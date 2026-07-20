@@ -9,6 +9,11 @@ You are integrating a comprehensive scientific, mathematical, and code-quality a
 `femboy2112/SmartChem`.
 
 Audit branch: `codex/comprehensive-audit-2026-07-20`
+Draft PR: `https://github.com/femboy2112/SmartChem/pull/1`
+Initial published audit commit: `6fb2234bb4d1a08dfccaac59dec25fa3c4837836`
+
+Treat the fetched branch head as authoritative because review/integration metadata may add
+commits after the initial audit implementation commit.
 
 The audit began from upstream `main` commit
 `3cd098553c1140a79f013489de98b9dba72aa63b`. Do not assume `main` is still at that commit.

@@ -516,3 +516,90 @@ class TestSpectatorsAreCancelledStructurally:
         assert caged is not None
         assert caged.value_ev == plain.value_ev
         assert caged.uncertainty_ev == pytest.approx(plain.uncertainty_ev)
+
+
+# ======================================================================================
+# The codomain is a monoid, and that is what makes the fold well defined
+# ======================================================================================
+class TestEstimateIsAMonoid:
+    """
+    ``E`` is usually described here as a functor into ``(R, +)``. That is a simplification:
+    it lands in ``Estimate``, which is a product of THREE monoids --
+
+        value_ev         (R, +)
+        uncertainty_ev   (R>=0, hypot)      associative, commutative, identity 0
+        extrapolation_ev (R, +)
+
+    -- and ``configuration_energy`` folds over a configuration's species with it. The fold
+    is only well defined if those laws hold, so they are checked rather than assumed.
+
+    The quadrature component carries a precondition the other two do not: hypot is the
+    correct combination ONLY for INDEPENDENT errors. That is exactly the precondition a
+    spectator violates, since its energy appears on both sides as one number rather than
+    two samples. Hence ``reaction_residue`` runs BEFORE the fold, not after -- the monoid
+    is sound on the residue and unsound on the raw configuration.
+    """
+
+    @staticmethod
+    def _e(v, u, x=0.0):
+        return Estimate(v, u, "m", 0.0, "", x)
+
+    def test_identity_is_a_left_and_right_unit(self):
+        z = Estimate.zero("m")
+        a = self._e(3.0, 0.4, 0.1)
+        for combined in (z + a, a + z):
+            assert combined.value_ev == pytest.approx(a.value_ev)
+            assert combined.uncertainty_ev == pytest.approx(a.uncertainty_ev)
+            assert combined.extrapolation_ev == pytest.approx(a.extrapolation_ev)
+
+    @settings(max_examples=100, deadline=None)
+    @given(
+        v=st.tuples(*[st.floats(-1e4, 1e4, allow_nan=False)] * 3),
+        u=st.tuples(*[st.floats(0.0, 1e3, allow_nan=False)] * 3),
+        x=st.tuples(*[st.floats(-1e2, 1e2, allow_nan=False)] * 3),
+    )
+    def test_addition_is_associative(self, v, u, x):
+        a, b, c = (self._e(v[i], u[i], x[i]) for i in range(3))
+        left, right = (a + b) + c, a + (b + c)
+        assert left.value_ev == pytest.approx(right.value_ev)
+        assert left.uncertainty_ev == pytest.approx(right.uncertainty_ev)
+        assert left.extrapolation_ev == pytest.approx(right.extrapolation_ev)
+
+    @settings(max_examples=100, deadline=None)
+    @given(
+        v=st.tuples(*[st.floats(-1e4, 1e4, allow_nan=False)] * 2),
+        u=st.tuples(*[st.floats(0.0, 1e3, allow_nan=False)] * 2),
+        x=st.tuples(*[st.floats(-1e2, 1e2, allow_nan=False)] * 2),
+    )
+    def test_addition_is_commutative(self, v, u, x):
+        a, b = (self._e(v[i], u[i], x[i]) for i in range(2))
+        assert (a + b).value_ev == pytest.approx((b + a).value_ev)
+        assert (a + b).uncertainty_ev == pytest.approx((b + a).uncertainty_ev)
+        assert (a + b).extrapolation_ev == pytest.approx((b + a).extrapolation_ev)
+
+    def test_quadrature_not_linear_addition(self):
+        """The uncertainty component is hypot, not +. Three at 0.3 give 0.5196, not 0.9."""
+        total = self._e(0, 0.3) + self._e(0, 0.3) + self._e(0, 0.3)
+        assert total.uncertainty_ev == pytest.approx(0.5196152, abs=1e-6)
+
+    def test_the_fold_does_not_depend_on_species_order(self):
+        """
+        What associativity and commutativity buy in practice: a configuration is a
+        multiset, so the fold must not care which order its species come out in.
+        """
+        parts = [self._e(1.0, 0.2), self._e(-3.0, 0.5), self._e(7.5, 0.1)]
+        forward = parts[0] + parts[1] + parts[2]
+        backward = parts[2] + parts[1] + parts[0]
+        assert forward.value_ev == pytest.approx(backward.value_ev)
+        assert forward.uncertainty_ev == pytest.approx(backward.uncertainty_ev)
+
+    def test_negation_preserves_uncertainty_but_flips_the_systematic_part(self):
+        """
+        The asymmetry that makes the difference honest. Random error has no sign, so
+        negation leaves it alone; the systematic correction does, so it flips and can
+        cancel in a conserving difference.
+        """
+        a = self._e(3.0, 0.4, 0.1)
+        assert (-a).uncertainty_ev == pytest.approx(a.uncertainty_ev)
+        assert (-a).extrapolation_ev == pytest.approx(-a.extrapolation_ev)
+        assert (a + (-a)).extrapolation_ev == pytest.approx(0.0)

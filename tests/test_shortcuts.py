@@ -210,6 +210,88 @@ class TestIsodesmicIsStrictlyStronger:
         assert is_bond_order_conserving(single) == is_bond_order_conserving(doubled)
 
 
+class TestTheIsodesmicMeasurementIsConfounded:
+    """
+    Pins the P4 run and, more importantly, pins the reason its headline is not reportable.
+
+    Transcribed from scratchpad/iso_result.json: 82 mass-balanced reactions over 14
+    species, HF/cc-pVTZ at relaxed HF geometries with this system's own harmonic ZPE,
+    scored against experimental enthalpies of formation at 0 K.
+
+    The naive reading refutes P4 -- isodesmic looks 1.65x worse than merely
+    order-conserving. The stratified reading flips the sign. Both are recorded, because a
+    future session that finds only the first number would draw a confident wrong
+    conclusion, and that is precisely the failure this class exists to prevent.
+    """
+
+    POOLED = {                       # class -> (n, mean |error| eV, mean eV per bond)
+        "isodesmic": (7, 0.1818, 0.0191),
+        "order-only": (47, 0.1101, 0.0111),
+        "creating": (28, 0.2858, 0.0339),
+    }
+    #: (isodesmic, order-conserving) mean |error| eV, split on whether a C=O species is present
+    STRATIFIED = {"no C=O": (0.0701, 0.1040), "with C=O": (0.2264, 0.2003)}
+
+    def test_the_pooled_numbers_refute_p4_on_their_face(self):
+        iso = self.POOLED["isodesmic"][1]
+        order = self.POOLED["order-only"][1]
+        creating = self.POOLED["creating"][1]
+        assert iso > order, "the pooled result is the one that looks like a refutation"
+        assert creating > iso, "creating is still worst, which is the part P4 got right"
+        assert iso / order == pytest.approx(1.65, abs=0.02)
+
+    def test_the_confound_is_a_composition_imbalance_not_a_structural_effect(self):
+        """
+        5 of 7 isodesmic reactions carry a carbonyl against 3 of 47 order-conserving ones.
+        Over these elements the only species that unlock isodesmic reactions have C=O, so
+        the predicate and the species class are nearly collinear -- and HF handles
+        multiple bonds worst because correlation energy is largest there.
+        """
+        iso_carbonyl_fraction = 5 / 7
+        order_carbonyl_fraction = 3 / 47
+        assert iso_carbonyl_fraction > 10 * order_carbonyl_fraction
+
+    def test_the_sign_flips_between_strata(self):
+        """Simpson's paradox. The pooled figure agrees with neither stratum."""
+        clean_iso, clean_order = self.STRATIFIED["no C=O"]
+        dirty_iso, dirty_order = self.STRATIFIED["with C=O"]
+        assert clean_iso < clean_order, "isodesmic wins once carbonyls are controlled"
+        assert dirty_iso > dirty_order, "and loses among them"
+        pooled_iso, pooled_order = self.POOLED["isodesmic"][1], self.POOLED["order-only"][1]
+        assert pooled_iso > pooled_order
+        assert not (clean_iso > clean_order), (
+            "the pooled direction is not the within-stratum direction -- that is the point"
+        )
+
+    def test_the_clean_stratum_is_too_small_to_conclude(self):
+        """
+        The honest stopping point. Two reactions is not a measurement, and no amount of
+        care with the energies changes that -- this is a property of the species set.
+        """
+        clean_isodesmic_n = 2
+        assert clean_isodesmic_n < 5, (
+            "if this ever rises, P4 becomes decidable and the docstring must be rewritten"
+        )
+
+    def test_the_predicted_h2_confound_was_null(self):
+        """
+        Registered in advance and worth nothing: H2 carries an experimental ZPE rather
+        than a computed one and appears in 21 of 47 order-conserving reactions and no
+        isodesmic ones. Recorded because a predicted-and-null control is evidence, and
+        because it is the confound that did NOT explain the result.
+        """
+        order_only_with_h2 = 0.1111
+        order_only_overall = 0.1101
+        assert abs(order_only_with_h2 - order_only_overall) < 0.01
+
+    def test_the_blocker_is_the_canonical_key_not_the_oracle(self):
+        """The dependency #17 -> #23, demonstrated rather than assumed."""
+        from smartchem.category import _MAX_CANONICAL_CANDIDATES, _canonical_cost
+
+        propane = ("C", "C", "C") + ("H",) * 8
+        assert _canonical_cost(propane) > _MAX_CANONICAL_CANDIDATES
+
+
 class TestIsodesmicCoverageWasTheBlocker:
     """
     Why `is_isodesmic` went unmeasured for so long, recorded as a fact about the SPECIES

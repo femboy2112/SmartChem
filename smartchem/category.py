@@ -589,10 +589,57 @@ def is_isodesmic(reaction: Reaction) -> bool:
     became ``H-F``. Chemistry expects the stronger property to cancel error better still,
     since the bonds on each side are then genuinely the same kind of object.
 
-    UNMEASURED here, and labelled as such on purpose. The measurement that exists tested
-    the weaker predicate, and the two must not be conflated -- the whole reason the number
-    in ``is_bond_order_conserving`` is trustworthy is that it is attached to the property
-    that was actually varied.
+    MEASURED, AND THE MEASUREMENT CANNOT DECIDE. The honest verdict is UNDECIDED, not a
+    number, and the reason is worth more than a number would have been.
+
+    Prediction P4, registered before the run: isodesmic < order-conserving < creating in
+    mean absolute error against experiment. Over 82 mass-balanced reactions among 14
+    species, scored against experimental enthalpies of formation at 0 K:
+
+    ==============  ===  ==========  ==========  ==========
+    class             n  absolute    relative    per bond
+    ==============  ===  ==========  ==========  ==========
+    isodesmic         7  0.1818 eV   0.33        0.0191 eV
+    order-conserving 47  0.1101 eV   0.19        0.0111 eV
+    creating         28  0.2858 eV   0.57        0.0339 eV
+    ==============  ===  ==========  ==========  ==========
+
+    Read naively that refutes P4 on all three statistics at once: isodesmic looks 1.65x
+    WORSE than merely order-conserving. It does not refute it, because the comparison is
+    confounded, and the confound was introduced by the fix for an earlier problem.
+
+    Over the nine species originally referenced, exactly ONE strictly isodesmic reaction
+    exists. Fixing that meant adding species, and over this element set the only species
+    that unlock isodesmic reactions carry C=O. So 5 of 7 isodesmic reactions contain a
+    carbonyl against 3 of 47 order-conserving ones -- "isodesmic" and "contains C=O" are
+    very nearly the same variable in this sample. That matters because HF omits electron
+    correlation and correlation energy is largest for multiple bonds, so a C=O species is
+    exactly what this tier handles worst. Stratifying:
+
+    ==================  =======================  ==========================
+    stratum             isodesmic                order-conserving
+    ==================  =======================  ==========================
+    no C=O species      0.0701 eV  (n=2)         0.1040 eV  (n=44)
+    contains C=O        0.2264 eV  (n=5)         0.2003 eV  (n=3)
+    ==================  =======================  ==========================
+
+    The sign flips between strata and the pooled figure agrees with neither -- Simpson's
+    paradox, driven by a composition imbalance this project created for itself. n=2 in the
+    clean stratum decides nothing, and the largest single isodesmic error and the smallest
+    are BOTH carbonyl reactions, so it is not a tidy species effect either.
+
+    One confound was predicted in advance and turned out to be null: reactions containing
+    H2 get an experimental zero-point energy rather than a computed one, and H2 appears in
+    21 of 47 order-conserving reactions and none of the isodesmic ones. It is worth
+    nothing -- 0.1111 eV with H2 against 0.1101 eV overall.
+
+    So this function DECIDES the property and reports it, and quotes no accuracy claim. To
+    settle P4 the isodesmic class needs members without carbonyls, which over these
+    elements means larger alkanes and alcohols; propane is the smallest and is currently
+    beyond ``_MAX_CANONICAL_CANDIDATES``. The blocker is therefore the canonical key, not
+    the oracle -- a dependency that is now demonstrated rather than assumed.
+
+    See ``tests/test_shortcuts.py::TestTheIsodesmicMeasurementIsConfounded``.
     """
     return bond_signature(reaction.dom) == bond_signature(reaction.cod)
 

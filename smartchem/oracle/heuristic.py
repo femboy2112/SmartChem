@@ -59,6 +59,14 @@ class HeuristicOracle(BaseOracle):
         if not molecule.bonds:
             # A free atom. Zero by definition of this oracle's reference, exactly -- not
             # an unknown, so it must not decline.
+            #
+            # "By definition" covers elements this oracle knows. It does NOT cover a
+            # symbol that is not an element at all: there the zero is not a convention
+            # being applied, it is a confident number about something that does not
+            # exist. Symbols here are opaque by design (see category.py), so nothing
+            # upstream rules that out and the check has to live here.
+            if any(s not in PT for s in molecule.atoms):
+                return None
             return Estimate(0.0, 0.0, self.name, 0.0, f"free atom {molecule.atoms[0]}"
                             if len(molecule.atoms) == 1 else "unbonded atoms")
 

@@ -195,6 +195,25 @@ class TestTheOraclesDeclineWhatTheyCannotValue:
     def test_a_quantum_is_declined_rather_than_priced_at_zero(self):
         assert HeuristicOracle().energy(Molecule.quantum("hv")) is None
 
+    def test_a_symbol_that_is_not_an_element_is_declined(self):
+        """
+        Found while measuring the species cache (#18). The heuristic oracle's free-atom
+        branch returned 0.0 +/- 0.0 eV for ANY unbonded atom -- including "Xx", which is
+        not an element.
+
+        The convention "a free atom is this oracle's zero" is exact for elements it knows
+        and is not a convention at all for a symbol naming nothing. Symbols are opaque by
+        design, which is what makes the category domain-neutral, so nothing upstream rules
+        this out and the oracle has to.
+
+        Directly relevant to #22: the same opacity that lets an object be labelled "R" or
+        "GND" is what lets a fictional element through, so the two are one issue.
+        """
+        oracle = HeuristicOracle()
+        assert oracle.energy(Molecule.atom("Na")) is not None
+        assert oracle.energy(Molecule.atom("Xx")) is None
+        assert oracle.energy(Molecule.atom("GND")) is None
+
     def test_the_guard_names_exactly_the_two_unmodelled_cases(self):
         assert carries_unmodelled_physics(Molecule.quantum("hv"))
         assert carries_unmodelled_physics(Molecule.atom("Na", state="excited"))

@@ -12,9 +12,11 @@ bare numpy/scipy install and the benchmark simply reports fewer rows.
 from __future__ import annotations
 
 from .base import BaseOracle, EnergyOracle, Estimate
+from .caching import CachingOracle
 from .heuristic import HeuristicOracle
 
-__all__ = ["BaseOracle", "EnergyOracle", "Estimate", "HeuristicOracle", "available_oracles"]
+__all__ = ["BaseOracle", "CachingOracle", "EnergyOracle", "Estimate", "HeuristicOracle",
+           "available_oracles"]
 
 
 def available_oracles() -> dict[str, EnergyOracle]:

@@ -317,10 +317,40 @@ class RelaxResult:
         return self.gradient_norm * HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM
 
 
+def _iteration_budget(n_atoms: int) -> int:
+    """
+    How many L-BFGS-B iterations a molecule of this size is allowed.
+
+    MEASURED, at HF/cc-pVDZ, counting calls to first reach the 3e-5 gradient tolerance:
+
+        C2H5OH    9 atoms, 21 DOF     93 calls
+        C3H8     11 atoms, 27 DOF     99 calls
+        C3H7OH   12 atoms, 30 DOF    113 calls
+
+    The old flat cap of 100 iterations (about 108 calls) sat *inside* that range. C3H8
+    converged with ONE call of margin -- its 2515.9 s number, the one the isodesmic study
+    rests on, is correct but succeeded by luck -- and C3H7OH missed by five and was
+    reported as a refusal for an hour of compute. A cap chosen for "small rigid species"
+    had quietly become binding across the whole size range this project now works in, and
+    it does not degrade gracefully: it is a wall, not a slope.
+
+    Scaling with atom count is the fix rather than a bigger flat number, because the driver
+    is the degrees of freedom (3N-6) the optimiser has to descend. Twenty per atom is
+    roughly double the measured need, and generosity is nearly free here: L-BFGS-B stops
+    when it converges, so a larger budget costs NOTHING for anything that already worked.
+    It only spends time on species that would otherwise have been refused -- exactly where
+    spending it is worthwhile.
+
+    The cap is kept rather than removed because it still has a real job: bounding how long
+    a genuinely pathological surface can run before the answer is honestly "no".
+    """
+    return max(100, 20 * n_atoms)
+
+
 def relax(
     coordinates: np.ndarray,
     energy_and_gradient: Callable[[np.ndarray], tuple[float, np.ndarray]],
-    max_iterations: int = 100,
+    max_iterations: int | None = None,
     gradient_tolerance: float = 3e-5,
 ) -> RelaxResult:
     """
@@ -347,6 +377,11 @@ def relax(
     answer: it agrees with the reference exactly, for no reason. 3e-5 is tight enough that
     a seed cannot pass it by luck.
 
+    That tolerance is NOT the knob to reach for when a large molecule fails to converge.
+    C3H7OH stopped at 2.02e-4 and loosening to admit it would land almost exactly back on
+    the 3e-4 that let MgO's seed pass untouched. The budget was the problem; see
+    ``_iteration_budget``.
+
     Note this function contains no chemistry at all -- it is handed a scalar field and
     finds a stationary point of it. That is what makes it testable against an analytic
     surface whose minimum is known in closed form, with no oracle in the loop.
@@ -369,6 +404,8 @@ def relax(
     from scipy.optimize import minimize
 
     shape = coordinates.shape
+    if max_iterations is None:
+        max_iterations = _iteration_budget(shape[0])
     calls = {"n": 0}
 
     def objective(flat: np.ndarray) -> tuple[float, np.ndarray]:

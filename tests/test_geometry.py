@@ -18,6 +18,7 @@ from smartchem.category import Bond, Molecule
 from smartchem.geometry import (
     GeometryError,
     _electron_domains,
+    _iteration_budget,
     _external_modes,
     _ideal_directions,
     _rotation_taking,
@@ -790,3 +791,60 @@ class TestAgainstARealWavefunction:
         assert analysis.is_minimum
         assert analysis.imaginary_modes == 0
         assert analysis.zero_point_energy_ev > 0.5      # water's ZPE is around 0.6 eV
+
+
+# ======================================================================================
+class TestTheIterationBudgetHasRealMargin:
+    """
+    The cap was a wall the project had been walking along the edge of.
+
+    MEASURED at HF/cc-pVDZ, calls to first reach the 3e-5 gradient tolerance
+    (``scratchpad/iteration_probe.py``):
+
+        C2H5OH    9 atoms     93 calls
+        C3H8     11 atoms     99 calls      <- one call inside the old cap
+        C3H7OH   12 atoms    113 calls      <- five calls outside it
+
+    The old flat cap of 100 iterations sat *inside* that range. C3H8's 2515.9 s number --
+    the one the isodesmic study rests on -- is correct but converged by luck, and C3H7OH
+    was reported as a refusal after an hour of compute for want of five steps.
+
+    These tests pin the margin so it cannot silently erode again. They need no oracle: the
+    budget is a function of atom count and nothing else.
+    """
+
+    #: species -> (atoms, calls measured to converge). The numbers this policy must clear.
+    MEASURED = {"C2H5OH": (9, 93), "C3H8": (11, 99), "C3H7OH": (12, 113)}
+
+    @pytest.mark.parametrize("species", sorted(MEASURED))
+    def test_every_measured_species_fits_with_room_to_spare(self, species):
+        atoms, needed = self.MEASURED[species]
+        budget = _iteration_budget(atoms)
+        assert budget > needed, f"{species} needs {needed} calls, budget is {budget}"
+        assert budget >= 1.5 * needed, (
+            f"{species} fits, but only just: {needed} needed against {budget}. "
+            f"That is how the old cap failed -- margin, not merely sufficiency.")
+
+    def test_the_old_flat_cap_would_have_failed_the_species_that_failed(self):
+        """
+        Non-vacuity: the test above must be able to fail. Under the old policy C3H7OH does
+        not fit, so these assertions are checking something real rather than restating
+        arithmetic that could not have come out otherwise.
+        """
+        old_cap = 100
+        assert self.MEASURED["C3H7OH"][1] > old_cap
+        assert self.MEASURED["C3H8"][1] < old_cap        # and this one squeaked through
+        assert old_cap - self.MEASURED["C3H8"][1] == 1   # by exactly one call
+
+    def test_the_budget_grows_with_the_molecule(self):
+        """The driver is 3N-6 degrees of freedom, so a flat number cannot be right."""
+        assert _iteration_budget(20) > _iteration_budget(12) > _iteration_budget(9)
+
+    def test_small_species_are_not_given_an_unbounded_budget(self):
+        """
+        The cap still has a job: bounding how long a pathological surface runs before the
+        answer is honestly "no". Water converges in 13 calls and must not be licensed to
+        spend hundreds.
+        """
+        assert _iteration_budget(3) == 100
+        assert _iteration_budget(1) == 100

@@ -63,11 +63,19 @@ only ever asked about candidates that are already structurally valid.
 """
 from __future__ import annotations
 
+import logging
 import re
 import time
 import warnings
 
 import numpy as np
+
+#: Progress for the long calculations. A polyatomic relaxation can run forty minutes with
+#: nothing to show for it, and "is it hung or still working" is not a question a caller
+#: should have to answer by reading CPU time in ``ps`` -- which is exactly how the C3H7OH
+#: refusal was eventually diagnosed. Silent by default (no handler, so nothing is emitted
+#: unless a caller asks); ``logging.basicConfig(level=logging.INFO)`` turns it on.
+_log = logging.getLogger(__name__)
 
 from .base import BaseOracle, Estimate, carries_unmodelled_physics
 from ..atoms import PT
@@ -80,6 +88,12 @@ try:
     from pyscf import gto, scf, mp, cc
 except ImportError as exc:  # pragma: no cover - exercised by absence, not presence
     raise ImportError("PySCFOracle requires pyscf: pip install 'smartchem[qc]'") from exc
+
+def _label(molecule: Molecule) -> str:
+    """A readable formula for a log line. Never raises: this is for humans, not for keys."""
+    return "".join(f"{symbol}{count if count > 1 else ''}"
+                   for symbol, count in sorted(molecule.formula.items())) or "?"
+
 
 HARTREE_EV = 27.211386245988
 
@@ -596,14 +610,26 @@ class PySCFOracle(BaseOracle):
 
         coordinates = seed_coordinates(molecule)
         for attempt in range(_MAX_DESCENTS + 1):
+            _log.info("%s: relaxation attempt %d/%d starting",
+                      _label(molecule), attempt + 1, _MAX_DESCENTS + 1)
             result = relax(coordinates, energy_and_gradient)
+            _log.info("%s: relaxation %s after %d calls, max|grad| %.2e Ha/Bohr",
+                      _label(molecule), "converged" if result.converged else "GAVE UP",
+                      result.iterations, result.gradient_norm)
             if not result.converged:
                 raise GeometryError(
                     f"relaxation did not converge for {symbols}: max gradient "
                     f"{result.gradient_norm:.2e} Ha/Bohr after {result.iterations} calls")
+            _log.info("%s: building the Hessian to certify the stationary point",
+                      _label(molecule))
             analysis = certify(result.coordinates)
             if analysis.is_minimum:
+                _log.info("%s: certified a minimum, ZPE %.4f eV",
+                          _label(molecule), analysis.zero_point_energy_ev)
                 return result.coordinates, analysis.zero_point_energy_ev
+            _log.info("%s: stationary point is a saddle (%d imaginary, lowest %.1f cm^-1)"
+                      "; descending along the unstable mode", _label(molecule),
+                      analysis.imaginary_modes, analysis.frequencies_cm[0])
             direction = analysis.unstable_direction()
             if direction is None or attempt == _MAX_DESCENTS:
                 raise GeometryError(

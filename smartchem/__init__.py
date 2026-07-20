@@ -66,6 +66,16 @@ from .thermo import (
     is_exothermic,
     reaction_energy,
 )
+from .geometry import (
+    GeometryError,
+    RelaxResult,
+    VibrationalAnalysis,
+    harmonic_analysis,
+    is_linear,
+    relax,
+    seed_bond_length,
+    seed_coordinates,
+)
 
 __all__ = [
     # category -- objects, morphisms, and the conservation theorem
@@ -84,4 +94,7 @@ __all__ = [
     # thermo -- the energy functor
     "configuration_energy", "reaction_energy", "bonding_energy",
     "is_exothermic", "favourability",
+    # geometry -- coordinates derived from the bond graph the object already carries
+    "GeometryError", "RelaxResult", "VibrationalAnalysis",
+    "seed_coordinates", "seed_bond_length", "relax", "harmonic_analysis", "is_linear",
 ]

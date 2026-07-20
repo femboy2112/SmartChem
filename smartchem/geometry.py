@@ -527,10 +527,16 @@ def harmonic_analysis(
 
 def is_linear(coordinates: np.ndarray, tolerance: float = 1e-3) -> bool:
     """
-    True when every atom lies on one line, which changes the vibrational mode count.
+    True when every atom lies on one line.
 
     Decided by the smallest singular value of the centred coordinates: a set of points is
     collinear exactly when its centred matrix has rank one.
+
+    This used to be what told ``harmonic_analysis`` whether to expect five external modes
+    or six. It no longer is -- the SVD in ``_external_modes`` discovers the rank itself, so
+    a linear molecule keeps its extra vibration with no flag to pass and no tolerance to
+    tune. What survives here is a plain predicate about a shape, which is worth having for
+    checking that a seed came out the right shape at all (CO2 linear, water not).
     """
     if len(coordinates) <= 2:
         return True

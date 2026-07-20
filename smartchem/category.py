@@ -44,13 +44,85 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from itertools import permutations
-from typing import Iterable, Mapping
+from itertools import permutations, product
+from math import factorial
+from typing import Iterable, Iterator, Mapping
 
-# Above this many atoms, canonical relabelling by brute-force permutation is refused
-# rather than silently returning a non-canonical form. Graph canonicalisation proper
-# (nauty-style refinement) is out of scope; the honest move is to say so.
-_MAX_CANONICAL_ATOMS = 8
+# Budget for canonical relabelling, counted in *candidate permutations actually examined*
+# -- not in atoms. See `_sorting_permutations` for why those differ by orders of magnitude.
+# Above this, canonicalisation is refused rather than silently returning a non-canonical
+# form. Full graph canonicalisation (nauty-style refinement) remains out of scope.
+#
+# Set to hold the old cap's WORST-CASE COST fixed, rather than to a round number. The
+# 8-atom cap already permitted 8! = 40_320 candidates, measured here at 5.4 us each
+# (~0.2 s). Keeping that same time budget and spending it through the symbol-class
+# restriction buys reach instead of atoms: C2H5OH costs 1_440 (20 ms), and this matters
+# because `Config.__post_init__` canonicalises on every construction, so the worst case
+# is paid per object, not once.
+#
+# Benzene is deliberately OUT of budget: 518_400 candidates, measured at 4.1 s. That is
+# not a cost this system can pay inside a constructor, so it refuses and says why.
+_MAX_CANONICAL_CANDIDATES = 50_000
+
+
+def _symbol_blocks(atoms: tuple[str, ...]) -> list[tuple[int, ...]]:
+    """Atom positions grouped by symbol, the groups themselves in sorted symbol order."""
+    order = sorted(range(len(atoms)), key=lambda i: atoms[i])
+    blocks: list[tuple[int, ...]] = []
+    start = 0
+    for k in range(1, len(order) + 1):
+        if k == len(order) or atoms[order[k]] != atoms[order[start]]:
+            blocks.append(tuple(order[start:k]))
+            start = k
+    return blocks
+
+
+def _canonical_cost(atoms: tuple[str, ...]) -> int:
+    """How many candidate permutations `canonical()` will examine: prod(m_i!)."""
+    total = 1
+    for block in _symbol_blocks(atoms):
+        total *= factorial(len(block))
+    return total
+
+
+def _sorting_permutations(atoms: tuple[str, ...]) -> Iterator[tuple[int, ...]]:
+    """
+    Every permutation that sorts the atom symbols -- and, deliberately, no others.
+
+    Why this loses nothing
+    ----------------------
+    ``canonical()`` minimises the key ``(symbols, edges)``, ordered lexicographically
+    with ``symbols`` first. Over all n! permutations the minimum of that first component
+    is ``tuple(sorted(atoms))``, a value fixed by the multiset of symbols and reachable
+    by some permutation. So a permutation that does not sort the symbols is strictly
+    beaten on the primary component by one that does, whatever it does to ``edges``, and
+    can never be the argmin.
+
+    The candidate set is therefore exactly the symbol-sorting permutations -- the ones
+    that shuffle atoms *within* a symbol class -- of which there are prod(m_i!), not n!.
+    For C2H5OH that is 1,440 instead of 362,880. For benzene, 518,400 instead of
+    479,001,600.
+
+    This is an exact restriction of the search, not a heuristic prune: same argmin, same
+    canonical form, verified against the old brute force in
+    ``TestCanonicalShortcutIsExact``. The saving is real but composition-dependent, and
+    vanishes entirely in the homonuclear worst case -- for C8 every permutation sorts the
+    symbols, prod(m_i!) = n!, and nothing is saved. The refusal above
+    ``_MAX_CANONICAL_CANDIDATES`` is what keeps that case honest.
+    """
+    n = len(atoms)
+    blocks = _symbol_blocks(atoms)
+    targets: list[tuple[int, ...]] = []
+    position = 0
+    for block in blocks:
+        targets.append(tuple(range(position, position + len(block))))
+        position += len(block)
+    for choice in product(*(permutations(block) for block in blocks)):
+        perm = [0] * n
+        for olds, news in zip(choice, targets):
+            for old, new in zip(olds, news):
+                perm[old] = new
+        yield tuple(perm)
 
 
 class ConservationError(ValueError):
@@ -148,21 +220,23 @@ class Molecule:
         """
         Canonical relabelling, so structurally identical molecules compare equal.
 
-        Brute force over permutations that sort the atom symbols. Fine for the small
-        species this system targets; refuses loudly above ``_MAX_CANONICAL_ATOMS``
-        rather than quietly returning something non-canonical.
+        Minimises the key ``(symbols, edges)`` over the candidate permutations, then
+        rebuilds the molecule from the winner. Refuses loudly above
+        ``_MAX_CANONICAL_CANDIDATES`` rather than quietly returning something
+        non-canonical.
         """
         n = len(self.atoms)
         if n <= 1:
             return self
-        if n > _MAX_CANONICAL_ATOMS:
+        budget = _canonical_cost(self.atoms)
+        if budget > _MAX_CANONICAL_CANDIDATES:
             raise NotImplementedError(
-                f"canonical relabelling of {n} atoms is not supported "
-                f"(limit {_MAX_CANONICAL_ATOMS}); graph canonicalisation is out of scope"
+                f"canonical relabelling of {self!r} needs {budget:,} candidate "
+                f"permutations, above the limit of {_MAX_CANONICAL_CANDIDATES:,}; "
+                f"full graph canonicalisation is out of scope"
             )
         best: tuple | None = None
-        best_perm: tuple[int, ...] | None = None
-        for perm in permutations(range(n)):
+        for perm in _sorting_permutations(self.atoms):
             # perm[old] = new
             symbols = tuple(x for _, x in sorted(zip(perm, self.atoms)))
             edges = tuple(sorted(
@@ -171,8 +245,8 @@ class Molecule:
             ))
             key = (symbols, edges)
             if best is None or key < best:
-                best, best_perm = key, perm
-        assert best is not None and best_perm is not None
+                best = key
+        assert best is not None
         symbols, edges = best
         return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in edges), self.charge)
 

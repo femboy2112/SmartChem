@@ -13,6 +13,10 @@ handful of examples.
 """
 from __future__ import annotations
 
+import itertools
+import math
+import random
+
 import pytest
 from hypothesis import given, settings, strategies as st
 
@@ -30,6 +34,13 @@ from smartchem.category import (
     identity,
     is_catalytic,
     tensor_obj,
+)
+# private, but the budget gate and the candidate enumeration are exactly what
+# TestCanonicalShortcutIsExact exists to hold down.
+from smartchem.category import (
+    _MAX_CANONICAL_CANDIDATES,
+    _canonical_cost,
+    _sorting_permutations,
 )
 
 ELEMENTS = ["H", "C", "N", "O", "F", "Na", "Cl"]
@@ -264,9 +275,94 @@ class TestObjectStructure:
         assert not Molecule(("H", "H"), frozenset()).is_connected()
 
     def test_large_molecule_refuses_rather_than_lies(self):
-        big = Molecule(tuple("H" * 9), frozenset())
+        # H12 costs 12! = 479_001_600 candidates -- every permutation sorts the symbols
+        # when there is only one symbol, so the shortcut buys exactly nothing here. This
+        # is the case the budget exists for.
+        big = Molecule(tuple("H" * 12), frozenset())
         with pytest.raises(NotImplementedError, match="out of scope"):
             big.canonical()
+
+    def test_reach_is_set_by_composition_not_by_atom_count(self):
+        """
+        The old cap refused at 9 atoms. It priced canonicalisation as n!, which it is
+        not -- so it refused ethanol while accepting an octane fragment that costs 28x
+        more. Reach follows the symbol multiplicities, not the atom count.
+        """
+        ethanol = ("C", "C", "O", "H", "H", "H", "H", "H", "H")   # 9 atoms
+        octyl = tuple("C" * 8)                                     # 8 atoms
+        assert _canonical_cost(ethanol) == 1_440
+        assert _canonical_cost(octyl) == 40_320
+        assert _canonical_cost(ethanol) < _canonical_cost(octyl)
+        # and the bigger species is the one that is now affordable
+        assert _canonical_cost(ethanol) <= _MAX_CANONICAL_CANDIDATES
+
+
+class TestCanonicalShortcutIsExact:
+    """
+    The shortcut restricts the search from n! permutations to prod(m_i!). That is only
+    admissible if it never changes the answer, so this compares it against the brute
+    force it replaced -- on every labelling of small chains, and on seeded random graphs.
+
+    A restriction of a search is exactly the kind of change that looks free and is not:
+    if the argument about the lexicographic key were subtly wrong, every downstream
+    equality in the category would silently drift. So the old loop is kept here, in the
+    test, as the oracle.
+    """
+
+    @staticmethod
+    def _brute_force(atoms, bonds):
+        """The pre-shortcut loop, preserved verbatim so it cannot drift with the code."""
+        best = None
+        for perm in itertools.permutations(range(len(atoms))):
+            symbols = tuple(x for _, x in sorted(zip(perm, atoms)))
+            edges = tuple(sorted(
+                (min(perm[b.i], perm[b.j]), max(perm[b.i], perm[b.j]), b.order)
+                for b in bonds
+            ))
+            key = (symbols, edges)
+            if best is None or key < best:
+                best = key
+        symbols, edges = best
+        return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in edges))
+
+    @pytest.mark.parametrize("n", [2, 3, 4, 5])
+    def test_agrees_on_every_labelling_of_a_chain(self, n):
+        bonds = frozenset(Bond(i, i + 1) for i in range(n - 1))
+        for atoms in itertools.product("HCO", repeat=n):
+            assert Molecule(atoms, bonds).canonical() == self._brute_force(atoms, bonds)
+
+    def test_agrees_on_random_graphs(self):
+        """Seeded, so any disagreement replays exactly rather than haunting CI."""
+        rng = random.Random(20260720)
+        for _ in range(400):
+            n = rng.randrange(2, 8)
+            atoms = tuple(rng.choice("HCON") for _ in range(n))
+            bonds = set()
+            for i in range(1, n):                      # spanning path: always connected
+                bonds.add(Bond(rng.randrange(i), i, rng.choice([1, 1, 1, 2, 3])))
+            for _ in range(rng.randrange(0, 3)):       # a few chords
+                i, j = rng.sample(range(n), 2)
+                bonds.add(Bond(i, j, rng.choice([1, 2])))
+            bonds = frozenset(bonds)
+            assert Molecule(atoms, bonds).canonical() == self._brute_force(atoms, bonds), (
+                f"shortcut disagrees with brute force on {atoms} {sorted(bonds)}"
+            )
+
+    def test_the_candidate_count_is_what_is_actually_enumerated(self):
+        """`_canonical_cost` is the budget gate, so it must not be an estimate."""
+        for atoms in [("H", "H"), ("C", "H", "H", "O"), ("C", "C", "H", "H", "H")]:
+            assert len(list(_sorting_permutations(atoms))) == _canonical_cost(atoms)
+
+    def test_every_candidate_really_sorts_the_symbols(self):
+        """The premise of the restriction: candidates all realise the minimal `symbols`."""
+        atoms = ("O", "H", "C", "H", "C")
+        target = tuple(sorted(atoms))
+        for perm in _sorting_permutations(atoms):
+            assert tuple(x for _, x in sorted(zip(perm, atoms))) == target
+
+    def test_homonuclear_saves_nothing_and_says_so(self):
+        """The boundary. One symbol means every permutation sorts it: no reduction."""
+        assert _canonical_cost(tuple("C" * 7)) == math.factorial(7)
 
 
 # ==================================================================================

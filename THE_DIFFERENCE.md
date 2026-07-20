@@ -112,6 +112,24 @@ energy moves. That is category theory doing load-bearing physical work rather th
 describing chemistry that was already there.
 → `tests/test_functor.py::TestConservationLicensesSubtraction`
 
+**It pays off again in deciding what not to compute.** The structure does not make any
+single quantum-chemical calculation faster — nothing here does, and the retirement of the
+legacy engine was the lesson that no algebra substitutes for the wavefunction. What it does
+is decide, *before* the expensive layer runs, which calls cannot affect the answer.
+
+A species present unchanged on both sides of a morphism cancels identically in `ΔE` by the
+monoidal law, so it is never priced. On `2 N → N₂` with an Fe spectator at ±5.0 eV that
+removed two oracle calls and shrank the reported uncertainty from 7.0711 eV to 0.0866 —
+because quadrature is valid only for *independent* errors, and a spectator's energy is one
+number appearing twice, minus itself, not two samples. The old bar was 82× too wide and the
+width was fiction. This is the same defect class as the extrapolation guard: a
+perfectly-correlated systematic quantity propagated as independent random error.
+
+That is the honest answer to "are we leaning too hard on someone else's calculation." For the
+*absolute energy of a species*, we should lean on PySCF entirely and there is no shortcut. For
+*which* absolute energies the question needs, and *how their errors compose*, we were
+over-deferring, and the category proved it.
+
 **It did not pay off in basis selection, and that was measured.** The reasoning was sound
 in shape: extrapolation only removes error the family is converging toward, so diffuse
 (ionic) and tight-*d* (second-row) deficiencies survive it; both are properties of the

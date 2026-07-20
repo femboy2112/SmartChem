@@ -24,19 +24,25 @@ spanning ionic, second-row and first-row covalent, with N₂ as a hard-correlati
 Iodine species are excluded because `aug-cc-pVQZ` on iodine would dominate the cost without
 testing anything; that exclusion is stated rather than silent.
 
-| tier | MAE (eV) | MAE (kcal/mol) | n |
-|---|---|---|---|
-| legacy heuristic | 4.5455 | 104.83 | 4 of 7 (3 refused) |
-| HF/cc-pVQZ | 2.5814 | 59.53 | 7 |
-| CCSD(T)/cc-pVTZ | 0.2186 | 5.04 | 7 |
-| CCSD(T)/cc-pVQZ | 0.0763 | 1.76 | 7 |
-| **CCSD(T)/cbs(TZ,QZ)** | **0.0562** | **1.30** | 7 |
-| CCSD(T)/aug-cbs(TZ,QZ)+d | 0.1277 | 2.94 | 7 |
+| tier | MAE (eV) | MAE (kcal/mol) | n | cost (s/species) |
+|---|---|---|---|---|
+| legacy heuristic | 4.5455 | 104.83 | 4 of 7 (3 refused) | 0.00 |
+| HF/cc-pVQZ | 2.5814 | 59.53 | 7 | 2.42 |
+| CCSD(T)/cc-pVTZ | 0.2186 | 5.04 | 7 | 9.62 |
+| CCSD(T)/cc-pVQZ | 0.0763 | 1.76 | 7 | 52.32 |
+| **CCSD(T)/cbs(TZ,QZ)** | **0.0562** | **1.30** | 7 | ≥ 61.94 † |
+| CCSD(T)/aug-cbs(TZ,QZ)+d | 0.1277 | 2.94 | 7 | not re-measured |
 
-The recommended tier costs **57.7 s/species** on 8 cores; the augmented tier costs
-294.7 s/species. (Those two were measured with nothing else running. The intermediate
-tiers' MAE values are exact — they are deterministic — but their wall-clock was measured
-while other jobs shared the machine, so it is not quoted here.)
+Every MAE above is exact and reproducible — the calculations are deterministic, and a clean
+re-run reproduced all five values to the digit.
+
+† **The cost column is weaker than the accuracy column, and the difference is stated rather
+than hidden.** The first four rows were measured sequentially on an otherwise idle 8-core
+machine. The `cbs(TZ,QZ)` row was not: two attempts to time it were contaminated by other
+jobs the author started on the same machine, and the first attempt returned 57.7 s/species —
+*impossible on its face*, since the extrapolation runs both TZ and QZ and so cannot cost less
+than their sum. The quoted figure is that structural lower bound, 9.62 + 52.32. Treat it as a
+floor, not a measurement.
 
 **Why one declared set.** The previously published table was not comparable across its own
 rows: it reported `n = 3, 3, 5, 5, 10`, and since CBS requires *both* TZ and QZ,
@@ -53,6 +59,65 @@ without being tested there. Extrapolation weights the larger basis by 64/37 and 
 by −27/37, so it amplifies non-smoothness rather than averaging it out. The machinery is
 kept and tested but not recommended — a negative result you can still run beats one you have
 to take on trust.
+
+---
+
+## What the category lets us *not* compute
+
+The oracle is the expensive layer, and no algebra makes CCSD(T) faster. But the algebra can
+prove that particular oracle calls are unnecessary *before any of them run* — which is the
+same "prune by type, ahead of the expensive layer" move the candidate search already makes,
+turned on the energy itself. Two shortcuts exist, at deliberately different levels of proof.
+
+**Exact — spectators, and this one is policy.** For `f : S ⊗ A → S ⊗ B`, the monoidal law
+gives `ΔE = (E(S) + E(B)) − (E(S) + E(A)) = E(B) − E(A)`. A species present unchanged on both
+sides cannot influence the answer, and the multiset difference of `dom` and `cod` finds it
+with no oracle call. So it is never priced.
+
+The saving is the smaller half. The larger half is rigor: uncertainties combine in quadrature,
+which is valid only for **independent** errors. A spectator's energy is not two independent
+samples — it is one number appearing twice, minus itself. Summing both sides and subtracting
+afterwards adds `2·u(S)²` of variance that physically cancels to zero.
+
+Measured on `2 N → N₂` with an Fe spectator carrying ±5.0 eV:
+
+| | catalyst priced | reported uncertainty |
+|---|---|---|
+| before | 2× | 7.0711 eV |
+| after | 0× | **0.0866 eV** |
+
+The value is bit-identical; the error bar was **82× too wide**, and the width was fiction. It
+is also a capability increase: a reaction whose spectator the oracle *cannot* price is now
+answerable, because the answer never depended on it. Species that actually change still block.
+→ `tests/test_functor.py::TestSpectatorsAreCancelledStructurally`
+
+**Approximate — bond-order conservation, and this one is deliberately *not* policy.** Method
+error is roughly a property of the bonds present, so a morphism that breaks and makes the same
+bond content should cancel much of it. Our objects carry bond topology, so `is_bond_order_conserving`
+decides this with no oracle call. Pre-registered prediction: the ratio of mean |error|
+(bond-creating ÷ bond-conserving) would exceed 3.
+
+| tier | bond-creating | bond-order-conserving | ratio |
+|---|---|---|---|
+| HF/cc-pVTZ | 1.8847 eV | 0.7475 eV | 2.52 |
+| CCSD(T)/cc-pVTZ | 0.1265 eV | 0.0592 eV | 2.14 |
+
+**The prediction failed at both tiers.** The effect is real and stable across tiers differing
+~15× in absolute error, but it is worth a factor of two, not three. So the predicate decides
+and reports the property; nothing selects a cheaper tier on the strength of it. Nine diatomic
+reactions in one basis family do not license an automatic accuracy policy — and the last policy
+proposed here on that kind of evidence, basis augmentation, lost outright when finally measured
+at the tier that mattered.
+
+Writing the tests also caught an error in the framing: `HCl + F → HF + Cl` preserves bond
+*orders* but not bond *types* (`H–Cl` became `H–F`), so the measured set is **not** isodesmic in
+the strict sense. Attaching the ratio to an isodesmic predicate would have claimed a number for
+a property the experiment never varied. Hence two predicates — `is_bond_order_conserving`
+(measured) and `is_isodesmic` (strictly stronger, labelled unmeasured) — with parametrized
+tests asserting every scored reaction falls on the side of the predicate it was scored as.
+→ `tests/test_shortcuts.py`
+
+---
 
 **And something worth knowing about the recommended tier.** For NaCl, extrapolation makes a
 good answer worse:

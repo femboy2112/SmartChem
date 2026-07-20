@@ -2,10 +2,17 @@
 from .reference import (
     BOND_REFS,
     GAP_REFS,
+    POLYATOMIC_REFS,
+    ATOM_FORMATION_KJ,
     BondRef,
     GapRef,
+    PolyatomicRef,
     bonds,
     gaps,
+    polyatomic,
+    polyatomics,
+    atomization_energy_ev,
+    reaction_energy_ev,
     coverage_report,
     required_elements,
     CHEMICAL_ACCURACY_EV,
@@ -14,7 +21,10 @@ from .reference import (
 )
 
 __all__ = [
-    "BOND_REFS", "GAP_REFS", "BondRef", "GapRef",
-    "bonds", "gaps", "coverage_report", "required_elements",
+    "BOND_REFS", "GAP_REFS", "POLYATOMIC_REFS", "ATOM_FORMATION_KJ",
+    "BondRef", "GapRef", "PolyatomicRef",
+    "bonds", "gaps", "polyatomic", "polyatomics",
+    "atomization_energy_ev", "reaction_energy_ev",
+    "coverage_report", "required_elements",
     "CHEMICAL_ACCURACY_EV", "GOOD_SEMIEMPIRICAL_EV", "USABLE_SCREENING_EV",
 ]

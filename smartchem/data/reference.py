@@ -27,7 +27,7 @@ cannot masquerade as a good MAE overall.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Mapping
 
 Split = Literal["train", "test"]
 
@@ -245,6 +245,148 @@ def zero_point_energy_ev(formula: str) -> float | None:
     if entry is None:
         return None
     return 0.5 * entry[1] * CM_TO_EV
+
+
+# --------------------------------------------------------------------------------------
+# Polyatomic thermochemistry
+# --------------------------------------------------------------------------------------
+# WHAT IS STORED, AND WHY IT IS NOT THE ATOMIZATION ENERGY
+#
+# The quantity every polyatomic accuracy claim wants is the atomization energy. It is NOT
+# stored here. What is stored is the enthalpy of formation at 0 K -- the quantity that was
+# actually measured -- and `atomization_energy_ev` derives the rest:
+#
+#     D0(molecule) = sum_atoms n_i * dfH(atom_i, 0 K)  -  dfH(molecule, 0 K)
+#
+# Storing the derived number would have hidden the derivation, and the derivation is where
+# a mistake would be invisible. It is also the difference between a reference value and a
+# reference *calculation*: this way every number here traces to a measurement.
+#
+# THE NEAR-MISS THAT SET THIS POLICY
+#
+# Ethanol's atomization energy was, from memory, "32.72 eV". The derived value is 32.982.
+# The recalled figure turned out to equal the bond-additivity estimate
+# (C2H6 + CH3OH - CH4) to three decimals -- i.e. it was a reconstruction that silently
+# assumed the isodesmic reaction C2H6 + CH3OH -> C2H5OH + CH4 is thermoneutral. It is not:
+# it is -0.261 eV (-6.0 kcal/mol). Writing that from memory would have baked the very
+# hypothesis `is_isodesmic` exists to test into the ground truth used to test it.
+#
+# ZERO-POINT ENERGY: WHOSE JOB IT IS
+#
+# These are D0 values -- dissociation from the vibrational ground state, which is what
+# thermochemistry measures. An electronic-structure oracle computes De, the depth of the
+# Born-Oppenheimer well. They differ by the molecule's zero-point energy:
+#
+#     De = D0 + ZPE(molecule)          (atoms have no vibrations, so no atomic term)
+#
+# The ZPE is NOT tabulated here on purpose. `smartchem.geometry.harmonic_analysis`
+# computes it from a Hessian this system takes itself, and it carries a known +9.1%
+# harmonic bias recorded in the signed `systematic_ev` channel. Tabulating a ZPE would
+# replace an owned, error-barred quantity with a borrowed one.
+#
+# UNCERTAINTIES
+#
+# CCCBDB quotes dfH(0 K) to 0.1 kJ/mol without an error bar, so `uncertainty_ev` is set
+# from the known experimental precision of each species plus the atomic terms. Note the
+# atomic values are COMMON across species: dfH(C, 0 K) enters every carbon compound with
+# the same sign, so its error is systematic across this table, not random -- it does not
+# average out over the set, and a mean absolute error computed here inherits it.
+#
+# Sources
+# -------
+# CCCBDB : NIST Computational Chemistry Comparison and Benchmark Database, Release 22,
+#          "Experimental enthalpy of formation at 0 K" (cccbdb.nist.gov/hf0kx.asp).
+# Check   : two values were reproduced from an independent literature compilation of
+#          experimental atomization energies -- CH4 17.018 eV and C2H6 28.885 eV -- against
+#          17.016 and 28.883 derived here. Agreement to 0.002 eV, ~20x inside chemical
+#          accuracy. `test_derivation_reproduces_independent_literature_values` pins it.
+
+#: dfH(0 K) of the gas-phase atoms, kJ/mol. Load-bearing: each enters multiplied by its
+#: atom count, so an error here scales with molecule size. CCCBDB Release 22.
+ATOM_FORMATION_KJ: dict[str, float] = {
+    "H": 216.0,
+    "C": 711.2,
+    "N": 470.8,
+    "O": 246.8,
+}
+
+KJ_PER_EV = 96.485
+
+
+@dataclass(frozen=True)
+class PolyatomicRef:
+    """An experimental enthalpy of formation at 0 K for a polyatomic molecule."""
+    formula: str
+    composition: dict[str, int]     # element symbol -> count
+    dfh_0k_kj: float                # enthalpy of formation at 0 K, kJ/mol
+    uncertainty_ev: float           # on the derived atomization energy, eV
+    split: Split
+    source: str
+
+
+POLYATOMIC_REFS: tuple[PolyatomicRef, ...] = (
+    PolyatomicRef("H2O",    {"H": 2, "O": 1},          -238.9, 0.004, "train", "CCCBDB R22"),
+    PolyatomicRef("NH3",    {"N": 1, "H": 3},           -38.9, 0.006, "train", "CCCBDB R22"),
+    PolyatomicRef("CH4",    {"C": 1, "H": 4},           -66.6, 0.008, "train", "CCCBDB R22"),
+    PolyatomicRef("CO2",    {"C": 1, "O": 2},          -393.1, 0.008, "test",  "CCCBDB R22"),
+    PolyatomicRef("H2O2",   {"H": 2, "O": 2},          -129.7, 0.010, "test",  "CCCBDB R22"),
+    PolyatomicRef("N2H4",   {"N": 2, "H": 4},           109.3, 0.012, "test",  "CCCBDB R22"),
+    PolyatomicRef("CH3OH",  {"C": 1, "H": 4, "O": 1},  -190.1, 0.008, "train", "CCCBDB R22"),
+    PolyatomicRef("C2H6",   {"C": 2, "H": 6},           -68.4, 0.012, "train", "CCCBDB R22"),
+    PolyatomicRef("C2H5OH", {"C": 2, "H": 6, "O": 1},  -217.1, 0.014, "test",  "CCCBDB R22"),
+)
+
+
+def atomization_energy_ev(formula: str) -> float | None:
+    """
+    Experimental atomization energy D0 at 0 K, in eV. None if the species is not tabulated.
+
+    Derived, not stored -- see the module note above. Positive means bound: the energy
+    required to pull the molecule apart into ground-state neutral atoms.
+
+    To compare against an electronic-structure result, add the molecule's zero-point
+    energy: ``De = D0 + ZPE``. This module deliberately does not supply that ZPE.
+    """
+    ref = polyatomic(formula)
+    if ref is None:
+        return None
+    atoms_kj = sum(n * ATOM_FORMATION_KJ[s] for s, n in ref.composition.items())
+    return (atoms_kj - ref.dfh_0k_kj) / KJ_PER_EV
+
+
+def polyatomic(formula: str) -> PolyatomicRef | None:
+    """Look up one polyatomic reference by formula."""
+    for ref in POLYATOMIC_REFS:
+        if ref.formula == formula:
+            return ref
+    return None
+
+
+def polyatomics(split: Split | None = None) -> tuple[PolyatomicRef, ...]:
+    """Polyatomic references, optionally restricted to one split."""
+    if split is None:
+        return POLYATOMIC_REFS
+    return tuple(r for r in POLYATOMIC_REFS if r.split == split)
+
+
+def reaction_energy_ev(left: Mapping[str, int], right: Mapping[str, int]) -> float | None:
+    """
+    Experimental reaction energy at 0 K in eV, from formula -> stoichiometric coefficient
+    on each side. Negative means exothermic. None if any species is missing.
+
+    Computed from enthalpies of formation directly rather than by differencing atomization
+    energies. Both routes are algebraically identical -- the atomic terms cancel when the
+    reaction conserves mass -- and `test_the_two_routes_to_a_reaction_energy_agree` checks
+    that they really do, which is a live test of the conservation the category enforces.
+    """
+    total = 0.0
+    for side, sign in ((right, 1.0), (left, -1.0)):
+        for formula, coefficient in side.items():
+            ref = polyatomic(formula)
+            if ref is None:
+                return None
+            total += sign * coefficient * ref.dfh_0k_kj
+    return total / KJ_PER_EV
 
 
 # Accuracy thresholds, stated once so no module invents its own.

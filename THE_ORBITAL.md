@@ -245,6 +245,16 @@ distinction between them is the point:
 | spectator cancellation | **exact — shipped as policy** | monoidal law; error bar 82× tighter |
 | geometry/energy separation | **measured — opt-in** | `geometry_tier=`, see §VII table |
 | bond-order conservation | **measured, ~2× — decided, not policy** | prediction of >3× falsified |
+| geometry *from the bond graph* | **measured — unblocks polyatomics** | `smartchem/geometry.py`; calibrated 0.000 cm⁻¹ |
+
+The fourth is the one where the object's structure pays a debt nobody expected it to. Objects
+were given bond topology so that `Na + Cl` and `NaCl` could be distinct and the reaction between
+them a genuine arrow — a purely categorical motive. But a bond graph is also exactly what a
+geometry builder needs, so the same decision that made conservation enforceable made
+*coordinates derivable*, and polyatomic species stopped being blocked. The three sub-steps have
+different characters and are kept apart deliberately: the seed is pure combinatorics, the
+relaxation needs only gradients, and the certificate is linear algebra on a Hessian. Exactly one
+of the three touches an oracle, and never the expensive one.
 
 For `f : S ⊗ A → S ⊗ B` the shared part cancels identically, so `E(S)` is never priced.
 `reaction_residue` finds it from the multiset difference of `dom` and `cod` with no oracle

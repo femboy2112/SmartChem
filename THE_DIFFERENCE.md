@@ -130,6 +130,32 @@ That is the honest answer to "are we leaning too hard on someone else's calculat
 *which* absolute energies the question needs, and *how their errors compose*, we were
 over-deferring, and the category proved it.
 
+**And the same decomposition unblocked polyatomics, which is the largest thing it has bought.**
+Anything with three or more atoms was declined for want of coordinates. The reflex is to reach
+for a bigger table of experimental geometries, or for an external optimiser. Neither was needed,
+because the object already carried a bond graph — put there for a purely categorical reason, so
+that `Na + Cl` and `NaCl` could be different objects — and a bond graph is precisely what a
+geometry builder consumes.
+
+What made it *rigorous* rather than merely convenient was refusing to treat "get a geometry" as
+one problem. It is three, with different computational characters: a seed (combinatorics, no
+wavefunction), a relaxation (needs gradients, and gradients are cheap), and a certificate (linear
+algebra on a Hessian). Splitting them is what let each ride at the cheapest tier that can
+actually answer it, and it is what made the certificate possible at all — a step nobody would
+have written if "geometry" had stayed a single opaque call.
+
+That certificate immediately earned its place. H₂O₂'s symmetric seed relaxes to the trans-planar
+form: a perfectly converged stationary point, gradient 1.7×10⁻⁵, and a *transition state*. The
+gradient alone calls it done. Only the Hessian says otherwise — and then its imaginary
+eigenvector says which way to go, so the diagnosis and the repair are the same object. Three of
+four bond-conserving polyatomic reactions hit this; without the certificate all three would have
+returned confident numbers for the wrong species.
+
+The pattern generalises past chemistry, and it is the ~/SmartASM discipline exactly: *candidate
+generation never upgrades proof status.* The VSEPR seed is a heuristic and stays one. The
+frequency analysis is a proof and is allowed to overrule it. Keeping those two roles in separate
+functions is the whole reason a wrong answer could not pass silently.
+
 **It did not pay off in basis selection, and that was measured.** The reasoning was sound
 in shape: extrapolation only removes error the family is converging toward, so diffuse
 (ionic) and tight-*d* (second-row) deficiencies survive it; both are properties of the

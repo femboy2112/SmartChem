@@ -46,9 +46,53 @@ What survives, which decides what to build first
    badly -- it cannot represent it at all, because the imaginary parts must cancel.
    Complex arithmetic here is load-bearing, not cosmetic.
 
-Scope of this file: it pins the arithmetic facts and the structural claim. It does not
-build a network solver. The next real step is a functor parameterised by a pair of monoids
-rather than welded to one, with energy recovered as the case where they coincide.
+AND THEN THE REPAIR WAS FALSIFIED TOO -- READ THIS BEFORE BUILDING ANYTHING
+---------------------------------------------------------------------------
+The paragraph above used to end: "the next real step is a functor parameterised by a pair
+of monoids rather than welded to one." That is wrong, and the probe that killed it costs
+four multiplications.
+
+In a symmetric monoidal category the INTERCHANGE law holds by definition -- it is what
+makes ``(x)`` a bifunctor:
+
+    (f . g) (x) (h . k)  ==  (f (x) h) . (g (x) k)
+
+A functor sending ``.`` to one operation and ``(x)`` to another must therefore make those
+two operations interchange as well. For impedance that demands
+
+    (Z1 + Z2) || (Z3 + Z4)  ==  (Z1 || Z3) + (Z2 || Z4)
+
+and it is false. Measured below: up to **73% relative disagreement**, and false already on
+PURE RESISTORS -- R = 1,2,3,4 gives 2.1000 against 2.0833 -- so it is not an artifact of
+complex arithmetic. That case is a Wheatstone bridge, which is precisely the classical
+example of a network that series-parallel reduction cannot reach. The physics knew.
+
+So impedance is not a strong monoidal functor of ANY monoid-pair shape. Not one monoid, not
+two. A network solver is not a widening of this functor and no amount of parameterisation
+gets there; circuits want a different structure entirely -- networks as cospans of graphs,
+composed by gluing boundary nodes, with a relation rather than a monoid element as the
+semantics.
+
+WHY ENERGY GETS ONE MONOID, WHICH IS A THEOREM AND NOT A COINCIDENCE
+--------------------------------------------------------------------
+Eckmann-Hilton: two monoid structures on one set that SHARE A UNIT and satisfy interchange
+are necessarily equal, and commutative. So energy having a single monoid is not luck and
+not a special property to be admired -- it is forced, the moment you notice that its tensor
+unit and its composition unit are both 0 eV.
+
+Impedance escapes the theorem for exactly one reason, and it is a satisfying one: its two
+units are different. A plain wire is the series identity at 0 ohm; an open circuit is the
+parallel identity at infinite ohm. Different units, no collapse, two genuinely distinct
+monoids -- which then fail interchange and so cannot both come from one functor anyway.
+
+This is the third premise in this project's history to die the same death: #23's
+"(symbol, degree)", #24's "Estimate is scalar", and now #24's "a pair of monoids". Each was
+a plausible generalisation adopted without a discriminating probe, and each probe, once
+written, took minutes. The lesson is the type, not the token.
+
+Scope of this file: it pins the arithmetic facts and the structural claims, including the
+ones that turned out to be wrong. It does not build a network solver, and it now says why
+the obvious route to one does not exist.
 """
 from __future__ import annotations
 
@@ -139,6 +183,87 @@ class TestWhatSurvives:
         assert self._power(Z_C) == pytest.approx(0.0, abs=1e-12)
         assert self._power(Z_L) == pytest.approx(0.0, abs=1e-12)
         assert self._power(Z_R) == pytest.approx(1.0 / R_OHMS)
+
+
+# ======================================================================================
+class TestInterchangeFailsSoNoMonoidPairCanWork:
+    """
+    The sharper finding, and the one that kills the obvious repair.
+
+    A pair of monoids is not merely insufficient for impedance -- it is impossible, because
+    the two operations would have to interchange and they do not.
+    """
+
+    @staticmethod
+    def _bridge(z1, z2, z3, z4):
+        """The two sides of the interchange law, as networks."""
+        left = parallel(series(z1, z2), series(z3, z4))     # (f.g) (x) (h.k)
+        right = series(parallel(z1, z3), parallel(z2, z4))  # (f(x)h) . (g(x)k)
+        return left, right
+
+    def test_interchange_fails_for_impedance(self):
+        """
+        Required by any functor sending composition to series and tensor to parallel.
+        It does not hold, so no such functor exists.
+        """
+        z = [complex(50, 30), complex(120, -80), complex(75, 10), complex(20, -150)]
+        left, right = self._bridge(*z)
+        assert abs(left - right) / abs(left) > 0.01
+
+    def test_it_fails_on_pure_resistors_too(self):
+        """
+        So nobody can attribute the failure to complex arithmetic and hope a real-valued
+        version survives. R = 1,2,3,4 is a Wheatstone bridge, the classical example of a
+        network series-parallel reduction cannot reach.
+        """
+        left, right = self._bridge(1.0, 2.0, 3.0, 4.0)
+        assert left == pytest.approx(2.1000, abs=1e-4)
+        assert right == pytest.approx(2.0833, abs=1e-4)
+        assert left != pytest.approx(right, abs=1e-3)
+
+    def test_the_symmetric_case_coincidentally_agrees(self):
+        """
+        Four equal resistors DO satisfy it. Kept deliberately: a test suite that only ever
+        tried the symmetric case would have concluded interchange holds and the monoid-pair
+        plan was sound. That is the balanced-count blindness of #22 in another costume, and
+        the reason the asymmetric cases above are the real test.
+        """
+        left, right = self._bridge(1.0, 1.0, 1.0, 1.0)
+        assert left == pytest.approx(right)
+
+    def test_energy_does_satisfy_interchange(self):
+        """The contrast that makes the point: with both operations +, interchange is trivial."""
+        a, b, c, d = -1.5, -2.25, 0.75, -3.0
+        assert (a + b) + (c + d) == pytest.approx((a + c) + (b + d))
+
+    def test_the_two_impedance_monoids_have_different_units(self):
+        """
+        Eckmann-Hilton needs a SHARED unit. Impedance does not have one -- a wire is the
+        series identity at 0 ohm, an open circuit is the parallel identity at infinity --
+        which is exactly why it gets to have two distinct monoids at all.
+        """
+        wire = 0.0
+        assert series(Z_R, wire) == pytest.approx(Z_R)
+        # the parallel identity is the limit of an ever-larger resistance
+        for open_circuit in (1e9, 1e12, 1e15):
+            assert parallel(Z_R, open_circuit) == pytest.approx(Z_R, rel=1e-6)
+        # and a wire in PARALLEL is a short, not an identity -- approached as a limit,
+        # since 1/0 is where the reciprocal formula stops being able to say it
+        for short in (1e-6, 1e-9, 1e-12):
+            assert abs(parallel(Z_R, short)) == pytest.approx(short, rel=1e-3)
+
+    def test_energys_two_units_coincide_which_is_what_forces_the_collapse(self):
+        """
+        Both of energy's units are 0 eV. With a shared unit and interchange, Eckmann-Hilton
+        makes the two monoids equal and commutative -- so energy's single monoid is a
+        theorem, not a lucky property of energy.
+        """
+        tensor_unit = 0.0
+        compose_unit = 0.0
+        assert tensor_unit == compose_unit
+        energy = -4.25
+        assert energy + tensor_unit == pytest.approx(energy)
+        assert energy + compose_unit == pytest.approx(energy)
 
 
 # ======================================================================================

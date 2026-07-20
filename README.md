@@ -109,6 +109,43 @@ reactions in one basis family do not license an automatic accuracy policy — an
 proposed here on that kind of evidence, basis augmentation, lost outright when finally measured
 at the tier that mattered.
 
+**Measured, opt-in — separating geometry from energy.** With `optimize_geometry=True` the
+oracle pays *six* calculations per diatomic: five to scan the bond length, one at the fitted
+minimum. That mode is not a luxury — it is the only way to price a species whose geometry is
+not in the vendored table, so it decides whether the system generalises past 28 tabulated
+diatomics.
+
+Those five scan points are answering a **different question** from the sixth. The scan needs
+the *position* of a minimum; the single point needs the *value* of an energy. A method's error
+is nearly constant across the 0.12 Å window scanned, and a constant shift moves a parabola's
+vertex not at all — only its height. So the scan should tolerate a much cheaper method.
+
+Energy tier held fixed at CCSD(T)/cc-pVTZ; only the scan tier varies:
+
+| scan tier | max Δr_e vs full scan | MAE (kcal/mol) | s/species | speedup |
+|---|---|---|---|---|
+| CCSD(T)/cc-pVTZ (full) | — | 4.99 | 45.6 | 1× |
+| MP2/cc-pVDZ | 0.0289 Å | 5.26 | 12.5 | 3.64× |
+| HF/cc-pVDZ | 0.0236 Å | 5.27 | 14.8 | 3.08× |
+
+**About 3× cheaper for about 0.3 kcal/mol.** Two honesty notes. The pre-registered bar was
+0.30 kcal/mol and both arms landed at 0.27–0.28 on n=7 — a pass, but with almost no margin,
+which is exactly why this is `geometry_tier=` and not the default. And the 3.64-vs-3.08
+ordering **is not a result**: HF/cc-pVDZ measured *slower* than MP2/cc-pVDZ, which cannot
+reflect work done since MP2 is HF plus a correction. Per-species wall-clock swung ~3.4× on
+identical final calculations, so the honest claim is "about 3×".
+
+One prediction was falsified: MP2 was expected to give geometries closer to the full tier than
+HF, and within 0.015 Å. It did neither — 0.0289 Å, and worse than HF's 0.0236.
+→ `tests/test_shortcuts.py::TestGeometryTierWasMeasured`
+
+**A candidate shortcut examined and rejected as unnecessary**, recorded so nobody optimises it
+later. Reaction energies come from subtracting two total energies near −3000 eV, which looks
+like catastrophic cancellation. It isn't: float64 carries ~6.8×10⁻¹³ eV of absolute precision
+there, and the binding SCF/CCSD convergence tolerances (~2.7×10⁻⁸ eV) sit six orders of
+magnitude below the 0.043 eV target. The arbitrary-zero contract is numerically safe, and the
+reason is the convergence thresholds, not luck.
+
 Writing the tests also caught an error in the framing: `HCl + F → HF + Cl` preserves bond
 *orders* but not bond *types* (`H–Cl` became `H–F`), so the measured set is **not** isodesmic in
 the strict sense. Attaching the ratio to an isodesmic predicate would have claimed a number for

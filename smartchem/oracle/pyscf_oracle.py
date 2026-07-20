@@ -204,6 +204,7 @@ class PySCFOracle(BaseOracle):
         optimize_geometry: bool = False,
         max_atoms: int = 2,
         tight_d: bool = True,
+        geometry_tier: tuple[str, str] | None = None,
     ):
         if method not in _METHODS:
             raise ValueError(f"method must be one of {_METHODS}, got {method!r}")
@@ -217,6 +218,18 @@ class PySCFOracle(BaseOracle):
         self.name = f"{method}/{basis}" + ("+d" if tight_d else "")
         self.nominal_accuracy_ev = _NOMINAL.get((method, self.name.split("/", 1)[1]), 0.30)
         self._cache: dict[tuple, float] = {}
+        # Locating the minimum and evaluating the energy at it are two different
+        # questions, and only the second one needs the expensive tier. When a geometry
+        # tier is named, the scan runs there and the single point runs here.
+        # optimize_geometry=False on the sub-oracle is what stops this recursing.
+        self.geometry_tier = geometry_tier
+        self._geom_oracle = (
+            PySCFOracle(geometry_tier[0], geometry_tier[1], optimize_geometry=False,
+                        max_atoms=max_atoms, tight_d=tight_d)
+            if geometry_tier is not None else None
+        )
+        if geometry_tier is not None:
+            self.name += f"//{geometry_tier[0]}/{geometry_tier[1]}"
 
     # -- internals ---------------------------------------------------------------
     def _is_cbs(self) -> tuple[str, str] | None:
@@ -326,14 +339,27 @@ class PySCFOracle(BaseOracle):
         """
         Parabolic minimisation over a small scan. Removes the experimental geometry
         input at the cost of ~5 extra energy evaluations.
+
+        Those five do not have to be paid at this oracle's tier. Locating a minimum and
+        evaluating an energy at it are separable problems: the minimum's *position* is far
+        less method-sensitive than the energy's *value*, because the error a method makes
+        is nearly constant across the 0.12 A window scanned here and a constant shift moves
+        a parabola's vertex not at all. So when ``geometry_tier`` is set the scan is
+        delegated to a cheap oracle and only the final single point is paid for here.
+
+        MEASURED -- see ``scratchpad/geometry_tier.py`` and the table in the module
+        docstring. Unlike the basis-set policy this is not an error-cancellation hope; it
+        is a claim about which sub-computation the answer is actually sensitive to, and it
+        was checked against optimising at the full tier rather than argued from principle.
         """
+        scanner = self._geom_oracle or self
         offsets = (-0.06, -0.03, 0.0, 0.03, 0.06)
         pts = []
         for d in offsets:
             r = guess + d
             # only the energy matters for locating the minimum; the extrapolation
             # correction is a property of the tier, not of the bond length
-            pts.append((r, self._energy(f"{a} 0 0 0; {b} 0 0 {r}", (a, b), spin)[0]))
+            pts.append((r, scanner._energy(f"{a} 0 0 0; {b} 0 0 {r}", (a, b), spin)[0]))
         # fit a parabola through the three lowest points
         pts.sort(key=lambda p: p[1])
         (r1, e1), (r2, e2), (r3, e3) = sorted(pts[:3])

@@ -234,6 +234,41 @@ returns the standard basis instead of substituting a different one.
 
 Measured accuracy is in `README.md`.
 
+**The functor also decides what not to compute.** No algebra makes a single quantum-chemical
+calculation faster. What the laws do is prove, ahead of the expensive layer, that particular
+calls cannot affect the answer — the same prune-by-type move the candidate search makes,
+turned on the energy itself. Three results, at three different levels of proof, and the
+distinction between them is the point:
+
+| shortcut | status | evidence |
+|---|---|---|
+| spectator cancellation | **exact — shipped as policy** | monoidal law; error bar 82× tighter |
+| geometry/energy separation | **measured — opt-in** | `geometry_tier=`, see §VII table |
+| bond-order conservation | **measured, ~2× — decided, not policy** | prediction of >3× falsified |
+
+For `f : S ⊗ A → S ⊗ B` the shared part cancels identically, so `E(S)` is never priced.
+`reaction_residue` finds it from the multiset difference of `dom` and `cod` with no oracle
+call. The saving is the smaller half: uncertainties combine in quadrature, which is valid
+only for **independent** errors, and a spectator's energy is one number appearing twice minus
+itself, not two samples. Summing both sides before subtracting added `2·u(S)²` of variance
+that physically cancels to zero.
+→ `tests/test_functor.py::TestSpectatorsAreCancelledStructurally`, `tests/test_shortcuts.py`
+
+Two further things are already exploited by construction rather than by code. Functoriality
+means the net `ΔE` of an n-step mechanism needs only its **endpoints**, never its
+intermediates — `ΔE(g∘f) = ΔE(f) + ΔE(g)` guarantees the two agree, so the cheaper may be
+taken freely, and per-step energies are computed only when the caller actually wants to know
+which step is rate-limiting. And `Config` canonicalises its multiset, so `E(A ⊗ B)` and
+`E(B ⊗ A)` are the same cache entry: the symmetry of the monoidal structure is a cache hit.
+
+One candidate shortcut was examined and **rejected as unnecessary**, recorded so nobody
+optimises it later. Reaction energies are extracted as the difference of two total energies
+near −3000 eV, which looks like catastrophic cancellation. It is not: float64 carries
+~6.8×10⁻¹³ eV of absolute precision at that magnitude, and the binding SCF/CCSD convergence
+tolerances (1×10⁻¹⁰ and 1×10⁻⁹ Hartree, i.e. ~2.7×10⁻⁸ eV) sit six orders of magnitude below
+the 0.043 eV chemical-accuracy target. The arbitrary-zero contract is numerically safe, and
+the reason it is safe is the convergence thresholds, not luck.
+
 ## VIII. WHAT WAS RETIRED, AND WHAT THAT COST
 
 On 2026-07-20 the legacy engine was retired: seven modules (`engine`, `comonad`, `lattice`,

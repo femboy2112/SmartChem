@@ -233,3 +233,97 @@ class TestTheMeasuredEffectIsRecorded:
         """
         ratios = [r["ratio"] for r in self.MEASURED.values()]
         assert max(ratios) - min(ratios) < 0.5
+
+
+# ======================================================================================
+# Separating geometry determination from energy evaluation
+# ======================================================================================
+class TestGeometryTierPlumbing:
+    """
+    The scan and the single point ask different questions, so they may be answered at
+    different tiers. These check the wiring without running PySCF; the accuracy claim is
+    pinned separately below.
+    """
+
+    def _oracle(self, **kw):
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+        return PySCFOracle("CCSD(T)", "cc-pVTZ", tight_d=False, **kw)
+
+    def test_no_geometry_tier_means_no_sub_oracle(self):
+        assert self._oracle()._geom_oracle is None
+
+    def test_a_geometry_tier_builds_a_sub_oracle_at_that_tier(self):
+        o = self._oracle(optimize_geometry=True, geometry_tier=("MP2", "cc-pVDZ"))
+        assert o._geom_oracle is not None
+        assert o._geom_oracle.method == "MP2"
+        assert o._geom_oracle.basis == "cc-pVDZ"
+
+    def test_the_sub_oracle_does_not_recurse(self):
+        """optimize_geometry=False on the child is the whole termination argument."""
+        o = self._oracle(optimize_geometry=True, geometry_tier=("HF", "cc-pVDZ"))
+        assert o._geom_oracle.optimize_geometry is False
+        assert o._geom_oracle._geom_oracle is None
+
+    def test_provenance_records_both_tiers(self):
+        """
+        A result whose geometry came from a different method is not the same result, and
+        the name has to say so -- the same reason tight_d is in the name.
+        """
+        o = self._oracle(optimize_geometry=True, geometry_tier=("MP2", "cc-pVDZ"))
+        assert "//" in o.name and "MP2" in o.name and "cc-pVDZ" in o.name
+
+    def test_the_energy_tier_is_unaffected(self):
+        o = self._oracle(optimize_geometry=True, geometry_tier=("HF", "cc-pVDZ"))
+        assert o.method == "CCSD(T)" and o.basis == "cc-pVTZ"
+
+
+class TestGeometryTierWasMeasured:
+    """
+    Transcribed from scratchpad/geometry_tier.json. Energy tier held fixed at
+    CCSD(T)/cc-pVTZ; only the tier the SCAN runs at varies. One variable at a time.
+
+    Pre-registered: P1 HF r_e within 0.03 A of the full scan; P2 MP2 within 0.015 A and
+    BETTER than HF; P3 |d MAE| < 0.30 kcal/mol; P4 speedup >= 3x.
+    """
+
+    FULL_MAE = 4.99
+    ARMS = {
+        "MP2/cc-pVDZ": {"d_re_max": 0.0289, "mae": 5.26, "speedup": 3.64},
+        "HF/cc-pVDZ":  {"d_re_max": 0.0236, "mae": 5.27, "speedup": 3.08},
+    }
+
+    @pytest.mark.parametrize("arm", sorted(ARMS))
+    def test_p3_accuracy_cost_stayed_under_the_pre_registered_bar(self, arm):
+        assert abs(self.ARMS[arm]["mae"] - self.FULL_MAE) < 0.30
+
+    @pytest.mark.parametrize("arm", sorted(ARMS))
+    def test_p3_passed_but_with_almost_no_margin(self, arm):
+        """
+        Honesty about how close this was. Both arms landed at 0.27-0.28 against a 0.30
+        bar, on n=7. That is a pass, not a comfortable one, and it is why the option is
+        opt-in rather than the default.
+        """
+        assert abs(self.ARMS[arm]["mae"] - self.FULL_MAE) > 0.20
+
+    @pytest.mark.parametrize("arm", sorted(ARMS))
+    def test_p4_speedup_cleared_three_times(self, arm):
+        assert self.ARMS[arm]["speedup"] >= 3.0
+
+    def test_p2_was_falsified(self):
+        """
+        MP2 was predicted to give geometries closer to the full tier than HF, and within
+        0.015 A. It did neither: 0.0289 A, and WORSE than HF's 0.0236. Kept on the record
+        because the prediction was written down before the run.
+        """
+        assert self.ARMS["MP2/cc-pVDZ"]["d_re_max"] > 0.015
+        assert self.ARMS["MP2/cc-pVDZ"]["d_re_max"] > self.ARMS["HF/cc-pVDZ"]["d_re_max"]
+
+    def test_the_speedup_ordering_between_arms_is_not_a_result(self):
+        """
+        HF/cc-pVDZ measured SLOWER overall than MP2/cc-pVDZ, which cannot reflect work
+        done -- MP2 is HF plus a correction. Per-species wall-clock swung ~3.4x on
+        identical final calculations, so the timing carries that much noise. The claim is
+        "about 3x", and the 3.64-vs-3.08 ordering is not resolvable.
+        """
+        arms = [a["speedup"] for a in self.ARMS.values()]
+        assert max(arms) - min(arms) < 1.0

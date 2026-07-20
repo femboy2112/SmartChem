@@ -21,7 +21,8 @@ Layer 3  Search & verification    pathway.py · store.py · bench.py
 Layer 2½ Domain instances          cell.py                (chemistry meets circuit)
 Layer 2  Categorical core         category.py · thermo.py
 Layer 1  Energy oracle            oracle/base.py + heuristic.py + pyscf_oracle.py
-                                  oracle/caching.py   (wraps any tier of the dial)
+                                  oracle/caching.py    (wraps any tier of the dial)
+                                  oracle/persistent.py (and outlives the process)
 Layer 1' Structure                geometry.py            (seed → relax → certify)
 Layer 0  Data                     atoms.py · data/reference.py · data/basis_tight_d.py
 ```
@@ -40,6 +41,7 @@ Nothing in Layer 2 or 3 knows which oracle it is talking to. That is the whole d
 | `smartchem/oracle/base.py` | 257 | The `EnergyOracle` protocol and `Estimate` — a value with an uncertainty *and* a signed systematic channel. Plus the guard that makes oracles decline what they cannot value. |
 | `smartchem/oracle/heuristic.py` | 117 | The original algebraic model, preserved unchanged as the baseline every later oracle must beat. |
 | `smartchem/oracle/caching.py` | 109 | Prices each distinct species once per search. Measured 33.5× on a 45-reaction network; the saving rests entirely on canonicalising the cache key. |
+| `smartchem/oracle/persistent.py` | 232 | The same functor law applied across *time*: species energies survive the process that paid for them. The caching is trivial; the key is the whole problem, and it carries the full tier provenance so a cheap number can never be served to an expensive question. |
 | `smartchem/oracle/pyscf_oracle.py` | 707 | Real quantum chemistry. HF / MP2 / CCSD(T), basis-set extrapolation, geometry optimisation, polyatomic support. |
 | `smartchem/cell.py` | 243 | **The AA battery litmus.** An electrochemical cell as two half-reactions that compose. Voltage from the *factorisation* (`n` lives in the path, not the endpoints), operating point under load, capacity from stoichiometry. Where the chemistry and the circuit turn out to be one object. |
 | `smartchem/thermo.py` | 169 | The **strong monoidal functor** from the category to the additive reals. Where structure meets energy. |
@@ -103,6 +105,7 @@ downhill, so the diagnosis and the repair are the same object.
 | `test_shortcuts.py` | The measured structural shortcuts and their controls |
 | `test_domain_neutral.py` | The category instantiated on radiation, Kirchhoff's current law, and RC/LC networks — neutrality demonstrated rather than asserted |
 | `test_caching.py` | The species cache: that it saves, that it changes nothing, and where it decays |
+| `test_persistent.py` | The disk cache, tested where it can hurt — ordered by how bad the failure would be, key discipline first and "it caches" last |
 | `test_cell.py` | The AA battery across coherent scenarios — structure, voltage, load sweep, power balance, capacity — plus the heuristic oracle's measured failure on it |
 | `test_network.py` | A **falsified** architectural prediction, kept: the energy functor's shape does not transfer to impedance. Energy is extensive, so one monoid serves both ⊗ and ∘; impedance needs a pair, and the additive law is 31.9× wrong on a parallel RC |
 | `test_thermo.py`, `test_store.py`, `test_pathway.py`, `test_basis_policy.py` | Their respective modules |

@@ -56,7 +56,7 @@ one.
 """
 from __future__ import annotations
 
-from .category import Config, Reaction
+from .category import Config, Reaction, reaction_residue
 from .oracle.base import Estimate
 
 
@@ -92,8 +92,14 @@ def reaction_energy(reaction: Reaction, oracle) -> Estimate | None:
 
     None if either side cannot be fully priced.
     """
-    dom = configuration_energy(reaction.dom, oracle)
-    cod = configuration_energy(reaction.cod, oracle)
+    # Cancel the spectators FIRST, structurally, before any oracle call. The monoidal law
+    # guarantees a species present unchanged on both sides contributes exactly nothing to
+    # the difference, so pricing it would buy a number that provably cannot move the
+    # answer -- and would then leak its uncertainty into the result as if it were an
+    # independent random error, which it is not. See ``category.reaction_residue``.
+    left, right = reaction_residue(reaction)
+    dom = configuration_energy(left, oracle)
+    cod = configuration_energy(right, oracle)
     if dom is None or cod is None:
         return None
     # The subtraction is where both the arbitrary energy zero and any systematic model

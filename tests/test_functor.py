@@ -21,7 +21,9 @@ from __future__ import annotations
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from smartchem.category import Bond, Config, Molecule, Reaction, UNIT, identity, tensor_obj
+from smartchem.category import (
+    Bond, Config, Molecule, Reaction, UNIT, identity, reaction_residue, tensor_obj,
+)
 from smartchem.oracle.base import BaseOracle, Estimate
 from smartchem.thermo import (
     bonding_energy,
@@ -382,3 +384,135 @@ class TestSystematicVsRandomError:
             "the widened bar must actually cover the experimental value"
         )
         assert "widened" in nacl.notes, "a widened bar must say why"
+
+
+# ======================================================================================
+# Spectator cancellation: the category deciding what NOT to compute
+# ======================================================================================
+class CountingOracle(StubOracle):
+    """StubOracle that records which species it was asked to price."""
+
+    name = "counting"
+
+    def __init__(self):
+        self.asked: list[tuple[str, ...]] = []
+
+    def energy(self, molecule: Molecule) -> Estimate | None:
+        self.asked.append(molecule.atoms)
+        return super().energy(molecule)
+
+
+class WideSpectatorOracle(StubOracle):
+    """
+    Prices Fe with a huge uncertainty and everything else tightly.
+
+    Fe is the stand-in for the realistic case: the catalyst is the biggest, least
+    well-known species in the vessel, and it is exactly the one that cancels.
+    """
+
+    name = "wide-spectator"
+
+    def energy(self, molecule: Molecule) -> Estimate | None:
+        est = super().energy(molecule)
+        if est is not None and "Fe" in molecule.atoms:
+            return Estimate(est.value_ev, 5.0, self.name, est.seconds, est.notes)
+        return est
+
+
+def _n2_from_atoms(*spectators: Molecule) -> Reaction:
+    """2 N -> N2, optionally with unchanging spectators on both sides."""
+    n, n2 = Molecule.atom("N"), Molecule.diatomic("N", "N", order=3)
+    return Reaction(Config.of(n, n, *spectators), Config.of(n2, *spectators))
+
+
+class TestSpectatorsAreCancelledStructurally:
+    """
+    A species present unchanged on both sides of a morphism contributes exactly zero to
+    dE, by the monoidal law. The category can see that before any oracle runs, so the
+    species is never priced.
+
+    This is the "prune by type ahead of the expensive layer" claim applied to the energy
+    itself, and unlike the basis-set policy it is exact rather than empirical: it does not
+    approximate the answer, it declines to compute a number that provably cannot move it.
+    """
+
+    def test_a_spectator_is_never_priced(self):
+        bare, withcat = CountingOracle(), CountingOracle()
+        reaction_energy(_n2_from_atoms(), bare)
+        reaction_energy(_n2_from_atoms(Molecule.atom("Fe")), withcat)
+        assert ("Fe",) not in withcat.asked, "the catalyst was priced despite cancelling"
+        assert withcat.asked == bare.asked, "adding a spectator changed the work done"
+
+    def test_a_spectator_does_not_change_the_value(self):
+        plain = reaction_energy(_n2_from_atoms(), ORACLE)
+        caged = reaction_energy(_n2_from_atoms(Molecule.atom("Fe")), ORACLE)
+        assert caged.value_ev == plain.value_ev, "bit-identical, not merely close"
+
+    def test_a_spectator_does_not_widen_the_error_bar(self):
+        """
+        The rigor half, and the sharper of the two claims.
+
+        Quadrature is valid only for *independent* errors. A spectator's energy is not two
+        independent samples -- it is one number appearing twice, minus itself. Summing both
+        sides before subtracting adds 2*u(Fe)^2 of variance that physically cancels to
+        zero, reporting an interval too wide by a factor that grows with the spectator.
+        """
+        oracle = WideSpectatorOracle()
+        plain = reaction_energy(_n2_from_atoms(), oracle)
+        caged = reaction_energy(_n2_from_atoms(Molecule.atom("Fe")), oracle)
+        assert caged.uncertainty_ev == pytest.approx(plain.uncertainty_ev)
+        # and the fiction it avoids is not a rounding detail: on this reaction the naive
+        # bar is 7.0716 eV against a true 0.0866, a factor of ~82, and it grows without
+        # bound as the spectator gets larger.
+        naive = (2 * 5.0**2 + plain.uncertainty_ev**2) ** 0.5
+        assert naive > 50 * plain.uncertainty_ev
+
+    def test_more_spectators_cost_nothing_extra(self):
+        oracle = WideSpectatorOracle()
+        one = reaction_energy(_n2_from_atoms(Molecule.atom("Fe")), oracle)
+        many = reaction_energy(
+            _n2_from_atoms(*(Molecule.atom("Fe"),) * 5), oracle)
+        assert many.value_ev == one.value_ev
+        assert many.uncertainty_ev == pytest.approx(one.uncertainty_ev)
+
+    def test_an_unpriceable_spectator_does_not_block_the_answer(self):
+        """
+        A capability increase, not merely a saving. Refusing because an *irrelevant*
+        species is unknown would be over-refusal: the answer does not depend on it.
+        """
+        unknown = Molecule.atom("Xx")           # absent from StubOracle.OFFSET
+        assert ORACLE.energy(unknown) is None
+        est = reaction_energy(_n2_from_atoms(unknown), ORACLE)
+        assert est is not None, "an unpriceable spectator blocked a computable reaction"
+        assert est.value_ev == reaction_energy(_n2_from_atoms(), ORACLE).value_ev
+
+    def test_a_participating_species_still_blocks(self):
+        """The saving must not become a licence to skip species that actually change."""
+        unknown = Molecule.atom("Xx")
+        rxn = Reaction(Config.of(unknown, Molecule.atom("N")),
+                       Config.of(Molecule.diatomic("Xx", "N")))
+        assert reaction_energy(rxn, ORACLE) is None
+
+    def test_identity_has_empty_residue_and_exactly_zero_energy(self):
+        obj = Config.of(Molecule.diatomic("N", "N", order=3), Molecule.atom("Fe"))
+        left, right = reaction_residue(identity(obj))
+        assert left == UNIT and right == UNIT
+        oracle = CountingOracle()
+        est = reaction_energy(identity(obj), oracle)
+        assert est.value_ev == 0.0
+        assert oracle.asked == [], "an identity morphism priced something"
+
+    def test_residue_is_still_a_conserving_pair(self):
+        """Removing the same multiset from both sides cannot unbalance the equation."""
+        left, right = reaction_residue(_n2_from_atoms(Molecule.atom("Fe")))
+        assert left.formula == right.formula
+        assert left.charge == right.charge
+
+    @settings(max_examples=50, deadline=None)
+    @given(spectator=molecules())
+    def test_any_spectator_leaves_the_answer_bit_identical(self, spectator):
+        plain = reaction_energy(_n2_from_atoms(), ORACLE)
+        caged = reaction_energy(_n2_from_atoms(spectator), ORACLE)
+        assert caged is not None
+        assert caged.value_ev == plain.value_ev
+        assert caged.uncertainty_ev == pytest.approx(plain.uncertainty_ev)

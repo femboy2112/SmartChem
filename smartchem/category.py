@@ -42,6 +42,7 @@ See ``tests/test_laws.py`` for the machine-checked versions of everything above.
 """
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from itertools import permutations
 from typing import Iterable, Mapping
@@ -385,6 +386,49 @@ def is_catalytic(reaction: Reaction, catalyst: Molecule) -> bool:
     return (
         reaction.dom.species.count(c) > 0
         and reaction.dom.species.count(c) == reaction.cod.species.count(c)
+    )
+
+
+def reaction_residue(reaction: Reaction) -> tuple[Config, Config]:
+    """
+    Strip the spectators: return ``(dom', cod')`` with the common sub-multiset removed.
+
+    This is the structural half of an *exact* computational shortcut. Because ``E`` is a
+    monoidal functor, ``E(S (x) X) = E(S) + E(X)``, so for ``f : S (x) A -> S (x) B`` the
+    shared part cancels identically::
+
+        dE(f) = (E(S) + E(B)) - (E(S) + E(A)) = E(B) - E(A)
+
+    ``E(S)`` therefore cannot influence the answer and does not need to be computed. The
+    category decides that before any oracle is called -- the same "prune by type, ahead of
+    the expensive layer" move the search already makes, applied to the energy itself.
+
+    Two things follow, and the second matters more than the first:
+
+    1. **Cost.** A spectator is never priced. In a catalytic step the catalyst is usually
+       the largest species present, so this is the difference between paying for the whole
+       vessel and paying for the bond that actually changes.
+
+    2. **Honesty of the error bar.** Uncertainties combine in quadrature, which is valid
+       only for *independent* errors. A spectator's energy is not two independent samples
+       -- it is one number, appearing twice, minus itself. Summing both sides first and
+       subtracting afterwards adds ``2 * u(S)^2`` of variance that physically cancels to
+       zero, so the reported interval is too wide by a factor that grows with the
+       spectator. Removing the species removes the fiction.
+
+    The cancellation is exact only if the oracle is a deterministic function of the
+    species -- true for every oracle here, and worth stating because a stochastic oracle
+    (diffusion Monte Carlo, say) would return two different samples and the shared part
+    would cancel only to within its own noise.
+
+    An identity morphism has empty residue on both sides, giving ``dE = 0`` exactly.
+    """
+    left = Counter(reaction.dom.species)
+    right = Counter(reaction.cod.species)
+    shared = left & right               # multiset intersection: the spectators
+    return (
+        Config(tuple((left - shared).elements())),
+        Config(tuple((right - shared).elements())),
     )
 
 

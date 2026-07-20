@@ -32,6 +32,7 @@ from .category import (
     conserves,
     identity,
     is_catalytic,
+    reaction_residue,
     tensor_obj,
 )
 from .store import (
@@ -66,7 +67,8 @@ __all__ = [
     # category -- objects, morphisms, and the conservation theorem
     "Bond", "Config", "Molecule", "Reaction", "UNIT",
     "ConservationError", "CompositionError",
-    "braid", "catalytic_cycle", "conserves", "identity", "is_catalytic", "tensor_obj",
+    "braid", "catalytic_cycle", "conserves", "identity", "is_catalytic",
+    "reaction_residue", "tensor_obj",
     # store -- the environment comonad and response surfaces
     "Store", "Conditions", "SOLVENTS",
     "survey", "response_surface", "is_responsive", "grid",

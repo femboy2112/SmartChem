@@ -51,67 +51,199 @@ from typing import Iterable, Iterator, Mapping
 # Budget for canonical relabelling, counted in *candidate permutations actually examined*
 # -- not in atoms. See `_sorting_permutations` for why those differ by orders of magnitude.
 # Above this, canonicalisation is refused rather than silently returning a non-canonical
-# form. Full graph canonicalisation (nauty-style refinement) remains out of scope.
+# form. Full graph canonicalisation (the whole of nauty: automorphism pruning, a search
+# tree over target cells) remains out of scope; only its first move, refinement, is here.
 #
-# Set to hold the old cap's WORST-CASE COST fixed, rather than to a round number. The
-# 8-atom cap already permitted 8! = 40_320 candidates, measured here at 5.4 us each
-# (~0.2 s). Keeping that same time budget and spending it through the symbol-class
-# restriction buys reach instead of atoms: C2H5OH costs 1_440 (20 ms), and this matters
-# because `Config.__post_init__` canonicalises on every construction, so the worst case
-# is paid per object, not once.
+# Set to hold the ORIGINAL cap's worst-case TIME fixed, rather than to a round number.
+# The 8-atom cap permitted 8! = 40_320 candidates at ~5.4 us each, about 0.2 s. That same
+# 0.2 s has now been spent twice over to buy reach rather than atoms -- first by
+# restricting to symbol classes (#21), then by refining those classes (#23) -- and the
+# budget itself has never moved. It matters because `Config.__post_init__` canonicalises
+# on every construction, so the worst case is paid per object, not once.
 #
-# Benzene is deliberately OUT of budget: 518_400 candidates, measured at 4.1 s. That is
-# not a cost this system can pay inside a constructor, so it refuses and says why.
+# Measured 2026-07-20 on this machine, and the per-candidate cost depends on how many
+# bonds there are to sort, so the honest figure comes from a BONDED worst case:
+#
+#   C7 ring       5_040 candidates    19.4 ms    3.85 us/candidate
+#   => 50_000 candidates is ~0.19 s, which is the ceiling this budget actually buys
+#   C8 unbonded  40_320 candidates    57.1 ms    1.42 us/candidate  (no edges to sort)
+#   C3H8 propane  2_880 candidates    16.2 ms    (241_920 before refinement)
+#
+# Benzene stays deliberately OUT of budget at 518_400 candidates. Refinement cannot help
+# it: its bond graph is vertex-transitive within each element, so no invariant computed
+# from local structure can split the carbons. That is a fact about benzene, not a gap in
+# the implementation, and it is the honest boundary of this approach.
 _MAX_CANONICAL_CANDIDATES = 50_000
 
 
-def _symbol_blocks(atoms: tuple[str, ...]) -> list[tuple[int, ...]]:
-    """Atom positions grouped by symbol, the groups themselves in sorted symbol order."""
-    order = sorted(range(len(atoms)), key=lambda i: atoms[i])
+def _blocks(keys: tuple) -> list[tuple[int, ...]]:
+    """Positions grouped by equal key, the groups themselves in sorted key order."""
+    order = sorted(range(len(keys)), key=lambda i: keys[i])
     blocks: list[tuple[int, ...]] = []
     start = 0
     for k in range(1, len(order) + 1):
-        if k == len(order) or atoms[order[k]] != atoms[order[start]]:
+        if k == len(order) or keys[order[k]] != keys[order[start]]:
             blocks.append(tuple(order[start:k]))
             start = k
     return blocks
 
 
-def _canonical_cost(atoms: tuple[str, ...]) -> int:
-    """How many candidate permutations `canonical()` will examine: prod(m_i!)."""
+def _wl_colours(atoms: tuple[str, ...], bonds: frozenset["Bond"]) -> tuple[int, ...]:
+    """
+    One-dimensional Weisfeiler-Leman refinement: a colour per atom, invariant under
+    relabelling, computed only from what the bond graph says about each atom's
+    surroundings.
+
+    Start every atom coloured by its element, then repeatedly recolour it by the pair
+    ``(its own colour, the sorted multiset of its neighbours' colours-and-bond-orders)``,
+    naming the new colours by sorting those signatures. Stop when a round splits nothing.
+
+    Two properties are load-bearing, and both come from the same fact -- that nothing here
+    ever mentions an atom's index:
+
+    - **Equivariance.** Relabelling the molecule permutes the colours with it. That is
+      what lets `canonical()` put colours in its sort key at all.
+    - **Consistency with symbols.** A colour is ranked by a signature whose first
+      component is the previous colour, so refinement never reorders classes, only splits
+      them. Sorting by final colour therefore also sorts by element.
+
+    What it cannot do is separate atoms that are genuinely interchangeable. It is a
+    one-sided instrument: different colours prove two atoms are distinguishable, equal
+    colours prove nothing. So the classes it returns are always a coarsening of the true
+    automorphism orbits, which is exactly why the count it produces is a safe upper bound
+    on the work and never an underestimate.
+    """
+    n = len(atoms)
+    neighbours: list[list[tuple[int, int]]] = [[] for _ in range(n)]
+    for b in bonds:
+        neighbours[b.i].append((b.j, b.order))
+        neighbours[b.j].append((b.i, b.order))
+    ranks = {symbol: k for k, symbol in enumerate(sorted(set(atoms)))}
+    colour = [ranks[a] for a in atoms]
+    for _ in range(n):                      # each round splits or stops; at most n-1 split
+        signature = [
+            (colour[i], tuple(sorted((order, colour[j]) for j, order in neighbours[i])))
+            for i in range(n)
+        ]
+        ranks = {s: k for k, s in enumerate(sorted(set(signature)))}
+        refined = [ranks[s] for s in signature]
+        if len(set(refined)) == len(set(colour)):
+            break                           # partition stable: no class was split
+        colour = refined
+    return tuple(colour)
+
+
+def _refined_blocks(atoms: tuple[str, ...], bonds: frozenset["Bond"]) -> list[tuple[int, ...]]:
+    """Atom positions grouped by Weisfeiler-Leman colour, groups in colour order."""
+    return _blocks(_wl_colours(atoms, bonds))
+
+
+def _cost_of(blocks: list[tuple[int, ...]]) -> int:
+    """Candidates enumerated when permuting within these classes: prod(m_i!)."""
     total = 1
-    for block in _symbol_blocks(atoms):
+    for block in blocks:
         total *= factorial(len(block))
     return total
 
 
-def _sorting_permutations(atoms: tuple[str, ...]) -> Iterator[tuple[int, ...]]:
+def _canonical_blocks(
+    atoms: tuple[str, ...], bonds: frozenset["Bond"]
+) -> list[tuple[int, ...]]:
     """
-    Every permutation that sorts the atom symbols -- and, deliberately, no others.
+    The classes `canonical()` permutes within: symbol classes, refined ONLY if the plain
+    ones would blow the budget.
+
+    Refinement is reach, not speed -- and it was measured to be a tax when spent where
+    reach was not needed. Weisfeiler-Leman costs a fixed 5-55 us per call, against 1-4 us
+    per candidate; on H2O, CO2, H2 and CH2O it splits nothing at all (2 candidates before,
+    2 after) and made construction 3x slower. Those are the species this repository builds
+    most, and `Config.__post_init__` canonicalises on every construction.
+
+    So the rule is: try the cheap restriction; refine only when the alternative is
+    refusing. Two properties fall out of that, and both are worth more than the speedup
+    given up:
+
+    - **The change is purely additive.** Any molecule that could be canonicalised before
+      #23 has a symbol cost within budget, so it never reaches the refined branch and its
+      canonical form is bit-for-bit what it always was. Only molecules that previously
+      RAISED can see the new key.
+    - **The two keys never have to agree.** A molecule takes its branch by symbol cost,
+      which is fixed by its multiset of elements -- an isomorphism invariant. So every
+      relabelling of one molecule takes the same branch, and two molecules in different
+      branches differ in composition and were never equal anyway.
+
+    The price, stated rather than hidden: a species whose symbol cost is under budget but
+    which refinement would have made much cheaper still pays the old price. A C7 chain
+    costs 5,040 candidates (~20 ms) where refinement would have charged 8. That is a
+    missed optimisation on a molecule that already worked, not a regression, and it buys
+    the additivity above.
+    """
+    blocks = _blocks(atoms)
+    if _cost_of(blocks) <= _MAX_CANONICAL_CANDIDATES:
+        return blocks
+    return _refined_blocks(atoms, bonds)
+
+
+def _canonical_cost(atoms: tuple[str, ...], bonds: frozenset["Bond"]) -> int:
+    """How many candidate permutations `canonical()` will examine."""
+    return _cost_of(_canonical_blocks(atoms, bonds))
+
+
+def _symbol_cost(atoms: tuple[str, ...]) -> int:
+    """
+    What canonicalisation costs without refinement: prod over ELEMENTS.
+
+    Kept because the gap between this and `_canonical_cost` is the whole of #23, and a
+    claim about a gap is worth more when both sides of it are computed rather than
+    remembered. Also the gate itself: refinement happens exactly when this exceeds the
+    budget.
+    """
+    return _cost_of(_blocks(atoms))
+
+
+def _sorting_permutations(
+    atoms: tuple[str, ...], bonds: frozenset["Bond"]
+) -> Iterator[tuple[int, ...]]:
+    """
+    Every permutation that sorts the atom colours -- and, deliberately, no others.
 
     Why this loses nothing
     ----------------------
-    ``canonical()`` minimises the key ``(symbols, edges)``, ordered lexicographically
-    with ``symbols`` first. Over all n! permutations the minimum of that first component
-    is ``tuple(sorted(atoms))``, a value fixed by the multiset of symbols and reachable
-    by some permutation. So a permutation that does not sort the symbols is strictly
-    beaten on the primary component by one that does, whatever it does to ``edges``, and
-    can never be the argmin.
+    ``canonical()`` minimises the key ``(symbols, colours, edges)`` lexicographically, and
+    the restriction falls out of that ordering in two stages:
 
-    The candidate set is therefore exactly the symbol-sorting permutations -- the ones
-    that shuffle atoms *within* a symbol class -- of which there are prod(m_i!), not n!.
-    For C2H5OH that is 1,440 instead of 362,880. For benzene, 518,400 instead of
-    479,001,600.
+    1. Over all n! permutations the minimum of ``symbols`` is ``tuple(sorted(atoms))`` --
+       a value fixed by the multiset of symbols and reachable by some permutation. A
+       permutation that does not sort the symbols is beaten on the primary component
+       whatever it does to the rest, so it can never be the argmin.
+    2. Among those, the minimum of ``colours`` is ``tuple(sorted(colours))``, by the same
+       argument one component down. Colours refine symbols and are ordered consistently
+       with them (see `_wl_colours`), so the two stages never fight: sorting by colour
+       sorts by symbol for free.
 
-    This is an exact restriction of the search, not a heuristic prune: same argmin, same
-    canonical form, verified against the old brute force in
-    ``TestCanonicalShortcutIsExact``. The saving is real but composition-dependent, and
-    vanishes entirely in the homonuclear worst case -- for C8 every permutation sorts the
-    symbols, prod(m_i!) = n!, and nothing is saved. The refusal above
-    ``_MAX_CANONICAL_CANDIDATES`` is what keeps that case honest.
+    What survives is the set of permutations that shuffle atoms *within a colour class*,
+    of which there are prod(m_i!) over the refined classes rather than over the elements.
+    That is where the reach comes from, and it is worth an order of magnitude or three:
+
+        species      symbol classes   refined classes
+        C2H5OH                1,440                12
+        C3H8 propane        241,920             2,880
+        C3H7OH propanol     241,920                24
+
+    This is an exact restriction of the search, not a heuristic prune -- verified against
+    brute force over all n! permutations in ``TestCanonicalShortcutIsExact``. The saving
+    is composition- *and* topology-dependent, and vanishes entirely where the graph is
+    symmetric enough that no local invariant separates anything: C8, and benzene. The
+    refusal above ``_MAX_CANONICAL_CANDIDATES`` is what keeps those cases honest.
+
+    Stage 2 is only *reached* when stage 1 alone would exceed the budget; see
+    ``_canonical_blocks`` for why refining unconditionally was measured to be a tax.
     """
-    n = len(atoms)
-    blocks = _symbol_blocks(atoms)
+    return _permute_within(_canonical_blocks(atoms, bonds), len(atoms))
+
+
+def _permute_within(blocks: list[tuple[int, ...]], n: int) -> Iterator[tuple[int, ...]]:
+    """Every permutation that shuffles atoms only within the given classes."""
     targets: list[tuple[int, ...]] = []
     position = 0
     for block in blocks:
@@ -224,31 +356,41 @@ class Molecule:
         rebuilds the molecule from the winner. Refuses loudly above
         ``_MAX_CANONICAL_CANDIDATES`` rather than quietly returning something
         non-canonical.
+
+        For molecules the symbol restriction alone cannot afford, the key becomes
+        ``(symbols, colours, edges)`` and the candidate set shrinks accordingly -- see
+        ``_canonical_blocks``. Those are exactly the molecules that used to raise, so no
+        canonical form computed before that change moved.
+
+        Only ``edges`` is compared in the loop below. The other two components are what
+        *define* the candidate set -- every candidate realises the same sorted ``symbols``
+        and the same sorted ``colours``, so they are constant here and cannot break a tie.
+        They are hoisted, not dropped; ``test_every_candidate_realises_the_same_prefix``
+        is what holds that claim down.
         """
         n = len(self.atoms)
         if n <= 1:
             return self
-        budget = _canonical_cost(self.atoms)
+        blocks = _canonical_blocks(self.atoms, self.bonds)
+        budget = _cost_of(blocks)
         if budget > _MAX_CANONICAL_CANDIDATES:
             raise NotImplementedError(
                 f"canonical relabelling of {self!r} needs {budget:,} candidate "
                 f"permutations, above the limit of {_MAX_CANONICAL_CANDIDATES:,}; "
                 f"full graph canonicalisation is out of scope"
             )
+        symbols = tuple(self.atoms[i] for block in blocks for i in block)
         best: tuple | None = None
-        for perm in _sorting_permutations(self.atoms):
+        for perm in _permute_within(blocks, n):
             # perm[old] = new
-            symbols = tuple(x for _, x in sorted(zip(perm, self.atoms)))
             edges = tuple(sorted(
                 (min(perm[b.i], perm[b.j]), max(perm[b.i], perm[b.j]), b.order)
                 for b in self.bonds
             ))
-            key = (symbols, edges)
-            if best is None or key < best:
-                best = key
+            if best is None or edges < best:
+                best = edges
         assert best is not None
-        symbols, edges = best
-        return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in edges), self.charge)
+        return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in best), self.charge)
 
     def __repr__(self) -> str:
         counts = self.formula

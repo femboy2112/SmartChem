@@ -284,12 +284,30 @@ class TestTheIsodesmicMeasurementIsConfounded:
         order_only_overall = 0.1101
         assert abs(order_only_with_h2 - order_only_overall) < 0.01
 
-    def test_the_blocker_is_the_canonical_key_not_the_oracle(self):
-        """The dependency #17 -> #23, demonstrated rather than assumed."""
-        from smartchem.category import _MAX_CANONICAL_CANDIDATES, _canonical_cost
+    def test_the_blocker_was_the_canonical_key_and_has_been_lifted(self):
+        """
+        The dependency #17 -> #23, demonstrated rather than assumed, and then paid off.
+
+        When this was first written propane cost 241,920 candidates against a budget of
+        50,000, so the confound could not be broken by adding species -- the canonicaliser
+        could not represent the species needed. Refining the key by Weisfeiler-Leman
+        colour drops the same molecule to 2,880 against the SAME budget. Both numbers are
+        asserted here because the pair is the finding: the wall was in the key, not in
+        the energies, and nothing about the oracle changed to move it.
+        """
+        from smartchem.category import (
+            _MAX_CANONICAL_CANDIDATES, _canonical_cost, _symbol_cost,
+        )
 
         propane = ("C", "C", "C") + ("H",) * 8
-        assert _canonical_cost(propane) > _MAX_CANONICAL_CANDIDATES
+        bonds = frozenset(
+            {Bond(0, 1), Bond(1, 2)}
+            | {Bond(0, 3), Bond(0, 4), Bond(0, 5)}
+            | {Bond(1, 6), Bond(1, 7)}
+            | {Bond(2, 8), Bond(2, 9), Bond(2, 10)}
+        )
+        assert _symbol_cost(propane) == 241_920 > _MAX_CANONICAL_CANDIDATES
+        assert _canonical_cost(propane, bonds) == 2_880 < _MAX_CANONICAL_CANDIDATES
 
 
 class TestIsodesmicCoverageWasTheBlocker:
@@ -329,23 +347,26 @@ class TestIsodesmicCoverageWasTheBlocker:
         """
         The fix was coverage, and it had to be coverage the canonicaliser could afford.
         Each of these unlocks at least one strictly isodesmic reaction and costs less than
-        the budget by orders of magnitude; propane would unlock more and does not.
+        the budget by orders of magnitude.
+
+        These were affordable *before* refinement too -- which is exactly why the
+        carbonyl-bearing species arrived first and the confound formed. The cheap species
+        over these elements are the ones with a carbonyl in them. Affordability picked
+        the sample, and the sample picked the answer.
         """
         from smartchem.category import _MAX_CANONICAL_CANDIDATES, _canonical_cost
 
         affordable = {
-            "CH2O": ("C", "O", "H", "H"),
-            "HCOOH": ("C", "O", "O", "H", "H"),
-            "CH3OCH3": ("C", "C", "O", "H", "H", "H", "H", "H", "H"),
+            "CH2O": (("C", "O", "H", "H"),
+                     frozenset({Bond(0, 1, 2), Bond(0, 2), Bond(0, 3)})),
+            "HCOOH": (("C", "O", "O", "H", "H"),
+                      frozenset({Bond(0, 1, 2), Bond(0, 2), Bond(0, 3), Bond(2, 4)})),
+            "CH3OCH3": (("C", "C", "O", "H", "H", "H", "H", "H", "H"),
+                        frozenset({Bond(0, 2), Bond(1, 2), Bond(0, 3), Bond(0, 4),
+                                   Bond(0, 5), Bond(1, 6), Bond(1, 7), Bond(1, 8)})),
         }
-        for name, atoms in affordable.items():
-            assert _canonical_cost(atoms) < _MAX_CANONICAL_CANDIDATES / 10, name
-
-        propane = ("C", "C", "C") + ("H",) * 8
-        assert _canonical_cost(propane) > _MAX_CANONICAL_CANDIDATES, (
-            "propane is expected to remain out of reach until the canonical key is "
-            "refined by degree as well as symbol"
-        )
+        for name, (atoms, bonds) in affordable.items():
+            assert _canonical_cost(atoms, bonds) < _MAX_CANONICAL_CANDIDATES / 10, name
 
 
 class TestTheMeasuredEffectIsRecorded:

@@ -39,11 +39,31 @@ from smartchem.category import (
 # TestCanonicalShortcutIsExact exists to hold down.
 from smartchem.category import (
     _MAX_CANONICAL_CANDIDATES,
+    _blocks,
+    _canonical_blocks,
     _canonical_cost,
+    _cost_of,
+    _refined_blocks,
     _sorting_permutations,
+    _symbol_cost,
+    _wl_colours,
 )
 
 ELEMENTS = ["H", "C", "N", "O", "F", "Na", "Cl"]
+
+
+def _perms_within(blocks, n):
+    """Every permutation that shuffles atoms only within the given classes."""
+    targets, position = [], 0
+    for block in blocks:
+        targets.append(tuple(range(position, position + len(block))))
+        position += len(block)
+    for choice in itertools.product(*(itertools.permutations(b) for b in blocks)):
+        perm = [0] * n
+        for olds, news in zip(choice, targets):
+            for old, new in zip(olds, news):
+                perm[old] = new
+        yield tuple(perm)
 
 
 # ==================================================================================
@@ -284,34 +304,148 @@ class TestObjectStructure:
 
     def test_reach_is_set_by_composition_not_by_atom_count(self):
         """
-        The old cap refused at 9 atoms. It priced canonicalisation as n!, which it is
-        not -- so it refused ethanol while accepting an octane fragment that costs 28x
-        more. Reach follows the symbol multiplicities, not the atom count.
+        The original cap refused at 9 atoms, pricing canonicalisation as n!, which it is
+        not -- so it refused ethanol while accepting an octane fragment costing 28x more.
+        Reach follows the symbol multiplicities, not the atom count.
         """
-        ethanol = ("C", "C", "O", "H", "H", "H", "H", "H", "H")   # 9 atoms
-        octyl = tuple("C" * 8)                                     # 8 atoms
-        assert _canonical_cost(ethanol) == 1_440
-        assert _canonical_cost(octyl) == 40_320
-        assert _canonical_cost(ethanol) < _canonical_cost(octyl)
-        # and the bigger species is the one that is now affordable
-        assert _canonical_cost(ethanol) <= _MAX_CANONICAL_CANDIDATES
+        ethanol_atoms = ("C", "C", "O", "H", "H", "H", "H", "H", "H")   # 9 atoms
+        ethanol_bonds = frozenset({
+            Bond(0, 1), Bond(1, 2),                                     # C-C, C-O
+            Bond(0, 3), Bond(0, 4), Bond(0, 5),                         # methyl
+            Bond(1, 6), Bond(1, 7),                                     # methylene
+            Bond(2, 8),                                                 # hydroxyl
+        })
+        octyl_atoms, octyl_bonds = tuple("C" * 8), frozenset()          # 8 atoms
+        assert _canonical_cost(ethanol_atoms, ethanol_bonds) == 1_440
+        assert _canonical_cost(octyl_atoms, octyl_bonds) == 40_320
+        # the *bigger* species is the affordable one
+        assert _canonical_cost(ethanol_atoms, ethanol_bonds) <= _MAX_CANONICAL_CANDIDATES
+
+    def test_refinement_is_spent_only_where_it_buys_reach(self):
+        """
+        Refinement is reach, not speed. Spending it unconditionally was measured to make
+        H2O, CO2 and CH2O ~3x slower while splitting nothing -- so it is gated on the
+        plain restriction failing first.
+
+        Ethanol is the witness on the cheap side: refinement WOULD cut it 1,440 -> 12,
+        and deliberately is not asked to, because 1,440 is already affordable and the
+        molecule already worked. Propane is the witness on the other: 241,920 is not
+        affordable, so refinement runs and brings it to 2,880.
+        """
+        ethanol_atoms = ("C", "C", "O", "H", "H", "H", "H", "H", "H")
+        ethanol_bonds = frozenset({
+            Bond(0, 1), Bond(1, 2), Bond(0, 3), Bond(0, 4),
+            Bond(0, 5), Bond(1, 6), Bond(1, 7), Bond(2, 8),
+        })
+        assert _symbol_cost(ethanol_atoms) == 1_440 <= _MAX_CANONICAL_CANDIDATES
+        assert _canonical_cost(ethanol_atoms, ethanol_bonds) == 1_440   # unrefined
+        assert _cost_of(_refined_blocks(ethanol_atoms, ethanol_bonds)) == 12   # if asked
+
+    def test_no_previously_canonicalisable_molecule_changed_its_form(self):
+        """
+        The additivity claim, checked rather than argued: refinement can only ever be
+        reached by a molecule whose symbol cost exceeds the budget, and such a molecule
+        used to raise. So every canonical form that existed before #23 is untouched.
+        """
+        rng = random.Random(20260722)
+        for _ in range(300):
+            n = rng.randrange(2, 8)
+            atoms = tuple(rng.choice("HCON") for _ in range(n))
+            bonds = frozenset(
+                Bond(rng.randrange(i), i, rng.choice([1, 1, 2])) for i in range(1, n)
+            )
+            if _symbol_cost(atoms) > _MAX_CANONICAL_CANDIDATES:
+                continue                                    # would have raised before
+            assert _canonical_blocks(atoms, bonds) == _blocks(atoms), (
+                f"{atoms} was refined although the plain restriction could afford it"
+            )
+
+    def test_propane_is_now_in_reach_and_benzene_is_still_not(self):
+        """
+        The point of the refinement, and its boundary, in one test. Propane is what #17
+        needs (a carbonyl-free isodesmic reaction needs C3); benzene is what refinement
+        provably cannot help, because its carbons are genuinely interchangeable.
+        """
+        propane_atoms = tuple("CCC" + "H" * 8)
+        propane_bonds = frozenset(
+            {Bond(0, 1), Bond(1, 2)}
+            | {Bond(0, 3), Bond(0, 4), Bond(0, 5)}
+            | {Bond(1, 6), Bond(1, 7)}
+            | {Bond(2, 8), Bond(2, 9), Bond(2, 10)}
+        )
+        assert _canonical_cost(propane_atoms, propane_bonds) == 2_880
+        assert _canonical_cost(propane_atoms, propane_bonds) < _MAX_CANONICAL_CANDIDATES
+        Molecule(propane_atoms, propane_bonds).canonical()      # does not raise
+
+        benzene_atoms = tuple("C" * 6 + "H" * 6)
+        benzene_bonds = frozenset(
+            {Bond(i, (i + 1) % 6, 2 if i % 2 == 0 else 1) for i in range(6)}
+            | {Bond(i, 6 + i) for i in range(6)}
+        )
+        assert _canonical_cost(benzene_atoms, benzene_bonds) == 518_400
+        with pytest.raises(NotImplementedError, match="out of scope"):
+            Molecule(benzene_atoms, benzene_bonds).canonical()
+
+    def test_colours_refine_symbols_rather_than_reordering_them(self):
+        """
+        Load-bearing for stage 2 of the restriction: sorting by colour must also sort by
+        element, or the two stages of the argument would fight and the argmin could sit
+        outside the candidate set.
+        """
+        atoms = ("O", "H", "C", "H", "C", "H", "H", "H", "H")
+        bonds = frozenset({
+            Bond(2, 4), Bond(4, 0), Bond(2, 1), Bond(2, 3),
+            Bond(2, 5), Bond(4, 6), Bond(4, 7), Bond(0, 8),
+        })
+        colours = _wl_colours(atoms, bonds)
+        by_colour = sorted(range(len(atoms)), key=lambda i: colours[i])
+        assert tuple(atoms[i] for i in by_colour) == tuple(sorted(atoms))
+        # and it is a strict refinement here, not a no-op: 3 elements, 6 colours
+        assert len(set(atoms)) == 3 and len(set(colours)) == 6
+
+    def test_colours_are_equivariant_under_relabelling(self):
+        """The property that lets colours sit in the sort key at all."""
+        rng = random.Random(20260721)
+        for _ in range(200):
+            n = rng.randrange(2, 8)
+            atoms = tuple(rng.choice("HCON") for _ in range(n))
+            bonds = frozenset(
+                Bond(rng.randrange(i), i, rng.choice([1, 1, 2])) for i in range(1, n)
+            )
+            sigma = list(range(n))
+            rng.shuffle(sigma)                                  # sigma[old] = new
+            moved_atoms = tuple(atoms[sigma.index(k)] for k in range(n))
+            moved_bonds = frozenset(Bond(sigma[b.i], sigma[b.j], b.order) for b in bonds)
+            before, after = _wl_colours(atoms, bonds), _wl_colours(moved_atoms, moved_bonds)
+            assert all(before[i] == after[sigma[i]] for i in range(n)), (
+                f"colours failed to move with the atoms: {atoms} under {sigma}"
+            )
 
 
 class TestCanonicalShortcutIsExact:
     """
-    The shortcut restricts the search from n! permutations to prod(m_i!). That is only
-    admissible if it never changes the answer, so this compares it against the brute
-    force it replaced -- on every labelling of small chains, and on seeded random graphs.
+    The shortcut restricts the search from n! permutations to prod(m_i!) over classes.
+    That is only admissible if it never changes the answer, so this compares it against
+    an unrestricted loop over all n! permutations -- on every labelling of small chains,
+    and on seeded random graphs.
 
     A restriction of a search is exactly the kind of change that looks free and is not:
     if the argument about the lexicographic key were subtly wrong, every downstream
-    equality in the category would silently drift. So the old loop is kept here, in the
-    test, as the oracle.
+    equality in the category would silently drift. So the brute force is kept here, in
+    the test, as the oracle.
+
+    Both branches are checked. The refined key is only *reached* in production by
+    molecules too big to brute-force, so the tests exercise it directly on small ones
+    rather than leave the new path unverified -- which is the whole reason it is
+    `_refined_blocks` under test here and not `canonical()`.
     """
 
     @staticmethod
-    def _brute_force(atoms, bonds):
-        """The pre-shortcut loop, preserved verbatim so it cannot drift with the code."""
+    def _brute_force(atoms, bonds, colours=None):
+        """
+        Unrestricted minimisation over all n! permutations. Pass `colours` to score the
+        refined key, omit it for the plain one.
+        """
         best = None
         for perm in itertools.permutations(range(len(atoms))):
             symbols = tuple(x for _, x in sorted(zip(perm, atoms)))
@@ -319,11 +453,92 @@ class TestCanonicalShortcutIsExact:
                 (min(perm[b.i], perm[b.j]), max(perm[b.i], perm[b.j]), b.order)
                 for b in bonds
             ))
-            key = (symbols, edges)
+            if colours is None:
+                key = (symbols, edges)
+            else:
+                key = (symbols, tuple(c for _, c in sorted(zip(perm, colours))), edges)
             if best is None or key < best:
                 best = key
-        symbols, edges = best
+        symbols, edges = (best[0], best[-1])
         return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in edges))
+
+    @staticmethod
+    def _restricted(atoms, bonds, blocks):
+        """`canonical()`'s loop, run over a block set chosen by the caller."""
+        best = None
+        for perm in _perms_within(blocks, len(atoms)):
+            edges = tuple(sorted(
+                (min(perm[b.i], perm[b.j]), max(perm[b.i], perm[b.j]), b.order)
+                for b in bonds
+            ))
+            if best is None or edges < best:
+                best = edges
+        symbols = tuple(atoms[i] for block in blocks for i in block)
+        return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in best))
+
+    def test_the_refined_restriction_is_exact_too(self):
+        """
+        The branch production only takes on molecules too large to brute-force. Checked
+        here on small ones, where the n! oracle is affordable: restricting to colour
+        classes must find the same argmin as searching every permutation under the same
+        key.
+        """
+        rng = random.Random(20260723)
+        exercised = 0
+        for _ in range(400):
+            n = rng.randrange(2, 8)
+            atoms = tuple(rng.choice("HCON") for _ in range(n))
+            bonds = {Bond(rng.randrange(i), i, rng.choice([1, 1, 1, 2, 3]))
+                     for i in range(1, n)}
+            for _ in range(rng.randrange(0, 3)):
+                i, j = rng.sample(range(n), 2)
+                bonds.add(Bond(i, j, rng.choice([1, 2])))
+            bonds = frozenset(bonds)
+            colours = _wl_colours(atoms, bonds)
+            refined = _refined_blocks(atoms, bonds)
+            if _cost_of(refined) < _symbol_cost(atoms):
+                exercised += 1                       # refinement actually split something
+            assert (self._restricted(atoms, bonds, refined)
+                    == self._brute_force(atoms, bonds, colours)), (
+                f"refined restriction disagrees with brute force on {atoms} {sorted(bonds)}"
+            )
+        assert exercised > 100, (
+            f"only {exercised}/400 cases refined anything -- the sample is not testing "
+            f"the branch it claims to"
+        )
+
+    def test_isomorphic_molecules_still_canonicalise_together(self):
+        """
+        The property everything downstream actually rides on, checked on both branches:
+        relabelling a molecule must not change what it canonicalises to, and molecules
+        that differ must not collide.
+
+        Checked through `_restricted` on each block set rather than through `canonical()`,
+        so the refined branch is covered on molecules small enough to also verify by
+        brute force.
+        """
+        rng = random.Random(20260721)
+        seen: dict[tuple, tuple] = {}
+        for _ in range(300):
+            n = rng.randrange(2, 7)
+            atoms = tuple(rng.choice("HCO") for _ in range(n))
+            bonds = frozenset(
+                Bond(rng.randrange(i), i, rng.choice([1, 1, 2])) for i in range(1, n)
+            )
+            sigma = list(range(n))
+            rng.shuffle(sigma)                                      # sigma[old] = new
+            moved_atoms = tuple(atoms[sigma.index(k)] for k in range(n))
+            moved_bonds = frozenset(Bond(sigma[b.i], sigma[b.j], b.order) for b in bonds)
+            for blocks_of in (lambda a, _: _blocks(a), _refined_blocks):
+                here = self._restricted(atoms, bonds, blocks_of(atoms, bonds))
+                there = self._restricted(moved_atoms, moved_bonds,
+                                         blocks_of(moved_atoms, moved_bonds))
+                assert here == there, f"{atoms} moved under {sigma} and changed form"
+                # and the form must discriminate: same canonical form => same brute force
+                truth = self._brute_force(atoms, bonds)
+                if here in seen:
+                    assert seen[here] == truth, f"{atoms} collided with a different molecule"
+                seen[here] = truth
 
     @pytest.mark.parametrize("n", [2, 3, 4, 5])
     def test_agrees_on_every_labelling_of_a_chain(self, n):
@@ -350,19 +565,59 @@ class TestCanonicalShortcutIsExact:
 
     def test_the_candidate_count_is_what_is_actually_enumerated(self):
         """`_canonical_cost` is the budget gate, so it must not be an estimate."""
-        for atoms in [("H", "H"), ("C", "H", "H", "O"), ("C", "C", "H", "H", "H")]:
-            assert len(list(_sorting_permutations(atoms))) == _canonical_cost(atoms)
+        cases = [
+            (("H", "H"), frozenset({Bond(0, 1)})),
+            (("C", "H", "H", "O"), frozenset({Bond(0, 1), Bond(0, 2), Bond(0, 3)})),
+            (("C", "C", "H", "H", "H"), frozenset({Bond(0, 1), Bond(0, 2), Bond(1, 3),
+                                                   Bond(1, 4)})),
+        ]
+        for atoms, bonds in cases:
+            enumerated = len(list(_sorting_permutations(atoms, bonds)))
+            assert enumerated == _canonical_cost(atoms, bonds), atoms
 
-    def test_every_candidate_really_sorts_the_symbols(self):
-        """The premise of the restriction: candidates all realise the minimal `symbols`."""
-        atoms = ("O", "H", "C", "H", "C")
-        target = tuple(sorted(atoms))
-        for perm in _sorting_permutations(atoms):
-            assert tuple(x for _, x in sorted(zip(perm, atoms))) == target
+    def test_every_candidate_realises_the_same_prefix(self):
+        """
+        `canonical()` compares only `edges`, having hoisted the rest of the key out of
+        the loop as constant across the candidate set. If that were false it would be
+        silently minimising a different key than the one its argument is about.
+
+        The invariant is branch-dependent, and that is the point: permuting within symbol
+        classes fixes `symbols` but NOT `colours` -- which is exactly why colours are not
+        in the key on that branch. Only the refined branch fixes both.
+        """
+        atoms = ("O", "H", "C", "H", "C", "H", "H", "H", "H")       # scrambled ethanol
+        bonds = frozenset({
+            Bond(2, 4), Bond(4, 0), Bond(2, 1), Bond(2, 3),
+            Bond(2, 5), Bond(4, 6), Bond(4, 7), Bond(0, 8),
+        })
+        colours = _wl_colours(atoms, bonds)
+
+        def prefixes(blocks):
+            out = set()
+            for perm in _perms_within(blocks, len(atoms)):
+                out.add((tuple(x for _, x in sorted(zip(perm, atoms))),
+                         tuple(c for _, c in sorted(zip(perm, colours)))))
+            return out
+
+        by_symbol = prefixes(_blocks(atoms))
+        assert {s for s, _ in by_symbol} == {tuple(sorted(atoms))}
+        assert len({c for _, c in by_symbol}) > 1, (
+            "colours are not constant here, so they must not be in this branch's key"
+        )
+
+        by_colour = prefixes(_refined_blocks(atoms, bonds))
+        assert by_colour == {(tuple(sorted(atoms)), tuple(sorted(colours)))}
 
     def test_homonuclear_saves_nothing_and_says_so(self):
-        """The boundary. One symbol means every permutation sorts it: no reduction."""
-        assert _canonical_cost(tuple("C" * 7)) == math.factorial(7)
+        """
+        The boundary, and it is now a topological one rather than a compositional one.
+        Seven carbons in a ring: one element, and every atom has the same surroundings as
+        every other, so refinement splits nothing and prod(m_i!) is still n!.
+        """
+        atoms = tuple("C" * 7)
+        ring = frozenset(Bond(i, (i + 1) % 7) for i in range(7))
+        assert _canonical_cost(atoms, ring) == math.factorial(7)
+        assert _canonical_cost(atoms, frozenset()) == math.factorial(7)
 
 
 # ==================================================================================

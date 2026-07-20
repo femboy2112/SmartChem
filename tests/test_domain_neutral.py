@@ -7,14 +7,26 @@ those were true while the structure still could not express a radiating antenna 
 the thing that foreclosed it was not an import, it was that the conserved signature and
 the state label were the same field.
 
-So this file does not audit. It instantiates the category on three systems that are not
+So this file does not audit. It instantiates the category on four systems that are not
 chemistry and runs the real laws over them:
 
     radiation   an object carrying energy and no matter, and emission as a morphism
     circuits    Kirchhoff's current law as the conservation the constructor enforces
     networks    a labelled graph whose vertices are components and whose edges are wires
+    electrodes  a half-reaction, where charge carriers appear on ONE side only
 
 If any of these stopped working, the layer would have quietly become chemistry-only.
+
+The fourth was added after the first three had been green for a session, and it is the
+reason this docstring no longer says "three". Instantiating the category on a domain is
+strictly better than auditing it, and it is still not sufficient: every circuit test here
+originally had the same carrier count on both sides, which is a real law honestly tested
+and also a case that CANNOT detect an electron wrongly booked as matter. The claim
+"circuits work" was true of everything tried and false of an electrode.
+
+The generalisation, which is the part worth keeping: **a conservation law tested only
+where the counts already match tests nothing.** Find the asymmetric case -- the electrode,
+the emitter, the open boundary -- or do not claim the law.
 
 The boundary is here too, and stated rather than implied: the *structure* hosts these
 systems, and the *energy models* do not. No oracle in this repository can price an
@@ -37,6 +49,7 @@ from smartchem.category import (
     Reaction,
     conserves,
     identity,
+    reaction_residue,
     tensor_obj,
 )
 from smartchem.oracle.base import carries_unmodelled_physics
@@ -136,7 +149,7 @@ class TestCircuitsAreExpressible:
 
     @staticmethod
     def _carriers(n):
-        return Config(tuple(Molecule.atom("e", charge=-1) for _ in range(n)))
+        return Config(tuple(Molecule.carrier("e-", charge=-1) for _ in range(n)))
 
     def test_kirchhoff_current_law_is_the_conservation_already_enforced(self):
         node = Reaction(self._carriers(3), self._carriers(3), name="KCL at a node")
@@ -173,6 +186,110 @@ class TestCircuitsAreExpressible:
         both = tensor_obj(Config.of(stage), Config.of(stage))
         assert both.formula == {"R": 2, "C": 2}
         assert conserves(identity(both))
+
+
+# ======================================================================================
+# Electrodes -- the case the balanced tests above structurally could not fail
+# ======================================================================================
+class TestAnElectrodeIsAMorphism:
+    """
+    The regression test for the defect #22 shipped, and the reason it survived review.
+
+    Every circuit test written for #22 had the SAME carrier count on both sides --
+    ``3 e- -> 3 e-`` for Kirchhoff's law. That is a real law and the test is a fair test
+    of it, but a balanced count cannot detect an electron wrongly entered in the MASS
+    ledger, because the same wrong entry appears on both sides and cancels. The tests were
+    all consistent with a claim that was false.
+
+    An electrode is where the counts do not match: electrons are produced at the anode and
+    consumed at the cathode, and only the external circuit makes the totals agree. That is
+    the entire point of a battery, and it was never tried until the AA cell was attempted.
+
+    The lesson generalises past this bug and is the reason this class exists rather than a
+    one-line fix: **a conservation claim tested only where the counts already match tests
+    nothing.** Test the asymmetric case or do not claim the law.
+    """
+
+    # an alkaline AA cell: Zn/MnO2, nominally 1.5 V
+    Zn = Molecule.atom("Zn")
+    OH = Molecule(("O", "H"), frozenset({Bond(0, 1)}), charge=-1)
+    H2O = Molecule(("O", "H", "H"), frozenset({Bond(0, 1), Bond(0, 2)}))
+    ZnO = Molecule(("Zn", "O"), frozenset({Bond(0, 1)}))
+    MnO2 = Molecule(("Mn", "O", "O"), frozenset({Bond(0, 1), Bond(0, 2)}))
+    Mn2O3 = Molecule(("Mn", "Mn", "O", "O", "O"),
+                     frozenset({Bond(0, 2), Bond(0, 3), Bond(1, 3), Bond(1, 4)}))
+    e = Molecule.carrier("e-", charge=-1)
+
+    def test_a_carrier_is_not_matter(self):
+        """The one-line statement of the defect."""
+        assert Molecule.carrier("e-", charge=-1).formula == {}
+        assert Molecule.carrier("e-", charge=-1).charge == -1
+        # the idiom #22 shipped, and why it was wrong
+        assert Molecule.atom("e", charge=-1).formula == {"e": 1}
+
+    def test_the_anode_half_reaction_constructs(self):
+        """Zn + 2 OH- -> ZnO + H2O + 2 e-: carriers on ONE side only."""
+        anode = Reaction(Config.of(self.Zn, self.OH, self.OH),
+                         Config.of(self.ZnO, self.H2O, self.e, self.e), name="anode")
+        assert conserves(anode)
+        assert anode.dom.charge == -2 and anode.cod.charge == -2
+
+    def test_the_cathode_half_reaction_constructs(self):
+        """2 MnO2 + H2O + 2 e- -> Mn2O3 + 2 OH-: carriers consumed, not produced."""
+        cathode = Reaction(
+            Config.of(self.MnO2, self.MnO2, self.H2O, self.e, self.e),
+            Config.of(self.Mn2O3, self.OH, self.OH), name="cathode")
+        assert conserves(cathode)
+        assert cathode.dom.charge == -2 and cathode.cod.charge == -2
+
+    def test_the_old_idiom_still_fails_so_the_test_is_not_vacuous(self):
+        """
+        Guard against a green that means nothing. If ``Molecule.atom("e", ...)`` ever
+        started conserving too, the two tests above would pass for the wrong reason and
+        this file would stop testing the distinction it exists for.
+        """
+        wrong = Molecule.atom("e", charge=-1)
+        with pytest.raises(ConservationError):
+            Reaction(Config.of(self.Zn, self.OH, self.OH),
+                     Config.of(self.ZnO, self.H2O, wrong, wrong))
+
+    def test_charge_is_still_enforced_on_carriers(self):
+        """
+        Freeing carriers from the mass ledger must not free them from the charge ledger,
+        or the fix would have replaced one silent hole with a worse one.
+        """
+        with pytest.raises(ConservationError):
+            Reaction(Config.of(self.Zn, self.OH, self.OH),
+                     Config.of(self.ZnO, self.H2O, self.e))     # one electron short
+
+    def test_the_half_cells_compose_into_the_whole_cell(self):
+        """
+        The categorical statement of "the circuit closes". Each half-reaction is tensored
+        with the identity on the other's spectators so that one's codomain IS the other's
+        domain, then composed. The electrons, the water and the hydroxide all appear on
+        both sides of the result and cancel -- which is exactly what it means to say the
+        electrons took the long way round, through the load.
+        """
+        anode = Reaction(Config.of(self.Zn, self.OH, self.OH),
+                         Config.of(self.ZnO, self.H2O, self.e, self.e))
+        cathode = Reaction(
+            Config.of(self.MnO2, self.MnO2, self.H2O, self.e, self.e),
+            Config.of(self.Mn2O3, self.OH, self.OH))
+        closed = (anode.tensor(identity(Config.of(self.MnO2, self.MnO2)))
+                  .then(identity(Config.of(self.ZnO)).tensor(cathode)))
+        assert conserves(closed)
+
+        consumed, produced = reaction_residue(closed)
+        # every carrier and every ion is a spectator of the overall cell reaction
+        assert consumed == Config.of(self.Zn, self.MnO2, self.MnO2)
+        assert produced == Config.of(self.ZnO, self.Mn2O3)
+
+    def test_the_cell_reaction_conserves_without_mentioning_electrons(self):
+        """The overall reaction: the residue above, standing on its own."""
+        cell = Reaction(Config.of(self.Zn, self.MnO2, self.MnO2),
+                        Config.of(self.ZnO, self.Mn2O3), name="AA cell")
+        assert conserves(cell)
+        assert cell.dom.charge == 0 and cell.cod.charge == 0
 
 
 # ======================================================================================

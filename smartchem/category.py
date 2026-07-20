@@ -356,15 +356,45 @@ class Molecule:
         return cls((symbol,), frozenset(), charge, state)
 
     @classmethod
+    def carrier(cls, label: str = "", charge: int = 0) -> "Molecule":
+        """
+        An object with no baryonic matter, whose conserved content is charge alone.
+
+        Empty ``atoms`` is deliberate and already legal -- it contributes nothing to
+        ``formula``, so a carrier appearing on one side only still conserves composition,
+        while ``charge`` is tracked exactly as for any ion.
+
+        **This is how an electron is spelled.** Not ``Molecule.atom("e", charge=-1)``,
+        which is what #22 shipped as the circuit idiom and which is wrong: that puts
+        ``"e"`` into ``formula``, so an electron becomes matter, and an electrode
+        half-reaction
+
+            Zn + 2 OH- -> ZnO + H2O + 2 e-
+
+        is rejected as mass-violating when nothing of the kind has happened. The charge
+        ledger already handles it correctly on its own (-2 -> -2); the mass ledger was
+        double-counting a quantity it does not own.
+
+        That defect survived #22 because every test written for it had the SAME number of
+        carriers on both sides -- ``3 e- -> 3 e-`` for Kirchhoff's law -- and a balanced
+        count cannot fail this way whatever the spelling. The unbalanced case is the
+        electrode, which is the entire point of a battery, and it was never tried.
+        ``tests/test_domain_neutral.py::TestAnElectrodeIsAMorphism`` is the regression
+        test; the lesson is that a conservation claim must be tested where the counts do
+        NOT match, or it tests nothing.
+        """
+        return cls((), frozenset(), charge, label)
+
+    @classmethod
     def quantum(cls, state: str = "") -> "Molecule":
         """
         A carrier of energy and no matter: a photon, a phonon, a radiated quantum.
 
-        Empty ``atoms`` is deliberate and already legal -- it contributes nothing to
-        ``formula``, so emission and absorption conserve composition automatically. This
-        constructor exists to name the case, not to enable it.
+        The chargeless case of :meth:`carrier`. A photon carries energy with no charge;
+        an electron carries charge with no mass. Structurally they are one thing, and the
+        field that distinguishes them is ``charge``, not the presence of atoms.
         """
-        return cls((), frozenset(), 0, state)
+        return cls.carrier(state, charge=0)
 
     @classmethod
     def diatomic(cls, a: str, b: str, order: int = 1, charge: int = 0) -> "Molecule":

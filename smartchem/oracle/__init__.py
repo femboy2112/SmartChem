@@ -39,9 +39,18 @@ def available_oracles() -> dict[str, EnergyOracle]:
         pass
     else:
         # Distinct tiers of the same backend: the accuracy/cost dial made explicit.
-        registry["ccsdt-tz"] = PySCFOracle(method="CCSD(T)", basis="cc-pVTZ")
-        registry["ccsdt-qz"] = PySCFOracle(method="CCSD(T)", basis="cc-pVQZ")
-        registry["ccsdt-cbs"] = PySCFOracle(method="CCSD(T)", basis="cbs(TZ,QZ)")
+        #
+        # tight_d is passed explicitly on every entry rather than left to the default.
+        # These names appear in a published accuracy table, so what each one MEANS has to
+        # be pinned here: flipping a default would silently redefine a tier and quietly
+        # invalidate the numbers in README.md.
+        registry["ccsdt-tz"] = PySCFOracle("CCSD(T)", "cc-pVTZ", tight_d=False)
+        registry["ccsdt-qz"] = PySCFOracle("CCSD(T)", "cc-pVQZ", tight_d=False)
+        registry["ccsdt-cbs"] = PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", tight_d=False)
+        # The augmented tier: diffuse functions for ionic character, tight d for the
+        # second row. Both corrections survive extrapolation, so they must be in the
+        # basis rather than recovered by it.
+        registry["ccsdt-aug-cbs"] = PySCFOracle("CCSD(T)", "aug-cbs(TZ,QZ)", tight_d=True)
 
     try:
         from .xtb_oracle import XTBOracle

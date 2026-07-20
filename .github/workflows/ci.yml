@@ -26,12 +26,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
 
-      # -rxX surfaces both xfails (known defects, with reasons) and xpasses. An xpass is a
-      # hard failure under strict=True, which is the point: a defect cannot be fixed
-      # without the corresponding marker in tests/test_findings.py being removed in the
-      # same commit.
+      # The xfail ratchet was discharged on 2026-07-20 when the legacy engine was retired:
+      # every finding now has an explicit verdict in tests/test_findings.py, either
+      # DISCHARGED (asserted against the live system, unmarked) or DROPPED (asserted
+      # absent). -rs surfaces what was skipped, so a silently-skipped suite cannot read
+      # as a green one.
+      #
+      # Tests needing real quantum-chemistry calls are gated behind --runslow and are NOT
+      # run here: PySCF is not installed on this runner, and a test that would be skipped
+      # anyway should say so rather than appear to pass.
       - name: Test
-        run: pytest -q -rxX
+        run: pytest -q -rs
 
       # The benchmark is informational on the core install (no optional QC backends
       # available here), but it must not crash, and its coverage line must stay honest.

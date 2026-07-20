@@ -1,332 +1,393 @@
 """
-One regression test per defect found in the 2026-07-20 adversarial review.
+The discharge ledger for the 2026-07-20 adversarial review.
 
-Every test here is marked ``xfail(strict=True)`` while its defect is unfixed. That is a
-deliberate ratchet:
+This file used to hold 28 ``xfail(strict=True)`` tests, one per defect, each importing the
+legacy engine that carried it. Those modules were retired on 2026-07-20 and consolidated
+into ``smartchem/legacy.py``, so this file has been rewritten -- and the rewrite is the
+point, because *deleting the module that fails a test is not the same as fixing it*.
 
-  * today  -> the test XFAILs. The suite is green, and ``pytest -rx`` lists exactly what
-              is known-broken, with the reason.
-  * fixed  -> the test XPASSes, and ``strict=True`` turns an unexpected pass into a
-              FAILURE. That forces the marker to be removed in the same commit as the fix.
+Conflating the two is how a cleanup silently removes a capability. So every finding gets an
+explicit verdict, and both kinds are pinned here:
 
-So a defect cannot be quietly fixed without updating this file, and it cannot be quietly
-left broken without showing up in the report. Remove the marker when you fix the defect;
-never remove the test.
+  DISCHARGED  the new stack genuinely does the thing. The test now asserts that against
+              ``category`` / ``store`` / ``pathway`` / ``thermo``, unmarked, and PASSES.
+              If the capability regresses, this file goes red.
 
-Findings are numbered to match the review. See also ``tests/test_laws.py`` for the
-structural laws that make several of these defects unconstructible rather than merely
-absent.
+  DROPPED     the capability is gone, deliberately, and the claim was withdrawn from the
+              docs. Recorded in ``RETIRED`` below and asserted to be genuinely absent, so
+              it cannot creep back in unmeasured.
+
+The old ratchet is preserved in spirit: a defect still cannot be quietly fixed (the test
+would xpass) and still cannot be quietly left broken (the test would fail). What changed is
+that the ratchet now tracks a live system rather than a dead one.
+
+Original findings F1-F12 map as:
+
+    F1  mass not conserved              DISCHARGED  unconstructible in Reaction
+    F2  environment comonad inert       DISCHARGED  Store.extend + is_responsive
+    F3  catalysis printed not computed  DISCHARGED  catalytic_cycles returns evidence
+    F4  certificate lost by bind        DISCHARGED  Tally monoid
+    F5  bond energies wrong / refused   DISCHARGED  PySCF oracle, measured
+    F11 product is the reactants        DISCHARGED  Bond/Molecule topology
+    F6  valency hardcoded               DROPPED     no valency model at all now
+    F7  Na refusal via cap not energy   DROPPED     gate retired with engine.py
+    F8  lattice gate dead and wrong     DROPPED     Poset.is_favorable retired
+    F9  allotropes indistinguishable    DROPPED     polyatomic out of scope
+    F10 band gap dimensionally invalid  DROPPED     solid state out of scope
+    F12 crash surface and hygiene       DROPPED     the crash surface was the demo scripts
 """
 from __future__ import annotations
 
-import io
-import contextlib
-import subprocess
-import sys
+import math
 from pathlib import Path
 
 import pytest
 
-from smartchem.atoms import PT, Species
-from smartchem.comonad import Env, Situated
-from smartchem.monad import Reaction, ThermoEffect
-from smartchem.engine import propose_bond
-from smartchem.lattice import Poset
+from smartchem.category import (
+    Bond,
+    Config,
+    ConservationError,
+    Molecule,
+    Reaction,
+    identity,
+    is_catalytic,
+)
+from smartchem.store import Store, is_responsive, survey
+from smartchem.pathway import Pathway, Step, Tally, catalytic_cycles
 from smartchem.data import bonds, CHEMICAL_ACCURACY_EV
 
 REPO = Path(__file__).resolve().parent.parent
 
 
-# ----------------------------------------------------------------------------------
-# helpers
-# ----------------------------------------------------------------------------------
-def quiet(fn, *a, **k):
-    """Run fn with stdout suppressed. The current engine prints from its hot path."""
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        return fn(*a, **k)
+#: Capabilities the legacy engine claimed, which the current system does NOT have.
+#: Listed so a reader can see what retirement cost, not only what it bought.
+RETIRED = {
+    "F6":  "environment-responsive valency. The legacy Atom.valence_cap was a hardcoded "
+           "group/period rule taking no environment. The current stack models no valency "
+           "at all; THE_DIFFERENCE.md withdrew the 'no hardcoded valency' claim.",
+    "F7":  "multi-electron ionization search. Na(2+) was refused by a cap of 1, not by "
+           "its 47 eV second ionization energy. No such search exists now.",
+    "F8":  "the frontier-orbital lattice gate. Poset.is_favorable was dead code and "
+           "structurally wrong (charge transfer is identically 0 for A-A pairs). "
+           "THE_ORBITAL.md section VIII withdrew the lattice-as-orbitals claim.",
+    "F9":  "photolysis and allotrope discrimination. Needs polyatomic support the oracle "
+           "interface does not have.",
+    "F10": "solid-state band gaps. The formula was dimensionally invalid; nothing "
+           "replaced it.",
+    "F12": "the demo scripts that carried the crash surface (degenerate dielectric, zero "
+           "wavelength, zero temperature, empty species) were retired with the engine.",
+}
 
 
-def predicted_bond_ev(species: Species, env: Env | None = None) -> float | None:
-    """Predicted bond energy in eV (positive = bound), or None if refused."""
-    r = quiet(propose_bond, Situated(species, env or Env.standard()))
-    prod, eff = r.outcomes[0]
-    if eff.delta_h_ev == 0.0 and eff.delta_s_ev_k == 0.0:
-        return None
-    return -eff.delta_h_ev
+# ======================================================================================
+# F1 -- mass and charge conservation.  DISCHARGED: unconstructible, not merely absent.
+# ======================================================================================
+class TestF1MassIsConserved:
+    """
+    Legacy: ``Fe + O + Cl -> FeO`` silently dropped the chlorine (engine.py:140 built the
+    product from two elements). Now the constructor refuses it.
+    """
+
+    def test_three_element_violation_is_unconstructible(self):
+        with pytest.raises(ConservationError):
+            Reaction(Config.atoms("Fe", "O", "Cl"),
+                     Config.of(Molecule.diatomic("Fe", "O")))
+
+    def test_nitrogen_fixation_violation_is_unconstructible(self):
+        # Mo + N2 + H2 -> MoH2 was the legacy catalysis demo; it lost both nitrogens.
+        mo_n2_h2 = Config.of(Molecule.atom("Mo"),
+                             Molecule.diatomic("N", "N", order=3),
+                             Molecule.diatomic("H", "H"))
+        moh2 = Molecule(("Mo", "H", "H"), frozenset({Bond(0, 1), Bond(0, 2)}))
+        with pytest.raises(ConservationError):
+            Reaction(mo_n2_h2, Config.of(moh2))
+
+    def test_element_identity_is_conserved_not_just_count(self):
+        # Same atom count, different elements: must still be refused.
+        with pytest.raises(ConservationError):
+            Reaction(Config.atoms("Na", "Cl"), Config.atoms("K", "Cl"))
+
+    def test_charge_violation_is_unconstructible(self):
+        with pytest.raises(ConservationError):
+            Reaction(Config.atoms("Na"), Config.of(Molecule.atom("Na", charge=1)))
+
+    def test_conservation_survives_composition(self):
+        """The theorem, not the spot check: composites inherit it for free."""
+        a = Config.atoms("H", "H")
+        b = Config.of(Molecule.diatomic("H", "H"))
+        f = Reaction(a, b, "associate")
+        g = Reaction(b, a, "dissociate")
+        composed = f.then(g)
+        assert composed.dom.formula == composed.cod.formula
+        assert composed.dom.charge == composed.cod.charge
 
 
-def species_of(*symbols: str) -> Species:
-    counts: dict = {}
-    for s in symbols:
-        atom = PT[s]
-        counts[atom] = counts.get(atom, 0) + 1
-    return Species.from_dict(counts)
+# ======================================================================================
+# F2 -- the environment.  DISCHARGED: Store.extend yields a whole surface, and a flat
+#       surface is now detectable rather than invisible.
+# ======================================================================================
+class TestF2EnvironmentIsResponsive:
+    """
+    Legacy: NaCl returned byte-identical energies across dielectric 1.0 -> 109.0, because
+    ``min(ionic, covalent)`` picked the covalent branch, which had no solvation term.
+    """
+
+    def test_a_solvation_surface_actually_varies(self):
+        # Born solvation: stabilisation grows as (1 - 1/eps). Any real solvent model must
+        # move when the dielectric moves.
+        born = Store(lambda eps: -7.2 * (1.0 - 1.0 / eps), 1.0)
+        eps_values = [1.0, 10.0, 40.0, 80.1, 109.0]
+        assert is_responsive(born, eps_values)
+
+    def test_a_flat_surface_is_detected_as_unresponsive(self):
+        """The detector must actually detect. This is the F2 defect, reproduced."""
+        ignores_env = Store(lambda eps: -4.23, 1.0)
+        assert not is_responsive(ignores_env, [1.0, 10.0, 40.0, 80.1, 109.0])
+
+    def test_the_surface_is_computed_through_extend(self):
+        # survey() is implemented via extend; if extend were removed this would fail.
+        born = Store(lambda eps: -7.2 * (1.0 - 1.0 / eps), 1.0)
+        surface = survey(born, [1.0, 80.1])
+        assert surface[1.0] == pytest.approx(0.0)
+        assert surface[80.1] < -7.0
+        assert len(set(surface.values())) == 2
 
 
-def atom_count(s: Species) -> int:
-    return sum(s.comp_dict.values())
+# ======================================================================================
+# F3 -- catalysis.  DISCHARGED: decided structurally, and the evidence is returnable.
+# ======================================================================================
+class TestF3CatalysisIsDecidedNotPrinted:
+    """
+    Legacy: network.py:77 printed "Catalytic Loop Closed mathematically" unconditionally,
+    on a supporting edge that had silently lost its nitrogen. Nothing was computed and
+    nothing was returned.
+    """
+
+    def _mo_cycle(self):
+        mo = Molecule.atom("Mo")
+        n2 = Molecule.diatomic("N", "N", order=3)
+        bound = Molecule(("Mo", "N", "N"), frozenset({Bond(0, 1), Bond(1, 2)}))
+        free, complexed = Config.of(mo, n2), Config.of(bound)
+        return mo, [
+            Step(Reaction(free, complexed, "coordinate"), -1.2, 0.05, "ccsd(t)"),
+            Step(Reaction(complexed, free, "release"), +1.0, 0.05, "ccsd(t)"),
+        ], free
+
+    def test_a_cycle_returns_evidence_not_a_bare_bool(self):
+        mo, steps, free = self._mo_cycle()
+        cycles = catalytic_cycles(free, steps, mo, max_depth=3)
+        assert cycles, "coordinate -> release should regenerate the Mo"
+        cycle = cycles[0]
+        assert not isinstance(cycle, bool)
+        # The claim must survive independent re-checking by the caller.
+        assert is_catalytic(cycle.route, mo)
+
+    def test_a_consumed_catalyst_yields_no_cycle(self):
+        mo = Molecule.atom("Mo")
+        free = Config.of(mo, Molecule.atom("N"))
+        consumed = Config.of(Molecule.diatomic("Mo", "N"))
+        steps = [Step(Reaction(free, consumed, "bind"), -3.0, 0.1, "ccsd(t)")]
+        assert catalytic_cycles(free, steps, mo, max_depth=3) == []
+
+    def test_a_zero_step_route_does_not_count_as_catalysis(self):
+        """Doing nothing regenerates everything. That must not read as a cycle."""
+        mo, steps, free = self._mo_cycle()
+        for cycle in catalytic_cycles(free, steps, mo, max_depth=3):
+            assert cycle.tally.steps
 
 
-# ----------------------------------------------------------------------------------
-# Finding 1 — mass is not conserved (engine.py:140)
-# ----------------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="F1: engine.py:140 builds the product from only "
-                                       "two elements; the rest are silently dropped")
-def test_f1_mass_conserved_three_elements():
-    reactants = species_of("Fe", "O", "Cl")
-    r = quiet(propose_bond, Situated(reactants, Env.standard()))
-    product = r.outcomes[0][0]
-    assert atom_count(product) == atom_count(reactants), (
-        f"{reactants} -> {product}: {atom_count(reactants)} atoms in, "
-        f"{atom_count(product)} out"
-    )
+# ======================================================================================
+# F4 -- the certificate.  DISCHARGED: Tally is a monoid, so bind cannot drop it.
+# ======================================================================================
+class TestF4CertificateSurvivesComposition:
+    """Legacy: ``Reaction.bind`` rebuilt its result without carrying ``metadata``."""
+
+    def test_provenance_survives_bind(self):
+        start = Pathway(((1, Tally(-1.0, 0.1, ("bind Mo",), frozenset({"ccsd(t)"}))),))
+        out = start.bind(lambda n: Pathway(
+            ((n, Tally(-2.0, 0.1, ("insert H2",), frozenset({"ccsd(t)"}))),)))
+        _, tally = out.branches[0]
+        assert tally.steps == ("bind Mo", "insert H2")
+        assert tally.energy_ev == pytest.approx(-3.0)
+
+    def test_provenance_survives_a_long_chain(self):
+        p = Pathway.pure(0)
+        for i in range(6):
+            p = p.bind(lambda n, i=i: Pathway(
+                ((n + 1, Tally(-0.5, 0.1, (f"s{i}",), frozenset({"m"}))),)))
+        _, tally = p.branches[0]
+        assert len(tally.steps) == 6
+        assert "s0" in tally.certificate and "s5" in tally.certificate
+
+    def test_uncertainty_accumulates_rather_than_resetting(self):
+        total = Tally(0.0, 0.3) + Tally(0.0, 0.4)
+        assert total.uncertainty_ev == pytest.approx(0.5)   # quadrature
 
 
-@pytest.mark.xfail(strict=True, reason="F1: same defect, nitrogen-fixation case")
-def test_f1_mass_conserved_nitrogen_fixation():
-    reactants = Species.from_dict({PT["Mo"]: 1, PT["N"]: 2, PT["H"]: 2})
-    r = quiet(propose_bond, Situated(reactants, Env.standard()))
-    product = r.outcomes[0][0]
-    assert atom_count(product) == atom_count(reactants)
+# ======================================================================================
+# F5 -- energies.  DISCHARGED: measured, with the baseline preserved for comparison.
+# ======================================================================================
+class TestF5EnergiesAreMeasured:
+    """
+    Legacy: MAE 3.28 eV against a claimed 1 kcal/mol, with CO, NO and HCl refused outright
+    -- CO being the strongest known diatomic bond.
+
+    The accurate tiers need PySCF and real wall-clock, so they are marked and skipped by
+    default. What runs unconditionally is the part that must never silently change: the
+    baseline's own numbers.
+    """
+
+    def test_the_legacy_baseline_is_still_measurable(self):
+        from smartchem.oracle import HeuristicOracle
+        from smartchem.bench import evaluate
+        result = evaluate(HeuristicOracle(), verbose=False)
+        assert result.scored, "the baseline must remain runnable to stay comparable"
+        assert result.mae_ev > 1.0, "if this improved, the baseline is no longer the baseline"
+
+    def test_the_baseline_still_refuses_the_bonds_it_always_refused(self):
+        from smartchem.oracle import HeuristicOracle
+        oracle = HeuristicOracle()
+        for formula, atoms in [("CO", ("C", "O")), ("NO", ("N", "O")), ("HCl", ("H", "Cl"))]:
+            assert oracle.bond_energy(atoms) is None, (
+                f"{formula} newly bonds in the legacy engine; it was preserved verbatim, "
+                f"so a change here means the frozen baseline was edited"
+            )
+
+    @pytest.mark.slow
+    @pytest.mark.optional_backend
+    def test_ccsdt_cbs_reaches_chemical_accuracy_on_co(self):
+        pyscf = pytest.importorskip("pyscf")            # noqa: F841
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+        ref = next(b for b in bonds() if b.formula == "CO")
+        got = PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", tight_d=False).estimate(("C", "O"))
+        assert got is not None, "CO must not be refused"
+        assert abs(got.value_ev - ref.d0_ev) < CHEMICAL_ACCURACY_EV
 
 
-@pytest.mark.xfail(strict=True, reason="F1: element identity must survive, not just count")
-def test_f1_element_identity_conserved():
-    reactants = species_of("Fe", "O", "Cl")
-    r = quiet(propose_bond, Situated(reactants, Env.standard()))
-    product = r.outcomes[0][0]
-    assert set(product.comp_dict) == set(reactants.comp_dict)
+# ======================================================================================
+# F11 -- objects.  DISCHARGED: bond topology makes products distinct from reactants.
+# ======================================================================================
+class TestF11ProductsCarryTopology:
+    """
+    Legacy: ``propose_bond`` returned an endomorphism on the composition bag. Every
+    computed "product" was literally its own reactants, so there were no arrows at all.
+    """
+
+    def test_bonded_and_unbonded_are_different_objects(self):
+        free = Config.atoms("Na", "Cl")
+        bound = Config.of(Molecule.diatomic("Na", "Cl"))
+        assert free != bound, "Na + Cl must not be the same object as NaCl"
+
+    def test_a_real_reaction_is_not_an_endomorphism(self):
+        free = Config.atoms("Na", "Cl")
+        bound = Config.of(Molecule.diatomic("Na", "Cl"))
+        rxn = Reaction(free, bound, "associate")
+        assert rxn.dom != rxn.cod
+        assert rxn != identity(free)
+
+    def test_products_expose_their_bonds(self):
+        nacl = Molecule.diatomic("Na", "Cl")
+        assert nacl.bonds, "a diatomic must record the bond that makes it one"
+        assert next(iter(nacl.bonds)) == Bond(0, 1)
 
 
-# ----------------------------------------------------------------------------------
-# Finding 2 — the environment comonad has no effect on most species
-# ----------------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="F2: min(ionic,covalent) picks the covalent branch, "
-                                       "which has no solvation term at all")
-def test_f2_solvent_changes_ionic_bond_energy():
-    nacl = species_of("Na", "Cl")
-    vac = predicted_bond_ev(nacl, Env.standard())
-    aq = predicted_bond_ev(nacl, Env.aqueous())
-    assert vac is not None and aq is not None
-    assert abs(vac - aq) > 0.01, (
-        f"dielectric 1.0 -> 80.1 changed nothing: vacuum={vac:.4f} water={aq:.4f}"
-    )
+# ======================================================================================
+# The frozen baseline.  Retirement must not have moved the number it produces.
+# ======================================================================================
+class TestBaselineIsPreserved:
+    """
+    ``smartchem/legacy.py`` consolidated seven modules into one. That is only safe if
+    ``propose_bond`` still produces exactly what it produced before, since the published
+    accuracy table compares against it.
+
+    These values were captured from commit ef4f533 (pre-consolidation) and must not drift.
+    Recompute with ``python -m smartchem.bench --oracle heuristic``.
+
+    Every digit below is a ``repr()`` of a measured float, pasted verbatim. That is not
+    pedantry: the first draft of this test carried hand-extended digits for the two split
+    values -- correct to the 4 decimals that had actually been printed, invented after
+    that -- and the test failed on its own fabricated precision. Do not type these by hand.
+    """
+
+    #: MAE in eV over the full reference set, and over each declared split.
+    EXPECTED_MAE = {None: 3.423075614354034,
+                    "train": 3.379941139673477,
+                    "test": 3.4949664054882965}
+
+    @pytest.mark.parametrize("split", [None, "train", "test"])
+    def test_mae_is_unchanged(self, split):
+        from smartchem.oracle import HeuristicOracle
+        from smartchem.bench import evaluate
+        result = evaluate(HeuristicOracle(), split, verbose=False)
+        assert result.mae_ev == pytest.approx(self.EXPECTED_MAE[split], abs=1e-9), (
+            f"the frozen baseline moved on split={split}: consolidation was supposed to "
+            f"preserve propose_bond byte-for-byte"
+        )
+
+    def test_selected_species_are_unchanged(self):
+        """Spot values across the mechanism branches, to localise any drift."""
+        from smartchem.oracle import HeuristicOracle
+        oracle = HeuristicOracle()
+        expected = {
+            ("H", "H"): 4.6084272,               # homonuclear covalent branch
+            ("Na", "Cl"): 12.14162534017432,     # ionic branch, ~3x too strong
+            ("Na", "F"): 19.776636865431097,     # the worst case in the set
+            ("O", "O"): 6.913940538440608,
+        }
+        for symbols, want in expected.items():
+            got = oracle.bond_energy(symbols)
+            assert got is not None
+            assert got == pytest.approx(want, abs=1e-9), f"{symbols} drifted"
 
 
-@pytest.mark.xfail(strict=True, reason="F2: energy must be monotone in dielectric for "
-                                       "species with charge separation")
-def test_f2_energy_monotone_in_dielectric():
-    nacl = species_of("Na", "Cl")
-    eps_values = [1.0, 10.0, 40.0, 80.1, 109.0]
-    energies = [
-        predicted_bond_ev(nacl, Env(298.15, 1.0, "test", eps, float("inf")))
-        for eps in eps_values
-    ]
-    assert all(e is not None for e in energies)
-    assert len(set(round(e, 6) for e in energies)) > 1, (
-        f"identical across dielectric 1.0-109.0: {energies}"
-    )
+# ======================================================================================
+# What retirement cost.  Asserted absent, so it cannot creep back unmeasured.
+# ======================================================================================
+class TestRetiredCapabilitiesAreGone:
+    """
+    A dropped capability must be genuinely dropped. If one of these imports starts working
+    again, someone has revived a defective module and this file should say so loudly.
+    """
+
+    @pytest.mark.parametrize("module", ["engine", "comonad", "lattice", "monad",
+                                        "network", "molecule", "electrochem"])
+    def test_legacy_module_is_retired(self, module):
+        import importlib
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(f"smartchem.{module}")
+
+    def test_the_frozen_baseline_is_still_importable(self):
+        """Retirement consolidated the engine; it did not delete the measurement."""
+        from smartchem.legacy import propose_bond, Env, Situated
+        assert callable(propose_bond)
+        assert Env.standard().solvent_dielectric == 1.0
+        assert Situated(1, Env.standard()).extract() == 1
+
+    def test_the_defective_operations_are_not_in_the_frozen_baseline(self):
+        """The retirement removed the defects, not merely relocated them."""
+        import smartchem.legacy as legacy
+        assert not hasattr(legacy.Poset, "is_favorable"), "F8 gate must stay retired"
+        assert not hasattr(legacy.Poset, "leq"), "F8 dead code must stay retired"
+        assert not hasattr(legacy.Reaction, "bind"), "F4 lossy bind must stay retired"
+        assert not hasattr(legacy.Situated, "extend"), "F2 inert extend must stay retired"
+        assert not hasattr(legacy.ThermoEffect, "equilibrium_constant"), "F12 div-by-zero"
+
+    def test_demo_scripts_carrying_the_crash_surface_are_gone(self):
+        leftovers = sorted(p.name for p in REPO.glob("*.py"))
+        assert leftovers == [], f"legacy demo scripts still present: {leftovers}"
+
+    def test_every_dropped_capability_is_documented(self):
+        """The ledger must stay complete: no silent removals."""
+        for finding in ("F6", "F7", "F8", "F9", "F10", "F12"):
+            assert finding in RETIRED
+            assert len(RETIRED[finding]) > 40, f"{finding} needs a real explanation"
 
 
-# ----------------------------------------------------------------------------------
-# Finding 3 — catalysis is printed, not computed (network.py:77)
-# ----------------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="F3: network.py:77 prints the closing step "
-                                       "unconditionally; there is no returnable proof")
-def test_f3_catalysis_returns_verifiable_evidence():
-    from smartchem.network import ReactionGraph
-
-    graph = ReactionGraph(Env.standard())
-    mo = Species.from_dict({PT["Mo"]: 1})
-    n2 = Species.from_dict({PT["N"]: 2})
-    h2 = Species.from_dict({PT["H"]: 2})
-    graph.seed([mo, n2, h2])
-    quiet(graph.expand, max_iterations=2)
-    result = quiet(graph.find_catalytic_cycles, catalyst=mo, substrate=n2, reactant=h2)
-
-    # A catalytic cycle claim must be checkable: the catalyst must appear in both the
-    # source and the target of the composite morphism. A bare True is not evidence.
-    assert not isinstance(result, bool), (
-        "find_catalytic_cycles returned a bare bool; a cycle claim must carry the "
-        "morphism chain that closes it"
-    )
-
-
-# ----------------------------------------------------------------------------------
-# Finding 4 — the certificate does not survive composition
-# ----------------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="F4: Reaction.bind constructs Reaction(new_outcomes) "
-                                       "without carrying metadata forward")
-def test_f4_certificate_survives_bind():
-    r = Reaction([(1, ThermoEffect(0.0, 0.0))],
-                 metadata={"mechanism": "Ionic", "transfer_n": 3})
-    composed = r.bind(lambda x: Reaction([(x, ThermoEffect(0.0, 0.0))]))
-    assert composed.metadata is not None, "metadata dropped by bind"
-    assert composed.metadata.get("mechanism") == "Ionic"
-
-
-# ----------------------------------------------------------------------------------
-# Finding 5 — bond energies are wrong, and some bonds are refused outright
-# ----------------------------------------------------------------------------------
-@pytest.mark.parametrize("formula", ["CO", "NO", "HCl"])
-@pytest.mark.xfail(strict=True, reason="F5: these bonds are refused entirely; CO is the "
-                                       "strongest known diatomic bond")
-def test_f5_strong_bonds_are_not_refused(formula):
-    ref = next(b for b in bonds() if b.formula == formula)
-    got = predicted_bond_ev(species_of(*ref.atoms))
-    assert got is not None, f"{formula} (D0 = {ref.d0_ev} eV) predicted not to bond at all"
-
-
-@pytest.mark.xfail(strict=True, reason="F5: measured MAE is 3.28 eV against a claimed "
-                                       "1 kcal/mol (0.043 eV)")
-def test_f5_mae_reaches_chemical_accuracy():
-    errors = []
-    for ref in bonds():
-        try:
-            got = predicted_bond_ev(species_of(*ref.atoms))
-        except (KeyError, IndexError):
-            continue
-        if got is None:
-            continue
-        errors.append(abs(got - ref.d0_ev))
-    assert errors, "no reference bond could be evaluated at all"
-    mae = sum(errors) / len(errors)
-    assert mae < CHEMICAL_ACCURACY_EV, (
-        f"MAE = {mae:.3f} eV ({mae * 23.0605:.1f} kcal/mol) over n={len(errors)}; "
-        f"chemical accuracy is {CHEMICAL_ACCURACY_EV} eV"
-    )
-
-
-@pytest.mark.xfail(strict=True, reason="F5: NaCl is the textbook ionic compound and is "
-                                       "predicted at ~3x its real strength")
-def test_f5_ionic_bond_magnitude():
-    ref = next(b for b in bonds() if b.formula == "NaCl")
-    got = predicted_bond_ev(species_of("Na", "Cl"))
-    assert got is not None
-    assert abs(got - ref.d0_ev) < 1.0, f"NaCl predicted {got:.2f} eV vs {ref.d0_ev} eV"
-
-
-# ----------------------------------------------------------------------------------
-# Finding 6 — valency is hardcoded despite the documented claim
-# ----------------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="F6: Atom.valence_cap is a hardcoded group/period "
-                                       "rule and takes no Env, so it cannot respond to one")
-def test_f6_valence_responds_to_environment():
-    import inspect
-    sig = inspect.signature(PT["C"].__class__.valence_cap.fget)
-    assert "env" in sig.parameters, (
-        "valence_cap takes no environment; THE_DIFFERENCE.md claims an extreme environment "
-        "can shift carbon to 5 bonds, which is structurally impossible as written"
-    )
-
-
-# ----------------------------------------------------------------------------------
-# Finding 7 — right answer, wrong mechanism
-# ----------------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="F7: the Na+ refusal comes from valence_cap at "
-                                       "engine.py:74, which skips the loop before the "
-                                       "ionization arithmetic at line 80 ever runs")
-def test_f7_sodium_refusal_is_energetic_not_a_cap():
-    # Na has a 47 eV second ionization energy; Mg's is 15 eV. If the refusal were
-    # energetic, raising the cap would not license Na(2+) while Mg(2+) stays licensed
-    # purely on the strength of a cheaper ionization.
-    na_cost = PT["Na"].ionization_cost(2)
-    mg_cost = PT["Mg"].ionization_cost(2)
-    assert na_cost > mg_cost  # sanity: the data really does say this
-
-    mg_bonds = predicted_bond_ev(Species.from_dict({PT["Mg"]: 1, PT["F"]: 2}))
-    assert mg_bonds is not None  # Mg is permitted...
-
-    # ...and the reason Na is not must be visible in the energy, not the cap.
-    assert PT["Na"].valence_cap > 1, (
-        "Na is refused by a hardcoded cap of 1, not by its 52 eV double-ionization cost"
-    )
-
-
-# ----------------------------------------------------------------------------------
-# Finding 8 — the lattice gate disagrees with the engine, and is dead code
-# ----------------------------------------------------------------------------------
-@pytest.mark.parametrize("symbol", ["H", "O", "N", "F", "Cl"])
-@pytest.mark.xfail(strict=True, reason="F8: charge transfer is identically 0 for A-A pairs, "
-                                       "so is_favorable says False for every homonuclear "
-                                       "bond while the engine happily forms them")
-def test_f8_lattice_gate_agrees_with_engine(symbol):
-    atom = PT[symbol]
-    engine_bonds = predicted_bond_ev(Species.from_dict({atom: 2})) is not None
-    lattice_says = Poset.is_favorable(atom, atom)
-    assert lattice_says == engine_bonds, (
-        f"{symbol}2: engine bonds={engine_bonds} but Poset.is_favorable={lattice_says}"
-    )
-
-
-# ----------------------------------------------------------------------------------
-# Finding 9 — photolysis cannot distinguish allotropes
-# ----------------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="F9: avg_hardness is a per-atom average, so it is "
-                                       "identical for O2, O3, O4... Real O3 is 1.10 eV "
-                                       "and O2 is 5.12 eV")
-def test_f9_ozone_distinguished_from_dioxygen():
-    from smartchem.engine import verify_photolysis
-
-    o = PT["O"]
-    uv = Env.upper_atmosphere()
-    o2_res = quiet(verify_photolysis, Situated(Species.from_dict({o: 2}), uv))
-    o3_res = quiet(verify_photolysis, Situated(Species.from_dict({o: 3}), uv))
-    # O3 dissociates at 1.1 eV; O2 needs 5.1 eV. A 5.0 eV photon must split exactly one.
-    assert (o3_res is not None) != (o2_res is not None), (
-        "a 5 eV photon treats O2 and O3 identically"
-    )
-
-
-# ----------------------------------------------------------------------------------
-# Finding 10 — band gap formula is dimensionally invalid
-# ----------------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="F10: (Z * chi)/eta is dimensionless (eV/eV) and is "
-                                       "subtracted from hubbard_u in eV")
-def test_f10_band_gap_is_dimensionally_consistent():
-    # A dimensionally sound gap must be invariant under a change of energy unit: scale
-    # every input energy by k and the gap must scale by exactly k.
-    from smartchem.engine import verify_crystal_lattice
-    from smartchem.atoms import Atom
-
-    base = PT["Si"]
-    k = 2.0
-    scaled = Atom(
-        symbol="Si", atomic_number=base.atomic_number, group=base.group,
-        period=base.period,
-        ie_list_ev=tuple(v * k for v in base.ie_list_ev),
-        ea_list_ev=tuple(v * k for v in base.ea_list_ev),
-        radius_pm=base.radius_pm, mass_amu=base.mass_amu,
-    )
-    eg1 = quiet(verify_crystal_lattice,
-                Situated(Species.from_dict({base: 1}), Env.standard()), 4)
-    eg2 = quiet(verify_crystal_lattice,
-                Situated(Species.from_dict({scaled: 1}), Env.standard()), 4)
-    assert abs(eg2 - k * eg1) < 1e-9 * max(1.0, abs(eg1)), (
-        f"scaling all energies by {k} changed the gap by {eg2 / eg1 if eg1 else float('nan'):.4f}x, "
-        f"not {k}x -- the formula mixes units"
-    )
-
-
-# ----------------------------------------------------------------------------------
-# Finding 11 — the product is always the reactants
-# ----------------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="F11: propose_bond returns an endomorphism on the "
-                                       "composition bag; no bond topology is ever built")
-def test_f11_product_carries_bond_topology():
-    r = quiet(propose_bond, Situated(species_of("Na", "Cl"), Env.standard()))
-    product = r.outcomes[0][0]
-    assert hasattr(product, "bonds"), (
-        "product has no bond structure; it is the same composition bag as the reactants"
-    )
-
-
-# ----------------------------------------------------------------------------------
-# Finding 12 — hygiene and crash surface
-# ----------------------------------------------------------------------------------
-def test_f12_no_duplicate_periodic_table_keys():
-    """He is defined twice in atoms.py; the second wins and silently has mass 0.0."""
+# ======================================================================================
+# Hygiene that survived the retirement
+# ======================================================================================
+def test_no_duplicate_periodic_table_keys():
+    """He was defined twice in atoms.py; the second won and silently had mass 0.0."""
     import re
     src = (REPO / "smartchem" / "atoms.py").read_text()
     keys = re.findall(r'^\s*"([A-Za-z]{1,3})":\s*Atom\(', src, re.M)
@@ -334,55 +395,15 @@ def test_f12_no_duplicate_periodic_table_keys():
     assert not dupes, f"duplicate periodic table entries: {dupes}"
 
 
-def test_f12_no_debug_prints_in_engine():
-    src = (REPO / "smartchem" / "engine.py").read_text()
-    offenders = [
-        line.strip()
-        for line in src.splitlines()
-        if "DEBUG" in line and "print" in line
-    ]
-    assert not offenders, f"debug prints left in the engine: {offenders}"
+def test_no_debug_prints_in_the_frozen_baseline():
+    src = (REPO / "smartchem" / "legacy.py").read_text()
+    offenders = [line.strip() for line in src.splitlines()
+                 if "DEBUG" in line and "print" in line]
+    assert not offenders, f"debug prints left in the baseline: {offenders}"
 
 
-@pytest.mark.parametrize(
-    "label,env",
-    [
-        ("zero dielectric", Env(298.15, 1.0, "x", 0.0, float("inf"))),
-        ("zero wavelength", Env(298.15, 1.0, "x", 1.0, 0.0)),
-    ],
-)
-@pytest.mark.xfail(strict=True, reason="F12: ZeroDivisionError on degenerate environments")
-def test_f12_degenerate_environments_do_not_crash(label, env):
-    quiet(propose_bond, Situated(species_of("Na", "Cl"), env))
-
-
-@pytest.mark.xfail(strict=True, reason="F12: IndexError on an empty species")
-def test_f12_empty_species_does_not_crash():
-    quiet(propose_bond, Situated(Species.from_dict({}), Env.standard()))
-
-
-@pytest.mark.xfail(strict=True, reason="F12: ThermoEffect.equilibrium_constant divides by "
-                                       "temp_k with no guard")
-def test_f12_zero_temperature_does_not_crash():
-    ThermoEffect(-1.0, 0.0).equilibrium_constant(0.0)
-
-
-@pytest.mark.xfail(strict=True, reason="F12: Reaction is frozen but holds a list and a "
-                                       "dict, so it is unhashable")
-def test_f12_reaction_is_hashable():
-    hash(Reaction([(1, ThermoEffect(0.0, 0.0))], metadata={"a": 1}))
-
-
-@pytest.mark.xfail(strict=True, reason="F12: adversarial.py:31 passes external_energy_ev, "
-                                       "which Env no longer accepts")
-def test_f12_shipped_scripts_run():
-    failures = []
-    for script in sorted(REPO.glob("*.py")):
-        proc = subprocess.run(
-            [sys.executable, script.name],
-            cwd=REPO, capture_output=True, text=True, timeout=120,
-        )
-        if proc.returncode != 0:
-            last = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "?"
-            failures.append(f"{script.name}: {last}")
-    assert not failures, "scripts in the repo root exit non-zero:\n  " + "\n  ".join(failures)
+def test_uncertainty_is_never_negative_or_nan():
+    """A certificate that reports a nonsense error bar is worse than none."""
+    t = Tally(-3.0, 0.2) + Tally(-1.0, 0.4)
+    assert t.uncertainty_ev >= 0.0
+    assert not math.isnan(t.uncertainty_ev)

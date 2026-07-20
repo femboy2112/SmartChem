@@ -2,7 +2,7 @@
 
 *Where SmartChem sits relative to neighbouring tools — including where they beat it.*
 
-The previous version of this document claimed SmartChem was better than cheminformatics,
+The first version of this document claimed SmartChem was better than cheminformatics,
 better than neural potentials, better than DFT, and better than applied category theory,
 on every axis. Adversarial testing on 2026-07-20 falsified the central claims: measured
 accuracy was 76× worse than stated, CO was predicted not to bond at all, and the
@@ -40,10 +40,10 @@ drug-sized molecules; SmartChem's oracle interface handles diatomics.
 reaction template drop an atom; SmartChem raises `ConservationError` at construction.
 
 **Previously claimed, now withdrawn:** *"We do not hardcode valency."* The legacy
-`Atom.valence_cap` is a hardcoded group/period rule including an explicit octet check —
-precisely the thing RDKit was criticised for. It takes no environment argument and so
-cannot respond to one. Swept across four extreme environments including 5 MK and 10⁹ atm,
-carbon never exceeded 4 bonds.
+`Atom.valence_cap` was a hardcoded group/period rule including an explicit octet check —
+precisely the thing RDKit was criticised for. It took no environment argument and so could
+not respond to one. That module was retired on 2026-07-20; the current system models no
+valency at all, so the claim is not merely withdrawn but inapplicable.
 
 ## 2. vs. Neural potentials (ANI, MACE, AlphaFold3)
 
@@ -60,7 +60,8 @@ uncertainty.
 **Previously claimed, softened:** the "white box" framing was fair, but it was attached to
 an engine whose central covalent term was a constant fitted on two data points, with a
 comment in the source saying so. Being interpretable is worth little when what is being
-interpreted is a curve fit.
+interpreted is a curve fit. That engine is now frozen in `smartchem/legacy.py` and used
+only as the baseline the accurate tiers are measured against.
 
 ## 3. vs. Quantum chemistry (PySCF, ORCA, Gaussian)
 
@@ -70,11 +71,12 @@ gradients, solvation models, and molecules with more than two atoms.
 
 **SmartChem adds:** composition. It calls PySCF and wraps the result in structure that
 tracks provenance, enforces conservation across multi-step routes, and generates response
-surfaces.
+surfaces. It also makes basis choice a function of the *elements involved* rather than a
+global setting — see §5.
 
 **Previously claimed, withdrawn:** *"The Oracle Gate resolves in milliseconds what takes
 DFT hours, achieving chemical accuracy through structural entailment."* No. Chemical
-accuracy is reached by running CCSD(T) with basis-set extrapolation, at ~100 s per
+accuracy is reached by running CCSD(T) with basis-set extrapolation, at minutes per
 diatomic. The algebra contributed none of that accuracy.
 
 **What survived, in a different form:** there *is* a real speed argument, just not the one
@@ -100,22 +102,64 @@ The legacy engine proved nothing of the kind — it compared hand-fitted algebra
 expressions. Whether an arrow should exist is now answered by an oracle, and the oracle is
 PySCF.
 
+## 5. Where the typed framing pays off in the physics — and where it didn't
+
+**It pays off in the energy functor.** `E` is a monoidal functor from the reaction category
+to `(ℝ, +)`, and `ΔE(f : A → B) = E(B) − E(A)` is well defined *only because* every morphism
+conserves matter. Total energy has an arbitrary zero fixed by atom content; conservation is
+what makes the offsets cancel. Shift every atomic reference by a million eV and no reaction
+energy moves. That is category theory doing load-bearing physical work rather than
+describing chemistry that was already there.
+→ `tests/test_functor.py::TestConservationLicensesSubtraction`
+
+**It did not pay off in basis selection, and that was measured.** The reasoning was sound
+in shape: extrapolation only removes error the family is converging toward, so diffuse
+(ionic) and tight-*d* (second-row) deficiencies survive it; both are properties of the
+*elements*, so let the type of the object choose the basis.
+
+At **fixed cardinal** the probe supported it (CCSD(T)/TZ, signed error, kcal/mol):
+
+| species | plain | +diffuse | +tight *d* | both |
+|---|---|---|---|---|
+| CS | −6.56 | −3.80 | −5.17 | **−2.44** |
+| NaCl | −4.10 | −1.11 | −4.07 | **−1.11** |
+
+At the **extrapolated tier** it lost outright — 2.94 kcal/mol against 1.30 for plain
+`cbs(TZ,QZ)`, at 5.1× the cost. The inference failed at an identifiable step: "helps at TZ"
+was assumed to imply "helps after extrapolating from TZ and QZ." Extrapolation weights the
+larger basis by 64/37 and the smaller by −27/37, so it *amplifies* non-smoothness between
+them instead of averaging it out. Two different claims; only one was measured.
+
+Two corrections to the record fell out of this:
+
+- *"CS misses because sulfur wants tight d"* was borrowed from the literature, not measured.
+  Diffuse is worth +2.76 to CS and tight *d* only +1.39.
+- *"NaCl needs diffuse functions"* survives at fixed cardinal but is beside the point: plain
+  `cc-pVQZ` gives +0.39 kcal/mol and the extrapolation to `cbs(TZ,QZ)` makes it +3.38.
+  **For ionic species the extrapolation is the problem, not the basis.**
+
+The machinery is kept and tested but not recommended, for the same reason the legacy engine
+is kept: a negative result you can still run beats one you have to take on trust.
+
+The honest summary is that the typed framing bought a real theorem in the energy functor
+and bought nothing in basis selection, and only measurement could tell those apart.
+
 ---
 
 ## The claim that replaced the killer feature
 
-The previous document's headline was the *Multi-Electron Fixpoint Search*, which claimed
-the engine discovered iron's +2/+3 preference in water and refused Na²⁺ on the strength of
-its +47 eV second ionization energy.
+The first document's headline was the *Multi-Electron Fixpoint Search*, which claimed the
+engine discovered iron's +2/+3 preference in water and refused Na²⁺ on the strength of its
++47 eV second ionization energy.
 
 Both were tested. Neither held:
 
 - Sweeping FeO₁ through FeO₄ showed ΔG decreasing monotonically — the model preferred
   *maximum* oxidation, not +2/+3, and returned identical values in vacuum and in water.
-- The Na²⁺ refusal came from the hardcoded `valence_cap` of 1 at `engine.py:74`, which
-  skips the loop iteration *before* the ionization arithmetic at line 80 ever runs. Proof:
-  Mg, with `valence_cap` 2, is permitted to double-ionize at 22.68 eV. The advertised
-  energy wall never fired.
+- The Na²⁺ refusal came from the hardcoded `valence_cap` of 1 (`engine.py:74`, since
+  retired), which skipped the loop iteration *before* the ionization arithmetic at line 80
+  ever ran. Proof: Mg, with `valence_cap` 2, was permitted to double-ionize at 22.68 eV.
+  The advertised energy wall never fired.
 
 The replacement claim is smaller and true:
 

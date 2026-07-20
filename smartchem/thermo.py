@@ -1,135 +1,146 @@
 """
-Where the categorical layer meets the energy oracle.
+The energy functor: where the categorical layer meets the oracle.
 
-A ``Reaction`` from ``smartchem.category`` is a structurally valid morphism -- it conserves
-matter and charge by construction. That says nothing about whether it is energetically
-favourable. This module answers that second question, for any oracle, without the
-categorical layer having to know which oracle it is talking to.
+``smartchem.category`` gives a symmetric monoidal category of chemical configurations and
+conserving reactions. This module gives a **strong monoidal functor** from it to the
+additive reals:
 
-    reaction_energy(rxn, oracle) -> Estimate | None
+    E   : Ob(C) -> R          E(A (x) B) = E(A) + E(B),   E(I) = 0
+    dE  : C(A,B) -> R         dE(f : A -> B) = E(B) - E(A)
 
-The accounting is deliberately simple and stated out loud, because a hidden energy model
-is exactly how the legacy engine accumulated fitted constants nobody could see:
+with the two laws that make it a functor rather than a lookup:
 
-    E(config)  = -sum of the dissociation energies of every bond present
-    dH(A -> B) = E(cod) - E(dom)
+    dE(g . f) = dE(f) + dE(g)         functoriality  (energy is a path integral)
+    dE(id_A)  = 0                     identity
+    dE(f (x) g) = dE(f) + dE(g)       monoidality
 
-so forming a bond releases energy (negative dH) and breaking one costs it.
+checked in ``tests/test_functor.py``.
 
-Two rules inherited from the oracle layer:
+Why this is the load-bearing part
+---------------------------------
+``E(B) - E(A)`` is meaningful **only because every morphism conserves matter and charge.**
 
-* **Partial pricing is refused.** If any single bond in either configuration cannot be
-  priced, the whole reaction is declined. Quietly skipping the bond that the oracle could
-  not handle would silently understate the energy, which is the failure mode where a
-  wrong number looks like a right one.
-* **Uncertainty propagates.** Independent bond estimates add in quadrature, so the caller
-  always sees how much the answer is worth.
+Total energy has an arbitrary zero fixed by the atom content: PySCF reports CO at about
+-3074 eV, the legacy heuristic at about -11 eV, and both are correct on their own
+reference. Subtracting across configurations with *different* atoms would compare two
+different arbitrary zeros and produce a number with no physical content -- and it would
+look perfectly reasonable, which is worse.
 
-Bond order and what it does *not* do
-------------------------------------
-An oracle prices an atom **pair**, and what it returns is the dissociation energy of that
-pair's ground-state diatomic -- for ``("C", "O")`` that is the full 11.16 eV triple bond,
-not a C-O single bond. So bond order is deliberately **not** used as a multiplier here.
-Scaling by order would triple-count CO.
+``Reaction.__post_init__`` guarantees ``formula(dom) == formula(cod)``. That is exactly the
+condition under which the per-atom offsets appear identically on both sides and cancel.
 
-The honest consequence: this module cannot currently distinguish a C-C single bond from a
-C=C double bond, because the oracle interface has no way to be told which was meant. That
-is exact for diatomics (the whole reference set) and an approximation for polyatomics.
-Fixing it means extending the oracle protocol to accept a bond order, not inventing a
-scaling factor at this layer -- which is precisely the kind of unlabelled fudge that put
-a hand-fitted 0.1 into the legacy engine.
+So the conservation theorem is not a safety check bolted onto a chemistry model. It is the
+**precondition that makes the energy functor well defined**, and functoriality is what makes
+a multi-step mechanism's energy equal the sum of its steps rather than merely be reported
+alongside them. That is the categorical structure doing physical work.
+→ ``tests/test_functor.py::TestConservationLicensesSubtraction``
+
+What changed, and why
+---------------------
+This module used to compute ``E(config) = -sum of dissociation energies of the bonds
+present`` -- bond additivity, with the oracle asked about atom *pairs*. That made
+bond-additivity an assumption of the architecture rather than a property of a particular
+oracle, and it had three consequences that were really one defect: polyatomic species were
+structurally unreachable, bond order could not be priced, and the energy of an object was
+a sum over edges rather than a property of the object.
+
+The oracle primitive is now ``energy(molecule)``. A bond-additive oracle still answers by
+summing over edges (see ``HeuristicOracle``), and a correlated method answers by solving
+the electronic structure -- but that is now a visible difference between oracles instead of
+a hidden assumption of the framework.
+
+Partial pricing is still refused: if any species in a configuration cannot be priced, the
+whole configuration declines. Quietly skipping the species an oracle could not handle would
+understate the energy, which is the failure mode where a wrong number looks like a right
+one.
 """
 from __future__ import annotations
 
-import math
-
-from .category import Config, Molecule, Reaction
+from .category import Config, Reaction
 from .oracle.base import Estimate
 
 
-def _bond_estimates(config: Config, oracle) -> list[Estimate] | None:
+def configuration_energy(config: Config, oracle) -> Estimate | None:
     """
-    Price every bond in a configuration. None if any bond cannot be priced.
+    ``E(A)``: total energy of a configuration, in eV, on the oracle's own zero.
 
-    Returns an empty list for a configuration of unbonded atoms, which is correct:
-    free atoms have no bonding energy, not an unknown one.
+    This is the object half of the functor, and the sum *is* the monoidal law:
+    ``E(A (x) B) = E(A) + E(B)`` holds because a tensor of configurations is the multiset
+    union of their species, and this walks that multiset.
+
+    The empty configuration has energy exactly zero -- ``E(I) = 0``, the unit law. That is
+    a real value, not a refusal.
+
+    None if any species cannot be priced.
     """
-    out: list[Estimate] = []
-    for mol in config.species:
-        for bond in sorted(mol.bonds):
-            pair = (mol.atoms[bond.i], mol.atoms[bond.j])
-            est = oracle.estimate(pair)
-            if est is None:
-                return None
-            if bond.order != 1:
-                # NOT scaled by order -- see the module docstring. The oracle already
-                # returns the ground-state diatomic's full dissociation energy, so the
-                # multiple-bond character is priced in. Recorded so the caller knows the
-                # order was observed and deliberately not used as a multiplier.
-                est = Estimate(
-                    value_ev=est.value_ev,
-                    uncertainty_ev=est.uncertainty_ev,
-                    method=est.method,
-                    seconds=est.seconds,
-                    notes=f"{est.notes}; declared order {bond.order}, priced as the "
-                          f"ground-state diatomic (order not used as a multiplier)",
-                )
-            out.append(est)
-    return out
-
-
-def bonding_energy(config: Config, oracle) -> Estimate | None:
-    """
-    Total bonding energy of a configuration, in eV. Negative = bound.
-
-    None if any bond cannot be priced by this oracle.
-    """
-    ests = _bond_estimates(config, oracle)
-    if ests is None:
-        return None
-    if not ests:
-        return Estimate(0.0, 0.0, getattr(oracle, "name", "?"), 0.0, "no bonds")
-    total = -sum(e.value_ev for e in ests)
-    unc = math.sqrt(sum(e.uncertainty_ev ** 2 for e in ests))
-    seconds = sum(e.seconds for e in ests)
-    multiple = any("declared order" in e.notes for e in ests)
-    return Estimate(
-        value_ev=total,
-        uncertainty_ev=unc,
-        method=getattr(oracle, "name", "?"),
-        seconds=seconds,
-        notes=f"{len(ests)} bond(s)"
-              + ("; multiple bonds priced as ground-state diatomics" if multiple else ""),
-    )
+    total = Estimate.zero(getattr(oracle, "name", "?"))
+    for molecule in config.species:
+        part = oracle.energy(molecule)
+        if part is None:
+            return None
+        total = total + part
+    return total
 
 
 def reaction_energy(reaction: Reaction, oracle) -> Estimate | None:
     """
-    Enthalpy change of a reaction, in eV. Negative = exothermic.
+    ``dE(f)``: enthalpy change of a reaction, in eV. Negative = exothermic.
 
-    None if either side cannot be fully priced. The categorical layer has already
-    guaranteed the reaction conserves matter and charge; this adds only the energetics.
+    Well defined precisely because ``reaction`` conserves matter and charge, so the
+    oracle's arbitrary energy zero cancels between ``cod`` and ``dom``. See the module
+    docstring; this single subtraction is where the conservation theorem earns its keep.
+
+    None if either side cannot be fully priced.
     """
-    dom = bonding_energy(reaction.dom, oracle)
-    cod = bonding_energy(reaction.cod, oracle)
+    dom = configuration_energy(reaction.dom, oracle)
+    cod = configuration_energy(reaction.cod, oracle)
     if dom is None or cod is None:
         return None
+    # The subtraction is where both the arbitrary energy zero and any systematic model
+    # correction cancel. Only what survives that cancellation should widen the error bar.
+    delta = (cod - dom).with_honest_uncertainty()
     return Estimate(
-        value_ev=cod.value_ev - dom.value_ev,
-        uncertainty_ev=math.sqrt(dom.uncertainty_ev ** 2 + cod.uncertainty_ev ** 2),
+        value_ev=delta.value_ev,
+        uncertainty_ev=delta.uncertainty_ev,
         method=getattr(oracle, "name", "?"),
-        seconds=dom.seconds + cod.seconds,
+        seconds=delta.seconds,
         notes=f"{reaction.dom} -> {reaction.cod}",
+        extrapolation_ev=delta.extrapolation_ev,
     )
+
+
+def bonding_energy(config: Config, oracle) -> Estimate | None:
+    """
+    Energy of a configuration relative to its own free atoms. Negative = bound.
+
+    Derived from the functor rather than primitive: it is ``dE`` of the (conserving)
+    morphism from free atoms to this configuration, so it inherits the same guarantee.
+    Kept because "how bound is this?" is the question a chemist actually asks, whereas
+    ``configuration_energy`` returns a number on an arbitrary scale.
+
+    None if either the configuration or its free atoms cannot be priced.
+    """
+    whole = configuration_energy(config, oracle)
+    if whole is None:
+        return None
+    free = configuration_energy(Config.atoms(*_all_atoms(config)), oracle)
+    if free is None:
+        return None
+    return whole - free
+
+
+def _all_atoms(config: Config) -> tuple[str, ...]:
+    """Every atom in the configuration, as free-atom symbols."""
+    return tuple(symbol for molecule in config.species for symbol in molecule.atoms)
 
 
 def is_exothermic(reaction: Reaction, oracle) -> bool | None:
     """
     True / False / None-if-unknown.
 
-    None is a real answer here and must not be collapsed to False: "the oracle cannot
-    price this" and "this reaction is uphill" are different facts, and conflating them is
-    how an unpriceable reaction gets silently reported as unfavourable.
+    None is a real answer and must not be collapsed to False: "the oracle cannot price
+    this" and "this reaction is uphill" are different facts, and conflating them is how an
+    unpriceable reaction gets silently reported as unfavourable.
     """
     est = reaction_energy(reaction, oracle)
     return None if est is None else est.value_ev < 0.0

@@ -13,7 +13,7 @@ Known structural limits, measured not guessed (see tests/test_findings.py):
 * Cannot describe homonuclear bonding through its charge-transfer term, which is
   identically zero when the two atoms are the same element. The homonuclear path is a
   separate hand-fitted branch whose scaling constant was tuned on exactly two data
-  points (H2 and F2) -- see the comment at engine.py:94.
+  points (H2 and F2) -- see the comment at legacy.py:275.
 
 It is kept because a baseline you can measure is worth more than a baseline you deleted.
 """
@@ -25,7 +25,8 @@ import time
 
 from .base import BaseOracle, Estimate
 from ..atoms import PT, Species
-from ..comonad import Env, Situated
+from ..category import Molecule
+from ..legacy import Env, Situated
 
 
 class HeuristicOracle(BaseOracle):
@@ -36,8 +37,41 @@ class HeuristicOracle(BaseOracle):
     def __init__(self, env: Env | None = None):
         self.env = env or Env.standard()
 
-    def estimate(self, symbols: tuple[str, ...]) -> Estimate | None:
-        from ..engine import propose_bond
+    def energy(self, molecule: Molecule) -> Estimate | None:
+        """
+        Total energy of a species on the free-atom zero: ``E = -sum(bond energies)``.
+
+        This oracle is bond-additive, and that is now a statement about *this
+        implementation* rather than about the framework. The interface asks for the energy
+        of a species; a bond-additive model answers by summing over edges, and a
+        correlated method answers by solving the electronic structure. Both satisfy the
+        same contract, and the difference between them becomes visible in the numbers
+        rather than baked into the architecture.
+
+        The zero here is free atoms (E(atom) = 0), not PySCF's total electronic energy.
+        Different zero, same contract -- it is consistent across every species this
+        instance prices, so it cancels in any conserving difference.
+        """
+        if molecule.charge != 0:
+            return None
+        if not molecule.bonds:
+            # A free atom. Zero by definition of this oracle's reference, exactly -- not
+            # an unknown, so it must not decline.
+            return Estimate(0.0, 0.0, self.name, 0.0, f"free atom {molecule.atoms[0]}"
+                            if len(molecule.atoms) == 1 else "unbonded atoms")
+
+        total = Estimate.zero(self.name)
+        for bond in sorted(molecule.bonds):
+            pair = (molecule.atoms[bond.i], molecule.atoms[bond.j])
+            est = self._pair_energy(pair)
+            if est is None:
+                return None      # partial pricing is refused; see the module docstring
+            total = total + est
+        return -total            # bonding releases energy: bound species sit below zero
+
+    def _pair_energy(self, symbols: tuple[str, ...]) -> Estimate | None:
+        """Dissociation energy of one atom pair, via the frozen legacy engine."""
+        from ..legacy import propose_bond
 
         counts: dict = {}
         for s in symbols:
@@ -69,5 +103,5 @@ class HeuristicOracle(BaseOracle):
             method=f"legacy heuristic ({meta.get('mechanism', 'unknown')}, "
                    f"n={meta.get('transfer_n', '?')})",
             seconds=dt,
-            notes="hand-fitted constants; see engine.py:94",
+            notes="hand-fitted constants; see legacy.py:275",
         )

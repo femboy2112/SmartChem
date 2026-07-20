@@ -20,6 +20,7 @@ microsecond heuristic or on CCSD(T)/CBS. Accuracy is a dial, not a property.
 Layer 3  Search & verification    pathway.py · store.py · bench.py
 Layer 2  Categorical core         category.py · thermo.py
 Layer 1  Energy oracle            oracle/base.py + heuristic.py + pyscf_oracle.py
+                                  oracle/caching.py   (wraps any tier of the dial)
 Layer 1' Structure                geometry.py            (seed → relax → certify)
 Layer 0  Data                     atoms.py · data/reference.py · data/basis_tight_d.py
 ```
@@ -31,12 +32,13 @@ Nothing in Layer 2 or 3 knows which oracle it is talking to. That is the whole d
 | File | Lines | What it is |
 |---|---:|---|
 | `smartchem/atoms.py` | 149 | Periodic-table data. Ionization energies, affinities, radii. Kept from the original build; the data was always good. |
-| `smartchem/data/reference.py` | 404 | **Experimental ground truth.** Diatomic D₀, band gaps, diatomic geometries, and polyatomic enthalpies of formation at 0 K. Every accuracy claim is measured against this file. |
+| `smartchem/data/reference.py` | 438 | **Experimental ground truth.** Diatomic D₀, band gaps, diatomic geometries, and polyatomic enthalpies of formation at 0 K (16 species; the C3 entries from ATcT, the rest CCCBDB). Every accuracy claim is measured against this file. |
 | `smartchem/data/basis_tight_d.py` | 1111 | Tight-d basis augmentation for second-row elements. Generated data, not hand-written. |
-| `smartchem/category.py` | 636 | **The load-bearing layer.** `Molecule` (atoms + bond topology + charge), `Config` (multiset of molecules), `Reaction` (morphism with conservation enforced in the smart constructor). Composition, tensor, braiding, identity. Plus the structural predicates `is_bond_order_conserving`, `is_isodesmic`, `is_catalytic`. |
+| `smartchem/category.py` | 885 | **The load-bearing layer.** `Molecule` (atoms + bond topology + charge + opaque internal state), `Config` (multiset of molecules), `Reaction` (morphism with conservation enforced in the smart constructor). Composition, tensor, braiding, identity. Canonicalisation by symbol class, refined by Weisfeiler-Leman colour when that is not enough. Plus the structural predicates `is_bond_order_conserving`, `is_isodesmic`, `is_catalytic`. |
 | `smartchem/geometry.py` | 545 | **Seed → relax → certify.** VSEPR-based coordinate seeding from the bond graph, Cartesian L-BFGS relaxation, Eckart-projected harmonic analysis. Deliberately PySCF-free so two of its three stages test without quantum chemistry. |
-| `smartchem/oracle/base.py` | 233 | The `EnergyOracle` protocol and `Estimate` — a value with an uncertainty *and* a signed systematic channel. |
-| `smartchem/oracle/heuristic.py` | 107 | The original algebraic model, preserved unchanged as the baseline every later oracle must beat. |
+| `smartchem/oracle/base.py` | 257 | The `EnergyOracle` protocol and `Estimate` — a value with an uncertainty *and* a signed systematic channel. Plus the guard that makes oracles decline what they cannot value. |
+| `smartchem/oracle/heuristic.py` | 117 | The original algebraic model, preserved unchanged as the baseline every later oracle must beat. |
+| `smartchem/oracle/caching.py` | 109 | Prices each distinct species once per search. Measured 33.5× on a 45-reaction network; the saving rests entirely on canonicalising the cache key. |
 | `smartchem/oracle/pyscf_oracle.py` | 707 | Real quantum chemistry. HF / MP2 / CCSD(T), basis-set extrapolation, geometry optimisation, polyatomic support. |
 | `smartchem/thermo.py` | 169 | The **strong monoidal functor** from the category to the additive reals. Where structure meets energy. |
 | `smartchem/store.py` | 226 | The **actual** Store comonad, `(Env, Env → a)`. One local definition yields a whole response surface. |
@@ -60,23 +62,36 @@ systematic channel separate is what lets a basis-extrapolation correction cancel
 molecule and its free atoms while a zero-point-energy bias correctly does *not* — with no
 special-casing anywhere.
 
-**3. Getting a geometry is three problems, not one.**
+**3. The categorical layer is not about chemistry, and that is checked, not claimed.**
+Objects are labelled graphs over opaque symbols with an integer charge and an opaque
+internal state; conservation is over composition and charge only. So the same machinery
+that makes `Fe + O + Cl → FeO` unconstructible makes a Kirchhoff-violating node
+unconstructible, and a series RC differs from a parallel RC for exactly the reason `Na +
+Cl` differs from `NaCl`. `tests/test_domain_neutral.py` instantiates the category on
+radiation and on circuits and runs the real laws over them — because an audit that
+`category.py` imports only the standard library was *true* while the structure still
+could not express a radiating antenna. What foreclosed it was not an import; it was that
+the conserved signature and the state label were the same field.
+
+**4. Getting a geometry is three problems, not one.**
 Seed (combinatorics, no wavefunction) → relax (needs gradients) → certify (needs a Hessian).
 Only one touches an oracle, and never the expensive one. Candidate generation never upgrades
 proof status: VSEPR proposes, the frequency analysis disposes. An imaginary frequency means
 the structure is a saddle, not a molecule — and the imaginary mode's eigenvector points
 downhill, so the diagnosis and the repair are the same object.
 
-## Tests — 366 fast, 10 slow
+## Tests — 422 fast, 10 slow
 
 | File | Covers |
 |---|---|
-| `test_laws.py` | Category/SMC/monad/comonad laws; conservation under composition and tensor (hypothesis); canonicalisation exactness |
+| `test_laws.py` | Category/SMC/monad/comonad laws; conservation under composition and tensor (hypothesis); canonicalisation exactness against brute force over all n! |
 | `test_findings.py` | One named regression test per defect found in the original build |
 | `test_functor.py` | Strong monoidal functor laws; spectator cancellation |
 | `test_geometry.py` | Seeding, relaxation, Eckart projection, harmonic analysis, the mode-following repair |
 | `test_reference.py` | The reference data itself — two-source, internal-algebra, and physical-sanity checks |
 | `test_shortcuts.py` | The measured structural shortcuts and their controls |
+| `test_domain_neutral.py` | The category instantiated on radiation, Kirchhoff's current law, and RC/LC networks — neutrality demonstrated rather than asserted |
+| `test_caching.py` | The species cache: that it saves, that it changes nothing, and where it decays |
 | `test_thermo.py`, `test_store.py`, `test_pathway.py`, `test_basis_policy.py` | Their respective modules |
 
 ```bash

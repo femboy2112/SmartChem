@@ -25,6 +25,7 @@ from __future__ import annotations
 import pytest
 
 from smartchem.category import (
+    Bond,
     Config,
     Molecule,
     Reaction,
@@ -192,6 +193,77 @@ class TestIsodesmicIsStrictlyStronger:
         rxn = Reaction(Config.of(_atom("H"), _atom("H")), Config.of(_dia("H", "H")))
         assert is_bond_order_conserving(rxn) is False
         assert is_isodesmic(rxn) is False
+
+    def test_scaling_a_reaction_does_not_change_either_verdict(self):
+        """
+        Both predicates compare multisets, so doubling every coefficient must be a no-op.
+        Worth pinning because the reaction enumerator relies on it: it discards 2X -> 2Y as
+        a duplicate of X -> Y, which is only sound if the classification agrees.
+        """
+        single = Reaction(Config.of(_dia("H", "Cl"), _atom("F")),
+                          Config.of(_dia("H", "F"), _atom("Cl")))
+        doubled = Reaction(
+            Config.of(_dia("H", "Cl"), _dia("H", "Cl"), _atom("F"), _atom("F")),
+            Config.of(_dia("H", "F"), _dia("H", "F"), _atom("Cl"), _atom("Cl")),
+        )
+        assert is_isodesmic(single) == is_isodesmic(doubled)
+        assert is_bond_order_conserving(single) == is_bond_order_conserving(doubled)
+
+
+class TestIsodesmicCoverageWasTheBlocker:
+    """
+    Why `is_isodesmic` went unmeasured for so long, recorded as a fact about the SPECIES
+    SET rather than about the energies.
+
+    Enumerating every mass-balanced reaction over the nine originally-referenced species
+    and letting the predicate sort them returned exactly ONE strictly isodesmic reaction.
+    The blocker was never the cost of the energies -- it was that n=1 cannot measure a
+    predicate, and no amount of care with the oracle changes that.
+
+    This is the shape of mistake worth pinning: the obvious next step (run better energies)
+    would have produced a confident-looking number from a sample of one.
+    """
+
+    #: bond-order-conserving, and the ONLY isodesmic reaction available over the original
+    #: nine species. Every other conserving reaction there changes at least one bond TYPE.
+    ETHANOL_SWAP = ("C2H6 + CH3OH -> C2H5OH + CH4",)
+
+    def test_a_reaction_can_conserve_order_while_changing_every_type(self):
+        """
+        The reason the isodesmic set is so much thinner than the order-conserving one.
+        C2H6 + H2 -> 2 CH4 keeps the bond-order multiset (8 single in, 8 single out) while
+        replacing a C-C and an H-H with two C-H. Order is cheap to conserve; type is not.
+        """
+        c2h6 = Molecule(("C", "C", "H", "H", "H", "H", "H", "H"),
+                        frozenset({Bond(0, 1), Bond(0, 2), Bond(0, 3), Bond(0, 4),
+                                   Bond(1, 5), Bond(1, 6), Bond(1, 7)}))
+        ch4 = Molecule(("C", "H", "H", "H", "H"),
+                       frozenset({Bond(0, 1), Bond(0, 2), Bond(0, 3), Bond(0, 4)}))
+        rxn = Reaction(Config.of(c2h6, _dia("H", "H")), Config.of(ch4, ch4))
+        assert is_bond_order_conserving(rxn)
+        assert not is_isodesmic(rxn)
+
+    def test_the_species_that_unlock_the_class_are_cheap_to_canonicalise(self):
+        """
+        The fix was coverage, and it had to be coverage the canonicaliser could afford.
+        Each of these unlocks at least one strictly isodesmic reaction and costs less than
+        the budget by orders of magnitude; propane would unlock more and does not.
+        """
+        from smartchem.category import _MAX_CANONICAL_CANDIDATES, _canonical_cost
+
+        affordable = {
+            "CH2O": ("C", "O", "H", "H"),
+            "HCOOH": ("C", "O", "O", "H", "H"),
+            "CH3OCH3": ("C", "C", "O", "H", "H", "H", "H", "H", "H"),
+        }
+        for name, atoms in affordable.items():
+            assert _canonical_cost(atoms) < _MAX_CANONICAL_CANDIDATES / 10, name
+
+        propane = ("C", "C", "C") + ("H",) * 8
+        assert _canonical_cost(propane) > _MAX_CANONICAL_CANDIDATES, (
+            "propane is expected to remain out of reach until the canonical key is "
+            "refined by degree as well as symbol"
+        )
 
 
 class TestTheMeasuredEffectIsRecorded:

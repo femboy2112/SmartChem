@@ -1,89 +1,193 @@
 # THE ORBITAL
 
-*The formal core of SmartChem — categorical structures that make chemical reactions and atomic behaviors into mathematical operations.*
+*Specification of SmartChem's categorical core.*
 
-> **The thesis:** A chemical reaction is not just a transformation of matter, but a *morphism* governed by a strict categorical structure. The environment provides a comonadic context, the reaction itself is a monad carrying thermodynamic effects, and the periodic table forms a lattice of interacting potentials. By modeling chemistry through category theory, we can predict behaviors of known atoms, extrapolate to the bleeding edge of molecular interactions, and eventually predict entirely new phenomena.
+Every claim in this document names the test that backs it. A claim without a test does not
+belong here — that rule is what separates this version from the one it replaces, which
+described a system considerably more capable than the one that shipped.
 
----
-
-## I. THE CHEMICAL SPACE — A Symmetric Monoidal Category
-
-### Objects
-The base objects in our category **Chem** are chemical species: Atoms, Ions, and Molecules. 
-An object `A ∈ Chem` is a bundle of quantum properties (atomic number, electron configuration, electronegativity, orbitals).
-
-### The Monoidal Structure
-Chemistry is fundamentally compositional. We use a **Symmetric Monoidal Category** where the tensor product `⊗` represents species existing together in a shared physical space (the reaction vessel).
-
-- `A ⊗ B`: Species A and species B in proximity.
-- Symmetry: `A ⊗ B ≅ B ⊗ A`
-- Unit `I`: The vacuum (or inert state).
-
-### The Morphisms
-A morphism `f: A ⊗ B → C ⊗ D` is a chemical reaction. It maps reactants to products. But reactions aren't just bare mappings—they are context-dependent and carry physical effects.
+> **Thesis.** A chemical reaction is a morphism in a symmetric monoidal category whose
+> objects carry bond topology. Conservation is enforced at construction, so it holds for
+> every composite by theorem rather than by vigilance. The environment is a Store comonad,
+> so one local definition yields an entire response surface. Mechanism search is a
+> Writer-over-List monad, so energy bookkeeping and provenance cannot drift out of step
+> with the route. Energy is supplied by a pluggable oracle, so accuracy is a dial.
 
 ---
 
-## II. THE ENVIRONMENTAL COMONAD — The Context
+## I. THE CATEGORY — objects
 
-A reaction does not happen in a void. It happens at a specific Temperature, Pressure, and within a Solvent. We model this as a **store comonad `W`** (the Environmental Comonad).
-
-### The Comonad `W`
-For a species `A`, `W(A)` represents "species A situated in an environment".
-
-- **Extract (`ε : W(A) → A`)**: Stripping away the environment to look at the bare chemical species.
-- **Extend (`δ : W(A) → W(W(A))`)**: If we know how an environment affects a local species, we can extend this understanding over the entire environmental context.
-
-A true chemical reaction is thus a morphism from a comonadic state: `W(A ⊗ B) → ...`
-The comonad dictates whether a reaction is even *licensed*. For instance, some atoms only ionize at high temperatures. The comonadic context provides the thermal energy required to cross the activation barrier.
-
----
-
-## III. THE THERMODYNAMIC MONAD — The Effect
-
-When a reaction occurs, it changes the world: heat is released or absorbed (Enthalpy), entropy changes, and multiple equilibrium states might be reached. This is an **Effect Monad `T`**.
-
-### The Monad `T`
-`T(A)` represents a superposition of chemical states paired with their thermodynamic footprint `ΔG` (Gibbs Free Energy).
+**Objects are configurations: multisets of molecules, each with explicit bond topology.**
+→ `smartchem/category.py`, `tests/test_laws.py::TestObjectStructure`
 
 ```
-T(A) = { (P_i, ΔG_i) }   where P_i are possible product states.
+Bond      = (i, j, order)              positions within one molecule
+Molecule  = (atoms, bonds, charge)     one connected species
+Config    = multiset of Molecule       the contents of the vessel — the OBJECT
 ```
 
-The composition of reactions (`bind` or `>>=`) accumulates the thermodynamic effects. A reaction pathway is valid if the total `ΔG < 0` (spontaneous), or if the Comonad `W` provides enough energy to overcome a `ΔG > 0`.
+Topology is load-bearing, not ornamental. Were an object a bare bag of atoms, `Na + Cl` and
+`NaCl` would be the *same object*; every conserving reaction would be an endomorphism and
+there would be nothing to reason about. That was a real defect in the previous
+implementation, where every computed "product" was its own reactants.
+→ `::test_bonded_and_unbonded_are_distinct_objects`
 
-### The Reaction Adjunction
-The interaction between the environment and the reaction forms an adjunction. The environment *provides* the conditions (Comonad), and the reaction *produces* the effects (Monad). 
+`Config` canonicalises its species multiset, and `Molecule` canonicalises under relabelling,
+so equality is structural and deterministic. The predecessor used a `frozenset`, whose
+iteration order varies with `PYTHONHASHSEED`.
+→ `::test_canonical_form_is_order_independent`
 
----
+Canonicalisation is brute-force over permutations and is capped at 8 atoms. Above the cap it
+raises rather than returning something non-canonical.
+→ `::test_large_molecule_refuses_rather_than_lies`
 
-## IV. THE LATTICE OF ELEMENTS
+## II. THE CATEGORY — morphisms and the conservation theorem
 
-The Periodic Table is not just a list; it is a **Partially Ordered Set (Poset)** and a Lattice.
+A morphism `f : A → B` is a reaction. The constructor enforces:
 
-### The Order: Electronegativity and Orbital Energy
-We define a partial order `≤` based on electron affinity and orbital energy.
-`A ≤ B` implies `B` can oxidize `A` (B takes electrons from A).
+```
+formula(dom) == formula(cod)      atoms conserved
+charge(dom)  == charge(cod)       charge conserved
+```
 
-- **Join (`A ∨ B`)**: In a molecular bond, the bonding molecular orbital (HOMO).
-- **Meet (`A ∧ B`)**: The anti-bonding orbital (LUMO).
+**The theorem.** Checked once on generators, inherited by every composite:
 
-### Frontier Molecular Orbital (FMO) Theory as Lattice Operations
-For a reaction to occur between `A` and `B`, the HOMO of `A` must interact with the LUMO of `B`. The cognitive "distance" in our figurative engine translates to **Energy Gap (ΔE)** in SmartChem.
-- If `ΔE` is too large, no reaction occurs (inert).
-- If `ΔE` is perfectly matched, the reaction is violently favorable.
-- The "Goldilocks Zone" is the regime of interesting, tunable chemistry.
+```
+f : A → B, g : B → C conserve   ⟹   g∘f : A → C conserves      (transitivity)
+f : A → B, g : C → D conserve   ⟹   f⊗g : A⊗C → B⊗D conserves   (additivity)
+```
 
----
+→ `::test_composition_inherits_conservation`, `::test_tensor_inherits_conservation`,
+verified against hypothesis-generated chains rather than examples.
 
-## V. THE VERIFICATION GATE (SmartChem Oracle)
+A violating reaction is therefore **unconstructible**, not merely absent.
+→ `::test_violating_reaction_is_unconstructible`, `::test_charge_violation_is_unconstructible`
 
-Just as in SmartASM and FigurativeEngine, predictions are born *unverified*.
+Morphisms carry their **path** — the sequence of elementary steps traversed. Two mechanisms
+with identical endpoints stay distinct, which mechanism search requires. It also makes the
+category laws hold for the right reason: associativity is associativity of concatenation,
+and the identity laws hold because the empty tuple is its unit.
+→ `::TestCategoryLaws`
 
-1. **Candidate Generation**: The system proposes a reaction pathway `F(A ⊗ B)`.
-2. **Context Gate**: Does the Comonad `W` license this? (Is T high enough? Is the solvent right?)
-3. **Effect Gate**: Is the Monad `T` yielding `ΔG < 0`?
-4. **Lattice Gate**: Do the orbital energies align? (HOMO-LUMO gap within bounds).
-5. **Oracle Certification**: We cross-reference with firmly established empirical data (NIST, PubChem) or ab-initio quantum chemistry calculations (Density Functional Theory).
+Composition is defined only when `cod(f) == dom(g)`; a mismatch raises.
+→ `::test_composition_rejects_mismatch`
 
-Once we map the known periodic table into this categorical framework, the structure will naturally highlight gaps and *predict* properties of novel interactions or extreme environments.
+## III. THE MONOIDAL STRUCTURE
+
+`A ⊗ B` is both configurations in one vessel; the unit `I` is the empty vessel.
+→ `::TestMonoidalLaws`
+
+Symmetry `A ⊗ B ≅ B ⊗ A` holds **on the nose**, because `Config` canonicalises its multiset.
+The braiding is therefore an identity. That is the honest statement — the previous version
+claimed a symmetric monoidal structure without anything checking it.
+→ `::test_symmetry`, `::test_braid_is_well_typed`
+
+## IV. THE ENVIRONMENT — a Store comonad
+
+→ `smartchem/store.py`, `tests/test_store.py`
+
+The previous specification claimed a Store comonad. The code implemented a **Coreader**:
+
+```
+Coreader   W a = (a, e)         a value, and the environment it sits in
+Store      W a = (e → a, e)     a way to compute the value at ANY environment,
+                                plus the one currently in focus
+```
+
+Coreader is a lawful comonad and its laws did hold. But its `extend` can only ever see the
+single environment it was handed, so it computes one answer. Store re-focuses everywhere, so
+`extend` turns one local definition into the **entire response surface** — solvent series,
+phase diagram, pressure sweep.
+
+```
+extract : W a → a                 the value here
+extend  : (W a → b) → W a → W b   that value, computed everywhere
+```
+
+→ `::TestComonadLaws` (checked extensionally — function equality is undecidable, so laws are
+verified by agreement at sampled positions)
+
+`survey` and `response_surface` are implemented **through** `extend`. Remove `extend` and they
+fail. In the predecessor, `extend` had zero call sites and every test still passed.
+→ `::TestResponseSurface`
+
+**Flat surfaces are detectable.** `is_responsive` flags a property that does not vary across
+a swept axis, which is nearly always a branch ignoring the variable. This is the structural
+detector for the defect where NaCl returned byte-identical energies across dielectric 1.0 →
+109.0.
+→ `::TestResponsiveness`
+
+## V. MECHANISM SEARCH — a Writer-over-List monad
+
+→ `smartchem/pathway.py`, `tests/test_pathway.py`
+
+```
+Pathway a = WriterT Tally []
+```
+
+The **list** branches over competing mechanisms; the **writer** accumulates a `Tally`
+(energy, uncertainty, provenance) along each branch.
+
+`Tally` is a **monoid**, and that is load-bearing rather than pedantic: it is the
+precondition for a lawful Writer, and it is what makes the certificate survive composition.
+The predecessor's `bind` rebuilt its result without carrying `metadata`, so the "rigorous
+mathematical certificate" was destroyed by the first compose.
+→ `::TestTallyMonoid`, `::TestCertificateSurvivesBind`
+
+Uncertainty adds in quadrature, treating step estimates as independent. Stated as an
+assumption rather than buried: correlated errors would add closer to linearly, so a long
+route's reported uncertainty is a lower bound.
+
+`bind` is the only mechanism by which pathways compose.
+→ `::TestMonadLaws`, `::TestSearch`
+
+## VI. CATALYSIS — decided, not asserted
+
+A catalytic step is a morphism `C ⊗ S → C ⊗ P`: the catalyst appears in source and target
+with equal multiplicity. This is a **structural property, decided by inspection**.
+
+`catalytic_cycles` returns the composed morphism as evidence, so the caller can re-check it
+independently. The predecessor printed *"Catalytic Loop Closed mathematically"* with no
+computation behind it, on a supporting edge that had silently lost its nitrogen.
+→ `::TestCatalysis`, `::TestCatalyticCycles`
+
+A structural verdict says the catalyst survives the step. It says nothing about whether the
+step is kinetically or thermodynamically accessible — those are the oracle's business and
+are reported separately.
+
+## VII. ENERGY — a pluggable oracle
+
+→ `smartchem/oracle/`, `smartchem/thermo.py`, `tests/test_thermo.py`
+
+The categorical layer is oracle-agnostic. The same conservation reasoning and the same
+search machinery run on a microsecond heuristic or on CCSD(T)/CBS.
+
+```
+E(config)  = −Σ dissociation energies of the bonds present
+ΔH(A → B)  = E(cod) − E(dom)
+```
+
+Two rules:
+
+- **Declining is allowed; inventing is not.** An unpriceable species returns `None`, and
+  partial pricing refuses the whole configuration — silently skipping a bond would
+  understate the energy, which is the failure mode where a wrong number looks right.
+  → `::test_unpriceable_bond_refuses_the_whole_configuration`
+- **Every value carries provenance and uncertainty**, and a verdict never outruns its own
+  error bar. → `::TestVerdictRespectsUncertainty`
+
+Measured accuracy is in `README.md`. Chemical accuracy (1 kcal/mol) is reached by
+CCSD(T)/cbs(TZ,QZ) at ~100 s per diatomic.
+
+## VIII. WHAT THIS SPECIFICATION DOES NOT CLAIM
+
+- **No adjunction between the environment comonad and an effect monad.** The previous
+  version asserted one. Establishing it requires a distributive law `λ : T∘W ⇒ W∘T`, which
+  has not been constructed or checked here. The claim is withdrawn rather than restated.
+- **No lattice join/meet as frontier orbitals.** `Poset` in the legacy module computes a
+  Parr–Pearson charge-transfer energy, which is identically zero for homonuclear pairs and
+  so cannot describe A–A bonding at all. Making join/meet genuine bonding and antibonding
+  orbitals requires an electronic-structure method at that layer. Not yet done.
+- **No prediction of novel phenomena.** The system computes energetics for structures it is
+  given and verifies structural properties of proposed mechanisms. It does not propose
+  chemistry no one has thought of.

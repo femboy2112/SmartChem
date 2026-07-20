@@ -37,12 +37,12 @@ Nothing in Layer 2 or 3 knows which oracle it is talking to. That is the whole d
 | `smartchem/data/reference.py` | 438 | **Experimental ground truth.** Diatomic D₀, band gaps, diatomic geometries, and polyatomic enthalpies of formation at 0 K (16 species; the C3 entries from ATcT, the rest CCCBDB). Every accuracy claim is measured against this file. |
 | `smartchem/data/basis_tight_d.py` | 1111 | Tight-d basis augmentation for second-row elements. Generated data, not hand-written. |
 | `smartchem/category.py` | 915 | **The load-bearing layer.** `Molecule` (atoms + bond topology + charge + opaque internal state), `Config` (multiset of molecules), `Reaction` (morphism with conservation enforced in the smart constructor). Composition, tensor, braiding, identity. Canonicalisation by symbol class, refined by Weisfeiler-Leman colour when that is not enough. Plus the structural predicates `is_bond_order_conserving`, `is_isodesmic`, `is_catalytic`. |
-| `smartchem/geometry.py` | 562 | **Seed → relax → certify.** VSEPR-based coordinate seeding from the bond graph, Cartesian L-BFGS relaxation, Eckart-projected harmonic analysis. Deliberately PySCF-free so two of its three stages test without quantum chemistry. |
+| `smartchem/geometry.py` | 599 | **Seed → relax → certify.** VSEPR-based coordinate seeding from the bond graph, Cartesian L-BFGS relaxation, Eckart-projected harmonic analysis. Deliberately PySCF-free so two of its three stages test without quantum chemistry. |
 | `smartchem/oracle/base.py` | 257 | The `EnergyOracle` protocol and `Estimate` — a value with an uncertainty *and* a signed systematic channel. Plus the guard that makes oracles decline what they cannot value. |
 | `smartchem/oracle/heuristic.py` | 117 | The original algebraic model, preserved unchanged as the baseline every later oracle must beat. |
 | `smartchem/oracle/caching.py` | 109 | Prices each distinct species once per search. Measured 33.5× on a 45-reaction network; the saving rests entirely on canonicalising the cache key. |
 | `smartchem/oracle/persistent.py` | 271 | The same functor law applied across *time*: species energies survive the process that paid for them. The caching is trivial; the key is the whole problem, and it carries the full tier provenance so a cheap number can never be served to an expensive question. |
-| `smartchem/oracle/pyscf_oracle.py` | 754 | Real quantum chemistry. HF / MP2 / CCSD(T), basis-set extrapolation, geometry optimisation, polyatomic support. |
+| `smartchem/oracle/pyscf_oracle.py` | 780 | Real quantum chemistry. HF / MP2 / CCSD(T), basis-set extrapolation, geometry optimisation, polyatomic support. |
 | `smartchem/cell.py` | 243 | **The AA battery litmus.** An electrochemical cell as two half-reactions that compose. Voltage from the *factorisation* (`n` lives in the path, not the endpoints), operating point under load, capacity from stoichiometry. Where the chemistry and the circuit turn out to be one object. |
 | `smartchem/thermo.py` | 169 | The **strong monoidal functor** from the category to the additive reals. Where structure meets energy. |
 | `smartchem/store.py` | 226 | The **actual** Store comonad, `(Env, Env → a)`. One local definition yields a whole response surface. |
@@ -113,7 +113,7 @@ proof status: VSEPR proposes, the frequency analysis disposes. An imaginary freq
 the structure is a saddle, not a molecule — and the imaginary mode's eigenvector points
 downhill, so the diagnosis and the repair are the same object.
 
-## Tests — 485 fast, 10 slow
+## Tests — 497 fast, 10 slow
 
 | File | Covers |
 |---|---|

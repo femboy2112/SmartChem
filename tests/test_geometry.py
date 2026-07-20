@@ -514,6 +514,79 @@ class TestAgainstARealWavefunction:
         theirs = np.sort(np.real(thermo.harmonic_analysis(mol, hessian)["freq_wavenumber"]))
         assert np.allclose(np.sort(mine.frequencies_cm), theirs, atol=0.05)
 
+    def test_a_polyatomic_is_priced_when_a_geometry_tier_is_named(self):
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+
+        oracle = PySCFOracle("CCSD(T)", "cc-pVDZ", tight_d=False,
+                             geometry_tier=("HF", "cc-pVDZ"))
+        estimate = oracle.energy(WATER)
+        assert estimate is not None
+        assert estimate.value_ev < 0                      # a total electronic energy
+        assert "ZPE" in estimate.notes
+        assert estimate.systematic_ev > 0                 # the ZPE bias rides here
+
+    def test_a_polyatomic_is_declined_without_a_gradient_capable_tier(self):
+        """
+        CCSD(T) has no analytic gradients, so there is no surface to relax on. Declining
+        is the contract; inventing coordinates would not be.
+        """
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+
+        assert PySCFOracle("CCSD(T)", "cc-pVDZ", tight_d=False).energy(WATER) is None
+
+    def test_a_cbs_request_cannot_serve_as_the_geometry_tier(self):
+        """
+        The extrapolation models basis-set error in an ENERGY. There is no corresponding
+        statement about a gradient, so extrapolating one would be inventing a quantity.
+        """
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+
+        oracle = PySCFOracle("HF", "cbs(TZ,QZ)", tight_d=False)
+        assert oracle._geometry_engine() is None
+        assert oracle.energy(WATER) is None
+
+    def test_the_zero_point_energy_is_carried_as_a_systematic_not_a_random_error(self):
+        """
+        The bias does not cancel against free atoms, which have no vibrations at all, so
+        it must propagate additively with sign rather than in quadrature. Folding it into
+        the random channel is the error already made once with the extrapolation
+        correction, and it destroys the certificate in whichever direction it is made.
+        """
+        from smartchem.oracle.pyscf_oracle import PySCFOracle, ZPE_BIAS_FRACTION
+
+        oracle = PySCFOracle("HF", "cc-pVDZ", tight_d=False)
+        estimate = oracle.energy(WATER)
+        assert estimate is not None
+        # the notes print the ZPE to four decimals, so the product can only be checked to
+        # half of that last digit -- asserting tighter would be testing the formatter
+        zpe = float(estimate.notes.split("ZPE=")[1].split(" eV")[0])
+        assert estimate.systematic_ev == pytest.approx(
+            ZPE_BIAS_FRACTION * zpe, abs=ZPE_BIAS_FRACTION * 5e-5)
+        assert estimate.systematic_ev > 0
+
+    def test_the_derived_path_agrees_with_the_tabulated_one_for_a_diatomic(self):
+        """
+        A diatomic can be priced two independent ways: from tabulated experimental r_e and
+        omega_e, or by relaxing a graph seed and computing a Hessian. They share only the
+        single-point energy code, so their difference isolates what the derived machinery
+        costs on a species whose right answer is known.
+
+        Measured over 8 diatomics: mean +0.024 eV, max 0.066 eV, positive in 7 of 8 -- the
+        exception being Cl2, whose ZPE is the smallest of the set, so the bias term stops
+        dominating. Against the CCSD(T)/cc-pVTZ tier's own 0.22 eV that is not the
+        limiting error, which is the fact that makes polyatomic work worth doing at all.
+        """
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+
+        hydrogen_fluoride = Molecule(("H", "F"), frozenset({Bond(0, 1)}))
+        tabulated = PySCFOracle("CCSD(T)", "cc-pVDZ", tight_d=False)
+        derived = PySCFOracle("CCSD(T)", "cc-pVDZ", tight_d=False,
+                              geometry_tier=("HF", "cc-pVDZ"))
+        lhs = tabulated.energy(hydrogen_fluoride)
+        rhs = derived._polyatomic_energy(hydrogen_fluoride)
+        assert lhs is not None and rhs is not None
+        assert abs(rhs.value_ev - lhs.value_ev) < 0.10
+
     def test_water_is_certified_a_minimum_not_a_saddle(self):
         from pyscf import gto, scf
 

@@ -259,9 +259,14 @@ class TestF5EnergiesAreMeasured:
         pyscf = pytest.importorskip("pyscf")            # noqa: F841
         from smartchem.oracle.pyscf_oracle import PySCFOracle
         ref = next(b for b in bonds() if b.formula == "CO")
-        got = PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", tight_d=False).estimate(("C", "O"))
+        # ``estimate(symbols)`` was the old atom-pair primitive and was removed when the
+        # oracle interface became species-based. This test kept calling it and went on
+        # passing collection while failing on execution, because it is marked slow and
+        # the slow suite was not being run -- exactly the decay tests/conftest.py warns
+        # about. ``bond_energy`` is the surviving compat path, returning D_0 in eV.
+        got = PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", tight_d=False).bond_energy(("C", "O"))
         assert got is not None, "CO must not be refused"
-        assert abs(got.value_ev - ref.d0_ev) < CHEMICAL_ACCURACY_EV
+        assert abs(got - ref.d0_ev) < CHEMICAL_ACCURACY_EV
 
 
 # ======================================================================================

@@ -208,7 +208,7 @@ Two rules:
   error bar. → `tests/test_thermo.py::TestVerdictRespectsUncertainty`
 
 **Systematic and random error are tracked separately**, because they combine differently.
-`uncertainty_ev` is random and adds in quadrature; `extrapolation_ev` is a signed
+`uncertainty_ev` is random and adds in quadrature; `systematic_ev` is a signed
 systematic model correction that adds with sign and *cancels* in a conserving difference,
 exactly as the energy zero does. Whatever survives that cancellation widens the error bar.
 → `tests/test_functor.py::TestSystematicVsRandomError`

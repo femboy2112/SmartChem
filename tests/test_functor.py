@@ -331,7 +331,7 @@ class TestSystematicVsRandomError:
     ``Estimate`` carries two different kinds of error and must not conflate them.
 
     ``uncertainty_ev`` is random: it combines in quadrature and never cancels.
-    ``extrapolation_ev`` is a signed systematic model correction: it combines additively
+    ``systematic_ev`` is a signed systematic model correction: it combines additively
     and DOES cancel between the two sides of a conserving difference, exactly as the
     arbitrary energy zero does.
 
@@ -348,9 +348,9 @@ class TestSystematicVsRandomError:
 
     def test_systematic_correction_cancels_in_a_difference(self):
         """Two species with the same correction leave nothing behind when subtracted."""
-        a = Estimate(10.0, 0.04, "m", extrapolation_ev=1.37)
-        b = Estimate(3.0, 0.04, "m", extrapolation_ev=1.37)
-        assert (a - b).extrapolation_ev == pytest.approx(0.0)
+        a = Estimate(10.0, 0.04, "m", systematic_ev=1.37)
+        b = Estimate(3.0, 0.04, "m", systematic_ev=1.37)
+        assert (a - b).systematic_ev == pytest.approx(0.0)
 
     def test_random_uncertainty_does_not_cancel_in_a_difference(self):
         a = Estimate(10.0, 0.3, "m")
@@ -358,17 +358,17 @@ class TestSystematicVsRandomError:
         assert (a - b).uncertainty_ev == pytest.approx(0.5)
 
     def test_the_bar_widens_only_to_what_survives_cancellation(self):
-        residual = Estimate(7.0, 0.04, "m", extrapolation_ev=0.13).with_honest_uncertainty()
+        residual = Estimate(7.0, 0.04, "m", systematic_ev=0.13).with_honest_uncertainty()
         assert residual.uncertainty_ev == pytest.approx(0.13)
 
     def test_a_converged_result_keeps_its_tight_bar(self):
         """No widening when the extrapolation barely moved anything."""
-        tight = Estimate(4.478, 0.041, "m", extrapolation_ev=0.001).with_honest_uncertainty()
+        tight = Estimate(4.478, 0.041, "m", systematic_ev=0.001).with_honest_uncertainty()
         assert tight.uncertainty_ev == pytest.approx(0.041)
 
     def test_widening_never_narrows(self):
         """with_honest_uncertainty is a floor, never a replacement."""
-        wide = Estimate(1.0, 2.0, "m", extrapolation_ev=0.1).with_honest_uncertainty()
+        wide = Estimate(1.0, 2.0, "m", systematic_ev=0.1).with_honest_uncertainty()
         assert wide.uncertainty_ev == pytest.approx(2.0)
 
     def test_a_large_surviving_correction_is_reported_not_hidden(self):
@@ -378,7 +378,7 @@ class TestSystematicVsRandomError:
         nominal +/-0.041 eV would be the oracle inventing confidence it has not got.
         """
         nacl = Estimate(4.3806, 0.041, "CCSD(T)/cbs(TZ,QZ)",
-                        extrapolation_ev=0.1299).with_honest_uncertainty()
+                        systematic_ev=0.1299).with_honest_uncertainty()
         assert nacl.uncertainty_ev > 3 * 0.041
         assert abs(nacl.value_ev - 4.234) < 1.5 * nacl.uncertainty_ev, (
             "the widened bar must actually cover the experimental value"
@@ -528,7 +528,7 @@ class TestEstimateIsAMonoid:
 
         value_ev         (R, +)
         uncertainty_ev   (R>=0, hypot)      associative, commutative, identity 0
-        extrapolation_ev (R, +)
+        systematic_ev (R, +)
 
     -- and ``configuration_energy`` folds over a configuration's species with it. The fold
     is only well defined if those laws hold, so they are checked rather than assumed.
@@ -550,7 +550,7 @@ class TestEstimateIsAMonoid:
         for combined in (z + a, a + z):
             assert combined.value_ev == pytest.approx(a.value_ev)
             assert combined.uncertainty_ev == pytest.approx(a.uncertainty_ev)
-            assert combined.extrapolation_ev == pytest.approx(a.extrapolation_ev)
+            assert combined.systematic_ev == pytest.approx(a.systematic_ev)
 
     @settings(max_examples=100, deadline=None)
     @given(
@@ -563,7 +563,7 @@ class TestEstimateIsAMonoid:
         left, right = (a + b) + c, a + (b + c)
         assert left.value_ev == pytest.approx(right.value_ev)
         assert left.uncertainty_ev == pytest.approx(right.uncertainty_ev)
-        assert left.extrapolation_ev == pytest.approx(right.extrapolation_ev)
+        assert left.systematic_ev == pytest.approx(right.systematic_ev)
 
     @settings(max_examples=100, deadline=None)
     @given(
@@ -575,7 +575,7 @@ class TestEstimateIsAMonoid:
         a, b = (self._e(v[i], u[i], x[i]) for i in range(2))
         assert (a + b).value_ev == pytest.approx((b + a).value_ev)
         assert (a + b).uncertainty_ev == pytest.approx((b + a).uncertainty_ev)
-        assert (a + b).extrapolation_ev == pytest.approx((b + a).extrapolation_ev)
+        assert (a + b).systematic_ev == pytest.approx((b + a).systematic_ev)
 
     def test_quadrature_not_linear_addition(self):
         """The uncertainty component is hypot, not +. Three at 0.3 give 0.5196, not 0.9."""
@@ -601,5 +601,5 @@ class TestEstimateIsAMonoid:
         """
         a = self._e(3.0, 0.4, 0.1)
         assert (-a).uncertainty_ev == pytest.approx(a.uncertainty_ev)
-        assert (-a).extrapolation_ev == pytest.approx(-a.extrapolation_ev)
-        assert (a + (-a)).extrapolation_ev == pytest.approx(0.0)
+        assert (-a).systematic_ev == pytest.approx(-a.systematic_ev)
+        assert (a + (-a)).systematic_ev == pytest.approx(0.0)

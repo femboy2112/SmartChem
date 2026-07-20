@@ -111,7 +111,7 @@ def reaction_energy(reaction: Reaction, oracle) -> Estimate | None:
         method=getattr(oracle, "name", "?"),
         seconds=delta.seconds,
         notes=f"{reaction.dom} -> {reaction.cod}",
-        extrapolation_ev=delta.extrapolation_ev,
+        systematic_ev=delta.systematic_ev,
     )
 
 

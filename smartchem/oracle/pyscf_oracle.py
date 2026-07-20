@@ -67,10 +67,14 @@ import re
 import time
 import warnings
 
+import numpy as np
+
 from .base import BaseOracle, Estimate
+from ..atoms import PT
 from ..category import Molecule
 from ..data.basis_tight_d import SECOND_ROW, TIGHT_D
 from ..data.reference import ATOM_SPIN, GEOMETRY, zero_point_energy_ev
+from ..geometry import (GeometryError, harmonic_analysis, relax, seed_coordinates)
 
 try:
     from pyscf import gto, scf, mp, cc
@@ -92,6 +96,39 @@ _CC_NAME = re.compile(r"^((?:aug-)?cc-pV)([DTQ5])(Z)$")
 
 #: Methods in increasing order of cost and accuracy.
 _METHODS = ("HF", "MP2", "CCSD", "CCSD(T)")
+
+#: Methods that can supply BOTH an analytic gradient and an analytic Hessian.
+#:
+#: The relaxation needs the gradient; the frequency certificate and the zero-point energy
+#: need the Hessian. They cannot be taken at different tiers: a Hessian is only a harmonic
+#: expansion at a point where the gradient vanishes, so evaluating it on a surface other
+#: than the one the geometry was relaxed on describes the curvature at a point that is not
+#: stationary for it, and the frequencies mean nothing.
+#:
+#: PySCF gives MP2 analytic gradients but no Hessian, so MP2 could relax and could not
+#: certify. That is precisely the combination not worth having: a geometry nobody can
+#: prove is a minimum and a ZPE nobody can compute. Hence HF alone.
+_GEOMETRY_METHODS = ("HF",)
+
+#: MEASURED bias of a Hartree-Fock harmonic zero-point energy, as a fraction.
+#:
+#: +9.1%, from 23 of the tabulated diatomics -- every one whose elements cc-pVDZ covers --
+#: against their experimental omega_e. See ``scratchpad/geom_calibrate.py``. The sign is
+#: consistent and well known: HF overestimates force constants because it has no
+#: correlation to soften the bond, and the harmonic approximation ignores anharmonicity,
+#: which mostly pushes the same way.
+#:
+#: It is carried as a SYSTEMATIC, in ``Estimate.systematic_ev``, never folded into the
+#: random uncertainty. That distinction is the same one that made spectator cancellation
+#: worth doing, and it is what lets the bias survive into an atomization energy (free
+#: atoms have no vibrations, so nothing cancels it) while largely cancelling in a
+#: bond-conserving reaction (similar bonds, similar bias, opposite signs).
+#:
+#: NOT applied as a scaling correction, deliberately. A factor fitted on 23 DIATOMICS and
+#: applied to polyatomics is the identical error already made once in this file with basis
+#: augmentation -- measured at fixed cardinal, assumed to carry to the extrapolated tier,
+#: and it did not. The bias is reported, not silently removed.
+ZPE_BIAS_FRACTION = 0.091
 
 #: MEASURED mean absolute error in eV, on ONE declared species set, 2026-07-20.
 #:
@@ -372,6 +409,156 @@ class PySCFOracle(BaseOracle):
             return guess
         return -bb / (2 * aa)
 
+    def _polyatomic_energy(self, molecule: Molecule) -> Estimate | None:
+        """
+        Total energy of a species with three or more atoms, at 0 K, in eV.
+
+        THE DIVISION OF LABOUR
+        ----------------------
+        The geometry, the curvature and the energy VALUE are three different questions
+        with three different sensitivities, and this method is where that stops being an
+        observation and starts being a policy:
+
+            coordinates : cheap tier (HF). The minimum's POSITION is far less
+                          method-sensitive than the energy at it -- measured, MAE 0.0255 A
+                          against 23 experimental diatomic r_e.
+            zero-point  : cheap tier, same surface. Measured +9.1% biased, carried as a
+                          systematic rather than corrected away.
+            energy      : THIS oracle's tier, whatever it is. No algebra substitutes for
+                          the wavefunction here, and nothing in this file pretends
+                          otherwise.
+
+        So one CCSD(T)/cbs(TZ,QZ) single point sits on top of a geometry and a ZPE that
+        cost a small fraction of it. That is the geometry/energy separability already
+        measured for diatomics, generalised, and it is what makes a polyatomic affordable
+        at all rather than merely possible.
+
+        WHY THE ZPE MATTERS MORE THAN IT LOOKS
+        --------------------------------------
+        Diatomics report D_0, subtracting a ZPE from the tabulated omega_e. A polyatomic
+        has no tabulated frequencies. Reporting the electronic energy alone would mean
+        quietly reporting D_e in a pipeline whose every other number is D_0 -- a 0.61 eV
+        error for water, which is fourteen times the chemical-accuracy threshold this
+        project quotes and would look like a bad method rather than a category error.
+
+        Declines rather than guessing when it has no gradient-capable tier, when the
+        graph is disconnected, when the relaxation fails, or when the result is a saddle.
+        """
+        engine = self._geometry_engine()
+        if engine is None:
+            return None                      # no gradient-capable tier: decline
+        spin = _closed_shell_spin(molecule)
+        if spin is None:
+            return None                      # an element with no data: decline
+
+        t0 = time.perf_counter()
+        try:
+            coordinates, zpe = engine._relaxed_geometry(molecule, spin)
+            spec = "; ".join(f"{s} {x:.10f} {y:.10f} {z:.10f}"
+                             for s, (x, y, z) in zip(molecule.atoms, coordinates))
+            e_elec, correction = self._energy(spec, molecule.atoms, spin)
+        except (ConvergenceFailure, GeometryError, KeyError, RuntimeError,
+                NotImplementedError):
+            return None                      # a number we do not trust is worse than none
+        dt = time.perf_counter() - t0
+
+        # The ZPE bias does NOT cancel against free atoms -- they have no vibrations at
+        # all -- so it rides in the signed systematic channel and survives into an
+        # atomization energy, while largely cancelling in a bond-conserving reaction.
+        zpe_bias = ZPE_BIAS_FRACTION * zpe
+        return Estimate(
+            value_ev=e_elec * HARTREE_EV + zpe,
+            uncertainty_ev=self.nominal_accuracy_ev,
+            method=self.name + "/geom",
+            seconds=dt,
+            notes=(f"E_elec={e_elec * HARTREE_EV:.4f} eV, ZPE={zpe:.4f} eV "
+                   f"(harmonic, {engine.name}, +{ZPE_BIAS_FRACTION:.1%} measured bias "
+                   f"carried as systematic), geometry relaxed at {engine.name}, "
+                   f"spin {spin} assumed from electron parity"
+                   + (f", CBS correction {correction * HARTREE_EV:+.4f} eV"
+                      if correction else "")),
+            systematic_ev=correction * HARTREE_EV + zpe_bias,
+        )
+
+    # -- polyatomic geometry -----------------------------------------------------
+    def _mean_field(self, atom_spec: str, symbols: tuple[str, ...], spin: int):
+        """A converged Hartree-Fock object, for gradients and Hessians."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            mol = gto.M(atom=atom_spec, basis=resolve_basis(symbols, self.basis,
+                                                            self.tight_d),
+                        spin=spin, verbose=0, unit="Angstrom")
+            mf = (scf.RHF if spin == 0 else scf.UHF)(mol)
+            mf.conv_tol = 1e-11
+            mf.max_cycle = 300
+            mf.kernel()
+            if not mf.converged:
+                raise ConvergenceFailure(f"SCF did not converge for {atom_spec}")
+            return mol, mf
+
+    def _relaxed_geometry(self, molecule: Molecule, spin: int):
+        """
+        ``(coordinates, zero-point energy in eV)`` for a polyatomic, or raise.
+
+        The three steps live in ``smartchem.geometry`` and are deliberately not merged:
+        seed from the bond graph, relax to a stationary point, certify with the Hessian.
+        Only the middle one needs a wavefunction, and it is taken at THIS oracle's tier --
+        which for a polyatomic is always the cheap geometry tier, since a caller reaching
+        this code has been routed here by ``_geometry_engine``.
+
+        Raises ``GeometryError`` if the relaxation stops on a saddle. That is not a
+        conservative refusal, it is a correctness one: a saddle point is a transition
+        state, and reporting its energy as a molecule's would be a wrong answer with no
+        outward sign of being wrong.
+        """
+        coordinates = seed_coordinates(molecule)
+        symbols = molecule.atoms
+
+        def energy_and_gradient(coords: np.ndarray) -> tuple[float, np.ndarray]:
+            spec = "; ".join(f"{s} {x:.10f} {y:.10f} {z:.10f}"
+                             for s, (x, y, z) in zip(symbols, coords))
+            _, mf = self._mean_field(spec, symbols, spin)
+            return mf.e_tot, mf.nuc_grad_method().kernel()
+
+        result = relax(coordinates, energy_and_gradient)
+        if not result.converged:
+            raise GeometryError(
+                f"relaxation did not converge for {symbols}: max gradient "
+                f"{result.gradient_norm:.2e} Ha/Bohr after {result.iterations} calls")
+
+        spec = "; ".join(f"{s} {x:.10f} {y:.10f} {z:.10f}"
+                         for s, (x, y, z) in zip(symbols, result.coordinates))
+        mol, mf = self._mean_field(spec, symbols, spin)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            hessian = mf.Hessian().kernel()
+        # isotope_avg=True is load-bearing: the bare call returns integer MASS NUMBERS,
+        # which shifts every frequency by sqrt(1.008) and every ZPE by 0.4%.
+        analysis = harmonic_analysis(mol.atom_mass_list(isotope_avg=True),
+                                     result.coordinates, hessian)
+        if not analysis.is_minimum:
+            raise GeometryError(
+                f"relaxation of {symbols} reached a saddle, not a minimum: "
+                f"{analysis.imaginary_modes} imaginary mode(s), lowest "
+                f"{analysis.frequencies_cm[0]:.1f} cm^-1")
+        return result.coordinates, analysis.zero_point_energy_ev
+
+    def _geometry_engine(self) -> "PySCFOracle | None":
+        """
+        The oracle that will supply polyatomic coordinates, or None if none can.
+
+        Returns the named geometry tier when it is gradient-and-Hessian capable, or self
+        when this oracle already is. A CBS request is refused: the extrapolation is a
+        model of basis-set error in an ENERGY, and there is no corresponding statement
+        about a gradient, so extrapolating one would be inventing a quantity.
+        """
+        for candidate in (self._geom_oracle, self):
+            if (candidate is not None
+                    and candidate.method in _GEOMETRY_METHODS
+                    and candidate._is_cbs() is None):
+                return candidate
+        return None
+
     # -- oracle interface --------------------------------------------------------
     def energy(self, molecule: Molecule) -> Estimate | None:
         """
@@ -412,13 +599,11 @@ class PySCFOracle(BaseOracle):
                 method=self.name,
                 seconds=time.perf_counter() - t0,
                 notes=f"atom {atoms[0]}, spin {ATOM_SPIN[atoms[0]]}",
-                extrapolation_ev=correction * HARTREE_EV,
+                systematic_ev=correction * HARTREE_EV,
             )
 
-        if len(atoms) != 2:
-            # Not an interface limit any more -- a missing geometry source. A polyatomic
-            # needs coordinates this oracle has no way to obtain.
-            return None
+        if len(atoms) > 2:
+            return self._polyatomic_energy(molecule)
 
         a, b = atoms
         formula = _formula_key(atoms)
@@ -448,8 +633,27 @@ class PySCFOracle(BaseOracle):
                   + (f", CBS correction {correction * HARTREE_EV:+.4f} eV"
                      if correction else "")
                   + ("" if geom else " (geometry optimised, no reference)"),
-            extrapolation_ev=correction * HARTREE_EV,
+            systematic_ev=correction * HARTREE_EV,
         )
+
+
+def _closed_shell_spin(molecule: Molecule) -> int | None:
+    """
+    The lowest spin consistent with the electron count, or None if it cannot be counted.
+
+    An even electron count is taken as a singlet and an odd one as a doublet. That is an
+    ASSUMPTION, not a derivation -- O2 is the standard counterexample, an even-electron
+    molecule with a triplet ground state -- and it is why diatomics keep using the spins
+    tabulated in ``data.reference.GEOMETRY`` rather than this. It is stated in the notes
+    of every estimate that relies on it so the assumption travels with the number.
+    """
+    electrons = -molecule.charge
+    for symbol in molecule.atoms:
+        atom = PT.get(symbol)
+        if atom is None:
+            return None
+        electrons += atom.atomic_number
+    return electrons % 2
 
 
 def _formula_key(symbols: tuple[str, ...]) -> str:

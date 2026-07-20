@@ -67,12 +67,26 @@ class Estimate:
     """
     A single energy prediction with everything needed to judge it.
 
-    ``extrapolation_ev`` is a **signed** model correction carried alongside the value --
-    currently the amount a basis-set extrapolation moved this number beyond its largest
-    explicit basis. It is signed, and it propagates additively rather than in quadrature,
-    because it is a systematic correction rather than a random error: it cancels between
-    the two sides of a conserving difference in exactly the way the arbitrary energy zero
-    does.
+    ``systematic_ev`` is a **signed** model correction carried alongside the value. It
+    propagates additively rather than in quadrature, because it is a systematic
+    correction rather than a random error, and that lets it cancel between the two sides
+    of a conserving difference in exactly the way the arbitrary energy zero does.
+
+    Two things ride in this channel, and the field is named for the property they share
+    rather than for either of them -- it was called ``extrapolation_ev`` while the first
+    was the only occupant, and that name became a lie the moment the second arrived:
+
+    * how far a basis-set extrapolation moved this number beyond its largest explicit
+      basis;
+    * the measured bias in a zero-point energy computed at a cheap tier -- HF harmonic
+      frequencies run about 9% high, worth roughly +0.055 eV on water.
+
+    The two behave differently in a difference, and correctly so without any special
+    casing. The extrapolation correction largely cancels between molecule and free atoms,
+    because both carry one. The ZPE bias does not, because free atoms have no vibrations
+    at all -- so it survives into an atomization energy and is reported there. In an
+    isodesmic reaction, where similar bonds appear on both sides, it substantially
+    cancels again. Signed additive propagation gets all three cases right on its own.
 
     That distinction is load-bearing and was got wrong once. Treating the per-species
     correction as an independent random error and combining it in quadrature produced
@@ -86,7 +100,7 @@ class Estimate:
     seconds: float = 0.0
     notes: str = ""
     #: signed systematic model correction; cancels in differences (see class docstring)
-    extrapolation_ev: float = 0.0
+    systematic_ev: float = 0.0
 
     def __add__(self, other: "Estimate") -> "Estimate":
         """
@@ -104,13 +118,13 @@ class Estimate:
             else f"{self.method}+{other.method}",
             seconds=self.seconds + other.seconds,
             notes="; ".join(n for n in (self.notes, other.notes) if n),
-            extrapolation_ev=self.extrapolation_ev + other.extrapolation_ev,
+            systematic_ev=self.systematic_ev + other.systematic_ev,
         )
 
     def __neg__(self) -> "Estimate":
         """Negation keeps the random uncertainty and flips the systematic correction."""
         return Estimate(-self.value_ev, self.uncertainty_ev, self.method,
-                        self.seconds, self.notes, -self.extrapolation_ev)
+                        self.seconds, self.notes, -self.systematic_ev)
 
     def __sub__(self, other: "Estimate") -> "Estimate":
         return self + (-other)
@@ -129,13 +143,13 @@ class Estimate:
         old flat error bar reported the bad one with full confidence. That is the oracle
         inventing rather than declining.
         """
-        net = abs(self.extrapolation_ev)
+        net = abs(self.systematic_ev)
         if net <= self.uncertainty_ev:
             return self
         return Estimate(self.value_ev, net, self.method, self.seconds,
                         (f"{self.notes}; widened to the net extrapolation correction "
                          f"{net:.4f} eV").lstrip("; "),
-                        self.extrapolation_ev)
+                        self.systematic_ev)
 
     @staticmethod
     def zero(method: str = "exact") -> "Estimate":

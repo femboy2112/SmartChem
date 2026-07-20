@@ -91,7 +91,7 @@ proof status: VSEPR proposes, the frequency analysis disposes. An imaginary freq
 the structure is a saddle, not a molecule — and the imaginary mode's eigenvector points
 downhill, so the diagnosis and the repair are the same object.
 
-## Tests — 454 fast, 10 slow
+## Tests — 463 fast, 10 slow
 
 | File | Covers |
 |---|---|
@@ -104,6 +104,7 @@ downhill, so the diagnosis and the repair are the same object.
 | `test_domain_neutral.py` | The category instantiated on radiation, Kirchhoff's current law, and RC/LC networks — neutrality demonstrated rather than asserted |
 | `test_caching.py` | The species cache: that it saves, that it changes nothing, and where it decays |
 | `test_cell.py` | The AA battery across coherent scenarios — structure, voltage, load sweep, power balance, capacity — plus the heuristic oracle's measured failure on it |
+| `test_network.py` | A **falsified** architectural prediction, kept: the energy functor's shape does not transfer to impedance. Energy is extensive, so one monoid serves both ⊗ and ∘; impedance needs a pair, and the additive law is 31.9× wrong on a parallel RC |
 | `test_thermo.py`, `test_store.py`, `test_pathway.py`, `test_basis_policy.py` | Their respective modules |
 
 ```bash
@@ -124,7 +125,9 @@ These are not aspirations; they are why the numbers here are worth anything.
   `.md` files cites the test that holds it down.
 - **Pre-register predictions, and keep the falsified ones on the record.** P3 (bond
   conservation helps *more* on polyatomics) was predicted and measured false; it is still
-  written down, in the docstring of the thing it was wrong about.
+  written down, in the docstring of the thing it was wrong about. So is the assumption
+  that the energy functor's shape generalises to other physical quantities — `test_network.py`
+  is the autopsy, and the 31.9× is quoted rather than softened.
 - **Calibrate the instrument before believing its readings.** Code that measures physics is
   a scientific instrument. The harmonic analysis was checked to 0.000 cm⁻¹ against an
   independent implementation before any of its numbers were used.

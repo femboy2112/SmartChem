@@ -173,6 +173,80 @@ def coverage_report(available: frozenset[str]) -> dict[str, object]:
     }
 
 
+# --------------------------------------------------------------------------------------
+# Structural INPUT data -- not reference answers
+# --------------------------------------------------------------------------------------
+# Equilibrium bond lengths and harmonic frequencies. These are *inputs* to an electronic
+# structure calculation, not the quantity being predicted, and keeping them in a clearly
+# separate block is deliberate so the distinction cannot blur.
+#
+# The protocol this supports is the standard one for benchmarking an electronic method:
+#
+#     INPUT     : r_e (experimental geometry), omega_e (experimental, for the ZPE)
+#     PREDICTED : D_e, the electronic dissociation energy
+#     REPORTED  : D_0 = D_e - ZPE,  ZPE ~ 0.5 * omega_e
+#
+# A fully predictive calculation would optimise the geometry and compute the harmonic
+# frequency itself. PySCFOracle can do that (``optimize_geometry=True``) at roughly 6x
+# the cost; it is off by default so the benchmark measures the *electronic* method rather
+# than a mixture of geometry error and energy error.
+#
+# Sources: NIST Diatomic Spectral Database; Huber & Herzberg, Constants of Diatomic
+# Molecules (1979).
+#
+#   formula -> (r_e in Angstrom, omega_e in cm^-1, molecular spin 2S)
+GEOMETRY: dict[str, tuple[float, float, int]] = {
+    "H2":   (0.74144, 4401.2, 0),
+    "N2":   (1.09768, 2358.6, 0),
+    "O2":   (1.20752, 1580.2, 2),   # triplet ground state
+    "F2":   (1.41193,  916.6, 0),
+    "Cl2":  (1.98790,  559.7, 0),
+    "I2":   (2.66600,  214.5, 0),
+    "P2":   (1.89340,  780.8, 0),
+    "S2":   (1.88920,  725.7, 2),   # triplet
+    "C2":   (1.24250, 1855.0, 0),
+    "Si2":  (2.24600,  510.9, 2),   # triplet
+    "Na2":  (3.07890,  159.1, 0),
+    "K2":   (3.90510,   92.4, 0),
+    "HF":   (0.91680, 4138.3, 0),
+    "HCl":  (1.27460, 2990.9, 0),
+    "HI":   (1.60920, 2309.0, 0),
+    "OH":   (0.96966, 3737.8, 1),   # doublet
+    "CH":   (1.11990, 2858.5, 1),   # doublet
+    "NH":   (1.03620, 3282.3, 2),   # triplet
+    "SiO":  (1.50974, 1241.5, 0),
+    "CS":   (1.53490, 1285.1, 0),
+    "CO":   (1.12832, 2169.8, 0),
+    "NO":   (1.15077, 1904.2, 1),   # doublet
+    "CN":   (1.17180, 2068.6, 1),   # doublet
+    "NaCl": (2.36085,  366.0, 0),
+    "KCl":  (2.66665,  281.0, 0),
+    "NaF":  (1.92595,  536.1, 0),
+    "MgO":  (1.74900,  785.1, 0),
+    "ICl":  (2.32090,  384.3, 0),
+}
+
+# Ground-state atomic spin multiplicities (2S = number of unpaired electrons).
+# Needed to compute the correct dissociation limit: a BDE is E(atoms) - E(molecule),
+# and getting the atomic spin state wrong corrupts the reference point.
+# Source: NIST Atomic Spectra Database ground-state term symbols.
+ATOM_SPIN: dict[str, int] = {
+    "H": 1, "He": 0, "Li": 1, "Be": 0, "B": 1, "C": 2, "N": 3, "O": 2, "F": 1, "Ne": 0,
+    "Na": 1, "Mg": 0, "Al": 1, "Si": 2, "P": 3, "S": 2, "Cl": 1, "Ar": 0,
+    "K": 1, "Ca": 0, "Fe": 4, "Cu": 1, "Zn": 0, "Br": 1, "I": 1,
+}
+
+CM_TO_EV = 1.23984198e-4
+
+
+def zero_point_energy_ev(formula: str) -> float | None:
+    """Harmonic ZPE = 0.5 * omega_e, in eV. None if the frequency is not tabulated."""
+    entry = GEOMETRY.get(formula)
+    if entry is None:
+        return None
+    return 0.5 * entry[1] * CM_TO_EV
+
+
 # Accuracy thresholds, stated once so no module invents its own.
 CHEMICAL_ACCURACY_EV = 0.043   # 1 kcal/mol. Reachable only by CCSD(T)/CBS-class methods.
 GOOD_SEMIEMPIRICAL_EV = 0.30   # a genuinely good fast method

@@ -18,6 +18,7 @@ microsecond heuristic or on CCSD(T)/CBS. Accuracy is a dial, not a property.
 
 ```
 Layer 3  Search & verification    pathway.py · store.py · bench.py
+Layer 2½ Domain instances          cell.py                (chemistry meets circuit)
 Layer 2  Categorical core         category.py · thermo.py
 Layer 1  Energy oracle            oracle/base.py + heuristic.py + pyscf_oracle.py
                                   oracle/caching.py   (wraps any tier of the dial)
@@ -34,12 +35,13 @@ Nothing in Layer 2 or 3 knows which oracle it is talking to. That is the whole d
 | `smartchem/atoms.py` | 149 | Periodic-table data. Ionization energies, affinities, radii. Kept from the original build; the data was always good. |
 | `smartchem/data/reference.py` | 438 | **Experimental ground truth.** Diatomic D₀, band gaps, diatomic geometries, and polyatomic enthalpies of formation at 0 K (16 species; the C3 entries from ATcT, the rest CCCBDB). Every accuracy claim is measured against this file. |
 | `smartchem/data/basis_tight_d.py` | 1111 | Tight-d basis augmentation for second-row elements. Generated data, not hand-written. |
-| `smartchem/category.py` | 885 | **The load-bearing layer.** `Molecule` (atoms + bond topology + charge + opaque internal state), `Config` (multiset of molecules), `Reaction` (morphism with conservation enforced in the smart constructor). Composition, tensor, braiding, identity. Canonicalisation by symbol class, refined by Weisfeiler-Leman colour when that is not enough. Plus the structural predicates `is_bond_order_conserving`, `is_isodesmic`, `is_catalytic`. |
+| `smartchem/category.py` | 915 | **The load-bearing layer.** `Molecule` (atoms + bond topology + charge + opaque internal state), `Config` (multiset of molecules), `Reaction` (morphism with conservation enforced in the smart constructor). Composition, tensor, braiding, identity. Canonicalisation by symbol class, refined by Weisfeiler-Leman colour when that is not enough. Plus the structural predicates `is_bond_order_conserving`, `is_isodesmic`, `is_catalytic`. |
 | `smartchem/geometry.py` | 545 | **Seed → relax → certify.** VSEPR-based coordinate seeding from the bond graph, Cartesian L-BFGS relaxation, Eckart-projected harmonic analysis. Deliberately PySCF-free so two of its three stages test without quantum chemistry. |
 | `smartchem/oracle/base.py` | 257 | The `EnergyOracle` protocol and `Estimate` — a value with an uncertainty *and* a signed systematic channel. Plus the guard that makes oracles decline what they cannot value. |
 | `smartchem/oracle/heuristic.py` | 117 | The original algebraic model, preserved unchanged as the baseline every later oracle must beat. |
 | `smartchem/oracle/caching.py` | 109 | Prices each distinct species once per search. Measured 33.5× on a 45-reaction network; the saving rests entirely on canonicalising the cache key. |
 | `smartchem/oracle/pyscf_oracle.py` | 707 | Real quantum chemistry. HF / MP2 / CCSD(T), basis-set extrapolation, geometry optimisation, polyatomic support. |
+| `smartchem/cell.py` | 243 | **The AA battery litmus.** An electrochemical cell as two half-reactions that compose. Voltage from the *factorisation* (`n` lives in the path, not the endpoints), operating point under load, capacity from stoichiometry. Where the chemistry and the circuit turn out to be one object. |
 | `smartchem/thermo.py` | 169 | The **strong monoidal functor** from the category to the additive reals. Where structure meets energy. |
 | `smartchem/store.py` | 226 | The **actual** Store comonad, `(Env, Env → a)`. One local definition yields a whole response surface. |
 | `smartchem/pathway.py` | 282 | Multi-step mechanism search through genuine monadic `bind`, with the certificate as a monoid so it survives composition. |
@@ -73,14 +75,23 @@ radiation and on circuits and runs the real laws over them — because an audit 
 could not express a radiating antenna. What foreclosed it was not an import; it was that
 the conserved signature and the state label were the same field.
 
-**4. Getting a geometry is three problems, not one.**
+**4. A cell voltage lives in the factorisation, not in the reaction.**
+`Zn + 2 MnO2 → ZnO + Mn2O3` does not mention electrons — they appear on both sides of the
+composite and cancel as spectators. So no function of `(dom, cod)` can recover `n`, and no
+function of `(dom, cod)` can return a voltage. `Reaction.path` still holds the intermediate
+configuration, which is where the electrons are. That is not a limitation to route around:
+a cell voltage genuinely is undetermined by the overall chemistry, depending on how the
+cell splits it into half-cells. And with energy in eV and charge in electrons, `ΔG = −nFE`
+collapses to `E[V] = −ΔE[eV] / n` with no physical constant at all.
+
+**5. Getting a geometry is three problems, not one.**
 Seed (combinatorics, no wavefunction) → relax (needs gradients) → certify (needs a Hessian).
 Only one touches an oracle, and never the expensive one. Candidate generation never upgrades
 proof status: VSEPR proposes, the frequency analysis disposes. An imaginary frequency means
 the structure is a saddle, not a molecule — and the imaginary mode's eigenvector points
 downhill, so the diagnosis and the repair are the same object.
 
-## Tests — 422 fast, 10 slow
+## Tests — 454 fast, 10 slow
 
 | File | Covers |
 |---|---|
@@ -92,6 +103,7 @@ downhill, so the diagnosis and the repair are the same object.
 | `test_shortcuts.py` | The measured structural shortcuts and their controls |
 | `test_domain_neutral.py` | The category instantiated on radiation, Kirchhoff's current law, and RC/LC networks — neutrality demonstrated rather than asserted |
 | `test_caching.py` | The species cache: that it saves, that it changes nothing, and where it decays |
+| `test_cell.py` | The AA battery across coherent scenarios — structure, voltage, load sweep, power balance, capacity — plus the heuristic oracle's measured failure on it |
 | `test_thermo.py`, `test_store.py`, `test_pathway.py`, `test_basis_policy.py` | Their respective modules |
 
 ```bash

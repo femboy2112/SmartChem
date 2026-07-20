@@ -69,10 +69,35 @@ from typing import Iterable, Iterator, Mapping
 #   C8 unbonded  40_320 candidates    57.1 ms    1.42 us/candidate  (no edges to sort)
 #   C3H8 propane  2_880 candidates    16.2 ms    (241_920 before refinement)
 #
-# Benzene stays deliberately OUT of budget at 518_400 candidates. Refinement cannot help
-# it: its bond graph is vertex-transitive within each element, so no invariant computed
-# from local structure can split the carbons. That is a fact about benzene, not a gap in
-# the implementation, and it is the honest boundary of this approach.
+# Benzene is OUT of budget at 518_400 candidates. Refinement cannot help it: its bond
+# graph is vertex-transitive within each element, so no invariant computed from local
+# structure can split the carbons.
+#
+# That is a true statement about REFINEMENT and it was written here as though it were a
+# statement about benzene, which it is not. Refinement is only the first move of the
+# nauty-style algorithm. The second is INDIVIDUALISATION -- when refinement stalls on a
+# non-singleton cell, give one of its vertices a colour nobody else has and refine again,
+# breaking by fiat the symmetry no local invariant could break. Canonicality is kept by
+# minimising over every choice within the cell, so the cost is |cell| x (subproblem)
+# rather than |cell|!.
+#
+# Measured (scratchpad/ir_probe.py), leaves of the individualisation tree:
+#
+#   C6H6 benzene   518_400 -> 6        86_400x
+#   C6H14 hexane 3_317_760 -> 1_152     2_880x
+#   C4H10 butane    69_120 -> 288         240x
+#   C3H8 propane     2_880 -> 144          20x
+#   C8 unbonded     40_320 -> 40_320         1x
+#
+# and on every case small enough to brute-force, the leaf count equals |Aut(G)| exactly,
+# which is the floor -- no canonical search can examine fewer labellings than the graph
+# has automorphisms. C8 is unimprovable for that reason and not for want of trying.
+#
+# So the honest boundary is not "benzene is too symmetric". It is "this implementation
+# stops after the first of two moves". Tracked as #25; the reason it was not simply done
+# is that a third canonical form is exactly the change where a silent error corrupts every
+# equality in the category, and it deserves the brute-force verification #23 got rather
+# than being tacked on at the end of a session.
 _MAX_CANONICAL_CANDIDATES = 50_000
 
 

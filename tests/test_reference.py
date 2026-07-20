@@ -43,6 +43,22 @@ class TestTheDerivationIsCorrect:
                 f"{formula}: derived {derived:.4f} eV vs literature {literature} eV"
             )
 
+    def test_the_ethanol_ether_isomer_gap_matches_experiment(self):
+        """
+        An independent handle on two of the newer entries.
+
+        C2H5OH and CH3OCH3 have identical formulas, so their atomic terms cancel exactly
+        and the gap is a pure difference of measured enthalpies -- no derivation, no atomic
+        reference values, nothing this module could get wrong in common. Ethanol is the
+        more stable isomer by ~50 kJ/mol experimentally, and that is a number known
+        independently of the 0 K table these two were drawn from.
+        """
+        gap = ref.reaction_energy_ev({"CH3OCH3": 1}, {"C2H5OH": 1})
+        assert gap == pytest.approx(-50.5 / ref.KJ_PER_EV, abs=0.01)
+        assert gap < 0, "ethanol is the more stable isomer"
+        # and the derived atomization energies must reflect the same ordering
+        assert ref.atomization_energy_ev("C2H5OH") > ref.atomization_energy_ev("CH3OCH3")
+
     def test_the_two_routes_to_a_reaction_energy_agree(self):
         """
         A reaction energy can be had by differencing enthalpies of formation, or by

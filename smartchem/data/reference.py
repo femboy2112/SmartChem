@@ -334,6 +334,15 @@ POLYATOMIC_REFS: tuple[PolyatomicRef, ...] = (
     PolyatomicRef("CH3OH",  {"C": 1, "H": 4, "O": 1},  -190.1, 0.008, "train", "CCCBDB R22"),
     PolyatomicRef("C2H6",   {"C": 2, "H": 6},           -68.4, 0.012, "train", "CCCBDB R22"),
     PolyatomicRef("C2H5OH", {"C": 2, "H": 6, "O": 1},  -217.1, 0.014, "test",  "CCCBDB R22"),
+    # Added to give the isodesmic class more than one member -- see `is_isodesmic`.
+    # Over the nine species above, exactly ONE strictly isodesmic reaction exists
+    # (C2H6 + CH3OH -> C2H5OH + CH4), and n=1 cannot measure a predicate. These four
+    # were chosen because they are cheap to canonicalise and each unlocks a reaction
+    # whose bond signature is preserved exactly.
+    PolyatomicRef("CH2O",    {"C": 1, "H": 2, "O": 1},         -104.9, 0.006, "train", "CCCBDB R22"),
+    PolyatomicRef("HCOOH",   {"C": 1, "H": 2, "O": 2},         -371.5, 0.008, "test",  "CCCBDB R22"),
+    PolyatomicRef("CH3OCH3", {"C": 2, "H": 6, "O": 1},         -166.6, 0.014, "train", "CCCBDB R22"),
+    PolyatomicRef("CH3NH2",  {"C": 1, "N": 1, "H": 5},           -7.8, 0.010, "test",  "CCCBDB R22"),
 )
 
 

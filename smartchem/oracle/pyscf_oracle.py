@@ -69,7 +69,7 @@ import warnings
 
 import numpy as np
 
-from .base import BaseOracle, Estimate
+from .base import BaseOracle, Estimate, carries_unmodelled_physics
 from ..atoms import PT
 from ..category import Molecule
 from ..data.basis_tight_d import SECOND_ROW, TIGHT_D
@@ -615,6 +615,8 @@ class PySCFOracle(BaseOracle):
         atoms = molecule.atoms
         if molecule.charge != 0:
             return None                      # ions need a different reference; decline
+        if carries_unmodelled_physics(molecule):
+            return None                      # excitations and quanta; see base.py
         if any(s not in ATOM_SPIN for s in atoms):
             return None                      # no ground-state spin known; decline
 

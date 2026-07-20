@@ -23,7 +23,7 @@ import io
 import contextlib
 import time
 
-from .base import BaseOracle, Estimate
+from .base import BaseOracle, Estimate, carries_unmodelled_physics
 from ..atoms import PT, Species
 from ..category import Molecule
 from ..legacy import Env, Situated
@@ -54,6 +54,8 @@ class HeuristicOracle(BaseOracle):
         """
         if molecule.charge != 0:
             return None
+        if carries_unmodelled_physics(molecule):
+            return None      # excitations and radiated quanta: see base.py for why
         if not molecule.bonds:
             # A free atom. Zero by definition of this oracle's reference, exactly -- not
             # an unknown, so it must not decline.

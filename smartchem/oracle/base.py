@@ -160,6 +160,30 @@ class Estimate:
         return f"{self.value_ev:.4f} +/- {self.uncertainty_ev:.4f} eV [{self.method}]"
 
 
+def carries_unmodelled_physics(molecule: Molecule) -> bool:
+    """
+    True when a species carries structure that none of the oracles here can price.
+
+    Two cases, both of which the category can express and no energy model in this
+    repository can value:
+
+    * a non-empty ``state`` -- an electronic excitation, a mode, an operating point;
+    * zero atoms -- a radiated quantum, whose energy is ``h*nu`` and appears in none of
+      these models.
+
+    Both would otherwise pass straight through the free-atom branch and come back as
+    ``0.0 +/- 0.0 eV``: a confident number with nothing behind it, and worse, one that is
+    *coincidentally right* for an emission (the excitation energy the model does not know
+    and the photon energy it also does not know cancel to zero). Right answer, no reason.
+
+    Making the oracles decline instead is what keeps #22 an honest boundary rather than a
+    lie. The structure being able to say ``Na(excited) -> Na + photon`` is the point; the
+    energetics of that morphism are simply not implemented, and an oracle that says so is
+    worth more than one that returns zero with no error bar.
+    """
+    return bool(molecule.state) or not molecule.atoms
+
+
 @runtime_checkable
 class EnergyOracle(Protocol):
     """Anything that can price a chemical species."""

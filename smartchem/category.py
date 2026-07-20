@@ -297,10 +297,26 @@ class Molecule:
     ``atoms`` is positional: ``bonds`` refers to atoms by index. Two molecules are equal
     when they are the same labelled graph after canonical relabelling, so ``H-O-H`` built
     in either atom order compares equal.
+
+    ``state`` is an opaque internal-state label -- an electronic excitation, a mode, an
+    operating point. It is part of the object's IDENTITY but not of the conserved
+    signature, and that separation is the whole point of the field.
+
+    Without it, the only way to distinguish an excited emitter from a relaxed one is to
+    change a symbol, and changing a symbol changes ``formula`` -- so ``Na* -> Na + photon``
+    is rejected as mass-violating when it is nothing of the kind. That is a real
+    foreclosure rather than a hypothetical: an antenna or any radiating system is exactly
+    *the same matter* in a different energy state, and a category that cannot say so
+    cannot host one. Photochemistry needs it for the same reason.
+
+    So: composition and charge are conserved; state is free to change. ``Na(state="*") ->
+    Na + photon`` is a legal morphism, and the energy difference is the oracle's business,
+    not the category's.
     """
     atoms: tuple[str, ...]
     bonds: frozenset[Bond] = frozenset()
     charge: int = 0
+    state: str = ""
 
     def __post_init__(self) -> None:
         n = len(self.atoms)
@@ -310,9 +326,20 @@ class Molecule:
 
     # -- construction ------------------------------------------------------------
     @classmethod
-    def atom(cls, symbol: str, charge: int = 0) -> "Molecule":
+    def atom(cls, symbol: str, charge: int = 0, state: str = "") -> "Molecule":
         """A lone unbonded atom."""
-        return cls((symbol,), frozenset(), charge)
+        return cls((symbol,), frozenset(), charge, state)
+
+    @classmethod
+    def quantum(cls, state: str = "") -> "Molecule":
+        """
+        A carrier of energy and no matter: a photon, a phonon, a radiated quantum.
+
+        Empty ``atoms`` is deliberate and already legal -- it contributes nothing to
+        ``formula``, so emission and absorption conserve composition automatically. This
+        constructor exists to name the case, not to enable it.
+        """
+        return cls((), frozenset(), 0, state)
 
     @classmethod
     def diatomic(cls, a: str, b: str, order: int = 1, charge: int = 0) -> "Molecule":
@@ -390,7 +417,8 @@ class Molecule:
             if best is None or edges < best:
                 best = edges
         assert best is not None
-        return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in best), self.charge)
+        return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in best),
+                        self.charge, self.state)
 
     def __repr__(self) -> str:
         counts = self.formula
@@ -401,6 +429,8 @@ class Molecule:
             body += f"^{self.charge}+"
         elif self.charge < 0:
             body += f"^{abs(self.charge)}-"
+        if self.state:
+            body += f"({self.state})"
         return body
 
 
@@ -420,9 +450,14 @@ class Config:
 
     def __post_init__(self) -> None:
         # canonical: each molecule canonicalised, then the multiset sorted deterministically
+        # `state` belongs in this key even though it is not conserved. Without it two
+        # species differing only in state tie, the sort is stable, and the canonical
+        # tuple would then depend on the order they were passed in -- making
+        # `Config.of(a, b) != Config.of(b, a)`. Silent, and fatal to every equality above.
         canon = tuple(sorted(
             (m.canonical() for m in self.species),
-            key=lambda m: (tuple(sorted(m.formula.items())), m.charge, sorted(m.bonds)),
+            key=lambda m: (tuple(sorted(m.formula.items())), m.charge,
+                           sorted(m.bonds), m.state),
         ))
         object.__setattr__(self, "species", canon)
 

@@ -1,8 +1,10 @@
 # SmartChem
 
-A compositional layer above quantum chemistry: a reaction algebra where conservation is
-enforced by construction, catalysis is a decidable property, and accuracy is a dial you
-set rather than a property you inherit.
+A conserving sequential-history layer above quantum chemistry. It enforces atom and charge
+balance, retains mechanism provenance, and lets benchmarked oracles decline unsupported work.
+It does **not** yet implement a symmetric-monoidal/open-system physics core; parallel
+composition, catalysis, Gibbs thermodynamics, circuits and radiation remain explicit roadmap
+items. See [the 2026-07-20 multiphysics audit](AUDIT_2026-07-20.md).
 
 ```python
 from smartchem import Config, Molecule, Reaction, favourability
@@ -11,15 +13,15 @@ from smartchem.oracle.pyscf_oracle import PySCFOracle
 rxn = Reaction(Config.atoms("C", "O"),
                Config.of(Molecule.diatomic("C", "O", order=3)))
 
-favourability(rxn, PySCFOracle("CCSD(T)", "aug-cbs(TZ,QZ)"))
-# 'exothermic (-11.13 +/- 0.04 eV)'        experiment: -11.157 eV
+favourability(rxn, PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", tight_d=False))
+# reports an oracle ΔE direction, not Gibbs spontaneity; benchmark MAE is 0.0562 eV
 ```
 
 ---
 
 ## Measured accuracy
 
-Measured on **one declared species set**, 2026-07-20: `NaCl, CS, HCl, Cl₂, CO, HF, N₂` —
+Measured on **one selected species set**, 2026-07-20: `NaCl, CS, HCl, Cl₂, CO, HF, N₂` —
 spanning ionic, second-row and first-row covalent, with N₂ as a hard-correlation control.
 Iodine species are excluded because `aug-cc-pVQZ` on iodine would dominate the cost without
 testing anything; that exclusion is stated rather than silent.
@@ -33,8 +35,14 @@ testing anything; that exclusion is stated rather than silent.
 | **CCSD(T)/cbs(TZ,QZ)** | **0.0562** | **1.30** | 7 | 432 | 71.4 |
 | CCSD(T)/aug-cbs(TZ,QZ)+d | 0.1277 | 2.94 | 7 | not re-measured | not re-measured |
 
-Every MAE above is exact and reproducible — the calculations are deterministic, and repeated
-re-runs reproduced all five values to the digit.
+This set and the historical `test` partition were inspected during protocol/model-policy
+work; neither is an independent holdout. The table is regression/model-selection evidence,
+not an estimate of broad generalization. A new locked external validation population is
+required before a coverage claim.
+
+The tabulated MAEs are pinned outputs of the declared data set and protocol. Re-runs in the
+recorded environment reproduced the displayed digits; backend/library versions, numerical
+settings and hardware still belong in provenance, so these are not timeless constants.
 
 † **The cost column is much weaker than the accuracy column, and the difference is stated
 rather than hidden. Treat it as ±10%, and as an ordering rather than a set of constants.**
@@ -81,26 +89,29 @@ prove that particular oracle calls are unnecessary *before any of them run* — 
 same "prune by type, ahead of the expensive layer" move the candidate search already makes,
 turned on the energy itself. Two shortcuts exist, at deliberately different levels of proof.
 
-**Exact — spectators, and this one is policy.** For `f : S ⊗ A → S ⊗ B`, the monoidal law
+**Exact inside the current separable-species model.** For `f : S + A → S + B`, the adapter's
+additivity assumption
 gives `ΔE = (E(S) + E(B)) − (E(S) + E(A)) = E(B) − E(A)`. A species present unchanged on both
 sides cannot influence the answer, and the multiset difference of `dom` and `cod` finds it
-with no oracle call. So it is never priced.
+with no oracle call. Interactions with a nominal spectator can invalidate this shortcut in a
+real vessel; the future compiler must require a separability proof/guard.
 
-The saving is the smaller half. The larger half is rigor: uncertainties combine in quadrature,
-which is valid only for **independent** errors. A spectator's energy is not two independent
-samples — it is one number appearing twice, minus itself. Summing both sides and subtracting
-afterwards adds `2·u(S)²` of variance that physically cancels to zero.
+The saving is the smaller half. The larger half is consistent reuse: quadrature is valid
+only for **independent** terms. A spectator's modeled energy is not two independent samples —
+it is one quantity appearing twice, minus itself. Summing both sides and subtracting
+afterwards invents `2·u(S)²` under that independence model.
 
 Measured on `2 N → N₂` with an Fe spectator carrying ±5.0 eV:
 
-| | catalyst priced | reported uncertainty |
+| | spectator priced | reported uncertainty |
 |---|---|---|
 | before | 2× | 7.0711 eV |
 | after | 0× | **0.0866 eV** |
 
-The value is bit-identical; the error bar was **82× too wide**, and the width was fiction. It
-is also a capability increase: a reaction whose spectator the oracle *cannot* price is now
-answerable, because the answer never depended on it. Species that actually change still block.
+The value is bit-identical; the scalar reporting scale was **82× wider** under the incorrect
+independence assumption. Neither number is automatically a calibrated confidence interval.
+It is also a capability increase: a reaction whose spectator the oracle *cannot* price is
+now answerable, because the answer never depended on it. Species that actually change still block.
 → `tests/test_functor.py::TestSpectatorsAreCancelledStructurally`
 
 **Approximate — bond-order conservation, and this one is deliberately *not* policy.** Method
@@ -121,7 +132,8 @@ reactions in one basis family do not license an automatic accuracy policy — an
 proposed here on that kind of evidence, basis augmentation, lost outright when finally measured
 at the tier that mattered.
 
-**Extended to polyatomics — where a control changed the answer by 6.6×.** Same experiment on
+**Tested on an internal polyatomic research path — where a control changed the answer by
+6.6×.** Same controlled experiment on
 four bond-creating and four bond-order-conserving polyatomic reactions, HF/cc-pVDZ against
 CCSD(T)/cc-pVDZ with basis, geometry and ZPE shared so only correlation differs:
 
@@ -131,6 +143,8 @@ CCSD(T)/cc-pVDZ with basis, geometry and ZPE shared so only correlation differs:
 | **relative to \|ΔE\|** | **0.2602** | **0.1049** | **2.48** |
 | per bond changed | 1.0322 eV | 0.0383 eV | 26.97 |
 
+These numbers do not validate public polyatomic estimates; the bundled oracle currently
+declines that protocol because conformer/spin coverage and a validation scale are absent.
 The raw 16.30 is **mostly artifact**. The creating arm is atomizations at 4–16 eV; the
 conserving arm rearranges one or two bonds at 1–3 eV. An error that merely scaled with reaction
 size would produce a large ratio with no help from the predicate at all. Size-controlled, the
@@ -147,16 +161,18 @@ conservation — so the single case that spoils the separation is exactly the on
 predicate, and the reason it stays on the task list rather than being quietly dropped.
 → `tests/test_geometry.py::TestThePolyatomicConservationMeasurement`
 
-**Measured, opt-in — separating geometry from energy.** With `optimize_geometry=True` the
-oracle pays *six* calculations per diatomic: five to scan the bond length, one at the fitted
-minimum. That mode is not a luxury — it is the only way to price a species whose geometry is
-not in the vendored table, so it decides whether the system generalises past 28 tabulated
-diatomics.
+**Measured, opt-in — local geometry refinement versus energy.** With
+`optimize_geometry=True` the oracle pays *six* calculations per supported diatomic: five to
+scan around the tabulated `r_e`, one at the bracketed fitted minimum. The mode still requires
+a tabulated spin and frequency for ZPE, so it does **not** price an unlisted species or prove
+geometry prediction from structure. An unlisted diatomic correctly declines until a computed
+frequency/state protocol exists.
 
 Those five scan points are answering a **different question** from the sixth. The scan needs
-the *position* of a minimum; the single point needs the *value* of an energy. A method's error
-is nearly constant across the 0.12 Å window scanned, and a constant shift moves a parabola's
-vertex not at all — only its height. So the scan should tolerate a much cheaper method.
+the *position* of a local minimum; the single point needs the *value* of an energy. A method's
+error may be nearly constant across this truth-centered 0.12 Å window, and a constant shift
+moves a parabola's vertex not at all—only its height. Whether a cheaper scan tier preserves
+that local vertex is measured below, not assumed globally.
 
 Energy tier held fixed at CCSD(T)/cc-pVTZ; only the scan tier varies:
 
@@ -180,9 +196,10 @@ HF, and within 0.015 Å. It did neither — 0.0289 Å, and worse than HF's 0.023
 **A candidate shortcut examined and rejected as unnecessary**, recorded so nobody optimises it
 later. Reaction energies come from subtracting two total energies near −3000 eV, which looks
 like catastrophic cancellation. It isn't: float64 carries ~6.8×10⁻¹³ eV of absolute precision
-there, and the binding SCF/CCSD convergence tolerances (~2.7×10⁻⁸ eV) sit six orders of
-magnitude below the 0.043 eV target. The arbitrary-zero contract is numerically safe, and the
-reason is the convergence thresholds, not luck.
+there, so the floating-point subtraction itself loses negligible precision at the quoted
+target. SCF/CC iteration tolerances are separate convergence controls, not rigorous bounds on
+the final electronic energy; solver residual/refinement and model error still need their own
+checks.
 
 Writing the tests also caught an error in the framing: `HCl + F → HF + Cl` preserves bond
 *orders* but not bond *types* (`H–Cl` became `H–F`), so the measured set is **not** isodesmic in
@@ -205,22 +222,25 @@ good answer worse:
 
 Plain QZ is nearly at chemical accuracy; extrapolating makes it 8× worse. The Helgaker
 formula behaves exactly as written — its *premise*, that correlation is already in the
-smooth X⁻³ tail by TZ, fails for an ionic species. This is no longer reported with false
-confidence: the extrapolation correction rides on every `Estimate` and widens the error bar
-by however much survives cancellation, so NaCl reports ±0.13 eV while fully-converged H₂
-keeps ±0.041.
+smooth X⁻³ tail by TZ, was inadequate for this NaCl row. The extrapolation displacement rides
+on every `Estimate` as a named sensitivity and raises the reported scalar floor when it
+survives algebraically, so NaCl reports 0.13 eV while H₂ retains the declared tier MAE of
+0.0562 eV. Neither is a species-level confidence interval.
 
-## Polyatomic species: the geometry comes from the bond graph
+## Polyatomic research path: the geometry seed comes from the bond graph
 
-Anything with three or more atoms used to be declined for want of coordinates. That was
+Anything with three or more atoms used to be blocked even internally for want of coordinates. That was
 never an interface limit — `energy(molecule)` has always taken full structure — it was a
 missing input, and a lookup table of experimental geometries only ever covers species
 somebody already tabulated.
 
-The answer was in the type. `Molecule` carries **bond topology**, a decision made so that
+Part of the answer was in the type. `Molecule` carries **bond topology**, a decision made so that
 `Na + Cl` and `NaCl` could be different objects and the reaction between them a genuine
-arrow. A bond graph is exactly what a geometry builder needs. The structure that made
-conservation enforceable makes coordinates derivable.
+arrow. A bond graph can seed a geometry builder, but does not determine stereochemistry,
+conformation, electronic state, or the global minimum. The structure that made conservation
+enforceable therefore makes candidate coordinates constructible, not uniquely derivable.
+The public oracle still declines polyatomic energy estimates until this complete protocol
+has a domain-specific validation profile.
 
 Getting a geometry splits into three parts with genuinely different computational
 characters, and keeping them apart is the entire design:
@@ -228,39 +248,43 @@ characters, and keeping them apart is the entire design:
 | step | what it needs | cost |
 |---|---|---|
 | **seed** — graph → coordinates | pure combinatorics; VSEPR domain counts and exact solid geometry (the tetrahedral angle is `arccos(−1/3)`, not a fitted parameter) | microseconds, no wavefunction |
-| **relax** — → stationary point | the real surface, but only its *gradients* | cheap tier |
-| **certify** — → proven minimum | the Hessian's eigenvalues | cheap tier, same surface |
+| **relax** — → stationary point | a chosen approximate surface and its *gradients* | cheap tier |
+| **check** — → local-curvature evidence | the Hessian's eigenvalues | cheap tier, same surface |
 
-Only the middle step touches an oracle, and never the expensive one. So a
-CCSD(T)/cbs single point sits on a geometry and a zero-point energy that cost a fraction
-of it — which is what makes polyatomics affordable rather than merely possible.
+Relaxation and certification both evaluate a cheap electronic-structure surface; the final
+single point can use a more expensive tier. So a CCSD(T)/CBS single point can sit on a
+geometry and zero-point estimate obtained at a cheaper, explicitly recorded tier. Whether
+that separation is accurate enough is a protocol-specific validation question.
 
 **Step 3 turned out to be load-bearing, not decorative.** Diatomics report `D₀` by
 subtracting a ZPE from tabulated `ω_e`. A polyatomic has no tabulated frequencies, so
 without a Hessian the only options are reporting `D_e` while every other number in the
 pipeline is `D₀`, or reporting nothing. For water that gap is **0.61 eV** — fourteen times
 the chemical-accuracy threshold quoted above, and it would read as a bad method rather than
-a category error. The same matrix that supplies the ZPE proves the point is a minimum and
-not a saddle; a saddle is a transition state, and pricing one as a molecule is exactly the
-silent wrong answer this project treats as unforgivable.
+a category error. The same matrix that supplies the ZPE detects negative local curvature
+and can reject a saddle on the modeled surface. The implementation currently counts every
+negative projected mode; it has no calibrated noise cutoff. No detected imaginary mode is
+not a proof of the global structure or finite-temperature stability.
 
-Calibrated against known answers before any of its readings were believed:
+Cross-checked against known answers before treating the mechanics as usable:
 
 | check | against | result |
 |---|---|---|
-| vibrational analysis | PySCF's independently written `thermo.harmonic_analysis`, same Hessian | **0.000 cm⁻¹** |
+| vibrational algebra cross-check | PySCF's independently written `thermo.harmonic_analysis`, same Hessian | **0.000 cm⁻¹ difference** on tested cases |
 | relaxed `r_e` | 23 tabulated experimental diatomics | MAE 0.0255 Å |
 | computed ZPE | the same 23 experimental `ω_e` | MAE 0.0103 eV, **+9.1% biased** |
 | imaginary modes / convergence failures | — | 0 / 0 |
 
-The +9.1% is the known Hartree–Fock harmonic overestimate. It is **systematic**, so it rides
-in `Estimate.systematic_ev` and propagates additively with sign rather than in quadrature —
-the same distinction that made spectator cancellation worth doing. That gets three cases
-right with no special-casing: it survives into an atomization energy (free atoms have no
-vibrations, so nothing cancels it), largely cancels in a bond-conserving reaction, and never
-inflates a random error bar. It is **not** applied as a scaling correction, because a factor
-fitted on 23 *diatomics* and carried to polyatomics is the identical mistake already made
-once here with basis augmentation.
+The +9.1% is the aggregate displacement of a Hartree–Fock harmonic protocol on this
+23-diatomic sample; the experiment does not separate electronic-method, anharmonic, and
+reference-convention contributions. It rides in a
+named signed systematic-sensitivity channel rather than being treated as an independent
+random draw. It survives into atomization against free atoms and can cancel algebraically in
+a related difference, but that does not establish cancellation of unknown residual error;
+coefficient uncertainty, species scatter, and transfer to polyatomics are not yet validated.
+The reporting policy may widen the displayed scalar uncertainty scale when a
+named sensitivity survives; it does not turn that scale into a confidence bound. The factor
+is not applied as a correction.
 
 **Two independent paths agree.** A diatomic can now be priced from tabulated experimental
 `r_e` and `ω_e`, or by relaxing a graph seed and computing a Hessian — sharing only the
@@ -270,50 +294,49 @@ max**, against the tier's own 0.22 eV. The geometry machinery is not the limitin
 
 Hartree–Fock is the only tier that can do this, for a structural reason: PySCF gives MP2
 analytic gradients but no Hessian, and a Hessian cannot be taken on a different surface from
-the relaxation — the point would not be stationary for it. MP2 could relax but not certify:
-a geometry nobody can prove is a minimum and a ZPE nobody can compute. Declined rather than
+the relaxation — the point would not be stationary for it. MP2 could relax but not perform
+the same-tier local-curvature/ZPE check. Declined rather than
 mixed.
 
 ## What this is for
 
 Not a faster DFT. PySCF is a *backend* here, not a rival.
 
-What doesn't otherwise exist is the layer above: reactions as typed morphisms that cannot
-violate conservation, mechanisms that compose with their energy bookkeeping guaranteed to
-stay in step, catalysis decided structurally, and an entire response surface generated from
-one local definition. A quantum chemistry package computes one number for one geometry. It
-has nothing to say about whether your proposed mechanism conserves mass.
+The useful layer above is narrower: reactions whose endpoints cannot violate composition or
+charge conservation, sequential mechanisms whose structural history stays aligned with their
+tally, and environment-response utilities. ``is_regenerated`` decides unchanged
+stoichiometric presence; it does not prove catalysis.
 
 This is also where the speed claim becomes true, in the only way it can. You don't run one
 CCSD(T) job faster — you **prune by type before any oracle call**. Candidates that violate
-conservation, charge balance or valence never reach the expensive layer at all.
+composition or charge balance never reach the expensive layer at all. Chemical valence is
+not currently validated.
 
 ## What it does not do
 
 Stated plainly, because the first version of these docs did not.
 
-- **Polyatomic energies exist but are not yet scored.** H₂O, NH₃, CH₄ and CO₂ are priced
-  (see below). What is missing is a *reference table* of polyatomic atomization energies to
-  score them against — this repo vendors diatomic BDEs only, so the polyatomic MAE column is
-  blank because nothing has been measured, not because something failed.
-- **Strict isodesmicity is decided but still unmeasured**, and now for a reason that can be
-  named exactly: over the elements covered, the smallest non-trivial strictly-isodesmic
-  reaction is `C₂H₆ + CH₃OH → C₂H₅OH + CH₄`, and C₂H₅OH has 9 atoms — one past the
-  canonicalisation cap. `is_bond_order_conserving`, the weaker predicate, *is* measured.
-- **Open-shell polyatomics take the lowest spin consistent with electron parity.** That is
-  an assumption, not a derivation — O₂ is the standard counterexample — so it is stated in
-  the notes of every estimate that relies on it. Diatomics use tabulated spins instead.
-- **Bond order reaches the oracle, but not every backend uses it.** The object carries its
-  topology and the oracle receives the whole species, so a bond-additive oracle prices
-  C–C and C=C differently. `PySCFOracle` keys *diatomic* geometry on formula, so it does not
-  distinguish them there — polyatomics do use the bond orders, via the VSEPR seed.
-- **No kinetics.** Everything here is thermodynamic. A favourable reaction may still be
-  impossibly slow.
+- **Public polyatomic energy coverage is refused.** A small 0 K reference table and several
+  controlled internal comparisons exercise the research mechanics, but they do not validate
+  conformer search, spin-state choice, solution chemistry, finite-temperature free energies,
+  or broad chemical space. The oracle returns no public estimate for that protocol.
+- **Strict isodesmicity is decided and measured, but the result is confounded.** The current
+  sample has seven isodesmic reactions; five contain carbonyl species, versus three of the
+  47 order-only reactions. Stratification flips the apparent ordering, so the evidence is
+  explicitly recorded as undecided rather than promoted to solver policy.
+- **The internal polyatomic path guesses PySCF spin from electron parity.** This is not safe
+  for production chemistry and is one reason the public path declines; explicit electronic
+  state/multiplicity identity and spin-state ensembles are required.
+- **The interface carries bond order, but both shipped backends have limitations.** The
+  frozen heuristic ignores order; PySCF treats it as topology/geometry guidance rather than
+  a quantum input. Backend conformance is roadmap work.
+- **No Gibbs thermodynamics or kinetics.** Bundled results are energy differences, not
+  spontaneity, equilibrium constants, rates, transition states or discharge curves.
 - **No valency model, no solid state, no photochemistry.** These existed in the legacy
   engine, did not work, and were removed rather than repaired. See
   `tests/test_findings.py::RETIRED`.
-- **Graph canonicalisation is capped at 8 atoms**, and refuses loudly above that rather
-  than silently returning a non-canonical form.
+- **Graph canonicalisation has a 50,000-candidate budget**, which can refuse highly symmetric
+  systems such as benzene regardless of raw atom count.
 
 ## The categorical structure, and why it is load-bearing
 
@@ -324,18 +347,18 @@ structure **prevents defects that description would only document**.
 |---|---|---|
 | Mass and charge conserved | `Reaction.__post_init__` | `test_laws.py::TestConservationTheorem` |
 | Conservation survives composition | transitivity of `∘` | `::test_composition_inherits_conservation` |
-| Conservation survives tensor | additivity of `⊗` | `::test_tensor_inherits_conservation` |
 | Category laws | `path` concatenation | `::TestCategoryLaws` |
-| Symmetric monoidal laws | `Config` canonicalisation | `::TestMonoidalLaws` |
-| Catalysis decidable | `is_catalytic` | `::TestCatalysis` |
+| Object product is commutative | `Config` canonicalisation | `::TestObjectProductAndScheduledProduct` |
+| True morphism interchange | not implemented; strict xfail | `::test_true_parallel_interchange_is_architecture_debt` |
+| Stoichiometric regeneration | `is_regenerated` | `::TestCatalysis` |
 | Comonad laws | `Store` | `test_store.py::TestComonadLaws` |
 | Response surfaces via `extend` | `survey` | `test_store.py::TestResponseSurface` |
-| Monad laws | `Pathway` | `test_pathway.py::TestMonadLaws` |
-| Certificate survives `bind` | `Tally` monoid | `test_pathway.py::TestCertificateSurvivesBind` |
-| **Energy is a monoidal functor** | `thermo` | `test_functor.py::TestMonoidalFunctor` |
+| Writer/List-style `bind` behavior on sampled finite values | `Pathway` | `test_pathway.py::TestMonadLaws` |
+| Step labels, method provenance and energy survive `bind` | structured accumulation | `test_pathway.py::TestCertificateSurvivesBind` |
+| Isolated-species energy is additive | `thermo` model assumption | `test_functor.py::TestSeparableEnergyAdditivity` |
 | **ΔE is additive along a path** | `∘` → `+` | `test_functor.py::TestFunctoriality` |
 | **Conservation licenses the subtraction** | `Reaction` + `ΔE` | `test_functor.py::TestConservationLicensesSubtraction` |
-| Systematic error cancels, random doesn't | `Estimate` | `test_functor.py::TestSystematicVsRandomError` |
+| Named correction displacements propagate by source | `Estimate` | `test_functor.py::TestSystematicVsRandomError` |
 | Basis choice follows the elements | `resolve_basis` | `test_basis_policy.py::TestResolution` |
 
 **The theorem.** Conservation is checked once, on generators, in the `Reaction`
@@ -343,7 +366,6 @@ constructor. Every composite inherits it:
 
 ```
 f : A → B conserves,  g : B → C conserves   ⟹   g∘f : A → C conserves    (transitivity)
-f : A → B, g : C → D conserve               ⟹   f⊗g : A⊗C → B⊗D conserves (additivity)
 ```
 
 So a mass-violating reaction is not merely absent — it is **unconstructible**:
@@ -360,24 +382,25 @@ an endomorphism, and there would be no arrows to reason about at all.
 
 ### Conservation is what licenses the physics
 
-The strongest claim here, and the one that took longest to find. Energy is a **monoidal
-functor** from the reaction category to `(ℝ, +)`:
+The honest categorical statement is an endpoint potential into the real translation
+category, under an isolated-species additivity model:
 
 ```
-E(A ⊗ B) = E(A) + E(B)          ΔE(f: A→B) = E(B) − E(A)
-ΔE(g∘f)  = ΔE(f) + ΔE(g)        ΔE(f⊗g) = ΔE(f) + ΔE(g)
+E(A + B) = E(A) + E(B)          ΔE(f: A→B) = E(B) − E(A)
+ΔE(g∘f)  = ΔE(f) + ΔE(g)
 ```
 
-Total energy has an **arbitrary zero** set by atom content — PySCF puts CO near −3074 eV,
-the legacy heuristic near −11 eV, and both are right on their own reference. So `E(B) − E(A)`
-is physically meaningful *only* when A and B hold the same atoms. That is exactly what
-`Reaction` enforces at construction.
+Total energy has an **arbitrary zero** set by atom content — PySCF puts CO near −3074 eV and
+the legacy heuristic near −11 eV, with each internally consistent on its own reference.
+`E(B) − E(A)` is invariant under the permitted per-element reference shifts when A and B hold
+the same atoms. Open-system differences require shared conventions plus explicit reservoirs;
+the closed `Reaction` type enforces the invariant case at construction.
 
 ```python
 >>> o.energy(Molecule.diatomic("C","O", order=3))   # -3082.5872 eV   arbitrary zero
 >>> o.energy(Molecule.atom("C"))                    # -1029.3330 eV   arbitrary zero
 >>> reaction_energy(Reaction(Config.atoms("C","O"), Config.of(co)), o)
--11.1199 +/- 0.0410 eV        # experiment: -11.157
+-11.1199 +/- 0.0562 eV        # experiment: -11.157; MAE label, not a confidence interval
 ```
 
 An 11 eV answer extracted as the difference of two ~3000 eV numbers, correct to five
@@ -386,27 +409,28 @@ million eV and no reaction energy moves at all
 (`test_functor.py::test_offsets_cancel_regardless_of_their_size`).
 
 **So conservation is not a safety check bolted onto a chemistry model — it is the
-precondition that makes the energy functor well defined**, and functoriality is what makes a
-multi-step mechanism's energy *equal* the sum of its steps rather than merely be reported
-next to them.
+precondition that makes endpoint differences invariant under permitted per-element reference
+shifts.** Telescoping then makes a multi-step history's endpoint ΔE equal the sum of its step
+differences. Open systems need explicit reservoirs rather than pretending inventories match.
 
 ## Architecture
 
 ```
-Search & verification    pathway.py · store.py    mechanisms, catalysis, response surfaces
-Categorical core         category.py              SMC — conservation enforced here
-Oracle interface         oracle/                  pluggable, provenance + error bar
+Search & verification    pathway.py · store.py    mechanisms, regeneration, response surfaces
+Sequential core          category.py              conservation + validated histories
+Oracle interface         oracle/                  pluggable, provenance + untyped scale/sensitivities
   ├─ heuristic           the frozen baseline, kept measurable
   ├─ pyscf_oracle        HF / MP2 / CCSD / CCSD(T), cc-pVXZ ± aug ± tight d, CBS
   └─ (xtb, tight-binding)                                          not yet implemented
 Data                     atoms.py                 NIST ionization / affinity data
-                         data/reference.py        experiment + declared train/test split
+                         data/reference.py        curated references + inspected historical split
                          data/basis_tight_d.py    vendored (X+d) sets for Al–Ar
 Frozen baseline          legacy.py                the original engine. Do not build on it.
 ```
 
 An oracle may **decline** but may not **invent**. Refusals are counted separately in the
-benchmark, so ducking the hard cases cannot improve a score.
+benchmark and prevent any accuracy-tier verdict; the numerical MAE is labeled conditional
+on the cases actually returned.
 
 ## Install and run
 
@@ -416,18 +440,19 @@ pip install -e '.[dev]'          # core + tests
 pip install -e '.[dev,qc]'       # + PySCF for the accurate tiers
 
 pytest -q                        # fast suite
-pytest -q --runslow              # + real oracle calls (minutes, needs PySCF)
+pytest -q --runslow              # + selected real oracle integration calls (needs PySCF)
 python -m smartchem.bench --split test
 ```
 
-`--split test` matters: the reference set declares a train/test split, and quoting a
-number without saying which set produced it is how the first version of this table became
-incomparable across its own rows.
+`--split test` selects a reproducible historical partition; it does not restore holdout
+status. Quoting which population produced a number still matters because the first version
+of this table mixed populations across rows.
 
 ## Status
 
-The categorical core, the Store comonad, the mechanism-search monad, the oracle interface
-and the basis policy are complete and tested.
+The closed sequential core, Store utilities, mechanism search, oracle interface and basis
+policy are tested but not complete for the stated multiphysics goal. The strict interchange
+xfail and audit roadmap make that boundary executable rather than implicit.
 
 **The legacy engine was retired on 2026-07-20.** Seven modules (`engine`, `comonad`,
 `lattice`, `monad`, `network`, `molecule`, `electrochem`) and twelve demo scripts were
@@ -439,7 +464,8 @@ fixing it** — a capability that disappears during a cleanup is indistinguishab
 that never existed. So each of the 28 findings from the original review carries an explicit
 verdict, and both kinds are pinned by tests in `tests/test_findings.py`:
 
-- **13 discharged** — F1 conservation, F2 environment response, F3 catalysis evidence,
+- **13 discharged** — F1 conservation, F2 environment response, F3 stoichiometric
+  regeneration evidence (not proof of catalysis),
   F4 certificate survival, F5 measured energies, F11 bond topology. Each now asserted
   against the live system, unmarked, passing.
 - **9 dropped** — F6 valency, F7 ionization search, F8 the lattice gate, F9 photolysis,
@@ -450,8 +476,8 @@ verdict, and both kinds are pinned by tests in `tests/test_findings.py`:
 The frozen baseline's exact MAE on every split is pinned, because the headline claim is a
 *comparison*, and a comparison is only checkable while both sides still run.
 
-Remaining: a tight-binding oracle for the fast tier, an `xtb` backend, polyatomic support
-in the oracle interface, and pricing bond order.
+Remaining: a tight-binding/xTB fast tier, broader polyatomic backend validation, explicit
+electronic states/conformers, and a documented bond-order policy per backend.
 
 ## Origin
 

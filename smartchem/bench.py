@@ -5,12 +5,14 @@ Run:  python -m smartchem.bench [--split test] [--oracle NAME ...]
 
 Design rules, so a number from this module can be trusted:
 
-* Coverage is printed before any MAE. A good score over three species is not a good score,
-  and this harness will not let that read as one.
-* Refusals are counted separately and never silently excluded. A model that declines to
-  predict CO does not get a better MAE for having ducked the hard case.
-* The train/test split is declared in ``smartchem.data.reference``, not drawn here. Any
-  oracle with fitted parameters must be fitted on train and reported on test.
+* Coverage is printed before any MAE. A good conditional score over three species is not a
+  good overall score, and incomplete coverage receives no accuracy-tier verdict.
+* Refusals remain excluded from the arithmetic mean because no defensible numerical error
+  exists for a missing prediction. They are included in the decision: an incomplete model
+  cannot earn “chemical accuracy” by declining hard cases.
+* The historical train/test partition is declared in ``smartchem.data.reference``. The
+  current ``test`` partition was inspected during 2026 model selection and is therefore not
+  a pristine holdout; future fitted models need a newly locked external validation set.
 * Wall-clock is measured per species so the accuracy/cost curve is visible. That curve is
   the deliverable: it says where to sit on the speed/accuracy dial, rather than assuming.
 """
@@ -20,9 +22,14 @@ import argparse
 import time
 from dataclasses import dataclass
 
-from .data import bonds, coverage_report, CHEMICAL_ACCURACY_EV, GOOD_SEMIEMPIRICAL_EV
-
-KCAL_PER_EV = 23.0605
+from .category import Molecule
+from .data import (
+    CHEMICAL_ACCURACY_EV,
+    GOOD_SEMIEMPIRICAL_EV,
+    KCAL_PER_EV,
+    bonds,
+    coverage_report,
+)
 
 
 @dataclass
@@ -32,6 +39,7 @@ class Row:
     predicted_ev: float | None   # None == the oracle refused to predict
     seconds: float
     kind: str
+    reference_scale_ev: float | None = None  # curation/source scale, coverage unspecified
 
     @property
     def error_ev(self) -> float | None:
@@ -74,18 +82,29 @@ def evaluate(oracle, split: str | None = None, verbose: bool = True) -> Result:
     """
     Score one oracle against the reference bond set.
 
-    ``oracle`` must expose ``name`` and ``bond_energy(symbols) -> float | None``, where the
-    return is a positive dissociation energy in eV, or None to decline.
+    ``oracle`` must expose ``name`` and ``atomization_energy(Molecule) -> Estimate | None``.
+    The returned value is a positive dissociation energy in eV, or None to decline. The
+    reference row's conventional bond order is included in the molecular graph, so species
+    identity is not silently collapsed to an unordered atom pair.
     """
     rows: list[Row] = []
     for ref in bonds(split):
+        molecule = Molecule.diatomic(*ref.atoms, order=ref.bond_order)
         t0 = time.perf_counter()
         try:
-            predicted = oracle.bond_energy(ref.atoms)
+            estimate = oracle.atomization_energy(molecule)
+            predicted = None if estimate is None else estimate.value_ev
         except (KeyError, NotImplementedError):
             predicted = None   # element or regime the oracle does not cover
         dt = time.perf_counter() - t0
-        rows.append(Row(ref.formula, ref.d0_ev, predicted, dt, ref.kind))
+        rows.append(Row(
+            ref.formula,
+            ref.d0_ev,
+            predicted,
+            dt,
+            ref.kind,
+            reference_scale_ev=ref.uncertainty_ev,
+        ))
         if verbose:
             if predicted is None:
                 print(f"  {ref.formula:6} {'REFUSED':>10} {ref.d0_ev:>9.3f} "
@@ -97,8 +116,10 @@ def evaluate(oracle, split: str | None = None, verbose: bool = True) -> Result:
     return Result(oracle.name, rows)
 
 
-def verdict(mae_ev: float | None) -> str:
-    """State plainly which accuracy tier a number actually reaches."""
+def verdict(mae_ev: float | None, *, refused: int = 0) -> str:
+    """State an accuracy tier only when coverage is complete."""
+    if refused:
+        return "INCOMPLETE COVERAGE (conditional MAE only; no accuracy tier)"
     if mae_ev is None:
         return "NO PREDICTIONS"
     if mae_ev < CHEMICAL_ACCURACY_EV:
@@ -125,13 +146,22 @@ def report(results: list[Result], available_elements: frozenset[str], split: str
     if cov["bonds_skipped"]:
         print(f"  skipped for missing elements       : {', '.join(cov['bonds_skipped'])}")
     print(f"  split evaluated                    : {split or 'all'}")
+    print("  reference uncertainty fields       : retained as curation/source scales; "
+          "not folded into MAE")
 
     print()
     print("=" * 78)
-    print(f"{'oracle':22} {'MAE eV':>9} {'kcal/mol':>10} {'max err':>9} "
+    print(f"{'oracle':22} {'cond MAE':>9} {'kcal/mol':>10} {'max err':>9} "
           f"{'n':>4} {'refused':>8} {'sec':>8}")
     print("-" * 78)
-    for r in sorted(results, key=lambda x: (x.mae_ev is None, x.mae_ev or 0.0)):
+    def order(result: Result) -> tuple:
+        return (
+            bool(result.refused),
+            len(result.refused) / len(result.rows) if result.rows else 1.0,
+            result.mae_ev is None,
+            result.mae_ev or 0.0,
+        )
+    for r in sorted(results, key=order):
         mae = r.mae_ev
         if mae is None:
             print(f"{r.oracle:22} {'--':>9} {'--':>10} {'--':>9} "
@@ -143,10 +173,11 @@ def report(results: list[Result], available_elements: frozenset[str], split: str
 
     print()
     print("VERDICT")
-    for r in sorted(results, key=lambda x: (x.mae_ev is None, x.mae_ev or 0.0)):
-        line = f"  {r.oracle:22} {verdict(r.mae_ev)}"
+    for r in sorted(results, key=order):
+        line = f"  {r.oracle:22} {verdict(r.mae_ev, refused=len(r.refused))}"
         if r.refused:
-            line += f"   [declined {len(r.refused)}/{len(r.rows)} - not counted in MAE]"
+            line += (f"   [declined {len(r.refused)}/{len(r.rows)}; conditional MAE "
+                     "excludes them]")
         print(line)
     print()
     print(f"  chemical accuracy threshold = {CHEMICAL_ACCURACY_EV} eV "

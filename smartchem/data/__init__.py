@@ -15,6 +15,7 @@ from .reference import (
     reaction_energy_ev,
     coverage_report,
     required_elements,
+    KCAL_PER_EV,
     CHEMICAL_ACCURACY_EV,
     GOOD_SEMIEMPIRICAL_EV,
     USABLE_SCREENING_EV,
@@ -26,5 +27,6 @@ __all__ = [
     "bonds", "gaps", "polyatomic", "polyatomics",
     "atomization_energy_ev", "reaction_energy_ev",
     "coverage_report", "required_elements",
+    "KCAL_PER_EV",
     "CHEMICAL_ACCURACY_EV", "GOOD_SEMIEMPIRICAL_EV", "USABLE_SCREENING_EV",
 ]

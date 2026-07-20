@@ -154,7 +154,7 @@ class TestF2EnvironmentIsResponsive:
 
 
 # ======================================================================================
-# F3 -- catalysis.  DISCHARGED: decided structurally, and the evidence is returnable.
+# F3 -- stoichiometric regeneration. DISCHARGED structurally; this is not proof of catalysis.
 # ======================================================================================
 class TestF3CatalysisIsDecidedNotPrinted:
     """
@@ -408,7 +408,7 @@ def test_no_debug_prints_in_the_frozen_baseline():
 
 
 def test_uncertainty_is_never_negative_or_nan():
-    """A certificate that reports a nonsense error bar is worse than none."""
+    """Even an uncalibrated reported scale must be numerically well formed."""
     t = Tally(-3.0, 0.2) + Tally(-1.0, 0.4)
     assert t.uncertainty_ev >= 0.0
     assert not math.isnan(t.uncertainty_ev)

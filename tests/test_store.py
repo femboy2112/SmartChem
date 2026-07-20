@@ -28,6 +28,11 @@ from smartchem.store import (
 POSITIONS = [0.0, 1.0, 2.5, 10.0, -3.0]
 
 
+def test_illustrative_solvent_table_is_read_only():
+    with pytest.raises(TypeError):
+        SOLVENTS["water"] = 1.0
+
+
 def agree(a: Store, b: Store, positions=POSITIONS) -> bool:
     """Extensional equality: same focus, and same observations everywhere sampled."""
     return a.focus == b.focus and all(a.peek(p) == b.peek(p) for p in positions)
@@ -156,6 +161,45 @@ class TestResponseSurface:
         surface = response_surface(phase, positions)
         assert len(surface) == 4
         assert sorted(set(surface.values())) == ["melt", "solid"]
+
+
+class TestConditionValidation:
+    @pytest.mark.parametrize("changes", [
+        {"temperature_k": -1.0},
+        {"pressure_atm": -1.0},
+        {"dielectric": 0.0},
+        {"dielectric": -1.0},
+        {"photon_ev": -1.0},
+    ])
+    def test_negative_or_zero_invalid_ranges_are_rejected(self, changes):
+        with pytest.raises(ValueError, match=next(iter(changes))):
+            Conditions(**changes)
+
+    @pytest.mark.parametrize("field", [
+        "temperature_k", "pressure_atm", "dielectric", "photon_ev",
+    ])
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+    def test_nonfinite_coordinates_are_rejected(self, field, bad):
+        with pytest.raises(ValueError, match=field):
+            Conditions(**{field: bad})
+
+    @pytest.mark.parametrize("bad", [True, None, "298"])
+    def test_non_numeric_coordinates_are_rejected(self, bad):
+        with pytest.raises(TypeError):
+            Conditions(temperature_k=bad)
+
+    def test_physical_boundary_values_are_allowed(self):
+        assert Conditions(0.0, 0.0, 1e-12, 0.0).temperature_k == 0.0
+
+    def test_copy_and_grid_share_the_constructor_gate(self):
+        with pytest.raises(ValueError, match="temperature_k"):
+            Conditions().with_(temperature_k=-1.0)
+        with pytest.raises(ValueError, match="pressure_atm"):
+            grid(pressures=(-1.0,))
+
+    def test_misspelled_coordinate_is_not_silently_ignored(self):
+        with pytest.raises(TypeError, match="temprature_k"):
+            Conditions().with_(temprature_k=999.0)
 
 
 # ==================================================================================

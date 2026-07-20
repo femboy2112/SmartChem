@@ -1,5 +1,16 @@
+"""Compact tabulated descriptors used by the legacy and geometry/oracle input layers.
+
+This is not the simulator's atomic, nuclear, or subatomic state model. ``Atom`` records a
+small hand-entered table used by the frozen heuristic and by limited geometry/PySCF input
+plumbing; it has no isotope-resolved nucleus, electronic configuration, geometry,
+record-level provenance, uncertainty, or environmental response. The ``beta_decay`` helper
+below is strictly inventory bookkeeping for beta-minus decay and does not calculate decay
+permission, Q values, rates, spectra, recoil, or neutrino state.
+"""
+
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, Tuple
+from types import MappingProxyType
+from typing import Dict, FrozenSet, Mapping, Tuple
 
 @dataclass(frozen=True)
 class Atom:
@@ -25,7 +36,11 @@ class Atom:
 
     @property
     def mulliken_en(self) -> float:
-        """Absolute chemical potential based on 1st IE and 1st EA."""
+        """Mulliken electronegativity ``(IE + EA)/2`` in eV.
+
+        The electronic chemical potential in conceptual DFT has the opposite sign under
+        the usual convention; this legacy heuristic consumes electronegativity directly.
+        """
         return (self.ie_list_ev[0] + self.ea_list_ev[0]) / 2.0
 
     @property
@@ -96,10 +111,15 @@ class Species:
 
     def beta_decay(self, original_atom: Atom, new_atom: Atom) -> 'Species':
         """
-        Subatomic Morphism: Beta Decay
-        A nucleus decays, changing its atomic number (Z -> Z+1 or Z-1).
-        This instantly rewrites the molecular topology.
+        Bookkeep one beta-minus inventory change ``Z -> Z+1``.
+
+        The emitted electron is outside this ``Species``, leaving the represented daughter
+        inventory one charge unit more positive. This is not a nuclear dynamics or
+        molecular-topology calculation; callers need an explicit nuclear/particle model
+        before treating it as physics.
         """
+        if new_atom.atomic_number != original_atom.atomic_number + 1:
+            raise ValueError("beta-minus bookkeeping requires daughter atomic number Z+1")
         if original_atom not in self.comp_dict:
             return self
             
@@ -110,14 +130,13 @@ class Species:
             del new_dict[original_atom]
             
         new_dict[new_atom] = new_dict.get(new_atom, 0) + 1
-        # The electron/positron emission changes the total charge
-        # Beta minus decay: n -> p + e- + v. The new atom has +1 proton.
-        # But wait, if it ejects an electron, the molecular charge becomes +1.
+        # beta-: n -> p + e- + anti-nu; the emitted particles are outside this inventory
         return Species.from_dict(new_dict, self.charge + 1)
 
-# EA2 for oxygen is -7.7 eV (costs energy in vacuum), but heavily stabilized by comonad in aqueous.
+# EA2 for oxygen is negative in vacuum. Solvation can change ion energetics, but no Store or
+# solvent model is coupled to this legacy table; callers must supply that physics explicitly.
 # EA for He, Ne are negative (endothermic to add electron).
-PT: Dict[str, Atom] = {
+PT: Mapping[str, Atom] = MappingProxyType({
     "H": Atom("H", 1, 1, 1, (13.598,), (0.754,), 53.0, 1.008),
     "D": Atom("D", 1, 1, 1, (13.598,), (0.754,), 53.0, 2.014),
     "T": Atom("T", 1, 1, 1, (13.598,), (0.754,), 53.0, 3.016),
@@ -146,4 +165,4 @@ PT: Dict[str, Atom] = {
     "K": Atom("K", 19, 1, 4, (4.34, 31.81), (0.501,), 227.0, 39.09),
     "Pb": Atom("Pb", 82, 14, 6, (7.41, 15.03, 31.93, 42.32), (0.36,), 154.0, 207.2),
     "I": Atom("I", 53, 17, 5, (10.45, 19.13, 33.0), (3.059, -3.0), 133.0, 126.9),
-}
+})

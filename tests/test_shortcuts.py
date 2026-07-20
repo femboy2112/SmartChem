@@ -6,9 +6,10 @@ CCSD(T) faster" -- we do not, and cannot -- but "which oracle calls can be prove
 unnecessary before any of them run". Two are implemented, and they sit at very different
 levels of proof:
 
-**Exact, and shipped as policy.** A spectator species cancels identically in ``dE`` by the
-monoidal law. It is never priced, and its uncertainty never enters the error bar. There is
-no approximation anywhere in the argument, so the system simply does it. Covered by
+**Exact inside the shipped separable adapter.** A spectator species cancels identically in
+``dE`` because that model assumes ``E(S+A)=E(S)+E(A)``. It is never priced, and its one
+shared modeled scale is not duplicated. Interactions can invalidate separability, so this
+is not a universal monoidal law. Covered by
 ``test_functor.py::TestSpectatorsAreCancelledStructurally``; here we check the structural
 predicate underneath it.
 

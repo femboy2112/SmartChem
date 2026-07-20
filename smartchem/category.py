@@ -1,7 +1,8 @@
 """
-The symmetric monoidal category of chemical configurations.
+A category of conserving sequential histories.
 
-This is the load-bearing layer. Not a description of the chemistry -- an enforcement of it.
+This is the load-bearing structural layer. It enforces atom and net-charge conservation;
+it does not enforce chemical feasibility, kinetics, thermodynamics or open-system balance.
 
 The central design decision
 --------------------------
@@ -24,26 +25,29 @@ only**. It then holds for every composite for free::
     ------------------------------------------------------
     g . f : A -> C         =>  formula(A) == formula(C)          [transitivity]
 
-    f : A -> B, g : C -> D  conserve
-    ------------------------------------------------------
-    f (x) g : A(x)C -> B(x)D                                     [additivity]
-      formula(A(x)C) = formula(A) + formula(C)
-                     = formula(B) + formula(D) = formula(B(x)D)
+The object operation ``tensor_obj`` is commutative multiset union. The current morphism
+representation is a *linear history*, however, so it cannot represent independent parallel
+events modulo the interchange law. ``Reaction.scheduled_product`` therefore gives an
+explicit left-then-right schedule; the legacy name ``Reaction.tensor`` is retained only as
+a compatibility alias. A true symmetric-monoidal/open-system layer needs ports and process
+graphs rather than another tuple convention.
 
 So a mass-violating reaction is not merely absent from this system, it is
 **unconstructible**. ``Fe + O + Cl -> FeO`` (finding F1) raises at construction time
 rather than silently dropping the chlorine.
 
-This is also where the speed claim becomes true. The pruning happens *here*, by type,
-before any energy oracle is consulted. Candidates that violate conservation, charge
-balance or valence never reach the expensive layer at all.
+This is also where structural pruning happens, before an energy oracle is consulted.
+Composition and total charge are enforced here. Chemical valence is deliberately not:
+labels are domain-neutral, so valence belongs in a chemistry-specific validator.
 
-See ``tests/test_laws.py`` for the machine-checked versions of everything above.
+See ``tests/test_laws.py`` for property tests over generated finite examples. They exercise
+the implementation but are not a formal proof of all Python values or physical validity.
 """
 from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import lru_cache
 from itertools import permutations, product
 from math import factorial
 from typing import Iterable, Iterator, Mapping
@@ -301,6 +305,10 @@ class Bond:
     order: int = 1
 
     def __post_init__(self) -> None:
+        if type(self.i) is not int or type(self.j) is not int:
+            raise TypeError("bond endpoints must be integer atom positions")
+        if type(self.order) is not int:
+            raise TypeError("bond order must be an integer")
         if self.i == self.j:
             raise ValueError(f"self-bond at position {self.i}")
         if self.order < 1:
@@ -319,9 +327,10 @@ class Molecule:
     """
     One connected chemical species, with explicit topology.
 
-    ``atoms`` is positional: ``bonds`` refers to atoms by index. Two molecules are equal
-    when they are the same labelled graph after canonical relabelling, so ``H-O-H`` built
-    in either atom order compares equal.
+    ``atoms`` is positional: ``bonds`` refers to atoms by index. Raw dataclass equality is
+    positional. Calling :meth:`canonical` (as ``Config`` does automatically) maps isomorphic
+    spellings to the same labelled graph, so ``H-O-H`` built in either atom order then
+    compares equal.
 
     ``state`` is an opaque internal-state label -- an electronic excitation, a mode, an
     operating point. It is part of the object's IDENTITY but not of the conserved
@@ -344,10 +353,35 @@ class Molecule:
     state: str = ""
 
     def __post_init__(self) -> None:
+        if not isinstance(self.atoms, tuple):
+            raise TypeError("atoms must be a tuple of component labels")
+        if not isinstance(self.bonds, frozenset) or any(
+            not isinstance(bond, Bond) for bond in self.bonds
+        ):
+            raise TypeError("bonds must be a frozenset of Bond values")
+        if type(self.charge) is not int:
+            raise TypeError("molecular charge must be an integer number of elementary charges")
+        if not isinstance(self.state, str):
+            raise TypeError("molecular state must be a string label")
+        if any(not isinstance(symbol, str) or not symbol for symbol in self.atoms):
+            raise ValueError("atom/component labels must be non-empty strings")
         n = len(self.atoms)
+        endpoints: set[tuple[int, int]] = set()
         for b in self.bonds:
             if not (0 <= b.i < n and 0 <= b.j < n):
                 raise ValueError(f"bond {b} refers outside atoms {self.atoms}")
+            pair = (b.i, b.j)
+            if pair in endpoints:
+                raise ValueError(
+                    f"multiple bond records for atom pair {pair}; encode multiplicity "
+                    "with one Bond.order value"
+                )
+            endpoints.add(pair)
+        if n > 1 and not self.is_connected():
+            raise ValueError(
+                "a Molecule must be one connected species; represent disconnected "
+                "components as separate Molecule values inside a Config"
+            )
 
     # -- construction ------------------------------------------------------------
     @classmethod
@@ -358,7 +392,7 @@ class Molecule:
     @classmethod
     def carrier(cls, label: str = "", charge: int = 0) -> "Molecule":
         """
-        An object with no baryonic matter, whose conserved content is charge alone.
+        An object with no atom inventory, whose conserved content is charge alone.
 
         Empty ``atoms`` is deliberate and already legal -- it contributes nothing to
         ``formula``, so a carrier appearing on one side only still conserves composition,
@@ -376,8 +410,9 @@ class Molecule:
         double-counting a quantity it does not own.
 
         That defect survived #22 because every test written for it had the SAME number of
-        carriers on both sides -- ``3 e- -> 3 e-`` for Kirchhoff's law -- and a balanced
-        count cannot fail this way whatever the spelling. The unbalanced case is the
+        carriers on both sides -- a ``3 e- -> 3 e-`` example then mislabeled as a test of
+        Kirchhoff's law -- and a balanced count cannot fail this way whatever the spelling.
+        It tested inventory syntax, not node-current semantics. The unbalanced case is the
         electrode, which is the entire point of a battery, and it was never tried.
         ``tests/test_domain_neutral.py::TestAnElectrodeIsAMorphism`` is the regression
         test; the lesson is that a conservation claim must be tested where the counts do
@@ -388,11 +423,14 @@ class Molecule:
     @classmethod
     def quantum(cls, state: str = "") -> "Molecule":
         """
-        A carrier of energy and no matter: a photon, a phonon, a radiated quantum.
+        A zero-atom token for an energy-carrying mode or quantum.
 
-        The chargeless case of :meth:`carrier`. A photon carries energy with no charge;
-        an electron carries charge with no mass. Structurally they are one thing, and the
-        field that distinguishes them is ``charge``, not the presence of atoms.
+        This is the chargeless case of :meth:`carrier`. It says only that no chemical atom
+        inventory is attached to the token; it does not say that every such excitation is
+        physically interchangeable or massless. An electron has nonzero rest mass, and a
+        phonon is a collective excitation of a material. Frequency, momentum, polarization,
+        medium and dispersion therefore belong in a future typed state/port model rather
+        than being inferred from this placeholder.
         """
         return cls.carrier(state, charge=0)
 
@@ -430,9 +468,14 @@ class Molecule:
                 stack.append(nxt)
         return len(seen) == n
 
+    @lru_cache(maxsize=8192)
     def canonical(self) -> "Molecule":
         """
         Canonical relabelling, so structurally identical molecules compare equal.
+
+        Results are cached by the complete immutable molecule value. This matters because
+        every ``Config`` construction canonicalises its members; repeated pathway states
+        should not repay the permutation search for a species already seen in this process.
 
         Minimises the key ``(symbols, edges)`` over the candidate permutations, then
         rebuilds the molecule from the winner. Refuses loudly above
@@ -504,6 +547,10 @@ class Config:
     species: tuple[Molecule, ...]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.species, tuple) or any(
+            not isinstance(molecule, Molecule) for molecule in self.species
+        ):
+            raise TypeError("species must be a tuple of Molecule values")
         # canonical: each molecule canonicalised, then the multiset sorted deterministically
         # `state` belongs in this key even though it is not conserved. Without it two
         # species differing only in state tie, the sort is stable, and the canonical
@@ -556,12 +603,16 @@ class Config:
         return " + ".join(repr(m) for m in self.species) if self.species else "I"
 
 
-#: The monoidal unit: the empty vessel. ``I (x) A == A``.
+#: Unit of the commutative object product: the empty formal configuration.
 UNIT = Config(())
 
 
 def tensor_obj(a: Config, b: Config) -> Config:
-    """``A (x) B``: both configurations present in the same vessel."""
+    """Commutative multiset union of configurations.
+
+    This is a formal object product. It does not assert physical co-location, interaction,
+    spatial separation or a parallel product on reaction morphisms.
+    """
     return Config(a.species + b.species)
 
 
@@ -600,12 +651,61 @@ class Reaction:
     cod: Config
     name: str = field(default="", compare=False)
     path: tuple[tuple[Config, Config], ...] | None = None
+    generator_id: str | None = field(default=None, compare=False, kw_only=True)
+    generator_word: tuple[tuple[Config, Config, str], ...] | None = field(
+        default=None, kw_only=True, repr=False
+    )
 
     def __post_init__(self) -> None:
+        if not isinstance(self.dom, Config) or not isinstance(self.cod, Config):
+            raise TypeError("reaction domain and codomain must be Config values")
+        if not isinstance(self.name, str):
+            raise TypeError("reaction name must be a string")
         if self.path is None:
-            # an elementary generator traverses exactly one step; an identity, none
-            step = () if self.dom == self.cod else ((self.dom, self.cod),)
-            object.__setattr__(self, "path", step)
+            # A constructor call denotes an elementary event even when its endpoints
+            # coincide.  Endomorphisms are not identities merely because their net state
+            # change is zero (a catalytic cycle and an AC period are obvious examples).
+            # ``identity`` passes path=() explicitly.
+            object.__setattr__(self, "path", ((self.dom, self.cod),))
+        elif not isinstance(self.path, tuple):
+            raise TypeError("reaction path must be a tuple of typed transitions")
+        if any(not isinstance(step, tuple) or len(step) != 2 for step in (self.path or ())):
+            raise TypeError("each reaction path entry must be a (Config, Config) tuple")
+        if self.generator_id is not None and (
+            not isinstance(self.generator_id, str)
+            or not self.generator_id
+            or "\x00" in self.generator_id
+        ):
+            raise ValueError(
+                "generator_id must be a non-empty stable string without NUL characters"
+            )
+        if self.generator_word is None:
+            path = self.path or ()
+            if self.generator_id is not None and len(path) != 1:
+                raise ValueError("generator_id can only label one elementary transition")
+            object.__setattr__(
+                self,
+                "generator_word",
+                tuple(
+                    (source, target, self.generator_id or "")
+                    for source, target in path
+                ),
+            )
+        elif not isinstance(self.generator_word, tuple):
+            raise TypeError("generator_word must be a tuple of typed generator keys")
+        if any(
+            not isinstance(key, tuple) or len(key) != 3
+            for key in (self.generator_word or ())
+        ):
+            raise TypeError(
+                "each generator key must be a (source, target, stable_id) tuple"
+            )
+        if self.generator_id is not None:
+            word = self.generator_word or ()
+            if len(word) != 1 or word[0][2] != self.generator_id:
+                raise ValueError(
+                    "generator_id must match the sole identity in generator_word"
+                )
         if self.dom.formula != self.cod.formula:
             raise ConservationError(
                 f"mass not conserved: {self.dom} -> {self.cod}; "
@@ -615,6 +715,47 @@ class Reaction:
             raise ConservationError(
                 f"charge not conserved: {self.dom} -> {self.cod}; "
                 f"{self.dom.charge:+d} != {self.cod.charge:+d}"
+            )
+        self._validate_path()
+
+    def _validate_path(self) -> None:
+        """Reject forged or discontinuous histories before they become certificates."""
+        path = self.path or ()
+        word = self.generator_word or ()
+        if len(word) != len(path):
+            raise CompositionError(
+                "generator_word must contain exactly one typed key per path transition"
+            )
+        if not path:
+            if self.dom != self.cod:
+                raise CompositionError(
+                    "only an identity may have an empty path; non-identity endpoints "
+                    "need at least one transition"
+                )
+            return
+
+        cursor = self.dom
+        for index, (source, target) in enumerate(path):
+            if source != cursor:
+                raise CompositionError(
+                    f"path step {index} starts at {source}, expected {cursor}"
+                )
+            if source.formula != target.formula or source.charge != target.charge:
+                raise ConservationError(
+                    f"path step {index} violates conservation: {source} -> {target}"
+                )
+            word_source, word_target, stable_id = word[index]
+            if (word_source, word_target) != (source, target):
+                raise CompositionError(
+                    f"generator key {index} is typed for {word_source} -> {word_target}, "
+                    f"not path transition {source} -> {target}"
+                )
+            if not isinstance(stable_id, str):
+                raise TypeError("generator identities must be stable strings")
+            cursor = target
+        if cursor != self.cod:
+            raise CompositionError(
+                f"path ends at {cursor}, but the declared codomain is {self.cod}"
             )
 
     def then(self, other: "Reaction") -> "Reaction":
@@ -629,20 +770,57 @@ class Reaction:
                 f"cannot compose {self.dom} -> {self.cod} with "
                 f"{other.dom} -> {other.cod}: codomain != domain"
             )
-        label = f"{self.name} ; {other.name}".strip(" ;")
+        label = " ; ".join(name for name in (self.name, other.name) if name)
         return Reaction(
             self.dom, other.cod, label,
             path=(self.path or ()) + (other.path or ()),
+            generator_word=(self.generator_word or ()) + (other.generator_word or ()),
         )
 
-    def tensor(self, other: "Reaction") -> "Reaction":
-        """Parallel composition ``self (x) other``: both reactions in one vessel."""
-        label = f"{self.name} (x) {other.name}".strip(" (x)")
+    def scheduled_product(self, other: "Reaction") -> "Reaction":
+        """
+        Put two histories alongside one another without erasing either history.
+
+        The current representation is a linear trace of whole-configuration states, so
+        independent events need a deterministic linearisation.  ``self`` is traversed
+        first while ``other.dom`` is held fixed, then ``other`` while ``self.cod`` is held
+        fixed.  This preserves certificates and the unit operation, but it deliberately
+        does *not* pretend that a linear trace implements the interchange quotient of a
+        free symmetric monoidal category.  That requires explicit ports/wires (an open
+        process graph), not another tuple convention.
+        """
+        label = " (x) ".join(name for name in (self.name, other.name) if name)
+        path: list[tuple[Config, Config]] = []
+        word: list[tuple[Config, Config, str]] = []
+        for index, (source, target) in enumerate(self.path or ()):
+            padded_source = tensor_obj(source, other.dom)
+            padded_target = tensor_obj(target, other.dom)
+            path.append((padded_source, padded_target))
+            stable_id = (self.generator_word or ())[index][2]
+            word.append((padded_source, padded_target, stable_id))
+        for index, (source, target) in enumerate(other.path or ()):
+            padded_source = tensor_obj(self.cod, source)
+            padded_target = tensor_obj(self.cod, target)
+            path.append((padded_source, padded_target))
+            stable_id = (other.generator_word or ())[index][2]
+            word.append((padded_source, padded_target, stable_id))
         return Reaction(
             tensor_obj(self.dom, other.dom),
             tensor_obj(self.cod, other.cod),
             label,
+            path=tuple(path),
+            generator_word=tuple(word),
         )
+
+    def tensor(self, other: "Reaction") -> "Reaction":
+        """
+        Compatibility alias for :meth:`scheduled_product`.
+
+        This operation serializes the left history before the right history. It is not a
+        parallel categorical tensor and does not satisfy interchange; use it only when that
+        explicit scheduling convention is intended.
+        """
+        return self.scheduled_product(other)
 
     @property
     def steps(self) -> int:
@@ -661,71 +839,69 @@ def identity(obj: Config) -> Reaction:
 
 def braid(a: Config, b: Config) -> Reaction:
     """
-    The symmetry ``sigma_{A,B} : A (x) B -> B (x) A``.
+    Object-level exchange ``A (+) B -> B (+) A``.
 
     Because ``Config`` canonicalises its species multiset, ``A (x) B`` and ``B (x) A``
     are already the *same object*, so this is an identity. That is the honest outcome:
-    the monoidal structure is symmetric on the nose rather than up to a nontrivial
-    natural isomorphism. Retained so the SMC interface is complete and so the law is
-    stated somewhere a test can find it.
+    the object product is commutative on the nose. This does not make the scheduled
+    morphism product symmetric or natural; interchange remains explicit architecture debt.
     """
-    return Reaction(tensor_obj(a, b), tensor_obj(b, a), "braid")
+    return Reaction(tensor_obj(a, b), tensor_obj(b, a), "braid", path=())
 
 
 # ======================================================================================
 # Structural properties, decided rather than asserted
 # ======================================================================================
-def is_catalytic(reaction: Reaction, catalyst: Molecule) -> bool:
+def is_regenerated(reaction: Reaction, species: Molecule) -> bool:
     """
-    Decide whether ``reaction`` is catalytic in ``catalyst``.
+    Decide whether ``species`` has the same positive multiplicity at both endpoints.
 
-    A catalytic step is a morphism ``C (x) S -> C (x) P``: the catalyst appears in both
-    the source and the target with the same multiplicity, so it is regenerated rather
-    than consumed. This replaces the legacy implementation, which printed
-    "Catalytic Loop Closed" unconditionally and computed nothing (finding F3).
-
-    Note this decides a *structural* property. It says the catalyst survives the step,
-    not that the step is kinetically or thermodynamically accessible -- those are the
-    oracle's business, and are reported separately.
+    This is a structural stoichiometric predicate only. An inert spectator passes it, so
+    it is not evidence of catalysis, rate enhancement, participation in a mechanism, or
+    kinetic accessibility.
     """
-    c = catalyst.canonical()
+    c = species.canonical()
     return (
         reaction.dom.species.count(c) > 0
         and reaction.dom.species.count(c) == reaction.cod.species.count(c)
     )
 
 
+def is_catalytic(reaction: Reaction, catalyst: Molecule) -> bool:
+    """Compatibility alias for :func:`is_regenerated`; it does not prove catalysis."""
+    return is_regenerated(reaction, catalyst)
+
+
 def reaction_residue(reaction: Reaction) -> tuple[Config, Config]:
     """
     Strip the spectators: return ``(dom', cod')`` with the common sub-multiset removed.
 
-    This is the structural half of an *exact* computational shortcut. Because ``E`` is a
-    monoidal functor, ``E(S (x) X) = E(S) + E(X)``, so for ``f : S (x) A -> S (x) B`` the
-    shared part cancels identically::
+    This is the structural half of an exact shortcut *inside the current separable,
+    isolated-species energy model*. Under ``E(S + X) = E(S) + E(X)``, the shared part
+    cancels identically::
 
         dE(f) = (E(S) + E(B)) - (E(S) + E(A)) = E(B) - E(A)
 
-    ``E(S)`` therefore cannot influence the answer and does not need to be computed. The
-    category decides that before any oracle is called -- the same "prune by type, ahead of
-    the expensive layer" move the search already makes, applied to the energy itself.
+    ``E(S)`` therefore cannot influence the answer and does not need to be computed under
+    that adapter. The multiset structure identifies the common spelling before any oracle
+    call; the separability assumption, not category theory alone, licenses cancellation.
 
     Two things follow, and the second matters more than the first:
 
-    1. **Cost.** A spectator is never priced. In a catalytic step the catalyst is usually
-       the largest species present, so this is the difference between paying for the whole
-       vessel and paying for the bond that actually changes.
+    1. **Cost.** A spectator is never priced. A nominated catalyst is often the largest
+       regenerated species present, so this can be the difference between paying for the
+       whole separable inventory and paying only for the species that change.
 
-    2. **Honesty of the error bar.** Uncertainties combine in quadrature, which is valid
-       only for *independent* errors. A spectator's energy is not two independent samples
-       -- it is one number, appearing twice, minus itself. Summing both sides first and
-       subtracting afterwards adds ``2 * u(S)^2`` of variance that physically cancels to
-       zero, so the reported interval is too wide by a factor that grows with the
-       spectator. Removing the species removes the fiction.
+    2. **Consistent reuse of one modeled quantity.** Quadrature is valid only for
+       independent terms. A spectator's energy is not two independent samples -- it is
+       one number, appearing twice, minus itself. Summing both sides first and subtracting
+       afterwards invents ``2 * u(S)^2`` under that independence model. Removing the
+       shared species preserves exact self-correlation. The remaining scalar scale is not
+       automatically a calibrated coverage interval.
 
-    The cancellation is exact only if the oracle is a deterministic function of the
-    species -- true for every oracle here, and worth stating because a stochastic oracle
-    (diffusion Monte Carlo, say) would return two different samples and the shared part
-    would cancel only to within its own noise.
+    It is not a universal statement about spectators in one interacting vessel. Binding,
+    solvent reorganisation, electrostatics and long-range fields can make the interaction
+    energy context-dependent even when the spectator's spelling is unchanged.
 
     An identity morphism has empty residue on both sides, giving ``dE = 0`` exactly.
     """
@@ -878,11 +1054,12 @@ def is_isodesmic(reaction: Reaction) -> bool:
 
 def catalytic_cycle(steps: Iterable[Reaction], catalyst: Molecule) -> Reaction | None:
     """
-    Compose ``steps`` into a single morphism and return it if the composite is catalytic.
+    Compatibility name: compose ``steps`` and require stoichiometric regeneration.
 
     Returns None if the steps do not compose (a real gap in the mechanism) or if the
-    catalyst is not regenerated. Returning the composed morphism rather than a bare
-    ``True`` is the point: the caller receives the evidence and can re-check it.
+    nominated species is not regenerated. Returning the composed morphism rather than a bare
+    ``True`` lets the caller re-check that structural fact. It does not establish catalysis:
+    an inert spectator passes, and no rate enhancement or mechanistic participation is tested.
     """
     steps = list(steps)
     if not steps:
@@ -893,7 +1070,7 @@ def catalytic_cycle(steps: Iterable[Reaction], catalyst: Molecule) -> Reaction |
             composite = composite.then(nxt)
         except CompositionError:
             return None
-    return composite if is_catalytic(composite, catalyst) else None
+    return composite if is_regenerated(composite, catalyst) else None
 
 
 def conserves(reaction: Reaction) -> bool:

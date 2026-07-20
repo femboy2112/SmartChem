@@ -158,7 +158,10 @@ class TestTheSavingRestsOnTheCanonicalKey:
         """
         inner = CountingOracle()
         cached = CachingOracle(inner)
-        huge = Molecule(tuple("H" * 12), frozenset())     # refuses to canonicalise
+        huge = Molecule(
+            tuple("H" * 12),
+            frozenset(Bond(i, (i + 1) % 12) for i in range(12)),
+        )                                                   # refuses to canonicalise
         with pytest.raises(NotImplementedError):
             huge.canonical()
 

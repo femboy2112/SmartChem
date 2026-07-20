@@ -340,4 +340,3 @@ def propose_bond(situated_reactants: Situated[Species]) -> Reaction[Species]:
     final_product, final_n, final_mech = best_outcome
     return Reaction([(final_product, best_effect)],
                     metadata={"transfer_n": final_n, "mechanism": final_mech})
-

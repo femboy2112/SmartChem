@@ -18,14 +18,17 @@ SmartChem is **not** a faster quantum chemistry package. PySCF is a backend here
 rival, and on any question of "what is the energy of this molecule" PySCF *is* SmartChem's
 answer.
 
-What SmartChem adds is the layer above, which does not otherwise exist: a reaction algebra
-where **conservation is enforced by construction**, **catalysis is a decidable property**,
-**mechanism search carries its own energy bookkeeping and provenance by law**, and an
-**entire response surface follows from one local definition**.
+What SmartChem currently adds is a small compositional layer: **closed reactions enforce
+atom and net-charge conservation at construction**, sequential histories retain generator
+provenance, and route search carries a caller-supplied energy tally alongside each branch.
+It can also evaluate an explicitly condition-dependent function over a finite grid. The
+structural predicate called `is_catalytic` is a compatibility alias for stoichiometric
+regeneration; kinetics and catalytic effect are not decided.
 
-A quantum chemistry package computes one number for one geometry. It has nothing to say
-about whether your proposed mechanism conserves mass, whether your catalyst is actually
-regenerated, or what the answer looks like across twelve solvents.
+Quantum-chemistry packages do much more than one number for one geometry, but they do not
+usually impose this repository's reaction-history type. SmartChem's useful separation is
+between structural validation, route bookkeeping and the energy backend. Environmental
+sweeps are meaningful only when the supplied computation actually models those conditions.
 
 ---
 
@@ -33,8 +36,8 @@ regenerated, or what the answer looks like across twelve solvents.
 
 **They do better:** essentially everything about real molecules. SMILES/InChI parsing, ring
 perception, stereochemistry, substructure search, conformer generation, fingerprints,
-reaction templates, and a periodic table covering the whole periodic table. RDKit handles
-drug-sized molecules; SmartChem's oracle interface handles diatomics.
+reaction templates, and broad periodic-table support. RDKit handles drug-sized molecules;
+SmartChem's validated oracle domain is currently small and method-dependent.
 
 **SmartChem adds:** conservation as a type-level guarantee. RDKit will happily let a
 reaction template drop an atom; SmartChem raises `ConservationError` at construction.
@@ -47,15 +50,15 @@ valency at all, so the claim is not merely withdrawn but inapplicable.
 
 ## 2. vs. Neural potentials (ANI, MACE, AlphaFold3)
 
-**They do better:** speed at scale and coverage. A trained potential evaluates in
-milliseconds on systems of thousands of atoms, and modern ones reach ~1 kcal/mol on the
-chemistry they were trained for. That is faster than SmartChem's accurate tier by four
-orders of magnitude.
+**They do better:** speed at scale and domain coverage. A trained potential can evaluate
+large systems rapidly and may reach low errors on the observables and chemical domain it
+was trained and validated for. That does not transfer automatically out of domain.
 
-**SmartChem adds:** structural guarantees a learned model cannot give. A network can
-predict a reaction that violates conservation because nothing in it forbids that. And a
-`Tally` certificate records exactly which oracle produced which step at what stated
-uncertainty.
+**SmartChem adds:** structural guarantees that an unconstrained learned model does not give.
+Learned architectures can also encode conservation, so this is an implementation property,
+not a limitation of neural methods. A `Tally` records the energy, uncertainty and method
+labels supplied for each step; it does not verify that those labels came from an oracle or
+that the uncertainties are calibrated.
 
 **Previously claimed, softened:** the "white box" framing was fair, but it was attached to
 an engine whose central covalent term was a constant fitted on two data points, with a
@@ -65,51 +68,63 @@ only as the baseline the accurate tiers are measured against.
 
 ## 3. vs. Quantum chemistry (PySCF, ORCA, Gaussian)
 
-**They do better:** the actual physics, comprehensively. Correlated methods, open-shell
+**They do better:** much broader electronic-structure physics and tooling. Correlated methods, open-shell
 systems, excited states, relativistic treatments, periodic boundary conditions, analytic
 gradients, solvation models, and molecules with more than two atoms.
 
-**SmartChem adds:** composition. It calls PySCF and wraps the result in structure that
-tracks provenance, enforces conservation across multi-step routes, and generates response
-surfaces. It also makes basis choice a function of the *elements involved* rather than a
-global setting — see §5.
+**SmartChem adds:** composition. It can call PySCF and wrap results in structures that track
+provenance and enforce conservation across sequential routes. Its Store utilities sample a
+user-supplied condition function; they do not make a condition-independent oracle respond
+to temperature, pressure or solvent. It also contains an experimental basis-selection
+policy keyed by the elements involved — see §5.
 
 **Previously claimed, withdrawn:** *"The Oracle Gate resolves in milliseconds what takes
-DFT hours, achieving chemical accuracy through structural entailment."* No. Chemical
-accuracy is reached by running CCSD(T) with basis-set extrapolation, at minutes per
-diatomic. The algebra contributed none of that accuracy.
+DFT hours, achieving chemical accuracy through structural entailment."* No. The best
+declared in-repository diatomic benchmark row uses CCSD(T) with basis-set extrapolation,
+at substantial cost per species, and remains above the conventional 1 kcal/mol threshold.
+The algebra contributed none of that electronic-structure accuracy, and benchmark
+performance does not guarantee accuracy out of domain. MP2, CCSD, optimized geometries,
+and polyatomic computation paths may exist internally, but public estimates fail closed
+when the selected protocol lacks a validation scale.
 
 **What survived, in a different form:** there *is* a real speed argument, just not the one
-claimed. Pruning happens **by type, before any oracle call** — candidates violating
-conservation, charge balance or valence never reach the expensive layer. That makes an
-expensive oracle affordable over a large candidate space. It does not make one calculation
-faster.
+claimed. Invalid `Reaction` objects that violate atom or net-charge conservation fail at
+construction, before any oracle call. The current core does not validate valence, generate
+reaction candidates, or prove that a conserving reaction is chemically accessible. Search
+only explores the supplied valid steps. This can avoid pricing malformed candidates; it
+does not make one quantum calculation faster.
 
 ## 4. vs. Applied category theory in chemistry (Baez, CRNs, Petri nets)
 
 **They do better:** rigour, generality, and priority. Baez and collaborators have a
 developed theory of reaction networks as symmetric monoidal categories, with published
-semantics for rates, stochastic dynamics and open systems. SmartChem's core is a small,
-concrete instance of ideas that literature already covers more generally.
+semantics for rates, stochastic dynamics and open systems. SmartChem does not yet implement
+that structure: its `Reaction` values form a category of sequential histories, while the
+commutative product on `Config` has no lawful parallel morphism tensor. The compatibility
+method `Reaction.tensor` is a deterministic left-first schedule and fails interchange and
+symmetry, so it must not be read as an SMC operation.
 
-**SmartChem adds:** an executable implementation wired to a real energy oracle, with the
-laws machine-checked against generated chains rather than proved on paper. That is an
-engineering contribution, not a mathematical one.
+**SmartChem adds:** an executable sequential implementation wired to energy oracles, with
+property tests over generated finite examples. Those tests are useful engineering evidence;
+they are not machine proofs of general laws and do not supply CRN rates or open-system
+semantics.
 
 **Previously claimed, withdrawn:** *"They are modelling macroscopic topology; we model
 microscopic quantum state transitions and prove whether the arrow should exist at all."*
 The legacy engine proved nothing of the kind — it compared hand-fitted algebraic
-expressions. Whether an arrow should exist is now answered by an oracle, and the oracle is
-PySCF.
+expressions. The current constructor answers only whether atom counts and net charge match.
+It accepts many physically impossible or kinetically inaccessible arrows. An energy oracle
+prices supported endpoint species; it does not decide whether a reaction mechanism exists.
 
 ## 5. Where the typed framing pays off in the physics — and where it didn't
 
-**It pays off in the energy functor.** `E` is a monoidal functor from the reaction category
-to `(ℝ, +)`, and `ΔE(f : A → B) = E(B) − E(A)` is well defined *only because* every morphism
-conserves matter. Total energy has an arbitrary zero fixed by atom content; conservation is
-what makes the offsets cancel. Shift every atomic reference by a million eV and no reaction
-energy moves. That is category theory doing load-bearing physical work rather than
-describing chemistry that was already there.
+**It pays off in reference-shift invariance.** The current ideal-species adapter defines an
+object potential `E(A)` by summing isolated species energies, and
+`ΔE(f : A → B) = E(B) − E(A)`. Sequential differences telescope. Conservation makes that
+difference invariant under permitted per-element reference shifts: add an arbitrary constant
+for every occurrence of each element and the offsets cancel between equal inventories. This
+is a useful gauge-invariance contract, not a strong-monoidal functor theorem and not a claim
+that energy is additive for interacting species in one vessel.
 → `tests/test_functor.py::TestConservationLicensesSubtraction`
 
 **It pays off again in deciding what not to compute.** The structure does not make any
@@ -117,44 +132,45 @@ single quantum-chemical calculation faster — nothing here does, and the retire
 legacy engine was the lesson that no algebra substitutes for the wavefunction. What it does
 is decide, *before* the expensive layer runs, which calls cannot affect the answer.
 
-A species present unchanged on both sides of a morphism cancels identically in `ΔE` by the
-monoidal law, so it is never priced. On `2 N → N₂` with an Fe spectator at ±5.0 eV that
-removed two oracle calls and shrank the reported uncertainty from 7.0711 eV to 0.0866 —
-because quadrature is valid only for *independent* errors, and a spectator's energy is one
-number appearing twice, minus itself, not two samples. The old bar was 82× too wide and the
-width was fiction. This is the same defect class as the extrapolation guard: a
-perfectly-correlated systematic quantity propagated as independent random error.
+A species present unchanged on both sides cancels identically in `ΔE` **under the adapter's
+separable isolated-species assumption**, so it is not priced. Binding, solvent reorganisation
+or long-range interactions can invalidate that shortcut in a real common environment. On
+`2 N → N₂` with an Fe spectator at ±5.0 eV the implemented shortcut
+removed two oracle calls and shrank the reported scalar scale from 7.0711 eV to 0.0866 —
+because quadrature is valid only for *independent* terms, and a spectator's energy is one
+modeled quantity appearing twice, minus itself, not two samples. The old scale was 82×
+too wide under that model. Neither scalar is automatically a confidence interval.
 
 That is the honest answer to "are we leaning too hard on someone else's calculation." For the
 *absolute energy of a species*, we should lean on PySCF entirely and there is no shortcut. For
-*which* absolute energies the question needs, and *how their errors compose*, we were
-over-deferring, and the category proved it.
+*which* isolated-species energies this adapter needs, and *how their stated errors compose*,
+the multiset structure plus the separability assumption supports an exact cancellation.
 
-**And the same decomposition unblocked polyatomics, which is the largest thing it has bought.**
-Anything with three or more atoms was declined for want of coordinates. The reflex is to reach
-for a bigger table of experimental geometries, or for an external optimiser. Neither was needed,
-because the object already carried a bond graph — put there for a purely categorical reason, so
-that `Na + Cl` and `NaCl` could be different objects — and a bond graph is precisely what a
-geometry builder consumes.
+**The same decomposition opened an experimental polyatomic geometry path.** Anything with
+three or more atoms was previously blocked for want of coordinates. A bond graph is a useful
+input to a seed builder, so the object representation enabled a research path without a
+larger table of geometries. Public polyatomic energies still decline: the seed/relaxation/
+Hessian machinery is not a conformer or spin-state search and has no validated accuracy
+profile. “Computable internally” is deliberately not presented as “supported estimate.”
 
-What made it *rigorous* rather than merely convenient was refusing to treat "get a geometry" as
+What made it more auditable rather than merely convenient was refusing to treat "get a geometry" as
 one problem. It is three, with different computational characters: a seed (combinatorics, no
-wavefunction), a relaxation (needs gradients, and gradients are cheap), and a certificate (linear
-algebra on a Hessian). Splitting them is what let each ride at the cheapest tier that can
-actually answer it, and it is what made the certificate possible at all — a step nobody would
-have written if "geometry" had stayed a single opaque call.
+wavefunction), a relaxation (needs gradients), and a local-minimum diagnostic (linear
+algebra on a Hessian). Splitting them is what let each ride at an appropriate tier, and it
+made the diagnostic explicit — a step that is easy to omit when "geometry" remains a
+single opaque call.
 
-That certificate immediately earned its place. H₂O₂'s symmetric seed relaxes to the trans-planar
+That diagnostic immediately earned its place. H₂O₂'s symmetric seed relaxes to the trans-planar
 form: a perfectly converged stationary point, gradient 1.7×10⁻⁵, and a *transition state*. The
 gradient alone calls it done. Only the Hessian says otherwise — and then its imaginary
 eigenvector says which way to go, so the diagnosis and the repair are the same object. Three of
-four bond-conserving polyatomic reactions hit this; without the certificate all three would have
+four bond-conserving polyatomic reactions hit this; without the curvature check all three would have
 returned confident numbers for the wrong species.
 
-The pattern generalises past chemistry, and it is the ~/SmartASM discipline exactly: *candidate
-generation never upgrades proof status.* The VSEPR seed is a heuristic and stays one. The
-frequency analysis is a proof and is allowed to overrule it. Keeping those two roles in separate
-functions is the whole reason a wrong answer could not pass silently.
+The engineering lesson generalises: candidate generation does not establish a minimum. The
+VSEPR seed is a heuristic and stays one. A projected frequency analysis is a numerical
+local-minimum check under the harmonic approximation, not a mathematical proof. Keeping the
+two roles in separate functions makes assumptions and failure modes visible.
 
 **It did not pay off in basis selection, and that was measured.** The reasoning was sound
 in shape: extrapolation only removes error the family is converging toward, so diffuse
@@ -178,15 +194,18 @@ Two corrections to the record fell out of this:
 
 - *"CS misses because sulfur wants tight d"* was borrowed from the literature, not measured.
   Diffuse is worth +2.76 to CS and tight *d* only +1.39.
-- *"NaCl needs diffuse functions"* survives at fixed cardinal but is beside the point: plain
+- *"NaCl needs diffuse functions"* survives at fixed cardinal in this selected calculation,
+  but is beside the point here: plain
   `cc-pVQZ` gives +0.39 kcal/mol and the extrapolation to `cbs(TZ,QZ)` makes it +3.38.
-  **For ionic species the extrapolation is the problem, not the basis.**
+  **For this NaCl protocol the tested extrapolation was the problem.** One molecule does
+  not justify a conclusion about ionic species generally.
 
 The machinery is kept and tested but not recommended, for the same reason the legacy engine
 is kept: a negative result you can still run beats one you have to take on trust.
 
-The honest summary is that the typed framing bought a real theorem in the energy functor
-and bought nothing in basis selection, and only measurement could tell those apart.
+The honest summary is that the typed framing bought reference-shift invariance and reliable
+sequential bookkeeping, while the tested basis-selection policy bought no accuracy at its
+target tier. Measurement was needed to tell those apart.
 
 ---
 
@@ -209,8 +228,9 @@ The replacement claim is smaller and true:
 
 > **Conservation is enforced once, on generators, and inherited by every composite.**
 > A mass-violating reaction is unconstructible, not merely absent. Checked against
-> hypothesis-generated composition and tensor chains in
+> hypothesis-generated sequential composition chains in
 > `tests/test_laws.py::TestConservationTheorem`.
 
-That is a modest theorem. It is also the thing here that actually works, and it does a job
-no neighbouring tool does.
+That is a modest theorem and the clearest invariant the current core supports. Other
+reaction-network and chemistry tools can also enforce conservation; SmartChem's contribution
+is this particular executable representation and its integration with route bookkeeping.

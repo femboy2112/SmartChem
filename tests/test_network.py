@@ -1,98 +1,46 @@
 """
-The energy functor's shape does NOT transfer to impedance, and this file is why.
+Scalar impedance arithmetic does not inherit the isolated-energy adapter's additive rule.
 
-This is a falsified prediction kept on the record, in the same spirit as P3. The working
-assumption behind "the categorical layer is domain-neutral" was that a new domain needs a
-new oracle and nothing else -- that `E(A (x) B) = E(A) + E(B)` is the general shape and
-each domain just supplies its own values. Reaching for a radio absorber is what killed it.
+This file keeps a falsified architectural prediction on the record. The historical
+assumption was that a new physical domain needed only a new oracle and could reuse one
+addition law. At 1 MHz, a 50 ohm resistor and 100 pF capacitor give:
 
-The measurement
----------------
-Two components at 1 MHz: R = 50 ohm and C = 100 pF.
+    series connection      Z = Z1 + Z2
+    parallel connection    Z = 1/(1/Z1 + 1/Z2)
 
-    series   (composition)    Z = Z1 + Z2                    additive
-    parallel (tensor)         Z = 1/(1/Z1 + 1/Z2)            NOT additive
+Using series addition for the parallel pair gives about 1592 ohm instead of 49.98 ohm,
+wrong by 31.9x. The tests below pin that arithmetic counterexample.
 
-The additive law gives 1592 ohm for the parallel pair where the truth is 49.98 ohm: wrong
-by 31.9x, silently, with no error bar and no refusal. That is the failure mode this
-repository exists to refuse.
+Historical note: an intermediate repair described series and parallel as a pair of monoids
+and tried to read them as categorical composition and tensor. That description was also too
+broad. A hypothetical symmetric-monoidal semantics would require the two scalar operations
+to satisfy interchange,
 
-What is actually going on
--------------------------
-**Energy is extensive**, so side-by-side and end-to-end are the SAME operation for it, and
-one monoid covers both. That is a special property of energy, not a general property of
-physical quantities -- and reading its niceness as generality is the mistake this file
-records.
+    (Z1 + Z2) || (Z3 + Z4) == (Z1 || Z3) + (Z2 || Z4),
 
-The general shape is a PAIR of monoids, one per categorical operation:
+and the representative values below do not. This rules out that particular scalar
+series/parallel interpretation; it does not construct or classify a network category.
+The pure-resistor example compares two different series-parallel arrangements. An earlier
+version incorrectly called it a Wheatstone bridge; there is no bridge branch in either
+expression.
 
-    energy        (x): +          (.): +          degenerate -- both the same
-    impedance     (x): parallel   (.): +
-    admittance    (x): +          (.): parallel
+One positive identity is deliberately narrow. For uncoupled parallel branches held at the
+same externally prescribed voltage, real powers add because admittances add:
 
-``smartchem/thermo.py`` hardcodes the degenerate case. It is correct for energy and it is
-not a template for anything else. Anything that reaches for classical field or network
-behaviour needs the pair, and a session that assumes otherwise gets a plausible number
-that is 32x wrong.
+    P_total = |V|^2 Re(Y1 + Y2) = P1 + P2.
 
-What survives, which decides what to build first
-------------------------------------------------
-1. **Absorbed power IS extensive** (asserted below). Two absorbers side by side dissipate
-   the sum of what each dissipates. So radiative ABSORPTION sits correctly on the existing
-   energy shape; it is network SOLVING that does not. That is a real ordering constraint
-   on the moonshot, and it says absorption is reachable before circuit solving is.
-2. **The cancellation is the physics.** At resonance |Z_L + Z_C| = 0.00 ohm while
-   |Z_L| + |Z_C| = 632.46 ohm. A magnitude-summing law does not approximate resonance
-   badly -- it cannot represent it at all, because the imaginary parts must cancel.
-   Complex arithmetic here is load-bearing, not cosmetic.
+That test does not establish radiative absorption additivity. Side-by-side absorbers can
+couple electromagnetically, change the field and load the source; none of those effects is
+represented here.
 
-AND THEN THE REPAIR WAS FALSIFIED TOO -- READ THIS BEFORE BUILDING ANYTHING
----------------------------------------------------------------------------
-The paragraph above used to end: "the next real step is a functor parameterised by a pair
-of monoids rather than welded to one." That is wrong, and the probe that killed it costs
-four multiplications.
+The LC tests establish another arithmetic fact: complex reactances cancel at resonance,
+whereas summing magnitudes cannot reproduce the zero. They do not amount to a circuit solver.
 
-In a symmetric monoidal category the INTERCHANGE law holds by definition -- it is what
-makes ``(x)`` a bifunctor:
-
-    (f . g) (x) (h . k)  ==  (f (x) h) . (g (x) k)
-
-A functor sending ``.`` to one operation and ``(x)`` to another must therefore make those
-two operations interchange as well. For impedance that demands
-
-    (Z1 + Z2) || (Z3 + Z4)  ==  (Z1 || Z3) + (Z2 || Z4)
-
-and it is false. Measured below: up to **73% relative disagreement**, and false already on
-PURE RESISTORS -- R = 1,2,3,4 gives 2.1000 against 2.0833 -- so it is not an artifact of
-complex arithmetic. That case is a Wheatstone bridge, which is precisely the classical
-example of a network that series-parallel reduction cannot reach. The physics knew.
-
-So impedance is not a strong monoidal functor of ANY monoid-pair shape. Not one monoid, not
-two. A network solver is not a widening of this functor and no amount of parameterisation
-gets there; circuits want a different structure entirely -- networks as cospans of graphs,
-composed by gluing boundary nodes, with a relation rather than a monoid element as the
-semantics.
-
-WHY ENERGY GETS ONE MONOID, WHICH IS A THEOREM AND NOT A COINCIDENCE
---------------------------------------------------------------------
-Eckmann-Hilton: two monoid structures on one set that SHARE A UNIT and satisfy interchange
-are necessarily equal, and commutative. So energy having a single monoid is not luck and
-not a special property to be admired -- it is forced, the moment you notice that its tensor
-unit and its composition unit are both 0 eV.
-
-Impedance escapes the theorem for exactly one reason, and it is a satisfying one: its two
-units are different. A plain wire is the series identity at 0 ohm; an open circuit is the
-parallel identity at infinite ohm. Different units, no collapse, two genuinely distinct
-monoids -- which then fail interchange and so cannot both come from one functor anyway.
-
-This is the third premise in this project's history to die the same death: #23's
-"(symbol, degree)", #24's "Estimate is scalar", and now #24's "a pair of monoids". Each was
-a plausible generalisation adopted without a discriminating probe, and each probe, once
-written, took minutes. The lesson is the type, not the token.
-
-Scope of this file: it pins the arithmetic facts and the structural claims, including the
-ones that turned out to be wrong. It does not build a network solver, and it now says why
-the obvious route to one does not exist.
+Abstractly, Eckmann-Hilton constrains two unital operations that share a unit and satisfy
+interchange. That theorem motivated the historical discussion, but the current SmartChem
+source has no genuine morphism tensor and its float accumulators are not exact monoids over
+all Python values. The small scalar examples below are representative numerical checks, not
+proofs of an energy functor or a general network semantics.
 """
 from __future__ import annotations
 
@@ -119,17 +67,17 @@ def parallel(*z: complex) -> complex:
 
 
 # ======================================================================================
-class TestImpedanceNeedsTwoMonoids:
-    """The core finding: one additive law cannot serve both categorical operations."""
+class TestImpedanceNeedsDistinctOperations:
+    """Series addition cannot be reused for the tested parallel connection."""
 
     def test_impedance_is_additive_under_series(self):
-        """Composition is fine. This half of the assumption was true."""
+        """The scalar series-connection formula is addition."""
         assert series(Z_R, Z_C) == pytest.approx(
             complex(R_OHMS, -1 / (OMEGA * C_FARADS)))
 
     def test_impedance_is_not_additive_under_parallel(self):
         """
-        The half that was false. If a session ever "reuses the energy functor" for a
+        The half that was false. If a session ever reuses isolated-energy additivity for a
         network, this is the number it silently gets wrong.
         """
         additive = series(Z_R, Z_C)
@@ -138,15 +86,13 @@ class TestImpedanceNeedsTwoMonoids:
         assert abs(additive - truth) > 1500.0
 
     def test_admittance_is_additive_under_parallel(self):
-        """The mirrored monoid. Both exist; neither serves both operations."""
+        """Admittances add for these uncoupled parallel branches."""
         assert 1 / Z_R + 1 / Z_C == pytest.approx(1 / parallel(Z_R, Z_C))
 
     def test_no_single_representation_is_additive_for_both_operations(self):
         """
-        Stated as a test rather than a comment, because it is the load-bearing claim.
-        Impedance is additive for composition and not for tensor; admittance is additive
-        for tensor and not for composition. Energy is additive for both, which is a fact
-        about energy and not about the framework.
+        For these scalar formulas impedance adds in series but not in parallel; admittance
+        adds in parallel but not in series. This is not a claim about a categorical tensor.
         """
         z_additive_series = series(Z_R, Z_C) == pytest.approx(series(Z_R, Z_C))
         z_additive_parallel = abs(series(Z_R, Z_C) - parallel(Z_R, Z_C)) < 1e-9
@@ -158,10 +104,9 @@ class TestImpedanceNeedsTwoMonoids:
 
 
 # ======================================================================================
-class TestWhatSurvives:
+class TestPrescribedVoltagePowerIdentity:
     """
-    What is still safe on the existing energy shape -- which is what decides the build
-    order for anything reaching toward classical behaviour.
+    A fixed-drive identity for uncoupled parallel branches, not radiative extensivity.
     """
 
     @staticmethod
@@ -169,11 +114,11 @@ class TestWhatSurvives:
         """Real power into an impedance at fixed drive: P = |V|^2 Re(Y)."""
         return abs(volts) ** 2 * (1 / z).real
 
-    def test_absorbed_power_is_extensive_under_tensor(self):
+    def test_uncoupled_parallel_branch_power_adds_at_prescribed_voltage(self):
         """
-        The result that makes radiative absorption reachable before network solving.
-        Two absorbers side by side dissipate the sum of what each dissipates, which is
-        exactly the law the energy functor already enforces.
+        Both branches see the same externally prescribed voltage and do not interact. The
+        equality follows from parallel admittance addition; it does not cover source loading,
+        mutual coupling, a self-consistent field or radiative absorbers.
         """
         assert self._power(Z_R) + self._power(Z_C) == pytest.approx(
             self._power(parallel(Z_R, Z_C)))
@@ -186,37 +131,33 @@ class TestWhatSurvives:
 
 
 # ======================================================================================
-class TestInterchangeFailsSoNoMonoidPairCanWork:
+class TestSeriesParallelScalarInterchangeCounterexample:
     """
-    The sharper finding, and the one that kills the obvious repair.
-
-    A pair of monoids is not merely insufficient for impedance -- it is impossible, because
-    the two operations would have to interchange and they do not.
+    These two scalar reduction operations fail the interchange equation on representatives.
     """
 
     @staticmethod
-    def _bridge(z1, z2, z3, z4):
-        """The two sides of the interchange law, as networks."""
+    def _interchange_sides(z1, z2, z3, z4):
+        """The two scalar series/parallel expressions being compared."""
         left = parallel(series(z1, z2), series(z3, z4))     # (f.g) (x) (h.k)
         right = series(parallel(z1, z3), parallel(z2, z4))  # (f(x)h) . (g(x)k)
         return left, right
 
     def test_interchange_fails_for_impedance(self):
         """
-        Required by any functor sending composition to series and tensor to parallel.
-        It does not hold, so no such functor exists.
+        A hypothetical semantics mapping composition to series and a true tensor to parallel
+        would require this equation. The numerical counterexample rejects that mapping.
         """
         z = [complex(50, 30), complex(120, -80), complex(75, 10), complex(20, -150)]
-        left, right = self._bridge(*z)
+        left, right = self._interchange_sides(*z)
         assert abs(left - right) / abs(left) > 0.01
 
     def test_it_fails_on_pure_resistors_too(self):
         """
-        So nobody can attribute the failure to complex arithmetic and hope a real-valued
-        version survives. R = 1,2,3,4 is a Wheatstone bridge, the classical example of a
-        network series-parallel reduction cannot reach.
+        The mismatch is already present for positive real scalars. These are two distinct
+        series-parallel arrangements, not a Wheatstone-bridge topology.
         """
-        left, right = self._bridge(1.0, 2.0, 3.0, 4.0)
+        left, right = self._interchange_sides(1.0, 2.0, 3.0, 4.0)
         assert left == pytest.approx(2.1000, abs=1e-4)
         assert right == pytest.approx(2.0833, abs=1e-4)
         assert left != pytest.approx(right, abs=1e-3)
@@ -224,23 +165,22 @@ class TestInterchangeFailsSoNoMonoidPairCanWork:
     def test_the_symmetric_case_coincidentally_agrees(self):
         """
         Four equal resistors DO satisfy it. Kept deliberately: a test suite that only ever
-        tried the symmetric case would have concluded interchange holds and the monoid-pair
-        plan was sound. That is the balanced-count blindness of #22 in another costume, and
-        the reason the asymmetric cases above are the real test.
+        tried the symmetric case could have left the historical monoid-pair plan unfalsified.
+        The asymmetric representatives are the discriminating cases.
         """
-        left, right = self._bridge(1.0, 1.0, 1.0, 1.0)
+        left, right = self._interchange_sides(1.0, 1.0, 1.0, 1.0)
         assert left == pytest.approx(right)
 
-    def test_energy_does_satisfy_interchange(self):
-        """The contrast that makes the point: with both operations +, interchange is trivial."""
+    def test_scalar_addition_representative_satisfies_the_interchange_equation(self):
+        """A finite float example agrees within tolerance when both operations are addition."""
         a, b, c, d = -1.5, -2.25, 0.75, -3.0
         assert (a + b) + (c + d) == pytest.approx((a + c) + (b + d))
 
-    def test_the_two_impedance_monoids_have_different_units(self):
+    def test_series_and_parallel_have_different_limiting_identities(self):
         """
-        Eckmann-Hilton needs a SHARED unit. Impedance does not have one -- a wire is the
-        series identity at 0 ohm, an open circuit is the parallel identity at infinity --
-        which is exactly why it gets to have two distinct monoids at all.
+        A wire is the series identity at 0 ohm; an open circuit is the parallel identity only
+        in the infinite-impedance limit. The finite helper is therefore not a total monoid
+        operation containing both identities.
         """
         wire = 0.0
         assert series(Z_R, wire) == pytest.approx(Z_R)
@@ -252,11 +192,11 @@ class TestInterchangeFailsSoNoMonoidPairCanWork:
         for short in (1e-6, 1e-9, 1e-12):
             assert abs(parallel(Z_R, short)) == pytest.approx(short, rel=1e-3)
 
-    def test_energys_two_units_coincide_which_is_what_forces_the_collapse(self):
+    def test_the_historical_scalar_energy_example_uses_zero_for_both_roles(self):
         """
-        Both of energy's units are 0 eV. With a shared unit and interchange, Eckmann-Hilton
-        makes the two monoids equal and commutative -- so energy's single monoid is a
-        theorem, not a lucky property of energy.
+        This is the small scalar observation that motivated the historical Eckmann-Hilton
+        analogy. It does not prove that the concrete float/Estimate implementation is an
+        exact monoid or that SmartChem has a morphism tensor.
         """
         tensor_unit = 0.0
         compose_unit = 0.0
@@ -267,10 +207,10 @@ class TestInterchangeFailsSoNoMonoidPairCanWork:
 
 
 # ======================================================================================
-class TestCancellationIsThePhysics:
+class TestComplexReactanceCancellation:
     """
-    Why complex values are load-bearing rather than cosmetic. A model carrying magnitudes
-    cannot represent resonance at all -- the imaginary parts have to cancel.
+    In the ideal scalar series-LC model, phase-bearing reactances cancel at resonance while
+    their magnitudes do not.
     """
 
     RESONANT_OMEGA = 1 / (L_HENRIES * C_FARADS) ** 0.5

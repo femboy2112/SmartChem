@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import pytest
 
+from smartchem.atoms import PT
+from smartchem.data.basis_tight_d import TIGHT_D
 from smartchem.data import reference as ref
 
 
@@ -122,22 +124,35 @@ class TestTheDerivationIsCorrect:
 
         assert via_formation == pytest.approx(via_atomization, abs=1e-9)
 
-    def test_a_mass_violating_reaction_makes_the_routes_disagree(self):
+    def test_a_mass_violating_pseudo_reaction_is_refused(self):
         """
-        The control for the test above. If the atomic terms did not cancel, the agreement
-        would be meaningless -- so break conservation and confirm the two routes part ways.
-        Without this, the previous test would pass even if both routes were the same bug.
+        Formation-enthalpy differences across unequal inventories depend on omitted atomic
+        reservoirs. Publishing one as an experimental reaction energy would be a plausible
+        but reference-dependent wrong answer.
         """
         left = {"C2H6": 1}
         right = {"CH4": 1}          # a carbon and two hydrogens vanish
+        with pytest.raises(ValueError, match="conserve elemental composition"):
+            ref.reaction_energy_ev(left, right)
 
-        via_formation = ref.reaction_energy_ev(left, right)
-        via_atomization = (
-            ref.atomization_energy_ev("C2H6") - ref.atomization_energy_ev("CH4")
-        )
-        assert abs(via_formation - via_atomization) > 1.0, (
-            "the atomic terms must NOT cancel when mass is not conserved"
-        )
+    @pytest.mark.parametrize(
+        ("side", "error"),
+        [
+            ({}, ValueError),
+            ({"CH4": 0}, ValueError),
+            ({"CH4": -1}, ValueError),
+            ({"CH4": True}, TypeError),
+            ({"CH4": 1.5}, TypeError),
+            ({"": 1}, ValueError),
+        ],
+    )
+    def test_reaction_stoichiometry_is_validated(self, side, error):
+        with pytest.raises(error):
+            ref.reaction_energy_ev(side, {"CH4": 1})
+
+    def test_reaction_sides_are_typed_mappings(self):
+        with pytest.raises(TypeError, match="mapping"):
+            ref.reaction_energy_ev([("CH4", 1)], {"CH4": 1})
 
 
 class TestPhysicalSanity:
@@ -190,6 +205,21 @@ class TestPhysicalSanity:
 
 
 class TestTheTableDoesNotLieAboutItself:
+    @pytest.mark.parametrize(
+        "table,key,value",
+        [
+            (ref.GEOMETRY, "H2", (9.0, 9.0, 0)),
+            (ref.ATOM_SPIN, "H", 0),
+            (ref.ATOM_FORMATION_KJ, "H", 0.0),
+            (PT, "H", None),
+            (TIGHT_D, "cc-pV(T+d)Z", "changed"),
+        ],
+    )
+    def test_model_input_tables_are_immutable(self, table, key, value):
+        """A running oracle's calculation inputs cannot drift behind its cache identity."""
+        with pytest.raises(TypeError):
+            table[key] = value
+
     def test_missing_species_returns_none_rather_than_guessing(self):
         assert ref.atomization_energy_ev("C6H6") is None
         assert ref.polyatomic("C6H6") is None
@@ -204,7 +234,7 @@ class TestTheTableDoesNotLieAboutItself:
                 )
 
     def test_splits_are_declared_and_both_populated(self):
-        """A held-out split with nothing in it is not a held-out split."""
+        """Historical regression partitions remain explicit, even though neither is pristine."""
         assert len(ref.polyatomics("train")) >= 3
         assert len(ref.polyatomics("test")) >= 3
         assert len(ref.polyatomics("train")) + len(ref.polyatomics("test")) == len(
@@ -214,3 +244,46 @@ class TestTheTableDoesNotLieAboutItself:
     def test_formulas_are_unique(self):
         formulas = [e.formula for e in ref.POLYATOMIC_REFS]
         assert len(formulas) == len(set(formulas))
+
+    def test_polyatomic_composition_is_an_immutable_snapshot(self):
+        source = {"H": 2, "O": 1}
+        entry = ref.PolyatomicRef("H2O", source, -238.9, 0.004, "train", "test")
+
+        source["H"] = 99
+        assert entry.composition == {"H": 2, "O": 1}
+        with pytest.raises(TypeError):
+            entry.composition["H"] = 3
+
+    @pytest.mark.parametrize(
+        ("composition", "error"),
+        [
+            ([], TypeError),
+            ({}, ValueError),
+            ({"": 1}, ValueError),
+            ({1: 1}, ValueError),
+            ({"H": True}, TypeError),
+            ({"H": 1.5}, TypeError),
+            ({"H": 0}, ValueError),
+            ({"H": -1}, ValueError),
+        ],
+    )
+    def test_polyatomic_composition_rejects_invalid_counts(self, composition, error):
+        with pytest.raises(error):
+            ref.PolyatomicRef("bad", composition, 0.0, 0.0, "train", "test")
+
+    def test_diatomic_rows_encode_their_conventional_graph_order(self):
+        expected = {
+            "H2": 1, "N2": 3, "O2": 2, "F2": 1, "Cl2": 1, "I2": 1,
+            "P2": 3, "S2": 2, "C2": 2, "Si2": 2, "Na2": 1, "K2": 1,
+            "HF": 1, "HCl": 1, "HI": 1, "OH": 1, "CH": 1, "NH": 1,
+            "SiO": 2, "CS": 3, "CO": 3, "NO": 2, "CN": 3,
+            "NaCl": 1, "KCl": 1, "NaF": 1, "MgO": 1, "ICl": 1,
+        }
+        assert {entry.formula: entry.bond_order for entry in ref.BOND_REFS} == expected
+
+    def test_new_bond_references_default_to_a_single_bond_for_source_compatibility(self):
+        entry = ref.BondRef("AB", ("A", "B"), 1.0, 0.1, "train", "test", "test")
+        assert entry.bond_order == 1
+
+    def test_chemical_accuracy_is_exactly_one_kcal_per_mol(self):
+        assert ref.CHEMICAL_ACCURACY_EV * ref.KCAL_PER_EV == pytest.approx(1.0)

@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from smartchem.category import Bond, Molecule
+from smartchem import geometry as geometry_module
 from smartchem.geometry import (
     GeometryError,
     _electron_domains,
@@ -38,6 +39,11 @@ CARBON_DIOXIDE = Molecule(("C", "O", "O"), frozenset({Bond(0, 1, 2), Bond(0, 2, 
 #: cm^-1 per sqrt(Hartree / (Bohr^2 amu)) -- checked against PySCF's own constant, which
 #: is assembled from CODATA rather than written down, and agreed to all printed digits.
 TO_WAVENUMBER = 5140.4871
+
+
+def test_geometry_seed_policy_is_read_only():
+    with pytest.raises(TypeError):
+        geometry_module._ORDER_SCALE[1] = 9.0
 
 
 def bond_length(coords, i, j):
@@ -186,9 +192,8 @@ class TestSeedGeometry:
         Two fragments fix no relative placement. Inventing a separation between them
         would be inventing a number, so this declines instead.
         """
-        pair = Molecule(("H", "H", "O"), frozenset({Bond(0, 1)}))
-        with pytest.raises(GeometryError, match="connected"):
-            seed_coordinates(pair)
+        with pytest.raises(ValueError, match="connected species"):
+            Molecule(("H", "H", "O"), frozenset({Bond(0, 1)}))
 
     def test_an_empty_molecule_is_refused(self):
         with pytest.raises(GeometryError):
@@ -264,10 +269,25 @@ class TestRelaxOnAnAnalyticSurface:
             unit = delta / r
             energy = 0.5 * k * (r - r0) ** 2
             force = k * (r - r0)
-            # gradient in Hartree/Bohr, which is what relax expects back
-            gradient = np.array([-force * unit, force * unit]) / 0.52917721092
+            # ``force`` is dE/dx in Hartree/Angstrom.  Since x_A = a0*q_bohr,
+            # dE/dq_bohr = a0*dE/dx_A.
+            gradient = np.array([-force * unit, force * unit]) * 0.52917721092
             return energy, gradient
         return energy_and_gradient
+
+    def test_native_gradient_matches_a_directional_finite_difference(self):
+        """Pin the Angstrom/Bohr chain rule independently of optimisation success."""
+        surface = self.harmonic_pair(1.2, k=0.7)
+        coords = np.array([[0.1, -0.2, 0.0], [1.55, 0.3, -0.1]])
+        direction = np.array([[0.3, -0.4, 0.2], [-0.1, 0.5, -0.2]])
+        direction /= np.linalg.norm(direction)
+        eps = 1e-6
+        plus = surface(coords + eps * direction)[0]
+        minus = surface(coords - eps * direction)[0]
+        finite_difference = (plus - minus) / (2 * eps)       # Hartree/Angstrom
+        gradient_bohr = surface(coords)[1]
+        analytic = float(np.sum((gradient_bohr / 0.52917721092) * direction))
+        assert analytic == pytest.approx(finite_difference, rel=1e-7, abs=1e-9)
 
     @pytest.mark.parametrize("r0", [0.8, 1.1, 1.5, 2.4])
     def test_it_finds_the_known_minimum(self, r0):
@@ -318,6 +338,41 @@ class TestRelaxOnAnAnalyticSurface:
         assert result.iterations > 1, "it must actually move, not accept the seed"
         assert bond_length(result.coordinates, 0, 1) == pytest.approx(r0, abs=1e-4)
 
+    @pytest.mark.parametrize(
+        ("coordinates", "error"),
+        [
+            (np.zeros(3), ValueError),
+            (np.zeros((0, 3)), ValueError),
+            (np.zeros((2, 2)), ValueError),
+            (np.array([[0.0, 0.0, 0.0], [float("nan"), 0.0, 1.0]]), ValueError),
+        ],
+    )
+    def test_invalid_coordinate_inputs_are_rejected(self, coordinates, error):
+        with pytest.raises(error):
+            relax(coordinates, self.harmonic_pair(1.0))
+
+    @pytest.mark.parametrize(
+        ("kwargs", "error"),
+        [
+            ({"max_iterations": True}, TypeError),
+            ({"max_iterations": 0}, ValueError),
+            ({"gradient_tolerance": True}, TypeError),
+            ({"gradient_tolerance": 0.0}, ValueError),
+            ({"gradient_tolerance": float("inf")}, ValueError),
+        ],
+    )
+    def test_invalid_optimizer_controls_are_rejected(self, kwargs, error):
+        coordinates = np.array([[0.0, 0.0, 0.0], [1.2, 0.0, 0.0]])
+        with pytest.raises(error):
+            relax(coordinates, self.harmonic_pair(1.0), **kwargs)
+
+    def test_malformed_backend_outputs_fail_before_the_optimizer_can_use_them(self):
+        coordinates = np.array([[0.0, 0.0, 0.0], [1.2, 0.0, 0.0]])
+        with pytest.raises(ValueError, match="gradient"):
+            relax(coordinates, lambda _coords: (0.0, np.zeros(3)))
+        with pytest.raises(ValueError, match="energy"):
+            relax(coordinates, lambda coords: (float("nan"), np.zeros_like(coords)))
+
 
 class TestHarmonicAnalysis:
     """
@@ -335,6 +390,22 @@ class TestHarmonicAnalysis:
         h[0, 0, 2, 2] = h[1, 1, 2, 2] = k
         h[0, 1, 2, 2] = h[1, 0, 2, 2] = -k
         return h
+
+    @pytest.mark.parametrize(
+        ("masses", "coordinates", "hessian", "match"),
+        [
+            ([1.0, 0.0], np.zeros((2, 3)), np.zeros((6, 6)), "masses"),
+            ([1.0, float("nan")], np.zeros((2, 3)), np.zeros((6, 6)), "masses"),
+            ([1.0, 1.0], np.zeros((2, 2)), np.zeros((6, 6)), "coordinates"),
+            ([1.0, 1.0], np.zeros((2, 3)), np.zeros((5, 5)), "Hessian"),
+            ([1.0, 1.0], np.zeros((2, 3)), np.full((6, 6), float("nan")), "Hessian"),
+        ],
+    )
+    def test_invalid_vibrational_inputs_are_rejected(
+        self, masses, coordinates, hessian, match
+    ):
+        with pytest.raises(ValueError, match=match):
+            harmonic_analysis(masses, coordinates, hessian)
 
     @pytest.mark.parametrize("m1,m2,k", [
         (1.008, 1.008, 0.37), (1.008, 18.998, 0.65), (15.999, 15.999, 1.14),
@@ -650,9 +721,9 @@ class TestAgainstARealWavefunction:
 
     def test_the_vibrational_analysis_agrees_with_pyscf_exactly(self):
         """
-        Two independent implementations, same Hessian in. This is the calibration that
-        licenses every frequency and zero-point energy this module reports; without it
-        the unit chain is only asserted.
+        Two independently implemented algorithms, same Hessian in. Agreement validates
+        this numerical unit/projection chain on the selected case; it does not validate
+        the Hessian's electronic surface or establish broad spectroscopic accuracy.
         """
         from pyscf import gto, scf
         from pyscf.hessian import thermo
@@ -671,16 +742,19 @@ class TestAgainstARealWavefunction:
         theirs = np.sort(np.real(thermo.harmonic_analysis(mol, hessian)["freq_wavenumber"]))
         assert np.allclose(np.sort(mine.frequencies_cm), theirs, atol=0.05)
 
-    def test_a_polyatomic_is_priced_when_a_geometry_tier_is_named(self):
+    def test_polyatomic_geometry_is_computable_but_energy_remains_unvalidated(self):
         from smartchem.oracle.pyscf_oracle import PySCFOracle
 
-        oracle = PySCFOracle("CCSD(T)", "cc-pVDZ", tight_d=False,
+        oracle = PySCFOracle("CCSD(T)", "cc-pVDZ", tight_d=False, max_atoms=3,
                              geometry_tier=("HF", "cc-pVDZ"))
-        estimate = oracle.energy(WATER)
-        assert estimate is not None
-        assert estimate.value_ev < 0                      # a total electronic energy
-        assert "ZPE" in estimate.notes
-        assert estimate.systematic_ev > 0                 # the ZPE bias rides here
+        engine = oracle._geometry_engine()
+        assert engine is not None
+        coordinates, zpe = engine._relaxed_geometry(WATER, spin=0)
+        assert coordinates.shape == (3, 3)
+        assert zpe > 0
+        assert oracle.energy(WATER) is None, (
+            "the seven-diatomic MAE must not be attached to a polyatomic protocol"
+        )
 
     def test_a_polyatomic_is_declined_without_a_gradient_capable_tier(self):
         """
@@ -689,7 +763,9 @@ class TestAgainstARealWavefunction:
         """
         from smartchem.oracle.pyscf_oracle import PySCFOracle
 
-        assert PySCFOracle("CCSD(T)", "cc-pVDZ", tight_d=False).energy(WATER) is None
+        assert PySCFOracle(
+            "CCSD(T)", "cc-pVDZ", tight_d=False, max_atoms=3
+        ).energy(WATER) is None
 
     def test_a_cbs_request_cannot_serve_as_the_geometry_tier(self):
         """
@@ -698,30 +774,25 @@ class TestAgainstARealWavefunction:
         """
         from smartchem.oracle.pyscf_oracle import PySCFOracle
 
-        oracle = PySCFOracle("HF", "cbs(TZ,QZ)", tight_d=False)
+        oracle = PySCFOracle("HF", "cbs(TZ,QZ)", tight_d=False, max_atoms=3)
         assert oracle._geometry_engine() is None
         assert oracle.energy(WATER) is None
 
-    def test_the_zero_point_energy_is_carried_as_a_systematic_not_a_random_error(self):
+    def test_unvalidated_polyatomic_zpe_is_not_published_as_an_estimate(self):
         """
         The bias does not cancel against free atoms, which have no vibrations at all, so
         it must propagate additively with sign rather than in quadrature. Folding it into
         the random channel is the error already made once with the extrapolation
         correction, and it destroys the certificate in whichever direction it is made.
         """
-        from smartchem.oracle.pyscf_oracle import PySCFOracle, ZPE_BIAS_FRACTION
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
 
-        oracle = PySCFOracle("HF", "cc-pVDZ", tight_d=False)
-        estimate = oracle.energy(WATER)
-        assert estimate is not None
-        # the notes print the ZPE to four decimals, so the product can only be checked to
-        # half of that last digit -- asserting tighter would be testing the formatter
-        zpe = float(estimate.notes.split("ZPE=")[1].split(" eV")[0])
-        assert estimate.systematic_ev == pytest.approx(
-            ZPE_BIAS_FRACTION * zpe, abs=ZPE_BIAS_FRACTION * 5e-5)
-        assert estimate.systematic_ev > 0
+        oracle = PySCFOracle("HF", "cc-pVDZ", tight_d=False, max_atoms=3)
+        _coordinates, zpe = oracle._relaxed_geometry(WATER, spin=0)
+        assert zpe > 0
+        assert oracle.energy(WATER) is None
 
-    def test_the_derived_path_agrees_with_the_tabulated_one_for_a_diatomic(self):
+    def test_unvalidated_derived_diatomic_path_is_not_published(self):
         """
         A diatomic can be priced two independent ways: from tabulated experimental r_e and
         omega_e, or by relaxing a graph seed and computing a Hessian. They share only the
@@ -739,10 +810,8 @@ class TestAgainstARealWavefunction:
         tabulated = PySCFOracle("CCSD(T)", "cc-pVDZ", tight_d=False)
         derived = PySCFOracle("CCSD(T)", "cc-pVDZ", tight_d=False,
                               geometry_tier=("HF", "cc-pVDZ"))
-        lhs = tabulated.energy(hydrogen_fluoride)
-        rhs = derived._polyatomic_energy(hydrogen_fluoride)
-        assert lhs is not None and rhs is not None
-        assert abs(rhs.value_ev - lhs.value_ev) < 0.10
+        assert tabulated.energy(hydrogen_fluoride) is not None
+        assert derived._polyatomic_energy(hydrogen_fluoride) is None
 
     def test_a_symmetric_seed_that_lands_on_a_saddle_is_descended_from(self):
         """

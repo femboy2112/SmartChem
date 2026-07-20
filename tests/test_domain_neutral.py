@@ -1,39 +1,27 @@
 """
-The categorical layer is not about chemistry, and this file is the evidence.
+The core data structures use opaque labels; this file checks that narrow syntactic fact.
 
-The claim is easy to make and easy to get wrong. An audit can confirm that `category.py`
-imports only the standard library and that atom symbols are opaque strings, and both of
-those were true while the structure still could not express a radiating antenna -- because
-the thing that foreclosed it was not an import, it was that the conserved signature and
-the state label were the same field.
+The claim is easy to overstate. Standard-library imports and opaque strings do not give a
+chemical category the semantics of radiation or circuits. These tests reuse the structural
+types for four non-chemical-shaped examples and check only what the implementation represents:
 
-So this file does not audit. It instantiates the category on four systems that are not
-chemistry and runs the real laws over them:
+    radiation   a zero-atom token and a state-labelled inventory transition
+    circuits    equal or unequal inventories of typed charge-carrier tokens
+    networks    labelled graphs that distinguish two wiring-like encodings
+    electrodes  balanced half-reaction inventories with carriers on one side
 
-    radiation   an object carrying energy and no matter, and emission as a morphism
-    circuits    Kirchhoff's current law as the conservation the constructor enforces
-    networks    a labelled graph whose vertices are components and whose edges are wires
-    electrodes  a half-reaction, where charge carriers appear on ONE side only
+They do not provide electromagnetic energy, boundary ports, current as charge per time,
+Kirchhoff node equations, component terminal semantics or a network solver.
 
-If any of these stopped working, the layer would have quietly become chemistry-only.
+Historical note: the first three examples were once presented as evidence that "circuits
+work." The electrode example exposed the narrower truth. Balanced carrier counts cannot
+detect that an electron was wrongly entered in the atom inventory, because the same wrong
+entry cancels on both sides. An asymmetric inventory case is therefore necessary to test the
+typed-carrier distinction, even though it still does not establish circuit behavior.
 
-The fourth was added after the first three had been green for a session, and it is the
-reason this docstring no longer says "three". Instantiating the category on a domain is
-strictly better than auditing it, and it is still not sufficient: every circuit test here
-originally had the same carrier count on both sides, which is a real law honestly tested
-and also a case that CANNOT detect an electron wrongly booked as matter. The claim
-"circuits work" was true of everything tried and false of an electrode.
-
-The generalisation, which is the part worth keeping: **a conservation law tested only
-where the counts already match tests nothing.** Find the asymmetric case -- the electrode,
-the emitter, the open boundary -- or do not claim the law.
-
-The boundary is here too, and stated rather than implied: the *structure* hosts these
-systems, and the *energy models* do not. No oracle in this repository can price an
-excitation or a photon, and each declines rather than returning a confident zero. That
-gap is real and is the honest next piece of work; a category that can express a thing its
-oracles cannot value is exactly the right way round for a layer whose whole design claim
-is that the two are independent.
+The boundary is explicit: no oracle in this repository can value a represented excitation
+or zero-atom quantum token, and each declines rather than returning a confident zero. The
+syntax can retain those distinctions while the physical model remains unimplemented.
 """
 from __future__ import annotations
 
@@ -59,13 +47,13 @@ from smartchem.oracle.heuristic import HeuristicOracle
 # ======================================================================================
 # Radiation
 # ======================================================================================
-class TestRadiationIsExpressible:
+class TestRadiationShapedSyntax:
     """
-    An antenna is the same matter in a different energy state, plus energy leaving. Both
-    halves of that need to be sayable.
+    The structure can distinguish a state change and a zero-atom token. It assigns neither
+    a photon energy nor antenna, field, momentum, polarization or emission semantics.
     """
 
-    def test_a_quantum_carries_energy_and_no_matter(self):
+    def test_a_quantum_token_has_no_atom_inventory_or_charge(self):
         photon = Molecule.quantum("hv")
         assert photon.formula == {}
         assert photon.charge == 0
@@ -77,11 +65,12 @@ class TestRadiationIsExpressible:
         # but it is still a distinct object: the configurations are NOT equal
         assert alone != with_photon
 
-    def test_emission_is_a_legal_morphism(self):
+    def test_an_emission_shaped_inventory_transition_is_structurally_allowed(self):
         """
         The case that motivated the `state` field. Before it, the only way to mark an
         excited atom was to change its symbol -- which changes `formula`, so emission was
-        rejected as mass-violating when no mass had gone anywhere.
+        rejected as atom-inventory-violating. Passing this constructor check does not supply
+        a radiative Hamiltonian or establish that the transition is physically allowed.
         """
         excited = Molecule.atom("Na", state="excited")
         ground = Molecule.atom("Na")
@@ -94,8 +83,8 @@ class TestRadiationIsExpressible:
         assert conserves(absorption)
         assert emission.dom == absorption.cod and emission.cod == absorption.dom
 
-    def test_changing_state_is_free_but_changing_matter_is_not(self):
-        """The separation the field exists to create, asserted from both sides."""
+    def test_state_is_not_in_the_conserved_inventory_but_atom_labels_are(self):
+        """Here, "free" means structurally unconserved, not zero energy or zero work."""
         excited = Molecule.atom("Na", state="excited")
         ground = Molecule.atom("Na")
         assert excited != ground                            # distinct objects
@@ -124,8 +113,8 @@ class TestRadiationIsExpressible:
         excited = Molecule.atom("Na", state="excited")
         assert Config.of(ground, excited) == Config.of(excited, ground)
 
-    def test_a_cascade_composes(self):
-        """Two emissions in sequence: the structure has to carry a multi-step process."""
+    def test_two_state_token_transitions_compose(self):
+        """Sequential history retains two radiation-shaped transitions without pricing them."""
         top = Molecule.atom("Na", state="3p")
         mid = Molecule.atom("Na", state="3s*")
         low = Molecule.atom("Na")
@@ -140,31 +129,33 @@ class TestRadiationIsExpressible:
 # ======================================================================================
 # Circuits
 # ======================================================================================
-class TestCircuitsAreExpressible:
+class TestOpaqueCircuitSyntax:
     """
-    Kirchhoff's current law is a conservation law over a graph, which is the same shape
-    as mass conservation -- so the constructor that makes a mass-violating reaction
-    unconstructible makes a charge-non-conserving node unconstructible too, unchanged.
+    These examples count typed carrier objects and compare labelled graphs. A carrier count
+    is not current (charge per time), and no object here denotes a boundary node or enforces
+    Kirchhoff's current law.
     """
 
     @staticmethod
     def _carriers(n):
         return Config(tuple(Molecule.carrier("e-", charge=-1) for _ in range(n)))
 
-    def test_kirchhoff_current_law_is_the_conservation_already_enforced(self):
-        node = Reaction(self._carriers(3), self._carriers(3), name="KCL at a node")
-        assert conserves(node)
+    def test_equal_typed_carrier_inventories_are_conserved(self):
+        transition = Reaction(
+            self._carriers(3), self._carriers(3), name="balanced carrier inventory"
+        )
+        assert conserves(transition)
 
-    def test_a_node_that_loses_current_is_unconstructible(self):
-        """Not "detected and reported" -- it cannot be built, exactly like Fe + O + Cl."""
+    def test_unequal_typed_carrier_inventories_are_rejected(self):
+        """This rejects missing charge tokens; it does not evaluate a current balance."""
         with pytest.raises(ConservationError):
             Reaction(self._carriers(3), self._carriers(2))
 
-    def test_components_and_wires_form_an_object_with_topology(self):
+    def test_labelled_graphs_distinguish_two_wiring_like_encodings(self):
         """
-        The load-bearing design decision, restated for circuits: if an object were a bag
-        of components, every rewiring would be an endomorphism and a topology change could
-        not be a morphism at all. A series RC and a parallel RC hold the SAME parts.
+        Bond edges retain graph topology, so these encodings with the same labels differ.
+        Component labels are treated as vertices with no terminals or constitutive laws;
+        calling the examples "series" and "parallel" is mnemonic, not circuit validation.
         """
         parts = ("R", "C", "GND")
         series = Molecule(parts, frozenset({Bond(0, 1), Bond(1, 2)}))
@@ -174,14 +165,14 @@ class TestCircuitsAreExpressible:
         rewire = Reaction(Config.of(series), Config.of(parallel), name="rewire")
         assert conserves(rewire)
 
-    def test_the_same_network_built_in_any_node_order_compares_equal(self):
-        """Canonicalisation is a graph-isomorphism test; it never knew this was chemistry."""
+    def test_the_same_labelled_graph_in_any_vertex_order_compares_equal(self):
+        """Canonicalisation compares the encoding as a labelled graph."""
         a = Molecule(("R", "L", "C"), frozenset({Bond(0, 1), Bond(1, 2)}))
         b = Molecule(("C", "L", "R"), frozenset({Bond(2, 1), Bond(1, 0)}))
         assert a.canonical() == b.canonical()
 
-    def test_subcircuits_tensor(self):
-        """Two independent stages side by side -- the monoidal structure, on circuits."""
+    def test_object_product_counts_two_graph_components(self):
+        """The formal object product is multiset union, not parallel circuit composition."""
         stage = Molecule(("R", "C"), frozenset({Bond(0, 1)}))
         both = tensor_obj(Config.of(stage), Config.of(stage))
         assert both.formula == {"R": 2, "C": 2}
@@ -195,19 +186,19 @@ class TestAnElectrodeIsAMorphism:
     """
     The regression test for the defect #22 shipped, and the reason it survived review.
 
-    Every circuit test written for #22 had the SAME carrier count on both sides --
-    ``3 e- -> 3 e-`` for Kirchhoff's law. That is a real law and the test is a fair test
-    of it, but a balanced count cannot detect an electron wrongly entered in the MASS
-    ledger, because the same wrong entry appears on both sides and cancels. The tests were
-    all consistent with a claim that was false.
+    Every circuit-shaped test written for #22 had the SAME carrier count on both sides --
+    ``3 e- -> 3 e-``. That checks only equality of the encoded inventories. It cannot detect
+    an electron wrongly entered in the atom ledger, because the same wrong entry appears on
+    both sides and cancels. The tests were all consistent with the broader historical claim
+    that "circuits work," but did not establish it.
 
     An electrode is where the counts do not match: electrons are produced at the anode and
     consumed at the cathode, and only the external circuit makes the totals agree. That is
     the entire point of a battery, and it was never tried until the AA cell was attempted.
 
     The lesson generalises past this bug and is the reason this class exists rather than a
-    one-line fix: **a conservation claim tested only where the counts already match tests
-    nothing.** Test the asymmetric case or do not claim the law.
+    one-line fix: a balanced example cannot test whether a carrier belongs in the correct
+    inventory. Test the asymmetric case before claiming typed-carrier bookkeeping works.
     """
 
     # an alkaline AA cell: Zn/MnO2, nominally 1.5 V
@@ -262,21 +253,22 @@ class TestAnElectrodeIsAMorphism:
             Reaction(Config.of(self.Zn, self.OH, self.OH),
                      Config.of(self.ZnO, self.H2O, self.e))     # one electron short
 
-    def test_the_half_cells_compose_into_the_whole_cell(self):
+    def test_scheduled_half_reaction_histories_have_the_expected_residue(self):
         """
-        The categorical statement of "the circuit closes". Each half-reaction is tensored
-        with the identity on the other's spectators so that one's codomain IS the other's
-        domain, then composed. The electrons, the water and the hydroxide all appear on
-        both sides of the result and cancel -- which is exactly what it means to say the
-        electrons took the long way round, through the load.
+        Each half-reaction is padded by the implementation's deterministic left-first
+        ``scheduled_product`` so the histories compose. Multiset residue then removes the
+        carriers, water and hydroxide that occur on both endpoints. This is a typed inventory
+        identity; it does not model an external circuit, current path or load.
         """
         anode = Reaction(Config.of(self.Zn, self.OH, self.OH),
                          Config.of(self.ZnO, self.H2O, self.e, self.e))
         cathode = Reaction(
             Config.of(self.MnO2, self.MnO2, self.H2O, self.e, self.e),
             Config.of(self.Mn2O3, self.OH, self.OH))
-        closed = (anode.tensor(identity(Config.of(self.MnO2, self.MnO2)))
-                  .then(identity(Config.of(self.ZnO)).tensor(cathode)))
+        closed = (
+            anode.scheduled_product(identity(Config.of(self.MnO2, self.MnO2)))
+            .then(identity(Config.of(self.ZnO)).scheduled_product(cathode))
+        )
         assert conserves(closed)
 
         consumed, produced = reaction_residue(closed)
@@ -345,10 +337,9 @@ class TestTheOraclesDeclineWhatTheyCannotValue:
 # ======================================================================================
 def test_the_categorical_core_imports_no_chemistry():
     """
-    Weaker than the tests above, and kept anyway: they show the structure CAN host other
-    domains, this shows nothing has quietly crept in that would couple it to one. Checked
-    against the parse tree rather than by grepping text, so a comment mentioning an atom
-    cannot fail it and a real import cannot hide from it.
+    A narrow dependency check, kept alongside the opaque-label examples. It does not confer
+    non-chemical semantics. Checked against the parse tree rather than by grepping text, so
+    a comment mentioning an atom cannot fail it and a real import cannot hide from it.
     """
     import smartchem.category as category
 
@@ -361,5 +352,5 @@ def test_the_categorical_core_imports_no_chemistry():
         elif isinstance(node, ast.ImportFrom):
             modules.add((node.module or "").split(".")[0])
 
-    assert modules <= {"__future__", "collections", "dataclasses", "itertools", "math",
-                       "typing"}, f"category.py grew a dependency: {modules}"
+    assert modules <= {"__future__", "collections", "dataclasses", "functools", "itertools",
+                       "math", "typing"}, f"category.py grew a dependency: {modules}"

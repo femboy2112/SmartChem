@@ -3,10 +3,10 @@ Price each distinct species once, however many reactions ask about it.
 
 Why this belongs here rather than in the search
 -----------------------------------------------
-Spectator cancellation is already exact *within* one reaction: ``reaction_residue``
-removes species that appear unchanged on both sides before any oracle call, because the
-monoidal law guarantees they cannot move the answer. That is worth 2.16x on the search
-measured in ``scratchpad/pathway_reuse.py``.
+Spectator cancellation is exact within the current separable isolated-species adapter:
+``reaction_residue`` removes species that appear unchanged on both sides before any oracle
+call. This is a model assumption, not a monoidal law for interacting species in one vessel.
+It was worth 2.16x on the workload measured in ``scratchpad/pathway_reuse.py``.
 
 What it cannot do is notice that step 7 needs the energy of a species step 2 already
 priced. Across a whole search the same handful of species recur constantly -- an
@@ -18,15 +18,17 @@ the work left after spectator cancellation is dominated by re-pricing. Measured 
     spectator cancellation only              155        2.16x
     plus this cache                           10       33.50x
 
-Ten is not an improvement to be tuned; it is the floor. There are ten distinct species,
-each is priced once, and no scheme can do better without pricing something zero times.
+Ten is the black-box floor for that workload if every distinct species must be requested
+from the wrapped oracle once. It is not a universal lower bound for surrogate, batched or
+analytically related models.
 
 Why it is sound
 ---------------
-Because energy is a **functor**. ``E(A (x) B) = E(A) + E(B)`` means a configuration's
-energy is determined by its species, so a species has one energy wherever it occurs, in
-whatever reaction, at whatever depth of the search. The cache is not an approximation
-that usually works -- it is the functor law, used as a lookup table.
+The cache is sound only when ``inner.energy(molecule)`` is a deterministic, context-free
+query for the lifetime of the wrapper. That is the contract assumed by the current
+isolated-species oracles. A condition-dependent, stochastic, mutable or geometry-contextual
+oracle needs those inputs in the key (or must not use this wrapper). The cache does not
+derive soundness from category theory.
 
 Why the key is canonical, which is the part that bites
 ------------------------------------------------------
@@ -60,9 +62,9 @@ class CachingOracle(BaseOracle):
     """
     Wraps any oracle and memoises ``energy`` by canonical species.
 
-    Transparent: same answers, same error bars, same ``None`` refusals -- including
-    caching the refusals, since an oracle that declines a species declines it every time
-    and re-asking is pure cost.
+    Transparent under the purity/context assumptions in the module docstring: same answers,
+    uncertainty fields and ``None`` refusals. Caching a refusal is safe only when support
+    cannot change during the wrapper's lifetime.
     """
 
     def __init__(self, inner):
@@ -74,6 +76,17 @@ class CachingOracle(BaseOracle):
         self.misses = 0
         #: species whose canonical form could not be computed, so keyed as given
         self.uncanonicalised = 0
+
+    def calculation_spec(self):
+        """The wrapper changes cost, not the underlying calculation semantics."""
+        provider = getattr(self.inner, "calculation_spec", None)
+        if not callable(provider):
+            raise TypeError("wrapped oracle must expose calculation_spec for persistence")
+        return {
+            "wrapper": "in-memory-canonical-cache-v1",
+            "inner_class": f"{type(self.inner).__module__}.{type(self.inner).__qualname__}",
+            "inner": provider(),
+        }
 
     def _key(self, molecule: Molecule) -> Molecule:
         try:

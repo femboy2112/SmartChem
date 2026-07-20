@@ -1,9 +1,10 @@
 """
 Ab initio energy oracle backed by PySCF.
 
-This is the accurate end of the dial. It exists to answer an empirical question rather
-than a rhetorical one: *how slow is chemical accuracy, actually?* Measured on this
-machine over the reference diatomics -- see ``python -m smartchem.bench``.
+This is the high-cost electronic-structure end of the current dial. It exists to answer
+an empirical question rather than a rhetorical one: how accurate and costly are specific
+declared protocols on a stated reference set? The present selected seven-diatomic results
+do not establish broad chemical accuracy -- see ``python -m smartchem.bench``.
 
 What is predicted and what is supplied
 --------------------------------------
@@ -13,19 +14,20 @@ What is predicted and what is supplied
 
 That is the standard protocol for benchmarking an *electronic* method: it isolates the
 quantity being tested instead of mixing in geometry error. Set ``optimize_geometry=True``
-to remove the geometry input at roughly 6x the cost, which makes the calculation fully
-predictive.
+to predict the diatomic bond length at additional cost. The current diatomic path still
+uses a tabulated harmonic frequency for ZPE, so that option is not a fully predictive
+thermochemistry protocol.
 
 Basis-set extrapolation
 -----------------------
-Correlation energy converges as X^-3 in the cardinal number of the basis, which is slow
-and is where essentially all of the remaining error sits. The Helgaker two-point formula
+In regimes already in the asymptotic tail, correlation energy is often modeled with a
+leading X^-3 cardinal-number error. The Helgaker two-point formula
 
     E_corr(CBS) = (X^3 E_corr(X) - Y^3 E_corr(Y)) / (X^3 - Y^3)
 
-removes it. Hartree-Fock converges exponentially, so the larger basis is used directly
-for that part. Extrapolating the two components separately is the whole point -- averaging
-total energies would smear the fast-converging part into the slow one.
+extrapolates that assumed leading term. It does not guarantee removal of the residual error;
+this repository's NaCl sequence is a counterexample to treating it as an identity.
+Hartree-Fock usually converges faster, so the larger basis is used directly for that part.
 
 Basis choice is a function of the elements -- and measuring that did not pay off
 --------------------------------------------------------------------------------
@@ -37,7 +39,7 @@ rather than taking one name for the whole molecule.
 
 The machinery is real, tested, and available (``tight_d=True``, ``aug-`` prefixes). **It
 is also not recommended, because it was measured and it lost**: 2.94 kcal/mol against 1.30
-for plain ``cbs(TZ,QZ)``, at 5.1x the cost. See ``_NOMINAL`` below for the breakdown.
+for plain ``cbs(TZ,QZ)``, at 5.1x the cost. See ``_FIXED_DIATOMIC_MAE`` below.
 
 It is kept rather than deleted for the same reason the legacy engine is kept: a negative
 result you can still run is worth more than one you have to take on trust. Reproduce with
@@ -57,16 +59,22 @@ Atomic energies dominate: a benchmark of N diatomics needs 2N atom calculations,
 a handful of distinct elements. They are cached per (element, basis, method), so E(H) at
 CCSD(T)/cc-pVQZ is computed once and reused by H2, HF, HCl, HI, OH, CH and NH.
 
-This is also where the categorical layer earns its keep. Pruning by conservation, charge
-balance and valence happens *before* any call into this module, so the expensive oracle is
-only ever asked about candidates that are already structurally valid.
+This is also where the categorical layer earns its keep. Pruning by composition and charge
+balance happens *before* any call into this module. Chemical valence and electronic-state
+validity need a separate chemistry-specific validator and are not guaranteed by the core.
 """
 from __future__ import annotations
 
+import hashlib
+import inspect
+import json
 import logging
+import math
 import re
 import time
 import warnings
+from importlib.metadata import PackageNotFoundError, version
+from types import MappingProxyType
 
 import numpy as np
 
@@ -86,8 +94,30 @@ from ..geometry import (GeometryError, harmonic_analysis, relax, seed_coordinate
 
 try:
     from pyscf import gto, scf, mp, cc
-except ImportError as exc:  # pragma: no cover - exercised by absence, not presence
-    raise ImportError("PySCFOracle requires pyscf: pip install 'smartchem[qc]'") from exc
+except ModuleNotFoundError as exc:  # optional backend; pure configuration must still import
+    # Only absence of the top-level optional package is an availability condition. If an
+    # installed PySCF fails because one of its own imports is broken, surface that defect
+    # instead of silently pretending the backend is not installed.
+    if exc.name != "pyscf":
+        raise
+    gto = scf = mp = cc = None
+    _PYSCF_IMPORT_ERROR: ImportError | None = exc
+else:
+    _PYSCF_IMPORT_ERROR = None
+
+PYSCF_AVAILABLE = _PYSCF_IMPORT_ERROR is None
+try:
+    PYSCF_VERSION = version("pyscf") if PYSCF_AVAILABLE else "unavailable"
+except PackageNotFoundError:  # defensive: import and package metadata should agree
+    PYSCF_VERSION = "unknown"
+
+
+def _require_pyscf() -> None:
+    """Raise only when a real backend operation is attempted."""
+    if not PYSCF_AVAILABLE:
+        raise ImportError(
+            "PySCFOracle requires pyscf: pip install 'smartchem[qc]'"
+        ) from _PYSCF_IMPORT_ERROR
 
 def _label(molecule: Molecule) -> str:
     """A readable formula for a log line. Never raises: this is for humans, not for keys."""
@@ -100,43 +130,47 @@ HARTREE_EV = 27.211386245988
 #: Cardinal number X for each correlation-consistent basis, used by the X^-3 extrapolation.
 #: Diffuse augmentation does not change the cardinal -- aug-cc-pVTZ is still X=3 -- so the
 #: extrapolation is unaffected by the aug- prefix.
-_CARDINAL = {
+_CARDINAL = MappingProxyType({
     "cc-pVDZ": 2, "cc-pVTZ": 3, "cc-pVQZ": 4, "cc-pV5Z": 5,
     "aug-cc-pVDZ": 2, "aug-cc-pVTZ": 3, "aug-cc-pVQZ": 4, "aug-cc-pV5Z": 5,
-}
+})
 
 #: Matches a correlation-consistent basis name so its tight-d variant can be named.
 _CC_NAME = re.compile(r"^((?:aug-)?cc-pV)([DTQ5])(Z)$")
+_CBS_NAME = re.compile(
+    r"^(aug-)?cbs\(\s*(DZ|TZ|QZ|5Z)\s*,\s*(DZ|TZ|QZ|5Z)\s*\)$",
+    re.IGNORECASE,
+)
 
 #: Methods in increasing order of cost and accuracy.
 _METHODS = ("HF", "MP2", "CCSD", "CCSD(T)")
 
 #: Methods that can supply BOTH an analytic gradient and an analytic Hessian.
 #:
-#: The relaxation needs the gradient; the frequency certificate and the zero-point energy
+#: The relaxation needs the gradient; the local-curvature check and zero-point energy
 #: need the Hessian. They cannot be taken at different tiers: a Hessian is only a harmonic
 #: expansion at a point where the gradient vanishes, so evaluating it on a surface other
 #: than the one the geometry was relaxed on describes the curvature at a point that is not
 #: stationary for it, and the frequencies mean nothing.
 #:
-#: PySCF gives MP2 analytic gradients but no Hessian, so MP2 could relax and could not
-#: certify. That is precisely the combination not worth having: a geometry nobody can
-#: prove is a minimum and a ZPE nobody can compute. Hence HF alone.
+#: PySCF gives MP2 analytic gradients but no Hessian here, so MP2 could relax but could not
+#: provide the same-tier harmonic local-curvature/ZPE calculation. Hence HF alone in this
+#: implementation; this is a coverage choice, not a claim that HF geometry is exact.
 _GEOMETRY_METHODS = ("HF",)
 
 #: MEASURED bias of a Hartree-Fock harmonic zero-point energy, as a fraction.
 #:
 #: +9.1%, from 23 of the tabulated diatomics -- every one whose elements cc-pVDZ covers --
-#: against their experimental omega_e. See ``scratchpad/geom_calibrate.py``. The sign is
-#: consistent and well known: HF overestimates force constants because it has no
-#: correlation to soften the bond, and the harmonic approximation ignores anharmonicity,
-#: which mostly pushes the same way.
+#: against their experimental omega_e. See ``scratchpad/geom_calibrate.py``. This is the
+#: aggregate displacement of an HF harmonic protocol relative to those references; the
+#: sample does not separately identify electronic-method, harmonic/anharmonic, and
+#: reference-convention contributions.
 #:
-#: It is carried as a SYSTEMATIC, in ``Estimate.systematic_ev``, never folded into the
-#: random uncertainty. That distinction is the same one that made spectator cancellation
-#: worth doing, and it is what lets the bias survive into an atomization energy (free
-#: atoms have no vibrations, so nothing cancels it) while largely cancelling in a
-#: bond-conserving reaction (similar bonds, similar bias, opposite signs).
+#: It is carried as a named correction sensitivity, in ``Estimate.systematic_terms``, not
+#: silently treated as an independent random draw. Its signed displacement can cancel
+#: algebraically in a related-energy difference; that does not prove cancellation of the
+#: unknown residual error. Coefficient uncertainty and species-residual scatter remain to
+#: be calibrated before this becomes an uncertainty model.
 #:
 #: NOT applied as a scaling correction, deliberately. A factor fitted on 23 DIATOMICS and
 #: applied to polyatomics is the identical error already made once in this file with basis
@@ -156,7 +190,7 @@ _MAX_DESCENTS = 3
 #: the symmetry that trapped it.
 _DESCENT_STEP_ANGSTROM = 0.25
 
-#: MEASURED mean absolute error in eV, on ONE declared species set, 2026-07-20.
+#: MEASURED mean absolute error in eV, on ONE selected species set, 2026-07-20.
 #:
 #: The set: NaCl, CS, HCl, Cl2, CO, HF, N2 -- chosen to span ionic, second-row and
 #: first-row covalent, with N2 as a hard-correlation control. Iodine species are excluded
@@ -197,18 +231,60 @@ _DESCENT_STEP_ANGSTROM = 0.25
 #:      cbs(TZ,QZ)   +3.38            <-- 8x worse after extrapolating
 #:
 #: The Helgaker formula behaves exactly as written; its premise -- that the correlation
-#: energy is already in the smooth X^-3 tail by TZ -- does not hold for an ionic species.
-#: This is no longer reported with false confidence: the extrapolation correction is
-#: carried on every Estimate and widens the error bar by however much of it survives
-#: cancellation (NaCl gets +/-0.13 eV rather than the tier's nominal +/-0.04).
-_NOMINAL = {
-    ("HF", "cc-pVDZ"): 2.44, ("HF", "cc-pVTZ"): 2.40, ("HF", "cc-pVQZ"): 2.58,
-    ("CCSD(T)", "cc-pVDZ"): 0.57,
-    ("CCSD(T)", "cc-pVTZ"): 0.22,
-    ("CCSD(T)", "cc-pVQZ"): 0.08,
-    ("CCSD(T)", "cbs(TZ,QZ)"): 0.041,
-    ("CCSD(T)", "aug-cbs(TZ,QZ)+d"): 0.128,
-}
+#: energy is already in the smooth X^-3 tail by TZ -- was not adequate for this NaCl row.
+#: The extrapolation displacement is carried on every Estimate and acts as a reporting
+#: sensitivity floor when it survives algebraic cancellation (NaCl reports 0.13 eV rather
+#: than the tier's nominal 0.0562 eV). This is not a calibrated residual-error bound.
+_FIXED_DIATOMIC_MAE = MappingProxyType({
+    ("HF", "cc-pVDZ", False): 2.44,
+    ("HF", "cc-pVTZ", False): 2.40,
+    ("HF", "cc-pVQZ", False): 2.5814,
+    ("CCSD(T)", "cc-pVDZ", False): 0.57,
+    ("CCSD(T)", "cc-pVTZ", False): 0.2186,
+    ("CCSD(T)", "cc-pVQZ", False): 0.0763,
+    ("CCSD(T)", "cbs(TZ,QZ)", False): 0.0562,
+    ("CCSD(T)", "aug-cbs(TZ,QZ)", True): 0.1277,
+})
+
+
+def _model_inputs_sha256() -> str:
+    """Digest transitive SmartChem data/code that can change an oracle result."""
+    geometry_module = inspect.getmodule(relax)
+    try:
+        geometry_source = inspect.getsource(geometry_module).encode("utf-8")
+        geometry_source_sha = hashlib.sha256(geometry_source).hexdigest()
+    except (OSError, TypeError):
+        geometry_source_sha = "unavailable"
+    payload = {
+        "atom_spin": sorted(ATOM_SPIN.items()),
+        "diatomic_geometry": sorted(
+            (formula, list(values)) for formula, values in GEOMETRY.items()
+        ),
+        "periodic_descriptors": sorted(
+            (
+                symbol,
+                atom.symbol,
+                atom.atomic_number,
+                atom.group,
+                atom.period,
+                atom.mass_amu,
+                list(atom.ie_list_ev),
+                list(atom.ea_list_ev),
+                atom.radius_pm,
+            )
+            for symbol, atom in PT.items()
+        ),
+        "second_row": sorted(SECOND_ROW),
+        "tight_d": sorted(TIGHT_D.items()),
+        "cardinals": sorted(_CARDINAL.items()),
+        "fixed_diatomic_mae": sorted(
+            (list(protocol), mae) for protocol, mae in _FIXED_DIATOMIC_MAE.items()
+        ),
+        "zpe_bias_fraction": ZPE_BIAS_FRACTION,
+        "geometry_source_sha256": geometry_source_sha,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class ConvergenceFailure(RuntimeError):
@@ -246,10 +322,36 @@ def resolve_basis(symbols: tuple[str, ...], basis: str, tight_d: bool) -> str | 
     plus_d = tight_d_name(basis)
     if plus_d is None or plus_d not in TIGHT_D:
         return basis
+    _require_pyscf()
     return {
         s: (gto.basis.parse(TIGHT_D[plus_d], symb=s) if s in SECOND_ROW else basis)
         for s in set(symbols)
     }
+
+
+def _parse_cbs_basis(basis: str) -> tuple[str, str] | None:
+    """Parse the documented two-cardinal CBS grammar, rejecting unsafe near-misses."""
+    if not isinstance(basis, str):
+        raise TypeError("basis must be a non-empty string")
+    basis = basis.strip()
+    if not basis:
+        raise ValueError("basis must be a non-empty string")
+    match = _CBS_NAME.fullmatch(basis)
+    if match is None:
+        if re.match(r"^(?:aug-)?cbs", basis, re.IGNORECASE):
+            raise ValueError(
+                "CBS basis must have form cbs(DZ,TZ), cbs(TZ,QZ), or another "
+                "strictly increasing pair from DZ/TZ/QZ/5Z"
+            )
+        return None
+    augmented, small_alias, large_alias = match.groups()
+    aliases = {"DZ": "cc-pVDZ", "TZ": "cc-pVTZ", "QZ": "cc-pVQZ", "5Z": "cc-pV5Z"}
+    small_alias, large_alias = small_alias.upper(), large_alias.upper()
+    small, large = aliases[small_alias], aliases[large_alias]
+    if _CARDINAL[small] >= _CARDINAL[large]:
+        raise ValueError("CBS cardinal numbers must be strictly increasing")
+    prefix = "aug-" if augmented else ""
+    return prefix + small, prefix + large
 
 
 class PySCFOracle(BaseOracle):
@@ -266,20 +368,60 @@ class PySCFOracle(BaseOracle):
         basis: str = "cc-pVTZ",
         optimize_geometry: bool = False,
         max_atoms: int = 2,
-        tight_d: bool = True,
+        tight_d: bool = False,
         geometry_tier: tuple[str, str] | None = None,
     ):
         if method not in _METHODS:
             raise ValueError(f"method must be one of {_METHODS}, got {method!r}")
+        if type(optimize_geometry) is not bool:
+            raise TypeError("optimize_geometry must be a boolean")
+        if type(tight_d) is not bool:
+            raise TypeError("tight_d must be a boolean")
+        if isinstance(max_atoms, bool) or not isinstance(max_atoms, int):
+            raise TypeError("max_atoms must be a positive integer")
+        if max_atoms < 1:
+            raise ValueError("max_atoms must be at least 1")
+        if geometry_tier is not None and (
+            not isinstance(geometry_tier, tuple)
+            or len(geometry_tier) != 2
+            or any(not isinstance(item, str) or not item for item in geometry_tier)
+        ):
+            raise TypeError("geometry_tier must be a (method, basis) string tuple or None")
+        parsed_cbs = _parse_cbs_basis(basis)
+        if parsed_cbs is not None:
+            reverse = {2: "DZ", 3: "TZ", 4: "QZ", 5: "5Z"}
+            prefix = "aug-" if parsed_cbs[0].startswith("aug-") else ""
+            first = parsed_cbs[0].removeprefix("aug-")
+            second = parsed_cbs[1].removeprefix("aug-")
+            basis = (f"{prefix}cbs({reverse[_CARDINAL[first]]},"
+                     f"{reverse[_CARDINAL[second]]})")
+        else:
+            basis = basis.strip()
         self.method = method
         self.basis = basis
+        self._cbs_pair = parsed_cbs
         self.optimize_geometry = optimize_geometry
         self.max_atoms = max_atoms
         self.tight_d = tight_d
+        self.backend_version = PYSCF_VERSION
         # The name records the policy, not just the basis: a result computed with tight d
         # on sulfur is not the same result as one without, and provenance has to say so.
         self.name = f"{method}/{basis}" + ("+d" if tight_d else "")
-        self.nominal_accuracy_ev = _NOMINAL.get((method, self.name.split("/", 1)[1]), 0.30)
+        # This is a benchmark MAE, not a calibrated probability interval. Unmeasured
+        # protocol combinations fail closed instead of inheriting an invented 0.30 eV bar.
+        self.fixed_diatomic_mae_ev = _FIXED_DIATOMIC_MAE.get(
+            (method, basis, tight_d), float("inf")
+        )
+        # The measured table covers fixed-tabulated-geometry neutral diatomics only.
+        # Optimized geometry and polyatomic-capable configurations are distinct protocols;
+        # they cannot inherit that seven-species MAE merely because the energy tier matches.
+        validated_profile = (
+            not optimize_geometry and geometry_tier is None and max_atoms <= 2
+        )
+        self.benchmark_mae_ev = (
+            self.fixed_diatomic_mae_ev if validated_profile else float("inf")
+        )
+        self.nominal_accuracy_ev = self.benchmark_mae_ev
         self._cache: dict[tuple, float] = {}
         # Locating the minimum and evaluating the energy at it are two different
         # questions, and only the second one needs the expensive tier. When a geometry
@@ -294,6 +436,19 @@ class PySCFOracle(BaseOracle):
         if geometry_tier is not None:
             self.name += f"//{geometry_tier[0]}/{geometry_tier[1]}"
 
+    def calculation_spec(self):
+        """Complete immutable calculation identity; runtime wavefunction caches are excluded."""
+        return {
+            "method": self.method,
+            "basis": self.basis,
+            "optimize_geometry": self.optimize_geometry,
+            "max_atoms": self.max_atoms,
+            "tight_d": self.tight_d,
+            "geometry_tier": self.geometry_tier,
+            "backend_version": self.backend_version,
+            "model_inputs_sha256": _model_inputs_sha256(),
+        }
+
     # -- internals ---------------------------------------------------------------
     def _is_cbs(self) -> tuple[str, str] | None:
         """
@@ -303,21 +458,13 @@ class PySCFOracle(BaseOracle):
         members, since extrapolating an augmented basis against a plain one would compare
         two different families and the X^-3 form would be meaningless.
         """
-        name = self.basis
-        prefix = ""
-        if name.lower().startswith("aug-"):
-            prefix, name = "aug-", name[4:]
-        if not name.lower().startswith("cbs"):
-            return None
-        inner = name[name.index("(") + 1: name.index(")")]
-        small, large = (s.strip() for s in inner.split(","))
-        expand = {"DZ": "cc-pVDZ", "TZ": "cc-pVTZ", "QZ": "cc-pVQZ", "5Z": "cc-pV5Z"}
-        return prefix + expand.get(small, small), prefix + expand.get(large, large)
+        return self._cbs_pair
 
     def _parts(
         self, atom_spec: str, symbols: tuple[str, ...], basis: str, spin: int
     ) -> tuple[float, float]:
         """(E_HF, E_corr) in Hartree. Raises ConvergenceFailure rather than guessing."""
+        _require_pyscf()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             resolved = resolve_basis(symbols, basis, self.tight_d)
@@ -355,12 +502,11 @@ class PySCFOracle(BaseOracle):
         cache_key: tuple | None = None,
     ) -> tuple[float, float]:
         """
-        ``(total energy, |extrapolation correction|)`` in Hartree at the configured tier.
+        ``(total energy, signed extrapolation displacement)`` in Hartree at the configured tier.
 
-        The second value is how far the CBS extrapolation moved the answer beyond the
-        larger basis, and it is zero for a plain single-basis request. It exists because
-        the extrapolation is a *model* of the remaining basis-set error, and a model that
-        applies a large correction has earned a large error bar -- see ``energy``.
+        The second value is the signed amount by which the CBS model moved the answer beyond
+        the larger basis, and it is zero for a plain request. Its magnitude is a sensitivity
+        diagnostic, not a proven bound on remaining basis error.
         """
         if cache_key is not None and cache_key in self._cache:
             return self._cache[cache_key]
@@ -400,8 +546,12 @@ class PySCFOracle(BaseOracle):
 
     def _optimal_bond_length(self, a: str, b: str, spin: int, guess: float) -> float:
         """
-        Parabolic minimisation over a small scan. Removes the experimental geometry
-        input at the cost of ~5 extra energy evaluations.
+        Local parabolic refinement over a small scan around a supplied bond-length guess.
+
+        The current caller supplies a tabulated experimental ``r_e`` and still uses a
+        tabulated frequency for ZPE. This therefore does *not* remove experimental geometry
+        input or price an unlisted species; it measures method sensitivity near a known
+        structure. A predictive path needs an independent seed and a computed frequency.
 
         Those five do not have to be paid at this oracle's tier. Locating a minimum and
         evaluating an energy at it are separable problems: the minimum's *position* is far
@@ -423,21 +573,28 @@ class PySCFOracle(BaseOracle):
             # only the energy matters for locating the minimum; the extrapolation
             # correction is a property of the tier, not of the bond length
             pts.append((r, scanner._energy(f"{a} 0 0 0; {b} 0 0 {r}", (a, b), spin)[0]))
-        # fit a parabola through the three lowest points
-        pts.sort(key=lambda p: p[1])
-        (r1, e1), (r2, e2), (r3, e3) = sorted(pts[:3])
+        # Fit the three points surrounding a discrete minimum. Three globally lowest
+        # samples need not be adjacent and do not by themselves prove the scan brackets it.
+        pts.sort()
+        minimum = min(range(len(pts)), key=lambda index: pts[index][1])
+        if minimum in (0, len(pts) - 1):
+            raise GeometryError("bond-length scan does not bracket a local minimum")
+        (r1, e1), (r2, e2), (r3, e3) = pts[minimum - 1:minimum + 2]
         denom = (r1 - r2) * (r1 - r3) * (r2 - r3)
         if abs(denom) < 1e-12:
-            return guess
+            raise GeometryError("bond-length parabola is numerically singular")
         aa = (r3 * (e2 - e1) + r2 * (e1 - e3) + r1 * (e3 - e2)) / denom
         bb = (r3**2 * (e1 - e2) + r2**2 * (e3 - e1) + r1**2 * (e2 - e3)) / denom
         if aa <= 0:
-            return guess
-        return -bb / (2 * aa)
+            raise GeometryError("bond-length scan has nonpositive fitted curvature")
+        vertex = -bb / (2 * aa)
+        if not r1 <= vertex <= r3:
+            raise GeometryError("fitted bond minimum lies outside its three-point bracket")
+        return vertex
 
     def _polyatomic_energy(self, molecule: Molecule) -> Estimate | None:
         """
-        Total energy of a species with three or more atoms, at 0 K, in eV.
+        Experimental polyatomic path; returns no public estimate without validation.
 
         THE DIVISION OF LABOUR
         ----------------------
@@ -448,8 +605,9 @@ class PySCFOracle(BaseOracle):
             coordinates : cheap tier (HF). The minimum's POSITION is far less
                           method-sensitive than the energy at it -- measured, MAE 0.0255 A
                           against 23 experimental diatomic r_e.
-            zero-point  : cheap tier, same surface. Measured +9.1% biased, carried as a
-                          systematic rather than corrected away.
+            zero-point  : cheap tier, same surface. The selected-diatomic protocol has an
+                          aggregate +9.1% displacement, carried as a named sensitivity
+                          rather than corrected away or called a calibrated bound.
             energy      : THIS oracle's tier, whatever it is. No algebra substitutes for
                           the wavefunction here, and nothing in this file pretends
                           otherwise.
@@ -467,9 +625,15 @@ class PySCFOracle(BaseOracle):
         error for water, which is fourteen times the chemical-accuracy threshold this
         project quotes and would look like a bad method rather than a category error.
 
-        Declines rather than guessing when it has no gradient-capable tier, when the
-        graph is disconnected, when the relaxation fails, or when the result is a saddle.
+        The mechanics remain here for research and geometry validation, but the bundled
+        seven-diatomic MAE does not quantify this protocol. The public oracle therefore
+        declines before backend work unless a future domain-specific validation profile
+        supplies an uncertainty model. It also declines when geometry/state checks fail.
         """
+        if len(molecule.atoms) > self.max_atoms or not math.isfinite(
+            self.nominal_accuracy_ev
+        ):
+            return None
         engine = self._geometry_engine()
         if engine is None:
             return None                      # no gradient-capable tier: decline
@@ -483,14 +647,14 @@ class PySCFOracle(BaseOracle):
             spec = "; ".join(f"{s} {x:.10f} {y:.10f} {z:.10f}"
                              for s, (x, y, z) in zip(molecule.atoms, coordinates))
             e_elec, correction = self._energy(spec, molecule.atoms, spin)
-        except (ConvergenceFailure, GeometryError, KeyError, RuntimeError,
-                NotImplementedError):
+        except (ConvergenceFailure, GeometryError, KeyError, NotImplementedError):
             return None                      # a number we do not trust is worse than none
         dt = time.perf_counter() - t0
 
-        # The ZPE bias does NOT cancel against free atoms -- they have no vibrations at
-        # all -- so it rides in the signed systematic channel and survives into an
-        # atomization energy, while largely cancelling in a bond-conserving reaction.
+        # The observed ZPE displacement does not cancel against free atoms -- they have no
+        # vibrations -- so its signed coefficient survives into atomization energy. In a
+        # related-energy difference the coefficient may cancel algebraically; residual
+        # model errors require a future calibrated covariance model.
         zpe_bias = ZPE_BIAS_FRACTION * zpe
         return Estimate(
             value_ev=e_elec * HARTREE_EV + zpe,
@@ -504,6 +668,11 @@ class PySCFOracle(BaseOracle):
                    + (f", CBS correction {correction * HARTREE_EV:+.4f} eV"
                       if correction else "")),
             systematic_ev=correction * HARTREE_EV + zpe_bias,
+            systematic_terms=(
+                (f"basis-extrapolation:{self.method}/{self.basis}/{self.tight_d}",
+                 correction * HARTREE_EV),
+                ("zpe:hf-harmonic-bias", zpe_bias),
+            ),
         )
 
     # -- polyatomic geometry -----------------------------------------------------
@@ -537,6 +706,7 @@ class PySCFOracle(BaseOracle):
         It is measured anyway, because "not the regime" is an argument and not a
         measurement: ``tests/test_geometry.py::TestTheGuessDoesNotMoveTheAnswer``.
         """
+        _require_pyscf()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             mol = gto.M(atom=atom_spec, basis=resolve_basis(symbols, self.basis,
@@ -565,10 +735,10 @@ class PySCFOracle(BaseOracle):
         ``(coordinates, zero-point energy in eV)`` for a polyatomic, or raise.
 
         The three steps live in ``smartchem.geometry`` and are deliberately not merged:
-        seed from the bond graph, relax to a stationary point, certify with the Hessian.
-        Only the middle one needs a wavefunction, and it is taken at THIS oracle's tier --
-        which for a polyatomic is always the cheap geometry tier, since a caller reaching
-        this code has been routed here by ``_geometry_engine``.
+        seed from the bond graph, relax to a stationary point, then evaluate a same-tier
+        Hessian for harmonic frequencies and a local-curvature check. The latter two steps
+        both evaluate a wavefunction at this oracle's selected geometry tier. Transfer of
+        that geometry to a higher-level single-point method is an approximation.
 
         A saddle is not simply refused. An imaginary frequency's eigenvector points
         DOWNHILL, so it is both the diagnosis and the repair: displace along it and relax
@@ -576,7 +746,8 @@ class PySCFOracle(BaseOracle):
         about 113 degrees, but a symmetric graph seed relaxes to the TRANS-PLANAR form --
         a perfectly converged stationary point, gradient 1.7e-5, and a transition state
         for internal rotation with one imaginary mode at -632 cm^-1. Without the
-        certificate that would have been priced as a molecule with nothing visibly wrong.
+        curvature check that stationary point would have been priced as a minimum with
+        nothing visibly wrong.
 
         Refusal remains the fallback when the descent does not reach a minimum, because
         a species whose shape this machinery cannot resolve must not be priced anyway.
@@ -598,7 +769,7 @@ class PySCFOracle(BaseOracle):
             spec = "; ".join(f"{s} {x:.10f} {y:.10f} {z:.10f}"
                              for s, (x, y, z) in zip(symbols, coords))
             # the relaxation just converged here, so its final density is very nearly
-            # this one -- the certifying SCF starts a step away from its own answer
+            # this one -- the Hessian SCF starts a step away from its own answer
             mol, mf = self._mean_field(spec, symbols, spin, guess=warm["dm"])
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -620,11 +791,11 @@ class PySCFOracle(BaseOracle):
                 raise GeometryError(
                     f"relaxation did not converge for {symbols}: max gradient "
                     f"{result.gradient_norm:.2e} Ha/Bohr after {result.iterations} calls")
-            _log.info("%s: building the Hessian to certify the stationary point",
+            _log.info("%s: building the Hessian to check the stationary point",
                       _label(molecule))
             analysis = certify(result.coordinates)
             if analysis.is_minimum:
-                _log.info("%s: certified a minimum, ZPE %.4f eV",
+                _log.info("%s: no imaginary harmonic modes detected, ZPE %.4f eV",
                           _label(molecule), analysis.zero_point_energy_ev)
                 return result.coordinates, analysis.zero_point_energy_ev
             _log.info("%s: stationary point is a saddle (%d imaginary, lowest %.1f cm^-1)"
@@ -679,13 +850,21 @@ class PySCFOracle(BaseOracle):
         free atoms have no vibrational zero-point motion, so the ZPE survives the
         subtraction untouched.
 
-        Declines rather than guesses when it has no geometry. That is the whole reason
-        polyatomic work is currently out of reach -- not the interface, which now expresses
-        it fine, but the absence of a geometry source.
+        Declines rather than guesses when it has no supported geometry/state protocol.
+        A limited polyatomic HF relaxation/Hessian path exists, but it is not a conformer,
+        stereochemistry, spin-state, or broadly validated thermochemistry workflow.
         """
         atoms = molecule.atoms
+        if len(atoms) > self.max_atoms:
+            return None
+        if not math.isfinite(self.fixed_diatomic_mae_ev):
+            return None                      # this energy tier has no measured validation MAE
         if molecule.charge != 0:
-            return None                      # ions need a different reference; decline
+            # Conserving charged reactions can use one consistent electronic-energy
+            # reference, but this small benchmark does not validate ionic basis, state,
+            # solvation or finite-size protocols. Decline for coverage, not because total
+            # energies of ions are intrinsically undefined.
+            return None
         if carries_unmodelled_physics(molecule):
             return None                      # excitations and quanta; see base.py
         if any(s not in ATOM_SPIN for s in atoms):
@@ -695,28 +874,46 @@ class PySCFOracle(BaseOracle):
             t0 = time.perf_counter()
             try:
                 e, correction = self._atom_energy(atoms[0])
-            except (ConvergenceFailure, KeyError, RuntimeError):
+            except (ConvergenceFailure, KeyError):
                 return None
             return Estimate(
                 value_ev=e * HARTREE_EV,
-                # The atomic reference is shared by every species containing this element,
-                # so its systematic error cancels in any conserving difference. The
-                # extrapolation correction rides along signed, to cancel the same way.
+                # Do not attach the tier's validation MAE independently to every atomic
+                # component: the selected atomization benchmark calibrates the molecular
+                # difference as one result. Per-element reference offsets cancel exactly
+                # in conserving reactions. The observed extrapolation displacement rides
+                # along signed; algebraic cancellation does not prove residual-error
+                # cancellation.
                 uncertainty_ev=0.0,
                 method=self.name,
                 seconds=time.perf_counter() - t0,
                 notes=f"atom {atoms[0]}, spin {ATOM_SPIN[atoms[0]]}",
                 systematic_ev=correction * HARTREE_EV,
+                systematic_terms=((
+                    f"basis-extrapolation:{self.method}/{self.basis}/{self.tight_d}",
+                    correction * HARTREE_EV,
+                ),),
             )
 
         if len(atoms) > 2:
             return self._polyatomic_energy(molecule)
+
+        # The local optimizer is truth-centered on a tabulated r_e and retains a tabulated
+        # frequency. It is not the fixed-geometry protocol measured by the benchmark and
+        # has no separate validation scale, so fail before purchasing its scan.
+        if self.optimize_geometry:
+            return None
 
         a, b = atoms
         formula = _formula_key(atoms)
         geom = GEOMETRY.get(formula)
         if geom is None and not self.optimize_geometry:
             return None                      # no geometry supplied and none requested
+        zpe = zero_point_energy_ev(formula)
+        if zpe is None:
+            # A bond-length optimisation does not provide vibrational curvature. Reporting
+            # zero here silently mixed D_e with the D_0 values used everywhere else.
+            return None
         r_e, _omega, mol_spin = geom if geom else (1.5, 0.0, 0)
 
         t0 = time.perf_counter()
@@ -725,15 +922,14 @@ class PySCFOracle(BaseOracle):
                 r_e = self._optimal_bond_length(a, b, mol_spin, r_e)
             e_mol, correction = self._energy(
                 f"{a} 0 0 0; {b} 0 0 {r_e}", (a, b), mol_spin)
-        except (ConvergenceFailure, KeyError, RuntimeError):
+        except (ConvergenceFailure, GeometryError, KeyError):
             # A number we do not trust is worse than no number. Decline.
             return None
         dt = time.perf_counter() - t0
 
-        zpe = zero_point_energy_ev(formula) or 0.0
         return Estimate(
             value_ev=e_mol * HARTREE_EV + zpe,
-            uncertainty_ev=self.nominal_accuracy_ev,
+            uncertainty_ev=self.fixed_diatomic_mae_ev,
             method=self.name + ("/opt" if self.optimize_geometry else ""),
             seconds=dt,
             notes=f"E_elec={e_mol * HARTREE_EV:.4f} eV, ZPE={zpe:.4f} eV, r_e={r_e:.4f} A"
@@ -741,6 +937,10 @@ class PySCFOracle(BaseOracle):
                      if correction else "")
                   + ("" if geom else " (geometry optimised, no reference)"),
             systematic_ev=correction * HARTREE_EV,
+            systematic_terms=((
+                f"basis-extrapolation:{self.method}/{self.basis}/{self.tight_d}",
+                correction * HARTREE_EV,
+            ),),
         )
 
 

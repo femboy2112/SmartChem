@@ -20,15 +20,25 @@ would test the cache no better while making it impossible to run.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import random
 
 import pytest
 
+from smartchem.atoms import PT
 from smartchem.category import Bond, Molecule
+from smartchem.data.reference import polyatomic
+from smartchem.legacy import Env
 from smartchem.oracle.base import BaseOracle, Estimate
-from smartchem.oracle.persistent import (PersistentCache, SCHEMA_VERSION,
-                                         species_signature)
+from smartchem.oracle import heuristic as heuristic_module
+from smartchem.oracle.heuristic import HeuristicOracle
+from smartchem.oracle.persistent import (
+    PersistentCache,
+    SCHEMA_VERSION,
+    _record_checksum,
+    species_signature,
+)
 
 
 class CountingOracle(BaseOracle):
@@ -118,13 +128,85 @@ class TestTheKeySeparatesTiers:
         assert result.value_ev == -2.0
         assert tight.calls == 1
 
-    def test_the_cross_check_rejects_a_record_whose_method_disagrees(self, tmp_path):
-        """
-        Belt and braces, tested directly: even if a key DID collide, the stored method
-        string is compared against the asking oracle and a mismatch is discarded.
+    def test_an_unlisted_result_driving_attribute_reaches_the_fingerprint(self, tmp_path):
+        """The conservative BaseOracle spec includes state a hand-written allowlist misses."""
+        path = tmp_path / "cache.json"
+        first = CountingOracle("FAKE/same", value=-1.0)
+        second = CountingOracle("FAKE/same", value=-2.0)
 
-        Simulated by writing a record under the right key with the wrong method -- which is
-        what a future key bug would look like from the cache's point of view.
+        PersistentCache(first, path).energy(water())
+        result = PersistentCache(second, path).energy(water())
+
+        assert result.value_ev == -2.0
+        assert second.calls == 1
+
+    def test_geometry_and_size_policy_reach_the_fingerprint(self, tmp_path):
+        first = CountingOracle("FAKE/same", value=-1.0)
+        second = CountingOracle("FAKE/same", value=-2.0)
+        first.max_atoms, second.max_atoms = 1, 2
+        path = tmp_path / "cache.json"
+        PersistentCache(first, path).energy(water())
+        result = PersistentCache(second, path).energy(water())
+        assert result.value_ev == -2.0
+        assert second.calls == 1
+
+    def test_environment_reaches_the_fingerprint(self, tmp_path):
+        standard = PersistentCache(HeuristicOracle(Env.standard()), tmp_path / "cache.json")
+        aqueous = PersistentCache(HeuristicOracle(Env.aqueous()), tmp_path / "cache.json")
+        assert standard.fingerprint != aqueous.fingerprint
+
+    def test_heuristic_periodic_inputs_reach_the_fingerprint(self, tmp_path, monkeypatch):
+        before = PersistentCache(
+            HeuristicOracle(), tmp_path / "cache.json"
+        ).fingerprint
+        monkeypatch.setattr(
+            heuristic_module,
+            "PT",
+            {**PT, "H": replace(PT["H"], ie_list_ev=(99.0,))},
+        )
+        after = PersistentCache(
+            HeuristicOracle(), tmp_path / "cache.json"
+        ).fingerprint
+        assert before != after
+
+    def test_legacy_engine_source_reaches_heuristic_model_identity(self, monkeypatch):
+        before = HeuristicOracle().calculation_spec()["model_inputs_sha256"]
+        real_source_sha256 = heuristic_module._source_sha256
+
+        def changed_legacy_source(subject):
+            if subject is heuristic_module.legacy_module:
+                return "changed-legacy-source"
+            return real_source_sha256(subject)
+
+        monkeypatch.setattr(heuristic_module, "_source_sha256", changed_legacy_source)
+        after = HeuristicOracle().calculation_spec()["model_inputs_sha256"]
+        assert before != after
+
+    def test_container_types_cannot_collide_in_calculation_specs(self, tmp_path):
+        path = tmp_path / "cache.json"
+        tuple_oracle = CountingOracle("FAKE/same", value=-1.0)
+        list_oracle = CountingOracle("FAKE/same", value=-2.0)
+        tuple_oracle.setting = (1, 2)
+        list_oracle.setting = [1, 2]
+
+        first = PersistentCache(tuple_oracle, path)
+        second = PersistentCache(list_oracle, path)
+        assert first.fingerprint != second.fingerprint
+        first.energy(water())
+        assert second.energy(water()).value_ev == -2.0
+        assert list_oracle.calls == 1
+
+    def test_immutable_mapping_inside_a_dataclass_can_be_fingerprinted(self, tmp_path):
+        oracle = CountingOracle()
+        oracle.reference_profile = polyatomic("H2O")
+        cache = PersistentCache(oracle, tmp_path / "cache.json")
+        assert cache.fingerprint
+        assert cache.energy(water()) is not None
+
+    def test_checksum_rejects_a_record_edited_after_it_was_written(self, tmp_path):
+        """
+        The checksum is an integrity guard, not authentication. An accidental or torn
+        edit must become a cache miss even when the outer key still matches.
         """
         path = tmp_path / "cache.json"
         oracle = CountingOracle("FAKE/tier-a", value=-1.0)
@@ -144,6 +226,23 @@ class TestTheKeySeparatesTiers:
         assert result.value_ev == -1.0, "a mismatched record was served"
         assert reloaded.rejected == 1
         assert fresh.calls == 1
+
+    def test_signed_record_with_wrong_oracle_identity_is_rejected(self, tmp_path):
+        path = tmp_path / "cache.json"
+        PersistentCache(CountingOracle(), path).energy(water())
+        raw = json.loads(path.read_text())
+        key = next(iter(raw["entries"]))
+        record = raw["entries"][key]
+        record["oracle_name"] = "FAKE/tier-a-evil"
+        unsigned = {field: value for field, value in record.items() if field != "checksum"}
+        record["checksum"] = _record_checksum(unsigned)
+        path.write_text(json.dumps(raw))
+
+        oracle = CountingOracle()
+        cache = PersistentCache(oracle, path)
+        assert cache.energy(water()).value_ev == -1.0
+        assert oracle.calls == 1
+        assert cache.rejected == 1
 
 
 # ======================================================================================
@@ -179,6 +278,12 @@ class TestTheKeySeparatesSpecies:
         single = Molecule(("C", "C"), frozenset({Bond(0, 1, 1)}))
         double = Molecule(("C", "C"), frozenset({Bond(0, 1, 2)}))
         assert species_signature(single) != species_signature(double)
+
+    def test_delimiter_characters_in_labels_cannot_collide(self):
+        left = Molecule(("A.B", "C"), frozenset({Bond(0, 1)}))
+        right = Molecule(("A", "B.C"), frozenset({Bond(0, 1)}))
+        assert left != right
+        assert species_signature(left) != species_signature(right)
 
     def test_the_signature_does_not_depend_on_frozenset_iteration_order(self):
         """
@@ -264,12 +369,110 @@ class TestFailureIsAlwaysAMiss:
         assert cache.energy(water()).value_ev == -1.0
         assert cache.load_error is not None
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"autosave": "false"}, {"cache_refusals": "false"}],
+    )
+    def test_boolean_policies_reject_truthy_strings(self, tmp_path, kwargs):
+        with pytest.raises(TypeError, match="boolean"):
+            PersistentCache(CountingOracle(), tmp_path / "cache.json", **kwargs)
+
     def test_a_file_from_another_schema_is_ignored_wholesale(self, tmp_path):
         path = tmp_path / "cache.json"
-        path.write_text(json.dumps({"version": SCHEMA_VERSION + 99, "entries": {}}))
-        cache = PersistentCache(CountingOracle(), path)
+        future = {
+            "version": SCHEMA_VERSION + 99,
+            "entries": {"future-expensive-result": {"sentinel": True}},
+        }
+        original = json.dumps(future, sort_keys=True)
+        path.write_text(original)
+        oracle = CountingOracle()
+        cache = PersistentCache(oracle, path)
         assert cache.load_error is not None
         assert cache.distinct_species == 0
+        assert cache.energy(water()).value_ev == -1.0
+        assert oracle.calls == 1
+        assert path.read_text() == original, "an older writer destroyed a future-schema file"
+
+    def test_autosave_failure_does_not_discard_a_computed_result(self, tmp_path):
+        blocker = tmp_path / "not-a-directory"
+        blocker.write_text("file")
+        oracle = CountingOracle()
+        cache = PersistentCache(oracle, blocker / "cache.json")
+
+        result = cache.energy(water())
+
+        assert result.value_ev == -1.0
+        assert oracle.calls == 1
+        assert cache.save_error is not None
+
+    def test_an_overflowing_numeric_record_is_recomputed(self, tmp_path):
+        path = tmp_path / "cache.json"
+        PersistentCache(CountingOracle(), path).energy(water())
+        raw = json.loads(path.read_text())
+        key = next(iter(raw["entries"]))
+        record = raw["entries"][key]
+        record["value_ev"] = 10**400
+        unsigned = {field: value for field, value in record.items() if field != "checksum"}
+        record["checksum"] = _record_checksum(unsigned)
+        path.write_text(json.dumps(raw))
+
+        oracle = CountingOracle()
+        cache = PersistentCache(oracle, path)
+        assert cache.energy(water()).value_ev == -1.0
+        assert oracle.calls == 1
+        assert cache.rejected == 1
+
+    def test_a_boolean_cannot_masquerade_as_a_numeric_record_field(self, tmp_path):
+        path = tmp_path / "cache.json"
+        PersistentCache(CountingOracle(), path).energy(water())
+        raw = json.loads(path.read_text())
+        key = next(iter(raw["entries"]))
+        record = raw["entries"][key]
+        record["value_ev"] = True
+        unsigned = {field: value for field, value in record.items() if field != "checksum"}
+        record["checksum"] = _record_checksum(unsigned)
+        path.write_text(json.dumps(raw))
+
+        oracle = CountingOracle()
+        cache = PersistentCache(oracle, path)
+        assert cache.energy(water()).value_ev == -1.0
+        assert oracle.calls == 1
+        assert cache.rejected == 1
+
+    def test_signed_record_rejects_malformed_sensitivity_provenance(self, tmp_path):
+        path = tmp_path / "cache.json"
+        PersistentCache(CountingOracle(), path).energy(water())
+        raw = json.loads(path.read_text())
+        key = next(iter(raw["entries"]))
+        record = raw["entries"][key]
+        record["systematic_terms"] = [[7, 0.1]]
+        record["systematic_ev"] = 0.1
+        unsigned = {field: value for field, value in record.items() if field != "checksum"}
+        record["checksum"] = _record_checksum(unsigned)
+        path.write_text(json.dumps(raw))
+
+        oracle = CountingOracle()
+        cache = PersistentCache(oracle, path)
+        assert cache.energy(water()).value_ev == -1.0
+        assert oracle.calls == 1
+        assert cache.rejected == 1
+
+    def test_signed_record_rejects_contradictory_method_views(self, tmp_path):
+        path = tmp_path / "cache.json"
+        PersistentCache(CountingOracle(), path).energy(water())
+        raw = json.loads(path.read_text())
+        key = next(iter(raw["entries"]))
+        record = raw["entries"][key]
+        record["methods"] = ["different-method"]
+        unsigned = {field: value for field, value in record.items() if field != "checksum"}
+        record["checksum"] = _record_checksum(unsigned)
+        path.write_text(json.dumps(raw))
+
+        oracle = CountingOracle()
+        cache = PersistentCache(oracle, path)
+        assert cache.energy(water()).value_ev == -1.0
+        assert oracle.calls == 1
+        assert cache.rejected == 1
 
     def test_a_record_missing_a_field_is_recomputed(self, tmp_path):
         path = tmp_path / "cache.json"
@@ -300,14 +503,47 @@ class TestFailureIsAlwaysAMiss:
         """
         path = tmp_path / "cache.json"
         first = CountingOracle(decline=True)
-        assert PersistentCache(first, path).energy(water()) is None
+        assert PersistentCache(first, path, cache_refusals=True).energy(water()) is None
 
         second = CountingOracle(decline=True)
-        cache = PersistentCache(second, path)
+        cache = PersistentCache(second, path, cache_refusals=True)
         assert cache.energy(water()) is None
         assert second.calls == 0, "a cached refusal was re-asked"
         assert cache.hits == 1
         assert cache.rejected == 0
+
+    def test_refusals_are_not_persistent_by_default(self, tmp_path):
+        path = tmp_path / "cache.json"
+        first = CountingOracle(decline=True)
+        assert PersistentCache(first, path).energy(water()) is None
+        second = CountingOracle(decline=False, value=-2.0)
+        result = PersistentCache(second, path).energy(water())
+        assert result.value_ev == -2.0
+        assert second.calls == 1
+
+    def test_default_reader_does_not_inherit_an_opted_in_cached_refusal(self, tmp_path):
+        path = tmp_path / "cache.json"
+        PersistentCache(
+            CountingOracle(decline=True), path, cache_refusals=True
+        ).energy(water())
+
+        live = CountingOracle(decline=True)
+        result = PersistentCache(live, path, cache_refusals=False).energy(water())
+        assert result is None
+        assert live.calls == 1
+
+    def test_a_non_object_record_is_recomputed(self, tmp_path):
+        path = tmp_path / "cache.json"
+        PersistentCache(CountingOracle(), path).energy(water())
+        raw = json.loads(path.read_text())
+        key = next(iter(raw["entries"]))
+        raw["entries"][key] = []
+        path.write_text(json.dumps(raw))
+        fresh = CountingOracle()
+        cache = PersistentCache(fresh, path)
+        assert cache.energy(water()).value_ev == -1.0
+        assert fresh.calls == 1
+        assert cache.rejected == 1
 
 
 # ======================================================================================
@@ -329,6 +565,8 @@ class TestItActuallyCaches:
         assert restored.value_ev == original.value_ev
         assert restored.uncertainty_ev == original.uncertainty_ev
         assert restored.systematic_ev == original.systematic_ev
+        assert restored.methods == original.methods
+        assert restored.systematic_terms == original.systematic_terms
         assert restored.method == original.method
 
     def test_a_restored_estimate_keeps_what_it_cost_to_know(self, tmp_path):
@@ -354,7 +592,57 @@ class TestItActuallyCaches:
         cache = PersistentCache(CountingOracle(), tmp_path / "cache.json")
         cache.energy(water())
         cache.energy(hydrogen_peroxide())
-        assert sorted(p.name for p in tmp_path.iterdir()) == ["cache.json"]
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["cache.json", "cache.json.lock"]
+
+    def test_stale_writers_merge_instead_of_losing_completed_work(self, tmp_path):
+        path = tmp_path / "cache.json"
+        first = PersistentCache(CountingOracle(), path)
+        second = PersistentCache(CountingOracle(), path)
+        first.energy(water())
+        second.energy(hydrogen_peroxide())
+        raw = json.loads(path.read_text())
+        assert len(raw["entries"]) == 2
+
+    def test_stale_writer_cannot_restore_a_record_another_writer_repaired(self, tmp_path):
+        path = tmp_path / "cache.json"
+        PersistentCache(CountingOracle(), path).energy(water())
+        raw = json.loads(path.read_text())
+        water_key = next(iter(raw["entries"]))
+        raw["entries"][water_key] = []
+        path.write_text(json.dumps(raw))
+
+        stale = PersistentCache(CountingOracle(), path, autosave=False)
+        repair = PersistentCache(CountingOracle(), path)
+        assert repair.energy(water()).value_ev == -1.0
+
+        stale.energy(hydrogen_peroxide())
+        assert stale.save()
+
+        merged = json.loads(path.read_text())["entries"]
+        assert len(merged) == 2
+        assert isinstance(merged[water_key], dict), "stale snapshot overwrote the repair"
+        verifier = CountingOracle()
+        assert PersistentCache(verifier, path).energy(water()).value_ev == -1.0
+        assert verifier.calls == 0
+
+    def test_intact_records_cannot_be_swapped_between_species_keys(self, tmp_path):
+        path = tmp_path / "cache.json"
+        cache = PersistentCache(CountingOracle(), path)
+        cache.energy(water())
+        cache.energy(hydrogen_peroxide())
+
+        raw = json.loads(path.read_text())
+        first_key, second_key = raw["entries"]
+        raw["entries"][first_key], raw["entries"][second_key] = (
+            raw["entries"][second_key], raw["entries"][first_key]
+        )
+        path.write_text(json.dumps(raw))
+
+        oracle = CountingOracle()
+        reloaded = PersistentCache(oracle, path)
+        assert reloaded.energy(water()).value_ev == -1.0
+        assert oracle.calls == 1
+        assert reloaded.rejected == 1
 
     def test_the_certificate_reports_the_saving(self, tmp_path):
         path = tmp_path / "cache.json"

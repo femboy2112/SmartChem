@@ -6,8 +6,8 @@ property the original design *described* but never checked, and several of them 
 defect from the review unconstructible rather than merely absent.
 
 The headline is ``TestConservationTheorem``: conservation is enforced once, on generators,
-in the ``Reaction`` constructor. Everything else -- every composite, every tensor, every
-chain hypothesis can build -- inherits it for free. That is the payoff for having a
+in the ``Reaction`` constructor. Everything else -- every composite and every scheduled
+product that the hypotheses build -- inherits it for free. That is the payoff for having a
 category at all, and it is checked here against randomly generated chains rather than a
 handful of examples.
 """
@@ -73,11 +73,10 @@ def _perms_within(blocks, n):
 def molecules(draw, max_atoms: int = 3):
     n = draw(st.integers(min_value=1, max_value=max_atoms))
     atoms = tuple(draw(st.sampled_from(ELEMENTS)) for _ in range(n))
-    # a random spanning-ish set of bonds, kept simple and always valid
+    # one connected random path; a Molecule is one species, never a mixture
     bonds = set()
     for i in range(1, n):
-        if draw(st.booleans()):
-            bonds.add(Bond(i - 1, i, draw(st.integers(min_value=1, max_value=3))))
+        bonds.add(Bond(i - 1, i, draw(st.integers(min_value=1, max_value=3))))
     charge = draw(st.integers(min_value=-1, max_value=1))
     return Molecule(atoms, frozenset(bonds), charge)
 
@@ -106,9 +105,17 @@ def reactions(draw):
     left, right = atoms[:split], atoms[split:]
     species = []
     if left:
-        species.append(Molecule(tuple(left), frozenset(), charge))
+        species.append(Molecule(
+            tuple(left),
+            frozenset(Bond(i - 1, i) for i in range(1, len(left))),
+            charge,
+        ))
     if right:
-        species.append(Molecule(tuple(right), frozenset(), 0))
+        species.append(Molecule(
+            tuple(right),
+            frozenset(Bond(i - 1, i) for i in range(1, len(right))),
+            0,
+        ))
     return Reaction(src, Config(tuple(species)), "generated")
 
 
@@ -166,8 +173,8 @@ class TestConservationTheorem:
 
     @settings(max_examples=200, deadline=None)
     @given(reactions(), reactions())
-    def test_tensor_inherits_conservation(self, f: Reaction, g: Reaction):
-        """Tensor is always defined, and always conserves."""
+    def test_scheduled_product_inherits_conservation(self, f: Reaction, g: Reaction):
+        """The compatibility schedule is always defined and always conserves."""
         assert conserves(f.tensor(g))
 
     @settings(max_examples=100, deadline=None)
@@ -212,11 +219,42 @@ class TestCategoryLaws:
         with pytest.raises(CompositionError, match="codomain"):
             f.then(g)
 
+    def test_an_elementary_endomorphism_is_not_silently_an_identity(self):
+        a = Config.atoms("H")
+        event = Reaction(a, a, "one period")
+        assert event.steps == 1
+        assert event != identity(a)
+
+    def test_a_forged_path_is_rejected(self):
+        h_free = Config.atoms("H", "H")
+        h_bound = Config.of(Molecule.diatomic("H", "H"))
+        n_free = Config.atoms("N", "N")
+        n_bound = Config.of(Molecule.diatomic("N", "N", order=3))
+        with pytest.raises(CompositionError, match="starts at"):
+            Reaction(h_free, h_bound, path=((n_free, n_bound),))
+
+    def test_a_discontinuous_path_is_rejected(self):
+        free = Config.atoms("H", "H")
+        bound = Config.of(Molecule.diatomic("H", "H"))
+        with pytest.raises(CompositionError, match="starts at"):
+            Reaction(free, free, path=((free, bound), (free, bound)))
+
+    def test_generator_id_cannot_contradict_the_typed_word(self):
+        free = Config.atoms("H", "H")
+        bound = Config.of(Molecule.diatomic("H", "H"))
+        with pytest.raises(ValueError, match="must match"):
+            Reaction(
+                free,
+                bound,
+                generator_id="channel-a",
+                generator_word=((free, bound, "channel-b"),),
+            )
+
 
 # ==================================================================================
-# Symmetric monoidal structure
+# Object commutative monoid and the compatibility scheduling operation
 # ==================================================================================
-class TestMonoidalLaws:
+class TestObjectProductAndScheduledProduct:
     @settings(max_examples=200, deadline=None)
     @given(configs())
     def test_unit_laws(self, a: Config):
@@ -247,6 +285,66 @@ class TestMonoidalLaws:
         idu = identity(UNIT)
         assert f.tensor(idu).dom == f.dom
         assert f.tensor(idu).cod == f.cod
+
+    def test_tensor_with_unit_preserves_a_composite_certificate(self):
+        free = Config.atoms("H", "H")
+        bound = Config.of(Molecule.diatomic("H", "H"))
+        loop = Reaction(free, bound, "associate").then(
+            Reaction(bound, free, "dissociate")
+        )
+        alongside_unit = loop.tensor(identity(UNIT))
+        assert alongside_unit == loop
+        assert alongside_unit.steps == 2
+
+    def test_tensor_does_not_collapse_parallel_loops_to_identity(self):
+        h_free = Config.atoms("H", "H")
+        h_bound = Config.of(Molecule.diatomic("H", "H"))
+        n_free = Config.atoms("N", "N")
+        n_bound = Config.of(Molecule.diatomic("N", "N", order=3))
+        h_loop = Reaction(h_free, h_bound).then(Reaction(h_bound, h_free))
+        n_loop = Reaction(n_free, n_bound).then(Reaction(n_bound, n_free))
+        combined = h_loop.tensor(n_loop)
+        assert combined.steps == 4
+        assert combined != identity(combined.dom)
+
+    def test_generator_identity_is_structural_not_a_display_label(self):
+        free = Config.atoms("H", "H")
+        bound = Config.of(Molecule.diatomic("H", "H"))
+        channel_a = Reaction(free, bound, "same display", generator_id="channel-a")
+        channel_b = Reaction(free, bound, "same display", generator_id="channel-b")
+        renamed_a = Reaction(free, bound, "renamed", generator_id="channel-a")
+        assert channel_a != channel_b
+        assert channel_a == renamed_a
+
+    def test_scheduled_product_is_associative_and_unital(self):
+        h0, h1 = Config.atoms("H", "H"), Config.of(Molecule.diatomic("H", "H"))
+        n0 = Config.atoms("N", "N")
+        n1 = Config.of(Molecule.diatomic("N", "N", order=3))
+        o0, o1 = Config.atoms("O", "O"), Config.of(Molecule.diatomic("O", "O", order=2))
+        f, g, h = Reaction(h0, h1), Reaction(n0, n1), Reaction(o0, o1)
+        assert f.scheduled_product(identity(UNIT)) == f
+        assert identity(UNIT).scheduled_product(f) == f
+        assert (f.scheduled_product(g).scheduled_product(h)
+                == f.scheduled_product(g.scheduled_product(h)))
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="linear histories cannot quotient independent events by interchange",
+    )
+    def test_true_parallel_interchange_is_architecture_debt(self):
+        h0, h1 = Config.atoms("H", "H"), Config.of(Molecule.diatomic("H", "H"))
+        n0 = Config.atoms("N", "N")
+        n1 = Config.of(Molecule.diatomic("N", "N", order=3))
+        f, g = Reaction(h0, h1, generator_id="h+"), Reaction(h1, h0, generator_id="h-")
+        k, ell = (Reaction(n0, n1, generator_id="n+"),
+                  Reaction(n1, n0, generator_id="n-"))
+        lhs = f.then(g).scheduled_product(k.then(ell))
+        rhs = f.scheduled_product(k).then(g.scheduled_product(ell))
+        assert lhs == rhs
+
+    def test_duplicate_edge_records_are_rejected(self):
+        with pytest.raises(ValueError, match="multiple bond records"):
+            Molecule(("C", "C"), frozenset({Bond(0, 1, 1), Bond(0, 1, 2)}))
 
 
 # ==================================================================================
@@ -292,13 +390,17 @@ class TestObjectStructure:
 
     def test_connectivity(self):
         assert Molecule.diatomic("H", "H").is_connected()
-        assert not Molecule(("H", "H"), frozenset()).is_connected()
+        with pytest.raises(ValueError, match="connected species"):
+            Molecule(("H", "H"), frozenset())
 
     def test_large_molecule_refuses_rather_than_lies(self):
         # H12 costs 12! = 479_001_600 candidates -- every permutation sorts the symbols
         # when there is only one symbol, so the shortcut buys exactly nothing here. This
         # is the case the budget exists for.
-        big = Molecule(tuple("H" * 12), frozenset())
+        big = Molecule(
+            tuple("H" * 12),
+            frozenset(Bond(i, (i + 1) % 12) for i in range(12)),
+        )
         with pytest.raises(NotImplementedError, match="out of scope"):
             big.canonical()
 
@@ -488,12 +590,17 @@ class TestCanonicalShortcutIsExact:
         for _ in range(400):
             n = rng.randrange(2, 8)
             atoms = tuple(rng.choice("HCON") for _ in range(n))
-            bonds = {Bond(rng.randrange(i), i, rng.choice([1, 1, 1, 2, 3]))
-                     for i in range(1, n)}
+            # Keep one edge record per unordered pair.  Bond multiplicity belongs in
+            # Bond.order; two records for the same pair are not a molecular graph.
+            edge_orders = {
+                (rng.randrange(i), i): rng.choice([1, 1, 1, 2, 3])
+                for i in range(1, n)
+            }
             for _ in range(rng.randrange(0, 3)):
                 i, j = rng.sample(range(n), 2)
-                bonds.add(Bond(i, j, rng.choice([1, 2])))
-            bonds = frozenset(bonds)
+                edge_orders[tuple(sorted((i, j)))] = rng.choice([1, 2])
+            bonds = frozenset(Bond(i, j, order)
+                              for (i, j), order in edge_orders.items())
             colours = _wl_colours(atoms, bonds)
             refined = _refined_blocks(atoms, bonds)
             if _cost_of(refined) < _symbol_cost(atoms):
@@ -552,13 +659,14 @@ class TestCanonicalShortcutIsExact:
         for _ in range(400):
             n = rng.randrange(2, 8)
             atoms = tuple(rng.choice("HCON") for _ in range(n))
-            bonds = set()
+            edge_orders = {}
             for i in range(1, n):                      # spanning path: always connected
-                bonds.add(Bond(rng.randrange(i), i, rng.choice([1, 1, 1, 2, 3])))
+                edge_orders[(rng.randrange(i), i)] = rng.choice([1, 1, 1, 2, 3])
             for _ in range(rng.randrange(0, 3)):       # a few chords
                 i, j = rng.sample(range(n), 2)
-                bonds.add(Bond(i, j, rng.choice([1, 2])))
-            bonds = frozenset(bonds)
+                edge_orders[tuple(sorted((i, j)))] = rng.choice([1, 2])
+            bonds = frozenset(Bond(i, j, order)
+                              for (i, j), order in edge_orders.items())
             assert Molecule(atoms, bonds).canonical() == self._brute_force(atoms, bonds), (
                 f"shortcut disagrees with brute force on {atoms} {sorted(bonds)}"
             )

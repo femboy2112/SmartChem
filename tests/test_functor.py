@@ -1,9 +1,10 @@
 """
-The energy functor laws.
+Endpoint-potential and isolated-species additivity laws.
 
-``smartchem.thermo`` claims to be a strong monoidal functor from the category of chemical
-configurations to the additive reals. This file checks that claim, and checks the thing
-underneath it that makes the categorical framing load-bearing rather than decorative:
+``smartchem.thermo`` defines an additive object potential for its explicitly separable
+species model and sends a conserving history to the endpoint difference. This file checks
+those narrower claims, and the thing underneath them that makes the categorical framing
+load-bearing rather than decorative:
 
 **conservation is what licenses the subtraction.**
 
@@ -102,9 +103,9 @@ def configs(draw):
 
 
 # ======================================================================================
-# The object half: E is monoidal
+# The object half: E is additive in the separable-species adapter
 # ======================================================================================
-class TestMonoidalFunctor:
+class TestSeparableEnergyAdditivity:
     def test_unit_has_zero_energy(self):
         """``E(I) = 0`` -- the empty vessel. A real value, not a refusal."""
         est = configuration_energy(UNIT, ORACLE)
@@ -114,7 +115,7 @@ class TestMonoidalFunctor:
     @settings(max_examples=150, deadline=None)
     @given(configs(), configs())
     def test_tensor_maps_to_addition(self, a: Config, b: Config):
-        """``E(A (x) B) = E(A) + E(B)`` -- the monoidal law."""
+        """``E(A + B) = E(A) + E(B)`` -- this adapter's separability assumption."""
         ea, eb = configuration_energy(a, ORACLE), configuration_energy(b, ORACLE)
         both = configuration_energy(tensor_obj(a, b), ORACLE)
         assert ea is not None and eb is not None and both is not None
@@ -169,8 +170,8 @@ class TestFunctoriality:
         loop = Reaction(free, bound, "associate").then(Reaction(bound, free, "dissociate"))
         assert reaction_energy(loop, ORACLE).value_ev == pytest.approx(0.0, abs=1e-9)
 
-    def test_tensor_of_morphisms_maps_to_addition(self):
-        """``dE(f (x) g) = dE(f) + dE(g)``."""
+    def test_scheduled_product_endpoints_map_to_addition(self):
+        """Endpoint differences add for the compatibility schedule in this model."""
         free_h, bound_h = _h2()
         free_n = Config.atoms("N", "N")
         bound_n = Config.of(Molecule.diatomic("N", "N", order=3))
@@ -252,13 +253,13 @@ class TestConservationLicensesSubtraction:
 
 
 # ======================================================================================
-# Bond order is now priced, because the object carries it
+# The oracle interface carries bond order; a conforming oracle can price it
 # ======================================================================================
-class TestBondOrderIsPriced:
+class TestOracleInterfaceCarriesBondOrder:
     """
-    The old interface asked the oracle about an atom *pair*, which carries no order, so a
-    C-C single bond and a C=C double bond were indistinguishable. The primitive is now a
-    species, and a species carries its topology.
+    The old interface asked the oracle about an atom *pair*, which carries no order. The
+    primitive is now a species, and this stub proves the order reaches an oracle that elects
+    to use it. The shipped heuristic still ignores order; ab initio bond order is emergent.
     """
 
     def test_single_and_double_bonds_differ(self):
@@ -328,17 +329,17 @@ class TestBondingEnergy:
 # ======================================================================================
 class TestSystematicVsRandomError:
     """
-    ``Estimate`` carries two different kinds of error and must not conflate them.
+    ``Estimate`` carries two different diagnostic channels and must not conflate them.
 
-    ``uncertainty_ev`` is random: it combines in quadrature and never cancels.
-    ``systematic_ev`` is a signed systematic model correction: it combines additively
-    and DOES cancel between the two sides of a conserving difference, exactly as the
-    arbitrary energy zero does.
+    ``uncertainty_ev`` combines in quadrature under an explicit independence assumption;
+    its statistical meaning still depends on the producing oracle. ``systematic_ev`` is a
+    signed model sensitivity: it combines additively and cancels algebraically between the
+    two sides of a conserving difference, exactly as the arbitrary energy zero does.
 
     Getting this wrong is not academic. Treating the per-species CBS correction as random
-    and combining it in quadrature produced +/-1.4 eV error bars on a method whose measured
-    accuracy is 0.04 eV -- a 35x inflation, caused entirely by discarding a cancellation of
-    about 97%.
+    and combining it in quadrature produced +/-1.4 eV reported scales on a method whose
+    small benchmark MAE was about 0.06 eV, caused largely by discarding a cancellation of
+    about 97%. Neither number is a calibrated coverage interval.
     """
 
     def test_random_uncertainty_grows_in_quadrature(self):
@@ -357,33 +358,100 @@ class TestSystematicVsRandomError:
         b = Estimate(3.0, 0.4, "m")
         assert (a - b).uncertainty_ev == pytest.approx(0.5)
 
-    def test_the_bar_widens_only_to_what_survives_cancellation(self):
-        residual = Estimate(7.0, 0.04, "m", systematic_ev=0.13).with_honest_uncertainty()
+    def test_the_reported_scale_includes_surviving_sensitivity(self):
+        residual = Estimate(7.0, 0.04, "m", systematic_ev=0.13).with_sensitivity_floor()
         assert residual.uncertainty_ev == pytest.approx(0.13)
 
-    def test_a_converged_result_keeps_its_tight_bar(self):
-        """No widening when the extrapolation barely moved anything."""
-        tight = Estimate(4.478, 0.041, "m", systematic_ev=0.001).with_honest_uncertainty()
+    def test_a_small_displacement_does_not_change_a_larger_reported_scale(self):
+        tight = Estimate(4.478, 0.041, "m", systematic_ev=0.001).with_sensitivity_floor()
         assert tight.uncertainty_ev == pytest.approx(0.041)
 
     def test_widening_never_narrows(self):
-        """with_honest_uncertainty is a floor, never a replacement."""
-        wide = Estimate(1.0, 2.0, "m", systematic_ev=0.1).with_honest_uncertainty()
+        """The sensitivity policy is a reporting floor, never a replacement."""
+        wide = Estimate(1.0, 2.0, "m", systematic_ev=0.1).with_sensitivity_floor()
         assert wide.uncertainty_ev == pytest.approx(2.0)
 
     def test_a_large_surviving_correction_is_reported_not_hidden(self):
         """
         The NaCl case. cbs(TZ,QZ) lands 3.38 kcal/mol out while plain cc-pVQZ lands 0.39
-        out -- the extrapolation degraded a good answer. Reporting that with the tier's
-        nominal +/-0.041 eV would be the oracle inventing confidence it has not got.
+        out -- the extrapolation degraded a good answer. The surviving displacement is
+        therefore useful as a reporting floor, but it is not a calibrated error bound.
         """
         nacl = Estimate(4.3806, 0.041, "CCSD(T)/cbs(TZ,QZ)",
-                        systematic_ev=0.1299).with_honest_uncertainty()
+                        systematic_ev=0.1299).with_sensitivity_floor()
         assert nacl.uncertainty_ev > 3 * 0.041
-        assert abs(nacl.value_ev - 4.234) < 1.5 * nacl.uncertainty_ev, (
-            "the widened bar must actually cover the experimental value"
+        assert nacl.systematic_magnitude_ev == pytest.approx(0.1299)
+        assert "sensitivity" in nacl.notes
+
+    def test_unrelated_systematic_sources_cannot_cancel(self):
+        estimate = Estimate(
+            1.0,
+            0.1,
+            "m",
+            systematic_terms=(("basis", +0.4), ("zpe", -0.4)),
         )
-        assert "widened" in nacl.notes, "a widened bar must say why"
+        assert estimate.systematic_ev == pytest.approx(0.0)
+        assert estimate.systematic_bound_ev == pytest.approx(0.8)
+        assert estimate.with_sensitivity_floor().uncertainty_ev == pytest.approx(0.8)
+
+    def test_legacy_method_name_is_only_a_compatibility_alias(self):
+        estimate = Estimate(1.0, 0.1, "m", systematic_ev=0.4)
+        assert estimate.with_honest_uncertainty() == estimate.with_sensitivity_floor()
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"uncertainty_ev": -0.1},
+            {"uncertainty_ev": float("nan")},
+            {"uncertainty_ev": float("inf")},
+            {"seconds": -1.0},
+            {"value_ev": float("nan")},
+        ],
+    )
+    def test_invalid_measurements_are_rejected(self, kwargs):
+        values = {"value_ev": 1.0, "uncertainty_ev": 0.1, "method": "m"}
+        values.update(kwargs)
+        with pytest.raises((TypeError, ValueError)):
+            Estimate(**values)
+
+    def test_bare_string_method_collection_is_rejected(self):
+        with pytest.raises(TypeError, match="set or frozenset"):
+            Estimate(1.0, 0.1, "HF", methods="HF")
+
+    @pytest.mark.parametrize(
+        "terms",
+        [
+            [["basis", 0.1]],
+            (("basis",),),
+            ("basis",),
+        ],
+    )
+    def test_systematic_term_container_shape_is_strict(self, terms):
+        with pytest.raises(TypeError, match="systematic_terms"):
+            Estimate(1.0, 0.1, "HF", systematic_terms=terms)
+
+    def test_coalescing_systematic_terms_cannot_overflow_silently(self):
+        with pytest.raises(ValueError, match="not finite"):
+            Estimate(
+                1.0,
+                0.1,
+                "m",
+                systematic_terms=(("basis", 1e308), ("basis", 1e308)),
+            )
+
+    def test_reused_quantity_scales_uncertainty_linearly(self):
+        one = Estimate(
+            2.0,
+            0.3,
+            "m",
+            seconds=4.0,
+            systematic_terms=(("basis", 0.2),),
+        )
+        two = one.scaled(2)
+        assert two.value_ev == pytest.approx(4.0)
+        assert two.uncertainty_ev == pytest.approx(0.6)
+        assert two.systematic_terms == (("basis", pytest.approx(0.4)),)
+        assert two.seconds == pytest.approx(4.0), "the underlying quantity was computed once"
 
 
 # ======================================================================================
@@ -406,7 +474,7 @@ class WideSpectatorOracle(StubOracle):
     """
     Prices Fe with a huge uncertainty and everything else tightly.
 
-    Fe is the stand-in for the realistic case: the catalyst is the biggest, least
+    Fe is the stand-in for the realistic case: the unchanged spectator is the biggest, least
     well-known species in the vessel, and it is exactly the one that cancels.
     """
 
@@ -427,20 +495,20 @@ def _n2_from_atoms(*spectators: Molecule) -> Reaction:
 
 class TestSpectatorsAreCancelledStructurally:
     """
-    A species present unchanged on both sides of a morphism contributes exactly zero to
-    dE, by the monoidal law. The category can see that before any oracle runs, so the
-    species is never priced.
+    A species present unchanged on both sides contributes exactly zero to dE under the
+    adapter's isolated-species separability assumption. The category can see that before
+    any oracle runs, so the species is never priced in this model.
 
     This is the "prune by type ahead of the expensive layer" claim applied to the energy
-    itself, and unlike the basis-set policy it is exact rather than empirical: it does not
-    approximate the answer, it declines to compute a number that provably cannot move it.
+    itself. It is exact inside this model, not a universal statement about an interacting
+    vessel, where binding, solvation or fields can make a nominal spectator matter.
     """
 
     def test_a_spectator_is_never_priced(self):
         bare, withcat = CountingOracle(), CountingOracle()
         reaction_energy(_n2_from_atoms(), bare)
         reaction_energy(_n2_from_atoms(Molecule.atom("Fe")), withcat)
-        assert ("Fe",) not in withcat.asked, "the catalyst was priced despite cancelling"
+        assert ("Fe",) not in withcat.asked, "the spectator was priced despite cancelling"
         assert withcat.asked == bare.asked, "adding a spectator changed the work done"
 
     def test_a_spectator_does_not_change_the_value(self):
@@ -519,19 +587,19 @@ class TestSpectatorsAreCancelledStructurally:
 
 
 # ======================================================================================
-# The codomain is a monoid, and that is what makes the fold well defined
+# Accumulator laws, modulo ordinary floating-point roundoff
 # ======================================================================================
-class TestEstimateIsAMonoid:
+class TestEstimateAccumulatorLaws:
     """
-    ``E`` is usually described here as a functor into ``(R, +)``. That is a simplification:
-    it lands in ``Estimate``, which is a product of THREE monoids --
+    ``configuration_energy`` folds species results through ``Estimate``. Conceptually its
+    channels use additive/hypot accumulators:
 
         value_ev         (R, +)
         uncertainty_ev   (R>=0, hypot)      associative, commutative, identity 0
         systematic_ev (R, +)
 
-    -- and ``configuration_energy`` folds over a configuration's species with it. The fold
-    is only well defined if those laws hold, so they are checked rather than assumed.
+    IEEE-754 arithmetic is not exactly associative, so the generated tests use tolerances
+    and this class deliberately does not claim an exact Python-level monoid.
 
     The quadrature component carries a precondition the other two do not: hypot is the
     correct combination ONLY for INDEPENDENT errors. That is exactly the precondition a
@@ -548,6 +616,7 @@ class TestEstimateIsAMonoid:
         z = Estimate.zero("m")
         a = self._e(3.0, 0.4, 0.1)
         for combined in (z + a, a + z):
+            assert combined == a
             assert combined.value_ev == pytest.approx(a.value_ev)
             assert combined.uncertainty_ev == pytest.approx(a.uncertainty_ev)
             assert combined.systematic_ev == pytest.approx(a.systematic_ev)
@@ -564,6 +633,17 @@ class TestEstimateIsAMonoid:
         assert left.value_ev == pytest.approx(right.value_ev)
         assert left.uncertainty_ev == pytest.approx(right.uncertainty_ev)
         assert left.systematic_ev == pytest.approx(right.systematic_ev)
+
+    def test_method_provenance_is_associative_too(self):
+        a, b, c = Estimate(1, 0.1, "x"), Estimate(2, 0.1, "x"), Estimate(3, 0.1, "y")
+        left, right = (a + b) + c, a + (b + c)
+        assert left.method == right.method == "x+y"
+        assert left.methods == right.methods == frozenset({"x", "y"})
+
+    def test_display_method_is_canonicalized_from_semantic_provenance(self):
+        estimate = Estimate(1.0, 0.1, "summary", methods=frozenset({"detail"}))
+        assert estimate.method == "detail"
+        assert Estimate.zero("one-label") == Estimate.zero("another-label")
 
     @settings(max_examples=100, deadline=None)
     @given(
@@ -592,6 +672,14 @@ class TestEstimateIsAMonoid:
         backward = parts[2] + parts[1] + parts[0]
         assert forward.value_ev == pytest.approx(backward.value_ev)
         assert forward.uncertainty_ev == pytest.approx(backward.uncertainty_ev)
+
+    def test_repeated_species_reuse_one_correlated_estimate(self):
+        """Two copies reuse one modeled number; they are not independent oracle samples."""
+        molecule = Molecule.diatomic("N", "N", order=3)
+        oracle = CountingOracle()
+        estimate = configuration_energy(Config.of(molecule, molecule), oracle)
+        assert oracle.asked.count(molecule.atoms) == 1
+        assert estimate.uncertainty_ev == pytest.approx(0.1)
 
     def test_negation_preserves_uncertainty_but_flips_the_systematic_part(self):
         """

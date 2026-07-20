@@ -1,10 +1,11 @@
 """
-Monad laws, and the mechanism search they carry.
+Writer/List-style laws, and the mechanism search they carry.
 
 Two things are being pinned here.
 
-First, the laws hold -- checked against hypothesis-generated chains, not examples, so a
-refactor of the search strategy provably cannot change what a pathway means.
+First, the structural laws hold up to the explicitly tolerated floating-point arithmetic
+used by the comparison helper. Generated examples are regression evidence, not a proof over
+all Python values.
 
 Second, and more to the point: ``bind`` is the *only* way pathways compose. In the legacy
 code ``bind`` had zero call sites and every test still passed, which is precisely how a
@@ -49,15 +50,23 @@ def same(p: Pathway, q: Pathway) -> bool:
     if len(p.branches) != len(q.branches):
         return False
     for (v1, t1), (v2, t2) in zip(p.branches, q.branches):
-        if v1 != v2 or t1.steps != t2.steps or t1.methods != t2.methods:
+        if (
+            v1 != v2
+            or t1.steps != t2.steps
+            or t1.methods != t2.methods
+            or t1.transitions != t2.transitions
+            or t1.generator_word != t2.generator_word
+        ):
             return False
         if t1.energy_ev != pytest.approx(t2.energy_ev, abs=1e-9):
+            return False
+        if t1.uncertainty_ev != pytest.approx(t2.uncertainty_ev, abs=1e-9):
             return False
     return True
 
 
 # ==================================================================================
-# The monoid, without which the Writer is not lawful
+# Approximate accumulator laws over IEEE-754 values
 # ==================================================================================
 class TestTallyMonoid:
     @settings(max_examples=200, deadline=None)
@@ -82,9 +91,39 @@ class TestTallyMonoid:
         total = Tally(0.0, 0.3) + Tally(0.0, 0.4)
         assert total.uncertainty_ev == pytest.approx(0.5)
 
+    def test_hypot_avoids_spurious_intermediate_overflow(self):
+        total = Tally(0.0, 1e200) + Tally(0.0, 1e200)
+        assert total.uncertainty_ev == pytest.approx(2 ** 0.5 * 1e200)
+
+    @pytest.mark.parametrize("kwargs", [
+        {"steps": "ab"},
+        {"methods": "HF"},
+    ])
+    def test_sequence_fields_reject_bare_strings(self, kwargs):
+        with pytest.raises(TypeError):
+            Tally(**kwargs)
+
+    @pytest.mark.parametrize("args", [
+        (float("nan"), 0.0),
+        (0.0, float("inf")),
+        (0.0, -0.1),
+        (True, 0.0),
+    ])
+    def test_invalid_numeric_tallies_are_rejected(self, args):
+        with pytest.raises((TypeError, ValueError)):
+            Tally(*args)
+
+    def test_generator_word_rejects_an_empty_semantic_id(self):
+        state = Config.atoms("H")
+        with pytest.raises(ValueError, match="non-empty"):
+            Tally(
+                transitions=((state, state),),
+                generator_word=((state, state, ""),),
+            )
+
 
 # ==================================================================================
-# Monad laws
+# Writer/List-style bind laws on the tested finite floating-point domain
 # ==================================================================================
 class TestMonadLaws:
     @settings(max_examples=200, deadline=None)
@@ -166,6 +205,17 @@ def _h2_steps():
 
 
 class TestSearch:
+    @pytest.mark.parametrize("kwargs", [
+        {"energy_ev": float("nan")},
+        {"energy_ev": 0.0, "uncertainty_ev": -0.1},
+        {"energy_ev": True},
+    ])
+    def test_invalid_step_numbers_are_rejected(self, kwargs):
+        free = Config.atoms("H", "H")
+        bound = Config.of(Molecule.diatomic("H", "H"))
+        with pytest.raises((TypeError, ValueError)):
+            Step(Reaction(free, bound), **kwargs)
+
     def test_finds_a_one_step_route(self):
         free, bound, steps = _h2_steps()
         routes = search(free, steps, target=bound, max_depth=1)
@@ -181,21 +231,121 @@ class TestSearch:
         assert 1 in lengths and 3 in lengths
         three = next(r for r in routes if len(r.tally.steps) == 3)
         assert three.energy_ev == pytest.approx(-4.478)
+        assert three.route.steps == 3
+        assert len(three.intermediates) == 2
+
+    def test_a_cycle_keeps_its_two_step_history(self):
+        free, _bound, steps = _h2_steps()
+        cycle = next(
+            route for route in search(free, steps, target=free, max_depth=2)
+            if len(route.tally.steps) == 2
+        )
+        assert cycle.route.steps == 2
+        assert cycle.route != Reaction(free, free, path=())
 
     def test_max_depth_is_enforced(self):
         free, _bound, steps = _h2_steps()
         routes = search(free, steps, max_depth=2)
         assert all(len(r.tally.steps) <= 2 for r in routes)
 
-    def test_results_are_energy_ordered(self):
+    def test_search_does_not_implicitly_rank_model_numbers(self):
         free, _bound, steps = _h2_steps()
         routes = search(free, steps, max_depth=3)
-        assert [r.energy_ev for r in routes] == sorted(r.energy_ev for r in routes)
+        energies = [route.energy_ev for route in routes]
+        assert energies != sorted(energies), (
+            "search ordering must remain enumeration, not an implicit scientific verdict"
+        )
 
-    def test_spontaneous_only_prunes_uphill_routes(self):
+    def test_same_display_label_generators_remain_distinct(self):
+        free, bound, _steps = _h2_steps()
+        routes = search(
+            free,
+            [
+                Step(Reaction(free, bound, "same", generator_id="channel-a"), -1.0),
+                Step(Reaction(free, bound, "same", generator_id="channel-b"), -2.0),
+            ],
+            target=bound,
+            max_depth=1,
+        )
+        assert len(routes) == 2
+        assert {route.energy_ev for route in routes} == {-1.0, -2.0}
+        assert len({route.route.generator_word for route in routes}) == 2
+
+    def test_duplicate_generator_preserves_alternative_estimates(self):
+        free, bound, _steps = _h2_steps()
+        routes = search(
+            free,
+            [
+                Step(Reaction(free, bound, "old", generator_id="same"), -1.0),
+                Step(Reaction(free, bound, "new", generator_id="same"), -2.0),
+            ],
+            target=bound,
+            max_depth=1,
+        )
+        assert len(routes) == 2
+        assert {route.energy_ev for route in routes} == {-1.0, -2.0}
+
+    def test_renaming_an_identical_generator_does_not_duplicate_a_route(self):
+        free, bound, _steps = _h2_steps()
+        routes = search(
+            free,
+            [
+                Step(Reaction(free, bound, "old", generator_id="same"), -1.0),
+                Step(Reaction(free, bound, "renamed", generator_id="same"), -1.0),
+            ],
+            target=bound,
+            max_depth=1,
+        )
+        assert len(routes) == 1
+
+    def test_anonymous_ids_cannot_collide_with_public_generator_ids(self):
+        free, bound, _steps = _h2_steps()
+        with pytest.raises(ValueError, match="NUL"):
+            Reaction(free, bound, generator_id="\x00smartchem-local-step:0")
+
+    def test_anonymous_same_endpoint_channels_do_not_alias(self):
+        free, bound, _steps = _h2_steps()
+        routes = search(
+            free,
+            [
+                Step(Reaction(free, bound, "channel-a"), -1.0),
+                Step(Reaction(free, bound, "channel-b"), -2.0),
+            ],
+            target=bound,
+            max_depth=1,
+        )
+        assert len(routes) == 2
+        assert len({route.route.generator_word for route in routes}) == 2
+
+    def test_spontaneous_only_filters_returned_uphill_routes(self):
         free, _bound, steps = _h2_steps()
         routes = search(free, steps, max_depth=2, spontaneous_only=True)
         assert all(r.energy_ev < 0 for r in routes)
+
+    def test_spontaneous_only_does_not_prune_an_uphill_prefix(self):
+        a = Config.atoms("H", "H")
+        b = Config.of(Molecule.diatomic("H", "H"))
+        c = Config.of(Molecule(
+            ("H", "H"), frozenset({Bond(0, 1)}), state="relaxed"
+        ))
+        routes = search(
+            a,
+            [
+                Step(Reaction(a, b, generator_id="up"), +1.0),
+                Step(Reaction(b, c, generator_id="down"), -3.0),
+            ],
+            target=c,
+            max_depth=2,
+            spontaneous_only=True,
+        )
+        assert len(routes) == 1
+        assert routes[0].energy_ev == pytest.approx(-2.0)
+
+    @pytest.mark.parametrize("bad", [-1, 1.5, True])
+    def test_invalid_depth_is_rejected(self, bad):
+        free, _bound, steps = _h2_steps()
+        with pytest.raises((TypeError, ValueError)):
+            search(free, steps, max_depth=bad)
 
     def test_unreachable_target_returns_nothing(self):
         free, _bound, steps = _h2_steps()
@@ -211,6 +361,34 @@ class TestSearch:
 
     def test_best_route_of_nothing_is_none(self):
         assert best_route([]) is None
+
+    def test_best_route_refuses_alternative_estimates_of_one_route(self):
+        free, bound, _steps = _h2_steps()
+        routes = search(
+            free,
+            [
+                Step(Reaction(free, bound, "a", generator_id="same"), -1.0),
+                Step(Reaction(free, bound, "b", generator_id="same"), -2.0),
+            ],
+            target=bound,
+            max_depth=1,
+        )
+        with pytest.raises(ValueError, match="alternative estimates"):
+            best_route(routes)
+
+    def test_best_route_refuses_mixed_estimators(self):
+        free, bound, _steps = _h2_steps()
+        routes = search(
+            free,
+            [
+                Step(Reaction(free, bound, "a", generator_id="a"), -1.0, method="A"),
+                Step(Reaction(free, bound, "b", generator_id="b"), -2.0, method="B"),
+            ],
+            target=bound,
+            max_depth=1,
+        )
+        with pytest.raises(ValueError, match="common estimator"):
+            best_route(routes)
 
 
 # ==================================================================================

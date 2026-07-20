@@ -3,8 +3,9 @@ The oracle contract and the quantities derived from it.
 
 The *functor laws* live in ``tests/test_functor.py``. This file pins the surrounding
 discipline that keeps the accuracy dial honest: an oracle may decline but may not invent,
-partial pricing is refused rather than silently understated, a verdict never outruns its
-own error bar, and derived quantities agree with the primitive they are derived from.
+partial pricing is refused rather than silently understated, an untyped uncertainty scale
+is never promoted into a confidence decision, and derived quantities agree with the
+primitive they are derived from.
 
 Nothing here requires an optional quantum-chemistry backend. A stub exercises the contract,
 so the rules stay enforced on a bare numpy/scipy install.
@@ -14,6 +15,7 @@ from __future__ import annotations
 import pytest
 
 from smartchem.category import Bond, Config, Molecule, Reaction
+from smartchem.legacy import Env
 from smartchem.oracle import HeuristicOracle
 from smartchem.oracle.base import BaseOracle, EnergyOracle, Estimate
 from smartchem.thermo import (
@@ -111,6 +113,10 @@ class TestDerivedQuantities:
     def test_atomization_declines_when_the_species_declines(self):
         assert StubOracle().atomization_energy(Molecule.diatomic("Xe", "Xe")) is None
 
+    def test_charged_atomization_declines_without_a_balanced_reference(self):
+        ion = Molecule.diatomic("H", "H", charge=1)
+        assert StubOracle().atomization_energy(ion) is None
+
 
 class TestBondingEnergy:
     def test_free_atoms_have_zero_bonding_energy(self):
@@ -137,6 +143,10 @@ class TestBondingEnergy:
         est = bonding_energy(cfg, StubOracle())
         assert est is not None
         assert est.uncertainty_ev > 0.1, "two uncertain species must exceed one"
+
+    def test_charged_bonding_declines_without_a_balanced_reference(self):
+        ion = Molecule.diatomic("H", "H", charge=1)
+        assert bonding_energy(Config.of(ion), StubOracle()) is None
 
 
 class TestBondOrderReachesTheOracle:
@@ -207,25 +217,51 @@ class TestReactionEnergy:
         assert a.value_ev == pytest.approx(b.value_ev)
         assert a.uncertainty_ev < b.uncertainty_ev
 
+    def test_underlying_oracle_assumptions_survive_in_the_certificate(self):
+        class NoteOracle(StubOracle):
+            def energy(self, molecule):
+                estimate = super().energy(molecule)
+                if estimate is None:
+                    return None
+                return Estimate(
+                    estimate.value_ev,
+                    estimate.uncertainty_ev,
+                    estimate.method,
+                    notes="critical spin/geometry/ZPE assumption",
+                )
 
-class TestVerdictRespectsUncertainty:
-    def test_verdict_within_error_bar_is_undecided(self):
-        """A prediction smaller than its own error bar has not earned a direction."""
+        rxn = Reaction(
+            Config.atoms("H", "H"), Config.of(Molecule.diatomic("H", "H"))
+        )
+        estimate = reaction_energy(rxn, NoteOracle())
+        assert "critical spin/geometry/ZPE assumption" in estimate.notes
+
+
+class TestEnergyDirectionReporting:
+    def test_uncalibrated_scale_is_not_used_as_a_decision_bound(self):
+        """A benchmark MAE or numerical scale is not automatically a confidence interval."""
         o = StubOracle(bond_ev=0.05)
         o.nominal_accuracy_ev = 3.0
         rxn = Reaction(Config.atoms("Na", "Cl"),
                        Config.of(Molecule.diatomic("Na", "Cl")))
-        assert "UNDECIDED" in favourability(rxn, o)
+        verdict = favourability(rxn, o)
+        assert "energy-lowering" in verdict
+        assert "coverage unspecified" in verdict
+        assert "UNDECIDED" not in verdict
 
-    def test_confident_verdict_states_direction(self):
+    def test_point_estimate_direction_is_reported(self):
         rxn = Reaction(Config.atoms("Na", "Cl"),
                        Config.of(Molecule.diatomic("Na", "Cl")))
-        assert "exothermic" in favourability(rxn, StubOracle())
+        assert "energy-lowering" in favourability(rxn, StubOracle())
 
     def test_declined_verdict_says_so(self):
         rxn = Reaction(Config.atoms("Xe", "Xe"),
                        Config.of(Molecule.diatomic("Xe", "Xe")))
         assert "UNKNOWN" in favourability(rxn, StubOracle())
+
+    def test_exact_zero_is_energy_neutral(self):
+        config = Config.of(Molecule.diatomic("H", "H"))
+        assert "energy-neutral" in favourability(Reaction(config, config), StubOracle())
 
 
 class TestLegacyBaselineIsMeasurable:
@@ -247,3 +283,12 @@ class TestLegacyBaselineIsMeasurable:
         est = HeuristicOracle().energy(Molecule.atom("Na"))
         assert est is not None
         assert est.value_ev == 0.0
+
+    def test_environmental_response_is_refused_outside_measured_vacuum_protocol(self):
+        oracle = HeuristicOracle(Env.aqueous())
+        assert oracle.energy(Molecule.diatomic("H", "H")) is None
+        assert oracle.nominal_accuracy_ev == float("inf")
+
+    def test_environment_argument_is_typed(self):
+        with pytest.raises(TypeError, match="Env"):
+            HeuristicOracle("water")

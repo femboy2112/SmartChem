@@ -19,23 +19,84 @@ It is kept because a baseline you can measure is worth more than a baseline you 
 """
 from __future__ import annotations
 
-import io
 import contextlib
+import hashlib
+import inspect
+import io
+import json
 import time
 
 from .base import BaseOracle, Estimate, carries_unmodelled_physics
-from ..atoms import PT, Species
+from .. import legacy as legacy_module
+from ..atoms import Atom, PT, Species
 from ..category import Molecule
 from ..legacy import Env, Situated
+
+
+# Conditional MAE over the 16 of 28 reference diatomics that the frozen model prices.
+# It was measured only in ``Env.standard()``; it is not transferable calibration for
+# solvent, temperature, pressure, or illumination response.
+_STANDARD_CONDITIONAL_MAE_EV = 3.423075614354034
+
+
+def _source_sha256(subject: object) -> str:
+    """Best-effort source identity for transitive code used by the frozen model."""
+    try:
+        return hashlib.sha256(inspect.getsource(subject).encode("utf-8")).hexdigest()
+    except (OSError, TypeError):
+        return "unavailable"
+
+
+def _model_inputs_sha256() -> str:
+    """Digest the table and transitive legacy/descriptor code that drive results."""
+    atoms_module = inspect.getmodule(Atom)
+    payload = {
+        "periodic_descriptors": sorted(
+            (
+                symbol,
+                atom.symbol,
+                atom.atomic_number,
+                atom.group,
+                atom.period,
+                list(atom.ie_list_ev),
+                list(atom.ea_list_ev),
+                atom.radius_pm,
+                atom.mass_amu,
+            )
+            for symbol, atom in PT.items()
+        ),
+        "atoms_source_sha256": _source_sha256(atoms_module if atoms_module else Atom),
+        "legacy_source_sha256": _source_sha256(legacy_module),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class HeuristicOracle(BaseOracle):
     name = "heuristic (legacy)"
     #: Measured over the full reference set, not asserted. See python -m smartchem.bench.
-    nominal_accuracy_ev = 3.28
+    # Conditional MAE over the 16 of 28 full-reference species this frozen model prices.
+    # Twelve refusals mean this is validation metadata, not an overall accuracy guarantee.
+    nominal_accuracy_ev = _STANDARD_CONDITIONAL_MAE_EV
 
     def __init__(self, env: Env | None = None):
-        self.env = env or Env.standard()
+        if env is not None and not isinstance(env, Env):
+            raise TypeError("env must be an Env or None")
+        self.env = Env.standard() if env is None else env
+        self._validated_environment = self.env == Env.standard()
+        self.nominal_accuracy_ev = (
+            _STANDARD_CONDITIONAL_MAE_EV
+            if self._validated_environment
+            else float("inf")
+        )
+
+    def calculation_spec(self):
+        """Immutable identity of the frozen heuristic calculation."""
+        return {
+            "model": "legacy-heuristic-v1",
+            "environment": self.env,
+            "model_inputs_sha256": _model_inputs_sha256(),
+        }
 
     def energy(self, molecule: Molecule) -> Estimate | None:
         """
@@ -52,6 +113,12 @@ class HeuristicOracle(BaseOracle):
         Different zero, same contract -- it is consistent across every species this
         instance prices, so it cancels in any conserving difference.
         """
+        # The legacy equations accept an ``Env`` but have never been validated as an
+        # environmental response model. In particular, a finite number in water would
+        # silently inherit the vacuum benchmark scale. Keep the configuration in cache
+        # identity, but decline outside the one measured protocol.
+        if not self._validated_environment:
+            return None
         if molecule.charge != 0:
             return None
         if carries_unmodelled_physics(molecule):

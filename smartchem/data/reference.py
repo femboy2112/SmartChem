@@ -10,13 +10,18 @@ GAP    : CRC Handbook Section 12 "Properties of Semiconductors"; Kittel, Introdu
 
 Conventions
 -----------
-* All energies in eV. 1 eV = 96.485 kJ/mol = 23.061 kcal/mol.
-* BDE values are D0 (dissociation from the vibrational ground state) where available.
-  Some sources tabulate D298; the two differ by roughly kT plus a zero-point correction,
-  typically 0.02-0.05 eV for these species. The stated `uncertainty` absorbs that.
-* `split` is declared explicitly rather than drawn at random so calibration is reproducible
-  and auditable. TEST entries must never be used to fit anything. The split spans
-  homonuclear / heteronuclear / ionic / covalent so it is representative, not adversarial.
+* All energies in eV. 1 eV = 96.485 kJ/mol = 23.0605 kcal/mol.
+* Diatomic values are intended to represent D0 (dissociation from the vibrational ground
+  state), but the compact source labels do not independently establish the D0/D298
+  convention for every row. Converting D298 to D0 requires species-specific thermal
+  enthalpy increments; it is not a generic kT or zero-point correction. The tabulated
+  `uncertainty_ev` does not silently absorb a convention mismatch. Verify the quantity in
+  the primary source before adding a row or using one as a high-precision standard.
+* `split` is declared explicitly rather than drawn at random so comparisons are
+  reproducible and auditable. Historical `test` entries were inspected during the 2026
+  tier/uncertainty audit, so that partition is no longer a pristine holdout and must not be
+  advertised as one. Future fitting/model selection needs a newly locked external set. The
+  existing partition remains useful for regression reporting only.
 
 Honesty note
 ------------
@@ -26,7 +31,10 @@ cannot masquerade as a good MAE overall.
 """
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Literal, Mapping
 
 Split = Literal["train", "test"]
@@ -38,10 +46,23 @@ class BondRef:
     formula: str
     atoms: tuple[str, ...]      # element symbols, one per atom
     d0_ev: float                # dissociation energy, eV (positive = bound)
-    uncertainty_ev: float       # honest error bar on the reference value itself
+    uncertainty_ev: float       # source/curation scale; not a calibrated coverage claim
     split: Split
     kind: str                   # homonuclear | polar-covalent | ionic | multiple-bond
     source: str
+    # Conventional molecular-graph order. This identifies the benchmark species; it is
+    # not a claim that a single integer captures its full electronic bond-order observable.
+    bond_order: int = 1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.atoms, tuple) or len(self.atoms) != 2:
+            raise ValueError("a diatomic reference must contain exactly two atoms")
+        if any(not isinstance(symbol, str) or not symbol for symbol in self.atoms):
+            raise ValueError("reference atom symbols must be non-empty strings")
+        if type(self.bond_order) is not int:
+            raise TypeError("bond_order must be an integer")
+        if self.bond_order < 1:
+            raise ValueError("bond_order must be at least one")
 
 
 @dataclass(frozen=True)
@@ -62,43 +83,43 @@ class GapRef:
 BOND_REFS: tuple[BondRef, ...] = (
     # --- homonuclear: the class the current charge-transfer model cannot describe at all,
     #     because chi_A - chi_B is identically zero for A-A pairs.
-    BondRef("H2",   ("H", "H"),   4.478, 0.001, "train", "homonuclear",    "NIST WebBook"),
-    BondRef("N2",   ("N", "N"),   9.754, 0.005, "test",  "multiple-bond",  "NIST WebBook"),
-    BondRef("O2",   ("O", "O"),   5.116, 0.003, "train", "multiple-bond",  "NIST WebBook"),
-    BondRef("F2",   ("F", "F"),   1.602, 0.005, "train", "homonuclear",    "CRC 104th, 9-73"),
-    BondRef("Cl2",  ("Cl", "Cl"), 2.479, 0.005, "train", "homonuclear",    "NIST WebBook (D0)"),
-    BondRef("I2",   ("I", "I"),   1.542, 0.003, "test",  "homonuclear",    "NIST WebBook"),
-    BondRef("P2",   ("P", "P"),   5.069, 0.020, "test",  "multiple-bond",  "CRC 104th, 9-73"),
-    BondRef("S2",   ("S", "S"),   4.371, 0.020, "train", "multiple-bond",  "CRC 104th, 9-73"),
-    BondRef("C2",   ("C", "C"),   6.213, 0.030, "train", "multiple-bond",  "NIST WebBook"),
-    BondRef("Si2",  ("Si", "Si"), 3.210, 0.050, "test",  "homonuclear",    "CRC 104th, 9-73"),
-    BondRef("Na2",  ("Na", "Na"), 0.720, 0.010, "train", "homonuclear",    "NIST WebBook"),
-    BondRef("K2",   ("K", "K"),   0.514, 0.010, "test",  "homonuclear",    "NIST WebBook"),
+    BondRef("H2",   ("H", "H"),   4.478, 0.001, "train", "homonuclear",    "NIST WebBook", 1),
+    BondRef("N2",   ("N", "N"),   9.754, 0.005, "test",  "multiple-bond",  "NIST WebBook", 3),
+    BondRef("O2",   ("O", "O"),   5.116, 0.003, "train", "multiple-bond",  "NIST WebBook", 2),
+    BondRef("F2",   ("F", "F"),   1.602, 0.005, "train", "homonuclear",    "CRC 104th, 9-73", 1),
+    BondRef("Cl2",  ("Cl", "Cl"), 2.479, 0.005, "train", "homonuclear",    "NIST WebBook (D0)", 1),
+    BondRef("I2",   ("I", "I"),   1.542, 0.003, "test",  "homonuclear",    "NIST WebBook", 1),
+    BondRef("P2",   ("P", "P"),   5.069, 0.020, "test",  "multiple-bond",  "CRC 104th, 9-73", 3),
+    BondRef("S2",   ("S", "S"),   4.371, 0.020, "train", "multiple-bond",  "CRC 104th, 9-73", 2),
+    BondRef("C2",   ("C", "C"),   6.213, 0.030, "train", "multiple-bond",  "NIST WebBook", 2),
+    BondRef("Si2",  ("Si", "Si"), 3.210, 0.050, "test",  "homonuclear",    "CRC 104th, 9-73", 2),
+    BondRef("Na2",  ("Na", "Na"), 0.720, 0.010, "train", "homonuclear",    "NIST WebBook", 1),
+    BondRef("K2",   ("K", "K"),   0.514, 0.010, "test",  "homonuclear",    "NIST WebBook", 1),
 
     # --- polar covalent
-    BondRef("HF",   ("H", "F"),   5.869, 0.003, "train", "polar-covalent", "NIST WebBook"),
-    BondRef("HCl",  ("H", "Cl"),  4.434, 0.003, "test",  "polar-covalent", "NIST WebBook"),
-    BondRef("HI",   ("H", "I"),   3.054, 0.005, "train", "polar-covalent", "NIST WebBook"),
-    BondRef("OH",   ("O", "H"),   4.392, 0.004, "train", "polar-covalent", "NIST WebBook"),
-    BondRef("CH",   ("C", "H"),   3.465, 0.010, "test",  "polar-covalent", "NIST WebBook"),
-    BondRef("NH",   ("N", "H"),   3.400, 0.020, "train", "polar-covalent", "CRC 104th, 9-73"),
-    BondRef("SiO",  ("Si", "O"),  8.263, 0.020, "test",  "multiple-bond",  "CRC 104th, 9-73"),
-    BondRef("CS",   ("C", "S"),   7.355, 0.030, "train", "multiple-bond",  "CRC 104th, 9-73"),
+    BondRef("HF",   ("H", "F"),   5.869, 0.003, "train", "polar-covalent", "NIST WebBook", 1),
+    BondRef("HCl",  ("H", "Cl"),  4.434, 0.003, "test",  "polar-covalent", "NIST WebBook", 1),
+    BondRef("HI",   ("H", "I"),   3.054, 0.005, "train", "polar-covalent", "NIST WebBook", 1),
+    BondRef("OH",   ("O", "H"),   4.392, 0.004, "train", "polar-covalent", "NIST WebBook", 1),
+    BondRef("CH",   ("C", "H"),   3.465, 0.010, "test",  "polar-covalent", "NIST WebBook", 1),
+    BondRef("NH",   ("N", "H"),   3.400, 0.020, "train", "polar-covalent", "CRC 104th, 9-73", 1),
+    BondRef("SiO",  ("Si", "O"),  8.263, 0.020, "test",  "multiple-bond",  "CRC 104th, 9-73", 2),
+    BondRef("CS",   ("C", "S"),   7.355, 0.030, "train", "multiple-bond",  "CRC 104th, 9-73", 3),
 
     # --- strong multiple bonds: CO is the strongest known diatomic bond and the current
     #     engine refuses to form it at all.
-    BondRef("CO",   ("C", "O"),  11.157, 0.005, "test",  "multiple-bond",  "NIST WebBook"),
-    BondRef("NO",   ("N", "O"),   6.496, 0.005, "train", "multiple-bond",  "NIST WebBook"),
-    BondRef("CN",   ("C", "N"),   7.738, 0.030, "train", "multiple-bond",  "CRC 104th, 9-73"),
+    BondRef("CO",   ("C", "O"),  11.157, 0.005, "test",  "multiple-bond",  "NIST WebBook", 3),
+    BondRef("NO",   ("N", "O"),   6.496, 0.005, "train", "multiple-bond",  "NIST WebBook", 2),
+    BondRef("CN",   ("C", "N"),   7.738, 0.030, "train", "multiple-bond",  "CRC 104th, 9-73", 3),
 
     # --- ionic: the class the current model overshoots by ~3x
-    BondRef("NaCl", ("Na", "Cl"), 4.234, 0.010, "train", "ionic",          "NIST WebBook"),
-    BondRef("KCl",  ("K", "Cl"),  4.420, 0.020, "test",  "ionic",          "CRC 104th, 9-73"),
-    BondRef("NaF",  ("Na", "F"),  4.945, 0.020, "train", "ionic",          "CRC 104th, 9-73"),
-    BondRef("MgO",  ("Mg", "O"),  3.673, 0.070, "test",  "ionic",          "CRC 104th, 9-73"),
+    BondRef("NaCl", ("Na", "Cl"), 4.234, 0.010, "train", "ionic",          "NIST WebBook", 1),
+    BondRef("KCl",  ("K", "Cl"),  4.420, 0.020, "test",  "ionic",          "CRC 104th, 9-73", 1),
+    BondRef("NaF",  ("Na", "F"),  4.945, 0.020, "train", "ionic",          "CRC 104th, 9-73", 1),
+    BondRef("MgO",  ("Mg", "O"),  3.673, 0.070, "test",  "ionic",          "CRC 104th, 9-73", 1),
 
     # --- interhalogen
-    BondRef("ICl",  ("I", "Cl"),  2.152, 0.010, "train", "polar-covalent", "NIST WebBook"),
+    BondRef("ICl",  ("I", "Cl"),  2.152, 0.010, "train", "polar-covalent", "NIST WebBook", 1),
 )
 
 
@@ -187,15 +208,16 @@ def coverage_report(available: frozenset[str]) -> dict[str, object]:
 #     REPORTED  : D_0 = D_e - ZPE,  ZPE ~ 0.5 * omega_e
 #
 # A fully predictive calculation would optimise the geometry and compute the harmonic
-# frequency itself. PySCFOracle can do that (``optimize_geometry=True``) at roughly 6x
-# the cost; it is off by default so the benchmark measures the *electronic* method rather
-# than a mixture of geometry error and energy error.
+# frequency on the resulting surface. ``PySCFOracle(optimize_geometry=True)`` currently
+# performs only a truth-centered local bond-length refinement and retains this tabulated
+# frequency, so it is not that protocol and is not assigned the fixed-geometry benchmark
+# MAE. It is off by default so the benchmark isolates the *electronic* method.
 #
 # Sources: NIST Diatomic Spectral Database; Huber & Herzberg, Constants of Diatomic
 # Molecules (1979).
 #
 #   formula -> (r_e in Angstrom, omega_e in cm^-1, molecular spin 2S)
-GEOMETRY: dict[str, tuple[float, float, int]] = {
+GEOMETRY: Mapping[str, tuple[float, float, int]] = MappingProxyType({
     "H2":   (0.74144, 4401.2, 0),
     "N2":   (1.09768, 2358.6, 0),
     "O2":   (1.20752, 1580.2, 2),   # triplet ground state
@@ -224,17 +246,18 @@ GEOMETRY: dict[str, tuple[float, float, int]] = {
     "NaF":  (1.92595,  536.1, 0),
     "MgO":  (1.74900,  785.1, 0),
     "ICl":  (2.32090,  384.3, 0),
-}
+})
 
-# Ground-state atomic spin multiplicities (2S = number of unpaired electrons).
-# Needed to compute the correct dissociation limit: a BDE is E(atoms) - E(molecule),
-# and getting the atomic spin state wrong corrupts the reference point.
+# Ground-state PySCF spin inputs: spin = N_alpha - N_beta = 2S. This is NOT the
+# multiplicity, which is 2S + 1. Needed to compute the correct dissociation limit: a BDE
+# is E(atoms) - E(molecule), and getting the atomic spin state wrong corrupts the
+# reference point.
 # Source: NIST Atomic Spectra Database ground-state term symbols.
-ATOM_SPIN: dict[str, int] = {
+ATOM_SPIN: Mapping[str, int] = MappingProxyType({
     "H": 1, "He": 0, "Li": 1, "Be": 0, "B": 1, "C": 2, "N": 3, "O": 2, "F": 1, "Ne": 0,
     "Na": 1, "Mg": 0, "Al": 1, "Si": 2, "P": 3, "S": 2, "Cl": 1, "Ar": 0,
     "K": 1, "Ca": 0, "Fe": 4, "Cu": 1, "Zn": 0, "Br": 1, "I": 1,
-}
+})
 
 CM_TO_EV = 1.23984198e-4
 
@@ -286,11 +309,14 @@ def zero_point_energy_ev(formula: str) -> float | None:
 #
 # UNCERTAINTIES
 #
-# CCCBDB quotes dfH(0 K) to 0.1 kJ/mol without an error bar, so `uncertainty_ev` is set
-# from the known experimental precision of each species plus the atomic terms. Note the
-# atomic values are COMMON across species: dfH(C, 0 K) enters every carbon compound with
-# the same sign, so its error is systematic across this table, not random -- it does not
-# average out over the set, and a mean absolute error computed here inherits it.
+# CCCBDB quotes dfH(0 K) to 0.1 kJ/mol without publishing an error bar. For those rows,
+# `uncertainty_ev` is a curation scale based on the reported precision and atomic
+# references, not a source-published or statistically calibrated interval with guaranteed
+# coverage. ATcT is uncertainty-bearing, but this compact table still does not retain
+# enough provenance to assign one uniform confidence level to every row. The atomic values
+# are also COMMON across species: dfH(C, 0 K) enters every carbon compound with the same
+# sign, so its error is systematic across this table, not random -- it does not average
+# out over the set, and a mean absolute error computed here inherits it.
 #
 # Sources
 # -------
@@ -303,12 +329,12 @@ def zero_point_energy_ev(formula: str) -> float | None:
 
 #: dfH(0 K) of the gas-phase atoms, kJ/mol. Load-bearing: each enters multiplied by its
 #: atom count, so an error here scales with molecule size. CCCBDB Release 22.
-ATOM_FORMATION_KJ: dict[str, float] = {
+ATOM_FORMATION_KJ: Mapping[str, float] = MappingProxyType({
     "H": 216.0,
     "C": 711.2,
     "N": 470.8,
     "O": 246.8,
-}
+})
 
 KJ_PER_EV = 96.485
 
@@ -317,11 +343,35 @@ KJ_PER_EV = 96.485
 class PolyatomicRef:
     """An experimental enthalpy of formation at 0 K for a polyatomic molecule."""
     formula: str
-    composition: dict[str, int]     # element symbol -> count
+    composition: Mapping[str, int]  # immutable element symbol -> positive count
     dfh_0k_kj: float                # enthalpy of formation at 0 K, kJ/mol
-    uncertainty_ev: float           # on the derived atomization energy, eV
+    uncertainty_ev: float           # reference scale; not a calibrated coverage claim
     split: Split
     source: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.composition, MappingABC):
+            raise TypeError("composition must be a mapping of element symbols to counts")
+        if not self.composition:
+            raise ValueError("composition must contain at least one element")
+
+        copied: dict[str, int] = {}
+        for symbol, count in self.composition.items():
+            if not isinstance(symbol, str) or not symbol:
+                raise ValueError("composition symbols must be non-empty strings")
+            if type(count) is not int:
+                raise TypeError("composition counts must be integers")
+            if count < 1:
+                raise ValueError("composition counts must be positive")
+            copied[symbol] = count
+
+        # Copy before wrapping so later mutation of the caller's dictionary cannot change
+        # a supposedly frozen reference object. Sorting keeps representation deterministic.
+        object.__setattr__(
+            self,
+            "composition",
+            MappingProxyType(dict(sorted(copied.items()))),
+        )
 
 
 POLYATOMIC_REFS: tuple[PolyatomicRef, ...] = (
@@ -363,7 +413,8 @@ POLYATOMIC_REFS: tuple[PolyatomicRef, ...] = (
 # The Active Thermochemical Tables solve a whole thermochemical network at once and do
 # publish 0 K values with uncertainties, so the C3 species take theirs from ATcT v1.202.
 # All three were cross-checked and every CCCBDB value agrees within 0.67 kJ/mol; the
-# switch was made for the error bars, not because anything was wrong.
+# switch was made to retain source-published uncertainty information, not because the
+# central CCCBDB values were shown wrong.
 #
 # Mixing sources inside one table is a real hazard and is tolerated here for a measured
 # reason: the largest disagreement between the two sources anywhere in this table is
@@ -414,25 +465,62 @@ def polyatomics(split: Split | None = None) -> tuple[PolyatomicRef, ...]:
 
 def reaction_energy_ev(left: Mapping[str, int], right: Mapping[str, int]) -> float | None:
     """
-    Experimental reaction energy at 0 K in eV, from formula -> stoichiometric coefficient
-    on each side. Negative means exothermic. None if any species is missing.
+    Experimental reaction energy at 0 K in eV, from formula -> positive integer
+    stoichiometric coefficient on each side. Negative means exothermic. None if any
+    species is missing.
 
     Computed from enthalpies of formation directly rather than by differencing atomization
-    energies. Both routes are algebraically identical -- the atomic terms cancel when the
-    reaction conserves mass -- and `test_the_two_routes_to_a_reaction_energy_agree` checks
-    that they really do, which is a live test of the conservation the category enforces.
+    energies. Both routes are algebraically identical only when the atomic terms cancel,
+    so this public reference helper validates elemental balance before publishing a number.
+    Open reactions require explicit reservoirs/chemical potentials, which this helper does
+    not accept; an unbalanced pseudo-reaction raises instead of acquiring an arbitrary
+    reference-dependent value.
     """
-    total = 0.0
-    for side, sign in ((right, 1.0), (left, -1.0)):
+    resolved: list[tuple[float, ...]] = []
+    inventories: list[Counter[str]] = []
+    for side_name, side in (("left", left), ("right", right)):
+        if not isinstance(side, MappingABC):
+            raise TypeError(f"{side_name} side must be a formula-to-coefficient mapping")
+        if not side:
+            raise ValueError(f"{side_name} side must contain at least one species")
+
+        # Validate the complete mapping before looking up any formula, so an unknown first
+        # row cannot hide malformed stoichiometry later in the same input.
         for formula, coefficient in side.items():
-            ref = polyatomic(formula)
-            if ref is None:
+            if not isinstance(formula, str) or not formula:
+                raise ValueError("reaction formulas must be non-empty strings")
+            if type(coefficient) is not int:
+                raise TypeError("stoichiometric coefficients must be integers")
+            if coefficient <= 0:
+                raise ValueError("stoichiometric coefficients must be positive")
+
+        side_rows: list[float] = []
+        inventory: Counter[str] = Counter()
+        for formula, coefficient in side.items():
+            reference = polyatomic(formula)
+            if reference is None:
                 return None
-            total += sign * coefficient * ref.dfh_0k_kj
+            composition = tuple(reference.composition.items())
+            side_rows.append(coefficient * reference.dfh_0k_kj)
+            for symbol, count in composition:
+                inventory[symbol] += coefficient * count
+        resolved.append(tuple(side_rows))
+        inventories.append(inventory)
+
+    if inventories[0] != inventories[1]:
+        raise ValueError(
+            "reaction must conserve elemental composition; explicit reservoirs are not "
+            "supported by reaction_energy_ev"
+        )
+
+    total = 0.0
+    for side_rows, sign in ((resolved[1], 1.0), (resolved[0], -1.0)):
+        total += sign * sum(side_rows)
     return total / KJ_PER_EV
 
 
 # Accuracy thresholds, stated once so no module invents its own.
-CHEMICAL_ACCURACY_EV = 0.043   # 1 kcal/mol. Reachable only by CCSD(T)/CBS-class methods.
+KCAL_PER_EV = 23.0605
+CHEMICAL_ACCURACY_EV = 1.0 / KCAL_PER_EV  # exactly 1 kcal/mol under this conversion
 GOOD_SEMIEMPIRICAL_EV = 0.30   # a genuinely good fast method
 USABLE_SCREENING_EV = 1.00     # useful for ranking, not for quoting

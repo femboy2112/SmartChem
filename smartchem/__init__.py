@@ -1,19 +1,23 @@
 """
-SmartChem: a compositional layer above quantum chemistry.
+SmartChem: a conserving sequential-history layer above quantum chemistry.
 
-Reactions are typed morphisms in a symmetric monoidal category whose objects carry bond
-topology, so conservation is enforced at construction and inherited by every composite.
-The environment is a Store comonad, so one local definition yields an entire response
-surface. Mechanism search is a Writer-over-List monad, so energy bookkeeping and provenance
-cannot drift out of step with the route. Energy comes from a pluggable oracle, so accuracy
-is a dial you set rather than a property you inherit.
+Reactions are typed morphisms whose objects carry bond topology, so conservation is
+enforced at construction and inherited by sequential composites. Configurations have a
+commutative multiset product; morphisms do not yet have a true parallel tensor because a
+linear history cannot satisfy interchange. ``Reaction.tensor`` is a compatibility name for
+an explicit left-first schedule while the future open-system layer gains ports/process graphs.
+The Store comonad represents a condition-indexed query plus a focus; finite response-surface
+utilities explicitly evaluate that query at requested positions. Mechanism search has a
+Writer-over-List shape and appends caller-supplied energy/provenance tallies alongside route
+transitions. Energy comes from a pluggable oracle whose coverage and measured accuracy are
+method- and domain-dependent.
 
     from smartchem import Config, Molecule, Reaction, favourability
     from smartchem.oracle.pyscf_oracle import PySCFOracle
 
     rxn = Reaction(Config.atoms("C", "O"),
                    Config.of(Molecule.diatomic("C", "O", order=3)))
-    favourability(rxn, PySCFOracle("CCSD(T)", "aug-cbs(TZ,QZ)"))
+    favourability(rxn, PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", tight_d=False))
 
 ``smartchem.legacy`` holds the frozen original engine. It is kept executable so the
 accuracy comparison stays checkable, and it is not exported here: new work builds on
@@ -35,6 +39,7 @@ from .category import (
     identity,
     is_bond_order_conserving,
     is_catalytic,
+    is_regenerated,
     is_isodesmic,
     reaction_residue,
     tensor_obj,
@@ -81,20 +86,20 @@ __all__ = [
     # category -- objects, morphisms, and the conservation theorem
     "Bond", "Config", "Molecule", "Reaction", "UNIT",
     "ConservationError", "CompositionError",
-    "braid", "catalytic_cycle", "conserves", "identity", "is_catalytic",
+    "braid", "catalytic_cycle", "conserves", "identity", "is_catalytic", "is_regenerated",
     "bond_order_profile", "bond_signature", "is_bond_order_conserving", "is_isodesmic",
     "reaction_residue", "tensor_obj",
-    # store -- the environment comonad and response surfaces
+    # store -- the environment comonad and finite response-surface sampling
     "Store", "Conditions", "SOLVENTS",
     "survey", "response_surface", "is_responsive", "grid",
     "argmin_position", "argmax_position",
-    # pathway -- the mechanism-search monad
+    # pathway -- Writer/List-style branching search (float accumulation is approximate)
     "Pathway", "Tally", "Step", "Mechanism",
     "search", "catalytic_cycles", "best_route",
-    # thermo -- the energy functor
+    # thermo -- separable endpoint-energy adapter
     "configuration_energy", "reaction_energy", "bonding_energy",
     "is_exothermic", "favourability",
-    # geometry -- coordinates derived from the bond graph the object already carries
+    # geometry -- candidate coordinates seeded from the bond graph
     "GeometryError", "RelaxResult", "VibrationalAnalysis",
     "seed_coordinates", "seed_bond_length", "relax", "harmonic_analysis", "is_linear",
 ]

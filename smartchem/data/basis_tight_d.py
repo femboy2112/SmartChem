@@ -51,6 +51,9 @@ substituting a different one.
 """
 from __future__ import annotations
 
+from types import MappingProxyType
+from typing import Mapping
+
 #: Elements for which a tight-d variant exists and is vendored below. Restricting the
 #: policy to this set is deliberate: applying a (X+d) basis to a first-row element is not
 #: merely wasteful, it is undefined -- no such set exists.
@@ -59,7 +62,7 @@ SECOND_ROW = frozenset({"Al", "Si", "P", "S", "Cl", "Ar"})
 
 #: basis name -> verbatim NWChem block covering SECOND_ROW.
 #: Parse per element: gto.basis.parse(TIGHT_D[name], symb='S').
-TIGHT_D: dict[str, str] = {
+TIGHT_D: Mapping[str, str] = MappingProxyType({
     'cc-pV(T+d)Z': """\
 #----------------------------------------------------------------------
 # Basis Set Exchange
@@ -1108,4 +1111,4 @@ Ar    G
       0.4590000              1.0000000
 END
 """,
-}
+})

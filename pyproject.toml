@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smartchem"
-version = "0.3.0"
+version = "0.4.0"
 description = "A compositional layer above quantum chemistry: conserving reaction algebra with pluggable energy oracles"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,7 +19,6 @@ dev = [
     "hypothesis>=6.90",
 ]
 # High-accuracy energy oracles. Optional: the categorical core runs without them.
-xtb = ["tblite>=0.3"]
 qc = ["pyscf>=2.4"]
 
 [tool.setuptools.packages.find]
@@ -30,5 +29,5 @@ testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
     "slow: benchmarks and oracle calls that take real time",
-    "optional_backend: requires tblite or pyscf",
+    "optional_backend: requires pyscf",
 ]

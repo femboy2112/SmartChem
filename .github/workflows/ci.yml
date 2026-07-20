@@ -26,11 +26,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
 
-      # The xfail ratchet was discharged on 2026-07-20 when the legacy engine was retired:
-      # every finding now has an explicit verdict in tests/test_findings.py, either
-      # DISCHARGED (asserted against the live system, unmarked) or DROPPED (asserted
-      # absent). -rs surfaces what was skipped, so a silently-skipped suite cannot read
-      # as a green one.
+      # The legacy-finding xfail ratchet was discharged on 2026-07-20. One strict xfail
+      # remains intentionally: the current linear-history representation cannot satisfy
+      # true parallel interchange. Strictness makes an eventual open-process repair show
+      # up as XPASS instead of silently leaving the debt marker stale. -rs surfaces skips.
       #
       # Tests needing real quantum-chemistry calls are gated behind --runslow and are NOT
       # run here: PySCF is not installed on this runner, and a test that would be skipped
@@ -42,3 +41,45 @@ jobs:
       # available here), but it must not crash, and its coverage line must stay honest.
       - name: Benchmark (baseline oracles only)
         run: python -m smartchem.bench --split test --quiet
+
+  pyscf-smoke:
+    name: Optional PySCF backend (smoke)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install core, test, and PySCF dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,qc]'
+
+      # Keep expensive wavefunction calculations behind the explicit --runslow gate,
+      # but prove that the optional backend imports, registers, and coexists with every
+      # fast core test. A missing or broken PySCF install must fail rather than skip.
+      - name: Verify PySCF discovery and one real calculation
+        run: >-
+          python -c 'from smartchem.oracle import available_oracles;
+          from smartchem.category import Molecule;
+          from smartchem.oracle.pyscf_oracle import PYSCF_AVAILABLE, PySCFOracle;
+          assert PYSCF_AVAILABLE and "ccsdt-cbs" in available_oracles();
+          result = PySCFOracle("HF", "cc-pVDZ", max_atoms=1).energy(Molecule.atom("H"));
+          assert result is not None and result.method.startswith("HF/cc-pVDZ")'
+
+      - name: Test fast suite with PySCF available
+        run: pytest -q -rs -m "not slow"
+
+      # Manual dispatch buys coverage of the expensive analytic-gradient and Hessian
+      # interfaces without charging every pull request for repeated wavefunction work.
+      # These are selected integration cases, not the full research benchmark.
+      - name: Manual real-wavefunction geometry integration
+        if: github.event_name == 'workflow_dispatch'
+        timeout-minutes: 45
+        run: >-
+          pytest -q -rs --runslow
+          tests/test_geometry.py::TestAgainstARealWavefunction::test_water_relaxes_to_the_known_hartree_fock_geometry
+          tests/test_geometry.py::TestAgainstARealWavefunction::test_the_vibrational_analysis_agrees_with_pyscf_exactly

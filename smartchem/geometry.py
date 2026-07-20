@@ -11,32 +11,36 @@ The obvious fix is a lookup table of experimental geometries, which is what the 
 use. It does not scale: it covers exactly the species someone has already tabulated, and
 the point of a search layer is to ask about species nobody has tabulated.
 
-The categorical framing supplies a better answer, and it was already sitting in the type.
+The structured molecule type supplies a useful starting point that was already present.
 ``category.Molecule`` carries **bond topology**, not just atom counts -- a decision made
 for an unrelated reason (so that ``Na + Cl`` and ``NaCl`` could be different objects and
-the reaction between them a genuine arrow). A bond graph is precisely the input a geometry
-builder needs. The structure that made conservation enforceable also makes coordinates
-derivable.
+the reaction between them a genuine arrow). A bond graph can seed a geometry builder, but it
+does not determine stereochemistry, conformation, electronic state or a unique minimum. The
+coordinates produced in step 1 are candidates, not categorical consequences.
 
 THE DECOMPOSITION
 -----------------
 Getting a geometry splits into three parts with genuinely different computational
 characters, and keeping them apart is the whole design:
 
-    1. SEED     graph -> approximate coordinates.  Pure combinatorics, microseconds,
-                no wavefunction. Exact solid geometry (the tetrahedral angle is
-                arccos(-1/3), not a fitted parameter) plus tabulated bond lengths.
+    1. SEED     graph -> approximate coordinates. Pure combinatorics plus tabulated bond
+                lengths and idealised local geometry; no wavefunction. Even where an ideal
+                angle is exact geometrically, applying it to a molecule is a heuristic.
 
-    2. RELAX    approximate -> stationary point.  Needs the real potential surface, so
-                this is quantum chemistry -- but it needs *gradients*, and gradients are
-                cheap at a low tier and unavailable at CCSD(T) anyway.
+    2. RELAX    approximate -> numerically stationary point on a chosen approximate
+                potential-energy surface. It needs energies and gradients from a backend;
+                cost and analytic availability depend on the method.
 
-    3. CERTIFY  stationary point -> proven minimum.  The Hessian's eigenvalues settle it.
-                No imaginary frequency means a genuine local minimum.
+    3. CHECK    stationary point -> projected harmonic frequencies and ZPE. Negative
+                curvature diagnoses a candidate saddle on that surface; the current code
+                has no calibrated noise cutoff. Absence of detected imaginary modes is
+                numerical evidence for a local minimum, not a proof of global structure or
+                finite-temperature stability.
 
-Only step 2 touches an oracle, and it does not have to be the *expensive* oracle. That is
-the geometry/energy separability already measured for diatomics (see
-``PySCFOracle._optimal_bond_length``), generalised from one dimension to 3N.
+Steps 2 and 3 require backend data (gradients and a Hessian), although this module receives
+them through callables and imports no quantum package. Using a cheaper geometry surface than
+the final single-point energy is an additional approximation that must be benchmarked; a
+diatomic observation does not by itself validate generalisation to polyatomics.
 
 WHAT STEP 3 BUYS THAT WAS NOT PART OF THE PLAN
 ----------------------------------------------
@@ -45,19 +49,20 @@ D_0 -- they subtract a zero-point energy taken from tabulated harmonic frequenci
 polyatomic has no tabulated frequencies, so without a Hessian the only options are to
 report D_e (a *different quantity*, silently) or to report nothing.
 
-For water that gap is 0.61 eV -- 14 kcal/mol, three hundred times the chemical-accuracy
+For water that gap is 0.61 eV -- 14 kcal/mol, about fourteen times the chemical-accuracy
 threshold this project quotes. It is not a footnote. The Hessian closes it, and the same
-matrix that supplies the ZPE proves the geometry is a minimum rather than a saddle. Two
-requirements, one computation.
+matrix that supplies the harmonic ZPE also checks local curvature on the chosen surface.
+Two diagnostics, one computation, both subject to method, harmonic and numerical error.
 
-THE PROOF-STATUS DISCIPLINE
----------------------------
-Deliberately borrowed from ~/SmartASM: *candidate generation never upgrades proof status.*
+THE EVIDENCE-STATUS DISCIPLINE
+------------------------------
+Candidate generation does not establish a minimum.
 The seed is a guess and is treated as one -- VSEPR is a heuristic, and a heuristic that
 lands in the wrong basin would otherwise produce a confident wrong answer. So the seed
-proposes and the frequency analysis disposes. An imaginary frequency means the relaxation
-found a saddle, and this module says so and declines rather than pricing a transition
-state as if it were a molecule.
+proposes and the frequency analysis checks local curvature. The current implementation
+counts every negative projected frequency as imaginary; it has no calibrated numerical-
+noise cutoff. Such a mode at a converged stationary point indicates a candidate saddle on
+the modeled surface, and this module declines rather than silently pricing it as a minimum.
 
 This module is deliberately free of any PySCF import. Steps 1 and 3 are linear algebra and
 graph work; the caller injects step 2 as a callable. That keeps the geometry logic
@@ -68,6 +73,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from numbers import Real
+from types import MappingProxyType
 from typing import Callable, Sequence
 
 import numpy as np
@@ -96,7 +103,7 @@ CM_TO_EV = 1.23984198e-4
 #: 15% short, and short in the wrong direction, because the correction was computed from a
 #: bond-order difference that was never measured. Left unscaled the same seed is 3% off.
 #: Correcting for an unmeasured quantity is worse than not correcting at all.
-_ORDER_SCALE = {1: 1.00, 2: 0.87, 3: 0.78}
+_ORDER_SCALE = MappingProxyType({1: 1.00, 2: 0.87, 3: 0.78})
 
 
 class GeometryError(RuntimeError):
@@ -403,6 +410,24 @@ def relax(
     """
     from scipy.optimize import minimize
 
+    if not callable(energy_and_gradient):
+        raise TypeError("energy_and_gradient must be callable")
+    coordinates = np.asarray(coordinates, dtype=float)
+    if coordinates.ndim != 2 or coordinates.shape[0] < 1 or coordinates.shape[1] != 3:
+        raise ValueError("coordinates must have shape (n_atoms, 3) with at least one atom")
+    if not np.all(np.isfinite(coordinates)):
+        raise ValueError("coordinates must be finite")
+    if max_iterations is not None:
+        if isinstance(max_iterations, bool) or not isinstance(max_iterations, int):
+            raise TypeError("max_iterations must be a positive integer or None")
+        if max_iterations < 1:
+            raise ValueError("max_iterations must be positive")
+    if isinstance(gradient_tolerance, bool) or not isinstance(gradient_tolerance, Real):
+        raise TypeError("gradient_tolerance must be a positive real number")
+    gradient_tolerance = float(gradient_tolerance)
+    if not math.isfinite(gradient_tolerance) or gradient_tolerance <= 0:
+        raise ValueError("gradient_tolerance must be finite and positive")
+
     shape = coordinates.shape
     if max_iterations is None:
         max_iterations = _iteration_budget(shape[0])
@@ -411,19 +436,30 @@ def relax(
     def objective(flat: np.ndarray) -> tuple[float, np.ndarray]:
         calls["n"] += 1
         energy, gradient = energy_and_gradient(flat.reshape(shape))
-        # gradient arrives in Hartree/Bohr but the variable is Angstrom; the chain rule
-        # is the whole conversion, and skipping it would scale every step by 1.89.
-        return energy, np.asarray(gradient).reshape(-1) * BOHR_TO_ANGSTROM
+        if isinstance(energy, bool) or not isinstance(energy, Real):
+            raise TypeError("backend energy must be a real number")
+        energy = float(energy)
+        if not math.isfinite(energy):
+            raise ValueError("backend energy must be finite")
+        gradient = np.asarray(gradient, dtype=float)
+        if gradient.shape != shape:
+            raise ValueError(f"backend gradient must have shape {shape}, got {gradient.shape}")
+        if not np.all(np.isfinite(gradient)):
+            raise ValueError("backend gradient must be finite")
+        # q_bohr = x_angstrom / a0, hence dE/dx = (dE/dq) / a0.  This division is
+        # load-bearing: multiplying by a0 instead makes the Jacobian too small by a0^2
+        # (0.2800) and lets the optimiser certify gradients at the wrong scale.
+        return energy, gradient.reshape(-1) / BOHR_TO_ANGSTROM
 
     result = minimize(
         objective, coordinates.reshape(-1), jac=True, method="L-BFGS-B",
-        options={"maxiter": max_iterations, "gtol": gradient_tolerance * BOHR_TO_ANGSTROM,
+        options={"maxiter": max_iterations, "gtol": gradient_tolerance / BOHR_TO_ANGSTROM,
                  "ftol": 1e-12},
     )
     final = result.x.reshape(shape)
-    # undo the Angstrom chain-rule factor the objective applied, so the convergence test
-    # is made in Hartree/Bohr -- the same units the tolerance is quoted in.
-    gradient = np.asarray(result.jac) / BOHR_TO_ANGSTROM
+    # Undo dE/dx_A = (dE/dq_bohr) / a0 so the convergence test is made in
+    # Hartree/Bohr -- the same units the tolerance is quoted in.
+    gradient = np.asarray(result.jac) * BOHR_TO_ANGSTROM
     norm = float(np.max(np.abs(gradient)))
     return RelaxResult(
         coordinates=final,
@@ -435,18 +471,19 @@ def relax(
 
 
 # ======================================================================================
-# Step 3: certification -- is this point a minimum, and what is its zero-point energy?
+# Step 3: local-curvature check and harmonic zero-point energy
 # ======================================================================================
 @dataclass(frozen=True)
 class VibrationalAnalysis:
     """
     Harmonic frequencies at a stationary point, and the verdict they deliver.
 
-    ``imaginary_modes`` is the certificate. A genuine local minimum has none; every
-    imaginary frequency is a direction in which the energy goes DOWN, which means the
-    relaxation stopped on a saddle. A saddle is a transition state, not a molecule, and
-    pricing one as if it were a molecule is exactly the silent wrong answer this project
-    treats as the unforgivable defect.
+    ``imaginary_modes`` is a numerical local-curvature diagnostic. At a converged stationary
+    point, a negative frequency represents negative curvature and hence a downhill
+    direction on the modeled surface. This implementation counts every negative value;
+    small modes can be numerical/projection artifacts because no cutoff is calibrated.
+    Zero detected modes does not identify a global minimum or establish finite-temperature
+    stability.
     """
     frequencies_cm: np.ndarray
     zero_point_energy_ev: float
@@ -479,10 +516,10 @@ def _external_modes(masses_amu: np.ndarray, coordinates: np.ndarray) -> np.ndarr
     An orthonormal basis for the translations and rotations, mass-weighted.
 
     Six vectors for a general molecule, five for a linear one -- but the count is not
-    assumed here. The vectors are built and then orthonormalised by SVD, which discovers
-    the true rank: for a linear molecule the rotation about the molecular axis comes out
-    as a null vector and is dropped automatically. That is better than branching on a
-    linearity test, because the test needs a tolerance and the SVD does not.
+    assumed here. The vectors are built and then orthonormalised by SVD, whose numerical
+    rank test discovers that a linear molecule's rotation about its axis is null and drops
+    it automatically. This avoids a separate geometry-linearity branch and tolerance; the
+    SVD rank threshold remains an explicit numerical tolerance below.
     """
     n = len(masses_amu)
     root_mass = np.sqrt(masses_amu)
@@ -532,15 +569,29 @@ def harmonic_analysis(
     treats as the unforgivable one.
 
     A negative eigenvalue gives an imaginary frequency, reported as a NEGATIVE wavenumber
-    by the usual convention and counted in ``imaginary_modes``. Imaginary modes are
+    by the usual convention and counted in ``imaginary_modes`` with no magnitude cutoff.
+    Imaginary modes are
     excluded from the ZPE sum: the harmonic zero-point formula assumes a real oscillator
     and applying it to an unbound direction would produce a meaningless number.
     """
     masses = np.asarray(masses_amu, dtype=float)
+    coordinates = np.asarray(coordinates, dtype=float)
+    if masses.ndim != 1 or len(masses) < 1:
+        raise ValueError("masses_amu must be a non-empty one-dimensional sequence")
+    if not np.all(np.isfinite(masses)) or np.any(masses <= 0):
+        raise ValueError("masses_amu must contain finite positive masses")
     n = len(masses)
-    hessian = np.asarray(hessian_hartree_bohr2)
+    if coordinates.shape != (n, 3) or not np.all(np.isfinite(coordinates)):
+        raise ValueError(f"coordinates must be finite with shape ({n}, 3)")
+    hessian = np.asarray(hessian_hartree_bohr2, dtype=float)
     if hessian.ndim == 4:
+        if hessian.shape != (n, n, 3, 3):
+            raise ValueError(f"four-index Hessian must have shape ({n}, {n}, 3, 3)")
         hessian = hessian.transpose(0, 2, 1, 3).reshape(3 * n, 3 * n)
+    elif hessian.shape != (3 * n, 3 * n):
+        raise ValueError(f"Hessian must have shape ({3 * n}, {3 * n})")
+    if not np.all(np.isfinite(hessian)):
+        raise ValueError("Hessian must be finite")
     # symmetrise: analytic Hessians are symmetric in exact arithmetic, and enforcing it
     # lets eigvalsh be used, which cannot return spurious complex eigenvalues
     hessian = 0.5 * (hessian + hessian.T)
@@ -548,7 +599,7 @@ def harmonic_analysis(
     inverse_sqrt_mass = np.repeat(1.0 / np.sqrt(masses), 3)
     weighted = hessian * inverse_sqrt_mass[:, None] * inverse_sqrt_mass[None, :]
 
-    external = _external_modes(masses, np.asarray(coordinates, dtype=float))
+    external = _external_modes(masses, coordinates)
     projector = np.eye(3 * n) - external @ external.T
     projected = projector @ weighted @ projector
 
@@ -587,9 +638,9 @@ def is_linear(coordinates: np.ndarray, tolerance: float = 1e-3) -> bool:
     collinear exactly when its centred matrix has rank one.
 
     This used to be what told ``harmonic_analysis`` whether to expect five external modes
-    or six. It no longer is -- the SVD in ``_external_modes`` discovers the rank itself, so
-    a linear molecule keeps its extra vibration with no flag to pass and no tolerance to
-    tune. What survives here is a plain predicate about a shape, which is worth having for
+    or six. It no longer is -- the SVD in ``_external_modes`` determines numerical rank, so
+    a linear molecule keeps its extra vibration without a separate linearity flag. What
+    survives here is a plain predicate about a shape, which is worth having for
     checking that a seed came out the right shape at all (CO2 linear, water not).
     """
     if len(coordinates) <= 2:

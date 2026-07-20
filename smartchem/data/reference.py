@@ -343,7 +343,41 @@ POLYATOMIC_REFS: tuple[PolyatomicRef, ...] = (
     PolyatomicRef("HCOOH",   {"C": 1, "H": 2, "O": 2},         -371.5, 0.008, "test",  "CCCBDB R22"),
     PolyatomicRef("CH3OCH3", {"C": 2, "H": 6, "O": 1},         -166.6, 0.014, "train", "CCCBDB R22"),
     PolyatomicRef("CH3NH2",  {"C": 1, "N": 1, "H": 5},           -7.8, 0.010, "test",  "CCCBDB R22"),
+
+    # -- C3, added for #17, and sourced from ATcT rather than CCCBDB. See the note below
+    # on why the source changed for these three and not for the thirteen above.
+    PolyatomicRef("C3H8",     {"C": 3, "H": 8},          -82.71, 0.016, "test",  "ATcT 1.202"),
+    PolyatomicRef("CH3OC2H5", {"C": 3, "H": 8, "O": 1}, -194.27, 0.018, "train", "ATcT 1.202"),
+    PolyatomicRef("C3H7OH",   {"C": 3, "H": 8, "O": 1}, -231.13, 0.018, "test",  "ATcT 1.202"),
 )
+
+# Why the last three came from a different source
+# -----------------------------------------------
+# The thirteen above are CCCBDB, which for 0 K publishes values DERIVED from 298 K
+# measurements via TRC heat-content functions -- and publishes no uncertainties at all.
+# That derivation has a documented failure: Karton et al. (arXiv:0905.3271) attribute a
+# 1.1 kcal/mol (4.6 kJ/mol) error in the CCCBDB 0 K value for neopentane to an erroneous
+# heat-content function. So the class of data is not uncertainty-bearing, whatever any
+# individual entry happens to be worth.
+#
+# The Active Thermochemical Tables solve a whole thermochemical network at once and do
+# publish 0 K values with uncertainties, so the C3 species take theirs from ATcT v1.202.
+# All three were cross-checked and every CCCBDB value agrees within 0.67 kJ/mol; the
+# switch was made for the error bars, not because anything was wrong.
+#
+# Mixing sources inside one table is a real hazard and is tolerated here for a measured
+# reason: the largest disagreement between the two sources anywhere in this table is
+# 0.67 kJ/mol = 0.007 eV, against Hartree-Fock reaction errors of 0.1-0.3 eV. It
+# contributes under 5% of the smallest effect being measured. Re-sourcing the other
+# thirteen is worth doing and is not worth blocking on.
+#
+# One more caution, learned the expensive way. A scrape of the CCCBDB 0 K table returned
+# propane = -98.5 kJ/mol carrying the formula string CH3CH2CH2CH3 -- that is BUTANE's row.
+# A second, narrower fetch of the identical URL returned the correct C3H8 | -82.4. Nothing
+# in the wrong answer looked wrong: right magnitude, right sign, plausible for an alkane.
+# This is the same failure mode as the ethanol near-miss documented above, arriving by a
+# different route, and the same rule kills both: a reference value is not usable until a
+# SECOND, INDEPENDENT source agrees with it.
 
 
 def atomization_energy_ev(formula: str) -> float | None:

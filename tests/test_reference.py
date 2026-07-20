@@ -43,6 +43,49 @@ class TestTheDerivationIsCorrect:
                 f"{formula}: derived {derived:.4f} eV vs literature {literature} eV"
             )
 
+    def test_the_c3_entries_agree_with_the_source_they_did_not_come_from(self):
+        """
+        The two-source check for the ATcT entries, run the other way round.
+
+        These three are stored from ATcT v1.202. CCCBDB derives its 0 K values by an
+        entirely different route -- 298 K measurements pushed down with TRC heat-content
+        functions -- so its numbers are an independent read on the same quantity. Both
+        being right is the evidence; the tolerance is what the two sources actually
+        disagree by, which was measured, not assumed.
+
+        Worth pinning because a scrape of the CCCBDB table once returned propane = -98.5
+        carrying butane's formula string. Nothing about that number looked wrong. A second
+        source is the only thing that catches a row-bleed, because the value it hands you
+        is a perfectly good value -- for the wrong molecule.
+        """
+        cccbdb_kj = {"C3H8": -82.4, "C3H7OH": -231.3, "CH3OC2H5": -193.6}
+        for formula, other_source in cccbdb_kj.items():
+            stored = ref.polyatomic(formula)
+            assert stored is not None, formula
+            assert abs(stored.dfh_0k_kj - other_source) < 1.0, (
+                f"{formula}: ATcT {stored.dfh_0k_kj} vs CCCBDB {other_source} kJ/mol"
+            )
+        # and the row-bleed itself would have been caught: butane is 16 kJ/mol away
+        assert abs(ref.polyatomic("C3H8").dfh_0k_kj - (-98.5)) > 10.0
+
+    def test_the_homologous_series_is_smooth(self):
+        """
+        A shape check no transcription error survives: adding a CH2 to a saturated chain
+        adds a near-constant amount of atomization energy, because it adds the same two
+        C-H bonds and converts one C-H into a C-C.
+
+        This is independent of the enthalpies' *source* -- it constrains the sequence, so
+        a single wrong entry breaks the pattern even if it looks individually plausible.
+        Increments measured across two families; the tolerance is what the real
+        (non-constant) trend spans, not a fitted number.
+        """
+        alkanes = ["CH4", "C2H6", "C3H8"]
+        alcohols = ["CH3OH", "C2H5OH", "C3H7OH"]
+        for series in (alkanes, alcohols):
+            d = [ref.atomization_energy_ev(f) for f in series]
+            steps = [d[i + 1] - d[i] for i in range(len(d) - 1)]
+            assert all(11.0 < s < 12.5 for s in steps), f"{series}: {steps}"
+
     def test_the_ethanol_ether_isomer_gap_matches_experiment(self):
         """
         An independent handle on two of the newer entries.
@@ -106,12 +149,22 @@ class TestPhysicalSanity:
     @pytest.mark.parametrize("entry", ref.POLYATOMIC_REFS, ids=lambda e: e.formula)
     def test_atomization_is_within_reach_of_a_bond_count(self, entry):
         """
-        Order-of-magnitude gate. A bond runs roughly 1.5-6 eV, and these species have
-        between 2 and 8 bonds, so anything outside 3-40 eV is a transcription error rather
-        than chemistry. Deliberately loose: this catches a misplaced decimal or a sign,
-        which is the realistic failure mode, not a subtly wrong digit.
+        Order-of-magnitude gate, per ATOM so it does not go stale as species grow.
+
+        It was written as an absolute 3-40 eV window when nothing here had more than 8
+        bonds, and propane (10 bonds, 40.9 eV) walked straight through the ceiling. A
+        bound that has to be widened every time the table grows is not a bound, so this
+        one is intensive instead.
+
+        Each atom's share of the atomization energy is at most half of four strong bonds
+        (4 x 6 / 2 = 12 eV) and at least half of one weak one. Deliberately loose: it
+        catches a misplaced decimal, a sign flip, or a kJ/eV confusion -- the realistic
+        transcription failures -- and is not trying to catch a subtly wrong digit, which
+        is what the two-source check is for.
         """
-        assert 3.0 < ref.atomization_energy_ev(entry.formula) < 40.0
+        n_atoms = sum(entry.composition.values())
+        per_atom = ref.atomization_energy_ev(entry.formula) / n_atoms
+        assert 0.75 < per_atom < 12.0, f"{entry.formula}: {per_atom:.2f} eV/atom"
 
     def test_bigger_molecules_hold_more_atoms_together(self):
         """Monotonicity that no correct table can violate, across three independent pairs."""

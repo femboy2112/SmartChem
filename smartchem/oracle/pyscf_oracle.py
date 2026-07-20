@@ -130,6 +130,18 @@ _GEOMETRY_METHODS = ("HF",)
 #: and it did not. The bias is reported, not silently removed.
 ZPE_BIAS_FRACTION = 0.091
 
+#: How many times to follow an imaginary mode downhill before giving up and declining.
+#: Two is enough for the cases seen -- a symmetric seed typically has one symmetry to
+#: break -- and a bound is required because a species whose surface keeps producing
+#: saddles is one this machinery cannot resolve and must not price.
+_MAX_DESCENTS = 3
+
+#: How far to step along an unstable mode, in Angstrom of largest atomic displacement.
+#: Large enough to leave the saddle's basin, small enough not to overshoot into an
+#: unrelated one. The relaxation that follows does the real work; this only has to break
+#: the symmetry that trapped it.
+_DESCENT_STEP_ANGSTROM = 0.25
+
 #: MEASURED mean absolute error in eV, on ONE declared species set, 2026-07-20.
 #:
 #: The set: NaCl, CS, HCl, Cl2, CO, HF, N2 -- chosen to span ionic, second-row and
@@ -506,12 +518,17 @@ class PySCFOracle(BaseOracle):
         which for a polyatomic is always the cheap geometry tier, since a caller reaching
         this code has been routed here by ``_geometry_engine``.
 
-        Raises ``GeometryError`` if the relaxation stops on a saddle. That is not a
-        conservative refusal, it is a correctness one: a saddle point is a transition
-        state, and reporting its energy as a molecule's would be a wrong answer with no
-        outward sign of being wrong.
+        A saddle is not simply refused. An imaginary frequency's eigenvector points
+        DOWNHILL, so it is both the diagnosis and the repair: displace along it and relax
+        again. H2O2 is the case that forced this. Its true minimum is skewed, dihedral
+        about 113 degrees, but a symmetric graph seed relaxes to the TRANS-PLANAR form --
+        a perfectly converged stationary point, gradient 1.7e-5, and a transition state
+        for internal rotation with one imaginary mode at -632 cm^-1. Without the
+        certificate that would have been priced as a molecule with nothing visibly wrong.
+
+        Refusal remains the fallback when the descent does not reach a minimum, because
+        a species whose shape this machinery cannot resolve must not be priced anyway.
         """
-        coordinates = seed_coordinates(molecule)
         symbols = molecule.atoms
 
         def energy_and_gradient(coords: np.ndarray) -> tuple[float, np.ndarray]:
@@ -520,28 +537,35 @@ class PySCFOracle(BaseOracle):
             _, mf = self._mean_field(spec, symbols, spin)
             return mf.e_tot, mf.nuc_grad_method().kernel()
 
-        result = relax(coordinates, energy_and_gradient)
-        if not result.converged:
-            raise GeometryError(
-                f"relaxation did not converge for {symbols}: max gradient "
-                f"{result.gradient_norm:.2e} Ha/Bohr after {result.iterations} calls")
+        def certify(coords: np.ndarray):
+            spec = "; ".join(f"{s} {x:.10f} {y:.10f} {z:.10f}"
+                             for s, (x, y, z) in zip(symbols, coords))
+            mol, mf = self._mean_field(spec, symbols, spin)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                hessian = mf.Hessian().kernel()
+            # isotope_avg=True is load-bearing: the bare call returns integer MASS
+            # NUMBERS, shifting every frequency by sqrt(1.008) and every ZPE by 0.4%.
+            return harmonic_analysis(mol.atom_mass_list(isotope_avg=True), coords,
+                                     hessian)
 
-        spec = "; ".join(f"{s} {x:.10f} {y:.10f} {z:.10f}"
-                         for s, (x, y, z) in zip(symbols, result.coordinates))
-        mol, mf = self._mean_field(spec, symbols, spin)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            hessian = mf.Hessian().kernel()
-        # isotope_avg=True is load-bearing: the bare call returns integer MASS NUMBERS,
-        # which shifts every frequency by sqrt(1.008) and every ZPE by 0.4%.
-        analysis = harmonic_analysis(mol.atom_mass_list(isotope_avg=True),
-                                     result.coordinates, hessian)
-        if not analysis.is_minimum:
-            raise GeometryError(
-                f"relaxation of {symbols} reached a saddle, not a minimum: "
-                f"{analysis.imaginary_modes} imaginary mode(s), lowest "
-                f"{analysis.frequencies_cm[0]:.1f} cm^-1")
-        return result.coordinates, analysis.zero_point_energy_ev
+        coordinates = seed_coordinates(molecule)
+        for attempt in range(_MAX_DESCENTS + 1):
+            result = relax(coordinates, energy_and_gradient)
+            if not result.converged:
+                raise GeometryError(
+                    f"relaxation did not converge for {symbols}: max gradient "
+                    f"{result.gradient_norm:.2e} Ha/Bohr after {result.iterations} calls")
+            analysis = certify(result.coordinates)
+            if analysis.is_minimum:
+                return result.coordinates, analysis.zero_point_energy_ev
+            direction = analysis.unstable_direction()
+            if direction is None or attempt == _MAX_DESCENTS:
+                raise GeometryError(
+                    f"relaxation of {symbols} reached a saddle, not a minimum, after "
+                    f"{attempt + 1} attempt(s): {analysis.imaginary_modes} imaginary "
+                    f"mode(s), lowest {analysis.frequencies_cm[0]:.1f} cm^-1")
+            coordinates = result.coordinates + _DESCENT_STEP_ANGSTROM * direction
 
     def _geometry_engine(self) -> "PySCFOracle | None":
         """

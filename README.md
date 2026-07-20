@@ -184,6 +184,70 @@ confidence: the extrapolation correction rides on every `Estimate` and widens th
 by however much survives cancellation, so NaCl reports ±0.13 eV while fully-converged H₂
 keeps ±0.041.
 
+## Polyatomic species: the geometry comes from the bond graph
+
+Anything with three or more atoms used to be declined for want of coordinates. That was
+never an interface limit — `energy(molecule)` has always taken full structure — it was a
+missing input, and a lookup table of experimental geometries only ever covers species
+somebody already tabulated.
+
+The answer was in the type. `Molecule` carries **bond topology**, a decision made so that
+`Na + Cl` and `NaCl` could be different objects and the reaction between them a genuine
+arrow. A bond graph is exactly what a geometry builder needs. The structure that made
+conservation enforceable makes coordinates derivable.
+
+Getting a geometry splits into three parts with genuinely different computational
+characters, and keeping them apart is the entire design:
+
+| step | what it needs | cost |
+|---|---|---|
+| **seed** — graph → coordinates | pure combinatorics; VSEPR domain counts and exact solid geometry (the tetrahedral angle is `arccos(−1/3)`, not a fitted parameter) | microseconds, no wavefunction |
+| **relax** — → stationary point | the real surface, but only its *gradients* | cheap tier |
+| **certify** — → proven minimum | the Hessian's eigenvalues | cheap tier, same surface |
+
+Only the middle step touches an oracle, and never the expensive one. So a
+CCSD(T)/cbs single point sits on a geometry and a zero-point energy that cost a fraction
+of it — which is what makes polyatomics affordable rather than merely possible.
+
+**Step 3 turned out to be load-bearing, not decorative.** Diatomics report `D₀` by
+subtracting a ZPE from tabulated `ω_e`. A polyatomic has no tabulated frequencies, so
+without a Hessian the only options are reporting `D_e` while every other number in the
+pipeline is `D₀`, or reporting nothing. For water that gap is **0.61 eV** — fourteen times
+the chemical-accuracy threshold quoted above, and it would read as a bad method rather than
+a category error. The same matrix that supplies the ZPE proves the point is a minimum and
+not a saddle; a saddle is a transition state, and pricing one as a molecule is exactly the
+silent wrong answer this project treats as unforgivable.
+
+Calibrated against known answers before any of its readings were believed:
+
+| check | against | result |
+|---|---|---|
+| vibrational analysis | PySCF's independently written `thermo.harmonic_analysis`, same Hessian | **0.000 cm⁻¹** |
+| relaxed `r_e` | 23 tabulated experimental diatomics | MAE 0.0255 Å |
+| computed ZPE | the same 23 experimental `ω_e` | MAE 0.0103 eV, **+9.1% biased** |
+| imaginary modes / convergence failures | — | 0 / 0 |
+
+The +9.1% is the known Hartree–Fock harmonic overestimate. It is **systematic**, so it rides
+in `Estimate.systematic_ev` and propagates additively with sign rather than in quadrature —
+the same distinction that made spectator cancellation worth doing. That gets three cases
+right with no special-casing: it survives into an atomization energy (free atoms have no
+vibrations, so nothing cancels it), largely cancels in a bond-conserving reaction, and never
+inflates a random error bar. It is **not** applied as a scaling correction, because a factor
+fitted on 23 *diatomics* and carried to polyatomics is the identical mistake already made
+once here with basis augmentation.
+
+**Two independent paths agree.** A diatomic can now be priced from tabulated experimental
+`r_e` and `ω_e`, or by relaxing a graph seed and computing a Hessian — sharing only the
+single-point code. Over 8 diatomics the derived path differs by **0.024 eV mean, 0.066 eV
+max**, against the tier's own 0.22 eV. The geometry machinery is not the limiting error.
+→ `tests/test_geometry.py`
+
+Hartree–Fock is the only tier that can do this, for a structural reason: PySCF gives MP2
+analytic gradients but no Hessian, and a Hessian cannot be taken on a different surface from
+the relaxation — the point would not be stationary for it. MP2 could relax but not certify:
+a geometry nobody can prove is a minimum and a ZPE nobody can compute. Declined rather than
+mixed.
+
 ## What this is for
 
 Not a faster DFT. PySCF is a *backend* here, not a rival.
@@ -202,16 +266,21 @@ conservation, charge balance or valence never reach the expensive layer at all.
 
 Stated plainly, because the first version of these docs did not.
 
-- **No molecular geometry.** Bond lengths are supplied as input, not predicted.
-  `optimize_geometry=True` removes that input at ~6× cost.
-- **No polyatomic quantitative work — but no longer for a structural reason.** The oracle
-  primitive is now the energy of a *species*, so the interface expresses polyatomics fine.
-  What is missing is a geometry source: `PySCFOracle` resolves coordinates from a table of
-  diatomics and declines anything it cannot place. That is a gap to fill, not a wall.
+- **Polyatomic energies exist but are not yet scored.** H₂O, NH₃, CH₄ and CO₂ are priced
+  (see below). What is missing is a *reference table* of polyatomic atomization energies to
+  score them against — this repo vendors diatomic BDEs only, so the polyatomic MAE column is
+  blank because nothing has been measured, not because something failed.
+- **Strict isodesmicity is decided but still unmeasured**, and now for a reason that can be
+  named exactly: over the elements covered, the smallest non-trivial strictly-isodesmic
+  reaction is `C₂H₆ + CH₃OH → C₂H₅OH + CH₄`, and C₂H₅OH has 9 atoms — one past the
+  canonicalisation cap. `is_bond_order_conserving`, the weaker predicate, *is* measured.
+- **Open-shell polyatomics take the lowest spin consistent with electron parity.** That is
+  an assumption, not a derivation — O₂ is the standard counterexample — so it is stated in
+  the notes of every estimate that relies on it. Diatomics use tabulated spins instead.
 - **Bond order reaches the oracle, but not every backend uses it.** The object carries its
   topology and the oracle receives the whole species, so a bond-additive oracle prices
-  C–C and C=C differently. `PySCFOracle` still keys geometry on formula, so it does not yet
-  distinguish them — now a backend limitation rather than an interface one.
+  C–C and C=C differently. `PySCFOracle` keys *diatomic* geometry on formula, so it does not
+  distinguish them there — polyatomics do use the bond orders, via the VSEPR seed.
 - **No kinetics.** Everything here is thermodynamic. A favourable reaction may still be
   impossibly slow.
 - **No valency model, no solid state, no photochemistry.** These existed in the legacy

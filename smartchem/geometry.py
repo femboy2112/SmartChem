@@ -397,10 +397,27 @@ class VibrationalAnalysis:
     frequencies_cm: np.ndarray
     zero_point_energy_ev: float
     imaginary_modes: int
+    #: Cartesian displacements, shape ``(n_modes, n_atoms, 3)``, ordered with
+    #: ``frequencies_cm``. Carried because an imaginary mode is not merely a diagnosis --
+    #: its eigenvector points DOWNHILL, so it is also the repair. See ``descend_from``.
+    modes: np.ndarray | None = None
 
     @property
     def is_minimum(self) -> bool:
         return self.imaginary_modes == 0
+
+    def unstable_direction(self) -> np.ndarray | None:
+        """
+        The Cartesian displacement along the most unstable mode, or None at a minimum.
+
+        Normalised to unit maximum atomic displacement so a caller can scale it in
+        Angstrom without knowing how the modes happen to be normalised.
+        """
+        if self.is_minimum or self.modes is None:
+            return None
+        direction = self.modes[int(np.argmin(self.frequencies_cm))]
+        largest = np.max(np.abs(direction))
+        return direction / largest if largest > 0 else None
 
 
 def _external_modes(masses_amu: np.ndarray, coordinates: np.ndarray) -> np.ndarray:
@@ -481,23 +498,30 @@ def harmonic_analysis(
     projector = np.eye(3 * n) - external @ external.T
     projected = projector @ weighted @ projector
 
-    eigenvalues = np.linalg.eigvalsh(projected)
+    eigenvalues, eigenvectors = np.linalg.eigh(projected)
     # after projection the external modes are numerically zero; drop exactly as many as
     # the SVD said there were, so a linear molecule keeps its extra vibration
     n_external = external.shape[1]
-    vibrational = eigenvalues[np.argsort(np.abs(eigenvalues))][n_external:]
+    internal = np.argsort(np.abs(eigenvalues))[n_external:]
+    vibrational = eigenvalues[internal]
+    vectors = eigenvectors[:, internal]
 
     # sqrt(Hartree / (Bohr^2 amu)) -> cm^-1. Stated once so the unit chain lives in one
     # place; a sign-preserving sqrt reports unstable modes as negative wavenumbers.
     to_wavenumber = 5140.4871
-    frequencies = np.sort(
-        np.sign(vibrational) * np.sqrt(np.abs(vibrational)) * to_wavenumber)
+    frequencies = np.sign(vibrational) * np.sqrt(np.abs(vibrational)) * to_wavenumber
+    order = np.argsort(frequencies)
+    frequencies = frequencies[order]
+    # un-mass-weight: an eigenvector of the mass-weighted Hessian is not a displacement
+    # until it is divided by sqrt(mass) again
+    modes = (vectors[:, order].T.reshape(-1, n, 3) * inverse_sqrt_mass.reshape(n, 3))
 
     real = frequencies[frequencies > 0]
     return VibrationalAnalysis(
         frequencies_cm=frequencies,
         zero_point_energy_ev=float(0.5 * real.sum() * CM_TO_EV),
         imaginary_modes=int(np.sum(frequencies < 0)),
+        modes=modes,
     )
 
 

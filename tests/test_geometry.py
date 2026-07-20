@@ -408,6 +408,48 @@ class TestHarmonicAnalysis:
         assert skew.frequencies_cm[0] == pytest.approx(upright.frequencies_cm[0], rel=1e-8)
 
 
+class TestTheUnstableModeIsAlsoTheRepair:
+    """
+    An imaginary frequency is not only a diagnosis. Its eigenvector points DOWNHILL, so
+    it says where to go as well as that something is wrong -- which is what turns the
+    certificate from a refusal into a fix.
+    """
+
+    COORDS = np.array([[0.0, 0, 0], [0.0, 0, 1.1]])
+
+    def test_a_minimum_offers_no_direction(self):
+        result = harmonic_analysis([1.008, 1.008], self.COORDS,
+                                   TestHarmonicAnalysis.diatomic_hessian(0.5))
+        assert result.unstable_direction() is None
+
+    def test_a_saddle_offers_one(self):
+        result = harmonic_analysis([1.008, 1.008], self.COORDS,
+                                   TestHarmonicAnalysis.diatomic_hessian(-0.5))
+        direction = result.unstable_direction()
+        assert direction is not None
+        assert direction.shape == (2, 3)
+
+    def test_the_direction_is_normalised_to_unit_largest_displacement(self):
+        """So a caller can scale it in Angstrom without knowing the mode normalisation."""
+        result = harmonic_analysis([1.008, 18.998], self.COORDS,
+                                   TestHarmonicAnalysis.diatomic_hessian(-0.5))
+        assert np.max(np.abs(result.unstable_direction())) == pytest.approx(1.0)
+
+    def test_the_direction_lies_along_the_unstable_coordinate(self):
+        """For a diatomic the only internal coordinate is the bond, so it must be axial."""
+        result = harmonic_analysis([1.008, 1.008], self.COORDS,
+                                   TestHarmonicAnalysis.diatomic_hessian(-0.5))
+        direction = result.unstable_direction()
+        assert np.allclose(direction[:, :2], 0.0, atol=1e-9)   # nothing transverse
+        assert direction[0, 2] * direction[1, 2] < 0           # atoms move oppositely
+
+    def test_modes_come_back_with_one_row_per_frequency(self):
+        result = harmonic_analysis([15.999, 1.008, 1.008],
+                                   np.array([[0.0, 0, 0], [0.96, 0, 0], [-0.24, .93, 0]]),
+                                   np.zeros((3, 3, 3, 3)))
+        assert result.modes.shape == (len(result.frequencies_cm), 3, 3)
+
+
 class TestExternalModes:
     def test_a_nonlinear_molecule_has_six_external_modes(self):
         coords = np.array([[0.0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]])
@@ -586,6 +628,39 @@ class TestAgainstARealWavefunction:
         rhs = derived._polyatomic_energy(hydrogen_fluoride)
         assert lhs is not None and rhs is not None
         assert abs(rhs.value_ev - lhs.value_ev) < 0.10
+
+    def test_a_symmetric_seed_that_lands_on_a_saddle_is_descended_from(self):
+        """
+        H2O2 is the case that forced the descent to exist.
+
+        Its true minimum is skewed -- the H-O-O-H torsion is 113.7 degrees by experiment
+        and about 116 at Hartree-Fock. A symmetric graph seed relaxes instead to the
+        TRANS-PLANAR form: a perfectly converged stationary point, gradient 1.7e-5, and a
+        transition state for internal rotation carrying one imaginary mode at -632 cm^-1.
+        Nothing about it looks wrong from the gradient alone.
+
+        The certificate caught it and the descent repaired it. The torsion below is
+        computed with a function calibrated against constructed geometries of known
+        torsion, because getting the sign convention wrong turns 115 degrees into 65 and
+        that mistake was made once already here.
+        """
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+
+        peroxide = Molecule(("O", "O", "H", "H"),
+                            frozenset({Bond(0, 1), Bond(0, 2), Bond(1, 3)}))
+        coords, zpe = PySCFOracle("HF", "cc-pVDZ",
+                                  tight_d=False)._relaxed_geometry(peroxide, 0)
+
+        def torsion(p0, p1, p2, p3):
+            b0, b1, b2 = p0 - p1, p2 - p1, p3 - p2
+            axis = b1 / np.linalg.norm(b1)
+            v = b0 - np.dot(b0, axis) * axis
+            w = b2 - np.dot(b2, axis) * axis
+            return math.degrees(math.atan2(np.dot(np.cross(axis, v), w), np.dot(v, w)))
+
+        angle = abs(torsion(coords[2], coords[0], coords[1], coords[3]))
+        assert 90.0 < angle < 140.0, f"expected a skewed minimum, got {angle:.1f} deg"
+        assert zpe > 0
 
     def test_water_is_certified_a_minimum_not_a_saddle(self):
         from pyscf import gto, scf

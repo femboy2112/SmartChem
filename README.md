@@ -24,25 +24,37 @@ spanning ionic, second-row and first-row covalent, with N₂ as a hard-correlati
 Iodine species are excluded because `aug-cc-pVQZ` on iodine would dominate the cost without
 testing anything; that exclusion is stated rather than silent.
 
-| tier | MAE (eV) | MAE (kcal/mol) | n | cost (s/species) |
-|---|---|---|---|---|
-| legacy heuristic | 4.5455 | 104.83 | 4 of 7 (3 refused) | 0.00 |
-| HF/cc-pVQZ | 2.5814 | 59.53 | 7 | 2.42 |
-| CCSD(T)/cc-pVTZ | 0.2186 | 5.04 | 7 | 9.62 |
-| CCSD(T)/cc-pVQZ | 0.0763 | 1.76 | 7 | 52.32 |
-| **CCSD(T)/cbs(TZ,QZ)** | **0.0562** | **1.30** | 7 | ≥ 61.94 † |
-| CCSD(T)/aug-cbs(TZ,QZ)+d | 0.1277 | 2.94 | 7 | not re-measured |
+| tier | MAE (eV) | MAE (kcal/mol) | n | CPU s/species † | wall s/species † |
+|---|---|---|---|---|---|
+| legacy heuristic | 4.5455 | 104.83 | 4 of 7 (3 refused) | 0.00 | 0.00 |
+| HF/cc-pVQZ | 2.5814 | 59.53 | 7 | 19.1 | 3.1 |
+| CCSD(T)/cc-pVTZ | 0.2186 | 5.04 | 7 | 106 | 17.1 |
+| CCSD(T)/cc-pVQZ | 0.0763 | 1.76 | 7 | 356 | 58.6 |
+| **CCSD(T)/cbs(TZ,QZ)** | **0.0562** | **1.30** | 7 | 432 | 71.4 |
+| CCSD(T)/aug-cbs(TZ,QZ)+d | 0.1277 | 2.94 | 7 | not re-measured | not re-measured |
 
-Every MAE above is exact and reproducible — the calculations are deterministic, and a clean
-re-run reproduced all five values to the digit.
+Every MAE above is exact and reproducible — the calculations are deterministic, and repeated
+re-runs reproduced all five values to the digit.
 
-† **The cost column is weaker than the accuracy column, and the difference is stated rather
-than hidden.** The first four rows were measured sequentially on an otherwise idle 8-core
-machine. The `cbs(TZ,QZ)` row was not: two attempts to time it were contaminated by other
-jobs the author started on the same machine, and the first attempt returned 57.7 s/species —
-*impossible on its face*, since the extrapolation runs both TZ and QZ and so cannot cost less
-than their sum. The quoted figure is that structural lower bound, 9.62 + 52.32. Treat it as a
-floor, not a measurement.
+† **The cost column is much weaker than the accuracy column, and the difference is stated
+rather than hidden. Treat it as ±10%, and as an ordering rather than a set of constants.**
+
+The machine is shared with unrelated workloads, so wall-clock is not reproducible; CPU-seconds
+(across all of PySCF's ~6 threads) is quoted because it measures work done rather than elapsed
+time. Even that is imperfect: OpenMP barriers spin-wait, so a contended run burns CPU without
+doing work.
+
+The honest state of this column is a coherence check that **fails, mildly, and is not fully
+explained.** `cbs(TZ,QZ)` computes both TZ and QZ, so it should cost their sum — and a call
+counter confirms it does exactly that (16 calls vs 8 + 8). Yet it *times* 6.4% below
+`106 + 356 = 462`. An earlier, independent wall-clock attempt came in 6.8% below its own
+contemporaneous sum. Same deficit, two instruments.
+
+An earlier version of this file called the first such figure *"impossible on its face"* and
+used that to declare it contaminated. **That was an overclaim and is withdrawn**: a ~7%
+shortfall sits inside this instrument's demonstrated variance, so it never established
+contamination. The work counts are exact; the timings carry noise of about this size, and the
+residual is an open question rather than a settled one.
 
 **Why one declared set.** The previously published table was not comparable across its own
 rows: it reported `n = 3, 3, 5, 5, 10`, and since CBS requires *both* TZ and QZ,

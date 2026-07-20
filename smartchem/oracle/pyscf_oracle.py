@@ -571,15 +571,25 @@ class PySCFOracle(BaseOracle):
         """
         The oracle that will supply polyatomic coordinates, or None if none can.
 
-        Returns the named geometry tier when it is gradient-and-Hessian capable, or self
-        when this oracle already is. A CBS request is refused: the extrapolation is a
-        model of basis-set error in an ENERGY, and there is no corresponding statement
-        about a gradient, so extrapolating one would be inventing a quantity.
+        A CBS request is refused: the extrapolation is a model of basis-set error in an
+        ENERGY, and there is no corresponding statement about a gradient, so extrapolating
+        one would be inventing a quantity.
+
+        WHEN A TIER IS NAMED, IT IS THE ONLY CANDIDATE
+        ----------------------------------------------
+        If ``geometry_tier`` is set and cannot do this job, the answer is None -- there is
+        deliberately no fallback to ``self``. The first version did fall back, and it was
+        wrong in a way that left no trace: ``PySCFOracle("HF", ..., geometry_tier=("MP2",
+        ...))`` would quietly relax a polyatomic at HF while still reporting a method
+        string of ``HF/cc-pVDZ//MP2/cc-pVDZ``, which says the geometry came from MP2.
+
+        Nothing about the number would look wrong. That is a provenance lie, and the rule
+        this file already lives by covers it: declining is allowed, inventing is not, and
+        substituting a different method from the one named is a way of inventing.
         """
-        for candidate in (self._geom_oracle, self):
-            if (candidate is not None
-                    and candidate.method in _GEOMETRY_METHODS
-                    and candidate._is_cbs() is None):
+        candidates = (self._geom_oracle,) if self._geom_oracle is not None else (self,)
+        for candidate in candidates:
+            if candidate.method in _GEOMETRY_METHODS and candidate._is_cbs() is None:
                 return candidate
         return None
 

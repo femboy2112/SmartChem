@@ -121,6 +121,32 @@ reactions in one basis family do not license an automatic accuracy policy — an
 proposed here on that kind of evidence, basis augmentation, lost outright when finally measured
 at the tier that mattered.
 
+**Extended to polyatomics — where a control changed the answer by 6.6×.** Same experiment on
+four bond-creating and four bond-order-conserving polyatomic reactions, HF/cc-pVDZ against
+CCSD(T)/cc-pVDZ with basis, geometry and ZPE shared so only correlation differs:
+
+| statistic | bond-creating | bond-order-conserving | ratio |
+|---|---|---|---|
+| mean absolute error | 2.4951 eV | 0.1531 eV | 16.30 |
+| **relative to \|ΔE\|** | **0.2602** | **0.1049** | **2.48** |
+| per bond changed | 1.0322 eV | 0.0383 eV | 26.97 |
+
+The raw 16.30 is **mostly artifact**. The creating arm is atomizations at 4–16 eV; the
+conserving arm rearranges one or two bonds at 1–3 eV. An error that merely scaled with reaction
+size would produce a large ratio with no help from the predicate at all. Size-controlled, the
+answer is **2.48** — sitting right on the diatomic 2.14–2.52. The effect **transfers unchanged
+rather than growing**, which falsifies the third pre-registered prediction (that more conserved
+bonds would mean more cancellation).
+
+And the spreads *touch*. `C₂H₆ + H₂ → 2 CH₄` has relative error 0.206, above the weakest
+creating reaction (`C + 4H → CH₄`, 0.199). That one reaction breaks a C–C bond and makes C–H
+bonds: bond *order* is conserved, all single throughout, but the bond *types* change about as
+much as they can. It is the least isodesmic-like member of a set chosen only for order
+conservation — so the single case that spoils the separation is exactly the one
+`is_isodesmic` would exclude. That is the strongest argument yet for measuring the stronger
+predicate, and the reason it stays on the task list rather than being quietly dropped.
+→ `tests/test_geometry.py::TestThePolyatomicConservationMeasurement`
+
 **Measured, opt-in — separating geometry from energy.** With `optimize_geometry=True` the
 oracle pays *six* calculations per diatomic: five to scan the bond length, one at the fitted
 minimum. That mode is not a luxury — it is the only way to price a species whose geometry is

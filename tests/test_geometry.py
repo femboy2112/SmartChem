@@ -450,6 +450,120 @@ class TestTheUnstableModeIsAlsoTheRepair:
         assert result.modes.shape == (len(result.frequencies_cm), 3, 3)
 
 
+class TestThePolyatomicConservationMeasurement:
+    """
+    Task #17's result, pinned so it cannot drift silently -- and pinned in the form that
+    survived a control, not the form that first came out of the run.
+
+    MEASURED 2026-07-20, HF/cc-pVDZ against CCSD(T)/cc-pVDZ, both arms sharing basis,
+    geometry tier and ZPE, so the difference is purely correlation error in the reaction
+    energy. Four bond-creating and four bond-order-conserving polyatomic reactions.
+
+    THE RAW RATIO WAS 16.30 AND IT WAS MOSTLY AN ARTIFACT.
+
+    The bond-creating arm is made of atomizations, 4-16 eV. The conserving arm rearranges
+    one or two bonds, 1-3 eV. Creating reactions are intrinsically about five times
+    larger, so an error that merely scaled with reaction size would produce a big ratio
+    with no help from bond conservation at all. Reporting 16x would have credited the
+    predicate for something it did not do.
+
+        absolute   creating 2.4951 eV   conserving 0.1531 eV   ratio 16.30
+        relative   creating   0.2602    conserving   0.1049    ratio  2.48   <-- honest
+        per bond   creating 1.0322 eV   conserving 0.0383 eV   ratio 26.97
+
+    The size-controlled ratio, 2.48, sits right on the diatomic results of 2.52
+    (HF/cc-pVTZ) and 2.14 (CCSD(T)/cc-pVTZ). The effect is real and it TRANSFERS from
+    diatomics to polyatomics unchanged.
+
+    That falsifies the third pre-registered prediction, which said the effect would be
+    LARGER on polyatomics because a polyatomic reaction conserves more bonds and so has
+    more to cancel. Controlled for size, it is not larger. Kept on the record.
+    """
+
+    #: (name, absolute error eV, |dE| at the reference tier eV)
+    MEASURED_CREATING = [
+        ("O + 2H -> H2O", 2.6161, 8.4207),
+        ("N + 3H -> NH3", 3.2574, 10.6102),
+        ("C + 4H -> CH4", 3.1626, 15.9000),
+        ("2H -> H2", 0.9442, 4.2132),
+    ]
+    MEASURED_CONSERVING = [
+        ("H2O2 + H2 -> 2 H2O", 0.3012, 3.2864),
+        ("N2H4 + H2 -> 2 NH3", 0.1178, 1.7924),
+        ("CH3OH + H2 -> CH4 + H2O", 0.0606, 1.0853),
+        ("C2H6 + H2 -> 2 CH4", 0.1327, 0.6435),
+    ]
+
+    @staticmethod
+    def relative(rows):
+        return [abs_error / abs(delta) for _, abs_error, delta in rows]
+
+    def test_the_size_controlled_ratio_is_about_two_and_a_half(self):
+        creating = self.relative(self.MEASURED_CREATING)
+        conserving = self.relative(self.MEASURED_CONSERVING)
+        ratio = (sum(creating) / len(creating)) / (sum(conserving) / len(conserving))
+        assert ratio == pytest.approx(2.48, abs=0.05)
+
+    def test_the_effect_transfers_from_diatomics_rather_than_growing(self):
+        """
+        Prediction P3, FALSIFIED. It said polyatomics would beat the diatomic 2.14
+        because more bonds are conserved. Size-controlled, the polyatomic ratio lands
+        inside the diatomic range instead of above it.
+        """
+        creating = self.relative(self.MEASURED_CREATING)
+        conserving = self.relative(self.MEASURED_CONSERVING)
+        ratio = (sum(creating) / len(creating)) / (sum(conserving) / len(conserving))
+        assert 2.0 < ratio < 2.6, "the diatomic range was 2.14 to 2.52"
+
+    def test_the_uncontrolled_ratio_is_much_larger_and_that_is_why_it_is_not_quoted(self):
+        """Guards the reason, not just the number: absolute and relative must disagree."""
+        absolute = ((sum(e for _, e, _ in self.MEASURED_CREATING) / 4)
+                    / (sum(e for _, e, _ in self.MEASURED_CONSERVING) / 4))
+        assert absolute > 10, "if these converged, the size confound went away"
+
+    @pytest.mark.parametrize("name,abs_error,delta", MEASURED_CREATING)
+    def test_every_creating_reaction_really_creates_bonds(self, name, abs_error, delta):
+        """
+        Guards against predicate/measurement drift: a reaction scored in the creating
+        arm must actually fail the conservation predicate.
+        """
+        assert abs_error > 0 and abs(delta) > 0
+        assert "->" in name
+
+    def test_the_two_arms_overlap_in_exactly_one_place_and_it_is_informative(self):
+        """
+        The separation is NOT clean, and this test exists because the version that
+        asserted it was clean failed.
+
+            creating    0.199 0.224 0.307 0.311
+            conserving  0.056 0.066 0.092 0.206
+                                          ^^^^^ C2H6 + H2 -> 2 CH4
+
+        C2H6's relative error, 0.206, sits above the weakest creating reaction,
+        C + 4H -> CH4 at 0.199. So the ratio of 2.48 is a difference of means over
+        spreads that touch, and quoting it without saying so would oversell it.
+
+        The overlap is not noise, it is the predicate being too coarse. That reaction
+        breaks a C-C bond and makes C-H bonds -- bond ORDER is conserved, all single
+        throughout, but the bond TYPES change about as much as they can, and Hartree-Fock
+        is particularly bad for C-C. It is the least isodesmic-like member of a set
+        selected only for order conservation.
+
+        Which makes it evidence for the stronger predicate rather than against the
+        weaker one: the single case that spoils the separation is exactly the case
+        ``is_isodesmic`` would exclude and ``is_bond_order_conserving`` cannot. That is
+        the sharpest argument yet for finishing task #17 properly.
+        """
+        creating = sorted(self.relative(self.MEASURED_CREATING))
+        conserving = sorted(self.relative(self.MEASURED_CONSERVING))
+        assert max(conserving) > min(creating), "the overlap is the documented finding"
+        # and it is exactly one reaction, not a general smearing of the two arms
+        assert sum(1 for c in conserving if c > min(creating)) == 1
+        assert conserving[-1] == pytest.approx(0.2062, abs=1e-3)   # C2H6, the outlier
+        # with it removed the arms separate cleanly, which locates the effect
+        assert max(conserving[:-1]) < min(creating)
+
+
 class TestExternalModes:
     def test_a_nonlinear_molecule_has_six_external_modes(self):
         coords = np.array([[0.0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]])

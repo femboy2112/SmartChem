@@ -27,11 +27,15 @@ from .category import (
     Molecule,
     Reaction,
     UNIT,
+    bond_order_profile,
+    bond_signature,
     braid,
     catalytic_cycle,
     conserves,
     identity,
+    is_bond_order_conserving,
     is_catalytic,
+    is_isodesmic,
     reaction_residue,
     tensor_obj,
 )
@@ -68,6 +72,7 @@ __all__ = [
     "Bond", "Config", "Molecule", "Reaction", "UNIT",
     "ConservationError", "CompositionError",
     "braid", "catalytic_cycle", "conserves", "identity", "is_catalytic",
+    "bond_order_profile", "bond_signature", "is_bond_order_conserving", "is_isodesmic",
     "reaction_residue", "tensor_obj",
     # store -- the environment comonad and response surfaces
     "Store", "Conditions", "SOLVENTS",

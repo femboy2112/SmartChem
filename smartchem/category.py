@@ -432,6 +432,97 @@ def reaction_residue(reaction: Reaction) -> tuple[Config, Config]:
     )
 
 
+def bond_signature(config: Config) -> Counter:
+    """
+    The multiset of bond *types* in a configuration: ``{(("H", "Cl"), 1): 2, ...}``.
+
+    A bond type is its two element symbols (sorted, so it is undirected) together with its
+    order. This is coarser than the topology -- it forgets which atom is which -- and that
+    coarseness is the point: it is the granularity at which method error is roughly
+    transferable between molecules.
+    """
+    sig: Counter = Counter()
+    for molecule in config.species:
+        for b in molecule.bonds:
+            pair = tuple(sorted((molecule.atoms[b.i], molecule.atoms[b.j])))
+            sig[(pair, b.order)] += 1
+    return sig
+
+
+def bond_order_profile(config: Config) -> Counter:
+    """
+    The multiset of bond *orders* in a configuration, forgetting which elements they join:
+    ``{1: 2, 3: 1}`` for two single bonds and one triple.
+
+    Coarser than ``bond_signature``, and the coarseness is deliberate. It is the level at
+    which "one single bond was broken and one single bond was made" is a statement about
+    the morphism, regardless of whether the partners changed.
+    """
+    profile: Counter = Counter()
+    for molecule in config.species:
+        for b in molecule.bonds:
+            profile[b.order] += 1
+    return profile
+
+
+def is_bond_order_conserving(reaction: Reaction) -> bool:
+    """
+    Decide whether ``reaction`` preserves the multiset of bond orders -- the same number of
+    single bonds, double bonds and so on, though the partners may swap.
+
+    ``HCl + F -> HF + Cl`` satisfies this: one single bond in, one single bond out.
+    ``2 H -> H2`` does not: it makes a bond out of nothing.
+
+    Decided from structure alone, with no oracle call, because the objects carry bond
+    topology. This is the predicate the measurement below actually tested.
+
+    Why it is worth deciding: a correlated method's error is approximately a property of
+    the bonds present, so in a morphism whose bond content is unchanged the errors appear
+    on both sides and partly cancel in ``dE`` -- the same shape of argument as the
+    arbitrary energy zero, but *approximate* where that one is exact.
+
+    MEASURED, and the pre-registered prediction was wrong. Over 5 bond-creating and 4
+    bond-order-conserving diatomic reactions scored against experimental D0:
+
+    ==================  ================  =====================  =====
+    tier                bond-creating     bond-order-conserving  ratio
+    ==================  ================  =====================  =====
+    HF/cc-pVTZ          1.8847 eV         0.7475 eV              2.52
+    CCSD(T)/cc-pVTZ     0.1265 eV         0.0592 eV              2.14
+    ==================  ================  =====================  =====
+
+    The prediction was a ratio above 3. It is not met at either tier. The effect is real,
+    consistent in sign and size across two tiers differing ~15x in absolute error, and
+    worth about a factor of two -- not the larger effect claimed in advance.
+
+    So this function DECIDES the property and reports it. It deliberately does not select
+    a cheaper tier on its own. Nine diatomic reactions in one basis family do not license
+    an automatic accuracy policy, and the last policy proposed here on that kind of
+    evidence -- basis augmentation -- lost outright when finally measured at the tier that
+    mattered. Candidate generation does not upgrade proof status.
+
+    See ``THE_DIFFERENCE.md`` section 5 and ``tests/test_shortcuts.py``.
+    """
+    return bond_order_profile(reaction.dom) == bond_order_profile(reaction.cod)
+
+
+def is_isodesmic(reaction: Reaction) -> bool:
+    """
+    Decide whether ``reaction`` preserves the multiset of bond *types* -- element pair and
+    order both. Strictly stronger than ``is_bond_order_conserving``.
+
+    ``HCl + F -> HF + Cl`` is bond-order conserving but NOT isodesmic, because ``H-Cl``
+    became ``H-F``. Chemistry expects the stronger property to cancel error better still,
+    since the bonds on each side are then genuinely the same kind of object.
+
+    UNMEASURED here, and labelled as such on purpose. The measurement that exists tested
+    the weaker predicate, and the two must not be conflated -- the whole reason the number
+    in ``is_bond_order_conserving`` is trustworthy is that it is attached to the property
+    that was actually varied.
+    """
+    return bond_signature(reaction.dom) == bond_signature(reaction.cod)
+
+
 def catalytic_cycle(steps: Iterable[Reaction], catalyst: Molecule) -> Reaction | None:
     """
     Compose ``steps`` into a single morphism and return it if the composite is catalytic.

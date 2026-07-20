@@ -493,8 +493,36 @@ class PySCFOracle(BaseOracle):
         )
 
     # -- polyatomic geometry -----------------------------------------------------
-    def _mean_field(self, atom_spec: str, symbols: tuple[str, ...], spin: int):
-        """A converged Hartree-Fock object, for gradients and Hessians."""
+    def _mean_field(self, atom_spec: str, symbols: tuple[str, ...], spin: int,
+                    guess: "np.ndarray | None" = None):
+        """
+        A converged Hartree-Fock object, for gradients and Hessians.
+
+        ``guess`` is a density matrix to start from. Along a geometry relaxation the
+        geometry changes by a fraction of an Angstrom per step, so the previous step's
+        converged density is a far better starting point than the atomic-density guess
+        PySCF would build from scratch, and the SCF reaches the same fixed point in
+        markedly fewer cycles.
+
+        WHY THIS DOES NOT COST ACCURACY, AND THE ONE CASE WHERE IT COULD
+        ----------------------------------------------------------------
+        The converged answer is *defined* by ``conv_tol``, not by the path taken to it: a
+        fixed point is a fixed point whichever direction you approach it from. So the
+        energy is unchanged to within 1e-11 Hartree, which is eight orders of magnitude
+        below the 0.3 eV bar this oracle reports. That is the honest form of a free
+        speedup -- fewer iterations to the same number, not a cheaper number.
+
+        The case where a starting guess genuinely CAN change the answer is a system with
+        more than one SCF solution, where the guess decides which one you land in. That is
+        real, not hypothetical. Two things make it acceptable here and both are worth
+        stating rather than waving away: for closed-shell organics near equilibrium
+        multiple solutions are not the regime, and along a relaxation *following the
+        previous solution is the desirable behaviour* -- it is what keeps a geometry
+        optimisation on one surface instead of hopping between them mid-descent.
+
+        It is measured anyway, because "not the regime" is an argument and not a
+        measurement: ``tests/test_geometry.py::TestTheGuessDoesNotMoveTheAnswer``.
+        """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             mol = gto.M(atom=atom_spec, basis=resolve_basis(symbols, self.basis,
@@ -503,9 +531,19 @@ class PySCFOracle(BaseOracle):
             mf = (scf.RHF if spin == 0 else scf.UHF)(mol)
             mf.conv_tol = 1e-11
             mf.max_cycle = 300
-            mf.kernel()
+            # a guess of the wrong shape is a guess for a different molecule; ignore it
+            # rather than let PySCF fail obscurely on a broadcast
+            usable = guess if (guess is not None
+                               and np.shape(guess)[-1] == mol.nao_nr()) else None
+            mf.kernel(dm0=usable)
             if not mf.converged:
-                raise ConvergenceFailure(f"SCF did not converge for {atom_spec}")
+                # a bad guess must never turn into a refusal: retry from PySCF's own
+                # initial guess before giving up, so the fast path can only ever cost
+                # time, never an answer
+                if usable is not None:
+                    mf.kernel(dm0=None)
+                if not mf.converged:
+                    raise ConvergenceFailure(f"SCF did not converge for {atom_spec}")
             return mol, mf
 
     def _relaxed_geometry(self, molecule: Molecule, spin: int):
@@ -530,17 +568,24 @@ class PySCFOracle(BaseOracle):
         a species whose shape this machinery cannot resolve must not be priced anyway.
         """
         symbols = molecule.atoms
+        # The previous step's converged density, carried forward as the next step's SCF
+        # starting guess. One array, overwritten in place -- this is a warm start, not a
+        # cache, so it costs O(nao^2) memory regardless of how long the descent runs.
+        warm: dict[str, np.ndarray | None] = {"dm": None}
 
         def energy_and_gradient(coords: np.ndarray) -> tuple[float, np.ndarray]:
             spec = "; ".join(f"{s} {x:.10f} {y:.10f} {z:.10f}"
                              for s, (x, y, z) in zip(symbols, coords))
-            _, mf = self._mean_field(spec, symbols, spin)
+            _, mf = self._mean_field(spec, symbols, spin, guess=warm["dm"])
+            warm["dm"] = mf.make_rdm1()
             return mf.e_tot, mf.nuc_grad_method().kernel()
 
         def certify(coords: np.ndarray):
             spec = "; ".join(f"{s} {x:.10f} {y:.10f} {z:.10f}"
                              for s, (x, y, z) in zip(symbols, coords))
-            mol, mf = self._mean_field(spec, symbols, spin)
+            # the relaxation just converged here, so its final density is very nearly
+            # this one -- the certifying SCF starts a step away from its own answer
+            mol, mf = self._mean_field(spec, symbols, spin, guess=warm["dm"])
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 hessian = mf.Hessian().kernel()

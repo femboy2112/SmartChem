@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+
+      # -rxX surfaces both xfails (known defects, with reasons) and xpasses. An xpass is a
+      # hard failure under strict=True, which is the point: a defect cannot be fixed
+      # without the corresponding marker in tests/test_findings.py being removed in the
+      # same commit.
+      - name: Test
+        run: pytest -q -rxX
+
+      # The benchmark is informational on the core install (no optional QC backends
+      # available here), but it must not crash, and its coverage line must stay honest.
+      - name: Benchmark (baseline oracles only)
+        run: python -m smartchem.bench --split test --quiet

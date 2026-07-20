@@ -138,7 +138,6 @@ def propose_bond(situated_reactants: Situated[Species]) -> Reaction[Species]:
         
         effect = ThermoEffect(delta_h_ev, delta_s_ev_k)
         product = Species.from_dict({a: reactants.comp_dict[a], b: reactants.comp_dict[b]}, charge=0)
-        print(f"DEBUG LOOP: n={n} covalent_h={covalent_h} ionic_h={ionic_h} pauli={pauli_repulsion}")
         outcomes.append(((product, n, mechanism_name), effect))
 
     # Pick the state (n) that minimizes delta_g (maximum stability)

@@ -161,12 +161,16 @@ conservation — so the single case that spoils the separation is exactly the on
 predicate, and the reason it stays on the task list rather than being quietly dropped.
 → `tests/test_geometry.py::TestThePolyatomicConservationMeasurement`
 
-**Measured, opt-in — local geometry refinement versus energy.** With
-`optimize_geometry=True` the oracle pays *six* calculations per supported diatomic: five to
-scan around the tabulated `r_e`, one at the bracketed fitted minimum. The mode still requires
-a tabulated spin and frequency for ZPE, so it does **not** price an unlisted species or prove
-geometry prediction from structure. An unlisted diatomic correctly declines until a computed
-frequency/state protocol exists.
+**Measured, then retired — local geometry refinement versus energy.** With
+`optimize_geometry=True` the oracle now pays *zero* calculations per diatomic: `energy()`
+declines before buying anything. It used to pay six — five to scan around the tabulated
+`r_e`, one at the bracketed fitted minimum — but the scan was truth-centered on that same
+tabulated `r_e` and the mode still took its spin and frequency from the tables, so it never
+priced an unlisted species or proved geometry prediction from structure, and no benchmark
+ever measured it. A protocol with no validation scale of its own does not ship a number
+here. Listed or unlisted, the diatomic answer is a decline until a computed
+frequency/state protocol exists. The scanner is kept and still unit-tested, so the numbers
+below remain reproducible.
 
 Those five scan points are answering a **different question** from the sixth. The scan needs
 the *position* of a local minimum; the single point needs the *value* of an energy. A method's

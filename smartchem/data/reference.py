@@ -208,10 +208,12 @@ def coverage_report(available: frozenset[str]) -> dict[str, object]:
 #     REPORTED  : D_0 = D_e - ZPE,  ZPE ~ 0.5 * omega_e
 #
 # A fully predictive calculation would optimise the geometry and compute the harmonic
-# frequency on the resulting surface. ``PySCFOracle(optimize_geometry=True)`` currently
-# performs only a truth-centered local bond-length refinement and retains this tabulated
-# frequency, so it is not that protocol and is not assigned the fixed-geometry benchmark
-# MAE. It is off by default so the benchmark isolates the *electronic* method.
+# frequency on the resulting surface. ``PySCFOracle(optimize_geometry=True)`` was never
+# that protocol -- its bond-length refinement was truth-centered on the r_e tabulated here
+# and it kept using this tabulated frequency -- so it is not assigned the fixed-geometry
+# benchmark MAE, and its diatomic path now declines outright rather than returning an
+# unvalidated number. The flag is off by default so the benchmark isolates the
+# *electronic* method.
 #
 # Sources: NIST Diatomic Spectral Database; Huber & Herzberg, Constants of Diatomic
 # Molecules (1979).

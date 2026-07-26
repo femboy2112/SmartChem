@@ -13,10 +13,14 @@ What is predicted and what is supplied
     reported  : D_0 = D_e - ZPE
 
 That is the standard protocol for benchmarking an *electronic* method: it isolates the
-quantity being tested instead of mixing in geometry error. Set ``optimize_geometry=True``
-to predict the diatomic bond length at additional cost. The current diatomic path still
-uses a tabulated harmonic frequency for ZPE, so that option is not a fully predictive
-thermochemistry protocol.
+quantity being tested instead of mixing in geometry error. ``optimize_geometry=True`` no
+longer buys a predicted diatomic bond length: that protocol was truth-centered on the
+tabulated ``r_e`` and still took its ZPE from a tabulated frequency, so it was never a
+predictive thermochemistry protocol and it has no validation scale of its own. ``energy()``
+now declines the diatomic branch outright when the flag is set. The scanner
+``_optimal_bond_length`` is retained and still unit-tested; it is simply no longer wired
+into ``energy()``. Note the flag keeps a second, unrelated meaning in ``__init__``, where
+it pins the benchmark MAE to inf for every species count.
 
 Basis-set extrapolation
 -----------------------
@@ -1175,25 +1179,38 @@ class PySCFOracle(BaseOracle):
         # The local optimizer is truth-centered on a tabulated r_e and retains a tabulated
         # frequency. It is not the fixed-geometry protocol measured by the benchmark and
         # has no separate validation scale, so fail before purchasing its scan.
+        #
+        # What this retires is the optimizing DIATOMIC protocol, and only that. The flag
+        # keeps two other jobs, which is the trap worth naming here: ``__init__`` reads it
+        # as the third protocol row -- self-optimised, never measured -- and pins
+        # ``benchmark_mae_ev`` to inf, which is what makes ``_polyatomic_energy`` decline
+        # at its own finiteness check. It does NOT switch relaxation on for polyatomics;
+        # ``geometry_tier`` and its sub-oracle do that, independently of this flag. So one
+        # attribute reads as "retired scan" below this line and as "no validated scale
+        # anywhere" above it. Everything past this return sees optimize_geometry False.
         if self.optimize_geometry:
             return None
 
         a, b = atoms
         formula = _formula_key(atoms)
         geom = GEOMETRY.get(formula)
-        if geom is None and not self.optimize_geometry:
-            return None                      # no geometry supplied and none requested
+        if geom is None:
+            return None                      # no tabulated geometry to stand on: decline
         zpe = zero_point_energy_ev(formula)
         if zpe is None:
-            # A bond-length optimisation does not provide vibrational curvature. Reporting
-            # zero here silently mixed D_e with the D_0 values used everywhere else.
+            # Unreachable as written: ``zero_point_energy_ev`` returns None on exactly one
+            # condition, ``formula not in GEOMETRY``, which the check two lines above has
+            # already caught. Retained as defence in depth, because the failure it guards
+            # is silent -- reporting zero ZPE here would mix D_e into the D_0 values used
+            # everywhere else, and the wrong number would look entirely reasonable. If the
+            # ZPE table ever gains a source independent of GEOMETRY, this becomes live.
             return None
-        r_e, _omega, mol_spin = geom if geom else (1.5, 0.0, 0)
+        # ``geom`` is non-None by the check above, so there is no guessed-1.5-Angstrom
+        # fallback any more. Nothing here invents a bond length; it is tabulated or absent.
+        r_e, _omega, mol_spin = geom
 
         t0 = time.perf_counter()
         try:
-            if self.optimize_geometry:
-                r_e = self._optimal_bond_length(a, b, mol_spin, r_e)
             e_mol, correction = self._energy(
                 f"{a} 0 0 0; {b} 0 0 {r_e}", (a, b), mol_spin)
         except (ConvergenceFailure, GeometryError, KeyError):
@@ -1204,12 +1221,13 @@ class PySCFOracle(BaseOracle):
         return Estimate(
             value_ev=e_mol * HARTREE_EV + zpe,
             uncertainty_ev=self.fixed_diatomic_mae_ev,
-            method=self.name + ("/opt" if self.optimize_geometry else ""),
+            # No ``/opt`` variant reaches this line: the only protocol that earned that
+            # suffix returns above. The method string is the tier and nothing else.
+            method=self.name,
             seconds=dt,
             notes=f"E_elec={e_mol * HARTREE_EV:.4f} eV, ZPE={zpe:.4f} eV, r_e={r_e:.4f} A"
                   + (f", CBS correction {correction * HARTREE_EV:+.4f} eV"
-                     if correction else "")
-                  + ("" if geom else " (geometry optimised, no reference)"),
+                     if correction else ""),
             systematic_ev=correction * HARTREE_EV,
             systematic_terms=((
                 f"basis-extrapolation:{self.method}/{self.basis}/{self.tight_d}",

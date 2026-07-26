@@ -374,6 +374,64 @@ class TestRelaxOnAnAnalyticSurface:
             relax(coordinates, lambda coords: (float("nan"), np.zeros_like(coords)))
 
 
+class TestTheFinalGradientIsNotRecomputed:
+    """
+    ``relax`` cites this class by name and it did not exist until 2026-07-26.
+
+    The docstring in ``smartchem/geometry.py`` justifies skipping a final
+    ``energy_and_gradient(result.x)`` call -- one whole oracle evaluation per relaxation,
+    which for a polyatomic is a converged SCF plus an analytic gradient -- on the claim
+    that ``result.jac`` already IS the gradient at ``result.x``, measured to agree with a
+    fresh evaluation to 0.0 exactly. The claim is true. Its proof was a sentence.
+
+    The exactness is not free arithmetic: ``objective`` divides by ``BOHR_TO_ANGSTROM``
+    and ``relax`` multiplies the returned Jacobian back by it, so the number makes a
+    round trip through a float division and a float multiplication. That it survives
+    bit-for-bit is a property worth pinning rather than assuming, because the day it
+    stops holding is the day the skipped call starts costing accuracy instead of time.
+    """
+
+    SEED = 20260726
+
+    def _reported_versus_fresh(self, start, energy_and_gradient):
+        result = relax(start, energy_and_gradient)
+        fresh = energy_and_gradient(result.coordinates)[1]
+        return abs(float(np.max(np.abs(fresh))) - result.gradient_norm)
+
+    def test_two_hundred_random_quadratic_surfaces_agree_to_zero_exactly(self):
+        rng = np.random.default_rng(self.SEED)
+        for _ in range(200):
+            n_atoms = int(rng.integers(2, 5))
+            centre = rng.normal(0.0, 1.0, (n_atoms, 3))
+            k = float(rng.uniform(0.5, 4.0))
+
+            def surface(coords, centre=centre, k=k):
+                offset = coords - centre
+                return 0.5 * k * float(np.sum(offset * offset)), \
+                    k * offset * geometry_module.BOHR_TO_ANGSTROM
+
+            start = centre + rng.normal(0.0, 0.3, (n_atoms, 3))
+            assert self._reported_versus_fresh(start, surface) == 0.0
+
+    def test_rosenbrock_agrees_too(self):
+        """
+        A curved valley, where L-BFGS-B's line search rejects trial points and the
+        returned ``jac`` is therefore NOT from the last function evaluation. That is the
+        case the whole optimisation rests on: scipy must hand back the Jacobian at the
+        point it returns, not at the last point it tried.
+        """
+        def rosenbrock(coords):
+            x, y = coords.reshape(-1)[:2]
+            value = (1.0 - x) ** 2 + 100.0 * (y - x * x) ** 2
+            gradient = np.zeros(coords.size)
+            gradient[0] = -2.0 * (1.0 - x) - 400.0 * x * (y - x * x)
+            gradient[1] = 200.0 * (y - x * x)
+            return value, gradient.reshape(coords.shape) * geometry_module.BOHR_TO_ANGSTROM
+
+        start = np.array([[-1.2, 1.0, 0.0], [0.0, 0.0, 0.0]])
+        assert self._reported_versus_fresh(start, rosenbrock) == 0.0
+
+
 class TestHarmonicAnalysis:
     """
     Checked against a closed form rather than another program.
@@ -1007,3 +1065,94 @@ class TestTheIterationBudgetHasRealMargin:
         """
         assert _iteration_budget(3) == 100
         assert _iteration_budget(1) == 100
+
+
+# ======================================================================================
+@pytest.mark.slow
+class TestTheGuessDoesNotMoveTheAnswer:
+    """
+    ``PySCFOracle._mean_field`` cites this class by name and it did not exist until
+    2026-07-26.
+
+    Along a relaxation the previous step's converged density is handed to the next step's
+    SCF as a starting guess. That is a real speedup and it is only free if the fixed point
+    is the same one. The docstring argues it is -- a fixed point is a fixed point whichever
+    direction you approach it from -- and then says "it is measured anyway, because 'not
+    the regime' is an argument and not a measurement". It was not measured anywhere.
+
+    Run with ``pytest --runslow``.
+    """
+
+    @staticmethod
+    def _oracle():
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+        return PySCFOracle("HF", "cc-pVDZ", max_atoms=3)
+
+    WATER = "O 0.0000000000 0.0000000000 0.1173000000; " \
+            "H 0.0000000000 0.7572000000 -0.4692000000; " \
+            "H 0.0000000000 -0.7572000000 -0.4692000000"
+    NUDGED = "O 0.0000000000 0.0000000000 0.1273000000; " \
+             "H 0.0000000000 0.7672000000 -0.4592000000; " \
+             "H 0.0000000000 -0.7672000000 -0.4592000000"
+
+    def test_a_warm_start_lands_on_the_same_energy_as_a_cold_one(self):
+        oracle = self._oracle()
+        symbols = ("O", "H", "H")
+        _, cold = oracle._mean_field(self.WATER, symbols, 0)
+        _, neighbour = oracle._mean_field(self.NUDGED, symbols, 0)
+        _, warm = oracle._mean_field(self.WATER, symbols, 0,
+                                     guess=neighbour.make_rdm1())
+        assert cold.converged and warm.converged
+        # conv_tol is 1e-11 Hartree; the two paths must agree at that scale, which is
+        # eight orders of magnitude below anything this oracle reports.
+        assert abs(warm.e_tot - cold.e_tot) < 1e-9
+
+    def test_a_guess_for_a_different_molecule_is_ignored_not_broadcast(self):
+        oracle = self._oracle()
+        _, water = oracle._mean_field(self.WATER, ("O", "H", "H"), 0)
+        _, hydrogen = oracle._mean_field("H 0 0 0; H 0 0 0.74", ("H", "H"), 0,
+                                         guess=water.make_rdm1())
+        assert hydrogen.converged
+
+
+@pytest.mark.slow
+class TestTheRetryFromAFailedGuessStartsClean:
+    """
+    The fallback in ``_mean_field`` promises that a bad guess can only ever cost time,
+    never an answer. Until 2026-07-26 it did not: ``mf.kernel(dm0=None)`` on an object
+    that has already run restarts from that object's own wavefunction
+    (``pyscf/scf/hf.py:2092``), so the retry re-fed the failed density straight back in.
+
+    CS was refused by this. Its relaxation reaches a 0.1206864376 A bond on the first
+    L-BFGS-B trial step, the warm SCF diverges there, the retry inherited the divergence,
+    and the species came back ``None`` -- indistinguishable from real hard chemistry.
+    A cold SCF at that same geometry converges to -220.797973 Hartree without complaint.
+
+    Run with ``pytest --runslow``.
+    """
+
+    COLLAPSED = "C 0.7071067812 0.0000000000 0.0000000000; " \
+                "S 0.8277932188 0.0000000000 0.0000000000"
+    SEED = "C 0.0000000000 0.0000000000 0.0000000000; " \
+           "S 1.5349000000 0.0000000000 0.0000000000"
+
+    def test_a_poisoning_guess_is_survived_rather_than_inherited(self):
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+        oracle = PySCFOracle("HF", "cc-pVDZ", max_atoms=2)
+        _, seed = oracle._mean_field(self.SEED, ("C", "S"), 0)
+        _, cold = oracle._mean_field(self.COLLAPSED, ("C", "S"), 0)
+        assert cold.converged, "premise: the collapsed geometry is convergeable cold"
+
+        _, recovered = oracle._mean_field(self.COLLAPSED, ("C", "S"), 0,
+                                          guess=seed.make_rdm1())
+        assert recovered.converged
+        assert recovered.e_tot == pytest.approx(cold.e_tot, abs=1e-8)
+
+    def test_the_species_the_broken_retry_cost_now_relaxes(self):
+        from smartchem.category import Molecule
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+        oracle = PySCFOracle("HF", "cc-pVDZ", max_atoms=2)
+        coordinates, zpe = oracle._relaxed_geometry(
+            Molecule.diatomic("C", "S", order=2), 0)
+        assert bond_length(coordinates, 0, 1) == pytest.approx(1.526, abs=5e-3)
+        assert zpe > 0.0

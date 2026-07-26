@@ -884,6 +884,39 @@ class PySCFOracle(BaseOracle):
 
         It is measured anyway, because "not the regime" is an argument and not a
         measurement: ``tests/test_geometry.py::TestTheGuessDoesNotMoveTheAnswer``.
+
+        THE RETRY USED NOT TO RETRY -- fixed 2026-07-26, and it had cost real species
+        ---------------------------------------------------------------------------
+        The fallback below promises that a bad guess can only ever cost time, never an
+        answer. Until this date it did not deliver that, because ``mf.kernel(dm0=None)``
+        does not mean "start from scratch" once ``mf`` has already run:
+        ``pyscf/scf/hf.py:2092`` reads
+
+            if dm0 is None and self.mo_coeff is not None and self.mo_occ is not None:
+                dm0 = self.make_rdm1()          # "Initial guess from existing wavefunction"
+
+        so the retry re-fed the *failed* run's own density straight back in. It was not a
+        second chance; it was the same chance, twice.
+
+        MEASURED on CS at the collapsed geometry its own relaxation reaches
+        (C 0.7071067812 0 0; S 0.8277932188 0 0, a 0.1206864376 A bond):
+
+            A  warm start                        converged=False
+            B  then dm0=None on the same object  converged=False   <-- the old fallback
+            C  then dm0=None after clearing MOs  converged=True  e=-220.797973
+            D  cold on a brand-new object        converged=True  e=-220.797973
+
+        C and D agree exactly, so nothing about that geometry is unconvergeable; only the
+        poisoned object was. CS and F2 were being refused by an SCF that would have
+        converged if asked properly, and the refusal surfaced as ``ConvergenceFailure`` ->
+        ``None`` -- a decline the user could not distinguish from real hard chemistry.
+
+        Rebuilding the object rather than clearing ``mo_coeff``/``mo_occ`` by hand is
+        deliberate: the fields PySCF consults for its implicit restart are its business
+        and may grow, whereas a new object has no history by construction.
+
+        This branch is reached only when the first SCF has already failed to converge, so
+        every calculation that works today is bit-identical after the change.
         """
         _require_pyscf()
         with warnings.catch_warnings():
@@ -891,9 +924,13 @@ class PySCFOracle(BaseOracle):
             mol = gto.M(atom=atom_spec, basis=resolve_basis(symbols, self.basis,
                                                             self.tight_d),
                         spin=spin, verbose=0, unit="Angstrom")
-            mf = (scf.RHF if spin == 0 else scf.UHF)(mol)
-            mf.conv_tol = 1e-11
-            mf.max_cycle = 300
+            def build_mean_field():
+                field = (scf.RHF if spin == 0 else scf.UHF)(mol)
+                field.conv_tol = 1e-11
+                field.max_cycle = 300
+                return field
+
+            mf = build_mean_field()
             # a guess of the wrong shape is a guess for a different molecule; ignore it
             # rather than let PySCF fail obscurely on a broadcast
             usable = guess if (guess is not None
@@ -902,8 +939,10 @@ class PySCFOracle(BaseOracle):
             if not mf.converged:
                 # a bad guess must never turn into a refusal: retry from PySCF's own
                 # initial guess before giving up, so the fast path can only ever cost
-                # time, never an answer
+                # time, never an answer. The retry needs a FRESH object -- see the
+                # docstring: dm0=None on a used one restarts from its own failed density.
                 if usable is not None:
+                    mf = build_mean_field()
                     mf.kernel(dm0=None)
                 if not mf.converged:
                     raise ConvergenceFailure(f"SCF did not converge for {atom_spec}")

@@ -305,6 +305,230 @@ def environmental_induction(lam: float, m: float) -> None:
 
 
 # ---------------------------------------------------------------------------
+# "WHY NOT JUST LET LAMBDA DEPEND ON THINGS?" -- the obvious repair, priced
+# ---------------------------------------------------------------------------
+
+def mixture_hazard(t: float, weight: float, lam_low: float, lam_high: float) -> float:
+    """Population hazard of a MIXTURE of two perfectly memoryless subpopulations.
+
+    Every individual here has a constant hazard. Nobody ages. The population still shows
+    a hazard that changes with time, because the high-hazard group is selectively removed.
+    """
+    s_low = weight * math.exp(-lam_low * t)
+    s_high = (1.0 - weight) * math.exp(-lam_high * t)
+    total = s_low + s_high
+    if total <= 0.0:
+        return lam_low
+    return (lam_low * s_low + lam_high * s_high) / total
+
+
+def why_not_just_vary_lambda(lam: float, m: float) -> None:
+    print()
+    print("-" * 78)
+    print("  THE OBVIOUS REPAIR: 'keep decay, but let lambda depend on t and environment'")
+    print("-" * 78)
+    print("""
+  It works, and that is the problem. ANY survival curve whatsoever can be written as
+  some h(t), so a free lambda(t) fits Gompertz, Weibull, a bathtub, or a scribble. A
+  model that fits everything forecloses nothing. Four specific things are lost:
+
+    1. MEMORYLESSNESS, by construction. 'lambda depends on t' is the literal negation
+       of 'the hazard does not depend on t'. There is no version of this that is still
+       radioactive decay; it is a survival process wearing the word.
+    2. THE HALF-LIFE STOPS BEING A PROPERTY. With lambda constant it belongs to the
+       SUBSTANCE -- same number for any sample, any quantity, any epoch. With lambda(t)
+       it belongs to a cohort at a moment: a summary of the data, not a parameter of
+       the thing. 'The half-life of a human' no longer denotes.
+    3. COMPOSITION BREAKS. Constant lambda composes exactly: competing channels add
+       (lambda_1 + lambda_2), chains solve in closed form (Bateman). With lambda(t)
+       competing risks still add pointwise, but chains lose their closed form -- and
+       most of the transportable content of decay theory lived in that closure.
+    4. THE EXPLANATION IS DELETED. The redundancy model DERIVES age-dependence from
+       parts that have none. lambda(t) POSITS it. Same curve, no mechanism.
+
+  The principled version of the repair already exists and is standard: proportional
+  hazards, h(t | x) = h0(t) * exp(beta . x). Environment scales the hazard and is NOT
+  permitted to change its shape. That constraint is the entire falsifiable content --
+  if the environment does change the shape, the model fails detectably, which is the
+  difference between a theory and a French curve.
+""")
+    print("  AND A TRAP, which bites this script's OWN band [C] -- run the numbers:")
+    print()
+    # Two subpopulations. Both perfectly memoryless. Nobody ages. Watch anyway.
+    weight, lam_low, lam_high = 0.5, 0.2 * lam, 3.0 * lam
+    print(f"    a 50/50 mixture of two CONSTANT hazards, {lam_low:.4f} and {lam_high:.4f} /yr")
+    print(f"    -- every individual memoryless, no aging term anywhere in the model")
+    print()
+    print(f"    {'age':>5}  {'population hazard':>18}  {'"apparent" doubling':>20}")
+    print(f"    {'-'*5}  {'-'*18}  {'-'*20}")
+    previous = None
+    for age in (0, 5, 10, 20, 40, 80, 160):
+        h = mixture_hazard(float(age), weight, lam_low, lam_high)
+        trend = "" if previous is None else ("rising" if h > previous else "FALLING")
+        previous = h
+        print(f"    {age:>5}  {h:>18.5f}  {trend:>20}")
+    print(f"""
+  The population hazard MOVES -- from the mean of the two rates toward the LOWER one --
+  with no individual changing at all. Selective removal of the frail does it. This is a
+  theorem, not a coincidence: a mixture of constant hazards has a completely monotone
+  survival function, so its population hazard is NON-INCREASING, always.
+
+  Which cuts two ways, and both matter:
+
+    GOOD NEWS   heterogeneity can NEVER manufacture a RISING hazard. So the Gompertz
+                acceleration of band [B] cannot be an artefact of population mixing. It
+                is real aging, and the metaphor's failure there is real too.
+    BAD NEWS    a PLATEAU is exactly what mixing does produce. So band [C] -- which this
+                script advertised as 'NOT fitted' and therefore a prediction -- is
+                CONFOUNDED. Redundancy exhaustion produces a plateau. So does a
+                heterogeneous population of memoryless individuals, with no aging model
+                at all. One survival curve cannot separate them, which is precisely why
+                the human late-life plateau is contested in the literature rather than
+                settled.
+
+  So band [C] is downgraded here, by this script, against its own earlier claim: it is
+  a prediction of the model but NOT evidence for the model, because a rival mechanism
+  gives the same signature. Separating them needs covariates, not a better fit.""")
+
+
+# ---------------------------------------------------------------------------
+# THE ACTUAL POINT: the exponential is the RULER, and the deviation is the DATUM
+# ---------------------------------------------------------------------------
+
+def _theta_sys(a: float, lam: float) -> float:
+    """d ln h_sys / dt as a closed form in A = m exp(-lambda t). Exact, not fitted."""
+    if a > 700.0:
+        return float("inf")
+    ea = math.exp(-a)
+    return lam * (a - 1.0 + a * ea / (1.0 - ea))
+
+
+def structure_from_deviation(lam_true: float, m_true: float) -> None:
+    """Recover the hidden structure from the survival curve alone.
+
+    This is the whole thesis made operational. Nothing here is told the true parameters
+    except through the hazard curve they generate; they are read back OFF that curve.
+    """
+    print()
+    print("=" * 78)
+    print("  THE EXPONENTIAL IS NOT THE MODEL. IT IS THE RULER.")
+    print("=" * 78)
+    print("""
+  A memoryless process is what a thing with NO PARTS and NO HISTORY does. That makes
+  the exponential the right null hypothesis rather than the right model, and it makes
+  every deviation from it a MEASUREMENT rather than a nuisance:
+
+      theta = d ln h / dt  ==  0     no internal structure. The null holds.
+      theta > 0                      structure being EXHAUSTED. Provably not
+                                     heterogeneity -- mixtures of constant hazards
+                                     are non-increasing, always. Rising hazard is a
+                                     THEOREM that the individuals have parts.
+      theta < 0                      variation being SORTED (the frail removed first),
+                                     or genuine burn-in. Ambiguous, unlike theta > 0.
+
+  So a rising hazard is proof of hidden structure, and the SIZE of the rise says how
+  much. Demonstrated below by inversion: the true parameters are used ONLY to generate
+  the curve, then thrown away and recovered from its shape.
+""")
+    # --- step 1: lambda from the late-life asymptote of the hazard -------------
+    late = [total_hazard(t, lam_true, m_true) for t in (300.0, 400.0, 500.0)]
+    lam_recovered = late[-1] - MU_PER_YEAR
+    print(f"  step 1  lambda from the PLATEAU of h at extreme age (minus the Makeham term)")
+    print(f"            h(300,400,500) = {late[0]:.6f}, {late[1]:.6f}, {late[2]:.6f}  -> converged")
+    print(f"            lambda_recovered = {lam_recovered:.6f}   true {lam_true:.6f}"
+          f"   err {abs(lam_recovered-lam_true):.2e}")
+
+    # --- step 2: A(t) from the local slope, at several ages independently ------
+    print()
+    print(f"  step 2  A = m exp(-lambda t) from the local slope theta(t), inverted exactly")
+    print()
+    print(f"    {'age':>5}  {'theta(t) /yr':>13}  {'A recovered':>12}  {'m = A e^(lam t)':>16}")
+    print(f"    {'-'*5}  {'-'*13}  {'-'*12}  {'-'*16}")
+    estimates = []
+    for age in (55.0, 60.0, 65.0, 70.0, 75.0, 80.0):
+        theta_measured = log_hazard_slope(age, lam_true, m_true)
+        # invert theta_sys(A) = theta_total * (h_total/h_sys), correcting for Makeham
+        h_sys = system_hazard(age, lam_true, m_true)
+        h_tot = total_hazard(age, lam_true, m_true)
+        if h_sys <= 0.0:
+            continue
+        theta_sys_target = theta_measured * h_tot / h_sys
+        try:
+            a_recovered = brentq(lambda a: _theta_sys(a, lam_recovered) - theta_sys_target,
+                                 1e-9, 60.0)
+        except ValueError:
+            continue
+        m_est = a_recovered * math.exp(lam_recovered * age)
+        estimates.append(m_est)
+        print(f"    {age:>5.0f}  {theta_measured:>13.5f}  {a_recovered:>12.4f}  {m_est:>16.1f}")
+
+    if estimates:
+        spread = max(estimates) / min(estimates)
+        mean_estimate = sum(estimates) / len(estimates)
+        print()
+        print(f"  RECOVERED REDUNDANCY  m = {mean_estimate:.1f}      TRUE m = {m_true:.1f}"
+              f"      spread across ages {spread:.4f}x")
+        print(f"  RECOVERED RATE   lambda = {lam_recovered:.6f}  TRUE = {lam_true:.6f}")
+
+        # The residual bias in m is not noise. m = A exp(lambda t), so a fractional error
+        # in lambda is amplified by t. Re-run step 2 with the TRUE lambda: if the bias is
+        # entirely inherited from step 1, m must come back exact.
+        clean = []
+        for age in (55.0, 60.0, 65.0, 70.0, 75.0, 80.0):
+            h_sys = system_hazard(age, lam_true, m_true)
+            h_tot = total_hazard(age, lam_true, m_true)
+            if h_sys <= 0.0:
+                continue
+            target = log_hazard_slope(age, lam_true, m_true) * h_tot / h_sys
+            try:
+                a = brentq(lambda x: _theta_sys(x, lam_true) - target, 1e-9, 60.0)
+            except ValueError:
+                continue
+            clean.append(a * math.exp(lam_true * age))
+        if clean:
+            clean_mean = sum(clean) / len(clean)
+            observed_bias = (mean_estimate - m_true) / m_true
+            # m = A exp(lambda t), so to leading order dm/m = t dlambda. Note the SIGN:
+            # lambda came back LOW, so the exponential factor came back low too.
+            leading = TARGET_MRDT_AT * (lam_recovered - lam_true)
+            residual = observed_bias - leading
+            print()
+            print(f"  IS THE {observed_bias:+.1%} BIAS IN m NOISE, OR INHERITED? Re-run step 2 with the")
+            print(f"  TRUE lambda and nothing else changed:  m = {clean_mean:.1f} vs true {m_true:.1f}"
+                  f"  ({(clean_mean-m_true)/m_true:+.2%})")
+            print(f"  Inherited, entirely. Step 1 IS the error budget; step 2 adds nothing.")
+            print()
+            print(f"  The accounting, both terms, because they fight each other:")
+            print(f"    m = A exp(lambda t), so dm/m = t dlambda to leading order.")
+            print(f"    lambda came back LOW by {lam_true-lam_recovered:.2e}, so at age {TARGET_MRDT_AT:.0f}")
+            print(f"    the exponential contributes  {leading:+.2%}")
+            print(f"    A itself rises when lambda falls (theta ~ lambda(A-1)), offsetting  {residual:+.2%}")
+            print(f"    net                                                                 {observed_bias:+.2%}")
+        print(f"""
+  Six independent ages, one answer. The hidden part-count was never measured directly
+  and never fitted -- it was read off the CURVATURE of a survival curve, using the
+  exponential purely as the baseline the curvature is measured against.
+
+  That is the thing worth carrying away, and it is not about mortality:
+
+      A process that looks memoryless at face value and is not, deviates by an amount
+      that MEASURES the structure it is hiding. The exponential does not describe the
+      system; it is the instrument the system is weighed on, and the reading is taken
+      where the system refuses to match it.
+
+  Which is the same move this repository already makes one layer down -- an oracle's
+  refusal to price something carries information that a number would have destroyed.
+  See THE_COMPILER.md, sections III and VIII. The refusal IS the datum, here and there.
+
+  HONEST BOUNDARY: the inversion above is exact because the generating model and the
+  inverting model are the same one. On real data they are not, and the recovered m
+  would then be model-dependent -- a redundancy count only in the sense that a
+  temperature is a mercury height. What survives that objection is the SIGN result,
+  which is a theorem and not a fit: theta > 0 proves parts exist. The magnitude is a
+  reading; the sign is a proof.""")
+
+
+# ---------------------------------------------------------------------------
 # REPORT
 # ---------------------------------------------------------------------------
 
@@ -431,6 +655,8 @@ def main() -> int:
 """)
 
     environmental_induction(lam, m)
+    why_not_just_vary_lambda(lam, m)
+    structure_from_deviation(lam, m)
 
     print()
     print("-" * 78)

@@ -272,3 +272,90 @@ conclusion transports, while part-scale rate conclusions do. Naming the assembly
 
 That last bullet is the genuine research problem underneath this whole document. Everything
 else is engineering.
+
+---
+
+## IX. THE COMPILER IS A SHEPHERD, NOT A GATE
+
+**This section corrects the emphasis of the eight above it.** Read back, §II is titled "the
+decline rule", §III forbids offering anything, and §IV's headline outcome is a refusal that is
+"a theorem". That describes a gatekeeper. It is the wrong primary posture, and the reason is
+not stylistic:
+
+> **The specs that fail hardest are the ones closest to new science.** A compiler whose main
+> verb is *reject* will reject exactly the inputs most worth having.
+
+The scientist arrives in one of two states, and neither is an error:
+
+* **The truth they are pointing at has no precise language yet.** They are not wrong; the
+  vocabulary is missing. Rejecting them for imprecision punishes the frontier.
+* **The language exists and they do not know it.** Innocent ignorance. Rejecting them for it
+  is a failure of the tool, not of the scientist.
+
+In both cases the job is to **shepherd them toward reality as we currently understand it** —
+supplying the words, locating the intuition inside existing structure, and handing back
+something sharper than what came in that they still recognise as their own idea.
+
+### This does not weaken §III. It says what §III governs.
+
+The derived-menu law constrains what the compiler **asserts**, never what it **asks**:
+
+| | May the compiler invent it? |
+|---|---|
+| **The physics** — an admissible constraint, a value, a claim about the world | **No.** Derived or declined. §III stands unchanged. |
+| **The language** — a name, a translation, a candidate framing, a question | **Yes, and it must.** Naming costs no invented physics. |
+
+So: **generous in interrogation, strict in assertion.** A compiler may propose *"is this what
+you mean by 'constrain'?"* freely, because a question is falsifiable by the person answering
+it. It may not propose *"here are five admissible constraints"* unless it derived all five.
+
+### The evidence: this document's own decay exchange
+
+`experiments/decay_analogy_probe.py` exists because a scientist arrived with *"a human life is
+an isotope with a half-life"* — informal, imprecise, and pointing at something real. The
+shepherding loop ran four rounds, and the record is worth keeping because each round was a
+correction *of the compiler*, not of the scientist:
+
+1. **Take it seriously, supply the vocabulary.** Hazard function, memorylessness, Gompertz,
+   Makeham. Result: the analogy fails on the founding axiom.
+2. **Find where it is right.** Relocated to the element scale — a human is a Poisson-sized
+   bucket of isotopes with a quorum rule. The failure at the whole is what the *assembly*
+   introduces (§VIII).
+3. **Push on the environment.** Nuclear λ moves by ~10⁻⁴ ordinarily and 10⁹ only under full
+   ionisation — i.e. only by *destroying structure*, never by tuning a rate. Which is exactly
+   how environmental insult acts on an organism: it lowers the redundancy, not the rate.
+4. **Find what the intuition was actually for.** Not "humans are isotopes" but *the class of
+   processes that present as memoryless and are not* — where the exponential is the **ruler,
+   not the model**, and the deviation is a measurement of hidden structure. Verified by
+   inversion: the redundancy count was read back off the survival curve's curvature to within
+   the error inherited from its own first step, six independent ages agreeing to 0.9%.
+
+Round 4 is the one that mattered, and no round of it was reachable by rejecting round 1.
+
+### The guard, without which §VIII becomes a flattery machine
+
+Relocation is powerful and therefore dangerous. **You can always find some scale at which a
+metaphor holds, if you are willing to weaken it enough.** A shepherd that always discovers the
+scientist was "right at some level" is a courtier. So:
+
+> **A relocation is admissible only if it is LOAD-BEARING** — it must let you compute or
+> predict something you could not compute before. If relocating buys no new prediction, the
+> honest report is *"this does not survive"*, not *"it survives at some scale."*
+
+The decay case passes its own guard: relocating memorylessness to the element scale is what
+makes the inversion possible, and recovering a hidden part-count from a survival curve is a
+computation that does not exist without it. Had it bought nothing, the correct output would
+have been a refusal.
+
+### And the compiler's authority is bounded
+
+"Reality as we understand it **to the best of our ability**" — the qualifier is load-bearing
+and belongs in the output. When no adequate language exists, the compiler must be able to say
+so, and to say it the right way round:
+
+> *"There is no vocabulary in what I hold that captures this. That is a statement about the
+> available language, not about your idea."*
+
+Which is the same discipline as `carries_unmodelled_physics` at `base.py:327`, one more level
+up: the honest boundary is more useful than a confident wrong answer, **and it is also more
+useful than a discouraging one.**

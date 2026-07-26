@@ -191,6 +191,28 @@ that never compiles. The loop needs a fixed-point criterion with teeth: **every 
 strictly reduce the number of unbound free parameters, or the compiler halts and says which
 parameter it cannot reduce.** No round that merely rephrases.
 
+> **AMENDED 2026-07-26 — the criterion is right and the measure was wrong.** The sentence
+> above is kept verbatim because Brick 3 was built to it and its failure is what produced
+> the replacement. *Reduce* is the correct demand; *the number of unbound free parameters*
+> is the wrong quantity to reduce, because a round that answers one abstract question and
+> opens two concrete ones beneath it is refinement — it is precisely what §IX's shepherd
+> does when it supplies vocabulary — and it raises the count. **The measure is now the
+> multiset of the holes' *ranks*, ordered by the Dershowitz–Manna multiset extension of `<`
+> on ℕ**, which is well-founded, so termination is still a theorem. Binding a hole descends;
+> replacing one hole of rank *r* by any finite number of holes of rank `< r` descends *while
+> the count rises*; rephrasing descends nowhere. A spec that declares no ranks is entirely
+> rank 0, nothing sits below rank 0, and the rule is then bit-for-bit the cardinality rule
+> above — so this amendment strictly adds cases rather than changing any.
+>
+> **What it cost, because it was not free either.** Cardinality was doing two jobs and only
+> one survives: it was the termination argument *and* an a-priori bound on the round count.
+> A rule that lets one hole open unboundedly many simpler holes lets the dialogue run
+> unboundedly many rounds — a fact about descending sequences below `ω^ω`, not a gap in the
+> implementation. So the round budget is now conditional on a *declared* fan-out, and
+> overrunning it is `EXHAUSTED` (a resource limit reached) rather than `LedgerContradiction`
+> (a theorem violated). The unconditional case is kept and still raises. See
+> `smartchem/ledger.py` and §VII's Brick 3 bullet.
+
 ---
 
 ## VII. BUILD ORDER
@@ -391,18 +413,66 @@ thing that blocks it is a fact about the design, not about the effort.
   recorded as discarded"* when it is empty, because silently omitting it is a different
   claim from reporting that it is empty.
 
-  **THE BRICK'S FAILURE IS THE INTERESTING PART, AND §VII PROMISED IT WOULD BE.** Applied
+  **THE BRICK'S FAILURE WAS THE INTERESTING PART, AND §VII PROMISED IT WOULD BE.** Applied
   literally, §VI.3 halts on a round that *widens* the spec — one hole closed and two opened
   beneath it. That is ordinary refinement; it is exactly what §IX's shepherd does when it
   supplies vocabulary. The rule was written against rounds that **rephrase** and its measure
   cannot tell those from rounds that **deepen**, because both fail "strictly reduce". So
-  `WIDENED` is a separate outcome carrying the slots that opened, rather than being reported
-  as a stall — the same split that keeps `runtime_refusals` apart from
+  `WIDENED` was made a separate outcome carrying the slots that opened, rather than being
+  reported as a stall — the same split that keeps `runtime_refusals` apart from
   `unexpressed_refusals` in Brick 1, and for the same reason: collapsing them would hide the
   informative case behind the failure case. **A cardinality measure is the wrong measure for
   a shepherding loop, and §VI.3 will need a well-founded one — depth-weighted, or ordinal —
   before the loop of §I can run more than one round of genuine refinement.** That is a fact
   about the design, which is what this build order is for.
+
+  **AND IT IS NOW FIXED, 2026-07-26 — the ordinal one, and it is the multiset order.** A
+  `Slot` carries a `rank`: how abstract the question is, and therefore how far it may still
+  be unfolded. `Spec.ordinal()` is the multiset of the *holes'* ranks, returned as a
+  descending-sorted tuple, and the loop continues exactly when that strictly descends under
+  ordinary tuple comparison — which on descending-sorted tuples is precisely the
+  Dershowitz–Manna multiset extension of `<` on ℕ, equivalently the ordinal `Σ ω^rank` in
+  Cantor normal form. Well-founded, so termination is a theorem rather than a hope. **The
+  round that used to halt the loop now advances it**, and the disagreement is legible on the
+  `Round` object itself: `reduced` is False and `descended` is True on the same round, which
+  is the entire content of the repair. `WIDENED` survives with a sharper meaning — *these
+  opened holes are not strictly simpler than what was closed* — and a rank-0 spec, which is
+  every spec that declares nothing, behaves bit-for-bit as it did before.
+
+  **THE SORT IS THE TERMINATION ARGUMENT, NOT PRESENTATION, AND THAT IS THE SUBTLE PART.**
+  Lexicographic order on *arbitrary* tuples of naturals is **not** well-founded —
+  `(1,) > (0,1) > (0,0,1) > …` descends forever — and that chain is realisable here by a
+  responder that closes its rank-1 hole and opens a rank-0 *and* a rank-1 hole every round.
+  Sorted descending that round reads `(1,) → (1,0)`, an increase, and halts. Drop
+  `reverse=True` and it reads `(1,) → (0,1)`, a "descent", and the loop never stops. The test
+  written for it asserts `WIDENED` specifically, because a budget would otherwise mask the
+  non-termination as `EXHAUSTED`.
+
+  **And measuring that guard caught a second, subtler one — in the check itself.**
+  `experiments/ledger_mutation_probe.py` is a committed harness that writes eight plausible
+  wrong implementations of this module and counts survivors. It reports **8 mutants, 0
+  survivors**, but the interesting run was the intermediate one. `TestTheOrderIsTheOneItClaimsToBe`
+  decides the multiset-order identity by exhaustive search against the textbook
+  Dershowitz–Manna definition — and as first written it built its specs from *already
+  descending* tuples, so it could not tell a correct sort from **no sort at all**: the mutant
+  that deletes `sorted()` entirely survived every assertion in the class, killed by only 1 of
+  53 tests. Building the slots in *ascending* order fixed it and both sort mutants now die 4
+  ways. Same disease as the correction boxes above — a check handed input derived from the
+  thing it checks — this time inside the test written to protect a theorem.
+
+  **WHAT THE REPAIR COST, KEPT AS A DISTINCTION RATHER THAN ABSORBED.** Cardinality was
+  doing two jobs — the termination argument and an a-priori round count — and only the first
+  survives unconditionally, because permitting unbounded fan-out on a deepening permits
+  unboundedly many rounds. `Spec.round_bound(fan_out)` is `Σ (fan_out+1)^rank`, which
+  strictly decreases on every round that respects the declared fan-out, and
+  `Spec.bound_is_theorem()` answers whether that declaration was needed at all rather than
+  leaving a caller to assume. Overrunning an unconditional bound is still
+  `LedgerContradiction`; overrunning a conditional one is `EXHAUSTED`, because calling a
+  reached resource limit a contradiction would be asserting a theorem this module does not
+  have. And the boundary, which is easy to overread: the rank order certifies **termination**
+  and nothing else. No parentage is recorded and none is checked, so a responder may close a
+  rank-3 hole and open two rank-2 holes about something else entirely and be accepted.
+  Semantic descent is not decidable here; that the dialogue ends is.
 
 The ordering matters. **Brick 0 before anything conversational.** The dialogue is the last
 thing built, not the first, because the dialogue is the part that can fake working.

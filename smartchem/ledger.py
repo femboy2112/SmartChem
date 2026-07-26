@@ -48,20 +48,69 @@ that closes only subject to an a-posteriori condition is a different object from
 closes outright, so it gets a different outcome token, and :data:`COMPILED_SUBJECT_TO` is
 never collapsed into :data:`COMPILED`.
 
-AND WHERE THE RULE AS WRITTEN BITES SOMETHING IT SHOULD NOT
------------------------------------------------------------
-Implemented literally, section VI.3 halts on a round that *widens* the spec -- a binding
-that resolves one hole and opens two beneath it, which is ordinary refinement and is
+WHERE CARDINALITY BIT SOMETHING IT SHOULD NOT, AND WHAT REPLACED IT
+--------------------------------------------------------------------
+The first build of this module implemented section VI.3 with the literal count, and its
+failure was the interesting part: the rule halts on a round that *widens* the spec -- a
+binding that resolves one hole and opens two beneath it, which is ordinary refinement and
 exactly what section IX's shepherding loop does when it supplies vocabulary. The rule was
-written against rounds that *rephrase*; it cannot tell those from rounds that *deepen*,
-because both fail "strictly reduce".
+written against rounds that *rephrase*; a cardinality measure cannot tell those from
+rounds that *deepen*, because both fail "strictly reduce".
 
-That is reported, not papered over. :data:`WIDENED` is a distinct outcome from
-:data:`STALLED` and carries the slots that opened. Reporting them as one token would hide
-the informative case behind the failure case, which is the mistake Brick 1 avoided by
-splitting ``runtime_refusals`` from ``unexpressed_refusals``. Section VII says each brick
-is chosen so its failure is informative; this is that failure, and it is a fact about
-section VI.3's measure rather than about the implementation.
+**The measure is now the multiset of the holes' ranks, ordered by the Dershowitz--Manna
+multiset extension of the natural numbers.** A :class:`Slot` carries a ``rank``: how
+abstract the question is, and therefore how far it may still be decomposed. The measure of
+a spec is :meth:`Spec.ordinal`, and a round is allowed to continue exactly when that
+measure strictly descends. Binding a hole removes an element and descends. Replacing one
+hole of rank *r* by any finite number of holes of rank *< r* also descends -- **the count
+goes up and the measure goes down, which is the whole repair.** Rephrasing leaves the
+multiset alone and descends nowhere.
+
+Two things make this the right object rather than a heuristic that happens to work:
+
+* **It is well-founded, so termination is a theorem and not a hope.** The multiset
+  extension of a well-founded order is well-founded, and the ranks are naturals. Equivalent
+  reading: the measure is the ordinal ``sum of omega**rank`` below ``omega**omega``, and
+  :meth:`Spec.ordinal` returns its Cantor normal form.
+* **The implementation is Python's own tuple comparison, and the sort is load-bearing.**
+  Lexicographic order on arbitrary tuples of naturals is NOT well-founded --
+  ``(1,) > (0,1) > (0,0,1) > ...`` descends forever. On tuples sorted DESCENDING it is
+  exactly the multiset order and it is well-founded. Dropping ``reverse=True`` leaves every
+  test about binding and rephrasing passing while admitting a responder that runs the loop
+  forever, so two tests exist for that one token: one naming the responder
+  (``test_the_sort_is_the_termination_argument``) and one deciding the claimed identity by
+  exhaustive search against the textbook definition
+  (``TestTheOrderIsTheOneItClaimsToBe``). Both are needed, and measuring that was itself
+  informative -- see ``experiments/ledger_mutation_probe.py``.
+
+Consequently :data:`WIDENED` now means something sharper than "the count went up": *this
+round opened holes that are not strictly simpler than what it closed*. A spec whose slots
+declare no ranks is entirely rank 0, no widening can descend, and the behaviour is
+bit-for-bit the old cardinality rule -- so nothing that worked before changed meaning.
+
+WHAT THE REPAIR COST, STATED RATHER THAN ABSORBED
+---------------------------------------------------
+Cardinality was doing two jobs at once and they are separable: it was the termination
+argument AND an a-priori bound on the number of rounds. The well-founded measure keeps the
+first and gives up the second, because a rule that permits unbounded fan-out on a deepening
+permits unboundedly many rounds -- that is a theorem about descending sequences below
+``omega**omega``, not a gap in this implementation.
+
+So the round bound is now conditional on a *declared* fan-out (:meth:`Spec.round_bound`),
+and the two cases are kept apart because they are different claims. With every rank 0 the
+bound is unconditional and exceeding it is still a :class:`LedgerContradiction`, exactly as
+before. With ranks declared the bound holds only if the responder respects the declared
+fan-out, and exceeding it is :data:`EXHAUSTED` -- a resource limit reached, not a lie
+detected. Calling the second one a contradiction would be claiming a theorem this module
+does not have.
+
+AND THE BOUNDARY, BECAUSE IT IS EASY TO OVERREAD
+--------------------------------------------------
+The rank order certifies **termination**. It does not certify that a newly opened slot is
+genuinely a sub-question of the one it replaced -- no parentage is recorded and none is
+checked, so a responder may close a rank-3 hole and open two rank-2 holes about something
+else entirely and the loop will accept it. Semantic descent is not a property anything here
+can decide. What is decided is that the dialogue ends.
 """
 from __future__ import annotations
 
@@ -73,8 +122,11 @@ from .stoichiometry import stoichiometry_menu
 __all__ = [
     "COMPILED",
     "COMPILED_SUBJECT_TO",
+    "EXHAUSTED",
     "STALLED",
     "WIDENED",
+    "DEFAULT_FAN_OUT",
+    "IllFoundedRank",
     "LedgerContradiction",
     "Round",
     "Session",
@@ -85,17 +137,41 @@ __all__ = [
     "shepherd",
 ]
 
+#: The fan-out the round bound is computed against: how many sub-questions one hole may
+#: open. Two is the smallest number for which "deepening" is a real branching rather than a
+#: rename, and it is a **declared assumption about the responder, not a measurement of
+#: it** -- nothing here can observe a responder's fan-out before running it. It is a
+#: parameter because it is not derivable; see :meth:`Spec.round_bound`.
+DEFAULT_FAN_OUT = 2
 
 #: Every free parameter is bound, and every binding was checkable before running anything.
 COMPILED = "COMPILED"
 #: Every free parameter is bound, but at least one binding is only checkable *after* the
 #: calculation it governs. Section VI.1: not the same object as :data:`COMPILED`.
 COMPILED_SUBJECT_TO = "COMPILED_SUBJECT_TO"
-#: A round failed to reduce the count and did not widen it either -- it rephrased.
+#: A round left the measure exactly where it was and opened nothing -- it rephrased.
 STALLED = "STALLED"
-#: A round opened more holes than it closed. Ordinary refinement; halts anyway under the
-#: rule as section VI.3 states it, and that is the finding rather than a bug.
+#: A round opened holes that are not strictly simpler than what it closed, so the measure
+#: did not descend. Under the old cardinality rule this token meant "the count went up",
+#: which also caught legitimate deepening; it no longer does.
 WIDENED = "WIDENED"
+#: Every round descended legitimately and the declared round budget ran out first. Not a
+#: stall (progress was real) and not a contradiction (no theorem was violated) -- the
+#: bound was conditional on :data:`DEFAULT_FAN_OUT` and the responder outran it.
+EXHAUSTED = "EXHAUSTED"
+
+
+class IllFoundedRank(ValueError):
+    """
+    Raised when a slot is given a negative rank.
+
+    The termination argument is that the ranks are drawn from a **well-founded** order, and
+    the integers are not one: ``0 > -1 > -2 > ...`` descends forever, so a single negative
+    rank would let a responder deepen without end while every round honestly reported a
+    strictly descending measure. This is the well-foundedness hypothesis enforced at the
+    constructor rather than assumed in a docstring -- the same move as
+    :class:`UnderivedMenu`, protecting a theorem instead of a policy.
+    """
 
 
 class UnderivedMenu(ValueError):
@@ -132,6 +208,15 @@ class Slot:
     ``menu`` is the admissible bindings and ``derivation`` says what computed them. An
     empty menu is honest and common: it means nothing in this package could derive the
     options, so the slot is interrogated with an open question instead of a list.
+
+    ``rank`` is how abstract the question is, and therefore how far it may still be
+    decomposed: a slot of rank *r* may be closed and replaced by sub-slots of rank *< r*,
+    and that counts as progress. **Rank 0 is the default and means atomic** -- a question
+    that must be answered rather than unfolded. A spec that declares no ranks is entirely
+    rank 0, no decomposition can descend, and :func:`shepherd` behaves exactly as the
+    original cardinality rule did. Rank is the scientist's or the responder's declaration
+    about the shape of their own question; the loop never invents one, and the ordering is
+    what stops a declaration from being self-serving (see :meth:`Spec.ordinal`).
     """
     name: str
     written: str
@@ -139,8 +224,15 @@ class Slot:
     checkable_after: bool = False
     menu: tuple[str, ...] = ()
     derivation: str = ""
+    rank: int = 0
 
     def __post_init__(self) -> None:
+        if self.rank < 0:
+            raise IllFoundedRank(
+                f"slot {self.name!r} has rank {self.rank}; ranks index a well-founded "
+                f"order and the negative integers are not one. A negative rank admits an "
+                f"infinite descent, so a responder could deepen forever while every round "
+                f"truthfully reported a strictly descending measure")
         if self.menu and not self.derivation:
             raise UnderivedMenu(
                 f"slot {self.name!r} carries {len(self.menu)} options with no derivation; "
@@ -205,8 +297,67 @@ class Spec:
         return tuple(slot for slot in self.slots if slot.binding is None)
 
     def measure(self) -> int:
-        """The number of unbound free parameters. Recomputed, never remembered."""
+        """
+        The number of unbound free parameters. Recomputed, never remembered.
+
+        This is section VI.3's literal count. It is still reported on every round, because
+        it is what a reader wants to know, but it is no longer what the loop decides on --
+        :meth:`ordinal` is. Keeping both visible is the point: the rounds where the two
+        disagree are exactly the deepening rounds, and printing them side by side is how
+        the repair stays legible rather than becoming folklore.
+        """
         return len(self.holes())
+
+    def ordinal(self) -> tuple[int, ...]:
+        """
+        The well-founded measure: the holes' ranks as a DESCENDING-sorted tuple.
+
+        Compared with ordinary tuple ordering, this is the Dershowitz--Manna multiset
+        extension of ``<`` on the naturals, and equivalently the ordinal
+        ``sum of omega**rank`` written in Cantor normal form. Both readings say the same
+        thing about what a round is allowed to do:
+
+        * bind a hole                       -- an element leaves          -> descends
+        * close rank *r*, open ranks *< r*  -- one element becomes many smaller ones,
+          any finite number of them         -> descends, though the COUNT rises
+        * rephrase                          -- the multiset is unchanged  -> does not
+        * open a hole of rank >= everything it closed                     -> does not
+
+        **The descending sort is the termination argument, not presentation.** Lex order on
+        arbitrary tuples of naturals is not well-founded -- ``(1,) > (0,1) > (0,0,1) > ...``
+        goes on forever -- and that infinite descent is realisable here: it is a responder
+        that closes its rank-1 hole and opens a rank-0 and a rank-1 hole every round. Sorted
+        descending, that round reads ``(1,) -> (1,0)``, which is an increase and halts.
+        Unsorted it reads ``(1,) -> (0,1)``, which looks like a descent and never stops.
+
+        It follows that the largest rank present can never increase across a round the loop
+        accepts, since a bigger leading element makes the tuple lexicographically larger.
+        A spec that starts entirely rank 0 therefore stays entirely rank 0, which is what
+        makes its round bound unconditional in :meth:`round_bound`.
+        """
+        return tuple(sorted((slot.rank for slot in self.holes()), reverse=True))
+
+    def round_bound(self, fan_out: int = DEFAULT_FAN_OUT) -> int:
+        """
+        How many rounds the loop can run, if every deepening fans out at most ``fan_out``.
+
+        ``sum((fan_out+1)**rank)`` over the holes. It strictly decreases by at least one on
+        every legal round: binding a rank-*r* hole drops it by ``(fan_out+1)**r``, and
+        replacing that hole with ``m <= fan_out`` holes of rank ``<= r-1`` drops it by at
+        least ``(fan_out+1)**r - fan_out*(fan_out+1)**(r-1) = (fan_out+1)**(r-1) >= 1``.
+
+        **Whether this is a theorem depends on the spec**, and :meth:`bound_is_theorem`
+        answers that rather than leaving a caller to assume. With every rank 0 it reduces
+        to :meth:`measure` and holds unconditionally, because no descent can add a hole at
+        all. With ranks declared it holds only while the responder honours ``fan_out``,
+        which nothing here can check in advance -- so overrunning it reports
+        :data:`EXHAUSTED` and not a contradiction.
+        """
+        return sum((fan_out + 1) ** slot.rank for slot in self.holes())
+
+    def bound_is_theorem(self) -> bool:
+        """True when :meth:`round_bound` needs no assumption about the responder."""
+        return all(slot.rank == 0 for slot in self.holes())
 
     def subject_to(self) -> tuple[Slot, ...]:
         """Bound slots whose binding can only be checked after the run (section VI.1)."""
@@ -243,23 +394,41 @@ class Round:
     """
     One interrogation round, with both measures taken from real spec objects.
 
-    ``before`` and ``after`` are the results of calling :meth:`Spec.measure` on the spec
-    going in and the spec coming out. Neither is supplied by the responder.
+    ``before``/``after`` are :meth:`Spec.measure` and ``before_ordinal``/``after_ordinal``
+    are :meth:`Spec.ordinal`, all four taken from real spec objects going in and coming
+    out. None of them is supplied by the responder.
+
+    Both measures are carried because the interesting rounds are the ones where they
+    disagree: a deepening has ``reduced`` false and ``descended`` true, and that pair is
+    the whole content of the repair to section VI.3.
     """
     index: int
     asked: tuple[str, ...]
     before: int
     after: int
+    before_ordinal: tuple[int, ...]
+    after_ordinal: tuple[int, ...]
     spec: Spec
 
     @property
     def reduced(self) -> bool:
+        """Section VI.3's literal rule: did the COUNT of free parameters fall?"""
         return self.after < self.before
 
+    @property
+    def descended(self) -> bool:
+        """The rule the loop actually applies: did the well-founded measure fall?"""
+        return self.after_ordinal < self.before_ordinal
+
     def __repr__(self) -> str:
-        arrow = "->" if self.reduced else "=/=>"
+        arrow = "->" if self.descended else "=/=>"
+        note = ""
+        if self.descended and not self.reduced:
+            note = "  [deepened: more holes, simpler ones]"
         return (f"round {self.index}: asked {list(self.asked)} "
-                f"{self.before} {arrow} {self.after}")
+                f"{self.before} {arrow} {self.after} holes, "
+                f"ranks {list(self.before_ordinal)} {arrow} "
+                f"{list(self.after_ordinal)}{note}")
 
 
 @dataclass(frozen=True)
@@ -287,14 +456,23 @@ class Session:
                  f"{self.spec.measure()} free parameters left)"]
         lines.extend(repr(r) for r in self.rounds)
         if self.outcome == STALLED:
-            lines.append("halted: a round did not strictly reduce the free parameters and "
-                         "did not open new ones -- it rephrased. Cannot reduce: "
+            lines.append("halted: a round left the measure exactly where it was and opened "
+                         "nothing -- it rephrased. Cannot reduce: "
                          + ", ".join(self.stuck_on))
         if self.outcome == WIDENED:
-            lines.append("halted: a round opened more free parameters than it closed ("
-                         + ", ".join(self.opened) + "). That is ordinary refinement, and "
-                         "section VI.3's measure cannot tell it from a rephrase; the rule "
-                         "is applied as written and the difference is reported here.")
+            lines.append("halted: a round opened free parameters ("
+                         + ", ".join(self.opened) + ") that are not strictly simpler than "
+                         "what it closed, so the measure did not descend. Deepening is "
+                         "allowed and is not this: a slot opened beneath a rank-r hole "
+                         "must declare a rank below r. Everything here is rank 0 unless "
+                         "someone said otherwise, and nothing sits below rank 0.")
+        if self.outcome == EXHAUSTED:
+            lines.append("halted: every round descended, and the round budget ran out "
+                         "first. The budget assumes each hole opens at most "
+                         f"{DEFAULT_FAN_OUT} sub-questions, which is a declared assumption "
+                         "about the responder and not a measurement of one -- so this is a "
+                         "resource limit reached, not a rule broken. Still open: "
+                         + ", ".join(self.stuck_on))
         if self.outcome == COMPILED_SUBJECT_TO:
             lines.append("every free parameter is bound, but the following are checkable "
                          "only AFTER the calculation they govern, so this spec has not "
@@ -332,50 +510,70 @@ def reaction_slot(name: str, written: str, species: tuple[Molecule, ...]) -> Slo
     )
 
 
-def shepherd(spec: Spec, respond, *, discarded: tuple[str, ...] = ()) -> Session:
+def shepherd(spec: Spec, respond, *, discarded: tuple[str, ...] = (),
+             fan_out: int = DEFAULT_FAN_OUT) -> Session:
     """
     Interrogate ``spec`` until it closes or the termination rule stops it.
 
     ``respond(spec, holes)`` is the scientist: it receives the current spec and its unbound
     slots and returns a NEW spec. It is not asked what it changed and it is not believed if
     it says -- everything the loop knows about a round comes from calling
-    :meth:`Spec.measure` on the object it got back.
+    :meth:`Spec.ordinal` and :meth:`Spec.measure` on the object it got back.
 
-    The round count is bounded by the initial measure, because strict decrease over a
-    non-negative integer cannot run longer than that. That bound is asserted rather than
-    assumed: if it is ever exceeded, the strict-decrease check above it is not doing what
-    this docstring says, and :class:`LedgerContradiction` is a better outcome than a
-    plausible answer from a loop that has already been shown to be lying.
+    A round continues exactly when the ordinal strictly descends. That is what admits
+    deepening (one hole out, several simpler ones in) while still refusing a rephrase, and
+    it terminates because the multiset order over the naturals is well-founded.
+
+    ``fan_out`` sizes the round budget only; it does not gate a round. A responder that
+    opens more sub-questions than this is not doing anything illegal -- the ordinal still
+    decides -- it has merely outrun the budget derived from the assumption, which is why
+    that case is :data:`EXHAUSTED`. When the spec declares no ranks the budget needs no
+    assumption at all (:meth:`Spec.bound_is_theorem`) and overrunning it is impossible, so
+    it stays a :class:`LedgerContradiction`: a claim this module really can make.
     """
-    ceiling = spec.measure()
+    budget = spec.round_bound(fan_out)
+    budget_is_theorem = spec.bound_is_theorem()
     rounds: list[Round] = []
     current = spec
 
     while True:
         before = current.measure()
+        before_ordinal = current.ordinal()
         if before == 0:
             outcome = COMPILED_SUBJECT_TO if current.subject_to() else COMPILED
             return Session(outcome, current, tuple(rounds), (), (), discarded)
 
-        if len(rounds) >= ceiling:
-            raise LedgerContradiction(
-                f"{len(rounds)} rounds against an initial measure of {ceiling}; strict "
-                f"decrease makes that impossible, so the reduction check is not enforcing "
-                f"what it claims")
+        if len(rounds) >= budget:
+            still = tuple(h.name for h in current.holes())
+            if budget_is_theorem:
+                raise LedgerContradiction(
+                    f"{len(rounds)} rounds against an unconditional bound of {budget}; "
+                    f"every rank here is 0, so no round can add a hole and strict descent "
+                    f"cannot run longer than that. The descent check is not enforcing "
+                    f"what it claims")
+            # Ranks are declared, so the bound was only ever conditional on the fan-out.
+            # Calling this a contradiction would be asserting a theorem this module does
+            # not have -- the responder outran an assumption, it did not break a rule.
+            return Session(EXHAUSTED, current, tuple(rounds), still, (), discarded)
 
         holes = current.holes()
         asked = tuple(h.name for h in holes)
         before_names = {h.name for h in holes}
 
         following = respond(current, holes)
-        after = following.measure()
-        rounds.append(Round(len(rounds) + 1, asked, before, after, following))
+        # Taken ONCE and reused, so the number recorded on the round is provably the number
+        # the decision below was made on. Two calls could not disagree today -- Spec is
+        # frozen -- but a report that is re-derived separately from the decision it reports
+        # is the shape of defect this module was built to avoid.
+        after_ordinal = following.ordinal()
+        rounds.append(Round(len(rounds) + 1, asked, before, following.measure(),
+                            before_ordinal, after_ordinal, following))
 
-        if after < before:
+        if after_ordinal < before_ordinal:
             current = following
             continue
 
-        # Did not reduce. Which of the two failures was it? The distinction is read off
+        # Did not descend. Which of the two failures was it? The distinction is read off
         # the slot names, not off anything the responder reported about itself.
         opened = tuple(h.name for h in following.holes() if h.name not in before_names)
         still = tuple(name for name in asked

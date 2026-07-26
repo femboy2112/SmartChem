@@ -11,14 +11,19 @@ So the class that matters here is :class:`TestTheMeasureIsTakenNotReported`. The
 what the loop is allowed to offer (section III), what it must ask anyway (section IX), what
 it refuses to certify (section VI.2), and what it must report on the way out (section X).
 """
+from collections import Counter
+from itertools import combinations, combinations_with_replacement
+
 import pytest
 
 from smartchem.category import Bond, Molecule
 from smartchem.ledger import (
     COMPILED,
     COMPILED_SUBJECT_TO,
+    EXHAUSTED,
     STALLED,
     WIDENED,
+    IllFoundedRank,
     Round,
     Session,
     Slot,
@@ -135,23 +140,29 @@ class TestTheRuleHasTeeth:
 
     def test_the_round_count_cannot_exceed_the_initial_measure(self):
         """
-        Strict decrease over a non-negative integer bounds the loop, which is why there is
-        no max-rounds knob to tune. ``LedgerContradiction`` guards the bound and is
-        deliberately unreachable while the check above it stays strict -- it exists to
-        catch a future relaxation of ``<`` to ``<=``, not a case reachable today.
+        With every rank 0 the bound is still the plain count, and still a theorem: no
+        descent can add a hole, so the loop cannot outrun it. ``LedgerContradiction``
+        guards that and stays deliberately unreachable while the check above it is strict
+        -- it exists to catch a future relaxation of ``<`` to ``<=``, not a case reachable
+        today. The conditional version of the same bound is :data:`EXHAUSTED`; see
+        ``TestTheBoundIsAConditionalOnceRanksExist``.
         """
+        assert SECTION_I.bound_is_theorem()
+        assert SECTION_I.round_bound() == SECTION_I.measure() == 4
         for responder in (_bind_all, lambda s, h: s.bind(h[0].name, "x")):
             session = shepherd(SECTION_I, responder)
             assert len(session.rounds) <= SECTION_I.measure()
 
 
-class TestWideningIsAnOutcomeOfItsOwn:
+class TestWideningWithoutRanksStillHalts:
     """
-    The place section VI.3's measure is wrong, reported rather than smoothed over.
+    The regression guard on the repair: an UNRANKED spec behaves exactly as it used to.
 
-    A round that binds one hole and opens two beneath it is ordinary refinement -- it is
-    what section IX's shepherd does when it supplies vocabulary -- and it fails "strictly
-    reduce" exactly as loudly as a round that rephrases.
+    Section I's fixture declares no ranks, so every slot is rank 0 and nothing sits below
+    rank 0. A round that binds one hole and opens two therefore has nothing simpler to
+    descend to, and it halts -- which is what the cardinality rule did, for a reason that
+    is now stated rather than accidental. If this class ever starts passing by compiling,
+    the ordinal is accepting a widening it has no grounds to accept.
     """
 
     @pytest.fixture
@@ -173,12 +184,265 @@ class TestWideningIsAnOutcomeOfItsOwn:
         assert set(session.opened) == {"testParticle.position.value",
                                        "testParticle.position.units"}
 
-    def test_the_explanation_says_the_measure_cannot_tell_the_two_apart(self, session):
-        assert "ordinary refinement" in session.explain()
+    def test_the_explanation_says_what_a_legal_deepening_would_have_needed(self, session):
+        text = session.explain()
+        assert "not strictly simpler" in text
+        assert "must declare a rank below" in text
+        assert "nothing sits below rank 0" in text
 
     def test_widening_a_slot_that_already_exists_raises(self):
         with pytest.raises(KeyError):
             SECTION_I.widen(Slot("testParticle.mass", "<again>"))
+
+
+#: One abstract question that may be unfolded once. Hand-written, and the ranks are the
+#: point: ``geometry`` is rank 1 because "constrain the geometry" is a question that
+#: decomposes, and the two slots it decomposes into are rank 0 because they are answers.
+RANKED = Spec("ranked", (
+    Slot("geometry", "constrain it somehow", rank=1),
+))
+
+
+def _unfold_geometry(spec, holes):
+    """Unfold the abstract slot once, then answer the concrete ones it opened."""
+    if any(hole.name == "geometry" for hole in holes):
+        return (spec.bind("geometry", "internal coordinates")
+                    .widen(Slot("geometry.bond_length", "<distance>"),
+                           Slot("geometry.units", "<units>")))
+    for hole in holes:
+        spec = spec.bind(hole.name, "0.0")
+    return spec
+
+
+def _fan_five(spec, holes):
+    """
+    Unfold the most abstract hole into FIVE sub-questions, against a budget bought for two.
+
+    Every round descends -- five holes of rank ``r-1`` really are simpler than one of rank
+    ``r`` -- so nothing here is illegitimate. It just costs more rounds than the declared
+    fan-out paid for.
+    """
+    deepest = max(holes, key=lambda hole: hole.rank)
+    spec = spec.bind(deepest.name, "unfolded")
+    if deepest.rank == 0:
+        return spec
+    index = len(spec.slots)
+    return spec.widen(*[Slot(f"{deepest.name}.{index}.{i}", "<sub>",
+                             rank=deepest.rank - 1) for i in range(5)])
+
+
+class TestTheWellFoundedMeasureAdmitsDeepening:
+    """
+    The repair itself: the round that used to halt the loop now continues it.
+
+    Section VII recorded the cardinality rule's failure as the informative part of Brick 3
+    -- "a cardinality measure is the wrong measure for a shepherding loop, and section VI.3
+    will need a well-founded one". This class is that measure, doing the one thing the old
+    one could not.
+    """
+
+    def test_the_ordinal_is_the_hand_written_multiset_of_ranks(self):
+        """Counted off the fixtures by eye, not by calling the thing under test."""
+        assert RANKED.ordinal() == (1,)
+        assert SECTION_I.ordinal() == (0, 0, 0, 0)
+        assert Spec("empty", ()).ordinal() == ()
+
+    def test_a_deepening_round_is_allowed_to_continue(self):
+        session = shepherd(RANKED, _unfold_geometry)
+        assert session
+        assert session.outcome == COMPILED
+
+    def test_the_count_rises_on_the_very_round_the_measure_falls(self):
+        """
+        The whole disagreement between the two rules, on one round object. Under section
+        VI.3 as written this round is a failure; under the multiset order it is progress.
+        """
+        session = shepherd(RANKED, _unfold_geometry)
+        first = session.rounds[0]
+        assert (first.before, first.after) == (1, 2), "one hole became two"
+        assert first.reduced is False, "section VI.3's literal rule says this failed"
+        assert first.descended is True, "the well-founded measure says it progressed"
+        assert (first.before_ordinal, first.after_ordinal) == ((1,), (0, 0))
+        assert "deepened: more holes, simpler ones" in repr(first)
+
+    def test_a_rephrase_inside_a_ranked_spec_is_still_a_stall(self):
+        """The permission is for deepening only; it is not a general amnesty."""
+        session = shepherd(RANKED, lambda s, h: s)
+        assert session.outcome == STALLED
+
+    def test_opening_a_hole_at_the_same_rank_is_not_a_descent(self):
+        def sideways(spec, holes):
+            return (spec.bind("geometry", "something")
+                        .widen(Slot("geometry.restated", "<same question>", rank=1)))
+
+        session = shepherd(RANKED, sideways)
+        assert session.outcome == WIDENED
+        assert session.opened == ("geometry.restated",)
+
+    def test_the_sort_is_the_termination_argument(self):
+        """
+        THE MUTANT THIS CLASS EXISTS FOR: drop ``reverse=True`` from ``Spec.ordinal`` and
+        every other test in this file still passes.
+
+        Lexicographic order on arbitrary tuples of naturals is not well-founded, and the
+        infinite descent is realisable rather than theoretical: this responder closes its
+        rank-1 hole and opens a rank-0 and a rank-1 hole, forever. Sorted descending the
+        round reads ``(1,) -> (1, 0)``, an increase, and halts here. Unsorted it reads
+        ``(1,) -> (0, 1)``, which every comparison in this module would call a descent,
+        and the loop never stops -- the budget would eventually cut it off and report
+        EXHAUSTED, so the assertion below is on WIDENED specifically.
+        """
+        def never_simpler(spec, holes):
+            n = len(spec.slots)
+            return (spec.bind("geometry", "one level down")
+                        .widen(Slot(f"answered.{n}", "<a real answer>", rank=0),
+                               Slot(f"geometry.{n}", "and constrain THAT", rank=1)))
+
+        session = shepherd(RANKED, never_simpler)
+        assert session.outcome == WIDENED, "an unsorted ordinal accepts this forever"
+        assert len(session.rounds) == 1
+
+
+class TestTheOrderIsTheOneItClaimsToBe:
+    """
+    The mathematical claim under the termination proof, decided by exhaustive search rather
+    than asserted in a docstring.
+
+    ``Spec.ordinal`` compares descending-sorted tuples with Python's ``<``, and the whole
+    argument for termination is that this *is* the Dershowitz--Manna multiset order, which
+    is well-founded. That is a claim about two definitions agreeing, so it is checkable the
+    only honest way: implement the textbook definition separately and enumerate.
+    """
+
+    @staticmethod
+    def _dershowitz_manna_greater(bigger, smaller):
+        """
+        ``M >mul N`` iff ``N == (M - X) + Y`` for some nonempty ``X`` in ``M`` with every
+        ``y`` in ``Y`` strictly less than some ``x`` in ``X``.
+
+        Written straight from the definition, over ``Counter``, with no reference to sorting
+        or to tuple comparison -- if it shared any machinery with the thing it checks it
+        would be worth nothing.
+        """
+        big, small = Counter(bigger), Counter(smaller)
+        for size in range(1, sum(big.values()) + 1):
+            for combo in combinations(sorted(big.elements()), size):
+                removed = Counter(combo)
+                kept = big - removed
+                if kept - small:                      # kept must survive into N
+                    continue
+                added = small - kept
+                if all(y < max(removed.elements()) for y in added.elements()):
+                    return True
+        return False
+
+    @pytest.mark.parametrize("size", [0, 1, 2, 3])
+    def test_it_agrees_with_the_textbook_definition_on_every_small_multiset(self, size):
+        """
+        Every multiset of ranks drawn from {0,1,2} up to size 3, against every other. The
+        ranks are small on purpose: the order only ever compares whole multisets, so a
+        disagreement would show up at this size or not be about the definition at all.
+        """
+        universe = [tuple(sorted(c, reverse=True))
+                    for n in range(4)
+                    for c in combinations_with_replacement((0, 1, 2), n)]
+        subjects = [m for m in universe if len(m) == size]
+        assert subjects, "the parametrisation must actually test something"
+
+        for bigger in subjects:
+            for smaller in universe:
+                # ASCENDING slot order, deliberately. Built descending, this loop cannot
+                # tell a correct sort from no sort at all -- it would be handing the
+                # subject its own answer, which is the failure mode this file exists to
+                # avoid. Measured: with the slots pre-sorted, `sort-dropped-entirely`
+                # survives every assertion in this class.
+                spec_big = Spec("b", tuple(Slot(f"b{i}", "<x>", rank=r)
+                                           for i, r in enumerate(reversed(bigger))))
+                spec_small = Spec("s", tuple(Slot(f"s{i}", "<x>", rank=r)
+                                             for i, r in enumerate(reversed(smaller))))
+                by_code = spec_small.ordinal() < spec_big.ordinal()
+                by_definition = self._dershowitz_manna_greater(bigger, smaller)
+                assert by_code == by_definition, (
+                    f"{bigger} vs {smaller}: ordinal says {by_code}, "
+                    f"Dershowitz-Manna says {by_definition}")
+
+    def test_the_definition_used_above_is_not_vacuous(self):
+        """
+        A check that never fires proves nothing, and this file has been bitten by exactly
+        that before. Both verdicts must be reachable from the reference implementation.
+        """
+        assert self._dershowitz_manna_greater((1,), (0, 0)), "one hole into two simpler"
+        assert not self._dershowitz_manna_greater((1,), (1, 0)), "into one simpler and one not"
+        assert not self._dershowitz_manna_greater((1,), (1,)), "a rephrase"
+        assert not self._dershowitz_manna_greater((0, 0), (1,)), "two into one harder"
+
+
+class TestRanksIndexAWellFoundedOrder:
+    """The hypothesis the termination proof rests on, enforced where it can be checked."""
+
+    def test_a_negative_rank_is_refused_at_construction(self):
+        with pytest.raises(IllFoundedRank):
+            Slot("bottomless", "<anything>", rank=-1)
+
+    def test_the_refusal_says_which_theorem_it_is_protecting(self):
+        with pytest.raises(IllFoundedRank, match="infinite descent"):
+            Slot("bottomless", "<anything>", rank=-1)
+
+    def test_rank_zero_is_allowed_and_is_the_default(self):
+        assert Slot("plain", "<x>").rank == 0
+        assert Slot("plain", "<x>", rank=0).rank == 0
+
+    def test_the_largest_rank_never_rises_across_an_accepted_round(self):
+        """
+        A consequence of the ordering, asserted on real sessions rather than argued: a
+        larger leading element makes the tuple lexicographically larger, so a round that
+        raises the maximum rank cannot descend. It is what keeps an all-rank-0 spec
+        all-rank-0, which is what makes its round bound unconditional.
+        """
+        session = shepherd(RANKED, _unfold_geometry)
+        peaks = [max(r.before_ordinal, default=0) for r in session.rounds]
+        peaks += [max(session.rounds[-1].after_ordinal, default=0)]
+        assert peaks == sorted(peaks, reverse=True)
+
+
+class TestTheBoundIsAConditionalOnceRanksExist:
+    """
+    What the repair cost, kept as a distinction rather than absorbed into a number.
+
+    Cardinality was doing two jobs -- the termination argument and an a-priori round count
+    -- and only the first survives unconditionally. Reporting an exhausted resource budget
+    as a ``LedgerContradiction`` would be claiming a theorem this module does not have.
+    """
+
+    #: One rank-2 hole. Hand-computed: ``round_bound(2) == 3**2 == 9``.
+    DEEP = Spec("deep", (Slot("top", "<abstract>", rank=2),))
+
+    def test_the_bound_is_hand_computable_and_is_not_the_hole_count(self):
+        assert self.DEEP.measure() == 1
+        assert self.DEEP.round_bound(fan_out=2) == 9
+        assert self.DEEP.round_bound(fan_out=1) == 4
+
+    def test_a_ranked_spec_says_its_bound_is_conditional(self):
+        assert self.DEEP.bound_is_theorem() is False
+        assert SECTION_I.bound_is_theorem() is True
+
+    def test_outrunning_a_conditional_bound_is_exhaustion_not_contradiction(self):
+        """
+        Five sub-questions per hole against a budget computed for two. Every round here
+        descends honestly; the loop simply runs out of the allowance that assumption
+        bought. That is not a rule being broken and it is not reported as one.
+        """
+        session = shepherd(self.DEEP, _fan_five)
+        assert session.outcome == EXHAUSTED
+        assert not session
+        assert len(session.rounds) == 9, "it ran the whole budget before stopping"
+        assert all(r.descended for r in session.rounds), "and every round was legitimate"
+
+    def test_the_explanation_calls_it_a_resource_limit_and_names_the_assumption(self):
+        session = shepherd(self.DEEP, _fan_five)
+        text = session.explain()
+        assert "resource limit reached, not a rule broken" in text
+        assert "declared assumption" in text
 
 
 class TestAMenuCannotBeInvented:

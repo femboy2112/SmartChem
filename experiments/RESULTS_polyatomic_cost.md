@@ -1223,6 +1223,14 @@ lever is `mf.max_memory`**, and `smartchem/oracle/pyscf_oracle.py` sets neither 
 HDF5 swap file and never holds the full `nao**4` array. The memory does not relocate into
 `ao2mo`; it is traded for recomputed J/K builds and disk I/O.
 
+> **REFUTED 2026-07-26 by measurement — the last two sentences above are wrong, and they
+> are left standing because deleting them would hide how the error was made.** The memory
+> DOES relocate into `ao2mo`, and 87.4% of it does. The paragraph reasoned from *which
+> branch* runs (outcore, correctly predicted, `Dataset` confirmed in every arm) to *how much
+> that branch allocates*, and those are different questions: the outcore path streams the
+> RESULT to HDF5 while sizing its in-RAM working buffers from `max_memory`. See
+> "Task #17" below for the three-arm measurement and the source that explains it.
+
 **GATE, unchanged and now sharper:** lowering `max_memory` forces Schwarz screening at
 `direct_scf_tol=1e-13` (`hf.py:2124-2133`), which the full incore tensor does not apply. So
 this is **NOT** presumptively identity-preserving and owes the same bit-identity gate. Given
@@ -1350,3 +1358,101 @@ wall-clock cost is at least 20x on that phase. Arms B and C were left running.
 **STILL OWED before any of arm B is carried anywhere:** the finished peak, the wall-clock
 total, and the cc-pVQZ bit-identity check. The DZ arms were bit-identical; QZ has 230 basis
 functions instead of 24 and a screening threshold does not scale by wishing.
+
+---
+
+## Task #17 CLOSED: `max_memory` is two levers, and the AO tensor is the smaller one
+
+All three arms finished. CH3OH/cc-pVQZ, 230 basis functions, `ru_maxrss` deltas per phase,
+one arm per process.
+
+| arm | `mf.max_memory` | cc budget | `mf._eri` | `SCF.kernel` | `CCSD.ao2mo` | peak RSS |
+|---|---|---|---|---:|---:|---:|
+| A — stock | 4000 MB | 4000, inherited | **True**, 2.6290 GB | +2.6758 | +1.0617 | **3.8568** |
+| B — throttled | 500 MB | 500, inherited | False | +0.0266 | +1.9238 | **2.0671** |
+| C — SCF only | 500 MB | 4000, restored | False | +0.0267 | +3.3783 | **3.5233** |
+| C′ — replicate | 500 MB | 4000, restored | False | +0.0265 | +3.3805 | **3.5244** |
+
+**The bit-identity gate PASSES at cc-pVQZ.** `E_SCF = -115.099552400814 Ha` in every arm and
+every run, to all fifteen figures. The DZ result transfers: Schwarz screening at
+`direct_scf_tol=1e-13` costs nothing on this energy at 230 basis functions either. **Its
+boundary, stated because this is exactly the claim that gets silently upgraded:** the probe
+stops after `mycc.ao2mo()`, so no correlation energy was ever computed in these arms. Bit-
+identity of `E_CCSD(T)` or of `D_e` under `max_memory` throttling is **UNVERIFIED.**
+
+**Arm C is the finding, and it refutes the "not a shell game" paragraph above.** With the
+SCF throttled but the CC layer left at stock, unbuilding a 2.6290 GB AO tensor moves the
+peak by **8.6%**, not 68%. The accounting closes to a thousandth of a GB:
+
+```
+A -> C   SCF gave up  -2.6491 GB      ao2mo took back  +2.3166 GB      net  -0.3325
+         measured change in peak                                            -0.3335
+C -> B   ao2mo alone                                   -1.4545 GB
+         measured change in peak                                            -1.4562
+```
+
+**87.4% of what the SCF stopped allocating reappeared in the transform.** So the 46.4%
+reduction arm B delivers is not one lever, it is two, and they split **18.6% / 81.4%** —
+unbuilding the AO tensor is the *smaller* contribution by a factor of four. Arm B only works
+because `cc.CCSD(mf)` copies the budget at construction (`pyscf/cc/ccsd.py:967`,
+`self.max_memory = mf.max_memory`), so setting `mf.max_memory` once silently throttles both
+layers. Restore the CC budget and four fifths of the saving evaporates.
+
+**Why, from source — and it is a thermostat, not a coincidence.** `_make_eris_outcore`
+computes its budget twice (`ccsd.py:1559` and `ccsd.py:1566`) as
+
+```python
+max_memory = max(MEMORYMIN, mycc.max_memory-lib.current_memory()[0])
+```
+
+and `lib.current_memory()` reads **live RSS from `/proc/self/statm`**
+(`pyscf/lib/misc.py:163-169`) — not a high-water mark. A resident `_eri` therefore subtracts
+from the transform's own budget, so **PySCF allocates less in `ao2mo` precisely because it
+already allocated more in the SCF.** The phases are not independent; they negotiate over one
+live figure. That is why the peak is so much less than the sum of what each phase would take
+alone, and why freeing 2.63 GB upstream buys only 0.33 GB downstream.
+
+The budget then sizes real in-RAM arrays — `blksize` at `ccsd.py:1573-1574`, and
+`numpy.empty` at `ccsd.py:1579`, `1580`, `1586` — which is where the earlier reasoning went
+wrong. It correctly predicted *which branch* runs (`eris.vvvv` is an h5py `Dataset` in all
+four readings above, never an `ndarray`) and then treated that as an answer about *how much
+the branch allocates*. Outcore means the RESULT streams to HDF5. It does not mean the working
+set is small.
+
+**`max_memory` is advisory, and it has a floor that can overrule you upward.**
+`MEMORYMIN = 2000` (`ccsd.py:39`) is the first argument of both `max()` calls, so a request
+of 500 MB is silently serviced as 2000 MB. Arm B asked for 500 and `ao2mo` allocated
+1.9238 GB — 3.9× over — which is the floor behaving exactly as written, not an overrun.
+
+**OPEN, and named rather than smoothed over.** That same formula predicts arm A ≈ arm B:
+both floor to `MEMORYMIN` (A because `4000 − ~2750` undercuts 2000, B because `500 − ~120`
+undercuts it harder), so both should compute the same `blksize` and allocate the same
+buffers. Measured, they are **1.81× apart** (1.0617 vs 1.9238 GB). Nor do the three
+documented buffers close it by hand: at `blksize = 174` with `nocc = 9`, `nmo = nao = 230`,
+no frozen core, `ccsd.py:1579/1580/1586` come to ≈1.33 GB, between the two measurements and
+matching neither. Both facts point the same way — there is a second sizing path,
+almost certainly the buffers inside `ao2mo.full` (`ccsd.py:1561`) and
+`ao2mo.outcore.half_e1` (`ccsd.py:1568`), which receive the same `max_memory` and were not
+read. **The discriminating probe, so nobody has to re-derive it:** log
+`lib.current_memory()[0]`, `mycc.max_memory`, and the computed `blksize` at `ccsd.py:1566`
+and `1573` in each arm. Filed as task #19.
+
+**Instrument note — the probe now replicates, and that is new.** Arms A and B were launched
+before the `--repeat` fix and looped in-process, so their run 2 is the monotone-instrument
+artifact: A reports `SCF.kernel +0.0000 GB` and B reports a **0.00% spread**, and the zero
+and the zero-spread are the *same* defect wearing opposite disguises. Only run 1 of each is
+a reading. Arm C ran post-fix, one subprocess per repeat, and its two independent readings
+are **3.5233 and 3.5244 GB — 0.031% apart**. Against `ccsd_acceleration_probe.py`
+disagreeing with itself by 13.3% on the same quantity, that is a real instrument improvement
+and it localises the 13.3% to that probe rather than to peak RSS as a measurable.
+
+**No wall-clock claim survives this batch.** Arm A's own two runs took 319.1 s and 630.4 s
+for the identical `ao2mo` call in the identical process — 1.98× apart — because a 910-test
+mutation sweep was running on the same 8-core box. `ru_maxrss` is immune to that; a stopwatch
+is not. The only timing statement that clears the contamination is directional and coarse:
+the throttled SCF is several-fold slower than the incore one (25.5 s stock against 165.2 and
+83.9 s), and the exact factor is **UNVERIFIED**.
+
+**Lastly, the small vindication.** The live `VmHWM` reading taken while arm B was still
+running was 2.0236 GB and was published as a lower bound. The finished peak is 2.0671 GB.
+The bound held.

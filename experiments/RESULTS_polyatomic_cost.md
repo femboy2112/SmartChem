@@ -77,24 +77,33 @@ here tests that; the largest species measured is 6 atoms at 58–130 basis funct
 
 The extrapolation does what the uniform negative sign predicted it would.
 
-| species | wall clock | error (eV) | error (kcal/mol) | vs. its own cc-pVTZ error |
-|---|---:|---:|---:|---:|
-| H2O | 56.5 s | −0.0300 | −0.69 | 10.5× smaller |
-| NH3 | 187.1 s | −0.0609 | −1.40 | 6.1× smaller |
-| CH4 | 284.7 s | −0.0364 | −0.84 | 4.5× smaller |
-| CO2 | *running* | | | |
-| H2O2 | *pending* | | | |
-| CH3OH | *pending* | | | |
+| species | wall clock | error (eV) | error (kcal/mol) | vs. its own cc-pVTZ error | TZ→CBS cost |
+|---|---:|---:|---:|---:|---:|
+| H2O | 56.5 s | −0.0300 | −0.69 ✓ | 10.5× smaller | 9.9× |
+| NH3 | 187.1 s | −0.0609 | −1.40 | 6.1× smaller | 8.4× |
+| CH4 | 284.7 s | −0.0364 | −0.84 ✓ | 4.5× smaller | 11.2× |
+| CO2 | 608.0 s | −0.0396 | −0.91 ✓ | 10.1× smaller | 11.6× |
+| H2O2 | 452.5 s | −0.1090 | −2.51 | 4.6× smaller | 9.7× |
+| CH3OH | *running* | | | | |
 
-Two of the three are inside chemical accuracy (1 kcal/mol = 0.0433 eV) and the third is
-just outside it. Running MAE over the three is 0.0424 eV, against a published diatomic MAE
-of 0.0562 eV at the same tier — the first evidence that polyatomic accuracy here is of the
-same order as the validated diatomic figure rather than six times worse. Every error is
-still negative, so residual underbinding survives the extrapolation; it is now small rather
-than dominant.
+```
+MAE (5 of 6)   0.0552 eV   (1.27 kcal/mol)
+published diatomic MAE at the same tier   0.0562 eV
+```
 
-**This is 3 of 6 and no split.** It is not a validation profile and must not be quoted as
-one.
+Three of the five are inside chemical accuracy (1 kcal/mol = 0.0433 eV). The five-species
+MAE sits within 2% of the published diatomic figure — the first evidence that polyatomic
+accuracy at this tier is of the same order as the validated diatomic number rather than six
+times worse. Every error is still negative, so residual underbinding survives the
+extrapolation; it is now small rather than dominant.
+
+**H2O2 is the outlier at both tiers** — worst at cc-pVTZ (−0.5046) and worst here. It is
+also the one species whose relaxation exercised the saddle-descent path. A harmonic ZPE for
+a hindered internal rotor is the obvious suspect and it is not tested here; do not average
+it away without looking at it.
+
+**This is 5 of 6 and no held-out split.** It is not a validation profile and must not be
+quoted as one.
 
 ## Pre-registered predictions for the rest of the run
 
@@ -112,6 +121,9 @@ materially above 11×.* **Falsifier:** completion in ≲1300 s.
 **P-Q2 — CO2 and H2O2 both complete.** Modelled at 0.703 and 0.790 GB, so ~3.5–4 GB
 calibrated: tight on this box but not over. *Predict both finish inside 1800 s.*
 **Falsifier:** either one is killed by the timeout.
+**→ CONFIRMED.** CO2 608.0 s, H2O2 452.5 s, both well inside. Cost ratios 11.6× and 9.7×,
+both inside the observed 8–11× band, so the memory model's implied cost behaviour holds
+where it predicted headroom.
 
 **P-Q3 — the six-species CBS MAE lands between 0.03 and 0.08 eV**, i.e. comparable to the
 published 0.0562 eV rather than to the 0.3575 eV measured at plain cc-pVTZ.

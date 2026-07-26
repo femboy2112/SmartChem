@@ -83,11 +83,30 @@ jobs:
       # installed, and CI could not see it. A check blind on the path where it can fail
       # is not a check.
       #
-      # --split test keeps this to the smaller partition; it is a crash-and-coverage
-      # gate, not the research benchmark.
+      # SCOPED TO THE CHEAPEST TIER, AND THE SCOPE IS MEASURED RATHER THAN GUESSED.
+      #
+      # The first version of this step ran every available oracle and was given 30
+      # minutes. That was never timed. It does not fit: a local run on 8 cores at
+      # OMP_NUM_THREADS=1 was killed by a 3000 s wall with 8 of 11 species still to go in
+      # the cbs(TZ,QZ) tier, having already spent 2580 s of per-species time. Si2 alone
+      # costs 1433 s at cc-pVQZ. The full four-tier test split is hours, not minutes, so
+      # the step as written would have failed by timeout on every run -- a red gate that
+      # proves nothing, which is a worse failure than the blind gate it replaced.
+      #
+      # heuristic + ccsdt-tz is the cheapest pair that still exercises what this step is
+      # for: the bench module end to end, the COVERAGE and VERDICT reporting, and every
+      # curated reference row reaching a decision on a real backend. Measured at 165 s
+      # wall / 1.02 GB peak RSS on a CONTENDED box, declining 3 of 11 (I2, K2, KCl) at
+      # ccsdt-tz exactly as the coverage guard requires. The budget below is ~5x that.
+      #
+      # The expensive tiers are not silently dropped -- they are simply not a per-push
+      # gate. What this step cannot catch is a defect specific to cc-pVQZ or the
+      # extrapolated tier; that belongs behind workflow_dispatch, not on every commit.
       - name: Benchmark must survive the real backend
-        timeout-minutes: 30
-        run: python -m smartchem.bench --split test --quiet
+        timeout-minutes: 15
+        run: >-
+          python -m smartchem.bench --split test --quiet
+          --oracle heuristic --oracle ccsdt-tz
 
       # Manual dispatch buys coverage of the expensive analytic-gradient and Hessian
       # interfaces without charging every pull request for repeated wavefunction work.

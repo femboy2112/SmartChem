@@ -323,3 +323,159 @@ class TestDefaultsAndDelegation:
                 return None
 
         assert isinstance(Bare(), EnergyOracle)
+
+
+#: The element rosters, WRITTEN OUT BY HAND and deliberately not derived from the tables
+#: they check. A test that iterates the table under test cannot notice that table getting
+#: smaller -- it would loop over the survivors and pass. That is the exact shape of the
+#: three defects this repository shipped in two days, and it is why a mutant narrowing the
+#: element sets to {H, C, O} survived all 31 tests in this file.
+#:
+#: Measured 2026-07-26 and pinned. If a legitimate change grows a table, this fails and the
+#: roster is updated in the same commit -- which is the point, because the change then has
+#: to be looked at rather than absorbed.
+_HEURISTIC_ROSTER = frozenset({
+    "C", "Cl", "Cu", "D", "F", "Fe", "H", "He", "I", "K", "Kr", "Mg", "Mn", "Mo",
+    "N", "Na", "O", "Og", "P", "Pb", "Pd", "Pt", "Ru", "S", "Si", "T", "Xe", "Zn",
+})
+
+#: PySCF at cc-pVDZ, which is 23 and NOT the 25 of its own spin table -- see the test below.
+_PYSCF_DZ_ROSTER = frozenset({
+    "Al", "Ar", "B", "Be", "Br", "C", "Ca", "Cl", "Cu", "F", "Fe", "H", "He", "Li",
+    "Mg", "N", "Na", "Ne", "O", "P", "S", "Si", "Zn",
+})
+
+#: Symbols no table here declares. Two are plausible-looking, one is real-but-untabulated.
+_OFF_ROSTER = ("Xx", "Zz", "Rf")
+
+
+class TestTheElementAxisIsProvenAndNotMerelyDeclared:
+    """
+    The axis a mutant walked straight through.
+
+    Narrowing an oracle's declared element set is an UNDER-approximation, and that is the
+    one direction the Brick 1 contract forbids: ``not admits(m)`` would be true while
+    ``energy(m)`` still returned a number, so a caller told "this oracle cannot price
+    sodium" would be told a falsehood by the only mechanism that exists to prevent them.
+
+    Every test here reaches the tables from outside them.
+    """
+
+    def test_the_heuristic_roster_is_still_what_was_measured(self):
+        assert HeuristicOracle().domain.elements == _HEURISTIC_ROSTER
+
+    def test_every_element_the_heuristic_actually_prices_is_admitted(self):
+        """
+        Soundness, checked against the oracle rather than against the declaration. The
+        loop runs over the hand-written roster, so an oracle that quietly stopped
+        declaring half of them fails here instead of iterating its own survivors.
+        """
+        oracle = HeuristicOracle()
+        domain = oracle.domain
+        priced = 0
+        for symbol in sorted(_HEURISTIC_ROSTER):
+            atom = Molecule.atom(symbol)
+            if oracle.energy(atom) is not None:
+                priced += 1
+                assert domain.admits(atom), f"{symbol} is priced and not admitted"
+        assert priced == len(_HEURISTIC_ROSTER), "every roster element must be priced"
+
+    def test_the_pyscf_roster_is_still_what_was_measured(self):
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+
+        assert PySCFOracle(basis="cc-pVDZ").domain.elements == _PYSCF_DZ_ROSTER
+
+    def test_the_basis_library_gates_the_axis_and_not_the_spin_table(self):
+        """
+        ``I`` and ``K`` are in ``ATOM_SPIN`` and are NOT covered by cc-pVDZ, so the domain
+        must exclude them. Checking the spin table instead of the basis library is not a
+        hypothetical mistake -- it is the one that crashed the bench on iodine (``ac68207``)
+        and it is what turned a 23-element axis into a 25-element claim once already.
+        """
+        from smartchem.oracle.pyscf_oracle import ATOM_SPIN, PySCFOracle
+
+        domain = PySCFOracle(basis="cc-pVDZ").domain
+        assert set(ATOM_SPIN) - set(domain.elements) == {"I", "K"}
+        for symbol in ("I", "K"):
+            assert symbol in ATOM_SPIN
+            assert not domain.admits(Molecule.atom(symbol))
+
+    def test_symbols_no_table_declares_are_refused_by_both(self):
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+
+        refused = 0
+        for symbol in _OFF_ROSTER:
+            atom = Molecule.atom(symbol)
+            for domain in (HeuristicOracle().domain,
+                           PySCFOracle(basis="cc-pVDZ").domain):
+                assert not domain.admits(atom), f"{symbol} must not be admitted"
+                assert domain.refusals(atom), f"{symbol} must come with a reason"
+                refused += 1
+        assert refused == 2 * len(_OFF_ROSTER)
+
+    def test_the_two_rosters_are_not_the_same_set(self):
+        """
+        Guards the laziest possible mutant: one shared element table behind both oracles.
+        Twelve symbols are heuristic-only and seven are PySCF-only.
+        """
+        assert len(_HEURISTIC_ROSTER & _PYSCF_DZ_ROSTER) == 15
+        assert len(_HEURISTIC_ROSTER - _PYSCF_DZ_ROSTER) == 13
+        assert len(_PYSCF_DZ_ROSTER - _HEURISTIC_ROSTER) == 8
+
+
+class TestTheMeetIsAValueAndBehavesLikeOne:
+    """
+    ``Domain`` is a frozen dataclass, so it carries ``__eq__`` and ``__hash__`` whether or
+    not anyone meant it to. Both of the identities below were false until 2026-07-26:
+    caveats unioned in argument order, and a self-meet grew a doubled label.
+    """
+
+    def _domains(self):
+        from smartchem.oracle.pyscf_oracle import PySCFOracle
+
+        return (PhotonOracle(589.0).domain, PhotonOracle(532.0).domain,
+                HeuristicOracle().domain, PySCFOracle(basis="cc-pVDZ").domain)
+
+    def test_the_meet_is_commutative_as_a_value(self):
+        domains = self._domains()
+        pairs = 0
+        for i, left in enumerate(domains):
+            for right in domains[i + 1:]:
+                pairs += 1
+                assert (left & right) == (right & left)
+                assert hash(left & right) == hash(right & left)
+        assert pairs == 6
+
+    def test_the_meet_is_idempotent_as_a_value(self):
+        for domain in self._domains():
+            assert (domain & domain) == domain
+
+    def test_a_shared_witness_does_not_imply_a_shared_reference(self):
+        """
+        The claim ``__and__``'s docstring used to make as though it were sufficient. The
+        intersection here is non-empty AND exact, and the two oracles still disagree.
+        """
+        left, right = PhotonOracle(589.0), PhotonOracle(532.0)
+        shared = left.domain & right.domain
+        assert not shared.is_empty and shared.is_exact
+        witness = shared.witness()
+        assert witness is not None
+        gap = left.energy(witness).value_ev - right.energy(witness).value_ev
+        assert abs(gap) == pytest.approx(0.225535, abs=1e-6)
+
+    def test_a_persistent_cache_alters_latency_not_coverage(self, tmp_path):
+        """
+        The twin of ``test_a_cache_alters_latency_not_coverage``. ``PersistentCache``
+        forwards ``domain`` with the same six lines and had no test at all, so a mutant
+        deleting the forward survived every one of this file's tests and all 42 tests that
+        touch that class.
+        """
+        from smartchem.oracle.persistent import PersistentCache
+
+        inner = PhotonOracle(589.0)
+        wrapped = PersistentCache(inner, path=tmp_path / "cache.json")
+        assert wrapped.domain.label == inner.domain.label
+        assert wrapped.domain.max_atoms == inner.domain.max_atoms
+        assert wrapped.domain == inner.domain
+        for molecule in SAMPLE:
+            assert wrapped.domain.admits(molecule) == inner.domain.admits(molecule)

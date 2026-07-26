@@ -211,13 +211,38 @@ class Domain:
         combination checkable: two oracles can share a reaction only over the intersection
         of their domains, and their zeros can be aligned only over a species inside it.
 
+        **THAT LAST CLAUSE IS NECESSARY AND NOT SUFFICIENT, and it used to be written as
+        though it were both.** A shared species is a shared TOKEN, not a shared REFERENCE.
+        Measured: ``PhotonOracle(589) & PhotonOracle(532)`` is non-empty and even
+        ``is_exact``, its sole witness is the bare quantum, and the two oracles price that
+        witness **0.225535 eV apart**. So a non-empty intersection licenses the offset to be
+        MEASURED and never licenses it to be assumed. ``diagnosis._compare_zeros`` does the
+        measuring and reports ``DISAGREED_OFFSET`` when it comes back non-zero; a caller who
+        read this docstring as a sufficient condition and skipped that step would be off by
+        exactly that much, silently.
+
         Caveats union rather than intersect. If either side may refuse at runtime, so may
         the pair -- a combination is no more predictable than its least predictable half.
+
+        **The meet is a value, so it is commutative and idempotent AS ONE.** Both used to
+        fail: caveats came out in argument order, so ``a & b != b & a`` with identical
+        admitted species and identical caveat SETS, and ``d & d`` grew a doubled label. A
+        frozen dataclass carries ``__eq__`` and ``__hash__``, so a value that compares
+        unequal to its own mirror is a value lying about itself, and it would have lied the
+        moment anyone put a domain in a set. Neither had a caller yet; both are fixed here
+        rather than left as a trap with a note on it.
         """
         if not isinstance(other, Domain):
             return NotImplemented
         return Domain(
-            label=f"{self.label} & {other.label}",
+            # Canonical, so the label cannot be the one field that breaks the identities
+            # below. A set collapses the self-meet, sorting drops the argument order.
+            # Associativity of the LABEL is not claimed and does not hold -- "(a & b) & c"
+            # and "a & (b & c)" sort differently -- while every constraint field does
+            # associate, because max, min, set-meet and set-union all do. Stated rather
+            # than quietly assumed, since the boundary is exactly the sort of thing that
+            # gets read as covered.
+            label=" & ".join(sorted({self.label, other.label})),
             min_atoms=max(self.min_atoms, other.min_atoms),
             max_atoms=_min_bound(self.max_atoms, other.max_atoms),
             elements=_meet(self.elements, other.elements),
@@ -412,11 +437,15 @@ def _meet(left: frozenset | None, right: frozenset | None) -> frozenset | None:
 
 
 def _union(left: tuple[str, ...], right: tuple[str, ...]) -> tuple[str, ...]:
-    """Order-stable union of caveat strings."""
-    seen: dict[str, None] = {}
-    for reason in left + right:
-        seen.setdefault(reason, None)
-    return tuple(seen)
+    """
+    Canonical union of caveat strings.
+
+    Sorted rather than argument-ordered, and that is the whole point: caveats are a SET,
+    and preserving ``left + right`` order made ``Domain.__and__`` non-commutative as a
+    value -- same admitted species, same caveats, different tuple, different hash. Reading
+    order was never worth a value that disagrees with its own mirror.
+    """
+    return tuple(sorted(set(left) | set(right)))
 
 
 #: Claims nothing. The correct default for an oracle that has not declared a domain:

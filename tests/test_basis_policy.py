@@ -255,6 +255,25 @@ class TestProvenance:
         )
         assert pyscf_module._model_inputs_sha256() != before
 
+    def test_the_zpe_bias_fraction_reaches_model_identity(self, monkeypatch):
+        """
+        Every other result-driving input in the whitelist had an anchor; this one did not.
+
+        ``PT``, ``TIGHT_D``, ``GEOMETRY``, ``_CARDINAL`` and ``_RELAXED_GEOMETRY_MAE`` each
+        already have a test proving they reach ``_model_inputs_sha256``.
+        ``zpe_bias_fraction`` was named in the payload and pinned by nothing, so a
+        reorganisation that dropped the key would have passed the whole suite -- and the
+        symptom would be a cache serving polyatomic systematics computed under a different
+        bias than the one the module now declares.
+
+        That gap is not hypothetical here. The 2026-07-26 refit found this constant does
+        not reproduce on any protocol, so it is a live candidate for revision; the edit
+        that changes it is exactly the edit that must not be invisible to cache identity.
+        """
+        before = pyscf_module._model_inputs_sha256()
+        monkeypatch.setattr(pyscf_module, "ZPE_BIAS_FRACTION", 0.0801)
+        assert pyscf_module._model_inputs_sha256() != before
+
     def test_vendored_basis_content_reaches_model_identity(self, monkeypatch):
         before = pyscf_module._model_inputs_sha256()
         basis_name = "cc-pV(T+d)Z"

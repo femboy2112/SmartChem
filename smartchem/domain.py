@@ -245,8 +245,13 @@ class Domain:
         needs no element, which is precisely how this package spells a photon.
 
         Checked against :meth:`witness` rather than trusted; see :class:`DomainContradiction`.
+
+        AND IT NOW ACTUALLY IS. This property used to return ``_empty_by_algebra()``
+        directly while the sentence above claimed otherwise, and nothing else in the package
+        called :meth:`witness`, so the cross-check the docstring advertised ran for no
+        caller. It answers with the *agreed* verdict of two derivations or it raises.
         """
-        return self._empty_by_algebra()
+        return self.witness() is None
 
     def _empty_by_algebra(self) -> bool:
         if self.max_atoms is not None and self.min_atoms > self.max_atoms:
@@ -269,9 +274,23 @@ class Domain:
         by calling :meth:`admits`. Disagreement raises rather than resolves.
 
         Deliberately not cached: it is a proof obligation, not a hot path.
+
+        THE CONSTRUCTION IS NOT GATED ON THE ALGEBRA, AND THAT IS THE WHOLE POINT. It used
+        to read ``built = None if empty else self._construct_witness()``, which makes the
+        "independent" derivation a function of the thing it audits: the two can then only
+        disagree when the algebra says NON-empty and construction fails, and that is the
+        harmless direction -- it costs a caller one wasted call. The direction that matters
+        is the other one, algebra says EMPTY while a species exists, because that is what
+        turns "these two oracles cannot both price anything, so no reaction spans them"
+        into a confident false obstruction. Gated, that direction was unreachable by
+        construction: a mutant asserting emptiness for a domain admitting water passed the
+        entire suite, and this method agreed with it.
+
+        Build first, compare second. Same lesson as the sublattice defect in
+        ``stoichiometry.py`` -- a check derived from its own subject checks nothing.
         """
         empty = self._empty_by_algebra()
-        built = None if empty else self._construct_witness()
+        built = self._construct_witness()
         if built is not None and not self.admits(built):
             raise DomainContradiction(
                 f"{self.label}: constructed {built!r} as a witness, but admits() rejects "
@@ -285,20 +304,36 @@ class Domain:
         return built
 
     def _construct_witness(self) -> Molecule | None:
+        """
+        Build the cheapest species satisfying every axis, or ``None`` if there is none.
+
+        Every axis that cannot be satisfied returns ``None`` rather than being CLAMPED into
+        range. The atom count used to be ``min(min_atoms, max_atoms)``, which quietly
+        produced a candidate below the floor it was supposed to respect -- so an
+        impossible domain handed back a real ``Molecule`` that :meth:`admits` then rejected,
+        and the caller saw a contradiction where the honest answer was "no witness". Now
+        that :meth:`witness` runs this unconditionally, that distinction is load bearing:
+        every ``None`` here must mean "no such species", never "I gave up part way".
+        """
         count = self.min_atoms
-        if self.max_atoms is not None:
-            count = min(count, self.max_atoms)
-        symbol = "H" if self.elements is None else (sorted(self.elements) or [None])[0]
-        if count >= 1 and symbol is None:
+        if self.max_atoms is not None and count > self.max_atoms:
             return None
-        charge = 0 if self.charges is None or 0 in self.charges else sorted(self.charges)[0]
-        if self.states is None or "" in self.states:
-            state = ""
-        else:
-            ordered = sorted(self.states)
-            if not ordered:
+        try:
+            symbol = "H" if self.elements is None else (sorted(self.elements) or [None])[0]
+            if count >= 1 and symbol is None:
                 return None
-            state = ordered[0]
+            if self.charges is not None and not self.charges:
+                return None
+            charge = (0 if self.charges is None or 0 in self.charges
+                      else sorted(self.charges)[0])
+            if self.states is not None and not self.states:
+                return None
+            state = ("" if self.states is None or "" in self.states
+                     else sorted(self.states)[0])
+        except TypeError:
+            # A declared set whose members are not orderable (mixed types, None) cannot be
+            # searched for a witness. That is "no witness I can build", not a crash.
+            return None
         atoms = tuple([symbol] * count) if count else ()
         # A Molecule with more than one atom must be connected; a chain is the cheapest
         # graph that satisfies that for any count.

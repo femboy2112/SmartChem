@@ -379,8 +379,25 @@ def domain_of(oracle: object) -> Domain:
     protocol -- adding it would make every third-party implementation fail
     ``isinstance``, and a compatibility break is a steep price for a property whose absence
     already has a correct answer.
+
+    A ``domain`` property that RAISES is not the same thing as an absent one, and this used
+    to conflate them: ``getattr(oracle, "domain", None)`` swallows any ``AttributeError``
+    escaping the property body, so an oracle whose declaration was broken silently reported
+    as unrestricted. That default is safe for ``admits`` -- ``EVERYTHING`` admits everything,
+    so it can never produce a false decline -- but it is NOT safe for ``is_empty``, because
+    ``EVERYTHING & x == x`` means a lost declaration contributes no obstruction and an
+    impossible composition reports as possible. The failure propagates instead.
+
+    Whether a domain was DECLARED is settled by looking the name up on the type and the
+    instance, never by catching the error and reading its message: the message is a
+    rendering of the failure and the question is about the object.
     """
-    found = getattr(oracle, "domain", None)
+    declared = any("domain" in vars(klass) for klass in type(oracle).__mro__)
+    if not declared:
+        declared = "domain" in getattr(oracle, "__dict__", {})
+    if not declared:
+        return EVERYTHING
+    found = oracle.domain          # declared, so any failure in it is a real failure
     return found if isinstance(found, Domain) else EVERYTHING
 
 

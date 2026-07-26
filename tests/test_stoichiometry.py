@@ -12,9 +12,10 @@ integer arithmetic, because a menu that is complete to within a floating-point t
 not complete.
 """
 import pytest
+from dataclasses import replace
 from hypothesis import given, settings, strategies as st
 
-from smartchem.category import Bond, Molecule, Reaction, conserves
+from smartchem.category import Bond, Config, Molecule, Reaction, conserves
 from smartchem.stoichiometry import (
     CHARGE_ROW,
     MenuContradiction,
@@ -342,6 +343,148 @@ class TestKernelArithmetic:
 
     def test_contradiction_is_a_distinct_error_type(self):
         assert issubclass(MenuContradiction, AssertionError)
+
+
+#: Deliberately includes the BARE quantum. Every boundary test above uses a *labelled*
+#: photon (``state="photon@589nm"``), which renders as ``(photon@589nm)`` and is therefore
+#: the one photon that could never expose the defect below. The species that broke the
+#: renderer was the only one no test had ever rendered.
+_RENDER_POOL = (
+    Molecule.quantum(),                 # no atoms, no charge, no state -- used to render ""
+    Molecule.quantum("589nm"),
+    Molecule.atom("Na"),
+    Molecule.carrier("", charge=-1),
+    H2O,
+)
+
+
+def _render(coefficients, species=_RENDER_POOL):
+    """
+    Render a coefficient vector the way the menu would, without requiring it to balance.
+
+    ``Completion.equation`` is a pure function of ``(coefficients, species)`` -- the
+    ``reaction`` field plays no part in it -- so driving it over vectors no real menu would
+    ever emit is strictly more coverage than only rendering what some menu happened to
+    produce. That is the point: the defect this guards lived in vectors the fixtures never
+    generated.
+    """
+    seed = stoichiometry_menu((H2, O2, H2O)).completions[0]
+    return replace(seed, coefficients=tuple(coefficients)).equation(tuple(species))
+
+
+class TestNothingRendersAsNothing:
+    """
+    A species whose text form is empty DISAPPEARS from every statement it is part of.
+
+    This is the second defect Brick 0 shipped, and it is the same shape as the first: the
+    module answered a question about the data by inspecting a *rendering* of the data.
+    ``side()`` decided "there is nothing here" from the joined string being falsy rather
+    than from the coefficients being zero, and ``Molecule.__repr__`` returned "" for the one
+    species with no atoms, no charge and no state. Composed, they printed the kernel vector
+    with coefficient 1 on a bare quantum as ``(nothing) -> (nothing)`` -- the trivial
+    reaction, which is a confident false statement about a true basis vector -- and printed
+    ``quantum -> Na`` as ``(nothing) -> Na``, which is a module whose entire subject is
+    conservation announcing that matter came from nowhere.
+
+    Soundness could not catch it either. Every rendered equation was a *correct* equation
+    about the species it still mentioned.
+    """
+
+    def test_no_molecule_renders_as_the_empty_string(self):
+        """The root invariant. "" is indistinguishable from absence, so it is never a name."""
+        sample = [
+            Molecule.quantum(), Molecule.quantum("589nm"), Molecule.atom("Na"),
+            Molecule.carrier("", charge=-1), Molecule.carrier("", charge=2),
+            Molecule.carrier("phonon", charge=0), H2, H2O, CO2,
+        ]
+        for molecule in sample:
+            assert repr(molecule) != "", f"{molecule!r} renders as nothing"
+            assert repr(molecule).strip() == repr(molecule)
+
+    def test_the_bare_quantum_is_named_and_cannot_be_confused(self):
+        """
+        Lower case so no formula can collide, unbracketed so no state can.
+
+        Element symbols are capitalised and states render as ``(state)``, so ``quantum``
+        occupies a slot neither can reach -- including ``Molecule.quantum("quantum")``.
+        """
+        assert repr(Molecule.quantum()) == "quantum"
+        assert repr(Molecule.quantum("quantum")) == "(quantum)"
+        assert repr(Molecule.quantum()) != repr(Molecule.quantum("quantum"))
+
+    def test_a_config_holding_only_a_quantum_is_not_the_identity(self):
+        """``Config(())`` is ``I``; a Config with a photon in it must not print as nothing."""
+        assert repr(Config(())) == "I"
+        assert repr(Config((Molecule.quantum(),))) not in ("", "I")
+
+    @settings(max_examples=300, deadline=None)
+    @given(st.lists(st.integers(min_value=-3, max_value=3),
+                    min_size=len(_RENDER_POOL), max_size=len(_RENDER_POOL)))
+    def test_every_nonzero_coefficient_reaches_the_side_it_belongs_on(self, coefficients):
+        """
+        The external property. Not "does this string look right" but: is every species the
+        vector mentions actually present in the rendering, on the correct side?
+
+        A renderer that drops a species passes every soundness check ever written about the
+        equations it still prints. Only an independent enumeration of what OUGHT to appear
+        can fail on a dropped term, which is exactly the lesson of the sublattice defect.
+
+        THE COUNT IS LOAD-BEARING AND THE SUBSTRING CHECK ALONE IS NOT. The first version
+        of this test asserted only ``repr(molecule) in side``, and against the very defect
+        it was written for that assertion is VACUOUS: the dropped species is the one whose
+        repr is ``""``, and ``"" in anything`` is True. It was the single test in this class
+        the mutant survived. Counting terms cannot be satisfied by dropping one.
+        """
+        rendered = _render(coefficients)
+        left, _, right = rendered.partition(" -> ")
+        for side, wanted in ((left, [c > 0 for c in coefficients]),
+                             (right, [c < 0 for c in coefficients])):
+            expected = sum(wanted)
+            actual = 0 if side == "(nothing)" else len(side.split(" + "))
+            assert actual == expected, f"{expected} term(s) owed, {actual} rendered in {side!r}"
+        for molecule, c in zip(_RENDER_POOL, coefficients):
+            if c:
+                assert repr(molecule), f"{molecule.atoms}/{molecule.state} has no name to print"
+                assert repr(molecule) in (left if c > 0 else right)
+
+    @settings(max_examples=300, deadline=None)
+    @given(st.lists(st.integers(min_value=-3, max_value=3),
+                    min_size=len(_RENDER_POOL), max_size=len(_RENDER_POOL)))
+    def test_nothing_is_printed_exactly_when_the_side_is_empty(self, coefficients):
+        """``(nothing)`` is a claim about the COEFFICIENTS, so it must be decided by them."""
+        left, _, right = _render(coefficients).partition(" -> ")
+        assert (left == "(nothing)") == (not any(c > 0 for c in coefficients))
+        assert (right == "(nothing)") == (not any(c < 0 for c in coefficients))
+
+    @settings(max_examples=300, deadline=None)
+    @given(st.lists(st.integers(min_value=-3, max_value=3),
+                    min_size=len(_RENDER_POOL), max_size=len(_RENDER_POOL)))
+    def test_no_side_is_blank_or_has_a_dangling_separator(self, coefficients):
+        """``' + Na -> (nothing)'`` was a real output. A dangling ``+`` is a dropped term."""
+        for side in _render(coefficients).partition(" -> ")[::2]:
+            assert side.strip() == side and side != ""
+            assert not side.startswith("+") and not side.endswith("+")
+            assert " +  + " not in side
+
+    def test_the_shipped_regressions_by_name(self):
+        """The four literal wrong renderings, so a reader can see what was fixed."""
+        hv, na = Molecule.quantum(), Molecule.atom("Na")
+        pair = (hv, na)
+        assert _render((1, 0), pair) == "quantum -> (nothing)"    # was '(nothing) -> (nothing)'
+        assert _render((2, 0), pair) == "2quantum -> (nothing)"   # was '2 -> (nothing)'
+        assert _render((1, 1), pair) == "quantum + Na -> (nothing)"  # was ' + Na -> (nothing)'
+        assert _render((1, -1), pair) == "quantum -> Na"          # was '(nothing) -> Na'
+
+    def test_the_documented_boundary_output_is_the_actual_output(self):
+        """
+        ``THE_COMPILER.md`` section VII says the menu offers ``photon -> (nothing)`` and
+        calls it "measured, not argued: that is the literal output". It was measured with a
+        labelled photon. With the bare quantum the species used to vanish, so the document's
+        own load-bearing example was the one case that did not hold.
+        """
+        menu = stoichiometry_menu((Molecule.atom("Na"), Molecule.quantum()))
+        assert "quantum -> (nothing)" in menu.equations()
+        assert "quantum has no atoms and no charge" in menu.explain()
 
 
 @st.composite

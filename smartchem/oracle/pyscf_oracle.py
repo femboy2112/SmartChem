@@ -1144,6 +1144,16 @@ class PySCFOracle(BaseOracle):
         therefore ``min(max_atoms, 2)``, and it will rise on its own the day a measured
         polyatomic MAE is entered in that table.
 
+        THAT LAST SENTENCE WAS FALSE WHEN FIRST WRITTEN. The ceiling was computed as
+        ``min(self.max_atoms, 2)`` and the branch below it was ``min(ceiling, 2)`` -- an
+        assignment that cannot change a value already bounded by 2. So the 2 was welded on,
+        exactly the way ``benchmark_mae_ev`` was welded before the 2026-07-20 audit, and an
+        entry in ``_RELAXED_GEOMETRY_MAE`` would have opened ``_polyatomic_energy`` while
+        ``admits`` still said no. That is an UNDER-approximation, the one direction this
+        contract forbids: the domain would promise a decline that never came. The gate is
+        now the same predicate ``_polyatomic_energy`` itself uses, so the two cannot drift
+        apart. With the table empty this computes what it always did.
+
         **``optimize_geometry=True`` leaves exactly the free atoms.** It pins
         ``benchmark_mae_ev`` to infinity, which closes the polyatomic path, and the
         diatomic branch declines on the flag directly -- but the one-atom branch returns
@@ -1157,10 +1167,12 @@ class PySCFOracle(BaseOracle):
         """
         if not math.isfinite(self.fixed_diatomic_mae_ev):
             return NOTHING.relabelled(f"{self.name} (no measured MAE for this tier)")
-        ceiling = min(self.max_atoms, 2)
+        ceiling = self.max_atoms
         if self.optimize_geometry:
             ceiling = min(ceiling, 1)
         elif not math.isfinite(self.nominal_accuracy_ev):
+            # The polyatomic path is shut for this tier, so nothing above a diatomic can be
+            # priced whatever max_atoms says. This is the live gate, not a restatement.
             ceiling = min(ceiling, 2)
         covered = frozenset(s for s in ATOM_SPIN if self._basis_covers((s,)))
         return Domain(

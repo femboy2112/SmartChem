@@ -519,6 +519,28 @@ class Molecule:
                         self.charge, self.state)
 
     def __repr__(self) -> str:
+        """
+        A text form that is never empty, because "" is indistinguishable from absence.
+
+        Exactly one species has no atoms, no charge and no state -- the bare
+        ``Molecule.quantum()`` -- and it used to render as the empty string. That is not a
+        cosmetic wart. Every renderer in this package joins species reprs with separators
+        and then decides emptiness from the joined text, so a species that renders as
+        nothing DISAPPEARS from the statement it is part of, and the statement stays
+        fluent: ``Config((quantum,))`` printed as ``""``, ``Reaction`` printed as
+        ``" -> "``, and the stoichiometry menu printed the balance ``quantum -> Na`` as
+        ``(nothing) -> Na`` -- a module whose whole subject is conservation, announcing
+        that matter came from nowhere.
+
+        The token is ``quantum``, lower-case and unbracketed, and both of those are load
+        bearing. A formula is a concatenation of element symbols and every element symbol
+        is capitalised, so a lower-case token can never be mistaken for one; a state
+        renders as ``(state)``, so an unbracketed token can never be mistaken for one
+        either. ``Molecule.quantum("quantum")`` therefore still renders distinctly, as
+        ``(quantum)``. It is deliberately not ``photon`` or ``hv``: this method's
+        counterpart :meth:`quantum` is explicit that a zero-atom token is "an
+        energy-carrying mode or quantum" and need not be radiation at all.
+        """
         counts = self.formula
         body = "".join(
             f"{s}{counts[s] if counts[s] > 1 else ''}" for s in sorted(counts)
@@ -529,7 +551,7 @@ class Molecule:
             body += f"^{abs(self.charge)}-"
         if self.state:
             body += f"({self.state})"
-        return body
+        return body or "quantum"
 
 
 # ======================================================================================

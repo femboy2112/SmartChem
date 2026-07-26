@@ -350,7 +350,16 @@ class Completion:
         def side(keep) -> str:
             terms = [f"{abs(c) if abs(c) != 1 else ''}{m!r}"
                      for m, c in zip(species, self.coefficients) if keep(c)]
-            return " + ".join(terms) or "(nothing)"
+            # "(nothing)" is decided from the COEFFICIENTS, never from the joined text.
+            # Those two predicates are not the same, and the difference shipped as a bug:
+            # a species whose repr was the empty string made a populated side join to ""
+            # and fall through to "(nothing)", so the kernel vector with coefficient 1 on
+            # a bare quantum printed as "(nothing) -> (nothing)" -- the trivial reaction,
+            # which is a confident false statement about a true basis vector. Molecule's
+            # repr no longer returns "", so this branch is now belt and braces; it stays
+            # because emptiness of a side IS a fact about the vector, and deriving a fact
+            # from a rendering of itself is how the sublattice bug got in too.
+            return " + ".join(terms) if terms else "(nothing)"
         return f"{side(lambda c: c > 0)} -> {side(lambda c: c < 0)}"
 
     def __repr__(self) -> str:

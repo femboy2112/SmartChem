@@ -27,6 +27,7 @@ from smartchem.geometry import GeometryError
 from smartchem.oracle import pyscf_oracle as pyscf_module
 from smartchem.oracle.pyscf_oracle import (
     PYSCF_AVAILABLE,
+    ZPE_BIAS_TRAIN_SPECIES,
     PySCFOracle,
     basis_covers,
     resolve_basis,
@@ -372,3 +373,52 @@ class TestElementCoverage:
                     assert oracle.energy(molecule) is None, (name, ref.formula)
                     checked += 1
         assert checked > 0, "the uncovered-species path was never exercised"
+
+
+@pytest.mark.skipif(not PYSCF_AVAILABLE, reason="the roster is defined by basis coverage")
+class TestZpeBiasTrainingRoster:
+    """
+    Pin the training set of ``ZPE_BIAS_FRACTION``, because a fit whose roster is unknown
+    cannot have anything held out of it.
+
+    The script that measured +9.1% lived in an uncommitted scratch directory and is gone.
+    What survived is its selection rule, stated in prose: every tabulated diatomic whose
+    elements cc-pVDZ covers. Applying that rule to the committed table regenerates 23
+    species, matching the count the docstring claims.
+
+    That match is corroboration, not proof of identity -- the prose could have been written
+    to describe a result rather than to specify the predicate. These tests therefore pin
+    what is actually checkable: the literal and the rule agree today, and any drift between
+    them is loud.
+    """
+
+    def _derive(self) -> tuple[str, ...]:
+        by_formula = {ref.formula: ref.atoms for ref in BOND_REFS}
+        return tuple(sorted(
+            formula for formula in GEOMETRY
+            if formula in by_formula and basis_covers(by_formula[formula], "cc-pVDZ", False)
+        ))
+
+    def test_the_committed_roster_still_matches_its_own_selection_rule(self):
+        assert self._derive() == tuple(sorted(ZPE_BIAS_TRAIN_SPECIES))
+
+    def test_the_roster_is_the_size_the_docstring_claims(self):
+        assert len(ZPE_BIAS_TRAIN_SPECIES) == 23
+
+    def test_the_excluded_species_are_excluded_by_basis_and_not_by_choice(self):
+        """
+        Five rows sat out. Recording *why* matters: they were not held back as a validation
+        set, they were unrepresentable. Anyone building a held-out set for the ZPE fit must
+        not mistake these for one.
+        """
+        excluded = set(GEOMETRY) - set(ZPE_BIAS_TRAIN_SPECIES)
+        assert excluded == {"HI", "I2", "ICl", "K2", "KCl"}
+        by_formula = {ref.formula: ref.atoms for ref in BOND_REFS}
+        for formula in excluded:
+            assert not basis_covers(by_formula[formula], "cc-pVDZ", False), formula
+
+    def test_every_member_is_a_real_row_in_both_tables(self):
+        formulas = {ref.formula for ref in BOND_REFS}
+        for formula in ZPE_BIAS_TRAIN_SPECIES:
+            assert formula in GEOMETRY, formula
+            assert formula in formulas, formula

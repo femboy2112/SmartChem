@@ -1228,3 +1228,125 @@ HDF5 swap file and never holds the full `nao**4` array. The memory does not relo
 this is **NOT** presumptively identity-preserving and owes the same bit-identity gate. Given
 the instrument disagreement above, it also owes a peak measured by *both* probes before any
 number from it is carried anywhere.
+
+---
+
+## Task #15 CLOSED: the +3.5% was an artifact, and the instrument's noise floor is 13%
+
+`experiments/ccsd_acceleration_probe.py`, CH3OH/cc-pVQZ/direct, re-run 2026-07-26 in a
+fresh process:
+
+```
+ROUTE_RESULT CH3OH cc-pVQZ direct 22.163760672 1539.42 4.3164
+```
+
+Against its own original **4.8924 GB**. Same probe, same species, same basis, same route,
+same D_e to every printed digit — and **13.3% apart in peak RSS**.
+
+| run | instrument | route | peak RSS | D_e (eV) |
+|---|---|---|---:|---:|
+| original | accel | conventional | 4.7263 | 22.163760672 |
+| original | accel | direct | **4.8924** | 22.163760672 |
+| replication | accel | direct | **4.3164** | 22.163760672 |
+| phase | phase | conventional | 4.6580 | 22.163760672 |
+| phase | phase | direct | 4.4356 | 22.163760672 |
+
+**The verdict.** `direct` does not raise the peak. Both replications (4.3164, 4.4356) sit
+below both `conventional` readings (4.7263, 4.6580), and the two instruments now agree on
+sign. The +3.5% that refuted `vvvv` and launched this entire phase hunt was one
+instrument's unreplicated number.
+
+**And the noise floor is larger than every effect these probes were used to detect.** A
+13.3% run-to-run spread on the same instrument means the 3.5% `direct` result, and the 1.5%
+cross-probe agreement on `conventional` that was cited as evidence of trustworthy
+attribution, were both inside the noise. The agreement was luck.
+
+**What survives, because it does not depend on a memory number.** `direct` is `mycc.direct`,
+a CC-layer flag, and `RHF.get_jk` never reads it. It therefore *cannot* move the SCF's
+contribution to the peak, which is the half that matters at cc-pVQZ. That was an argument
+from the source, not from a reading, which is why it is the part still standing.
+
+**RULE: no peak-RSS claim from a single run.** Energies were always cross-checked between
+probes. Memory numbers never were, and that is precisely where the one bad number lived.
+
+---
+
+## Task #14: the AO integral tensor is 2.6290 GB, and it was never a memory measurement
+
+`experiments/ao_storage_probe.py`, new this round. It stops after `mycc.ao2mo()` — the
+amplitude iterations and the triples were both measured at exactly +0.0000 GB of peak at
+cc-pVQZ, so running them costs ~24 minutes per arm to re-measure two zeros.
+
+**THE ANSWER, and it needed no instrument at all.**
+
+```
+mf._eri built    : True  (2.6290 GB tensor)
+```
+
+`mf._eri.nbytes`, read off the array itself. Exact, no baseline, no high-water mark, no
+repeats, no noise floor. Three probes and a week of RSS forensics were spent chasing a
+quantity that was sitting on an attribute the whole time. **Ask the object before
+instrumenting the process.**
+
+`nao_nr()` is 230 and `230**4/1e6 = 2798.41 MB` is the model figure; the array is 2.6290 GB
+= 2692 MiB. Those agree to 3.8%, the difference being MB-vs-MiB and the 8-fold symmetry
+packing, which is the first time the floor model and a real allocation have been checked
+against each other directly.
+
+**The lever fires, verified at the branch rather than at the memory.** H2O/cc-pVDZ, one
+process per arm:
+
+| `mf.max_memory` | `mf._eri` built | `eris.vvvv` type | E_SCF (Ha) |
+|---|---|---|---:|
+| stock (4000 MB) | **True** | `ndarray` | -76.027053512765 |
+| 100 MB | **False** | `Dataset` | -76.027053512765 |
+
+Two things worth separating out of that table. The `ndarray`-vs-`Dataset` column confirms
+the chain claimed from source last round: with `_eri` unbuilt, `CCSDBase.ao2mo` falls to
+`_make_eris_outcore` and streams to HDF5 rather than rebuilding the tensor. And the SCF
+energy is **bit-identical** across the two arms at this basis, so Schwarz screening at
+`direct_scf_tol=1e-13` costs nothing here — which is a measurement, not a promise, and it
+does not transfer to cc-pVQZ without being run there.
+
+**A boolean would have lied.** `eris.vvvv is not None` is `True` on *both* paths — the
+outcore branch makes an h5py dataset where the incore branch makes a numpy array. A
+truthiness test agrees with the incore answer whenever the incore answer is right, which is
+exactly the shape of check that gets believed. The probe reports `type(...).__name__`.
+
+**cc-pVQZ, arm A (stock), and the probe's own defect that the data exposed.**
+
+| run (same process) | `_eri` | `SCF.kernel` | `CCSD.ao2mo` | "peak" |
+|---|---|---:|---:|---:|
+| 1 | 2.6290 GB | +2.6758 GB, 25.5 s | +1.0617 GB, 319.1 s | 3.8568 GB |
+| 2 | 2.6290 GB | **+0.0000 GB**, 30.3 s | +0.7442 GB, 630.4 s | 4.6010 GB |
+
+**The zero is the tell.** An SCF that builds a 2.6290 GB tensor cannot add nothing to the
+peak. It "added nothing" because run 1 had already pushed `ru_maxrss` to 3.8568 GB and a
+monotone counter cannot come back down. The 19.30% "spread" between the two peaks was the
+watermark **accumulating**, not variance.
+
+This file's own opening paragraph says a process-wide high-water mark cannot report two
+things honestly, and `--repeat` then looped in-process and did exactly that. Fixed:
+`--repeat` now spawns a subprocess per run. **A monotone instrument has exactly one reading
+per process**, and when a phase you know is large reports zero, the first hypothesis is that
+the mark was already past it — never that the phase is free.
+
+The same property is why the earlier `+0.0000 GB` readings for the amplitude iterations and
+the triples still stand: they were only ever read as *"did not SET the peak"*, which is what
+a zero delta on a monotone counter means, and never as *"allocates nothing"*.
+
+**Arm B (`mf.max_memory=500`) at cc-pVQZ — PARTIAL, still running at time of writing.**
+Read live from `/proc/<pid>/status`:
+
+```
+VmHWM: 2.0236 GB   after 525 s
+```
+
+against arm A's 3.8568 GB — a **47.5% reduction**, and that figure is a LOWER BOUND on arm
+B's final peak because the run had not finished. The price is already visible and it is
+steep: arm A's SCF took **25.5 s**, arm B was still inside the SCF at **525 s**, so the
+wall-clock cost is at least 20x on that phase. Arms B and C were left running.
+
+**STILL OWED before any of arm B is carried anywhere:** the finished peak, the wall-clock
+total, and the cc-pVQZ bit-identity check. The DZ arms were bit-identical; QZ has 230 basis
+functions instead of 24 and a screening threshold does not scale by wishing.

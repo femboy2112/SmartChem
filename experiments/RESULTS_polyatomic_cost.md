@@ -1056,3 +1056,96 @@ present effect is narrowing the `ZPE_BIAS_FRACTION` calibration roster from 23 s
 rather than `bounds=` — remains the right one and still deserves its own scoped change.
 What changes is the reason: it is not there to rescue F2's chemistry, it is there because
 the optimizer walks into nuclei and 21 species avoid that by arithmetic accident.
+
+---
+
+## The peak owner CHANGES with basis, and at cc-pVQZ it is the SCF
+
+The cc-pVTZ attribution above named `CCSDBase.ao2mo` and closed the section with a caveat:
+`vvvv` is quartic in the virtual count and the triples arrays are not, so the owner can
+change with basis, and cc-pVQZ is the basis that matters. It changes. It does not change to
+either candidate.
+
+`CH3OH`, `conventional`, both bases, exclusive `ru_maxrss` deltas:
+
+| phase | cc-pVTZ | cc-pVQZ |
+|---|---:|---:|
+| `SCF.kernel` | +0.1672 GB (15.4%) | **+2.2763 GB (48.9%)** |
+| `CCSDBase.ao2mo` (inside `kernel`) | **+0.6860 GB (63.1%)** | +1.8488 GB (39.7%) |
+| `CCSDBase.kernel` — the amplitude iterations | +0.0000 GB | +0.0000 GB |
+| `CCSD.ccsd_t` — the triples | +0.0000 GB | +0.0000 GB |
+| `CCSDBase.ao2mo` again, inside `ccsd_t` | +0.0797 GB | +0.0000 GB |
+| **measured peak** | 1.0868 GB | 4.6580 GB |
+
+```
+PHASE_RESULT CH3OH cc-pVQZ conventional CCSD(T) 22.163760672 4.6580 SCF.kernel 2.2763
+```
+
+**At the basis that actually matters, the peak is set by the mean field.** The arithmetic
+that explains it is not subtle: the incore AO integral tensor is `nao^4 / 8` doubles, which
+is 2.8 GB at 230 basis functions and 0.18 GB at 116. It was a rounding error at cc-pVTZ and
+it is half the peak at cc-pVQZ, which is exactly why three probes and two wrong guesses
+never went near it.
+
+Every memory lever considered in this document so far — `vvvv`, the triples, `direct`,
+sharing the transform — targets the coupled-cluster layer. At cc-pVQZ the coupled-cluster
+layer is not what sets the mark. The untried lever is `direct_scf` or density fitting on
+the SCF, filed as task #14, and it is explicitly NOT presumptively identity-preserving: it
+changes the convergence path, so it owes the same bit-identity gate `direct` failed.
+
+**The instrument cross-checks.** `ccsd_acceleration_probe.py` measured this same case at
+4.7263 GB by separate instrumentation; the phase probe says 4.6580 GB, 1.4% apart, and the
+two report the identical energy 22.163760672 to every printed digit. Two harnesses, one
+number.
+
+## Task #13, closed: the integral transform is built once
+
+`_parts` called `mycc.kernel()` and `mycc.ccsd_t()` with no arguments. Both default to
+`eris=None` and rebuild the transformation (`pyscf/cc/ccsd.py:1099-1100` and `:1289-1293`;
+`uccsd.py:633` for the open-shell twin). The cost, measured rather than estimated:
+
+    cc-pVTZ :  7.5 s of a 77.4 s molecule    (~9.7%)
+    cc-pVQZ :  294.6 s
+
+Now built once and shared. It is identity-preserving for a structural reason: `ao2mo` builds
+one fixed block set with no branch on the caller, and the triples correction consumes a
+strict subset of it — never `vvvv`. Verified three independent ways, because a structural
+argument is still an argument:
+
+* `tests/test_eris_reuse.py`, both spin paths (`CCSD` and `UCCSD`), single-threaded
+  difference exactly **0.000e+00 Ha**.
+* That gate had to be rebuilt once, and the failure is worth recording. The first version
+  compared two separate SCF runs and failed on `E_HF` — a quantity fixed before `cc.CCSD` is
+  constructed, which this change cannot touch — by ~1e-14 Ha under the full suite, while
+  passing standalone where threads happened to be pinned. **A test whose verdict depends on
+  `OMP_NUM_THREADS` is not measuring what it claims to.** It now shares one mean field and
+  calibrates its own noise floor by repeating the *unchanged* path: 5.6e-17, 1.4e-17 and
+  8.3e-17 Ha at 8 threads, with an absolute ceiling so a pathologically noisy run cannot
+  calibrate its own gate open.
+* `ccsd_peak_phase_probe.py`'s calibration compares its replica — which still rebuilds —
+  against the real `PySCFOracle._parts`, and reports 0.000e+00 Ha at **cc-pVQZ** over three
+  UHF free atoms. Independent, on the shipping path, at a larger basis than the unit test.
+
+Note what the peak table says about the memory side of this: at cc-pVTZ the second transform
+raised the high-water mark by 0.0797 GB, at cc-pVQZ by **exactly zero**. So #13 is a
+wall-clock win that happens to shed a little memory at TZ and none at QZ — not a memory fix,
+and it was filed as one.
+
+## What was NOT measured, and the arithmetic that killed it
+
+`C2H5OH / cc-pVQZ / direct` ran for 58 minutes and was killed at 16:52:39 rather than
+allowed to finish. Recorded here because a silently abandoned run reads as one that was
+never planned.
+
+`nao` for C2H5OH over CH3OH is exactly **1.500** at every basis (345 vs 230 at cc-pVQZ).
+CH3OH/QZ/direct spent 1108.3 s on the molecule; splitting that at the TZ-measured 58/42
+between the amplitude solve and the triples, and scaling by N^6 (11.39x) and N^7 (17.09x)
+respectively, projects **≈15,280 s = 4.24 h** against the job's own `timeout 14400`. It was
+on course to be killed by its own clock having printed nothing, since the probe emits
+`ROUTE_RESULT` only at the end. Even the charitable pure-N^6 read is 3.51 h.
+
+Against that it was holding the box — the cc-pVQZ phase attribution needs ~4.7 GB and could
+not start — for a datapoint with **no partner**: the `conventional` half of the pair would
+need roughly 24 GB and cannot run on a 7 GB machine at all. A route comparison with one arm
+is not a route comparison. The paired CH3OH/QZ measurement was worth more than an unpairable
+C2H5OH one, and that is the whole justification.

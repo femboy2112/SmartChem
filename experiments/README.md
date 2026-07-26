@@ -38,9 +38,14 @@ harness at all.
 | `vibrational_probe.py` | What is in the harmonic spectrum, mode by mode, and how much ZPE does each mode carry? Built to price H2O2's hindered rotor; it cost 2.9% of the ZPE and the hypothesis died. |
 | `multireference_probe.py` | Is a species multireference? Reads CCSD(T) amplitudes at the pipeline geometry for T1, D1, max\|t1\|, max\|t2\| and (T)/E_corr. |
 | `zpe_bias_refit.py` | Re-derives `ZPE_BIAS_FRACTION` from the 23-species roster, and decides whether the code applies it to the wrong denominator. Replaces the lost `scratchpad/geom_calibrate.py`. |
+| `ccsd_acceleration_probe.py` | Is a candidate CCSD speedup identity-preserving or a measured tradeoff? Runs one species through `conventional`/`direct`/`df`/`df-ri` and **recalibrates itself against the real `PySCFOracle._parts` on every run** before any route number is believed. |
+| `stoichiometry_menu_rank.py` | Can the meta-compiler's "here are X admissible completions" menu be *derived* rather than guessed? Exact integer kernel of the composition matrix; backs `THE_COMPILER.md` §IV. Seconds, no PySCF. |
+| `decay_analogy_probe.py` | On what set is a cross-scale metaphor actually true? Worked example for `THE_COMPILER.md` §V/§VIII, using "a human life is an isotope" as the specification under test. Analytic, seconds, no PySCF. |
 
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
-passes and keeps superseded numbers rather than overwriting them.
+passes and keeps superseded numbers rather than overwriting them. The last three scripts in
+the table above are self-reporting instead — each prints its own verdict, its own boundary,
+and (for the last two) an explicit section on what it does *not* establish.
 
 ## Running
 

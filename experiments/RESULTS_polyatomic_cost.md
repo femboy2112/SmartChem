@@ -231,6 +231,11 @@ in the profile**, and the six-species figure understates the spread by about hal
 MAE quoted as an accuracy tier would have been optimistic by 1.5x at this tier. This is
 exactly why the 0.0558 eV was not entered into the table in item 1.
 
+> **Superseded — see the third pass below.** C2H6 landed at −0.2769 eV and moved the holdout
+> MAE from 0.5334 (n=4) to 0.4821 (n=5) and the ratio from 1.49x to 1.35x. The four remaining
+> species were dropped against the memory wall, priced there. The table above is the n=4
+> snapshot and is kept as the record of what was known at the time.
+
 The remaining five (C2H6, C2H5OH, CH3OCH3, C3H8, CH3OC2H5) are still running. The
 tier-matched cbs(TZ,QZ) holdout is affordable only for CH2O, N2H4 and HCOOH — CH3NH2 at
 4.3 GB modelled is a stretch and C2H6 upward is out, per `basis_size_probe.py`.
@@ -307,3 +312,111 @@ The geometry is HF/cc-pVDZ with a measured 0.0255 Å r_e MAE. `_GEOMETRY_METHODS
 is the boundary: only the geometry *basis* can be varied through the public constructor, so
 the clean test is HF/cc-pVDZ versus HF/cc-pVTZ on the same species. That is the next probe,
 and it has not been run.
+
+---
+
+# 2026-07-26, third pass: the holdout closes, the live suspect dies, and a prediction is filed
+
+## The cc-pVTZ holdout, final at n=5 — and what was dropped, priced
+
+| species | error (eV) | kcal/mol |
+|---|---:|---:|
+| C2H6 | −0.2769 | −6.39 |
+| CH2O | −0.2901 | −6.69 |
+| CH3NH2 | −0.4900 | −11.30 |
+| HCOOH | −0.6725 | −15.51 |
+| N2H4 | −0.6808 | −15.70 |
+
+```
+holdout MAE   0.4821 eV   (n=5)
+profile MAE   0.3575 eV   (n=6, the set the protocol was developed on)
+ratio         1.35x
+```
+
+C2H6 landing at −0.2769 matters: it is the largest species measured and among the *best*, which
+kills "error grows with size" as a simple story. The 1.49x ratio reported at n=4 was an artefact
+of which four had finished first; at n=5 it is 1.35x. The direction of the finding is unchanged —
+the training MAE understates the holdout — but the magnitude moved by a seventh on one added
+species, which is the honest measure of how little n=5 constrains.
+
+**Four species were dropped, and this is the reason, not a rounding of the roster.** Modelled
+CCSD(T) `vvvv` storage at cc-pVTZ against a 7 GB box that was concurrently committed to the
+higher-value cbs(TZ,QZ) run:
+
+| dropped | vvvv GB @ cc-pVTZ |
+|---|---:|
+| C2H5OH | 5.0 |
+| CH3OCH3 | 5.0 |
+| C3H8 | 9.5 |
+| CH3OC2H5 | 15.9 |
+
+C2H5OH was killed in flight at 785 s with 1560 MB resident and the box down to 411 MB available.
+C3H8 and CH3OC2H5 cannot be run on this hardware at this tier at all. **The holdout is n=5 of a
+possible 9, and every number that follows is a statement about those five.**
+
+## The live suspect is refuted — and it fails in the informative direction
+
+Same energy tier (CCSD(T)/cc-pVTZ), only the geometry basis varied. One cache file **per
+geometry tier**, so a stale HF/cc-pVDZ answer cannot alias into an HF/cc-pVTZ slot — the
+failure mode that would have manufactured a difference of exactly zero and published
+"geometry does not matter."
+
+| species | geom HF/cc-pVDZ | geom HF/cc-pVTZ | Δ | Δ as % of error |
+|---|---:|---:|---:|---:|
+| H2O | −0.3153 | −0.3259 | −0.0106 | 3.4% |
+| H2O2 | −0.5046 | −0.5327 | −0.0281 | 5.6% |
+
+**The geometry tier is not the dominant cause.** It moves 3–6% of an error that needs to move
+by 100%. But it does not move to zero, and it moves the *wrong way*: upgrading the geometry
+basis makes the atomization energy worse, consistently, in both species. That is a real
+finding and it inverts the obvious remedy — "use a better geometry" is a *degradation* here.
+
+Two collateral results:
+
+* The DZ-geometry H2O2 number reproduced as **−0.5046 eV from a cold cache**, bit-identical to
+  the value recorded above. The pipeline is deterministic and the earlier figure is
+  reproducible — a regression anchor obtained for free.
+* The H2O ZPE moved 0.6262 → 0.6265 eV across the geometry-basis change (0.0003 eV). The
+  concern that a changed Hessian basis would confound the geometry-position effect — and
+  silently void the provenance of `ZPE_BIAS_FRACTION`, which was fitted at HF/cc-pVDZ — does
+  not bite at this magnitude for H2O.
+
+**And the claim this probe was testing has no surviving evidence.** `pyscf_oracle.py:714` says
+the geometry-delegation design is `MEASURED -- see scratchpad/geometry_tier.py`. That file is
+in **no commit on any branch** (`git log --all --diff-filter=A` finds nothing) and `scratchpad/`
+does not exist. It is the same pattern as the lost `geom_calibrate.py` behind
+`ZPE_BIAS_FRACTION`. The measurement above re-establishes the claim's *direction*
+independently — geometry position really is a small effect — which is the only reason the
+delegation design survives contact with its own missing evidence.
+
+## Pre-registered prediction for the cbs(TZ,QZ) holdout
+
+**Filed before any cbs number for these three existed.** Basis: across the 11 species measured
+at cc-pVTZ, the best structural correlate of the error is **valence electron pairs correlated**
+(Pearson r = 0.662 against |error|; Spearman ρ = 0.66, p = 0.029). Bond count (r = 0.11) and
+π-bond count (r = 0.09) are dead — and in this all-acyclic set bond count is an affine
+restatement of atom count, so it was never an independent axis. ZPE is *exactly* uncorrelated
+with the error (Spearman ρ = 0.000), which kills "big-ZPE species have big errors."
+
+The correlate's strongest evidence is that it transfers across the split it was not fitted on:
+err/valence-pair is −0.06503 eV on the profile and −0.06598 eV on the holdout.
+
+| species | predicted cbs(TZ,QZ) error | interval |
+|---|---:|---|
+| CH2O | −0.05 eV | −0.03 to −0.07 |
+| HCOOH | −0.10 eV | −0.07 to −0.13 |
+| N2H4 | −0.10 eV | −0.08 to −0.17 |
+
+**N2H4's interval is deliberately wider and skewed deep.** It is already the worst species at
+cc-pVTZ and already off the valence-pair trend by 49%; the only other known outlier, H2O2, was
+underpredicted by ~0.04 eV in leave-one-out. If N2H4 lands past −0.17 the correlate is refuted
+outright, not merely loose.
+
+**The honest caveat, filed with the prediction rather than after it:** the correlate explains
+under half the variance (R² = 0.44), and it gets *looser* at the CBS tier, not tighter — the
+coefficient of variation of err/valence-pair rises from 0.290 at cc-pVTZ to 0.390 at
+cbs(TZ,QZ). H2O2 and CH3OH have identical valence-pair counts (7) and CBS errors of −0.1090
+and −0.0588, nearly 2x apart. So "countable, additive, removed by CBS" is a first-order truth
+with a real second-order residual this prediction does not capture. A separate unexplained
+pattern: the three nitrogen species (NH3, N2H4, CH3NH2) average −0.087 eV per valence pair
+against −0.058 for the rest, and nothing here explains why.

@@ -710,3 +710,68 @@ sentinel.
 
 The real defect is not the value. A one-parameter multiplicative model is the wrong **shape**
 for data whose sd equals its mean, and refitting the one parameter does not address that.
+
+## The cbs(TZ,QZ) holdout, closed at n=3 — and the gate stays shut
+
+| species | atoms | TZ error | **cbs error** | TZ→CBS shrink | wall |
+|---|---:|---:|---:|---:|---:|
+| CH2O | 4 | −0.2901 | **−0.0575** | 5.05× | 681.5 s |
+| N2H4 | 6 | −0.6808 | **−0.1279** | 5.32× | 1750.8 s |
+| HCOOH | 5 | −0.6725 | **−0.2546** | **2.64×** | 2115.3 s |
+
+```
+cbs holdout MAE (n=3) : 0.1467 eV   spread 0.0575 .. 0.2546  (4.43x range)
+cbs profile MAE (n=6) : 0.0558 eV
+ratio                 : 2.63x       (it was 1.66x at n=2)
+```
+
+**One species moved the ratio from 1.66× to 2.63×.** That is the second time in this file a
+single addition has moved a summary statistic by more than half its own value — the cc-pVTZ
+ratio went 1.49× → 1.35× on C2H6 — and it is the honest measure of how little n=3 constrains.
+Neither number should be quoted as stable.
+
+### Scoring the pre-registered prediction: two hits and one clear miss
+
+Filed in `d5d19d5` before any of these three numbers existed.
+
+| species | predicted | interval | actual | |
+|---|---:|---|---:|---|
+| CH2O | −0.05 | −0.07 … −0.03 | −0.0575 | **HIT** |
+| N2H4 | −0.10 | −0.17 … −0.08 | −0.1279 | **HIT**, deep, as the wider interval anticipated |
+| HCOOH | −0.10 | −0.13 … −0.07 | **−0.2546** | **MISS** — nearly 2× past the deep edge |
+
+**The valence-electron-pair correlate is refuted at the CBS tier.** It was fitted at
+cc-pVTZ, where err/valence-pair transferred across the split at −0.06503 (profile) against
+−0.06598 (holdout) — the very fact quoted as its strongest evidence. At cbs(TZ,QZ) the same
+quantity over these three species runs −0.0096 (CH2O), −0.0183 (N2H4), −0.0283 (HCOOH): a
+**2.95× spread**, monotone in atom count, and a factor of two to seven below the coefficient
+it was fitted with. The filed caveat said the correlate gets *looser* at the CBS tier rather
+than tighter (coefficient of variation 0.290 → 0.390); the caveat was right and understated.
+
+**HCOOH is the anomaly and it is worth naming precisely.** Its TZ→CBS shrink is 2.64×
+against 5.05× and 5.32× for the other two — the extrapolation removes roughly half as much of
+its error as it removes of theirs. It is also the only species here carrying two oxygens, and
+the only one with both a C=O and an O–H. Nothing in this file explains that, and it should not
+be explained by whichever story is nearest to hand; it is a filed anomaly, alongside the
+unexplained nitrogen offset already recorded above.
+
+### The gate decision rule, applied
+
+The rule was filed in `6280de2` before these numbers existed. Against it:
+
+| criterion | status |
+|---|---|
+| 1. holdout-only evidence | **met** — none of these three developed the protocol |
+| 2. **n ≥ 8** | **FAILS** — n = 3 |
+| 3. `max_validated_atoms` never extrapolated | would be 6, met |
+| 4. spread reported with the mean | spread is **4.43×**, and reporting it is what condemns the mean |
+
+**`_RELAXED_GEOMETRY_MAE` stays empty. No entry is made.** That was the pre-registered
+expected outcome, and the evidence for it came in stronger than expected: criterion 2 fails by
+construction on this hardware, and criterion 4 turns out to fail on the merits as well. A
+0.1467 eV bar quoted from a distribution spanning 0.0575 to 0.2546 would be a plausible
+number with nothing behind it — which is the exact failure this project exists to refuse.
+
+The run's job was never to open the gate. It was to measure the residual and price what a
+real profile would cost, and it did both: the tier-matched holdout error is **2.6× the
+training figure**, so entering 0.0558 eV would have understated the bar by more than half.

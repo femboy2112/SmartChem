@@ -73,11 +73,79 @@ materially better and must be measured before any comparison is quoted.
 (PySCF default 4000 MB). At 405–520 basis functions the intermediates may not fit. Nothing
 here tests that; the largest species measured is 6 atoms at 58–130 basis functions.
 
+## The tier-matched rerun — partial, 3 of 6 in
+
+The extrapolation does what the uniform negative sign predicted it would.
+
+| species | wall clock | error (eV) | error (kcal/mol) | vs. its own cc-pVTZ error |
+|---|---:|---:|---:|---:|
+| H2O | 56.5 s | −0.0300 | −0.69 | 10.5× smaller |
+| NH3 | 187.1 s | −0.0609 | −1.40 | 6.1× smaller |
+| CH4 | 284.7 s | −0.0364 | −0.84 | 4.5× smaller |
+| CO2 | *running* | | | |
+| H2O2 | *pending* | | | |
+| CH3OH | *pending* | | | |
+
+Two of the three are inside chemical accuracy (1 kcal/mol = 0.0433 eV) and the third is
+just outside it. Running MAE over the three is 0.0424 eV, against a published diatomic MAE
+of 0.0562 eV at the same tier — the first evidence that polyatomic accuracy here is of the
+same order as the validated diatomic figure rather than six times worse. Every error is
+still negative, so residual underbinding survives the extrapolation; it is now small rather
+than dominant.
+
+**This is 3 of 6 and no split.** It is not a validation profile and must not be quoted as
+one.
+
+## Pre-registered predictions for the rest of the run
+
+Written before the remaining species finished, so they can be scored honestly. Recorded in
+commit history rather than edited in afterwards.
+
+**P-Q1 — CH3OH at cbs(TZ,QZ) will not follow the observed cost ratio.** The TZ→CBS
+wall-clock ratios so far are 9.9× (H2O), 8.4× (NH3), 11.2× (CH4). Naively CH3OH would be
+115.9 s × ~10 ≈ 1160 s. But CH3OH needs cc-pVQZ at 230 basis functions / 221 virtual, which
+`basis_size_probe.py` models at 2.635 GB and the calibration says to multiply by roughly
+five — around 13 GB, against a machine with 7 GB total and ~2 GB free. *Predict: it either
+exceeds the harness's 1800 s per-species timeout and is killed, or it completes at a ratio
+materially above 11×.* **Falsifier:** completion in ≲1300 s.
+
+**P-Q2 — CO2 and H2O2 both complete.** Modelled at 0.703 and 0.790 GB, so ~3.5–4 GB
+calibrated: tight on this box but not over. *Predict both finish inside 1800 s.*
+**Falsifier:** either one is killed by the timeout.
+
+**P-Q3 — the six-species CBS MAE lands between 0.03 and 0.08 eV**, i.e. comparable to the
+published 0.0562 eV rather than to the 0.3575 eV measured at plain cc-pVTZ.
+**Falsifier:** MAE above 0.15 eV.
+
+## The cc-pVQZ affordability question, answered
+
+`basis_size_probe.py` prices it exactly, because basis-function counts depend only on the
+elements and never on the geometry. C3H8 at cc-pVQZ is 405 functions and **25.2 GB**, of
+which the `vvvv` integral block alone is 22.1 GB. This machine has 7 GB.
+
+The calibration matters more than the number. Run against real CCSD on water,
+baseline-subtracted, the model **understates** actual peak RSS by 6.1× at TZ and 5.2× at QZ,
+with the ratio still falling as size grows. It is a floor, not an estimate — which makes the
+verdict robust to its own uncertainty: even read as an exact lower bound with no multiplier,
+25.2 GB against 7 GB is not close.
+
+**And the obvious remedy does not work.** Frozen core is the first thing anyone reaches for,
+and it is named in this probe's own docstring:
+
+```
+C3H8  cc-pVQZ   occ 13 -> fc 10   t2 0.193 -> 0.114 GB   vvvv 22.103 -> 22.103 GB
+```
+
+It cuts the amplitudes 41% and moves the binding constraint by exactly zero, because the
+dominant term is quartic in the *virtual* count and contains no occupied index at all.
+Density fitting is the remedy that applies — DF-CCSD never forms `vvvv`, and
+`pyscf.cc.dfccsd.RCCSD` is present in PySCF 2.14.0. That choice is now a decision on a
+number instead of on folklore.
+
 ## The one thing to do next
 
-Rerun this table at `--basis 'cbs(TZ,QZ)'` over the same six species. It is the
-tier-matched number, it is the one that can legitimately be compared against 0.0562 eV, and
-it doubles as the cc-pVQZ affordability test at small size before anything larger is tried.
+Finish scoring P-Q1 through P-Q3, then decide the protocol for anything above 6 atoms on
+the DF-vs-tier evidence rather than on the assumption that frozen core buys headroom.
 
 Re-opening the public path needs a code edit as well as a measurement: `validated_profile`
 in `PySCFOracle.__init__` requires `max_atoms <= 2`, while `_polyatomic_energy` is only

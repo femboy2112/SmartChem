@@ -177,31 +177,70 @@ _GEOMETRY_METHODS = ("HF",)
 #: AS 0.091 ON ANY PROTOCOL OR DENOMINATOR::
 #:
 #:     protocol                       n      f_A (/reference)   f_B (/computed)
-#:     relax + Hessian (production)   21/23      0.0801              0.0742
+#:     relax + Hessian (production)   22/23   0.08116 pooled      0.07507 pooled
+#:                                            0.08158 mean        0.07066 mean
+#:                                            sd 0.07956          sd 0.06821
 #:     Hessian at tabulated r_e       23/23      0.0390              0.0375
+#:
+#: The production roster was 21/23 when first re-derived and is 22/23 after the
+#: ``_mean_field`` retry fix of the same day recovered CS -- which lands at f_A 0.1122,
+#: ABOVE the mean, so repairing the SCF moved the fit toward the inherited constant rather
+#: than away. F2 is the one remaining loss and it is named in the harness output.
 #:
 #: Three things follow, and none of them is "the old number was wrong" -- PySCF's version,
 #: convergence thresholds and the lost script's roster weighting are all unrecoverable, so
 #: this is drift of unknown origin, not a refutation.
 #:
-#: 1. THE DENOMINATOR IS PROBABLY WRONG. f_A is nearer 0.091 than f_B on BOTH protocols,
-#:    and the code applies the constant to the COMPUTED ZPE (see ``zpe_bias`` below), i.e.
-#:    as an f_B. Pooled, ``f_B = f_A / (1 + f_A)`` exactly. If the lost fit measured
-#:    against the reference ZPE, this file overstates the systematic by ~1.09x.
-#: 2. THE SCATTER IS AS LARGE AS THE CONSTANT. Per-species sd is 0.0812 against a mean of
-#:    0.0801, and FOUR of the 21 species have the OPPOSITE SIGN (CN -0.039, MgO -0.053,
-#:    Na2 -0.022, NaCl -0.030) while O2 reaches +0.264. A "9.1% systematic" is the mean of
-#:    a distribution that straddles zero -- which is why it is reported as a sensitivity
-#:    and never applied.
+#: 1. THE DENOMINATOR IS WRONG, AND THE CONSTANT STAYS ANYWAY. f_A is nearer 0.091 than
+#:    f_B on BOTH protocols, and the code applies the constant to the COMPUTED ZPE (see
+#:    ``zpe_bias`` below), i.e. as an f_B. Pooled, ``f_B = f_A / (1 + f_A)`` exactly
+#:    (checked: 0.075067 both ways). The f_B-consistent value is 0.0751, so as used, this
+#:    file overstates the systematic by 1.21x.
+#:
+#:    DECIDED 2026-07-26: hold 0.091 rather than substitute 0.0751. Three reasons, and
+#:    the third is the one that settles it.
+#:      - Substituting swaps an unreproduced number for a reproduced but unjustified one.
+#:        0.0751 is the mean of a distribution whose sd is 91% of its own mean, containing
+#:        four sign reversals, fitted on DIATOMICS and applied to POLYATOMICS. Its extra
+#:        digits are precision, not accuracy, and this file has already made the mistake
+#:        of transferring a diatomic figure to polyatomics once.
+#:      - It is not applied to ``value_ev``. It is a reported sensitivity, and 0.091 versus
+#:        0.0751 does not change what a reader does with "the ZPE carries a bias of about
+#:        this size" -- whereas sd 0.0796 against mean 0.0816 changes it completely.
+#:      - THE ERROR IS IN THE CONSERVATIVE DIRECTION. ``systematic_magnitude_ev`` feeds
+#:        ``Estimate.with_sensitivity_floor`` (``base.py``), where a larger term raises the
+#:        reported uncertainty. Overstating by 1.21x widens a bar; understating would
+#:        narrow one. For a project whose thesis is that a plausible wrong number is worse
+#:        than no number, the safe direction to be wrong in is the wide one.
+#:    What must change is the CLAIM, not the number, and it has: the discrepancy is now
+#:    inherited in writing instead of the value being inherited in silence.
+#:
+#:    Note this constant is currently INERT in production. ``_polyatomic_energy`` returns
+#:    None while ``nominal_accuracy_ev`` is non-finite, and ``_RELAXED_GEOMETRY_MAE`` is
+#:    empty, so no shipped path reaches ``zpe_bias`` at all -- measured, not assumed:
+#:    ``PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", optimize_geometry=True, max_atoms=6)
+#:    .nominal_accuracy_ev`` is ``inf``. Only ``experiments/polyatomic_cost_probe.py``
+#:    executes it, by force-assigning the 999.0 eV probe sentinel. So the cost of holding
+#:    is bounded today; the cost of a bad substitution would not be.
+#: 2. THE SCATTER IS AS LARGE AS THE CONSTANT. Per-species sd is 0.0796 against a mean of
+#:    0.0816, and FOUR of the 22 species have the OPPOSITE SIGN (CN -0.0392, MgO -0.0532,
+#:    Na2 -0.0221, NaCl -0.0303) while O2 reaches +0.2641. A "9.1% systematic" is the mean
+#:    of a distribution that straddles zero -- which is why it is reported as a sensitivity
+#:    and never applied, and which is the real defect here. A one-parameter multiplicative
+#:    model is the wrong SHAPE for this data, and no amount of refitting its one parameter
+#:    addresses that.
 #: 3. HALF OF IT IS GEOMETRY, NOT METHOD. The production path is 2.05x the fixed-geometry
 #:    control, so relaxing at HF/cc-pVDZ -- whose bonds are measurably too short, see
 #:    ``experiments/RESULTS_polyatomic_cost.md`` -- stiffens the molecule and inflates the
 #:    frequencies about as much as the electronic method does.
 #:
-#: CS and F2 do not survive the production path at all: the unconstrained Cartesian
-#: L-BFGS-B line search drives their atoms nearly coincident and SCF diverges. That is a
-#: live fragility in the same ``_relaxed_geometry`` polyatomics use, not an artefact of
-#: the harness.
+#: F2 does not survive the production path: its tabulated r_e is 1.411930 A and the first
+#: unbounded L-BFGS-B trial step moves a diatomic bond by exactly sqrt(2) = 1.414214 A, so
+#: trial 1 puts its nuclei 0.002284 A apart and the SCF fails there from any guess. The
+#: accuracy of its seed is what kills it. CS used to fail the same test and no longer does:
+#: its collapsed geometry is convergeable, and what refused it was a retry that was not a
+#: retry -- see ``_mean_field``. That distinction matters, because the two looked identical
+#: from outside and only one of them was a real wall.
 #:
 #: It is carried as a named correction sensitivity, in ``Estimate.systematic_terms``, not
 #: silently treated as an independent random draw. Its signed displacement can cancel

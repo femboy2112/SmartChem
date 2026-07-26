@@ -40,6 +40,7 @@ harness at all.
 | `zpe_bias_refit.py` | Re-derives `ZPE_BIAS_FRACTION` from the 23-species roster, and decides whether the code applies it to the wrong denominator. Replaces the lost `scratchpad/geom_calibrate.py`. |
 | `ccsd_acceleration_probe.py` | Is a candidate CCSD speedup identity-preserving or a measured tradeoff? Runs one species through `conventional`/`direct`/`df`/`df-ri` and **recalibrates itself against the real `PySCFOracle._parts` on every run** before any route number is believed. |
 | `stoichiometry_menu_rank.py` | Can the meta-compiler's "here are X admissible completions" menu be *derived* rather than guessed? Exact integer kernel of the composition matrix; backs `THE_COMPILER.md` §IV. Seconds, no PySCF. |
+| `ccsd_peak_phase_probe.py` | Which phase actually sets the CCSD(T) peak RSS? Partitions one run into nested phases and reads `ru_maxrss` at every boundary; because a high-water mark is monotone, the exclusive delta per phase is exact attribution rather than a sample. Calibrates with its own instrumentation active. |
 | `decay_analogy_probe.py` | On what set is a cross-scale metaphor actually true? Worked example for `THE_COMPILER.md` §V/§VIII, using "a human life is an isotope" as the specification under test. Analytic, seconds, no PySCF. |
 
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in

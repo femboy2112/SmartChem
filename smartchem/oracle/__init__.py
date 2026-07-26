@@ -16,9 +16,10 @@ from __future__ import annotations
 from .base import BaseOracle, EnergyOracle, Estimate
 from .caching import CachingOracle
 from .heuristic import HeuristicOracle
+from .photon import PhotonOracle
 
 __all__ = ["BaseOracle", "CachingOracle", "EnergyOracle", "Estimate", "HeuristicOracle",
-           "available_oracles"]
+           "PhotonOracle", "available_oracles"]
 
 
 def available_oracles() -> dict[str, EnergyOracle]:
@@ -27,6 +28,14 @@ def available_oracles() -> dict[str, EnergyOracle]:
 
     Missing optional backends are silently absent rather than an error: a machine without
     PySCF should still be able to run the whole categorical test suite.
+
+    ``PhotonOracle`` is deliberately NOT here despite being importable and conforming. This
+    registry maps names to *instances*, and every entry below is a definite configuration a
+    caller could have meant. A photon oracle has no canonical instance -- it is built for a
+    wavelength, and there is no default wavelength that means anything. Registering an
+    arbitrary one would invent a configuration nobody asked for, and the benchmark that
+    consumes this dict prices diatomics, which that oracle correctly refuses to touch.
+    Import and construct it directly with the wavelength you mean.
     """
     registry: dict[str, EnergyOracle] = {"heuristic": HeuristicOracle()}
 

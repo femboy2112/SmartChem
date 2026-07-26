@@ -410,6 +410,19 @@ class BaseOracle:
             # Neutral free atoms are not a conserving reference for an ion. A charged
             # atomization energy needs explicit ionic fragments or an electron reservoir.
             return None
+        if not molecule.atoms:
+            # A species with no atoms has no atomization energy -- the quantity is not
+            # small or uncertain here, it is undefined. Without this guard the loop below
+            # iterates over an empty Counter, leaves ``total`` at zero, and returns
+            # ``zero - whole == -whole``: the species' own energy, negated, wearing the
+            # label of a different observable. That is a wrong number rather than a
+            # refusal, which is the one failure this package does not tolerate.
+            #
+            # It is unreachable while every bundled oracle declines a zero-atom species,
+            # and it arms the moment one values them -- which is exactly what a photon
+            # oracle does. Guarded here, at the derivation, so it cannot depend on the
+            # discipline of each future oracle.
+            return None
         whole = self.energy(molecule)
         if whole is None:
             return None

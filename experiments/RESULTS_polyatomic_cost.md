@@ -680,6 +680,12 @@ proof was missing. Both classes now exist, along with one pinning the retry. Thi
 `experiments/`-are-committed problem one layer in: a claim can cite a test by name and the
 name can be fiction.
 
+**Audited, and those two were the only ones.** Every `tests/<file>.py::<Class>` citation in
+`smartchem/` and `experiments/` (6 distinct), every bare `Test*` class name referenced from
+source (7 distinct), and every `::test_<name>` function citation now resolves to something
+that exists. A negative result worth writing down, because the next person to wonder should
+not have to re-run the grep.
+
 ## `ZPE_BIAS_FRACTION`, re-derived again and then deliberately not changed
 
 The retry fix recovered CS, so the production roster moved 21/23 → 22/23. CS lands at f_A

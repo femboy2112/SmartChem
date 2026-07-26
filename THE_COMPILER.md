@@ -359,3 +359,66 @@ so, and to say it the right way round:
 Which is the same discipline as `carries_unmodelled_physics` at `base.py:327`, one more level
 up: the honest boundary is more useful than a confident wrong answer, **and it is also more
 useful than a discouraging one.**
+
+---
+
+## X. REFINABILITY IS NOT VINDICATION
+
+The most dangerous moment in §IX's loop is the moment it **succeeds**. A scientist brings a
+metaphor, the compiler refines it into something coherent and reality-respecting, and the
+obvious reading of that outcome is *"so the metaphor was right."* It is not, and the compiler
+must be built so that it cannot be read that way.
+
+> **A metaphor that refines successfully has demonstrated exactly one thing: that it carried
+> enough STRUCTURE to be iteratively refined into a coherent, reality-respecting simulation.**
+> It has not demonstrated that it was true. The refined artefact belongs to the refinement,
+> not to the metaphor, and the metaphor does not inherit its credibility.
+
+The worked case in this repository is unambiguous on the point. *"A human life is an isotope
+with a half-life"* refined all the way to a working inversion that recovers a hidden part-count
+from a survival curve. **And the metaphor is still false.** Humans are not memoryless. What
+was demonstrated was that the metaphor committed to enough structure — a rate, a state, a
+succession rule, an ensemble rule — to be *checked against*, and that its pattern of failure
+was informative. Its reward for being refinable was **being disproved precisely**. That is the
+entire payoff and it is a large one. It is not a promotion.
+
+### The two axes are independent
+
+Refinability and truth are orthogonal, and the compiler must know which cell it is reporting
+from:
+
+| | **True** | **False** |
+|---|---|---|
+| **Refinable** | the ordinary success | ← **the decay case**, and enormously productive anyway |
+| **Not refinable** | the frontier: §IX's missing-language case | genuinely empty |
+
+Note the bottom-left cell. **A metaphor that cannot be refined is not thereby false** — it may
+be underdetermined, or the vocabulary to express it may not exist yet. So refinability implies
+nothing about truth in *either* direction. Any compiler output that collapses these two axes
+into one verdict is lying about which measurement it made.
+
+### The enforcement mechanism: report the casualty list
+
+A shepherd that refines everything and reports success will systematically flatter, which is
+§IX's courtier failure arriving by a different road. The guard is concrete and cheap:
+
+> **On every successful refinement, the compiler reports what was DISCARDED.**
+
+For the decay case that list is five axioms of the source theory, all of them load-bearing
+there and none of them surviving here:
+
+```
+memorylessness              discarded -- the founding axiom of the source
+half-life as a PROPERTY     discarded -- becomes a cohort statistic, not a parameter
+rate invariance             discarded -- nuclear lambda moves ~1e-4; human hazard by factors
+independent ensemble        discarded -- nuclei share no environment; people do
+daughter inherits a rate    discarded -- decomposition is Arrhenius and environment-coupled
+```
+
+The scientist reads that and sees precisely what they no longer have. A refinement reported
+without its casualty list is a refinement pretending to be a confirmation.
+
+---
+
+*Sections I–X are design. Nothing in this document is built. `THE_ORBITAL.md` describes what
+exists; this describes what is argued for.*

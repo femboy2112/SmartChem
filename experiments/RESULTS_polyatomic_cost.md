@@ -1149,3 +1149,82 @@ not start — for a datapoint with **no partner**: the `conventional` half of th
 need roughly 24 GB and cannot run on a 7 GB machine at all. A route comparison with one arm
 is not a route comparison. The paired CH3OH/QZ measurement was worth more than an unpairable
 C2H5OH one, and that is the whole justification.
+
+---
+
+## The `direct` half of the cc-pVQZ pair, and it dissolves the question it was run to answer
+
+The pair is complete. `PHASE_BATCH_DONE`. CH3OH, cc-pVQZ, CCSD(T), one process per route,
+`OMP_NUM_THREADS=1`, both routes calibrated against `PySCFOracle._parts` at
+`0.000e+00 Ha` over three free atoms before either molecule ran.
+
+| phase | conventional | direct |
+|---|---:|---:|
+| `SCF.kernel` | +2.2763 GB (48.9%) | +2.2791 GB (51.4%) |
+| `CCSDBase.ao2mo` (in kernel) | +1.8488 GB, 229.9 s | +1.6311 GB, **35.9 s** |
+| `CCSDBase.kernel` | +0.0000 GB, 750.5 s | +0.0000 GB, 754.0 s |
+| `CCSD.ccsd_t` | +0.0000 GB, 691.8 s | +0.0000 GB, 469.7 s |
+| molecule wall | 1469.0 s | **1248.8 s** |
+| **peak** | **4.6580 GB** | **4.4356 GB** |
+| D_e | 22.163760672 eV | 22.163760672 eV |
+
+**The question was "why did `direct` RAISE the peak 3.5% at cc-pVQZ". It did not raise it.
+By this instrument it LOWERED it by 0.2224 GB, 4.8%, and it was 220 s faster.**
+
+### Two instruments, one sign disagreement
+
+| instrument | conventional | direct | verdict on `direct` |
+|---|---:|---:|---|
+| `ccsd_acceleration_probe.py` | 4.7263 GB | 4.8924 GB | **+3.5%** |
+| `ccsd_peak_phase_probe.py` | 4.6580 GB | 4.4356 GB | **−4.8%** |
+
+They agree on `conventional` to **1.5%** and disagree on `direct` by **10.3%**, in opposite
+directions. All four runs report the identical energy `22.163760672` and both agree `direct`
+is faster, so this is not a numerical drift — it is a disagreement about peak RSS alone.
+**The +3.5% was one instrument's unreplicated number, and every statement built on it was
+built on that.** No claim about `direct`'s memory effect at cc-pVQZ is supportable until the
+disagreement is resolved; a replication of the accel arm is the cheapest discriminator and
+is the open item.
+
+### What survives the disagreement, and it is the part that matters
+
+**`SCF.kernel` owns the peak on BOTH routes, at +2.2763 and +2.2791 GB — 0.12% apart.**
+That is the same allocation twice, and it must be: `direct` is `mycc.direct`, a
+coupled-cluster flag. PySCF's `RHF.get_jk` (`pyscf/scf/hf.py:2504-2508`) never consults it.
+So `direct` cannot move the thing that owns half the peak, whatever the residual 10%
+disagreement turns out to be about. Both routes also confirm again that the amplitude
+iterations and the triples raise the high-water mark by **exactly zero** — 754.0 s and
+469.7 s of arithmetic that costs nothing at the mark.
+
+## Task #14 was filed wrong, the same way #13 was
+
+The task said the untried lever is `mf.direct_scf`. **It is not.** `mf.direct_scf` defaults
+to `True` already and is irrelevant on this path: `RHF.get_jk` decides incore-vs-direct on
+memory headroom alone and never reads it; `direct_scf` only reaches the base-class
+`SCF.get_jk`, which is the branch *not* taken. The literal gate is `_is_mem_enough`,
+`pyscf/scf/hf.py:2248-2250`:
+
+```python
+def _is_mem_enough(self):
+    nbf = self.mol.nao_nr()
+    return nbf**4/1e6 + lib.current_memory()[0] < self.max_memory*.95
+```
+
+CH3OH/cc-pVQZ: `nao_nr()` is 230, `230**4/1e6` is **2798.41 MB** — exactly the incore
+8-fold-symmetric tensor, no fudge factor — against `max_memory*0.95 = 3800`. It fits, so
+`mf._eri = mol.intor('int2e', aosym='s8')` fires and is cached for the whole SCF. **The real
+lever is `mf.max_memory`**, and `smartchem/oracle/pyscf_oracle.py` sets neither it nor
+`direct_scf`, `density_fit` or `incore_anyway` anywhere — the 2.28 GB is stock PySCF at
+`max_memory=4000`.
+
+**And it is not a shell game.** `CCSDBase.ao2mo` (`pyscf/cc/ccsd.py:1194-1198`) has
+`self._scf._eri is not None` as a hard `and`-prerequisite for its incore branch, so with
+`_eri` unbuilt it falls to `_make_eris_outcore`, which streams shell-quartet blocks to an
+HDF5 swap file and never holds the full `nao**4` array. The memory does not relocate into
+`ao2mo`; it is traded for recomputed J/K builds and disk I/O.
+
+**GATE, unchanged and now sharper:** lowering `max_memory` forces Schwarz screening at
+`direct_scf_tol=1e-13` (`hf.py:2124-2133`), which the full incore tensor does not apply. So
+this is **NOT** presumptively identity-preserving and owes the same bit-identity gate. Given
+the instrument disagreement above, it also owes a peak measured by *both* probes before any
+number from it is carried anywhere.

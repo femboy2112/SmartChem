@@ -347,8 +347,62 @@ thing that blocks it is a fact about the design, not about the effort.
   all-zero one. The offset obstruction is deliberately **not** raised while any species is
   unpriced — that question is moot until everything has an oracle, and raising it anyway
   would be a fabricated second problem.
-* **Brick 3 — the free-parameter ledger and the termination rule (§VI.3).** Only after a
-  real spec has more than one hole.
+* **Brick 3 — the free-parameter ledger and the termination rule (§VI.3). BUILT,
+  2026-07-26, `smartchem/ledger.py`.** `Spec` is named slots, bound or not; `shepherd`
+  interrogates until the spec closes or §VI.3's rule stops it. **The gate this bullet
+  carried — "only after a real spec has more than one hole" — was met twice over and it was
+  never arbitrary.** §I's own example is a four-hole spec as written (two masses, two
+  positions "constrained, but you have not said to what"), and Brick 2 returns more than one
+  obstruction on a real reaction. On a *one*-hole spec "strictly reduced" and "finished" are
+  the same event, so the rule has no teeth and testing it proves nothing.
+
+  **The whole design hangs off one decision: the measure is re-derived, never reported.**
+  `Spec.measure()` counts `binding is None` over the slots of the object the responder
+  actually returned, every round. Write `remaining -= len(bound)` instead and "strictly
+  reduced" becomes a tautology no responder can fail — the loop would certify progress it
+  never made. That is not fastidiousness, it is the correction box two bullets up applied
+  before the fact rather than after: a check whose input comes from the thing it checks. The
+  load-bearing test hands `shepherd` a responder that *reports* binding every hole it was
+  shown and returns the spec untouched; the session must come back `STALLED` with all four
+  parameters still free. Relaxing the strict `<` to `<=` kills **4 tests**, one of them by
+  driving the loop past its own termination bound into `LedgerContradiction`.
+
+  **§III is enforced by the constructor, not by review.** A `Slot` carrying options and no
+  `derivation` raises `UnderivedMenu`. The compiler may invent a *question* — falsifiable by
+  whoever answers it — and may not invent an *answer*. `reaction_slot` is the worked case:
+  its options are Brick 0's `equations()` verbatim, which is §I's "there are exactly X
+  admissible relations, here they are" made literal instead of illustrative.
+
+  **And the first version collapsed a distinction that is the entire point, caught by its
+  own test.** An empty menu was reported as §IX's *"nothing here can enumerate this — a
+  statement about the available language"*. But Brick 0's `REFUSE` verdict also produces an
+  empty menu, and that is the opposite claim: **enumerated, and the answer is zero.** The
+  first says find better words; the second says the question has been answered by theorem.
+  Told the wrong one, a scientist goes looking for vocabulary they do not need. The two are
+  now separated by whether a `derivation` exists, and a mutant restoring the collapse dies
+  on exactly one test — the one written for it.
+
+  **§VI.1 is honoured rather than absorbed.** A spec whose holes all close but one of whose
+  bindings is only checkable *after* the run returns `COMPILED_SUBJECT_TO`, never `COMPILED`.
+  Both are truthy; `bool` answers "did this close" and `outcome` answers "closed how", so no
+  caller has to infer the second from the first. §VI.2 is honoured by omission: nothing here
+  emits the word *meaningful*, and a test asserts that along with five other overclaims.
+  §X's casualty list prints on every successful refinement, and prints *"nothing was
+  recorded as discarded"* when it is empty, because silently omitting it is a different
+  claim from reporting that it is empty.
+
+  **THE BRICK'S FAILURE IS THE INTERESTING PART, AND §VII PROMISED IT WOULD BE.** Applied
+  literally, §VI.3 halts on a round that *widens* the spec — one hole closed and two opened
+  beneath it. That is ordinary refinement; it is exactly what §IX's shepherd does when it
+  supplies vocabulary. The rule was written against rounds that **rephrase** and its measure
+  cannot tell those from rounds that **deepen**, because both fail "strictly reduce". So
+  `WIDENED` is a separate outcome carrying the slots that opened, rather than being reported
+  as a stall — the same split that keeps `runtime_refusals` apart from
+  `unexpressed_refusals` in Brick 1, and for the same reason: collapsing them would hide the
+  informative case behind the failure case. **A cardinality measure is the wrong measure for
+  a shepherding loop, and §VI.3 will need a well-founded one — depth-weighted, or ordinal —
+  before the loop of §I can run more than one round of genuine refinement.** That is a fact
+  about the design, which is what this build order is for.
 
 The ordering matters. **Brick 0 before anything conversational.** The dialogue is the last
 thing built, not the first, because the dialogue is the part that can fake working.

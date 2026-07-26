@@ -55,6 +55,19 @@ from .domain import (
     Domain,
     DomainContradiction,
 )
+from .ledger import (
+    COMPILED,
+    COMPILED_SUBJECT_TO,
+    STALLED,
+    WIDENED,
+    LedgerContradiction,
+    Session,
+    Slot,
+    Spec,
+    UnderivedMenu,
+    reaction_slot,
+    shepherd,
+)
 from .stoichiometry import (
     Completion,
     MenuContradiction,
@@ -116,6 +129,10 @@ __all__ = [
     "Domain", "DomainContradiction", "EVERYTHING", "NOTHING",
     # diagnosis -- WHY a reaction cannot be priced, as a value rather than a None
     "Diagnosis", "Obstruction", "diagnose",
+    # ledger -- free parameters, and a termination rule that measures rather than believes
+    "COMPILED", "COMPILED_SUBJECT_TO", "STALLED", "WIDENED",
+    "LedgerContradiction", "Session", "Slot", "Spec", "UnderivedMenu",
+    "reaction_slot", "shepherd",
     # store -- the environment comonad and finite response-surface sampling
     "Store", "Conditions", "SOLVENTS",
     "survey", "response_surface", "is_responsive", "grid",

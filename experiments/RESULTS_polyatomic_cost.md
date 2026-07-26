@@ -178,27 +178,132 @@ Density fitting is the remedy that applies — DF-CCSD never forms `vvvv`, and
 `pyscf.cc.dfccsd.RCCSD` is present in PySCF 2.14.0. That choice is now a decision on a
 number instead of on folklore.
 
-## The one thing to do next
+---
 
-**Not more of this table.** Six species at 53 minutes with a MAE that matches the diatomic
-figure is enough to say the protocol is not broken; it is nowhere near enough to publish an
-accuracy tier, and adding a seventh species of the same kind buys almost nothing.
+# 2026-07-26, second pass: three items worked, two hypotheses dead, one defect found
 
-What is actually blocking is not measurement:
+The three blockers named at the end of the first pass were: the welded gate, the missing
+holdout, and H2O2. All three moved, and **one of the three claims below was simply wrong.**
 
-1. **The gate is welded shut in code.** `validated_profile` in `PySCFOracle.__init__`
-   requires `max_atoms <= 2` while `_polyatomic_energy` is only reachable above 2. No
-   argument combination can publish a polyatomic energy today whatever this file says. That
-   edit is a decision, not an experiment.
-2. **There is no held-out set and none can be assembled from the current tables.** Every
-   `GEOMETRY` diatomic is either in the ZPE fit's 23 or excluded by basis coverage. A real
-   split needs newly tabulated species.
-3. **H2O2 is the informative species here, not the average.** Worst at both tiers, and the
-   only one whose relaxation exercised saddle descent. Its harmonic ZPE for a hindered
-   internal rotor is untested and is the most likely place this protocol is quietly wrong.
-   One species that is understood beats three more that are merely counted.
+## Item 1 — the gate is now a lock, and the lock is still shut
 
-Re-opening the public path needs a code edit as well as a measurement: `validated_profile`
-in `PySCFOracle.__init__` requires `max_atoms <= 2`, while `_polyatomic_energy` is only
-reachable above 2 — so no argument combination can publish a polyatomic energy today, no
-matter what gets measured.
+`validated_profile` had `max_atoms <= 2` as a term in the boolean that produced the accuracy
+bar, so "we have not measured this" and "this cannot be measured" were the same state.
+Replaced with three protocols consulting three tables (`pyscf_oracle.py`, commit `ea18bab`).
+`_RELAXED_GEOMETRY_MAE` is **empty**, so behaviour is byte-identical; evidence now has
+somewhere to live. Entries carry `(mae_ev, max_validated_atoms)` because a profile measured
+on 4-atom species says nothing about 12.
+
+**The 0.0558 eV above is deliberately NOT entered.** All six species were used to develop and
+inspect the protocol, so it is a training error — see item 2 for how badly that matters.
+
+## Item 2 — I was wrong: a holdout exists, and the training MAE understates the error
+
+The first pass asserted "there is no held-out set and none can be assembled from the current
+tables." That is true of the **diatomics** and false about everything else. `POLYATOMIC_REFS`
+carries **sixteen** species. Only six had ever been computed here. The other ten have curated
+thermochemistry and had never been touched by any prediction, timing, or residual inspection.
+The only missing input was a bond graph.
+
+Nine added to `TOPOLOGY`, each validated against its own reference row. `C3H7OH` declined:
+propan-1-ol and propan-2-ol are both C3H8O, their formation enthalpies differ by more than
+this protocol's entire error budget, and `PolyatomicRef` records no structure. That is a
+latent defect in the reference table, not an oversight here.
+
+**Holdout at cc-pVTZ, 4 of 9 in** (same protocol, same geometry tier, cache shared):
+
+| species | error (eV) | kcal/mol |
+|---|---:|---:|
+| CH2O | −0.2901 | −6.69 |
+| CH3NH2 | −0.4900 | −11.30 |
+| HCOOH | −0.6725 | −15.51 |
+| N2H4 | −0.6808 | −15.70 |
+
+```
+holdout MAE so far   0.5334 eV   (n=4)
+profile MAE          0.3575 eV   (n=6, the set the protocol was developed on)
+ratio                1.49x
+```
+
+Every error is negative, so the systematic underbinding **does** transfer — that is the
+validation signal, and it is the good news. But **two holdout species are worse than anything
+in the profile**, and the six-species figure understates the spread by about half. A training
+MAE quoted as an accuracy tier would have been optimistic by 1.5x at this tier. This is
+exactly why the 0.0558 eV was not entered into the table in item 1.
+
+The remaining five (C2H6, C2H5OH, CH3OCH3, C3H8, CH3OC2H5) are still running. The
+tier-matched cbs(TZ,QZ) holdout is affordable only for CH2O, N2H4 and HCOOH — CH3NH2 at
+4.3 GB modelled is a stretch and C2H6 upward is out, per `basis_size_probe.py`.
+
+## Item 3 — H2O2: both suspects refuted
+
+**The hindered rotor is dead, by its own upper bound.** `vibrational_probe.py` dumps every
+harmonic mode. H2O2's torsion is **377.8 cm⁻¹ carrying 0.0234 eV — 2.9% of its ZPE**, at a
+dihedral of −115.0° (the trans-planar saddle is 180°, so the saddle descent did its job).
+The cbs(TZ,QZ) error is −0.1090 eV. Deleting the mode outright — far more than any
+hindered-rotor correction can do — leaves −0.0856 eV, still the worst species by a
+comfortable margin over NH3's −0.0609. **The mode cannot carry the error.**
+
+**Multireference character is dead too.** H2O2 is the only species with an O–O single bond,
+the textbook single-determinant failure. `multireference_probe.py` reads the CCSD(T)
+amplitudes:
+
+| species | T1 | D1 | (T)/E_corr | err eV |
+|---|---:|---:|---:|---:|
+| H2O2 | 0.00794 | 0.01913 | 0.03364 | −0.1090 |
+| NH3 | 0.00550 | 0.00959 | 0.02957 | −0.0609 |
+| CH3OH | 0.00736 | 0.01683 | 0.03129 | −0.0588 |
+| CO2 | **0.01458** | **0.04400** | **0.04423** | −0.0396 |
+| CH4 | 0.00676 | 0.01211 | 0.02745 | −0.0364 |
+| H2O | 0.00564 | 0.01028 | 0.02740 | −0.0300 |
+
+Nothing exceeds the conventional T1 > 0.02 or D1 > 0.05. H2O2 sits at 0.00794, comfortably
+single-reference, and the species with the **highest** diagnostic on all three columns is
+only fourth in error. The ordering runs against the hypothesis.
+
+**And the holdout killed the peroxide framing outright.** `N2H4` was added specifically as
+the N–N single-bond analogue of H2O2 — the discriminating species, written into `TOPOLOGY`
+with that stated purpose before the sweep was launched. It came back at **−0.6808 eV, worse
+than H2O2's −0.5046 at the same tier.** So whatever this is, it is not about the O–O bond.
+(Weaker evidence than the P-Q series: written before the data arrived, but not
+git-committed first.)
+
+## What the red-team found instead: a silent wrong answer
+
+An adversarial review aimed at the ZPE-bias transfer went looking for a competing explanation
+and found a defect in `harmonic_analysis`. Verified independently here on a real HF/cc-pVDZ
+Hessian rather than the synthetic case reported:
+
+```
+CO2 at r(C-O)=1.1430 A, one oxygen displaced perpendicular by delta
+
+delta <= 1e-8 A   5 external  4 modes  ZPE 0.3466 eV  [768.3 768.3 1500.5 2554.1]
+delta >= 1e-7 A   6 external  3 modes  ZPE 0.2990 eV  [768.3 1500.5 2554.1]
+```
+
+Two linearity criteria in one file, five orders of magnitude apart — `_external_modes` at
+1e-8, `is_linear` at 1e-3 — and between them a physically linear molecule loses a genuine
+degenerate bend with no error and no warning. **0.0476 eV**, larger than chemical accuracy
+and larger than the whole polyatomic MAE. Fixed in `050e6f6` by refusing when the two
+disagree. Not reachable by the six measured species; it arms for near-linear geometries that
+do not land exactly on axis.
+
+## Two things the red-team is right about that are not yet acted on
+
+1. **The 9.1% ZPE bias is evaluated entirely outside its fitted range.** The 23 training ZPEs
+   run 0.00986–0.27284 eV. Every polyatomic ZPE is *above* the maximum: CO2 1.28×, CH3OH
+   5.46×. A one-parameter model, 5.5× out of range, on six points. That is a sharper problem
+   than the bends-versus-stretches framing, which the data actually anti-supports.
+2. **Two systematics are omitted and unnamed.** `grep -rE "spin.orbit|relativis|counterpoise|BSSE" smartchem/`
+   returns zero hits, and `cc.CCSD(mf)` at `pyscf_oracle.py:637` is all-electron in a
+   valence-only basis whose correlation energy is then X⁻³-extrapolated. Both push the same
+   direction as the observed residual and both scale with heavy-atom count.
+
+## The live suspect
+
+A CCSD(T) single point evaluated off the true minimum is **strictly above** it, second order
+in the displacement — so it cannot change sign, and every error measured here is negative.
+The geometry is HF/cc-pVDZ with a measured 0.0255 Å r_e MAE. `_GEOMETRY_METHODS = ("HF",)`
+is the boundary: only the geometry *basis* can be varied through the public constructor, so
+the clean test is HF/cc-pVDZ versus HF/cc-pVTZ on the same species. That is the next probe,
+and it has not been run.

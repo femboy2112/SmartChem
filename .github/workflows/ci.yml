@@ -73,6 +73,22 @@ jobs:
       - name: Test fast suite with PySCF available
         run: pytest -q -rs -m "not slow"
 
+      # This job is the ONLY place the benchmark can fail, so it is the only place the
+      # benchmark means anything. The core `test` job runs it with no backend, so it
+      # exercises the heuristic oracle and nothing else -- which is exactly how the
+      # iodine defect survived: I2/HI/ICl are curated reference rows, PySCF has no
+      # cc-pVTZ for iodine, and the coverage guard consulted the ground-state-spin table
+      # instead of the basis library. `python -m smartchem.bench` therefore exited 1 with
+      # an uncaught BasisNotFoundError on every developer machine with the backend
+      # installed, and CI could not see it. A check blind on the path where it can fail
+      # is not a check.
+      #
+      # --split test keeps this to the smaller partition; it is a crash-and-coverage
+      # gate, not the research benchmark.
+      - name: Benchmark must survive the real backend
+        timeout-minutes: 30
+        run: python -m smartchem.bench --split test --quiet
+
       # Manual dispatch buys coverage of the expensive analytic-gradient and Hessian
       # interfaces without charging every pull request for repeated wavefunction work.
       # These are selected integration cases, not the full research benchmark.

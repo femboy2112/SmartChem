@@ -1,9 +1,18 @@
 """
 Benchmark harness. Reports measured accuracy against experimental reference data.
 
-Run:  python -m smartchem.bench [--split test] [--oracle NAME ...]
+Run:  python -m smartchem.bench [--split test] [--oracle NAME ...] [--cache PATH]
 
 Design rules, so a number from this module can be trusted:
+
+* ``--cache`` is off by default, and that is a deliberate choice rather than an oversight.
+  Species caching is identity-preserving for *energies* -- the functor law used as a lookup
+  table, measured at 33.5x on a 45-reaction network -- but it is **not** identity-preserving
+  for the wall-clock column, which is one of this module's published outputs. A warm run
+  reports the marginal cost of a species given the atoms already priced, which is a
+  different quantity from the cold cost the accuracy/cost curve was built on. So the
+  default stays cold and comparable, the flag is available when the run is research rather
+  than publication, and any cached run says so in its own report.
 
 * Coverage is printed before any MAE. A good conditional score over three species is not a
   good overall score, and incomplete coverage receives no accuracy-tier verdict.
@@ -184,7 +193,7 @@ def report(results: list[Result], available_elements: frozenset[str], split: str
           f"(1.00 kcal/mol)")
 
 
-def _load_oracles(names: list[str] | None):
+def _load_oracles(names: list[str] | None, cache_path: str | None = None):
     from .oracle import available_oracles
     registry = available_oracles()
     if names:
@@ -194,8 +203,37 @@ def _load_oracles(names: list[str] | None):
                 f"unknown oracle(s): {', '.join(missing)}. "
                 f"available: {', '.join(sorted(registry))}"
             )
-        return [registry[n] for n in names]
-    return list(registry.values())
+        chosen = [registry[n] for n in names]
+    else:
+        chosen = list(registry.values())
+    if cache_path is None:
+        return chosen
+    # In-memory innermost, on disk outermost: a repeat within this run is answered from the
+    # process dict, and what this run paid for outlives it. Both wrappers preserve name,
+    # reported scale, named sensitivities and None refusals, so only cost changes.
+    from .oracle.caching import CachingOracle
+    from .oracle.persistent import PersistentCache
+    return [PersistentCache(CachingOracle(o), cache_path) for o in chosen]
+
+
+def _cache_line(oracle) -> str | None:
+    """One honest line about what the run did not have to pay for, or None if uncached."""
+    hits = getattr(oracle, "hits", None)
+    if hits is None:
+        return None
+    inner = getattr(oracle, "inner", None)
+    inner_hits = getattr(inner, "hits", 0)
+    saved = getattr(oracle, "saved_seconds", 0.0)
+    parts = [f"cache: {hits} disk hits, {getattr(oracle, 'misses', 0)} misses",
+             f"{inner_hits} in-process hits"]
+    if saved:
+        parts.append(f"{saved:.1f}s restored")
+    for field, label in (("rejected", "REJECTED"), ("load_error", "load error"),
+                         ("save_error", "save error")):
+        value = getattr(oracle, field, None)
+        if value:
+            parts.append(f"{label}: {value}")
+    return "  " + ", ".join(parts)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -205,11 +243,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--oracle", action="append", dest="oracles", default=None,
                    help="oracle name; repeatable (default: every available oracle)")
     p.add_argument("--quiet", action="store_true", help="summary only, no per-species rows")
+    p.add_argument("--cache", dest="cache", default=None, metavar="PATH",
+                   help="memoise species energies to PATH and reuse them. Same numbers, "
+                        "less work -- but the wall-clock column then reports warm marginal "
+                        "cost, not the cold cost the published curve was measured on")
     args = p.parse_args(argv)
 
     from .atoms import PT
 
-    oracles = _load_oracles(args.oracles)
+    oracles = _load_oracles(args.oracles, args.cache)
     results = []
     for oracle in oracles:
         if not args.quiet:
@@ -218,8 +260,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {'species':6} {'predicted':>10} {'reference':>9} "
                   f"{'err eV':>9} {'err kcal':>10} {'time':>8}")
         results.append(evaluate(oracle, args.split, verbose=not args.quiet))
+        line = _cache_line(oracle)
+        if line and not args.quiet:
+            print(line)
 
     report(results, frozenset(PT.keys()), args.split)
+    if args.cache is not None:
+        # Say it where the numbers are, not only in --help: a reader comparing this run's
+        # timings against the published curve is comparing two different quantities.
+        print()
+        print(f"  NOTE: run was cached to {args.cache}. Energies are unchanged; the "
+              f"wall-clock column is warm marginal cost, not cold cost.")
     return 0
 
 

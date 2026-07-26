@@ -22,12 +22,13 @@ import pytest
 from smartchem.atoms import PT
 from smartchem.category import Bond, Molecule
 from smartchem.data.basis_tight_d import SECOND_ROW, TIGHT_D
-from smartchem.data.reference import GEOMETRY
+from smartchem.data.reference import ATOM_SPIN, BOND_REFS, GEOMETRY
 from smartchem.geometry import GeometryError
 from smartchem.oracle import pyscf_oracle as pyscf_module
 from smartchem.oracle.pyscf_oracle import (
     PYSCF_AVAILABLE,
     PySCFOracle,
+    basis_covers,
     resolve_basis,
     tight_d_name,
 )
@@ -312,3 +313,62 @@ class TestCostLimit:
         monkeypatch.setattr(oracle, "_atom_energy", broken_backend)
         with pytest.raises(RuntimeError, match="implementation defect"):
             oracle.energy(Molecule.atom("H"))
+
+
+@pytest.mark.skipif(not PYSCF_AVAILABLE, reason="coverage is a question for the basis library")
+class TestElementCoverage:
+    """
+    The guard has to agree with the basis library, not with the spin table.
+
+    Iodine has a ground-state spin on file and three curated reference rows (I2 in the test
+    split, HI and ICl in train), and no ``cc-pVTZ``. A coverage guard that consulted only
+    ``ATOM_SPIN`` therefore let all three through to ``gto.M``, which raised
+    ``BasisNotFoundError`` out through the public ``energy()`` contract -- neither a value
+    nor a decline -- and took ``python -m smartchem.bench`` down with it (exit 1, no report)
+    on every machine with PySCF installed.
+    """
+
+    def test_the_two_tables_disagree_and_the_library_is_the_authority(self):
+        assert "I" in ATOM_SPIN                            # what the old guard asked
+        assert not basis_covers(("I",), "cc-pVTZ", False)  # what actually decides
+
+    def test_covered_elements_are_unaffected(self):
+        assert basis_covers(("H", "O"), "cc-pVTZ", False)
+        assert basis_covers(("C", "N"), "cc-pVDZ", False)
+
+    def test_an_uncovered_element_declines_before_backend_work(self, monkeypatch):
+        oracle = PySCFOracle("CCSD(T)", "cc-pVTZ", tight_d=False)
+        for attr in ("_energy", "_atom_energy"):
+            monkeypatch.setattr(
+                oracle, attr, lambda *_a, **_k: pytest.fail("backend ran"))
+        assert oracle.energy(Molecule.diatomic("I", "I")) is None
+        assert oracle.energy(Molecule.atom("I")) is None
+
+    def test_a_cbs_tier_needs_both_members_to_cover(self):
+        """Extrapolating from whichever member happens to have the element is not the protocol."""
+        oracle = PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", tight_d=False)
+        assert oracle._basis_covers(("I", "I")) is False
+        assert oracle._basis_covers(("H", "H")) is True
+
+    def test_no_curated_reference_row_can_reach_the_backend_uncovered(self):
+        """
+        The anchor the benchmark needed: walk the species the benchmark walks, and require
+        that every one of them gets a *decision* rather than an exception.
+
+        Only the uncovered rows are actually priced here -- those decline instantly. A
+        covered row would cost a real wavefunction, which is what ``--runslow`` is for.
+        """
+        from smartchem.oracle import available_oracles
+
+        checked = 0
+        for name, oracle in sorted(available_oracles().items()):
+            if not isinstance(oracle, PySCFOracle):
+                continue
+            for ref in BOND_REFS:
+                covered = oracle._basis_covers(ref.atoms)
+                assert isinstance(covered, bool), (name, ref.formula)
+                if not covered:
+                    molecule = Molecule.diatomic(*ref.atoms, order=ref.bond_order)
+                    assert oracle.energy(molecule) is None, (name, ref.formula)
+                    checked += 1
+        assert checked > 0, "the uncovered-species path was never exercised"

@@ -94,6 +94,7 @@ from ..geometry import (GeometryError, harmonic_analysis, relax, seed_coordinate
 
 try:
     from pyscf import gto, scf, mp, cc
+    from pyscf.lib.exceptions import BasisNotFoundError
 except ModuleNotFoundError as exc:  # optional backend; pure configuration must still import
     # Only absence of the top-level optional package is an availability condition. If an
     # installed PySCF fails because one of its own imports is broken, surface that defect
@@ -101,6 +102,9 @@ except ModuleNotFoundError as exc:  # optional backend; pure configuration must 
     if exc.name != "pyscf":
         raise
     gto = scf = mp = cc = None
+    # Never raised without the backend -- ``basis_covers`` requires PySCF before it can
+    # reach an except clause -- but the name has to exist for the module to import.
+    BasisNotFoundError = RuntimeError
     _PYSCF_IMPORT_ERROR: ImportError | None = exc
 else:
     _PYSCF_IMPORT_ERROR = None
@@ -327,6 +331,56 @@ def resolve_basis(symbols: tuple[str, ...], basis: str, tight_d: bool) -> str | 
         s: (gto.basis.parse(TIGHT_D[plus_d], symb=s) if s in SECOND_ROW else basis)
         for s in set(symbols)
     }
+
+
+#: Whether one (basis, element) pair exists in the backend's library. A basis set's element
+#: coverage is fixed data, so one lookup per pair is enough for the life of the process.
+_BASIS_COVERAGE: dict[tuple[str, str], bool] = {}
+
+
+def basis_covers(symbols: tuple[str, ...], basis: str, tight_d: bool) -> bool:
+    """
+    Whether the basis this tier would actually hand the backend exists for every element.
+
+    ``ATOM_SPIN`` membership answers a *different* question -- is a ground-state
+    multiplicity on file -- and the two tables disagree. Iodine has a spin and no
+    ``cc-pVTZ``, so a coverage guard that consulted only the spin table passed I2, HI and
+    ICl (all three curated in ``data/reference.py``, one in the test split and two in
+    train) straight through to ``gto.M``, which raised ``BasisNotFoundError`` out through
+    the public ``energy()`` contract. That is neither a value nor a decline but an escaping
+    backend exception, and it took ``python -m smartchem.bench`` down with it -- exit 1,
+    no report -- on any machine where PySCF was installed.
+
+    CI could not see it. The job that runs the benchmark has no backend, so it exercised
+    only the heuristic oracle; the job that has a backend runs a hydrogen smoke test and
+    not the benchmark. A check that is blind on the path where it can fail is not a check.
+
+    The authority on what a basis covers is the basis library, so ask it, rather than
+    maintain a second element table that can drift out of agreement with the first.
+    """
+    _require_pyscf()
+    resolved = resolve_basis(symbols, basis, tight_d)
+    for symbol in set(symbols):
+        wanted = resolved if isinstance(resolved, str) else resolved[symbol]
+        if not isinstance(wanted, str):
+            # An already-parsed vendored tight-d set. Covered by construction: TIGHT_D only
+            # holds elements it has exponents for, and resolve_basis only reaches for it
+            # after confirming the variant is vendored at this cardinal.
+            continue
+        key = (wanted, symbol)
+        if key not in _BASIS_COVERAGE:
+            try:
+                gto.basis.load(wanted, symbol)
+            except (BasisNotFoundError, KeyError):
+                # Only "this library has no such set for this element" is a coverage
+                # answer. Anything else is a real defect and must surface, not be
+                # laundered into a polite decline.
+                _BASIS_COVERAGE[key] = False
+            else:
+                _BASIS_COVERAGE[key] = True
+        if not _BASIS_COVERAGE[key]:
+            return False
+    return True
 
 
 def _parse_cbs_basis(basis: str) -> tuple[str, str] | None:
@@ -835,6 +889,21 @@ class PySCFOracle(BaseOracle):
                 return candidate
         return None
 
+    def _basis_covers(self, symbols: tuple[str, ...]) -> bool:
+        """
+        Every basis this oracle would reach for must exist for every element.
+
+        A CBS request is two real calculations, so both members have to cover the species
+        -- extrapolating from one basis is not this tier's protocol. A named geometry tier
+        is a third: ``_polyatomic_energy`` drives the sub-oracle's internals directly
+        rather than through its own ``energy()``, so its coverage is checked here or
+        nowhere.
+        """
+        names = list(self._is_cbs() or (self.basis,))
+        if self.geometry_tier is not None:
+            names.append(self.geometry_tier[1])
+        return all(basis_covers(symbols, name, self.tight_d) for name in names)
+
     # -- oracle interface --------------------------------------------------------
     def energy(self, molecule: Molecule) -> Estimate | None:
         """
@@ -869,6 +938,8 @@ class PySCFOracle(BaseOracle):
             return None                      # excitations and quanta; see base.py
         if any(s not in ATOM_SPIN for s in atoms):
             return None                      # no ground-state spin known; decline
+        if not self._basis_covers(atoms):
+            return None                      # no basis for some element at this tier; decline
 
         if len(atoms) == 1:
             t0 = time.perf_counter()

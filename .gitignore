@@ -5,3 +5,9 @@ __pycache__/
 venv/
 .pytest_cache/
 *.log
+# Persistent species-energy caches. The energies in one are real and expensive, but a
+# committed blob of them is a provenance claim this repo has not decided how to make:
+# a cache record is only as trustworthy as the fingerprint it was keyed on.
+experiments/*.json
+experiments/*.json.lock
+experiments/.probe_cache.json

@@ -44,6 +44,14 @@ from .category import (
     reaction_residue,
     tensor_obj,
 )
+from .stoichiometry import (
+    Completion,
+    MenuContradiction,
+    StoichiometryMenu,
+    composition_matrix,
+    integer_kernel_basis,
+    stoichiometry_menu,
+)
 from .store import (
     Conditions,
     SOLVENTS,
@@ -89,6 +97,9 @@ __all__ = [
     "braid", "catalytic_cycle", "conserves", "identity", "is_catalytic", "is_regenerated",
     "bond_order_profile", "bond_signature", "is_bond_order_conserving", "is_isodesmic",
     "reaction_residue", "tensor_obj",
+    # stoichiometry -- the inverse of `conserves`: derive the balances, never guess them
+    "Completion", "StoichiometryMenu", "MenuContradiction",
+    "composition_matrix", "integer_kernel_basis", "stoichiometry_menu",
     # store -- the environment comonad and finite response-surface sampling
     "Store", "Conditions", "SOLVENTS",
     "survey", "response_surface", "is_responsive", "grid",

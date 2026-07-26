@@ -600,13 +600,51 @@ def harmonic_analysis(
     weighted = hessian * inverse_sqrt_mass[:, None] * inverse_sqrt_mass[None, :]
 
     external = _external_modes(masses, coordinates)
+    n_external = external.shape[1]
+    # TWO LINEARITY CRITERIA LIVE IN THIS FILE AND THEY DISAGREE ON A REAL RANGE.
+    #
+    # ``_external_modes`` decides the external count by SVD rank at 1e-8 relative;
+    # ``is_linear`` decides the same shape question at 1e-3. Five orders of magnitude
+    # apart, and until 2026-07-26 only the tight one had any effect. In the window between
+    # them a physically LINEAR molecule carrying numerical noise off its axis was assigned
+    # six external modes instead of five, the projector removed a direction that overlaps a
+    # genuine degenerate bend, and one real vibration vanished from the spectrum with no
+    # error, no warning, and a perfectly plausible-looking ZPE.
+    #
+    # Measured on a real HF/cc-pVDZ Hessian for CO2 at r(C-O) = 1.1430 A, displacing one
+    # oxygen perpendicular to the axis by delta:
+    #
+    #     delta <= 1e-8 A    5 external   4 modes   ZPE 0.3466 eV   [768.3 768.3 1500.5 2554.1]
+    #     delta >= 1e-7 A    6 external   3 modes   ZPE 0.2990 eV   [768.3 1500.5 2554.1]
+    #
+    # 0.0476 eV lost to a displacement of one ten-millionth of an Angstrom -- larger than
+    # this project's chemical-accuracy threshold and larger than its whole measured
+    # polyatomic MAE. ``is_linear`` returned True at every delta in that sweep.
+    #
+    # WHY THIS REFUSES INSTEAD OF PICKING A WINNER.
+    # Silently trusting ``is_linear`` would mean truncating the external basis to five of
+    # six numerically near-degenerate directions and hoping the discarded one was the axial
+    # rotation; silently trusting the SVD is the current defect. In the disagreement window
+    # the geometry genuinely does not determine the answer, and the frequencies are not
+    # uncertain here -- one of them is absent. A caller who means a linear species should
+    # hand in coordinates that are linear; a caller who means a bent one should hand in a
+    # bend this file can see. Refusing is the same rule the oracles follow.
+    expected_external = 3 if n == 1 else (5 if is_linear(coordinates) else 6)
+    if n_external != expected_external:
+        raise GeometryError(
+            f"geometry is numerically ambiguous: the mass-weighted external subspace has "
+            f"rank {n_external}, but the shape test expects {expected_external} "
+            f"({'linear' if expected_external == 5 else 'nonlinear'}). A ZPE computed here "
+            f"would silently gain or lose a vibrational mode. Symmetrise the coordinates "
+            f"or relax them further before asking for frequencies."
+        )
     projector = np.eye(3 * n) - external @ external.T
     projected = projector @ weighted @ projector
 
     eigenvalues, eigenvectors = np.linalg.eigh(projected)
     # after projection the external modes are numerically zero; drop exactly as many as
-    # the SVD said there were, so a linear molecule keeps its extra vibration
-    n_external = external.shape[1]
+    # the SVD said there were, so a linear molecule keeps its extra vibration. The count
+    # was cross-checked against the shape test above, so the two cannot disagree here.
     internal = np.argsort(np.abs(eigenvalues))[n_external:]
     vibrational = eigenvalues[internal]
     vectors = eigenvectors[:, internal]

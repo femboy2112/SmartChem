@@ -644,7 +644,12 @@ class TestExternalModes:
     def test_a_linear_molecule_has_only_five(self):
         """
         Rotation about the molecular axis is not a motion at all, so the SVD finds it as
-        a null vector and drops it -- no linearity flag, no tolerance to tune.
+        a null vector and drops it.
+
+        The SVD rank test still carries a tolerance (1e-8 relative), and it is not the only
+        linearity criterion in the module -- ``is_linear`` uses 1e-3. Where those two
+        disagree, ``harmonic_analysis`` now refuses rather than picking one; see
+        ``TestTheTwoLinearityCriteriaMustAgree``.
         """
         coords = np.array([[0.0, 0, 0], [0.0, 0, 1.16], [0.0, 0, -1.16]])
         assert _external_modes(np.array([12.011, 15.999, 15.999]), coords).shape[1] == 5
@@ -653,6 +658,91 @@ class TestExternalModes:
         coords = np.array([[0.0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]])
         modes = _external_modes(np.array([15.999, 1.008, 1.008]), coords)
         assert np.allclose(modes.T @ modes, np.eye(modes.shape[1]))
+
+
+class TestTheTwoLinearityCriteriaMustAgree:
+    """
+    A silently-dropped vibrational mode, found 2026-07-26 and closed.
+
+    ``_external_modes`` decides how many external modes exist by SVD rank at 1e-8 relative.
+    ``is_linear`` answers the same shape question at 1e-3. For five orders of magnitude
+    between them, a physically LINEAR molecule carrying numerical noise off its axis was
+    handed six external modes instead of five. The projector then removed a direction
+    overlapping a genuine degenerate bend, ``argsort(...)[n_external:]`` discarded one more
+    eigenvalue than it should have, and a real vibration disappeared from the spectrum.
+
+    No exception, no warning, no decline -- just a ZPE that is too small by one mode and
+    looks entirely ordinary. Measured on a real HF/cc-pVDZ Hessian for CO2 with one oxygen
+    displaced 1e-7 A off axis: 0.3466 eV became 0.2990 eV. That 0.0476 eV is larger than
+    the chemical-accuracy threshold this project quotes (0.0433 eV) and larger than the
+    whole measured polyatomic MAE (0.0558 eV).
+
+    These tests use a synthetic Hessian, because the defect is in the projection bookkeeping
+    and needs no wavefunction to reproduce -- and a test that needs an optional backend is a
+    test that does not run.
+    """
+    MASSES = np.array([12.011, 15.999, 15.999])
+    LINEAR = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.16], [0.0, 0.0, -1.16]])
+
+    @staticmethod
+    def isotropic_hessian() -> np.ndarray:
+        """Any Hessian positive on the internal subspace exposes the mode count."""
+        return np.eye(9)
+
+    def displaced(self, delta: float) -> np.ndarray:
+        coordinates = self.LINEAR.copy()
+        coordinates[1, 1] += delta
+        return coordinates
+
+    def test_an_exactly_linear_triatomic_keeps_all_four_modes(self):
+        result = harmonic_analysis(self.MASSES, self.LINEAR, self.isotropic_hessian())
+        assert len(result.frequencies_cm) == 4          # 3N-5, the linear count
+
+    @pytest.mark.parametrize("delta", [0.0, 1e-12, 1e-9, 1e-8])
+    def test_noise_below_the_svd_tolerance_is_still_linear(self, delta):
+        result = harmonic_analysis(self.MASSES, self.displaced(delta),
+                                   self.isotropic_hessian())
+        assert len(result.frequencies_cm) == 4
+
+    @pytest.mark.parametrize("delta", [1e-7, 1e-6, 1e-5, 1e-4, 1e-3])
+    def test_the_disagreement_window_is_refused_instead_of_answered(self, delta):
+        """
+        This is the whole point. Every one of these deltas previously returned a
+        confident, wrong, one-mode-short answer.
+        """
+        with pytest.raises(GeometryError, match="numerically ambiguous"):
+            harmonic_analysis(self.MASSES, self.displaced(delta),
+                              self.isotropic_hessian())
+
+    @pytest.mark.parametrize("delta", [1e-2, 5e-2, 0.3])
+    def test_a_genuinely_bent_triatomic_is_answered_normally(self, delta):
+        """Past the window both criteria agree the molecule is bent; nothing is refused."""
+        coordinates = self.displaced(delta)
+        assert not is_linear(coordinates)
+        result = harmonic_analysis(self.MASSES, coordinates, self.isotropic_hessian())
+        assert len(result.frequencies_cm) == 3          # 3N-6, the nonlinear count
+
+    def test_the_refusal_reports_both_counts_so_it_can_be_diagnosed(self):
+        with pytest.raises(GeometryError) as caught:
+            harmonic_analysis(self.MASSES, self.displaced(1e-5), self.isotropic_hessian())
+        message = str(caught.value)
+        assert "rank 6" in message and "expects 5" in message and "linear" in message
+
+    def test_the_guard_does_not_disturb_a_single_atom(self):
+        """One atom has three external modes and no vibrations; neither branch applies."""
+        result = harmonic_analysis([1.008], np.zeros((1, 3)), np.zeros((3, 3)))
+        assert len(result.frequencies_cm) == 0
+
+    def test_the_guard_does_not_disturb_a_diatomic(self):
+        coordinates = np.array([[0.0, 0, 0], [0.0, 0, 1.1]])
+        result = harmonic_analysis([1.008, 18.998], coordinates,
+                                   TestHarmonicAnalysis.diatomic_hessian(0.65))
+        assert len(result.frequencies_cm) == 1
+
+    def test_a_bent_polyatomic_is_untouched(self):
+        coordinates = np.array([[0.0, 0, 0.117], [0.0, 0.757, -0.469], [0.0, -0.757, -0.469]])
+        result = harmonic_analysis([15.999, 1.008, 1.008], coordinates, np.eye(9))
+        assert len(result.frequencies_cm) == 3
 
 
 class TestTheMassConventionIsLoadBearing:

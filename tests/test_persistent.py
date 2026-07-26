@@ -36,6 +36,8 @@ from smartchem.oracle.heuristic import HeuristicOracle
 from smartchem.oracle.persistent import (
     PersistentCache,
     SCHEMA_VERSION,
+    _chain_source_sha256,
+    _fingerprint,
     _record_checksum,
     species_signature,
 )
@@ -651,3 +653,63 @@ class TestItActuallyCaches:
         cache.energy(water())
         assert "restored" in cache.certificate()
         assert "12.5 s not re-spent" in cache.certificate()
+
+
+class TestTheWrapperDoesNotHideTheInnerImplementation:
+    """
+    A wrapped oracle's cache key must depend on the WRAPPED oracle's implementation.
+
+    This was a live silent-wrong-answer path. ``_fingerprint`` hashed only
+    ``inspect.getmodule(type(oracle))``, and the ordinary composition this project uses --
+    ``PersistentCache(CachingOracle(PySCFOracle(...)))`` -- meant the digest covered
+    ``caching.py`` and never ``pyscf_oracle.py``. ``calculation_spec`` delegates correctly,
+    but it carries SETTINGS, and ``_model_inputs_sha256`` is a deliberate whitelist: a
+    change to ``conv_tol``, ``_DESCENT_STEP_ANGSTROM``, the CBS algebra, or a frozen-core
+    flag altered every number and left the key untouched. Measured on a copied tree, adding
+    ``mycc.frozen = 1`` moved the bare fingerprint and left the wrapped one bit-identical,
+    and the stale value was served with ``rejected=0``.
+    """
+
+    class Wrapper:
+        """Minimal stand-in for any delegating oracle: the hazard is composition itself."""
+
+        def __init__(self, inner):
+            self.inner = inner
+
+        def calculation_spec(self):
+            return {"wrapper": "test", "inner": getattr(self.inner, "name", None)}
+
+    def test_the_inner_oracle_source_reaches_the_digest(self):
+        # HeuristicOracle and CountingOracle live in different modules, so a digest that
+        # ignored `.inner` would return the same value for both wrappers.
+        one = _chain_source_sha256(self.Wrapper(HeuristicOracle()))
+        two = _chain_source_sha256(self.Wrapper(CountingOracle()))
+        assert one != two
+
+    def test_a_wrapper_alone_differs_from_a_wrapper_around_something(self):
+        assert _chain_source_sha256(self.Wrapper(None)) != _chain_source_sha256(
+            self.Wrapper(HeuristicOracle())
+        )
+
+    def test_the_chain_is_walked_to_the_bottom_not_just_one_level(self):
+        shallow = self.Wrapper(self.Wrapper(None))
+        deep = self.Wrapper(self.Wrapper(HeuristicOracle()))
+        assert _chain_source_sha256(shallow) != _chain_source_sha256(deep)
+
+    def test_a_self_referential_chain_terminates_instead_of_recursing_forever(self):
+        node = self.Wrapper(None)
+        node.inner = node          # the guard is identity, not a depth limit
+        assert isinstance(_chain_source_sha256(node), str)
+
+    def test_a_repeated_module_is_not_double_counted(self):
+        # Two wrappers of the same class contribute their module once, so the digest is a
+        # statement about which implementations are involved, not how deep the stack is.
+        once = _chain_source_sha256(self.Wrapper(None))
+        twice = _chain_source_sha256(self.Wrapper(self.Wrapper(None)))
+        assert once == twice
+
+    def test_the_full_fingerprint_inherits_this(self, tmp_path):
+        # The property has to survive at _fingerprint, which is what actually keys records.
+        assert _fingerprint(self.Wrapper(HeuristicOracle())) != _fingerprint(
+            self.Wrapper(CountingOracle())
+        )

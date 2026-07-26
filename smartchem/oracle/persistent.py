@@ -164,6 +164,54 @@ def species_signature(molecule: Molecule) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
+def _chain_source_sha256(oracle) -> str:
+    """
+    Hash the implementation of EVERY oracle in the delegation chain, outermost first.
+
+    Hashing only ``type(oracle)``'s module was a silent-wrong-answer path, and it was armed
+    by the ordinary way this project composes oracles. ``PersistentCache(CachingOracle(
+    PySCFOracle(...)))`` handed ``CachingOracle`` to this function, so the digest covered
+    ``caching.py`` and never ``pyscf_oracle.py``. ``calculation_spec`` delegates correctly
+    and carries the inner settings, but settings are not source: ``_model_inputs_sha256``
+    is a deliberate WHITELIST of constants, so anything not on it -- ``conv_tol``,
+    ``max_cycle``, ``_DESCENT_STEP_ANGSTROM``, the CBS extrapolation algebra, adding frozen
+    core or density fitting to ``_parts`` -- changed every number the oracle produced and
+    changed the cache key not at all.
+
+    MEASURED, on a copy of the tree with ``mycc.frozen = 1`` added to ``_parts``::
+
+        pristine   bare d87102f11f384b24   wrapped 34e5368ef7bf3d4c
+        + frozen   bare 2ebcc929b73d639e   wrapped 34e5368ef7bf3d4c   <-- unchanged
+
+    The bare oracle invalidated correctly; the wrapped one served the pre-edit number with
+    ``rejected=0`` and no warning. That is the one defect this project refuses.
+
+    Walking ``.inner`` is the fix rather than special-casing ``CachingOracle`` because the
+    hazard is composition itself: any future wrapper reintroduces it otherwise. Cycles are
+    guarded by identity, not by depth, so a self-referential chain terminates instead of
+    recursing forever.
+    """
+    digest = hashlib.sha256()
+    seen_ids: set[int] = set()
+    seen_names: set[str] = set()
+    node = oracle
+    while node is not None and id(node) not in seen_ids:
+        seen_ids.add(id(node))
+        target = inspect.getmodule(type(node)) or type(node)
+        name = getattr(target, "__name__", None) or type(node).__qualname__
+        if name not in seen_names:
+            seen_names.add(name)
+            try:
+                source = inspect.getsource(target).encode("utf-8")
+            except (OSError, TypeError):
+                source = b"unavailable"
+            digest.update(name.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(hashlib.sha256(source).digest())
+        node = getattr(node, "inner", None)
+    return digest.hexdigest()
+
+
 def _fingerprint(oracle) -> str:
     """
     A string identifying the TIER, so a cached number is only ever served to a question
@@ -176,12 +224,7 @@ def _fingerprint(oracle) -> str:
     spec_provider = getattr(oracle, "calculation_spec", None)
     raw_spec = spec_provider() if callable(spec_provider) else dict(vars(oracle))
     settings = _jsonable(raw_spec)
-    try:
-        module = inspect.getmodule(type(oracle))
-        source = inspect.getsource(module if module is not None else type(oracle)).encode("utf-8")
-        source_hash = hashlib.sha256(source).hexdigest()
-    except (OSError, TypeError):
-        source_hash = "unavailable"
+    source_hash = _chain_source_sha256(oracle)
     descriptor = {
         "class": f"{type(oracle).__module__}.{type(oracle).__qualname__}",
         "name": getattr(oracle, "name", ""),

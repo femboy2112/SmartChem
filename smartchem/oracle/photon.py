@@ -56,6 +56,7 @@ What that zero does NOT cover, and what the caller owns:
 from __future__ import annotations
 
 from ..category import Molecule
+from ..domain import Domain
 from .base import BaseOracle, Estimate
 
 #: Planck constant times the speed of light, in eV*nm.
@@ -118,6 +119,30 @@ class PhotonOracle(BaseOracle):
     @property
     def frequency_hz(self) -> float:
         return HC_EV_NM / (H_EV_S * self.wavelength_nm)
+
+    @property
+    def domain(self) -> Domain:
+        """
+        Zero atoms, neutral, and either unlabelled or carrying this instance's own label.
+
+        The only EXACT domain in this package: every one of ``energy``'s three declines is
+        a function of the request alone, nothing is left to a computation that might fail,
+        and the four constraint axes express all three without loss. So here, and only
+        here, ``admits`` really does mean "will return a value".
+
+        That is worth stating because it makes this oracle the reference case for what a
+        declared domain is *supposed* to look like -- and because the contrast with
+        ``PySCFOracle``, which cannot be exact for reasons no design change would fix, is
+        the honest shape of the general problem rather than a defect in either one.
+        """
+        return Domain(
+            label=self.name,
+            min_atoms=0,
+            max_atoms=0,
+            elements=frozenset(),
+            charges=frozenset({0}),
+            states=frozenset({"", self.label}),
+        )
 
     def energy(self, molecule: Molecule) -> Estimate | None:
         if molecule.atoms:

@@ -30,6 +30,7 @@ from .base import BaseOracle, Estimate, carries_unmodelled_physics
 from .. import legacy as legacy_module
 from ..atoms import Atom, PT, Species
 from ..category import Molecule
+from ..domain import NOTHING, Domain
 from ..legacy import Env, Situated
 
 
@@ -88,6 +89,31 @@ class HeuristicOracle(BaseOracle):
             _STANDARD_CONDITIONAL_MAE_EV
             if self._validated_environment
             else float("inf")
+        )
+
+    @property
+    def domain(self) -> Domain:
+        """
+        Neutral ground-state species over the elements this frozen model tabulates.
+
+        Empty outside the one validated environment, which is the case worth having: a
+        caller who constructs ``HeuristicOracle(Env(...))`` with anything but the standard
+        environment currently discovers that it prices nothing by getting ``None`` back
+        once per species forever. The domain says so once, before the first call.
+        """
+        if not self._validated_environment:
+            return NOTHING.relabelled(f"{self.name} (unvalidated environment)")
+        return Domain(
+            label=self.name,
+            min_atoms=1,
+            elements=frozenset(PT),
+            charges=frozenset({0}),
+            states=frozenset({""}),
+            runtime_refusals=(
+                "the frozen legacy engine can raise on a pair it cannot parameterise",
+                "the legacy engine may report a bond with zero enthalpy AND zero entropy, "
+                "which is its own way of refusing the pair, and is only knowable by asking",
+            ),
         )
 
     def calculation_spec(self):

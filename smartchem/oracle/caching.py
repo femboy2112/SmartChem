@@ -77,6 +77,20 @@ class CachingOracle(BaseOracle):
         #: species whose canonical form could not be computed, so keyed as given
         self.uncanonicalised = 0
 
+    @property
+    def domain(self):
+        """
+        The wrapped oracle's domain, unchanged. A cache alters latency, never coverage.
+
+        Delegated rather than inherited: ``BaseOracle``'s default claims nothing, so a
+        wrapper that forgot to forward this would silently erase a real declared boundary
+        the moment an oracle was cached -- exactly the same shape as the
+        ``nominal_accuracy_ev`` forwarding immediately above it in ``__init__``.
+        """
+        from .base import domain_of
+
+        return domain_of(self.inner)
+
     def calculation_spec(self):
         """The wrapper changes cost, not the underlying calculation semantics."""
         provider = getattr(self.inner, "calculation_spec", None)

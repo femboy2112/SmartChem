@@ -297,6 +297,20 @@ class PersistentCache(BaseOracle):
         self._load()
 
     # -- the file ------------------------------------------------------------------
+    @property
+    def domain(self):
+        """
+        The wrapped oracle's domain, unchanged. A cache alters latency, never coverage.
+
+        Delegated rather than inherited: ``BaseOracle``'s default claims nothing, so a
+        wrapper that forgot to forward this would silently erase a real declared boundary
+        the moment an oracle was cached -- the same shape as the ``nominal_accuracy_ev``
+        forwarding in ``__init__``.
+        """
+        from .base import domain_of
+
+        return domain_of(self.inner)
+
     def _load(self) -> None:
         if not self.path.exists():
             return

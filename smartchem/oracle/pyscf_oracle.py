@@ -92,6 +92,7 @@ _log = logging.getLogger(__name__)
 from .base import BaseOracle, Estimate, carries_unmodelled_physics
 from ..atoms import PT
 from ..category import Molecule
+from ..domain import NOTHING, Domain
 from ..data.basis_tight_d import SECOND_ROW, TIGHT_D
 from ..data.reference import ATOM_SPIN, GEOMETRY, zero_point_energy_ev
 from ..geometry import (GeometryError, harmonic_analysis, relax, seed_coordinates)
@@ -708,12 +709,25 @@ class PySCFOracle(BaseOracle):
             mycc = cc.CCSD(mf)
             mycc.conv_tol = 1e-9
             mycc.max_cycle = 300
-            mycc.kernel()
+            # Transform the integrals ONCE and hand the same object to both consumers.
+            # ``ccsd``/``ccsd_t`` each rebuild them when passed ``eris=None`` -- see
+            # pyscf/cc/ccsd.py:1099-1100 and :1289-1293, and uccsd.py:633 for the open-shell
+            # twin -- so the default call sequence pays for the transformation twice.
+            # Measured on CH3OH/cc-pVTZ with experiments/ccsd_peak_phase_probe.py: 7.6 s
+            # inside ``kernel`` and 7.5 s again inside ``ccsd_t``, out of a 77.4 s molecule.
+            #
+            # This is identity-preserving rather than a tradeoff, and the reason is
+            # structural: ``ao2mo`` builds one fixed block set with no branch on the caller,
+            # and the triples correction consumes a strict SUBSET of it (ovoo/ovov/ovvv,
+            # never vvvv). The object the second call would have built is the object the
+            # first one already holds.
+            eris = mycc.ao2mo()
+            mycc.kernel(eris=eris)
             if not mycc.converged:
                 raise ConvergenceFailure(f"CCSD did not converge for {atom_spec} / {basis}")
             corr = mycc.e_corr
             if self.method == "CCSD(T)":
-                corr += mycc.ccsd_t()
+                corr += mycc.ccsd_t(eris=eris)
             return mf.e_tot, corr
 
     def _energy(
@@ -1112,6 +1126,61 @@ class PySCFOracle(BaseOracle):
         return all(basis_covers(symbols, name, self.tight_d) for name in names)
 
     # -- oracle interface --------------------------------------------------------
+    @property
+    def domain(self) -> Domain:
+        """
+        What this CONFIGURED oracle will attempt. Every constructor knob moves it.
+
+        Derived from the request-determined gates at the top of :meth:`energy`, in the
+        same order, and the two results it makes visible were both measured rather than
+        assumed:
+
+        **No configuration prices a polyatomic.** Raising ``max_atoms`` past 2 does not
+        open the polyatomic path so much as reveal a second gate behind it:
+        ``_polyatomic_energy`` declines on ``not math.isfinite(self.nominal_accuracy_ev)``,
+        and ``_RELAXED_GEOMETRY_MAE`` is the empty dict for every ``geometry_tier``, so
+        that check is unconditionally true today. Measured: ``max_atoms=6`` prices a free
+        atom and a diatomic and returns ``None`` for water. The declared ceiling is
+        therefore ``min(max_atoms, 2)``, and it will rise on its own the day a measured
+        polyatomic MAE is entered in that table.
+
+        **``optimize_geometry=True`` leaves exactly the free atoms.** It pins
+        ``benchmark_mae_ev`` to infinity, which closes the polyatomic path, and the
+        diatomic branch declines on the flag directly -- but the one-atom branch returns
+        before either check. Measured: free atom yes, diatomic no, water no. So the ceiling
+        is 1, not 0, and writing 0 here would have been the more obvious guess and wrong.
+
+        Never exact, for two reasons that are different in kind and are reported
+        separately. The tabulated-geometry lookup is keyed by molecular FORMULA, which four
+        independent axes cannot express -- fixable by widening the language. SCF and CCSD
+        convergence cannot be known without running -- not fixable by anything.
+        """
+        if not math.isfinite(self.fixed_diatomic_mae_ev):
+            return NOTHING.relabelled(f"{self.name} (no measured MAE for this tier)")
+        ceiling = min(self.max_atoms, 2)
+        if self.optimize_geometry:
+            ceiling = min(ceiling, 1)
+        elif not math.isfinite(self.nominal_accuracy_ev):
+            ceiling = min(ceiling, 2)
+        covered = frozenset(s for s in ATOM_SPIN if self._basis_covers((s,)))
+        return Domain(
+            label=self.name,
+            min_atoms=1,
+            max_atoms=ceiling,
+            elements=covered,
+            charges=frozenset({0}),
+            states=frozenset({""}),
+            runtime_refusals=(
+                "SCF may fail to converge, including after the newton fallback",
+                "the CCSD amplitude equations may fail to converge",
+            ),
+            unexpressed_refusals=(
+                "a diatomic needs a tabulated equilibrium geometry and ZPE, and that "
+                "table is keyed by molecular formula rather than by element, which these "
+                "four axes cannot express",
+            ) if ceiling >= 2 else (),
+        )
+
     def energy(self, molecule: Molecule) -> Estimate | None:
         """
         Total energy of this species at 0 K, in eV: electronic energy plus ZPE.

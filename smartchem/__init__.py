@@ -44,6 +44,12 @@ from .category import (
     reaction_residue,
     tensor_obj,
 )
+from .domain import (
+    EVERYTHING,
+    NOTHING,
+    Domain,
+    DomainContradiction,
+)
 from .stoichiometry import (
     Completion,
     MenuContradiction,
@@ -100,6 +106,9 @@ __all__ = [
     # stoichiometry -- the inverse of `conserves`: derive the balances, never guess them
     "Completion", "StoichiometryMenu", "MenuContradiction",
     "composition_matrix", "integer_kernel_basis", "stoichiometry_menu",
+
+    # domain -- what an oracle declares it can price, before being called
+    "Domain", "DomainContradiction", "EVERYTHING", "NOTHING",
     # store -- the environment comonad and finite response-surface sampling
     "Store", "Conditions", "SOLVENTS",
     "survey", "response_surface", "is_responsive", "grid",

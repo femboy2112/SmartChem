@@ -64,6 +64,7 @@ from numbers import Real
 from typing import Mapping, Protocol, runtime_checkable
 
 from ..category import Molecule
+from ..domain import EVERYTHING, Domain
 
 
 @dataclass(frozen=True)
@@ -368,6 +369,21 @@ class EnergyOracle(Protocol):
         ...
 
 
+def domain_of(oracle: object) -> Domain:
+    """
+    The declared validity domain of any oracle, whether or not it declares one.
+
+    An oracle that has not been given a domain is treated as ``EVERYTHING``, which claims
+    nothing: the soundness contract "declared-outside implies refused" holds vacuously when
+    nothing is outside. That default is why ``domain`` is NOT part of the ``EnergyOracle``
+    protocol -- adding it would make every third-party implementation fail
+    ``isinstance``, and a compatibility break is a steep price for a property whose absence
+    already has a correct answer.
+    """
+    found = getattr(oracle, "domain", None)
+    return found if isinstance(found, Domain) else EVERYTHING
+
+
 class BaseOracle:
     """
     Convenience base. Implement ``energy``; get the derived quantities for free.
@@ -378,6 +394,18 @@ class BaseOracle:
 
     name: str = "unnamed"
     nominal_accuracy_ev: float = float("inf")
+
+    @property
+    def domain(self) -> Domain:
+        """
+        What this oracle declares it will attempt, before being called. See ``domain.py``.
+
+        The default claims nothing, and that is deliberate rather than lazy: a subclass
+        that has not thought about its boundary must not appear to have declared one.
+        Overriding it is how an oracle earns the ability to be asked "would you even try?",
+        and how it becomes composable with an oracle from another vertical.
+        """
+        return EVERYTHING
 
     def calculation_spec(self) -> Mapping[str, object]:
         """

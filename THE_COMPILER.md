@@ -113,6 +113,20 @@ insight: **a spec that verifiably cannot compile, where the impossibility is the
 Not "I failed to find a reaction." *No reaction exists*, proved, in two lines of rank
 arithmetic.
 
+> **Correction, 2026-07-26 — and note which half was wrong.** The paragraph above says
+> `ker A ∩ Z^n`, and that specification was correct. The first implementation of it was
+> not. It solved the kernel over the *rationals* and then cleared each basis vector's
+> denominators one at a time, which generates a proper sublattice of the integer kernel —
+> so balanced reactions existed that the menu could neither list nor reconstruct, while
+> printing "every other one is an integer combination of these". On `{O2, H2O, H2O2, H2}`
+> the omitted reaction was `H2 + O2 → H2O2`; it is `(b₀+b₁)/2`, and every integer
+> combination of the returned basis has an even third component. Worse, *which* reactions
+> vanished depended on the caller's argument order: 4 of the 24 orderings of those four
+> species lost one. Fixed by unimodular column reduction, which returns the saturated
+> lattice by construction. The document did not need changing here; the code did. **A
+> design stated correctly is not a design implemented correctly, and only the executable
+> one gets audited** — which is the entire argument for §VII's build order.
+
 ---
 
 ## V. CROSS-SCALE — why "extreme conditions" is computable and not mystical
@@ -189,6 +203,26 @@ thing that blocks it is a fact about the design, not about the effort.
   returns the three-way verdict, and proves completeness by test (29 of them). All three
   §IV regimes reproduce over the shipped types.
 
+  **AND IT SHIPPED THE EXACT DEFECT IT EXISTS TO PREVENT — corrected the same day, by
+  adversarial review rather than by its own tests.** The kernel was computed over the
+  rationals and denominators cleared per vector, which returns a proper *sublattice* of
+  `ker A ∩ Z^n`; see the correction box in §IV for the counterexample and the fix. Two
+  things about that are worth more than the bug:
+
+  * **The test suite had a class named `TestCompleteness` that asserted no completeness.**
+    Its two tests were `len(completions) == freedom`, which the constructor already raises
+    on — so the assertion restated two implementation lines and could error but never fail
+    — and `A @ ν == 0`, which is *soundness*. Soundness was never the hard part. A mutant
+    returning an index-2 sublattice passed **28 of the 29 tests**, and the one that caught
+    it did so by hard-coded string comparison on a single species set. The guard was named
+    after the property it did not test.
+  * **A module cannot audit itself into completeness.** Every check it ran — rank-nullity,
+    `A @ ν == 0`, the `Reaction` constructor — was a *soundness* check, and all of them
+    passed on an incomplete menu, because an incomplete menu is a menu of correct answers.
+    The property that mattered needed an *external* enumeration: every integer kernel point
+    in a box, each required to be reachable. That is now `TestCompleteness`, and it kills
+    the mutant.
+
   **One plan in this bullet was wrong and the build found it.** It said the menu "reuses
   `conserves` as an independent checker of its own output". `conserves` is
   *tautologically* `True` for any `Reaction` that exists, because
@@ -221,10 +255,39 @@ thing that blocks it is a fact about the design, not about the effort.
   with the exact reason the completion means less than it looks like it means. It is also
   the precondition for Brick 2: `Na(excited) → Na + photon` fails *this* way, and now the
   failure has a name.
-* **Brick 1 — declared domains on the existing oracles.** Give `PySCFOracle` and
-  `PhotonOracle` an explicit validity domain and make composition intersect them. Two
-  oracles in two verticals already exist, so the first cross-scale refusal is testable
-  without inventing a third.
+* **Brick 1 — declared domains on the existing oracles. BUILT, 2026-07-26,
+  `smartchem/domain.py`.** `Domain` is a frozen value over four axes — atom count, element
+  set, charge, internal state — with `admits`, `refusals`, `&`, `is_empty` and `witness`.
+  `PySCFOracle`, `PhotonOracle` and `HeuristicOracle` each declare one; both cache wrappers
+  forward it; `domain_of` supplies the unrestricted domain for anything that does not.
+
+  **The contract points one way and that is the whole design.** `not admits(m)` implies
+  `energy(m) is None`; the converse is *not* claimed, so a domain over-approximates
+  coverage, and over-approximating is the safe direction — a loose domain wastes a call, a
+  tight one would promise an answer that never comes. The converse fails for two reasons
+  reported *separately*, because collapsing them would hide the fixable case behind the
+  unfixable one: `runtime_refusals` (an SCF that will not converge — no design can
+  pre-announce that) and `unexpressed_refusals` (the diatomic geometry table is keyed by
+  molecular formula, which four axes cannot say — a limit of this vocabulary, removable).
+  `is_exact` is true only when both are empty, and `PhotonOracle` is the only thing in the
+  repository that earns it.
+
+  **The measured payoff, and neither result was visible before writing it down.** First:
+  **no `PySCFOracle` configuration prices a polyatomic.** Raising `max_atoms` past 2 does
+  not open the polyatomic path, it exposes a second gate behind it — `_polyatomic_energy`
+  declines on a non-finite `nominal_accuracy_ev`, and `_RELAXED_GEOMETRY_MAE` is the empty
+  dict for every `geometry_tier`. Measured: `max_atoms=6` prices a free atom and a
+  diatomic and returns `None` for water. Second: `optimize_geometry=True` leaves exactly
+  the *free atoms* — it closes the polyatomic path and the diatomic branch, but the
+  one-atom branch returns before either check, so the ceiling is 1 and not 0. The obvious
+  guess was wrong and the measurement said so.
+
+  **And the acceptance test §VII actually asked for.** `PySCFOracle.domain &
+  PhotonOracle.domain` is **empty** — one requires at least one atom, the other admits only
+  species with none. So there is no species both can price, and therefore no shared
+  reference against which their two arbitrary zeros could be aligned. That is a real
+  obstruction to a cross-vertical reaction energy, computed by construction rather than
+  rediscovered once per attempt, and it is the diagnosis Brick 2 needs.
 * **Brick 2 — `Na(excited) → Na + photon`.** Turn `base.py:343-346`'s worked example from a
   boolean decline into a diagnosis. This morphism is the design's acceptance test, and it
   was written down as an open gap years before this document.

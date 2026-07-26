@@ -618,3 +618,95 @@ bound *values* provably do nothing, and it perturbs currently-working species by
 3.1e-5 eV. The defensible fix is a penalty return on `ConvergenceFailure` — provably inert on
 paths that already work — and it deserves its own scoped change, not a hurried one at the end
 of a session.
+
+## Correction to the section above: for CS the wall was ours, not the surface's
+
+The √2 first-step finding stands exactly as measured. The *conclusion drawn from it* did not
+survive being asked one more question, and the question was "if the SCF converges at CS's
+collapsed geometry, why is CS refused?"
+
+It is refused by the retry. `_mean_field` warm-starts each relaxation step from the previous
+step's converged density and promises, in its own docstring, that a bad guess "can only ever
+cost time, never an answer" — implemented as `kernel(dm0=usable)`, and on failure
+`kernel(dm0=None)` on the **same object**. `pyscf/scf/hf.py:2092` reads
+
+```python
+if dm0 is None and self.mo_coeff is not None and self.mo_occ is not None:
+    dm0 = self.make_rdm1()          # "Initial guess from existing wavefunction"
+```
+
+so `dm0=None` means "start from scratch" only on a *fresh* object. On a used one it means
+"reuse what you have". The fallback re-fed the failed run's own density straight back in.
+
+MEASURED at `C 0.7071067812 0 0; S 0.8277932188 0 0`, the 0.1206864376 Å geometry CS's own
+relaxation reaches on trial 1:
+
+| | | |
+|---|---|---|
+| A | warm start | `converged=False` |
+| B | then `dm0=None` on the same object | `converged=False` ← the old fallback |
+| C | then `dm0=None` after clearing MOs | `converged=True`, e = −220.797973 |
+| D | cold on a brand-new object | `converged=True`, e = −220.797973 |
+
+C and D agree exactly, so nothing about that geometry is unconvergeable — only the poisoned
+object was. Fixed in `081390c` by rebuilding the mean field for the retry rather than clearing
+fields by hand: the fields PySCF consults for its implicit restart are its business and may
+grow, whereas a new object has no history by construction. The branch is reached only after an
+SCF has already failed, so every calculation that works today is bit-identical.
+
+**CS now relaxes**, r = 1.5259590402 Å against a tabulated r_e of 1.5349 — shorter, like every
+other HF/cc-pVDZ bond measured in this file.
+
+**F2 still declines, and that one is real.** Its tabulated r_e is 1.411930 Å, the first
+unbounded L-BFGS-B trial step moves a diatomic bond by exactly √2 = 1.414214 Å, and the
+resulting 0.002284 Å separation fails from *any* guess — cold included. F2 fails **because its
+reference geometry is accurate**. So the penalty-return fix proposed above is still the right
+remedy for F2 and is no longer needed for CS, and the two cases were indistinguishable from
+outside: both came back `None`. One was a wall; one was us.
+
+### Two docstrings cited tests that did not exist
+
+Grepped, not assumed:
+
+| citation | site | status |
+|---|---|---|
+| `TestTheFinalGradientIsNotRecomputed` | `geometry.py:404` | absent from the tree |
+| `TestTheGuessDoesNotMoveTheAnswer` | `pyscf_oracle.py:886` | absent from the tree |
+
+Both underlying claims are TRUE. The first was re-measured here over 200 randomised quadratic
+surfaces plus Rosenbrock — `result.jac` and a fresh evaluation at `result.x` agree to **0.0
+exactly**, round trip through the Bohr/Ångström division and multiplication included. Only the
+proof was missing. Both classes now exist, along with one pinning the retry. This is the
+`experiments/`-are-committed problem one layer in: a claim can cite a test by name and the
+name can be fiction.
+
+## `ZPE_BIAS_FRACTION`, re-derived again and then deliberately not changed
+
+The retry fix recovered CS, so the production roster moved 21/23 → 22/23. CS lands at f_A
+**0.1122**, above the mean — repairing the SCF moved the fit *toward* the inherited constant.
+
+| estimator | pooled | mean | sd | \|pooled − 0.091\| |
+|---|---:|---:|---:|---:|
+| f_A = Δ / **reference** ZPE | 0.08116 | 0.08158 | 0.07956 | 0.00984 |
+| f_B = Δ / **computed** ZPE | 0.07507 | 0.07066 | 0.06821 | 0.01593 |
+
+Identity check `f_A/(1+f_A) = 0.075067` against `f_B` pooled `= 0.075067`. The code applies
+the constant to the computed ZPE, i.e. as an f_B, so **as used it overstates the systematic by
+1.21×**; the f_B-consistent value is 0.0751.
+
+**Decision: hold 0.091.** Substituting swaps an unreproduced number for a reproduced but
+unjustified one — 0.0751 is the mean of a distribution whose sd is 91% of its own mean, with
+four sign reversals, fitted on diatomics and applied to polyatomics, the exact transfer this
+project records getting wrong once with basis augmentation. It is not applied to `value_ev`,
+so the digits change nobody's action. And the error runs the conservative way:
+`systematic_magnitude_ev` feeds `Estimate.with_sensitivity_floor`, where a larger term
+**widens** the reported bar. Wide is the safe direction to be wrong in here.
+
+Measured, not assumed: the constant is **inert in production today**.
+`PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", optimize_geometry=True, max_atoms=6).nominal_accuracy_ev`
+is `inf`, `_RELAXED_GEOMETRY_MAE` is empty, and `_polyatomic_energy` returns `None` before it
+ever reaches `zpe_bias`. Only the probe executes that line, by force-assigning the 999.0 eV
+sentinel.
+
+The real defect is not the value. A one-parameter multiplicative model is the wrong **shape**
+for data whose sd equals its mean, and refitting the one parameter does not address that.

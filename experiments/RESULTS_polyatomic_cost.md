@@ -420,3 +420,30 @@ and −0.0588, nearly 2x apart. So "countable, additive, removed by CBS" is a fi
 with a real second-order residual this prediction does not capture. A separate unexplained
 pattern: the three nitrogen species (NH3, N2H4, CH3NH2) average −0.087 eV per valence pair
 against −0.058 for the rest, and nothing here explains why.
+
+## The gate decision rule, also filed before the numbers
+
+`_RELAXED_GEOMETRY_MAE` is empty and every lookup misses, so the public oracle declines every
+polyatomic. The cbs(TZ,QZ) holdout now running is the evidence that could populate it. The
+temptation, once three tidy numbers exist, will be to enter their mean. **The rule below is
+written now so that decision is made against a standard rather than against a result.**
+
+An entry `(mae_ev, max_validated_atoms)` may be added only when **all** of these hold:
+
+1. The MAE comes from species **never used to develop the protocol**. The six profile species
+   are permanently disqualified as evidence for their own gate.
+2. **n ≥ 8.** Three species is a data point cluster, not a validation profile. The n=4 → n=5
+   move above shifted the holdout ratio by a seventh on one species; at n=3 the standard error
+   of the mean is not meaningfully bounded, and a bar quoted from it would be a plausible
+   number with nothing behind it.
+3. `max_validated_atoms` is the atom count of the **largest species actually measured**, never
+   extrapolated. A profile earned on 4-atom species does not license a 12-atom one.
+4. The spread is reported alongside the mean. A 3x range across the holdout makes the MAE a
+   summary statistic of a distribution nobody has characterised, and the `uncertainty_ev` it
+   would feed is a per-species claim, not an average one.
+
+**On this session's evidence the expected outcome is that the gate stays shut**, because the
+affordable cbs holdout is n=3 and criterion 2 fails by construction on this hardware. That is
+not a failure of the run — the run's job is to measure the residual and price what a real
+profile would cost, and a measurement that says "not yet" is the correct output of a protocol
+whose entire thesis is that a plausible wrong number is worse than no number.

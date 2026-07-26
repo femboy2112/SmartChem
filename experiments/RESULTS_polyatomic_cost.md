@@ -371,6 +371,32 @@ by 100%. But it does not move to zero, and it moves the *wrong way*: upgrading t
 basis makes the atomization energy worse, consistently, in both species. That is a real
 finding and it inverts the obvious remedy — "use a better geometry" is a *degradation* here.
 
+**The mechanism, confirmed rather than asserted.** Relaxing through the pipeline's own
+`_relaxed_geometry` at both bases (H2O2 hit the trans-planar saddle first at *both*, and the
+descent recovered the skewed minimum at both — documented behaviour, not a failure):
+
+| coordinate | HF/cc-pVDZ | HF/cc-pVTZ | experiment | \|DZ err\| | \|TZ err\| |
+|---|---:|---:|---:|---:|---:|
+| H2O r(O–H) / Å | 0.9463 | 0.9406 | 0.9572 | 0.0109 | 0.0166 |
+| H2O2 r(O–O) / Å | 1.3925 | 1.3873 | 1.4556 | 0.0631 | 0.0683 |
+| H2O2 r(O–H) / Å | 0.9482 | 0.9422 | 0.9670 | 0.0188 | 0.0248 |
+
+Every bond shrinks DZ→TZ (3 of 3) and every DZ bond is closer to experiment (3 of 3). HF
+bonds are too short because HF has no correlation to pull them out; a larger basis converges
+HF toward its own even-shorter limit; cc-pVDZ's incompleteness lengthens bonds and partially
+cancels the deficiency. A CCSD(T) single point at a too-short bond lies **above** the true
+minimum, which underbinds, which is negative — and the shorter TZ geometry lies further out.
+That reproduces the sign and the rough magnitude of both energy deltas above, so the
+mechanism is not a story fitted after the fact.
+
+**The counterexample, which is not being buried.** Generalised past bond length the framing
+breaks. The H2O2 H–O–O–H dihedral is 115.04° at cc-pVDZ against 111.70° at cc-pVTZ, and
+experiment is 111.5° — for the torsional coordinate that actually governs this molecule's
+non-planarity, **cc-pVTZ is better by an order of magnitude** (0.20° vs 3.54°). So the
+correct statement is narrow: *bond lengths* benefit from a fortuitous cancellation at
+cc-pVDZ. "cc-pVDZ is the better geometry basis" is false as stated, and the angular degrees
+of freedom are driven by something else entirely.
+
 Two collateral results:
 
 * The DZ-geometry H2O2 number reproduced as **−0.5046 eV from a cold cache**, bit-identical to

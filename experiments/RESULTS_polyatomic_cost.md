@@ -365,8 +365,9 @@ failure mode that would have manufactured a difference of exactly zero and publi
 |---|---:|---:|---:|---:|
 | H2O | −0.3153 | −0.3259 | −0.0106 | 3.4% |
 | H2O2 | −0.5046 | −0.5327 | −0.0281 | 5.6% |
+| N2H4 | −0.6808 | −0.6974 | −0.0166 | 2.4% |
 
-**The geometry tier is not the dominant cause.** It moves 3–6% of an error that needs to move
+**The geometry tier is not the dominant cause.** It moves 2–6% of an error that needs to move
 by 100%. But it does not move to zero, and it moves the *wrong way*: upgrading the geometry
 basis makes the atomization energy worse, consistently, in both species. That is a real
 finding and it inverts the obvious remedy — "use a better geometry" is a *degradation* here.

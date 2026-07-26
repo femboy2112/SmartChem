@@ -947,3 +947,112 @@ at cc-pVQZ shows `direct` faster than `conventional` by more than 5%, as a paire
 same box. `C2H5OH / cc-pVQZ direct` is running now and **cannot settle this** — no
 conventional partner was queued for it, so it produces a wall-clock number with nothing to
 compare against. It is a memory-scaling datapoint and should not be read as anything else.
+
+---
+
+## What actually sets the CCSD(T) peak: measured, and it is neither `vvvv` nor `(T)`
+
+`experiments/ccsd_peak_phase_probe.py`, committed. The previous section left a named
+suspect — the triples step — and an explicit instruction not to believe it until run. It
+has now been run, and the suspect is wrong.
+
+**The instrument.** `resource.getrusage(...).ru_maxrss` is a high-water mark and therefore
+monotone, so over any interval `maxrss(exit) - maxrss(enter)` is *exactly* the amount by
+which that interval raised the peak, and those increases are additive over any partition
+of the timeline. Partition the run into nested phases and attribution becomes arithmetic
+rather than sampling:
+
+    inclusive(phase) = maxrss at exit - maxrss at entry
+    exclusive(phase) = inclusive(phase) - sum(inclusive of its direct children)
+
+A phase with `exclusive == 0` did not set the peak. Not *probably* did not — did not.
+There is no sampling interval for a spike to hide in, because a spike would have moved the
+high-water mark and the high-water mark is read at both ends.
+
+Phase boundaries are recorded by wrappers installed on PySCF's own methods; each reads a
+clock and a counter, calls through, and returns the value untouched. That is an argument,
+not evidence, so the calibration runs *with the wrappers active* and bit-identity against
+the real `PySCFOracle._parts` is required before any attribution is reported.
+
+**CH3OH / cc-pVTZ / conventional, peak 1.0868 GB:**
+
+```
+SEGMENT molecule                     77.4 s   peak +0.0000 GB
+  SCF.kernel                          2.0 s   peak +0.1672 GB
+  CCSDBase.kernel                    44.0 s   peak +0.0000 GB
+    CCSDBase.ao2mo                    7.6 s   peak +0.6860 GB    <-- 63.1% of the peak
+  CCSD.ccsd_t                        31.3 s   peak +0.0000 GB
+    CCSDBase.ao2mo                    7.5 s   peak +0.0797 GB
+```
+
+**The peak is set by the integral transformation.** `CCSDBase.ao2mo` owns 0.6860 GB of a
+1.0868 GB peak. Two phases raised it by *nothing at all*, exactly:
+
+* `CCSDBase.kernel` — the CCSD amplitude iterations, 44.0 s of arithmetic, `+0.0000 GB`.
+  Everything they need was already resident when `ao2mo` returned.
+* `CCSD.ccsd_t` — the triples, 31.3 s, `+0.0000 GB` of its own. **The filed suspect is
+  refuted.** `(T)` does not allocate the peak.
+
+**What the timeline caught that nobody was looking for: the integrals are transformed
+twice.** `ccsd_t` raised nothing directly, but it called `ao2mo` *again* — a second full
+7.5 s transform, adding 0.0797 GB. `_parts` calls `mycc.ccsd_t()` with no `eris` argument,
+and PySCF rebuilds them from scratch when none is supplied. At cc-pVTZ that is 7.5 s of a
+77.4 s molecule, ~9.7%, spent recomputing something that had just been computed. Filed as
+task #13, not acted on here: it is a candidate identity-preserving speedup and it is owed
+the same bit-identity gate as `direct`, which failed that gate on memory.
+
+**What this does NOT settle.** One run, one basis. `vvvv` grows quartically in the virtual
+count and the triples arrays do not, so the owner of the peak can change with basis — and
+cc-pVQZ is the basis the open question is actually about, because that is where `direct`
+*raised* the peak by 3.5%. The paired cc-pVQZ attribution, both routes, is queued behind
+the running job. Nothing here should be carried to cc-pVQZ before it lands.
+
+---
+
+## The F2 refusal, re-diagnosed: it is a nuclear collision, not fragile chemistry
+
+Task #8 asked whether F2's collapsed-step refusal is worth fixing. The answer is that F2
+is not the bug, and the diagnosis recorded earlier in this file is wrong in a way that
+would misdirect whoever picked it up.
+
+**Confirmed, in pure scipy, no PySCF involved.** `relax` calls L-BFGS-B with no `bounds=`
+(`geometry.py:454-458`). Its first trial step has Euclidean norm **exactly 1.0** over the
+flattened Cartesian vector, at every gradient magnitude tested (`1e-3`, `1.0`, `1e3` — all
+`|step| = 1.0000000000`). For a diatomic the gradient is exactly antisymmetric, so each
+atom moves `1/sqrt(2) = 0.7071068` in opposite directions and the bond changes by
+`sqrt(2)`.
+
+**The direction was assumed and is now measured.** HF/cc-pVDZ at F2's tabulated
+`r_e = 1.41193 A` gives `dE/dr = +5.055117e-02 Ha/Bohr` — positive, so the step pulls the
+nuclei **together**. The bond after trial 1 is `|r_e - sqrt(2)|`:
+
+    F2   r_e = 1.41193   ->   0.002284 A     two fluorine nuclei, 0.0023 A apart
+    N2   r_e = 1.09768   ->   0.316534 A
+
+**The number 0.002284 A was read as the wrong quantity.** This file previously described
+F2 as landing 0.002284 A *from the correct answer*, which reads as "so close, and the SCF
+is still fragile there." It is not that. 0.002284 A is the **resulting bond length** — a
+nuclear singularity. The coincidence is exact and nasty: `|r_e - sqrt(2)|` is
+simultaneously "the distance from `r_e` to `sqrt(2)`" and "the bond length after a
+collapse through `sqrt(2)`", so both readings produce the identical figure while
+describing utterly different physics. SCF failing with two nuclei 0.0023 A apart requires
+no explanation about near-degenerate frontier orbitals. It is the only correct outcome.
+
+**F2 is not marginal, it is an extreme outlier.** Ranking every tabulated diatomic by
+`|r_e - sqrt(2)|`, the collapsed bond it would be driven to:
+
+    F2    0.002284 A      SiO   0.095526 A      CS    0.120686 A      HCl   0.139614 A
+
+The runner-up is **42x further** from the singularity. The earlier note that "the 21
+species that pass do so on per-species SCF luck, not margin" is right and understates it:
+the margin is `|r_e - sqrt(2)|`, and the hazard exists only because a unit-norm step in a
+routine that thinks in Angstroms happens to be 1.0. Nothing about `sqrt(2) A` is chemical.
+
+**Verdict on #8: not worth fixing as an F2 fix, and it should not be filed as one.** The
+blast radius is zero — no public path reaches it (diatomics never call `_relaxed_geometry`
+through `energy()`; polyatomics decline first on `nominal_accuracy_ev`), and its only
+present effect is narrowing the `ZPE_BIAS_FRACTION` calibration roster from 23 species to
+22. The remedy already named in this file — a penalty return on `ConvergenceFailure`
+rather than `bounds=` — remains the right one and still deserves its own scoped change.
+What changes is the reason: it is not there to rescue F2's chemistry, it is there because
+the optimizer walks into nuclei and 21 species avoid that by arithmetic accident.

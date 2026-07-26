@@ -41,9 +41,14 @@ number.
 
 * `smartchem/oracle/base.py:327` — `carries_unmodelled_physics`, a predicate whose whole
   job is to catch objects the category can *express* and no model here can *value*.
-* `smartchem/oracle/photon.py:122-139` — one `energy()` method that declines on four
+* `smartchem/oracle/photon.py:122-139` — one `energy()` method that declines on three
   separate grounds, each with the reason written down. Matter; charge; an opaque label it
-  did not issue; and nothing else.
+  did not issue. Nothing else, and nothing implicit.
+
+  *(This said "four" until 2026-07-26, with the three-item list sitting directly beneath
+  the count. Recorded rather than quietly corrected, because a document arguing that
+  derived beats plausible has no business carrying a miscount of the very refusals it
+  cites as its evidence.)*
 
 The meta-compiler is that same rule at the **specification** layer:
 
@@ -179,11 +184,43 @@ parameter it cannot reduce.** No round that merely rephrases.
 Each brick is chosen so that its *failure* is informative — if a brick cannot be built, the
 thing that blocks it is a fact about the design, not about the effort.
 
-* **Brick 0 — the stoichiometry menu (§IV).** Enumerate `ker A ∩ Z^n` over a `Config`,
-  return the three-way verdict, prove completeness by test. This is the smallest honest
-  proof that the derived-menu law is implementable at all, and it reuses `conserves` as an
-  independent checker of its own output. If this cannot be made complete-by-theorem, the
-  whole design is unsound and better to know in a day.
+* **Brick 0 — the stoichiometry menu (§IV). BUILT, 2026-07-26,
+  `smartchem/stoichiometry.py`.** Enumerates `ker A ∩ Z^n` over real `Molecule` values,
+  returns the three-way verdict, and proves completeness by test (29 of them). All three
+  §IV regimes reproduce over the shipped types.
+
+  **One plan in this bullet was wrong and the build found it.** It said the menu "reuses
+  `conserves` as an independent checker of its own output". `conserves` is
+  *tautologically* `True` for any `Reaction` that exists, because
+  `Reaction.__post_init__` already raises `ConservationError` otherwise — its own
+  docstring says exactly that. Calling it on a reaction the menu just built checks
+  nothing.
+
+  The real independent check is the **constructor**. Every derived `ν` is turned into
+  `Config` objects and pushed through `Reaction(...)`, which re-derives balance by
+  accumulating `Molecule.formula` dictionaries and never touches a `Fraction`. Different
+  number type, different code path, same claim; disagreement raises rather than being
+  swallowed. Worth stating plainly: a document whose thesis is *derived, never plausible*
+  had shipped a plausible-sounding verification plan, and only writing it exposed that.
+
+  **And the build produced a corollary the design did not anticipate — the derived-menu
+  law's own boundary, which it reports rather than hides.** A menu is complete with
+  respect to the **declared** invariants and not one inch further. A species with no atoms
+  and no charge — how this package spells a photon — has an all-zero column, so it lies in
+  the kernel *by itself*, and the enumeration dutifully offers `(photon@589nm) →
+  (nothing)` as a balanced reaction. Measured, not argued: that is the literal output.
+
+  Under mass and charge conservation alone it **is** balanced. Those invariants cannot see
+  energy. The completion is not wrong; the invariant list is short, and the menu is the
+  first thing in this repository able to *say* so. Such species are named in
+  `StoichiometryMenu.unconstrained` and every completion touching one is flagged, so
+  "balanced under the declared invariants" can never be read as "physical".
+
+  This is the shepherd posture of §IX arriving a layer earlier than expected. The compiler
+  does not refuse the photon and does not price it — it hands back the completion together
+  with the exact reason the completion means less than it looks like it means. It is also
+  the precondition for Brick 2: `Na(excited) → Na + photon` fails *this* way, and now the
+  failure has a name.
 * **Brick 1 — declared domains on the existing oracles.** Give `PySCFOracle` and
   `PhotonOracle` an explicit validity domain and make composition intersect them. Two
   oracles in two verticals already exist, so the first cross-scale refusal is testable

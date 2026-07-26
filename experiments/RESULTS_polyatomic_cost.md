@@ -361,6 +361,15 @@ geometry tier**, so a stale HF/cc-pVDZ answer cannot alias into an HF/cc-pVTZ sl
 failure mode that would have manufactured a difference of exactly zero and published
 "geometry does not matter."
 
+That aliasing turns out **not** to have been live, and this is now measured rather than
+assumed: `persistent._fingerprint` hashes a descriptor built from `calculation_spec`, which
+carries `geometry_tier` (`pyscf_oracle.py:598`). Three configurations, three distinct
+fingerprints — `d87102f1…` for HF/cc-pVDZ, `35104e4d…` for HF/cc-pVTZ, `5eb177b3…` for no
+geometry tier. The separate cache files were therefore redundant. They were also free, and
+the choice to make the failure structurally impossible rather than merely checked is the
+one worth repeating: the check came back clean, but it came back *after* the experiment
+would have been run.
+
 | species | geom HF/cc-pVDZ | geom HF/cc-pVTZ | Δ | Δ as % of error |
 |---|---:|---:|---:|---:|
 | H2O | −0.3153 | −0.3259 | −0.0106 | 3.4% |

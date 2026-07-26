@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import math
+from types import MappingProxyType
 
 import pytest
 
@@ -269,11 +270,109 @@ class TestProvenance:
         [
             (pyscf_module._CARDINAL, "cc-pVDZ", 99),
             (pyscf_module._FIXED_DIATOMIC_MAE, ("HF", "cc-pVDZ", False), 0.0),
+            (pyscf_module._RELAXED_GEOMETRY_MAE,
+             ("CCSD(T)", "cbs(TZ,QZ)", False, ("HF", "cc-pVDZ")), (0.0, 6)),
         ],
     )
     def test_oracle_policy_tables_are_read_only(self, table, key, value):
         with pytest.raises(TypeError):
             table[key] = value
+
+
+class TestTheRelaxedGeometryGateIsALockAndNotAWeld:
+    """
+    Before 2026-07-26 no argument combination could publish a polyatomic energy.
+
+    ``max_atoms <= 2`` was a term in the boolean that produced the accuracy bar, so a
+    polyatomic-capable oracle got ``inf`` and declined regardless of what had been
+    measured. "We have not measured this" and "this cannot be measured" were the same
+    state -- indistinguishable from outside, and very different once evidence arrives.
+
+    The gate now consults a table. The table is empty, so today's behaviour is unchanged;
+    what these tests pin is that the emptiness is the reason for the decline, and that
+    filling it would actually open the path and would still respect its own ceiling.
+    """
+
+    RELAXED = ("CCSD(T)", "cbs(TZ,QZ)", False, ("HF", "cc-pVDZ"))
+
+    def test_the_table_is_empty_and_no_number_has_been_entered_unearned(self):
+        """
+        RESULTS_polyatomic_cost.md reports MAE 0.0558 eV over six polyatomics at exactly
+        this protocol. It is deliberately NOT here: all six were used to develop and
+        inspect the protocol, so that figure is a training error. An entry is earned by a
+        measurement on species the protocol was never tuned on.
+        """
+        assert dict(pyscf_module._RELAXED_GEOMETRY_MAE) == {}
+
+    def test_a_relaxed_geometry_profile_still_declines(self):
+        oracle = PySCFOracle(
+            "CCSD(T)", "cbs(TZ,QZ)", max_atoms=6, geometry_tier=("HF", "cc-pVDZ")
+        )
+        assert math.isinf(oracle.nominal_accuracy_ev)
+
+    def test_a_populated_entry_opens_the_gate(self, monkeypatch):
+        """The keyhole has to actually turn, or an empty table proves nothing."""
+        monkeypatch.setattr(
+            pyscf_module, "_RELAXED_GEOMETRY_MAE",
+            MappingProxyType({self.RELAXED: (0.0558, 6)}),
+        )
+        oracle = PySCFOracle(
+            "CCSD(T)", "cbs(TZ,QZ)", max_atoms=6, geometry_tier=("HF", "cc-pVDZ")
+        )
+        assert oracle.nominal_accuracy_ev == pytest.approx(0.0558)
+
+    def test_a_populated_entry_still_refuses_beyond_its_validated_atom_count(
+        self, monkeypatch
+    ):
+        """A profile measured to 6 atoms says nothing about 12, and must not pretend to."""
+        monkeypatch.setattr(
+            pyscf_module, "_RELAXED_GEOMETRY_MAE",
+            MappingProxyType({self.RELAXED: (0.0558, 6)}),
+        )
+        assert math.isinf(PySCFOracle(
+            "CCSD(T)", "cbs(TZ,QZ)", max_atoms=7, geometry_tier=("HF", "cc-pVDZ")
+        ).nominal_accuracy_ev)
+
+    def test_an_entry_does_not_leak_across_protocols(self, monkeypatch):
+        """Measuring one geometry tier must not license a different one."""
+        monkeypatch.setattr(
+            pyscf_module, "_RELAXED_GEOMETRY_MAE",
+            MappingProxyType({self.RELAXED: (0.0558, 6)}),
+        )
+        for method, basis, tight_d, tier in [
+            ("CCSD(T)", "cbs(TZ,QZ)", False, ("HF", "cc-pVTZ")),   # other geometry tier
+            ("CCSD(T)", "cc-pVTZ", False, ("HF", "cc-pVDZ")),      # other energy tier
+            ("CCSD(T)", "cbs(TZ,QZ)", True, ("HF", "cc-pVDZ")),    # other basis policy
+        ]:
+            assert math.isinf(PySCFOracle(
+                method, basis, tight_d=tight_d, max_atoms=6, geometry_tier=tier
+            ).nominal_accuracy_ev), f"{method}/{basis}/{tight_d}//{tier} leaked"
+
+    def test_the_diatomic_table_is_untouched_by_any_of_this(self):
+        """The behaviour that was already validated must be byte-identical."""
+        assert PySCFOracle(
+            "CCSD(T)", "cbs(TZ,QZ)"
+        ).nominal_accuracy_ev == pytest.approx(0.0562)
+        assert math.isinf(
+            PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", optimize_geometry=True).nominal_accuracy_ev
+        )
+        assert math.isinf(
+            PySCFOracle("CCSD(T)", "cbs(TZ,QZ)", max_atoms=3).nominal_accuracy_ev
+        )
+
+    def test_the_relaxed_table_reaches_model_identity(self, monkeypatch):
+        """
+        ``_model_inputs_sha256`` is a whitelist, not a scan of the module. A table that is
+        not named in it is invisible to cache identity -- and the first edit anyone makes to
+        this table will be to put a number in it. If that edit did not move the digest,
+        every persistent cache would keep serving the old uncertainty.
+        """
+        before = pyscf_module._model_inputs_sha256()
+        monkeypatch.setattr(
+            pyscf_module, "_RELAXED_GEOMETRY_MAE",
+            MappingProxyType({self.RELAXED: (0.0558, 6)}),
+        )
+        assert pyscf_module._model_inputs_sha256() != before
 
 
 class TestCostLimit:

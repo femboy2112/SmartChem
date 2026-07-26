@@ -67,7 +67,31 @@ PROBE_SENTINEL_EV = 999.0
 #: Explicit bond topology per species. ``PolyatomicRef`` carries composition but not
 #: connectivity, and the seeder consumes a bond graph -- so the graph is written here,
 #: conventionally, rather than inferred by a heuristic that would become a hidden variable.
+#:
+#: THE FIRST SIX ARE THE TRAINING PROFILE. THE REST ARE THE HOLDOUT.
+#: ----------------------------------------------------------------
+#: H2O, NH3, CH4, CO2, H2O2 and CH3OH are the six that
+#: ``RESULTS_polyatomic_cost.md`` measured at cc-pVTZ and at cbs(TZ,QZ). Every claim in
+#: that file was fitted-or-inspected on them, so no number computed for them can validate
+#: anything. The nine below have curated thermochemistry in ``POLYATOMIC_REFS`` and have
+#: NEVER been computed by anything in this repository -- no prediction, no timing, no
+#: inspection of a residual. That is what makes them a holdout for THIS protocol,
+#: independently of the ``split`` labels in ``reference.py``, which its own header
+#: (lines 20-24) says are no longer pristine.
+#:
+#: WHY C3H7OH IS ABSENT, AND WHY THAT IS NOT AN OVERSIGHT
+#: ------------------------------------------------------
+#: ``POLYATOMIC_REFS`` carries ``C3H7OH`` with composition {C:3, H:8, O:1} and a value from
+#: ATcT 1.202. That label does not determine a molecule. Propan-1-ol and propan-2-ol are
+#: both C3H8O, both stable, and their formation enthalpies differ by more than this
+#: protocol's entire error budget -- so guessing which one the row means would silently
+#: compare a computed number against the wrong experiment. Every other formula here either
+#: has exactly one stable isomer (N2H4, C2H6, CH2O, C3H8) or is written as an explicit
+#: connectivity string (CH3OCH3, CH3NH2, CH3OC2H5, HCOOH, C2H5OH -- the last disambiguated
+#: by CH3OCH3 being tabulated separately). ``C3H7OH`` is neither, and no field in
+#: ``PolyatomicRef`` records structure. Declining is the same rule the oracles follow.
 TOPOLOGY: dict[str, tuple[tuple[str, ...], frozenset]] = {
+    # -- the six the profile was measured on -------------------------------------------
     "H2O":    (("O", "H", "H"), frozenset({Bond(0, 1), Bond(0, 2)})),
     "NH3":    (("N", "H", "H", "H"),
                frozenset({Bond(0, 1), Bond(0, 2), Bond(0, 3)})),
@@ -78,7 +102,64 @@ TOPOLOGY: dict[str, tuple[tuple[str, ...], frozenset]] = {
                frozenset({Bond(0, 1), Bond(0, 2), Bond(1, 3)})),
     "CH3OH":  (("C", "O", "H", "H", "H", "H"),
                frozenset({Bond(0, 1), Bond(0, 2), Bond(0, 3), Bond(0, 4), Bond(1, 5)})),
+
+    # -- the holdout: tabulated, never computed ----------------------------------------
+    # formaldehyde, H2C=O -- the only C=O double bond outside CO2, and the cheapest
+    # holdout species at 170 basis functions in cc-pVQZ.
+    "CH2O":     (("C", "O", "H", "H"),
+                 frozenset({Bond(0, 1, 2), Bond(0, 2), Bond(0, 3)})),
+    # hydrazine, H2N-NH2 -- the N-N single-bond analogue of H2O2, and therefore the one
+    # species that can say whether H2O2's outlier status is about peroxide or about a
+    # skewed heavy-atom single bond in general.
+    "N2H4":     (("N", "N", "H", "H", "H", "H"),
+                 frozenset({Bond(0, 1), Bond(0, 2), Bond(0, 3),
+                            Bond(1, 4), Bond(1, 5)})),
+    # formic acid, H-C(=O)-O-H: carbonyl O at 1, hydroxyl O at 2.
+    "HCOOH":    (("C", "O", "O", "H", "H"),
+                 frozenset({Bond(0, 1, 2), Bond(0, 2), Bond(0, 3), Bond(2, 4)})),
+    # methylamine, CH3-NH2.
+    "CH3NH2":   (("C", "N", "H", "H", "H", "H", "H"),
+                 frozenset({Bond(0, 1), Bond(0, 2), Bond(0, 3), Bond(0, 4),
+                            Bond(1, 5), Bond(1, 6)})),
+    # ethane, H3C-CH3.
+    "C2H6":     (("C", "C", "H", "H", "H", "H", "H", "H"),
+                 frozenset({Bond(0, 1),
+                            Bond(0, 2), Bond(0, 3), Bond(0, 4),
+                            Bond(1, 5), Bond(1, 6), Bond(1, 7)})),
+    # ethanol, CH3-CH2-OH: C0 methyl, C1 methylene, O2 hydroxyl.
+    "C2H5OH":   (("C", "C", "O", "H", "H", "H", "H", "H", "H"),
+                 frozenset({Bond(0, 1), Bond(1, 2),
+                            Bond(0, 3), Bond(0, 4), Bond(0, 5),
+                            Bond(1, 6), Bond(1, 7), Bond(2, 8)})),
+    # dimethyl ether, CH3-O-CH3 -- constitutional isomer of ethanol, which is why both
+    # are tabulated and why neither label is ambiguous.
+    "CH3OCH3":  (("C", "O", "C", "H", "H", "H", "H", "H", "H"),
+                 frozenset({Bond(0, 1), Bond(1, 2),
+                            Bond(0, 3), Bond(0, 4), Bond(0, 5),
+                            Bond(2, 6), Bond(2, 7), Bond(2, 8)})),
+    # propane, CH3-CH2-CH3.
+    "C3H8":     (("C", "C", "C", "H", "H", "H", "H", "H", "H", "H", "H"),
+                 frozenset({Bond(0, 1), Bond(1, 2),
+                            Bond(0, 3), Bond(0, 4), Bond(0, 5),
+                            Bond(1, 6), Bond(1, 7),
+                            Bond(2, 8), Bond(2, 9), Bond(2, 10)})),
+    # methyl ethyl ether, CH3-O-CH2-CH3.
+    "CH3OC2H5": (("C", "O", "C", "C", "H", "H", "H", "H", "H", "H", "H", "H"),
+                 frozenset({Bond(0, 1), Bond(1, 2), Bond(2, 3),
+                            Bond(0, 4), Bond(0, 5), Bond(0, 6),
+                            Bond(2, 7), Bond(2, 8),
+                            Bond(3, 9), Bond(3, 10), Bond(3, 11)})),
 }
+
+#: The six the accuracy profile in ``RESULTS_polyatomic_cost.md`` was measured on. Named
+#: explicitly so "holdout" is a set difference against a written roster rather than a
+#: recollection -- the same discipline ``ZPE_BIAS_TRAIN_SPECIES`` exists to enforce.
+PROFILE_SPECIES: tuple[str, ...] = ("H2O", "NH3", "CH4", "CO2", "H2O2", "CH3OH")
+
+#: Everything with a bond graph that the profile was not measured on.
+HOLDOUT_SPECIES: tuple[str, ...] = tuple(
+    formula for formula in TOPOLOGY if formula not in PROFILE_SPECIES
+)
 
 
 def build(formula: str) -> Molecule:
@@ -130,9 +211,11 @@ def main(argv: list[str] | None = None) -> int:
                        geometry_tier=tier)
     if math.isfinite(base.nominal_accuracy_ev):
         raise SystemExit(
-            "this configuration already carries a finite accuracy bar -- the weld this "
-            "probe exists to measure around is gone, so re-read the constructor before "
-            "trusting anything below"
+            "this configuration already carries a finite accuracy bar. Since 2026-07-26 "
+            "that no longer means the constructor was edited: it means somebody put a "
+            "measured entry in _RELAXED_GEOMETRY_MAE for this exact protocol. If that is "
+            "real, this probe's sentinel is obsolete for it and the public oracle should "
+            "be measured directly instead. Re-read the table before trusting anything below."
         )
     base.nominal_accuracy_ev = PROBE_SENTINEL_EV
     if base._geom_oracle is not None:

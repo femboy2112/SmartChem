@@ -277,6 +277,38 @@ _FIXED_DIATOMIC_MAE = MappingProxyType({
     ("CCSD(T)", "aug-cbs(TZ,QZ)", True): 0.1277,
 })
 
+#: MEASURED mean absolute error for a RELAXED-GEOMETRY protocol -- seed, relax, Hessian,
+#: then a single point at the energy tier. Keyed on the full protocol identity, because
+#: that is what was measured: ``(method, basis, tight_d, geometry_tier)``. The value is
+#: ``(mae_ev, max_validated_atoms)``; a request for more atoms than were validated does not
+#: inherit the number, since a profile measured on 4-atom species says nothing about 12.
+#:
+#: IT IS EMPTY, AND THAT IS THE POINT.
+#: ----------------------------------
+#: Until 2026-07-26 this file could not express a validated polyatomic protocol AT ALL:
+#: ``max_atoms <= 2`` was a term in the boolean that produced the accuracy bar, so every
+#: polyatomic-capable oracle got ``inf`` and declined no matter what evidence existed. That
+#: is not fail-closed, it is welded shut -- the two look identical from outside and behave
+#: very differently when evidence finally arrives. A lock with no key still has a keyhole.
+#:
+#: The change is deliberately behaviour-preserving: an empty table means every lookup misses
+#: and every polyatomic oracle still declines, exactly as before. What changed is that
+#: measured evidence now has somewhere to be written down.
+#:
+#: WHAT WOULD FILL IT, AND WHAT EXPLICITLY WOULD NOT
+#: -------------------------------------------------
+#: ``experiments/RESULTS_polyatomic_cost.md`` reports MAE 0.0558 eV over six polyatomics at
+#: ``CCSD(T)/cbs(TZ,QZ)//HF/cc-pVDZ``. That number is NOT entered here and must not be. All
+#: six species were used to develop and inspect the protocol; a residual measured on the
+#: set you tuned on is a training error, and publishing it as an accuracy bar is the same
+#: category of error as inheriting the diatomic MAE -- the thing the audit already caught
+#: once. ``experiments/polyatomic_cost_probe.py`` names a holdout of species that have
+#: curated thermochemistry and have never been computed here. A number measured on those,
+#: at a stated species count, is what earns an entry.
+_RELAXED_GEOMETRY_MAE: "MappingProxyType[tuple[str, str, bool, tuple[str, str] | None], tuple[float, int]]" = (
+    MappingProxyType({})
+)
+
 
 def _model_inputs_sha256() -> str:
     """Digest transitive SmartChem data/code that can change an oracle result."""
@@ -310,6 +342,21 @@ def _model_inputs_sha256() -> str:
         "cardinals": sorted(_CARDINAL.items()),
         "fixed_diatomic_mae": sorted(
             (list(protocol), mae) for protocol, mae in _FIXED_DIATOMIC_MAE.items()
+        ),
+        # Hashed while still EMPTY, on purpose. This payload is a whitelist, not a scan of
+        # the module, so a table that is not named here is invisible to model identity --
+        # and the first thing anyone will do to this table is put a number in it. Naming it
+        # now means that edit invalidates every persistent cache automatically. Naming it
+        # later means the edit lands silently and cached estimates keep serving the old
+        # uncertainty. The one-time digest change this causes today is the cheap half of
+        # that trade.
+        "relaxed_geometry_mae": sorted(
+            (
+                [protocol[0], protocol[1], protocol[2],
+                 None if protocol[3] is None else list(protocol[3])],
+                [mae, max_atoms],
+            )
+            for protocol, (mae, max_atoms) in _RELAXED_GEOMETRY_MAE.items()
         ),
         "zpe_bias_fraction": ZPE_BIAS_FRACTION,
         "geometry_source_sha256": geometry_source_sha,
@@ -493,15 +540,38 @@ class PySCFOracle(BaseOracle):
         self.fixed_diatomic_mae_ev = _FIXED_DIATOMIC_MAE.get(
             (method, basis, tight_d), float("inf")
         )
-        # The measured table covers fixed-tabulated-geometry neutral diatomics only.
-        # Optimized geometry and polyatomic-capable configurations are distinct protocols;
-        # they cannot inherit that seven-species MAE merely because the energy tier matches.
-        validated_profile = (
-            not optimize_geometry and geometry_tier is None and max_atoms <= 2
-        )
-        self.benchmark_mae_ev = (
-            self.fixed_diatomic_mae_ev if validated_profile else float("inf")
-        )
+        # THREE PROTOCOLS, THREE SEPARATE QUESTIONS ABOUT EVIDENCE.
+        #
+        # This used to be one boolean whose terms included ``max_atoms <= 2``, which made
+        # "we have not measured this" and "this cannot be measured" the same state. They
+        # are not. Each protocol below asks its own table whether anything was measured
+        # FOR IT, and an unanswered question yields inf and a decline -- as before.
+        #
+        #   fixed diatomic    tabulated geometry, no relaxation      _FIXED_DIATOMIC_MAE
+        #   relaxed geometry  seed/relax/Hessian at a named tier     _RELAXED_GEOMETRY_MAE
+        #   self-optimised    bond-length scan at this same tier     nothing, ever measured
+        #
+        # The seven-species diatomic MAE belongs to the first row alone. It does not
+        # transfer to the others merely because the energy tier matches -- that inheritance
+        # is exactly the defect the 2026-07-20 audit closed.
+        if optimize_geometry:
+            self.benchmark_mae_ev = float("inf")
+        elif geometry_tier is None:
+            self.benchmark_mae_ev = (
+                self.fixed_diatomic_mae_ev if max_atoms <= 2 else float("inf")
+            )
+        else:
+            measured = _RELAXED_GEOMETRY_MAE.get(
+                (method, basis, tight_d, geometry_tier)
+            )
+            # A profile validated up to N atoms says nothing about N+1. Carrying the
+            # species-count ceiling in the table rather than in a comment is what stops a
+            # four-atom measurement from silently licensing a twelve-atom answer.
+            self.benchmark_mae_ev = (
+                measured[0]
+                if measured is not None and max_atoms <= measured[1]
+                else float("inf")
+            )
         self.nominal_accuracy_ev = self.benchmark_mae_ev
         self._cache: dict[tuple, float] = {}
         # Locating the minimum and evaluating the energy at it are two different

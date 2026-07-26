@@ -88,34 +88,25 @@ def _rref(rows: list[list[Fraction]]) -> tuple[list[list[Fraction]], list[int]]:
     return mat, pivots
 
 
-def _primitive(vec: list[Fraction]) -> Vector:
-    """Clear denominators, divide out the gcd, and fix the sign of the first nonzero."""
-    denominators = [x.denominator for x in vec]
-    multiplier = reduce(lambda a, b: a * b // gcd(a, b), denominators, 1)
-    ints = [int(x * multiplier) for x in vec]
-    common = reduce(gcd, (abs(v) for v in ints if v), 0)
-    if common:
-        ints = [v // common for v in ints]
-    first = next((v for v in ints if v), 0)
-    if first < 0:
-        ints = [-v for v in ints]
-    return ints
-
-
 def integer_kernel_basis(matrix: Matrix) -> list[Vector]:
-    """A primitive integer basis of ker(matrix). Exact; no tolerance anywhere."""
-    ncols = len(matrix[0])
-    rows = [[Fraction(x) for x in row] for row in matrix]
-    reduced, pivots = _rref(rows)
-    free = [c for c in range(ncols) if c not in pivots]
-    basis: list[Vector] = []
-    for f in free:
-        vec = [Fraction(0)] * ncols
-        vec[f] = Fraction(1)
-        for r, p in enumerate(pivots):
-            vec[p] = -reduced[r][f]
-        basis.append(_primitive(vec))
-    return basis
+    """
+    A ``Z``-basis of ``ker(matrix) & Z^n``, DELEGATED to the shipped implementation.
+
+    This harness used to carry its own copy: solve the kernel over the rationals by row
+    reduction, then clear each basis vector's denominators independently. That copy was
+    wrong in the same way the first shipped module was wrong, and for the same reason --
+    clearing a denominator inside one generator shrinks the group the generators span, to a
+    proper sublattice of the integer kernel. Balanced reactions existed that neither could
+    name. The counterexample is recorded in ``smartchem/stoichiometry.py``'s docstring.
+
+    Two second copies of an algorithm is two places for it to be wrong, and this one had no
+    reason to exist: the harness predates the module, and the module is now the artefact
+    ``THE_COMPILER.md`` section IV actually cites. So the duplicate is deleted rather than
+    repaired, and this file measures what ships instead of what it once prototyped.
+    """
+    from smartchem.stoichiometry import integer_kernel_basis as shipped
+
+    return [list(vector) for vector in shipped(tuple(tuple(row) for row in matrix))]
 
 
 def _apply(matrix: Matrix, vec: Vector) -> Vector:

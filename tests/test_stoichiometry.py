@@ -31,6 +31,9 @@ He = Molecule.atom("He")
 C = Molecule.atom("C")
 H2O = Molecule(("O", "H", "H"), frozenset({Bond(0, 1, 1), Bond(0, 2, 1)}))
 CO2 = Molecule(("C", "O", "O"), frozenset({Bond(0, 1, 2), Bond(0, 2, 2)}))
+#: The set that exposed the 2026-07-26 completeness defect; see TestCompleteness.
+H2O2 = Molecule(("O", "O", "H", "H"),
+                frozenset({Bond(0, 1, 1), Bond(0, 2, 1), Bond(1, 3, 1)}))
 
 
 def _apply(matrix, nu):
@@ -58,16 +61,83 @@ class TestTheThreeRegimes:
         assert menu.equations() == ("2H2 + O2 -> 2H2O",)
 
     def test_rank_two_enumerates_a_lattice_basis(self):
-        """{C, O2, CO, CO2} has a genuine choice, and the menu is a BASIS of it."""
+        """
+        {C, O2, CO, CO2} has a genuine choice, and the menu is a BASIS of it.
+
+        Asserted as a property of the LATTICE rather than as two expected equation strings.
+        Which basis vectors come back is a fact about the elimination order, and pinning
+        the strings makes an honest change of algorithm look like a regression -- it is
+        exactly what this assertion did when the kernel was corrected on 2026-07-26. The
+        durable claim is that the reactions a chemist expects are *reachable*, which is a
+        statement about the group the basis generates.
+        """
         menu = stoichiometry_menu((C, O2, CO, CO2))
         assert menu.freedom == 2
         assert menu.verdict == "ENUMERATE"
         assert len(menu.completions) == 2
-        assert set(menu.equations()) == {"2C + O2 -> 2CO", "C + O2 -> CO2"}
+        basis = [c.coefficients for c in menu.completions]
+        for expected in ((2, 1, -2, 0), (1, 1, 0, -1), (1, 0, -2, 1)):
+            assert _apply(menu.matrix, expected) == [0] * len(menu.matrix)
+            assert _integer_combination(basis, expected) is not None, (
+                f"{expected} is balanced but unreachable from the returned basis"
+            )
+
+
+def _integer_combination(basis, target):
+    """
+    The integer coefficients expressing ``target`` over ``basis``, or None if there are none.
+
+    Exact elimination over ``Fraction``; a rational solution with any denominator other
+    than 1 means the target lies in the rational span but OUTSIDE the lattice the basis
+    generates, which is precisely the failure this file exists to detect.
+    """
+    from fractions import Fraction
+
+    width, height = len(basis), len(target)
+    augmented = [
+        [Fraction(basis[j][i]) for j in range(width)] + [Fraction(target[i])]
+        for i in range(height)
+    ]
+    row, pivots = 0, []
+    for column in range(width):
+        found = next((i for i in range(row, height) if augmented[i][column] != 0), None)
+        if found is None:
+            continue
+        augmented[row], augmented[found] = augmented[found], augmented[row]
+        lead = augmented[row][column]
+        augmented[row] = [x / lead for x in augmented[row]]
+        for i in range(height):
+            if i != row and augmented[i][column] != 0:
+                factor = augmented[i][column]
+                augmented[i] = [a - factor * b for a, b in zip(augmented[i], augmented[row])]
+        pivots.append(column)
+        row += 1
+    if any(augmented[i][width] != 0 for i in range(row, height)):
+        return None                                   # not even in the rational span
+    solution = [Fraction(0)] * width
+    for i, column in enumerate(pivots):
+        solution[column] = augmented[i][width]
+    if any(value.denominator != 1 for value in solution):
+        return None                                   # in the span, outside the lattice
+    return tuple(int(value) for value in solution)
 
 
 class TestCompleteness:
-    """The menu is a basis of ker(A), not a sample of it. That is the whole claim."""
+    """
+    The menu generates ker(A) INTERSECTED WITH THE INTEGER LATTICE, not a sublattice of it.
+
+    This class previously asserted no such thing, and the gap shipped a real defect. Its
+    two tests were ``len(completions) == freedom`` -- which ``stoichiometry_menu`` already
+    raises on, so the assertion restated two implementation lines and could error but never
+    fail -- and ``A @ nu == 0``, which is SOUNDNESS. Soundness was never the hard part. A
+    mutant returning a generating set of an index-2 sublattice is still sound, still
+    count-correct, still primitive, and passed 28 of the 29 tests in this file.
+
+    So the test below is the one that kills that mutant: enumerate every integer point of
+    the kernel inside a box and require each to be an integer combination of what the menu
+    returned. Exhaustive over a bounded region rather than proved for all of ``Z^n``, and
+    the box is stated rather than implied.
+    """
 
     @pytest.mark.parametrize("species", [
         (H2, He), (H2, O2, H2O), (C, O2, CO, CO2), (N2, CO, CO2, O2, C),
@@ -80,16 +150,84 @@ class TestCompleteness:
         (H2, O2, H2O), (C, O2, CO, CO2), (N2, CO, CO2, O2, C),
     ])
     def test_every_derived_vector_is_exactly_in_the_kernel(self, species):
-        """A@nu == 0 in integers. Not 'close to zero' -- zero."""
+        """A@nu == 0 in integers. Not 'close to zero' -- zero. This is SOUNDNESS."""
         menu = stoichiometry_menu(species)
         for completion in menu.completions:
             assert _apply(menu.matrix, completion.coefficients) == [0] * len(menu.matrix)
+
+    @pytest.mark.parametrize("species,bound", [
+        ((H2, O2, H2O), 3),
+        ((C, O2, CO, CO2), 3),
+        ((O2, H2O, H2O2, H2), 3),
+        ((N2, CO, CO2, O2, C), 2),
+    ])
+    def test_no_balanced_reaction_in_the_box_is_unreachable(self, species, bound):
+        """
+        THE test. Every integer kernel point in [-bound, bound]^n must be generated.
+
+        ``(O2, H2O, H2O2, H2)`` is in the roster because it is the set that exposed the
+        original defect: the rational-basis version returned (1,2,-2,0) and (1,-2,0,2) and
+        could not reach (1,0,-1,1), which is ``H2 + O2 -> H2O2``, a balanced reaction any
+        chemist would name first.
+        """
+        from itertools import product
+
+        menu = stoichiometry_menu(species)
+        basis = [c.coefficients for c in menu.completions]
+        zero = [0] * len(menu.matrix)
+        checked = 0
+        for point in product(range(-bound, bound + 1), repeat=len(species)):
+            if not any(point) or _apply(menu.matrix, point) != zero:
+                continue
+            checked += 1
+            assert _integer_combination(basis, point) is not None, (
+                f"{point} balances over {species} but is not an integer combination of "
+                f"the returned basis {basis} -- the menu is incomplete"
+            )
+        assert checked > 0, "the box contained no balanced reactions; the test proves nothing"
+
+    def test_completeness_does_not_depend_on_argument_order(self):
+        """
+        The lattice is a property of the species set, not of how the caller listed them.
+
+        The original defect made this false: 4 of the 24 orderings of this set returned a
+        basis generating a different sublattice, and ``C + O2 -> CO2`` was unreachable from
+        several of them. Mutual integer containment is the exact check -- two bases generate
+        the same lattice precisely when each spans the other over ``Z``.
+        """
+        from itertools import permutations
+
+        species = (C, O2, CO, CO2)
+        reference = [c.coefficients for c in stoichiometry_menu(species).completions]
+        for order in permutations(range(len(species))):
+            shuffled = tuple(species[i] for i in order)
+            menu = stoichiometry_menu(shuffled)
+            # Re-express in the reference species order before comparing lattices.
+            realigned = [
+                tuple(vector[order.index(i)] for i in range(len(species)))
+                for vector in (c.coefficients for c in menu.completions)
+            ]
+            for vector in realigned:
+                assert _integer_combination(reference, vector) is not None, order
+            for vector in reference:
+                assert _integer_combination(realigned, vector) is not None, order
 
     def test_coefficients_are_integers_not_floats(self):
         """A rational menu with a tolerance is a plausible menu. Guard the type."""
         menu = stoichiometry_menu((C, O2, CO, CO2))
         for completion in menu.completions:
             assert all(type(c) is int for c in completion.coefficients)
+
+    def test_float_input_is_refused_rather_than_silently_widened(self):
+        """
+        ``Fraction(0.1)`` is a ratio of astronomical integers, and the kernel of that is a
+        kernel of a matrix nobody supplied. The module refuses a floating-point RANK on
+        exactly this argument; refusing the input is the same argument one step earlier.
+        """
+        with pytest.raises(TypeError):
+            integer_kernel_basis(((0.1, 0.3),))
+        with pytest.raises(ValueError):
+            integer_kernel_basis(((1, 2, 3), (1, 2)))
 
 
 class TestTheIndependentCheck:

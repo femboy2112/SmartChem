@@ -536,3 +536,85 @@ means the roster that produced 0.0801 is 21 species, not the 23 the constant cla
 substitute one unexplained number for another. The comment block above the constant now
 records all of this, so the figure's weakness is visible where it is used rather than only
 here.
+
+### The reconstruction that was reported and did not reproduce
+
+An independent pass reported re-deriving the constant as **+0.0906 mean at n=23/23**, which
+would have made 0.091 reproduce and would have made the paragraphs above wrong. It is
+recorded here because it was not reproducible, not because it was ignored.
+
+Re-run under a third protocol — relaxation **seeded at the tabulated r_e** rather than at
+`seed_coordinates`' bond-graph seed — the result is **f_A mean 0.08161, sd 0.07956, n=22/23**
+(CS recovers, F2 still fails). That is 0.0094 from 0.091, not 0.0004. Three protocols now
+sit at 0.0390, 0.0801 and 0.0816, and none reaches 0.091. The reported 23/23 is also
+inconsistent with the F2 failure, which two other passes and both of the harness's protocols
+reproduce deterministically. **The conclusion stands: 0.091 does not re-derive here.** What
+is not established is why the reported figure differed, and that is left open rather than
+explained away.
+
+## A silent wrong answer, found in the cache and closed
+
+`persistent._fingerprint` hashed only `inspect.getmodule(type(oracle))`. The ordinary
+composition this project uses — `PersistentCache(CachingOracle(PySCFOracle(...)))`, which is
+literally `polyatomic_cost_probe.py:224-226` — meant the implementation digest covered
+`caching.py` and **never `pyscf_oracle.py`**.
+
+`calculation_spec` delegates to the inner oracle correctly, which is why this looked safe.
+But it carries *settings*, and `_model_inputs_sha256` is a deliberate whitelist. Anything
+off that list — `conv_tol`, `max_cycle`, `_DESCENT_STEP_ANGSTROM`, `_MAX_DESCENTS`, the CBS
+extrapolation algebra, or adding frozen core or density fitting to `_parts` — changed every
+number the oracle produced and changed the cache key not at all.
+
+Measured on a copied tree with `mycc.frozen = 1` added to `_parts`:
+
+```
+pristine   bare d87102f11f384b24   wrapped 34e5368ef7bf3d4c
++ frozen   bare 2ebcc929b73d639e   wrapped 34e5368ef7bf3d4c   <-- unchanged
+```
+
+The bare oracle invalidated correctly; the wrapped one served the pre-edit number with
+`rejected=0`. Closed by digesting every module in the `.inner` chain rather than
+special-casing `CachingOracle`, because the hazard is composition itself. Six regression
+tests. **Every persistent cache file on disk is invalidated by this, correctly — they were
+keyed by a rule that could not distinguish the code that produced them.**
+
+Note the irony worth keeping: the geometry probe earlier today was designed around a
+*suspected* cache hazard that turned out not to exist, and a real one was sitting one layer
+further out the whole time.
+
+## Every diatomic relaxation evaluates one nonphysical geometry
+
+`geometry.py:454` calls scipy L-BFGS-B unbounded. With no bounds, scipy sets the first step
+length to `1/||d||`, so the first trial displacement has Euclidean norm **exactly 1.0** in
+the optimiser's variables — which are Ångström. For a diatomic the gradient is exactly
+antisymmetric, so each atom moves 1/√2 = 0.70711 Å in opposite directions and **the bond
+length changes by exactly √2 = 1.414214 Å on trial 1, for every diatomic, regardless of how
+small the gradient is.**
+
+That is visible in this repository's own failure message without any instrumentation: the CS
+`ConvergenceFailure` prints `C 0.7071067812 -0.0000000000 0.0000000000`. The two failures
+are then pure arithmetic:
+
+```
+CS  1.534900 - 1.414214 = 0.120686 A     <- matches the error message to the digit
+F2 |1.411930 - 1.414214| = 0.002284 A
+```
+
+**The seed is not the culprit** — `seed_bond_length` reaches its tabulated branch and returns
+the experimental r_e exactly for both, so bond order never enters. **F2 fails *because* its
+seed is perfect:** its r_e of 1.41193 Å agrees with the fixed 1.414214 Å step to 0.0023 Å. A
+worse reference value would have survived.
+
+**And there is no distance boundary.** SiO lands at 0.0955 Å — *closer* than CS's fatal
+0.1207 Å — and its SCF converges. The 21 species that pass do so on per-species SCF luck,
+not margin. Polyatomics are affected too: the 1 Å budget is normalised over the whole 3N
+vector, and production water drives an O and an H to **0.164 Å** apart on every relaxation it
+has ever run.
+
+Production impact is bounded — `pyscf_oracle.py:829` catches `ConvergenceFailure` and returns
+`None`, so this costs coverage, not correctness, and it fails loudly. It is not fixed here.
+The `bounds=` remedy is disqualified: it works only by tripping scipy's boxed branch, the
+bound *values* provably do nothing, and it perturbs currently-working species by up to
+3.1e-5 eV. The defensible fix is a penalty return on `ConvergenceFailure` — provably inert on
+paths that already work — and it deserves its own scoped change, not a hurried one at the end
+of a session.

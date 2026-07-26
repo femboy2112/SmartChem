@@ -775,3 +775,79 @@ number with nothing behind it — which is the exact failure this project exists
 The run's job was never to open the gate. It was to measure the residual and price what a
 real profile would cost, and it did both: the tier-matched holdout error is **2.6× the
 training figure**, so entering 0.0558 eV would have understated the bar by more than half.
+
+## Speed: sorting the routes into identity-preserving and measured tradeoff
+
+The gate above is blocked on n ≥ 8, and n ≥ 8 at cbs(TZ,QZ) is blocked on memory, not on
+ideas. So the prerequisite for ever opening that gate is the `vvvv` wall, and the question is
+which routes past it change the answer.
+
+Five independent probes of PySCF 2.14.0 and of this repo's own configuration. Harness:
+`experiments/ccsd_acceleration_probe.py`, which **calibrates itself every run** — it
+re-implements `_parts` because the oracle exposes no hook for the CC object, so bit-identity
+against the real `PySCFOracle._parts` on the free atoms is required before any route number is
+believed. A drifted replica exits 2 rather than reporting a difference it cannot attribute.
+
+### Identity-preserving
+
+| lever | evidence | verdict |
+|---|---|---|
+| `mycc.direct = True` | never builds `vvvv`; recomputes the contraction from AO integrals each iteration (`ccsd.py:1558`, mirrored for open shells at `uccsd.py:1172`) | **the answer to the wall** |
+| cross-species parallelism | nothing in `smartchem/` pins threads; `lib.num_threads()` is 8 by default and `OMP_NUM_THREADS=1` is a *timing* discipline, not a limit | free, RAM-bound |
+| MO projection across the CBS pair | `scf.addons.project_dm_nr2nr`; H2O/cc-pVQZ went 10 → 8 SCF cycles, energies agreeing to 1.07e-12 Ha | real, small share |
+| atom-energy reuse | already live inside one process via the instance `_cache`, keyed molecule-independently | already switched on |
+
+**`direct = True` measured, and it is exact where it matters — on the atomization energy:**
+
+| species / basis | route | D_e (eV) | wall | peak RSS |
+|---|---|---:|---:|---:|
+| H2O / cc-pVDZ | conventional | 9.046975604 | 0.44 s | 0.115 GB |
+| H2O / cc-pVDZ | direct | **9.046975604** | 0.57 s | 0.114 GB |
+| H2O2 / cc-pVTZ | conventional | 11.227822491 | 27.53 s | 0.485 GB |
+| H2O2 / cc-pVTZ | direct | **11.227822491** | 33.80 s | 0.502 GB |
+
+Bit-identical to all printed digits at both sizes, calibration 0.000e+00 Ha both times. The
+price so far is **1.23× wall clock** at cc-pVTZ. The memory saving does not show at either
+size and is not expected to: `vvvv` for H2O2/cc-pVTZ is a few tens of MB against a peak
+dominated by the AO integral transform. The wall lives at cc-pVQZ, where the model in
+`basis_size_probe.py` puts `vvvv` at 2.24 GB for CH3OH and 22.1 GB for C3H8.
+
+### Measured tradeoff
+
+Density fitting works, including for the open-shell atoms — `dfccsd` **and** `dfuccsd` both
+exist, `cc.CCSD(mf)` dispatches off `with_df`, and `ccsd_t()` runs on top because the triples
+reach integrals through `eris.get_ovvv` and never touch `vvvv` at all.
+
+| route | D_e (H2O/cc-pVDZ) | Δ vs conventional | as a fraction of chemical accuracy |
+|---|---:|---:|---:|
+| df (`-jkfit`, the default) | 9.047561507 | +0.000586 eV | 1.4% |
+| df-ri (`-ri`, the correct tier) | 9.047913744 | +0.000938 eV | 2.2% |
+
+Two findings outrank those numbers.
+
+**DF-UCCSD cannot run on a hydrogen atom.** One electron means a zero-dimension spin block and
+h5py refuses the chunk (`ValueError: All chunk dimensions must be positive`). Every
+hydrogen-containing species hits it, which is nearly all of them. Correlation is identically
+zero for one electron and the conventional route measures that — H/cc-pVDZ gives
+`e_corr = -1.92e-32` Hartree and `ccsd_t() = 0.0` exactly — so falling back is the defined
+answer rather than a patch, but a shipping integration would have to carry that branch
+knowingly.
+
+**The `-ri` auxiliary basis is *farther* from the conventional answer than the `-jkfit`
+default here, not nearer.** `.density_fit()` fits with `-jkfit`, and `dfccsd`/`dfuccsd` reuse
+that set for the correlation energy rather than building the `-ri` set (`dfccsd.py:35-38`).
+That is a wrong-tier default nobody chose and it deserved naming — but on this case correcting
+it moves the answer away by 0.00035 eV. One species at one basis proves nothing about which
+set is right; it does prove the two differ, and that the trap is not self-evidently costly.
+
+### Refuted — do not spend time here
+
+- **Point-group symmetry.** `pyscf.cc.ccsd`'s amplitude iterations ignore it entirely; only
+  the RHF (T) step exploits it, and `uccsd_t.py` hardcodes `orbsym = zeros`, so it is worth
+  exactly nothing on the open-shell atoms. A speedup that covers the molecule but not its own
+  atoms does not help an atomization energy.
+- **Frozen core** does not move the wall. `nocc` and `nmo` both drop by the frozen count, so
+  `nvir` is arithmetically unchanged — confirmed by probe, not inferred.
+- **CCSD(T)-F12 and local/PNO correlation are absent from PySCF 2.14.0.** The only F12 code in
+  the tree is `mp/mp2f12_slow.py`, self-flagged "in testing", and it is MP2. There is no
+  cheap route to CBS quality from a TZ calculation in this library.

@@ -250,6 +250,25 @@ thing that blocks it is a fact about the design, not about the effort.
   `StoichiometryMenu.unconstrained` and every completion touching one is flagged, so
   "balanced under the declared invariants" can never be read as "physical".
 
+  **THE SENTENCE ABOVE WAS MEASURED WITH A LABELLED PHOTON, AND THAT IS THE ONLY REASON IT
+  HELD — a second defect, found 2026-07-26.** `Molecule.__repr__` returned the **empty
+  string** for the one species with no atoms, no charge and no state, and every renderer in
+  the package joins species reprs and then decides emptiness from the joined *text*. So a
+  bare `Molecule.quantum()` vanished from any statement it was part of while the statement
+  stayed fluent. The kernel vector with coefficient 1 on the quantum printed as
+  `(nothing) -> (nothing)` — the trivial reaction, a confident false claim about a true
+  basis vector — and `quantum -> Na` printed as `(nothing) -> Na`, a module whose entire
+  subject is conservation announcing that matter came from nowhere. `Config((quantum,))`
+  printed as `""` and a photon-only `Reaction` as `" -> "`.
+
+  It survived because every boundary fixture used `state="photon@589nm"`, which renders as
+  `(photon@589nm)`; **the one species that triggers the defect was the one species no test
+  had ever rendered.** Fixed by giving the bare quantum a name (`quantum` — lower case so
+  no formula can collide, unbracketed so no state can) and by deciding `(nothing)` from the
+  *coefficients* rather than from the rendered text. A mutant restoring both defects
+  survives **239 of 239** pre-existing tests across six files and dies on all 8 of the new
+  ones. Same disease as the sublattice bug: a fact derived from a rendering of itself.
+
   This is the shepherd posture of §IX arriving a layer earlier than expected. The compiler
   does not refuse the photon and does not price it — it hands back the completion together
   with the exact reason the completion means less than it looks like it means. It is also
@@ -288,9 +307,46 @@ thing that blocks it is a fact about the design, not about the effort.
   reference against which their two arbitrary zeros could be aligned. That is a real
   obstruction to a cross-vertical reaction energy, computed by construction rather than
   rediscovered once per attempt, and it is the diagnosis Brick 2 needs.
-* **Brick 2 — `Na(excited) → Na + photon`.** Turn `base.py:343-346`'s worked example from a
-  boolean decline into a diagnosis. This morphism is the design's acceptance test, and it
-  was written down as an open gap years before this document.
+* **Brick 2 — `Na(excited) → Na + photon`. BUILT, 2026-07-26, `smartchem/diagnosis.py`.**
+  `diagnose(reaction, oracles)` returns a `Diagnosis`: the per-species oracle attribution,
+  and a tuple of `Obstruction`s each carrying its kind, its subject, its prose, and a
+  `removable` flag. Nothing it says is invented — every obstruction is derived from
+  something Brick 0 or Brick 1 already computed, which is §III's derived-menu law applied
+  to refusals instead of completions. A plausible wrong *explanation* of a decline is worse
+  than a bare decline, because a bare decline at least does not send anyone off to fix the
+  wrong thing.
+
+  **It is additive, and that was measured before it was decided.** Turning `Estimate |
+  None` into a richer type would have broken **52 test assertions and 17 internal call
+  sites**, plus every third-party `EnergyOracle` duck-type, for a gain available without
+  it. `energy()` still returns `None`; the diagnosis is a separate channel. That is also
+  the only way it can take a *set* of oracles — `thermo.reaction_energy` takes exactly
+  one, there is no router anywhere in the package, and a reaction spanning two verticals
+  has nowhere to put the second.
+
+  **The claim §VII had been making was too strong, and building it forced the correction.**
+  Brick 1 measured that `PySCFOracle.domain & PhotonOracle.domain` is empty, and that was
+  being read as "so their two arbitrary zeros cannot be aligned, therefore no cross-vertical
+  reaction energy". In `Na(*) → Na + photon` both sodium terms are priced by the *same*
+  oracle, so its zero cancels between them and the photon's energy is absolute — the zeros
+  are reconcilable for this reaction. What an empty intersection actually establishes is
+  narrower and still sharp: **the offset between two oracles' zeros cannot be *measured*,
+  because no species lies in both domains.** A statement about verifiability, which names
+  its own remedy — one shared species.
+
+  **And a non-empty intersection does not settle it either, so the code measures rather
+  than assumes.** `PhotonOracle(589) & PhotonOracle(532)` is non-empty and even `is_exact`;
+  its sole witness is the bare quantum; and the two price that witness **0.225535 eV**
+  apart. A shared *token* is not a shared *reference*. That number is the thing nothing in
+  this repository could compute before — the whole point of §VIII's load-bearing test.
+
+  **What the acceptance case actually reports.** For `Na(*) → Na + photon`: `Na(excited)`
+  is `UNPRICED` with *every* failing axis from *both* oracles enumerated rather than the
+  first; `Na` and the photon are attributed to the oracles that do cover them; and Brick 0's
+  `INVARIANT_BLIND` is carried through for the twinned Na(\*)/Na columns and the photon's
+  all-zero one. The offset obstruction is deliberately **not** raised while any species is
+  unpriced — that question is moot until everything has an oracle, and raising it anyway
+  would be a fabricated second problem.
 * **Brick 3 — the free-parameter ledger and the termination rule (§VI.3).** Only after a
   real spec has more than one hole.
 

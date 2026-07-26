@@ -44,6 +44,11 @@ from .category import (
     reaction_residue,
     tensor_obj,
 )
+from .diagnosis import (
+    Diagnosis,
+    Obstruction,
+    diagnose,
+)
 from .domain import (
     EVERYTHING,
     NOTHING,
@@ -109,6 +114,8 @@ __all__ = [
 
     # domain -- what an oracle declares it can price, before being called
     "Domain", "DomainContradiction", "EVERYTHING", "NOTHING",
+    # diagnosis -- WHY a reaction cannot be priced, as a value rather than a None
+    "Diagnosis", "Obstruction", "diagnose",
     # store -- the environment comonad and finite response-surface sampling
     "Store", "Conditions", "SOLVENTS",
     "survey", "response_surface", "is_responsive", "grid",

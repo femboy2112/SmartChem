@@ -196,3 +196,79 @@ thing that blocks it is a fact about the design, not about the effort.
 
 The ordering matters. **Brick 0 before anything conversational.** The dialogue is the last
 thing built, not the first, because the dialogue is the part that can fake working.
+
+---
+
+## VIII. WHY ANY OF THIS TRANSPORTS — the general form of §V
+
+§V is a special case of something larger, and this section states the larger thing because
+it is the actual load-bearing claim of the whole design.
+
+**When a structural pattern recurs across scales, the recurrence induces a vocabulary that is
+about the STRUCTURE rather than about any one scale's substrate — and that vocabulary can
+then be validly carried across scales.** The scientist's spec in §I is written in exactly
+such a vocabulary: `observe`, `constrain`, `range` are structural roles, not physics. That is
+*why* the compiler can be scale-free at all. If the spec language were chemical, there would
+be no compiler here, only a chemistry front-end.
+
+The question that makes this rigorous instead of poetic is: **when is such a transport
+valid?** The answer is standard mathematics wearing an operational hat — a transport is valid
+on exactly the sub-theory preserved by the map, i.e. where the map is a homomorphism for the
+operations the conclusion actually uses. Nothing new. What is proposed here is that the
+compiler be made to *do* it, as a required and checkable step:
+
+> **NAME THE ASSEMBLY.** A cross-scale transport is valid on exactly the sub-theory that the
+> assembly operation preserves. Identify the operation that builds the whole from the parts,
+> determine which axioms it preserves, and you have named — not guessed — the exact set of
+> conclusions that survive the crossing.
+
+### The evidence, and it is already in this repository
+
+**Case 1 — the `EnergyOracle` protocol, chemistry → radiation. Transport valid, whole.**
+`smartchem/oracle/photon.py` prices a photon and satisfies the oracle contract **with no
+interface change**. Its own docstring states the finding: the contract "was in fact
+domain-neutral all along." The assembly here is *"an oracle prices an object"*, which uses
+nothing about atoms — so it preserves everything, and the transport is total.
+
+**Case 2 — the interchange law, chemistry → electrical networks. The strongest case, because
+what transported was a NEGATIVE result.**
+
+* `tests/test_laws.py::TestObjectProductAndScheduledProduct::test_true_parallel_interchange_is_architecture_debt`
+  — a **strict xfail**. Chemical reactions do not satisfy interchange.
+* `tests/test_network.py::TestSeriesParallelScalarInterchangeCounterexample` — the same
+  law, asked of series/parallel impedance. It fails there too, and the counterexample is
+  exactly rational: for resistors 1, 2, 3, 4,
+
+      parallel(series(1,2), series(3,4)) = 21/10 = 2.1000
+      series(parallel(1,3), parallel(2,4)) = 25/12 = 2.0833
+
+  Not approximately unequal. Unequal.
+
+The *question* transported perfectly and so did the *answer*. A vocabulary that were secretly
+chemical could not have produced a true statement about resistors; that it did is the best
+evidence available that the language is genuinely about structure. Note also what this closes:
+the standing requirement that the categorical layer reach circuits and radiation is, at the
+level of *structure*, already met by these two cases.
+
+**Case 3 — memoryless decay, nuclear → biological. Valid on a sub-theory only, and the
+assembly said which one.** `experiments/decay_analogy_probe.py`. The assembly is redundancy
+plus a quorum rule; it does not preserve memorylessness; therefore no organism-scale survival
+conclusion transports, while part-scale rate conclusions do. Naming the assembly converted
+"the metaphor is imperfect" into a decomposition with edges.
+
+### What this section does NOT claim
+
+* **It is not new mathematics.** Structure-preserving maps are old. The proposal is the
+  discipline — that "name the assembly" become a step the compiler *refuses to skip* — not
+  the concept.
+* **n = 3, and one is not independent.** Case 3 was constructed for this document, so it
+  demonstrates the method rather than testing it. The real evidence is Cases 1 and 2, which
+  predate it and were not built to support it.
+* **The open problem is identifying the assembly at all.** In chemistry it is `tensor_obj`
+  (`category.py:610`, whose docstring already declares what it does *not* assert). In the
+  survival model it is redundancy-plus-quorum. For an arbitrary spec **nobody has said what
+  the assembly is**, and until that is answerable the §III derived-menu law binds here too:
+  a compiler that cannot identify the assembly must say so, and must not transport anyway.
+
+That last bullet is the genuine research problem underneath this whole document. Everything
+else is engineering.

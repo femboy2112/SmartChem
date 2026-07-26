@@ -884,3 +884,66 @@ The decision rule, filed before the number: **wire `mycc.direct = True` into `_p
 the QZ run is bit-identical AND its peak drops by more than the 1.23× wall-clock price is
 worth** — i.e. only if it converts species that cannot run into species that can. A route that
 is merely slower and equally large is not adopted, however elegant its mechanism.
+
+### The `direct` verdict: exact, faster, and BIGGER — the memory hypothesis is refuted
+
+`CH3OH / cc-pVQZ direct` landed. Both rows, from `scratchpad/accel.txt`:
+
+```
+route         D_e (eV)        wall        peak RSS
+conventional  22.163760672   1334.38 s    4.7263 GB
+direct        22.163760672   1119.42 s    4.8924 GB
+```
+
+Calibration `0.000e+00 Ha` over 3 free atoms on both runs, as on every run in this file.
+
+**Criterion 1 — exactness: PASSED, at the hardest size.** `22.163760672` eV to the last
+printed digit, at the basis where the AO-driven contraction does the most work. `direct` is
+now bit-identical at cc-pVDZ, cc-pVTZ and cc-pVQZ. That claim is settled.
+
+**Criterion 2 — the memory saving: REFUTED, and it went the wrong way.** The peak did not
+fall to the predicted ~2.5 GB. It *rose*, from 4.7263 GB to 4.8924 GB — **+0.1661 GB, 3.5%
+larger**. Not a small saving; a small penalty.
+
+**So the filed rule applies and the answer is NO.** `mycc.direct = True` is **not wired into
+`_parts`.** The rule required the peak to drop enough to convert species that cannot run into
+species that can. It did not drop at all, so the C2H5OH/C3H8 tier is exactly as unreachable as
+it was this morning, and [the cbs gate](#the-cbstzqz-holdout-closed-at-n3--and-the-gate-stays-shut)
+stays blocked on memory with its named remedy removed.
+
+**The correction this forces, which is larger than the route question.** The reasoning chain
+was: the wall is `vvvv`, `vvvv` is 2.24 GB of CH3OH/cc-pVQZ's 4.726 GB peak, `direct` never
+builds `vvvv`, therefore `direct` halves the peak. The measurement kills the *conclusion*,
+which means one of the premises is false — and the one that fails is the third-to-last:
+
+> **The peak for CH3OH / cc-pVQZ is not set by `vvvv`.**
+
+The `vvvv` array may well be 2.24 GB; deleting it changed the high-water mark by nothing. A
+model calibrated against peak RSS was being read as a model *of the peak's composition*, and
+those are different claims. This is the same species of error as the ZPE fraction — a
+quantity fitted for one purpose, consumed as though it answered another.
+
+**The leading suspect, named but NOT claimed.** `direct` alters only the CCSD amplitude
+iteration. `ccsd_t()` runs afterward, allocates its own arrays, and is untouched by the flag —
+so if the triples step sets the high-water mark, both routes peak at the same place and the
+3.5% is transient noise around a shared ceiling. That is *consistent* with what was measured
+and is not evidence for it. **The discriminating probe:** run both routes with the `(T)` step
+disabled and compare peaks. If the gap opens to ~2 GB, `vvvv` was real and `(T)` was hiding
+it; if both fall together, the transform sets it. One run each, not yet done, and no
+conclusion is recorded here until it is.
+
+**The unanticipated result, kept separate because the rule did not cover it.** `direct` was
+1.295× slower at cc-pVDZ and 1.2277× at cc-pVTZ. At cc-pVQZ it is **1.1920× FASTER**
+(1.1945× on the molecule alone) — 214.96 s saved on a 1334 s run. The sign flipped somewhere
+between TZ and QZ.
+
+That is interesting and it is **n = 1**. A sign reversal resting on a single paired
+measurement is precisely the kind of result this file exists to not act on. It is recorded as
+an observation, not a finding, and it is *not* what the filed rule was about — stretching a
+memory rule to ratify a speed result would be answering a question nobody pre-registered.
+
+**Pre-registered, before the next run:** the speed reversal is confirmed if a second species
+at cc-pVQZ shows `direct` faster than `conventional` by more than 5%, as a paired run on the
+same box. `C2H5OH / cc-pVQZ direct` is running now and **cannot settle this** — no
+conventional partner was queued for it, so it produces a wall-clock number with nothing to
+compare against. It is a memory-scaling datapoint and should not be read as anything else.

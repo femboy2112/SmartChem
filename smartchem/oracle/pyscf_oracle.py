@@ -171,9 +171,37 @@ _GEOMETRY_METHODS = ("HF",)
 #: harmonic/anharmonic, and reference-convention contributions.
 #:
 #: The script that produced the number, ``scratchpad/geom_calibrate.py``, was never
-#: committed and is gone. The 0.091 is therefore a value this repository cannot currently
-#: re-derive; only its training roster has been recovered. Treat the figure as inherited
-#: rather than reproduced until ``experiments/`` carries a harness that regenerates it.
+#: committed and is gone. Only its training roster has been recovered.
+#:
+#: RE-DERIVED 2026-07-26 by ``experiments/zpe_bias_refit.py``, and IT DOES NOT COME BACK
+#: AS 0.091 ON ANY PROTOCOL OR DENOMINATOR::
+#:
+#:     protocol                       n      f_A (/reference)   f_B (/computed)
+#:     relax + Hessian (production)   21/23      0.0801              0.0742
+#:     Hessian at tabulated r_e       23/23      0.0390              0.0375
+#:
+#: Three things follow, and none of them is "the old number was wrong" -- PySCF's version,
+#: convergence thresholds and the lost script's roster weighting are all unrecoverable, so
+#: this is drift of unknown origin, not a refutation.
+#:
+#: 1. THE DENOMINATOR IS PROBABLY WRONG. f_A is nearer 0.091 than f_B on BOTH protocols,
+#:    and the code applies the constant to the COMPUTED ZPE (see ``zpe_bias`` below), i.e.
+#:    as an f_B. Pooled, ``f_B = f_A / (1 + f_A)`` exactly. If the lost fit measured
+#:    against the reference ZPE, this file overstates the systematic by ~1.09x.
+#: 2. THE SCATTER IS AS LARGE AS THE CONSTANT. Per-species sd is 0.0812 against a mean of
+#:    0.0801, and FOUR of the 21 species have the OPPOSITE SIGN (CN -0.039, MgO -0.053,
+#:    Na2 -0.022, NaCl -0.030) while O2 reaches +0.264. A "9.1% systematic" is the mean of
+#:    a distribution that straddles zero -- which is why it is reported as a sensitivity
+#:    and never applied.
+#: 3. HALF OF IT IS GEOMETRY, NOT METHOD. The production path is 2.05x the fixed-geometry
+#:    control, so relaxing at HF/cc-pVDZ -- whose bonds are measurably too short, see
+#:    ``experiments/RESULTS_polyatomic_cost.md`` -- stiffens the molecule and inflates the
+#:    frequencies about as much as the electronic method does.
+#:
+#: CS and F2 do not survive the production path at all: the unconstrained Cartesian
+#: L-BFGS-B line search drives their atoms nearly coincident and SCF diverges. That is a
+#: live fragility in the same ``_relaxed_geometry`` polyatomics use, not an artefact of
+#: the harness.
 #:
 #: It is carried as a named correction sensitivity, in ``Estimate.systematic_terms``, not
 #: silently treated as an independent random draw. Its signed displacement can cancel

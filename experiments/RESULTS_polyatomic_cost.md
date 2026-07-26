@@ -473,3 +473,56 @@ affordable cbs holdout is n=3 and criterion 2 fails by construction on this hard
 not a failure of the run — the run's job is to measure the residual and price what a real
 profile would cost, and a measurement that says "not yet" is the correct output of a protocol
 whose entire thesis is that a plausible wrong number is worse than no number.
+
+## The midterm goal, done: `ZPE_BIAS_FRACTION` is re-derivable, and it does not re-derive
+
+`experiments/zpe_bias_refit.py` is committed. It is the replacement for
+`scratchpad/geom_calibrate.py`, which was never committed and is gone, and it makes 0.091
+reproducible for the first time in this repository's history. Bond orders come from
+`BOND_REFS` rather than a table written in the harness, so the calibration carries no
+hand-authored hidden variable.
+
+**It does not come back as 0.091 on any protocol or denominator.**
+
+| protocol | n | f_A = Δ/reference | f_B = Δ/computed |
+|---|---:|---:|---:|
+| relax + Hessian — *the production path* | 21 / 23 | **0.0801** (sd 0.0812) | 0.0742 |
+| Hessian at tabulated r_e — control | 23 / 23 | 0.0390 | 0.0375 |
+
+Pooled, `f_B = f_A/(1+f_A)` holds to six decimals, as the algebra requires. Both protocols
+were reproduced independently by a second, separately-written script before being believed;
+the two agreed to the digits shown.
+
+**Three findings, and none of them is "the old number was wrong."** PySCF's version, the
+convergence thresholds and the lost script's roster weighting are unrecoverable, so this is
+drift of unknown origin. What it does establish:
+
+1. **The denominator is probably wrong.** f_A is nearer 0.091 than f_B on *both* protocols,
+   and `pyscf_oracle.py:809` applies the constant to the **computed** ZPE — i.e. as an f_B.
+   If the lost fit measured against the reference ZPE, the file overstates the systematic
+   by ~1.09x. This is the suspicion recorded in the second pass, and it now has evidence
+   on both sides of a protocol change rather than none.
+2. **The scatter is as large as the constant.** Per-species sd is 0.0812 against a mean of
+   0.0801, and **four of the 21 species have the opposite sign** — CN −0.039, MgO −0.053,
+   Na2 −0.022, NaCl −0.030 — while O2 reaches +0.264. A "9.1% systematic" is the mean of a
+   distribution that straddles zero. Combined with the second pass's finding that every
+   polyatomic ZPE lies *above* the training maximum, this term is a one-parameter model
+   evaluated out of range **and** fitted on data it barely describes.
+3. **About half of it is geometry, not method.** The production path is **2.05x** the
+   fixed-geometry control. Relaxing at HF/cc-pVDZ — whose bonds are measurably too short,
+   established above — stiffens the molecule and inflates the harmonic frequencies roughly
+   as much as the electronic method does. The "HF harmonic bias" is not purely an HF
+   harmonic bias.
+
+**A live fragility surfaced on the way.** CS and F2 do not survive the production path at
+all: the unconstrained Cartesian L-BFGS-B line search in `geometry.py:357` takes a trial
+step that drives the two atoms nearly coincident (C–S separation 0.12 Å against an
+equilibrium 1.53 Å) and SCF diverges. This is the same `_relaxed_geometry` polyatomics use.
+It fails loudly, with `ConvergenceFailure`, so it is not a silent-wrong-answer path — but it
+means the roster that produced 0.0801 is 21 species, not the 23 the constant claims.
+
+**Nothing was changed.** `ZPE_BIAS_FRACTION` is still 0.091 and is still not applied to
+`value_ev`. Overwriting a calibration constant from a run that does not reproduce it would
+substitute one unexplained number for another. The comment block above the constant now
+records all of this, so the figure's weakness is visible where it is used rather than only
+here.

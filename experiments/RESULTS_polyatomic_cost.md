@@ -811,6 +811,8 @@ believed. A drifted replica exits 2 rather than reporting a difference it cannot
 | H2O / cc-pVDZ | direct | **9.046975604** | 0.57 s | 0.114 GB |
 | H2O2 / cc-pVTZ | conventional | 11.227822491 | 27.53 s | 0.485 GB |
 | H2O2 / cc-pVTZ | direct | **11.227822491** | 33.80 s | 0.502 GB |
+| CH3OH / cc-pVQZ | conventional | 22.163760672 | 1334.38 s | **4.726 GB** |
+| CH3OH / cc-pVQZ | direct | *running at time of writing* | | |
 
 Bit-identical to all printed digits at both sizes, calibration 0.000e+00 Ha both times. The
 price so far is **1.23× wall clock** at cc-pVTZ. The memory saving does not show at either
@@ -857,3 +859,28 @@ set is right; it does prove the two differ, and that the trap is not self-eviden
 - **CCSD(T)-F12 and local/PNO correlation are absent from PySCF 2.14.0.** The only F12 code in
   the tree is `mp/mp2f12_slow.py`, self-flagged "in testing", and it is MP2. There is no
   cheap route to CBS quality from a TZ calculation in this library.
+
+### Where the `direct` measurement stands, and what finishes it
+
+`CH3OH / cc-pVQZ conventional` is the first case in this file where `vvvv` is genuinely
+load-bearing: **4.726 GB peak RSS against a 7 GB box**, 1334.38 s. That is the regime the
+whole acceleration question is about — one species, alone, using two thirds of the machine.
+The two cc-pVTZ cases above show exactness but cannot show a memory saving, because their
+`vvvv` is tens of megabytes inside a peak dominated by the integral transform.
+
+**The outstanding measurement is `CH3OH / cc-pVQZ direct`**, running as this was written, via
+`scratchpad/run_accel.sh` writing to `scratchpad/accel.txt`. It decides two things at once:
+
+1. **Exactness at scale.** `direct` must return `22.163760672` eV. It has been bit-identical
+   at cc-pVDZ and cc-pVTZ; QZ is where the AO-driven contraction does the most work and so is
+   the strongest test of the claim.
+2. **Whether the saving is real.** The model in `basis_size_probe.py` puts CH3OH's `vvvv` at
+   2.24 GB of that 4.726 GB peak. If `direct` lands near 2.5 GB, the wall moves by roughly a
+   factor of two on this species and the C2H5OH/C3H8 tier becomes reachable; if it lands near
+   4.7 GB, the peak is dominated by something else and `direct` buys wall clock debt for
+   nothing. Either result is worth having and only one of them is a speedup.
+
+The decision rule, filed before the number: **wire `mycc.direct = True` into `_parts` only if
+the QZ run is bit-identical AND its peak drops by more than the 1.23× wall-clock price is
+worth** — i.e. only if it converts species that cannot run into species that can. A route that
+is merely slower and equally large is not adopted, however elegant its mechanism.

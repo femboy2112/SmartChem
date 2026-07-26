@@ -34,6 +34,13 @@ harness at all.
 | Script | Question it answers |
 |---|---|
 | `polyatomic_cost_probe.py` | What does one real polyatomic cost end to end at CCSD(T), and how far off is it? Go/no-go for the whole polyatomic validation plan. |
+| `basis_size_probe.py` | Where does CCSD(T) run out of memory, and does frozen core fix it? Prices `t2`/`ovvv`/`vvvv` per species and basis, and calibrates the model against real peak RSS. |
+| `vibrational_probe.py` | What is in the harmonic spectrum, mode by mode, and how much ZPE does each mode carry? Built to price H2O2's hindered rotor; it cost 2.9% of the ZPE and the hypothesis died. |
+| `multireference_probe.py` | Is a species multireference? Reads CCSD(T) amplitudes at the pipeline geometry for T1, D1, max\|t1\|, max\|t2\| and (T)/E_corr. |
+| `zpe_bias_refit.py` | Re-derives `ZPE_BIAS_FRACTION` from the 23-species roster, and decides whether the code applies it to the wrong denominator. Replaces the lost `scratchpad/geom_calibrate.py`. |
+
+Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
+passes and keeps superseded numbers rather than overwriting them.
 
 ## Running
 

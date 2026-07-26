@@ -83,19 +83,28 @@ The extrapolation does what the uniform negative sign predicted it would.
 | NH3 | 187.1 s | −0.0609 | −1.40 | 6.1× smaller | 8.4× |
 | CH4 | 284.7 s | −0.0364 | −0.84 ✓ | 4.5× smaller | 11.2× |
 | CO2 | 608.0 s | −0.0396 | −0.91 ✓ | 10.1× smaller | 11.6× |
-| H2O2 | 452.5 s | −0.1090 | −2.51 | 4.6× smaller | 9.7× |
-| CH3OH | *running* | | | | |
+| H2O2 | 452.5 s | −0.1090 | −2.51 | 4.6× smaller | 9.73× |
+| CH3OH | 1614.3 s | −0.0588 | −1.36 | 6.7× smaller | 13.93× |
 
 ```
-MAE (5 of 6)   0.0552 eV   (1.27 kcal/mol)
-published diatomic MAE at the same tier   0.0562 eV
+MAE            0.0558 eV   (1.28 kcal/mol)
+published diatomic MAE at the same tier   0.0562 eV      -- 0.74% below it
+mean signed   -0.0558 eV   -- all six still negative, no cancellation
+range          0.0300 (H2O) to 0.1090 (H2O2)
+total wall     3203.1 s = 53.4 minutes for the whole tier-matched profile
 ```
 
-Three of the five are inside chemical accuracy (1 kcal/mol = 0.0433 eV). The five-species
-MAE sits within 2% of the published diatomic figure — the first evidence that polyatomic
-accuracy at this tier is of the same order as the validated diatomic number rather than six
-times worse. Every error is still negative, so residual underbinding survives the
-extrapolation; it is now small rather than dominant.
+Three of the six are inside chemical accuracy (1 kcal/mol = 0.0433 eV). The six-species MAE
+lands within 1% of the published diatomic figure at the same tier — polyatomic accuracy here
+is of the same order as the validated diatomic number, not six times worse as plain cc-pVTZ
+implied.
+
+Every error is still negative. Residual underbinding survives the extrapolation; it is now
+small rather than dominant, and that it is uniform means it is still systematic rather than
+scatter. A 6-species MAE that coincides with the diatomic MAE to within 1% is a striking
+number and should be treated with suspicion proportional to how convenient it is: n=6, no
+held-out split, and one shared protocol whose ZPE bias is itself a fitted quantity carried
+from a different species class.
 
 **H2O2 is the outlier at both tiers** — worst at cc-pVTZ (−0.5046) and worst here. It is
 also the one species whose relaxation exercised the saddle-descent path. A harmonic ZPE for
@@ -117,6 +126,14 @@ wall-clock ratios so far are 9.9× (H2O), 8.4× (NH3), 11.2× (CH4). Naively CH3
 five — around 13 GB, against a machine with 7 GB total and ~2 GB free. *Predict: it either
 exceeds the harness's 1800 s per-species timeout and is killed, or it completes at a ratio
 materially above 11×.* **Falsifier:** completion in ≲1300 s.
+**→ CONFIRMED, on its weaker branch, and the margin is modest.** 1614.3 s, a ratio of
+13.93× against a prior maximum of 11.65×. The falsifier did not occur. But the prediction's
+*stronger* branch — that it would be killed outright — did not happen either, so the ×5
+calibration factor was pessimistic at this size. That is consistent rather than lucky: the
+calibration ratio was already noted as falling with size (6.1× → 5.2×), and a species that
+hits memory pressure, swaps rather than dies, and pays for it in wall clock is exactly the
+20%-over-band signature observed. Scored as a hit, but a soft one: "materially above 11×"
+was a threshold I set myself, and 13.93× clears it without drama.
 
 **P-Q2 — CO2 and H2O2 both complete.** Modelled at 0.703 and 0.790 GB, so ~3.5–4 GB
 calibrated: tight on this box but not over. *Predict both finish inside 1800 s.*
@@ -128,6 +145,13 @@ where it predicted headroom.
 **P-Q3 — the six-species CBS MAE lands between 0.03 and 0.08 eV**, i.e. comparable to the
 published 0.0562 eV rather than to the 0.3575 eV measured at plain cc-pVTZ.
 **Falsifier:** MAE above 0.15 eV.
+**→ CONFIRMED.** 0.0558 eV, mid-band, and 0.74% below the published diatomic figure.
+
+**All three scored: 3 confirmed, 0 falsified.** Worth stating plainly that a clean sweep is
+weaker evidence than it feels — these were predictions about a run whose mechanism was
+already partly understood, not blind ones, and P-Q1's threshold was self-set. The
+falsifiable record exists so the *next* set can be judged against a known calibration, not
+so this one can be claimed as vindication.
 
 ## The cc-pVQZ affordability question, answered
 
@@ -156,8 +180,23 @@ number instead of on folklore.
 
 ## The one thing to do next
 
-Finish scoring P-Q1 through P-Q3, then decide the protocol for anything above 6 atoms on
-the DF-vs-tier evidence rather than on the assumption that frozen core buys headroom.
+**Not more of this table.** Six species at 53 minutes with a MAE that matches the diatomic
+figure is enough to say the protocol is not broken; it is nowhere near enough to publish an
+accuracy tier, and adding a seventh species of the same kind buys almost nothing.
+
+What is actually blocking is not measurement:
+
+1. **The gate is welded shut in code.** `validated_profile` in `PySCFOracle.__init__`
+   requires `max_atoms <= 2` while `_polyatomic_energy` is only reachable above 2. No
+   argument combination can publish a polyatomic energy today whatever this file says. That
+   edit is a decision, not an experiment.
+2. **There is no held-out set and none can be assembled from the current tables.** Every
+   `GEOMETRY` diatomic is either in the ZPE fit's 23 or excluded by basis coverage. A real
+   split needs newly tabulated species.
+3. **H2O2 is the informative species here, not the average.** Worst at both tiers, and the
+   only one whose relaxation exercised saddle descent. Its harmonic ZPE for a hindered
+   internal rotor is untested and is the most likely place this protocol is quietly wrong.
+   One species that is understood beats three more that are merely counted.
 
 Re-opening the public path needs a code edit as well as a measurement: `validated_profile`
 in `PySCFOracle.__init__` requires `max_atoms <= 2`, while `_polyatomic_energy` is only

@@ -39,6 +39,9 @@ ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "smartchem" / "ledger.py"
 SUITE = "tests/test_ledger.py"
 
+STOICHIOMETRY = ROOT / "smartchem" / "stoichiometry.py"
+STOICHIOMETRY_SUITE = "tests/test_stoichiometry.py tests/test_section_i.py"
+
 #: (name, exact source text, replacement, the reasoning error it embodies).
 #:
 #: The ``old`` strings are required to appear EXACTLY ONCE in the target. A mutation that
@@ -146,11 +149,86 @@ MUTATIONS = [
 ]
 
 
-def _run_suite() -> tuple[bool, str]:
-    """Run the ledger suite. Returns (all passed, the last line of output)."""
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", SUITE, "-q", "--no-header", "-p", "no:cacheprovider"],
+#: Section I's second clause, mutated. ``StoichiometryMenu.check`` decides whether a balance
+#: a SCIENTIST WROTE is admissible, so every wrong version here is a confident verdict about
+#: someone else's chemistry -- the exact failure this package exists to refuse.
+WRITTEN_CHECK_MUTATIONS = [
+    (
+        "the-empty-vector-accepted",
+        "        trivial = not any(nu)\n",
+        "        trivial = False\n",
+        "Dropping the all-zero guard. A @ 0 == 0 exactly, on every row, in every menu that "
+        "has ever existed, so a bare residual test reports the empty statement as a "
+        "balanced reaction. The most plausible mutation here: it looks like a special case "
+        "someone added defensively, and it is the one case the residual cannot catch.",
+    ),
+    (
+        "verified-collapsed-into-admissible",
+        "        return self.admissible and not self.unverifiable\n",
+        "        return self.admissible\n",
+        "Treating 'it balances' and 'the invariants could see what it balances' as one "
+        "claim. Na(*) -> Na then reports VERIFIED, which is a confident statement about "
+        "de-excitation derived from invariants that cannot see excitation.",
+    ),
+    (
+        "truthiness-follows-the-weaker-claim",
+        "        return self.verified\n",
+        "        return self.admissible\n",
+        "Making bool() agree with Session.__bool__, which IS truthy on its weaker case. "
+        "Plausible by analogy and wrong: COMPILED_SUBJECT_TO is a checked result with a "
+        "condition, while an unverifiable balance is silence about part of the claim.",
+    ),
+    (
+        "charge-row-dropped-from-the-residual",
+        "                         for row in self.matrix)",
+        "                         for row in self.matrix[:-1])",
+        "Checking the element rows and not the charge row, which composition_matrix appends "
+        "last. `conserves` tests atoms AND charge, so this accepts balances that Reaction "
+        "then refuses -- and the MenuContradiction path is what would catch it.",
+    ),
+    (
+        "unverifiable-ignores-whether-it-is-touched",
+        "                             if c and molecule in self.unconstrained)",
+        "                             if molecule in self.unconstrained)",
+        "Flagging every invariant-blind species in the candidate set rather than the ones "
+        "the vector actually uses. Over-refuses: a blind species with coefficient zero is "
+        "not being leaned on, and reporting it downgrades verdicts that were fine.",
+    ),
+    (
+        "written-length-unchecked",
+        "        if len(nu) != len(self.species):\n",
+        "        if False:\n",
+        "Trusting the caller to align their vector. zip and the row loop then read past or "
+        "short of the species tuple, and the verdict is about a different vector than the "
+        "one that was written.",
+    ),
+    (
+        "float-coefficients-allowed",
+        "        if any(not isinstance(c, int) or isinstance(c, bool) for c in nu):\n",
+        "        if False:\n",
+        "Letting a float through. It sums cleanly into the residual and yields a confident "
+        "admissible/refused verdict about a vector that is not a candidate balance at all.",
+    ),
+    (
+        "equation-species-length-unchecked",
+        "        if len(species) != len(self.coefficients):\n",
+        "        if False:\n",
+        "The defect this module actually shipped: zip truncates in silence, so a short "
+        "species tuple renders a SHORTER balance that reads as complete.",
+    ),
+]
+
+
+def _pytest(suite: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", *suite.split(), "-q", "--no-header",
+         "-p", "no:cacheprovider"],
         cwd=ROOT, capture_output=True, text=True, timeout=600)
+
+
+def _run_suite(suite: str) -> tuple[bool, str]:
+    """Run a suite. Returns (all passed, the last line of output)."""
+    proc = _pytest(suite)
     lines = [line for line in proc.stdout.strip().splitlines() if line.strip()]
     return proc.returncode == 0, (lines[-1] if lines else "<no output>")
 
@@ -160,25 +238,26 @@ def _failed_test_names(output: str) -> list[str]:
                    for line in output.splitlines() if line.startswith("FAILED")})
 
 
-def main() -> int:
-    original = TARGET.read_text()
+def _probe(label: str, target: Path, suite: str, mutations: list) -> tuple[int, list[str]]:
+    """Run every mutation for one target. Returns (exit hint, survivor names)."""
+    original = target.read_text()
 
+    print("\n" + "=" * 78)
+    print(f"{label}")
     print("=" * 78)
-    print("LEDGER MUTATION PROBE")
-    print("=" * 78)
-    print(f"  target           : {TARGET.relative_to(ROOT)}")
-    print(f"  suite            : {SUITE}")
+    print(f"  target           : {target.relative_to(ROOT)}")
+    print(f"  suite            : {suite}")
 
-    clean_ok, clean_line = _run_suite()
+    clean_ok, clean_line = _run_suite(suite)
     print(f"  unmutated        : {clean_line}")
     if not clean_ok:
         print("  ABORTED: the suite does not pass before any mutation, so a 'killed' "
               "verdict below would be meaningless.")
-        return 1
+        return 1, ["<suite red before mutation>"]
 
     survivors: list[str] = []
     try:
-        for name, old, new, why in MUTATIONS:
+        for name, old, new, why in mutations:
             occurrences = original.count(old)
             print(f"\n  -- {name} " + "-" * max(0, 62 - len(name)))
             print(f"     why : {why}")
@@ -189,11 +268,8 @@ def main() -> int:
                 survivors.append(f"{name} (ANCHOR STALE)")
                 continue
 
-            TARGET.write_text(original.replace(old, new))
-            proc = subprocess.run(
-                [sys.executable, "-m", "pytest", SUITE, "-q", "--no-header",
-                 "-p", "no:cacheprovider"],
-                cwd=ROOT, capture_output=True, text=True, timeout=600)
+            target.write_text(original.replace(old, new))
+            proc = _pytest(suite)
             lines = [ln for ln in proc.stdout.strip().splitlines() if ln.strip()]
             summary = lines[-1] if lines else "<no output>"
             killers = _failed_test_names(proc.stdout)
@@ -206,24 +282,42 @@ def main() -> int:
                 for killer in killers:
                     print(f"         {killer}")
     finally:
-        TARGET.write_text(original)
+        target.write_text(original)
 
-    restored = TARGET.read_text()
-    if restored != original:
+    if target.read_text() != original:
         print("\n  HARD ERROR: the target was NOT restored byte-for-byte.")
-        return 2
+        return 2, survivors
+
+    print(f"\n  {label}: {len(mutations)} mutants, {len(survivors)} survivors, "
+          f"target restored byte-identical")
+    return 0, survivors
+
+
+def main() -> int:
+    runs = [
+        ("BRICK 3 -- the termination rule", TARGET, SUITE, MUTATIONS),
+        ("BRICK 4 -- section I's second clause", STOICHIOMETRY, STOICHIOMETRY_SUITE,
+         WRITTEN_CHECK_MUTATIONS),
+    ]
+    worst, total, all_survivors = 0, 0, []
+    for label, target, suite, mutations in runs:
+        code, survivors = _probe(label, target, suite, mutations)
+        worst = max(worst, code)
+        total += len(mutations)
+        all_survivors += [f"{label.split(' -- ')[0]}/{s}" for s in survivors]
 
     print("\n" + "=" * 78)
-    print(f"  mutants run      : {len(MUTATIONS)}")
-    print(f"  survivors        : {len(survivors)}"
-          + ("" if not survivors else "  -> " + ", ".join(survivors)))
-    print(f"  target restored  : byte-identical, verified")
-    if survivors:
+    print(f"  targets          : {len(runs)}")
+    print(f"  mutants run      : {total}")
+    print(f"  survivors        : {len(all_survivors)}"
+          + ("" if not all_survivors else "  -> " + ", ".join(all_survivors)))
+    print(f"  targets restored : byte-identical, verified")
+    if all_survivors:
         print("  A survivor is a wrong implementation this suite accepts. It is a hole, "
               "and the repair is a test that reaches the subject by a route the subject "
               "does not control.")
     print("=" * 78)
-    return 0
+    return worst
 
 
 if __name__ == "__main__":

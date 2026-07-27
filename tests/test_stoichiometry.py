@@ -587,6 +587,34 @@ class TestSectionIsSecondClause:
         assert bool(written) is False, "truthiness follows the STRONGER claim"
         assert "silence about them" in written.explain()
 
+    def test_a_blind_species_only_costs_a_verdict_when_the_vector_touches_it(self):
+        """
+        The distinction between *present in the candidate set* and *leaned on*.
+
+        Found by ``experiments/ledger_mutation_probe.py``: the mutant that drops the
+        ``c and`` guard -- flagging every invariant-blind species rather than the ones with
+        a nonzero coefficient -- SURVIVED all 69 tests written for this brick. The code was
+        right and the suite could not see it, which is a coverage hole and not a shipped
+        defect, but the two are only distinguishable by measuring.
+
+        A bare quantum has an all-zero column, so it is in the kernel by itself and
+        contributes nothing to ``A @ nu`` whatever its coefficient. With coefficient zero
+        the balance does not rest on it at all and the verdict must not be downgraded;
+        with a nonzero one it does, and must be.
+        """
+        photon = Molecule(())
+        menu = stoichiometry_menu(COMBUSTION + (photon,))
+        assert menu.unconstrained == (photon,), "the blind species really is flagged"
+
+        untouched = menu.check((1, 2, -1, -2, 0))
+        assert untouched.unverifiable == (), "coefficient zero is not leaning on it"
+        assert untouched.verified and bool(untouched) is True
+
+        touched = menu.check((1, 2, -1, -2, 1))
+        assert touched.admissible, "the all-zero column keeps the residual at zero"
+        assert touched.unverifiable == (photon,)
+        assert not touched.verified, "and that zero is silence, not evidence"
+
     @pytest.mark.parametrize("nu, exception", [
         ((1, 2, -1), ValueError),           # wrong length -- would silently zip-truncate
         ((1, 2.0, -1, -2), TypeError),      # a float sums straight through the residual

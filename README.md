@@ -611,9 +611,13 @@ The frozen baseline's exact MAE on every split is pinned, because the headline c
 
 Both structural halves of the canonical cross-domain pair now run. The human half correctly
 returns incompatible mathematical probability witnesses rather than an empirically calibrated
-or actual-human/population mortality prediction; an empirically fitted D2b model requires
-multi-dose/time evidence, uncertainty, held-out validation, competing-risk semantics where
-applicable, and data-governance authority. The no-loss optimizer precedes the
+or actual-human/population mortality prediction. A separate D2b-S executor now recovers one
+preselected Weibull family from content-addressed seeded-binomial synthetic interval cohorts,
+using a structurally TRAIN-only fit capability, explicit gradient/curvature gates, conditional
+likelihood-curvature intervals, and locked HOLDOUT scoring. This is same-generator
+`STRUCTURAL_TOY` evidence, not empirical human calibration or confidence coverage. Empirical
+D2b still requires independent data/applicability authority, external validation, stronger
+uncertainty, and competing-risk semantics where applicable. The no-loss optimizer precedes the
 conversational surface. Physical water-wave validation remains separate:
 continuity/momentum-admissible backgrounds, wavelength/capillarity gates, uncertainty, and a
 full dispersive branch solver. The broader metaphor portfolio begins with traffic kinematic

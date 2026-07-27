@@ -52,6 +52,7 @@ harness at all.
 | `compiled_water_wave_vertical.py` | Executes the first approved cross-domain structural-toy vertical: underidentified phrase -> scientist-confirmed typed water profile/branch/regime/orientation -> exact output contract -> prescribed-background characteristic calculation -> independent recheck -> RunRecord/certificate. It is not a measured flume or continuum wave simulation. The durable receipt is `RESULTS_compiled_water_wave_vertical.md`; the JSON journal is ignored. |
 | `compiled_water_wave_validation.py` | Executes the v2 manufactured finite-section compatibility preflight: nominal discharge/head, declared `kh` and Bond-number screens, sign-aware branch/orientation, uncertainty-resolved adjacent-sample bracket, and complete output/casualty retention. It is not a continuous stationary solution or measured validation. Receipt: `RESULTS_compiled_water_wave_validation.md`. |
 | `compiled_human_isotope_vertical.py` | Executes the D2a cross-scale structural-identifiability vertical: underidentified metaphor -> scientist-confirmed cohort/population/assembly/exposure/endpoint choices -> exact output contract -> two independently rechecked dynamic-family probability witnesses -> RunRecord/certificate. It emits an underidentification result, not an empirically calibrated mortality model or actual-human/population prediction. The durable receipt is `RESULTS_compiled_human_isotope_vertical.md`; the JSON journal is ignored. |
+| `compiled_human_survival_recovery.py` | Executes the separate D2b-S synthetic recovery vertical: content-addressed seeded-binomial independent interval cohorts -> structurally TRAIN-only fixed-family likelihood -> gradient/curvature gates -> conditional likelihood-curvature intervals -> locked HOLDOUT binomial scores -> post-fit same-generator recovery. The intervals are not calibrated confidence coverage; the run is not empirical human calibration, biological validation, toxicology, causality, LD50/LC50 evidence, or transfer authority. Receipt: `RESULTS_compiled_human_survival_recovery.md`. |
 
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
 passes and keeps superseded numbers rather than overwriting them — `ao_storage_probe.py` and
@@ -108,6 +109,10 @@ OMP_NUM_THREADS=1 .venv/bin/python experiments/compiled_h2_vertical.py \
 # structural-toy cross-scale identifiability vertical; no PySCF required
 .venv/bin/python experiments/compiled_human_isotope_vertical.py \
   --journal /tmp/smartchem-human-isotope-run.json
+
+# selected-family synthetic recovery; no human/animal data or PySCF required
+.venv/bin/python experiments/compiled_human_survival_recovery.py \
+  --journal /tmp/smartchem-human-survival-run.json
 ```
 
 Pin the threads and check `uptime` first. This repo has already been burned once by timing

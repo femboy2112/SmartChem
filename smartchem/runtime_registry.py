@@ -296,6 +296,31 @@ _DESCRIPTORS = (
             "smartchem.human_isotope_domain",
         ))),
     ),
+    ExecutorDescriptor(
+        executor_id=(
+            "smartchem.human_survival/"
+            "synthetic-weibull-interval-recovery-v1"
+        ),
+        resolved_container=TypeReference("smartchem.program", "ResolvedDomainProgram"),
+        subject_type=TypeReference(
+            "smartchem.human_survival_domain",
+            "SurvivalCalibrationSpec",
+        ),
+        subject_attribute="subject",
+        output_contract_factory=FunctionReference(
+            "smartchem.human_survival",
+            "_default_output_contract",
+        ),
+        runner=FunctionReference(
+            "smartchem.human_survival",
+            "_execute_human_survival",
+        ),
+        implementation_modules=tuple(sorted((
+            *_SHARED_IMPLEMENTATION_MODULES,
+            "smartchem.human_survival",
+            "smartchem.human_survival_domain",
+        ))),
+    ),
 )
 
 _BY_EXECUTOR_ID = MappingProxyType({

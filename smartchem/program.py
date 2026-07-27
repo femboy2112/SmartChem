@@ -163,6 +163,9 @@ _WATER_WAVE_VALIDATION_EXECUTOR = (
     "smartchem.water_wave/finite-section-compatibility-v2"
 )
 _HUMAN_ISOTOPE_EXECUTOR = "smartchem.human_isotope/identifiability-v1"
+_HUMAN_SURVIVAL_EXECUTOR = (
+    "smartchem.human_survival/synthetic-weibull-interval-recovery-v1"
+)
 
 
 def _executor_observables(executor_id: str) -> frozenset[str]:
@@ -1425,6 +1428,43 @@ def _observable_payload_error(
             diagnostic.family_witnesses
         ):
             return "human-isotope family witnesses are not the diagnostic witnesses"
+        return None
+    if plan.executor_id == _HUMAN_SURVIVAL_EXECUTOR:
+        from .human_survival import _payloads as human_survival_payloads
+        from .human_survival_domain import (
+            SurvivalCalibrationResult,
+            SurvivalCalibrationSpec,
+            fit_synthetic_survival,
+        )
+
+        resolved = plan.request.resolved
+        if (
+            type(resolved) is not ResolvedDomainProgram
+            or type(resolved.subject) is not SurvivalCalibrationSpec
+        ):
+            return (
+                "human-survival plan has no exact SurvivalCalibrationSpec subject"
+            )
+        diagnostic = payloads.get("human_survival_synthetic_fit")
+        if type(diagnostic) is not SurvivalCalibrationResult:
+            return (
+                "human_survival_synthetic_fit must retain an exact "
+                "SurvivalCalibrationResult"
+            )
+        reference = fit_synthetic_survival(resolved.subject)
+        if canonical_digest(diagnostic) != canonical_digest(reference):
+            return (
+                "human-survival fit does not equal the independently recomputed result"
+            )
+        expected_payloads = human_survival_payloads(reference, resolved.subject)
+        for observable_id, expected in expected_payloads.items():
+            if observable_id not in payloads:
+                return f"human-survival output omitted {observable_id}"
+            if canonical_digest(payloads[observable_id]) != canonical_digest(expected):
+                return (
+                    f"human-survival output {observable_id} differs from the "
+                    "independently recomputed payload"
+                )
         return None
     return f"no observable payload validator for executor {plan.executor_id!r}"
 

@@ -44,7 +44,7 @@ What exists is unusually valuable:
   non-linear constraints;
 - adversarial and mutation testing that has repeatedly falsified stronger-looking claims.
 
-The 2026-07-27 implementation added that connection for four deliberately narrow verticals:
+The 2026-07-27 implementation added that connection for five deliberately narrow verticals:
 
 - a closed executor registry, a full shipped-source approval identity, and exclusive
   run-owned journals that prevent one calculation from erasing another;
@@ -66,18 +66,24 @@ The 2026-07-27 implementation added that connection for four deliberately narrow
   constructs two incompatible mathematical probability families satisfying the same median
   endpoint and emits no empirically calibrated or actual-human/population mortality
   probability or prediction.
+- one separate synthetic D2b-S recovery executor that binds exact independent
+  interval-cohort records, fits one preselected Weibull proportional-hazards family on TRAIN
+  with a conditional-binomial likelihood, retains conditional likelihood-curvature intervals and
+  optimizer diagnostics, and scores every locked HOLDOUT record. Its same-generator recovery
+  is implementation evidence only, not empirical human calibration or biological validation.
 
 What still does not exist is the general version: a language covering arbitrary worlds,
 open-process and multiphysics semantics, a planner choosing among multiple valid model chains,
 general cross-domain transport/assembly compilation, a general post-run validity/refinement
 runtime, or a conversational surface. The executable bridges accept one typed `Reaction`, one
 typed `WaterWaveSpec`, one typed `WaterWaveValidationSpec`, or one typed
-`HumanIsotopeSpec` from an outright-compiled `Session`; this set is still not a general
+`HumanIsotopeSpec`, or one typed `SurvivalCalibrationSpec` from an outright-compiled
+`Session`; this set is still not a general
 `SimulationPlan` compiler, continuum wave solver,
 toxicology model, or mortality simulator.
 
 **This audit set the contract seam before the conversational UI.** That narrow seam is now
-implemented and exercised across four deliberately narrow calculations. The same ordering
+implemented and exercised across five deliberately narrow calculations. The same ordering
 still governs the remaining general work:
 build and test semantics before adding a fluent surface that could make missing semantics look
 complete.
@@ -280,16 +286,16 @@ predicate, an exactness or discrepancy reference, and an emitted transform recor
 | Refusal diagnosis | **Built** | Obstructions are derived from conservation and domain facts. There is no model router or executable remedy graph. |
 | Shepherd termination | **Built, syntactic** | A well-founded multiset rank prevents endless rephrasing/deepening, and menus require a non-empty derivation string. It proves termination, not that new subquestions semantically descend from the old one. Legacy slots remain textual; the first executable vertical additionally requires typed bindings and machine derivation references. |
 | Section I loop | **Demonstrated, not compiled** | Four rounds close a hard-coded example and the category accepts its fixed reaction. The closed `Session` is not interpreted into a general runtime plan. |
-| Contract seam and typed bindings | **Built, narrow vertical slices** | Immutable source/program, request, plan, approval, run, certificate, typed binding, and validity-obligation artifacts now support the H2, structural water, and structural human-identifiability verticals. They do not yet make a general simulation language. |
+| Contract seam and typed bindings | **Built, narrow vertical slices** | Immutable source/program, request, plan, approval, run, certificate, typed binding, and validity-obligation artifacts now support H2, two structural water executors, structural human identifiability, and synthetic survival recovery. They do not yet make a general simulation language. |
 | Approved H2 vertical | **Executed once, complete** | `2 H -> H2` ran through the approved source-to-certificate path at the existing CCSD(T)/cc-pVTZ protocol. The durable receipt and its limitations are in `experiments/RESULTS_compiled_h2_vertical.md`. |
 | Water-wave cross-domain slice | **Executed structural compiler test** | The typed language distinguishes target, regime, branch, flow direction, and black/white/pair orientation; the runtime retains every prescribed SI profile point, independently rechecks every crossing, and binds an exact analogue/casualty scope. The synthetic run is `STRUCTURAL_TOY`, not a measured flume, validated horizon, continuum wave evolution, or astrophysical result. |
 | Human–isotope cross-scale slice | **Executed structural underidentification test** | The typed language binds target, population, granularity, assembly, environment, hazard effect, toxicokinetic link, LD50/LC50 protocol, and calibration evidence. The runtime independently rechecks that distinct exponential and Weibull probability witnesses share the one median endpoint while disagreeing away from it. The run is `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`; individual, cause-specific, observed-data, and empirically calibrated or predictive probability outputs remain blocked. |
 | Public quantum-chemistry output | **Implemented in a narrow domain** | Enabled neutral atoms and fixed neutral diatomics under measured protocols; broader internal code fails closed rather than inheriting evidence. |
 | General simulation runtime | **Unbuilt** | No general state evolution, boundary/reservoir semantics, time integration, mesh, ensemble, or coupled solver system. |
-| Typed Physical IR and language | **Built for four narrow verticals; otherwise unbuilt** | The minimal source/IR records support H2, two distinct finite water diagnostics, and a human-proxy identifiability record including typed calibration and model patches. They do not yet cover general worlds, typed ports, validated cross-scale dynamics, or a general simulation language. |
-| Output contract and approval gate | **Built for four narrow verticals** | All four executors require their exact output contracts; changing membership, support, resolution, precision, coverage, diagnostics, or retention blocks execution until a different executor exists. Broader policy and tradeoff negotiation remain unbuilt. |
-| Post-run validity transition | **Built for four narrow verticals** | Named obligations and complete/incomplete/invalid/refused/failed records exist on all four; no general solver/result-state runtime exists. |
-| Result certificate | **Built for four narrow verticals** | Receipts bind the H2, both structural water, and structural human-identifiability runs to their scope, evidence, omissions, and casualties; this is not yet a general artifact system. |
+| Typed Physical IR and language | **Built for five narrow verticals; otherwise unbuilt** | The minimal source/IR records support H2, two distinct finite water diagnostics, human-proxy identifiability, and selected-family synthetic survival recovery. They do not yet cover general worlds, typed ports, validated cross-scale dynamics, or a general simulation language. |
+| Output contract and approval gate | **Built for five narrow verticals** | All five executors require their exact output contracts; changing membership, support, resolution, precision, coverage, diagnostics, or retention blocks execution until a different executor exists. Broader policy and tradeoff negotiation remain unbuilt. |
+| Post-run validity transition | **Built for five narrow verticals** | Named obligations and complete/incomplete/invalid/refused/failed records exist on all five; no general solver/result-state runtime exists. |
+| Result certificate | **Built for five narrow verticals** | Receipts bind H2, both structural water runs, structural human identifiability, and synthetic survival recovery to their scope, evidence, omissions, and casualties; this is not yet a general artifact system. |
 
 The strongest honest summary is:
 
@@ -661,9 +667,9 @@ The conversational layer is an interface to these transitions. It never substitu
 
 For the roadmap horizons requested on 2026-07-27, Milestones A and B are completed
 short-term goals. The H2 instance of Milestone C is complete. The selected next midterm was
-decomposed: water-wave D1 is complete as a structural toy, and human–isotope D2a is complete
-as a structural underidentification result. D2b—the first empirically fitted
-probability-bearing data-bound reliability/survival executor—remains open. Milestones E and F
+decomposed: water-wave D1 is complete as a structural toy, human–isotope D2a is complete
+as a structural underidentification result, and D2b-S is complete as a same-generator
+synthetic selected-family recovery test. Empirical D2b remains open. Milestones E and F
 follow. Physical flume validation, dispersive wave solving, and broader multiphysics work
 remain separate
 longer-horizon validation/runtime work.
@@ -756,7 +762,7 @@ execution, not a recalibration, an MAE, a bound, a Gibbs result, or new chemistr
 See `experiments/RESULTS_compiled_h2_vertical.md` for the run, plan, approval, artifact, and
 certificate digests.
 
-### Milestone D — compile the canonical cross-domain pair — D1 AND D2a EXECUTED; D2b OPEN
+### Milestone D — compile the canonical cross-domain pair — D1, D2a, AND D2b-S EXECUTED; EMPIRICAL D2b OPEN
 
 Compile both canonical requests through the same artifact chain:
 
@@ -803,12 +809,22 @@ blockers until their distinct endpoint semantics, data-governance, competing-ris
 calibration, validation, and output executors exist. See
 `experiments/RESULTS_compiled_human_isotope_vertical.md`.
 
-**Open D2b scope.** An empirically fitted probability-bearing model must add a
-scientist-selected dynamic family, multi-dose and multi-time data, uncertainty, held-out
-validation, and identified assembly/toxicokinetic evidence. Cause-specific probability
-additionally requires every
-competing hazard and a cumulative-incidence calculation. D2a's successful negative result is
-not calibration evidence for D2b.
+**Completed D2b-S scope.** A separate executor accepts exact content-addressed independent
+synthetic interval cohorts under one preselected Weibull proportional-hazards family. It
+fits TRAIN only with the correct conditional-binomial interval likelihood, requires fixed
+  multistart agreement and full-rank positive-definite likelihood curvature, retains every
+prediction and uncertainty diagnostic, scores the locked HOLDOUT, and consults known
+generator truth only for a post-fit recovery assessment. Its strongest result is
+same-generator `SYNTHETIC_RECOVERY_PASSED` under
+`EXPERIMENTAL_PROXY/STRUCTURAL_TOY`. It does not weaken D2a, use LD50/LC50 as a rate, or
+establish human calibration, biology, toxicology, causality, or transfer.
+
+**Open empirical D2b scope.** A probability-bearing empirical model still needs independent
+data-governance/applicability authority, an identified assembly/toxicokinetic interpretation
+where claimed, cohort bootstrap/profile uncertainty, external locked validation, and
+censoring semantics. Cause-specific probability additionally requires every competing
+hazard and a cumulative-incidence calculation. Neither D2a's negative result nor D2b-S's
+same-generator recovery is empirical calibration evidence.
 
 **Exit tests**
 

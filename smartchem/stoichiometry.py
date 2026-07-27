@@ -428,7 +428,19 @@ class Written:
         return self.admissible and not self.unverifiable
 
     def __bool__(self) -> bool:
-        """Truthy on :attr:`verified`, the stronger of the two claims, never on the weaker."""
+        """
+        Truthy on :attr:`verified`, the STRONGER of the two claims, never on the weaker.
+
+        **This is deliberately the opposite convention from ``Session.__bool__``, which is
+        truthy on ``COMPILED_SUBJECT_TO`` as well as ``COMPILED``, and the divergence is
+        named here so nobody has to discover it.** The two weaker cases are not the same
+        kind of thing. ``COMPILED_SUBJECT_TO`` is a *checked* result with a condition
+        attached: the spec closed, and one binding needs re-reading after the run. An
+        unverifiable balance is not a weaker yes at all -- it is the invariants being
+        SILENT about part of the claim, because the columns they would have used are
+        indistinguishable. Absence of evidence is not evidence with a caveat, so the
+        careless ``if menu.check(nu):`` gets ``False`` here rather than a pass.
+        """
         return self.verified
 
     def explain(self) -> str:

@@ -173,6 +173,9 @@ _HUMAN_SURVIVAL_EXECUTOR = (
 _ISING_LATTICE_GAS_EXECUTOR = (
     "smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"
 )
+_RESISTIVE_DC_EXECUTOR = (
+    "smartchem.resistive_dc/exact-relation-sparse-mna-v1"
+)
 _RUNTIME_DISPATCH_TOKEN = object()
 
 
@@ -1743,6 +1746,55 @@ def _observable_payload_error(
                 return (
                     f"Ising-lattice-gas output {observable_id} differs from the "
                     "independently recomputed payload"
+                )
+        return None
+    if plan.executor_id == _RESISTIVE_DC_EXECUTOR:
+        from .resistive_dc import (
+            ResistiveDCAnalysis,
+            ResistiveDCSubject,
+            _ideal_resistor_model,
+            _payloads as resistive_dc_payloads,
+            analyze_resistive_dc,
+        )
+
+        resolved = plan.request.resolved
+        if (
+            type(resolved) is not ResolvedDomainProgram
+            or type(resolved.subject) is not ResistiveDCSubject
+        ):
+            return "resistive-DC plan has no exact ResistiveDCSubject"
+        exact_model = _ideal_resistor_model()
+        if (
+            plan.model != exact_model
+            or plan.request.physical_ir.models != (exact_model,)
+        ):
+            return "resistive-DC plan does not retain the runtime-owned exact model"
+        analysis = payloads.get("resistive_dc_analysis")
+        if type(analysis) is not ResistiveDCAnalysis:
+            return (
+                "resistive_dc_analysis must retain an exact "
+                "ResistiveDCAnalysis"
+            )
+        try:
+            reference = analyze_resistive_dc(resolved.subject)
+        except Exception as error:
+            return (
+                "approved resistive-DC subject failed separate deterministic "
+                f"recomputation: {type(error).__name__}: {error}"
+            )
+        if canonical_digest(analysis) != canonical_digest(reference):
+            return (
+                "resistive_dc_analysis differs from the separate deterministic "
+                "recomputation"
+            )
+        expected_payloads = resistive_dc_payloads(reference)
+        for observable_id, expected in expected_payloads.items():
+            if observable_id not in payloads:
+                return f"resistive-DC output omitted {observable_id}"
+            if canonical_digest(payloads[observable_id]) != canonical_digest(expected):
+                return (
+                    f"resistive-DC output {observable_id} differs from the "
+                    "separately recomputed payload"
                 )
         return None
     return f"no observable payload validator for executor {plan.executor_id!r}"

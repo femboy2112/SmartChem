@@ -7,15 +7,16 @@ parts without reading the whole tree. For *what the system claims and what was m
 
 ## The one-paragraph version
 
-SmartChem is a **compositional layer above quantum chemistry**, not a replacement for it.
-Chemical configurations form a commutative multiset of structured species, and reactions
-are validated sequential histories that cannot violate atom or net-charge conservation.
-They form a path category under sequential composition. The object product does **not**
-currently extend to a symmetric monoidal product of reaction histories:
-``scheduled_product`` means a deterministic left-first schedule; the deprecated
-``tensor`` compatibility name warns because it is not a parallel tensor. Energy comes from
-a pluggable oracle whose coverage and measured
-accuracy depend on method, species and conditions.
+SmartChem is a research compiler with a **compositional chemistry core and a first separate
+open-system control**, not a replacement for domain solvers. Chemical configurations form
+a commutative multiset of structured species, and reactions are validated sequential
+histories that cannot violate atom or net-charge conservation. They form a path category
+under sequential composition. The object product does **not** extend to a symmetric
+monoidal product of reaction histories: ``scheduled_product`` is a deterministic left-first
+schedule, and the deprecated ``tensor`` name warns because it is not parallel. Genuine
+open wiring now lives in `open_diagram`; its first domain algebra is the exact ideal-resistor
+boundary relation in `circuit`. Chemistry energy still comes from a pluggable oracle whose
+coverage and measured accuracy depend on method, species and conditions.
 
 ## Layers
 
@@ -26,6 +27,9 @@ Layer 3½ Compiled vertical seam   contracts.py · program.py · typed ledger bi
                                   water_wave_continuous_domain.py · water_wave_continuous.py
                                   human_isotope_domain.py · human_isotope.py
                                   human_survival_domain.py · human_survival.py
+                                  ising_lattice_gas_domain.py · ising_lattice_gas.py
+                                  resistive_dc.py
+Layer 2¾ Open-system semantics    open_diagram.py · circuit.py
 Layer 2½ Domain instances          cell.py                (chemistry meets circuit)
 Layer 2  Sequential core          category.py · thermo.py
 Layer 1  Energy oracle            oracle/base.py + heuristic.py + pyscf_oracle.py
@@ -52,6 +56,9 @@ Nothing in Layer 2 or 3 knows which oracle it is talking to. That is the whole d
 | `smartchem/human_isotope_domain.py`, `smartchem/human_isotope.py` | current structural cross-scale slice | Pure typed target/population/granularity/assembly/exposure/toxicokinetic/LD50-LC50/calibration records plus the proxy-only identifiability runtime. Its two normalized family witnesses establish that one median endpoint does not identify dynamics. The run is `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`, not a human mortality, clinical, toxicological, causal, or regulatory model. |
 | `smartchem/human_survival_domain.py`, `smartchem/human_survival.py` | synthetic D2b-S recovery slice | Content-addressed seeded-binomial independent synthetic interval cohorts, fixed TRAIN/HOLDOUT authority, a preselected Weibull proportional-hazards conditional-binomial likelihood, deterministic multistart/gradient diagnostics, conditional likelihood-curvature intervals, heldout binomial scores, and post-fit generator recovery. The intervals are not calibrated confidence coverage; the run is not empirical human calibration, biological validation, toxicology, LD50/LC50 evidence, causality, or transfer authority. |
 | `smartchem/ising_lattice_gas_domain.py`, `smartchem/ising_lattice_gas.py` | exact finite cross-domain control | Exact-integer enumeration of all eight states on the fixed undirected three-cycle, the affine spin/occupancy and Hamiltonian map, both formal partition inventories, explicit zero-output-loss evidence, and a separately implemented direct runtime verifier. Its finite algebra is `ESTABLISHED`; its physical claim remains `ANALOGUE`, with no material, dynamics, thermodynamic-limit, or arbitrary-graph transfer. |
+| `smartchem/open_diagram.py` | finite typed open-structure presentation | Ordered electrical boundary interfaces, construction-local component/junction resolution, total boundary gluing and disjoint-union tensor, identities/braids, and a separate exact alpha-invariant canonical observer with named search-budget refusal. The current two-terminal/at-least-two-incidence slice is not a universal graph language or full free hypergraph-category API; finite law tests are not a formal proof. |
+| `smartchem/circuit.py` | exact resistor semantics and sparse DC evaluator | Exact positive-rational resistor decoration bound to one declaration-order presentation; exact boundary linear relations on potentials/inward currents with relational composition/direct product; and a one-path sparse COO→CSC MNA evaluator with reference, KCL, source-constraint, source-inclusive power, passivity, relation, singularity, and numerical-refusal gates. It is resistor-only DC—not AC/RLC, hardware, safety, or port-Hamiltonian dynamics. |
+| `smartchem/resistive_dc.py` | compiled open-system control | The eighth closed executor carries a typed open diagram, exact resistor model, and separate drive/reference experiment through source interpretation, frozen IR/output contract, approval, one-call exact/sparse analysis, write-once journal, three complete outputs, and certificate. Its `LITERAL/VALIDATED_WITHIN_REGIME/CERTIFIED` scope names only the declared ideal finite mathematics and numerical witness. |
 | `smartchem/geometry.py` | 650 | **Seed → relax → check local curvature.** VSEPR-based candidate coordinates from the bond graph, Cartesian L-BFGS relaxation on a supplied surface, and Eckart-projected harmonic analysis. The module imports no quantum backend, but relaxation and Hessian construction still require backend data in real use. |
 | `smartchem/oracle/base.py` | 440 | The `EnergyOracle` protocol and `Estimate` — a value with an untyped reported scale and named signed correction sensitivities. Plus the guard that makes oracles decline what they cannot value. |
 | `smartchem/oracle/heuristic.py` | 184 | A guarded wrapper around the frozen original algebraic model with transitive table/source fingerprinting. It remains measurable only in its selected standard/vacuum environment and declines nonstandard environments rather than exporting that calibration. |
@@ -81,14 +88,15 @@ Stable source IDs allow the same systematic term to cancel while unrelated terms
 cancel merely because their scalar totals happen to oppose. IEEE-754 addition and `hypot`
 are not exactly associative, and no covariance model or calibration guarantee is implied.
 
-**3. The core syntax is domain-neutral; its physical semantics are not automatic.**
+**3. The closed chemistry syntax is domain-neutral; open physical semantics are explicit.**
 Objects use labelled graphs over opaque symbols, an integer charge and opaque internal
 state, while `Reaction` conserves symbol counts and total charge. That syntax can spell
-toy radiation and circuit examples, but it has no typed boundary ports, Kirchhoff node
-semantics, rates, fields or open-system composition. In particular, its conservation check
-does not by itself make a Kirchhoff-violating circuit unconstructible. A future physical
-network layer needs explicit port and behavioral semantics rather than reinterpretation of
-chemical fields.
+toy radiation and circuit examples, but it still has no typed boundary ports, Kirchhoff
+node semantics, rates, fields or open-system composition. The separate
+`open_diagram`/`circuit` slice now supplies those features for finite ideal resistors only;
+it does not reinterpret chemical fields or automatically supply another domain's physics.
+The layered category roadmap explains how structure, model decoration, semantic algebra,
+experiment, evidence, and execution remain distinct.
 
 **4. The current cell prototype gets electron count from an explicit factorisation.**
 The simplified structural example `Zn + 2 MnO2 → ZnO + Mn2O3` does not mention electrons —
@@ -150,6 +158,9 @@ eigenvector can seed a repair attempt but does not prove which chemical structur
 | `test_optional_backends.py` | Core import/registry behavior when PySCF is unavailable or broken |
 | `test_cell.py` | Half-reaction structure and carrier counting, the `−ΔE/n` diagnostic, resistive-load algebra and stoichiometric capacity. Electrochemical OCV is intentionally not implemented. |
 | `test_network.py` | A **falsified** architectural prediction, kept: isolated-species energy additivity does not transfer to scalar impedance. One additive rule is 31.9× wrong on the tested parallel RC. Its power identity covers only uncoupled parallel branches at one prescribed voltage; it says nothing about radiative additivity or coupled fields. |
+| `test_open_diagram.py` | Total presentation composition/tensor versus bounded canonical observation; malformed incidence refusal; alpha/declaration permutation; multiplicity/self-loop retention; a brute small-permutation oracle; identity/associativity/tensor/interchange; braid involution/naturality; both hexagons; and explicit budget refusal. These are finite controls, not a universal proof. |
+| `test_circuit.py` | Exact rational boundary relations and relational composition/tensor; splitter–tensor–merger parallel wiring; bridge decomposition; single/series/parallel/cycle/bridge sparse MNA; signed source and source-inclusive power; exact-vs-numeric rational grids; floating-relation versus grounded-solve scope; and rank/nonfinite/underflow/mutation/refusal gates. |
+| `test_resistive_dc_program.py` | Closed-registry source-to-certificate lifecycle, exact three-output retention, public exports, bridge controls, output/engine/model mutation, write-once journal, resource/canonicalization caps, floating refusal, quarantine, and narrow literal scope. |
 | `test_thermo.py`, `test_store.py`, `test_pathway.py`, `test_basis_policy.py` | Their respective modules |
 | `test_program.py`, `test_p0_runtime_seam.py`, `test_optimizer.py`, `test_typed_ledger.py`, `test_water_wave_domain.py`, `test_water_wave_program.py`, `test_water_wave_validation_domain.py`, `test_water_wave_validation_program.py`, `test_water_wave_continuous_domain.py`, `test_water_wave_continuous_program.py`, `test_human_isotope_domain.py`, `test_human_isotope_program.py`, `test_human_survival_domain.py`, `test_human_survival_program.py`, `test_ising_lattice_gas_domain.py`, `test_ising_lattice_gas_program.py` | Approval/integrity/lifecycle boundaries, exact IR/evidence/model/transform/dispatch ownership, typed shepherd authority, Class-A transform multiplicity/workset/forgery/output preservation, branch/orientation algebra, finite and continuous manufactured water balance/regularity/convergence/comparison gates, LD50/LC50 and underidentification semantics, synthetic interval-likelihood/split/uncertainty gates, exact finite cross-domain algebra/completeness, analogue/proxy casualties, exact output semantics, payload schemas, resource/quarantine transitions, constructor bypass, and forged-result rejection. |
 
@@ -170,7 +181,9 @@ run is recorded in `experiments/RESULTS_compiled_water_wave_vertical.md`; and th
 manufactured continuous steady-water control is recorded in
 `experiments/RESULTS_compiled_water_wave_continuous.md`; the human-identifiability run is
 recorded in
-`experiments/RESULTS_compiled_human_isotope_vertical.md`. All were executed by explicit user
+`experiments/RESULTS_compiled_human_isotope_vertical.md`; and the exact resistor relation
+plus sparse-MNA bridge is recorded in
+`experiments/RESULTS_compiled_resistive_dc.md`. All were executed by explicit user
 directive on 2026-07-27, not because the wider roadmap was silently assumed approved. Raw
 RunRecords are ignored journals; durable notes carry the relevant digests, evidence status,
 omissions, casualties, and limitations.

@@ -1,346 +1,323 @@
-# Category backbone roadmap — 2026-07-27
+# Category backbone roadmap — 2026-07-27, open-semantics checkpoint
 
-## Status and decision
+## Decision
 
-**No typed open-diagram kernel or circuit executor was implemented in this round.**
-This is an implementation-grade design and dependency cut, not evidence that a general
-multiphysics category or circuit vertical exists. The separate manufactured
-continuous-water runtime was implemented as a domain-semantic rung; it supplies a
-concrete future open conservation-law component, not the general wiring kernel itself.
+SmartChem should use category theory as typed composition glue, not as the numerical or
+physical content of every domain. The most useful architecture is therefore not one giant
+“category of physics.” It is:
 
-The repository has a load-bearing category of *closed sequential chemical histories*.
-It does not have a true parallel morphism product: `Reaction.scheduled_product`/`tensor`
-is intentionally a left-first linearisation, and the existing strict expected failure for
-interchange is correct.  The next backbone must therefore be introduced beside that API,
-not by relabelling it.
+1. a small typed language of open structure;
+2. domain models indexed by that structure;
+3. one or more domain-specific semantic functors into the mathematical category best
+   suited to the problem;
+4. evidence and execution layers that remain outside structural equality.
 
-The smallest sufficient target is a finite typed open-diagram syntax with canonical
-composition and a passive, lumped electrical interpretation.  It is enough to establish
-one topology-generic control.  It is not a promise of a universal physics language.
+This round implements the first narrow instance:
 
-## Diagnosis
+- `smartchem.open_diagram` supplies total finite presentation-level composition and tensor;
+- a separate budgeted observer supplies exact alpha-invariant canonical forms when its
+  declared search succeeds;
+- `smartchem.circuit` assigns exact positive-rational resistor data and maps a diagram to a
+  boundary linear relation over potentials and inward currents;
+- a separate sparse MNA evaluator computes one grounded, voltage-driven numerical point;
+- `smartchem.resistive_dc` carries that control through the closed
+  source/plan/approval/journal/certificate runtime.
 
-### What is load-bearing today
+The result is a real load-bearing slice, not a general multiphysics category, a universal
+proof of the category/functor laws, an AC/RLC solver, or a port-Hamiltonian implementation.
 
-| Asset | Why it is load-bearing | Boundary that must remain visible |
+## What changed from the inherited design
+
+Two inherited proposals were wrong and are now explicitly superseded.
+
+First, `then` and `tensor` must not canonicalize. A fixed factorial search budget would make
+those operations partial: two individually observable symmetric fragments can be tensored
+into a diagram whose exact canonical observation exceeds the same budget. The corrected
+API keeps presentation operations total and makes canonical observation separately
+resource-bounded.
+
+Second, resistance kind/value must not be part of structural identity. The implemented
+structure contains electrical node kinds and two-terminal component slots only. Exact
+resistance values belong to `ResistiveDCModel`; drive, reference, and tolerance belong to
+`DCSolveSpec`.
+
+The current separation is:
+
+| Layer | Current owner | Semantic role |
 |---|---|---|
-| `Molecule`, `Config`, `Reaction` | `Reaction` makes atom/charge-violating closed histories unconstructible; path concatenation supplies genuine sequential associativity. | It has no open ports, node equations, rates, fields, or parallel interchange. |
-| Frozen plan/approval/run/certificate seam | Approval binds a typed request, model, calculation identity, output contract, and implementation digest. | It is an API authority boundary, not hostile-process security or scientific validation. |
-| Closed runtime registry | A known executable owns a known typed subject and exact output contract. | A new vertical must be registered and preflighted; a capability object must not self-authorize. |
-| Exact finite Ising/lattice-gas control | It demonstrates that a cross-domain map can retain every finite state and distinct referents. | It does not generalize to arbitrary graph dynamics or material identity. |
-| Water finite-section v2 | It retains all manufactured samples and compatibility gates while refusing a continuum claim. | It does not establish steady momentum, critical regularity, convergence, or measurement. |
+| structural presentation | `OpenDiagram` | ordered boundaries, junction incidence, two-terminal slots, total gluing/disjoint union |
+| quotient observer | `canonicalize` | exact alpha-invariant observation or named budget refusal |
+| model decoration | `ResistiveDCModel` | exact positive-rational resistance aligned to structural edge slots |
+| exact semantics | `BoundaryLinearRelation` | relation on ordered boundary potentials and inward currents |
+| experiment | `DCSolveSpec` | drive polarity/voltage, reference, numerical tolerance |
+| numerical evaluator | `solve_resistive_dc` | one sparse MNA point with retained KCL, constraint, power, and relation gates |
+| evidence/execution | `PhysicalIR`, plan, approval, journal, certificate | claim boundary, authority, artifacts, resource limits, terminal state |
 
-### What is decorative or insufficient as a kernel
+One remaining placement debt is visible rather than hidden:
+`ResistiveDCSubject.canonicalization_budget` is safe and approval-bound, but it is observer
+resource policy, not topology, constitutive data, or experiment physics. Move it into a
+future explicit analysis/execution specification.
 
-| Existing surface | Why it cannot be the new kernel |
-|---|---|
-| `Reaction.tensor` | It serializes independent histories and fails interchange by construction. |
-| Scalar impedance series/parallel helpers | `tests/test_network.py` already falsifies scalar interchange; impedance is not the semantic object of an arbitrary open network. |
-| `program.Port`, `Component`, `Connection` | They are useful IR records, but their free-string fields and historical lack of global reference ownership do not define topology or constitutive law. |
-| A graph of opaque chemical labels | It can distinguish encodings but cannot enforce KCL, port compatibility, reference nodes, or a constitutive equation. |
-| A converged grid solve | It is evidence about one finite numerical problem only; it does not establish a continuous solution or categorical law. |
+## The actual categorical core
 
-The key distinction is that **syntax, topology, constitutive model, evidence, and execution
-authority must not be stored in one record merely because all of them have IDs**.
+### Closed chemistry remains useful but is not parallel
 
-## The target separation
+`Molecule`, `Config`, and `Reaction` remain a useful category of closed conserving
+sequential histories. Construction makes atom/charge violations unrepresentable, and
+sequential composition is genuinely associative.
 
-The following separation should be explicit in code and in plan digests.  It prevents a
-topology edit from silently becoming a model change, or a finite numerical outcome from
-being mistaken for evidence of a continuum assertion.
+`Reaction.tensor` is not a parallel tensor. It is a left-first schedule and fails strict
+interchange. Keeping that counterexample and deprecating the misleading name were correct.
+Do not retrofit open-system meaning into this class.
 
-| Layer | Owns | Must not own |
-|---|---|---|
-| `StructureIR` | Typed ports, junctions, boundary interfaces, component incidence, canonical topology, diagram composition/tensor. | Constitutive parameters' physical validity, source authority, solver tolerances, evidence status. |
-| `ModelIR` | Equations, parameter values/units, regime assumptions, domain/refusal conditions, conserved quantities, named postconditions. | Internal topology IDs as semantic labels, output reduction, scientific approval. |
-| `EvidenceIR` | Claim scope, transport/assembly evidence, validation gaps, casualties, calibration provenance, falsifiers. | A solver result as automatic validation, a model patch as an approved execution. |
-| `ExecutionDAG` | Concrete engine calls, retained intermediate artifacts, dependencies, calculation identities, resource ceilings, exact output inventory. | A new physics interpretation, unapproved output loss, hidden optimization. |
+### S0 is a symmetric-monoidal presentation, not yet a full hypergraph API
 
-`PhysicalIR` can eventually contain or reference these layers, but it should not be made
-the canonical topology store during the first kernel slice.  Preserve the current
-`PhysicalIR` constructors and compiled verticals; introduce a precise v2 structure value
-beside them, then add an adapter only after the seam has global reference/type validation.
+For compatible interfaces, `OpenDiagram.then` glues ordered boundary nodes and
+`OpenDiagram.tensor` takes disjoint union. Identity and braid diagrams are explicit.
+Finite tests cover identities, associativity, tensor units/associativity, interchange,
+braid involution/naturality, and both hexagons.
 
-## Exact open-diagram kernel
+The mathematical quotient by internal names is total. The practical canonical observer is
+not: it performs relabeling-equivariant color refinement followed by exact residual
+permutation search and names a budget refusal. Passing finite tests is evidence for the
+implementation, not a formal theorem over every finite graph.
 
-### Minimal public signature
+The present constructor also requires at least two incidences per retained junction. That
+is closed under the implemented operations and sufficient for the resistor control, but it
+omits nullary/unary junctions and therefore should not yet be advertised as the full free
+hypergraph category of typed cospans. Add Frobenius unit/counit structure only when a domain
+actually needs it and its semantics are specified.
 
-Place this in a new `smartchem/open_diagram.py`; do not modify `category.py` for the first
-slice.
+### E0 is relation-valued because functions and scalars are too weak
 
-```python
-class PortKind(Enum):
-    ELECTRICAL_NODE = "electrical-node"
+The exact electrical semantic object is a homogeneous linear relation in the ordered
+coordinates
 
-@dataclass(frozen=True)
-class Interface:
-    ports: tuple[PortKind, ...]       # position is boundary identity
-
-class BoundarySide(Enum):
-    INPUT = "input"
-    OUTPUT = "output"
-
-@dataclass(frozen=True)
-class BoundaryRef:
-    side: BoundarySide
-    index: int
-
-class PassiveKind(Enum):
-    RESISTOR = "R"
-    INDUCTOR = "L"
-    CAPACITOR = "C"
-
-@dataclass(frozen=True)
-class PassiveElement:
-    element_id: str                   # construction-local only
-    kind: PassiveKind
-    value_si: float                   # finite, strictly positive
-
-@dataclass(frozen=True)
-class ElementPortRef:
-    element_id: str
-    terminal: Literal["a", "b"]
-
-EndpointRef = BoundaryRef | ElementPortRef
-
-@dataclass(frozen=True)
-class Junction:
-    junction_id: str                  # construction-local only
-    kind: PortKind
-    endpoints: tuple[EndpointRef, ...]
-
-class OpenDiagram:
-    @classmethod
-    def build(cls, dom, cod, elements, junctions) -> "OpenDiagram": ...
-    def then(self, other: "OpenDiagram") -> "OpenDiagram": ...
-    def tensor(self, other: "OpenDiagram") -> "OpenDiagram": ...
+```text
+(V_dom, V_cod, I_inward_dom, I_inward_cod).
 ```
 
-Expose `identity(interface)`, `unit_interface()`, and `braid(a, b)` in this module's
-namespace.  Construction should be smart-constructor-only (an internal token is adequate
-for normal accidental-bypass protection).  A hostile Python caller can still subvert
-objects; that is outside the local-library threat model already stated for the program
-seam.
+Serial composition shares interface potentials, imposes
+`I_left + I_right = 0`, and existentially eliminates the glued variables. Tensor is direct
+product. This handles singular or floating passive networks honestly; an input impedance
+or driven solution is only a derived observation after additional boundary choices.
 
-### Constructor invariants
+This is why the old scalar-impedance idea could not be made monoidal. Series addition and
+parallel reduction do not obey the interchange equation required of one scalar-valued
+strict monoidal semantics.
 
-At `OpenDiagram.build`:
+The implementation uses exact rational RREF/elimination for the relation and a separate
+binary64 sparse solve for one experiment. Bridge, cycle, splitter–tensor–merger parallel,
+floating, and finite rational controls test that separation. They do not prove a theorem
+for all networks.
 
-1. Element and junction IDs are nonempty and unique in their separate local namespaces.
-2. Each supported passive element has exactly the inferred electrical terminals `a` and
-   `b`, and a finite positive SI parameter.
-3. Every referenced element and terminal exists; every interface boundary index is in
-   range; every element terminal and every boundary port occurs **exactly once** across
-   all junctions.
-4. A junction contains at least two endpoints and all its endpoints have its declared
-   `PortKind`.  This rejects mixed-physics connections before a solver is involved.
-5. No local ID is semantic.  A user who needs a stable scientific probe identity must
-   introduce an explicit typed probe/output contract in a later slice, rather than
-   relying on an internal graph spelling.
+## Is the category theory now maximally useful?
 
-An internally closed connected component is not a syntactic orphan merely because it has
-no boundary port.  It may be a legitimate diagram fragment.  A *driven circuit analysis*
-must later refuse it if it floats relative to the selected reference.  Keeping these two
-failures distinct is important.
+No. It is finally useful, but it is still a first slice.
 
-### Canonical equality and alpha-renaming
+### What is now right
 
-The stored value must discard raw IDs and retain only:
+- Structural composition is executable and tested rather than asserted in prose.
+- Resource-bounded equality no longer contaminates closure of composition.
+- Internal IDs are construction-local; successful canonical observation is alpha-invariant.
+- Parallel multiplicity and self-loops survive canonicalization.
+- Constitutive parameters, experiment choices, evidence, and runtime authority are
+  separated.
+- Electrical semantics lands in linear relations, which can represent nonfunctional and
+  singular boundary behavior.
+- Exact and numerical interpreters are distinct, so MNA can be checked against a stronger
+  boundary invariant.
+- The bridge control prevents a hidden series/parallel dispatcher from masquerading as a
+  topology-generic solver.
+- Refusal remains first-class: a floating exact relation may be valid while a particular
+  grounded evaluator refuses.
 
-- domain/codomain interface types and order;
-- canonical numbered junction nodes;
-- ordered maps from input/output boundary positions to nodes;
-- sorted undirected passive-edge records
-  `(kind, value_si, min(node_a,node_b), max(node_a,node_b))`.
+### What is still wrong or inefficient
 
-For passive two-terminal elements, `a`/`b` has no physical polarity and is normalized as
-an undirected edge.  Do not reuse this rule for a future directed/non-passive component.
+- `ResistiveDCModel` is bound to an order-sensitive presentation digest. This is safe, but
+  an alpha-renamed/reordered diagram requires explicit model rebinding. It is not yet an
+  ergonomic model transport or a canonical structural cache key.
+- Dense `Fraction` RREF is correctness-first and can grow badly in time and coefficient
+  size. It is not the eventual large-network exact engine.
+- Exact canonicalization has factorial worst cases. It should be used at equality/cache
+  boundaries, not inserted into every construction or solve.
+- `PhysicalIR` still contains legacy free-string structural records. The typed diagram is
+  retained in the subject, but there is no general `StructureIR v2` adapter yet.
+- There is no explicit `SemanticFunctor` protocol or law witness connecting syntax,
+  exact semantics, and approximate evaluators.
+- There is no model-reindexing witness under structural isomorphism.
+- Tests establish strong finite controls, not universal laws or machine-checked proofs.
+- The current node-arity restriction means “hypergraph category” would overstate the API.
+- Category theory is still absent from the open chemical, kinetic, stochastic, and PDE
+  domains where it could provide more reuse.
 
-Canonicalize as follows:
+## The more load-bearing design
 
-1. Give each junction an initial color consisting of `PortKind` plus all attached fixed
-   boundary markers, such as `(input, 0)` and `(output, 1)`.
-2. Run color refinement using the multiset of incident
-   `(element kind, exact parameter, neighbor color)` records.
-3. Enumerate only permutations within equal final-color cells, assign node labels in
-   color order, and take the lexicographically least boundary-map/edge tuple.
-4. Fix a candidate budget.  If the product of cell factorials exceeds it, raise a named
-   canonicalization-budget refusal rather than returning an ID-dependent value.
+### 1. Treat models as an indexed family over structures
 
-Refinement is relabeling-equivariant, so restricting permutations to equal-color cells is
-exact once the color sequence is included in the canonical prefix.  The residual search
-is factorial for highly symmetric networks; that is a deliberately explicit finite
-boundary, not a reason to quietly make equality approximate.
+For each structure `S`, let `Model(S)` be the allowed domain models on its component slots.
+An isomorphism `u: S ≅ S'` must carry an explicit reindexing map
+`u_*: Model(S) -> Model(S')`.
 
-### Composition and laws
+In code, the next seam should contain:
 
-For `f : A -> B` and `g : B -> C`, require exact `f.cod == g.dom`, take a disjoint union,
-and union-find identify output node `i` of `f` with input node `i` of `g`.  Retain the
-input boundary of `f` and output boundary of `g`, then re-canonicalize.  Tensor is
-disjoint union with interface concatenation and re-canonicalization.  `identity(A)` has
-one junction per port, joining its input and output occurrences.  `braid(A,B)` preserves
-wires and reorders the output attachment list.
+```text
+StructurePresentation
+StructureIsomorphismWitness
+ModelDecoration[Structure]
+reindex_model(witness, model)
+DecoratedCanonicalIdentity
+```
 
-These algorithms, not an assertion in a docstring, are the reason to expect:
+This keeps topology and parameters separate while making alpha-renaming/reordering usable
+instead of merely safe-to-refuse. A decorated canonical identity can then key result
+caches, while the raw presentation digest continues to defend declaration-order tuples.
 
-\[
-\operatorname{id};f=f=f;\operatorname{id},\qquad
-(f;g);h=f;(g;h),\qquad
-(f;g)\otimes(h;k)=(f\otimes h);(g\otimes k).
-\]
+Categorically, this is closer to an indexed category/fibration of models over structures
+than to one record that owns everything.
 
-The laws remain claims about every constructible finite diagram within the canonicalization
-budget, not a formal proof about arbitrary Python values.
+### 2. Make semantic targets domain-specific
 
-## Semantic ladder: DC first, then AC/RLC
+Do not force every interpreter into matrices, scalar costs, or port-Hamiltonian form.
 
-### Why not start with scalar impedance
+| Domain | Structural glue | Useful internal mathematics / semantic target |
+|---|---|---|
+| passive DC circuits | typed open wiring | exact rational linear relations; sparse MNA as an evaluator |
+| AC/RLC circuits | same wiring plus typed element model | complex linear relations, positive-real/passivity predicates, sparse complex MNA |
+| dynamical energy systems | typed effort/flow ports | Dirac/Lagrangian relations and port-Hamiltonian state dynamics, only after a power pairing is proved |
+| chemical reaction networks | open species interfaces | stoichiometric matrices, open Petri nets, mass-action ODEs, stochastic CTMCs, thermodynamic constraints |
+| water/traffic conservation laws | boundary state/flux interfaces | finite-volume/PDE relations, entropy and shock conditions, convergence/error records |
+| Ising/lattice systems | graph boundaries | transfer operators, tensor-network or exact finite-state semantics where justified |
+| survival/reliability | cohort/state interfaces | stochastic kernels, likelihoods, censoring/competing-risk models, calibration evidence |
+| quantum models | typed state/process interfaces | linear maps or completely positive maps only where the physical interpretation supports them |
 
-The semantic target is a boundary **linear relation** between terminal potentials and
-currents.  Composing diagrams glues potentials and cancels the two boundary currents;
-tensor takes a direct product.  This allows singular and floating cases to retain an
-honest relation.  An input impedance is only a derived number after reference, drive, and
-termination choices are declared.
+Category theory supplies composition and translation laws. The objects inside each box
+should use the best mathematics for that domain.
 
-That distinction is required by the existing scalar interchange counterexample.  A mapping
-from categorical composition to scalar series addition and tensor to scalar parallel
-reduction would demand an interchange equality that representative resistors already
-violate.
+### 3. Represent interpreters and approximations explicitly
 
-### Stage E1: resistive DC MNA
+A future protocol should distinguish:
 
-Add `smartchem/circuit.py` only after the topology kernel passes its generated laws.
-Initially support positive resistors and a declared ideal-voltage boundary drive plus a
-declared reference node.  For each resistor between nodes `a,b`, stamp conductance
-`g=1/R` into sparse nodal matrix `G`:
+```text
+exact_semantics: DecoratedDiagram -> ExactSemanticObject
+evaluate: ExactSemanticObject × Experiment -> NumericalWitness
+verify: ExactSemanticObject × NumericalWitness -> Diagnostic
+```
 
-\[
-G_{aa}{+}=g,\quad G_{bb}{+}=g,\quad G_{ab}{-}=g,\quad G_{ba}{-}=g.
-\]
+Exact-to-numerical comparisons are then natural-transformation/refinement candidates rather
+than claims that floating output is the exact functor. For discretized PDEs, a refinement
+map should carry mesh identity and an error/convergence obligation; it need not be strictly
+functorial if the honest structure is only lax or approximate.
 
-With reference voltage removed and ideal source constraints collected in `B`, solve:
+### 4. Use composition to improve efficiency
 
-\[
-\begin{bmatrix}G&B\\B^T&0\end{bmatrix}
-\begin{bmatrix}v\\i_s\end{bmatrix}
-=
-\begin{bmatrix}0\\e\end{bmatrix}.
-\]
+The useful performance consequences are concrete:
 
-Use sparse COO triplet assembly followed by CSC conversion and SciPy sparse solve.  Reject
-any component not connected to the reference through passive/source constraints, rank
-warnings, non-finite values, and scaled residual failure.  Check KCL and power balance;
-each resistor must satisfy nonnegative absorbed real power.
+- cache canonical decorated subdiagrams, not raw user IDs;
+- reuse symbolic sparse ordering/factorization metadata when topology and grounding are
+  unchanged;
+- compose cached boundary Schur complements/relations rather than re-solving unchanged
+  interiors;
+- retain the construction DAG as an incremental Merkle identity, invoking expensive graph
+  canonicalization only when cross-presentation equality is needed;
+- use exact isomorphism witnesses to transport model tuples and cached results;
+- replace dense rational RREF, after profiling, with sparse fraction-free elimination or
+  modular reconstruction while preserving exact outputs;
+- express execution cost/resource estimates as a separate lax monoidal accounting functor,
+  never as physical semantics.
 
-Controls: one-resistor drive, series and parallel resistor analytic cases, and a five-edge
-bridge all compile through the same stamping routine.  The bridge is specifically required
-to falsify any unnoticed series/parallel branch dispatcher.
+These optimizations are authorized only when the output contract and exact/numerical
+verification remain unchanged.
 
-### Stage E2: positive-frequency passive RLC phasors
+### 5. Use categorical laws as metamorphic tests
 
-Only after E1, admit finite `omega > 0` and the admittances
+Every domain functor should inherit generated tests:
 
-\[
-y_R=1/R,\qquad y_L=1/(j\omega L),\qquad y_C=j\omega C.
-\]
+- semantics of identity equals semantic identity;
+- whole-diagram semantics equals semantics composed at a cut;
+- tensor/disjoint union maps to the target product;
+- alpha-isomorphic decorated diagrams agree after model reindexing;
+- exact and numerical interpreters commute within declared error gates;
+- a semantics-preserving compiler pass leaves every requested observable unchanged.
 
-Use the same MNA assembly.  Return branch voltage/current/complex power and require:
+This is one of the highest-value uses of category theory here: it manufactures adversarial
+test oracles for wiring, sign, ordering, conservation, and optimization bugs.
 
-\[
-S_e=(V_a-V_b)\overline{y_e(V_a-V_b)},\qquad
-\Re S_R\ge -\epsilon.
-\]
+## Roadmap
 
-Inductor/capacitor real power must be numerically zero at the declared tolerance; include
-source absorbed power in the global complex-power residual.  A pure lossless resonant
-subnetwork may be singular under an ideal drive.  Refusal is the required result, not a
-numerical defect to be hidden by an arbitrary regularizer.
+### Short term
 
-Controls: analytic series RLC, parallel RC, damped RLC resonance (reactive currents cancel
-while resistor dissipation remains), and a deliberately singular undamped resonance.
+1. Keep the completed S0/E0/E1 controls and their counterexample boundaries in CI.
+2. Move canonicalization budget from `ResistiveDCSubject` to an explicit analysis/execution
+   policy without changing completed plan semantics silently.
+3. Add `StructureIsomorphismWitness` and explicit `reindex_model`; test resistance
+   transport under edge/junction declaration permutations.
+4. Add generated small decorated-diagram law tests with reproducible seeds and preserved
+   minimal counterexamples.
+5. Benchmark canonicalization candidates, dense rational elimination, coefficient growth,
+   sparse MNA assembly/factorization, and cache hit boundaries before optimizing.
+6. Specify `StructureIR v2`, `ModelDecoration`, and `SemanticFunctor` protocols beside the
+   current compiled verticals; do not rewrite legacy `PhysicalIR` in place.
 
-## Continuous water as an open relation
+### Mid term
 
-The continuous-water milestone should not be shoehorned into a two-terminal resistor
-diagram.  Its smallest honest open structure is a steady one-dimensional relation with
-boundary variables such as discharge `q` and head `H` (plus declared geometry, bed, gravity,
-and friction/model parameters).  A candidate structure is:
+1. **E2 AC/RLC:** reuse the open wiring and sparse stamping path; add complex boundary
+   relations, branch complex power, positive-frequency assumptions, damped resonance, and
+   explicit singular lossless-resonance refusal.
+2. **StructureIR v2 adapter:** compile one existing typed subject through the new layered
+   structure/model/evidence/execution records with exact digest and output-contract
+   migration tests.
+3. **Open chemical-network control:** model one finite open Petri net and provide distinct
+   stoichiometric, deterministic mass-action, and stochastic semantics without weakening
+   the closed `Reaction` API.
+4. **Composable exact/numerical verification:** make exact relation, sparse evaluator, and
+   diagnostic checker explicit interpreter layers and add reusable functor-law harnesses.
+5. **Water or traffic boundary relation:** choose typed conserved state/flux ports and keep
+   finite-volume closure, entropy, calibration, and validation mathematics inside the
+   domain model.
 
-\[
-q=bhU,\qquad H=z_b+h+\frac{U^2}{2g},
-\]
+### Long term
 
-with a declared steady momentum/friction equation supplying the spatial relation.  The
-open semantic object contains boundary tuples `(q,H)` and retained interior state; serial
-composition glues shared boundary discharge/head under a sign convention.  It is **not** a
-claim that these two quantities exhaust free-surface, dispersive, turbulent, or
-two-dimensional physics.
+- use a double category/equipment when horizontal open-system composition and vertical
+  refinement/model maps both become first-class;
+- add port-Hamiltonian/Dirac structure only for dynamic domains with explicit state,
+  Hamiltonian, effort/flow pairing, and power-conserving interconnection;
+- support compositional sensitivity/adjoint information for calibration and inverse design;
+- make uncertainty/error transport explicit rather than attaching one scalar “uncertainty”
+  to arbitrary semantic objects;
+- add proof-producing or proof-assistant verification for the small structural kernel if it
+  becomes security- or science-critical;
+- keep evidence applicability and execution authority separate even when structural and
+  semantic reuse becomes broad.
 
-The continuous solver layer must separately retain:
+## Dominance and falsifiers
 
-- the exact manufactured profile/forcing and boundary conditions;
-- the critical/transcritical regularity condition rather than merely a sampled `Fr=1`
-  crossing;
-- discrete solutions at `N`, `2N`, and `4N` plus a declared norm and convergence ratios;
-- a lossless-vs-friction comparison payload.  Disagreement is a model discrepancy to
-  explain by the declared momentum/friction assumptions, not a verdict that either model
-  is physically true;
-- its residuals, regime predicates, grid identity, calculation specification, and every
-  excluded physical effect.
+The new backbone dominates the old “parallel history” framing only while:
 
-The existing finite v2 diagnostic remains an independent finite-sample screen.  It may
-agree or disagree with the continuous model, but neither outcome upgrades a manufactured
-test into measured validation.
+- presentation composition remains total when canonical observation refuses;
+- alpha-renaming and declaration reorderings preserve successful canonical observations;
+- model transport is explicit and cannot silently permute parameters;
+- whole-network exact semantics agrees with cutwise relational composition;
+- numerical evaluators retain dimension-separated residuals and source-inclusive power;
+- bridges/cycles use the same topology-generic path;
+- floating/singular cases refuse only at the layer that actually requires uniqueness;
+- existing chemistry and compiled verticals do not regress.
 
-## Dependency sequence
+A violation is a counterexample to preserve, not a reason to weaken equality, regularize a
+singularity silently, or rename a schedule “tensor.”
 
-The scientific-validation ladder and the open-structure ladder are parallel after their
-shared P0 prerequisite; continuous water does not depend on a circuit interpreter.
+## Primary mathematical bearings
 
-1. **P0 seam hardening — completed this round.** Global `PhysicalIR`
-   ownership/reference/type checks, runtime-owned model/transform preflight, exact
-   transform contract binding, guarded runner dispatch, and mutation tests now precede
-   every journal and engine call.
-2. **W1 manufactured continuous-water vertical — completed this round.** The typed
-   regular-transcritical control retains 32/64/128-cell fields, both refinement-pair
-   convergence evidence, critical compatibility, uncertainty, and a quantified
-   finite-v2 comparison at `STRUCTURAL_TOY`.
-3. **S0 syntax only — next category milestone.** Implement `open_diagram.py`,
-   canonicalization-budget refusal, and
-   generated category-law tests.  No solver or physics claim yet.
-4. **E1 resistive DC control.** Add sparse MNA, topological-reference refusal, residual and
-   passivity checks, analytic and bridge controls.
-5. **E2 AC/RLC control.** Add phasors, energy/power checks, damped resonance control, and
-   lossless singular refusal.
-6. **Only then consider a `StructureIR` adapter.** It must be a deliberate migration with
-   exact plan-digest/output-contract tests, not a broad rewrite of current compiled
-   verticals.
+- Baez and Fong, [A Compositional Framework for Passive Linear
+  Networks](https://arxiv.org/abs/1504.05625): passive circuits black-box to boundary
+  potential/current linear relations.
+- Baez and Courser, [Structured Cospans](https://arxiv.org/abs/1911.04630): typed open
+  systems composed by structured cospans.
+- Baez, Courser, and Vasilakopoulou,
+  [Structured versus Decorated Cospans](https://arxiv.org/abs/2101.09363): the distinction
+  between structural and decorated open-system constructions.
+- Baez and Master, [Open Petri Nets](https://arxiv.org/abs/1808.05415): open reaction
+  networks, gluing, and distinct operational/reachability semantics.
 
-## Falsifiers and budgets
-
-| Claim | Cheapest discriminating failure |
-|---|---|
-| Typed topology is real | Construct an unknown/duplicate terminal, mixed-kind junction, or unattached component port. |
-| Equality is alpha-invariant | Rename every construction-local ID or reorder declarations and obtain a different canonical diagram. |
-| Tensor is genuine | Generated associativity/unit/interchange counterexample. |
-| Semantics is topology-generic | A bridge requires a `series`/`parallel` branch or cannot be stamped. |
-| Passive solver is sound in scope | Material KCL residual, negative real resistor power, or failed global power balance. |
-| Refusal path is honest | A floating or exact lossless-resonant circuit returns a finite authoritative result. |
-| Continuous-water result is stronger than v2 in the right way | It lacks retained N/2N/4N records or claims continuum truth from a finite grid. |
-| Existing behavior is preserved | Any chemistry/compiled-vertical regression or changed digest without an approved migration. |
-
-Initial complexity budget: roughly 500–700 lines for the immutable topology/canonicalizer,
-350–500 lines for DC+AC MNA, and 450–650 focused test lines.  The canonicalizer's candidate
-cap must be measured and recorded; its worst case is factorial in symmetric node cells.
-Sparse MNA storage is linear in edges/nodes before factorization, while solve cost is
-topology-dependent and must be reported rather than predicted as universally linear.
-
-## Dominance boundary
-
-This program dominates the current false “parallel history” framing only if all of the
-following hold: canonical open composition passes generated laws; bridge and cycle topology
-compile through one sparse assembly path; solver residual/passivity/refusal controls pass;
-and existing verticals remain unchanged.  It does **not** dominate current work merely by
-introducing ports, an attributed graph, a scalar impedance helper, a converged grid, or a
-more ambitious roadmap.  If any prerequisite fails, preserve the counterexample and stop at
-the narrower completed layer.
+These papers guide the architecture. They do not prove SmartChem's Python implementation;
+that evidence remains the code, exact controls, hostile tests, and explicit limitations.

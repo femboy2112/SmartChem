@@ -10,7 +10,7 @@ plan, and return results with their evidence, omissions, casualties, and approva
 attached.
 
 The general language does not exist yet. The repository contains a rigorous compiler/runtime
-seam, a chemistry core, and seven deliberately narrow executors that test the design.
+seam, a chemistry core, and eight deliberately narrow executors that test the design.
 
 ## Non-negotiable contract
 
@@ -65,6 +65,7 @@ without becoming literal; a literal target can remain unsupported.
 | Human-isotope D2a | A complete typed interpretation and proof that one hypothetical median-lethality endpoint is compatible with distinct survival families. | `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`; no LD50-to-rate conversion, human prediction, toxicology calibration, or experimentation authority. |
 | Synthetic survival D2b-S | TRAIN-only fixed-family conditional-binomial recovery on content-addressed independent synthetic cohorts, with uncertainty diagnostics and locked HOLDOUT scoring. | Same-generator implementation evidence only; no human/animal evidence, biological validation, causality, or transfer authority. |
 | Finite C3 Ising↔lattice gas | All eight states, `ε=4J`, `μ=2h−4J`, `H_I=H_LG+3(h−J)`, and the formal partition identity, checked with exact integers and a separate direct verifier. | `ANALOGUE/ESTABLISHED/CERTIFIED` for that finite algebra only; no material identity, dynamics, thermodynamic limit, or arbitrary-graph transfer. |
+| Exact resistor relation + sparse MNA | Total typed open-diagram presentation; budgeted exact alpha-observer; exact rational boundary potential/current relation; and a complete sparse-MNA bridge witness with KCL, source, power, passivity, relation, refusal, and lifecycle gates. | `LITERAL/VALIDATED_WITHIN_REGIME/CERTIFIED` only for the declared finite ideal mathematical circuit; no hardware, AC/RLC, safety, port-Hamiltonian, or universal category theorem. |
 
 The Ising/lattice-gas control is intentionally important: it proves that SmartChem can carry
 an exact cross-domain map without confusing exact mathematics with literal physical identity.
@@ -85,11 +86,13 @@ Where transport or assembly is not established, SmartChem may construct a typed 
 hypothesis with explicit missing evidence. It must not enter the certified lane or lose its
 experimental status merely because it runs successfully.
 
-The current portfolio deliberately spans three cases:
+The current portfolio deliberately spans four cases:
 
 - water/black-hole language: a regime-bounded structural analogue;
 - human/isotope language: an underidentified cross-scale experimental proxy;
 - Ising/lattice-gas language: an exact finite map between distinct referents.
+- ideal resistor networks: literal finite mathematics with exact relational semantics and
+  a separately gated numerical evaluation.
 
 Next controls under consideration include traffic kinematic waves, port-Hamiltonian
 cross-substrate composition, groundwater/electrical potential, and SIR/reaction-network
@@ -127,7 +130,7 @@ python -m smartchem.bench
 Current maintained fast-suite result:
 
 ```text
-1279 passed, 51 skipped, 1 xfailed
+1328 passed, 51 skipped, 1 xfailed
 ```
 
 The skipped tests require the absent optional PySCF backend or the explicit slow-test
@@ -149,6 +152,7 @@ Every cited compiled run has a committed deterministic harness and durable recei
 - [synthetic survival recovery](experiments/RESULTS_compiled_human_survival_recovery.md)
 - [verified Class-A reaction residue](experiments/RESULTS_compiled_class_a_optimizer.md)
 - [exact finite Ising/lattice-gas map](experiments/RESULTS_compiled_ising_lattice_gas_vertical.md)
+- [exact resistor relation and sparse-MNA bridge](experiments/RESULTS_compiled_resistive_dc.md)
 
 Raw journals are write-once local run artifacts. Receipts retain the relevant identities,
 outcomes, scientific scope, evidence status, omissions, casualties, and negative claims.
@@ -156,23 +160,29 @@ outcomes, scientific scope, evidence status, omissions, casualties, and negative
 ## Roadmap
 
 The current short-term seam is hardened: `PhysicalIR` owns member/reference/evidence
-integrity, transforms bind the approved model and contracts, all seven executors own their
+integrity, transforms bind the approved model and contracts, all eight executors own their
 model/transform inventory before a calculation or journal, and resolved runners cannot be
 used as an alternate authoritative dispatch path. The manufactured continuous-water
-midterm is also complete.
+midterm is also complete. The S0 open-structure and E0/E1 resistor-semantics midterms are
+now complete through the same source/approval/journal/certificate chain.
 
 Best next work:
 
-1. implement exact typed open-diagram syntax, canonical alpha-renaming, boundary gluing,
-   disjoint-union tensor, and generated category-law/interchange tests;
-2. interpret that same syntax with a resistor-only DC MNA control before AC/RLC or
-   port-Hamiltonian claims;
-3. extend water only after the stationary manufactured rung: bounded dispersive branches
+1. move canonical-observer policy into an execution spec, add explicit structural
+   isomorphism/model-reindex witnesses, and benchmark exact canonicalization/RREF before
+   optimizing;
+2. add positive-frequency passive AC/RLC boundary relations and complex MNA, including
+   damped-resonance controls and singular lossless-resonance refusal; do not claim
+   port-Hamiltonian structure before dynamic state and a power pairing exist;
+3. introduce `StructureIR v2`, indexed model decorations, and reusable semantic-functor
+   law tests beside—not as a rewrite of—the current `PhysicalIR`;
+4. extend water only after the stationary manufactured rung: bounded dispersive branches
    first, then measured regime-matched evidence before any promotion beyond `STRUCTURAL_TOY`;
-4. build the traffic kinematic-wave vertical as the next regime-valid analogue;
-5. add persistent reuse/shared-intermediate/lossless-storage planner slices only where full
+5. build the traffic kinematic-wave or open chemical-Petri-net control with domain-local
+   conservation/closure mathematics;
+6. add persistent reuse/shared-intermediate/lossless-storage planner slices only where full
    output equivalence is established;
-6. design the empirical survival rung around independent data authority, external validation,
+7. design the empirical survival rung around independent data authority, external validation,
    censoring/competing-risk semantics, and calibrated uncertainty—without assuming access to
    human data or authority for experimentation.
 

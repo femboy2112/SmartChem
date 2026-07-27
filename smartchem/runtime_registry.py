@@ -410,6 +410,38 @@ _DESCRIPTORS = (
             "smartchem.ising_lattice_gas_domain",
         ))),
     ),
+    ExecutorDescriptor(
+        executor_id=(
+            "smartchem.resistive_dc/exact-relation-sparse-mna-v1"
+        ),
+        resolved_container=TypeReference(
+            "smartchem.program",
+            "ResolvedDomainProgram",
+        ),
+        subject_type=TypeReference(
+            "smartchem.resistive_dc",
+            "ResistiveDCSubject",
+        ),
+        subject_attribute="subject",
+        output_contract_factory=FunctionReference(
+            "smartchem.resistive_dc",
+            "_default_output_contract",
+        ),
+        plan_preflight=FunctionReference(
+            "smartchem.resistive_dc",
+            "_preflight_resistive_dc",
+        ),
+        runner=FunctionReference(
+            "smartchem.resistive_dc",
+            "_execute_resistive_dc",
+        ),
+        implementation_modules=tuple(sorted((
+            *_SHARED_IMPLEMENTATION_MODULES,
+            "smartchem.circuit",
+            "smartchem.open_diagram",
+            "smartchem.resistive_dc",
+        ))),
+    ),
 )
 
 _BY_EXECUTOR_ID = MappingProxyType({

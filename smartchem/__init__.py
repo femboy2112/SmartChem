@@ -5,7 +5,10 @@ Reactions are typed morphisms whose objects carry bond topology, so conservation
 enforced at construction and inherited by sequential composites. Configurations have a
 commutative multiset product; morphisms do not yet have a true parallel tensor because a
 linear history cannot satisfy interchange. ``Reaction.tensor`` is a compatibility name for
-an explicit left-first schedule while the future open-system layer gains ports/process graphs.
+an explicit left-first schedule. The separate ``open_diagram`` layer now supplies total
+typed wiring presentation composition/tensor and a budgeted exact observer; ``circuit``
+provides its first exact resistor relation and sparse-DC interpretation without changing
+the closed reaction API.
 The Store comonad represents a condition-indexed query plus a focus; finite response-surface
 utilities explicitly evaluate that query at requested positions. Mechanism search has a
 Writer-over-List shape and appends caller-supplied energy/provenance tallies alongside route
@@ -301,6 +304,55 @@ from .ising_lattice_gas import (
     compile_session_ising_lattice_gas_equilibrium,
     ising_lattice_gas_slot,
 )
+from .open_diagram import (
+    BoundaryRef as OpenBoundaryRef,
+    BoundarySide as OpenBoundarySide,
+    CanonicalDiagram,
+    CanonicalizationBudgetExceeded,
+    ComponentKind as OpenComponentKind,
+    ComponentSlot as OpenComponentSlot,
+    DiagramCompositionError,
+    DiagramConstructionError,
+    ElementPortRef,
+    Interface as OpenInterface,
+    Junction as OpenJunction,
+    OpenDiagram,
+    PortKind as OpenPortKind,
+    braid as open_braid,
+    canonicalize as canonicalize_open_diagram,
+    identity as open_identity,
+    unit_interface as open_unit_interface,
+)
+from .circuit import (
+    BoundaryLinearRelation,
+    CircuitDiagnostics,
+    CircuitError,
+    CircuitNumericalRefusal,
+    CircuitResidualError,
+    DCSolveResult,
+    DCSolveSpec,
+    DCVoltageDrive,
+    FloatingCircuitError,
+    NodeVoltage,
+    PositiveResistance,
+    Rational,
+    ResistorBranch,
+    ResistiveDCModel,
+    SourceObservation,
+    blackbox_resistive_dc,
+    solve_resistive_dc,
+)
+from .resistive_dc import (
+    RESISTIVE_DC_CASUALTIES,
+    RESISTIVE_DC_OMISSIONS,
+    ExactResistiveDCEngine,
+    ResistiveDCAnalysis,
+    ResistiveDCSubject,
+    analyze_resistive_dc,
+    compile_resistive_dc,
+    compile_session_resistive_dc,
+    resistive_dc_slot,
+)
 from .stoichiometry import (
     MAX_WRITTEN_WEIGHT,
     Completion,
@@ -451,6 +503,22 @@ __all__ = [
     "ISING_LATTICE_GAS_CASUALTIES", "ISING_LATTICE_GAS_OMISSIONS",
     "ExactC3EquilibriumEngine", "compile_ising_lattice_gas_equilibrium",
     "compile_session_ising_lattice_gas_equilibrium", "ising_lattice_gas_slot",
+    # finite open structure and ideal-resistor DC semantics
+    "OpenBoundaryRef", "OpenBoundarySide", "CanonicalDiagram",
+    "CanonicalizationBudgetExceeded", "OpenComponentKind", "OpenComponentSlot",
+    "DiagramCompositionError", "DiagramConstructionError", "ElementPortRef",
+    "OpenInterface", "OpenJunction", "OpenDiagram", "OpenPortKind",
+    "open_braid", "canonicalize_open_diagram", "open_identity",
+    "open_unit_interface", "BoundaryLinearRelation", "CircuitDiagnostics",
+    "CircuitError", "CircuitNumericalRefusal", "CircuitResidualError",
+    "DCSolveResult", "DCSolveSpec", "DCVoltageDrive", "FloatingCircuitError",
+    "NodeVoltage", "PositiveResistance", "Rational", "ResistorBranch",
+    "ResistiveDCModel", "SourceObservation", "blackbox_resistive_dc",
+    "solve_resistive_dc", "RESISTIVE_DC_CASUALTIES",
+    "RESISTIVE_DC_OMISSIONS", "ExactResistiveDCEngine",
+    "ResistiveDCAnalysis", "ResistiveDCSubject", "analyze_resistive_dc",
+    "compile_resistive_dc", "compile_session_resistive_dc",
+    "resistive_dc_slot",
     # store -- the environment comonad and finite response-surface sampling
     "Store", "Conditions", "SOLVENTS",
     "survey", "response_surface", "is_responsive", "grid",

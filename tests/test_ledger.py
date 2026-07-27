@@ -392,6 +392,60 @@ class TestRanksIndexAWellFoundedOrder:
         assert Slot("plain", "<x>").rank == 0
         assert Slot("plain", "<x>", rank=0).rank == 0
 
+    @pytest.mark.parametrize("bad", [float("inf"), float("nan"), 2.0, "3", None])
+    def test_a_rank_that_is_not_an_integer_is_refused(self, bad):
+        """
+        ``rank: int`` is an annotation, and annotations do not run. The sign test alone is
+        defeated by exactly the two values that break the order, because ``inf < 0`` and
+        ``nan < 0`` are both False.
+        """
+        with pytest.raises(IllFoundedRank):
+            Slot("mistyped", "<anything>", rank=bad)
+
+    def test_what_the_missing_type_check_actually_cost(self):
+        """
+        The guard demonstrated to be load-bearing rather than asserted to be.
+
+        The bypass is deliberate -- ``object.__setattr__`` is the only way to build what
+        the constructor now refuses -- and it shows the two distinct failures a float
+        bought. ``inf``: the round budget becomes infinite, so ``len(rounds) >= budget``
+        is False for every finite round count and the loop's ONLY backstop against a
+        runaway responder is silently off. ``nan``: every comparison against it is False,
+        so the ranks stop forming an order at all.
+        """
+        runaway = Slot("smuggled", "<x>", rank=0)
+        object.__setattr__(runaway, "rank", float("inf"))
+        assert not (runaway.rank < 0), "the sign test alone waves it straight through"
+        spec = Spec("runaway", (runaway,))
+        assert spec.round_bound(2) == float("inf")
+        assert not (10 ** 9 >= spec.round_bound(2)), "no finite round count can trip it"
+
+    def test_and_what_a_nan_rank_costs_is_worse_than_a_wrong_answer(self):
+        """
+        MEASURED, because the obvious guess about nan is wrong in an instructive way.
+
+        The guess is "every comparison against nan is False, so a real descent is rejected".
+        That holds only for DISTINCT nan objects, and then it is a trichotomy failure --
+        neither ``<`` nor ``>`` nor ``==`` -- which is precisely what "not an order" means.
+        When the two specs share one nan object, CPython's tuple ``==`` takes an identity
+        shortcut, the nan is skipped, and the comparison proceeds as though it were absent.
+        So the same logical spec answers differently depending on whether a Slot was reused
+        or rebuilt. Not a wrong order: no order, plus a result that depends on object
+        identity. Hence the constructor refuses the type rather than testing the value.
+        """
+        def ordinal_with(nan, tail):
+            poisoned = Slot("poisoned", "<x>", rank=0)
+            object.__setattr__(poisoned, "rank", nan)
+            return Spec("p", (poisoned, Slot("real", "<x>", rank=tail))).ordinal()
+
+        first, second = float("nan"), float("nan")
+        low, high = ordinal_with(first, 1), ordinal_with(second, 3)
+        assert not low < high and not high < low and not low == high, "trichotomy fails"
+
+        shared = float("nan")
+        assert ordinal_with(shared, 1) < ordinal_with(shared, 3), (
+            "and one shared object silently restores a comparison the other case refused")
+
     def test_the_largest_rank_never_rises_across_an_accepted_round(self):
         """
         A consequence of the ordering, asserted on real sessions rather than argued: a
@@ -403,6 +457,178 @@ class TestRanksIndexAWellFoundedOrder:
         peaks = [max(r.before_ordinal, default=0) for r in session.rounds]
         peaks += [max(session.rounds[-1].after_ordinal, default=0)]
         assert peaks == sorted(peaks, reverse=True)
+
+
+class TestTheDiagnosisIsReadOffTheMeasureItGatedOn:
+    """
+    The reason a round halted must come from the quantity that halted it.
+
+    Found by an adversarial pass over the committed module. A responder that binds two
+    rank-0 holes and hands the third back with its rank raised 0 -> 5 was correctly
+    REFUSED -- the ordinal rose, so the loop halted and never advanced into it -- and then
+    described as ``STALLED``: "left the measure exactly where it was ... it rephrased",
+    printed directly beneath its own line reading ``ranks [0, 0, 0] =/=> [5]``. The
+    decision was sound; the diagnosis was computed from slot-name set differences, and a
+    name is silent about a rank. Same disease as everywhere else in this repository -- a
+    check derived from something other than its own subject -- landing in the diagnostics
+    rather than the gate, which is why every termination test passed straight over it.
+    """
+
+    START = Spec("s", (Slot("a", "<x>"), Slot("b", "<x>"), Slot("c", "<x>")))
+
+    @staticmethod
+    def _raise_c_in_place(spec, holes):
+        """Answer two questions honestly, hand the third back declared more abstract."""
+        spec = spec.bind("a", "0").bind("b", "0")
+        return Spec(spec.name, tuple(
+            Slot("c", "<x>", rank=5) if s.name == "c" else s for s in spec.slots))
+
+    def test_the_round_is_still_refused(self):
+        """The gate was never the broken part; pin that before touching the report."""
+        session = shepherd(self.START, self._raise_c_in_place)
+        assert not session
+        assert len(session.rounds) == 1, "it halted immediately, it did not advance"
+        assert session.rounds[-1].before_ordinal == (0, 0, 0)
+        assert session.rounds[-1].after_ordinal == (5,)
+        assert session.rounds[-1].descended is False
+
+    def test_and_it_is_not_reported_as_a_rephrase(self):
+        session = shepherd(self.START, self._raise_c_in_place)
+        assert session.outcome == WIDENED, "the measure rose; only the names stayed put"
+        text = session.explain()
+        assert "rephrased" not in text, "the count fell 3 -> 1 and the measure went UP"
+        assert "raised the measure without opening any new slot" in text
+        assert "[0, 0, 0] became [5]" in text, "the report quotes the deciding numbers"
+
+    def test_the_count_and_the_measure_disagree_here_which_is_the_whole_point(self):
+        """``reduced`` is True and ``descended`` is False on the very same round."""
+        session = shepherd(self.START, self._raise_c_in_place)
+        only = session.rounds[-1]
+        assert only.before == 3 and only.after == 1
+        assert only.reduced is True, "section VI.3's literal rule accepts this round"
+        assert only.descended is False, "and the well-founded measure refuses it"
+
+    def test_a_rank_raised_with_nothing_else_touched_is_also_a_widening(self):
+        """
+        A second route to the same claim, by a different responder shape, because the
+        mutation probe measured the first one as the ONLY test standing between this
+        module and the defect. One assertion guarding a finding is how the last one got
+        through: nothing is bound here, so the count does not move either.
+        """
+        def only_raise_a(spec, holes):
+            return Spec(spec.name, tuple(
+                Slot("a", "<x>", rank=2) if s.name == "a" else s for s in spec.slots))
+
+        session = shepherd(self.START, only_raise_a)
+        assert session.outcome == WIDENED
+        assert session.opened == (), "no new name appeared, and the measure moved anyway"
+        assert session.rounds[-1].before == session.rounds[-1].after == 3
+        assert session.rounds[-1].after_ordinal == (2, 0, 0)
+
+    def test_a_genuine_rephrase_is_still_stalled(self):
+        """The other side of the discriminant: nothing moves, nothing new appears."""
+        def reword(spec, holes):
+            return Spec(spec.name, tuple(
+                Slot(s.name, s.written + " (restated)", rank=s.rank) for s in spec.slots))
+
+        session = shepherd(self.START, reword)
+        assert session.outcome == STALLED
+        assert session.rounds[-1].before_ordinal == session.rounds[-1].after_ordinal
+        assert "rephrased" in session.explain()
+
+
+class TestTheLoopMeasuresOnlyWhatItWrote:
+    """
+    A responder returns a ``Spec`` or the loop stops, because every verdict it issues is
+    ``Spec``'s own measure quoted back at the caller.
+
+    Found adversarially. ``shepherd`` called ``.ordinal()``/``.measure()`` on whatever came
+    back, so an object merely supplying those names could drive the loop anywhere -- and
+    the worst destination is not a wrong answer, it is a ``LedgerContradiction`` reading
+    "the descent check is not enforcing what it claims" raised about machinery that was
+    never exercised. A module that a caller's return type can make accuse its own theorem
+    is not enforcing that theorem.
+    """
+
+    class _Liar:
+        """Quacks like a Spec and claims to descend forever."""
+
+        class _BelowEverything(tuple):
+            def __lt__(self, other):
+                return True
+
+            def __gt__(self, other):
+                return False
+
+        def __init__(self, spec):
+            self._spec = spec
+
+        def measure(self):
+            return 1
+
+        def ordinal(self):
+            return self._BelowEverything()
+
+        def holes(self):
+            return self._spec.holes()
+
+        def subject_to(self):
+            return ()
+
+    FLAT = Spec("flat", (Slot("x", "<x>"),))
+
+    def test_an_impostor_is_refused_by_type(self):
+        with pytest.raises(TypeError, match="not a Spec"):
+            shepherd(self.FLAT, lambda spec, holes: self._Liar(spec))
+
+    def test_the_refusal_names_why_duck_typing_is_not_enough_here(self):
+        with pytest.raises(TypeError, match="a rule it never exercised"):
+            shepherd(self.FLAT, lambda spec, holes: self._Liar(spec))
+
+    def test_the_impostor_really_would_have_been_believed(self):
+        """
+        Not a hypothetical: the object's comparison is checked to be the lie it claims.
+        Without the type guard this returns True against every ordinal forever, so the
+        descent test passes on every round and only the round budget ends the session.
+        """
+        liar = self._Liar(self.FLAT)
+        assert liar.ordinal() < (0,)
+        assert liar.ordinal() < liar.ordinal(), "it even claims to descend below itself"
+        assert liar.measure() != 0, "and it never reports itself closed"
+
+
+class TestOneInvariantNeedsBothDoors:
+    """
+    ``widen`` has refused a duplicate slot name since it was written. The constructor did
+    not, and an invariant enforced at one entrance is not an invariant.
+    """
+
+    def test_widen_refuses_a_clash(self):
+        with pytest.raises(KeyError):
+            Spec("s", (Slot("x", "<a>"),)).widen(Slot("x", "<b>"))
+
+    def test_and_now_so_does_direct_construction(self):
+        with pytest.raises(KeyError, match="more than once"):
+            Spec("s", (Slot("x", "<a>"), Slot("x", "<b>")))
+
+    def test_what_the_open_door_let_through(self):
+        """
+        The damage, demonstrated through the same deliberate bypass used above.
+
+        A duplicate name is counted twice by every measure, and ``bind`` -- whose filter is
+        ``s.name == name`` rather than "the first match" -- binds BOTH in one call. The
+        effect on the ordinal is monotone, so it could never break termination, which is
+        precisely why no test about termination could see it.
+        """
+        pair = (Slot("x", "<a>", rank=2), Slot("x", "<b>", rank=2))
+        smuggled = Spec.__new__(Spec)
+        object.__setattr__(smuggled, "name", "dup")
+        object.__setattr__(smuggled, "slots", pair)
+
+        assert smuggled.measure() == 2, "one question, counted as two"
+        assert smuggled.ordinal() == (2, 2)
+        with pytest.raises(KeyError):
+            smuggled.bind("x", "value")   # the guard catches it on the way out, too
 
 
 class TestTheBoundIsAConditionalOnceRanksExist:

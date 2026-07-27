@@ -63,8 +63,8 @@ MUTATIONS = [
     ),
     (
         "descent-not-strict",
-        "if following.ordinal() < before_ordinal:",
-        "if following.ordinal() <= before_ordinal:",
+        "        if after_ordinal < before_ordinal:\n",
+        "        if after_ordinal <= before_ordinal:\n",
         "The classic off-by-one on a termination rule: accepting a round that changed "
         "nothing. Section VI.3's word is *strictly*, and <= makes every rephrase progress.",
     ),
@@ -78,11 +78,48 @@ MUTATIONS = [
     ),
     (
         "widening-collapsed-into-stalling",
-        "        if opened:\n",
+        "        if opened or after_ordinal > before_ordinal:\n",
         "        if False:\n",
         "Reporting a widening as a stall. The first build of this module made the sibling "
         "of this mistake with empty menus; collapsing an informative case into a failure "
         "case tells a scientist to fix the wrong thing.",
+    ),
+    (
+        "widening-decided-by-names-only",
+        "        if opened or after_ordinal > before_ordinal:\n",
+        "        if opened:\n",
+        "The defect an adversarial pass actually found in the committed module, restored "
+        "verbatim. Deciding the HALT REASON from slot-name set differences rather than "
+        "from the ordinal the halt decision was made on. The gate stays correct, so every "
+        "termination test passes; a round that raises an existing hole's rank 0 -> 5 is "
+        "then reported as 'it rephrased', two lines under its own ranks [0,0,0] =/=> [5].",
+    ),
+    (
+        "rank-type-unchecked",
+        "        if not isinstance(self.rank, int):\n",
+        "        if False:\n",
+        "Trusting the ``rank: int`` annotation, which does not run. inf then passes the "
+        "sign test and makes round_bound infinite, so the loop's only backstop against a "
+        "runaway responder can never fire; nan passes it too and stops the ranks being an "
+        "order at all. The plausible reading is 'the sign check already covers this'.",
+    ),
+    (
+        "responder-return-untyped",
+        "        if not isinstance(following, Spec):\n",
+        "        if False:\n",
+        "Duck-typing the responder's return, which is what the module did until an "
+        "adversary fed it an impostor. An object merely supplying ordinal()/measure() can "
+        "drive the loop to a LedgerContradiction -- a message accusing the descent check "
+        "of not enforcing what it claims, about machinery that was never exercised.",
+    ),
+    (
+        "duplicate-slot-names-allowed",
+        "        if len(names) == len(set(names)):\n            return\n",
+        "        if True:\n            return\n",
+        "Enforcing the no-duplicate-names invariant at widen() only, the way it was. A "
+        "directly constructed Spec then double-counts one name in every measure, and "
+        "bind() -- filtering on ``s.name == name``, not the first match -- binds both at "
+        "once. Monotone, so no termination test can see it.",
     ),
     (
         "bound-always-unconditional",

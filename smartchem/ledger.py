@@ -149,11 +149,15 @@ COMPILED = "COMPILED"
 #: Every free parameter is bound, but at least one binding is only checkable *after* the
 #: calculation it governs. Section VI.1: not the same object as :data:`COMPILED`.
 COMPILED_SUBJECT_TO = "COMPILED_SUBJECT_TO"
-#: A round left the measure exactly where it was and opened nothing -- it rephrased.
+#: A round left the measure exactly where it was and opened no new slot -- it rephrased.
+#: Both halves are checked against the thing they name: the measure half comes from the
+#: ordinal the gate itself used, never from the slot names, so a round that keeps every
+#: name while raising a rank is emphatically NOT this.
 STALLED = "STALLED"
-#: A round opened holes that are not strictly simpler than what it closed, so the measure
-#: did not descend. Under the old cardinality rule this token meant "the count went up",
-#: which also caught legitimate deepening; it no longer does.
+#: A round did not descend and the measure did not stay put either -- it opened holes that
+#: are not strictly simpler than what it closed, or raised the rank of a hole it left open.
+#: Under the old cardinality rule this token meant "the count went up", which also caught
+#: legitimate deepening; it no longer does.
 WIDENED = "WIDENED"
 #: Every round descended legitimately and the declared round budget ran out first. Not a
 #: stall (progress was real) and not a contradiction (no theorem was violated) -- the
@@ -227,6 +231,21 @@ class Slot:
     rank: int = 0
 
     def __post_init__(self) -> None:
+        # Checked BEFORE the sign test, because the sign test is what a float defeats:
+        # ``nan < 0`` is False and ``inf < 0`` is False, so a bare ``rank < 0`` waves
+        # through the two values that break the order outright. The annotation ``int`` is
+        # a hint and hints are not enforcement -- the well-foundedness hypothesis has to be
+        # checked by something that runs.
+        if not isinstance(self.rank, int):
+            raise IllFoundedRank(
+                f"slot {self.name!r} has rank {self.rank!r} of type "
+                f"{type(self.rank).__name__}; ranks index a well-founded order and only "
+                f"the naturals are offered as one here. Floats defeat the sign test twice "
+                f"over: inf makes the round budget infinite, so the loop's only backstop "
+                f"against a runaway responder can never fire, and nan is not comparable "
+                f"even to itself, so the ranks stop being an order -- with the further "
+                f"charm that whether a descent is seen at all then depends on whether two "
+                f"slots happen to share one nan object")
         if self.rank < 0:
             raise IllFoundedRank(
                 f"slot {self.name!r} has rank {self.rank}; ranks index a well-founded "
@@ -285,6 +304,30 @@ class Spec:
     """
     name: str
     slots: tuple[Slot, ...]
+
+    def __post_init__(self) -> None:
+        """
+        Reject duplicate slot names, which :meth:`widen` already refuses at its own door.
+
+        An invariant enforced at one entrance and not the other is not an invariant. Built
+        directly, ``Spec("s", (Slot("x", ...), Slot("x", ...)))`` double-counts in
+        :meth:`holes`, :meth:`measure` and :meth:`ordinal`, and :meth:`bind` -- whose filter
+        is ``s.name == name`` rather than "the first match" -- binds BOTH in one call. The
+        double-count is monotone and so cannot break termination, which is exactly why it
+        would have survived every test about termination.
+        """
+        names = [s.name for s in self.slots]
+        # Set membership first, and the O(n^2) roster only on the way to raising. Every
+        # bind() and widen() rebuilds the Spec, so this runs once per round; counting each
+        # name against the whole list would make a loop over a spec with n slots quadratic
+        # in n for no answer it does not already have. Identity-preserving, not a tradeoff.
+        if len(names) == len(set(names)):
+            return
+        clash = sorted({name for name in names if names.count(name) > 1})
+        if clash:
+            raise KeyError(f"{self.name} declares slot name(s) {clash} more than once; "
+                           f"a name is how bind() and the round report identify a slot, so "
+                           f"two slots sharing one are bound together and counted twice")
 
     def holes(self) -> tuple[Slot, ...]:
         """
@@ -352,6 +395,27 @@ class Spec:
         all. With ranks declared it holds only while the responder honours ``fan_out``,
         which nothing here can check in advance -- so overrunning it reports
         :data:`EXHAUSTED` and not a contradiction.
+
+        **It is exponential in the rank, so it is a termination argument and not a
+        practical guard, and those are different jobs.** A responder that repeatedly splits
+        the highest hole into ``fan_out`` holes one rank down is entirely legal and never
+        threatens this budget -- it walks a binary tree of ``2**(rank+1) - 1`` nodes against
+        a bound of ``3**rank`` -- and simply takes as long as that is. MEASURED at
+        ``fan_out=2`` from a single ``Slot(rank=K)``, by
+        ``experiments/ledger_rank_blowup.py``::
+
+            K= 5   rounds     63   bound    243
+            K=10   rounds   2047   bound  59049     1.35 s
+            K=12   rounds   8191   bound 531441    43.84 s
+
+        Wall time grows ~7x per unit of K while the round count only doubles, because
+        :meth:`bind` and :meth:`widen` each rebuild the whole slot tuple, so the cost is
+        quadratic in the slots alive. (Timings taken while another job held the box; they
+        are an order of magnitude, not a benchmark. The round counts are exact and load-
+        independent.) Nothing is broken -- descending sequences below ``omega**omega`` can
+        be as long as they like, which is the price of admitting deepening at all -- but a
+        caller who reads ``round_bound`` as "this will stop soon" has read it wrong. It
+        says the loop stops. It says nothing whatever about when.
         """
         return sum((fan_out + 1) ** slot.rank for slot in self.holes())
 
@@ -459,13 +523,25 @@ class Session:
             lines.append("halted: a round left the measure exactly where it was and opened "
                          "nothing -- it rephrased. Cannot reduce: "
                          + ", ".join(self.stuck_on))
-        if self.outcome == WIDENED:
+        if self.outcome == WIDENED and self.opened:
             lines.append("halted: a round opened free parameters ("
                          + ", ".join(self.opened) + ") that are not strictly simpler than "
                          "what it closed, so the measure did not descend. Deepening is "
                          "allowed and is not this: a slot opened beneath a rank-r hole "
                          "must declare a rank below r. Everything here is rank 0 unless "
                          "someone said otherwise, and nothing sits below rank 0.")
+        if self.outcome == WIDENED and not self.opened:
+            # No new NAME appeared and the measure still rose, so the widening happened
+            # inside a slot the loop had already seen. Reported separately because the
+            # name-set is silent about it, and a report that says "it rephrased" while its
+            # own ranks line shows an increase is worse than no report.
+            last = self.rounds[-1]
+            lines.append("halted: a round raised the measure without opening any new slot "
+                         f"-- ranks {list(last.before_ordinal)} became "
+                         f"{list(last.after_ordinal)}. An existing hole came back declared "
+                         "MORE abstract than it went out, which refuses to descend exactly "
+                         "as opening one would, while wearing a name the loop had already "
+                         "seen. Cannot reduce: " + ", ".join(self.stuck_on))
         if self.outcome == EXHAUSTED:
             lines.append("halted: every round descended, and the round budget ran out "
                          "first. The budget assumes each hole opens at most "
@@ -561,6 +637,19 @@ def shepherd(spec: Spec, respond, *, discarded: tuple[str, ...] = (),
         before_names = {h.name for h in holes}
 
         following = respond(current, holes)
+        if not isinstance(following, Spec):
+            # Everything below is a claim about the multiset order, and it is only a claim
+            # about the multiset order if the object being measured is the one whose
+            # ordinal() this module wrote. Duck-typing here does not merely risk a wrong
+            # answer, it risks a LedgerContradiction -- a message asserting that "the
+            # descent check is not enforcing what it claims" -- raised because a supplied
+            # object lied about its own measure. The loop must not be able to blame its own
+            # theorem for a caller's return type.
+            raise TypeError(
+                f"respond returned {type(following).__name__}, not a Spec. Every outcome "
+                f"this loop reports is derived from Spec.ordinal() and Spec.measure(); an "
+                f"object that merely supplies those names can drive the loop to any "
+                f"conclusion, including a contradiction against a rule it never exercised")
         # Taken ONCE and reused, so the number recorded on the round is provably the number
         # the decision below was made on. Two calls could not disagree today -- Spec is
         # frozen -- but a report that is re-derived separately from the decision it reports
@@ -573,11 +662,18 @@ def shepherd(spec: Spec, respond, *, discarded: tuple[str, ...] = (),
             current = following
             continue
 
-        # Did not descend. Which of the two failures was it? The distinction is read off
-        # the slot names, not off anything the responder reported about itself.
+        # Did not descend. Which of the two failures was it?
+        #
+        # The names are REPORTED here; they are not what decides. Reading the verdict off a
+        # name-set difference is how a round that raised an existing hole's rank -- from
+        # (0,0,0) to (5), a strict increase -- got reported as "left the measure exactly
+        # where it was ... it rephrased", with the contradicting ranks printed two lines
+        # above in the same report. Same name, so no name opened; the measure moved anyway.
+        # The discriminant has to be the quantity the gate above actually used, or the
+        # diagnosis is derived from something other than its own subject.
         opened = tuple(h.name for h in following.holes() if h.name not in before_names)
         still = tuple(name for name in asked
                       if any(h.name == name for h in following.holes()))
-        if opened:
+        if opened or after_ordinal > before_ordinal:
             return Session(WIDENED, following, tuple(rounds), still, opened, discarded)
         return Session(STALLED, following, tuple(rounds), still, (), discarded)

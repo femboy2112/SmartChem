@@ -256,6 +256,27 @@ from .human_survival import (
     compile_session_human_survival_recovery,
     human_survival_slot,
 )
+from .ising_lattice_gas_domain import (
+    C3_EDGES,
+    C3_VERTICES,
+    CompletenessInventory as IsingLatticeGasCompletenessInventory,
+    ExactEquilibriumMap as IsingLatticeGasExactEquilibriumMap,
+    FormalBoltzmannTerm,
+    IsingLatticeGasSpec,
+    MicrostateMap as IsingLatticeGasMicrostateMap,
+    ParameterMap as IsingLatticeGasParameterMap,
+    PartitionIdentity as IsingLatticeGasPartitionIdentity,
+    StateClass as IsingLatticeGasStateClass,
+    derive_exact_equilibrium_map,
+)
+from .ising_lattice_gas import (
+    ISING_LATTICE_GAS_CASUALTIES,
+    ISING_LATTICE_GAS_OMISSIONS,
+    ExactC3EquilibriumEngine,
+    compile_ising_lattice_gas_equilibrium,
+    compile_session_ising_lattice_gas_equilibrium,
+    ising_lattice_gas_slot,
+)
 from .stoichiometry import (
     MAX_WRITTEN_WEIGHT,
     Completion,
@@ -388,6 +409,15 @@ __all__ = [
     "HUMAN_SURVIVAL_CASUALTIES", "HUMAN_SURVIVAL_OMISSIONS",
     "SyntheticSurvivalRecoveryEngine", "compile_human_survival_recovery",
     "compile_session_human_survival_recovery", "human_survival_slot",
+    # exact finite cross-domain map -- established algebra, distinct physical referents
+    "C3_EDGES", "C3_VERTICES", "IsingLatticeGasSpec",
+    "IsingLatticeGasParameterMap", "IsingLatticeGasMicrostateMap",
+    "IsingLatticeGasStateClass", "FormalBoltzmannTerm",
+    "IsingLatticeGasPartitionIdentity", "IsingLatticeGasCompletenessInventory",
+    "IsingLatticeGasExactEquilibriumMap", "derive_exact_equilibrium_map",
+    "ISING_LATTICE_GAS_CASUALTIES", "ISING_LATTICE_GAS_OMISSIONS",
+    "ExactC3EquilibriumEngine", "compile_ising_lattice_gas_equilibrium",
+    "compile_session_ising_lattice_gas_equilibrium", "ising_lattice_gas_slot",
     # store -- the environment comonad and finite response-surface sampling
     "Store", "Conditions", "SOLVENTS",
     "survey", "response_surface", "is_responsive", "grid",

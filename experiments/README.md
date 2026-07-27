@@ -54,6 +54,7 @@ harness at all.
 | `compiled_human_isotope_vertical.py` | Executes the D2a cross-scale structural-identifiability vertical: underidentified metaphor -> scientist-confirmed cohort/population/assembly/exposure/endpoint choices -> exact output contract -> two independently rechecked dynamic-family probability witnesses -> RunRecord/certificate. It emits an underidentification result, not an empirically calibrated mortality model or actual-human/population prediction. The durable receipt is `RESULTS_compiled_human_isotope_vertical.md`; the JSON journal is ignored. |
 | `compiled_human_survival_recovery.py` | Executes the separate D2b-S synthetic recovery vertical: content-addressed seeded-binomial independent interval cohorts -> structurally TRAIN-only fixed-family likelihood -> gradient/curvature gates -> conditional likelihood-curvature intervals -> locked HOLDOUT binomial scores -> post-fit same-generator recovery. The intervals are not calibrated confidence coverage; the run is not empirical human calibration, biological validation, toxicology, causality, LD50/LC50 evidence, or transfer authority. Receipt: `RESULTS_compiled_human_survival_recovery.md`. |
 | `compiled_class_a_optimizer.py` | Executes the first plan-visible Class-A transform and an exact spectator-free reference. A regenerated Fe spectator lies outside the probe oracle's declared domain; the runtime-owned separable model licenses its independently verified removal before domain admission/oracle calls, and every reaction-energy observable field is retained. The two residual calls were already shipped behavior, so the probe establishes certification and removal of false over-refusal—not a new call-count/timing speedup or general optimizer. Receipt: `RESULTS_compiled_class_a_optimizer.md`. |
+| `compiled_ising_lattice_gas_vertical.py` | Executes an exact finite cross-domain map on the three-site undirected cycle: every one of eight Ising spin states is retained beside its lattice-gas occupancy state; `epsilon=4J`, `mu=2h-4J`, `H_I=H_LG+3(h-J)`, and the formal partition relation are independently rechecked. It is an `ANALOGUE/ESTABLISHED` finite algebraic result, not a material, dynamics, thermodynamic-limit, or arbitrary-graph claim. Receipt: `RESULTS_compiled_ising_lattice_gas_vertical.md`. |
 
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
 passes and keeps superseded numbers rather than overwriting them — `ao_storage_probe.py` and
@@ -118,6 +119,10 @@ OMP_NUM_THREADS=1 .venv/bin/python experiments/compiled_h2_vertical.py \
 # first Class-A structural optimizer probe; directory must not already contain journals
 .venv/bin/python experiments/compiled_class_a_optimizer.py \
   --journal-dir /tmp/smartchem-class-a-run
+
+# exact finite C3 Ising-to-lattice-gas map; fresh journal path required
+.venv/bin/python experiments/compiled_ising_lattice_gas_vertical.py \
+  --journal /tmp/smartchem-ising-lattice-gas-run.json
 ```
 
 Pin the threads and check `uptime` first. This repo has already been burned once by timing

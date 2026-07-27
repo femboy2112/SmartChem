@@ -167,6 +167,9 @@ _HUMAN_ISOTOPE_EXECUTOR = "smartchem.human_isotope/identifiability-v1"
 _HUMAN_SURVIVAL_EXECUTOR = (
     "smartchem.human_survival/synthetic-weibull-interval-recovery-v1"
 )
+_ISING_LATTICE_GAS_EXECUTOR = (
+    "smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"
+)
 
 
 def _executor_observables(executor_id: str) -> frozenset[str]:
@@ -1506,6 +1509,55 @@ def _observable_payload_error(
             if canonical_digest(payloads[observable_id]) != canonical_digest(expected):
                 return (
                     f"human-survival output {observable_id} differs from the "
+                    "independently recomputed payload"
+                )
+        return None
+    if plan.executor_id == _ISING_LATTICE_GAS_EXECUTOR:
+        from .ising_lattice_gas import (
+            _finite_c3_model,
+            _payloads as ising_lattice_gas_payloads,
+        )
+        from .ising_lattice_gas_domain import (
+            ExactEquilibriumMap,
+            IsingLatticeGasSpec,
+            exact_equilibrium_map_error,
+        )
+
+        resolved = plan.request.resolved
+        if (
+            type(resolved) is not ResolvedDomainProgram
+            or type(resolved.subject) is not IsingLatticeGasSpec
+        ):
+            return (
+                "Ising-lattice-gas plan has no exact IsingLatticeGasSpec subject"
+            )
+        exact_model = _finite_c3_model()
+        if (
+            plan.model != exact_model
+            or plan.request.physical_ir.models != (exact_model,)
+        ):
+            return "Ising-lattice-gas plan does not retain the runtime-owned exact model"
+        diagnostic = payloads.get("ising_lattice_gas_state_map")
+        if type(diagnostic) is not ExactEquilibriumMap:
+            return (
+                "ising_lattice_gas_state_map must retain an exact ExactEquilibriumMap"
+            )
+        verification_error = exact_equilibrium_map_error(
+            diagnostic,
+            resolved.subject,
+        )
+        if verification_error is not None:
+            return (
+                "Ising-lattice-gas state map failed the separate direct verifier: "
+                + verification_error
+            )
+        expected_payloads = ising_lattice_gas_payloads(diagnostic)
+        for observable_id, expected in expected_payloads.items():
+            if observable_id not in payloads:
+                return f"Ising-lattice-gas output omitted {observable_id}"
+            if canonical_digest(payloads[observable_id]) != canonical_digest(expected):
+                return (
+                    f"Ising-lattice-gas output {observable_id} differs from the "
                     "independently recomputed payload"
                 )
         return None

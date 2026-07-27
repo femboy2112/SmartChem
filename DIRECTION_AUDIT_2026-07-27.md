@@ -44,7 +44,7 @@ What exists is unusually valuable:
   non-linear constraints;
 - adversarial and mutation testing that has repeatedly falsified stronger-looking claims.
 
-The 2026-07-27 implementation added that connection for five deliberately narrow verticals:
+The 2026-07-27 implementation added that connection for six deliberately narrow executors:
 
 - a closed executor registry, a full shipped-source approval identity, and exclusive
   run-owned journals that prevent one calculation from erasing another;
@@ -71,6 +71,12 @@ The 2026-07-27 implementation added that connection for five deliberately narrow
   with a conditional-binomial likelihood, retains conditional likelihood-curvature intervals and
   optimizer diagnostics, and scores every locked HOLDOUT record. Its same-generator recovery
   is implementation evidence only, not empirical human calibration or biological validation.
+- one exact finite C3 Ising-to-lattice-gas executor that maps all eight microstates with
+  integer arithmetic, retains both grouped formal partition inventories and a zero-output-loss
+  count, and separately verifies `epsilon=4J`, `mu=2h-4J`, `H_I=H_LG+3(h-J)`. Its
+  algebraic evidence is `ESTABLISHED`, while its claim kind remains `ANALOGUE`: no literal
+  particle identity, dynamics, material prediction, thermodynamic limit, or arbitrary-graph
+  transfer is inferred.
 
 What still does not exist is the general version: a language covering arbitrary worlds,
 open-process and multiphysics semantics, a planner choosing among multiple valid model chains,
@@ -83,7 +89,7 @@ typed `WaterWaveSpec`, one typed `WaterWaveValidationSpec`, or one typed
 toxicology model, or mortality simulator.
 
 **This audit set the contract seam before the conversational UI.** That narrow seam is now
-implemented and exercised across five deliberately narrow calculations. The same ordering
+implemented and exercised across six deliberately narrow executors. The same ordering
 still governs the remaining general work:
 build and test semantics before adding a fluent surface that could make missing semantics look
 complete.
@@ -286,16 +292,16 @@ predicate, an exactness or discrepancy reference, and an emitted transform recor
 | Refusal diagnosis | **Built** | Obstructions are derived from conservation and domain facts. There is no model router or executable remedy graph. |
 | Shepherd termination | **Built, syntactic** | A well-founded multiset rank prevents endless rephrasing/deepening, and menus require a non-empty derivation string. It proves termination, not that new subquestions semantically descend from the old one. Legacy slots remain textual; the first executable vertical additionally requires typed bindings and machine derivation references. |
 | Section I loop | **Demonstrated, not compiled** | Four rounds close a hard-coded example and the category accepts its fixed reaction. The closed `Session` is not interpreted into a general runtime plan. |
-| Contract seam and typed bindings | **Built, narrow vertical slices** | Immutable source/program, request, plan, approval, run, certificate, typed binding, and validity-obligation artifacts now support H2, two structural water executors, structural human identifiability, and synthetic survival recovery. They do not yet make a general simulation language. |
+| Contract seam and typed bindings | **Built, narrow vertical slices** | Immutable source/program, request, plan, approval, run, certificate, typed binding, and validity-obligation artifacts now support H2, two structural water executors, structural human identifiability, synthetic survival recovery, and the exact finite C3 Ising/lattice-gas map. They do not yet make a general simulation language. |
 | Approved H2 vertical | **Executed once, complete** | `2 H -> H2` ran through the approved source-to-certificate path at the existing CCSD(T)/cc-pVTZ protocol. The durable receipt and its limitations are in `experiments/RESULTS_compiled_h2_vertical.md`. |
 | Water-wave cross-domain slice | **Executed structural compiler test** | The typed language distinguishes target, regime, branch, flow direction, and black/white/pair orientation; the runtime retains every prescribed SI profile point, independently rechecks every crossing, and binds an exact analogue/casualty scope. The synthetic run is `STRUCTURAL_TOY`, not a measured flume, validated horizon, continuum wave evolution, or astrophysical result. |
 | Human–isotope cross-scale slice | **Executed structural underidentification test** | The typed language binds target, population, granularity, assembly, environment, hazard effect, toxicokinetic link, LD50/LC50 protocol, and calibration evidence. The runtime independently rechecks that distinct exponential and Weibull probability witnesses share the one median endpoint while disagreeing away from it. The run is `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`; individual, cause-specific, observed-data, and empirically calibrated or predictive probability outputs remain blocked. |
 | Public quantum-chemistry output | **Implemented in a narrow domain** | Enabled neutral atoms and fixed neutral diatomics under measured protocols; broader internal code fails closed rather than inheriting evidence. |
 | General simulation runtime | **Unbuilt** | No general state evolution, boundary/reservoir semantics, time integration, mesh, ensemble, or coupled solver system. |
-| Typed Physical IR and language | **Built for five narrow verticals; otherwise unbuilt** | The minimal source/IR records support H2, two distinct finite water diagnostics, human-proxy identifiability, and selected-family synthetic survival recovery. They do not yet cover general worlds, typed ports, validated cross-scale dynamics, or a general simulation language. |
-| Output contract and approval gate | **Built for five narrow verticals** | All five executors require their exact output contracts; changing membership, support, resolution, precision, coverage, diagnostics, or retention blocks execution until a different executor exists. Broader policy and tradeoff negotiation remain unbuilt. |
-| Post-run validity transition | **Built for five narrow verticals** | Named obligations and complete/incomplete/invalid/refused/failed records exist on all five; no general solver/result-state runtime exists. |
-| Result certificate | **Built for five narrow verticals** | Receipts bind H2, both structural water runs, structural human identifiability, and synthetic survival recovery to their scope, evidence, omissions, and casualties; this is not yet a general artifact system. |
+| Typed Physical IR and language | **Built for six narrow executors; otherwise unbuilt** | The minimal source/IR records support H2, two distinct finite water diagnostics, human-proxy identifiability, selected-family synthetic survival recovery, and the exact finite C3 map. They do not yet cover general worlds, typed ports, validated cross-scale dynamics, or a general simulation language. |
+| Output contract and approval gate | **Built for six narrow executors** | All six executors require their exact output contracts; changing membership, support, resolution, precision, coverage, diagnostics, or retention blocks execution until a different executor exists. Broader policy and tradeoff negotiation remain unbuilt. |
+| Post-run validity transition | **Built for six narrow executors** | Named obligations and complete/incomplete/invalid/refused/failed records exist on all six; no general solver/result-state runtime exists. |
+| Result certificate | **Built for six narrow executors** | Receipts bind H2, both structural water runs, structural human identifiability, synthetic survival recovery, and the exact finite map to their scope, evidence, omissions, and casualties; this is not yet a general artifact system. |
 
 The strongest honest summary is:
 
@@ -592,7 +598,7 @@ exercise a materially different kind of transport, assembly, or evidence boundar
 | **Traffic jam as a kinematic fluid shock** | Vehicle conservation, characteristics, shocks/rarefactions, and Rankine–Hugoniot shock speed under a declared flux law. The gas-kinetic route can also derive macroscopic equations from driver/vehicle assumptions. | Cars are not fluid molecules; momentum closure, driver memory, lane changing, junctions, and stop–go behavior do not follow automatically. Require measured fundamental diagrams, boundary/sensor provenance, uncertainty, and held-out shock trajectories. | Best next regime-valid analogue after D2. See [Treiber, Hennecke, and Helbing (1999)](https://arxiv.org/abs/cond-mat/9901240). |
 | **SIR epidemic as a chemical reaction network** | `S + I -> 2 I`, `I -> R` has a mass-action deterministic/stochastic reaction interpretation under a well-mixed abstraction. | Contacts are not molecular collisions; chemical thermodynamics and detailed balance do not transport. Networks, behavior, latency, infectious-period distributions, demography, observation bias, and causal claims require their own models and evidence. | Strong reuse test for the chemistry syntax, but higher-stakes than traffic. |
 | **Electrical, mechanical, hydraulic, and thermal systems through bond graphs / port-Hamiltonian structure** | Effort-flow power pairing, storage, dissipation, and power-conserving port interconnection compose across substrates. | Voltage is not force, pressure, or temperature; constitutive laws, parasitics, field radiation, saturation, distributed effects, and regime limits remain domain-specific. | Best architectural test of typed ports and open-process composition. See the [automated multi-bond-graph formulation](https://arxiv.org/abs/1909.02848). |
-| **Ising magnet as a lattice gas** | The occupation/spin substitution can give an exact equilibrium Hamiltonian and partition-function map. | Spins are not particles; dynamical rules, transport, ensemble, boundary, and finite-size interpretation do not follow from the equilibrium equivalence. | Theorem-level transport control against which the compiler's map/casualty machinery can be checked. |
+| **Ising magnet as a lattice gas** | The occupation/spin substitution gives an exact finite equilibrium Hamiltonian and partition-function map on the now-implemented C3 control. | Spins are not particles; dynamical rules, transport, ensemble, other boundaries/graphs, and finite-size interpretation do not follow from the equilibrium equivalence. | Completed theorem-level finite control for the compiler's map/casualty and zero-output-loss machinery; generalization remains open. |
 | **Option pricing as heat diffusion** | Under the Black–Scholes assumptions, log-price, discounting, and reversed time transform the pricing PDE into a heat equation. | Temperature is not value; risk-neutral price is not an actual-return forecast. Constant volatility, continuous trading, frictionlessness, and diffusion assumptions are load-bearing. | Adversarial non-physical-domain boundary; avoid until the interface cannot turn it into financial prediction. |
 | **Groundwater flow as an electrical conductor/network** | Darcy flux and Ohmic current share a linear potential-gradient/conservation structure in the declared regime. | Water is not charge; unsaturated, multiphase, non-Darcy, deformable, transient-storage, and reactive-transport behavior require additional models. | Low-risk port/field validation case with clear field-evidence gates. |
 
@@ -846,6 +852,18 @@ same-generator recovery is empirical calibration evidence.
 - no result can lose `EXPERIMENTAL/UNVALIDATED` status merely because it converged or refined
   successfully.
 
+**Completed exact-map cross-domain control.** The finite C3 Ising/lattice-gas executor is a
+deliberately different test from the water and human experimental lanes. On vertices
+`(0,1,2)` with undirected edges `((0,1),(1,2),(0,2))` counted once, it enumerates all eight
+states and checks the affine substitution `s_i=2*n_i-1` using exact integer energy ticks. A
+separate direct verifier binds every parameter, state row, degeneracy class, formal partition
+term, and completeness count back to the approved `J`, `h`, graph, and Hamiltonians. The
+result may therefore carry `ESTABLISHED` evidence and enter the certified lane for that exact
+finite algebra while its claim kind remains `ANALOGUE`. This demonstrates why claim referent
+and evidence strength must not be one scale: an exact map still does not make spins literal
+particles or license dynamics, material prediction, a phase transition, or transfer to
+another graph. See `experiments/RESULTS_compiled_ising_lattice_gas_vertical.md`.
+
 ### Milestone E — optimizer and no-loss ratchet
 
 Add a planner with Class A transformations first: cache/reuse, exact structural cancellation
@@ -921,17 +939,17 @@ environment:
 
 ```text
 .venv/bin/python -m pytest -q -rs
-1169 passed, 14 skipped, 1 xfailed in 19.72s
+1266 passed, 14 skipped, 1 xfailed in 20.40s
 ```
 
 The 14 tests marked slow were not run and are not counted as passed. PySCF was installed, so
 the unmarked real-oracle tests and the separate compiled H2 smoke did execute real wavefunction
-work. The water-wave and human-identifiability structural calculations have no PySCF
-dependency. The strict xfail is the intentional true-parallel-interchange architecture debt.
-This no-`--runslow` result plus the scoped H2, water, and human-identifiability receipts
-supports the implemented narrow contracts only; it does not validate the unbuilt general
-language/compiler, promote the water profile beyond `STRUCTURAL_TOY`, or validate a human
-mortality model.
+work. The water, human, and finite C3 calculations have no PySCF dependency. The strict xfail
+is the intentional true-parallel-interchange architecture debt. This no-`--runslow` result
+plus the scoped executor receipts supports the implemented narrow contracts only; it does
+not validate the unbuilt general language/compiler, promote the water profile beyond
+`STRUCTURAL_TOY`, validate a human mortality model, or transfer the finite C3 identity to
+another graph or physical referent.
 
 ---
 

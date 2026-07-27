@@ -321,6 +321,33 @@ _DESCRIPTORS = (
             "smartchem.human_survival_domain",
         ))),
     ),
+    ExecutorDescriptor(
+        executor_id=(
+            "smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"
+        ),
+        resolved_container=TypeReference(
+            "smartchem.program",
+            "ResolvedDomainProgram",
+        ),
+        subject_type=TypeReference(
+            "smartchem.ising_lattice_gas_domain",
+            "IsingLatticeGasSpec",
+        ),
+        subject_attribute="subject",
+        output_contract_factory=FunctionReference(
+            "smartchem.ising_lattice_gas",
+            "_default_output_contract",
+        ),
+        runner=FunctionReference(
+            "smartchem.ising_lattice_gas",
+            "_execute_ising_lattice_gas",
+        ),
+        implementation_modules=tuple(sorted((
+            *_SHARED_IMPLEMENTATION_MODULES,
+            "smartchem.ising_lattice_gas",
+            "smartchem.ising_lattice_gas_domain",
+        ))),
+    ),
 )
 
 _BY_EXECUTOR_ID = MappingProxyType({

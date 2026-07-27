@@ -420,6 +420,11 @@ differences. Open systems need explicit reservoirs rather than pretending invent
 ## Architecture
 
 ```
+Specification layer      stoichiometry.py         derive every balanced reaction; check a written one
+                         rigidity.py              the same law against a quadratic invariant
+                         domain.py                what an oracle can be asked, before asking
+                         diagnosis.py             why a refusal happened, and whether it is removable
+                         ledger.py                interrogate an underdetermined spec to a fixed point
 Search & verification    pathway.py · store.py    mechanisms, regeneration, response surfaces
 Sequential core          category.py              conservation + validated histories
 Oracle interface         oracle/                  pluggable, provenance + untyped scale/sensitivities
@@ -435,6 +440,77 @@ Frozen baseline          legacy.py                the original engine. Do not bu
 An oracle may **decline** but may not **invent**. Refusals are counted separately in the
 benchmark and prevent any accuracy-tier verdict; the numerical MAE is labeled conditional
 on the cases actually returned.
+
+## The specification layer, and the one negative result it has produced
+
+`THE_COMPILER.md` argues for a layer above the oracles: a scientist writes a deliberately
+underdetermined specification, and the system interrogates it — naming what is
+underdetermined, offering the admissible completions, iterating — rather than either
+running it or rejecting it. The governing rule is the **derived-menu law**: every option
+offered must be the image of a *declared invariant* under a *declared operation*, and a
+system that cannot enumerate the options must **say so** rather than improvise a plausible
+list. An LLM asked "what are the possible configurations here?" will always produce a
+fluent answer, and a wrong specification is unreachable by any oracle's refusal.
+
+Two instances are built, and the interesting part is that they do not behave the same way.
+
+**Linear invariant — `stoichiometry.py`.** Declare per-element atom counts and net charge;
+the operation is the saturated integer kernel of the composition matrix. The admissible
+balances are `ker(A) ∩ Zⁿ`, a lattice, so a basis is a *complete* menu and every balanced
+reaction is an integer combination of it. Three ranks give three behaviours: `freedom == 0`
+refuses and the refusal is a theorem; `1` is forced; `≥ 2` is a genuine choice. It also
+implements the second half of the ask — hand it a balance you wrote and it checks it
+against the same matrix that derived the menu, naming which conserved quantity fails and by
+how much (`O off by -2`), not merely *no*.
+
+**Non-linear invariant — `rigidity.py`.** Declare pairwise distances, `|pᵢ − pⱼ|² = d²`.
+This is the case the stoichiometry module named as its own open question and could not
+answer. Measured by `experiments/nonlinear_menu_rank.py`:
+
+| | linear (atom counts) | non-linear (distances) |
+|---|---|---|
+| admissible set | a lattice | a real algebraic variety |
+| closed under addition | yes | no |
+| REFUSE is a theorem | always | only on a **complete** constraint set |
+| FILL_IN is a theorem | always | only on a complete constraint set |
+| ENUMERATE | a finite basis generating everything | **no analogue exists** |
+| check a written answer | decidable | decidable |
+
+**The law does not survive, and it fails in a specific way rather than collapsing.** A
+complete distance matrix is decided exactly, in rational arithmetic with no tolerance, by
+the rank and definiteness of its Gram matrix — but a complete distance matrix also fixes
+the configuration up to isometry, so it can never present a choice. *The non-linear
+invariant is derivable exactly where it is doing no work.* The row where the linear menu
+earned its keep is the row where derivability dies. Deciding a *partial* distance matrix in
+a fixed dimension is NP-hard (Saxe 1979), and a real bond graph is always partial — the
+undeclared H–H distance in water **is** the bond angle.
+
+Both standard repairs are linearisations, and both give confident wrong answers in
+*opposite* directions:
+
+- the **Maxwell count** says the double banana (8 points, 18 constraints, 3D) is rigid; it
+  hinges. Counted 0, true internal freedom 1.
+- the **rigidity-matrix rank** says a triangle with lengths 1, 1, 2 is flexible; it is
+  rigid, because the triangle inequality is tight and exactly one configuration exists.
+
+This repository has already paid for that second sentence once, two layers down:
+`geometry.py:604` records **0.0476 eV** of zero-point energy lost when a physically linear
+molecule carrying a ten-millionth of an Ångström of noise was assigned six external modes
+instead of five, and a real vibration vanished with no warning. The external modes are the
+trivial infinitesimal motions of a framework; the degenerate configurations are the
+collinear geometries. Same phenomenon, two storeys apart.
+
+What survives intact is the *checking* clause. Evaluating a written answer is decidable for
+any computable invariant, while deriving the menu needed the invariant to be linear. **The
+two halves of the ask have different computability, and stoichiometry made them look like a
+matched pair.** A compiler generalised from the friendly case would have inherited that
+assumption silently.
+
+The ground truth for the two counterexamples was derived independently and blind, by a
+separate agent working from standard definitions and never reading this repository; it
+agrees with everything above. Run `.venv/bin/python experiments/nonlinear_menu_rank.py`
+(exit 0 = all claims verified) and `experiments/ledger_mutation_probe.py`, which restores
+each of these modules' known defects verbatim and confirms the tests kill them.
 
 ## Install and run
 
@@ -483,6 +559,14 @@ The frozen baseline's exact MAE on every split is pinned, because the headline c
 Remaining: a tight-binding/xTB fast tier, broader polyatomic backend validation, explicit
 electronic states/conformers, and a documented bond-order policy per backend.
 
+On the specification layer, the derived-menu law is now implemented for a linear invariant
+and measured against a quadratic one, with the negative result above. What is **not**
+settled is whether any useful middle ground exists — an invariant non-linear enough to be
+worth declaring, structured enough to enumerate. Multiplicative laws linearise under a log
+and are not a real test of that; a genuine one has not been found. Until it is, the honest
+reading is that the enumerating half of the law is a property of linear invariants and not
+of the law.
+
 ## Origin
 
 The first implementation was generated by Antigravity and reviewed adversarially on
@@ -492,4 +576,16 @@ claimed chemical accuracy the code missed by 76×.
 
 The atomic data was genuinely good (36 NIST values, zero errors > 0.06 eV) and the textbook
 formulas were correctly transcribed. Those were kept. See `THE_ORBITAL.md` for the current
-specification and `THE_DIFFERENCE.md` for an honest comparison against neighbouring tools.
+specification, `THE_DIFFERENCE.md` for an honest comparison against neighbouring tools, and
+`THE_COMPILER.md` for the specification layer's design and its running record of what each
+brick's failure taught — which is most of what it is for.
+
+Every module in the specification layer has shipped at least one defect invisible to its own
+tests, and every one was found by pointing an adversary at it rather than by the suite: an
+index-2 sublattice that made the menu quietly incomplete, a domain ceiling welded shut by
+dead arithmetic while its docstring promised it would rise, a length check standing in where
+identity was needed, an `isinstance` that admitted a subclass which then lied about its own
+magnitude, and a rigid-motion count that went negative above seven points. That is a
+budgeting fact, not a confession — the tests are written knowing it, and
+`experiments/ledger_mutation_probe.py` restores each of those defects verbatim and checks
+that the suite now kills it.

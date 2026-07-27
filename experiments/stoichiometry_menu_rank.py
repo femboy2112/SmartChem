@@ -226,6 +226,15 @@ def main() -> int:
     print("  with completeness proved rather than asserted. What it does NOT establish is")
     print("  that a non-linear invariant (a position constraint) yields to the same")
     print("  treatment. See the module docstring.")
+    print()
+    print("  THAT QUESTION IS NOW ANSWERED, AND THE ANSWER IS NO -- measured 2026-07-27 by")
+    print("  experiments/nonlinear_menu_rank.py against smartchem/rigidity.py. REFUSE and")
+    print("  FILL_IN survive as theorems on a COMPLETE constraint set; ENUMERATE has no")
+    print("  analogue, because a complete set fixes the configuration up to isometry and")
+    print("  so can never offer a choice. The row this script's rank>=2 case exists for is")
+    print("  exactly the row where derivability dies. The paragraph above is kept as")
+    print("  written rather than edited, because what it disclaimed turned out to be the")
+    print("  finding and a disclaimer quietly replaced by its own answer teaches nobody.")
     return 0
 
 

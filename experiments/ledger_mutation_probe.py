@@ -242,6 +242,135 @@ WRITTEN_CHECK_MUTATIONS = [
 ]
 
 
+RIGIDITY = ROOT / "smartchem" / "rigidity.py"
+RIGIDITY_SUITE = "tests/test_rigidity.py"
+
+RIGIDITY_MUTATIONS = [
+    (
+        "trivial-freedom-as-shipped-wrong",
+        "        spanned = min(n - 1, d)\n"
+        "        free = d - spanned\n"
+        "        return d * (d + 1) // 2 - free * (free - 1) // 2\n",
+        "        return min(d * n - comb(n, 2), d * (d + 1) // 2)\n",
+        "The formula this module ACTUALLY SHIPPED on 2026-07-27, restored verbatim. It "
+        "goes NEGATIVE at eight points in three dimensions (24 - 28 = -4), so every "
+        "freedom derived from it is ten too large. It was caught by an ABSOLUTE assertion "
+        "in the harness; the neighbouring relational claim -- that the control's count and "
+        "rank agree -- passed the whole time, because the error entered both sides through "
+        "this one term and cancelled.",
+    ),
+    (
+        "psd-ignores-the-live-off-diagonal",
+        "                if any(work[k][m] != 0 for m in active):\n",
+        "                if work[k][k] != 0:\n",
+        "Checking the diagonal entry that the enclosing branch has already established is "
+        "zero, instead of the rest of its row. [[0, 1], [1, 0]] has eigenvalues +1 and -1 "
+        "and is then judged PSD -- a confident 'these lengths are realisable' about "
+        "lengths that are realisable nowhere.",
+    ),
+    (
+        "psd-by-leading-minors-only",
+        "        pivot = next((k for k in active if work[k][k] > 0), None)\n",
+        "        pivot = next((k for k in active if work[k][k] != 0), None)\n",
+        "Pivoting on any nonzero diagonal rather than a positive one, which is the "
+        "elimination you write if you are thinking about RANK and have forgotten you are "
+        "also deciding a SIGN. Negative-definite blocks then pass.",
+    ),
+    (
+        "degenerate-ignores-the-point-count",
+        "        degenerate = affine_rank < min(d, n - 1)\n",
+        "        degenerate = affine_rank < d\n",
+        "Two points can never affinely span three dimensions, so this flags every "
+        "two-point framework as degenerate. Plausible -- the ambient dimension is the "
+        "number you are thinking about -- and it makes the warning fire so often it stops "
+        "carrying information, which is how a real warning gets ignored.",
+    ),
+    (
+        "placement-truthy-on-the-weaker-claim",
+        "        return self.trustworthy\n",
+        "        return self.satisfies\n",
+        "Making bool(placement) mean 'the lengths are met' rather than 'the lengths are "
+        "met AND the linearisation here is trustworthy'. The degenerate triangle then "
+        "passes a bare truth test on its way into a rank computation that will lie to it.",
+    ),
+    (
+        "the-count-is-offered-as-a-proof",
+        "            proved=False,\n",
+        "            proved=True,\n",
+        "Marking the UNDECIDED verdict as proved. The Maxwell count is then a derivation "
+        "rather than a labelled upper bound -- which is exactly the confabulated menu the "
+        "derived-menu law exists to forbid, and the double banana is the standing proof "
+        "that the count is not the freedom.",
+    ),
+    (
+        "embedding-dimension-off-by-one",
+        "    if rank > framework.dimension:\n",
+        "    if rank >= framework.dimension:\n",
+        "Refusing a set of lengths that needs exactly as many dimensions as were declared. "
+        "A planar triangle in the plane is then REFUSED -- a confident theorem-shaped "
+        "refusal of a perfectly realisable specification.",
+    ),
+    (
+        "float-coordinates-allowed",
+        "    if isinstance(value, bool) or not isinstance(value, (int, Fraction)):\n",
+        "    if not isinstance(value, (int, Fraction, float)):\n",
+        "Admitting float coordinates. Every verdict in this module is meant to be exact, "
+        "and 0.1 + 0.2 != 0.3 makes 'the residual is exactly zero' a statement about "
+        "binary rounding. Also readmits bool, so True places a point at 1.",
+    ),
+    (
+        "completeness-by-a-plausible-count",
+        "        return len(self.constraints) == comb(self.points, 2)\n",
+        "        return len(self.constraints) >= self.points\n",
+        "Guessing at completeness instead of counting the pairs. An incomplete framework "
+        "then reaches squared_matrix(), and the whole UNDECIDED branch -- the module's "
+        "one honest answer -- becomes unreachable.",
+    ),
+    (
+        "explain-crashes-on-the-refusal-path",
+        "                f\"|p{i} - p{j}|^2 off by {'+' if error > 0 else ''}{error}\"\n",
+        "                f\"|p{i} - p{j}|^2 off by {error:+}\"\n",
+        "The crash this module shipped and its own tests caught, restored verbatim. "
+        "Fraction rejects a bare '+' format spec and RAISES, in the one method whose "
+        "entire job is making a refusal useful -- so the failure path was the untested "
+        "path, which is the usual way round.",
+    ),
+]
+
+STOICHIOMETRY_DEFECT_MUTATIONS = [
+    (
+        "charge-row-collision-unguarded",
+        "    if CHARGE_ROW in elements:\n",
+        "    if CHARGE_ROW in species:\n",
+        "Checking the wrong collection: species are Molecules and never equal a string, so "
+        "the guard cannot fire. This restores the defect that shipped -- row labels "
+        "('(charge)', '(charge)') for two structurally different conserved quantities, and "
+        "a violation report that names the same row twice for two different failures.",
+    ),
+    (
+        "element-rows-read-off-the-sentinel",
+        "        elements = list(self.row_labels[:-1])\n",
+        "        elements = [label for label in self.row_labels\n"
+        "                    if label != CHARGE_ROW]\n",
+        "The filter this module shipped, restored verbatim: a fact about the matrix read "
+        "off how its last row happens to be SPELLED. With a colliding atom label it "
+        "printed 'atom counts for (none)' while a real atom invariant was still deriving "
+        "the menu. Note this mutant is invisible to any test that builds its menu through "
+        "composition_matrix, because the collision guard now refuses those inputs -- the "
+        "test that kills it has to reach explain() by a route explain() does not control.",
+    ),
+    (
+        "materialisation-cap-counts-entries-not-weight",
+        "    weight = sum(abs(coefficient) for coefficient in nu)\n",
+        "    weight = len(nu)\n",
+        "Confusing how BIG a vector is with how MANY entries it has. The measured attack "
+        "is two species carrying six-digit charges, so len(nu) is 2 and the cap never "
+        "fires: 4.2 s and 215 MB on the unguarded code, extrapolating to seventy minutes "
+        "and two hundred gigabytes at ten digits.",
+    ),
+]
+
+
 def _pytest(suite: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "pytest", *suite.split(), "-q", "--no-header",
@@ -321,6 +450,11 @@ def main() -> int:
         ("BRICK 3 -- the termination rule", TARGET, SUITE, MUTATIONS),
         ("BRICK 4 -- section I's second clause", STOICHIOMETRY, STOICHIOMETRY_SUITE,
          WRITTEN_CHECK_MUTATIONS),
+        ("BRICK 5 -- the non-linear invariant", RIGIDITY, RIGIDITY_SUITE,
+         RIGIDITY_MUTATIONS),
+        ("BRICK 5 -- two defects stoichiometry shipped", STOICHIOMETRY,
+         STOICHIOMETRY_SUITE + " tests/test_rigidity.py",
+         STOICHIOMETRY_DEFECT_MUTATIONS),
     ]
     worst, total, all_survivors = 0, 0, []
     for label, target, suite, mutations in runs:

@@ -141,8 +141,27 @@ __all__ = [
     "stoichiometry_menu",
 ]
 
-#: Row label used for the net-charge row of the composition matrix. Not an element symbol,
-#: and deliberately unspellable as one, so it can never collide with a real row.
+#: Row label used for the net-charge row of the composition matrix.
+#:
+#: **This comment used to claim the string was "deliberately unspellable" as an element
+#: symbol, and that was false.** ``Molecule.__post_init__`` requires only that an atom label
+#: be a non-empty string -- ``category.py`` says in its own docstring that labels are
+#: domain-neutral, which is a deliberate choice and not an oversight -- so
+#: ``Molecule.atom("(charge)")`` was legal and produced a composition matrix whose row
+#: labels read ``("(charge)", "(charge)")``: one genuine atom-count row and the charge row,
+#: carrying one label. Both downstream readers then lied. ``explain()`` filtered on
+#: ``label != CHARGE_ROW`` and printed "atom counts for (none)" while a real atom invariant
+#: was still deriving the menu, and ``Written.explain()`` reported two structurally
+#: different broken conservation laws as ``(charge) off by +1; (charge) off by +1`` --
+#: textually indistinguishable, in the one message whose documented job is to name which
+#: quantity failed so the repair is arithmetic rather than guesswork.
+#:
+#: The claim is now ENFORCED by :func:`composition_matrix` rather than assumed here, and
+#: :meth:`StoichiometryMenu.explain` no longer depends on the string at all -- it takes the
+#: element rows by POSITION, which is how ``composition_matrix`` builds them. Either fix
+#: alone would close the reported symptom; both are kept because they are independent, and
+#: a label collision would still be a real defect even in a version of this file that never
+#: rendered a row name.
 CHARGE_ROW = "(charge)"
 
 
@@ -215,6 +234,14 @@ def composition_matrix(
     ``Reaction`` then rejects.
     """
     elements = tuple(sorted({s for molecule in species for s in molecule.formula}))
+    if CHARGE_ROW in elements:
+        raise ValueError(
+            f"an atom label equal to {CHARGE_ROW!r} was declared, which is the reserved "
+            f"label for the net-charge row. Two structurally different conserved "
+            f"quantities -- a count of that element, and total charge -- would share one "
+            f"row name, and every diagnosis downstream names the row. A refusal that "
+            f"cannot be told from another refusal is worse than no diagnosis, so this is "
+            f"refused at the point the collision is created. Rename the label.")
     rows = [tuple(molecule.formula.get(element, 0) for molecule in species)
             for element in elements]
     rows.append(tuple(molecule.charge for molecule in species))
@@ -393,11 +420,18 @@ class Completion:
         return f"{self.reaction.dom} -> {self.reaction.cod}{flag}"
 
 
-#: The largest total coefficient weight :meth:`StoichiometryMenu.check` will materialise.
+#: The largest total coefficient weight this module will materialise as objects.
 #: ``_configs`` builds ``abs(coefficient)`` molecule objects per species, so an unbounded
-#: written vector is an unbounded allocation reachable from a public entry point that takes
-#: whatever a scientist typed. No balance in chemistry needs this much; the cap is a
+#: vector is an unbounded allocation. No balance in chemistry needs this much; the cap is a
 #: statement about the arithmetic, not about the chemistry, and it refuses loudly.
+#:
+#: The name is historical and now slightly narrow: the cap is enforced inside ``_configs``
+#: and therefore governs DERIVED vectors as well as written ones, which is the point --
+#: guarding only the written path left ``stoichiometry_menu`` able to allocate hundreds of
+#: gigabytes from a two-species input (see ``_configs``). :meth:`StoichiometryMenu.check`
+#: keeps its own earlier test against this same constant so a scientist who types a large
+#: vector gets a message about what they typed rather than a message about materialisation;
+#: the two must never be given different thresholds, which is why there is only one.
 MAX_WRITTEN_WEIGHT = 1000
 
 
@@ -620,7 +654,14 @@ class StoichiometryMenu:
         see WHICH invariant and WHICH operation produced the options, and can therefore
         tell a derivation from a plausible-sounding list.
         """
-        elements = [label for label in self.row_labels if label != CHARGE_ROW]
+        # By POSITION, not by string equality against CHARGE_ROW. ``composition_matrix``
+        # builds the labels as ``elements + (CHARGE_ROW,)``, so the element rows are
+        # everything but the last one, and that is a fact about the construction rather
+        # than about how the last row happens to be spelled. The filter this replaces read
+        # a fact off a rendering of itself -- the same shape as the sublattice bug and the
+        # empty-side bug above -- and printed "atom counts for (none)" for a matrix that
+        # had a genuine atom row, whenever a caller spelled an atom label "(charge)".
+        elements = list(self.row_labels[:-1])
         lines = [
             f"invariants declared : atom counts for {', '.join(elements) or '(none)'}"
             f"; net charge",
@@ -703,7 +744,38 @@ def _invariant_blind(
 
 def _configs(species: tuple[Molecule, ...],
              nu: tuple[int, ...]) -> tuple[Config, Config]:
-    """Split a signed coefficient vector into reactant and product configurations."""
+    """
+    Split a signed coefficient vector into reactant and product configurations.
+
+    THE CAP LIVES HERE BECAUSE THE ALLOCATION LIVES HERE. It used to live only at
+    :meth:`StoichiometryMenu.check`, which guarded the vectors a scientist WRITES and left
+    the vectors this module DERIVES completely unbounded -- and the derived path is
+    reachable from ``stoichiometry_menu`` with nothing but an ordinary species tuple.
+
+    MEASURED, 2026-07-27, by adversarial review of the unguarded code::
+
+        Molecule.carrier(label="X", charge=999_937)     kernel basis (999999, -999937)
+        Molecule.carrier(label="Y", charge=999_999)     weight 1,999,936
+        stoichiometry_menu((X, Y))                      4.2 s, 215 MB RSS
+
+    TWO species. The attack surface is charge MAGNITUDE, not species count: for a single
+    charge row the kernel vector of two coprime charges is proportional to the charges
+    themselves, so the weight is linear in a number the caller types. Raising the charges
+    to ten digits extrapolates to roughly seventy minutes and two hundred gigabytes, and
+    ``Molecule.carrier`` is this package's own documented idiom for ions with no magnitude
+    bound anywhere between it and this line. A many-species construction also works --
+    Fibonacci charges drive the column reduction into Euclid's worst case and reach weight
+    1,134,903,171 at forty species -- but it is the weaker attack and needs the bigger setup.
+    """
+    weight = sum(abs(coefficient) for coefficient in nu)
+    if weight > MAX_WRITTEN_WEIGHT:
+        raise ValueError(
+            f"refusing to materialise a coefficient vector of total weight {weight}; the "
+            f"cap is {MAX_WRITTEN_WEIGHT}. This builds one Molecule object per unit of "
+            f"weight. If this vector was DERIVED rather than written, the species set "
+            f"carries charges or compositions whose exact kernel is enormous -- the "
+            f"arithmetic is correct and the answer is simply too large to instantiate, "
+            f"which is a fact about the input rather than a failure of the kernel.")
     reactants: list[Molecule] = []
     products: list[Molecule] = []
     for molecule, coefficient in zip(species, nu):

@@ -1,6 +1,14 @@
 # THE COMPILER
 
-*Design note for a meta-compiler over physical specifications. **Nothing here is built.***
+*Design note for a meta-compiler over physical specifications.*
+
+**Status, 2026-07-27: Bricks 0 through 5 of §VII are BUILT** — `stoichiometry.py`,
+`domain.py`, `diagnosis.py`, `ledger.py`, `rigidity.py`, plus §I's loop running end to end
+in `experiments/section_i_end_to_end.py`. The line this note opened with until today —
+*"nothing here is built"* — was true when it was written in July and had been false for a
+while before anyone deleted it, which is precisely the failure mode §VII exists to catch.
+What remains unbuilt is the conversational surface, deliberately and last; see the end of
+§VII for why.
 
 `THE_ORBITAL.md` opens with the rule that a claim without a test does not belong in it.
 This document is design, not specification, so it obeys a stricter version of that rule:
@@ -556,6 +564,83 @@ thing that blocks it is a fact about the design, not about the effort.
   nonzero charge**, zero disagreements and zero incompleteness. So `MenuContradiction`
   remains unreachable by honest input — its one demonstrated route was the type confusion
   above, which is now closed.
+
+* **Brick 5 — the derived-menu law against a NON-LINEAR invariant (§III). BUILT,
+  2026-07-27, `smartchem/rigidity.py`, `experiments/nonlinear_menu_rank.py`, 57 tests.
+  The answer is NO, and the shape of the no is the deliverable.** §IV's worked example and
+  Brick 0's module both close with the same disclaimer — *"a position constraint between
+  two particles is not obviously linear in anything, and nothing here says it yields to the
+  same treatment"* — and `experiments/stoichiometry_menu_rank.py:227` prints it at the end
+  of every run. That was the last open question in this document. It is now measured.
+
+  Declare `|pᵢ − pⱼ|² = d²`. The admissible set is a real algebraic variety rather than a
+  lattice, and closed under nothing — so "here are X options and everything else is a
+  combination of them" is not a weaker claim in this setting, it is a *meaningless* one.
+  The presentation that made §IV's menu useful presupposes the algebra the non-linear case
+  lacks.
+
+  **What survives, and the price it is bought at.** A COMPLETE constraint set is decided
+  exactly, in rational arithmetic with no tolerance anywhere: form the Gram matrix by
+  polarisation and test it for positive semidefiniteness by symmetric elimination over
+  `Fraction`. Not PSD, or rank exceeding the ambient dimension, gives `REFUSED` — §IV's
+  rank-0 row, intact, still a theorem, still "the impossibility is the result". PSD of
+  small enough rank gives `FORCED`. **But a complete distance matrix pins the configuration
+  up to isometry, so it can never present a choice.** The non-linear invariant is derivable
+  exactly where it is doing no work, and §IV's `freedom ≥ 2` row — the one the whole menu
+  exists for — has no analogue at all. There is deliberately no `ENUMERATE` token in the
+  module, and a test asserts its absence.
+
+  The case the compiler actually faces is the undecidable one, always: a bond graph gives
+  edges, never the full matrix, and the undeclared H–H distance in water *is* the bond
+  angle. Deciding a partial distance matrix in fixed dimension is NP-hard (Saxe 1979,
+  cited — not measured here), so this is not an afternoon's implementation gap.
+
+  **Note which half of §III's law this breaks, because it is not the half one would guess.**
+  The linear method's completeness never depended on how many invariants were declared:
+  `ker(A) ∩ Zⁿ` is complete whether `A` has one row or forty, and a short invariant list
+  makes the menu *longer*, never less derivable. Here, declaring fewer constraints does not
+  widen a derivable menu — it destroys derivability outright.
+
+  **BOTH STANDARD REPAIRS ARE LINEARISATIONS AND BOTH GIVE CONFIDENT WRONG ANSWERS, IN
+  OPPOSITE DIRECTIONS.** The Maxwell count says the double banana (8 points, 18
+  constraints, 3D) is rigid at exactly zero internal freedom; it hinges about the line
+  through its shared apexes, measured freedom 1, stable across three unrelated rational
+  placements. The rigidity-matrix rank repairs that and fails the other way: at lengths
+  1, 1, 2 it reports one degree of freedom for a framework that is rigid, because the
+  triangle inequality is tight and exactly one configuration exists. So the module reports
+  a `degenerate` flag alongside `satisfies` — the analogue of `Written.unverifiable`, and
+  for the same reason: meeting the constraints and being safe to differentiate are two
+  claims, and collapsing them is how a plausible wrong yes gets out.
+
+  **AND THE REPOSITORY HAD ALREADY PAID FOR THIS ONCE, TWO LAYERS DOWN, WITHOUT ANYONE
+  CONNECTING IT.** `geometry.py:604` records 0.0476 eV of zero-point energy lost when a
+  physically linear molecule carrying 10⁻⁷ Å of noise was assigned six external modes
+  instead of five, and a real vibration vanished with no error and a plausible-looking ZPE.
+  `_external_modes` builds exactly the trivial infinitesimal motions of a framework; that
+  bug's collinear geometries are exactly this module's degenerate configurations. The
+  value layer met the non-linear invariant first and lost a mode to it.
+
+  **What survives intact is §I's SECOND clause, and the asymmetry is the clean statement of
+  the result.** Checking a written configuration is exact arithmetic that always terminates,
+  so `check` is total on every framework here — including the ones no verdict could be
+  derived for at all. **The two clauses of §I have different computability, and linearity
+  is what made them look like a matched pair.** A compiler generalised from Brick 0 would
+  have inherited "if I can check it I can enumerate it" as a silent assumption, and that is
+  an accident of the friendly invariant.
+
+  **Two defects, one shipped by this brick and two inherited, all found by adversaries.**
+  `trivial_freedom` went NEGATIVE above seven points (`24 − 28 = −4`), shifting every
+  freedom by ten — caught by the harness asserting an ABSOLUTE value, while the
+  neighbouring claim that the control's count and rank *agree* passed the whole time,
+  because the error entered both sides through one shared term and cancelled. **A
+  relational check between two quantities sharing a term cannot see an error in that term.**
+  And `explain()` crashed on `f"{Fraction:+}"`, in the one method whose job is making a
+  refusal useful — the failure path was the untested path. Inherited and now closed:
+  `CHARGE_ROW` was documented as "deliberately unspellable" and was not, so two different
+  conserved quantities could share one row label and `explain()` printed "atom counts for
+  (none)" for a matrix that had one; and the materialisation cap guarded only what a
+  scientist *wrote*, leaving `stoichiometry_menu` able to allocate ~200 GB from a
+  two-species input whose charges were merely large.
 
 The ordering matters. **Brick 0 before anything conversational.** The dialogue is the last
 thing built, not the first, because the dialogue is the part that can fake working.

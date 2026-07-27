@@ -42,11 +42,20 @@ harness at all.
 | `stoichiometry_menu_rank.py` | Can the meta-compiler's "here are X admissible completions" menu be *derived* rather than guessed? Exact integer kernel of the composition matrix; backs `THE_COMPILER.md` §IV. Seconds, no PySCF. |
 | `ccsd_peak_phase_probe.py` | Which phase actually sets the CCSD(T) peak RSS? Partitions one run into nested phases and reads `ru_maxrss` at every boundary; because a high-water mark is monotone, the exclusive delta per phase is exact attribution rather than a sample. Calibrates with its own instrumentation active. |
 | `decay_analogy_probe.py` | On what set is a cross-scale metaphor actually true? Worked example for `THE_COMPILER.md` §V/§VIII, using "a human life is an isotope" as the specification under test. Analytic, seconds, no PySCF. |
+| `ao_storage_probe.py` | What does the AO integral tensor actually cost, and does `max_memory` control it? Prices `mf._eri` directly instead of inferring it from a peak. |
+| `ao2mo_sizing_probe.py` | Which sub-phase of `CCSD.ao2mo` sets the peak, on what budget, and **is a `ru_maxrss` delta even an allocation?** Wraps three PySCF sizing sites and reads the budget at the call boundary rather than reconstructing it from the memory reading that is under suspicion. Registers falsifiable predictions in its docstring before running. |
+| `ledger_mutation_probe.py` | Does the test suite notice a wrong implementation? Writes plausible wrong versions of `ledger.py` and `stoichiometry.py` and counts survivors. Restores each target and **verifies byte-identity before exit**; a stale anchor is reported as an error, never as a survivor. |
+| `ledger_rank_blowup.py` | How long can a *legal* shepherding dialogue run? Measures rounds against `round_bound` as a function of one declared rank, to keep a termination argument from being read as a practical guard. Exact round counts; wall times are shape, not benchmark. |
+| `section_i_end_to_end.py` | Does `THE_COMPILER.md` §I's loop actually run? Four rounds on a real spec including one genuine refinement, every menu derived, ending in an object the category constructs. Backs Brick 4. Seconds, no PySCF. |
 
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
-passes and keeps superseded numbers rather than overwriting them. The last three scripts in
-the table above are self-reporting instead — each prints its own verdict, its own boundary,
-and (for the last two) an explicit section on what it does *not* establish.
+passes and keeps superseded numbers rather than overwriting them — `ao_storage_probe.py` and
+`ao2mo_sizing_probe.py` report there too. The rest are self-reporting instead: each prints
+its own verdict and its own boundary, and `decay_analogy_probe.py`,
+`stoichiometry_menu_rank.py`, `ledger_rank_blowup.py` and `section_i_end_to_end.py` carry an
+explicit section on what they do *not* establish. `ledger_mutation_probe.py` and
+`section_i_end_to_end.py` exit non-zero when their own checks fail, so they can be run as
+gates rather than read as reports.
 
 ## Running
 

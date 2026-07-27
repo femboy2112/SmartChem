@@ -617,7 +617,11 @@ using a structurally TRAIN-only fit capability, explicit gradient/curvature gate
 likelihood-curvature intervals, and locked HOLDOUT scoring. This is same-generator
 `STRUCTURAL_TOY` evidence, not empirical human calibration or confidence coverage. Empirical
 D2b still requires independent data/applicability authority, external validation, stronger
-uncertainty, and competing-risk semantics where applicable. The no-loss optimizer precedes the
+uncertainty, and competing-risk semantics where applicable. The first narrow Class-A
+optimizer slice is also live: `reaction-residue-v1` makes exact spectator cancellation
+plan-visible and independently rechecks its residual/multiplicity/workset before any oracle
+call under the closed separable endpoint model. It preserves the full reaction-energy
+contract; it is not a general optimizer or a measured timing speedup. The remaining optimizer precedes the
 conversational surface. Physical water-wave validation remains separate:
 continuity/momentum-admissible backgrounds, wavelength/capillarity gates, uncertainty, and a
 full dispersive branch solver. The broader metaphor portfolio begins with traffic kinematic

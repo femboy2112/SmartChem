@@ -853,6 +853,22 @@ inside the declared separable model, shared intermediates, lossless storage, and
 parallel scheduling. Add Class B choices only against explicit tolerances and refinement
 evidence. Class C remains proposal-only until approved.
 
+**Completed first Class-A slice.** The closed separable reaction-energy compiler now emits
+`ReactionResidueTransform` when the exact endpoint multiset contains shared spectators. The
+typed proof object retains the original reaction digest, exact residual configurations,
+eliminated multiplicities, unique residual workset, unchanged model digest, applicability,
+evidence, and empty casualty list. The runtime independently recomputes it before any oracle
+call, admits only the verified residual to the oracle domain, and records the transform in
+the journal; the certificate's plan digest binds that record without changing the certificate
+schema. An unpriceable regenerated spectator no longer over-refuses a computable endpoint.
+The public structural probe retained the same output-contract digest and matched every
+reaction-energy observable field from the existing residual execution. Its three raw species
+and two residual calls document the already-shipped shortcut rather than a new reduction.
+This cycle makes that shortcut plan-visible, runtime-model-bound, and independently checked;
+it is not a measured timing speedup, general optimizer, persistent cache,
+shared-intermediate system, or Class B/C authority. See
+`experiments/RESULTS_compiled_class_a_optimizer.md`.
+
 **Exit tests**
 
 - every Class A transform is tested against an independent or mutation-capable oracle;

@@ -39,7 +39,7 @@ try:
 except ImportError:  # pragma: no cover - non-POSIX fallback
     resource = None
 
-from .category import Molecule, Reaction, conserves, reaction_residue
+from .category import Config, Molecule, Reaction, conserves, reaction_residue
 from .contracts import (
     ClaimKind,
     Digestible,
@@ -88,6 +88,7 @@ __all__ = [
     "PhysicalIR",
     "Port",
     "Quantity",
+    "ReactionResidueTransform",
     "ResolvedDomainProgram",
     "ResolvedProgram",
     "Reservoir",
@@ -656,6 +657,46 @@ class Transform(Digestible):
 
 
 @dataclass(frozen=True)
+class ReactionResidueTransform(Transform):
+    """Class-A spectator cancellation proof object for the separable energy model."""
+
+    original_reaction_digest: str
+    residual_left: Config
+    residual_right: Config
+    eliminated_species: tuple[tuple[Molecule, int], ...]
+    workset: tuple[Molecule, ...]
+    verifier_id: str
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _nonempty(self.original_reaction_digest, "original_reaction_digest")
+        if type(self.residual_left) is not Config or type(self.residual_right) is not Config:
+            raise TypeError("reaction-residue transform requires exact residual Config values")
+        if not isinstance(self.eliminated_species, tuple) or any(
+            not isinstance(item, tuple)
+            or len(item) != 2
+            or type(item[0]) is not Molecule
+            or type(item[1]) is not int
+            or item[1] < 1
+            for item in self.eliminated_species
+        ):
+            raise TypeError(
+                "eliminated_species must contain exact (Molecule, positive int) pairs"
+            )
+        if len({item[0] for item in self.eliminated_species}) != len(
+            self.eliminated_species
+        ):
+            raise ValueError("eliminated species identities must be unique")
+        if not isinstance(self.workset, tuple) or any(
+            type(item) is not Molecule for item in self.workset
+        ):
+            raise TypeError("workset must contain exact Molecule values")
+        if len(set(self.workset)) != len(self.workset):
+            raise ValueError("workset species must be unique")
+        _nonempty(self.verifier_id, "verifier_id")
+
+
+@dataclass(frozen=True)
 class SourceProgram(Digestible):
     text: str
     spans: tuple[str, ...] = ()
@@ -847,6 +888,8 @@ class CandidatePlan(Digestible):
             raise ValueError(str(error)) from error
         if not isinstance(self.transforms, tuple):
             raise TypeError("transforms must be a tuple")
+        if any(not isinstance(item, Transform) for item in self.transforms):
+            raise TypeError("transforms must contain Transform values")
         if not isinstance(self.predicted_resources, tuple):
             raise TypeError("predicted_resources must be a tuple")
         resource_names: list[str] = []
@@ -1806,6 +1849,103 @@ def _reaction_obligations() -> tuple[ValidityObligation, ...]:
     )
 
 
+def _reaction_energy_model() -> ModelSpec:
+    """Return the exact runtime-owned model that licenses spectator cancellation."""
+    return ModelSpec(
+        name="closed-separable-endpoint-energy",
+        equations=(
+            "E(configuration) = sum(count_i * E(species_i))",
+            "delta_E(reaction) = E(products) - E(reactants)",
+        ),
+        assumptions=(
+            "isolated noninteracting species at each endpoint",
+            "one consistent oracle reference and calculation protocol",
+            "spectator cancellation is used only inside this separable model",
+        ),
+        valid_if=(
+            "Reaction construction and independent conserves() check pass",
+            "the selected oracle admits and returns every non-spectator species",
+        ),
+        postconditions=(
+            "a finite Estimate is returned",
+            "the output inventory exactly matches the approved contract",
+        ),
+        conserved=("atom inventory", "net charge"),
+        version="1",
+    )
+
+
+def _build_reaction_residue_transform(
+    reaction: Reaction,
+    model: ModelSpec,
+) -> ReactionResidueTransform | None:
+    """Construct the exact Class-A transform when a shared multiset exists."""
+    left_counts = Counter(reaction.dom.species)
+    right_counts = Counter(reaction.cod.species)
+    shared = left_counts & right_counts
+    if not shared:
+        return None
+    residual_left, residual_right = reaction_residue(reaction)
+    eliminated = tuple(
+        (molecule, shared[molecule])
+        for molecule in dict.fromkeys(reaction.dom.species)
+        if shared[molecule]
+    )
+    workset = tuple(
+        dict.fromkeys(residual_left.species + residual_right.species)
+    )
+    return ReactionResidueTransform(
+        name="reaction-residue-v1",
+        exactness_class="A_IDENTITY_PRESERVING",
+        input_model_digest=model.digest,
+        output_model_digest=model.digest,
+        applicability=(
+            "closed Reaction",
+            "E(configuration) is the sum of isolated species energies",
+            "the same immutable oracle calculation specification prices both endpoints",
+        ),
+        evidence=(
+            "multiset intersection recomputed from the approved raw Reaction",
+            "E(S+R)-E(S+L)=E(R)-E(L) in the declared separable model",
+            "residual workset and multiplicities retained exactly",
+        ),
+        casualties=(),
+        original_reaction_digest=canonical_digest(reaction),
+        residual_left=residual_left,
+        residual_right=residual_right,
+        eliminated_species=eliminated,
+        workset=workset,
+        verifier_id="smartchem.category/reaction-residue-v1",
+    )
+
+
+def _verified_reaction_residue(
+    reaction: Reaction,
+    model: ModelSpec,
+    transforms: tuple[Transform, ...],
+) -> tuple[Config, Config, tuple[Molecule, ...], ReactionResidueTransform | None]:
+    """Recompute the only supported transform and reject any forged plan record."""
+    expected = _build_reaction_residue_transform(reaction, model)
+    if expected is None:
+        if transforms:
+            raise ValueError(
+                "reaction has no shared spectator multiset but the plan names a transform"
+            )
+        left, right = reaction_residue(reaction)
+        return left, right, tuple(dict.fromkeys(left.species + right.species)), None
+    if len(transforms) != 1 or type(transforms[0]) is not ReactionResidueTransform:
+        raise ValueError(
+            "reaction with shared spectators requires exactly one "
+            "ReactionResidueTransform"
+        )
+    planned = transforms[0]
+    if planned != expected:
+        raise ValueError(
+            "planned reaction-residue transform differs from independent recomputation"
+        )
+    return expected.residual_left, expected.residual_right, expected.workset, expected
+
+
 def compile_reaction_energy(
     source: SourceProgram | str,
     reaction: Reaction,
@@ -1866,28 +2006,7 @@ def compile_reaction_energy(
         )
         for index, molecule in enumerate(species)
     )
-    model = ModelSpec(
-        name="closed-separable-endpoint-energy",
-        equations=(
-            "E(configuration) = sum(count_i * E(species_i))",
-            "delta_E(reaction) = E(products) - E(reactants)",
-        ),
-        assumptions=(
-            "isolated noninteracting species at each endpoint",
-            "one consistent oracle reference and calculation protocol",
-            "spectator cancellation is used only inside this separable model",
-        ),
-        valid_if=(
-            "Reaction construction and independent conserves() check pass",
-            "the selected oracle admits and returns every non-spectator species",
-        ),
-        postconditions=(
-            "a finite Estimate is returned",
-            "the output inventory exactly matches the approved contract",
-        ),
-        conserved=("atom inventory", "net charge"),
-        version="1",
-    )
+    model = _reaction_energy_model()
     solver = SolverSpec(
         name=getattr(oracle, "name", type(oracle).__qualname__),
         algorithm="existing SmartChem EnergyOracle",
@@ -1897,6 +2016,12 @@ def compile_reaction_energy(
         reproducibility="immutable CalculationSpec plus implementation digest",
     )
     calculation = CalculationSpec.from_oracle(oracle)
+    residue_transform = _build_reaction_residue_transform(reaction, model)
+    residual_left, residual_right = reaction_residue(reaction)
+    residual_reaction = Reaction(residual_left, residual_right)
+    residual_workset = tuple(
+        dict.fromkeys(residual_left.species + residual_right.species)
+    )
     claim_scope = ClaimScope(
         ClaimKind.LITERAL,
         "endpoint delta-E under the closed separable species model and named oracle",
@@ -1959,7 +2084,10 @@ def compile_reaction_energy(
         physical_ir=physical_ir,
         output_contract=output_contract or _default_output_contract(),
         equivalence_contract=equivalence_contract or EquivalenceContract(
-            relation="semantic equality of every requested scalar and evidence field",
+            relation=(
+                "exact equality of every reaction_energy ObservableValue field under "
+                "the approved raw Reaction and CalculationSpec"
+            ),
             numeric_tolerances=(),
             ordering="observable IDs sorted for comparison; source order retained in records",
             rng_policy="no RNG in this vertical",
@@ -1967,10 +2095,17 @@ def compile_reaction_energy(
                 "completed species estimates may be reused only under an identical "
                 "CalculationSpec and a newly approved resume plan"
             ),
+            allowed_provenance_differences=(
+                "one verified transform artifact may be added to the retained RunRecord",
+                "the oracle-domain obligation detail names the verified residual workset",
+                "plan, approval, run, artifact, and certificate identities bind the "
+                "retained transform record and therefore differ from a transform-free plan",
+                "timing and cache counters are execution provenance, not scientific outputs",
+            ),
         ),
         obligations=obligations,
     )
-    inspection = diagnose(reaction, (oracle,))
+    inspection = diagnose(residual_reaction, (oracle,))
     blockers = tuple(repr(obstruction) for obstruction in inspection.obstructions)
     unsupported = tuple(
         observable
@@ -1994,10 +2129,12 @@ def compile_reaction_energy(
         calculation=calculation,
         compiler_implementation_digest=_compiler_implementation_digest(),
         executor_id=_REACTION_EXECUTOR,
-        transforms=(),
+        transforms=((residue_transform,) if residue_transform is not None else ()),
         predicted_resources=(
-            ("species calls", str(len(set(reaction_residue(reaction)[0].species
-                                           + reaction_residue(reaction)[1].species)))),
+            (
+                "structural residual species calls",
+                str(len(residual_workset)),
+            ),
             ("wall/memory", "oracle-dependent; measured by RunRecord, not guessed"),
         ),
         blockers=blockers,
@@ -2082,6 +2219,7 @@ def _pre_result(
     obligation: ValidityObligation,
     reaction: Reaction,
     oracle: object,
+    residual_reaction: Reaction | None = None,
 ) -> ObligationResult:
     if obligation.evaluator_id == "smartchem.program/reaction-conserves-v1":
         passed = conserves(reaction)
@@ -2091,7 +2229,7 @@ def _pre_result(
             "conserves(reaction) returned true" if passed else "conserves(reaction) returned false",
         )
     if obligation.evaluator_id == "smartchem.program/oracle-domain-v1":
-        inspection = diagnose(reaction, (oracle,))
+        inspection = diagnose(residual_reaction or reaction, (oracle,))
         return _obligation(
             obligation,
             ObligationOutcome.PASS if inspection else ObligationOutcome.REFUSE,
@@ -2275,10 +2413,64 @@ def _execute_reaction_energy(
                 payload=payload,
             ))
 
+        runtime_model = _reaction_energy_model()
+        if (
+            plan.model != runtime_model
+            or plan.request.physical_ir.models != (runtime_model,)
+        ):
+            return ExecutionReport(
+                journal.invalid(
+                    "reaction executor model differs from the exact runtime-owned "
+                    "closed-separable endpoint-energy model"
+                ),
+                None,
+                None,
+            )
+        try:
+            left, right, species, residue_transform = _verified_reaction_residue(
+                reaction,
+                plan.model,
+                plan.transforms,
+            )
+        except ValueError as error:
+            return ExecutionReport(
+                journal.invalid(f"Class-A transform verification failed: {error}"),
+                None,
+                None,
+            )
+        residual_reaction = Reaction(left, right)
+        if residue_transform is not None:
+            journal.add_artifact(
+                Artifact(
+                    artifact_id="transform:reaction-residue-v1",
+                    kind="transform",
+                    content_digest=residue_transform.digest,
+                    complete=True,
+                    quarantined=False,
+                    detail=(
+                        f"Class A; eliminated={sum(count for _, count in residue_transform.eliminated_species)} "
+                        f"molecules; residual_distinct_species={len(species)}"
+                    ),
+                    payload=residue_transform,
+                )
+            )
+            journal.add_cache_state(
+                "verified Class-A reaction-residue-v1 spectator cancellation applied"
+            )
+        else:
+            journal.add_cache_state(
+                "Class-A reaction-residue-v1 not applicable: no shared spectator multiset"
+            )
+
         for obligation in plan.request.obligations:
             if obligation.stage is not ObligationStage.PRE:
                 continue
-            result = _pre_result(obligation, reaction, oracle)
+            result = _pre_result(
+                obligation,
+                reaction,
+                oracle,
+                residual_reaction,
+            )
             journal.add_obligation_result(result)
             if obligation.required and result.outcome is not ObligationOutcome.PASS:
                 record = journal.refused(
@@ -2288,8 +2480,6 @@ def _execute_reaction_energy(
                 return ExecutionReport(record, None, None)
 
         cached = CachingOracle(oracle)
-        left, right = reaction_residue(reaction)
-        species = tuple(dict.fromkeys(left.species + right.species))
         calls = 0
         for molecule in species:
             breach = _resource_wall(

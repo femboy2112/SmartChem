@@ -27,7 +27,7 @@ import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass, fields, is_dataclass, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Callable
@@ -887,7 +887,7 @@ def record_approval(
         plan_digest=plan.digest,
         scope=scope,
         approved_deltas=approved_deltas,
-        timestamp=timestamp or datetime.now(UTC).isoformat(),
+        timestamp=timestamp or datetime.now(timezone.utc).isoformat(),
         _token=_APPROVAL_RECORD_TOKEN,
     )
 
@@ -1154,7 +1154,7 @@ class RunJournal:
         if not isinstance(approved, ApprovedPlan):
             raise TypeError("RunJournal requires an ApprovedPlan")
         _nonempty(backend, "backend")
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         self.approved = approved
         self.path = Path(path) if path is not None else None
         self._record = RunRecord(
@@ -1183,7 +1183,7 @@ class RunJournal:
             raise RuntimeError(f"run is already terminal: {self._record.status.value}")
         following = replace(
             self._record,
-            updated_at=datetime.now(UTC).isoformat(),
+            updated_at=datetime.now(timezone.utc).isoformat(),
             **changes,
         )
         self._persist(following)

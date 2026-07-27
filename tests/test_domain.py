@@ -381,6 +381,7 @@ class TestTheElementAxisIsProvenAndNotMerelyDeclared:
         assert priced == len(_HEURISTIC_ROSTER), "every roster element must be priced"
 
     def test_the_pyscf_roster_is_still_what_was_measured(self):
+        pytest.importorskip("pyscf")
         from smartchem.oracle.pyscf_oracle import PySCFOracle
 
         assert PySCFOracle(basis="cc-pVDZ").domain.elements == _PYSCF_DZ_ROSTER
@@ -392,6 +393,7 @@ class TestTheElementAxisIsProvenAndNotMerelyDeclared:
         hypothetical mistake -- it is the one that crashed the bench on iodine (``ac68207``)
         and it is what turned a 23-element axis into a 25-element claim once already.
         """
+        pytest.importorskip("pyscf")
         from smartchem.oracle.pyscf_oracle import ATOM_SPIN, PySCFOracle
 
         domain = PySCFOracle(basis="cc-pVDZ").domain
@@ -401,6 +403,7 @@ class TestTheElementAxisIsProvenAndNotMerelyDeclared:
             assert not domain.admits(Molecule.atom(symbol))
 
     def test_symbols_no_table_declares_are_refused_by_both(self):
+        pytest.importorskip("pyscf")
         from smartchem.oracle.pyscf_oracle import PySCFOracle
 
         refused = 0
@@ -431,6 +434,7 @@ class TestTheMeetIsAValueAndBehavesLikeOne:
     """
 
     def _domains(self):
+        pytest.importorskip("pyscf")
         from smartchem.oracle.pyscf_oracle import PySCFOracle
 
         return (PhotonOracle(589.0).domain, PhotonOracle(532.0).domain,

@@ -211,6 +211,7 @@ class TestProvenance:
         ).nominal_accuracy_ev)
 
     def test_polyatomic_profile_declines_before_backend_work(self, monkeypatch):
+        pytest.importorskip("pyscf")
         oracle = PySCFOracle(
             "CCSD(T)", "cbs(TZ,QZ)", max_atoms=3,
             geometry_tier=("HF", "cc-pVDZ"),
@@ -411,11 +412,13 @@ class TestCostLimit:
         assert oracle.energy(Molecule.diatomic("H", "H")) is None
 
     def test_limit_is_inclusive(self, monkeypatch):
+        pytest.importorskip("pyscf")
         oracle = PySCFOracle("CCSD(T)", "cc-pVTZ", tight_d=False, max_atoms=2)
         monkeypatch.setattr(oracle, "_energy", lambda *_a, **_k: (-1.0, 0.0))
         assert oracle.energy(Molecule.diatomic("H", "H")) is not None
 
     def test_unknown_diatomic_zpe_is_not_silently_zero(self, monkeypatch):
+        pytest.importorskip("pyscf")
         oracle = PySCFOracle(
             "CCSD(T)", "cc-pVTZ", tight_d=False, max_atoms=2,
             optimize_geometry=True,
@@ -424,6 +427,7 @@ class TestCostLimit:
         assert oracle.energy(Molecule.diatomic("Br", "Br")) is None
 
     def test_internal_backend_defects_are_not_disguised_as_refusals(self, monkeypatch):
+        pytest.importorskip("pyscf")
         oracle = PySCFOracle("HF", "cc-pVDZ", max_atoms=1)
 
         def broken_backend(_symbol):

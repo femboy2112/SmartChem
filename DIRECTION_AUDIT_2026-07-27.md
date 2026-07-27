@@ -796,7 +796,7 @@ environment:
 
 ```text
 .venv/bin/python -m pytest -q -rs
-1089 passed, 14 skipped, 1 xfailed in 22.23s
+1089 passed, 14 skipped, 1 xfailed in 21.09s
 ```
 
 The 14 tests marked slow were not run and are not counted as passed. PySCF was installed, so

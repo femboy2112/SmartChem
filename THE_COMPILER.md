@@ -566,7 +566,7 @@ thing that blocks it is a fact about the design, not about the effort.
   above, which is now closed.
 
 * **Brick 5 — the derived-menu law against a NON-LINEAR invariant (§III). BUILT,
-  2026-07-27, `smartchem/rigidity.py`, `experiments/nonlinear_menu_rank.py`, 57 tests.
+  2026-07-27, `smartchem/rigidity.py`, `experiments/nonlinear_menu_rank.py`, 58 tests.
   The answer is NO, and the shape of the no is the deliverable.** §IV's worked example and
   Brick 0's module both close with the same disclaimer — *"a position constraint between
   two particles is not obviously linear in anything, and nothing here says it yields to the

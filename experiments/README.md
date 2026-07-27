@@ -48,6 +48,7 @@ harness at all.
 | `ledger_mutation_probe.py` | Does the test suite notice a wrong implementation? Writes plausible wrong versions of `ledger.py` and `stoichiometry.py` and counts survivors. Restores each target and **verifies byte-identity before exit**; a stale anchor is reported as an error, never as a survivor. |
 | `ledger_rank_blowup.py` | How long can a *legal* shepherding dialogue run? Measures rounds against `round_bound` as a function of one declared rank, to keep a termination argument from being read as a practical guard. Exact round counts; wall times are shape, not benchmark. |
 | `section_i_end_to_end.py` | Does `THE_COMPILER.md` §I's loop actually run? Four rounds on a real spec including one genuine refinement, every menu derived, ending in an object the category constructs. Backs Brick 4. Seconds, no PySCF. |
+| `compiled_h2_vertical.py` | Executes the first approved compiled chemistry vertical: preserved source -> typed request/plan -> approval -> CCSD(T)/cc-pVTZ H2 run -> obligations -> RunRecord/certificate. The durable result note is `RESULTS_compiled_h2_vertical.md`; the JSON journal is an ignored run artifact. |
 
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
 passes and keeps superseded numbers rather than overwriting them — `ao_storage_probe.py` and
@@ -58,10 +59,20 @@ explicit section on what they do *not* establish. `ledger_mutation_probe.py` and
 `section_i_end_to_end.py` exit non-zero when their own checks fail, so they can be run as
 gates rather than read as reports.
 
+The compiled H2 vertical is different from a research probe: it exercises the new approval and
+certificate seam at existing public coverage. Its durable receipt records the run's relevant
+source, plan, approval, calculation, result-artifact, and certificate digests, the one-run
+magnitude comparison with repository H2 D0, and what that comparison does **not** establish:
+`RESULTS_compiled_h2_vertical.md`.
+
 ## Running
 
 ```bash
 OMP_NUM_THREADS=1 .venv/bin/python experiments/polyatomic_cost_probe.py --species H2O
+
+# first approved compiled vertical; replace the journal path for a new run
+OMP_NUM_THREADS=1 .venv/bin/python experiments/compiled_h2_vertical.py \
+  --journal /tmp/smartchem-h2-run.json
 ```
 
 Pin the threads and check `uptime` first. This repo has already been burned once by timing

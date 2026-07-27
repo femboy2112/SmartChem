@@ -20,6 +20,7 @@ accuracy depend on method, species and conditions.
 
 ```
 Layer 3  Search & verification    pathway.py · store.py · bench.py
+Layer 3½ Compiled vertical seam   contracts.py · program.py · typed ledger bindings
 Layer 2½ Domain instances          cell.py                (chemistry meets circuit)
 Layer 2  Sequential core          category.py · thermo.py
 Layer 1  Energy oracle            oracle/base.py + heuristic.py + pyscf_oracle.py
@@ -39,6 +40,7 @@ Nothing in Layer 2 or 3 knows which oracle it is talking to. That is the whole d
 | `smartchem/data/reference.py` | 526 | Curated comparison data: intended diatomic D₀ rows, band gaps and geometries, plus selected 0 K formation enthalpies used to derive polyatomic references. Compact source labels do not prove every D₀/D₂₉₈ convention, and uncertainty fields are curation scales rather than one calibrated coverage model. Balanced reaction helpers validate stoichiometry; these rows are not universal ground truth. |
 | `smartchem/data/basis_tight_d.py` | 1114 | Read-only tight-d basis augmentation for second-row elements. Generated data, not hand-written. |
 | `smartchem/category.py` | 1092 | **The load-bearing layer.** `Molecule` (atoms + bond topology + charge + opaque internal state), `Config` (multiset of molecules), and `Reaction` (validated sequential morphism history). It provides category composition and identities, a commutative object product, and a left-first `scheduled_product`; the latter is not a parallel tensor. Canonicalisation is by symbol class, refined by Weisfeiler-Leman colour when that is not enough. Structural predicates include `is_bond_order_conserving`, `is_isodesmic`, and stoichiometric `is_regenerated` (`is_catalytic` is a compatibility alias, not a proof of catalysis). |
+| `smartchem/contracts.py`, `smartchem/program.py`, `smartchem/ledger.py` | current compiler seam | The narrow compiled-program path: immutable source/request/plan/approval/run/certificate records and typed shepherd bindings/validity obligations. It is exercised by `experiments/compiled_h2_vertical.py`; it is not yet a general language, planner, or multiphysics runtime. |
 | `smartchem/geometry.py` | 650 | **Seed → relax → check local curvature.** VSEPR-based candidate coordinates from the bond graph, Cartesian L-BFGS relaxation on a supplied surface, and Eckart-projected harmonic analysis. The module imports no quantum backend, but relaxation and Hessian construction still require backend data in real use. |
 | `smartchem/oracle/base.py` | 440 | The `EnergyOracle` protocol and `Estimate` — a value with an untyped reported scale and named signed correction sensitivities. Plus the guard that makes oracles decline what they cannot value. |
 | `smartchem/oracle/heuristic.py` | 184 | A guarded wrapper around the frozen original algebraic model with transitive table/source fingerprinting. It remains measurable only in its selected standard/vacuum environment and declines nonstandard environments rather than exporting that calibration. |
@@ -148,6 +150,12 @@ python -m smartchem.bench # declared-set errors, conditional MAE, refusals and t
 
 **`--runslow` matters.** The slow tests were silently broken for several sessions because
 the fast suite passed and nobody ran them. `tests/conftest.py` warns about exactly this.
+
+**Compiled-run convention.** An execution that is going to be cited must preserve its
+source-to-certificate receipt. The first instance, `2 H -> H2`, is recorded in
+`experiments/RESULTS_compiled_h2_vertical.md`; it was executed by explicit user directive on
+2026-07-27, not because the wider roadmap was silently assumed approved. Its raw RunRecord is
+an ignored journal, while the durable result note carries the relevant digests and limitations.
 
 ## Working rules this repo is held to
 

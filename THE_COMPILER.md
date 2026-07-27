@@ -7,8 +7,16 @@
 in `experiments/section_i_end_to_end.py`. The line this note opened with until today —
 *"nothing here is built"* — was true when it was written in July and had been false for a
 while before anyone deleted it, which is precisely the failure mode §VII exists to catch.
-What remains unbuilt is the conversational surface, deliberately and last; see the end of
-§VII for why.
+In the original Brick 0–5 sequence, the conversational surface remains unbuilt, deliberately
+and last; see the end of §VII for why. The later direction audit also leaves the general
+cross-domain compiler, planner, and runtime unbuilt.
+
+**Post-Brick implementation, 2026-07-27.** By explicit user directive, not by an assumed
+earlier ratification of this design note, the narrow contract seam and typed shepherd bindings
+were executed through one approved H2 chemistry vertical. That run demonstrates and tests only
+the source-to-certificate plumbing at existing CCSD(T)/cc-pVTZ diatomic coverage; it does not
+build the conversational surface, a general simulation runtime, or the cross-scale compiler.
+See `experiments/RESULTS_compiled_h2_vertical.md` and `DIRECTION_AUDIT_2026-07-27.md`.
 
 `THE_ORBITAL.md` opens with the rule that a claim without a test does not belong in it.
 This document is design, not specification, so it obeys a stricter version of that rule:
@@ -733,9 +741,29 @@ level of *structure*, already met by these two cases.
 
 **Case 3 — memoryless decay, nuclear → biological. Valid on a sub-theory only, and the
 assembly said which one.** `experiments/decay_analogy_probe.py`. The assembly is redundancy
-plus a quorum rule; it does not preserve memorylessness; therefore no organism-scale survival
-conclusion transports, while part-scale rate conclusions do. Naming the assembly converted
-"the metaphor is imperfect" into a decomposition with edges.
+plus a quorum rule; it does not preserve memorylessness. The probe **instantiates** constant
+part-level rate structure and derives its whole-level consequence inside that experimental
+interpretation; it does not certify that literal biological components inherit nuclear decay
+rates. Naming the assumed assembly converted "the metaphor is imperfect" into a decomposition
+with testable edges.
+
+That probe instantiates one target interpretation: fixed part-level hazard, with environment
+acting through the organism's redundancy/assembly. It is not the language's unique answer.
+The scientist may instead intend environment-dependent component hazards, whole-organism
+hazard, repair state, or a combination, calibrated under a declared exposure protocol. The
+compiler's job is to ask which structure is intended and type the answer, not to promote this
+probe's choice into a law. `DIRECTION_AUDIT_2026-07-27.md` §5.2 makes the extended
+human–isotope/LD50 case the canonical acceptance test.
+
+**Required counterweight — analogue black holes in water. UNBUILT.** Surface waves on a
+transcritical current can carry an effective horizon and reproduce a declared sub-theory of
+black-hole wave kinematics; they do not create literal gravity or an astrophysical black hole.
+This is the complementary transport case because much more of the map is mathematically
+identified before the dialogue begins. The compiler must still ask whether the scientist means
+a black-hole or white-hole orientation, wave blocking, scattering/mode conversion, a thermal
+relation, or another observable, and it must emit the literal/analogue casualty list. See
+`DIRECTION_AUDIT_2026-07-27.md` §5.3 and the measured
+[black-hole-oriented water-wave scattering experiment](https://doi.org/10.1103/PhysRevLett.124.141101).
 
 ### What this section does NOT claim
 
@@ -749,7 +777,10 @@ conclusion transports, while part-scale rate conclusions do. Naming the assembly
   (`category.py:610`, whose docstring already declares what it does *not* assert). In the
   survival model it is redundancy-plus-quorum. For an arbitrary spec **nobody has said what
   the assembly is**, and until that is answerable the §III derived-menu law binds here too:
-  a compiler that cannot identify the assembly must say so, and must not transport anyway.
+  a compiler that cannot identify the assembly must say so, and must not **assert or certify**
+  a transport. It may work with the scientist to formulate an explicit assembly hypothesis
+  and execute it as experimental, with the missing proof and calibration carried in the
+  result; refinability does not promote the transport to truth.
 
 That last bullet is the genuine research problem underneath this whole document. Everything
 else is engineering.
@@ -802,9 +833,18 @@ correction *of the compiler*, not of the scientist:
 2. **Find where it is right.** Relocated to the element scale — a human is a Poisson-sized
    bucket of isotopes with a quorum rule. The failure at the whole is what the *assembly*
    introduces (§VIII).
-3. **Push on the environment.** Nuclear λ moves by ~10⁻⁴ ordinarily and 10⁹ only under full
-   ionisation — i.e. only by *destroying structure*, never by tuning a rate. Which is exactly
-   how environmental insult acts on an organism: it lowers the redundancy, not the rate.
+3. **Push on the environment.** For selected alpha and beta-minus decays, ordinary thermal,
+   pressure, and chemical perturbations are usually tiny; the sensitivity is isotope- and
+   decay-mode-specific. Atomic-state changes can be qualitatively larger for electron-capture
+   or bound-state-beta channels. For fully stripped `187Re`, opening a bound-state beta
+   channel changes the lifetime from roughly 42 Gyr to 32.9 years, about `1.3 × 10⁹`
+   ([Bosch et al., 1996](https://doi.org/10.1103/PhysRevLett.77.5190)); this is a specific
+   changed-channel example, not a general environmental tuning law. Fully stripping suitable
+   nuclides can instead suppress electron-capture decay. The worked probe chose one biological
+   target interpretation: environmental insult lowers effective redundancy. That choice is
+   not universal; an experimental target model may put environment dependence in component
+   hazards, repair/redundancy state, whole-organism hazard, or more than one, provided the
+   scientist specifies and the certificate preserves the distinction.
 4. **Find what the intuition was actually for.** Not "humans are isotopes" but *the class of
    processes that present as memoryless and are not* — where the exponential is the **ruler,
    not the model**, and the deviation is a measurement of hidden structure. Verified by
@@ -891,15 +931,22 @@ there and none of them surviving here:
 ```
 memorylessness              discarded -- the founding axiom of the source
 half-life as a PROPERTY     discarded -- becomes a cohort statistic, not a parameter
-rate invariance             discarded -- nuclear lambda moves ~1e-4; human hazard by factors
-independent ensemble        discarded -- nuclei share no environment; people do
-daughter inherits a rate    discarded -- decomposition is Arrhenius and environment-coupled
+rate invariance             discarded -- source and target environmental sensitivities differ
+independent ensemble        discarded -- independent nuclei lack organism-scale feedback
+daughter inherits a rate    discarded -- biological decomposition has different mechanisms
 ```
+
+Independent nuclei do not share organism-scale physiology, repair, or feedback. This is not
+an assertion that atomic/electronic environments never affect nuclear decay: selected decay
+channels are sensitive to those environments, as the worked discussion above records.
 
 The scientist reads that and sees precisely what they no longer have. A refinement reported
 without its casualty list is a refinement pretending to be a confirmation.
 
 ---
 
-*Sections I–X are design. Nothing in this document is built. `THE_ORBITAL.md` describes what
-exists; this describes what is argued for.*
+*Sections I–X contain both design and the dated build record for Bricks 0 through 5. A narrow
+contract/typed-binding/H2 vertical was subsequently executed by explicit user directive; the
+conversational surface and general cross-scale simulation compiler remain unbuilt.
+`THE_ORBITAL.md` describes the established categorical core; the
+`DIRECTION_AUDIT_2026-07-27.md` records the proposed roadmap and executed narrow slice.*

@@ -5,6 +5,14 @@ balance, retains mechanism provenance, and lets benchmarked oracles decline unsu
 It does **not** yet implement a symmetric-monoidal/open-system physics core; parallel
 composition, catalysis, Gibbs thermodynamics, circuits and radiation remain explicit roadmap
 items. See [the 2026-07-20 multiphysics audit](AUDIT_2026-07-20.md).
+The [2026-07-27 direction audit](DIRECTION_AUDIT_2026-07-27.md) proposes the acceptance
+contract for the simulation language/compiler: maximize efficiency without silently reducing
+the scientist-approved output, while treating cross-domain and cross-scale experimental
+language as a first-class shepherding problem.
+
+On 2026-07-27, by explicit user directive rather than presumed earlier roadmap ratification,
+the first contract/typed-binding slice and its H2 chemistry vertical were executed. The result
+and strict scope are recorded in [the compiled H2 vertical receipt](experiments/RESULTS_compiled_h2_vertical.md).
 
 ```python
 from smartchem import Config, Molecule, Reaction, favourability
@@ -549,6 +557,14 @@ The closed sequential core, Store utilities, mechanism search, oracle interface 
 policy are tested but not complete for the stated multiphysics goal. The strict interchange
 xfail and audit roadmap make that boundary executable rather than implicit.
 
+**Compiled vertical status (2026-07-27).** The narrow source-to-certificate seam is now
+implemented and was executed once for `2 H -> H2` at existing fixed-geometry
+CCSD(T)/cc-pVTZ coverage: `delta-E = -4.427005898711 eV`. Its magnitude differs from the
+repository H2 D0 (`4.478 eV`) by `0.050994 eV`. This comparison is a single-run diagnostic,
+not a calibration, MAE, error bound, Gibbs/spontaneity result, or expanded chemistry claim;
+the original public-domain and validation limits still apply. See
+`experiments/RESULTS_compiled_h2_vertical.md`.
+
 **The legacy engine was retired on 2026-07-20.** Seven modules (`engine`, `comonad`,
 `lattice`, `monad`, `network`, `molecule`, `electrochem`) and twelve demo scripts were
 removed; the code path needed to reproduce the baseline was consolidated into
@@ -571,8 +587,12 @@ verdict, and both kinds are pinned by tests in `tests/test_findings.py`:
 The frozen baseline's exact MAE on every split is pinned, because the headline claim is a
 *comparison*, and a comparison is only checkable while both sides still run.
 
-Remaining: a tight-binding/xTB fast tier, broader polyatomic backend validation, explicit
-electronic states/conformers, and a documented bond-order policy per backend.
+Remaining midterm compiler work is the explicitly experimental cross-domain pair (water-wave
+analogue and human–isotope model), then the no-loss optimizer and only then the conversational
+surface.
+Chemistry expansion remains separate: a tight-binding/xTB fast tier, broader polyatomic
+backend validation, explicit electronic states/conformers, and a documented bond-order policy
+per backend.
 
 On the specification layer, the derived-menu law is now implemented for a linear invariant
 and measured against a quadratic one, with the negative result above. What is **not**

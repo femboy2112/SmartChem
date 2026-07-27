@@ -1,0 +1,2011 @@
+"""
+The first typed simulation-program seam and its narrow chemistry vertical.
+
+This is deliberately not a general simulator.  It makes the approval boundary and result
+lineage real for one already-supported calculation: a closed, conserving reaction's endpoint
+energy under one existing oracle.  The general records are present so later domains do not
+have to smuggle their meaning into strings, but only ``compile_reaction_energy`` and
+``execute`` currently form an executable vertical.
+
+The governing rule is that execution accepts an :class:`ApprovedPlan`, never a raw request.
+Changing an input, model, solver, calculation setting, obligation, output, tolerance, support,
+or retention rule changes the plan digest and invalidates the approval.  A timeout/resource
+wall becomes ``INCOMPLETE`` with a durable artifact inventory; it never becomes a successful
+calculation with fewer outputs.
+
+Python object capabilities are an API boundary, not a hostile-process security mechanism.
+The private construction token prevents ordinary accidental bypass; cryptographic authority
+and multi-user identity are outside this local library's present scope.
+"""
+from __future__ import annotations
+
+import json
+import hashlib
+import math
+import os
+import tempfile
+import time
+from collections import Counter
+from dataclasses import dataclass, fields, is_dataclass, replace
+from datetime import UTC, datetime
+from enum import Enum
+from pathlib import Path
+from typing import Callable
+from uuid import uuid4
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    resource = None
+
+from .category import Molecule, Reaction, conserves, reaction_residue
+from .contracts import (
+    ClaimKind,
+    Digestible,
+    EvidenceStatus,
+    ExecutionLane,
+    ObligationOutcome,
+    ObligationResult,
+    ObligationStage,
+    RunStatus,
+    ValidityObligation,
+    canonical_digest,
+    freeze_semantic_value,
+    oracle_implementation_digest,
+)
+from .diagnosis import diagnose
+from .oracle.base import Estimate
+from .oracle.caching import CachingOracle
+from .oracle.persistent import species_signature
+from .thermo import reaction_energy
+
+__all__ = [
+    "Adapter",
+    "Approval",
+    "ApprovedPlan",
+    "Artifact",
+    "AssemblyEvidence",
+    "AssemblyHypothesis",
+    "AssemblySpec",
+    "Boundary",
+    "CalculationSpec",
+    "CalibrationSpec",
+    "CandidatePlan",
+    "Certificate",
+    "ClaimScope",
+    "Component",
+    "Connection",
+    "EquivalenceContract",
+    "ExecutionReport",
+    "Identity",
+    "Invariant",
+    "ModelPatch",
+    "ModelSpec",
+    "ObservableRequest",
+    "ObservableValue",
+    "OutputContract",
+    "PhysicalIR",
+    "Port",
+    "Quantity",
+    "ResolvedProgram",
+    "Reservoir",
+    "RunJournal",
+    "RunRecord",
+    "RuntimeLimits",
+    "SimulationRequest",
+    "SimulationResult",
+    "SolverSpec",
+    "SourceProgram",
+    "SourceTheory",
+    "TargetIntent",
+    "Transform",
+    "TransportEvidence",
+    "TransportMap",
+    "approve",
+    "compile_reaction_energy",
+    "compile_session_reaction_energy",
+    "execute",
+    "record_approval",
+]
+
+
+def _nonempty(value: object, name: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be a non-empty string")
+
+
+def _strings(values: tuple[str, ...], name: str) -> None:
+    if not isinstance(values, tuple):
+        raise TypeError(f"{name} must be a tuple")
+    if any(not isinstance(value, str) or not value for value in values):
+        raise ValueError(f"{name} must contain non-empty strings")
+
+
+def _unique(values: tuple[object, ...], key: Callable[[object], object], name: str) -> None:
+    seen = [key(value) for value in values]
+    if len(seen) != len(set(seen)):
+        raise ValueError(f"{name} must be unique")
+
+
+def _compiler_implementation_digest() -> str:
+    """Bind approval to the executable compiler/runtime and shared contract semantics."""
+    digest = hashlib.sha256()
+    for path in (Path(__file__), Path(__file__).with_name("contracts.py")):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True)
+class Quantity(Digestible):
+    value: float
+    dimension: str
+    unit: str
+    frame: str = ""
+    uncertainty: float | None = None
+    source: str = ""
+
+    def __post_init__(self) -> None:
+        if isinstance(self.value, bool) or not isinstance(self.value, (int, float)):
+            raise TypeError("value must be a real scalar")
+        if not math.isfinite(float(self.value)):
+            raise ValueError("value must be finite")
+        object.__setattr__(self, "value", float(self.value))
+        _nonempty(self.dimension, "dimension")
+        _nonempty(self.unit, "unit")
+        if self.uncertainty is not None:
+            if isinstance(self.uncertainty, bool) or not isinstance(
+                self.uncertainty, (int, float)
+            ):
+                raise TypeError("uncertainty must be a real scalar or None")
+            if self.uncertainty < 0:
+                raise ValueError("uncertainty must be non-negative")
+            if not math.isfinite(float(self.uncertainty)):
+                raise ValueError("uncertainty must be finite")
+            object.__setattr__(self, "uncertainty", float(self.uncertainty))
+
+
+@dataclass(frozen=True)
+class Identity(Digestible):
+    stable_id: str
+    kind: str
+    state: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        _nonempty(self.stable_id, "stable_id")
+        _nonempty(self.kind, "kind")
+        if not isinstance(self.state, tuple):
+            raise TypeError("state must be a tuple of key/value pairs")
+        keys: list[str] = []
+        for item in self.state:
+            if not isinstance(item, tuple) or len(item) != 2:
+                raise TypeError("state must contain (key, value) pairs")
+            key, value = item
+            _nonempty(key, "state key")
+            if not isinstance(value, str):
+                raise TypeError("state values must be strings")
+            keys.append(key)
+        if len(keys) != len(set(keys)):
+            raise ValueError("state keys must be unique")
+
+
+@dataclass(frozen=True)
+class Port(Digestible):
+    port_id: str
+    component_id: str
+    variable: str
+    dimension: str
+    orientation: str
+    connection_type: str
+
+    def __post_init__(self) -> None:
+        for name in (
+            "port_id",
+            "component_id",
+            "variable",
+            "dimension",
+            "orientation",
+            "connection_type",
+        ):
+            _nonempty(getattr(self, name), name)
+
+
+@dataclass(frozen=True)
+class Component(Digestible):
+    component_id: str
+    kind: str
+    identity: Identity
+    ports: tuple[Port, ...] = ()
+    parameters: tuple[Quantity, ...] = ()
+
+    def __post_init__(self) -> None:
+        _nonempty(self.component_id, "component_id")
+        _nonempty(self.kind, "kind")
+        if not isinstance(self.identity, Identity):
+            raise TypeError("identity must be an Identity")
+        if not isinstance(self.ports, tuple) or not isinstance(self.parameters, tuple):
+            raise TypeError("ports and parameters must be tuples")
+        _unique(self.ports, lambda port: port.port_id, "component port IDs")
+        if any(port.component_id != self.component_id for port in self.ports):
+            raise ValueError("every port must name its owning component")
+
+
+@dataclass(frozen=True)
+class Connection(Digestible):
+    connection_id: str
+    port_ids: tuple[str, ...]
+    law: str
+
+    def __post_init__(self) -> None:
+        _nonempty(self.connection_id, "connection_id")
+        _strings(self.port_ids, "port_ids")
+        if len(self.port_ids) < 2:
+            raise ValueError("a connection requires at least two ports")
+        _nonempty(self.law, "law")
+
+
+@dataclass(frozen=True)
+class Reservoir(Digestible):
+    reservoir_id: str
+    exchanges: tuple[str, ...]
+    state: tuple[Quantity, ...] = ()
+
+    def __post_init__(self) -> None:
+        _nonempty(self.reservoir_id, "reservoir_id")
+        _strings(self.exchanges, "exchanges")
+        if not isinstance(self.state, tuple):
+            raise TypeError("state must be a tuple")
+
+
+@dataclass(frozen=True)
+class Boundary(Digestible):
+    boundary_id: str
+    target_ids: tuple[str, ...]
+    condition: str
+
+    def __post_init__(self) -> None:
+        _nonempty(self.boundary_id, "boundary_id")
+        _strings(self.target_ids, "target_ids")
+        _nonempty(self.condition, "condition")
+
+
+@dataclass(frozen=True)
+class SourceTheory(Digestible):
+    name: str
+    axioms: tuple[str, ...]
+    provenance: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _nonempty(self.name, "name")
+        _strings(self.axioms, "axioms")
+        _strings(self.provenance, "provenance")
+
+
+@dataclass(frozen=True)
+class TargetIntent(Digestible):
+    statement: str
+    target_scale: str
+    requested_meaning: str
+
+    def __post_init__(self) -> None:
+        for name in ("statement", "target_scale", "requested_meaning"):
+            _nonempty(getattr(self, name), name)
+
+
+@dataclass(frozen=True)
+class TransportMap(Digestible):
+    source_theory_digest: str
+    target_intent_digest: str
+    preserved: tuple[str, ...] = ()
+    modified: tuple[str, ...] = ()
+    discarded: tuple[str, ...] = ()
+    unknown: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _nonempty(self.source_theory_digest, "source_theory_digest")
+        _nonempty(self.target_intent_digest, "target_intent_digest")
+        for name in ("preserved", "modified", "discarded", "unknown"):
+            _strings(getattr(self, name), name)
+
+
+@dataclass(frozen=True)
+class ClaimScope(Digestible):
+    kind: ClaimKind
+    referent: str
+    exclusions: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ClaimKind):
+            raise TypeError("kind must be a ClaimKind")
+        _nonempty(self.referent, "referent")
+        _strings(self.exclusions, "exclusions")
+
+
+@dataclass(frozen=True)
+class AssemblySpec(Digestible):
+    name: str
+    granularity: str
+    rules: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _nonempty(self.name, "name")
+        _nonempty(self.granularity, "granularity")
+        _strings(self.rules, "rules")
+
+
+@dataclass(frozen=True)
+class AssemblyHypothesis(Digestible):
+    spec: AssemblySpec
+    missing_evidence: tuple[str, ...]
+    falsifiers: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.spec, AssemblySpec):
+            raise TypeError("spec must be an AssemblySpec")
+        _strings(self.missing_evidence, "missing_evidence")
+        _strings(self.falsifiers, "falsifiers")
+
+
+@dataclass(frozen=True)
+class TransportEvidence(Digestible):
+    transport_digest: str
+    regime_predicates: tuple[str, ...]
+    evidence: tuple[str, ...]
+    remaining_obligations: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _nonempty(self.transport_digest, "transport_digest")
+        for name in ("regime_predicates", "evidence", "remaining_obligations"):
+            _strings(getattr(self, name), name)
+
+
+@dataclass(frozen=True)
+class AssemblyEvidence(Digestible):
+    assembly_digest: str
+    evidence: tuple[str, ...]
+    remaining_obligations: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _nonempty(self.assembly_digest, "assembly_digest")
+        _strings(self.evidence, "evidence")
+        _strings(self.remaining_obligations, "remaining_obligations")
+
+
+@dataclass(frozen=True)
+class ModelPatch(Digestible):
+    name: str
+    changes: tuple[str, ...]
+    casualties: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _nonempty(self.name, "name")
+        _strings(self.changes, "changes")
+        _strings(self.casualties, "casualties")
+
+
+@dataclass(frozen=True)
+class CalibrationSpec(Digestible):
+    population: str
+    protocol: str
+    endpoints: tuple[str, ...]
+    identifiability: str
+    validation_split: str
+    uncertainty_treatment: str
+
+    def __post_init__(self) -> None:
+        for name in (
+            "population",
+            "protocol",
+            "identifiability",
+            "validation_split",
+            "uncertainty_treatment",
+        ):
+            _nonempty(getattr(self, name), name)
+        _strings(self.endpoints, "endpoints")
+
+
+@dataclass(frozen=True)
+class Invariant(Digestible):
+    name: str
+    statement: str
+    scope: str
+    checker_id: str
+
+    def __post_init__(self) -> None:
+        for name in ("name", "statement", "scope", "checker_id"):
+            _nonempty(getattr(self, name), name)
+
+
+@dataclass(frozen=True)
+class ModelSpec(Digestible):
+    name: str
+    equations: tuple[str, ...]
+    assumptions: tuple[str, ...]
+    valid_if: tuple[str, ...]
+    postconditions: tuple[str, ...]
+    conserved: tuple[str, ...]
+    version: str
+
+    def __post_init__(self) -> None:
+        _nonempty(self.name, "name")
+        _nonempty(self.version, "version")
+        for name in ("equations", "assumptions", "valid_if", "postconditions", "conserved"):
+            _strings(getattr(self, name), name)
+
+
+@dataclass(frozen=True)
+class SolverSpec(Digestible):
+    name: str
+    algorithm: str
+    version: str
+    tolerances: tuple[tuple[str, float], ...] = ()
+    stopping_policy: str = "backend-declared"
+    reproducibility: str = "backend-declared"
+
+    def __post_init__(self) -> None:
+        for name in ("name", "algorithm", "version", "stopping_policy", "reproducibility"):
+            _nonempty(getattr(self, name), name)
+        if not isinstance(self.tolerances, tuple):
+            raise TypeError("tolerances must be a tuple")
+        names: list[str] = []
+        for item in self.tolerances:
+            if not isinstance(item, tuple) or len(item) != 2:
+                raise TypeError("tolerances must contain (name, value) pairs")
+            name, value = item
+            _nonempty(name, "tolerance name")
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or value < 0
+            ):
+                raise ValueError("tolerances must be non-negative real numbers")
+            names.append(name)
+        if len(names) != len(set(names)):
+            raise ValueError("tolerance names must be unique")
+
+
+@dataclass(frozen=True)
+class CalculationSpec(Digestible):
+    engine_class: str
+    engine_name: str
+    settings: object
+    implementation_digest: str
+
+    def __post_init__(self) -> None:
+        for name in ("engine_class", "engine_name", "implementation_digest"):
+            _nonempty(getattr(self, name), name)
+        # Re-run the canonical encoder at the boundary so a hand-built spec cannot smuggle
+        # a mutable/unsupported object into an approval identity.
+        canonical_digest(self.settings)
+
+    @classmethod
+    def from_oracle(cls, oracle: object) -> "CalculationSpec":
+        provider = getattr(oracle, "calculation_spec", None)
+        if not callable(provider):
+            raise TypeError("an executable oracle must expose calculation_spec()")
+        settings = freeze_semantic_value(provider())
+        return cls(
+            engine_class=f"{type(oracle).__module__}.{type(oracle).__qualname__}",
+            engine_name=getattr(oracle, "name", type(oracle).__qualname__),
+            settings=settings,
+            implementation_digest=oracle_implementation_digest(oracle),
+        )
+
+
+@dataclass(frozen=True)
+class Adapter(Digestible):
+    name: str
+    source_representation: str
+    target_representation: str
+    exchanged_observables: tuple[str, ...]
+    validity: tuple[str, ...]
+    discrepancy: str
+
+    def __post_init__(self) -> None:
+        for name in ("name", "source_representation", "target_representation", "discrepancy"):
+            _nonempty(getattr(self, name), name)
+        _strings(self.exchanged_observables, "exchanged_observables")
+        _strings(self.validity, "validity")
+
+
+@dataclass(frozen=True)
+class ObservableRequest(Digestible):
+    observable_id: str
+    kind: str
+    unit: str
+    support: str
+    resolution: str
+    precision: str
+    coverage: str
+    diagnostics: tuple[str, ...] = ()
+    retention: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for name in (
+            "observable_id",
+            "kind",
+            "unit",
+            "support",
+            "resolution",
+            "precision",
+            "coverage",
+        ):
+            _nonempty(getattr(self, name), name)
+        _strings(self.diagnostics, "diagnostics")
+        _strings(self.retention, "retention")
+
+
+@dataclass(frozen=True)
+class OutputContract(Digestible):
+    observables: tuple[ObservableRequest, ...]
+    diagnostics: tuple[str, ...]
+    retention: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.observables, tuple) or not self.observables:
+            raise ValueError("observables must be a non-empty tuple")
+        if any(not isinstance(item, ObservableRequest) for item in self.observables):
+            raise TypeError("observables must contain ObservableRequest values")
+        _unique(self.observables, lambda item: item.observable_id, "observable IDs")
+        _strings(self.diagnostics, "diagnostics")
+        _strings(self.retention, "retention")
+
+    @property
+    def observable_ids(self) -> tuple[str, ...]:
+        return tuple(item.observable_id for item in self.observables)
+
+
+@dataclass(frozen=True)
+class EquivalenceContract(Digestible):
+    relation: str
+    numeric_tolerances: tuple[tuple[str, float], ...]
+    ordering: str
+    rng_policy: str
+    checkpoint_policy: str
+    allowed_provenance_differences: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for name in ("relation", "ordering", "rng_policy", "checkpoint_policy"):
+            _nonempty(getattr(self, name), name)
+        SolverSpec(
+            "equivalence-validation",
+            "none",
+            "1",
+            self.numeric_tolerances,
+        )
+        _strings(self.allowed_provenance_differences, "allowed_provenance_differences")
+
+
+@dataclass(frozen=True)
+class Transform(Digestible):
+    name: str
+    exactness_class: str
+    input_model_digest: str
+    output_model_digest: str
+    applicability: tuple[str, ...]
+    evidence: tuple[str, ...]
+    casualties: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name in (
+            "name",
+            "exactness_class",
+            "input_model_digest",
+            "output_model_digest",
+        ):
+            _nonempty(getattr(self, name), name)
+        for name in ("applicability", "evidence", "casualties"):
+            _strings(getattr(self, name), name)
+
+
+@dataclass(frozen=True)
+class SourceProgram(Digestible):
+    text: str
+    spans: tuple[str, ...] = ()
+    scientist: str = "unspecified"
+
+    def __post_init__(self) -> None:
+        _nonempty(self.text, "text")
+        _strings(self.spans, "spans")
+        _nonempty(self.scientist, "scientist")
+
+
+@dataclass(frozen=True)
+class ResolvedProgram(Digestible):
+    source_digest: str
+    reaction: Reaction
+    target: TargetIntent
+    source_theory: SourceTheory
+    shepherd_session_digest: str
+
+    def __post_init__(self) -> None:
+        _nonempty(self.source_digest, "source_digest")
+        _nonempty(self.shepherd_session_digest, "shepherd_session_digest")
+        if not isinstance(self.reaction, Reaction):
+            raise TypeError("reaction must be a Reaction")
+
+
+@dataclass(frozen=True)
+class PhysicalIR(Digestible):
+    resolved_digest: str
+    components: tuple[Component, ...]
+    connections: tuple[Connection, ...]
+    reservoirs: tuple[Reservoir, ...]
+    boundaries: tuple[Boundary, ...]
+    models: tuple[ModelSpec, ...]
+    adapters: tuple[Adapter, ...]
+    invariants: tuple[Invariant, ...]
+    transport_maps: tuple[TransportMap, ...]
+    transport_evidence: tuple[TransportEvidence, ...]
+    assemblies: tuple[AssemblySpec | AssemblyHypothesis, ...]
+    assembly_evidence: tuple[AssemblyEvidence, ...]
+    claim_scope: ClaimScope
+    evidence_status: EvidenceStatus
+
+    def __post_init__(self) -> None:
+        _nonempty(self.resolved_digest, "resolved_digest")
+        for name in (
+            "components",
+            "connections",
+            "reservoirs",
+            "boundaries",
+            "models",
+            "adapters",
+            "invariants",
+            "transport_maps",
+            "transport_evidence",
+            "assemblies",
+            "assembly_evidence",
+        ):
+            if not isinstance(getattr(self, name), tuple):
+                raise TypeError(f"{name} must be a tuple")
+        if not self.models:
+            raise ValueError("PhysicalIR requires at least one model")
+        if not isinstance(self.claim_scope, ClaimScope):
+            raise TypeError("claim_scope must be a ClaimScope")
+        if not isinstance(self.evidence_status, EvidenceStatus):
+            raise TypeError("evidence_status must be an EvidenceStatus")
+        if (
+            any(isinstance(assembly, AssemblyHypothesis) for assembly in self.assemblies)
+            and self.evidence_status
+            not in (
+                EvidenceStatus.EXPERIMENTAL,
+                EvidenceStatus.STRUCTURAL_TOY,
+                EvidenceStatus.UNSUPPORTED,
+            )
+        ):
+            raise ValueError(
+                "an AssemblyHypothesis carries missing evidence and cannot have calibrated "
+                "or established evidence status"
+            )
+
+
+@dataclass(frozen=True)
+class SimulationRequest(Digestible):
+    source: SourceProgram
+    resolved: ResolvedProgram
+    physical_ir: PhysicalIR
+    output_contract: OutputContract
+    equivalence_contract: EquivalenceContract
+    obligations: tuple[ValidityObligation, ...]
+
+    def __post_init__(self) -> None:
+        if self.resolved.source_digest != self.source.digest:
+            raise ValueError("resolved program is not bound to this source")
+        if self.physical_ir.resolved_digest != self.resolved.digest:
+            raise ValueError("PhysicalIR is not bound to this resolved program")
+        if not isinstance(self.obligations, tuple):
+            raise TypeError("obligations must be a tuple")
+        if any(not isinstance(item, ValidityObligation) for item in self.obligations):
+            raise TypeError("obligations must contain ValidityObligation values")
+        _unique(self.obligations, lambda item: item.name, "obligation names")
+
+
+@dataclass(frozen=True)
+class RuntimeLimits(Digestible):
+    """Approved hard stops.
+
+    ``wall_seconds`` is elapsed time from durable run creation. ``memory_bytes`` is an
+    absolute process peak-RSS ceiling (not an incremental allocation budget).  Both are
+    checked before and after each indivisible oracle call.  The current oracle protocol has
+    no cancellation hook, so a single call may cross a limit before the runtime can observe
+    it; its completed artifact is then retained and quarantined in an ``INCOMPLETE`` run.
+    """
+
+    max_species_calls: int | None = None
+    wall_seconds: float | None = None
+    memory_bytes: int | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("max_species_calls", "memory_bytes"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError(f"{name} must be a non-negative integer or None")
+        if self.wall_seconds is not None and (
+            isinstance(self.wall_seconds, bool)
+            or not isinstance(self.wall_seconds, (int, float))
+            or not math.isfinite(float(self.wall_seconds))
+            or self.wall_seconds < 0
+        ):
+            raise ValueError("wall_seconds must be a non-negative real number or None")
+
+
+@dataclass(frozen=True)
+class CandidatePlan(Digestible):
+    request: SimulationRequest
+    model: ModelSpec
+    solver: SolverSpec
+    calculation: CalculationSpec
+    compiler_implementation_digest: str
+    executor_id: str
+    transforms: tuple[Transform, ...]
+    predicted_resources: tuple[tuple[str, str], ...]
+    blockers: tuple[str, ...]
+    execution_lane: ExecutionLane
+    limits: RuntimeLimits
+
+    def __post_init__(self) -> None:
+        if self.model not in self.request.physical_ir.models:
+            raise ValueError("selected model is not present in the PhysicalIR")
+        _nonempty(self.compiler_implementation_digest, "compiler_implementation_digest")
+        _nonempty(self.executor_id, "executor_id")
+        if self.executor_id != "smartchem.program/reaction-energy-v1":
+            raise ValueError(f"no runtime is registered for executor_id {self.executor_id!r}")
+        if not isinstance(self.transforms, tuple):
+            raise TypeError("transforms must be a tuple")
+        if not isinstance(self.predicted_resources, tuple):
+            raise TypeError("predicted_resources must be a tuple")
+        resource_names: list[str] = []
+        for item in self.predicted_resources:
+            if not isinstance(item, tuple) or len(item) != 2:
+                raise TypeError("predicted_resources must contain (name, estimate) pairs")
+            name, estimate = item
+            _nonempty(name, "resource name")
+            _nonempty(estimate, "resource estimate")
+            resource_names.append(name)
+        if len(resource_names) != len(set(resource_names)):
+            raise ValueError("predicted resource names must be unique")
+        _strings(self.blockers, "blockers")
+        unsupported = sorted(
+            set(self.request.output_contract.observable_ids)
+            - {"reaction_energy"}
+        )
+        if unsupported and not self.blockers:
+            raise ValueError(
+                "candidate plan requests unsupported observables without a planning blocker: "
+                + ", ".join(unsupported)
+            )
+        if not isinstance(self.execution_lane, ExecutionLane):
+            raise TypeError("execution_lane must be an ExecutionLane")
+        if (
+            self.execution_lane is ExecutionLane.CERTIFIED
+            and self.request.physical_ir.evidence_status
+            in (EvidenceStatus.EXPERIMENTAL, EvidenceStatus.STRUCTURAL_TOY,
+                EvidenceStatus.UNSUPPORTED)
+        ):
+            raise ValueError("uncertified evidence cannot enter the certified execution lane")
+        if self.execution_lane is ExecutionLane.CERTIFIED:
+            ir = self.request.physical_ir
+            if any(isinstance(item, AssemblyHypothesis) for item in ir.assemblies):
+                raise ValueError("an AssemblyHypothesis cannot enter the certified lane")
+            transport_evidence = {
+                item.transport_digest: item for item in ir.transport_evidence
+            }
+            assembly_evidence = {
+                item.assembly_digest: item for item in ir.assembly_evidence
+            }
+            missing_transport = [
+                item.digest for item in ir.transport_maps
+                if item.digest not in transport_evidence
+                or transport_evidence[item.digest].remaining_obligations
+            ]
+            missing_assembly = [
+                item.digest for item in ir.assemblies
+                if item.digest not in assembly_evidence
+                or assembly_evidence[item.digest].remaining_obligations
+            ]
+            if missing_transport or missing_assembly:
+                raise ValueError(
+                    "certified execution requires closed transport and assembly evidence; "
+                    f"transport={missing_transport}, assembly={missing_assembly}"
+                )
+
+
+_APPROVAL_RECORD_TOKEN = object()
+
+
+@dataclass(frozen=True, init=False)
+class Approval(Digestible):
+    principal: str
+    plan_digest: str
+    scope: str
+    approved_deltas: tuple[str, ...]
+    timestamp: str
+
+    def __init__(
+        self,
+        principal: str,
+        plan_digest: str,
+        scope: str,
+        approved_deltas: tuple[str, ...],
+        timestamp: str,
+        *,
+        _token: object | None = None,
+    ) -> None:
+        if _token is not _APPROVAL_RECORD_TOKEN:
+            raise PermissionError("Approval can only be created by record_approval()")
+        object.__setattr__(self, "principal", principal)
+        object.__setattr__(self, "plan_digest", plan_digest)
+        object.__setattr__(self, "scope", scope)
+        object.__setattr__(self, "approved_deltas", approved_deltas)
+        object.__setattr__(self, "timestamp", timestamp)
+        for name in ("principal", "plan_digest", "scope", "timestamp"):
+            _nonempty(getattr(self, name), name)
+        _strings(self.approved_deltas, "approved_deltas")
+        try:
+            parsed = datetime.fromisoformat(self.timestamp)
+        except ValueError as error:
+            raise ValueError("timestamp must be ISO-8601") from error
+        if parsed.tzinfo is None:
+            raise ValueError("timestamp must include a timezone")
+
+
+_APPROVAL_TOKEN = object()
+
+
+@dataclass(frozen=True, init=False)
+class ApprovedPlan(Digestible):
+    plan: CandidatePlan
+    approval: Approval
+
+    def __init__(
+        self,
+        plan: CandidatePlan,
+        approval: Approval,
+        *,
+        _token: object | None = None,
+    ) -> None:
+        if _token is not _APPROVAL_TOKEN:
+            raise PermissionError("ApprovedPlan can only be created by approve()")
+        object.__setattr__(self, "plan", plan)
+        object.__setattr__(self, "approval", approval)
+
+
+def record_approval(
+    plan: CandidatePlan,
+    principal: str,
+    scope: str,
+    *,
+    approved_deltas: tuple[str, ...] = (),
+    timestamp: str | None = None,
+) -> Approval:
+    """Record explicit authority for exactly this candidate-plan digest."""
+    return Approval(
+        principal=principal,
+        plan_digest=plan.digest,
+        scope=scope,
+        approved_deltas=approved_deltas,
+        timestamp=timestamp or datetime.now(UTC).isoformat(),
+        _token=_APPROVAL_RECORD_TOKEN,
+    )
+
+
+def approve(plan: CandidatePlan, approval: Approval) -> ApprovedPlan:
+    if plan.blockers:
+        raise ValueError("a candidate with blockers cannot be approved: " + "; ".join(plan.blockers))
+    if approval.plan_digest != plan.digest:
+        raise ValueError("approval does not name this candidate-plan digest")
+    return ApprovedPlan(plan, approval, _token=_APPROVAL_TOKEN)
+
+
+@dataclass(frozen=True)
+class Artifact(Digestible):
+    artifact_id: str
+    kind: str
+    content_digest: str
+    complete: bool
+    quarantined: bool
+    path: str = ""
+    detail: str = ""
+    payload: object | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("artifact_id", "kind", "content_digest"):
+            _nonempty(getattr(self, name), name)
+        if type(self.complete) is not bool or type(self.quarantined) is not bool:
+            raise TypeError("complete and quarantined must be booleans")
+        if self.payload is not None:
+            if canonical_digest(self.payload) != self.content_digest:
+                raise ValueError("content_digest must identify the retained artifact payload")
+
+
+@dataclass(frozen=True)
+class RunRecord(Digestible):
+    run_id: str
+    plan_digest: str
+    approval_digest: str
+    status: RunStatus
+    started_at: str
+    updated_at: str
+    backend: str
+    cache_state: tuple[str, ...]
+    artifacts: tuple[Artifact, ...]
+    checkpoints: tuple[Artifact, ...]
+    obligation_results: tuple[ObligationResult, ...]
+    diagnostics: tuple[str, ...]
+    failures: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name in (
+            "run_id",
+            "plan_digest",
+            "approval_digest",
+            "started_at",
+            "updated_at",
+            "backend",
+        ):
+            _nonempty(getattr(self, name), name)
+        for name in ("cache_state", "diagnostics", "failures"):
+            _strings(getattr(self, name), name)
+        for name in ("artifacts", "checkpoints", "obligation_results"):
+            if not isinstance(getattr(self, name), tuple):
+                raise TypeError(f"{name} must be a tuple")
+        if not isinstance(self.status, RunStatus):
+            raise TypeError("status must be a RunStatus")
+        result_digests = [
+            result.obligation_digest for result in self.obligation_results
+        ]
+        if len(result_digests) != len(set(result_digests)):
+            raise ValueError("a RunRecord cannot contain duplicate obligation results")
+
+    @property
+    def output_inventory(self) -> tuple[str, ...]:
+        return tuple(sorted(
+            artifact.artifact_id.removeprefix("observable:")
+            for artifact in self.artifacts
+            if artifact.kind == "observable" and artifact.complete and not artifact.quarantined
+        ))
+
+
+@dataclass(frozen=True)
+class ObservableValue(Digestible):
+    observable_id: str
+    value: float
+    unit: str
+    uncertainty: float
+    method: str
+    support: str
+    seconds: float
+    notes: str
+    systematic_ev: float
+    methods: tuple[str, ...]
+    systematic_terms: tuple[tuple[str, float], ...]
+
+    def __post_init__(self) -> None:
+        for name in ("observable_id", "unit", "method", "support"):
+            _nonempty(getattr(self, name), name)
+        for name in ("value", "uncertainty", "seconds", "systematic_ev"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{name} must be a real number")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"{name} must be finite")
+            object.__setattr__(self, name, float(value))
+        if self.uncertainty < 0 or self.seconds < 0:
+            raise ValueError("uncertainty and seconds must be non-negative")
+        if not isinstance(self.notes, str):
+            raise TypeError("notes must be a string")
+        _strings(self.methods, "methods")
+        if not isinstance(self.systematic_terms, tuple):
+            raise TypeError("systematic_terms must be a tuple")
+        for item in self.systematic_terms:
+            if not isinstance(item, tuple) or len(item) != 2:
+                raise TypeError("systematic_terms must contain (source, coefficient) pairs")
+            source, coefficient = item
+            _nonempty(source, "systematic source")
+            if (
+                isinstance(coefficient, bool)
+                or not isinstance(coefficient, (int, float))
+                or not math.isfinite(float(coefficient))
+            ):
+                raise ValueError("systematic coefficients must be finite real numbers")
+
+
+@dataclass(frozen=True)
+class Certificate(Digestible):
+    source_digest: str
+    request_digest: str
+    plan_digest: str
+    approval_digest: str
+    calculation_digest: str
+    compiler_implementation_digest: str
+    run_id: str
+    run_status: RunStatus
+    claim_scope: ClaimScope
+    evidence_status: EvidenceStatus
+    validity_results: tuple[ObligationResult, ...]
+    output_inventory: tuple[str, ...]
+    casualties: tuple[str, ...]
+    omissions: tuple[str, ...]
+    failures: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name in (
+            "source_digest",
+            "request_digest",
+            "plan_digest",
+            "approval_digest",
+            "calculation_digest",
+            "compiler_implementation_digest",
+            "run_id",
+        ):
+            _nonempty(getattr(self, name), name)
+        for name in ("output_inventory", "casualties", "omissions", "failures"):
+            _strings(getattr(self, name), name)
+        if not isinstance(self.validity_results, tuple) or any(
+            not isinstance(result, ObligationResult)
+            for result in self.validity_results
+        ):
+            raise TypeError(
+                "validity_results must be a tuple of ObligationResult values"
+            )
+        _unique(
+            self.validity_results,
+            lambda result: result.obligation_digest,
+            "certificate obligation results",
+        )
+        if not isinstance(self.run_status, RunStatus):
+            raise TypeError("run_status must be a RunStatus")
+        if not isinstance(self.claim_scope, ClaimScope):
+            raise TypeError("claim_scope must be a ClaimScope")
+        if not isinstance(self.evidence_status, EvidenceStatus):
+            raise TypeError("evidence_status must be an EvidenceStatus")
+
+
+@dataclass(frozen=True)
+class SimulationResult(Digestible):
+    run_id: str
+    values: tuple[ObservableValue, ...]
+    certificate_digest: str
+
+    def __post_init__(self) -> None:
+        _nonempty(self.run_id, "run_id")
+        _nonempty(self.certificate_digest, "certificate_digest")
+        if (
+            not isinstance(self.values, tuple)
+            or not self.values
+            or any(not isinstance(value, ObservableValue) for value in self.values)
+        ):
+            raise ValueError(
+                "values must be a non-empty tuple of ObservableValue values"
+            )
+        _unique(self.values, lambda item: item.observable_id, "result observable IDs")
+
+
+@dataclass(frozen=True)
+class ExecutionReport(Digestible):
+    record: RunRecord
+    result: SimulationResult | None
+    certificate: Certificate | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.record, RunRecord):
+            raise TypeError("record must be a RunRecord")
+        if self.record.status is RunStatus.COMPLETE:
+            if self.result is None or self.certificate is None:
+                raise ValueError("a complete run requires a result and certificate")
+            if self.result.run_id != self.record.run_id:
+                raise ValueError("result run_id does not name the RunRecord")
+            if self.certificate.run_id != self.record.run_id:
+                raise ValueError("certificate run_id does not name the RunRecord")
+            if self.certificate.run_status is not self.record.status:
+                raise ValueError("certificate status does not match the RunRecord")
+            if self.result.certificate_digest != self.certificate.digest:
+                raise ValueError("result does not name the supplied certificate")
+        elif self.result is not None:
+            raise ValueError("a non-complete run cannot carry a SimulationResult")
+        elif self.certificate is not None:
+            raise ValueError("a non-complete run cannot carry a Certificate")
+
+
+def _plain(value: object) -> object:
+    """Human-readable JSON form for durable run journals; digests use canonical_payload."""
+    if isinstance(value, Enum):
+        return value.value
+    if is_dataclass(value) and not isinstance(value, type):
+        return {
+            field.name: _plain(getattr(value, field.name))
+            for field in fields(value)
+            if not field.name.startswith("_")
+        }
+    if isinstance(value, tuple):
+        return [_plain(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted((_plain(item) for item in value), key=repr)
+    if isinstance(value, dict):
+        if any(not isinstance(key, str) for key in value):
+            raise TypeError("run journal mapping keys must be strings")
+        return {key: _plain(value[key]) for key in sorted(value)}
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    raise TypeError(f"run journal cannot serialize {type(value).__qualname__}")
+
+
+class RunJournal:
+    """
+    Durable lifecycle tracker for one approved calculation.
+
+    Every state transition atomically replaces the JSON record.  A completed species result
+    may be reused by an independently approved resume plan through the ordinary calculation
+    cache, but artifacts from an incomplete run remain quarantined and are never presented as
+    the requested simulation result.
+    """
+
+    def __init__(
+        self,
+        approved: ApprovedPlan,
+        *,
+        backend: str,
+        path: str | os.PathLike[str] | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        if not isinstance(approved, ApprovedPlan):
+            raise TypeError("RunJournal requires an ApprovedPlan")
+        _nonempty(backend, "backend")
+        now = datetime.now(UTC).isoformat()
+        self.approved = approved
+        self.path = Path(path) if path is not None else None
+        self._record = RunRecord(
+            run_id=run_id or uuid4().hex,
+            plan_digest=approved.plan.digest,
+            approval_digest=approved.approval.digest,
+            status=RunStatus.RUNNING,
+            started_at=now,
+            updated_at=now,
+            backend=backend,
+            cache_state=(),
+            artifacts=(),
+            checkpoints=(),
+            obligation_results=(),
+            diagnostics=(),
+            failures=(),
+        )
+        self._persist()
+
+    @property
+    def record(self) -> RunRecord:
+        return self._record
+
+    def _transition(self, **changes: object) -> RunRecord:
+        if self._record.status is not RunStatus.RUNNING:
+            raise RuntimeError(f"run is already terminal: {self._record.status.value}")
+        following = replace(
+            self._record,
+            updated_at=datetime.now(UTC).isoformat(),
+            **changes,
+        )
+        self._persist(following)
+        self._record = following
+        return self._record
+
+    def add_artifact(self, artifact: Artifact) -> RunRecord:
+        if any(existing.artifact_id == artifact.artifact_id for existing in self._record.artifacts):
+            raise ValueError(f"artifact {artifact.artifact_id!r} already exists")
+        return self._transition(artifacts=self._record.artifacts + (artifact,))
+
+    def add_checkpoint(self, artifact: Artifact) -> RunRecord:
+        if artifact.kind != "checkpoint":
+            raise ValueError("checkpoint artifacts must have kind='checkpoint'")
+        return self._transition(checkpoints=self._record.checkpoints + (artifact,))
+
+    def add_obligation_result(self, result: ObligationResult) -> RunRecord:
+        declared = {
+            obligation.digest
+            for obligation in self.approved.plan.request.obligations
+        }
+        if result.obligation_digest not in declared:
+            raise ValueError("obligation result is not declared by the approved request")
+        if any(
+            existing.obligation_digest == result.obligation_digest
+            for existing in self._record.obligation_results
+        ):
+            raise ValueError(
+                "an obligation may have exactly one result in a run; contradictory or "
+                "duplicate verdicts require a new run"
+            )
+        return self._transition(
+            obligation_results=self._record.obligation_results + (result,)
+        )
+
+    def add_cache_state(self, detail: str) -> RunRecord:
+        _nonempty(detail, "cache state")
+        return self._transition(cache_state=self._record.cache_state + (detail,))
+
+    def add_diagnostic(self, detail: str) -> RunRecord:
+        _nonempty(detail, "diagnostic")
+        return self._transition(diagnostics=self._record.diagnostics + (detail,))
+
+    def incomplete(self, reason: str) -> RunRecord:
+        _nonempty(reason, "reason")
+        quarantined = tuple(
+            replace(artifact, quarantined=True)
+            for artifact in self._record.artifacts
+        )
+        quarantined_checkpoints = tuple(
+            replace(artifact, quarantined=True)
+            for artifact in self._record.checkpoints
+        )
+        return self._transition(
+            status=RunStatus.INCOMPLETE,
+            artifacts=quarantined,
+            checkpoints=quarantined_checkpoints,
+            failures=self._record.failures + (reason,),
+        )
+
+    def refused(self, reason: str) -> RunRecord:
+        _nonempty(reason, "reason")
+        quarantined = tuple(
+            replace(artifact, quarantined=True)
+            for artifact in self._record.artifacts
+        )
+        quarantined_checkpoints = tuple(
+            replace(artifact, quarantined=True)
+            for artifact in self._record.checkpoints
+        )
+        return self._transition(
+            status=RunStatus.REFUSED,
+            artifacts=quarantined,
+            checkpoints=quarantined_checkpoints,
+            failures=self._record.failures + (reason,),
+        )
+
+    def invalid(self, reason: str) -> RunRecord:
+        _nonempty(reason, "reason")
+        quarantined = tuple(
+            replace(artifact, quarantined=True)
+            for artifact in self._record.artifacts
+        )
+        quarantined_checkpoints = tuple(
+            replace(artifact, quarantined=True)
+            for artifact in self._record.checkpoints
+        )
+        return self._transition(
+            status=RunStatus.INVALID,
+            artifacts=quarantined,
+            checkpoints=quarantined_checkpoints,
+            failures=self._record.failures + (reason,),
+        )
+
+    def failed(self, reason: str) -> RunRecord:
+        _nonempty(reason, "reason")
+        quarantined = tuple(
+            replace(artifact, quarantined=True)
+            for artifact in self._record.artifacts
+        )
+        quarantined_checkpoints = tuple(
+            replace(artifact, quarantined=True)
+            for artifact in self._record.checkpoints
+        )
+        return self._transition(
+            status=RunStatus.FAILED,
+            artifacts=quarantined,
+            checkpoints=quarantined_checkpoints,
+            failures=self._record.failures + (reason,),
+        )
+
+    def complete(self) -> RunRecord:
+        expected = tuple(sorted(self.approved.plan.request.output_contract.observable_ids))
+        actual = self._record.output_inventory
+        if actual != expected:
+            missing = sorted(set(expected) - set(actual))
+            extra = sorted(set(actual) - set(expected))
+            return self.incomplete(
+                f"output inventory mismatch; missing={missing}, extra={extra}"
+            )
+        required = {
+            obligation.digest
+            for obligation in self.approved.plan.request.obligations
+            if obligation.required
+        }
+        results = {
+            result.obligation_digest: result
+            for result in self._record.obligation_results
+        }
+        missing_or_failed = {
+            digest for digest in required
+            if digest not in results
+            or results[digest].outcome is not ObligationOutcome.PASS
+        }
+        if missing_or_failed:
+            return self.invalid(
+                "required obligations did not all pass: "
+                + ", ".join(sorted(missing_or_failed))
+            )
+        return self._transition(status=RunStatus.COMPLETE)
+
+    def _persist(self, record: RunRecord | None = None) -> None:
+        if self.path is None:
+            return
+        record = self._record if record is None else record
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(
+            dir=str(self.path.parent),
+            prefix=self.path.name + ".",
+            suffix=".tmp",
+        )
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                json.dump(_plain(record), stream, indent=2, sort_keys=True)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, self.path)
+        except BaseException:
+            Path(temporary).unlink(missing_ok=True)
+            raise
+
+
+def _molecule_identity(molecule: Molecule) -> Identity:
+    return Identity(
+        stable_id=canonical_digest(molecule),
+        kind="chemical-species",
+        state=(
+            ("signature", species_signature(molecule)),
+            ("phase", "unspecified"),
+            ("geometry", "fixed protocol geometry where the oracle requires one"),
+        ),
+    )
+
+
+def _default_output_contract() -> OutputContract:
+    return OutputContract(
+        observables=(
+            ObservableRequest(
+                observable_id="reaction_energy",
+                kind="closed-reaction endpoint energy difference",
+                unit="eV",
+                support="one conserving reaction at the oracle's declared fixed protocol",
+                resolution="one scalar endpoint difference",
+                precision="preserve the oracle value and reported uncertainty scale",
+                coverage="all non-spectator endpoint species or refuse",
+                diagnostics=(
+                    "oracle method",
+                    "reported uncertainty scale",
+                    "systematic sensitivities",
+                    "runtime seconds",
+                ),
+                retention=("run record", "certificate"),
+            ),
+        ),
+        diagnostics=(
+            "pre/post validity outcomes",
+            "cache hits and misses",
+            "artifact inventory",
+            "refusals and failures",
+        ),
+        retention=(
+            "source program",
+            "approved plan",
+            "run record",
+            "completed species checkpoints",
+            "result certificate",
+        ),
+    )
+
+
+def _reaction_obligations() -> tuple[ValidityObligation, ...]:
+    return (
+        ValidityObligation(
+            "reaction-conserves",
+            ObligationStage.PRE,
+            "smartchem.program/reaction-conserves-v1",
+            "the closed reaction conserves atom inventory and net charge",
+        ),
+        ValidityObligation(
+            "oracle-admits-every-species",
+            ObligationStage.PRE,
+            "smartchem.program/oracle-domain-v1",
+            "one oracle admits every non-spectator endpoint species without obstruction",
+        ),
+        ValidityObligation(
+            "oracle-returned-endpoint-energy",
+            ObligationStage.POST,
+            "smartchem.program/result-present-v1",
+            "the oracle returned a finite endpoint estimate rather than declining",
+        ),
+        ValidityObligation(
+            "output-inventory-exact",
+            ObligationStage.POST,
+            "smartchem.program/output-inventory-v1",
+            "emitted observable identities exactly equal the frozen output contract",
+        ),
+    )
+
+
+def compile_reaction_energy(
+    source: SourceProgram | str,
+    reaction: Reaction,
+    oracle: object,
+    *,
+    output_contract: OutputContract | None = None,
+    equivalence_contract: EquivalenceContract | None = None,
+    limits: RuntimeLimits | None = None,
+    shepherd_session_digest: str = "directly-resolved-without-a-shepherd-session",
+) -> CandidatePlan:
+    """
+    Compile one closed reaction-energy request without executing the oracle.
+
+    The plan is certified only inside the current isolated-species endpoint adapter and the
+    oracle's declared domain.  It does not claim Gibbs free energy, spontaneity, kinetics,
+    an interacting vessel, or accuracy outside the oracle's validation statement.
+    """
+    if isinstance(source, str):
+        source = SourceProgram(source)
+    if not isinstance(source, SourceProgram):
+        raise TypeError("source must be SourceProgram or str")
+    if not isinstance(reaction, Reaction):
+        raise TypeError("reaction must be a Reaction")
+
+    source_theory = SourceTheory(
+        name="closed separable endpoint-energy model",
+        axioms=(
+            "the Reaction carries equal atom inventories and equal net charge at both endpoints",
+            "configuration energy is the sum of isolated species energies",
+            "one immutable oracle calculation specification prices every retained species",
+        ),
+        provenance=(
+            "smartchem.category.Reaction",
+            "smartchem.thermo.reaction_energy",
+        ),
+    )
+    target = TargetIntent(
+        statement=source.text,
+        target_scale="one closed chemical reaction",
+        requested_meaning=(
+            "endpoint delta-E under the selected oracle; not delta-G, spontaneity, or kinetics"
+        ),
+    )
+    resolved = ResolvedProgram(
+        source.digest,
+        reaction,
+        target,
+        source_theory,
+        shepherd_session_digest,
+    )
+
+    species = tuple(dict.fromkeys(reaction.dom.species + reaction.cod.species))
+    components = tuple(
+        Component(
+            component_id=f"species-{index}",
+            kind="chemical-species",
+            identity=_molecule_identity(molecule),
+        )
+        for index, molecule in enumerate(species)
+    )
+    model = ModelSpec(
+        name="closed-separable-endpoint-energy",
+        equations=(
+            "E(configuration) = sum(count_i * E(species_i))",
+            "delta_E(reaction) = E(products) - E(reactants)",
+        ),
+        assumptions=(
+            "isolated noninteracting species at each endpoint",
+            "one consistent oracle reference and calculation protocol",
+            "spectator cancellation is used only inside this separable model",
+        ),
+        valid_if=(
+            "Reaction construction and independent conserves() check pass",
+            "the selected oracle admits and returns every non-spectator species",
+        ),
+        postconditions=(
+            "a finite Estimate is returned",
+            "the output inventory exactly matches the approved contract",
+        ),
+        conserved=("atom inventory", "net charge"),
+        version="1",
+    )
+    solver = SolverSpec(
+        name=getattr(oracle, "name", type(oracle).__qualname__),
+        algorithm="existing SmartChem EnergyOracle",
+        version="1",
+        tolerances=(),
+        stopping_policy="oracle-declared; any decline refuses the whole endpoint difference",
+        reproducibility="immutable CalculationSpec plus implementation digest",
+    )
+    calculation = CalculationSpec.from_oracle(oracle)
+    claim_scope = ClaimScope(
+        ClaimKind.LITERAL,
+        "endpoint delta-E under the closed separable species model and named oracle",
+        exclusions=(
+            "Gibbs free energy",
+            "thermodynamic spontaneity",
+            "kinetics or mechanism",
+            "interacting-vessel effects",
+            "human or environmental safety",
+        ),
+    )
+    nominal_accuracy = getattr(oracle, "nominal_accuracy_ev", float("inf"))
+    measured_evidence = (
+        isinstance(nominal_accuracy, (int, float))
+        and not isinstance(nominal_accuracy, bool)
+        and math.isfinite(float(nominal_accuracy))
+    )
+    evidence_status = (
+        EvidenceStatus.CALIBRATED if measured_evidence else EvidenceStatus.EXPERIMENTAL
+    )
+    physical_ir = PhysicalIR(
+        resolved_digest=resolved.digest,
+        components=components,
+        connections=(),
+        reservoirs=(),
+        boundaries=(),
+        models=(model,),
+        adapters=(
+            Adapter(
+                "isolated-species endpoint adapter",
+                "closed Reaction",
+                "scalar endpoint energy difference",
+                ("reaction_energy",),
+                (
+                    "closed conserved inventory",
+                    "one reference-compatible oracle",
+                ),
+                "inter-species interaction and finite-temperature terms omitted",
+            ),
+        ),
+        invariants=(
+            Invariant(
+                "closed inventory",
+                "reactant and product atom counts and net charge agree",
+                "this Reaction",
+                "smartchem.category/conserves-v1",
+            ),
+        ),
+        transport_maps=(),
+        transport_evidence=(),
+        assemblies=(),
+        assembly_evidence=(),
+        claim_scope=claim_scope,
+        evidence_status=evidence_status,
+    )
+    obligations = _reaction_obligations()
+    request = SimulationRequest(
+        source=source,
+        resolved=resolved,
+        physical_ir=physical_ir,
+        output_contract=output_contract or _default_output_contract(),
+        equivalence_contract=equivalence_contract or EquivalenceContract(
+            relation="semantic equality of every requested scalar and evidence field",
+            numeric_tolerances=(),
+            ordering="observable IDs sorted for comparison; source order retained in records",
+            rng_policy="no RNG in this vertical",
+            checkpoint_policy=(
+                "completed species estimates may be reused only under an identical "
+                "CalculationSpec and a newly approved resume plan"
+            ),
+        ),
+        obligations=obligations,
+    )
+    inspection = diagnose(reaction, (oracle,))
+    blockers = tuple(repr(obstruction) for obstruction in inspection.obstructions)
+    unsupported = tuple(
+        observable
+        for observable in request.output_contract.observable_ids
+        if observable != "reaction_energy"
+    )
+    if unsupported:
+        blockers += (
+            "this vertical cannot emit requested observable(s): " + ", ".join(unsupported),
+        )
+    return CandidatePlan(
+        request=request,
+        model=model,
+        solver=solver,
+        calculation=calculation,
+        compiler_implementation_digest=_compiler_implementation_digest(),
+        executor_id="smartchem.program/reaction-energy-v1",
+        transforms=(),
+        predicted_resources=(
+            ("species calls", str(len(set(reaction_residue(reaction)[0].species
+                                           + reaction_residue(reaction)[1].species)))),
+            ("wall/memory", "oracle-dependent; measured by RunRecord, not guessed"),
+        ),
+        blockers=blockers,
+        execution_lane=(
+            ExecutionLane.CERTIFIED if measured_evidence else ExecutionLane.EXPERIMENTAL
+        ),
+        limits=limits or RuntimeLimits(),
+    )
+
+
+def compile_session_reaction_energy(
+    source: SourceProgram | str,
+    session: object,
+    reaction_slot_name: str,
+    oracle: object,
+    *,
+    output_contract: OutputContract | None = None,
+    equivalence_contract: EquivalenceContract | None = None,
+    limits: RuntimeLimits | None = None,
+) -> CandidatePlan:
+    """
+    Bridge a closed typed shepherd session into the executable reaction-energy vertical.
+
+    Only an outright ``COMPILED`` session is accepted here.  A
+    ``COMPILED_SUBJECT_TO`` session carries post-run obligations that must first be mapped
+    into the runtime registry; silently discarding them while crossing this seam would
+    upgrade conditional coherence into an executable plan.
+    """
+    from .ledger import COMPILED, Session
+
+    _nonempty(reaction_slot_name, "reaction_slot_name")
+    if not isinstance(session, Session):
+        raise TypeError("session must be a shepherd Session")
+    if session.outcome != COMPILED:
+        raise ValueError(
+            "this vertical requires an outright COMPILED typed session; "
+            f"received {session.outcome}"
+        )
+    if session.spec.measure() != 0 or session.spec.subject_to():
+        raise ValueError(
+            "this vertical independently requires a closed shepherd spec with no "
+            "unmapped post-run obligations"
+        )
+    slot = next(
+        (candidate for candidate in session.spec.slots
+         if candidate.name == reaction_slot_name),
+        None,
+    )
+    if slot is None:
+        raise KeyError(f"compiled session has no slot named {reaction_slot_name!r}")
+    if slot.typed_binding is None:
+        raise TypeError(
+            f"slot {reaction_slot_name!r} has no typed binding; text cannot authorize "
+            "reaction execution"
+        )
+    reaction = slot.typed_binding.value
+    if not isinstance(reaction, Reaction):
+        raise TypeError(
+            f"slot {reaction_slot_name!r} is bound to {type(reaction).__name__}, "
+            "not a Reaction"
+        )
+    return compile_reaction_energy(
+        source,
+        reaction,
+        oracle,
+        output_contract=output_contract,
+        equivalence_contract=equivalence_contract,
+        limits=limits,
+        shepherd_session_digest=canonical_digest(session),
+    )
+
+
+def _obligation(
+    obligation: ValidityObligation,
+    outcome: ObligationOutcome,
+    detail: str,
+) -> ObligationResult:
+    return ObligationResult(obligation.digest, outcome, detail)
+
+
+def _pre_result(
+    obligation: ValidityObligation,
+    reaction: Reaction,
+    oracle: object,
+) -> ObligationResult:
+    if obligation.evaluator_id == "smartchem.program/reaction-conserves-v1":
+        passed = conserves(reaction)
+        return _obligation(
+            obligation,
+            ObligationOutcome.PASS if passed else ObligationOutcome.FAIL,
+            "conserves(reaction) returned true" if passed else "conserves(reaction) returned false",
+        )
+    if obligation.evaluator_id == "smartchem.program/oracle-domain-v1":
+        inspection = diagnose(reaction, (oracle,))
+        return _obligation(
+            obligation,
+            ObligationOutcome.PASS if inspection else ObligationOutcome.REFUSE,
+            inspection.explain(),
+        )
+    return _obligation(
+        obligation,
+        ObligationOutcome.REFUSE,
+        f"no approved evaluator registered for {obligation.evaluator_id}",
+    )
+
+
+def _post_result(
+    obligation: ValidityObligation,
+    estimate: Estimate | None,
+    output_ids: tuple[str, ...],
+    expected_ids: tuple[str, ...],
+) -> ObligationResult:
+    if obligation.evaluator_id == "smartchem.program/result-present-v1":
+        return _obligation(
+            obligation,
+            ObligationOutcome.PASS if estimate is not None else ObligationOutcome.REFUSE,
+            "oracle returned an Estimate" if estimate is not None else "oracle declined",
+        )
+    if obligation.evaluator_id == "smartchem.program/output-inventory-v1":
+        passed = tuple(sorted(output_ids)) == tuple(sorted(expected_ids))
+        return _obligation(
+            obligation,
+            ObligationOutcome.PASS if passed else ObligationOutcome.FAIL,
+            f"expected={sorted(expected_ids)}, emitted={sorted(output_ids)}",
+        )
+    return _obligation(
+        obligation,
+        ObligationOutcome.REFUSE,
+        f"no approved evaluator registered for {obligation.evaluator_id}",
+    )
+
+
+def _estimate_artifact(artifact_id: str, kind: str, estimate: Estimate) -> Artifact:
+    return Artifact(
+        artifact_id=artifact_id,
+        kind=kind,
+        content_digest=canonical_digest(estimate),
+        complete=True,
+        quarantined=False,
+        detail=(
+            f"{estimate.value_ev:+.12g} eV via {estimate.method}; "
+            f"reported scale {estimate.uncertainty_ev:.12g} eV"
+        ),
+        payload=estimate,
+    )
+
+
+def _peak_rss_bytes() -> int | None:
+    """Best available process peak RSS, or ``None`` where the platform exposes none."""
+    if resource is None:
+        return None
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # Linux reports KiB; macOS reports bytes.  ``sys.platform`` would add another import,
+    # while /proc is the more direct discriminator on the supported Linux CI/runtime.
+    return int(peak * 1024) if Path("/proc/self/statm").exists() else int(peak)
+
+
+def _resource_wall(
+    limits: RuntimeLimits,
+    *,
+    started: float,
+    completed_calls: int,
+) -> str | None:
+    elapsed = time.monotonic() - started
+    if limits.wall_seconds is not None and elapsed >= limits.wall_seconds:
+        return (
+            f"approved wall_seconds={limits.wall_seconds} reached after "
+            f"{elapsed:.6f}s and {completed_calls} completed species calls"
+        )
+    peak = _peak_rss_bytes()
+    if limits.memory_bytes is not None:
+        if peak is None:
+            return (
+                "approved memory_bytes limit cannot be monitored on this platform; "
+                "refusing to run past an unenforceable hard stop"
+            )
+        if peak >= limits.memory_bytes:
+            return (
+                f"approved memory_bytes={limits.memory_bytes} reached at peak_rss={peak} "
+                f"after {completed_calls} completed species calls"
+            )
+    return None
+
+
+def execute(
+    approved: ApprovedPlan,
+    oracle: object,
+    *,
+    journal_path: str | os.PathLike[str] | None = None,
+) -> ExecutionReport:
+    """Execute the approved reaction-energy vertical and return its full lineage."""
+    if not isinstance(approved, ApprovedPlan):
+        raise TypeError("execute requires an ApprovedPlan")
+    plan = approved.plan
+    if approved.approval.plan_digest != plan.digest:
+        raise ValueError(
+            "approved plan integrity check failed; approval no longer names this plan"
+        )
+    if _compiler_implementation_digest() != plan.compiler_implementation_digest:
+        raise ValueError(
+            "compiler/runtime implementation changed after approval; re-plan and obtain "
+            "new approval"
+        )
+    # This vertical has exactly one executor and one output capability. Keep those literals
+    # at the call site: extending them requires a source change, which changes the compiler
+    # implementation digest and therefore invalidates every prior approval.
+    if plan.executor_id != "smartchem.program/reaction-energy-v1":
+        raise ValueError(
+            f"approved executor_id {plan.executor_id!r} has no registered runtime"
+        )
+    unsupported_outputs = sorted(
+        set(plan.request.output_contract.observable_ids) - {"reaction_energy"}
+    )
+    if unsupported_outputs:
+        raise ValueError(
+            "approved executor cannot emit requested observables: "
+            + ", ".join(unsupported_outputs)
+        )
+    actual_calculation = CalculationSpec.from_oracle(oracle)
+    if actual_calculation.digest != plan.calculation.digest:
+        raise ValueError(
+            "oracle CalculationSpec changed after approval; re-plan and obtain new approval"
+        )
+
+    started_monotonic = time.monotonic()
+    journal = RunJournal(
+        approved,
+        backend=actual_calculation.engine_name,
+        path=journal_path,
+    )
+    reaction = plan.request.resolved.reaction
+    try:
+        for artifact_id, kind, payload in (
+            ("source-program", "source", plan.request.source),
+            ("candidate-plan", "plan", plan),
+            ("approval", "approval", approved.approval),
+        ):
+            journal.add_artifact(Artifact(
+                artifact_id=artifact_id,
+                kind=kind,
+                content_digest=payload.digest,
+                complete=True,
+                quarantined=False,
+                payload=payload,
+            ))
+
+        for obligation in plan.request.obligations:
+            if obligation.stage is not ObligationStage.PRE:
+                continue
+            result = _pre_result(obligation, reaction, oracle)
+            journal.add_obligation_result(result)
+            if obligation.required and result.outcome is not ObligationOutcome.PASS:
+                record = journal.refused(
+                    f"precondition {obligation.name} ended {result.outcome.value}: "
+                    f"{result.detail}"
+                )
+                return ExecutionReport(record, None, None)
+
+        cached = CachingOracle(oracle)
+        left, right = reaction_residue(reaction)
+        species = tuple(dict.fromkeys(left.species + right.species))
+        calls = 0
+        for molecule in species:
+            breach = _resource_wall(
+                plan.limits,
+                started=started_monotonic,
+                completed_calls=calls,
+            )
+            if breach is not None:
+                record = journal.incomplete(breach)
+                return ExecutionReport(record, None, None)
+            cap = plan.limits.max_species_calls
+            if cap is not None and calls >= cap:
+                record = journal.incomplete(
+                    f"approved max_species_calls={cap} reached after {calls} completed calls"
+                )
+                return ExecutionReport(record, None, None)
+            estimate = cached.energy(molecule)
+            calls += 1
+            if estimate is None:
+                if CalculationSpec.from_oracle(oracle).digest != plan.calculation.digest:
+                    raise RuntimeError(
+                        "oracle CalculationSpec changed during an approved species call"
+                    )
+                record = journal.refused(
+                    f"oracle declined endpoint species {species_signature(molecule)}"
+                )
+                return ExecutionReport(record, None, None)
+            checkpoint = _estimate_artifact(
+                "checkpoint:species:" + canonical_digest(molecule),
+                "checkpoint",
+                estimate,
+            )
+            journal.add_checkpoint(checkpoint)
+            journal.add_artifact(replace(
+                checkpoint,
+                artifact_id="intermediate:species:" + canonical_digest(molecule),
+                kind="intermediate",
+            ))
+            if CalculationSpec.from_oracle(oracle).digest != plan.calculation.digest:
+                raise RuntimeError(
+                    "oracle CalculationSpec changed during an approved species call"
+                )
+            breach = _resource_wall(
+                plan.limits,
+                started=started_monotonic,
+                completed_calls=calls,
+            )
+            if breach is not None:
+                record = journal.incomplete(breach)
+                return ExecutionReport(record, None, None)
+
+        estimate = reaction_energy(reaction, cached)
+        emitted: tuple[str, ...] = ()
+        if estimate is not None:
+            observable = _estimate_artifact(
+                "observable:reaction_energy",
+                "observable",
+                estimate,
+            )
+            journal.add_artifact(observable)
+            emitted = ("reaction_energy",)
+
+        journal.add_cache_state(
+            f"in-memory canonical cache: hits={cached.hits}, misses={cached.misses}, "
+            f"distinct_species={cached.distinct_species}"
+        )
+
+        for obligation in plan.request.obligations:
+            if obligation.stage is not ObligationStage.POST:
+                continue
+            result = _post_result(
+                obligation,
+                estimate,
+                emitted,
+                plan.request.output_contract.observable_ids,
+            )
+            journal.add_obligation_result(result)
+            if obligation.required and result.outcome is not ObligationOutcome.PASS:
+                record = journal.invalid(
+                    f"postcondition {obligation.name} ended {result.outcome.value}: "
+                    f"{result.detail}"
+                )
+                return ExecutionReport(record, None, None)
+
+        if estimate is None:
+            record = journal.refused("oracle declined the endpoint reaction energy")
+            return ExecutionReport(record, None, None)
+
+        # The certificate is prepared from the still-running record, then its digest is
+        # inventoried before the run becomes COMPLETE.  It intentionally does not contain
+        # the RunRecord digest, avoiding a certificate<->record digest cycle.
+        certificate = Certificate(
+            source_digest=plan.request.source.digest,
+            request_digest=plan.request.digest,
+            plan_digest=plan.digest,
+            approval_digest=approved.approval.digest,
+            calculation_digest=actual_calculation.digest,
+            compiler_implementation_digest=plan.compiler_implementation_digest,
+            run_id=journal.record.run_id,
+            run_status=RunStatus.COMPLETE,
+            claim_scope=plan.request.physical_ir.claim_scope,
+            evidence_status=plan.request.physical_ir.evidence_status,
+            validity_results=journal.record.obligation_results,
+            output_inventory=emitted,
+            casualties=plan.request.physical_ir.claim_scope.exclusions,
+            omissions=(),
+            failures=(),
+        )
+        journal.add_artifact(Artifact(
+            artifact_id="certificate",
+            kind="certificate",
+            content_digest=certificate.digest,
+            complete=True,
+            quarantined=False,
+            payload=certificate,
+        ))
+        record = journal.complete()
+        if record.status is not RunStatus.COMPLETE:
+            return ExecutionReport(record, None, None)
+        value = ObservableValue(
+            observable_id="reaction_energy",
+            value=estimate.value_ev,
+            unit="eV",
+            uncertainty=estimate.uncertainty_ev,
+            method=estimate.method,
+            support=plan.request.output_contract.observables[0].support,
+            seconds=estimate.seconds,
+            notes=estimate.notes,
+            systematic_ev=estimate.systematic_ev,
+            methods=tuple(sorted(estimate.methods or ())),
+            systematic_terms=tuple(estimate.systematic_terms or ()),
+        )
+        result = SimulationResult(record.run_id, (value,), certificate.digest)
+        return ExecutionReport(record, result, certificate)
+    except Exception as error:
+        if journal.record.status is RunStatus.RUNNING:
+            record = journal.failed(f"{type(error).__name__}: {error}")
+            return ExecutionReport(record, None, None)
+        raise

@@ -114,9 +114,16 @@ can decide. What is decided is that the dialogue ends.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 
 from .category import Molecule
+from .contracts import (
+    DerivationRef,
+    InferenceKind,
+    ValidityObligation,
+    canonical_digest,
+)
 from .stoichiometry import stoichiometry_menu
 
 __all__ = [
@@ -130,6 +137,9 @@ __all__ = [
     "LedgerContradiction",
     "Round",
     "Session",
+    "BindingSchema",
+    "TypedBinding",
+    "DerivedOption",
     "Slot",
     "Spec",
     "UnderivedMenu",
@@ -200,6 +210,90 @@ class LedgerContradiction(AssertionError):
 
 
 @dataclass(frozen=True)
+class BindingSchema:
+    """The runtime type and local predicate required by a typed slot.
+
+    ``validator_id`` is retained with the schema so a plan can later name the check it used.
+    The callable is deliberately local to the ledger transition: executable plans retain only
+    the stable obligation identity, never a process-local callable.
+    """
+    accepted_types: tuple[type, ...]
+    validator_id: str = ""
+    validator: Callable[[object], bool] | None = field(
+        default=None, compare=False, repr=False
+    )
+
+    def __post_init__(self) -> None:
+        if (not isinstance(self.accepted_types, tuple) or not self.accepted_types
+                or any(not isinstance(kind, type) for kind in self.accepted_types)):
+            raise TypeError("accepted_types must be a non-empty tuple of types")
+        if not isinstance(self.validator_id, str):
+            raise TypeError("validator_id must be a string")
+        if self.validator is not None and not callable(self.validator):
+            raise TypeError("validator must be callable or None")
+        if self.validator is not None and not self.validator_id:
+            raise ValueError("a validator must carry a non-empty validator_id")
+        if self.validator is None and self.validator_id:
+            raise ValueError("validator_id names no validator")
+
+    def validate(self, value: object) -> None:
+        """Raise rather than silently accepting a value outside this physical schema."""
+        if not isinstance(value, self.accepted_types):
+            names = ", ".join(kind.__name__ for kind in self.accepted_types)
+            raise TypeError(
+                f"expected a value of type {names}, got {type(value).__name__}"
+            )
+        if self.validator is not None:
+            passed = self.validator(value)
+            if type(passed) is not bool:
+                raise TypeError(
+                    f"validator {self.validator_id!r} returned "
+                    f"{type(passed).__name__}, not bool"
+                )
+            if not passed:
+                raise ValueError(
+                    f"value does not satisfy validator {self.validator_id!r}"
+                )
+
+
+@dataclass(frozen=True)
+class TypedBinding:
+    """A checked semantic value plus the source text and inference that licensed it."""
+    value: object
+    source_text: str
+    inference: InferenceKind
+    derivation: DerivationRef | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_text, str) or not self.source_text:
+            raise ValueError("source_text must be a non-empty string")
+        if not isinstance(self.inference, InferenceKind):
+            raise TypeError("inference must be an InferenceKind")
+        if self.derivation is not None and not isinstance(self.derivation, DerivationRef):
+            raise TypeError("derivation must be a DerivationRef or None")
+        if (self.inference in (InferenceKind.DERIVED_COMPLETE,
+                               InferenceKind.WRITTEN_CHECKED)
+                and self.derivation is None):
+            raise ValueError(
+                f"{self.inference.value} bindings require a machine derivation reference"
+            )
+
+
+@dataclass(frozen=True)
+class DerivedOption:
+    """One displayable derived option and the machine reference that produced it."""
+    display: str
+    value: object
+    derivation: DerivationRef
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.display, str) or not self.display:
+            raise ValueError("display must be a non-empty string")
+        if not isinstance(self.derivation, DerivationRef):
+            raise TypeError("derivation must be a DerivationRef")
+
+
+@dataclass(frozen=True)
 class Slot:
     """
     One named parameter of a spec, bound or not, with what the scientist actually wrote.
@@ -225,10 +319,18 @@ class Slot:
     name: str
     written: str
     binding: str | None = None
+    #: Deprecated compatibility marker for old text-only callers.  New slots declare
+    #: explicit ``ValidityObligation`` records in ``obligations`` instead.
     checkable_after: bool = False
     menu: tuple[str, ...] = ()
     derivation: str = ""
     rank: int = 0
+    #: ``None`` preserves the original text-only slot behaviour.  A schema makes a slot
+    #: physical: only :meth:`bind_typed` may close it.
+    schema: BindingSchema | None = None
+    typed_binding: TypedBinding | None = None
+    derived_options: tuple[DerivedOption, ...] = ()
+    obligations: tuple[ValidityObligation, ...] = ()
 
     def __post_init__(self) -> None:
         # Checked BEFORE the sign test, because the sign test is what a float defeats:
@@ -258,11 +360,56 @@ class Slot:
                 f"a menu is an assertion about the world and section III forbids offering "
                 f"one that was not derived. State what computed these, or drop them and "
                 f"ask an open question instead")
+        if self.schema is not None and not isinstance(self.schema, BindingSchema):
+            raise TypeError("schema must be a BindingSchema or None")
+        if self.typed_binding is not None:
+            if not isinstance(self.typed_binding, TypedBinding):
+                raise TypeError("typed_binding must be a TypedBinding or None")
+            if self.schema is None:
+                raise ValueError("a typed binding requires a BindingSchema")
+            self.schema.validate(self.typed_binding.value)
+            if self.binding is not None and self.binding != self.typed_binding.source_text:
+                raise ValueError("binding text must match typed_binding.source_text")
+            if self.binding is None:
+                object.__setattr__(self, "binding", self.typed_binding.source_text)
+        elif self.schema is not None and self.binding is not None:
+            raise TypeError(
+                "a schema slot cannot close through legacy text; use bind_typed()"
+            )
+        if not isinstance(self.derived_options, tuple) or any(
+            not isinstance(option, DerivedOption) for option in self.derived_options
+        ):
+            raise TypeError("derived_options must be a tuple of DerivedOption values")
+        if self.derived_options:
+            displayed = tuple(option.display for option in self.derived_options)
+            if self.menu and self.menu != displayed:
+                raise ValueError("menu must exactly match derived_options displays")
+            if not self.menu:
+                object.__setattr__(self, "menu", displayed)
+        if not isinstance(self.obligations, tuple) or any(
+            not isinstance(obligation, ValidityObligation) for obligation in self.obligations
+        ):
+            raise TypeError("obligations must be a tuple of ValidityObligation values")
 
     @property
     def is_bound(self) -> bool:
-        """Re-read from ``binding`` on every access; nothing caches this."""
-        return self.binding is not None
+        """Re-read from both binding representations; nothing caches this."""
+        return self.binding is not None or self.typed_binding is not None
+
+    def bind_typed(
+        self,
+        value: object,
+        *,
+        source_text: str,
+        inference: InferenceKind,
+        derivation: DerivationRef | None = None,
+    ) -> "Slot":
+        """Close a physical slot through its schema, never through a placeholder string."""
+        if self.schema is None:
+            raise TypeError(f"slot {self.name!r} has no BindingSchema")
+        typed = TypedBinding(value, source_text, inference, derivation)
+        self.schema.validate(typed.value)
+        return replace(self, binding=typed.source_text, typed_binding=typed)
 
     def question(self) -> str:
         """
@@ -337,7 +484,7 @@ class Spec:
         a field: a stored count is a number the loop would have to be told, and being told
         is precisely what this rule cannot afford.
         """
-        return tuple(slot for slot in self.slots if slot.binding is None)
+        return tuple(slot for slot in self.slots if not slot.is_bound)
 
     def measure(self) -> int:
         """
@@ -424,15 +571,51 @@ class Spec:
         return all(slot.rank == 0 for slot in self.holes())
 
     def subject_to(self) -> tuple[Slot, ...]:
-        """Bound slots whose binding can only be checked after the run (section VI.1)."""
-        return tuple(s for s in self.slots if s.binding is not None and s.checkable_after)
+        """Bound slots carrying legacy or typed post-run validity obligations."""
+        return tuple(
+            slot for slot in self.slots
+            if slot.is_bound and (
+                slot.checkable_after
+                or any(obligation.required and obligation.stage.value == "POST"
+                       for obligation in slot.obligations)
+            )
+        )
 
     def bind(self, name: str, value: str) -> "Spec":
-        """A new spec with one slot bound. Raises if the slot is not there to bind."""
-        if not any(s.name == name for s in self.slots):
+        """Legacy text binding for untyped slots; schema slots must use :meth:`bind_typed`."""
+        found = next((slot for slot in self.slots if slot.name == name), None)
+        if found is None:
             raise KeyError(f"{self.name} has no slot named {name!r}")
+        if found.schema is not None:
+            raise TypeError(
+                f"slot {name!r} is physical and cannot close through legacy text; "
+                "use bind_typed()"
+            )
         return replace(self, slots=tuple(
             replace(s, binding=value) if s.name == name else s for s in self.slots))
+
+    def bind_typed(
+        self,
+        name: str,
+        value: object,
+        *,
+        source_text: str,
+        inference: InferenceKind,
+        derivation: DerivationRef | None = None,
+    ) -> "Spec":
+        """Bind one schema slot through a checked semantic value and inference record."""
+        found = next((slot for slot in self.slots if slot.name == name), None)
+        if found is None:
+            raise KeyError(f"{self.name} has no slot named {name!r}")
+        bound = found.bind_typed(
+            value,
+            source_text=source_text,
+            inference=inference,
+            derivation=derivation,
+        )
+        return replace(self, slots=tuple(
+            bound if slot.name == name else slot for slot in self.slots
+        ))
 
     def widen(self, *slots: Slot) -> "Spec":
         """A new spec with further slots appended -- the sub-holes a binding opened."""
@@ -447,7 +630,7 @@ class Spec:
                  f"{self.measure()} unbound"]
         for slot in self.slots:
             mark = "  " if slot.is_bound else "??"
-            after = "  [a posteriori]" if slot.checkable_after else ""
+            after = "  [a posteriori]" if slot in self.subject_to() else ""
             lines.append(f" {mark} {slot.name:<28} {slot.written!r} -> "
                          f"{slot.binding!r}{after}")
         return "\n".join(lines)
@@ -512,6 +695,33 @@ class Session:
     opened: tuple[str, ...]
     discarded: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        if self.outcome not in (
+            COMPILED,
+            COMPILED_SUBJECT_TO,
+            EXHAUSTED,
+            STALLED,
+            WIDENED,
+        ):
+            raise ValueError(f"unknown shepherd outcome {self.outcome!r}")
+        if not isinstance(self.spec, Spec):
+            raise TypeError("spec must be a Spec")
+        for name in ("rounds", "stuck_on", "opened", "discarded"):
+            if not isinstance(getattr(self, name), tuple):
+                raise TypeError(f"{name} must be a tuple")
+        if self.outcome == COMPILED:
+            if self.spec.measure() != 0 or self.spec.subject_to():
+                raise ValueError(
+                    "COMPILED requires a closed spec with no post-run obligations"
+                )
+        elif self.outcome == COMPILED_SUBJECT_TO:
+            if self.spec.measure() != 0 or not self.spec.subject_to():
+                raise ValueError(
+                    "COMPILED_SUBJECT_TO requires a closed spec with post-run obligations"
+                )
+        elif self.spec.measure() == 0:
+            raise ValueError(f"{self.outcome} cannot describe a closed spec")
+
     def __bool__(self) -> bool:
         return self.outcome in (COMPILED, COMPILED_SUBJECT_TO)
 
@@ -550,10 +760,19 @@ class Session:
                          "resource limit reached, not a rule broken. Still open: "
                          + ", ".join(self.stuck_on))
         if self.outcome == COMPILED_SUBJECT_TO:
+            post_checks = []
+            for slot in self.spec.subject_to():
+                if slot.checkable_after:
+                    post_checks.append(slot.name)
+                post_checks.extend(
+                    f"{slot.name}: {obligation.name}"
+                    for obligation in slot.obligations
+                    if obligation.required and obligation.stage.value == "POST"
+                )
             lines.append("every free parameter is bound, but the following are checkable "
                          "only AFTER the calculation they govern, so this spec has not "
                          "compiled outright: "
-                         + ", ".join(s.name for s in self.spec.subject_to()))
+                         + ", ".join(post_checks))
         if self:
             # Section X, and it is not optional. A shepherd that reports only successes
             # flatters; the casualty list is what makes a successful refinement legible
@@ -577,12 +796,28 @@ def reaction_slot(name: str, written: str, species: tuple[Molecule, ...]) -> Slo
     reader can tell an enumerated menu from a forced one.
     """
     menu = stoichiometry_menu(species)
+    source_digest = canonical_digest((menu.species, menu.row_labels, menu.matrix))
+    derived_options = tuple(
+        DerivedOption(
+            display=completion.equation(menu.species),
+            value=completion.reaction,
+            derivation=DerivationRef(
+                kind=InferenceKind.DERIVED_COMPLETE,
+                source="smartchem.stoichiometry.stoichiometry_menu",
+                source_digest=source_digest,
+                scope=(f"completion {index} of rank {menu.rank} / "
+                       f"freedom {menu.freedom}"),
+            ),
+        )
+        for index, completion in enumerate(menu.completions)
+    )
     return Slot(
         name=name,
         written=written,
         menu=menu.equations(),
         derivation=(f"stoichiometry_menu over {len(species)} species: "
                     f"rank {menu.rank}, freedom {menu.freedom}, verdict {menu.verdict}"),
+        derived_options=derived_options,
     )
 
 

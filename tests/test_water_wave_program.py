@@ -415,7 +415,7 @@ def test_executor_subject_mismatch_fails_before_journal_creation(tmp_path):
     object.__setattr__(approved, "approval_record_digest", approved.approval.digest)
     journal = tmp_path / "must-not-exist.json"
 
-    with pytest.raises(ValueError, match="reaction executor requires"):
+    with pytest.raises(ValueError, match="requires exact resolved container"):
         execute(approved, engine, journal_path=journal)
 
     assert engine.calls == 0

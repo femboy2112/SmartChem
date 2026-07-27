@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+from pathlib import Path
 
 import pytest
 
@@ -407,6 +408,41 @@ def test_mutating_compiler_after_approval_is_rejected_before_any_call(
     assert oracle.calls == []
 
 
+def test_compiler_manifest_binds_transitive_chemistry_sources():
+    relative = {
+        path.relative_to(Path(program_module.__file__).resolve().parent.parent).as_posix()
+        for path in program_module._compiler_source_paths()
+    }
+
+    assert {
+        "pyproject.toml",
+        "smartchem/category.py",
+        "smartchem/contracts.py",
+        "smartchem/diagnosis.py",
+        "smartchem/program.py",
+        "smartchem/thermo.py",
+    }.issubset(relative)
+
+
+def test_transitive_source_change_after_approval_is_rejected_before_any_call(
+    plan, oracle, monkeypatch
+):
+    approved = _approved(plan)
+    original_read_bytes = Path.read_bytes
+
+    def changed_thermo(path):
+        payload = original_read_bytes(path)
+        if path.name == "thermo.py":
+            return payload + b"\n# simulated post-approval semantic change\n"
+        return payload
+
+    monkeypatch.setattr(Path, "read_bytes", changed_thermo)
+
+    with pytest.raises(ValueError, match="compiler/runtime implementation changed"):
+        execute(approved, oracle)
+    assert oracle.calls == []
+
+
 def test_calculation_spec_freezes_nested_settings_and_new_identity_detects_mutation():
     class NestedMutableOracle(MutableOracle):
         def __init__(self):
@@ -441,6 +477,43 @@ def test_run_journal_persists_running_then_incomplete_and_quarantines_artifacts(
     assert persisted["artifacts"][0]["quarantined"] is True
     with pytest.raises(RuntimeError, match="already terminal"):
         journal.complete()
+
+
+def test_run_journal_path_is_exclusively_owned_by_one_run(plan, tmp_path):
+    path = tmp_path / "exclusive.json"
+    first = RunJournal(
+        _approved(plan),
+        backend="deterministic",
+        path=path,
+        run_id="first-run",
+    )
+
+    with pytest.raises(FileExistsError):
+        RunJournal(
+            _approved(plan),
+            backend="deterministic",
+            path=path,
+            run_id="second-run",
+        )
+
+    first.add_diagnostic("first run still owns the journal")
+    assert json.loads(path.read_text())["run_id"] == "first-run"
+
+
+def test_run_journal_refuses_to_overwrite_replaced_owner(plan, tmp_path):
+    path = tmp_path / "owned.json"
+    journal = RunJournal(
+        _approved(plan),
+        backend="deterministic",
+        path=path,
+        run_id="owner",
+    )
+    path.write_text('{"run_id":"intruder","status":"RUNNING"}')
+
+    with pytest.raises(RuntimeError, match="no longer owned"):
+        journal.add_diagnostic("must not overwrite another run")
+
+    assert json.loads(path.read_text())["run_id"] == "intruder"
 
 
 def test_species_call_limit_returns_incomplete_with_quarantined_intermediates(plan, oracle, tmp_path):

@@ -20,6 +20,12 @@ slice were executed. Their strict scopes are recorded in
 The latter two are synthetic compiler acceptance calculations: neither is a validated
 physical/biological model, and the human slice emits no mortality prediction.
 
+The approved runtime now uses a closed three-executor registry, binds plans to the complete
+shipped source manifest, and gives each journal path exclusive run ownership. The
+[migration receipt](experiments/RESULTS_runtime_registry_migration.md) records fresh
+regressions of all three verticals; it is infrastructure evidence, not new scientific
+validation.
+
 ```python
 from smartchem import Config, Molecule, Reaction, favourability
 from smartchem.oracle.pyscf_oracle import PySCFOracle

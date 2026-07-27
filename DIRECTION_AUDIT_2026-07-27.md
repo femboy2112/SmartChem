@@ -46,6 +46,8 @@ What exists is unusually valuable:
 
 The 2026-07-27 implementation added that connection for three deliberately narrow verticals:
 
+- a closed executor registry, a full shipped-source approval identity, and exclusive
+  run-owned journals that prevent one calculation from erasing another;
 - immutable source, resolved-program, thin Physical IR, request, plan, approval, run, and
   certificate artifacts;
 - typed shepherd bindings and named validity obligations;

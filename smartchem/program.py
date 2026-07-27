@@ -130,20 +130,28 @@ def _unique(values: tuple[object, ...], key: Callable[[object], object], name: s
         raise ValueError(f"{name} must be unique")
 
 
+def _compiler_source_paths() -> tuple[Path, ...]:
+    """Return the closed source manifest that can affect compiler/runtime semantics.
+
+    The first compiler seam listed a handful of files manually.  That was too weak:
+    chemistry execution also depends on category, diagnosis, thermochemistry, and oracle
+    adapter code.  Over-invalidation is safer than allowing an approved plan to survive a
+    material implementation change, so the narrow local runtime binds every shipped Python
+    module plus the package/dependency declaration.
+    """
+    package = Path(__file__).resolve().parent
+    project = package.parent
+    paths = tuple(sorted(package.rglob("*.py"), key=lambda item: item.relative_to(project).as_posix()))
+    pyproject = project / "pyproject.toml"
+    return paths + ((pyproject,) if pyproject.exists() else ())
+
+
 def _compiler_implementation_digest() -> str:
-    """Bind approval to the executable compiler/runtime and shared contract semantics."""
+    """Bind approval to the complete shipped compiler/runtime source manifest."""
     digest = hashlib.sha256()
-    for path in (
-        Path(__file__),
-        Path(__file__).with_name("contracts.py"),
-        Path(__file__).with_name("water_wave_domain.py"),
-        Path(__file__).with_name("water_wave.py"),
-        Path(__file__).with_name("human_isotope_domain.py"),
-        Path(__file__).with_name("human_isotope.py"),
-    ):
-        if not path.exists():
-            continue
-        digest.update(path.name.encode("utf-8"))
+    root = Path(__file__).resolve().parent.parent
+    for path in _compiler_source_paths():
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
         digest.update(b"\0")
         digest.update(hashlib.sha256(path.read_bytes()).digest())
     return digest.hexdigest()
@@ -155,21 +163,14 @@ _HUMAN_ISOTOPE_EXECUTOR = "smartchem.human_isotope/identifiability-v1"
 
 
 def _executor_observables(executor_id: str) -> frozenset[str]:
-    """Source-bound capabilities; extending this function invalidates prior approvals."""
-    if executor_id == _REACTION_EXECUTOR:
-        return frozenset(("reaction_energy",))
-    if executor_id == _WATER_WAVE_EXECUTOR:
-        return frozenset((
-            "water_wave_horizon",
-            "water_wave_characteristic_profile",
-        ))
-    if executor_id == _HUMAN_ISOTOPE_EXECUTOR:
-        return frozenset((
-            "human_isotope_identifiability",
-            "human_isotope_constraint_inventory",
-            "human_isotope_family_witnesses",
-        ))
-    raise ValueError(f"no runtime is registered for executor_id {executor_id!r}")
+    """Return the exact output capability of one closed-world registry entry."""
+    from .runtime_registry import descriptor_for
+
+    try:
+        contract = descriptor_for(executor_id).default_output_contract()
+    except KeyError as error:
+        raise ValueError(str(error)) from error
+    return frozenset(contract.observable_ids)
 
 
 def _executor_contract_error(
@@ -177,26 +178,12 @@ def _executor_contract_error(
     contract: "OutputContract",
 ) -> str | None:
     """Return why the narrow executor cannot honor this semantic output contract."""
-    if executor_id == _REACTION_EXECUTOR:
-        expected = _default_output_contract()
-    elif executor_id == _WATER_WAVE_EXECUTOR:
-        from .water_wave import _default_output_contract as water_wave_contract
+    from .runtime_registry import output_contract_error
 
-        expected = water_wave_contract()
-    elif executor_id == _HUMAN_ISOTOPE_EXECUTOR:
-        from .human_isotope import _default_output_contract as human_isotope_contract
-
-        expected = human_isotope_contract()
-    else:
-        _executor_observables(executor_id)
-        raise AssertionError("unreachable")
-    if contract != expected:
-        return (
-            "this narrow executor can honor only its exact default output contract; "
-            "changing support, resolution, precision, coverage, diagnostics, retention, "
-            "or observable membership requires a different validated executor"
-        )
-    return None
+    try:
+        return output_contract_error(executor_id, contract)
+    except KeyError as error:
+        raise ValueError(str(error)) from error
 
 
 @dataclass(frozen=True)
@@ -846,29 +833,12 @@ class CandidatePlan(Digestible):
         _nonempty(self.compiler_implementation_digest, "compiler_implementation_digest")
         _nonempty(self.executor_id, "executor_id")
         supported_outputs = _executor_observables(self.executor_id)
-        if (
-            self.executor_id == _REACTION_EXECUTOR
-            and not isinstance(self.request.resolved, ResolvedProgram)
-        ):
-            raise ValueError("reaction executor requires a chemical ResolvedProgram")
-        if (
-            self.executor_id == _WATER_WAVE_EXECUTOR
-            and not isinstance(self.request.resolved, ResolvedDomainProgram)
-        ):
-            raise ValueError(
-                "water-wave executor requires a non-chemical ResolvedDomainProgram"
-            )
-        if self.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
-            from .human_isotope_domain import HumanIsotopeSpec
+        from .runtime_registry import extract_subject
 
-            if (
-                not isinstance(self.request.resolved, ResolvedDomainProgram)
-                or not isinstance(self.request.resolved.subject, HumanIsotopeSpec)
-            ):
-                raise ValueError(
-                    "human-isotope executor requires a ResolvedDomainProgram "
-                    "HumanIsotopeSpec"
-                )
+        try:
+            extract_subject(self.executor_id, self.request.resolved)
+        except (KeyError, TypeError) as error:
+            raise ValueError(str(error)) from error
         if not isinstance(self.transforms, tuple):
             raise TypeError("transforms must be a tuple")
         if not isinstance(self.predicted_resources, tuple):
@@ -1432,11 +1402,47 @@ class RunJournal:
             diagnostics=(),
             failures=(),
         )
+        self._reserve_path()
         self._persist()
 
     @property
     def record(self) -> RunRecord:
         return self._record
+
+    def _reserve_path(self) -> None:
+        """Claim a journal path exactly once so concurrent runs cannot erase each other."""
+        if self.path is None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        descriptor = os.open(self.path, flags, 0o600)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(
+                    {
+                        "run_id": self._record.run_id,
+                        "status": "RESERVED",
+                    },
+                    stream,
+                    sort_keys=True,
+                )
+                stream.flush()
+                os.fsync(stream.fileno())
+        except BaseException:
+            self.path.unlink(missing_ok=True)
+            raise
+
+    def _assert_path_owned(self) -> None:
+        if self.path is None:
+            return
+        try:
+            persisted = json.loads(self.path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as error:
+            raise RuntimeError("run journal path was removed or corrupted") from error
+        if persisted.get("run_id") != self._record.run_id:
+            raise RuntimeError(
+                "run journal path is no longer owned by this run; refusing to overwrite it"
+            )
 
     def _transition(self, **changes: object) -> RunRecord:
         if self._record.status is not RunStatus.RUNNING:
@@ -1594,8 +1600,8 @@ class RunJournal:
     def _persist(self, record: RunRecord | None = None) -> None:
         if self.path is None:
             return
+        self._assert_path_owned()
         record = self._record if record is None else record
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(
             dir=str(self.path.parent),
             prefix=self.path.name + ".",
@@ -1607,6 +1613,11 @@ class RunJournal:
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)
+            directory = os.open(self.path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
         except BaseException:
             Path(temporary).unlink(missing_ok=True)
             raise
@@ -2072,7 +2083,7 @@ def execute(
     *,
     journal_path: str | os.PathLike[str] | None = None,
 ) -> ExecutionReport:
-    """Execute the approved reaction-energy vertical and return its full lineage."""
+    """Validate and dispatch one approved plan through the closed executor registry."""
     if not isinstance(approved, ApprovedPlan):
         raise TypeError("execute requires an ApprovedPlan")
     plan = approved.plan
@@ -2090,30 +2101,14 @@ def execute(
             "compiler/runtime implementation changed after approval; re-plan and obtain "
             "new approval"
         )
-    supported_outputs = _executor_observables(plan.executor_id)
-    if (
-        plan.executor_id == _REACTION_EXECUTOR
-        and not isinstance(plan.request.resolved, ResolvedProgram)
-    ):
-        raise ValueError("reaction executor requires a chemical ResolvedProgram")
-    if (
-        plan.executor_id == _WATER_WAVE_EXECUTOR
-        and not isinstance(plan.request.resolved, ResolvedDomainProgram)
-    ):
-        raise ValueError(
-            "water-wave executor requires a non-chemical ResolvedDomainProgram"
-        )
-    if plan.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
-        from .human_isotope_domain import HumanIsotopeSpec
+    from .runtime_registry import descriptor_for
 
-        if (
-            not isinstance(plan.request.resolved, ResolvedDomainProgram)
-            or not isinstance(plan.request.resolved.subject, HumanIsotopeSpec)
-        ):
-            raise ValueError(
-                "human-isotope executor requires a ResolvedDomainProgram "
-                "HumanIsotopeSpec"
-            )
+    try:
+        descriptor = descriptor_for(plan.executor_id)
+        descriptor.extract_subject(plan.request.resolved)
+    except (KeyError, TypeError) as error:
+        raise ValueError(str(error)) from error
+    supported_outputs = frozenset(descriptor.default_output_contract().observable_ids)
     unsupported_outputs = sorted(
         set(plan.request.output_contract.observable_ids) - supported_outputs
     )
@@ -2122,10 +2117,7 @@ def execute(
             "approved executor cannot emit requested observables: "
             + ", ".join(unsupported_outputs)
         )
-    contract_error = _executor_contract_error(
-        plan.executor_id,
-        plan.request.output_contract,
-    )
+    contract_error = descriptor.output_contract_error(plan.request.output_contract)
     if contract_error is not None:
         raise ValueError(contract_error)
     actual_calculation = CalculationSpec.from_oracle(oracle)
@@ -2133,25 +2125,28 @@ def execute(
         raise ValueError(
             "oracle CalculationSpec changed after approval; re-plan and obtain new approval"
         )
-    if plan.executor_id == _WATER_WAVE_EXECUTOR:
-        from .water_wave import _execute_water_wave_horizon
+    runner = descriptor.resolve_runner()
+    return runner(
+        approved,
+        oracle,
+        actual_calculation=actual_calculation,
+        journal_path=journal_path,
+    )
 
-        return _execute_water_wave_horizon(
-            approved,
-            oracle,
-            actual_calculation=actual_calculation,
-            journal_path=journal_path,
-        )
-    if plan.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
-        from .human_isotope import _execute_human_isotope_identifiability
 
-        return _execute_human_isotope_identifiability(
-            approved,
-            oracle,
-            actual_calculation=actual_calculation,
-            journal_path=journal_path,
-        )
-
+def _execute_reaction_energy(
+    approved: ApprovedPlan,
+    oracle: object,
+    *,
+    actual_calculation: CalculationSpec,
+    journal_path: str | os.PathLike[str] | None = None,
+) -> ExecutionReport:
+    """Run the already validated reaction-energy plan."""
+    plan = approved.plan
+    if plan.executor_id != _REACTION_EXECUTOR:
+        raise ValueError("reaction-energy runner received a different executor plan")
+    if type(plan.request.resolved) is not ResolvedProgram:
+        raise ValueError("reaction executor requires an exact chemical ResolvedProgram")
     started_monotonic = time.monotonic()
     journal = RunJournal(
         approved,

@@ -83,12 +83,16 @@ empirically calibrated or predictive probability requests require different sema
 executors:
 `RESULTS_compiled_human_isotope_vertical.md`.
 
+The three executors were then migrated to the closed runtime registry and re-run with fresh,
+write-once journal paths. `RESULTS_runtime_registry_migration.md` records that infrastructure
+regression; it adds no scientific evidence to the three domain receipts.
+
 ## Running
 
 ```bash
 OMP_NUM_THREADS=1 .venv/bin/python experiments/polyatomic_cost_probe.py --species H2O
 
-# first approved compiled vertical; replace the journal path for a new run
+# first approved compiled vertical; every run requires a fresh journal path
 OMP_NUM_THREADS=1 .venv/bin/python experiments/compiled_h2_vertical.py \
   --journal /tmp/smartchem-h2-run.json
 

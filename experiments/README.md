@@ -49,6 +49,7 @@ harness at all.
 | `ledger_rank_blowup.py` | How long can a *legal* shepherding dialogue run? Measures rounds against `round_bound` as a function of one declared rank, to keep a termination argument from being read as a practical guard. Exact round counts; wall times are shape, not benchmark. |
 | `section_i_end_to_end.py` | Does `THE_COMPILER.md` §I's loop actually run? Four rounds on a real spec including one genuine refinement, every menu derived, ending in an object the category constructs. Backs Brick 4. Seconds, no PySCF. |
 | `compiled_h2_vertical.py` | Executes the first approved compiled chemistry vertical: preserved source -> typed request/plan -> approval -> CCSD(T)/cc-pVTZ H2 run -> obligations -> RunRecord/certificate. The durable result note is `RESULTS_compiled_h2_vertical.md`; the JSON journal is an ignored run artifact. |
+| `compiled_water_wave_vertical.py` | Executes the first approved cross-domain structural-toy vertical: underidentified phrase -> scientist-confirmed typed water profile/branch/regime/orientation -> exact output contract -> prescribed-background characteristic calculation -> independent recheck -> RunRecord/certificate. It is not a measured flume or continuum wave simulation. The durable receipt is `RESULTS_compiled_water_wave_vertical.md`; the JSON journal is ignored. |
 
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
 passes and keeps superseded numbers rather than overwriting them — `ao_storage_probe.py` and
@@ -65,6 +66,12 @@ source, plan, approval, calculation, result-artifact, and certificate digests, t
 magnitude comparison with repository H2 D0, and what that comparison does **not** establish:
 `RESULTS_compiled_h2_vertical.md`.
 
+The compiled water-wave vertical exercises the same seam across domains, but its scientific
+evidence is intentionally weaker: `STRUCTURAL_TOY`. The full profile and derived
+characteristics are retained, while missing profile provenance, wavelength/capillarity
+gates, stationary balance checks, uncertainty, and interpolation validation are certificate
+omissions rather than hidden assumptions: `RESULTS_compiled_water_wave_vertical.md`.
+
 ## Running
 
 ```bash
@@ -73,6 +80,10 @@ OMP_NUM_THREADS=1 .venv/bin/python experiments/polyatomic_cost_probe.py --specie
 # first approved compiled vertical; replace the journal path for a new run
 OMP_NUM_THREADS=1 .venv/bin/python experiments/compiled_h2_vertical.py \
   --journal /tmp/smartchem-h2-run.json
+
+# structural-toy cross-domain acceptance vertical; no PySCF required
+.venv/bin/python experiments/compiled_water_wave_vertical.py \
+  --journal /tmp/smartchem-water-wave-run.json
 ```
 
 Pin the threads and check `uptime` first. This repo has already been burned once by timing

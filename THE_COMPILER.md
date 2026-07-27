@@ -13,10 +13,14 @@ cross-domain compiler, planner, and runtime unbuilt.
 
 **Post-Brick implementation, 2026-07-27.** By explicit user directive, not by an assumed
 earlier ratification of this design note, the narrow contract seam and typed shepherd bindings
-were executed through one approved H2 chemistry vertical. That run demonstrates and tests only
-the source-to-certificate plumbing at existing CCSD(T)/cc-pVTZ diatomic coverage; it does not
-build the conversational surface, a general simulation runtime, or the cross-scale compiler.
-See `experiments/RESULTS_compiled_h2_vertical.md` and `DIRECTION_AUDIT_2026-07-27.md`.
+were executed through one approved H2 chemistry vertical and one prescribed-background
+water-wave structural-toy vertical. Those runs demonstrate and test only the
+source-to-certificate plumbing at existing CCSD(T)/cc-pVTZ diatomic coverage and one narrow
+cross-domain characteristic map; they do not build the conversational surface, a general
+simulation runtime, or the cross-scale compiler. See
+`experiments/RESULTS_compiled_h2_vertical.md`,
+`experiments/RESULTS_compiled_water_wave_vertical.md`, and
+`DIRECTION_AUDIT_2026-07-27.md`.
 
 `THE_ORBITAL.md` opens with the rule that a claim without a test does not belong in it.
 This document is design, not specification, so it obeys a stricter version of that rule:
@@ -755,7 +759,8 @@ compiler's job is to ask which structure is intended and type the answer, not to
 probe's choice into a law. `DIRECTION_AUDIT_2026-07-27.md` §5.2 makes the extended
 human–isotope/LD50 case the canonical acceptance test.
 
-**Required counterweight — analogue black holes in water. UNBUILT.** Surface waves on a
+**Required counterweight — analogue black holes in water. FIRST STRUCTURAL SLICE BUILT.**
+Surface waves on a
 transcritical current can carry an effective horizon and reproduce a declared sub-theory of
 black-hole wave kinematics; they do not create literal gravity or an astrophysical black hole.
 This is the complementary transport case because much more of the map is mathematically
@@ -764,6 +769,16 @@ a black-hole or white-hole orientation, wave blocking, scattering/mode conversio
 relation, or another observable, and it must emit the literal/analogue casualty list. See
 `DIRECTION_AUDIT_2026-07-27.md` §5.3 and the measured
 [black-hole-oriented water-wave scattering experiment](https://doi.org/10.1103/PhysRevLett.124.141101).
+
+The built slice is deliberately smaller than that research program:
+`water_wave_slot` requires a scientist-confirmed typed target, branch, flow direction,
+orientation, regime, assumption vector, gravity, and complete SI profile. The only executor
+computes and independently rechecks the nondispersive prescribed-background
+`U +/- sqrt(g h)` characteristic and all isolated crossings. Its acceptance run is
+`ANALOGUE/STRUCTURAL_TOY`; it retains the synthetic-profile, regime, balance, uncertainty,
+and interpolation omissions and refuses scattering, thermal, quantum, laser, backreaction,
+dispersive, viscous, nonlinear, and turbulent claims. This tests the cross-domain compiler
+boundary. It is not a measured water experiment or a continuum wave solver.
 
 ### What this section does NOT claim
 

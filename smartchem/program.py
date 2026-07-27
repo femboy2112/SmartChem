@@ -2,10 +2,10 @@
 The first typed simulation-program seam and its narrow chemistry vertical.
 
 This is deliberately not a general simulator.  It makes the approval boundary and result
-lineage real for one already-supported calculation: a closed, conserving reaction's endpoint
-energy under one existing oracle.  The general records are present so later domains do not
-have to smuggle their meaning into strings, but only ``compile_reaction_energy`` and
-``execute`` currently form an executable vertical.
+lineage real for two narrow calculations: a closed conserving reaction's endpoint energy and
+a prescribed-background shallow-water characteristic diagnostic.  The general records are
+present so later domains do not have to smuggle their meaning into strings; neither vertical
+licenses broader chemistry, fluid dynamics, or literal-gravity claims.
 
 The governing rule is that execution accepts an :class:`ApprovedPlan`, never a raw request.
 Changing an input, model, solver, calculation setting, obligation, output, tolerance, support,
@@ -87,6 +87,7 @@ __all__ = [
     "PhysicalIR",
     "Port",
     "Quantity",
+    "ResolvedDomainProgram",
     "ResolvedProgram",
     "Reservoir",
     "RunJournal",
@@ -97,6 +98,7 @@ __all__ = [
     "SolverSpec",
     "SourceProgram",
     "SourceTheory",
+    "StructuredObservableValue",
     "TargetIntent",
     "Transform",
     "TransportEvidence",
@@ -130,11 +132,57 @@ def _unique(values: tuple[object, ...], key: Callable[[object], object], name: s
 def _compiler_implementation_digest() -> str:
     """Bind approval to the executable compiler/runtime and shared contract semantics."""
     digest = hashlib.sha256()
-    for path in (Path(__file__), Path(__file__).with_name("contracts.py")):
+    for path in (
+        Path(__file__),
+        Path(__file__).with_name("contracts.py"),
+        Path(__file__).with_name("water_wave_domain.py"),
+        Path(__file__).with_name("water_wave.py"),
+    ):
+        if not path.exists():
+            continue
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
         digest.update(hashlib.sha256(path.read_bytes()).digest())
     return digest.hexdigest()
+
+
+_REACTION_EXECUTOR = "smartchem.program/reaction-energy-v1"
+_WATER_WAVE_EXECUTOR = "smartchem.water_wave/shallow-water-horizon-v1"
+
+
+def _executor_observables(executor_id: str) -> frozenset[str]:
+    """Source-bound capabilities; extending this function invalidates prior approvals."""
+    if executor_id == _REACTION_EXECUTOR:
+        return frozenset(("reaction_energy",))
+    if executor_id == _WATER_WAVE_EXECUTOR:
+        return frozenset((
+            "water_wave_horizon",
+            "water_wave_characteristic_profile",
+        ))
+    raise ValueError(f"no runtime is registered for executor_id {executor_id!r}")
+
+
+def _executor_contract_error(
+    executor_id: str,
+    contract: "OutputContract",
+) -> str | None:
+    """Return why the narrow executor cannot honor this semantic output contract."""
+    if executor_id == _REACTION_EXECUTOR:
+        expected = _default_output_contract()
+    elif executor_id == _WATER_WAVE_EXECUTOR:
+        from .water_wave import _default_output_contract as water_wave_contract
+
+        expected = water_wave_contract()
+    else:
+        _executor_observables(executor_id)
+        raise AssertionError("unreachable")
+    if contract != expected:
+        return (
+            "this narrow executor can honor only its exact default output contract; "
+            "changing support, resolution, precision, coverage, diagnostics, retention, "
+            "or observable membership requires a different validated executor"
+        )
+    return None
 
 
 @dataclass(frozen=True)
@@ -628,6 +676,26 @@ class ResolvedProgram(Digestible):
 
 
 @dataclass(frozen=True)
+class ResolvedDomainProgram(Digestible):
+    """A non-chemical semantic subject closed by a typed shepherd session."""
+
+    source_digest: str
+    subject: object
+    target: TargetIntent
+    source_theory: SourceTheory
+    shepherd_session_digest: str
+
+    def __post_init__(self) -> None:
+        _nonempty(self.source_digest, "source_digest")
+        _nonempty(self.shepherd_session_digest, "shepherd_session_digest")
+        if not isinstance(self.target, TargetIntent):
+            raise TypeError("target must be a TargetIntent")
+        if not isinstance(self.source_theory, SourceTheory):
+            raise TypeError("source_theory must be a SourceTheory")
+        canonical_digest(self.subject)
+
+
+@dataclass(frozen=True)
 class PhysicalIR(Digestible):
     resolved_digest: str
     components: tuple[Component, ...]
@@ -685,7 +753,7 @@ class PhysicalIR(Digestible):
 @dataclass(frozen=True)
 class SimulationRequest(Digestible):
     source: SourceProgram
-    resolved: ResolvedProgram
+    resolved: ResolvedProgram | ResolvedDomainProgram
     physical_ir: PhysicalIR
     output_contract: OutputContract
     equivalence_contract: EquivalenceContract
@@ -717,9 +785,10 @@ class RuntimeLimits(Digestible):
     max_species_calls: int | None = None
     wall_seconds: float | None = None
     memory_bytes: int | None = None
+    max_engine_calls: int | None = None
 
     def __post_init__(self) -> None:
-        for name in ("max_species_calls", "memory_bytes"):
+        for name in ("max_species_calls", "max_engine_calls", "memory_bytes"):
             value = getattr(self, name)
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f"{name} must be a non-negative integer or None")
@@ -751,8 +820,19 @@ class CandidatePlan(Digestible):
             raise ValueError("selected model is not present in the PhysicalIR")
         _nonempty(self.compiler_implementation_digest, "compiler_implementation_digest")
         _nonempty(self.executor_id, "executor_id")
-        if self.executor_id != "smartchem.program/reaction-energy-v1":
-            raise ValueError(f"no runtime is registered for executor_id {self.executor_id!r}")
+        supported_outputs = _executor_observables(self.executor_id)
+        if (
+            self.executor_id == _REACTION_EXECUTOR
+            and not isinstance(self.request.resolved, ResolvedProgram)
+        ):
+            raise ValueError("reaction executor requires a chemical ResolvedProgram")
+        if (
+            self.executor_id == _WATER_WAVE_EXECUTOR
+            and not isinstance(self.request.resolved, ResolvedDomainProgram)
+        ):
+            raise ValueError(
+                "water-wave executor requires a non-chemical ResolvedDomainProgram"
+            )
         if not isinstance(self.transforms, tuple):
             raise TypeError("transforms must be a tuple")
         if not isinstance(self.predicted_resources, tuple):
@@ -770,7 +850,7 @@ class CandidatePlan(Digestible):
         _strings(self.blockers, "blockers")
         unsupported = sorted(
             set(self.request.output_contract.observable_ids)
-            - {"reaction_energy"}
+            - supported_outputs
         )
         if unsupported and not self.blockers:
             raise ValueError(
@@ -859,6 +939,7 @@ _APPROVAL_TOKEN = object()
 class ApprovedPlan(Digestible):
     plan: CandidatePlan
     approval: Approval
+    approval_record_digest: str
 
     def __init__(
         self,
@@ -871,6 +952,7 @@ class ApprovedPlan(Digestible):
             raise PermissionError("ApprovedPlan can only be created by approve()")
         object.__setattr__(self, "plan", plan)
         object.__setattr__(self, "approval", approval)
+        object.__setattr__(self, "approval_record_digest", approval.digest)
 
 
 def record_approval(
@@ -916,6 +998,11 @@ class Artifact(Digestible):
             _nonempty(getattr(self, name), name)
         if type(self.complete) is not bool or type(self.quarantined) is not bool:
             raise TypeError("complete and quarantined must be booleans")
+        if self.kind == "observable" and self.payload is None:
+            raise ValueError(
+                "a complete observable identity is insufficient: observable artifacts "
+                "must retain a schema-checkable payload"
+            )
         if self.payload is not None:
             if canonical_digest(self.payload) != self.content_digest:
                 raise ValueError("content_digest must identify the retained artifact payload")
@@ -1014,6 +1101,35 @@ class ObservableValue(Digestible):
 
 
 @dataclass(frozen=True)
+class StructuredObservableValue(Digestible):
+    """A complete non-scalar observable whose typed payload is retained verbatim."""
+
+    observable_id: str
+    payload: object
+    unit: str
+    method: str
+    support: str
+    seconds: float
+    uncertainty_note: str
+    notes: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("observable_id", "unit", "method", "support", "uncertainty_note"):
+            _nonempty(getattr(self, name), name)
+        if (
+            isinstance(self.seconds, bool)
+            or not isinstance(self.seconds, (int, float))
+            or not math.isfinite(float(self.seconds))
+            or self.seconds < 0
+        ):
+            raise ValueError("seconds must be a non-negative finite real number")
+        object.__setattr__(self, "seconds", float(self.seconds))
+        if not isinstance(self.notes, str):
+            raise TypeError("notes must be a string")
+        canonical_digest(self.payload)
+
+
+@dataclass(frozen=True)
 class Certificate(Digestible):
     source_digest: str
     request_digest: str
@@ -1067,7 +1183,7 @@ class Certificate(Digestible):
 @dataclass(frozen=True)
 class SimulationResult(Digestible):
     run_id: str
-    values: tuple[ObservableValue, ...]
+    values: tuple[ObservableValue | StructuredObservableValue, ...]
     certificate_digest: str
 
     def __post_init__(self) -> None:
@@ -1076,10 +1192,13 @@ class SimulationResult(Digestible):
         if (
             not isinstance(self.values, tuple)
             or not self.values
-            or any(not isinstance(value, ObservableValue) for value in self.values)
+            or any(
+                not isinstance(value, (ObservableValue, StructuredObservableValue))
+                for value in self.values
+            )
         ):
             raise ValueError(
-                "values must be a non-empty tuple of ObservableValue values"
+                "values must be a non-empty tuple of supported observable values"
             )
         _unique(self.values, lambda item: item.observable_id, "result observable IDs")
 
@@ -1131,6 +1250,61 @@ def _plain(value: object) -> object:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     raise TypeError(f"run journal cannot serialize {type(value).__qualname__}")
+
+
+def _observable_payload_error(
+    plan: CandidatePlan,
+    artifacts: tuple[Artifact, ...],
+) -> str | None:
+    """Validate executor-specific observable payload schemas before completion."""
+    payloads = {
+        artifact.artifact_id.removeprefix("observable:"): artifact.payload
+        for artifact in artifacts
+        if artifact.kind == "observable"
+        and artifact.complete
+        and not artifact.quarantined
+    }
+    if plan.executor_id == _REACTION_EXECUTOR:
+        payload = payloads.get("reaction_energy")
+        if not isinstance(payload, Estimate):
+            return "reaction_energy must retain a typed Estimate payload"
+        return None
+    if plan.executor_id == _WATER_WAVE_EXECUTOR:
+        from .water_wave_domain import (
+            CharacteristicSample,
+            HorizonDiagnostic,
+            WaterWaveSpec,
+            diagnose_horizon,
+        )
+
+        resolved = plan.request.resolved
+        if (
+            not isinstance(resolved, ResolvedDomainProgram)
+            or not isinstance(resolved.subject, WaterWaveSpec)
+        ):
+            return "water-wave plan has no typed WaterWaveSpec subject"
+        diagnostic = payloads.get("water_wave_horizon")
+        profile = payloads.get("water_wave_characteristic_profile")
+        if not isinstance(diagnostic, HorizonDiagnostic):
+            return "water_wave_horizon must retain a typed HorizonDiagnostic payload"
+        if (
+            not isinstance(profile, tuple)
+            or any(not isinstance(item, CharacteristicSample) for item in profile)
+        ):
+            return (
+                "water_wave_characteristic_profile must retain every typed "
+                "CharacteristicSample"
+            )
+        try:
+            reference = diagnose_horizon(resolved.subject)
+        except ValueError as error:
+            return f"approved water-wave subject is unclassifiable: {error}"
+        if diagnostic != reference:
+            return "water_wave_horizon does not equal the independently recomputed diagnostic"
+        if profile != diagnostic.samples:
+            return "water-wave characteristic profile does not equal the diagnostic samples"
+        return None
+    return f"no observable payload validator for executor {plan.executor_id!r}"
 
 
 class RunJournal:
@@ -1304,6 +1478,12 @@ class RunJournal:
             return self.incomplete(
                 f"output inventory mismatch; missing={missing}, extra={extra}"
             )
+        payload_error = _observable_payload_error(
+            self.approved.plan,
+            self._record.artifacts,
+        )
+        if payload_error is not None:
+            return self.invalid("observable payload schema mismatch: " + payload_error)
         required = {
             obligation.digest
             for obligation in self.approved.plan.request.obligations
@@ -1598,13 +1778,19 @@ def compile_reaction_energy(
         blockers += (
             "this vertical cannot emit requested observable(s): " + ", ".join(unsupported),
         )
+    contract_error = _executor_contract_error(
+        _REACTION_EXECUTOR,
+        request.output_contract,
+    )
+    if contract_error is not None:
+        blockers += (contract_error,)
     return CandidatePlan(
         request=request,
         model=model,
         solver=solver,
         calculation=calculation,
         compiler_implementation_digest=_compiler_implementation_digest(),
-        executor_id="smartchem.program/reaction-energy-v1",
+        executor_id=_REACTION_EXECUTOR,
         transforms=(),
         predicted_resources=(
             ("species calls", str(len(set(reaction_residue(reaction)[0].species
@@ -1771,12 +1957,13 @@ def _resource_wall(
     *,
     started: float,
     completed_calls: int,
+    call_label: str = "species calls",
 ) -> str | None:
     elapsed = time.monotonic() - started
     if limits.wall_seconds is not None and elapsed >= limits.wall_seconds:
         return (
             f"approved wall_seconds={limits.wall_seconds} reached after "
-            f"{elapsed:.6f}s and {completed_calls} completed species calls"
+            f"{elapsed:.6f}s and {completed_calls} completed {call_label}"
         )
     peak = _peak_rss_bytes()
     if limits.memory_bytes is not None:
@@ -1788,7 +1975,7 @@ def _resource_wall(
         if peak >= limits.memory_bytes:
             return (
                 f"approved memory_bytes={limits.memory_bytes} reached at peak_rss={peak} "
-                f"after {completed_calls} completed species calls"
+                f"after {completed_calls} completed {call_label}"
             )
     return None
 
@@ -1803,6 +1990,11 @@ def execute(
     if not isinstance(approved, ApprovedPlan):
         raise TypeError("execute requires an ApprovedPlan")
     plan = approved.plan
+    if approved.approval.digest != approved.approval_record_digest:
+        raise ValueError(
+            "approved plan integrity check failed; approval record changed after "
+            "authorization"
+        )
     if approved.approval.plan_digest != plan.digest:
         raise ValueError(
             "approved plan integrity check failed; approval no longer names this plan"
@@ -1812,25 +2004,46 @@ def execute(
             "compiler/runtime implementation changed after approval; re-plan and obtain "
             "new approval"
         )
-    # This vertical has exactly one executor and one output capability. Keep those literals
-    # at the call site: extending them requires a source change, which changes the compiler
-    # implementation digest and therefore invalidates every prior approval.
-    if plan.executor_id != "smartchem.program/reaction-energy-v1":
+    supported_outputs = _executor_observables(plan.executor_id)
+    if (
+        plan.executor_id == _REACTION_EXECUTOR
+        and not isinstance(plan.request.resolved, ResolvedProgram)
+    ):
+        raise ValueError("reaction executor requires a chemical ResolvedProgram")
+    if (
+        plan.executor_id == _WATER_WAVE_EXECUTOR
+        and not isinstance(plan.request.resolved, ResolvedDomainProgram)
+    ):
         raise ValueError(
-            f"approved executor_id {plan.executor_id!r} has no registered runtime"
+            "water-wave executor requires a non-chemical ResolvedDomainProgram"
         )
     unsupported_outputs = sorted(
-        set(plan.request.output_contract.observable_ids) - {"reaction_energy"}
+        set(plan.request.output_contract.observable_ids) - supported_outputs
     )
     if unsupported_outputs:
         raise ValueError(
             "approved executor cannot emit requested observables: "
             + ", ".join(unsupported_outputs)
         )
+    contract_error = _executor_contract_error(
+        plan.executor_id,
+        plan.request.output_contract,
+    )
+    if contract_error is not None:
+        raise ValueError(contract_error)
     actual_calculation = CalculationSpec.from_oracle(oracle)
     if actual_calculation.digest != plan.calculation.digest:
         raise ValueError(
             "oracle CalculationSpec changed after approval; re-plan and obtain new approval"
+        )
+    if plan.executor_id == _WATER_WAVE_EXECUTOR:
+        from .water_wave import _execute_water_wave_horizon
+
+        return _execute_water_wave_horizon(
+            approved,
+            oracle,
+            actual_calculation=actual_calculation,
+            journal_path=journal_path,
         )
 
     started_monotonic = time.monotonic()

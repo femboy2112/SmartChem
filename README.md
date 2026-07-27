@@ -11,8 +11,12 @@ the scientist-approved output, while treating cross-domain and cross-scale exper
 language as a first-class shepherding problem.
 
 On 2026-07-27, by explicit user directive rather than presumed earlier roadmap ratification,
-the first contract/typed-binding slice and its H2 chemistry vertical were executed. The result
-and strict scope are recorded in [the compiled H2 vertical receipt](experiments/RESULTS_compiled_h2_vertical.md).
+the first contract/typed-binding slice, its H2 chemistry vertical, and a typed structural-toy
+water-wave analogue-kinematics slice were executed. Their strict scopes are recorded in
+[the compiled H2 receipt](experiments/RESULTS_compiled_h2_vertical.md) and
+[the compiled water-wave receipt](experiments/RESULTS_compiled_water_wave_vertical.md).
+The latter is a prescribed-profile algebraic compiler acceptance calculation, not a measured
+flume, continuum wave simulation, or literal black hole.
 
 ```python
 from smartchem import Config, Molecule, Reaction, favourability
@@ -433,6 +437,9 @@ Specification layer      stoichiometry.py         derive every balanced reaction
                          domain.py                what an oracle can be asked, before asking
                          diagnosis.py             why a refusal happened, and whether it is removable
                          ledger.py                interrogate an underdetermined spec to a fixed point
+Compiled verticals       contracts.py · program.py
+                         water_wave_domain.py     typed branch/profile diagnostic, structural toy
+                         water_wave.py            analogue-only plan/approval/journal/certificate path
 Search & verification    pathway.py · store.py    mechanisms, regeneration, response surfaces
 Sequential core          category.py              conservation + validated histories
 Oracle interface         oracle/                  pluggable, provenance + untyped scale/sensitivities
@@ -587,9 +594,11 @@ verdict, and both kinds are pinned by tests in `tests/test_findings.py`:
 The frozen baseline's exact MAE on every split is pinned, because the headline claim is a
 *comparison*, and a comparison is only checkable while both sides still run.
 
-Remaining midterm compiler work is the explicitly experimental cross-domain pair (water-wave
-analogue and human–isotope model), then the no-loss optimizer and only then the conversational
-surface.
+The structural water-wave half of the canonical cross-domain pair now runs. Remaining
+midterm compiler work starts with the underidentified human–isotope/environmental-hazard
+half, then the no-loss optimizer and only then the conversational surface. Physical
+water-wave validation remains separate: continuity/momentum-admissible backgrounds,
+wavelength/capillarity gates, uncertainty, and a full dispersive branch solver.
 Chemistry expansion remains separate: a tight-binding/xTB fast tier, broader polyatomic
 backend validation, explicit electronic states/conformers, and a documented bond-order policy
 per backend.

@@ -6,8 +6,9 @@ reality-respecting simulation language.*
 **Status:** project-direction audit, 2026-07-27. The non-negotiable laws below encode the
 scientist's stated brief. The milestone order began as a proposal, not as evidence of an
 earlier ratification. On 2026-07-27 the user explicitly directed execution of Milestones A and
-B and the narrow H2 instance of Milestone C; the completion record below is therefore a user
-directive, not a retroactive claim about what Leah or Claude had previously intended.
+B, the narrow H2 instance of Milestone C, and then the best-shot next midterm beginning with
+the water-wave half of Milestone D. The completion record below is therefore a user directive,
+not a retroactive claim about what Leah or Claude had previously intended.
 
 **Audited baseline head:** `b85135a6849b78c507bb472752fc314116046b73`
 (`main == origin/main` before this implementation)
@@ -42,8 +43,7 @@ What exists is unusually valuable:
   non-linear constraints;
 - adversarial and mutation testing that has repeatedly falsified stronger-looking claims.
 
-The 2026-07-27 implementation added that connection for one deliberately narrow chemistry
-vertical:
+The 2026-07-27 implementation added that connection for two deliberately narrow verticals:
 
 - immutable source, resolved-program, thin Physical IR, request, plan, approval, run, and
   certificate artifacts;
@@ -51,12 +51,16 @@ vertical:
 - one fixed reaction-energy compiler/executor with output-inventory, resource-wall, quarantine,
   and approval-integrity checks;
 - one real `2 H -> H2` execution at existing public oracle coverage.
+- one typed, branch-specific, prescribed-background shallow-water characteristic diagnostic,
+  executed on a synthetic profile as `ANALOGUE/STRUCTURAL_TOY`, with every input/derived point,
+  omission, and literal-gravity casualty retained.
 
 What still does not exist is the general version: a language covering arbitrary worlds,
 open-process and multiphysics semantics, a planner choosing among multiple valid model chains,
-cross-domain transport/assembly compilation, a general post-run validity/refinement runtime,
-or a conversational surface. The current executable bridge accepts one typed `Reaction`
-binding from an outright-compiled `Session`; it is not a general `SimulationPlan` compiler.
+general cross-domain transport/assembly compilation, a general post-run validity/refinement
+runtime, or a conversational surface. The executable bridges accept either one typed
+`Reaction` or one typed `WaterWaveSpec` from an outright-compiled `Session`; this pair is
+still not a general `SimulationPlan` compiler or a continuum wave solver.
 
 **This audit set the contract seam before the conversational UI.** That narrow seam is now
 implemented and exercised once. The same ordering still governs the remaining general work:
@@ -261,14 +265,15 @@ predicate, an exactness or discrepancy reference, and an emitted transform recor
 | Refusal diagnosis | **Built** | Obstructions are derived from conservation and domain facts. There is no model router or executable remedy graph. |
 | Shepherd termination | **Built, syntactic** | A well-founded multiset rank prevents endless rephrasing/deepening, and menus require a non-empty derivation string. It proves termination, not that new subquestions semantically descend from the old one. Legacy slots remain textual; the first executable vertical additionally requires typed bindings and machine derivation references. |
 | Section I loop | **Demonstrated, not compiled** | Four rounds close a hard-coded example and the category accepts its fixed reaction. The closed `Session` is not interpreted into a general runtime plan. |
-| Contract seam and typed bindings | **Built, narrow vertical slice** | Immutable source/program, request, plan, approval, run, certificate, typed binding, and validity-obligation artifacts now exist for the first vertical. They do not yet make a general simulation language. |
+| Contract seam and typed bindings | **Built, narrow vertical slices** | Immutable source/program, request, plan, approval, run, certificate, typed binding, and validity-obligation artifacts now support the H2 and structural water verticals. They do not yet make a general simulation language. |
 | Approved H2 vertical | **Executed once, complete** | `2 H -> H2` ran through the approved source-to-certificate path at the existing CCSD(T)/cc-pVTZ protocol. The durable receipt and its limitations are in `experiments/RESULTS_compiled_h2_vertical.md`. |
+| Water-wave cross-domain slice | **Executed structural compiler test** | The typed language distinguishes target, regime, branch, flow direction, and black/white/pair orientation; the runtime retains every prescribed SI profile point, independently rechecks every crossing, and binds an exact analogue/casualty scope. The synthetic run is `STRUCTURAL_TOY`, not a measured flume, validated horizon, continuum wave evolution, or astrophysical result. |
 | Public quantum-chemistry output | **Implemented in a narrow domain** | Enabled neutral atoms and fixed neutral diatomics under measured protocols; broader internal code fails closed rather than inheriting evidence. |
 | General simulation runtime | **Unbuilt** | No general state evolution, boundary/reservoir semantics, time integration, mesh, ensemble, or coupled solver system. |
-| Typed Physical IR and language | **Built for the first vertical; otherwise unbuilt** | The minimal source/IR records support the executed H2 path. They do not yet cover the general world, ports, cross-scale assembly, or simulation language envisioned below. |
-| Output contract and approval gate | **Built for the first vertical** | The executed H2 plan was immutable and explicitly approved. Broader policy, model families, and tradeoff negotiation remain unbuilt. |
-| Post-run validity transition | **Built for the first vertical** | Named obligations and complete/incomplete/failure records exist on the vertical; no general solver/result-state runtime exists. |
-| Result certificate | **Built for the first vertical** | The receipt binds the source-to-result run at the H2 scope; it is not yet a general artifact system. |
+| Typed Physical IR and language | **Built for two narrow verticals; otherwise unbuilt** | The minimal source/IR records support H2 and the prescribed-background water diagnostic. They do not yet cover general worlds, typed ports, cross-scale assembly, or a general simulation language. |
+| Output contract and approval gate | **Built for two narrow verticals** | Both executors require their exact validated output contracts; changing membership, support, resolution, precision, coverage, diagnostics, or retention blocks execution until a different executor exists. Broader policy and tradeoff negotiation remain unbuilt. |
+| Post-run validity transition | **Built for two narrow verticals** | Named obligations and complete/incomplete/invalid/refused/failed records exist on both; no general solver/result-state runtime exists. |
+| Result certificate | **Built for two narrow verticals** | Receipts bind the H2 and structural water runs to their scope, evidence, omissions, and casualties; this is not yet a general artifact system. |
 
 The strongest honest summary is:
 
@@ -531,8 +536,10 @@ without flattening them into the same confidence class.
 - record the applicability of stationarity, dimensionality, irrotational/barotropic or
   shallow-water assumptions, depth and capillarity regime, vorticity/shear,
   viscosity/dissipation, nonlinearity, forcing/reflections, and slow-background/WKB
-  assumptions; when the effective-metric conditions fail, report
-  `CLASSICAL_WAVE_SCATTERING` rather than an analogue-horizon result;
+  assumptions; failure of the nondispersive effective-metric gates invalidates that claim.
+  A full-dispersion branch/group-velocity horizon remains a possible weaker analogue claim
+  only when it is derived from the frequency- and branch-specific dispersion relation;
+  otherwise report only the actually established classical wave-scattering result;
 - emit the complete source-to-target transport and casualty map;
 - prevent classical stimulated scattering from being labeled spontaneous quantum emission;
 - for a thermal-spectrum target, normalize positive- and negative-norm modes; calibrate
@@ -607,10 +614,12 @@ The conversational layer is an interface to these transitions. It never substitu
 
 ## 7. Milestone status and build order
 
-For the roadmap horizons requested on 2026-07-27, Milestones A and B are the completed
-short-term goals. The H2 instance of Milestone C is the completed selected midterm goal.
-Milestones D, E, and F are the remaining midterm sequence, in that order. The broader
-multiphysics and validation work in the roadmap checkpoint remains long term.
+For the roadmap horizons requested on 2026-07-27, Milestones A and B are completed
+short-term goals. The H2 instance of Milestone C is complete. The selected next midterm was
+decomposed: the water-wave D1 compiler/runtime slice is complete as a structural toy, while
+the human–isotope D2 slice remains the next canonical cross-domain test. Milestones E and F
+follow. Physical flume validation, dispersive wave solving, and the broader multiphysics work
+remain separate longer-horizon validation/runtime work.
 
 ### Milestone A — freeze the contracts — EXECUTED 2026-07-27 by user directive
 
@@ -700,7 +709,7 @@ execution, not a recalibration, an MAE, a bound, a Gibbs result, or new chemistr
 See `experiments/RESULTS_compiled_h2_vertical.md` for the run, plan, approval, artifact, and
 certificate digests.
 
-### Milestone D — compile the canonical cross-domain pair
+### Milestone D — compile the canonical cross-domain pair — WATER D1 EXECUTED; HUMAN D2 OPEN
 
 Compile both canonical requests through the same artifact chain:
 
@@ -711,6 +720,19 @@ Compile both canonical requests through the same artifact chain:
 The pair is deliberate. The first tests whether the language can preserve a known sub-theory
 without turning an analogue into a literal claim. The second tests whether it can help the
 scientist formulate a new approximation without turning refinement into validation.
+
+**Completed D1 scope.** `water_wave_slot` refuses to close the original phrase through text;
+the scientist must bind a typed target, nondispersive/dispersive/etc. regime, characteristic
+branch, flow direction, black/white/pair orientation, explicit assumption vector, gravity,
+and complete SI profile. The current executor implements only the classical nondispersive
+`U +/- sqrt(g h)` characteristic diagnostic. Unsupported scattering, thermal, quantum,
+laser, backreaction, viscous, nonlinear, turbulent, and gravity-capillary requests are
+planning blockers. A synthetic four-point run reached `COMPLETE` with a
+`KINEMATIC_CROSSING_IN_DECLARED_MODEL` at the independently reproduced interpolated position;
+its scope is `ANALOGUE` and its evidence is `STRUCTURAL_TOY`. The certificate explicitly
+records that the profile is synthetic and that wavelength/frequency, capillarity, stationary
+continuity/momentum, measurement/resolution uncertainty, and interpolation discrepancy were
+not established. See `experiments/RESULTS_compiled_water_wave_vertical.md`.
 
 For the human case, reuse `experiments/decay_analogy_probe.py` only as one prior hypothesis and
 not as the predetermined answer. The compiler must support a scientist-selected
@@ -796,14 +818,16 @@ environment:
 
 ```text
 .venv/bin/python -m pytest -q -rs
-1089 passed, 14 skipped, 1 xfailed in 21.09s
+1133 passed, 14 skipped, 1 xfailed in 22.32s
 ```
 
 The 14 tests marked slow were not run and are not counted as passed. PySCF was installed, so
 the unmarked real-oracle tests and the separate compiled H2 smoke did execute real wavefunction
-work. The strict xfail is the intentional true-parallel-interchange architecture debt. This
-no-`--runslow` result plus the scoped H2 smoke supports the implemented narrow contracts only;
-it does not validate the unbuilt general language/compiler.
+work. The water-wave structural calculation has no PySCF dependency. The strict xfail is the
+intentional true-parallel-interchange architecture debt. This no-`--runslow` result plus the
+scoped H2 and water receipts supports the implemented narrow contracts only; it does not
+validate the unbuilt general language/compiler or promote the water profile beyond
+`STRUCTURAL_TOY`.
 
 ---
 
@@ -825,8 +849,9 @@ it does not validate the unbuilt general language/compiler.
   objects and a calculation-spec digest checked on every lookup.
 - the inspected benchmark population is not an independent holdout.
 - open systems, ports, Gibbs thermodynamics, kinetics, full state identity, coupled fields,
-  continuum free-surface flow, analogue-gravity wave propagation, and general multiphysics
-  validity remain roadmap work.
+  continuum free-surface evolution, dispersive analogue-gravity wave propagation, and general
+  multiphysics validity remain roadmap work; the built water slice is only a prescribed-profile
+  algebraic characteristic diagnostic.
 - the arbitrary cross-scale “assembly” needed to justify structural transport remains a
   research problem. If it cannot be identified, certified transport must be declined; an
   explicit assembly hypothesis may still enter the experimental lane.

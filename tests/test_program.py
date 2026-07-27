@@ -479,6 +479,15 @@ def test_wall_and_memory_limits_are_enforced_as_incomplete_before_oracle_calls(
     assert all(item.quarantined for item in report.record.artifacts)
 
 
+def test_runtime_limits_preserve_the_pre_water_wave_positional_api():
+    limits = RuntimeLimits(3, 10.0, 1024)
+
+    assert limits.max_species_calls == 3
+    assert limits.wall_seconds == 10.0
+    assert limits.memory_bytes == 1024
+    assert limits.max_engine_calls is None
+
+
 def test_unsupported_observable_is_blocked_before_approval(plan, oracle):
     contract = _changed_output_contract(plan.request.output_contract, extra=True)
     blocked = compile_reaction_energy(
@@ -489,11 +498,30 @@ def test_unsupported_observable_is_blocked_before_approval(plan, oracle):
     )
 
     assert blocked.blockers
-    assert "cannot emit" in blocked.blockers[-1]
+    assert any("cannot emit" in item for item in blocked.blockers)
     with pytest.raises(ValueError, match="blockers"):
         approve(blocked, _approval(blocked))
     with pytest.raises(ValueError, match="unsupported observables"):
         _with_request(plan, replace(plan.request, output_contract=contract))
+
+
+def test_supported_reaction_output_id_cannot_promise_unsupported_semantics(plan, oracle):
+    altered = _changed_output_contract(
+        plan.request.output_contract,
+        precision="claim an exact Gibbs free energy instead of the emitted endpoint delta-E",
+    )
+
+    blocked = compile_reaction_energy(
+        plan.request.source,
+        H_FORMATION,
+        oracle,
+        output_contract=altered,
+    )
+
+    assert any("exact default output contract" in item for item in blocked.blockers)
+    with pytest.raises(ValueError, match="blockers"):
+        approve(blocked, _approval(blocked))
+    assert oracle.calls == []
 
 
 def test_required_unknown_obligation_refuses_before_oracle_execution(plan, oracle):
@@ -516,14 +544,48 @@ def test_required_unknown_obligation_refuses_before_oracle_execution(plan, oracl
 
 def test_run_journal_refuses_completion_when_required_obligations_are_missing(plan):
     journal = RunJournal(_approved(plan), backend="deterministic")
-    journal.add_artifact(Artifact("observable:reaction_energy", "observable", "b" * 64,
-                                 True, False))
+    payload = Estimate(-1.0, 0.1, "typed-test-estimate")
+    journal.add_artifact(Artifact(
+        "observable:reaction_energy",
+        "observable",
+        canonical_digest(payload),
+        True,
+        False,
+        payload=payload,
+    ))
 
     record = journal.complete()
 
     assert record.status is RunStatus.INVALID
     assert record.artifacts[0].quarantined is True
     assert "required obligations did not all pass" in record.failures[-1]
+
+
+def test_run_journal_rejects_wrong_observable_payload_schema(plan):
+    journal = RunJournal(_approved(plan), backend="deterministic")
+    payload = {"value_ev": -1.0}
+    journal.add_artifact(Artifact(
+        "observable:reaction_energy",
+        "observable",
+        canonical_digest(payload),
+        True,
+        False,
+        payload=payload,
+    ))
+    for obligation in plan.request.obligations:
+        journal.add_obligation_result(
+            ObligationResult(
+                obligation.digest,
+                ObligationOutcome.PASS,
+                "forged pass cannot override payload schema",
+            )
+        )
+
+    record = journal.complete()
+
+    assert record.status is RunStatus.INVALID
+    assert all(item.quarantined for item in record.artifacts)
+    assert "payload schema mismatch" in record.failures[-1]
 
 
 def test_an_obligation_cannot_acquire_contradictory_duplicate_results(plan):
@@ -551,10 +613,29 @@ def test_executor_identity_is_rechecked_before_calls(plan, oracle):
     approved = _approved(plan)
     object.__setattr__(approved.plan, "executor_id", "attacker/unregistered")
     object.__setattr__(approved.approval, "plan_digest", approved.plan.digest)
+    object.__setattr__(
+        approved,
+        "approval_record_digest",
+        approved.approval.digest,
+    )
 
-    with pytest.raises(ValueError, match="no registered runtime"):
+    with pytest.raises(ValueError, match="no runtime is registered"):
         execute(approved, oracle)
     assert oracle.calls == []
+
+
+def test_approval_record_mutation_is_rejected_before_calls(plan, oracle):
+    approved = _approved(plan)
+    object.__setattr__(approved.approval, "scope", "post-authorization wider scope")
+
+    with pytest.raises(ValueError, match="approval record changed"):
+        execute(approved, oracle)
+    assert oracle.calls == []
+
+
+def test_observable_artifact_requires_schema_checkable_payload():
+    with pytest.raises(ValueError, match="schema-checkable payload"):
+        Artifact("observable:forged", "observable", "b" * 64, True, False)
 
 
 def test_oracle_identity_change_during_a_call_fails_and_quarantines_partial(plan):

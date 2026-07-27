@@ -14,12 +14,17 @@ cross-domain compiler, planner, and runtime unbuilt.
 **Post-Brick implementation, 2026-07-27.** By explicit user directive, not by an assumed
 earlier ratification of this design note, the narrow contract seam and typed shepherd bindings
 were executed through one approved H2 chemistry vertical and one prescribed-background
-water-wave structural-toy vertical. Those runs demonstrate and test only the
+water-wave structural-toy vertical. A third approved D2a vertical now binds the
+human–isotope metaphor to a completely synthetic cohort/assembly/exposure/LD50 record and
+returns only the constructive result that one median endpoint does not identify a unique
+dynamic survival family. Those runs demonstrate and test only the
 source-to-certificate plumbing at existing CCSD(T)/cc-pVTZ diatomic coverage and one narrow
-cross-domain characteristic map; they do not build the conversational surface, a general
-simulation runtime, or the cross-scale compiler. See
+cross-domain characteristic map plus one narrow cross-scale identifiability map; they do not
+build the conversational surface, a general simulation runtime, or an empirically fitted
+probability-bearing human model. See
 `experiments/RESULTS_compiled_h2_vertical.md`,
 `experiments/RESULTS_compiled_water_wave_vertical.md`, and
+`experiments/RESULTS_compiled_human_isotope_vertical.md`, plus
 `DIRECTION_AUDIT_2026-07-27.md`.
 
 `THE_ORBITAL.md` opens with the rule that a claim without a test does not belong in it.
@@ -759,6 +764,18 @@ compiler's job is to ask which structure is intended and type the answer, not to
 probe's choice into a law. `DIRECTION_AUDIT_2026-07-27.md` §5.2 makes the extended
 human–isotope/LD50 case the canonical acceptance test.
 
+**First human D2a slice built.** The executable interpretation is intentionally narrower than
+the general request: a scientist-confirmed, wholly synthetic cohort all-cause target with a
+typed population/event, differentiated component granularity, assembly hypothesis,
+environmental schedule, hazard-effect choice, toxicokinetic placeholder, and one LD50/LC50
+constraint. The compiler binds exposure to the endpoint time origin/window, binds affected
+components to the declared granularity, and binds toxicokinetic source/target species. It
+blocks functional-threshold, cause-specific, individual, observed-data, cross-species, and
+richer-calibration execution. Its two normalized family witnesses agree at the median
+endpoint and disagree away from it, establishing only structural non-uniqueness:
+`EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`. See
+`experiments/RESULTS_compiled_human_isotope_vertical.md`.
+
 **Required counterweight — analogue black holes in water. FIRST STRUCTURAL SLICE BUILT.**
 Surface waves on a
 transcritical current can carry an effective horizon and reproduce a declared sub-theory of
@@ -960,8 +977,10 @@ without its casualty list is a refinement pretending to be a confirmation.
 
 ---
 
-*Sections I–X contain both design and the dated build record for Bricks 0 through 5. A narrow
-contract/typed-binding/H2 vertical was subsequently executed by explicit user directive; the
-conversational surface and general cross-scale simulation compiler remain unbuilt.
+*Sections I–X contain both design and the dated build record for Bricks 0 through 5. Three
+narrow contract/typed-binding verticals—H2, structural water-wave kinematics, and the
+human-isotope underidentification diagnostic—were subsequently executed by explicit user
+directive; the conversational surface, general runtime, and empirically fitted
+probability-bearing cross-scale simulation compiler remain unbuilt.
 `THE_ORBITAL.md` describes the established categorical core; the
 `DIRECTION_AUDIT_2026-07-27.md` records the proposed roadmap and executed narrow slice.*

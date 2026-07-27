@@ -2,10 +2,11 @@
 The first typed simulation-program seam and its narrow chemistry vertical.
 
 This is deliberately not a general simulator.  It makes the approval boundary and result
-lineage real for two narrow calculations: a closed conserving reaction's endpoint energy and
-a prescribed-background shallow-water characteristic diagnostic.  The general records are
-present so later domains do not have to smuggle their meaning into strings; neither vertical
-licenses broader chemistry, fluid dynamics, or literal-gravity claims.
+lineage real for three narrow calculations: a closed conserving reaction's endpoint energy,
+a prescribed-background shallow-water characteristic diagnostic, and a structural
+human-isotope identifiability diagnostic.  The general records are present so later domains
+do not have to smuggle their meaning into strings; none of these verticals licenses broader
+chemistry, fluid dynamics, literal-gravity claims, or human mortality prediction.
 
 The governing rule is that execution accepts an :class:`ApprovedPlan`, never a raw request.
 Changing an input, model, solver, calculation setting, obligation, output, tolerance, support,
@@ -137,6 +138,8 @@ def _compiler_implementation_digest() -> str:
         Path(__file__).with_name("contracts.py"),
         Path(__file__).with_name("water_wave_domain.py"),
         Path(__file__).with_name("water_wave.py"),
+        Path(__file__).with_name("human_isotope_domain.py"),
+        Path(__file__).with_name("human_isotope.py"),
     ):
         if not path.exists():
             continue
@@ -148,6 +151,7 @@ def _compiler_implementation_digest() -> str:
 
 _REACTION_EXECUTOR = "smartchem.program/reaction-energy-v1"
 _WATER_WAVE_EXECUTOR = "smartchem.water_wave/shallow-water-horizon-v1"
+_HUMAN_ISOTOPE_EXECUTOR = "smartchem.human_isotope/identifiability-v1"
 
 
 def _executor_observables(executor_id: str) -> frozenset[str]:
@@ -158,6 +162,12 @@ def _executor_observables(executor_id: str) -> frozenset[str]:
         return frozenset((
             "water_wave_horizon",
             "water_wave_characteristic_profile",
+        ))
+    if executor_id == _HUMAN_ISOTOPE_EXECUTOR:
+        return frozenset((
+            "human_isotope_identifiability",
+            "human_isotope_constraint_inventory",
+            "human_isotope_family_witnesses",
         ))
     raise ValueError(f"no runtime is registered for executor_id {executor_id!r}")
 
@@ -173,6 +183,10 @@ def _executor_contract_error(
         from .water_wave import _default_output_contract as water_wave_contract
 
         expected = water_wave_contract()
+    elif executor_id == _HUMAN_ISOTOPE_EXECUTOR:
+        from .human_isotope import _default_output_contract as human_isotope_contract
+
+        expected = human_isotope_contract()
     else:
         _executor_observables(executor_id)
         raise AssertionError("unreachable")
@@ -711,6 +725,8 @@ class PhysicalIR(Digestible):
     assembly_evidence: tuple[AssemblyEvidence, ...]
     claim_scope: ClaimScope
     evidence_status: EvidenceStatus
+    calibrations: tuple[CalibrationSpec, ...] = ()
+    model_patches: tuple[ModelPatch, ...] = ()
 
     def __post_init__(self) -> None:
         _nonempty(self.resolved_digest, "resolved_digest")
@@ -726,6 +742,8 @@ class PhysicalIR(Digestible):
             "transport_evidence",
             "assemblies",
             "assembly_evidence",
+            "calibrations",
+            "model_patches",
         ):
             if not isinstance(getattr(self, name), tuple):
                 raise TypeError(f"{name} must be a tuple")
@@ -735,6 +753,13 @@ class PhysicalIR(Digestible):
             raise TypeError("claim_scope must be a ClaimScope")
         if not isinstance(self.evidence_status, EvidenceStatus):
             raise TypeError("evidence_status must be an EvidenceStatus")
+        if any(
+            not isinstance(calibration, CalibrationSpec)
+            for calibration in self.calibrations
+        ):
+            raise TypeError("calibrations must contain CalibrationSpec values")
+        if any(not isinstance(patch, ModelPatch) for patch in self.model_patches):
+            raise TypeError("model_patches must contain ModelPatch values")
         if (
             any(isinstance(assembly, AssemblyHypothesis) for assembly in self.assemblies)
             and self.evidence_status
@@ -833,6 +858,17 @@ class CandidatePlan(Digestible):
             raise ValueError(
                 "water-wave executor requires a non-chemical ResolvedDomainProgram"
             )
+        if self.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
+            from .human_isotope_domain import HumanIsotopeSpec
+
+            if (
+                not isinstance(self.request.resolved, ResolvedDomainProgram)
+                or not isinstance(self.request.resolved.subject, HumanIsotopeSpec)
+            ):
+                raise ValueError(
+                    "human-isotope executor requires a ResolvedDomainProgram "
+                    "HumanIsotopeSpec"
+                )
         if not isinstance(self.transforms, tuple):
             raise TypeError("transforms must be a tuple")
         if not isinstance(self.predicted_resources, tuple):
@@ -1303,6 +1339,56 @@ def _observable_payload_error(
             return "water_wave_horizon does not equal the independently recomputed diagnostic"
         if profile != diagnostic.samples:
             return "water-wave characteristic profile does not equal the diagnostic samples"
+        return None
+    if plan.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
+        from .human_isotope_domain import (
+            ConstraintInventory,
+            FamilyWitness,
+            HumanIsotopeSpec,
+            IdentifiabilityDiagnostic,
+            diagnose_human_isotope,
+        )
+
+        resolved = plan.request.resolved
+        if (
+            not isinstance(resolved, ResolvedDomainProgram)
+            or not isinstance(resolved.subject, HumanIsotopeSpec)
+        ):
+            return "human-isotope plan has no typed HumanIsotopeSpec subject"
+        diagnostic = payloads.get("human_isotope_identifiability")
+        inventory = payloads.get("human_isotope_constraint_inventory")
+        witnesses = payloads.get("human_isotope_family_witnesses")
+        if type(diagnostic) is not IdentifiabilityDiagnostic:
+            return (
+                "human_isotope_identifiability must retain an exact "
+                "IdentifiabilityDiagnostic payload"
+            )
+        if type(inventory) is not ConstraintInventory:
+            return (
+                "human_isotope_constraint_inventory must retain an exact "
+                "ConstraintInventory payload"
+            )
+        if (
+            type(witnesses) is not tuple
+            or any(type(item) is not FamilyWitness for item in witnesses)
+        ):
+            return (
+                "human_isotope_family_witnesses must retain every exact FamilyWitness"
+            )
+        reference = diagnose_human_isotope(resolved.subject)
+        if canonical_digest(diagnostic) != canonical_digest(reference):
+            return (
+                "human_isotope_identifiability does not equal the independently "
+                "recomputed diagnostic"
+            )
+        if canonical_digest(inventory) != canonical_digest(
+            diagnostic.constraint_inventory
+        ):
+            return "human-isotope constraint inventory is not the diagnostic inventory"
+        if canonical_digest(witnesses) != canonical_digest(
+            diagnostic.family_witnesses
+        ):
+            return "human-isotope family witnesses are not the diagnostic witnesses"
         return None
     return f"no observable payload validator for executor {plan.executor_id!r}"
 
@@ -2017,6 +2103,17 @@ def execute(
         raise ValueError(
             "water-wave executor requires a non-chemical ResolvedDomainProgram"
         )
+    if plan.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
+        from .human_isotope_domain import HumanIsotopeSpec
+
+        if (
+            not isinstance(plan.request.resolved, ResolvedDomainProgram)
+            or not isinstance(plan.request.resolved.subject, HumanIsotopeSpec)
+        ):
+            raise ValueError(
+                "human-isotope executor requires a ResolvedDomainProgram "
+                "HumanIsotopeSpec"
+            )
     unsupported_outputs = sorted(
         set(plan.request.output_contract.observable_ids) - supported_outputs
     )
@@ -2040,6 +2137,15 @@ def execute(
         from .water_wave import _execute_water_wave_horizon
 
         return _execute_water_wave_horizon(
+            approved,
+            oracle,
+            actual_calculation=actual_calculation,
+            journal_path=journal_path,
+        )
+    if plan.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
+        from .human_isotope import _execute_human_isotope_identifiability
+
+        return _execute_human_isotope_identifiability(
             approved,
             oracle,
             actual_calculation=actual_calculation,

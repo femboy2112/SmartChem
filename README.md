@@ -11,12 +11,14 @@ the scientist-approved output, while treating cross-domain and cross-scale exper
 language as a first-class shepherding problem.
 
 On 2026-07-27, by explicit user directive rather than presumed earlier roadmap ratification,
-the first contract/typed-binding slice, its H2 chemistry vertical, and a typed structural-toy
-water-wave analogue-kinematics slice were executed. Their strict scopes are recorded in
+the first contract/typed-binding slice, its H2 chemistry vertical, a typed structural-toy
+water-wave analogue-kinematics slice, and a typed human–isotope structural-identifiability
+slice were executed. Their strict scopes are recorded in
 [the compiled H2 receipt](experiments/RESULTS_compiled_h2_vertical.md) and
-[the compiled water-wave receipt](experiments/RESULTS_compiled_water_wave_vertical.md).
-The latter is a prescribed-profile algebraic compiler acceptance calculation, not a measured
-flume, continuum wave simulation, or literal black hole.
+[the compiled water-wave receipt](experiments/RESULTS_compiled_water_wave_vertical.md), plus
+[the human-identifiability receipt](experiments/RESULTS_compiled_human_isotope_vertical.md).
+The latter two are synthetic compiler acceptance calculations: neither is a validated
+physical/biological model, and the human slice emits no mortality prediction.
 
 ```python
 from smartchem import Config, Molecule, Reaction, favourability
@@ -440,6 +442,8 @@ Specification layer      stoichiometry.py         derive every balanced reaction
 Compiled verticals       contracts.py · program.py
                          water_wave_domain.py     typed branch/profile diagnostic, structural toy
                          water_wave.py            analogue-only plan/approval/journal/certificate path
+                         human_isotope_domain.py  typed endpoint/assembly identifiability
+                         human_isotope.py         proxy-only plan/approval/journal/certificate path
 Search & verification    pathway.py · store.py    mechanisms, regeneration, response surfaces
 Sequential core          category.py              conservation + validated histories
 Oracle interface         oracle/                  pluggable, provenance + untyped scale/sensitivities
@@ -594,11 +598,16 @@ verdict, and both kinds are pinned by tests in `tests/test_findings.py`:
 The frozen baseline's exact MAE on every split is pinned, because the headline claim is a
 *comparison*, and a comparison is only checkable while both sides still run.
 
-The structural water-wave half of the canonical cross-domain pair now runs. Remaining
-midterm compiler work starts with the underidentified human–isotope/environmental-hazard
-half, then the no-loss optimizer and only then the conversational surface. Physical
-water-wave validation remains separate: continuity/momentum-admissible backgrounds,
-wavelength/capillarity gates, uncertainty, and a full dispersive branch solver.
+Both structural halves of the canonical cross-domain pair now run. The human half correctly
+returns incompatible mathematical probability witnesses rather than an empirically calibrated
+or actual-human/population mortality prediction; an empirically fitted D2b model requires
+multi-dose/time evidence, uncertainty, held-out validation, competing-risk semantics where
+applicable, and data-governance authority. The no-loss optimizer precedes the
+conversational surface. Physical water-wave validation remains separate:
+continuity/momentum-admissible backgrounds, wavelength/capillarity gates, uncertainty, and a
+full dispersive branch solver. The broader metaphor portfolio begins with traffic kinematic
+waves, Ising/lattice-gas as an exact-map control, and port-Hamiltonian networks as the
+cross-substrate composition control.
 Chemistry expansion remains separate: a tight-binding/xTB fast tier, broader polyatomic
 backend validation, explicit electronic states/conformers, and a documented bond-order policy
 per backend.

@@ -50,6 +50,7 @@ harness at all.
 | `section_i_end_to_end.py` | Does `THE_COMPILER.md` §I's loop actually run? Four rounds on a real spec including one genuine refinement, every menu derived, ending in an object the category constructs. Backs Brick 4. Seconds, no PySCF. |
 | `compiled_h2_vertical.py` | Executes the first approved compiled chemistry vertical: preserved source -> typed request/plan -> approval -> CCSD(T)/cc-pVTZ H2 run -> obligations -> RunRecord/certificate. The durable result note is `RESULTS_compiled_h2_vertical.md`; the JSON journal is an ignored run artifact. |
 | `compiled_water_wave_vertical.py` | Executes the first approved cross-domain structural-toy vertical: underidentified phrase -> scientist-confirmed typed water profile/branch/regime/orientation -> exact output contract -> prescribed-background characteristic calculation -> independent recheck -> RunRecord/certificate. It is not a measured flume or continuum wave simulation. The durable receipt is `RESULTS_compiled_water_wave_vertical.md`; the JSON journal is ignored. |
+| `compiled_human_isotope_vertical.py` | Executes the D2a cross-scale structural-identifiability vertical: underidentified metaphor -> scientist-confirmed cohort/population/assembly/exposure/endpoint choices -> exact output contract -> two independently rechecked dynamic-family probability witnesses -> RunRecord/certificate. It emits an underidentification result, not an empirically calibrated mortality model or actual-human/population prediction. The durable receipt is `RESULTS_compiled_human_isotope_vertical.md`; the JSON journal is ignored. |
 
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
 passes and keeps superseded numbers rather than overwriting them — `ao_storage_probe.py` and
@@ -72,6 +73,16 @@ characteristics are retained, while missing profile provenance, wavelength/capil
 gates, stationary balance checks, uncertainty, and interpolation validation are certificate
 omissions rather than hidden assumptions: `RESULTS_compiled_water_wave_vertical.md`.
 
+The human–isotope D2a vertical exercises the shepherding boundary on a deliberately
+underidentified cross-scale metaphor. Its one hypothetical LD50 endpoint is retained as a
+dose/protocol/window constraint, never a rate. Two normalized survival families agree at
+that endpoint and disagree away from it, so the only executable result is
+`UNDERIDENTIFIED_DYNAMIC_MODEL/UNVALIDATED`. The current executor accepts only a synthetic
+cohort all-cause target; functional-threshold, cause-specific, individual, observed-data, and
+empirically calibrated or predictive probability requests require different semantics and
+executors:
+`RESULTS_compiled_human_isotope_vertical.md`.
+
 ## Running
 
 ```bash
@@ -84,6 +95,10 @@ OMP_NUM_THREADS=1 .venv/bin/python experiments/compiled_h2_vertical.py \
 # structural-toy cross-domain acceptance vertical; no PySCF required
 .venv/bin/python experiments/compiled_water_wave_vertical.py \
   --journal /tmp/smartchem-water-wave-run.json
+
+# structural-toy cross-scale identifiability vertical; no PySCF required
+.venv/bin/python experiments/compiled_human_isotope_vertical.py \
+  --journal /tmp/smartchem-human-isotope-run.json
 ```
 
 Pin the threads and check `uptime` first. This repo has already been burned once by timing

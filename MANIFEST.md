@@ -22,6 +22,7 @@ accuracy depend on method, species and conditions.
 Layer 3  Search & verification    pathway.py · store.py · bench.py
 Layer 3½ Compiled vertical seam   contracts.py · program.py · typed ledger bindings
                                   water_wave_domain.py · water_wave.py
+                                  human_isotope_domain.py · human_isotope.py
 Layer 2½ Domain instances          cell.py                (chemistry meets circuit)
 Layer 2  Sequential core          category.py · thermo.py
 Layer 1  Energy oracle            oracle/base.py + heuristic.py + pyscf_oracle.py
@@ -41,8 +42,9 @@ Nothing in Layer 2 or 3 knows which oracle it is talking to. That is the whole d
 | `smartchem/data/reference.py` | 526 | Curated comparison data: intended diatomic D₀ rows, band gaps and geometries, plus selected 0 K formation enthalpies used to derive polyatomic references. Compact source labels do not prove every D₀/D₂₉₈ convention, and uncertainty fields are curation scales rather than one calibrated coverage model. Balanced reaction helpers validate stoichiometry; these rows are not universal ground truth. |
 | `smartchem/data/basis_tight_d.py` | 1114 | Read-only tight-d basis augmentation for second-row elements. Generated data, not hand-written. |
 | `smartchem/category.py` | 1092 | **The load-bearing layer.** `Molecule` (atoms + bond topology + charge + opaque internal state), `Config` (multiset of molecules), and `Reaction` (validated sequential morphism history). It provides category composition and identities, a commutative object product, and a left-first `scheduled_product`; the latter is not a parallel tensor. Canonicalisation is by symbol class, refined by Weisfeiler-Leman colour when that is not enough. Structural predicates include `is_bond_order_conserving`, `is_isodesmic`, and stoichiometric `is_regenerated` (`is_catalytic` is a compatibility alias, not a proof of catalysis). |
-| `smartchem/contracts.py`, `smartchem/program.py`, `smartchem/ledger.py` | current compiler seam | Immutable source/request/plan/approval/run/certificate records, exact executable output-contract checks, typed observable payload schemas, and typed shepherd bindings/validity obligations. The H2 and structural water-wave verticals exercise it; it is not yet a general language, planner, or multiphysics runtime. |
+| `smartchem/contracts.py`, `smartchem/program.py`, `smartchem/ledger.py` | current compiler seam | Immutable source/request/plan/approval/run/certificate records, exact executable output-contract checks, typed observable payload schemas, and typed shepherd bindings/validity obligations. The H2, structural water-wave, and human-identifiability verticals exercise it; it is not yet a general language, planner, or multiphysics runtime. |
 | `smartchem/water_wave_domain.py`, `smartchem/water_wave.py` | current structural cross-domain slice | Pure typed SI prescribed-profile characteristic diagnostics plus the analogue-only compiler/runtime bridge. It retains all profile points/crossings and refuses unsupported regimes/claims. Its bundled run is `STRUCTURAL_TOY`, not a measured flume, free-surface evolution, scattering calculation, or literal-gravity result. |
+| `smartchem/human_isotope_domain.py`, `smartchem/human_isotope.py` | current structural cross-scale slice | Pure typed target/population/granularity/assembly/exposure/toxicokinetic/LD50-LC50/calibration records plus the proxy-only identifiability runtime. Its two normalized family witnesses establish that one median endpoint does not identify dynamics. The run is `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`, not a human mortality, clinical, toxicological, causal, or regulatory model. |
 | `smartchem/geometry.py` | 650 | **Seed → relax → check local curvature.** VSEPR-based candidate coordinates from the bond graph, Cartesian L-BFGS relaxation on a supplied surface, and Eckart-projected harmonic analysis. The module imports no quantum backend, but relaxation and Hessian construction still require backend data in real use. |
 | `smartchem/oracle/base.py` | 440 | The `EnergyOracle` protocol and `Estimate` — a value with an untyped reported scale and named signed correction sensitivities. Plus the guard that makes oracles decline what they cannot value. |
 | `smartchem/oracle/heuristic.py` | 184 | A guarded wrapper around the frozen original algebraic model with transitive table/source fingerprinting. It remains measurable only in its selected standard/vacuum environment and declines nonstandard environments rather than exporting that calibration. |
@@ -142,7 +144,7 @@ eigenvector can seed a repair attempt but does not prove which chemical structur
 | `test_cell.py` | Half-reaction structure and carrier counting, the `−ΔE/n` diagnostic, resistive-load algebra and stoichiometric capacity. Electrochemical OCV is intentionally not implemented. |
 | `test_network.py` | A **falsified** architectural prediction, kept: isolated-species energy additivity does not transfer to scalar impedance. One additive rule is 31.9× wrong on the tested parallel RC. Its power identity covers only uncoupled parallel branches at one prescribed voltage; it says nothing about radiative additivity or coupled fields. |
 | `test_thermo.py`, `test_store.py`, `test_pathway.py`, `test_basis_policy.py` | Their respective modules |
-| `test_program.py`, `test_typed_ledger.py`, `test_water_wave_domain.py`, `test_water_wave_program.py` | Approval/integrity/lifecycle boundaries, typed shepherd authority, branch/orientation algebra, analogue casualties, exact output semantics, payload schemas, resource/quarantine transitions, and forged-result rejection for the two compiled verticals. |
+| `test_program.py`, `test_typed_ledger.py`, `test_water_wave_domain.py`, `test_water_wave_program.py`, `test_human_isotope_domain.py`, `test_human_isotope_program.py` | Approval/integrity/lifecycle boundaries, typed shepherd authority, branch/orientation algebra, LD50/LC50 and underidentification semantics, analogue/proxy casualties, exact output semantics, payload schemas, resource/quarantine transitions, and forged-result rejection for the three compiled verticals. |
 
 ```bash
 python -m venv .venv && . .venv/bin/activate && pip install -e '.[dev]'
@@ -157,10 +159,12 @@ the fast suite passed and nobody ran them. `tests/conftest.py` warns about exact
 **Compiled-run convention.** An execution that is going to be cited must preserve its
 source-to-certificate receipt. `2 H -> H2` is recorded in
 `experiments/RESULTS_compiled_h2_vertical.md`; the structural water-wave compiler acceptance
-run is recorded in `experiments/RESULTS_compiled_water_wave_vertical.md`. Both were executed
-by explicit user directive on 2026-07-27, not because the wider roadmap was silently assumed
-approved. Raw RunRecords are ignored journals; durable notes carry the relevant digests,
-evidence status, omissions, casualties, and limitations.
+run is recorded in `experiments/RESULTS_compiled_water_wave_vertical.md`; and the
+human-identifiability run is recorded in
+`experiments/RESULTS_compiled_human_isotope_vertical.md`. All were executed by explicit user
+directive on 2026-07-27, not because the wider roadmap was silently assumed approved. Raw
+RunRecords are ignored journals; durable notes carry the relevant digests, evidence status,
+omissions, casualties, and limitations.
 
 ## Working rules this repo is held to
 

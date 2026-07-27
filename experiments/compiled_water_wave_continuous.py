@@ -1,8 +1,9 @@
 """Run the approved manufactured continuous steady-water control.
 
 The calculation reconstructs one regular-transcritical manufactured background on
-N, 2N, and 4N meshes, checks steady balance and critical compatibility, and compares
-the retained finest-mesh points with the independent finite-section v2 diagnostic.
+N, 2N, and 4N meshes, checks steady balance and both critical compatibility
+conditions, and compares the retained finest-mesh points with the independent
+finite-section v2 diagnostic.
 It remains STRUCTURAL_TOY evidence, not a measured flume or continuum theorem.
 """
 from __future__ import annotations
@@ -51,7 +52,10 @@ def compile_plan(engine: ContinuousWaterWaveEngine):
         (
             "Run the manufactured continuous steady shallow-water control on the "
             "declared regular-transcritical family. Retain the N, 2N, and 4N meshes, "
-            "all fields and residuals, critical compatibility, uncertainty, and the "
+            "all fields and residuals, binary64 roundings of a 60-digit Decimal "
+            "manufactured reference evaluation, critical "
+            "numerator/derivative "
+            "compatibility, metadata-only uncertainty, and the "
             "exact finite-v2 comparison. Explain the friction/lossless disagreement. "
             "Do not claim a measured flume, continuum theorem, dispersive scattering, "
             "quantum radiation, or literal gravity."
@@ -60,7 +64,7 @@ def compile_plan(engine: ContinuousWaterWaveEngine):
             "manufactured continuous steady shallow-water control",
             "regular-transcritical family",
             "N, 2N, and 4N meshes",
-            "critical compatibility",
+            "critical numerator and derivative compatibility",
             "finite-v2 comparison",
             "friction/lossless disagreement",
         ),
@@ -83,7 +87,7 @@ def compile_plan(engine: ContinuousWaterWaveEngine):
             subject,
             source_text=(
                 "Use the exact regular-transcritical manufactured subject, constant "
-                "friction/source balance, retained uncertainty, 32/64/128 meshes, and "
+                "friction/source balance, metadata-only uncertainty, 32/64/128 meshes, and "
                 "the attached nine-point finite-v2 comparison."
             ),
             inference=InferenceKind.QUESTION_CONFIRMED,
@@ -114,7 +118,7 @@ def run(journal: Path):
             "Leah",
             (
                 "run this manufactured regular-transcritical N/2N/4N control with "
-                "complete residual, uncertainty, critical, and finite-v2 outputs; "
+                "complete residual, reference, metadata-only uncertainty, both critical, and finite-v2 outputs; "
                 "retain STRUCTURAL_TOY scope"
             ),
         ),
@@ -146,6 +150,9 @@ def summary(results: object) -> dict[str, object]:
         "execution_lane": plan.execution_lane.value,
         "mesh_cells": [mesh.cells for mesh in diagnostic.meshes],
         "depth_l2_errors": [mesh.l2_depth_error for mesh in diagnostic.meshes],
+        "max_absolute_depth_errors_m": [
+            max(map(abs, mesh.depth_error_m)) for mesh in diagnostic.meshes
+        ],
         "momentum_residual_l2": [
             mesh.momentum_residual_l2 for mesh in diagnostic.meshes
         ],
@@ -171,7 +178,12 @@ def summary(results: object) -> dict[str, object]:
         "critical_compatibility_residual": (
             diagnostic.meshes[-1].critical_compatibility_residual
         ),
+        "critical_derivative_compatibility_residual": (
+            diagnostic.meshes[-1].critical_derivative_compatibility_residual
+        ),
         "regularity_satisfied": diagnostic.regularity_satisfied,
+        "uncertainty_propagated": diagnostic.uncertainty_propagated,
+        "uncertainty_semantics": diagnostic.uncertainty_semantics,
         "finite_v2_status": comparison.finite_v2_status,
         "finite_v2_head_gate_passed": (
             comparison.finite_v2_diagnostic.head_gate_passed

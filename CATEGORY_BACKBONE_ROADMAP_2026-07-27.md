@@ -276,17 +276,19 @@ composition glues shared boundary discharge/head under a sign convention.  It is
 claim that these two quantities exhaust free-surface, dispersive, turbulent, or
 two-dimensional physics.
 
-The continuous solver layer must separately retain:
+The current continuous reconstruction layer and any future solver must separately retain:
 
 - the exact manufactured profile/forcing and boundary conditions;
-- the critical/transcritical regularity condition rather than merely a sampled `Fr=1`
-  crossing;
+- both the critical numerator and first-derivative regularity conditions rather than
+  merely a sampled `Fr=1` crossing;
 - discrete solutions at `N`, `2N`, and `4N` plus a declared norm and convergence ratios;
 - a lossless-vs-friction comparison payload.  Disagreement is a model discrepancy to
   explain by the declared momentum/friction assumptions, not a verdict that either model
   is physically true;
 - its residuals, regime predicates, grid identity, calculation specification, and every
   excluded physical effect.
+- whether uncertainty is propagated or merely retained metadata, and a verifier path
+  separate from the production reconstruction.
 
 The existing finite v2 diagnostic remains an independent finite-sample screen.  It may
 agree or disagree with the continuous model, but neither outcome upgrades a manufactured
@@ -302,14 +304,19 @@ shared P0 prerequisite; continuous water does not depend on a circuit interprete
    transform contract binding, guarded runner dispatch, and mutation tests now precede
    every journal and engine call.
 2. **W1 manufactured continuous-water vertical — completed this round.** The typed
-   regular-transcritical control retains 32/64/128-cell fields, both refinement-pair
-   convergence evidence, critical compatibility, uncertainty, and a quantified
-   finite-v2 comparison at `STRUCTURAL_TOY`.
-3. **S0 syntax only — next category milestone.** Implement `open_diagram.py`,
+   regular-transcritical control retains 32/64/128-mesh fields, both refinement-pair
+   convergence evidence, both critical compatibility conditions, metadata-only
+   uncertainty, solver-independent direct verification, and a quantified finite-v2
+   comparison at `STRUCTURAL_TOY`. It is a bounded cell-centred energy reconstruction,
+   not a finite-volume/general stationary solver.
+3. **S0 syntax only — next category milestone.** Selectively audit and port
+   `open_diagram.py` from remote `fdb906f`,
    canonicalization-budget refusal, and
    generated category-law tests.  No solver or physics claim yet.
-4. **E1 resistive DC control.** Add sparse MNA, topological-reference refusal, residual and
-   passivity checks, analytic and bridge controls.
+4. **E1 resistive DC control.** The remote attempt is `NO-SHIP` until a separately
+   implemented direct verifier replaces its production-solver recomputation. Then add
+   sparse MNA, topological-reference refusal, residual and passivity checks, analytic and
+   bridge controls.
 5. **E2 AC/RLC control.** Add phasors, energy/power checks, damped resonance control, and
    lossless singular refusal.
 6. **Only then consider a `StructureIR` adapter.** It must be a deliberate migration with

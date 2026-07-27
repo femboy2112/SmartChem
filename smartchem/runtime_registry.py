@@ -324,6 +324,7 @@ _DESCRIPTORS = (
             *_SHARED_IMPLEMENTATION_MODULES,
             "smartchem.water_wave_continuous",
             "smartchem.water_wave_continuous_domain",
+            "smartchem.water_wave_continuous_verifier",
             "smartchem.water_wave_validation_domain",
         ))),
     ),

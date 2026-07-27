@@ -1,8 +1,9 @@
 # SmartChem campaign and category-backbone round handoff
 
 **Prepared:** 2026-07-27
-**Working branch:** `agent/smartchem-roadmap-round-20260727`
+**Working branch:** `main`
 **Round base:** `247c060d4b2ead4690f952b270e334496b6b7d73`
+**Imported other-model baseline:** `521e719`
 **Cycle 5 implementation baseline:** `45885f2`
 
 This is the compact continuation artifact for the 2026-07-27 campaign. The detailed
@@ -60,13 +61,17 @@ Completed:
 2. **Distribution/CI repair.** Public `experiments.*` harnesses are now installed. The
    untouched branch initially failed all three CI jobs on the same two imports when
    invoked through console `pytest`; the repaired local console-entrypoint controls pass.
-3. **Manufactured continuous-water midterm.** A bounded branch-aware energy-root solver
+3. **Manufactured continuous-water midterm.** A bounded branch-aware, cell-centred
+   specific-energy reconstruction
    reconstructs subcritical, supercritical, and isolated regular-transcritical
    backgrounds on N/2N/4N meshes. It retains depth, velocity, discharge, bed, head,
    Froude number, source/friction, continuity/momentum residuals, both refinement-pair
-   convergence evidence, uncertainty, boundaries, critical compatibility, and every
-   comparison field. The compiled default uses 32/64/128 cells and remains
-   `ANALOGUE/STRUCTURAL_TOY`.
+   convergence evidence, binary64 roundings of a separate 60-digit Decimal reference
+   evaluation, metadata-only uncertainty, boundaries, numerator and first-derivative
+   critical compatibility, and every comparison field. A separately implemented direct
+   verifier checks the entire payload without calling the production solver. The compiled
+   default uses 32/64/128 meshes and remains `ANALOGUE/STRUCTURAL_TOY`; it is not a
+   finite-volume or general stationary solver.
 4. **Finite-v2 differential control.** The attached v2 subject uses nine explicitly
    retained finest-mesh points and independent v2 code. Continuity, shallow-water,
    capillarity, uncertainty-bracket, position, and orientation gates pass; the lossless
@@ -85,7 +90,8 @@ Detailed contract and claim ledger:
 
 ## Calculation ledger
 
-No calculation is in progress.
+No compiled simulation is in progress. One optional verification calculation is active
+and explicitly non-authoritative.
 
 | Calculation family | Terminal state | Scope note |
 |---|---|---|
@@ -96,28 +102,39 @@ No calculation is in progress.
 | Synthetic survival D2b-S | `COMPLETE` | Same-generator synthetic implementation evidence only. |
 | Class-A optimizer probe, transformed and reference arms | `COMPLETE` | Certification/domain-admission correction; not a newly measured speedup. |
 | Finite C3 Ising/lattice-gas | `COMPLETE` | `ANALOGUE/ESTABLISHED/CERTIFIED` finite algebra only. |
-| Manufactured continuous steady water | `COMPLETE` | 32/64/128-cell regular-transcritical `ANALOGUE/STRUCTURAL_TOY`; finite-v2 comparison is independent code on derived manufactured samples, not independent data. |
+| Manufactured continuous steady water | `COMPLETE`, run `9af118648f6c456a99390d2a77c93816` | 32/64/128-mesh regular-transcritical cell-centred reconstruction, `ANALOGUE/STRUCTURAL_TOY`; metadata-only uncertainty; finite-v2 comparison is independent code on derived manufactured samples, not independent data. |
+| Cold all-oracle chemistry benchmark | `IN_PROGRESS`, OS PID `151446` | Command: `.venv/bin/python -m smartchem.bench --split test --quiet`. This unjournaled verification run exposes four cold PySCF CCSD(T) variants plus the heuristic. Its wall-clock output is unpublishable because it overlapped pytest load; it is not a release gate or simulation receipt. Preserve it to terminal state unless the scientist explicitly authorizes cancellation. |
 
 Ignored JSON journals are local, terminal run artifacts. New calculations require fresh
 write-once paths, new plan identities, and new approvals. No checkpoint or partial output is
 being carried forward as a completed result.
 
+The repair calculations `09edde17fe3443fcb8ce8364b8dbe3d4` and
+`cc0b3e1aa6d649fdaad0dafd9419a4ac` and `e0e0b079703c4dcbbad8e7023581bb51`
+also reached terminal `COMPLETE`, but their compiler identities were superseded by the
+final stored-precision wording, all-mesh magnitude gate, exact comparison-explanation
+verifier, and finite-volume claim removal. They are not receipt authority. The final
+authoritative run is `9af118648f6c456a99390d2a77c93816`; none is in progress.
+The separate cold benchmark above is the only active calculation.
+
 ## Final verification state
 
 ```text
-.venv/bin/python -m pytest -q -rs
+ .venv/bin/python -m pytest -q -rs
 .venv/bin/pytest -q -rs
-1279 passed, 51 skipped, 1 xfailed
+1329 passed, 14 skipped, 1 xfailed
 ```
 
-- The 51 optional-PySCF or slow tests were not run and are not represented as passing.
+- The 14 slow tests were not run and are not represented as passing.
 - The strict xfail is the known true-parallel-interchange architecture debt.
 - `python -m compileall -q smartchem experiments tests` passed.
-- `python -m smartchem.bench --split test --quiet` completed and reported the
-  heuristic-only baseline as incomplete coverage (`6` evaluated, `5` refused).
+- `python -m smartchem.bench --split test --oracle heuristic --quiet` completed and
+  reported incomplete coverage (`6` evaluated, `5` refused; conditional MAE `3.4950 eV`,
+  no accuracy tier).
 - `git diff --check` passed at the final local gate.
-- Independent continuous-water science/runtime review and independent P0 seam review
-  returned `SHIP`.
+- Independent continuous-water science/runtime re-review returned `SHIP` for the narrowed
+  cell-centred reconstruction claim after the derivative, verifier, uncertainty,
+  stored-precision wording, and all-mesh magnitude repairs.
 - The current P0 gate refuses malformed graph/evidence records, foreign
   model/transform plans, direct-runner dispatch, and nominal plan/record subclasses
   before calculation or journal creation.
@@ -142,15 +159,23 @@ dispersive water solver, general optimizer, or conversational scientific environ
 
 ## Best next category midterm: exact open syntax, then DC semantics
 
+Remote `origin/agent/smartchem-open-semantics-round-20260727` at `fdb906f` already contains
+a serious implementation attempt, but it is **not release authority**: its resistive-DC
+completion check reuses the production solver and therefore fails the independent-verifier
+gate. Use it as selective-port input after main's continuous-water repairs, not as a
+fast-forward target.
+
 Do not broaden `PhysicalIR` strings or reinterpret `Reaction.tensor`. Build a separate
 finite open-diagram value:
 
-1. exact typed ordered boundary interfaces and smart-constructor ownership;
-2. canonical equality modulo internal naming with budgeted refusal rather than approximate
+1. port the exact typed ordered boundary interfaces and smart-constructor ownership from
+   `fdb906f` without overwriting the verified main runtime/doc repairs;
+2. independently audit canonical equality modulo internal naming with budgeted refusal rather than approximate
    equality;
 3. boundary gluing, disjoint union, identities, braid, and generated unit,
    associativity, symmetry, alpha-renaming, and interchange tests;
-4. one resistor-only sparse MNA interpreter using the same stamping path for series,
+4. add a separately implemented direct resistor relation/KCL/power verifier, then admit
+   the resistor-only sparse MNA interpreter using the same stamping path for series,
    parallel, bridge, and cycle topology;
 5. reference/floating/singularity refusal, KCL, power, and passivity controls;
 6. only after those pass, AC/RLC; only after a proved power pairing, port-Hamiltonian

@@ -182,6 +182,7 @@ from .water_wave_validation import (
     water_wave_validation_slot,
 )
 from .water_wave_continuous_domain import (
+    CONTINUOUS_UNCERTAINTY_SEMANTICS,
     ContinuousBackgroundSpec,
     ContinuousDiagnostic,
     ContinuousMeshResult,
@@ -195,6 +196,7 @@ from .water_wave_continuous_domain import (
     SteadyBoundary,
     solve_continuous_background,
 )
+from .water_wave_continuous_verifier import continuous_diagnostic_error
 from .water_wave_continuous import (
     CONTINUOUS_WATER_CASUALTIES,
     CONTINUOUS_WATER_OMISSIONS,
@@ -404,10 +406,12 @@ __all__ = [
     "compile_session_water_wave_validation", "compile_water_wave_validation",
     "water_wave_validation_slot",
     # manufactured continuous-water rung -- finite convergence, not a continuum theorem
-    "ContinuousBackgroundSpec", "ContinuousDiagnostic", "ContinuousMeshResult",
+    "CONTINUOUS_UNCERTAINTY_SEMANTICS", "ContinuousBackgroundSpec",
+    "ContinuousDiagnostic", "ContinuousMeshResult",
     "ContinuousSample", "ContinuousStatus", "ContinuousUncertainty", "FrictionLaw",
     "ManufacturedFamily", "RegularityRequirement", "SourceLaw", "SteadyBoundary",
-    "solve_continuous_background", "CONTINUOUS_WATER_CASUALTIES",
+    "solve_continuous_background", "continuous_diagnostic_error",
+    "CONTINUOUS_WATER_CASUALTIES",
     "CONTINUOUS_WATER_OMISSIONS", "ContinuousFiniteV2Comparison",
     "ContinuousWaterSubject", "ContinuousWaterWaveEngine",
     "compile_session_water_wave_continuous", "compile_water_wave_continuous",

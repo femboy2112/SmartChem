@@ -8,6 +8,7 @@ import pytest
 from smartchem.contracts import EvidenceStatus
 import smartchem.water_wave_continuous_domain as continuous_domain
 from smartchem.water_wave_continuous_domain import (
+    CONTINUOUS_UNCERTAINTY_SEMANTICS,
     ContinuousBackgroundSpec,
     ContinuousStatus,
     ContinuousUncertainty,
@@ -16,6 +17,9 @@ from smartchem.water_wave_continuous_domain import (
     RegularityRequirement,
     SourceLaw,
     solve_continuous_background,
+)
+from smartchem.water_wave_continuous_verifier import (
+    continuous_diagnostic_error,
 )
 
 
@@ -26,6 +30,9 @@ def test_each_manufactured_family_retains_a_three_mesh_convergence_receipt(famil
     assert diagnostic.status is ContinuousStatus.CONVERGED_MANUFACTURED
     assert diagnostic.evidence_status is EvidenceStatus.STRUCTURAL_TOY
     assert diagnostic.spec.evidence_status is EvidenceStatus.STRUCTURAL_TOY
+    assert diagnostic.uncertainty_propagated is False
+    assert diagnostic.uncertainty_semantics == CONTINUOUS_UNCERTAINTY_SEMANTICS
+    assert continuous_diagnostic_error(diagnostic.spec, diagnostic) is None
     assert tuple(mesh.cells for mesh in diagnostic.meshes) == (32, 64, 128)
     # The off-grid regular-critical limiter is grid-phase sensitive. Require both
     # refinement pairs to decrease at first-order class or better, not a cherry-picked
@@ -41,6 +48,12 @@ def test_each_manufactured_family_retains_a_three_mesh_convergence_receipt(famil
     for mesh in diagnostic.meshes:
         assert len(mesh.samples) == len(mesh.x_m) == mesh.cells
         assert len(mesh.depth_m) == len(mesh.velocity_m_s) == mesh.cells
+        assert len(mesh.high_precision_reference_depth_m) == mesh.cells
+        assert len(mesh.depth_error_m) == mesh.cells
+        assert all(
+            type(value) is float
+            for value in mesh.high_precision_reference_depth_m
+        )
         assert len(mesh.bed_elevation_m) == len(mesh.head_m) == mesh.cells
         assert len(mesh.source_slope) == len(mesh.friction_slope) == mesh.cells
         assert len(mesh.continuity_residual) == len(mesh.momentum_residual) == mesh.cells
@@ -53,6 +66,14 @@ def test_each_manufactured_family_retains_a_three_mesh_convergence_receipt(famil
             for iteration in mesh.root_iterations
         )
         assert all(left < right for left, right in zip(mesh.x_m, mesh.x_m[1:]))
+        assert all(
+            error == pytest.approx(observed - reference, abs=1e-14)
+            for error, observed, reference in zip(
+                mesh.depth_error_m,
+                mesh.depth_m,
+                mesh.high_precision_reference_depth_m,
+            )
+        )
     assert all(
         mesh.observed_order is not None and mesh.observed_order >= 0.8
         for mesh in diagnostic.meshes[1:]
@@ -111,6 +132,10 @@ def test_regular_transcritical_family_has_one_declared_critical_point_and_exact_
     assert diagnostic.critical_location_m == pytest.approx(0.43 * spec.length_m)
     assert diagnostic.regularity_satisfied is True
     assert diagnostic.meshes[-1].critical_compatibility_residual == pytest.approx(0.0, abs=1e-13)
+    assert diagnostic.meshes[-1].critical_derivative_compatibility_residual == pytest.approx(
+        0.0,
+        abs=1e-10,
+    )
     froude = diagnostic.meshes[-1].froude_number
     assert min(froude) < 1.0 < max(froude)
     assert sum(
@@ -153,6 +178,28 @@ def test_false_regularity_declaration_is_refused_even_for_an_exact_family():
     assert diagnostic.regularity_satisfied is False
 
 
+def test_zero_order_critical_match_cannot_hide_a_wrong_first_derivative():
+    spec = ContinuousBackgroundSpec.manufactured(
+        ManufacturedFamily.REGULAR_TRANSCRITICAL
+    )
+    bad = replace(
+        spec,
+        source=replace(spec.source, critical_derivative_scale=0.5),
+    )
+    diagnostic = solve_continuous_background(bad)
+
+    assert diagnostic.meshes[-1].critical_compatibility_residual == pytest.approx(
+        0.0,
+        abs=1e-13,
+    )
+    assert abs(
+        diagnostic.meshes[-1].critical_derivative_compatibility_residual
+    ) > 1e-4
+    assert diagnostic.regularity_satisfied is False
+    assert diagnostic.status is ContinuousStatus.REGULARITY_REFUSED
+    assert continuous_diagnostic_error(bad, diagnostic) is None
+
+
 def test_boundary_mutation_is_reported_not_absorbed_by_interpolation():
     spec = ContinuousBackgroundSpec.manufactured(ManufacturedFamily.SUBCRITICAL)
     bad_boundary = replace(spec.downstream_boundary, depth_m=spec.downstream_boundary.depth_m + 0.1)
@@ -183,7 +230,41 @@ def test_uncertainty_is_retained_in_the_full_spec_and_survives_the_numerical_rec
     )
 
     assert diagnostic.spec.uncertainty == uncertainty
+    assert diagnostic.uncertainty_propagated is False
+    assert "metadata only" in diagnostic.uncertainty_semantics
     assert all(sample.source_slope != 0.0 and sample.friction_slope > 0.0 for sample in diagnostic.meshes[-1].samples)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    (
+        {
+            "length_m": 7.5,
+            "width_m": 1.4,
+            "discharge_m3_s": 1.1,
+            "gravitational_acceleration_m_s2": 9.80665,
+            "friction_slope": 0.004,
+            "base_cells": 24,
+        },
+        {
+            "length_m": 16.0,
+            "width_m": 3.0,
+            "discharge_m3_s": 4.0,
+            "gravitational_acceleration_m_s2": 3.71,
+            "friction_slope": 0.002,
+            "base_cells": 40,
+        },
+    ),
+)
+def test_separate_direct_verifier_covers_parameter_varied_manufactured_cases(kwargs):
+    spec = ContinuousBackgroundSpec.manufactured(
+        ManufacturedFamily.SUBCRITICAL,
+        **kwargs,
+    )
+    diagnostic = solve_continuous_background(spec)
+
+    assert diagnostic.status is ContinuousStatus.CONVERGED_MANUFACTURED
+    assert continuous_diagnostic_error(spec, diagnostic) is None
 
 
 def test_friction_is_required_and_positive():
@@ -251,3 +332,32 @@ def test_omitting_friction_from_the_balance_creates_a_nonconvergent_order_one_re
 
     assert min(abs(value) for value in omitted_friction) > 0.009
     assert mesh.max_momentum_residual < 1e-4
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("max_continuity_residual", 2e-12),
+        ("max_energy_root_residual_m", 2e-10),
+        ("max_momentum_residual", 2e-3),
+    ),
+)
+def test_every_retained_mesh_is_subject_to_absolute_residual_gates(
+    monkeypatch,
+    field,
+    value,
+):
+    original_mesh = continuous_domain._mesh
+
+    def threshold_attack(*args, **kwargs):
+        mesh = original_mesh(*args, **kwargs)
+        return replace(mesh, **{field: value})
+
+    monkeypatch.setattr(continuous_domain, "_mesh", threshold_attack)
+    diagnostic = solve_continuous_background(
+        ContinuousBackgroundSpec.manufactured(
+            ManufacturedFamily.SUBCRITICAL,
+        )
+    )
+
+    assert diagnostic.status is ContinuousStatus.CONVERGENCE_NOT_OBSERVED

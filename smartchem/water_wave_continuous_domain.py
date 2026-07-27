@@ -8,6 +8,7 @@ not a general Saint-Venant solver, measured-flume model, or scattering solver.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from decimal import Decimal, localcontext
 from enum import Enum
 import math
 from numbers import Real
@@ -15,8 +16,13 @@ from numbers import Real
 from .contracts import EvidenceStatus
 
 _MAX_ROOT_BRACKET_EXPANSIONS = 64
+CONTINUOUS_UNCERTAINTY_SEMANTICS = (
+    "retained manufactured-input metadata only; not propagated into output bounds, "
+    "regularity tolerances, or validation authority"
+)
 
 __all__ = [
+    "CONTINUOUS_UNCERTAINTY_SEMANTICS",
     "ContinuousBackgroundSpec", "ContinuousDiagnostic", "ContinuousMeshResult",
     "ContinuousSample", "ContinuousStatus", "ContinuousUncertainty",
     "FrictionLaw", "ManufacturedFamily", "RegularityRequirement", "SourceLaw",
@@ -97,17 +103,28 @@ class SourceLaw:
 
     balance_sign: int = 1
     provenance: str = "manufactured source slope derived from exact profile"
+    critical_derivative_scale: float = 1.0
 
     def __post_init__(self) -> None:
         if self.balance_sign not in (-1, 1):
             raise ValueError("balance_sign must be +1 or -1")
         _require_manufactured_provenance("source provenance", self.provenance)
+        object.__setattr__(
+            self,
+            "critical_derivative_scale",
+            _real(
+                "critical_derivative_scale",
+                self.critical_derivative_scale,
+                positive=True,
+            ),
+        )
 
 
 @dataclass(frozen=True)
 class RegularityRequirement:
     require_isolated_critical_compatibility: bool = True
     compatibility_tolerance: float = 1e-12
+    derivative_compatibility_tolerance: float = 1e-9
 
     def __post_init__(self) -> None:
         if type(self.require_isolated_critical_compatibility) is not bool:
@@ -115,6 +132,15 @@ class RegularityRequirement:
         object.__setattr__(self, "compatibility_tolerance", _real(
             "compatibility_tolerance", self.compatibility_tolerance, nonnegative=True
         ))
+        object.__setattr__(
+            self,
+            "derivative_compatibility_tolerance",
+            _real(
+                "derivative_compatibility_tolerance",
+                self.derivative_compatibility_tolerance,
+                nonnegative=True,
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -200,6 +226,8 @@ class ContinuousBackgroundSpec:
 class ContinuousSample:
     x_m: float
     depth_m: float
+    high_precision_reference_depth_m: float
+    depth_error_m: float
     velocity_m_s: float
     discharge_m3_s: float
     bed_elevation_m: float
@@ -219,6 +247,8 @@ class ContinuousMeshResult:
     cells: int
     x_m: tuple[float, ...]
     depth_m: tuple[float, ...]
+    high_precision_reference_depth_m: tuple[float, ...]
+    depth_error_m: tuple[float, ...]
     velocity_m_s: tuple[float, ...]
     discharge_m3_s: tuple[float, ...]
     bed_elevation_m: tuple[float, ...]
@@ -232,6 +262,7 @@ class ContinuousMeshResult:
     energy_root_residual_m: tuple[float, ...]
     critical_projection_applied: tuple[bool, ...]
     critical_compatibility_residual: float
+    critical_derivative_compatibility_residual: float
     max_continuity_residual: float
     max_momentum_residual: float
     max_energy_root_residual_m: float
@@ -251,6 +282,8 @@ class ContinuousDiagnostic:
     residual_convergence_order: float | None
     critical_location_m: float | None
     regularity_satisfied: bool
+    uncertainty_propagated: bool
+    uncertainty_semantics: str
 
 
 def _family_parameters(family: ManufacturedFamily) -> tuple[float, float, float]:
@@ -278,9 +311,64 @@ def _exact_depth_prime(x: float, length: float, hc: float, params: tuple[float, 
     return hc * (a + 2.0 * b * s) / length
 
 
+def _decimal_cuberoot(value: Decimal) -> Decimal:
+    """High-precision positive cube root without using the binary64 solver path."""
+    if value <= 0:
+        raise ValueError("cube-root input must be positive")
+    guess = Decimal(str(float(value) ** (1.0 / 3.0)))
+    three = Decimal(3)
+    for _ in range(80):
+        updated = (Decimal(2) * guess + value / (guess * guess)) / three
+        if updated == guess:
+            break
+        guess = updated
+    return +guess
+
+
+def _high_precision_reference_depth(
+    spec: ContinuousBackgroundSpec,
+    *,
+    cell_index: int,
+    cells: int,
+) -> float:
+    """Evaluate the manufactured polynomial with 60-digit decimal arithmetic."""
+    with localcontext() as context:
+        context.prec = 60
+        discharge = Decimal(str(spec.discharge_m3_s))
+        gravity = Decimal(str(spec.gravitational_acceleration_m_s2))
+        width = Decimal(str(spec.width_m))
+        hc = _decimal_cuberoot(discharge * discharge / (gravity * width * width))
+        if spec.family is ManufacturedFamily.SUBCRITICAL:
+            offset, linear, quadratic, critical = (
+                Decimal("1.45"),
+                Decimal("0.08"),
+                Decimal("0.04"),
+                Decimal("0.5"),
+            )
+        elif spec.family is ManufacturedFamily.SUPERCRITICAL:
+            offset, linear, quadratic, critical = (
+                Decimal("0.55"),
+                Decimal("0.08"),
+                Decimal("0.04"),
+                Decimal("0.5"),
+            )
+        else:
+            offset, linear, quadratic, critical = (
+                Decimal("1.0"),
+                Decimal("0.35"),
+                Decimal("0.04"),
+                Decimal("0.43"),
+            )
+        fraction = (
+            Decimal(2 * cell_index + 1) / Decimal(2 * cells)
+        )
+        shifted = fraction - critical
+        return float(hc * (offset + linear * shifted + quadratic * shifted * shifted))
+
+
 def _root_reconstruct_depth(left: float, right: float, spec: ContinuousBackgroundSpec, hc: float,
                             params: tuple[float, float, float]) -> tuple[float, int, float, bool]:
-    """Solve one bounded branch-aware finite-volume energy root by bisection.
+    """Solve one bounded branch-aware cell-centred specific-energy root by bisection.
 
     The cell stores the trapezoidal bed reconstruction, not the exact point bed.
     Consequently this is a real second-order spatial reconstruction rather than a
@@ -385,7 +473,43 @@ def _source_slope(x: float, spec: ContinuousBackgroundSpec, hc: float,
     h = _exact_depth(x, spec.length_m, hc, params)
     fr2 = spec.discharge_m3_s ** 2 / (spec.gravitational_acceleration_m_s2 * spec.width_m ** 2 * h ** 3)
     balanced = spec.friction.constant_slope + (1.0 - fr2) * _exact_depth_prime(x, spec.length_m, hc, params)
+    if spec.family is ManufacturedFamily.REGULAR_TRANSCRITICAL:
+        critical_x = _critical_fraction(spec.family) * spec.length_m
+        critical_depth_prime = hc * params[1] / spec.length_m
+        required_numerator_derivative = (
+            3.0 * critical_depth_prime * critical_depth_prime / hc
+        )
+        balanced += (
+            (spec.source.critical_derivative_scale - 1.0)
+            * (x - critical_x)
+            * required_numerator_derivative
+        )
     return spec.source.balance_sign * balanced
+
+
+def _critical_compatibility(
+    spec: ContinuousBackgroundSpec,
+    hc: float,
+    params: tuple[float, float, float],
+) -> tuple[float, float]:
+    """Return numerator and first-derivative removable-singularity residuals."""
+    if spec.family is not ManufacturedFamily.REGULAR_TRANSCRITICAL:
+        return (0.0, 0.0)
+    critical_x = _critical_fraction(spec.family) * spec.length_m
+    numerator = (
+        _source_slope(critical_x, spec, hc, params)
+        - spec.friction.constant_slope
+    )
+    step = spec.length_m * 1e-5
+    numerator_derivative = (
+        _source_slope(critical_x + step, spec, hc, params)
+        - _source_slope(critical_x - step, spec, hc, params)
+    ) / (2.0 * step)
+    critical_depth_prime = hc * params[1] / spec.length_m
+    required_derivative = (
+        3.0 * critical_depth_prime * critical_depth_prime / hc
+    )
+    return (numerator, numerator_derivative - required_derivative)
 
 
 def _boundary_matches(spec: ContinuousBackgroundSpec, hc: float, params: tuple[float, float, float]) -> bool:
@@ -393,7 +517,9 @@ def _boundary_matches(spec: ContinuousBackgroundSpec, hc: float, params: tuple[f
     hL = _exact_depth(spec.length_m, spec.length_m, hc, params)
     H0 = _specific_energy(h0, spec.discharge_m3_s, spec.width_m, spec.gravitational_acceleration_m_s2)
     HL = H0 - spec.friction.constant_slope * spec.length_m
-    tolerance = max(spec.uncertainty.depth_m, 1e-12)
+    # The uncertainty record is metadata-only in this manufactured rung; it is not
+    # silently repurposed as an acceptance tolerance.
+    tolerance = 1e-12
     return (abs(spec.upstream_boundary.depth_m - h0) <= tolerance and abs(spec.downstream_boundary.depth_m - hL) <= tolerance
             and abs(spec.upstream_boundary.total_head_m - H0) <= tolerance and abs(spec.downstream_boundary.total_head_m - HL) <= tolerance)
 
@@ -406,6 +532,14 @@ def _mesh(spec: ContinuousBackgroundSpec, cells: int, hc: float, params: tuple[f
         for i in range(cells)
     )
     h = tuple(item[0] for item in roots)
+    high_precision_reference = tuple(
+        _high_precision_reference_depth(spec, cell_index=index, cells=cells)
+        for index in range(cells)
+    )
+    depth_error = tuple(
+        observed - reference
+        for observed, reference in zip(h, high_precision_reference)
+    )
     root_iterations = tuple(item[1] for item in roots)
     energy_root_residual = tuple(item[2] for item in roots)
     critical_projection = tuple(item[3] for item in roots)
@@ -426,46 +560,54 @@ def _mesh(spec: ContinuousBackgroundSpec, cells: int, hc: float, params: tuple[f
         else:
             derivative.append((h[index + 1] - h[index - 1]) / (2.0 * dx))
     momentum = tuple((1.0 - fr * fr) * dh - (s0 - sf) for fr, dh, s0, sf in zip(froude, derivative, source, friction))
-    exact = tuple(_exact_depth(value, spec.length_m, hc, params) for value in x)
-    l2_error = math.sqrt(sum((a - b) ** 2 for a, b in zip(h, exact)) / cells)
+    l2_error = math.sqrt(sum(value * value for value in depth_error) / cells)
     mom_l2 = math.sqrt(sum(value * value for value in momentum) / cells)
-    critical_x = _critical_fraction(spec.family) * spec.length_m if spec.family is ManufacturedFamily.REGULAR_TRANSCRITICAL else None
-    compatibility = 0.0 if critical_x is None else _source_slope(critical_x, spec, hc, params) - spec.friction.constant_slope
+    compatibility, derivative_compatibility = _critical_compatibility(
+        spec,
+        hc,
+        params,
+    )
     samples = tuple(
         ContinuousSample(
-            a,
-            b,
-            c,
-            d,
-            e,
-            f,
-            g,
-            h1,
-            i,
-            j,
-            k,
-            iterations,
-            root_residual,
-            projected,
+            x_m=position,
+            depth_m=depth,
+            high_precision_reference_depth_m=reference,
+            depth_error_m=error,
+            velocity_m_s=velocity,
+            discharge_m3_s=discharge,
+            bed_elevation_m=bed_value,
+            total_head_m=head_value,
+            froude_number=froude_value,
+            source_slope=source_value,
+            friction_slope=friction_value,
+            continuity_residual_m3_s=continuity_value,
+            momentum_residual=momentum_value,
+            root_iterations=iterations,
+            energy_root_residual_m=root_residual,
+            critical_projection_applied=projected,
         )
         for (
-            a,
-            b,
-            c,
-            d,
-            e,
-            f,
-            g,
-            h1,
-            i,
-            j,
-            k,
+            position,
+            depth,
+            reference,
+            error,
+            velocity,
+            discharge,
+            bed_value,
+            head_value,
+            froude_value,
+            source_value,
+            friction_value,
+            continuity_value,
+            momentum_value,
             iterations,
             root_residual,
             projected,
         ) in zip(
             x,
             h,
+            high_precision_reference,
+            depth_error,
             u,
             q,
             bed,
@@ -481,29 +623,32 @@ def _mesh(spec: ContinuousBackgroundSpec, cells: int, hc: float, params: tuple[f
         )
     )
     return ContinuousMeshResult(
-        cells,
-        x,
-        h,
-        u,
-        q,
-        bed,
-        head,
-        froude,
-        source,
-        friction,
-        continuity,
-        momentum,
-        root_iterations,
-        energy_root_residual,
-        critical_projection,
-        compatibility,
-        max(map(abs, continuity)),
-        max(map(abs, momentum)),
-        max(energy_root_residual),
-        l2_error,
-        mom_l2,
-        None,
-        samples,
+        cells=cells,
+        x_m=x,
+        depth_m=h,
+        high_precision_reference_depth_m=high_precision_reference,
+        depth_error_m=depth_error,
+        velocity_m_s=u,
+        discharge_m3_s=q,
+        bed_elevation_m=bed,
+        head_m=head,
+        froude_number=froude,
+        source_slope=source,
+        friction_slope=friction,
+        continuity_residual=continuity,
+        momentum_residual=momentum,
+        root_iterations=root_iterations,
+        energy_root_residual_m=energy_root_residual,
+        critical_projection_applied=critical_projection,
+        critical_compatibility_residual=compatibility,
+        critical_derivative_compatibility_residual=derivative_compatibility,
+        max_continuity_residual=max(map(abs, continuity)),
+        max_momentum_residual=max(map(abs, momentum)),
+        max_energy_root_residual_m=max(energy_root_residual),
+        l2_depth_error=l2_error,
+        momentum_residual_l2=mom_l2,
+        observed_order=None,
+        samples=samples,
     )
 
 
@@ -514,7 +659,7 @@ def _order(coarse: float, fine: float) -> float | None:
 
 
 def solve_continuous_background(spec: ContinuousBackgroundSpec) -> ContinuousDiagnostic:
-    """Return three retained finite-volume reconstructions, never a continuum proof."""
+    """Return three retained cell-centred energy reconstructions, never a continuum proof."""
     if type(spec) is not ContinuousBackgroundSpec:
         raise TypeError("spec must be an exact ContinuousBackgroundSpec")
     hc = (spec.discharge_m3_s ** 2 / (spec.gravitational_acceleration_m_s2 * spec.width_m ** 2)) ** (1.0 / 3.0)
@@ -525,7 +670,19 @@ def solve_continuous_background(spec: ContinuousBackgroundSpec) -> ContinuousDia
     meshes = tuple(replace(mesh, observed_order=(None if index == 0 else depth_orders[index - 1])) for index, mesh in enumerate(raw))
     critical_x = _critical_fraction(spec.family) * spec.length_m if spec.family is ManufacturedFamily.REGULAR_TRANSCRITICAL else None
     compatibility = raw[-1].critical_compatibility_residual
-    regularity = (critical_x is None or (spec.regularity.require_isolated_critical_compatibility and abs(compatibility) <= spec.regularity.compatibility_tolerance))
+    derivative_compatibility = (
+        raw[-1].critical_derivative_compatibility_residual
+    )
+    regularity = (
+        critical_x is None
+        or (
+            spec.regularity.require_isolated_critical_compatibility
+            and abs(compatibility)
+            <= spec.regularity.compatibility_tolerance
+            and abs(derivative_compatibility)
+            <= spec.regularity.derivative_compatibility_tolerance
+        )
+    )
     if spec.source.balance_sign != 1:
         status = ContinuousStatus.SOURCE_SIGN_INVALID
     elif not _boundary_matches(spec, hc, params):
@@ -535,6 +692,11 @@ def solve_continuous_background(spec: ContinuousBackgroundSpec) -> ContinuousDia
     elif any(
         order is None or order < 0.8
         for order in (*depth_orders, *residual_orders)
+    ) or any(
+        mesh.max_continuity_residual > 1e-12
+        or mesh.max_energy_root_residual_m > 1e-10
+        or mesh.max_momentum_residual > 1e-3
+        for mesh in raw
     ):
         status = ContinuousStatus.CONVERGENCE_NOT_OBSERVED
     else:
@@ -554,4 +716,6 @@ def solve_continuous_background(spec: ContinuousBackgroundSpec) -> ContinuousDia
         min(finite_residual_orders) if finite_residual_orders else None,
         critical_x,
         regularity,
+        False,
+        CONTINUOUS_UNCERTAINTY_SEMANTICS,
     )

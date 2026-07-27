@@ -11,7 +11,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from smartchem.contracts import ObligationOutcome, RunStatus
+from smartchem.contracts import (
+    ObligationOutcome,
+    ObligationResult,
+    RunStatus,
+)
+import smartchem.water_wave_continuous as continuous_module
 from smartchem.program import (
     Transform,
     approve,
@@ -36,6 +41,7 @@ from smartchem.water_wave_continuous_domain import (
     RegularityRequirement,
     solve_continuous_background,
 )
+from smartchem.water_wave_continuous_verifier import continuous_payload_error
 
 
 def _subject() -> ContinuousWaterSubject:
@@ -220,6 +226,106 @@ def test_false_regularity_cannot_complete_the_compiled_vertical(tmp_path):
     assert report.record.status is RunStatus.INVALID
     assert report.result is None
     assert "critical compatibility did not pass" in report.record.failures[-1]
+
+
+def test_first_derivative_regularity_failure_cannot_complete_the_compiled_vertical(
+    tmp_path,
+):
+    background = ContinuousBackgroundSpec.manufactured(
+        ManufacturedFamily.REGULAR_TRANSCRITICAL,
+    )
+    background = replace(
+        background,
+        source=replace(
+            background.source,
+            critical_derivative_scale=0.5,
+        ),
+    )
+    subject = ContinuousWaterSubject.manufactured_comparison(background)
+    engine = ContinuousWaterWaveEngine()
+    plan = compile_water_wave_continuous(
+        "first-derivative regularity mutation",
+        subject,
+        engine,
+    )
+    report = execute(
+        _approved(plan),
+        engine,
+        journal_path=tmp_path / "derivative-regularity.json",
+    )
+
+    assert report.record.status is RunStatus.INVALID
+    assert report.result is None and report.certificate is None
+    assert "critical compatibility did not pass" in report.record.failures[-1]
+    assert report.record.checkpoints
+    assert all(item.quarantined for item in report.record.checkpoints)
+    assert all(item.quarantined for item in report.record.artifacts)
+
+
+def test_final_payload_validator_does_not_reuse_the_production_solver(
+    monkeypatch,
+    tmp_path,
+):
+    subject = _subject()
+    genuine = solve_continuous_background(subject.background)
+    forged = replace(
+        genuine,
+        uncertainty_propagated=True,
+        uncertainty_semantics="forged propagated uncertainty",
+    )
+    engine = ContinuousWaterWaveEngine()
+    plan = compile_water_wave_continuous(
+        "common-mode production-solver attack",
+        subject,
+        engine,
+    )
+
+    monkeypatch.setattr(
+        continuous_module,
+        "solve_continuous_background",
+        lambda _spec: forged,
+    )
+    monkeypatch.setattr(
+        continuous_module,
+        "_post_result",
+        lambda obligation, *_args: ObligationResult(
+            obligation.digest,
+            ObligationOutcome.PASS,
+            "test-only forced postcondition pass",
+        ),
+    )
+    report = execute(
+        _approved(plan),
+        engine,
+        journal_path=tmp_path / "common-mode-forgery.json",
+    )
+
+    assert report.record.status is RunStatus.INVALID
+    assert report.result is None and report.certificate is None
+    assert engine.calls == 1
+    assert "reported as propagated" in report.record.failures[-1]
+    assert report.record.checkpoints
+    assert all(item.quarantined for item in report.record.checkpoints)
+    assert all(item.quarantined for item in report.record.artifacts)
+
+
+def test_direct_payload_verifier_rejects_a_forged_comparison_explanation():
+    subject = _subject()
+    diagnostic = solve_continuous_background(subject.background)
+    comparison = continuous_module._comparison(subject, diagnostic)
+
+    assert continuous_payload_error(
+        subject,
+        diagnostic,
+        diagnostic.meshes,
+        comparison,
+    ) is None
+    assert "explanation differs" in continuous_payload_error(
+        subject,
+        diagnostic,
+        diagnostic.meshes,
+        replace(comparison, explanation="plausible but unearned explanation"),
+    )
 
 
 def test_finite_v2_attachment_cannot_drift_from_the_retained_continuous_mesh():

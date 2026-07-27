@@ -66,14 +66,16 @@ regular-transcritical—the compiler can:
    H=z_b+h+\frac{U^2}{2g},\qquad
    (1-Fr^2)h'=S_0-S_f;
    \]
-3. require \(S_0=S_f\) where \(Fr=1\), without evaluating a hidden \(0/0\)
-   quotient;
+3. require both \(S_0=S_f\) and
+   \(N'(x_c)=3[h'(x_c)]^2/h_c\), where \(N=S_0-S_f\), at the isolated
+   \(Fr=1\) point without evaluating a hidden \(0/0\) quotient;
 4. run one bounded numerical reconstruction on \(N,2N,4N\) meshes, retain each
    field/residual/diagnostic, and expose honest spatial reconstruction convergence;
 5. compare the result with the finite-section v2 diagnostics and explain, rather
    than suppress, disagreements caused by v2's finite/lossless assumptions;
-6. reject or downgrade friction omission, a flipped critical sign, forged
-   regularity, hidden interpolation, and dropped uncertainty/output evidence.
+6. reject or downgrade friction omission, a flipped critical sign, a zero-order-only
+   regularity match, hidden interpolation, threshold violations, and dropped
+   uncertainty/output evidence.
 
 ### Truth state
 
@@ -96,10 +98,12 @@ they remain outside-scope for arbitrary profiles, meshes, and physical channels.
 
 ### Weakest sufficient form
 
-A manufactured verifier/reconstructor with independent equation residuals,
-critical compatibility, preregistered refinement, complete retained output, and an
+A manufactured cell-centred energy reconstructor with a separately implemented direct
+verifier, both critical compatibility conditions, preregistered refinement, complete
+retained output, and an
 approved calculation receipt is sufficient. A time-dependent PDE solver,
-free-surface CFD code, or measured-flume calibration is not required.
+finite-volume/general stationary solver, free-surface CFD code, or measured-flume
+calibration is not required.
 
 ### Dependency edges closed if true
 
@@ -113,15 +117,16 @@ free-surface CFD code, or measured-flume calibration is not required.
 ### Novelty tax
 
 This is not a denser sampling of water v2. It must carry a continuous manufactured
-profile, spatial derivatives, friction/source balance, critical compatibility, a
-mesh ladder, and out-of-sample reconstruction error. It is not a general continuum
-claim because the family and solver are explicitly bounded.
+profile, spatial derivatives, friction/source balance, both critical compatibility
+conditions, a mesh ladder, and out-of-sample reconstruction error. It is not a
+general continuum claim because the family and reconstruction are explicitly bounded.
 
 ### Known failures it must evade
 
 - one-mesh agreement masquerading as convergence;
 - direct evaluation of the analytic profile masquerading as a numerical solve;
 - division through \(1-Fr^2=0\) at the critical point;
+- accepting \(S_0=S_f\) without the first-derivative smooth-passage condition;
 - an omitted friction term being hidden by a manufactured bed profile;
 - interpolation at undisclosed sample locations;
 - treating finite v2 as truth or silently forcing agreement;
@@ -140,16 +145,17 @@ claim because the family and solver are explicitly bounded.
 ### Candidate proof/implementation languages
 
 Frozen typed records, analytic manufactured profiles, specific-energy roots,
-bounded branch selection, piecewise spatial reconstruction, finite-difference
-diagnostics that do not share the exact derivative path, immutable execution
-receipts, and property/mutation tests.
+bounded branch selection, cell-centred spatial reconstruction, binary64 roundings of
+a separate 60-digit Decimal reference evaluation, finite-difference diagnostics, a
+solver-independent direct payload verifier, immutable execution receipts, and
+property/mutation tests.
 
 ### Finite/computational boundary
 
 Passing the finite mesh ladder does not prove convergence for arbitrary mesh size,
 arbitrary geometry, or the full shallow-water PDE. Manufactured exactness does not
 establish external physical validity. The evidence supports only the implemented
-families, equations, solver, and declared reconstruction metric.
+families, equations, bounded reconstruction, and declared metrics.
 
 ### Next lamp if Dark
 
@@ -226,16 +232,20 @@ power-preserving interconnection theorem.
 | Every closed executor owns its model/transforms pre-journal | supported after repair | seven registry preflights, guarded dispatch, exact plan/approval admission, and zero-call/no-journal attacks |
 | Open diagrams + MNA are the best immediate midterm | refuted as a scheduling claim | live handoff plus dependency/size comparison |
 | Manufactured continuous water is the best immediate midterm | supported and completed | bounded dependency cut plus terminal compiled run |
-| Continuous manufactured result is valid | supported at declared finite scope | `COMPLETE` receipt, six passing obligations, conservative two-pair refinement, root residuals, mutation controls, independent `SHIP` |
+| Continuous manufactured result is valid | supported at declared finite scope | `COMPLETE` receipt, six passing obligations, conservative two-pair refinement, all-mesh magnitude gates, both critical residuals, solver-independent direct verification, mutation controls, independent `SHIP` |
 
 ## Round outcome
 
 All five P0 gates closed. Public experiment harnesses are now installed, removing the
 module-vs-console `pytest` packaging split that made the initial remote branch red. The
-seventh closed executor completed the regular-transcritical `32/64/128` control with
-minimum depth/residual orders `1.0220072337077022` and `1.0315851382167684`, maximum
+seventh closed executor completed the regular-transcritical `32/64/128` cell-centred
+control with minimum depth/residual orders `1.0220072337077508` and
+`1.0315851382167684`, maximum
 continuity residual `2.220446049250313e-16`, maximum energy-root residual
-`1.1102230246251565e-16`, and exact critical compatibility at `x=4.3 m`.
+`1.1102230246251565e-16`, critical numerator residual `0.0`, and critical
+first-derivative residual `-2.5640297177109694e-14` at `x=4.3 m`. The result is
+explicitly not a finite-volume/general stationary solve, propagated uncertainty
+analysis, or continuum theorem.
 
 Finite v2 independently evaluated nine retained finest-mesh samples. It is independent
 code, not independent data. Its lossless head gate disagreed with the frictional
@@ -243,7 +253,10 @@ continuous model; the retained friction drop (`0.09921875000000001 m`) exceeds t
 maximum reconstruction offset (`1.801707032789146e-6 m`) by far more than the
 preregistered attribution threshold.
 
-The terminal run is `d60a232aa9d74507bbc1127f38cc6315`; no calculation remains in
-progress. Both supported pytest entry points report
-`1279 passed, 51 skipped, 1 xfailed`. The deterministic harness and complete identity
+The authoritative terminal run is `9af118648f6c456a99390d2a77c93816`; no compiled
+simulation remains in progress. One optional unjournaled cold all-oracle chemistry
+benchmark remains active at OS PID `151446`; its wall-clock output is not publishable
+because it overlapped pytest load and it is not a release gate. Both supported pytest
+entry points report
+`1329 passed, 14 skipped, 1 xfailed`. The deterministic harness and complete identity
 ledger are in `experiments/RESULTS_compiled_water_wave_continuous.md`.

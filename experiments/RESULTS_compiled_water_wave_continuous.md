@@ -6,9 +6,10 @@
 ## Verdict
 
 SmartChem completed the approved regular-transcritical manufactured control on
-`32/64/128` finite-volume cells. The runtime retained every requested field, residual,
-refinement result, critical-compatibility result, uncertainty record, and finite-v2
-comparison. All six lifecycle obligations passed.
+`32/64/128` cell-centred meshes. The runtime retained every requested field, residual,
+binary64 rounding of the separately evaluated Decimal reference, refinement result,
+both critical-compatibility residuals, uncertainty record, and finite-v2 comparison.
+All six lifecycle obligations passed.
 
 The implemented steady equations are
 
@@ -19,8 +20,15 @@ Fr^2 = U^2 / (g h)
 (1 - Fr^2) h' = S0 - Sf
 ```
 
-At the declared isolated critical point, the code checks the removable regularity
-condition `S0 = Sf` directly instead of dividing by `1 - Fr^2`.
+At the declared isolated critical point, the code checks both removable-regularity
+conditions independently of the energy-root solver:
+
+```text
+N(x_c) = S0(x_c) - Sf(x_c) = 0
+N'(x_c) = 3 h'(x_c)^2 / h_c
+```
+
+It never divides by `1 - Fr^2` at the critical point.
 
 This compiled run is finite manufactured numerical evidence for the declared
 regular-transcritical family. Directed tests separately exercise all three closed
@@ -28,16 +36,20 @@ manufactured families. Neither is a general Saint-Venant solver, a continuum con
 theorem, measured-flume validation, or authority for dispersive, turbulent, breaking,
 two-dimensional, quantum, or literal gravity claims.
 
-## Reconstruction and refinement
+## Bounded reconstruction and refinement
 
-The engine reconstructs depth from the finite-volume energy equation with a bounded,
-regime-aware bisection root. The branch is selected from the declared
+The engine performs a bounded, pointwise specific-energy reconstruction using
+cell-edge bed averaging and a regime-aware bisection root. This is not a
+finite-volume conservation solve. The branch is selected from the declared
 subcritical/supercritical/regular-transcritical family, not copied from the analytic
-depth. Per-cell root iterations and residuals are retained.
+depth. Per-cell root iterations and residuals are retained. Reference depths are
+evaluated through a separate 60-digit Decimal path and retained as binary64 roundings;
+the stored values are not represented as 60-digit numbers.
 
 | Quantity | 32 cells | 64 cells | 128 cells |
 |---|---:|---:|---:|
-| depth L2 error | `3.41113872686102e-4` | `1.679749609747297e-4` | `3.8190251227890805e-5` |
+| depth L2 error | `3.4111387268610387e-4` | `1.6797496097472497e-4` | `3.819025122788959e-5` |
+| maximum absolute depth error, m | `1.5475570440469655e-3` | `1.2250709094430712e-3` | `2.8032002795846944e-4` |
 | momentum-residual L2 | `4.776148982585693e-5` | `2.336360179592856e-5` | `5.339013031681103e-6` |
 | maximum momentum residual | `2.0317335828708648e-4` | `1.4526586649426452e-4` | `4.1946658660556483e-5` |
 | maximum continuity residual | `2.220446049250313e-16` | `2.220446049250313e-16` | `2.220446049250313e-16` |
@@ -46,14 +58,23 @@ depth. Per-cell root iterations and residuals are retained.
 | critical projections | `0` | `0` | `0` |
 
 The conservative minimum order over **both** refinement pairs was
-`1.0220072337077022` for depth reconstruction and `1.0315851382167684` for the
+`1.0220072337077508` for depth reconstruction and `1.0315851382167684` for the
 momentum residual. The preregistered gate was `>= 0.8` for every pair and both
-quantities.
+quantities. Every retained mesh also passed the absolute gates:
+continuity `<= 1e-12`, energy-root residual `<= 1e-10 m`, and maximum momentum
+residual `<= 1e-3`.
 
-The declared critical point was `x = 4.3 m`; its compatibility residual was exactly
-`0.0`. Directed controls also reject a flipped source sign (residual `-0.02`), omitted
-friction, false regularity, measurement/calibration language in manufactured provenance,
-and branch/model/result forgeries.
+The declared critical point was `x = 4.3 m`; its numerator residual was exactly
+`0.0`, and its first-derivative compatibility residual was
+`-2.5640297177109694e-14`. A mutation that preserves the numerator condition while
+halving the required derivative is refused. Directed controls also reject a flipped
+source sign, omitted friction, false regularity, measurement/calibration language in
+manufactured provenance, wrong root branches, residual-threshold violations, and
+model/result forgeries.
+
+The input uncertainty record is retained but deliberately **not propagated** into
+output bounds, regularity tolerances, or validation authority. This limitation is part
+of the payload, omission inventory, direct verifier, and certificate.
 
 ## Finite-v2 differential control
 
@@ -91,35 +112,36 @@ A tiny-friction mutation does not receive that explanation; it is reported as
 
 | Record | Digest / ID |
 |---|---|
-| run | `d60a232aa9d74507bbc1127f38cc6315` |
-| source | `e8a2a42bb1e20a1c64a9fc6c0ac60de0bd80765ecf3b1a8312cbda957446c1e8` |
-| resolved program | `11b724e85ff0b1e46b723f54bab8b6fc5339f9c1de24e42746cc567a10b1743e` |
-| Physical IR | `1f4898f71ec91398afc999d33dd284c778937be7a78d76991f95459bcc8c2272` |
-| request | `df6cc6085894bc1a2ecb005b92acecb3da1f7f8df5d35ea1baa15cd0c62ae6d5` |
-| plan | `fdfd71e645ce5ef51da31862e122d3a5b5d6b2fe03a84c61c6806ef4f2f055` |
-| approval | `6ccb6667b91aca5b0a7d5d213a1714e744768b0580ebb5e8bdcba3c1f3498cdb` |
-| calculation | `684b1e460541e4945c20be76187a3dd53018a39c7af811a6d810d8aebe781da2` |
-| compiler/runtime implementation | `7f2efe663186f96c0524c9ea34c1532b6799fedb9ebaca4d29c800ce24ddfa0c` |
-| continuous diagnostic/checkpoint | `c57ffa066c75c42b62c7e8bd658ae6a695acad76f7c7823ef6ef756a763b0f4c` |
-| retained meshes | `f406c22de0b5ed7d35328bc84cc131f5e98c8e7a7b83ed69c9f36559bebdcfbf` |
+| run | `9af118648f6c456a99390d2a77c93816` |
+| source | `59da28acd223d6926ffcef62ea39dcdb7bb567f96868f5b12dac5ccd6d006fad` |
+| resolved program | `e17b7d23da64e7034a2b79c02b765980dd6c837d10119e23e23f48f3af37ba8f` |
+| Physical IR | `43445ca79f607bc2fb90dbf767a252f6421ee3fb224895defb33ada0e7ed7461` |
+| request | `88378f86d6b1de7420adeeb2d4b147095bb284596d5286359c5fd543e137af6a` |
+| plan | `fd21896268f7a1a8ee36784973eb76fcd555560f36edfb54cc5a77faade528c9` |
+| approval | `a5dd6e2e1630a579d79c97cf7daf533795e8f9d4af8879021c59901793188f25` |
+| calculation | `b0d9523c6035ec7b737185095bf16607f6ce7241b22e89e0c01738c7a00ddd0c` |
+| compiler/runtime implementation | `d4fcf3619b64b2e4790541961f80366bfb4e26b9d7958d24e5243f523fd1c9c1` |
+| continuous diagnostic/checkpoint | `c4488cc2bf03d2775ad4ed4865a1fa01b546adb8e2c656dac45b043fc34effc6` |
+| retained meshes | `ac0e522ab6983a48a509470d6e124896bf073fdb27c217df8cf5b6dfeb262c7e` |
 | finite-v2 comparison | `0c9c9ce32e685147ad6b0057da432f6afc51ab0abbb35776d0a560691a612f26` |
-| certificate | `fb3a9f604c82e133d1c1c08cf199405c70ebaaf5967b51ba6716c3374162c3ee` |
+| certificate | `0e08909ff4cc31319ce606ab591b9de652ba4b90f712364d4a1b80cb2834ee28` |
 
 The write-once local journal is
-`/tmp/smartchem-continuous-final.ujJhon/run.json`. It ran from
-`2026-07-27T14:05:09.333912+00:00` to `2026-07-27T14:05:09.855206+00:00`.
+`/tmp/smartchem-continuous-authority2.FK4IFV/run.json`. It ran from
+`2026-07-27T22:46:26.460250+00:00` to `2026-07-27T22:46:27.744625+00:00`.
 The journal is intentionally not committed; this receipt and the deterministic harness
 are.
 
 ## Verification
 
 - both `.venv/bin/python -m pytest -q -rs` and `.venv/bin/pytest -q -rs`:
-  `1279 passed, 51 skipped, 1 xfailed`;
-- the 51 skips are explicitly PySCF-dependent or slow and are not represented as passes;
-- `python -m smartchem.bench --split test --quiet`: completed with honest incomplete
-  heuristic coverage (`6` evaluated, `5` refused);
+  `1329 passed, 14 skipped, 1 xfailed`;
+- the 14 skips are explicitly slow and are not represented as passes;
+- `python -m smartchem.bench --split test --oracle heuristic --quiet`: completed with
+  honest incomplete heuristic coverage (`6` evaluated, `5` refused; conditional MAE
+  `3.4950 eV`, no accuracy tier);
 - `python -m compileall -q smartchem experiments tests`: passed;
 - `git diff --check`: passed;
-- independent continuous-equation, solver, provenance, comparison, and runtime review:
-  `SHIP`;
+- independent continuous-equation, direct-verifier, provenance, comparison, and
+  runtime review: `SHIP` after correcting the finite-volume and stored-precision claims;
 - independent P0 constructor/dispatch seam review: `SHIP`.

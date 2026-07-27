@@ -61,7 +61,7 @@ without becoming literal; a literal target can remain unsupported.
 | Reaction energy | Conserving closed endpoint-energy execution with exact output inventory and a verified spectator-residue transform under the runtime-owned separable model. | Public oracle coverage remains narrow; spectator cancellation is not licensed for interacting, solvated, field-coupled, or open models. |
 | Shallow-water horizon v1 | Branch-specific `U ± sqrt(g h)` characteristics and sample-bracketed crossings on a typed prescribed profile. | `ANALOGUE/STRUCTURAL_TOY`; not a continuous background solution, measured flume, scattering calculation, or literal black hole. |
 | Water finite-section preflight v2 | Manufactured discharge/head, `kh`, Bond-number, sign/orientation, uncertainty, and adjacent-sample compatibility gates. | Does not establish steady regularity, a continuous transcritical solution, or experimental validation. |
-| Continuous steady-water control | Manufactured subcritical, supercritical, and isolated regular-transcritical backgrounds; bounded energy-root reconstruction on 32/64/128 cells; retained balance residuals, both refinement-pair rates, critical compatibility, uncertainty, and an exact finite-v2 comparison. | `ANALOGUE/STRUCTURAL_TOY`; finite manufactured convergence is not a continuum theorem, measured flume, dispersive solver, scattering result, or literal gravity. |
+| Continuous steady-water control | Manufactured subcritical, supercritical, and isolated regular-transcritical backgrounds; bounded cell-centred energy-root reconstruction on 32/64/128 meshes; binary64 roundings of a separate 60-digit Decimal reference evaluation; retained balance residuals, both refinement-pair rates, both critical compatibility conditions, metadata-only uncertainty, and an exact finite-v2 comparison. | `ANALOGUE/STRUCTURAL_TOY`; not a finite-volume/general stationary solver, continuum theorem, propagated uncertainty analysis, measured flume, dispersive/scattering result, or literal gravity. |
 | Human-isotope D2a | A complete typed interpretation and proof that one hypothetical median-lethality endpoint is compatible with distinct survival families. | `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`; no LD50-to-rate conversion, human prediction, toxicology calibration, or experimentation authority. |
 | Synthetic survival D2b-S | TRAIN-only fixed-family conditional-binomial recovery on content-addressed independent synthetic cohorts, with uncertainty diagnostics and locked HOLDOUT scoring. | Same-generator implementation evidence only; no human/animal evidence, biological validation, causality, or transfer authority. |
 | Finite C3 Ising↔lattice gas | All eight states, `ε=4J`, `μ=2h−4J`, `H_I=H_LG+3(h−J)`, and the formal partition identity, checked with exact integers and a separate direct verifier. | `ANALOGUE/ESTABLISHED/CERTIFIED` for that finite algebra only; no material identity, dynamics, thermodynamic limit, or arbitrary-graph transfer. |
@@ -127,12 +127,11 @@ python -m smartchem.bench
 Current maintained fast-suite result:
 
 ```text
-1279 passed, 51 skipped, 1 xfailed
+1329 passed, 14 skipped, 1 xfailed
 ```
 
-The skipped tests require the absent optional PySCF backend or the explicit slow-test
-gate; they are not represented as passed. Run selected real-wavefunction integration
-coverage with:
+The skipped tests require the explicit slow-test gate and are not represented as passed.
+Run selected real-wavefunction integration coverage with:
 
 ```bash
 pytest -q --runslow

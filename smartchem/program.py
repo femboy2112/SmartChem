@@ -1559,16 +1559,8 @@ def _observable_payload_error(
             return "water-background regime inventory differs from the diagnostic"
         return None
     if plan.executor_id == _WATER_WAVE_CONTINUOUS_EXECUTOR:
-        from .water_wave_continuous import (
-            ContinuousFiniteV2Comparison,
-            ContinuousWaterSubject,
-            _comparison as continuous_v2_comparison,
-        )
-        from .water_wave_continuous_domain import (
-            ContinuousDiagnostic,
-            ContinuousMeshResult,
-            solve_continuous_background,
-        )
+        from .water_wave_continuous import ContinuousWaterSubject
+        from .water_wave_continuous_verifier import continuous_payload_error
 
         resolved = plan.request.resolved
         if (
@@ -1579,36 +1571,12 @@ def _observable_payload_error(
         diagnostic = payloads.get("water_wave_continuous_diagnostic")
         meshes = payloads.get("water_wave_continuous_meshes")
         comparison = payloads.get("water_wave_finite_v2_comparison")
-        if type(diagnostic) is not ContinuousDiagnostic:
-            return (
-                "water_wave_continuous_diagnostic must retain an exact "
-                "ContinuousDiagnostic"
-            )
-        if (
-            type(meshes) is not tuple
-            or any(type(item) is not ContinuousMeshResult for item in meshes)
-        ):
-            return "water_wave_continuous_meshes must retain every exact mesh result"
-        if type(comparison) is not ContinuousFiniteV2Comparison:
-            return (
-                "water_wave_finite_v2_comparison must retain an exact "
-                "ContinuousFiniteV2Comparison"
-            )
-        reference = solve_continuous_background(resolved.subject.background)
-        if canonical_digest(diagnostic) != canonical_digest(reference):
-            return (
-                "continuous-water diagnostic does not equal the independently "
-                "recomputed result"
-            )
-        if canonical_digest(meshes) != canonical_digest(reference.meshes):
-            return "continuous-water mesh inventory differs from the diagnostic"
-        expected_comparison = continuous_v2_comparison(resolved.subject, reference)
-        if canonical_digest(comparison) != canonical_digest(expected_comparison):
-            return (
-                "continuous-water finite-v2 comparison differs from the "
-                "independently recomputed payload"
-            )
-        return None
+        return continuous_payload_error(
+            resolved.subject,
+            diagnostic,
+            meshes,
+            comparison,
+        )
     if plan.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
         from .human_isotope_domain import (
             ConstraintInventory,

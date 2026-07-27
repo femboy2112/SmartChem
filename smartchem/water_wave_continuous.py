@@ -27,9 +27,11 @@ from .program import (
     _require_runtime_dispatch, _resource_wall,
 )
 from .water_wave_continuous_domain import (
-    ContinuousBackgroundSpec, ContinuousDiagnostic, ContinuousMeshResult,
+    CONTINUOUS_UNCERTAINTY_SEMANTICS,
+    ContinuousBackgroundSpec, ContinuousDiagnostic,
     ContinuousStatus, solve_continuous_background,
 )
+from .water_wave_continuous_verifier import continuous_diagnostic_error
 from .water_wave_validation_domain import (
     BackgroundSample, BackgroundTolerances, DeclaredWavelengthSupport,
     FluidProperties, ValidationDiagnostic, WaterWaveValidationSpec,
@@ -60,6 +62,7 @@ CONTINUOUS_WATER_CASUALTIES = (
 CONTINUOUS_WATER_OMISSIONS = (
     "no measurement provenance, calibration, or experimental validation is supplied",
     "no dispersive, capillary, nonlinear, turbulent, or two-dimensional uncertainty is quantified",
+    CONTINUOUS_UNCERTAINTY_SEMANTICS,
     "N/2N/4N agreement is finite manufactured numerical evidence, not a continuum theorem",
     "finite-v2 remains an independent lossless finite-section diagnostic, not a validation oracle",
 )
@@ -175,9 +178,9 @@ class ContinuousWaterSubject:
                 item.bed_elevation_m,
                 0.0,
                 0.0,
-                background.uncertainty.depth_m,
                 0.0,
-                background.uncertainty.depth_m,
+                0.0,
+                0.0,
             )
             for item in (finest.samples[index] for index in indices)
         )
@@ -250,9 +253,14 @@ def _default_output_contract() -> OutputContract:
                 "structured SI record",
                 "the exact approved manufactured family on retained N, 2N, and 4N meshes",
                 "every retained mesh point and every named residual/regularity verdict",
-                "retain binary64 values; no physical uncertainty is invented",
-                "specification, status, all mesh records, residual maxima, and observed orders",
-                diagnostics=("critical compatibility", "continuity and momentum residuals", "N/2N/4N convergence"),
+                "retain binary64 solver values plus binary64 roundings of a 60-digit Decimal manufactured reference evaluation; no physical uncertainty is invented",
+                "specification, status, all mesh records, residual maxima, both critical residuals, and observed orders",
+                diagnostics=(
+                    "critical numerator and first-derivative compatibility",
+                    "continuity and momentum residuals",
+                    "N/2N/4N convergence",
+                    CONTINUOUS_UNCERTAINTY_SEMANTICS,
+                ),
                 retention=("complete ContinuousDiagnostic",),
             ),
             ObservableRequest(
@@ -265,6 +273,7 @@ def _default_output_contract() -> OutputContract:
                     "mesh cell counts",
                     "observed convergence order",
                     "per-cell root iterations, energy residual, and critical projection",
+                    "binary64 rounding of a 60-digit Decimal manufactured reference depth and pointwise depth error",
                 ),
                 retention=("every ContinuousMeshResult",),
             ),
@@ -294,7 +303,7 @@ def _runtime_model() -> ModelSpec:
             "q(x) = b(x) h(x) U(x)",
             "H(x) = z_b(x) + h(x) + U(x)^2/(2 g)",
             "steady momentum residual retains source slope and declared friction slope",
-            "critical compatibility residual is retained at declared transcritical control",
+            "critical compatibility retains numerator and first-derivative residuals at the declared transcritical control",
             "N, 2N, and 4N manufactured meshes retain observed convergence order",
         ),
         (
@@ -306,14 +315,17 @@ def _runtime_model() -> ModelSpec:
         (
             "the subject is an exact ContinuousBackgroundSpec",
             "all domain preconditions and manufactured boundary data are accepted by the domain constructor",
-            "critical compatibility and N/2N/4N convergence are checked after one complete engine call",
+            "critical numerator/derivative compatibility and N/2N/4N convergence are checked after one complete engine call",
         ),
         (
             "every retained mesh has complete field/residual arrays",
-            "the diagnostic is independently reproducible from the exact approved subject",
+            "a separately implemented direct verifier checks the diagnostic without calling the production solver",
             "a finite-v2 comparison explicitly distinguishes lossless finite-section gates from frictional continuous momentum",
         ),
-        ("steady discharge under the declared one-dimensional manufactured model",),
+        (
+            "steady discharge under the declared one-dimensional manufactured model",
+            CONTINUOUS_UNCERTAINTY_SEMANTICS,
+        ),
         "1",
     )
 
@@ -510,17 +522,7 @@ def _result(obligation: ValidityObligation, outcome: ObligationOutcome, detail: 
 
 
 def _complete(diagnostic: object, spec: ContinuousBackgroundSpec) -> bool:
-    if type(diagnostic) is not ContinuousDiagnostic or type(diagnostic.spec) is not ContinuousBackgroundSpec:
-        return False
-    if canonical_digest(diagnostic.spec) != canonical_digest(spec):
-        return False
-    if type(diagnostic.meshes) is not tuple or len(diagnostic.meshes) != 3:
-        return False
-    if any(type(mesh) is not ContinuousMeshResult for mesh in diagnostic.meshes):
-        return False
-    if type(diagnostic.status) is not ContinuousStatus or not isinstance(diagnostic.evidence_status, EvidenceStatus):
-        return False
-    return canonical_digest(diagnostic) == canonical_digest(solve_continuous_background(spec))
+    return continuous_diagnostic_error(spec, diagnostic) is None
 
 
 def _pre_result(obligation: ValidityObligation, approved: ApprovedPlan, subject: ContinuousWaterSubject) -> ObligationResult:
@@ -541,8 +543,9 @@ def _post_result(obligation: ValidityObligation, diagnostic: object, spec: Conti
                  emitted: tuple[str, ...], expected: tuple[str, ...]) -> ObligationResult:
     complete = _complete(diagnostic, spec)
     if obligation.evaluator_id == "smartchem.water_wave_continuous/complete-diagnostic-v1":
+        error = continuous_diagnostic_error(spec, diagnostic)
         return _result(obligation, ObligationOutcome.PASS if complete else ObligationOutcome.FAIL,
-                       "independent recomputation retained exact N/2N/4N diagnostic" if complete else "diagnostic was altered, incomplete, or forged")
+                       "separate direct verifier retained the exact N/2N/4N diagnostic" if complete else f"diagnostic was altered, incomplete, or forged: {error}")
     if obligation.evaluator_id == "smartchem.water_wave_continuous/critical-compatibility-v1":
         passed = (
             complete

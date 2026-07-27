@@ -122,6 +122,7 @@ declared invariants" for "physical".
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from functools import reduce
@@ -339,25 +340,37 @@ class Completion:
     coefficients: tuple[int, ...]
     reaction: Reaction
     unconstrained: bool
+    species: tuple[Molecule, ...]
 
-    def equation(self, species: tuple[Molecule, ...]) -> str:
+    def equation(self, species: tuple[Molecule, ...] | None = None) -> str:
         """
         The balance written with integer coefficients, which is what a caller reads.
 
         ``Config.__repr__`` renders a multiset, so three waters print as ``H2O + H2O +
-        H2O``. That is faithful to the object and useless as a menu entry. Takes the
-        species tuple rather than storing it because a ``Completion`` is only ever handed
-        out by the menu that owns that tuple.
+        H2O``. That is faithful to the object and useless as a menu entry.
+
+        **The species are STORED, and the argument is now only a cross-check.** They used
+        to be a required parameter, on the reasoning that a ``Completion`` is only ever
+        handed out by the menu that owns the tuple. That reasoning was wrong twice over.
+        A tuple of the wrong LENGTH let ``zip`` truncate in silence and render a shorter
+        balance that reads as complete; guarding the length then left the worse case wide
+        open, because a tuple of the RIGHT length and the wrong CONTENT renders a fully
+        formed, entirely plausible equation for a reaction nobody derived. Reordering a
+        species list is an ordinary mistake in a pipeline, not an attack::
+
+            completion.equation((O2, CH4, H2O, CO2))   ->  'O2 + 2CH4 -> H2O + 2CO2'
+
+        which is not mass-balanced and is indistinguishable, as a string, from something
+        that came out of :meth:`StoichiometryMenu.equations`. Identity is the only guard
+        that closes that, so the object carries what it renders against.
         """
-        if len(species) != len(self.coefficients):
-            # ``zip`` truncates in silence, so a species tuple of the wrong length used to
-            # render a SHORTER equation that looks entirely plausible and drops terms
-            # without saying so. A plausible wrong equation is the exact failure this
-            # package exists to refuse, and it was reachable from a public method.
+        if species is not None and tuple(species) != self.species:
             raise ValueError(
-                f"equation() got {len(species)} species for {len(self.coefficients)} "
-                f"coefficients; zip would drop the difference and render a shorter "
-                f"balance that reads as complete. Pass the menu's own species tuple")
+                f"equation() was given a species tuple that is not the one these "
+                f"coefficients were derived against. A same-length tuple in a different "
+                f"order renders a complete, plausible, WRONG equation -- pass this "
+                f"completion's own species, or pass nothing")
+        species = self.species
 
         def side(keep) -> str:
             terms = [f"{abs(c) if abs(c) != 1 else ''}{m!r}"
@@ -531,16 +544,39 @@ class StoichiometryMenu:
         answering a malformed question with ``False`` would tell a scientist their
         chemistry is wrong when their typing was.
         """
+        if not isinstance(coefficients, Sequence) or isinstance(coefficients, (str, bytes)):
+            # A ``set`` has a length, holds integers, and passes every other guard here --
+            # and ``tuple()`` freezes it in HASH order, which for these integers is not
+            # insertion order. Measured: over 39 scalings of this menu's own derived
+            # balance, 34 came back with a confident, specific, WRONG "no" carrying
+            # fabricated row violations, purely because the container was unordered.
+            # ``scale=1`` survived by hash-layout coincidence, which is worse than failing.
+            raise TypeError(
+                f"coefficients must be an ordered sequence (list or tuple), got "
+                f"{type(coefficients).__name__}. An unordered container is silently "
+                f"reordered by tuple(), and this method would then answer confidently "
+                f"about a vector the caller never wrote")
         nu = tuple(coefficients)
         if len(nu) != len(self.species):
             raise ValueError(
                 f"check() got {len(nu)} coefficients for {len(self.species)} species; "
                 f"align them with this menu's own species tuple, in its order")
-        if any(not isinstance(c, int) or isinstance(c, bool) for c in nu):
+        if any(type(c) is not int for c in nu):
+            # ``type(c) is int`` and not ``isinstance``, deliberately. bool is an int
+            # subclass and True is a typo rather than a 1 -- but the sharper reason is
+            # that an int SUBCLASS may lie. The weight cap below and ``_configs``'s
+            # allocation each call ``abs()`` independently, so a stateful ``__abs__``
+            # returning an honest value once and a huge one afterwards passes the cap and
+            # then materialises the huge count. Measured: a subclass declaring weight 4
+            # allocated 5,000,000 molecules, and the resulting mismatch was reported as a
+            # MenuContradiction -- the module accusing its own two derivations of
+            # disagreeing when neither was wrong and the TYPE had lied. An exactness
+            # guarantee cannot be built on a value the caller can recompute differently.
             raise TypeError(
-                f"coefficients must be integers, got {nu!r}. A float would sum through "
-                f"the residual test and produce a yes or no about a vector that is not a "
-                f"candidate balance; bool is refused because True is a typo, not a 1")
+                f"coefficients must be exactly int, got "
+                f"{[type(c).__name__ for c in nu]}. A float sums straight through the "
+                f"residual test; bool is a typo, not a 1; and an int subclass can return "
+                f"one value to the allocation guard and another to the allocator")
         weight = sum(abs(c) for c in nu)
         if weight > MAX_WRITTEN_WEIGHT:
             raise ValueError(
@@ -726,7 +762,7 @@ def stoichiometry_menu(species: tuple[Molecule, ...]) -> StoichiometryMenu:
         reaction = Reaction(dom, cod, name="derived")
         touches_blind = any(coefficient and molecule in blind
                             for molecule, coefficient in zip(species, nu))
-        completions.append(Completion(nu, reaction, touches_blind))
+        completions.append(Completion(nu, reaction, touches_blind, tuple(species)))
 
     return StoichiometryMenu(
         species=tuple(species),

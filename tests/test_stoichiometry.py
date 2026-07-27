@@ -15,7 +15,14 @@ import pytest
 from dataclasses import replace
 from hypothesis import given, settings, strategies as st
 
-from smartchem.category import Bond, Config, Molecule, Reaction, conserves
+from smartchem.category import (
+    Bond,
+    Config,
+    ConservationError,
+    Molecule,
+    Reaction,
+    conserves,
+)
 from smartchem.stoichiometry import (
     CHARGE_ROW,
     MenuContradiction,
@@ -367,9 +374,14 @@ def _render(coefficients, species=_RENDER_POOL):
     ever emit is strictly more coverage than only rendering what some menu happened to
     produce. That is the point: the defect this guards lived in vectors the fixtures never
     generated.
+
+    Both are replaced together, deliberately. ``equation`` now refuses a species tuple that
+    is not the one its coefficients were derived against, so replacing only the
+    coefficients would be constructing exactly the mismatch that guard exists to refuse.
     """
     seed = stoichiometry_menu((H2, O2, H2O)).completions[0]
-    return replace(seed, coefficients=tuple(coefficients)).equation(tuple(species))
+    return replace(seed, coefficients=tuple(coefficients),
+                   species=tuple(species)).equation()
 
 
 class TestNothingRendersAsNothing:
@@ -661,14 +673,103 @@ class TestSectionIsSecondClause:
 
 
 class TestEquationCannotBeHandedTheWrongSpecies:
-    """``zip`` truncates in silence, and a shorter equation reads as a complete one."""
+    """
+    A rendered equation must be about the reaction whose coefficients rendered it.
 
-    def test_a_short_species_tuple_is_refused_rather_than_truncated(self):
-        menu = stoichiometry_menu(COMBUSTION)
-        completion = menu.completions[0]
-        with pytest.raises(ValueError, match="would drop the difference"):
-            completion.equation(COMBUSTION[:3])
+    Two rounds of this. The first guard checked only the LENGTH, because ``zip`` truncates
+    in silence and a shorter equation reads as a complete one. Adversarial review then
+    showed the length check leaves the worse case wide open: a tuple of the RIGHT length
+    and the wrong CONTENT renders a fully formed, plausible equation for a reaction nobody
+    derived -- and reordering a species list is an ordinary pipeline mistake, not an
+    attack. Identity is the only guard that closes it, so the species are stored now.
+    """
 
-    def test_the_menus_own_tuple_still_works(self):
-        menu = stoichiometry_menu(COMBUSTION)
-        assert menu.completions[0].equation(menu.species) == "CH4 + 2O2 -> CO2 + 2H2O"
+    MENU = stoichiometry_menu(COMBUSTION)
+
+    def test_a_short_species_tuple_is_refused(self):
+        with pytest.raises(ValueError):
+            self.MENU.completions[0].equation(COMBUSTION[:3])
+
+    def test_a_reordered_tuple_of_the_right_length_is_refused(self):
+        """The case the length guard could not see, and the likelier of the two."""
+        with pytest.raises(ValueError, match="different order"):
+            self.MENU.completions[0].equation((O2, CH4, H2O, CO2))
+
+    def test_an_unrelated_tuple_of_the_right_length_is_refused(self):
+        with pytest.raises(ValueError):
+            self.MENU.completions[0].equation((N2, C, He, H2))
+
+    def test_what_the_length_only_guard_would_have_rendered(self):
+        """
+        The stake, made concrete rather than described. Building the mismatch deliberately
+        via ``replace`` shows what the old signature handed back for a reordered tuple: a
+        well-formed string, indistinguishable from a menu entry, for a reaction that does
+        not even balance.
+        """
+        rogue = replace(self.MENU.completions[0], species=(O2, CH4, H2O, CO2))
+        assert rogue.equation() == "O2 + 2CH4 -> H2O + 2CO2"
+        with pytest.raises(ConservationError):
+            Reaction(Config.of(O2, CH4, CH4), Config.of(H2O, CO2, CO2))
+
+    def test_the_menus_own_tuple_still_works_and_so_does_no_tuple(self):
+        completion = self.MENU.completions[0]
+        assert completion.equation(self.MENU.species) == "CH4 + 2O2 -> CO2 + 2H2O"
+        assert completion.equation() == "CH4 + 2O2 -> CO2 + 2H2O"
+
+
+class TestTheWrittenCheckRefusesTypesThatCanLie:
+    """
+    Both found by adversarial review of the check itself. Neither is about arithmetic --
+    each is a container or a type producing a confident verdict about a vector nobody wrote.
+    """
+
+    MENU = stoichiometry_menu(COMBUSTION)
+
+    def test_an_unordered_container_is_refused_rather_than_silently_sorted(self):
+        """
+        A ``set`` has a length, holds ints, and passes every other guard. ``tuple()``
+        freezes it in HASH order. MEASURED over 39 scalings of this menu's own derived
+        balance: 34 came back with a confident, specific, WRONG refusal carrying fabricated
+        row violations. ``scale=1`` survived by hash-layout coincidence, which is worse
+        than failing, because it makes the bug look like it is not there.
+        """
+        with pytest.raises(TypeError, match="ordered sequence"):
+            self.MENU.check({1, 2, -1, -2})
+        assert self.MENU.check([1, 2, -1, -2]).admissible, "a list is ordered and fine"
+
+    def test_a_set_really_does_reorder_this_vector(self):
+        """The premise of the guard above, asserted rather than assumed."""
+        assert tuple({2, 4, -2, -4}) != (2, 4, -2, -4)
+
+    def test_an_int_subclass_is_refused_because_it_can_answer_twice(self):
+        """
+        ``MAX_WRITTEN_WEIGHT`` is justified as an allocation bound, and that bound is only
+        real if the value it measures is the value the allocator sees. ``abs()`` is called
+        once at the gate and again inside ``_configs``. MEASURED: a subclass declaring
+        weight 4 to the gate allocated 5,000,000 molecules, and the mismatch surfaced as a
+        ``MenuContradiction`` -- the module accusing its own two derivations of disagreeing
+        when neither was wrong and the TYPE had lied.
+
+        The payload below is 50,000 rather than the 5,000,000 that was measured. It is
+        still fifty times ``MAX_WRITTEN_WEIGHT`` and proves the identical point, and it
+        keeps the mutation harness -- which runs this test against a build with the guard
+        removed, where the allocation really happens -- from spending gigabytes and half a
+        minute to establish what a smaller number establishes.
+        """
+        class Toggle(int):
+            def __new__(cls, value, big):
+                obj = int.__new__(cls, value)
+                obj._big, obj._calls = big, 0
+                return obj
+
+            def __abs__(self):
+                self._calls += 1
+                return abs(int(self)) if self._calls == 1 else self._big
+
+        poison = Toggle(2, 50_000)
+        assert isinstance(poison, int), "isinstance would have waved this through"
+        with pytest.raises(TypeError, match="exactly int"):
+            self.MENU.check((1, poison, -1, -2))
+
+    def test_a_plain_int_is_still_fine(self):
+        assert self.MENU.check((1, 2, -1, -2)).verified

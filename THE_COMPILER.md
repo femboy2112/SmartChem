@@ -525,11 +525,37 @@ thing that blocks it is a fact about the design, not about the effort.
   the existence of the object is the evidence. `COMPILED` is the loop's opinion of its own
   dialogue; the constructed `Reaction` is the category's.
 
-  **One defect found on the way, in code that predates this brick.** `Completion.equation()`
-  took a caller-supplied species tuple and `zip`ped it against the coefficients — and `zip`
-  truncates in silence, so a short tuple rendered a **shorter balance that reads as
-  complete**. A plausible wrong equation, reachable from a public method, in the module whose
-  entire purpose is refusing plausible wrong answers. It raises now.
+  **One defect found on the way, in code that predates this brick — and the first repair for
+  it was itself incomplete, which is the more useful half of the story.**
+  `Completion.equation()` took a caller-supplied species tuple and `zip`ped it against the
+  coefficients, and `zip` truncates in silence, so a short tuple rendered a **shorter balance
+  that reads as complete**. The obvious fix is a length check. Adversarial review then showed
+  that the length check leaves the *worse* case wide open: a tuple of the right length and
+  the wrong content renders a **fully formed, entirely plausible equation for a reaction
+  nobody derived** — `completion.equation((O2, CH4, H2O, CO2))` gives `O2 + 2CH4 → H2O +
+  2CO2`, which does not balance and is indistinguishable, as a string, from a menu entry.
+  Reordering a species list is an ordinary pipeline mistake, not an attack. Identity is the
+  only guard that closes it, so a `Completion` now carries what it renders against.
+
+  **Two more from the same pass, and both are the same shape: a confident verdict about a
+  vector nobody wrote.** A `set` has a length, holds integers, and passes every other guard —
+  and `tuple()` freezes it in *hash* order; measured over 39 scalings of this menu's own
+  derived balance, **34 came back as a specific, confident, wrong refusal** carrying
+  fabricated row violations, with `scale=1` surviving by hash-layout coincidence, which is
+  worse than failing outright. And `isinstance(c, int)` admits int *subclasses*: the weight
+  cap and `_configs` each call `abs()` independently, so a stateful `__abs__` declaring
+  weight 4 to the gate then **allocated 5,000,000 molecules**, and the resulting mismatch
+  surfaced as a `MenuContradiction` — this module accusing its own two derivations of
+  disagreeing when neither was wrong and the *type* had lied. An exactness guarantee cannot
+  rest on a value the caller can recompute differently, so the guard is `type(c) is int`.
+
+  **What the adversary could NOT break, stated because a clean bill is only worth the attack
+  behind it.** It could not make the exact kernel and `Reaction`'s dictionary accumulation
+  genuinely disagree: ~2,886 balanced integer points across ~4,000 sampled species sets,
+  **including charged species and ions that the shipped property tests never exercise with
+  nonzero charge**, zero disagreements and zero incompleteness. So `MenuContradiction`
+  remains unreachable by honest input — its one demonstrated route was the type confusion
+  above, which is now closed.
 
 The ordering matters. **Brick 0 before anything conversational.** The dialogue is the last
 thing built, not the first, because the dialogue is the part that can fake working.

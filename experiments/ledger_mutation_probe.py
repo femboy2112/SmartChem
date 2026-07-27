@@ -203,18 +203,41 @@ WRITTEN_CHECK_MUTATIONS = [
         "one that was written.",
     ),
     (
-        "float-coefficients-allowed",
-        "        if any(not isinstance(c, int) or isinstance(c, bool) for c in nu):\n",
+        "coefficient-type-unchecked",
+        "        if any(type(c) is not int for c in nu):\n",
         "        if False:\n",
-        "Letting a float through. It sums cleanly into the residual and yields a confident "
-        "admissible/refused verdict about a vector that is not a candidate balance at all.",
+        "Dropping the type guard outright. A float sums cleanly into the residual and "
+        "yields a confident admissible/refused verdict about a vector that is not a "
+        "candidate balance at all.",
     ),
     (
-        "equation-species-length-unchecked",
-        "        if len(species) != len(self.coefficients):\n",
+        "equation-checks-length-not-identity",
+        "        if species is not None and tuple(species) != self.species:\n",
+        "        if species is not None and len(species) != len(self.species):\n",
+        "The first repair, restored verbatim -- and it is the more instructive mutant "
+        "because it is not a strawman, it SHIPPED. Guarding the length stops zip "
+        "truncating and leaves the worse case open: a same-length tuple in a different "
+        "order renders a complete, plausible, unbalanced equation, and reordering a "
+        "species list is an ordinary pipeline mistake rather than an attack.",
+    ),
+    (
+        "unordered-coefficients-allowed",
+        "        if not isinstance(coefficients, Sequence) or isinstance(coefficients, (str, bytes)):\n",
         "        if False:\n",
-        "The defect this module actually shipped: zip truncates in silence, so a short "
-        "species tuple renders a SHORTER balance that reads as complete.",
+        "Trusting tuple() to preserve an order the container never had. A set has a "
+        "length, holds ints, and passes every other guard; tuple() freezes it in HASH "
+        "order, and 34 of 39 scalings of a correct balance then come back as a confident, "
+        "specific, WRONG refusal with fabricated row violations.",
+    ),
+    (
+        "int-subclasses-allowed",
+        "        if any(type(c) is not int for c in nu):\n",
+        "        if any(not isinstance(c, int) or isinstance(c, bool) for c in nu):\n",
+        "The previous version, restored verbatim -- isinstance admits int SUBCLASSES. The "
+        "weight cap and _configs each call abs() independently, so a stateful __abs__ "
+        "passes the cap honestly and then allocates the huge value. Measured: declared "
+        "weight 4, allocated 5,000,000 molecules, reported as a MenuContradiction -- the "
+        "module accusing its own derivations when neither was wrong and the type lied.",
     ),
 ]
 

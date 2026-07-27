@@ -566,7 +566,7 @@ thing that blocks it is a fact about the design, not about the effort.
   above, which is now closed.
 
 * **Brick 5 — the derived-menu law against a NON-LINEAR invariant (§III). BUILT,
-  2026-07-27, `smartchem/rigidity.py`, `experiments/nonlinear_menu_rank.py`, 58 tests.
+  2026-07-27, `smartchem/rigidity.py`, `experiments/nonlinear_menu_rank.py`, 66 tests.
   The answer is NO, and the shape of the no is the deliverable.** §IV's worked example and
   Brick 0's module both close with the same disclaimer — *"a position constraint between
   two particles is not obviously linear in anything, and nothing here says it yields to the
@@ -641,6 +641,39 @@ thing that blocks it is a fact about the design, not about the effort.
   (none)" for a matrix that had one; and the materialisation cap guarded only what a
   scientist *wrote*, leaving `stoichiometry_menu` able to allocate ~200 GB from a
   two-species input whose charges were merely large.
+
+  **AND THE ADVERSARY FALSIFIED A GUARANTEE THIS BRICK HAD WRITTEN DOWN, WHICH IS THE ONE
+  WORTH READING.** `Placement.degenerate` was documented as separating "meets the
+  constraints" from "safe to differentiate". It does not: it is a GLOBAL affine-span test,
+  and three points collinear at lengths 1, 1, 2 — the module's own worked counterexample —
+  with a fourth point off the line span the plane, clear the flag, and still report one
+  degree of freedom for a framework that is rigid. Confirmed against an independent numpy
+  null-space computation. There is no cheap local repair, so **the claim was weakened to
+  the one direction that is true** rather than patched: infinitesimal rigidity *implies*
+  rigidity, so `linearised_freedom == 0` concludes and anything else concludes nothing.
+  `conclusive` is now the only certificate offered and `degenerate` is demoted to one
+  detectable reason among others. Same move as Brick 2 weakening "the zeros cannot be
+  aligned" to "the offset cannot be measured": when the strong claim is false, the
+  deliverable is the largest true one, not a better-looking flag.
+
+  Also from that pass: `FORCED` says "unique up to isometry", which is exact — and `O(d)`
+  contains reflections, so a **chiral** configuration and its mirror satisfy the same
+  complete distance set and are not interconvertible by any rigid motion. In chemistry
+  those are enantiomers, different substances, and lacking a mirror symmetry is the
+  generic case. The one decidable row is blind to a real distinction, exactly as identical
+  composition columns leave `Na(*) → Na` unseen in Brick 0. And `constraints` was
+  validated but not materialised, so a generator was consumed by its own validation loop
+  and `infinitesimal_freedom` then answered `d*n` — every direction free — for a framework
+  carrying three real constraints, silently.
+
+  **What the adversary could NOT break, stated because a clean bill is only worth the
+  attack behind it.** `psd_rank` survived 6,675+ cross-checked cases against three
+  independent methods — exact all-principal-minors, a differently-ordered pivot reference,
+  and numpy eigenvalues — including every hand-built trap for the zero-diagonal branch.
+  `embedding_dimension` matched independently computed affine rank on 400+ configurations
+  including coincident points. And `trivial_freedom`, the formula that had been wrong
+  earlier the same day, survived the full 1≤n≤8 × 1≤d≤5 grid checked against the rigidity
+  matrix nullity of generic complete frameworks — zero mismatches.
 
 The ordering matters. **Brick 0 before anything conversational.** The dialogue is the last
 thing built, not the first, because the dialogue is the part that can fake working.

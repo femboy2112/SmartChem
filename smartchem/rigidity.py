@@ -56,6 +56,15 @@ matrix pins the configuration up to congruence -- the Gram matrix determines the
 to an orthogonal transformation, which is classical. So a complete constraint set never
 yields a menu with more than one entry.
 
+**"Up to isometry" is load-bearing there, and in this domain it costs something.** ``O(d)``
+contains reflections, so a chiral configuration and its mirror image satisfy the same
+complete distance set exactly. They are one point up to isometry and two up to
+orientation-preserving rigid motion, and in chemistry that pair is a pair of enantiomers --
+different substances, not different views of one. A distance matrix cannot distinguish
+them, and lacking a mirror symmetry is the generic case rather than an edge case. So even
+the one decidable row reports a distinction it cannot see, which is the same shape as
+``Na(*)`` and ``Na`` presenting identical composition columns in the linear module.
+
 **AND THAT IS THE FINDING. The non-linear invariant is derivable exactly where it is not
 doing any work.** The linear menu earned its keep at ``freedom >= 2``, the row where the
 scientist has a genuine choice. In the non-linear case that row is precisely the row where
@@ -172,12 +181,47 @@ class Framework:
     constraints: tuple[tuple[int, int, Fraction], ...]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.points, int) or self.points < 1:
+        if isinstance(self.points, bool) or not isinstance(self.points, int) \
+                or self.points < 1:
             raise ValueError(f"points must be a positive int, got {self.points!r}")
-        if not isinstance(self.dimension, int) or self.dimension < 1:
+        if isinstance(self.dimension, bool) or not isinstance(self.dimension, int) \
+                or self.dimension < 1:
             raise ValueError(f"dimension must be a positive int, got {self.dimension!r}")
+
+        # MATERIALISE FIRST, VALIDATE SECOND, AND STORE THE MATERIALISED COPY.
+        #
+        # The first version validated whatever it was handed and kept the caller's object.
+        # Two confirmed defects followed, both found by adversarial review on 2026-07-27:
+        #
+        #   a GENERATOR was consumed by the validation loop itself, so the field then held
+        #   a spent iterator. ``rigidity_matrix`` iterates it and produced ZERO rows, and
+        #   ``infinitesimal_freedom`` reported d*n -- "every direction is free" -- for a
+        #   framework with three real constraints, silently, with no exception anywhere.
+        #
+        #   a LIST passed too, and ``frozen=True`` stops the field being REASSIGNED while
+        #   doing nothing about the caller mutating the object it still points at. The same
+        #   Framework returned FORCED and then UNDECIDED after an external append, and
+        #   ``hash()`` raised, quietly costing the value semantics a frozen dataclass is
+        #   asked for in the first place. This repository has already been bitten once by
+        #   an object that was not the value it looked like -- see the fingerprint that
+        #   ignored the wrapped oracle -- so the copy is not paranoia.
+        #
+        # ``tuple()`` on a tuple is the identity, so this costs nothing in the normal case.
+        object.__setattr__(self, "constraints", tuple(self.constraints))
+
         seen: set[tuple[int, int]] = set()
-        for i, j, squared in self.constraints:
+        for entry in self.constraints:
+            if not isinstance(entry, tuple) or len(entry) != 3:
+                raise TypeError(
+                    f"each constraint must be a 3-tuple (i, j, squared_length), got "
+                    f"{entry!r}")
+            i, j, squared = entry
+            if isinstance(i, bool) or isinstance(j, bool) \
+                    or not isinstance(i, int) or not isinstance(j, int):
+                raise TypeError(
+                    f"constraint indices must be int, got ({i!r}, {j!r}). A float or "
+                    f"Fraction index fails much later with a bare indexing error, which "
+                    f"names neither the constraint nor the reason")
             if not (0 <= i < self.points and 0 <= j < self.points):
                 raise ValueError(
                     f"constraint ({i}, {j}) indexes a point outside 0..{self.points - 1}")
@@ -388,6 +432,28 @@ class Placement:
     sit where the constraint map's Jacobian loses rank -- at which point the linearised
     freedom is a statement about the linearisation, not about the framework. Satisfying the
     constraints and being safe to differentiate are two claims.
+
+    **THE FLAG IS SUFFICIENT AND NOT NECESSARY, AND THE FIRST VERSION OF THIS DOCSTRING
+    CLAIMED OTHERWISE.** ``degenerate`` tests whether the points span as much as this many
+    of them could, which is a GLOBAL property, and adversarial review on 2026-07-27
+    produced a framework where that is not enough: three points collinear with lengths
+    1, 1, 2 -- the module's own worked counterexample -- plus a fourth point off the line.
+    The whole set spans the plane, so the flag stays False, and ``linearised_freedom``
+    still reports 1 for a framework that is rigid, because the tight sub-triangle is forced
+    and the fourth point is then pinned by two distances. Confirmed against an independent
+    numpy null-space computation sharing no code with ``_rref``.
+
+    So the honest statement is the one-directional one, and it is worth more than the flag:
+
+        ``linearised_freedom == 0``   the framework IS rigid. A theorem: infinitesimal
+                                      rigidity implies continuous rigidity.
+        ``linearised_freedom > 0``    NOTHING follows. It may be flexible; it may be rigid
+                                      with the linearisation lying, and no cheap local test
+                                      separates those.
+
+    ``conclusive`` reports exactly that asymmetry. ``degenerate`` is demoted to what it
+    always was: one detectable, common reason the second row is likely in play, never a
+    certificate that it is not.
     """
     coordinates: tuple[tuple[Fraction, ...], ...]
     residual: tuple[tuple[int, int, Fraction], ...]
@@ -402,18 +468,34 @@ class Placement:
         return not self.violations
 
     @property
+    def conclusive(self) -> bool:
+        """
+        The linearised reading at this placement can be believed. A THEOREM when True.
+
+        True exactly when the framework is infinitesimally rigid here, which IMPLIES it is
+        rigid -- the implication runs one way only, so a ``False`` establishes nothing at
+        all about flexibility. This is the claim that survived adversarial review;
+        :attr:`degenerate` is the heuristic that did not.
+        """
+        return self.satisfies and self.linearised_freedom == 0
+
+    @property
     def trustworthy(self) -> bool:
-        """Satisfies the constraints, AND the linearisation here is not degenerate."""
+        """
+        Satisfies the constraints, and no degeneracy was DETECTED. A weaker claim than
+        it reads as: see :attr:`conclusive` and the class docstring.
+        """
         return self.satisfies and not self.degenerate
 
     def __bool__(self) -> bool:
         """
-        Truthy on :attr:`trustworthy`, the STRONGER claim -- same convention as ``Written``.
+        Truthy on :attr:`trustworthy` -- the constraints are met and nothing was flagged.
 
-        A degenerate placement is not a weaker yes about the constraints; the constraints
-        are met exactly. It is a warning that the DERIVATIVE-based questions asked next --
-        how many degrees of freedom, is it rigid -- have unreliable answers at this point.
-        Returning ``True`` here would send a caller straight into that with nothing said.
+        Read this as "no objection was found", not as "the freedom count is right". The
+        degeneracy detector is one-sided, so ``True`` here does not certify
+        ``linearised_freedom``; only :attr:`conclusive` does, and only when it is zero.
+        ``False`` remains the strong direction and is worth acting on: either the lengths
+        are not met, or the linearisation is known to be unreliable.
         """
         return self.trustworthy
 
@@ -443,9 +525,22 @@ class Placement:
                     f"offers a motion. Ask for rigidity at a spanning configuration, or "
                     f"accept that the number above is about the derivative and not about "
                     f"the framework.")
-        return ("SATISFIED: every declared squared distance is met exactly, in rational "
-                "arithmetic with no tolerance, and the points affinely span the ambient "
-                "space, so the linearisation at this configuration is not degenerate.")
+        if self.conclusive:
+            return ("SATISFIED AND CONCLUSIVE: every declared squared distance is met "
+                    "exactly, in rational arithmetic with no tolerance, and the linearised "
+                    "internal freedom is zero -- so the framework is rigid here, and that "
+                    "is a theorem rather than a reading, because infinitesimal rigidity "
+                    "implies rigidity.")
+        return (f"SATISFIED, VERDICT INCONCLUSIVE: every declared squared distance is met "
+                f"exactly, and no degeneracy was detected -- the points span as much as "
+                f"{len(self.coordinates)} of them can. But the linearised internal freedom "
+                f"is {self.linearised_freedom}, and a NONZERO linearised freedom "
+                f"establishes nothing: infinitesimal rigidity implies rigidity and the "
+                f"converse is false. The degeneracy test above is global, so it cannot see "
+                f"a locally collinear sub-framework -- three points at lengths 1, 1, 2 "
+                f"with a fourth off the line span the plane, clear this test, and still "
+                f"report a motion that does not exist. Declare the remaining distances for "
+                f"an exact verdict.")
 
 
 @dataclass(frozen=True)
@@ -500,12 +595,17 @@ class RigidityMenu:
                 raise TypeError(
                     f"point {index} must be an ordered sequence of {d} coordinates, got "
                     f"{type(point).__name__}")
-            if len(point) != d:
+            # Materialise FIRST and measure the result, never the reported length. An
+            # object whose __len__ disagrees with what it yields passed the old check and
+            # then either raised a bare IndexError downstream or quietly stored a
+            # d+1-component "point"; the count that matters is the one that arrived.
+            values = tuple(_exact(v, f"{index}[{axis}]")
+                           for axis, v in enumerate(point))
+            if len(values) != d:
                 raise ValueError(
-                    f"point {index} has {len(point)} coordinates; the framework is in "
+                    f"point {index} has {len(values)} coordinates; the framework is in "
                     f"{d} dimensions")
-            rows.append(tuple(_exact(v, f"{index}[{axis}]")
-                              for axis, v in enumerate(point)))
+            rows.append(values)
         placed = tuple(rows)
 
         residual = tuple(
@@ -608,8 +708,15 @@ def rigidity_menu(framework: Framework) -> RigidityMenu:
         reason=(f"every pairwise distance is declared and the Gram matrix is positive "
                 f"semidefinite of rank {rank} <= {framework.dimension}, so a realisation "
                 f"exists and is UNIQUE up to isometry -- the Gram matrix determines the "
-                f"points up to an orthogonal transformation. There is exactly one option, "
-                f"so there is no menu to offer. Note what this costs: a complete "
-                f"constraint set is the only case decided here, and a complete constraint "
-                f"set can never present a choice."),
+                f"points up to an ORTHOGONAL transformation, reflections included. Note "
+                f"what this costs twice over. A complete constraint set is the only case "
+                f"decided here, and a complete constraint set can never present a choice. "
+                f"AND 'up to isometry' is doing real work in that sentence: O(d) contains "
+                f"reflections, so a CHIRAL configuration and its mirror image satisfy this "
+                f"same distance set exactly and are not interconvertible by any rigid "
+                f"motion. In chemistry those two are enantiomers -- different substances. "
+                f"A distance matrix cannot tell them apart, so even this row hands back a "
+                f"pair wherever the configuration lacks a mirror symmetry, which is the "
+                f"generic case. Same boundary as identical composition columns in the "
+                f"linear module: the declared invariants cannot see a real distinction."),
         embedding_dimension=rank, maxwell_freedom=framework.maxwell_freedom)

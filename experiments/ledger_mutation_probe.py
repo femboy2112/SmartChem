@@ -327,6 +327,28 @@ RIGIDITY_MUTATIONS = [
         "one honest answer -- becomes unreachable.",
     ),
     (
+        "constraints-kept-as-handed-in",
+        "        object.__setattr__(self, \"constraints\", tuple(self.constraints))\n",
+        "        pass\n",
+        "The defect this module shipped, restored verbatim. Validating the caller's object "
+        "and then keeping it means a GENERATOR is consumed by the validation loop itself: "
+        "rigidity_matrix then builds zero rows and infinitesimal_freedom answers d*n -- "
+        "every direction free -- for a framework with three real constraints, silently. A "
+        "list survives validation too, and frozen=True stops the field being reassigned "
+        "while doing nothing about the caller mutating what it points at.",
+    ),
+    (
+        "conclusive-collapsed-into-the-flag",
+        "        return self.satisfies and self.linearised_freedom == 0\n",
+        "        return self.trustworthy\n",
+        "The claim adversarial review FALSIFIED, restored. degenerate is a global affine "
+        "span test and cannot see a locally collinear sub-framework: three points at "
+        "lengths 1, 1, 2 with a fourth off the line span the plane, clear the flag, and "
+        "still report a motion that does not exist. Infinitesimal rigidity implies "
+        "rigidity and the converse is false, so only a ZERO linearised freedom concludes "
+        "anything.",
+    ),
+    (
         "explain-crashes-on-the-refusal-path",
         "                f\"|p{i} - p{j}|^2 off by {'+' if error > 0 else ''}{error}\"\n",
         "                f\"|p{i} - p{j}|^2 off by {error:+}\"\n",

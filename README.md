@@ -493,6 +493,21 @@ Both standard repairs are linearisations, and both give confident wrong answers 
 - the **rigidity-matrix rank** says a triangle with lengths 1, 1, 2 is flexible; it is
   rigid, because the triangle inequality is tight and exactly one configuration exists.
 
+The rank proxy is salvageable only in one direction, and adversarial review is what forced
+that admission. Zero linearised freedom **implies** rigidity and is a theorem; a nonzero
+one implies nothing, and the module's first attempt to flag *when* it could be trusted was
+a global test that a locally collinear sub-framework walks straight past. There is no cheap
+local repair, so the claim was weakened to the one-directional statement rather than
+patched — `Placement.conclusive` is now the only certificate offered.
+
+Two further honesty notes on the `FORCED` row, because it hands back less than it looks
+like it does. "Unique **up to isometry**" is exact, and `O(d)` contains reflections — so a
+chiral configuration and its mirror image satisfy the same complete distance matrix and are
+not interconvertible by any rigid motion. In chemistry that pair is a pair of enantiomers,
+different substances, and lacking a mirror symmetry is the generic case. A declared
+distance invariant cannot see the distinction, exactly as identical composition columns
+leave `Na(*) → Na` unseen in the linear module.
+
 This repository has already paid for that second sentence once, two layers down:
 `geometry.py:604` records **0.0476 eV** of zero-point energy lost when a physically linear
 molecule carrying a ten-millionth of an Ångström of noise was assigned six external modes

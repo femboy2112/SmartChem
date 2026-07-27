@@ -22,6 +22,7 @@ from smartchem.rigidity import (
     UNDECIDED,
     infinitesimal_freedom,
     psd_rank,
+    rigidity_matrix,
     rigidity_menu,
 )
 from smartchem.stoichiometry import (
@@ -412,6 +413,127 @@ class TestTheFrameworkRefusesMalformedDeclarations:
         framework = Framework(3, 2, ((0, 1, F(1)),))
         with pytest.raises(ValueError, match="inventing"):
             framework.squared_matrix()
+
+
+class TestTheAdversarialFindingsOf20260727:
+    """
+    Five defects found by pointing an adversary at this module the day it was written.
+    Every brick in this project has shipped one; the budget is for it, not against it.
+    """
+
+    def test_a_generator_of_constraints_cannot_be_silently_exhausted(self):
+        """
+        The validation loop consumed it, and the field then held a spent iterator.
+
+        ``rigidity_matrix`` produced ZERO rows and ``infinitesimal_freedom`` answered
+        ``d*n`` -- every direction free -- for a framework carrying three real constraints,
+        with no exception anywhere. A confident wrong answer from a public function.
+        """
+        def constraints():
+            yield (0, 1, F(1))
+            yield (1, 2, F(1))
+            yield (0, 2, F(4))
+
+        framework = Framework(3, 2, constraints())
+        assert len(framework.constraints) == 3
+        placed = ((F(0), F(0)), (F(1), F(0)), (F(2), F(0)))
+        assert infinitesimal_freedom(framework, placed) < 2 * 3
+        assert len(rigidity_matrix(framework, placed)) == 3
+
+    def test_a_list_of_constraints_cannot_be_mutated_afterwards(self):
+        """
+        ``frozen=True`` stops the field being reassigned, not the caller's list changing.
+
+        The same object answered FORCED and then UNDECIDED after an external append, and
+        ``hash()`` raised, so the value semantics a frozen dataclass exists for were gone.
+        """
+        mutable = [(0, 1, F(1)), (1, 2, F(1)), (0, 2, F(4))]
+        framework = Framework(3, 2, mutable)
+        before = rigidity_menu(framework).verdict
+        mutable.append((0, 1, F(999)))
+        assert rigidity_menu(framework).verdict == before
+        assert isinstance(framework.constraints, tuple)
+        hash(framework)
+
+    def test_a_locally_collinear_subframework_clears_the_degeneracy_flag(self):
+        """
+        THE FLAG IS SUFFICIENT AND NOT NECESSARY, and this records the counterexample.
+
+        Three points collinear at lengths 1, 1, 2 -- the module's own worked case -- plus
+        a fourth off the line. The whole set spans the plane, so ``degenerate`` stays
+        False, and the linearised freedom is still 1 for a framework that is rigid.
+
+        This test asserts the DEFECT's shape, not its absence, because there is no cheap
+        local test that would close it. What it pins is that the module no longer CLAIMS
+        to have closed it: ``conclusive`` is False here, and ``explain()`` says so.
+        """
+        points = ((F(0), F(0)), (F(1), F(0)), (F(2), F(0)), (F(0), F(1)))
+        edges = ((0, 1), (1, 2), (0, 2), (0, 3), (2, 3))
+        constraints = tuple(
+            (i, j, sum((points[i][a] - points[j][a]) ** 2 for a in range(2)))
+            for i, j in edges)
+        menu = rigidity_menu(Framework(4, 2, constraints))
+        placement = menu.check(points)
+
+        assert placement.satisfies
+        assert not placement.degenerate, "the global span test cannot see the local one"
+        assert placement.linearised_freedom == 1, "and the rank still offers a motion"
+        assert not placement.conclusive, "so the module reports the reading as inconclusive"
+        assert "INCONCLUSIVE" in placement.explain()
+
+    def test_conclusive_is_the_one_directional_claim_that_survives(self):
+        """Zero linearised freedom implies rigid. Nonzero implies nothing."""
+        rigid = rigidity_menu(triangle(3, 5, 4)).check(
+            ((F(0), F(0)), (F(3), F(0)), (F(0), F(4))))
+        assert rigid.linearised_freedom == 0
+        assert rigid.conclusive
+
+        tight = rigidity_menu(triangle(1, 1, 2)).check(
+            ((F(0), F(0)), (F(1), F(0)), (F(2), F(0))))
+        assert tight.linearised_freedom == 1
+        assert not tight.conclusive, "nonzero freedom certifies nothing either way"
+
+    def test_a_chiral_configuration_and_its_mirror_share_one_distance_matrix(self):
+        """
+        "There is exactly one option" is true up to ISOMETRY and O(d) contains reflections.
+
+        In chemistry the two are enantiomers -- different substances. The declared
+        invariant cannot see the distinction, which is the same boundary as ``Na(*)`` and
+        ``Na`` presenting identical composition columns.
+        """
+        points = ((F(0), F(0), F(0)), (F(4), F(0), F(0)),
+                  (F(1), F(3), F(0)), (F(1), F(1), F(2)))
+        framework, placed = complete_from(points, 3)
+        menu = rigidity_menu(framework)
+        assert menu.verdict == FORCED and menu.embedding_dimension == 3
+
+        mirrored = tuple((x, y, -z) for x, y, z in placed)
+        assert menu.check(mirrored).satisfies, "the mirror meets every declared length"
+        assert mirrored != placed, "and it is a different configuration"
+        assert "enantiomers" in menu.reason
+
+    def test_a_lying_length_cannot_smuggle_an_extra_coordinate(self):
+        class Liar(tuple):
+            def __len__(self):
+                return 2
+
+        menu = rigidity_menu(triangle(3, 5, 4))
+        with pytest.raises(ValueError, match="coordinates"):
+            menu.check((Liar((F(0), F(0), F(9))), (F(3), F(0)), (F(0), F(4))))
+
+    def test_malformed_constraint_entries_are_refused(self):
+        with pytest.raises(TypeError, match="3-tuple"):
+            Framework(3, 2, ((0, 1),))
+        with pytest.raises(TypeError, match="indices must be int"):
+            Framework(3, 2, ((0, F(1), F(1)),))
+        with pytest.raises(TypeError, match="indices must be int"):
+            Framework(3, 2, ((False, True, F(1)),))
+
+    def test_bool_is_refused_for_the_scalar_fields_too(self):
+        with pytest.raises(ValueError, match="positive int"):
+            Framework(True, 2, ())
+        with pytest.raises(ValueError, match="positive int"):
+            Framework(2, True, ())
 
 
 class TestTheInheritedStoichiometryDefects:

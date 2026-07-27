@@ -43,6 +43,7 @@ from smartchem.program import (
     Approval,
     ApprovedPlan,
     Artifact,
+    AssemblyEvidence,
     AssemblyHypothesis,
     AssemblySpec,
     CalculationSpec,
@@ -737,11 +738,16 @@ def test_assembly_hypothesis_cannot_enter_calibrated_or_certified_lane(plan):
     hypothesis = AssemblyHypothesis(spec, ("calibration missing",), ("quorum fails",))
 
     with pytest.raises(ValueError, match="AssemblyHypothesis"):
-        replace(plan.request.physical_ir, assemblies=(hypothesis,))
+        replace(
+            plan.request.physical_ir,
+            assemblies=(hypothesis,),
+            assembly_evidence=(AssemblyEvidence(hypothesis.digest, (), ()),),
+        )
 
     experimental_ir = replace(
         plan.request.physical_ir,
         assemblies=(hypothesis,),
+        assembly_evidence=(AssemblyEvidence(hypothesis.digest, (), ()),),
         evidence_status=EvidenceStatus.EXPERIMENTAL,
     )
     request = replace(plan.request, physical_ir=experimental_ir)

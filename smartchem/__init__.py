@@ -181,6 +181,30 @@ from .water_wave_validation import (
     compile_water_wave_validation,
     water_wave_validation_slot,
 )
+from .water_wave_continuous_domain import (
+    ContinuousBackgroundSpec,
+    ContinuousDiagnostic,
+    ContinuousMeshResult,
+    ContinuousSample,
+    ContinuousStatus,
+    ContinuousUncertainty,
+    FrictionLaw,
+    ManufacturedFamily,
+    RegularityRequirement,
+    SourceLaw,
+    SteadyBoundary,
+    solve_continuous_background,
+)
+from .water_wave_continuous import (
+    CONTINUOUS_WATER_CASUALTIES,
+    CONTINUOUS_WATER_OMISSIONS,
+    ContinuousFiniteV2Comparison,
+    ContinuousWaterSubject,
+    ContinuousWaterWaveEngine,
+    compile_session_water_wave_continuous,
+    compile_water_wave_continuous,
+    continuous_water_slot,
+)
 from .human_isotope_domain import (
     AssemblyKind,
     CalibrationEvidence,
@@ -379,6 +403,15 @@ __all__ = [
     "WATER_WAVE_VALIDATION_OMISSIONS", "FiniteSectionCompatibilityEngine",
     "compile_session_water_wave_validation", "compile_water_wave_validation",
     "water_wave_validation_slot",
+    # manufactured continuous-water rung -- finite convergence, not a continuum theorem
+    "ContinuousBackgroundSpec", "ContinuousDiagnostic", "ContinuousMeshResult",
+    "ContinuousSample", "ContinuousStatus", "ContinuousUncertainty", "FrictionLaw",
+    "ManufacturedFamily", "RegularityRequirement", "SourceLaw", "SteadyBoundary",
+    "solve_continuous_background", "CONTINUOUS_WATER_CASUALTIES",
+    "CONTINUOUS_WATER_OMISSIONS", "ContinuousFiniteV2Comparison",
+    "ContinuousWaterSubject", "ContinuousWaterWaveEngine",
+    "compile_session_water_wave_continuous", "compile_water_wave_continuous",
+    "continuous_water_slot",
     # human-isotope proxy -- typed underidentification, never a human mortality prediction
     "AssemblyKind", "CalibrationEvidence", "ConstraintInventory",
     "EnvironmentalProtocol", "EvidenceBasis", "ExposureEvent", "ExposureMetric",

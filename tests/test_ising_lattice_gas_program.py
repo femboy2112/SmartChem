@@ -236,9 +236,7 @@ def test_runtime_owned_model_replacement_is_refused_before_engine_execution():
     object.__setattr__(approved.approval, "plan_digest", approved.plan.digest)
     object.__setattr__(approved, "approval_record_digest", approved.approval.digest)
 
-    report = execute(approved, engine)
+    with pytest.raises(ValueError, match="exact runtime-owned model"):
+        execute(approved, engine)
 
-    assert report.record.status is RunStatus.REFUSED
-    assert report.result is None and report.certificate is None
     assert engine.calls == 0
-    assert "runtime-owned finite C3 form" in report.record.failures[-1]

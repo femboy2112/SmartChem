@@ -141,6 +141,8 @@ def test_spectator_reaction_matches_the_spectator_free_result_and_output_contrac
         lambda transform: replace(transform, residual_right=Config.of(H, H)),
         lambda transform: replace(transform, workset=(H,)),
         lambda transform: replace(transform, input_model_digest="forged-model-digest"),
+        lambda transform: replace(transform, output_contract_digest="forged-contract"),
+        lambda transform: replace(transform, equivalence_contract_digest="forged-equivalence"),
         lambda transform: replace(transform, eliminated_species=((HE, 1),)),
         lambda transform: replace(
             transform, original_reaction_digest="forged-reaction-digest"
@@ -152,6 +154,8 @@ def test_spectator_reaction_matches_the_spectator_free_result_and_output_contrac
         "residual-right",
         "workset",
         "model-digest",
+        "output-contract-binding",
+        "equivalence-contract-binding",
         "eliminated-multiplicity",
         "reaction-digest",
         "verifier",
@@ -162,11 +166,9 @@ def test_forged_transform_is_invalid_before_any_oracle_call(forgery):
     plan = _plan(TWO_HE_SPECTATOR_FORMATION, oracle)
     forged = replace(plan, transforms=(forgery(plan.transforms[0]),))
 
-    report = execute(_approved(forged), oracle)
+    with pytest.raises(ValueError, match="Class-A transform verification failed"):
+        execute(_approved(forged), oracle)
 
-    assert report.record.status is RunStatus.INVALID
-    assert report.result is None and report.certificate is None
-    assert "Class-A transform verification failed" in report.record.failures[-1]
     assert oracle.calls == []
 
 
@@ -235,10 +237,9 @@ def test_runtime_rejects_self_consistent_transform_under_replacement_model():
         transforms=(forged_transform,),
     )
 
-    report = execute(_approved(forged), oracle)
+    with pytest.raises(ValueError, match="runtime-owned"):
+        execute(_approved(forged), oracle)
 
-    assert report.record.status is RunStatus.INVALID
-    assert "runtime-owned" in report.record.failures[-1]
     assert oracle.calls == []
 
 

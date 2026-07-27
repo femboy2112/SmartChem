@@ -72,6 +72,7 @@ from .program import (
     TransportMap,
     _HUMAN_ISOTOPE_EXECUTOR,
     _compiler_implementation_digest,
+    _require_runtime_dispatch,
     _resource_wall,
 )
 
@@ -277,6 +278,35 @@ def _synthetic_calibration_is_supported(spec: HumanIsotopeSpec) -> bool:
         and not calibration.uncertainty_quantified
         and calibration.heldout_record_count == 0
         and calibration.heldout_dataset_digest is None
+)
+
+
+def _human_isotope_model() -> ModelSpec:
+    return ModelSpec(
+        name="single-median-endpoint structural identifiability model",
+        equations=(
+            "P(event by declared observation window | declared median endpoint protocol) = 0.5",
+            "exponential witness: F(tau/2) = 1 - exp(-ln(2)/2)",
+            "Weibull-shape-2 witness: F(tau/2) = 1 - exp(-ln(2)/4)",
+            "both witnesses satisfy F(tau) = 0.5 and therefore prove non-uniqueness",
+        ),
+        assumptions=(
+            "the endpoint is used only at its declared population, route, protocol, and window",
+            "the two normalized witness curves are mathematical counterexamples to uniqueness",
+            "the selected assembly and toxicokinetic link are hypotheses, not fitted mechanisms",
+        ),
+        valid_if=(
+            "every scientist-owned choice is present in HumanIsotopeSpec",
+            "endpoint, environmental protocol, and toxicokinetic route/metric agree",
+            "the one scheduled exposure equals the one declared median endpoint protocol",
+        ),
+        postconditions=(
+            "no empirically calibrated or actual-human mortality probability is emitted",
+            "both family witnesses satisfy the endpoint and disagree away from it",
+            "validation remains UNVALIDATED regardless of successful execution",
+        ),
+        conserved=(),
+        version="1",
     )
 
 
@@ -331,32 +361,7 @@ def compile_human_isotope_identifiability(
         source_theory,
         shepherd_session_digest,
     )
-    model = ModelSpec(
-        name="single-median-endpoint structural identifiability model",
-        equations=(
-            "P(event by declared observation window | declared median endpoint protocol) = 0.5",
-            "exponential witness: F(tau/2) = 1 - exp(-ln(2)/2)",
-            "Weibull-shape-2 witness: F(tau/2) = 1 - exp(-ln(2)/4)",
-            "both witnesses satisfy F(tau) = 0.5 and therefore prove non-uniqueness",
-        ),
-        assumptions=(
-            "the endpoint is used only at its declared population, route, protocol, and window",
-            "the two normalized witness curves are mathematical counterexamples to uniqueness",
-            "the selected assembly and toxicokinetic link are hypotheses, not fitted mechanisms",
-        ),
-        valid_if=(
-            "every scientist-owned choice is present in HumanIsotopeSpec",
-            "endpoint, environmental protocol, and toxicokinetic route/metric agree",
-            "the one scheduled exposure equals the one declared median endpoint protocol",
-        ),
-        postconditions=(
-            "no empirically calibrated or actual-human mortality probability is emitted",
-            "both family witnesses satisfy the endpoint and disagree away from it",
-            "validation remains UNVALIDATED regardless of successful execution",
-        ),
-        conserved=(),
-        version="1",
-    )
+    model = _human_isotope_model()
     transport = TransportMap(
         source_theory.digest,
         target.digest,
@@ -799,15 +804,28 @@ def _post_result(
     )
 
 
+def _preflight_human_isotope_identifiability(plan: CandidatePlan) -> None:
+    expected = _human_isotope_model()
+    if plan.executor_id != _HUMAN_ISOTOPE_EXECUTOR:
+        raise ValueError("human-isotope preflight received a different executor plan")
+    if plan.model != expected or plan.request.physical_ir.models != (expected,):
+        raise ValueError("human-isotope executor requires its exact runtime-owned model")
+    if plan.transforms:
+        raise ValueError("human-isotope executor does not support transforms")
+
+
 def _execute_human_isotope_identifiability(
     approved: ApprovedPlan,
     engine: object,
     *,
     actual_calculation: CalculationSpec,
     journal_path: str | os.PathLike[str] | None = None,
+    _dispatch_token: object = None,
 ) -> ExecutionReport:
     """Execute after the common approval/compiler/calculation preflight."""
+    _require_runtime_dispatch(_dispatch_token)
     plan = approved.plan
+    _preflight_human_isotope_identifiability(plan)
     resolved = plan.request.resolved
     if (
         not isinstance(resolved, ResolvedDomainProgram)

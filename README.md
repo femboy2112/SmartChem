@@ -10,7 +10,7 @@ plan, and return results with their evidence, omissions, casualties, and approva
 attached.
 
 The general language does not exist yet. The repository contains a rigorous compiler/runtime
-seam, a chemistry core, and six deliberately narrow executors that test the design.
+seam, a chemistry core, and seven deliberately narrow executors that test the design.
 
 ## Non-negotiable contract
 
@@ -61,6 +61,7 @@ without becoming literal; a literal target can remain unsupported.
 | Reaction energy | Conserving closed endpoint-energy execution with exact output inventory and a verified spectator-residue transform under the runtime-owned separable model. | Public oracle coverage remains narrow; spectator cancellation is not licensed for interacting, solvated, field-coupled, or open models. |
 | Shallow-water horizon v1 | Branch-specific `U ± sqrt(g h)` characteristics and sample-bracketed crossings on a typed prescribed profile. | `ANALOGUE/STRUCTURAL_TOY`; not a continuous background solution, measured flume, scattering calculation, or literal black hole. |
 | Water finite-section preflight v2 | Manufactured discharge/head, `kh`, Bond-number, sign/orientation, uncertainty, and adjacent-sample compatibility gates. | Does not establish steady regularity, a continuous transcritical solution, or experimental validation. |
+| Continuous steady-water control | Manufactured subcritical, supercritical, and isolated regular-transcritical backgrounds; bounded energy-root reconstruction on 32/64/128 cells; retained balance residuals, both refinement-pair rates, critical compatibility, uncertainty, and an exact finite-v2 comparison. | `ANALOGUE/STRUCTURAL_TOY`; finite manufactured convergence is not a continuum theorem, measured flume, dispersive solver, scattering result, or literal gravity. |
 | Human-isotope D2a | A complete typed interpretation and proof that one hypothetical median-lethality endpoint is compatible with distinct survival families. | `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`; no LD50-to-rate conversion, human prediction, toxicology calibration, or experimentation authority. |
 | Synthetic survival D2b-S | TRAIN-only fixed-family conditional-binomial recovery on content-addressed independent synthetic cohorts, with uncertainty diagnostics and locked HOLDOUT scoring. | Same-generator implementation evidence only; no human/animal evidence, biological validation, causality, or transfer authority. |
 | Finite C3 Ising↔lattice gas | All eight states, `ε=4J`, `μ=2h−4J`, `H_I=H_LG+3(h−J)`, and the formal partition identity, checked with exact integers and a separate direct verifier. | `ANALOGUE/ESTABLISHED/CERTIFIED` for that finite algebra only; no material identity, dynamics, thermodynamic limit, or arbitrary-graph transfer. |
@@ -107,7 +108,8 @@ The older core remains useful and actively tested:
 
 Reactions form a category under sequential composition. The object product is commutative,
 but reaction histories do not yet form a true parallel symmetric monoidal product:
-`scheduled_product`/`tensor` is a deterministic left-first compatibility schedule.
+`scheduled_product` is a deterministic left-first schedule. The old `tensor` compatibility
+name now emits a deprecation warning because it is not a parallel tensor.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](MANIFEST.md).
 
@@ -125,11 +127,12 @@ python -m smartchem.bench
 Current maintained fast-suite result:
 
 ```text
-1266 passed, 14 skipped, 1 xfailed
+1279 passed, 51 skipped, 1 xfailed
 ```
 
-The skipped tests are marked slow and are not represented as passed. Run selected
-real-wavefunction integration coverage with:
+The skipped tests require the absent optional PySCF backend or the explicit slow-test
+gate; they are not represented as passed. Run selected real-wavefunction integration
+coverage with:
 
 ```bash
 pytest -q --runslow
@@ -141,6 +144,7 @@ Every cited compiled run has a committed deterministic harness and durable recei
 - [H2 compiled vertical](experiments/RESULTS_compiled_h2_vertical.md)
 - [water-wave structural vertical](experiments/RESULTS_compiled_water_wave_vertical.md)
 - [water finite-section preflight](experiments/RESULTS_compiled_water_wave_validation.md)
+- [continuous steady-water control](experiments/RESULTS_compiled_water_wave_continuous.md)
 - [human-isotope identifiability](experiments/RESULTS_compiled_human_isotope_vertical.md)
 - [synthetic survival recovery](experiments/RESULTS_compiled_human_survival_recovery.md)
 - [verified Class-A reaction residue](experiments/RESULTS_compiled_class_a_optimizer.md)
@@ -151,22 +155,26 @@ outcomes, scientific scope, evidence status, omissions, casualties, and negative
 
 ## Roadmap
 
-Short-term campaign work is complete: the runtime registry, finite water preflight,
-synthetic survival recovery, first verified Class-A transform, and exact finite cross-domain
-control are committed and reproduced.
+The current short-term seam is hardened: `PhysicalIR` owns member/reference/evidence
+integrity, transforms bind the approved model and contracts, all seven executors own their
+model/transform inventory before a calculation or journal, and resolved runners cannot be
+used as an alternate authoritative dispatch path. The manufactured continuous-water
+midterm is also complete.
 
-Best next midterm work:
+Best next work:
 
-1. extend the water ladder to continuous steady compatibility/regularity and spatial
-   convergence before any dispersive solver claim;
-2. build the traffic kinematic-wave vertical as the next regime-valid analogue;
-3. add persistent reuse/shared-intermediate/lossless-storage planner slices only where full
+1. implement exact typed open-diagram syntax, canonical alpha-renaming, boundary gluing,
+   disjoint-union tensor, and generated category-law/interchange tests;
+2. interpret that same syntax with a resistor-only DC MNA control before AC/RLC or
+   port-Hamiltonian claims;
+3. extend water only after the stationary manufactured rung: bounded dispersive branches
+   first, then measured regime-matched evidence before any promotion beyond `STRUCTURAL_TOY`;
+4. build the traffic kinematic-wave vertical as the next regime-valid analogue;
+5. add persistent reuse/shared-intermediate/lossless-storage planner slices only where full
    output equivalence is established;
-4. design the empirical survival rung around independent data authority, external validation,
+6. design the empirical survival rung around independent data authority, external validation,
    censoring/competing-risk semantics, and calibrated uncertainty—without assuming access to
-   human data or authority for experimentation;
-5. add typed open ports through a port-Hamiltonian control before claiming general
-   multiphysics composition.
+   human data or authority for experimentation.
 
 Long term: a domain-extensible Physical IR, open-process semantics, model-chain planner,
 general validity/refinement runtime, and finally a conversational language that exposes rather
@@ -184,6 +192,10 @@ The compact continuation sheet is [ROADMAP_2026-07-27.md](ROADMAP_2026-07-27.md)
 - [experiments/README.md](experiments/README.md) — reproducible probes and compiled harnesses.
 - [CAMPAIGN_HANDOFF_2026-07-27.md](CAMPAIGN_HANDOFF_2026-07-27.md) — five-cycle state,
   calculations, commits, and next work.
+- [RESEARCH_ROUND_2026-07-27.md](RESEARCH_ROUND_2026-07-27.md) — this build/research
+  round's target, falsifiers, calculation ledger, and claim state.
+- [CATEGORY_BACKBONE_ROADMAP_2026-07-27.md](CATEGORY_BACKBONE_ROADMAP_2026-07-27.md) —
+  the staged open-diagram/domain-algebra architecture and its dominance boundary.
 
 The standing standard is simple: a loud refusal is acceptable; a plausible, unearned answer
 is not.

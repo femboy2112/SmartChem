@@ -27,7 +27,7 @@ import os
 import tempfile
 import time
 from collections import Counter
-from dataclasses import dataclass, fields, is_dataclass, replace
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -163,6 +163,9 @@ _WATER_WAVE_EXECUTOR = "smartchem.water_wave/shallow-water-horizon-v1"
 _WATER_WAVE_VALIDATION_EXECUTOR = (
     "smartchem.water_wave/finite-section-compatibility-v2"
 )
+_WATER_WAVE_CONTINUOUS_EXECUTOR = (
+    "smartchem.water_wave_continuous/manufactured-steady-v1"
+)
 _HUMAN_ISOTOPE_EXECUTOR = "smartchem.human_isotope/identifiability-v1"
 _HUMAN_SURVIVAL_EXECUTOR = (
     "smartchem.human_survival/synthetic-weibull-interval-recovery-v1"
@@ -170,6 +173,15 @@ _HUMAN_SURVIVAL_EXECUTOR = (
 _ISING_LATTICE_GAS_EXECUTOR = (
     "smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"
 )
+_RUNTIME_DISPATCH_TOKEN = object()
+
+
+def _require_runtime_dispatch(token: object) -> None:
+    """Keep registry runners behind :func:`execute`'s validated dispatch path."""
+    if token is not _RUNTIME_DISPATCH_TOKEN:
+        raise ValueError(
+            "runtime runners are internal capabilities; dispatch through smartchem.execute"
+        )
 
 
 def _executor_observables(executor_id: str) -> frozenset[str]:
@@ -281,10 +293,14 @@ class Component(Digestible):
     def __post_init__(self) -> None:
         _nonempty(self.component_id, "component_id")
         _nonempty(self.kind, "kind")
-        if not isinstance(self.identity, Identity):
+        if type(self.identity) is not Identity:
             raise TypeError("identity must be an Identity")
-        if not isinstance(self.ports, tuple) or not isinstance(self.parameters, tuple):
+        if type(self.ports) is not tuple or type(self.parameters) is not tuple:
             raise TypeError("ports and parameters must be tuples")
+        if any(type(port) is not Port for port in self.ports):
+            raise TypeError("ports must contain Port values")
+        if any(type(parameter) is not Quantity for parameter in self.parameters):
+            raise TypeError("parameters must contain Quantity values")
         _unique(self.ports, lambda port: port.port_id, "component port IDs")
         if any(port.component_id != self.component_id for port in self.ports):
             raise ValueError("every port must name its owning component")
@@ -313,8 +329,10 @@ class Reservoir(Digestible):
     def __post_init__(self) -> None:
         _nonempty(self.reservoir_id, "reservoir_id")
         _strings(self.exchanges, "exchanges")
-        if not isinstance(self.state, tuple):
+        if type(self.state) is not tuple:
             raise TypeError("state must be a tuple")
+        if any(type(item) is not Quantity for item in self.state):
+            raise TypeError("state must contain Quantity values")
 
 
 @dataclass(frozen=True)
@@ -646,6 +664,8 @@ class Transform(Digestible):
     applicability: tuple[str, ...]
     evidence: tuple[str, ...]
     casualties: tuple[str, ...]
+    output_contract_digest: str = field(default="", kw_only=True)
+    equivalence_contract_digest: str = field(default="", kw_only=True)
 
     def __post_init__(self) -> None:
         for name in (
@@ -657,6 +677,10 @@ class Transform(Digestible):
             _nonempty(getattr(self, name), name)
         for name in ("applicability", "evidence", "casualties"):
             _strings(getattr(self, name), name)
+        for name in ("output_contract_digest", "equivalence_contract_digest"):
+            value = getattr(self, name)
+            if not isinstance(value, str):
+                raise TypeError(f"{name} must be a string")
 
 
 @dataclass(frozen=True)
@@ -782,23 +806,97 @@ class PhysicalIR(Digestible):
             "calibrations",
             "model_patches",
         ):
-            if not isinstance(getattr(self, name), tuple):
+            if type(getattr(self, name)) is not tuple:
                 raise TypeError(f"{name} must be a tuple")
         if not self.models:
             raise ValueError("PhysicalIR requires at least one model")
-        if not isinstance(self.claim_scope, ClaimScope):
+        member_types = (
+            ("components", Component),
+            ("connections", Connection),
+            ("reservoirs", Reservoir),
+            ("boundaries", Boundary),
+            ("models", ModelSpec),
+            ("adapters", Adapter),
+            ("invariants", Invariant),
+            ("transport_maps", TransportMap),
+            ("transport_evidence", TransportEvidence),
+            ("assembly_evidence", AssemblyEvidence),
+        )
+        for name, expected in member_types:
+            if any(type(item) is not expected for item in getattr(self, name)):
+                raise TypeError(f"{name} must contain {expected.__name__} values")
+        if any(
+            type(item) not in (AssemblySpec, AssemblyHypothesis)
+            for item in self.assemblies
+        ):
+            raise TypeError("assemblies must contain AssemblySpec or AssemblyHypothesis values")
+        _unique(self.components, lambda item: item.component_id, "component IDs")
+        _unique(self.connections, lambda item: item.connection_id, "connection IDs")
+        _unique(self.reservoirs, lambda item: item.reservoir_id, "reservoir IDs")
+        _unique(self.boundaries, lambda item: item.boundary_id, "boundary IDs")
+        component_ids = {item.component_id for item in self.components}
+        ports = tuple(port for component in self.components for port in component.ports)
+        _unique(ports, lambda item: item.port_id, "PhysicalIR port IDs")
+        port_by_id = {item.port_id: item for item in ports}
+        targets = component_ids | set(port_by_id)
+        for connection in self.connections:
+            if len(set(connection.port_ids)) != len(connection.port_ids):
+                raise ValueError("a connection cannot name the same port more than once")
+            try:
+                connected = tuple(port_by_id[item] for item in connection.port_ids)
+            except KeyError as error:
+                raise ValueError(
+                    f"connection {connection.connection_id!r} names an unknown port {error.args[0]!r}"
+                ) from error
+            if len({item.dimension for item in connected}) != 1:
+                raise ValueError("connected ports must have one shared dimension")
+            if len({item.connection_type for item in connected}) != 1:
+                raise ValueError("connected ports must have one shared connection_type")
+        for boundary in self.boundaries:
+            unknown = sorted(set(boundary.target_ids) - targets)
+            if unknown:
+                raise ValueError(
+                    f"boundary {boundary.boundary_id!r} names unknown target(s): "
+                    + ", ".join(unknown)
+                )
+        for reservoir in self.reservoirs:
+            unknown = sorted(set(reservoir.exchanges) - targets)
+            if unknown:
+                raise ValueError(
+                    f"reservoir {reservoir.reservoir_id!r} names unknown exchange target(s): "
+                    + ", ".join(unknown)
+                )
+        transport_digests = tuple(item.digest for item in self.transport_maps)
+        assembly_digests = tuple(item.digest for item in self.assemblies)
+        if len(transport_digests) != len(set(transport_digests)):
+            raise ValueError("transport maps must have unique digests")
+        if len(assembly_digests) != len(set(assembly_digests)):
+            raise ValueError("assemblies must have unique digests")
+        evidence_digests = tuple(item.transport_digest for item in self.transport_evidence)
+        assembly_evidence_digests = tuple(
+            item.assembly_digest for item in self.assembly_evidence
+        )
+        if len(evidence_digests) != len(set(evidence_digests)):
+            raise ValueError("transport evidence must target each transport at most once")
+        if len(assembly_evidence_digests) != len(set(assembly_evidence_digests)):
+            raise ValueError("assembly evidence must target each assembly at most once")
+        if set(evidence_digests) != set(transport_digests):
+            raise ValueError("transport evidence must target every and only declared transport")
+        if set(assembly_evidence_digests) != set(assembly_digests):
+            raise ValueError("assembly evidence must target every and only declared assembly")
+        if type(self.claim_scope) is not ClaimScope:
             raise TypeError("claim_scope must be a ClaimScope")
-        if not isinstance(self.evidence_status, EvidenceStatus):
+        if type(self.evidence_status) is not EvidenceStatus:
             raise TypeError("evidence_status must be an EvidenceStatus")
         if any(
-            not isinstance(calibration, CalibrationSpec)
+            type(calibration) is not CalibrationSpec
             for calibration in self.calibrations
         ):
             raise TypeError("calibrations must contain CalibrationSpec values")
-        if any(not isinstance(patch, ModelPatch) for patch in self.model_patches):
+        if any(type(patch) is not ModelPatch for patch in self.model_patches):
             raise TypeError("model_patches must contain ModelPatch values")
         if (
-            any(isinstance(assembly, AssemblyHypothesis) for assembly in self.assemblies)
+            any(type(assembly) is AssemblyHypothesis for assembly in self.assemblies)
             and self.evidence_status
             not in (
                 EvidenceStatus.EXPERIMENTAL,
@@ -822,13 +920,28 @@ class SimulationRequest(Digestible):
     obligations: tuple[ValidityObligation, ...]
 
     def __post_init__(self) -> None:
+        if type(self.source) is not SourceProgram:
+            raise TypeError("source must be a SourceProgram")
+        if type(self.resolved) not in (ResolvedProgram, ResolvedDomainProgram):
+            raise TypeError("resolved must be a ResolvedProgram or ResolvedDomainProgram")
+        if type(self.physical_ir) is not PhysicalIR:
+            raise TypeError("physical_ir must be a PhysicalIR")
+        if type(self.output_contract) is not OutputContract:
+            raise TypeError("output_contract must be an OutputContract")
+        if type(self.equivalence_contract) is not EquivalenceContract:
+            raise TypeError("equivalence_contract must be an EquivalenceContract")
         if self.resolved.source_digest != self.source.digest:
             raise ValueError("resolved program is not bound to this source")
         if self.physical_ir.resolved_digest != self.resolved.digest:
             raise ValueError("PhysicalIR is not bound to this resolved program")
-        if not isinstance(self.obligations, tuple):
+        for transport in self.physical_ir.transport_maps:
+            if transport.source_theory_digest != self.resolved.source_theory.digest:
+                raise ValueError("transport map is not bound to this resolved source theory")
+            if transport.target_intent_digest != self.resolved.target.digest:
+                raise ValueError("transport map is not bound to this resolved target intent")
+        if type(self.obligations) is not tuple:
             raise TypeError("obligations must be a tuple")
-        if any(not isinstance(item, ValidityObligation) for item in self.obligations):
+        if any(type(item) is not ValidityObligation for item in self.obligations):
             raise TypeError("obligations must contain ValidityObligation values")
         _unique(self.obligations, lambda item: item.name, "obligation names")
 
@@ -878,6 +991,16 @@ class CandidatePlan(Digestible):
     limits: RuntimeLimits
 
     def __post_init__(self) -> None:
+        if type(self.request) is not SimulationRequest:
+            raise TypeError("request must be a SimulationRequest")
+        if type(self.model) is not ModelSpec:
+            raise TypeError("model must be a ModelSpec")
+        if type(self.solver) is not SolverSpec:
+            raise TypeError("solver must be a SolverSpec")
+        if type(self.calculation) is not CalculationSpec:
+            raise TypeError("calculation must be a CalculationSpec")
+        if type(self.limits) is not RuntimeLimits:
+            raise TypeError("limits must be RuntimeLimits")
         if self.model not in self.request.physical_ir.models:
             raise ValueError("selected model is not present in the PhysicalIR")
         _nonempty(self.compiler_implementation_digest, "compiler_implementation_digest")
@@ -1008,6 +1131,10 @@ class ApprovedPlan(Digestible):
     ) -> None:
         if _token is not _APPROVAL_TOKEN:
             raise PermissionError("ApprovedPlan can only be created by approve()")
+        if type(plan) is not CandidatePlan:
+            raise TypeError("plan must be a CandidatePlan")
+        if type(approval) is not Approval:
+            raise TypeError("approval must be an Approval")
         object.__setattr__(self, "plan", plan)
         object.__setattr__(self, "approval", approval)
         object.__setattr__(self, "approval_record_digest", approval.digest)
@@ -1022,6 +1149,8 @@ def record_approval(
     timestamp: str | None = None,
 ) -> Approval:
     """Record explicit authority for exactly this candidate-plan digest."""
+    if type(plan) is not CandidatePlan:
+        raise TypeError("plan must be a CandidatePlan")
     return Approval(
         principal=principal,
         plan_digest=plan.digest,
@@ -1033,6 +1162,10 @@ def record_approval(
 
 
 def approve(plan: CandidatePlan, approval: Approval) -> ApprovedPlan:
+    if type(plan) is not CandidatePlan:
+        raise TypeError("plan must be a CandidatePlan")
+    if type(approval) is not Approval:
+        raise TypeError("approval must be an Approval")
     if plan.blockers:
         raise ValueError("a candidate with blockers cannot be approved: " + "; ".join(plan.blockers))
     if approval.plan_digest != plan.digest:
@@ -1424,6 +1557,57 @@ def _observable_payload_error(
             return "water-background crossing inventory differs from the diagnostic"
         if regime != expected_regime:
             return "water-background regime inventory differs from the diagnostic"
+        return None
+    if plan.executor_id == _WATER_WAVE_CONTINUOUS_EXECUTOR:
+        from .water_wave_continuous import (
+            ContinuousFiniteV2Comparison,
+            ContinuousWaterSubject,
+            _comparison as continuous_v2_comparison,
+        )
+        from .water_wave_continuous_domain import (
+            ContinuousDiagnostic,
+            ContinuousMeshResult,
+            solve_continuous_background,
+        )
+
+        resolved = plan.request.resolved
+        if (
+            type(resolved) is not ResolvedDomainProgram
+            or type(resolved.subject) is not ContinuousWaterSubject
+        ):
+            return "continuous-water plan has no exact ContinuousWaterSubject"
+        diagnostic = payloads.get("water_wave_continuous_diagnostic")
+        meshes = payloads.get("water_wave_continuous_meshes")
+        comparison = payloads.get("water_wave_finite_v2_comparison")
+        if type(diagnostic) is not ContinuousDiagnostic:
+            return (
+                "water_wave_continuous_diagnostic must retain an exact "
+                "ContinuousDiagnostic"
+            )
+        if (
+            type(meshes) is not tuple
+            or any(type(item) is not ContinuousMeshResult for item in meshes)
+        ):
+            return "water_wave_continuous_meshes must retain every exact mesh result"
+        if type(comparison) is not ContinuousFiniteV2Comparison:
+            return (
+                "water_wave_finite_v2_comparison must retain an exact "
+                "ContinuousFiniteV2Comparison"
+            )
+        reference = solve_continuous_background(resolved.subject.background)
+        if canonical_digest(diagnostic) != canonical_digest(reference):
+            return (
+                "continuous-water diagnostic does not equal the independently "
+                "recomputed result"
+            )
+        if canonical_digest(meshes) != canonical_digest(reference.meshes):
+            return "continuous-water mesh inventory differs from the diagnostic"
+        expected_comparison = continuous_v2_comparison(resolved.subject, reference)
+        if canonical_digest(comparison) != canonical_digest(expected_comparison):
+            return (
+                "continuous-water finite-v2 comparison differs from the "
+                "independently recomputed payload"
+            )
         return None
     if plan.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
         from .human_isotope_domain import (
@@ -1930,6 +2114,8 @@ def _reaction_energy_model() -> ModelSpec:
 def _build_reaction_residue_transform(
     reaction: Reaction,
     model: ModelSpec,
+    output_contract_digest: str = "",
+    equivalence_contract_digest: str = "",
 ) -> ReactionResidueTransform | None:
     """Construct the exact Class-A transform when a shared multiset exists."""
     left_counts = Counter(reaction.dom.species)
@@ -1962,6 +2148,8 @@ def _build_reaction_residue_transform(
             "residual workset and multiplicities retained exactly",
         ),
         casualties=(),
+        output_contract_digest=output_contract_digest,
+        equivalence_contract_digest=equivalence_contract_digest,
         original_reaction_digest=canonical_digest(reaction),
         residual_left=residual_left,
         residual_right=residual_right,
@@ -1975,9 +2163,16 @@ def _verified_reaction_residue(
     reaction: Reaction,
     model: ModelSpec,
     transforms: tuple[Transform, ...],
+    output_contract: OutputContract,
+    equivalence_contract: EquivalenceContract,
 ) -> tuple[Config, Config, tuple[Molecule, ...], ReactionResidueTransform | None]:
     """Recompute the only supported transform and reject any forged plan record."""
-    expected = _build_reaction_residue_transform(reaction, model)
+    expected = _build_reaction_residue_transform(
+        reaction,
+        model,
+        output_contract.digest,
+        equivalence_contract.digest,
+    )
     if expected is None:
         if transforms:
             raise ValueError(
@@ -2157,6 +2352,12 @@ def compile_reaction_energy(
         ),
         obligations=obligations,
     )
+    if residue_transform is not None:
+        residue_transform = replace(
+            residue_transform,
+            output_contract_digest=request.output_contract.digest,
+            equivalence_contract_digest=request.equivalence_contract.digest,
+        )
     inspection = diagnose(residual_reaction, (oracle,))
     blockers = tuple(repr(obstruction) for obstruction in inspection.obstructions)
     unsupported = tuple(
@@ -2373,6 +2574,32 @@ def _resource_wall(
     return None
 
 
+def _preflight_reaction_energy(plan: CandidatePlan) -> None:
+    """Reject a forged reaction plan before it can claim a run journal."""
+    if plan.executor_id != _REACTION_EXECUTOR:
+        raise ValueError("reaction preflight received a different executor plan")
+    if type(plan.request.resolved) is not ResolvedProgram:
+        raise ValueError("reaction executor requires an exact chemical ResolvedProgram")
+    runtime_model = _reaction_energy_model()
+    if plan.model != runtime_model or plan.request.physical_ir.models != (runtime_model,):
+        raise ValueError(
+            "reaction executor model differs from the exact runtime-owned "
+            "closed-separable endpoint-energy model"
+        )
+    try:
+        _verified_reaction_residue(
+            plan.request.resolved.reaction,
+            plan.model,
+            plan.transforms,
+            plan.request.output_contract,
+            plan.request.equivalence_contract,
+        )
+    except ValueError as error:
+        raise ValueError(
+            f"Class-A transform verification failed before journal creation: {error}"
+        ) from error
+
+
 def execute(
     approved: ApprovedPlan,
     oracle: object,
@@ -2380,9 +2607,13 @@ def execute(
     journal_path: str | os.PathLike[str] | None = None,
 ) -> ExecutionReport:
     """Validate and dispatch one approved plan through the closed executor registry."""
-    if not isinstance(approved, ApprovedPlan):
+    if type(approved) is not ApprovedPlan:
         raise TypeError("execute requires an ApprovedPlan")
     plan = approved.plan
+    if type(plan) is not CandidatePlan:
+        raise TypeError("approved plan must contain a CandidatePlan")
+    if type(approved.approval) is not Approval:
+        raise TypeError("approved plan must contain an Approval")
     if approved.approval.digest != approved.approval_record_digest:
         raise ValueError(
             "approved plan integrity check failed; approval record changed after "
@@ -2416,6 +2647,7 @@ def execute(
     contract_error = descriptor.output_contract_error(plan.request.output_contract)
     if contract_error is not None:
         raise ValueError(contract_error)
+    descriptor.resolve_plan_preflight()(plan)
     actual_calculation = CalculationSpec.from_oracle(oracle)
     if actual_calculation.digest != plan.calculation.digest:
         raise ValueError(
@@ -2427,6 +2659,7 @@ def execute(
         oracle,
         actual_calculation=actual_calculation,
         journal_path=journal_path,
+        _dispatch_token=_RUNTIME_DISPATCH_TOKEN,
     )
 
 
@@ -2436,9 +2669,12 @@ def _execute_reaction_energy(
     *,
     actual_calculation: CalculationSpec,
     journal_path: str | os.PathLike[str] | None = None,
+    _dispatch_token: object = None,
 ) -> ExecutionReport:
     """Run the already validated reaction-energy plan."""
+    _require_runtime_dispatch(_dispatch_token)
     plan = approved.plan
+    _preflight_reaction_energy(plan)
     if plan.executor_id != _REACTION_EXECUTOR:
         raise ValueError("reaction-energy runner received a different executor plan")
     if type(plan.request.resolved) is not ResolvedProgram:
@@ -2483,6 +2719,8 @@ def _execute_reaction_energy(
                 reaction,
                 plan.model,
                 plan.transforms,
+                plan.request.output_contract,
+                plan.request.equivalence_contract,
             )
         except ValueError as error:
             return ExecutionReport(

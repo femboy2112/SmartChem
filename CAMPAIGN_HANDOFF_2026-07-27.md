@@ -1,9 +1,9 @@
-# SmartChem five-cycle campaign handoff
+# SmartChem campaign and category-backbone round handoff
 
 **Prepared:** 2026-07-27
-**Branch:** `main`
-**Implementation baseline after Cycle 5:** `45885f2`
-**Remote state at that baseline:** `main == origin/main`
+**Working branch:** `agent/smartchem-roadmap-round-20260727`
+**Round base:** `247c060d4b2ead4690f952b270e334496b6b7d73`
+**Cycle 5 implementation baseline:** `45885f2`
 
 This is the compact continuation artifact for the 2026-07-27 campaign. The detailed
 scientific and product contract remains
@@ -41,6 +41,48 @@ language that:
 Every cycle was analyzed, attacked, fixed where necessary, tested, committed, and pushed
 before the next began. No Grok model was used.
 
+## Current build/research round
+
+The round first recovered the exact private-repository tree on a separate branch, then
+triangulated the live handoff, a runtime attack surface, and an independent category
+construction. The initial RLC-first target was rejected as too broad: a credible circuit
+slice contains three dependencies—P0 ownership, exact open syntax, and MNA semantics—while
+the live water ladder already exposed a bounded missing continuous rung.
+
+Completed:
+
+1. **P0 seam hardening.** Exact `PhysicalIR` members, global graph IDs/references,
+   connection compatibility, transport/assembly evidence closure, and source/target
+   transport binding; runtime-owned model/transform preflight for all seven executors;
+   reaction transform output/equivalence contract binding; dispatch-capability-guarded
+   runners; exact nominal plan/approval admission; and visible `Reaction.tensor`
+   deprecation.
+2. **Distribution/CI repair.** Public `experiments.*` harnesses are now installed. The
+   untouched branch initially failed all three CI jobs on the same two imports when
+   invoked through console `pytest`; the repaired local console-entrypoint controls pass.
+3. **Manufactured continuous-water midterm.** A bounded branch-aware energy-root solver
+   reconstructs subcritical, supercritical, and isolated regular-transcritical
+   backgrounds on N/2N/4N meshes. It retains depth, velocity, discharge, bed, head,
+   Froude number, source/friction, continuity/momentum residuals, both refinement-pair
+   convergence evidence, uncertainty, boundaries, critical compatibility, and every
+   comparison field. The compiled default uses 32/64/128 cells and remains
+   `ANALOGUE/STRUCTURAL_TOY`.
+4. **Finite-v2 differential control.** The attached v2 subject uses nine explicitly
+   retained finest-mesh points and independent v2 code. Continuity, shallow-water,
+   capillarity, uncertainty-bracket, position, and orientation gates pass; the lossless
+   head gate fails. The comparison quantitatively attributes the default mismatch to
+   friction only because declared frictional head drop exceeds both reconstruction
+   offset and v2 tolerance by more than 10×. A tiny-friction mutation is correctly
+   reported as cause-not-isolated.
+5. **Category-backbone decision.** Keep the conserving closed reaction path category.
+   Introduce a separate layered `StructureIR`/`ModelIR`/`EvidenceIR`/`ExecutionDAG`
+   architecture. Exact open-diagram syntax and laws precede resistor-only DC MNA; AC/RLC
+   and port-Hamiltonian claims come later.
+
+Detailed contract and claim ledger:
+`RESEARCH_ROUND_2026-07-27.md`. Implementation-grade category design:
+`CATEGORY_BACKBONE_ROADMAP_2026-07-27.md`.
+
 ## Calculation ledger
 
 No calculation is in progress.
@@ -54,6 +96,7 @@ No calculation is in progress.
 | Synthetic survival D2b-S | `COMPLETE` | Same-generator synthetic implementation evidence only. |
 | Class-A optimizer probe, transformed and reference arms | `COMPLETE` | Certification/domain-admission correction; not a newly measured speedup. |
 | Finite C3 Ising/lattice-gas | `COMPLETE` | `ANALOGUE/ESTABLISHED/CERTIFIED` finite algebra only. |
+| Manufactured continuous steady water | `COMPLETE` | 32/64/128-cell regular-transcritical `ANALOGUE/STRUCTURAL_TOY`; finite-v2 comparison is independent code on derived manufactured samples, not independent data. |
 
 Ignored JSON journals are local, terminal run artifacts. New calculations require fresh
 write-once paths, new plan identities, and new approvals. No checkpoint or partial output is
@@ -62,22 +105,27 @@ being carried forward as a completed result.
 ## Final verification state
 
 ```text
-.venv/bin/python -m pytest -q
-1266 passed, 14 skipped, 1 xfailed in 20.40s
+.venv/bin/python -m pytest -q -rs
+.venv/bin/pytest -q -rs
+1279 passed, 51 skipped, 1 xfailed
 ```
 
-- The 14 slow tests were not run and are not represented as passing.
+- The 51 optional-PySCF or slow tests were not run and are not represented as passing.
 - The strict xfail is the known true-parallel-interchange architecture debt.
 - `python -m compileall -q smartchem experiments tests` passed.
-- `git diff --check` passed at each publication gate.
-- Science/algebra and runtime/release reviewers both returned `SHIP` for Cycles 4 and 5.
-- The Cycle 5 payload validator survived a constructor bypass, forged Hamiltonian row, and
-  forced postcondition pass; the result was `INVALID` and artifacts were quarantined.
+- `python -m smartchem.bench --split test --quiet` completed and reported the
+  heuristic-only baseline as incomplete coverage (`6` evaluated, `5` refused).
+- `git diff --check` passed at the final local gate.
+- Independent continuous-water science/runtime review and independent P0 seam review
+  returned `SHIP`.
+- The current P0 gate refuses malformed graph/evidence records, foreign
+  model/transform plans, direct-runner dispatch, and nominal plan/record subclasses
+  before calculation or journal creation.
 - These are local verification claims. No remote CI result is inferred from them.
 
 ## What the project can now honestly say
 
-SmartChem has six closed executors behind one source/IR/plan/approval/run/certificate seam.
+SmartChem has seven closed executors behind one source/IR/plan/approval/run/certificate seam.
 It can:
 
 - require a closed typed shepherd session before cross-domain execution;
@@ -89,51 +137,44 @@ It can:
 - expose and verify one narrow Class-A transform without claiming a general optimizer.
 
 It still cannot honestly say that it is a general simulation language, general model-chain
-planner, multiphysics runtime, empirical human model, continuous water-wave solver, general
-optimizer, or conversational scientific environment.
+planner, multiphysics runtime, empirical human model, general Saint-Venant/free-surface or
+dispersive water solver, general optimizer, or conversational scientific environment.
 
-## Best next midterm: continuous water-background rung
+## Best next category midterm: exact open syntax, then DC semantics
 
-This is the best-shot next midterm because the typed water semantics, finite compatibility
-gates, sign/orientation logic, uncertainty fields, output contract, and runtime lifecycle
-already exist. It should be decomposed into these short-term gates:
+Do not broaden `PhysicalIR` strings or reinterpret `Reaction.tensor`. Build a separate
+finite open-diagram value:
 
-1. Define a typed continuous background representation with domain, boundary, discharge,
-   head/energy, friction/source, uncertainty, and regularity semantics.
-2. State the steady governing residuals and critical-point compatibility conditions
-   independently of any solver.
-3. Add manufactured subcritical, supercritical, and regular transcritical solutions with
-   exact or high-precision reference residuals.
-4. Implement one bounded solver that retains every requested field, residual, iteration
-   diagnostic, and mesh identity.
-5. Require mesh-refinement/spatial-convergence evidence; a converged nonlinear solve on one
-   mesh is not a continuum result.
-6. Compare the continuous result with the existing finite-section preflight and explain every
-   disagreement rather than treating v2 as ground truth.
-7. Add mutation attacks for omitted friction, wrong critical sign, false regularity, hidden
-   interpolation, dropped uncertainty, and reduced output.
-8. Run a manufactured compiled vertical and retain `STRUCTURAL_TOY` until measured
-   regime-matched evidence exists.
-
-Do not jump directly to a dispersive scattering solver. The continuous stationary background
-and its convergence evidence are prerequisites.
+1. exact typed ordered boundary interfaces and smart-constructor ownership;
+2. canonical equality modulo internal naming with budgeted refusal rather than approximate
+   equality;
+3. boundary gluing, disjoint union, identities, braid, and generated unit,
+   associativity, symmetry, alpha-renaming, and interchange tests;
+4. one resistor-only sparse MNA interpreter using the same stamping path for series,
+   parallel, bridge, and cycle topology;
+5. reference/floating/singularity refusal, KCL, power, and passivity controls;
+6. only after those pass, AC/RLC; only after a proved power pairing, port-Hamiltonian
+   composition.
 
 ## Following midterm queue
 
-1. **Traffic kinematic waves:** next regime-valid metaphor control. Preserve conservation-law
+1. **Water next rung:** a bounded dispersive branch solver with independent convergence
+   and output gates, then measured regime-matched evidence. Manufactured v1/v2/continuous
+   agreement is not external validation.
+2. **Traffic kinematic waves:** next regime-valid metaphor control. Preserve conservation-law
    structure and shock/characteristic semantics; discard literal fluid identity and add
    traffic-specific closure/calibration.
-2. **Remaining optimizer:** persistent reuse, shared electronic intermediates, lossless
+3. **Remaining optimizer:** persistent reuse, shared electronic intermediates, lossless
    storage choice, and deterministic scheduling. Each slice needs exact applicability and
    full-output equivalence before it can be Class A.
-3. **Empirical survival rung:** independent data authority, censoring, cause-specific
+4. **Empirical survival rung:** independent data authority, censoring, cause-specific
    competing risks where requested, profile/bootstrap uncertainty, external locked
    validation, and explicit applicability/extrapolation. No human data access or
    experimentation authority is presumed.
-4. **Port-Hamiltonian control:** typed effort/flow ports, power-conserving interconnection,
+5. **Port-Hamiltonian control:** typed effort/flow ports, power-conserving interconnection,
    and domain-local constitutive laws as the architectural control for open cross-substrate
    composition.
-5. **Chemistry expansion:** xTB fast tier and broader polyatomic/state/conformer validation
+6. **Chemistry expansion:** xTB fast tier and broader polyatomic/state/conformer validation
    remain separate from compiler plumbing.
 
 Other metaphor candidates already considered include groundwater/electrical potential,
@@ -151,10 +192,11 @@ They are stress tests with distinct casualty/evidence needs, not an exhaustive l
 
 ## Resume protocol
 
-1. Confirm `main`, `origin/main`, and a clean worktree.
+1. Confirm the intended branch, remote head, and a clean worktree.
 2. Read this handoff, the direction audit, and the roadmap before choosing work.
 3. Inspect current receipts and live tests rather than trusting a stale recap.
-4. Decompose the continuous-water midterm into the short gates above.
+4. Read the category-backbone roadmap before implementing S0; keep topology, domain
+   equations, evidence, and task scheduling separate.
 5. Keep each calculation's terminal state and journal path explicit.
 6. Preserve unrelated work; stage only the intended slice.
 7. Require science and runtime attacks before a public receipt.

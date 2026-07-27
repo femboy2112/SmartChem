@@ -22,7 +22,7 @@ dev = [
 qc = ["pyscf>=2.4"]
 
 [tool.setuptools.packages.find]
-include = ["smartchem*"]
+include = ["smartchem*", "experiments*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

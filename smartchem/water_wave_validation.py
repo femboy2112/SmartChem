@@ -25,7 +25,7 @@ from .program import (
     RunJournal, RuntimeLimits, SimulationRequest, SimulationResult, SolverSpec,
     SourceProgram, SourceTheory, StructuredObservableValue, TargetIntent,
     TransportEvidence, TransportMap, _WATER_WAVE_VALIDATION_EXECUTOR,
-    _compiler_implementation_digest, _resource_wall,
+    _compiler_implementation_digest, _require_runtime_dispatch, _resource_wall,
 )
 from .water_wave_validation_domain import (
     BackgroundSample, CharacteristicInterval, CrossingBracket, SampleDiagnostic,
@@ -174,6 +174,27 @@ def _manufactured_provenance_is_supported(spec: WaterWaveValidationSpec) -> bool
     )
 
 
+def _water_wave_validation_model() -> ModelSpec:
+    return ModelSpec(
+        "manufactured finite-section shallow-water compatibility preflight",
+        (
+            "q = width * depth * velocity", "H = bed + depth + velocity^2/(2g)",
+            "lambda = U - sqrt(g*h)", "kh = 2*pi*h/lambda_min", "Bo = rho*g*h^2/sigma",
+        ),
+        (
+            "one-dimensional finite supplied samples",
+            "nominal section-mean continuity and lossless Bernoulli-head gates",
+            "hydrostatic depth-averaged rectangular sections with unit energy coefficient",
+            "no friction, hydraulic jump, or resolved transcritical control",
+            "declared long-wave and gravity-dominance support",
+            "manufactured, not measured, provenance",
+        ),
+        ("all inputs are exact WaterWaveValidationSpec values", "provenance is manufactured/declaration-only"),
+        ("every sample is retained", "every adjacent strict sign bracket is retained", "status does not promote evidence"),
+        (), "2",
+    )
+
+
 def compile_water_wave_validation(
     source: SourceProgram | str, spec: WaterWaveValidationSpec, engine: object, *,
     output_contract: OutputContract | None = None,
@@ -198,22 +219,7 @@ def compile_water_wave_validation(
         "screen finite-section nominal compatibility and sample-bounded kinematic brackets",
     )
     resolved = ResolvedDomainProgram(source.digest, spec, target, source_theory, shepherd_session_digest)
-    model = ModelSpec(
-        "manufactured finite-section shallow-water compatibility preflight",
-        ("q = width * depth * velocity", "H = bed + depth + velocity^2/(2g)",
-         "lambda = U - sqrt(g*h)", "kh = 2*pi*h/lambda_min", "Bo = rho*g*h^2/sigma"),
-        (
-            "one-dimensional finite supplied samples",
-            "nominal section-mean continuity and lossless Bernoulli-head gates",
-            "hydrostatic depth-averaged rectangular sections with unit energy coefficient",
-            "no friction, hydraulic jump, or resolved transcritical control",
-            "declared long-wave and gravity-dominance support",
-            "manufactured, not measured, provenance",
-        ),
-        ("all inputs are exact WaterWaveValidationSpec values", "provenance is manufactured/declaration-only"),
-        ("every sample is retained", "every adjacent strict sign bracket is retained", "status does not promote evidence"),
-        (), "2",
-    )
+    model = _water_wave_validation_model()
     transport = TransportMap(source_theory.digest, target.digest,
         preserved=("sample-level shallow-water kinematic characteristic",),
         modified=("source analogy is reduced to a nominal finite-section compatibility screen",),
@@ -329,10 +335,23 @@ def _post_result(obligation: ValidityObligation, diagnostic: object, spec: Water
     return _result(obligation, ObligationOutcome.REFUSE, f"no approved evaluator registered for {obligation.evaluator_id}")
 
 
+def _preflight_water_wave_validation(plan: CandidatePlan) -> None:
+    expected = _water_wave_validation_model()
+    if plan.executor_id != _WATER_WAVE_VALIDATION_EXECUTOR:
+        raise ValueError("water-background preflight received a different executor plan")
+    if plan.model != expected or plan.request.physical_ir.models != (expected,):
+        raise ValueError("water-background executor requires its exact runtime-owned model")
+    if plan.transforms:
+        raise ValueError("water-background executor does not support transforms")
+
+
 def _execute_water_wave_validation(approved: ApprovedPlan, engine: object, *, actual_calculation: CalculationSpec,
-                                   journal_path: str | os.PathLike[str] | None = None) -> ExecutionReport:
+                                   journal_path: str | os.PathLike[str] | None = None,
+                                   _dispatch_token: object = None) -> ExecutionReport:
     """Run one approved preflight; completion follows result-safe construction only."""
+    _require_runtime_dispatch(_dispatch_token)
     plan = approved.plan
+    _preflight_water_wave_validation(plan)
     if plan.executor_id != _WATER_WAVE_VALIDATION_EXECUTOR:
         raise ValueError("water-background runner received a different executor plan")
     resolved = plan.request.resolved

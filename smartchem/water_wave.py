@@ -59,6 +59,7 @@ from .program import (
     TransportMap,
     _WATER_WAVE_EXECUTOR,
     _compiler_implementation_digest,
+    _require_runtime_dispatch,
     _resource_wall,
 )
 from .water_wave_domain import (
@@ -252,6 +253,39 @@ def _unsupported_assumptions(assumptions: RegimeAssumptions) -> tuple[str, ...]:
     )
 
 
+def _water_wave_model() -> ModelSpec:
+    """Return the sole model licensed by this narrow executor."""
+    return ModelSpec(
+        name="prescribed-background nondispersive shallow-water characteristic model",
+        equations=(
+            "c(x) = sqrt(g h(x))",
+            "lambda_counter(x) = U(x) - sign(U) c(x)",
+            "lambda_co(x) = U(x) + sign(U) c(x)",
+            "Fr(x) = abs(U(x)) / c(x)",
+            "a branch horizon is an isolated strict zero crossing of selected lambda",
+        ),
+        assumptions=(
+            "stationary one-dimensional prescribed background",
+            "inviscid, irrotational, gravity-only shallow water",
+            "linear perturbations, unidirectional flow, no retained wave forcing or reflections",
+            "profile values are already expressed in the fixed SI fields of WaterWaveSpec",
+        ),
+        valid_if=(
+            "every RegimeAssumptions flag required by this model is true",
+            "target is KINEMATIC_HORIZON",
+            "regime is NONDISPERSIVE_SHALLOW_WATER",
+            "critical points are isolated and bracket strict sign changes",
+        ),
+        postconditions=(
+            "every input point has one retained characteristic sample",
+            "every sample-bracketed strict crossing is retained or a no-bracket-at-samples status is returned without claiming continuous-profile absence",
+            "computed horizon orientations meet the approved scientist selection",
+        ),
+        conserved=(),
+        version="1",
+    )
+
+
 def compile_water_wave_horizon(
     source: SourceProgram | str,
     spec: WaterWaveSpec,
@@ -301,37 +335,7 @@ def compile_water_wave_horizon(
         source_theory,
         shepherd_session_digest,
     )
-    model = ModelSpec(
-        name="prescribed-background nondispersive shallow-water characteristic model",
-        equations=(
-            "c(x) = sqrt(g h(x))",
-            "lambda_counter(x) = U(x) - sign(U) c(x)",
-            "lambda_co(x) = U(x) + sign(U) c(x)",
-            "Fr(x) = abs(U(x)) / c(x)",
-            "a branch horizon is an isolated strict zero crossing of selected lambda",
-        ),
-        assumptions=(
-            "stationary one-dimensional prescribed background",
-            "inviscid, irrotational, gravity-only shallow water",
-            "linear perturbations, unidirectional flow, no retained wave forcing or "
-            "reflections",
-            "profile values are already expressed in the fixed SI fields of WaterWaveSpec",
-        ),
-        valid_if=(
-            "every RegimeAssumptions flag required by this model is true",
-            "target is KINEMATIC_HORIZON",
-            "regime is NONDISPERSIVE_SHALLOW_WATER",
-            "critical points are isolated and bracket strict sign changes",
-        ),
-        postconditions=(
-            "every input point has one retained characteristic sample",
-            "every sample-bracketed strict crossing is retained or a no-bracket-at-samples "
-            "status is returned without claiming continuous-profile absence",
-            "computed horizon orientations meet the approved scientist selection",
-        ),
-        conserved=(),
-        version="1",
-    )
+    model = _water_wave_model()
     transport = TransportMap(
         source_theory.digest,
         target.digest,
@@ -720,15 +724,29 @@ def _post_result(
     )
 
 
+def _preflight_water_wave_horizon(plan: CandidatePlan) -> None:
+    """Reject non-owned semantics before this executor creates a journal."""
+    expected = _water_wave_model()
+    if plan.executor_id != _WATER_WAVE_EXECUTOR:
+        raise ValueError("water-wave preflight received a different executor plan")
+    if plan.model != expected or plan.request.physical_ir.models != (expected,):
+        raise ValueError("water-wave executor requires its exact runtime-owned model")
+    if plan.transforms:
+        raise ValueError("water-wave executor does not support transforms")
+
+
 def _execute_water_wave_horizon(
     approved: ApprovedPlan,
     engine: object,
     *,
     actual_calculation: CalculationSpec,
     journal_path: str | os.PathLike[str] | None = None,
+    _dispatch_token: object = None,
 ) -> ExecutionReport:
     """Execute after the common approval/compiler/calculation preflight in program.execute."""
+    _require_runtime_dispatch(_dispatch_token)
     plan = approved.plan
+    _preflight_water_wave_horizon(plan)
     resolved = plan.request.resolved
     if (
         not isinstance(resolved, ResolvedDomainProgram)

@@ -63,6 +63,7 @@ from .program import (
     TransportMap,
     _ISING_LATTICE_GAS_EXECUTOR,
     _compiler_implementation_digest,
+    _require_runtime_dispatch,
     _resource_wall,
 )
 
@@ -675,15 +676,28 @@ def _post_result(
     )
 
 
+def _preflight_ising_lattice_gas(plan: CandidatePlan) -> None:
+    expected = _finite_c3_model()
+    if plan.executor_id != _ISING_LATTICE_GAS_EXECUTOR:
+        raise ValueError("Ising-lattice-gas preflight received a different executor plan")
+    if plan.model != expected or plan.request.physical_ir.models != (expected,):
+        raise ValueError("Ising-lattice-gas executor requires its exact runtime-owned model")
+    if plan.transforms:
+        raise ValueError("Ising-lattice-gas executor does not support transforms")
+
+
 def _execute_ising_lattice_gas(
     approved: ApprovedPlan,
     engine: object,
     *,
     actual_calculation: CalculationSpec,
     journal_path: str | os.PathLike[str] | None = None,
+    _dispatch_token: object = None,
 ) -> ExecutionReport:
     """Execute after the common approval/compiler/calculation preflight."""
+    _require_runtime_dispatch(_dispatch_token)
     plan = approved.plan
+    _preflight_ising_lattice_gas(plan)
     if plan.executor_id != _ISING_LATTICE_GAS_EXECUTOR:
         raise ValueError("Ising-lattice-gas runner received a different executor plan")
     resolved = plan.request.resolved

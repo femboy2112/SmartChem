@@ -73,6 +73,7 @@ from .program import (
     TransportMap,
     _HUMAN_SURVIVAL_EXECUTOR,
     _compiler_implementation_digest,
+    _require_runtime_dispatch,
     _resource_wall,
 )
 
@@ -244,6 +245,33 @@ def _obligations() -> tuple[ValidityObligation, ...]:
             "smartchem.human_survival/output-inventory-v1",
             "emitted observable identities exactly equal the frozen contract",
         ),
+)
+
+
+def _human_survival_model() -> ModelSpec:
+    return ModelSpec(
+        "synthetic Weibull proportional-hazards interval-cohort proxy",
+        (
+            "H(t|d) = (t/lambda)^k * exp(beta*d/d_ref)",
+            "q[t0,t1|d] = 1 - exp(-(H(t1|d)-H(t0|d)))",
+            "events ~ Binomial(at_risk, q) for independent synthetic cohorts",
+        ),
+        (
+            "one fixed preselected family and static synthetic dose covariate",
+            "independent cohorts; no repeated cumulative rows treated as independent",
+            "TRAIN-only fitting; locked HOLDOUT scoring; post-fit truth comparison",
+        ),
+        (
+            "authority is SYNTHETIC_ONLY",
+            "record and split digests are exact",
+            "optimizer agreement and conditional likelihood-curvature gates pass or no fit is emitted",
+        ),
+        (
+            "all records and scores retained",
+            "scientific status never exceeds synthetic generator recovery",
+        ),
+        (),
+        "1",
     )
 
 
@@ -287,30 +315,7 @@ def compile_human_survival_recovery(
         source_theory,
         shepherd_session_digest,
     )
-    model = ModelSpec(
-        "synthetic Weibull proportional-hazards interval-cohort proxy",
-        (
-            "H(t|d) = (t/lambda)^k * exp(beta*d/d_ref)",
-            "q[t0,t1|d] = 1 - exp(-(H(t1|d)-H(t0|d)))",
-            "events ~ Binomial(at_risk, q) for independent synthetic cohorts",
-        ),
-        (
-            "one fixed preselected family and static synthetic dose covariate",
-            "independent cohorts; no repeated cumulative rows treated as independent",
-            "TRAIN-only fitting; locked HOLDOUT scoring; post-fit truth comparison",
-        ),
-        (
-            "authority is SYNTHETIC_ONLY",
-            "record and split digests are exact",
-            "optimizer agreement and conditional likelihood-curvature gates pass or no fit is emitted",
-        ),
-        (
-            "all records and scores retained",
-            "scientific status never exceeds synthetic generator recovery",
-        ),
-        (),
-        "1",
-    )
+    model = _human_survival_model()
     transport = TransportMap(
         source_theory.digest,
         target.digest,
@@ -649,14 +654,27 @@ def _post_result(
     )
 
 
+def _preflight_human_survival(plan: CandidatePlan) -> None:
+    expected = _human_survival_model()
+    if plan.executor_id != _HUMAN_SURVIVAL_EXECUTOR:
+        raise ValueError("human-survival preflight received a different executor plan")
+    if plan.model != expected or plan.request.physical_ir.models != (expected,):
+        raise ValueError("human-survival executor requires its exact runtime-owned model")
+    if plan.transforms:
+        raise ValueError("human-survival executor does not support transforms")
+
+
 def _execute_human_survival(
     approved: ApprovedPlan,
     engine: object,
     *,
     actual_calculation: CalculationSpec,
     journal_path: str | os.PathLike[str] | None = None,
+    _dispatch_token: object = None,
 ) -> ExecutionReport:
+    _require_runtime_dispatch(_dispatch_token)
     plan = approved.plan
+    _preflight_human_survival(plan)
     if plan.executor_id != _HUMAN_SURVIVAL_EXECUTOR:
         raise ValueError("human-survival runner received a different executor plan")
     resolved = plan.request.resolved

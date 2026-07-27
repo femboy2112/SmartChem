@@ -12,6 +12,7 @@ import smartchem.runtime_registry as registry
 REACTION = "smartchem.program/reaction-energy-v1"
 WATER_WAVE = "smartchem.water_wave/shallow-water-horizon-v1"
 WATER_WAVE_VALIDATION = "smartchem.water_wave/finite-section-compatibility-v2"
+WATER_WAVE_CONTINUOUS = "smartchem.water_wave_continuous/manufactured-steady-v1"
 HUMAN_ISOTOPE = "smartchem.human_isotope/identifiability-v1"
 HUMAN_SURVIVAL = "smartchem.human_survival/synthetic-weibull-interval-recovery-v1"
 ISING_LATTICE_GAS = "smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"
@@ -27,17 +28,18 @@ def _nominal_subject(descriptor: registry.ExecutorDescriptor) -> tuple[object, o
     return container, subject
 
 
-def test_registry_is_closed_immutable_and_contains_exactly_six_executors():
+def test_registry_is_closed_immutable_and_contains_exactly_seven_executors():
     assert registry.executor_ids() == tuple(sorted((
         REACTION,
         WATER_WAVE,
         WATER_WAVE_VALIDATION,
+        WATER_WAVE_CONTINUOUS,
         HUMAN_ISOTOPE,
         HUMAN_SURVIVAL,
         ISING_LATTICE_GAS,
     )))
     descriptors = tuple(registry.descriptor_for(item) for item in registry.executor_ids())
-    assert len(descriptors) == 6
+    assert len(descriptors) == 7
     assert not hasattr(registry, "register")
     assert not hasattr(registry, "register_executor")
     with pytest.raises(FrozenInstanceError):
@@ -63,7 +65,7 @@ def test_unknown_executor_is_rejected_by_every_public_operation():
 
 @pytest.mark.parametrize(
     "executor_id",
-    (REACTION, WATER_WAVE, WATER_WAVE_VALIDATION, HUMAN_ISOTOPE, HUMAN_SURVIVAL,
+    (REACTION, WATER_WAVE, WATER_WAVE_VALIDATION, WATER_WAVE_CONTINUOUS, HUMAN_ISOTOPE, HUMAN_SURVIVAL,
      ISING_LATTICE_GAS),
 )
 def test_exact_resolved_container_and_subject_are_validated_and_extracted(executor_id):
@@ -88,7 +90,7 @@ def test_exact_resolved_container_and_subject_are_validated_and_extracted(execut
 
 @pytest.mark.parametrize(
     "executor_id",
-    (REACTION, WATER_WAVE, WATER_WAVE_VALIDATION, HUMAN_ISOTOPE, HUMAN_SURVIVAL,
+    (REACTION, WATER_WAVE, WATER_WAVE_VALIDATION, WATER_WAVE_CONTINUOUS, HUMAN_ISOTOPE, HUMAN_SURVIVAL,
      ISING_LATTICE_GAS),
 )
 def test_only_exact_default_output_contract_is_accepted(executor_id):
@@ -109,7 +111,7 @@ def test_only_exact_default_output_contract_is_accepted(executor_id):
 
 @pytest.mark.parametrize(
     "executor_id",
-    (REACTION, WATER_WAVE, WATER_WAVE_VALIDATION, HUMAN_ISOTOPE, HUMAN_SURVIVAL,
+    (REACTION, WATER_WAVE, WATER_WAVE_VALIDATION, WATER_WAVE_CONTINUOUS, HUMAN_ISOTOPE, HUMAN_SURVIVAL,
      ISING_LATTICE_GAS),
 )
 def test_runner_resolves_to_the_exact_declared_module_level_function(executor_id):
@@ -119,6 +121,20 @@ def test_runner_resolves_to_the_exact_declared_module_level_function(executor_id
     assert callable(runner)
     assert runner.__module__ == descriptor.runner.module
     assert runner.__name__ == descriptor.runner.name
+
+
+@pytest.mark.parametrize(
+    "executor_id",
+    (REACTION, WATER_WAVE, WATER_WAVE_VALIDATION, WATER_WAVE_CONTINUOUS, HUMAN_ISOTOPE, HUMAN_SURVIVAL,
+     ISING_LATTICE_GAS),
+)
+def test_plan_preflight_resolves_to_the_exact_declared_module_level_function(executor_id):
+    descriptor = registry.descriptor_for(executor_id)
+    preflight = registry.resolve_plan_preflight(executor_id)
+
+    assert callable(preflight)
+    assert preflight.__module__ == descriptor.plan_preflight.module
+    assert preflight.__name__ == descriptor.plan_preflight.name
 
 
 def test_reloading_registry_performs_no_lazy_target_imports(monkeypatch):

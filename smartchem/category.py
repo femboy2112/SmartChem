@@ -842,6 +842,12 @@ class Reaction:
         parallel categorical tensor and does not satisfy interchange; use it only when that
         explicit scheduling convention is intended.
         """
+        __import__("warnings").warn(
+            "Reaction.tensor is deprecated because it is a left-first schedule, not a "
+            "parallel tensor; call scheduled_product() explicitly",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.scheduled_product(other)
 
     @property

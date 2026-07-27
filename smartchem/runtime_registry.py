@@ -26,6 +26,7 @@ __all__ = [
     "executor_ids",
     "extract_subject",
     "output_contract_error",
+    "resolve_plan_preflight",
     "resolve_runner",
     "semantic_manifest",
     "semantic_manifest_digest",
@@ -135,6 +136,7 @@ class ExecutorDescriptor:
     subject_type: TypeReference
     subject_attribute: str
     output_contract_factory: FunctionReference
+    plan_preflight: FunctionReference
     runner: FunctionReference
     implementation_modules: tuple[str, ...]
 
@@ -196,6 +198,9 @@ class ExecutorDescriptor:
     def resolve_runner(self) -> Callable[..., object]:
         return self.runner.resolve()
 
+    def resolve_plan_preflight(self) -> Callable[..., object]:
+        return self.plan_preflight.resolve()
+
     def manifest_record(self) -> dict[str, object]:
         return {
             "executor_id": self.executor_id,
@@ -205,6 +210,7 @@ class ExecutorDescriptor:
                 "attribute": self.subject_attribute,
             },
             "output_contract_factory": self.output_contract_factory.manifest_record(),
+            "plan_preflight": self.plan_preflight.manifest_record(),
             "runner": self.runner.manifest_record(),
             "implementation_modules": list(self.implementation_modules),
         }
@@ -233,6 +239,10 @@ _DESCRIPTORS = (
             "smartchem.program",
             "_default_output_contract",
         ),
+        plan_preflight=FunctionReference(
+            "smartchem.program",
+            "_preflight_reaction_energy",
+        ),
         runner=FunctionReference("smartchem.program", "_execute_reaction_energy"),
         implementation_modules=_SHARED_IMPLEMENTATION_MODULES,
     ),
@@ -244,6 +254,10 @@ _DESCRIPTORS = (
         output_contract_factory=FunctionReference(
             "smartchem.water_wave",
             "_default_output_contract",
+        ),
+        plan_preflight=FunctionReference(
+            "smartchem.water_wave",
+            "_preflight_water_wave_horizon",
         ),
         runner=FunctionReference(
             "smartchem.water_wave",
@@ -267,6 +281,10 @@ _DESCRIPTORS = (
             "smartchem.water_wave_validation",
             "_default_output_contract",
         ),
+        plan_preflight=FunctionReference(
+            "smartchem.water_wave_validation",
+            "_preflight_water_wave_validation",
+        ),
         runner=FunctionReference(
             "smartchem.water_wave_validation",
             "_execute_water_wave_validation",
@@ -278,6 +296,38 @@ _DESCRIPTORS = (
         ))),
     ),
     ExecutorDescriptor(
+        executor_id=(
+            "smartchem.water_wave_continuous/manufactured-steady-v1"
+        ),
+        resolved_container=TypeReference(
+            "smartchem.program",
+            "ResolvedDomainProgram",
+        ),
+        subject_type=TypeReference(
+            "smartchem.water_wave_continuous",
+            "ContinuousWaterSubject",
+        ),
+        subject_attribute="subject",
+        output_contract_factory=FunctionReference(
+            "smartchem.water_wave_continuous",
+            "_default_output_contract",
+        ),
+        plan_preflight=FunctionReference(
+            "smartchem.water_wave_continuous",
+            "plan_preflight",
+        ),
+        runner=FunctionReference(
+            "smartchem.water_wave_continuous",
+            "_execute_water_wave_continuous",
+        ),
+        implementation_modules=tuple(sorted((
+            *_SHARED_IMPLEMENTATION_MODULES,
+            "smartchem.water_wave_continuous",
+            "smartchem.water_wave_continuous_domain",
+            "smartchem.water_wave_validation_domain",
+        ))),
+    ),
+    ExecutorDescriptor(
         executor_id="smartchem.human_isotope/identifiability-v1",
         resolved_container=TypeReference("smartchem.program", "ResolvedDomainProgram"),
         subject_type=TypeReference("smartchem.human_isotope_domain", "HumanIsotopeSpec"),
@@ -285,6 +335,10 @@ _DESCRIPTORS = (
         output_contract_factory=FunctionReference(
             "smartchem.human_isotope",
             "_default_output_contract",
+        ),
+        plan_preflight=FunctionReference(
+            "smartchem.human_isotope",
+            "_preflight_human_isotope_identifiability",
         ),
         runner=FunctionReference(
             "smartchem.human_isotope",
@@ -310,6 +364,10 @@ _DESCRIPTORS = (
         output_contract_factory=FunctionReference(
             "smartchem.human_survival",
             "_default_output_contract",
+        ),
+        plan_preflight=FunctionReference(
+            "smartchem.human_survival",
+            "_preflight_human_survival",
         ),
         runner=FunctionReference(
             "smartchem.human_survival",
@@ -337,6 +395,10 @@ _DESCRIPTORS = (
         output_contract_factory=FunctionReference(
             "smartchem.ising_lattice_gas",
             "_default_output_contract",
+        ),
+        plan_preflight=FunctionReference(
+            "smartchem.ising_lattice_gas",
+            "_preflight_ising_lattice_gas",
         ),
         runner=FunctionReference(
             "smartchem.ising_lattice_gas",
@@ -386,6 +448,10 @@ def validate_output_contract(executor_id: str, contract: object) -> None:
 
 def resolve_runner(executor_id: str) -> Callable[..., object]:
     return descriptor_for(executor_id).resolve_runner()
+
+
+def resolve_plan_preflight(executor_id: str) -> Callable[..., object]:
+    return descriptor_for(executor_id).resolve_plan_preflight()
 
 
 def semantic_manifest() -> dict[str, object]:

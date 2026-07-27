@@ -1456,3 +1456,93 @@ the throttled SCF is several-fold slower than the incore one (25.5 s stock again
 **Lastly, the small vindication.** The live `VmHWM` reading taken while arm B was still
 running was 2.0236 GB and was published as a lower bound. The finished peak is 2.0671 GB.
 The bound held.
+
+---
+
+## Task #19 CLOSED: the only sizing formula visible in `ccsd.py` sizes buffers that never set the peak
+
+Measured 2026-07-26 with `experiments/ao2mo_sizing_probe.py`, committed. CH3OH/cc-pVQZ, 230
+basis functions, one arm per process, `OMP_NUM_THREADS=1`. The probe wraps `ao2mo.full`,
+`ao2mo.outcore.half_e1` and `ao2mo.outcore.guess_e1bufsize` and records, at the **call
+boundary**, the `max_memory` each site was handed together with its exclusive `ru_maxrss`
+delta. The budgets are therefore read as they cross the call, not reconstructed from a
+memory reading — which matters, because the memory reading is the quantity under suspicion.
+
+| arm | `mycc.max_memory` | live RSS at `ao2mo` entry | budget at `:1561` (vvvv) | budget at `:1568` | `ao2mo.full` Δpeak | outer `half_e1` Δpeak | `ao2mo` total | peak |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| A — stock | 4000 | 2931.3 MB | **2000.0** *(floored)* | 3690.3 | **+0.7663** | **+0.0000** | 0.7663 | 3.5596 |
+| B — throttled | 500 | 155.9 MB | **2000.0** *(floored)* | 2000.0 *(floored)* | **+1.8784** | **+0.0000** | 1.8784 | 2.0234 |
+| C — SCF only | 4000 | 155.5 MB | 3844.5 | 3946.0 | **+3.3712** | **+0.0000** | 3.3712 | 3.5157 |
+
+**THE HEADLINE, AND IT INVALIDATES THE HAND-DERIVATION IN #17.** In all three arms
+`ao2mo.full`'s delta *equals the entire* `CCSD.ao2mo` delta, and the `half_e1` nested inside
+it equals that in turn. So **100% of the transform's contribution to the peak is the vvvv
+transform at `ccsd.py:1561`**, and — `ru_maxrss` deltas being additive over any partition of
+the timeline — everything after it contributes exactly zero. That includes the `blksize`
+loop at `ccsd.py:1573-1586`, whose three documented buffers come to **1.2371 GB** at a
+2000 MB budget and **1.6353 GB** at arm C's. Task #17 hand-derived those buffers, got
+1.33 GB, and reported that it "matched neither arm". It matched neither arm because it was
+computing a set of arrays that **never set the mark**. The only sizing formula visible in
+the `ccsd` source is the one that does not own the peak.
+
+**THE UNREAD PATHS, NAMED.** Below `ccsd.py:1573` there are at least three more, none
+mentioned by the ccsd source:
+
+* `guess_e1bufsize` (`ao2mo/outcore.py:690`) — and it carries **a second floor**.
+  `iobuf_words = max(int(mem_words//6), IOBUF_WORDS)` with `IOBUF_WORDS = 1e8` words
+  = **800 MB**. `mem_words//6 ≥ 1e8` requires `max_memory ≥ 4800 MB`, so **below a 4800 MB
+  budget this buffer is a constant and `max_memory` does not control it at all.** Observed
+  `floored at IOBUF_WORDS: True` in all six calls across the three arms, and at cc-pVDZ too.
+  `MEMORYMIN = 2000` was not the only floor; it was the only floor anyone had read.
+* The `e1buflen` **override** at `outcore.py:442`: `e1buflen = max([x[2] for x in shranges])`.
+  The value `guess_e1bufsize` returns is fed to `guess_shell_ranges` and then **discarded** —
+  the buffers at `outcore.py:453-455` are sized from the shell ranges, not from the guess.
+  Any derivation that stops at the guess is computing a number the code throws away.
+* `guess_e2bufsize` (`outcore.py:702`) driving **four** further arrays at `outcore.py:294-297`,
+  off `ioblk_size = max(max_memory*.1, 256)` — 0.8528 GiB at a 2000 MB budget.
+
+**THE A-vs-C GAP IS THE THERMOSTAT, NOW READ OFF THE CALL RATHER THAN INFERRED.** Arm C is
+handed **3844.5 MB** at the vvvv site and arm A is handed **2000.0**. Same
+`mycc.max_memory = 4000`; the difference is `lib.current_memory()`, 155.5 MB against
+2931.3 MB, because arm A is carrying a resident `mf._eri`. `4000 − 2931.3 = 1068.7`, which
+floors to `MEMORYMIN`. So a resident AO tensor costs the transform **1.92× of its own
+budget**, and that is the mechanism #17 described from the source printed as a number.
+
+**AND THE A-vs-B ANOMALY THAT OPENED THIS TASK IS DISSOLVED RATHER THAN EXPLAINED.** #19 was
+filed because the budget formula predicted arms A and B would be equal and they measured
+1.81× apart. The formula was right: **both arms are handed exactly 2000.0 MB at the same
+site**, both floored to `MEMORYMIN`. There is no second budget. The peak deltas differ
+anyway — 0.7663 against 1.8784, 2.45× — so the discrepancy was never about sizing.
+
+**CONJECTURED, not measured, with the discriminating probe named.** `numpy.empty` reserves
+address space; RSS grows only as pages are first touched. Arm A enters the transform with
+2.73 GB already resident, so part of the request can be served from already-faulted pages;
+arm B enters with 0.145 GB and faults everything. If that is right, **a `ru_maxrss` delta is
+not an allocation**, and the two questions come apart: *which phase owns the peak* is
+answerable from a monotone counter, *how much does this phase need* is not. The supporting
+observation is that the arm with the largest resident pool is the least reproducible —
+across the two probes, arm C agrees with itself to **0.2%** (3.5157 vs 3.5233/3.5244), arm B
+to **2.1%** (2.0234 vs 2.0671), and arm A to **7.7%** (3.5596 vs 3.8568), with A's `ao2mo`
+delta alone 38% apart (0.7663 vs 1.0617). **The probe that decides it:** record
+`/proc/self/statm` at exit as well as entry for each wrapped call, so live growth and peak
+growth can be compared directly. Until that runs, no per-phase memory *requirement* is
+established here — only per-phase *peak ownership*, which is what the instrument measures.
+
+**THE PREDICTION REGISTERED IN THE PROBE'S DOCSTRING WAS REFUTED, ON BOTH HALVES.** It said
+`half_e1`'s exclusive delta would be roughly equal across arms A and B, and that the loop
+after `blksize` was where they diverge. The loop contributes **zero in every arm**, and
+`half_e1` is exactly where they diverge (0.77 against 1.88). Right suspect function, wrong
+role for it — which is the same error shape as #17's refuted claim, one level down: reasoning
+about *which* code runs instead of measuring *what it allocates*.
+
+**Bit-identity holds across this probe too.** `E_SCF = -115.099552400814 Ha` in all three
+arms, all fifteen figures, matching `ao_storage_probe.py`'s four readings exactly — seven
+runs across two independent instruments. The boundary is unchanged and still stands: both
+probes stop after `ao2mo()`, so bit-identity of `E_CCSD(T)` or `D_e` under throttling remains
+**UNVERIFIED**.
+
+**Instrument limitation, stated because this probe does NOT replace the other one.** One run
+per arm. It measures *attribution* — which sub-phase, handed which budget — which is a
+within-run comparison and is sound from a monotone counter. Its peak figures are
+corroboration of `ao_storage_probe.py`'s replicated ones, not a refinement of them, and the
+7.7% arm-A disagreement between the two probes is exactly why that distinction is kept.

@@ -12,10 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Package source tree
-        run: tar --exclude=.git --exclude=smartchem-source.tgz -czf smartchem-source.tgz .
+        run: git archive --format=tar.gz --output=/tmp/smartchem-source.tgz HEAD
       - name: Upload source tree
         uses: actions/upload-artifact@v4
         with:
           name: smartchem-source-${{ github.sha }}
-          path: smartchem-source.tgz
+          path: /tmp/smartchem-source.tgz
           retention-days: 1

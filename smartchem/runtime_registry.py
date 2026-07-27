@@ -256,6 +256,28 @@ _DESCRIPTORS = (
         ))),
     ),
     ExecutorDescriptor(
+        executor_id="smartchem.water_wave/finite-section-compatibility-v2",
+        resolved_container=TypeReference("smartchem.program", "ResolvedDomainProgram"),
+        subject_type=TypeReference(
+            "smartchem.water_wave_validation_domain",
+            "WaterWaveValidationSpec",
+        ),
+        subject_attribute="subject",
+        output_contract_factory=FunctionReference(
+            "smartchem.water_wave_validation",
+            "_default_output_contract",
+        ),
+        runner=FunctionReference(
+            "smartchem.water_wave_validation",
+            "_execute_water_wave_validation",
+        ),
+        implementation_modules=tuple(sorted((
+            *_SHARED_IMPLEMENTATION_MODULES,
+            "smartchem.water_wave_validation",
+            "smartchem.water_wave_validation_domain",
+        ))),
+    ),
+    ExecutorDescriptor(
         executor_id="smartchem.human_isotope/identifiability-v1",
         resolved_container=TypeReference("smartchem.program", "ResolvedDomainProgram"),
         subject_type=TypeReference("smartchem.human_isotope_domain", "HumanIsotopeSpec"),

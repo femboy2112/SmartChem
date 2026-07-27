@@ -168,7 +168,7 @@ def test_typed_shepherd_session_is_the_execution_authority(tmp_path):
     )
     diagnostic = report.result.values[0].payload
     assert isinstance(diagnostic, HorizonDiagnostic)
-    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_IN_DECLARED_MODEL
+    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES
     assert len(diagnostic.samples) == len(spec.profile)
     assert len(diagnostic.horizons) == 1
     expected = (math.sqrt(9.81 * 0.1) - 0.8) / (1.2 - 0.8)
@@ -201,7 +201,7 @@ def test_no_horizon_is_a_complete_negative_result():
 
     assert report.record.status is RunStatus.COMPLETE
     diagnostic = report.result.values[0].payload
-    assert diagnostic.status is HorizonStatus.NO_HORIZON_IN_DECLARED_REGIME
+    assert diagnostic.status is HorizonStatus.NO_BRACKET_IN_SUPPLIED_SAMPLES
     assert diagnostic.horizons == ()
 
 
@@ -458,7 +458,7 @@ def test_engine_cannot_forge_a_conforming_looking_diagnostic(forgery):
                 return replace(
                     genuine,
                     horizons=(),
-                    status=HorizonStatus.NO_HORIZON_IN_DECLARED_REGIME,
+                    status=HorizonStatus.NO_BRACKET_IN_SUPPLIED_SAMPLES,
                 )
             forged_horizon = replace(
                 genuine.horizons[0],

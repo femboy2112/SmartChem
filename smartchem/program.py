@@ -159,6 +159,9 @@ def _compiler_implementation_digest() -> str:
 
 _REACTION_EXECUTOR = "smartchem.program/reaction-energy-v1"
 _WATER_WAVE_EXECUTOR = "smartchem.water_wave/shallow-water-horizon-v1"
+_WATER_WAVE_VALIDATION_EXECUTOR = (
+    "smartchem.water_wave/finite-section-compatibility-v2"
+)
 _HUMAN_ISOTOPE_EXECUTOR = "smartchem.human_isotope/identifiability-v1"
 
 
@@ -1309,6 +1312,69 @@ def _observable_payload_error(
             return "water_wave_horizon does not equal the independently recomputed diagnostic"
         if profile != diagnostic.samples:
             return "water-wave characteristic profile does not equal the diagnostic samples"
+        return None
+    if plan.executor_id == _WATER_WAVE_VALIDATION_EXECUTOR:
+        from .water_wave_validation_domain import (
+            CrossingBracket,
+            SampleDiagnostic,
+            ValidationDiagnostic,
+            WaterWaveValidationSpec,
+            diagnose_water_wave_background,
+        )
+
+        resolved = plan.request.resolved
+        if (
+            type(resolved) is not ResolvedDomainProgram
+            or type(resolved.subject) is not WaterWaveValidationSpec
+        ):
+            return "water-background plan has no exact WaterWaveValidationSpec subject"
+        diagnostic = payloads.get("water_background_validation")
+        samples = payloads.get("water_background_sample_diagnostics")
+        crossings = payloads.get("water_background_crossing_brackets")
+        regime = payloads.get("water_background_regime_inventory")
+        if type(diagnostic) is not ValidationDiagnostic:
+            return "water_background_validation must retain an exact ValidationDiagnostic"
+        if (
+            type(samples) is not tuple
+            or any(type(item) is not SampleDiagnostic for item in samples)
+        ):
+            return (
+                "water_background_sample_diagnostics must retain every exact "
+                "SampleDiagnostic"
+            )
+        if (
+            type(crossings) is not tuple
+            or any(type(item) is not CrossingBracket for item in crossings)
+        ):
+            return (
+                "water_background_crossing_brackets must retain every exact "
+                "CrossingBracket"
+            )
+        try:
+            reference = diagnose_water_wave_background(resolved.subject)
+        except ValueError as error:
+            return f"approved water-background subject is unclassifiable: {error}"
+        expected_regime = (
+            reference.status,
+            reference.continuity_gate_passed,
+            reference.head_gate_passed,
+            reference.shallow_water_gate_passed,
+            reference.gravity_capillarity_gate_passed,
+            reference.uncertainty_resolved_bracket_gate_passed,
+            reference.position_order_resolved_gate_passed,
+            reference.orientation_gate_passed,
+        )
+        if canonical_digest(diagnostic) != canonical_digest(reference):
+            return (
+                "water_background_validation does not equal the independently "
+                "recomputed diagnostic"
+            )
+        if samples != reference.samples:
+            return "water-background sample inventory differs from the diagnostic"
+        if crossings != reference.crossings:
+            return "water-background crossing inventory differs from the diagnostic"
+        if regime != expected_regime:
+            return "water-background regime inventory differs from the diagnostic"
         return None
     if plan.executor_id == _HUMAN_ISOTOPE_EXECUTOR:
         from .human_isotope_domain import (

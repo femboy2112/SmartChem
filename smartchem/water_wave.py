@@ -146,17 +146,21 @@ def _default_output_contract() -> OutputContract:
                 observable_id="water_wave_horizon",
                 kind="branch-specific shallow-water kinematic horizon diagnostic",
                 unit="structured SI record",
-                support="every isolated crossing in the complete supplied 1-D profile",
+                support=(
+                    "every strict crossing bracketed by adjacent supplied samples under "
+                    "the declared linear interpolant"
+                ),
                 resolution="linear interpolation between every adjacent supplied sample",
                 precision=(
                     "retain binary64 values; no measurement or interpolation uncertainty "
                     "is invented"
                 ),
                 coverage=(
-                    "all supplied profile points and all selected-characteristic crossings"
+                    "all supplied profile points and all sample-bracketed "
+                    "selected-characteristic crossings"
                 ),
                 diagnostics=(
-                    "complete negative NO_HORIZON_IN_DECLARED_REGIME status",
+                    "sample-bounded NO_BRACKET_IN_SUPPLIED_SAMPLES status",
                     "black/white orientation along the declared flow direction",
                     "bracketing sample indices for every crossing",
                 ),
@@ -321,7 +325,8 @@ def compile_water_wave_horizon(
         ),
         postconditions=(
             "every input point has one retained characteristic sample",
-            "every strict crossing is retained or a complete no-horizon status is returned",
+            "every sample-bracketed strict crossing is retained or a no-bracket-at-samples "
+            "status is returned without claiming continuous-profile absence",
             "computed horizon orientations meet the approved scientist selection",
         ),
         conserved=(),
@@ -668,7 +673,7 @@ def _diagnostic_is_complete(
             or not math.isfinite(sample.froude_number)
         ):
             return False
-    if diagnostic.status is HorizonStatus.NO_HORIZON_IN_DECLARED_REGIME:
+    if diagnostic.status is HorizonStatus.NO_BRACKET_IN_SUPPLIED_SAMPLES:
         return not diagnostic.horizons
     return bool(diagnostic.horizons)
 

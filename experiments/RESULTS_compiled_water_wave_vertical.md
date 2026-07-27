@@ -12,12 +12,18 @@ x = 0.47613610288287683 m
 orientation = BLACK
 ```
 
-This is the linearly interpolated zero of the counter-current nondispersive characteristic
+This is the linearly interpolated zero bracketed by two adjacent samples of the counter-current nondispersive characteristic
 `U - sqrt(g h)` in a four-point **synthetic prescribed profile**. It is a
 `ClaimScope = ANALOGUE` and `EvidenceStatus = STRUCTURAL_TOY` result. It is not a measured
 flume horizon, a continuum free-surface simulation, a scattering calculation, a Hawking
 temperature, quantum radiation, backreaction, literal gravity, or an astrophysical black
 hole.
+
+The line above is the immutable historical run's status. After adversarial review, the current
+v1 code tightened the name to
+`KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES`: it certifies a bracket in the supplied
+samples under the declared linear interpolant. A no-bracket result does not prove that an
+unobserved continuous profile has no crossing.
 
 ## Frozen request
 

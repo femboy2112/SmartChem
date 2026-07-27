@@ -68,7 +68,7 @@ def request(
 def test_counter_current_positive_flow_acceleration_is_a_black_horizon():
     diagnostic = diagnose_horizon(request((0.5 * C, 1.5 * C)))
 
-    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_IN_DECLARED_MODEL
+    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES
     assert len(diagnostic.horizons) == 1
     horizon = diagnostic.horizons[0]
     assert horizon.orientation is HorizonOrientation.BLACK
@@ -82,7 +82,7 @@ def test_counter_current_positive_flow_deceleration_is_a_white_horizon():
         request((1.5 * C, 0.5 * C), orientation=HorizonOrientation.WHITE)
     )
 
-    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_IN_DECLARED_MODEL
+    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES
     assert diagnostic.horizons[0].orientation is HorizonOrientation.WHITE
     assert diagnostic.horizons[0].position_m == pytest.approx(0.5)
 
@@ -96,7 +96,7 @@ def test_negative_x_flow_uses_downstream_order_not_left_to_right_order():
         )
     )
 
-    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_IN_DECLARED_MODEL
+    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES
     assert diagnostic.horizons[0].orientation is HorizonOrientation.BLACK
     assert diagnostic.horizons[0].position_m == pytest.approx(0.5)
 
@@ -110,17 +110,32 @@ def test_negative_x_flow_deceleration_along_flow_is_a_white_horizon():
         )
     )
 
-    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_IN_DECLARED_MODEL
+    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES
     assert diagnostic.horizons[0].orientation is HorizonOrientation.WHITE
     assert diagnostic.horizons[0].position_m == pytest.approx(0.5)
 
 
-def test_subcritical_counter_current_profile_is_a_complete_no_horizon_result():
+def test_subcritical_samples_report_only_no_bracket_at_samples():
     diagnostic = diagnose_horizon(request((0.2 * C, 0.8 * C)))
 
-    assert diagnostic.status is HorizonStatus.NO_HORIZON_IN_DECLARED_REGIME
+    assert diagnostic.status is HorizonStatus.NO_BRACKET_IN_SUPPLIED_SAMPLES
     assert diagnostic.horizons == ()
     assert len(diagnostic.samples) == len(diagnostic.spec.profile) == 2
+
+
+def test_unsampled_crossing_counterexample_prevents_a_continuous_absence_claim():
+    endpoints_only = diagnose_horizon(request((0.4 * C, 0.4 * C)))
+    resolved_middle = diagnose_horizon(request((0.4 * C, 1.2 * C, 0.4 * C)))
+
+    assert endpoints_only.status is HorizonStatus.NO_BRACKET_IN_SUPPLIED_SAMPLES
+    assert endpoints_only.horizons == ()
+    assert resolved_middle.status is (
+        HorizonStatus.KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES
+    )
+    assert tuple(point.orientation for point in resolved_middle.horizons) == (
+        HorizonOrientation.BLACK,
+        HorizonOrientation.WHITE,
+    )
 
 
 def test_co_current_characteristic_has_no_horizon_for_unidirectional_flow():
@@ -128,7 +143,7 @@ def test_co_current_characteristic_has_no_horizon_for_unidirectional_flow():
         request((0.5 * C, 1.5 * C), branch=WaveBranch.CO_CURRENT)
     )
 
-    assert diagnostic.status is HorizonStatus.NO_HORIZON_IN_DECLARED_REGIME
+    assert diagnostic.status is HorizonStatus.NO_BRACKET_IN_SUPPLIED_SAMPLES
     assert diagnostic.horizons == ()
     assert all(sample.selected_characteristic_m_s > 0.0 for sample in diagnostic.samples)
 
@@ -141,7 +156,7 @@ def test_multiple_crossings_are_retained_and_can_satisfy_a_requested_pair():
         )
     )
 
-    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_IN_DECLARED_MODEL
+    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES
     assert tuple(horizon.orientation for horizon in diagnostic.horizons) == (
         HorizonOrientation.BLACK,
         HorizonOrientation.WHITE,
@@ -152,7 +167,7 @@ def test_multiple_crossings_are_retained_and_can_satisfy_a_requested_pair():
 def test_an_isolated_exact_critical_sample_is_a_strict_zero_crossing():
     diagnostic = diagnose_horizon(request((0.5 * C, C, 1.5 * C)))
 
-    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_IN_DECLARED_MODEL
+    assert diagnostic.status is HorizonStatus.KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES
     assert len(diagnostic.horizons) == 1
     assert diagnostic.horizons[0].orientation is HorizonOrientation.BLACK
     assert diagnostic.horizons[0].position_m == pytest.approx(1.0)

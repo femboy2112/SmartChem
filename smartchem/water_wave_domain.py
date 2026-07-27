@@ -74,10 +74,12 @@ class FlowDirection(str, Enum):
 
 
 class HorizonStatus(str, Enum):
-    """A complete negative result is distinct from an invalid declared regime."""
+    """Sample-bracketing result; unsampled continuous behavior remains unknown."""
 
-    KINEMATIC_CROSSING_IN_DECLARED_MODEL = "KINEMATIC_CROSSING_IN_DECLARED_MODEL"
-    NO_HORIZON_IN_DECLARED_REGIME = "NO_HORIZON_IN_DECLARED_REGIME"
+    KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES = (
+        "KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES"
+    )
+    NO_BRACKET_IN_SUPPLIED_SAMPLES = "NO_BRACKET_IN_SUPPLIED_SAMPLES"
     ORIENTATION_MISMATCH = "ORIENTATION_MISMATCH"
 
 
@@ -250,8 +252,9 @@ def diagnose_horizon(spec: WaterWaveSpec) -> HorizonDiagnostic:
     ``COUNTER_CURRENT`` uses ``U - sign(U) sqrt(g h)``.  ``CO_CURRENT`` uses
     ``U + sign(U) sqrt(g h)``.  Individual horizons are BLACK when, travelling
     downstream, the selected characteristic changes from negative to positive;
-    the reverse transition is WHITE.  A boundary zero, a zero plateau, or a
-    zero that merely touches rather than crosses is refused as unclassifiable.
+    the reverse transition is WHITE. A boundary zero, a zero plateau, or a zero that merely
+    touches rather than crosses is refused as unclassifiable. Absence of a bracket does not
+    establish absence of a crossing between samples.
     """
     if not isinstance(spec, WaterWaveSpec):
         raise TypeError("spec must be a WaterWaveSpec value")
@@ -268,9 +271,9 @@ def diagnose_horizon(spec: WaterWaveSpec) -> HorizonDiagnostic:
     )
     horizons = _find_horizons(samples, flow_sign)
     if not horizons:
-        status = HorizonStatus.NO_HORIZON_IN_DECLARED_REGIME
+        status = HorizonStatus.NO_BRACKET_IN_SUPPLIED_SAMPLES
     elif _orientation_matches(spec.requested_orientation, horizons):
-        status = HorizonStatus.KINEMATIC_CROSSING_IN_DECLARED_MODEL
+        status = HorizonStatus.KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES
     else:
         status = HorizonStatus.ORIENTATION_MISMATCH
     return HorizonDiagnostic(spec=spec, samples=samples, horizons=horizons, status=status)

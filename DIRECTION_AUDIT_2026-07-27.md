@@ -44,7 +44,7 @@ What exists is unusually valuable:
   non-linear constraints;
 - adversarial and mutation testing that has repeatedly falsified stronger-looking claims.
 
-The 2026-07-27 implementation added that connection for three deliberately narrow verticals:
+The 2026-07-27 implementation added that connection for four deliberately narrow verticals:
 
 - a closed executor registry, a full shipped-source approval identity, and exclusive
   run-owned journals that prevent one calculation from erasing another;
@@ -57,6 +57,10 @@ The 2026-07-27 implementation added that connection for three deliberately narro
 - one typed, branch-specific, prescribed-background shallow-water characteristic diagnostic,
   executed on a synthetic profile as `ANALOGUE/STRUCTURAL_TOY`, with every input/derived point,
   omission, and literal-gravity casualty retained.
+- one typed manufactured finite-section water preflight that screens nominal discharge and
+  Bernoulli-head compatibility, declared `kh` and depth Bond-number bounds, sign-aware
+  branch/orientation, and crossing uncertainty without claiming a continuous stationary
+  solution or measured validation.
 - one typed human–isotope structural identifiability diagnostic, executed on a completely
   synthetic endpoint/protocol as `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`, which
   constructs two incompatible mathematical probability families satisfying the same median
@@ -67,12 +71,13 @@ What still does not exist is the general version: a language covering arbitrary 
 open-process and multiphysics semantics, a planner choosing among multiple valid model chains,
 general cross-domain transport/assembly compilation, a general post-run validity/refinement
 runtime, or a conversational surface. The executable bridges accept one typed `Reaction`, one
-typed `WaterWaveSpec`, or one typed `HumanIsotopeSpec` from an outright-compiled `Session`;
-this trio is still not a general `SimulationPlan` compiler, continuum wave solver,
+typed `WaterWaveSpec`, one typed `WaterWaveValidationSpec`, or one typed
+`HumanIsotopeSpec` from an outright-compiled `Session`; this set is still not a general
+`SimulationPlan` compiler, continuum wave solver,
 toxicology model, or mortality simulator.
 
 **This audit set the contract seam before the conversational UI.** That narrow seam is now
-implemented and exercised across three deliberately narrow calculations. The same ordering
+implemented and exercised across four deliberately narrow calculations. The same ordering
 still governs the remaining general work:
 build and test semantics before adding a fluent surface that could make missing semantics look
 complete.
@@ -281,10 +286,10 @@ predicate, an exactness or discrepancy reference, and an emitted transform recor
 | Human–isotope cross-scale slice | **Executed structural underidentification test** | The typed language binds target, population, granularity, assembly, environment, hazard effect, toxicokinetic link, LD50/LC50 protocol, and calibration evidence. The runtime independently rechecks that distinct exponential and Weibull probability witnesses share the one median endpoint while disagreeing away from it. The run is `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`; individual, cause-specific, observed-data, and empirically calibrated or predictive probability outputs remain blocked. |
 | Public quantum-chemistry output | **Implemented in a narrow domain** | Enabled neutral atoms and fixed neutral diatomics under measured protocols; broader internal code fails closed rather than inheriting evidence. |
 | General simulation runtime | **Unbuilt** | No general state evolution, boundary/reservoir semantics, time integration, mesh, ensemble, or coupled solver system. |
-| Typed Physical IR and language | **Built for three narrow verticals; otherwise unbuilt** | The minimal source/IR records support H2, the prescribed-background water diagnostic, and a human-proxy identifiability record including typed calibration and model patches. They do not yet cover general worlds, typed ports, validated cross-scale dynamics, or a general simulation language. |
-| Output contract and approval gate | **Built for three narrow verticals** | All three executors require their exact output contracts; changing membership, support, resolution, precision, coverage, diagnostics, or retention blocks execution until a different executor exists. Broader policy and tradeoff negotiation remain unbuilt. |
-| Post-run validity transition | **Built for three narrow verticals** | Named obligations and complete/incomplete/invalid/refused/failed records exist on all three; no general solver/result-state runtime exists. |
-| Result certificate | **Built for three narrow verticals** | Receipts bind the H2, structural water, and structural human-identifiability runs to their scope, evidence, omissions, and casualties; this is not yet a general artifact system. |
+| Typed Physical IR and language | **Built for four narrow verticals; otherwise unbuilt** | The minimal source/IR records support H2, two distinct finite water diagnostics, and a human-proxy identifiability record including typed calibration and model patches. They do not yet cover general worlds, typed ports, validated cross-scale dynamics, or a general simulation language. |
+| Output contract and approval gate | **Built for four narrow verticals** | All four executors require their exact output contracts; changing membership, support, resolution, precision, coverage, diagnostics, or retention blocks execution until a different executor exists. Broader policy and tradeoff negotiation remain unbuilt. |
+| Post-run validity transition | **Built for four narrow verticals** | Named obligations and complete/incomplete/invalid/refused/failed records exist on all four; no general solver/result-state runtime exists. |
+| Result certificate | **Built for four narrow verticals** | Receipts bind the H2, both structural water, and structural human-identifiability runs to their scope, evidence, omissions, and casualties; this is not yet a general artifact system. |
 
 The strongest honest summary is:
 
@@ -542,7 +547,8 @@ without flattening them into the same confidence class.
 - require the scientist to select the transported phenomenon and black/white orientation;
 - derive or numerically check the branch-specific horizon condition from the approved
   fluid/wave model;
-- report `NO_HORIZON_IN_DECLARED_REGIME` when the flow never crosses the relevant wave speed;
+- report `NO_BRACKET_IN_SUPPLIED_SAMPLES` when no adjacent supplied samples bracket the
+  relevant wave speed; this does not establish absence between samples;
 - distinguish nondispersive, gravity-capillary, viscous, nonlinear, and turbulent regimes;
 - record the applicability of stationarity, dimensionality, irrotational/barotropic or
   shallow-water assumptions, depth and capillarity regime, vorticity/shear,
@@ -769,7 +775,7 @@ and complete SI profile. The current executor implements only the classical nond
 `U +/- sqrt(g h)` characteristic diagnostic. Unsupported scattering, thermal, quantum,
 laser, backreaction, viscous, nonlinear, turbulent, and gravity-capillary requests are
 planning blockers. A synthetic four-point run reached `COMPLETE` with a
-`KINEMATIC_CROSSING_IN_DECLARED_MODEL` at the independently reproduced interpolated position;
+`KINEMATIC_CROSSING_BRACKETED_IN_SUPPLIED_SAMPLES` at the independently reproduced interpolated position;
 its scope is `ANALOGUE` and its evidence is `STRUCTURAL_TOY`. The certificate explicitly
 records that the profile is synthetic and that wavelength/frequency, capillarity, stationary
 continuity/momentum, measurement/resolution uncertainty, and interpolation discrepancy were

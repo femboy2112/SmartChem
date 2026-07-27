@@ -159,6 +159,27 @@ from .water_wave import (
     compile_water_wave_horizon,
     water_wave_slot,
 )
+from .water_wave_validation_domain import (
+    BackgroundSample,
+    BackgroundTolerances,
+    CharacteristicInterval,
+    CrossingBracket,
+    DeclaredWavelengthSupport,
+    FluidProperties,
+    SampleDiagnostic,
+    ValidationDiagnostic as WaterWaveValidationDiagnostic,
+    ValidationStatus as WaterWaveValidationStatus,
+    WaterWaveValidationSpec,
+    diagnose_water_wave_background,
+)
+from .water_wave_validation import (
+    WATER_WAVE_VALIDATION_CASUALTIES,
+    WATER_WAVE_VALIDATION_OMISSIONS,
+    FiniteSectionCompatibilityEngine,
+    compile_session_water_wave_validation,
+    compile_water_wave_validation,
+    water_wave_validation_slot,
+)
 from .human_isotope_domain import (
     AssemblyKind,
     CalibrationEvidence,
@@ -290,6 +311,15 @@ __all__ = [
     "ShallowWaterHorizonEngine", "WATER_WAVE_CASUALTIES", "WATER_WAVE_OMISSIONS",
     "compile_session_water_wave_horizon", "compile_water_wave_horizon",
     "water_wave_slot",
+    # water-wave v2 -- manufactured finite-section compatibility, not validation
+    "BackgroundSample", "BackgroundTolerances", "CharacteristicInterval",
+    "CrossingBracket", "DeclaredWavelengthSupport", "FluidProperties",
+    "SampleDiagnostic", "WaterWaveValidationDiagnostic",
+    "WaterWaveValidationStatus", "WaterWaveValidationSpec",
+    "diagnose_water_wave_background", "WATER_WAVE_VALIDATION_CASUALTIES",
+    "WATER_WAVE_VALIDATION_OMISSIONS", "FiniteSectionCompatibilityEngine",
+    "compile_session_water_wave_validation", "compile_water_wave_validation",
+    "water_wave_validation_slot",
     # human-isotope proxy -- typed underidentification, never a human mortality prediction
     "AssemblyKind", "CalibrationEvidence", "ConstraintInventory",
     "EnvironmentalProtocol", "EvidenceBasis", "ExposureEvent", "ExposureMetric",

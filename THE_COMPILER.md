@@ -424,7 +424,10 @@ thing that blocks it is a fact about the design, not about the effort.
   informative case behind the failure case. **A cardinality measure is the wrong measure for
   a shepherding loop, and §VI.3 will need a well-founded one — depth-weighted, or ordinal —
   before the loop of §I can run more than one round of genuine refinement.** That is a fact
-  about the design, which is what this build order is for.
+  about the design, which is what this build order is for. *(Both halves of that sentence
+  are now discharged and dated: the ordinal measure two paragraphs down, and the §I loop it
+  was gating in Brick 4 below — where the widening round runs as the middle of a four-round
+  dialogue instead of halting it.)*
 
   **AND IT IS NOW FIXED, 2026-07-26 — the ordinal one, and it is the multiset order.** A
   `Slot` carries a `rank`: how abstract the question is, and therefore how far it may still
@@ -473,6 +476,60 @@ thing that blocks it is a fact about the design, not about the effort.
   and nothing else. No parentage is recorded and none is checked, so a responder may close a
   rank-3 hole and open two rank-2 holes about something else entirely and be accepted.
   Semantic descent is not decidable here; that the dialogue ends is.
+
+* **Brick 4 — §I's loop, end to end, and §I's second clause. BUILT, 2026-07-26,
+  `experiments/section_i_end_to_end.py` and `tests/test_section_i.py`.** This is the brick
+  the paragraph above was gating, and the prediction it made is discharged: the loop now
+  runs **four rounds on a real spec, one of which is a genuine refinement.** Round 2 closes
+  `geometry` — §I's own *"constrained, but you have not said to what"* — and opens
+  `geometry.bond_lengths` and `geometry.frame` beneath it. The count of free parameters goes
+  `1 → 2` and the measure goes `[1] → [0,0]`: `reduced` False and `descended` True on one
+  `Round` object. **That is the round the cardinality rule halted the compiler on**, running
+  as the middle of a dialogue instead of the end of one.
+
+  **Every menu in it is derived, and that is the part that took the work.** The reaction
+  options are Brick 0's `stoichiometry_menu`; the bond-length options are
+  `geometry.seed_bond_length` over the distinct bond types actually present in the candidate
+  species; the frame options come from calling `is_linear` on `seed_coordinates`' own output.
+  Nothing is written by hand, and `Slot.__post_init__` would refuse it if it were.
+
+  **§I'S SECOND CLAUSE EXISTED ONLY AS PROSE UNTIL NOW, AND THAT IS THE REAL DELIVERABLE.**
+  §I promises *"Choose one, **or write one and I will check it against the same rules.**"*
+  Brick 0 implemented the first clause in July and the second was never built — which makes
+  a derived menu a multiple-choice question wearing the costume of a dialogue.
+  `StoichiometryMenu.check` is the second clause, and *the same rules* is enforced literally
+  rather than rhetorically: the verdict is `A @ ν` against the menu's **own `matrix`**, the
+  identical object that produced `completions`, not a second checker written to agree with
+  the first. A test asserts the two clauses agree — every option the menu *offers* passes the
+  check the menu *applies* — because if they ever disagreed, one of them would be lying about
+  which rules it used.
+
+  **Three things a naive residual test gets wrong, kept apart deliberately.** The all-zero
+  vector satisfies `A @ ν == 0` exactly, on every row, in every menu that has ever existed,
+  and is not a reaction — reporting it admissible would be a confident yes about the empty
+  statement. `admissible` (it balances) and `verified` (…and the invariants could see every
+  species it touches) are two claims, and `Na(*) → Na` is the case that separates them: the
+  columns are identical because `state` is deliberately outside the conserved signature, so
+  `A @ ν` is unchanged by either column and a zero residual is *silence* about de-excitation
+  rather than evidence of it. Same distinction as `COMPILED` against `COMPILED_SUBJECT_TO`,
+  and `bool(Written)` follows the stronger claim. And a malformed input — wrong length,
+  a float, a coefficient weight past the allocation bound — **raises** instead of returning
+  `False`, because answering a malformed question with `False` tells a scientist their
+  chemistry is wrong when their typing was.
+
+  **And the refusal is informative, which is §IX applied to arithmetic.** `CH4 + O2 → CO2 +
+  2 H2O` comes back not as *no* but as **`O off by -2`** — the row label is
+  `composition_matrix`'s, so even the diagnosis is derived. What makes realisation a
+  *verification* rather than a flag: `Reaction`'s constructor re-derives conservation by
+  accumulating formula dictionaries and **raises** rather than returning something wrong, so
+  the existence of the object is the evidence. `COMPILED` is the loop's opinion of its own
+  dialogue; the constructed `Reaction` is the category's.
+
+  **One defect found on the way, in code that predates this brick.** `Completion.equation()`
+  took a caller-supplied species tuple and `zip`ped it against the coefficients — and `zip`
+  truncates in silence, so a short tuple rendered a **shorter balance that reads as
+  complete**. A plausible wrong equation, reachable from a public method, in the module whose
+  entire purpose is refusing plausible wrong answers. It raises now.
 
 The ordering matters. **Brick 0 before anything conversational.** The dialogue is the last
 thing built, not the first, because the dialogue is the part that can fake working.

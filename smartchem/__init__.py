@@ -71,9 +71,11 @@ from .ledger import (
     shepherd,
 )
 from .stoichiometry import (
+    MAX_WRITTEN_WEIGHT,
     Completion,
     MenuContradiction,
     StoichiometryMenu,
+    Written,
     composition_matrix,
     integer_kernel_basis,
     stoichiometry_menu,
@@ -125,6 +127,7 @@ __all__ = [
     "reaction_residue", "tensor_obj",
     # stoichiometry -- the inverse of `conserves`: derive the balances, never guess them
     "Completion", "StoichiometryMenu", "MenuContradiction",
+    "Written", "MAX_WRITTEN_WEIGHT",
     "composition_matrix", "integer_kernel_basis", "stoichiometry_menu",
 
     # domain -- what an oracle declares it can price, before being called

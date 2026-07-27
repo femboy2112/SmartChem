@@ -127,12 +127,14 @@ from fractions import Fraction
 from functools import reduce
 from math import gcd
 
-from .category import Config, Molecule, Reaction
+from .category import Config, ConservationError, Molecule, Reaction
 
 __all__ = [
+    "MAX_WRITTEN_WEIGHT",
     "Completion",
     "MenuContradiction",
     "StoichiometryMenu",
+    "Written",
     "composition_matrix",
     "integer_kernel_basis",
     "stoichiometry_menu",
@@ -347,6 +349,16 @@ class Completion:
         species tuple rather than storing it because a ``Completion`` is only ever handed
         out by the menu that owns that tuple.
         """
+        if len(species) != len(self.coefficients):
+            # ``zip`` truncates in silence, so a species tuple of the wrong length used to
+            # render a SHORTER equation that looks entirely plausible and drops terms
+            # without saying so. A plausible wrong equation is the exact failure this
+            # package exists to refuse, and it was reachable from a public method.
+            raise ValueError(
+                f"equation() got {len(species)} species for {len(self.coefficients)} "
+                f"coefficients; zip would drop the difference and render a shorter "
+                f"balance that reads as complete. Pass the menu's own species tuple")
+
         def side(keep) -> str:
             terms = [f"{abs(c) if abs(c) != 1 else ''}{m!r}"
                      for m, c in zip(species, self.coefficients) if keep(c)]
@@ -366,6 +378,85 @@ class Completion:
         flag = "  [UNCONSTRAINED: touches a species the invariants cannot see]" \
             if self.unconstrained else ""
         return f"{self.reaction.dom} -> {self.reaction.cod}{flag}"
+
+
+#: The largest total coefficient weight :meth:`StoichiometryMenu.check` will materialise.
+#: ``_configs`` builds ``abs(coefficient)`` molecule objects per species, so an unbounded
+#: written vector is an unbounded allocation reachable from a public entry point that takes
+#: whatever a scientist typed. No balance in chemistry needs this much; the cap is a
+#: statement about the arithmetic, not about the chemistry, and it refuses loudly.
+MAX_WRITTEN_WEIGHT = 1000
+
+
+@dataclass(frozen=True)
+class Written:
+    """
+    A balance the scientist WROTE, judged by the rules that derived the menu.
+
+    Section I's ask has two clauses -- *"choose one, or write one and I will check it
+    against the same rules"* -- and only the first was implemented. This is the second.
+    "The same rules" is meant literally: the verdict is ``A @ nu == 0`` against the menu's
+    own ``matrix``, the identical object that produced ``completions``, not a second
+    checker written to agree with the first.
+
+    **Two claims, kept apart, because collapsing them is how a plausible wrong yes gets
+    out.** ``admissible`` says the vector balances under the declared invariants.
+    ``verified`` says that *and* that the invariants could actually see every species it
+    touches -- an invariant-blind species contributes an all-zero column, so ``A @ nu``
+    is silent about it and a balance that leans on one has not been checked, it has been
+    unexamined. Same distinction as ``COMPILED`` against ``COMPILED_SUBJECT_TO``.
+
+    ``trivial`` is the third thing a naive check gets wrong: the all-zero vector satisfies
+    ``A @ nu == 0`` exactly and is not a reaction. Reporting it as admissible would be a
+    confident yes about the empty statement.
+    """
+    coefficients: tuple[int, ...]
+    residual: tuple[int, ...]
+    violations: tuple[tuple[str, int], ...]
+    unverifiable: tuple[Molecule, ...]
+    trivial: bool
+    reaction: Reaction | None
+
+    @property
+    def admissible(self) -> bool:
+        """It balances under the declared invariants, and is not the empty statement."""
+        return not self.violations and not self.trivial
+
+    @property
+    def verified(self) -> bool:
+        """Admissible, AND every species it touches was visible to those invariants."""
+        return self.admissible and not self.unverifiable
+
+    def __bool__(self) -> bool:
+        """Truthy on :attr:`verified`, the stronger of the two claims, never on the weaker."""
+        return self.verified
+
+    def explain(self) -> str:
+        if self.trivial:
+            return ("REFUSED: the all-zero vector. It satisfies every invariant exactly, "
+                    "which is why a bare residual test accepts it, and it states nothing. "
+                    "A balance has to move at least one species.")
+        if self.violations:
+            broken = "; ".join(f"{label} off by {amount:+d}"
+                               for label, amount in self.violations)
+            return (f"REFUSED: what you wrote does not balance under the declared "
+                    f"invariants. {broken}. This is the same matrix that derived the "
+                    f"menu -- the row labels name which conserved quantity fails and by "
+                    f"how much, so the repair is arithmetic rather than guesswork.")
+        if self.unverifiable:
+            names = ", ".join(repr(m) for m in self.unverifiable)
+            return (f"ADMISSIBLE BUT NOT VERIFIED: the residual is zero on every row, and "
+                    f"it touches {names} -- species the declared invariants cannot "
+                    f"resolve, either from nothing (an all-zero column) or from each "
+                    f"other (identical columns, which is how an excited atom and a "
+                    f"relaxed one appear when state is kept out of the conserved "
+                    f"signature). A @ nu is unchanged by those columns whatever the "
+                    f"coefficients are, so a zero residual is not evidence about them; it "
+                    f"is silence about them. Constrain them or say why they need not be.")
+        return ("VERIFIED: the residual is zero on every row, every species it touches was "
+                "visible to those rows, and Reaction's constructor re-derived the balance "
+                "independently by accumulating formula dictionaries. Two derivations "
+                "sharing no code agreed.")
 
 
 @dataclass(frozen=True)
@@ -401,6 +492,77 @@ class StoichiometryMenu:
     def equations(self) -> tuple[str, ...]:
         """Every completion written with integer coefficients, in basis order."""
         return tuple(c.equation(self.species) for c in self.completions)
+
+    def check(self, coefficients) -> "Written":
+        """
+        Section I's second clause: judge a balance the scientist wrote themselves.
+
+        ``coefficients`` is aligned with :attr:`species` and signed exactly as
+        :attr:`Completion.coefficients` is -- positive reactants, negative products, zero
+        absent. The verdict is ``A @ nu`` against :attr:`matrix`, which is the object that
+        derived :attr:`completions`; "checked against the same rules" is not a figure of
+        speech here, it is the same array.
+
+        **Nothing is asked about whether the vector is in the menu, because that question
+        is already answered by a theorem.** :func:`integer_kernel_basis` returns a basis of
+        ``ker(A) & Z^n``, so every balanced integer vector over these species IS an integer
+        combination of :attr:`completions` -- that is the whole content of the sublattice
+        repair. A written balance that passes here is therefore in the menu's span by
+        construction, and re-deriving that would be asking the module to confirm its own
+        theorem. What a scientist actually needs told is the opposite case: which conserved
+        quantity their vector breaks, and by how much, which is what :class:`Written`
+        carries.
+
+        Raises rather than returning a verdict when the input is not a candidate balance at
+        all: a wrong length, a non-integer, or a total weight past
+        :data:`MAX_WRITTEN_WEIGHT`. Those are malformed questions, not wrong answers, and
+        answering a malformed question with ``False`` would tell a scientist their
+        chemistry is wrong when their typing was.
+        """
+        nu = tuple(coefficients)
+        if len(nu) != len(self.species):
+            raise ValueError(
+                f"check() got {len(nu)} coefficients for {len(self.species)} species; "
+                f"align them with this menu's own species tuple, in its order")
+        if any(not isinstance(c, int) or isinstance(c, bool) for c in nu):
+            raise TypeError(
+                f"coefficients must be integers, got {nu!r}. A float would sum through "
+                f"the residual test and produce a yes or no about a vector that is not a "
+                f"candidate balance; bool is refused because True is a typo, not a 1")
+        weight = sum(abs(c) for c in nu)
+        if weight > MAX_WRITTEN_WEIGHT:
+            raise ValueError(
+                f"total coefficient weight {weight} exceeds {MAX_WRITTEN_WEIGHT}; the "
+                f"configurations built to confirm this balance materialise one molecule "
+                f"object per unit of weight, so this is an allocation bound and not a "
+                f"claim about chemistry")
+
+        residual = tuple(sum(row[i] * nu[i] for i in range(len(nu)))
+                         for row in self.matrix)
+        violations = tuple((label, amount)
+                           for label, amount in zip(self.row_labels, residual) if amount)
+        trivial = not any(nu)
+        # Only species the vector actually TOUCHES matter: a blind species with
+        # coefficient zero is not being leaned on and its invisibility costs nothing here.
+        unverifiable = tuple(molecule for molecule, c in zip(self.species, nu)
+                             if c and molecule in self.unconstrained)
+
+        reaction = None
+        if not violations and not trivial:
+            # The same independent confirmation the derived completions get. Reaction's
+            # constructor re-derives the balance by accumulating formula dictionaries --
+            # integer arithmetic sharing no code with the residual sum above. A
+            # ConservationError escaping here is two derivations disagreeing, which is a
+            # MenuContradiction and must not be swallowed into a False.
+            dom, cod = _configs(self.species, nu)
+            try:
+                reaction = Reaction(dom, cod, name="written")
+            except ConservationError as clash:
+                raise MenuContradiction(
+                    f"written nu={nu} has zero residual against every invariant row, and "
+                    f"Reaction refused it: {clash}. Two derivations that share no code "
+                    f"disagree about the same vector") from clash
+        return Written(nu, residual, violations, unverifiable, trivial, reaction)
 
     def explain(self) -> str:
         """

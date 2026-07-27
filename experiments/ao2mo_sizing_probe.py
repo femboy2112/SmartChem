@@ -68,6 +68,52 @@ figures it prints are corroboration of ``ao_storage_probe.py``'s replicated ones
 replacement for them.
 
 Stops after ``mycc.ao2mo()``, same boundary as ``ao_storage_probe.py``.
+
+TASK #20: IS A ``ru_maxrss`` DELTA AN ALLOCATION?
+--------------------------------------------------
+Task #19 closed by measuring, and left one number unexplained. Arms A and B are handed
+**exactly the same 2000.0 MB** at ``ccsd.py:1561`` -- both floored at ``MEMORYMIN`` -- and
+``ao2mo.full``'s exclusive peak delta still came out 2.45x apart (+0.7663 vs +1.8784 GB).
+Identical budget, identical molecule, identical basis, different number. So the difference
+is not a sizing decision at all, and every per-phase memory model in this repository is
+built on ``ru_maxrss`` deltas.
+
+THE MECHANISM, STATED AS ARITHMETIC RATHER THAN AS A STORY
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``ru_maxrss`` is a HIGH-WATER MARK. If an earlier phase pushed it above the level RSS has
+since fallen back to, the next phase can allocate into that gap and raise the mark by
+nothing at all. Call that gap the HEADROOM::
+
+    headroom = maxrss_at_entry - live_rss_at_entry
+
+Arm A enters ``ao2mo`` with a 2.63 GB ``_eri`` resident and an SCF that transiently went
+higher still; arm B enters at 155.9 MB having built no ``_eri``. If the peak delta is
+under-reporting by the headroom, then it is not measuring the allocation, and the honest
+additive quantity is the LIVE RSS delta -- which needs no high-water mark and therefore
+has no one-reading-per-process limit either.
+
+PREDICTIONS, REGISTERED BEFORE THE RUN
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+P1 (the identity, and the sharp one). At every wrapped site::
+
+        peak_delta == max(0, live_rss_at_exit - maxrss_at_entry)
+
+    to within a few MB. If RSS grows monotonically through the call, the new mark is
+    ``max(old_mark, rss_exit)`` and nothing else. Refuted if any site's residual exceeds
+    ~0.05 GB -- which would mean RSS peaked mid-call and fell back before exit, i.e. the
+    live reading has its own blind spot and neither instrument is additive.
+
+P2 (the consequence that matters). ``ao2mo.full``'s LIVE RSS delta is approximately equal
+    in arms A and B, because both are handed exactly 2000.0 MB. Refuted if they differ by
+    more than ~15%, which would mean a second mechanism really is sizing those buffers and
+    #19's closure named the site but not the cause.
+
+P3 (the direct observable). ``ru_minflt`` delta x 4096 bytes tracks the live RSS delta at
+    each site, confirming the growth is first-touch page faulting rather than accounting.
+    This one is corroboration, not a discriminator: it can agree while P1 fails.
+
+``ru_minflt`` is a monotonically increasing COUNTER, not a high-water mark, so unlike
+``ru_maxrss`` its deltas are honestly additive over a partition of the timeline.
 """
 from __future__ import annotations
 
@@ -98,6 +144,22 @@ def _maxrss_gb() -> float:
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0 ** 2
 
 
+def _minflt() -> int:
+    """
+    Minor page faults so far: a monotone COUNTER, not a high-water mark.
+
+    This is the distinction task #20 exists to test. ``ru_maxrss`` deltas are only
+    additive when no earlier phase left headroom under the mark; a fault count has no
+    such caveat, because a page can only be first-touched once.
+    """
+    return resource.getrusage(resource.RUSAGE_SELF).ru_minflt
+
+
+def _gauges() -> tuple[float, float, int]:
+    """(high-water mark, live RSS, minor faults) -- read as close together as possible."""
+    return _maxrss_gb(), _rss_gb(), _minflt()
+
+
 def _install_probes(log: list) -> None:
     """
     Wrap the three sizing sites. Every wrapper records at the CALL BOUNDARY.
@@ -112,32 +174,49 @@ def _install_probes(log: list) -> None:
     real_half_e1 = ao2mo.outcore.half_e1
     real_guess = ao2mo.outcore.guess_e1bufsize
 
+    def _record(site: str, budget, entry: tuple[float, float, int], wall: float) -> dict:
+        """
+        Both instruments, read at both boundaries, plus P1's residual.
+
+        ``peak_delta_gb`` is the number every earlier probe in this repository reported.
+        ``live_delta_gb`` is the same call measured by a gauge with no memory of the past.
+        ``p1_residual_gb`` is what task #20 registered as its discriminator: if the peak
+        delta is nothing more than the live level breaching an OLD mark, this is zero.
+        """
+        entry_max, entry_rss, entry_flt = entry
+        exit_max, exit_rss, exit_flt = _gauges()
+        return {
+            "site": site,
+            "budget_mb": budget,
+            "live_rss_gb": entry_rss,
+            "exit_rss_gb": exit_rss,
+            "maxrss_entry_gb": entry_max,
+            # Space under the existing high-water mark, free to allocate into unseen.
+            "headroom_gb": entry_max - entry_rss,
+            "peak_delta_gb": exit_max - entry_max,
+            "live_delta_gb": exit_rss - entry_rss,
+            "minflt_delta": exit_flt - entry_flt,
+            "minflt_gb": (exit_flt - entry_flt) * 4096 / 1024.0 ** 3,
+            "p1_residual_gb": (exit_max - entry_max) - max(0.0, exit_rss - entry_max),
+            "wall": wall,
+        }
+
     def full(mol, mo_coeff, erifile, *args, **kwargs):
-        entry_max, entry_rss = _maxrss_gb(), _rss_gb()
+        entry = _gauges()
         t0 = time.perf_counter()
         out = real_full(mol, mo_coeff, erifile, *args, **kwargs)
-        log.append({
-            "site": "ao2mo.full (ccsd.py:1561, vvvv)",
-            "budget_mb": kwargs.get("max_memory"),
-            "live_rss_gb": entry_rss,
-            "peak_delta_gb": _maxrss_gb() - entry_max,
-            "wall": time.perf_counter() - t0,
-        })
+        log.append(_record("ao2mo.full (ccsd.py:1561, vvvv)", kwargs.get("max_memory"),
+                           entry, time.perf_counter() - t0))
         return out
 
     def half_e1(mol, mo_coeffs, swapfile, intor="int2e", aosym="s4", comp=1,
                 max_memory=2000, *args, **kwargs):
-        entry_max, entry_rss = _maxrss_gb(), _rss_gb()
+        entry = _gauges()
         t0 = time.perf_counter()
         out = real_half_e1(mol, mo_coeffs, swapfile, intor, aosym, comp,
                            max_memory, *args, **kwargs)
-        log.append({
-            "site": "ao2mo.outcore.half_e1 (ccsd.py:1568)",
-            "budget_mb": max_memory,
-            "live_rss_gb": entry_rss,
-            "peak_delta_gb": _maxrss_gb() - entry_max,
-            "wall": time.perf_counter() - t0,
-        })
+        log.append(_record("ao2mo.outcore.half_e1 (ccsd.py:1568)", max_memory,
+                           entry, time.perf_counter() - t0))
         return out
 
     def guess_e1bufsize(max_memory, ioblk_size, nij_pair, nao_pair, comp):
@@ -202,9 +281,11 @@ def _one_arm(atom_spec: str, symbols, basis: str, max_memory, restore_cc: bool) 
         entry_live = lib.current_memory()[0]
         entry_budget = mycc.max_memory
 
+        arm_max, arm_rss, arm_flt = _gauges()
         t0 = time.perf_counter()
         eris = mycc.ao2mo()
         ao2mo_wall = time.perf_counter() - t0
+        exit_max, exit_rss, exit_flt = _gauges()
         ao2mo_peak = _peak_gb()
         vvvv = getattr(eris, "vvvv", None)
         vvvv_kind = "absent" if vvvv is None else type(vvvv).__name__
@@ -225,6 +306,15 @@ def _one_arm(atom_spec: str, symbols, basis: str, max_memory, restore_cc: bool) 
         "ao2mo_gb": ao2mo_peak - scf_peak,
         "peak_gb": ao2mo_peak,
         "ao2mo_wall": ao2mo_wall,
+        # Task #20: the whole ao2mo() call read by both instruments, so the sub-phase
+        # records below can be checked for additivity against their own container.
+        "arm_headroom_gb": arm_max - arm_rss,
+        "arm_entry_rss_gb": arm_rss,
+        "arm_exit_rss_gb": exit_rss,
+        "arm_live_delta_gb": exit_rss - arm_rss,
+        "arm_peak_delta_gb": exit_max - arm_max,
+        "arm_minflt_delta": exit_flt - arm_flt,
+        "arm_p1_residual_gb": (exit_max - arm_max) - max(0.0, exit_rss - arm_max),
         "sizing": sizing,
     }
 
@@ -291,9 +381,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {entry['site']}")
             print(f"      budget handed in : "
                   + ("None (default)" if budget is None else f"{budget:.1f} MB"))
-            print(f"      live RSS at entry: {entry['live_rss_gb']:.4f} GB")
+            print(f"      live RSS         : {entry['live_rss_gb']:.4f} -> "
+                  f"{entry['exit_rss_gb']:.4f} GB")
+            print(f"      headroom at entry: {entry['headroom_gb']:.4f} GB "
+                  f"(mark {entry['maxrss_entry_gb']:.4f} above live)")
             print(f"      raised peak by   : +{entry['peak_delta_gb']:.4f} GB, "
                   f"{entry['wall']:.1f} s")
+            print(f"      live RSS grew by : +{entry['live_delta_gb']:.4f} GB   "
+                  f"<- the additive one")
+            print(f"      minor faults     : {entry['minflt_delta']:,} "
+                  f"({entry['minflt_gb']:.4f} GB of first-touched pages)")
+            print(f"      P1 residual      : {entry['p1_residual_gb']:+.4f} GB "
+                  f"({'HOLDS' if abs(entry['p1_residual_gb']) <= 0.05 else 'REFUTED'} "
+                  f"at the 0.05 GB threshold registered in the docstring)")
 
     # The ccsd.py:1573 blksize, recomputed here from the budget half_e1 was handed, so the
     # documented formula and the second path can be compared on one line each.
@@ -312,15 +412,30 @@ def main(argv: list[str] | None = None) -> int:
         print(f"      buf + buf_prefetch + outbuf : "
               f"{2 * buf + outbuf:.4f} GB  ({buf:.4f} x2 + {outbuf:.4f})")
 
+    print(f"\n  -- task #20: the whole ao2mo() call, both instruments " + "-" * 17)
+    print(f"      headroom at entry: {record['arm_headroom_gb']:.4f} GB")
+    print(f"      live RSS         : {record['arm_entry_rss_gb']:.4f} -> "
+          f"{record['arm_exit_rss_gb']:.4f} GB")
+    print(f"      peak delta       : +{record['arm_peak_delta_gb']:.4f} GB")
+    print(f"      live delta       : +{record['arm_live_delta_gb']:.4f} GB")
+    print(f"      minor faults     : {record['arm_minflt_delta']:,}")
+    print(f"      P1 residual      : {record['arm_p1_residual_gb']:+.4f} GB "
+          f"({'HOLDS' if abs(record['arm_p1_residual_gb']) <= 0.05 else 'REFUTED'})")
+
     tag = "stock" if args.max_memory is None else f"{args.max_memory:.0f}MB"
     if args.restore_cc_memory:
         tag += "+ccstock"
     parts = " ".join(
         f"{e['site'].split()[0]}={e['peak_delta_gb']:.4f}/{e['budget_mb']}"
+        f"/live={e['live_delta_gb']:.4f}/head={e['headroom_gb']:.4f}"
+        f"/flt={e['minflt_delta']}/p1={e['p1_residual_gb']:+.4f}"
         for e in record["sizing"] if "peak_delta_gb" in e)
     print(f"SIZING_RESULT {args.species} {args.basis} {tag} "
           f"ao2mo={record['ao2mo_gb']:.4f} peak={record['peak_gb']:.4f} "
-          f"entry_live={record['entry_live_mb']:.1f} {parts} "
+          f"entry_live={record['entry_live_mb']:.1f} "
+          f"arm_head={record['arm_headroom_gb']:.4f} "
+          f"arm_live={record['arm_live_delta_gb']:.4f} "
+          f"arm_p1={record['arm_p1_residual_gb']:+.4f} {parts} "
           f"etot={record['e_tot']:.12f}")
     return 0
 

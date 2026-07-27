@@ -1546,3 +1546,101 @@ per arm. It measures *attribution* — which sub-phase, handed which budget — 
 within-run comparison and is sound from a monotone counter. Its peak figures are
 corroboration of `ao_storage_probe.py`'s replicated ones, not a refinement of them, and the
 7.7% arm-A disagreement between the two probes is exactly why that distinction is kept.
+
+---
+
+## Task #20 CLOSED: a `ru_maxrss` delta is not an allocation, and #19's attribution was of a nested call
+
+Three arms, CH3OH/cc-pVQZ, one process each, `experiments/ao2mo_sizing_probe.py` extended to
+read **both** boundaries with **both** gauges plus `ru_minflt`. Three predictions were
+registered in the docstring before the run. **All three are refuted, and the refutation is
+the finding.**
+
+| arm | `mycc.max_memory` | live at entry | headroom | inner `half_e1` budget | inner Δpeak | **inner minor faults** | outer `half_e1` Δpeak | live Δ over `ao2mo` | peak |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| A stock | 4000 | 2970.6 MB | 0.0392 | **2000.0** floored | **+0.7608** | **2,932,916** | +0.0000 | **−2.6670** | 3.5666 |
+| B throttled | 500 | 156.2 MB | −0.0001 | **2000.0** floored | **+1.8799** | **2,872,059** | +0.0000 | +0.0401 | 2.0522 |
+| C cc restored | 4000 | 156.3 MB | −0.0002 | 3843.6 | **+3.2994** | 3,213,531 | +0.0000 | −0.0302 | 3.4448 |
+
+### The answer, in one comparison
+
+Arms A and B are handed **exactly the same 2000.0 MB**, do the same transform on the same
+molecule, and touch **2,932,916 against 2,872,059 pages — 2.1% apart**. Their `ru_maxrss`
+deltas differ by **2.47×**. Same budget, same work, same page traffic, and the high-water
+mark reports it two and a half times apart.
+
+**A `ru_maxrss` delta is therefore not an allocation.** It is the amount by which one phase
+happened to breach a mark set by the whole process history, and two phases doing identical
+work report differently because of what was resident around them.
+
+### The mechanism, and it is not the one that was registered
+
+The prediction was **headroom**: that arm A entered `ao2mo` with the mark already above its
+resident level, so its allocation partly fit underneath for free. **Measured: there is no
+headroom.** All three arms enter with 0.0392, −0.0001 and −0.0002 GB — zero to within the
+gap between two `/proc/self/statm` reads. The registered mechanism is dead.
+
+What the numbers show instead is **overlap**. Arm A's live RSS *falls 2.6670 GB across the
+call* — the 2.6290 GB `_eri` tensor is released while the transform's buffers are being
+allocated, so the allocator hands back pages that were already resident and the mark barely
+moves. Arm B has nothing to release, so every buffer page is genuinely new residency. Arm A
+faults 2.1% **more** pages than arm B and raises the mark 2.47× **less**. That is
+free-and-reallocate overlap, not a stale watermark, and it is **CONJECTURED** — the fault
+counts are consistent with it and do not prove it.
+
+### The registered predictions, each with its verdict
+
+* **P1 — `peak_delta == max(0, rss_exit − maxrss_entry)` to within 0.05 GB. REFUTED at every
+  site in every arm**, residuals +0.7608, +1.8799, +3.2994. The identity assumed RSS grows
+  monotonically through the call. It does not: the buffers are freed *inside* the call, so
+  the exit reading is at or below the entry reading while the mark genuinely rose in
+  between. **Neither boundary reading sees a mid-call peak**, which means the live-RSS delta
+  is not a repair for `ru_maxrss` — it is a different blind spot.
+* **P2 — the live delta is roughly equal in arms A and B. REFUTED**, −2.5026 against −0.0027
+  at `ao2mo.full`. And the refutation is uninformative in the way that matters: over this
+  call the live delta is dominated by a *free*, not by an allocation, so it was never
+  measuring the quantity the prediction was about.
+* **P3 — `ru_minflt` tracks the live delta. REFUTED as stated, and it is the one that pays.**
+  2.93M faults is 12.0 GB of page-touching against buffers of order 1 GB, because a page
+  freed and re-touched is counted again. So minflt measures *traffic*, not footprint — and
+  traffic is exactly the invariant across arms A and B that identifies them as the same work.
+  The prediction was wrong about what the counter means and right that the counter was worth
+  reading.
+
+### A correction to task #19: those two sites were nested, not siblings
+
+`ao2mo.full` and the first-logged `half_e1` have **identical** peak deltas in all three arms
+— 0.7608/0.7608, 1.8799/1.8799, 3.2994/3.2994 — because `ao2mo.full` *calls* `half_e1`
+internally, and a wrapper that logs on exit records the inner call first. #19 reported
+"`ao2mo.full` owns 100% of the ao2mo peak contribution" and treated that delta as exclusive.
+It is not exclusive: **100% of `ao2mo.full` is inside its nested `half_e1`.** The site that
+sets the peak is `ao2mo.outcore.half_e1` *called from within `ao2mo.full`*, not the outer
+`half_e1` at `ccsd.py:1568`.
+
+What survives #19 unchanged: the outer `half_e1` contributes **+0.0000 GB in all three
+arms**, three for three, so the `blksize` loop at `ccsd.py:1573-1586` still contributes
+exactly zero, and the one sizing formula visible in the `ccsd` source still does not own the
+peak. What does not survive is the attribution *within* `ao2mo.full`, which was reading a
+call tree as a flat list.
+
+### Arm C is the control, and it says the budget does still size the buffers
+
+C is handed 3843.6 MB where B is floored to 2000.0 — a 1.92× budget ratio — and its peak
+delta is 3.2994 against 1.8799, a 1.75× ratio, with 11.9% more page faults. So `max_memory`
+genuinely controls the allocation, exactly as #19 concluded. It was never the sizing that was
+misread; it was the *measurement* of it.
+
+### What this bounds
+
+Every per-phase memory figure in this file derived from a `ru_maxrss` delta is a statement
+about **what a phase added to the process high-water mark in the context it ran in**, and not
+about what that phase allocates. Within-run attribution across a partition of one timeline
+stays sound — the deltas are still additive over that partition. **Cross-arm comparison of
+two `ru_maxrss` deltas is not sound**, and the 2.47× at identical budget is the measured size
+of the error. Where a cross-arm claim is wanted, `ru_minflt` is the counter that survived: it
+is monotone, it cannot be masked by an earlier phase, and it was 2.1% reproducible across the
+two arms that were doing the same work.
+
+`E_SCF = -115.099552400814 Ha` in all three arms again — ten runs now, across three
+instruments, all fifteen figures. The boundary is unchanged: every probe here stops after
+`ao2mo()`, so bit-identity of `E_CCSD(T)` or `D_e` under throttling remains **UNVERIFIED**.

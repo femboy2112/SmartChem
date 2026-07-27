@@ -518,3 +518,129 @@ class TestProperties:
         menu = stoichiometry_menu(species)
         assert (menu.verdict == "REFUSE") == (menu.freedom == 0)
         assert bool(menu) == (menu.freedom > 0)
+
+
+CH4 = Molecule(("C", "H", "H", "H", "H"),
+               frozenset({Bond(0, 1, 1), Bond(0, 2, 1), Bond(0, 3, 1), Bond(0, 4, 1)}))
+#: Section I's own example set. Order matters: check() aligns with the menu's species.
+COMBUSTION = (CH4, O2, CO2, H2O)
+
+
+class TestSectionIsSecondClause:
+    """
+    "Choose one, **or write one and I will check it against the same rules.**"
+
+    The first clause has been implemented since Brick 0; the second had not been, and a
+    menu without it is a multiple-choice question wearing the costume of a dialogue. The
+    phrase "the same rules" is enforced literally here: ``check`` evaluates ``A @ nu``
+    against the menu's own ``matrix``, the identical object that produced ``completions``,
+    rather than a second checker written to agree with the first.
+    """
+
+    MENU = stoichiometry_menu(COMBUSTION)
+
+    def test_the_menu_is_the_fill_in_regime_so_writing_one_is_the_only_choice(self):
+        """Freedom 1: there is nothing to pick between, which is when clause two matters."""
+        assert self.MENU.verdict == "FILL_IN"
+        assert self.MENU.equations() == ("CH4 + 2O2 -> CO2 + 2H2O",)
+
+    def test_a_correct_written_balance_is_verified(self):
+        written = self.MENU.check((1, 2, -1, -2))
+        assert written.admissible and written.verified and bool(written)
+        assert written.residual == (0, 0, 0, 0)
+        assert written.reaction is not None and conserves(written.reaction)
+
+    def test_a_wrong_one_names_which_invariant_broke_and_by_how_much(self):
+        """
+        Section IX: a refusal that says only "no" sends a scientist back to guess. The
+        row labels come from ``composition_matrix``, so the diagnosis is derived.
+        """
+        written = self.MENU.check((1, 1, -1, -2))       # under-oxidised by one O2
+        assert not written.admissible
+        assert written.violations == (("O", -2),)
+        assert "O off by -2" in written.explain()
+
+    def test_the_all_zero_vector_is_refused_although_it_balances(self):
+        """
+        The trap a bare residual test walks into. ``A @ 0 == 0`` exactly, on every row, in
+        every menu that has ever existed. Reporting it as admissible would be a confident
+        yes about the empty statement.
+        """
+        written = self.MENU.check((0, 0, 0, 0))
+        assert written.residual == (0, 0, 0, 0), "it really does satisfy every invariant"
+        assert written.trivial and not written.admissible and not bool(written)
+        assert written.reaction is None, "and nothing was constructed from it"
+
+    def test_admissible_and_verified_are_two_claims_and_stay_apart(self):
+        """
+        ``Na(*) -> Na``. The columns are identical because ``state`` is deliberately kept
+        out of the conserved signature, so the invariants cannot resolve these two species
+        from each other and ``A @ nu`` is unchanged by either column. The balance is real;
+        it is not evidence about de-excitation, and the weaker claim must not wear the
+        stronger one's name.
+        """
+        excited, relaxed = Molecule(("Na",), state="*"), Molecule.atom("Na")
+        menu = stoichiometry_menu((excited, relaxed))
+        written = menu.check((1, -1))
+        assert written.admissible, "the residual is zero on every row"
+        assert not written.verified, "and no row could see what it is a balance OF"
+        assert bool(written) is False, "truthiness follows the STRONGER claim"
+        assert "silence about them" in written.explain()
+
+    @pytest.mark.parametrize("nu, exception", [
+        ((1, 2, -1), ValueError),           # wrong length -- would silently zip-truncate
+        ((1, 2.0, -1, -2), TypeError),      # a float sums straight through the residual
+        ((1, True, -1, -2), TypeError),     # True is a typo, not a 1
+        ((900, 900, -900, -900), ValueError),   # past MAX_WRITTEN_WEIGHT
+    ])
+    def test_a_malformed_question_raises_rather_than_answering_false(self, nu, exception):
+        """
+        Returning ``False`` here would tell a scientist their chemistry is wrong when
+        their typing was. The weight cap is an allocation bound, not a claim about
+        chemistry, and its message says so.
+        """
+        with pytest.raises(exception):
+            self.MENU.check(nu)
+
+    def test_the_two_clauses_agree_with_each_other(self):
+        """
+        Every option the menu OFFERS must pass the check the menu APPLIES. If these two
+        ever disagreed, one of the clauses would be lying about the same rules.
+        """
+        for completion in self.MENU.completions:
+            written = self.MENU.check(completion.coefficients)
+            assert written.admissible, f"{completion!r} is offered but fails its own check"
+
+    @pytest.mark.parametrize("multiple", [1, -1, 2, -3, 7])
+    def test_every_integer_multiple_of_an_offered_balance_also_passes(self, multiple):
+        """
+        The kernel is a lattice, so scaling and reversal stay inside it. This is the
+        cheap half of the completeness theorem, asserted on the written-check path
+        because that path is new and the theorem is what makes it complete.
+        """
+        base = self.MENU.completions[0].coefficients
+        written = self.MENU.check(tuple(multiple * c for c in base))
+        assert written.admissible
+
+    def test_the_check_shares_the_matrix_it_claims_to_share(self):
+        """
+        "The same rules" asserted against the object rather than the prose: the residual
+        is recomputed here from ``menu.matrix`` by an independent expression and must
+        agree term for term with what ``check`` reported.
+        """
+        nu = (1, 1, -1, -2)
+        assert self.MENU.check(nu).residual == tuple(_apply(self.MENU.matrix, nu))
+
+
+class TestEquationCannotBeHandedTheWrongSpecies:
+    """``zip`` truncates in silence, and a shorter equation reads as a complete one."""
+
+    def test_a_short_species_tuple_is_refused_rather_than_truncated(self):
+        menu = stoichiometry_menu(COMBUSTION)
+        completion = menu.completions[0]
+        with pytest.raises(ValueError, match="would drop the difference"):
+            completion.equation(COMBUSTION[:3])
+
+    def test_the_menus_own_tuple_still_works(self):
+        menu = stoichiometry_menu(COMBUSTION)
+        assert menu.completions[0].equation(menu.species) == "CH4 + 2O2 -> CO2 + 2H2O"

@@ -71,7 +71,9 @@ from .program import (
     TransportEvidence,
     TransportMap,
     _HUMAN_ISOTOPE_EXECUTOR,
+    _ExecutionAdmissionSnapshot,
     _compiler_implementation_digest,
+    _execution_admission_error,
     _require_runtime_dispatch,
     _resource_wall,
 )
@@ -821,6 +823,7 @@ def _execute_human_isotope_identifiability(
     actual_calculation: CalculationSpec,
     journal_path: str | os.PathLike[str] | None = None,
     _dispatch_token: object = None,
+    _admission_snapshot: _ExecutionAdmissionSnapshot | None = None,
 ) -> ExecutionReport:
     """Execute after the common approval/compiler/calculation preflight."""
     _require_runtime_dispatch(_dispatch_token)
@@ -835,6 +838,8 @@ def _execute_human_isotope_identifiability(
             "human-isotope executor requires a ResolvedDomainProgram HumanIsotopeSpec"
         )
     spec = resolved.subject
+    if type(_admission_snapshot) is not _ExecutionAdmissionSnapshot:
+        raise TypeError("human-isotope executor requires an execution admission snapshot")
     started = time.monotonic()
     journal = RunJournal(
         approved,
@@ -894,6 +899,11 @@ def _execute_human_isotope_identifiability(
                 "human-isotope engine must expose solve(HumanIsotopeSpec)"
             )
         diagnostic = solver(spec)
+        admission_error = _execution_admission_error(
+            approved, spec, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         if type(diagnostic) is not IdentifiabilityDiagnostic:
             return ExecutionReport(
                 journal.invalid(
@@ -915,7 +925,13 @@ def _execute_human_isotope_identifiability(
             payload=diagnostic,
         )
         journal.add_checkpoint(checkpoint)
-        if CalculationSpec.from_oracle(engine).digest != plan.calculation.digest:
+        observed_calculation = CalculationSpec.from_oracle(engine)
+        admission_error = _execution_admission_error(
+            approved, spec, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
+        if observed_calculation.digest != plan.calculation.digest:
             raise RuntimeError(
                 "CalculationSpec changed during the approved human-isotope engine call"
             )
@@ -975,6 +991,11 @@ def _execute_human_isotope_identifiability(
                     None,
                 )
 
+        admission_error = _execution_admission_error(
+            approved, spec, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         certificate = Certificate(
             source_digest=plan.request.source.digest,
             request_digest=plan.request.digest,
@@ -1038,6 +1059,11 @@ def _execute_human_isotope_identifiability(
             return ExecutionReport(record, None, None)
         return ExecutionReport(record, result, certificate)
     except Exception as error:
+        admission_error = _execution_admission_error(
+            approved, spec, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         record = journal.failed(
             f"{type(error).__name__}: {error}"
         )

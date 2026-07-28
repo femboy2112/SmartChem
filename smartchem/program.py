@@ -173,6 +173,9 @@ _HUMAN_SURVIVAL_EXECUTOR = (
 _ISING_LATTICE_GAS_EXECUTOR = (
     "smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"
 )
+_RESISTIVE_DC_EXECUTOR = (
+    "smartchem.resistive_dc/exact-relation-sparse-mna-v1"
+)
 _RUNTIME_DISPATCH_TOKEN = object()
 
 
@@ -1174,6 +1177,61 @@ def approve(plan: CandidatePlan, approval: Approval) -> ApprovedPlan:
 
 
 @dataclass(frozen=True)
+class _ExecutionAdmissionSnapshot:
+    """Pre-backend identity of every authority-bearing execution input."""
+
+    plan_digest: str
+    approval_digest: str
+    approval_record_digest: str
+    resolved_digest: str
+    subject_digest: str
+    calculation_digest: str
+    compiler_implementation_digest: str
+
+
+def _capture_execution_admission(
+    approved: ApprovedPlan,
+    subject: object,
+) -> _ExecutionAdmissionSnapshot:
+    """Freeze admission before any in-process backend callback can mutate it."""
+    if type(approved) is not ApprovedPlan:
+        raise TypeError("execution admission requires an exact ApprovedPlan")
+    return _ExecutionAdmissionSnapshot(
+        approved.plan.digest,
+        approved.approval.digest,
+        approved.approval_record_digest,
+        canonical_digest(approved.plan.request.resolved),
+        canonical_digest(subject),
+        approved.plan.calculation.digest,
+        approved.plan.compiler_implementation_digest,
+    )
+
+
+def _execution_admission_error(
+    approved: ApprovedPlan,
+    subject: object,
+    expected: _ExecutionAdmissionSnapshot,
+) -> str | None:
+    """Name post-callback approval drift; return ``None`` only for exact identity."""
+    if type(expected) is not _ExecutionAdmissionSnapshot:
+        return "execution admission snapshot has the wrong exact type"
+    try:
+        current = _capture_execution_admission(approved, subject)
+    except Exception as error:
+        return (
+            "approved execution identity is no longer digestible after backend callback: "
+            f"{type(error).__name__}: {error}"
+        )
+    if current != expected:
+        return "approved execution identity changed during an in-process backend callback"
+    if approved.approval.plan_digest != approved.plan.digest:
+        return "approval no longer names the admitted candidate plan"
+    if approved.approval.digest != approved.approval_record_digest:
+        return "approval record changed after execution admission"
+    return None
+
+
+@dataclass(frozen=True)
 class Artifact(Digestible):
     artifact_id: str
     kind: str
@@ -1713,6 +1771,48 @@ def _observable_payload_error(
                     "independently recomputed payload"
                 )
         return None
+    if plan.executor_id == _RESISTIVE_DC_EXECUTOR:
+        from .resistive_dc import ResistiveDCAnalysis, ResistiveDCSubject, _payloads
+        from .resistive_dc_verifier import (
+            DirectVerificationReport,
+            verify_resistive_dc_analysis,
+        )
+
+        resolved = plan.request.resolved
+        if (
+            type(resolved) is not ResolvedDomainProgram
+            or type(resolved.subject) is not ResistiveDCSubject
+        ):
+            return "resistive-DC plan has no exact ResistiveDCSubject"
+        analysis = payloads.get("resistive_dc_analysis")
+        if type(analysis) is not ResistiveDCAnalysis:
+            return "resistive_dc_analysis must retain an exact ResistiveDCAnalysis"
+        verification = verify_resistive_dc_analysis(resolved.subject, analysis)
+        if not verification.passed:
+            return (
+                "resistive-DC analysis failed the production-independent direct "
+                f"verifier: {'; '.join(verification.reasons)}"
+            )
+        retained_verification = payloads.get("resistive_dc_direct_verification")
+        if type(retained_verification) is not DirectVerificationReport:
+            return (
+                "resistive_dc_direct_verification must retain an exact "
+                "DirectVerificationReport"
+            )
+        if canonical_digest(retained_verification) != canonical_digest(verification):
+            return (
+                "resistive_dc_direct_verification differs from the fresh "
+                "production-independent verifier report"
+            )
+        for observable_id, expected in _payloads(analysis, verification).items():
+            if observable_id not in payloads:
+                return f"resistive-DC output omitted {observable_id}"
+            if canonical_digest(payloads[observable_id]) != canonical_digest(expected):
+                return (
+                    f"resistive-DC output {observable_id} differs from the "
+                    "directly verified analysis payload"
+                )
+        return None
     return f"no observable payload validator for executor {plan.executor_id!r}"
 
 
@@ -1846,14 +1946,43 @@ class RunJournal:
         _nonempty(detail, "diagnostic")
         return self._transition(diagnostics=self._record.diagnostics + (detail,))
 
+    @staticmethod
+    def _quarantine_artifact(artifact: Artifact) -> Artifact:
+        """Quarantine even when an in-process engine mutated a retained payload.
+
+        The ordinary path preserves the approved content digest.  If the payload's
+        current digest no longer matches, retain the mutated payload under its actual
+        digest and record the originally observed digest in the detail rather than
+        allowing quarantine itself to fail.
+        """
+        try:
+            return replace(artifact, quarantined=True)
+        except ValueError:
+            if artifact.payload is None:
+                raise
+            original_digest = artifact.content_digest
+            current_digest = canonical_digest(artifact.payload)
+            detail = (
+                f"{artifact.detail}; " if artifact.detail else ""
+            ) + (
+                "payload identity changed after retention; "
+                f"original_digest={original_digest}"
+            )
+            return replace(
+                artifact,
+                content_digest=current_digest,
+                quarantined=True,
+                detail=detail,
+            )
+
     def incomplete(self, reason: str) -> RunRecord:
         _nonempty(reason, "reason")
         quarantined = tuple(
-            replace(artifact, quarantined=True)
+            self._quarantine_artifact(artifact)
             for artifact in self._record.artifacts
         )
         quarantined_checkpoints = tuple(
-            replace(artifact, quarantined=True)
+            self._quarantine_artifact(artifact)
             for artifact in self._record.checkpoints
         )
         return self._transition(
@@ -1866,11 +1995,11 @@ class RunJournal:
     def refused(self, reason: str) -> RunRecord:
         _nonempty(reason, "reason")
         quarantined = tuple(
-            replace(artifact, quarantined=True)
+            self._quarantine_artifact(artifact)
             for artifact in self._record.artifacts
         )
         quarantined_checkpoints = tuple(
-            replace(artifact, quarantined=True)
+            self._quarantine_artifact(artifact)
             for artifact in self._record.checkpoints
         )
         return self._transition(
@@ -1883,11 +2012,11 @@ class RunJournal:
     def invalid(self, reason: str) -> RunRecord:
         _nonempty(reason, "reason")
         quarantined = tuple(
-            replace(artifact, quarantined=True)
+            self._quarantine_artifact(artifact)
             for artifact in self._record.artifacts
         )
         quarantined_checkpoints = tuple(
-            replace(artifact, quarantined=True)
+            self._quarantine_artifact(artifact)
             for artifact in self._record.checkpoints
         )
         return self._transition(
@@ -1900,11 +2029,11 @@ class RunJournal:
     def failed(self, reason: str) -> RunRecord:
         _nonempty(reason, "reason")
         quarantined = tuple(
-            replace(artifact, quarantined=True)
+            self._quarantine_artifact(artifact)
             for artifact in self._record.artifacts
         )
         quarantined_checkpoints = tuple(
-            replace(artifact, quarantined=True)
+            self._quarantine_artifact(artifact)
             for artifact in self._record.checkpoints
         )
         return self._transition(
@@ -2600,7 +2729,7 @@ def execute(
 
     try:
         descriptor = descriptor_for(plan.executor_id)
-        descriptor.extract_subject(plan.request.resolved)
+        subject = descriptor.extract_subject(plan.request.resolved)
     except (KeyError, TypeError) as error:
         raise ValueError(str(error)) from error
     supported_outputs = frozenset(descriptor.default_output_contract().observable_ids)
@@ -2616,7 +2745,15 @@ def execute(
     if contract_error is not None:
         raise ValueError(contract_error)
     descriptor.resolve_plan_preflight()(plan)
+    admission_snapshot = _capture_execution_admission(approved, subject)
     actual_calculation = CalculationSpec.from_oracle(oracle)
+    admission_error = _execution_admission_error(
+        approved,
+        subject,
+        admission_snapshot,
+    )
+    if admission_error is not None:
+        raise ValueError(admission_error)
     if actual_calculation.digest != plan.calculation.digest:
         raise ValueError(
             "oracle CalculationSpec changed after approval; re-plan and obtain new approval"
@@ -2628,6 +2765,7 @@ def execute(
         actual_calculation=actual_calculation,
         journal_path=journal_path,
         _dispatch_token=_RUNTIME_DISPATCH_TOKEN,
+        _admission_snapshot=admission_snapshot,
     )
 
 
@@ -2638,6 +2776,7 @@ def _execute_reaction_energy(
     actual_calculation: CalculationSpec,
     journal_path: str | os.PathLike[str] | None = None,
     _dispatch_token: object = None,
+    _admission_snapshot: _ExecutionAdmissionSnapshot | None = None,
 ) -> ExecutionReport:
     """Run the already validated reaction-energy plan."""
     _require_runtime_dispatch(_dispatch_token)
@@ -2654,6 +2793,8 @@ def _execute_reaction_energy(
         path=journal_path,
     )
     reaction = plan.request.resolved.reaction
+    if type(_admission_snapshot) is not _ExecutionAdmissionSnapshot:
+        raise TypeError("reaction executor requires an execution admission snapshot")
     try:
         for artifact_id, kind, payload in (
             ("source-program", "source", plan.request.source),
@@ -2756,8 +2897,23 @@ def _execute_reaction_energy(
                 return ExecutionReport(record, None, None)
             estimate = cached.energy(molecule)
             calls += 1
+            admission_error = _execution_admission_error(
+                approved,
+                reaction,
+                _admission_snapshot,
+            )
+            if admission_error is not None:
+                return ExecutionReport(journal.invalid(admission_error), None, None)
             if estimate is None:
-                if CalculationSpec.from_oracle(oracle).digest != plan.calculation.digest:
+                observed_calculation = CalculationSpec.from_oracle(oracle)
+                admission_error = _execution_admission_error(
+                    approved,
+                    reaction,
+                    _admission_snapshot,
+                )
+                if admission_error is not None:
+                    return ExecutionReport(journal.invalid(admission_error), None, None)
+                if observed_calculation.digest != plan.calculation.digest:
                     raise RuntimeError(
                         "oracle CalculationSpec changed during an approved species call"
                     )
@@ -2776,7 +2932,15 @@ def _execute_reaction_energy(
                 artifact_id="intermediate:species:" + canonical_digest(molecule),
                 kind="intermediate",
             ))
-            if CalculationSpec.from_oracle(oracle).digest != plan.calculation.digest:
+            observed_calculation = CalculationSpec.from_oracle(oracle)
+            admission_error = _execution_admission_error(
+                approved,
+                reaction,
+                _admission_snapshot,
+            )
+            if admission_error is not None:
+                return ExecutionReport(journal.invalid(admission_error), None, None)
+            if observed_calculation.digest != plan.calculation.digest:
                 raise RuntimeError(
                     "oracle CalculationSpec changed during an approved species call"
                 )
@@ -2829,6 +2993,13 @@ def _execute_reaction_energy(
         # The certificate is prepared from the still-running record, then its digest is
         # inventoried before the run becomes COMPLETE.  It intentionally does not contain
         # the RunRecord digest, avoiding a certificate<->record digest cycle.
+        admission_error = _execution_admission_error(
+            approved,
+            reaction,
+            _admission_snapshot,
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         certificate = Certificate(
             source_digest=plan.request.source.digest,
             request_digest=plan.request.digest,
@@ -2873,6 +3044,13 @@ def _execute_reaction_energy(
         result = SimulationResult(record.run_id, (value,), certificate.digest)
         return ExecutionReport(record, result, certificate)
     except Exception as error:
+        admission_error = _execution_admission_error(
+            approved,
+            reaction,
+            _admission_snapshot,
+        )
+        if admission_error is not None and journal.record.status is RunStatus.RUNNING:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         if journal.record.status is RunStatus.RUNNING:
             record = journal.failed(f"{type(error).__name__}: {error}")
             return ExecutionReport(record, None, None)

@@ -240,3 +240,41 @@ def test_runtime_owned_model_replacement_is_refused_before_engine_execution():
         execute(approved, engine)
 
     assert engine.calls == 0
+
+
+def test_engine_cannot_mutate_approved_plan_during_solve():
+    class PlanMutatingEngine(ExactC3EquilibriumEngine):
+        def __init__(self):
+            super().__init__()
+            self.approved = None
+
+        def solve(self, spec):
+            diagnostic = super().solve(spec)
+            assert self.approved is not None
+            contract = self.approved.plan.request.output_contract
+            object.__setattr__(
+                self.approved.plan.request,
+                "output_contract",
+                replace(
+                    contract,
+                    observables=(
+                        replace(
+                            contract.observables[0],
+                            precision="mutated during approved Ising solve",
+                        ),
+                    )
+                    + contract.observables[1:],
+                ),
+            )
+            return diagnostic
+
+    engine = PlanMutatingEngine()
+    approved = _approved(compile_ising_lattice_gas_equilibrium("map", SPEC, engine))
+    engine.approved = approved
+
+    report = execute(approved, engine)
+
+    assert report.record.status is RunStatus.INVALID
+    assert report.result is None and report.certificate is None
+    assert report.record.artifacts
+    assert all(artifact.quarantined for artifact in report.record.artifacts)

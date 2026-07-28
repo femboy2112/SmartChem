@@ -56,6 +56,7 @@ harness at all.
 | `compiled_human_survival_recovery.py` | Executes the separate D2b-S synthetic recovery vertical: content-addressed seeded-binomial independent interval cohorts -> structurally TRAIN-only fixed-family likelihood -> gradient/curvature gates -> conditional likelihood-curvature intervals -> locked HOLDOUT binomial scores -> post-fit same-generator recovery. The intervals are not calibrated confidence coverage; the run is not empirical human calibration, biological validation, toxicology, causality, LD50/LC50 evidence, or transfer authority. Receipt: `RESULTS_compiled_human_survival_recovery.md`. |
 | `compiled_class_a_optimizer.py` | Executes the first plan-visible Class-A transform and an exact spectator-free reference. A regenerated Fe spectator lies outside the probe oracle's declared domain; the runtime-owned separable model licenses its independently verified removal before domain admission/oracle calls, and every reaction-energy observable field is retained. The two residual calls were already shipped behavior, so the probe establishes certification and removal of false over-refusal—not a new call-count/timing speedup or general optimizer. Receipt: `RESULTS_compiled_class_a_optimizer.md`. |
 | `compiled_ising_lattice_gas_vertical.py` | Executes an exact finite cross-domain map on the three-site undirected cycle: every one of eight Ising spin states is retained beside its lattice-gas occupancy state; `epsilon=4J`, `mu=2h-4J`, `H_I=H_LG+3(h-J)`, and the formal partition relation are independently rechecked. It is an `ANALOGUE/ESTABLISHED` finite algebraic result, not a material, dynamics, thermodynamic-limit, or arbitrary-graph claim. Receipt: `RESULTS_compiled_ising_lattice_gas_vertical.md`. |
+| `compiled_resistive_dc.py` | Executes the finite ideal-resistor E1 bridge: exact rational passive boundary relation, explicit model-to-structural-edge witness, one topology-generic sparse-MNA drive, every node/branch/source value, and a production-independent direct-verification payload. It is literal only for the declared ideal mathematical circuit, not a device, AC/RLC, thermal, safety, nonlinear, distributed, or port-Hamiltonian claim. Receipt: `RESULTS_compiled_resistive_dc.md`. |
 
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
 passes and keeps superseded numbers rather than overwriting them — `ao_storage_probe.py` and
@@ -128,6 +129,10 @@ OMP_NUM_THREADS=1 .venv/bin/python experiments/compiled_h2_vertical.py \
 # exact finite C3 Ising-to-lattice-gas map; fresh journal path required
 .venv/bin/python experiments/compiled_ising_lattice_gas_vertical.py \
   --journal /tmp/smartchem-ising-lattice-gas-run.json
+
+# finite positive ideal-resistor E1; fresh journal path required
+.venv/bin/python experiments/compiled_resistive_dc.py \
+  --journal /tmp/smartchem-resistive-dc-run.json
 ```
 
 Pin the threads and check `uptime` first. This repo has already been burned once by timing

@@ -1,5 +1,11 @@
 # SmartChem exact open-syntax round — release record
 
+> **Historical S0 cut.** Its seven-executor/E1-next statements are superseded by
+> `RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md`: E1 is now complete, the registry has eight
+> executors, positive-frequency passive AC/RLC E2 is next, and former PID `151446` is
+> terminal-unclassified rather than active. The remote `fdb906f` E1 rejection below remains
+> valid history.
+
 **Base:** `ff41f018338886949c3e57657495e77f91e3fcc3`
 
 **Remote input audited:** `origin/agent/smartchem-open-semantics-round-20260727`

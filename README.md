@@ -10,8 +10,9 @@ plan, and return results with their evidence, omissions, casualties, and approva
 attached.
 
 The general language does not exist yet. The repository contains a rigorous compiler/runtime
-seam, a chemistry core, seven deliberately narrow executors that test the design, and a
-separate finite typed open-diagram syntax that does not yet have circuit semantics.
+seam, a chemistry core, eight deliberately narrow executors that test the design, and a
+separate finite typed open-diagram syntax with one independently verified ideal-resistor
+DC interpretation.
 
 ## Non-negotiable contract
 
@@ -50,7 +51,10 @@ incomplete source
 Plans bind the shipped compiler/runtime implementation and the calculation identity. Run
 journals have exclusive path ownership, persist atomically, and quarantine artifacts from
 non-complete runs. The runtime registry is closed and reviewed: no third-party executor can
-inherit authority by registration.
+inherit authority by registration. A pre-backend execution-admission snapshot is rechecked
+after in-process backend callbacks and before certification, so a callback cannot silently
+rewrite the approved plan, resolved subject, output contract, calculation identity, or
+compiler identity and still complete.
 
 `ClaimKind` and `EvidenceStatus` are independent. An analogue can have established algebra
 without becoming literal; a literal target can remain unsupported.
@@ -66,6 +70,7 @@ without becoming literal; a literal target can remain unsupported.
 | Human-isotope D2a | A complete typed interpretation and proof that one hypothetical median-lethality endpoint is compatible with distinct survival families. | `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`; no LD50-to-rate conversion, human prediction, toxicology calibration, or experimentation authority. |
 | Synthetic survival D2b-S | TRAIN-only fixed-family conditional-binomial recovery on content-addressed independent synthetic cohorts, with uncertainty diagnostics and locked HOLDOUT scoring. | Same-generator implementation evidence only; no human/animal evidence, biological validation, causality, or transfer authority. |
 | Finite C3 Ising↔lattice gas | All eight states, `ε=4J`, `μ=2h−4J`, `H_I=H_LG+3(h−J)`, and the formal partition identity, checked with exact integers and a separate direct verifier. | `ANALOGUE/ESTABLISHED/CERTIFIED` for that finite algebra only; no material identity, dynamics, thermodynamic limit, or arbitrary-graph transfer. |
+| Finite resistive DC E1 | Exact rational passive boundary relation plus one topology-generic sparse-MNA drive, explicit model-to-edge binding, complete node/branch/source output, and a production-independent direct verifier. | `LITERAL/VALIDATED_WITHIN_REGIME/CERTIFIED` only for finite positive ideal resistors and the declared drive/reference; no device, AC/RLC, thermal, safety, nonlinear, distributed, or port-Hamiltonian claim. |
 
 The Ising/lattice-gas control is intentionally important: it proves that SmartChem can carry
 an exact cross-domain map without confusing exact mathematics with literal physical identity.
@@ -112,12 +117,15 @@ but reaction histories do not yet form a true parallel symmetric monoidal produc
 `scheduled_product` is a deterministic left-first schedule. The old `tensor` compatibility
 name now emits a deprecation warning because it is not a parallel tensor.
 
-`smartchem.open_diagram` is a separate topology-only layer: ordered typed boundaries,
+`smartchem.open_diagram` remains a separate topology-only layer: ordered typed boundaries,
 two-terminal component slots, exact endpoint ownership, total boundary gluing, true
 disjoint-union tensor, identities, and braids. A budgeted exact observer compares successful
 finite presentations modulo internal naming and refuses explicitly above its candidate
-budget. This is not a circuit equation, solver, `PhysicalIR` migration, or proof of a general
-multiphysics category.
+budget. `smartchem.resistive_dc_schema`, `smartchem.circuit`, and
+`smartchem.resistive_dc` add one narrow positive ideal-resistor DC semantics beside it;
+topology itself still does not imply those equations. This is not a
+`PhysicalIR` migration, AC/RLC system, device model, or proof of a general multiphysics
+category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](MANIFEST.md).
 
@@ -135,7 +143,7 @@ python -m smartchem.bench
 Current maintained fast-suite result:
 
 ```text
-1345 passed, 14 skipped, 1 xfailed
+1434 passed, 14 skipped, 1 xfailed
 ```
 
 The skipped tests require the explicit slow-test gate and are not represented as passed.
@@ -156,6 +164,7 @@ Every cited compiled run has a committed deterministic harness and durable recei
 - [synthetic survival recovery](experiments/RESULTS_compiled_human_survival_recovery.md)
 - [verified Class-A reaction residue](experiments/RESULTS_compiled_class_a_optimizer.md)
 - [exact finite Ising/lattice-gas map](experiments/RESULTS_compiled_ising_lattice_gas_vertical.md)
+- [independently verified resistive-DC bridge](experiments/RESULTS_compiled_resistive_dc.md)
 
 Raw journals are write-once local run artifacts. Receipts retain the relevant identities,
 outcomes, scientific scope, evidence status, omissions, casualties, and negative claims.
@@ -163,17 +172,17 @@ outcomes, scientific scope, evidence status, omissions, casualties, and negative
 ## Roadmap
 
 The current short-term seam is hardened: `PhysicalIR` owns member/reference/evidence
-integrity, transforms bind the approved model and contracts, all seven executors own their
+integrity, transforms bind the approved model and contracts, all eight executors own their
 model/transform inventory before a calculation or journal, and resolved runners cannot be
 used as an alternate authoritative dispatch path. The manufactured continuous-water
-midterm and the finite open-diagram S0 midterm are also complete.
+midterm, finite open-diagram S0, and independently verified resistive-DC E1 are complete.
 
 Best next work:
 
-1. implement a production-independent direct resistor relation/KCL/power verifier and
-   forced-postcondition mutation gate;
-2. only then interpret the open syntax with one topology-generic resistor-only sparse DC
-   MNA path before AC/RLC or port-Hamiltonian claims;
+1. add positive-frequency passive AC/RLC E2 with complex-power/passivity checks, damped
+   resonance controls, and explicit lossless singular-resonance refusal;
+2. keep port-Hamiltonian semantics later until dynamic state and an effort/flow power
+   pairing are explicit and verified;
 3. extend water only after the stationary manufactured rung: bounded dispersive branches
    first, then measured regime-matched evidence before any promotion beyond `STRUCTURAL_TOY`;
 4. build the traffic kinematic-wave vertical as the next regime-valid analogue;
@@ -203,6 +212,9 @@ The compact continuation sheet is [ROADMAP_2026-07-27.md](ROADMAP_2026-07-27.md)
   round's target, falsifiers, calculation ledger, and claim state.
 - [RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md](RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md)
   — selective S0 port, generated-law evidence, rejected remote E1, and compact-resume cut.
+- [RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md](RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md)
+  — independently verified E1 implementation, hostile repairs, calculation receipt, and
+  compact-resume cut.
 - [CATEGORY_BACKBONE_ROADMAP_2026-07-27.md](CATEGORY_BACKBONE_ROADMAP_2026-07-27.md) —
   the staged open-diagram/domain-algebra architecture and its dominance boundary.
 

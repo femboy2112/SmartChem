@@ -25,7 +25,8 @@ from .program import (
     RunJournal, RuntimeLimits, SimulationRequest, SimulationResult, SolverSpec,
     SourceProgram, SourceTheory, StructuredObservableValue, TargetIntent,
     TransportEvidence, TransportMap, _WATER_WAVE_VALIDATION_EXECUTOR,
-    _compiler_implementation_digest, _require_runtime_dispatch, _resource_wall,
+    _ExecutionAdmissionSnapshot, _compiler_implementation_digest,
+    _execution_admission_error, _require_runtime_dispatch, _resource_wall,
 )
 from .water_wave_validation_domain import (
     BackgroundSample, CharacteristicInterval, CrossingBracket, SampleDiagnostic,
@@ -347,7 +348,8 @@ def _preflight_water_wave_validation(plan: CandidatePlan) -> None:
 
 def _execute_water_wave_validation(approved: ApprovedPlan, engine: object, *, actual_calculation: CalculationSpec,
                                    journal_path: str | os.PathLike[str] | None = None,
-                                   _dispatch_token: object = None) -> ExecutionReport:
+                                   _dispatch_token: object = None,
+                                   _admission_snapshot: _ExecutionAdmissionSnapshot | None = None) -> ExecutionReport:
     """Run one approved preflight; completion follows result-safe construction only."""
     _require_runtime_dispatch(_dispatch_token)
     plan = approved.plan
@@ -358,6 +360,8 @@ def _execute_water_wave_validation(approved: ApprovedPlan, engine: object, *, ac
     if type(resolved) is not ResolvedDomainProgram or type(resolved.subject) is not WaterWaveValidationSpec:
         raise TypeError("water-background executor requires an exact ResolvedDomainProgram WaterWaveValidationSpec")
     spec = resolved.subject
+    if type(_admission_snapshot) is not _ExecutionAdmissionSnapshot:
+        raise TypeError("water-background executor requires an execution admission snapshot")
     started = time.monotonic()
     journal = RunJournal(approved, backend=actual_calculation.engine_name, path=journal_path)
     try:
@@ -378,11 +382,18 @@ def _execute_water_wave_validation(approved: ApprovedPlan, engine: object, *, ac
         if not callable(solver):
             raise TypeError("water-background engine must expose solve(WaterWaveValidationSpec)")
         diagnostic = solver(spec)
+        admission_error = _execution_admission_error(approved, spec, _admission_snapshot)
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         if type(diagnostic) is not ValidationDiagnostic:
             return ExecutionReport(journal.invalid("water-background engine returned no exact ValidationDiagnostic"), None, None)
         journal.add_checkpoint(Artifact("checkpoint:water-background-validation", "checkpoint", canonical_digest(diagnostic), True, False,
                                         detail=f"{diagnostic.status.value}; {len(diagnostic.samples)} samples; {len(diagnostic.crossings)} brackets", payload=diagnostic))
-        if CalculationSpec.from_oracle(engine).digest != plan.calculation.digest:
+        observed_calculation = CalculationSpec.from_oracle(engine)
+        admission_error = _execution_admission_error(approved, spec, _admission_snapshot)
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
+        if observed_calculation.digest != plan.calculation.digest:
             raise RuntimeError("CalculationSpec changed during the approved water-background engine call")
         breach = _resource_wall(plan.limits, started=started, completed_calls=1, call_label="water-background engine calls")
         if breach is not None:
@@ -416,6 +427,9 @@ def _execute_water_wave_validation(approved: ApprovedPlan, engine: object, *, ac
                 journal.add_obligation_result(verdict)
                 if obligation.required and verdict.outcome is not ObligationOutcome.PASS:
                     return ExecutionReport(journal.invalid(f"postcondition {obligation.name} ended {verdict.outcome.value}: {verdict.detail}"), None, None)
+        admission_error = _execution_admission_error(approved, spec, _admission_snapshot)
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         certificate = Certificate(plan.request.source.digest, plan.request.digest, plan.digest, approved.approval.digest,
             actual_calculation.digest, plan.compiler_implementation_digest, journal.record.run_id, RunStatus.COMPLETE,
             plan.request.physical_ir.claim_scope, plan.request.physical_ir.evidence_status, journal.record.obligation_results,
@@ -432,4 +446,9 @@ def _execute_water_wave_validation(approved: ApprovedPlan, engine: object, *, ac
         record = journal.complete()
         return ExecutionReport(record, result, certificate) if record.status is RunStatus.COMPLETE else ExecutionReport(record, None, None)
     except Exception as error:
+        admission_error = _execution_admission_error(
+            approved, spec, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         return ExecutionReport(journal.failed(f"{type(error).__name__}: {error}"), None, None)

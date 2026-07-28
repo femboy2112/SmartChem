@@ -1,5 +1,10 @@
 # SmartChem build/research round — live contract
 
+> **Historical round record.** Its seven-executor/E1-next statements are superseded by
+> `RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md`: E1 is now complete, the registry has eight
+> executors, and positive-frequency passive AC/RLC E2 is next. The cold benchmark described
+> below is terminal-unclassified, not active.
+
 **Remote base:** `femboy2112/SmartChem@247c060d4b2ead4690f952b270e334496b6b7d73`
 **Working branch:** `agent/smartchem-roadmap-round-20260727`
 **Initial local baseline:** `python -m pytest -q -rs` reported
@@ -254,8 +259,8 @@ maximum reconstruction offset (`1.801707032789146e-6 m`) by far more than the
 preregistered attribution threshold.
 
 The authoritative terminal run is `9af118648f6c456a99390d2a77c93816`; no compiled
-simulation remains in progress. One optional unjournaled cold all-oracle chemistry
-benchmark remains active at OS PID `151446`; its wall-clock output is not publishable
+simulation remains in progress. The optional unjournaled cold all-oracle chemistry
+benchmark formerly at OS PID `151446` is terminal-unclassified; its wall-clock output is not publishable
 because it overlapped pytest load and it is not a release gate. Both supported pytest
 entry points report
 `1329 passed, 14 skipped, 1 xfailed`. The deterministic harness and complete identity

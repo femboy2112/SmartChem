@@ -33,6 +33,7 @@ __all__ = [
     "Junction",
     "OpenDiagram",
     "PortKind",
+    "StructuralEdge",
     "braid",
     "canonicalize",
     "identity",
@@ -170,6 +171,28 @@ class _Edge:
         _exact_enum(self.kind, ComponentKind, "edge kind")
         if type(self.node_a) is not int or type(self.node_b) is not int:
             raise DiagramConstructionError("edge nodes must be integers")
+
+
+@dataclass(frozen=True)
+class StructuralEdge:
+    """Stable, ID-free public view of one declared two-terminal component.
+
+    ``edge_index`` is the model-alignment position retained by the presentation.  It is
+    not an alpha-invariant identity; model transport across a different presentation
+    still requires an explicit reindex witness.
+    """
+
+    edge_index: int
+    kind: ComponentKind
+    node_a: int
+    node_b: int
+
+    def __post_init__(self) -> None:
+        if type(self.edge_index) is not int or self.edge_index < 0:
+            raise DiagramConstructionError("structural edge index must be non-negative")
+        _exact_enum(self.kind, ComponentKind, "structural edge kind")
+        if type(self.node_a) is not int or type(self.node_b) is not int:
+            raise DiagramConstructionError("structural edge nodes must be integers")
 
 
 @dataclass(frozen=True, init=False)
@@ -343,6 +366,17 @@ class OpenDiagram:
         if boundary.index >= len(nodes):
             raise DiagramConstructionError("boundary reference is out of range for this diagram")
         return nodes[boundary.index]
+
+    def structural_edges(self) -> tuple[StructuralEdge, ...]:
+        """Return the stable public topology/model-alignment view.
+
+        The returned records expose only component kind and incidence.  Construction-local
+        IDs remain discarded, and no domain parameter or constitutive law is attached.
+        """
+        return tuple(
+            StructuralEdge(index, edge.kind, edge.node_a, edge.node_b)
+            for index, edge in enumerate(self.edges)
+        )
 
     def then(self, other: "OpenDiagram") -> "OpenDiagram":
         """Total boundary gluing.  It never invokes the bounded canonical observer."""

@@ -24,6 +24,7 @@ from .program import (
     RunJournal, RuntimeLimits, SimulationRequest, SimulationResult, SolverSpec,
     SourceProgram, SourceTheory, StructuredObservableValue, TargetIntent,
     TransportEvidence, TransportMap, _compiler_implementation_digest,
+    _ExecutionAdmissionSnapshot, _execution_admission_error,
     _require_runtime_dispatch, _resource_wall,
 )
 from .water_wave_continuous_domain import (
@@ -568,13 +569,16 @@ def _post_result(obligation: ValidityObligation, diagnostic: object, spec: Conti
 
 def _execute_water_wave_continuous(approved: ApprovedPlan, engine: object, *, actual_calculation: CalculationSpec,
                                    journal_path: str | os.PathLike[str] | None = None,
-                                   _dispatch_token: object = None) -> ExecutionReport:
+                                   _dispatch_token: object = None,
+                                   _admission_snapshot: _ExecutionAdmissionSnapshot | None = None) -> ExecutionReport:
     """Registry runner; common approval/calculation checks have already happened."""
     _require_runtime_dispatch(_dispatch_token)
     plan = approved.plan
     plan_preflight(plan)
     subject = plan.request.resolved.subject
     assert type(subject) is ContinuousWaterSubject
+    if type(_admission_snapshot) is not _ExecutionAdmissionSnapshot:
+        raise TypeError("continuous-water executor requires an execution admission snapshot")
     spec = subject.background
     started = time.monotonic()
     journal = RunJournal(approved, backend=actual_calculation.engine_name, path=journal_path)
@@ -596,11 +600,22 @@ def _execute_water_wave_continuous(approved: ApprovedPlan, engine: object, *, ac
         if not callable(solver):
             raise TypeError("continuous-water engine must expose solve(ContinuousBackgroundSpec)")
         diagnostic = solver(subject)
+        admission_error = _execution_admission_error(
+            approved, subject, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         if type(diagnostic) is not ContinuousDiagnostic:
             return ExecutionReport(journal.invalid("continuous-water engine returned no exact ContinuousDiagnostic"), None, None)
         journal.add_checkpoint(Artifact("checkpoint:continuous-water", "checkpoint", canonical_digest(diagnostic), True, False,
                                         detail=f"{diagnostic.status.value}; meshes={len(diagnostic.meshes)}", payload=diagnostic))
-        if CalculationSpec.from_oracle(engine).digest != plan.calculation.digest:
+        observed_calculation = CalculationSpec.from_oracle(engine)
+        admission_error = _execution_admission_error(
+            approved, subject, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
+        if observed_calculation.digest != plan.calculation.digest:
             raise RuntimeError("CalculationSpec changed during the approved continuous-water engine call")
         comparison = _comparison(subject, diagnostic)
         payloads: dict[str, object] = {
@@ -621,6 +636,11 @@ def _execute_water_wave_continuous(approved: ApprovedPlan, engine: object, *, ac
                 journal.add_obligation_result(verdict)
                 if obligation.required and verdict.outcome is not ObligationOutcome.PASS:
                     return ExecutionReport(journal.invalid(f"postcondition {obligation.name} ended {verdict.outcome.value}: {verdict.detail}"), None, None)
+        admission_error = _execution_admission_error(
+            approved, subject, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         certificate = Certificate(plan.request.source.digest, plan.request.digest, plan.digest, approved.approval.digest,
             actual_calculation.digest, plan.compiler_implementation_digest, journal.record.run_id, RunStatus.COMPLETE,
             plan.request.physical_ir.claim_scope, plan.request.physical_ir.evidence_status, journal.record.obligation_results,
@@ -634,4 +654,9 @@ def _execute_water_wave_continuous(approved: ApprovedPlan, engine: object, *, ac
         record = journal.complete()
         return ExecutionReport(record, result, certificate) if record.status is RunStatus.COMPLETE else ExecutionReport(record, None, None)
     except Exception as error:
+        admission_error = _execution_admission_error(
+            approved, subject, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         return ExecutionReport(journal.failed(f"{type(error).__name__}: {error}"), None, None)

@@ -733,6 +733,125 @@ def test_oracle_identity_change_during_a_call_fails_and_quarantines_partial(plan
     assert "CalculationSpec changed during" in report.record.failures[-1]
 
 
+def test_calculation_spec_cannot_mutate_approved_plan_before_any_oracle_call(plan, tmp_path):
+    """Admission identity is captured before a backend-controlled spec lookup."""
+
+    class PreAdmissionMutatingOracle(MutableOracle):
+        def __init__(self):
+            super().__init__()
+            self.approved = None
+            self.mutate_on_spec_lookup = False
+
+        def calculation_spec(self):
+            if self.mutate_on_spec_lookup:
+                assert self.approved is not None
+                contract = self.approved.plan.request.output_contract
+                object.__setattr__(
+                    self.approved.plan.request,
+                    "output_contract",
+                    replace(
+                        contract,
+                        observables=(
+                            replace(
+                                contract.observables[0],
+                                precision="mutated during pre-backend admission",
+                            ),
+                        ),
+                    ),
+                )
+            return super().calculation_spec()
+
+    oracle = PreAdmissionMutatingOracle()
+    plan = compile_reaction_energy(plan.request.source, H_FORMATION, oracle)
+    approved = _approved(plan)
+    oracle.approved = approved
+    oracle.mutate_on_spec_lookup = True
+    journal = tmp_path / "must-not-exist.json"
+
+    with pytest.raises(ValueError, match="execution identity changed"):
+        execute(approved, oracle, journal_path=journal)
+
+    assert oracle.calls == []
+    assert not journal.exists()
+
+
+def test_oracle_cannot_mutate_approved_plan_during_energy_call(plan):
+    class PlanMutatingOracle(MutableOracle):
+        def __init__(self):
+            super().__init__()
+            self.approved = None
+
+        def energy(self, molecule):
+            estimate = super().energy(molecule)
+            assert self.approved is not None
+            contract = self.approved.plan.request.output_contract
+            object.__setattr__(
+                self.approved.plan.request,
+                "output_contract",
+                replace(
+                    contract,
+                    observables=(
+                        replace(
+                            contract.observables[0],
+                            precision="mutated during approved energy call",
+                        ),
+                    ),
+                ),
+            )
+            return estimate
+
+    oracle = PlanMutatingOracle()
+    mutation_plan = compile_reaction_energy(plan.request.source, H_FORMATION, oracle)
+    approved = _approved(mutation_plan)
+    oracle.approved = approved
+
+    report = execute(approved, oracle)
+
+    assert report.record.status is RunStatus.INVALID
+    assert report.result is None and report.certificate is None
+    assert report.record.artifacts
+    assert all(artifact.quarantined for artifact in report.record.artifacts)
+
+
+def test_raising_oracle_plan_mutation_is_invalid_and_quarantined(plan):
+    class PlanMutatingRaisingOracle(MutableOracle):
+        def __init__(self):
+            super().__init__()
+            self.approved = None
+
+        def energy(self, molecule):
+            super().energy(molecule)
+            assert self.approved is not None
+            contract = self.approved.plan.request.output_contract
+            object.__setattr__(
+                self.approved.plan.request,
+                "output_contract",
+                replace(
+                    contract,
+                    observables=(
+                        replace(
+                            contract.observables[0],
+                            precision="mutated before backend exception",
+                        ),
+                    ),
+                ),
+            )
+            raise RuntimeError("backend exception after mutating approved plan")
+
+    oracle = PlanMutatingRaisingOracle()
+    mutation_plan = compile_reaction_energy(plan.request.source, H_FORMATION, oracle)
+    approved = _approved(mutation_plan)
+    oracle.approved = approved
+
+    report = execute(approved, oracle)
+
+    assert report.record.status is RunStatus.INVALID
+    assert report.result is None and report.certificate is None
+    assert report.record.artifacts
+    assert all(artifact.quarantined for artifact in report.record.artifacts)
+    assert any("execution identity changed" in detail for detail in report.record.failures)
+
+
 def test_assembly_hypothesis_cannot_enter_calibrated_or_certified_lane(plan):
     spec = AssemblySpec("hypothetical whole", "component", ("quorum rule",))
     hypothesis = AssemblyHypothesis(spec, ("calibration missing",), ("quorum fails",))

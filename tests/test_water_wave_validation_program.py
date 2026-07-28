@@ -170,6 +170,44 @@ def test_calculation_and_implementation_mutation_are_rejected_before_execution(m
         execute(clean_approved, clean_engine)
 
 
+def test_engine_cannot_mutate_approved_plan_during_solve():
+    class PlanMutatingEngine(FiniteSectionCompatibilityEngine):
+        def __init__(self):
+            super().__init__()
+            self.approved = None
+
+        def solve(self, subject):
+            diagnostic = super().solve(subject)
+            assert self.approved is not None
+            contract = self.approved.plan.request.output_contract
+            object.__setattr__(
+                self.approved.plan.request,
+                "output_contract",
+                replace(
+                    contract,
+                    observables=(
+                        replace(
+                            contract.observables[0],
+                            precision="mutated during approved validation solve",
+                        ),
+                    )
+                    + contract.observables[1:],
+                ),
+            )
+            return diagnostic
+
+    engine = PlanMutatingEngine()
+    approved = _approved(compile_water_wave_validation("check", _spec(), engine))
+    engine.approved = approved
+
+    report = execute(approved, engine)
+
+    assert report.record.status is RunStatus.INVALID
+    assert report.result is None and report.certificate is None
+    assert report.record.artifacts
+    assert all(artifact.quarantined for artifact in report.record.artifacts)
+
+
 def test_resource_wall_and_tampered_claim_scope_refuse_without_result():
     engine = FiniteSectionCompatibilityEngine()
     resource_plan = compile_water_wave_validation("check", _spec(), engine, limits=RuntimeLimits(max_engine_calls=0))

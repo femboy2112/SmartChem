@@ -58,7 +58,9 @@ from .program import (
     TransportEvidence,
     TransportMap,
     _WATER_WAVE_EXECUTOR,
+    _ExecutionAdmissionSnapshot,
     _compiler_implementation_digest,
+    _execution_admission_error,
     _require_runtime_dispatch,
     _resource_wall,
 )
@@ -742,6 +744,7 @@ def _execute_water_wave_horizon(
     actual_calculation: CalculationSpec,
     journal_path: str | os.PathLike[str] | None = None,
     _dispatch_token: object = None,
+    _admission_snapshot: _ExecutionAdmissionSnapshot | None = None,
 ) -> ExecutionReport:
     """Execute after the common approval/compiler/calculation preflight in program.execute."""
     _require_runtime_dispatch(_dispatch_token)
@@ -754,6 +757,8 @@ def _execute_water_wave_horizon(
     ):
         raise TypeError("water-wave executor requires a ResolvedDomainProgram WaterWaveSpec")
     spec = resolved.subject
+    if type(_admission_snapshot) is not _ExecutionAdmissionSnapshot:
+        raise TypeError("water-wave executor requires an execution admission snapshot")
     started = time.monotonic()
     journal = RunJournal(
         approved,
@@ -810,11 +815,25 @@ def _execute_water_wave_horizon(
         try:
             diagnostic = solver(spec)
         except ValueError as error:
+            admission_error = _execution_admission_error(
+                approved,
+                spec,
+                _admission_snapshot,
+            )
+            if admission_error is not None:
+                return ExecutionReport(journal.invalid(admission_error), None, None)
             return ExecutionReport(
                 journal.invalid(f"approved water-wave input is unclassifiable: {error}"),
                 None,
                 None,
             )
+        admission_error = _execution_admission_error(
+            approved,
+            spec,
+            _admission_snapshot,
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         if not isinstance(diagnostic, HorizonDiagnostic):
             return ExecutionReport(
                 journal.invalid(
@@ -836,7 +855,15 @@ def _execute_water_wave_horizon(
             payload=diagnostic,
         )
         journal.add_checkpoint(checkpoint)
-        if CalculationSpec.from_oracle(engine).digest != plan.calculation.digest:
+        observed_calculation = CalculationSpec.from_oracle(engine)
+        admission_error = _execution_admission_error(
+            approved,
+            spec,
+            _admission_snapshot,
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
+        if observed_calculation.digest != plan.calculation.digest:
             raise RuntimeError(
                 "CalculationSpec changed during the approved water-wave engine call"
             )
@@ -890,6 +917,13 @@ def _execute_water_wave_horizon(
                 )
                 return ExecutionReport(record, None, None)
 
+        admission_error = _execution_admission_error(
+            approved,
+            spec,
+            _admission_snapshot,
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         certificate = Certificate(
             source_digest=plan.request.source.digest,
             request_digest=plan.request.digest,
@@ -951,6 +985,13 @@ def _execute_water_wave_horizon(
             certificate,
         )
     except Exception as error:
+        admission_error = _execution_admission_error(
+            approved,
+            spec,
+            _admission_snapshot,
+        )
+        if admission_error is not None and journal.record.status is RunStatus.RUNNING:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         if journal.record.status is RunStatus.RUNNING:
             record = journal.failed(f"{type(error).__name__}: {error}")
             return ExecutionReport(record, None, None)

@@ -62,7 +62,9 @@ from .program import (
     TransportEvidence,
     TransportMap,
     _ISING_LATTICE_GAS_EXECUTOR,
+    _ExecutionAdmissionSnapshot,
     _compiler_implementation_digest,
+    _execution_admission_error,
     _require_runtime_dispatch,
     _resource_wall,
 )
@@ -693,6 +695,7 @@ def _execute_ising_lattice_gas(
     actual_calculation: CalculationSpec,
     journal_path: str | os.PathLike[str] | None = None,
     _dispatch_token: object = None,
+    _admission_snapshot: _ExecutionAdmissionSnapshot | None = None,
 ) -> ExecutionReport:
     """Execute after the common approval/compiler/calculation preflight."""
     _require_runtime_dispatch(_dispatch_token)
@@ -710,6 +713,8 @@ def _execute_ising_lattice_gas(
             "IsingLatticeGasSpec"
         )
     spec = resolved.subject
+    if type(_admission_snapshot) is not _ExecutionAdmissionSnapshot:
+        raise TypeError("exact C3 executor requires an execution admission snapshot")
     started = time.monotonic()
     journal = RunJournal(
         approved,
@@ -768,6 +773,11 @@ def _execute_ising_lattice_gas(
                 "Ising-lattice-gas engine must expose solve(IsingLatticeGasSpec)"
             )
         diagnostic = solver(spec)
+        admission_error = _execution_admission_error(
+            approved, spec, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         if type(diagnostic) is not ExactEquilibriumMap:
             return ExecutionReport(
                 journal.invalid(
@@ -790,7 +800,13 @@ def _execute_ising_lattice_gas(
                 payload=diagnostic,
             )
         )
-        if CalculationSpec.from_oracle(engine).digest != plan.calculation.digest:
+        observed_calculation = CalculationSpec.from_oracle(engine)
+        admission_error = _execution_admission_error(
+            approved, spec, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
+        if observed_calculation.digest != plan.calculation.digest:
             raise RuntimeError(
                 "CalculationSpec changed during the approved exact C3 engine call"
             )
@@ -847,6 +863,11 @@ def _execute_ising_lattice_gas(
                         None,
                     )
 
+        admission_error = _execution_admission_error(
+            approved, spec, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         certificate = Certificate(
             plan.request.source.digest,
             plan.request.digest,
@@ -912,6 +933,11 @@ def _execute_ising_lattice_gas(
             return ExecutionReport(record, None, None)
         return ExecutionReport(record, result, certificate)
     except Exception as error:
+        admission_error = _execution_admission_error(
+            approved, spec, _admission_snapshot
+        )
+        if admission_error is not None:
+            return ExecutionReport(journal.invalid(admission_error), None, None)
         return ExecutionReport(
             journal.failed(f"{type(error).__name__}: {error}"),
             None,

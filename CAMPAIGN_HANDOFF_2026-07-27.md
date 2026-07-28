@@ -54,10 +54,11 @@ Completed:
 
 1. **P0 seam hardening.** Exact `PhysicalIR` members, global graph IDs/references,
    connection compatibility, transport/assembly evidence closure, and source/target
-   transport binding; runtime-owned model/transform preflight for all seven executors;
+   transport binding; runtime-owned model/transform preflight for all eight executors;
    reaction transform output/equivalence contract binding; dispatch-capability-guarded
-   runners; exact nominal plan/approval admission; and visible `Reaction.tensor`
-   deprecation.
+   runners; exact nominal plan/approval admission; one pre-backend execution-admission
+   snapshot rechecked after backend callbacks and before certification; and visible
+   `Reaction.tensor` deprecation.
 2. **Distribution/CI repair.** Public `experiments.*` harnesses are now installed. The
    untouched branch initially failed all three CI jobs on the same two imports when
    invoked through console `pytest`; the repaired local console-entrypoint controls pass.
@@ -89,17 +90,24 @@ Completed:
    observer. Generated finite controls now cover structurally varied unit, associativity,
    interchange, naturality, symmetry, alpha-renaming, multiplicity, self-loop, and refusal
    cases. No circuit model, solver, executor, result receipt, or physical-validation claim
-   was imported.
+   was imported from that branch.
+7. **Finite resistive-DC E1.** Added shared immutable nominal records, exact rational
+   passive boundary relations, an explicit model-to-structural-edge witness, one generic
+   sparse-MNA path, complete node/branch/source/diagnostic output, and a separately
+   implemented direct verifier. Hostile controls cover coherent production forgery,
+   recursive same-name dataclass impostors, approved-input substitution, nonidentity
+   reindexing, canonical/inventory mutations, and 64 seeded connected multigraphs. Scope
+   is the declared finite positive ideal mathematical circuit only.
 
 Detailed contract and claim ledger:
 `RESEARCH_ROUND_2026-07-27.md`. Implementation-grade category design:
-`CATEGORY_BACKBONE_ROADMAP_2026-07-27.md`. S0 release evidence and the exact E1 resume
-cut: `RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md`.
+`CATEGORY_BACKBONE_ROADMAP_2026-07-27.md`. S0 release evidence and the rejected remote E1
+cut: `RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md`. Current E1 authority:
+`RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md`.
 
 ## Calculation ledger
 
-No compiled simulation is in progress. One optional verification calculation is active
-and explicitly non-authoritative.
+No compiled simulation or optional benchmark is in progress.
 
 | Calculation family | Terminal state | Scope note |
 |---|---|---|
@@ -111,7 +119,8 @@ and explicitly non-authoritative.
 | Class-A optimizer probe, transformed and reference arms | `COMPLETE` | Certification/domain-admission correction; not a newly measured speedup. |
 | Finite C3 Ising/lattice-gas | `COMPLETE` | `ANALOGUE/ESTABLISHED/CERTIFIED` finite algebra only. |
 | Manufactured continuous steady water | `COMPLETE`, run `9af118648f6c456a99390d2a77c93816` | 32/64/128-mesh regular-transcritical cell-centred reconstruction, `ANALOGUE/STRUCTURAL_TOY`; metadata-only uncertainty; finite-v2 comparison is independent code on derived manufactured samples, not independent data. |
-| Cold all-oracle chemistry benchmark | `IN_PROGRESS`, OS PID `151446` | Command: `.venv/bin/python -m smartchem.bench --split test --quiet`. This unjournaled verification run exposes four cold PySCF CCSD(T) variants plus the heuristic. Its wall-clock output is unpublishable because it overlapped pytest load; it is not a release gate or simulation receipt. Preserve it to terminal state unless the scientist explicitly authorizes cancellation. |
+| Finite resistive DC E1 | `COMPLETE` | Exact relation plus sparse-MNA bridge under a separate direct verifier; fresh run identity and source-bound digests are in `experiments/RESULTS_compiled_resistive_dc.md`. |
+| Cold all-oracle chemistry benchmark | **terminal-unclassified**; former OS PID `151446` | The process is gone. It had no journal, stdout capture, recovered exit code, or final report. Historical live observations are not publishable timing evidence, and this is not `COMPLETE` or `INCOMPLETE`. |
 
 Ignored JSON journals are local, terminal run artifacts. New calculations require fresh
 write-once paths, new plan identities, and new approvals. No checkpoint or partial output is
@@ -123,19 +132,19 @@ also reached terminal `COMPLETE`, but their compiler identities were superseded 
 final stored-precision wording, all-mesh magnitude gate, exact comparison-explanation
 verifier, and finite-volume claim removal. They are not receipt authority. The final
 authoritative run is `9af118648f6c456a99390d2a77c93816`; none is in progress.
-The separate cold benchmark above is the only active calculation.
+The separate cold benchmark is not active and has no recoverable scientific result.
 
 ## Final verification state
 
 ```text
 .venv/bin/python -m pytest -q -rs
 .venv/bin/pytest -q -rs
-1345 passed, 14 skipped, 1 xfailed
+1434 passed, 14 skipped, 1 xfailed
 ```
 
 - The 14 slow tests were not run and are not represented as passing.
 - The strict xfail is the known true-parallel-interchange architecture debt.
-- Focused S0/registry/P0/closed-law verification reported `108 passed, 1 xfailed`.
+- Final focused E1/registry/P0 and full-suite counts are recorded in the E1 research round.
 - A deterministic independent metamorphic probe accepted 500 generated multigraph
   presentations under component/junction/endpoint reordering, alpha-renaming, and
   undirected terminal reversal at seed `20260727`.
@@ -156,14 +165,12 @@ The separate cold benchmark above is the only active calculation.
   model/transform plans, direct-runner dispatch, and nominal plan/record subclasses
   before calculation or journal creation.
 - These are local verification claims. No remote CI result is inferred from them.
-- The seven-executor registry semantic digest remains
-  `aed56d04625e864e2ed029375ceb663c4d242a152a2b7ccfbb5f4890d44623e0`;
-  the shipped-source compiler digest is now
-  `84577e497d48d48685bf44e8a4777cc25c4583e3dd7630de8f19184af8910669`.
+- The eight-executor registry and shipped-source compiler digests are recorded from the
+  frozen final tree in the E1 research round and receipt.
 
 ## What the project can now honestly say
 
-SmartChem has seven closed executors behind one source/IR/plan/approval/run/certificate seam.
+SmartChem has eight closed executors behind one source/IR/plan/approval/run/certificate seam.
 It can:
 
 - require a closed typed shepherd session before cross-domain execution;
@@ -174,35 +181,30 @@ It can:
 - carry an established exact analogue without making its referents literal;
 - expose and verify one narrow Class-A transform without claiming a general optimizer;
 - construct and compose finite typed open wiring presentations and compare them exactly
-  modulo internal naming when the declared observer budget succeeds.
+  modulo internal naming when the declared observer budget succeeds;
+- interpret one such presentation as a finite positive ideal-resistor DC network, retaining
+  its exact relation and full sparse solution under independent direct verification.
 
 It still cannot honestly say that it is a general simulation language, general model-chain
 planner, multiphysics runtime, empirical human model, general Saint-Venant/free-surface or
-dispersive water solver, circuit simulator, general optimizer, or conversational scientific
-environment.
+dispersive water solver, general circuit/device simulator, general optimizer, or
+conversational scientific environment.
 
-## Best next category midterm: independently verified resistive DC semantics
+## Best next category midterm: positive-frequency passive AC/RLC E2
 
-Remote `origin/agent/smartchem-open-semantics-round-20260727` at `fdb906f` already contains
-a serious E1 implementation attempt, but it is **not release authority**: its resistive-DC
-completion check reuses the production solver and therefore fails the independent-verifier
-gate. S0 selectively reused and strengthened only its topology kernel; the remaining
-circuit/runtime/receipt stack was rejected. Do not fast-forward the branch.
+E1 is complete. Remote `origin/agent/smartchem-open-semantics-round-20260727` at `fdb906f`
+remains historical `NO-SHIP` because its completion check reused production analysis; do not
+fast-forward it. Starting from the shipped E1 boundary:
 
-Do not broaden `PhysicalIR` strings or reinterpret `Reaction.tensor`. Starting from the
-now-complete finite open-diagram value:
-
-1. add a separately implemented direct resistor relation/KCL/power verifier that does not
-   import or call production analysis, stamping, solving, or exact-relation helpers;
-2. require a forced-postcondition/common-mode mutation gate that corrupts production
-   branch, node, source, and relation outputs while the direct verifier remains untouched;
-3. admit
-   the resistor-only sparse MNA interpreter using the same stamping path for series,
-   parallel, bridge, and cycle topology;
-4. require reference/floating/singularity refusal, complete retained outputs, KCL, power,
-   passivity, exact-small/analytic controls, and an explicit structure/model reindex witness;
-5. only after those pass, AC/RLC; only after a proved power pairing, port-Hamiltonian
-   composition.
+1. add finite `omega > 0` phasor-valued R/L/C schema and preserve the explicit
+   model-to-edge witness;
+2. retain branch voltage/current/complex power and the complete MNA state without
+   reducing E1 outputs;
+3. independently rederive positive-real/passivity and global complex-power checks;
+4. require analytic RC/RLC, damped resonance, mutation, and conditioning controls;
+5. refuse ideal lossless singular resonance rather than silently regularizing it;
+6. keep port-Hamiltonian composition later, until dynamic state and an effort/flow power
+   pairing are explicit and verified.
 
 ## Following midterm queue
 
@@ -243,7 +245,7 @@ They are stress tests with distinct casualty/evidence needs, not an exhaustive l
 1. Confirm the intended branch, remote head, and a clean worktree.
 2. Read this handoff, the direction audit, and the roadmap before choosing work.
 3. Inspect current receipts and live tests rather than trusting a stale recap.
-4. Read the category-backbone roadmap before implementing E1; keep topology, domain
+4. Read the category-backbone roadmap before implementing E2; keep topology, domain
    equations, verification, evidence, and task scheduling separate.
 5. Keep each calculation's terminal state and journal path explicit.
 6. Preserve unrelated work; stage only the intended slice.

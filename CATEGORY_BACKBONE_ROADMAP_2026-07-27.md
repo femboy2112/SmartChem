@@ -2,13 +2,16 @@
 
 ## Status and decision
 
-**The finite typed open-diagram S0 kernel is now implemented; no circuit executor is.**
+**The finite typed open-diagram S0 kernel and its first narrow E1 interpreter are now
+implemented; no general circuit executor is.**
 `smartchem/open_diagram.py` supplies topology-only presentations, total composition/tensor,
 and a separate budgeted exact canonical observer. Generated and adversarial finite controls
 support the implemented coherence claims; they are not a formal proof of the laws for all
-finite graphs. This remains a dependency cut, not evidence that a general multiphysics
-category or circuit vertical exists. The manufactured continuous-water runtime remains a
-domain-semantic rung and is not silently reinterpreted through the new wiring kernel.
+finite graphs. The separate E1 stack supplies only finite positive ideal-resistor DC
+relations and one declared drive/reference. This remains a dependency cut, not evidence
+that a general multiphysics category or general circuit vertical exists. The manufactured
+continuous-water runtime remains a domain-semantic rung and is not silently reinterpreted
+through the new wiring kernel.
 
 The repository has a load-bearing category of *closed sequential chemical histories*.
 It does not have a true parallel morphism product: `Reaction.scheduled_product`/`tensor`
@@ -17,10 +20,10 @@ interchange is correct.  The next backbone must therefore be introduced beside t
 not by relabelling it.
 
 The completed structural target is a finite typed open-diagram syntax with total
-composition and a budgeted canonical observer. The next semantic target is a passive,
-lumped electrical interpretation with an independent verifier. Together they are enough
-to establish one topology-generic control; neither is a promise of a universal physics
-language.
+composition and a budgeted canonical observer. The first semantic target—a passive,
+lumped resistive-DC interpretation with an independent verifier—is also complete.
+Together they establish one topology-generic control; neither is a promise of a universal
+physics language. Positive-frequency passive AC/RLC E2 is next.
 
 ## Diagnosis
 
@@ -217,11 +220,11 @@ from categorical composition to scalar series addition and tensor to scalar para
 reduction would demand an interchange equality that representative resistors already
 violate.
 
-### Stage E1: resistive DC MNA
+### Stage E1: resistive DC MNA — completed
 
-Add `smartchem/circuit.py` only after the topology kernel passes its generated laws.
-Initially support positive resistors and a declared ideal-voltage boundary drive plus a
-declared reference node.  For each resistor between nodes `a,b`, stamp conductance
+The shipped `smartchem/circuit.py` was added after the topology kernel passed its generated
+laws. It supports positive resistors and a declared ideal-voltage boundary drive plus a
+declared reference node. For each resistor between nodes `a,b`, it stamps conductance
 `g=1/R` into sparse nodal matrix `G`:
 
 \[
@@ -242,9 +245,12 @@ any component not connected to the reference through passive/source constraints,
 warnings, non-finite values, and scaled residual failure.  Check KCL and power balance;
 each resistor must satisfy nonnegative absorbed real power.
 
-Controls: one-resistor drive, series and parallel resistor analytic cases, and a five-edge
-bridge all compile through the same stamping routine.  The bridge is specifically required
-to falsify any unnoticed series/parallel branch dispatcher.
+Controls include one-resistor drive, series and parallel analytic cases, a five-edge bridge,
+a cycle, nonidentity model-edge reindexing, seeded connected multigraphs, recursive nominal
+record forgeries, and approved-input substitution. They compile through the same stamping
+routine and a separate verifier independently derives the exact relation and physical
+residuals. The durable receipt is
+`experiments/RESULTS_compiled_resistive_dc.md`.
 
 ### Stage E2: positive-frequency passive RLC phasors
 
@@ -323,11 +329,12 @@ shared P0 prerequisite; continuous water does not depend on a circuit interprete
    `fdb906f`, retained total presentation operations and named
    canonicalization-budget refusal, and expanded the category-law harness over a
    deterministic generated structural family. No solver or physics claim was added.
-4. **E1 resistive DC control — next category milestone.** The remote attempt is `NO-SHIP` until a separately
-   implemented direct verifier replaces its production-solver recomputation. Then add
-   sparse MNA, topological-reference refusal, residual and passivity checks, analytic and
-   bridge controls.
-5. **E2 AC/RLC control.** Add phasors, energy/power checks, damped resonance control, and
+4. **E1 resistive DC control — completed.** The older remote `fdb906f` attempt remains
+   historical `NO-SHIP`; the shipped implementation instead uses shared immutable nominal
+   records, separate production and direct-verifier computations, sparse MNA,
+   topological-reference refusal, residual/passivity checks, complete outputs, and
+   hostile common-mode/input-substitution controls.
+5. **E2 AC/RLC control — next category milestone.** Add phasors, energy/power checks, damped resonance control, and
    lossless singular refusal.
 6. **Only then consider a `StructureIR` adapter.** It must be a deliberate migration with
    exact plan-digest/output-contract tests, not a broad rewrite of current compiled
@@ -347,9 +354,12 @@ shared P0 prerequisite; continuous water does not depend on a circuit interprete
 | Existing behavior is preserved | Any chemistry/compiled-vertical regression or changed digest without an approved migration. |
 
 The S0 implementation occupies 575 source lines plus its focused generated/adversarial
-tests, inside the initial 500–700-line topology budget. The remaining initial complexity
-budget is roughly
-350–500 lines for DC+AC MNA, and 450–650 focused test lines.  The canonicalizer's candidate
+tests, inside the initial 500–700-line topology budget. E1 exceeded the initial sketch:
+its schema, production relation/MNA, compiled lifecycle, and independent verifier occupy
+about 2,590 source lines, with about 1,295 focused test lines. The added size is principally
+the full-output lifecycle and genuinely separate verifier/hostile integrity gates; it is
+recorded as complexity debt, not hidden as a small scalar circuit helper. E2 should reuse
+this boundary and resist further duplication. The canonicalizer's candidate
 cap must be measured and recorded; its worst case is factorial in symmetric node cells.
 Sparse MNA storage is linear in edges/nodes before factorization, while solve cost is
 topology-dependent and must be reported rather than predicted as universally linear.

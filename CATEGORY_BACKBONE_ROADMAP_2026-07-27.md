@@ -2,11 +2,13 @@
 
 ## Status and decision
 
-**No typed open-diagram kernel or circuit executor was implemented in this round.**
-This is an implementation-grade design and dependency cut, not evidence that a general
-multiphysics category or circuit vertical exists. The separate manufactured
-continuous-water runtime was implemented as a domain-semantic rung; it supplies a
-concrete future open conservation-law component, not the general wiring kernel itself.
+**The finite typed open-diagram S0 kernel is now implemented; no circuit executor is.**
+`smartchem/open_diagram.py` supplies topology-only presentations, total composition/tensor,
+and a separate budgeted exact canonical observer. Generated and adversarial finite controls
+support the implemented coherence claims; they are not a formal proof of the laws for all
+finite graphs. This remains a dependency cut, not evidence that a general multiphysics
+category or circuit vertical exists. The manufactured continuous-water runtime remains a
+domain-semantic rung and is not silently reinterpreted through the new wiring kernel.
 
 The repository has a load-bearing category of *closed sequential chemical histories*.
 It does not have a true parallel morphism product: `Reaction.scheduled_product`/`tensor`
@@ -14,9 +16,11 @@ is intentionally a left-first linearisation, and the existing strict expected fa
 interchange is correct.  The next backbone must therefore be introduced beside that API,
 not by relabelling it.
 
-The smallest sufficient target is a finite typed open-diagram syntax with canonical
-composition and a passive, lumped electrical interpretation.  It is enough to establish
-one topology-generic control.  It is not a promise of a universal physics language.
+The completed structural target is a finite typed open-diagram syntax with total
+composition and a budgeted canonical observer. The next semantic target is a passive,
+lumped electrical interpretation with an independent verifier. Together they are enough
+to establish one topology-generic control; neither is a promise of a universal physics
+language.
 
 ## Diagnosis
 
@@ -62,6 +66,12 @@ the canonical topology store during the first kernel slice.  Preserve the curren
 beside them, then add an adapter only after the seam has global reference/type validation.
 
 ## Exact open-diagram kernel
+
+**Implementation state:** S0 is complete in `smartchem/open_diagram.py` and
+`tests/test_open_diagram.py`. The public shape below remains intentionally electrical and
+two-terminal, with no constitutive value in structural identity. Exact observation may
+refuse above its explicit factorial candidate budget; `then` and `tensor` remain total and
+never invoke that observer.
 
 ### Minimal public signature
 
@@ -309,11 +319,11 @@ shared P0 prerequisite; continuous water does not depend on a circuit interprete
    uncertainty, solver-independent direct verification, and a quantified finite-v2
    comparison at `STRUCTURAL_TOY`. It is a bounded cell-centred energy reconstruction,
    not a finite-volume/general stationary solver.
-3. **S0 syntax only — next category milestone.** Selectively audit and port
-   `open_diagram.py` from remote `fdb906f`,
-   canonicalization-budget refusal, and
-   generated category-law tests.  No solver or physics claim yet.
-4. **E1 resistive DC control.** The remote attempt is `NO-SHIP` until a separately
+3. **S0 syntax only — completed.** Selectively ported `open_diagram.py` from remote
+   `fdb906f`, retained total presentation operations and named
+   canonicalization-budget refusal, and expanded the category-law harness over a
+   deterministic generated structural family. No solver or physics claim was added.
+4. **E1 resistive DC control — next category milestone.** The remote attempt is `NO-SHIP` until a separately
    implemented direct verifier replaces its production-solver recomputation. Then add
    sparse MNA, topological-reference refusal, residual and passivity checks, analytic and
    bridge controls.
@@ -336,7 +346,9 @@ shared P0 prerequisite; continuous water does not depend on a circuit interprete
 | Continuous-water result is stronger than v2 in the right way | It lacks retained N/2N/4N records or claims continuum truth from a finite grid. |
 | Existing behavior is preserved | Any chemistry/compiled-vertical regression or changed digest without an approved migration. |
 
-Initial complexity budget: roughly 500–700 lines for the immutable topology/canonicalizer,
+The S0 implementation occupies 575 source lines plus its focused generated/adversarial
+tests, inside the initial 500–700-line topology budget. The remaining initial complexity
+budget is roughly
 350–500 lines for DC+AC MNA, and 450–650 focused test lines.  The canonicalizer's candidate
 cap must be measured and recorded; its worst case is factorial in symmetric node cells.
 Sparse MNA storage is linear in edges/nodes before factorization, while solve cost is

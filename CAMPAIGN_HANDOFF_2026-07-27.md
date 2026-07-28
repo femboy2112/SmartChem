@@ -83,10 +83,18 @@ Completed:
    Introduce a separate layered `StructureIR`/`ModelIR`/`EvidenceIR`/`ExecutionDAG`
    architecture. Exact open-diagram syntax and laws precede resistor-only DC MNA; AC/RLC
    and port-Hamiltonian claims come later.
+6. **Exact open syntax S0.** Selectively ported only the topology kernel from remote
+   `fdb906f`: typed ordered interfaces, exact terminal ownership, total boundary gluing,
+   total disjoint union, identity/braid, and a separate budgeted exact alpha-canonical
+   observer. Generated finite controls now cover structurally varied unit, associativity,
+   interchange, naturality, symmetry, alpha-renaming, multiplicity, self-loop, and refusal
+   cases. No circuit model, solver, executor, result receipt, or physical-validation claim
+   was imported.
 
 Detailed contract and claim ledger:
 `RESEARCH_ROUND_2026-07-27.md`. Implementation-grade category design:
-`CATEGORY_BACKBONE_ROADMAP_2026-07-27.md`.
+`CATEGORY_BACKBONE_ROADMAP_2026-07-27.md`. S0 release evidence and the exact E1 resume
+cut: `RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md`.
 
 ## Calculation ledger
 
@@ -120,13 +128,20 @@ The separate cold benchmark above is the only active calculation.
 ## Final verification state
 
 ```text
- .venv/bin/python -m pytest -q -rs
+.venv/bin/python -m pytest -q -rs
 .venv/bin/pytest -q -rs
-1329 passed, 14 skipped, 1 xfailed
+1345 passed, 14 skipped, 1 xfailed
 ```
 
 - The 14 slow tests were not run and are not represented as passing.
 - The strict xfail is the known true-parallel-interchange architecture debt.
+- Focused S0/registry/P0/closed-law verification reported `108 passed, 1 xfailed`.
+- A deterministic independent metamorphic probe accepted 500 generated multigraph
+  presentations under component/junction/endpoint reordering, alpha-renaming, and
+  undirected terminal reversal at seed `20260727`.
+- A separate read-only S0 attack enumerated 761 constructible zero-to-three-component
+  `1 -> 1` presentations with declaration-aligned opaque labels and found no
+  alpha/declaration counterexample. This is additional finite evidence, not a proof.
 - `python -m compileall -q smartchem experiments tests` passed.
 - `python -m smartchem.bench --split test --oracle heuristic --quiet` completed and
   reported incomplete coverage (`6` evaluated, `5` refused; conditional MAE `3.4950 eV`,
@@ -135,10 +150,16 @@ The separate cold benchmark above is the only active calculation.
 - Independent continuous-water science/runtime re-review returned `SHIP` for the narrowed
   cell-centred reconstruction claim after the derivative, verifier, uncertainty,
   stored-precision wording, and all-mesh magnitude repairs.
+- Independent S0 implementation review returned `SHIP` for topology/coherence only and
+  preserved the circuit/general-`StructureIR`/formal-proof exclusions.
 - The current P0 gate refuses malformed graph/evidence records, foreign
   model/transform plans, direct-runner dispatch, and nominal plan/record subclasses
   before calculation or journal creation.
 - These are local verification claims. No remote CI result is inferred from them.
+- The seven-executor registry semantic digest remains
+  `aed56d04625e864e2ed029375ceb663c4d242a152a2b7ccfbb5f4890d44623e0`;
+  the shipped-source compiler digest is now
+  `84577e497d48d48685bf44e8a4777cc25c4583e3dd7630de8f19184af8910669`.
 
 ## What the project can now honestly say
 
@@ -151,34 +172,36 @@ It can:
 - bind plans to compiler/runtime and calculation identities;
 - carry experimental proxies without promoting them;
 - carry an established exact analogue without making its referents literal;
-- expose and verify one narrow Class-A transform without claiming a general optimizer.
+- expose and verify one narrow Class-A transform without claiming a general optimizer;
+- construct and compose finite typed open wiring presentations and compare them exactly
+  modulo internal naming when the declared observer budget succeeds.
 
 It still cannot honestly say that it is a general simulation language, general model-chain
 planner, multiphysics runtime, empirical human model, general Saint-Venant/free-surface or
-dispersive water solver, general optimizer, or conversational scientific environment.
+dispersive water solver, circuit simulator, general optimizer, or conversational scientific
+environment.
 
-## Best next category midterm: exact open syntax, then DC semantics
+## Best next category midterm: independently verified resistive DC semantics
 
 Remote `origin/agent/smartchem-open-semantics-round-20260727` at `fdb906f` already contains
-a serious implementation attempt, but it is **not release authority**: its resistive-DC
+a serious E1 implementation attempt, but it is **not release authority**: its resistive-DC
 completion check reuses the production solver and therefore fails the independent-verifier
-gate. Use it as selective-port input after main's continuous-water repairs, not as a
-fast-forward target.
+gate. S0 selectively reused and strengthened only its topology kernel; the remaining
+circuit/runtime/receipt stack was rejected. Do not fast-forward the branch.
 
-Do not broaden `PhysicalIR` strings or reinterpret `Reaction.tensor`. Build a separate
-finite open-diagram value:
+Do not broaden `PhysicalIR` strings or reinterpret `Reaction.tensor`. Starting from the
+now-complete finite open-diagram value:
 
-1. port the exact typed ordered boundary interfaces and smart-constructor ownership from
-   `fdb906f` without overwriting the verified main runtime/doc repairs;
-2. independently audit canonical equality modulo internal naming with budgeted refusal rather than approximate
-   equality;
-3. boundary gluing, disjoint union, identities, braid, and generated unit,
-   associativity, symmetry, alpha-renaming, and interchange tests;
-4. add a separately implemented direct resistor relation/KCL/power verifier, then admit
+1. add a separately implemented direct resistor relation/KCL/power verifier that does not
+   import or call production analysis, stamping, solving, or exact-relation helpers;
+2. require a forced-postcondition/common-mode mutation gate that corrupts production
+   branch, node, source, and relation outputs while the direct verifier remains untouched;
+3. admit
    the resistor-only sparse MNA interpreter using the same stamping path for series,
    parallel, bridge, and cycle topology;
-5. reference/floating/singularity refusal, KCL, power, and passivity controls;
-6. only after those pass, AC/RLC; only after a proved power pairing, port-Hamiltonian
+4. require reference/floating/singularity refusal, complete retained outputs, KCL, power,
+   passivity, exact-small/analytic controls, and an explicit structure/model reindex witness;
+5. only after those pass, AC/RLC; only after a proved power pairing, port-Hamiltonian
    composition.
 
 ## Following midterm queue
@@ -220,8 +243,8 @@ They are stress tests with distinct casualty/evidence needs, not an exhaustive l
 1. Confirm the intended branch, remote head, and a clean worktree.
 2. Read this handoff, the direction audit, and the roadmap before choosing work.
 3. Inspect current receipts and live tests rather than trusting a stale recap.
-4. Read the category-backbone roadmap before implementing S0; keep topology, domain
-   equations, evidence, and task scheduling separate.
+4. Read the category-backbone roadmap before implementing E1; keep topology, domain
+   equations, verification, evidence, and task scheduling separate.
 5. Keep each calculation's terminal state and journal path explicit.
 6. Preserve unrelated work; stage only the intended slice.
 7. Require science and runtime attacks before a public receipt.

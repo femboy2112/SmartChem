@@ -5,7 +5,9 @@ Reactions are typed morphisms whose objects carry bond topology, so conservation
 enforced at construction and inherited by sequential composites. Configurations have a
 commutative multiset product; morphisms do not yet have a true parallel tensor because a
 linear history cannot satisfy interchange. ``Reaction.tensor`` is a compatibility name for
-an explicit left-first schedule while the future open-system layer gains ports/process graphs.
+an explicit left-first schedule. The separate ``open_diagram`` layer supplies typed finite
+wiring presentations with total boundary gluing/disjoint union and a budgeted exact canonical
+observer; it does not yet supply circuit equations, a solver, or general multiphysics semantics.
 The Store comonad represents a condition-indexed query plus a focus; finite response-surface
 utilities explicitly evaluate that query at requested positions. Mechanism search has a
 Writer-over-List shape and appends caller-supplied energy/provenance tallies alongside route
@@ -303,6 +305,25 @@ from .ising_lattice_gas import (
     compile_session_ising_lattice_gas_equilibrium,
     ising_lattice_gas_slot,
 )
+from .open_diagram import (
+    BoundaryRef as OpenBoundaryRef,
+    BoundarySide as OpenBoundarySide,
+    CanonicalDiagram as OpenCanonicalDiagram,
+    CanonicalizationBudgetExceeded,
+    ComponentKind as OpenComponentKind,
+    ComponentSlot as OpenComponentSlot,
+    DiagramCompositionError,
+    DiagramConstructionError,
+    ElementPortRef as OpenElementPortRef,
+    Interface as OpenInterface,
+    Junction as OpenJunction,
+    OpenDiagram,
+    PortKind as OpenPortKind,
+    braid as open_braid,
+    canonicalize as canonicalize_open_diagram,
+    identity as open_identity,
+    unit_interface as open_unit_interface,
+)
 from .stoichiometry import (
     MAX_WRITTEN_WEIGHT,
     Completion,
@@ -455,6 +476,12 @@ __all__ = [
     "ISING_LATTICE_GAS_CASUALTIES", "ISING_LATTICE_GAS_OMISSIONS",
     "ExactC3EquilibriumEngine", "compile_ising_lattice_gas_equilibrium",
     "compile_session_ising_lattice_gas_equilibrium", "ising_lattice_gas_slot",
+    # finite open structure -- exact syntax/coherence only, with no circuit semantics yet
+    "OpenBoundaryRef", "OpenBoundarySide", "OpenCanonicalDiagram",
+    "CanonicalizationBudgetExceeded", "OpenComponentKind", "OpenComponentSlot",
+    "DiagramCompositionError", "DiagramConstructionError", "OpenElementPortRef",
+    "OpenInterface", "OpenJunction", "OpenDiagram", "OpenPortKind",
+    "open_braid", "canonicalize_open_diagram", "open_identity", "open_unit_interface",
     # store -- the environment comonad and finite response-surface sampling
     "Store", "Conditions", "SOLVENTS",
     "survey", "response_surface", "is_responsive", "grid",

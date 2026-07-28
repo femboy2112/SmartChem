@@ -27,6 +27,7 @@ Layer 3½ Compiled vertical seam   contracts.py · program.py · typed ledger bi
                                   water_wave_continuous_verifier.py
                                   human_isotope_domain.py · human_isotope.py
                                   human_survival_domain.py · human_survival.py
+Layer 2¾ Open structure           open_diagram.py        (syntax/coherence only)
 Layer 2½ Domain instances          cell.py                (chemistry meets circuit)
 Layer 2  Sequential core          category.py · thermo.py
 Layer 1  Energy oracle            oracle/base.py + heuristic.py + pyscf_oracle.py
@@ -46,6 +47,7 @@ Nothing in Layer 2 or 3 knows which oracle it is talking to. That is the whole d
 | `smartchem/data/reference.py` | 526 | Curated comparison data: intended diatomic D₀ rows, band gaps and geometries, plus selected 0 K formation enthalpies used to derive polyatomic references. Compact source labels do not prove every D₀/D₂₉₈ convention, and uncertainty fields are curation scales rather than one calibrated coverage model. Balanced reaction helpers validate stoichiometry; these rows are not universal ground truth. |
 | `smartchem/data/basis_tight_d.py` | 1114 | Read-only tight-d basis augmentation for second-row elements. Generated data, not hand-written. |
 | `smartchem/category.py` | 1092 | **The load-bearing layer.** `Molecule` (atoms + bond topology + charge + opaque internal state), `Config` (multiset of molecules), and `Reaction` (validated sequential morphism history). It provides category composition and identities, a commutative object product, and a left-first `scheduled_product`; the latter is not a parallel tensor. Canonicalisation is by symbol class, refined by Weisfeiler-Leman colour when that is not enough. Structural predicates include `is_bond_order_conserving`, `is_isodesmic`, and stoichiometric `is_regenerated` (`is_catalytic` is a compatibility alias, not a proof of catalysis). |
+| `smartchem/open_diagram.py` | 575 | A separate finite topology-only kernel with ordered electrical interfaces, two-terminal component slots, exact terminal/junction ownership, total boundary gluing and disjoint-union tensor, identity/braid, and an exact alpha-invariant observer with named candidate-budget refusal. It contains no resistance, equation, solver, evidence, execution authority, or general multiphysics semantics. |
 | `smartchem/contracts.py`, `smartchem/program.py`, `smartchem/runtime_registry.py`, `smartchem/ledger.py` | current compiler seam | Immutable source/request/plan/approval/run/certificate records; a closed exact-subject/output/preflight/runner registry; exact `PhysicalIR` member, ID, graph, evidence, source/target, model, transform, and contract ownership; dispatch-capability-guarded runners; full shipped-source approval identity; write-once run-owned journals; typed observable payload schemas; typed shepherd bindings/validity obligations; and the first plan-visible/runtime-model-bound Class-A `reaction-residue-v1` transform. It is not yet a general language, optimizer, planner, hostile-process security boundary, or multiphysics runtime. |
 | `smartchem/water_wave_domain.py`, `smartchem/water_wave.py` | current structural cross-domain slice | Pure typed SI prescribed-profile characteristic diagnostics plus the analogue-only compiler/runtime bridge. It retains all profile points/crossings and refuses unsupported regimes/claims. Its bundled run is `STRUCTURAL_TOY`, not a measured flume, free-surface evolution, scattering calculation, or literal-gravity result. |
 | `smartchem/water_wave_validation_domain.py`, `smartchem/water_wave_validation.py` | manufactured water preflight v2 | Finite-section nominal discharge/Bernoulli compatibility, wavelength/depth and gravity/capillarity screens, typed sign-aware branch/orientation, and uncertainty-resolved adjacent-sample brackets. It deliberately does not establish steady momentum/regularity, a continuous stationary background, measured validation, or a physical horizon. |
@@ -86,10 +88,10 @@ are not exactly associative, and no covariance model or calibration guarantee is
 Objects use labelled graphs over opaque symbols, an integer charge and opaque internal
 state, while `Reaction` conserves symbol counts and total charge. That syntax can spell
 toy radiation and circuit examples, but it has no typed boundary ports, Kirchhoff node
-semantics, rates, fields or open-system composition. In particular, its conservation check
-does not by itself make a Kirchhoff-violating circuit unconstructible. A future physical
-network layer needs explicit port and behavioral semantics rather than reinterpretation of
-chemical fields.
+semantics, rates, fields or open-system composition. The separate `open_diagram` module now
+supplies typed open wiring syntax and genuine structural gluing/tensor, without
+reinterpreting `Reaction`. It still has no Kirchhoff or constitutive semantics: a future
+domain layer and direct verifier must establish those rather than infer them from topology.
 
 **4. The current cell prototype gets electron count from an explicit factorisation.**
 The simplified structural example `Zn + 2 MnO2 → ZnO + Mn2O3` does not mention electrons —
@@ -139,6 +141,7 @@ eigenvector can seed a repair attempt but does not prove which chemical structur
 | File | Covers |
 |---|---|
 | `test_laws.py` | Sequential category laws and conservation, object-product laws, scheduled-product compatibility boundaries, and canonicalisation checks on generated finite examples. These are tests, not a formal proof or an SMC construction. |
+| `test_open_diagram.py` | Smart-constructor ownership/refusal, alpha/declaration invariance, multiplicity/self-loops, observer-budget refusal, and finite generated identity/associativity/interchange/symmetry/coherence controls for the separate topology kernel. These finite tests are not a formal proof or circuit validation. |
 | `test_findings.py` | One named regression test per defect found in the original build |
 | `test_functor.py` | Endpoint-difference telescoping, ideal isolated-species additivity, permitted reference-shift invariance, and spectator cancellation under that adapter. |
 | `test_geometry.py` | Seeding, relaxation, Eckart projection, harmonic analysis, the mode-following repair |

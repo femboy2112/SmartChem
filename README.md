@@ -10,7 +10,8 @@ plan, and return results with their evidence, omissions, casualties, and approva
 attached.
 
 The general language does not exist yet. The repository contains a rigorous compiler/runtime
-seam, a chemistry core, and seven deliberately narrow executors that test the design.
+seam, a chemistry core, seven deliberately narrow executors that test the design, and a
+separate finite typed open-diagram syntax that does not yet have circuit semantics.
 
 ## Non-negotiable contract
 
@@ -111,6 +112,13 @@ but reaction histories do not yet form a true parallel symmetric monoidal produc
 `scheduled_product` is a deterministic left-first schedule. The old `tensor` compatibility
 name now emits a deprecation warning because it is not a parallel tensor.
 
+`smartchem.open_diagram` is a separate topology-only layer: ordered typed boundaries,
+two-terminal component slots, exact endpoint ownership, total boundary gluing, true
+disjoint-union tensor, identities, and braids. A budgeted exact observer compares successful
+finite presentations modulo internal naming and refuses explicitly above its candidate
+budget. This is not a circuit equation, solver, `PhysicalIR` migration, or proof of a general
+multiphysics category.
+
 For the module-by-module map and scientific caveats, see [MANIFEST.md](MANIFEST.md).
 
 ## Reproduce
@@ -127,7 +135,7 @@ python -m smartchem.bench
 Current maintained fast-suite result:
 
 ```text
-1329 passed, 14 skipped, 1 xfailed
+1345 passed, 14 skipped, 1 xfailed
 ```
 
 The skipped tests require the explicit slow-test gate and are not represented as passed.
@@ -158,14 +166,14 @@ The current short-term seam is hardened: `PhysicalIR` owns member/reference/evid
 integrity, transforms bind the approved model and contracts, all seven executors own their
 model/transform inventory before a calculation or journal, and resolved runners cannot be
 used as an alternate authoritative dispatch path. The manufactured continuous-water
-midterm is also complete.
+midterm and the finite open-diagram S0 midterm are also complete.
 
 Best next work:
 
-1. implement exact typed open-diagram syntax, canonical alpha-renaming, boundary gluing,
-   disjoint-union tensor, and generated category-law/interchange tests;
-2. interpret that same syntax with a resistor-only DC MNA control before AC/RLC or
-   port-Hamiltonian claims;
+1. implement a production-independent direct resistor relation/KCL/power verifier and
+   forced-postcondition mutation gate;
+2. only then interpret the open syntax with one topology-generic resistor-only sparse DC
+   MNA path before AC/RLC or port-Hamiltonian claims;
 3. extend water only after the stationary manufactured rung: bounded dispersive branches
    first, then measured regime-matched evidence before any promotion beyond `STRUCTURAL_TOY`;
 4. build the traffic kinematic-wave vertical as the next regime-valid analogue;
@@ -193,6 +201,8 @@ The compact continuation sheet is [ROADMAP_2026-07-27.md](ROADMAP_2026-07-27.md)
   calculations, commits, and next work.
 - [RESEARCH_ROUND_2026-07-27.md](RESEARCH_ROUND_2026-07-27.md) — this build/research
   round's target, falsifiers, calculation ledger, and claim state.
+- [RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md](RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md)
+  — selective S0 port, generated-law evidence, rejected remote E1, and compact-resume cut.
 - [CATEGORY_BACKBONE_ROADMAP_2026-07-27.md](CATEGORY_BACKBONE_ROADMAP_2026-07-27.md) —
   the staged open-diagram/domain-algebra architecture and its dominance boundary.
 

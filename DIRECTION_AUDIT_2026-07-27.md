@@ -44,7 +44,7 @@ What exists is unusually valuable:
   non-linear constraints;
 - adversarial and mutation testing that has repeatedly falsified stronger-looking claims.
 
-The 2026-07-27 implementation added that connection for six deliberately narrow executors:
+The 2026-07-27 implementation added that connection for seven deliberately narrow executors:
 
 - a closed executor registry, a full shipped-source approval identity, and exclusive
   run-owned journals that prevent one calculation from erasing another;
@@ -61,6 +61,11 @@ The 2026-07-27 implementation added that connection for six deliberately narrow 
   Bernoulli-head compatibility, declared `kh` and depth Bond-number bounds, sign-aware
   branch/orientation, and crossing uncertainty without claiming a continuous stationary
   solution or measured validation.
+- one manufactured continuous steady-water executor with retained 32/64/128-mesh
+  cell-centred reconstructions, balance/refinement/critical-regularity gates, metadata-only
+  uncertainty, a direct verifier, and a finite-v2 comparison. It remains
+  `ANALOGUE/STRUCTURAL_TOY`, not a general stationary/free-surface solver, continuum theorem,
+  propagated uncertainty analysis, or measured validation.
 - one typed human–isotope structural identifiability diagnostic, executed on a completely
   synthetic endpoint/protocol as `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`, which
   constructs two incompatible mathematical probability families satisfying the same median
@@ -82,14 +87,15 @@ What still does not exist is the general version: a language covering arbitrary 
 open-process and multiphysics semantics, a planner choosing among multiple valid model chains,
 general cross-domain transport/assembly compilation, a general post-run validity/refinement
 runtime, or a conversational surface. The executable bridges accept one typed `Reaction`, one
-typed `WaterWaveSpec`, one typed `WaterWaveValidationSpec`, or one typed
+typed `WaterWaveSpec`, one typed `WaterWaveValidationSpec`, one typed
+`ContinuousWaterSubject`, one typed
 `HumanIsotopeSpec`, or one typed `SurvivalCalibrationSpec` from an outright-compiled
-`Session`; this set is still not a general
+`Session`, or one typed `IsingLatticeGasSpec`; this set is still not a general
 `SimulationPlan` compiler, continuum wave solver,
 toxicology model, or mortality simulator.
 
 **This audit set the contract seam before the conversational UI.** That narrow seam is now
-implemented and exercised across six deliberately narrow executors. The same ordering
+implemented and exercised across seven deliberately narrow executors. The same ordering
 still governs the remaining general work:
 build and test semantics before adding a fluent surface that could make missing semantics look
 complete.
@@ -292,21 +298,23 @@ predicate, an exactness or discrepancy reference, and an emitted transform recor
 | Refusal diagnosis | **Built** | Obstructions are derived from conservation and domain facts. There is no model router or executable remedy graph. |
 | Shepherd termination | **Built, syntactic** | A well-founded multiset rank prevents endless rephrasing/deepening, and menus require a non-empty derivation string. It proves termination, not that new subquestions semantically descend from the old one. Legacy slots remain textual; the first executable vertical additionally requires typed bindings and machine derivation references. |
 | Section I loop | **Demonstrated, not compiled** | Four rounds close a hard-coded example and the category accepts its fixed reaction. The closed `Session` is not interpreted into a general runtime plan. |
-| Contract seam and typed bindings | **Built, narrow vertical slices** | Immutable source/program, request, plan, approval, run, certificate, typed binding, and validity-obligation artifacts now support H2, two structural water executors, structural human identifiability, synthetic survival recovery, and the exact finite C3 Ising/lattice-gas map. They do not yet make a general simulation language. |
+| Contract seam and typed bindings | **Built, narrow vertical slices** | Immutable source/program, request, plan, approval, run, certificate, typed binding, and validity-obligation artifacts now support H2, three structural/manufactured water executors, structural human identifiability, synthetic survival recovery, and the exact finite C3 Ising/lattice-gas map. They do not yet make a general simulation language. |
+| Finite open-diagram syntax S0 | **Built, topology only** | Ordered typed boundaries, exact endpoint ownership, total gluing/disjoint union, identity/braid, and a budgeted exact alpha-canonical observer are implemented separately from `Reaction`. Generated finite law controls support the implemented coherence claims. There is no circuit equation, solver, runtime executor, general `StructureIR` adapter, or formal proof over all finite diagrams. |
 | Approved H2 vertical | **Executed once, complete** | `2 H -> H2` ran through the approved source-to-certificate path at the existing CCSD(T)/cc-pVTZ protocol. The durable receipt and its limitations are in `experiments/RESULTS_compiled_h2_vertical.md`. |
 | Water-wave cross-domain slice | **Executed structural compiler test** | The typed language distinguishes target, regime, branch, flow direction, and black/white/pair orientation; the runtime retains every prescribed SI profile point, independently rechecks every crossing, and binds an exact analogue/casualty scope. The synthetic run is `STRUCTURAL_TOY`, not a measured flume, validated horizon, continuum wave evolution, or astrophysical result. |
 | Human–isotope cross-scale slice | **Executed structural underidentification test** | The typed language binds target, population, granularity, assembly, environment, hazard effect, toxicokinetic link, LD50/LC50 protocol, and calibration evidence. The runtime independently rechecks that distinct exponential and Weibull probability witnesses share the one median endpoint while disagreeing away from it. The run is `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`; individual, cause-specific, observed-data, and empirically calibrated or predictive probability outputs remain blocked. |
 | Public quantum-chemistry output | **Implemented in a narrow domain** | Enabled neutral atoms and fixed neutral diatomics under measured protocols; broader internal code fails closed rather than inheriting evidence. |
 | General simulation runtime | **Unbuilt** | No general state evolution, boundary/reservoir semantics, time integration, mesh, ensemble, or coupled solver system. |
-| Typed Physical IR and language | **Built for six narrow executors; otherwise unbuilt** | The minimal source/IR records support H2, two distinct finite water diagnostics, human-proxy identifiability, selected-family synthetic survival recovery, and the exact finite C3 map. They do not yet cover general worlds, typed ports, validated cross-scale dynamics, or a general simulation language. |
-| Output contract and approval gate | **Built for six narrow executors** | All six executors require their exact output contracts; changing membership, support, resolution, precision, coverage, diagnostics, or retention blocks execution until a different executor exists. Broader policy and tradeoff negotiation remain unbuilt. |
-| Post-run validity transition | **Built for six narrow executors** | Named obligations and complete/incomplete/invalid/refused/failed records exist on all six; no general solver/result-state runtime exists. |
-| Result certificate | **Built for six narrow executors** | Receipts bind H2, both structural water runs, structural human identifiability, synthetic survival recovery, and the exact finite map to their scope, evidence, omissions, and casualties; this is not yet a general artifact system. |
+| Typed Physical IR and language | **Built for seven narrow executors; otherwise unbuilt** | The minimal source/IR records support H2, three distinct water diagnostics/controls, human-proxy identifiability, selected-family synthetic survival recovery, and the exact finite C3 map. The separate open-diagram syntax is not yet integrated into `PhysicalIR`. These records do not yet cover general worlds, validated cross-scale dynamics, or a general simulation language. |
+| Output contract and approval gate | **Built for seven narrow executors** | All seven executors require their exact output contracts; changing membership, support, resolution, precision, coverage, diagnostics, or retention blocks execution until a different executor exists. Broader policy and tradeoff negotiation remain unbuilt. |
+| Post-run validity transition | **Built for seven narrow executors** | Named obligations and complete/incomplete/invalid/refused/failed records exist on all seven; no general solver/result-state runtime exists. |
+| Result certificate | **Built for seven narrow executors** | Receipts bind H2, all three water runs, structural human identifiability, synthetic survival recovery, and the exact finite map to their scope, evidence, omissions, and casualties; this is not yet a general artifact system. |
 
 The strongest honest summary is:
 
-> SmartChem is a tested, fail-closed compositional chemistry and specification-tooling
-> prototype. It is not yet a simulation language or a shepherded simulation compiler.
+> SmartChem is a tested, fail-closed research-compiler prototype with seven narrow
+> executors and a separate exact finite open-structure syntax. It is not yet a general
+> simulation language, model-chain planner, or multiphysics runtime.
 
 ---
 
@@ -676,7 +684,8 @@ short-term goals. The H2 instance of Milestone C is complete. The selected next 
 decomposed: water-wave D1 is complete as a structural toy, human–isotope D2a is complete
 as a structural underidentification result, and D2b-S is complete as a same-generator
 synthetic selected-family recovery test. Empirical D2b remains open. Milestones E and F
-follow. Physical flume validation, dispersive wave solving, and broader multiphysics work
+follow. The separate open-diagram S0 structural milestone is also complete; independently
+verified resistive DC semantics are next. Physical flume validation, dispersive wave solving, and broader multiphysics work
 remain separate
 longer-horizon validation/runtime work.
 
@@ -939,7 +948,7 @@ environment:
 
 ```text
 .venv/bin/python -m pytest -q -rs
-1266 passed, 14 skipped, 1 xfailed in 20.40s
+1345 passed, 14 skipped, 1 xfailed
 ```
 
 The 14 tests marked slow were not run and are not counted as passed. PySCF was installed, so
@@ -970,10 +979,11 @@ another graph or physical referent.
   wrappers are mutable compatibility machinery; the compiled runtime needs frozen execution
   objects and a calculation-spec digest checked on every lookup.
 - the inspected benchmark population is not an independent holdout.
-- open systems, ports, Gibbs thermodynamics, kinetics, full state identity, coupled fields,
-  continuum free-surface evolution, dispersive analogue-gravity wave propagation, and general
-  multiphysics validity remain roadmap work; the built water slice is only a prescribed-profile
-  algebraic characteristic diagnostic.
+- domain semantics for open systems, Kirchhoff/constitutive equations, Gibbs thermodynamics,
+  kinetics, full state identity, coupled fields, continuum free-surface evolution, dispersive
+  analogue-gravity wave propagation, and general multiphysics validity remain roadmap work.
+  S0 supplies finite typed wiring syntax only; the built water portfolio remains manufactured
+  or prescribed-profile structural evidence, not measured validation.
 - the arbitrary cross-scale “assembly” needed to justify structural transport remains a
   research problem. If it cannot be identified, certified transport must be declined; an
   explicit assembly hypothesis may still enter the experimental lane.

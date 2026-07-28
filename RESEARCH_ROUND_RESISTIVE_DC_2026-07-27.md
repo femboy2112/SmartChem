@@ -114,6 +114,14 @@ public exports: 331, all unique and resolvable
 closed executors: 8
 ```
 
+Post-push GitHub Actions run
+[`30329968359`](https://github.com/femboy2112/SmartChem/actions/runs/30329968359)
+completed successfully for source commit
+`b43c77744343defe028abb441e0e465a9316e2cb`: Python 3.10, Python 3.12, and
+the optional PySCF discovery/real-calculation/fast-suite/benchmark job all passed.
+The conditional manual real-wavefunction geometry integration step was skipped by the
+workflow and is not represented as executed.
+
 The first broad suite attempt was deliberately interrupted at 90% when the host was
 actively swapping under unrelated multi-gigabyte workloads. It is not counted as a
 completed gate. The two completed runs above were performed later with one test process at

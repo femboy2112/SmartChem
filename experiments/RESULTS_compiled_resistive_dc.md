@@ -178,7 +178,11 @@ separate direct verifier and forced common-mode gates existed.
 
 ## Verification boundary
 
-Focused, full-suite, compiler-digest, registry-digest, and local release gates are
-recorded in `RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md`. This receipt establishes only
-the scoped run above. E2 positive-frequency AC/RLC remains unbuilt, and port-Hamiltonian
-semantics require an explicit dynamic state and proved effort/flow power pairing.
+Focused, full-suite, compiler-digest, registry-digest, local release, and post-push CI gates
+are recorded in `RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md`. GitHub Actions run
+[`30329968359`](https://github.com/femboy2112/SmartChem/actions/runs/30329968359)
+passed on source commit `b43c77744343defe028abb441e0e465a9316e2cb`; its conditional
+manual real-wavefunction geometry integration step was skipped and is not counted as
+executed. This receipt establishes only the scoped run above. E2 positive-frequency AC/RLC
+remains unbuilt, and port-Hamiltonian semantics require an explicit dynamic state and proved
+effort/flow power pairing.

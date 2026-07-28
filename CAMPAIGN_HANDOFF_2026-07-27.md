@@ -164,7 +164,13 @@ The separate cold benchmark is not active and has no recoverable scientific resu
 - The current P0 gate refuses malformed graph/evidence records, foreign
   model/transform plans, direct-runner dispatch, and nominal plan/record subclasses
   before calculation or journal creation.
-- These are local verification claims. No remote CI result is inferred from them.
+- Post-push GitHub Actions run
+  [`30329968359`](https://github.com/femboy2112/SmartChem/actions/runs/30329968359)
+  completed successfully for source commit
+  `b43c77744343defe028abb441e0e465a9316e2cb`: Python 3.10, Python 3.12,
+  and the optional PySCF discovery/real-calculation/fast-suite/benchmark job passed.
+  Its conditional manual real-wavefunction geometry integration step was skipped and
+  is not represented as executed.
 - The eight-executor registry and shipped-source compiler digests are recorded from the
   frozen final tree in the E1 research round and receipt.
 

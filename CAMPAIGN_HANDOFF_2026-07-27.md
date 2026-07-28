@@ -1,10 +1,11 @@
 # SmartChem campaign and category-backbone round handoff
 
-**Prepared:** 2026-07-27
+**Prepared:** 2026-07-27; updated through E2 on 2026-07-28
 **Working branch:** `main`
 **Round base:** `247c060d4b2ead4690f952b270e334496b6b7d73`
 **Imported other-model baseline:** `521e719`
 **Cycle 5 implementation baseline:** `45885f2`
+**E2 round base:** `4e1350e13ced6605244759023158b37106fea1bc`
 
 This is the compact continuation artifact for the 2026-07-27 campaign. The detailed
 scientific and product contract remains
@@ -54,7 +55,7 @@ Completed:
 
 1. **P0 seam hardening.** Exact `PhysicalIR` members, global graph IDs/references,
    connection compatibility, transport/assembly evidence closure, and source/target
-   transport binding; runtime-owned model/transform preflight for all eight executors;
+   transport binding; runtime-owned model/transform preflight for all nine executors;
    reaction transform output/equivalence contract binding; dispatch-capability-guarded
    runners; exact nominal plan/approval admission; one pre-backend execution-admission
    snapshot rechecked after backend callbacks and before certification; and visible
@@ -98,12 +99,21 @@ Completed:
    recursive same-name dataclass impostors, approved-input substitution, nonidentity
    reindexing, canonical/inventory mutations, and 64 seeded connected multigraphs. Scope
    is the declared finite positive ideal mathematical circuit only.
+8. **Positive-frequency passive-RLC E2.** Added exact `Q(i)` component laws and boundary
+   relations, exact driven-rank preflight, explicit model-to-structural-edge binding, one
+   normalized sparse complex-MNA path, complete phasor/power/diagnostic output, and a
+   separately implemented direct verifier. The damped parallel-RLC control completes;
+   exact lossless series-LC resonance refuses before an engine call and without
+   regularization. Scope is one declared positive frequency in an ideal mathematical
+   circuit, not a device, transient, nonlinear, safety, distributed, or port-Hamiltonian
+   result.
 
 Detailed contract and claim ledger:
 `RESEARCH_ROUND_2026-07-27.md`. Implementation-grade category design:
 `CATEGORY_BACKBONE_ROADMAP_2026-07-27.md`. S0 release evidence and the rejected remote E1
 cut: `RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md`. Current E1 authority:
-`RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md`.
+`RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md`. Current E2 authority and compact-resume cut:
+`RESEARCH_ROUND_RLC_AC_2026-07-28.md`.
 
 ## Calculation ledger
 
@@ -120,6 +130,10 @@ No compiled simulation or optional benchmark is in progress.
 | Finite C3 Ising/lattice-gas | `COMPLETE` | `ANALOGUE/ESTABLISHED/CERTIFIED` finite algebra only. |
 | Manufactured continuous steady water | `COMPLETE`, run `9af118648f6c456a99390d2a77c93816` | 32/64/128-mesh regular-transcritical cell-centred reconstruction, `ANALOGUE/STRUCTURAL_TOY`; metadata-only uncertainty; finite-v2 comparison is independent code on derived manufactured samples, not independent data. |
 | Finite resistive DC E1 | `COMPLETE` | Exact relation plus sparse-MNA bridge under a separate direct verifier; fresh run identity and source-bound digests are in `experiments/RESULTS_compiled_resistive_dc.md`. |
+| Positive-frequency passive-RLC E2 | `COMPLETE`, run `1f1a11fc7cd34608b24e8298d990eaa9` | Exact relation/rank plus complex sparse-MNA under a separate direct verifier; fixed-frequency ideal mathematical control only. |
+| Exact lossless series-LC E2 control | `REFUSED`, run `da8dc8d51c394c90ba02eef1fcadfe5b` | Exact rank deficient; zero engine calls, no checkpoint, no regularization, no observable. |
+| Accidental unqualified local benchmark | interrupted, exit `130` | Optional PySCF/CCSD work; no journal or result, so not timing or accuracy evidence. |
+| Explicit heuristic benchmark smoke | `COMPLETE`, incomplete coverage | 19 required elements, 28/28 bonds attemptable, 6 evaluated, 5 refused, conditional MAE `3.495 eV`; no accuracy tier. |
 | Cold all-oracle chemistry benchmark | **terminal-unclassified**; former OS PID `151446` | The process is gone. It had no journal, stdout capture, recovered exit code, or final report. Historical live observations are not publishable timing evidence, and this is not `COMPLETE` or `INCOMPLETE`. |
 
 Ignored JSON journals are local, terminal run artifacts. New calculations require fresh
@@ -139,12 +153,12 @@ The separate cold benchmark is not active and has no recoverable scientific resu
 ```text
 .venv/bin/python -m pytest -q -rs
 .venv/bin/pytest -q -rs
-1434 passed, 14 skipped, 1 xfailed
+1467 passed, 14 skipped, 1 xfailed
 ```
 
 - The 14 slow tests were not run and are not represented as passing.
 - The strict xfail is the known true-parallel-interchange architecture debt.
-- Final focused E1/registry/P0 and full-suite counts are recorded in the E1 research round.
+- The focused E2 circuit/lifecycle/verifier/registry/P0 selection reports `78 passed`.
 - A deterministic independent metamorphic probe accepted 500 generated multigraph
   presentations under component/junction/endpoint reordering, alpha-renaming, and
   undirected terminal reversal at seed `20260727`.
@@ -171,12 +185,12 @@ The separate cold benchmark is not active and has no recoverable scientific resu
   and the optional PySCF discovery/real-calculation/fast-suite/benchmark job passed.
   Its conditional manual real-wavefunction geometry integration step was skipped and
   is not represented as executed.
-- The eight-executor registry and shipped-source compiler digests are recorded from the
-  frozen final tree in the E1 research round and receipt.
+- The nine-executor registry and shipped-source compiler digests are recorded from the
+  frozen final tree in the E2 research round and receipt.
 
 ## What the project can now honestly say
 
-SmartChem has eight closed executors behind one source/IR/plan/approval/run/certificate seam.
+SmartChem has nine closed executors behind one source/IR/plan/approval/run/certificate seam.
 It can:
 
 - require a closed typed shepherd session before cross-domain execution;
@@ -189,28 +203,28 @@ It can:
 - construct and compose finite typed open wiring presentations and compare them exactly
   modulo internal naming when the declared observer budget succeeds;
 - interpret one such presentation as a finite positive ideal-resistor DC network, retaining
-  its exact relation and full sparse solution under independent direct verification.
+  its exact relation and full sparse solution under independent direct verification;
+- interpret finite passive R/L/C presentations at one exact positive frequency, retaining
+  exact relation/rank and complete phasor/power state under independent verification while
+  refusing exact lossless singular resonance without regularization.
 
 It still cannot honestly say that it is a general simulation language, general model-chain
 planner, multiphysics runtime, empirical human model, general Saint-Venant/free-surface or
 dispersive water solver, general circuit/device simulator, general optimizer, or
 conversational scientific environment.
 
-## Best next category midterm: positive-frequency passive AC/RLC E2
+## Best next category midterm: deliberate `StructureIR` adapter
 
-E1 is complete. Remote `origin/agent/smartchem-open-semantics-round-20260727` at `fdb906f`
-remains historical `NO-SHIP` because its completion check reused production analysis; do not
-fast-forward it. Starting from the shipped E1 boundary:
+S0, E1, and E2 are complete. The next bounded dependency cut is an adapter from S0
+canonical structure into a typed `StructureIR` value:
 
-1. add finite `omega > 0` phasor-valued R/L/C schema and preserve the explicit
-   model-to-edge witness;
-2. retain branch voltage/current/complex power and the complete MNA state without
-   reducing E1 outputs;
-3. independently rederive positive-real/passivity and global complex-power checks;
-4. require analytic RC/RLC, damped resonance, mutation, and conditioning controls;
-5. refuse ideal lossless singular resonance rather than silently regularizing it;
-6. keep port-Hamiltonian composition later, until dynamic state and an effort/flow power
-   pairing are explicit and verified.
+1. preserve S0 identity and all nine existing typed subjects;
+2. bind adapter identity into plan and compiler digests;
+3. preserve every output contract and observable digest under an explicitly approved
+   migration;
+4. test round trips, alpha-renaming, declaration order, model-edge binding, and forged
+   adapter refusal;
+5. regress all nine executors and make no general-physics claim from the architecture.
 
 ## Following midterm queue
 
@@ -251,7 +265,8 @@ They are stress tests with distinct casualty/evidence needs, not an exhaustive l
 1. Confirm the intended branch, remote head, and a clean worktree.
 2. Read this handoff, the direction audit, and the roadmap before choosing work.
 3. Inspect current receipts and live tests rather than trusting a stale recap.
-4. Read the category-backbone roadmap before implementing E2; keep topology, domain
+4. Read `RESEARCH_ROUND_RLC_AC_2026-07-28.md` and the category-backbone roadmap before
+   implementing the `StructureIR` adapter; keep topology, domain
    equations, verification, evidence, and task scheduling separate.
 5. Keep each calculation's terminal state and journal path explicit.
 6. Preserve unrelated work; stage only the intended slice.

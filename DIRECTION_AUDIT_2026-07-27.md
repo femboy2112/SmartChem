@@ -11,6 +11,12 @@ the water-wave half of Milestone D and continuing through the human-identifiabil
 slice. The completion record below is therefore a user directive, not a retroactive claim
 about what Leah or Claude had previously intended.
 
+> **State supersession, 2026-07-28.** The laws and scientific boundaries below remain
+> governing, but eight-executor/E2-next inventory statements are historical. E2 is complete
+> as the ninth narrow executor, with exact lossless singular refusal. Current authority and
+> the decomposed continuation are `RESEARCH_ROUND_RLC_AC_2026-07-28.md`,
+> `experiments/RESULTS_compiled_rlc_ac.md`, and `ROADMAP_2026-07-27.md`.
+
 **Audited baseline head:** `b85135a6849b78c507bb472752fc314116046b73`
 (`main == origin/main` before this implementation)
 

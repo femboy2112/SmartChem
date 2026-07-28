@@ -2,14 +2,16 @@
 
 ## Status and decision
 
-**The finite typed open-diagram S0 kernel and its first narrow E1 interpreter are now
+**The finite typed open-diagram S0 kernel and its narrow E1 and E2 interpreters are now
 implemented; no general circuit executor is.**
 `smartchem/open_diagram.py` supplies topology-only presentations, total composition/tensor,
 and a separate budgeted exact canonical observer. Generated and adversarial finite controls
 support the implemented coherence claims; they are not a formal proof of the laws for all
-finite graphs. The separate E1 stack supplies only finite positive ideal-resistor DC
-relations and one declared drive/reference. This remains a dependency cut, not evidence
-that a general multiphysics category or general circuit vertical exists. The manufactured
+finite graphs. The separate E1 stack supplies finite positive ideal-resistor DC relations
+and one declared drive/reference. The separate E2 stack supplies fixed-positive-frequency
+ideal passive-RLC relations and refuses exact lossless singular resonance. These remain
+dependency cuts, not evidence that a general multiphysics category or general circuit
+vertical exists. The manufactured
 continuous-water runtime remains a domain-semantic rung and is not silently reinterpreted
 through the new wiring kernel.
 
@@ -20,10 +22,11 @@ interchange is correct.  The next backbone must therefore be introduced beside t
 not by relabelling it.
 
 The completed structural target is a finite typed open-diagram syntax with total
-composition and a budgeted canonical observer. The first semantic target—a passive,
-lumped resistive-DC interpretation with an independent verifier—is also complete.
-Together they establish one topology-generic control; neither is a promise of a universal
-physics language. Positive-frequency passive AC/RLC E2 is next.
+composition and a budgeted canonical observer. Two semantic targets are now complete:
+a passive lumped resistive-DC interpretation and a positive-frequency passive-RLC
+interpretation, each with an independent implementation verifier. Together they establish
+two topology-generic controls; neither is a promise of a universal physics language. A
+deliberate `StructureIR` adapter is next.
 
 ## Diagnosis
 
@@ -252,7 +255,7 @@ routine and a separate verifier independently derives the exact relation and phy
 residuals. The durable receipt is
 `experiments/RESULTS_compiled_resistive_dc.md`.
 
-### Stage E2: positive-frequency passive RLC phasors
+### Stage E2: positive-frequency passive RLC phasors — completed
 
 Only after E1, admit finite `omega > 0` and the admittances
 
@@ -274,6 +277,15 @@ numerical defect to be hidden by an arbitrary regularizer.
 
 Controls: analytic series RLC, parallel RC, damped RLC resonance (reactive currents cancel
 while resistor dissipation remains), and a deliberately singular undamped resonance.
+
+The shipped E2 implementation is additive in `smartchem.rlc_ac_schema`,
+`smartchem.rlc_ac_circuit`, `smartchem.rlc_ac`, and `smartchem.rlc_ac_verifier`. It retains
+an exact `Q(i)` relation and exact driven-MNA rank before normalized sparse complex solving.
+The direct verifier imports neither the production circuit interpreter nor executor. The
+approved damped parallel `R=L=C=1`, `omega=1` fixture completes; an exact lossless series-LC
+fixture refuses before an engine call and without regularization. The durable receipt is
+`experiments/RESULTS_compiled_rlc_ac.md`. This is a finite ideal mathematical control, not
+a general AC simulator, device, all-network theorem, or dynamic model.
 
 ## Continuous water as an open relation
 
@@ -334,9 +346,10 @@ shared P0 prerequisite; continuous water does not depend on a circuit interprete
    records, separate production and direct-verifier computations, sparse MNA,
    topological-reference refusal, residual/passivity checks, complete outputs, and
    hostile common-mode/input-substitution controls.
-5. **E2 AC/RLC control — next category milestone.** Add phasors, energy/power checks, damped resonance control, and
-   lossless singular refusal.
-6. **Only then consider a `StructureIR` adapter.** It must be a deliberate migration with
+5. **E2 AC/RLC control — completed.** Exact `Q(i)` relation/rank, RMS phasors, complete
+   complex-MNA and power output, independent verification, damped resonance, and
+   lossless singular refusal now pass through the ninth closed executor.
+6. **`StructureIR` adapter — next category milestone.** It must be a deliberate migration with
    exact plan-digest/output-contract tests, not a broad rewrite of current compiled
    verticals.
 
@@ -358,8 +371,10 @@ tests, inside the initial 500–700-line topology budget. E1 exceeded the initia
 its schema, production relation/MNA, compiled lifecycle, and independent verifier occupy
 about 2,590 source lines, with about 1,295 focused test lines. The added size is principally
 the full-output lifecycle and genuinely separate verifier/hostile integrity gates; it is
-recorded as complexity debt, not hidden as a small scalar circuit helper. E2 should reuse
-this boundary and resist further duplication. The canonicalizer's candidate
+recorded as complexity debt, not hidden as a small scalar circuit helper. E2 reused the
+structural boundary but added another explicit schema, lifecycle, and independent verifier;
+that duplication is visible complexity debt and motivates a bounded adapter rather than an
+implicit abstraction. The canonicalizer's candidate
 cap must be measured and recorded; its worst case is factorial in symmetric node cells.
 Sparse MNA storage is linear in edges/nodes before factorization, while solve cost is
 topology-dependent and must be reported rather than predicted as universally linear.

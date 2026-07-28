@@ -18,6 +18,7 @@ Python object capabilities are an API boundary, not a hostile-process security m
 The private construction token prevents ordinary accidental bypass; cryptographic authority
 and multi-user identity are outside this local library's present scope.
 """
+
 from __future__ import annotations
 
 import json
@@ -125,7 +126,9 @@ def _strings(values: tuple[str, ...], name: str) -> None:
         raise ValueError(f"{name} must contain non-empty strings")
 
 
-def _unique(values: tuple[object, ...], key: Callable[[object], object], name: str) -> None:
+def _unique(
+    values: tuple[object, ...], key: Callable[[object], object], name: str
+) -> None:
     seen = [key(value) for value in values]
     if len(seen) != len(set(seen)):
         raise ValueError(f"{name} must be unique")
@@ -142,7 +145,11 @@ def _compiler_source_paths() -> tuple[Path, ...]:
     """
     package = Path(__file__).resolve().parent
     project = package.parent
-    paths = tuple(sorted(package.rglob("*.py"), key=lambda item: item.relative_to(project).as_posix()))
+    paths = tuple(
+        sorted(
+            package.rglob("*.py"), key=lambda item: item.relative_to(project).as_posix()
+        )
+    )
     pyproject = project / "pyproject.toml"
     return paths + ((pyproject,) if pyproject.exists() else ())
 
@@ -160,9 +167,7 @@ def _compiler_implementation_digest() -> str:
 
 _REACTION_EXECUTOR = "smartchem.program/reaction-energy-v1"
 _WATER_WAVE_EXECUTOR = "smartchem.water_wave/shallow-water-horizon-v1"
-_WATER_WAVE_VALIDATION_EXECUTOR = (
-    "smartchem.water_wave/finite-section-compatibility-v2"
-)
+_WATER_WAVE_VALIDATION_EXECUTOR = "smartchem.water_wave/finite-section-compatibility-v2"
 _WATER_WAVE_CONTINUOUS_EXECUTOR = (
     "smartchem.water_wave_continuous/manufactured-steady-v1"
 )
@@ -170,12 +175,9 @@ _HUMAN_ISOTOPE_EXECUTOR = "smartchem.human_isotope/identifiability-v1"
 _HUMAN_SURVIVAL_EXECUTOR = (
     "smartchem.human_survival/synthetic-weibull-interval-recovery-v1"
 )
-_ISING_LATTICE_GAS_EXECUTOR = (
-    "smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"
-)
-_RESISTIVE_DC_EXECUTOR = (
-    "smartchem.resistive_dc/exact-relation-sparse-mna-v1"
-)
+_ISING_LATTICE_GAS_EXECUTOR = "smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"
+_RESISTIVE_DC_EXECUTOR = "smartchem.resistive_dc/exact-relation-sparse-mna-v1"
+_RLC_AC_EXECUTOR = "smartchem.rlc_ac/positive-frequency-passive-rlc-v1"
 _RUNTIME_DISPATCH_TOKEN = object()
 
 
@@ -510,7 +512,13 @@ class ModelSpec(Digestible):
     def __post_init__(self) -> None:
         _nonempty(self.name, "name")
         _nonempty(self.version, "version")
-        for name in ("equations", "assumptions", "valid_if", "postconditions", "conserved"):
+        for name in (
+            "equations",
+            "assumptions",
+            "valid_if",
+            "postconditions",
+            "conserved",
+        ):
             _strings(getattr(self, name), name)
 
 
@@ -524,7 +532,13 @@ class SolverSpec(Digestible):
     reproducibility: str = "backend-declared"
 
     def __post_init__(self) -> None:
-        for name in ("name", "algorithm", "version", "stopping_policy", "reproducibility"):
+        for name in (
+            "name",
+            "algorithm",
+            "version",
+            "stopping_policy",
+            "reproducibility",
+        ):
             _nonempty(getattr(self, name), name)
         if not isinstance(self.tolerances, tuple):
             raise TypeError("tolerances must be a tuple")
@@ -584,7 +598,12 @@ class Adapter(Digestible):
     discrepancy: str
 
     def __post_init__(self) -> None:
-        for name in ("name", "source_representation", "target_representation", "discrepancy"):
+        for name in (
+            "name",
+            "source_representation",
+            "target_representation",
+            "discrepancy",
+        ):
             _nonempty(getattr(self, name), name)
         _strings(self.exchanged_observables, "exchanged_observables")
         _strings(self.validity, "validity")
@@ -700,8 +719,13 @@ class ReactionResidueTransform(Transform):
     def __post_init__(self) -> None:
         super().__post_init__()
         _nonempty(self.original_reaction_digest, "original_reaction_digest")
-        if type(self.residual_left) is not Config or type(self.residual_right) is not Config:
-            raise TypeError("reaction-residue transform requires exact residual Config values")
+        if (
+            type(self.residual_left) is not Config
+            or type(self.residual_right) is not Config
+        ):
+            raise TypeError(
+                "reaction-residue transform requires exact residual Config values"
+            )
         if not isinstance(self.eliminated_species, tuple) or any(
             not isinstance(item, tuple)
             or len(item) != 2
@@ -832,7 +856,9 @@ class PhysicalIR(Digestible):
             type(item) not in (AssemblySpec, AssemblyHypothesis)
             for item in self.assemblies
         ):
-            raise TypeError("assemblies must contain AssemblySpec or AssemblyHypothesis values")
+            raise TypeError(
+                "assemblies must contain AssemblySpec or AssemblyHypothesis values"
+            )
         _unique(self.components, lambda item: item.component_id, "component IDs")
         _unique(self.connections, lambda item: item.connection_id, "connection IDs")
         _unique(self.reservoirs, lambda item: item.reservoir_id, "reservoir IDs")
@@ -844,7 +870,9 @@ class PhysicalIR(Digestible):
         targets = component_ids | set(port_by_id)
         for connection in self.connections:
             if len(set(connection.port_ids)) != len(connection.port_ids):
-                raise ValueError("a connection cannot name the same port more than once")
+                raise ValueError(
+                    "a connection cannot name the same port more than once"
+                )
             try:
                 connected = tuple(port_by_id[item] for item in connection.port_ids)
             except KeyError as error:
@@ -875,18 +903,26 @@ class PhysicalIR(Digestible):
             raise ValueError("transport maps must have unique digests")
         if len(assembly_digests) != len(set(assembly_digests)):
             raise ValueError("assemblies must have unique digests")
-        evidence_digests = tuple(item.transport_digest for item in self.transport_evidence)
+        evidence_digests = tuple(
+            item.transport_digest for item in self.transport_evidence
+        )
         assembly_evidence_digests = tuple(
             item.assembly_digest for item in self.assembly_evidence
         )
         if len(evidence_digests) != len(set(evidence_digests)):
-            raise ValueError("transport evidence must target each transport at most once")
+            raise ValueError(
+                "transport evidence must target each transport at most once"
+            )
         if len(assembly_evidence_digests) != len(set(assembly_evidence_digests)):
             raise ValueError("assembly evidence must target each assembly at most once")
         if set(evidence_digests) != set(transport_digests):
-            raise ValueError("transport evidence must target every and only declared transport")
+            raise ValueError(
+                "transport evidence must target every and only declared transport"
+            )
         if set(assembly_evidence_digests) != set(assembly_digests):
-            raise ValueError("assembly evidence must target every and only declared assembly")
+            raise ValueError(
+                "assembly evidence must target every and only declared assembly"
+            )
         if type(self.claim_scope) is not ClaimScope:
             raise TypeError("claim_scope must be a ClaimScope")
         if type(self.evidence_status) is not EvidenceStatus:
@@ -898,14 +934,12 @@ class PhysicalIR(Digestible):
             raise TypeError("calibrations must contain CalibrationSpec values")
         if any(type(patch) is not ModelPatch for patch in self.model_patches):
             raise TypeError("model_patches must contain ModelPatch values")
-        if (
-            any(type(assembly) is AssemblyHypothesis for assembly in self.assemblies)
-            and self.evidence_status
-            not in (
-                EvidenceStatus.EXPERIMENTAL,
-                EvidenceStatus.STRUCTURAL_TOY,
-                EvidenceStatus.UNSUPPORTED,
-            )
+        if any(
+            type(assembly) is AssemblyHypothesis for assembly in self.assemblies
+        ) and self.evidence_status not in (
+            EvidenceStatus.EXPERIMENTAL,
+            EvidenceStatus.STRUCTURAL_TOY,
+            EvidenceStatus.UNSUPPORTED,
         ):
             raise ValueError(
                 "an AssemblyHypothesis carries missing evidence and cannot have calibrated "
@@ -926,7 +960,9 @@ class SimulationRequest(Digestible):
         if type(self.source) is not SourceProgram:
             raise TypeError("source must be a SourceProgram")
         if type(self.resolved) not in (ResolvedProgram, ResolvedDomainProgram):
-            raise TypeError("resolved must be a ResolvedProgram or ResolvedDomainProgram")
+            raise TypeError(
+                "resolved must be a ResolvedProgram or ResolvedDomainProgram"
+            )
         if type(self.physical_ir) is not PhysicalIR:
             raise TypeError("physical_ir must be a PhysicalIR")
         if type(self.output_contract) is not OutputContract:
@@ -939,9 +975,13 @@ class SimulationRequest(Digestible):
             raise ValueError("PhysicalIR is not bound to this resolved program")
         for transport in self.physical_ir.transport_maps:
             if transport.source_theory_digest != self.resolved.source_theory.digest:
-                raise ValueError("transport map is not bound to this resolved source theory")
+                raise ValueError(
+                    "transport map is not bound to this resolved source theory"
+                )
             if transport.target_intent_digest != self.resolved.target.digest:
-                raise ValueError("transport map is not bound to this resolved target intent")
+                raise ValueError(
+                    "transport map is not bound to this resolved target intent"
+                )
         if type(self.obligations) is not tuple:
             raise TypeError("obligations must be a tuple")
         if any(type(item) is not ValidityObligation for item in self.obligations):
@@ -1024,7 +1064,9 @@ class CandidatePlan(Digestible):
         resource_names: list[str] = []
         for item in self.predicted_resources:
             if not isinstance(item, tuple) or len(item) != 2:
-                raise TypeError("predicted_resources must contain (name, estimate) pairs")
+                raise TypeError(
+                    "predicted_resources must contain (name, estimate) pairs"
+                )
             name, estimate = item
             _nonempty(name, "resource name")
             _nonempty(estimate, "resource estimate")
@@ -1033,8 +1075,7 @@ class CandidatePlan(Digestible):
             raise ValueError("predicted resource names must be unique")
         _strings(self.blockers, "blockers")
         unsupported = sorted(
-            set(self.request.output_contract.observable_ids)
-            - supported_outputs
+            set(self.request.output_contract.observable_ids) - supported_outputs
         )
         if unsupported and not self.blockers:
             raise ValueError(
@@ -1046,14 +1087,21 @@ class CandidatePlan(Digestible):
         if (
             self.execution_lane is ExecutionLane.CERTIFIED
             and self.request.physical_ir.evidence_status
-            in (EvidenceStatus.EXPERIMENTAL, EvidenceStatus.STRUCTURAL_TOY,
-                EvidenceStatus.UNSUPPORTED)
+            in (
+                EvidenceStatus.EXPERIMENTAL,
+                EvidenceStatus.STRUCTURAL_TOY,
+                EvidenceStatus.UNSUPPORTED,
+            )
         ):
-            raise ValueError("uncertified evidence cannot enter the certified execution lane")
+            raise ValueError(
+                "uncertified evidence cannot enter the certified execution lane"
+            )
         if self.execution_lane is ExecutionLane.CERTIFIED:
             ir = self.request.physical_ir
             if any(isinstance(item, AssemblyHypothesis) for item in ir.assemblies):
-                raise ValueError("an AssemblyHypothesis cannot enter the certified lane")
+                raise ValueError(
+                    "an AssemblyHypothesis cannot enter the certified lane"
+                )
             transport_evidence = {
                 item.transport_digest: item for item in ir.transport_evidence
             }
@@ -1061,12 +1109,14 @@ class CandidatePlan(Digestible):
                 item.assembly_digest: item for item in ir.assembly_evidence
             }
             missing_transport = [
-                item.digest for item in ir.transport_maps
+                item.digest
+                for item in ir.transport_maps
                 if item.digest not in transport_evidence
                 or transport_evidence[item.digest].remaining_obligations
             ]
             missing_assembly = [
-                item.digest for item in ir.assemblies
+                item.digest
+                for item in ir.assemblies
                 if item.digest not in assembly_evidence
                 or assembly_evidence[item.digest].remaining_obligations
             ]
@@ -1170,7 +1220,9 @@ def approve(plan: CandidatePlan, approval: Approval) -> ApprovedPlan:
     if type(approval) is not Approval:
         raise TypeError("approval must be an Approval")
     if plan.blockers:
-        raise ValueError("a candidate with blockers cannot be approved: " + "; ".join(plan.blockers))
+        raise ValueError(
+            "a candidate with blockers cannot be approved: " + "; ".join(plan.blockers)
+        )
     if approval.plan_digest != plan.digest:
         raise ValueError("approval does not name this candidate-plan digest")
     return ApprovedPlan(plan, approval, _token=_APPROVAL_TOKEN)
@@ -1223,7 +1275,9 @@ def _execution_admission_error(
             f"{type(error).__name__}: {error}"
         )
     if current != expected:
-        return "approved execution identity changed during an in-process backend callback"
+        return (
+            "approved execution identity changed during an in-process backend callback"
+        )
     if approved.approval.plan_digest != approved.plan.digest:
         return "approval no longer names the admitted candidate plan"
     if approved.approval.digest != approved.approval_record_digest:
@@ -1254,7 +1308,9 @@ class Artifact(Digestible):
             )
         if self.payload is not None:
             if canonical_digest(self.payload) != self.content_digest:
-                raise ValueError("content_digest must identify the retained artifact payload")
+                raise ValueError(
+                    "content_digest must identify the retained artifact payload"
+                )
 
 
 @dataclass(frozen=True)
@@ -1298,11 +1354,15 @@ class RunRecord(Digestible):
 
     @property
     def output_inventory(self) -> tuple[str, ...]:
-        return tuple(sorted(
-            artifact.artifact_id.removeprefix("observable:")
-            for artifact in self.artifacts
-            if artifact.kind == "observable" and artifact.complete and not artifact.quarantined
-        ))
+        return tuple(
+            sorted(
+                artifact.artifact_id.removeprefix("observable:")
+                for artifact in self.artifacts
+                if artifact.kind == "observable"
+                and artifact.complete
+                and not artifact.quarantined
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -1338,7 +1398,9 @@ class ObservableValue(Digestible):
             raise TypeError("systematic_terms must be a tuple")
         for item in self.systematic_terms:
             if not isinstance(item, tuple) or len(item) != 2:
-                raise TypeError("systematic_terms must contain (source, coefficient) pairs")
+                raise TypeError(
+                    "systematic_terms must contain (source, coefficient) pairs"
+                )
             source, coefficient = item
             _nonempty(source, "systematic source")
             if (
@@ -1410,8 +1472,7 @@ class Certificate(Digestible):
         for name in ("output_inventory", "casualties", "omissions", "failures"):
             _strings(getattr(self, name), name)
         if not isinstance(self.validity_results, tuple) or any(
-            not isinstance(result, ObligationResult)
-            for result in self.validity_results
+            not isinstance(result, ObligationResult) for result in self.validity_results
         ):
             raise TypeError(
                 "validity_results must be a tuple of ObligationResult values"
@@ -1527,18 +1588,16 @@ def _observable_payload_error(
         )
 
         resolved = plan.request.resolved
-        if (
-            not isinstance(resolved, ResolvedDomainProgram)
-            or not isinstance(resolved.subject, WaterWaveSpec)
+        if not isinstance(resolved, ResolvedDomainProgram) or not isinstance(
+            resolved.subject, WaterWaveSpec
         ):
             return "water-wave plan has no typed WaterWaveSpec subject"
         diagnostic = payloads.get("water_wave_horizon")
         profile = payloads.get("water_wave_characteristic_profile")
         if not isinstance(diagnostic, HorizonDiagnostic):
             return "water_wave_horizon must retain a typed HorizonDiagnostic payload"
-        if (
-            not isinstance(profile, tuple)
-            or any(not isinstance(item, CharacteristicSample) for item in profile)
+        if not isinstance(profile, tuple) or any(
+            not isinstance(item, CharacteristicSample) for item in profile
         ):
             return (
                 "water_wave_characteristic_profile must retain every typed "
@@ -1573,18 +1632,18 @@ def _observable_payload_error(
         crossings = payloads.get("water_background_crossing_brackets")
         regime = payloads.get("water_background_regime_inventory")
         if type(diagnostic) is not ValidationDiagnostic:
-            return "water_background_validation must retain an exact ValidationDiagnostic"
-        if (
-            type(samples) is not tuple
-            or any(type(item) is not SampleDiagnostic for item in samples)
+            return (
+                "water_background_validation must retain an exact ValidationDiagnostic"
+            )
+        if type(samples) is not tuple or any(
+            type(item) is not SampleDiagnostic for item in samples
         ):
             return (
                 "water_background_sample_diagnostics must retain every exact "
                 "SampleDiagnostic"
             )
-        if (
-            type(crossings) is not tuple
-            or any(type(item) is not CrossingBracket for item in crossings)
+        if type(crossings) is not tuple or any(
+            type(item) is not CrossingBracket for item in crossings
         ):
             return (
                 "water_background_crossing_brackets must retain every exact "
@@ -1645,9 +1704,8 @@ def _observable_payload_error(
         )
 
         resolved = plan.request.resolved
-        if (
-            not isinstance(resolved, ResolvedDomainProgram)
-            or not isinstance(resolved.subject, HumanIsotopeSpec)
+        if not isinstance(resolved, ResolvedDomainProgram) or not isinstance(
+            resolved.subject, HumanIsotopeSpec
         ):
             return "human-isotope plan has no typed HumanIsotopeSpec subject"
         diagnostic = payloads.get("human_isotope_identifiability")
@@ -1663,9 +1721,8 @@ def _observable_payload_error(
                 "human_isotope_constraint_inventory must retain an exact "
                 "ConstraintInventory payload"
             )
-        if (
-            type(witnesses) is not tuple
-            or any(type(item) is not FamilyWitness for item in witnesses)
+        if type(witnesses) is not tuple or any(
+            type(item) is not FamilyWitness for item in witnesses
         ):
             return (
                 "human_isotope_family_witnesses must retain every exact FamilyWitness"
@@ -1680,9 +1737,7 @@ def _observable_payload_error(
             diagnostic.constraint_inventory
         ):
             return "human-isotope constraint inventory is not the diagnostic inventory"
-        if canonical_digest(witnesses) != canonical_digest(
-            diagnostic.family_witnesses
-        ):
+        if canonical_digest(witnesses) != canonical_digest(diagnostic.family_witnesses):
             return "human-isotope family witnesses are not the diagnostic witnesses"
         return None
     if plan.executor_id == _HUMAN_SURVIVAL_EXECUTOR:
@@ -1698,9 +1753,7 @@ def _observable_payload_error(
             type(resolved) is not ResolvedDomainProgram
             or type(resolved.subject) is not SurvivalCalibrationSpec
         ):
-            return (
-                "human-survival plan has no exact SurvivalCalibrationSpec subject"
-            )
+            return "human-survival plan has no exact SurvivalCalibrationSpec subject"
         diagnostic = payloads.get("human_survival_synthetic_fit")
         if type(diagnostic) is not SurvivalCalibrationResult:
             return (
@@ -1738,15 +1791,14 @@ def _observable_payload_error(
             type(resolved) is not ResolvedDomainProgram
             or type(resolved.subject) is not IsingLatticeGasSpec
         ):
-            return (
-                "Ising-lattice-gas plan has no exact IsingLatticeGasSpec subject"
-            )
+            return "Ising-lattice-gas plan has no exact IsingLatticeGasSpec subject"
         exact_model = _finite_c3_model()
-        if (
-            plan.model != exact_model
-            or plan.request.physical_ir.models != (exact_model,)
+        if plan.model != exact_model or plan.request.physical_ir.models != (
+            exact_model,
         ):
-            return "Ising-lattice-gas plan does not retain the runtime-owned exact model"
+            return (
+                "Ising-lattice-gas plan does not retain the runtime-owned exact model"
+            )
         diagnostic = payloads.get("ising_lattice_gas_state_map")
         if type(diagnostic) is not ExactEquilibriumMap:
             return (
@@ -1810,6 +1862,49 @@ def _observable_payload_error(
             if canonical_digest(payloads[observable_id]) != canonical_digest(expected):
                 return (
                     f"resistive-DC output {observable_id} differs from the "
+                    "directly verified analysis payload"
+                )
+        return None
+    if plan.executor_id == _RLC_AC_EXECUTOR:
+        from .rlc_ac import _payloads
+        from .rlc_ac_schema import RLCACAnalysis, RLCACSubject
+        from .rlc_ac_verifier import (
+            DirectACVerificationReport,
+            verify_rlc_ac_analysis,
+        )
+
+        resolved = plan.request.resolved
+        if (
+            type(resolved) is not ResolvedDomainProgram
+            or type(resolved.subject) is not RLCACSubject
+        ):
+            return "RLC-AC plan has no exact RLCACSubject"
+        analysis = payloads.get("rlc_ac_analysis")
+        if type(analysis) is not RLCACAnalysis:
+            return "rlc_ac_analysis must retain an exact RLCACAnalysis"
+        verification = verify_rlc_ac_analysis(resolved.subject, analysis)
+        if not verification.passed:
+            return (
+                "RLC-AC analysis failed the production-independent direct "
+                f"verifier: {'; '.join(verification.reasons)}"
+            )
+        retained_verification = payloads.get("rlc_ac_direct_verification")
+        if type(retained_verification) is not DirectACVerificationReport:
+            return (
+                "rlc_ac_direct_verification must retain an exact "
+                "DirectACVerificationReport"
+            )
+        if canonical_digest(retained_verification) != canonical_digest(verification):
+            return (
+                "rlc_ac_direct_verification differs from the fresh "
+                "production-independent verifier report"
+            )
+        for observable_id, expected in _payloads(analysis, verification).items():
+            if observable_id not in payloads:
+                return f"RLC-AC output omitted {observable_id}"
+            if canonical_digest(payloads[observable_id]) != canonical_digest(expected):
+                return (
+                    f"RLC-AC output {observable_id} differs from the "
                     "directly verified analysis payload"
                 )
         return None
@@ -1910,7 +2005,10 @@ class RunJournal:
         return self._record
 
     def add_artifact(self, artifact: Artifact) -> RunRecord:
-        if any(existing.artifact_id == artifact.artifact_id for existing in self._record.artifacts):
+        if any(
+            existing.artifact_id == artifact.artifact_id
+            for existing in self._record.artifacts
+        ):
             raise ValueError(f"artifact {artifact.artifact_id!r} already exists")
         return self._transition(artifacts=self._record.artifacts + (artifact,))
 
@@ -1921,11 +2019,12 @@ class RunJournal:
 
     def add_obligation_result(self, result: ObligationResult) -> RunRecord:
         declared = {
-            obligation.digest
-            for obligation in self.approved.plan.request.obligations
+            obligation.digest for obligation in self.approved.plan.request.obligations
         }
         if result.obligation_digest not in declared:
-            raise ValueError("obligation result is not declared by the approved request")
+            raise ValueError(
+                "obligation result is not declared by the approved request"
+            )
         if any(
             existing.obligation_digest == result.obligation_digest
             for existing in self._record.obligation_results
@@ -1962,9 +2061,7 @@ class RunJournal:
                 raise
             original_digest = artifact.content_digest
             current_digest = canonical_digest(artifact.payload)
-            detail = (
-                f"{artifact.detail}; " if artifact.detail else ""
-            ) + (
+            detail = (f"{artifact.detail}; " if artifact.detail else "") + (
                 "payload identity changed after retention; "
                 f"original_digest={original_digest}"
             )
@@ -1978,12 +2075,10 @@ class RunJournal:
     def incomplete(self, reason: str) -> RunRecord:
         _nonempty(reason, "reason")
         quarantined = tuple(
-            self._quarantine_artifact(artifact)
-            for artifact in self._record.artifacts
+            self._quarantine_artifact(artifact) for artifact in self._record.artifacts
         )
         quarantined_checkpoints = tuple(
-            self._quarantine_artifact(artifact)
-            for artifact in self._record.checkpoints
+            self._quarantine_artifact(artifact) for artifact in self._record.checkpoints
         )
         return self._transition(
             status=RunStatus.INCOMPLETE,
@@ -1995,12 +2090,10 @@ class RunJournal:
     def refused(self, reason: str) -> RunRecord:
         _nonempty(reason, "reason")
         quarantined = tuple(
-            self._quarantine_artifact(artifact)
-            for artifact in self._record.artifacts
+            self._quarantine_artifact(artifact) for artifact in self._record.artifacts
         )
         quarantined_checkpoints = tuple(
-            self._quarantine_artifact(artifact)
-            for artifact in self._record.checkpoints
+            self._quarantine_artifact(artifact) for artifact in self._record.checkpoints
         )
         return self._transition(
             status=RunStatus.REFUSED,
@@ -2012,12 +2105,10 @@ class RunJournal:
     def invalid(self, reason: str) -> RunRecord:
         _nonempty(reason, "reason")
         quarantined = tuple(
-            self._quarantine_artifact(artifact)
-            for artifact in self._record.artifacts
+            self._quarantine_artifact(artifact) for artifact in self._record.artifacts
         )
         quarantined_checkpoints = tuple(
-            self._quarantine_artifact(artifact)
-            for artifact in self._record.checkpoints
+            self._quarantine_artifact(artifact) for artifact in self._record.checkpoints
         )
         return self._transition(
             status=RunStatus.INVALID,
@@ -2029,12 +2120,10 @@ class RunJournal:
     def failed(self, reason: str) -> RunRecord:
         _nonempty(reason, "reason")
         quarantined = tuple(
-            self._quarantine_artifact(artifact)
-            for artifact in self._record.artifacts
+            self._quarantine_artifact(artifact) for artifact in self._record.artifacts
         )
         quarantined_checkpoints = tuple(
-            self._quarantine_artifact(artifact)
-            for artifact in self._record.checkpoints
+            self._quarantine_artifact(artifact) for artifact in self._record.checkpoints
         )
         return self._transition(
             status=RunStatus.FAILED,
@@ -2044,7 +2133,9 @@ class RunJournal:
         )
 
     def complete(self) -> RunRecord:
-        expected = tuple(sorted(self.approved.plan.request.output_contract.observable_ids))
+        expected = tuple(
+            sorted(self.approved.plan.request.output_contract.observable_ids)
+        )
         actual = self._record.output_inventory
         if actual != expected:
             missing = sorted(set(expected) - set(actual))
@@ -2068,7 +2159,8 @@ class RunJournal:
             for result in self._record.obligation_results
         }
         missing_or_failed = {
-            digest for digest in required
+            digest
+            for digest in required
             if digest not in results
             or results[digest].outcome is not ObligationOutcome.PASS
         }
@@ -2226,9 +2318,7 @@ def _build_reaction_residue_transform(
         for molecule in dict.fromkeys(reaction.dom.species)
         if shared[molecule]
     )
-    workset = tuple(
-        dict.fromkeys(residual_left.species + residual_right.species)
-    )
+    workset = tuple(dict.fromkeys(residual_left.species + residual_right.species))
     return ReactionResidueTransform(
         name="reaction-residue-v1",
         exactness_class="A_IDENTITY_PRESERVING",
@@ -2427,7 +2517,8 @@ def compile_reaction_energy(
         resolved=resolved,
         physical_ir=physical_ir,
         output_contract=output_contract or _default_output_contract(),
-        equivalence_contract=equivalence_contract or EquivalenceContract(
+        equivalence_contract=equivalence_contract
+        or EquivalenceContract(
             relation=(
                 "exact equality of every reaction_energy ObservableValue field under "
                 "the approved raw Reaction and CalculationSpec"
@@ -2464,7 +2555,8 @@ def compile_reaction_energy(
     )
     if unsupported:
         blockers += (
-            "this vertical cannot emit requested observable(s): " + ", ".join(unsupported),
+            "this vertical cannot emit requested observable(s): "
+            + ", ".join(unsupported),
         )
     contract_error = _executor_contract_error(
         _REACTION_EXECUTOR,
@@ -2529,8 +2621,11 @@ def compile_session_reaction_energy(
             "unmapped post-run obligations"
         )
     slot = next(
-        (candidate for candidate in session.spec.slots
-         if candidate.name == reaction_slot_name),
+        (
+            candidate
+            for candidate in session.spec.slots
+            if candidate.name == reaction_slot_name
+        ),
         None,
     )
     if slot is None:
@@ -2576,7 +2671,9 @@ def _pre_result(
         return _obligation(
             obligation,
             ObligationOutcome.PASS if passed else ObligationOutcome.FAIL,
-            "conserves(reaction) returned true" if passed else "conserves(reaction) returned false",
+            "conserves(reaction) returned true"
+            if passed
+            else "conserves(reaction) returned false",
         )
     if obligation.evaluator_id == "smartchem.program/oracle-domain-v1":
         inspection = diagnose(residual_reaction or reaction, (oracle,))
@@ -2601,8 +2698,12 @@ def _post_result(
     if obligation.evaluator_id == "smartchem.program/result-present-v1":
         return _obligation(
             obligation,
-            ObligationOutcome.PASS if estimate is not None else ObligationOutcome.REFUSE,
-            "oracle returned an Estimate" if estimate is not None else "oracle declined",
+            ObligationOutcome.PASS
+            if estimate is not None
+            else ObligationOutcome.REFUSE,
+            "oracle returned an Estimate"
+            if estimate is not None
+            else "oracle declined",
         )
     if obligation.evaluator_id == "smartchem.program/output-inventory-v1":
         passed = tuple(sorted(output_ids)) == tuple(sorted(expected_ids))
@@ -2678,7 +2779,9 @@ def _preflight_reaction_energy(plan: CandidatePlan) -> None:
     if type(plan.request.resolved) is not ResolvedProgram:
         raise ValueError("reaction executor requires an exact chemical ResolvedProgram")
     runtime_model = _reaction_energy_model()
-    if plan.model != runtime_model or plan.request.physical_ir.models != (runtime_model,):
+    if plan.model != runtime_model or plan.request.physical_ir.models != (
+        runtime_model,
+    ):
         raise ValueError(
             "reaction executor model differs from the exact runtime-owned "
             "closed-separable endpoint-energy model"
@@ -2801,19 +2904,20 @@ def _execute_reaction_energy(
             ("candidate-plan", "plan", plan),
             ("approval", "approval", approved.approval),
         ):
-            journal.add_artifact(Artifact(
-                artifact_id=artifact_id,
-                kind=kind,
-                content_digest=payload.digest,
-                complete=True,
-                quarantined=False,
-                payload=payload,
-            ))
+            journal.add_artifact(
+                Artifact(
+                    artifact_id=artifact_id,
+                    kind=kind,
+                    content_digest=payload.digest,
+                    complete=True,
+                    quarantined=False,
+                    payload=payload,
+                )
+            )
 
         runtime_model = _reaction_energy_model()
-        if (
-            plan.model != runtime_model
-            or plan.request.physical_ir.models != (runtime_model,)
+        if plan.model != runtime_model or plan.request.physical_ir.models != (
+            runtime_model,
         ):
             return ExecutionReport(
                 journal.invalid(
@@ -2927,11 +3031,13 @@ def _execute_reaction_energy(
                 estimate,
             )
             journal.add_checkpoint(checkpoint)
-            journal.add_artifact(replace(
-                checkpoint,
-                artifact_id="intermediate:species:" + canonical_digest(molecule),
-                kind="intermediate",
-            ))
+            journal.add_artifact(
+                replace(
+                    checkpoint,
+                    artifact_id="intermediate:species:" + canonical_digest(molecule),
+                    kind="intermediate",
+                )
+            )
             observed_calculation = CalculationSpec.from_oracle(oracle)
             admission_error = _execution_admission_error(
                 approved,
@@ -3017,14 +3123,16 @@ def _execute_reaction_energy(
             omissions=(),
             failures=(),
         )
-        journal.add_artifact(Artifact(
-            artifact_id="certificate",
-            kind="certificate",
-            content_digest=certificate.digest,
-            complete=True,
-            quarantined=False,
-            payload=certificate,
-        ))
+        journal.add_artifact(
+            Artifact(
+                artifact_id="certificate",
+                kind="certificate",
+                content_digest=certificate.digest,
+                complete=True,
+                quarantined=False,
+                payload=certificate,
+            )
+        )
         record = journal.complete()
         if record.status is not RunStatus.COMPLETE:
             return ExecutionReport(record, None, None)

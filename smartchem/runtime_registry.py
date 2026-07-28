@@ -8,6 +8,7 @@ registry usable from :mod:`smartchem.program` without creating an import cycle.
 This is deliberately a static registry.  Adding an executor is a reviewed source change
 that changes :func:`semantic_manifest_digest`; there is no third-party registration seam.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -86,10 +87,7 @@ class TypeReference:
         resolved = _resolve_qualified(self.module, self.qualname)
         if not isinstance(resolved, type):
             raise TypeError(f"{self.module}.{self.qualname} does not resolve to a type")
-        if (
-            resolved.__module__ != self.module
-            or resolved.__qualname__ != self.qualname
-        ):
+        if resolved.__module__ != self.module or resolved.__qualname__ != self.qualname:
             raise TypeError(
                 f"{self.module}.{self.qualname} resolved to aliased type "
                 f"{resolved.__module__}.{resolved.__qualname__}"
@@ -143,16 +141,18 @@ class ExecutorDescriptor:
     def __post_init__(self) -> None:
         if not isinstance(self.executor_id, str) or not self.executor_id:
             raise ValueError("executor_id must be a non-empty string")
-        if not isinstance(self.subject_attribute, str) or not self.subject_attribute.isidentifier():
+        if (
+            not isinstance(self.subject_attribute, str)
+            or not self.subject_attribute.isidentifier()
+        ):
             raise ValueError("subject_attribute must be a Python identifier")
         if not isinstance(self.implementation_modules, tuple):
             raise TypeError("implementation_modules must be a tuple")
         for module_name in self.implementation_modules:
             _validate_module_name(module_name, "implementation_modules entry")
-        if (
-            len(self.implementation_modules) != len(set(self.implementation_modules))
-            or self.implementation_modules != tuple(sorted(self.implementation_modules))
-        ):
+        if len(self.implementation_modules) != len(
+            set(self.implementation_modules)
+        ) or self.implementation_modules != tuple(sorted(self.implementation_modules)):
             raise ValueError("implementation_modules must be unique and sorted")
 
     def extract_subject(self, resolved: object) -> object:
@@ -263,11 +263,15 @@ _DESCRIPTORS = (
             "smartchem.water_wave",
             "_execute_water_wave_horizon",
         ),
-        implementation_modules=tuple(sorted((
-            *_SHARED_IMPLEMENTATION_MODULES,
-            "smartchem.water_wave",
-            "smartchem.water_wave_domain",
-        ))),
+        implementation_modules=tuple(
+            sorted(
+                (
+                    *_SHARED_IMPLEMENTATION_MODULES,
+                    "smartchem.water_wave",
+                    "smartchem.water_wave_domain",
+                )
+            )
+        ),
     ),
     ExecutorDescriptor(
         executor_id="smartchem.water_wave/finite-section-compatibility-v2",
@@ -289,16 +293,18 @@ _DESCRIPTORS = (
             "smartchem.water_wave_validation",
             "_execute_water_wave_validation",
         ),
-        implementation_modules=tuple(sorted((
-            *_SHARED_IMPLEMENTATION_MODULES,
-            "smartchem.water_wave_validation",
-            "smartchem.water_wave_validation_domain",
-        ))),
+        implementation_modules=tuple(
+            sorted(
+                (
+                    *_SHARED_IMPLEMENTATION_MODULES,
+                    "smartchem.water_wave_validation",
+                    "smartchem.water_wave_validation_domain",
+                )
+            )
+        ),
     ),
     ExecutorDescriptor(
-        executor_id=(
-            "smartchem.water_wave_continuous/manufactured-steady-v1"
-        ),
+        executor_id=("smartchem.water_wave_continuous/manufactured-steady-v1"),
         resolved_container=TypeReference(
             "smartchem.program",
             "ResolvedDomainProgram",
@@ -320,18 +326,24 @@ _DESCRIPTORS = (
             "smartchem.water_wave_continuous",
             "_execute_water_wave_continuous",
         ),
-        implementation_modules=tuple(sorted((
-            *_SHARED_IMPLEMENTATION_MODULES,
-            "smartchem.water_wave_continuous",
-            "smartchem.water_wave_continuous_domain",
-            "smartchem.water_wave_continuous_verifier",
-            "smartchem.water_wave_validation_domain",
-        ))),
+        implementation_modules=tuple(
+            sorted(
+                (
+                    *_SHARED_IMPLEMENTATION_MODULES,
+                    "smartchem.water_wave_continuous",
+                    "smartchem.water_wave_continuous_domain",
+                    "smartchem.water_wave_continuous_verifier",
+                    "smartchem.water_wave_validation_domain",
+                )
+            )
+        ),
     ),
     ExecutorDescriptor(
         executor_id="smartchem.human_isotope/identifiability-v1",
         resolved_container=TypeReference("smartchem.program", "ResolvedDomainProgram"),
-        subject_type=TypeReference("smartchem.human_isotope_domain", "HumanIsotopeSpec"),
+        subject_type=TypeReference(
+            "smartchem.human_isotope_domain", "HumanIsotopeSpec"
+        ),
         subject_attribute="subject",
         output_contract_factory=FunctionReference(
             "smartchem.human_isotope",
@@ -345,17 +357,18 @@ _DESCRIPTORS = (
             "smartchem.human_isotope",
             "_execute_human_isotope_identifiability",
         ),
-        implementation_modules=tuple(sorted((
-            *_SHARED_IMPLEMENTATION_MODULES,
-            "smartchem.human_isotope",
-            "smartchem.human_isotope_domain",
-        ))),
+        implementation_modules=tuple(
+            sorted(
+                (
+                    *_SHARED_IMPLEMENTATION_MODULES,
+                    "smartchem.human_isotope",
+                    "smartchem.human_isotope_domain",
+                )
+            )
+        ),
     ),
     ExecutorDescriptor(
-        executor_id=(
-            "smartchem.human_survival/"
-            "synthetic-weibull-interval-recovery-v1"
-        ),
+        executor_id=("smartchem.human_survival/synthetic-weibull-interval-recovery-v1"),
         resolved_container=TypeReference("smartchem.program", "ResolvedDomainProgram"),
         subject_type=TypeReference(
             "smartchem.human_survival_domain",
@@ -374,16 +387,18 @@ _DESCRIPTORS = (
             "smartchem.human_survival",
             "_execute_human_survival",
         ),
-        implementation_modules=tuple(sorted((
-            *_SHARED_IMPLEMENTATION_MODULES,
-            "smartchem.human_survival",
-            "smartchem.human_survival_domain",
-        ))),
+        implementation_modules=tuple(
+            sorted(
+                (
+                    *_SHARED_IMPLEMENTATION_MODULES,
+                    "smartchem.human_survival",
+                    "smartchem.human_survival_domain",
+                )
+            )
+        ),
     ),
     ExecutorDescriptor(
-        executor_id=(
-            "smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"
-        ),
+        executor_id=("smartchem.ising_lattice_gas/finite-c3-equilibrium-map-v1"),
         resolved_container=TypeReference(
             "smartchem.program",
             "ResolvedDomainProgram",
@@ -405,11 +420,15 @@ _DESCRIPTORS = (
             "smartchem.ising_lattice_gas",
             "_execute_ising_lattice_gas",
         ),
-        implementation_modules=tuple(sorted((
-            *_SHARED_IMPLEMENTATION_MODULES,
-            "smartchem.ising_lattice_gas",
-            "smartchem.ising_lattice_gas_domain",
-        ))),
+        implementation_modules=tuple(
+            sorted(
+                (
+                    *_SHARED_IMPLEMENTATION_MODULES,
+                    "smartchem.ising_lattice_gas",
+                    "smartchem.ising_lattice_gas_domain",
+                )
+            )
+        ),
     ),
     ExecutorDescriptor(
         executor_id="smartchem.resistive_dc/exact-relation-sparse-mna-v1",
@@ -434,23 +453,64 @@ _DESCRIPTORS = (
             "smartchem.resistive_dc",
             "_execute_resistive_dc",
         ),
-        implementation_modules=tuple(sorted((
-            *_SHARED_IMPLEMENTATION_MODULES,
-            "smartchem.circuit",
-            "smartchem.open_diagram",
-            "smartchem.resistive_dc",
-            "smartchem.resistive_dc_schema",
-            "smartchem.resistive_dc_verifier",
-        ))),
+        implementation_modules=tuple(
+            sorted(
+                (
+                    *_SHARED_IMPLEMENTATION_MODULES,
+                    "smartchem.circuit",
+                    "smartchem.open_diagram",
+                    "smartchem.resistive_dc",
+                    "smartchem.resistive_dc_schema",
+                    "smartchem.resistive_dc_verifier",
+                )
+            )
+        ),
+    ),
+    ExecutorDescriptor(
+        executor_id="smartchem.rlc_ac/positive-frequency-passive-rlc-v1",
+        resolved_container=TypeReference(
+            "smartchem.program",
+            "ResolvedDomainProgram",
+        ),
+        subject_type=TypeReference(
+            "smartchem.rlc_ac_schema",
+            "RLCACSubject",
+        ),
+        subject_attribute="subject",
+        output_contract_factory=FunctionReference(
+            "smartchem.rlc_ac",
+            "_default_output_contract",
+        ),
+        plan_preflight=FunctionReference(
+            "smartchem.rlc_ac",
+            "_preflight_rlc_ac",
+        ),
+        runner=FunctionReference(
+            "smartchem.rlc_ac",
+            "_execute_rlc_ac",
+        ),
+        implementation_modules=tuple(
+            sorted(
+                (
+                    *_SHARED_IMPLEMENTATION_MODULES,
+                    "smartchem.open_diagram",
+                    "smartchem.rlc_ac",
+                    "smartchem.rlc_ac_circuit",
+                    "smartchem.rlc_ac_schema",
+                    "smartchem.rlc_ac_verifier",
+                )
+            )
+        ),
     ),
 )
 
-_BY_EXECUTOR_ID = MappingProxyType({
-    descriptor.executor_id: descriptor
-    for descriptor in _DESCRIPTORS
-})
+_BY_EXECUTOR_ID = MappingProxyType(
+    {descriptor.executor_id: descriptor for descriptor in _DESCRIPTORS}
+)
 
-if len(_BY_EXECUTOR_ID) != len(_DESCRIPTORS):  # pragma: no cover - import-time invariant
+if len(_BY_EXECUTOR_ID) != len(
+    _DESCRIPTORS
+):  # pragma: no cover - import-time invariant
     raise RuntimeError("runtime registry contains duplicate executor IDs")
 
 
@@ -464,7 +524,9 @@ def descriptor_for(executor_id: str) -> ExecutorDescriptor:
     try:
         return _BY_EXECUTOR_ID[executor_id]
     except (KeyError, TypeError) as error:
-        raise KeyError(f"no runtime is registered for executor_id {executor_id!r}") from error
+        raise KeyError(
+            f"no runtime is registered for executor_id {executor_id!r}"
+        ) from error
 
 
 def extract_subject(executor_id: str, resolved: object) -> object:

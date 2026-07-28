@@ -10,9 +10,9 @@ plan, and return results with their evidence, omissions, casualties, and approva
 attached.
 
 The general language does not exist yet. The repository contains a rigorous compiler/runtime
-seam, a chemistry core, eight deliberately narrow executors that test the design, and a
-separate finite typed open-diagram syntax with one independently verified ideal-resistor
-DC interpretation.
+seam, a chemistry core, nine deliberately narrow executors that test the design, and a
+separate finite typed open-diagram syntax with independently verified ideal-resistor DC and
+positive-frequency passive-RLC interpretations.
 
 ## Non-negotiable contract
 
@@ -71,6 +71,7 @@ without becoming literal; a literal target can remain unsupported.
 | Synthetic survival D2b-S | TRAIN-only fixed-family conditional-binomial recovery on content-addressed independent synthetic cohorts, with uncertainty diagnostics and locked HOLDOUT scoring. | Same-generator implementation evidence only; no human/animal evidence, biological validation, causality, or transfer authority. |
 | Finite C3 Ising↔lattice gas | All eight states, `ε=4J`, `μ=2h−4J`, `H_I=H_LG+3(h−J)`, and the formal partition identity, checked with exact integers and a separate direct verifier. | `ANALOGUE/ESTABLISHED/CERTIFIED` for that finite algebra only; no material identity, dynamics, thermodynamic limit, or arbitrary-graph transfer. |
 | Finite resistive DC E1 | Exact rational passive boundary relation plus one topology-generic sparse-MNA drive, explicit model-to-edge binding, complete node/branch/source output, and a production-independent direct verifier. | `LITERAL/VALIDATED_WITHIN_REGIME/CERTIFIED` only for finite positive ideal resistors and the declared drive/reference; no device, AC/RLC, thermal, safety, nonlinear, distributed, or port-Hamiltonian claim. |
+| Positive-frequency passive RLC E2 | Exact `Q(i)` boundary relation, exact driven-rank preflight, one normalized sparse complex-MNA path, complete phasor/power/diagnostic output, explicit model-to-edge binding, and a production-independent direct verifier. | `LITERAL/VALIDATED_WITHIN_REGIME/CERTIFIED` only for the declared finite ideal mathematical networks at one positive frequency; exact lossless singular resonance is refused without regularization. No device, transient, nonlinear/active, tolerance, safety, distributed, or port-Hamiltonian claim. |
 
 The Ising/lattice-gas control is intentionally important: it proves that SmartChem can carry
 an exact cross-domain map without confusing exact mathematics with literal physical identity.
@@ -122,10 +123,12 @@ two-terminal component slots, exact endpoint ownership, total boundary gluing, t
 disjoint-union tensor, identities, and braids. A budgeted exact observer compares successful
 finite presentations modulo internal naming and refuses explicitly above its candidate
 budget. `smartchem.resistive_dc_schema`, `smartchem.circuit`, and
-`smartchem.resistive_dc` add one narrow positive ideal-resistor DC semantics beside it;
-topology itself still does not imply those equations. This is not a
-`PhysicalIR` migration, AC/RLC system, device model, or proof of a general multiphysics
-category.
+`smartchem.resistive_dc` add one narrow positive ideal-resistor DC semantics beside it.
+`smartchem.rlc_ac_schema`, `smartchem.rlc_ac_circuit`, `smartchem.rlc_ac`, and
+`smartchem.rlc_ac_verifier` add a separate positive-frequency passive-RLC semantics with
+exact singular preflight. Topology itself still does not imply either set of equations.
+This is not a `PhysicalIR` migration, general AC system, device model, or proof of a
+general multiphysics category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](MANIFEST.md).
 
@@ -143,7 +146,7 @@ python -m smartchem.bench
 Current maintained fast-suite result:
 
 ```text
-1434 passed, 14 skipped, 1 xfailed
+1467 passed, 14 skipped, 1 xfailed
 ```
 
 The skipped tests require the explicit slow-test gate and are not represented as passed.
@@ -165,6 +168,7 @@ Every cited compiled run has a committed deterministic harness and durable recei
 - [verified Class-A reaction residue](experiments/RESULTS_compiled_class_a_optimizer.md)
 - [exact finite Ising/lattice-gas map](experiments/RESULTS_compiled_ising_lattice_gas_vertical.md)
 - [independently verified resistive-DC bridge](experiments/RESULTS_compiled_resistive_dc.md)
+- [independently verified positive-frequency passive-RLC bridge](experiments/RESULTS_compiled_rlc_ac.md)
 
 Raw journals are write-once local run artifacts. Receipts retain the relevant identities,
 outcomes, scientific scope, evidence status, omissions, casualties, and negative claims.
@@ -172,15 +176,16 @@ outcomes, scientific scope, evidence status, omissions, casualties, and negative
 ## Roadmap
 
 The current short-term seam is hardened: `PhysicalIR` owns member/reference/evidence
-integrity, transforms bind the approved model and contracts, all eight executors own their
+integrity, transforms bind the approved model and contracts, all nine executors own their
 model/transform inventory before a calculation or journal, and resolved runners cannot be
 used as an alternate authoritative dispatch path. The manufactured continuous-water
-midterm, finite open-diagram S0, and independently verified resistive-DC E1 are complete.
+midterm, finite open-diagram S0, independently verified resistive-DC E1, and
+positive-frequency passive-RLC E2 are complete.
 
 Best next work:
 
-1. add positive-frequency passive AC/RLC E2 with complex-power/passivity checks, damped
-   resonance controls, and explicit lossless singular-resonance refusal;
+1. introduce a deliberate `StructureIR` adapter with exact plan/output-digest and
+   alpha-invariance controls while preserving all nine existing executors;
 2. keep port-Hamiltonian semantics later until dynamic state and an effort/flow power
    pairing are explicit and verified;
 3. extend water only after the stationary manufactured rung: bounded dispersive branches
@@ -215,6 +220,9 @@ The compact continuation sheet is [ROADMAP_2026-07-27.md](ROADMAP_2026-07-27.md)
 - [RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md](RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md)
   — independently verified E1 implementation, hostile repairs, calculation receipt, and
   compact-resume cut.
+- [RESEARCH_ROUND_RLC_AC_2026-07-28.md](RESEARCH_ROUND_RLC_AC_2026-07-28.md)
+  — independently verified E2 implementation, exact singular refusal, calculation ledger,
+  decomposed roadmap, and compact-resume cut.
 - [CATEGORY_BACKBONE_ROADMAP_2026-07-27.md](CATEGORY_BACKBONE_ROADMAP_2026-07-27.md) —
   the staged open-diagram/domain-algebra architecture and its dominance boundary.
 

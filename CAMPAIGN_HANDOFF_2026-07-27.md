@@ -1,11 +1,12 @@
 # SmartChem campaign and category-backbone round handoff
 
-**Prepared:** 2026-07-27; updated through E2 on 2026-07-28
+**Prepared:** 2026-07-27; updated through the StructureIR migration on 2026-07-28
 **Working branch:** `main`
 **Round base:** `247c060d4b2ead4690f952b270e334496b6b7d73`
 **Imported other-model baseline:** `521e719`
 **Cycle 5 implementation baseline:** `45885f2`
 **E2 round base:** `4e1350e13ced6605244759023158b37106fea1bc`
+**StructureIR round base:** `ae60a254f266b90322ac9d23c92ebf839dbe60ff`
 
 This is the compact continuation artifact for the 2026-07-27 campaign. The detailed
 scientific and product contract remains
@@ -107,13 +108,21 @@ Completed:
    regularization. Scope is one declared positive frequency in an ideal mathematical
    circuit, not a device, transient, nonlinear, safety, distributed, or port-Hamiltonian
    result.
+9. **Bounded StructureIR migration.** Successful undecorated S0 canonical observations now
+   encode as versioned quotient values with resource-bounded composition/tensor/identity/
+   braid. Raw-presentation digest and budget remain in a separate witness; every plan
+   records `OBSERVED`, `REFUSED`, or `NOT_APPLICABLE` and rederives that attachment before
+   dispatch. The registry, all nine subjects, and every exact output contract remain
+   unchanged. This is an architectural identity cut, not a universal category or new
+   physics result.
 
 Detailed contract and claim ledger:
 `RESEARCH_ROUND_2026-07-27.md`. Implementation-grade category design:
 `CATEGORY_BACKBONE_ROADMAP_2026-07-27.md`. S0 release evidence and the rejected remote E1
 cut: `RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md`. Current E1 authority:
 `RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md`. Current E2 authority and compact-resume cut:
-`RESEARCH_ROUND_RLC_AC_2026-07-28.md`.
+`RESEARCH_ROUND_RLC_AC_2026-07-28.md`. Current category migration authority:
+`RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md`.
 
 ## Calculation ledger
 
@@ -153,12 +162,13 @@ The separate cold benchmark is not active and has no recoverable scientific resu
 ```text
 .venv/bin/python -m pytest -q -rs
 .venv/bin/pytest -q -rs
-1467 passed, 14 skipped, 1 xfailed
+1476 passed, 14 skipped, 1 xfailed
 ```
 
 - The 14 slow tests were not run and are not represented as passing.
 - The strict xfail is the known true-parallel-interchange architecture debt.
 - The focused E2 circuit/lifecycle/verifier/registry/P0 selection reports `78 passed`.
+- The focused StructureIR/S0/P0/registry/E1/E2 selection reports `90 passed`.
 - A deterministic independent metamorphic probe accepted 500 generated multigraph
   presentations under component/junction/endpoint reordering, alpha-renaming, and
   undirected terminal reversal at seed `20260727`.
@@ -213,22 +223,23 @@ planner, multiphysics runtime, empirical human model, general Saint-Venant/free-
 dispersive water solver, general circuit/device simulator, general optimizer, or
 conversational scientific environment.
 
-## Best next category midterm: deliberate `StructureIR` adapter
+## Best next category midterm: complex relation closure, then circuit ModelIR
 
-S0, E1, and E2 are complete. The next bounded dependency cut is an adapter from S0
-canonical structure into a typed `StructureIR` value:
+S0, E1, E2, and the bounded StructureIR adapter are complete. DC already has exact rational
+linear-relation identity/composition/tensor and finite black-box preservation controls.
+E2's exact `ComplexBoundaryRelation` lacks those operations, so an AC semantic-functor claim
+is not yet expressible.
 
-1. preserve S0 identity and all nine existing typed subjects;
-2. bind adapter identity into plan and compiler digests;
-3. preserve every output contract and observable digest under an explicitly approved
-   migration;
-4. test round trips, alpha-renaming, declaration order, model-edge binding, and forged
-   adapter refusal;
-5. regress all nine executors and make no general-physics claim from the architecture.
+1. implement exact `Q(i)` relation identity, composition, and tensor;
+2. test E2 black-box preservation independently of a selected driven solve;
+3. preserve singular/floating relations even where a chosen MNA drive refuses;
+4. then introduce a circuit-local decorated `ModelIR` with explicit presentation
+   permutation witnesses;
+5. keep seven non-S0 subjects explicitly outside this electrical category.
 
 ## Following midterm queue
 
-1. **Water next rung:** a bounded dispersive branch solver with independent convergence
+1. **Water next scientific rung:** a bounded dispersive branch solver with independent convergence
    and output gates, then measured regime-matched evidence. Manufactured v1/v2/continuous
    agreement is not external validation.
 2. **Traffic kinematic waves:** next regime-valid metaphor control. Preserve conservation-law
@@ -253,7 +264,8 @@ They are stress tests with distinct casualty/evidence needs, not an exhaustive l
 
 ## Long-term direction
 
-- domain-extensible Physical IR with typed open ports and state identity;
+- domain-indexed structure categories and a domain-extensible Physical IR with typed open
+  ports and state identity;
 - verified model/adaptor-chain planning across scale and domain;
 - general precondition, convergence, postcondition, validation, and refinement transitions;
 - reusable evidence and calibration objects with explicit applicability;
@@ -265,9 +277,10 @@ They are stress tests with distinct casualty/evidence needs, not an exhaustive l
 1. Confirm the intended branch, remote head, and a clean worktree.
 2. Read this handoff, the direction audit, and the roadmap before choosing work.
 3. Inspect current receipts and live tests rather than trusting a stale recap.
-4. Read `RESEARCH_ROUND_RLC_AC_2026-07-28.md` and the category-backbone roadmap before
-   implementing the `StructureIR` adapter; keep topology, domain
-   equations, verification, evidence, and task scheduling separate.
+4. Read `RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md` and the category-backbone roadmap before
+   implementing complex relation closure or circuit `ModelIR`; keep quotient topology,
+   raw-presentation/model binding, equations, verification, evidence, and task scheduling
+   separate.
 5. Keep each calculation's terminal state and journal path explicit.
 6. Preserve unrelated work; stage only the intended slice.
 7. Require science and runtime attacks before a public receipt.

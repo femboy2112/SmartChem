@@ -2,9 +2,10 @@
 
 > **Historical round record.** Its seven-executor/E1-next statements are superseded first
 > by `RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md`, then by
-> `RESEARCH_ROUND_RLC_AC_2026-07-28.md`: E1 and E2 are complete, the registry has nine
-> executors, and a bounded `StructureIR` adapter is next. The cold benchmark described below
-> is terminal-unclassified, not active.
+> `RESEARCH_ROUND_RLC_AC_2026-07-28.md`, then by
+> `RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md`: E1, E2, and the bounded StructureIR adapter
+> are complete, and the registry has nine executors. The cold benchmark described below is
+> terminal-unclassified, not active.
 
 **Remote base:** `femboy2112/SmartChem@247c060d4b2ead4690f952b270e334496b6b7d73`
 **Working branch:** `agent/smartchem-roadmap-round-20260727`

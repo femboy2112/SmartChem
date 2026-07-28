@@ -326,6 +326,19 @@ from .open_diagram import (
     identity as open_identity,
     unit_interface as open_unit_interface,
 )
+from .structure_ir import (
+    STRUCTURE_ADAPTER_SCHEMA,
+    STRUCTURE_ATTACHMENT_SCHEMA,
+    STRUCTURE_IR_SCHEMA,
+    StructureAdapterWitness,
+    StructureAttachment,
+    StructureIREdge,
+    StructureIR,
+    StructureObservationStatus,
+    adapt_open_diagram,
+    structure_braid,
+    structure_identity,
+)
 from .circuit import (
     BoundaryLinearRelation,
     CircuitDiagnostics,
@@ -747,6 +760,18 @@ __all__ = [
     "canonicalize_open_diagram",
     "open_identity",
     "open_unit_interface",
+    # versioned quotient representation plus presentation-bound migration witness
+    "STRUCTURE_ADAPTER_SCHEMA",
+    "STRUCTURE_ATTACHMENT_SCHEMA",
+    "STRUCTURE_IR_SCHEMA",
+    "StructureAdapterWitness",
+    "StructureAttachment",
+    "StructureIREdge",
+    "StructureIR",
+    "StructureObservationStatus",
+    "adapt_open_diagram",
+    "structure_braid",
+    "structure_identity",
     "BoundaryLinearRelation",
     "CircuitDiagnostics",
     "CircuitError",

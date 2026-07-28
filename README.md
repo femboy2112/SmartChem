@@ -146,7 +146,7 @@ python -m smartchem.bench
 Current maintained fast-suite result:
 
 ```text
-1467 passed, 14 skipped, 1 xfailed
+1476 passed, 14 skipped, 1 xfailed
 ```
 
 The skipped tests require the explicit slow-test gate and are not represented as passed.
@@ -169,6 +169,7 @@ Every cited compiled run has a committed deterministic harness and durable recei
 - [exact finite Ising/lattice-gas map](experiments/RESULTS_compiled_ising_lattice_gas_vertical.md)
 - [independently verified resistive-DC bridge](experiments/RESULTS_compiled_resistive_dc.md)
 - [independently verified positive-frequency passive-RLC bridge](experiments/RESULTS_compiled_rlc_ac.md)
+- [bounded StructureIR adapter migration](experiments/RESULTS_structure_ir_adapter.md)
 
 Raw journals are write-once local run artifacts. Receipts retain the relevant identities,
 outcomes, scientific scope, evidence status, omissions, casualties, and negative claims.
@@ -180,20 +181,26 @@ integrity, transforms bind the approved model and contracts, all nine executors 
 model/transform inventory before a calculation or journal, and resolved runners cannot be
 used as an alternate authoritative dispatch path. The manufactured continuous-water
 midterm, finite open-diagram S0, independently verified resistive-DC E1, and
-positive-frequency passive-RLC E2 are complete.
+positive-frequency passive-RLC E2 are complete. The bounded `StructureIR` migration is
+also complete: successful S0 canonical observations have a versioned quotient value,
+raw-presentation/model alignment remains in a separate witness, every new plan records
+`OBSERVED`, `REFUSED`, or `NOT_APPLICABLE`, and execution rederives the attachment before
+any journal or engine call.
 
 Best next work:
 
-1. introduce a deliberate `StructureIR` adapter with exact plan/output-digest and
-   alpha-invariance controls while preserving all nine existing executors;
-2. keep port-Hamiltonian semantics later until dynamic state and an effort/flow power
+1. add exact identity/composition/tensor to E2's complex boundary relations and test
+   black-box preservation; unlike DC, AC does not yet expose a semantic functor;
+2. introduce a circuit-local decorated `ModelIR` only with explicit presentation
+   permutation witnesses—undecorated topology cannot infer parameter transport;
+3. keep port-Hamiltonian semantics later until dynamic state and an effort/flow power
    pairing are explicit and verified;
-3. extend water only after the stationary manufactured rung: bounded dispersive branches
+4. extend water only after the stationary manufactured rung: bounded dispersive branches
    first, then measured regime-matched evidence before any promotion beyond `STRUCTURAL_TOY`;
-4. build the traffic kinematic-wave vertical as the next regime-valid analogue;
-5. add persistent reuse/shared-intermediate/lossless-storage planner slices only where full
+5. build the traffic kinematic-wave vertical as the next regime-valid analogue;
+6. add persistent reuse/shared-intermediate/lossless-storage planner slices only where full
    output equivalence is established;
-6. design the empirical survival rung around independent data authority, external validation,
+7. design the empirical survival rung around independent data authority, external validation,
    censoring/competing-risk semantics, and calibrated uncertainty—without assuming access to
    human data or authority for experimentation.
 
@@ -223,6 +230,8 @@ The compact continuation sheet is [ROADMAP_2026-07-27.md](ROADMAP_2026-07-27.md)
 - [RESEARCH_ROUND_RLC_AC_2026-07-28.md](RESEARCH_ROUND_RLC_AC_2026-07-28.md)
   — independently verified E2 implementation, exact singular refusal, calculation ledger,
   decomposed roadmap, and compact-resume cut.
+- [RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md](RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md)
+  — bounded quotient adapter, plan-identity migration, category audit, and next semantic rung.
 - [CATEGORY_BACKBONE_ROADMAP_2026-07-27.md](CATEGORY_BACKBONE_ROADMAP_2026-07-27.md) —
   the staged open-diagram/domain-algebra architecture and its dominance boundary.
 

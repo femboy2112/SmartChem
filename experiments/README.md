@@ -59,6 +59,12 @@ harness at all.
 | `compiled_resistive_dc.py` | Executes the finite ideal-resistor E1 bridge: exact rational passive boundary relation, explicit model-to-structural-edge witness, one topology-generic sparse-MNA drive, every node/branch/source value, and a production-independent direct-verification payload. It is literal only for the declared ideal mathematical circuit, not a device, AC/RLC, thermal, safety, nonlinear, distributed, or port-Hamiltonian claim. Receipt: `RESULTS_compiled_resistive_dc.md`. |
 | `compiled_rlc_ac.py` | Executes two finite ideal E2 controls through the closed runtime: one damped parallel RLC resonance completes with exact `Q(i)` relation, complete complex-MNA/phasor/power output, and production-independent verification; one exact lossless series-LC resonance refuses before an engine call and without regularization. It is literal only for the declared fixed-frequency ideal mathematical circuits, not a device, transient, nonlinear/active, safety, distributed, or port-Hamiltonian claim. Receipt: `RESULTS_compiled_rlc_ac.md`. |
 
+`RESULTS_structure_ir_adapter.md` is deliberately a migration receipt without a new
+scientific harness or run journal. It freezes the S0 quotient/adapter/plan-attachment
+schemas, exact E1/E2 structure and witness identities, preserved closed registry and
+all-nine output contracts, category-law controls, and the boundary that canonical topology
+cannot infer raw declaration-index model transport.
+
 Results and their interpretation live in `RESULTS_polyatomic_cost.md`, which is written in
 passes and keeps superseded numbers rather than overwriting them — `ao_storage_probe.py` and
 `ao2mo_sizing_probe.py` report there too. The rest are self-reporting instead: each prints

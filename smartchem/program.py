@@ -59,6 +59,11 @@ from .diagnosis import diagnose
 from .oracle.base import Estimate
 from .oracle.caching import CachingOracle
 from .oracle.persistent import species_signature
+from .structure_ir import (
+    StructureAttachment,
+    structure_attachment_for_subject,
+    validate_structure_attachment,
+)
 from .thermo import reaction_energy
 
 __all__ = [
@@ -1032,6 +1037,7 @@ class CandidatePlan(Digestible):
     blockers: tuple[str, ...]
     execution_lane: ExecutionLane
     limits: RuntimeLimits
+    structure_attachment: StructureAttachment | None = None
 
     def __post_init__(self) -> None:
         if type(self.request) is not SimulationRequest:
@@ -1052,9 +1058,21 @@ class CandidatePlan(Digestible):
         from .runtime_registry import extract_subject
 
         try:
-            extract_subject(self.executor_id, self.request.resolved)
+            subject = extract_subject(self.executor_id, self.request.resolved)
         except (KeyError, TypeError) as error:
             raise ValueError(str(error)) from error
+        expected_structure = structure_attachment_for_subject(
+            self.executor_id,
+            subject,
+        )
+        if self.structure_attachment is None:
+            object.__setattr__(self, "structure_attachment", expected_structure)
+        elif type(self.structure_attachment) is not StructureAttachment:
+            raise TypeError("structure_attachment must be an exact StructureAttachment")
+        elif self.structure_attachment != expected_structure:
+            raise ValueError(
+                "structure_attachment differs from the exact subject/adapter observation"
+            )
         if not isinstance(self.transforms, tuple):
             raise TypeError("transforms must be a tuple")
         if any(not isinstance(item, Transform) for item in self.transforms):
@@ -2835,6 +2853,14 @@ def execute(
         subject = descriptor.extract_subject(plan.request.resolved)
     except (KeyError, TypeError) as error:
         raise ValueError(str(error)) from error
+    try:
+        validate_structure_attachment(
+            plan.executor_id,
+            subject,
+            plan.structure_attachment,
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"StructureIR plan admission failed: {error}") from error
     supported_outputs = frozenset(descriptor.default_output_contract().observable_ids)
     unsupported_outputs = sorted(
         set(plan.request.output_contract.observable_ids) - supported_outputs

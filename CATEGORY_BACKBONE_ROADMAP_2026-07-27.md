@@ -2,8 +2,8 @@
 
 ## Status and decision
 
-**The finite typed open-diagram S0 kernel and its narrow E1 and E2 interpreters are now
-implemented; no general circuit executor is.**
+**The finite typed open-diagram S0 kernel, bounded StructureIR adapter, and narrow E1/E2
+interpreters are now implemented; no general circuit executor or cross-domain category is.**
 `smartchem/open_diagram.py` supplies topology-only presentations, total composition/tensor,
 and a separate budgeted exact canonical observer. Generated and adversarial finite controls
 support the implemented coherence claims; they are not a formal proof of the laws for all
@@ -25,8 +25,11 @@ The completed structural target is a finite typed open-diagram syntax with total
 composition and a budgeted canonical observer. Two semantic targets are now complete:
 a passive lumped resistive-DC interpretation and a positive-frequency passive-RLC
 interpretation, each with an independent implementation verifier. Together they establish
-two topology-generic controls; neither is a promise of a universal physics language. A
-deliberate `StructureIR` adapter is next.
+two topology-generic controls; neither is a promise of a universal physics language.
+`smartchem/structure_ir.py` now gives successful undecorated S0 canonical observations a
+versioned quotient value, retains raw-presentation identity in a separate adapter witness,
+and binds every new plan to `OBSERVED`, `REFUSED`, or `NOT_APPLICABLE` before dispatch.
+Canonical topology does not infer E1/E2 declaration-index model transport.
 
 ## Diagnosis
 
@@ -66,10 +69,11 @@ being mistaken for evidence of a continuum assertion.
 | `EvidenceIR` | Claim scope, transport/assembly evidence, validation gaps, casualties, calibration provenance, falsifiers. | A solver result as automatic validation, a model patch as an approved execution. |
 | `ExecutionDAG` | Concrete engine calls, retained intermediate artifacts, dependencies, calculation identities, resource ceilings, exact output inventory. | A new physics interpretation, unapproved output loss, hidden optimization. |
 
-`PhysicalIR` can eventually contain or reference these layers, but it should not be made
-the canonical topology store during the first kernel slice.  Preserve the current
-`PhysicalIR` constructors and compiled verticals; introduce a precise v2 structure value
-beside them, then add an adapter only after the seam has global reference/type validation.
+`PhysicalIR` can eventually contain or reference these layers, but it is not the canonical
+topology store. The completed bounded adapter places the precise StructureIR quotient value
+beside existing `PhysicalIR`, preserves all current constructors/compiled verticals, and
+binds the attachment only after closed-registry subject validation. The next cut is a
+circuit-local decorated `ModelIR`, not a broad `PhysicalIR` rewrite.
 
 ## Exact open-diagram kernel
 
@@ -349,9 +353,15 @@ shared P0 prerequisite; continuous water does not depend on a circuit interprete
 5. **E2 AC/RLC control — completed.** Exact `Q(i)` relation/rank, RMS phasors, complete
    complex-MNA and power output, independent verification, damped resonance, and
    lossless singular refusal now pass through the ninth closed executor.
-6. **`StructureIR` adapter — next category milestone.** It must be a deliberate migration with
-   exact plan-digest/output-contract tests, not a broad rewrite of current compiled
-   verticals.
+6. **`StructureIR` adapter — completed.** The versioned quotient value, separate
+   presentation witness, typed budget-refusal/non-applicability states, plan/compiler
+   binding, and pre-dispatch rederivation are implemented without changing any subject,
+   registry descriptor, or output contract. Exact alpha/round-trip/law/model-binding/
+   forgery controls and the all-nine regression pass.
+7. **Complex linear-relation closure — next category milestone.** Add exact identity,
+   composition, and tensor to E2's `ComplexBoundaryRelation`, then test RLC black-box
+   preservation independently of whether a chosen drive admits a nonsingular MNA solve.
+   Only after that should a circuit-local decorated `ModelIR` make a semantic-functor claim.
 
 ## Falsifiers and budgets
 
@@ -374,7 +384,9 @@ the full-output lifecycle and genuinely separate verifier/hostile integrity gate
 recorded as complexity debt, not hidden as a small scalar circuit helper. E2 reused the
 structural boundary but added another explicit schema, lifecycle, and independent verifier;
 that duplication is visible complexity debt and motivates a bounded adapter rather than an
-implicit abstraction. The canonicalizer's candidate
+implicit abstraction. The bounded adapter now makes quotient structure, raw-presentation
+identity, and plan authority explicit; it does not yet remove E1/E2 model-schema
+duplication. The canonicalizer's candidate
 cap must be measured and recorded; its worst case is factorial in symmetric node cells.
 Sparse MNA storage is linear in edges/nodes before factorization, while solve cost is
 topology-dependent and must be reported rather than predicted as universally linear.

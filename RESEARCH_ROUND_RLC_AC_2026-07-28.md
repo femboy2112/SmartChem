@@ -1,5 +1,10 @@
 # SmartChem positive-frequency passive-RLC research round
 
+> **Historical round boundary.** E2 remains authoritative, but its StructureIR-next
+> roadmap is superseded by `RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md`: the bounded adapter
+> is complete, complex linear-relation closure is the next category-semantic rung, and W2
+> remains the next scientific vertical.
+
 **Date:** 2026-07-28
 **Branch:** `main`
 **Round base:** `4e1350e13ced6605244759023158b37106fea1bc`

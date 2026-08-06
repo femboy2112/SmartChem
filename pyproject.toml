@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,8 @@ name = "smartchem"
 version = "0.4.0"
 description = "A compositional layer above quantum chemistry: conserving reaction algebra with pluggable energy oracles"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",
@@ -27,8 +29,11 @@ qc = ["pyscf>=2.4"]
 [project.scripts]
 smartchem-verify-probes = "smartchem.evidence.cli:main"
 
+# experiments/ is kept in git for harness reproducibility but is not part of the installable
+# API, so it is deliberately excluded from the built distribution. The test suite still
+# imports it directly from the source tree (pytest runs from the repo root).
 [tool.setuptools.packages.find]
-include = ["smartchem*", "experiments*"]
+include = ["smartchem*"]
 
 # Ship the machine-readable manifest contract and the consumer guide with the package,
 # so an adopter who `pip install`s SmartChem can validate manifests against the schema the

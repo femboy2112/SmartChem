@@ -1,0 +1,58 @@
+{
+  "schema": "smartchem.evidence/probe-manifest-v1",
+  "program": "fine-man",
+  "claimed_tier": "floor",
+  "floor_tier": "floor",
+  "promoted_tier": "legitimized",
+  "records": [
+    {
+      "probe": "modular_hda_froeb_continuum_toy",
+      "check": "recovers_known_froeb_entropy",
+      "role": "CALIBRATION",
+      "claim_kind": "LITERAL",
+      "evidence_status": "CALIBRATED",
+      "passed": true,
+      "empirical_values": [
+        {"label": "froeb_entropy_coefficient", "value": 0.25, "source": "arXiv:2401.01234"}
+      ],
+      "numeric_result": {"recovered_within_tol": true, "tol": 1e-09}
+    },
+    {
+      "probe": "modular_hda_froeb_continuum_toy",
+      "check": "continuum_convergence_agreement",
+      "role": "CLAIM",
+      "claim_kind": "ANALOGUE",
+      "evidence_status": "STRUCTURAL_TOY",
+      "passed": true,
+      "agreement": true,
+      "inputs": [
+        {"source": "arXiv:2401.01234", "derivation": "Froeb continuum entropy"},
+        {"source": "independent_modular_flow_derivation", "derivation": "HDA modular Hamiltonian"}
+      ],
+      "empirical_values": [
+        {"label": "convergence_exponent", "value": 2.0, "source": "arXiv:1998.07654"}
+      ],
+      "scope_boundary": "toy continuum limit only; fixed-cutoff regime explicitly excluded",
+      "pairs_with": ["fixed_cutoff_must_not_converge"],
+      "numeric_result": {"exponent_estimate": 2.0, "residual": 3e-07}
+    },
+    {
+      "probe": "modular_hda_froeb_continuum_toy",
+      "check": "fixed_cutoff_must_not_converge",
+      "role": "MUTATION",
+      "claim_kind": "ANALOGUE",
+      "evidence_status": "STRUCTURAL_TOY",
+      "passed": true,
+      "numeric_result": {"diverges_as_cutoff_fixed": true}
+    },
+    {
+      "probe": "modular_hda_froeb_continuum_toy",
+      "check": "declared_boundary",
+      "role": "SCOPE",
+      "claim_kind": "ANALOGUE",
+      "evidence_status": "STRUCTURAL_TOY",
+      "passed": true,
+      "scope_boundary": "floor tier only; no legitimization; UV completion out of scope"
+    }
+  ]
+}

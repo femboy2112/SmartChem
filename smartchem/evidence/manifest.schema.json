@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smartchem.local/evidence/probe-manifest-v1.schema.json",
+  "title": "SmartChem probe-evidence manifest",
+  "description": "The decoupled (Mode B) contract between any external project and the SmartChem probe-evidence auditor. A project emits a conformant manifest describing its probe checks; `python -m smartchem.evidence verify-probes <file|dir>` audits the epistemic contract (teeth, provenance independence, source locks, scope, tier boundary) and certifies or refuses it. Neither repo imports the other. This auditor checks HYGIENE, never physics, and never raises a declared evidence status.",
+  "type": "object",
+  "required": ["schema", "program", "claimed_tier", "floor_tier", "promoted_tier", "records"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "smartchem.evidence/probe-manifest-v1",
+      "description": "Manifest schema identity. Must match exactly or the manifest is refused."
+    },
+    "program": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The emitting project's name (any project — not fine-man-specific)."
+    },
+    "claimed_tier": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The tier this manifest claims. Must equal either floor_tier (always honest) or promoted_tier (gated on a passed literal discriminator)."
+    },
+    "floor_tier": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The always-honest baseline tier name (e.g. 'floor'). Requires no discriminator."
+    },
+    "promoted_tier": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The stronger tier name (e.g. 'legitimized'). Reportable only if a role=CLAIM, claim_kind=LITERAL, discriminator=true, passed=true record is present. Must differ from floor_tier."
+    },
+    "records": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/record" },
+      "description": "One record per probe check. (probe, check) pairs must be unique."
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "required": ["probe", "check", "role", "claim_kind", "evidence_status", "passed"],
+      "additionalProperties": false,
+      "properties": {
+        "probe": { "type": "string", "minLength": 1, "description": "The probe file/module the check lives in." },
+        "check": { "type": "string", "minLength": 1, "description": "The check function name. Unique within its probe." },
+        "role": {
+          "enum": ["CALIBRATION", "CLAIM", "MUTATION", "SCOPE"],
+          "description": "CALIBRATION recovers a known result; CLAIM is the new assertion; MUTATION is a deliberately-broken variant whose `passed=true` means it correctly detected the break (teeth); SCOPE states the boundary."
+        },
+        "claim_kind": {
+          "enum": ["LITERAL", "ANALOGUE", "EXPERIMENTAL_PROXY"],
+          "description": "The referent of the claim, reused from smartchem.contracts.ClaimKind. Independent of evidence_status."
+        },
+        "evidence_status": {
+          "enum": ["ESTABLISHED", "VALIDATED_WITHIN_REGIME", "CALIBRATED", "EXPERIMENTAL", "STRUCTURAL_TOY", "UNSUPPORTED"],
+          "description": "Strength of evidence the author DECLARES, reused from smartchem.contracts.EvidenceStatus. The auditor never raises this; it may refuse a claim that over-declares it."
+        },
+        "passed": { "type": "boolean", "description": "Whether the check passed its own suite assertion. For a MUTATION, true = the broken variant was correctly rejected (teeth confirmed)." },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenance" },
+          "description": "Declared provenance of the check's inputs. For an agreement CLAIM the auditor counts DISTINCT sources."
+        },
+        "empirical_values": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sourceLocked" },
+          "description": "Each cited empirical/reference number and the token it is locked to. An empty source token is refused."
+        },
+        "numeric_result": {
+          "type": "object",
+          "description": "The check's returned data, as a JSON object. Canonicalized into the record digest. Must not contain NaN or Infinity."
+        },
+        "scope_boundary": {
+          "type": "string",
+          "description": "Required non-empty for a CLAIM. The union of these across records becomes the certificate's casualty list."
+        },
+        "pairs_with": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "For a CLAIM: the MUTATION check name(s) in the same probe that give it teeth."
+        },
+        "agreement": {
+          "type": "boolean",
+          "description": "True if this CLAIM asserts an agreement/equality between two computed quantities (triggers the provenance-independence rule)."
+        },
+        "discriminator": {
+          "type": "boolean",
+          "description": "True if this record is THE tier-gating discriminator (must also be role=CLAIM, claim_kind=LITERAL, passed=true, evidence above structural-toy, to unlock promoted_tier)."
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "Structural echo of the auditor's teeth + scope rules: a CLAIM must be scoped and paired. Advisory only — the auditor's rules are the acceptance gate and are stricter.",
+          "if": { "properties": { "role": { "const": "CLAIM" } }, "required": ["role"] },
+          "then": {
+            "required": ["scope_boundary", "pairs_with"],
+            "properties": {
+              "scope_boundary": { "minLength": 1 },
+              "pairs_with": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "$comment": "agreement / discriminator / pairs_with are CLAIM-only payloads (role-laundering guard).",
+          "if": { "properties": { "role": { "not": { "const": "CLAIM" } } }, "required": ["role"] },
+          "then": {
+            "properties": {
+              "agreement": { "const": false },
+              "discriminator": { "const": false },
+              "pairs_with": { "maxItems": 0 }
+            }
+          }
+        }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "description": "The ROOT provenance token. Two inputs sharing a source are common-mode." },
+        "derivation": { "type": "string", "description": "Optional description of the transform applied to the source." }
+      }
+    },
+    "sourceLocked": {
+      "type": "object",
+      "required": ["label", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string", "minLength": 1, "description": "Human name for the cited value." },
+        "value": { "type": ["number", "string"], "description": "The cited number (or string form). Must not be NaN/Infinity." },
+        "source": { "type": "string", "description": "The source-lock token (arXiv id, textbook, closed form). Empty = refused by the source-lock rule." }
+      }
+    }
+  }
+}

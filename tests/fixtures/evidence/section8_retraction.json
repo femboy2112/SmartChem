@@ -1,0 +1,55 @@
+{
+  "schema": "smartchem.evidence/probe-manifest-v1",
+  "program": "fine-man",
+  "claimed_tier": "floor",
+  "floor_tier": "floor",
+  "promoted_tier": "legitimized",
+  "records": [
+    {
+      "probe": "s8_non_circularity",
+      "check": "conformal_anomaly_source_locked",
+      "role": "CALIBRATION",
+      "claim_kind": "LITERAL",
+      "evidence_status": "CALIBRATED",
+      "passed": true,
+      "empirical_values": [
+        {"label": "trace_anomaly_coefficient", "value": 0.0, "source": "closed-form: conformal trace identity"}
+      ],
+      "numeric_result": {"recovered": true}
+    },
+    {
+      "probe": "s8_non_circularity",
+      "check": "q_hda_equals_q_corr",
+      "role": "CLAIM",
+      "claim_kind": "LITERAL",
+      "evidence_status": "VALIDATED_WITHIN_REGIME",
+      "passed": true,
+      "agreement": true,
+      "inputs": [
+        {"source": "conformal_factor_Omega"},
+        {"source": "conformal_factor_Omega", "derivation": "algebraic rearrangement of the same Omega"}
+      ],
+      "scope_boundary": "continuum HDA limit, conformal frame fixed",
+      "pairs_with": ["perturb_the_conformal_factor"],
+      "numeric_result": {"q_hda_minus_q_corr": 0.0}
+    },
+    {
+      "probe": "s8_non_circularity",
+      "check": "perturb_the_conformal_factor",
+      "role": "MUTATION",
+      "claim_kind": "LITERAL",
+      "evidence_status": "STRUCTURAL_TOY",
+      "passed": false,
+      "numeric_result": {"agreement_still_holds_after_break": true}
+    },
+    {
+      "probe": "s8_non_circularity",
+      "check": "declared_boundary",
+      "role": "SCOPE",
+      "claim_kind": "LITERAL",
+      "evidence_status": "STRUCTURAL_TOY",
+      "passed": true,
+      "scope_boundary": "no legitimization claimed; this probe demonstrates a hygiene contract only"
+    }
+  ]
+}

@@ -166,7 +166,13 @@ def manifest_from_mapping(data: Mapping[str, object]) -> ProbeManifest:
 
 def load_manifest(path: str | Path) -> ProbeManifest:
     """Load and validate one manifest JSON file, fail-closed on any malformation."""
-    text = Path(path).read_text(encoding="utf-8")
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as error:
+        # A missing/unreadable manifest is a load failure, not an internal crash:
+        # surface it as a ManifestError so the CLI honours its documented exit-code
+        # contract (2 = "could not be loaded"), symmetric with the JSON-decode guard below.
+        raise ManifestError(f"{path}: cannot read manifest: {error}") from error
     try:
         data = json.loads(text, parse_constant=_reject_constant)
     except json.JSONDecodeError as error:

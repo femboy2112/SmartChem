@@ -31,6 +31,16 @@ def test_cli_reports_load_error_as_exit_2(tmp_path, capsys):
     assert "error" in capsys.readouterr().out.lower()
 
 
+def test_cli_reports_missing_manifest_as_exit_2(tmp_path, capsys):
+    # A nonexistent (or unreadable) manifest is a load failure, not an internal crash:
+    # the documented contract is exit 2, never a raw FileNotFoundError traceback at exit 1.
+    # Regression guard for the OSError wrap in manifest_io.load_manifest.
+    missing = tmp_path / "does_not_exist.json"
+    code = main(["verify-probes", str(missing)])
+    assert code == 2
+    assert "error" in capsys.readouterr().out.lower()
+
+
 def test_cli_directory_mixed_returns_refuse(capsys):
     # The fixtures dir contains one CERTIFY and one REFUSE → overall exit 1.
     code = main(["verify-probes", str(_FIXTURES)])

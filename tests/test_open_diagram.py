@@ -6,7 +6,7 @@ formal proof over arbitrary Python objects.
 """
 from __future__ import annotations
 
-from itertools import permutations, product
+from itertools import islice, permutations, product
 
 import pytest
 
@@ -423,3 +423,87 @@ class TestGeneratedDiagramCoherence:
                     first.tensor(second).then(braid(first.cod, second.cod)),
                     braid(first.dom, second.dom).then(second.tensor(first)),
                 )
+
+
+EMPTY = Interface(())
+
+
+def _closed_graph(edges: tuple[tuple[int, int], ...], node_count: int) -> OpenDiagram:
+    """A boundary-free open diagram whose junctions ARE the graph nodes.
+
+    Each edge is one electrical two-terminal component; node ``v`` is the junction that
+    collects every terminal incident to it.  With an empty boundary the WL refinement has
+    no port markers to seed colours, which is exactly the regime where 1-WL is weakest.
+    """
+    names = tuple(f"e{i}" for i in range(len(edges)))
+    slots = tuple(
+        ComponentSlot(name, ComponentKind.ELECTRICAL_TWO_TERMINAL) for name in names
+    )
+    incident: list[list[object]] = [[] for _ in range(node_count)]
+    for index, (node_u, node_v) in enumerate(edges):
+        incident[node_u].append(ElementPortRef(names[index], "a"))
+        incident[node_v].append(ElementPortRef(names[index], "b"))
+    junctions = tuple(
+        Junction(f"n{node}", E, tuple(incident[node])) for node in range(node_count)
+    )
+    return OpenDiagram.build(EMPTY, EMPTY, slots, junctions)
+
+
+# Two 3-regular graphs on 6 nodes that 1-WL cannot tell apart (each collapses to a single
+# colour cell): the complete bipartite K3,3 and the triangular prism.  They are NOT
+# isomorphic, so a correct canonical form must still separate them -- via the exhaustive
+# within-cell search, not via WL.
+_K33 = tuple((u, v) for u in (0, 1, 2) for v in (3, 4, 5))
+_PRISM = ((0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3), (0, 3), (1, 4), (2, 5))
+_FOUR_CYCLE = ((0, 1), (1, 2), (2, 3), (3, 0))
+
+
+class TestCanonicalizerInvariantTripwires:
+    """Guard the one implicit invariant the whole identity layer rests on.
+
+    ``canonicalize`` is correct only because 1-WL colour classes are never FINER than the
+    automorphism orbits, so the within-cell brute force always contains every isomorphism.
+    Nothing else in the suite pins that in the regime where WL is blind, and a future
+    non-equivariant tiebreak in ``_refine_colours`` would silently over-refine -- producing a
+    false negative (one graph, two canonical forms) with no error raised.  These are the
+    differential tripwires an adversarial structure-theorem probe identified as missing.
+    """
+
+    def test_1wl_is_actually_blind_on_these_regular_graphs(self):
+        """Precondition for the two tests below: confirm K3,3 and the prism really do live
+        in the WL-blind regime (a single colour cell), so those tests exercise the
+        exhaustive search rather than a WL shortcut.
+        """
+        for edges in (_K33, _PRISM):
+            graph = _closed_graph(edges, 6)
+            colours = _refine_colours(graph, (None,) * len(graph.edges))
+            assert len(set(colours)) == 1
+
+    def test_wl_blind_non_isomorphic_regular_graphs_are_separated(self):
+        """Injectivity tripwire: two distinct 1-WL-indistinguishable 3-regular graphs must
+        still receive DIFFERENT canonical forms.  If this ever passes-as-equal, the canonical
+        form has stopped separating non-isomorphic graphs in the blind regime -- a false
+        positive at the root of every circuit identity.
+        """
+        assert canonicalize(_closed_graph(_K33, 6)) != canonicalize(
+            _closed_graph(_PRISM, 6)
+        )
+
+    def test_canonical_form_is_invariant_under_node_relabelling(self):
+        """Over-refinement tripwire: relabelling the nodes of a graph must NOT change its
+        canonical form.  A non-equivariant tiebreak sneaked into WL refinement would break
+        exactly this (the canonical form would depend on the incoming node order), so a
+        bounded but nontrivial sweep of relabellings over graphs with real automorphism is
+        the direct detector.
+        """
+        for edges, node_count, cap in (
+            (_PRISM, 6, 120),
+            (_K33, 6, 120),
+            (_FOUR_CYCLE, 4, 24),
+        ):
+            reference = canonicalize(_closed_graph(edges, node_count))
+            for mapping in islice(permutations(range(node_count)), cap):
+                relabelled = tuple(
+                    (mapping[node_u], mapping[node_v]) for node_u, node_v in edges
+                )
+                assert canonicalize(_closed_graph(relabelled, node_count)) == reference

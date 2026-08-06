@@ -70,7 +70,6 @@ from .rlc_ac_circuit import (
     solve_rlc_ac,
 )
 from .rlc_ac_schema import (
-    ElementKind,
     RLCACAnalysis,
     RLCACSubject,
     RLCModel,
@@ -150,22 +149,12 @@ def _ideal_rlc_model() -> ModelSpec:
 
 
 def _component_labels(model: RLCModel) -> tuple[str, ...]:
-    """Opaque exact labels preserving kind/value/model alignment in canonicalization."""
-    labels: list[str] = []
-    for component in model.components_in_structural_order():
-        if component.kind is ElementKind.RESISTOR:
-            value = component.value.ohms
-            unit = "ohm"
-        elif component.kind is ElementKind.INDUCTOR:
-            value = component.value.henries
-            unit = "H"
-        else:
-            value = component.value.farads
-            unit = "F"
-        labels.append(
-            f"{component.kind.value}:{value.numerator}/{value.denominator} {unit}"
-        )
-    return tuple(labels)
+    """Opaque exact labels preserving kind/value/model alignment in canonicalization.
+
+    Delegates to :meth:`RLCModel.canonical_edge_labels`, the single source of the
+    decoration convention shared with :class:`~smartchem.circuit_model_ir.CircuitModelIR`.
+    """
+    return model.canonical_edge_labels()
 
 
 def analyze_rlc_ac(subject: RLCACSubject) -> RLCACAnalysis:

@@ -300,6 +300,33 @@ class RLCModel:
             ]
         return tuple(x for x in ordered if x is not None)
 
+    def canonical_edge_labels(self) -> tuple[str, ...]:
+        """Opaque exact edge decorations, declaration/structural-order aligned.
+
+        Each label injectively encodes one component's kind and exact rational value in
+        the structural edge order (the order ``diagram.edges`` is declared in), so it can
+        be handed to :func:`~smartchem.open_diagram.canonicalize` as the ``edge_labels``
+        that carry the R/L/C decoration through the exact alpha-invariant canonicalizer.
+        This is the single source of the decoration convention: the analysis pipeline and
+        the :class:`~smartchem.circuit_model_ir.CircuitModelIR` identity both consume it,
+        so a decorated canonical form is byte-identical however it was produced.
+        """
+        labels: list[str] = []
+        for component in self.components_in_structural_order():
+            if component.kind is ElementKind.RESISTOR:
+                value = component.value.ohms
+                unit = "ohm"
+            elif component.kind is ElementKind.INDUCTOR:
+                value = component.value.henries
+                unit = "H"
+            else:
+                value = component.value.farads
+                unit = "F"
+            labels.append(
+                f"{component.kind.value}:{value.numerator}/{value.denominator} {unit}"
+            )
+        return tuple(labels)
+
 
 def _rref(
     rows: Iterable[Sequence[GaussianComplex]], width: int

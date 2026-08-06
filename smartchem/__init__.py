@@ -339,6 +339,12 @@ from .structure_ir import (
     structure_braid,
     structure_identity,
 )
+from .circuit_model_ir import (
+    CIRCUIT_MODEL_IR_SCHEMA,
+    CircuitModelIR,
+    CircuitModelIRError,
+    observe_circuit_model_ir,
+)
 from .circuit import (
     BoundaryLinearRelation,
     CircuitDiagnostics,
@@ -772,6 +778,10 @@ __all__ = [
     "adapt_open_diagram",
     "structure_braid",
     "structure_identity",
+    "CIRCUIT_MODEL_IR_SCHEMA",
+    "CircuitModelIR",
+    "CircuitModelIRError",
+    "observe_circuit_model_ir",
     "BoundaryLinearRelation",
     "CircuitDiagnostics",
     "CircuitError",

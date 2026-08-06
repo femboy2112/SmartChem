@@ -21,8 +21,20 @@ dev = [
 # High-accuracy energy oracles. Optional: the categorical core runs without them.
 qc = ["pyscf>=2.4"]
 
+# The decoupled probe-evidence bridge as an installed command, so external consumers
+# (fine-man and the like) get `smartchem-verify-probes` on their PATH after install,
+# matching the CLI's own prog name and its documented `python -m smartchem.evidence` form.
+[project.scripts]
+smartchem-verify-probes = "smartchem.evidence.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["smartchem*", "experiments*"]
+
+# Ship the machine-readable manifest contract and the consumer guide with the package,
+# so an adopter who `pip install`s SmartChem can validate manifests against the schema the
+# bridge points them at, without cloning the repo for one JSON file.
+[tool.setuptools.package-data]
+"smartchem.evidence" = ["manifest.schema.json", "README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

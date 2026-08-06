@@ -26,463 +26,565 @@ accuracy comparison stays checkable, and it is not exported here: new work build
 ``category``, ``store``, ``pathway`` and ``thermo``.
 """
 
-from .category import (
-    Bond,
-    Config,
-    ConservationError,
-    CompositionError,
-    Molecule,
-    Reaction,
-    UNIT,
-    bond_order_profile,
-    bond_signature,
-    braid,
-    catalytic_cycle,
-    conserves,
-    identity,
-    is_bond_order_conserving,
-    is_catalytic,
-    is_regenerated,
-    is_isodesmic,
-    reaction_residue,
-    tensor_obj,
-)
-from .diagnosis import (
-    Diagnosis,
-    Obstruction,
-    diagnose,
-)
-from .domain import (
-    EVERYTHING,
-    NOTHING,
-    Domain,
-    DomainContradiction,
-)
-from .contracts import (
-    ClaimKind,
-    DerivationRef,
-    EvidenceStatus,
-    ExecutionLane,
-    InferenceKind,
-    ObligationOutcome,
-    ObligationResult,
-    ObligationStage,
-    RunStatus,
-    ValidityObligation,
-    canonical_digest,
-)
-from .ledger import (
-    BindingSchema,
-    COMPILED,
-    COMPILED_SUBJECT_TO,
-    DerivedOption,
-    EXHAUSTED,
-    STALLED,
-    WIDENED,
-    IllFoundedRank,
-    LedgerContradiction,
-    Session,
-    Slot,
-    Spec,
-    TypedBinding,
-    UnderivedMenu,
-    reaction_slot,
-    shepherd,
-)
-from .program import (
-    Adapter,
-    Approval,
-    ApprovedPlan,
-    Artifact,
-    AssemblyEvidence,
-    AssemblyHypothesis,
-    AssemblySpec,
-    Boundary,
-    CalculationSpec,
-    CalibrationSpec,
-    CandidatePlan,
-    Certificate,
-    ClaimScope,
-    Component,
-    Connection,
-    EquivalenceContract,
-    ExecutionReport,
-    Identity,
-    Invariant,
-    ModelPatch,
-    ModelSpec,
-    ObservableRequest,
-    ObservableValue,
-    OutputContract,
-    PhysicalIR,
-    Port,
-    Quantity,
-    ReactionResidueTransform,
-    ResolvedDomainProgram,
-    ResolvedProgram,
-    Reservoir,
-    RunJournal,
-    RunRecord,
-    RuntimeLimits,
-    SimulationRequest,
-    SimulationResult,
-    SolverSpec,
-    SourceProgram,
-    SourceTheory,
-    StructuredObservableValue,
-    TargetIntent,
-    Transform,
-    TransportEvidence,
-    TransportMap,
-    approve,
-    compile_reaction_energy,
-    compile_session_reaction_energy,
-    execute,
-    record_approval,
-)
-from .water_wave_domain import (
-    CharacteristicSample,
-    FlowDirection,
-    HorizonDiagnostic,
-    HorizonOrientation,
-    HorizonPoint,
-    HorizonStatus,
-    ProfilePoint,
-    RegimeAssumptions,
-    WaterWaveSpec,
-    WaveBranch,
-    WaveRegime,
-    WaveTarget,
-    diagnose_horizon,
-)
-from .water_wave import (
-    ShallowWaterHorizonEngine,
-    WATER_WAVE_CASUALTIES,
-    WATER_WAVE_OMISSIONS,
-    compile_session_water_wave_horizon,
-    compile_water_wave_horizon,
-    water_wave_slot,
-)
-from .water_wave_validation_domain import (
-    BackgroundSample,
-    BackgroundTolerances,
-    CharacteristicInterval,
-    CrossingBracket,
-    DeclaredWavelengthSupport,
-    FluidProperties,
-    SampleDiagnostic,
-    ValidationDiagnostic as WaterWaveValidationDiagnostic,
-    ValidationStatus as WaterWaveValidationStatus,
-    WaterWaveValidationSpec,
-    diagnose_water_wave_background,
-)
-from .water_wave_validation import (
-    WATER_WAVE_VALIDATION_CASUALTIES,
-    WATER_WAVE_VALIDATION_OMISSIONS,
-    FiniteSectionCompatibilityEngine,
-    compile_session_water_wave_validation,
-    compile_water_wave_validation,
-    water_wave_validation_slot,
-)
-from .water_wave_continuous_domain import (
-    CONTINUOUS_UNCERTAINTY_SEMANTICS,
-    ContinuousBackgroundSpec,
-    ContinuousDiagnostic,
-    ContinuousMeshResult,
-    ContinuousSample,
-    ContinuousStatus,
-    ContinuousUncertainty,
-    FrictionLaw,
-    ManufacturedFamily,
-    RegularityRequirement,
-    SourceLaw,
-    SteadyBoundary,
-    solve_continuous_background,
-)
-from .water_wave_continuous_verifier import continuous_diagnostic_error
-from .water_wave_continuous import (
-    CONTINUOUS_WATER_CASUALTIES,
-    CONTINUOUS_WATER_OMISSIONS,
-    ContinuousFiniteV2Comparison,
-    ContinuousWaterSubject,
-    ContinuousWaterWaveEngine,
-    compile_session_water_wave_continuous,
-    compile_water_wave_continuous,
-    continuous_water_slot,
-)
-from .human_isotope_domain import (
-    AssemblyKind,
-    CalibrationEvidence,
-    ConstraintInventory,
-    EnvironmentalProtocol,
-    EvidenceBasis,
-    ExposureEvent,
-    ExposureMetric,
-    ExposureRoute,
-    FamilyWitness,
-    GranularityLevel,
-    GranularitySpec,
-    HazardEffect,
-    HazardMechanismChoice,
-    HumanIsotopeSpec,
-    HumanTarget,
-    IdentifiabilityDiagnostic,
-    IdentifiabilityStatus,
-    InternalExposureMetric,
-    LivingAssemblyHypothesis,
-    MedianEndpointConstraint,
-    MedianEndpointKind,
-    PopulationProtocol,
-    RecoveryModel,
-    SurvivalFamily,
-    ToxicokineticLink,
-    TransportInventory,
-    UncertaintyInterval,
-    ValidationStatus,
-    diagnose_human_isotope,
-)
-from .human_isotope import (
-    HUMAN_ISOTOPE_CASUALTIES,
-    HUMAN_ISOTOPE_OMISSIONS,
-    HumanIsotopeIdentifiabilityEngine,
-    compile_human_isotope_identifiability,
-    compile_session_human_isotope_identifiability,
-    human_isotope_slot,
-)
-from .human_survival_domain import (
-    Applicability as SyntheticSurvivalApplicability,
-    DataAuthority as SyntheticSurvivalDataAuthority,
-    FitProtocol as SyntheticSurvivalFitProtocol,
-    FitStatus as SyntheticSurvivalFitStatus,
-    GeneratorTruth as SyntheticSurvivalGeneratorTruth,
-    IntervalCohortRecord,
-    IntervalPrediction as SyntheticSurvivalIntervalPrediction,
-    OptimizerDiagnostic as SyntheticSurvivalOptimizerDiagnostic,
-    ParameterEstimate as SyntheticSurvivalParameterEstimate,
-    ParameterInterval as SyntheticSurvivalParameterInterval,
-    RecoveryAssessment as SyntheticSurvivalRecoveryAssessment,
-    Split as SyntheticSurvivalSplit,
-    SurvivalAssembly as SyntheticSurvivalAssembly,
-    SurvivalCalibrationResult as SyntheticSurvivalCalibrationResult,
-    SurvivalCalibrationSpec as SyntheticSurvivalCalibrationSpec,
-    SurvivalDataset as SyntheticSurvivalDataset,
-    SurvivalFamily as SyntheticSurvivalFamily,
-    SurvivalFitInput as SyntheticSurvivalFitInput,
-    SurvivalFitResult as SyntheticSurvivalFitResult,
-    SyntheticDataGovernance,
-    SyntheticValidationStatus as SyntheticSurvivalValidationStatus,
-    TruthVisibility as SyntheticSurvivalTruthVisibility,
-    fit_synthetic_survival,
-    fit_synthetic_survival_model,
-    assess_synthetic_survival,
-    interval_event_probability,
-)
-from .human_survival import (
-    HUMAN_SURVIVAL_CASUALTIES,
-    HUMAN_SURVIVAL_OMISSIONS,
-    SyntheticSurvivalRecoveryEngine,
-    compile_human_survival_recovery,
-    compile_session_human_survival_recovery,
-    human_survival_slot,
-)
-from .ising_lattice_gas_domain import (
-    C3_EDGES,
-    C3_VERTICES,
-    CompletenessInventory as IsingLatticeGasCompletenessInventory,
-    ExactEquilibriumMap as IsingLatticeGasExactEquilibriumMap,
-    FormalBoltzmannTerm,
-    IsingLatticeGasSpec,
-    MicrostateMap as IsingLatticeGasMicrostateMap,
-    ParameterMap as IsingLatticeGasParameterMap,
-    PartitionIdentity as IsingLatticeGasPartitionIdentity,
-    StateClass as IsingLatticeGasStateClass,
-    derive_exact_equilibrium_map,
-)
-from .ising_lattice_gas import (
-    ISING_LATTICE_GAS_CASUALTIES,
-    ISING_LATTICE_GAS_OMISSIONS,
-    ExactC3EquilibriumEngine,
-    compile_ising_lattice_gas_equilibrium,
-    compile_session_ising_lattice_gas_equilibrium,
-    ising_lattice_gas_slot,
-)
-from .open_diagram import (
-    BoundaryRef as OpenBoundaryRef,
-    BoundarySide as OpenBoundarySide,
-    CanonicalDiagram as OpenCanonicalDiagram,
-    CanonicalizationBudgetExceeded,
-    ComponentKind as OpenComponentKind,
-    ComponentSlot as OpenComponentSlot,
-    DiagramCompositionError,
-    DiagramConstructionError,
-    ElementPortRef as OpenElementPortRef,
-    Interface as OpenInterface,
-    Junction as OpenJunction,
-    OpenDiagram,
-    PortKind as OpenPortKind,
-    StructuralEdge as OpenStructuralEdge,
-    braid as open_braid,
-    canonicalize as canonicalize_open_diagram,
-    identity as open_identity,
-    unit_interface as open_unit_interface,
-)
-from .structure_ir import (
-    STRUCTURE_ADAPTER_SCHEMA,
-    STRUCTURE_ATTACHMENT_SCHEMA,
-    STRUCTURE_IR_SCHEMA,
-    StructureAdapterWitness,
-    StructureAttachment,
-    StructureIREdge,
-    StructureIR,
-    StructureObservationStatus,
-    adapt_open_diagram,
-    structure_braid,
-    structure_identity,
-)
-from .circuit_model_ir import (
-    CIRCUIT_MODEL_IR_SCHEMA,
-    CircuitModelIR,
-    CircuitModelIRError,
-    observe_circuit_model_ir,
-)
-from .circuit import (
-    BoundaryLinearRelation,
-    CircuitDiagnostics,
-    CircuitError,
-    CircuitNumericalRefusal,
-    CircuitResidualError,
-    DCSolveResult,
-    DCSolveSpec,
-    DCVoltageDrive,
-    FloatingCircuitError,
-    NodeVoltage,
-    PositiveResistance,
-    Rational,
-    ResistorBranch,
-    ResistorEdgeBinding,
-    ResistiveDCModel,
-    SourceObservation,
-    blackbox_resistive_dc,
-    solve_resistive_dc,
-)
-from .resistive_dc import (
-    RESISTIVE_DC_CASUALTIES,
-    RESISTIVE_DC_OMISSIONS,
-    ExactResistiveDCEngine,
-    ResistiveDCAnalysis,
-    ResistiveDCSubject,
-    analyze_resistive_dc,
-    compile_resistive_dc,
-    compile_session_resistive_dc,
-    resistive_dc_slot,
-)
-from .resistive_dc_verifier import (
-    DirectCircuitDiagnostics,
-    DirectVerificationDecision,
-    DirectVerificationReport,
-    direct_preflight as preflight_resistive_dc_directly,
-    verify_resistive_dc_analysis,
-)
-from .rlc_ac_circuit import (
-    ACCircuitError,
-    ACFloatingCircuitError,
-    ACNumericalRefusal,
-    ACResidualError,
-    ConditioningRefusal,
-    LosslessSingularResonanceError,
-    admittance_exact as rlc_ac_admittance_exact,
-    blackbox_rlc_ac,
-    solve_rlc_ac,
-)
-from .rlc_ac_schema import (
-    ACCircuitDiagnostics as RLCACCircuitDiagnostics,
-    ACSolveResult,
-    ACSolveSpec,
-    ACSourceObservation,
-    ACVoltageDrive,
-    ComplexBoundaryRelation,
-    ElementKind as RLCElementKind,
-    GaussianComplex,
-    MNAState as RLCMNAState,
-    NodePhasor,
-    Phasor,
-    PositiveAngularFrequency,
-    PositiveCapacitance,
-    PositiveInductance,
-    PositiveResistance as RLCPositiveResistance,
-    RLCACAnalysis,
-    RLCACSubject,
-    RLCBranch,
-    RLCComponent,
-    RLCEdgeBinding,
-    RLCModel,
-)
-from .rlc_ac import (
-    RLC_AC_CASUALTIES,
-    RLC_AC_OMISSIONS,
-    ExactRLCACEngine,
-    analyze_rlc_ac,
-    compile_rlc_ac,
-    compile_session_rlc_ac,
-    rlc_ac_slot,
-)
-from .rlc_ac_verifier import (
-    DirectACDiagnostics,
-    DirectACVerificationDecision,
-    DirectACVerificationReport,
-    direct_preflight as preflight_rlc_ac_directly,
-    verify_rlc_ac_analysis,
-)
-from .stoichiometry import (
-    MAX_WRITTEN_WEIGHT,
-    Completion,
-    MenuContradiction,
-    StoichiometryMenu,
-    Written,
-    composition_matrix,
-    integer_kernel_basis,
-    stoichiometry_menu,
-)
-from .store import (
-    Conditions,
-    SOLVENTS,
-    Store,
-    argmax_position,
-    argmin_position,
-    grid,
-    is_responsive,
-    response_surface,
-    survey,
-)
-from .pathway import (
-    Mechanism,
-    Pathway,
-    Step,
-    Tally,
-    best_route,
-    catalytic_cycles,
-    search,
-)
-from .thermo import (
-    bonding_energy,
-    configuration_energy,
-    favourability,
-    is_exothermic,
-    reaction_energy,
-)
-from .geometry import (
-    GeometryError,
-    RelaxResult,
-    VibrationalAnalysis,
-    harmonic_analysis,
-    is_linear,
-    relax,
-    seed_bond_length,
-    seed_coordinates,
-)
+import importlib
+import importlib.util
+from typing import TYPE_CHECKING
+
+# The public API is served lazily (PEP 562). The eager imports live under TYPE_CHECKING
+# so type checkers and IDEs still see every re-export, but at runtime importing a single
+# submodule (e.g. ``smartchem.evidence``, ``smartchem.contracts``) no longer drags in
+# numpy/scipy and every domain module through this package __init__. __getattr__ imports
+# each owning submodule on first touch and caches the result. This keeps ``from smartchem
+# import Config`` working unchanged while decoupling the light, stdlib-only subpackages
+# from the heavy scientific stack.
+if TYPE_CHECKING:
+    from .category import (
+        Bond,
+        Config,
+        ConservationError,
+        CompositionError,
+        Molecule,
+        Reaction,
+        UNIT,
+        bond_order_profile,
+        bond_signature,
+        braid,
+        catalytic_cycle,
+        conserves,
+        identity,
+        is_bond_order_conserving,
+        is_catalytic,
+        is_regenerated,
+        is_isodesmic,
+        reaction_residue,
+        tensor_obj,
+    )
+    from .diagnosis import (
+        Diagnosis,
+        Obstruction,
+        diagnose,
+    )
+    from .domain import (
+        EVERYTHING,
+        NOTHING,
+        Domain,
+        DomainContradiction,
+    )
+    from .contracts import (
+        ClaimKind,
+        DerivationRef,
+        EvidenceStatus,
+        ExecutionLane,
+        InferenceKind,
+        ObligationOutcome,
+        ObligationResult,
+        ObligationStage,
+        RunStatus,
+        ValidityObligation,
+        canonical_digest,
+    )
+    from .ledger import (
+        BindingSchema,
+        COMPILED,
+        COMPILED_SUBJECT_TO,
+        DerivedOption,
+        EXHAUSTED,
+        STALLED,
+        WIDENED,
+        IllFoundedRank,
+        LedgerContradiction,
+        Session,
+        Slot,
+        Spec,
+        TypedBinding,
+        UnderivedMenu,
+        reaction_slot,
+        shepherd,
+    )
+    from .program import (
+        Adapter,
+        Approval,
+        ApprovedPlan,
+        Artifact,
+        AssemblyEvidence,
+        AssemblyHypothesis,
+        AssemblySpec,
+        Boundary,
+        CalculationSpec,
+        CalibrationSpec,
+        CandidatePlan,
+        Certificate,
+        ClaimScope,
+        Component,
+        Connection,
+        EquivalenceContract,
+        ExecutionReport,
+        Identity,
+        Invariant,
+        ModelPatch,
+        ModelSpec,
+        ObservableRequest,
+        ObservableValue,
+        OutputContract,
+        PhysicalIR,
+        Port,
+        Quantity,
+        ReactionResidueTransform,
+        ResolvedDomainProgram,
+        ResolvedProgram,
+        Reservoir,
+        RunJournal,
+        RunRecord,
+        RuntimeLimits,
+        SimulationRequest,
+        SimulationResult,
+        SolverSpec,
+        SourceProgram,
+        SourceTheory,
+        StructuredObservableValue,
+        TargetIntent,
+        Transform,
+        TransportEvidence,
+        TransportMap,
+        approve,
+        compile_reaction_energy,
+        compile_session_reaction_energy,
+        execute,
+        record_approval,
+    )
+    from .water_wave_domain import (
+        CharacteristicSample,
+        FlowDirection,
+        HorizonDiagnostic,
+        HorizonOrientation,
+        HorizonPoint,
+        HorizonStatus,
+        ProfilePoint,
+        RegimeAssumptions,
+        WaterWaveSpec,
+        WaveBranch,
+        WaveRegime,
+        WaveTarget,
+        diagnose_horizon,
+    )
+    from .water_wave import (
+        ShallowWaterHorizonEngine,
+        WATER_WAVE_CASUALTIES,
+        WATER_WAVE_OMISSIONS,
+        compile_session_water_wave_horizon,
+        compile_water_wave_horizon,
+        water_wave_slot,
+    )
+    from .water_wave_validation_domain import (
+        BackgroundSample,
+        BackgroundTolerances,
+        CharacteristicInterval,
+        CrossingBracket,
+        DeclaredWavelengthSupport,
+        FluidProperties,
+        SampleDiagnostic,
+        ValidationDiagnostic as WaterWaveValidationDiagnostic,
+        ValidationStatus as WaterWaveValidationStatus,
+        WaterWaveValidationSpec,
+        diagnose_water_wave_background,
+    )
+    from .water_wave_validation import (
+        WATER_WAVE_VALIDATION_CASUALTIES,
+        WATER_WAVE_VALIDATION_OMISSIONS,
+        FiniteSectionCompatibilityEngine,
+        compile_session_water_wave_validation,
+        compile_water_wave_validation,
+        water_wave_validation_slot,
+    )
+    from .water_wave_continuous_domain import (
+        CONTINUOUS_UNCERTAINTY_SEMANTICS,
+        ContinuousBackgroundSpec,
+        ContinuousDiagnostic,
+        ContinuousMeshResult,
+        ContinuousSample,
+        ContinuousStatus,
+        ContinuousUncertainty,
+        FrictionLaw,
+        ManufacturedFamily,
+        RegularityRequirement,
+        SourceLaw,
+        SteadyBoundary,
+        solve_continuous_background,
+    )
+    from .water_wave_continuous_verifier import (
+        continuous_diagnostic_error,
+    )
+    from .water_wave_continuous import (
+        CONTINUOUS_WATER_CASUALTIES,
+        CONTINUOUS_WATER_OMISSIONS,
+        ContinuousFiniteV2Comparison,
+        ContinuousWaterSubject,
+        ContinuousWaterWaveEngine,
+        compile_session_water_wave_continuous,
+        compile_water_wave_continuous,
+        continuous_water_slot,
+    )
+    from .human_isotope_domain import (
+        AssemblyKind,
+        CalibrationEvidence,
+        ConstraintInventory,
+        EnvironmentalProtocol,
+        EvidenceBasis,
+        ExposureEvent,
+        ExposureMetric,
+        ExposureRoute,
+        FamilyWitness,
+        GranularityLevel,
+        GranularitySpec,
+        HazardEffect,
+        HazardMechanismChoice,
+        HumanIsotopeSpec,
+        HumanTarget,
+        IdentifiabilityDiagnostic,
+        IdentifiabilityStatus,
+        InternalExposureMetric,
+        LivingAssemblyHypothesis,
+        MedianEndpointConstraint,
+        MedianEndpointKind,
+        PopulationProtocol,
+        RecoveryModel,
+        SurvivalFamily,
+        ToxicokineticLink,
+        TransportInventory,
+        UncertaintyInterval,
+        ValidationStatus,
+        diagnose_human_isotope,
+    )
+    from .human_isotope import (
+        HUMAN_ISOTOPE_CASUALTIES,
+        HUMAN_ISOTOPE_OMISSIONS,
+        HumanIsotopeIdentifiabilityEngine,
+        compile_human_isotope_identifiability,
+        compile_session_human_isotope_identifiability,
+        human_isotope_slot,
+    )
+    from .human_survival_domain import (
+        Applicability as SyntheticSurvivalApplicability,
+        DataAuthority as SyntheticSurvivalDataAuthority,
+        FitProtocol as SyntheticSurvivalFitProtocol,
+        FitStatus as SyntheticSurvivalFitStatus,
+        GeneratorTruth as SyntheticSurvivalGeneratorTruth,
+        IntervalCohortRecord,
+        IntervalPrediction as SyntheticSurvivalIntervalPrediction,
+        OptimizerDiagnostic as SyntheticSurvivalOptimizerDiagnostic,
+        ParameterEstimate as SyntheticSurvivalParameterEstimate,
+        ParameterInterval as SyntheticSurvivalParameterInterval,
+        RecoveryAssessment as SyntheticSurvivalRecoveryAssessment,
+        Split as SyntheticSurvivalSplit,
+        SurvivalAssembly as SyntheticSurvivalAssembly,
+        SurvivalCalibrationResult as SyntheticSurvivalCalibrationResult,
+        SurvivalCalibrationSpec as SyntheticSurvivalCalibrationSpec,
+        SurvivalDataset as SyntheticSurvivalDataset,
+        SurvivalFamily as SyntheticSurvivalFamily,
+        SurvivalFitInput as SyntheticSurvivalFitInput,
+        SurvivalFitResult as SyntheticSurvivalFitResult,
+        SyntheticDataGovernance,
+        SyntheticValidationStatus as SyntheticSurvivalValidationStatus,
+        TruthVisibility as SyntheticSurvivalTruthVisibility,
+        fit_synthetic_survival,
+        fit_synthetic_survival_model,
+        assess_synthetic_survival,
+        interval_event_probability,
+    )
+    from .human_survival import (
+        HUMAN_SURVIVAL_CASUALTIES,
+        HUMAN_SURVIVAL_OMISSIONS,
+        SyntheticSurvivalRecoveryEngine,
+        compile_human_survival_recovery,
+        compile_session_human_survival_recovery,
+        human_survival_slot,
+    )
+    from .ising_lattice_gas_domain import (
+        C3_EDGES,
+        C3_VERTICES,
+        CompletenessInventory as IsingLatticeGasCompletenessInventory,
+        ExactEquilibriumMap as IsingLatticeGasExactEquilibriumMap,
+        FormalBoltzmannTerm,
+        IsingLatticeGasSpec,
+        MicrostateMap as IsingLatticeGasMicrostateMap,
+        ParameterMap as IsingLatticeGasParameterMap,
+        PartitionIdentity as IsingLatticeGasPartitionIdentity,
+        StateClass as IsingLatticeGasStateClass,
+        derive_exact_equilibrium_map,
+    )
+    from .ising_lattice_gas import (
+        ISING_LATTICE_GAS_CASUALTIES,
+        ISING_LATTICE_GAS_OMISSIONS,
+        ExactC3EquilibriumEngine,
+        compile_ising_lattice_gas_equilibrium,
+        compile_session_ising_lattice_gas_equilibrium,
+        ising_lattice_gas_slot,
+    )
+    from .open_diagram import (
+        BoundaryRef as OpenBoundaryRef,
+        BoundarySide as OpenBoundarySide,
+        CanonicalDiagram as OpenCanonicalDiagram,
+        CanonicalizationBudgetExceeded,
+        ComponentKind as OpenComponentKind,
+        ComponentSlot as OpenComponentSlot,
+        DiagramCompositionError,
+        DiagramConstructionError,
+        ElementPortRef as OpenElementPortRef,
+        Interface as OpenInterface,
+        Junction as OpenJunction,
+        OpenDiagram,
+        PortKind as OpenPortKind,
+        StructuralEdge as OpenStructuralEdge,
+        braid as open_braid,
+        canonicalize as canonicalize_open_diagram,
+        identity as open_identity,
+        unit_interface as open_unit_interface,
+    )
+    from .structure_ir import (
+        STRUCTURE_ADAPTER_SCHEMA,
+        STRUCTURE_ATTACHMENT_SCHEMA,
+        STRUCTURE_IR_SCHEMA,
+        StructureAdapterWitness,
+        StructureAttachment,
+        StructureIREdge,
+        StructureIR,
+        StructureObservationStatus,
+        adapt_open_diagram,
+        structure_braid,
+        structure_identity,
+    )
+    from .circuit_model_ir import (
+        CIRCUIT_MODEL_IR_SCHEMA,
+        CircuitModelIR,
+        CircuitModelIRError,
+        observe_circuit_model_ir,
+    )
+    from .circuit import (
+        BoundaryLinearRelation,
+        CircuitDiagnostics,
+        CircuitError,
+        CircuitNumericalRefusal,
+        CircuitResidualError,
+        DCSolveResult,
+        DCSolveSpec,
+        DCVoltageDrive,
+        FloatingCircuitError,
+        NodeVoltage,
+        PositiveResistance,
+        Rational,
+        ResistorBranch,
+        ResistorEdgeBinding,
+        ResistiveDCModel,
+        SourceObservation,
+        blackbox_resistive_dc,
+        solve_resistive_dc,
+    )
+    from .resistive_dc import (
+        RESISTIVE_DC_CASUALTIES,
+        RESISTIVE_DC_OMISSIONS,
+        ExactResistiveDCEngine,
+        ResistiveDCAnalysis,
+        ResistiveDCSubject,
+        analyze_resistive_dc,
+        compile_resistive_dc,
+        compile_session_resistive_dc,
+        resistive_dc_slot,
+    )
+    from .resistive_dc_verifier import (
+        DirectCircuitDiagnostics,
+        DirectVerificationDecision,
+        DirectVerificationReport,
+        direct_preflight as preflight_resistive_dc_directly,
+        verify_resistive_dc_analysis,
+    )
+    from .rlc_ac_circuit import (
+        ACCircuitError,
+        ACFloatingCircuitError,
+        ACNumericalRefusal,
+        ACResidualError,
+        ConditioningRefusal,
+        LosslessSingularResonanceError,
+        admittance_exact as rlc_ac_admittance_exact,
+        blackbox_rlc_ac,
+        solve_rlc_ac,
+    )
+    from .rlc_ac_schema import (
+        ACCircuitDiagnostics as RLCACCircuitDiagnostics,
+        ACSolveResult,
+        ACSolveSpec,
+        ACSourceObservation,
+        ACVoltageDrive,
+        ComplexBoundaryRelation,
+        ElementKind as RLCElementKind,
+        GaussianComplex,
+        MNAState as RLCMNAState,
+        NodePhasor,
+        Phasor,
+        PositiveAngularFrequency,
+        PositiveCapacitance,
+        PositiveInductance,
+        PositiveResistance as RLCPositiveResistance,
+        RLCACAnalysis,
+        RLCACSubject,
+        RLCBranch,
+        RLCComponent,
+        RLCEdgeBinding,
+        RLCModel,
+    )
+    from .rlc_ac import (
+        RLC_AC_CASUALTIES,
+        RLC_AC_OMISSIONS,
+        ExactRLCACEngine,
+        analyze_rlc_ac,
+        compile_rlc_ac,
+        compile_session_rlc_ac,
+        rlc_ac_slot,
+    )
+    from .rlc_ac_verifier import (
+        DirectACDiagnostics,
+        DirectACVerificationDecision,
+        DirectACVerificationReport,
+        direct_preflight as preflight_rlc_ac_directly,
+        verify_rlc_ac_analysis,
+    )
+    from .stoichiometry import (
+        MAX_WRITTEN_WEIGHT,
+        Completion,
+        MenuContradiction,
+        StoichiometryMenu,
+        Written,
+        composition_matrix,
+        integer_kernel_basis,
+        stoichiometry_menu,
+    )
+    from .store import (
+        Conditions,
+        SOLVENTS,
+        Store,
+        argmax_position,
+        argmin_position,
+        grid,
+        is_responsive,
+        response_surface,
+        survey,
+    )
+    from .pathway import (
+        Mechanism,
+        Pathway,
+        Step,
+        Tally,
+        best_route,
+        catalytic_cycles,
+        search,
+    )
+    from .thermo import (
+        bonding_energy,
+        configuration_energy,
+        favourability,
+        is_exothermic,
+        reaction_energy,
+    )
+    from .geometry import (
+        GeometryError,
+        RelaxResult,
+        VibrationalAnalysis,
+        harmonic_analysis,
+        is_linear,
+        relax,
+        seed_bond_length,
+        seed_coordinates,
+    )
+
+_EXPORTS: dict[str, tuple[object, ...]] = {
+    "category": ("Bond", "Config", "ConservationError", "CompositionError", "Molecule", "Reaction", "UNIT", "bond_order_profile", "bond_signature", "braid", "catalytic_cycle", "conserves", "identity", "is_bond_order_conserving", "is_catalytic", "is_regenerated", "is_isodesmic", "reaction_residue", "tensor_obj",),
+    "diagnosis": ("Diagnosis", "Obstruction", "diagnose",),
+    "domain": ("EVERYTHING", "NOTHING", "Domain", "DomainContradiction",),
+    "contracts": ("ClaimKind", "DerivationRef", "EvidenceStatus", "ExecutionLane", "InferenceKind", "ObligationOutcome", "ObligationResult", "ObligationStage", "RunStatus", "ValidityObligation", "canonical_digest",),
+    "ledger": ("BindingSchema", "COMPILED", "COMPILED_SUBJECT_TO", "DerivedOption", "EXHAUSTED", "STALLED", "WIDENED", "IllFoundedRank", "LedgerContradiction", "Session", "Slot", "Spec", "TypedBinding", "UnderivedMenu", "reaction_slot", "shepherd",),
+    "program": ("Adapter", "Approval", "ApprovedPlan", "Artifact", "AssemblyEvidence", "AssemblyHypothesis", "AssemblySpec", "Boundary", "CalculationSpec", "CalibrationSpec", "CandidatePlan", "Certificate", "ClaimScope", "Component", "Connection", "EquivalenceContract", "ExecutionReport", "Identity", "Invariant", "ModelPatch", "ModelSpec", "ObservableRequest", "ObservableValue", "OutputContract", "PhysicalIR", "Port", "Quantity", "ReactionResidueTransform", "ResolvedDomainProgram", "ResolvedProgram", "Reservoir", "RunJournal", "RunRecord", "RuntimeLimits", "SimulationRequest", "SimulationResult", "SolverSpec", "SourceProgram", "SourceTheory", "StructuredObservableValue", "TargetIntent", "Transform", "TransportEvidence", "TransportMap", "approve", "compile_reaction_energy", "compile_session_reaction_energy", "execute", "record_approval",),
+    "water_wave_domain": ("CharacteristicSample", "FlowDirection", "HorizonDiagnostic", "HorizonOrientation", "HorizonPoint", "HorizonStatus", "ProfilePoint", "RegimeAssumptions", "WaterWaveSpec", "WaveBranch", "WaveRegime", "WaveTarget", "diagnose_horizon",),
+    "water_wave": ("ShallowWaterHorizonEngine", "WATER_WAVE_CASUALTIES", "WATER_WAVE_OMISSIONS", "compile_session_water_wave_horizon", "compile_water_wave_horizon", "water_wave_slot",),
+    "water_wave_validation_domain": ("BackgroundSample", "BackgroundTolerances", "CharacteristicInterval", "CrossingBracket", "DeclaredWavelengthSupport", "FluidProperties", "SampleDiagnostic", ("ValidationDiagnostic", "WaterWaveValidationDiagnostic"), ("ValidationStatus", "WaterWaveValidationStatus"), "WaterWaveValidationSpec", "diagnose_water_wave_background",),
+    "water_wave_validation": ("WATER_WAVE_VALIDATION_CASUALTIES", "WATER_WAVE_VALIDATION_OMISSIONS", "FiniteSectionCompatibilityEngine", "compile_session_water_wave_validation", "compile_water_wave_validation", "water_wave_validation_slot",),
+    "water_wave_continuous_domain": ("CONTINUOUS_UNCERTAINTY_SEMANTICS", "ContinuousBackgroundSpec", "ContinuousDiagnostic", "ContinuousMeshResult", "ContinuousSample", "ContinuousStatus", "ContinuousUncertainty", "FrictionLaw", "ManufacturedFamily", "RegularityRequirement", "SourceLaw", "SteadyBoundary", "solve_continuous_background",),
+    "water_wave_continuous_verifier": ("continuous_diagnostic_error",),
+    "water_wave_continuous": ("CONTINUOUS_WATER_CASUALTIES", "CONTINUOUS_WATER_OMISSIONS", "ContinuousFiniteV2Comparison", "ContinuousWaterSubject", "ContinuousWaterWaveEngine", "compile_session_water_wave_continuous", "compile_water_wave_continuous", "continuous_water_slot",),
+    "human_isotope_domain": ("AssemblyKind", "CalibrationEvidence", "ConstraintInventory", "EnvironmentalProtocol", "EvidenceBasis", "ExposureEvent", "ExposureMetric", "ExposureRoute", "FamilyWitness", "GranularityLevel", "GranularitySpec", "HazardEffect", "HazardMechanismChoice", "HumanIsotopeSpec", "HumanTarget", "IdentifiabilityDiagnostic", "IdentifiabilityStatus", "InternalExposureMetric", "LivingAssemblyHypothesis", "MedianEndpointConstraint", "MedianEndpointKind", "PopulationProtocol", "RecoveryModel", "SurvivalFamily", "ToxicokineticLink", "TransportInventory", "UncertaintyInterval", "ValidationStatus", "diagnose_human_isotope",),
+    "human_isotope": ("HUMAN_ISOTOPE_CASUALTIES", "HUMAN_ISOTOPE_OMISSIONS", "HumanIsotopeIdentifiabilityEngine", "compile_human_isotope_identifiability", "compile_session_human_isotope_identifiability", "human_isotope_slot",),
+    "human_survival_domain": (("Applicability", "SyntheticSurvivalApplicability"), ("DataAuthority", "SyntheticSurvivalDataAuthority"), ("FitProtocol", "SyntheticSurvivalFitProtocol"), ("FitStatus", "SyntheticSurvivalFitStatus"), ("GeneratorTruth", "SyntheticSurvivalGeneratorTruth"), "IntervalCohortRecord", ("IntervalPrediction", "SyntheticSurvivalIntervalPrediction"), ("OptimizerDiagnostic", "SyntheticSurvivalOptimizerDiagnostic"), ("ParameterEstimate", "SyntheticSurvivalParameterEstimate"), ("ParameterInterval", "SyntheticSurvivalParameterInterval"), ("RecoveryAssessment", "SyntheticSurvivalRecoveryAssessment"), ("Split", "SyntheticSurvivalSplit"), ("SurvivalAssembly", "SyntheticSurvivalAssembly"), ("SurvivalCalibrationResult", "SyntheticSurvivalCalibrationResult"), ("SurvivalCalibrationSpec", "SyntheticSurvivalCalibrationSpec"), ("SurvivalDataset", "SyntheticSurvivalDataset"), ("SurvivalFamily", "SyntheticSurvivalFamily"), ("SurvivalFitInput", "SyntheticSurvivalFitInput"), ("SurvivalFitResult", "SyntheticSurvivalFitResult"), "SyntheticDataGovernance", ("SyntheticValidationStatus", "SyntheticSurvivalValidationStatus"), ("TruthVisibility", "SyntheticSurvivalTruthVisibility"), "fit_synthetic_survival", "fit_synthetic_survival_model", "assess_synthetic_survival", "interval_event_probability",),
+    "human_survival": ("HUMAN_SURVIVAL_CASUALTIES", "HUMAN_SURVIVAL_OMISSIONS", "SyntheticSurvivalRecoveryEngine", "compile_human_survival_recovery", "compile_session_human_survival_recovery", "human_survival_slot",),
+    "ising_lattice_gas_domain": ("C3_EDGES", "C3_VERTICES", ("CompletenessInventory", "IsingLatticeGasCompletenessInventory"), ("ExactEquilibriumMap", "IsingLatticeGasExactEquilibriumMap"), "FormalBoltzmannTerm", "IsingLatticeGasSpec", ("MicrostateMap", "IsingLatticeGasMicrostateMap"), ("ParameterMap", "IsingLatticeGasParameterMap"), ("PartitionIdentity", "IsingLatticeGasPartitionIdentity"), ("StateClass", "IsingLatticeGasStateClass"), "derive_exact_equilibrium_map",),
+    "ising_lattice_gas": ("ISING_LATTICE_GAS_CASUALTIES", "ISING_LATTICE_GAS_OMISSIONS", "ExactC3EquilibriumEngine", "compile_ising_lattice_gas_equilibrium", "compile_session_ising_lattice_gas_equilibrium", "ising_lattice_gas_slot",),
+    "open_diagram": (("BoundaryRef", "OpenBoundaryRef"), ("BoundarySide", "OpenBoundarySide"), ("CanonicalDiagram", "OpenCanonicalDiagram"), "CanonicalizationBudgetExceeded", ("ComponentKind", "OpenComponentKind"), ("ComponentSlot", "OpenComponentSlot"), "DiagramCompositionError", "DiagramConstructionError", ("ElementPortRef", "OpenElementPortRef"), ("Interface", "OpenInterface"), ("Junction", "OpenJunction"), "OpenDiagram", ("PortKind", "OpenPortKind"), ("StructuralEdge", "OpenStructuralEdge"), ("braid", "open_braid"), ("canonicalize", "canonicalize_open_diagram"), ("identity", "open_identity"), ("unit_interface", "open_unit_interface"),),
+    "structure_ir": ("STRUCTURE_ADAPTER_SCHEMA", "STRUCTURE_ATTACHMENT_SCHEMA", "STRUCTURE_IR_SCHEMA", "StructureAdapterWitness", "StructureAttachment", "StructureIREdge", "StructureIR", "StructureObservationStatus", "adapt_open_diagram", "structure_braid", "structure_identity",),
+    "circuit_model_ir": ("CIRCUIT_MODEL_IR_SCHEMA", "CircuitModelIR", "CircuitModelIRError", "observe_circuit_model_ir",),
+    "circuit": ("BoundaryLinearRelation", "CircuitDiagnostics", "CircuitError", "CircuitNumericalRefusal", "CircuitResidualError", "DCSolveResult", "DCSolveSpec", "DCVoltageDrive", "FloatingCircuitError", "NodeVoltage", "PositiveResistance", "Rational", "ResistorBranch", "ResistorEdgeBinding", "ResistiveDCModel", "SourceObservation", "blackbox_resistive_dc", "solve_resistive_dc",),
+    "resistive_dc": ("RESISTIVE_DC_CASUALTIES", "RESISTIVE_DC_OMISSIONS", "ExactResistiveDCEngine", "ResistiveDCAnalysis", "ResistiveDCSubject", "analyze_resistive_dc", "compile_resistive_dc", "compile_session_resistive_dc", "resistive_dc_slot",),
+    "resistive_dc_verifier": ("DirectCircuitDiagnostics", "DirectVerificationDecision", "DirectVerificationReport", ("direct_preflight", "preflight_resistive_dc_directly"), "verify_resistive_dc_analysis",),
+    "rlc_ac_circuit": ("ACCircuitError", "ACFloatingCircuitError", "ACNumericalRefusal", "ACResidualError", "ConditioningRefusal", "LosslessSingularResonanceError", ("admittance_exact", "rlc_ac_admittance_exact"), "blackbox_rlc_ac", "solve_rlc_ac",),
+    "rlc_ac_schema": (("ACCircuitDiagnostics", "RLCACCircuitDiagnostics"), "ACSolveResult", "ACSolveSpec", "ACSourceObservation", "ACVoltageDrive", "ComplexBoundaryRelation", ("ElementKind", "RLCElementKind"), "GaussianComplex", ("MNAState", "RLCMNAState"), "NodePhasor", "Phasor", "PositiveAngularFrequency", "PositiveCapacitance", "PositiveInductance", ("PositiveResistance", "RLCPositiveResistance"), "RLCACAnalysis", "RLCACSubject", "RLCBranch", "RLCComponent", "RLCEdgeBinding", "RLCModel",),
+    "rlc_ac": ("RLC_AC_CASUALTIES", "RLC_AC_OMISSIONS", "ExactRLCACEngine", "analyze_rlc_ac", "compile_rlc_ac", "compile_session_rlc_ac", "rlc_ac_slot",),
+    "rlc_ac_verifier": ("DirectACDiagnostics", "DirectACVerificationDecision", "DirectACVerificationReport", ("direct_preflight", "preflight_rlc_ac_directly"), "verify_rlc_ac_analysis",),
+    "stoichiometry": ("MAX_WRITTEN_WEIGHT", "Completion", "MenuContradiction", "StoichiometryMenu", "Written", "composition_matrix", "integer_kernel_basis", "stoichiometry_menu",),
+    "store": ("Conditions", "SOLVENTS", "Store", "argmax_position", "argmin_position", "grid", "is_responsive", "response_surface", "survey",),
+    "pathway": ("Mechanism", "Pathway", "Step", "Tally", "best_route", "catalytic_cycles", "search",),
+    "thermo": ("bonding_energy", "configuration_energy", "favourability", "is_exothermic", "reaction_energy",),
+    "geometry": ("GeometryError", "RelaxResult", "VibrationalAnalysis", "harmonic_analysis", "is_linear", "relax", "seed_bond_length", "seed_coordinates",),
+}
+
+
+def _build_attr_source() -> dict[str, tuple[str, str]]:
+    """exported name -> (submodule, original name), from the _EXPORTS table."""
+    index: dict[str, tuple[str, str]] = {}
+    for submodule, entries in _EXPORTS.items():
+        for entry in entries:
+            if isinstance(entry, tuple):
+                original, exported = entry
+            else:
+                original = exported = entry
+            index[exported] = (submodule, original)
+    return index
+
+
+_ATTR_SOURCE = _build_attr_source()
+
+
+def __getattr__(name: str) -> object:
+    """PEP 562 lazy attribute access for the SmartChem public API.
+
+    A name in the export table imports its owning submodule on first touch, caches the
+    resolved value in this module's globals (so later lookups skip this hook), and returns
+    it. A bare submodule name (e.g. ``smartchem.category`` without a prior explicit import)
+    resolves to the submodule. ``find_spec`` only locates the submodule -- it does not
+    execute it -- so a genuine ImportError inside a submodule still surfaces as itself,
+    never masked into an AttributeError.
+    """
+    source = _ATTR_SOURCE.get(name)
+    if source is not None:
+        submodule, original = source
+        module = importlib.import_module(f".{submodule}", __name__)
+        value = getattr(module, original)
+        globals()[name] = value
+        return value
+    if not name.startswith("_"):
+        try:
+            spec = importlib.util.find_spec(f"{__name__}.{name}")
+        except (ImportError, AttributeError, ValueError):
+            spec = None
+        if spec is not None:
+            module = importlib.import_module(f".{name}", __name__)
+            globals()[name] = module
+            return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    # Advertise exactly the public API, not the lazy-loader machinery (_EXPORTS,
+    # _ATTR_SOURCE, importlib, ...) that happens to live in this module's globals.
+    return sorted(__all__)
+
 
 __all__ = [
-    # category -- objects, morphisms, and the conservation theorem
     "Bond",
     "Config",
     "Molecule",
@@ -502,7 +604,6 @@ __all__ = [
     "is_isodesmic",
     "reaction_residue",
     "tensor_obj",
-    # stoichiometry -- the inverse of `conserves`: derive the balances, never guess them
     "Completion",
     "StoichiometryMenu",
     "MenuContradiction",
@@ -511,12 +612,10 @@ __all__ = [
     "composition_matrix",
     "integer_kernel_basis",
     "stoichiometry_menu",
-    # domain -- what an oracle declares it can price, before being called
     "Domain",
     "DomainContradiction",
     "EVERYTHING",
     "NOTHING",
-    # contracts -- non-aliasing inference/evidence/claim and runtime states
     "ClaimKind",
     "DerivationRef",
     "EvidenceStatus",
@@ -528,11 +627,9 @@ __all__ = [
     "RunStatus",
     "ValidityObligation",
     "canonical_digest",
-    # diagnosis -- WHY a reaction cannot be priced, as a value rather than a None
     "Diagnosis",
     "Obstruction",
     "diagnose",
-    # ledger -- free parameters, and a termination rule that measures rather than believes
     "COMPILED",
     "COMPILED_SUBJECT_TO",
     "EXHAUSTED",
@@ -549,7 +646,6 @@ __all__ = [
     "UnderivedMenu",
     "reaction_slot",
     "shepherd",
-    # program -- typed source-to-certificate seam and first narrow executable vertical
     "Adapter",
     "Approval",
     "ApprovedPlan",
@@ -599,7 +695,6 @@ __all__ = [
     "execute",
     "record_approval",
     "compile_session_reaction_energy",
-    # water-wave analogue -- typed classical horizon diagnostic, never literal gravity
     "CharacteristicSample",
     "FlowDirection",
     "HorizonDiagnostic",
@@ -619,7 +714,6 @@ __all__ = [
     "compile_session_water_wave_horizon",
     "compile_water_wave_horizon",
     "water_wave_slot",
-    # water-wave v2 -- manufactured finite-section compatibility, not validation
     "BackgroundSample",
     "BackgroundTolerances",
     "CharacteristicInterval",
@@ -637,7 +731,6 @@ __all__ = [
     "compile_session_water_wave_validation",
     "compile_water_wave_validation",
     "water_wave_validation_slot",
-    # manufactured continuous-water rung -- finite convergence, not a continuum theorem
     "CONTINUOUS_UNCERTAINTY_SEMANTICS",
     "ContinuousBackgroundSpec",
     "ContinuousDiagnostic",
@@ -660,7 +753,6 @@ __all__ = [
     "compile_session_water_wave_continuous",
     "compile_water_wave_continuous",
     "continuous_water_slot",
-    # human-isotope proxy -- typed underidentification, never a human mortality prediction
     "AssemblyKind",
     "CalibrationEvidence",
     "ConstraintInventory",
@@ -696,7 +788,6 @@ __all__ = [
     "compile_human_isotope_identifiability",
     "compile_session_human_isotope_identifiability",
     "human_isotope_slot",
-    # synthetic survival recovery -- data-bound proxy, never human calibration
     "SyntheticSurvivalApplicability",
     "SyntheticSurvivalDataAuthority",
     "SyntheticSurvivalFitProtocol",
@@ -729,7 +820,6 @@ __all__ = [
     "compile_human_survival_recovery",
     "compile_session_human_survival_recovery",
     "human_survival_slot",
-    # exact finite cross-domain map -- established algebra, distinct physical referents
     "C3_EDGES",
     "C3_VERTICES",
     "IsingLatticeGasSpec",
@@ -747,7 +837,6 @@ __all__ = [
     "compile_ising_lattice_gas_equilibrium",
     "compile_session_ising_lattice_gas_equilibrium",
     "ising_lattice_gas_slot",
-    # finite open structure -- exact syntax/coherence only, with no circuit semantics yet
     "OpenBoundaryRef",
     "OpenBoundarySide",
     "OpenCanonicalDiagram",
@@ -766,7 +855,6 @@ __all__ = [
     "canonicalize_open_diagram",
     "open_identity",
     "open_unit_interface",
-    # versioned quotient representation plus presentation-bound migration witness
     "STRUCTURE_ADAPTER_SCHEMA",
     "STRUCTURE_ATTACHMENT_SCHEMA",
     "STRUCTURE_IR_SCHEMA",
@@ -814,7 +902,6 @@ __all__ = [
     "DirectVerificationReport",
     "preflight_resistive_dc_directly",
     "verify_resistive_dc_analysis",
-    # positive-frequency passive RLC E2 -- fixed-frequency ideal mathematics only
     "ACCircuitError",
     "ACFloatingCircuitError",
     "ACNumericalRefusal",
@@ -857,7 +944,6 @@ __all__ = [
     "DirectACVerificationReport",
     "preflight_rlc_ac_directly",
     "verify_rlc_ac_analysis",
-    # store -- the environment comonad and finite response-surface sampling
     "Store",
     "Conditions",
     "SOLVENTS",
@@ -867,7 +953,6 @@ __all__ = [
     "grid",
     "argmin_position",
     "argmax_position",
-    # pathway -- Writer/List-style branching search (float accumulation is approximate)
     "Pathway",
     "Tally",
     "Step",
@@ -875,13 +960,11 @@ __all__ = [
     "search",
     "catalytic_cycles",
     "best_route",
-    # thermo -- separable endpoint-energy adapter
     "configuration_energy",
     "reaction_energy",
     "bonding_energy",
     "is_exothermic",
     "favourability",
-    # geometry -- candidate coordinates seeded from the bond graph
     "GeometryError",
     "RelaxResult",
     "VibrationalAnalysis",

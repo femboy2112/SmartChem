@@ -22,7 +22,13 @@ from .records import (
     SourceLockedValue,
 )
 
-__all__ = ["ManifestError", "load_manifest", "load_manifest_dir", "manifest_from_mapping"]
+__all__ = [
+    "ManifestError",
+    "load_manifest",
+    "load_manifest_dir",
+    "manifest_from_mapping",
+    "manifest_to_mapping",
+]
 
 
 class ManifestError(ValueError):
@@ -162,6 +168,79 @@ def manifest_from_mapping(data: Mapping[str, object]) -> ProbeManifest:
         )
     except (TypeError, ValueError) as error:
         raise ManifestError(f"manifest: {error}") from error
+
+
+def _provenance_to_mapping(tag: ProvenanceTag) -> dict[str, object]:
+    data: dict[str, object] = {"source": tag.source}
+    if tag.derivation:
+        data["derivation"] = tag.derivation
+    return data
+
+
+def _source_locked_to_mapping(value: SourceLockedValue) -> dict[str, object]:
+    data: dict[str, object] = {"label": value.label, "value": value.value}
+    if value.source:
+        data["source"] = value.source
+    return data
+
+
+def _record_to_mapping(record: EvidenceRecord) -> dict[str, object]:
+    data: dict[str, object] = {
+        "probe": record.probe,
+        "check": record.check,
+        "role": record.role.value,
+        "claim_kind": record.claim_kind.value,
+        "evidence_status": record.evidence_status.value,
+        "passed": record.passed,
+    }
+    # Optional fields are emitted only when non-default, so the JSON reads like a
+    # hand-authored manifest; the loader restores each default on the way back in.
+    if record.inputs:
+        data["inputs"] = [_provenance_to_mapping(tag) for tag in record.inputs]
+    if record.empirical_values:
+        data["empirical_values"] = [
+            _source_locked_to_mapping(v) for v in record.empirical_values
+        ]
+    numeric_result = json.loads(record.numeric_result)
+    if numeric_result:
+        data["numeric_result"] = numeric_result
+    if record.scope_boundary:
+        data["scope_boundary"] = record.scope_boundary
+    if record.pairs_with:
+        data["pairs_with"] = list(record.pairs_with)
+    if record.agreement:
+        data["agreement"] = record.agreement
+    if record.discriminator:
+        data["discriminator"] = record.discriminator
+    return data
+
+
+def manifest_to_mapping(manifest: ProbeManifest) -> dict[str, object]:
+    """Serialize a :class:`ProbeManifest` to a plain JSON-ready mapping — the inverse of
+    :func:`manifest_from_mapping`.
+
+    The round-trip is **exact** for any manifest the loader could have produced:
+    ``manifest_from_mapping(manifest_to_mapping(m)).digest == m.digest``.  Default and
+    empty optional fields are omitted (the loader restores them), so the output reads like
+    a manifest a human wrote by hand.
+
+    This exists to close the Mode-B authoring gap: a Python emitter (fine-man and the like)
+    can build typed :class:`EvidenceRecord` / :class:`ProbeManifest` values — validated at
+    construction — and ``json.dumps`` this mapping to emit a *guaranteed conformant*
+    manifest, rather than hand-assembling the schema by eye.  ``empirical_values`` are
+    numbers or strings per the schema; a bool-valued lock (structurally constructible but
+    rejected by the loader) is outside the round-trip's stated domain.
+    """
+    if type(manifest) is not ProbeManifest:
+        raise TypeError("manifest must be an exact ProbeManifest")
+    return {
+        "schema": manifest.schema,
+        "program": manifest.program,
+        "claimed_tier": manifest.claimed_tier,
+        "floor_tier": manifest.floor_tier,
+        "promoted_tier": manifest.promoted_tier,
+        "records": [_record_to_mapping(record) for record in manifest.records],
+    }
 
 
 def load_manifest(path: str | Path) -> ProbeManifest:

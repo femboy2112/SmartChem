@@ -29,11 +29,13 @@ from .certificate import (
     AuditOutcome,
     RuleResult,
 )
+from .example import example_manifest
 from .manifest_io import (
     ManifestError,
     load_manifest,
     load_manifest_dir,
     manifest_from_mapping,
+    manifest_to_mapping,
 )
 from .records import (
     MANIFEST_SCHEMA,
@@ -69,9 +71,11 @@ __all__ = [
     "SourceLockedValue",
     "audit_manifest",
     "evidence_rank",
+    "example_manifest",
     "load_manifest",
     "load_manifest_dir",
     "manifest_from_mapping",
+    "manifest_to_mapping",
     "rule_provenance_independence",
     "rule_scope",
     "rule_source_lock",

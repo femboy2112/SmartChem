@@ -200,6 +200,17 @@ class EvidenceRecord(Digestible):
             raise ValueError("numeric_result must be valid JSON") from error
         if not isinstance(parsed, dict):
             raise ValueError("numeric_result must encode a JSON object")
+        # Canonicalize the stored text so the record's digest depends on the result's
+        # CONTENT, never on incoming key order or spacing -- the invariant _canonical_json
+        # documents.  build() already passes canonical text (this is then a no-op), and a
+        # loaded manifest is canonical for the same reason; this closes the gap for the RAW
+        # constructor, so a hand-set numeric_result cannot produce a record whose digest
+        # disagrees with its own reload.  It makes manifest_to_mapping round-trip exactly for
+        # every *constructible* record, not merely loader-produced ones.  (Adversarial probe,
+        # 2026-08-07: the raw constructor previously admitted non-canonical text.)
+        canonical = _canonical_json(parsed)
+        if canonical != self.numeric_result:
+            object.__setattr__(self, "numeric_result", canonical)
         # Structural coherence: agreement / discriminator / pairs_with are the
         # payload of a CLAIM.  A record cannot wear another role's immunity while
         # carrying a CLAIM's tell-tale fields (the role-laundering bypass), so a

@@ -114,8 +114,9 @@ evidence status; every certificate prints a hygiene-not-physics banner.
 The integration is decoupled by design. A consumer emits a JSON manifest conforming to
 `smartchem/evidence/manifest.schema.json` and runs
 
-    smartchem-verify-probes verify-probes path/to/manifest.json
-    # equivalently: python -m smartchem.evidence verify-probes path/to/manifest.json
+    smartchem-verify-probes --example > my-probes.json   # a certifying template to edit
+    smartchem-verify-probes my-probes.json               # audit it
+    # equivalently: python -m smartchem.evidence my-probes.json
 
 importing nothing else from SmartChem — and the subpackage itself imports only the standard
 library, so the auditor never pulls in the numeric stack (`import smartchem` stays light;

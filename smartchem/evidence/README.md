@@ -22,10 +22,20 @@ SmartChem imports nothing from yours.** The tier vocabulary is caller-declared
 ## Usage
 
 ```bash
-python -m smartchem.evidence verify-probes path/to/manifest.json
-python -m smartchem.evidence verify-probes path/to/manifests_dir/
-python -m smartchem.evidence verify-probes manifest.json --json     # canonical JSON output
+# Start from a known-good, CERTIFYING template, then edit the strings:
+smartchem-verify-probes --example > my-probes.json
+smartchem-verify-probes my-probes.json
+
+# Verify a file, a directory of manifests, or emit canonical JSON:
+smartchem-verify-probes path/to/manifest.json
+smartchem-verify-probes path/to/manifests_dir/
+smartchem-verify-probes manifest.json --json
 ```
+
+`smartchem-verify-probes` is put on your PATH by `pip install smartchem`; the exact
+equivalent is `python -m smartchem.evidence …`. The older `… verify-probes <path>`
+subcommand word still works as an optional alias — it is no longer required, so the
+command no longer stutters.
 
 Exit codes (the CI-gate contract):
 
@@ -34,6 +44,10 @@ Exit codes (the CI-gate contract):
 | `0`  | every audited manifest **CERTIFIED** |
 | `1`  | at least one manifest **REFUSED** (a working refusal, not an error) |
 | `2`  | a manifest could not be loaded (malformed / missing / not JSON) |
+
+> A **`flag`** (rule 2's honestly-scoped common-mode) still **CERTIFIES and exits `0`** — it is a
+> note, not a refusal. If your CI gate must catch flagged claims, grep the text output for `flag`
+> or read each rule's `outcome` in `--json`; the exit code alone will not show it.
 
 ## The five rules (each transplants one SmartChem discipline)
 
@@ -56,6 +70,13 @@ Exit codes (the CI-gate contract):
 
 ## Field semantics (the ones emitters get wrong)
 
+- **`role: CALIBRATION`** — the instrument recovers a *known* result before its novel readings are
+  trusted. It is the one role **enforced by none of the five rules** — a manifest certifies without
+  one — so the `--example` template includes it as good practice, not obligation. Include one per
+  probe when you can: put the recovered-vs-known comparison in `numeric_result` and the cited known
+  value in `empirical_values` (so the source-lock rule sees it). The other three roles carry
+  weight: `CLAIM` is audited by teeth/provenance/scope/tier, `MUTATION` gives a claim its teeth, and
+  every probe needs ≥1 `SCOPE`.
 - **`claim_kind`** (reused from `smartchem.contracts.ClaimKind`, independent of `evidence_status`):
   - `LITERAL` — the claim is *about the real target itself* (this circuit, this spacetime).
   - `ANALOGUE` — the claim is about a *structural analogue / toy model* standing in for the target;
@@ -119,3 +140,21 @@ every certificate's banner rather than silently assumed away:
   ]
 }
 ```
+
+## Two ways to author a manifest
+
+1. **Emit JSON, import nothing** (the decoupled default). Run
+   `smartchem-verify-probes --example` to print a complete **certifying** manifest that
+   exercises all four roles, redirect it to a file, and edit the placeholder strings. This
+   is the whole integration surface — your repo never imports SmartChem.
+
+2. **Build typed records, then serialize** (for a project that is happy to import SmartChem,
+   e.g. its own test suite). Construct `EvidenceRecord` / `ProbeManifest` values — they are
+   validated *at construction* — then `manifest_to_mapping(manifest)` returns a JSON-ready
+   dict you can `json.dumps`. The round-trip is exact
+   (`manifest_from_mapping(manifest_to_mapping(m)).digest == m.digest`), so what you emit is
+   guaranteed conformant. `example_manifest()` is the worked reference the `--example`
+   command itself serializes.
+
+Either way, validate against `manifest.schema.json` *and* run `verify-probes`: the schema
+checks shape, the five rules check hygiene, and the rules are stricter.

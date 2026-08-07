@@ -1,13 +1,18 @@
-"""``smartchem verify-probes`` — the thin CLI over the probe-evidence auditor.
+"""``smartchem-verify-probes`` — the thin CLI over the probe-evidence auditor.
 
-Usage (either form)::
+Usage::
 
-    python -m smartchem.evidence verify-probes <manifest.json | dir/>
-    smartchem-verify-probes verify-probes <manifest.json | dir/>
+    python -m smartchem.evidence <manifest.json | dir/>
+    smartchem-verify-probes <manifest.json | dir/>
+    smartchem-verify-probes --example > my-probes.json   # emit a certifying template
+
+The ``verify-probes`` word is an accepted **optional** leading alias, kept so the older
+``smartchem-verify-probes verify-probes <path>`` form still works; it is no longer required,
+so the console-script name no longer stutters.
 
 Exit codes are the contract for a CI gate:
 
-* ``0`` — every audited manifest CERTIFIED.
+* ``0`` — every audited manifest CERTIFIED (or ``--example`` printed its template).
 * ``1`` — at least one manifest was REFUSED (a working refusal, not an error).
 * ``2`` — a manifest could not be loaded (malformed / missing / not JSON).
 """
@@ -66,7 +71,34 @@ def _verify_probes(path: str, as_json: bool) -> int:
     return exit_code
 
 
+def _emit_example() -> int:
+    """Print a known-good, certifying template manifest to stdout (``--example``)."""
+    # Lazy imports keep the common verify path from paying for the template machinery.
+    from .example import example_manifest
+    from .manifest_io import manifest_to_mapping
+
+    print(
+        json.dumps(
+            manifest_to_mapping(example_manifest()),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    import sys
+
+    raw = list(sys.argv[1:] if argv is None else argv)
+    # Back-compat: ``verify-probes`` was a REQUIRED subcommand, so the console script read
+    # ``smartchem-verify-probes verify-probes <path>`` -- the double word this collapse removes.
+    # It is now an OPTIONAL leading alias: strip at most one, so both the bare and the
+    # legacy two-word forms parse identically.
+    if raw and raw[0] == "verify-probes":
+        raw = raw[1:]
     parser = argparse.ArgumentParser(
         prog="smartchem-verify-probes",
         description=(
@@ -75,21 +107,29 @@ def main(argv: list[str] | None = None) -> int:
             "not physics."
         ),
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    verify = subparsers.add_parser(
-        "verify-probes", help="audit a manifest JSON file or a directory of them"
+    parser.add_argument(
+        "path",
+        nargs="?",
+        help="path to a manifest .json file or a directory of them",
     )
-    verify.add_argument("path", help="path to a manifest .json file or a directory")
-    verify.add_argument(
+    parser.add_argument(
         "--json",
         action="store_true",
         help="emit the certificate(s) as canonical JSON instead of text",
     )
-    args = parser.parse_args(argv)
-    if args.command == "verify-probes":
-        return _verify_probes(args.path, as_json=args.json)
-    parser.error(f"unknown command {args.command!r}")  # pragma: no cover
-    return 2  # pragma: no cover
+    parser.add_argument(
+        "--example",
+        action="store_true",
+        help="print a known-good, certifying template manifest to stdout and exit",
+    )
+    args = parser.parse_args(raw)
+    if args.example:
+        if args.path is not None:
+            parser.error("--example takes no path argument")
+        return _emit_example()
+    if args.path is None:
+        parser.error("a manifest path (a .json file or a directory) is required")
+    return _verify_probes(args.path, as_json=args.json)
 
 
 if __name__ == "__main__":  # pragma: no cover

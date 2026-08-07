@@ -1,9 +1,12 @@
-"""B2 acceptance: the verify-probes CLI — exit codes and determinism."""
+"""B2 acceptance: the verify-probes CLI — exit codes, determinism, and the authoring aids."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+import pytest
+
+from smartchem.evidence import audit_manifest, manifest_from_mapping
 from smartchem.evidence.cli import main
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "evidence"
@@ -56,3 +59,35 @@ def test_cli_json_output_is_deterministic(capsys):
     assert first == second
     payload = json.loads(first)
     assert payload[0]["certificate"]["type"] == "dataclass"
+
+
+def test_cli_bare_path_form_certifies_without_the_subcommand_word(capsys):
+    # The stutter-free form: a path with no leading `verify-probes` token. The old
+    # two-word alias (exercised by every test above) must keep working too.
+    code = main([str(_FIXTURES / "healthy_probe.json")])
+    assert code == 0
+    assert "CERTIFIED" in capsys.readouterr().out
+
+
+def test_cli_example_emits_a_certifying_template(capsys):
+    # `--example` prints a known-good template; a consumer runs `--example > m.json`, and
+    # that file audits CLEAN — the emitted starting point is guaranteed sound, not a guess.
+    code = main(["--example"])
+    assert code == 0
+    manifest = manifest_from_mapping(json.loads(capsys.readouterr().out))
+    assert audit_manifest(manifest).certified
+
+
+def test_cli_example_output_is_deterministic(capsys):
+    main(["--example"])
+    first = capsys.readouterr().out
+    main(["--example"])
+    second = capsys.readouterr().out
+    assert first == second
+
+
+def test_cli_example_rejects_a_stray_path():
+    # `--example` emits a template and takes no path; passing one is a usage error (exit 2).
+    with pytest.raises(SystemExit) as exc:
+        main(["--example", str(_FIXTURES / "healthy_probe.json")])
+    assert exc.value.code == 2

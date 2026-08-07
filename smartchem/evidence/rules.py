@@ -25,6 +25,7 @@ from .records import ProbeManifest, Role, evidence_rank
 
 __all__ = [
     "RULES",
+    "rule_nonvacuous",
     "rule_provenance_independence",
     "rule_scope",
     "rule_source_lock",
@@ -39,6 +40,41 @@ def _key(probe: str, check: str) -> str:
 
 def _dedupe(items: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(items))
+
+
+def rule_nonvacuous(manifest: ProbeManifest) -> RuleResult:
+    """A manifest must carry at least one record, or there is nothing to audit.
+
+    An empty ``records`` list trips none of the five claim-centric rules and passes
+    ``rule_tier_boundary`` at the floor tier, so an empty manifest would *certify
+    vacuously*: a green certificate over nothing, which a ``$?``-only CI gate reads as
+    "the suite passed."  That silent-empty-green is exactly what a first-timer's
+    dropped-records emitter bug (``{"records": []}``) produces, so it is refused here.
+
+    Deliberately scoped to the EMPTY manifest, NOT the claim-free one.  A manifest that
+    carries records but no CLAIM (a calibration/scope-only baseline) is a legitimate
+    independent unit -- notably one file of a directory-audited suite whose CLAIM lives
+    in a sibling file -- so refusing it would be a false positive against directory
+    audit (adversarial probe, 2026-08-07).  And this rule does NOT close every vacuity:
+    a single *hollow* CLAIM (no inputs, no empirical values, a rubber-stamp mutation)
+    still certifies -- that is the declarative auditor's documented residue (the exit
+    code certifies HYGIENE, not substance; read the evidence ledger / ``--json`` for
+    strength), not something a record COUNT can police.
+    """
+    if manifest.records:
+        return RuleResult(
+            "nonvacuous",
+            AuditOutcome.PASS,
+            "manifest carries at least one record to audit",
+        )
+    return RuleResult(
+        "nonvacuous",
+        AuditOutcome.REFUSE,
+        "manifest has no records; there is nothing to certify, so an empty manifest "
+        "must not pass as green (a dropped-records emitter bug produces exactly this; "
+        "start from `smartchem-verify-probes --example`)",
+        ("<manifest>",),
+    )
 
 
 def rule_teeth(manifest: ProbeManifest) -> RuleResult:
@@ -250,6 +286,7 @@ def rule_tier_boundary(manifest: ProbeManifest) -> RuleResult:
 # Fixed evaluation order; the auditor runs all of them and never short-circuits, so
 # a refused manifest still reports every rule's verdict.
 RULES = (
+    rule_nonvacuous,
     rule_teeth,
     rule_provenance_independence,
     rule_source_lock,

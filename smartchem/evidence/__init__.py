@@ -48,6 +48,7 @@ from .records import (
 )
 from .rules import (
     RULES,
+    rule_nonvacuous,
     rule_provenance_independence,
     rule_scope,
     rule_source_lock,
@@ -76,6 +77,7 @@ __all__ = [
     "load_manifest_dir",
     "manifest_from_mapping",
     "manifest_to_mapping",
+    "rule_nonvacuous",
     "rule_provenance_independence",
     "rule_scope",
     "rule_source_lock",

@@ -1,4 +1,4 @@
-"""B1 acceptance: each of the five auditor rules, with hand-authored manifests.
+"""B1 acceptance: each of the six auditor rules, with hand-authored manifests.
 
 Every fixture here is built from raw dataclass construction; none imports a rule's
 own construction helper (there are none — the rules are pure functions over plain
@@ -14,6 +14,7 @@ from smartchem.evidence import (
     ProvenanceTag,
     Role,
     SourceLockedValue,
+    rule_nonvacuous,
     rule_provenance_independence,
     rule_scope,
     rule_source_lock,
@@ -230,3 +231,27 @@ def test_tier_refuses_discriminator_that_is_not_literal_or_not_passed():
 def test_tier_refuses_unknown_claimed_tier():
     m = _manifest(claimed="transcended")
     assert rule_tier_boundary(m).outcome is AuditOutcome.REFUSE
+
+
+# ------------------------------------------------------------ nonvacuous -------
+def test_nonvacuous_passes_with_any_record():
+    m = _manifest(_rec(probe="p", check="c", role=Role.CLAIM, scope_boundary="b"))
+    assert rule_nonvacuous(m).outcome is AuditOutcome.PASS
+
+
+def test_nonvacuous_refuses_an_empty_manifest():
+    # The dropped-records emitter bug (`{"records": []}`): zero records must never
+    # certify vacuously.  This is the whole point of the rule.
+    assert rule_nonvacuous(_manifest()).outcome is AuditOutcome.REFUSE
+
+
+def test_nonvacuous_passes_a_claim_free_manifest_with_records():
+    # A calibration/scope-only manifest is a legitimate independent unit -- e.g. one
+    # file of a directory-audited suite whose CLAIM lives in a sibling file.  Refusing
+    # it would be a false positive against directory audit (adversarial probe,
+    # 2026-08-07); the rule is scoped to the EMPTY manifest, not the claim-free one.
+    m = _manifest(
+        _rec(probe="p", check="cal", role=Role.CALIBRATION),
+        _rec(probe="p", check="scope", role=Role.SCOPE, scope_boundary="b"),
+    )
+    assert rule_nonvacuous(m).outcome is AuditOutcome.PASS

@@ -51,6 +51,19 @@ Exit codes (the CI-gate contract):
 
 ## The five rules (each transplants one SmartChem discipline)
 
+> **Precondition — `nonvacuous`.** Before the five, a manifest must carry **at least one
+> record**. An empty `records` list trips none of the five rules and would otherwise *certify
+> vacuously* — a green certificate over nothing, which a `$?`-only gate reads as "passed." It is
+> **REFUSED** (exit `1`) instead: the guard against the likeliest adoption footgun, a
+> dropped-records emitter bug (`{"records": []}`) shipping a green gate.
+>
+> Two deliberate boundaries: (1) a manifest that carries records but **no `CLAIM`** — a
+> calibration-only baseline, e.g. one file of a directory-audited suite whose `CLAIM` lives in a
+> sibling file — is *not* refused; it is a legitimate independent unit. (2) The exit code
+> certifies **hygiene, not substance**: a single *hollow* `CLAIM` (no inputs, no values, a
+> rubber-stamp mutation) still certifies at exit `0`, honestly held at toy tier — a record count
+> cannot police content. Read the evidence ledger / `--json` for strength, not just `$?`.
+
 1. **teeth** ⇐ the DERIVED-MENU LAW — every `CLAIM` must be paired (`pairs_with`) with a
    `MUTATION` recorded as demonstrating a break (`passed=true`). A claim with no mutation, or
    whose mutation did not break it (`passed=false`), has no teeth → **REFUSE**.
@@ -157,4 +170,5 @@ every certificate's banner rather than silently assumed away:
    command itself serializes.
 
 Either way, validate against `manifest.schema.json` *and* run `verify-probes`: the schema
-checks shape, the five rules check hygiene, and the rules are stricter.
+checks shape, the rules check hygiene (the `nonvacuous` precondition plus the five
+disciplines), and the rules are stricter.

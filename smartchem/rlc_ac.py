@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import time
 
+from .circuit_model_ir import CircuitModelIR, observe_circuit_model_ir
 from .contracts import (
     ClaimKind,
     EvidenceStatus,
@@ -87,6 +88,7 @@ __all__ = [
     "RLCACAnalysis",
     "RLCACSubject",
     "analyze_rlc_ac",
+    "circuit_model_ir_of",
     "compile_rlc_ac",
     "compile_session_rlc_ac",
     "rlc_ac_slot",
@@ -177,6 +179,43 @@ def analyze_rlc_ac(subject: RLCACSubject) -> RLCACAnalysis:
         subject.model.edge_bindings,
         relation,
         solution,
+    )
+
+
+def circuit_model_ir_of(subject: RLCACSubject) -> CircuitModelIR:
+    """The optional fused-identity face of an RLC-AC subject (M-1a1 pipeline wiring).
+
+    :func:`analyze_rlc_ac` computes the decorated canonical form inline and drops it,
+    unnamed, into an :class:`~smartchem.rlc_ac_schema.RLCACAnalysis`; this derives the
+    *named*, reusable :class:`~smartchem.circuit_model_ir.CircuitModelIR` for the SAME
+    presentation at the SAME budget, reaching the plan-seam
+    :class:`~smartchem.structure_ir.StructureIR` topology face the analysis never builds.
+
+    It is an **optional face**, not a new analysis field.  :class:`RLCACAnalysis` is a
+    frozen :class:`~smartchem.contracts.Digestible` whose identity must not move, so the
+    fused identity is derived on demand rather than stored -- adding a field would silently
+    change every analysis digest.  Nothing here touches, mutates, or re-solves the analysis.
+
+    Because this and :func:`analyze_rlc_ac` both decorate through
+    ``subject.model.canonical_edge_labels()``, the returned
+    :attr:`~smartchem.circuit_model_ir.CircuitModelIR.decorated_canonical_form` is
+    **byte-identical** to ``analyze_rlc_ac(subject).decorated_model_canonical_form`` -- the
+    stated M-1a congruence, now reachable as a value.  That equality is *relational* (both
+    sides share the label convention), so it certifies cross-world congruence, not label
+    correctness; the absolute invariance of the identity is proved separately in
+    ``tests/test_circuit_model_ir.py``.
+
+    Fails closed exactly as :func:`~smartchem.circuit_model_ir.observe_circuit_model_ir`:
+    an exhausted budget or an unobservable topology raises
+    :class:`~smartchem.circuit_model_ir.CircuitModelIRError`, so a subject whose budget the
+    analysis pipeline would also reject has no fused identity.  It refuses the *same*
+    budget-starved subjects as :func:`analyze_rlc_ac`, but with this exception type rather
+    than the canonicalizer's own budget error -- a caller wrapping both should catch each.
+    """
+    if type(subject) is not RLCACSubject:
+        raise TypeError("subject must be an exact RLCACSubject")
+    return observe_circuit_model_ir(
+        subject.diagram, subject.model, budget=subject.canonicalization_budget
     )
 
 

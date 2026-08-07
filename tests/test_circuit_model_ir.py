@@ -414,3 +414,73 @@ class TestRoundTripAndFailClosed:
                 ir.adapter_witness,
                 (RLCEdgeBinding(0, 0),),  # one binding for a two-edge structure
             )
+
+
+class TestOptionalFace:
+    """M-1a1: ``circuit_model_ir_of`` exposes the fused identity as an optional face of the
+    analysis pipeline, without adding a field to (and thus moving the digest of) the frozen
+    :class:`RLCACAnalysis`.
+    """
+
+    def _subject(self, diagram, model, *, budget: int = 100_000) -> RLCACSubject:
+        return RLCACSubject(
+            diagram,
+            model,
+            ACSolveSpec(
+                reference=_out(),
+                drive=ACVoltageDrive(_in(), _out(), GaussianComplex.one()),
+                omega=PositiveAngularFrequency(Rational(1)),
+            ),
+            budget,
+        )
+
+    def test_face_is_exactly_the_observed_fused_identity(self):
+        """The named pipeline face returns the SAME value as observing the presentation and
+        model directly at the subject's budget -- it is thin wiring, not a reimplementation.
+        """
+        from smartchem.rlc_ac import circuit_model_ir_of
+
+        diagram = _series(("r", "l"))
+        model = _model(diagram, (R100, L2))
+        subject = self._subject(diagram, model)
+        assert circuit_model_ir_of(subject) == observe_circuit_model_ir(
+            diagram, model, budget=subject.canonicalization_budget
+        )
+
+    def test_face_decorated_form_is_byte_identical_to_analyze_rlc_ac(self):
+        """The face's decorated canonical form equals the one ``analyze_rlc_ac`` computes
+        inline, and its circuit identity is that form's digest.  This is a *relational*
+        congruence -- both sides decorate through ``RLCModel.canonical_edge_labels`` -- so it
+        certifies that the two topology worlds AGREE, not that the labels are correct; the
+        absolute invariance of the identity is proved by the classes above.
+        """
+        from smartchem.rlc_ac import analyze_rlc_ac, circuit_model_ir_of
+
+        diagram = _series(("r", "c"))
+        model = _model(diagram, (R100, _component(ElementKind.CAPACITOR, Rational(3))))
+        subject = self._subject(diagram, model)
+        face = circuit_model_ir_of(subject)
+        analysis = analyze_rlc_ac(subject)
+        assert face.decorated_canonical_form == analysis.decorated_model_canonical_form
+        assert face.circuit_identity == canonical_digest(
+            analysis.decorated_model_canonical_form
+        )
+        assert face.edge_witness == analysis.model_edge_bindings
+
+    def test_face_fails_closed_on_exhausted_budget(self):
+        """A subject the analysis pipeline would refuse for budget has no fused identity
+        either -- the face fails closed exactly as ``observe_circuit_model_ir`` does.
+        """
+        from smartchem.rlc_ac import circuit_model_ir_of
+
+        diagram = _single("r")
+        model = _model(diagram, (R100,))
+        subject = self._subject(diagram, model, budget=0)
+        with pytest.raises(CircuitModelIRError, match="not observable"):
+            circuit_model_ir_of(subject)
+
+    def test_face_rejects_a_non_subject(self):
+        from smartchem.rlc_ac import circuit_model_ir_of
+
+        with pytest.raises(TypeError, match="exact RLCACSubject"):
+            circuit_model_ir_of(object())

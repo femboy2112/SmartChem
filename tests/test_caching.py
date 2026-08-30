@@ -158,9 +158,12 @@ class TestTheSavingRestsOnTheCanonicalKey:
         """
         inner = CountingOracle()
         cached = CachingOracle(inner)
+        # since #25 a symmetric ring canonicalises; the still-refusing case is a fully
+        # symmetric non-molecule (the complete graph K_9) whose true-twin vertices blow past
+        # the individualisation ceiling
         huge = Molecule(
-            tuple("H" * 12),
-            frozenset(Bond(i, (i + 1) % 12) for i in range(12)),
+            tuple("C" * 9),
+            frozenset(Bond(i, j) for i in range(9) for j in range(i + 1, 9)),
         )                                                   # refuses to canonicalise
         with pytest.raises(NotImplementedError):
             huge.canonical()

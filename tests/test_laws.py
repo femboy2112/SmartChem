@@ -394,15 +394,19 @@ class TestObjectStructure:
             Molecule(("H", "H"), frozenset())
 
     def test_large_molecule_refuses_rather_than_lies(self):
-        # H12 costs 12! = 479_001_600 candidates -- every permutation sorts the symbols
-        # when there is only one symbol, so the shortcut buys exactly nothing here. This
-        # is the case the budget exists for.
-        big = Molecule(
-            tuple("H" * 12),
-            frozenset(Bond(i, (i + 1) % 12) for i in range(12)),
+        # Since #25 (individualisation), a symmetric RING no longer refuses -- its dihedral
+        # symmetry is tiny and false-twin pruning kills the hydrogen blow-up. The case the
+        # budget still exists for is a genuinely all-symmetric graph refinement AND
+        # individualisation cannot cheaply crack: the complete graph K_9 (nine mutually
+        # bonded atoms -- structurally valid, chemically absurd), whose vertices are all true
+        # twins the false-twin prune deliberately does not touch, so the search-tree leaves
+        # blow past the ceiling and it refuses loudly rather than grinding forever or lying.
+        k9 = Molecule(
+            tuple("C" * 9),
+            frozenset(Bond(i, j) for i in range(9) for j in range(i + 1, 9)),
         )
-        with pytest.raises(NotImplementedError, match="out of scope"):
-            big.canonical()
+        with pytest.raises(NotImplementedError, match="individualisation exceeded"):
+            k9.canonical()
 
     def test_reach_is_set_by_composition_not_by_atom_count(self):
         """
@@ -462,11 +466,12 @@ class TestObjectStructure:
                 f"{atoms} was refined although the plain restriction could afford it"
             )
 
-    def test_propane_is_now_in_reach_and_benzene_is_still_not(self):
+    def test_propane_by_refinement_and_benzene_by_individualisation(self):
         """
-        The point of the refinement, and its boundary, in one test. Propane is what #17
-        needs (a carbonyl-free isodesmic reaction needs C3); benzene is what refinement
-        provably cannot help, because its carbons are genuinely interchangeable.
+        The two moves, and where each is spent. Propane is what refinement (#23) needs -- its
+        colour classes cut the search under budget. Benzene is what refinement provably cannot
+        help (its carbons are genuinely interchangeable), so it falls through to individualisation
+        (#25), the second move, and now canonicalises where it once refused.
         """
         propane_atoms = tuple("CCC" + "H" * 8)
         propane_bonds = frozenset(
@@ -477,16 +482,17 @@ class TestObjectStructure:
         )
         assert _canonical_cost(propane_atoms, propane_bonds) == 2_880
         assert _canonical_cost(propane_atoms, propane_bonds) < _MAX_CANONICAL_CANDIDATES
-        Molecule(propane_atoms, propane_bonds).canonical()      # does not raise
+        Molecule(propane_atoms, propane_bonds).canonical()      # cheap path, does not raise
 
         benzene_atoms = tuple("C" * 6 + "H" * 6)
         benzene_bonds = frozenset(
             {Bond(i, (i + 1) % 6, 2 if i % 2 == 0 else 1) for i in range(6)}
             | {Bond(i, 6 + i) for i in range(6)}
         )
+        # refinement still cannot afford it -- that is what forces the individualisation branch
         assert _canonical_cost(benzene_atoms, benzene_bonds) == 518_400
-        with pytest.raises(NotImplementedError, match="out of scope"):
-            Molecule(benzene_atoms, benzene_bonds).canonical()
+        canon = Molecule(benzene_atoms, benzene_bonds).canonical()   # was NotImplementedError
+        assert canon.formula == {"C": 6, "H": 6}                     # sound: composition preserved
 
     def test_colours_refine_symbols_rather_than_reordering_them(self):
         """

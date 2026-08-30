@@ -73,17 +73,17 @@ from typing import Iterable, Iterator, Mapping
 #   C8 unbonded  40_320 candidates    57.1 ms    1.42 us/candidate  (no edges to sort)
 #   C3H8 propane  2_880 candidates    16.2 ms    (241_920 before refinement)
 #
-# Benzene is OUT of budget at 518_400 candidates. Refinement cannot help it: its bond
-# graph is vertex-transitive within each element, so no invariant computed from local
-# structure can split the carbons.
+# Benzene is out of REFINEMENT's budget at 518_400 candidates: its bond graph is
+# vertex-transitive within each element, so no invariant computed from local structure can
+# split the carbons. Refinement is only the first move of the nauty-style algorithm.
 #
-# That is a true statement about REFINEMENT and it was written here as though it were a
-# statement about benzene, which it is not. Refinement is only the first move of the
-# nauty-style algorithm. The second is INDIVIDUALISATION -- when refinement stalls on a
-# non-singleton cell, give one of its vertices a colour nobody else has and refine again,
-# breaking by fiat the symmetry no local invariant could break. Canonicality is kept by
-# minimising over every choice within the cell, so the cost is |cell| x (subproblem)
-# rather than |cell|!.
+# The second move, INDIVIDUALISATION, is now BUILT (#25, `_canonical_by_individualisation`):
+# when refinement stalls on a non-singleton cell, give one of its vertices a colour nobody
+# else has and refine again, breaking by fiat the symmetry no local invariant could break.
+# Canonicality is kept by minimising the edge tuple over every choice within the cell, so the
+# cost is |cell| x (subproblem) rather than |cell|!. Reached ONLY when refinement alone is
+# over budget -- exactly the molecules that used to raise -- so it is purely additive: no
+# canonical form that existed before it can move. Benzene now canonicalises in ~0.5 ms.
 #
 # Measured (scratchpad/ir_probe.py), leaves of the individualisation tree:
 #
@@ -97,11 +97,15 @@ from typing import Iterable, Iterator, Mapping
 # which is the floor -- no canonical search can examine fewer labellings than the graph
 # has automorphisms. C8 is unimprovable for that reason and not for want of trying.
 #
-# So the honest boundary is not "benzene is too symmetric". It is "this implementation
-# stops after the first of two moves". Tracked as #25; the reason it was not simply done
-# is that a third canonical form is exactly the change where a silent error corrupts every
-# equality in the category, and it deserves the brute-force verification #23 got rather
-# than being tacked on at the end of a session.
+# So the boundary is no longer "benzene is too symmetric" NOR "this implementation stops
+# after the first of two moves" -- both moves are now here. Because a third canonical form is
+# exactly the change where a silent error corrupts every equality in the category, it earned
+# the brute-force verification #23 got: `tests/test_individualisation.py` proves the benzene
+# form is a genuine relabelling of benzene (sound, isomorphic) AND relabel-invariant across
+# every respelling, and the whole suite is the additivity regression that no prior form moved.
+# The one remaining honest boundary is the leaf ceiling: a fully-symmetric non-molecule (the
+# complete graph K_n) still refuses loudly rather than grind, since false-twin pruning is not
+# true-twin pruning (see `_canonical_by_individualisation`).
 _MAX_CANONICAL_CANDIDATES = 50_000
 
 
@@ -142,13 +146,32 @@ def _wl_colours(atoms: tuple[str, ...], bonds: frozenset["Bond"]) -> tuple[int, 
     automorphism orbits, which is exactly why the count it produces is a safe upper bound
     on the work and never an underestimate.
     """
+    ranks = {symbol: k for k, symbol in enumerate(sorted(set(atoms)))}
+    return _refine_from(atoms, bonds, [ranks[a] for a in atoms])
+
+
+def _refine_from(
+    atoms: tuple[str, ...], bonds: frozenset["Bond"], initial: list[int]
+) -> tuple[int, ...]:
+    """Equitable colour refinement seeded from an arbitrary initial colouring.
+
+    Generalises :func:`_wl_colours` (which seeds from element symbols) to any starting
+    partition, so an *individualised* vertex -- one handed a colour of its own -- propagates
+    its distinction through the graph.  Same one-sided guarantee as WL: the result is a
+    coarsening of the orbits under the automorphisms that FIX the seed, and it is equivariant
+    under any relabelling that preserves the seed.
+
+    The seed's rank is the first component of every signature, so a round only ever *splits* a
+    class, never reorders two -- the ordered partition therefore stays consistent with the
+    seed, which is exactly what keeps the individualisation search (below) canonical.
+    """
     n = len(atoms)
     neighbours: list[list[tuple[int, int]]] = [[] for _ in range(n)]
     for b in bonds:
         neighbours[b.i].append((b.j, b.order))
         neighbours[b.j].append((b.i, b.order))
-    ranks = {symbol: k for k, symbol in enumerate(sorted(set(atoms)))}
-    colour = [ranks[a] for a in atoms]
+    seed = {c: k for k, c in enumerate(sorted(set(initial)))}
+    colour = [seed[c] for c in initial]
     for _ in range(n):                      # each round splits or stops; at most n-1 split
         signature = [
             (colour[i], tuple(sorted((order, colour[j]) for j, order in neighbours[i])))
@@ -284,6 +307,124 @@ def _permute_within(blocks: list[tuple[int, ...]], n: int) -> Iterator[tuple[int
             for old, new in zip(olds, news):
                 perm[old] = new
         yield tuple(perm)
+
+
+# --------------------------------------------------------------------------------------
+# #25 -- individualisation: nauty's SECOND move, so a graph refinement cannot split still
+# canonicalises. Reached ONLY when refinement alone leaves the block search above budget
+# (exactly the molecules that used to raise), so it is purely additive: no canonical form
+# that existed before this can move, and a molecule always takes the same branch because
+# `_canonical_cost` is an isomorphism invariant. See the module header (#25) for the why.
+# --------------------------------------------------------------------------------------
+# A leaf ceiling, honest above the refinement path's, not infinite: it caps the search-tree
+# leaves we will grind before refusing loudly (never a wrong silent form). With false-twin
+# pruning (see below) every REAL molecule stays in the low thousands -- benzene 12, adamantane
+# ~40, a 90-atom symmetric ring ~1,000 -- so 50k is 10x-plus headroom for chemistry while
+# keeping the refusal on a pathological all-symmetric graph (a complete graph K_n, not a
+# molecule) bounded in time rather than a 13-second grind.
+_MAX_INDIVIDUALISATION_LEAVES = 50_000
+
+
+def _partition_colours(partition: list[tuple[int, ...]], n: int) -> list[int]:
+    """The per-atom colour (its cell's ordinal) implied by an ordered partition."""
+    colour = [0] * n
+    for k, cell in enumerate(partition):
+        for i in cell:
+            colour[i] = k
+    return colour
+
+
+def _refine_partition(
+    atoms: tuple[str, ...], bonds: frozenset["Bond"], partition: list[tuple[int, ...]]
+) -> list[tuple[int, ...]]:
+    """Equitably refine an ordered partition to a fixpoint, preserving cell order (splits only).
+
+    Seeds :func:`_refine_from` from the partition's own colouring, so a singleton individualised
+    cell keeps its distinction; the result is the refined cells grouped in colour order, which --
+    because refinement only splits -- is consistent with the input order.
+    """
+    colour = _refine_from(atoms, bonds, _partition_colours(partition, len(atoms)))
+    return _blocks(colour)
+
+
+def _canonical_by_individualisation(
+    atoms: tuple[str, ...], bonds: frozenset["Bond"]
+) -> tuple[tuple[str, ...], tuple[tuple[int, int, int], ...]]:
+    """Canonical ``(symbols, edges)`` via refinement + individualisation.
+
+    When refinement stalls on a non-singleton cell, individualise each of its vertices in turn
+    (hand it a colour of its own), refine again, and recurse to a discrete partition; the
+    canonical edge-tuple is the **minimum** over every individualisation choice. Minimising over
+    the choices is what makes the answer independent of *which* symmetric vertex was picked --
+    the relabel-invariance the tests pin down by brute force. The symbols prefix is the atoms in
+    refined-cell order and is constant across every leaf (refinement never crosses a symbol
+    class), so it is read once from the start partition.
+
+    **False-twin pruning keeps it fast.** Two atoms in the target cell with no neighbour inside
+    that cell and an identical neighbour multiset are *provably* interchangeable -- swapping them
+    is a graph automorphism that needs no discovery -- so the branch is taken on ONE representative
+    per twin class. This is exactly what collapses the ``2**(#CH2)`` hydrogen blow-up (the two H on
+    a carbon are false twins) that otherwise makes a symmetric ring hopeless. It is sound because a
+    pruned branch is an automorphic image of an explored one, so the minimum is unchanged -- pinned
+    by the soundness + relabel-invariance tests, which break the instant a non-twin is pruned.
+
+    Leaves are bounded by :data:`_MAX_INDIVIDUALISATION_LEAVES`; above it this refuses loudly,
+    exactly like the plain path, only at a far higher ceiling.
+    """
+    n = len(atoms)
+    adjacency: list[list[tuple[int, int]]] = [[] for _ in range(n)]
+    for b in bonds:
+        adjacency[b.i].append((b.j, b.order))
+        adjacency[b.j].append((b.i, b.order))
+    start = _refine_partition(atoms, bonds, _blocks(_wl_colours(atoms, bonds)))
+    symbols = tuple(atoms[i] for cell in start for i in cell)
+    best: list[tuple[tuple[int, int, int], ...] | None] = [None]
+    leaves = [0]
+
+    def recurse(partition: list[tuple[int, ...]]) -> None:
+        if leaves[0] > _MAX_INDIVIDUALISATION_LEAVES:
+            raise NotImplementedError(
+                f"canonical relabelling by individualisation exceeded "
+                f"{_MAX_INDIVIDUALISATION_LEAVES:,} leaves; graph too symmetric for this budget"
+            )
+        partition = _refine_partition(atoms, bonds, partition)
+        target = next((k for k, cell in enumerate(partition) if len(cell) > 1), None)
+        if target is None:                         # discrete: read the labelling off cell order
+            leaves[0] += 1
+            perm = [0] * n
+            for new, old in enumerate(i for cell in partition for i in cell):
+                perm[old] = new
+            edges = tuple(sorted(
+                (min(perm[b.i], perm[b.j]), max(perm[b.i], perm[b.j]), b.order)
+                for b in bonds
+            ))
+            if best[0] is None or edges < best[0]:
+                best[0] = edges
+            return
+        cell = partition[target]
+        cellset = set(cell)
+        reps: list[int] = []
+        seen_twins: set = set()
+        for v in cell:
+            if any(j in cellset for j, _o in adjacency[v]):
+                key: tuple = ("distinct", v)                  # in-cell neighbour -> keep distinct
+            else:
+                key = ("false-twin", frozenset(adjacency[v]))  # provably swappable
+            if key in seen_twins:
+                continue
+            seen_twins.add(key)
+            reps.append(v)
+        for v in reps:                             # individualise each choice; minimise over them
+            refined_choice = (
+                partition[:target]
+                + [(v,), tuple(x for x in cell if x != v)]
+                + partition[target + 1:]
+            )
+            recurse(refined_choice)
+
+    recurse(start)
+    assert best[0] is not None
+    return symbols, best[0]
 
 
 class ConservationError(ValueError):
@@ -478,14 +619,20 @@ class Molecule:
         should not repay the permutation search for a species already seen in this process.
 
         Minimises the key ``(symbols, edges)`` over the candidate permutations, then
-        rebuilds the molecule from the winner. Refuses loudly above
-        ``_MAX_CANONICAL_CANDIDATES`` rather than quietly returning something
-        non-canonical.
+        rebuilds the molecule from the winner.
 
         For molecules the symbol restriction alone cannot afford, the key becomes
         ``(symbols, colours, edges)`` and the candidate set shrinks accordingly -- see
         ``_canonical_blocks``. Those are exactly the molecules that used to raise, so no
         canonical form computed before that change moved.
+
+        For molecules refinement *still* cannot afford (a vertex-transitive cell it cannot
+        split -- benzene, symmetric rings), it falls through to individualisation, nauty's
+        second move (#25, ``_canonical_by_individualisation``): a relabel-invariant canonical
+        form, proven sound and invariant by brute force. Still purely additive -- only
+        molecules that used to raise reach it -- and it refuses loudly above a leaf ceiling
+        for the fully-symmetric non-molecule (a complete graph) rather than returning a wrong
+        form.
 
         Only ``edges`` is compared in the loop below. The other two components are what
         *define* the candidate set -- every candidate realises the same sorted ``symbols``
@@ -499,11 +646,12 @@ class Molecule:
         blocks = _canonical_blocks(self.atoms, self.bonds)
         budget = _cost_of(blocks)
         if budget > _MAX_CANONICAL_CANDIDATES:
-            raise NotImplementedError(
-                f"canonical relabelling of {self!r} needs {budget:,} candidate "
-                f"permutations, above the limit of {_MAX_CANONICAL_CANDIDATES:,}; "
-                f"full graph canonicalisation is out of scope"
-            )
+            # refinement alone cannot afford this graph (a vertex-transitive cell it cannot
+            # split): fall through to individualisation, nauty's second move (#25). Purely
+            # additive -- only molecules that USED to raise here reach this branch.
+            symbols, best = _canonical_by_individualisation(self.atoms, self.bonds)
+            return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in best),
+                            self.charge, self.state)
         symbols = tuple(self.atoms[i] for block in blocks for i in block)
         best: tuple | None = None
         for perm in _permute_within(blocks, n):

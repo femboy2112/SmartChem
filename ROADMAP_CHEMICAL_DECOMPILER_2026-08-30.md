@@ -616,3 +616,125 @@ missing its own C2H6O docstring example) → now fires on any non-degenerate int
 the cross-coherence guard to assert each hazard/thermo formula pins exactly one registered isomer.
 Held under real attack: the 298 K→0 K convention firewall, the whole-token equation annotator, the
 canonical identity's separation/relabel-invariance, and the W3 forward-reaction framing.
+
+## Part 13 — Execution: structure-aware DESCENT (v2 proper) + the capability-gap map
+
+Part 12's own tail named "structure-aware DESCENT (v2 proper)" as the next build: *bond-graph-aware
+decomposition (break specific bonds), where N- vs O-acetylation becomes representable rather than a
+formula-level ambiguity.* This part records that it is **built and pushed**, and then — the second
+half of the ask, "plan anything we are still structurally incapable of doing that we should be" —
+maps every wall this build hit, each classified so a future session knows whether to climb it, source
+it, or leave it uncrossed by law.
+
+### 13.0 — What got built (`smartchem/structure_descent.py`, commits `d514673`, `66dbb4a`, `59361cf`)
+
+- **Pure scission (rung 1).** A `ScissionEdge` cuts a set of bonds from a `category.Molecule` and reads
+  off the connected components as `Fragment`s — specific radical sub-structures with recorded open
+  valences, not bare compositions. The constructor is a full self-certificate: partition of the
+  parent's atoms, fragment-graph fidelity (no fabricated bond), valence conserved atom-by-atom
+  (`used + open == parent degree`), and W1 descent forced by the partition. `ScissionEdge.forget()`
+  is the **soundness bridge**: every scission projects to a valid v1 `DecompositionEdge`, so
+  structure-level descent is a *refinement* of formula-level descent, not a parallel engine. The
+  presentation-invariant `signature` deduplicates symmetry-equivalent cuts (proven on the para ring's
+  mirror-paired C–H bonds: 14 bridges → 12 scissions).
+- **Capped scission (rung 2).** A `CappedScission` is a **valence-preserving bond rewrite**: break
+  `cut` bonds, form `caps` bonds, read off the closed products. The object *is* the plan; products are
+  derived, so there is nothing to lie about. The certificate is the structural teeth — every atom
+  keeps its exact valence (order removed == order added), products connected + closed, reactant
+  genuinely cleaved across ≥2 products, reagent consumed, W1 descent. `forget()` lands the existing
+  `MediatedEdge`, so a structure-derived reaction flows through the whole review layer unchanged.
+- **The litmus, mechanized.** `capped_scissions(paracetamol, water)` **derives**
+  `C8H9NO2 + H2O → C2H4O2 + C6H7NO` and **proves by canonical graph-equality** against the sourced
+  structure registry that the products *are* 4-aminophenol and acetic acid — not hand-entered, derived
+  and checked. The engine honestly enumerates all seven valence-valid rewrites of that bond+water (the
+  acetaldehyde variant, the phenol-cleavage variant, …); the registry match picks the real one.
+  **Structure enumerates, evidence identifies** — that division of labour is the whole design.
+- **N- vs O-acetylation is now a graph fact.** Paracetamol (amide) and its O-acetyl isomer
+  4-aminophenyl acetate (ester) share one formula but have *different scission menus*; the acetyl-link
+  cleavage opens a valence on **N** in one and on **O** in the other. Both hydrolyse to the same pair,
+  but the structure says *which bond broke* — invisible to v1, gap #3 of the litmus, closed.
+- **Registry widened (rung 3a).** 6 → 14 named compounds (CO, CO₂, CH₄, NH₃, H₂O₂, methanol,
+  formaldehyde, formic acid), so more decomposition nodes resolve to a real name.
+
+### 13.1 — The capability-gap map (what "complete" still needs)
+
+Each gap is tagged **BUILD** (a structural capability we should add), **DATA** (sourcing under the
+second-source discipline, not structure), or **BOUNDARY** (a physical claim W3 forbids us to make —
+listed so a future session does not mistake a deliberate refusal for an unfinished feature). The line
+that separates BUILD from BOUNDARY is the same one the whole package rides on: *we may represent and
+attach, we may never predict.*
+
+1. **Isomer-keyed evidence — BUILD (highest leverage).** The hazard/thermo/conditions tables are
+   *formula*-keyed, but structure-aware descent produces *structure*-specific facts. The
+   one-isomer-per-formula guard (`test_data_coherence`) is a band-aid over exactly this: it is why the
+   O-acetyl isomer cannot be registered in the main registry without breaking the invariant. **Next
+   rung:** key evidence by `NamedStructure.structure_identity` (the canonical digest), with the
+   formula→structure resolution licensing attachment; the review layer attaches by *structure* where a
+   node is structure-resolved, by *formula* (loudly `ISOMER_ASSUMED`) where it is not. This is the
+   bridge from "structure resolves names" to "structure resolves data," and it retires `ISOMER_ASSUMED`
+   from the resolved cases. Medium difficulty; touches all three data modules + the attach path.
+
+2. **General capping — BUILD.** `capped_scissions` v2 handles the bounded common case: one order-1
+   reactant bond, one reagent, two pairings. It cannot yet do multi-bond cuts, double/triple-bond
+   caps, ring-forming or ring-opening rewrites, condensations (lose a small molecule), or multi-reagent
+   mediation (two waters). **Next rung:** a general valence-matching capper (perfect matching between
+   the reactant's and reagents' open-valence multisets), under the identical valence-preservation
+   certificate and a stated budget. Medium-high difficulty (combinatorial matching).
+
+3. **Recursive structure-level descent graph — BUILD.** Today the structure engine emits single-step
+   edges; there is no structure-level analogue of `DecompositionGraph`/`MediatedDecompositionGraph`
+   that recurses on fragment *structures* down to elements. **Next rung:** `structure_decompose`
+   recursing over `ScissionEdge`/`CappedScission` products; per-step termination is already proven, so
+   this is the graph builder + a loud budget refusal. Medium difficulty.
+
+4. **Radical intermediates in the review layer — BUILD.** Scission fragments are radicals (open
+   valences); the review layer reviews formula-level and mediated edges, not pure `ScissionEdge`s. A
+   structure-descent review that surfaces the radical intermediates *labelled as radicals* (never as
+   stable compounds — that would be the exact structural lie) is unwired. Small–medium.
+
+5. **Public-API exposure — BUILD (small).** `smartchem.structure_descent` is not on the lazy
+   `__init__` surface (`__all__`/`_ATTR_SOURCE` lockstep, per the evidence-bridge decoupling). A
+   deliberate, separate act when wanted.
+
+6. **Structure-resolved & broader thermochemistry — DATA.** Energetics is formula-level formation
+   enthalpies (16 reference + 2 decompiler species, already folded in). Bond-specific / structure-
+   resolved enthalpy is absent, and the litmus itself is genuinely *uncertifiable* today: paracetamol
+   is 298 K-only (excluded from the 0 K balance by the convention firewall), 4-aminophenol's two
+   gas-phase sources disagree by 9 kJ/mol. That an edge reads `ENERGETICS_UNKNOWN` is a **result**,
+   not a missing feature. Grows only under the second-source discipline.
+
+7. **Broader hazard / conditions coverage — DATA.** Hazards and conditions grow only with sourced,
+   corroborated records; the point is the mechanism (real reaction → its real facts, everything else a
+   loud UNKNOWN), never coverage for its own sake.
+
+8. **Which cleavage actually happens — BOUNDARY.** The engine enumerates *all* valence-valid rewrites;
+   ranking which is thermodynamically or kinetically favored is a physical prediction and is **not
+   ours to make**. The permitted move, and the only one: attach sourced conditions/hazards/energetics
+   so a chemist can rank, while the engine claims only conservation. Attach, never predict.
+
+9. **Stereochemistry — BUILD-if-needed (representation) / BOUNDARY (outcome).** Bond graphs are
+   constitutional (no cis/trans, no R/S). Adding a stereo layer is a legitimate representational
+   extension should a use-case need it; claiming a stereochemical *outcome* is physical and stays
+   uncrossed.
+
+10. **Aromaticity / resonance / tautomers — mixed.** Aromatic rings are hand-entered in one Kekulé
+    form and the canonicalizer treats the drawn graph as given; bare vertex-transitive benzene still
+    refuses canonicalization (individualisation, the second nauty move, is unbuilt — tracked as
+    `category.py` #25). **BUILD:** individualisation, for full canonical completeness — but it is the
+    one change where a silent error corrupts every graph equality, so it earns brute-force
+    verification, not a bolt-on. **BOUNDARY:** which tautomer or resonance form *dominates* is
+    physical. (Substituted rings — every litmus species — already canonicalize; the gap bites only bare
+    symmetric rings.)
+
+11. **Charge / ionic / electrochemical descent — BUILD (substantial).** The decompiler is neutral-only;
+    heterolytic cleavage → ions, acid/base chemistry, and redox are absent from the descent, though
+    `category.Molecule` + the charge/carrier machinery already support charged species and electrons
+    for the electromagnetic vertical. **Next rung:** extend scission/capping to charged fragments and
+    heterolytic caps (charge conserved alongside valence) — a real rung that also ties the chemical and
+    EM verticals together.
+
+**The through-line.** Gaps 1–5 and 11 are the buildable structure work; 6–7 are honest sourcing; 8–10
+carry a BOUNDARY half that is not an unfinished feature but the W3 law restated at finer resolution.
+"Complete" for this feature is: **isomer-keyed evidence (1) + general capping (2) + the recursive
+structure graph (3)**, at which point a chemist gets a structure-resolved, evidence-annotated
+decomposition tree — with every physical judgment still theirs to make.

@@ -19,9 +19,12 @@ from smartchem.category import Bond, Molecule
 from smartchem.decompiler import DecompositionEdge, Formula
 from smartchem.structure import known_compounds
 from smartchem.structure_descent import (
+    HETEROLYTIC_SCHEMA,
     Fragment,
+    HeterolyticScission,
     ScissionEdge,
     ScissionError,
+    heterolytic_scissions,
     scission_edges,
     structure_decompose,
     verify_valence_integrity,
@@ -247,6 +250,41 @@ class TestRecursiveStructureGraph:
             for f in edge.fragments:
                 if len(f.molecule.atoms) == 1:
                     assert len(f.molecule.bonds) == 0    # an atom has no bonds -> genuinely terminal
+
+
+class TestHeterolyticScission:
+    def test_hcl_splits_into_a_proton_and_a_chloride(self):
+        hcl = Molecule(("H", "Cl"), frozenset({Bond(0, 1)}))
+        edges = heterolytic_scissions(hcl)
+        eqs = {e.equation() for e in edges}
+        assert "ClH -> H^1+ + Cl^1-" in eqs      # the physical ionisation
+        assert "ClH -> Cl^1+ + H^1-" in eqs      # and its reverse -- both enumerated, neither claimed
+
+    def test_charge_is_conserved_and_the_pieces_are_the_cut_bond_components(self):
+        hcl = Molecule(("H", "Cl"), frozenset({Bond(0, 1)}))
+        e = heterolytic_scissions(hcl)[0]
+        assert e.anion.charge + e.cation.charge == 0                # conserved (neutral reactant)
+        assert type(e) is HeterolyticScission                       # constructed => certificate held
+
+    def test_acetic_acid_acid_dissociation_is_derived(self):
+        aa = known_compounds("C2H4O2")[0].molecule
+        edges = heterolytic_scissions(aa)
+        # among the heterolyses is the acid dissociation: a proton + the acetate anion
+        assert any(
+            e.cation.atoms == ("H",) and repr(e.anion) == "C2H3O2^1-" for e in edges
+        )
+
+    def test_bad_charges_are_rejected(self):
+        hcl = Molecule(("H", "Cl"), frozenset({Bond(0, 1)}))
+        h_plus = Molecule(("H",), frozenset(), 1)
+        cl_neutral = Molecule(("Cl",), frozenset(), 0)   # not an anion -> charge not conserved
+        with pytest.raises(ScissionError):
+            HeterolyticScission(HETEROLYTIC_SCHEMA, hcl, Bond(0, 1), cl_neutral, h_plus)
+
+    def test_a_charged_reactant_is_refused(self):
+        charged = Molecule(("H", "Cl"), frozenset({Bond(0, 1)}), 1)
+        with pytest.raises(ScissionError):
+            heterolytic_scissions(charged)
 
 
 class TestNvsOAcetylationIsRepresentable:

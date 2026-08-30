@@ -56,13 +56,16 @@ __all__ = [
     "STRUCTURE_DESCENT_SCHEMA",
     "CAPPED_SCISSION_SCHEMA",
     "STRUCTURE_GRAPH_SCHEMA",
+    "HETEROLYTIC_SCHEMA",
     "ScissionError",
     "Fragment",
     "ScissionEdge",
     "CappedScission",
+    "HeterolyticScission",
     "StructureDecompositionGraph",
     "scission_edges",
     "capped_scissions",
+    "heterolytic_scissions",
     "structure_decompose",
     "verify_valence_integrity",
 ]
@@ -70,6 +73,7 @@ __all__ = [
 STRUCTURE_DESCENT_SCHEMA = "smartchem.structure_descent/scission-v2"
 CAPPED_SCISSION_SCHEMA = "smartchem.structure_descent/capped-scission-v2"
 STRUCTURE_GRAPH_SCHEMA = "smartchem.structure_descent/structure-graph-v2"
+HETEROLYTIC_SCHEMA = "smartchem.structure_descent/heterolytic-v2"
 
 
 def _fkey(formula: Formula) -> tuple:
@@ -792,3 +796,121 @@ def structure_decompose(
                 if fkey not in expanded and len(fragment.molecule.atoms) > 1:
                     frontier.append(fragment.molecule)
     return build("COMPLETE", "")
+
+
+# ======================================================================================
+# Rung 6 -- heterolytic (ionic) scission: a bond breaks BOTH electrons one way
+# ======================================================================================
+def _subgraph(reactant: Molecule, origin: tuple[int, ...], charge: int) -> Molecule:
+    """The connected sub-graph on ``origin`` (re-indexed) carrying net ``charge``."""
+    local = {r: k for k, r in enumerate(origin)}
+    atoms = tuple(reactant.atoms[r] for r in origin)
+    bonds = frozenset(
+        Bond(local[b.i], local[b.j], b.order)
+        for b in reactant.bonds
+        if b.i in local and b.j in local
+    )
+    return Molecule(atoms, bonds, charge, reactant.state)
+
+
+@dataclass(frozen=True)
+class HeterolyticScission(Digestible):
+    """One HETEROLYTIC single-bond cleavage: ``reactant -> anion(-1) + cation(+1)``.
+
+    Where a :class:`ScissionEdge` breaks a bond homolytically (each fragment keeps one electron, a
+    radical), a heterolytic cleavage sends BOTH electrons to one side: the atom that keeps the pair
+    becomes an anion, the atom that loses it a cation.  ``H-Cl -> H(+) + Cl(-)``, ``Na-Cl -> Na(+) +
+    Cl(-)``, an acid dissociation.  The certificate is charge conservation on top of the scission
+    conservation:
+
+    * one order-1 ``cut_bond`` of a NEUTRAL reactant (v1 heterolysis of neutrals);
+    * ``anion`` carries charge -1 and ``cation`` charge +1, so total charge is conserved (0);
+    * their atoms partition the reactant's, and each is a strict sub-molecule (W1 descent);
+    * stripped of charge, ``{anion, cation}`` are exactly the two connected components of
+      ``reactant`` minus ``cut_bond`` (fidelity: the ions are the cut pieces, not invented graphs).
+
+    W3 unchanged: this certifies that a valence-and-charge-consistent heterolytic split EXISTS, never
+    that a bond ionises this way (which direction the electrons go is the physical selectivity the
+    engine refuses to predict -- both assignments are enumerated).  The formula-level engine is
+    neutral-only, so a heterolytic split has no v1 ``forget`` image; ionic descent lives at structure
+    level, and its formula/review integration is a documented next rung.
+    """
+
+    schema_version: str
+    reactant: Molecule
+    cut_bond: Bond
+    anion: Molecule
+    cation: Molecule
+
+    def __post_init__(self) -> None:
+        if self.schema_version != HETEROLYTIC_SCHEMA:
+            raise ScissionError(f"schema_version must be exactly {HETEROLYTIC_SCHEMA!r}")
+        for name, mol in (("reactant", self.reactant), ("anion", self.anion), ("cation", self.cation)):
+            if type(mol) is not Molecule:
+                raise ScissionError(f"{name} must be a Molecule")
+        if self.reactant.charge != 0:
+            raise ScissionError("v1 heterolysis splits a NEUTRAL reactant")
+        if type(self.cut_bond) is not Bond or self.cut_bond not in self.reactant.bonds:
+            raise ScissionError("cut_bond must be a bond of the reactant")
+        if self.cut_bond.order != 1:
+            raise ScissionError("v1 heterolysis cleaves an order-1 bond (one electron pair)")
+        if self.anion.charge != -1 or self.cation.charge != 1:
+            raise ScissionError("anion must carry charge -1 and cation charge +1")
+        # charge conserved: -1 + 1 == reactant charge (0)
+        if self.anion.charge + self.cation.charge != self.reactant.charge:
+            raise ScissionError("charge not conserved across the heterolytic split")
+        # atoms partition the reactant, each fragment strictly smaller (W1)
+        if Counter(self.anion.atoms) + Counter(self.cation.atoms) != Counter(self.reactant.atoms):
+            raise ScissionError("anion + cation atoms do not sum to the reactant composition")
+        n = len(self.reactant.atoms)
+        if len(self.anion.atoms) >= n or len(self.cation.atoms) >= n:
+            raise ScissionError("each ion must have strictly fewer atoms than the reactant (W1)")
+        # fidelity: neutralised, the ions are exactly the two components of reactant - cut_bond
+        comps = _components(n, self.reactant.bonds - {self.cut_bond})
+        if len(comps) != 2:
+            raise ScissionError("a single-bond heterolysis needs a bridge bond (exactly two pieces)")
+        want = {_subgraph(self.reactant, origin, 0).canonical() for origin in comps}
+        got = {
+            Molecule(self.anion.atoms, self.anion.bonds, 0, self.anion.state).canonical(),
+            Molecule(self.cation.atoms, self.cation.bonds, 0, self.cation.state).canonical(),
+        }
+        if want != got:
+            raise ScissionError("anion/cation are not the two connected pieces of the cut reactant")
+
+    def equation(self) -> str:
+        return f"{self.reactant!r} -> {self.cation!r} + {self.anion!r}"
+
+    def __repr__(self) -> str:
+        return f"HeterolyticScission({self.equation()})"
+
+
+def heterolytic_scissions(molecule: Molecule) -> tuple[HeterolyticScission, ...]:
+    """Every single-bond heterolytic cleavage of a neutral ``molecule`` into an anion + a cation.
+
+    For each order-1 bridge bond, both electron assignments are emitted (either component may take the
+    pair) -- because which way a bond ionises is physical selectivity the engine does not predict.
+    Deduplicated by digest.  Multi-bond and charged-reactant heterolysis are documented gaps.
+    """
+    if type(molecule) is not Molecule:
+        raise TypeError("molecule must be a Molecule")
+    if molecule.charge != 0:
+        raise ScissionError("v1 heterolysis splits a neutral molecule")
+    n = len(molecule.atoms)
+    out: dict[str, HeterolyticScission] = {}
+    for b in sorted(molecule.bonds):
+        if b.order != 1:
+            continue
+        comps = _components(n, molecule.bonds - {b})
+        if len(comps) != 2:
+            continue  # not a bridge -> no single-bond split
+        first, second = comps
+        for neg_origin, pos_origin in ((first, second), (second, first)):
+            edge = HeterolyticScission(
+                HETEROLYTIC_SCHEMA,
+                molecule,
+                b,
+                _subgraph(molecule, neg_origin, -1),
+                _subgraph(molecule, pos_origin, 1),
+            )
+            out.setdefault(edge.digest, edge)
+    return tuple(sorted(out.values(), key=lambda e: e.digest))

@@ -100,6 +100,11 @@ LADDER: list[Entry] = [
     # ... and the same rings with max_cut_bonds=2 (ring-opening enabled), depth-bounded.
     (3, "cyclopropane/open",  "C1CC1",            "C3H6",    "descend2", 2, 2),
     (3, "benzene/open",       "c1ccccc1",         "C6H6",    "descend2", 2, 1),
+    # R1: ring-aware descent -- targeted ring-opening so the ring reaches single atoms (atomised=Y),
+    # where the plain descent above dead-ends at a core (atomised=N). Fast cases only in the gate;
+    # a large/fused ring's full atomic descent explodes and REFUSES loudly (proven in the tests).
+    (3, "cyclopropane/R1",    "C1CC1",            "C3H6",    "descend_ring", 1, None),
+    (3, "benzene/R1",         "c1ccccc1",         "C6H6",    "descend_ring", 1, None),
     # Tier 4 -- substituted aromatics: a breakable substituent bond on a ring.
     # phenol/aniline stay full-descent (a mixed case: atom terminals from -OH/-NH2 AND a ring core);
     # toluene/styrene/benzoic acid are depth-bounded -- their full atomic descent is many seconds of
@@ -177,9 +182,10 @@ def _has_bridge(mol: Molecule) -> bool:
     return False
 
 
-def audit_descent(name: str, mol: Molecule, cut: int, depth: int | None, f: Findings) -> str:
+def audit_descent(name: str, mol: Molecule, cut: int, depth: int | None, f: Findings,
+                  ring_aware: bool = False) -> str:
     """Run the descent and audit every reality-respecting invariant. Returns a one-line status."""
-    graph = structure_decompose(mol, max_cut_bonds=cut, max_depth=depth)
+    graph = structure_decompose(mol, max_cut_bonds=cut, max_depth=depth, ring_aware=ring_aware)
 
     # (0) status is one of the three honest labels (constructor enforces; assert the contract holds)
     if graph.status not in ("COMPLETE", "COMPLETE_TO_DEPTH", "REFUSED_BUDGET"):
@@ -242,7 +248,7 @@ def audit_descent(name: str, mol: Molecule, cut: int, depth: int | None, f: Find
     indep_cores = []
     for key, m in nodes.items():
         if len(m.atoms) > 1 and m.bonds and key not in has_out:
-            edges_m, complete_m = scission_edges(m, max_cut_bonds=cut)
+            edges_m, complete_m = scission_edges(m, max_cut_bonds=cut, ring_aware=ring_aware)
             if complete_m and not edges_m:                 # genuinely no admissible cut -> a true core
                 indep_cores.append(m)
     truly_atomised = graph.status == "COMPLETE" and not indep_cores
@@ -348,6 +354,8 @@ def main() -> int:
         try:
             if mode in ("descend", "descend2"):
                 result = audit_descent(name, mol, cut, depth, f)
+            elif mode == "descend_ring":
+                result = audit_descent(name, mol, cut, depth, f, ring_aware=True)
             elif mode == "ionic":
                 result = audit_ionic(name, mol, f)
             elif mode == "redox":

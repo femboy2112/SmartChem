@@ -403,7 +403,7 @@ def verify_valence_integrity(reactant: Molecule, cut_bonds: tuple[Bond, ...]) ->
 
 
 def scission_edges(
-    molecule: Molecule, *, max_cut_bonds: int = 1, budget: int = 100_000
+    molecule: Molecule, *, max_cut_bonds: int = 1, budget: int = 100_000, ring_aware: bool = False
 ) -> tuple[tuple[ScissionEdge, ...], bool]:
     """Every admissible scission of ``molecule`` cutting up to ``max_cut_bonds`` bonds.
 
@@ -416,6 +416,16 @@ def scission_edges(
     ``max_cut_bonds`` is the completeness boundary: ``1`` (the default) enumerates every single-bond
     cleavage (all the non-ring bonds); ``2`` and above reach ring-opening and multi-site cleavages
     and multiply the search.
+
+    ``ring_aware`` (R1) additionally emits the **targeted ring-opening** cuts: 2-cuts of *ring-bond
+    pairs* (a ring bond is one whose removal does not disconnect the molecule). Cutting a ring at two
+    bonds splits it into two arcs -- a genuine scission (>=2 fragments, each strictly smaller, so W1
+    still holds by atom count alone), and the ONLY way a pure ring reaches single atoms. Restricted to
+    ring-bond pairs this is a small targeted set (a handful per node) rather than the full 2-cut
+    powerset, so cyclics atomise *tractably*. It is redundant once ``max_cut_bonds >= 2`` (the general
+    loop already enumerates those pairs) and is skipped there. A ring that no 2-cut can open (a caged
+    polycyclic needing >=3 simultaneous cuts) is a stated boundary -- it stays an irreducible core, and
+    :meth:`StructureDecompositionGraph.irreducible_cores` surfaces it honestly.
     """
     if type(molecule) is not Molecule:
         raise TypeError("molecule must be a smartchem.category.Molecule")
@@ -425,18 +435,33 @@ def scission_edges(
     bonds = sorted(molecule.bonds)
     edges: dict[tuple, ScissionEdge] = {}
     work = 0
-    for size in range(1, max_cut_bonds + 1):
-        for combo in combinations(bonds, size):
-            work += 1
-            if work > budget:
-                return tuple(edges.values()), False
-            cut = frozenset(combo)
-            comps = _components(n, molecule.bonds - cut)
-            if len(comps) < 2:
-                continue  # cut did not disconnect: not a decomposition
+
+    def try_cut(combo: tuple[Bond, ...]) -> bool:
+        """Build and register the scission for this cut; return False iff the budget is now spent."""
+        nonlocal work
+        work += 1
+        if work > budget:
+            return False
+        cut = frozenset(combo)
+        comps = _components(n, molecule.bonds - cut)
+        if len(comps) >= 2:                      # a cut that does not disconnect is no decomposition
             fragments = tuple(_fragment_of(molecule, origin, cut) for origin in comps)
             edge = ScissionEdge(STRUCTURE_DESCENT_SCHEMA, molecule, tuple(sorted(combo)), fragments)
             edges.setdefault(edge.signature, edge)
+        return True
+
+    for size in range(1, max_cut_bonds + 1):
+        for combo in combinations(bonds, size):
+            if not try_cut(combo):
+                return tuple(edges.values()), False
+
+    if ring_aware and max_cut_bonds < 2:
+        base = len(_components(n, molecule.bonds))
+        ring_bonds = [b for b in bonds if len(_components(n, molecule.bonds - {b})) == base]
+        for combo in combinations(ring_bonds, 2):
+            if not try_cut(combo):
+                return tuple(edges.values()), False
+
     ordered = tuple(sorted(edges.values(), key=lambda e: e.digest))
     return ordered, True
 
@@ -788,6 +813,7 @@ class StructureDecompositionGraph(Digestible):
     edges: tuple[ScissionEdge, ...]
     refusal_reason: str = ""
     max_depth: int | None = None
+    ring_aware: bool = False
 
     _STATUSES = ("COMPLETE", "COMPLETE_TO_DEPTH", "REFUSED_BUDGET")
 
@@ -852,7 +878,9 @@ class StructureDecompositionGraph(Digestible):
             if self.is_complete:
                 cores[key] = m  # a finished search left no out-edge here: provably irreducible
             else:
-                edges, complete = scission_edges(m, max_cut_bonds=self.max_cut_bonds, budget=self.budget)
+                edges, complete = scission_edges(
+                    m, max_cut_bonds=self.max_cut_bonds, budget=self.budget, ring_aware=self.ring_aware
+                )
                 if complete and not edges:
                     cores[key] = m  # genuinely no admissible cut, not merely unexpanded at the horizon
         return tuple(sorted(cores.values(), key=_mol_key))
@@ -898,12 +926,18 @@ def structure_decompose(
     budget: int = 100_000,
     max_edges: int = 5_000,
     max_depth: int | None = None,
+    ring_aware: bool = False,
 ) -> StructureDecompositionGraph:
     """Build the structure-level descent of ``target`` toward single atoms.
 
     Recurses :func:`scission_edges` on every fragment molecule (each strictly smaller, so it
     terminates), deduplicating nodes by presentation-invariant identity.  A budget hit yields a
     **loud** ``REFUSED_BUDGET`` graph, never a silent partial (W2).
+
+    ``ring_aware`` (R1) adds the targeted ring-opening 2-cuts (see :func:`scission_edges`), so a cyclic
+    target actually descends to single atoms -- benzene, cyclohexane, naphthalene reach atoms and
+    ``reaches_single_atoms`` becomes ``True`` -- at a small multiple of the ``max_cut_bonds=1`` cost
+    rather than the full 2-cut powerset. A ring no 2-cut can open stays an honest irreducible core.
 
     ``max_depth`` bounds the descent to that many scission steps from the target. It is the fast,
     chemically-legible mode: the full descent of a drug-sized molecule to single atoms is huge
@@ -924,7 +958,7 @@ def structure_decompose(
     def build(status: str, reason: str) -> StructureDecompositionGraph:
         return StructureDecompositionGraph(
             STRUCTURE_GRAPH_SCHEMA, target, max_cut_bonds, budget, status,
-            tuple(sorted(collected.values(), key=lambda e: e.digest)), reason, max_depth,
+            tuple(sorted(collected.values(), key=lambda e: e.digest)), reason, max_depth, ring_aware,
         )
 
     while frontier:
@@ -935,7 +969,7 @@ def structure_decompose(
             continue
         if max_depth is not None and depth >= max_depth:
             continue                      # at the horizon: expandable, deliberately left unexpanded
-        edges, complete = scission_edges(node, max_cut_bonds=max_cut_bonds, budget=budget)
+        edges, complete = scission_edges(node, max_cut_bonds=max_cut_bonds, budget=budget, ring_aware=ring_aware)
         if not complete:
             return build("REFUSED_BUDGET", f"scission budget exhausted at {node!r}")
         expanded.add(key)

@@ -365,6 +365,64 @@ class TestIrreducibleCoreHonesty:
         assert g.is_complete_to_depth and not g.reaches_single_atoms
 
 
+class TestRingAwareDescent:
+    """R1: targeted ring-opening -- a ring reaches single atoms via 2-cuts of ring-bond pairs.
+
+    A ring bond is not a bridge, so a 1-cut never opens a ring (that is the irreducible-core boundary
+    above). ``ring_aware=True`` adds the 2-cuts of ring-bond *pairs*: cutting a ring at two bonds
+    splits it into two arcs -- a genuine scission (>=2 fragments, strictly smaller, W1 by atom count),
+    the only way a pure ring atomises. Restricted to ring-bond pairs it is a small targeted set, so
+    small rings atomise tractably; a big/fused ring whose full atomic descent explodes refuses LOUDLY.
+    """
+
+    def test_a_small_ring_now_reaches_single_atoms(self):
+        from smartchem.smiles import parse_smiles
+
+        plain = structure_decompose(parse_smiles("C1CC1"))                 # cyclopropane, no ring-opening
+        aware = structure_decompose(parse_smiles("C1CC1"), ring_aware=True)
+        assert not plain.reaches_single_atoms and plain.irreducible_cores()  # a C3 core without R1
+        assert aware.is_complete and aware.reaches_single_atoms              # R1 opens it to atoms
+        assert aware.irreducible_cores() == ()                              # nothing survives as a core
+
+    def test_ring_opening_moves_enter_the_menu_and_are_genuine_scissions(self):
+        from smartchem.smiles import parse_smiles
+
+        benzene = parse_smiles("c1ccccc1")
+        plain, _ = scission_edges(benzene)
+        aware, _ = scission_edges(benzene, ring_aware=True)
+        ring_open = [e for e in aware if len(e.cut_bonds) == 2]
+        assert not any(len(e.cut_bonds) == 2 for e in plain)   # no ring-opening without R1
+        assert ring_open                                        # R1 puts ring-opening in the menu
+        for e in ring_open:
+            assert e.disconnects and len(e.fragments) == 2      # a ring cut at 2 bonds -> two arcs
+            assert verify_valence_integrity(e.reactant, e.cut_bonds)   # independent: conserves valence
+            assert type(e.forget()) is DecompositionEdge        # forgets to a valid v1 edge
+
+    def test_ring_opening_only_cuts_ring_bonds_never_a_bridge_pair(self):
+        from smartchem.smiles import parse_smiles
+
+        # toluene = ring + a methyl bridge. R1's 2-cuts must be ring-bond pairs only; a bridge is
+        # already a 1-cut, so no 2-cut here should include the exocyclic C-C or any C-H bridge.
+        tol = parse_smiles("Cc1ccccc1")
+        aware, _ = scission_edges(tol, ring_aware=True)
+        n = len(tol.atoms)
+        from smartchem.structure_descent import _components
+        base = len(_components(n, tol.bonds))
+        for e in aware:
+            if len(e.cut_bonds) == 2:
+                for b in e.cut_bonds:                          # every cut bond is a ring bond (non-bridge)
+                    assert len(_components(n, tol.bonds - {b})) == base
+
+    def test_a_big_fused_ring_refuses_loudly_never_hangs_or_lies(self):
+        from smartchem.smiles import parse_smiles
+
+        # naphthalene's full ring-aware atomic descent explodes; a tight budget must yield a LOUD
+        # REFUSED_BUDGET (a partial graph that says so), never a silent partial sold as COMPLETE (W2).
+        g = structure_decompose(parse_smiles("c1ccc2ccccc2c1"), ring_aware=True, max_edges=200)
+        assert g.status == "REFUSED_BUDGET" and g.refusal_reason
+        assert not g.is_complete and not g.reaches_single_atoms
+
+
 class TestBoundedDepthDescent:
     """G2: the bounded-depth mode -- fast, legible, and a POSITIVE guarantee, not a truncation."""
 

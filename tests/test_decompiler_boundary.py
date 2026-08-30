@@ -9,14 +9,18 @@ sourced evidence, never inventing an order from nothing.
 from smartchem.category import Bond, Molecule
 from smartchem.decompiler_boundary import (
     RankingBasis,
+    SpeciesClass,
     StereoRepresentation,
     cis_trans_candidates,
     evidence_ranking,
+    species_class,
+    stability_caveat,
     stereo_status,
     stereocenters,
     tautomerizable,
 )
 from smartchem.structure import known_compounds
+from smartchem.structure_descent import heterolytic_scissions, scission_edges
 
 
 def _named(formula: str, name: str) -> Molecule:
@@ -80,6 +84,26 @@ class TestTautomerDetection:
     def test_formaldehyde_has_no_alpha_hydrogen(self):
         # H2C=O has a carbonyl but no alpha carbon -> no keto-enol partner
         assert tautomerizable(_named("CH2O", "formaldehyde")) == ()
+
+
+class TestSpeciesClassKeepsIntermediatesHonest:
+    def test_a_closed_molecule_is_closed(self):
+        assert species_class(_named("C2H4O2", "acetic acid")) is SpeciesClass.CLOSED
+        assert stability_caveat(_named("C2H4O2", "acetic acid")) == ""
+
+    def test_a_scission_fragment_is_a_radical(self):
+        aa = _named("C2H4O2", "acetic acid")
+        edges, _ = scission_edges(aa)
+        fragment = edges[0].fragments[0]                 # a piece of a homolytic cut
+        assert species_class(fragment) is SpeciesClass.RADICAL
+        assert "RADICAL" in stability_caveat(fragment)   # never presented as isolable
+
+    def test_a_heterolytic_product_is_an_ion(self):
+        hcl = Molecule(("H", "Cl"), frozenset({Bond(0, 1)}))
+        edge = heterolytic_scissions(hcl)[0]
+        assert species_class(edge.anion) is SpeciesClass.ION
+        assert species_class(edge.cation) is SpeciesClass.ION
+        assert "counter-ion" in stability_caveat(edge.anion)
 
 
 class TestEvidenceRankingRefusesToPredict:

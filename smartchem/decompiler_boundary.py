@@ -37,11 +37,14 @@ __all__ = [
     "StereoStatus",
     "RankingBasis",
     "EvidenceRanking",
+    "SpeciesClass",
     "stereocenters",
     "cis_trans_candidates",
     "stereo_status",
     "tautomerizable",
     "evidence_ranking",
+    "species_class",
+    "stability_caveat",
 ]
 
 BOUNDARY_SCHEMA = "smartchem.decompiler_boundary/w3-v1"
@@ -182,6 +185,56 @@ def tautomerizable(molecule: Molecule) -> tuple[int, ...]:
         if any(any(k in hydrogens for k, _ in adj[a]) for a in alpha_carbons):
             out.append(i)
     return tuple(out)
+
+
+class SpeciesClass(str, Enum):
+    """What KIND of species a decomposition intermediate is -- so a reactive one is never presented
+    as a stable, bottle-able compound (the honesty half of BUILD #4)."""
+
+    CLOSED = "CLOSED"            # a valence-complete neutral molecule -- a real, isolable compound
+    RADICAL = "RADICAL"         # unpaired valence(s): a reactive fragment, not isolable as drawn
+    ION = "ION"                 # net charge: exists with a counter-ion, not neutral in isolation
+    RADICAL_ION = "RADICAL_ION"  # both
+
+
+def species_class(species: object) -> SpeciesClass:
+    """Classify a decomposition species as CLOSED / RADICAL / ION / RADICAL_ION.
+
+    Accepts a :class:`~smartchem.category.Molecule` (uses its charge) or a
+    :class:`~smartchem.structure_descent.Fragment` (uses its ``open_valence_total`` and its molecule's
+    charge). A scission fragment carries open valences -> RADICAL; a heterolytic product carries a
+    charge -> ION. The point is to keep the review honest: neither is a stable compound, and this is
+    what lets a caller say so rather than list a radical beside a real molecule as if they were peers.
+    """
+    open_valences = int(getattr(species, "open_valence_total", 0) or 0)
+    charge = getattr(species, "charge", None)
+    if charge is None:
+        inner = getattr(species, "molecule", None)
+        charge = getattr(inner, "charge", 0) if inner is not None else 0
+    radical = open_valences > 0
+    ion = charge != 0
+    if radical and ion:
+        return SpeciesClass.RADICAL_ION
+    if radical:
+        return SpeciesClass.RADICAL
+    if ion:
+        return SpeciesClass.ION
+    return SpeciesClass.CLOSED
+
+
+def stability_caveat(species: object) -> str:
+    """A one-line honesty caveat for a non-closed species, or ``""`` for a closed molecule.
+
+    A review that surfaces a decomposition intermediate uses this so a reactive fragment is never
+    displayed as if it were an isolable compound.
+    """
+    cls = species_class(species)
+    return {
+        SpeciesClass.CLOSED: "",
+        SpeciesClass.RADICAL: "RADICAL -- an open-valence fragment, reactive and not isolable as drawn",
+        SpeciesClass.ION: "ION -- carries a net charge; exists with a counter-ion, not neutral alone",
+        SpeciesClass.RADICAL_ION: "RADICAL ION -- open-valence AND charged; highly reactive, not isolable",
+    }[cls]
 
 
 class RankingBasis(str, Enum):

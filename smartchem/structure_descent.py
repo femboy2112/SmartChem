@@ -55,17 +55,21 @@ from .decompiler_mediated import MediatedEdge
 __all__ = [
     "STRUCTURE_DESCENT_SCHEMA",
     "CAPPED_SCISSION_SCHEMA",
+    "STRUCTURE_GRAPH_SCHEMA",
     "ScissionError",
     "Fragment",
     "ScissionEdge",
     "CappedScission",
+    "StructureDecompositionGraph",
     "scission_edges",
     "capped_scissions",
+    "structure_decompose",
     "verify_valence_integrity",
 ]
 
 STRUCTURE_DESCENT_SCHEMA = "smartchem.structure_descent/scission-v2"
 CAPPED_SCISSION_SCHEMA = "smartchem.structure_descent/capped-scission-v2"
+STRUCTURE_GRAPH_SCHEMA = "smartchem.structure_descent/structure-graph-v2"
 
 
 def _fkey(formula: Formula) -> tuple:
@@ -661,3 +665,130 @@ def capped_scissions(
                             continue  # not cleaving / not valence-preserving / pass-through -> dropped
                         out.setdefault(edge.digest, edge)
     return tuple(sorted(out.values(), key=lambda e: e.digest)), True
+
+
+# ======================================================================================
+# Rung 3 -- the recursive structure-level descent graph (the structure analogue of B2)
+# ======================================================================================
+def _mol_key(molecule: Molecule) -> str:
+    """A presentation-invariant node identity for a fragment molecule (``asgiven:`` fallback)."""
+    try:
+        return canonical_digest(molecule.canonical())
+    except NotImplementedError:
+        return "asgiven:" + canonical_digest(molecule)
+
+
+@dataclass(frozen=True)
+class StructureDecompositionGraph(Digestible):
+    """The full descent of one target *structure* to single atoms by repeated bond-graph scission.
+
+    Nodes are molecules (the target and every radical fragment reached); hyperedges are
+    :class:`ScissionEdge` s.  It is the structure-level analogue of
+    :class:`~smartchem.decompiler.DecompositionGraph`: where that splits atom multisets, this splits
+    the bond graph, so each node is a specific sub-structure rather than a composition.  Termination is
+    W1, forced by the partition -- every fragment has strictly fewer atoms, so the descent bottoms out
+    at single atoms.  ``status`` is ``COMPLETE`` only when the whole reachable graph fit the budget;
+    ``REFUSED_BUDGET`` carries a partial graph and a reason, never a silent truncation (W2).
+
+    One honest boundary, stated: a fragment is carried into the next level as its own bond graph, and
+    the open valences left by the cut that made it are not threaded across levels -- so this certifies
+    the SKELETON descent (which bonds break, into which sub-structures), not a radical-electron ledger.
+    Cross-level open-valence tracking is a documented refinement.
+    """
+
+    schema_version: str
+    target: Molecule
+    max_cut_bonds: int
+    budget: int
+    status: str
+    edges: tuple[ScissionEdge, ...]
+    refusal_reason: str = ""
+
+    _STATUSES = ("COMPLETE", "REFUSED_BUDGET")
+
+    def __post_init__(self) -> None:
+        if self.schema_version != STRUCTURE_GRAPH_SCHEMA:
+            raise ScissionError(f"schema_version must be exactly {STRUCTURE_GRAPH_SCHEMA!r}")
+        if type(self.target) is not Molecule:
+            raise ScissionError("target must be a Molecule")
+        if self.status not in self._STATUSES:
+            raise ScissionError(f"status must be one of {self._STATUSES}")
+        if self.status == "COMPLETE" and self.refusal_reason:
+            raise ScissionError("a COMPLETE graph carries no refusal reason")
+        if self.status == "REFUSED_BUDGET" and not self.refusal_reason:
+            raise ScissionError("a REFUSED_BUDGET graph must state its reason")
+        if any(type(e) is not ScissionEdge for e in self.edges):
+            raise ScissionError("edges must be ScissionEdge values")
+
+    @property
+    def is_complete(self) -> bool:
+        return self.status == "COMPLETE"
+
+    def nodes(self) -> frozenset[str]:
+        """The identities (:func:`_mol_key`) of every molecule reached, including the target."""
+        seen = {_mol_key(self.target)}
+        for edge in self.edges:
+            seen.add(_mol_key(edge.reactant))
+            for fragment in edge.fragments:
+                seen.add(_mol_key(fragment.molecule))
+        return frozenset(seen)
+
+    def terminals(self) -> frozenset[str]:
+        """The single-atom leaf identities the descent bottoms out at."""
+        keys: set[str] = set()
+        for edge in self.edges:
+            for fragment in edge.fragments:
+                if len(fragment.molecule.atoms) == 1:
+                    keys.add(_mol_key(fragment.molecule))
+        return frozenset(keys)
+
+    def edges_from(self, molecule: Molecule) -> tuple[ScissionEdge, ...]:
+        """Every scission whose reactant is ``molecule`` (compared by presentation-invariant key)."""
+        key = _mol_key(molecule)
+        return tuple(e for e in self.edges if _mol_key(e.reactant) == key)
+
+
+def structure_decompose(
+    target: Molecule,
+    *,
+    max_cut_bonds: int = 1,
+    budget: int = 100_000,
+    max_edges: int = 5_000,
+) -> StructureDecompositionGraph:
+    """Build the full structure-level descent of ``target`` to single atoms.
+
+    Recurses :func:`scission_edges` on every fragment molecule (each strictly smaller, so it
+    terminates), deduplicating nodes by presentation-invariant identity.  A budget hit yields a
+    **loud** ``REFUSED_BUDGET`` graph, never a silent partial (W2).
+    """
+    if type(target) is not Molecule:
+        raise TypeError("target must be a Molecule")
+    collected: dict[str, ScissionEdge] = {}
+    expanded: set[str] = set()
+    frontier: list[Molecule] = [target]
+
+    def build(status: str, reason: str) -> StructureDecompositionGraph:
+        return StructureDecompositionGraph(
+            STRUCTURE_GRAPH_SCHEMA, target, max_cut_bonds, budget, status,
+            tuple(sorted(collected.values(), key=lambda e: e.digest)), reason,
+        )
+
+    while frontier:
+        node = frontier.pop()
+        key = _mol_key(node)
+        if key in expanded or len(node.atoms) <= 1 or not node.bonds:
+            expanded.add(key)
+            continue
+        edges, complete = scission_edges(node, max_cut_bonds=max_cut_bonds, budget=budget)
+        if not complete:
+            return build("REFUSED_BUDGET", f"scission budget exhausted at {node!r}")
+        expanded.add(key)
+        for edge in edges:
+            collected[edge.digest] = edge
+            if len(collected) > max_edges:
+                return build("REFUSED_BUDGET", f"edge budget ({max_edges}) exceeded")
+            for fragment in edge.fragments:
+                fkey = _mol_key(fragment.molecule)
+                if fkey not in expanded and len(fragment.molecule.atoms) > 1:
+                    frontier.append(fragment.molecule)
+    return build("COMPLETE", "")

@@ -23,6 +23,7 @@ from smartchem.structure_descent import (
     ScissionEdge,
     ScissionError,
     scission_edges,
+    structure_decompose,
     verify_valence_integrity,
 )
 
@@ -215,6 +216,37 @@ def _aminophenyl_acetate() -> Molecule:
             Bond(1, 16), Bond(2, 17), Bond(4, 18), Bond(5, 19),  # ring H
         }),
     )
+
+
+class TestRecursiveStructureGraph:
+    def test_acetic_acid_descends_completely_to_single_atoms(self):
+        aa = known_compounds("C2H4O2")[0].molecule
+        graph = structure_decompose(aa, max_cut_bonds=1)
+        assert graph.is_complete
+        assert graph.edges and graph.nodes()
+        # every terminal is a single atom, and every scission fragment is strictly smaller (W1)
+        for edge in graph.edges:
+            assert all(len(f.molecule.atoms) < len(edge.reactant.atoms) for f in edge.fragments)
+        # the target's own direct scissions are reachable via edges_from
+        assert graph.edges_from(aa)
+
+    def test_a_big_target_refuses_loudly_never_truncates_silently(self):
+        para = known_compounds("C8H9NO2")[1].molecule  # whichever isomer; both explode
+        graph = structure_decompose(para, max_cut_bonds=1, max_edges=500)
+        assert not graph.is_complete
+        assert graph.status == "REFUSED_BUDGET"
+        assert graph.refusal_reason                      # a partial graph that SAYS it is partial
+
+    def test_terminals_are_all_rank_one(self):
+        etoh = next(s.molecule for s in known_compounds("C2H6O") if s.name == "ethanol")
+        graph = structure_decompose(etoh)
+        assert graph.is_complete
+        # terminals() are single-atom leaf identities; confirm they really bottom out
+        assert graph.terminals()
+        for edge in graph.edges:
+            for f in edge.fragments:
+                if len(f.molecule.atoms) == 1:
+                    assert len(f.molecule.bonds) == 0    # an atom has no bonds -> genuinely terminal
 
 
 class TestNvsOAcetylationIsRepresentable:

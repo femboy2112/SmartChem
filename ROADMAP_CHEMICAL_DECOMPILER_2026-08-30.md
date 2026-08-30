@@ -489,3 +489,35 @@ honest about their tier.
 NO on "run the actual steps," because the runnable reaction is **mediated** (`paracetamol + H2O →
 4-aminophenol + acetic acid`), which needs **C2** (mediated edges + medium ledger). C2 is the next
 rung and the linchpin for the litmus flipping to YES.
+
+---
+
+## Part 11 — Execution: C2 mediated (solution / byproduct) edges — the litmus reaction is generated
+
+**Built** — `smartchem/decompiler_mediated.py` + `tests/test_decompiler_mediated.py` (11 tests; full
+suite 1768 passed, zero regressions; ruff clean). A `MediatedEdge` is
+`n . reactant + reagents (from a declared closed medium) -> products`, with every invariant enforced:
+**augmented-system conservation** (`n.reactant + reagents == products`), **descent** (every product
+*and* reagent strictly lower rank than the reactant, so termination is unchanged from v1), **genuine
+mediation** (≥1 reagent, and no species is both a reagent and a product — a pass-through would be a
+plain decomposition with a spectator; catalytic regeneration is a C2b refinement), a real split (≥2
+products), canonical bucket spelling, primitivity. The generator `mediated_edges` reuses v1's
+bucket-forced solver against the augmented target `n.reactant + reagents`, enumerating reagent
+multisets from the medium; v1 itself is untouched.
+
+**The litmus reaction is now generated.** Measured:
+`mediated_edges("C8H9NO2", inventory=["C6H7NO","C2H4O2"], medium=["H2O"])` produces
+**`C8H9NO2 + H2O -> C2H4O2 + C6H7NO`** — paracetamol + water → acetic acid + 4-aminophenol, the exact
+literature hydrolysis (Part 9), which v1's own-atoms-only model *structurally could not represent*.
+With no medium there are no mediated edges (mediation genuinely requires a reagent from solution).
+
+**Litmus status now:** the real, runnable reaction is **representable, generated, conserving, and (via
+the review layer) rankable and safety-screenable** — no longer a flat NO. The remaining gaps to a full
+YES for an arbitrary target from bare elements, each a named next step:
+1. **mediated-graph recursion** — build the whole descent with mediated edges (this cut is the edge +
+   generator; the recursive `DecompositionGraph` analogue over mediated edges is C2b);
+2. **review/coherence over `MediatedEdge`** — `decompiler_review` currently ranks/screens plain
+   `DecompositionEdge`s; generalise it (a shared edge protocol) so mediated edges rank and carry safety
+   alongside;
+3. **conditions data (C1)** — envelopes are still mostly `UNKNOWN` without a sourced table;
+4. **structure (v2)** — `C6H7NO` is still a formula, not the specific p-aminophenol a chemist acts on.

@@ -71,13 +71,18 @@ def main(argv: list[str] | None = None) -> int:
     stability = autoload_stability(
         list(species.values()), identifiers=smiles_by_mol, allow_network=not args.offline,
     )
+    # M3: the broader sourced 298 K ΔfH°/S° table, so ΔG feasibility (M1) and equilibrium K (M2) reach
+    # beyond the litmus seed (every common organic here unlocks its combustion). Degrades to UNKNOWN, never
+    # a fabricated value, for anything it does not cover.
+    from ..data.thermo_extended import extended_thermo
+    thermo = extended_thermo()
 
     box = ConstraintBox(
         max_temperature_k=args.max_temp,
         max_pressure_atm=Fraction(args.max_pressure).limit_denominator() if args.max_pressure else None,
         available_reagents=None,  # the CLI ranks; reagent availability is implied by the inventory it built
     )
-    ranked = rank_routes(list(routes), box, stability=stability)
+    ranked = rank_routes(list(routes), box, stability=stability, thermo=thermo)
 
     print(f"{len(routes)} candidate route(s) to {args.target!r}; ranked best-first:\n")
     for i, rf in enumerate(ranked[:args.show], 1):
@@ -89,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     print("\n" + "=" * 90)
     print("TOP ROUTE -- drafted procedure:\n")
     feed = {m: 1 for m in (*have, *reagents)}
-    print(draft_procedure(best.route, feed=feed or None, stability=stability).render())
+    print(draft_procedure(best.route, feed=feed or None, stability=stability, thermo=thermo).render())
     return 0
 
 

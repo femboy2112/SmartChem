@@ -1381,3 +1381,51 @@ reach real targets. It is the highest-leverage next step precisely because it tu
 already built onto the north-star (paracetamol) litmus. After M3: M4 convergent-route DAGs (orthogonal,
 structural); then long-term L1 (TST kinetics -- the honest "real rate"), L2 (the unified classifier -- the
 mission made literal), L3 (decompiler R3-R5).
+
+## Part 24 -- M3 thermochemistry breadth BUILT (the extended sourced table unlocks M1/M2)
+
+M1 (ΔG) and M2 (K) are universal ENGINES; their reach is the thermo data they are handed, and the 8-species
+seed is litmus-focused. M3 is the *coverage* layer: a broader sourced 298 K standard-state ΔfH°/S° set so ΔG
+and K reach real bench targets. Not a new capability -- the same established Hess+Gibbs / van't Hoff models,
+on more sourced inputs. It is a DATA gap being closed, exactly as Part 23 predicted.
+
+### M3 -- `smartchem/data/thermo_extended.py`
+
+* **What it adds.** Six common organics (methanol, ethanol, formic acid, acetic acid, acetone, benzene) at
+  298.15 K, 1 bar standard state, each with BOTH ΔfH° and S°. Every one immediately unlocks its **combustion**
+  (CO2/H2O/O2 are already seeded) -- the killer app for breadth. `extended_thermo()` returns the seed extended
+  with these; additive and injectable, degrading to a loud `UNKNOWN` for anything uncovered.
+* **Sourced, never recalled -- the discipline that mattered most.** This repo has a documented history of
+  *memory-recall poisoning* (the ethanol near-miss, the butane/propane scrape -- see `decompiler_thermo.py`).
+  So EVERY value was VERIFIED against the NIST Chemistry WebBook (U.S.-gov public domain) via a real fetch,
+  and carries the specific author/year of the measurement (e.g. ethanol S° 159.86 Haida & Suga 1977; acetic
+  acid ΔfH° −483.52 Steele et al. 1997; benzene ΔfH° +49.0 Roux et al. 2008). No number came from training
+  recall. `glucose` was dropped from the set because the fetch did not surface a clean value -- refused rather
+  than guessed.
+* **The two refusals, enforced.** (1) *No entropy, no record*: a compound with a sourced ΔfH° but no cleanly
+  sourced S° gets NO fabricated S° -- it goes in `EXTENDED_THERMO_GAPS` with the reason. (2) *Phase
+  consistency*: every value is the named-phase 298 K standard-state value; no convention mixing.
+* **Wired in.** The CLI (`experiment/cli.py`, the download-and-go entry) now passes `thermo=extended_thermo()`
+  to `rank_routes` and `draft_procedure`, so a real user gets the breadth automatically.
+* **Calibrated (the Instrument rule).** Ethanol combustion, UNKNOWN on the seed, becomes FAVORABLE/DERIVED on
+  the extended table with **ΔG = −1326.4 kJ** (textbook ~−1325) and M2 ESSENTIALLY_COMPLETE (log10 K ~ 232).
+  The extended data recovers a known reaction before its novel reach is believed. Gate **42/42**, suite
+  **2134** (12 new).
+
+### The paracetamol litmus, honestly half-unlocked
+
+The north-star step `4-aminophenol + acetic anhydride -> paracetamol + acetic acid` is STILL `UNKNOWN` after
+M3 -- but the reason is now precise and sourced, not a blanket gap. Paracetamol's **ΔfH°(cr) = −410.4 kJ/mol
+IS sourced** (Picciochi 2010, verified -- the same DOI the decompiler-thermo pass cites), but no standard
+molar entropy S°(cr) is cleanly sourced (only an entropy of *fusion*). So ΔG cannot be formed without
+fabricating S°, and M3 refuses -- the step stays `UNKNOWN` on a documented entropy gap, naming exactly which
+species and which quantity blocks it. Sourcing what exists, refusing what does not: the ethos, working.
+
+### Next: M4 -- convergent-route DAGs (the orthogonal structural shape)
+
+The thermo arc (M1 ΔG, M2 K, M3 breadth) has taken the DERIVED bucket as far as sourced 298 K data reaches.
+The next structural rung is orthogonal to thermochemistry: `ExperimentRoute` is LINEAR and E5 recurses on ONE
+missing precursor, but a real convergent synthesis is a DAG -- two sub-routes feeding one step. M4 is that
+shape. (Further thermo reach -- drug-sized S° via low-T Cp integration or stat-mech from computed
+frequencies -- is a heavier, L1-adjacent lift, deferred behind M4.) After M4: long-term L1 (TST kinetics),
+L2 (the unified classifier -- the mission made literal), L3 (decompiler R3-R5).

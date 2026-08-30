@@ -1,0 +1,108 @@
+"""M3 -- thermochemistry breadth: a broader SOURCED 298 K standard-state ΔfH°/S° set for M1/M2.
+
+M1 (ΔG feasibility) and M2 (equilibrium K) are universal ENGINES; their reach is the thermo data they are
+handed.  The 8-species seed in :mod:`smartchem.data.thermo` is litmus-focused (small molecules that calibrate
+the engines).  This module is the *coverage* layer: a broader set of common organics whose 298 K standard-state
+formation enthalpy AND standard molar entropy are both cleanly sourced, so ΔG/K reach real bench targets --
+every organic here immediately unlocks its **combustion** (CO2 / H2O / O2 are already seeded).  Not a new
+capability: the same established Hess+Gibbs / van't Hoff models, on more sourced inputs.
+
+The discipline (inherited from :mod:`smartchem.data.decompiler_thermo`)
+----------------------------------------------------------------------
+This repo has a documented history of *memory-recall poisoning* -- a plausible-looking thermo number recalled
+from training rather than sourced, later found wrong (the ethanol near-miss, the butane/propane scrape).  So
+every value here was VERIFIED against the NIST Chemistry WebBook (a U.S.-government public-domain compilation)
+and carries the specific author/year of the measurement it came from -- never a recalled number.  Two things
+are refused, loudly, exactly as the seed refuses them:
+
+* **No entropy, no record.** ΔG = ΔH - TΔS needs S°.  A compound whose ΔfH° is sourced but whose S° is NOT
+  cleanly sourced does not get a fabricated S° -- it gets an entry in :data:`EXTENDED_THERMO_GAPS` naming what
+  was found and what is missing.  Paracetamol is exactly this case (see the litmus note below).
+* **Phase consistency.** Every value is the 298.15 K, 1 bar standard-state value in the phase named; mixing a
+  gas ΔfH° into a condensed-phase balance is the silent convention error the repo warns against.
+
+The paracetamol litmus, honestly
+--------------------------------
+The north-star step is ``4-aminophenol + acetic anhydride -> paracetamol + acetic acid``.  Its ΔG is still
+``UNKNOWN`` after M3 -- and the reason is now *precise and sourced*, not a blanket gap:
+* **acetic acid** (l): fully sourced here -> usable.
+* **paracetamol** (cr): ΔfH°(cr) = -410.4 kJ/mol is real and sourced (Picciochi 2010, the same DOI the
+  decompiler-thermo pass cites), but no standard molar entropy S°(cr, 298 K) is cleanly sourced (only an
+  entropy of *fusion*) -> a documented gap, not a fabricated S°.
+* **4-aminophenol** (s) and **acetic anhydride** (l): entropy/consistent-phase data not sourced here.
+So M3 sources what genuinely exists (paracetamol's formation enthalpy skeleton) and refuses what does not
+(its entropy), and the step stays honestly ``UNKNOWN`` -- the correct behaviour, loud about exactly which
+species and which quantity blocks it.
+"""
+from __future__ import annotations
+
+from .thermo import DEFAULT_THERMO, ThermoRef, ThermoTable
+
+__all__ = [
+    "EXTENDED_THERMO_REFS",
+    "EXTENDED_THERMO_GAPS",
+    "extended_thermo",
+]
+
+_NIST = "NIST Chemistry WebBook (webbook.nist.gov), U.S.-gov public domain"
+
+#: Broader sourced 298.15 K, 1 bar standard-state records -- each VERIFIED against the NIST WebBook, each
+#: naming the specific measurement (author, year) its ΔfH° and S° came from.  Every one unlocks its combustion
+#: (CO2/H2O/O2 seeded).  Injectable and additive to the seed; NOT a whitelist and NOT re-sourced from memory.
+EXTENDED_THERMO_REFS: tuple[ThermoRef, ...] = (
+    ThermoRef(
+        "CH4O", "methanol", -239.5, 127.19, "liquid",
+        f"ΔfH° -239.5±0.2 (Chao & Rossini 1965); S° 127.19 (Carlson & Westrum 1971); {_NIST}",
+    ),
+    ThermoRef(
+        "C2H6O", "ethanol", -277.0, 159.86, "liquid",
+        f"ΔfH° NIST avg of 6 exptl -276±2 (CRC/CODATA -277.0, agrees); S° 159.86 "
+        f"(Haida & Suga 1977, adiabatic calorimetry); {_NIST}",
+    ),
+    ThermoRef(
+        "CH2O2", "formic acid", -425.09, 131.84, "liquid",
+        f"ΔfH° -425.09 (Guthrie 1974); S° 131.84 (Stout & Fisher 1941); {_NIST}",
+    ),
+    ThermoRef(
+        "C2H4O2", "acetic acid", -483.52, 158.0, "liquid",
+        f"ΔfH° -483.52±0.36 (Steele, Chirico et al. 1997, combustion cal.); S° 158.0 "
+        f"(Martin & Andon 1982); {_NIST}",
+    ),
+    ThermoRef(
+        "C3H6O", "acetone", -249.4, 200.4, "liquid",
+        f"ΔfH° -249.4±0.63 (Wiberg, Crocker et al. 1991); S° 200.4 (Kelley 1929); {_NIST}",
+    ),
+    ThermoRef(
+        "C6H6", "benzene", 49.0, 173.26, "liquid",
+        f"ΔfH° +49.0±0.9 (Roux, Temprado et al. 2008); S° 173.26 (Oliver, Eaton et al. 1948); {_NIST}",
+    ),
+)
+
+
+#: Composition -> why no usable 298 K standard-state record is stored (documented, never a silent absence).
+#: A chemist sees that a value was sought and exactly what is missing, rather than an empty gap.
+EXTENDED_THERMO_GAPS: dict[str, str] = {
+    "C8H9NO2": (
+        "paracetamol: ΔfH°(cr, 298 K) = -410.4±1.3 kJ/mol IS sourced (Picciochi, Diogo & Minas da Piedade, "
+        "J. Therm. Anal. Calorim. 2010, DOI 10.1007/s10973-009-0634-y), but no standard molar entropy "
+        "S°(cr, 298 K) is cleanly sourced (only an entropy of fusion, 59.8 J/K/mol) -> ΔG cannot be formed "
+        "without fabricating S°; refused. The acetylation step therefore stays UNKNOWN on the entropy gap"
+    ),
+    "C6H7NO": (
+        "4-aminophenol: two gas-phase ΔfH° sources disagree by 9 kJ/mol (per the decompiler-thermo pass), "
+        "and no consistent-phase 298 K ΔfH°+S° pair is sourced here -> UNKNOWN, not extrapolated"
+    ),
+    "C4H6O3": (
+        "acetic anhydride: a liquid ΔfH° exists (~-625 kJ/mol, Guthrie 1974 / Pedley 1986) but no sourced "
+        "298 K liquid S° to pair with it here -> UNKNOWN until an entropy is sourced"
+    ),
+}
+
+
+def extended_thermo(base: ThermoTable = DEFAULT_THERMO) -> ThermoTable:
+    """The seed extended with the broader sourced 298 K set -- the download-and-go thermo table for M1/M2.
+
+    Additive to ``base`` (the litmus seed by default): pass a caller's own table to layer these on top of it.
+    A composition in :data:`EXTENDED_THERMO_GAPS` deliberately gets NO record (its ΔG stays a loud UNKNOWN).
+    """
+    return base.with_records(*EXTENDED_THERMO_REFS)

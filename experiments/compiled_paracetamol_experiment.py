@@ -37,6 +37,7 @@ from fractions import Fraction
 from smartchem.conditions import ConditionEnvelope, Interval
 from smartchem.contracts import EvidenceStatus
 from smartchem.data.stability import DEFAULT_STABILITY, StabilityRef
+from smartchem.data.thermo_extended import EXTENDED_THERMO_GAPS, EXTENDED_THERMO_REFS, extended_thermo
 from smartchem.experiment import (
     Bucket,
     ConstraintBox,
@@ -289,6 +290,31 @@ def main() -> int:
     f.check(verify_equilibrium(ranked_eq[0].route).verdict == "ESSENTIALLY_COMPLETE",
             "ranking floats the ESSENTIALLY_COMPLETE route above the negligible-equilibrium one")
 
+    # -- M3: thermochemistry breadth -- the extended sourced table unlocks M1/M2 beyond the seed --------
+    print("\n[M3 breadth] the extended NIST-sourced table unlocks ΔG/K beyond the litmus seed:", flush=True)
+    ext = extended_thermo()
+    ETHANOL = parse_smiles("CCO")
+    ethanol_burn = ExperimentStep.assembling(
+        CO2, (ETHANOL, O2, O2, O2), (CO2, CO2, WATER, WATER, WATER))                # C2H6O + 3O2 -> 2CO2 + 3H2O
+    f.check(feasibility_of_step(ethanol_burn).direction is FeasibilityDirection.UNKNOWN,
+            "ethanol combustion is UNKNOWN on the 8-species seed (ethanol not seeded)")
+    fe = feasibility_of_step(ethanol_burn, thermo=ext)
+    print(f"  C2H6O + 3O2 -> 2CO2 + 3H2O : {fe.direction.value}/{fe.grade.value}, "
+          f"ΔG = {fe.delta_g_kj:.1f} kJ/mol (textbook ~-1325)", flush=True)
+    f.check(fe.direction is FeasibilityDirection.FAVORABLE and abs(fe.delta_g_kj - (-1325.0)) < 15.0,
+            "the extended table recovers ethanol combustion's textbook ΔG ~ -1325 kJ (the instrument reads true)")
+    f.check(equilibrium_of_step(ethanol_burn, thermo=ext).extent is EquilibriumExtent.ESSENTIALLY_COMPLETE,
+            "M2 reaches the unlocked reaction too: ethanol combustion is ESSENTIALLY_COMPLETE at equilibrium")
+    f.check(all(r.formula != "C8H9NO2" for r in EXTENDED_THERMO_REFS)
+            and ext.for_formula("C8H9NO2") is None,
+            "no fabricated paracetamol thermo record exists (its ΔfH° is sourced, its S° is NOT)")
+    f.check("C8H9NO2" in EXTENDED_THERMO_GAPS
+            and ("entropy" in EXTENDED_THERMO_GAPS["C8H9NO2"] or "S" in EXTENDED_THERMO_GAPS["C8H9NO2"]),
+            "the paracetamol litmus gap is DOCUMENTED (entropy S° unsourced), never papered over")
+    para_ext = feasibility_of_step(anhydride_route().steps[0], thermo=ext)
+    f.check(para_ext.direction is FeasibilityDirection.UNKNOWN and para_ext.missing,
+            "paracetamol's acetylation step stays honestly UNKNOWN under the extended table (the entropy gap holds)")
+
     # -- the drafted procedure a chemist reads --------------------------------------------------------
     print("\n[draft] the chemist-facing procedure for the winning route:", flush=True)
     draft = draft_procedure(anhydride_route(pres=(1, 1)), feed={AMP: 1, ANH: Fraction(6, 5)})
@@ -313,8 +339,8 @@ def main() -> int:
     print(f"VERDICT: PASS -- all {f.checks} acceptance criteria hold. The Experiment Compiler certifies "
           "steps, refuses the degenerate route on a sourced fact, fits routes to a real bench, computes an "
           "exact ceiling, grades regiochemical selectivity, DERIVED thermodynamic feasibility (ΔG) and the "
-          "DERIVED equilibrium extent (K = exp(-ΔG/RT)), and drafts a chemist-usable procedure -- universal "
-          "and bucket-honest throughout.",
+          "DERIVED equilibrium extent (K = exp(-ΔG/RT)) over a NIST-sourced thermo table broadened to reach "
+          "real bench targets, and drafts a chemist-usable procedure -- universal and bucket-honest throughout.",
           flush=True)
     return 0
 

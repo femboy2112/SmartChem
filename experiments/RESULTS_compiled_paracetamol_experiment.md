@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (36/36), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (42/42), exit 0**
 
 ## The question
 
@@ -11,7 +11,7 @@ and draft a chemist-usable procedure — all under the **known-not-new-physics**
 chemistry; never invent a feasibility/kinetics/yield model)? Not *"does the synthesis work"* — W3 forbids
 that — but every fact the compiler asserts must hold, and every refusal must cite a sourced fact.
 
-## What ran, and what held (36/36)
+## What ran, and what held (42/42)
 
 | Rung | Criterion | Result |
 |------|-----------|--------|
@@ -49,6 +49,12 @@ that — but every fact the compiler asserts must hold, and every refusal must c
 | M2 | a **Δn≠0** reaction's conversion is a **loud UNKNOWN** (needs a reference state) — but its K is DERIVED | PASS |
 | M2 | paracetamol acetylation equilibrium is a **loud UNKNOWN** (no seed thermo), never a fabricated K | PASS |
 | M2 | ranking **floats the ESSENTIALLY_COMPLETE route above** the negligible-equilibrium one | PASS |
+| M3 | ethanol combustion is **UNKNOWN on the 8-species seed** (ethanol not seeded) | PASS |
+| M3 | the **extended NIST-sourced table recovers** ethanol combustion's textbook ΔG ≈ −1325 kJ (unlock + instrument) | PASS |
+| M3 | M2 reaches the unlocked reaction too — ethanol combustion is **ESSENTIALLY_COMPLETE** at equilibrium | PASS |
+| M3 | **no fabricated paracetamol thermo record** exists (its ΔfH° is sourced, its S° is not) | PASS |
+| M3 | the paracetamol litmus gap is **DOCUMENTED** (entropy S° unsourced), never papered over | PASS |
+| M3 | paracetamol's acetylation step **stays honestly UNKNOWN** under the extended table (the entropy gap holds) | PASS |
 
 ## The ledger completed this arc (E1 depth · coverage/autoload · E5 · CLI)
 
@@ -97,6 +103,12 @@ at best.* The heat is honestly `UNKNOWN` (paracetamol has no sourced 0 K formati
 - **Universal engine, sourced data.** Formal layers (E0/E1-logic/E2/equipment) run on any parsed molecule;
   the stability/thermo data is a SEED that degrades to a loud `UNKNOWN` and is injectable per call — proven
   by the off-seed lever above. Not a whitelist.
+- **M3 breadth, sourced not recalled.** The extended thermo table (`data/thermo_extended.py`) broadens M1/M2
+  beyond the 8-species seed with common organics whose 298 K ΔfH°+S° were **verified against the NIST
+  WebBook**, each carrying its measurement's author/year — never a number recalled from memory (this repo has
+  a documented history of memory-recall poisoning). The paracetamol litmus is *honestly half-unlocked*: its
+  ΔfH°(cr) = −410.4 is sourced, but no S°(cr) is cleanly sourced, so its ΔG stays `UNKNOWN` on a **documented
+  entropy gap** — the correct refusal, loud about exactly which species and quantity blocks it.
 - **Sourced-model gaps, stated:** the pressure-dependence of phase (Clausius–Clapeyron) is not attempted by
   E1; the M2 equilibrium conversion is exact only for Δn=0 under an ideal reference (Δn≠0 needs a caller's
   sourced activity model — a loud `UNKNOWN`, never a guess). Equipment selection is standard bench practice,

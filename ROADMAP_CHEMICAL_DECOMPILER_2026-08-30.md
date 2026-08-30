@@ -1190,3 +1190,96 @@ entry point: enumerate -> autoload -> fit/rank against the bench -> print the to
   (not just SMILES) warming in the fetch script.
 * **E5 selectivity.** The generator is structure-level; isomer-keyed evidence (N- vs O-acylation) still
   rides on the decompiler's structure layer, not yet surfaced in the route ranking.
+
+## Part 21 -- The governing frame CORRECTED, the short-term ledger built, the rest re-sequenced
+
+### The operator's correction (this session): the wall is narrower than Part 18 drew it
+
+Part 18's W3 said M-5 "never predicts which path Nature takes, a real yield, a real rate, or the
+feasibility of an unsourced reaction." That was too strict, and inconsistent with what the repo already
+does one vertical over: the PySCF oracle does not *look up* an atomization energy, it **computes** one from
+CCSD(T) -- an established, validated theory -- calibrated on known cases, envelope stated, fail-closed
+outside it. That is exactly "encode the law, *derive* the datum you don't have stored." The decompiler /
+M-5 side was simply more timid than the oracle side.
+
+**The corrected mission.** Encode physics/chemistry *as it stands today*, then over **all formal linear
+combinations of atoms / chemicals / reactions**, emit a *graded* verdict:
+
+* **KNOWN** -- matches a sourced datum, or is a pure conservation truth.
+* **DERIVED** -- an established, validated model computes it *inside* its calibrated envelope (interpolation).
+* **PREDICTED** -- theory predicts it *past* the calibration window (extrapolation): lower-confidence,
+  envelope-flagged.
+* **HYPOTHESIZED** -- theory is silent or underdetermined; a candidate, not a claim.
+* **REFUTED / physically-unreal** -- established physics *forbids* it, and we name the law that forbids it
+  (conservation, valence, an adverse ΔG, a sourced incompatibility).
+* **UNKNOWN** -- genuinely no validated model reaches it (loud, value-less).
+
+The two hard refusals **survive, narrowed**: (1) never **contradict** established physics while presenting
+it as established; (2) never **fabricate** a law/model and pass it off as known. A genuine, well-founded
+hole in physics is *allowed* -- but it enters the ledger flagged as exactly that: a claim *against* current
+theory, carrying its own burden of proof. The discipline that never moves: calibrate-on-known,
+state-the-envelope, fail-closed-outside, label-every-output. We **do** say which isomer forms, whether a
+reaction is feasible, its equilibrium extent -- **wherever a validated model reaches it, wearing its
+grade** -- and we stay UNKNOWN, never fabricate, where none does. (Supersedes Part 18's four buckets by
+*splitting* the old blanket "UNKNOWN unless sourced" into DERIVED / PREDICTED / HYPOTHESIZED / REFUTED /
+UNKNOWN; the four buckets remain the *labels on a Quantity*, this is the *verdict on a combination*.)
+
+### Short-term ledger -- BUILT this session
+
+* **E5 isomer-keyed regiochemical selectivity (`efcd178`).** The first manifestation of the corrected
+  frame. `smartchem/experiment/selectivity.py`: a sourced, injectable `SelectivityTable` keyed by the
+  reactant composition and matched against the product's STRUCTURAL identity -- the exact gap
+  `decompiler_conditions.py` named ("does not distinguish N- vs O-acetylation"). A step making the sourced
+  major isomer is `FAVORED`; a different registered isomer of the same formula is `DISFAVORED`; competing
+  isomers with no sourced fact are `UNKNOWN`; a single-isomer formula is `NOT_APPLICABLE` (the vacuous-green
+  guard -- never a manufactured preference). Wired into `rank_routes` as a first-class tiebreaker after
+  composability (FAVORED > UNKNOWN/NA > DISFAVORED) and rendered in the draft. Gate: targeting the O-acetyl
+  ester is DISFAVORED, the anhydride route to paracetamol FAVORED and ranks first. Gate 25/25.
+* **Name-based warming + honest provider extension point (`9755294`).** `structure_by_name` (offline
+  registry resolver) + PubChem `resolve_smiles` (live, pure parser fixture-tested) close the "name-only
+  warming not wired" gap: a name becomes a structure (the cache key) via registry -> PubChem -> loud skip.
+  Provider breadth is documented as a ready extension point; NIST/ChEBI are NOT fabricated (adding one means
+  capturing a real fixture, per the no-invented-data-contract ethos). Suite 2096.
+
+### Mid-term, re-sequenced -- the DERIVED bucket (established thermodynamic models, oracle discipline)
+
+Ordered by leverage; each is an ESTABLISHED validated model on SOURCED inputs, labelled DERIVED with its
+envelope -- reproduce known chemistry, never invent it.
+
+1. **M1 -- thermodynamic feasibility (ΔG_rxn) as a first-class step verdict.** ΔG = ΔH - TΔS from sourced
+   formation enthalpies + standard entropies (atop the repo's 0 K dfH machinery). ΔG < 0 -> spontaneous in
+   the written direction; ΔG > 0 -> non-spontaneous (a *sourced* REFUTED-in-this-direction, the honest core
+   of "physically likely unreal"). The keystone: it turns "feasibility" from a blanket UNKNOWN into a graded
+   verdict. Boundary stated loudly: thermodynamics says *whether*, not *how fast* (kinetics is L1).
+2. **M2 -- equilibrium extent / K.** K = exp(-ΔG/RT); the equilibrium-limited ceiling -- a DERIVED upper
+   bound *tighter* than E2's 100% conservation ceiling where ΔG is known. "Real yield" in the
+   thermodynamic-equilibrium sense, labelled equilibrium-not-kinetics, never a kinetic yield claim.
+3. **M3 -- seed thermochemistry breadth.** A sourced 298 K -> 0 K reduction path (or a broader open dataset)
+   so ΔH / ΔG / K reach drug-sized targets. Coverage that *unlocks* M1/M2 beyond the seed; not a new
+   capability. (Was the standing "seed thermochemistry breadth" item.)
+4. **M4 -- convergent-route DAGs.** `ExperimentRoute` is linear and E5 recurses on ONE missing precursor;
+   a convergent synthesis DAG (two sub-routes feeding one step) is the next structural shape, orthogonal to
+   the thermo work. (Was the standing "convergent routes" item.)
+
+### Long-term / research -- the PREDICTED + REFUTED frontier, and deeper formal completeness
+
+* **L1 -- kinetics / rate via transition-state theory.** The honest "real rate": a computed or sourced
+  activation barrier -> Eyring/Arrhenius rate, DERIVED within TST's envelope (the PySCF oracle can in
+  principle supply the barrier), UNKNOWN otherwise. Expensive, narrow envelope, strictly labelled -- the
+  corrected frame's boldest reach, and the one most easily abused into fabrication if the discipline slips.
+* **L2 -- the unified classifier (the mission, made literal).** A single graded verdict
+  (KNOWN/DERIVED/PREDICTED/HYPOTHESIZED/REFUTED/UNKNOWN) over ANY formal combination, composing conservation
+  (E0/E2) + thermodynamic feasibility (M1) + equilibrium (M2) + selectivity (this session) + sourced data +
+  the oracle. This is what makes "systematically parse ALL formal linear combinations and judge which are
+  legitimate / hypothesized / physically unreal" a literal capability rather than a slogan.
+* **L3 -- decompiler formal completeness R3-R5.** R3 recursive ionic descent, R4 cross-level radical ledger,
+  R5 fragment evidence + naming coverage (Part 17's ledger). Refinements to a sound skeleton, atop the
+  permanent physical wall below.
+
+### The permanent wall, corrected
+
+The ONLY permanent refusals are (1) asserting a chemistry that **contradicts** an established, sourced fact
+while presenting it as established, and (2) **fabricating** a law/model with no grounding. Everything a
+validated model reaches is fair game, labelled by grade. A well-founded discovery of a *hole* in current
+theory is permitted -- flagged as a claim against theory, never smuggled in as settled. That is the ethos,
+sharpened, not a gap.

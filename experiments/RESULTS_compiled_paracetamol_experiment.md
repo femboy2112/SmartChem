@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (20/20), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (25/25), exit 0**
 
 ## The question
 
@@ -11,7 +11,7 @@ and draft a chemist-usable procedure — all under the **known-not-new-physics**
 chemistry; never invent a feasibility/kinetics/yield model)? Not *"does the synthesis work"* — W3 forbids
 that — but every fact the compiler asserts must hold, and every refusal must cite a sourced fact.
 
-## What ran, and what held (17/17)
+## What ran, and what held (25/25)
 
 | Rung | Criterion | Result |
 |------|-----------|--------|
@@ -33,6 +33,11 @@ that — but every fact the compiler asserts must hold, and every refusal must c
 | E5 | rediscovers the **acetic-anhydride** acetylation of 4-aminophenol from the decompiler | PASS |
 | E5 | rediscovers the **acetic-acid condensation** route from the decompiler | PASS |
 | E5 | returns a **loud empty** (no route) from an empty inventory, never a fabricated route | PASS |
+| E5+ | the amide (paracetamol) is the **sourced FAVORED** product of acetylating 4-aminophenol | PASS |
+| E5+ | the **O-acetyl ester** from the same reactants is `DISFAVORED` (major product is the amide) | PASS |
+| E5+ | the ketene acetylation carries **no sourced N-/O-selectivity** → a loud `UNKNOWN`, never fabricated | PASS |
+| E5+ | ranking **floats the FAVORED (right-isomer) route above** the disfavored one | PASS |
+| E5+ | the draft **surfaces the sourced regiochemistry** (this route makes the major isomer) | PASS |
 
 ## The ledger completed this arc (E1 depth · coverage/autoload · E5 · CLI)
 

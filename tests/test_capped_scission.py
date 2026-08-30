@@ -197,3 +197,46 @@ class TestAmideVersusEsterHydrolysis:
         assert ("C", "N") in amide_hetero
         assert ("C", "O") in ester_hetero
         assert amide_hetero != ester_hetero
+
+
+class TestGeneralCapping:
+    """G3: any-order cuts + a full perfect matching over open ends -> higher-order and ring-forming
+    rewrites the order-1 reactant-to-reagent bijection could not represent. Soundness is unchanged
+    (the CappedScission certificate filters every candidate); only the reach grew."""
+
+    def test_olefin_metathesis_is_an_order_two_whole_bond_swap(self):
+        from smartchem.smiles import parse_smiles
+        butene, ethylene, propene = parse_smiles("CC=CC"), parse_smiles("C=C"), parse_smiles("CC=C")
+        edges, complete = capped_scissions(butene, (ethylene,), budget=200_000)
+        assert complete
+        # 2-butene + ethylene -> 2 propene: two C=C cut, two C=C formed -- pure order-2, impossible
+        # for an order-1 capper
+        hit = [e for e in edges if [p.canonical() for p in e.products].count(propene) == 2]
+        assert hit, "metathesis to two propene was not derived"
+        assert hit[0].forget().equation() == "C4H8 + C2H4 -> 2 C3H6"
+
+    def test_ring_forming_cap_produces_a_cyclic_product(self):
+        # reactant-end-to-reactant-end caps close a ring in a product -- needs >=2 cuts and the full
+        # perfect matching (a reactant-to-reagent bijection can only ever produce trees/acyclic joins)
+        from smartchem.smiles import parse_smiles
+        glycol, water = parse_smiles("OCCO"), parse_smiles("O")
+        edges, _ = capped_scissions(glycol, (water,), max_reactant_cuts=2, budget=300_000)
+
+        def is_ring(m):
+            return len(m.atoms) > 2 and len(m.bonds) >= len(m.atoms)   # a connected graph with a cycle
+
+        assert any(is_ring(p) for e in edges for p in e.products), "no ring-forming rewrite was derived"
+
+    def test_order_one_hydrolysis_is_unchanged(self):
+        # the whole existing capability is a subset: the real paracetamol hydrolysis still derives
+        edges, _ = capped_scissions(PARACETAMOL, (WATER,))
+        assert any({p.canonical() for p in e.products} == {AMINOPHENOL, ACETIC} for e in edges)
+
+    def test_every_emitted_edge_forgets_to_a_valid_mediated_edge(self):
+        # regression for the element-product forget bug the general capper surfaced (a capped H2/O2
+        # product must bucket to unit elements, not a multi-atom element formula)
+        from smartchem.smiles import parse_smiles
+        glycol, water = parse_smiles("OCCO"), parse_smiles("O")
+        edges, _ = capped_scissions(glycol, (water,), max_reactant_cuts=2, budget=300_000)
+        for e in edges:
+            e.forget()                         # must not raise -- every rewrite has a formula-level image

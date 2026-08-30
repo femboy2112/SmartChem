@@ -45,7 +45,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from itertools import combinations, combinations_with_replacement, permutations, product
+from itertools import combinations, combinations_with_replacement, product
 
 from .category import Bond, Molecule
 from .contracts import Digestible, canonical_digest
@@ -452,6 +452,30 @@ def _degree(bonds: frozenset[Bond], index: int) -> int:
     return sum(b.order for b in bonds if index in (b.i, b.j))
 
 
+def _perfect_matchings(n: int):
+    """Yield every way to pair up ``0..n-1`` (n even), each as a list of ``(i, j)`` index pairs.
+
+    ``(n-1)!!`` matchings -- the general enumeration a capper needs: pairing the *open ends* freely
+    (not a reactant-to-reagent bijection) is exactly what admits a reactant-end-to-reactant-end cap,
+    i.e. a ring-forming rewrite. The caller filters each pairing by equal-order and by the
+    :class:`CappedScission` certificate, and bounds the count with a budget.
+    """
+    if n % 2 != 0:
+        return
+    order = list(range(n))
+
+    def rec(remaining: list[int]):
+        if not remaining:
+            yield []
+            return
+        first, rest = remaining[0], remaining[1:]
+        for k in range(len(rest)):
+            for sub in rec(rest[:k] + rest[k + 1:]):
+                yield [(first, rest[k])] + sub
+
+    yield from rec(order)
+
+
 @dataclass(frozen=True)
 class CappedScission(Digestible):
     """A valence-preserving bond rewrite: break ``cut`` bonds and form ``caps`` bonds, then read off
@@ -583,7 +607,16 @@ class CappedScission(Digestible):
             counts: dict[Formula, int] = {}
             for m in mols:
                 f = _formula(m)
-                counts[f] = counts.get(f, 0) + 1
+                if f.is_element:
+                    # a single-element product (H2 from capping two H ends, O2, ...) forgets to its
+                    # unit element bucket carrying the atom count -- MediatedEdge's element convention,
+                    # the same collapse ScissionEdge.forget performs. The general capper can now
+                    # produce these where the order-1 capper never did.
+                    (symbol, count), = f.counts
+                    bucket = Formula.bucket(symbol)
+                    counts[bucket] = counts.get(bucket, 0) + count
+                else:
+                    counts[f] = counts.get(f, 0) + 1
             return tuple(sorted(counts.items(), key=lambda pm: ((pm[0].counts, pm[0].charge), pm[1])))
 
         return MediatedEdge(
@@ -617,53 +650,66 @@ def capped_scissions(
     that fails to cleave, conserve valence, or consume its reagents.
 
     ``max_reactant_cuts = 1`` (the default) is single-bond hydrolysis -- amide/ester cleavage,
-    hydrogenolysis -- reproducing the earlier bounded behaviour exactly.  ``k = 2`` reaches
-    double-hydrolysis (a diester to two acids + a diol needs two water) and multi-site cleavage;
-    higher orders multiply the search.  Every valence-valid rewrite is emitted -- including chemically
-    odd ones -- because the engine enumerates structure; *which* products are real compounds is the
-    data layer's job.  Returns ``(edges, complete)``; ``complete`` is ``False`` iff ``budget`` was hit.
+    hydrogenolysis. ``k = 2`` reaches double-hydrolysis (a diester to two acids + a diol needs two
+    water) and multi-site cleavage; higher orders multiply the search.  Every valence-valid rewrite is
+    emitted -- including chemically odd ones -- because the engine enumerates structure; *which*
+    products are real compounds is the data layer's job.  Returns ``(edges, complete)``; ``complete``
+    is ``False`` iff ``budget`` was hit.
 
-    Still bounded (documented gaps, not silently attempted): higher-ORDER cuts and caps (a double bond
-    opens order-2 ends), ring-forming caps (reactant-end to reactant-end), and heterolytic/charged
-    caps -- these are Part 13 BUILD items 2 (remainder) and 6.
+    General over order and topology (G3): a cut bond may be of any order, and the ``2k`` reactant plus
+    ``2k`` reagent open ends are paired by a full **perfect matching** (not a reactant-to-reagent
+    bijection), so a reactant-end-to-reactant-end cap -- a **ring-forming** rewrite -- is enumerated
+    alongside the substitutions. A cap only joins two ends of EQUAL order (a single bond restoring both
+    valences), and every candidate is filtered by the :class:`CappedScission` certificate, so soundness
+    is unchanged; only the reach grew. Still out of scope (documented, not silently attempted):
+    partial bond-order change (addition ACROSS a double bond, which is not a whole-bond rewrite) and
+    heterolytic/charged caps -- the latter is :class:`HeterolyticScission` (Part 13 item 6).
     """
     if type(reactant) is not Molecule:
         raise TypeError("reactant must be a Molecule")
     if type(reagents) is not tuple or not reagents or any(type(r) is not Molecule for r in reagents):
         raise TypeError("reagents must be a non-empty tuple of reagent-TYPE Molecules")
-    reagent_types = [r for r in reagents if any(b.order == 1 for b in r.bonds)]
+    reagent_types = [r for r in reagents if r.bonds]
     if not reagent_types:
         return (), True
-    r_order1 = [b for b in sorted(reactant.bonds) if b.order == 1]
+    r_bonds = sorted(reactant.bonds)
     out: dict[str, CappedScission] = {}
     work = 0
     for k in range(1, max_reactant_cuts + 1):
-        for rcuts in combinations(r_order1, k):
-            reactant_ends = [end for b in rcuts for end in (b.i, b.j)]  # 2k reactant open ends
+        for rcuts in combinations(r_bonds, k):
+            r_ends = [(b.i, b.order) for b in rcuts] + [(b.j, b.order) for b in rcuts]  # 2k ends
             for type_choice in combinations_with_replacement(range(len(reagent_types)), k):
                 reagent_mols = tuple(reagent_types[i] for i in type_choice)
-                bond_options = [[b for b in sorted(m.bonds) if b.order == 1] for m in reagent_mols]
+                bond_options = [sorted(m.bonds) for m in reagent_mols]
                 _atoms, _bonds, offsets = _join(reactant, reagent_mols)
                 for chosen in product(*bond_options):
                     reagent_cut: list[Bond] = []
-                    reagent_ends: list[int] = []
+                    g_ends: list[tuple[int, int]] = []
                     for inst, b in enumerate(chosen):
                         off = offsets[1 + inst]
                         reagent_cut.append(Bond(b.i + off, b.j + off, b.order))
-                        reagent_ends += [b.i + off, b.j + off]  # 2k reagent open ends
+                        g_ends += [(b.i + off, b.order), (b.j + off, b.order)]  # 2k reagent ends
                     cut = tuple(sorted(list(rcuts) + reagent_cut))
-                    for pairing in permutations(reagent_ends):
+                    ends = r_ends + g_ends
+                    for matching in _perfect_matchings(len(ends)):
                         work += 1
                         if work > budget:
                             return tuple(sorted(out.values(), key=lambda e: e.digest)), False
-                        caps = tuple(sorted(
-                            Bond(re, me, 1) for re, me in zip(reactant_ends, pairing)
-                        ))
-                        if len({(b.i, b.j) for b in caps}) != len(caps):
+                        caps: list[Bond] = []
+                        valid = True
+                        for i, j in matching:
+                            (a, oa), (b, ob) = ends[i], ends[j]
+                            if oa != ob or a == b:       # a cap joins equal-order ends of distinct atoms
+                                valid = False
+                                break
+                            caps.append(Bond(a, b, oa))
+                        if not valid:
+                            continue
+                        if len({(c.i, c.j) for c in caps}) != len(caps):
                             continue  # two caps on the same atom pair -> not a simple graph
                         try:
                             edge = CappedScission(
-                                CAPPED_SCISSION_SCHEMA, reactant, reagent_mols, cut, caps
+                                CAPPED_SCISSION_SCHEMA, reactant, reagent_mols, cut, tuple(sorted(caps))
                             )
                         except ScissionError:
                             continue  # not cleaving / not valence-preserving / pass-through -> dropped

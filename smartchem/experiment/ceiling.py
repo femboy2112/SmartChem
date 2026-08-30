@@ -20,8 +20,9 @@ rationals (``int`` or :class:`~fractions.Fraction`, in mol); a ``float`` is refu
 importing binary imprecision into a bucket whose whole claim is exactness -- convert grams->mol to a
 Fraction at the boundary.
 
-W3: an idealised bound at 100% efficiency, labelled as one.  It never claims the reaction reaches this,
-which requires a real yield -- physics the compiler does not predict.
+This is a CONSERVATION bound at 100% efficiency, labelled as one.  It never claims the reaction *reaches*
+this -- reaching it is a matter of YIELD, which this conservation number does not assert.  (A sourced
+thermodynamic equilibrium extent is a tighter, DERIVED bound -- a separate, graded claim, not this one.)
 """
 from __future__ import annotations
 

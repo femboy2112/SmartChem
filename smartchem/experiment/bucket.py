@@ -10,11 +10,19 @@ non-interchangeable, exactly as :class:`~smartchem.contracts.EvidenceStatus` is:
   ceiling).  An idealised bound, never a claim about what actually happens.
 * ``COMPOSABILITY`` -- a constraint-satisfaction verdict over declared/sourced envelopes ("these two
   stated conditions contradict").  A logical refusal, not a prediction about chemistry.
-* ``KNOWN_SOURCED`` -- a value reproduced from a SOURCE or an ESTABLISHED, VALIDATED model, under the
-  oracle's calibrate/state-envelope/refuse discipline.  Reproduction of known chemistry.
-* ``UNKNOWN`` -- no source and no established model.  The honest gap.  Manufacturing a number here --
-  a novel feasibility/kinetics/yield model -- is the forbidden "new physics", so this bucket exists to
-  be emitted *loudly* instead.
+* ``KNOWN_SOURCED`` -- a value reproduced from a SOURCE or COMPUTED by an ESTABLISHED, VALIDATED model on
+  sourced inputs, under the oracle's calibrate/state-envelope/refuse discipline.  This covers both a
+  looked-up datum and one DERIVED (interpolated) or PREDICTED (extrapolated, flagged) from established
+  theory -- reproducing known chemistry, never inventing it.
+* ``UNKNOWN`` -- no source and no established model reaches it.  The honest gap.  Manufacturing a number
+  here -- a NOVEL (not-established) feasibility/kinetics/yield model, or a value contradicting a sourced
+  fact -- is the forbidden move, so this bucket exists to be emitted *loudly* instead.
+
+These four are the epistemic label on a single :class:`Quantity`.  They are the finer, per-value shadow of
+the whole-combination verdict the compiler grades a reaction with (KNOWN / DERIVED / PREDICTED /
+HYPOTHESIZED / REFUTED / UNKNOWN -- see the roadmap's governing frame): a DERIVED or PREDICTED verdict is
+carried by ``KNOWN_SOURCED`` quantities, a REFUTED verdict cites ``CONSERVATION`` / ``COMPOSABILITY`` /
+``KNOWN_SOURCED`` facts, and an UNKNOWN verdict is all ``UNKNOWN``.
 """
 from __future__ import annotations
 

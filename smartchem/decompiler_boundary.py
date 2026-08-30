@@ -5,11 +5,13 @@ because they are physical predictions, not the graph/conservation facts this pac
 boundary is not an unfinished feature; it is a line the engine must refuse to cross. This module
 turns that refusal from a paragraph into code, so a test can prove the line holds:
 
-* **Which cleavage actually happens** is not answered. The structure engine enumerates *every*
-  valence-valid rewrite; ranking them by reactivity or by computed-energy magnitude would be a
-  prediction. The only sanctioned ordering is :func:`evidence_ranking` -- order by SOURCED evidence
-  present (declared conditions, documented hazards), loudly ``UNRANKED`` when there is no basis. The
-  engine surfaces what is known and stops. Attach, never predict.
+* **Which cleavage actually happens** is not answered *by the formal engine itself*. The structure engine
+  enumerates *every* valence-valid rewrite; ordering them by an INVENTED, ungrounded reactivity heuristic
+  would be fabrication. :func:`evidence_ranking` orders by graded evidence -- SOURCED facts present
+  (declared conditions, documented hazards), loudly ``UNRANKED`` when there is no basis. Ordering by a
+  value from an ESTABLISHED, validated model (a computed feasibility/energy, each labelled with its grade)
+  is admissible and lives in the experiment-compiler layer (roadmap M1+), not here; the formal engine stays
+  enumerative and attaches graded evidence, it does not invent a ranking.
 * **Stereochemistry** is not represented (bond graphs are constitutional) and not claimed.
   :func:`stereo_status` *detects* where stereochemistry exists -- tetrahedral stereocentres, potential
   E/Z double bonds -- and reports it as ``CONSTITUTIONAL_ONLY``, so the silence is explicit and

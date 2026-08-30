@@ -7,8 +7,9 @@
 It enumerates candidate synthesis routes from the decompiler (E5), autoloads sourced stability data for
 every species (PubChem/Wikidata/Bradley, cached; ``--offline`` uses seed + cache only), fits and ranks the
 routes against the target bench (``--max-temp`` K, ``--max-pressure`` atm, the reagents on hand), and prints
-the top runnable route as a chemist-facing DRAFT -- under the "NOT a predicted synthesis" banner, every
-number in its epistemic bucket.  This is the "download and go" entry point.
+the top runnable route as a chemist-facing DRAFT -- under the honesty banner (no success guarantee, no
+kinetic rate; every other claim graded), every number in its epistemic bucket.  This is the "download and
+go" entry point.
 """
 from __future__ import annotations
 

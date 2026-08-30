@@ -864,3 +864,58 @@ evidence-annotated decomposition graph, with every *which-one-happens* judgment 
 **physical** ask ("give me the real reaction path") is answered `no` forever, and that `no` is the
 feature. **G1 is the single highest-leverage next build** — without it, every other rung only ever
 serves the two-dozen compounds already typed in.
+
+## Part 16 — Execution: Part 15's gap map built (bonds + G1–G5), the FORMAL half closed
+
+Part 15's five buildable gaps and the "bonds working fully" prerequisite are **built, verified,
+pushed** (commits `fa11f30`..`e646eca`; suite 1896 → 1971, zero regressions). The formal half of
+"recompile any chemical into its byproducts + conservation-valid decomposition tree" is now
+substantially closed; the physical half ("the real reaction path") remains the permanent W3 BOUNDARY.
+
+- **B — bonds working fully (`fa11f30`), the foundation.** The canonicaliser did only refinement
+  (nauty's first move) and RAISED on a vertex-transitive cell, so bare benzene / symmetric rings had
+  no canonical form. **Individualisation** (the second move, category #25) closes it: proven SOUND
+  (benzene's form is a genuine relabelling, brute-forced over all 518,400 labellings) and COMPLETE
+  (relabel-invariant, byte-exact), purely additive (reached only where refinement was already over
+  budget, so no prior form moves — the whole suite is the regression proof). **False-twin pruning**
+  makes it fast: cyclododecane 12,721 ms → 24.6 ms (516×), a former 30-s refusal now 53 ms. Honest
+  boundary kept: a complete graph K_n still refuses loudly. This was BOTH the "bonds" fix AND the
+  "efficient" win, and the prerequisite for G1.
+
+- **G1 — the front door (`66e7599`).** `smartchem/smiles.py`, a hand-rolled SMILES-subset parser
+  (no dependency, numpy-free-root-clean — RDKit was rejected as against the ethos). All 23 registered
+  species parse to their hand-entered structure CANONICAL-EQUAL. Aromatic all-carbon Kekulisation by
+  perfect matching; aromatic heteroatoms / malformed input refused loudly; constitutional-only (W3).
+  Ingestion is no longer the wall.
+
+- **G2 — bounded-depth descent (`4791f82`).** `structure_decompose(max_depth=k)` → the new
+  `COMPLETE_TO_DEPTH` status, a POSITIVE horizon guarantee distinct from full `COMPLETE` and from a
+  `REFUSED_BUDGET` truncation. Paracetamol depth-1 in 0.06 s / depth-2 in 1.2 s where the full descent
+  is ~7,750 edges / ~30 s. Proven: bounded edges are a SUBSET of the full descent (bounding never
+  invents), monotone in depth.
+
+- **G3 — general capping (`faaba2f`).** Any-order cuts + a full perfect matching over open ends
+  (equal-order pairs), filtered by the unchanged valence certificate. New reach: olefin metathesis
+  `2-butene + ethylene → 2 propene` (order-2 whole-bond swap) and ring-forming reactant-to-reactant
+  caps. Fixed a latent `forget()` bug the general capper surfaced (an element-only product H2 now
+  buckets to unit elements). Out of scope, documented: partial bond-order change (addition).
+
+- **G4 — redox + ionic descent (`b118de0`).** `RedoxHalfReaction` (`Fe2+ → Fe3+ + e-`), the
+  chemical↔EM bridge: the electron is a massless charge carrier (never `atom("e")`), charge is the
+  conserved quantity. `ionic_edges` wires heterolysis + redox into one node view; every ionic product
+  is labelled ION / electron, never a neutral compound. Boundary: heterolysis of an already-charged
+  ion (recursive ionic descent) is the next rung.
+
+- **G5 — widened byproduct evidence (`e646eca`), DATA.** Six common products (benzene, H2S,
+  acetaldehyde, ethylene, acetylene, phenol) registered via G1's `parse_smiles` + sourced hazard
+  records under the second-source discipline (multi-notifier / ECHA-harmonised GHS, minority
+  over-classifications rejected, load-bearing hazards surfaced). Thermo deliberately NOT added: the
+  research pass gave one 0 K value each and CCCBDB mirrors NIST WebBook for several (shared provenance,
+  not two independent bearings), so none clears the two-independent-source ESTABLISHED bar — recorded
+  as the honest next step, not faked. Registry 23 → 29.
+
+**Where the capability stands now.** A chemist can hand in a SMILES (G1), get a fast structure-resolved
+bounded decomposition (G2) with general rewrites (G3), ionic/redox routes (G4), and sourced byproduct
+evidence where covered (G5) — every physical which-one-happens judgment still theirs (W3). Remaining:
+broader sourced coverage (data, ongoing) and recursive ionic descent (a named next rung). The physical
+ask stays `no`, and that `no` is the feature.

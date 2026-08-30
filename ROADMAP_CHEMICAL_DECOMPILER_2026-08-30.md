@@ -1069,3 +1069,72 @@ and refuses or labels everything else.
 2. **Route direction.** A "synthesis path" is a decompiler descent read backwards (assembly). Confirm
    M-5 consumes an existing descent/assembly path object rather than re-deriving routes.
 3. **Where E2's ceiling gets its molar arithmetic** -- reuse `stoichiometry.py`'s exact integer kernel.
+
+## Part 19 -- Execution: M-5 the Experiment Compiler, BUILT (E0-E4), universal and bucket-honest
+
+The whole M-5 vertical is built and gated. `smartchem/experiment/` (E0-E4) + `smartchem/data/stability.py`
+(the sourced seed) + `experiments/compiled_paracetamol_experiment.py` (a 17/17 self-reporting gate).
+Commits `24a48d8` (E0+E1), `bce29e7` (E2+E3+E4+equipment). Full suite 2036 passed, ruff clean.
+
+### The load-bearing correction the operator made mid-build: works for ANY chemical
+
+The seed data tables are a **SEED, not a whitelist**. The design splits cleanly and the split is the whole
+answer: the FORMAL layers (E0 conservation, E1 composability *logic*, E2 ceiling, equipment-from-conditions)
+run on ANY `Molecule` the SMILES front door parses -- no per-compound branch anywhere. The DATA layers
+(stability thresholds, conditions, thermo) accept any molecule, are **injectable per call**
+(`StabilityTable.with_records`, a caller-supplied envelope), and degrade to a LOUD `UNKNOWN` on a gap --
+never a crash, never a silent guess. Proven in the gate: an off-seed molecule (ethyl acetate) flows through
+E0->E4, and an off-seed intermediate is `UNKNOWN` until sourced data is injected, then `COMPOSABLE`. This is
+fully consistent with known-not-new-physics: the *engine* is universal; the *data* is sourced-or-UNKNOWN.
+It never fabricates a threshold for a compound it has no source for.
+
+### What each rung became
+
+* **E0 `experiment/step.py`.** `ExperimentStep` = reactants -> products under a declared/unknown
+  `ConditionEnvelope`, conservation re-checked through `category.Reaction` (an independent dict-accumulation
+  path). `ExperimentRoute` is a linear chain (each step's target is the next step's intermediate).
+  `from_capped_scission` builds the SYNTHESIS step by reversing a `CappedScission` -- consuming an existing
+  path object, not re-deriving routes (**open decision #2, answered: yes**).
+* **E1 `experiment/composability.py`.** The "won't survive the transition" check as constraint satisfaction
+  over SOURCED stability windows: `COMPOSABLE` / `DEGENERATE(reason)` / `UNKNOWN`. The teeth are (a) a
+  non-isolable species (ketene -> DEGENERATE, the operator's own example) and (b) a decomposition-onset
+  exceedance, both citing the sourced fact + the two declared envelopes. Non-vacuity guarded: a single-step
+  route is `SINGLE_STEP`, never a vacuous `COMPOSABLE`; any `UNKNOWN` gap keeps the route off a clean pass.
+  Pressure is reported honestly but not turned into a survival verdict (Clausius-Clapeyron is a stated
+  sourced-model gap). **Open decision #1, answered:** a dedicated sourced seed table (`data/stability.py`),
+  isomer-specific, extensible per call.
+* **E2 `experiment/ceiling.py`.** The 100%-efficiency maximum by limiting reagent -- exact `Fraction`,
+  cross-checked against `stoichiometry.py`'s integer kernel (**open decision #3, answered: reuse it**), and
+  `route_ceiling` propagates it across a whole route. `CONSERVATION`-bucketed, an upper bound never a yield.
+* **E3 `experiment/accounting.py`.** Heat via the repo's established Hess's-law thermochemistry, rewired onto
+  a new isomer-correct resolver `decompiler_review.molecule_dfh_0k_range_kj` (the pre-existing
+  `molecule_dfh_0k_kj` missed water -- whose 0 K dfH lives in the reference table, not the tiered set --
+  which would have kept heat perpetually UNKNOWN); temperature/pressure/time/solvent from the DECLARED
+  envelope or a loud UNKNOWN. **No rate, no yield below the ceiling** -- the forbidden new-physics wall.
+* **equipment `experiment/equipment.py`.** The operator's "Bunsen and a few flasks / a volumetric" click,
+  inferred from DECLARED conditions (universal), each item tagged with its triggering condition; a flammable
+  medium forbids the open flame; sourced-hazard fume-hood containment (inform, never neuter); undeclared
+  conditions -> loud UNDETERMINED.
+* **E4 `experiment/drafter.py`.** `draft_procedure` composes E1-E3 + equipment into a chemist-facing DRAFT
+  under a "NOT a predicted synthesis" banner. The **constraint fitter** (`ConstraintBox` / `fit_routes` /
+  `rank_routes`) is a compiler backend with a target-machine description -- "paracetamol but no chemistry
+  above 1.5 bar, burner caps at 1200 C" -- that FITS/EXCLUDES/UNKNOWNs routes citing the exact violated
+  bound, floating runnable-and-sourced above UNKNOWN above DEGENERATE (the north-star litmus).
+
+### The four buckets, made a TYPE (`experiment/bucket.py`)
+
+Every number M-5 emits is a `Quantity` carrying its `Bucket` (CONSERVATION / COMPOSABILITY / KNOWN_SOURCED /
+UNKNOWN); an UNKNOWN carries no value and a KNOWN_SOURCED must carry a provenance -- the label cannot drift
+from the thing it labels. The refined W3 boundary is no longer a comment; it is enforced at construction.
+
+### What is left (honest ledger)
+
+* **E1 depth.** Pressure-dependent phase (Clausius-Clapeyron) and a sourced pressure-tolerance channel are
+  the stated next extension; today disjoint declared pressures are a reported caution, not a verdict.
+* **Coverage, not capability.** The seed stability/thermo tables are small on purpose. Widening them (or
+  wiring a sourced dataset / connector through the injectable provider) is coverage work, not a redesign --
+  the engine is already universal.
+* **Convergent routes.** `ExperimentRoute` is linear; a convergent synthesis DAG (two branches feeding one
+  step) is a documented next shape.
+* **Decompiler -> route generation.** M-5 consumes routes; auto-enumerating candidate synthesis routes from
+  a decompiler descent (then ranking them with `rank_routes`) is the natural E5 that closes the loop.

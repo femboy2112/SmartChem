@@ -93,6 +93,51 @@ class TestSpellingsAgree:
         assert parse_smiles("CC(=O)Nc1ccc(O)cc1") == parse_smiles("Oc1ccc(NC(C)=O)cc1")
 
 
+class TestResonanceCanonicalIdentity:
+    """R2: a fused benzenoid has several non-isomorphic Kekulé structures; the parser must give it ONE
+    drawing-invariant identity (the resonance-canonical / minimal form), or one molecule decomposes to
+    several different menus. Confirmed live on naphthalene (2 identities), anthracene (2), phenanthrene
+    (4); benzene / mono- / para-substituted rings are symmetric and were already invariant.
+    """
+
+    @staticmethod
+    def _kekule_orbit(smiles: str) -> set[str]:
+        """Every canonical digest reachable by re-matching the aromatic system -- the resonance orbit."""
+        from smartchem.contracts import canonical_digest
+        from smartchem.smiles import _aromatic_matchings, _fill_hydrogens, _parse_skeleton
+
+        atoms, bonds = _parse_skeleton(smiles)
+        charge = sum(a.charge for a in atoms)
+        arom, matchings = _aromatic_matchings(atoms, bonds)
+        digs = set()
+        for doubles in matchings:
+            for k in arom:
+                bonds[k][2] = 2 if k in doubles else 1
+            oa, ob = _fill_hydrogens(atoms, bonds)
+            digs.add(canonical_digest(Molecule(tuple(oa), frozenset(ob), charge).canonical()))
+        return digs
+
+    def test_naphthalene_kekule_forms_are_really_non_isomorphic(self):
+        # the bug is real, not hypothetical: naphthalene's Kekulé structures give >1 raw identity
+        assert len(self._kekule_orbit("c1ccc2ccccc2c1")) >= 2
+
+    def test_parse_returns_the_resonance_canonical_representative(self):
+        from smartchem.contracts import canonical_digest
+
+        for smi in ("c1ccc2ccccc2c1", "c1ccc2cc3ccccc3cc2c1", "c1ccc2ccc3ccccc3c2c1"):  # naph/anthr/phen
+            parsed = canonical_digest(parse_smiles(smi).canonical())
+            assert parsed == min(self._kekule_orbit(smi))   # the minimal orbit member, deterministically
+
+    def test_kekule_drawings_of_one_molecule_collapse_to_one_identity(self):
+        # three genuinely different SMILES traversals of naphthalene -> a single canonical identity
+        forms = {parse_smiles(s) for s in ("c1ccc2ccccc2c1", "c1cccc2ccccc12", "c1ccc2c(c1)cccc2")}
+        assert len(forms) == 1
+
+    def test_resonance_canonical_does_not_over_merge_distinct_isomers(self):
+        # collapsing Kekulé forms must NOT collapse real isomers: 1-naphthol and 2-naphthol differ
+        assert parse_smiles("Oc1cccc2ccccc12") != parse_smiles("Oc1ccc2ccccc2c1")
+
+
 class TestImplicitHydrogen:
     def test_carbon_fills_to_four(self):
         assert dict(parse_smiles("C").formula) == {"C": 1, "H": 4}

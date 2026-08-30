@@ -29,18 +29,23 @@ Scope (v1), stated as loud walls, never silent
   *claim* stereochemistry. A bond graph is constitution, not configuration.
 * **Disconnected SMILES** (``.``) are refused: a ``Molecule`` is one connected species.
 
-Aromatic identity boundary (honest): a substituted aromatic has several Kekulé structures that are
-distinct graphs. This parser picks one deterministically. For symmetric substitution -- benzene,
-mono-substituted, para-disubstituted (every ring in the registry) -- the Kekulé forms are isomorphic,
-so the canonical identity is invariant. For less symmetric substitution the identity is Kekulé-form-
-specific (the resonance boundary of Part 13 #10), stable and self-consistent but tied to this
-parser's deterministic choice.
+Aromatic identity is resonance-canonical (R2): a fused benzenoid such as naphthalene has several
+non-isomorphic Kekulé structures, so picking one arbitrarily would give one molecule several
+identities (and several decomposition menus). Instead the parser builds the canonical form of EVERY
+Kekulé structure and returns the minimal one -- a canonical representative of the resonance orbit --
+so any two Kekulé drawings of the same molecule collapse to ONE identity. Symmetric rings (benzene,
+mono-/para-substituted) already had isomorphic Kekulé forms, so their identity is unchanged. The
+remaining honest boundary is finer: this fixes the molecule's *identity*, not the aromatic bond model
+-- a scission still cuts the specific single/double bonds of the chosen canonical form, so cutting an
+aromatic ring bond is reported against that representative rather than a delocalised 1.5-order bond (a
+stated resonance boundary, not a silent one). A giant PAH beyond the enumeration bound is refused.
 """
 
 from __future__ import annotations
 
 from .atoms import PT
 from .category import Bond, Molecule
+from .contracts import canonical_digest
 
 __all__ = ["SmilesError", "parse_smiles"]
 
@@ -211,16 +216,31 @@ def _parse_skeleton(
     return atoms, bonds
 
 
-def _kekulise(atoms: list[_Atom], bonds: list[list[int]]) -> None:
-    """Assign single/double orders to the aromatic bonds by a perfect matching over aromatic carbons.
+# R2: bound the resonance enumeration. A benzenoid's Kekulé count is small (benzene 2, naphthalene 3,
+# anthracene 4, phenanthrene 5, pyrene 6, coronene 20); only a pathological giant PAH exceeds these,
+# and it is refused loudly rather than given a Kekulé-arbitrary identity.
+_MAX_AROMATIC_CARBONS = 30
+_MAX_KEKULE_MATCHINGS = 5000
 
-    Each aromatic carbon takes exactly one double bond among its aromatic bonds; the rest become
-    single. Refuses an aromatic heteroatom (a v1 gap) and any aromatic system with no perfect
-    matching (which a pure benzenoid always has) -- loudly, never a silent wrong order.
+
+def _aromatic_matchings(
+    atoms: list[_Atom], bonds: list[list[int]]
+) -> tuple[list[int], list[frozenset[int]]]:
+    """The aromatic bond indices and EVERY perfect matching over the aromatic carbons.
+
+    Each matching is the set of aromatic bond indices assigned a *double* bond (one Kekulé structure);
+    the rest become single, so every aromatic carbon takes exactly one double bond. Returns
+    ``([], [])`` when there is no aromatic bond. Refuses an aromatic heteroatom (a v1 gap) and an
+    aromatic system with no perfect matching -- loudly, never a silent wrong order.
+
+    Enumerating EVERY matching (not just the first) is what lets :func:`parse_smiles` pick a
+    resonance-CANONICAL representative (R2): a fused benzenoid such as naphthalene has several
+    non-isomorphic Kekulé structures, and taking the canonical-minimal one collapses them to a single
+    identity, so two Kekulé drawings of one molecule no longer decompose to two different menus.
     """
     arom_bonds = [k for k, (_i, _j, o) in enumerate(bonds) if o == _AROMATIC]
     if not arom_bonds:
-        return
+        return [], []
     arom_atoms = sorted({e for bi in arom_bonds for e in bonds[bi][:2]})
     for a in arom_atoms:
         if atoms[a].element != "C":
@@ -228,34 +248,38 @@ def _kekulise(atoms: list[_Atom], bonds: list[list[int]]) -> None:
                 f"aromatic heteroatom {atoms[a].element!r} is a v1 gap; "
                 "give an explicit Kekulé SMILES (e.g. uppercase atoms with '=' bonds)"
             )
+    if len(arom_atoms) > _MAX_AROMATIC_CARBONS:
+        raise SmilesError(
+            f"aromatic system has {len(arom_atoms)} carbons (> {_MAX_AROMATIC_CARBONS}); a "
+            "resonance-canonical identity for a PAH this large is out of scope (give a Kekulé SMILES)"
+        )
     neighbours: dict[int, list[tuple[int, int]]] = {a: [] for a in arom_atoms}
     for bi in arom_bonds:
         a, b, _o = bonds[bi]
         neighbours[a].append((b, bi))
         neighbours[b].append((a, bi))
-    matched: dict[int, int] = {}          # atom -> bond index chosen as its double bond
+    matchings: list[frozenset[int]] = []
 
-    def match(pos: int) -> bool:
-        if pos == len(arom_atoms):
-            return True
-        a = arom_atoms[pos]
-        if a in matched:
-            return match(pos + 1)
-        for b, bi in neighbours[a]:
-            if b in matched:
-                continue
-            matched[a] = matched[b] = bi
-            if match(pos + 1):
-                return True
-            del matched[a]
-            del matched[b]
-        return False
+    def enumerate_from(matched: frozenset[int], chosen: frozenset[int]) -> None:
+        if len(matchings) > _MAX_KEKULE_MATCHINGS:
+            return
+        a = next((x for x in arom_atoms if x not in matched), None)
+        if a is None:                                  # every aromatic carbon paired: a full matching
+            matchings.append(chosen)
+            return
+        for b, bi in neighbours[a]:                    # pair the smallest unmatched atom each step:
+            if b not in matched:                       # enumerates every perfect matching exactly once
+                enumerate_from(matched | {a, b}, chosen | {bi})
 
-    if not match(0):
+    enumerate_from(frozenset(), frozenset())
+    if not matchings:
         raise SmilesError("could not assign a Kekulé structure to the aromatic system")
-    doubles = set(matched.values())
-    for bi in arom_bonds:
-        bonds[bi][2] = 2 if bi in doubles else 1
+    if len(matchings) > _MAX_KEKULE_MATCHINGS:
+        raise SmilesError(
+            f"aromatic system has more than {_MAX_KEKULE_MATCHINGS} Kekulé structures; a "
+            "resonance-canonical identity for it is out of scope (give an explicit Kekulé SMILES)"
+        )
+    return arom_bonds, matchings
 
 
 def _fill_hydrogens(atoms: list[_Atom], bonds: list[list[int]]) -> tuple[list[str], list[Bond]]:
@@ -308,7 +332,27 @@ def parse_smiles(text: str) -> Molecule:
     if not stripped:
         raise SmilesError("empty SMILES")
     atoms, bonds = _parse_skeleton(stripped)
-    _kekulise(atoms, bonds)
-    out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
     charge = sum(a.charge for a in atoms)
-    return Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical()
+    arom_bonds, matchings = _aromatic_matchings(atoms, bonds)
+
+    if not matchings:                                  # no aromatic system: a single deterministic form
+        out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
+        return Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical()
+
+    # R2 -- resonance-canonical: build the canonical form of EVERY Kekulé structure and return the
+    # minimal one, so any two Kekulé drawings of the same molecule collapse to a single identity (and
+    # thus a single decomposition menu). For a symmetric ring (benzene, mono/para-substituted) all
+    # Kekulé forms are already isomorphic, so this returns the same identity as before; for a fused
+    # benzenoid (naphthalene, anthracene, phenanthrene) it removes the former Kekulé-choice ambiguity.
+    best: Molecule | None = None
+    best_key: str | None = None
+    for doubles in matchings:
+        for k in arom_bonds:
+            bonds[k][2] = 2 if k in doubles else 1
+        out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
+        cand = Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical()
+        key = canonical_digest(cand)
+        if best_key is None or key < best_key:
+            best, best_key = cand, key
+    assert best is not None                            # matchings is non-empty here
+    return best

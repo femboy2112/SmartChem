@@ -169,7 +169,7 @@ python -m smartchem.bench
 Current maintained fast-suite result:
 
 ```text
-1476 passed, 14 skipped, 1 xfailed
+1624 passed, 14 skipped, 1 xfailed
 ```
 
 The skipped tests require the explicit slow-test gate and are not represented as passed.
@@ -257,6 +257,9 @@ The compact continuation sheet is [ROADMAP_2026-07-27.md](ROADMAP_2026-07-27.md)
   — bounded quotient adapter, plan-identity migration, category audit, and next semantic rung.
 - [CATEGORY_BACKBONE_ROADMAP_2026-07-27.md](CATEGORY_BACKBONE_ROADMAP_2026-07-27.md) —
   the staged open-diagram/domain-algebra architecture and its dominance boundary.
+- [ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md](ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md) —
+  proposal (M-4): the chemical decompiler / elemental-descent hypergraph, its formal-not-physical
+  frame, termination/budget walls, reuse map, and B0–B4 build ladder.
 
 The standing standard is simple: a loud refusal is acceptable; a plausible, unearned answer
 is not.

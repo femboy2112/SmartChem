@@ -919,3 +919,62 @@ bounded decomposition (G2) with general rewrites (G3), ionic/redox routes (G4), 
 evidence where covered (G5) — every physical which-one-happens judgment still theirs (W3). Remaining:
 broader sourced coverage (data, ongoing) and recursive ionic descent (a named next rung). The physical
 ask stays `no`, and that `no` is the feature.
+
+## Part 17 — Reality-respecting audit on a difficulty ladder, and the honest "truly complete" ledger
+
+**What was asked.** "What's left to build for the decompiler to be *truly complete*? — and test the
+machinery against chemicals of increasing difficulty, making sure the output is reality-respecting on
+all, fixing issues that show up."
+
+**The ladder (`experiments/structure_decompiler_ladder.py`, receipt
+`RESULTS_structure_decompiler_ladder.md`, commit `1ab0bd4`).** 36 chemicals across 8 difficulty tiers
+(hydrides → chains → unsaturation/heteroatoms → single rings → substituted aromatics → drug-sized →
+fused/heteroaromatic-as-Kekulé → ionic/redox), each parsed through G1 and decomposed, every edge
+audited against an **independent** recompute — never the edge's own certificate (the repo's
+"no check derived from its own subject" discipline). **2 888 scission edges, all PASS:** every one
+conserves atoms, passes the independent `verify_valence_integrity`, projects via `forget()` to a valid
+formula-level edge, and labels every open-valence fragment RADICAL / every ionic product ION. Hard
+non-vacuity held (every decomposable target produced edges); all 14 ionic/redox checks conserve charge
+and mass with the electron massless. The FORMAL half is now *demonstrated* reality-respecting, not
+merely argued.
+
+**The one defect it caught, and fixed.** `is_complete` (status `COMPLETE`) documented itself as "a full
+descent to **single atoms**", but any ring is irreducible at `max_cut_bonds=1` (a ring bond is not a
+bridge), so benzene / cyclohexane / cyclopropane / phenol / aniline / naphthalene / pyridine finish
+`COMPLETE` yet bottom out at a carbon-ring **core**, not single atoms. A labelling over-claim (not a
+conservation break) — and W3 forbids claiming more than was done. Fixed by correcting the docstrings and
+adding `irreducible_cores()` (the non-atomic leaves no cut can open — the boundary made auditable) and
+`reaches_single_atoms` (the precise "did it atomise?" predicate `is_complete` was mistaken for). Pinned
+by `TestIrreducibleCoreHonesty` (5 tests); full suite 1976 passed, zero regressions.
+
+**The honest "truly complete" ledger.** The sentence forks on W3, and the fork is the answer:
+
+- **PHYSICAL completeness is NOT a build target — it is the permanent W3 wall.** *Which* cleavage
+  happens, at what rate, under what conditions, driven by what thermodynamics — the real reaction path —
+  is never certified. The most a chemist gets is a structurally-honest menu they rank with their own
+  knowledge plus sourced evidence (the litmus). "Truly complete" can never mean "predicts reality";
+  that `no` is the ethos, not a gap.
+
+- **FORMAL completeness is substantially built and now proven; what remains are refinements, ranked by
+  leverage (R1 is the one the ladder made load-bearing):**
+  - **R1 — ring-aware descent.** The ladder's finding: cyclics do not atomise without the caller
+    knowing to raise `max_cut_bonds`, and even then the 2-cut powerset blows up. A ring-perception layer
+    that opens each ring with its minimal cut set would let `reaches_single_atoms` become `True` for
+    cyclics without the combinatorial cost. **The highest-leverage open formal rung.**
+  - **R2 — resonance-aware identity (asymmetric-aromatic Kekulé).** Two Kekulé drawings of the same real
+    asymmetric aromatic can canonicalise differently → different menus. Symmetric rings (all currently
+    registered) wash the choice out; asymmetric ones do not. The top reality-respecting *boundary* the
+    ladder does not yet cover. Research rung (delocalised-bond representation or Kekulé-orbit quotient).
+  - **R3 — recursive ionic descent.** Heterolysis splits neutrals only; an already-charged ion does not
+    further descend. Named next rung (Part 16).
+  - **R4 — cross-level radical/open-valence ledger.** The descent certifies the *skeleton* (which bonds
+    break into which sub-structures), not a threaded radical-electron count across levels. Documented
+    boundary in the graph docstring.
+  - **R5 — fragment evidence + naming coverage.** Enumerated byproducts are structurally exact but only
+    29 species carry sourced hazard/condition evidence, and 0 K thermo stays deferred for lack of two
+    independent bearings. Open-ended data curation, not a correctness gap.
+
+**Verdict.** The decompiler produces reality-respecting FORMAL output on chemicals from H₂O to aspirin —
+audited, not asserted. It is *not* "truly complete" in the sense of atomising every ring (R1) or
+resolving resonance identity (R2), and it will *never* be complete in the physical sense (W3). Those are
+the honest edges: R1–R5 are refinements to a sound skeleton, and the physical wall is permanent.

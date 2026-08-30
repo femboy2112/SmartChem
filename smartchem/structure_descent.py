@@ -57,15 +57,22 @@ __all__ = [
     "CAPPED_SCISSION_SCHEMA",
     "STRUCTURE_GRAPH_SCHEMA",
     "HETEROLYTIC_SCHEMA",
+    "REDOX_SCHEMA",
+    "IONIC_EDGES_SCHEMA",
+    "ELECTRON",
     "ScissionError",
     "Fragment",
     "ScissionEdge",
     "CappedScission",
     "HeterolyticScission",
+    "RedoxHalfReaction",
+    "IonicEdges",
     "StructureDecompositionGraph",
     "scission_edges",
     "capped_scissions",
     "heterolytic_scissions",
+    "redox_couples",
+    "ionic_edges",
     "structure_decompose",
     "verify_valence_integrity",
 ]
@@ -74,6 +81,14 @@ STRUCTURE_DESCENT_SCHEMA = "smartchem.structure_descent/scission-v2"
 CAPPED_SCISSION_SCHEMA = "smartchem.structure_descent/capped-scission-v2"
 STRUCTURE_GRAPH_SCHEMA = "smartchem.structure_descent/structure-graph-v2"
 HETEROLYTIC_SCHEMA = "smartchem.structure_descent/heterolytic-v2"
+REDOX_SCHEMA = "smartchem.structure_descent/redox-v1"
+IONIC_EDGES_SCHEMA = "smartchem.structure_descent/ionic-edges-v1"
+
+#: The electron, spelled the repository's way -- a charge carrier with NO atoms, so it is massless in
+#: the mass ledger (it never enters ``formula``) while carrying charge -1. This is the idiom
+#: ``category.Molecule.carrier`` exists for (see its docstring and ``cell.py``); an electron is not
+#: ``Molecule.atom("e")``, which would make charge into matter.
+ELECTRON = Molecule.carrier("e-", charge=-1)
 
 
 def _fkey(formula: Formula) -> tuple:
@@ -1000,3 +1015,137 @@ def heterolytic_scissions(molecule: Molecule) -> tuple[HeterolyticScission, ...]
             )
             out.setdefault(edge.digest, edge)
     return tuple(sorted(out.values(), key=lambda e: e.digest))
+
+
+# ======================================================================================
+# G4 -- redox (electron-transfer) half-reactions and the unified ionic edge view
+# ======================================================================================
+@dataclass(frozen=True)
+class RedoxHalfReaction(Digestible):
+    """One electron-transfer half-reaction: ``reduced -> oxidized + n e-`` (an OXIDATION).
+
+    Electrons are charge carriers with no atoms (:data:`ELECTRON`), so mass is conserved trivially and
+    **charge** is the conserved quantity the certificate turns on: the oxidised species carries ``n``
+    more positive charge, the ``n`` electrons carry ``n`` negative. This is the chemical<->EM bridge --
+    an electrode half-reaction, an ionisation, a redox couple -- spelled as an exact conserving
+    morphism, the ionic analogue of a scission.
+
+    The certificate (recomputed from the fields, never trusted):
+
+    * ``reduced`` and ``oxidized`` are the SAME species but for charge -- identical atoms, bonds and
+      state (a redox step moves electrons, it does not make or break bonds);
+    * ``electrons`` >= 1;
+    * charge conserved: ``oxidized.charge - electrons == reduced.charge`` (removing ``n`` electrons
+      raises the charge by ``n``).
+
+    W3 unchanged: this certifies that a charge-and-mass-consistent electron transfer EXISTS, never that
+    it occurs, at what potential, or that this oxidation state is accessible -- *which* oxidation
+    happens is physical selectivity the engine refuses to predict (it enumerates ``n = 1, 2, ...``).
+    """
+
+    schema_version: str
+    reduced: Molecule
+    oxidized: Molecule
+    electrons: int
+
+    def __post_init__(self) -> None:
+        if self.schema_version != REDOX_SCHEMA:
+            raise ScissionError(f"schema_version must be exactly {REDOX_SCHEMA!r}")
+        if type(self.reduced) is not Molecule or type(self.oxidized) is not Molecule:
+            raise ScissionError("reduced and oxidized must be Molecules")
+        if type(self.electrons) is not int or self.electrons < 1:
+            raise ScissionError("a half-reaction must transfer at least one electron")
+        if (self.reduced.atoms != self.oxidized.atoms
+                or self.reduced.bonds != self.oxidized.bonds
+                or self.reduced.state != self.oxidized.state):
+            raise ScissionError(
+                "reduced and oxidized must be the same species but for charge; a redox step moves "
+                "electrons, it does not make or break bonds"
+            )
+        if self.oxidized.charge - self.electrons != self.reduced.charge:
+            raise ScissionError(
+                f"charge not conserved: oxidized {self.oxidized.charge} - {self.electrons} e- "
+                f"!= reduced {self.reduced.charge}"
+            )
+
+    @property
+    def products(self) -> tuple[Molecule, ...]:
+        """The oxidised species plus the ``n`` released electrons (each a massless charge carrier)."""
+        return (self.oxidized,) + (ELECTRON,) * self.electrons
+
+    def equation(self) -> str:
+        e = f"{self.electrons} e-" if self.electrons > 1 else "e-"
+        return f"{self.reduced!r} -> {self.oxidized!r} + {e}"
+
+    def __repr__(self) -> str:
+        return f"RedoxHalfReaction({self.equation()})"
+
+
+def redox_couples(species: Molecule, *, max_electrons: int = 2) -> tuple[RedoxHalfReaction, ...]:
+    """The oxidation half-reactions of ``species`` removing ``1..max_electrons`` electrons.
+
+    A pure structural/charge enumeration -- it does NOT claim which oxidation state is accessible or at
+    what potential (that is physics, W3). The reduction direction is the mirror image and is obtained by
+    swapping reduced/oxidized; only oxidations are emitted here to avoid double-counting a couple.
+    """
+    if type(species) is not Molecule:
+        raise TypeError("species must be a Molecule")
+    if type(max_electrons) is not int or max_electrons < 1:
+        raise ValueError("max_electrons must be >= 1")
+    out: list[RedoxHalfReaction] = []
+    for n in range(1, max_electrons + 1):
+        oxidized = Molecule(species.atoms, species.bonds, species.charge + n, species.state)
+        out.append(RedoxHalfReaction(REDOX_SCHEMA, species, oxidized, n))
+    return tuple(out)
+
+
+@dataclass(frozen=True)
+class IonicEdges(Digestible):
+    """The ionic decompositions of one species, wiring heterolysis and redox into one node view.
+
+    This is the ionic analogue of a node's scission menu -- what :func:`scission_edges` is to homolytic
+    (radical) descent, :func:`ionic_edges` is to heterolytic (ion) + redox (electron-transfer) descent.
+    Every product here is a charged species or an electron, and :func:`~smartchem.decompiler_boundary`
+    ``species_class`` labels them ION / carrier, never a neutral compound.
+
+    One honest boundary, stated: heterolysis is emitted only for a NEUTRAL species (the v1 heterolytic
+    engine splits neutrals), so this is a single ionic level, not a recursive ionic graph -- heterolysis
+    of an already-charged ion is the documented next rung.
+    """
+
+    schema_version: str
+    species: Molecule
+    heterolytic: tuple[HeterolyticScission, ...]
+    redox: tuple[RedoxHalfReaction, ...]
+
+    def __post_init__(self) -> None:
+        if self.schema_version != IONIC_EDGES_SCHEMA:
+            raise ScissionError(f"schema_version must be exactly {IONIC_EDGES_SCHEMA!r}")
+        if type(self.species) is not Molecule:
+            raise ScissionError("species must be a Molecule")
+        if any(type(h) is not HeterolyticScission for h in self.heterolytic):
+            raise ScissionError("heterolytic must be HeterolyticScission values")
+        if any(type(r) is not RedoxHalfReaction for r in self.redox):
+            raise ScissionError("redox must be RedoxHalfReaction values")
+
+    @property
+    def ions(self) -> tuple[Molecule, ...]:
+        """Every charged product across the heterolytic cleavages (anions and cations)."""
+        out: list[Molecule] = []
+        for h in self.heterolytic:
+            out.extend((h.anion, h.cation))
+        return tuple(out)
+
+
+def ionic_edges(molecule: Molecule, *, max_electrons: int = 2) -> IonicEdges:
+    """The unified ionic edge set of ``molecule``: heterolytic cleavages + redox half-reactions.
+
+    Heterolysis is enumerated only for a neutral molecule (the v1 engine's boundary); redox couples are
+    enumerated for any species. The result bundles both so a caller sees a species' whole ionic menu at
+    once -- the graph-level wiring of :class:`HeterolyticScission` and :class:`RedoxHalfReaction`.
+    """
+    if type(molecule) is not Molecule:
+        raise TypeError("molecule must be a Molecule")
+    het = heterolytic_scissions(molecule) if molecule.charge == 0 else ()
+    redox = redox_couples(molecule, max_electrons=max_electrons)
+    return IonicEdges(IONIC_EDGES_SCHEMA, molecule, het, redox)

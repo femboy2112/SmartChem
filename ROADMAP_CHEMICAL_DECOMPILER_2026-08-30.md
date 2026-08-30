@@ -546,3 +546,73 @@ eV) falls inside the formula-level interval [0.2622, 0.7856] eV. Measured: for p
 hydrolysis `C8H9NO2 + H2O → C2H4O2 + C6H7NO` surfaces **ranked #1** (coherence 1.0) and safety-screened,
 in one call. 5 new tests; full suite 1773 passed. The **direct-reaction view is now coherent**; C2b
 (recursion) is what extends that coherence to the whole chain from bare elements.
+
+## Part 12 — Execution: data + structure (v2 rung 1) — the litmus made actionable
+
+**Built this session (four coherent commits, pushed):** the two efforts Part 11 named as "no longer
+framework — data and structure" are now standing, consumed by the honest machinery already in place.
+
+- **Structure bridge** (`smartchem/structure.py`, commit `b9b995f`). `NamedStructure(Digestible)` over
+  the existing `category.Molecule` bond graph (relocate, don't reinvent — no new graph type). The
+  forgetful `structure -> Formula` map is `Formula.of(molecule.formula, molecule.charge)`;
+  `structure_identity` is the `canonical_digest` of `Molecule.canonical()` (1-WL), presentation-
+  invariant, with an honest `asgiven:` fallback if canonicalization refuses. A hand-entered,
+  guard-verified registry of the six litmus species (water, ketene, acetic acid, acetic anhydride,
+  4-aminophenol, paracetamol) — each molecule's composition checked against its declared formula at
+  import, so a mistyped atom list fails loudly. `C6H7NO` now resolves to **4-aminophenol** (CAS,
+  synonyms, real bond graph), closing litmus gap #3 at the name/identity level. Tests are differential:
+  the guard is shown to reject a wrong formula; the identity is shown both relabel-**invariant** and
+  isomer-**separating** (acetic acid vs methyl formate, same formula, different id).
+
+- **Hazard data** (`smartchem/data/hazards.py`, commit `228ce4e`). Sourced, tiered `HazardRef` records
+  (GHS + reactivity + exposure limits + regulatory/tox) for the five litmus species, from PubChem GHS
+  (ECHA aggregates), CAMEO Chemicals (NOAA), and NJ DOH Right-to-Know fact sheets. Ketene reads *fatal
+  if inhaled, polymerises explosively*; 4-aminophenol carries its **USP <227>** regulated-degradant
+  status (~50 ppm cap); acetic anhydride warns *reacts violently with water*. A record cannot be
+  UNSUPPORTED or source-less; absence is UNKNOWN (a loud gap), never a clearance.
+
+- **Thermochemistry** (`smartchem/data/decompiler_thermo.py`, commit `b90cde8`), **separate from the
+  oracle benchmark** so provisional values can never corrupt its MAE. What the sourcing pass honestly
+  established: ketene (0 K −44.51) and acetic acid (0 K −418.10) — two independent sources agree,
+  `ESTABLISHED`, usable; paracetamol — single-source **298 K** (−280.5), stored for display but the 0 K
+  accessor filters it out (mixing conventions is the silent error `reference.py` warns of), so its edges
+  stay UNKNOWN; 4-aminophenol (two sources disagree by 9 kJ/mol) and acetic-anhydride gas (only a liquid
+  value) — recorded in `THERMO_GAPS` with the reason. **The data pull proved the litmus hydrolysis
+  energetics genuinely cannot be certified from literature** — a result, not a failure of the machine.
+
+- **Integration** (`decompiler_review.py`, `decompiler_conditions.py`, commit `a79927a`). One
+  `decompile_and_review` call on paracetamol now surfaces, for the real routes, **named** compounds
+  (`C6H7NO (4-aminophenol)`), **attached** sourced hazards (`DOCUMENTED_HAZARD`), **broadened**
+  energetics (ketene/acetic-acid edges get real assembly enthalpies; paracetamol/4-aminophenol stay
+  honestly UNKNOWN), and **sourced synthesis conditions** for both the ketene-acetylation route (reverse
+  of the coherence-1.0 backbone) and the acetic-anhydride route (the standard lab synthesis). Nothing is
+  filtered — inform-never-neuter throughout. Full suite **1823 passed** (was 1782), zero regressions.
+
+**Litmus status now.** For paracetamol a chemist reading the output gets the three real routes to/from
+the compound, each named, hazard-annotated, and condition-annotated — enough to *pick real steps*
+(e.g. "reverse of the acetic-anhydride edge is my synthesis; run it cooled; acetic anhydride reacts
+violently with water"). The energetics are honestly UNKNOWN exactly where the literature is.
+
+**What remains (each its own effort, none of it this session's framework):**
+1. **Data coverage** — the thermo/hazard/conditions tables are the litmus set plus neighbours, not a
+   database. Broaden with the same tiered, sourced, second-source discipline (ketene and acetic acid
+   meet the benchmark standard and could later be *promoted* into `POLYATOMIC_REFS` as a deliberate,
+   split-aware act).
+2. **Structure-aware DESCENT (v2 proper)** — today structure resolves *names* on a formula-level graph;
+   the deeper v2 is bond-graph-aware decomposition (break specific bonds), where N- vs O-acetylation
+   selectivity becomes representable rather than a formula-level ambiguity.
+3. **Public-API exposure** — `smartchem.decompiler`/`structure` are not yet on the lazy `__init__`
+   surface (the `__all__`/`_ATTR_SOURCE` lockstep); a deliberate, separate act when wanted.
+
+**Adversarial hardening (commit `7c3f5a0`).** Before the arc was called done, an adversarial pass
+(evil-morty) attacked the new layer for the repo's known disease family. It broke three surfaces and
+signed four as holding. Fixed, each with a regression test firing on the counterexample: **F1** the
+hazard channel was silent when blind (a species with no record produced no flag, so partial coverage
+read as assessed-clean) → `HAZARDS_UNASSESSED` now fires and names the gap, symmetric with
+`ENERGETICS_UNKNOWN`; **F2** a single isomer was presented as identity → `ISOMER_ASSUMED` now marks
+any formula-level name/hazard attachment; **F3** `ISOMER_AMBIGUOUS` under-fired (sign-crossing only,
+missing its own C2H6O docstring example) → now fires on any non-degenerate interval; **F4** corrected
+`structure._check`'s over-claim (composition + connectivity, not isomer identity); **F5** strengthened
+the cross-coherence guard to assert each hazard/thermo formula pins exactly one registered isomer.
+Held under real attack: the 298 K→0 K convention firewall, the whole-token equation annotator, the
+canonical identity's separation/relabel-invariance, and the W3 forward-reaction framing.

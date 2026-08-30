@@ -22,11 +22,16 @@ def _hydrolysis(reviews):
 
 
 class TestNamesSurface:
-    def test_the_hydrolysis_edge_reads_in_compound_names(self):
+    def test_the_formula_level_hydrolysis_edge_names_species_honestly(self):
+        # decompile_and_review is FORMULA-level: C8H9NO2 now has two registered isomers, so it is
+        # named AMBIGUOUSLY ("... or ...") rather than silently picking one. The single-isomer species
+        # are still definitive. (The structure-derived path names paracetamol definitively -- see
+        # TestStructureResolvedReview.)
         _b, reviews = decompile_and_review("C8H9NO2", inventory=LITMUS_INVENTORY, medium=["H2O"])
         r = _hydrolysis(reviews)
         named = r.named_equation()
-        assert "C8H9NO2 (paracetamol)" in named
+        assert "paracetamol" in named and "4-aminophenyl acetate" in named   # both isomers shown
+        assert " or " in named                                                # ambiguity is visible
         assert "C6H7NO (4-aminophenol)" in named
         assert "C2H4O2 (acetic acid)" in named
         assert "H2O (water)" in named

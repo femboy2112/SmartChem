@@ -24,7 +24,8 @@ from smartchem.structure_descent import CappedScission, ScissionError, capped_sc
 
 import pytest
 
-PARACETAMOL = known_compounds("C8H9NO2")[0].molecule
+# C8H9NO2 now has two registered isomers (paracetamol + the O-acetyl ester); select BY NAME, never [0]
+PARACETAMOL = next(s.molecule for s in known_compounds("C8H9NO2") if s.name == "paracetamol")
 WATER = Molecule(("O", "H", "H"), frozenset({Bond(0, 1), Bond(0, 2)}))
 AMINOPHENOL = known_compounds("C6H7NO")[0].molecule.canonical()
 ACETIC = known_compounds("C2H4O2")[0].molecule.canonical()

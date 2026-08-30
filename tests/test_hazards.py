@@ -96,9 +96,14 @@ class TestRecordGuards:
         with pytest.raises(ValueError):
             HazardRef("X", "x", ("H200",), "s", (), "", "", "")
 
-    def test_no_two_records_share_a_formula(self):
-        formulas = [r.formula for r in HAZARD_REFS]
-        assert len(formulas) == len(set(formulas))
+    def test_records_are_keyed_by_unique_name_isomers_may_share_a_formula(self):
+        # isomer-keying: a formula MAY carry several records (ethanol and dimethyl ether both under
+        # C2H6O), but every record's NAME is unique -- that is what makes structure -> name -> record
+        # unambiguous. hazards_for on a multi-isomer formula returns None (ambiguous), by design.
+        names = [r.name for r in HAZARD_REFS]
+        assert len(names) == len(set(names))
+        assert hazards_for("C2H6O") is None                       # ambiguous formula -> no single answer
+        assert {r.name for r in HAZARD_REFS if r.formula == "C2H6O"} == {"ethanol", "dimethyl ether"}
 
     def test_digestible(self):
         assert len(hazards_for("C2H2O").digest) == 64

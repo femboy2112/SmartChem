@@ -59,7 +59,9 @@ class TestForgetfulMap:
 
 class TestRegistryLookup:
     def test_resolve_names_for_the_litmus_species(self):
-        assert resolve_names("C8H9NO2") == ("paracetamol",)
+        # C8H9NO2 now resolves to BOTH registered isomers (isomer-keying) -- formula-level is
+        # ambiguous by design; a structure resolution picks one.
+        assert set(resolve_names("C8H9NO2")) == {"paracetamol", "4-aminophenyl acetate"}
         assert resolve_names("C6H7NO") == ("4-aminophenol",)
         assert resolve_names("C2H2O") == ("ketene",)
         assert resolve_names("C2H4O2") == ("acetic acid",)
@@ -69,7 +71,7 @@ class TestRegistryLookup:
         assert known_compounds("Xe") == ()
 
     def test_synonyms_carry_the_names_a_chemist_uses(self):
-        pap = known_compounds("C8H9NO2")[0]
+        pap = next(s for s in known_compounds("C8H9NO2") if s.name == "paracetamol")  # not [0]
         assert "acetaminophen" in pap.all_names
         assert pap.cas == "103-90-2"
         # common name leads, and names are deduplicated

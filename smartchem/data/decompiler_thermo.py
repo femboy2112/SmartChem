@@ -38,6 +38,7 @@ __all__ = [
     "DECOMPILER_THERMO",
     "THERMO_GAPS",
     "records_for",
+    "records_for_named",
     "zero_k_records",
 ]
 
@@ -116,6 +117,28 @@ DECOMPILER_THERMO: tuple[ThermoRef, ...] = (
         ),
         second_source="",  # single source; no independent gas-phase replicate found -> EXPERIMENTAL
     ),
+    # -- the C2H6O isomer pair: SAME composition, DIFFERENT 0 K value. Structure-resolved thermo
+    # returns the exact per-isomer number where formula-level can only offer the [-217.1, -166.6]
+    # interval (ISOMER_AMBIGUOUS). Values REUSED from the benchmark set (reference.POLYATOMIC_REFS,
+    # which stores 0 K), not re-sourced -- so they inherit the benchmark's own validation.
+    ThermoRef(
+        formula="C2H6O",
+        name="ethanol",
+        dfh_kj=-217.1,
+        temperature_k=0,
+        status=EvidenceStatus.ESTABLISHED,
+        provenance="reference.POLYATOMIC_REFS 'C2H5OH' (CCCBDB R22, 0 K), benchmark-validated",
+        second_source="the benchmark's own second-source gate; CCCBDB R22 experimental 0 K",
+    ),
+    ThermoRef(
+        formula="C2H6O",
+        name="dimethyl ether",
+        dfh_kj=-166.6,
+        temperature_k=0,
+        status=EvidenceStatus.ESTABLISHED,
+        provenance="reference.POLYATOMIC_REFS 'CH3OCH3' (CCCBDB R22, 0 K), benchmark-validated",
+        second_source="the benchmark's own second-source gate; CCCBDB R22 experimental 0 K",
+    ),
 )
 
 
@@ -138,6 +161,16 @@ THERMO_GAPS: dict[str, str] = {
 def records_for(formula: str) -> tuple[ThermoRef, ...]:
     """Every stored thermo record for a composition, ANY convention (for display, not for a balance)."""
     return tuple(r for r in DECOMPILER_THERMO if r.formula == formula)
+
+
+def records_for_named(name: str) -> tuple[ThermoRef, ...]:
+    """Every stored thermo record for a specific NAMED compound -- the isomer-resolved lookup.
+
+    A structure resolution supplies the name (ethanol vs dimethyl ether), and this returns that
+    isomer's records only, so a 0 K balance can use the EXACT value rather than the formula-level
+    interval over both isomers.
+    """
+    return tuple(r for r in DECOMPILER_THERMO if r.name == name)
 
 
 def zero_k_records(formula: str) -> tuple[ThermoRef, ...]:

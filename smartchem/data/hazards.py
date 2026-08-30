@@ -35,6 +35,8 @@ __all__ = [
     "HazardRef",
     "HAZARD_REFS",
     "hazards_for",
+    "hazards_for_named",
+    "hazards_for_formula_all",
 ]
 
 HAZARDS_SCHEMA = "smartchem.data.hazards/qualitative-v1"
@@ -333,28 +335,197 @@ HAZARD_REFS: tuple[HazardRef, ...] = (
         provenance="assessed-benign at scale: PubChem CID 962 records 'does not meet GHS hazard criteria' for 99.5% (1866/1876) of reports; recorded so absence-of-record stays meaningful",
         status=EvidenceStatus.ESTABLISHED,
     ),
+    # --- the C2H6O isomer pair: SAME formula, DIFFERENT hazard class (isomer-keying demo) ---------
+    HazardRef(
+        formula="C2H6O",
+        name="ethanol",
+        ghs_codes=("H225", "H319"),
+        summary=(
+            "highly flammable LIQUID; mild eye irritant; CNS depressant at high vapour concentration. "
+            "IARC Group 1 carcinogen (as ingested alcohol)"
+        ),
+        reactivity=("incompatible with strong oxidisers, acetyl halides, alkali metals",),
+        exposure="OSHA PEL 1000 ppm (8-h TWA); NIOSH REL 1000 ppm; IDLH 3300 ppm",
+        regulatory=(
+            "IARC Group 1: ethanol in alcoholic beverages, and its metabolite acetaldehyde, are "
+            "carcinogenic to humans (oral/pharynx/oesophagus/liver/colorectum/breast)"
+        ),
+        provenance="PubChem GHS / ECHA harmonised H225 (CID 702); IARC Monographs; NIOSH npgd0262",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="C2H6O",
+        name="dimethyl ether",
+        ghs_codes=("H220", "H280"),
+        summary=(
+            "extremely flammable GAS (shipped liquefied under pressure); simple asphyxiant / narcotic "
+            "at high concentration. NOT the flammable-liquid + eye-irritant profile of its isomer "
+            "ethanol -- same formula C2H6O, different hazard class"
+        ),
+        reactivity=("fire/explosion hazard as a gas; pressure-vessel rupture on heating",),
+        exposure="no occupational exposure limit established (NJ DOH RTK FS-0758; absent from NIOSH index)",
+        regulatory="",
+        provenance="PubChem GHS / ECHA harmonised H220 (CID 8254); NJ DOH RTK Fact Sheet 0758",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="C3H6O",
+        name="acetone",
+        ghs_codes=("H225", "H319", "H336"),
+        summary="highly flammable liquid; eye irritant; narcotic/CNS-depressant vapour (drowsiness/dizziness)",
+        reactivity=("incompatible with strong oxidisers and acids; wide flammable range (2.5-12.8%)",),
+        exposure="OSHA PEL 1000 ppm (8-h TWA); NIOSH REL 250 ppm (4x more conservative); IDLH 2500 ppm",
+        regulatory="",
+        provenance="PubChem GHS / ECHA harmonised (CID 180, >98.7% notifier); NIOSH npgd0004",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="CH5N",
+        name="methylamine",
+        ghs_codes=("H220", "H314", "H332", "H335"),
+        summary=(
+            "flammable (gas anhydrous / liquid aqueous); CORROSIVE -- serious eye/skin damage in the "
+            "aqueous form; harmful if inhaled; respiratory irritant"
+        ),
+        reactivity=(
+            "air-reactive; neutralises acids exothermically; corrosive to copper/zinc/aluminium",
+            "incompatible with isocyanates, anhydrides, acid halides, peroxides, mercury, oxidisers",
+        ),
+        exposure="OSHA PEL 10 ppm (8-h TWA); NIOSH REL 10 ppm; IDLH 100 ppm",
+        regulatory=(
+            "EU harmonised splits by physical form: anhydrous gas (H220/H315/H318/H332/H335) vs "
+            "aqueous solution (H224/H302/H314/H332); the codes here are the union a handler should heed"
+        ),
+        provenance="PubChem GHS / ECHA harmonised (CID 6329); CAMEO 8850; NIOSH npgd0398",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="CHN",
+        name="hydrogen cyanide",
+        ghs_codes=("H224", "H300", "H310", "H330", "H410"),
+        summary=(
+            "extremely flammable; FATAL by ALL routes -- inhalation, ingestion, AND skin contact "
+            "(H330/H300/H310) -- a rapid systemic asphyxiant blocking cytochrome c oxidase; death in "
+            "minutes at high concentration; very toxic to aquatic life"
+        ),
+        reactivity=(
+            "CAN POLYMERISE (sometimes violently) at 50-60 C -- a bulk-storage runaway hazard",
+            "extremely wide flammable range (5.6-40%); incompatible with amines, oxidisers, acids, caustics",
+        ),
+        exposure="NIOSH REL ST 4.7 ppm [skin]; OSHA PEL 10 ppm (8-h TWA) [skin]; IDLH 50 ppm",
+        regulatory="H330 'fatal if inhaled' at 100% notifier agreement (ECHA) -- the one code all agree on",
+        provenance="PubChem GHS / ECHA harmonised (CID 768, H330 100%); NIOSH npgd0333 (raw HTML)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="NO",
+        name="nitric oxide",
+        ghs_codes=("H270", "H280", "H314", "H330"),
+        summary=(
+            "non-flammable but OXIDISING gas (accelerates combustion); corrosive -- forms nitric acid "
+            "on contact with moisture (H314 at 100% notifier agreement); fatal if inhaled; rapidly "
+            "converts to NO2 in air"
+        ),
+        reactivity=(
+            "reacts with water to form nitric acid; rapidly oxidised to NO2 in air",
+            "incompatible with reducing agents, ammonia, halogens, phosphorus, ozone, alkali metals",
+        ),
+        exposure="OSHA PEL 25 ppm (8-h TWA); NIOSH REL 25 ppm; IDLH 100 ppm",
+        regulatory=(
+            "no EU Annex VI HARMONISED entry exists -- classification rests on the ECHA self-"
+            "notification aggregate + Japan NITE, one tier weaker in authority than NO2/SO2/HCN"
+        ),
+        provenance="PubChem GHS aggregate (CID 145068, no harmonised block); NIOSH npgd0448; CAMEO 1192",
+        status=EvidenceStatus.EXPERIMENTAL,  # aggregate-only, no harmonised entry -> a tier weaker
+    ),
+    HazardRef(
+        formula="NO2",
+        name="nitrogen dioxide",
+        ghs_codes=("H270", "H280", "H314", "H330"),
+        summary=(
+            "OXIDISING, corrosive, acutely lethal-by-inhalation gas; forms nitric acid with water; the "
+            "classic combustion-byproduct hazard (silo-filler's disease, DELAYED pulmonary oedema)"
+        ),
+        reactivity=(
+            "reacts with water to form nitric acid; accelerates burning of combustibles",
+            "exists in fast equilibrium with its dimer N2O4 (NIOSH tabulates them together)",
+        ),
+        exposure="NIOSH REL ST 1 ppm; OSHA PEL ceiling C 5 ppm (a 5x TWA-vs-ceiling tension); IDLH 13 ppm",
+        regulatory="",
+        provenance="PubChem GHS / ECHA harmonised H270/H314/H330 (CID 3032552); NIOSH npgd0454",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="O2S",  # canonical Formula repr of SO2 (alphabetical: O before S)
+        name="sulfur dioxide",
+        ghs_codes=("H314", "H331", "H370"),
+        summary=(
+            "non-flammable, CORROSIVE, toxic-by-inhalation gas; the classic respiratory irritant "
+            "(bronchoconstriction); may damage organs on a single exposure (H370)"
+        ),
+        reactivity=(
+            "reacts with water to form sulfurous acid",
+            "incompatible with powdered alkali metals, ammonia, zinc, aluminium, brass, copper",
+        ),
+        exposure="OSHA PEL 5 ppm (8-h TWA); NIOSH REL 2 ppm / ST 5 ppm; IDLH 100 ppm",
+        regulatory=(
+            "EU/ECHA/HSDB classify H314 (corrosive, Danger); Japan NITE classifies only H319 (eye "
+            "irritation, Warning) -- a full severity-category disagreement; the corrosive call is used"
+        ),
+        provenance="PubChem GHS / ECHA harmonised H314/H331/H370 (CID 1119, H314 ~84%); NIOSH npgd0575",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
 )
 
 
-def _index() -> dict[str, HazardRef]:
+def _by_name() -> dict[str, HazardRef]:
+    """Records indexed by compound name -- the ISOMER-resolved key. Names must be unique."""
     index: dict[str, HazardRef] = {}
     for ref in HAZARD_REFS:
-        if ref.formula in index:
-            raise ValueError(
-                f"two hazard records share formula {ref.formula!r}; hazards are isomer-specific and "
-                f"this formula-keyed table admits one named compound per formula (extend the key)"
-            )
-        index[ref.formula] = ref
+        if ref.name in index:
+            raise ValueError(f"two hazard records share the name {ref.name!r}; names must be unique")
+        index[ref.name] = ref
     return index
 
 
-_BY_FORMULA = _index()
+def _by_formula() -> dict[str, tuple[HazardRef, ...]]:
+    """Records grouped by composition. A formula may now map to SEVERAL isomer-specific records
+    (ethanol and dimethyl ether both key ``C2H6O``); each such record must carry a distinct name so a
+    structure resolution can pick the right one."""
+    groups: dict[str, list[HazardRef]] = {}
+    for ref in HAZARD_REFS:
+        groups.setdefault(ref.formula, []).append(ref)
+    out: dict[str, tuple[HazardRef, ...]] = {}
+    for formula, refs in groups.items():
+        if len({r.name for r in refs}) != len(refs):
+            raise ValueError(f"formula {formula!r} has two hazard records with the same name")
+        out[formula] = tuple(refs)
+    return out
+
+
+_BY_FORMULA = _by_formula()
+_BY_NAME = _by_name()
 
 
 def hazards_for(formula: str) -> HazardRef | None:
-    """The hazard record for a composition, or ``None`` (UNKNOWN, which is NOT safe).
+    """The hazard record for a composition IFF that composition pins exactly ONE recorded isomer.
 
-    ``formula`` is a canonical formula string as produced by ``repr`` of a decompiler ``Formula``
-    (e.g. ``"C2H2O"``). A miss is a loud gap for the caller to surface, never a clearance.
+    ``formula`` is a canonical formula string (``repr`` of a decompiler ``Formula``, e.g. ``"C2H2O"``).
+    A miss is a loud gap, never a clearance. A composition with SEVERAL isomer records (e.g. ``C2H6O``
+    = ethanol or dimethyl ether) is ambiguous at formula level and returns ``None`` -- resolve the
+    structure and use :func:`hazards_for_named` (the formula-keyed answer would be a false single
+    isomer, the exact over-claim isomer-keying exists to retire).
     """
-    return _BY_FORMULA.get(formula)
+    recs = _BY_FORMULA.get(formula, ())
+    return recs[0] if len(recs) == 1 else None
+
+
+def hazards_for_named(name: str) -> HazardRef | None:
+    """The hazard record for a specific NAMED compound -- the isomer-resolved lookup. ``None`` if
+    unassessed (still not a clearance)."""
+    return _BY_NAME.get(name)
+
+
+def hazards_for_formula_all(formula: str) -> tuple[HazardRef, ...]:
+    """Every isomer-specific hazard record for a composition (empty if none)."""
+    return _BY_FORMULA.get(formula, ())

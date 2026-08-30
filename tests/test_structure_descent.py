@@ -26,7 +26,8 @@ from smartchem.structure_descent import (
     verify_valence_integrity,
 )
 
-PARACETAMOL = known_compounds("C8H9NO2")[0].molecule           # N-acetyl (amide)
+# C8H9NO2 now has two registered isomers; select paracetamol BY NAME, never [0]
+PARACETAMOL = next(s.molecule for s in known_compounds("C8H9NO2") if s.name == "paracetamol")  # N-acetyl
 AMIDE_BOND = Bond(7, 8)                                          # N7-C8, the acetyl linkage
 
 

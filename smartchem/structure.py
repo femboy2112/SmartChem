@@ -48,6 +48,7 @@ __all__ = [
     "COMPOUND_REGISTRY",
     "known_compounds",
     "resolve_names",
+    "resolve_structure",
     "registered_structures",
 ]
 
@@ -182,6 +183,52 @@ _FORMIC_ACID = _mol(
     {Bond(0, 1, 2), Bond(0, 2), Bond(2, 3), Bond(0, 4)},
 )
 
+# --- isomer pairs and heteroatom species (the isomer-keyed-evidence subjects) -------------
+# ethanol, CH3-CH2-OH  (C2H6O)
+_ETHANOL = _mol(
+    ("C", "C", "O", "H", "H", "H", "H", "H", "H"),
+    {Bond(0, 1), Bond(1, 2), Bond(2, 8), Bond(0, 3), Bond(0, 4), Bond(0, 5), Bond(1, 6), Bond(1, 7)},
+)
+# dimethyl ether, CH3-O-CH3  (C2H6O -- same formula as ethanol, different structure)
+_DIMETHYL_ETHER = _mol(
+    ("C", "C", "O", "H", "H", "H", "H", "H", "H"),
+    {Bond(0, 2), Bond(1, 2), Bond(0, 3), Bond(0, 4), Bond(0, 5), Bond(1, 6), Bond(1, 7), Bond(1, 8)},
+)
+# acetone, CH3-C(=O)-CH3  (C3H6O)
+_ACETONE = _mol(
+    ("C", "C", "C", "O", "H", "H", "H", "H", "H", "H"),
+    {Bond(0, 1), Bond(1, 2), Bond(1, 3, 2), Bond(0, 4), Bond(0, 5), Bond(0, 6),
+     Bond(2, 7), Bond(2, 8), Bond(2, 9)},
+)
+# methylamine, CH3-NH2  (CH5N)
+_METHYLAMINE = _mol(
+    ("C", "N", "H", "H", "H", "H", "H"),
+    {Bond(0, 1), Bond(0, 2), Bond(0, 3), Bond(0, 4), Bond(1, 5), Bond(1, 6)},
+)
+# hydrogen cyanide, H-C#N  (CHN)
+_HYDROGEN_CYANIDE = _mol(("C", "N", "H"), {Bond(0, 1, 3), Bond(0, 2)})
+# nitric oxide, N=O  (NO)
+_NITRIC_OXIDE = _mol(("N", "O"), {Bond(0, 1, 2)})
+# nitrogen dioxide, O=N-O  (NO2, one Kekule form)
+_NITROGEN_DIOXIDE = _mol(("N", "O", "O"), {Bond(0, 1, 2), Bond(0, 2)})
+# sulfur dioxide, O=S=O  (O2S)
+_SULFUR_DIOXIDE = _mol(("S", "O", "O"), {Bond(0, 1, 2), Bond(0, 2, 2)})
+
+# 4-aminophenyl acetate -- the O-acetyl (ESTER) isomer of paracetamol, C8H9NO2
+# CH3-C(=O)-O-C6H4-NH2: ring C0..C5, amine N6 on C3, ester O7 on C0, carbonyl C8(=O9), methyl C10
+_AMINOPHENYL_ACETATE = _mol(
+    ("C", "C", "C", "C", "C", "C", "N", "O", "C", "O", "C",
+     "H", "H", "H", "H", "H", "H", "H", "H", "H"),
+    {
+        Bond(0, 1, 2), Bond(1, 2, 1), Bond(2, 3, 2), Bond(3, 4, 1), Bond(4, 5, 2), Bond(5, 0, 1),
+        Bond(0, 7), Bond(7, 8),                        # C0-O7-C8  (ester linkage)
+        Bond(3, 6), Bond(6, 11), Bond(6, 12),          # C3-N, N-H, N-H  (free amine)
+        Bond(8, 9, 2), Bond(8, 10),                    # C8=O9, C8-C10
+        Bond(10, 13), Bond(10, 14), Bond(10, 15),      # methyl H
+        Bond(1, 16), Bond(2, 17), Bond(4, 18), Bond(5, 19),  # ring H
+    },
+)
+
 # ketene, CH2=C=O -- C0(H2)=C1=O2
 _KETENE = _mol(
     ("C", "C", "O", "H", "H"),
@@ -268,6 +315,44 @@ _REGISTERED: tuple[NamedStructure, ...] = (
         provenance="std small-molecule structure",
     ),
     NamedStructure(
+        "ethanol", _ETHANOL, "C2H6O", iupac="ethanol", cas="64-17-5",
+        synonyms=("ethyl alcohol",), provenance="std organic structure; the C2H6O isomer pair",
+    ),
+    NamedStructure(
+        "dimethyl ether", _DIMETHYL_ETHER, "C2H6O", iupac="methoxymethane", cas="115-10-6",
+        synonyms=("methyl ether",), provenance="std organic structure; the C2H6O isomer pair",
+    ),
+    NamedStructure(
+        "acetone", _ACETONE, "C3H6O", iupac="propan-2-one", cas="67-64-1",
+        synonyms=("propanone", "dimethyl ketone"), provenance="std organic structure",
+    ),
+    NamedStructure(
+        "methylamine", _METHYLAMINE, "CH5N", iupac="methanamine", cas="74-89-5",
+        provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "hydrogen cyanide", _HYDROGEN_CYANIDE, "CHN", iupac="formonitrile", cas="74-90-8",
+        synonyms=("prussic acid", "hydrocyanic acid"), provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "nitric oxide", _NITRIC_OXIDE, "NO", iupac="nitric oxide", cas="10102-43-9",
+        synonyms=("nitrogen monoxide",), provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "nitrogen dioxide", _NITROGEN_DIOXIDE, "NO2", iupac="nitrogen dioxide", cas="10102-44-0",
+        provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "sulfur dioxide", _SULFUR_DIOXIDE, "O2S", iupac="sulfur dioxide", cas="7446-09-5",
+        provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "4-aminophenyl acetate", _AMINOPHENYL_ACETATE, "C8H9NO2",
+        iupac="(4-aminophenyl) acetate", cas="3993-73-1",
+        synonyms=("p-aminophenyl acetate",),
+        provenance="the O-acetyl (ester) ISOMER of paracetamol; same formula, distinct structure",
+    ),
+    NamedStructure(
         "ketene", _KETENE, "C2H2O", iupac="ethenone", cas="463-51-4",
         provenance="std organic structure; the reactive acetylating intermediate",
     ),
@@ -316,6 +401,31 @@ def known_compounds(formula: "str | dict[str, int] | Formula") -> tuple[NamedStr
 def resolve_names(formula: "str | dict[str, int] | Formula") -> tuple[str, ...]:
     """The common names of the registered compounds for ``formula`` (empty if unregistered)."""
     return tuple(s.name for s in known_compounds(formula))
+
+
+def resolve_structure(molecule: Molecule) -> "NamedStructure | None":
+    """The registered isomer whose bond graph IS ``molecule`` (by canonical identity), or ``None``.
+
+    This is the isomer-resolved lookup that closes the formula-keying gap: given an actual structure
+    (a decomposition product, say), it names the *specific* isomer -- ethanol vs dimethyl ether,
+    paracetamol vs 4-aminophenyl acetate -- so evidence can be attached by structure, not by an
+    ambiguous formula. Returns ``None`` when no registered isomer matches, or when the graph cannot be
+    canonicalized (a vertex-transitive ring, per :attr:`NamedStructure.canonical_identity_is_invariant`)
+    -- in which case there is no confident structural match to claim.
+    """
+    if type(molecule) is not Molecule:
+        raise StructureError("resolve_structure needs a smartchem.category.Molecule")
+    candidates = known_compounds(Formula.of(molecule.formula, molecule.charge))
+    if not candidates:
+        return None
+    try:
+        key = canonical_digest(molecule.canonical())
+    except NotImplementedError:
+        return None
+    for structure in candidates:
+        if structure.canonical_identity_is_invariant and structure.structure_identity == key:
+            return structure
+    return None
 
 
 def registered_structures() -> tuple[NamedStructure, ...]:

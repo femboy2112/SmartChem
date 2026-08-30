@@ -1,17 +1,21 @@
-"""Cross-field coherence between the three formula-keyed tables and the structure registry.
+"""Cross-field coherence between the isomer-keyed data tables and the structure registry.
 
-Hazards and thermochemistry are keyed by FORMULA but are isomer-specific claims; the review layer
-attaches them to a formula-level node on the strength of the structure registry resolving that formula
-to one named compound. That coupling is only sound if the tables AGREE on which compound a formula is.
-Nothing enforced that until here. This is the repo's recurring "declarative auditor trusts the field it
-polices" lesson made into a guard: a hazard/thermo record whose name contradicts the registered isomer
-would silently mislabel a chemist's hazards, and this test fires on exactly that.
+Hazards and thermochemistry are isomer-specific claims. Since isomer-keyed evidence landed, a formula
+may carry SEVERAL records (ethanol and dimethyl ether both under C2H6O), and a record is attached to a
+node by resolving that node's structure to a specific isomer NAME. That coupling is sound iff two
+things hold, both guarded here: every record's name pins EXACTLY ONE registered isomer (so name -> one
+structure), and the registered isomers of a formula have DISTINCT structure identities (so structure ->
+one name). This is the repo's recurring "declarative auditor trusts the field it polices" lesson: a
+record whose name matched zero or two structures, or two isomers that were secretly one graph, would
+silently mislabel a chemist's hazards -- and these tests fire on exactly that.
 """
+
+from collections import Counter
 
 from smartchem.data.decompiler_thermo import DECOMPILER_THERMO, THERMO_GAPS
 from smartchem.data.hazards import HAZARD_REFS
 from smartchem.decompiler import Formula
-from smartchem.structure import known_compounds
+from smartchem.structure import COMPOUND_REGISTRY, known_compounds
 
 
 def _registered_names(formula_str: str) -> set[str]:
@@ -32,16 +36,17 @@ class TestHazardNamesMatchTheRegisteredIsomer:
                     f"resolves that formula to {registered}"
                 )
 
-    def test_a_hazard_formula_licences_attachment_by_pinning_exactly_one_isomer(self):
-        # hazards_for is keyed by formula string and attaches by formula; that is only sound while a
-        # formula resolves to ONE registered isomer. The day a second isomer is registered for a
-        # hazard-keyed formula, this guard fires -- forcing an isomer-aware redesign, not a silent
-        # mis-attachment (the crack the adversarial pass flagged).
+    def test_every_hazard_record_pins_exactly_one_registered_isomer_by_name(self):
+        # isomer-keying makes attachment sound not by one-isomer-per-formula (the retired band-aid)
+        # but by each record's NAME resolving to exactly one registered structure: structure -> name
+        # -> record is then unambiguous even when a formula has several isomers.
         for ref in HAZARD_REFS:
-            n = len(known_compounds(Formula.parse(ref.formula)))
-            assert n <= 1, (
-                f"formula {ref.formula} now has {n} registered isomers; a single formula-keyed "
-                f"hazard record can no longer be attached unambiguously"
+            matches = [
+                s for s in known_compounds(Formula.parse(ref.formula)) if ref.name in s.all_names
+            ]
+            assert len(matches) == 1, (
+                f"hazard record {ref.formula}/{ref.name!r} must name exactly one registered isomer; "
+                f"matched {[s.name for s in matches]}"
             )
 
 
@@ -55,12 +60,27 @@ class TestThermoNamesMatchTheRegisteredIsomer:
                     f"resolves that formula to {registered}"
                 )
 
-    def test_a_thermo_formula_licences_attachment_by_pinning_exactly_one_isomer(self):
+    def test_every_thermo_record_pins_exactly_one_registered_isomer_by_name(self):
         for ref in DECOMPILER_THERMO:
-            n = len(known_compounds(Formula.parse(ref.formula)))
-            assert n <= 1, (
-                f"formula {ref.formula} now has {n} registered isomers; a single formula-keyed "
-                f"thermo value can no longer be attached unambiguously"
+            matches = [
+                s for s in known_compounds(Formula.parse(ref.formula)) if ref.name in s.all_names
+            ]
+            assert len(matches) == 1, (
+                f"thermo record {ref.formula}/{ref.name!r} must name exactly one registered isomer; "
+                f"matched {[s.name for s in matches]}"
+            )
+
+
+class TestRegisteredIsomersAreDistinct:
+    def test_isomers_of_a_formula_have_distinct_structure_identities(self):
+        # the whole scheme rests on structure -> ONE name: two 'isomers' that were secretly the same
+        # graph would let a resolution pick the wrong record. Guard that no formula's isomers collide.
+        for formula, structures in COMPOUND_REGISTRY.items():
+            ids = Counter(s.structure_identity for s in structures)
+            collisions = {i: c for i, c in ids.items() if c > 1}
+            assert not collisions, (
+                f"formula {formula!r} has isomers sharing a structure identity: a resolution could "
+                f"not tell them apart"
             )
 
 

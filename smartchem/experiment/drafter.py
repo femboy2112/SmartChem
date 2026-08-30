@@ -39,6 +39,7 @@ from .bucket import Bucket
 from .ceiling import RouteCeiling, route_ceiling
 from .composability import Composability, verify_composability
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_step
+from .selectivity import RouteSelectivity, SelectivityTable, verify_selectivity
 from .step import ExperimentRoute
 
 __all__ = [
@@ -109,6 +110,7 @@ class RouteFit(Digestible):
     exclusions: tuple[str, ...]   # hard box violations / degeneracy
     gaps: tuple[str, ...]         # undeclared constrained dimensions / composability UNKNOWNs
     composability: Composability
+    selectivity: RouteSelectivity  # which isomer each step makes (sourced regiochemistry, or a loud gap)
 
     @property
     def fits(self) -> bool:
@@ -120,6 +122,8 @@ class RouteFit(Digestible):
             lines.append(f"  EXCLUDED: {e}")
         for g in self.gaps:
             lines.append(f"  GAP: {g}")
+        if self.selectivity.verdict != "NOT_APPLICABLE":
+            lines.append(f"  SELECTIVITY: {self.selectivity.verdict}")
         return "\n".join(lines)
 
 
@@ -168,11 +172,15 @@ def _step_box_check(step, box: ConstraintBox, equip: tuple[EquipmentItem, ...],
     return exclusions, gaps
 
 
-def fit_route(route: ExperimentRoute, box: ConstraintBox, *, stability=None) -> RouteFit:
+def fit_route(
+    route: ExperimentRoute, box: ConstraintBox, *,
+    stability=None, selectivity: SelectivityTable | None = None,
+) -> RouteFit:
     """Judge whether one route runs on the target bench described by ``box``."""
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     comp = verify_composability(route) if stability is None else verify_composability(route, stability=stability)
+    sel = verify_selectivity(route, table=selectivity)
 
     exclusions: list[str] = []
     gaps: list[str] = []
@@ -192,35 +200,49 @@ def fit_route(route: ExperimentRoute, box: ConstraintBox, *, stability=None) -> 
         status = RouteFitStatus.UNKNOWN
     else:
         status = RouteFitStatus.FITS
-    return RouteFit(route, status, tuple(exclusions), tuple(gaps), comp)
+    return RouteFit(route, status, tuple(exclusions), tuple(gaps), comp, sel)
 
 
-def fit_routes(routes, box: ConstraintBox, *, stability=None) -> tuple[RouteFit, ...]:
+def fit_routes(
+    routes, box: ConstraintBox, *, stability=None, selectivity: SelectivityTable | None = None,
+) -> tuple[RouteFit, ...]:
     """Judge every route against the bench ``box`` (order preserved)."""
-    return tuple(fit_route(r, box, stability=stability) for r in routes)
+    return tuple(fit_route(r, box, stability=stability, selectivity=selectivity) for r in routes)
 
 
 def _route_score(fit: RouteFit) -> tuple:
-    """Sort key, lower = better: excluded worst, then unknown, then by gap-count, sourced-count."""
+    """Sort key, lower = better: excluded worst, then unknown, then sourced-regiochemistry, then gaps.
+
+    Selectivity is a first-class correctness tiebreaker right after composability: a sourced-FAVORED route
+    (it makes the major isomer) floats above one with an unresolved isomer question, which floats above a
+    sourced-DISFAVORED route (it makes the minor isomer).  NOT_APPLICABLE and UNKNOWN are neutral -- we
+    reward a sourced positive and penalize a sourced negative, never ignorance.
+    """
     status_rank = {RouteFitStatus.FITS: 0, RouteFitStatus.UNKNOWN: 1, RouteFitStatus.EXCLUDED: 2}
     comp_rank = {"COMPOSABLE": 0, "SINGLE_STEP": 1, "UNKNOWN": 2, "DEGENERATE": 3}
+    sel_rank = {"FAVORED": 0, "NOT_APPLICABLE": 1, "UNKNOWN": 1, "DISFAVORED": 2}
     return (
         status_rank[fit.status],
         comp_rank.get(fit.composability.verdict, 4),
+        sel_rank.get(fit.selectivity.verdict, 1),
         len(fit.gaps),
         len(fit.exclusions),
     )
 
 
-def rank_routes(routes, box: ConstraintBox | None = None, *, stability=None) -> tuple[RouteFit, ...]:
+def rank_routes(
+    routes, box: ConstraintBox | None = None, *,
+    stability=None, selectivity: SelectivityTable | None = None,
+) -> tuple[RouteFit, ...]:
     """Rank routes best-first for a bench (or, with ``box=None``, an unconstrained bench).
 
     The north-star litmus: given several candidate routes to the same target, float the ones that FIT and
-    are COMPOSABLE and sourced above those with UNKNOWN gaps above those EXCLUDED or DEGENERATE -- surfacing
-    what is runnable-and-known and stopping, exactly as ``evidence_ranking`` does for a single edge.
+    are COMPOSABLE and sourced above those with UNKNOWN gaps above those EXCLUDED or DEGENERATE -- and, among
+    otherwise-comparable routes, the one whose steps make the SOURCED major isomer above one that makes the
+    minor one -- surfacing what is runnable-and-known, exactly as ``evidence_ranking`` does for a single edge.
     """
     effective_box = box if box is not None else ConstraintBox()
-    fits = fit_routes(routes, effective_box, stability=stability)
+    fits = fit_routes(routes, effective_box, stability=stability, selectivity=selectivity)
     return tuple(sorted(fits, key=_route_score))
 
 
@@ -233,6 +255,7 @@ class DraftedProcedure(Digestible):
     accounting: PhysicalAccounting
     equipment: tuple[tuple[EquipmentItem, ...], ...]   # one tuple per step
     ceiling: RouteCeiling | None
+    selectivity: RouteSelectivity  # which isomer each step makes (sourced regiochemistry, or a loud gap)
 
     def render(self) -> str:
         lines = [DRAFT_BANNER, "", f"TARGET: {self.route.final_target!r}", ""]
@@ -240,11 +263,17 @@ class DraftedProcedure(Digestible):
             lines.append(f"STEP {idx + 1}: {step.equation()}")
             for q in self.accounting.per_step[idx].quantities():
                 lines.append(f"    {q.render()}")
+            sel = self.selectivity.per_step[idx]
+            if sel.status.value != "NOT_APPLICABLE":
+                lines.append(f"    {sel.finding.render()}")
             lines.append("    equipment:")
             for item in self.equipment[idx]:
                 lines.append(f"      - {item.render()}")
             lines.append("")
         lines.append(self.composability.explain())
+        if self.selectivity.verdict != "NOT_APPLICABLE":
+            lines.append("")
+            lines.append(self.selectivity.explain())
         if self.ceiling is not None:
             lines.append("")
             lines.append(self.ceiling.explain())
@@ -256,18 +285,22 @@ def draft_procedure(
     feed: Mapping[Molecule, "int | Fraction"] | None = None,
     *,
     stability=None,
+    selectivity: SelectivityTable | None = None,
 ) -> DraftedProcedure:
-    """Compose the full drafted procedure for a route: E1 composability, E3 accounting, equipment, E2 ceiling.
+    """Compose the full drafted procedure for a route: E1 composability, E3 accounting, equipment, E2 ceiling,
+    and the sourced regiochemical selectivity (which isomer each step makes).
 
     ``feed`` (external reactant amounts in mol) turns on the propagated 100%-efficiency ceiling; omit it to
-    skip the outcome bound.  ``stability`` optionally extends the sourced thresholds for any chemical.
+    skip the outcome bound.  ``stability`` / ``selectivity`` optionally extend the sourced data for any
+    chemical.
     """
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     comp = verify_composability(route) if stability is None else verify_composability(route, stability=stability)
+    sel = verify_selectivity(route, table=selectivity)
     accounting = account_route(route)
     equipment = tuple(equipment_for_step(s) for s in route.steps)
     ceiling = None
     if feed is not None:
         ceiling = route_ceiling(route, feed)
-    return DraftedProcedure(route, comp, accounting, equipment, ceiling)
+    return DraftedProcedure(route, comp, accounting, equipment, ceiling, sel)

@@ -62,6 +62,15 @@ from .drafter import (
 )
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_envelope, equipment_for_step
 from .routes import enumerate_routes
+from .selectivity import (
+    RouteSelectivity,
+    SelectivityRecord,
+    SelectivityStatus,
+    SelectivityTable,
+    StepSelectivity,
+    selectivity_of_step,
+    verify_selectivity,
+)
 from .step import ExperimentRoute, ExperimentStep, StepError
 
 __all__ = [
@@ -97,4 +106,11 @@ __all__ = [
     "rank_routes",
     "draft_procedure",
     "enumerate_routes",
+    "SelectivityStatus",
+    "SelectivityRecord",
+    "SelectivityTable",
+    "StepSelectivity",
+    "RouteSelectivity",
+    "selectivity_of_step",
+    "verify_selectivity",
 ]

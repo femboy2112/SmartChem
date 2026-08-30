@@ -43,11 +43,13 @@ from smartchem.experiment import (
     ExperimentRoute,
     ExperimentStep,
     RouteFitStatus,
+    SelectivityStatus,
     draft_procedure,
     fit_route,
     rank_routes,
     stoichiometric_ceiling,
     verify_composability,
+    verify_selectivity,
 )
 from smartchem.experiment.equipment import EquipmentKind
 from smartchem.experiment.routes import enumerate_routes
@@ -68,6 +70,12 @@ PARA = parse_smiles("CC(=O)Nc1ccc(O)cc1")
 ACOH = parse_smiles("CC(=O)O")
 WATER = parse_smiles("O")
 KETENE = parse_smiles("C=C=O")
+ESTER = parse_smiles("CC(=O)Oc1ccc(N)cc1")   # 4-aminophenyl acetate, the O-acetyl ISOMER of paracetamol
+
+
+def ester_route() -> ExperimentRoute:
+    """The same anhydride acetylation aimed at the O-acetyl ester -- the DISFAVORED regiochemical outcome."""
+    return ExperimentRoute.of(ExperimentStep.assembling(ESTER, (AMP, ANH), (ESTER, ACOH), reagents=(ANH,)))
 
 
 def anhydride_route(pres=None) -> ExperimentRoute:
@@ -202,6 +210,24 @@ def main() -> int:
     f.check(not enumerate_routes(PARA, reagents=(WATER,), available=(), max_depth=1),
             "E5 returns a loud empty (no route) from an empty inventory, never a fabricated route")
 
+    # -- E5 depth: isomer-keyed regiochemical selectivity (which isomer the step makes) ---------------
+    print("\n[selectivity] N- vs O-acetylation of 4-aminophenol (same formula C8H9NO2, different isomer):",
+          flush=True)
+    sel_para = verify_selectivity(anhydride_route())
+    sel_ester = verify_selectivity(ester_route())
+    sel_ket = verify_selectivity(ketene_route())
+    print(f"  paracetamol (N-acetyl amide) via anhydride -> {sel_para.verdict}", flush=True)
+    print(f"  4-aminophenyl acetate (O-acetyl ester) via anhydride -> {sel_ester.verdict}", flush=True)
+    f.check(sel_para.verdict == "FAVORED",
+            "the amide (paracetamol) is the SOURCED FAVORED product of acetylating 4-aminophenol")
+    f.check(sel_ester.verdict == "DISFAVORED",
+            "the O-acetyl ester is DISFAVORED -- the sourced major product is the amide, not the ester")
+    f.check(sel_ket.per_step[-1].status is SelectivityStatus.UNKNOWN,
+            "the ketene acetylation carries no sourced N-/O-selectivity: a loud UNKNOWN, never fabricated")
+    ranked_iso = rank_routes([ester_route(), anhydride_route()])
+    f.check(ranked_iso[0].route == anhydride_route(),
+            "ranking floats the FAVORED (right-isomer) route above the DISFAVORED one")
+
     # -- the drafted procedure a chemist reads --------------------------------------------------------
     print("\n[draft] the chemist-facing procedure for the winning route:", flush=True)
     draft = draft_procedure(anhydride_route(pres=(1, 1)), feed={AMP: 1, ANH: Fraction(6, 5)})
@@ -212,6 +238,8 @@ def main() -> int:
             "the draft names the heating apparatus (the 'Bunsen and flasks' click)")
     f.check(any(i.kind is EquipmentKind.CONTAINMENT for i in draft.equipment[0]),
             "the draft attaches sourced-hazard containment (a fume hood)")
+    f.check("selectivity: FAVORED" in text,
+            "the draft surfaces the sourced regiochemistry (this route makes the major isomer)")
 
     # -- verdict --------------------------------------------------------------------------------------
     print("\n" + "=" * 96, flush=True)

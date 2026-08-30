@@ -69,6 +69,7 @@ __all__ = [
     "molecule_name",
     "molecule_hazards",
     "molecule_dfh_0k_kj",
+    "molecule_dfh_0k_range_kj",
     "structures_of",
     "review_capped_scission",
 ]
@@ -125,6 +126,19 @@ def molecule_dfh_0k_kj(molecule: Molecule) -> float | None:
         return None
     recs = [r.dfh_kj for r in decompiler_thermo.records_for_named(name) if r.usable_at_0k]
     return recs[0] if recs else None
+
+
+def molecule_dfh_0k_range_kj(molecule: Molecule) -> tuple[float, float] | None:
+    """The 0 K formation-enthalpy interval (kJ/mol) for a *molecule*, isomer-resolved where known.
+
+    The molecule-level entry point to :func:`_dfh_range_kj`, the same resolver the energy screen uses, so
+    a caller gets the COMPLETE coverage (both the reference ``POLYATOMIC_REFS`` and the decompiler's own 0 K
+    tiered values), unlike :func:`molecule_dfh_0k_kj`, which reads only the tiered set.  Returns an EXACT
+    (degenerate) interval when the structure resolves to a tabulated isomer, the min/max over a
+    composition's isomers when only the formula is known (ambiguity made explicit, not hidden), and
+    ``None`` when no reference covers it.
+    """
+    return _dfh_range_kj(Formula.of(molecule.formula, molecule.charge), molecule)
 
 
 def _dfh_range_kj(formula: Formula, molecule: Molecule | None = None) -> tuple[float, float] | None:

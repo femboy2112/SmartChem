@@ -158,6 +158,30 @@ def _mol(atoms: tuple[str, ...], bonds: set[Bond]) -> Molecule:
 # H2O -- O0 with two H
 _WATER = _mol(("O", "H", "H"), {Bond(0, 1), Bond(0, 2)})
 
+# --- common small molecules (single dominant isomer each) --------------------------------
+# carbon monoxide, C#O
+_CARBON_MONOXIDE = _mol(("C", "O"), {Bond(0, 1, 3)})
+# carbon dioxide, O=C=O
+_CARBON_DIOXIDE = _mol(("C", "O", "O"), {Bond(0, 1, 2), Bond(0, 2, 2)})
+# methane, CH4
+_METHANE = _mol(("C", "H", "H", "H", "H"), {Bond(0, 1), Bond(0, 2), Bond(0, 3), Bond(0, 4)})
+# ammonia, NH3
+_AMMONIA = _mol(("N", "H", "H", "H"), {Bond(0, 1), Bond(0, 2), Bond(0, 3)})
+# hydrogen peroxide, H-O-O-H
+_HYDROGEN_PEROXIDE = _mol(("O", "O", "H", "H"), {Bond(0, 1), Bond(0, 2), Bond(1, 3)})
+# methanol, CH3-OH
+_METHANOL = _mol(
+    ("C", "O", "H", "H", "H", "H"),
+    {Bond(0, 1), Bond(1, 2), Bond(0, 3), Bond(0, 4), Bond(0, 5)},
+)
+# formaldehyde, H2C=O
+_FORMALDEHYDE = _mol(("C", "O", "H", "H"), {Bond(0, 1, 2), Bond(0, 2), Bond(0, 3)})
+# formic acid, H-C(=O)-O-H
+_FORMIC_ACID = _mol(
+    ("C", "O", "O", "H", "H"),
+    {Bond(0, 1, 2), Bond(0, 2), Bond(2, 3), Bond(0, 4)},
+)
+
 # ketene, CH2=C=O -- C0(H2)=C1=O2
 _KETENE = _mol(
     ("C", "C", "O", "H", "H"),
@@ -210,6 +234,38 @@ _REGISTERED: tuple[NamedStructure, ...] = (
     NamedStructure(
         "water", _WATER, "H2O", iupac="oxidane", cas="7732-18-5",
         provenance="elementary structure",
+    ),
+    NamedStructure(
+        "carbon monoxide", _CARBON_MONOXIDE, "CO", iupac="carbon monoxide", cas="630-08-0",
+        provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "carbon dioxide", _CARBON_DIOXIDE, "CO2", iupac="carbon dioxide", cas="124-38-9",
+        provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "methane", _METHANE, "CH4", iupac="methane", cas="74-82-8",
+        provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "ammonia", _AMMONIA, "NH3", iupac="azane", cas="7664-41-7",
+        provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "hydrogen peroxide", _HYDROGEN_PEROXIDE, "H2O2", iupac="hydrogen peroxide",
+        cas="7722-84-1", provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "methanol", _METHANOL, "CH4O", iupac="methanol", cas="67-56-1",
+        synonyms=("methyl alcohol", "wood alcohol"), provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "formaldehyde", _FORMALDEHYDE, "CH2O", iupac="methanal", cas="50-00-0",
+        provenance="std small-molecule structure",
+    ),
+    NamedStructure(
+        "formic acid", _FORMIC_ACID, "CH2O2", iupac="methanoic acid", cas="64-18-6",
+        provenance="std small-molecule structure",
     ),
     NamedStructure(
         "ketene", _KETENE, "C2H2O", iupac="ethenone", cas="463-51-4",

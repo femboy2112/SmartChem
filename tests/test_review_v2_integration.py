@@ -38,7 +38,9 @@ class TestNamesSurface:
         edge = next(e for e in edges if e.equation() == "H2O2 -> H2O + O")
         review = EdgeReview(edge, coherence_score(edge), screen_edge(edge))
         named = review.named_equation()
-        assert named == "H2O2 -> H2O (water) + O"  # H2O2 untouched, H2O annotated
+        # both are registered now; the point stands -- each WHOLE token resolves to its OWN name,
+        # the "H2O" inside "H2O2" is never matched (that would mangle it to "H2O (water)2").
+        assert named == "H2O2 (hydrogen peroxide) -> H2O (water) + O"
 
     def test_unregistered_species_are_not_renamed(self):
         _b, reviews = decompile_and_review("C8H9NO2", inventory=LITMUS_INVENTORY, medium=["H2O"])
@@ -120,10 +122,17 @@ class TestAdversarialHardening:
         _b, reviews = decompile_and_review("C8H9NO2", inventory=LITMUS_INVENTORY, medium=["H2O"])
         r = _hydrolysis(reviews)
         assert HazardFlag.ISOMER_ASSUMED in r.hazard.flags
-        # ...and an edge with no registered/hazarded species does NOT falsely claim an isomer
-        edges, _ = admissible_edges(Formula.parse("CO2"))
-        floor = next(e for e in edges if e.is_elemental_floor)
-        assert HazardFlag.ISOMER_ASSUMED not in screen_edge(floor).flags
+        # ...and the flag tracks name attachment EXACTLY -- present iff some touched species resolves
+        # to a registered compound. Asserted as the biconditional so it survives registry growth
+        # (data widening registered CO2, so its floor now legitimately carries the flag; a still-
+        # unregistered floor must not).
+        from smartchem.decompiler_review import _edge_species
+        from smartchem.structure import resolve_names
+        for target in ("CO2", "N2O"):
+            edges, _ = admissible_edges(Formula.parse(target))
+            floor = next(e for e in edges if e.is_elemental_floor)
+            has_name = any(resolve_names(s) for s in _edge_species(floor))
+            assert (HazardFlag.ISOMER_ASSUMED in screen_edge(floor).flags) == has_name
 
     def test_f3_isomer_ambiguous_fires_on_any_nondegenerate_interval(self):
         # C2H6O = ethanol or dimethyl ether: a same-sign but real enthalpy spread. The docstring's

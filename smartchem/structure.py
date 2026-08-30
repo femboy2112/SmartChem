@@ -20,12 +20,17 @@ connected molecule with these bonds -- and nothing about thermodynamics, reactiv
 a real sample actually is.  A registry entry is a *documented identity claim* (name + structure +
 provenance), not a prediction that a decomposition yields this isomer.
 
-The guard that bites
---------------------
+The guard that bites -- and exactly how far it bites
+----------------------------------------------------
 Every registered structure declares its intended ``expected_formula`` and :func:`_check` rejects it
 unless the ``Molecule``'s own composition matches -- so a mistyped atom list (build ``C6H8NO`` while
-intending ``C6H7NO``) fails loudly at import, never registers a wrong structure under a right key.
-This is the conservation guard of :mod:`smartchem.decompiler` applied to hand-entered graphs.
+intending ``C6H7NO``) fails loudly at import. That is the conservation guard of
+:mod:`smartchem.decompiler` applied to hand-entered graphs, and it catches the common hand-entry
+error; ``Molecule.__post_init__`` separately enforces connectivity. What it does **not** verify is
+*isomer identity*: a valid but wrong isomer of the right composition (a methyl-formate graph labelled
+"acetic acid") passes the composition check. Isomer-correctness of the hand-entered graphs is the
+author's responsibility, exercised by the differential identity tests (relabel-invariant and
+isomer-separating), not certified by this guard.
 """
 
 from __future__ import annotations

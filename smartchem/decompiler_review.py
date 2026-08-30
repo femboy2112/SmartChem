@@ -92,6 +92,8 @@ class HazardFlag(str, Enum):
     ENERGETICS_UNKNOWN = "ENERGETICS_UNKNOWN"     # not assessable from reference data -- NOT "safe"
     ISOMER_AMBIGUOUS = "ISOMER_AMBIGUOUS"         # formula-level: enthalpy depends on the isomer
     DOCUMENTED_HAZARD = "DOCUMENTED_HAZARD"       # a species carries a sourced qualitative hazard record
+    HAZARDS_UNASSESSED = "HAZARDS_UNASSESSED"     # a species has NO sourced hazard record -- NOT "safe"
+    ISOMER_ASSUMED = "ISOMER_ASSUMED"             # a specific isomer's name/hazards attached at formula level
 
 
 def _dfh_range_kj(formula: Formula) -> tuple[float, float] | None:
@@ -236,14 +238,24 @@ def _edge_species(edge: AnyEdge) -> tuple[Formula, ...]:
     return tuple(seen)
 
 
-def _collect_species_hazards(edge: AnyEdge) -> tuple[HazardRef, ...]:
-    """The sourced hazard records for the edge's species (deduplicated, registration-stable order)."""
-    records: list[HazardRef] = []
+def _collect_species_hazards(edge: AnyEdge) -> tuple[tuple[HazardRef, ...], tuple[str, ...]]:
+    """``(found_records, unassessed_species)`` for the edge's species.
+
+    A species with a sourced record contributes to ``found_records``; one WITHOUT contributes its
+    repr to ``unassessed_species`` -- so a coverage gap is data the caller must surface, symmetric
+    with the energetics channel, never a silent drop (the clearance-by-omission this layer forbids).
+    """
+    found: list[HazardRef] = []
+    unassessed: list[str] = []
     for species in _edge_species(edge):
-        record = hazards_for(repr(species))
-        if record is not None and record not in records:
-            records.append(record)
-    return tuple(records)
+        key = repr(species)
+        record = hazards_for(key)
+        if record is not None:
+            if record not in found:
+                found.append(record)
+        else:
+            unassessed.append(key)
+    return tuple(found), tuple(unassessed)
 
 
 def screen_edge(
@@ -259,7 +271,9 @@ def screen_edge(
             f"{', '.join(energy.uncovered_species)}; UNKNOWN is not safe."
         )
     else:
-        if energy.sign_ambiguous:
+        # the enthalpy depends on which isomer of a formula-level species this is whenever the
+        # tabulated interval is non-degenerate -- fire on any real spread, not only a sign flip.
+        if energy.assembly_lo_ev != energy.assembly_hi_ev:
             flags.append(HazardFlag.ISOMER_AMBIGUOUS)
         # exothermic if the interval is (robustly) negative beyond the threshold, or if it could
         # be strongly exothermic on one isomer -- either way the chemist should see it.
@@ -268,13 +282,22 @@ def screen_edge(
         lo, hi = energy.assembly_lo_ev, energy.assembly_hi_ev
         span = f"{lo:.2f} eV" if lo == hi else f"[{lo:.2f}, {hi:.2f}] eV"
         note = f"assembly enthalpy {span} (0 K formation balance; negative = releases heat)."
-    # attach sourced qualitative hazards for the species involved -- inform, never neuter
-    hazards = _collect_species_hazards(edge)
+    # attach sourced qualitative hazards -- inform, never neuter -- AND surface the coverage gaps
+    hazards, unassessed = _collect_species_hazards(edge)
     if hazards:
         flags.append(HazardFlag.DOCUMENTED_HAZARD)
         note = note + " DOCUMENTED HAZARDS -- " + "; ".join(
             f"{h.name}: {h.summary}" for h in hazards
         ) + "."
+    if unassessed:
+        flags.append(HazardFlag.HAZARDS_UNASSESSED)
+        note = note + " HAZARDS UNASSESSED for " + ", ".join(unassessed) + (
+            " -- no sourced hazard record; UNKNOWN is not safe."
+        )
+    # isomer honesty: any specific-isomer name or hazard attached to a formula-level node is an
+    # ASSUMPTION (v1 nodes do not pin structure) -- mark it rather than present it as identity.
+    if hazards or any(resolve_names(s) for s in _edge_species(edge)):
+        flags.append(HazardFlag.ISOMER_ASSUMED)
     return HazardProfile(energy, tuple(flags), note, hazards)
 
 
@@ -335,9 +358,12 @@ class EdgeReview(Digestible):
         return tuple(pairs)
 
     def named_equation(self) -> str:
-        """The edge equation with each recognised formula annotated by its compound name.
+        """The edge equation with each recognised formula annotated by its assumed compound name.
 
-        Whole-token replacement only, so ``H2O`` is never matched inside ``H2O2``.
+        The annotation is the registry's known isomer of a *formula-level* node, not a structural
+        identity claim: a bare ``C2H4O2`` node is equally methyl formate, so the name is an
+        assumption the co-located ``ISOMER_ASSUMED`` hazard flag marks. Whole-token replacement only,
+        so ``H2O`` is never matched inside ``H2O2``.
         """
         names = dict(self.compound_names)
         tokens = self.edge.equation().split(" ")

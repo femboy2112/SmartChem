@@ -92,6 +92,50 @@ class TestEnergeticsBroadenedButHonest:
         assert not r.hazard.assessed
 
 
+class TestAdversarialHardening:
+    """Regression bars for the three breaks the adversarial pass found -- each fires on its own
+    counterexample, so a silent regression to clearance-by-omission would trip here."""
+
+    def test_f1_unassessed_hazards_are_loud_not_silent(self):
+        # CO2 -> C + 2 O: no species has a hazard record; the gap must be flagged, not silent
+        edges, _ = admissible_edges(Formula.parse("CO2"))
+        floor = next(e for e in edges if e.is_elemental_floor)
+        prof = screen_edge(floor)
+        assert HazardFlag.HAZARDS_UNASSESSED in prof.flags
+        assert "UNASSESSED" in prof.notes and "not safe" in prof.notes.lower()
+
+    def test_f1_partial_coverage_names_the_unassessed_species(self):
+        # C2H4O2 -> CH4 + CO2: acetic acid IS documented, but CH4/CO2 must not read as assessed-clean
+        edges, _ = admissible_edges(
+            Formula.parse("C2H4O2"), (Formula.parse("CH4"), Formula.parse("CO2"))
+        )
+        edge = next(e for e in edges if e.equation() == "C2H4O2 -> CH4 + CO2")
+        prof = screen_edge(edge)
+        assert HazardFlag.DOCUMENTED_HAZARD in prof.flags      # acetic acid surfaced
+        assert HazardFlag.HAZARDS_UNASSESSED in prof.flags     # AND the gap surfaced
+        assert "CH4" in prof.notes and "CO2" in prof.notes     # the specific unassessed species named
+
+    def test_f2_isomer_assumption_is_marked_where_a_name_is_attached(self):
+        # a formula-level node labelled with one isomer's name/hazards carries the assumption flag...
+        _b, reviews = decompile_and_review("C8H9NO2", inventory=LITMUS_INVENTORY, medium=["H2O"])
+        r = _hydrolysis(reviews)
+        assert HazardFlag.ISOMER_ASSUMED in r.hazard.flags
+        # ...and an edge with no registered/hazarded species does NOT falsely claim an isomer
+        edges, _ = admissible_edges(Formula.parse("CO2"))
+        floor = next(e for e in edges if e.is_elemental_floor)
+        assert HazardFlag.ISOMER_ASSUMED not in screen_edge(floor).flags
+
+    def test_f3_isomer_ambiguous_fires_on_any_nondegenerate_interval(self):
+        # C2H6O = ethanol or dimethyl ether: a same-sign but real enthalpy spread. The docstring's
+        # own example must now get the flag it promises.
+        edges, _ = admissible_edges(Formula.parse("C2H6O"))
+        floor = next(e for e in edges if e.is_elemental_floor)
+        prof = screen_edge(floor)
+        assert prof.energy.assembly_lo_ev != prof.energy.assembly_hi_ev  # a real interval
+        assert not prof.energy.sign_ambiguous                            # ...that does not cross zero
+        assert HazardFlag.ISOMER_AMBIGUOUS in prof.flags                 # ...still flagged
+
+
 class TestSynthesisConditions:
     def test_the_ketene_and_anhydride_routes_now_carry_declared_conditions(self):
         _b, reviews = decompile_and_review(

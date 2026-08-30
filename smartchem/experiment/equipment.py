@@ -26,7 +26,7 @@ from enum import Enum
 
 from ..conditions import ConditionEnvelope
 from ..contracts import Digestible
-from .bucket import Bucket, Quantity, unknown
+from .bucket import Bucket
 from .step import ExperimentStep
 
 __all__ = [
@@ -208,13 +208,3 @@ def equipment_for_step(step: ExperimentStep) -> tuple[EquipmentItem, ...]:
             provenance="smartchem.data.hazards (CAMEO / NJ RTK / GHS); the chemist owns the safety call",
         ))
     return tuple(items)
-
-
-def equipment_summary(items: tuple[EquipmentItem, ...]) -> Quantity:
-    """A one-line bucket-labelled summary of an equipment list (UNKNOWN if nothing could be inferred)."""
-    known = [it for it in items if it.bucket is not Bucket.UNKNOWN]
-    if not known:
-        return unknown("equipment", "", "no declared conditions to infer apparatus from")
-    return Quantity(
-        "equipment", "; ".join(it.name for it in known), "", Bucket.KNOWN_SOURCED, _STD,
-    )

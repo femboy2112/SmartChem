@@ -1,10 +1,12 @@
 # Roadmap proposal — the chemical decompiler (elemental descent graph)
 
-**Status:** proposal awaiting explicit execution authority, 2026-08-30. Nothing here is
-built. This is a **provenance-honest decomposition**, not a milestone anyone has directed.
-It slots a new chemistry-core research vertical into `ROADMAP_2026-08-06.md` as **M-4**,
-parallel to the circuit-`ModelIR` line (M-1), and does not displace it, the consumption
-arc, or the long-term category backbone.
+**Status:** proposal + execution, 2026-08-30. The design in Parts 0–6 is the original
+proposal; the four owner decisions (Part 6) were then fixed and **B0–B2 were authorized
+("go full blast") and built** — see the execution addendum in Part 7, which supersedes the
+"nothing built" framing for B0–B2. This is a **provenance-honest** record, not a retroactive
+ratification. It slots a new chemistry-core research vertical into `ROADMAP_2026-08-06.md` as
+**M-4**, parallel to the circuit-`ModelIR` line (M-1), and does not displace it, the
+consumption arc, or the long-term category backbone.
 
 **Baseline:** `03ae86a` (`main == origin/main`, clean; fast suite `1624 passed, 14 skipped,
 1 xfailed`, re-run and verified 2026-08-30).
@@ -201,3 +203,61 @@ These reshape the build; recorded here rather than silently chosen. Recommendati
 - On authorization: start B0 (object + termination proof) after decisions 1–4 are fixed. The
   math engine is reuse; the discipline (termination, budget-refusal, formal≠physical tier,
   independent verifier) is the actual work.
+
+---
+
+## Part 7 — Execution addendum (2026-08-30): B0–B2 built and verified
+
+The four decisions were fixed with the owner: **(1)** 10th executor; **(2)** formula-level v1,
+structure v2; **(3)** closed inventory v1, open v2; **(4)** terminals are **element buckets
+counted in atoms** (`O`/`O2` are one bucket), with the familiar molecular packaging kept as a
+*reporting* layer, not a terminal identity. The owner also sharpened the framing to its dual —
+"given buckets of each element, how full must each be, and by what chains do they assemble to
+X" — which is the **same hypergraph read leaves-to-root**; and the bucket-fullness question is
+*forced by conservation* (it is the target's own formula), so only the routing is searched.
+
+**Landed — `smartchem/decompiler.py` + `tests/test_decompiler.py` (35 tests; full suite
+1659 passed, 14 skipped, 1 xfailed — baseline 1624 + 35, zero regressions):**
+
+- **`Formula`** — the honest formula-level species (atom multiset + charge), a `Digestible`.
+  Necessary because `category.Molecule` *requires bond-connectivity* for any n>1 species, so a
+  bond-free "just the formula" molecule is illegal there — and injecting fake bonds would assert
+  structure that isn't there. Parses `C8H9NO2` / `(NH4)2SO4`, validates elements against
+  `atoms.PT` (refuses unknowns by name), collapses isomers by construction (the v1 contract).
+- **B0 — `DecompositionEdge`** — one AND hyperedge `n · reactant → products`, with every
+  invariant enforced at construction: exact conservation, **W1 descent** (every product strictly
+  lower rank — the termination proof; it *bites*, rejecting `2 H2O → H2 + H2O2` because H2O2 is
+  larger than H2O), ≥2 product instances, canonical unit-bucket spelling, and primitivity. The
+  descent guard is proven **non-vacuous** (a genuine descending edge builds).
+- **B1 — `admissible_edges`** — enumerates every primitive conserving decomposition over a
+  closed inventory. Key algorithmic move: branch only over *molecular* candidates and **force**
+  the leftover atoms into unit element buckets (one way, deterministic) — so the cost is the true
+  solution count, not a cloud of dead partial-bucket branches (the first cut exploded on acetone
+  before the fix). Returns an explicit `complete` flag; a budget hit is reported, never a silent
+  subset. `max_multiplicity=1` default (the atom floor + all whole-number splits); n>1 is the
+  opt-in fraction-clearing knob.
+- **B2 — `DecompositionGraph` + `build_decomposition`** — the AND–OR DAG, a presentation-invariant
+  `Digestible`. `status` is `COMPLETE` only when the whole reachable graph fit the budget;
+  `REFUSED_BUDGET` carries a partial graph **and a reason**, and can never read as complete (W2 —
+  the arc-III vacuity disease, pre-empted). Measured: water → 1 edge (`H2O → 2 H + O`, the one
+  family); acetone/`C3H6O` over a generic inventory → COMPLETE, 19 edges / 9 nodes; paracetamol
+  → COMPLETE, 145 edges / 15 nodes — denser, as predicted. Identity is deterministic and
+  representation-independent (a dict target and a string target digest equal).
+- **Reporting — `standard_state_equation`** — repackages the forced atom buckets into reference
+  molecules with the minimal integer scaling (`2 H2O → 2 H2 + O2`): decision 4's coherent "2
+  part" bookkeeping, explicitly a conservation-reporting convenience, not a physical or reaction
+  claim.
+
+**Deliberately NOT done this cut (held for B3, its own focused pass):** the module is *not* wired
+into the closed executor registry or the top-level public API, and there is no certificate/tier
+or production-independent verifier yet. That is the architectural, registry-touching step — it
+must land with the S-1 completeness guard green, a payload-error branch, a structure-attachment
+decision, the `FORMAL/EXACT/CERTIFIED`-for-conservation tier + realizability-refusal casualty
+list, and an independent verifier (the `stoichiometry.integer_kernel_basis` engine is the natural
+second blind path). Also open: exposing `smartchem.decompiler` on the lazy public API (touches the
+`__all__`/`_ATTR_SOURCE` lockstep), and B4 thermodynamic decoration.
+
+**Stated v1 boundaries (honest walls, not hidden):** formula-level (all isomers of a formula
+share one graph); neutral species only (a charged target is refused); completeness is over
+`(declared inventory, n ≤ max_multiplicity)`; and — the load-bearing one — this certifies
+*conservation*, never chemistry: no thermodynamics, kinetics, mechanism, or synthesizability.

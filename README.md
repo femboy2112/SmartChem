@@ -169,7 +169,7 @@ python -m smartchem.bench
 Current maintained fast-suite result:
 
 ```text
-1863 passed, 14 skipped, 1 xfailed
+1896 passed, 14 skipped, 1 xfailed
 ```
 
 The skipped tests require the explicit slow-test gate and are not represented as passed.

@@ -738,3 +738,48 @@ carry a BOUNDARY half that is not an unfinished feature but the W3 law restated 
 "Complete" for this feature is: **isomer-keyed evidence (1) + general capping (2) + the recursive
 structure graph (3)**, at which point a chemist gets a structure-resolved, evidence-annotated
 decomposition tree — with every physical judgment still theirs to make.
+
+## Part 14 — Execution: Part 13's plan, built (BUILD ×6 + BOUNDARY + DATA)
+
+The Part 13 map was interrogated column by column and built. Commits `1951ac8`..`084a1e2`
+(pushed); suite 1863 → 1896. What landed:
+
+**BUILD.**
+1. **Isomer-keyed evidence** (`1951ac8`) — the keystone. Evidence attaches by STRUCTURE, not formula:
+   `resolve_structure(molecule)` names the specific isomer; hazards/thermo key by unique name (a
+   formula may carry several isomers); `hazards_for(ambiguous formula)` returns `None` not a false
+   pick; the review threads a `structures` context so a resolved species gets its isomer's data and
+   `ISOMER_ASSUMED`/`ISOMER_AMBIGUOUS` RETIRE. `review_capped_scission` reviews a structure-derived
+   edge at structure resolution. Registered the C2H6O pair (ethanol/DME) and the C8H9NO2 O-acetyl
+   isomer — the plurality the old one-isomer band-aid forbade. Ethanol (−217.1, H225 liquid, IARC 1)
+   vs dimethyl ether (−166.6, H220 gas) are now fully distinguished, sourced.
+2. **General capping** (`8923d76`) — `capped_scissions(max_reactant_cuts=k)`: cut k order-1 bonds,
+   consume a size-k reagent multiset, bipartite-match the open valences. Derives the diester double
+   hydrolysis `C4H6O4 + 2 H2O → 2 CH2O2 + C2H6O2`.
+3. **Recursive structure graph** (`5ffda3e`) — `structure_decompose`: the structure analogue of B2,
+   recursing scission to single atoms, W1-terminating, W2 loud `REFUSED_BUDGET`.
+4. **Radical/ion intermediates** (`084a1e2`) — `species_class` / `stability_caveat`: a scission
+   fragment is a RADICAL, a heterolytic product an ION; neither is presented as an isolable compound.
+5. **Public API** (`5bc8c26`) — the whole vertical on the lazy `__init__` surface (45 names), lockstep
+   held, root import still numpy-free.
+6. **Charged/ionic descent** (`03211a3`) — `HeterolyticScission`: `HCl → H⁺ + Cl⁻`, acetic acid's
+   acid dissociation derived; charge conserved, both electron directions enumerated (which ionises is
+   not claimed). The chemical/EM bridge.
+
+**BOUNDARY, made executable** (`9ea38cb`, `084a1e2`) — `smartchem/decompiler_boundary.py`.
+`stereo_status`/`stereocenters`/`cis_trans_candidates` detect stereochemistry (1-WL sound lower bound,
+ring bonds excluded) and report `CONSTITUTIONAL_ONLY`, never R/S or E/Z. `tautomerizable` detects the
+keto-enol motif; which tautomer dominates is not claimed. `evidence_ranking` orders only by SOURCED
+evidence present, `UNRANKED` (input order kept) when there is no basis — "which cleavage happens" has
+no predict function, by design. Attach, never predict — enforced, not merely documented.
+
+**DATA** (`1820f3f` earlier, `1951ac8`) — hazards 5 → 22 (common products + the 8 isomer-pair/
+heteroatom species), each authored blind then reconciled against an independent PubChem/ECHA/NIOSH
+bearing; real corrections caught (H2O2 ≥70% band, CO2 IDLH omitted, formic-acid H226 dropped, ammonia
+`H3N` key). Thermo gained the ethanol/DME 0 K pair reused from the benchmark.
+
+**The one BUILD item deliberately NOT taken this pass:** the canonicalizer INDIVIDUALISATION for
+bare vertex-transitive rings (`category.py` #25) — Part 13 marked it the one change where a silent
+error corrupts every graph equality, so it earns brute-force verification rather than a bolt-on at
+the end of a long arc. It bites only bare benzene; every registered/litmus species canonicalizes.
+That, and broader sourced coverage, are what remain.

@@ -270,13 +270,15 @@ def _evidence_weight(review) -> tuple[int, int]:
 
 
 def evidence_ranking(reviews) -> EvidenceRanking:
-    """Order ``reviews`` by SOURCED evidence present -- the only sanctioned ranking (attach, never
-    predict).
+    """Order ``reviews`` by SOURCED evidence PRESENT -- the formal engine's ranking (it attaches graded
+    evidence; it never invents an order).
 
-    Reviews with declared conditions rank above those without; documented hazards break ties. This
-    orders by the PRESENCE of sourced facts, never by any computed number, so it makes no reactivity
-    or feasibility claim. If NO review carries sourced conditions there is no evidential basis, and the
-    result is ``UNRANKED`` with the input order preserved -- the engine will not manufacture an order.
+    Reviews with declared conditions rank above those without; documented hazards break ties. This orders by
+    the PRESENCE of sourced facts, never by an unsourced reactivity guess. (Ordering by a value from an
+    ESTABLISHED model -- a computed feasibility/energy, each graded -- is admissible too, but lives in the
+    experiment-compiler layer, e.g. `feasibility` ranking; it is not this formal function's job.) If NO
+    review carries sourced conditions there is no evidential basis, and the result is ``UNRANKED`` with the
+    input order preserved -- the engine will not manufacture an order.
     """
     reviews = tuple(reviews)
     weights = [_evidence_weight(r) for r in reviews]

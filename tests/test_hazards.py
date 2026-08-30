@@ -27,8 +27,41 @@ class TestKeysMatchFormulaRepr:
 
 class TestUnknownIsNotSafe:
     def test_a_miss_returns_none_not_an_empty_clearance(self):
-        assert hazards_for("H2O") is None      # water: not in the hazard table
+        assert hazards_for("C3H8") is None      # propane: not in the hazard table -> a loud gap
         assert hazards_for("C99H1") is None     # nonsense: a loud gap, never "safe"
+
+
+class TestCommonSpeciesAreNowCovered:
+    """The widening: common decomposition products / inventory carry sourced records, so those
+    edges read DOCUMENTED rather than the loud HAZARDS_UNASSESSED. Keys are canonical Formula reprs
+    (ammonia is 'H3N', not 'NH3' -- alphabetical element order)."""
+
+    def test_the_common_species_have_records(self):
+        expected = {
+            "CO": "carbon monoxide", "CO2": "carbon dioxide", "CH4": "methane",
+            "H3N": "ammonia", "H2O2": "hydrogen peroxide", "CH4O": "methanol",
+            "CH2O": "formaldehyde", "CH2O2": "formic acid", "H2O": "water",
+        }
+        for formula, name in expected.items():
+            rec = hazards_for(formula)
+            assert rec is not None and rec.name == name
+
+    def test_carbon_monoxide_warns_toxic_and_flammable(self):
+        co = hazards_for("CO")
+        assert "H220" in co.ghs_codes and "H331" in co.ghs_codes   # flammable + toxic-by-inhalation
+        assert "INHALED" in co.summary.upper()
+
+    def test_formaldehyde_is_flagged_carcinogen(self):
+        f = hazards_for("CH2O")
+        assert "H350" in f.ghs_codes                                # ECHA Carc. 1B
+        assert "IARC" in f.regulatory or "carcinogen" in f.regulatory.lower()
+
+    def test_water_is_assessed_benign_not_unassessed(self):
+        # water carries a POSITIVE record with no GHS codes -- assessed and benign, which is a
+        # different thing from an absent record (the loud UNKNOWN a chemist must not read as "safe").
+        w = hazards_for("H2O")
+        assert w is not None and w.ghs_codes == ()
+        assert "benign" in w.summary.lower()
 
 
 class TestSafetyCriticalFactsArePresent:

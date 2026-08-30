@@ -99,7 +99,8 @@ class TestAdversarialHardening:
     counterexample, so a silent regression to clearance-by-omission would trip here."""
 
     def test_f1_unassessed_hazards_are_loud_not_silent(self):
-        # CO2 -> C + 2 O: no species has a hazard record; the gap must be flagged, not silent
+        # CO2 -> C + 2 O: CO2 now has a record, but the bare element buckets C/O do not; that gap
+        # must still be flagged, not silent (the element buckets can never carry a compound hazard).
         edges, _ = admissible_edges(Formula.parse("CO2"))
         floor = next(e for e in edges if e.is_elemental_floor)
         prof = screen_edge(floor)
@@ -107,15 +108,18 @@ class TestAdversarialHardening:
         assert "UNASSESSED" in prof.notes and "not safe" in prof.notes.lower()
 
     def test_f1_partial_coverage_names_the_unassessed_species(self):
-        # C2H4O2 -> CH4 + CO2: acetic acid IS documented, but CH4/CO2 must not read as assessed-clean
-        edges, _ = admissible_edges(
-            Formula.parse("C2H4O2"), (Formula.parse("CH4"), Formula.parse("CO2"))
-        )
-        edge = next(e for e in edges if e.equation() == "C2H4O2 -> CH4 + CO2")
-        prof = screen_edge(edge)
-        assert HazardFlag.DOCUMENTED_HAZARD in prof.flags      # acetic acid surfaced
-        assert HazardFlag.HAZARDS_UNASSESSED in prof.flags     # AND the gap surfaced
-        assert "CH4" in prof.notes and "CO2" in prof.notes     # the specific unassessed species named
+        # the elemental floor of acetic acid: acetic acid IS documented, but the bare element buckets
+        # (C, O, H) have no record and must NOT read as assessed-clean. Retargeted at element buckets,
+        # which stay permanently unassessed regardless of how far the compound hazard tables widen.
+        from smartchem.decompiler_review import _collect_species_hazards
+        edges, _ = admissible_edges(Formula.parse("C2H4O2"))
+        floor = next(e for e in edges if e.is_elemental_floor)
+        prof = screen_edge(floor)
+        found, unassessed = _collect_species_hazards(floor)
+        assert any(h.name == "acetic acid" for h in found)     # the documented species surfaced
+        assert unassessed                                      # AND the element-bucket gap surfaced
+        assert HazardFlag.DOCUMENTED_HAZARD in prof.flags
+        assert HazardFlag.HAZARDS_UNASSESSED in prof.flags
 
     def test_f2_isomer_assumption_is_marked_where_a_name_is_attached(self):
         # a formula-level node labelled with one isomer's name/hazards carries the assumption flag...

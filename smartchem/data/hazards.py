@@ -172,6 +172,167 @@ HAZARD_REFS: tuple[HazardRef, ...] = (
         ),
         status=EvidenceStatus.ESTABLISHED,
     ),
+    # --- common small molecules (decomposition products / inventory) ------------------------
+    HazardRef(
+        formula="CO",
+        name="carbon monoxide",
+        ghs_codes=("H220", "H331", "H360D", "H372"),
+        summary=(
+            "extremely flammable gas; TOXIC IF INHALED -- binds haemoglobin as carboxyhaemoglobin, "
+            "a chemical asphyxiant that is colourless and odourless; reproductive toxicant"
+        ),
+        reactivity=(
+            "forms explosive mixtures with air (12.5-74%)",
+            "forms metal carbonyls (Ni, Fe) under pressure in steel systems; some detonate on heating",
+        ),
+        exposure="OSHA PEL 50 ppm (8-h TWA); NIOSH REL 35 ppm / 200 ppm ceiling; IDLH 1200 ppm",
+        regulatory="ECHA harmonised: Repr. 1A (H360D), STOT RE 1 (H372, cardiovascular)",
+        provenance="PubChem GHS / ECHA harmonised (CID 281); NIOSH Pocket Guide; CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="CO2",
+        name="carbon dioxide",
+        ghs_codes=("H280",),
+        summary=(
+            "not flammable; a SIMPLE ASPHYXIANT -- displaces oxygen, high concentrations cause rapid "
+            "CNS depression and unconsciousness; solid/liquid cause cryogenic burns"
+        ),
+        reactivity=("asphyxiation hazard in confined/low spaces (denser than air)",),
+        exposure=(
+            "OSHA PEL 5000 ppm (8-h TWA); NIOSH REL 5000 ppm / 30000 ppm STEL "
+            "[IDLH figure not corroborated across sources in verification -- omitted rather than guessed]"
+        ),
+        regulatory="",
+        provenance="PubChem GHS (CID 280, ~82% notifier H280); NIOSH Pocket Guide; CAMEO Chemicals (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="CH4",
+        name="methane",
+        ghs_codes=("H220",),
+        summary=(
+            "extremely flammable gas; a simple asphyxiant that displaces oxygen; not otherwise toxic"
+        ),
+        reactivity=("forms explosive mixtures with air (5-15%); violent with strong oxidisers",),
+        exposure="no specific PEL (simple asphyxiant); explosive limits 5-15%; IDLH 50000 ppm (LEL-based, not health-based)",
+        regulatory="",
+        provenance="PubChem GHS / ECHA harmonised (CID 297); NIOSH Pocket Guide; CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="H3N",  # canonical Formula repr (alphabetical: H before N) -- NOT "NH3"
+        name="ammonia",
+        ghs_codes=("H221", "H280", "H314", "H331", "H400"),
+        summary=(
+            "flammable gas; TOXIC IF INHALED; corrosive -- severe skin/eye burns; very toxic to "
+            "aquatic life"
+        ),
+        reactivity=(
+            "reacts violently with strong acids and oxidisers",
+            "forms explosive/shock-sensitive compounds with halogens, gold, silver, mercury",
+        ),
+        exposure="OSHA PEL 50 ppm (8-h TWA); NIOSH REL 25 ppm / 35 ppm STEL; IDLH 300 ppm",
+        regulatory="",
+        provenance="PubChem GHS / ECHA harmonised (CID 222); NIOSH Pocket Guide; CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="H2O2",
+        name="hydrogen peroxide",
+        ghs_codes=("H271", "H302", "H314", "H332"),
+        summary=(
+            "STRONG OXIDISER (concentrated may cause fire/explosion); corrosive -- severe burns; "
+            "harmful if swallowed/inhaled; decomposes to water + oxygen. This profile is for the "
+            "CONCENTRATED grade (>=70%); severity is concentration-graded and much lower when dilute"
+        ),
+        reactivity=(
+            "powerful oxidiser; decomposes exothermically, accelerated by heat, metals, catalysts and "
+            "contamination (can rupture sealed containers)",
+            "incompatible with organics, reductants, many metals and their salts",
+        ),
+        exposure="OSHA PEL 1 ppm (8-h TWA); NIOSH REL 1 ppm; IDLH 75 ppm",
+        regulatory=(
+            "ECHA CLP Annex VI concentration bands: Ox. Liq. 1 / H271 and Skin Corr. 1A / H314 apply "
+            "at >=70%; Skin Corr. 1B at 50-70%; mere irritation (H315) at 35-50%; eye damage (H318) "
+            "from ~8%. A minority H351 self-notification is not corroborated by IARC/NTP and is omitted"
+        ),
+        provenance="PubChem GHS / ECHA C&L (CID 784, H271 ~90%/H314 ~99.6% notifier); NIOSH Pocket Guide; CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="CH4O",
+        name="methanol",
+        ghs_codes=("H225", "H301", "H311", "H331", "H370"),
+        summary=(
+            "highly flammable liquid and vapour; TOXIC by all routes (oral/dermal/inhalation); "
+            "H370 -- damages organs: metabolised to formic acid, causing optic-nerve damage and "
+            "blindness"
+        ),
+        reactivity=("flammable; incompatible with strong oxidisers",),
+        exposure="OSHA PEL 200 ppm (8-h TWA); NIOSH REL 200 ppm / 250 ppm STEL [skin]; IDLH 6000 ppm",
+        regulatory="ECHA harmonised: Acute Tox. 3 (oral/dermal/inhalation), STOT SE 1 (H370); [skin] = significant dermal absorption",
+        provenance="PubChem GHS / ECHA harmonised (CID 887); NIOSH Pocket Guide; CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="CH2O",
+        name="formaldehyde",
+        ghs_codes=("H301", "H311", "H331", "H314", "H317", "H341", "H350"),
+        summary=(
+            "TOXIC by all routes; corrosive -- severe burns; skin sensitiser; CARCINOGEN (IARC "
+            "Group 1, ECHA Carc. 1B) and suspected mutagen"
+        ),
+        reactivity=(
+            "polymerises to paraformaldehyde on standing/cooling",
+            "incompatible with strong oxidisers, strong bases, and amines",
+        ),
+        exposure="OSHA PEL 0.75 ppm (8-h TWA) / 2 ppm STEL; NIOSH REL 0.016 ppm (carcinogen); IDLH 20 ppm",
+        regulatory=(
+            "carcinogen classification disagrees across sources, resolved toward the STRONGER call: "
+            "IARC Group 1 (human carcinogen) and ECHA harmonised Carc. 1B / H350 (legally binding) -- "
+            "even though a majority of individual self-notifiers under-classify to only H351 (Carc. 2); "
+            "codes here follow the harmonised/IARC classification. Also Muta. 2 (H341)"
+        ),
+        provenance="PubChem GHS / ECHA harmonised Annex VI (CID 712); IARC Monograph 100F; NIOSH Pocket Guide",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="CH2O2",
+        name="formic acid",
+        ghs_codes=("H314", "H302", "H331"),
+        summary=(
+            "CORROSIVE -- severe skin/eye burns (the one near-universal call, ~99.7% of notifiers); "
+            "harmful if swallowed and toxic if inhaled at concentration (minority-notified, ~18-21%). "
+            "Combustible (flash point ~50-69 C) but below the H226 flammable-liquid threshold in most "
+            "classifications, so H226 is not asserted here"
+        ),
+        reactivity=(
+            "decomposes on heating/catalysis to CO + water (dehydration) or CO2 + H2 "
+            "(dehydrogenation); the CO route is the hazard with hot conc. sulfuric acid",
+            "corrodes active metals releasing hydrogen; exothermic with all bases",
+            "incompatible with strong oxidisers, strong bases, and concentrated sulfuric acid",
+        ),
+        exposure="OSHA PEL 5 ppm (8-h TWA); NIOSH REL 5 ppm; IDLH 30 ppm",
+        regulatory="",
+        provenance="PubChem GHS / ECHA C&L (CID 284, H314 ~99.7% notifier); NIOSH Pocket Guide; CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="H2O",
+        name="water",
+        ghs_codes=(),  # deliberately empty: water carries no GHS classification
+        summary=(
+            "no significant hazard -- the reference benign substance. This is a positive ASSESSED "
+            "record (assessed and benign), NOT an absence: a decomposition touching water reads "
+            "documented, not the loud HAZARDS_UNASSESSED that an unknown species gets"
+        ),
+        reactivity=("violent with a few reactive species (alkali metals, acid anhydrides), by their reactivity not water's",),
+        exposure="",
+        regulatory="a ~0.5% minority self-notification (H315/H319/H335) exists and is uninterpreted (likely a mislabelled mixture or data artefact); not asserted here",
+        provenance="assessed-benign at scale: PubChem CID 962 records 'does not meet GHS hazard criteria' for 99.5% (1866/1876) of reports; recorded so absence-of-record stays meaningful",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
 )
 
 

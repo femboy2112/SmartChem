@@ -61,6 +61,7 @@ from .drafter import (
     rank_routes,
 )
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_envelope, equipment_for_step
+from .routes import enumerate_routes
 from .step import ExperimentRoute, ExperimentStep, StepError
 
 __all__ = [
@@ -95,4 +96,5 @@ __all__ = [
     "fit_routes",
     "rank_routes",
     "draft_procedure",
+    "enumerate_routes",
 ]

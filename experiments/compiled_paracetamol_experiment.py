@@ -50,6 +50,7 @@ from smartchem.experiment import (
     verify_composability,
 )
 from smartchem.experiment.equipment import EquipmentKind
+from smartchem.experiment.routes import enumerate_routes
 from smartchem.smiles import parse_smiles
 
 
@@ -186,6 +187,20 @@ def main() -> int:
     print(f"  off-seed intermediate: {before} -> (inject sourced data) -> {after}", flush=True)
     f.check(before == "UNKNOWN" and after == "COMPOSABLE",
             "an off-seed intermediate is UNKNOWN until sourced data is injected, then COMPOSABLE")
+
+    # -- E5: enumerate candidate routes from the decompiler (the loop-closer) --------------------------
+    print("\n[E5] enumerate synthesis routes from the decompiler (target + inventory -> routes):",
+          flush=True)
+    gen = enumerate_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1)
+    eqs = {s.equation() for r in gen for s in r.steps}
+    for e in sorted(eqs):
+        print(f"  candidate: {e}", flush=True)
+    f.check("C4H6O3 + C6H7NO -> C8H9NO2 + C2H4O2" in eqs,
+            "E5 rediscovers the acetic-anhydride acetylation of 4-aminophenol from the decompiler")
+    f.check("C2H4O2 + C6H7NO -> C8H9NO2 + H2O" in eqs,
+            "E5 rediscovers the acetic-acid condensation route from the decompiler")
+    f.check(not enumerate_routes(PARA, reagents=(WATER,), available=(), max_depth=1),
+            "E5 returns a loud empty (no route) from an empty inventory, never a fabricated route")
 
     # -- the drafted procedure a chemist reads --------------------------------------------------------
     print("\n[draft] the chemist-facing procedure for the winning route:", flush=True)

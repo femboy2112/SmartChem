@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (25/25), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (30/30), exit 0**
 
 ## The question
 
@@ -11,7 +11,7 @@ and draft a chemist-usable procedure — all under the **known-not-new-physics**
 chemistry; never invent a feasibility/kinetics/yield model)? Not *"does the synthesis work"* — W3 forbids
 that — but every fact the compiler asserts must hold, and every refusal must cite a sourced fact.
 
-## What ran, and what held (25/25)
+## What ran, and what held (30/30)
 
 | Rung | Criterion | Result |
 |------|-----------|--------|
@@ -38,6 +38,11 @@ that — but every fact the compiler asserts must hold, and every refusal must c
 | E5+ | the ketene acetylation carries **no sourced N-/O-selectivity** → a loud `UNKNOWN`, never fabricated | PASS |
 | E5+ | ranking **floats the FAVORED (right-isomer) route above** the disfavored one | PASS |
 | E5+ | the draft **surfaces the sourced regiochemistry** (this route makes the major isomer) | PASS |
+| M1 | the ΔG engine **recovers the textbook −474 kJ** for 2H₂+O₂→2H₂O (the instrument reads true) | PASS |
+| M1 | Haber is **FAVORABLE at 298 K** (DERIVED, ΔG ≈ −33 kJ) | PASS |
+| M1 | Haber **flips UNFAVORABLE at 700 K, flagged PREDICTED** (extrapolated) — the real T-dependence | PASS |
+| M1 | paracetamol acetylation feasibility is a **loud UNKNOWN** (no seed thermo), never a fabricated ΔG | PASS |
+| M1 | ranking **floats the thermodynamically FAVORABLE route above** the endergonic one | PASS |
 
 ## The ledger completed this arc (E1 depth · coverage/autoload · E5 · CLI)
 

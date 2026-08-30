@@ -61,6 +61,14 @@ from .drafter import (
     rank_routes,
 )
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_envelope, equipment_for_step
+from .feasibility import (
+    FeasibilityDirection,
+    FeasibilityGrade,
+    RouteFeasibility,
+    StepFeasibility,
+    feasibility_of_step,
+    verify_feasibility,
+)
 from .routes import enumerate_routes
 from .selectivity import (
     RouteSelectivity,
@@ -113,4 +121,10 @@ __all__ = [
     "RouteSelectivity",
     "selectivity_of_step",
     "verify_selectivity",
+    "FeasibilityDirection",
+    "FeasibilityGrade",
+    "StepFeasibility",
+    "RouteFeasibility",
+    "feasibility_of_step",
+    "verify_feasibility",
 ]

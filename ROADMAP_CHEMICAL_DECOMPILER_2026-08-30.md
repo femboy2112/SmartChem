@@ -1283,3 +1283,54 @@ while presenting it as established, and (2) **fabricating** a law/model with no 
 validated model reaches is fair game, labelled by grade. A well-founded discovery of a *hole* in current
 theory is permitted -- flagged as a claim against theory, never smuggled in as settled. That is the ethos,
 sharpened, not a gap.
+
+## Part 22 -- M1 thermodynamic feasibility BUILT (the DERIVED bucket opens), framing hardened
+
+### M1 -- ΔG feasibility, the DERIVED verdict (the keystone of Part 21's mid-term)
+
+The first capability built to *compute* a physical answer from an established model rather than look it up on
+the M-5 side -- the DERIVED bucket, made real.
+
+* **Data (`smartchem/data/thermo.py`).** A tiny, sourced seed of standard formation enthalpies and standard
+  molar entropies (ΔfH°, S° at 298.15 K, 1 bar), CODATA Key Values where they exist, NIST/CRC otherwise,
+  each cited. Injectable per call (`ThermoTable.with_records`) for any chemical -- the universality lever --
+  and a miss is a loud `None`, never a fabricated value.
+* **Engine (`smartchem/experiment/feasibility.py`).** From that data an ESTABLISHED model computes a
+  reaction's ΔG -- ΔH by Hess's law, ΔG = ΔH - TΔS -- reusing `ceiling._coefficient_vector` so feasibility
+  and the ceiling share ONE kernel-cross-checked stoichiometry. The verdict is graded twice: a DIRECTION
+  (`FAVORABLE` ΔG<0 / `UNFAVORABLE` ΔG>0 / `BORDERLINE` / `UNKNOWN`) and an epistemic GRADE (`DERIVED` at/near
+  298 K, `PREDICTED` extrapolated far via constant ΔH/ΔS, `UNKNOWN` on missing data). Wired into `rank_routes`
+  as a tiebreaker after selectivity and rendered in the draft.
+* **Calibrated (the Instrument rule).** 2H2+O2->2H2O(l) recovers ΔG° = -474.3 kJ (textbook -474.26); Haber
+  recovers -32.8 kJ at 298 K and flips UNFAVORABLE (flagged PREDICTED) above ~465 K -- the real "why Haber
+  needs pressure" thermodynamics. The instrument reads true on known cases before its novel outputs count.
+* **Honest boundaries, loud.** `UNFAVORABLE` is a sourced *disfavour in this direction at standard state* --
+  explicitly NOT "impossible" (coupling / non-standard conditions / product removal can drive it; the
+  equilibrium extent is M2). ΔG is *whether*, never *how fast* -- no rate, no kinetics. Paracetamol
+  acetylation feasibility is honestly `UNKNOWN` (no seed thermo for drug-sized species). Gate now **30/30**,
+  suite **2108**.
+
+### Framing hardened -- the six-grade frame made durable across the code
+
+The Part 21 correction was propagated so no live statement contradicts it or the new capability:
+
+* The `DRAFT_BANNER` no longer says the draft "never claims which path Nature takes, a real yield, or a real
+  rate" (already false with selectivity, and M1). It now commits only to what is durable: no success
+  guarantee, no reaction RATE (no established kinetics), every other claim graded and enveloped, and nothing
+  that contradicts a sourced fact or invents a law.
+* `bucket.py` ties the four per-value buckets to the six-grade combination verdict, and clarifies that only a
+  NOVEL (not established) model, or a value contradicting a sourced fact, is forbidden.
+* `accounting.py` no longer lists "feasibility" among the models "the repo does not have and would have to
+  invent" -- feasibility IS computed by M1 from established thermo; only a novel kinetics/yield model stays
+  forbidden.
+* `ceiling.py` softened "a real yield -- physics the compiler does not predict" to "not a yield claim; a
+  DERIVED equilibrium extent is a separate, tighter bound"; `decompiler_boundary.py` scoped "attach, never
+  predict" to the FORMAL engine, admitting graded ranking by an established-model value in the compiler layer.
+
+### Next: M2 -- equilibrium extent / K (the tighter, DERIVED ceiling)
+
+With ΔG in hand, `K = exp(-ΔG/RT)` is the immediate next DERIVED capability: the equilibrium extent -- a
+sourced upper bound *tighter* than E2's 100% conservation ceiling, and "yield" in the thermodynamic-
+equilibrium sense (labelled equilibrium-not-kinetics, never a kinetic yield claim). It reuses M1's ΔG engine
+directly. After M2: M3 thermo breadth (unlock M1/M2 for drug-sized targets), M4 convergent DAGs; then the
+long-term L1 (TST kinetics) / L2 (the unified classifier) / L3 (decompiler R3-R5).

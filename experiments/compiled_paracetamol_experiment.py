@@ -42,13 +42,17 @@ from smartchem.experiment import (
     ConstraintBox,
     ExperimentRoute,
     ExperimentStep,
+    FeasibilityDirection,
+    FeasibilityGrade,
     RouteFitStatus,
     SelectivityStatus,
     draft_procedure,
+    feasibility_of_step,
     fit_route,
     rank_routes,
     stoichiometric_ceiling,
     verify_composability,
+    verify_feasibility,
     verify_selectivity,
 )
 from smartchem.experiment.equipment import EquipmentKind
@@ -71,6 +75,10 @@ ACOH = parse_smiles("CC(=O)O")
 WATER = parse_smiles("O")
 KETENE = parse_smiles("C=C=O")
 ESTER = parse_smiles("CC(=O)Oc1ccc(N)cc1")   # 4-aminophenyl acetate, the O-acetyl ISOMER of paracetamol
+H2 = parse_smiles("[H][H]")
+O2 = parse_smiles("O=O")
+N2 = parse_smiles("N#N")
+NH3 = parse_smiles("N")
 
 
 def ester_route() -> ExperimentRoute:
@@ -228,6 +236,28 @@ def main() -> int:
     f.check(ranked_iso[0].route == anhydride_route(),
             "ranking floats the FAVORED (right-isomer) route above the DISFAVORED one")
 
+    # -- M1: thermodynamic feasibility (ΔG), the DERIVED bucket, calibrated on known reactions ---------
+    print("\n[M1 feasibility] DERIVED ΔG, instrument calibrated on known reactions:", flush=True)
+    water = ExperimentStep.assembling(WATER, (H2, H2, O2), (WATER, WATER))       # 2H2 + O2 -> 2H2O
+    fw = feasibility_of_step(water)
+    print(f"  2H2 + O2 -> 2H2O : {fw.direction.value}/{fw.grade.value}, ΔG = {fw.delta_g_kj:.1f} kJ/mol",
+          flush=True)
+    f.check(fw.direction is FeasibilityDirection.FAVORABLE and abs(fw.delta_g_kj - (-474.3)) < 1.0,
+            "ΔG engine recovers the textbook -474 kJ for 2H2+O2->2H2O (the instrument reads true)")
+    haber = ExperimentStep.assembling(NH3, (N2, H2, H2, H2), (NH3, NH3))          # N2 + 3H2 -> 2NH3
+    f.check(feasibility_of_step(haber).direction is FeasibilityDirection.FAVORABLE,
+            "Haber is FAVORABLE at 298 K (DERIVED, ΔG ~ -33 kJ)")
+    hot = feasibility_of_step(haber, temperature_k=700.0)
+    f.check(hot.direction is FeasibilityDirection.UNFAVORABLE and hot.grade is FeasibilityGrade.PREDICTED,
+            "Haber flips UNFAVORABLE at 700 K, flagged PREDICTED (extrapolated) -- the real T-dependence")
+    fp = feasibility_of_step(anhydride_route().steps[0])
+    f.check(fp.direction is FeasibilityDirection.UNKNOWN and fp.missing,
+            "paracetamol acetylation feasibility is a loud UNKNOWN (no seed thermo), never a fabricated ΔG")
+    ranked_feas = rank_routes([ExperimentRoute.of(
+        ExperimentStep.assembling(H2, (WATER, WATER), (H2, H2, O2))), ExperimentRoute.of(water)])
+    f.check(verify_feasibility(ranked_feas[0].route).verdict == "FAVORABLE",
+            "ranking floats the thermodynamically FAVORABLE route above the endergonic one")
+
     # -- the drafted procedure a chemist reads --------------------------------------------------------
     print("\n[draft] the chemist-facing procedure for the winning route:", flush=True)
     draft = draft_procedure(anhydride_route(pres=(1, 1)), feed={AMP: 1, ANH: Fraction(6, 5)})
@@ -251,7 +281,8 @@ def main() -> int:
         return 1
     print(f"VERDICT: PASS -- all {f.checks} acceptance criteria hold. The Experiment Compiler certifies "
           "steps, refuses the degenerate route on a sourced fact, fits routes to a real bench, computes an "
-          "exact ceiling, and drafts a chemist-usable procedure -- universal and bucket-honest throughout.",
+          "exact ceiling, grades regiochemical selectivity and DERIVED thermodynamic feasibility (ΔG), and "
+          "drafts a chemist-usable procedure -- universal and bucket-honest throughout.",
           flush=True)
     return 0
 

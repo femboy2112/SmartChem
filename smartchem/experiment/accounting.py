@@ -13,12 +13,16 @@ Nothing is invented.
   provenance to exist) is ``KNOWN_SOURCED``; an undeclared field is ``UNKNOWN``.  The envelope machinery
   guarantees conditions are sourced or absent, never fabricated.
 
-The boundary E3 does NOT cross (this is the wall)
--------------------------------------------------
-E3 never computes a **rate**, a **time-to-completion**, or a **yield** below the E2 ceiling.  Those need a
-kinetics/feasibility model the repo does not have and would have to invent -- the forbidden "new physics".
-The 100%-efficiency ceiling (E2, ``CONSERVATION``) is the only outcome number, and it is an upper bound, not
-a prediction.  E3 stops at *sourced state* and *established thermochemistry*.
+The boundary E3 does NOT cross
+------------------------------
+E3 never computes a **rate** or a **time-to-completion**: those need a kinetics model the repo has no
+established, validated basis for, and inventing one would be the forbidden fabrication.  It also does not
+compute a **yield** below the E2 ceiling -- but note the distinction the corrected frame draws: thermodynamic
+*feasibility* (ΔG) IS computable from established thermochemistry and is M1's DERIVED verdict
+(:mod:`smartchem.experiment.feasibility`), a sibling of E3's heat, not new physics; the equilibrium *extent*
+is likewise a future DERIVED bound (M2).  What stays forbidden is a NOVEL kinetics/yield model or any number
+contradicting a sourced fact.  E3 itself stops at *sourced state* and *established thermochemistry*; the
+100%-efficiency ceiling (E2, ``CONSERVATION``) is its only outcome number, an upper bound, not a yield.
 
 Universal: any step flows through; unsourced fields simply come back ``UNKNOWN``.
 """

@@ -456,3 +456,36 @@ plan:
 This is the encouraging read: the formal foundation is *sound* (it holds the real pathway's skeleton),
 and turning the litmus from NO to YES is precisely what C1/C2/C4 + v2 do. The litmus is recorded as a
 standing benchmark; re-run it at each rung.
+
+---
+
+## Part 10 — Execution: the review layer (safety screen + coherence ranking)
+
+**Built** — `smartchem/decompiler_review.py` + `tests/test_decompiler_review.py` (15 tests; full
+suite 1757 passed, zero regressions; ruff clean). Two jobs, both aimed straight at the litmus, both
+honest about their tier.
+
+- **Structural coherence ranking (C4 structural half; data-free).** `coherence_score(edge)` = the
+  fraction of product content that is a *declared compound* rather than an element bucket;
+  `review_graph` sorts by it. Measured: for paracetamol the real backbone
+  `C8H9NO2 → p-aminophenol + ketene` (score **1.00**) now ranks **#1 of 80**, above the element
+  shrapnel — the litmus's "1-of-80-unrankable" gap, closed by a pure structural heuristic (labelled a
+  presentation heuristic, not feasibility).
+- **Safety screen (the owner's ask: inform, never neuter).** `screen_edge` **always** returns a
+  `HazardProfile` — no decomposition is ever hidden or refused for being dangerous. The energetics are
+  **real**: assembly reaction enthalpy at 0 K from NIST/CCCBDB formation enthalpies
+  (`smartchem.data.reference`), and **Verified by a second blind path** — the assembly enthalpy equals
+  `reference.atomization_energy_ev` computed by an independent route (H2O −9.5113 eV, CO2 −16.561 eV,
+  agree to 1e-9). Assembling from bare atoms is strongly exothermic and is flagged with the actual
+  number (`EXOTHERMIC_ASSEMBLY`). Two honesty rules: **UNKNOWN is not safe** — an uncovered edge is a
+  loud `ENERGETICS_UNKNOWN`, never an absent flag read as a clearance (paracetamol itself is
+  UNKNOWN — no tabulated dfH); and **formula-level ambiguity is surfaced** — a composition with several
+  tabulated isomers (C2H6O = ethanol/DME) carries an enthalpy *interval* and `ISOMER_AMBIGUOUS`, not a
+  false single number. A `SAFETY_BANNER` states the doctrine. It is a screening estimate (0 K, ideal,
+  from atoms), never the enthalpy under real reagents/conditions; it decorates, never upgrades, the
+  certified skeleton.
+
+**Litmus movement:** the real backbone now *surfaces ranked and safety-annotated* — a real gain. Still
+NO on "run the actual steps," because the runnable reaction is **mediated** (`paracetamol + H2O →
+4-aminophenol + acetic acid`), which needs **C2** (mediated edges + medium ledger). C2 is the next
+rung and the linchpin for the litmus flipping to YES.

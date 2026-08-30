@@ -35,10 +35,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from .conditions import ConditionEnvelope
 from .contracts import Digestible
 from .data import reference
 from .decompiler import DecompositionEdge, DecompositionGraph, Formula, admissible_edges
+from .decompiler_conditions import reaction_conditions
 from .decompiler_mediated import MediatedEdge, mediated_edges
+
+#: The loud no-declared-conditions default shared by every un-annotated review.
+_UNKNOWN_CONDITIONS = ConditionEnvelope.unknown()
 
 #: Either kind of decomposition edge the review layer knows how to score and screen. Both expose
 #: ``reactant`` / ``reactant_multiplicity`` / ``products``; a MediatedEdge additionally exposes
@@ -240,17 +245,24 @@ def coherence_score(edge: AnyEdge) -> float:
 
 @dataclass(frozen=True)
 class EdgeReview(Digestible):
-    """One reviewed edge (plain or mediated): the edge, its coherence, and its safety profile."""
+    """One reviewed edge (plain or mediated): edge, coherence, safety profile, and conditions.
+
+    ``conditions`` is a C0 :class:`~smartchem.conditions.ConditionEnvelope` — sourced where a
+    reference documents the reaction, the loud ``unknown()`` otherwise (the usual case).
+    """
 
     edge: AnyEdge
     coherence: float
     hazard: HazardProfile
+    conditions: ConditionEnvelope = _UNKNOWN_CONDITIONS
 
     def __post_init__(self) -> None:
         if type(self.edge) not in (DecompositionEdge, MediatedEdge):
             raise TypeError("edge must be a DecompositionEdge or MediatedEdge")
         if type(self.hazard) is not HazardProfile:
             raise TypeError("hazard must be a HazardProfile")
+        if type(self.conditions) is not ConditionEnvelope:
+            raise TypeError("conditions must be a ConditionEnvelope")
 
     @property
     def mediated(self) -> bool:
@@ -263,17 +275,26 @@ def _review_key(review: "EdgeReview") -> tuple:
 
 
 def review_edges(
-    edges, *, exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV
+    edges,
+    *,
+    exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV,
+    conditions_source=reaction_conditions,
 ) -> tuple[str, tuple[EdgeReview, ...]]:
-    """Rank any mix of plain and mediated edges by coherence and attach a safety profile to each.
+    """Rank any mix of plain and mediated edges by coherence; attach safety and conditions to each.
 
     Returns ``(banner, reviews)``, most chemically coherent first. No edge is ever dropped — the
-    review *informs*, it does not censor.
+    review *informs*, it does not censor. ``conditions_source(edge) -> ConditionEnvelope`` supplies
+    sourced conditions where known (the loud ``unknown()`` otherwise).
     """
     reviews = tuple(
         sorted(
             (
-                EdgeReview(e, coherence_score(e), screen_edge(e, exotherm_threshold_ev=exotherm_threshold_ev))
+                EdgeReview(
+                    e,
+                    coherence_score(e),
+                    screen_edge(e, exotherm_threshold_ev=exotherm_threshold_ev),
+                    conditions_source(e),
+                )
                 for e in edges
             ),
             key=_review_key,
@@ -287,6 +308,7 @@ def review_graph(
     *,
     reactant: Formula | None = None,
     exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV,
+    conditions_source=reaction_conditions,
 ) -> tuple[str, tuple[EdgeReview, ...]]:
     """Rank a graph's edges by structural coherence and attach a safety profile to each.
 
@@ -296,7 +318,9 @@ def review_graph(
     if type(graph) is not DecompositionGraph:
         raise TypeError("graph must be a DecompositionGraph")
     edges = graph.edges_from(reactant) if reactant is not None else graph.edges
-    return review_edges(edges, exotherm_threshold_ev=exotherm_threshold_ev)
+    return review_edges(
+        edges, exotherm_threshold_ev=exotherm_threshold_ev, conditions_source=conditions_source
+    )
 
 
 def decompile_and_review(
@@ -307,6 +331,7 @@ def decompile_and_review(
     exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV,
     max_reagent_instances: int = 1,
     budget: int = 200_000,
+    conditions_source=reaction_conditions,
 ) -> tuple[str, tuple[EdgeReview, ...]]:
     """The unified chemist-facing view of one target's direct decompositions.
 
@@ -326,4 +351,8 @@ def decompile_and_review(
     mediated, _mc = mediated_edges(
         tf, inv, medium, max_reagent_instances=max_reagent_instances, budget=budget
     )
-    return review_edges(plain + mediated, exotherm_threshold_ev=exotherm_threshold_ev)
+    return review_edges(
+        plain + mediated,
+        exotherm_threshold_ev=exotherm_threshold_ev,
+        conditions_source=conditions_source,
+    )

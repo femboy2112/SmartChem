@@ -10,6 +10,7 @@ import pytest
 
 from smartchem.data import reference
 from smartchem.decompiler import DecompositionEdge, Formula, build_decomposition
+from smartchem.decompiler_conditions import reaction_conditions
 from smartchem.decompiler_mediated import MediatedEdge
 from smartchem.decompiler_review import (
     SAFETY_BANNER,
@@ -166,3 +167,30 @@ class TestUnifiedPlainAndMediatedReview:
                                        key=lambda pm: (pm[0].counts, pm[0].charge, pm[1]))))
         _banner, reviews = review_edges([plain, med])
         assert reviews[0].edge is med and reviews[-1].edge is plain  # coherent first
+
+
+class TestSourcedConditions:
+    def test_the_litmus_reaction_carries_sourced_conditions(self):
+        _banner, reviews = decompile_and_review(
+            "C8H9NO2", inventory=["C6H7NO", "C2H4O2"], medium=["H2O"]
+        )
+        real = [r for r in reviews if r.mediated and r.edge.equation() == "C8H9NO2 + H2O -> C2H4O2 + C6H7NO"]
+        assert len(real) == 1
+        assert real[0].conditions.is_declared
+        assert real[0].conditions.medium == "aqueous, acidic"
+        assert real[0].conditions.provenance  # every declared condition is sourced
+
+    def test_untabulated_reactions_have_loud_unknown_conditions(self):
+        _banner, reviews = decompile_and_review(
+            "C8H9NO2", inventory=["C6H7NO", "C2H4O2"], medium=["H2O"]
+        )
+        unknown = sum(1 for r in reviews if not r.conditions.is_declared)
+        assert unknown >= len(reviews) - 1  # at most the one seed entry is declared
+
+    def test_reaction_conditions_defaults_to_unknown(self):
+        assert not reaction_conditions(_to_atoms("H2O", (H, 2), (OX, 1))).is_declared
+
+    def test_edge_review_conditions_default_is_unknown(self):
+        edge = _to_atoms("H2O", (H, 2), (OX, 1))
+        review = EdgeReview(edge, coherence_score(edge), screen_edge(edge))
+        assert not review.conditions.is_declared

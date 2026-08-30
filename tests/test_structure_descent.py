@@ -312,6 +312,59 @@ class TestNvsOAcetylationIsRepresentable:
         assert oxy.molecule.atoms[j] == "O"       # opened on OXYGEN, not nitrogen -- the O-acetyl fact
 
 
+class TestIrreducibleCoreHonesty:
+    """A COMPLETE descent must not silently claim it reached single atoms when it dead-ended at a ring.
+
+    The ladder (``experiments/structure_decompiler_ladder.py``) caught ``is_complete`` over-claiming a
+    "full descent to single atoms" on every ring: benzene is COMPLETE, yet no single cut can ever open
+    its C6 ring, so it bottoms out at a carbon-ring core, not six carbons. These pin the honest reads
+    (``reaches_single_atoms`` / ``irreducible_cores``) that make that boundary auditable.
+    """
+
+    def test_benzene_is_complete_but_does_not_reach_single_atoms(self):
+        from smartchem.smiles import parse_smiles
+
+        g = structure_decompose(parse_smiles("c1ccccc1"), max_cut_bonds=1)
+        assert g.is_complete                              # the search DID finish (fully explored)
+        assert not g.reaches_single_atoms                # but it did NOT atomise -- the ring survives
+        cores = g.irreducible_cores()
+        assert len(cores) == 1                           # exactly one dead-end core: the bare C6 ring
+        (core,) = cores
+        assert core.formula == {"C": 6} and core.bonds   # six carbons, still ring-bonded (not loose)
+
+    def test_the_surfaced_core_is_genuinely_irreducible_not_merely_unexpanded(self):
+        from smartchem.smiles import parse_smiles
+
+        (core,) = structure_decompose(parse_smiles("c1ccccc1")).irreducible_cores()
+        edges, complete = scission_edges(core, max_cut_bonds=1)
+        assert complete and not edges                    # NO admissible single cut exists -- a true core
+
+    def test_an_acyclic_target_reaches_single_atoms_with_no_cores(self):
+        from smartchem.smiles import parse_smiles
+
+        g = structure_decompose(parse_smiles("CCO"))     # ethanol: no ring, fully atomises
+        assert g.is_complete and g.reaches_single_atoms
+        assert g.irreducible_cores() == ()               # nothing survives as a core
+
+    def test_nonempty_terminals_does_not_imply_atomisation(self):
+        from smartchem.smiles import parse_smiles
+
+        # phenol has an -OH whose O and H DO reach atoms, so terminals() is non-empty -- yet its C6 ring
+        # is still an irreducible core. terminals() alone would hide that; reaches_single_atoms does not.
+        g = structure_decompose(parse_smiles("Oc1ccccc1"), max_cut_bonds=1)
+        assert g.is_complete and g.terminals()           # some atoms ARE reached
+        assert not g.reaches_single_atoms                # but not all -- the ring core remains
+        assert [c.formula for c in g.irreducible_cores()] == [{"C": 6}]
+
+    def test_a_bounded_depth_graph_never_reports_reaching_atoms(self):
+        from smartchem.smiles import parse_smiles
+
+        # a COMPLETE_TO_DEPTH graph did not finish, so it can never be a completed atomic descent --
+        # regardless of whether its horizon stubs happen to look core-shaped.
+        g = structure_decompose(parse_smiles("CC(=O)Nc1ccc(O)cc1"), max_depth=1)
+        assert g.is_complete_to_depth and not g.reaches_single_atoms
+
+
 class TestBoundedDepthDescent:
     """G2: the bounded-depth mode -- fast, legible, and a POSITIVE guarantee, not a truncation."""
 

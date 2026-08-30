@@ -751,9 +751,15 @@ class StructureDecompositionGraph(Digestible):
     :class:`ScissionEdge` s.  It is the structure-level analogue of
     :class:`~smartchem.decompiler.DecompositionGraph`: where that splits atom multisets, this splits
     the bond graph, so each node is a specific sub-structure rather than a composition.  Termination is
-    W1, forced by the partition -- every fragment has strictly fewer atoms, so the descent bottoms out
-    at single atoms.  ``status`` is ``COMPLETE`` only when the whole reachable graph fit the budget;
-    ``REFUSED_BUDGET`` carries a partial graph and a reason, never a silent truncation (W2).
+    W1, forced by the partition -- every fragment has strictly fewer atoms, so the descent bottoms out.
+    It bottoms out at single atoms *or* at an **irreducible ring core**: a ring whose every bond is a
+    ring bond has no single disconnecting cut, so at a given ``max_cut_bonds`` no admissible step opens
+    it and it is a legitimate leaf (W1 still holds -- every step strictly shrinks; a core simply has no
+    step). A molecule with a ring therefore does NOT descend to single atoms until ``max_cut_bonds`` is
+    large enough to open every ring; :meth:`irreducible_cores` surfaces exactly the cores where that
+    boundary bites, and :attr:`reaches_single_atoms` is the honest "did it actually atomise?" read.
+    ``status`` is ``COMPLETE`` only when the whole reachable graph fit the budget; ``REFUSED_BUDGET``
+    carries a partial graph and a reason, never a silent truncation (W2).
 
     One honest boundary, stated: a fragment is carried into the next level as its own bond graph, and
     the open valences left by the cut that made it are not threaded across levels -- so this certifies
@@ -762,7 +768,9 @@ class StructureDecompositionGraph(Digestible):
 
     Three honest statuses, never a silent partial (W2):
 
-    * ``COMPLETE`` -- the whole reachable graph descended to single atoms within budget.
+    * ``COMPLETE`` -- the whole reachable graph was expanded within budget: every node bottomed out
+      either at a single atom or at an irreducible ring core no admissible cut can open (so ``COMPLETE``
+      means "fully explored", NOT "atomised" -- see :attr:`reaches_single_atoms`).
     * ``COMPLETE_TO_DEPTH`` -- a *positive* bounded guarantee: every node within ``max_depth`` scission
       steps of the target is fully expanded, and the graph is complete out to that horizon. Deeper
       structure was deliberately not explored (the fast, chemically-legible mode for a large target
@@ -801,8 +809,53 @@ class StructureDecompositionGraph(Digestible):
 
     @property
     def is_complete(self) -> bool:
-        """True only for a full descent to single atoms -- NOT for a bounded-depth graph."""
+        """True for a fully-expanded descent -- NOT a bounded-depth or budget-refused graph.
+
+        This does NOT imply single-atom terminals: a ring core no admissible cut can open is a
+        legitimate irreducible leaf of a fully-explored graph. Use :attr:`reaches_single_atoms` for the
+        "did it actually atomise?" question this property is easily mistaken for.
+        """
         return self.status == "COMPLETE"
+
+    @property
+    def reaches_single_atoms(self) -> bool:
+        """True iff this is a ``COMPLETE`` descent that bottomed out ENTIRELY at single atoms.
+
+        The precise "did it actually atomise?" predicate that :attr:`is_complete` is often mistaken
+        for: a fully-expanded graph with no :meth:`irreducible_cores`. False for any molecule with a
+        ring at a ``max_cut_bonds`` too small to open it (the ring survives as a core), and False for a
+        bounded-depth or budget-refused graph, which did not finish.
+        """
+        return self.is_complete and not self.irreducible_cores()
+
+    def irreducible_cores(self) -> tuple[Molecule, ...]:
+        """The non-atomic nodes the descent bottomed out at because no admissible cut opens them.
+
+        The honest counterpart to :meth:`terminals` (the single-atom leaves): a ring whose every bond
+        is a ring bond has no single disconnecting cut, so at this graph's ``max_cut_bonds`` it is a
+        legitimate irreducible leaf rather than a failure -- and this surfaces exactly those cores, so a
+        ``COMPLETE`` graph never silently claims an atomic descent it did not achieve. Each candidate is
+        confirmed structurally (a node with an out-edge is reducible and skipped; a leaf of a
+        ``COMPLETE`` graph is irreducible because the finished search found no cut; a leaf of a
+        bounded-depth or refused graph is re-run through :func:`scission_edges` to tell a true core from
+        a merely-unexpanded stub) -- so the result is correct regardless of *why* the search stopped.
+        """
+        has_out = {_mol_key(e.reactant) for e in self.edges}
+        node_mols: dict[str, Molecule] = {_mol_key(self.target): self.target}
+        for e in self.edges:
+            for f in e.fragments:
+                node_mols.setdefault(_mol_key(f.molecule), f.molecule)
+        cores: dict[str, Molecule] = {}
+        for key, m in node_mols.items():
+            if len(m.atoms) <= 1 or not m.bonds or key in has_out:
+                continue  # atomic, bond-free, or reducible (already has a scission out-edge)
+            if self.is_complete:
+                cores[key] = m  # a finished search left no out-edge here: provably irreducible
+            else:
+                edges, complete = scission_edges(m, max_cut_bonds=self.max_cut_bonds, budget=self.budget)
+                if complete and not edges:
+                    cores[key] = m  # genuinely no admissible cut, not merely unexpanded at the horizon
+        return tuple(sorted(cores.values(), key=_mol_key))
 
     @property
     def is_complete_to_depth(self) -> bool:
@@ -819,7 +872,12 @@ class StructureDecompositionGraph(Digestible):
         return frozenset(seen)
 
     def terminals(self) -> frozenset[str]:
-        """The single-atom leaf identities the descent bottoms out at."""
+        """The single-atom leaf identities the descent bottoms out at.
+
+        These are the atomic leaves only; a ring core is a non-atomic leaf and lives in
+        :meth:`irreducible_cores`. A non-empty ``terminals()`` therefore does NOT mean the whole target
+        atomised -- :attr:`reaches_single_atoms` is that check.
+        """
         keys: set[str] = set()
         for edge in self.edges:
             for fragment in edge.fragments:

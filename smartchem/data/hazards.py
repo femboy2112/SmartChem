@@ -475,6 +475,103 @@ HAZARD_REFS: tuple[HazardRef, ...] = (
         provenance="PubChem GHS / ECHA harmonised H314/H331/H370 (CID 1119, H314 ~84%); NIOSH npgd0575",
         status=EvidenceStatus.ESTABLISHED,
     ),
+    # --- G5: common decomposition products (sourced 2026-08-30, second-source reconciled) ------
+    HazardRef(
+        formula="C6H6",
+        name="benzene",
+        ghs_codes=("H225", "H304", "H315", "H319", "H340", "H350", "H372"),
+        summary=(
+            "highly flammable liquid; aspiration hazard; KNOWN HUMAN CARCINOGEN (IARC Group 1, ECHA "
+            "Carc. 1A) and germ-cell mutagen; chronic exposure damages the blood-forming organs (H372)"
+        ),
+        reactivity=("flammable; ignites on contact with powdered chromic anhydride; violent with strong oxidisers",),
+        exposure="NIOSH REL 0.1 ppm TWA / 1 ppm STEL (Ca); OSHA PEL 1 ppm TWA / 5 ppm STEL (29 CFR 1910.1028); IDLH 500 ppm",
+        regulatory="ECHA harmonised Carc. 1A / Muta. 1B (H340/H350); IARC Group 1; the codes converge >99% across ECHA notifiers",
+        provenance="PubChem GHS (ECHA C&L aggregate, 1934 reports, H-codes 99.3-99.8%); IARC Monograph 100F; NIOSH Pocket Guide",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="H2S",
+        name="hydrogen sulfide",
+        ghs_codes=("H220", "H330", "H400"),
+        summary=(
+            "extremely flammable gas; FATAL IF INHALED (H330 -- the single most load-bearing hazard "
+            "here); rapidly deadens the sense of smell, so odour is not a warning; very toxic to aquatic life"
+        ),
+        reactivity=("flammable; heavier than air, pools in low/confined spaces; incompatible with strong oxidisers",),
+        exposure="NIOSH REL C 10 ppm (10-min ceiling); OSHA PEL C 20 ppm / 50 ppm peak [10 min]; IDLH 100 ppm",
+        regulatory="ECHA harmonised Acute Tox. 2 inhalation (H330), Flam. Gas 1 (H220), Aquatic Acute 1 (H400)",
+        provenance="PubChem GHS / ECHA harmonised (CID 402, multi-body convergence); NIOSH Pocket Guide npgd0337; CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="C2H4O",
+        name="acetaldehyde",
+        ghs_codes=("H224", "H319", "H335", "H351"),
+        summary=(
+            "extremely flammable liquid (very low flash point); eye and respiratory irritant; "
+            "SUSPECTED CARCINOGEN (IARC Group 2B, ECHA Carc. 2)"
+        ),
+        reactivity=(
+            "polymerises violently on contact with sodium hydroxide",
+            "reacts violently with acid anhydrides, phenols, hydrogen sulfide, halogens",
+        ),
+        exposure="NIOSH REL: none (Ca, potential occupational carcinogen); OSHA PEL 200 ppm TWA; IDLH 2000 ppm",
+        regulatory=(
+            "carcinogen call resolved to the corroborated tier: ECHA harmonised Carc. 2 / IARC 2B (H351); "
+            "some self-notifiers over-classify to H350 -- the harmonised H351 is used"
+        ),
+        provenance="PubChem GHS (ECHA C&L aggregate, CID 177); IARC; NIOSH Pocket Guide; CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="C2H4",
+        name="ethylene",
+        ghs_codes=("H220", "H336"),
+        summary="extremely flammable gas; simple asphyxiant; high concentrations are narcotic (H336, drowsiness/dizziness)",
+        reactivity=(
+            "a peroxidisable monomer that may initiate exothermic polymerisation",
+            "ozone and ethylene react explosively; polymerises at low pressure with titanium-halide catalysts",
+        ),
+        exposure="no NIOSH REL / OSHA PEL / IDLH established (simple asphyxiant)",
+        regulatory="ECHA Flam. Gas 1 (H220); aquatic self-classifications (H402/H412) are NITE/HSDB-only, not ECHA-corroborated",
+        provenance="PubChem GHS (ECHA C&L aggregate, CID 6325, H220 99.2% / H336 99.1%); CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="C2H2",
+        name="acetylene",
+        ghs_codes=("H220", "H280"),
+        summary="extremely flammable gas dissolved under pressure; simple asphyxiant; unstable and can decompose explosively when compressed",
+        reactivity=(
+            "forms sensitive, explosive acetylide salts on contact with silver, copper, and lead",
+            "copper forms an unstable acetylide on oxide-coated surfaces",
+        ),
+        exposure="NIOSH REL C 2500 ppm (ceiling); OSHA PEL: none established; IDLH: not determined",
+        regulatory="ECHA harmonised Flam. Gas 1 (H220), Press. Gas / Chem. Unstable Gas (H280/H230)",
+        provenance="PubChem GHS (ECHA C&L aggregate, CID 6326); NIOSH Pocket Guide (REL single-source); CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
+        formula="C6H6O",
+        name="phenol",
+        ghs_codes=("H301", "H311", "H314", "H331", "H341", "H373"),
+        summary=(
+            "TOXIC by all routes (oral/dermal/inhalation); CORROSIVE -- severe burns and rapid dermal "
+            "absorption; suspected mutagen; repeated exposure damages organs (H373)"
+        ),
+        reactivity=(
+            "nitrated very rapidly even by dilute nitric acid; nitrated phenols often explode when heated",
+            "may explode in contact with peroxodisulfuric / peroxomonosulfuric acid",
+        ),
+        exposure="NIOSH REL 5 ppm TWA / C 15.6 ppm [15 min, skin]; OSHA PEL 5 ppm TWA [skin]; IDLH 250 ppm",
+        regulatory=(
+            "ECHA harmonised Acute Tox. 3 (all routes), Skin Corr. 1B (H314), Muta. 2 (H341); Japan NITE "
+            "classifies more strongly (H340/H360) -- not ECHA-corroborated at threshold, so the harmonised set is used"
+        ),
+        provenance="PubChem GHS / ECHA harmonised (CID 996, 4205 reports); NIOSH Pocket Guide npgd0505; CAMEO (NOAA)",
+        status=EvidenceStatus.ESTABLISHED,
+    ),
 )
 
 

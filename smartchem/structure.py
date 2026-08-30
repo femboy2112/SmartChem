@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from .category import Bond, Molecule
 from .contracts import Digestible, canonical_digest
 from .decompiler import Formula
+from .smiles import parse_smiles
 
 __all__ = [
     "STRUCTURE_SCHEMA",
@@ -374,6 +375,35 @@ _REGISTERED: tuple[NamedStructure, ...] = (
         "paracetamol", _PARACETAMOL, "C8H9NO2", iupac="N-(4-hydroxyphenyl)acetamide",
         cas="103-90-2", synonyms=("acetaminophen", "4-acetamidophenol", "APAP"),
         provenance="std organic structure; the litmus target",
+    ),
+    # --- G5: common decomposition products, structures parsed from SMILES (G1) so the widened
+    #     hazard data has a registered isomer to pin to. Symmetric/mono-substituted aromatics are
+    #     Kekulé-invariant, so their canonical identity is stable. ------------------------------
+    NamedStructure(
+        "benzene", parse_smiles("c1ccccc1"), "C6H6", iupac="benzene", cas="71-43-2",
+        provenance="std aromatic parent; SMILES c1ccccc1",
+    ),
+    NamedStructure(
+        "hydrogen sulfide", parse_smiles("S"), "H2S", iupac="sulfane", cas="7783-06-4",
+        synonyms=("sulfureted hydrogen",),
+        provenance="std inorganic decomposition product; SMILES S",
+    ),
+    NamedStructure(
+        "acetaldehyde", parse_smiles("CC=O"), "C2H4O", iupac="acetaldehyde", cas="75-07-0",
+        synonyms=("ethanal",), provenance="std organic oxidation product; SMILES CC=O",
+    ),
+    NamedStructure(
+        "ethylene", parse_smiles("C=C"), "C2H4", iupac="ethene", cas="74-85-1",
+        synonyms=("ethene",), provenance="std alkene; SMILES C=C",
+    ),
+    NamedStructure(
+        "acetylene", parse_smiles("C#C"), "C2H2", iupac="ethyne", cas="74-86-2",
+        synonyms=("ethyne",), provenance="std alkyne; SMILES C#C",
+    ),
+    NamedStructure(
+        "phenol", parse_smiles("Oc1ccccc1"), "C6H6O", iupac="phenol", cas="108-95-2",
+        synonyms=("carbolic acid", "hydroxybenzene"),
+        provenance="std aromatic alcohol; SMILES Oc1ccccc1",
     ),
 )
 

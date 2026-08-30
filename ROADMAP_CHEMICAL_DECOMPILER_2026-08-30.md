@@ -5,7 +5,9 @@ proposal; the four owner decisions (Part 6) were fixed and **B0–B2 (the formal
 skeleton) were built** (Part 7, superseding "nothing built" for B0–B2). **Part 8 factors the
 owner's next direction — M-4b, the conditions-aware (comonadic) decompiler** ("under what
 conditions is this reaction possible?", things-in-solution, byproducts, feasibility trade-offs,
-transient-stability), which is **not built**. This is a **provenance-honest** record, not a
+transient-stability); its **C0 (the Env comonad) is built** (Part 9), C1–C4 remain vision.
+**Part 9** also records the **paracetamol litmus** — the standing acceptance gate, pinned to
+literature. This is a **provenance-honest** record, not a
 retroactive ratification. It slots a new chemistry-core research vertical into
 `ROADMAP_2026-08-06.md` as **M-4** (skeleton) + **M-4b** (conditions), parallel to the
 circuit-`ModelIR` line (M-1), and does not displace it, the consumption arc, or the long-term
@@ -411,4 +413,46 @@ comonadic conditions layer *is* an EvidenceIR.
 
 **Sequencing:** M-4b sits *above* M-4 v1 (built) and is independent of B3 (the executor wiring) —
 though B3's certificate/tier is the natural place the conditions `EvidenceRecord` eventually attaches.
-Nothing in M-4b is built; this Part is the factored vision, awaiting a go.
+**C0 is now built** (Part 9); C1–C4 remain the factored vision.
+
+---
+
+## Part 9 — Execution (C0) + the paracetamol litmus, pinned to literature
+
+**C0 built** — `smartchem/conditions.py` + `tests/test_conditions.py` (83 tests; full suite green,
+ruff clean). The **Env comonad** `Env C a = (C, a)`: `ConditionEnvelope` (temperature/pressure/
+duration `Interval`s, medium, catalysts, applied field — the EM-scope hook — plus an
+`EvidenceStatus` + provenance), `Conditioned[A]` with `extract`/`extend`/`duplicate`/`map`, and the
+point-free `extract`/`extend`/`duplicate`. **The three comonad laws are property-tested** over
+representative (envelope, value) pairs with context-*reading* functions (so `extend` is non-trivial).
+The tiering gates are isolated and bite: the empty `unknown()` is the only `UNSUPPORTED` envelope; any
+declared condition **requires a provenance** (no fabricated envelope); the status is **capped below
+the certified lane** (no label-borrowing). Nothing computes chemistry — this is the pure context
+algebra C1–C4 hang on.
+
+**The litmus (the standing acceptance gate for the whole M-4 line):** *Could a real chemist use our
+paracetamol decompilation to pick real steps that make the reaction happen?* Run it at every rung,
+pinned to a known truth rather than our own say-so.
+
+*Known truth (literature-pinned):* synthesis is `p-aminophenol (C6H7NO) + acetic anhydride (C4H6O3)
+→ paracetamol (C8H9NO2) + acetic acid (C2H4O2)` (H2SO4 cat.); degradation is `paracetamol + H2O →
+4-aminophenol + acetic acid` (acidic amide hydrolysis; 4-aminophenol is the regulated ≤50 ppm
+degradant). Sources: ACS *J. Chem. Ed.* 10.1021/acs.jchemed.3c00549; RSC *Anal. Methods* c3ay40747k.
+
+*What v1 actually produces* (measured, not asserted): COMPLETE, ~124 edges / 14 nodes, **80 direct
+edges**. It **does contain the correct backbone** — `paracetamol → p-aminophenol + ketene`
+(`C8H9NO2 = C6H7NO + C2H2O`), which is the **anhydrous skeleton of the real hydrolysis** (ketene +
+H2O → acetic acid). The chemist-recognisable `p-aminophenol + acetic acid` does not balance without
+water (`= C8H11NO3 = paracetamol + H2O`).
+
+*Verdict:* **NO — a chemist could not yet pick real steps from v1 alone — but the skeleton is
+under-decorated, not misdirected** (the real backbone is in there). The three gaps map exactly to the
+plan:
+1. the real route is **mediated** (water / anhydride from solution); v1 shows the dehydrated ketene
+   skeleton → **C2**;
+2. the real edge is **1 of 80**, unrankable next to `→ C + CO + C6H7NO + 2 H` → **C1 + C4**;
+3. **formula-level** `C6H7NO` is not an actionable structure → **v2**.
+
+This is the encouraging read: the formal foundation is *sound* (it holds the real pathway's skeleton),
+and turning the litmus from NO to YES is precisely what C1/C2/C4 + v2 do. The litmus is recorded as a
+standing benchmark; re-run it at each rung.

@@ -50,17 +50,22 @@ from itertools import combinations
 from .category import Bond, Molecule
 from .contracts import Digestible, canonical_digest
 from .decompiler import DecompositionEdge, Formula
+from .decompiler_mediated import MediatedEdge
 
 __all__ = [
     "STRUCTURE_DESCENT_SCHEMA",
+    "CAPPED_SCISSION_SCHEMA",
     "ScissionError",
     "Fragment",
     "ScissionEdge",
+    "CappedScission",
     "scission_edges",
+    "capped_scissions",
     "verify_valence_integrity",
 ]
 
 STRUCTURE_DESCENT_SCHEMA = "smartchem.structure_descent/scission-v2"
+CAPPED_SCISSION_SCHEMA = "smartchem.structure_descent/capped-scission-v2"
 
 
 def _fkey(formula: Formula) -> tuple:
@@ -411,3 +416,231 @@ def scission_edges(
             edges.setdefault(edge.signature, edge)
     ordered = tuple(sorted(edges.values(), key=lambda e: e.digest))
     return ordered, True
+
+
+# ======================================================================================
+# Rung 2b -- capped scission: a valence-preserving bond rewrite (derived mediated reactions)
+# ======================================================================================
+def _join(reactant: Molecule, reagents: tuple[Molecule, ...]) -> tuple[tuple[str, ...], frozenset[Bond], list[int]]:
+    """Lay reactant and reagents into one combined index space.
+
+    Returns ``(atoms, bonds, offsets)`` where ``offsets[k]`` is the starting index of the k-th
+    molecule (reactant is molecule 0).  Deterministic, so the combined graph a :class:`CappedScission`
+    verifies against is recovered from its stored molecules alone.
+    """
+    atoms: list[str] = list(reactant.atoms)
+    bonds: set[Bond] = set(reactant.bonds)
+    offsets = [0]
+    for reagent in reagents:
+        off = len(atoms)
+        offsets.append(off)
+        atoms.extend(reagent.atoms)
+        for b in reagent.bonds:
+            bonds.add(Bond(b.i + off, b.j + off, b.order))
+    return tuple(atoms), frozenset(bonds), offsets
+
+
+def _degree(bonds: frozenset[Bond], index: int) -> int:
+    return sum(b.order for b in bonds if index in (b.i, b.j))
+
+
+@dataclass(frozen=True)
+class CappedScission(Digestible):
+    """A valence-preserving bond rewrite: break ``cut`` bonds and form ``caps`` bonds, then read off
+    the closed product molecules.  This is the graph-level *derivation* of a mediated reaction (an
+    amide/ester hydrolysis, an addition-elimination) from structure -- the structural refinement of
+    :class:`~smartchem.decompiler_mediated.MediatedEdge`.
+
+    The object *is* the plan (reactant, consumed reagents, and the broken/formed bonds in one joined
+    index space); :attr:`products` are DERIVED, so there is nothing to lie about.  The constructor is
+    the certificate, all of it recomputed from the stored molecules:
+
+    * **valence preserved atom-by-atom** -- for every atom, the bond order removed by ``cut`` equals
+      the order restored by ``caps``, so each atom ends with exactly its starting valence.  This is
+      the structural teeth: bonds are *rewired*, never created or destroyed at an atom.  It is a
+      strictly stronger claim than mass conservation.
+    * **closed products** -- ``cut``/``caps`` partition the joined graph into connected molecules with
+      no residual open valence (``caps`` are genuinely new bonds, not duplicates of surviving ones);
+    * **a real mediated cleavage** -- at least two products, the reactant's own atoms end up split
+      across at least two of them (it was actually cleaved), and no product is an untouched reagent
+      (the reagent was consumed, matching the MediatedEdge no-pass-through rule);
+    * **W1 descent** -- every product is strictly lower rank (fewer atoms) than the reactant.
+
+    W3 is unchanged: this certifies that such a rewrite EXISTS and conserves valence, never that the
+    reaction occurs or under what conditions.  Which of several valence-valid rewrites corresponds to
+    a real compound is decided downstream, by matching :attr:`products` against the sourced structure
+    registry -- structure enumerates, evidence identifies.
+    """
+
+    schema_version: str
+    reactant: Molecule
+    reagents: tuple[Molecule, ...]
+    cut: tuple[Bond, ...]
+    caps: tuple[Bond, ...]
+
+    def __post_init__(self) -> None:
+        if self.schema_version != CAPPED_SCISSION_SCHEMA:
+            raise ScissionError(f"schema_version must be exactly {CAPPED_SCISSION_SCHEMA!r}")
+        if type(self.reactant) is not Molecule:
+            raise ScissionError("reactant must be a Molecule")
+        if type(self.reagents) is not tuple or not self.reagents or any(
+            type(r) is not Molecule for r in self.reagents
+        ):
+            raise ScissionError("reagents must be a non-empty tuple of Molecules (the consumed mediators)")
+        for name, seq in (("cut", self.cut), ("caps", self.caps)):
+            if type(seq) is not tuple or any(type(b) is not Bond for b in seq):
+                raise ScissionError(f"{name} must be a tuple of Bond values")
+            if list(seq) != sorted(seq) or len(set(seq)) != len(seq):
+                raise ScissionError(f"{name} must be sorted and distinct")
+        atoms, bonds, _offsets = _join(self.reactant, self.reagents)
+        n = len(atoms)
+        cut = frozenset(self.cut)
+        caps = frozenset(self.caps)
+        if not cut <= bonds:
+            raise ScissionError("every cut bond must be a bond of the joined reactant+reagents graph")
+        if not cut:
+            raise ScissionError("a capped scission must break at least one bond")
+        surviving = bonds - cut
+        # caps must be genuinely NEW bonds (not a surviving pair re-added), and reference real atoms
+        surviving_pairs = {(b.i, b.j) for b in surviving}
+        for c in caps:
+            if not (0 <= c.i < n and 0 <= c.j < n):
+                raise ScissionError("a cap bond refers outside the joined atom set")
+            if (c.i, c.j) in surviving_pairs:
+                raise ScissionError("a cap bond duplicates a surviving bond; caps must be new bonds")
+        # -- valence preserved at every atom: order removed by cut == order added by caps -----
+        for a in range(n):
+            removed = _degree(cut, a)
+            added = _degree(caps, a)
+            if removed != added:
+                raise ScissionError(
+                    f"valence not preserved at joined atom {a}: cut removed {removed} but caps "
+                    f"added {added}; a capped scission only REWIRES bonds"
+                )
+        result = surviving | caps
+        comps = _components(n, result)
+        if len(comps) < 2:
+            raise ScissionError("a capped scission must yield at least two product molecules")
+        # every product strictly lower rank than the reactant (descent), and the reactant's own
+        # atoms must be split across >= 2 products (it was genuinely cleaved, not merely conjugated)
+        r_atoms = set(range(len(self.reactant.atoms)))
+        reactant_touch = sum(1 for comp in comps if r_atoms & set(comp))
+        if reactant_touch < 2:
+            raise ScissionError("the reactant's atoms are not split across products; nothing was cleaved")
+        for comp in comps:
+            if len(comp) >= len(self.reactant.atoms):
+                raise ScissionError("every product must have strictly fewer atoms than the reactant (W1)")
+        # no product is an untouched reagent (the reagent must be consumed -- no pass-through)
+        reagent_canon = {r.canonical() for r in self.reagents}
+        for product in self._product_molecules(atoms, comps, result):
+            if product.canonical() in reagent_canon:
+                raise ScissionError(
+                    "a product is an unconsumed reagent (pass-through); the mediator must be consumed"
+                )
+
+    @staticmethod
+    def _product_molecules(
+        atoms: tuple[str, ...], comps: list[tuple[int, ...]], result: frozenset[Bond]
+    ) -> tuple[Molecule, ...]:
+        out: list[Molecule] = []
+        for comp in comps:
+            local = {a: k for k, a in enumerate(comp)}
+            frag_atoms = tuple(atoms[a] for a in comp)
+            frag_bonds = frozenset(
+                Bond(local[b.i], local[b.j], b.order)
+                for b in result
+                if b.i in local and b.j in local
+            )
+            out.append(Molecule(frag_atoms, frag_bonds).canonical())
+        return tuple(out)
+
+    @property
+    def products(self) -> tuple[Molecule, ...]:
+        """The derived, valence-closed product molecules (canonical), sorted deterministically."""
+        atoms, bonds, _ = _join(self.reactant, self.reagents)
+        result = (bonds - frozenset(self.cut)) | frozenset(self.caps)
+        mols = self._product_molecules(atoms, _components(len(atoms), result), result)
+        return tuple(sorted(mols, key=lambda m: (len(m.atoms), repr(m))))
+
+    def forget(self) -> MediatedEdge:
+        """The forgetful image: the composition-level :class:`MediatedEdge` this rewrite realizes.
+
+        Products and reagents collapse to formulas; the result flows into the review layer exactly
+        like any mediated edge, now cross-checked against a real bond-graph derivation.
+        """
+        def _formula(m: Molecule) -> Formula:
+            return Formula.of(m.formula, m.charge)
+
+        def _merge(mols) -> tuple[tuple[Formula, int], ...]:
+            counts: dict[Formula, int] = {}
+            for m in mols:
+                f = _formula(m)
+                counts[f] = counts.get(f, 0) + 1
+            return tuple(sorted(counts.items(), key=lambda pm: ((pm[0].counts, pm[0].charge), pm[1])))
+
+        return MediatedEdge(
+            _formula(self.reactant), 1, _merge(self.reagents), _merge(self.products)
+        )
+
+    def equation(self) -> str:
+        lhs = " + ".join([repr(self.reactant)] + [repr(r) for r in self.reagents])
+        rhs = " + ".join(repr(p) for p in self.products)
+        return f"{lhs} -> {rhs}"
+
+    def __repr__(self) -> str:
+        return f"CappedScission({self.equation()})"
+
+
+def capped_scissions(
+    reactant: Molecule,
+    reagents: tuple[Molecule, ...],
+    *,
+    budget: int = 20_000,
+) -> tuple[tuple[CappedScission, ...], bool]:
+    """Enumerate valence-preserving single-bond hydrolytic/addition cleavages of ``reactant``.
+
+    The bounded, common case that covers amide/ester hydrolysis and hydrogenolysis: break ONE order-1
+    bond of the reactant (opening two order-1 valences) and ONE order-1 bond of a single reagent
+    (splitting it into two capping pieces), then form the two cap bonds in each of the two possible
+    pairings.  Every valence-valid rewrite is emitted -- including chemically odd ones -- because the
+    engine enumerates structure; the *identification* of which products are real compounds is the
+    data layer's job (match :attr:`CappedScission.products` against the structure registry).
+
+    Returns ``(edges, complete)``; ``complete`` is ``False`` iff the search hit ``budget``.  Multi-bond
+    cuts, higher-order caps, ring-forming caps, and multi-reagent mediation are documented gaps, not
+    silently attempted.
+    """
+    if type(reactant) is not Molecule:
+        raise TypeError("reactant must be a Molecule")
+    if type(reagents) is not tuple or len(reagents) != 1 or type(reagents[0]) is not Molecule:
+        raise TypeError("capped_scissions v2 mediates with exactly one reagent molecule")
+    reagent = reagents[0]
+    out: dict[str, CappedScission] = {}
+    offset = len(reactant.atoms)
+    work = 0
+    for rb in sorted(reactant.bonds):
+        if rb.order != 1:
+            continue  # a single-bond cleavage opens two order-1 ends (the bounded v2 case)
+        # a reactant bond only cleaves if it is a bridge (its removal disconnects the reactant)
+        if len(_components(len(reactant.atoms), reactant.bonds - {rb})) < 2:
+            continue
+        r_ends = (rb.i, rb.j)
+        for mb in sorted(reagent.bonds):
+            if mb.order != 1:
+                continue
+            m_ends = (mb.i + offset, mb.j + offset)
+            cut = tuple(sorted((rb, Bond(mb.i + offset, mb.j + offset, mb.order))))
+            for pairing in ((0, 1), (1, 0)):
+                work += 1
+                if work > budget:
+                    return tuple(sorted(out.values(), key=lambda e: e.digest)), False
+                caps = tuple(sorted((
+                    Bond(r_ends[0], m_ends[pairing[0]], 1),
+                    Bond(r_ends[1], m_ends[pairing[1]], 1),
+                )))
+                try:
+                    edge = CappedScission(CAPPED_SCISSION_SCHEMA, reactant, reagents, cut, caps)
+                except ScissionError:
+                    continue  # a rewrite that does not cleave / conserve / consume is dropped
+                out.setdefault(edge.digest, edge)
+    return tuple(sorted(out.values(), key=lambda e: e.digest)), True

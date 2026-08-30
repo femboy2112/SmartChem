@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (30/30), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (36/36), exit 0**
 
 ## The question
 
@@ -11,7 +11,7 @@ and draft a chemist-usable procedure — all under the **known-not-new-physics**
 chemistry; never invent a feasibility/kinetics/yield model)? Not *"does the synthesis work"* — W3 forbids
 that — but every fact the compiler asserts must hold, and every refusal must cite a sourced fact.
 
-## What ran, and what held (30/30)
+## What ran, and what held (36/36)
 
 | Rung | Criterion | Result |
 |------|-----------|--------|
@@ -43,6 +43,12 @@ that — but every fact the compiler asserts must hold, and every refusal must c
 | M1 | Haber **flips UNFAVORABLE at 700 K, flagged PREDICTED** (extrapolated) — the real T-dependence | PASS |
 | M1 | paracetamol acetylation feasibility is a **loud UNKNOWN** (no seed thermo), never a fabricated ΔG | PASS |
 | M1 | ranking **floats the thermodynamically FAVORABLE route above** the endergonic one | PASS |
+| M2 | `K = exp(−ΔG/RT)` **recovers Haber's K ≈ 6×10⁵** at 298 K (the instrument reads true) | PASS |
+| M2 | Haber's equilibrium **collapses below K=1 at 700 K** → NEGLIGIBLE — the real "why it needs pressure" | PASS |
+| M2 | a **Δn=0** reaction gets an **exact ideal-reference equilibrium conversion** fraction (tighter than 100%) | PASS |
+| M2 | a **Δn≠0** reaction's conversion is a **loud UNKNOWN** (needs a reference state) — but its K is DERIVED | PASS |
+| M2 | paracetamol acetylation equilibrium is a **loud UNKNOWN** (no seed thermo), never a fabricated K | PASS |
+| M2 | ranking **floats the ESSENTIALLY_COMPLETE route above** the negligible-equilibrium one | PASS |
 
 ## The ledger completed this arc (E1 depth · coverage/autoload · E5 · CLI)
 
@@ -81,11 +87,17 @@ at best.* The heat is honestly `UNKNOWN` (paracetamol has no sourced 0 K formati
 
 ## The boundaries this pins (loud, not hidden)
 
-- **W3 held.** No rate, no time-to-completion, no yield below the ceiling. The 100%-efficiency ceiling is
-  the only outcome number, `CONSERVATION`-labelled as an upper bound.
+- **The corrected frame held (no *new* physics).** Two outcome numbers now appear, each an ESTABLISHED model
+  on sourced inputs, each wearing its grade: the `CONSERVATION` 100%-efficiency ceiling (an exact upper
+  bound), and the M2 `KNOWN_SOURCED`/DERIVED **equilibrium extent** (`K = exp(−ΔG/RT)` and, where Δn=0, an
+  exact ideal-reference conversion) — a *tighter* bound than the ceiling, labelled equilibrium-not-kinetics.
+  What is still refused: a reaction **RATE** / time-to-completion (no established kinetics model — roadmap L1),
+  a fabricated K/ΔG for an unsourced species (a loud `UNKNOWN` instead), and any claim contradicting a sourced
+  fact. Equilibrium is *how far*, never *how fast*.
 - **Universal engine, sourced data.** Formal layers (E0/E1-logic/E2/equipment) run on any parsed molecule;
   the stability/thermo data is a SEED that degrades to a loud `UNKNOWN` and is injectable per call — proven
   by the off-seed lever above. Not a whitelist.
 - **Sourced-model gaps, stated:** the pressure-dependence of phase (Clausius–Clapeyron) is not attempted by
-  E1; a chemist injects sourced pressure tolerance to extend it. Equipment selection is standard bench
-  practice, not a claim the reaction proceeds.
+  E1; the M2 equilibrium conversion is exact only for Δn=0 under an ideal reference (Δn≠0 needs a caller's
+  sourced activity model — a loud `UNKNOWN`, never a guess). Equipment selection is standard bench practice,
+  not a claim the reaction proceeds.

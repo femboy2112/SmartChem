@@ -40,6 +40,7 @@ from smartchem.data.stability import DEFAULT_STABILITY, StabilityRef
 from smartchem.experiment import (
     Bucket,
     ConstraintBox,
+    EquilibriumExtent,
     ExperimentRoute,
     ExperimentStep,
     FeasibilityDirection,
@@ -47,11 +48,13 @@ from smartchem.experiment import (
     RouteFitStatus,
     SelectivityStatus,
     draft_procedure,
+    equilibrium_of_step,
     feasibility_of_step,
     fit_route,
     rank_routes,
     stoichiometric_ceiling,
     verify_composability,
+    verify_equilibrium,
     verify_feasibility,
     verify_selectivity,
 )
@@ -79,6 +82,8 @@ H2 = parse_smiles("[H][H]")
 O2 = parse_smiles("O=O")
 N2 = parse_smiles("N#N")
 NH3 = parse_smiles("N")
+CO = parse_smiles("[C-]#[O+]")
+CO2 = parse_smiles("O=C=O")
 
 
 def ester_route() -> ExperimentRoute:
@@ -258,6 +263,32 @@ def main() -> int:
     f.check(verify_feasibility(ranked_feas[0].route).verdict == "FAVORABLE",
             "ranking floats the thermodynamically FAVORABLE route above the endergonic one")
 
+    # -- M2: equilibrium extent (K = exp(-ΔG/RT)), the tighter DERIVED bound, calibrated on Haber -------
+    print("\n[M2 equilibrium] DERIVED K = exp(-ΔG/RT), the equilibrium extent:", flush=True)
+    eh = equilibrium_of_step(haber)
+    print(f"  N2 + 3H2 -> 2NH3 : {eh.extent.value}, log10 K = {eh.log10_k:.2f} (K ~ {10 ** eh.log10_k:.1e})",
+          flush=True)
+    f.check(5.4 < eh.log10_k < 6.1 and eh.extent is EquilibriumExtent.ESSENTIALLY_COMPLETE,
+            "K = exp(-ΔG/RT) recovers Haber's K ~ 6e5 at 298 K (the instrument reads true)")
+    eh_hot = equilibrium_of_step(haber, temperature_k=700.0)
+    f.check(eh_hot.log10_k < 0.0 and eh_hot.extent is EquilibriumExtent.NEGLIGIBLE,
+            "Haber's equilibrium collapses below K=1 at 700 K -- the real 'why it needs pressure' (Le Chatelier)")
+    wgs = ExperimentStep.assembling(CO2, (CO, WATER), (CO2, H2))                   # CO + H2O -> CO2 + H2, Δn=0
+    ewgs = equilibrium_of_step(wgs)
+    print(f"  CO + H2O -> CO2 + H2 (Δn=0) : equilibrium conversion = {ewgs.conversion_fraction:.3f}", flush=True)
+    f.check(ewgs.conversion_fraction is not None and 0.0 < ewgs.conversion_fraction < 1.0,
+            "a Δn=0 reaction gets an EXACT ideal-reference equilibrium conversion fraction (tighter than 100%)")
+    ew = equilibrium_of_step(water)                                                # 2H2+O2->2H2O, Δn=-1
+    f.check(ew.conversion_fraction is None and ew.k_finding.bucket is Bucket.KNOWN_SOURCED,
+            "a Δn!=0 reaction's conversion is a loud UNKNOWN (needs a reference state), but its K is DERIVED")
+    ep = equilibrium_of_step(anhydride_route().steps[0])
+    f.check(ep.extent is EquilibriumExtent.UNKNOWN and ep.log10_k is None,
+            "paracetamol acetylation equilibrium is a loud UNKNOWN (no seed thermo), never a fabricated K")
+    ranked_eq = rank_routes([ExperimentRoute.of(
+        ExperimentStep.assembling(H2, (WATER, WATER), (H2, H2, O2))), ExperimentRoute.of(water)])
+    f.check(verify_equilibrium(ranked_eq[0].route).verdict == "ESSENTIALLY_COMPLETE",
+            "ranking floats the ESSENTIALLY_COMPLETE route above the negligible-equilibrium one")
+
     # -- the drafted procedure a chemist reads --------------------------------------------------------
     print("\n[draft] the chemist-facing procedure for the winning route:", flush=True)
     draft = draft_procedure(anhydride_route(pres=(1, 1)), feed={AMP: 1, ANH: Fraction(6, 5)})
@@ -281,8 +312,9 @@ def main() -> int:
         return 1
     print(f"VERDICT: PASS -- all {f.checks} acceptance criteria hold. The Experiment Compiler certifies "
           "steps, refuses the degenerate route on a sourced fact, fits routes to a real bench, computes an "
-          "exact ceiling, grades regiochemical selectivity and DERIVED thermodynamic feasibility (ΔG), and "
-          "drafts a chemist-usable procedure -- universal and bucket-honest throughout.",
+          "exact ceiling, grades regiochemical selectivity, DERIVED thermodynamic feasibility (ΔG) and the "
+          "DERIVED equilibrium extent (K = exp(-ΔG/RT)), and drafts a chemist-usable procedure -- universal "
+          "and bucket-honest throughout.",
           flush=True)
     return 0
 

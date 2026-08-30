@@ -39,6 +39,7 @@ from .accounting import PhysicalAccounting, account_route
 from .bucket import Bucket
 from .ceiling import RouteCeiling, route_ceiling
 from .composability import Composability, verify_composability
+from .equilibrium import RouteEquilibrium, verify_equilibrium
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_step
 from .feasibility import RouteFeasibility, verify_feasibility
 from .selectivity import RouteSelectivity, SelectivityTable, verify_selectivity
@@ -58,9 +59,9 @@ DRAFT_BANNER = (
     "DRAFT -- a composed, evidence-graded synthesis over known chemistry. NOT a predicted successful "
     "synthesis: it is no guarantee the reaction succeeds, and it asserts no reaction RATE or "
     "time-to-completion (the repo carries no established kinetics model). Every claim it DOES make -- "
-    "selectivity, feasibility, the conservation ceiling, sourced conditions -- wears its epistemic grade "
-    "and envelope; UNKNOWN marks a genuine gap, never a cleared one, and nothing here contradicts a "
-    "sourced fact or invents a law."
+    "selectivity, feasibility, the equilibrium extent, the conservation ceiling, sourced conditions -- wears "
+    "its epistemic grade and envelope; UNKNOWN marks a genuine gap, never a cleared one, and nothing here "
+    "contradicts a sourced fact or invents a law."
 )
 
 
@@ -117,6 +118,7 @@ class RouteFit(Digestible):
     composability: Composability
     selectivity: RouteSelectivity  # which isomer each step makes (sourced regiochemistry, or a loud gap)
     feasibility: RouteFeasibility  # thermodynamic ΔG verdict per step (DERIVED, or a loud UNKNOWN)
+    equilibrium: RouteEquilibrium  # equilibrium extent K=exp(-ΔG/RT) per step (DERIVED, or a loud UNKNOWN)
 
     @property
     def fits(self) -> bool:
@@ -132,6 +134,8 @@ class RouteFit(Digestible):
             lines.append(f"  SELECTIVITY: {self.selectivity.verdict}")
         if self.feasibility.verdict != "UNKNOWN":
             lines.append(f"  FEASIBILITY: {self.feasibility.verdict}")
+        if self.equilibrium.verdict != "UNKNOWN":
+            lines.append(f"  EQUILIBRIUM: {self.equilibrium.verdict}")
         return "\n".join(lines)
 
 
@@ -190,6 +194,7 @@ def fit_route(
     comp = verify_composability(route) if stability is None else verify_composability(route, stability=stability)
     sel = verify_selectivity(route, table=selectivity)
     feas = verify_feasibility(route, thermo=thermo)
+    equi = verify_equilibrium(route, thermo=thermo)
 
     exclusions: list[str] = []
     gaps: list[str] = []
@@ -209,7 +214,7 @@ def fit_route(
         status = RouteFitStatus.UNKNOWN
     else:
         status = RouteFitStatus.FITS
-    return RouteFit(route, status, tuple(exclusions), tuple(gaps), comp, sel, feas)
+    return RouteFit(route, status, tuple(exclusions), tuple(gaps), comp, sel, feas, equi)
 
 
 def fit_routes(
@@ -223,23 +228,28 @@ def fit_routes(
 
 
 def _route_score(fit: RouteFit) -> tuple:
-    """Sort key, lower = better: excluded worst, then composability, then regiochemistry, then feasibility.
+    """Sort key, lower = better: excluded worst, then composability, then three sourced thermochemical tiers.
 
-    Two sourced correctness tiebreakers ride after composability. Selectivity: a sourced-FAVORED route (it
+    Three sourced correctness tiebreakers ride after composability. Selectivity: a sourced-FAVORED route (it
     makes the major isomer) floats above an unresolved one, above a sourced-DISFAVORED one. Feasibility: a
-    thermodynamically FAVORABLE route (ΔG < 0) floats above a borderline/unknown one, above an UNFAVORABLE
-    one (ΔG > 0). Both are neutral on ignorance -- we reward a sourced positive and penalize a sourced
-    negative, never a gap.
+    thermodynamically FAVORABLE route (ΔG < 0) floats above a borderline/unknown one, above an UNFAVORABLE one
+    (ΔG > 0). Equilibrium (the finer magnitude tiebreaker after feasibility's sign): a route that runs
+    ESSENTIALLY_COMPLETE at equilibrium floats above a partial one, above one whose equilibrium is NEGLIGIBLE.
+    All three are neutral on ignorance -- we reward a sourced positive and penalize a sourced negative, never
+    a gap.
     """
     status_rank = {RouteFitStatus.FITS: 0, RouteFitStatus.UNKNOWN: 1, RouteFitStatus.EXCLUDED: 2}
     comp_rank = {"COMPOSABLE": 0, "SINGLE_STEP": 1, "UNKNOWN": 2, "DEGENERATE": 3}
     sel_rank = {"FAVORED": 0, "NOT_APPLICABLE": 1, "UNKNOWN": 1, "DISFAVORED": 2}
     feas_rank = {"FAVORABLE": 0, "BORDERLINE": 1, "UNKNOWN": 1, "UNFAVORABLE": 2}
+    eq_rank = {"ESSENTIALLY_COMPLETE": 0, "FAVORABLE": 1, "BALANCED": 2, "UNKNOWN": 2,
+               "LIMITED": 3, "NEGLIGIBLE": 4}
     return (
         status_rank[fit.status],
         comp_rank.get(fit.composability.verdict, 4),
         sel_rank.get(fit.selectivity.verdict, 1),
         feas_rank.get(fit.feasibility.verdict, 1),
+        eq_rank.get(fit.equilibrium.verdict, 2),
         len(fit.gaps),
         len(fit.exclusions),
     )
@@ -272,6 +282,7 @@ class DraftedProcedure(Digestible):
     ceiling: RouteCeiling | None
     selectivity: RouteSelectivity  # which isomer each step makes (sourced regiochemistry, or a loud gap)
     feasibility: RouteFeasibility  # thermodynamic ΔG verdict per step (DERIVED, or a loud UNKNOWN)
+    equilibrium: RouteEquilibrium  # equilibrium extent K=exp(-ΔG/RT) per step (DERIVED, or a loud UNKNOWN)
 
     def render(self) -> str:
         lines = [DRAFT_BANNER, "", f"TARGET: {self.route.final_target!r}", ""]
@@ -280,6 +291,10 @@ class DraftedProcedure(Digestible):
             for q in self.accounting.per_step[idx].quantities():
                 lines.append(f"    {q.render()}")
             lines.append(f"    {self.feasibility.per_step[idx].finding.render()}")
+            eq = self.equilibrium.per_step[idx]
+            lines.append(f"    {eq.k_finding.render()}")
+            if eq.conversion_fraction is not None:
+                lines.append(f"    {eq.conversion_finding.render()}")
             sel = self.selectivity.per_step[idx]
             if sel.status.value != "NOT_APPLICABLE":
                 lines.append(f"    {sel.finding.render()}")
@@ -290,6 +305,8 @@ class DraftedProcedure(Digestible):
         lines.append(self.composability.explain())
         lines.append("")
         lines.append(self.feasibility.explain())
+        lines.append("")
+        lines.append(self.equilibrium.explain())
         if self.selectivity.verdict != "NOT_APPLICABLE":
             lines.append("")
             lines.append(self.selectivity.explain())
@@ -308,21 +325,22 @@ def draft_procedure(
     thermo=None,
 ) -> DraftedProcedure:
     """Compose the full drafted procedure for a route: E1 composability, E3 accounting, equipment, E2 ceiling,
-    the sourced regiochemical selectivity (which isomer each step makes), and the DERIVED thermodynamic
-    feasibility (ΔG per step).
+    the sourced regiochemical selectivity (which isomer each step makes), the DERIVED thermodynamic
+    feasibility (ΔG per step), and the DERIVED equilibrium extent (M2: K = exp(-ΔG/RT) per step).
 
     ``feed`` (external reactant amounts in mol) turns on the propagated 100%-efficiency ceiling; omit it to
     skip the outcome bound.  ``stability`` / ``selectivity`` / ``thermo`` optionally extend the sourced data
-    for any chemical.
+    for any chemical (``thermo`` feeds both the ΔG feasibility and the equilibrium K).
     """
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     comp = verify_composability(route) if stability is None else verify_composability(route, stability=stability)
     sel = verify_selectivity(route, table=selectivity)
     feas = verify_feasibility(route, thermo=thermo)
+    equi = verify_equilibrium(route, thermo=thermo)
     accounting = account_route(route)
     equipment = tuple(equipment_for_step(s) for s in route.steps)
     ceiling = None
     if feed is not None:
         ceiling = route_ceiling(route, feed)
-    return DraftedProcedure(route, comp, accounting, equipment, ceiling, sel, feas)
+    return DraftedProcedure(route, comp, accounting, equipment, ceiling, sel, feas, equi)

@@ -60,6 +60,13 @@ from .drafter import (
     fit_routes,
     rank_routes,
 )
+from .equilibrium import (
+    EquilibriumExtent,
+    RouteEquilibrium,
+    StepEquilibrium,
+    equilibrium_of_step,
+    verify_equilibrium,
+)
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_envelope, equipment_for_step
 from .feasibility import (
     FeasibilityDirection,
@@ -127,4 +134,9 @@ __all__ = [
     "RouteFeasibility",
     "feasibility_of_step",
     "verify_feasibility",
+    "EquilibriumExtent",
+    "StepEquilibrium",
+    "RouteEquilibrium",
+    "equilibrium_of_step",
+    "verify_equilibrium",
 ]

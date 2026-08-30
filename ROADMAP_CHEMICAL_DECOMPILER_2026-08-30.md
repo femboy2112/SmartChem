@@ -1334,3 +1334,50 @@ sourced upper bound *tighter* than E2's 100% conservation ceiling, and "yield" i
 equilibrium sense (labelled equilibrium-not-kinetics, never a kinetic yield claim). It reuses M1's ΔG engine
 directly. After M2: M3 thermo breadth (unlock M1/M2 for drug-sized targets), M4 convergent DAGs; then the
 long-term L1 (TST kinetics) / L2 (the unified classifier) / L3 (decompiler R3-R5).
+
+## Part 23 -- M2 equilibrium extent BUILT (K = exp(-ΔG/RT), the tighter DERIVED ceiling)
+
+The second DERIVED capability on the M-5 side, and the one the roadmap flagged as immediate-next: with M1's ΔG
+in hand, the equilibrium constant is one established relation away, and it turns feasibility's *sign* into an
+*extent* -- how far a reaction actually proceeds before it stalls at equilibrium. Still known chemistry, not
+new: we reproduce the equilibrium constant an established model gives, exactly as M1 reproduces ΔG.
+
+### M2 -- `smartchem/experiment/equilibrium.py`
+
+* **Engine.** `equilibrium_of_step` calls `feasibility_of_step` for the sourced ΔG, its grade, and the reaction
+  temperature (so M1 and M2 can NEVER disagree on the thermodynamics), then `K = exp(-ΔG/RT)`. Computed in
+  `log10 K` space so an astronomically favorable reaction (water synthesis, log10 K ~ 83) never overflows a
+  float into a fabricated `inf` -- the magnitude is carried honestly.
+* **Three graded outputs, each wearing its bucket.**
+  1. **K** (and log10 K) -- the DERIVED equilibrium constant.
+  2. **The extent verdict** -- an assumption-free reading of K on the standard chemist's decade scale:
+     `ESSENTIALLY_COMPLETE` (K >= 1e3, the conservation ceiling is thermodynamically approachable) / `FAVORABLE`
+     / `BALANCED` (K ~ 1) / `LIMITED` / `NEGLIGIBLE` (K <= 1e-3, barely proceeds) / `UNKNOWN`.
+  3. **The equilibrium conversion fraction** -- a concrete "yield in the equilibrium sense", computed ONLY where
+     it is exactly solvable: a reaction with **no net mole change** (Δn=0) under a declared ideal reference
+     (ideal activities, stoichiometric equimolar charge, no initial product), where the reference concentration
+     cancels and `α = t/(1+t)`, `t = (K/C_stoich)^(1/M)`. Where Δn != 0 the conversion needs a reference
+     state/activity model, so it is a LOUD `UNKNOWN` (K and the verdict stay DERIVED) -- never a fabricated
+     fraction. Same honesty as E1's pressure residue.
+* **Wired in.** `verify_equilibrium` (route), a bottleneck-dominated route verdict (the least-complete SOURCED
+  step caps the route), `rank_routes` gains an equilibrium tiebreaker AFTER feasibility (feasibility is the
+  *sign*, equilibrium the finer *magnitude*), and the draft renders K + the conversion. `DRAFT_BANNER` adds the
+  equilibrium extent to its enumerated graded claims.
+* **Calibrated (the Instrument rule).** Haber recovers **K ~ 5.5e5 at 298 K** (textbook ~6e5, log10 K = 5.74),
+  `ESSENTIALLY_COMPLETE`; at 700 K K **collapses to ~3e-4** (log10 K = -3.50, `NEGLIGIBLE`, flagged PREDICTED)
+  -- the exact thermodynamic reason the Haber process fights entropy with pressure (Le Chatelier). Water-gas
+  shift (Δn=0) gives an exact **98.3%** ideal-reference conversion, cross-checked against `√K/(1+√K)`. Gate now
+  **36/36**, suite **2122** (14 new equilibrium tests).
+* **Boundaries, loud.** Equilibrium is *extent*, never *rate* (a reaction can be `ESSENTIALLY_COMPLETE` and
+  kinetically frozen -- diamond -> graphite). The conversion's ideal reference is a stated idealisation. K for
+  paracetamol acetylation is honestly `UNKNOWN` (no seed thermo) -- unlocked by M3, not by a guess.
+
+### Next: M3 -- seed thermochemistry breadth (unlock M1/M2 for drug-sized targets)
+
+M1 and M2 are ENGINES; their reach is the thermo seed. The paracetamol step is `UNKNOWN` today only because no
+sourced ΔfH°/S° covers drug-sized species -- not a capability gap, a DATA gap. M3 is a sourced 298 K -> 0 K
+reduction path (or a broader open dataset via the autoload provider stack) that widens coverage so ΔH/ΔG/K
+reach real targets. It is the highest-leverage next step precisely because it turns the two DERIVED engines
+already built onto the north-star (paracetamol) litmus. After M3: M4 convergent-route DAGs (orthogonal,
+structural); then long-term L1 (TST kinetics -- the honest "real rate"), L2 (the unified classifier -- the
+mission made literal), L3 (decompiler R3-R5).

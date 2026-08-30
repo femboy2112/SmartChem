@@ -37,7 +37,13 @@ from enum import Enum
 
 from .contracts import Digestible
 from .data import reference
-from .decompiler import DecompositionEdge, DecompositionGraph, Formula
+from .decompiler import DecompositionEdge, DecompositionGraph, Formula, admissible_edges
+from .decompiler_mediated import MediatedEdge, mediated_edges
+
+#: Either kind of decomposition edge the review layer knows how to score and screen. Both expose
+#: ``reactant`` / ``reactant_multiplicity`` / ``products``; a MediatedEdge additionally exposes
+#: ``reagents`` (drawn from solution), which the energy balance adds to the reactant side.
+AnyEdge = DecompositionEdge | MediatedEdge
 
 __all__ = [
     "SAFETY_BANNER",
@@ -45,10 +51,13 @@ __all__ = [
     "EnergyAssessment",
     "HazardProfile",
     "EdgeReview",
+    "AnyEdge",
     "coherence_score",
     "assess_edge_energy",
     "screen_edge",
+    "review_edges",
     "review_graph",
+    "decompile_and_review",
 ]
 
 SAFETY_BANNER = (
@@ -131,32 +140,41 @@ class EnergyAssessment(Digestible):
         return self.covered and self.assembly_lo_ev < 0.0 <= self.assembly_hi_ev
 
 
-def assess_edge_energy(edge: DecompositionEdge) -> EnergyAssessment:
-    """Compute the assembly enthalpy interval for an edge from reference formation enthalpies."""
-    if type(edge) is not DecompositionEdge:
-        raise TypeError("edge must be a DecompositionEdge")
+def assess_edge_energy(edge: AnyEdge) -> EnergyAssessment:
+    """Compute the assembly enthalpy interval for an edge from reference formation enthalpies.
+
+    Handles both a plain :class:`~smartchem.decompiler.DecompositionEdge` and a mediated
+    :class:`~smartchem.decompiler_mediated.MediatedEdge`: the reactant-side (LHS) interval is
+    ``n * reactant`` plus every reagent drawn from solution, so a hydrolysis is scored with its
+    water on the balance, not silently dropped.
+    """
+    if type(edge.reactant) is not Formula:  # duck-typed over both edge kinds
+        raise TypeError("edge must expose a Formula reactant, int multiplicity, and products")
     uncovered: list[str] = []
-    reactant = _dfh_range_kj(edge.reactant)
-    if reactant is None:
-        uncovered.append(repr(edge.reactant))
-    product_ranges: list[tuple[tuple[float, float], int]] = []
+    # reactant-side species: n * reactant, then any reagents (empty for a plain edge)
+    lhs_lo = lhs_hi = 0.0
+    lhs_species = [(edge.reactant, edge.reactant_multiplicity)] + list(getattr(edge, "reagents", ()))
+    for species, mult in lhs_species:
+        rng = _dfh_range_kj(species)
+        if rng is None:
+            uncovered.append(repr(species))
+        else:
+            lhs_lo += mult * rng[0]
+            lhs_hi += mult * rng[1]
+    prod_lo = prod_hi = 0.0
     for product, mult in edge.products:
-        pr = _dfh_range_kj(product)
-        if pr is None:
+        rng = _dfh_range_kj(product)
+        if rng is None:
             uncovered.append(repr(product))
         else:
-            product_ranges.append((pr, mult))
+            prod_lo += mult * rng[0]
+            prod_hi += mult * rng[1]
     if uncovered:
         return EnergyAssessment(None, None, tuple(sorted(set(uncovered))))
 
-    n = edge.reactant_multiplicity
-    r_lo, r_hi = reactant  # type: ignore[misc]
-    # decomposition ΔH interval (kJ): products - n*reactant, propagated as an interval
-    decomp_lo = sum(mult * lo for (lo, _hi), mult in product_ranges) - n * r_hi
-    decomp_hi = sum(mult * hi for (_lo, hi), mult in product_ranges) - n * r_lo
-    # assembly is the reverse: negate and swap the interval
-    assembly_lo = -decomp_hi / reference.KJ_PER_EV
-    assembly_hi = -decomp_lo / reference.KJ_PER_EV
+    # decomposition ΔH interval (kJ): products - LHS; assembly is its reverse (negate and swap)
+    assembly_lo = -(prod_hi - lhs_lo) / reference.KJ_PER_EV
+    assembly_hi = -(prod_lo - lhs_hi) / reference.KJ_PER_EV
     return EnergyAssessment(assembly_lo, assembly_hi, ())
 
 
@@ -184,7 +202,7 @@ class HazardProfile(Digestible):
 
 
 def screen_edge(
-    edge: DecompositionEdge, *, exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV
+    edge: AnyEdge, *, exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV
 ) -> HazardProfile:
     """Screen one edge for hazards. Always returns a profile -- it never hides or refuses an edge."""
     energy = assess_edge_energy(edge)
@@ -208,12 +226,12 @@ def screen_edge(
     return HazardProfile(energy, tuple(flags), note)
 
 
-def coherence_score(edge: DecompositionEdge) -> float:
+def coherence_score(edge: AnyEdge) -> float:
     """Fraction of product content that is a declared compound rather than an element bucket.
 
     1.0 = every product is a molecule (a chemically meaningful split); 0.0 = pure element
     shrapnel (the elemental floor). A STRUCTURAL presentation heuristic, not a feasibility or
-    thermodynamic claim.
+    thermodynamic claim. Reagents are not scored -- coherence is about what the target became.
     """
     molecular = sum(m for p, m in edge.products if not p.is_element)
     total = sum(m for _p, m in edge.products)
@@ -222,17 +240,21 @@ def coherence_score(edge: DecompositionEdge) -> float:
 
 @dataclass(frozen=True)
 class EdgeReview(Digestible):
-    """One reviewed edge: the edge, its structural coherence, and its safety profile."""
+    """One reviewed edge (plain or mediated): the edge, its coherence, and its safety profile."""
 
-    edge: DecompositionEdge
+    edge: AnyEdge
     coherence: float
     hazard: HazardProfile
 
     def __post_init__(self) -> None:
-        if type(self.edge) is not DecompositionEdge:
-            raise TypeError("edge must be a DecompositionEdge")
+        if type(self.edge) not in (DecompositionEdge, MediatedEdge):
+            raise TypeError("edge must be a DecompositionEdge or MediatedEdge")
         if type(self.hazard) is not HazardProfile:
             raise TypeError("hazard must be a HazardProfile")
+
+    @property
+    def mediated(self) -> bool:
+        return type(self.edge) is MediatedEdge
 
 
 def _review_key(review: "EdgeReview") -> tuple:
@@ -240,20 +262,14 @@ def _review_key(review: "EdgeReview") -> tuple:
     return (-review.coherence, review.edge.digest)
 
 
-def review_graph(
-    graph: DecompositionGraph,
-    *,
-    reactant: Formula | None = None,
-    exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV,
+def review_edges(
+    edges, *, exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV
 ) -> tuple[str, tuple[EdgeReview, ...]]:
-    """Rank a graph's edges by structural coherence and attach a safety profile to each.
+    """Rank any mix of plain and mediated edges by coherence and attach a safety profile to each.
 
-    Returns ``(banner, reviews)``. No edge is ever dropped — the review *informs*, it does not
-    censor. Restrict to one reactant's direct decompositions with ``reactant``.
+    Returns ``(banner, reviews)``, most chemically coherent first. No edge is ever dropped — the
+    review *informs*, it does not censor.
     """
-    if type(graph) is not DecompositionGraph:
-        raise TypeError("graph must be a DecompositionGraph")
-    edges = graph.edges_from(reactant) if reactant is not None else graph.edges
     reviews = tuple(
         sorted(
             (
@@ -264,3 +280,50 @@ def review_graph(
         )
     )
     return SAFETY_BANNER, reviews
+
+
+def review_graph(
+    graph: DecompositionGraph,
+    *,
+    reactant: Formula | None = None,
+    exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV,
+) -> tuple[str, tuple[EdgeReview, ...]]:
+    """Rank a graph's edges by structural coherence and attach a safety profile to each.
+
+    Returns ``(banner, reviews)``. No edge is ever dropped. Restrict to one reactant's direct
+    decompositions with ``reactant``.
+    """
+    if type(graph) is not DecompositionGraph:
+        raise TypeError("graph must be a DecompositionGraph")
+    edges = graph.edges_from(reactant) if reactant is not None else graph.edges
+    return review_edges(edges, exotherm_threshold_ev=exotherm_threshold_ev)
+
+
+def decompile_and_review(
+    target: "str | dict[str, int] | Formula",
+    inventory: "tuple[Formula, ...] | tuple[str, ...]" = (),
+    medium: "tuple[Formula, ...] | tuple[str, ...]" = (),
+    *,
+    exotherm_threshold_ev: float = _DEFAULT_EXOTHERM_THRESHOLD_EV,
+    max_reagent_instances: int = 1,
+    budget: int = 200_000,
+) -> tuple[str, tuple[EdgeReview, ...]]:
+    """The unified chemist-facing view of one target's direct decompositions.
+
+    Generates both the plain (own-atoms) edges and the mediated (solution-assisted) edges over the
+    declared ``inventory`` + ``medium``, then reviews them together — so the real runnable reaction
+    (a hydrolysis, say) surfaces ranked and safety-screened alongside the anhydrous backbone. No
+    edge is dropped; ``ENERGETICS_UNKNOWN`` is loud where reference data is absent.
+    """
+    tf = target if isinstance(target, Formula) else (
+        Formula.parse(target) if isinstance(target, str) else Formula.of(target)
+    )
+    inv = tuple(
+        s if isinstance(s, Formula) else (Formula.parse(s) if isinstance(s, str) else Formula.of(s))
+        for s in inventory
+    )
+    plain, _pc = admissible_edges(tf, inv, budget=budget)
+    mediated, _mc = mediated_edges(
+        tf, inv, medium, max_reagent_instances=max_reagent_instances, budget=budget
+    )
+    return review_edges(plain + mediated, exotherm_threshold_ev=exotherm_threshold_ev)

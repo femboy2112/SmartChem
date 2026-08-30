@@ -516,8 +516,16 @@ the review layer) rankable and safety-screenable** — no longer a flat NO. The 
 YES for an arbitrary target from bare elements, each a named next step:
 1. **mediated-graph recursion** — build the whole descent with mediated edges (this cut is the edge +
    generator; the recursive `DecompositionGraph` analogue over mediated edges is C2b);
-2. **review/coherence over `MediatedEdge`** — `decompiler_review` currently ranks/screens plain
-   `DecompositionEdge`s; generalise it (a shared edge protocol) so mediated edges rank and carry safety
-   alongside;
+2. ~~**review/coherence over `MediatedEdge`**~~ — **DONE** (below);
 3. **conditions data (C1)** — envelopes are still mostly `UNKNOWN` without a sourced table;
 4. **structure (v2)** — `C6H7NO` is still a formula, not the specific p-aminophenol a chemist acts on.
+
+**Update — unified review landed (gap #2 closed).** `decompiler_review` now scores and safety-screens
+**both** plain and mediated edges (`AnyEdge`), and `decompile_and_review(target, inventory, medium)` is
+the single chemist-facing entry: it generates plain + mediated direct edges and reviews them together.
+The energy balance now adds reagents to the reactant side (a hydrolysis is scored with its water),
+cross-verified — for `DME + H2O → 2 MeOH` the structure-resolved `reference.reaction_energy_ev` (0.2622
+eV) falls inside the formula-level interval [0.2622, 0.7856] eV. Measured: for paracetamol the real
+hydrolysis `C8H9NO2 + H2O → C2H4O2 + C6H7NO` surfaces **ranked #1** (coherence 1.0) and safety-screened,
+in one call. 5 new tests; full suite 1773 passed. The **direct-reaction view is now coherent**; C2b
+(recursion) is what extends that coherence to the whole chain from bare elements.

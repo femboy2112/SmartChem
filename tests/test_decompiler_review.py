@@ -10,13 +10,17 @@ import pytest
 
 from smartchem.data import reference
 from smartchem.decompiler import DecompositionEdge, Formula, build_decomposition
+from smartchem.decompiler_mediated import MediatedEdge
 from smartchem.decompiler_review import (
     SAFETY_BANNER,
+    EdgeReview,
     EnergyAssessment,
     HazardFlag,
     _dfh_range_kj,
     assess_edge_energy,
     coherence_score,
+    decompile_and_review,
+    review_edges,
     review_graph,
     screen_edge,
 )
@@ -117,3 +121,48 @@ class TestCoherenceRanking:
         # ranking is monotone non-increasing in coherence
         cohs = [r.coherence for r in reviews]
         assert cohs == sorted(cohs, reverse=True)
+
+
+class TestUnifiedPlainAndMediatedReview:
+    def test_the_real_hydrolysis_surfaces_ranked_and_screened(self):
+        _banner, reviews = decompile_and_review(
+            "C8H9NO2", inventory=["C6H7NO", "C2H4O2", "CO", "CO2", "CH4"], medium=["H2O"]
+        )
+        real = [r for r in reviews if r.mediated and r.edge.equation() == "C8H9NO2 + H2O -> C2H4O2 + C6H7NO"]
+        assert len(real) == 1
+        assert real[0].coherence == 1.0            # it ranks with the most coherent
+        assert reviews[0].coherence == 1.0         # and coherence-1.0 edges lead the list
+        cohs = [r.coherence for r in reviews]
+        assert cohs == sorted(cohs, reverse=True)
+
+    def test_mixed_edges_are_both_present_and_nothing_is_dropped(self):
+        _banner, reviews = decompile_and_review(
+            "C8H9NO2", inventory=["C6H7NO", "C2H4O2"], medium=["H2O"]
+        )
+        assert any(r.mediated for r in reviews) and any(not r.mediated for r in reviews)
+
+    def test_mediated_energy_includes_the_reagent(self):
+        # DME + H2O -> 2 MeOH, all covered; my formula-level interval must contain the
+        # structure-resolved reference value (which pins DME) -- proving the reagent is on the balance
+        edge = MediatedEdge(Formula.parse("C2H6O"), 1, ((Formula.parse("H2O"), 1),), ((Formula.parse("CH4O"), 2),))
+        ea = assess_edge_energy(edge)
+        assert ea.covered
+        ref = reference.reaction_energy_ev({"CH3OCH3": 1, "H2O": 1}, {"CH3OH": 2})  # decomposition direction
+        assert -ea.assembly_hi_ev - 1e-9 <= ref <= -ea.assembly_lo_ev + 1e-9
+
+    def test_edge_review_accepts_a_mediated_edge(self):
+        edge = MediatedEdge(
+            Formula.parse("C8H9NO2"), 1, ((Formula.parse("H2O"), 1),),
+            tuple(sorted(((Formula.parse("C2H4O2"), 1), (Formula.parse("C6H7NO"), 1)),
+                        key=lambda pm: (pm[0].counts, pm[0].charge, pm[1]))),
+        )
+        review = EdgeReview(edge, coherence_score(edge), screen_edge(edge))
+        assert review.mediated and review.coherence == 1.0
+
+    def test_review_edges_ranks_a_mixed_list(self):
+        plain = _to_atoms("H2O", (H, 2), (OX, 1))  # coherence 0.0
+        med = MediatedEdge(Formula.parse("C8H9NO2"), 1, ((Formula.parse("H2O"), 1),),
+                           tuple(sorted(((Formula.parse("C2H4O2"), 1), (Formula.parse("C6H7NO"), 1)),
+                                       key=lambda pm: (pm[0].counts, pm[0].charge, pm[1]))))
+        _banner, reviews = review_edges([plain, med])
+        assert reviews[0].edge is med and reviews[-1].edge is plain  # coherent first

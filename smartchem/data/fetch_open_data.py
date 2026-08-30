@@ -5,7 +5,9 @@ first networked run (see :mod:`smartchem.data.autoload`).  This script adds the 
 too big to fetch one compound at a time:
 
     python -m smartchem.data.fetch_open_data bradley       # ~28k melting points (CC0), to the data dir
-    python -m smartchem.data.fetch_open_data warm --smiles "CC(=O)O" "CCO"   # pre-fill the live cache
+    python -m smartchem.data.fetch_open_data warm --smiles "CC(=O)O" "CCO"   # pre-fill the cache (SMILES)
+    python -m smartchem.data.fetch_open_data warm --name aspirin "acetic acid"   # ... or by NAME
+    python -m smartchem.data.fetch_open_data warm --name water ethanol --offline # registry-only, no network
 
 The Bradley Open Melting Point Dataset ships as an XLSX; this converts it to the CSV the Bradley provider
 reads, using only the standard library (no new dependency -- XLSX is zipped XML).  Everything downloaded is
@@ -65,27 +67,56 @@ def fetch_bradley(dest: str | None = None, url: str = BRADLEY_XLSX_URL) -> str:
     return dest
 
 
-def warm_cache(identifiers: list[str]) -> None:
-    """Pre-populate the live cache for a list of names/SMILES, so later runs are offline."""
+def _resolve_to_molecule(ident: str, *, allow_network: bool):
+    """Resolve one identifier (a SMILES OR a chemical name) to ``(molecule, name_hint)``, or ``(None, ident)``.
+
+    Order: parse as a SMILES; else the offline structure registry (:func:`structure_by_name`); else, when
+    the network is allowed, a live PubChem name->SMILES resolution.  The cache is keyed by STRUCTURAL
+    identity, so a name must become a structure before it can be warmed -- this is what closes the
+    "name-only warming not wired" gap.  Returns ``(None, ident)`` on a miss; never a fabricated structure.
+    """
     from ..smiles import SmilesError, parse_smiles
+    from ..structure import structure_by_name
+    try:
+        return parse_smiles(ident), ident              # a SMILES
+    except SmilesError:
+        pass
+    named = structure_by_name(ident)                   # a registered name (offline)
+    if named is not None:
+        return named.molecule, ident
+    if allow_network:                                  # a live name->structure resolution
+        from .providers.pubchem import PubChemProvider
+        smiles = PubChemProvider().resolve_smiles(ident)
+        if smiles:
+            try:
+                return parse_smiles(smiles), ident
+            except SmilesError:
+                pass
+    return None, ident
+
+
+def warm_cache(identifiers: list[str], *, allow_network: bool = True) -> None:
+    """Pre-populate the cache for a list of SMILES and/or names, so later runs are offline.
+
+    Names are resolved to structures via the registry (offline) or PubChem (when ``allow_network``); the
+    structural key is what the cache stores.  A name that resolves nowhere is a loud skip, never a guess.
+    """
     from .autoload import autoload_stability
     mols = []
     hints = {}
     for ident in identifiers:
-        try:
-            m = parse_smiles(ident)          # a SMILES
-        except SmilesError:
-            m = None
-        if m is not None:
-            mols.append(m)
-            hints[m] = ident
-        else:
-            print(f"  (skipping {ident!r}: not a parseable SMILES; name-only warming not wired here)",
-                  flush=True)
+        m, name = _resolve_to_molecule(ident, allow_network=allow_network)
+        if m is None:
+            reason = ("not a SMILES, not a registered name, and PubChem could not resolve it"
+                      if allow_network else "not a SMILES and not a registered name (offline)")
+            print(f"  (skipping {ident!r}: {reason})", flush=True)
+            continue
+        mols.append(m)
+        hints[m] = name
     if not mols:
         print("nothing to warm.", flush=True)
         return
-    table = autoload_stability(mols, identifiers=hints, allow_network=True)
+    table = autoload_stability(mols, identifiers=hints, allow_network=allow_network)
     covered = sum(1 for m in mols if table.for_formula(_fkey(m)) is not None)
     print(f"warmed cache for {covered}/{len(mols)} compound(s).", flush=True)
 
@@ -101,13 +132,17 @@ def main(argv: list[str] | None = None) -> int:
     b = sub.add_parser("bradley", help="download the Bradley Open MP Dataset (CC0) to the cache")
     b.add_argument("--url", default=BRADLEY_XLSX_URL)
     b.add_argument("--dest", default=None)
-    w = sub.add_parser("warm", help="pre-fill the live cache for given SMILES")
+    w = sub.add_parser("warm", help="pre-fill the cache for given SMILES and/or names")
     w.add_argument("--smiles", nargs="+", default=[], help="SMILES strings to warm the cache for")
+    w.add_argument("--name", nargs="+", default=[],
+                   help="chemical names to warm (resolved via the registry, or PubChem unless --offline)")
+    w.add_argument("--offline", action="store_true",
+                   help="registry-only name resolution and no network fetch")
     args = parser.parse_args(argv)
     if args.cmd == "bradley":
         fetch_bradley(args.dest, args.url)
     elif args.cmd == "warm":
-        warm_cache(args.smiles)
+        warm_cache([*args.smiles, *args.name], allow_network=not args.offline)
     return 0
 
 

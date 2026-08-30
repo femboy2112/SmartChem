@@ -18,7 +18,25 @@ from smartchem.structure import (
     known_compounds,
     registered_structures,
     resolve_names,
+    structure_by_name,
 )
+
+
+class TestStructureByName:
+    """The offline name->structure resolver that keys warming/evidence by a compound's NAME."""
+
+    def test_resolves_a_common_name_case_and_whitespace_insensitively(self):
+        assert structure_by_name("  Acetic Acid ").name == "acetic acid"
+
+    def test_resolves_a_synonym(self):
+        # acetaminophen is a registered synonym of paracetamol
+        assert structure_by_name("acetaminophen").name == "paracetamol"
+
+    def test_an_unregistered_name_is_a_loud_none_not_a_guess(self):
+        assert structure_by_name("unobtainium") is None
+
+    def test_empty_input_is_none(self):
+        assert structure_by_name("") is None and structure_by_name("   ") is None
 
 
 def _relabel(molecule: Molecule, perm: dict[int, int]) -> Molecule:

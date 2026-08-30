@@ -13,10 +13,33 @@ import json
 from .base import PropertyProvider, PropertyRecord
 from .tempparse import aggregate_kelvin, parse_temperature_values
 
-__all__ = ["PubChemProvider"]
+__all__ = ["PubChemProvider", "smiles_from_property_json"]
 
 _BASE = "https://pubchem.ncbi.nlm.nih.gov/rest"
 _UA = "smartchem/0.1 (chemistry education; open-data autoload)"
+
+
+def smiles_from_property_json(text: str) -> str | None:
+    """Extract a SMILES from a PUG-REST property response (the pure, testable core).
+
+    PubChem's property key is ``SMILES`` (it renamed the former ``CanonicalSMILES`` in 2025);
+    ``ConnectivitySMILES`` (the former ``IsomericSMILES``) and the historical names are accepted as
+    fallbacks, so the parser survives the endpoint's own churn.  Returns the first non-empty string, or
+    ``None`` -- never a fabricated structure.
+    """
+    try:
+        obj = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    props = obj.get("PropertyTable", {}).get("Properties", [])
+    if not isinstance(props, list) or not props or not isinstance(props[0], dict):
+        return None
+    first = props[0]
+    for key in ("SMILES", "CanonicalSMILES", "ConnectivitySMILES", "IsomericSMILES"):
+        val = first.get(key)
+        if isinstance(val, str) and val:
+            return val
+    return None
 
 
 def _extract_strings(obj: object) -> list[str]:
@@ -85,6 +108,24 @@ class PubChemProvider(PropertyProvider):
         data = json.loads(self._get(url))
         cids = data.get("IdentifierList", {}).get("CID", [])
         return int(cids[0]) if cids else None
+
+    def resolve_smiles(self, name: str) -> str | None:
+        """Resolve a chemical NAME to a SMILES via PUG-REST (network), or ``None`` on a miss.
+
+        The parsing is factored into :func:`smiles_from_property_json` (tested offline against a recorded
+        response); this method is the thin live call, which degrades to ``None`` on any error.
+        """
+        if not name:
+            return None
+        import urllib.parse
+        url = (
+            f"{_BASE}/pug/compound/name/{urllib.parse.quote(name, safe='')}"
+            f"/property/SMILES,ConnectivitySMILES/JSON"
+        )
+        try:
+            return smiles_from_property_json(self._get(url))
+        except Exception:  # noqa: BLE001 -- an unreachable/404 name is a miss, not a crash
+            return None
 
     def _cid_for(self, identifier: str) -> int | None:
         """Resolve a CID by NAME first, then by SMILES -- so an arbitrary structure is still found."""

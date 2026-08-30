@@ -42,8 +42,25 @@ Bulk melting-point coverage (one-time, ~28k rows, CC0):
 
 ```
 python -m smartchem.data.fetch_open_data bradley          # downloads + converts to the cache
-python -m smartchem.data.fetch_open_data warm --smiles "CC(=O)O" "CCO"   # pre-fill the cache
+python -m smartchem.data.fetch_open_data warm --smiles "CC(=O)O" "CCO"   # pre-fill the cache (SMILES)
+python -m smartchem.data.fetch_open_data warm --name aspirin "acetic acid"   # ... or by NAME
+python -m smartchem.data.fetch_open_data warm --name water ethanol --offline # registry-only, no network
 ```
+
+Warming needs a **structure** — the cache is keyed by structural identity — so a name is resolved to one
+first: the offline structure registry (any compound it carries, e.g. `water`, `paracetamol`,
+`acetaminophen`), then PubChem's name→SMILES endpoint (unless `--offline`). A name that resolves nowhere is
+a loud skip, never a guess.
+
+## Adding a provider (the honest extension point)
+
+The stack is a plain `PropertyProvider` interface (`base.py`): implement `fetch(*, identifier, formula=None)`
+returning a `PropertyRecord` or `None`, add it to `default_providers`, and it participates in the
+seed→cache→providers→UNKNOWN flow. The discipline is strict and non-negotiable: the parsing of a response is
+a **pure function tested against a REAL recorded fixture** (`tests/fixtures/providers/`, captured live once),
+separate from the network call. More open sources (NIST-linked thermochemistry, ChEBI) fit here directly —
+they are not yet shipped because adding one means capturing its real response into a fixture rather than
+guessing its schema, and this project never fabricates a data contract it hasn't seen.
 
 Programmatically:
 

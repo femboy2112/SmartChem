@@ -7,7 +7,7 @@ that makes autoload safe -- an explicit unit is required, outliers are rejected,
 from pathlib import Path
 
 from smartchem.data.providers.bradley import BradleyMeltingPointProvider
-from smartchem.data.providers.pubchem import record_from_annotations
+from smartchem.data.providers.pubchem import record_from_annotations, smiles_from_property_json
 from smartchem.data.providers.tempparse import aggregate_kelvin, parse_temperature_values
 from smartchem.data.providers.wikidata import record_from_sparql
 
@@ -47,6 +47,25 @@ class TestPubChemParsing:
 
     def test_an_empty_annotation_is_a_clean_miss(self):
         assert record_from_annotations(None, None, 1).is_empty
+
+
+class TestPubChemNameResolution:
+    """The name->SMILES resolution that lets an arbitrary NAME be warmed (structure is the cache key)."""
+
+    def test_real_aspirin_name_to_smiles_response(self):
+        # PubChem's current property key is `SMILES` (formerly CanonicalSMILES) -- the parser reads it
+        text = (_FIX / "pubchem_name2smiles_aspirin.json").read_text()
+        assert smiles_from_property_json(text) == "CC(=O)OC1=CC=CC=C1C(=O)O"
+
+    def test_a_historical_key_is_still_read(self):
+        # resilience to the endpoint's own churn: the old CanonicalSMILES key still parses
+        assert smiles_from_property_json(
+            '{"PropertyTable":{"Properties":[{"CID":1,"CanonicalSMILES":"CCO"}]}}'
+        ) == "CCO"
+
+    def test_an_empty_or_malformed_response_is_a_clean_none(self):
+        assert smiles_from_property_json('{"PropertyTable":{"Properties":[]}}') is None
+        assert smiles_from_property_json("not json") is None
 
 
 class TestWikidataParsing:

@@ -110,3 +110,29 @@ class TestMergeAndCache:
 
     def test_data_dir_is_resolvable(self):
         assert isinstance(smartchem_data_dir(), str) and smartchem_data_dir()
+
+
+class TestNameBasedWarming:
+    """Name-based warming: a NAME becomes a STRUCTURE (the cache key) offline via the registry, or is a
+    loud skip -- closing the 'name-only warming not wired' gap without any network in the committed suite."""
+
+    def test_a_smiles_resolves_to_its_molecule(self):
+        from smartchem.data.fetch_open_data import _resolve_to_molecule
+        m, hint = _resolve_to_molecule("CCO", allow_network=False)
+        assert m is not None and m.formula == {"C": 2, "H": 6, "O": 1} and hint == "CCO"
+
+    def test_a_registered_name_resolves_offline(self):
+        from smartchem.data.fetch_open_data import _resolve_to_molecule
+        m, hint = _resolve_to_molecule("acetic acid", allow_network=False)
+        assert m is not None and m.formula == {"C": 2, "H": 4, "O": 2} and hint == "acetic acid"
+
+    def test_an_unresolvable_name_offline_is_a_loud_skip_not_a_guess(self):
+        from smartchem.data.fetch_open_data import _resolve_to_molecule
+        m, hint = _resolve_to_molecule("unobtainium", allow_network=False)
+        assert m is None and hint == "unobtainium"
+
+    def test_warm_cache_offline_covers_a_seed_compound_and_reports(self, capsys):
+        from smartchem.data.fetch_open_data import warm_cache
+        warm_cache(["water"], allow_network=False)   # water is in the seed
+        out = capsys.readouterr().out
+        assert "warmed cache for 1/1" in out

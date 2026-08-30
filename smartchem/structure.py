@@ -50,6 +50,7 @@ __all__ = [
     "known_compounds",
     "resolve_names",
     "resolve_structure",
+    "structure_by_name",
     "registered_structures",
 ]
 
@@ -454,6 +455,23 @@ def resolve_structure(molecule: Molecule) -> "NamedStructure | None":
         return None
     for structure in candidates:
         if structure.canonical_identity_is_invariant and structure.structure_identity == key:
+            return structure
+    return None
+
+
+def structure_by_name(name: str) -> "NamedStructure | None":
+    """The registered structure whose common name, IUPAC, or a synonym matches ``name``.
+
+    Case- and surrounding-whitespace-insensitive over :attr:`NamedStructure.all_names`.  This is the
+    offline name->structure resolver: it lets a chemist warm the cache or key evidence by a compound's
+    NAME without a network round-trip, for any compound the registry carries.  Returns ``None`` on a miss
+    (the caller falls back to a live name->structure resolution, or reports a loud skip) -- never a guess.
+    """
+    if not isinstance(name, str) or not name.strip():
+        return None
+    needle = name.strip().casefold()
+    for structure in _REGISTERED:
+        if any(label.casefold() == needle for label in structure.all_names):
             return structure
     return None
 

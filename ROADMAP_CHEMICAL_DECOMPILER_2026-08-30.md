@@ -783,3 +783,84 @@ bare vertex-transitive rings (`category.py` #25) — Part 13 marked it the one c
 error corrupts every graph equality, so it earns brute-force verification rather than a bolt-on at
 the end of a long arc. It bites only bare benzene; every registered/litmus species canonicalizes.
 That, and broader sourced coverage, are what remain.
+
+## Part 15 — Capability verdict: "recompile ANY chemical into its reaction paths and byproducts?"
+
+The owner's standing question, answered against the built system, not against optimism. The
+sentence hides a **fork across W3**, and the two halves get opposite answers — conflating them is
+the exact error this whole vertical exists to not commit.
+
+### 15.0 — The fork (the load-bearing distinction)
+
+- **Byproducts + the conservation-valid decomposition graph = FORMAL.** "What multisets of
+  lower species does this structure conserve down to, and by what tree of bond-rewrites" is linear
+  algebra over the bond graph. This we **certify** — for a target we can (a) represent as a
+  `category.Molecule` and (b) fit in budget — and we attach sourced byproduct facts wherever the
+  data covers them, a loud `UNKNOWN` everywhere else.
+- **The reaction path that actually occurs = PHYSICAL.** "Which of these routes happens, in what
+  order, under what conditions, at what rate" is thermodynamic/kinetic prediction. This we **never
+  assert** (W3). We enumerate candidate routes and hand a chemist sourced evidence to rank; we do
+  not rank by reactivity ourselves. Building *past* this is not a missing feature — it is the wall
+  that keeps the tool from emitting chemically-plausible falsehoods at scale.
+
+**Verdict, both halves.** *Formal:* **not for "any" yet** — blocked by ingestion, search budget,
+and rewrite/ion coverage (15.1, all buildable). *Physical (the real reaction path, singular):*
+**no, by design, permanently** — that is a BOUNDARY, not a TODO.
+
+### 15.1 — The gaps between here and "any chemical, formal tree" (measured 2026-08-30)
+
+Ranked by how hard each bites on the word **any**. Tags as Part 13: BUILD / DATA / BOUNDARY.
+
+- **G1 — the front door: structure INPUT — BUILD (highest leverage, NEW; Part 13's map assumed
+  the `Molecule` already in hand).** There is **no** name/SMILES/InChI → `category.Molecule`
+  reader; the only parser in the repo is `Formula.parse` (formula *string* → bond-free atom
+  multiset). Every bond graph is hand-entered and guard-verified — **23** compounds today
+  (measured). So "any chemical" is false *at ingestion*: the decompiler can only reach what
+  someone typed in. This one change — a structure reader landing in `category.Molecule`, then the
+  existing certified composition guard — is what turns "23 hand-entered species" into "any
+  compound a chemist can name." *Owner decision:* a hand-rolled SMILES-subset parser (bounded, no
+  dependency, matches the numpy-free-root discipline) vs. an optional RDKit-backed reader behind
+  the lazy surface (heavy dep, full coverage). Not silently chosen. Substantial.
+
+- **G2 — the budget wall on real targets — BUILD.** Measured: `structure_decompose(paracetamol)`
+  → **`REFUSED_BUDGET` at 5001 edges** (edge budget 5000); ethanol (9 atoms) → **COMPLETE, 131
+  edges / 46 nodes**. The full recursive descent of a real drug molecule does **not** reach
+  elements under default budget — it refuses *loudly and correctly* (W2), but the complete tree is
+  unobtainable for dense targets. Needs: canonical memoization across the graph (fragments recur
+  massively), pruning to meaningful cleavages, or an explicit bounded-depth contract as the honest
+  deliverable. Medium-high. *This is the price of "all the way down" being real rather than
+  silently truncated.*
+
+- **G3 — rewrite coverage (capping) — BUILD (Part 13 #2 remainder).** `capped_scissions` is
+  **order-1 only**: no double/triple-bond caps (order-2 ends), no ring-forming or ring-opening
+  rewrites, no condensations that close a ring. Whole classes of real byproduct-producing
+  reactions are structurally unrepresentable. Medium-high (higher-order valence matching).
+
+- **G4 — ionic / redox descent not wired into the graph — BUILD.** `HeterolyticScission` exists
+  (`HCl → H⁺ + Cl⁻`, charge-conserved, both directions enumerated) but is **not** in the recursive
+  graph or the review layer, and there is no redox / electron-transfer edge. Acid-base and redox
+  routes — a large fraction of real decomposition chemistry — are absent from the tree. Substantial;
+  also the concrete tie to the EM vertical.
+
+- **G5 — byproduct evidence coverage — DATA.** Even when structure enumerates and *identifies*
+  correctly, the byproduct FACTS (hazard / thermo / conditions) attach only across the ~22-record
+  registry; everything else is a loud `UNKNOWN`. Honest, but "any chemical's real byproducts,
+  annotated" needs a real database grown under the second-source discipline — never coverage for
+  its own sake.
+
+### 15.2 — The BOUNDARY pile (absent on purpose — never mistake these for TODO)
+
+- **Which cleavage / route actually happens** — reactivity, ΔG/ΔH ranking as *selection*, kinetics.
+  The engine enumerates; the chemist ranks with the sourced evidence we attach. Attach, never predict.
+- **Stereochemical / tautomer / resonance-dominance OUTCOMES** — detection is built and refuses
+  (`decompiler_boundary.py`, `CONSTITUTIONAL_ONLY` / `UNRANKED`); the *outcome claim* stays uncrossed.
+- **Any claim an edge is physically realized.** The casualty list on every certificate.
+
+### 15.3 — "Complete" for the formal ask, defined
+
+**G1 (input) + G2 (search) + G3 (capping) + G4 (ionic) + G5 (data)** — at which point a chemist
+hands in any nameable compound and gets back a structure-resolved, byproduct-enumerated,
+evidence-annotated decomposition graph, with every *which-one-happens* judgment still theirs. The
+**physical** ask ("give me the real reaction path") is answered `no` forever, and that `no` is the
+feature. **G1 is the single highest-leverage next build** — without it, every other rung only ever
+serves the two-dozen compounds already typed in.

@@ -51,6 +51,7 @@ from ..data.stability import DEFAULT_STABILITY, StabilityRef, StabilityTable
 from ..decompiler import Formula
 from ..structure import resolve_structure
 from .bucket import Bucket, Quantity, unknown
+from .phase import estimate_phase
 from .step import ExperimentRoute
 
 __all__ = [
@@ -120,6 +121,49 @@ def _pressure_note(a: ConditionEnvelope, b: ConditionEnvelope) -> Quantity | Non
     )
 
 
+def _pressure_phase_degeneracy(
+    rec: StabilityRef, env_from: ConditionEnvelope, env_to: ConditionEnvelope
+) -> tuple[str, Quantity] | None:
+    """A DEGENERATE reason (+ its sourced finding) when a real pressure drop flashes the intermediate off.
+
+    Fires ONLY when it is fully sourced and unambiguous: both steps declare temperature AND pressure, the two
+    pressures are DISJOINT (a genuine change the route imposes), the record carries a boiling point and an
+    enthalpy of vaporisation, and the Clausius-Clapeyron estimate places the intermediate as a CONDENSED
+    phase at the higher-pressure step but a GAS at the lower-pressure step -- i.e. the pressure change itself
+    boils it away, so it cannot be transferred to the next step.  Returns ``None`` in every other case (no
+    change, or insufficient sourced data), so the pressure dimension is never a fabricated verdict.
+    """
+    pf, pt = env_from.pressure, env_to.pressure
+    tf, tt = env_from.temperature, env_to.temperature
+    if pf is None or pt is None or tf is None or tt is None:
+        return None
+    if rec.boiling is None or rec.dhvap_kj_per_mol is None:
+        return None
+    disjoint = pf.hi < pt.lo or pt.hi < pf.lo
+    if not disjoint:
+        return None
+    from_p, to_p = (pf.lo + pf.hi) / 2.0, (pt.lo + pt.hi) / 2.0
+    from_t, to_t = (tf.lo + tf.hi) / 2.0, (tt.lo + tt.hi) / 2.0
+    (hi_t, hi_p), (lo_t, lo_p) = (
+        ((from_t, from_p), (to_t, to_p)) if from_p >= to_p else ((to_t, to_p), (from_t, from_p))
+    )
+    phase_hi = estimate_phase(rec, hi_t, hi_p)
+    phase_lo = estimate_phase(rec, lo_t, lo_p)
+    if phase_hi in ("liquid", "solid") and phase_lo == "gas":
+        reason = (
+            f"DEGENERATE: {rec.name} is {phase_hi} at {hi_p} atm but a gas at {lo_p} atm "
+            f"(Clausius-Clapeyron estimate from sourced bp + dHvap {rec.dhvap_kj_per_mol} kJ/mol); the "
+            f"pressure drop across the transition boils it off, so it cannot be carried to the next step"
+        )
+        finding = Quantity(
+            "phase-at-transition", f"{phase_hi}@{hi_p}atm -> gas@{lo_p}atm", "",
+            Bucket.KNOWN_SOURCED,
+            f"Clausius-Clapeyron (established model) over sourced bp + dHvap {rec.dhvap_kj_per_mol} kJ/mol",
+        )
+        return reason, finding
+    return None
+
+
 @dataclass(frozen=True)
 class Transition(Digestible):
     """One intermediate crossing one step-to-step transition, with its sourced verdict and evidence."""
@@ -179,6 +223,15 @@ def _judge_transition(
             f"DEGENERATE: {rec.name} is not isolable and is generated/consumed in situ ({rec.provenance}); "
             f"a route that hands it from step {from_step + 1} to step {to_step + 1} cannot exist",
             exposed, tuple(findings),
+        )
+
+    # -- sourced fact #1b (E1 depth): a pressure drop that boils the intermediate off (Clausius-Clapeyron)
+    pressure_deg = _pressure_phase_degeneracy(rec, env_from, env_to)
+    if pressure_deg is not None:
+        reason, finding = pressure_deg
+        findings.append(finding)
+        return Transition(
+            from_step, to_step, intermediate, TransitionStatus.DEGENERATE, reason, exposed, tuple(findings),
         )
 
     # -- the load-bearing sourced fact #2: thermal decomposition vs the exposure ----------------------

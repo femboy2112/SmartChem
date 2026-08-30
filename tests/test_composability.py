@@ -92,6 +92,45 @@ class TestUnknownIsLoudAndCloses:
         assert comp.verdict == "COMPOSABLE"
 
 
+H2O2 = parse_smiles("OO")
+O2 = parse_smiles("O=O")
+
+
+class TestPressurePhaseClausiusClapeyron:
+    """E1 depth: a real pressure DROP that boils a condensed intermediate off across the transition is
+    DEGENERATE, grounded in the Clausius-Clapeyron estimate over sourced bp + dHvap -- the operator's
+    'pressure can't be reconciled' case.  Fires only when fully sourced and unambiguous.
+    """
+
+    def _pstep(self, target, reactants, products, t, p, prov):
+        env = ConditionEnvelope(
+            temperature=Interval(t, t, "K"), pressure=Interval(p, p, "atm"),
+            status=EvidenceStatus.EXPERIMENTAL, provenance=prov,
+        )
+        return ExperimentStep.assembling(target, reactants, products, envelope=env)
+
+    def test_a_pressure_drop_that_boils_the_intermediate_off_is_degenerate(self):
+        # water intermediate: liquid at 5 atm / 340 K, but a gas at 0.1 atm / 340 K (CC estimate)
+        s1 = self._pstep(WATER, (H2O2, H2O2), (WATER, WATER, O2), 340, 5.0, "high-P step")
+        s2 = self._pstep(ACOH, (WATER, ANH), (ACOH, ACOH), 340, 0.1, "low-P step")
+        comp = verify_composability(ExperimentRoute.of(s1, s2))
+        assert comp.is_degenerate
+        assert "Clausius-Clapeyron" in comp.degenerate_reasons[0]
+
+    def test_the_same_pressure_is_not_a_pressure_degeneracy(self):
+        s1 = self._pstep(WATER, (H2O2, H2O2), (WATER, WATER, O2), 340, 5.0, "step")
+        s2 = self._pstep(ACOH, (WATER, ANH), (ACOH, ACOH), 340, 5.0, "same-P step")
+        assert verify_composability(ExperimentRoute.of(s1, s2)).verdict == "COMPOSABLE"
+
+    def test_without_sourced_dhvap_the_pressure_dimension_does_not_fabricate_a_verdict(self):
+        # 4-aminophenol has no sourced dHvap in the seed -> no CC pressure verdict, not a fabricated one
+        amp_acetate = parse_smiles("CC(=O)Oc1ccc(N)cc1")
+        s1 = self._pstep(AMP, (amp_acetate, WATER), (AMP, ACOH), 340, 5.0, "hydrolysis")
+        s2 = self._pstep(PARA, (AMP, ANH), (PARA, ACOH), 340, 0.1, "low-P")
+        # not degenerate on pressure (no dHvap); the temperature check clears it -> COMPOSABLE
+        assert verify_composability(ExperimentRoute.of(s1, s2)).verdict == "COMPOSABLE"
+
+
 class TestNonVacuity:
     def test_single_step_route_is_never_a_vacuous_composable(self):
         route = ExperimentRoute.of(

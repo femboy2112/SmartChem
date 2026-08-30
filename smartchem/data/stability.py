@@ -85,6 +85,7 @@ class StabilityRef(Digestible):
     decomposition_onset: Interval | None
     isolable: bool
     provenance: str
+    dhvap_kj_per_mol: float | None = None
     status: EvidenceStatus = EvidenceStatus.EXPERIMENTAL
 
     def __post_init__(self) -> None:
@@ -100,6 +101,12 @@ class StabilityRef(Digestible):
                 raise ValueError(f"{field_name} must be in kelvin (unit 'K'), got {value.unit!r}")
         if type(self.isolable) is not bool:
             raise TypeError("isolable must be a bool")
+        if self.dhvap_kj_per_mol is not None and (
+            isinstance(self.dhvap_kj_per_mol, bool)
+            or not isinstance(self.dhvap_kj_per_mol, (int, float))
+            or self.dhvap_kj_per_mol <= 0
+        ):
+            raise ValueError("dhvap_kj_per_mol must be a positive number (kJ/mol) or None")
         if not isinstance(self.provenance, str) or not self.provenance.strip():
             raise ValueError("a stored stability record must carry a non-empty provenance")
         if not isinstance(self.status, EvidenceStatus):
@@ -185,7 +192,8 @@ SEED_STABILITY_REFS: tuple[StabilityRef, ...] = (
         boiling=_k(373.12, 373.15),
         decomposition_onset=None,  # water does not thermally decompose in any bench regime
         isolable=True,
-        provenance="CRC Handbook 97th ed.: water mp 0.00 C, bp 99.97-100.0 C at 1 atm",
+        provenance="CRC Handbook 97th ed.: water mp 0.00 C, bp 99.97-100.0 C at 1 atm; dHvap 40.66 kJ/mol",
+        dhvap_kj_per_mol=40.66,
     ),
     StabilityRef(
         formula="C2H4O2",
@@ -194,7 +202,9 @@ SEED_STABILITY_REFS: tuple[StabilityRef, ...] = (
         boiling=_k(390.9, 391.2),
         decomposition_onset=None,
         isolable=True,
-        provenance="CRC Handbook / PubChem CID 176: acetic acid mp 16.6 C, bp 117.9-118 C at 1 atm",
+        provenance="CRC Handbook / PubChem CID 176: acetic acid mp 16.6 C, bp 117.9-118 C at 1 atm; "
+        "dHvap 23.7 kJ/mol",
+        dhvap_kj_per_mol=23.7,
     ),
     StabilityRef(
         formula="C4H6O3",

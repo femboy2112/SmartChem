@@ -1,0 +1,230 @@
+{
+  "Record": {
+    "RecordType": "CID",
+    "RecordNumber": 176,
+    "RecordTitle": "Acetic Acid",
+    "Section": [
+      {
+        "TOCHeading": "Chemical and Physical Properties",
+        "Description": "Various chemical and physical properties that are experimentally determined for this compound.  See also the Safety and Hazard Properties section (if available), which has additional properties pertinent to chemical safety and hazards.",
+        "Section": [
+          {
+            "TOCHeading": "Experimental Properties",
+            "Description": "Various experimentally determined properties for this compound.  See also the Safety and Hazard Properties section (if available), which has additional properties pertinent to chemical safety and hazards.",
+            "Section": [
+              {
+                "TOCHeading": "Boiling Point",
+                "Description": "The temperature at which this compound changes state from liquid to gas at a given atmospheric pressure.",
+                "URL": "https://chem.libretexts.org/Bookshelves/Organic_Chemistry/Organic_Chemistry_Lab_Techniques_(Nichols)/06%3A_Miscellaneous_Techniques/6.02%3A_Boiling_Point",
+                "Information": [
+                  {
+                    "ReferenceNumber": 14,
+                    "Reference": [
+                      "National Toxicology Program, Institute of Environmental Health Sciences, National Institutes of Health (NTP). 1992. National Toxicology Program Chemical Repository Database. Research Triangle Park, North Carolina."
+                    ],
+                    "ExtendedReference": [
+                      {
+                        "Citation": "National Toxicology Program, Institute of Environmental Health Sciences, National Institutes of Health (NTP). 1992. National Toxicology Program Chemical Repository Database. Research Triangle Park, North Carolina.",
+                        "Matched": {
+                          "PCLID": 900163266,
+                          "Citation": "National Toxicology Program, Institute of Environmental Health Sciences, National Institutes of Health (NTP). 1992. National Toxicology Program Chemical Repository Database. Research Triangle Park, North Carolina."
+                        }
+                      }
+                    ],
+                    "Value": {
+                      "StringWithMarkup": [
+                        {
+                          "String": "244 °F at 760 mmHg (NTP, 1992)"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "ReferenceNumber": 32,
+                    "Reference": [
+                      "PhysProp"
+                    ],
+                    "ExtendedReference": [
+                      {
+                        "Citation": "PhysProp"
+                      }
+                    ],
+                    "Value": {
+                      "Number": [
+                        117.9
+                      ],
+                      "Unit": "°C"
+                    }
+                  },
+                  {
+                    "ReferenceNumber": 63,
+                    "Description": "PEER REVIEWED",
+                    "Reference": [
+                      "Haynes, W.M. (ed.). CRC Handbook of Chemistry and Physics. 94th Edition. CRC Press LLC, Boca Raton: FL 2013-2014, p. 3-4"
+                    ],
+                    "ExtendedReference": [
+                      {
+                        "Citation": "Haynes, W.M. (ed.). CRC Handbook of Chemistry and Physics. 94th Edition. CRC Press LLC, Boca Raton: FL 2013-2014, p. 3-4",
+                        "Matched": {
+                          "PCLID": 900112778,
+                          "Citation": "Haynes, W.M. (ed.). CRC Handbook of Chemistry and Physics. 94th Edition. CRC Press LLC, Boca Raton: FL 2013-2014, p. 3-4"
+                        }
+                      }
+                    ],
+                    "Value": {
+                      "StringWithMarkup": [
+                        {
+                          "String": "117.9 °C"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "ReferenceNumber": 83,
+                    "Name": "",
+                    "Value": {
+                      "StringWithMarkup": [
+                        {
+                          "String": "118 °C"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "ReferenceNumber": 90,
+                    "Value": {
+                      "StringWithMarkup": [
+                        {
+                          "String": "118 °C"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "ReferenceNumber": 133,
+                    "Value": {
+                      "StringWithMarkup": [
+                        {
+                          "String": "244 °F"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "ReferenceNumber": 135,
+                    "Value": {
+                      "StringWithMarkup": [
+                        {
+                          "String": "117.9 °C @760 [mm Hg]"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "ReferenceNumber": 157,
+                    "Value": {
+                      "StringWithMarkup": [
+                        {
+                          "String": "244 °F"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "Reference": [
+      {
+        "ReferenceNumber": 14,
+        "SourceName": "CAMEO Chemicals",
+        "SourceID": "2272",
+        "Name": "ACETIC ACID, GLACIAL",
+        "Description": "CAMEO Chemicals is a chemical database designed for people who are involved in hazardous material incident response and planning. CAMEO Chemicals contains a library with thousands of datasheets containing response-related information and recommendations for hazardous materials that are commonly transported, used, or stored in the United States. CAMEO Chemicals was developed by the National Oceanic and Atmospheric Administration's Office of Response and Restoration in partnership with the Environmental Protection Agency's Office of Emergency Management.",
+        "URL": "https://cameochemicals.noaa.gov/chemical/2272",
+        "LicenseNote": "CAMEO Chemicals and all other CAMEO products are available at no charge to those organizations and individuals (recipients) responsible for the safe handling of chemicals. However, some of the chemical data itself is subject to the copyright restrictions of the companies or organizations that provided the data.",
+        "LicenseURL": "https://cameochemicals.noaa.gov/help/reference/terms_and_conditions.htm?d_f=false",
+        "ANID": 756402
+      },
+      {
+        "ReferenceNumber": 32,
+        "SourceName": "DrugBank",
+        "SourceID": "DB03166",
+        "Name": "Acetic acid",
+        "Description": "The DrugBank database is a unique bioinformatics and cheminformatics resource that combines detailed drug (i.e. chemical, pharmacological and pharmaceutical) data with comprehensive drug target (i.e. sequence, structure, and pathway) information.",
+        "URL": "https://go.drugbank.com/drugs/DB03166",
+        "LicenseNote": "Creative Common's Attribution-NonCommercial 4.0 International License (http://creativecommons.org/licenses/by-nc/4.0/legalcode)",
+        "LicenseURL": "https://www.drugbank.ca/legal/terms_of_use",
+        "ANID": 3614615
+      },
+      {
+        "ReferenceNumber": 63,
+        "SourceName": "Hazardous Substances Data Bank (HSDB)",
+        "SourceID": "40",
+        "Name": "ACETIC ACID",
+        "Description": "The Hazardous Substances Data Bank (HSDB) is a toxicology database that focuses on the toxicology of potentially hazardous chemicals. It provides information on human exposure, industrial hygiene, emergency handling procedures, environmental fate, regulatory requirements, nanomaterials, and related areas. The information in HSDB has been assessed by a Scientific Review Panel.",
+        "URL": "https://pubchem.ncbi.nlm.nih.gov/source/hsdb/40",
+        "LicenseURL": "https://www.nlm.nih.gov/web_policies.html",
+        "IsToxnet": true,
+        "ANID": 11
+      },
+      {
+        "ReferenceNumber": 83,
+        "SourceName": "ILO-WHO International Chemical Safety Cards (ICSCs)",
+        "SourceID": "0363",
+        "Name": "ACETIC ACID",
+        "Description": "The International Chemical Safety Cards (ICSCs) are data sheets intended to provide essential safety and health information on chemicals in a clear and concise way. The primary aim of the Cards is to promote the safe use of chemicals in the workplace.",
+        "URL": "https://chemicalsafety.ilo.org/dyn/icsc/showcard.display?p_card_id=0363",
+        "LicenseNote": "Creative Commons CC BY 4.0",
+        "LicenseURL": "https://www.ilo.org/global/copyright/lang--en/index.htm",
+        "ANID": 2260272
+      },
+      {
+        "ReferenceNumber": 90,
+        "SourceName": "Joint FAO/WHO Expert Committee on Food Additives (JECFA)",
+        "SourceID": "f_3",
+        "Name": "Acetic acid",
+        "Description": "The flavoring agent databse provides the most recent specifications for flavorings evaluated by JECFA.",
+        "URL": "http://www.fao.org/food/food-safety-quality/scientific-advice/jecfa/jecfa-flav/details/en/c/3/",
+        "LicenseNote": "Permission from WHO is not required for the use of WHO materials issued under the Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Intergovernmental Organization (CC BY-NC-SA 3.0 IGO) licence.",
+        "LicenseURL": "https://www.who.int/about/policies/publishing/copyright",
+        "ANID": 9155743
+      },
+      {
+        "ReferenceNumber": 133,
+        "SourceName": "Occupational Safety and Health Administration (OSHA)",
+        "SourceID": "469",
+        "Name": "ACETIC ACID",
+        "Description": "The OSHA Occupational Chemical Database contains over 800 entries with information such as physical properties, exposure guidelines, etc.",
+        "URL": "https://www.osha.gov/chemicaldata/469",
+        "LicenseNote": "Materials created by the federal government are generally part of the public domain and may be used, reproduced and distributed without permission. Therefore, content on this website which is in the public domain may be used without the prior permission of the U.S. Department of Labor (DOL). Warning: Some content - including both images and text - may be the copyrighted property of others and used by the DOL under a license.",
+        "LicenseURL": "https://www.dol.gov/general/aboutdol/copyright",
+        "ANID": 3410945
+      },
+      {
+        "ReferenceNumber": 135,
+        "SourceName": "PAC Chemical Database, U.S. Department of Energy",
+        "SourceID": "64-19-7",
+        "Name": "Acetic acid",
+        "Description": "",
+        "URL": "https://emhub1.energy.gov/pacteel/search#64-19-7",
+        "LicenseURL": "https://www.energy.gov/web-policies",
+        "ANID": 56698536
+      },
+      {
+        "ReferenceNumber": 157,
+        "SourceName": "The National Institute for Occupational Safety and Health (NIOSH)",
+        "SourceID": "npgd0002",
+        "Name": "Acetic acid",
+        "Description": "The NIOSH Pocket Guide to Chemical Hazards is intended as a source of general industrial hygiene information on several hundred chemicals/classes for workers, employers, and occupational health professionals. Read more: https://www.cdc.gov/niosh/npg/",
+        "URL": "https://www.cdc.gov/niosh/npg/npgd0002.html",
+        "LicenseNote": "The information provided using CDC Web site is only intended to be general summary information to the public. It is not intended to take the place of either the written law or regulations.",
+        "LicenseURL": "https://www.cdc.gov/Other/disclaimer.html",
+        "ANID": 2266302
+      }
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+key,name,smiles,mpC,csid,link,source,donotuse,donotusebecause
+1,ethyl acetate,CCOC(=O)C,-83.6,8525,http://example,SourceA,,
+2,benzoic acid,c1ccccc1C(=O)O,121,238,http://example,SourceA,,
+3,benzoic acid,c1ccccc1C(=O)O,123,238,http://example,SourceB,,
+4,bad entry,CCO,9999,1,http://example,SourceX,x,flagged wrong
+5,acetic acid,CC(=O)O,16.6,171,http://example,SourceA,,

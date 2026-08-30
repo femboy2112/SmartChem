@@ -140,6 +140,44 @@ class TestForgetFlowsIntoReview:
 # ======================================================================================
 # N- vs O-acetylation: same products, different broken bond
 # ======================================================================================
+class TestGeneralMultiCutCapping:
+    """max_reactant_cuts > 1: two bonds cut, two reagents consumed, open valences bipartite-matched.
+    A diester hydrolyses to two acids + a diol -- a reaction a single-bond cut cannot reach."""
+
+    def _diester(self) -> Molecule:
+        # ethylene glycol diformate, H-C(=O)-O-CH2-CH2-O-C(=O)-H  (C4H6O4)
+        return Molecule(
+            ("C", "O", "O", "C", "C", "O", "C", "O", "H", "H", "H", "H", "H", "H"),
+            frozenset({
+                Bond(0, 1, 2), Bond(0, 2), Bond(2, 3), Bond(3, 4), Bond(4, 5), Bond(5, 6),
+                Bond(6, 7, 2), Bond(0, 8), Bond(6, 9), Bond(3, 10), Bond(3, 11),
+                Bond(4, 12), Bond(4, 13),
+            }),
+        )
+
+    def test_double_hydrolysis_is_derived_with_two_waters(self):
+        from collections import Counter
+        diester = self._diester()
+        formic = Molecule(("C", "O", "O", "H", "H"),
+                          frozenset({Bond(0, 1, 2), Bond(0, 2), Bond(2, 3), Bond(0, 4)})).canonical()
+        glycol = Molecule(
+            ("C", "C", "O", "O", "H", "H", "H", "H", "H", "H"),
+            frozenset({Bond(0, 1), Bond(0, 2), Bond(1, 3), Bond(2, 8), Bond(3, 9),
+                       Bond(0, 4), Bond(0, 5), Bond(1, 6), Bond(1, 7)})).canonical()
+        edges, complete = capped_scissions(diester, (WATER,), max_reactant_cuts=2, budget=200_000)
+        assert complete
+        target = Counter([formic, formic, glycol])
+        hits = [e for e in edges if Counter(p.canonical() for p in e.products) == target]
+        assert hits, "the diester's double hydrolysis to 2 formic acid + ethylene glycol was not derived"
+        # it consumes TWO water and every atom keeps its valence (the certificate passed at build)
+        assert hits[0].forget().equation() == "C4H6O4 + 2 H2O -> 2 CH2O2 + C2H6O2"
+
+    def test_single_cut_default_is_unchanged(self):
+        # max_reactant_cuts defaults to 1: the paracetamol hydrolysis is found exactly as before
+        edge = _hydrolysis()
+        assert {p.canonical() for p in edge.products} == {AMINOPHENOL, ACETIC}
+
+
 class TestAmideVersusEsterHydrolysis:
     def test_both_isomers_hydrolyse_to_the_same_pair_but_break_different_bonds(self):
         amide_edge = _hydrolysis(PARACETAMOL)

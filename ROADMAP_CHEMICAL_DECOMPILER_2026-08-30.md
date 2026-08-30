@@ -977,4 +977,95 @@ by `TestIrreducibleCoreHonesty` (5 tests); full suite 1976 passed, zero regressi
 **Verdict.** The decompiler produces reality-respecting FORMAL output on chemicals from H₂O to aspirin —
 audited, not asserted. It is *not* "truly complete" in the sense of atomising every ring (R1) or
 resolving resonance identity (R2), and it will *never* be complete in the physical sense (W3). Those are
-the honest edges: R1–R5 are refinements to a sound skeleton, and the physical wall is permanent.
+the honest edges: R1-R5 are refinements to a sound skeleton, and the physical wall is permanent.
+
+## Part 18 -- R1 + R2 built, and the new vertical: the Experiment Compiler (M-5)
+
+**R1 -- ring-aware descent (`4ffb6b2`), BUILT.** `ring_aware=True` adds targeted 2-cuts of ring-bond
+pairs: cutting a ring at two bonds splits it into two arcs, a genuine scission (W1 holds by atom count),
+the only way a pure ring atomises. Small rings now reach single atoms (`reaches_single_atoms` True,
+cyclopropane/benzene); the ring-opening move enters the menu (benzene 4, naphthalene 12); a big/fused
+ring whose full atomic descent explodes REFUSES loudly. **R2 -- resonance-canonical identity (`42dfb15`),
+BUILT.** A fused benzenoid had several identities across its Kekule forms (naphthalene 2, anthracene 2,
+phenanthrene 4, measured); the parser now returns the canonical-minimal Kekule form -- the resonance
+orbit's representative -- so one molecule has one drawing-invariant identity (three naphthalene spellings
+-> one identity) without over-merging isomers (1- vs 2-naphthol stay distinct). Remaining: R3 recursive
+ionic descent, R4 cross-level radical ledger, R5 evidence/thermo coverage.
+
+### The ask, recovered
+
+"An experimental compiler: take a reaction PATH the decompiler produced and verify it as an actually
+runnable experiment; output a DRAFT sequence of synthesis steps; and simulate it to the best of our
+ability -- the 100%-efficiency max outcome, the time/heat/pressure each step takes, the solvents and
+freely-available chemicals assumed to aid it -- flagging paths that are physically degenerate (an
+intermediate that cannot survive the transition to the next step's conditions; a pressure that cannot be
+reconciled with the next step)."
+
+### The governing frame (refined W3): reproduce KNOWN chemistry, never invent NEW physics
+
+The operator's correction is load-bearing and it is the ethos the repo already lives by: **the wall is
+NEW physics, not physics.** The PySCF oracle does not predict new physics -- it reproduces *known*
+quantum chemistry (CCSD(T)) under a calibrate-on-known-cases / state-the-envelope / fail-closed
+discipline. M-5 is that same pattern extended to reaction SEQUENCES. Every number M-5 emits falls in
+exactly one of four buckets, and it says which:
+
+* **CONSERVATION (formal, free).** The 100%-efficiency ceiling is the limiting-reagent calculation --
+  exact stoichiometric conservation, no physics. An idealised UPPER BOUND, labelled as such, never a
+  predicted yield.
+* **COMPOSABILITY (constraint satisfaction, not prediction).** "Won't survive the transition to room
+  temp", "pressure can't be reconciled" -- these are *incompatibilities of declared/sourced envelopes*,
+  a logical refusal (`DEGENERATE`), not a claim about what chemistry does. A path is degenerate when its
+  own stated constraints contradict, full stop.
+* **KNOWN-MODEL / SOURCED (reproduce, with the oracle's discipline).** Per-step T/P/time/heat and
+  assumed solvents/reagents come from SOURCED conditions or an ESTABLISHED, VALIDATED model (ideal gas,
+  a sourced decomposition threshold, the repo's own thermochemistry) -- calibrated on known cases, its
+  envelope stated, refused outside it, the model and its inputs labelled.
+* **UNKNOWN (loud).** No source and no established model -> `UNKNOWN`/`UNRANKED`, never a manufactured
+  number. Inventing a novel feasibility/kinetics/yield model is the forbidden "new physics".
+
+W3 restated for M-5: it never predicts *which* path Nature takes, a real yield, a real rate, or the
+feasibility of an unsourced reaction. It composes, checks, idealises, and reproduces known chemistry --
+and refuses or labels everything else.
+
+### The walls (M-5's, restated)
+
+* **W1 (composition terminates).** A route is a finite DAG of steps over the (terminating) descent; the
+  composability check is a single pass over consecutive steps -- no fixpoint.
+* **W2 (loud partial).** A route with any `UNKNOWN` envelope is not "runnable" -- it is `DRAFT` with the
+  gaps named, never silently sold as verified. A degenerate path is `DEGENERATE(reason)`.
+* **W3 (formal/known, never new).** The frame above.
+
+### Build ladder (E0-E4), each with its certificate and its litmus
+
+* **E0 -- `ExperimentStep`.** A certified step: reactants + reagents (incl. assumed solvent/ancillary
+  chemicals, each evidence-labelled) -> product, conserving mass and charge (reuse the scission/capped
+  certificate). Carries a `ConditionEnvelope` (T-range, P-range, phase, time) that is DECLARED (sourced)
+  or `UNKNOWN` -- never invented. *Reuses:* `decompiler_conditions`, `data.hazards`, the
+  `structure_descent` certificates.
+* **E1 -- the composability verifier.** Given an ordered step sequence, check each intermediate survives
+  the transition to the next step's envelope, against its SOURCED stability threshold
+  (decomposition/melting/boiling). Emit `COMPOSABLE` or `DEGENERATE(reason)`. The executable form of
+  "won't survive the transition" / "pressure can't be reconciled" -- constraint satisfaction over sourced
+  envelopes, the E-analogue of the W3 boundary module. *Certificate:* the reason cites the exact two
+  envelopes and the sourced threshold that conflict; no source -> the pair is `UNKNOWN`, not "fine".
+* **E2 -- the stoichiometric ceiling.** The 100%-efficiency maximum outcome by limiting reagent -- exact
+  rational conservation, seconds, no oracle. *Litmus:* paracetamol from 4-aminophenol + acetic anhydride,
+  max mol paracetamol per mol limiting reagent.
+* **E3 -- the physical-accounting attach layer.** Per-step time/heat/pressure/solvent from SOURCED
+  conditions or an ESTABLISHED model, under the oracle's calibrate/state-envelope/refuse discipline;
+  `UNKNOWN` where unsourced. *Boundary:* never a computed rate or a yield below the ceiling (kinetics --
+  new physics unless sourced).
+* **E4 -- the procedure drafter.** Emit the human-readable DRAFT sequence of synthesis steps, every
+  assumption (solvent, reagent, envelope, ceiling) evidence-labelled, under a banner: a composed and
+  composability-checked draft over KNOWN data, NOT a predicted successful synthesis. *North-star litmus
+  (extends the paracetamol litmus):* given the decompiler's paracetamol routes, rank the ones whose steps
+  are COMPOSABLE and fully SOURCED above those with `UNKNOWN`/`DEGENERATE` gaps -- surfacing what is known
+  and stopping, exactly as `evidence_ranking` does for single edges.
+
+### Open decisions (owner's call, before E0)
+
+1. **Sourcing model for stability thresholds.** E1 needs decomposition/melting/boiling data under the
+   second-source discipline. Start from the registry species (29) or pull a dedicated sourced set first?
+2. **Route direction.** A "synthesis path" is a decompiler descent read backwards (assembly). Confirm
+   M-5 consumes an existing descent/assembly path object rather than re-deriving routes.
+3. **Where E2's ceiling gets its molar arithmetic** -- reuse `stoichiometry.py`'s exact integer kernel.

@@ -310,3 +310,52 @@ class TestNvsOAcetylationIsRepresentable:
         oxy = next(f for f in ester_edge.fragments if f.formula != Formula.parse("C2H3O"))
         (j, _), = oxy.open_valences
         assert oxy.molecule.atoms[j] == "O"       # opened on OXYGEN, not nitrogen -- the O-acetyl fact
+
+
+class TestBoundedDepthDescent:
+    """G2: the bounded-depth mode -- fast, legible, and a POSITIVE guarantee, not a truncation."""
+
+    def _para(self):
+        from smartchem.smiles import parse_smiles
+        return parse_smiles("CC(=O)Nc1ccc(O)cc1")
+
+    def test_depth_one_is_complete_to_depth_not_complete(self):
+        g = structure_decompose(self._para(), max_depth=1)
+        assert g.status == "COMPLETE_TO_DEPTH"
+        assert g.is_complete_to_depth and not g.is_complete      # a bounded answer, honestly labelled
+        assert g.max_depth == 1
+
+    def test_bounded_edges_are_a_subset_of_the_full_descent(self):
+        # bounding the depth must never INVENT an edge -- it only stops early. Proven on acetone,
+        # whose FULL descent is fast, so the property is checked against a real complete graph.
+        from smartchem.smiles import parse_smiles
+        acetone = parse_smiles("CC(=O)C")
+        full = structure_decompose(acetone)
+        assert full.is_complete
+        bounded = {e.digest for e in structure_decompose(acetone, max_depth=2).edges}
+        assert bounded <= {e.digest for e in full.edges}
+
+    def test_deeper_horizon_never_loses_an_edge(self):
+        para = self._para()
+        d1 = {e.digest for e in structure_decompose(para, max_depth=1).edges}
+        d2 = {e.digest for e in structure_decompose(para, max_depth=2, max_edges=50_000).edges}
+        assert d1 <= d2                                          # monotone in depth
+
+    def test_a_molecule_that_bottoms_out_within_the_horizon_is_COMPLETE(self):
+        from smartchem.smiles import parse_smiles
+        # ethanol's full descent is shallow; a generous horizon does not bind, so it is COMPLETE
+        g = structure_decompose(parse_smiles("CCO"), max_depth=99)
+        assert g.status == "COMPLETE" and g.is_complete
+
+    def test_max_depth_zero_is_refused(self):
+        import pytest
+        with pytest.raises(ValueError, match="max_depth"):
+            structure_decompose(self._para(), max_depth=0)
+
+    def test_complete_to_depth_graph_requires_a_stated_depth(self):
+        import pytest
+        from smartchem.structure_descent import STRUCTURE_GRAPH_SCHEMA, StructureDecompositionGraph
+        with pytest.raises(ScissionError, match="max_depth"):
+            StructureDecompositionGraph(
+                STRUCTURE_GRAPH_SCHEMA, self._para(), 1, 100_000, "COMPLETE_TO_DEPTH", (), "", None,
+            )

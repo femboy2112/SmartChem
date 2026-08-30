@@ -698,6 +698,17 @@ class StructureDecompositionGraph(Digestible):
     the open valences left by the cut that made it are not threaded across levels -- so this certifies
     the SKELETON descent (which bonds break, into which sub-structures), not a radical-electron ledger.
     Cross-level open-valence tracking is a documented refinement.
+
+    Three honest statuses, never a silent partial (W2):
+
+    * ``COMPLETE`` -- the whole reachable graph descended to single atoms within budget.
+    * ``COMPLETE_TO_DEPTH`` -- a *positive* bounded guarantee: every node within ``max_depth`` scission
+      steps of the target is fully expanded, and the graph is complete out to that horizon. Deeper
+      structure was deliberately not explored (the fast, chemically-legible mode for a large target
+      whose full descent to atoms is huge). This is NOT a refusal and NOT ``is_complete``; it is a
+      complete answer to a bounded question.
+    * ``REFUSED_BUDGET`` -- the edge/candidate budget was hit before the graph closed; a partial graph
+      plus a reason, never readable as complete.
     """
 
     schema_version: str
@@ -707,8 +718,9 @@ class StructureDecompositionGraph(Digestible):
     status: str
     edges: tuple[ScissionEdge, ...]
     refusal_reason: str = ""
+    max_depth: int | None = None
 
-    _STATUSES = ("COMPLETE", "REFUSED_BUDGET")
+    _STATUSES = ("COMPLETE", "COMPLETE_TO_DEPTH", "REFUSED_BUDGET")
 
     def __post_init__(self) -> None:
         if self.schema_version != STRUCTURE_GRAPH_SCHEMA:
@@ -717,16 +729,24 @@ class StructureDecompositionGraph(Digestible):
             raise ScissionError("target must be a Molecule")
         if self.status not in self._STATUSES:
             raise ScissionError(f"status must be one of {self._STATUSES}")
-        if self.status == "COMPLETE" and self.refusal_reason:
-            raise ScissionError("a COMPLETE graph carries no refusal reason")
+        if self.status in ("COMPLETE", "COMPLETE_TO_DEPTH") and self.refusal_reason:
+            raise ScissionError("a complete graph carries no refusal reason")
         if self.status == "REFUSED_BUDGET" and not self.refusal_reason:
             raise ScissionError("a REFUSED_BUDGET graph must state its reason")
+        if self.status == "COMPLETE_TO_DEPTH" and self.max_depth is None:
+            raise ScissionError("a COMPLETE_TO_DEPTH graph must state the max_depth it is complete to")
         if any(type(e) is not ScissionEdge for e in self.edges):
             raise ScissionError("edges must be ScissionEdge values")
 
     @property
     def is_complete(self) -> bool:
+        """True only for a full descent to single atoms -- NOT for a bounded-depth graph."""
         return self.status == "COMPLETE"
+
+    @property
+    def is_complete_to_depth(self) -> bool:
+        """True iff the graph is a positive bounded-depth answer (complete out to ``max_depth``)."""
+        return self.status == "COMPLETE_TO_DEPTH"
 
     def nodes(self) -> frozenset[str]:
         """The identities (:func:`_mol_key`) of every molecule reached, including the target."""
@@ -758,31 +778,44 @@ def structure_decompose(
     max_cut_bonds: int = 1,
     budget: int = 100_000,
     max_edges: int = 5_000,
+    max_depth: int | None = None,
 ) -> StructureDecompositionGraph:
-    """Build the full structure-level descent of ``target`` to single atoms.
+    """Build the structure-level descent of ``target`` toward single atoms.
 
     Recurses :func:`scission_edges` on every fragment molecule (each strictly smaller, so it
     terminates), deduplicating nodes by presentation-invariant identity.  A budget hit yields a
     **loud** ``REFUSED_BUDGET`` graph, never a silent partial (W2).
+
+    ``max_depth`` bounds the descent to that many scission steps from the target. It is the fast,
+    chemically-legible mode: the full descent of a drug-sized molecule to single atoms is huge
+    (paracetamol is ~7,750 edges / ~1,100 nodes) and its deepest layers are combinatorial shrapnel a
+    chemist has no use for, whereas the first few layers are the recognisable fragments. A bounded run
+    that closes within the horizon reports ``COMPLETE_TO_DEPTH`` -- a *positive* guarantee, complete
+    out to ``max_depth``, distinct from both a full ``COMPLETE`` and a ``REFUSED_BUDGET`` truncation.
+    ``max_depth=None`` (the default) is the full descent to atoms.
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
+    if max_depth is not None and max_depth < 1:
+        raise ValueError("max_depth must be >= 1 (or None for the full descent)")
     collected: dict[str, ScissionEdge] = {}
     expanded: set[str] = set()
-    frontier: list[Molecule] = [target]
+    frontier: list[tuple[Molecule, int]] = [(target, 0)]
 
     def build(status: str, reason: str) -> StructureDecompositionGraph:
         return StructureDecompositionGraph(
             STRUCTURE_GRAPH_SCHEMA, target, max_cut_bonds, budget, status,
-            tuple(sorted(collected.values(), key=lambda e: e.digest)), reason,
+            tuple(sorted(collected.values(), key=lambda e: e.digest)), reason, max_depth,
         )
 
     while frontier:
-        node = frontier.pop()
+        node, depth = frontier.pop()
         key = _mol_key(node)
         if key in expanded or len(node.atoms) <= 1 or not node.bonds:
             expanded.add(key)
             continue
+        if max_depth is not None and depth >= max_depth:
+            continue                      # at the horizon: expandable, deliberately left unexpanded
         edges, complete = scission_edges(node, max_cut_bonds=max_cut_bonds, budget=budget)
         if not complete:
             return build("REFUSED_BUDGET", f"scission budget exhausted at {node!r}")
@@ -794,7 +827,14 @@ def structure_decompose(
             for fragment in edge.fragments:
                 fkey = _mol_key(fragment.molecule)
                 if fkey not in expanded and len(fragment.molecule.atoms) > 1:
-                    frontier.append(fragment.molecule)
+                    frontier.append((fragment.molecule, depth + 1))
+    # complete to atoms unless the depth horizon left an expandable fragment unexpanded (W2:
+    # a bounded answer is labelled as such, never silently sold as a full descent)
+    if max_depth is not None and any(
+        len(f.molecule.atoms) > 1 and f.molecule.bonds and _mol_key(f.molecule) not in expanded
+        for e in collected.values() for f in e.fragments
+    ):
+        return build("COMPLETE_TO_DEPTH", "")
     return build("COMPLETE", "")
 
 

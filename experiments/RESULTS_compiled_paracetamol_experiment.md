@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (17/17), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (20/20), exit 0**
 
 ## The question
 
@@ -30,6 +30,25 @@ that — but every fact the compiler asserts must hold, and every refusal must c
 | E4 | the draft carries the **honesty banner** ("NOT a predicted successful synthesis") | PASS |
 | E4 | the draft names the heating apparatus — the "Bunsen and flasks" **click** | PASS |
 | E4 | the draft attaches **sourced-hazard containment** (a fume hood; inform, never neuter) | PASS |
+| E5 | rediscovers the **acetic-anhydride** acetylation of 4-aminophenol from the decompiler | PASS |
+| E5 | rediscovers the **acetic-acid condensation** route from the decompiler | PASS |
+| E5 | returns a **loud empty** (no route) from an empty inventory, never a fabricated route | PASS |
+
+## The ledger completed this arc (E1 depth · coverage/autoload · E5 · CLI)
+
+- **E1 pressure/phase (Clausius–Clapeyron).** A real pressure DROP that boils a condensed intermediate off
+  is now `DEGENERATE`, grounded in the integrated CC equation over a sourced boiling point + enthalpy of
+  vaporisation — the operator's "pressure can't be reconciled" case. Verified: water is liquid at 5 atm but
+  a gas at 0.1 atm across a transition → `DEGENERATE`; same pressure stays `COMPOSABLE`; a missing dHvap
+  leaves the dimension a labeled `UNKNOWN`, never a fabricated verdict.
+- **Coverage / autoload ("download and go").** A pluggable provider stack — **PubChem** (public domain),
+  **Wikidata** (CC0), **Bradley Open MP Dataset** (CC0, ~28k mp) — fetches sourced property data and caches
+  it locally under the bundled seed. Offline-first + live-fetch-that-caches, no API key, degrades to a loud
+  `UNKNOWN`. Verified live end to end (aspirin autoloaded from PubChem, cached); committed tests parse
+  recorded fixtures offline. Bulk: `python -m smartchem.data.fetch_open_data bradley`.
+- **E5 + the CLI.** `enumerate_routes` reads the decompiler's cleavages backward into candidate syntheses;
+  `python -m smartchem.experiment "<SMILES>" --have ... --reagents ... --max-temp K --max-pressure atm`
+  enumerates, autoloads, fits/ranks against the bench, and prints the top drafted procedure.
 
 ## The drafted procedure (verbatim)
 

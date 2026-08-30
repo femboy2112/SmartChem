@@ -1138,3 +1138,55 @@ from the thing it labels. The refined W3 boundary is no longer a comment; it is 
   step) is a documented next shape.
 * **Decompiler -> route generation.** M-5 consumes routes; auto-enumerating candidate synthesis routes from
   a decompiler descent (then ranking them with `rank_routes`) is the natural E5 that closes the loop.
+
+## Part 20 -- Execution: the M-5 ledger completed (E1 depth, autoload/coverage, E5, a CLI)
+
+The remaining M-5 ledger from Part 19 is built. Commits `9b237bc` (autoload), `019b58a` (E1 depth),
+`725530d` (E5 + CLI). Gate 20/20, full suite 2073 passed, ruff clean.
+
+### E1 depth -- Clausius-Clapeyron pressure/phase (`019b58a`)
+
+`experiment/phase.py` estimates phase-at-(T,P) from a sourced normal boiling point + enthalpy of
+vaporisation via the integrated Clausius-Clapeyron equation (`dhvap_kj_per_mol` added to `StabilityRef`,
+seeded for water and acetic acid). A transition is now `DEGENERATE` when both steps declare T and P, the
+pressures are DISJOINT, and the intermediate is CONDENSED at the higher-pressure step but a GAS at the
+lower -- the pressure drop boils it off (the operator's "pressure can't be reconciled" case). Conservative
+and honest: fires only fully-sourced; a missing bp/dHvap leaves the pressure dimension a labeled `UNKNOWN`.
+An established model on sourced inputs, its constant-dHvap/ideal-vapour assumption stated -- known physics,
+not new.
+
+### Coverage / autoload -- "download and go" (`9b237bc`)
+
+The seed was always a SEED; this makes arbitrary chemicals actually covered. `smartchem/data/providers/`
+is one `PropertyProvider` interface over three OPEN sources -- **PubChem** (public domain, aggregated
+mp/bp parsed conservatively through a unit-required, outlier-rejecting temperature parser), **Wikidata**
+(CC0, structured mp/bp + enthalpy of vaporisation by unit QID), **Bradley Open MP Dataset** (CC0, ~28k mp
+from a local CSV). `smartchem/data/autoload.py` layers seed -> local cache -> providers -> UNKNOWN, keyed
+by structural identity (stable across runs), fetched values carrying source + licence. Offline-first +
+live-fetch-that-caches; no API key; a corrupt cache loads empty. `fetch_open_data.py` pulls the Bradley
+XLSX (figshare, CC0) and converts it with only the standard library. Lookup is by name OR SMILES, so a
+structure with no registered name is still queryable. Verified live (aspirin from PubChem, cached) and on
+the real 28k-row Bradley set; committed tests parse recorded fixtures offline. **This does not weaken the
+ethos:** the engine is universal, the data is sourced-or-UNKNOWN, nothing is ever fabricated.
+
+### E5 -- route generation, the loop closed (`725530d`)
+
+`experiment/routes.py` `enumerate_routes` is a bounded retrosynthesis over the decompiler's own
+conservation-valid capped scissions: read each cleavage backward into an assembly step, attach sourced
+conditions, recurse on a not-yet-available precursor up to `max_depth`. Structure enumerates, evidence
+identifies -- `rank_routes` floats the composable/sourced/in-budget routes up. On the paracetamol litmus
+it rediscovers BOTH real syntheses from 4-aminophenol (acetic-acid condensation AND acetic-anhydride
+acetylation); an empty inventory returns a loud empty. `experiment/cli.py` (`python -m smartchem.experiment
+"<SMILES>" --have ... --reagents ... --max-temp K --max-pressure atm [--offline]`) is the download-and-go
+entry point: enumerate -> autoload -> fit/rank against the bench -> print the top drafted procedure.
+
+### The honest ledger now (what remains, none of it blocking)
+
+* **Convergent routes.** `ExperimentRoute` is linear and E5 recurses on a single missing precursor; a
+  convergent synthesis DAG (two sub-routes feeding one step) is the next shape.
+* **Seed thermochemistry breadth.** E3 heat is UNKNOWN for drug-sized targets (no sourced 0 K dfH); a
+  sourced 298 K -> 0 K path or a broader dataset would widen it. Coverage, not capability.
+* **Provider breadth.** More open sources (NIST-linked, ChEBI) behind the same interface; and name-based
+  (not just SMILES) warming in the fetch script.
+* **E5 selectivity.** The generator is structure-level; isomer-keyed evidence (N- vs O-acylation) still
+  rides on the decompiler's structure layer, not yet surfaced in the route ranking.

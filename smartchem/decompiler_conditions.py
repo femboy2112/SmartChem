@@ -50,6 +50,30 @@ SEED_CONDITIONS: dict[tuple, ConditionEnvelope] = {
         status=EvidenceStatus.EXPERIMENTAL,
         provenance="lit: acidic amide hydrolysis of paracetamol (RSC Anal. Methods c3ay40747k)",
     ),
+    # Anhydrous backbone C8H9NO2 -> C6H7NO + C2H2O. Its REVERSE (assembly) is the ketene
+    # acetylation of 4-aminophenol -- ketene acetylates the amine to give paracetamol. Ketene is
+    # an acutely toxic reactive gas generated and consumed in situ; N- vs O-selectivity is a
+    # structure-level concern this formula-level edge does not resolve.
+    _sig("C8H9NO2", (), ("C6H7NO", "C2H2O")): ConditionEnvelope(
+        medium="ketene generated and consumed in situ (not storable)",
+        status=EvidenceStatus.EXPERIMENTAL,
+        provenance=(
+            "reverse (assembly) direction: ketene acetylation of 4-aminophenol; ketene is acutely "
+            "toxic and generated in situ (NJ RTK / CAMEO; see hazards). Formula-level edge does not "
+            "distinguish N- vs O-acetylation"
+        ),
+    ),
+    # Mediated C8H9NO2 + C2H4O2 -> C6H7NO + C4H6O3. Its REVERSE (assembly) is the standard lab
+    # synthesis: 4-aminophenol + acetic anhydride -> paracetamol + acetic acid.
+    _sig("C8H9NO2", ("C2H4O2",), ("C6H7NO", "C4H6O3")): ConditionEnvelope(
+        medium="aqueous or neat; addition/temperature controlled",
+        status=EvidenceStatus.EXPERIMENTAL,
+        provenance=(
+            "reverse (assembly) direction: standard acetic-anhydride acetylation of 4-aminophenol "
+            "(ACS J. Chem. Educ. teaching synthesis); acetic anhydride reacts violently with water, "
+            "so addition and temperature are controlled in practice"
+        ),
+    ),
 }
 
 

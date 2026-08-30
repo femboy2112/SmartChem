@@ -37,10 +37,12 @@ from enum import Enum
 
 from .conditions import ConditionEnvelope
 from .contracts import Digestible
-from .data import reference
+from .data import decompiler_thermo, reference
+from .data.hazards import HazardRef, hazards_for
 from .decompiler import DecompositionEdge, DecompositionGraph, Formula, admissible_edges
 from .decompiler_conditions import reaction_conditions
 from .decompiler_mediated import MediatedEdge, mediated_edges
+from .structure import resolve_names
 
 #: The loud no-declared-conditions default shared by every un-annotated review.
 _UNKNOWN_CONDITIONS = ConditionEnvelope.unknown()
@@ -69,8 +71,10 @@ SAFETY_BANNER = (
     "SAFETY: hazards shown are INFORMATIONAL and never a filter — no decomposition is hidden or "
     "refused for being dangerous. Energetics are a 0 K standard formation-enthalpy balance from "
     "gas-phase atoms (NIST/CCCBDB), a SCREENING estimate, not the enthalpy under your real "
-    "reagents, solvent, or conditions. ENERGETICS_UNKNOWN means unassessed, NOT safe. You own the "
-    "decision about whether a real experiment is within your safety profile."
+    "reagents, solvent, or conditions. Sourced qualitative hazards (GHS/CAMEO/RTK) are ATTACHED "
+    "where known — their absence is UNASSESSED, not a clearance. ENERGETICS_UNKNOWN means "
+    "unassessed, NOT safe. You own the decision about whether a real experiment is within your "
+    "safety profile."
 )
 
 # The default exothermicity threshold: assembling any molecule from bare atoms releases many eV,
@@ -87,6 +91,7 @@ class HazardFlag(str, Enum):
     EXOTHERMIC_ASSEMBLY = "EXOTHERMIC_ASSEMBLY"   # forming this species releases significant heat
     ENERGETICS_UNKNOWN = "ENERGETICS_UNKNOWN"     # not assessable from reference data -- NOT "safe"
     ISOMER_AMBIGUOUS = "ISOMER_AMBIGUOUS"         # formula-level: enthalpy depends on the isomer
+    DOCUMENTED_HAZARD = "DOCUMENTED_HAZARD"       # a species carries a sourced qualitative hazard record
 
 
 def _dfh_range_kj(formula: Formula) -> tuple[float, float] | None:
@@ -101,7 +106,11 @@ def _dfh_range_kj(formula: Formula) -> tuple[float, float] | None:
         base = reference.ATOM_FORMATION_KJ.get(symbol)
         return None if base is None else (count * base, count * base)
     comp = formula.as_dict
+    # the benchmark verified set, plus the decompiler's own tiered 0 K values (ketene, acetic acid,
+    # ...). Only 0 K-convention thermo entries are folded in -- a 298 K value (paracetamol) is
+    # excluded upstream by zero_k_records, so it never contaminates this 0 K balance.
     matches = [r.dfh_0k_kj for r in reference.POLYATOMIC_REFS if dict(r.composition) == comp]
+    matches += [r.dfh_kj for r in decompiler_thermo.zero_k_records(repr(formula))]
     return (min(matches), max(matches)) if matches else None
 
 
@@ -185,11 +194,18 @@ def assess_edge_energy(edge: AnyEdge) -> EnergyAssessment:
 
 @dataclass(frozen=True)
 class HazardProfile(Digestible):
-    """Informational hazard tags for an edge, plus its energy assessment. Never a filter."""
+    """Informational hazard tags for an edge, its energy assessment, and any sourced species hazards.
+
+    ``species_hazards`` are the qualitative :class:`~smartchem.data.hazards.HazardRef` records for the
+    species this edge touches (reactant, reagents, products) -- attached, never used to filter. They
+    are what tells a chemist that ketene is fatal if inhaled or that 4-aminophenol is a regulated
+    degradant, beyond the bare heat-of-formation number.
+    """
 
     energy: EnergyAssessment
     flags: tuple[HazardFlag, ...]
     notes: str = ""
+    species_hazards: tuple[HazardRef, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.energy) is not EnergyAssessment:
@@ -199,11 +215,35 @@ class HazardProfile(Digestible):
         object.__setattr__(self, "flags", tuple(sorted(set(self.flags), key=lambda f: f.value)))
         if not isinstance(self.notes, str):
             raise TypeError("notes must be a string")
+        if type(self.species_hazards) is not tuple or any(
+            type(h) is not HazardRef for h in self.species_hazards
+        ):
+            raise TypeError("species_hazards must be a tuple of HazardRef")
 
     @property
     def assessed(self) -> bool:
         """True iff the energetics were resolvable; False means UNKNOWN (and UNKNOWN is not safe)."""
         return self.energy.covered
+
+
+def _edge_species(edge: AnyEdge) -> tuple[Formula, ...]:
+    """Every distinct species an edge touches: reactant, any reagents (mediated), and products."""
+    seen: dict[Formula, None] = {edge.reactant: None}
+    for species, _ in getattr(edge, "reagents", ()):
+        seen.setdefault(species, None)
+    for species, _ in edge.products:
+        seen.setdefault(species, None)
+    return tuple(seen)
+
+
+def _collect_species_hazards(edge: AnyEdge) -> tuple[HazardRef, ...]:
+    """The sourced hazard records for the edge's species (deduplicated, registration-stable order)."""
+    records: list[HazardRef] = []
+    for species in _edge_species(edge):
+        record = hazards_for(repr(species))
+        if record is not None and record not in records:
+            records.append(record)
+    return tuple(records)
 
 
 def screen_edge(
@@ -228,7 +268,14 @@ def screen_edge(
         lo, hi = energy.assembly_lo_ev, energy.assembly_hi_ev
         span = f"{lo:.2f} eV" if lo == hi else f"[{lo:.2f}, {hi:.2f}] eV"
         note = f"assembly enthalpy {span} (0 K formation balance; negative = releases heat)."
-    return HazardProfile(energy, tuple(flags), note)
+    # attach sourced qualitative hazards for the species involved -- inform, never neuter
+    hazards = _collect_species_hazards(edge)
+    if hazards:
+        flags.append(HazardFlag.DOCUMENTED_HAZARD)
+        note = note + " DOCUMENTED HAZARDS -- " + "; ".join(
+            f"{h.name}: {h.summary}" for h in hazards
+        ) + "."
+    return HazardProfile(energy, tuple(flags), note, hazards)
 
 
 def coherence_score(edge: AnyEdge) -> float:
@@ -267,6 +314,34 @@ class EdgeReview(Digestible):
     @property
     def mediated(self) -> bool:
         return type(self.edge) is MediatedEdge
+
+    @property
+    def compound_names(self) -> tuple[tuple[str, str], ...]:
+        """``(formula_repr, name)`` for each species this edge touches that resolves to a compound.
+
+        The structure registry licenses reading a bare formula as a specific isomer; an unresolved
+        formula is simply absent here -- never renamed by guess.
+        """
+        pairs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for species in _edge_species(self.edge):
+            key = repr(species)
+            if key in seen:
+                continue
+            names = resolve_names(species)
+            if names:
+                pairs.append((key, names[0]))
+            seen.add(key)
+        return tuple(pairs)
+
+    def named_equation(self) -> str:
+        """The edge equation with each recognised formula annotated by its compound name.
+
+        Whole-token replacement only, so ``H2O`` is never matched inside ``H2O2``.
+        """
+        names = dict(self.compound_names)
+        tokens = self.edge.equation().split(" ")
+        return " ".join(f"{t} ({names[t]})" if t in names else t for t in tokens)
 
 
 def _review_key(review: "EdgeReview") -> tuple:

@@ -8,7 +8,13 @@ model structurally could not represent. Every construction invariant is isolated
 import pytest
 
 from smartchem.decompiler import Formula
-from smartchem.decompiler_mediated import MediatedEdge, mediated_edges
+from smartchem.decompiler_mediated import (
+    MEDIATED_GRAPH_SCHEMA,
+    MediatedDecompositionGraph,
+    MediatedEdge,
+    mediated_decompose,
+    mediated_edges,
+)
 
 H = Formula.bucket("H")
 OX = Formula.bucket("O")
@@ -91,3 +97,39 @@ class TestMediatedEdgeInvariants:
         a = MediatedEdge(PARACETAMOL, 1, ((WATER, 1),), _s((ACETIC, 1), (AMINOPHENOL, 1)))
         b = MediatedEdge(PARACETAMOL, 1, ((WATER, 1),), _s((AMINOPHENOL, 1), (ACETIC, 1)))
         assert a.digest == b.digest
+
+
+class TestMediatedGraph:
+    def test_small_target_descends_to_elements_via_plain_and_mediated_steps(self):
+        g = mediated_decompose(
+            "C2H4O2", inventory=["CO", "CO2", "CH4", "H2O"], medium=["H2O"], max_edges=20000
+        )
+        assert g.is_complete
+        assert g.schema_version == MEDIATED_GRAPH_SCHEMA
+        assert g.plain and g.mediated  # both kinds of step appear in the descent
+        assert g.terminals() == {Formula.bucket("C"), Formula.bucket("H"), Formula.bucket("O")}
+
+    def test_every_nonterminal_node_reaches_elements(self):
+        g = mediated_decompose("C2H4O2", inventory=["CO", "CO2", "CH4"], medium=["H2O"], max_edges=20000)
+        for node in g.nodes():
+            if not node.is_element:
+                assert g.edges_from(node), f"{node!r} is a stuck non-terminal (termination broken)"
+
+    def test_budget_refusal_is_loud_never_silent(self):
+        g = mediated_decompose(
+            "C8H9NO2", inventory=["C6H7NO", "C2H4O2", "CO", "CO2", "CH4", "NH3"],
+            medium=["H2O"], max_edges=50,
+        )
+        assert not g.is_complete
+        assert g.status == "REFUSED_BUDGET" and g.refusal_reason
+
+    def test_graph_is_deterministic(self):
+        a = mediated_decompose("C2H4O2", inventory=["CO", "CH4"], medium=["H2O"])
+        b = mediated_decompose("C2H4O2", inventory=["CO", "CH4"], medium=["H2O"])
+        assert a.digest == b.digest
+
+    def test_complete_graph_invariant_forbids_a_refusal_reason(self):
+        with pytest.raises(ValueError, match="refusal reason"):
+            MediatedDecompositionGraph(
+                MEDIATED_GRAPH_SCHEMA, PARACETAMOL, (), (), 1, 1, 100, "COMPLETE", (), (), "oops"
+            )

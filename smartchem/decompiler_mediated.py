@@ -31,15 +31,19 @@ from functools import reduce
 from math import gcd
 
 from .contracts import Digestible
-from .decompiler import Formula
+from .decompiler import DecompositionEdge, Formula, admissible_edges
 
 __all__ = [
     "MEDIATED_SCHEMA",
+    "MEDIATED_GRAPH_SCHEMA",
     "MediatedEdge",
+    "MediatedDecompositionGraph",
     "mediated_edges",
+    "mediated_decompose",
 ]
 
 MEDIATED_SCHEMA = "smartchem.decompiler/mediated-edge-v1"
+MEDIATED_GRAPH_SCHEMA = "smartchem.decompiler/mediated-graph-v1"
 
 
 def _multi_gcd(values: tuple[int, ...]) -> int:
@@ -298,3 +302,131 @@ def _edge_key(edge: MediatedEdge) -> tuple:
         tuple((_sort_key(r), m) for r, m in edge.reagents),
         tuple((_sort_key(p), m) for p, m in edge.products),
     )
+
+
+# ======================================================================================
+# C2b -- the recursive mediated graph: the whole descent to elements may use solution steps
+# ======================================================================================
+@dataclass(frozen=True)
+class MediatedDecompositionGraph(Digestible):
+    """The descent of one target to element buckets, allowing plain AND mediated steps.
+
+    Every reached non-terminal node carries both its own-atoms (plain) decompositions and its
+    solution-assisted (mediated) ones; the medium is a **reservoir** of declared reagents (a
+    step may draw water at every level, it is not depleted). ``status`` is ``COMPLETE`` only
+    when the whole reachable graph fit the budget; ``REFUSED_BUDGET`` carries a partial graph and
+    a reason, never a silent truncation. Termination is unchanged from v1: every product (plain or
+    mediated) is strictly lower rank than its reactant, so the descent is well-founded.
+    """
+
+    schema_version: str
+    target: Formula
+    inventory: tuple[Formula, ...]
+    medium: tuple[Formula, ...]
+    max_multiplicity: int
+    max_reagent_instances: int
+    budget: int
+    status: str
+    plain: tuple[DecompositionEdge, ...]
+    mediated: tuple[MediatedEdge, ...]
+    refusal_reason: str = ""
+
+    _STATUSES = ("COMPLETE", "REFUSED_BUDGET")
+
+    def __post_init__(self) -> None:
+        if self.schema_version != MEDIATED_GRAPH_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {MEDIATED_GRAPH_SCHEMA!r}")
+        if type(self.target) is not Formula:
+            raise TypeError("target must be a Formula")
+        if self.status not in self._STATUSES:
+            raise ValueError(f"status must be one of {self._STATUSES}")
+        if self.status == "COMPLETE" and self.refusal_reason:
+            raise ValueError("a COMPLETE graph carries no refusal reason")
+        if self.status == "REFUSED_BUDGET" and not self.refusal_reason:
+            raise ValueError("a REFUSED_BUDGET graph must state its reason")
+
+    @property
+    def is_complete(self) -> bool:
+        return self.status == "COMPLETE"
+
+    def all_edges(self) -> tuple:
+        return self.plain + self.mediated
+
+    def nodes(self) -> frozenset[Formula]:
+        seen: set[Formula] = {self.target}
+        for edge in self.all_edges():
+            seen.add(edge.reactant)
+            for product, _ in edge.products:
+                seen.add(product)
+        return frozenset(seen)
+
+    def terminals(self) -> frozenset[Formula]:
+        return frozenset(n for n in self.nodes() if n.is_element)
+
+    def edges_from(self, node: Formula) -> tuple:
+        return tuple(e for e in self.all_edges() if e.reactant == node)
+
+
+def mediated_decompose(
+    target: "str | dict[str, int] | Formula",
+    inventory: "tuple[Formula, ...] | tuple[str, ...]" = (),
+    medium: "tuple[Formula, ...] | tuple[str, ...]" = (),
+    *,
+    max_multiplicity: int = 1,
+    max_reagent_instances: int = 1,
+    budget: int = 200_000,
+    max_edges: int = 5_000,
+) -> MediatedDecompositionGraph:
+    """Build the full descent of ``target`` to element buckets over plain and mediated steps.
+
+    Recurses on every product (all strictly lower rank, so it terminates), collecting each node's
+    plain edges (`admissible_edges`) and mediated edges (`mediated_edges`). A budget hit yields a
+    **loud** ``REFUSED_BUDGET`` graph, never a silent partial.
+    """
+    tf = _coerce(target)
+    if tf.charge != 0:
+        raise ValueError("v1 decomposes neutral targets only")
+    inv = tuple(_coerce(s) for s in inventory)
+    med = tuple(_coerce(s) for s in medium)
+
+    plain_c: dict[str, DecompositionEdge] = {}
+    med_c: dict[str, MediatedEdge] = {}
+    expanded: set[Formula] = set()
+    frontier: list[Formula] = [tf]
+
+    def build(status: str, reason: str) -> MediatedDecompositionGraph:
+        return MediatedDecompositionGraph(
+            MEDIATED_GRAPH_SCHEMA, tf, inv, med, max_multiplicity, max_reagent_instances, budget,
+            status,
+            tuple(sorted(plain_c.values(), key=lambda e: e.digest)),
+            tuple(sorted(med_c.values(), key=lambda e: e.digest)),
+            reason,
+        )
+
+    while frontier:
+        node = frontier.pop()
+        if node in expanded or node.is_element:
+            expanded.add(node)
+            continue
+        p_edges, p_complete = admissible_edges(
+            node, inv, max_multiplicity=max_multiplicity, budget=budget
+        )
+        if not p_complete:
+            return build("REFUSED_BUDGET", f"plain search budget exhausted at {node!r}")
+        m_edges, m_complete = mediated_edges(
+            node, inv, med, max_reagent_instances=max_reagent_instances,
+            max_multiplicity=max_multiplicity, budget=budget,
+        )
+        if not m_complete:
+            return build("REFUSED_BUDGET", f"mediated search budget exhausted at {node!r}")
+        expanded.add(node)
+        for store, group in ((plain_c, p_edges), (med_c, m_edges)):
+            for edge in group:
+                store[edge.digest] = edge
+                if len(plain_c) + len(med_c) > max_edges:
+                    return build("REFUSED_BUDGET", f"edge budget ({max_edges}) exceeded")
+                for product, _ in edge.products:
+                    if product not in expanded and not product.is_element:
+                        frontier.append(product)
+
+    return build("COMPLETE", "")

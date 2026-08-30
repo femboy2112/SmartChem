@@ -514,11 +514,21 @@ With no medium there are no mediated edges (mediation genuinely requires a reage
 **Litmus status now:** the real, runnable reaction is **representable, generated, conserving, and (via
 the review layer) rankable and safety-screenable** — no longer a flat NO. The remaining gaps to a full
 YES for an arbitrary target from bare elements, each a named next step:
-1. **mediated-graph recursion** — build the whole descent with mediated edges (this cut is the edge +
-   generator; the recursive `DecompositionGraph` analogue over mediated edges is C2b);
-2. ~~**review/coherence over `MediatedEdge`**~~ — **DONE** (below);
-3. **conditions data (C1)** — envelopes are still mostly `UNKNOWN` without a sourced table;
+1. ~~**mediated-graph recursion**~~ — **DONE**: `MediatedDecompositionGraph` + `mediated_decompose`
+   recurse the whole descent to element buckets using both plain and mediated steps (medium is a
+   reservoir), terminating (every product strictly lower rank) with a loud `REFUSED_BUDGET`.
+   Measured: acetic acid → COMPLETE, 15 plain + 10 mediated edges to C/H/O, no stuck node.
+2. ~~**review/coherence over `MediatedEdge`**~~ — **DONE**;
+3. **conditions data (C1)** — envelopes (C0) exist but read `UNKNOWN` without a sourced table; the
+   next rung is a small **sourced** conditions/reaction table (e.g. the paracetamol hydrolysis is
+   aqueous/acidic per Part 9's literature) wired onto edges via the Env comonad — most edges stay a
+   loud `UNKNOWN`;
 4. **structure (v2)** — `C6H7NO` is still a formula, not the specific p-aminophenol a chemist acts on.
+
+With C2 + C2b + the unified review, the **reaction-representation and safety machinery is in place**:
+a chemist gives (target, inventory, medium) and gets the full descent to elements over real
+solution-assisted reactions, ranked by coherence and safety-screened. The remaining gaps (3, 4) are
+**data and structure**, not missing framework.
 
 **Update — unified review landed (gap #2 closed).** `decompiler_review` now scores and safety-screens
 **both** plain and mediated edges (`AnyEdge`), and `decompile_and_review(target, inventory, medium)` is

@@ -66,6 +66,60 @@ class TestTheInstrumentReadsTrue:
         assert abs(est.s_j_per_mol_k - s_known) <= est.s_uncertainty_j_per_k
 
 
+#: Halogen + sulfur anchors -- an INDEPENDENT lineage (NIST WebBook / CCCBDB) from the RMG group values, so
+#: agreement is a two-blind-path cross-validation (the sulfur groups are a Vandeputte/Gillis quantum refit,
+#: the halogen groups G4-library ML fits; neither saw these molecular values).  ΔfH° recovers tightly; the S°
+#: residual is up to ~6 J/mol/K on the HIGH-SYMMETRY halomethanes -- that is the KNOWN improper-mirror σ
+#: factor-2 residual the code folds into the band (CCl4/CF4 have graph |Aut|=24 vs proper σ_ext=12), not error.
+HALOGEN_SULFUR_CALIBRATION = [
+    ("chloromethane", "CCl", -83.68, 234.36),      # ΔfH/S Chase 1998 (JANAF)
+    ("dichloromethane", "ClCCl", -95.52, 270.28),  # Chase 1998
+    ("chloroform", "ClC(Cl)Cl", -103.18, 295.61),  # Chase 1998
+    ("carbon tetrachloride", "ClC(Cl)(Cl)Cl", -100.0, 309.65),  # avg-of-6 / Chase 1998
+    ("fluoromethane", "CF", -234.30, 222.84),      # Chase 1998
+    ("tetrafluoromethane", "FC(F)(F)F", -930.0, 261.41),  # avg-of-12 / Chase 1998
+    ("methanethiol", "CS", -22.84, 255.14),        # ΔfH Good 1961; S webbook
+    ("ethanethiol", "CCS", -46.00, 296.25),        # TRC 1994
+    ("1-propanethiol", "CCCS", -68.58, 336.55),    # ΔfH webbook; S TRC
+    ("dimethyl sulfide", "CSC", -37.50, 285.96),   # ΔfH webbook; S TRC
+    ("dimethyl disulfide", "CSSC", -24.10, 336.80),  # ΔfH webbook; S TRC
+]
+
+
+class TestHalogenAndSulfurReadTrue:
+    """Rung B families 4a/4c: the halogen + sulfur groups recover independent NIST/CCCBDB anchors.
+
+    ΔfH° within 4 kJ/mol; S° within 7 J/mol/K (the extra room over the alkane calibration is the improper-
+    mirror σ residual on the high-symmetry halomethanes, folded honestly into every estimate's own band)."""
+
+    @pytest.mark.parametrize("name,smiles,dhf_known,s_known", HALOGEN_SULFUR_CALIBRATION,
+                             ids=[c[0] for c in HALOGEN_SULFUR_CALIBRATION])
+    def test_recovers_sourced_gas_thermo(self, name, smiles, dhf_known, s_known):
+        est = estimate_thermo(parse_smiles(smiles))
+        assert est is not None, f"{name} should be derivable"
+        assert abs(est.dhf_kj_per_mol - dhf_known) <= 4.0, (
+            f"{name}: ΔfH° {est.dhf_kj_per_mol} vs sourced {dhf_known}"
+        )
+        assert abs(est.s_j_per_mol_k - s_known) <= 7.0, (
+            f"{name}: S° {est.s_j_per_mol_k} vs sourced {s_known}"
+        )
+        # the two blind paths must agree within the estimate's OWN reported band (honest self-consistency)
+        assert abs(est.dhf_kj_per_mol - dhf_known) <= est.dhf_uncertainty_kj
+        assert abs(est.s_j_per_mol_k - s_known) <= est.s_uncertainty_j_per_k
+
+    def test_iodine_tertiary_placeholder_zero_entropy_is_refused(self):
+        # Cs-CCCI carried a bare S298=0 placeholder in RMG; it must NOT be stored (never a fabricated zero).
+        # tert-butyl iodide's central carbon would need C-(C)3(I); its absence -> loud off-coverage, not a zero.
+        from smartchem.data.thermo_groups import _GROUP_BY_LABEL
+        assert "C-(C)3(I)" not in _GROUP_BY_LABEL
+        assert estimate_thermo(parse_smiles("CC(C)(C)I")) is None  # tert-butyl iodide -> off-coverage
+
+    def test_halogen_is_a_ligand_never_a_centre(self):
+        # a halogen contributes only to its carbon's label; it emits no group of its own (like H)
+        assert assign_groups(parse_smiles("CCl")) == ("C-(Cl)(H)3",)
+        assert assign_groups(parse_smiles("ClC(Cl)(Cl)Cl")) == ("C-(Cl)4",)
+
+
 class TestGroupAssignment:
     """The structural decomposition into canonical Benson labels (independent of the numeric values)."""
 
@@ -98,12 +152,22 @@ class TestOffCoverageIsALoudNone:
         assert estimate_thermo(parse_smiles(smiles)) is None
         assert assign_groups(parse_smiles(smiles)) is None
 
-    def test_non_chno_element_refused(self):
-        # sulfur is outside the sourced CHNO table -> loud None
-        assert estimate_thermo(parse_smiles("CS")) is None
+    def test_non_covered_element_refused(self):
+        # thiols/sulfides + F/Cl/Br/I are NOW covered (sulfur + halogen rungs), but phosphorus has no
+        # independent NIST calibration anchor so it stays a deferred, loud None -- never a fabricated number.
+        assert estimate_thermo(parse_smiles("CP(C)C")) is None   # trimethylphosphine
+        assert assign_groups(parse_smiles("CP")) is None          # methylphosphine
+
+    def test_oxidised_sulfur_refused(self):
+        # a divalent thiol/sulfide derives, but an OXIDISED sulfur (S=O of a sulfoxide/sulfone) is off-coverage
+        # and must be refused EXPLICITLY -- its =O would otherwise be silently absorbed like a carbonyl and the
+        # S mis-read as a plain sulfide (a confident wrong answer).  The _center_type "Sx" guard prevents that.
+        assert estimate_thermo(parse_smiles("CS(=O)C")) is None    # dimethyl sulfoxide
+        assert estimate_thermo(parse_smiles("CS(=O)(=O)C")) is None  # dimethyl sulfone
 
     def test_uncovered_functional_group_refused(self):
-        # a nitrile's triple-bond carbon (Ct) and nitrile N have no sourced groups -> loud None
+        # a nitrile's triple-bond carbon (Ct) and nitrile N have no sourced groups -> loud None (the nitrile
+        # nitrogen needs second-nearest-neighbour keying the flat centre+direct-ligand scheme cannot express)
         assert estimate_thermo(parse_smiles("CC#N")) is None
 
 
@@ -145,6 +209,24 @@ class TestSymmetryOvercountGuard:
         assert est is not None and est.grade == "DERIVED"
         s_err = R_J_PER_MOL_K * math.log(est.symmetry_number / 972)  # true σ(neopentane) = 12 x 3^4
         assert abs(s_err) <= est.s_uncertainty_j_per_k
+
+    # The internal-rotor σ residual (the last open σ question), PROVEN in-band on sourced anchors.  The observed
+    # bias is one-directional (S° under-predicted): the graph over-counts σ_ext by the improper-mirror factor 2
+    # (isobutane |Aut|=6 vs proper C3=3), which is folded into the band; the memo's "uncounted t-butyl internal
+    # rotor" would push S° the OTHER way, so it partially cancels rather than compounds.  A correct σ_ext needs
+    # 3-D (a 2-D graph cannot separate a proper C2 from a mirror), so the residual stays HONESTLY BANDED, never
+    # hacked with a brittle divide-by-2 that would misfire on the proper-rotation cases (propane's σ_ext=2 IS a
+    # real C2 and must not be halved).  Each anchor below is under-predicted by <= R ln 2 + group variance, in band.
+    @pytest.mark.parametrize("name,smiles,s_known", [
+        ("isobutane", "CC(C)C", 294.6), ("neopentane", "CC(C)(C)C", 306.4),
+        ("2,2-dimethylbutane", "CCC(C)(C)C", 358.1), ("2-methylbutane", "CCC(C)C", 343.6),
+    ])
+    def test_branched_alkane_rotor_residual_is_one_directional_and_in_band(self, name, smiles, s_known):
+        est = estimate_thermo(parse_smiles(smiles))
+        assert est is not None
+        residual = est.s_j_per_mol_k - s_known
+        assert residual < 0.0, f"{name}: the σ-overcount bias is under-prediction (S° too low), not random"
+        assert abs(residual) <= est.s_uncertainty_j_per_k, f"{name}: residual {residual:.1f} not in band"
 
 
 class TestNoFabricatedZeroEntropy:
@@ -247,6 +329,7 @@ RUNG_AB = [
     ("propylamine", "CCCN", -70.17), ("trimethylamine", "CN(C)C", -23.70), ("dimethylamine", "CNC", -19.00),
     ("acetic-acid", "CC(=O)O", -433.00), ("formic-acid", "OC=O", -378.60),
     ("methyl-acetate", "COC(=O)C", -410.00), ("ethyl-acetate", "CCOC(=O)C", -445.43),
+    ("pyrrolidine", "C1CCNC1", -3.60), ("1,4-dioxane", "C1COCCO1", -315.30),  # saturated N/O hetero-rings
 ]
 
 
@@ -266,6 +349,23 @@ class TestRingAndFunctionalGroupRungs:
         # ~-62 (a bare propyl chain); the strain is what makes it correctly +53.
         cp = estimate_thermo(parse_smiles("C1CC1"))
         assert cp.dhf_kj_per_mol > 40.0  # strain-corrected, not the ~-62 chain estimate
+
+    def test_saturated_hetero_rings_reproduce_their_anchor(self):
+        # pyrrolidine + 1,4-dioxane derive from their gas anchors (both ΔfH° AND S° sourced), reproducing them
+        # exactly by construction; pyrrolidine is PREDICTED (its N-(C)2(H) is ASSIGNED), dioxane DERIVED.
+        pyr = estimate_thermo(parse_smiles("C1CCNC1"))
+        assert abs(pyr.s_j_per_mol_k - 309.60) < 1.0 and pyr.grade == "PREDICTED"
+        diox = estimate_thermo(parse_smiles("C1COCCO1"))
+        assert abs(diox.dhf_kj_per_mol - (-315.30)) < 1.0 and abs(diox.s_j_per_mol_k - 299.91) < 1.0
+
+    @pytest.mark.parametrize("name,smiles", [
+        ("1,2-dioxane", "C1CCOOC1"), ("1,3-dioxane", "C1COCOC1"), ("1,3-dioxolane", "C1OCOC1"),
+    ])
+    def test_ring_isomer_does_not_borrow_a_different_arrangements_strain(self, name, smiles):
+        # the necklace-signature key distinguishes ARRANGEMENT, not just the element multiset: 1,2-/1,3-dioxane
+        # (same CCCCOO multiset as 1,4-dioxane, different O placement, different real strain) must stay a loud
+        # None -- never borrow 1,4-dioxane's correction ([[a-reaction-key-by-formula-borrows-a-rate]] at the ring).
+        assert estimate_thermo(parse_smiles(smiles)) is None
 
 
 class TestLabelsAreCanonical:

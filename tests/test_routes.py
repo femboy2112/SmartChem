@@ -6,8 +6,9 @@ raised otherwise), that it is honest when no route exists, and that the CLI runs
 """
 import pytest
 
+from smartchem.experiment.dag import SynthesisDAG, verify_dag
 from smartchem.experiment.drafter import rank_routes
-from smartchem.experiment.routes import enumerate_routes
+from smartchem.experiment.routes import enumerate_dags, enumerate_routes
 from smartchem.experiment.step import ExperimentRoute
 from smartchem.smiles import parse_smiles
 
@@ -16,6 +17,11 @@ AMP = parse_smiles("Nc1ccc(O)cc1")
 WATER = parse_smiles("O")
 ACOH = parse_smiles("CC(=O)O")
 ANH = parse_smiles("CC(=O)OC(=O)C")
+
+# A reagent pool over which ethyl acetate has a genuinely CONVERGENT retro-synthesis (two intermediates each
+# made from scratch, then joined) -- the case enumerate_routes silently dropped and enumerate_dags now reaches.
+ETAC = parse_smiles("CCOC(=O)C")
+DAG_REAGENTS = tuple(parse_smiles(s) for s in ("O", "CO", "CC(=O)O", "C=C", "CCO", "C=C=O"))
 
 
 class TestEnumeration:
@@ -42,6 +48,49 @@ class TestEnumeration:
         routes = enumerate_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1)
         ranked = rank_routes(list(routes))
         assert ranked and ranked[0].composability.verdict in {"COMPOSABLE", "SINGLE_STEP"}
+
+
+class TestConvergentDAGEnumeration:
+    """The mid-term lift: enumerate_dags generalises enumerate_routes to CONVERGENT syntheses -- a step fed by
+    two-or-more precursors both made from scratch, which the linear enumerator silently dropped."""
+
+    def test_every_emitted_structure_is_a_valid_dag_to_the_target(self):
+        dags = enumerate_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=60)
+        assert dags
+        for d in dags:
+            assert isinstance(d, SynthesisDAG)          # construction re-checked every DAG invariant
+            assert d.final_target == ETAC
+
+    def test_reaches_a_genuinely_convergent_synthesis(self):
+        # enumerate_routes drops any join needing two from-scratch precursors; enumerate_dags reaches them.
+        dags = enumerate_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=60)
+        convergent = [d for d in dags if d.is_convergent]
+        assert convergent, "expected at least one convergent DAG for ethyl acetate over this pool"
+        d = convergent[0]
+        # a convergence point is a step fed by >=2 produced intermediates
+        assert d.convergence_points
+        join = d.convergence_points[0]
+        produced_into_join = [(i, j) for (i, j, _m) in d.edges if j == join]
+        assert len(produced_into_join) >= 2  # two branches feed the join
+
+    def test_the_convergent_dag_verifies_on_every_rung(self):
+        dags = enumerate_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=60)
+        d = next(x for x in dags if x.is_convergent)
+        v = verify_dag(d)                                # E1 composability + M1 feasibility + M2 equilibrium
+        assert v.feasibility_verdict in {"FAVORABLE", "BORDERLINE", "UNFAVORABLE", "UNKNOWN"}
+        assert v.composability.verdict in {"COMPOSABLE", "DEGENERATE", "UNKNOWN", "NO_TRANSITIONS"}
+
+    def test_is_a_superset_of_the_linear_enumerator(self):
+        # every linear route enumerate_routes finds appears among enumerate_dags' NON-convergent (path) DAGs.
+        routes = enumerate_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1)
+        dags = enumerate_dags(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1)
+        assert dags and all(not d.is_convergent for d in dags)  # depth-1 single-precursor steps are all linear
+        route_step_sets = {frozenset(s.equation() for s in r.steps) for r in routes}
+        dag_step_sets = {frozenset(s.equation() for s in d.steps) for d in dags}
+        assert route_step_sets <= dag_step_sets
+
+    def test_no_dag_from_an_empty_pool_is_a_loud_empty(self):
+        assert enumerate_dags(PARA, reagents=(WATER,), available=(), max_depth=1) == ()
 
 
 class TestCLI:

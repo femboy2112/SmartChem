@@ -56,18 +56,21 @@ def acetylation() -> ExperimentStep:                # 4-aminophenol + Ac2O -> pa
     return ExperimentStep.assembling(APAP, (AMINOPHENOL, ANHYDRIDE), (APAP, ACOH))
 
 
-# sulfur species are off-coverage for the derivation engine (no S groups) -> reliably HYPOTHESIZED steps.
-# (cyclopropane/propene/acetic-acid/acetamide etc. now DERIVE via the ring-strain + amine/acid rungs, so the
-# old carbocyclic/oxygenate "unseeded" examples grade DERIVED; sulfur is the honest still-uncovered floor.)
-DMS = parse_smiles("CSC")        # dimethyl sulfide
-ETSH = parse_smiles("CCS")       # ethanethiol
-CH3SH = parse_smiles("CS")       # methanethiol
-H2S = parse_smiles("S")          # hydrogen sulfide
-MEAMINE = parse_smiles("CN")     # methylamine
+# Off-coverage species for the derivation engine -> reliably HYPOTHESIZED steps.  (cyclopropane/propene/
+# acetic-acid/acetamide, and now the THIOLS/SULFIDES and halogens, all DERIVE via the ring-strain +
+# amine/acid + sulfur/halogen rungs -- so those are no longer the floor.)  What is STILL off-coverage:
+# H2S (a bare S-(H)2 has no sourced group -- H2S is a library species, not a Benson group), NITRILES (the
+# nitrile N needs second-nearest-neighbour keying the flat scheme can't express) and PHOSPHORUS (a deferred
+# family: a real source exists but no independent NIST calibration anchor does).  These are the honest floor.
+CH3SH = parse_smiles("CS")       # methanethiol -- NOW COVERED (thiol rung); kept for the mixed-grade tests
+MEAMINE = parse_smiles("CN")     # methylamine -- COVERED (primary-amine rung)
+H2S = parse_smiles("S")          # hydrogen sulfide -- OFF-COVERAGE (bare S-(H)2, no sourced group)
+ACETONITRILE = parse_smiles("CC#N")        # off-coverage (nitrile N unrepresentable in the flat scheme)
+ISOCYANIDE = parse_smiles("[C-]#[N+]C")    # methyl isocyanide, same formula C2H3N -- also off-coverage
 
 
-def isomerization() -> ExperimentStep:   # dimethyl sulfide -> ethanethiol (C2H6S; S off-coverage => HYPOTHESIZED)
-    return ExperimentStep.assembling(ETSH, (DMS,), (ETSH,))
+def isomerization() -> ExperimentStep:   # acetonitrile -> methyl isocyanide (C2H3N; both off-coverage => HYPOTHESIZED)
+    return ExperimentStep.assembling(ISOCYANIDE, (ACETONITRILE,), (ISOCYANIDE,))
 
 
 class TestTheSixGrades:
@@ -140,7 +143,8 @@ class TestWorstStepDominatedAggregation:
     def test_a_route_is_graded_by_its_weakest_step(self):
         # step 1 (DERIVED): make NH3 ; step 2 (HYPOTHESIZED): NH3 + AcOH -> acetamide + water (unseeded)
         make_nh3 = haber()
-        # step 2: NH3 + CH3SH -> CH3NH2 + H2S -- consumes the NH3 and is HYPOTHESIZED (H2S/CH3SH off-coverage)
+        # step 2: NH3 + CH3SH -> CH3NH2 + H2S -- consumes the NH3 and is HYPOTHESIZED (H2S off-coverage; the
+        # thiol/amine now derive, but the bare S-(H)2 of H2S has no sourced group, so the step stays UNKNOWN)
         use_nh3 = ExperimentStep.assembling(MEAMINE, (NH3, CH3SH), (MEAMINE, H2S))
         assert classify_step(make_nh3).grade is Grade.DERIVED
         assert classify_step(use_nh3).grade is Grade.HYPOTHESIZED

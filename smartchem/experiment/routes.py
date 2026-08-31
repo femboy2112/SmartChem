@@ -18,14 +18,17 @@ assemblies and lets the E-rungs judge them.
 """
 from __future__ import annotations
 
+import itertools
+
 from ..category import Molecule
 from ..conditions import ConditionEnvelope
 from ..contracts import canonical_digest
 from ..decompiler_conditions import reaction_conditions
 from ..structure_descent import capped_scissions
+from .dag import DAGError, SynthesisDAG
 from .step import ExperimentRoute, ExperimentStep
 
-__all__ = ["enumerate_routes"]
+__all__ = ["enumerate_routes", "enumerate_dags"]
 
 
 def _ident(m: Molecule) -> str:
@@ -97,3 +100,104 @@ def enumerate_routes(
     for route in routes_making(target, 1, frozenset()):
         seen_routes.setdefault(route.digest, route)
     return tuple(seen_routes.values())
+
+
+def _merge_branches(branches: tuple[tuple[ExperimentStep, ...], ...]) -> tuple[ExperimentStep, ...]:
+    """Flatten several branch step-lists into one, deduplicating by produced-target identity.
+
+    Two branches of a convergent synthesis may share an intermediate (both need the same acid, say); a DAG
+    makes each intermediate exactly once (``SynthesisDAG``'s distinct-targets invariant), so the shared step is
+    kept once and the later branch's consumers resolve to it by identity in :meth:`SynthesisDAG.edges`.  First
+    producer of a target wins; order is preserved so producers precede their eventual consumers.
+    """
+    by_target: dict[str, ExperimentStep] = {}
+    order: list[ExperimentStep] = []
+    for branch in branches:
+        for step in branch:
+            key = _ident(step.target)
+            if key in by_target:
+                continue
+            by_target[key] = step
+            order.append(step)
+    return tuple(order)
+
+
+def enumerate_dags(
+    target: Molecule,
+    *,
+    reagents: tuple[Molecule, ...],
+    available: tuple[Molecule, ...] = (),
+    commodities: tuple[Molecule, ...] = (),
+    max_depth: int = 2,
+    max_dags: int = 100,
+    cut_budget: int = 20_000,
+) -> tuple[SynthesisDAG, ...]:
+    """Enumerate candidate CONVERGENT synthesis DAGs to ``target`` -- the multi-precursor generalisation of
+    :func:`enumerate_routes`.
+
+    :func:`enumerate_routes` recurses on exactly ONE missing precursor per step and silently drops any cleavage
+    whose join needs two-or-more precursors both made from scratch -- so a genuinely convergent target (make A
+    down one branch, B down another, then a step consuming both) never compiled.  This function lifts that: at a
+    step with several missing precursors it recurses on EACH, takes the cartesian product of the ways to make
+    them, merges the branches (deduping shared intermediates, :func:`_merge_branches`), and appends the joining
+    step -- yielding a :class:`~smartchem.experiment.dag.SynthesisDAG`.
+
+    Every proposed step-list is handed to :meth:`SynthesisDAG.of`, which is the single source of DAG-invariant
+    truth: it refuses a duplicate-target, a cycle (a sub-branch that consumes an ancestor, the bounded-recursion
+    escape hatch here), or a disconnected orphan, and any such candidate is skipped rather than special-cased
+    out.  The linear route is the special case where the DAG is a path (:attr:`SynthesisDAG.is_convergent` is
+    ``False``); this enumerator is a strict superset of :func:`enumerate_routes`, adding the convergent shapes it
+    could not reach.  Termination and identity discipline are inherited unchanged (strictly-smaller precursors,
+    ``max_depth`` bound, identity-keyed inventory termination -- never by formula).
+
+    Returns deduplicated DAGs (by digest); empty if nothing within ``max_depth`` reaches the inventory -- a loud
+    "no route found", never a fabricated one.
+    """
+    if type(target) is not Molecule:
+        raise TypeError("target must be a Molecule")
+    on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
+    seen_dags: dict[str, SynthesisDAG] = {}
+
+    def syntheses_making(t: Molecule, depth: int, ancestors: frozenset[str]) -> list[tuple[ExperimentStep, ...]]:
+        """Every step-list (dependency order, ``t``'s producer implied last per branch) that makes ``t``."""
+        out: list[tuple[ExperimentStep, ...]] = []
+        if depth > max_depth:
+            return out
+        cleavages, _complete = capped_scissions(t, reagents, budget=cut_budget)
+        for cs in cleavages:
+            step = ExperimentStep.from_capped_scission(cs, envelope=_conditions_for(cs))
+            distinct: dict[str, Molecule] = {}
+            for m in step.reactants:
+                distinct.setdefault(_ident(m), m)
+            missing = [m for k, m in distinct.items() if k not in on_hand and k not in ancestors]
+            if not missing:
+                out.append((step,))
+            elif depth < max_depth:
+                child_ancestors = ancestors | {_ident(t)}
+                options: list[list[tuple[ExperimentStep, ...]]] = []
+                reachable = True
+                for m in missing:
+                    subs = syntheses_making(m, depth + 1, child_ancestors)
+                    if not subs:
+                        reachable = False  # a precursor no branch can make -> this cleavage is a dead end
+                        break
+                    options.append(subs)
+                if not reachable:
+                    continue
+                for combo in itertools.product(*options):
+                    out.append(_merge_branches(combo) + (step,))
+                    if len(out) >= max_dags:
+                        break
+            if len(out) >= max_dags:
+                break
+        return out
+
+    for steps in syntheses_making(target, 1, frozenset()):
+        if len(seen_dags) >= max_dags:
+            break
+        try:
+            dag = SynthesisDAG.of(*steps)
+        except DAGError:
+            continue  # a cyclic / duplicate-target / orphaned candidate -- refused by the invariant, skipped
+        seen_dags.setdefault(dag.digest, dag)
+    return tuple(seen_dags.values())

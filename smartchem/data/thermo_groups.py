@@ -211,6 +211,45 @@ BENSON_GROUPS: tuple[BensonGroup, ...] = (
     BensonGroup("N-(CO)2(H)", 1.49, 17.59, _A, "N3s-(CO)(CO)H", _RMG + "imide N; single-point fit (n=1, +-20 kJ) -- ASSIGNED-grade (PREDICTED), too rough for DERIVED"),
     BensonGroup("N-(C)2(CO)", 20.03, -62.90, _A, "N3s-(CO)CsCs", _RMG + "tertiary-amide N; n=2 fit (+-20 kJ) -- ASSIGNED-grade (PREDICTED)"),
     BensonGroup("CO-(N)2", -163.70, 51.22, _X, "CO-N3sN3sOd", _RMG + "urea-type carbonyl (two amide N)"),
+    # -- sulfur coverage (rung B, family 4c): the divalent S centre is its own group (like O/N); a carbon
+    #    bearing S takes it as a ligand.  Values FETCHED from RMG group.py (Vandeputte 2011 / Gillis & Class
+    #    2013 / Bozzelli, refit Ryan Gillis 2019 -- a quantum-calc refit, so EXPERIMENTAL tier), native
+    #    kcal/cal, CROSS-CHECKED against independent NIST/CCCBDB gas anchors (methanethiol, ethanethiol,
+    #    dimethyl sulfide, dimethyl disulfide -- see tests).  Thiophene (aromatic S), sulfoxide and sulfone
+    #    (hypervalent S=O) are OFF-COVERAGE: the ring guard refuses thiophene, _center_type refuses S=O. -----
+    BensonGroup("S-(C)(H)", *_kcal(-7.93, 28.75), _X, "S2s-CsH", _RMG + "thiol S centre; Vandeputte/Gillis/Bozzelli refit Gillis 2019; NIST CH3SH/C2H5SH xcheck"),
+    BensonGroup("S-(C)2", *_kcal(-12.89, 1.98), _X, "S2s-CsCs", _RMG + "sulfide S centre; same refit; NIST (CH3)2S xcheck"),
+    BensonGroup("S-(C)(S)", *_kcal(-5.11, 6.93), _X, "S2s-S2sCs", _RMG + "disulfide S centre; same refit; NIST (CH3S)2 xcheck"),
+    BensonGroup("C-(S)(H)3", *_kcal(1.96, 35.84), _X, "Cs-S2sHHH", _RMG + "thiomethyl C (S-bearing methyl); same refit"),
+    BensonGroup("C-(C)(S)(H)2", *_kcal(6.95, 14.5), _X, "Cs-CsS2HH", _RMG + "thio CH2 (S-bearing methylene); same refit"),
+    # -- halogen coverage (rung B, family 4a): a halogen is a LIGAND on carbon, NEVER its own centre -- exactly
+    #    how RMG keys it (verified: no halogen is ever the starred centre atom of a group).  F/Cl/Br sp3 groups
+    #    are ML refits ("Derived from RMG Thermo Libraries", G4 quantum libraries) -> EXPERIMENTAL; the three
+    #    C-bearing iodine groups are classic BENSON (Thermochemical Kinetics 2nd ed., Table A4, p.280) ->
+    #    ESTABLISHED.  CROSS-CHECKED against NIST gas anchors: CH3Cl/CH2Cl2/CHCl3/CCl4/CH3F/CF4 recover S° to
+    #    <=0.74 J/mol/K and ΔfH° to <=3.3 kJ/mol (mostly inside NIST's own error bars).  Values native SI
+    #    (RMG's H298 kcal already converted by the source-of-record; written directly, like the CBS-QB3 rows).
+    #    RMG has NO primary C-(I)(H)3 (iodomethane) group and NO iodine di/tri/tetra groups -- iodine coverage
+    #    stops at a carbon-substituted centre; C-(I)(C)3 (Cs-CCCI) carried a bare S298=0 placeholder and is
+    #    REFUSED (never stored as a physical zero), same discipline as the aromatic-amide-N placeholder. -------
+    BensonGroup("C-(F)(H)3", -236.113, 231.548, _X, "Cs-FHHH", _RMG + "'Derived from RMG Thermo Libraries' (G4 CHOF); NIST CH3F xcheck 1.8 kJ"),
+    BensonGroup("C-(Cl)(H)3", -81.598, 243.364, _X, "Cs-ClHHH", _RMG + "'Derived from RMG Thermo Libraries' (G4 CHOCl); NIST CH3Cl xcheck 2.1 kJ / 0.13 J"),
+    BensonGroup("C-(Br)(H)3", -35.178, 254.906, _X, "Cs-BrHHH", _RMG + "'Derived from RMG Thermo Libraries' (G4 CHOBr); NIST CH3Br xcheck"),
+    BensonGroup("C-(C)(F)(H)2", -229.576, 140.503, _X, "Cs-CsFHH", _RMG + "'Derived from RMG Thermo Libraries' (G4, n=163+, ±0.16 kJ)"),
+    BensonGroup("C-(C)(Cl)(H)2", -70.481, 148.908, _X, "Cs-CsClHH", _RMG + "'Derived from RMG Thermo Libraries' (G4, n=157+); NIST C2H5Cl xcheck 4.2 kJ (in-band)"),
+    BensonGroup("C-(C)(Br)(H)2", -23.649, 158.984, _X, "Cs-CsBrHH", _RMG + "'Derived from RMG Thermo Libraries' (G4, n=114+)"),
+    BensonGroup("C-(F)2(H)2", -451.274, 252.123, _X, "Cs-FFHH", _RMG + "'Derived from RMG Thermo Libraries' (G4)"),
+    BensonGroup("C-(Cl)2(H)2", -93.068, 276.106, _X, "Cs-ClClHH", _RMG + "'Derived from RMG Thermo Libraries' (G4); NIST CH2Cl2 xcheck 2.5 kJ / 0.06 J"),
+    BensonGroup("C-(Br)2(H)2", 4.638, 299.428, _X, "Cs-BrBrHH", _RMG + "'Derived from RMG Thermo Libraries' (G4)"),
+    BensonGroup("C-(F)3(H)", -696.456, 268.600, _X, "Cs-FFFH", _RMG + "'Derived from RMG Thermo Libraries' (G4)"),
+    BensonGroup("C-(Cl)3(H)", -101.097, 305.209, _X, "Cs-ClClClH", _RMG + "'Derived from RMG Thermo Libraries' (G4); NIST CHCl3 xcheck 2.1 kJ / 0.47 J"),
+    BensonGroup("C-(Br)3(H)", 49.164, 340.688, _X, "Cs-BrBrBrH", _RMG + "'Derived from RMG Thermo Libraries' (G4)"),
+    BensonGroup("C-(F)4", -933.325, 282.204, _X, "Cs-FFFF", _RMG + "'Derived from RMG Thermo Libraries' (G4); NIST CF4 xcheck 3.3 kJ / 0.13 J (in-band)"),
+    BensonGroup("C-(Cl)4", -98.929, 331.046, _X, "Cs-ClClClCl", _RMG + "'Derived from RMG Thermo Libraries' (G4); NIST CCl4 xcheck 1.1 kJ / 0.74 J (in-band)"),
+    BensonGroup("C-(Br)4", 103.275, 378.984, _X, "Cs-BrBrBrBr", _RMG + "'Derived from RMG Thermo Libraries' (G4)"),
+    BensonGroup("C-(C)(I)(H)2", 33.472, 179.912, _E, "Cs-CIHH", _RMG + "'C-(I)(H)2(C) BENSON' (Thermochemical Kinetics Table A4, p.280)"),
+    BensonGroup("C-(C)(I)2(H)", 108.784, 228.446, _E, "Cs-CIIH", _RMG + "'C-(I)2(C)(H) BENSON' (Table A4)"),
+    BensonGroup("C-(C)2(I)(H)", 43.932, 89.119, _E, "Cs-CCIH", _RMG + "'C-(I)(H)(C)2 BENSON' (Table A4)"),
 )
 
 
@@ -258,6 +297,14 @@ RING_STRAIN: tuple[RingStrain, ...] = (
     RingStrain("Ethylene_oxide", 114.57, 134.85, _RE, f"{_RDER}; anchor oxirane -52.63/243.00"),
     RingStrain("Oxetane", 107.29, 123.87, _RE, f"{_RDER}; anchor oxetane -80.54/271.43"),
     RingStrain("Tetrahydrofuran", 24.25, 114.73, _RE, f"{_RDER}; anchor THF -184.20/301.70"),
+    # saturated N/O heterocycles (rung A, family 3): DERIVED from independent gas anchors, consistent with this
+    # engine's own group basis (same method as the carbocycles).  Only the rings with BOTH a sourced gas ΔfH°
+    # AND gas S° anchor are covered: pyrrolidine (McCullough 1959 / TRC 1994) and 1,4-dioxane (Bystrom 1982 /
+    # Stull 1969).  Piperidine (RMG value is a copy-paste stub of pyrrolidine's, and no gas S° anchor), oxane
+    # (no gas S°), morpholine (its only gas S° looked like a mislabeled liquid value) and piperazine (no RMG
+    # entry, no anchor) stay OFF-COVERAGE -- documented honest gaps, not transcribed guesses.
+    RingStrain("Pyrrolidine", 28.86, 122.31, _RE, f"{_RDER}; anchor pyrrolidine -3.6/309.60 (McCullough 1959 / TRC 1994)"),
+    RingStrain("1,4-Dioxane", 19.10, 83.62, _RE, f"{_RDER}; anchor 1,4-dioxane -315.30/299.91 (Bystrom 1982 / Stull 1969)"),
     RingStrain("Cyclohexene", 4.89, 88.75, _RX, _RRING + "'Cyclohexene ring BENSON'; no molecular anchor here"),
     RingStrain("Cyclopentene", 24.98, 108.07, _RX, _RRING + "'Cyclopentene ring BENSON'; no molecular anchor here"),
     RingStrain("Cyclobutene", 124.85, 124.97, _RX, _RRING + "'Cyclobutene ring BENSON'; no molecular anchor here"),
@@ -268,7 +315,16 @@ _RING_BY_KEY: dict[str, RingStrain] = {r.key: r for r in RING_STRAIN}
 _GROUP_BY_LABEL: dict[str, BensonGroup] = {g.label: g for g in BENSON_GROUPS}
 
 # Priority order for rendering a group's heavy ligands into a canonical label (H is always rendered last).
-_LIGAND_PRIORITY: dict[str, int] = {"C": 0, "Cd": 1, "Ct": 2, "CB": 3, "CO": 4, "O": 5, "N": 6}
+# Sulfur is a real centre (thiol/sulfide) AND a ligand, like O/N; the halogens are ligands only (never a
+# centre -- see _LIGAND_ONLY), so they appear here purely to render in canonical order after the heteroatoms.
+_LIGAND_PRIORITY: dict[str, int] = {
+    "C": 0, "Cd": 1, "Ct": 2, "CB": 3, "CO": 4, "O": 5, "N": 6, "S": 7, "F": 8, "Cl": 9, "Br": 10, "I": 11,
+}
+
+#: Elements that are LIGANDS ONLY -- they contribute to a neighbour's group label but have no group of their
+#: own (like H, and like an absorbed carbonyl =O).  The halogens: RMG keys every halogen value on the carbon
+#: centre, never on the halogen (verified against RMG group.py -- no halogen is ever a starred centre atom).
+_LIGAND_ONLY: frozenset[str] = frozenset({"F", "Cl", "Br", "I"})
 
 
 # =====================================================================================================
@@ -384,17 +440,72 @@ def _select_sssr(rings: list[list[int]], cycle_rank: int) -> list[list[int]] | N
     return selected if len(selected) == cycle_rank else None
 
 
+def _necklace_signature(elements: tuple[str, ...], orders: tuple[int, ...]) -> tuple:
+    """Canonical signature of a cyclic ring pattern, invariant under rotation AND reflection.
+
+    ``elements[i]`` is ring node ``i``'s element; ``orders[i]`` is the bond order between node ``i`` and node
+    ``i+1`` (mod k).  Returns the lexicographically-minimal interleaved tuple over all k rotations of the
+    forward AND reversed traversals -- so 1,2- / 1,3- / 1,4-dioxane (same element MULTISET, different
+    ARRANGEMENT) get DISTINCT signatures and never share a strain correction (the isomer-collision guard,
+    [[a-reaction-key-by-formula-borrows-a-rate]] at the ring level)."""
+    k = len(elements)
+    best: tuple | None = None
+    for E, B in ((elements, orders),
+                 (elements[::-1], tuple(orders[(k - 2 - i) % k] for i in range(k)))):
+        for r in range(k):
+            seq: list = []
+            for i in range(k):
+                seq.append(E[(r + i) % k])
+                seq.append(B[(r + i) % k])
+            cand = tuple(seq)
+            if best is None or cand < best:
+                best = cand
+    return best  # type: ignore[return-value]
+
+
+def _ring_signature(mol: Molecule, adj: list[list[tuple[int, int]]], ring: list[int]) -> tuple:
+    """The canonical necklace signature of ``ring`` as it sits in ``mol`` (ring atoms are in cyclic order)."""
+    order_between: dict[frozenset[int], int] = {}
+    for i in ring:
+        for j, o in adj[i]:
+            order_between[frozenset((i, j))] = o
+    elements = tuple(mol.atoms[i] for i in ring)
+    orders = tuple(order_between[frozenset((ring[i], ring[(i + 1) % len(ring)]))] for i in range(len(ring)))
+    return _necklace_signature(elements, orders)
+
+
+# Parent ring patterns: (name, ring-element sequence in cyclic order, ring-bond-order sequence).  Keyed by
+# canonical necklace signature so ARRANGEMENT (not just the element multiset) selects the correction -- this
+# is what lets 1,4-dioxane be added safely without a 1,2-/1,3-dioxane silently borrowing its value.
+_RING_PATTERNS: tuple[tuple[str, str, tuple[int, ...]], ...] = (
+    ("Cyclopropane", "CCC", (1, 1, 1)),
+    ("Ethylene_oxide", "CCO", (1, 1, 1)),
+    ("Cyclobutane", "CCCC", (1, 1, 1, 1)),
+    ("Cyclobutene", "CCCC", (2, 1, 1, 1)),
+    ("Oxetane", "CCCO", (1, 1, 1, 1)),
+    ("Cyclopentane", "CCCCC", (1, 1, 1, 1, 1)),
+    ("Cyclopentene", "CCCCC", (2, 1, 1, 1, 1)),
+    ("Tetrahydrofuran", "CCCCO", (1, 1, 1, 1, 1)),
+    ("Pyrrolidine", "CCCCN", (1, 1, 1, 1, 1)),
+    ("Cyclohexane", "CCCCCC", (1, 1, 1, 1, 1, 1)),
+    ("Cyclohexene", "CCCCCC", (2, 1, 1, 1, 1, 1)),
+    ("1,4-Dioxane", "OCCOCC", (1, 1, 1, 1, 1, 1)),
+)
+_RING_SIG_TO_NAME: dict[tuple, str] = {
+    _necklace_signature(tuple(els), orders): name for name, els, orders in _RING_PATTERNS
+}
+
+
 def _classify_ring(mol: Molecule, adj: list[list[tuple[int, int]]], ring: list[int]) -> str | None:
-    """Map a NON-aromatic ring to a RING_STRAIN key (size + element multiset + ring-double-bond count), or
-    None if it is a ring type with no sourced strain correction.
+    """Map a NON-aromatic ring to a RING_STRAIN key by its canonical necklace signature (size + cyclic element
+    AND bond-order ARRANGEMENT), or None if it is a ring type with no sourced strain correction.
 
     Keys on the RING atoms only, so a SUBSTITUTED ring borrows its parent carbocycle/heterocycle's strain
     correction -- the standard Benson approximation: cyclohexanone/methylcyclohexane use the Cyclohexane
-    correction, a γ-lactone the Tetrahydrofuran one (the substituent's and an in-ring carbonyl's effect on
-    strain is left to the atom groups + the uncertainty band, which covers it on the tested cases; a ring the
-    band could NOT cover would be a real gap to add here).  An in-ring heteroatom pattern with no tabled
-    correction (a 6-ring lactone/lactam, 1,4-dioxane, ...) returns None -- off-coverage, not a wrong strain."""
-    size = len(ring)
+    correction (the substituent's effect on strain is left to the atom groups + the uncertainty band).  Because
+    the key is the full cyclic ARRANGEMENT and not just the element multiset, 1,2-/1,3-/1,4-dioxane (or any
+    other heteroatom-arrangement isomers) get DISTINCT keys and never borrow each other's correction; an
+    arrangement with no sourced correction returns None -- off-coverage, not a wrong strain."""
     ringset = set(ring)
     # A ring atom with an EXOCYCLIC double bond (an in-ring carbonyl -> ketone/lactone/lactam ring, or an
     # exocyclic alkene) has a strain the parent carbocycle/heterocycle correction does NOT capture -- for a
@@ -404,19 +515,7 @@ def _classify_ring(mol: Molecule, adj: list[list[tuple[int, int]]], ring: list[i
         for j, o in adj[i]:
             if j not in ringset and o >= 2:
                 return None
-    elems = "".join(sorted(mol.atoms[i] for i in ring))
-    ndouble = 0
-    for i in ring:
-        for j, o in adj[i]:
-            if j in ringset and j > i and o == 2:
-                ndouble += 1
-    table = {
-        (3, "CCC", 0): "Cyclopropane", (3, "CCO", 0): "Ethylene_oxide",
-        (4, "CCCC", 0): "Cyclobutane", (4, "CCCC", 1): "Cyclobutene", (4, "CCCO", 0): "Oxetane",
-        (5, "CCCCC", 0): "Cyclopentane", (5, "CCCCC", 1): "Cyclopentene", (5, "CCCCO", 0): "Tetrahydrofuran",
-        (6, "CCCCCC", 0): "Cyclohexane", (6, "CCCCCC", 1): "Cyclohexene",
-    }
-    return table.get((size, elems, ndouble))
+    return _RING_SIG_TO_NAME.get(_ring_signature(mol, adj, ring))
 
 
 def _ring_analysis(
@@ -479,6 +578,16 @@ def _center_type(mol: Molecule, i: int, adj: list[list[tuple[int, int]]], aromat
         return "O"
     if el == "N":
         return "N"
+    if el == "S":
+        # thiol / sulfide / disulfide: a divalent sulfur with single bonds only.  An OXIDISED sulfur (S=O of a
+        # sulfoxide/sulfone) or any hypervalent S is OFF-COVERAGE -- and must be refused EXPLICITLY, because its
+        # =O would otherwise be silently absorbed by the carbonyl rule above and the S mis-read as a plain
+        # sulfide: a confident wrong answer.  A non-priority sentinel makes assign_groups return None loudly.
+        if any(o >= 2 for (_j, o) in nbrs):
+            return "Sx"  # oxidised/hypervalent sulfur -- off-coverage
+        return "S"
+    if el in _LIGAND_ONLY:
+        return el  # a halogen: a ligand on its neighbour, never its own centre
     return el  # off-coverage element sentinel
 
 
@@ -550,8 +659,10 @@ def assign_groups(molecule: Molecule) -> tuple[str, ...] | None:
     for i, ct in center_types.items():
         if ct is None:
             continue  # absorbed carbonyl oxygen
+        if ct in _LIGAND_ONLY:
+            continue  # a halogen atom: contributes only as a ligand, no group of its own
         if ct not in _LIGAND_PRIORITY and ct != "Ct":
-            return None  # off-coverage centre element (e.g. S, Cl, P)
+            return None  # off-coverage centre element (e.g. Sx oxidised sulfur, P, a bare non-CHNOS symbol)
         label = _group_label(mol, i, ct, adj, center_types, ring_bonds)
         if label is None:
             return None
@@ -579,6 +690,14 @@ def assign_groups(molecule: Molecule) -> tuple[str, ...] | None:
 #   each bearing ≥2 equivalent methyl tops) and the estimate is graded PREDICTED with its S° band widened to
 #   R ln(σ_ext) -- honestly bracketing the over-count instead of asserting a confident (too-low) S°.
 #   (Found by adversarial review; the old "≤ R ln 2 always" claim here was false for multi-branch alkanes.)
+# * The internal-rotor residual (the last open σ question), now PROVEN in-band rather than left unproven.  A
+#   single multi-methyl centre (isobutane, neopentane) carries the factor-2 improper-mirror over-count above,
+#   so its S° is under-predicted by ~R ln 2; the "uncounted whole-t-butyl internal rotor" that _internal_symmetry
+#   omits would push S° the OTHER way, so the two partially CANCEL rather than compound.  On sourced anchors the
+#   net bias is one-directional and <= R ln 2 + group variance -- inside the reported band (test:
+#   test_branched_alkane_rotor_residual_is_one_directional_and_in_band).  It stays HONESTLY BANDED, never a
+#   brittle divide-by-2: a 2-D graph cannot separate a proper C2 (propane's σ_ext=2, which must NOT be halved)
+#   from an improper mirror, so any blanket correction would misfire on the proper-rotation cases.
 # n_optical (chirality) is a future rung; held at 1 (its effect is also ≤ R ln 2, in the band).
 # =====================================================================================================
 _MAX_AUT_ATOMS = 20  # safety valve: above this, skip the search -> σ_ext=1 and the estimate grades PREDICTED

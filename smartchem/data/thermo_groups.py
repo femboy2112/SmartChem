@@ -235,9 +235,15 @@ BENSON_GROUPS: tuple[BensonGroup, ...] = (
     BensonGroup("C-(F)(H)3", -236.113, 231.548, _X, "Cs-FHHH", _RMG + "'Derived from RMG Thermo Libraries' (G4 CHOF); NIST CH3F xcheck 1.8 kJ"),
     BensonGroup("C-(Cl)(H)3", -81.598, 243.364, _X, "Cs-ClHHH", _RMG + "'Derived from RMG Thermo Libraries' (G4 CHOCl); NIST CH3Cl xcheck 2.1 kJ / 0.13 J"),
     BensonGroup("C-(Br)(H)3", -35.178, 254.906, _X, "Cs-BrHHH", _RMG + "'Derived from RMG Thermo Libraries' (G4 CHOBr); NIST CH3Br xcheck"),
-    BensonGroup("C-(C)(F)(H)2", -229.576, 140.503, _X, "Cs-CsFHH", _RMG + "'Derived from RMG Thermo Libraries' (G4, n=163+, ±0.16 kJ)"),
-    BensonGroup("C-(C)(Cl)(H)2", -70.481, 148.908, _X, "Cs-CsClHH", _RMG + "'Derived from RMG Thermo Libraries' (G4, n=157+); NIST C2H5Cl xcheck 4.2 kJ (in-band)"),
-    BensonGroup("C-(C)(Br)(H)2", -23.649, 158.984, _X, "Cs-CsBrHH", _RMG + "'Derived from RMG Thermo Libraries' (G4, n=114+)"),
+    # The FLEXIBLE halide carbons (a halogen on a chain carbon, so a rotatable C-C bond) carry a per-group band
+    # override: their G4 group entropy is a SINGLE-CONFORMER fit, so it systematically UNDER-predicts S° by the
+    # internal-rotation/gauche-conformer entropy the real molecule has (chloroethane -8.9, 1,2-dichloroethane
+    # -13.9 J/mol/K vs sourced TRC -- one-directional, and CORRELATED across repeated halide carbons, so
+    # quadrature of the plain EXPERIMENTAL band under-brackets it).  The (8, 9) override honestly covers the
+    # conformer deficit; the RIGID halomethanes (C-(X)(H)3, C-(X)n) keep the tight EXPERIMENTAL band (no rotor).
+    BensonGroup("C-(C)(F)(H)2", -229.576, 140.503, _X, "Cs-CsFHH", _RMG + "'Derived from RMG Thermo Libraries' (G4, n=163+, ±0.16 kJ); single-conformer S° -> band override for the internal-rotor deficit", band=(8.0, 9.0)),
+    BensonGroup("C-(C)(Cl)(H)2", -70.481, 148.908, _X, "Cs-CsClHH", _RMG + "'Derived from RMG Thermo Libraries' (G4, n=157+); NIST C2H5Cl xcheck 4.2 kJ; single-conformer S° -> band override", band=(8.0, 9.0)),
+    BensonGroup("C-(C)(Br)(H)2", -23.649, 158.984, _X, "Cs-CsBrHH", _RMG + "'Derived from RMG Thermo Libraries' (G4, n=114+); single-conformer S° -> band override", band=(8.0, 9.0)),
     BensonGroup("C-(F)2(H)2", -451.274, 252.123, _X, "Cs-FFHH", _RMG + "'Derived from RMG Thermo Libraries' (G4)"),
     BensonGroup("C-(Cl)2(H)2", -93.068, 276.106, _X, "Cs-ClClHH", _RMG + "'Derived from RMG Thermo Libraries' (G4); NIST CH2Cl2 xcheck 2.5 kJ / 0.06 J"),
     BensonGroup("C-(Br)2(H)2", 4.638, 299.428, _X, "Cs-BrBrHH", _RMG + "'Derived from RMG Thermo Libraries' (G4)"),
@@ -275,8 +281,9 @@ class RingStrain:
     provenance: str
 
 
-_RE = RingTier.ESTABLISHED
-_RX = RingTier.EXPERIMENTAL
+_RE = RingTier.ESTABLISHED  # every live ring correction is molecule-anchored (ESTABLISHED); the EXPERIMENTAL
+# tier stays defined (RingStrain/_ring_band) for a future RMG-transcribed ring with no anchor, but no such
+# entry currently exists (the dead unsaturated-carbocycle transcriptions were removed -- red-team).
 _RRING = "RMG-database input/thermo/groups/ring.py (MIT); "
 
 #: Ring-strain corrections, DERIVED to be CONSISTENT WITH THIS ENGINE'S GROUP BASIS.  An RMG ring correction
@@ -305,9 +312,11 @@ RING_STRAIN: tuple[RingStrain, ...] = (
     # entry, no anchor) stay OFF-COVERAGE -- documented honest gaps, not transcribed guesses.
     RingStrain("Pyrrolidine", 28.86, 122.31, _RE, f"{_RDER}; anchor pyrrolidine -3.6/309.60 (McCullough 1959 / TRC 1994)"),
     RingStrain("1,4-Dioxane", 19.10, 83.62, _RE, f"{_RDER}; anchor 1,4-dioxane -315.30/299.91 (Bystrom 1982 / Stull 1969)"),
-    RingStrain("Cyclohexene", 4.89, 88.75, _RX, _RRING + "'Cyclohexene ring BENSON'; no molecular anchor here"),
-    RingStrain("Cyclopentene", 24.98, 108.07, _RX, _RRING + "'Cyclopentene ring BENSON'; no molecular anchor here"),
-    RingStrain("Cyclobutene", 124.85, 124.97, _RX, _RRING + "'Cyclobutene ring BENSON'; no molecular anchor here"),
+    # NOTE: the unsaturated carbocycle corrections (cyclobutene/cyclopentene/cyclohexene) were REMOVED as dead
+    # entries -- they can never fire, because an in-ring alkene needs an allylic ring-carbon group with a Cd
+    # ligand (C-(C)(Cd)(H)2, ...) that this table does not have, so assign_groups returns None before any ring
+    # strain is consulted (red-team: hollow coverage).  They return WITH a sourced Cd-ring-carbon group family,
+    # not before; TestEveryRingCorrectionIsReachable guards against a corpse re-entering the table.
 )
 
 _RING_BY_KEY: dict[str, RingStrain] = {r.key: r for r in RING_STRAIN}
@@ -481,16 +490,16 @@ _RING_PATTERNS: tuple[tuple[str, str, tuple[int, ...]], ...] = (
     ("Cyclopropane", "CCC", (1, 1, 1)),
     ("Ethylene_oxide", "CCO", (1, 1, 1)),
     ("Cyclobutane", "CCCC", (1, 1, 1, 1)),
-    ("Cyclobutene", "CCCC", (2, 1, 1, 1)),
     ("Oxetane", "CCCO", (1, 1, 1, 1)),
     ("Cyclopentane", "CCCCC", (1, 1, 1, 1, 1)),
-    ("Cyclopentene", "CCCCC", (2, 1, 1, 1, 1)),
     ("Tetrahydrofuran", "CCCCO", (1, 1, 1, 1, 1)),
     ("Pyrrolidine", "CCCCN", (1, 1, 1, 1, 1)),
     ("Cyclohexane", "CCCCCC", (1, 1, 1, 1, 1, 1)),
-    ("Cyclohexene", "CCCCCC", (2, 1, 1, 1, 1, 1)),
     ("1,4-Dioxane", "OCCOCC", (1, 1, 1, 1, 1, 1)),
 )
+# NOTE: no unsaturated-ring patterns (cyclobutene/cyclopentene/cyclohexene) -- their strain corrections were
+# removed as unreachable (an in-ring alkene's allylic carbon needs a Cd-ligand group this table lacks); a
+# pattern with no live RING_STRAIN entry would just make _classify_ring return a key _ring_analysis then drops.
 _RING_SIG_TO_NAME: dict[tuple, str] = {
     _necklace_signature(tuple(els), orders): name for name, els, orders in _RING_PATTERNS
 }
@@ -797,7 +806,14 @@ def _sigma_multicenter_unreliable(mol: Molecule, adj: list[list[tuple[int, int]]
     """True when σ_ext = |Aut(heavy graph)| can COMPOUND past the factor-2 mirror residual: the signature is
     two or more distinct branch points that each bear >=2 equivalent methyl tops, which the graph permits to
     permute independently (S3xS3, …) though no rigid rotation does.  A single multi-methyl centre (neopentane,
-    isobutane) is only the factor-2 improper case and stays reliable (in-band)."""
+    isobutane) is only the factor-2 improper case and stays reliable (in-band).
+
+    FORWARD-WARNING (red-team): this counts METHYL tops only.  The identical compounding over-count would arise
+    from >=2 equivalent tops of ANY equivalent group (e.g. two carbons each bearing two equivalent halogens);
+    it is DORMANT today only because the enabling groups (a di-halo-with-carbon centre like C-(C)(Cl)2(H)) are
+    not in the table, so such a molecule fails to a loud None before σ is ever computed.  Anyone who adds such a
+    group to close a coverage gap MUST generalise `_methyl_tops_per_atom` to the new equivalent tops, or this
+    guard silently stops covering the case it exists for (a wrong, too-low S° graded DERIVED)."""
     counts = _methyl_tops_per_atom(mol, adj)
     return sum(1 for n in counts.values() if n >= 2) >= 2
 

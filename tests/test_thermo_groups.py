@@ -107,6 +107,26 @@ class TestHalogenAndSulfurReadTrue:
         assert abs(est.dhf_kj_per_mol - dhf_known) <= est.dhf_uncertainty_kj
         assert abs(est.s_j_per_mol_k - s_known) <= est.s_uncertainty_j_per_k
 
+    @pytest.mark.parametrize("name,smiles,dhf_known,s_known", [
+        ("chloroethane", "CCCl", -112.0, 275.89),          # ΔfH avg-of-6; S° TRC 1994 (CCCBDB)
+        ("1,2-dichloroethane", "ClCCCl", -132.0, 305.96),  # ΔfH Manion 2002; S° TRC 1994 (CCCBDB)
+    ])
+    def test_flexible_halide_conformer_deficit_is_banded_not_hidden(self, name, smiles, dhf_known, s_known):
+        # RED-TEAM (verified against sourced TRC S°): a FLEXIBLE halide's single-conformer G4 group entropy
+        # systematically UNDER-predicts S° by the internal-rotation/gauche entropy -- one-directional, and
+        # correlated across repeated halide carbons (chloroethane -8.9, 1,2-DCE -13.9 J/mol/K).  It must stay
+        # INSIDE the (band-overridden) uncertainty, never a confident-wrong-answer.  Tests where the groups were
+        # NOT fit (the rigid-halomethane calibration is a mirror otherwise).
+        est = estimate_thermo(parse_smiles(smiles))
+        assert est is not None
+        assert abs(est.dhf_kj_per_mol - dhf_known) <= est.dhf_uncertainty_kj  # ΔfH within band
+        s_residual = est.s_j_per_mol_k - s_known
+        assert s_residual < 0.0, f"{name}: the conformer deficit is under-prediction (S° too low), not random"
+        assert abs(s_residual) <= est.s_uncertainty_j_per_k, (
+            f"{name}: S° deficit {s_residual:.1f} not covered by the band ±{est.s_uncertainty_j_per_k} "
+            f"-- the flexible-halide band override must bracket the conformer entropy"
+        )
+
     def test_iodine_tertiary_placeholder_zero_entropy_is_refused(self):
         # Cs-CCCI carried a bare S298=0 placeholder in RMG; it must NOT be stored (never a fabricated zero).
         # tert-butyl iodide's central carbon would need C-(C)3(I); its absence -> loud off-coverage, not a zero.
@@ -366,6 +386,31 @@ class TestRingAndFunctionalGroupRungs:
         # (same CCCCOO multiset as 1,4-dioxane, different O placement, different real strain) must stay a loud
         # None -- never borrow 1,4-dioxane's correction ([[a-reaction-key-by-formula-borrows-a-rate]] at the ring).
         assert estimate_thermo(parse_smiles(smiles)) is None
+
+
+class TestEveryRingCorrectionIsReachable:
+    """Guard against the dead-ring-correction class (red-team): a RING_STRAIN entry that no molecule can ever
+    trigger is hollow coverage.  The cyclobutene/cyclopentene/cyclohexene corrections were removed because an
+    in-ring alkene's allylic carbon needs a Cd-ligand group the table lacks -- assign_groups returns None first.
+    Every surviving RING_STRAIN key must (a) have a live necklace pattern, and (b) actually fire on a real ring."""
+
+    def test_ring_strain_and_patterns_are_a_bijection(self):
+        from smartchem.data.thermo_groups import RING_STRAIN, _RING_SIG_TO_NAME
+        assert set(_RING_SIG_TO_NAME.values()) == {r.key for r in RING_STRAIN}, (
+            "a RING_STRAIN key with no pattern (or a pattern with no strain entry) is a dead/unreachable entry"
+        )
+
+    @pytest.mark.parametrize("key,smiles", [
+        ("Cyclopropane", "C1CC1"), ("Cyclobutane", "C1CCC1"), ("Cyclopentane", "C1CCCC1"),
+        ("Cyclohexane", "C1CCCCC1"), ("Ethylene_oxide", "C1CO1"), ("Oxetane", "C1COC1"),
+        ("Tetrahydrofuran", "C1CCOC1"), ("Pyrrolidine", "C1CCNC1"), ("1,4-Dioxane", "C1COCCO1"),
+    ])
+    def test_each_ring_correction_actually_fires(self, key, smiles):
+        # every parent ring must derive (proving its correction is reachable), and there must be a
+        # representative SMILES for every RING_STRAIN key (the parametrize list is complete)
+        from smartchem.data.thermo_groups import RING_STRAIN
+        assert key in {r.key for r in RING_STRAIN}
+        assert estimate_thermo(parse_smiles(smiles)) is not None, f"{key} correction is unreachable"
 
 
 class TestLabelsAreCanonical:

@@ -1920,3 +1920,36 @@ per-command `--help` and the wiki for depth. A chemist picks it up from `--help`
 Suite: +44 tests to **2407** (verified), ruff-clean on all touched files, two commits. Still rolled forward: Mid-(b) gas→crystal corrections
 (the last mile to a condensed-phase paracetamol ΔG), the ring-strain correction table (to lift the ring off-coverage),
 and everything else in Part 32's roll-forward list.
+
+## Part 34 — the next 3 derivation rungs + a 2-workflow source/red-team pipeline (2026-08-31)
+
+"Full blast on the next rungs" -- ring strain (A), amine/acid/ester/amide coverage (B), and gas->condensed
+(C) -- built with a **two-workflow** discipline: one workflow SOURCED the data (5 fetchers + 5 independent
+verifiers + a completeness critic; every record cross-checked against a separate NIST/CCCBDB lineage AND my
+own hand reconstruction) and a second workflow RED-TEAMED the result (5 adversaries + 5 verifiers).
+
+- **Rung A (ring strain).** A general ring finder (SSSR) + classifier lifts the blanket "any non-benzene
+  ring -> None".  Ring corrections are **DERIVED to be consistent with this engine's group basis** (sourced
+  molecular ΔfH°/S° − the atom-group sum), NOT transcribed from RMG (whose corrections are fit to RMG's own
+  groups -- the red-team proved that mismatch put S°(THF) 26 J/mol/K out of band).  Covers the carbocycles
+  (cyclopropane +115 .. cyclohexane ~0) and O-heterocycles (oxirane/oxetane/THF).  Off-coverage stays a loud
+  None: fused/spiro/bridged polycycles, N-/mixed-heterocycles, and -- after the red-team -- any ring with an
+  in-ring carbonyl (cyclopropanone was off 76 kJ, sign-flipped) or exocyclic double bond.
+- **Rung B (group coverage).** Amines/acids/esters/amides now derive (were honest-None).  Primary amines +
+  acids + esters are tight (propylamine 0.5, acetic acid 2.9, methyl acetate 0.0 kJ) and DERIVED; the
+  red-team caught that N-(C)3's methyl-armed fit is ~19 kJ off for ethyl arms, so secondary/tertiary amines
+  now grade PREDICTED with a per-group widened band (new `BensonGroup.band` override).  A canonical-label
+  guard test was added after a mis-ordered ester-oxygen key was found silently unreachable.
+- **Rung C (gas->condensed).** New `data/phase_change.py`: sourced ΔsubH/ΔsubS, ΔvapH/ΔvapS correct a gas
+  estimate to its condensed standard state (resolve_thermo gains `condensed`, default True).  **THE
+  PARACETAMOL LITMUS CLOSES**: S°(cr) = S°(gas) − ΔsubS = 241 J/mol/K (the missing entropy that WAS the
+  wall), and ΔfH°(cr) = Benson gas (−311) − sourced ΔsubH (117.9) = −428.9, reconstructing Picciochi's
+  calorimetric −410.4 within band -- three unrelated sources agreeing on one number.  The red-team caught a
+  formula-collision (dimethyl ether borrowing ethanol's ΔvapH); phase-change now matches by structural
+  identity only, never bare formula.
+
+Two feature commits + one σ-fix + one 4-defect-fix; suite 2363 -> **2445**, ruff-clean.  Honest boundaries
+that remain (from the completeness critic + red-team): ketone/lactone/lactam RINGS (in-ring carbonyl) are
+off-coverage; heteroaromatics, N-/mixed-O-N ring strains, halogens, nitro, nitrile, sulfur, phosphorus have
+no groups yet; the substituted-ring correction is the parent-ring approximation (band-covered where it
+derives, refused where it isn't).

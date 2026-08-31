@@ -43,6 +43,7 @@ from .composability import Composability, verify_composability
 from .equilibrium import RouteEquilibrium, verify_equilibrium
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_step
 from .feasibility import RouteFeasibility, verify_feasibility
+from .handling import RouteHandling, verify_handling
 from .kinetics import RouteKinetics, verify_kinetics
 from .selectivity import RouteSelectivity, SelectivityTable, verify_selectivity
 from .step import ExperimentRoute
@@ -302,6 +303,7 @@ class DraftedProcedure(Digestible):
     selectivity: RouteSelectivity  # which isomer each step makes (sourced regiochemistry, or a loud gap)
     feasibility: RouteFeasibility  # thermodynamic ΔG verdict per step (DERIVED, or a loud UNKNOWN)
     equilibrium: RouteEquilibrium  # equilibrium extent K=exp(-ΔG/RT) per step (DERIVED, or a loud UNKNOWN)
+    handling: RouteHandling  # E6 bench handling: byproducts, off-gasses, and the care level per step
 
     def render(self) -> str:
         lines = [DRAFT_BANNER, "", f"TARGET: {self.route.final_target!r}", ""]
@@ -317,6 +319,15 @@ class DraftedProcedure(Digestible):
             sel = self.selectivity.per_step[idx]
             if sel.status.value != "NOT_APPLICABLE":
                 lines.append(f"    {sel.finding.render()}")
+            # -- E6: what comes off this step, and how much care running it needs --------------------
+            sh = self.handling.steps[idx]
+            lines.append(f"    handling: {sh.care.value}")
+            for b in sh.byproducts:
+                gas = " (OFF-GAS)" if b.is_offgas else ""
+                haz = f" [{b.hazard_name}]" if b.hazard_name else " [hazard UNASSESSED]"
+                lines.append(f"      byproduct: {b.moles_per_target} x {b.molecule!r} -- {b.fate.value}{gas}{haz}")
+            for reason in sh.care_reasons:
+                lines.append(f"      ! {reason}")
             lines.append("    equipment:")
             for item in self.equipment[idx]:
                 lines.append(f"      - {item.render()}")
@@ -329,6 +340,8 @@ class DraftedProcedure(Digestible):
         if self.selectivity.verdict != "NOT_APPLICABLE":
             lines.append("")
             lines.append(self.selectivity.explain())
+        lines.append("")
+        lines.append(self.handling.explain())
         if self.ceiling is not None:
             lines.append("")
             lines.append(self.ceiling.explain())
@@ -357,9 +370,10 @@ def draft_procedure(
     sel = verify_selectivity(route, table=selectivity)
     feas = verify_feasibility(route, thermo=thermo)
     equi = verify_equilibrium(route, thermo=thermo)
+    handling = verify_handling(route) if stability is None else verify_handling(route, stability=stability)
     accounting = account_route(route)
     equipment = tuple(equipment_for_step(s) for s in route.steps)
     ceiling = None
     if feed is not None:
         ceiling = route_ceiling(route, feed)
-    return DraftedProcedure(route, comp, accounting, equipment, ceiling, sel, feas, equi)
+    return DraftedProcedure(route, comp, accounting, equipment, ceiling, sel, feas, equi, handling)

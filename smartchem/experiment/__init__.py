@@ -102,6 +102,17 @@ from .feasibility import (
     feasibility_of_step,
     verify_feasibility,
 )
+from .handling import (
+    ByproductEntry,
+    CareLevel,
+    Fate,
+    HazardFlag,
+    RouteHandling,
+    StepHandling,
+    handling_of_dag,
+    handling_of_step,
+    verify_handling,
+)
 from .kinetics import (
     RateGrade,
     RateRegime,
@@ -188,6 +199,15 @@ __all__ = [
     "eyring_of_step",
     "verify_eyring",
     "rate_agreement",
+    "Fate",
+    "CareLevel",
+    "ByproductEntry",
+    "HazardFlag",
+    "StepHandling",
+    "RouteHandling",
+    "handling_of_step",
+    "handling_of_dag",
+    "verify_handling",
     "SynthesisDAG",
     "DAGCeiling",
     "DAGComposability",

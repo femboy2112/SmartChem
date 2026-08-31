@@ -124,8 +124,12 @@ class EyringTable(Digestible):
 #: The SEED -- sourced transition-state activation parameters for CALIBRATION reaction(s) whose rate constant
 #: is measured, so the engine's computed k can be checked against a known value (the instrument rule).  Tiny
 #: by design and injectable per call, NOT a whitelist.  Filled from FETCHED, cited values -- never recalled,
-#: and NEVER back-computed from an Arrhenius Ea/A (that would be circular).  The instrument reads true: with
-#: these parameters, k = (kB*T/h)*exp(-ΔG‡/RT) reproduces an INDEPENDENTLY measured k within 0.14 decades.
+#: and NEVER back-computed from an Arrhenius Ea/A (that would be circular).  Two calibration reactions: (1)
+#: ethyl acetate saponification -- k reproduces an INDEPENDENTLY measured value within 0.14 decades; (2)
+#: cyclopropane isomerization -- the reaction whose Arrhenius (Ea, A) is ALREADY seeded, so the two providers'
+#: rate CROSS-CHECK fires on real data, its independent group-additivity ΔS‡ reproducing the measured
+#: pre-exponential to 0.03 decades (from an open-access primary; see the record's provenance for the exact,
+#: honestly-bounded independence -- ΔH‡ = Ea - RT is shared physics and cancels, the entropy is the check).
 SEED_EYRING_REFS: tuple[EyringRef, ...] = (
     # Alkaline hydrolysis (saponification) of ethyl acetate: a bimolecular SN2-at-carbonyl reaction whose
     # transition-state activation parameters are INDEPENDENTLY tabulated (Eyring/TST, NOT an Arrhenius
@@ -151,6 +155,43 @@ SEED_EYRING_REFS: tuple[EyringRef, ...] = (
             "ΔS‡ is physically correct for an associative transition state. Fit window 298-323 K."
         ),
     ),
+    # Cyclopropane -> propene: the reaction whose Arrhenius (Ea, A) is ALREADY seeded (smartchem.data.kinetics),
+    # so seeding its transition-state parameters makes the two providers' rate CROSS-CHECK fire on real data.
+    # The independence is subtle and stated in full: for a UNIMOLECULAR reaction ΔH‡ = Ea - RT is an exact
+    # identity (the activation enthalpy IS the Arrhenius barrier), so the only genuinely independent content
+    # is the pre-exponential -- and here ΔS‡ is an INDEPENDENT group-additivity estimate, not an inversion of
+    # the measured A.  From an OPEN-ACCESS primary (the clean open Eyring table the seed previously lacked).
+    EyringRef(
+        reactant_smiles=(("C1CC1", 1),),
+        product_smiles=(("CC=C", 1),),
+        name="cyclopropane isomerization",
+        dh_dagger_kj_per_mol=266.0,
+        ds_dagger_j_per_mol_k=29.3,
+        a_units="s^-1",
+        temperature_range_k=(700.0, 800.0),
+        provenance=(
+            "cyclopropane -> propene, first order (rate = -d[c-C3H6]/dt = k[c-C3H6]; a 1:1 isomerization, no "
+            "stoichiometric-convention ambiguity). ΔS‡ = +29.3 J/mol/K (+7.0 cal/mol/K) INDEPENDENTLY "
+            "tabulated by Benson & O'Neal, 'Kinetic Data on Gas Phase Unimolecular Reactions', NSRDS-NBS 21, "
+            "U.S. National Bureau of Standards (1970), sec. III-4.1, from biradical-intermediate GROUP-"
+            "ADDITIVITY thermochemistry (2.0 cal + R ln 12 reaction-path degeneracy = 6.9 cal/mol/K) -- a "
+            "FORWARD theoretical estimate, NOT inverted from the measured pre-exponential A (the "
+            "non-circularity requirement, satisfied on the entropy). ΔH‡ = 266 kJ/mol = Ea - RT at ~770 K: "
+            "for a unimolecular reaction the activation enthalpy and the Arrhenius Ea are the SAME barrier (an "
+            "exact identity), so this half is SHARED with the Arrhenius provider by physics -- and it CANCELS "
+            "from the two providers' log10 k difference, leaving the cross-check to test exactly the genuinely "
+            "independent content: does the theory ΔS‡ reproduce the MEASURED A?  CALIBRATED: with ΔS‡ = 29.3 "
+            "the pre-exponential A = (e·kB·T/h)·exp(ΔS‡/R) = 1.49e15 s^-1 (log10 A = 15.17), reproducing the "
+            "measured log10 A = 15.20 (Atkins Table 22.4 / Chambers & Kistiakowsky, JACS 56:399 (1934)) to "
+            "0.03 decades -- an INDEPENDENT measured pre-exponential recovered by an INDEPENDENT theory. The "
+            "Arrhenius (Ea = 272, log10 A = 15.20) side is the existing seed, anchor-verified at k(773 K). "
+            "Source confirmed OPEN-ACCESS on the Internet Archive (archive.org/details/kineticdataongas21bens, "
+            "title/authors/year verified); the sec. III-4.1 page value via a secondary read, cross-validated "
+            "by the calibration above. Isomer note: cyclopropane and propene share the formula C3H6, so this "
+            "record is safe ONLY because the engine keys on canonical STRUCTURE, not formula. Fit window "
+            "~700-800 K (the Arrhenius experimental regime)."
+        ),
+    ),
 )
 
 #: A convenience default seed; extended per call for any other reaction, NOT a whitelist.
@@ -161,11 +202,21 @@ DEFAULT_EYRING = EyringTable(SEED_EYRING_REFS)
 #: as :data:`~smartchem.data.kinetics.KINETIC_GAPS` documents missing Arrhenius data.
 EYRING_GAPS: dict[str, str] = {
     "furan-maleimide retro-Diels-Alder": (
-        "the only fully-open-access, cleanly-verbatim Eyring ΔH‡/ΔS‡ table found this pass (Widstrom & Lear, "
-        "PMC6892874, 2019, retro-Diels-Alder of furan-maleimide adducts) was REJECTED as a seed on PHYSICAL "
-        "grounds: its ΔS‡ = +178..+215 (source header omits the K^-1) for a unimolecular retro-DA implies an "
-        "Arrhenius A-factor far larger than physically sensible, so the printed values could not be trusted -> "
-        "not seeded, rather than ship an anomalous barrier. A clean open-access primary Eyring table for a "
-        "physically-sound reaction remains a gap; the saponification seed came via a paywalled primary."
+        "the only fully-open-access, cleanly-verbatim Eyring ΔH‡/ΔS‡ table found in the FIRST sourcing pass "
+        "(Widstrom & Lear, PMC6892874, 2019, retro-Diels-Alder of furan-maleimide adducts) was REJECTED as a "
+        "seed on PHYSICAL grounds: its ΔS‡ = +178..+215 (source header omits the K^-1) for a unimolecular "
+        "retro-DA implies an Arrhenius A-factor far larger than physically sensible, so the printed values "
+        "could not be trusted -> not seeded, rather than ship an anomalous barrier. (The clean-open-access-"
+        "primary gap it named is now CLOSED by the cyclopropane record above: Benson & O'Neal NSRDS-NBS 21, "
+        "1970, is public-domain on the Internet Archive.)"
+    ),
+    "cyclopentadiene dimerization (independent Eyring)": (
+        "a stronger CROSS-LAB cross-check target: the Arrhenius side is corroborated across four independent "
+        "labs (Krupka 2010, Wassermann 1938, Muja 1975, a Georgia Tech thesis; ~4% on Ea), and genuinely "
+        "INDEPENDENT experimental Eyring ΔH‡/ΔS‡ exist (Muja et al., Rev. Chim. 26:981 (1975); Wassermann, "
+        "Trans. Faraday Soc. 34:128 (1938) and J. Chem. Soc. 1939-42) -- but every one is paywalled or "
+        "undigitized and could not be read this pass, so it is NOT seeded rather than transcribe an unseen "
+        "value. Seeding it would upgrade the cross-check from theory-vs-experiment (cyclopropane) to a fully "
+        "independent experiment-vs-experiment bearing; a documented next step, not a fabrication."
     ),
 }

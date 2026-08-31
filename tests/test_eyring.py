@@ -40,14 +40,29 @@ def _n2o5_decomposition() -> ExperimentStep:
     return ExperimentStep.assembling(o, (a, a), (n, n, n, n, o))
 
 
+def _cyclopropane_at(temperature_k: float) -> ExperimentStep:
+    """cyclopropane -> propene at a declared temperature -- seeded in BOTH rate providers."""
+    from smartchem.conditions import ConditionEnvelope, Interval
+    from smartchem.contracts import EvidenceStatus
+    cp, pr = parse_smiles("C1CC1"), parse_smiles("CC=C")
+    env = ConditionEnvelope(temperature=Interval(temperature_k, temperature_k, "K"),
+                            status=EvidenceStatus.EXPERIMENTAL, provenance="test")
+    return ExperimentStep.assembling(pr, (cp,), (pr,), envelope=env)
+
+
 class TestSeedIntegrity:
-    def test_the_seed_is_the_saponification_calibration_reaction(self):
-        assert len(SEED_EYRING_REFS) == 1
-        r = SEED_EYRING_REFS[0]
-        assert r.dh_dagger_kj_per_mol == 38.6
-        assert r.ds_dagger_j_per_mol_k == -131.0
-        assert r.a_units == "M^-1 s^-1"
-        assert "Petek" in r.provenance and "Tsujikawa" in r.provenance  # params source AND independent calib
+    def test_the_seed_carries_the_two_calibration_reactions(self):
+        # (1) saponification (fully-independent Eyring) and (2) cyclopropane (cross-check with the Arrhenius seed)
+        assert len(SEED_EYRING_REFS) == 2
+        sap = next(r for r in SEED_EYRING_REFS if r.name == "ethyl acetate saponification")
+        assert sap.dh_dagger_kj_per_mol == 38.6
+        assert sap.ds_dagger_j_per_mol_k == -131.0
+        assert sap.a_units == "M^-1 s^-1"
+        assert "Petek" in sap.provenance and "Tsujikawa" in sap.provenance  # params source AND independent calib
+        cp = next(r for r in SEED_EYRING_REFS if r.name == "cyclopropane isomerization")
+        assert cp.ds_dagger_j_per_mol_k == 29.3
+        assert cp.a_units == "s^-1"
+        assert "Benson" in cp.provenance and "NSRDS-NBS 21" in cp.provenance  # the open-access primary
 
     def test_the_constants_are_the_si_2019_exact_values(self):
         assert BOLTZMANN_J_PER_K == 1.380649e-23
@@ -150,6 +165,44 @@ class TestCrossCheck:
         assert note is not None and "DISAGREE" in note
 
 
+class TestCyclopropaneRealCrossCheck:
+    """The cross-check fires on REAL seed data: cyclopropane is seeded in BOTH providers, from INDEPENDENT
+    sources (experimental Arrhenius, group-additivity-theory Eyring ΔS‡), and they corroborate."""
+
+    def test_cyclopropane_is_seeded_in_both_providers(self):
+        cp_rec = (("C1CC1", 1),)
+        assert any(r.reactant_smiles == cp_rec for r in DEFAULT_KINETICS.records), "Arrhenius seed missing"
+        assert any(r.reactant_smiles == cp_rec for r in DEFAULT_EYRING.records), "Eyring seed missing"
+
+    def test_the_two_providers_corroborate_on_real_seed_data(self):
+        # the whole point of the arc: both providers have SOURCED data, and their computed k's agree
+        step = _cyclopropane_at(773.0)  # the anchor regime, in-window for both
+        kin = kinetics_of_step(step)
+        eyr = eyring_of_step(step)
+        assert kin.is_known and eyr.is_known
+        assert kin.grade is RateGrade.DERIVED and eyr.grade is RateGrade.DERIVED  # both in-window
+        note = rate_agreement(kin, eyr)
+        assert note is not None and "AGREE" in note
+        assert abs(kin.log10_k - eyr.log10_k) < 0.2  # corroborate within a fraction of a decade
+
+    def test_the_independent_entropy_reproduces_the_measured_pre_exponential(self):
+        # the instrument rule for THIS seed: Benson's independent ΔS‡ recovers the MEASURED Arrhenius A
+        rec = next(r for r in DEFAULT_EYRING.records if r.reactant_smiles == (("C1CC1", 1),))
+        T = 773.0
+        a_pred = math.e * (BOLTZMANN_J_PER_K * T / PLANCK_J_S) * math.exp(
+            rec.ds_dagger_j_per_mol_k / 8.314462618)
+        assert abs(math.log10(a_pred) - 15.20) < 0.1  # measured log10 A = 15.20 (Atkins)
+
+    def test_the_eyring_entropy_is_not_an_inversion_of_the_arrhenius_a(self):
+        # non-circularity: the sourced ΔS‡ is the group-additivity value (29.3), NOT the exact inversion of A
+        rec = next(r for r in DEFAULT_EYRING.records if r.reactant_smiles == (("C1CC1", 1),))
+        T = 773.0
+        # the ΔS‡ that would make Eyring == Arrhenius EXACTLY (the forbidden inversion):
+        ds_inversion = 8.314462618 * (15.20 * math.log(10.0) - math.log(
+            math.e * BOLTZMANN_J_PER_K * T / PLANCK_J_S))
+        assert abs(rec.ds_dagger_j_per_mol_k - ds_inversion) > 0.1  # sourced value differs from the inversion
+
+
 class TestRouteAggregation:
     def test_route_verdict_is_bottleneck_dominated(self):
         route = ExperimentRoute.of(_saponification())
@@ -184,3 +237,39 @@ class TestEyringInClassify:
         assert with_frozen.eyring.regime is RateRegime.FROZEN
         # the sourced Eyring rate is surfaced as a bucketed finding
         assert any("eyring" in f.label for f in with_frozen.findings)
+
+    def test_classify_route_surfaces_the_eyring_verdict_note(self):
+        # the second rate provider must reach the route level, symmetric to the Arrhenius `kinetics` note
+        from smartchem.experiment.classify import classify_route
+
+        route = ExperimentRoute.of(_saponification())  # matches the default Eyring seed
+        v = classify_route(route)
+        assert any("eyring (rate, worst step)" in n for n in v.notes)
+
+    def test_classify_dag_threads_barriers_and_surfaces_eyring(self):
+        # the G2 deliverable: Eyring reaches the DAG level too, AND the dispatcher threads `barriers` to it
+        # (the same partial-threading bug class the acceptance gate caught at the step branch).
+        from smartchem.experiment.classify import classify, classify_dag
+        from smartchem.experiment.dag import SynthesisDAG
+
+        dag = SynthesisDAG.of(_saponification())
+        v = classify_dag(dag)
+        assert any("eyring (rate, worst step)" in n for n in v.notes)
+        # inject a FROZEN barrier THROUGH THE DISPATCHER; if `barriers` were dropped the regime note would
+        # still read MODERATE (the default), so this pins the dispatcher->classify_dag threading.
+        frozen = EyringTable((
+            EyringRef((("CCOC(C)=O", 1), ("[OH-]", 1)), (("CC(=O)[O-]", 1), ("CCO", 1)),
+                      "sap-frozen", 200.0, -131.0, "M^-1 s^-1", (298.0, 323.0), "SYNTHETIC frozen"),
+        ))
+        vf = classify(dag, barriers=frozen)
+        assert any("eyring (rate, worst step): FROZEN" in n for n in vf.notes)
+
+    def test_a_route_with_no_eyring_data_keeps_its_notes_byte_identical(self):
+        # a route the Eyring provider cannot touch (empty barrier table) must add NO eyring note -- the
+        # conditional-emission discipline that keeps every pre-existing route/DAG verdict unchanged.
+        from smartchem.experiment.classify import classify_route
+
+        route = ExperimentRoute.of(_saponification())
+        empty = EyringTable(())
+        v = classify_route(route, barriers=empty)
+        assert not any("eyring" in n.lower() for n in v.notes)

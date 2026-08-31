@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (92/92), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (106/106), exit 0**
 
 ## The question
 
@@ -271,3 +271,39 @@ shipped). Gate **79→92**, full suite **2245→2281**, zero regressions, every 
 - **Rate-aware ranking — a physical tiebreaker, never a grade.** `drafter._route_score` gains a final tuple tier: a
   sourced FAST rate floats and a FROZEN one sinks *only* among routes tied on every higher-priority dimension;
   UNKNOWN sits neutral (never a penalty for missing data). Ranking-only — it never touches any L2 grade.
+
+## The short/mid arc III — the cross-check fires for real, and the compiler learns to warn the chemist
+
+Gate **92 → 106/106**, suite **2245 → 2307**, zero regressions; every value FETCHED with author+year, every
+changed line ruff-clean. Five goals — the three short/mid rate-and-reach items, plus the chemist-facing capstone.
+
+- **G1+G3 — the Arrhenius/Eyring cross-check now fires on REAL seed data (from an open-access primary).**
+  Cyclopropane → propene is seeded in **both** providers: its Arrhenius (Ea, A) was already the seed, and Benson &
+  O'Neal *NSRDS-NBS 21* (1970, **public-domain on the Internet Archive** — source title/authors/year verified by
+  fetch) supplies an **independent** group-additivity ΔS‡ = +29.3 J/mol/K. At 773 K the two providers **AGREE within
+  0.06 decades** (Arrhenius log₁₀k −3.18 vs Eyring −3.24). The independence is stated in full and honestly: for a
+  unimolecular reaction ΔH‡ = Ea − RT is an exact identity (shared physics, and it **cancels** from the log-k
+  difference), so the genuinely independent content is the pre-exponential — and the instrument rule holds there: the
+  independent theory ΔS‡ reproduces the **measured** log₁₀A = 15.20 to **0.03 decades**. This closes both the
+  "seed one reaction in both providers" and "a clean open-access primary Eyring table" gaps at once. (A stronger
+  *experiment-vs-experiment* cross-lab pairing — cyclopentadiene dimerization via Muja 1975 / Wassermann 1938 — is a
+  documented next step: those independent Eyring values are paywalled/undigitized and were **not seeded** rather than
+  transcribe an unseen number.)
+- **G2 — the second rate provider reaches the DAG level.** `classify_dag` now threads `barriers` (and the dispatcher
+  forwards it — the exact partial-threading bug class the gate caught last arc, now guarded), surfacing an Eyring
+  worst-step verdict and the per-step Arrhenius/Eyring cross-check, symmetric to the linear route. Conditional
+  emission keeps every pre-existing route/DAG verdict **byte-identical** when the provider has no data.
+- **E6 — the chemist-facing capstone: a general byproduct ledger + off-gas + care level.** New `experiment/handling.py`
+  keeps a **general byproduct ledger** (every co-product, exact mol-per-target via the balanced equation, sourced
+  fate), detects **off-gasses** two sourced ways (a GHS gas classification, or a Clausius-Clapeyron phase call at the
+  step's own T/P), attaches the **sourced GHS hazard** of every species present (isomer-keyed — ethanol and dimethyl
+  ether never borrow), and derives a bench **care level** worst-dominated over those facts:
+  **NEEDS_ACTIVE_CONTROL** (a toxic/flammable off-gas, or a non-isolable in-situ species, or a species decomposing at
+  the operating T), **ATTENTION_ADVISED** (a known hazard, no walk-away blocker), **UNKNOWN** (any species unassessed —
+  *never* a false "proceed"), **PROCEED_UNATTENDED** (every species positively assessed and benign). On the litmus:
+  `paracetamol → 4-aminophenol + ketene` reads **NEEDS_ACTIVE_CONTROL** — ketene tracked as a 1-per-target **toxic
+  off-gas** (H330) that is **non-isolable**, both facts named with provenance; the real acetylation reads
+  **ATTENTION_ADVISED**; an unassessed step holds at **UNKNOWN**. It is surfaced in the very procedure the chemist
+  reads (`draft_procedure`), which now prints, per step, the care level, the byproducts with fate, and a sourced
+  hazard line per species. Same doctrine as the hazard/stability layers it composes: **inform, never neuter; UNKNOWN
+  is not safe**; it adds no data and predicts nothing.

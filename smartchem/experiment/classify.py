@@ -345,6 +345,30 @@ def _aggregate_grade(step_grades: tuple[Grade, ...]) -> Grade:
     return min(step_grades, key=lambda g: _LADDER[g])
 
 
+def _with_eyring_notes(
+    notes: tuple[str, ...],
+    kin_steps: tuple,
+    eyr_steps: tuple,
+    eyr_verdict: str,
+) -> tuple[str, ...]:
+    """Append the Eyring worst-step verdict, then a per-step Arrhenius/Eyring rate cross-check wherever BOTH
+    providers fired -- but ONLY when the Eyring provider has sourced ``(ΔH‡, ΔS‡)`` on at least one step.
+
+    A route/DAG the second provider cannot touch (the common case with a tiny seed) keeps its notes
+    byte-identical -- the same conditional-emission discipline :func:`classify_step` uses so the orthogonal
+    rate axis never perturbs a verdict it has no data for.  ``kin_steps`` and ``eyr_steps`` are aligned per
+    step; ``eyr_verdict`` is the pre-computed worst-step regime string.
+    """
+    if not any(e.is_known for e in eyr_steps):
+        return notes
+    out = (*notes, f"eyring (rate, worst step): {eyr_verdict}")
+    for kstep, estep in zip(kin_steps, eyr_steps):
+        agreement = rate_agreement(kstep, estep)
+        if agreement is not None:  # both providers fired on this step -> corroborate or flag
+            out = (*out, agreement)
+    return out
+
+
 def classify_route(
     route: ExperimentRoute,
     *,
@@ -396,6 +420,7 @@ def classify_route(
         f"selectivity: {rsel.verdict}",
         f"kinetics (rate, worst step): {rkin.verdict}",
     )
+    notes = _with_eyring_notes(notes, rkin.per_step, reyr.per_step, reyr.verdict)
     return UnifiedVerdict(
         grade, headline, None, True, findings, notes,
         feasibility=rfeas, equilibrium=requi, selectivity=rsel, composability=comp, kinetics=rkin,
@@ -410,15 +435,19 @@ def classify_dag(
     stability: StabilityTable = DEFAULT_STABILITY,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
     kinetics: KineticTable = DEFAULT_KINETICS,
+    barriers: EyringTable = DEFAULT_EYRING,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade a convergent :class:`~smartchem.experiment.dag.SynthesisDAG` -- the same worst-step-dominated
     rule over a partial order instead of a chain, reusing M4's per-edge composability and per-step rungs.
 
-    The transition-state (Eyring) rate axis is not threaded at the DAG level: like the per-step feasibility /
-    selectivity FIELDS (which this function stores as ``None``, surfacing only aggregate verdicts in the
-    notes), the DAG deliberately carries a reduced rung fidelity.  ``classify_step`` and ``classify_route``
-    carry the full Eyring rate axis and its Arrhenius cross-check."""
+    BOTH rate providers are threaded here, symmetric to :func:`classify_route`: the Arrhenius (``kinetics``)
+    and transition-state (``eyring``) axes each contribute a worst-step verdict, and where both fire on the
+    same step a rate cross-check note corroborates or flags them.  As with the per-step feasibility /
+    selectivity FIELDS (stored ``None`` at DAG level, surfacing only aggregate verdicts in the notes), the two
+    rate axes are carried in the NOTES rather than as sub-verdict objects -- the DAG's deliberate reduced field
+    fidelity -- and, exactly as :func:`classify_step` does, the eyring verdict + cross-check appear only when
+    the Eyring provider has sourced ``(ΔH‡, ΔS‡)`` for at least one step (else the notes are unchanged)."""
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
     comp = dag_composability(dag, stability=stability)
@@ -426,6 +455,7 @@ def classify_dag(
     equi = tuple(equilibrium_of_step(s, thermo=thermo, temperature_k=temperature_k) for s in dag.steps)
     sels = tuple(selectivity_of_step(s, table=selectivity) for s in dag.steps)
     kins = tuple(kinetics_of_step(s, kinetics=kinetics, temperature_k=temperature_k) for s in dag.steps)
+    eyrs = tuple(eyring_of_step(s, barriers=barriers, temperature_k=temperature_k) for s in dag.steps)
 
     shape = "convergent" if dag.is_convergent else "linear"
     findings = (_conservation_finding(),)
@@ -458,6 +488,7 @@ def classify_dag(
         f"equilibrium (extent, worst step): {equi_verdict}",
         f"kinetics (rate, worst step): {kin_verdict}",
     )
+    notes = _with_eyring_notes(notes, kins, eyrs, worst_regime(e.regime for e in eyrs).value)
     return UnifiedVerdict(
         grade, headline, None, True, findings, notes,
         feasibility=None, equilibrium=None, selectivity=None, composability=comp,
@@ -492,7 +523,7 @@ def classify(
     if type(subject) is SynthesisDAG:
         return classify_dag(
             subject, thermo=thermo, stability=stability, selectivity=selectivity, kinetics=kinetics,
-            temperature_k=temperature_k,
+            barriers=barriers, temperature_k=temperature_k,
         )
     raise TypeError(
         "classify accepts an ExperimentStep, ExperimentRoute, or SynthesisDAG; for raw reactants/products "

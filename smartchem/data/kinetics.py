@@ -198,7 +198,11 @@ SEED_KINETIC_REFS: tuple[KineticRef, ...] = (
             "773 K (Atkins Table 22.1), which the engine reproduces to 0.985 (6.61e-4 computed) -- the "
             "instrument reads true. FETCHED via curl+pdftotext from the Atkins data-tables PDF, quoted "
             "verbatim; not recalled. NOTE: the isomer cyclopropane and product propene share the formula "
-            "C3H6, so this record is safe ONLY because the engine keys on canonical STRUCTURE, not formula."
+            "C3H6, so this record is safe ONLY because the engine keys on canonical STRUCTURE, not formula. "
+            "PAIRED with an INDEPENDENT Eyring (ΔH‡, ΔS‡) record (smartchem.data.eyring, Benson & O'Neal "
+            "NSRDS-NBS 21) so the two rate providers CROSS-CHECK on this reaction: the group-additivity ΔS‡ "
+            "reproduces this measured A to 0.03 decades (the independent bearing; ΔH‡ = Ea - RT is shared "
+            "physics and cancels)."
         ),
     ),
 )

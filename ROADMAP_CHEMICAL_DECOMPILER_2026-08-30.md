@@ -1757,3 +1757,51 @@ ranking on real data** (the tiebreaker activates as more `(Ea, A)` / `(ΔH‡, �
 under what conditions, is never certified. TWO rate providers make the wall *sharper*, not lower — each reports a rate
 under a SOURCED fit and refuses (loud UNKNOWN) everywhere else, and where both speak they cross-check rather than
 average.
+
+---
+
+## Part 31 — the cross-check fires for real, Eyring reaches the DAG, and the compiler warns the chemist (2026-08-31, arc III)
+
+Gate **92 → 106/106 exit 0**, suite **2245 → 2307**, zero regressions; every value FETCHED with author+year,
+every changed line ruff-clean (two pre-existing lint errors in unrelated legacy files left untouched).
+
+- **G1+G3 — the Arrhenius/Eyring cross-check now fires on REAL, INDEPENDENT seed data (open-access primary).**
+  Cyclopropane → propene is seeded in **both** rate providers. Its Arrhenius (Ea 272, log₁₀A 15.20) was already the
+  seed; Benson & O'Neal *NSRDS-NBS 21* (1970, **public-domain on the Internet Archive**, source verified by fetch)
+  supplies an **independent** group-additivity ΔS‡ = +29.3 J/mol/K (a forward theoretical estimate, *not* inverted
+  from A). At 773 K the two providers **AGREE within 0.06 decades**. The independence is documented in full: ΔH‡ = Ea −
+  RT is exact unimolecular physics (shared, and it **cancels** from the log-k difference), so the genuinely
+  independent content is the pre-exponential — and there the instrument rule holds: the theory ΔS‡ reproduces the
+  **measured** log₁₀A = 15.20 to 0.03 decades. Closes both the "seed one reaction in both providers" and "a clean
+  open-access primary Eyring table" gaps at once.
+- **G2 — Eyring at the DAG level.** `classify_dag` threads `barriers` (and the dispatcher forwards it — the exact
+  partial-threading bug class the gate caught last arc, now guarded), symmetric to `classify_route`, surfacing an
+  Eyring worst-step verdict + the per-step cross-check. Conditional emission keeps pre-existing verdicts byte-identical.
+- **E6 — the chemist-facing capstone: a general byproduct ledger + off-gas + care level** (`experiment/handling.py`).
+  Tracks **every byproduct** (exact mol-per-target from the balanced equation, a CONSERVATION fact), detects
+  **off-gasses** (a GHS gas classification, or a Clausius-Clapeyron phase call at the step's T/P), attaches the
+  **sourced GHS hazard** of every species present (isomer-keyed), and derives a bench **care level** worst-dominated
+  over those facts — NEEDS_ACTIVE_CONTROL / ATTENTION_ADVISED / UNKNOWN / PROCEED_UNATTENDED, with PROCEED reachable
+  only when *every* species is positively assessed (UNKNOWN is never "safe"). On the litmus: the ketene route reads
+  **NEEDS_ACTIVE_CONTROL** (a toxic, non-isolable off-gas, both facts named), the real acetylation **ATTENTION**, an
+  unassessed step **UNKNOWN**. Surfaced in the drafted procedure the chemist reads. Composes the existing
+  hazard/stability/phase layers; adds no data and predicts nothing (inform, never neuter).
+
+### The roadmap, refreshed (short / mid / long)
+
+**Short** — (a) **the experiment-vs-experiment cross-lab Eyring seed** (cyclopentadiene dimerization via Muja 1975 /
+Wassermann 1938): upgrade the cross-check from theory-vs-experiment to a fully independent experimental bearing — the
+values are paywalled/undigitized (a documented gap, not seeded). (b) **injectable hazard table** for E6, matching the
+stability table's universality lever, so a chemist brings a novel compound's sourced GHS profile the same way they
+bring its thermo. (c) **more sourced gas-byproduct stability rows** (CO₂, CO, NH₃, HCl with FETCHED bp + dHvap) so the
+Clausius-Clapeyron off-gas path fires beyond the GHS-gas-code signal.
+
+**Mid** — (a) **R5-full across the deep intermediate space** (still the top open rung; source the literal-route members
+with clean same-phase pairs, keep the entropy-walled ones honest). (b) **E6 care at the route/DAG procedure level**
+made first-class in the classify verdict, not only the drafter render. (c) **rate-aware ranking on real data** — the
+tiebreaker activates as more `(Ea, A)` / `(ΔH‡, ΔS‡)` families reach real synthesis steps; the cyclopropane cross-check
+is the first real dual-provider datum.
+
+**Long (unchanged)** — the permanent physical **W3 wall**: which cleavage Nature actually takes, at what real rate, and
+what it will *do* on the bench, is never certified. E6 makes the wall *safer to stand next to* — it reports what is
+KNOWN about what comes off and how to handle it, and refuses (loud UNKNOWN) to certify "safe to walk away" over any gap.

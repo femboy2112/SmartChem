@@ -56,8 +56,18 @@ def acetylation() -> ExperimentStep:                # 4-aminophenol + Ac2O -> pa
     return ExperimentStep.assembling(APAP, (AMINOPHENOL, ANHYDRIDE), (APAP, ACOH))
 
 
-def isomerization() -> ExperimentStep:              # cyclopropane -> propene (unseeded => HYPOTHESIZED)
-    return ExperimentStep.assembling(PROPENE, (CYCLOPROPANE,), (PROPENE,))
+# sulfur species are off-coverage for the derivation engine (no S groups) -> reliably HYPOTHESIZED steps.
+# (cyclopropane/propene/acetic-acid/acetamide etc. now DERIVE via the ring-strain + amine/acid rungs, so the
+# old carbocyclic/oxygenate "unseeded" examples grade DERIVED; sulfur is the honest still-uncovered floor.)
+DMS = parse_smiles("CSC")        # dimethyl sulfide
+ETSH = parse_smiles("CCS")       # ethanethiol
+CH3SH = parse_smiles("CS")       # methanethiol
+H2S = parse_smiles("S")          # hydrogen sulfide
+MEAMINE = parse_smiles("CN")     # methylamine
+
+
+def isomerization() -> ExperimentStep:   # dimethyl sulfide -> ethanethiol (C2H6S; S off-coverage => HYPOTHESIZED)
+    return ExperimentStep.assembling(ETSH, (DMS,), (ETSH,))
 
 
 class TestTheSixGrades:
@@ -130,21 +140,24 @@ class TestWorstStepDominatedAggregation:
     def test_a_route_is_graded_by_its_weakest_step(self):
         # step 1 (DERIVED): make NH3 ; step 2 (HYPOTHESIZED): NH3 + AcOH -> acetamide + water (unseeded)
         make_nh3 = haber()
-        use_nh3 = ExperimentStep.assembling(ACETAMIDE, (NH3, ACOH), (ACETAMIDE, H2O))
+        # step 2: NH3 + CH3SH -> CH3NH2 + H2S -- consumes the NH3 and is HYPOTHESIZED (H2S/CH3SH off-coverage)
+        use_nh3 = ExperimentStep.assembling(MEAMINE, (NH3, CH3SH), (MEAMINE, H2S))
         assert classify_step(make_nh3).grade is Grade.DERIVED
         assert classify_step(use_nh3).grade is Grade.HYPOTHESIZED
         v = classify(ExperimentRoute.of(make_nh3, use_nh3))
         assert v.grade is Grade.HYPOTHESIZED                       # min(DERIVED, HYPOTHESIZED)
 
     def test_a_convergent_dag_is_graded_by_its_weakest_step(self):
-        ALD, ETHENE, ETOH, EA = (parse_smiles(s) for s in ("CC=O", "C=C", "CCO", "CCOC(=O)C"))
-        branch_acid = ExperimentStep.assembling(ACOH, (ALD, ALD, O2), (ACOH, ACOH))
-        branch_alcohol = ExperimentStep.assembling(ETOH, (ETHENE, H2O), (ETOH,))
-        esterify = ExperimentStep.assembling(EA, (ACOH, ETOH), (EA, H2O))
-        dag = SynthesisDAG.of(branch_acid, branch_alcohol, esterify)
+        # a convergent thio-ester synthesis: the two branches join at a thioester; the thiol branch and the
+        # join are HYPOTHESIZED (H2S / thioester are off-coverage for the derivation engine).
+        ALD, ETHENE, THIOL, THIOESTER = (parse_smiles(s) for s in ("CC=O", "C=C", "CCS", "CCSC(=O)C"))
+        branch_acid = ExperimentStep.assembling(ACOH, (ALD, ALD, O2), (ACOH, ACOH))          # 2 MeCHO + O2 -> 2 AcOH
+        branch_thiol = ExperimentStep.assembling(THIOL, (ETHENE, H2S), (THIOL,))             # ethene + H2S -> EtSH
+        thioesterify = ExperimentStep.assembling(THIOESTER, (ACOH, THIOL), (THIOESTER, H2O))  # AcOH + EtSH -> thioester + H2O
+        dag = SynthesisDAG.of(branch_acid, branch_thiol, thioesterify)
         assert dag.is_convergent
         v = classify(dag)
-        assert v.grade is Grade.HYPOTHESIZED                       # all branches unseeded
+        assert v.grade is Grade.HYPOTHESIZED                       # weakest branch (thiol/thioester) is off-coverage
 
     def test_a_degenerate_dag_edge_refutes_the_whole_dag(self):
         make_ketene = ExperimentStep.assembling(KETENE, (ACOH,), (KETENE, H2O))

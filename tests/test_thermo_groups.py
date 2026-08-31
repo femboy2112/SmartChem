@@ -91,9 +91,10 @@ class TestGroupAssignment:
 class TestOffCoverageIsALoudNone:
     """The engine returns None (never a fabricated / strain-blind number) outside its sourced coverage."""
 
-    @pytest.mark.parametrize("smiles", ["C1CC1", "C1CCC1", "C1CCCCC1", "C1CO1"])
-    def test_strained_or_aliphatic_rings_refused(self, smiles):
-        # Benson needs a ring-strain correction we do not carry -> off-coverage, not a sign-wrong chain estimate
+    @pytest.mark.parametrize("smiles", ["C1CCCCCC1", "C1CCOCC1", "C1CCNCC1", "C1CCC2CCCCC2C1"])
+    def test_rings_without_a_sourced_correction_refused(self, smiles):
+        # cycloheptane (7-ring), oxane (6-ring O), piperidine (N ring), decalin (fused) have NO sourced strain
+        # correction -> off-coverage, never a strain-blind estimate.  (The covered rings derive; see below.)
         assert estimate_thermo(parse_smiles(smiles)) is None
         assert assign_groups(parse_smiles(smiles)) is None
 
@@ -102,8 +103,8 @@ class TestOffCoverageIsALoudNone:
         assert estimate_thermo(parse_smiles("CS")) is None
 
     def test_uncovered_functional_group_refused(self):
-        # a carboxylic acid needs O-(CO)(H), which is not tabled -> None, naming nothing it cannot source
-        assert estimate_thermo(parse_smiles("CC(=O)O")) is None
+        # a nitrile's triple-bond carbon (Ct) and nitrile N have no sourced groups -> loud None
+        assert estimate_thermo(parse_smiles("CC#N")) is None
 
 
 class TestSymmetryNumber:
@@ -181,13 +182,22 @@ class TestRung2FeasibilityLift:
     def test_resolve_thermo_derives_on_miss(self):
         eth = parse_smiles("CCO")  # off-seed
         assert resolve_thermo(eth, DEFAULT_THERMO, derive=False) is None
-        derived = resolve_thermo(eth, DEFAULT_THERMO, derive=True)
-        assert derived is not None and derived.grade == "DERIVED" and derived.phase == "gas"
+        # condensed=False: the raw gas estimate, graded DERIVED
+        gas = resolve_thermo(eth, DEFAULT_THERMO, derive=True, condensed=False)
+        assert gas is not None and gas.grade == "DERIVED" and gas.phase == "gas"
+        # condensed=True (default): ethanol has a sourced ΔvapH (rung C) -> corrected to its LIQUID standard
+        # state, and a gas-estimate-plus-correction is a two-step estimate, so it grades PREDICTED.
+        liq = resolve_thermo(eth, DEFAULT_THERMO, derive=True, condensed=True)
+        assert liq is not None and liq.phase == "liquid" and liq.grade == "PREDICTED"
+        assert liq.dhf_kj_per_mol < gas.dhf_kj_per_mol  # condensed is lower in enthalpy than gas
 
     def test_a_gas_isomerization_unknown_becomes_derived(self):
-        # dimethyl ether -> ethanol: both off-seed, both derivable to gas; UNKNOWN without derivation, a real
-        # (correct-signed) DERIVED ΔG with it -- ethanol is ~51 kJ more stable than its ether isomer.
-        step = ExperimentStep.assembling(parse_smiles("CCO"), (parse_smiles("COC"),), (parse_smiles("CCO"),))
+        # cyclopropane + H2 -> propane: cyclopropane is off-seed (UNKNOWN sourced-only); rung A derives it and
+        # rung 2 wires it in, giving a real DERIVED ΔG -- strongly FAVORABLE as the +115 kJ ring strain is
+        # released.  cyclopropane's groups + ring correction are all ESTABLISHED, propane too, H2 is seeded.
+        step = ExperimentStep.assembling(
+            parse_smiles("CCC"), (parse_smiles("C1CC1"), parse_smiles("[H][H]")), (parse_smiles("CCC"),)
+        )
         assert feasibility_of_step(step, derive=False).direction is FeasibilityDirection.UNKNOWN
         f = feasibility_of_step(step, derive=True)
         assert f.direction is FeasibilityDirection.FAVORABLE
@@ -225,3 +235,51 @@ class TestEntropyFormula:
         s_groups = groups["C-(O)(H)3"].s_j_per_mol_k + groups["O-(C)(H)"].s_j_per_mol_k
         expected = s_groups - R_J_PER_MOL_K * math.log(3)  # σ(methanol) = 3
         assert est.s_j_per_mol_k == pytest.approx(expected, abs=0.01)
+
+
+# -- rung A (ring strain) + rung B (amine/acid/ester) calibration: SOURCED gas ΔfH° anchors ----------------
+# (ring anchors: NIST WebBook / CCCBDB; amine/acid anchors: NIST/CCCBDB -- all CONFIRMED by the sourcing
+#  workflow's independent verifier, and reconstructed by hand to the residuals in the module provenance.)
+RUNG_AB = [
+    ("cyclopropane", "C1CC1", 53.30), ("cyclobutane", "C1CCC1", 28.40),
+    ("cyclopentane", "C1CCCC1", -76.40), ("cyclohexane", "C1CCCCC1", -123.10),
+    ("oxirane", "C1CO1", -52.63), ("oxetane", "C1COC1", -80.54), ("thf", "C1CCOC1", -184.20),
+    ("propylamine", "CCCN", -70.17), ("trimethylamine", "CN(C)C", -23.70), ("dimethylamine", "CNC", -19.00),
+    ("acetic-acid", "CC(=O)O", -433.00), ("formic-acid", "OC=O", -378.60),
+    ("methyl-acetate", "COC(=O)C", -410.00), ("ethyl-acetate", "CCOC(=O)C", -445.43),
+]
+
+
+class TestRingAndFunctionalGroupRungs:
+    """Rungs A + B: strained/aliphatic rings and amines/acids/esters now DERIVE within band of sourced data."""
+
+    @pytest.mark.parametrize("name,smiles,dhf_known", RUNG_AB, ids=[c[0] for c in RUNG_AB])
+    def test_derives_within_band(self, name, smiles, dhf_known):
+        est = estimate_thermo(parse_smiles(smiles))
+        assert est is not None, f"{name} should now be derivable"
+        assert est.phase == "gas"
+        assert abs(est.dhf_kj_per_mol - dhf_known) <= 8.0, f"{name}: {est.dhf_kj_per_mol} vs {dhf_known}"
+        assert abs(est.dhf_kj_per_mol - dhf_known) <= est.dhf_uncertainty_kj  # within its own band
+
+    def test_ring_strain_actually_moves_the_estimate(self):
+        # cyclohexane's strain (~0) vs cyclopropane's (+115 kJ): without the correction cyclopropane would be
+        # ~-62 (a bare propyl chain); the strain is what makes it correctly +53.
+        cp = estimate_thermo(parse_smiles("C1CC1"))
+        assert cp.dhf_kj_per_mol > 40.0  # strain-corrected, not the ~-62 chain estimate
+
+
+class TestLabelsAreCanonical:
+    """Guard against the ester-oxygen bug class: every table key must be in canonical ligand order, else the
+    label assign_groups PRODUCES will never match it and the group is silently unreachable (a dead entry)."""
+
+    def test_every_group_label_is_canonically_ordered(self):
+        import re
+        from smartchem.data.thermo_groups import _LIGAND_PRIORITY
+        for b in BENSON_GROUPS:
+            m = re.match(r"^[A-Za-z]+-((?:\([A-Za-z]+\)\d*)+)$", b.label)
+            assert m, f"unparseable group label {b.label!r}"
+            heavy = [t for t in re.findall(r"\(([A-Za-z]+)\)(\d*)", m.group(1)) if t[0] != "H"]
+            types = [t for t, _n in heavy]
+            assert types == sorted(types, key=lambda t: (_LIGAND_PRIORITY[t], t)), (
+                f"group label {b.label!r} has non-canonical ligand order -- assign_groups can never reach it"
+            )

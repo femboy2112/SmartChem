@@ -55,6 +55,9 @@ __all__ = [
     "GroupTier",
     "BensonGroup",
     "BENSON_GROUPS",
+    "RingTier",
+    "RingStrain",
+    "RING_STRAIN",
     "GroupThermoEstimate",
     "assign_groups",
     "estimate_thermo",
@@ -181,7 +184,75 @@ BENSON_GROUPS: tuple[BensonGroup, ...] = (
     # -- so paracetamol's amide N resolves as PREDICTED-with-wide-band, never a fabricated zero-entropy.
     BensonGroup("N-(CB)(CO)(H)", *_kcal(0.4, 8.54505), _A, "N3s-(CO)CbH",
                 _RMG + "ΔfH° from N3s-(CO)CbH (0.4 kcal); S° ASSIGNED from N-(C)(CO)(H)=8.54505 cal (its RMG S298=0 is a placeholder, refused)"),
+    # -- aliphatic amine coverage (rung B): closes ethylamine/propylamine/di-/tri-methylamine; SI values
+    #    fetched from RMG group.py and CROSS-CHECKED against sourced gas ΔfH° (n-propylamine residual 0.45 kJ,
+    #    trimethylamine 1.3 kJ, dimethylamine 2.1 kJ -- NIST/CCCBDB). ------------------------------------
+    BensonGroup("C-(C)(N)(H)2", -10.93, 41.17, _E, "Cs-CsN3sHH", _RMG + "amine CH2; xcheck n-propylamine 0.45 kJ"),
+    BensonGroup("C-(N)(H)3", -23.76, 132.15, _E, "Cs-N3sHHH", _RMG + "N-methyl; xcheck trimethylamine 1.3 kJ"),
+    BensonGroup("N-(C)2(H)", 30.65, 31.89, _E, "N3s-CsCsH", _RMG + "secondary amine N; xcheck dimethylamine 2.1 kJ"),
+    BensonGroup("N-(C)3", 48.86, -66.58, _E, "N3s-CsCsCs", _RMG + "tertiary amine N; xcheck trimethylamine"),
+    BensonGroup("C-(C)2(N)(H)", 4.88, -51.73, _X, "Cs-CsCsN3sH", _RMG + "amine CH; single-compound fit (n=9, isopropylamine) -- EXPERIMENTAL"),
+    # -- carboxylic-acid / ester coverage (rung B): closes acetic/formic acid, methyl/ethyl acetate;
+    #    O-(CO)(H) closes acetic acid to 2.9 kJ and formic acid to 1.6 kJ (NIST gas). --------------------
+    BensonGroup("O-(CO)(H)", -165.20, 125.32, _E, "O2s-(Cds-O2d)H", _RMG + "acid/ester hydroxyl O; xcheck acetic acid 2.9 kJ"),
+    BensonGroup("CO-(O)(H)", -211.80, 124.04, _E, "Cds-OdOsH", _RMG + "carboxyl carbon; xcheck formic acid 1.6 kJ"),
+    BensonGroup("O-(C)(CO)", -102.20, 45.71, _E, "O2s-(Cds-O2d)Cs", _RMG + "ester oxygen (canonical C-before-CO order); xcheck methyl acetate 0.0 kJ"),
+    BensonGroup("C-(C)(CO)(H)2", -21.50, 40.32, _X, "Cs-Cs(CO)HH", _RMG + "CH2 alpha to carbonyl"),
+    # -- amide coverage (rung B): the aliphatic amides beyond the aromatic-amide N already present.
+    #    Several are low-n RMG-library fits (EXPERIMENTAL, wide band); none carry a placeholder-zero entropy.
+    BensonGroup("CO-(N)(H)", -160.27, 136.98, _X, "Cds-OdN3sH", _RMG + "formamide-type amide carbonyl"),
+    BensonGroup("N-(CO)(H)2", -37.06, 110.38, _X, "N3s-(CO)HH", _RMG + "primary-amide N"),
+    BensonGroup("N-(CO)2(H)", 1.49, 17.59, _A, "N3s-(CO)(CO)H", _RMG + "imide N; single-point fit (n=1, +-20 kJ) -- ASSIGNED-grade (PREDICTED), too rough for DERIVED"),
+    BensonGroup("N-(C)2(CO)", 20.03, -62.90, _A, "N3s-(CO)CsCs", _RMG + "tertiary-amide N; n=2 fit (+-20 kJ) -- ASSIGNED-grade (PREDICTED)"),
+    BensonGroup("CO-(N)2", -163.70, 51.22, _X, "CO-N3sN3sOd", _RMG + "urea-type carbonyl (two amide N)"),
 )
+
+
+class RingTier(str, Enum):
+    """Whether a ring-strain correction is molecule-calibrated (ESTABLISHED) or only an exact RMG transcription
+    with no molecular cross-check available here (EXPERIMENTAL, wider band)."""
+
+    ESTABLISHED = "ESTABLISHED"
+    EXPERIMENTAL = "EXPERIMENTAL"
+
+
+@dataclass(frozen=True)
+class RingStrain:
+    """One ring's SOURCED strain correction: the ΔfH°/S° a ring adds ON TOP of its atom-centred groups.
+
+    ``key`` is the ring classifier name (:func:`_classify_ring`); ``dhf_kj_per_mol`` / ``s_j_per_mol_k`` are
+    the corrections in SI.  Applied as ΔfH° += strain.ΔfH, S° += strain.S (then the usual − R ln σ)."""
+
+    key: str
+    dhf_kj_per_mol: float
+    s_j_per_mol_k: float
+    tier: RingTier
+    provenance: str
+
+
+_RE = RingTier.ESTABLISHED
+_RX = RingTier.EXPERIMENTAL
+_RRING = "RMG-database input/thermo/groups/ring.py (MIT); "
+
+#: Ring-strain corrections, FETCHED from RMG ring.py and (for the saturated carbocycles + O-heterocycles)
+#: CROSS-CHECKED: the parent molecule's sourced gas ΔfH° minus the atom-group sum reproduces the strain to
+#: <2 kJ/mol (cyclopropane 0.004, cyclobutane 1.29, cyclopentane 0.38, cyclohexane 0.33, oxirane ~2.4).  The
+#: three UNSATURATED-ring corrections are exact RMG transcriptions with no molecular cross-check here (they
+#: also require the alkene Cd groups) -> EXPERIMENTAL.
+RING_STRAIN: tuple[RingStrain, ...] = (
+    RingStrain("Cyclopropane", 115.19, 133.93, _RE, _RRING + "'Cyclopropane ring BENSON'; xcheck 0.004 kJ"),
+    RingStrain("Cyclobutane", 109.62, 124.68, _RE, _RRING + "'Cyclobutane ring BENSON'; xcheck 1.29 kJ"),
+    RingStrain("Cyclopentane", 26.36, 114.22, _RE, _RRING + "'Cyclopentane ring BENSON'; xcheck 0.38 kJ"),
+    RingStrain("Cyclohexane", 0.34, 75.85, _RE, _RRING + "'Cyclohexane ring BENSON'; xcheck 0.33 kJ"),
+    RingStrain("Ethylene_oxide", 112.22, 130.44, _RE, _RRING + "'CY/C2O Dorofeeva 92'; xcheck oxirane ~2.4 kJ"),
+    RingStrain("Oxetane", 104.94, 119.45, _RE, _RRING + "'CY/C3O Dorofeeva 92'"),
+    RingStrain("Tetrahydrofuran", 24.94, 88.54, _RE, _RRING + "'CY/C4O Dorofeeva 92'"),
+    RingStrain("Cyclohexene", 4.89, 88.75, _RX, _RRING + "'Cyclohexene ring BENSON'; no molecular xcheck here"),
+    RingStrain("Cyclopentene", 24.98, 108.07, _RX, _RRING + "'Cyclopentene ring BENSON'; no molecular xcheck here"),
+    RingStrain("Cyclobutene", 124.85, 124.97, _RX, _RRING + "'Cyclobutene ring BENSON'; no molecular xcheck here"),
+)
+
+_RING_BY_KEY: dict[str, RingStrain] = {r.key: r for r in RING_STRAIN}
 
 _GROUP_BY_LABEL: dict[str, BensonGroup] = {g.label: g for g in BENSON_GROUPS}
 
@@ -252,6 +323,111 @@ def _aromatic_rings(mol: Molecule, adj: list[list[tuple[int, int]]]) -> tuple[fr
             ring_bonds |= this_ring_bonds
             num_rings += 1
     return frozenset(aromatic), frozenset(ring_bonds), num_rings
+
+
+def _find_rings(mol: Molecule, adj: list[list[tuple[int, int]]]) -> list[list[int]]:
+    """All simple cycles up to length 7 among heavy atoms, deduped by atom-set, returned in cycle order."""
+    heavy = [i for i, s in enumerate(mol.atoms) if s != "H"]
+    hset = set(heavy)
+    seen: set[frozenset[int]] = set()
+    rings: list[list[int]] = []
+
+    def dfs(start: int, cur: int, path: list[int]) -> None:
+        for j, _o in adj[cur]:
+            if j not in hset:
+                continue
+            if j == start and len(path) >= 3:
+                key = frozenset(path)
+                if key not in seen:
+                    seen.add(key)
+                    rings.append(list(path))
+                continue
+            if j in path or len(path) >= 7 or j <= start:
+                continue
+            path.append(j)
+            dfs(start, j, path)
+            path.pop()
+
+    for s in heavy:
+        dfs(s, s, [s])
+    return rings
+
+
+def _ring_edges(ring: list[int]) -> frozenset[frozenset[int]]:
+    return frozenset(frozenset((ring[k], ring[(k + 1) % len(ring)])) for k in range(len(ring)))
+
+
+def _select_sssr(rings: list[list[int]], cycle_rank: int) -> list[list[int]] | None:
+    """The smallest-set-of-smallest-rings: greedily take smallest rings that each add a new edge until the
+    cycle space is spanned.  Returns None if fewer than ``cycle_rank`` independent rings are found (a ring
+    larger than the search cap went uncaught -> off-coverage, not silently ignored)."""
+    selected: list[list[int]] = []
+    covered: set[frozenset[int]] = set()
+    for r in sorted(rings, key=len):
+        e = _ring_edges(r)
+        if not e <= covered:
+            selected.append(r)
+            covered |= e
+        if len(selected) == cycle_rank:
+            return selected
+    return selected if len(selected) == cycle_rank else None
+
+
+def _classify_ring(mol: Molecule, adj: list[list[tuple[int, int]]], ring: list[int]) -> str | None:
+    """Map a NON-aromatic ring to a RING_STRAIN key (size + element multiset + ring-double-bond count), or
+    None if it is a ring type with no sourced strain correction.
+
+    Keys on the RING atoms only, so a SUBSTITUTED ring borrows its parent carbocycle/heterocycle's strain
+    correction -- the standard Benson approximation: cyclohexanone/methylcyclohexane use the Cyclohexane
+    correction, a γ-lactone the Tetrahydrofuran one (the substituent's and an in-ring carbonyl's effect on
+    strain is left to the atom groups + the uncertainty band, which covers it on the tested cases; a ring the
+    band could NOT cover would be a real gap to add here).  An in-ring heteroatom pattern with no tabled
+    correction (a 6-ring lactone/lactam, 1,4-dioxane, ...) returns None -- off-coverage, not a wrong strain."""
+    size = len(ring)
+    ringset = set(ring)
+    elems = "".join(sorted(mol.atoms[i] for i in ring))
+    ndouble = 0
+    for i in ring:
+        for j, o in adj[i]:
+            if j in ringset and j > i and o == 2:
+                ndouble += 1
+    table = {
+        (3, "CCC", 0): "Cyclopropane", (3, "CCO", 0): "Ethylene_oxide",
+        (4, "CCCC", 0): "Cyclobutane", (4, "CCCC", 1): "Cyclobutene", (4, "CCCO", 0): "Oxetane",
+        (5, "CCCCC", 0): "Cyclopentane", (5, "CCCCC", 1): "Cyclopentene", (5, "CCCCO", 0): "Tetrahydrofuran",
+        (6, "CCCCCC", 0): "Cyclohexane", (6, "CCCCCC", 1): "Cyclohexene",
+    }
+    return table.get((size, elems, ndouble))
+
+
+def _ring_analysis(
+    mol: Molecule, adj: list[list[tuple[int, int]]], aromatic: frozenset[int]
+) -> tuple[str, ...] | None:
+    """The RING_STRAIN keys for a molecule's non-aromatic rings, or None (off-coverage) if any ring is a
+    type with no sourced correction, the rings are fused (polycyclic strain not tabulated), or a ring larger
+    than the search cap went uncaught.  An acyclic molecule -- or one whose only rings are benzene aromatics
+    -- returns ``()`` (no correction, on-coverage)."""
+    heavy = [i for i, s in enumerate(mol.atoms) if s != "H"]
+    hbonds = sum(1 for b in mol.bonds if mol.atoms[b.i] != "H" and mol.atoms[b.j] != "H")
+    cycle_rank = hbonds - len(heavy) + 1
+    if cycle_rank <= 0:
+        return ()
+    sssr = _select_sssr(_find_rings(mol, adj), cycle_rank)
+    if sssr is None:
+        return None  # a ring bigger than the search cap -> off-coverage
+    nonarom = [r for r in sssr if not all(i in aromatic for i in r)]
+    # fused rings (any two non-aromatic rings share an atom) -> polycyclic strain not tabulated
+    for a in range(len(nonarom)):
+        for b in range(a + 1, len(nonarom)):
+            if set(nonarom[a]) & set(nonarom[b]):
+                return None
+    keys: list[str] = []
+    for r in nonarom:
+        key = _classify_ring(mol, adj, r)
+        if key is None or key not in _RING_BY_KEY:
+            return None
+        keys.append(key)
+    return tuple(keys)
 
 
 def _h_count(adj_i: list[tuple[int, int]], atoms: tuple[str, ...]) -> int:
@@ -338,17 +514,14 @@ def assign_groups(molecule: Molecule) -> tuple[str, ...] | None:
         raise TypeError("assign_groups takes a Molecule")
     mol = molecule.canonical()
     adj = _neighbours(mol)
-    aromatic, ring_bonds, num_aromatic_rings = _aromatic_rings(mol, adj)
-    # Ring-strain guard: Benson additivity needs a ring-strain correction for every non-benzene ring
-    # (cyclopropane +115, cyclobutane +110, epoxide +115 kJ/mol, ...).  We do NOT carry those corrections,
-    # so a molecule with any ring the aromatic groups do NOT already account for is OFF-COVERAGE -- a loud
-    # None, never a strain-blind (and sign-wrong) chain estimate.  Cycle rank = E - V + 1 (connected); each
-    # detected benzene ring is one covered cycle.
-    heavy_atoms = [i for i, s in enumerate(mol.atoms) if s != "H"]
-    heavy_bonds = sum(1 for b in mol.bonds if mol.atoms[b.i] != "H" and mol.atoms[b.j] != "H")
-    cycle_rank = heavy_bonds - len(heavy_atoms) + 1
-    if cycle_rank > num_aromatic_rings:
-        return None  # an aliphatic/strained/fused ring with no sourced strain correction
+    aromatic, ring_bonds, _num_aromatic_rings = _aromatic_rings(mol, adj)
+    # Ring-strain guard: Benson additivity needs a strain correction for every non-benzene ring
+    # (cyclopropane +115, cyclobutane +110, epoxide +112 kJ/mol, ...).  :func:`_ring_analysis` returns the
+    # sourced strain keys for the molecule's non-aromatic rings, or None when a ring has no sourced
+    # correction, the rings are fused (polycyclic strain not tabulated), or a ring is larger than the search
+    # cap -- in every such case the molecule is OFF-COVERAGE (a loud None), never a strain-blind estimate.
+    if _ring_analysis(mol, adj, aromatic) is None:
+        return None
     center_types: dict[int, str | None] = {}
     for i, s in enumerate(mol.atoms):
         if s == "H":
@@ -546,12 +719,18 @@ def estimate_thermo(molecule: Molecule) -> GroupThermoEstimate | None:
     multicenter = _sigma_multicenter_unreliable(mol, adj)
     sigma_unreliable = skipped or multicenter
 
-    dhf = sum(g.dhf_kj_per_mol for g in groups)
-    s_groups = sum(g.s_j_per_mol_k for g in groups)
+    # ring-strain corrections (rung A): a non-aromatic ring adds ΔfH°/S° on top of its atom-centred groups.
+    # assign_groups already guaranteed every ring is sourced (else it returned None), so this is not-None.
+    ring_keys = _ring_analysis(mol, adj, _aromatic) or ()
+    rings = [_RING_BY_KEY[k] for k in ring_keys]
+
+    dhf = sum(g.dhf_kj_per_mol for g in groups) + sum(r.dhf_kj_per_mol for r in rings)
+    s_groups = sum(g.s_j_per_mol_k for g in groups) + sum(r.s_j_per_mol_k for r in rings)
     s_total = s_groups - R_J_PER_MOL_K * math.log(sigma)  # n_optical = 1 -> +R ln 1 = 0
 
-    dhf_var = sum(_TIER_BAND[g.tier][0] ** 2 for g in groups)
-    s_var = sum(_TIER_BAND[g.tier][1] ** 2 for g in groups)
+    _ring_band = {RingTier.ESTABLISHED: (4.0, 5.0), RingTier.EXPERIMENTAL: (8.0, 8.0)}
+    dhf_var = sum(_TIER_BAND[g.tier][0] ** 2 for g in groups) + sum(_ring_band[r.tier][0] ** 2 for r in rings)
+    s_var = sum(_TIER_BAND[g.tier][1] ** 2 for g in groups) + sum(_ring_band[r.tier][1] ** 2 for r in rings)
     # symmetry-uncertainty band: normally the R ln 2 improper-mirror residual; widened when σ is unreliable.
     if skipped:
         s_sym_residual = R_J_PER_MOL_K * math.log(18.0)   # σ_ext unknown (graph too big) -- a generous floor
@@ -579,9 +758,12 @@ def estimate_thermo(molecule: Molecule) -> GroupThermoEstimate | None:
            "multiple equivalent branch tops -- graph over-counts the rotational σ; S° band widened to bracket it")
         + " -> PREDICTED]"
     )
+    ring_note = "" if not rings else (
+        f"; ring-strain corrections [{', '.join(sorted(r.key for r in rings))}] (RMG ring.py)"
+    )
     provenance = (
-        f"{grade} ideal-gas (298 K) via Benson group additivity: ΔfH° = Σ groups, "
-        f"S° = Σ groups − R·ln(σ={sigma}); groups [{group_render}]; "
+        f"{grade} ideal-gas (298 K) via Benson group additivity: ΔfH° = Σ groups (+ ring strain), "
+        f"S° = Σ groups (+ ring strain) − R·ln(σ={sigma}); groups [{group_render}]{ring_note}; "
         f"sourced RMG-database Benson/CBS-QB3 values (see BENSON_GROUPS provenance); "
         f"gas phase only (condensed-phase needs a separate Δsub correction){sigma_note}"
     )

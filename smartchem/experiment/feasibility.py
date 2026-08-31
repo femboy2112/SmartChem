@@ -40,6 +40,7 @@ from enum import Enum
 from ..category import Molecule
 from ..conditions import ConditionEnvelope
 from ..contracts import Digestible
+from ..data.phase_change import DEFAULT_PHASE_CHANGE, PhaseChangeRef, PhaseChangeTable, to_condensed
 from ..data.thermo import DEFAULT_THERMO, REFERENCE_TEMPERATURE_K, ThermoRef, ThermoTable
 from ..data.thermo_groups import estimate_thermo
 from ..decompiler import Formula
@@ -86,18 +87,32 @@ def _label(molecule: Molecule) -> str:
     return named.name if named is not None else _formula_str(molecule)
 
 
+def _resolve_phase_change(molecule: Molecule, table: PhaseChangeTable) -> PhaseChangeRef | None:
+    named = resolve_structure(molecule)
+    if named is not None:
+        hit = table.for_named(named.expected_formula, named.name)
+        if hit is not None:
+            return hit
+    return table.for_formula(_formula_str(molecule))
+
+
 def resolve_thermo(
-    molecule: Molecule, table: ThermoTable = DEFAULT_THERMO, *, derive: bool = True
+    molecule: Molecule, table: ThermoTable = DEFAULT_THERMO, *, derive: bool = True, condensed: bool = True,
+    phase_change: PhaseChangeTable = DEFAULT_PHASE_CHANGE,
 ) -> ThermoRef | None:
     """The thermo record for ``molecule``: sourced if the table covers it (named, else formula-level when
-    unambiguous), else -- when ``derive`` (default) -- a DERIVED/PREDICTED **gas-phase** estimate from Benson
-    group additivity (:mod:`smartchem.data.thermo_groups`), else ``None`` (a loud gap).
+    unambiguous), else -- when ``derive`` (default) -- a group-additivity estimate
+    (:mod:`smartchem.data.thermo_groups`), else ``None`` (a loud gap).
 
     Sourced ALWAYS wins over derived: the group estimate is the rung-2 fallback that stops feasibility from
     reflexively returning ``UNKNOWN`` for a compound whose thermo known physics can derive
-    ([[known-physics-not-new-physics]]).  A derived record carries ``grade`` in {DERIVED, PREDICTED},
-    ``phase="gas"``, and a band in its provenance; the caller (below) enforces phase honesty when a derived
-    gas value meets a sourced condensed one.  ``derive=False`` restores the pure-sourced behaviour.
+    ([[known-physics-not-new-physics]]).  The group estimate is GAS-phase; when ``condensed`` (default) and a
+    SOURCED sublimation/vaporization (rung C, :mod:`smartchem.data.phase_change`) exists for the compound, the
+    gas estimate is corrected to its condensed standard state -- ΔfH°(cr) = ΔfH°(gas) − ΔsubH,
+    S°(cr) = S°(gas) − ΔsubS -- so a crystalline drug / liquid reagent gets a condensed-phase record instead
+    of a phase-mismatched gas one (this is what finally gives paracetamol a condensed-phase ΔG).  A
+    gas-estimate-plus-phase-correction is a two-step estimate, so it grades ``PREDICTED``.  ``derive=False``
+    restores pure-sourced behaviour; ``condensed=False`` keeps the raw gas estimate.
     """
     named = resolve_structure(molecule)
     if named is not None:
@@ -110,10 +125,16 @@ def resolve_thermo(
     if derive:
         est = estimate_thermo(molecule)
         if est is not None:
-            return ThermoRef(
-                _formula_str(molecule), _label(molecule), est.dhf_kj_per_mol, est.s_j_per_mol_k,
-                est.phase, est.provenance, grade=est.grade,
+            dhf, s, phase, grade, prov = (
+                est.dhf_kj_per_mol, est.s_j_per_mol_k, est.phase, est.grade, est.provenance,
             )
+            if condensed:
+                pc = _resolve_phase_change(molecule, phase_change)
+                if pc is not None:
+                    dhf, s, phase = to_condensed(dhf, s, pc)
+                    grade = "PREDICTED"  # a gas estimate + a sourced phase correction is a two-step estimate
+                    prov = f"{prov}; corrected GAS->{phase} via {pc.transition.value} ({pc.provenance})"
+            return ThermoRef(_formula_str(molecule), _label(molecule), dhf, s, phase, prov, grade=grade)
     return None
 
 

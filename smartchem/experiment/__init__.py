@@ -59,6 +59,8 @@ from .classify import (
     classify_route,
     classify_step,
 )
+from .compile import CompiledSynthesis, compile_synthesis
+from .formation import DerivedFormation, formation_enthalpy_0k
 from .composability import (
     Composability,
     Transition,
@@ -223,6 +225,10 @@ __all__ = [
     "classify_reaction",
     "classify_route",
     "classify_dag",
+    "CompiledSynthesis",
+    "compile_synthesis",
+    "DerivedFormation",
+    "formation_enthalpy_0k",
     "SynthesisAssemblyError",
     "assemble_synthesis",
     "find_scission",

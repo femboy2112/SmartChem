@@ -48,6 +48,7 @@ def enumerate_routes(
     *,
     reagents: tuple[Molecule, ...],
     available: tuple[Molecule, ...] = (),
+    commodities: tuple[Molecule, ...] = (),
     max_depth: int = 2,
     max_routes: int = 100,
     cut_budget: int = 20_000,
@@ -56,14 +57,19 @@ def enumerate_routes(
 
     ``reagents`` are the small helpers the cleavage may consume (water, an anhydride, an acid); ``available``
     are precursors the chemist already has, which terminate the backward search (the ``reagents`` are treated
-    as available too).  Linear routes only (a step with at most one not-yet-available precursor is recursed
-    on); a step whose precursors are all on hand is a complete route.  Returns deduplicated routes, ready for
+    as available too).  ``commodities`` are widely-obtainable stock (the "poor-man's buckets" -- table salt,
+    vinegar, baking soda; see :mod:`smartchem.data.reagents`) that ALSO terminate a branch: a route can bottom
+    out at stuff a chemist can actually buy instead of at pure elements.  All three sets terminate identically
+    -- they are keyed by the same canonical identity (:func:`_ident`), never by formula, so a same-formula
+    isomer never wrongly terminates (the ``a-reaction-key-by-formula-borrows-a-rate`` fail-open).  Linear
+    routes only (a step with at most one not-yet-available precursor is recursed on); a step whose precursors
+    are all on hand is a complete route.  Returns deduplicated routes, ready for
     :func:`~smartchem.experiment.drafter.rank_routes`.  Empty if nothing within ``max_depth`` reaches the
     inventory -- a loud "no route found", never a fabricated one.
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
-    on_hand = {_ident(m) for m in (*available, *reagents)}
+    on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
     seen_routes: dict[str, ExperimentRoute] = {}
 
     def routes_making(t: Molecule, depth: int, ancestors: frozenset[str]) -> list[ExperimentRoute]:

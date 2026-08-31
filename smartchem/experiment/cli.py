@@ -45,6 +45,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-depth", type=int, default=2, help="retrosynthesis depth (default 2)")
     p.add_argument("--offline", action="store_true", help="do not fetch; use the seed + cache only")
     p.add_argument("--show", type=int, default=5, help="how many ranked routes to list (default 5)")
+    p.add_argument("--poor-mans", action="store_true",
+                   help="also terminate routes at WIDELY-AVAILABLE commodity compounds (table salt, "
+                        "vinegar, baking soda, ...) and print a shopping list -- so a route can bottom out "
+                        "at stuff you can actually buy instead of at pure elements")
     args = p.parse_args(argv)
 
     target = _parse(args.target)
@@ -54,7 +58,12 @@ def main(argv: list[str] | None = None) -> int:
     for mol, smi in [(target, args.target), *zip(have, args.have), *zip(reagents, args.reagents)]:
         smiles_by_mol[mol] = smi
 
-    routes = enumerate_routes(target, reagents=reagents, available=have, max_depth=args.max_depth)
+    commodities = ()
+    if args.poor_mans:
+        from ..data.reagents import commodity_inventory
+        commodities = commodity_inventory()
+    routes = enumerate_routes(target, reagents=reagents, available=have, commodities=commodities,
+                              max_depth=args.max_depth)
     if not routes:
         print(f"no synthesis route to {args.target!r} from the given inventory within depth "
               f"{args.max_depth}. Add precursors with --have, reagents with --reagents, or raise "
@@ -95,6 +104,18 @@ def main(argv: list[str] | None = None) -> int:
     print("TOP ROUTE -- drafted procedure:\n")
     feed = {m: 1 for m in (*have, *reagents)}
     print(draft_procedure(best.route, feed=feed or None, stability=stability, thermo=thermo).render())
+
+    if args.poor_mans:
+        from ..data.reagents import shopping_list
+        buy = shopping_list(best.route)
+        print("\n" + "=" * 90)
+        print("SHOPPING LIST -- commodity buckets this route can bottom out at:")
+        if buy:
+            for r in buy:
+                print(f"  * {r.name} -- {r.common_source} [{r.availability.value}]")
+        else:
+            print("  (this route's starting materials did not match a known commodity; "
+                  "raise --max-depth or add precursors)")
     return 0
 
 

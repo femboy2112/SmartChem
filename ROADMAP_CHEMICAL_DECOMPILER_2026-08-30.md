@@ -1696,3 +1696,64 @@ touching the grade.
 under what conditions, is never certified. Every rung enumerates and grades; none predicts new physics. The rate
 dimension makes the wall *sharper*, not lower — it reports a rate under a SOURCED fit and refuses (loud UNKNOWN)
 everywhere else.
+
+## Part 30 — the SECOND rate provider (Eyring), halogens, and arbitrary-target reach (short×3 + mid×3, arc II)
+
+The tier Part 29 opened, closed: all three short-term goals AND all three mid-term ones, under the same recon-first /
+web-sourced-with-provenance / adversarially-verified discipline. A read-only **recon workflow** mapped every gap's real
+state — catching that Bromine already PARSED, so the gap was one periodic-table row, not the parser; a web-**sourcing
+workflow** FETCHED every number with author+year; and the **acceptance gate** caught a real dispatcher bug
+(`classify(step, barriers=…)` dropped the kwarg on the step branch) before it shipped. Gate **79→92**, full suite
+**2245→2281**, zero regressions, every changed file ruff-clean.
+
+### The builds
+
+* **Mid-3 — the Eyring/TST rate provider, a SECOND independent bearing on k.** `smartchem/data/eyring.py`
+  (`EyringRef`/`EyringTable`, keyed by canonical reaction structure, isomer-safe) + `smartchem/experiment/eyring.py`
+  (`k = (kB·T/h)·exp(−ΔG‡/RT)`, `ΔG‡ = ΔH‡ − TΔS‡`), *reusing* the Arrhenius provider's `RateRegime`/`RateGrade`/regime
+  bands/keying/log-space math — one rate axis, two providers, the only new physics the two SI-2019-exact constants
+  kB/h. Seeded with **ethyl-acetate saponification** (ΔH‡ 38.6 kJ/mol, ΔS‡ −131.0 J/mol/K; Petek & Krajnc 2012,
+  TST-derived *separately* from Arrhenius — the non-circularity requirement), **calibrated against an INDEPENDENT
+  measured k** (Tsujikawa & Inoue 1966, 0.112 M⁻¹s⁻¹) which the engine reproduces within **0.14 decades**. Wired into
+  `classify` as a sixth sub-verdict `eyring` that **never enters `_step_grade`/`_LADDER`**; a `rate_agreement`
+  cross-check corroborates or flags the two providers' k where both fire (two blind paths to one observable). A barrier
+  is never back-computed from Arrhenius Ea/A (circular) nor from ground-state thermo (a saddle has no ΔfH°). 16 tests.
+* **Element breadth (short) — halogen chemistry, end to end.** One SOURCED Bromine row in `smartchem/atoms.py`
+  (IE₁₋₃ NIST ASD Kramida 2024, EA₁ Blondel 1989, radius 114 pm Pyykkö 2009 — the Cl=99/I=133 set, mass IUPAC/CIAAW)
+  unblocks every bromide (Formula/scission/NamedStructure/selectivity), which had fail-closed on `unknown element 'Br'`
+  — Markovnikov-HX / Zaitsev substrates are now handleable. The hand-written element-roster guard in `test_domain` fired
+  and was updated *in the same commit* — the review it exists to force. 6 tests.
+* **CAS→NIST-ID (short) — arbitrary bench targets.** `resolve_nist_id` (name via `NIST_IDS`, or CAS via the `"C"`+digits
+  convention **verified against six real captured pages**) wired into `autoload_thermo` with a
+  **page-must-carry-the-CAS identity guard**; methanol (registered, absent from the old 2-name table) is now reached via
+  its CAS; the fail-closed path is preserved (a real page yields a full pair OR correctly refuses). 3 new committed
+  fixtures (methanol / cumene / paracetamol), 11 tests.
+* **R5-full (mid) — a second real precursor rung lifts.** FETCHED cumene(l) ΔfH°/S° lifts `cumene + O₂ → phenol +
+  acetone` (the cumene process) to DERIVED; acetanilide is a newly-documented entropy-wall gap (ΔfH° real, S°(cr)
+  absent).
+* **Kinetic breadth (mid) — a second Arrhenius family.** Cyclopropane → propene (Atkins Table 22.4); the engine
+  reproduces its anchor k at 773 K within ~1.5% and reads FROZEN at RT; the same-formula C₃H₆ isomer pair stays distinct
+  by the structural key. Saponification's units-ambiguous Arrhenius A is a documented gap (its rate is the Eyring
+  provider's).
+* **Rate-aware ranking (mid) — a physical tiebreaker, never a grade.** `drafter._route_score` gains a final tuple tier
+  (FAST floats, FROZEN sinks, UNKNOWN neutral) that orders only routes tied on every higher-priority dimension and never
+  touches an L2 grade.
+
+### The roadmap, refreshed (short / mid / long)
+
+**Short** — (a) **a clean open-access Eyring seed**: the saponification ΔH‡/ΔS‡ came via a paywalled primary (answered
+by the independent calibration); a fully-retrievable primary Eyring table for a physically-sound reaction would harden
+the provider. (b) **a reaction seeded in BOTH rate providers**, so the Arrhenius↔Eyring cross-check fires on real seed
+data, not only on an injected table. (c) **more element rows** (each FETCHED, each through the roster guard) for the
+main-group elements a bench target needs beyond the halogens.
+
+**Mid** — (a) **R5-full across the deep intermediate space** (now a shorter gap: two precursor rungs — nitration and
+cumene — are DERIVED, and `autoload_thermo` reaches any NIST-tabulated species once its CAS resolves; source the
+literal-route members with a clean same-phase pair, keep the entropy-walled ones honest). (b) **Eyring at the DAG
+level** (`classify_dag` threads the rate axis, closing the documented per-step-field asymmetry). (c) **rate-aware
+ranking on real data** (the tiebreaker activates as more `(Ea, A)` / `(ΔH‡, ΔS‡)` families reach real synthesis steps).
+
+**Long (unchanged)** — the permanent physical **W3 wall**: which cleavage Nature actually takes, at what real rate,
+under what conditions, is never certified. TWO rate providers make the wall *sharper*, not lower — each reports a rate
+under a SOURCED fit and refuses (loud UNKNOWN) everywhere else, and where both speak they cross-check rather than
+average.

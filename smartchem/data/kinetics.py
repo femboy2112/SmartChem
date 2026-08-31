@@ -178,6 +178,29 @@ SEED_KINETIC_REFS: tuple[KineticRef, ...] = (
             "either calibrates the engine."
         ),
     ),
+    # Cyclopropane -> propene thermal isomerization: the canonical first-order UNIMOLECULAR family (single
+    # reactant, single product, clean s^-1, and a 1:1 isomerization so NO stoichiometric-convention ambiguity).
+    KineticRef(
+        reactant_smiles=(("C1CC1", 1),),
+        product_smiles=(("CC=C", 1),),
+        name="cyclopropane isomerization",
+        ea_kj_per_mol=272.0,
+        log10_a=15.20,
+        a_units="s^-1",
+        temperature_range_k=(700.0, 800.0),
+        provenance=(
+            "cyclopropane -> propene, first order (rate = -d[c-C3H6]/dt = k[c-C3H6]; a 1:1 isomerization, so "
+            "no stoichiometric-convention ambiguity). Ea = 272 kJ/mol, A = 1.58e15 s^-1 (log10 A = 15.20) "
+            "from Atkins' Physical Chemistry, Data Table 22.4 (Arrhenius parameters); classic experimental "
+            "lineage Chambers & Kistiakowsky 1934 / Pritchard, Sowden & Trotman-Dickenson 1953 / tabulated by "
+            "Laidler. The table prints no explicit validity window; set to the classic high-pressure "
+            "gas-phase experimental regime ~700-800 K, anchored by the sourced point k = 6.71e-4 s^-1 at "
+            "773 K (Atkins Table 22.1), which the engine reproduces to 0.985 (6.61e-4 computed) -- the "
+            "instrument reads true. FETCHED via curl+pdftotext from the Atkins data-tables PDF, quoted "
+            "verbatim; not recalled. NOTE: the isomer cyclopropane and product propene share the formula "
+            "C3H6, so this record is safe ONLY because the engine keys on canonical STRUCTURE, not formula."
+        ),
+    ),
 )
 
 #: A convenience default seed; extended per call for any other reaction, NOT a whitelist.
@@ -199,5 +222,13 @@ KINETIC_GAPS: dict[str, str] = {
         "the litmus acetylation: the reaction is KNOWN (sourced regiochemistry attests it), but its "
         "Arrhenius (Ea, A) rate parameters are not sourced -> its RATE is a loud UNKNOWN, ORTHOGONALLY to "
         "the KNOWN grade. A reaction can be attested-and-legitimate yet kinetically unquantified; L2 says so."
+    ),
+    "ethyl acetate saponification (Arrhenius A)": (
+        "CH3COOC2H5 + OH- -> CH3COO- + C2H5OH: Ea = 43.1 kJ/mol IS sourced (Mukhtar et al., Res. J. Chem. "
+        "Sci. 5(11):46 (2015)), but that paper's tabulated pre-exponential 2.314e10 has AMBIGUOUS units -- it "
+        "prints k in 'min-1' for a SECOND-order reaction, and reading that A as M^-1 s^-1 gives a k ~100x the "
+        "independently measured value, so the units cannot be pinned -> the ARRHENIUS rate stays UNKNOWN "
+        "rather than ship a mis-conventioned A. The reaction's rate IS reproduced by the EYRING provider from "
+        "independently-sourced ΔH‡/ΔS‡ (see smartchem.data.eyring) -- the two providers are complementary."
     ),
 }

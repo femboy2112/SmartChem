@@ -33,6 +33,7 @@ from typing import Mapping
 
 from ..category import Molecule
 from ..contracts import Digestible
+from ..data.kinetics import KineticTable
 from ..decompiler import Formula
 from ..structure import resolve_structure
 from .accounting import PhysicalAccounting, account_route
@@ -42,6 +43,7 @@ from .composability import Composability, verify_composability
 from .equilibrium import RouteEquilibrium, verify_equilibrium
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_step
 from .feasibility import RouteFeasibility, verify_feasibility
+from .kinetics import RouteKinetics, verify_kinetics
 from .selectivity import RouteSelectivity, SelectivityTable, verify_selectivity
 from .step import ExperimentRoute
 
@@ -119,6 +121,7 @@ class RouteFit(Digestible):
     selectivity: RouteSelectivity  # which isomer each step makes (sourced regiochemistry, or a loud gap)
     feasibility: RouteFeasibility  # thermodynamic ΔG verdict per step (DERIVED, or a loud UNKNOWN)
     equilibrium: RouteEquilibrium  # equilibrium extent K=exp(-ΔG/RT) per step (DERIVED, or a loud UNKNOWN)
+    kinetics: RouteKinetics        # rate regime per step (bottleneck-dominated); ranking-only, NEVER a grade
 
     @property
     def fits(self) -> bool:
@@ -136,6 +139,8 @@ class RouteFit(Digestible):
             lines.append(f"  FEASIBILITY: {self.feasibility.verdict}")
         if self.equilibrium.verdict != "UNKNOWN":
             lines.append(f"  EQUILIBRIUM: {self.equilibrium.verdict}")
+        if self.kinetics.verdict != "UNKNOWN":
+            lines.append(f"  RATE: {self.kinetics.verdict}")
         return "\n".join(lines)
 
 
@@ -187,6 +192,7 @@ def _step_box_check(step, box: ConstraintBox, equip: tuple[EquipmentItem, ...],
 def fit_route(
     route: ExperimentRoute, box: ConstraintBox, *,
     stability=None, selectivity: SelectivityTable | None = None, thermo=None,
+    kinetics: KineticTable | None = None,
 ) -> RouteFit:
     """Judge whether one route runs on the target bench described by ``box``."""
     if type(route) is not ExperimentRoute:
@@ -195,6 +201,7 @@ def fit_route(
     sel = verify_selectivity(route, table=selectivity)
     feas = verify_feasibility(route, thermo=thermo)
     equi = verify_equilibrium(route, thermo=thermo)
+    kin = verify_kinetics(route, kinetics=kinetics)  # ORTHOGONAL rate; a ranking tiebreaker only, never a grade
 
     exclusions: list[str] = []
     gaps: list[str] = []
@@ -214,16 +221,18 @@ def fit_route(
         status = RouteFitStatus.UNKNOWN
     else:
         status = RouteFitStatus.FITS
-    return RouteFit(route, status, tuple(exclusions), tuple(gaps), comp, sel, feas, equi)
+    return RouteFit(route, status, tuple(exclusions), tuple(gaps), comp, sel, feas, equi, kin)
 
 
 def fit_routes(
     routes, box: ConstraintBox, *,
     stability=None, selectivity: SelectivityTable | None = None, thermo=None,
+    kinetics: KineticTable | None = None,
 ) -> tuple[RouteFit, ...]:
     """Judge every route against the bench ``box`` (order preserved)."""
     return tuple(
-        fit_route(r, box, stability=stability, selectivity=selectivity, thermo=thermo) for r in routes
+        fit_route(r, box, stability=stability, selectivity=selectivity, thermo=thermo, kinetics=kinetics)
+        for r in routes
     )
 
 
@@ -236,7 +245,10 @@ def _route_score(fit: RouteFit) -> tuple:
     (ΔG > 0). Equilibrium (the finer magnitude tiebreaker after feasibility's sign): a route that runs
     ESSENTIALLY_COMPLETE at equilibrium floats above a partial one, above one whose equilibrium is NEGLIGIBLE.
     All three are neutral on ignorance -- we reward a sourced positive and penalize a sourced negative, never
-    a gap.
+    a gap.  A fourth, PHYSICAL tiebreaker rides DEAD LAST (after even the gap/exclusion counts): the rate
+    regime, so that among routes otherwise identical a kinetically FAST route floats and a FROZEN/SLOW one
+    sinks -- also neutral on ignorance (UNKNOWN in the middle), and it NEVER enters any L2 grade (that
+    orthogonality is the whole point of the kinetics module).
     """
     status_rank = {RouteFitStatus.FITS: 0, RouteFitStatus.UNKNOWN: 1, RouteFitStatus.EXCLUDED: 2}
     comp_rank = {"COMPOSABLE": 0, "SINGLE_STEP": 1, "UNKNOWN": 2, "DEGENERATE": 3}
@@ -244,6 +256,10 @@ def _route_score(fit: RouteFit) -> tuple:
     feas_rank = {"FAVORABLE": 0, "BORDERLINE": 1, "UNKNOWN": 1, "UNFAVORABLE": 2}
     eq_rank = {"ESSENTIALLY_COMPLETE": 0, "FAVORABLE": 1, "BALANCED": 2, "UNKNOWN": 2,
                "LIMITED": 3, "NEGLIGIBLE": 4}
+    # LAST-resort rate tiebreaker: sourced FAST floats, sourced FROZEN/SLOW sinks, UNKNOWN sits neutral in the
+    # middle (never a penalty for missing kinetic data).  The final tuple slot => it only orders routes that
+    # tied on every dimension above; it can never outweigh composability/selectivity/feasibility/equilibrium.
+    regime_rank = {"FAST": 0, "MODERATE": 1, "UNKNOWN": 2, "SLOW": 3, "FROZEN": 4}
     return (
         status_rank[fit.status],
         comp_rank.get(fit.composability.verdict, 4),
@@ -252,12 +268,14 @@ def _route_score(fit: RouteFit) -> tuple:
         eq_rank.get(fit.equilibrium.verdict, 2),
         len(fit.gaps),
         len(fit.exclusions),
+        regime_rank.get(fit.kinetics.verdict, 2),
     )
 
 
 def rank_routes(
     routes, box: ConstraintBox | None = None, *,
     stability=None, selectivity: SelectivityTable | None = None, thermo=None,
+    kinetics: KineticTable | None = None,
 ) -> tuple[RouteFit, ...]:
     """Rank routes best-first for a bench (or, with ``box=None``, an unconstrained bench).
 
@@ -267,7 +285,8 @@ def rank_routes(
     FAVORABLE above those that make the minor isomer or are endergonic -- surfacing what is runnable-and-known.
     """
     effective_box = box if box is not None else ConstraintBox()
-    fits = fit_routes(routes, effective_box, stability=stability, selectivity=selectivity, thermo=thermo)
+    fits = fit_routes(routes, effective_box, stability=stability, selectivity=selectivity, thermo=thermo,
+                      kinetics=kinetics)
     return tuple(sorted(fits, key=_route_score))
 
 

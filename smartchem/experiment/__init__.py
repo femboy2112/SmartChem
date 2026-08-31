@@ -93,6 +93,7 @@ from .equilibrium import (
     verify_equilibrium,
 )
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_envelope, equipment_for_step
+from .eyring import RouteEyring, StepEyring, eyring_of_step, rate_agreement, verify_eyring
 from .feasibility import (
     FeasibilityDirection,
     FeasibilityGrade,
@@ -182,6 +183,11 @@ __all__ = [
     "verify_kinetics",
     "reaction_key_of",
     "worst_regime",
+    "RouteEyring",
+    "StepEyring",
+    "eyring_of_step",
+    "verify_eyring",
+    "rate_agreement",
     "SynthesisDAG",
     "DAGCeiling",
     "DAGComposability",

@@ -307,6 +307,17 @@ class ThermoCache:
         return tuple(self._by_key.values())
 
 
+def _registry_cas(name: str) -> str | None:
+    """The CAS registry number for a registered species name, or ``None`` -- the key the NIST CAS->ID
+    convention needs.  The structure registry is imported lazily so :mod:`smartchem.data.autoload` stays
+    free of an import cycle (structure -> parser -> ... would otherwise close a loop at module load)."""
+    from ..structure import structure_by_name
+
+    s = structure_by_name(name)
+    cas = getattr(s, "cas", "") if s is not None else ""
+    return cas or None
+
+
 def autoload_thermo(
     molecules,
     *,
@@ -323,13 +334,15 @@ def autoload_thermo(
     1. **the seed/caller table** (``base``, default :func:`~.thermo_extended.extended_thermo`) -- wins if it
        already resolves the species by its registered ``(formula, name)``, and nothing is fetched;
     2. **the local cache** (keyed by STRUCTURE, so it is stable across runs and identifiers);
-    3. **the NIST WebBook** -- only for a species with a REGISTERED name that resolves via
-       :data:`~.providers.nist_thermo.NIST_IDS`; ``fetch`` defaults to
+    3. **the NIST WebBook** -- for a species resolvable by its registered name OR by its registry CAS number
+       (via :func:`~.providers.nist_thermo.resolve_nist_id`'s CAS->WebBook-ID convention), fetched then
+       CONFIRMED (a CAS-constructed id is trusted only if the fetched page actually carries that CAS -- an
+       identity guard against a convention miss); ``fetch`` defaults to
        :func:`~.providers.nist_thermo.fetch_nist_html` and is overridable (a fake, for offline tests);
     4. **nothing** -- an unresolved species, an unreachable page, or a page missing ΔfH° or S° all leave the
        species simply absent from the returned table (``UNKNOWN`` downstream), never a fabricated record.
     """
-    from .providers.nist_thermo import NIST_IDS, fetch_nist_html, parse_condensed_thermo
+    from .providers.nist_thermo import fetch_nist_html, parse_condensed_thermo, resolve_nist_id
     from .thermo_extended import extended_thermo
 
     base = base if base is not None else extended_thermo()
@@ -354,15 +367,25 @@ def autoload_thermo(
         if cached is not None:
             new_refs.append(cached)
             continue
-        # 3) the NIST WebBook -- only reachable via a REGISTERED name; an unnamed/unresolvable species has
-        #    nothing to query it by and stays absent, exactly like autoload_stability's identifier gate
+        # 3) the NIST WebBook -- reachable by a REGISTERED name OR by the registry's CAS number (the
+        #    CAS->WebBook-ID convention); an unnamed/unresolvable species has nothing to query it by and
+        #    stays absent, exactly like autoload_stability's identifier gate
         if name is None:
             continue
-        nist_id = NIST_IDS.get(name)
+        cas = _registry_cas(name)
+        nist_id = resolve_nist_id(name)
+        confirm_cas = None
+        if nist_id is None and cas is not None:
+            nist_id = resolve_nist_id(cas)  # the CAS convention -- only a CANDIDATE, confirmed just below
+            confirm_cas = cas
         if nist_id is None:
             continue
         page = fetch(nist_id)
         if page is None:
+            continue
+        # identity guard: a CAS-constructed id must serve the RIGHT species -- require the requested CAS to
+        # appear on the fetched page, so a convention miss can never silently attribute another compound here
+        if confirm_cas is not None and confirm_cas not in page:
             continue
         parsed = parse_condensed_thermo(page)
         if parsed is None:

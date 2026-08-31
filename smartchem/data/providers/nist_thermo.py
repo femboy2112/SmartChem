@@ -18,7 +18,7 @@ from __future__ import annotations
 import html
 import re
 
-__all__ = ["parse_condensed_thermo", "fetch_nist_html", "NIST_IDS"]
+__all__ = ["parse_condensed_thermo", "fetch_nist_html", "NIST_IDS", "resolve_nist_id"]
 
 _UA = "smartchem/0.1 (chemistry education; open-data autoload)"
 
@@ -162,3 +162,38 @@ NIST_IDS: dict[str, str] = {
     "ethanol": "C64175",
     "acetic acid": "C64197",
 }
+
+
+#: A CAS Registry Number: 2-7 digits, a 2-digit block, a single check digit (e.g. ``64-17-5``).
+_CAS_RE = re.compile(r"^\d{2,7}-\d{2}-\d$")
+
+
+def _cas_to_nist_id(cas: str) -> str:
+    """NIST WebBook's compound-ID convention: ``"C"`` + the CAS number with its dashes removed
+    (ethanol 64-17-5 -> ``C64175``).  VERIFIED to resolve to the correct page on every real captured
+    fixture (ethanol, acetic acid, methanol, cumene, phenol, 4-aminophenol, acetaminophen -- see the tests).
+    A constructed id is only a CANDIDATE: :func:`~smartchem.data.autoload.autoload_thermo` fetches it and
+    refuses (leaves the species UNKNOWN) unless the page proves its identity (the requested CAS appears on it)
+    AND carries a complete ΔfH°+S° pair -- so a convention miss never becomes a fabricated/mis-attributed
+    record.  This is the CAS->ID resolver the module header once flagged as future work."""
+    return "C" + cas.replace("-", "")
+
+
+def resolve_nist_id(name_or_cas: str) -> str | None:
+    """A registered name OR a CAS registry number -> a NIST WebBook compound ID, or ``None``.
+
+    Supersedes the bare :data:`NIST_IDS` lookup (only two hand-verified names): a species now resolves either
+    by a name in :data:`NIST_IDS` or by its CAS number via the ``"C"``+digits WebBook convention
+    (:func:`_cas_to_nist_id`).  Anything that is neither a known name nor a CAS-shaped string is ``None`` --
+    never guessed.  The convention is confirmed against real captured pages in the suite, and every
+    constructed id is re-confirmed by an actual fetch downstream, so this widens reach to arbitrary
+    CAS-bearing bench targets without ever fabricating a record.
+    """
+    if not isinstance(name_or_cas, str) or not name_or_cas:
+        return None
+    hit = NIST_IDS.get(name_or_cas)
+    if hit is not None:
+        return hit
+    if _CAS_RE.match(name_or_cas):
+        return _cas_to_nist_id(name_or_cas)
+    return None

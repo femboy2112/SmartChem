@@ -165,4 +165,11 @@ PT: Mapping[str, Atom] = MappingProxyType({
     "K": Atom("K", 19, 1, 4, (4.34, 31.81), (0.501,), 227.0, 39.09),
     "Pb": Atom("Pb", 82, 14, 6, (7.41, 15.03, 31.93, 42.32), (0.36,), 154.0, 207.2),
     "I": Atom("I", 53, 17, 5, (10.45, 19.13, 33.0), (3.059, -3.0), 133.0, 126.9),
+    # Br (Z=35, group 17, period 4). All FETCHED this session, never recalled (the PT gate exists to
+    # 'refuse rather than guess'): IE1-3 = 11.81381/21.591/34.871 eV from the NIST Atomic Spectra Database
+    # (Kramida, Ralchenko, Reader & NIST ASD Team, ver. 5.12, 2024), re-fetched and confirmed; EA1 = 3.3636 eV
+    # from Blondel, Cacciani, Delsart & Trainham, Phys. Rev. A 40, 3698 (1989); single-bond covalent radius
+    # 114 pm from Pyykko & Atsumi, Chem. Eur. J. 15, 186 (2009) -- the same set that gives the repo's Cl=99,
+    # I=133; standard atomic weight 79.904 from IUPAC/CIAAW. EA is the fetched EA1 only (no invented 2nd EA).
+    "Br": Atom("Br", 35, 17, 4, (11.814, 21.591, 34.871), (3.364,), 114.0, 79.904),
 })

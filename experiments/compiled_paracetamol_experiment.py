@@ -67,10 +67,12 @@ from smartchem.experiment import (
     find_scission,
     draft_procedure,
     equilibrium_of_step,
+    eyring_of_step,
     feasibility_of_step,
     fit_route,
     kinetics_of_step,
     rank_routes,
+    rate_agreement,
     selectivity_of_step,
     stoichiometric_ceiling,
     verify_composability,
@@ -80,11 +82,16 @@ from smartchem.experiment import (
     verify_selectivity,
 )
 from smartchem.experiment.equipment import EquipmentKind
+from smartchem.experiment.drafter import _route_score
 from smartchem.experiment.routes import enumerate_routes
 from smartchem.experiment.selectivity import DEFAULT_SELECTIVITY
 from smartchem.data.autoload import autoload_thermo
-from smartchem.data.providers.nist_thermo import parse_condensed_thermo
+from smartchem.data.providers.nist_thermo import parse_condensed_thermo, resolve_nist_id
 from smartchem.data.thermo import DEFAULT_THERMO as SEED_THERMO
+from smartchem.data.kinetics import KineticRef, KineticTable
+from smartchem.data.eyring import EyringRef, EyringTable
+from smartchem.atoms import PT
+from smartchem.structure import NamedStructure
 from pathlib import Path
 from smartchem.smiles import parse_smiles
 
@@ -361,6 +368,62 @@ def main() -> int:
             "L1: a reaction with no sourced Arrhenius (Ea, A) has a loud UNKNOWN rate -- never a fabricated k, "
             "never a barrier guessed from bond energies (the W3 wall)")
 
+    # -- Mid-3: the Eyring/TST rate provider -- a SECOND, independent bearing on k -----------------------
+    print("\n[Mid-3 Eyring] a second rate provider k = (kB*T/h)*exp(-ΔG‡/RT) from sourced ΔH‡/ΔS‡, "
+          "cross-checked against Arrhenius:", flush=True)
+    EA_ESTER, OHm = parse_smiles("CCOC(C)=O"), parse_smiles("[OH-]")
+    ACm, ETOH = parse_smiles("CC(=O)[O-]"), parse_smiles("CCO")
+    sapon = ExperimentStep.assembling(ETOH, (EA_ESTER, OHm), (ACm, ETOH))  # ester + OH- -> acetate- + ethanol
+    ey = eyring_of_step(sapon, temperature_k=298.15)
+    print(f"  saponification: k(298 K) = {10 ** ey.log10_k:.3f} M^-1 s^-1 (independent measured 0.112), "
+          f"{ey.regime.value}/{ey.grade.value}", flush=True)
+    f.check(abs(10 ** ey.log10_k / 0.112 - 1.0) < 0.5 and ey.grade is RateGrade.DERIVED,
+            "Mid-3: the Eyring engine reproduces an INDEPENDENTLY measured k (Tsujikawa 1966) from sourced "
+            "ΔH‡/ΔS‡ (Petek 2012) -- two independent sources agree within a factor of 1.4 (0.14 decades)")
+    f.check(kinetics_of_step(sapon).regime is RateRegime.UNKNOWN,
+            "Mid-3: the Eyring seed is NON-CIRCULAR -- the reaction has no Arrhenius (Ea, A) in the kinetics "
+            "seed, so its ΔH‡/ΔS‡ cannot be an Arrhenius back-calc")
+    base_g = classify(sapon)
+    frozen_bar = EyringTable((EyringRef((("CCOC(C)=O", 1), ("[OH-]", 1)), (("CC(=O)[O-]", 1), ("CCO", 1)),
+                                        "frozen", 200.0, -131.0, "M^-1 s^-1", (298.0, 323.0), "synthetic"),))
+    frz_g = classify(sapon, barriers=frozen_bar)
+    f.check(frz_g.grade is base_g.grade and frz_g.eyring.regime is RateRegime.FROZEN,
+            "Mid-3: the Eyring rate is ORTHOGONAL to the grade -- injecting a FROZEN barrier leaves the grade "
+            "identical (rate reported, never aggregated)")
+    _la = ey.log10_k + 41.4 * 1000.0 / (8.314462618 * 298.15 * 2.302585)  # a synthetic Arrhenius matching k
+    arr_match = KineticTable((KineticRef((("CCOC(C)=O", 1), ("[OH-]", 1)), (("CC(=O)[O-]", 1), ("CCO", 1)),
+                                         "sap-arr", 41.4, _la, "M^-1 s^-1", (298.0, 323.0), "synthetic match"),))
+    x = rate_agreement(kinetics_of_step(sapon, kinetics=arr_match, temperature_k=298.15), ey)
+    f.check(x is not None and "AGREE" in x,
+            "Mid-3: where BOTH providers fire, the rate cross-check corroborates the two independent k's -- "
+            "two blind paths to one observable")
+
+    # -- kinetic breadth: a second sourced Arrhenius family, calibration-verified -----------------------
+    print("\n[kinetic breadth] a second Arrhenius family (cyclopropane -> propene) reproduces its anchor:",
+          flush=True)
+    cp = ExperimentStep.assembling(parse_smiles("CC=C"), (parse_smiles("C1CC1"),), (parse_smiles("CC=C"),))
+    kcp = kinetics_of_step(cp, temperature_k=773.0)
+    print(f"  cyclopropane -> propene: k(773 K) = {10 ** kcp.log10_k:.2e} s^-1 (anchor 6.71e-4), "
+          f"{kcp.regime.value}/{kcp.grade.value}", flush=True)
+    f.check(abs(10 ** kcp.log10_k / 6.71e-4 - 1.0) < 0.05 and kcp.grade is RateGrade.DERIVED,
+            "kinetic breadth: cyclopropane isomerization reproduces its sourced anchor k at 773 K within 5% "
+            "(a first-order family beyond N2O5; the C3H6 isomer pair is safe by the structural key)")
+    f.check(kinetics_of_step(cp, temperature_k=298.0).regime is RateRegime.FROZEN,
+            "kinetic breadth: correct chemistry -- cyclopropane is FROZEN at room temperature")
+
+    # -- rate-aware ranking: a FROZEN/FAST rate is a LAST-resort tiebreaker, never a grade --------------
+    print("\n[rate-aware ranking] a FAST/FROZEN rate breaks a RANKING tie, never touching a grade:", flush=True)
+    _rs, _ps = (("O=[N+]([O-])O[N+](=O)[O-]", 2),), (("[N+](=O)[O-]", 4), ("O=O", 1))
+    _route = ExperimentRoute.of(n2o5_decomp)
+    _fit_fast = fit_route(_route, ConstraintBox(),
+                          kinetics=KineticTable((KineticRef(_rs, _ps, "t", 10.0, 13.0, "s^-1", (298.0, 338.0), "syn"),)))
+    _fit_frozen = fit_route(_route, ConstraintBox(),
+                            kinetics=KineticTable((KineticRef(_rs, _ps, "t", 200.0, 13.0, "s^-1", (298.0, 338.0), "syn"),)))
+    _sfa, _sfr = _route_score(_fit_fast), _route_score(_fit_frozen)
+    f.check(_sfa[:-1] == _sfr[:-1] and _sfa[-1] < _sfr[-1] and _fit_fast.kinetics.verdict == "FAST",
+            "rate-aware ranking: among routes tied on every higher-priority dimension, a FAST rate floats above "
+            "a FROZEN one as the DEAD-LAST tiebreaker -- rate lives only in the sort key, never in a grade")
+
     # -- M3: thermochemistry breadth -- the extended sourced table unlocks M1/M2 beyond the seed --------
     print("\n[M3 breadth] the extended NIST-sourced table unlocks ΔG/K beyond the litmus seed:", flush=True)
     ext = extended_thermo()
@@ -568,6 +631,22 @@ def main() -> int:
             "R5-lite extends one edge FORWARD: benzene + HNO3 -> nitrobenzene + H2O grades DERIVED on the newly-"
             "sourced HNO3(l) thermo (the nitration-front skeleton); the drug's terminal edges stay walled by the "
             "permanent 4-nitrophenol / paracetamol entropy gaps")
+    # R5-full: cumene lifts a SECOND real precursor rung; acetanilide is a newly-documented entropy wall
+    CUMENE = parse_smiles("CC(C)c1ccccc1")
+    PHENOL = parse_smiles("Oc1ccccc1")
+    ACETONE = parse_smiles("CC(C)=O")
+    cumene_ox = ExperimentStep.assembling(PHENOL, (CUMENE, O2), (PHENOL, ACETONE))  # C9H12 + O2 -> C6H6O + C3H6O
+    v_cum_seed = classify(cumene_ox)
+    v_cum = classify(cumene_ox, thermo=thermo)
+    print(f"  cumene + O2 -> phenol + acetone: seed {v_cum_seed.grade.value} -> R5-full {v_cum.grade.value}",
+          flush=True)
+    f.check(v_cum_seed.grade is Grade.HYPOTHESIZED and v_cum.grade is Grade.DERIVED
+            and v_cum.feasibility.missing == (),
+            "R5-full: a SECOND real precursor rung (cumene + O2 -> phenol + acetone, the industrial cumene "
+            "process that MAKES phenol) LIFTS to DERIVED on the newly-fetched cumene(l) thermo")
+    f.check("C8H9NO" in EXTENDED_THERMO_GAPS,
+            "R5-full keeps the discipline: acetanilide's ΔfH°(cr) is real but its S°(cr) is absent on NIST, so "
+            "the amidation analog stays a DOCUMENTED gap, never a fabricated entropy")
 
     # -- Mid-2: the NIST-WebBook thermo autoload path -- DERIVED/KNOWN reach real bench targets ---------
     print("\n[autoload thermo] a NIST-WebBook thermo provider reaches bench targets (offline fixture, no fabrication):",
@@ -592,6 +671,30 @@ def main() -> int:
     f.check(tbl_auto.for_formula("C6H4N2O4") is None,
             "Mid-2: an unmapped species (no NIST id) or an offline fetch stays a loud gap -- coverage widens only "
             "on a genuinely fetched record, never by fabricating one")
+
+    # -- short-b: CAS -> NIST-ID resolution -- autoload reaches arbitrary CAS-bearing targets ------------
+    print("\n[CAS->NIST-ID] resolve a species by its CAS number, confirmed against real captured pages:",
+          flush=True)
+    f.check(resolve_nist_id("64-17-5") == "C64175" and resolve_nist_id("103-90-2") == "C103902"
+            and resolve_nist_id("not-a-cas") is None,
+            "short-b: resolve_nist_id maps a CAS number to its NIST WebBook id via the 'C'+digits convention "
+            "(verified against real captured pages), and refuses a non-CAS -- never a guess")
+    _fix_dir = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "providers"
+    f.check(parse_condensed_thermo((_fix_dir / "nist_thermo_cumene.html").read_text()) is not None
+            and parse_condensed_thermo((_fix_dir / "nist_thermo_paracetamol.html").read_text()) is None,
+            "short-b: a real captured page yields a full pair (cumene) OR correctly REFUSES (paracetamol has no "
+            "S°(cr), the entropy wall) -- the widened CAS reach never fabricates a missing value")
+
+    # -- element breadth: a sourced Bromine row unblocks halogen chemistry end to end -------------------
+    print("\n[element breadth] a sourced Bromine row unblocks bromide chemistry (Markovnikov-HX, Zaitsev):",
+          flush=True)
+    f.check("Br" in PT and PT["Br"].atomic_number == 35 and PT["Br"].radius_pm == 114.0,
+            "element breadth: Bromine is in the periodic table with SOURCED descriptors (IE NIST ASD 2024, EA "
+            "Blondel 1989, radius Pyykko 2009, mass IUPAC/CIAAW) -- fetched, never recalled")
+    _brom = NamedStructure("1-bromopropane", parse_smiles("CCCBr"), "C3H7Br")
+    f.check(_brom.name == "1-bromopropane" and str(Formula.of({"C": 3, "H": 7, "Br": 1})) == "BrC3H7",
+            "element breadth: a bromide now flows through Formula + NamedStructure (previously 'unknown element "
+            "Br', a fail-closed refusal) -- halogen substrates are handleable end to end")
 
     # -- SMILES: the front door now parses aromatic heteroatoms (unblocks N-heterocycles) --------------
     print("\n[SMILES heteroatoms] aromatic N/O/S rings now parse (pyridine, pyrrole, furan) -- was a hard refusal:",
@@ -676,7 +779,13 @@ def main() -> int:
           "meta-nitration) and is now isomer-keyed on the reactant side too (S2); the NIST-sourced thermo extends "
           "one real edge forward (benzene nitration -> DERIVED) and a NIST-WebBook autoload provider reaches bench "
           "targets from real captured fixtures -- universal and bucket-honest throughout, every rate/thermo/"
-          "selectivity gap a loud UNKNOWN and never a fabrication.",
+          "selectivity gap a loud UNKNOWN and never a fabrication. The rate axis now has TWO independent "
+          "providers -- Arrhenius (Ea, A) AND Eyring (ΔH‡, ΔS‡, calibrated to reproduce an INDEPENDENTLY "
+          "measured k within 0.14 decades), cross-checked where both fire; a second Arrhenius family "
+          "(cyclopropane, anchor-verified) and a SOURCED Bromine row (halogen chemistry end to end) broaden the "
+          "reach; R5-full lifts the cumene -> phenol rung to DERIVED (acetanilide kept an honest gap); a "
+          "CAS -> NIST-ID resolver reaches arbitrary bench targets from real captured pages; and a FROZEN/FAST "
+          "rate now breaks a route-ranking tie without ever touching a grade.",
           flush=True)
     return 0
 

@@ -334,8 +334,12 @@ class TestDefaultsAndDelegation:
 #: Measured 2026-07-26 and pinned. If a legitimate change grows a table, this fails and the
 #: roster is updated in the same commit -- which is the point, because the change then has
 #: to be looked at rather than absorbed.
+#: 2026-08-31: "Br" added -- the element-set-breadth goal put a SOURCED bromine row into the
+#: periodic table (smartchem/atoms.py: IE NIST ASD 2024, EA Blondel 1989, radius Pyykko 2009,
+#: mass IUPAC/CIAAW) so halogen chemistry (Markovnikov-HX, Zaitsev) is handleable. This is the
+#: guard doing its job: the roster grew, so the change was reviewed.
 _HEURISTIC_ROSTER = frozenset({
-    "C", "Cl", "Cu", "D", "F", "Fe", "H", "He", "I", "K", "Kr", "Mg", "Mn", "Mo",
+    "Br", "C", "Cl", "Cu", "D", "F", "Fe", "H", "He", "I", "K", "Kr", "Mg", "Mn", "Mo",
     "N", "Na", "O", "Og", "P", "Pb", "Pd", "Pt", "Ru", "S", "Si", "T", "Xe", "Zn",
 })
 
@@ -421,9 +425,9 @@ class TestTheElementAxisIsProvenAndNotMerelyDeclared:
         Guards the laziest possible mutant: one shared element table behind both oracles.
         Twelve symbols are heuristic-only and seven are PySCF-only.
         """
-        assert len(_HEURISTIC_ROSTER & _PYSCF_DZ_ROSTER) == 15
+        assert len(_HEURISTIC_ROSTER & _PYSCF_DZ_ROSTER) == 16  # Br now in BOTH (added to the heuristic table)
         assert len(_HEURISTIC_ROSTER - _PYSCF_DZ_ROSTER) == 13
-        assert len(_PYSCF_DZ_ROSTER - _HEURISTIC_ROSTER) == 8
+        assert len(_PYSCF_DZ_ROSTER - _HEURISTIC_ROSTER) == 7   # Br left the PySCF-only set for the overlap
 
 
 class TestTheMeetIsAValueAndBehavesLikeOne:

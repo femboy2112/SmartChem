@@ -67,6 +67,7 @@ from enum import Enum
 
 from ..category import ConservationError, Molecule
 from ..contracts import Digestible
+from ..data.eyring import DEFAULT_EYRING, EyringTable
 from ..data.kinetics import DEFAULT_KINETICS, KineticTable
 from ..data.stability import DEFAULT_STABILITY, StabilityTable
 from ..data.thermo import DEFAULT_THERMO, ThermoTable
@@ -79,6 +80,7 @@ from .dag import (
     dag_composability,
 )
 from .equilibrium import equilibrium_of_step, verify_equilibrium
+from .eyring import eyring_of_step, rate_agreement, verify_eyring
 from .feasibility import FeasibilityGrade, StepFeasibility, feasibility_of_step, verify_feasibility
 from .kinetics import kinetics_of_step, verify_kinetics, worst_regime
 from .selectivity import (
@@ -131,9 +133,11 @@ class UnifiedVerdict(Digestible):
     otherwise); ``conserves`` is the mass/charge bookkeeping outcome; ``findings`` are the labelled
     :class:`~smartchem.experiment.bucket.Quantity` values each rung contributed (so the verdict carries its
     own bucketed evidence); the sub-verdict fields hold the composed rung objects (``None`` where a rung does
-    not apply -- a single step has no composability); ``notes`` are the per-rung human reasons.  ``kinetics``
-    is the ORTHOGONAL rate dimension: reported alongside the grade, it never enters it (a ``KNOWN`` reaction
-    with a ``FROZEN`` or ``UNKNOWN`` rate is still ``KNOWN``).
+    not apply -- a single step has no composability); ``notes`` are the per-rung human reasons.
+    ``kinetics`` (Arrhenius) and ``eyring`` (transition-state) are the ORTHOGONAL rate dimension -- TWO
+    INDEPENDENT providers of the same observable ``k``, reported alongside the grade but NEVER entering it (a
+    ``KNOWN`` reaction with a ``FROZEN`` or ``UNKNOWN`` rate is still ``KNOWN``); where both fire, a rate
+    cross-check note corroborates or flags the two.
     """
 
     grade: Grade
@@ -147,6 +151,7 @@ class UnifiedVerdict(Digestible):
     selectivity: Digestible | None
     composability: Digestible | None
     kinetics: Digestible | None = None
+    eyring: Digestible | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.grade, Grade):
@@ -225,6 +230,7 @@ def classify_step(
     thermo: ThermoTable = DEFAULT_THERMO,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
     kinetics: KineticTable = DEFAULT_KINETICS,
+    barriers: EyringTable = DEFAULT_EYRING,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade one conserving :class:`ExperimentStep` -- the atomic case of the unified classifier.
@@ -240,6 +246,7 @@ def classify_step(
     equi = equilibrium_of_step(step, thermo=thermo, temperature_k=temperature_k)
     sel = selectivity_of_step(step, table=selectivity)
     kin = kinetics_of_step(step, kinetics=kinetics, temperature_k=temperature_k)
+    eyr = eyring_of_step(step, barriers=barriers, temperature_k=temperature_k)
     grade = _step_grade(feas, sel, step.is_declared)  # rate is deliberately NOT an input -- it is orthogonal
 
     if grade is Grade.KNOWN:
@@ -261,9 +268,15 @@ def classify_step(
 
     findings = (_conservation_finding(), feas.finding, equi.k_finding, sel.finding, kin.k_finding)
     notes = (feas.reason, equi.reason, sel.reason, kin.reason)
+    if eyr.is_known:  # the second (Eyring) rate provider speaks only when it has sourced (ΔH‡, ΔS‡)
+        findings = (*findings, eyr.k_finding)
+        notes = (*notes, eyr.reason)
+        agreement = rate_agreement(kin, eyr)
+        if agreement is not None:  # both providers fired -> cross-check the two independent k's
+            notes = (*notes, agreement)
     return UnifiedVerdict(
         grade, headline, None, True, findings, notes,
-        feasibility=feas, equilibrium=equi, selectivity=sel, composability=None, kinetics=kin,
+        feasibility=feas, equilibrium=equi, selectivity=sel, composability=None, kinetics=kin, eyring=eyr,
     )
 
 
@@ -275,6 +288,7 @@ def classify_reaction(
     thermo: ThermoTable = DEFAULT_THERMO,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
     kinetics: KineticTable = DEFAULT_KINETICS,
+    barriers: EyringTable = DEFAULT_EYRING,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade ANY formal combination ``reactants -> products`` -- the universal front door.
@@ -321,7 +335,8 @@ def classify_reaction(
             )
         raise  # a genuine usage error (empty reactants, target not a product): not a chemistry verdict
     return classify_step(
-        step, thermo=thermo, selectivity=selectivity, kinetics=kinetics, temperature_k=temperature_k
+        step, thermo=thermo, selectivity=selectivity, kinetics=kinetics, barriers=barriers,
+        temperature_k=temperature_k,
     )
 
 
@@ -337,6 +352,7 @@ def classify_route(
     stability: StabilityTable = DEFAULT_STABILITY,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
     kinetics: KineticTable = DEFAULT_KINETICS,
+    barriers: EyringTable = DEFAULT_EYRING,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade a linear :class:`ExperimentRoute` -- worst-step-dominated, a ``DEGENERATE`` handoff => REFUTED."""
@@ -347,6 +363,7 @@ def classify_route(
     requi = verify_equilibrium(route, thermo=thermo, temperature_k=temperature_k)
     rsel = verify_selectivity(route, table=selectivity)
     rkin = verify_kinetics(route, kinetics=kinetics, temperature_k=temperature_k)  # orthogonal rate dimension
+    reyr = verify_eyring(route, barriers=barriers, temperature_k=temperature_k)  # second (Eyring) rate provider
 
     findings = (_conservation_finding(),)
     if comp.verdict == "DEGENERATE":
@@ -359,6 +376,7 @@ def classify_route(
         return UnifiedVerdict(
             Grade.REFUTED, headline, law, True, findings, comp.degenerate_reasons,
             feasibility=rfeas, equilibrium=requi, selectivity=rsel, composability=comp, kinetics=rkin,
+            eyring=reyr,
         )
 
     step_grades = tuple(
@@ -381,6 +399,7 @@ def classify_route(
     return UnifiedVerdict(
         grade, headline, None, True, findings, notes,
         feasibility=rfeas, equilibrium=requi, selectivity=rsel, composability=comp, kinetics=rkin,
+        eyring=reyr,
     )
 
 
@@ -394,7 +413,12 @@ def classify_dag(
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade a convergent :class:`~smartchem.experiment.dag.SynthesisDAG` -- the same worst-step-dominated
-    rule over a partial order instead of a chain, reusing M4's per-edge composability and per-step rungs."""
+    rule over a partial order instead of a chain, reusing M4's per-edge composability and per-step rungs.
+
+    The transition-state (Eyring) rate axis is not threaded at the DAG level: like the per-step feasibility /
+    selectivity FIELDS (which this function stores as ``None``, surfacing only aggregate verdicts in the
+    notes), the DAG deliberately carries a reduced rung fidelity.  ``classify_step`` and ``classify_route``
+    carry the full Eyring rate axis and its Arrhenius cross-check."""
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
     comp = dag_composability(dag, stability=stability)
@@ -447,6 +471,7 @@ def classify(
     stability: StabilityTable = DEFAULT_STABILITY,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
     kinetics: KineticTable = DEFAULT_KINETICS,
+    barriers: EyringTable = DEFAULT_EYRING,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade any built formal combination -- a step, a linear route, or a convergent DAG -- with one verdict.
@@ -456,12 +481,13 @@ def classify(
     """
     if type(subject) is ExperimentStep:
         return classify_step(
-            subject, thermo=thermo, selectivity=selectivity, kinetics=kinetics, temperature_k=temperature_k
+            subject, thermo=thermo, selectivity=selectivity, kinetics=kinetics, barriers=barriers,
+            temperature_k=temperature_k,
         )
     if type(subject) is ExperimentRoute:
         return classify_route(
             subject, thermo=thermo, stability=stability, selectivity=selectivity, kinetics=kinetics,
-            temperature_k=temperature_k,
+            barriers=barriers, temperature_k=temperature_k,
         )
     if type(subject) is SynthesisDAG:
         return classify_dag(

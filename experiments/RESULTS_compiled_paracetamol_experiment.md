@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (78/78), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (92/92), exit 0**
 
 ## The question
 
@@ -232,3 +232,42 @@ for lack of sourced data (R5-full — now a *shorter* gap: the nitration front i
 reach any NIST-tabulated bench target once its ID is resolved); Mid-3 TST ΔG‡ (Eyring) reuses the L1 shape but stays
 `UNKNOWN` until barrier data is sourced; the permanent physical W3 wall — which cleavage Nature takes, at what real
 rate — is never certified.
+
+## The short/mid arc II (this session): a SECOND rate provider, halogens, arbitrary-target reach
+
+The *next* tier of six goals — again recon-first, web-sourced-with-provenance, adversarially built (an
+acceptance-gate run caught a real dispatcher bug — the `barriers` kwarg dropped on the step branch — before it
+shipped). Gate **79→92**, full suite **2245→2281**, zero regressions, every changed file ruff-clean.
+
+- **Mid-3 Eyring — a SECOND, independent rate provider.** `data/eyring.py` + `experiment/eyring.py` add
+  `k = (kB·T/h)·exp(−ΔG‡/RT)` from sourced activation parameters `(ΔH‡, ΔS‡)`, *reusing* the Arrhenius provider's
+  regime bands, canonical-structure keying, and overflow-safe log-space math (one rate axis, two providers). Seeded
+  with **ethyl-acetate saponification** — ΔH‡ = 38.6 kJ/mol, ΔS‡ = −131.0 J/mol/K (Petek & Krajnc 2012, TST-derived
+  *separately* from the Arrhenius fit — the non-circularity requirement). **Calibrated against an INDEPENDENT
+  measured k** (Tsujikawa & Inoue 1966, 0.112 M⁻¹s⁻¹): the engine reproduces it within **0.14 decades** — two
+  independent sources, 46 years apart, agreeing. Where both providers fire, a **cross-check** corroborates or flags
+  the two k's (two blind paths to one observable). The Eyring rate is **orthogonal to the grade** (a FROZEN barrier
+  never moves it — proven *through the dispatcher*). The two SI-2019-exact constants kB/h are the only new physics; a
+  barrier is never back-computed from Arrhenius or from ground-state thermo (a saddle has no formation enthalpy).
+- **Element breadth — halogen chemistry, end to end.** A single missing periodic-table row (Bromine) fail-closed
+  *every* bromide. Added with **fetched** descriptors: IE₁₋₃ (NIST ASD, Kramida 2024, re-fetched and confirmed), EA₁
+  (Blondel 1989), single-bond covalent radius 114 pm (Pyykkö & Atsumi 2009 — the same set that gives the repo's
+  Cl=99/I=133), mass (IUPAC/CIAAW). `NamedStructure('1-bromopropane', …)` — previously `unknown element 'Br'` — now
+  builds; Markovnikov-HX and Zaitsev substrates are handleable. The hand-written element-roster guard fired and was
+  updated *in the same commit* — the review the guard exists to force.
+- **CAS→NIST-ID resolution — arbitrary bench targets.** `resolve_nist_id` maps a species by name OR CAS number (the
+  `"C"`+digits WebBook convention, **verified against real captured pages** for six species), wired into
+  `autoload_thermo` with a **page-must-carry-the-CAS identity guard** so a convention miss can never mis-attribute
+  another compound's thermo. Methanol (registered, absent from the old 2-name table) is now reached via its CAS; a
+  real captured page yields a full pair (cumene) OR correctly refuses (paracetamol — no S°(cr), the entropy wall).
+- **R5-full — a second real precursor rung lifts.** FETCHED cumene(l) ΔfH°/S° (Prosen 1945 / Kishimoto 1973, off the
+  raw NIST page) lifts **cumene + O₂ → phenol + acetone** (the industrial cumene process) to DERIVED. Acetanilide's
+  ΔfH°(cr) is real but its S°(cr) is absent on NIST, so the amidation analog stays a **documented gap** — the
+  "no entropy, no record" discipline, on real data.
+- **Kinetic breadth — a second Arrhenius family.** Cyclopropane → propene (Ea 272 kJ/mol, log₁₀A 15.20, Atkins Table
+  22.4); the engine reproduces the sourced anchor **k = 6.71×10⁻⁴ s⁻¹ at 773 K within ~1.5%**, and is correctly
+  **FROZEN at room temperature**. A same-formula isomer pair (C₃H₆) kept distinct by the structural key.
+  Saponification's units-ambiguous Arrhenius A is a documented gap (its rate comes from the Eyring provider instead).
+- **Rate-aware ranking — a physical tiebreaker, never a grade.** `drafter._route_score` gains a final tuple tier: a
+  sourced FAST rate floats and a FROZEN one sinks *only* among routes tied on every higher-priority dimension;
+  UNKNOWN sits neutral (never a penalty for missing data). Ranking-only — it never touches any L2 grade.

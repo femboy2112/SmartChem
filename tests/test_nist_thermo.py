@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 from smartchem.data.autoload import ThermoCache, autoload_thermo
-from smartchem.data.providers.nist_thermo import NIST_IDS, parse_condensed_thermo
+from smartchem.data.providers.nist_thermo import NIST_IDS, parse_condensed_thermo, resolve_nist_id
 from smartchem.data.thermo import DEFAULT_THERMO
 from smartchem.smiles import parse_smiles
 
@@ -20,6 +20,9 @@ _FIX = Path(__file__).parent / "fixtures" / "providers"
 
 ETHANOL_HTML = (_FIX / "nist_thermo_ethanol.html").read_text()
 ACETIC_ACID_HTML = (_FIX / "nist_thermo_aceticacid.html").read_text()
+METHANOL_HTML = (_FIX / "nist_thermo_methanol.html").read_text()
+PARACETAMOL_HTML = (_FIX / "nist_thermo_paracetamol.html").read_text()
+CUMENE_HTML = (_FIX / "nist_thermo_cumene.html").read_text()
 
 #: A minimal condensed-phase table with a ΔfH°liquid row but no S° row at all -- the "no entropy, no
 #: record" case, built by hand rather than trimmed from a fixture so the missing row is unambiguous.
@@ -84,14 +87,80 @@ class TestAutoloadThermo:
         assert -278.5 <= rec.dhf_kj_per_mol <= -274.5
         assert rec.phase == "liquid"
 
-    def test_a_species_with_no_nist_ids_entry_stays_absent(self):
-        methanol = parse_smiles("CO")  # registered by name, but NOT in NIST_IDS
+    def test_a_registered_species_absent_from_nist_ids_is_reached_via_its_cas(self):
+        # Methanol is registered (name + CAS 67-56-1) but NOT one of the two hand-verified NIST_IDS names.
+        # The CAS->WebBook-ID convention (67-56-1 -> C67561) now reaches it -- the widened arbitrary-target
+        # reach, and NOT a new hardcode (methanol is still absent from NIST_IDS).
+        methanol = parse_smiles("CO")
         assert "methanol" not in NIST_IDS
+        assert resolve_nist_id("67-56-1") == "C67561"
 
         def fake_fetch(nist_id: str) -> str:
-            raise AssertionError("should never be called: methanol has no NIST_IDS entry")
+            assert nist_id == "C67561"  # resolved via CAS, not a NIST_IDS name
+            return METHANOL_HTML
 
         with tempfile.TemporaryDirectory() as d:
             cache = ThermoCache.load(os.path.join(d, "c.json"))
             table = autoload_thermo([methanol], base=DEFAULT_THERMO, fetch=fake_fetch, cache=cache)
-        assert table.for_named("CH4O", "methanol") is None
+        rec = table.for_named("CH4O", "methanol")
+        assert rec is not None
+        assert rec.s_j_per_mol_k == 127.19  # Carlson & Westrum 1971, read off the real captured page
+        assert rec.phase == "liquid"
+
+    def test_the_identity_guard_refuses_a_page_that_does_not_carry_the_requested_cas(self):
+        # If a CAS-constructed id ever served the WRONG species, the fetched page would not carry the CAS we
+        # asked for.  The guard must refuse (stay absent) rather than attribute another compound's thermo.
+        methanol = parse_smiles("CO")
+        assert "67-56-1" not in ETHANOL_HTML  # ethanol's page carries 64-17-5, not methanol's CAS
+
+        def wrong_species_fetch(nist_id: str) -> str:
+            return ETHANOL_HTML  # a real page, but for the wrong compound
+
+        with tempfile.TemporaryDirectory() as d:
+            cache = ThermoCache.load(os.path.join(d, "c.json"))
+            table = autoload_thermo([methanol], base=DEFAULT_THERMO, fetch=wrong_species_fetch, cache=cache)
+        assert table.for_named("CH4O", "methanol") is None  # mis-attribution refused, not silently accepted
+
+    def test_a_species_with_no_registered_name_stays_absent_and_is_never_fetched(self):
+        # No registered name => nothing to look up an id or a CAS by => absent, and fetch is never called.
+        unnamed = parse_smiles("CCCCCCCCCC")  # decane: not in the structure registry
+
+        def fake_fetch(nist_id: str) -> str:
+            raise AssertionError("should never be called: an unnamed species has no id to query")
+
+        with tempfile.TemporaryDirectory() as d:
+            cache = ThermoCache.load(os.path.join(d, "c.json"))
+            table = autoload_thermo([unnamed], base=DEFAULT_THERMO, fetch=fake_fetch, cache=cache)
+        assert table.for_formula("C10H22") is None  # nothing added; the fail-closed gate held
+
+
+class TestResolveNistId:
+    def test_a_hand_verified_name_resolves(self):
+        assert resolve_nist_id("ethanol") == NIST_IDS["ethanol"] == "C64175"
+
+    def test_a_cas_number_resolves_by_the_webbook_convention(self):
+        assert resolve_nist_id("64-17-5") == "C64175"     # ethanol
+        assert resolve_nist_id("103-90-2") == "C103902"   # acetaminophen
+        assert resolve_nist_id("98-82-8") == "C98828"     # cumene
+
+    def test_neither_a_name_nor_a_cas_is_none_never_guessed(self):
+        assert resolve_nist_id("definitely not a cas") is None
+        assert resolve_nist_id("") is None
+        assert resolve_nist_id("C64175") is None  # an id is neither a known name nor a CAS -> not re-resolved
+
+    def test_the_cas_convention_is_confirmed_against_real_captured_pages(self):
+        # The "C"+CAS-without-dashes convention is VERIFIED, not assumed: for each real captured page the
+        # constructed id matches AND the page proves its identity by carrying that CAS.
+        for cas, cid, html_text in [
+            ("98-82-8", "C98828", CUMENE_HTML),
+            ("103-90-2", "C103902", PARACETAMOL_HTML),
+            ("67-56-1", "C67561", METHANOL_HTML),
+        ]:
+            assert resolve_nist_id(cas) == cid
+            assert cas in html_text  # identity: the constructed id really served THIS species
+
+    def test_the_real_pages_full_pair_vs_fail_closed(self):
+        # cumene's real page yields a complete pair; the drug's real page correctly REFUSES (no S(cr)).
+        cumene = parse_condensed_thermo(CUMENE_HTML)
+        assert cumene is not None and cumene["dhf_kj_per_mol"] == -41.2 and cumene["phase"] == "liquid"
+        assert parse_condensed_thermo(PARACETAMOL_HTML) is None  # fail-closed: the paracetamol entropy wall

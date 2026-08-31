@@ -12,10 +12,12 @@ from smartchem.contracts import EvidenceStatus
 from smartchem.experiment.drafter import (
     ConstraintBox,
     RouteFitStatus,
+    _route_score,
     draft_procedure,
     fit_route,
     rank_routes,
 )
+from smartchem.data.kinetics import KineticRef, KineticTable
 from smartchem.experiment.equipment import EquipmentKind
 from smartchem.experiment.step import ExperimentRoute, ExperimentStep
 from smartchem.smiles import parse_smiles
@@ -57,6 +59,38 @@ class TestRanking:
         ranked = rank_routes([_ketene_route(), _anhydride_route()])
         assert ranked[0].route == _anhydride_route()  # the real synthesis, not the ketene path
         assert ranked[-1].composability.verdict == "DEGENERATE"
+
+
+class TestRateAwareRanking:
+    """A FROZEN/SLOW rate is a LAST-resort ranking tiebreaker only -- it never touches a grade."""
+
+    def _n2o5_route(self):
+        a = parse_smiles("O=[N+]([O-])O[N+](=O)[O-]")
+        n = parse_smiles("[N+](=O)[O-]")
+        o = parse_smiles("O=O")
+        return ExperimentRoute.of(ExperimentStep.assembling(o, (a, a), (n, n, n, n, o)))
+
+    def _table(self, ea, log10a):
+        rs = (("O=[N+]([O-])O[N+](=O)[O-]", 2),)
+        ps = (("[N+](=O)[O-]", 4), ("O=O", 1))
+        return KineticTable((KineticRef(rs, ps, "t", ea, log10a, "s^-1", (298.0, 338.0), "synthetic test"),))
+
+    def test_rate_is_the_last_resort_tiebreaker_fast_floats_frozen_sinks(self):
+        route, box = self._n2o5_route(), ConstraintBox()
+        fast = fit_route(route, box, kinetics=self._table(10.0, 13.0))     # low barrier -> FAST
+        frozen = fit_route(route, box, kinetics=self._table(200.0, 13.0))  # high barrier -> FROZEN
+        empty = fit_route(route, box, kinetics=KineticTable(()))           # no data -> UNKNOWN
+        sf, sfr, se = _route_score(fast), _route_score(frozen), _route_score(empty)
+        assert len(sf) == 8                     # a rate tier was appended as the final element
+        assert sf[:-1] == sfr[:-1] == se[:-1]   # tied on every prior (higher-priority) dimension
+        assert sf[-1] < se[-1] < sfr[-1]        # FAST < UNKNOWN(neutral middle) < FROZEN
+        assert fast.kinetics.verdict == "FAST" and frozen.kinetics.verdict == "FROZEN"
+
+    def test_unknown_rate_is_neutral_never_a_penalty_for_missing_data(self):
+        route, box = self._n2o5_route(), ConstraintBox()
+        empty = _route_score(fit_route(route, box, kinetics=KineticTable(())))
+        frozen = _route_score(fit_route(route, box, kinetics=self._table(200.0, 13.0)))
+        assert empty[-1] < frozen[-1]  # UNKNOWN (2) ranks better than a sourced FROZEN (4), never worse
 
 
 class TestConstraintFitting:

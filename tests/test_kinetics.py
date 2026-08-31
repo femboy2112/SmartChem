@@ -215,3 +215,37 @@ class TestRouteAggregation:
         assert len(rk.per_step) == 1
         assert all(type(s) is StepKinetics for s in rk.per_step)
         assert rk.verdict == rk.per_step[0].regime.value
+
+
+class TestKineticBreadth:
+    """A second sourced Arrhenius family: cyclopropane -> propene, calibration-verified against its anchor."""
+
+    def _cyclopropane(self) -> ExperimentStep:
+        return ExperimentStep.assembling(
+            parse_smiles("CC=C"), (parse_smiles("C1CC1"),), (parse_smiles("CC=C"),)
+        )
+
+    def test_cyclopropane_is_in_the_default_seed(self) -> None:
+        assert "cyclopropane isomerization" in {r.name for r in SEED_KINETIC_REFS}
+
+    def test_the_engine_reproduces_the_sourced_anchor_k_at_773K(self) -> None:
+        # Atkins Table 22.1 anchor: k = 6.71e-4 s^-1 at 773 K (500 C). The instrument must recover it.
+        sk = kinetics_of_step(self._cyclopropane(), temperature_k=773.0)
+        assert math.isclose(10.0 ** sk.log10_k, 6.71e-4, rel_tol=0.05)  # within 5% (actually ~1.5%)
+        assert sk.grade is RateGrade.DERIVED  # 773 K inside the 700-800 K window
+
+    def test_cyclopropane_is_frozen_at_room_temperature(self) -> None:
+        # Correct chemistry: cyclopropane does not isomerize at RT; a FROZEN, flagged-extrapolated read.
+        sk = kinetics_of_step(self._cyclopropane(), temperature_k=298.0)
+        assert sk.regime is RateRegime.FROZEN
+        assert sk.grade is RateGrade.PREDICTED  # 298 K far outside the 700-800 K fit window
+
+    def test_the_c3h6_isomer_pair_is_kept_distinct_by_the_structural_key(self) -> None:
+        # cyclopropane and propene are both C3H6; the reverse must NOT inherit the forward rate.
+        rev = ExperimentStep.assembling(
+            parse_smiles("C1CC1"), (parse_smiles("CC=C"),), (parse_smiles("C1CC1"),)
+        )
+        assert kinetics_of_step(rev).regime is RateRegime.UNKNOWN
+
+    def test_the_saponification_arrhenius_units_gap_is_documented(self) -> None:
+        assert any("saponification" in k for k in KINETIC_GAPS)

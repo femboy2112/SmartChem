@@ -46,6 +46,11 @@ whose 298 K standard-state ΔfH° AND S° both genuinely exist as a same-phase p
 to ``DERIVED`` (a real ΔG at the 298.15 K reference).  Sourcing **nitric acid** (HNO3, pure-liquid NBS-1982
 pair) now extends the DERIVED reach ONE real edge FORWARD: ``benzene + HNO3 -> nitrobenzene + H2O`` grades
 DERIVED and strongly favorable -- the aromatic nitration-front, the precursor skeleton of the route.
+Sourcing **cumene** (isopropylbenzene, liquid pair from the raw NIST WebBook page) lifts a second real
+precursor rung: ``cumene + O2 -> phenol + acetone`` (the industrial cumene process that MAKES phenol, both
+products already sourced) grades DERIVED.  **Acetanilide** was fetched the same way and DELIBERATELY refused
+-- its ΔfH°(cr) is real but the page carries no S°(cr), so the amidation analog of the drug-forming step
+stays an honest gap (see :data:`EXTENDED_THERMO_GAPS`), never a fabricated entropy.
 
 But do not mistake that for reaching the drug.  The TERMINAL literal descent to paracetamol does NOT lift,
 and the wall is permanent and named: ``phenol -> 4-nitrophenol -> 4-aminophenol`` (nitration then reduction)
@@ -129,6 +134,14 @@ EXTENDED_THERMO_REFS: tuple[ThermoRef, ...] = (
         "Chemistry Wikibook. Pure-LIQUID row (distinct from the aqueous -207.4/146.4 and gas -134.3 "
         "values — the correct phase); NBS-1982 lineage, not a CODATA Key Values species.",
     ),
+    ThermoRef(
+        "C9H12", "cumene", -41.2, 277.57, "liquid",
+        f"ΔfH°(l) -41.2 (Prosen, Gilmont et al. 1945, combustion cal.); S°(l) 277.57 "
+        f"(Kishimoto, Suga et al. 1973, calorimetry); {_NIST}. FETCHED from the raw cbook.cgi Mask=2 page "
+        f"(ID C98828) this pass and phase-checked (liquid ΔfH° paired with liquid S°); lifts "
+        f"'cumene + O2 -> phenol + acetone' (the cumene process that industrially MAKES phenol) to DERIVED, "
+        f"both products already sourced.",
+    ),
 )
 
 
@@ -157,6 +170,15 @@ EXTENDED_THERMO_GAPS: dict[str, str] = {
         "but NO standard molar entropy S°(298 K) exists in any phase on the NIST WebBook (only a 283 K Cp "
         "point, Campbell & Campbell 1941) -> ΔG cannot be formed without fabricating S°; refused. A fourth "
         "instance of the same 'no entropy, no record' gap as paracetamol / 4-aminophenol / acetic anhydride"
+    ),
+    "C8H9NO": (
+        "acetanilide (N-phenylacetamide): ΔfH°(cr) IS sourced (-209.5±1.5 Sato-Toshima, Kamagughi et al. "
+        "1983; -209.4±1.0 Johnson 1975, both combustion cal.), FETCHED from the raw NIST WebBook cbook.cgi "
+        "Mask=2 page (ID C103844) this pass, but that page carries NO standard molar entropy S°(cr) row -> "
+        "ΔG cannot be formed without fabricating S°; refused. The N-acetylation analog "
+        "'aniline + acetic acid -> acetanilide + water' -- the SAME amidation class as the paracetamol "
+        "acetylation -- therefore stays HYPOTHESIZED on the entropy gap. A fifth instance of the same "
+        "'no entropy, no record' gap; the ΔfH° is real, the entropy is genuinely absent, not recalled"
     ),
 }
 

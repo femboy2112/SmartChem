@@ -50,6 +50,16 @@ from .composability import (
     TransitionStatus,
     verify_composability,
 )
+from .dag import (
+    DAGCeiling,
+    DAGComposability,
+    DAGError,
+    DAGVerification,
+    SynthesisDAG,
+    dag_ceiling,
+    dag_composability,
+    verify_dag,
+)
 from .drafter import (
     ConstraintBox,
     DraftedProcedure,
@@ -139,4 +149,12 @@ __all__ = [
     "RouteEquilibrium",
     "equilibrium_of_step",
     "verify_equilibrium",
+    "SynthesisDAG",
+    "DAGCeiling",
+    "DAGComposability",
+    "DAGVerification",
+    "DAGError",
+    "dag_ceiling",
+    "dag_composability",
+    "verify_dag",
 ]

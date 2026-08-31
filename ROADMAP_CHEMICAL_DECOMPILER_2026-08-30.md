@@ -1429,3 +1429,44 @@ missing precursor, but a real convergent synthesis is a DAG -- two sub-routes fe
 shape. (Further thermo reach -- drug-sized S° via low-T Cp integration or stat-mech from computed
 frequencies -- is a heavier, L1-adjacent lift, deferred behind M4.) After M4: long-term L1 (TST kinetics),
 L2 (the unified classifier -- the mission made literal), L3 (decompiler R3-R5).
+
+## Part 25 -- M4 convergent-route DAGs BUILT (the structural shape beyond a linear chain)
+
+The thermo arc (M1 ΔG, M2 K, M3 breadth) took the DERIVED bucket as far as sourced 298 K data reaches; M4 is
+the orthogonal STRUCTURAL rung. `ExperimentRoute` is linear (a total order) and E5 recurses on ONE missing
+precursor -- so a *convergent* synthesis (two branches making two intermediates that one step joins) could not
+be represented. M4 adds it, WITHOUT disturbing the linear route (whose invariant holds the whole suite).
+
+### M4 -- `smartchem/experiment/dag.py`
+
+* **`SynthesisDAG`** composes existing certified `ExperimentStep` nodes into a DAG. A linear route is the
+  special case where the DAG is a path; `is_convergent` is true exactly when some step joins two or more
+  produced intermediates (`convergence_points`). Four invariants refused at construction: distinct targets
+  (each intermediate made once), acyclic (Kahn topological sort), exactly one sink (one final target -- a
+  synthesis makes ONE thing), and connected-to-sink (no orphan branch). `edges`, `topological_order`,
+  `leaf_inputs` expose the structure.
+* **Reuse, not reinvention.** Every rung is the linear machinery generalised in *shape* only: conservation is
+  each step's own E0 certificate; composability is E1's exact `_judge_transition` applied to each DAG EDGE
+  (a producer->consumer handoff); feasibility (M1) and equilibrium (M2) are per-step and shape-agnostic, so
+  `verify_dag` maps them over the nodes and aggregates the SAME worst-step-dominated way the linear route
+  verdicts do (`_worst_feasibility`/`_worst_equilibrium` mirror `RouteFeasibility`/`RouteEquilibrium`).
+* **The one genuinely new computation -- the convergent ceiling (`dag_ceiling`).** The limiting-reagent max
+  propagated through the DAG in TOPOLOGICAL order, reusing the exact E2 kernel (`stoichiometric_ceiling`) per
+  step: a convergent step is naturally limited by whichever of its several intermediate inputs (or external
+  reagents) is scarcest. Proven on the convergent ethyl-acetate synthesis (2 CH3CHO+O2->2 CH3COOH  and
+  C2H4+H2O->C2H6O, joined by Fischer esterification): the ceiling is 1 mol, limited by the alcohol branch, and
+  **starving that branch halves the ceiling** -- real convergent accounting, exact rationals throughout.
+* **Verified.** 15 tests (structure, edges, topo order, the convergent ceiling + branch-starvation, the four
+  malformed-DAG refusals incl. a genuine cycle, and M1/M2 aggregation over a seeded Sabatier-style convergent
+  DAG where the endergonic water-splitting branch correctly dominates the aggregate). Gate **47/47**, suite
+  **2149**. The linear route and its 2134 prior tests are untouched -- M4 is purely additive.
+
+### Next: L2 -- the unified classifier (the mission, made literal)
+
+With conservation (E0/E2, linear + convergent), composability (E1), feasibility (M1), equilibrium (M2),
+selectivity, sourced data (M3), and the oracle all built, the pieces for the mission's literal form now exist:
+**a single graded verdict (KNOWN / DERIVED / PREDICTED / HYPOTHESIZED / REFUTED / UNKNOWN) over ANY formal
+combination of atoms/chemicals/reactions**, composing all of the above. This is what turns "systematically
+parse ALL formal linear combinations and judge which are legitimate / hypothesized / physically unreal" from a
+slogan into a capability -- the operator's stated destination. (L1 TST kinetics -- the honest "real rate" --
+and L3 decompiler R3-R5 remain the deeper research frontier; L2 is the synthesis of what is already built.)

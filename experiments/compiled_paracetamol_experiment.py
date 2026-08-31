@@ -41,6 +41,7 @@ from smartchem.data.thermo_extended import EXTENDED_THERMO_GAPS, EXTENDED_THERMO
 from smartchem.experiment import (
     Bucket,
     ConstraintBox,
+    DAGError,
     EquilibriumExtent,
     ExperimentRoute,
     ExperimentStep,
@@ -48,6 +49,8 @@ from smartchem.experiment import (
     FeasibilityGrade,
     RouteFitStatus,
     SelectivityStatus,
+    SynthesisDAG,
+    dag_ceiling,
     draft_procedure,
     equilibrium_of_step,
     feasibility_of_step,
@@ -55,6 +58,7 @@ from smartchem.experiment import (
     rank_routes,
     stoichiometric_ceiling,
     verify_composability,
+    verify_dag,
     verify_equilibrium,
     verify_feasibility,
     verify_selectivity,
@@ -315,6 +319,44 @@ def main() -> int:
     f.check(para_ext.direction is FeasibilityDirection.UNKNOWN and para_ext.missing,
             "paracetamol's acetylation step stays honestly UNKNOWN under the extended table (the entropy gap holds)")
 
+    # -- M4: convergent-route DAGs -- two sub-routes feeding one step ----------------------------------
+    print("\n[M4 convergent DAGs] two branches feeding one join, a DAG not a chain:", flush=True)
+    ALD = parse_smiles("CC=O")      # acetaldehyde
+    ETHENE = parse_smiles("C=C")    # ethylene
+    ETOH = parse_smiles("CCO")      # ethanol
+    EA = parse_smiles("CCOC(=O)C")  # ethyl acetate
+    CH4 = parse_smiles("C")         # methane (for the seeded Sabatier convergent DAG below)
+    branch_a = ExperimentStep.assembling(ACOH, (ALD, ALD, O2), (ACOH, ACOH))      # 2 CH3CHO + O2 -> 2 CH3COOH
+    branch_b = ExperimentStep.assembling(ETOH, (ETHENE, WATER), (ETOH,))          # C2H4 + H2O -> C2H6O
+    join = ExperimentStep.assembling(EA, (ACOH, ETOH), (EA, WATER))               # acid + alcohol -> ester + H2O
+    ea_dag = SynthesisDAG.of(branch_a, branch_b, join)
+    print(f"  {ea_dag!r}; join at step {[i + 1 for i in ea_dag.convergence_points]}", flush=True)
+    f.check(ea_dag.is_convergent and ea_dag.convergence_points == (2,),
+            "a convergent ethyl-acetate synthesis is a DAG with one join (the acid and alcohol branches meet)")
+    ceil = dag_ceiling(ea_dag, {ALD: 2, O2: 1, ETHENE: 1, WATER: 1})
+    print(f"  convergent ceiling: {ceil.final_target_mol} mol ethyl acetate, "
+          f"limited by {ceil.per_step[-1].limiting_reactant!r}", flush=True)
+    f.check(ceil.final_target_mol == Fraction(1) and repr(ceil.per_step[-1].limiting_reactant) == "C2H6O",
+            "the convergent ceiling is limited by the scarcer branch (ethanol, branch B) -- 1 mol at 100%")
+    ceil_starved = dag_ceiling(ea_dag, {ALD: 2, O2: 1, ETHENE: Fraction(1, 2), WATER: 1})
+    f.check(ceil_starved.final_target_mol == Fraction(1, 2),
+            "starving branch B halves the convergent ceiling (the join follows the scarcer branch)")
+    # a seeded convergent DAG so per-step ΔG is DERIVED; the endergonic branch dominates the aggregate
+    sab = SynthesisDAG.of(
+        ExperimentStep.assembling(CO2, (CO, CO, O2), (CO2, CO2)),                 # 2CO + O2 -> 2CO2 (favorable)
+        ExperimentStep.assembling(H2, (WATER, WATER), (H2, H2, O2)),              # 2H2O -> 2H2 + O2 (UNFAVORABLE)
+        ExperimentStep.assembling(CH4, (CO2, H2, H2, H2, H2), (CH4, WATER, WATER)),  # Sabatier join: consumes CO2+H2
+    )
+    vdag = verify_dag(sab)
+    f.check(all(x.grade is FeasibilityGrade.DERIVED for x in vdag.feasibility)
+            and vdag.feasibility_verdict == "UNFAVORABLE",
+            "M1/M2 reused per-step over a DAG: every step DERIVED, the endergonic branch dominates the aggregate")
+    try:
+        SynthesisDAG.of(branch_a, branch_b)   # acid AND alcohol both unconsumed -> not one synthesis
+        f.check(False, "a two-sink structure must be refused")
+    except DAGError:
+        f.check(True, "a malformed DAG (two unconsumed targets) is refused, never silently accepted")
+
     # -- the drafted procedure a chemist reads --------------------------------------------------------
     print("\n[draft] the chemist-facing procedure for the winning route:", flush=True)
     draft = draft_procedure(anhydride_route(pres=(1, 1)), feed={AMP: 1, ANH: Fraction(6, 5)})
@@ -338,9 +380,10 @@ def main() -> int:
         return 1
     print(f"VERDICT: PASS -- all {f.checks} acceptance criteria hold. The Experiment Compiler certifies "
           "steps, refuses the degenerate route on a sourced fact, fits routes to a real bench, computes an "
-          "exact ceiling, grades regiochemical selectivity, DERIVED thermodynamic feasibility (ΔG) and the "
-          "DERIVED equilibrium extent (K = exp(-ΔG/RT)) over a NIST-sourced thermo table broadened to reach "
-          "real bench targets, and drafts a chemist-usable procedure -- universal and bucket-honest throughout.",
+          "exact ceiling (linear AND convergent-DAG), grades regiochemical selectivity, DERIVED thermodynamic "
+          "feasibility (ΔG) and the DERIVED equilibrium extent (K = exp(-ΔG/RT)) over a NIST-sourced thermo "
+          "table broadened to reach real bench targets, and drafts a chemist-usable procedure -- universal and "
+          "bucket-honest throughout.",
           flush=True)
     return 0
 

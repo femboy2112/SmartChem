@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (42/42), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (47/47), exit 0**
 
 ## The question
 
@@ -11,7 +11,7 @@ and draft a chemist-usable procedure — all under the **known-not-new-physics**
 chemistry; never invent a feasibility/kinetics/yield model)? Not *"does the synthesis work"* — W3 forbids
 that — but every fact the compiler asserts must hold, and every refusal must cite a sourced fact.
 
-## What ran, and what held (42/42)
+## What ran, and what held (47/47)
 
 | Rung | Criterion | Result |
 |------|-----------|--------|
@@ -55,6 +55,11 @@ that — but every fact the compiler asserts must hold, and every refusal must c
 | M3 | **no fabricated paracetamol thermo record** exists (its ΔfH° is sourced, its S° is not) | PASS |
 | M3 | the paracetamol litmus gap is **DOCUMENTED** (entropy S° unsourced), never papered over | PASS |
 | M3 | paracetamol's acetylation step **stays honestly UNKNOWN** under the extended table (the entropy gap holds) | PASS |
+| M4 | a **convergent** ethyl-acetate synthesis is a **DAG with one join** (the acid and alcohol branches meet) | PASS |
+| M4 | the **convergent ceiling** is limited by the **scarcer branch** (ethanol, branch B) — 1 mol at 100% | PASS |
+| M4 | **starving branch B halves** the convergent ceiling (the join follows the scarcer branch) | PASS |
+| M4 | M1/M2 **reused per-step over a DAG** — every step DERIVED, the endergonic branch dominates the aggregate | PASS |
+| M4 | a **malformed DAG** (two unconsumed targets) is **refused**, never silently accepted | PASS |
 
 ## The ledger completed this arc (E1 depth · coverage/autoload · E5 · CLI)
 

@@ -35,6 +35,19 @@ class Atom:
         return hash(self.symbol)
 
     @property
+    def standard_atomic_weight(self) -> float:
+        """The relative atomic mass (u) from the SOURCED periodic table
+        (:mod:`smartchem.data.periodic_table`, IUPAC/CIAAW).
+
+        This is the authoritative mass and the one physics code should use.  The legacy
+        ``mass_amu`` field is incomplete (it defaults to ``0.0`` and is set for only a handful of
+        elements) and is retained unchanged solely because the descriptor fingerprints already hash
+        it; new code must not read a possibly-zero ``mass_amu``.
+        """
+        from .data.periodic_table import standard_atomic_weight
+        return standard_atomic_weight(self.symbol)
+
+    @property
     def mulliken_en(self) -> float:
         """Mulliken electronegativity ``(IE + EA)/2`` in eV.
 

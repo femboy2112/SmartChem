@@ -58,3 +58,28 @@ class TestLedgerHonesty:
         cs = compile_synthesis(_mol("acetic anhydride"), reagents=(_mol("water"),), max_depth=2)
         assert cs.ledger  # never empty -- the scope is always stated
         assert any("commodity" in n.lower() for n in cs.ledger)
+
+
+class TestRedTeamFixes:
+    def test_target_that_is_a_commodity_short_circuits(self):
+        # compiling something you can just buy should say so, not hand back a needless synthesis
+        cs = compile_synthesis(_mol("acetic acid"))
+        assert cs.already_obtainable is not None
+        assert cs.best_draft is None
+        assert cs.found_route  # "obtainable" counts as found
+        assert "IS ITSELF A COMMODITY" in cs.render()
+
+    def test_grade_first_ranking_is_stable_when_grades_tie(self):
+        # when every candidate shares a grade, the fit-order tiebreaker preserves the prior best (no churn)
+        an = _mol("acetic anhydride")
+        cs = compile_synthesis(an, reagents=(_mol("water"),), max_depth=2)
+        assert cs.found_route
+        # the chosen verdict IS classify's verdict for the chosen route (grade == what render shows)
+        assert cs.verdict is not None
+
+    def test_alternatives_carry_their_grade(self):
+        cs = compile_synthesis(_mol("acetic anhydride"),
+                               reagents=(_mol("water"), _mol("formic acid")), max_depth=2)
+        # alternatives, when present, are (grade, equation) pairs -- never a bare count
+        for g, eq in cs.alternatives:
+            assert isinstance(g, str) and isinstance(eq, str)

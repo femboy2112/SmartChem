@@ -204,6 +204,35 @@ class TestGeometryMoments:
         assert moments[-1] == pytest.approx(i_expected, rel=1e-9)
 
 
+class TestFiniteGuards:
+    """A NaN/inf must raise a clean ValueError, never leak into a value dressed as DERIVED (red-team-found)."""
+
+    def test_nan_frequency_raises_not_a_nan_value(self):
+        with pytest.raises(ValueError):
+            ideal_gas_entropy(molar_mass_u=18.0, frequencies_cm=[float("nan")],
+                              moments_of_inertia_kg_m2=[1e-46], linear=True, symmetry_number=1,
+                              electronic_degeneracy=1)
+
+    def test_infinite_temperature_raises_cleanly(self):
+        with pytest.raises(ValueError):
+            ideal_gas_entropy(molar_mass_u=18.0, frequencies_cm=[100.0],
+                              moments_of_inertia_kg_m2=[1e-46], linear=True, symmetry_number=1,
+                              electronic_degeneracy=1, temperature_k=float("inf"))
+
+    def test_nonfinite_moment_raises(self):
+        with pytest.raises(ValueError):
+            ideal_gas_entropy(molar_mass_u=18.0, frequencies_cm=[100.0],
+                              moments_of_inertia_kg_m2=[float("inf")], linear=True, symmetry_number=1,
+                              electronic_degeneracy=1)
+
+    def test_ultra_stiff_mode_is_finite_zero_not_an_overflow(self):
+        # a 1e10 cm^-1 mode is infinitely stiff -> 0 vibrational entropy, computed, not an OverflowError
+        s = ideal_gas_entropy(molar_mass_u=1.0, frequencies_cm=[1e10], moments_of_inertia_kg_m2=[1e-46],
+                              linear=True, symmetry_number=1, electronic_degeneracy=1)
+        assert math.isfinite(s.value_j_per_mol_k)
+        assert s.vibrational == 0.0
+
+
 class TestInputValidation:
     def test_nonpositive_temperature_refused(self):
         with pytest.raises(ValueError):

@@ -17,9 +17,15 @@ it is the second half of the derivation layer's thermodynamics (S° is :mod:`sma
 BOUNDS, stated loudly -- outside them the answer is a loud ``None``, NEVER a fabricated number:
 * CHNO only.  The sourced atomic anchor ``reference.ATOM_FORMATION_KJ`` exists for H, C, N, O only.
 * Neutral only.  ``oracle.atomization_energy`` declines charged species.
-* Only where the oracle returns a value.  The oracle FAILS CLOSED -- the bundled public PySCF oracle
-  declines every polyatomic (its polyatomic accuracy gate is unopened), so in production the live reach is
-  the tabulated CHNO diatomics.  A decline propagates as ``None`` here.
+* Only where the oracle returns a value.  The bundled public PySCF oracle declines by returning ``None``
+  (its polyatomic accuracy gate is unopened, so in production the live reach is the tabulated CHNO
+  diatomics), and a ``None`` propagates as ``None`` here; a non-finite (NaN/inf) energy is likewise
+  refused.  Fail-closed here means exactly the oracle's documented ``None`` decline -- an oracle that
+  *raises* instead is out of that contract and its exception propagates.
+* PRECONDITION (unverifiable, so stated not checked): the oracle's atomization energy must be a D_0
+  (zero-point-INCLUDED, as the bundled PySCF oracle deliberately reports), NOT a D_e (electronic-only).
+  Feed a D_e oracle and the result is wrong by the molecular ZPE (tens of kJ/mol) while still labelled a
+  0 K value -- the module cannot detect the convention, so a caller substituting a different oracle owns it.
 
 WHAT THIS IS: a 0 K formation enthalpy.  The oracle's energy folds in the molecular ZPE, so its atomization
 energy is an (approximate) D_0 on the same 0 K convention as ``reference.POLYATOMIC_REFS`` -- so the derived
@@ -28,6 +34,7 @@ enthalpy correction (a separate, unbuilt rung -- see the roadmap).
 """
 from __future__ import annotations
 
+import math
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Mapping
@@ -52,8 +59,9 @@ class DerivedFormation:
 
     def render(self) -> str:
         return (
-            f"ΔfH°(0K) = {self.value_kj_per_mol:.1f} +/- {self.uncertainty_kj_per_mol:.1f} kJ/mol "
-            f"[{self.grade}] (D0 = {self.d0_ev:.3f} eV; {self.method})"
+            f"ΔfH°(0K) = {self.value_kj_per_mol:.1f} +/- >={self.uncertainty_kj_per_mol:.1f} kJ/mol "
+            f"[{self.grade}] (band is the oracle D0 error ONLY, a LOWER bound -- the sourced atomic-anchor "
+            f"systematic adds; D0 = {self.d0_ev:.3f} eV; {self.method})"
         )
 
 
@@ -78,9 +86,11 @@ def formation_enthalpy_0k(
 
     est = oracle.atomization_energy(molecule)
     if est is None:
-        return None  # the oracle declined (fail-closed) -> honest UNKNOWN
+        return None  # the oracle declined (returned None) -> honest UNKNOWN
 
     d0_ev = est.value_ev
+    if not math.isfinite(d0_ev):
+        return None  # a NaN/inf atomization energy is not a number -> loud gap, never a NaN dressed as DERIVED
     atoms_kj = sum(n * atomic_dfh[s] for s, n in atoms.items())
     dfh_kj = atoms_kj - d0_ev * KJ_PER_EV  # the inverse; the sign is load-bearing (dfH = atoms - D0)
 

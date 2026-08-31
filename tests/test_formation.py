@@ -80,6 +80,27 @@ class TestFailsClosed:
     def test_oracle_decline_propagates_as_none(self):
         assert formation_enthalpy_0k(_water(), _StubOracle(0.0, declines=True)) is None
 
+    def test_nonfinite_d0_from_a_duck_typed_oracle_is_refused(self):
+        # a real Estimate rejects NaN/inf at construction, but formation duck-types the oracle; a bare
+        # object with a NaN value_ev must still return None, never a NaN dressed as DERIVED (red-team-found).
+        class _DuckEstimate:
+            def __init__(self, v):
+                self.value_ev = v
+                self.uncertainty_ev = 0.1
+                self.systematic_ev = 0.0
+
+        class _DuckOracle:
+            name = "duck"
+
+            def __init__(self, v):
+                self._v = v
+
+            def atomization_energy(self, m):
+                return _DuckEstimate(self._v)
+
+        assert formation_enthalpy_0k(_water(), _DuckOracle(float("nan"))) is None
+        assert formation_enthalpy_0k(_water(), _DuckOracle(float("inf"))) is None
+
     def test_empty_molecule_is_a_loud_gap(self):
         # a bare empty species -- no atoms, no formation enthalpy -> loud None, never a fabricated 0
         empty = Molecule(atoms=(), bonds=frozenset())

@@ -135,6 +135,10 @@ def _vibrational_entropy(frequencies_cm: Sequence[float], temperature_k: float) 
         if nu <= 0.0:            # imaginary/near-zero (external) modes contribute nothing real here
             continue
         x = _H * _C_CM_PER_S * nu / (_KB * temperature_k)
+        if x > 700.0:
+            # a mode that stiff (h*nu >> kB*T) has vanishing entropy; both terms -> 0.  Handling it
+            # explicitly avoids an OverflowError in expm1(x) for a physically-legitimate large finite x.
+            continue
         total += x / math.expm1(x) - math.log1p(-math.exp(-x))
     return _R * total
 
@@ -221,16 +225,24 @@ def ideal_gas_entropy(
     ground term; e.g. 3 for O2's triplet).  ``frequency_bias_fraction`` (default 0, experimental
     frequencies) propagates a known bias in a COMPUTED frequency source into the uncertainty band.
     """
-    if not (isinstance(temperature_k, (int, float)) and temperature_k > 0):
-        raise ValueError("temperature_k must be a positive absolute temperature (K)")
-    if not (isinstance(pressure_pa, (int, float)) and pressure_pa > 0):
-        raise ValueError("pressure_pa must be a positive pressure (Pa)")
-    if not (isinstance(symmetry_number, int) and symmetry_number >= 1):
+    # every numeric input must be a FINITE positive number -- a NaN/inf must raise a clean ValueError here,
+    # never leak into the RRHO arithmetic and surface as a NaN/inf S deg dressed as a confident DERIVED value.
+    if not (isinstance(temperature_k, (int, float)) and math.isfinite(temperature_k) and temperature_k > 0):
+        raise ValueError("temperature_k must be a finite positive absolute temperature (K)")
+    if not (isinstance(pressure_pa, (int, float)) and math.isfinite(pressure_pa) and pressure_pa > 0):
+        raise ValueError("pressure_pa must be a finite positive pressure (Pa)")
+    if not (isinstance(symmetry_number, int) and not isinstance(symmetry_number, bool)
+            and symmetry_number >= 1):
         raise ValueError("symmetry_number must be a positive integer")
-    if not (isinstance(electronic_degeneracy, int) and electronic_degeneracy >= 1):
+    if not (isinstance(electronic_degeneracy, int) and not isinstance(electronic_degeneracy, bool)
+            and electronic_degeneracy >= 1):
         raise ValueError("electronic_degeneracy must be a positive integer")
-    if molar_mass_u <= 0:
-        raise ValueError("molar_mass_u must be positive")
+    if not (isinstance(molar_mass_u, (int, float)) and math.isfinite(molar_mass_u) and molar_mass_u > 0):
+        raise ValueError("molar_mass_u must be a finite positive mass (u)")
+    if any(not math.isfinite(f) for f in frequencies_cm):
+        raise ValueError("every frequency must be finite (a NaN/inf frequency is not a real mode)")
+    if any((not math.isfinite(m)) or m <= 0 for m in moments_of_inertia_kg_m2):
+        raise ValueError("every moment of inertia must be a finite positive number")
 
     s_tr = _translational_entropy(molar_mass_u, temperature_k, pressure_pa)
     moments = list(moments_of_inertia_kg_m2)
@@ -247,6 +259,8 @@ def ideal_gas_entropy(
     s_vib = _vibrational_entropy(frequencies_cm, temperature_k)
     s_el = _electronic_entropy(electronic_degeneracy)
     total = s_tr + s_rot + s_vib + s_el
+    if not math.isfinite(total):  # backstop: never report a NaN/inf as a confident value
+        raise ValueError("computed standard entropy is non-finite; refusing to report it")
 
     grade, band, notes = _grade_and_band(temperature_k, s_vib, frequency_bias_fraction, frequencies_cm)
     method = (

@@ -672,12 +672,65 @@ class CappedScission(Digestible):
         return f"CappedScission({self.equation()})"
 
 
+def _cap_a_cut(
+    reactant: Molecule,
+    rcuts: tuple[Bond, ...],
+    reagent_types: list[Molecule],
+    out: dict[str, CappedScission],
+    work: int,
+    budget: int,
+) -> tuple[int, bool]:
+    """Enumerate every valence-capped rewrite that cuts EXACTLY the reactant bonds ``rcuts`` and caps the
+    opened ends with ``len(rcuts)`` reagent instances.  The extracted inner body of
+    :func:`capped_scissions`; returns ``(work, ok)`` where ``ok`` is ``False`` iff ``budget`` was hit."""
+    k = len(rcuts)
+    r_ends = [(b.i, b.order) for b in rcuts] + [(b.j, b.order) for b in rcuts]  # 2k ends
+    for type_choice in combinations_with_replacement(range(len(reagent_types)), k):
+        reagent_mols = tuple(reagent_types[i] for i in type_choice)
+        bond_options = [sorted(m.bonds) for m in reagent_mols]
+        _atoms, _bonds, offsets = _join(reactant, reagent_mols)
+        for chosen in product(*bond_options):
+            reagent_cut: list[Bond] = []
+            g_ends: list[tuple[int, int]] = []
+            for inst, b in enumerate(chosen):
+                off = offsets[1 + inst]
+                reagent_cut.append(Bond(b.i + off, b.j + off, b.order))
+                g_ends += [(b.i + off, b.order), (b.j + off, b.order)]  # 2k reagent ends
+            cut = tuple(sorted(list(rcuts) + reagent_cut))
+            ends = r_ends + g_ends
+            for matching in _perfect_matchings(len(ends)):
+                work += 1
+                if work > budget:
+                    return work, False
+                caps: list[Bond] = []
+                valid = True
+                for i, j in matching:
+                    (a, oa), (b, ob) = ends[i], ends[j]
+                    if oa != ob or a == b:       # a cap joins equal-order ends of distinct atoms
+                        valid = False
+                        break
+                    caps.append(Bond(a, b, oa))
+                if not valid:
+                    continue
+                if len({(c.i, c.j) for c in caps}) != len(caps):
+                    continue  # two caps on the same atom pair -> not a simple graph
+                try:
+                    edge = CappedScission(
+                        CAPPED_SCISSION_SCHEMA, reactant, reagent_mols, cut, tuple(sorted(caps))
+                    )
+                except ScissionError:
+                    continue  # not cleaving / not valence-preserving / pass-through -> dropped
+                out.setdefault(edge.digest, edge)
+    return work, True
+
+
 def capped_scissions(
     reactant: Molecule,
     reagents: tuple[Molecule, ...],
     *,
     max_reactant_cuts: int = 1,
     budget: int = 50_000,
+    ring_aware: bool = False,
 ) -> tuple[tuple[CappedScission, ...], bool]:
     """Enumerate valence-preserving hydrolytic / addition-elimination cleavages of ``reactant``.
 
@@ -704,6 +757,19 @@ def capped_scissions(
     is unchanged; only the reach grew. Still out of scope (documented, not silently attempted):
     partial bond-order change (addition ACROSS a double bond, which is not a whole-bond rewrite) and
     heterolytic/charged caps -- the latter is :class:`HeterolyticScission` (Part 13 item 6).
+
+    ``ring_aware`` (R1, at the REACTION level): a single cut cannot open a ring -- a ring bond's removal
+    leaves the graph connected, so no order-1 rewrite cleaves it -- so a ring reaches no capped
+    (gradeable) reaction until ``max_reactant_cuts >= 2``, and the full 2-cut powerset is expensive on a
+    substituted target.  With ``ring_aware`` set and ``max_reactant_cuts < 2``, the capper ADDITIONALLY
+    cuts the **targeted ring-bond pairs** (a ring bond is one whose removal does not disconnect the
+    molecule) and caps the four opened ends -- the tractable ring-opening REACTION, mirroring the
+    skeleton :func:`scission_edges`.  It is the reaction-level analogue of that R1 optimisation: it is
+    exactly the subset of the ``k = 2`` cuts that open a ring, so a drug-sized target's ring opens at a
+    small multiple of the order-1 cost rather than the full 2-cut powerset, and its ring-opening
+    products become real :class:`CappedScission` reactions (hence :class:`~smartchem.experiment.step.
+    ExperimentStep` s a classifier can grade).  Redundant once ``max_reactant_cuts >= 2`` and skipped
+    there.
     """
     if type(reactant) is not Molecule:
         raise TypeError("reactant must be a Molecule")
@@ -717,43 +783,19 @@ def capped_scissions(
     work = 0
     for k in range(1, max_reactant_cuts + 1):
         for rcuts in combinations(r_bonds, k):
-            r_ends = [(b.i, b.order) for b in rcuts] + [(b.j, b.order) for b in rcuts]  # 2k ends
-            for type_choice in combinations_with_replacement(range(len(reagent_types)), k):
-                reagent_mols = tuple(reagent_types[i] for i in type_choice)
-                bond_options = [sorted(m.bonds) for m in reagent_mols]
-                _atoms, _bonds, offsets = _join(reactant, reagent_mols)
-                for chosen in product(*bond_options):
-                    reagent_cut: list[Bond] = []
-                    g_ends: list[tuple[int, int]] = []
-                    for inst, b in enumerate(chosen):
-                        off = offsets[1 + inst]
-                        reagent_cut.append(Bond(b.i + off, b.j + off, b.order))
-                        g_ends += [(b.i + off, b.order), (b.j + off, b.order)]  # 2k reagent ends
-                    cut = tuple(sorted(list(rcuts) + reagent_cut))
-                    ends = r_ends + g_ends
-                    for matching in _perfect_matchings(len(ends)):
-                        work += 1
-                        if work > budget:
-                            return tuple(sorted(out.values(), key=lambda e: e.digest)), False
-                        caps: list[Bond] = []
-                        valid = True
-                        for i, j in matching:
-                            (a, oa), (b, ob) = ends[i], ends[j]
-                            if oa != ob or a == b:       # a cap joins equal-order ends of distinct atoms
-                                valid = False
-                                break
-                            caps.append(Bond(a, b, oa))
-                        if not valid:
-                            continue
-                        if len({(c.i, c.j) for c in caps}) != len(caps):
-                            continue  # two caps on the same atom pair -> not a simple graph
-                        try:
-                            edge = CappedScission(
-                                CAPPED_SCISSION_SCHEMA, reactant, reagent_mols, cut, tuple(sorted(caps))
-                            )
-                        except ScissionError:
-                            continue  # not cleaving / not valence-preserving / pass-through -> dropped
-                        out.setdefault(edge.digest, edge)
+            work, ok = _cap_a_cut(reactant, rcuts, reagent_types, out, work, budget)
+            if not ok:
+                return tuple(sorted(out.values(), key=lambda e: e.digest)), False
+
+    if ring_aware and max_reactant_cuts < 2:
+        n = len(reactant.atoms)
+        base = len(_components(n, reactant.bonds))
+        ring_bonds = [b for b in r_bonds if len(_components(n, reactant.bonds - {b})) == base]
+        for rcuts in combinations(ring_bonds, 2):
+            work, ok = _cap_a_cut(reactant, rcuts, reagent_types, out, work, budget)
+            if not ok:
+                return tuple(sorted(out.values(), key=lambda e: e.digest)), False
+
     return tuple(sorted(out.values(), key=lambda e: e.digest)), True
 
 

@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (57/57), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (59/59), exit 0**
 
 ## The question
 
@@ -70,6 +70,8 @@ that — but every fact the compiler asserts must hold, and every refusal must c
 | L2 | a route is **worst-step-dominated** — a DERIVED step under a HYPOTHESIZED step grades HYPOTHESIZED | PASS |
 | — | **the litmus bottoms out at ELEMENTAL BUCKETS {C,H,N,O}**: the decompiler descends the whole compound to atoms, conserving every edge | PASS |
 | — | read backwards, that descent **is the assembly of paracetamol from those buckets** (a 16-node chain, not one atomisation edge) | PASS |
+| R1 | `ring_aware` **opens paracetamol's aromatic ring into gradeable reactions** — the ring-opening subset of the full 2-cut (8 ⊂ 80 ⊂ 404), tractable, never invents an edge | PASS |
+| R1×L2 | a ring-opening **read backwards is the assembly of the ring**, graded **HYPOTHESIZED** — the STRUCTURED chain reaches *through* the ring, not just to its core | PASS |
 
 ## The ledger completed this arc (E1 depth · coverage/autoload · E5 · CLI)
 
@@ -142,6 +144,14 @@ at best.* The heat is honestly `UNKNOWN` (paracetamol has no sourced 0 K formati
   `{C, H, N, O}`, COMPLETE and conserving every edge — read backwards, that *is* the assembly of paracetamol
   from elemental buckets. The honest boundary: this from-buckets chain is FORMULA-level (conservation), so
   every edge is L2's `HYPOTHESIZED` floor (a formally valid candidate); L2 **lifts** the structured rungs to
-  `KNOWN`/`DERIVED` where sourced data reaches (the acetylation grades KNOWN). A fully-STRUCTURED,
-  sourced-graded route from atoms to paracetamol is the open frontier (the reality-ladder R1–R5 rungs, atop
-  the permanent physical W3 wall).
+  `KNOWN`/`DERIVED` where sourced data reaches (the acetylation grades KNOWN).
+- **R1 — the STRUCTURED descent now reaches through the ring (reaction level).** Ring-aware descent already
+  existed at the *skeleton* level (`ScissionEdge`), so a ring atomises there; the gap was the *reaction* level
+  — `capped_scissions` had no `ring_aware`, so a single cut opened no ring and ring-opening REACTIONS needed
+  the full, expensive 2-cut powerset. R1 adds targeted ring-bond-pair cutting to `capped_scissions`: on
+  paracetamol the ring opens into gradeable reactions as the *ring-opening subset* of the full 2-cut
+  (`8 ⊂ 80 ⊂ 404` — tractable, never inventing an edge), and read backwards a ring-opening is the assembly of
+  the ring, which L2 grades `HYPOTHESIZED`. So the structured chain reaches *through* the aromatic ring, not
+  just to its irreducible core. **Still open:** a fully-structured, sourced-graded route from atoms to
+  paracetamol end to end (the R2–R5 rungs — resonance identity, recursive ionic, radical ledger,
+  evidence/thermo — plus sourced data for the deep intermediates), atop the permanent physical W3 wall.

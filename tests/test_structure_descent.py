@@ -20,10 +20,12 @@ from smartchem.decompiler import DecompositionEdge, Formula
 from smartchem.structure import known_compounds
 from smartchem.structure_descent import (
     HETEROLYTIC_SCHEMA,
+    CappedScission,
     Fragment,
     HeterolyticScission,
     ScissionEdge,
     ScissionError,
+    capped_scissions,
     heterolytic_scissions,
     scission_edges,
     structure_decompose,
@@ -470,3 +472,60 @@ class TestBoundedDepthDescent:
             StructureDecompositionGraph(
                 STRUCTURE_GRAPH_SCHEMA, self._para(), 1, 100_000, "COMPLETE_TO_DEPTH", (), "", None,
             )
+
+
+class TestRingAwareCappedScission:
+    """R1 at the REACTION level: ring-opening as a valence-capped, gradeable CappedScission.
+
+    A single cut cannot open a ring (a ring bond's removal leaves the graph connected), so a ring
+    reaches no capped reaction until ``max_reactant_cuts >= 2`` -- and the full 2-cut powerset is
+    expensive on a substituted target. ``ring_aware`` cuts only the targeted ring-bond PAIRS: exactly
+    the ring-opening subset of the k=2 cuts, so a ring opens tractably and its products become real
+    reactions (hence ExperimentSteps a classifier can grade).
+    """
+
+    def _benzene(self):
+        from smartchem.smiles import parse_smiles
+        return parse_smiles("c1ccccc1")
+
+    def _H2(self):
+        from smartchem.smiles import parse_smiles
+        return parse_smiles("[H][H]")
+
+    def test_a_single_cut_opens_no_ring_reaction(self):
+        # the default (k=1, no ring-awareness) cannot cleave a ring -> no capped reaction at all
+        edges, complete = capped_scissions(self._benzene(), (self._H2(),))
+        assert complete and edges == ()
+
+    def test_ring_aware_puts_ring_opening_reactions_on_the_menu(self):
+        edges, complete = capped_scissions(self._benzene(), (self._H2(),), ring_aware=True)
+        assert complete and edges
+        for e in edges:
+            assert type(e) is CappedScission
+            assert len(e.products) >= 2          # a ring cut at 2 bonds -> a genuine multi-product scission
+
+    def test_ring_aware_is_exactly_the_ring_opening_subset_of_the_full_2cut(self):
+        benzene, H2 = self._benzene(), (self._H2(),)
+        aware = {e.digest for e in capped_scissions(benzene, H2, ring_aware=True)[0]}
+        full = {e.digest for e in capped_scissions(benzene, H2, max_reactant_cuts=2, budget=200_000)[0]}
+        assert aware <= full                     # ring-awareness never INVENTS a reaction the 2-cut lacks
+        # benzene is all-ring, so its ring-opening subset IS the whole 2-cut set
+        assert aware == full
+
+    def test_ring_aware_is_a_tractable_strict_subset_on_a_substituted_ring(self):
+        from smartchem.smiles import parse_smiles
+        tol, H2 = parse_smiles("Cc1ccccc1"), (parse_smiles("[H][H]"),)     # ring + acyclic methyl/H bonds
+        aware = {e.digest for e in capped_scissions(tol, H2, ring_aware=True, budget=200_000)[0]}
+        full = {e.digest for e in capped_scissions(tol, H2, max_reactant_cuts=2, budget=200_000)[0]}
+        assert aware <= full and len(aware) < len(full)   # targeted: fewer than the full powerset, never more
+
+    def test_a_ring_opening_reaction_conserves_and_becomes_an_assembly_step(self):
+        from smartchem.experiment import ExperimentStep, classify
+        from smartchem.experiment.classify import Grade
+        edges, _ = capped_scissions(self._benzene(), (self._H2(),), ring_aware=True)
+        opening = edges[0]
+        # the CappedScission certificate already guarantees valence + mass conservation; read backwards
+        # it is the assembly of the ring, which the classifier grades (a balanced candidate -> HYPOTHESIZED)
+        step = ExperimentStep.from_capped_scission(opening)
+        assert step.target.formula == self._benzene().formula
+        assert classify(step).grade is Grade.HYPOTHESIZED

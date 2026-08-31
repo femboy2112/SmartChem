@@ -1521,3 +1521,50 @@ with L2 grading each rung. It needs (a) the structure-level descent to reach fur
 ring-aware descent, then R2-R5), and (b) sourced thermo/selectivity for the deep intermediates so the rungs
 lift above HYPOTHESIZED. L1 TST kinetics (the honest "real rate") remains the deeper research frontier, atop
 the permanent physical W3 wall.
+
+## Part 27 -- R1 completed at the REACTION level (ring-opening becomes gradeable), litmus reaches through the ring
+
+Investigating "full blast on R1" turned up the honest truth first: **R1 ring-aware descent was ALREADY built at
+the skeleton level** (commit `4ffb6b2`), and verified so on the filesystem, not the docstring -- benzene,
+cyclohexane, cyclopropane atomise (`reaches_single_atoms=True`, zero cores) with `ring_aware=True`, and
+paracetamol descends through its ring (no cores at every bounded depth). The roadmap/memory calling R1 "the top
+gap" was stale. Not re-building what exists.
+
+The REAL remaining R1 gap was one level up: `scission_edges`/`structure_decompose` had `ring_aware`, but
+`capped_scissions` -- the valence-capped REACTION generator that feeds `ExperimentStep.from_capped_scission`
+(and thus L2) -- did NOT. So a ring could be cracked at the skeleton (bonds break into fragments with open
+valences) but that cracking never became a real, balanced, gradeable REACTION: a single cut cannot open a ring
+(a ring bond's removal leaves the graph connected), and ring-opening reactions therefore needed the full,
+expensive 2-cut powerset (`max_reactant_cuts=2`).
+
+* **The fix (additive, output-identical for the old path).** Extracted the capper's inner cap-enumeration into
+  `_cap_a_cut` (a behaviour-preserving refactor -- the 38 prior `structure_descent` tests pass unchanged), then
+  added `ring_aware` to `capped_scissions`: at `max_reactant_cuts < 2` it ALSO cuts the targeted ring-bond
+  PAIRS and caps the four opened ends -- exactly the ring-opening subset of the k=2 cuts, mirroring the skeleton
+  `scission_edges`. Soundness is unchanged (every candidate still passes the `CappedScission` certificate);
+  benzene (all-ring) gives the same 72 reactions as the full k=2, proving the subset is complete.
+* **The tractability win (the point of R1).** On paracetamol the ring opens into gradeable reactions as the
+  *ring-opening subset* of the full 2-cut: **8 (k=1, acyclic only) ⊂ 80 (ring_aware) ⊂ 404 (full 2-cut)** --
+  6x less work than the powerset, targeting only the ring, so a substituted aromatic opens tractably.
+* **Wired to L2 -- the chain reaches THROUGH the ring.** A ring-opening `CappedScission`
+  (`C8H9NO2 + H2 -> C2H5NO + C6H6O`) becomes an `ExperimentStep.from_capped_scission`, and read backwards it is
+  the assembly of paracetamol's ring (`C2H5NO + C6H6O -> C8H9NO2 + H2`), which L2 grades `HYPOTHESIZED` (a
+  formally valid structured candidate). So the STRUCTURED descent now reaches through the aromatic ring into
+  gradeable steps, not just to its irreducible core.
+* **Verified.** 5 new reaction-level tests (`tests/test_structure_descent.py::TestRingAwareCappedScission`:
+  single-cut opens no ring; ring_aware puts genuine ring-openings on the menu; it is exactly the ring-opening
+  subset of k=2 (equal for benzene, a strict tractable subset for a substituted ring); a ring-opening conserves
+  and becomes a HYPOTHESIZED assembly step). Gate grew an `[R1 ring-opening]` section (+2) to **59/59**; full
+  suite **2173** (2168 + 5), zero regressions, ruff-clean.
+
+### Next: R3-R5 -- close atoms->paracetamol end to end, structured AND sourced
+
+R1 (ring-opening) and R2 (resonance-canonical aromatic identity, `42dfb15`) are BOTH built; the chain now
+reaches through the ring but the deep rungs still grade `HYPOTHESIZED` for lack of sourced data. The remaining
+ledger to a route a chemist could read atoms->paracetamol top to bottom: **R3** recursive ionic descent, **R4**
+the radical-electron ledger (cross-level open-valence tracking, the documented skeleton boundary), **R5**
+sourced thermo/selectivity for the deep intermediates so those rungs LIFT above HYPOTHESIZED into DERIVED/KNOWN
+-- R5 is the highest-leverage rung, because it is what turns the now-reachable structured chain into a GRADED
+one. Upstream, the SMILES front door's aromatic-heteroatom gap (pyridine needs Kekule) blocks N-heterocyclic
+targets. L1 TST kinetics (the honest "real rate") remains the deeper frontier, atop the permanent physical W3
+wall.

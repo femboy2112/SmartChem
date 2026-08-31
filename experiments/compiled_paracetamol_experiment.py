@@ -39,6 +39,7 @@ from smartchem.contracts import EvidenceStatus
 from smartchem.data.stability import DEFAULT_STABILITY, StabilityRef
 from smartchem.data.thermo_extended import EXTENDED_THERMO_GAPS, EXTENDED_THERMO_REFS, extended_thermo
 from smartchem.decompiler import Formula, build_decomposition, example_inventory
+from smartchem.structure_descent import capped_scissions
 from smartchem.experiment import (
     Bucket,
     ConstraintBox,
@@ -436,6 +437,28 @@ def main() -> int:
           "data reaches (the acetylation above grades KNOWN). A fully-structured, sourced-graded route from atoms "
           "to paracetamol is the open frontier (reality-ladder R1-R5).", flush=True)
 
+    # -- R1: the structured chain now reaches THROUGH the aromatic ring (reaction level, L2-graded) ----
+    print("\n[R1 ring-opening] the structured descent cracks paracetamol's aromatic ring into gradeable "
+          "reactions:", flush=True)
+    plain_ro, _ = capped_scissions(PARA, (H2,))                      # k=1 default: no ring reaches a reaction
+    aware_ro, ok_ro = capped_scissions(PARA, (H2,), ring_aware=True, budget=200_000)
+    full_ro, _ = capped_scissions(PARA, (H2,), max_reactant_cuts=2, budget=200_000)
+    plain_d = {e.digest for e in plain_ro}
+    aware_d = {e.digest for e in aware_ro}
+    full_d = {e.digest for e in full_ro}
+    print(f"  ring-opening reactions: k=1 default {len(plain_ro)} (acyclic cuts only), ring_aware "
+          f"{len(aware_ro)} (+ the ring-openings), full 2-cut powerset {len(full_ro)}", flush=True)
+    f.check(ok_ro and plain_d < aware_d < full_d,
+            "R1 (reaction level): ring_aware STRICTLY grows the k=1 menu with paracetamol's ring-openings while "
+            "staying a STRICT SUBSET of the full 2-cut powerset -- tractable, and it never invents an edge")
+    ring_open = next(e for e in aware_ro if len(e.products) >= 2)
+    assembly = ExperimentStep.from_capped_scission(ring_open)
+    v_ring = classify(assembly, thermo=thermo)
+    print(f"  ring-opening read backwards: {assembly.equation()} -> L2 {v_ring.grade.value}", flush=True)
+    f.check(v_ring.grade is Grade.HYPOTHESIZED and assembly.target.formula == PARA.formula,
+            "R1 x L2: a ring-opening read backwards is the assembly of paracetamol's ring, graded HYPOTHESIZED "
+            "(a formally valid structured candidate) -- the chain reaches THROUGH the ring, not just to its core")
+
     # -- the drafted procedure a chemist reads --------------------------------------------------------
     print("\n[draft] the chemist-facing procedure for the winning route:", flush=True)
     draft = draft_procedure(anhydride_route(pres=(1, 1)), feed={AMP: 1, ANH: Fraction(6, 5)})
@@ -463,7 +486,9 @@ def main() -> int:
           "feasibility (ΔG) and the DERIVED equilibrium extent (K = exp(-ΔG/RT)) over a NIST-sourced thermo "
           "table broadened to reach real bench targets, drafts a chemist-usable procedure, and -- the mission "
           "made literal -- classifies ANY formal combination with ONE graded verdict (KNOWN / DERIVED / "
-          "PREDICTED / HYPOTHESIZED / REFUTED / UNKNOWN), composing every rung -- universal and bucket-honest "
+          "PREDICTED / HYPOTHESIZED / REFUTED / UNKNOWN), composing every rung. The chain is the WHOLE chain: "
+          "the decompiler bottoms out at elemental buckets {C,H,N,O}, and R1 ring-opening lets the STRUCTURED "
+          "descent reach through the aromatic ring into gradeable reactions -- universal and bucket-honest "
           "throughout.",
           flush=True)
     return 0

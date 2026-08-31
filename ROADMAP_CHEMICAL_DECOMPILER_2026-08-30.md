@@ -1805,3 +1805,74 @@ is the first real dual-provider datum.
 **Long (unchanged)** — the permanent physical **W3 wall**: which cleavage Nature actually takes, at what real rate, and
 what it will *do* on the bench, is never certified. E6 makes the wall *safer to stand next to* — it reports what is
 KNOWN about what comes off and how to handle it, and refuses (loud UNKNOWN) to certify "safe to walk away" over any gap.
+
+## Part 32 — the derivation layer opens + poor-man's buckets + the compile() front door (2026-08-31, arc IV)
+
+The governing correction this arc rests on (operator, 2026-08-31): **"we do not invent NEW physics, but that
+doesn't mean don't use known physics to DERIVE/interpolate/extrapolate unknowns — just label them honestly."**
+`UNKNOWN` had become a timid reflex for any not-pre-tabulated value; the fix is a **derivation layer** that reaches
+a value by a chain of known laws and grades it DERIVED/PREDICTED-with-band, reserving `UNKNOWN` for what no chain of
+known physics reaches. Fabrication (a value with NO derivational chain) stays forbidden. Physics and chemistry are
+one connected whole.
+
+**Built this arc:**
+- **The periodic table SmartChem never had** (`data/periodic_table.py`). `Atom.mass_amu` defaulted to 0.0 and was
+  set for THREE elements — carbon had no mass. Now: a complete SOURCED table of all 118 elements (IUPAC/CIAAW abridged
+  "Atomic Weights 2021" + 2024 revisions), WebFetched and cross-checked against a second IUPAC-attributed source (91/92
+  stable elements agreed to the digit; the one discrepancy, Zr, is the documented 2024 CIAAW revision). Radioactive/
+  synthetic elements carry a flagged most-stable-isotope mass number; unknown symbol raises, never a silent 0.0.
+  `Atom.standard_atomic_weight` reads it additively (legacy `mass_amu` untouched → no fingerprint churn).
+- **Derivation-layer RUNG 1 — ideal-gas RRHO standard molar entropy** (`thermo_entropy.py`). S°(gas,T) from sourced
+  structure (Sackur-Tetrode + rigid rotor + harmonic oscillator + electronic), graded DERIVED/PREDICTED with a
+  propagated band (incl. the +9.1% PySCF harmonic bias when frequencies are computed). CALIBRATED, nothing tuned:
+  reproduces CODATA/JANAF standard entropies (N₂/CO/HCl) to ≤0.15 J/mol/K; O₂'s triplet electronic term proven
+  load-bearing.
+- **Derivation-layer RUNG (ΔfH°) — formation enthalpy from atomization** (`experiment/formation.py`). The exact inverse
+  of the validated `reference.atomization_energy_ev`: ΔfH°(0K) = Σ n·ΔfH_atom − D0, D0 from the oracle. CHNO-neutral,
+  fail-closed (loud None off-domain), round-trip proven exact. Live reach today = tabulated CHNO diatomics (the oracle
+  DECLINES every polyatomic — the CCSD(T) memory wall, ~3 heavy atoms on commodity hardware).
+- **Poor-man's buckets** (`data/reagents.py` + `enumerate_routes(commodities=)` + `cli --poor-mans`). Retrosynthesis can
+  bottom out at WIDELY-AVAILABLE commodity compounds (table salt, vinegar, baking soda, bleach, lye, rubbing alcohol,
+  ...) instead of pure elements — because you can't get elemental sodium but you can get NaCl. Zero new mechanism (rides
+  the existing `available` termination, keyed by canonical identity, never formula). `shopping_list()` reads back the
+  commodity leaves. Identity grounded (registry/explicit Lewis skeletons); availability tier is a labelled editorial
+  obtainability judgment, not a sourced constant.
+- **The compile() front door** (`experiment/compile.py`). `compile_synthesis(target)` composes the whole stack —
+  enumerate → rank → draft → classify + rate — into ONE bucket-terminated result: the full drafted procedure, the L2
+  grade, the orthogonal Arrhenius/Eyring rate the bare draft omits, the commodity shopping list, and an honesty ledger
+  that states the scope (linear-chain best route) instead of over-claiming. Reuses every rung; adds no physics.
+
+Suite 2307 → 2355, gate green, two commits (`0dd757b`, `a76caa4`). A 5-agent recon workflow mapped all five wiring
+seams first; a 4-agent adversarial workflow red-teamed the result.
+
+### The honest ceiling this arc made explicit (why poor-man's buckets are structural, not a nicety)
+
+Ab-initio thermo can't scale past ~3 heavy atoms on commodity hardware — the vvvv CCSD(T) integral block is quartic in
+the virtual count (measured: C₃H₈ needs ~22 GB). So retrosynthesis of an arbitrary compound **cannot** push every branch
+to atoms + an intractable calculation; it MUST bottom out at SOURCED obtainable compounds, with ab-initio derivation
+reserved for the small CHNO leaves it can certify. The two termination modes (atom buckets vs commodity buckets) map
+cleanly onto the two ΔfH sources (computed-DERIVED for small CHNO vs sourced-lookup for everything else).
+
+### Rolled forward (the rest of the "any formula → complete tree" goal)
+
+**Short / next** — (a) **Derivation-layer rung 2: DERIVED thermo into feasibility** — a `derive_thermo` provider
+(mirroring `autoload_thermo`) that supplies S° (RRHO) + ΔfH° (atomization) so a GAS-phase CHNO-neutral small-molecule
+step grades DERIVED instead of UNKNOWN; calibrate against the seed's gas-phase values. Bounded by the phase trap
+(RRHO gives S°(gas), not S°(cr)) and the oracle's polyatomic gate. (b) **DERIVED-with-band `ThermoRef`** — carry the
+grade + ± band as `field(compare=False)` (preserve the fingerprint) so ΔG reports a ± instead of a bare number.
+(c) **0K↔298K enthalpy correction** (the RRHO enthalpy-function rung) so ΔfH lands at the table's 298.15 K reference.
+
+**Mid** — (a) **Group-additivity (Benson) S°/ΔfH°** for drug-sized molecules the oracle can't reach — needs a FETCHED,
+sourced group-contribution table (the derivation path that actually closes the paracetamol litmus, since PySCF never
+will). (b) **gas→crystal/liquid corrections** (entropy of sublimation/vaporisation) to lift S°(gas) → S°(cr) for
+condensed targets. (c) **True convergent AND-OR tree enumeration** — `enumerate_routes` drops multi-precursor branches;
+lift it to emit `SynthesisDAG` (the DAG grader already exists) so a target needing two from-scratch precursors compiles.
+(d) **A sourced, provenance-carrying commodity registry** (identities structure-keyed) + broader sourced conditions so
+each drafted step's medium/T/P is explicit, sourced-or-loud-UNKNOWN. (e) **Extend the atomic ΔfH anchor beyond CHNO**
+(two-independent-source discipline) to widen the atomization bridge.
+
+**Long (W3, NARROWED)** — the permanent wall is CERTIFYING the exact real-world dynamical outcome AS FACT — which
+cleavage Nature actually takes and the true rate under real conditions — and even that yields a graded PREDICTED estimate
+from known physics (thermodynamic control, TST). It is NOT "thermodynamics is never certified": ΔG/K/S°/ΔfH° are
+DERIVED/PREDICTED wherever a chain of known physics reaches from sourced inputs. A value known physics can derive is
+never dumped to UNKNOWN.

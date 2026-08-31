@@ -372,13 +372,24 @@ def assign_groups(molecule: Molecule) -> tuple[str, ...] | None:
 # σ = σ_ext × σ_int:  σ_ext = |Aut(heavy graph)| with aromatic ring bonds uniformised (so the Kekulé
 # single/double alternation does not spuriously break benzene's ring symmetry); σ_int = 3 per methyl-type
 # top.  This reproduces the physical symmetry number for the whole calibration set (ethane/propane/butane
-# 18, benzene 12, methanol/ethanol/acetaldehyde/propene 3, acetone/dimethyl-ether 18).  It can OVER-count
-# by a factor 2 for a molecule whose only skeletal symmetry is an improper mirror (e.g. toluene), because a
-# 2-D graph cannot tell a proper C2 rotation from a mirror; that ≤ R ln 2 ≈ 5.76 J/mol/K residual is folded
-# into the reported S° band.  n_optical (chirality) is a future rung; held at 1 (its effect is also ≤ R ln 2,
-# in the band).
+# 18, benzene 12, methanol/ethanol/acetaldehyde/propene 3, acetone/dimethyl-ether 18).
+#
+# WHERE THE GRAPH AUTOMORPHISM IS NOT THE SYMMETRY NUMBER (and how each case is handled honestly):
+# * Improper (mirror) symmetry -- a 2-D graph cannot tell a proper C2 rotation from a mirror, so |Aut|
+#   over-counts a *single* equivalent-group swap by a factor 2 (e.g. toluene, isopropanol, and even
+#   neopentane where |Aut|=|Td|=24 vs the proper σ_ext=12).  That ≤ R ln 2 ≈ 5.76 J/mol/K residual is
+#   always folded into the S° band, and these stay DERIVED.
+# * Independent permutation of equivalent tops at DIFFERENT branch points -- the graph lets the methyls on
+#   one quaternary/tertiary carbon permute independently of those on another (S3×S3×… ), which NO rigid
+#   rotation realizes, so the over-count COMPOUNDS multiplicatively and blows past R ln 2 (2,2,3,3-
+#   tetramethylbutane: |Aut|σ=52488 vs true 4374, a factor 12).  A 2-D graph cannot compute the true σ_ext
+#   here (it needs 3-D), so :func:`_sigma_multicenter_unreliable` DETECTS the signature (≥2 heavy atoms
+#   each bearing ≥2 equivalent methyl tops) and the estimate is graded PREDICTED with its S° band widened to
+#   R ln(σ_ext) -- honestly bracketing the over-count instead of asserting a confident (too-low) S°.
+#   (Found by adversarial review; the old "≤ R ln 2 always" claim here was false for multi-branch alkanes.)
+# n_optical (chirality) is a future rung; held at 1 (its effect is also ≤ R ln 2, in the band).
 # =====================================================================================================
-_MAX_AUT_ATOMS = 20  # safety valve: above this, skip the automorphism search (σ_ext=1, band widened)
+_MAX_AUT_ATOMS = 20  # safety valve: above this, skip the search -> σ_ext=1 and the estimate grades PREDICTED
 
 
 def _heavy_symmetry_graph(mol: Molecule, adj: list[list[tuple[int, int]]],
@@ -453,13 +464,41 @@ def _internal_symmetry(mol: Molecule, adj: list[list[tuple[int, int]]]) -> int:
     return sigma_int
 
 
+def _methyl_tops_per_atom(mol: Molecule, adj: list[list[tuple[int, int]]]) -> dict[int, int]:
+    """For each heavy atom, how many methyl-type tops (a C bonded to it by one single bond and to 3 H) hang
+    off it -- the count of independently-permutable equivalent tops at that branch point."""
+    counts: dict[int, int] = {}
+    for i, s in enumerate(mol.atoms):
+        if s == "H":
+            continue
+        n = 0
+        for j, o in adj[i]:
+            if o == 1 and mol.atoms[j] == "C":
+                jheavy = [(k, oo) for (k, oo) in adj[j] if mol.atoms[k] != "H"]
+                jH = _h_count(adj[j], mol.atoms)
+                if len(jheavy) == 1 and jH == 3:
+                    n += 1
+        counts[i] = n
+    return counts
+
+
+def _sigma_multicenter_unreliable(mol: Molecule, adj: list[list[tuple[int, int]]]) -> bool:
+    """True when σ_ext = |Aut(heavy graph)| can COMPOUND past the factor-2 mirror residual: the signature is
+    two or more distinct branch points that each bear >=2 equivalent methyl tops, which the graph permits to
+    permute independently (S3xS3, …) though no rigid rotation does.  A single multi-methyl centre (neopentane,
+    isobutane) is only the factor-2 improper case and stays reliable (in-band)."""
+    counts = _methyl_tops_per_atom(mol, adj)
+    return sum(1 for n in counts.values() if n >= 2) >= 2
+
+
 def _symmetry_number(mol: Molecule, adj: list[list[tuple[int, int]]],
-                     ring_bonds: frozenset[frozenset[int]]) -> tuple[int, bool]:
-    """The total rotational symmetry number σ, and whether the automorphism search was skipped (too big)."""
+                     ring_bonds: frozenset[frozenset[int]]) -> tuple[int, int, bool]:
+    """The total rotational symmetry number σ, its external part σ_ext, and whether the automorphism search
+    was skipped (graph too big -> σ_ext forced to 1)."""
     heavy, color, edges = _heavy_symmetry_graph(mol, adj, ring_bonds)
     skipped = len(heavy) > _MAX_AUT_ATOMS
     sigma_ext = _automorphism_count(heavy, color, edges)
-    return sigma_ext * _internal_symmetry(mol, adj), skipped
+    return sigma_ext * _internal_symmetry(mol, adj), sigma_ext, skipped
 
 
 @dataclass(frozen=True)
@@ -503,7 +542,9 @@ def estimate_thermo(molecule: Molecule) -> GroupThermoEstimate | None:
     mol = molecule.canonical()
     adj = _neighbours(mol)
     _aromatic, ring_bonds, _n_rings = _aromatic_rings(mol, adj)
-    sigma, skipped = _symmetry_number(mol, adj, ring_bonds)
+    sigma, sigma_ext, skipped = _symmetry_number(mol, adj, ring_bonds)
+    multicenter = _sigma_multicenter_unreliable(mol, adj)
+    sigma_unreliable = skipped or multicenter
 
     dhf = sum(g.dhf_kj_per_mol for g in groups)
     s_groups = sum(g.s_j_per_mol_k for g in groups)
@@ -511,22 +552,38 @@ def estimate_thermo(molecule: Molecule) -> GroupThermoEstimate | None:
 
     dhf_var = sum(_TIER_BAND[g.tier][0] ** 2 for g in groups)
     s_var = sum(_TIER_BAND[g.tier][1] ** 2 for g in groups)
-    s_sym_residual = R_J_PER_MOL_K * math.log(2) * (2.0 if skipped else 1.0)
+    # symmetry-uncertainty band: normally the R ln 2 improper-mirror residual; widened when σ is unreliable.
+    if skipped:
+        s_sym_residual = R_J_PER_MOL_K * math.log(18.0)   # σ_ext unknown (graph too big) -- a generous floor
+    elif multicenter:
+        s_sym_residual = R_J_PER_MOL_K * math.log(sigma_ext)  # brackets the compounding branch-permutation over-count
+    else:
+        s_sym_residual = R_J_PER_MOL_K * math.log(2.0)
     dhf_band = round(math.sqrt(dhf_var), 1)
     s_band = round(math.sqrt(s_var) + s_sym_residual, 1)
 
     tiers = tuple(g.tier for g in groups)
-    grade = "PREDICTED" if any(t is GroupTier.ASSIGNED for t in tiers) else "DERIVED"
+    grade = (
+        "PREDICTED"
+        if (any(t is GroupTier.ASSIGNED for t in tiers) or sigma_unreliable)
+        else "DERIVED"
+    )
 
     counts: dict[str, int] = {}
     for lbl in labels:
         counts[lbl] = counts.get(lbl, 0) + 1
     group_render = ", ".join(f"{n}x {lbl}" if n > 1 else lbl for lbl, n in sorted(counts.items()))
+    sigma_note = "" if not sigma_unreliable else (
+        " [σ UNRELIABLE: "
+        + ("graph too large, σ_ext skipped" if skipped else
+           "multiple equivalent branch tops -- graph over-counts the rotational σ; S° band widened to bracket it")
+        + " -> PREDICTED]"
+    )
     provenance = (
         f"{grade} ideal-gas (298 K) via Benson group additivity: ΔfH° = Σ groups, "
         f"S° = Σ groups − R·ln(σ={sigma}); groups [{group_render}]; "
         f"sourced RMG-database Benson/CBS-QB3 values (see BENSON_GROUPS provenance); "
-        f"gas phase only (condensed-phase needs a separate Δsub correction)"
+        f"gas phase only (condensed-phase needs a separate Δsub correction){sigma_note}"
     )
     return GroupThermoEstimate(
         round(dhf, 2), round(s_total, 2), dhf_band, s_band, grade, sigma, tuple(labels), provenance,

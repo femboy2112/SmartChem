@@ -117,6 +117,35 @@ class TestSymmetryNumber:
         assert est is not None and est.symmetry_number == sigma
 
 
+class TestSymmetryOvercountGuard:
+    """Regression (adversarial red-team, HIGH): |Aut(heavy graph)| over-counts the rotational σ without
+    bound when equivalent methyl tops at DIFFERENT branch points permute independently -- a wrong (too-low)
+    S°, and it was graded DERIVED with no flag. The guard: such molecules grade PREDICTED with a band that
+    honestly brackets the over-count; a single multi-methyl centre (factor-2 improper only) stays DERIVED."""
+
+    @pytest.mark.parametrize("name,smiles,true_sigma", [
+        ("2,2,3,3-tetramethylbutane", "CC(C)(C)C(C)(C)C", 4374),   # was factor 12, out of band
+        ("2,2,4,4-tetramethylpentane", "CC(C)(C)CC(C)(C)C", 1458),  # was factor 36, out of band
+        ("2,3-dimethylbutane", "CC(C)C(C)C", 162),
+    ])
+    def test_multi_branch_overcount_is_predicted_and_banded(self, name, smiles, true_sigma):
+        est = estimate_thermo(parse_smiles(smiles))
+        assert est is not None
+        assert est.grade == "PREDICTED", f"{name} must not grade DERIVED on an unreliable σ"
+        # the S° band must cover the actual over-count error R*ln(codeσ/trueσ)
+        s_err = R_J_PER_MOL_K * math.log(est.symmetry_number / true_sigma)
+        assert abs(s_err) <= est.s_uncertainty_j_per_k, (
+            f"{name}: S° error {s_err:.1f} not covered by band ±{est.s_uncertainty_j_per_k}"
+        )
+
+    def test_single_multi_methyl_centre_stays_derived(self):
+        # neopentane: one quaternary C, four methyls -> only the factor-2 improper case, error = R ln 2, in band
+        est = estimate_thermo(parse_smiles("CC(C)(C)C"))
+        assert est is not None and est.grade == "DERIVED"
+        s_err = R_J_PER_MOL_K * math.log(est.symmetry_number / 972)  # true σ(neopentane) = 12 x 3^4
+        assert abs(s_err) <= est.s_uncertainty_j_per_k
+
+
 class TestNoFabricatedZeroEntropy:
     """The S298=0 placeholder poisoning guard: a group whose RMG entry carried a placeholder zero entropy is
     never stored as a physical zero -- the aromatic amide N (paracetamol's) is ASSIGNED a real analogue S°."""

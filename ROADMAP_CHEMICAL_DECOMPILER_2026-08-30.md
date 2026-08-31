@@ -1876,3 +1876,47 @@ cleavage Nature actually takes and the true rate under real conditions — and e
 from known physics (thermodynamic control, TST). It is NOT "thermodynamics is never certified": ΔG/K/S°/ΔfH° are
 DERIVED/PREDICTED wherever a chain of known physics reaches from sourced inputs. A value known physics can derive is
 never dumped to UNKNOWN.
+
+## Part 33 — the derivation layer's rung 2 (Benson group additivity) + a coherent CLI front door (2026-08-31)
+
+The Mid-(a) item above is BUILT: **`smartchem/data/thermo_groups.py`** estimates ideal-gas ΔfH°(298) and S°(298)
+by Benson group additivity — the sourced group-contribution path that reaches paracetamol-sized molecules the
+CCSD(T) oracle never will (the ~3-heavy-atom wall). It is the FETCHED, sourced group table the roadmap said this
+needed: every increment comes from the open MIT-licensed **RMG-database** group tables (Benson 1976 / Cohen & Benson
+1993 core, with a CBS-QB3 refit where that is the only bearing), unit-read per record (the source mixes kcal/kJ),
+carried with its RMG provenance tag, **never recalled**.
+
+- **The engine.** The bond graph is walked into canonical Benson groups (`C-(C)(H)3`, `CB-(O)`, `CO-(C)(N)`,
+  `N-(CB)(CO)(H)`, …); ΔfH° = Σ increments; S° = Σ group entropies − R·ln(σ), where σ is the rotational symmetry
+  number computed as |Aut(heavy graph)| **with aromatic ring bonds uniformised** (so the Kekulé single/double
+  alternation does not spuriously break benzene's ring symmetry) × 3 per methyl top. Output is graded `DERIVED`
+  (in-scheme) or `PREDICTED` (a group assigned by analogy), always with an uncertainty band.
+- **Honest boundaries, enforced not commented.** (1) **Gas phase only** — the phase trap; a condensed-phase value
+  needs a separate Δsub/Δvap correction, and feasibility flags any derived-gas ⊕ sourced-condensed sum as
+  `PHASE-MIXED` and caps it at `PREDICTED`. (2) **Ring strain** — a ring with no sourced strain correction
+  (cyclopropane, epoxide, …) is OFF-COVERAGE (a loud `None`), refusing a sign-wrong strain-blind chain estimate
+  (cyclopropane→propene was the tell: +115 kJ/mol of missing strain flips the verdict). (3) **Placeholder zeros** —
+  a group whose RMG entry carried `S298=0` (a not-yet-fitted stub) is refused, never stored as a physical zero;
+  paracetamol's aromatic amide N takes a real analogue entropy instead.
+- **Instrument rule.** Calibrated against SOURCED gas-phase molecular ΔfH°/S° (NIST WebBook + CCCBDB / Gurvich 1989,
+  Frenkel-Marsh 1994) — a SEPARATE data lineage from the RMG group values, so agreement is a two-blind-path
+  cross-validation. Every anchor (ethane…propene) recovers within 6 kJ/mol and 6 J/mol/K. **Paracetamol's once-UNKNOWN
+  gas thermo is now `PREDICTED`-with-band (−311 ± 21 kJ/mol)** — the litmus lift; the gas→crystal Δsub correction
+  stays the named next rung (Mid-(b)).
+
+**Rung-2 wiring.** `resolve_thermo` / `feasibility_of_step` / `equilibrium_of_step` gain `derive` (default **True**):
+on a sourced-table miss they DERIVE a gas value instead of reflexively returning `UNKNOWN` — "a value known physics can
+derive is never dumped to UNKNOWN", made real. `ThermoRef` carries the derivation `grade` as `field(compare=False)`
+(fingerprint-safe, verified: the digest does not move). The DERIVED-with-band `ThermoRef` (Short-(b)) is thereby
+also delivered.
+
+**The CLI front door (the "pick up and go" gap).** There was no `python -m smartchem` and no decompiler CLI, and
+`compile_synthesis` was unwired. Now **`smartchem/cli.py`** is one coherent dispatcher — `decompile FORMULA` (the
+AND-OR bucket descent, accepts `--smiles`), `compile SMILES` (the `compile_synthesis` front door — ranked, graded,
+bucket-terminated, with the honesty ledger), `synthesize SMILES` (the route engine, delegates to
+`smartchem.experiment`), `audit PATH` (the probe-evidence auditor, delegates to `smartchem.evidence`) — with clean
+per-command `--help` and the wiki for depth. A chemist picks it up from `--help` alone.
+
+Suite: +44 tests to **2407** (verified), ruff-clean on all touched files, two commits. Still rolled forward: Mid-(b) gas→crystal corrections
+(the last mile to a condensed-phase paracetamol ΔG), the ring-strain correction table (to lift the ring off-coverage),
+and everything else in Part 32's roll-forward list.

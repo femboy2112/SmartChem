@@ -41,6 +41,7 @@ from ..category import Molecule
 from ..conditions import ConditionEnvelope
 from ..contracts import Digestible
 from ..data.thermo import DEFAULT_THERMO, REFERENCE_TEMPERATURE_K, ThermoRef, ThermoTable
+from ..data.thermo_groups import estimate_thermo
 from ..decompiler import Formula
 from ..structure import resolve_structure
 from .bucket import Bucket, Quantity, unknown
@@ -85,15 +86,35 @@ def _label(molecule: Molecule) -> str:
     return named.name if named is not None else _formula_str(molecule)
 
 
-def resolve_thermo(molecule: Molecule, table: ThermoTable = DEFAULT_THERMO) -> ThermoRef | None:
-    """The sourced thermo record for ``molecule`` -- named if the registry resolves it, else formula-level
-    (unambiguous only), else ``None`` (a loud gap).  Mirrors ``composability.resolve_stability``."""
+def resolve_thermo(
+    molecule: Molecule, table: ThermoTable = DEFAULT_THERMO, *, derive: bool = True
+) -> ThermoRef | None:
+    """The thermo record for ``molecule``: sourced if the table covers it (named, else formula-level when
+    unambiguous), else -- when ``derive`` (default) -- a DERIVED/PREDICTED **gas-phase** estimate from Benson
+    group additivity (:mod:`smartchem.data.thermo_groups`), else ``None`` (a loud gap).
+
+    Sourced ALWAYS wins over derived: the group estimate is the rung-2 fallback that stops feasibility from
+    reflexively returning ``UNKNOWN`` for a compound whose thermo known physics can derive
+    ([[known-physics-not-new-physics]]).  A derived record carries ``grade`` in {DERIVED, PREDICTED},
+    ``phase="gas"``, and a band in its provenance; the caller (below) enforces phase honesty when a derived
+    gas value meets a sourced condensed one.  ``derive=False`` restores the pure-sourced behaviour.
+    """
     named = resolve_structure(molecule)
     if named is not None:
         hit = table.for_named(named.expected_formula, named.name)
         if hit is not None:
             return hit
-    return table.for_formula(_formula_str(molecule))
+    hit = table.for_formula(_formula_str(molecule))
+    if hit is not None:
+        return hit
+    if derive:
+        est = estimate_thermo(molecule)
+        if est is not None:
+            return ThermoRef(
+                _formula_str(molecule), _label(molecule), est.dhf_kj_per_mol, est.s_j_per_mol_k,
+                est.phase, est.provenance, grade=est.grade,
+            )
+    return None
 
 
 def _temperature_of(step: ExperimentStep) -> float:
@@ -132,19 +153,24 @@ class StepFeasibility(Digestible):
 
 
 def feasibility_of_step(
-    step: ExperimentStep, *, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None
+    step: ExperimentStep, *, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None,
+    derive: bool = True,
 ) -> StepFeasibility:
-    """The DERIVED ΔG feasibility verdict for one step, over sourced thermodynamic data.
+    """The graded ΔG feasibility verdict for one step, over sourced thermodynamic data plus (when ``derive``,
+    the default) a Benson group-additivity gas-phase fallback for species the table does not cover.
 
     ``temperature_k`` overrides the reaction temperature (default: the step's declared envelope midpoint, or
-    the 298.15 K reference).  A species with no sourced ΔfH°/S° makes the whole verdict UNKNOWN -- loud, never
-    a fabricated ΔG.
+    the 298.15 K reference).  A species whose thermo is neither sourced NOR derivable makes the whole verdict
+    UNKNOWN -- loud, never a fabricated ΔG.  When a derived (gas-phase) record is used, the verdict grade
+    reflects it: a PREDICTED group value caps the verdict at PREDICTED, and mixing a derived-gas record with a
+    sourced-condensed one caps at PREDICTED with a loud phase-inconsistency note (the group method yields gas
+    values; a cross-phase ΔG omits the Δsub/Δvap terms -- the phase trap, stated not hidden).
     """
     if type(step) is not ExperimentStep:
         raise TypeError("step must be an ExperimentStep")
     temperature = temperature_k if temperature_k is not None else _temperature_of(step)
     species, nu = _coefficient_vector(step)
-    resolved = [(m, n, resolve_thermo(m, thermo)) for m, n in zip(species, nu)]
+    resolved = [(m, n, resolve_thermo(m, thermo, derive=derive)) for m, n in zip(species, nu)]
     missing = tuple(_label(m) for m, _n, r in resolved if r is None)
     if missing:
         return StepFeasibility(
@@ -160,11 +186,20 @@ def feasibility_of_step(
     delta_s = -sum(n * r.s_j_per_mol_k for _m, n, r in resolved)
     delta_g = delta_h - temperature * delta_s / 1000.0  # S in J/K -> kJ/K
 
+    # Provenance of the inputs: was any ΔfH°/S° group-DERIVED rather than sourced, and did the derived
+    # (gas) records mix phases with sourced (condensed) ones?  Both cap the verdict grade honestly.
+    grades = [r.grade for _m, _n, r in resolved]
+    derived_labels = tuple(_label(m) for m, _n, r in resolved if r.grade != "SOURCED")
+    phases = {r.phase for _m, _n, r in resolved}
+    phase_mixed = len(phases) > 1 and bool(derived_labels)
+
     grade = (
         FeasibilityGrade.DERIVED
         if abs(temperature - REFERENCE_TEMPERATURE_K) <= NEAR_REFERENCE_K
         else FeasibilityGrade.PREDICTED
     )
+    if any(g == "PREDICTED" for g in grades) or phase_mixed:
+        grade = FeasibilityGrade.PREDICTED  # a PREDICTED group value / cross-phase sum can't grade DERIVED
     if abs(delta_g) < BORDERLINE_KJ:
         direction = FeasibilityDirection.BORDERLINE
     elif delta_g < 0:
@@ -174,19 +209,29 @@ def feasibility_of_step(
 
     extrap = "" if grade is FeasibilityGrade.DERIVED else (
         " [PREDICTED: extrapolated from the 298.15 K reference via constant ΔH/ΔS]"
+        if abs(temperature - REFERENCE_TEMPERATURE_K) > NEAR_REFERENCE_K else ""
+    )
+    derived_note = "" if not derived_labels else (
+        f" [group-additivity DERIVED (gas, Benson) for {', '.join(sorted(set(derived_labels)))}]"
+    )
+    phase_note = "" if not phase_mixed else (
+        f" [PHASE-MIXED {sorted(phases)}: a group-derived GAS value is summed with a sourced condensed "
+        f"value; ΔG omits the Δsub/Δvap correction -- gas-phase estimate only, not the condensed ΔG]"
     )
     disfavour = "" if direction is not FeasibilityDirection.UNFAVORABLE else (
         " (endergonic in this direction at standard state -- disfavored, NOT impossible: coupling / "
         "non-standard conditions / product removal can still drive it)"
     )
+    source_desc = "sourced ΔfH°/S°" if not derived_labels else "sourced + group-derived (gas) ΔfH°/S°"
     reason = (
         f"{direction.value}: ΔG = {delta_g:.1f} kJ/mol at {temperature:.1f} K "
-        f"(ΔH = {delta_h:.1f} kJ, ΔS = {delta_s:.1f} J/K; Hess's law + Gibbs over sourced formation data)"
-        f"{disfavour}{extrap} -- thermodynamic feasibility, not a rate"
+        f"(ΔH = {delta_h:.1f} kJ, ΔS = {delta_s:.1f} J/K; Hess's law + Gibbs over {source_desc})"
+        f"{disfavour}{extrap}{derived_note}{phase_note} -- thermodynamic feasibility, not a rate"
     )
     finding = Quantity(
         "delta-G-rxn", f"{delta_g:.1f}", "kJ/mol", Bucket.KNOWN_SOURCED,
-        f"{grade.value} via Hess's law + ΔG=ΔH-TΔS (established) over sourced ΔfH°/S° at {temperature:.1f} K",
+        f"{grade.value} via Hess's law + ΔG=ΔH-TΔS (established) over {source_desc} at {temperature:.1f} K"
+        + ("" if not derived_labels else " (Benson group additivity, gas phase, banded)"),
     )
     return StepFeasibility(
         direction, grade, temperature, delta_h, delta_s, delta_g, reason, finding, (),
@@ -232,11 +277,15 @@ class RouteFeasibility(Digestible):
 
 
 def verify_feasibility(
-    route: ExperimentRoute, *, thermo: ThermoTable = None, temperature_k: float | None = None
+    route: ExperimentRoute, *, thermo: ThermoTable = None, temperature_k: float | None = None,
+    derive: bool = True,
 ) -> RouteFeasibility:
-    """The thermodynamic feasibility of every step of a route, over the sourced (injectable) thermo table."""
+    """The thermodynamic feasibility of every step of a route, over the sourced (injectable) thermo table
+    plus (when ``derive``, the default) the Benson group-additivity gas-phase fallback."""
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     tbl = DEFAULT_THERMO if thermo is None else thermo
-    per_step = tuple(feasibility_of_step(s, thermo=tbl, temperature_k=temperature_k) for s in route.steps)
+    per_step = tuple(
+        feasibility_of_step(s, thermo=tbl, temperature_k=temperature_k, derive=derive) for s in route.steps
+    )
     return RouteFeasibility(route, per_step)

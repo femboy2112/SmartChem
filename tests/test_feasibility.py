@@ -83,7 +83,10 @@ class TestInjectabilityLever:
         step = ExperimentStep.assembling(
             CO2, (ETHANOL, O2, O2, O2), (CO2, CO2, H2O, H2O, H2O)
         )
-        assert feasibility_of_step(step).direction is FeasibilityDirection.UNKNOWN
+        # This test isolates the SOURCED injectability lever, so derivation is disabled: rung 2 (group
+        # additivity) would otherwise DERIVE ethanol's gas thermo and lift this off UNKNOWN by default
+        # (see tests/test_thermo_groups.py for that path).
+        assert feasibility_of_step(step, derive=False).direction is FeasibilityDirection.UNKNOWN
 
         injected = DEFAULT_THERMO.with_records(
             ThermoRef("C2H6O", "ethanol", -277.6, 160.7, "liquid",

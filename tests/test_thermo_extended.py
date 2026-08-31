@@ -62,7 +62,9 @@ class TestTheUnlock:
 
     def test_a_seed_unknown_reaction_becomes_derived(self):
         step = ethanol_combustion()
-        assert feasibility_of_step(step).direction is FeasibilityDirection.UNKNOWN         # seed: no ethanol
+        # derive=False isolates the SOURCED coverage layer: rung-2 group additivity would otherwise DERIVE
+        # ethanol's gas thermo by default (that lift is exercised in tests/test_thermo_groups.py).
+        assert feasibility_of_step(step, derive=False).direction is FeasibilityDirection.UNKNOWN  # seed: no ethanol
         assert feasibility_of_step(step, thermo=EXT).direction is FeasibilityDirection.FAVORABLE
 
     def test_the_unlock_reaches_M2_equilibrium_too(self):

@@ -168,17 +168,20 @@ class StepEquilibrium(Digestible):
 
 
 def equilibrium_of_step(
-    step: ExperimentStep, *, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None
+    step: ExperimentStep, *, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None,
+    derive: bool = True,
 ) -> StepEquilibrium:
-    """The DERIVED equilibrium constant and extent for one step, over sourced thermodynamic data.
+    """The DERIVED equilibrium constant and extent for one step, over sourced (and, when ``derive``, the
+    default, group-additivity-derived) thermodynamic data.
 
     Reuses :func:`~smartchem.experiment.feasibility.feasibility_of_step` for ΔG, its grade, and the reaction
-    temperature (so M1 and M2 never disagree), then ``K = exp(-ΔG/RT)``.  A species with no sourced ΔfH°/S°
-    makes the whole verdict UNKNOWN -- loud, never a fabricated K.
+    temperature (so M1 and M2 never disagree -- ``derive`` is threaded straight through for exactly that
+    reason), then ``K = exp(-ΔG/RT)``.  A species whose ΔfH°/S° is neither sourced nor derivable makes the
+    whole verdict UNKNOWN -- loud, never a fabricated K.
     """
     if type(step) is not ExperimentStep:
         raise TypeError("step must be an ExperimentStep")
-    feas = feasibility_of_step(step, thermo=thermo, temperature_k=temperature_k)
+    feas = feasibility_of_step(step, thermo=thermo, temperature_k=temperature_k, derive=derive)
     if feas.delta_g_kj is None:  # no sourced ΔG -> no K
         return StepEquilibrium(
             EquilibriumExtent.UNKNOWN, FeasibilityGrade.UNKNOWN, feas.temperature_k, None, None, None,
@@ -266,11 +269,15 @@ class RouteEquilibrium(Digestible):
 
 
 def verify_equilibrium(
-    route: ExperimentRoute, *, thermo: ThermoTable = None, temperature_k: float | None = None
+    route: ExperimentRoute, *, thermo: ThermoTable = None, temperature_k: float | None = None,
+    derive: bool = True,
 ) -> RouteEquilibrium:
-    """The equilibrium extent of every step of a route, over the sourced (injectable) thermo table."""
+    """The equilibrium extent of every step of a route, over the sourced (injectable) thermo table plus (when
+    ``derive``, the default) the group-additivity gas-phase fallback -- threaded to match M1."""
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     tbl = DEFAULT_THERMO if thermo is None else thermo
-    per_step = tuple(equilibrium_of_step(s, thermo=tbl, temperature_k=temperature_k) for s in route.steps)
+    per_step = tuple(
+        equilibrium_of_step(s, thermo=tbl, temperature_k=temperature_k, derive=derive) for s in route.steps
+    )
     return RouteEquilibrium(route, per_step)

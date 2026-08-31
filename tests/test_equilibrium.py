@@ -122,7 +122,9 @@ class TestHonestUnknown:
 class TestInjectabilityLever:
     def test_ethanol_combustion_unknown_until_injected_then_complete(self):
         step = ExperimentStep.assembling(CO2, (ETHANOL, O2, O2, O2), (CO2, CO2, H2O, H2O, H2O))
-        assert equilibrium_of_step(step).extent is EquilibriumExtent.UNKNOWN
+        # derive=False isolates the SOURCED lever: with rung-2 derivation on (the default) ethanol's gas
+        # thermo is DERIVED, so M2 would report an extent rather than UNKNOWN (threaded straight from M1).
+        assert equilibrium_of_step(step, derive=False).extent is EquilibriumExtent.UNKNOWN
 
         injected = DEFAULT_THERMO.with_records(
             ThermoRef("C2H6O", "ethanol", -277.6, 160.7, "liquid",

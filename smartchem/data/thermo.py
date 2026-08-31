@@ -21,7 +21,7 @@ favorable, never *how fast* (kinetics is a separate, unbuilt model; see the road
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..contracts import Digestible
 
@@ -52,9 +52,15 @@ class ThermoRef(Digestible):
     s_j_per_mol_k: float
     phase: str
     provenance: str
+    #: How the ΔfH°/S° were obtained: ``"SOURCED"`` (a measured/tabulated value, the default), or a
+    #: derivation grade (``"DERIVED"`` / ``"PREDICTED"``) when the record was ESTIMATED by group additivity
+    #: (:mod:`smartchem.data.thermo_groups`).  ``compare=False`` keeps it OUT of the semantic digest and out
+    #: of equality (``contracts.canonical_payload`` skips ``field.compare is False`` fields), so tagging a
+    #: record's provenance-grade never moves any fingerprint -- it is metadata, not identity.
+    grade: str = field(default="SOURCED", compare=False)
 
     def __post_init__(self) -> None:
-        for field_name in ("formula", "name", "phase", "provenance"):
+        for field_name in ("formula", "name", "phase", "provenance", "grade"):
             v = getattr(self, field_name)
             if not isinstance(v, str) or not v:
                 raise ValueError(f"{field_name} must be a non-empty string")

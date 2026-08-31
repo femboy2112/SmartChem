@@ -1633,3 +1633,66 @@ turns the reachable structured chain into a *ranked* one) decomposes into:
 **Still open after this arc:** R2 was already built (resonance-canonical identity, `42dfb15`); the remaining
 ladder is R5-full (above) atop R3/R4 now done. The deep structured intermediates grade `HYPOTHESIZED` until
 R5-full sources them.
+
+## Part 29 — the RATE dimension (L1), deeper sourcing, and broader reach (short×3 + mid×3)
+
+One coherent arc closing all three short-term goals AND the three mid-term ones, under the anti-fake-build /
+anti-poisoning discipline made procedural: a read-only **recon workflow** (5 agents) mapped every gap's exact state
+first (catching two would-be lies — the thermo goal is walled by a permanent entropy gap, not missing code; a
+`PropertyProvider` physically cannot widen DERIVED), then a **web-sourcing workflow** (4 agents) FETCHED every number
+with provenance and captured real NIST fixtures, then **three caged executors** built the disjoint streams in
+parallel while the kinetics chokepoint was wired by hand, then an **adversarial-verify workflow** red-teamed the
+result. Gate **69→78**, full suite **2206→2242**, zero regressions, every changed file ruff-clean. The coherent
+through-line: **L2 grows a rate axis orthogonal to feasibility, the existing grades get sourced deeper and keyed to
+the right isomer, and reach broadens** — one arc, not six pokes.
+
+### The builds
+
+* **L1 kinetics — the RATE dimension (short S3 + mid Mid-3 engine).** `smartchem/data/kinetics.py` (the sourced
+  `KineticRef`/`KineticTable`, keyed by a canonical direction-specific **reaction** signature) + `smartchem/experiment/
+  kinetics.py` (`k = A·exp(−Ea/RT)` in `log10 k` space; `RateRegime` FAST..FROZEN read off a half-life; `RateGrade`
+  DERIVED-in-window / PREDICTED-extrapolated / UNKNOWN). The one genuinely-new bit of engineering vs. the M1 template:
+  a rate constant is a property of the WHOLE reaction, so the key is built from feasibility's own
+  `_coefficient_vector` (it can never disagree with the balance). Seeded with **N₂O₅ decomposition** as the
+  calibration reaction (Ea 103.5 kJ/mol, log₁₀A 13.69, 298–338 K, FETCHED + corroborated ≥3 sources; convention pinned
+  to `−d[N2O5]/dt = k[N2O5]`, the sourcing pass having caught the exact-2× stoichiometric-convention hazard). The
+  instrument reads true: engine k reproduces the measured value within **7%/3%** at 298/338 K. Wired into
+  `classify.py` as a fifth `UnifiedVerdict` sub-verdict that **never touches `_step_grade`/`_LADDER`** — a KNOWN
+  reaction reports its rate FROZEN/UNKNOWN without its footing moving. 18 tests (`tests/test_kinetics.py`).
+* **Mid-1 selectivity breadth + S2 isomer-keyed reactant guard (short S2 + mid Mid-1).** `selectivity.py` gains a
+  `reactant_names` field: a record fires FAVORED only when a reactant genuinely *resolves* to the required isomer
+  (greedy multiset containment), else a loud UNKNOWN — the reactant side is now isomer-keyed, symmetric with the
+  already-structure-resolved product side. Two FETCHED regiochemistry records (Markovnikov → propan-2-ol; meta-director
+  nitration → 1,3-dinitrobenzene) broaden sourced selectivity beyond the paracetamol N-vs-O record; 4 competing
+  product isomers registered in `structure.py` so the FAVORED is a real discrimination (non-vacuous). Br was found
+  UNSUPPORTED on the filesystem, so the Zaitsev/2-bromobutane record was dropped rather than misattributed — the cage
+  catching a recon agent's wrong claim.
+* **S1 R5-lite nitration front (short S1).** FETCHED **HNO₃(l)** ΔfH°/S° (NBS-1982 lineage, crosschecked,
+  phase-disambiguated) lifts `benzene + HNO₃ → nitrobenzene + H₂O` to DERIVED (ΔG ≈ −138 kJ/mol) — the aromatic
+  nitration front. The permanent entropy wall is now *named loudly* in the docstring: the terminal drug edges stay
+  HYPOTHESIZED / KNOWN-but-thermo-UNKNOWN, walled by 4-nitrophenol's and paracetamol's missing S°. Acetic-anhydride
+  liquid S° stays a documented gap (only gas-phase exists).
+* **Mid-2 NIST-WebBook thermo autoload.** A separate `autoload_thermo` path (`data/providers/nist_thermo.py` +
+  `data/autoload.py`) mirroring `autoload_stability`, because `PropertyRecord` cannot carry ΔfH°/S°. The parser is
+  pinned to **real captured fixtures** and recovers known values offline (ethanol S° 159.86 exact), enforcing
+  no-entropy-no-record; a species NIST doesn't tabulate stays a loud gap.
+
+### The roadmap, refreshed (short / mid / long)
+
+**Short** — (a) **Mid-3 TST/Eyring ΔG‡** as the second rate provider (reuse the L1 `StepKinetics` shape; swap the
+Arrhenius resolve for `k = (kB·T/h)·exp(−ΔG‡/RT)` via feasibility's Hess+Gibbs kernel over SOURCED barrier data;
+UNKNOWN until barriers are sourced). (b) **CAS→NIST-ID resolution** for `autoload_thermo` (the one seam left before it
+reaches arbitrary bench targets — a captured CAS-lookup fixture, like the other providers). (c) **Element-set breadth**
+(add Br/Cl/… to the bundled element table so halogen chemistry — Zaitsev, Markovnikov-HX — becomes sourceable).
+
+**Mid** — (a) **R5-full** across the deep intermediate space (now a shorter gap: the nitration front is DERIVED and the
+autoload path can reach any NIST-tabulated species once its ID resolves; source the literal-route members that have a
+clean same-phase ΔfH°+S° pair, leave the entropy-walled ones honest). (b) **kinetic breadth** — more sourced `(Ea, A)`
+families so the rate dimension reaches real synthesis steps, not just the calibration reaction. (c) **rate-aware
+ranking** — let a FROZEN/SLOW rate inform route *ranking* (a tiebreaker in `drafter._route_score`) without ever
+touching the grade.
+
+**Long (unchanged)** — the permanent physical **W3 wall**: which cleavage Nature actually takes, at what real rate,
+under what conditions, is never certified. Every rung enumerates and grades; none predicts new physics. The rate
+dimension makes the wall *sharper*, not lower — it reports a rate under a SOURCED fit and refuses (loud UNKNOWN)
+everywhere else.

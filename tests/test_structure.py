@@ -12,12 +12,14 @@ import pytest
 from smartchem.category import Bond, Molecule
 from smartchem.contracts import canonical_digest
 from smartchem.decompiler import Formula
+from smartchem.smiles import parse_smiles
 from smartchem.structure import (
     NamedStructure,
     StructureError,
     known_compounds,
     registered_structures,
     resolve_names,
+    resolve_structure,
     structure_by_name,
 )
 
@@ -134,3 +136,24 @@ class TestDigestible:
     def test_named_structure_has_a_digest(self):
         st = known_compounds("C2H2O")[0]
         assert isinstance(st.digest, str) and len(st.digest) == 64
+
+
+class TestS2Mid1CompetingProductIsomers:
+    """S2/Mid-1: four new registered isomers -- ooh, TWO whole competing pairs, one alcohol one
+    dinitrobenzene -- so selectivity has more than the paracetamol fork to chew on."""
+
+    def test_propanol_isomers_parse_and_resolve_by_name(self):
+        assert resolve_structure(parse_smiles("CCCO")).name == "propan-1-ol"
+        assert resolve_structure(parse_smiles("CC(O)C")).name == "propan-2-ol"
+
+    def test_dinitrobenzene_isomers_parse_and_resolve_by_name(self):
+        meta = parse_smiles("[O-][N+](=O)c1cccc([N+](=O)[O-])c1")
+        para = parse_smiles("[O-][N+](=O)c1ccc([N+](=O)[O-])cc1")
+        assert resolve_structure(meta).name == "1,3-dinitrobenzene"
+        assert resolve_structure(para).name == "1,4-dinitrobenzene"
+
+    def test_propanol_formula_has_at_least_two_registered_isomers(self):
+        assert len(known_compounds("C3H8O")) >= 2
+
+    def test_dinitrobenzene_formula_has_at_least_two_registered_isomers(self):
+        assert len(known_compounds("C6H4N2O4")) >= 2

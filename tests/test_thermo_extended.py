@@ -82,7 +82,9 @@ class TestSourcingDiscipline:
 
     def test_every_extended_record_names_a_real_source(self):
         for r in EXTENDED_THERMO_REFS:
-            assert "NIST" in r.provenance
+            # a named U.S.-gov standard-reference lineage: NIST WebBook, or its NBS predecessor (the HNO3
+            # pair is Wagman-1982/NBS via JPCRD -- the same body, an earlier compilation, not memory-recall)
+            assert "NIST" in r.provenance or "NBS" in r.provenance
             assert any(ch.isdigit() for ch in r.provenance)   # carries a measurement year
             assert r.s_j_per_mol_k > 0                          # third law (also enforced at construction)
 
@@ -175,3 +177,24 @@ class TestR5LiteAromaticSkeleton:
         assert "C6H5NO3" in EXTENDED_THERMO_GAPS
         reason = EXTENDED_THERMO_GAPS["C6H5NO3"]
         assert ("S°" in reason or "entropy" in reason)
+
+
+class TestR5LiteNitrationFront:
+    """HNO3 extends the DERIVED reach one real edge FORWARD: the aromatic nitration front.
+
+    ``benzene + HNO3 -> nitrobenzene + H2O`` is the precursor skeleton of the industrial route. With the
+    liquid HNO3 pair sourced (NBS-1982), all four species carry a same-phase 298 K ΔfH°+S°, so the edge
+    grades DERIVED and strongly exergonic -- NOT the drug itself, which stays walled by the missing entropies.
+    """
+
+    def test_benzene_nitration_front_lifts_to_derived(self):
+        # a real precursor edge: C6H6 + HNO3 -> C6H5NO2 + H2O ; DERIVED on R5-lite, ΔG ~ -138 kJ/mol
+        benzene = parse_smiles("c1ccccc1")
+        hno3 = parse_smiles("O[N+](=O)[O-]")
+        nitrobenzene = parse_smiles("[O-][N+](=O)c1ccccc1")
+        water = parse_smiles("O")
+        step = ExperimentStep.assembling(nitrobenzene, (benzene, hno3), (nitrobenzene, water))
+        f = feasibility_of_step(step, thermo=extended_thermo())
+        assert f.direction is FeasibilityDirection.FAVORABLE
+        assert f.grade is FeasibilityGrade.DERIVED
+        assert f.delta_g_kj < -100                          # independently computed ΔG ~ -138 kJ/mol

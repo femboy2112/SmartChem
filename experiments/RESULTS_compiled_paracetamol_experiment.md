@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (69/69), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (78/78), exit 0**
 
 ## The question
 
@@ -189,6 +189,46 @@ at best.* The heat is honestly `UNKNOWN` (paracetamol has no sourced 0 K formati
   `7 cut + 0 = 7`). The documented boundary: it conserves the open-valence BUDGET across levels; per-atom,
   per-path radical identity is bounded by canonical dedup — the remaining refinement.
 
+## The short/mid arc (this session): the RATE dimension, deeper sourcing, broader reach
+
+Six goals — three short-term, three mid-term — under the anti-fake-build discipline (a read-only recon pass and a
+web-sourcing pass ran *first*, so every gap built was the REAL one and every number is FETCHED-with-provenance, not
+recalled). Gate **69→78**, full suite **2206→2242**, zero regressions, every changed file ruff-clean.
+
+- **L1 kinetics — the RATE dimension, orthogonal to the grade (short S3 + mid Mid-3 engine).** `data/kinetics.py`
+  + `experiment/kinetics.py` add `k = A·exp(−Ea/RT)` (Arrhenius, in `log10 k` space so a huge `A` never overflows to
+  a fabricated `inf`), keyed by a canonical **reaction** signature built from the same `_coefficient_vector`
+  feasibility uses (so the rate lookup can never disagree with the balance). Seeded with ONE calibration reaction —
+  **N₂O₅ decomposition** (2 N₂O₅ → 4 NO₂ + O₂), FETCHED and corroborated across ≥3 sources (Ea = 103.5 kJ/mol,
+  log₁₀A = 13.69, 298–338 K; textbook-compilation provenance, convention pinned to `−d[N2O5]/dt = k[N2O5]`). **The
+  instrument reads true:** the engine reproduces the *measured* k within **7% at 298 K and 3% at 338 K**. Composed
+  into L2 as a fifth sub-verdict that **never enters the grade**: a `KNOWN` reaction is reported kinetically `FROZEN`
+  or `UNKNOWN` without its footing changing (proven both ways in the gate). A reaction with no sourced `(Ea, A)` is a
+  loud `UNKNOWN` rate — never a barrier guessed from bond energies. HI (A unfetchable) and the litmus acetylation
+  rate are documented `KINETIC_GAPS`, not faked.
+- **Mid-1 selectivity breadth + S2 isomer-keyed reactant guard.** `selectivity.py` gains two FETCHED regiochemistry
+  records — Markovnikov hydration → **propan-2-ol** and meta-director nitration → **1,3-dinitrobenzene** (each a
+  clean single-major with a cited source; 4 competing product isomers registered so the FAVORED is a real
+  discrimination, never vacuous-green) — so sourced selectivity reaches beyond paracetamol toward `KNOWN`. **S2**
+  closes the reactant-side gap: a record may carry `reactant_names`, and it fires FAVORED only when a reactant
+  actually *resolves* to the required isomer — the wrong C₆H₇NO isomer (3-aminophenol) yields a loud `UNKNOWN`, not a
+  fired-for-the-wrong-isomer FAVORED. The two pre-existing paracetamol records (no `reactant_names`) are byte-for-byte
+  back-compatible.
+- **S1 R5-lite nitration front + the entropy wall named.** The FETCHED **HNO₃(l)** ΔfH°/S° (−174.1 / 155.6,
+  NBS-1982 lineage via OpenStax/LibreTexts, crosschecked, phase-disambiguated from the aqueous/gas values) extends the
+  DERIVED reach one real edge FORWARD: **benzene + HNO₃ → nitrobenzene + H₂O grades DERIVED** (ΔG ≈ −138 kJ/mol). The
+  honest boundary is now *named loudly*: the terminal descent to the drug stays `HYPOTHESIZED` (nitration/reduction,
+  walled by 4-nitrophenol's permanent missing S°) or `KNOWN`-but-thermo-`UNKNOWN` (acetylation, walled by
+  paracetamol's missing S°). Acetic-anhydride liquid S° stays a documented gap (only a gas-phase value exists).
+- **Mid-2 NIST-WebBook thermo autoload.** `PropertyRecord` cannot carry ΔfH°/S°, so a *separate* `autoload_thermo`
+  path (`data/providers/nist_thermo.py` + `data/autoload.py`) mirrors `autoload_stability`: seed → cache → a NIST
+  WebBook HTML scrape → absent. The parser is pinned to **real captured fixtures** (ethanol, acetic acid — HTTP 200,
+  sha256-recorded) and recovers their known values offline (ethanol S° = 159.86 *exact*, ΔfH° in the −276±2 band;
+  acetic acid S° = 158.0, skipping the flagged 193.7 outlier), enforcing **no-entropy-no-record**. A species with no
+  sourced NIST record stays a loud gap — the reach widens honestly, never by fabrication.
+
 **Still open:** the deep intermediates of a fully-structured atoms→paracetamol route still grade `HYPOTHESIZED`
-for lack of sourced data (R5-full); L1 TST kinetics (the honest "real rate") remains the deeper frontier, atop
-the permanent physical W3 wall.
+for lack of sourced data (R5-full — now a *shorter* gap: the nitration front is DERIVED, and the autoload path can
+reach any NIST-tabulated bench target once its ID is resolved); Mid-3 TST ΔG‡ (Eyring) reuses the L1 shape but stays
+`UNKNOWN` until barrier data is sourced; the permanent physical W3 wall — which cleavage Nature takes, at what real
+rate — is never certified.

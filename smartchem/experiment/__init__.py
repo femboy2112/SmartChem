@@ -101,6 +101,16 @@ from .feasibility import (
     feasibility_of_step,
     verify_feasibility,
 )
+from .kinetics import (
+    RateGrade,
+    RateRegime,
+    RouteKinetics,
+    StepKinetics,
+    kinetics_of_step,
+    reaction_key_of,
+    verify_kinetics,
+    worst_regime,
+)
 from .routes import enumerate_routes
 from .selectivity import (
     RouteSelectivity,
@@ -164,6 +174,14 @@ __all__ = [
     "RouteEquilibrium",
     "equilibrium_of_step",
     "verify_equilibrium",
+    "RateRegime",
+    "RateGrade",
+    "StepKinetics",
+    "RouteKinetics",
+    "kinetics_of_step",
+    "verify_kinetics",
+    "reaction_key_of",
+    "worst_regime",
     "SynthesisDAG",
     "DAGCeiling",
     "DAGComposability",

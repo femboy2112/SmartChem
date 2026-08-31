@@ -55,6 +55,8 @@ from smartchem.experiment import (
     FeasibilityDirection,
     FeasibilityGrade,
     Grade,
+    RateGrade,
+    RateRegime,
     RouteFitStatus,
     SelectivityStatus,
     SynthesisDAG,
@@ -67,7 +69,9 @@ from smartchem.experiment import (
     equilibrium_of_step,
     feasibility_of_step,
     fit_route,
+    kinetics_of_step,
     rank_routes,
+    selectivity_of_step,
     stoichiometric_ceiling,
     verify_composability,
     verify_dag,
@@ -77,6 +81,11 @@ from smartchem.experiment import (
 )
 from smartchem.experiment.equipment import EquipmentKind
 from smartchem.experiment.routes import enumerate_routes
+from smartchem.experiment.selectivity import DEFAULT_SELECTIVITY
+from smartchem.data.autoload import autoload_thermo
+from smartchem.data.providers.nist_thermo import parse_condensed_thermo
+from smartchem.data.thermo import DEFAULT_THERMO as SEED_THERMO
+from pathlib import Path
 from smartchem.smiles import parse_smiles
 
 
@@ -258,6 +267,32 @@ def main() -> int:
     f.check(ranked_iso[0].route == anhydride_route(),
             "ranking floats the FAVORED (right-isomer) route above the DISFAVORED one")
 
+    # Mid-1: sourced regiochemistry beyond the paracetamol record -- more reactions can now reach KNOWN
+    PROPENE = parse_smiles("CC=C")
+    PROP2OL = parse_smiles("CC(O)C")
+    HNO3 = parse_smiles("O[N+](=O)[O-]")
+    NB0 = parse_smiles("O=[N+]([O-])c1ccccc1")
+    DNB13 = parse_smiles("[O-][N+](=O)c1cccc([N+](=O)[O-])c1")
+    sel_markov = selectivity_of_step(
+        ExperimentStep.assembling(PROP2OL, (PROPENE, WATER), (PROP2OL,)), table=DEFAULT_SELECTIVITY)
+    sel_meta = selectivity_of_step(
+        ExperimentStep.assembling(DNB13, (NB0, HNO3), (DNB13, WATER)), table=DEFAULT_SELECTIVITY)
+    print(f"  Markovnikov hydration -> propan-2-ol: {sel_markov.status.value}; "
+          f"meta-nitration -> 1,3-dinitrobenzene: {sel_meta.status.value}", flush=True)
+    f.check(sel_markov.status is SelectivityStatus.FAVORED and sel_meta.status is SelectivityStatus.FAVORED,
+            "Mid-1: sourced selectivity now reaches beyond paracetamol -- Markovnikov (propan-2-ol) and "
+            "meta-nitration (1,3-dinitrobenzene) grade FAVORED against their fetched regiochemistry records")
+    # S2: the reactant side is now ISOMER-keyed ON THE DEFAULT TABLE -- a seed record fires only for the RIGHT isomer
+    right_iso = selectivity_of_step(
+        ExperimentStep.assembling(PARA, (AMP, ANH), (PARA, ACOH)), table=DEFAULT_SELECTIVITY)
+    wrong_iso = selectivity_of_step(
+        ExperimentStep.assembling(PARA, (parse_smiles("Nc1cccc(O)c1"), ANH), (PARA, ACOH)),
+        table=DEFAULT_SELECTIVITY)
+    f.check(right_iso.status is SelectivityStatus.FAVORED and wrong_iso.status is SelectivityStatus.UNKNOWN,
+            "S2: the DEFAULT selectivity table is now reactant-isomer-keyed -- 4-aminophenol + Ac2O -> paracetamol "
+            "FAVORS, but 3-aminophenol (a same-formula C6H7NO sibling) + Ac2O -> paracetamol yields a loud UNKNOWN, "
+            "never a fired-for-the-wrong-isomer FAVORED (the S2 guard is live on the seed, not just injectable)")
+
     # -- M1: thermodynamic feasibility (ΔG), the DERIVED bucket, calibrated on known reactions ---------
     print("\n[M1 feasibility] DERIVED ΔG, instrument calibrated on known reactions:", flush=True)
     water = ExperimentStep.assembling(WATER, (H2, H2, O2), (WATER, WATER))       # 2H2 + O2 -> 2H2O
@@ -305,6 +340,26 @@ def main() -> int:
         ExperimentStep.assembling(H2, (WATER, WATER), (H2, H2, O2))), ExperimentRoute.of(water)])
     f.check(verify_equilibrium(ranked_eq[0].route).verdict == "ESSENTIALLY_COMPLETE",
             "ranking floats the ESSENTIALLY_COMPLETE route above the negligible-equilibrium one")
+
+    # -- L1: reaction kinetics -- the RATE dimension, orthogonal to the grade, calibrated on N2O5 -------
+    print("\n[L1 kinetics] the Arrhenius rate k = A*exp(-Ea/RT), a dimension ORTHOGONAL to the grade, "
+          "calibrated on a sourced reaction:", flush=True)
+    N2O5 = parse_smiles("O=[N+]([O-])O[N+](=O)[O-]")
+    NO2 = parse_smiles("[N+](=O)[O-]")
+    n2o5_decomp = ExperimentStep.assembling(O2, (N2O5, N2O5), (NO2, NO2, NO2, NO2, O2))  # 2 N2O5 -> 4 NO2 + O2
+    k298 = kinetics_of_step(n2o5_decomp, temperature_k=298.15)
+    print(f"  2 N2O5 -> 4 NO2 + O2 : k(298 K) = {10 ** k298.log10_k:.2e} s^-1 (measured 3.38e-5), "
+          f"{k298.regime.value}/{k298.grade.value}", flush=True)
+    f.check(abs(10 ** k298.log10_k / 3.38e-5 - 1.0) < 0.15 and k298.grade is RateGrade.DERIVED,
+            "L1: the Arrhenius engine reproduces N2O5's MEASURED rate constant at 298 K within 15% (the "
+            "instrument reads true before its novel outputs are believed)")
+    k_low = kinetics_of_step(n2o5_decomp, temperature_k=200.0)
+    f.check(k_low.grade is RateGrade.PREDICTED and k_low.regime is RateRegime.FROZEN,
+            "L1: outside the sourced fit window the rate is a FLAGGED PREDICTED extrapolation (200 K -> FROZEN)")
+    k_apap = kinetics_of_step(anhydride_route().steps[0])
+    f.check(k_apap.regime is RateRegime.UNKNOWN and k_apap.k_finding.value is None,
+            "L1: a reaction with no sourced Arrhenius (Ea, A) has a loud UNKNOWN rate -- never a fabricated k, "
+            "never a barrier guessed from bond energies (the W3 wall)")
 
     # -- M3: thermochemistry breadth -- the extended sourced table unlocks M1/M2 beyond the seed --------
     print("\n[M3 breadth] the extended NIST-sourced table unlocks ΔG/K beyond the litmus seed:", flush=True)
@@ -381,6 +436,9 @@ def main() -> int:
     f.check(v_apap.grade is Grade.KNOWN and v_apap.feasibility.grade is FeasibilityGrade.UNKNOWN,
             "L2: the real acetylation grades KNOWN (sourced chemistry attests it) with thermodynamics honestly "
             "UNKNOWN -- a documented reaction whose ΔG is a loud gap, both true at once")
+    f.check(v_apap.kinetics is not None and v_apap.kinetics.regime is RateRegime.UNKNOWN,
+            "L2: the KNOWN acetylation reports its RATE as a SEPARATE, orthogonal dimension -- known-but-"
+            "kinetically-UNKNOWN, the rate never touching the grade (L1 composed without disturbing L2)")
 
     # KNOWN is not FAVORED: the O-acetyl ester is a documented reaction that makes the MINOR isomer
     v_ester = classify(ester_route().steps[0], thermo=thermo)
@@ -501,6 +559,39 @@ def main() -> int:
             "NIST-sourced aromatic thermo (phenol / aniline / nitrobenzene / toluene, fetched + phase-checked)")
     f.check("C6H5NO3" in EXTENDED_THERMO_GAPS and thermo.for_formula("C6H5NO3") is None,
             "R5-lite keeps the honest gaps: 4-nitrophenol (no S° in any phase) is a DOCUMENTED gap, not a fabricated record")
+    # the sourced HNO3 extends the DERIVED reach one real edge FORWARD -- the aromatic nitration front
+    BENZ = parse_smiles("c1ccccc1")
+    HNO3r = parse_smiles("O[N+](=O)[O-]")
+    nitration = ExperimentStep.assembling(NB, (BENZ, HNO3r), (NB, WATER))          # C6H6 + HNO3 -> C6H5NO2 + H2O
+    v_nitr = classify(nitration, thermo=thermo)
+    f.check(v_nitr.grade is Grade.DERIVED and v_nitr.feasibility.direction is FeasibilityDirection.FAVORABLE,
+            "R5-lite extends one edge FORWARD: benzene + HNO3 -> nitrobenzene + H2O grades DERIVED on the newly-"
+            "sourced HNO3(l) thermo (the nitration-front skeleton); the drug's terminal edges stay walled by the "
+            "permanent 4-nitrophenol / paracetamol entropy gaps")
+
+    # -- Mid-2: the NIST-WebBook thermo autoload path -- DERIVED/KNOWN reach real bench targets ---------
+    print("\n[autoload thermo] a NIST-WebBook thermo provider reaches bench targets (offline fixture, no fabrication):",
+          flush=True)
+    _fixture = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "providers" / "nist_thermo_ethanol.html"
+    parsed = parse_condensed_thermo(_fixture.read_text())
+    print(f"  parsed ethanol from the captured NIST fixture: S° = {parsed['s_j_per_mol_k']} J/mol/K, "
+          f"ΔfH° = {parsed['dhf_kj_per_mol']} kJ/mol ({parsed['phase']})", flush=True)
+    f.check(parsed is not None and parsed["s_j_per_mol_k"] == 159.86
+            and -278.5 <= parsed["dhf_kj_per_mol"] <= -274.5 and parsed["phase"] == "liquid",
+            "Mid-2: the NIST-WebBook thermo provider recovers ethanol's KNOWN S° = 159.86 from a REAL captured "
+            "fixture, offline -- a genuine provider pinned to fetched HTML, not a fabricated one")
+    # exercise the ACTUAL fetch/parse/merge path: a fake fetch of the real ethanol page ADDS ethanol's record
+    ETHANOL_M = parse_smiles("CCO")
+    warmed = autoload_thermo([ETHANOL_M], base=SEED_THERMO, fetch=lambda nist_id: _fixture.read_text())
+    warm_rec = warmed.for_named("C2H6O", "ethanol")
+    f.check(SEED_THERMO.for_named("C2H6O", "ethanol") is None
+            and warm_rec is not None and warm_rec.s_j_per_mol_k == 159.86,
+            "Mid-2: autoload_thermo genuinely FETCHES + PARSES -- a fake fetch of the real NIST ethanol page adds "
+            "ethanol's DERIVED-capable record (S° = 159.86, parsed from the page) to a seed that lacked it")
+    tbl_auto = autoload_thermo([DNB13], base=extended_thermo(), fetch=lambda nist_id: None)  # offline: no network
+    f.check(tbl_auto.for_formula("C6H4N2O4") is None,
+            "Mid-2: an unmapped species (no NIST id) or an offline fetch stays a loud gap -- coverage widens only "
+            "on a genuinely fetched record, never by fabricating one")
 
     # -- SMILES: the front door now parses aromatic heteroatoms (unblocks N-heterocycles) --------------
     print("\n[SMILES heteroatoms] aromatic N/O/S rings now parse (pyridine, pyrrole, furan) -- was a hard refusal:",
@@ -578,8 +669,14 @@ def main() -> int:
           "SynthesisDAG graded in a single shot. R5-lite lifts a sourced aromatic rung from HYPOTHESIZED to DERIVED "
           "(gaps kept honest); the SMILES front door parses aromatic N/O/S heterocycles; R3 makes the ionic descent "
           "genuinely recursive (a charged ion re-heterolyzes to bare ions, or an honest irreducible leaf); and R4 "
-          "audits the cross-level open-valence conservation of a whole descent -- universal and bucket-honest "
-          "throughout.",
+          "audits the cross-level open-valence conservation of a whole descent. And the reaction verdict is now "
+          "complete: L1 adds the RATE dimension (k = A*exp(-Ea/RT), calibrated to reproduce N2O5's measured rate "
+          "within 15%) ORTHOGONALLY to the grade -- a KNOWN reaction can be reported kinetically FROZEN or UNKNOWN "
+          "without the rate ever touching its footing; sourced selectivity reaches beyond paracetamol (Markovnikov, "
+          "meta-nitration) and is now isomer-keyed on the reactant side too (S2); the NIST-sourced thermo extends "
+          "one real edge forward (benzene nitration -> DERIVED) and a NIST-WebBook autoload provider reaches bench "
+          "targets from real captured fixtures -- universal and bucket-honest throughout, every rate/thermo/"
+          "selectivity gap a loud UNKNOWN and never a fabrication.",
           flush=True)
     return 0
 

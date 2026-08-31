@@ -11,9 +11,11 @@ The discipline (inherited from :mod:`smartchem.data.decompiler_thermo`)
 ----------------------------------------------------------------------
 This repo has a documented history of *memory-recall poisoning* -- a plausible-looking thermo number recalled
 from training rather than sourced, later found wrong (the ethanol near-miss, the butane/propane scrape).  So
-every value here was VERIFIED against the NIST Chemistry WebBook (a U.S.-government public-domain compilation)
-and carries the specific author/year of the measurement it came from -- never a recalled number.  Two things
-are refused, loudly, exactly as the seed refuses them:
+every value here was VERIFIED against a U.S.-government standard-reference compilation -- the NIST Chemistry
+WebBook for all but one, and (for HNO3, which the WebBook does not surface a condensed-phase value for) its
+NBS-1982 predecessor tables via secondary thermodynamic appendices -- and carries the specific author/year of
+the measurement it came from (see each record's provenance for exactly which source); never a recalled number.
+Two things are refused, loudly, exactly as the seed refuses them:
 
 * **No entropy, no record.** ΔG = ΔH - TΔS needs S°.  A compound whose ΔfH° is sourced but whose S° is NOT
   cleanly sourced does not get a fabricated S° -- it gets an entry in :data:`EXTENDED_THERMO_GAPS` naming what
@@ -41,11 +43,18 @@ The industrial paracetamol route descends through aromatic intermediates -- ``ph
 ``benzene -> nitrobenzene -> aniline`` reduction skeleton.  R5-lite sources the members of that skeleton
 whose 298 K standard-state ΔfH° AND S° both genuinely exist as a same-phase pair on the NIST WebBook --
 **phenol, aniline, nitrobenzene, toluene** -- so the rungs among them LIFT from L2's ``HYPOTHESIZED`` floor
-to ``DERIVED`` (a real ΔG at the 298.15 K reference).  The two rungs that reach the drug itself stay honest
-GAPS: **4-nitrophenol** has ΔfH° but no S° in any phase (a fourth instance of the same entropy-gap disease),
-and **4-aminophenol** has disagreeing ΔfH° sources -- so the final descent to paracetamol is graded, not
-faked, exactly where the data runs out.  Every value here was fetched from the raw NIST page and
-phase-checked; none is recalled.
+to ``DERIVED`` (a real ΔG at the 298.15 K reference).  Sourcing **nitric acid** (HNO3, pure-liquid NBS-1982
+pair) now extends the DERIVED reach ONE real edge FORWARD: ``benzene + HNO3 -> nitrobenzene + H2O`` grades
+DERIVED and strongly favorable -- the aromatic nitration-front, the precursor skeleton of the route.
+
+But do not mistake that for reaching the drug.  The TERMINAL literal descent to paracetamol does NOT lift,
+and the wall is permanent and named: ``phenol -> 4-nitrophenol -> 4-aminophenol`` (nitration then reduction)
+stays ``HYPOTHESIZED`` -- walled by **4-nitrophenol**'s missing S° in every phase and **4-aminophenol**'s
+disagreeing ΔfH° sources -- and the final ``4-aminophenol + acetic anhydride -> paracetamol`` (acetylation)
+stays ``KNOWN``-but-thermo-``UNKNOWN``, walled by **paracetamol**'s missing S°(cr).  The nitration FRONT is
+derivable; the drug's own edges are not.  Every value here was fetched from a U.S.-gov standard-reference
+source -- the raw NIST WebBook page, or (for HNO3) the NBS-1982 tables via a secondary thermodynamic appendix
+-- and phase-checked; none is recalled.
 """
 from __future__ import annotations
 
@@ -59,7 +68,8 @@ __all__ = [
 
 _NIST = "NIST Chemistry WebBook (webbook.nist.gov), U.S.-gov public domain"
 
-#: Broader sourced 298.15 K, 1 bar standard-state records -- each VERIFIED against the NIST WebBook, each
+#: Broader sourced 298.15 K, 1 bar standard-state records -- each VERIFIED against the NIST WebBook (HNO3
+#: via its NBS-1982 predecessor tables; see its provenance), each
 #: naming the specific measurement (author, year) its ΔfH° and S° came from.  Every one unlocks its combustion
 #: (CO2/H2O/O2 seeded).  Injectable and additive to the seed; NOT a whitelist and NOT re-sourced from memory.
 EXTENDED_THERMO_REFS: tuple[ThermoRef, ...] = (
@@ -111,6 +121,14 @@ EXTENDED_THERMO_REFS: tuple[ThermoRef, ...] = (
         f"ΔfH° 12.0±1.1 (Roux, Temprado et al. 2008, review); S° 220.96 "
         f"(Scott, Guthrie et al. 1962); {_NIST}",
     ),
+    ThermoRef(
+        "HNO3", "nitric acid", -174.1, 155.6, "liquid",
+        "ΔfH°(l) -174.1 and S°(l) 155.6 (298.15 K, pure liquid, standard state) from the NBS Tables "
+        "(Wagman et al., J. Phys. Chem. Ref. Data 11 Suppl.2, 1982) via the OpenStax/LibreTexts "
+        "thermodynamic appendix; crosschecked to the digit against Penn State Chem 310 / Inorganic "
+        "Chemistry Wikibook. Pure-LIQUID row (distinct from the aqueous -207.4/146.4 and gas -134.3 "
+        "values — the correct phase); NBS-1982 lineage, not a CODATA Key Values species.",
+    ),
 )
 
 
@@ -128,8 +146,11 @@ EXTENDED_THERMO_GAPS: dict[str, str] = {
         "and no consistent-phase 298 K ΔfH°+S° pair is sourced here -> UNKNOWN, not extrapolated"
     ),
     "C4H6O3": (
-        "acetic anhydride: a liquid ΔfH° exists (~-625 kJ/mol, Guthrie 1974 / Pedley 1986) but no sourced "
-        "298 K liquid S° to pair with it here -> UNKNOWN until an entropy is sourced"
+        "acetic anhydride: a liquid ΔfH° exists (~-624.4 kJ/mol, Guthrie 1974 / Pedley 1986) but the only "
+        "sourced standard molar entropy is GAS-phase (S°gas 389.95 J/mol/K, Stull 1969) -- the WRONG phase "
+        "to pair with the liquid ΔfH°. No same-phase 298 K liquid ΔfH°+S° pair exists here, so mixing them "
+        "would be the silent phase-convention error the repo warns against -> stays UNKNOWN until a liquid "
+        "S° is sourced"
     ),
     "C6H5NO3": (
         "4-nitrophenol: ΔfH° IS sourced (solid -207.1±1.1, gas -114.7±1.2 kJ/mol, Sabbah & Gouali 1994) "

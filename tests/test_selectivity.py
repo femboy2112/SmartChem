@@ -15,6 +15,7 @@ from smartchem.experiment.selectivity import (
     DEFAULT_SELECTIVITY,
     SelectivityRecord,
     SelectivityStatus,
+    SelectivityTable,
     _formulas_key,
     selectivity_of_step,
     verify_selectivity,
@@ -137,3 +138,80 @@ class TestSourcedDiscipline:
                 major_isomer_name="ethanol",
                 provenance="",
             )
+
+    def test_reactant_names_must_be_a_tuple_of_non_empty_strings(self):
+        with pytest.raises(TypeError):
+            SelectivityRecord(
+                reactant_key=_formulas_key("C2H4", "H2O"),
+                product_formula=Formula.parse("C2H6O").counts,
+                major_isomer_name="ethanol",
+                provenance="test",
+                reactant_names=("",),
+            )
+
+
+# Mid-1: two more sourced regiochemical facts beyond the paracetamol N-/O-acetylation record --
+# ooh, one Markovnikov, one meta-director, so the SEED covers more than one litmus compound now.
+PROPENE = parse_smiles("CC=C")
+PROP1OL = parse_smiles("CCCO")          # propan-1-ol, the Markovnikov-minor product
+PROP2OL = parse_smiles("CC(O)C")        # propan-2-ol, the Markovnikov-major product
+NITROBENZENE = parse_smiles("[O-][N+](=O)c1ccccc1")
+HNO3 = parse_smiles("O[N+](=O)[O-]")
+META_DNB = parse_smiles("[O-][N+](=O)c1cccc([N+](=O)[O-])c1")   # 1,3-dinitrobenzene, sourced major
+PARA_DNB = parse_smiles("[O-][N+](=O)c1ccc([N+](=O)[O-])cc1")   # 1,4-dinitrobenzene, sourced minor
+DNB_WATER = parse_smiles("O")   # nitration's byproduct, needed to conserve mass (C6H5NO2+HNO3 -> DNB+H2O)
+
+
+class TestMid1SourcedSelectivityBeyondParacetamol:
+    def test_markovnikov_hydration_of_propene_favors_propan_2_ol(self):
+        step = ExperimentStep.assembling(PROP2OL, (PROPENE, WATER), (PROP2OL,))
+        assert selectivity_of_step(step, table=DEFAULT_SELECTIVITY).status is SelectivityStatus.FAVORED
+
+    def test_the_same_reactants_making_propan_1_ol_is_disfavored(self):
+        step = ExperimentStep.assembling(PROP1OL, (PROPENE, WATER), (PROP1OL,))
+        assert selectivity_of_step(step, table=DEFAULT_SELECTIVITY).status is SelectivityStatus.DISFAVORED
+
+    def test_meta_directed_nitration_favors_1_3_dinitrobenzene(self):
+        # nitration's byproduct water is required to conserve mass: C6H5NO2+HNO3 -> DNB + H2O
+        step = ExperimentStep.assembling(META_DNB, (NITROBENZENE, HNO3), (META_DNB, DNB_WATER))
+        assert selectivity_of_step(step, table=DEFAULT_SELECTIVITY).status is SelectivityStatus.FAVORED
+
+    def test_the_same_reactants_making_1_4_dinitrobenzene_is_disfavored(self):
+        step = ExperimentStep.assembling(PARA_DNB, (NITROBENZENE, HNO3), (PARA_DNB, DNB_WATER))
+        assert selectivity_of_step(step, table=DEFAULT_SELECTIVITY).status is SelectivityStatus.DISFAVORED
+
+
+AMINOPHENOL_3 = parse_smiles("Nc1cccc(O)c1")  # 3-aminophenol, same formula (C6H7NO) as 4-aminophenol
+
+
+class TestS2ReactantSideIsomerKeying:
+    """S2: a sourced record injected with ``reactant_names`` must refuse to fire for the WRONG reactant
+    isomer, even though the composition matches -- 3-aminophenol is not 4-aminophenol just because both
+    resolve to C6H7NO. This exercises an INJECTED table, never the seed."""
+
+    def _injected_table(self) -> SelectivityTable:
+        return DEFAULT_SELECTIVITY.with_records(
+            SelectivityRecord(
+                reactant_key=_formulas_key("C6H7NO", "C4H6O3"),
+                product_formula=Formula.parse("C8H9NO2").counts,
+                major_isomer_name="paracetamol",
+                provenance="test: N-selective acetylation, keyed to the 4-aminophenol isomer specifically",
+                reactant_names=("4-aminophenol",),
+            )
+        )
+
+    def test_fires_favored_when_the_reactant_actually_resolves_to_the_keyed_isomer(self):
+        # acetic acid is the anhydride acetylation's byproduct, needed to conserve mass (as in
+        # _para_via_anhydride above)
+        step = ExperimentStep.assembling(PARA, (AMP, ANH), (PARA, ACOH))
+        sel = selectivity_of_step(step, table=self._injected_table())
+        assert sel.status is SelectivityStatus.FAVORED
+
+    def test_refuses_to_fire_for_a_same_formula_wrong_isomer_reactant(self):
+        # 3-aminophenol + acetic anhydride -> paracetamol: same C6H7NO composition, WRONG isomer.
+        # A fabricated FAVORED here would be exactly the vacuity this guard exists to prevent.
+        step = ExperimentStep.assembling(PARA, (AMINOPHENOL_3, ANH), (PARA, ACOH))
+        sel = selectivity_of_step(step, table=self._injected_table())
+        assert sel.status is SelectivityStatus.UNKNOWN
+        assert "4-aminophenol" in sel.reason
+        assert sel.finding.bucket.name == "UNKNOWN"

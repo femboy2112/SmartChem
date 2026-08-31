@@ -92,13 +92,21 @@ def _formulas_key(*formula_strings: str) -> CompositionKey:
 class SelectivityRecord(Digestible):
     """A SOURCED regiochemical fact: for a reactant composition forming a product formula, which registered
     isomer is the MAJOR product.  Keyed structurally on the product (by the major isomer's registered name),
-    scale-independent on the reactants."""
+    scale-independent on the reactants.
+
+    ``reactant_names`` isomer-keys the REACTANT side (S2): when non-empty, the record fires only when the
+    step's reactants actually resolve, structurally, to *those* named isomers -- not merely by matching
+    composition.  A composition can hide more than one starting isomer (4-aminophenol vs 3-aminophenol are
+    both ``C6H7NO``), and a sourced regiochemical preference for one is not license to fire for the other.
+    Empty (the default) means composition-only matching, unchanged from before S2 -- back-compat, ooh yeah.
+    """
 
     reactant_key: CompositionKey
     product_formula: CompositionKey
     major_isomer_name: str
     provenance: str
     status: EvidenceStatus = EvidenceStatus.EXPERIMENTAL
+    reactant_names: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.major_isomer_name, str) or not self.major_isomer_name:
@@ -107,6 +115,10 @@ class SelectivityRecord(Digestible):
             raise ValueError("a selectivity record must carry a provenance (no unsourced preference)")
         if not isinstance(self.status, EvidenceStatus):
             raise TypeError("status must be an EvidenceStatus")
+        if type(self.reactant_names) is not tuple or any(
+            not isinstance(n, str) or not n for n in self.reactant_names
+        ):
+            raise TypeError("reactant_names must be a tuple of non-empty strings")
 
 
 @dataclass(frozen=True)
@@ -233,6 +245,34 @@ def selectivity_of_step(step: ExperimentStep, *, table: SelectivityTable) -> Ste
             unknown("selectivity", "", f"{len(isomers)} isomers compete; no sourced regiochemical fact"),
         )
 
+    if rec.reactant_names:
+        # S2: composition got us here, but a composition can hide more than one starting isomer
+        # (4-aminophenol is not 3-aminophenol just because both are C6H7NO) -- check the ACTUAL structure
+        # resolved, greedily, one distinct reactant per required name.  Match against the reactant's FULL
+        # name set (common / IUPAC / synonyms), so a record may key by any registered label, the way
+        # structure_by_name resolves -- an EMPTY set for an unresolved reactant matches nothing.
+        namesets = [
+            set(resolved.all_names) if resolved is not None else set()
+            for resolved in (resolve_structure(reactant) for reactant in step.reactants)
+        ]
+        missing: str | None = None
+        for name in rec.reactant_names:
+            idx = next((i for i, ns in enumerate(namesets) if name in ns), None)
+            if idx is None:
+                missing = name
+                break
+            namesets[idx] = set()  # consume this reactant -- one distinct reactant per required name
+        if missing is not None:
+            return StepSelectivity(
+                SelectivityStatus.UNKNOWN,
+                f"UNKNOWN: a sourced selectivity exists (major: {rec.major_isomer_name}) but a required "
+                f"reactant isomer ({missing}) is not present — not fired for the wrong reactant isomer",
+                unknown(
+                    "selectivity", "",
+                    f"required reactant isomer {missing} did not resolve among this step's reactants",
+                ),
+            )
+
     named = resolve_structure(target)
     if named is None:
         return StepSelectivity(
@@ -278,6 +318,7 @@ SEED_SELECTIVITY_RECORDS: tuple[SelectivityRecord, ...] = (
         reactant_key=_formulas_key("C6H7NO", "C4H6O3"),
         product_formula=Formula.parse("C8H9NO2").counts,
         major_isomer_name="paracetamol",
+        reactant_names=("4-aminophenol", "acetic anhydride"),
         provenance=(
             "N- vs O-acetylation of 4-aminophenol: the aromatic amine is far more nucleophilic than the "
             "phenol -OH, so acetic-anhydride acetylation is N-selective and gives the amide (paracetamol) "
@@ -289,10 +330,37 @@ SEED_SELECTIVITY_RECORDS: tuple[SelectivityRecord, ...] = (
         reactant_key=_formulas_key("C6H7NO", "C2H4O2"),
         product_formula=Formula.parse("C8H9NO2").counts,
         major_isomer_name="paracetamol",
+        reactant_names=("4-aminophenol", "acetic acid"),
         provenance=(
             "N- vs O-acetylation of 4-aminophenol: the amine outcompetes the phenol -OH, so the acetic-acid "
             "condensation is likewise N-selective, giving the amide (paracetamol) as the major product "
             "(standard amine>alcohol acylation regiochemistry)"
+        ),
+    ),
+    # Mid-1: propene + water -> C3H8O, Markovnikov addition -> propan-2-ol (major).
+    SelectivityRecord(
+        reactant_key=_formulas_key("C3H6", "H2O"),
+        product_formula=Formula.parse("C3H8O").counts,
+        major_isomer_name="propan-2-ol",
+        reactant_names=("propene", "water"),
+        provenance=(
+            "Markovnikov selectivity: acid-catalysed hydration of propene gives propan-2-ol as the MAJOR "
+            "product (OH adds to the more-substituted carbon via the more stable secondary carbocation); "
+            "propan-1-ol is minor. Sourced: AUS-e-TUTE hydration-of-alkenes tutorial; rule from V. "
+            "Markovnikov 1870, Annalen der Chemie 153:228-259."
+        ),
+    ),
+    # Mid-1: nitrobenzene + nitric acid -> C6H4N2O4, meta-director -> 1,3-dinitrobenzene (major).
+    SelectivityRecord(
+        reactant_key=_formulas_key("C6H5NO2", "HNO3"),
+        product_formula=Formula.parse("C6H4N2O4").counts,
+        major_isomer_name="1,3-dinitrobenzene",
+        reactant_names=("nitrobenzene", "nitric acid"),
+        provenance=(
+            "Meta-director selectivity: electrophilic aromatic nitration of nitrobenzene gives "
+            "1,3-dinitrobenzene as the MAJOR product (93%; ortho 6%, para 1%) because the -NO2 group is a "
+            "deactivating meta-director. Sourced: Buddrus 2003, Grundlagen der organischen Chemie 3rd ed. "
+            "p.360 (via Wikipedia '1,3-Dinitrobenzene'); corroborated by OCLUE (Cooper & Klymkowsky) 8.11."
         ),
     ),
 )

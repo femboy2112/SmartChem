@@ -48,7 +48,12 @@ Boundaries, stated loudly
 -------------------------
 * The grade classifies epistemic FOOTING, never a rate or a yield -- a ``KNOWN`` or ``DERIVED`` reaction can
   be kinetically frozen; L2 says *what we know about whether it is a real, legitimate transformation*, never
-  *how fast* (kinetics is unbuilt -- roadmap L1).
+  *how fast* on its own.  The rate is reported as a SEPARATE, orthogonal dimension
+  (:mod:`~smartchem.experiment.kinetics`, roadmap L1): where a reaction's Arrhenius ``(Ea, A)`` are sourced,
+  the ``kinetics`` sub-verdict carries its rate regime (``FAST`` .. ``FROZEN``), and where they are not it is a
+  loud ``UNKNOWN`` rate -- but NEITHER ever alters the grade.  So a ``KNOWN`` reaction stays ``KNOWN`` while
+  its rate reads ``FROZEN`` or ``UNKNOWN``; L2 can now SAY "known-but-kinetically-frozen" without predicting a
+  rate it has no source for.
 * ``KNOWN`` is only as broad as the sourced records injected; the seed attests a few reactions, and coverage
   grows by injecting sourced selectivity records / declared envelopes, NOT by editing this module.  A
   narrow ``KNOWN`` is honest, not a bug -- most formal combinations are genuinely DERIVED / HYPOTHESIZED.
@@ -62,6 +67,7 @@ from enum import Enum
 
 from ..category import ConservationError, Molecule
 from ..contracts import Digestible
+from ..data.kinetics import DEFAULT_KINETICS, KineticTable
 from ..data.stability import DEFAULT_STABILITY, StabilityTable
 from ..data.thermo import DEFAULT_THERMO, ThermoTable
 from .bucket import Bucket, Quantity
@@ -74,6 +80,7 @@ from .dag import (
 )
 from .equilibrium import equilibrium_of_step, verify_equilibrium
 from .feasibility import FeasibilityGrade, StepFeasibility, feasibility_of_step, verify_feasibility
+from .kinetics import kinetics_of_step, verify_kinetics, worst_regime
 from .selectivity import (
     DEFAULT_SELECTIVITY,
     SelectivityStatus,
@@ -124,7 +131,9 @@ class UnifiedVerdict(Digestible):
     otherwise); ``conserves`` is the mass/charge bookkeeping outcome; ``findings`` are the labelled
     :class:`~smartchem.experiment.bucket.Quantity` values each rung contributed (so the verdict carries its
     own bucketed evidence); the sub-verdict fields hold the composed rung objects (``None`` where a rung does
-    not apply -- a single step has no composability); ``notes`` are the per-rung human reasons.
+    not apply -- a single step has no composability); ``notes`` are the per-rung human reasons.  ``kinetics``
+    is the ORTHOGONAL rate dimension: reported alongside the grade, it never enters it (a ``KNOWN`` reaction
+    with a ``FROZEN`` or ``UNKNOWN`` rate is still ``KNOWN``).
     """
 
     grade: Grade
@@ -137,6 +146,7 @@ class UnifiedVerdict(Digestible):
     equilibrium: Digestible | None
     selectivity: Digestible | None
     composability: Digestible | None
+    kinetics: Digestible | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.grade, Grade):
@@ -214,21 +224,23 @@ def classify_step(
     *,
     thermo: ThermoTable = DEFAULT_THERMO,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
+    kinetics: KineticTable = DEFAULT_KINETICS,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade one conserving :class:`ExperimentStep` -- the atomic case of the unified classifier.
 
-    Composes feasibility (M1), equilibrium (M2), and selectivity (E5+) into one grade.  A single step has no
-    transition, so composability does not apply and a single step is never ``REFUTED`` here (conservation is
-    guaranteed by construction; use :func:`classify_reaction` to grade an unbuilt, possibly non-conserving
-    combination).
+    Composes feasibility (M1), equilibrium (M2), and selectivity (E5+) into one grade, and reports the rate
+    (L1 kinetics) as an ORTHOGONAL dimension that never enters the grade.  A single step has no transition, so
+    composability does not apply and a single step is never ``REFUTED`` here (conservation is guaranteed by
+    construction; use :func:`classify_reaction` to grade an unbuilt, possibly non-conserving combination).
     """
     if type(step) is not ExperimentStep:
         raise TypeError("step must be an ExperimentStep")
     feas = feasibility_of_step(step, thermo=thermo, temperature_k=temperature_k)
     equi = equilibrium_of_step(step, thermo=thermo, temperature_k=temperature_k)
     sel = selectivity_of_step(step, table=selectivity)
-    grade = _step_grade(feas, sel, step.is_declared)
+    kin = kinetics_of_step(step, kinetics=kinetics, temperature_k=temperature_k)
+    grade = _step_grade(feas, sel, step.is_declared)  # rate is deliberately NOT an input -- it is orthogonal
 
     if grade is Grade.KNOWN:
         headline = (
@@ -247,11 +259,11 @@ def classify_step(
             f"sourced attestation and no derivable ΔG ({missing})"
         )
 
-    findings = (_conservation_finding(), feas.finding, equi.k_finding, sel.finding)
-    notes = (feas.reason, equi.reason, sel.reason)
+    findings = (_conservation_finding(), feas.finding, equi.k_finding, sel.finding, kin.k_finding)
+    notes = (feas.reason, equi.reason, sel.reason, kin.reason)
     return UnifiedVerdict(
         grade, headline, None, True, findings, notes,
-        feasibility=feas, equilibrium=equi, selectivity=sel, composability=None,
+        feasibility=feas, equilibrium=equi, selectivity=sel, composability=None, kinetics=kin,
     )
 
 
@@ -262,6 +274,7 @@ def classify_reaction(
     target: Molecule | None = None,
     thermo: ThermoTable = DEFAULT_THERMO,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
+    kinetics: KineticTable = DEFAULT_KINETICS,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade ANY formal combination ``reactants -> products`` -- the universal front door.
@@ -307,7 +320,9 @@ def classify_reaction(
                 feasibility=None, equilibrium=None, selectivity=None, composability=None,
             )
         raise  # a genuine usage error (empty reactants, target not a product): not a chemistry verdict
-    return classify_step(step, thermo=thermo, selectivity=selectivity, temperature_k=temperature_k)
+    return classify_step(
+        step, thermo=thermo, selectivity=selectivity, kinetics=kinetics, temperature_k=temperature_k
+    )
 
 
 def _aggregate_grade(step_grades: tuple[Grade, ...]) -> Grade:
@@ -321,6 +336,7 @@ def classify_route(
     thermo: ThermoTable = DEFAULT_THERMO,
     stability: StabilityTable = DEFAULT_STABILITY,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
+    kinetics: KineticTable = DEFAULT_KINETICS,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade a linear :class:`ExperimentRoute` -- worst-step-dominated, a ``DEGENERATE`` handoff => REFUTED."""
@@ -330,6 +346,7 @@ def classify_route(
     rfeas = verify_feasibility(route, thermo=thermo, temperature_k=temperature_k)
     requi = verify_equilibrium(route, thermo=thermo, temperature_k=temperature_k)
     rsel = verify_selectivity(route, table=selectivity)
+    rkin = verify_kinetics(route, kinetics=kinetics, temperature_k=temperature_k)  # orthogonal rate dimension
 
     findings = (_conservation_finding(),)
     if comp.verdict == "DEGENERATE":
@@ -341,28 +358,29 @@ def classify_route(
         )
         return UnifiedVerdict(
             Grade.REFUTED, headline, law, True, findings, comp.degenerate_reasons,
-            feasibility=rfeas, equilibrium=requi, selectivity=rsel, composability=comp,
+            feasibility=rfeas, equilibrium=requi, selectivity=rsel, composability=comp, kinetics=rkin,
         )
 
     step_grades = tuple(
         _step_grade(f, s, st.is_declared)
         for f, s, st in zip(rfeas.per_step, rsel.per_step, route.steps)
     )
-    grade = _aggregate_grade(step_grades)
+    grade = _aggregate_grade(step_grades)  # rate is deliberately NOT aggregated into the grade
     headline = (
         f"{grade.value}: {len(route.steps)}-step route -> {route.final_target!r} (weakest step: "
         f"{grade.value}); composability {comp.verdict}, feasibility {rfeas.verdict}, equilibrium "
-        f"{requi.verdict}, selectivity {rsel.verdict}"
+        f"{requi.verdict}, selectivity {rsel.verdict}, kinetics {rkin.verdict}"
     )
     notes = (
         f"composability: {comp.verdict}",
         f"feasibility (ΔG, worst step): {rfeas.verdict}",
         f"equilibrium (extent, worst step): {requi.verdict}",
         f"selectivity: {rsel.verdict}",
+        f"kinetics (rate, worst step): {rkin.verdict}",
     )
     return UnifiedVerdict(
         grade, headline, None, True, findings, notes,
-        feasibility=rfeas, equilibrium=requi, selectivity=rsel, composability=comp,
+        feasibility=rfeas, equilibrium=requi, selectivity=rsel, composability=comp, kinetics=rkin,
     )
 
 
@@ -372,6 +390,7 @@ def classify_dag(
     thermo: ThermoTable = DEFAULT_THERMO,
     stability: StabilityTable = DEFAULT_STABILITY,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
+    kinetics: KineticTable = DEFAULT_KINETICS,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade a convergent :class:`~smartchem.experiment.dag.SynthesisDAG` -- the same worst-step-dominated
@@ -382,6 +401,7 @@ def classify_dag(
     feas = tuple(feasibility_of_step(s, thermo=thermo, temperature_k=temperature_k) for s in dag.steps)
     equi = tuple(equilibrium_of_step(s, thermo=thermo, temperature_k=temperature_k) for s in dag.steps)
     sels = tuple(selectivity_of_step(s, table=selectivity) for s in dag.steps)
+    kins = tuple(kinetics_of_step(s, kinetics=kinetics, temperature_k=temperature_k) for s in dag.steps)
 
     shape = "convergent" if dag.is_convergent else "linear"
     findings = (_conservation_finding(),)
@@ -399,18 +419,20 @@ def classify_dag(
     step_grades = tuple(
         _step_grade(f, s, st.is_declared) for f, s, st in zip(feas, sels, dag.steps)
     )
-    grade = _aggregate_grade(step_grades)
+    grade = _aggregate_grade(step_grades)  # rate is deliberately NOT aggregated into the grade
     feas_verdict = _worst_feasibility(tuple(f.direction for f in feas))
     equi_verdict = _worst_equilibrium(tuple(e.extent for e in equi))
+    kin_verdict = worst_regime(k.regime for k in kins).value
     headline = (
         f"{grade.value}: {shape} DAG -> {dag.final_target!r} ({len(dag.steps)} steps, "
         f"{len(dag.convergence_points)} join(s); weakest step: {grade.value}); composability "
-        f"{comp.verdict}, feasibility {feas_verdict}, equilibrium {equi_verdict}"
+        f"{comp.verdict}, feasibility {feas_verdict}, equilibrium {equi_verdict}, kinetics {kin_verdict}"
     )
     notes = (
         f"composability (per edge): {comp.verdict}",
         f"feasibility (ΔG, worst step): {feas_verdict}",
         f"equilibrium (extent, worst step): {equi_verdict}",
+        f"kinetics (rate, worst step): {kin_verdict}",
     )
     return UnifiedVerdict(
         grade, headline, None, True, findings, notes,
@@ -424,6 +446,7 @@ def classify(
     thermo: ThermoTable = DEFAULT_THERMO,
     stability: StabilityTable = DEFAULT_STABILITY,
     selectivity: SelectivityTable = DEFAULT_SELECTIVITY,
+    kinetics: KineticTable = DEFAULT_KINETICS,
     temperature_k: float | None = None,
 ) -> UnifiedVerdict:
     """Grade any built formal combination -- a step, a linear route, or a convergent DAG -- with one verdict.
@@ -432,14 +455,18 @@ def classify(
     and products -- use :func:`classify_reaction`, the front door that can return ``REFUTED`` on conservation.
     """
     if type(subject) is ExperimentStep:
-        return classify_step(subject, thermo=thermo, selectivity=selectivity, temperature_k=temperature_k)
+        return classify_step(
+            subject, thermo=thermo, selectivity=selectivity, kinetics=kinetics, temperature_k=temperature_k
+        )
     if type(subject) is ExperimentRoute:
         return classify_route(
-            subject, thermo=thermo, stability=stability, selectivity=selectivity, temperature_k=temperature_k
+            subject, thermo=thermo, stability=stability, selectivity=selectivity, kinetics=kinetics,
+            temperature_k=temperature_k,
         )
     if type(subject) is SynthesisDAG:
         return classify_dag(
-            subject, thermo=thermo, stability=stability, selectivity=selectivity, temperature_k=temperature_k
+            subject, thermo=thermo, stability=stability, selectivity=selectivity, kinetics=kinetics,
+            temperature_k=temperature_k,
         )
     raise TypeError(
         "classify accepts an ExperimentStep, ExperimentRoute, or SynthesisDAG; for raw reactants/products "

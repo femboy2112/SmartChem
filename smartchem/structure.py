@@ -406,6 +406,47 @@ _REGISTERED: tuple[NamedStructure, ...] = (
         synonyms=("carbolic acid", "hydroxybenzene"),
         provenance="std aromatic alcohol; SMILES Oc1ccccc1",
     ),
+    # --- S2/Mid-1: competing PRODUCT isomers for sourced regiochemical selectivity beyond paracetamol.
+    #     Ooh, look at me, two whole isomer PAIRS -- C3H8O splits Markovnikov-wise, C6H4N2O4 splits
+    #     ortho/meta/para-wise; can't tell "the major one" apart without a name for each! ------------
+    NamedStructure(
+        "propan-1-ol", parse_smiles("CCCO"), "C3H8O", iupac="propan-1-ol", cas="71-23-8",
+        synonyms=("1-propanol", "n-propanol"),
+        provenance="std primary alcohol; SMILES CCCO",
+    ),
+    NamedStructure(
+        "propan-2-ol", parse_smiles("CC(O)C"), "C3H8O", iupac="propan-2-ol", cas="67-63-0",
+        synonyms=("2-propanol", "isopropanol", "isopropyl alcohol"),
+        provenance="std secondary alcohol; SMILES CC(O)C",
+    ),
+    NamedStructure(
+        "1,3-dinitrobenzene", parse_smiles("[O-][N+](=O)c1cccc([N+](=O)[O-])c1"), "C6H4N2O4",
+        iupac="1,3-dinitrobenzene", cas="99-65-0",
+        synonyms=("m-dinitrobenzene", "meta-dinitrobenzene"),
+        provenance="std meta-nitration product; SMILES [O-][N+](=O)c1cccc([N+](=O)[O-])c1",
+    ),
+    NamedStructure(
+        "1,4-dinitrobenzene", parse_smiles("[O-][N+](=O)c1ccc([N+](=O)[O-])cc1"), "C6H4N2O4",
+        iupac="1,4-dinitrobenzene", cas="100-25-4",
+        synonyms=("p-dinitrobenzene", "para-dinitrobenzene"),
+        provenance="std para-nitration product; SMILES [O-][N+](=O)c1ccc([N+](=O)[O-])cc1",
+    ),
+    # reactants for the sourced selectivity records, so the S2 reactant-isomer guard can key on them
+    NamedStructure(
+        "propene", parse_smiles("CC=C"), "C3H6", iupac="prop-1-ene", cas="115-07-1",
+        synonyms=("propylene", "1-propene", "methylethylene"),
+        provenance="std alkene; the Markovnikov-hydration substrate; SMILES CC=C",
+    ),
+    NamedStructure(
+        "nitrobenzene", parse_smiles("O=[N+]([O-])c1ccccc1"), "C6H5NO2", iupac="nitrobenzene",
+        cas="98-95-3", synonyms=("nitrobenzol",),
+        provenance="std aromatic; the meta-director nitration substrate; SMILES O=[N+]([O-])c1ccccc1",
+    ),
+    NamedStructure(
+        "nitric acid", parse_smiles("O[N+](=O)[O-]"), "HNO3", iupac="nitric acid", cas="7697-37-2",
+        synonyms=("aqua fortis",),
+        provenance="std mineral acid; the nitrating agent; SMILES O[N+](=O)[O-]",
+    ),
 )
 
 

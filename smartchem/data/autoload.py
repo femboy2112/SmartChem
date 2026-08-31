@@ -28,12 +28,15 @@ from ..decompiler import Formula
 from ..decompiler_review import molecule_name
 from .providers.base import PropertyProvider, PropertyRecord
 from .stability import DEFAULT_STABILITY, StabilityRef, StabilityTable
+from .thermo import ThermoRef, ThermoTable
 
 __all__ = [
     "smartchem_data_dir",
     "StabilityCache",
     "autoload_stability",
     "merge_records",
+    "ThermoCache",
+    "autoload_thermo",
 ]
 
 
@@ -240,6 +243,139 @@ def autoload_stability(
                 cache.put(struct_key, ref)
                 new_refs.append(ref)
                 dirty = True
+    if dirty:
+        cache.save()
+    return base.with_records(*new_refs)
+
+
+def _thermo_ref_to_json(ref: ThermoRef) -> dict:
+    return {
+        "formula": ref.formula,
+        "name": ref.name,
+        "dhf_kj_per_mol": ref.dhf_kj_per_mol,
+        "s_j_per_mol_k": ref.s_j_per_mol_k,
+        "phase": ref.phase,
+        "provenance": ref.provenance,
+    }
+
+
+def _thermo_ref_from_json(d: dict) -> ThermoRef:
+    return ThermoRef(
+        formula=d["formula"], name=d["name"],
+        dhf_kj_per_mol=d["dhf_kj_per_mol"], s_j_per_mol_k=d["s_j_per_mol_k"],
+        phase=d["phase"], provenance=d["provenance"],
+    )
+
+
+@dataclass
+class ThermoCache:
+    """A local on-disk cache of fetched :class:`ThermoRef` records, keyed by STRUCTURAL identity.
+
+    The thermo path's own errand, right next to :class:`StabilityCache` -- SAME structural-key idiom (a
+    molecule warmed by name today is served by structure tomorrow, whatever string a caller looks it up
+    with), same "a missing or corrupt cache is simply empty" discipline. Two tables, two caches, one habit.
+    """
+
+    path: str
+    _by_key: dict[str, ThermoRef]
+
+    @classmethod
+    def load(cls, path: str | None = None) -> "ThermoCache":
+        path = path or os.path.join(smartchem_data_dir(), "thermo_cache.json")
+        by_key: dict[str, ThermoRef] = {}
+        try:
+            with open(path, encoding="utf-8") as fh:
+                for row in json.load(fh):
+                    by_key[row["key"]] = _thermo_ref_from_json(row)
+        except (OSError, ValueError, KeyError, TypeError):
+            by_key = {}  # a missing or corrupt cache is simply empty, never a crash
+        return cls(path, by_key)
+
+    def get(self, struct_key: str) -> ThermoRef | None:
+        return self._by_key.get(struct_key)
+
+    def put(self, struct_key: str, ref: ThermoRef) -> None:
+        self._by_key[struct_key] = ref
+
+    def save(self) -> None:
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        rows = [{"key": key, **_thermo_ref_to_json(ref)} for key, ref in self._by_key.items()]
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump(rows, fh, indent=2)
+
+    def records(self) -> tuple[ThermoRef, ...]:
+        return tuple(self._by_key.values())
+
+
+def autoload_thermo(
+    molecules,
+    *,
+    base: ThermoTable | None = None,
+    fetch=None,
+    cache: ThermoCache | None = None,
+) -> ThermoTable:
+    """Resolve ΔfH°/S° thermo records for ``molecules`` from seed -> cache -> the NIST WebBook.
+
+    *Look at me, a SECOND autoload for a SECOND table!* :class:`ThermoTable` cannot carry mp/bp/dHvap and
+    :class:`~.providers.base.PropertyRecord` cannot carry ΔfH°/S° -- so this is a separate path, not a
+    branch bolted onto :func:`autoload_stability`, mirroring its exact resolution order one level over:
+
+    1. **the seed/caller table** (``base``, default :func:`~.thermo_extended.extended_thermo`) -- wins if it
+       already resolves the species by its registered ``(formula, name)``, and nothing is fetched;
+    2. **the local cache** (keyed by STRUCTURE, so it is stable across runs and identifiers);
+    3. **the NIST WebBook** -- only for a species with a REGISTERED name that resolves via
+       :data:`~.providers.nist_thermo.NIST_IDS`; ``fetch`` defaults to
+       :func:`~.providers.nist_thermo.fetch_nist_html` and is overridable (a fake, for offline tests);
+    4. **nothing** -- an unresolved species, an unreachable page, or a page missing ΔfH° or S° all leave the
+       species simply absent from the returned table (``UNKNOWN`` downstream), never a fabricated record.
+    """
+    from .providers.nist_thermo import NIST_IDS, fetch_nist_html, parse_condensed_thermo
+    from .thermo_extended import extended_thermo
+
+    base = base if base is not None else extended_thermo()
+    fetch = fetch if fetch is not None else fetch_nist_html
+    cache = cache if cache is not None else ThermoCache.load()
+
+    new_refs: list[ThermoRef] = []
+    seen: set[str] = set()
+    dirty = False
+    for m in molecules:
+        struct_key = _struct_key(m)
+        if struct_key in seen:
+            continue
+        seen.add(struct_key)
+        formula = _formula_str(m)
+        name = molecule_name(m)
+        # 1) the seed/caller table wins -- do not re-fetch what is already curated
+        if name is not None and base.for_named(formula, name) is not None:
+            continue
+        # 2) the local cache (keyed by structure, so it is stable across runs and identifiers)
+        cached = cache.get(struct_key)
+        if cached is not None:
+            new_refs.append(cached)
+            continue
+        # 3) the NIST WebBook -- only reachable via a REGISTERED name; an unnamed/unresolvable species has
+        #    nothing to query it by and stays absent, exactly like autoload_stability's identifier gate
+        if name is None:
+            continue
+        nist_id = NIST_IDS.get(name)
+        if nist_id is None:
+            continue
+        page = fetch(nist_id)
+        if page is None:
+            continue
+        parsed = parse_condensed_thermo(page)
+        if parsed is None:
+            continue  # a page missing ΔfH° or S° is a miss, not a half-fabricated record
+        ref = ThermoRef(
+            formula=formula, name=name,
+            dhf_kj_per_mol=parsed["dhf_kj_per_mol"], s_j_per_mol_k=parsed["s_j_per_mol_k"],
+            phase=parsed["phase"],
+            provenance=f"{parsed['dhf_provenance']} | {parsed['s_provenance']}",
+        )
+        cache.put(struct_key, ref)
+        new_refs.append(ref)
+        dirty = True
     if dirty:
         cache.save()
     return base.with_records(*new_refs)

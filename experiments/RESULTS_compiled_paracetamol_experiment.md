@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (47/47), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (57/57), exit 0**
 
 ## The question
 
@@ -60,6 +60,16 @@ that — but every fact the compiler asserts must hold, and every refusal must c
 | M4 | **starving branch B halves** the convergent ceiling (the join follows the scarcer branch) | PASS |
 | M4 | M1/M2 **reused per-step over a DAG** — every step DERIVED, the endergonic branch dominates the aggregate | PASS |
 | M4 | a **malformed DAG** (two unconsumed targets) is **refused**, never silently accepted | PASS |
+| L2 | the real acetylation grades **KNOWN** (sourced chemistry attests it) with thermodynamics honestly **UNKNOWN** — both true at once | PASS |
+| L2 | the O-acetyl ester route grades **KNOWN yet flags the MINOR isomer** (KNOWN ≠ favored) | PASS |
+| L2 | an **unbalanced** formal combination grades **REFUTED**, citing *conservation of mass and charge* | PASS |
+| L2 | the ketene route grades **REFUTED**, its law citing the **sourced not-isolable fact** (E1, unified) | PASS |
+| L2 | water synthesis grades **DERIVED/FAVORABLE**, ΔG ≈ −474 kJ (the model reads true in-envelope) | PASS |
+| L2 | Haber at 700 K grades **PREDICTED** (extrapolated), UNFAVORABLE — the real temperature flip | PASS |
+| L2 | paracetamol hydrolysis grades **HYPOTHESIZED** — a balanced, formally valid candidate, no data | PASS |
+| L2 | a route is **worst-step-dominated** — a DERIVED step under a HYPOTHESIZED step grades HYPOTHESIZED | PASS |
+| — | **the litmus bottoms out at ELEMENTAL BUCKETS {C,H,N,O}**: the decompiler descends the whole compound to atoms, conserving every edge | PASS |
+| — | read backwards, that descent **is the assembly of paracetamol from those buckets** (a 16-node chain, not one atomisation edge) | PASS |
 
 ## The ledger completed this arc (E1 depth · coverage/autoload · E5 · CLI)
 
@@ -118,3 +128,20 @@ at best.* The heat is honestly `UNKNOWN` (paracetamol has no sourced 0 K formati
   E1; the M2 equilibrium conversion is exact only for Δn=0 under an ideal reference (Δn≠0 needs a caller's
   sourced activity model — a loud `UNKNOWN`, never a guess). Equipment selection is standard bench practice,
   not a claim the reaction proceeds.
+- **L2 — the mission made literal.** One classifier (`experiment/classify.py`) now grades ANY formal
+  combination — a step, a linear route, a convergent DAG, or raw reactants→products — with a single verdict:
+  `KNOWN` / `DERIVED` / `PREDICTED` / `HYPOTHESIZED` / `REFUTED` / `UNKNOWN`. No new engine, no new physics:
+  it *composes* the existing verified rungs exactly as `bucket.py` already documented (a DERIVED/PREDICTED
+  verdict carried by `KNOWN_SOURCED` quantities; a REFUTED verdict naming a `CONSERVATION`/`COMPOSABILITY`
+  fact; UNKNOWN all-gap). Each grade is earned by a checkable condition; routes/DAGs are worst-step-dominated
+  on the ladder `HYPOTHESIZED < PREDICTED < DERIVED < KNOWN`; a `DEGENERATE` handoff overrides to `REFUTED`
+  citing the sourced fact. The nuance the frame exists for holds: paracetamol acetylation grades **KNOWN**
+  (a documented reaction) with **UNKNOWN thermodynamics** — both true, neither faked.
+- **The litmus is the ENTIRE chain, from elemental buckets.** The paracetamol experiment does not start
+  mid-chain: the decompiler descends `C8H9NO2` to a 16-node AND-OR hypergraph terminating in the atom buckets
+  `{C, H, N, O}`, COMPLETE and conserving every edge — read backwards, that *is* the assembly of paracetamol
+  from elemental buckets. The honest boundary: this from-buckets chain is FORMULA-level (conservation), so
+  every edge is L2's `HYPOTHESIZED` floor (a formally valid candidate); L2 **lifts** the structured rungs to
+  `KNOWN`/`DERIVED` where sourced data reaches (the acetylation grades KNOWN). A fully-STRUCTURED,
+  sourced-graded route from atoms to paracetamol is the open frontier (the reality-ladder R1–R5 rungs, atop
+  the permanent physical W3 wall).

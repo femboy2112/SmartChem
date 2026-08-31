@@ -1470,3 +1470,54 @@ combination of atoms/chemicals/reactions**, composing all of the above. This is 
 parse ALL formal linear combinations and judge which are legitimate / hypothesized / physically unreal" from a
 slogan into a capability -- the operator's stated destination. (L1 TST kinetics -- the honest "real rate" --
 and L3 decompiler R3-R5 remain the deeper research frontier; L2 is the synthesis of what is already built.)
+
+## Part 26 -- L2 the unified classifier BUILT (the mission made literal), tied to elemental buckets
+
+L2 is not another engine; it is the one function that *composes* everything already built into the single
+verdict the governing frame demands. `smartchem/experiment/classify.py` grades ANY formal combination -- a
+step, a linear route, a convergent DAG, or raw reactants->products -- as exactly one of
+**KNOWN / DERIVED / PREDICTED / HYPOTHESIZED / REFUTED / UNKNOWN**.
+
+* **No new physics -- it cashes a check `bucket.py` already wrote.** The bucket docstring had long *documented*
+  the mapping ("a DERIVED or PREDICTED verdict is carried by KNOWN_SOURCED quantities; a REFUTED verdict cites
+  CONSERVATION / COMPOSABILITY / KNOWN_SOURCED facts; an UNKNOWN verdict is all UNKNOWN") without any function
+  keeping it. L2 is that function.
+* **Each grade earned by a checkable condition.** `REFUTED` (overrides all) needs a NAMED law: conservation of
+  mass/charge violated (the raw combination will not build a `Reaction`), or a SOURCED impossibility (an E1
+  `DEGENERATE` handoff -- not-isolable / phase). `KNOWN` needs a sourced record attesting the reaction itself
+  (a matched regiochemistry record, or a sourced/declared envelope). `DERIVED` / `PREDICTED` are the
+  in-envelope / extrapolated feasibility grades. `HYPOTHESIZED` is the FLOOR for any balanced reaction
+  (conserves => a formally valid candidate). `UNKNOWN` is reserved for a combination that cannot even be
+  placed (a species that will not canonicalise).
+* **The nuance the frame exists for.** Paracetamol acetylation grades **KNOWN** (a documented ACS teaching
+  synthesis) with **UNKNOWN thermodynamics** (no sourced formation data) -- both true at once, neither faked.
+  And `KNOWN != favored`: the O-acetyl ester grades KNOWN yet its verdict flags the MINOR isomer.
+* **Routes and DAGs: worst-step-dominated.** A route/DAG is graded by its weakest step on the ladder
+  `HYPOTHESIZED < PREDICTED < DERIVED < KNOWN`, a `DEGENERATE` transition overriding to `REFUTED` -- the exact
+  honest bottleneck aggregation the other rungs already use, reusing `verify_composability` /
+  `dag_composability` and M4's worst-aggregators, never re-derived.
+* **Calibrated (the instrument rule) before belief.** Water synthesis -> DERIVED/FAVORABLE, ΔG -474.3 kJ
+  (textbook); Haber -> DERIVED at 298 K, PREDICTED/UNFAVORABLE at 700 K (the real T-flip); an unbalanced
+  combination -> REFUTED citing conservation with the exact imbalance; the ketene route -> REFUTED citing the
+  sourced not-isolable fact. All six grades exercised.
+* **Verified.** 19 tests (`tests/test_classify.py`); the gate grew an L2 section (+8) and an elemental-buckets
+  section (+2) to **57/57**; full suite **2168** (2149 + 19), zero regressions, ruff-clean. The linear route,
+  its invariant, and every prior rung are untouched -- L2 is purely additive.
+
+### The litmus is the ENTIRE chain, from elemental buckets (the operator's north star, made explicit)
+
+The paracetamol experiment is meant to simulate *the entire synthesis chain from elemental buckets*, not just
+the final acetylation. The gate now says so and proves the half that is provable: the decompiler descends
+`C8H9NO2` to a 16-node AND-OR hypergraph terminating in the atom buckets `{C, H, N, O}`, COMPLETE and
+conserving every edge -- read backwards, that IS the assembly of paracetamol from elemental buckets. The
+honest boundary, stated in the gate: that from-buckets chain is FORMULA-level (conservation), so every edge is
+L2's `HYPOTHESIZED` floor; L2 **lifts** the structured rungs to `KNOWN`/`DERIVED` where sourced data reaches.
+L2's grade ladder is precisely the bridge between the formal from-buckets chain and the sourced chemistry.
+
+### Next: close the atoms->paracetamol chain end to end (structured + sourced)
+
+The open frontier is now sharp: a single STRUCTURED, sourced-graded route from atom buckets to paracetamol,
+with L2 grading each rung. It needs (a) the structure-level descent to reach further down (reality-ladder R1
+ring-aware descent, then R2-R5), and (b) sourced thermo/selectivity for the deep intermediates so the rungs
+lift above HYPOTHESIZED. L1 TST kinetics (the honest "real rate") remains the deeper research frontier, atop
+the permanent physical W3 wall.

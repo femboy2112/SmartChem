@@ -44,6 +44,15 @@ from .ceiling import (
     route_ceiling,
     stoichiometric_ceiling,
 )
+from .classify import (
+    Grade,
+    UnifiedVerdict,
+    classify,
+    classify_dag,
+    classify_reaction,
+    classify_route,
+    classify_step,
+)
 from .composability import (
     Composability,
     Transition,
@@ -157,4 +166,11 @@ __all__ = [
     "dag_ceiling",
     "dag_composability",
     "verify_dag",
+    "Grade",
+    "UnifiedVerdict",
+    "classify",
+    "classify_step",
+    "classify_reaction",
+    "classify_route",
+    "classify_dag",
 ]

@@ -38,6 +38,7 @@ from smartchem.conditions import ConditionEnvelope, Interval
 from smartchem.contracts import EvidenceStatus
 from smartchem.data.stability import DEFAULT_STABILITY, StabilityRef
 from smartchem.data.thermo_extended import EXTENDED_THERMO_GAPS, EXTENDED_THERMO_REFS, extended_thermo
+from smartchem.decompiler import Formula, build_decomposition, example_inventory
 from smartchem.experiment import (
     Bucket,
     ConstraintBox,
@@ -47,9 +48,12 @@ from smartchem.experiment import (
     ExperimentStep,
     FeasibilityDirection,
     FeasibilityGrade,
+    Grade,
     RouteFitStatus,
     SelectivityStatus,
     SynthesisDAG,
+    classify,
+    classify_reaction,
     dag_ceiling,
     draft_procedure,
     equilibrium_of_step,
@@ -357,6 +361,81 @@ def main() -> int:
     except DAGError:
         f.check(True, "a malformed DAG (two unconsumed targets) is refused, never silently accepted")
 
+    # -- L2: the unified classifier -- ONE graded verdict over any formal combination ------------------
+    print("\n[L2 unified classifier] one grade (KNOWN/DERIVED/PREDICTED/HYPOTHESIZED/REFUTED/UNKNOWN) over "
+          "any formal combination -- the mission made literal:", flush=True)
+    thermo = extended_thermo()
+    ACETAMIDE = parse_smiles("CC(=O)N")
+
+    # KNOWN: the real acetylation is attested by sourced chemistry -- yet its ΔG is honestly UNKNOWN
+    v_apap = classify(anhydride_route().steps[0], thermo=thermo)
+    print(f"  anhydride acetylation -> {v_apap.grade.value} ({v_apap.feasibility.grade.value} thermo)", flush=True)
+    f.check(v_apap.grade is Grade.KNOWN and v_apap.feasibility.grade is FeasibilityGrade.UNKNOWN,
+            "L2: the real acetylation grades KNOWN (sourced chemistry attests it) with thermodynamics honestly "
+            "UNKNOWN -- a documented reaction whose ΔG is a loud gap, both true at once")
+
+    # KNOWN is not FAVORED: the O-acetyl ester is a documented reaction that makes the MINOR isomer
+    v_ester = classify(ester_route().steps[0], thermo=thermo)
+    f.check(v_ester.grade is Grade.KNOWN and "MINOR" in v_ester.headline,
+            "L2: the O-acetyl ester route grades KNOWN yet its verdict flags the MINOR isomer (KNOWN != favored)")
+
+    # REFUTED by a NAMED law #1: an unbalanced combination is physically unreal (conservation)
+    v_bad = classify_reaction((AMP, ANH), (PARA,))          # drops the acetic-acid byproduct
+    print(f"  AMP + Ac2O -> paracetamol (no byproduct) -> {v_bad.grade.value}: {v_bad.law}", flush=True)
+    f.check(v_bad.grade is Grade.REFUTED and v_bad.law == "conservation of mass and charge",
+            "L2: an unbalanced formal combination grades REFUTED, citing conservation of mass and charge")
+
+    # REFUTED by a NAMED law #2: the ketene route carries a SOURCED not-isolable intermediate
+    v_ket = classify(ketene_route(), thermo=thermo)
+    f.check(v_ket.grade is Grade.REFUTED and "not isolable" in v_ket.law,
+            "L2: the ketene route grades REFUTED, its law citing the sourced not-isolable fact (E1, unified)")
+
+    # DERIVED: an established model computes ΔG in-envelope; the instrument reads the textbook value
+    water_step = ExperimentStep.assembling(WATER, (H2, H2, O2), (WATER, WATER))
+    v_water = classify(water_step, thermo=thermo)
+    f.check(v_water.grade is Grade.DERIVED
+            and v_water.feasibility.direction is FeasibilityDirection.FAVORABLE
+            and abs(v_water.feasibility.delta_g_kj - (-474.3)) < 1.0,
+            "L2: water synthesis grades DERIVED/FAVORABLE, ΔG ~ -474 kJ (the model reads true in-envelope)")
+
+    # PREDICTED: the same model, extrapolated far from the 298 K reference -- flagged
+    haber_step = ExperimentStep.assembling(NH3, (N2, H2, H2, H2), (NH3, NH3))
+    v_haber700 = classify(haber_step, thermo=thermo, temperature_k=700.0)
+    f.check(v_haber700.grade is Grade.PREDICTED
+            and v_haber700.feasibility.direction is FeasibilityDirection.UNFAVORABLE,
+            "L2: Haber at 700 K grades PREDICTED (extrapolated), UNFAVORABLE -- the real temperature flip")
+
+    # HYPOTHESIZED: the balanced hydrolysis conserves but is neither sourced nor derivable
+    hydrolysis = ExperimentStep.assembling(AMP, (PARA, WATER), (AMP, ACOH))
+    v_hyd = classify(hydrolysis, thermo=thermo)
+    f.check(v_hyd.grade is Grade.HYPOTHESIZED and v_hyd.conserves,
+            "L2: paracetamol hydrolysis grades HYPOTHESIZED -- a balanced, formally valid candidate, no data")
+
+    # worst-step-dominated: a DERIVED step + a HYPOTHESIZED step -> the route is HYPOTHESIZED
+    use_nh3 = ExperimentStep.assembling(ACETAMIDE, (NH3, ACOH), (ACETAMIDE, WATER))
+    mixed = ExperimentRoute.of(haber_step, use_nh3)
+    f.check(classify(haber_step, thermo=thermo).grade is Grade.DERIVED
+            and classify(mixed, thermo=thermo).grade is Grade.HYPOTHESIZED,
+            "L2: a route is worst-step-dominated -- a DERIVED step under a HYPOTHESIZED step grades HYPOTHESIZED")
+
+    # -- the whole chain, from atoms up: the litmus assembles paracetamol FROM elemental buckets -------
+    print("\n[elemental buckets] the paracetamol litmus is the ENTIRE chain, from atoms up:", flush=True)
+    bucket_inventory = example_inventory()          # small-molecule buckets (H2O, CO, CO2, CH4, NH3, ...)
+    chain = build_decomposition("C8H9NO2", bucket_inventory, max_multiplicity=2, budget=400_000, max_edges=8_000)
+    floor = tuple(sorted(repr(t) for t in chain.terminals()))
+    print(f"  {len(chain.nodes())}-node AND-OR hypergraph -> terminals {floor}; status {chain.status}", flush=True)
+    f.check(chain.is_complete and floor == ("C", "H", "N", "O"),
+            "the litmus's synthesis chain bottoms out at ELEMENTAL BUCKETS {C,H,N,O}: the decompiler descends "
+            "the whole compound to atoms, conserving every edge (read backwards = assembly from buckets)")
+    para_f = Formula.parse("C8H9NO2")
+    f.check(len(chain.edges_from(para_f)) > 0 and len(chain.nodes()) > 4,
+            "read backwards, that descent IS the assembly of paracetamol from those buckets (a multi-node chain, "
+            "not a single atomisation edge)")
+    print("  boundary (honest): this from-buckets chain is FORMULA-level and conservation-complete -- every edge "
+          "is L2's HYPOTHESIZED floor (a formally valid candidate); L2 LIFTS the structured rungs where sourced "
+          "data reaches (the acetylation above grades KNOWN). A fully-structured, sourced-graded route from atoms "
+          "to paracetamol is the open frontier (reality-ladder R1-R5).", flush=True)
+
     # -- the drafted procedure a chemist reads --------------------------------------------------------
     print("\n[draft] the chemist-facing procedure for the winning route:", flush=True)
     draft = draft_procedure(anhydride_route(pres=(1, 1)), feed={AMP: 1, ANH: Fraction(6, 5)})
@@ -382,8 +461,10 @@ def main() -> int:
           "steps, refuses the degenerate route on a sourced fact, fits routes to a real bench, computes an "
           "exact ceiling (linear AND convergent-DAG), grades regiochemical selectivity, DERIVED thermodynamic "
           "feasibility (ΔG) and the DERIVED equilibrium extent (K = exp(-ΔG/RT)) over a NIST-sourced thermo "
-          "table broadened to reach real bench targets, and drafts a chemist-usable procedure -- universal and "
-          "bucket-honest throughout.",
+          "table broadened to reach real bench targets, drafts a chemist-usable procedure, and -- the mission "
+          "made literal -- classifies ANY formal combination with ONE graded verdict (KNOWN / DERIVED / "
+          "PREDICTED / HYPOTHESIZED / REFUTED / UNKNOWN), composing every rung -- universal and bucket-honest "
+          "throughout.",
           flush=True)
     return 0
 

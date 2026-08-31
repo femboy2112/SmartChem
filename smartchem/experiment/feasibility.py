@@ -88,12 +88,15 @@ def _label(molecule: Molecule) -> str:
 
 
 def _resolve_phase_change(molecule: Molecule, table: PhaseChangeTable) -> PhaseChangeRef | None:
+    # Match ONLY by resolved structural identity (name), NEVER by bare formula: a phase change is
+    # compound-specific, and formula-keying lets an ISOMER steal another compound's Δsub/Δvap -- dimethyl
+    # ether (C2H6O, a gas) would borrow ethanol's (C2H6O) ΔvapH and be "corrected" to a liquid.  Same
+    # formula-collision class the kinetics lookup was hardened against ([[a-reaction-key-by-formula-borrows-
+    # a-rate]]); red-team-found here.  An unregistered compound simply gets no correction (stays gas).
     named = resolve_structure(molecule)
-    if named is not None:
-        hit = table.for_named(named.expected_formula, named.name)
-        if hit is not None:
-            return hit
-    return table.for_formula(_formula_str(molecule))
+    if named is None:
+        return None
+    return table.for_named(named.expected_formula, named.name)
 
 
 def resolve_thermo(

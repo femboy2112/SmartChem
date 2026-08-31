@@ -109,6 +109,10 @@ class BensonGroup:
     tier: GroupTier
     rmg_label: str
     provenance: str
+    #: Optional (ΔfH° kJ/mol, S° J/mol/K) uncertainty override, used when a group's real transferability is
+    #: worse than its tier implies -- e.g. a group calibrated in one environment that transfers poorly to
+    #: another (the branched tertiary-amine N, whose methyl-armed fit is ~19 kJ off for ethyl arms).
+    band: tuple[float, float] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.label, str) or not self.label:
@@ -189,8 +193,10 @@ BENSON_GROUPS: tuple[BensonGroup, ...] = (
     #    trimethylamine 1.3 kJ, dimethylamine 2.1 kJ -- NIST/CCCBDB). ------------------------------------
     BensonGroup("C-(C)(N)(H)2", -10.93, 41.17, _E, "Cs-CsN3sHH", _RMG + "amine CH2; xcheck n-propylamine 0.45 kJ"),
     BensonGroup("C-(N)(H)3", -23.76, 132.15, _E, "Cs-N3sHHH", _RMG + "N-methyl; xcheck trimethylamine 1.3 kJ"),
-    BensonGroup("N-(C)2(H)", 30.65, 31.89, _E, "N3s-CsCsH", _RMG + "secondary amine N; xcheck dimethylamine 2.1 kJ"),
-    BensonGroup("N-(C)3", 48.86, -66.58, _E, "N3s-CsCsCs", _RMG + "tertiary amine N; xcheck trimethylamine"),
+    BensonGroup("N-(C)2(H)", 30.65, 31.89, _A, "N3s-CsCsH",
+                _RMG + "secondary amine N; methyl-armed calibration transfers poorly to non-methyl arms -- PREDICTED, wide band", band=(16.0, 16.0)),
+    BensonGroup("N-(C)3", 48.86, -66.58, _A, "N3s-CsCsCs",
+                _RMG + "tertiary amine N; methyl-armed fit is ~19 kJ off for ethyl arms (red-team HIGH) -- PREDICTED, wide band", band=(20.0, 18.0)),
     BensonGroup("C-(C)2(N)(H)", 4.88, -51.73, _X, "Cs-CsCsN3sH", _RMG + "amine CH; single-compound fit (n=9, isopropylamine) -- EXPERIMENTAL"),
     # -- carboxylic-acid / ester coverage (rung B): closes acetic/formic acid, methyl/ethyl acetate;
     #    O-(CO)(H) closes acetic acid to 2.9 kJ and formic acid to 1.6 kJ (NIST gas). --------------------
@@ -234,22 +240,27 @@ _RE = RingTier.ESTABLISHED
 _RX = RingTier.EXPERIMENTAL
 _RRING = "RMG-database input/thermo/groups/ring.py (MIT); "
 
-#: Ring-strain corrections, FETCHED from RMG ring.py and (for the saturated carbocycles + O-heterocycles)
-#: CROSS-CHECKED: the parent molecule's sourced gas ΔfH° minus the atom-group sum reproduces the strain to
-#: <2 kJ/mol (cyclopropane 0.004, cyclobutane 1.29, cyclopentane 0.38, cyclohexane 0.33, oxirane ~2.4).  The
-#: three UNSATURATED-ring corrections are exact RMG transcriptions with no molecular cross-check here (they
-#: also require the alkene Cd groups) -> EXPERIMENTAL.
+#: Ring-strain corrections, DERIVED to be CONSISTENT WITH THIS ENGINE'S GROUP BASIS.  An RMG ring correction
+#: is fit to RMG's own group values; mixing it with this table's (Benson/CBS-QB3-blended) groups is unsound
+#: -- the adversarial red-team proved it: RMG's Tetrahydrofuran ring-S (88.54) with this basis gave S°(THF)
+#: 26 J/mol/K too low, outside band (it wrongly put THF's entropy BELOW cyclopentane's).  So each correction
+#: here is instead DERIVED as (sourced gas molecular ΔfH°/S°) − (this engine's atom-group sum) [+ R ln σ for
+#: S] from the workflow-verified anchors -- reproducing the parent ring EXACTLY and transferring consistently
+#: to substituted rings.  ΔfH matches its old RMG value (the C/H groups already agreed); the S° values are the
+#: corrected ones (THF 114.73 not 88.54, cyclohexane 82.37 not 75.85, ...).  The three UNSATURATED-ring
+#: corrections keep their RMG transcription (no molecular anchor + they need the alkene Cd groups) -> EXPERIMENTAL.
+_RDER = _RRING + "ring correction DERIVED from sourced gas molecular ΔfH°/S° minus this engine's group sum"
 RING_STRAIN: tuple[RingStrain, ...] = (
-    RingStrain("Cyclopropane", 115.19, 133.93, _RE, _RRING + "'Cyclopropane ring BENSON'; xcheck 0.004 kJ"),
-    RingStrain("Cyclobutane", 109.62, 124.68, _RE, _RRING + "'Cyclobutane ring BENSON'; xcheck 1.29 kJ"),
-    RingStrain("Cyclopentane", 26.36, 114.22, _RE, _RRING + "'Cyclopentane ring BENSON'; xcheck 0.38 kJ"),
-    RingStrain("Cyclohexane", 0.34, 75.85, _RE, _RRING + "'Cyclohexane ring BENSON'; xcheck 0.33 kJ"),
-    RingStrain("Ethylene_oxide", 112.22, 130.44, _RE, _RRING + "'CY/C2O Dorofeeva 92'; xcheck oxirane ~2.4 kJ"),
-    RingStrain("Oxetane", 104.94, 119.45, _RE, _RRING + "'CY/C3O Dorofeeva 92'"),
-    RingStrain("Tetrahydrofuran", 24.94, 88.54, _RE, _RRING + "'CY/C4O Dorofeeva 92'"),
-    RingStrain("Cyclohexene", 4.89, 88.75, _RX, _RRING + "'Cyclohexene ring BENSON'; no molecular xcheck here"),
-    RingStrain("Cyclopentene", 24.98, 108.07, _RX, _RRING + "'Cyclopentene ring BENSON'; no molecular xcheck here"),
-    RingStrain("Cyclobutene", 124.85, 124.97, _RX, _RRING + "'Cyclobutene ring BENSON'; no molecular xcheck here"),
+    RingStrain("Cyclopropane", 115.18, 134.04, _RE, f"{_RDER}; anchor cyclopropane 53.30/237.38"),
+    RingStrain("Cyclobutane", 110.91, 124.04, _RE, f"{_RDER}; anchor cyclobutane 28.40/264.40"),
+    RingStrain("Cyclopentane", 26.73, 114.94, _RE, f"{_RDER}; anchor cyclopentane -76.40/292.86"),
+    RingStrain("Cyclohexane", 0.66, 82.37, _RE, f"{_RDER}; anchor cyclohexane -123.10/298.19"),
+    RingStrain("Ethylene_oxide", 114.57, 134.85, _RE, f"{_RDER}; anchor oxirane -52.63/243.00"),
+    RingStrain("Oxetane", 107.29, 123.87, _RE, f"{_RDER}; anchor oxetane -80.54/271.43"),
+    RingStrain("Tetrahydrofuran", 24.25, 114.73, _RE, f"{_RDER}; anchor THF -184.20/301.70"),
+    RingStrain("Cyclohexene", 4.89, 88.75, _RX, _RRING + "'Cyclohexene ring BENSON'; no molecular anchor here"),
+    RingStrain("Cyclopentene", 24.98, 108.07, _RX, _RRING + "'Cyclopentene ring BENSON'; no molecular anchor here"),
+    RingStrain("Cyclobutene", 124.85, 124.97, _RX, _RRING + "'Cyclobutene ring BENSON'; no molecular anchor here"),
 )
 
 _RING_BY_KEY: dict[str, RingStrain] = {r.key: r for r in RING_STRAIN}
@@ -385,6 +396,14 @@ def _classify_ring(mol: Molecule, adj: list[list[tuple[int, int]]], ring: list[i
     correction (a 6-ring lactone/lactam, 1,4-dioxane, ...) returns None -- off-coverage, not a wrong strain."""
     size = len(ring)
     ringset = set(ring)
+    # A ring atom with an EXOCYCLIC double bond (an in-ring carbonyl -> ketone/lactone/lactam ring, or an
+    # exocyclic alkene) has a strain the parent carbocycle/heterocycle correction does NOT capture -- for a
+    # strained ring the error is huge and sign-flipping (cyclopropanone: parent Cyclopropane strain +115 vs
+    # its true ~+191, a 76 kJ/mol confident-wrong-answer, red-team HIGH). Refuse it: off-coverage, not a guess.
+    for i in ring:
+        for j, o in adj[i]:
+            if j not in ringset and o >= 2:
+                return None
     elems = "".join(sorted(mol.atoms[i] for i in ring))
     ndouble = 0
     for i in ring:
@@ -729,8 +748,9 @@ def estimate_thermo(molecule: Molecule) -> GroupThermoEstimate | None:
     s_total = s_groups - R_J_PER_MOL_K * math.log(sigma)  # n_optical = 1 -> +R ln 1 = 0
 
     _ring_band = {RingTier.ESTABLISHED: (4.0, 5.0), RingTier.EXPERIMENTAL: (8.0, 8.0)}
-    dhf_var = sum(_TIER_BAND[g.tier][0] ** 2 for g in groups) + sum(_ring_band[r.tier][0] ** 2 for r in rings)
-    s_var = sum(_TIER_BAND[g.tier][1] ** 2 for g in groups) + sum(_ring_band[r.tier][1] ** 2 for r in rings)
+    _gband = [g.band if g.band is not None else _TIER_BAND[g.tier] for g in groups]
+    dhf_var = sum(b[0] ** 2 for b in _gband) + sum(_ring_band[r.tier][0] ** 2 for r in rings)
+    s_var = sum(b[1] ** 2 for b in _gband) + sum(_ring_band[r.tier][1] ** 2 for r in rings)
     # symmetry-uncertainty band: normally the R ln 2 improper-mirror residual; widened when σ is unreliable.
     if skipped:
         s_sym_residual = R_J_PER_MOL_K * math.log(18.0)   # σ_ext unknown (graph too big) -- a generous floor

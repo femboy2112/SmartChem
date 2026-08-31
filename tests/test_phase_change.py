@@ -72,3 +72,21 @@ class TestParacetamolLitmusClosure:
         apap = parse_smiles("CC(=O)Nc1ccc(O)cc1")
         gas = resolve_thermo(apap, DEFAULT_THERMO, derive=True, condensed=False)
         assert gas is not None and gas.phase == "gas"
+
+
+class TestFormulaCollisionGuard:
+    """Red-team: PhaseChangeTable must be keyed on structural identity, never bare formula -- else an isomer
+    steals another compound's Δsub/Δvap (dimethyl ether, C2H6O, borrowing ethanol's ΔvapH)."""
+
+    def test_dimethyl_ether_does_not_borrow_ethanol_vaporization(self):
+        # dimethyl ether (a GAS, bp -24 C) shares formula C2H6O with ethanol (a liquid). It must resolve to a
+        # GAS record, NOT be "corrected" to a liquid via ethanol's ΔvapH.
+        dme = parse_smiles("COC")
+        r = resolve_thermo(dme, DEFAULT_THERMO, derive=True, condensed=True)
+        assert r is not None and r.phase == "gas"
+
+    def test_paracetamol_still_gets_its_own_correction(self):
+        # the fix (name-match only) must not break the litmus target's real correction
+        apap = parse_smiles("CC(=O)Nc1ccc(O)cc1")
+        r = resolve_thermo(apap, DEFAULT_THERMO, derive=True, condensed=True)
+        assert r is not None and r.phase == "solid"

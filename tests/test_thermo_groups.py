@@ -283,3 +283,32 @@ class TestLabelsAreCanonical:
             assert types == sorted(types, key=lambda t: (_LIGAND_PRIORITY[t], t)), (
                 f"group label {b.label!r} has non-canonical ligand order -- assign_groups can never reach it"
             )
+
+
+class TestRedTeamRegressions:
+    """Four CONFIRMED defects from the adversarial red-team of the ring/group/phase rungs -- each now guarded."""
+
+    def test_thf_ring_entropy_consistent_with_group_basis(self):
+        # RMG's THF ring-S (fit to RMG's groups) gave S° 26 J too low with this engine's basis; the ring
+        # corrections are now DERIVED from sourced molecular S° minus THIS engine's group sum -> exact anchor.
+        est = estimate_thermo(parse_smiles("C1CCOC1"))
+        assert abs(est.s_j_per_mol_k - 301.70) <= est.s_uncertainty_j_per_k
+        assert abs(est.s_j_per_mol_k - 301.70) < 3.0  # reproduces the anchor
+
+    @pytest.mark.parametrize("smiles", ["O=C1CC1", "O=C1CCC1", "O=C1CCCC1", "O=C1CCCCC1", "O=C1CCCO1"])
+    def test_in_ring_carbonyl_is_off_coverage(self, smiles):
+        # a ring with an in-ring carbonyl (ketone-ring / lactone) has a strain the parent-carbocycle
+        # correction does not capture -- cyclopropanone was off by 76 kJ, sign-flipped, graded DERIVED.
+        assert estimate_thermo(parse_smiles(smiles)) is None
+
+    def test_tertiary_amine_is_predicted_with_a_covering_band(self):
+        # triethylamine: the methyl-armed N-(C)3 fit is ~19 kJ off for ethyl arms; now PREDICTED with a band
+        # (widened via the N group's per-group override) that covers the transfer error.
+        est = estimate_thermo(parse_smiles("CCN(CC)CC"))
+        assert est.grade == "PREDICTED"
+        assert abs(est.dhf_kj_per_mol - (-92.9)) <= est.dhf_uncertainty_kj
+
+    def test_primary_amine_still_derives_tightly(self):
+        # the fix must not degrade primary amines (no N-(C)2/N-(C)3): propylamine stays DERIVED and tight
+        est = estimate_thermo(parse_smiles("CCCN"))
+        assert est.grade == "DERIVED" and abs(est.dhf_kj_per_mol - (-70.17)) < 3.0

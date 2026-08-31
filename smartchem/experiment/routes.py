@@ -102,6 +102,35 @@ def enumerate_routes(
     return tuple(seen_routes.values())
 
 
+def _prune_to_sink(steps: tuple[ExperimentStep, ...]) -> tuple[ExperimentStep, ...]:
+    """Keep only the steps that (transitively) feed the final-target producer (``steps[-1]``), dropping any
+    ORPHAN branch that makes nothing downstream consumes.
+
+    When :func:`_merge_branches` drops a duplicate producer of a shared intermediate, that producer's private
+    sub-tree can be left orphaned (its output now feeds nothing).  ``SynthesisDAG`` refuses an orphan, so such a
+    candidate would be silently lost (a false negative -- correct, but incomplete).  Pruning to the sink's
+    backward-reachable set turns it into the valid synthesis "make the shared intermediate once, via the kept
+    route".  A no-op whenever every step already feeds the sink (e.g. every depth<=2 candidate)."""
+    producer: dict[str, ExperimentStep] = {}
+    for s in steps:
+        producer.setdefault(_ident(s.target), s)
+    keep: set[str] = set()
+    stack = [_ident(steps[-1].target)]
+    while stack:
+        tid = stack.pop()
+        if tid in keep:
+            continue
+        keep.add(tid)
+        s = producer.get(tid)
+        if s is None:
+            continue
+        for r in s.reactants:
+            rid = _ident(r)
+            if rid in producer and rid not in keep:
+                stack.append(rid)
+    return tuple(s for s in steps if _ident(s.target) in keep)
+
+
 def _merge_branches(branches: tuple[tuple[ExperimentStep, ...], ...]) -> tuple[ExperimentStep, ...]:
     """Flatten several branch step-lists into one, deduplicating by produced-target identity.
 
@@ -151,18 +180,35 @@ def enumerate_dags(
     ``max_depth`` bound, identity-keyed inventory termination -- never by formula).
 
     Returns deduplicated DAGs (by digest); empty if nothing within ``max_depth`` reaches the inventory -- a loud
-    "no route found", never a fabricated one.
+    "no route found", never a fabricated one.  ``max_dags`` bounds the number of DISTINCT syntheses at every
+    recursion level (candidates are deduped by an order-invariant step-set signature AS they are built, so the
+    cap counts unique results, not the duplicate-heavy raw ``itertools.product`` combos -- a cap that throttled
+    the raw candidates would truncate before the dedup and silently drop most of the answer, including linear
+    routes, breaking the superset guarantee).
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
     on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
-    seen_dags: dict[str, SynthesisDAG] = {}
+
+    def _sig(steps: tuple[ExperimentStep, ...]) -> frozenset[str]:
+        """Order-invariant identity of a synthesis: the SET of its step digests (a DAG is not an ordered list)."""
+        return frozenset(s.digest for s in steps)
 
     def syntheses_making(t: Molecule, depth: int, ancestors: frozenset[str]) -> list[tuple[ExperimentStep, ...]]:
-        """Every step-list (dependency order, ``t``'s producer implied last per branch) that makes ``t``."""
+        """The DISTINCT step-lists (deduped by :func:`_sig`) that make ``t`` -- capped at ``max_dags`` UNIQUE."""
         out: list[tuple[ExperimentStep, ...]] = []
+        seen: set[frozenset[str]] = set()
         if depth > max_depth:
             return out
+
+        def offer(cand: tuple[ExperimentStep, ...]) -> bool:
+            """Record a candidate if it is new; return False once the distinct cap is reached (stop the caller)."""
+            sig = _sig(cand)
+            if sig not in seen:
+                seen.add(sig)
+                out.append(cand)
+            return len(out) < max_dags
+
         cleavages, _complete = capped_scissions(t, reagents, budget=cut_budget)
         for cs in cleavages:
             step = ExperimentStep.from_capped_scission(cs, envelope=_conditions_for(cs))
@@ -171,7 +217,8 @@ def enumerate_dags(
                 distinct.setdefault(_ident(m), m)
             missing = [m for k, m in distinct.items() if k not in on_hand and k not in ancestors]
             if not missing:
-                out.append((step,))
+                if not offer((step,)):
+                    break
             elif depth < max_depth:
                 child_ancestors = ancestors | {_ident(t)}
                 options: list[list[tuple[ExperimentStep, ...]]] = []
@@ -184,14 +231,20 @@ def enumerate_dags(
                     options.append(subs)
                 if not reachable:
                     continue
+                capped = False
                 for combo in itertools.product(*options):
-                    out.append(_merge_branches(combo) + (step,))
-                    if len(out) >= max_dags:
+                    # merge the branches, append the join, then prune any branch orphaned by a shared-intermediate
+                    # dedup -> a valid connected synthesis (a no-op at depth<=2, where nothing is orphaned).
+                    if not offer(_prune_to_sink(_merge_branches(combo) + (step,))):
+                        capped = True
                         break
+                if capped:
+                    break
             if len(out) >= max_dags:
                 break
         return out
 
+    seen_dags: dict[str, SynthesisDAG] = {}
     for steps in syntheses_making(target, 1, frozenset()):
         if len(seen_dags) >= max_dags:
             break

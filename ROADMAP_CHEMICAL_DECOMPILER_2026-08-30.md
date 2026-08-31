@@ -1953,3 +1953,88 @@ that remain (from the completeness critic + red-team): ketone/lactone/lactam RIN
 off-coverage; heteroaromatics, N-/mixed-O-N ring strains, halogens, nitro, nitrile, sulfur, phosphorus have
 no groups yet; the substituted-ring correction is the parent-ring approximation (band-covered where it
 derives, refused where it isn't).
+
+## Part 35 -- short-term rungs (halogens/sulfur/hetero-rings) + the convergent-DAG enumerator (2026-08-31)
+
+"Full blast on all short-term goals, and start knocking down mid-term goals."  **Seven parallel Citadel-Rick
+sourcing bearings** (each FETCHING with provenance from RMG-database group.py/ring.py + an INDEPENDENT
+NIST/CCCBDB molecular-anchor lineage, never recalled), then integrate the families that source CLEANLY and
+calibrate, and DEFER (documented, loud `None`) the ones that would be confident-wrong-answers.  Two adversarial
+`evil-morty` red-teams (one on the thermo surface, one on the enumerator) hardened the result.  Suite
+**2445 -> 2490**, ruff-clean.  Commits `c10efc4` (feat) + `4aa3b30` (thermo red-team fix) + the DAG red-team fix.
+
+**BUILT (clean, calibrated):**
+- **Sulfur (family 4c)** -- thiol / sulfide / disulfide.  The divalent S is its own centre (like O/N); a carbon
+  bearing S takes it as a ligand.  RMG Vandeputte/Gillis/Bozzelli refit (EXPERIMENTAL).  An OXIDISED sulfur
+  (S=O of a sulfoxide/sulfone) is REFUSED explicitly (the `Sx` sentinel) -- else its `=O` is silently absorbed
+  by the carbonyl rule and the S mis-read as a plain sulfide (a confident wrong answer the red-team probed and
+  could not produce).
+- **Halogens (family 4a)** -- F/Cl/Br full sp3 series (G4-library ML refit, EXPERIMENTAL) + the three C-bearing
+  iodine groups (classic BENSON, ESTABLISHED).  A halogen is a LIGAND on carbon, never a centre (as RMG keys
+  them).  The `Cs-CCCI` `S298=0` placeholder is REFUSED (never a fabricated zero).  Calibrated against
+  independent NIST anchors: ΔfH° <= 3.3 kJ/mol; S° <= 6 J/mol/K on the rigid halomethanes (the residual is the
+  known improper-mirror factor-2, in band).  **Red-team fix:** a FLEXIBLE halide (`C-(C)(X)(H)2`, a rotatable
+  C-C bond) has a single-conformer G4 group entropy that systematically UNDER-predicts S° by the missing
+  internal-rotation/gauche entropy (chloroethane -8.9, 1,2-dichloroethane -13.9 J/mol/K vs sourced TRC S°) --
+  one-directional and correlated; a per-group `(8,9)` band override brackets it, and the calibration now tests
+  the flexible/vicinal cases the rigid-halomethane set alone ("a mirror") never exercised.
+- **Ring signature** -- `_classify_ring` hardened from a `(size, element-multiset, double-count)` key to a
+  canonical NECKLACE SIGNATURE (cyclic element+bond arrangement, invariant under rotation/reflection; a proven
+  bijection under a 20k-trial fuzz).  So 1,2-/1,3-/1,4-dioxane (same multiset, different O placement, different
+  strain) get DISTINCT keys and never borrow each other's correction -- the `a-reaction-key-by-formula-borrows-
+  a-rate` class killed for the WHOLE ring classifier.
+- **Saturated N/O rings** -- pyrrolidine + 1,4-dioxane DERIVED from their gas anchors (both ΔfH° AND S° sourced),
+  consistent with this engine's own group basis (reproduce the anchor exactly; pyrrolidine PREDICTED via its
+  ASSIGNED amine N, dioxane DERIVED).
+- **Internal-rotor σ residual (family 5, the last open σ question)** -- PROVEN in-band on 4 sourced anchors and
+  documented: the improper-mirror bias partially CANCELS the uncounted whole-t-butyl rotor (opposite signs), so
+  the net is <= R ln 2 + group variance, in band.  A correct fix needs 3-D (a 2-D graph cannot separate a proper
+  C2 from a mirror), so it stays honestly banded, never a brittle divide-by-2.
+- **Red-team fix (thermo):** removed three DEAD unsaturated-carbocycle ring corrections (cyclobutene/cyclopentene/
+  cyclohexene) that could never fire (an in-ring alkene's allylic carbon needs a `Cd`-ligand group the table
+  lacks) -- hollow coverage; `RING_STRAIN` and the patterns are now a proven bijection.  Forward-warning added on
+  `_sigma_multicenter_unreliable` (methyl-only; would silently stop covering the compounding-σ case if a
+  di-halo-with-carbon group is ever added).
+
+**MID-TERM (started): `enumerate_dags`** -- the CONVERGENT generalisation of `enumerate_routes`.  A step fed by
+two-or-more from-scratch precursors (which the linear enumerator SILENTLY DROPPED) now compiles as a
+`SynthesisDAG`; each candidate is validated by SynthesisDAG's own invariants (propose-then-validate).  Ethyl
+acetate -> a genuinely convergent 3-step DAG, verified on every rung (E1/M1/M2).  **Red-team fix (HIGH):** the
+`max_dags` cap counted the duplicate-heavy raw `itertools.product` candidates (866 for one target) instead of
+DISTINCT DAGs (47), so the default returned 14 of 47 and dropped 18 of 19 linear routes -- FALSIFYING the
+"strict superset" claim.  Fixed by deduping candidates AS built (order-invariant step-set signature) so the cap
+bounds unique results; the superset now holds (0 linear routes missing) and deep enumeration terminates (12.6s
+at depth 3, was non-terminating).  A reachability PRUNE (`_prune_to_sink`) prevents a shared-intermediate dedup
+from orphaning a branch at depth >= 3 (a false-negative that failed closed).
+
+**DEFERRED, documented (NO confident-wrong-answers):**
+- **heteroaromatics** -- Benson additivity does not represent them; RMG's own furan/thiophene ring corrections
+  disagree with its library values ~2x in S° (sign-flip in ΔfH for thiophene); pyridine/pyrrole/imidazole have
+  zero RMG coverage; S°(gas) UNKNOWN on NIST for all five.  A whole-ring-correction path exists but needs
+  contested-literature adjudication (a research task, not a fetch).
+- **phosphorus** -- a real source exists (Vuori 2019 phosphines, W1X-1) but NO independent NIST calibration
+  anchor for the organic-P groups (only PH3), so the instrument rule cannot be satisfied.
+- **nitrile / nitro** -- the nitrile N needs SECOND-nearest-neighbour keying and nitro needs formal-charge
+  representation, neither of which the flat centre+direct-ligand scheme can express (PROVEN by running the live
+  engine: `assign_groups(acetonitrile)` already returns `None`).
+- **most carbonyl rings** -- ketone/lactone/lactam need SEPARATE corrections, gas S° missing for 7/8, the ester
+  series is non-monotonic; only cyclohexanone has both gas anchors.
+- **piperidine / piperazine / morpholine / oxane** -- missing or suspect anchors (piperidine's RMG value is a
+  copy-paste stub of pyrrolidine's; morpholine's only gas S° looked like a mislabeled liquid value).
+
+### The roadmap, refreshed
+
+**Short (next, cleanest):** the ketone/lactone/lactam ring family remains the highest-leverage refusal to lift,
+but it needs sourced gas S° for 7/8 targets (only cyclohexanone has both anchors today) -- so it is a SOURCING
+task (CCCBDB/WTT/Pedley for the missing entropies), not an engine task.  Secondary/branched halide + thio-carbon
+groups (`C-(C)2(X)(H)`, `C-(C)(S)...`) to widen halide/sulfur reach.  Wire `enumerate_dags` into
+`compile_synthesis` / the CLI so convergent targets compile through the front door (today it is the enumerator +
+`verify_dag`, not yet the drafter/ranker, which are `ExperimentRoute`-shaped).
+
+**Mid:** heteroaromatic whole-ring corrections (adjudicate the contested literature); a general internal-rotor /
+conformer entropy term (would lift the flexible-halide band from "bracketed" to "corrected"); extend the ΔfH
+anchor beyond CHNO; rate-aware ranking on real dual-provider data.
+
+**Long (W3, unchanged):** the permanent physical wall -- which cleavage Nature actually takes, at what real rate,
+under what conditions -- is never certified as raw FACT, only a graded PREDICTED estimate from TST +
+thermodynamic control.

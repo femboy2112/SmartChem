@@ -92,6 +92,54 @@ class TestConvergentDAGEnumeration:
     def test_no_dag_from_an_empty_pool_is_a_loud_empty(self):
         assert enumerate_dags(PARA, reagents=(WATER,), available=(), max_depth=1) == ()
 
+    def test_max_dags_caps_distinct_results_not_raw_candidates(self):
+        # RED-TEAM (HIGH): the cap must bound DISTINCT DAGs, not the duplicate-heavy raw itertools.product
+        # candidates.  If it capped raw candidates, a small cap would truncate before the dedup and silently
+        # return a fraction of the answer (and drop linear routes -> the superset claim would be false).
+        # The full distinct set is stable once the cap exceeds it; a smaller-but-sufficient cap returns it too.
+        full = enumerate_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5000)
+        n = len(full)
+        assert n > 20  # ethyl acetate has many distinct DAGs over this pool
+        # a cap at exactly the distinct count returns the whole set (not a duplicate-throttled fraction)
+        at_n = enumerate_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=n)
+        assert len(at_n) == n
+        # and a cap below it returns AT MOST that many distinct DAGs (a real bound on the result)
+        assert len(enumerate_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5)) <= 5
+
+    def test_depth_three_terminates_and_stays_valid(self):
+        # RED-TEAM residual: the dedup + distinct-cap must keep deeper enumeration bounded (it did not terminate
+        # before), and the orphan-prune must keep every emitted DAG a valid connected synthesis.
+        dags = enumerate_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=3, max_dags=40)
+        assert dags and len(dags) <= 40
+        assert all(isinstance(d, SynthesisDAG) and d.final_target == ETAC for d in dags)
+
+
+class TestOrphanPrune:
+    """The reachability prune that keeps a shared-intermediate dedup from orphaning a branch (red-team residual)."""
+
+    def test_prune_drops_a_branch_that_feeds_nothing_downstream(self):
+        from smartchem.experiment.routes import _prune_to_sink
+        from smartchem.experiment.step import ExperimentStep
+        ethene, water = parse_smiles("C=C"), parse_smiles("O")
+        ethanol, acid = parse_smiles("CCO"), parse_smiles("CC(=O)O")
+        etac, butene = parse_smiles("CCOC(=O)C"), parse_smiles("CC=CC")
+        feeder = ExperimentStep.assembling(ethanol, (ethene, water), (ethanol,))          # ethene + H2O -> EtOH
+        orphan = ExperimentStep.assembling(butene, (ethene, ethene), (butene,))           # 2 ethene -> butene (unused)
+        sink = ExperimentStep.assembling(etac, (ethanol, acid), (etac, water))            # EtOH + AcOH -> EtOAc + H2O
+        pruned = _prune_to_sink((orphan, feeder, sink))
+        targets = {p.target for p in pruned}
+        assert sink.target in targets and ethanol in targets      # sink + its feeder kept
+        assert butene not in targets                              # the orphan branch pruned away
+
+    def test_prune_is_a_noop_when_everything_feeds_the_sink(self):
+        from smartchem.experiment.routes import _prune_to_sink
+        from smartchem.experiment.step import ExperimentStep
+        ethene, water, ethanol, acid = (parse_smiles(s) for s in ("C=C", "O", "CCO", "CC(=O)O"))
+        etac = parse_smiles("CCOC(=O)C")
+        feeder = ExperimentStep.assembling(ethanol, (ethene, water), (ethanol,))
+        sink = ExperimentStep.assembling(etac, (ethanol, acid), (etac, water))
+        assert _prune_to_sink((feeder, sink)) == (feeder, sink)  # both feed the sink -> unchanged
+
 
 class TestCLI:
     def test_cli_runs_offline_end_to_end(self, capsys):

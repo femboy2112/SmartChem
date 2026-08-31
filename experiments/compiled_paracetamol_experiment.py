@@ -39,7 +39,12 @@ from smartchem.contracts import EvidenceStatus
 from smartchem.data.stability import DEFAULT_STABILITY, StabilityRef
 from smartchem.data.thermo_extended import EXTENDED_THERMO_GAPS, EXTENDED_THERMO_REFS, extended_thermo
 from smartchem.decompiler import Formula, build_decomposition, example_inventory
-from smartchem.structure_descent import capped_scissions
+from smartchem.structure_descent import (
+    capped_scissions,
+    ionic_decompose,
+    structure_decompose,
+    verify_radical_ledger,
+)
 from smartchem.experiment import (
     Bucket,
     ConstraintBox,
@@ -53,9 +58,11 @@ from smartchem.experiment import (
     RouteFitStatus,
     SelectivityStatus,
     SynthesisDAG,
+    assemble_synthesis,
     classify,
     classify_reaction,
     dag_ceiling,
+    find_scission,
     draft_procedure,
     equilibrium_of_step,
     feasibility_of_step,
@@ -459,6 +466,85 @@ def main() -> int:
             "R1 x L2: a ring-opening read backwards is the assembly of paracetamol's ring, graded HYPOTHESIZED "
             "(a formally valid structured candidate) -- the chain reaches THROUGH the ring, not just to its core")
 
+    # -- chain assembly: a structured multi-level descent graded as ONE object ------------------------
+    print("\n[chain assembly] the litmus chain assembled and graded in ONE shot (structured, through the ring):",
+          flush=True)
+    cs1 = find_scission(capped_scissions(PARA, (WATER,))[0], products=["C6H7NO", "C2H4O2"])[0]  # amide hydrolysis
+    plain2, _ = capped_scissions(AMP, (WATER,), ring_aware=False)
+    aware2, _ = capped_scissions(AMP, (WATER,), ring_aware=True)
+    ring_open2 = sorted(
+        (e for e in aware2 if e.digest not in {p.digest for p in plain2}), key=lambda e: e.digest
+    )[0]                                                                     # a genuine 4-aminophenol ring-opening
+    chain_dag = assemble_synthesis([cs1, ring_open2])
+    v_chain = classify(chain_dag, thermo=thermo)
+    print(f"  {chain_dag!r} -> L2 {v_chain.grade.value}", flush=True)
+    f.check(chain_dag.final_target.formula == PARA.formula and len(chain_dag.steps) == 2,
+            "a 2-level structured descent (amide hydrolysis + a ring-opening) assembles into ONE SynthesisDAG -> "
+            "paracetamol -- the whole chain as a single classify()-able object")
+    f.check(v_chain.grade is Grade.HYPOTHESIZED and v_chain.conserves,
+            "L2 grades the WHOLE structured chain in one shot: HYPOTHESIZED (a formally valid structured candidate), "
+            "conserving every step -- the honest floor a deep unsourced descent earns")
+    f.check(ring_open2.digest not in {p.digest for p in plain2},
+            "the structured chain reaches THROUGH the aromatic ring: its level-2 step is a genuine ring-opening (R1)")
+
+    # -- R5-lite: the sourced aromatic skeleton lifts a real route rung above HYPOTHESIZED -------------
+    print("\n[R5-lite] a sourced aromatic-intermediate rung lifts from HYPOTHESIZED to DERIVED (gaps kept honest):",
+          flush=True)
+    NB = parse_smiles("O=[N+]([O-])c1ccccc1")
+    ANILINE = parse_smiles("Nc1ccccc1")
+    reduction = ExperimentStep.assembling(ANILINE, (NB, H2, H2, H2), (ANILINE, WATER, WATER))  # C6H5NO2 + 3H2 -> C6H7N + 2H2O
+    r_seed = classify(reduction)                     # 8-species seed: the aromatics are unseeded
+    r_ext = classify(reduction, thermo=thermo)
+    print(f"  nitrobenzene -> aniline reduction: seed {r_seed.grade.value} -> R5-lite {r_ext.grade.value}", flush=True)
+    f.check(r_seed.grade is Grade.HYPOTHESIZED and r_ext.grade is Grade.DERIVED,
+            "R5-lite: a real skeleton rung (nitrobenzene -> aniline) LIFTS from HYPOTHESIZED to DERIVED on the "
+            "NIST-sourced aromatic thermo (phenol / aniline / nitrobenzene / toluene, fetched + phase-checked)")
+    f.check("C6H5NO3" in EXTENDED_THERMO_GAPS and thermo.for_formula("C6H5NO3") is None,
+            "R5-lite keeps the honest gaps: 4-nitrophenol (no S° in any phase) is a DOCUMENTED gap, not a fabricated record")
+
+    # -- SMILES: the front door now parses aromatic heteroatoms (unblocks N-heterocycles) --------------
+    print("\n[SMILES heteroatoms] aromatic N/O/S rings now parse (pyridine, pyrrole, furan) -- was a hard refusal:",
+          flush=True)
+    pyridine = parse_smiles("c1ccncc1")
+    pyrrole = parse_smiles("c1cc[nH]c1")
+    furan = parse_smiles("c1ccoc1")
+    print(f"  pyridine {dict(pyridine.formula)}, pyrrole {dict(pyrrole.formula)}, furan {dict(furan.formula)}",
+          flush=True)
+    f.check(dict(pyridine.formula) == {"C": 5, "H": 5, "N": 1}
+            and dict(pyrrole.formula) == {"C": 4, "H": 5, "N": 1}
+            and dict(furan.formula) == {"C": 4, "H": 4, "O": 1},
+            "aromatic heteroatoms parse with correct valence (pyridine C5H5N, pyrrole C4H5N, furan C4H4O), the "
+            "pyridine-vs-pyrrole N distinction handled by the pi-acceptor / pi-donor split")
+
+    # -- R3: the recursive ionic descent (an ion's fragments split again, or an honest leaf) -----------
+    print("\n[R3 recursive ionic descent] a charged ion now heterolyzes again -> bare ions, or an honest leaf:",
+          flush=True)
+    g_water = ionic_decompose(WATER)
+    g_co2 = ionic_decompose(CO2)
+    print(f"  H2O: {g_water.status}, {len(g_water.nodes())} nodes, reaches_bare_ions={g_water.reaches_bare_ions}; "
+          f"CO2 irreducible leaves: {[repr(m) for m in g_co2.irreducible_ionic_leaves()]}", flush=True)
+    f.check(g_water.is_complete and g_water.reaches_bare_ions and len(g_water.nodes()) > 3,
+            "R3: water descends RECURSIVELY through its [OH] ion to bare ions/atoms (v1 was a single ionic level)")
+    f.check(g_co2.reaches_bare_ions is False
+            and [repr(m) for m in g_co2.irreducible_ionic_leaves()] == [repr(CO2)],
+            "R3: CO2 (no order-1 bridge) is an HONEST irreducible ionic leaf, surfaced -- never a faked dissociation")
+
+    # -- R4: the cross-level radical (open-valence) conservation ledger --------------------------------
+    print("\n[R4 radical ledger] whole-descent open-valence conservation (cut + surviving == target bond order):",
+          flush=True)
+    ethane_g = structure_decompose(parse_smiles("CC"))
+    benzene_g = structure_decompose(parse_smiles("c1ccccc1"))
+    L_eth = verify_radical_ledger(ethane_g)
+    L_bz = verify_radical_ledger(benzene_g)
+    print(f"  ethane: {L_eth.cut_bond_order} cut + {L_eth.surviving_core_order} surviving == {L_eth.target_bond_order}; "
+          f"benzene(core): {L_bz.cut_bond_order} cut + {L_bz.surviving_core_order} surviving == {L_bz.target_bond_order}",
+          flush=True)
+    f.check(L_eth.conserves and L_eth.surviving_core_order == 0 and ethane_g.reaches_single_atoms,
+            "R4: ethane's full atomisation conserves -- every bond cut, nothing surviving (cut == target bond order)")
+    f.check(L_bz.conserves and L_bz.surviving_core_order > 0 and not benzene_g.reaches_single_atoms,
+            "R4: benzene's ring core leaves its bonds surviving, and cut + surviving STILL == the target bond order "
+            "-- the whole-tree open-valence conservation no single edge can see")
+
     # -- the drafted procedure a chemist reads --------------------------------------------------------
     print("\n[draft] the chemist-facing procedure for the winning route:", flush=True)
     draft = draft_procedure(anhydride_route(pres=(1, 1)), feed={AMP: 1, ANH: Fraction(6, 5)})
@@ -487,8 +573,12 @@ def main() -> int:
           "table broadened to reach real bench targets, drafts a chemist-usable procedure, and -- the mission "
           "made literal -- classifies ANY formal combination with ONE graded verdict (KNOWN / DERIVED / "
           "PREDICTED / HYPOTHESIZED / REFUTED / UNKNOWN), composing every rung. The chain is the WHOLE chain: "
-          "the decompiler bottoms out at elemental buckets {C,H,N,O}, and R1 ring-opening lets the STRUCTURED "
-          "descent reach through the aromatic ring into gradeable reactions -- universal and bucket-honest "
+          "the decompiler bottoms out at elemental buckets {C,H,N,O}, R1 ring-opening lets the STRUCTURED descent "
+          "reach through the aromatic ring, and a whole multi-level structured descent now ASSEMBLES into one "
+          "SynthesisDAG graded in a single shot. R5-lite lifts a sourced aromatic rung from HYPOTHESIZED to DERIVED "
+          "(gaps kept honest); the SMILES front door parses aromatic N/O/S heterocycles; R3 makes the ionic descent "
+          "genuinely recursive (a charged ion re-heterolyzes to bare ions, or an honest irreducible leaf); and R4 "
+          "audits the cross-level open-valence conservation of a whole descent -- universal and bucket-honest "
           "throughout.",
           flush=True)
     return 0

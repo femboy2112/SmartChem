@@ -36,6 +36,12 @@ Every number falls in exactly one :class:`~smartchem.experiment.bucket.Bucket` a
 from __future__ import annotations
 
 from .accounting import PhysicalAccounting, StepAccounting, account_route, account_step
+from .assembly import (
+    SynthesisAssemblyError,
+    assemble_synthesis,
+    find_scission,
+    steps_from_scissions,
+)
 from .bucket import Bucket, Quantity, unknown
 from .ceiling import (
     CeilingError,
@@ -173,4 +179,8 @@ __all__ = [
     "classify_reaction",
     "classify_route",
     "classify_dag",
+    "SynthesisAssemblyError",
+    "assemble_synthesis",
+    "find_scission",
+    "steps_from_scissions",
 ]

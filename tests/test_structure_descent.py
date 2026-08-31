@@ -17,18 +17,23 @@ import pytest
 
 from smartchem.category import Bond, Molecule
 from smartchem.decompiler import DecompositionEdge, Formula
+from smartchem.smiles import parse_smiles
 from smartchem.structure import known_compounds
 from smartchem.structure_descent import (
     HETEROLYTIC_SCHEMA,
     CappedScission,
     Fragment,
     HeterolyticScission,
+    IonicDecompositionGraph,
+    RadicalLedger,
     ScissionEdge,
     ScissionError,
     capped_scissions,
     heterolytic_scissions,
+    ionic_decompose,
     scission_edges,
     structure_decompose,
+    verify_radical_ledger,
     verify_valence_integrity,
 )
 
@@ -283,10 +288,72 @@ class TestHeterolyticScission:
         with pytest.raises(ScissionError):
             HeterolyticScission(HETEROLYTIC_SCHEMA, hcl, Bond(0, 1), cl_neutral, h_plus)
 
-    def test_a_charged_reactant_is_refused(self):
-        charged = Molecule(("H", "Cl"), frozenset({Bond(0, 1)}), 1)
+    def test_a_charged_reactant_now_heterolyzes_conservingly(self):
+        # R3: a charged reactant is ADMITTED (v1 refused it); every split conserves the reactant's charge
+        anion = Molecule(("O", "H"), frozenset({Bond(0, 1)}), -1)   # [OH]-
+        edges = heterolytic_scissions(anion)
+        assert edges                                                 # no longer refused (was ScissionError)
+        for e in edges:
+            assert e.anion.charge + e.cation.charge == -1            # conserves the reactant's charge
+            assert abs(e.anion.charge) == 1 or abs(e.cation.charge) == 1   # the single-pair signature
+
+    def test_the_neutral_case_is_unchanged_by_the_generalization(self):
+        # R3 must not perturb the classic q=0 result: still exactly the two (-1, +1) assignments
+        hcl = Molecule(("H", "Cl"), frozenset({Bond(0, 1)}))
+        edges = heterolytic_scissions(hcl)
+        assert len(edges) == 2
+        assert all({e.anion.charge, e.cation.charge} == {-1, 1} for e in edges)
+
+    def test_an_even_charge_split_is_outside_the_localized_model(self):
+        # a split where NEITHER fragment carries only the bond pair (+/-1) is refused, even though it
+        # conserves charge -- the documented localized-charge boundary, not silently accepted
+        di = Molecule(("O", "O"), frozenset({Bond(0, 1)}), -2)
+        a = Molecule(("O",), frozenset(), -2)   # -2 and 0 conserves to -2, but neither is +/-1
+        c = Molecule(("O",), frozenset(), 0)
         with pytest.raises(ScissionError):
-            heterolytic_scissions(charged)
+            HeterolyticScission(HETEROLYTIC_SCHEMA, di, Bond(0, 1), a, c)
+
+
+class TestIonicDecompositionGraph:
+    """R3: the recursive heterolytic descent -- an ion's fragments split again, until bare ions/atoms."""
+
+    def test_hcl_dissociates_completely_to_atomic_ions(self):
+        hcl = Molecule(("H", "Cl"), frozenset({Bond(0, 1)}))
+        g = ionic_decompose(hcl)
+        assert type(g) is IonicDecompositionGraph
+        assert g.is_complete
+        assert g.reaches_bare_ions                       # H+ + Cl-, both atomic
+        assert g.irreducible_ionic_leaves() == ()
+
+    def test_water_descends_recursively_through_an_ion(self):
+        # H-O-H: heterolysis gives an [OH] ion, which R3 splits AGAIN -> genuinely recursive, terminates
+        water = Molecule(("O", "H", "H"), frozenset({Bond(0, 1), Bond(0, 2)}))
+        g = ionic_decompose(water)
+        assert g.is_complete and g.reaches_bare_ions
+        assert len(g.nodes()) > 3                         # more than {target, +, -}: it recursed
+
+    def test_a_multiply_bonded_ion_is_an_honest_irreducible_leaf(self):
+        # CO2 has only double bonds -> no order-1 bridge -> no heterolysis -> a surfaced irreducible leaf,
+        # never a silent claim of full dissociation
+        co2 = Molecule(("C", "O", "O"), frozenset({Bond(0, 1, 2), Bond(0, 2, 2)}))
+        g = ionic_decompose(co2)
+        assert g.is_complete
+        assert g.reaches_bare_ions is False
+        assert [repr(m) for m in g.irreducible_ionic_leaves()] == [repr(co2)]
+
+    def test_bounded_depth_reports_a_positive_partial_not_a_refusal(self):
+        water = Molecule(("O", "H", "H"), frozenset({Bond(0, 1), Bond(0, 2)}))
+        g = ionic_decompose(water, max_depth=1)
+        assert g.is_complete_to_depth
+        assert not g.is_complete                          # a bounded answer, never sold as the full descent
+
+    def test_termination_is_forced_by_w1(self):
+        # every ion is strictly smaller than its parent -> the descent bottoms out (no runaway)
+        water = Molecule(("O", "H", "H"), frozenset({Bond(0, 1), Bond(0, 2)}))
+        g = ionic_decompose(water)
+        for e in g.edges:
+            assert len(e.anion.atoms) < len(e.reactant.atoms)
+            assert len(e.cation.atoms) < len(e.reactant.atoms)
 
 
 class TestNvsOAcetylationIsRepresentable:
@@ -529,3 +596,40 @@ class TestRingAwareCappedScission:
         step = ExperimentStep.from_capped_scission(opening)
         assert step.target.formula == self._benzene().formula
         assert classify(step).grade is Grade.HYPOTHESIZED
+
+
+class TestRadicalLedger:
+    """R4: the whole-descent open-valence conservation ledger (cut + surviving == target bond order)."""
+
+    def test_a_full_atomisation_cuts_every_bond_and_survives_none(self):
+        # ethane atomises: every bond is cut somewhere, nothing survives in a core
+        g = structure_decompose(parse_smiles("CC"))
+        L = verify_radical_ledger(g)
+        assert type(L) is RadicalLedger
+        assert g.reaches_single_atoms
+        assert L.surviving_core_order == 0
+        assert L.cut_bond_order == L.target_bond_order       # every target bond got cut
+        assert L.conserves
+        assert L.opened_valence == 2 * L.cut_bond_order       # two half-bonds per unit of cut order
+
+    def test_an_irreducible_ring_core_leaves_its_bonds_surviving_and_still_conserves(self):
+        # benzene at max_cut_bonds=1 bottoms out at the ring core: the C-H bonds are cut, the ring survives
+        g = structure_decompose(parse_smiles("c1ccccc1"))
+        L = verify_radical_ledger(g)
+        assert not g.reaches_single_atoms
+        assert L.surviving_core_order > 0                     # the ring core's bonds survive uncut
+        assert L.cut_bond_order + L.surviving_core_order == L.target_bond_order
+        assert L.conserves                                    # cut + surviving accounts for every bond
+
+    def test_ring_aware_atomisation_conserves_with_nothing_surviving(self):
+        # with ring_aware the ring opens and benzene atomises: back to all-cut, none surviving
+        g = structure_decompose(parse_smiles("c1ccccc1"), ring_aware=True)
+        L = verify_radical_ledger(g)
+        assert g.reaches_single_atoms
+        assert L.surviving_core_order == 0 and L.conserves
+
+    def test_a_partial_descent_cannot_be_audited_whole(self):
+        # a bounded-depth graph did not finish -> refuse to certify a whole-tree conservation
+        g = structure_decompose(parse_smiles("CCCC"), max_depth=1)
+        with pytest.raises(ValueError):
+            verify_radical_ledger(g)

@@ -33,6 +33,19 @@ The north-star step is ``4-aminophenol + acetic anhydride -> paracetamol + aceti
 So M3 sources what genuinely exists (paracetamol's formation enthalpy skeleton) and refuses what does not
 (its entropy), and the step stays honestly ``UNKNOWN`` -- the correct behaviour, loud about exactly which
 species and which quantity blocks it.
+
+R5-lite: the aromatic-intermediate skeleton toward the litmus (sourced, not fabricated)
+--------------------------------------------------------------------------------------
+The industrial paracetamol route descends through aromatic intermediates -- ``phenol -> (nitration) ->
+4-nitrophenol -> (reduction) -> 4-aminophenol -> (acetylation) -> paracetamol`` -- and the analogous
+``benzene -> nitrobenzene -> aniline`` reduction skeleton.  R5-lite sources the members of that skeleton
+whose 298 K standard-state ΔfH° AND S° both genuinely exist as a same-phase pair on the NIST WebBook --
+**phenol, aniline, nitrobenzene, toluene** -- so the rungs among them LIFT from L2's ``HYPOTHESIZED`` floor
+to ``DERIVED`` (a real ΔG at the 298.15 K reference).  The two rungs that reach the drug itself stay honest
+GAPS: **4-nitrophenol** has ΔfH° but no S° in any phase (a fourth instance of the same entropy-gap disease),
+and **4-aminophenol** has disagreeing ΔfH° sources -- so the final descent to paracetamol is graded, not
+faked, exactly where the data runs out.  Every value here was fetched from the raw NIST page and
+phase-checked; none is recalled.
 """
 from __future__ import annotations
 
@@ -76,6 +89,28 @@ EXTENDED_THERMO_REFS: tuple[ThermoRef, ...] = (
         "C6H6", "benzene", 49.0, 173.26, "liquid",
         f"ΔfH° +49.0±0.9 (Roux, Temprado et al. 2008); S° 173.26 (Oliver, Eaton et al. 1948); {_NIST}",
     ),
+    # -- R5-lite: the aromatic-intermediate skeleton toward the paracetamol litmus (same-phase ΔfH°+S°
+    #    pairs fetched from the raw NIST WebBook page and phase-checked; NOT recalled) ------------------
+    ThermoRef(
+        "C6H6O", "phenol", -165.1, 144.01, "solid",
+        f"ΔfH° -165.1±1.3 (Andon, Biddiscombe et al. 1960, combustion cal.); S° 144.01 "
+        f"(Andon, Counsell et al. 1963); {_NIST}",
+    ),
+    ThermoRef(
+        "C6H7N", "aniline", 31.3, 191.30, "liquid",
+        f"ΔfH° 31.3±0.84 (Hatton, Hildenbrand et al. 1962, combustion cal.); S° 191.30 "
+        f"(Hatton, Hildenbrand et al. 1962, same paper); {_NIST}",
+    ),
+    ThermoRef(
+        "C6H5NO2", "nitrobenzene", 12.5, 224.3, "liquid",
+        f"ΔfH° 12.5±0.54 (Lebedeva, Katin et al. 1971, reanalyzed by Pedley, Naylor et al. 1986); "
+        f"S° 224.3 (Parks, Todd et al. 1936); {_NIST}",
+    ),
+    ThermoRef(
+        "C7H8", "toluene", 12.0, 220.96, "liquid",
+        f"ΔfH° 12.0±1.1 (Roux, Temprado et al. 2008, review); S° 220.96 "
+        f"(Scott, Guthrie et al. 1962); {_NIST}",
+    ),
 )
 
 
@@ -95,6 +130,12 @@ EXTENDED_THERMO_GAPS: dict[str, str] = {
     "C4H6O3": (
         "acetic anhydride: a liquid ΔfH° exists (~-625 kJ/mol, Guthrie 1974 / Pedley 1986) but no sourced "
         "298 K liquid S° to pair with it here -> UNKNOWN until an entropy is sourced"
+    ),
+    "C6H5NO3": (
+        "4-nitrophenol: ΔfH° IS sourced (solid -207.1±1.1, gas -114.7±1.2 kJ/mol, Sabbah & Gouali 1994) "
+        "but NO standard molar entropy S°(298 K) exists in any phase on the NIST WebBook (only a 283 K Cp "
+        "point, Campbell & Campbell 1941) -> ΔG cannot be formed without fabricating S°; refused. A fourth "
+        "instance of the same 'no entropy, no record' gap as paracetamol / 4-aminophenol / acetic anhydride"
     ),
 }
 

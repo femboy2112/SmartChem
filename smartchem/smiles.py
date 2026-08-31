@@ -21,9 +21,14 @@ Scope (v1), stated as loud walls, never silent
   validated against :data:`~smartchem.atoms.PT`.
 * **Bonds** ``-`` ``=`` ``#`` (orders 1/2/3), aromatic (lowercase atoms or ``:``), branches ``( )``,
   ring closures (single digit and ``%nn``).
-* **Aromatic Kekulisation** for all-CARBON aromatic rings (benzene, naphthalene, substituted
-  benzenes): a perfect matching assigns the alternating double bonds. An aromatic HETEROatom
-  (``n o s p``) is a documented v1 gap and is **refused loudly** -- give an explicit Kekulé SMILES.
+* **Aromatic Kekulisation** for carbon rings AND the common aromatic heteroatoms -- pyridine-type
+  ``n``, pyrrole-type ``[nH]``, furan/thiophene-type ``o``/``s`` (pyridine, pyrrole, furan,
+  thiophene, imidazole all parse): a perfect matching over the ring's pi-ACCEPTORS (carbon, and a
+  bare/no-H nitrogen with fewer than three sigma bonds) assigns the alternating double bonds, while
+  each pi-DONOR (``o``, ``s``, and an ``H``-bearing or already-3-bonded nitrogen) sits out the
+  matching entirely and keeps every incident aromatic bond at order 1 -- its lone pair, not a ring
+  double bond, is the aromatic contribution. Any OTHER aromatic heteroatom (``p`` and friends) is a
+  documented v1 gap and is **refused loudly** -- give an explicit Kekulé SMILES.
 * **Constitutional only (W3).** Stereo markers (``/``, backslash, ``@``) carry no cis/trans or R/S
   here -- they are parsed and ignored, exactly as :mod:`smartchem.decompiler_boundary` refuses to
   *claim* stereochemistry. A bond graph is constitution, not configuration.
@@ -226,12 +231,22 @@ _MAX_KEKULE_MATCHINGS = 5000
 def _aromatic_matchings(
     atoms: list[_Atom], bonds: list[list[int]]
 ) -> tuple[list[int], list[frozenset[int]]]:
-    """The aromatic bond indices and EVERY perfect matching over the aromatic carbons.
+    """The aromatic bond indices and EVERY perfect matching over the aromatic ring's pi-acceptors.
 
     Each matching is the set of aromatic bond indices assigned a *double* bond (one Kekulé structure);
-    the rest become single, so every aromatic carbon takes exactly one double bond. Returns
-    ``([], [])`` when there is no aromatic bond. Refuses an aromatic heteroatom (a v1 gap) and an
-    aromatic system with no perfect matching -- loudly, never a silent wrong order.
+    the rest become single. Not every aromatic atom takes a double bond, though: a heteroatom can be a
+    pi-DONOR instead (its lone pair, not a ring double bond, supplies the aromatic electron), so the
+    matching runs over the pi-ACCEPTOR subset only --
+
+    * **acceptor** (needs exactly one ring double bond, same as an aromatic carbon): element ``C``; or
+      a bare/no-H aromatic ``N`` with fewer than three sigma bonds (the pyridine-type nitrogen).
+    * **donor** (sits out the matching; every incident aromatic bond defaults to order 1): element
+      ``O`` or ``S``; or an aromatic ``N`` carrying an explicit H, OR one already at three sigma bonds
+      -- a substituted or bridgehead pyrrole-type nitrogen ([nH], N-substituted pyrrole, indolizine).
+
+    Returns ``([], [])`` when there is no aromatic bond. Refuses any OTHER aromatic heteroatom (a v1
+    gap, e.g. aromatic P) and an aromatic system with no perfect matching -- loudly, never a silent
+    wrong order.
 
     Enumerating EVERY matching (not just the first) is what lets :func:`parse_smiles` pick a
     resonance-CANONICAL representative (R2): a fused benzenoid such as naphthalene has several
@@ -242,29 +257,52 @@ def _aromatic_matchings(
     if not arom_bonds:
         return [], []
     arom_atoms = sorted({e for bi in arom_bonds for e in bonds[bi][:2]})
+
+    # Full sigma-bond degree (EVERY bond, not just the aromatic ring ones) is what tells a bare,
+    # H-less aromatic N apart: 2 connections and it's pyridine-type (an acceptor); 3 and every seat is
+    # already taken, so it's donor-type (a substituted pyrrole N or a bridgehead like indolizine).
+    degree: dict[int, int] = {}
+    for a, b, _o in bonds:
+        degree[a] = degree.get(a, 0) + 1
+        degree[b] = degree.get(b, 0) + 1
+
+    acceptors: list[int] = []
     for a in arom_atoms:
-        if atoms[a].element != "C":
+        element = atoms[a].element
+        if element == "C":
+            acceptors.append(a)
+        elif element == "N":
+            h = atoms[a].h_explicit
+            if h or degree.get(a, 0) >= 3:
+                pass                            # [nH], or no H but already 3 sigma bonds -- a donor
+            else:                               # bare, 2-connection N: pyridine-type, takes one double
+                acceptors.append(a)
+        elif element in ("O", "S"):
+            pass                                # a lone-pair donor, never a matching vertex
+        else:
             raise SmilesError(
-                f"aromatic heteroatom {atoms[a].element!r} is a v1 gap; "
+                f"aromatic heteroatom {element!r} is a v1 gap; "
                 "give an explicit Kekulé SMILES (e.g. uppercase atoms with '=' bonds)"
             )
     if len(arom_atoms) > _MAX_AROMATIC_CARBONS:
         raise SmilesError(
-            f"aromatic system has {len(arom_atoms)} carbons (> {_MAX_AROMATIC_CARBONS}); a "
-            "resonance-canonical identity for a PAH this large is out of scope (give a Kekulé SMILES)"
+            f"aromatic system has {len(arom_atoms)} atoms (> {_MAX_AROMATIC_CARBONS}); a "
+            "resonance-canonical identity for a ring this large is out of scope (give a Kekulé SMILES)"
         )
-    neighbours: dict[int, list[tuple[int, int]]] = {a: [] for a in arom_atoms}
+    acceptor_set = set(acceptors)
+    neighbours: dict[int, list[tuple[int, int]]] = {a: [] for a in acceptors}
     for bi in arom_bonds:
         a, b, _o = bonds[bi]
-        neighbours[a].append((b, bi))
-        neighbours[b].append((a, bi))
+        if a in acceptor_set and b in acceptor_set:    # a donor-incident bond is never a matching edge
+            neighbours[a].append((b, bi))               # -- it stays order 1 by default below, its
+            neighbours[b].append((a, bi))                # lone pair never masquerading as a double bond
     matchings: list[frozenset[int]] = []
 
     def enumerate_from(matched: frozenset[int], chosen: frozenset[int]) -> None:
         if len(matchings) > _MAX_KEKULE_MATCHINGS:
             return
-        a = next((x for x in arom_atoms if x not in matched), None)
-        if a is None:                                  # every aromatic carbon paired: a full matching
+        a = next((x for x in acceptors if x not in matched), None)
+        if a is None:                                  # every pi-acceptor paired: a full matching
             matchings.append(chosen)
             return
         for b, bi in neighbours[a]:                    # pair the smallest unmatched atom each step:
@@ -323,8 +361,8 @@ def parse_smiles(text: str) -> Molecule:
     """Parse a SMILES string into a canonical :class:`~smartchem.category.Molecule`.
 
     Raises :class:`SmilesError` for a malformed string or an out-of-scope feature (an aromatic
-    heteroatom, a disconnected ``.``), never returning a wrong graph silently. The returned molecule
-    is canonicalised, so two spellings of the same structure compare equal.
+    heteroatom outside {C, N, O, S}, a disconnected ``.``), never returning a wrong graph silently.
+    The returned molecule is canonicalised, so two spellings of the same structure compare equal.
     """
     if not isinstance(text, str):
         raise SmilesError("SMILES input must be a string")

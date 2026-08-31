@@ -1568,3 +1568,68 @@ sourced thermo/selectivity for the deep intermediates so those rungs LIFT above 
 one. Upstream, the SMILES front door's aromatic-heteroatom gap (pyridine needs Kekule) blocks N-heterocyclic
 targets. L1 TST kinetics (the honest "real rate") remains the deeper frontier, atop the permanent physical W3
 wall.
+
+## Part 28 — the chain assembled and graded; R3/R4/R5-lite; N-heterocycles unblocked; long-term decomposed
+
+A single coherent arc closing best-next-steps 1–3, the short-term shelf, and two mid-term rungs (R3 + R4),
+all under the anti-fake-build discipline (five read-only recon agents first, so every gap built was the REAL
+one, not a hallucinated one). **Full suite 2206** (from 2173), **gate 69/69** exit 0, zero regressions,
+changed files ruff-clean.
+
+### The builds
+
+* **Chain assembly (`experiment/assembly.py`) — the litmus chain graded as ONE object.** The missing bridge
+  between the decompiler and L2. `assemble_synthesis` turns a chosen multi-level structured descent into one
+  `SynthesisDAG`; `find_scission` picks a specific cleavage out of the valence-valid soup by product formula.
+  The demonstration assembles paracetamol's amide hydrolysis + a genuine 4-aminophenol *ring-opening* into one
+  DAG that `classify()` grades `HYPOTHESIZED` in a single shot, reaching THROUGH the ring. **Backbone chosen
+  deliberately:** the CAPPED descent (closed-shell real molecules), not the formula chain (`Formula` ≠
+  `Molecule`, the graphite-bucket landmine) nor the radical-fragment structure graph (blocked on R4). The two
+  halves of "the whole chain from buckets" now both exist and neither is faked into the other. 13 tests
+  (`tests/test_assembly.py`).
+* **R5-lite (`data/thermo_extended.py`) — a sourced aromatic rung lifts, gaps kept honest.** Four same-phase
+  298 K ΔfH°+S° NIST pairs (phenol, aniline, nitrobenzene, toluene) *fetched from the raw WebBook and
+  phase-checked* by a web-enabled agent (the anti-poisoning discipline, held). Nitrobenzene→aniline reduction
+  lifts `HYPOTHESIZED`→`DERIVED`. 4-nitrophenol filed as a fourth "no S°, no record" GAP. 4 tests.
+* **SMILES aromatic heteroatoms (`smiles.py`) — N-heterocycles unblocked.** The blanket refusal of any
+  aromatic heteroatom is replaced by a π-acceptor / π-donor split (pyridine-type `n` joins the Kekulé matching;
+  `o`/`s`/pyrrole-`[nH]` sit out, single-bonded); pyridine/pyrrole/furan/thiophene/imidazole parse with correct
+  valence, aromatic P still refused. (Built by a caged Sonnet executor, verified on the filesystem — 50/50
+  smiles tests, the pyridine-refusal contract test repointed at aromatic P.)
+* **R3 recursive ionic descent (`structure_descent.py`).** `HeterolyticScission` generalised to a CHARGED
+  reactant under the localized-charge model (one fragment carries only the bond pair `±1`; reduces to `(−1,+1)`
+  at q=0; even-charge split is the documented boundary; the dead charge-sum check is now the live certificate).
+  `IonicDecompositionGraph`/`ionic_decompose` recurse it with W1 termination: water dissociates recursively to
+  bare ions, CO₂ is an HONEST irreducible ionic leaf. Heterolysis-of-an-ion was a documented boundary; it now
+  exists. 9 tests + one inverted contract test in `test_ionic_descent.py`.
+* **R4 cross-level radical ledger (`structure_descent.py`).** `verify_radical_ledger` threads a spanning
+  descent and verifies `cut + surviving == target bond order` — the whole-tree open-valence conservation no
+  single edge can see (the documented "not threaded across levels" gap). Boundary stated: it conserves the
+  BUDGET; per-atom per-path identity is bounded by canonical dedup. 4 tests.
+
+### The long-term, decomposed into short/mid (the operator's ask)
+
+**R5-full** (sourced thermo/selectivity across the deep intermediate space — the highest-leverage rung, what
+turns the reachable structured chain into a *ranked* one) decomposes into:
+* *(short)* extend R5-lite along the literal paracetamol route — source the remaining sourceable members
+  (4-nitrophenol *stays* a gap on S°; nitration/reduction reagents) and wire the assembled chain to grade with
+  the extended table, so its recognizable rungs read `DERIVED` not `HYPOTHESIZED`;
+* *(short)* isomer-keyed evidence — the top decompiler gap — so a cleavage is identified against the RIGHT
+  isomer's record, not merely a formula match;
+* *(mid)* a sourced *selectivity* table beyond the paracetamol N-vs-O record, so structured rungs can reach
+  `KNOWN`, not just `DERIVED`;
+* *(mid)* autoload provider breadth (NIST-linked / ChEBI behind the existing ABC, name-based warming) so
+  KNOWN/DERIVED reach arbitrary bench targets, not just the seed family.
+
+**L1 TST kinetics** (the honest "real rate" — the one outcome number the frame still refuses) decomposes into:
+* *(short)* an Arrhenius/`k = A·exp(−Ea/RT)` rung over SOURCED (Ea, A) pairs, oracle-disciplined (calibrate on
+  a known rate, refuse on a gap) — a `KINETICS` bucket that says UNKNOWN loudly, exactly like M1 did for ΔG;
+* *(mid)* transition-state ΔG‡ via the same Hess+Gibbs machinery once barrier data is sourced, composing into
+  L2 as a *rate* dimension orthogonal to the *feasibility* grade (a KNOWN/DERIVED reaction can be kinetically
+  frozen — L2 must say so);
+* *(long, unchanged)* the permanent physical **W3 wall** — which cleavage Nature actually takes, at what rate,
+  under what conditions, is never certified; the engine enumerates and grades, it never predicts new physics.
+
+**Still open after this arc:** R2 was already built (resonance-canonical identity, `42dfb15`); the remaining
+ladder is R5-full (above) atop R3/R4 now done. The deep structured intermediates grade `HYPOTHESIZED` until
+R5-full sources them.

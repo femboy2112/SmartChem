@@ -79,9 +79,12 @@ class TestUnifiedIonicView:
         for ion in ie.ions:
             assert species_class(ion) is SpeciesClass.ION   # honest: an ion, not an isolable compound
 
-    def test_a_charged_species_skips_heterolysis_but_still_has_redox(self):
-        # the v1 heterolytic engine splits neutrals; an already-charged ion has no heterolysis here
+    def test_a_charged_species_now_heterolyzes_too_r3(self):
+        # R3: an already-charged ion now heterolyzes too (was a documented boundary) -- this is what
+        # makes the ionic descent RECURSIVE; every split conserves the reactant's charge
         cation = Molecule(("H", "Cl"), frozenset({Bond(0, 1)}), charge=1)
         ie = ionic_edges(cation)
-        assert ie.heterolytic == ()                      # documented boundary: recursive ionic descent
-        assert len(ie.redox) >= 1                         # but redox still applies to any species
+        assert ie.heterolytic                            # no longer empty (was the v1 neutral-only boundary)
+        for h in ie.heterolytic:
+            assert h.anion.charge + h.cation.charge == 1   # conserves the reactant's +1 charge
+        assert len(ie.redox) >= 1                         # redox still applies to any species

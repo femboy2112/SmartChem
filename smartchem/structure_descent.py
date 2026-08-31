@@ -83,6 +83,8 @@ STRUCTURE_GRAPH_SCHEMA = "smartchem.structure_descent/structure-graph-v2"
 HETEROLYTIC_SCHEMA = "smartchem.structure_descent/heterolytic-v2"
 REDOX_SCHEMA = "smartchem.structure_descent/redox-v1"
 IONIC_EDGES_SCHEMA = "smartchem.structure_descent/ionic-edges-v1"
+IONIC_GRAPH_SCHEMA = "smartchem.structure_descent/ionic-graph-v1"
+RADICAL_LEDGER_SCHEMA = "smartchem.structure_descent/radical-ledger-v1"
 
 #: The electron, spelled the repository's way -- a charge carrier with NO atoms, so it is massless in
 #: the mass ledger (it never enters ``formula``) while carrying charge -1. This is the idiom
@@ -1050,25 +1052,41 @@ def _subgraph(reactant: Molecule, origin: tuple[int, ...], charge: int) -> Molec
 
 @dataclass(frozen=True)
 class HeterolyticScission(Digestible):
-    """One HETEROLYTIC single-bond cleavage: ``reactant -> anion(-1) + cation(+1)``.
+    """One HETEROLYTIC single-bond cleavage: ``reactant(q) -> anion + cation`` conserving charge.
 
     Where a :class:`ScissionEdge` breaks a bond homolytically (each fragment keeps one electron, a
-    radical), a heterolytic cleavage sends BOTH electrons to one side: the atom that keeps the pair
-    becomes an anion, the atom that loses it a cation.  ``H-Cl -> H(+) + Cl(-)``, ``Na-Cl -> Na(+) +
-    Cl(-)``, an acid dissociation.  The certificate is charge conservation on top of the scission
-    conservation:
+    radical), a heterolytic cleavage sends BOTH electrons to one side: the fragment that keeps the pair
+    is more negative by one, the fragment that loses it more positive by one.  ``H-Cl -> H(+) + Cl(-)``,
+    ``Na-Cl -> Na(+) + Cl(-)``, an acid dissociation.
 
-    * one order-1 ``cut_bond`` of a NEUTRAL reactant (v1 heterolysis of neutrals);
-    * ``anion`` carries charge -1 and ``cation`` charge +1, so total charge is conserved (0);
-    * their atoms partition the reactant's, and each is a strict sub-molecule (W1 descent);
-    * stripped of charge, ``{anion, cation}`` are exactly the two connected components of
-      ``reactant`` minus ``cut_bond`` (fidelity: the ions are the cut pieces, not invented graphs).
+    **R3 -- recursive ionic descent: a CHARGED reactant is now admitted.**  v1 split only a neutral
+    reactant (``q = 0`` -> exactly ``-1`` and ``+1``), so heterolysis was a single ionic level -- its
+    charged products could never be split again.  R3 generalises the certificate to any reactant charge
+    ``q`` so a polyatomic ion descends further, under one STATED model: the **localized-charge** model.
+    The bond electron pair still moves one way (one fragment carries only that pair, charge ``+/-1``);
+    the reactant's pre-existing charge ``q`` sits ENTIRELY on the *other* fragment (never split across
+    the cut).  This reduces to the neutral ``(-1, +1)`` pair at ``q = 0`` and lets a ``-2`` ion split as
+    ``(-1, -1)`` (each piece keeping one unit of the two).  The certificate:
+
+    * one order-1 ``cut_bond`` of the reactant (any charge);
+    * charge conserved: ``anion.charge + cation.charge == reactant.charge`` (the general law -- for a
+      neutral reactant this is the old ``-1 + 1 == 0``);
+    * the heterolytic signature: exactly the localized model -- ONE fragment carries only the bond pair
+      (``abs(charge) == 1``); the other carries ``q`` shifted by that pair;
+    * their atoms partition the reactant's, each a strict sub-molecule (W1 descent);
+    * stripped of charge, ``{anion, cation}`` are exactly the two connected components of ``reactant``
+      minus ``cut_bond`` (fidelity: the ions are the cut pieces, not invented graphs).
+
+    The one honest boundary (documented, not silently attempted): a pre-existing charge split *evenly*
+    across the cut (a ``-4`` ion -> ``(-2, -2)``) is outside the localized model -- no fragment then
+    carries only ``+/-1`` -- and is refused here; :meth:`IonicDecompositionGraph.irreducible_ionic_leaves`
+    surfaces exactly the ions where that boundary bites, the same honest-leaf discipline R1 uses for ring
+    cores.  The field names ``anion``/``cation`` are historical (the neutral ``-1``/``+1`` pair); for a
+    charged reactant both fragments can share a sign (``-2 -> -1 + -1``).
 
     W3 unchanged: this certifies that a valence-and-charge-consistent heterolytic split EXISTS, never
-    that a bond ionises this way (which direction the electrons go is the physical selectivity the
-    engine refuses to predict -- both assignments are enumerated).  The formula-level engine is
-    neutral-only, so a heterolytic split has no v1 ``forget`` image; ionic descent lives at structure
-    level, and its formula/review integration is a documented next rung.
+    that a bond ionises this way (which direction the electrons go, and how the charge localizes, is
+    physical selectivity the engine refuses to predict -- every localized assignment is enumerated).
     """
 
     schema_version: str
@@ -1083,17 +1101,25 @@ class HeterolyticScission(Digestible):
         for name, mol in (("reactant", self.reactant), ("anion", self.anion), ("cation", self.cation)):
             if type(mol) is not Molecule:
                 raise ScissionError(f"{name} must be a Molecule")
-        if self.reactant.charge != 0:
-            raise ScissionError("v1 heterolysis splits a NEUTRAL reactant")
         if type(self.cut_bond) is not Bond or self.cut_bond not in self.reactant.bonds:
             raise ScissionError("cut_bond must be a bond of the reactant")
         if self.cut_bond.order != 1:
-            raise ScissionError("v1 heterolysis cleaves an order-1 bond (one electron pair)")
-        if self.anion.charge != -1 or self.cation.charge != 1:
-            raise ScissionError("anion must carry charge -1 and cation charge +1")
-        # charge conserved: -1 + 1 == reactant charge (0)
+            raise ScissionError("heterolysis cleaves an order-1 bond (one electron pair)")
+        # charge conserved across the split -- the reactant's charge, 0 or not (R3: the general law,
+        # the check the v1 -1/+1 hardcode made dead; now live for a charged reactant)
         if self.anion.charge + self.cation.charge != self.reactant.charge:
-            raise ScissionError("charge not conserved across the heterolytic split")
+            raise ScissionError(
+                f"charge not conserved: anion {self.anion.charge} + cation {self.cation.charge} "
+                f"!= reactant {self.reactant.charge}"
+            )
+        # the heterolytic signature under the localized-charge model: one fragment carries ONLY the bond
+        # electron pair (charge +/-1). Reduces to the neutral (-1, +1) at q=0; a charge split evenly
+        # across the cut has no such fragment and is the documented boundary (an irreducible ionic leaf).
+        if abs(self.anion.charge) != 1 and abs(self.cation.charge) != 1:
+            raise ScissionError(
+                "not a single-pair heterolysis: one fragment must carry only the bond electron pair "
+                "(charge +/-1); a charge split evenly across the cut is outside the localized-charge model"
+            )
         # atoms partition the reactant, each fragment strictly smaller (W1)
         if Counter(self.anion.atoms) + Counter(self.cation.atoms) != Counter(self.reactant.atoms):
             raise ScissionError("anion + cation atoms do not sum to the reactant composition")
@@ -1120,16 +1146,20 @@ class HeterolyticScission(Digestible):
 
 
 def heterolytic_scissions(molecule: Molecule) -> tuple[HeterolyticScission, ...]:
-    """Every single-bond heterolytic cleavage of a neutral ``molecule`` into an anion + a cation.
+    """Every single-bond heterolytic cleavage of ``molecule`` (neutral OR charged) into two ions.
 
-    For each order-1 bridge bond, both electron assignments are emitted (either component may take the
-    pair) -- because which way a bond ionises is physical selectivity the engine does not predict.
-    Deduplicated by digest.  Multi-bond and charged-reactant heterolysis are documented gaps.
+    For each order-1 bridge bond, the enumerated candidates are (deduplicated by digest): the bond
+    electron pair goes to either component (which fragment keeps it), and -- for a CHARGED reactant
+    (R3) -- the reactant's pre-existing charge ``q`` localizes onto either fragment (never split across
+    the cut).  Every candidate conserves charge (``anion + cation == q``) and carries the single-pair
+    signature (one fragment ``+/-1``), so it passes the :class:`HeterolyticScission` certificate; a
+    charge split evenly across the cut is outside the localized model and is not emitted.  At ``q = 0``
+    this collapses to the two classic ``(-1, +1)`` assignments.  Which way a bond ionises, and how the
+    charge localizes, is physical selectivity the engine does not predict -- it enumerates.
     """
     if type(molecule) is not Molecule:
         raise TypeError("molecule must be a Molecule")
-    if molecule.charge != 0:
-        raise ScissionError("v1 heterolysis splits a neutral molecule")
+    q = molecule.charge
     n = len(molecule.atoms)
     out: dict[str, HeterolyticScission] = {}
     for b in sorted(molecule.bonds):
@@ -1139,15 +1169,20 @@ def heterolytic_scissions(molecule: Molecule) -> tuple[HeterolyticScission, ...]
         if len(comps) != 2:
             continue  # not a bridge -> no single-bond split
         first, second = comps
-        for neg_origin, pos_origin in ((first, second), (second, first)):
-            edge = HeterolyticScission(
-                HETEROLYTIC_SCHEMA,
-                molecule,
-                b,
-                _subgraph(molecule, neg_origin, -1),
-                _subgraph(molecule, pos_origin, 1),
-            )
-            out.setdefault(edge.digest, edge)
+        for anion_origin, cation_origin in ((first, second), (second, first)):
+            # the bond pair goes to the anion side; the reactant charge q localizes onto one fragment
+            for anion_charge, cation_charge in ((q - 1, 1), (-1, q + 1)):
+                try:
+                    edge = HeterolyticScission(
+                        HETEROLYTIC_SCHEMA,
+                        molecule,
+                        b,
+                        _subgraph(molecule, anion_origin, anion_charge),
+                        _subgraph(molecule, cation_origin, cation_charge),
+                    )
+                except ScissionError:
+                    continue  # a candidate outside the localized-charge model -> dropped, never faked
+                out.setdefault(edge.digest, edge)
     return tuple(sorted(out.values(), key=lambda e: e.digest))
 
 
@@ -1242,9 +1277,10 @@ class IonicEdges(Digestible):
     Every product here is a charged species or an electron, and :func:`~smartchem.decompiler_boundary`
     ``species_class`` labels them ION / carrier, never a neutral compound.
 
-    One honest boundary, stated: heterolysis is emitted only for a NEUTRAL species (the v1 heterolytic
-    engine splits neutrals), so this is a single ionic level, not a recursive ionic graph -- heterolysis
-    of an already-charged ion is the documented next rung.
+    R3: heterolysis is now emitted for a charged species too (the localized-charge model), so an ion's
+    ionic menu is no longer empty -- :func:`ionic_decompose` recurses these edges into a real ionic
+    descent graph.  The remaining boundary is narrow and documented: a charge split evenly across a cut
+    (a ``-4`` ion -> ``(-2, -2)``) is outside the localized model and simply is not enumerated.
     """
 
     schema_version: str
@@ -1274,12 +1310,286 @@ class IonicEdges(Digestible):
 def ionic_edges(molecule: Molecule, *, max_electrons: int = 2) -> IonicEdges:
     """The unified ionic edge set of ``molecule``: heterolytic cleavages + redox half-reactions.
 
-    Heterolysis is enumerated only for a neutral molecule (the v1 engine's boundary); redox couples are
-    enumerated for any species. The result bundles both so a caller sees a species' whole ionic menu at
-    once -- the graph-level wiring of :class:`HeterolyticScission` and :class:`RedoxHalfReaction`.
+    Heterolysis is enumerated for any species (R3: neutral or charged, the localized-charge model);
+    redox couples are enumerated for any species. The result bundles both so a caller sees a species'
+    whole ionic menu at once -- the graph-level wiring of :class:`HeterolyticScission` and
+    :class:`RedoxHalfReaction`.
     """
     if type(molecule) is not Molecule:
         raise TypeError("molecule must be a Molecule")
-    het = heterolytic_scissions(molecule) if molecule.charge == 0 else ()
+    het = heterolytic_scissions(molecule)   # R3: neutral OR charged (the localized-charge model)
     redox = redox_couples(molecule, max_electrons=max_electrons)
     return IonicEdges(IONIC_EDGES_SCHEMA, molecule, het, redox)
+
+
+# ======================================================================================
+# R3 -- the recursive ionic descent graph (the ionic analogue of the structure graph)
+# ======================================================================================
+@dataclass(frozen=True)
+class IonicDecompositionGraph(Digestible):
+    """The recursive HETEROLYTIC descent of one species toward bare ions / atoms.
+
+    The ionic analogue of :class:`StructureDecompositionGraph`: where that recurses homolytic
+    :class:`ScissionEdge` s (neutral radical fragments), this recurses :class:`HeterolyticScission` s
+    (charged ion fragments).  R3 -- the generalized, charge-conserving heterolysis -- is what makes it
+    RECURSIVE: an ion's fragments are themselves ions that split again, so a polyatomic ion descends
+    instead of being a dead end.  Termination is W1, forced by the certificate: every ion has strictly
+    fewer atoms than its parent, so the descent bottoms out -- at a single atom / atomic ion, or at an
+    IRREDUCIBLE IONIC LEAF (an ion no admissible heterolysis opens: no order-1 bridge, or only the
+    even-charge split the localized-charge model refuses).  ``status`` is ``COMPLETE`` only when the
+    whole reachable graph fit the budget; ``REFUSED_BUDGET`` carries a partial graph and a reason (W2).
+
+    Redox is NOT a descent edge here (a redox step is charge-only, same atoms -- an orthogonal axis, not
+    a size-reducing descent); it stays available per node via :func:`ionic_edges`.
+
+    :meth:`irreducible_ionic_leaves` surfaces exactly the non-atomic ions the descent stopped at, so a
+    ``COMPLETE`` graph never silently claims a bare-ion descent it did not achieve -- the same
+    honest-leaf discipline :meth:`StructureDecompositionGraph.irreducible_cores` uses for ring cores;
+    :attr:`reaches_bare_ions` is the precise "did it fully dissociate?" read.
+    """
+
+    schema_version: str
+    target: Molecule
+    budget: int
+    status: str
+    edges: tuple[HeterolyticScission, ...]
+    refusal_reason: str = ""
+    max_depth: int | None = None
+
+    _STATUSES = ("COMPLETE", "COMPLETE_TO_DEPTH", "REFUSED_BUDGET")
+
+    def __post_init__(self) -> None:
+        if self.schema_version != IONIC_GRAPH_SCHEMA:
+            raise ScissionError(f"schema_version must be exactly {IONIC_GRAPH_SCHEMA!r}")
+        if type(self.target) is not Molecule:
+            raise ScissionError("target must be a Molecule")
+        if self.status not in self._STATUSES:
+            raise ScissionError(f"status must be one of {self._STATUSES}")
+        if self.status in ("COMPLETE", "COMPLETE_TO_DEPTH") and self.refusal_reason:
+            raise ScissionError("a complete graph carries no refusal reason")
+        if self.status == "REFUSED_BUDGET" and not self.refusal_reason:
+            raise ScissionError("a REFUSED_BUDGET graph must state its reason")
+        if self.status == "COMPLETE_TO_DEPTH" and self.max_depth is None:
+            raise ScissionError("a COMPLETE_TO_DEPTH graph must state the max_depth it is complete to")
+        if any(type(e) is not HeterolyticScission for e in self.edges):
+            raise ScissionError("edges must be HeterolyticScission values")
+
+    @property
+    def is_complete(self) -> bool:
+        """True for a fully-expanded descent -- NOT bounded-depth or budget-refused.  Does NOT imply
+        bare-ion terminals (an irreducible ionic leaf is a legitimate leaf); see :attr:`reaches_bare_ions`."""
+        return self.status == "COMPLETE"
+
+    @property
+    def is_complete_to_depth(self) -> bool:
+        return self.status == "COMPLETE_TO_DEPTH"
+
+    def _species(self) -> dict[str, Molecule]:
+        out: dict[str, Molecule] = {_mol_key(self.target): self.target}
+        for e in self.edges:
+            for m in (e.anion, e.cation):
+                out.setdefault(_mol_key(m), m)
+        return out
+
+    def nodes(self) -> frozenset[str]:
+        """The identities (:func:`_mol_key`) of every species reached, including the target."""
+        return frozenset(self._species())
+
+    def edges_from(self, molecule: Molecule) -> tuple[HeterolyticScission, ...]:
+        """Every heterolysis whose reactant is ``molecule`` (by presentation-invariant key)."""
+        key = _mol_key(molecule)
+        return tuple(e for e in self.edges if _mol_key(e.reactant) == key)
+
+    def terminals(self) -> frozenset[str]:
+        """The single-atom (atomic-ion) leaf identities the descent bottoms out at."""
+        keys: set[str] = set()
+        for e in self.edges:
+            for m in (e.anion, e.cation):
+                if len(m.atoms) == 1:
+                    keys.add(_mol_key(m))
+        return frozenset(keys)
+
+    def irreducible_ionic_leaves(self) -> tuple[Molecule, ...]:
+        """The non-atomic ions the descent stopped at because no admissible heterolysis opens them.
+
+        The honest counterpart to :meth:`terminals`: an ion with no order-1 bridge (a ring or a
+        multiply-bonded ion), or one whose only charge-conserving split is the even-charge split the
+        localized-charge model refuses, is a legitimate irreducible leaf, not a failure.  Confirmed
+        structurally: a node with an out-edge is reducible and skipped; a leaf of a ``COMPLETE`` graph is
+        irreducible (the finished search found no split); a leaf of a bounded / refused graph is re-run
+        through :func:`heterolytic_scissions` to tell a true leaf from a merely-unexpanded stub.
+        """
+        has_out = {_mol_key(e.reactant) for e in self.edges}
+        leaves: dict[str, Molecule] = {}
+        for key, m in self._species().items():
+            if len(m.atoms) <= 1 or not m.bonds or key in has_out:
+                continue
+            if self.is_complete or not heterolytic_scissions(m):
+                leaves[key] = m
+        return tuple(sorted(leaves.values(), key=_mol_key))
+
+    @property
+    def reaches_bare_ions(self) -> bool:
+        """True iff a ``COMPLETE`` descent bottomed out ENTIRELY at single atoms / atomic ions (no
+        irreducible polyatomic ion left) -- the precise "did it fully dissociate?" predicate."""
+        return self.is_complete and not self.irreducible_ionic_leaves()
+
+
+def ionic_decompose(
+    target: Molecule,
+    *,
+    budget: int = 5_000,
+    max_depth: int | None = None,
+) -> IonicDecompositionGraph:
+    """Build the recursive heterolytic (ionic) descent of ``target`` toward bare ions / atoms.
+
+    Recurses :func:`heterolytic_scissions` on every ion fragment (each strictly smaller by W1, so it
+    terminates), deduplicating nodes by presentation-invariant identity.  ``budget`` caps the collected
+    edges; a hit yields a LOUD ``REFUSED_BUDGET`` graph, never a silent partial (W2).  ``max_depth``
+    bounds the descent to that many heterolysis steps and reports a positive ``COMPLETE_TO_DEPTH`` when it
+    closes within the horizon (distinct from a full ``COMPLETE`` and a ``REFUSED_BUDGET`` truncation).
+    """
+    if type(target) is not Molecule:
+        raise TypeError("target must be a Molecule")
+    if max_depth is not None and max_depth < 1:
+        raise ValueError("max_depth must be >= 1 (or None for the full descent)")
+    collected: dict[str, HeterolyticScission] = {}
+    expanded: set[str] = set()
+    frontier: list[tuple[Molecule, int]] = [(target, 0)]
+
+    def build(status: str, reason: str) -> IonicDecompositionGraph:
+        return IonicDecompositionGraph(
+            IONIC_GRAPH_SCHEMA, target, budget, status,
+            tuple(sorted(collected.values(), key=lambda e: e.digest)), reason, max_depth,
+        )
+
+    while frontier:
+        node, depth = frontier.pop()
+        key = _mol_key(node)
+        if key in expanded or len(node.atoms) <= 1 or not node.bonds:
+            expanded.add(key)
+            continue
+        if max_depth is not None and depth >= max_depth:
+            continue                       # at the horizon: expandable, deliberately left unexpanded
+        edges = heterolytic_scissions(node)
+        expanded.add(key)
+        for edge in edges:
+            collected[edge.digest] = edge
+            if len(collected) > budget:
+                return build("REFUSED_BUDGET", f"ionic edge budget ({budget}) exceeded at {node!r}")
+            for frag in (edge.anion, edge.cation):
+                fkey = _mol_key(frag)
+                if fkey not in expanded and len(frag.atoms) > 1:
+                    frontier.append((frag, depth + 1))
+    # complete to bare ions unless the depth horizon left an expandable ion unexpanded (W2)
+    if max_depth is not None and any(
+        len(m.atoms) > 1 and m.bonds and _mol_key(m) not in expanded
+        for e in collected.values() for m in (e.anion, e.cation)
+    ):
+        return build("COMPLETE_TO_DEPTH", "")
+    return build("COMPLETE", "")
+
+
+# ======================================================================================
+# R4 -- the cross-level open-valence (radical) conservation ledger over a whole descent
+# ======================================================================================
+@dataclass(frozen=True)
+class RadicalLedger(Digestible):
+    """R4 -- the cross-level open-valence (radical) conservation ledger over a whole descent.
+
+    Each :class:`ScissionEdge` self-checks its LOCAL valence balance (opened == twice the cut bond
+    order); what no single edge can check is that the WHOLE descent conserves -- that every bond of the
+    target is, across all levels, either cut exactly once (opening two half-bonds) or left surviving
+    inside an irreducible core.  This is precisely the documented gap: a fragment was carried into the
+    next level as a bare graph, its danglers never threaded across levels, so no whole-tree open-valence
+    check existed.  This ledger closes it: it threads a spanning descent (one chosen cut per node, every
+    occurrence counted) and verifies
+
+        total cut bond order  +  total surviving (core) bond order  ==  target total bond order
+
+    so the open valence created across the entire descent (twice the cut order) is exactly accounted --
+    the cross-level radical conservation the per-edge certificate cannot see.
+
+    One honest boundary, stated: this conserves the open-valence BUDGET across levels; it does NOT thread
+    each individual atom's danglers along every path -- the descent deduplicates fragments by canonical
+    identity, so per-atom, per-path radical identity is bounded by that dedup, the remaining refinement.
+    W3 unchanged: the ledger audits bookkeeping, never claims a radical is stable or that it forms.
+    """
+
+    schema_version: str
+    target: Molecule
+    cut_bond_order: int
+    surviving_core_order: int
+    target_bond_order: int
+
+    def __post_init__(self) -> None:
+        if self.schema_version != RADICAL_LEDGER_SCHEMA:
+            raise ScissionError(f"schema_version must be exactly {RADICAL_LEDGER_SCHEMA!r}")
+        if type(self.target) is not Molecule:
+            raise ScissionError("target must be a Molecule")
+        for name in ("cut_bond_order", "surviving_core_order", "target_bond_order"):
+            v = getattr(self, name)
+            if type(v) is not int or v < 0:
+                raise ScissionError(f"{name} must be a non-negative int")
+
+    @property
+    def opened_valence(self) -> int:
+        """The total open valence created across the descent -- two half-bonds per unit of cut order."""
+        return 2 * self.cut_bond_order
+
+    @property
+    def conserves(self) -> bool:
+        """True iff cut + surviving order == the target's total bond order (nothing lost or invented)."""
+        return self.cut_bond_order + self.surviving_core_order == self.target_bond_order
+
+    def explain(self) -> str:
+        verdict = "conserves" if self.conserves else "DOES NOT conserve"
+        return (
+            f"radical ledger: {self.cut_bond_order} cut + {self.surviving_core_order} surviving == "
+            f"{self.cut_bond_order + self.surviving_core_order} vs target {self.target_bond_order} bond "
+            f"order -> {verdict}; {self.opened_valence} open valences created across the descent"
+        )
+
+
+def verify_radical_ledger(graph: StructureDecompositionGraph) -> RadicalLedger:
+    """Audit the cross-level open-valence conservation of a structure descent (R4).
+
+    Traverses a spanning descent (deterministic lowest-digest edge per node, memoized by identity, every
+    occurrence counted) and totals the cut vs. surviving bond order.  Requires a fully-expanded graph
+    (:attr:`StructureDecompositionGraph.is_complete`); a bounded-depth or budget-refused graph did not
+    finish and cannot be audited whole -- a ``ValueError`` says so rather than certifying a partial
+    descent.  The returned :class:`RadicalLedger`'s :attr:`~RadicalLedger.conserves` is the verdict.
+    """
+    if type(graph) is not StructureDecompositionGraph:
+        raise TypeError("graph must be a StructureDecompositionGraph")
+    if not graph.is_complete:
+        raise ValueError(
+            f"the radical ledger audits a COMPLETE descent; this graph did not finish ({graph.status}) "
+            "-- a partial descent has no whole-tree conservation to check"
+        )
+    memo: dict[str, tuple[int, int]] = {}
+
+    def spanning(molecule: Molecule) -> tuple[int, int]:
+        key = _mol_key(molecule)
+        if key in memo:
+            return memo[key]
+        if len(molecule.atoms) <= 1 or not molecule.bonds:
+            memo[key] = (0, 0)
+            return memo[key]
+        outs = graph.edges_from(molecule)
+        if not outs:
+            memo[key] = (0, sum(b.order for b in molecule.bonds))  # irreducible core: its bonds survive
+            return memo[key]
+        edge = min(outs, key=lambda e: e.digest)
+        cut = sum(b.order for b in edge.cut_bonds)
+        surv = 0
+        for f in edge.fragments:
+            c, s = spanning(f.molecule)
+            cut += c
+            surv += s
+        memo[key] = (cut, surv)
+        return memo[key]
+
+    total_cut, total_surv = spanning(graph.target)
+    target_order = sum(b.order for b in graph.target.bonds)
+    return RadicalLedger(RADICAL_LEDGER_SCHEMA, graph.target, total_cut, total_surv, target_order)

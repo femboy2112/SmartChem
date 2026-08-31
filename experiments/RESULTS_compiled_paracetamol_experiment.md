@@ -1,7 +1,7 @@
 # M-5 Experiment Compiler — paracetamol litmus, end to end
 
 **Harness:** `experiments/compiled_paracetamol_experiment.py` · **Gate:** exits non-zero on any hard failure
-**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (59/59), exit 0**
+**Run:** `.venv/bin/python experiments/compiled_paracetamol_experiment.py` → **VERDICT: PASS (69/69), exit 0**
 
 ## The question
 
@@ -152,6 +152,43 @@ at best.* The heat is honestly `UNKNOWN` (paracetamol has no sourced 0 K formati
   paracetamol the ring opens into gradeable reactions as the *ring-opening subset* of the full 2-cut
   (`8 ⊂ 80 ⊂ 404` — tractable, never inventing an edge), and read backwards a ring-opening is the assembly of
   the ring, which L2 grades `HYPOTHESIZED`. So the structured chain reaches *through* the aromatic ring, not
-  just to its irreducible core. **Still open:** a fully-structured, sourced-graded route from atoms to
-  paracetamol end to end (the R2–R5 rungs — resonance identity, recursive ionic, radical ledger,
-  evidence/thermo — plus sourced data for the deep intermediates), atop the permanent physical W3 wall.
+  just to its irreducible core.
+- **Chain assembly — the structured descent graded as ONE object.** The bridge that was missing between the
+  decompiler and L2: `experiment/assembly.py` (`assemble_synthesis` + `find_scission`) turns a chosen
+  multi-level structured descent — the amide hydrolysis, then a genuine *ring-opening* of 4-aminophenol — into
+  one `SynthesisDAG` that `classify()` grades in a single shot (`HYPOTHESIZED`, worst-step-dominated, reaching
+  *through* the aromatic ring). The backbone is the **capped** descent, chosen deliberately: its fragments are
+  closed-shell real molecules (unlike the formula chain's `Formula` buckets or the structure graph's radical
+  fragments), so they are legitimate gradeable steps. The two halves of "the whole chain from buckets" now
+  both exist: the FORMULA chain proves atoms→target is conservation-complete; this STRUCTURED chain grades the
+  chemist-legible rungs, lifting above `HYPOTHESIZED` where sourced data reaches. It reaches real intermediates,
+  not bare atoms — stated as an assertion (`leaf_inputs` are polyatomic), never hidden.
+- **R5-lite — a sourced aromatic rung lifts HYPOTHESIZED→DERIVED, gaps kept honest.** Four same-phase 298 K
+  ΔfH°+S° pairs (phenol, aniline, nitrobenzene, toluene) were *fetched from the raw NIST WebBook and
+  phase-checked* — not recalled — closing the anti-poisoning discipline. On them a real skeleton rung
+  (nitrobenzene→aniline reduction) lifts from `HYPOTHESIZED` (seed) to `DERIVED` (R5-lite). The rungs that reach
+  the drug itself stay honest, documented GAPS: 4-nitrophenol has no S° in any phase (a *fourth* instance of the
+  same entropy-gap disease), 4-aminophenol has disagreeing ΔfH° sources.
+- **SMILES aromatic heteroatoms — N-heterocycles unblocked.** The front door refused every aromatic heteroatom
+  before R2's Kekulé matcher ran; the fix splits aromatic atoms into π-acceptors (C, pyridine-type `n` — join
+  the perfect matching) and π-donors (`o`, `s`, pyrrole `[nH]` — sit out, single-bonded), so pyridine (C5H5N),
+  pyrrole (C4H5N), furan (C4H4O), thiophene, imidazole now parse with correct valence; aromatic P still refused
+  loudly. `_fill_hydrogens` needed zero changes.
+- **R3 — recursive ionic descent.** v1 heterolysis split neutrals only, so an ion was a dead end (a single
+  ionic level). R3 generalises `HeterolyticScission` to a CHARGED reactant under the *localized-charge model*
+  (one fragment carries only the bond pair `±1`, the other the pre-existing charge; reduces to the neutral
+  `(−1,+1)` at q=0; the even-charge split is the documented boundary — and this resurrects the dead charge-sum
+  check as the live certificate). `IonicDecompositionGraph`/`ionic_decompose` then recurse it into a real graph
+  with W1 termination: water dissociates recursively through its `[OH]` ion to bare ions; CO₂ (no order-1
+  bridge) is surfaced as an HONEST irreducible ionic leaf — the same honest-leaf discipline R1 uses for ring
+  cores.
+- **R4 — the cross-level radical (open-valence) ledger.** Each `ScissionEdge` self-checks its LOCAL valence
+  balance; nothing checked that a WHOLE descent conserves. `verify_radical_ledger` threads a spanning descent
+  and verifies `total cut bond order + total surviving (core) order == target total bond order` — so the open
+  valence created across every level is exactly accounted (benzene at cut=1: `6 cut + 9 surviving = 15`; ethane:
+  `7 cut + 0 = 7`). The documented boundary: it conserves the open-valence BUDGET across levels; per-atom,
+  per-path radical identity is bounded by canonical dedup — the remaining refinement.
+
+**Still open:** the deep intermediates of a fully-structured atoms→paracetamol route still grade `HYPOTHESIZED`
+for lack of sourced data (R5-full); L1 TST kinetics (the honest "real rate") remains the deeper frontier, atop
+the permanent physical W3 wall.

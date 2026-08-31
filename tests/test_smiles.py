@@ -7,7 +7,8 @@ The parser is trusted only as far as it is checked. Two kinds of proof:
   same formula, the same bond graph (double bonds, ring, everything), byte for byte after
   canonicalisation. A wrong implicit-H count or a wrong bond order fails here.
 * **Loud boundaries.** Malformed strings, disconnected components, and out-of-scope features (an
-  aromatic heteroatom) raise :class:`SmilesError` -- never a silently-wrong molecule.
+  aromatic heteroatom outside {C, N, O, S}, e.g. aromatic phosphorus) raise :class:`SmilesError` --
+  never a silently-wrong molecule.
 
 Aromatic identity: benzene and the para/mono-substituted rings in the registry are Kekulé-invariant
 (the two Kekulé forms are isomorphic under the ring's symmetry), so canonicalisation makes the
@@ -163,10 +164,57 @@ class TestCharge:
         assert dict(m.formula) == {"O": 1, "H": 1} and m.charge == -1
 
 
+class TestAromaticHeteroatoms:
+    """R2's Kekulé matching is element-agnostic once past the classification gate: a ring nitrogen
+    splits into two roles -- pyridine-type (no H, joins the matching, takes one ring double bond,
+    same as an aromatic carbon) and pyrrole-type (``[nH]``, sits out the matching, its lone pair is
+    the aromatic contribution instead) -- while ring O and S are always donors, same as pyrrole N.
+    Formula AND per-atom valence are asserted, so a wrong bond-order split can't hide behind a
+    merely-right atom count.
+    """
+
+    @staticmethod
+    def _assert_legal_valences(m, expected: dict[str, int]) -> None:
+        m.canonical()          # must not raise -- the parsed graph is a legal, canonical Molecule
+        for i, sym in enumerate(m.atoms):
+            if sym != "H":
+                assert m.degree(i) == expected[sym], f"atom {i} ({sym}) has illegal valence {m.degree(i)}"
+
+    def test_pyridine_type_nitrogen_parses(self):
+        m = parse_smiles("c1ccncc1")            # pyridine: bare ring N, no H
+        assert dict(m.formula) == {"C": 5, "H": 5, "N": 1}
+        self._assert_legal_valences(m, {"C": 4, "N": 3})
+
+    def test_pyrrole_type_nitrogen_parses(self):
+        m = parse_smiles("c1cc[nH]c1")          # pyrrole: [nH] donates its lone pair, no ring double
+        assert dict(m.formula) == {"C": 4, "H": 5, "N": 1}
+        self._assert_legal_valences(m, {"C": 4, "N": 3})
+
+    def test_furan_oxygen_is_a_donor(self):
+        m = parse_smiles("c1ccoc1")
+        assert dict(m.formula) == {"C": 4, "H": 4, "O": 1}
+        self._assert_legal_valences(m, {"C": 4, "O": 2})
+
+    def test_thiophene_sulfur_is_a_donor(self):
+        m = parse_smiles("c1ccsc1")
+        assert dict(m.formula) == {"C": 4, "H": 4, "S": 1}
+        self._assert_legal_valences(m, {"C": 4, "S": 2})
+
+    def test_imidazole_mixes_both_nitrogen_roles(self):
+        # one pyridine-type N (bare, in the matching) and one pyrrole-type N ([nH], sitting out)
+        m = parse_smiles("c1cnc[nH]1")
+        assert dict(m.formula) == {"C": 3, "H": 4, "N": 2}
+        self._assert_legal_valences(m, {"C": 4, "N": 3})
+
+    def test_benzene_still_parses_unaffected_by_the_heteroatom_split(self):
+        # no regression: an all-carbon aromatic ring must not be touched by the new classification
+        assert dict(parse_smiles("c1ccccc1").formula) == {"C": 6, "H": 6}
+
+
 class TestBoundariesRefuseLoudly:
-    def test_aromatic_heteroatom_is_refused_not_guessed(self):
+    def test_aromatic_phosphorus_is_refused_not_guessed(self):
         with pytest.raises(SmilesError, match="heteroatom"):
-            parse_smiles("c1ccncc1")            # pyridine: a documented v1 gap
+            parse_smiles("c1ccpcc1")            # aromatic P: still a documented v1 gap
 
     def test_disconnected_smiles_is_refused(self):
         with pytest.raises(SmilesError, match="connected"):

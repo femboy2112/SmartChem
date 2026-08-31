@@ -24,6 +24,7 @@ from smartchem.smiles import parse_smiles
 O2 = parse_smiles("O=O")
 CO2 = parse_smiles("O=C=O")
 H2O = parse_smiles("O")
+H2 = parse_smiles("[H][H]")
 ETHANOL = parse_smiles("CCO")
 METHANOL = parse_smiles("CO")
 ACETIC = parse_smiles("CC(=O)O")
@@ -129,3 +130,48 @@ class TestInjectabilityLayering:
         layered = extended_thermo(DEFAULT_THERMO)
         assert layered.for_formula("C2H6O") is not None       # ethanol from the extended set
         assert layered.for_named("H2O", "water") is not None  # water from the seed base
+
+
+class TestR5LiteAromaticSkeleton:
+    """R5-lite: the sourced aromatic-intermediate skeleton toward the paracetamol litmus lifts real rungs.
+
+    ``phenol -> 4-nitrophenol -> 4-aminophenol -> paracetamol`` (and the ``benzene -> nitrobenzene ->
+    aniline`` reduction analogue) is the industrial descent; R5-lite sources the members whose 298 K
+    ΔfH°+S° both genuinely exist as a same-phase NIST pair, so those rungs grade DERIVED instead of sitting
+    at L2's HYPOTHESIZED floor -- while the rungs that reach the drug itself stay honest, documented GAPS.
+    """
+
+    def test_the_four_aromatic_records_are_sourced_and_resolvable(self):
+        for formula, dhf in (("C6H6O", -165.1), ("C6H7N", 31.3), ("C6H5NO2", 12.5), ("C7H8", 12.0)):
+            rec = EXT.for_formula(formula)
+            assert rec is not None
+            assert rec.dhf_kj_per_mol == dhf                   # pinned against silent drift
+            assert rec.s_j_per_mol_k > 0                        # a same-phase S° was sourced (third law)
+            assert "NIST" in rec.provenance and any(ch.isdigit() for ch in rec.provenance)
+
+    def test_toluene_combustion_calibrates_the_instrument(self):
+        # C7H8 + 9 O2 -> 7 CO2 + 4 H2O ; textbook ΔcH° ~ -3910 kJ/mol, ΔG strongly exergonic
+        TOL = parse_smiles("Cc1ccccc1")
+        burn = ExperimentStep.assembling(CO2, (TOL,) + (O2,) * 9, (CO2,) * 7 + (H2O,) * 4)
+        f = feasibility_of_step(burn, thermo=EXT)
+        assert f.direction is FeasibilityDirection.FAVORABLE
+        assert f.grade is FeasibilityGrade.DERIVED
+        assert f.delta_g_kj < -3700.0                          # combustion: hugely exergonic, cannot be wrong
+
+    def test_nitrobenzene_reduction_rung_lifts_from_unknown_to_derived(self):
+        # a real skeleton rung: C6H5NO2 + 3 H2 -> C6H7N + 2 H2O ; UNKNOWN on the seed, DERIVED on R5-lite
+        NB = parse_smiles("O=[N+]([O-])c1ccccc1")
+        ANILINE = parse_smiles("Nc1ccccc1")
+        step = ExperimentStep.assembling(ANILINE, (NB, H2, H2, H2), (ANILINE, H2O, H2O))
+        assert feasibility_of_step(step).direction is FeasibilityDirection.UNKNOWN   # seed lacks the aromatics
+        f = feasibility_of_step(step, thermo=EXT)
+        assert f.direction is FeasibilityDirection.FAVORABLE
+        assert f.grade is FeasibilityGrade.DERIVED
+
+    def test_4_nitrophenol_is_a_documented_gap_not_a_fabricated_record(self):
+        # ΔfH° exists but S° does not in any phase -> refused, documented, never a fabricated entropy
+        assert all(r.formula != "C6H5NO3" for r in EXTENDED_THERMO_REFS)
+        assert EXT.for_formula("C6H5NO3") is None
+        assert "C6H5NO3" in EXTENDED_THERMO_GAPS
+        reason = EXTENDED_THERMO_GAPS["C6H5NO3"]
+        assert ("S°" in reason or "entropy" in reason)

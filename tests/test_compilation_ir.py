@@ -27,7 +27,7 @@ from smartchem.compilation_ir import (
 )
 from smartchem.transform_registry import TRANSFORM_REGISTRIES, transform_registry_digest
 from smartchem.decompiler import Formula, example_inventory
-from smartchem.search import SearchStatus
+from smartchem.search import STANDARD_8_2_STATUSES, SearchStatus
 from smartchem.smiles import parse_smiles
 
 INV = example_inventory()
@@ -108,7 +108,7 @@ class TestIRConstructionInvariants:
             ChemicalCompilationIR(
                 CHEMICAL_COMPILATION_IR_SCHEMA, ir.tool_version, ir.operation, ir.target, ir.request_digest,
                 ir.identity_losses, ir.terminal_policy_digest, ir.transform_registry_digest, ir.search_status,
-                ir.search_receipt_digest, tuple(reversed(ir.candidates)), ir.diagnostics,
+                ir.standard_status, ir.search_receipt_digest, tuple(reversed(ir.candidates)), ir.diagnostics,
             )
 
     def test_construction_rejects_duplicate_candidates(self):
@@ -117,7 +117,7 @@ class TestIRConstructionInvariants:
             ChemicalCompilationIR(
                 CHEMICAL_COMPILATION_IR_SCHEMA, ir.tool_version, ir.operation, ir.target, ir.request_digest,
                 ir.identity_losses, ir.terminal_policy_digest, ir.transform_registry_digest, ir.search_status,
-                ir.search_receipt_digest, ir.candidates + ir.candidates, ir.diagnostics,
+                ir.standard_status, ir.search_receipt_digest, ir.candidates + ir.candidates, ir.diagnostics,
             )
 
     def test_identity_of_formula_records_the_formula_layer(self):
@@ -502,10 +502,91 @@ class TestTransformRegistryDigest:
         with pytest.raises(ValueError, match="transform_registry_digest must be a non-empty string"):
             ChemicalCompilationIR(
                 CHEMICAL_COMPILATION_IR_SCHEMA, ir.tool_version, ir.operation, ir.target, ir.request_digest,
-                ir.identity_losses, ir.terminal_policy_digest, "", ir.search_status, ir.search_receipt_digest,
-                ir.candidates, ir.diagnostics,
+                ir.identity_losses, ir.terminal_policy_digest, "", ir.search_status, ir.standard_status,
+                ir.search_receipt_digest, ir.candidates, ir.diagnostics,
             )
 
     def test_unknown_registry_kind_is_refused(self):
         with pytest.raises(ValueError, match="unknown transform-registry kind"):
             transform_registry_digest("nonexistent-grammar")
+
+
+class TestSection82IRFace:
+    """IR-8.2-01: the IR speaks the standard's section 8.2 terminal-status vocabulary, faithfully to its own
+    native search_status, and a refusal string that cites section 8.2 now prints an actual section 8.2 status."""
+
+    def test_schema_bumped_to_v1alpha2_for_the_standard_status_field(self):
+        assert CHEMICAL_COMPILATION_IR_SCHEMA.endswith("v1alpha2")
+
+    def test_decompile_ir_carries_a_faithful_8_2_status(self):
+        ir = decompile_to_ir("C8H9NO2", INV)
+        assert ir.standard_status in STANDARD_8_2_STATUSES
+        assert ir.standard_status == ir.search_status.standard_name  # single-limit native: agrees exactly
+
+    def test_recompile_ir_carries_a_faithful_8_2_status(self):
+        ir = recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=2)
+        assert ir.standard_status in STANDARD_8_2_STATUSES
+        if ir.search_status.standard_name is not None:  # non-MULTIPLE agrees; MULTIPLE resolves a primary
+            assert ir.standard_status == ir.search_status.standard_name
+
+    def test_render_leads_with_the_8_2_status_and_labels_the_native_one(self):
+        ir = decompile_to_ir("H2O")
+        r = ir.render()
+        assert ir.standard_status in r
+        assert f"engine: {ir.search_status.value}" in r
+
+    def test_round_trip_preserves_standard_status_and_digest(self):
+        ir = recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=2)
+        back = deserialize_ir(serialize_ir(ir))
+        assert back.standard_status == ir.standard_status
+        assert back.digest == ir.digest  # the new semantic field rides in the value digest and round-trips
+
+    def test_the_payload_carries_the_8_2_status(self):
+        ir = decompile_to_ir("H2O")
+        assert ir_to_payload(ir)["standard_status"] == ir.standard_status
+
+    # -- the faithfulness guard: the IR cannot carry a section 8.2 status contradicting its native status ----
+    def _ir_with(self, native, standard):
+        base = decompile_to_ir("H2O")
+        return ChemicalCompilationIR(
+            CHEMICAL_COMPILATION_IR_SCHEMA, base.tool_version, base.operation, base.target, base.request_digest,
+            base.identity_losses, base.terminal_policy_digest, base.transform_registry_digest, native, standard,
+            base.search_receipt_digest, base.candidates, base.diagnostics,
+        )
+
+    def test_a_single_limit_status_must_match_its_standard_name(self):
+        with pytest.raises(ValueError, match="must equal search_status.standard_name"):
+            self._ir_with(SearchStatus.COMPLETE_WITHIN_BOUNDS, "INCOMPLETE_RESULT_LIMIT")
+
+    def test_a_non_8_2_word_is_refused(self):
+        # the engine's own native token is NOT a section 8.2 status
+        with pytest.raises(ValueError, match="must be one of the section 8.2 statuses"):
+            self._ir_with(SearchStatus.COMPLETE_WITHIN_BOUNDS, "PARTIAL_CUT_BUDGET")
+
+    def test_multiple_limits_accepts_a_resolvable_primary(self):
+        ir = self._ir_with(SearchStatus.PARTIAL_MULTIPLE_LIMITS, "INCOMPLETE_CUT_BUDGET")
+        assert ir.standard_status == "INCOMPLETE_CUT_BUDGET"
+
+    def test_multiple_limits_refuses_a_non_resolvable_8_2_status(self):
+        # INCOMPLETE_CANDIDATE_LIMIT is a real 8.2 name, but no engine limit produces it, so a MULTIPLE status
+        # cannot legitimately resolve to it (the residue guard).
+        with pytest.raises(ValueError, match="must resolve to a primary"):
+            self._ir_with(SearchStatus.PARTIAL_MULTIPLE_LIMITS, "INCOMPLETE_CANDIDATE_LIMIT")
+
+    def test_multiple_limits_refuses_a_completion_status(self):
+        # W2: a partial (multiple-limit) search must never be laundered into a completion status
+        with pytest.raises(ValueError, match="must resolve to a primary"):
+            self._ir_with(SearchStatus.PARTIAL_MULTIPLE_LIMITS, "COMPLETE_WITHIN_DECLARED_SPACE")
+
+    # -- the red-team's finding 4: the section-8.2-citing refusal now prints an actual 8.2 status -----------
+    def test_the_inconclusive_refusal_prints_an_8_2_status_not_a_native_token(self):
+        starved = recompile_from_serialized(
+            serialize_ir(decompile_to_ir("C8H9NO2")), structure=PARA, reagents=(WATER,), max_depth=1, cut_budget=1
+        )
+        assert starved.inverse_status is InverseStatus.INCONCLUSIVE_BOUNDS_HIT
+        assert starved.recompile_ir.standard_status in STANDARD_8_2_STATUSES
+        assert starved.recompile_ir.standard_status in starved.refusal   # the 8.2 word is what's printed
+        assert "PARTIAL_" not in starved.refusal                          # the native token is gone
+        assert "section 8.2" in starved.refusal                          # the stop-reason citation is accurate
+        # and this zero-candidate/incomplete cell also names its section 8.3 no-route wording (sibling symmetry)
+        assert "section 8.3" in starved.refusal and "INCOMPLETE_NO_ROUTE_OBSERVED" in starved.refusal

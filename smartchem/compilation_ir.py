@@ -31,7 +31,7 @@ from enum import Enum
 
 from .contracts import Digestible, canonical_digest
 from .decompiler import DecompositionGraph, Formula, search_decomposition
-from .search import SearchStatus
+from .search import PRIMARY_RESOLVABLE_8_2_STATUSES, STANDARD_8_2_STATUSES, SearchStatus
 # the transform-registry identity lives in a shared leaf (below both the search and IR layers) so the receipts
 # and the IR stamp the SAME digest (see smartchem.transform_registry).
 from .transform_registry import transform_registry_digest as _transform_registry_digest
@@ -56,7 +56,7 @@ __all__ = [
     "recompile_from_serialized",
 ]
 
-CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha1"
+CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha2"
 CHEMICAL_IDENTITY_SCHEMA = "smartchem.compilation-ir/chemical-identity-v1alpha1"
 CANDIDATE_SUMMARY_SCHEMA = "smartchem.compilation-ir/candidate-summary-v1alpha1"
 
@@ -165,6 +165,11 @@ class ChemicalCompilationIR(Digestible):
     terminal_policy_digest: str
     transform_registry_digest: str
     search_status: SearchStatus
+    # the SAME completeness fact as search_status, named in the standard's section 8.2 terminal-status vocabulary
+    # (COMPLETE_WITHIN_DECLARED_SPACE / INCOMPLETE_* / ...).  Carried as a stored field, not derived on the fly,
+    # because the engine's PARTIAL_MULTIPLE_LIMITS has no single section 8.2 name -- it must be resolved to one
+    # primary from the receipt's per-limit flags at construction, where the receipt is live (the IR is not).
+    standard_status: str
     search_receipt_digest: str
     candidates: tuple[CandidateSummary, ...]
     diagnostics: tuple[str, ...]
@@ -180,6 +185,29 @@ class ChemicalCompilationIR(Digestible):
             raise TypeError("target must be a ChemicalIdentity")
         if not isinstance(self.search_status, SearchStatus):
             raise TypeError("search_status must be a SearchStatus")
+        # standard_status must be a real section 8.2 name AND faithful to the native search_status: for a status
+        # that maps 1:1 it must be exactly search_status.standard_name; for PARTIAL_MULTIPLE_LIMITS (no single 8.2
+        # name) it must be one of the primaries that resolution can LEGALLY produce.  This forbids a section 8.2
+        # status that contradicts the native one -- for a single-limit status exactly, and for PARTIAL_MULTIPLE_
+        # LIMITS up to the primary CHOICE: the IR carries only search_receipt_digest, not the live per-limit flags,
+        # so the guard cannot pin WHICH resolvable primary THIS receipt implies (that is pinned upstream in
+        # SearchReceipt.standard_status, where the flags are live).  Every value it admits is INCOMPLETE_*, so a
+        # partial is never laundered toward complete either way; every real producer passes receipt.standard_status,
+        # so the looseness is reachable only by a hand-built, internally-inconsistent payload.
+        if self.standard_status not in STANDARD_8_2_STATUSES:
+            raise ValueError(f"standard_status must be one of the section 8.2 statuses {STANDARD_8_2_STATUSES}")
+        _native_8_2 = self.search_status.standard_name
+        if _native_8_2 is not None:
+            if self.standard_status != _native_8_2:
+                raise ValueError(
+                    f"standard_status {self.standard_status!r} must equal search_status.standard_name "
+                    f"{_native_8_2!r} for the single-limit status {self.search_status.value}"
+                )
+        elif self.standard_status not in PRIMARY_RESOLVABLE_8_2_STATUSES:
+            raise ValueError(
+                f"a {self.search_status.value} status must resolve to a primary stop reason in "
+                f"{sorted(PRIMARY_RESOLVABLE_8_2_STATUSES)}, not {self.standard_status!r}"
+            )
         for name in ("request_digest", "terminal_policy_digest", "transform_registry_digest", "search_receipt_digest"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise ValueError(f"{name} must be a non-empty string")
@@ -208,7 +236,8 @@ class ChemicalCompilationIR(Digestible):
         return (
             f"CHEMICAL COMPILATION IR ({self.operation.value}, {self.schema_version}, tool {self.tool_version})\n"
             f"  target: {self.target.canonical_repr} [{self.target.layer.value}]\n"
-            f"  search: {self.search_status.value}; candidates: {self.candidate_count}\n"
+            f"  search: {self.standard_status} (engine: {self.search_status.value}); "
+            f"candidates: {self.candidate_count}\n"
             f"  request digest: {self.request_digest}\n"
             f"  transform registry: {self.transform_registry_digest}\n"
             f"  losses: {len(self.identity_losses)}; diagnostics: {len(self.diagnostics)}\n"
@@ -302,6 +331,7 @@ def decompile_to_ir(
         terminal_digest,
         registry_digest,
         receipt.status,
+        receipt.standard_status,
         receipt.digest,
         candidates,
         diagnostics,
@@ -445,6 +475,7 @@ def recompile_to_ir(
         terminal_digest,
         registry_digest,
         receipt.status,
+        receipt.standard_status,
         receipt.digest,
         candidates,
         diagnostics,
@@ -479,6 +510,7 @@ def ir_to_payload(ir: ChemicalCompilationIR) -> dict:
         "terminal_policy_digest": ir.terminal_policy_digest,
         "transform_registry_digest": ir.transform_registry_digest,
         "search_status": ir.search_status.value,
+        "standard_status": ir.standard_status,
         "search_receipt_digest": ir.search_receipt_digest,
         "candidates": [
             {
@@ -523,6 +555,7 @@ def ir_from_payload(payload: dict) -> ChemicalCompilationIR:
         payload["terminal_policy_digest"],
         payload["transform_registry_digest"],
         SearchStatus(payload["search_status"]),
+        payload["standard_status"],
         payload["search_receipt_digest"],
         candidates,
         tuple(payload["diagnostics"]),
@@ -638,7 +671,8 @@ class InverseResult:
         if self.recompile_ir is not None:
             head += (
                 f"  recompiled: {self.recompile_ir.target.canonical_repr} "
-                f"[{self.recompile_ir.target.layer.value}]; search {self.recompile_ir.search_status.value}; "
+                f"[{self.recompile_ir.target.layer.value}]; search {self.recompile_ir.standard_status} "
+                f"(engine: {self.recompile_ir.search_status.value}); "
                 f"{self.recompile_ir.candidate_count} candidate(s)\n"
             )
         # NB: a decompile artifact is formula-level, so a success confirms only that the SUPPLIED structural
@@ -753,7 +787,8 @@ def recompile_from_serialized(
         InverseStatus.INCONCLUSIVE_BOUNDS_HIT,
         (
             f"the recompile search for {decompile_ir.target.canonical_repr} was TRUNCATED "
-            f"({recompile_ir.search_status.value}) before finding any route or exhausting the grammar; no-route "
-            f"cannot be concluded -- raise the bounds to decide (section 8.2)"
+            f"({recompile_ir.standard_status}) before finding any route or exhausting the grammar; no-route "
+            f"cannot be concluded -- raise the bounds to decide (stop reason per section 8.2; this zero-candidate "
+            f"incomplete outcome is section 8.3's INCOMPLETE_NO_ROUTE_OBSERVED)"
         ),
     )

@@ -13,7 +13,12 @@ from __future__ import annotations
 
 from enum import Enum
 
-__all__ = ["SearchStatus", "STANDARD_8_2_STATUSES", "primary_standard_status"]
+__all__ = [
+    "SearchStatus",
+    "STANDARD_8_2_STATUSES",
+    "PRIMARY_RESOLVABLE_8_2_STATUSES",
+    "primary_standard_status",
+]
 
 
 class SearchStatus(str, Enum):
@@ -140,3 +145,10 @@ def primary_standard_status(active: "tuple[SearchStatus, ...]") -> str:
         if member in active_set:
             return _STANDARD_NAME_BY_MEMBER[member]
     raise ValueError("no active limit to resolve to a section 8.2 primary stop reason")
+
+
+# The exact section 8.2 names PARTIAL_MULTIPLE_LIMITS can resolve to via primary_standard_status -- derived from
+# the precedence, so it never drifts.  A consumer that stores a resolved primary (e.g. the IR, whose search_status
+# is a bare enum lacking the per-limit flags) uses this to check that a MULTIPLE status resolved to a legal
+# primary and not, say, INCOMPLETE_CANDIDATE_LIMIT (which no engine limit produces).
+PRIMARY_RESOLVABLE_8_2_STATUSES = frozenset(_STANDARD_NAME_BY_MEMBER[m] for m in _PRIMARY_PRECEDENCE)

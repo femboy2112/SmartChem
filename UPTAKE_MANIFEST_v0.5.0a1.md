@@ -49,8 +49,9 @@ vs the 2510/51 above reflect PySCF and slow paths being *available* here rather 
 regression; the collected total (2566) reconciles across both environments. Continuation increments so far:
 `4a958b8` (DAG search receipt, +11 tests) -> 2562 passed; `454d2a0` (formula receipt + the shared
 `smartchem.search.SearchStatus`, +15 tests) -> 2577 passed; `a34cc69` (two render-honesty fixes -- empty box
-!= FITS, ideal K != practical yield; +5 tests) -> **2582 passed, 14 skipped, 1 expected failure**. See the
-uptake records after §3.1 and §4.
+!= FITS, ideal K != practical yield; +5 tests) -> 2582 passed; `09b3072` (ChemicalCompilationIR first brick, the
+shared artifact emitted by the formula decompiler; +13 tests) -> **2595 passed, 14 skipped, 1 expected
+failure**. See the uptake records after §3.1, §3.2 and §4.
 
 ## 2. Audit-branch patches already present
 
@@ -170,9 +171,34 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | Formula graph and structural capped-scission search are separate | Define shared target, loss, transform, receipt and candidate records | Recompiler consumes a serialized decompile artifact without reconstructing hidden defaults | `SRCH-RCT-01`, identity work | `TODO` |
+| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural producer, IR serialization + recompiler consumption, first-class loss records, and registry receipts remain | Add the structural (route/DAG) producer; serialize/deserialize the IR and have the recompiler consume it; add `IdentityLoss` records (`IR-LOSS-01`) and registry receipts | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
 | `IR-LOSS-01` | Formula/structure forgetting is explicit | `--smiles` formula path discards topology without a first-class loss record | Add `IdentityLoss`; downgrade or refuse dependent claims | `CCO` vs `COC` remain distinct as input identities; formula view announces collapse | `ID-LAYER-01` | `TODO` |
 | `IR-INV-01` | Claimed inverse scope is executable | Route compiler cannot construct water from H/O or H2/O2 terminals | Either add an explicit transform that bridges the shared IR or narrow naming/docs | Water fixture succeeds within named transform registry or renders a precise unsupported-transform refusal | `IR-CHEM-01` | `TODO` |
+
+**Uptake record — ChemicalCompilationIR first brick** (advances `IR-CHEM-01` TODO -> IN_PROGRESS):
+
+```text
+ID:                  IR-CHEM-01 (first brick)
+commit:              09b3072
+files:               smartchem/compilation_ir.py (new), smartchem/__init__.py, tests/test_compilation_ir.py
+tests:               tests/test_compilation_ir.py (13 new adversarial items)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2595 passed, 14 skipped, 1 xfailed (baseline 2582; +13). ruff clean; git diff --check clean.
+built:               ChemicalCompilationIR (the section 4.1 envelope), ChemicalIdentity (minimal formula/structure
+                     layer tag), CandidateSummary, and decompile_to_ir (the first producer: the formula decompiler
+                     emits the IR from search_decomposition).
+falsifier fixture:   decompile_to_ir("C8H9NO2", inv, budget=100_000).digest != (...budget=90_000).digest WHILE the
+                     two candidate sets are byte-for-byte identical -- the section 4.1 rule that a search-bound
+                     change alters the digest holds via request_digest. Reordering the inventory does NOT change
+                     the digest (presentation invariance). Changing the target or inventory DOES.
+residual limitations (the rest of IR-CHEM-01, named in code and its row):
+  1. Only the FORMULA producer exists; the structural (route/DAG) producer is TODO.
+  2. The IR is an in-memory value; serialize/deserialize + the recompiler consuming a SERIALIZED artifact
+     (the IR-CHEM-01 acceptance) is TODO, as is the water-from-buckets inverse (IR-INV-01).
+  3. identity_losses is empty: formula decompile forgets topology, but first-class IdentityLoss records need
+     ID-LAYER-01 (IR-LOSS-01, TODO). ChemicalIdentity is a layer TAG, not the full section 5.1 identity model.
+  4. search is carried as status + receipt digest, not the full embedded receipt; registry receipts are absent.
+```
 
 ### 3.3 Identity and evidence
 

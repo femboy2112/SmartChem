@@ -17,6 +17,8 @@ from smartchem.compilation_ir import (
     IdentityLayer,
     InverseResult,
     InverseStatus,
+    _TRANSFORM_REGISTRIES,
+    _transform_registry_digest,
     decompile_to_ir,
     deserialize_ir,
     ir_from_payload,
@@ -106,8 +108,8 @@ class TestIRConstructionInvariants:
         with pytest.raises(ValueError, match="canonical .*order"):
             ChemicalCompilationIR(
                 CHEMICAL_COMPILATION_IR_SCHEMA, ir.tool_version, ir.operation, ir.target, ir.request_digest,
-                ir.identity_losses, ir.terminal_policy_digest, ir.search_status, ir.search_receipt_digest,
-                tuple(reversed(ir.candidates)), ir.diagnostics,
+                ir.identity_losses, ir.terminal_policy_digest, ir.transform_registry_digest, ir.search_status,
+                ir.search_receipt_digest, tuple(reversed(ir.candidates)), ir.diagnostics,
             )
 
     def test_construction_rejects_duplicate_candidates(self):
@@ -115,8 +117,8 @@ class TestIRConstructionInvariants:
         with pytest.raises(ValueError, match="distinct by digest"):
             ChemicalCompilationIR(
                 CHEMICAL_COMPILATION_IR_SCHEMA, ir.tool_version, ir.operation, ir.target, ir.request_digest,
-                ir.identity_losses, ir.terminal_policy_digest, ir.search_status, ir.search_receipt_digest,
-                ir.candidates + ir.candidates, ir.diagnostics,
+                ir.identity_losses, ir.terminal_policy_digest, ir.transform_registry_digest, ir.search_status,
+                ir.search_receipt_digest, ir.candidates + ir.candidates, ir.diagnostics,
             )
 
     def test_identity_of_formula_records_the_formula_layer(self):
@@ -243,6 +245,7 @@ class TestIRSerialization:
         assert [c.candidate_digest for c in back.candidates] == [c.candidate_digest for c in ir.candidates]
         assert back.diagnostics == ir.diagnostics
         assert back.request_digest == ir.request_digest
+        assert back.transform_registry_digest == ir.transform_registry_digest
 
     def test_serialized_string_is_canonical_and_stable(self):
         ir = self._decompile_ir()
@@ -451,3 +454,59 @@ class TestRecompileFromSerialized:
     def test_type_guard_on_a_non_molecule_structure(self):
         with pytest.raises(TypeError):
             recompile_from_serialized(self._water_artifact(), structure="O", reagents=(H2, O2))
+
+
+class TestTransformRegistryDigest:
+    """The IR names WHICH transform grammar produced its candidates (section 8.4) and its digest is sensitive to
+    the grammar version (section 4.1: the digest MUST change on a transform-provider version change)."""
+
+    def test_the_ir_carries_the_declared_registry_digest_for_its_grammar(self):
+        dec = decompile_to_ir("C8H9NO2", INV)
+        assert dec.transform_registry_digest == _transform_registry_digest("formula-decomposition")
+        routes = recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1, mode="routes")
+        assert routes.transform_registry_digest == _transform_registry_digest("capped-scission-linear")
+        dags = recompile_to_ir(ETAC, reagents=DAG_REAGENTS, max_depth=2, mode="dags")
+        assert dags.transform_registry_digest == _transform_registry_digest("capped-scission-convergent")
+
+    def test_the_three_grammars_have_distinct_registry_digests(self):
+        digests = {
+            _transform_registry_digest(k)
+            for k in ("formula-decomposition", "capped-scission-linear", "capped-scission-convergent")
+        }
+        assert len(digests) == 3  # a formula edge, a linear route, and a convergent DAG are DIFFERENT grammars
+
+    def test_a_registry_version_bump_changes_request_and_full_digest_even_with_identical_candidates(self, monkeypatch):
+        # section 4.1 falsifier: the digest MUST move when the transform-provider version changes, even though
+        # nothing else -- target, terminals, bounds, candidate set -- differs.
+        before = decompile_to_ir("C8H9NO2", INV)
+        bumped = (*_TRANSFORM_REGISTRIES["formula-decomposition"][:2], "v2-TEST",
+                  *_TRANSFORM_REGISTRIES["formula-decomposition"][3:])
+        monkeypatch.setitem(_TRANSFORM_REGISTRIES, "formula-decomposition", bumped)
+        after = decompile_to_ir("C8H9NO2", INV)
+        assert [c.candidate_digest for c in after.candidates] == [c.candidate_digest for c in before.candidates]
+        assert after.transform_registry_digest != before.transform_registry_digest
+        assert after.request_digest != before.request_digest      # folded into the request identity
+        assert after.digest != before.digest                       # and hence the full value digest
+
+    def test_registry_digest_is_presentation_invariant(self):
+        # it is a property of the GRAMMAR, so permuting the inventory never changes it
+        a = recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1)
+        b = recompile_to_ir(PARA, reagents=(ANH, WATER, ACOH), available=(AMP,), max_depth=1)
+        assert a.transform_registry_digest == b.transform_registry_digest
+
+    def test_round_trip_preserves_the_registry_digest(self):
+        ir = recompile_to_ir(ETAC, reagents=DAG_REAGENTS, max_depth=2, mode="dags")
+        assert deserialize_ir(serialize_ir(ir)).transform_registry_digest == ir.transform_registry_digest
+
+    def test_construction_rejects_an_empty_registry_digest(self):
+        ir = decompile_to_ir("H2O")
+        with pytest.raises(ValueError, match="transform_registry_digest must be a non-empty string"):
+            ChemicalCompilationIR(
+                CHEMICAL_COMPILATION_IR_SCHEMA, ir.tool_version, ir.operation, ir.target, ir.request_digest,
+                ir.identity_losses, ir.terminal_policy_digest, "", ir.search_status, ir.search_receipt_digest,
+                ir.candidates, ir.diagnostics,
+            )
+
+    def test_unknown_registry_kind_is_refused(self):
+        with pytest.raises(ValueError, match="unknown transform-registry kind"):
+            _transform_registry_digest("nonexistent-grammar")

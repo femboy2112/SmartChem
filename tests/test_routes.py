@@ -44,12 +44,24 @@ class TestEnumeration:
         assert result.receipt.complete_within_bounds
 
     def test_rich_search_api_preserves_tuple_wrapper_and_reports_completion(self):
-        result = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1)
+        # depth 3 genuinely exhausts this fixture (no branch is cut by the depth bound), so the receipt can
+        # truthfully report COMPLETE_WITHIN_BOUNDS; at depth 1 it is honestly depth-truncated (see below).
+        result = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=3)
         assert result.routes == enumerate_routes(
-            PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1
+            PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=3
         )
         assert result.receipt.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
+        assert result.receipt.depth_truncated_branches == 0
         assert result.receipt.results_returned == len(result.routes)
+
+    def test_depth_truncation_is_reported_not_laundered_into_complete(self):
+        # REGRESSION (adversarial finding): a shallow search that cuts an expandable branch at the depth bound
+        # must report PARTIAL_DEPTH_LIMIT, never COMPLETE -- depth 1 here hides routes that exist at depth 2/3.
+        shallow = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1)
+        deep = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=3)
+        assert len(deep.routes) > len(shallow.routes)  # there genuinely were more routes past the bound
+        assert shallow.receipt.status is SearchStatus.PARTIAL_DEPTH_LIMIT
+        assert shallow.receipt.depth_limited and not shallow.receipt.complete_within_bounds
 
     def test_cut_budget_exhaustion_is_not_laundered_into_no_route(self):
         result = search_routes(PARA, reagents=(WATER,), available=(), max_depth=1, cut_budget=1)
@@ -62,7 +74,10 @@ class TestEnumeration:
             PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1, max_routes=1
         )
         assert len(result.routes) == 1
-        assert result.receipt.status is SearchStatus.PARTIAL_RESULT_LIMIT
+        # the result cap saturated -- the visible fact this test pins. (At max_depth=1 a depth truncation also
+        # co-occurs, so the combined status is PARTIAL_MULTIPLE_LIMITS; the result-limit flag is what matters here.)
+        assert result.receipt.result_limit_saturated
+        assert not result.receipt.complete_within_bounds
 
     @pytest.mark.parametrize("field", ["max_depth", "max_routes", "cut_budget"])
     def test_search_bounds_must_be_positive(self, field):
@@ -192,12 +207,16 @@ class TestConvergentDAGReceipt:
         assert result.receipt.expansions_attempted == 0
         assert result.receipt.complete_within_bounds
 
-    def test_rich_dag_api_matches_tuple_wrapper_and_reports_completion(self):
+    def test_rich_dag_api_matches_tuple_wrapper_and_reports_status(self):
         result = search_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5000)
         assert result.dags == enumerate_dags(
             ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5000
         )
-        assert result.receipt.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
+        # the cut budget and result cap are NOT the limiter here (well above the count), but depth-2 leaves
+        # expandable branches cut by the bound, so the honest status is PARTIAL_DEPTH_LIMIT -- not a laundered
+        # COMPLETE. The rich API still faithfully mirrors the tuple wrapper and its own returned count.
+        assert result.receipt.status is SearchStatus.PARTIAL_DEPTH_LIMIT
+        assert result.receipt.depth_limited and not result.receipt.result_limit_saturated
         assert result.receipt.results_returned == len(result.dags)
         assert result.receipt.incomplete_expansions == 0
         assert not result.target_in_terminal_stock
@@ -210,19 +229,23 @@ class TestConvergentDAGReceipt:
         assert starved.receipt.status is SearchStatus.PARTIAL_CUT_BUDGET
         assert starved.receipt.cut_budget_exhausted
         assert starved.receipt.incomplete_expansions > 0
-        # ...whereas the SAME query at full budget is a genuine complete-empty (NO_ROUTE_IN_DECLARED_SPACE),
-        # and only the receipt tells the two empties apart.
-        complete = search_dags(PARA, reagents=(WATER,), available=(), max_depth=1)
-        assert complete.dags == ()
-        assert complete.receipt.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
-        assert complete.receipt.complete_within_bounds
+        # ...whereas the SAME query at full budget is NOT cut-limited but IS honestly depth-limited (an
+        # expandable branch was cut by max_depth=1) -- so it is ALSO a partial, not a certified no-route. The
+        # cut-budget flag distinguishes the two empties, and neither is ever laundered into a proof of absence.
+        full = search_dags(PARA, reagents=(WATER,), available=(), max_depth=1)
+        assert full.dags == ()
+        assert full.receipt.status is SearchStatus.PARTIAL_DEPTH_LIMIT
+        assert not full.receipt.cut_budget_exhausted and full.receipt.depth_limited
+        assert not full.receipt.complete_within_bounds
 
     def test_distinct_result_cap_saturation_is_visible(self):
         # A cap below the true distinct count must be reported partial (SRCH-CAP-01), not passed off as complete.
         result = search_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5)
         assert len(result.dags) <= 5
-        assert result.receipt.status is SearchStatus.PARTIAL_RESULT_LIMIT
+        # the result cap saturated -- the fact this test pins (a depth truncation co-occurs, so the combined
+        # status is PARTIAL_MULTIPLE_LIMITS; the result-limit flag is the distinguishing evidence here).
         assert result.receipt.result_limit_saturated
+        assert not result.receipt.complete_within_bounds
 
     def test_result_cap_saturation_is_conservative_at_the_exact_count(self):
         # DOCUMENTED BOUNDARY: max_dags caps DISTINCT syntheses at every recursion level, so proving "there was
@@ -232,10 +255,10 @@ class TestConvergentDAGReceipt:
         # flip it to the dangerous direction.
         full = search_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5000)
         n = len(full.dags)
-        assert full.receipt.status is SearchStatus.COMPLETE_WITHIN_BOUNDS  # a cap well above the count is complete
+        assert not full.receipt.result_limit_saturated  # a cap well above the count did NOT saturate the result
         at_n = search_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=n)
         assert len(at_n.dags) == n  # the whole set is still returned
-        assert at_n.receipt.status is SearchStatus.PARTIAL_RESULT_LIMIT  # conservatively flagged partial
+        assert at_n.receipt.result_limit_saturated  # ...yet a cap AT the exact count conservatively flags saturated
 
     @pytest.mark.parametrize("field", ["max_depth", "max_dags", "cut_budget"])
     def test_search_bounds_must_be_positive(self, field):
@@ -295,7 +318,7 @@ class TestCLI:
         code = main([
             "CC(=O)Nc1ccc(O)cc1", "--have", "Nc1ccc(O)cc1",
             "--reagents", "O", "CC(=O)O", "CC(=O)OC(=O)C",
-            "--max-depth", "1", "--offline",
+            "--max-depth", "3", "--offline",  # depth 3 genuinely exhausts, so the search is COMPLETE -> exit 0
         ])
         out = capsys.readouterr().out
         assert code == 0
@@ -319,7 +342,9 @@ class TestCLI:
         ])
         out = capsys.readouterr().out
         assert code == 4
-        assert "PARTIAL_CUT_BUDGET" in out
+        # candidates exist yet the search is partial (here both the cut budget AND the depth bound bit, so the
+        # receipt reads PARTIAL_MULTIPLE_LIMITS) -- the point is a partial status is shown, never a false complete.
+        assert "PARTIAL" in out and "COMPLETE_WITHIN_BOUNDS" not in out
 
     def test_cli_rejects_bad_smiles(self, capsys):
         from smartchem.experiment.cli import main

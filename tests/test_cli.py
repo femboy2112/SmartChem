@@ -68,7 +68,10 @@ class TestCompile:
         assert "COMMODITY" in capsys.readouterr().out.upper()
 
     def test_bounded_no_route_is_a_nonzero_domain_outcome(self, capsys):
-        assert main(["compile", "acetic anhydride", "--elements", "--max-depth", "1"]) == 3
+        # depth 2 genuinely exhausts the elemental search for acetic anhydride (no branch cut by the bound), so
+        # this is a real COMPLETE no-route (exit 3). At depth 1 it is honestly PARTIAL_DEPTH_LIMIT (routes may
+        # exist deeper), which is exit 4 -- so a bumped bound is required to reach the genuine complete-empty.
+        assert main(["compile", "acetic anhydride", "--elements", "--max-depth", "2"]) == 3
         out = capsys.readouterr().out
         assert "COMPLETE_WITHIN_BOUNDS" in out and "NO ROUTE FOUND WITHIN" in out
 
@@ -79,7 +82,10 @@ class TestCompile:
             "--max-depth", "1", "--cut-budget", "1000", "--elements",
         ])
         assert code == 4
-        assert "PARTIAL_CUT_BUDGET" in capsys.readouterr().out
+        # partial exit even with candidates present; here the cut budget and the depth bound both bit, so the
+        # receipt reads PARTIAL_MULTIPLE_LIMITS -- the exit status must be the partial 4, never a false 0.
+        out = capsys.readouterr().out
+        assert "PARTIAL" in out and "COMPLETE_WITHIN_BOUNDS" not in out
 
     def test_charged_structural_request_is_a_clean_unsupported_error(self, capsys):
         assert main(["compile", "[CH2+]CCC", "--elements", "--max-depth", "1"]) == 5

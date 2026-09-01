@@ -32,4 +32,13 @@ class SearchStatus(str, Enum):
     PARTIAL_CUT_BUDGET = "PARTIAL_CUT_BUDGET"            # a scission/candidate enumeration hit its cut budget
     PARTIAL_SEARCH_BUDGET = "PARTIAL_SEARCH_BUDGET"      # a graph descent hit its search-node budget
     PARTIAL_RESULT_LIMIT = "PARTIAL_RESULT_LIMIT"        # the result/edge cap saturated before exhaustion
+    PARTIAL_DEPTH_LIMIT = "PARTIAL_DEPTH_LIMIT"          # an expandable branch was cut by the max-depth bound
     PARTIAL_MULTIPLE_LIMITS = "PARTIAL_MULTIPLE_LIMITS"  # more than one limit bit at once
+
+    # ``PARTIAL_DEPTH_LIMIT`` is this codebase's name for the standard's INCOMPLETE_DEPTH_LIMIT (section 8.2): a
+    # retrosynthetic branch that COULD have been expanded (a linear-expandable single missing precursor, or any
+    # missing precursor for the convergent DAG search) but was not, because the recursion hit ``max_depth``.
+    # Without it a depth-truncated search reported COMPLETE_WITHIN_BOUNDS and its missed-but-reachable routes
+    # vanished silently -- the exact "incomplete looks complete" defect section 8 forbids.  It is DISTINCT from a
+    # grammar boundary (a linear search dropping a >=2-missing convergent branch is out-of-grammar, not
+    # depth-limited) and from a genuine dead end (a node with no cleavages at all is complete, not truncated).

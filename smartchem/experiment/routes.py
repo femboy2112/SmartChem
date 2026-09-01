@@ -64,6 +64,9 @@ class RouteSearchReceipt(Digestible):
     incomplete_expansions: int
     result_limit_saturated: bool
     results_returned: int
+    # a linear-expandable branch (exactly one missing precursor) cut solely because the recursion hit max_depth;
+    # trailing default keeps the first-brick positional constructions valid. See SearchStatus.PARTIAL_DEPTH_LIMIT.
+    depth_truncated_branches: int = 0
 
     def __post_init__(self) -> None:
         if self.schema_version != ROUTE_SEARCH_RECEIPT_SCHEMA:
@@ -72,7 +75,7 @@ class RouteSearchReceipt(Digestible):
             value = getattr(self, name)
             if type(value) is not int or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
-        for name in ("expansions_attempted", "incomplete_expansions", "results_returned"):
+        for name in ("expansions_attempted", "incomplete_expansions", "results_returned", "depth_truncated_branches"):
             value = getattr(self, name)
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
@@ -88,24 +91,35 @@ class RouteSearchReceipt(Digestible):
         return self.incomplete_expansions > 0
 
     @property
+    def depth_limited(self) -> bool:
+        """True iff an expandable branch was cut solely by the max-depth bound (a real missed-route truncation)."""
+        return self.depth_truncated_branches > 0
+
+    @property
     def complete_within_bounds(self) -> bool:
-        return not self.cut_budget_exhausted and not self.result_limit_saturated
+        return not self.cut_budget_exhausted and not self.result_limit_saturated and not self.depth_limited
 
     @property
     def status(self) -> SearchStatus:
-        if self.cut_budget_exhausted and self.result_limit_saturated:
+        active = [
+            s for fired, s in (
+                (self.cut_budget_exhausted, SearchStatus.PARTIAL_CUT_BUDGET),
+                (self.result_limit_saturated, SearchStatus.PARTIAL_RESULT_LIMIT),
+                (self.depth_limited, SearchStatus.PARTIAL_DEPTH_LIMIT),
+            ) if fired
+        ]
+        if not active:
+            return SearchStatus.COMPLETE_WITHIN_BOUNDS
+        if len(active) > 1:
             return SearchStatus.PARTIAL_MULTIPLE_LIMITS
-        if self.cut_budget_exhausted:
-            return SearchStatus.PARTIAL_CUT_BUDGET
-        if self.result_limit_saturated:
-            return SearchStatus.PARTIAL_RESULT_LIMIT
-        return SearchStatus.COMPLETE_WITHIN_BOUNDS
+        return active[0]
 
     def render(self) -> str:
         return (
             f"SEARCH RECEIPT: {self.status.value}; results={self.results_returned}/{self.result_limit}; "
             f"depth<={self.max_depth}; expansions={self.expansions_attempted}; "
             f"incomplete cut expansions={self.incomplete_expansions}; "
+            f"depth-truncated branches={self.depth_truncated_branches}; "
             f"cut budget={self.cut_budget_per_expansion} candidates per expansion. "
             "Scope: linear acyclic routes in the current capped-scission rewrite grammar; not all chemistry."
         )
@@ -160,6 +174,9 @@ class DAGSearchReceipt(Digestible):
     incomplete_expansions: int
     result_limit_saturated: bool
     results_returned: int
+    # a convergent branch (any missing precursor) cut solely because the recursion hit max_depth; trailing
+    # default keeps the first-brick positional constructions valid. See SearchStatus.PARTIAL_DEPTH_LIMIT.
+    depth_truncated_branches: int = 0
 
     def __post_init__(self) -> None:
         if self.schema_version != DAG_SEARCH_RECEIPT_SCHEMA:
@@ -168,7 +185,7 @@ class DAGSearchReceipt(Digestible):
             value = getattr(self, name)
             if type(value) is not int or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
-        for name in ("expansions_attempted", "incomplete_expansions", "results_returned"):
+        for name in ("expansions_attempted", "incomplete_expansions", "results_returned", "depth_truncated_branches"):
             value = getattr(self, name)
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
@@ -184,24 +201,35 @@ class DAGSearchReceipt(Digestible):
         return self.incomplete_expansions > 0
 
     @property
+    def depth_limited(self) -> bool:
+        """True iff an expandable branch was cut solely by the max-depth bound (a real missed-synthesis truncation)."""
+        return self.depth_truncated_branches > 0
+
+    @property
     def complete_within_bounds(self) -> bool:
-        return not self.cut_budget_exhausted and not self.result_limit_saturated
+        return not self.cut_budget_exhausted and not self.result_limit_saturated and not self.depth_limited
 
     @property
     def status(self) -> SearchStatus:
-        if self.cut_budget_exhausted and self.result_limit_saturated:
+        active = [
+            s for fired, s in (
+                (self.cut_budget_exhausted, SearchStatus.PARTIAL_CUT_BUDGET),
+                (self.result_limit_saturated, SearchStatus.PARTIAL_RESULT_LIMIT),
+                (self.depth_limited, SearchStatus.PARTIAL_DEPTH_LIMIT),
+            ) if fired
+        ]
+        if not active:
+            return SearchStatus.COMPLETE_WITHIN_BOUNDS
+        if len(active) > 1:
             return SearchStatus.PARTIAL_MULTIPLE_LIMITS
-        if self.cut_budget_exhausted:
-            return SearchStatus.PARTIAL_CUT_BUDGET
-        if self.result_limit_saturated:
-            return SearchStatus.PARTIAL_RESULT_LIMIT
-        return SearchStatus.COMPLETE_WITHIN_BOUNDS
+        return active[0]
 
     def render(self) -> str:
         return (
             f"DAG SEARCH RECEIPT: {self.status.value}; distinct syntheses={self.results_returned}/"
             f"{self.result_limit}; depth<={self.max_depth}; expansions={self.expansions_attempted}; "
             f"incomplete cut expansions={self.incomplete_expansions}; "
+            f"depth-truncated branches={self.depth_truncated_branches}; "
             f"cut budget={self.cut_budget_per_expansion} candidates per expansion. "
             "Scope: convergent + linear synthesis DAGs in the current capped-scission rewrite grammar; "
             "not all chemistry."
@@ -294,10 +322,11 @@ def search_routes(
     seen_routes: dict[str, ExperimentRoute] = {}
     expansions_attempted = 0
     incomplete_expansions = 0
+    depth_truncated = 0
     result_limit_saturated = False
 
     def routes_making(t: Molecule, depth: int, ancestors: frozenset[str]):
-        nonlocal expansions_attempted, incomplete_expansions
+        nonlocal expansions_attempted, incomplete_expansions, depth_truncated
         if depth > max_depth:
             return
         expansions_attempted += 1
@@ -317,6 +346,11 @@ def search_routes(
                 precursor = missing[0]
                 for sub in routes_making(precursor, depth + 1, ancestors | {_ident(t)}):
                     yield ExperimentRoute.of(*sub.steps, step)
+            elif len(missing) == 1:
+                # a linear-expandable branch (exactly one missing precursor) we could have recursed on, but
+                # depth ran out -- a real depth truncation (a route may exist just past max_depth). A >=2-missing
+                # branch is a LINEAR-grammar boundary (search_dags' job), not a depth limit, so it is not counted.
+                depth_truncated += 1
 
     for route in routes_making(target, 1, frozenset()):
         if route.digest in seen_routes:
@@ -335,6 +369,7 @@ def search_routes(
         incomplete_expansions,
         result_limit_saturated,
         len(routes),
+        depth_truncated,
     )
     return RouteSearchResult(ROUTE_SEARCH_RESULT_SCHEMA, routes, receipt, False)
 
@@ -466,6 +501,7 @@ def search_dags(
 
     expansions_attempted = 0
     incomplete_expansions = 0
+    depth_truncated = 0
     result_limit_saturated = False
 
     def _sig(steps: tuple[ExperimentStep, ...]) -> frozenset[str]:
@@ -474,7 +510,7 @@ def search_dags(
 
     def syntheses_making(t: Molecule, depth: int, ancestors: frozenset[str]) -> list[tuple[ExperimentStep, ...]]:
         """The DISTINCT step-lists (deduped by :func:`_sig`) that make ``t`` -- capped at ``max_dags`` UNIQUE."""
-        nonlocal expansions_attempted, incomplete_expansions, result_limit_saturated
+        nonlocal expansions_attempted, incomplete_expansions, result_limit_saturated, depth_truncated
         out: list[tuple[ExperimentStep, ...]] = []
         seen: set[frozenset[str]] = set()
         if depth > max_depth:
@@ -532,6 +568,11 @@ def search_dags(
                         break
                 if capped:
                     break
+            else:
+                # missing precursors but depth == max_depth: an expandable convergent branch cut by the depth
+                # bound (the recursion could have made any number of missing precursors) -- a real depth
+                # truncation, so a synthesis may exist just past max_depth and the search is not complete.
+                depth_truncated += 1
             if len(out) >= max_dags:
                 break
         return out
@@ -556,6 +597,7 @@ def search_dags(
         incomplete_expansions,
         result_limit_saturated,
         len(dags),
+        depth_truncated,
     )
     return DAGSearchResult(DAG_SEARCH_RESULT_SCHEMA, dags, receipt, False)
 

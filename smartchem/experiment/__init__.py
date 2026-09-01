@@ -149,7 +149,14 @@ from .selectivity import (
     verify_selectivity,
 )
 from .step import ExperimentRoute, ExperimentStep, StepError
-from .stock import FitnessVerdict, MaterialComponent, Phase, StockMaterial
+from .stock import (
+    CostObservation,
+    FitnessVerdict,
+    MaterialComponent,
+    Phase,
+    StockMaterial,
+    StockQuantity,
+)
 
 __all__ = [
     "Bucket",
@@ -160,6 +167,8 @@ __all__ = [
     "StepError",
     "StockMaterial",
     "MaterialComponent",
+    "StockQuantity",
+    "CostObservation",
     "Phase",
     "FitnessVerdict",
     "Transition",

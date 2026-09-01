@@ -15,7 +15,8 @@ profile) and canonical-structure component keying (ID-LAYER-01) are later bricks
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 from enum import Enum
 
 from ..contracts import Digestible
@@ -23,16 +24,33 @@ from ..contracts import Digestible
 __all__ = [
     "STOCK_MATERIAL_SCHEMA",
     "MATERIAL_COMPONENT_SCHEMA",
+    "STOCK_QUANTITY_SCHEMA",
+    "COST_OBSERVATION_SCHEMA",
     "Phase",
     "FitnessVerdict",
     "MaterialComponent",
+    "StockQuantity",
+    "CostObservation",
     "StockMaterial",
 ]
 
 STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha1"
 MATERIAL_COMPONENT_SCHEMA = "smartchem.experiment/material-component-v1alpha1"
+STOCK_QUANTITY_SCHEMA = "smartchem.experiment/stock-quantity-v1alpha1"
+COST_OBSERVATION_SCHEMA = "smartchem.experiment/cost-observation-v1alpha1"
 
 _FRACTION_EPS = 1e-9
+
+
+def _positive_numeric(value: str, what: str) -> float:
+    """Parse ``value`` as a finite, strictly-positive number, or raise -- no NaN/inf/zero quantity."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{what} must be a numeric string") from exc
+    if not math.isfinite(v) or v <= 0:
+        raise ValueError(f"{what} must be a positive, finite quantity")
+    return v
 
 
 class Phase(str, Enum):
@@ -94,6 +112,83 @@ class MaterialComponent(Digestible):
 
 
 @dataclass(frozen=True)
+class StockQuantity(Digestible):
+    """A declared physical amount of a material: an exact numeric-string ``value`` plus a ``unit``.
+
+    Section 10.3 forbids inventing a quantity: the honest "no declared amount" is the ABSENCE of this value
+    (``StockMaterial.quantity is None`` -> UNKNOWN), never an assumed one mole / one bottle.  ``value`` is kept
+    as the exact source string (no float drift enters the identity); it must parse as a positive finite number.
+    """
+
+    schema_version: str
+    value: str
+    unit: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != STOCK_QUANTITY_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {STOCK_QUANTITY_SCHEMA!r}")
+        if not isinstance(self.unit, str) or not self.unit.strip():
+            raise ValueError("unit must be a non-empty string")
+        if not isinstance(self.value, str):
+            raise ValueError("value must be a numeric string")
+        _positive_numeric(self.value, "value")
+
+    @classmethod
+    def of(cls, value: "str | int | float", unit: str) -> "StockQuantity":
+        return cls(STOCK_QUANTITY_SCHEMA, str(value), unit)
+
+    def render(self) -> str:
+        return f"{self.value} {self.unit}"
+
+
+@dataclass(frozen=True)
+class CostObservation(Digestible):
+    """A DATED, SOURCED price observation (section 10.4: prices MUST be dated and sourced; the compiler MUST NOT
+    invent a price).
+
+    There is deliberately no way to construct one without an amount, currency, observation date, and source: an
+    unpriced material carries ``cost_observation=None`` (UNKNOWN), never a guessed number.  ``region`` is the one
+    optional field (an empty string means unspecified market).
+    """
+
+    schema_version: str
+    amount: str
+    currency: str
+    observed_date: str
+    source: str
+    region: str = ""
+
+    def __post_init__(self) -> None:
+        if self.schema_version != COST_OBSERVATION_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {COST_OBSERVATION_SCHEMA!r}")
+        for name in ("amount", "currency", "observed_date", "source"):
+            v = getattr(self, name)
+            if not isinstance(v, str) or not v.strip():
+                raise ValueError(
+                    f"{name} must be a non-empty string -- a price observation must be dated and sourced "
+                    "(section 10.4); an unpriced material uses cost_observation=None"
+                )
+        try:
+            a = float(self.amount)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("amount must be a numeric string") from exc
+        if not math.isfinite(a) or a < 0:
+            raise ValueError("amount must be a non-negative, finite number")
+        if not isinstance(self.region, str):
+            raise TypeError("region must be a string")
+
+    @classmethod
+    def of(
+        cls, amount: "str | int | float", currency: str, observed_date: str, source: str, region: str = ""
+    ) -> "CostObservation":
+        return cls(COST_OBSERVATION_SCHEMA, str(amount), currency, observed_date, source, region)
+
+    def render(self) -> str:
+        where = f", {self.region}" if self.region else ""
+        return f"{self.amount} {self.currency} (observed {self.observed_date}{where}; source: {self.source})"
+
+
+@dataclass(frozen=True)
 class StockMaterial(Digestible):
     """A real material: one or more components (each a fraction interval), a phase, and provenance.
 
@@ -107,6 +202,16 @@ class StockMaterial(Digestible):
     components: tuple[MaterialComponent, ...]
     phase: Phase
     provenance: str
+    # -- the rest of the section 10.2 schema; all keyword-optional so the first-brick positional form still
+    # constructs, and every one defaults to an honest UNKNOWN (None / empty), never an assumed value.
+    quantity: "StockQuantity | None" = None
+    assay_method: "str | None" = None
+    container_and_storage: "str | None" = None
+    opened_or_age_state: "str | None" = None
+    jurisdiction_and_availability: "str | None" = None
+    cost_observation: "CostObservation | None" = None
+    formulation_notes: tuple[str, ...] = ()
+    known_impurities: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if self.schema_version != STOCK_MATERIAL_SCHEMA:
@@ -122,6 +227,19 @@ class StockMaterial(Digestible):
             raise TypeError("components must be a non-empty tuple of MaterialComponent values")
         if sum(c.min_fraction for c in self.components) > 1.0 + _FRACTION_EPS:
             raise ValueError("component minimum fractions sum above 1.0 -- an infeasible material")
+        # -- section 10.2 optional fields: each is a typed value or an honest UNKNOWN -----------------------
+        if self.quantity is not None and type(self.quantity) is not StockQuantity:
+            raise TypeError("quantity must be a StockQuantity or None (UNKNOWN)")
+        if self.cost_observation is not None and type(self.cost_observation) is not CostObservation:
+            raise TypeError("cost_observation must be a CostObservation or None (UNKNOWN)")
+        for name in ("assay_method", "container_and_storage", "opened_or_age_state", "jurisdiction_and_availability"):
+            v = getattr(self, name)
+            if v is not None and (not isinstance(v, str) or not v.strip()):
+                raise ValueError(f"{name} must be a non-empty string or None (UNKNOWN)")
+        for name in ("formulation_notes", "known_impurities"):
+            seq = getattr(self, name)
+            if type(seq) is not tuple or any(not isinstance(x, str) or not x.strip() for x in seq):
+                raise TypeError(f"{name} must be a tuple of non-empty strings")
 
     def active_fraction_interval(self, required_identity: str) -> tuple[float, float] | None:
         """The summed fraction interval ``(lo, hi)`` of components matching ``required_identity``, or ``None``.
@@ -163,8 +281,21 @@ class StockMaterial(Digestible):
             f"{c.identity_key} ({c.role}) {c.min_fraction * 100:.0f}-{c.max_fraction * 100:.0f}%"
             for c in self.components
         )
+        detail = [
+            f"quantity: {self.quantity.render() if self.quantity else 'UNKNOWN'}",
+            f"assay method: {self.assay_method or 'UNKNOWN'}",
+            f"container/storage: {self.container_and_storage or 'UNKNOWN'}",
+            f"opened/age: {self.opened_or_age_state or 'UNKNOWN'}",
+            f"jurisdiction/availability: {self.jurisdiction_and_availability or 'UNKNOWN'}",
+            f"cost: {self.cost_observation.render() if self.cost_observation else 'UNKNOWN'}",
+        ]
+        if self.known_impurities:
+            detail.append("known impurities: " + ", ".join(self.known_impurities))
+        if self.formulation_notes:
+            detail.append("formulation: " + "; ".join(self.formulation_notes))
         return (
             f"STOCK MATERIAL {self.display_name!r} [{self.phase.value}] -- {comps}. "
-            f"Source: {self.provenance}. A material, not a pure identity: assay is an interval, and a pure-reagent "
-            "requirement is met only when the interval PROVES it (section 10)."
+            f"Source: {self.provenance}. " + " | ".join(detail) + ". "
+            "A material, not a pure identity: assay is an interval, and a pure-reagent requirement is met only "
+            "when the interval PROVES it (section 10). Unknown fields are UNKNOWN, never an assumed value."
         )

@@ -42,6 +42,7 @@ __all__ = [
     "CandidateSummary",
     "ChemicalCompilationIR",
     "decompile_to_ir",
+    "recompile_to_ir",
 ]
 
 CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha1"
@@ -87,6 +88,21 @@ class ChemicalIdentity(Digestible):
         if type(formula) is not Formula:
             raise TypeError("of_formula needs a Formula")
         return cls(CHEMICAL_IDENTITY_SCHEMA, IdentityLayer.FORMULA, repr(formula), canonical_digest(formula))
+
+    @classmethod
+    def of_molecule(cls, molecule: "object") -> "ChemicalIdentity":
+        """A STRUCTURE-layer identity for a :class:`~smartchem.category.Molecule`.
+
+        The ``identity_digest`` is byte-congruent with the pipeline's own molecular identity
+        (:func:`_structure_ident`, the same ``canonical()``/``asgiven:`` fallback that
+        :mod:`smartchem.experiment.routes`/``step``/``dag`` use), so a structural IR target is the SAME
+        value the route/DAG search keys on -- a same-formula isomer is a distinct identity here (section 5.4),
+        never collapsed to its formula.
+        """
+        from .category import Molecule
+        if type(molecule) is not Molecule:
+            raise TypeError("of_molecule needs a smartchem.category.Molecule")
+        return cls(CHEMICAL_IDENTITY_SCHEMA, IdentityLayer.STRUCTURE, repr(molecule), _structure_ident(molecule))
 
 
 @dataclass(frozen=True)
@@ -191,6 +207,19 @@ def _tool_version() -> str:
     return __version__
 
 
+def _structure_ident(molecule: "object") -> str:
+    """The pipeline's presentation-invariant molecular identity: canonical digest, ``asgiven:`` for a graph the
+    canonicaliser refuses (a symmetric ring).  Byte-for-byte the ``_ident`` used in routes/step/dag, so a
+    structural IR keys on the SAME identity the search does."""
+    from .category import Molecule
+    if type(molecule) is not Molecule:
+        raise TypeError("_structure_ident needs a smartchem.category.Molecule")
+    try:
+        return canonical_digest(molecule.canonical())
+    except NotImplementedError:
+        return "asgiven:" + canonical_digest(molecule)
+
+
 def _terminal_policy_digest(inventory: tuple[Formula, ...]) -> str:
     """A canonical digest of the declared formula terminal policy: the match mode plus the canonical inventory.
 
@@ -253,6 +282,129 @@ def decompile_to_ir(
         target_id,
         request_digest,
         (),  # identity_losses -- formula decompile forgets topology; first-class loss records are IR-LOSS-01 (TODO)
+        terminal_digest,
+        receipt.status,
+        receipt.digest,
+        candidates,
+        diagnostics,
+    )
+
+
+def _recompile_terminal_policy_digest(
+    reagents: tuple, available: tuple, commodities: tuple
+) -> str:
+    """A canonical digest of the structural terminal policy: match mode plus the SET of terminal identities.
+
+    Section 7: a structural search terminates a branch at any node whose canonical STRUCTURE identity is on
+    hand.  :func:`~smartchem.experiment.routes.search_routes`/``search_dags`` put every one of
+    ``available``/``reagents``/``commodities`` into that on-hand set, so the *terminal set* is their union,
+    keyed by :func:`_structure_ident` (never by formula -- a same-formula isomer does not terminate).  A
+    frozenset makes the digest order-invariant, so permuting any inventory list leaves the policy unchanged.
+    """
+    terminals = frozenset(_structure_ident(m) for m in (*available, *reagents, *commodities))
+    return canonical_digest(("terminal-policy", "STRUCTURE", terminals))
+
+
+def recompile_to_ir(
+    target: "object",
+    *,
+    reagents: tuple,
+    available: tuple = (),
+    commodities: tuple = (),
+    max_depth: int = 2,
+    max_results: int = 100,
+    cut_budget: int = 20_000,
+    mode: str = "routes",
+    tool_version: str | None = None,
+) -> ChemicalCompilationIR:
+    """Emit a :class:`ChemicalCompilationIR` for the *structural* recompilation (synthesis) of ``target``.
+
+    The second concrete producer of the shared IR (advancing IR-CHEM-01): where :func:`decompile_to_ir` packages
+    the formula decomposition, this packages the recompiler's route or DAG search
+    (:func:`~smartchem.experiment.routes.search_routes` when ``mode='routes'``,
+    :func:`~smartchem.experiment.routes.search_dags` when ``mode='dags'``) as canonical, digest-identified
+    ``ROUTE``/``DAG`` candidates over a STRUCTURE-layer target identity.
+
+    The IR's digest keeps the section 4.1 discipline: it is presentation-invariant (permuting ``reagents`` or
+    ``available`` does not change it -- the terminal policy is a frozenset and candidates are digest-sorted) and
+    semantic-input-sensitive (a search-bound change alters ``request_digest``, hence the value digest, even when
+    the returned candidate set is byte-for-byte identical).  ``request_digest`` additionally distinguishes the
+    reagent HELPER pool from the plain terminal stock, because moving a molecule from ``reagents`` (a pool the
+    cleavage may consume) to ``available`` (mere on-hand stock) genuinely changes which candidates exist.
+
+    W3 unchanged: every candidate is a ``FORMAL_CANDIDATE`` -- a conservation-valid assembly within the current
+    capped-scission grammar and the declared search bounds, never a claim that the synthesis works.
+    """
+    from .category import Molecule
+    if type(target) is not Molecule:
+        raise TypeError("recompile_to_ir target must be a smartchem.category.Molecule")
+    if mode not in ("routes", "dags"):
+        raise ValueError("mode must be 'routes' or 'dags'")
+    from .experiment.routes import search_dags, search_routes
+
+    if mode == "routes":
+        result = search_routes(
+            target, reagents=reagents, available=available, commodities=commodities,
+            max_depth=max_depth, max_routes=max_results, cut_budget=cut_budget,
+        )
+        candidate_kind = "ROUTE"
+        candidate_objs: tuple = result.routes
+        def _equation(obj) -> str:
+            return " ; ".join(obj.equation_lines())
+    else:
+        result = search_dags(
+            target, reagents=reagents, available=available, commodities=commodities,
+            max_depth=max_depth, max_dags=max_results, cut_budget=cut_budget,
+        )
+        candidate_kind = "DAG"
+        candidate_objs = result.dags
+        def _equation(obj) -> str:
+            return " ; ".join(s.equation() for s in obj.topological_order())
+
+    receipt = result.receipt
+    target_id = ChemicalIdentity.of_molecule(target)
+    terminal_digest = _recompile_terminal_policy_digest(reagents, available, commodities)
+    candidates = tuple(
+        sorted(
+            (
+                CandidateSummary(
+                    CANDIDATE_SUMMARY_SCHEMA, candidate_kind, obj.digest,
+                    _equation(obj) or repr(obj), "FORMAL_CANDIDATE",
+                )
+                for obj in candidate_objs
+            ),
+            key=lambda c: c.candidate_digest,
+        )
+    )
+    # request_digest identifies the REQUEST: target + terminal set + the reagent HELPER pool (distinct from
+    # plain stock) + mode + bounds -- so a bound change (or a reagent-vs-available move) changes the IR digest
+    # even when the candidate set is identical.
+    reagent_pool = frozenset(_structure_ident(m) for m in reagents)
+    request_digest = canonical_digest(
+        (
+            "recompile-request",
+            target_id.identity_digest,
+            terminal_digest,
+            ("reagent-pool", reagent_pool),
+            ("mode", mode),
+            ("bounds", max_depth, max_results, cut_budget),
+        )
+    )
+    if result.target_in_terminal_stock:
+        diagnostics: tuple[str, ...] = (
+            "target is already present in the active terminal stock; no synthesis is required (section 7)",
+        )
+    elif not receipt.complete_within_bounds:
+        diagnostics = (f"search incomplete within bounds: {receipt.status.value}",)
+    else:
+        diagnostics = ()
+    return ChemicalCompilationIR(
+        CHEMICAL_COMPILATION_IR_SCHEMA,
+        tool_version or _tool_version(),
+        CompilationOperation.RECOMPILE,
+        target_id,
+        request_digest,
+        (),  # identity_losses -- structural assembly forgets nothing at the structure layer; IR-LOSS-01 (TODO)
         terminal_digest,
         receipt.status,
         receipt.digest,

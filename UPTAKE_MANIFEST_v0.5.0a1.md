@@ -216,9 +216,9 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural (route/DAG) producer now exists too: `recompile_to_ir` (`43dbcb1`) packages `search_routes`/`search_dags` as canonical `ROUTE`/`DAG` candidates over a STRUCTURE-layer identity, with the same presentation-invariant/semantic-sensitive digest (a bound change alters it via `request_digest`; the reagent helper pool is distinguished from plain stock). IR (de)serialization now round-trips digest-stably too (`serialize_ir`/`deserialize_ir`, canonical JSON; deserialize re-validates and refuses a tampered payload). The recompiler consuming a serialized artifact END TO END (`IR-INV-01`), first-class loss records, and registry receipts remain | Have the recompiler consume a serialized decompile artifact; add `IdentityLoss` records (`IR-LOSS-01`) and registry receipts | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
+| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural (route/DAG) producer now exists too: `recompile_to_ir` (`43dbcb1`) packages `search_routes`/`search_dags` as canonical `ROUTE`/`DAG` candidates over a STRUCTURE-layer identity, with the same presentation-invariant/semantic-sensitive digest (a bound change alters it via `request_digest`; the reagent helper pool is distinguished from plain stock). IR (de)serialization now round-trips digest-stably too (`serialize_ir`/`deserialize_ir`, canonical JSON; deserialize re-validates and refuses a tampered payload). The recompiler now CONSUMES a serialized decompile artifact end to end via `recompile_from_serialized` (`2e21490`, `IR-INV-01` closed on the refusal clause): it gates the structural hypothesis on the decompiled formula and classifies the inverse outcome, with water rendering a precise mode+bounds-scoped no-route refusal (no fabricated transform). First-class loss records (`IR-LOSS-01`) and registry receipts remain | Add `IdentityLoss` records (`IR-LOSS-01`) and registry receipts | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
 | `IR-LOSS-01` | Formula/structure forgetting is explicit | `--smiles` formula path discards topology without a first-class loss record | Add `IdentityLoss`; downgrade or refuse dependent claims | `CCO` vs `COC` remain distinct as input identities; formula view announces collapse | `ID-LAYER-01` | `TODO` |
-| `IR-INV-01` | Claimed inverse scope is executable | Route compiler cannot construct water from H/O or H2/O2 terminals | Either add an explicit transform that bridges the shared IR or narrow naming/docs | Water fixture succeeds within named transform registry or renders a precise unsupported-transform refusal | `IR-CHEM-01` | `TODO` |
+| `IR-INV-01` | Claimed inverse scope is executable | `recompile_from_serialized` (`2e21490`) consumes a serialized decompile artifact end to end: it gates the structural hypothesis on the decompiled formula (section 5.4) and classifies the inverse outcome (six-way `InverseStatus`). Water (H2O from H2/O2) renders a PRECISE unsupported-transform refusal (`NO_ROUTE_IN_GRAMMAR`), scoped to the mode+bounds, with no fabricated transform (W3) — the acceptance's refusal clause. An EXHAUSTIVE empty search is distinguished from a TRUNCATED one (`INCONCLUSIVE_BOUNDS_HIT`) | Refusal clause met; a named inter-grammar transform registry that SUCCEEDS on water remains a future, SOURCED brick (narrowed naming/docs, never a fabricated reaction) | Water renders a precise unsupported-transform refusal (**met**) OR succeeds within a named transform registry (future) | `IR-CHEM-01` | `DONE` (refusal clause) |
 
 **Uptake record — ChemicalCompilationIR first brick** (advances `IR-CHEM-01` TODO -> IN_PROGRESS):
 
@@ -303,6 +303,70 @@ residual limitations:
      yet embed the full SearchReceipt or the transform/evidence registry receipts (still IR-CHEM-01 residuals).
   2. The recompiler does not yet CONSUME a serialized decompile artifact end to end (IR-INV-01); this brick is the
      serialize/deserialize primitive that makes that wiring possible.
+```
+
+**Uptake record — IR-INV-01: the recompiler consumes a SERIALIZED decompile artifact end to end** (advances
+`IR-CHEM-01`; closes `IR-INV-01` on the refusal clause):
+
+```text
+ID:                  IR-INV-01
+commit:              2e21490
+files:               smartchem/compilation_ir.py, smartchem/__init__.py, tests/test_compilation_ir.py
+tests:               tests/test_compilation_ir.py::TestRecompileFromSerialized (12 items) +
+                     ::TestRecompileNoRouteDiagnostic (5 items) -- 17 new adversarial items
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2660 passed, 14 skipped, 1 xfailed (baseline 2643; +17). ruff clean on every changed file;
+                     git diff --check clean.
+built:               recompile_from_serialized(text, structure=, reagents=, ...) -- deserializes a DECOMPILE
+                     artifact, gates the structural hypothesis on the decompiled formula (section 5.4 coherence),
+                     runs recompile_to_ir, and classifies the inverse outcome as an InverseStatus:
+                     NOT_A_DECOMPILE_ARTIFACT / FORMULA_MISMATCH (pre-search refusals, no recompile IR) |
+                     TARGET_ALREADY_TERMINAL / ROUTES_FOUND (successes) | NO_ROUTE_IN_GRAMMAR (EXHAUSTIVE empty
+                     within THIS mode+bounds) | INCONCLUSIVE_BOUNDS_HIT (TRUNCATED empty: cannot conclude).
+                     InverseResult bundles the consumed decompile IR + the produced recompile IR + verdict +
+                     precise refusal, and enforces its OWN coherence (each slot carries the operation its name
+                     advertises; NOT_A_DECOMPILE_ARTIFACT is the one exemption -- it reports the offending
+                     artifact). ALSO fixed recompile_to_ir: a complete-within-bounds, zero-candidate,
+                     not-in-stock search now emits a precise "exhaustive within THIS mode at THESE bounds"
+                     diagnostic instead of a SILENT empty (the SRCH-DEPTH-01 laundering one layer up).
+acceptance (IR-INV-01, refusal clause): water. decompile_to_ir("H2O") -> serialize -> recompile_from_serialized(
+                     text, structure=water, reagents=(H2, O2)) returns NO_ROUTE_IN_GRAMMAR with a precise
+                     unsupported-transform refusal and a recompile IR with ZERO candidates. NO water reaction is
+                     invented (W3): elemental redox is outside the capped-scission grammar, and the compiler SAYS
+                     SO -- but scoped to what the receipt proves. The manifest's first clause (a named transform
+                     registry that SUCCEEDS on water) is deliberately NOT taken: fabricating a transform violates W3.
+falsifier fixture:   the EXHAUSTIVE-vs-TRUNCATED split is load-bearing and pinned: water (complete, empty) ->
+                     NO_ROUTE_IN_GRAMMAR; the SAME shape starved to PARTIAL_CUT_BUDGET -> INCONCLUSIVE_BOUNDS_HIT,
+                     never a dead end. A structure whose formula != the decompiled formula -> FORMULA_MISMATCH
+                     BEFORE any search. Same-formula isomers (PARA vs its O-acetyl ester, both C8H9NO2) both PASS
+                     the formula gate and key on DISTINCT structure identities. A RECOMPILE artifact fed as input
+                     -> refused. A tampered artifact (candidates out of canonical order) -> refused on read.
+adversarial review:  an independent red-team (evil-morty) attacked the no-route diagnostic's truthfulness, the
+                     six-way classifier, the formula-digest gate, W3, and the InverseResult invariants. Two
+                     VERIFIED findings, both fixed and regression-pinned here:
+                     (1) MEDIUM -- the no-route refusal claimed a REGISTRY-WIDE dead end, but complete_within_bounds
+                         proves only exhaustion of THIS mode's grammar at THESE bounds; the SAME request under
+                         mode='dags' reaches PARTIAL. Fix: both the recompile_to_ir diagnostic and the bridge
+                         refusal now scope the claim to the mode+bounds and explicitly do NOT exclude a different
+                         mode / higher bounds. Pinned by test_the_no_route_diagnostic_does_not_overclaim_registry_wide.
+                     (2) LOW -- InverseResult did not enforce that its two IR slots carry the right operation;
+                         a DECOMPILE artifact could sit in the recompile slot. Fix: __post_init__ now checks it
+                         (NOT_A_DECOMPILE_ARTIFACT exempted). Pinned by test_result_enforces_operation_coherence.
+                     The classifier's target-terminal agreement, the formula gate, the guard (op AND layer), and
+                     W3 (no fabricated candidate) all survived. The render() "reconstituted" wording was softened
+                     to "routes for the supplied structure" so a formula-level success does not read as isomer-
+                     level identity confirmation.
+residual limitations:
+  1. The formula gate is FORMULA-layer by construction (section 5.4): any same-formula isomer is a legitimate
+     structural hypothesis for a formula-level decompile artifact -- the bridge reconstitutes the ISOMER THE
+     CALLER SUPPLIES, honestly labeled, never a claim it is THE decompiled structure (a formula does not fix
+     one). Structure-layer artifacts + isomer-exact matching is ID-LAYER-01 / IR-LOSS-01.
+  2. The refusal clause is taken, not the transform-registry clause: no named inter-grammar transform (e.g.
+     elemental redox) exists yet; adding one is a future brick, and it must be SOURCED, never fabricated.
+  3. Degenerate inputs (reagents=(), max_depth/max_results/cut_budget <= 0) raise the underlying search's own
+     precise ValueError/TypeError from a lower frame rather than a bridge-level message -- a documented boundary
+     (red-team finding 3, LOW): the errors are already exact, so no ceremony re-guard was added.
+  4. identity_losses is still empty (IR-LOSS-01, gated on ID-LAYER-01); registry receipts still absent.
 ```
 
 ### 3.3 Identity and evidence

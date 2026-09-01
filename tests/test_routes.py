@@ -22,6 +22,7 @@ from smartchem.experiment.routes import (
     search_routes,
 )
 from smartchem.experiment.step import ExperimentRoute
+from smartchem.search import STANDARD_8_2_STATUSES
 from smartchem.smiles import parse_smiles
 from smartchem.transform_registry import transform_registry_digest
 
@@ -500,3 +501,58 @@ class TestSection81IdentityDigests:
         # even a trivially-terminated search records the target/terminal/grammar it was asked about
         r = search_routes(PARA, reagents=(WATER,), available=(PARA,), max_depth=1).receipt
         assert r.target_identity_digest and r.terminal_policy_digest and r.transform_registry_digest
+
+
+class TestSection82StandardStatus:
+    """Section 8.2: every route/DAG receipt also speaks the standard's terminal-status vocabulary, and resolves
+    the single primary stop reason 8.2 requires even when the native status is PARTIAL_MULTIPLE_LIMITS."""
+
+    def _route(self, incomplete, saturated, results, depth_trunc=0):
+        return RouteSearchReceipt(
+            ROUTE_SEARCH_RECEIPT_SCHEMA, 3, 5, 10, 4, incomplete, saturated, results, depth_trunc
+        )
+
+    def test_complete_receipt_maps_to_declared_space(self):
+        rc = self._route(0, False, 2)
+        assert rc.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
+        assert rc.standard_status == "COMPLETE_WITHIN_DECLARED_SPACE"
+
+    def test_single_result_limit_maps_directly(self):
+        rc = self._route(0, True, 5)
+        assert rc.status is SearchStatus.PARTIAL_RESULT_LIMIT
+        assert rc.standard_status == "INCOMPLETE_RESULT_LIMIT"
+
+    def test_single_depth_limit_maps_directly(self):
+        rc = self._route(0, False, 2, depth_trunc=1)
+        assert rc.status is SearchStatus.PARTIAL_DEPTH_LIMIT
+        assert rc.standard_status == "INCOMPLETE_DEPTH_LIMIT"
+
+    def test_multiple_limits_resolves_to_the_primary_the_bare_enum_cannot_name(self):
+        # cut budget + result limit both bit: native is MULTIPLE (standard_name None), but the RECEIPT resolves
+        # the one primary 8.2 demands -- cut budget wins precedence.
+        rc = self._route(2, True, 5)
+        assert rc.status is SearchStatus.PARTIAL_MULTIPLE_LIMITS
+        assert rc.status.standard_name is None
+        assert rc.standard_status == "INCOMPLETE_CUT_BUDGET"
+        assert rc.standard_status in STANDARD_8_2_STATUSES
+
+    def test_multiple_limits_depth_plus_result_resolves_to_depth(self):
+        rc = self._route(0, True, 5, depth_trunc=1)
+        assert rc.status is SearchStatus.PARTIAL_MULTIPLE_LIMITS
+        assert rc.standard_status == "INCOMPLETE_DEPTH_LIMIT"
+
+    def test_dag_receipt_resolves_multiple_limits_too(self):
+        d = DAGSearchReceipt(DAG_SEARCH_RECEIPT_SCHEMA, 3, 5, 10, 4, 2, True, 5, depth_truncated_branches=1)
+        assert d.status is SearchStatus.PARTIAL_MULTIPLE_LIMITS
+        assert d.standard_status == "INCOMPLETE_CUT_BUDGET"  # cut budget outranks depth and result
+
+    def test_standard_status_agrees_with_the_enum_on_every_non_multiple_case(self):
+        for rc in (self._route(0, False, 2), self._route(0, True, 5), self._route(0, False, 2, depth_trunc=1)):
+            assert rc.status is not SearchStatus.PARTIAL_MULTIPLE_LIMITS
+            assert rc.standard_status == rc.status.standard_name
+
+    def test_a_live_search_receipt_speaks_8_2(self):
+        r = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=2).receipt
+        assert r.standard_status in STANDARD_8_2_STATUSES
+        d = search_dags(ETAC, reagents=DAG_REAGENTS, max_depth=2).receipt
+        assert d.standard_status in STANDARD_8_2_STATUSES

@@ -662,6 +662,16 @@ class FormulaSearchReceipt(Digestible):
     def complete_within_bounds(self) -> bool:
         return self.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
 
+    @property
+    def standard_status(self) -> str:
+        """This receipt's terminal status in the standard's section 8.2 vocabulary.
+
+        The formula descent stops on exactly one budget at a time (``PARTIAL_MULTIPLE_LIMITS`` is refused in
+        ``__post_init__``), so the single native member always names a section 8.2 status directly -- no primary
+        resolution is needed here, unlike the route and DAG receipts.
+        """
+        return self.status.standard_name
+
     def render(self) -> str:
         def _n(v: "int | None") -> str:
             return "UNKNOWN" if v is None else str(v)

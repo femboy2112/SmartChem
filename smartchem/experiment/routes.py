@@ -26,7 +26,7 @@ from ..conditions import ConditionEnvelope
 from ..contracts import Digestible, canonical_digest
 from ..transform_registry import transform_registry_digest
 from ..decompiler_conditions import assembly_conditions
-from ..search import SearchStatus
+from ..search import SearchStatus, primary_standard_status
 from ..structure_descent import capped_scissions
 from .dag import DAGError, SynthesisDAG
 from .step import ExperimentRoute, ExperimentStep
@@ -171,19 +171,41 @@ class RouteSearchReceipt(Digestible):
         return not self.cut_budget_exhausted and not self.result_limit_saturated and not self.depth_limited
 
     @property
-    def status(self) -> SearchStatus:
-        active = [
+    def _active_limits(self) -> "tuple[SearchStatus, ...]":
+        """The individual PARTIAL_* limits that fired -- the single source both ``status`` and
+        ``standard_status`` read, so the native and section 8.2 vocabularies can never disagree on which bit."""
+        return tuple(
             s for fired, s in (
                 (self.cut_budget_exhausted, SearchStatus.PARTIAL_CUT_BUDGET),
                 (self.result_limit_saturated, SearchStatus.PARTIAL_RESULT_LIMIT),
                 (self.depth_limited, SearchStatus.PARTIAL_DEPTH_LIMIT),
             ) if fired
-        ]
+        )
+
+    @property
+    def status(self) -> SearchStatus:
+        active = self._active_limits
         if not active:
             return SearchStatus.COMPLETE_WITHIN_BOUNDS
         if len(active) > 1:
             return SearchStatus.PARTIAL_MULTIPLE_LIMITS
         return active[0]
+
+    @property
+    def standard_status(self) -> str:
+        """This receipt's terminal status in the standard's section 8.2 vocabulary (:data:`STANDARD_8_2_STATUSES`).
+
+        For a single fired limit this is ``status.standard_name``; for several at once it resolves the one primary
+        section 8.2 requires from the recorded limit flags (:func:`primary_standard_status`) -- so a receipt whose
+        native ``status`` is ``PARTIAL_MULTIPLE_LIMITS`` (whose ``standard_name`` is ``None``) still names a single,
+        valid section 8.2 status here.
+        """
+        active = self._active_limits
+        if not active:
+            return "COMPLETE_WITHIN_DECLARED_SPACE"
+        if len(active) == 1:
+            return active[0].standard_name
+        return primary_standard_status(active)
 
     def render(self) -> str:
         def _n(v: "int | None") -> str:
@@ -308,19 +330,41 @@ class DAGSearchReceipt(Digestible):
         return not self.cut_budget_exhausted and not self.result_limit_saturated and not self.depth_limited
 
     @property
-    def status(self) -> SearchStatus:
-        active = [
+    def _active_limits(self) -> "tuple[SearchStatus, ...]":
+        """The individual PARTIAL_* limits that fired -- the single source both ``status`` and
+        ``standard_status`` read, so the native and section 8.2 vocabularies can never disagree on which bit."""
+        return tuple(
             s for fired, s in (
                 (self.cut_budget_exhausted, SearchStatus.PARTIAL_CUT_BUDGET),
                 (self.result_limit_saturated, SearchStatus.PARTIAL_RESULT_LIMIT),
                 (self.depth_limited, SearchStatus.PARTIAL_DEPTH_LIMIT),
             ) if fired
-        ]
+        )
+
+    @property
+    def status(self) -> SearchStatus:
+        active = self._active_limits
         if not active:
             return SearchStatus.COMPLETE_WITHIN_BOUNDS
         if len(active) > 1:
             return SearchStatus.PARTIAL_MULTIPLE_LIMITS
         return active[0]
+
+    @property
+    def standard_status(self) -> str:
+        """This receipt's terminal status in the standard's section 8.2 vocabulary (:data:`STANDARD_8_2_STATUSES`).
+
+        For a single fired limit this is ``status.standard_name``; for several at once it resolves the one primary
+        section 8.2 requires from the recorded limit flags (:func:`primary_standard_status`) -- so a receipt whose
+        native ``status`` is ``PARTIAL_MULTIPLE_LIMITS`` (whose ``standard_name`` is ``None``) still names a single,
+        valid section 8.2 status here.
+        """
+        active = self._active_limits
+        if not active:
+            return "COMPLETE_WITHIN_DECLARED_SPACE"
+        if len(active) == 1:
+            return active[0].standard_name
+        return primary_standard_status(active)
 
     def render(self) -> str:
         def _n(v: "int | None") -> str:

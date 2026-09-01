@@ -24,7 +24,7 @@ from smartchem.decompiler import (
     search_decomposition,
     standard_state_equation,
 )
-from smartchem.search import SearchStatus
+from smartchem.search import STANDARD_8_2_STATUSES, SearchStatus
 from smartchem.transform_registry import transform_registry_digest
 
 H = Formula.bucket("H")
@@ -414,3 +414,40 @@ class TestSection81FormulaReceiptTelemetry:
             FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 0,
                                  SearchStatus.COMPLETE_WITHIN_BOUNDS, "",
                                  candidates_rejected_by_reason=(("duplicate", 0),))
+
+
+class TestSection82FormulaStandardStatus:
+    """Section 8.2: the formula receipt speaks the standard terminal-status vocabulary. The descent stops on
+    exactly one budget at a time (PARTIAL_MULTIPLE_LIMITS is refused), so no primary resolution is needed."""
+
+    def _receipt(self, status, reason):
+        return FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 5000, 3, status, reason)
+
+    def test_complete_maps_to_declared_space(self):
+        rc = FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 5000, 3,
+                                  SearchStatus.COMPLETE_WITHIN_BOUNDS, "")
+        assert rc.standard_status == "COMPLETE_WITHIN_DECLARED_SPACE"
+
+    def test_search_node_budget_maps_to_the_one_8_2_cut_budget_status(self):
+        # the per-node search budget IS 8.2's single cut budget; search_kind FORMULA_DECOMPOSITION (and the
+        # `budget` field) names which knob to raise -- not cut_budget_scope, which is PER_NODE here as on route/DAG.
+        rc = self._receipt(SearchStatus.PARTIAL_SEARCH_BUDGET, "search budget exhausted")
+        assert rc.standard_status == "INCOMPLETE_CUT_BUDGET"
+
+    def test_edge_cap_maps_to_result_limit(self):
+        rc = self._receipt(SearchStatus.PARTIAL_RESULT_LIMIT, "edge cap exceeded")
+        assert rc.standard_status == "INCOMPLETE_RESULT_LIMIT"
+
+    def test_every_reachable_formula_status_is_a_valid_8_2_member(self):
+        for status, reason in (
+            (SearchStatus.COMPLETE_WITHIN_BOUNDS, ""),
+            (SearchStatus.PARTIAL_SEARCH_BUDGET, "budget"),
+            (SearchStatus.PARTIAL_RESULT_LIMIT, "cap"),
+        ):
+            rc = FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 5000, 3, status, reason)
+            assert rc.standard_status in STANDARD_8_2_STATUSES
+            assert rc.standard_status == rc.status.standard_name  # never MULTIPLE here, so always agrees
+
+    def test_a_live_decomposition_receipt_speaks_8_2(self):
+        r = search_decomposition("C8H9NO2", example_inventory())
+        assert r.receipt.standard_status in STANDARD_8_2_STATUSES

@@ -216,7 +216,7 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural (route/DAG) producer now exists too: `recompile_to_ir` (`43dbcb1`) packages `search_routes`/`search_dags` as canonical `ROUTE`/`DAG` candidates over a STRUCTURE-layer identity, with the same presentation-invariant/semantic-sensitive digest (a bound change alters it via `request_digest`; the reagent helper pool is distinguished from plain stock). IR serialization + recompiler consumption of a SERIALIZED artifact, first-class loss records, and registry receipts remain | Serialize/deserialize the IR and have the recompiler consume it; add `IdentityLoss` records (`IR-LOSS-01`) and registry receipts | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
+| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural (route/DAG) producer now exists too: `recompile_to_ir` (`43dbcb1`) packages `search_routes`/`search_dags` as canonical `ROUTE`/`DAG` candidates over a STRUCTURE-layer identity, with the same presentation-invariant/semantic-sensitive digest (a bound change alters it via `request_digest`; the reagent helper pool is distinguished from plain stock). IR (de)serialization now round-trips digest-stably too (`serialize_ir`/`deserialize_ir`, canonical JSON; deserialize re-validates and refuses a tampered payload). The recompiler consuming a serialized artifact END TO END (`IR-INV-01`), first-class loss records, and registry receipts remain | Have the recompiler consume a serialized decompile artifact; add `IdentityLoss` records (`IR-LOSS-01`) and registry receipts | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
 | `IR-LOSS-01` | Formula/structure forgetting is explicit | `--smiles` formula path discards topology without a first-class loss record | Add `IdentityLoss`; downgrade or refuse dependent claims | `CCO` vs `COC` remain distinct as input identities; formula view announces collapse | `ID-LAYER-01` | `TODO` |
 | `IR-INV-01` | Claimed inverse scope is executable | Route compiler cannot construct water from H/O or H2/O2 terminals | Either add an explicit transform that bridges the shared IR or narrow naming/docs | Water fixture succeeds within named transform registry or renders a precise unsupported-transform refusal | `IR-CHEM-01` | `TODO` |
 
@@ -280,6 +280,31 @@ residual limitations (the rest of IR-CHEM-01, unchanged and named):
   3. search is carried as status + receipt digest; registry receipts are absent.
 ```
 
+**Uptake record — ChemicalCompilationIR serialization** (advances `IR-CHEM-01`; the IR is now a transportable
+artifact, not just an in-memory value):
+
+```text
+ID:                  IR-CHEM-01 (serialization)
+commit:              3819f75
+files:               smartchem/compilation_ir.py, smartchem/__init__.py, tests/test_compilation_ir.py
+tests:               tests/test_compilation_ir.py::TestIRSerialization (7 new adversarial items)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2643 passed, 14 skipped, 1 xfailed (baseline 2632; +11 = the IR-serialize + bridge tests).
+                     ruff clean on every changed file; git diff --check clean.
+built:               ir_to_payload / ir_from_payload (JSON-compatible dict, enums by value, tuples as lists) and
+                     serialize_ir / deserialize_ir (canonical sort_keys JSON string).
+falsifier fixture:   deserialize_ir(serialize_ir(ir)).digest == ir.digest for BOTH the formula (decompile) and
+                     structural (recompile) producers -- the round trip is identity. deserialize RE-VALIDATES:
+                     a payload with candidates reversed out of canonical digest order raises "canonical order";
+                     an unknown operation enum value raises. serialize is presentation-invariant (permuted inputs
+                     -> identical string). Type guards on both ends.
+residual limitations:
+  1. Serializes the IR VALUE (target, terminal/request digests, status + receipt digest, candidates); it does not
+     yet embed the full SearchReceipt or the transform/evidence registry receipts (still IR-CHEM-01 residuals).
+  2. The recompiler does not yet CONSUME a serialized decompile artifact end to end (IR-INV-01); this brick is the
+     serialize/deserialize primitive that makes that wiring possible.
+```
+
 ### 3.3 Identity and evidence
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
@@ -312,7 +337,7 @@ residual limitations (the rest of IR-CHEM-01, unchanged and named):
 | `TERM-COM-02` | Disabled/custom commodity inventory is authoritative everywhere | Current linear compile shortcut/termination/shopping respects the active inventory and `commodities=()` regression passes | Preserve through shared terminal/material policy and DAG work | `commodities=()` never uses global catalogue to stop/rank/shop | `TERM-POL-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `FEED-AMT-01` | Identity-only flags never invent quantity | Experimental CLI no longer maps identities to one mole and emits no finite ceiling without feed | Add explicit quantity+unit/assay input and optional symbolic ceiling separately | Identity-only poor-man fixture has no finite ceiling and no crash | `STOCK-01` desirable | `IMPLEMENTED_AND_VERIFIED` |
 | `FEED-ERR-01` | Missing feed cannot abort an otherwise valid dossier | Route dossier now renders without a ceiling when feed is absent | Preserve structured diagnostic in shared response/JSON | Missing commodity amount preserves route dossier and non-internal exit status | `FEED-AMT-01` | `IMPLEMENTED_AND_VERIFIED` |
-| `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | `StockMaterial` + `MaterialComponent` + `FitnessVerdict` exist (`smartchem/experiment/stock.py`, `7d27e3c`): a typed material of components (each a fraction INTERVAL), a phase, and provenance, with a rigorous `satisfies(identity, min_assay)` interval gate (vinegar -> `INSUFFICIENT_ASSAY`, a straddling requirement -> `UNKNOWN_ASSAY`, an unknown fraction never passes). The full section 10.2 schema is now built too (`3ace975`): typed `StockQuantity` (positive-finite value+unit), a `CostObservation` that cannot be constructed unless dated AND sourced (section 10.4, no invented price), plus assay method, container/storage, opened/age, jurisdiction/availability, formulation notes and known impurities -- every field keyword-optional and defaulting to an honest UNKNOWN. Canonical-structure component keying, the `CommodityReagent` bridge, and recompiler/shopping integration remain | Key components by canonical structure; bridge `CommodityReagent` -> `StockMaterial` as an UNKNOWN-assay source lead; wire the gate into route/shopping selection | Vinegar cannot satisfy pure acetic-acid input without assay/preprocessing | `ID-LAYER-01` | `IN_PROGRESS` |
+| `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | `StockMaterial` + `MaterialComponent` + `FitnessVerdict` exist (`smartchem/experiment/stock.py`, `7d27e3c`): a typed material of components (each a fraction INTERVAL), a phase, and provenance, with a rigorous `satisfies(identity, min_assay)` interval gate (vinegar -> `INSUFFICIENT_ASSAY`, a straddling requirement -> `UNKNOWN_ASSAY`, an unknown fraction never passes). The full section 10.2 schema is now built too (`3ace975`): typed `StockQuantity` (positive-finite value+unit), a `CostObservation` that cannot be constructed unless dated AND sourced (section 10.4, no invented price), plus assay method, container/storage, opened/age, jurisdiction/availability, formulation notes and known impurities -- every field keyword-optional and defaulting to an honest UNKNOWN. The `CommodityReagent` -> `StockMaterial` source-lead bridge is now built too (`stock_material_from_commodity`, §10.1): a commodity maps to an UNKNOWN-fraction, phase-UNKNOWN material so it can never silently satisfy a pure requirement. Canonical-structure component keying and recompiler/shopping integration remain | Key components by canonical structure; wire the gate into route/shopping selection | Vinegar cannot satisfy pure acetic-acid input without assay/preprocessing | `ID-LAYER-01` | `IN_PROGRESS` |
 | `SHOP-LEAF-02` | Shopping list is external, quantity-aware route input | Linear external-leaf identity logic is implemented and tested; quantities, DAG fan-out and purchased supplements are absent | Extend across DAGs, purchased supplements and quantity | Internally produced acid is absent now; purchased deficits must later include amount/unknown | `DAG-FLOW-01`, `STOCK-01` | `IN_PROGRESS` |
 
 **Uptake record — StockMaterial first brick** (advances `STOCK-01` TODO -> IN_PROGRESS):
@@ -367,6 +392,32 @@ residual limitations:
      field was deliberately NOT added as a hollow null (it would churn every digest for no honesty gain).
   2. Still not wired into recompiler / shopping / affordability, and no CommodityReagent -> StockMaterial bridge
      yet -- the next two bricks (SHOP-LEAF-02, COST-VEC-01, and the source-lead bridge).
+```
+
+**Uptake record — CommodityReagent -> StockMaterial source-lead bridge** (advances `STOCK-01`; enforces the
+section 10.1 rule that a commodity match is a lead, not a proven material):
+
+```text
+ID:                  STOCK-01 (commodity bridge)
+commit:              92a80a0
+files:               smartchem/experiment/stock.py, smartchem/experiment/__init__.py, tests/test_stock.py
+tests:               tests/test_stock.py::TestCommodityBridge (4 new adversarial items)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2643 passed, 14 skipped, 1 xfailed (baseline 2632; +11 = the bridge + IR-serialize tests).
+                     ruff clean on every changed file; git diff --check clean.
+built:               stock_material_from_commodity(CommodityReagent) -> StockMaterial: the commodity identity
+                     becomes ONE component of UNKNOWN fraction [0,1] in a phase-UNKNOWN material, with the
+                     everyday-source note carried as provenance/formulation and explicitly labelled a curated
+                     editorial obtainability judgment, not an assay.
+falsifier fixture:   stock_material_from_commodity(<acetic acid commodity>).satisfies("acetic acid",
+                     min_assay=0.99) -> UNKNOWN_ASSAY (and min_assay=0.50 -> UNKNOWN_ASSAY) -- a commodity match
+                     NEVER stands in for a proven pure material (section 10.1); quantity and cost stay None
+                     (UNKNOWN), never invented from the commodity record. Works on the real COMMODITY_REAGENTS
+                     registry; rejects a non-CommodityReagent.
+residual limitations:
+  1. Still keyed by the commodity name string (canonical-structure keying is ID-LAYER-01).
+  2. Not yet consumed by the shopping list / affordability ranking (SHOP-LEAF-02, COST-VEC-01, blocked on the
+     DAG quantity-flow accounting DAG-FLOW-01).
 ```
 
 ### 3.6 Readiness and safety

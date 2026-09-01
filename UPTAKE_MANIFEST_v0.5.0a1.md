@@ -216,7 +216,7 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural producer, IR serialization + recompiler consumption, first-class loss records, and registry receipts remain | Add the structural (route/DAG) producer; serialize/deserialize the IR and have the recompiler consume it; add `IdentityLoss` records (`IR-LOSS-01`) and registry receipts | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
+| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural (route/DAG) producer now exists too: `recompile_to_ir` (`43dbcb1`) packages `search_routes`/`search_dags` as canonical `ROUTE`/`DAG` candidates over a STRUCTURE-layer identity, with the same presentation-invariant/semantic-sensitive digest (a bound change alters it via `request_digest`; the reagent helper pool is distinguished from plain stock). IR serialization + recompiler consumption of a SERIALIZED artifact, first-class loss records, and registry receipts remain | Serialize/deserialize the IR and have the recompiler consume it; add `IdentityLoss` records (`IR-LOSS-01`) and registry receipts | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
 | `IR-LOSS-01` | Formula/structure forgetting is explicit | `--smiles` formula path discards topology without a first-class loss record | Add `IdentityLoss`; downgrade or refuse dependent claims | `CCO` vs `COC` remain distinct as input identities; formula view announces collapse | `ID-LAYER-01` | `TODO` |
 | `IR-INV-01` | Claimed inverse scope is executable | Route compiler cannot construct water from H/O or H2/O2 terminals | Either add an explicit transform that bridges the shared IR or narrow naming/docs | Water fixture succeeds within named transform registry or renders a precise unsupported-transform refusal | `IR-CHEM-01` | `TODO` |
 
@@ -243,6 +243,41 @@ residual limitations (the rest of IR-CHEM-01, named in code and its row):
   3. identity_losses is empty: formula decompile forgets topology, but first-class IdentityLoss records need
      ID-LAYER-01 (IR-LOSS-01, TODO). ChemicalIdentity is a layer TAG, not the full section 5.1 identity model.
   4. search is carried as status + receipt digest, not the full embedded receipt; registry receipts are absent.
+```
+
+**Uptake record — ChemicalCompilationIR structural producer** (advances `IR-CHEM-01`; the recompiler now emits
+the same shared artifact the decompiler does):
+
+```text
+ID:                  IR-CHEM-01 (structural producer)
+commit:              43dbcb1
+files:               smartchem/compilation_ir.py, smartchem/__init__.py, tests/test_compilation_ir.py
+tests:               tests/test_compilation_ir.py::TestRecompileToIR (12 new adversarial items)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2632 passed, 14 skipped, 1 xfailed (with the depth-fix + stock bricks on the tree). ruff
+                     clean on every changed file; git diff --check clean.
+built:               recompile_to_ir (mode='routes'|'dags') packaging search_routes/search_dags as canonical
+                     digest-sorted ROUTE/DAG CandidateSummary values; ChemicalIdentity.of_molecule (STRUCTURE
+                     layer, byte-congruent with the pipeline's _ident); a structural terminal-policy digest
+                     (frozenset of the on-hand identities) and a request_digest that also distinguishes the
+                     reagent helper pool from plain stock.
+falsifier fixture:   permuting reagents/available does NOT change ir.digest (frozenset terminal + digest-sorted
+                     candidates); a cut_budget change DOES change request_digest (hence ir.digest) while the
+                     candidate set is byte-identical; PARA vs its O-acetyl isomer (same formula C8H9NO2) get
+                     distinct target identity_digests and distinct IRs (section 5.4); a depth-1 recompile reports
+                     PARTIAL_DEPTH_LIMIT + a diagnostic, never a laundered COMPLETE (the SRCH-DEPTH-01 regression
+                     at the IR layer); a target already in terminal stock yields 0 candidates + an explicit
+                     "no synthesis is required" diagnostic.
+adversarial review:  an independent red-team (evil-morty) attacked presentation-invariance, semantic-sensitivity,
+                     the reagent-pool/terminal-set distinction, isomer distinctness, and no-silent-laundering.
+                     Four survived; the fifth (depth laundering) was a real defect in the search layer beneath,
+                     now fixed as SRCH-DEPTH-01 and regression-pinned here.
+residual limitations (the rest of IR-CHEM-01, unchanged and named):
+  1. Still an in-memory value: serialize/deserialize + the recompiler consuming a SERIALIZED artifact (IR-INV-01,
+     water-from-buckets) is the next brick.
+  2. identity_losses is empty for the structural path too (assembly forgets nothing at the structure layer);
+     first-class IdentityLoss records are IR-LOSS-01 (gated on ID-LAYER-01).
+  3. search is carried as status + receipt digest; registry receipts are absent.
 ```
 
 ### 3.3 Identity and evidence

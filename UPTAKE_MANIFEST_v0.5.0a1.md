@@ -95,6 +95,7 @@ They passed focused regressions and the final full suite; none implies release c
 | `SRCH-CAP-01` | Route/DAG result-cap saturation is visible | Linear and DAG result-cap saturation are both receipt-visible and tested (`4a958b8`); DAG saturation is conservative — a cap equal to the true distinct count flags `PARTIAL_RESULT_LIMIT`, never a false complete | Add shared JSON exposure of the saturation flag | Low linear and DAG result caps are partial; caps above fixture count are complete | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `SRCH-NO-01` | No-route wording distinguishes complete from incomplete | Linear human output distinguishes partial absence, and DAG `search_dags` distinguishes complete-empty from incomplete-empty at the receipt level (`4a958b8`); the formula receipt reports partial-vs-complete too (though a formula graph always has edges, so it has no empty-candidate no-route case). No human/JSON renderer surfaces the four-outcome matrix uniformly yet | Implement the four-outcome matrix in the shared response and all renderers | Empty incomplete -> `INCOMPLETE_NO_ROUTE_OBSERVED`; empty complete -> `NO_ROUTE_IN_DECLARED_SPACE` everywhere | `SRCH-RCT-01` | `IN_PROGRESS` |
 | `SRCH-BUD-01` | Budget scope is accurately named | All three receipts name their budget scope: linear/DAG say cut budget per expansion; the formula receipt names its per-node search-node budget and whole-graph edge cap distinctly (`PARTIAL_SEARCH_BUDGET` vs `PARTIAL_RESULT_LIMIT`, `454d2a0`) | Keep the named scopes when the receipts fold into a shared response | Every receipt says `PER_NODE`/per-expansion or enforces one global counter | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
+| `SRCH-DEPTH-01` | A depth-limited search is never laundered into a complete one | A route/DAG search that cut an expandable branch at the `max_depth` bound reported `COMPLETE_WITHIN_BOUNDS` with no diagnostic; a depth-1 "complete" hid routes that provably exist at depth 2+. Fixed (`ba69169`): `SearchStatus.PARTIAL_DEPTH_LIMIT` (this codebase's name for the standard's `INCOMPLETE_DEPTH_LIMIT`, section 8.2) plus a `depth_truncated_branches` counter on both receipts, folded into `status`/`complete_within_bounds`. A >=2-missing linear branch stays a grammar boundary (not depth); a node with no cleavages stays genuinely complete | Carry the depth-limit signal into the future shared response/JSON and the four-outcome renderer | Lowering `max_depth` below a fixture's true route depth reports `PARTIAL_DEPTH_LIMIT`, never a complete/no-route | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `SRCH-DIG-01` | Equivalent inventory order has equal request/result digest | Formula inventory is now canonicalized/deduplicated and permutation-tested; shared request identity does not exist | Extend canonical set/multiset inputs to structural/material request IR | Formula permutations match now; future request/result digests also match | Shared request IR | `IN_PROGRESS` |
 
 **Uptake record — DAG search receipt** (closes `SRCH-RCT-02`, `SRCH-CAP-01` for the DAG path; advances
@@ -113,6 +114,10 @@ falsifier fixture:   search_dags(PARA, reagents=(WATER,), max_depth=1, cut_budge
                      certified no-route); the SAME query at full budget -> status COMPLETE_WITHIN_BOUNDS, so
                      only the receipt tells the two empties apart. search_dags(ETAC, DAG_REAGENTS, max_depth=2,
                      max_dags=5) -> PARTIAL_RESULT_LIMIT; max_dags=5000 -> COMPLETE_WITHIN_BOUNDS (47 DAGs).
+                     SUPERSEDED by SRCH-DEPTH-01 (ba69169): the "full budget -> COMPLETE" and the "max_dags=5000
+                     -> COMPLETE" claims held only while depth truncation was unreported. Both fixtures are in
+                     fact depth-limited, so they now honestly report PARTIAL_DEPTH_LIMIT / PARTIAL_MULTIPLE_LIMITS;
+                     the cut-budget vs depth flags still tell the two empties apart. See the SRCH-DEPTH-01 block.
 human-output check:  none new -- no production human/JSON path consumes the DAG search yet (only search_routes
                      reaches the CLI). The receipt makes the truth available to the future shared renderer.
 JSON/schema check:   n/a -- shared JSON response is CLI-JSON-01 (TODO). DAGSearchReceipt/DAGSearchResult are
@@ -166,6 +171,45 @@ residual limitations:
      generative intermediates (OPEN-SEARCH-01, DEFERRED).
   2. The three receipts share a vocabulary but are not yet one response object (SRCH-NO-01 renderer / CLI-JSON-01
      still open); the formula path has no empty-candidate no-route case (a formula graph always has edges).
+```
+
+**Uptake record — depth-limit truncation status** (closes `SRCH-DEPTH-01`; found by an adversarial red-team of
+`recompile_to_ir`):
+
+```text
+ID:                  SRCH-DEPTH-01
+commit:              ba69169
+files:               smartchem/search.py, smartchem/experiment/routes.py, tests/test_routes.py, tests/test_cli.py
+tests:               tests/test_routes.py (test_depth_truncation_is_reported_not_laundered_into_complete + the
+                     corrected rich-api/cap/no-route assertions); tests/test_compilation_ir.py
+                     (test_depth_truncation_is_never_laundered_to_complete_in_the_ir, in the recompile brick)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2632 passed, 14 skipped, 1 xfailed (with the recompile + stock bricks on the tree). ruff
+                     clean on every changed file; git diff --check clean.
+defect:              search_routes/search_dags dropped a branch when depth == max_depth with a still-missing
+                     precursor, and NO counter recorded it. The SearchStatus enum had no depth member, so a
+                     depth-truncated search reported COMPLETE_WITHIN_BOUNDS with empty diagnostics. Confirmed
+                     repro: recompile_to_ir(PARA, reagents=(WATER,ACOH,ANH), available=(AMP,), max_depth=d) returns
+                     2/5/9 route candidates at d=1/2/3, yet every one reported COMPLETE -- routes existed one bound
+                     away and vanished silently (standard section 8.2 mandates a distinct INCOMPLETE_DEPTH_LIMIT).
+fix:                 SearchStatus.PARTIAL_DEPTH_LIMIT + depth_truncated_branches:int on RouteSearchReceipt and
+                     DAGSearchReceipt (trailing default 0, so existing positional constructions are unchanged),
+                     folded into status/complete_within_bounds. A linear >=2-missing branch is a GRAMMAR boundary
+                     (search_dags' job), not depth, so it is not counted; a node with no cleavages stays complete.
+falsifier fixture:   search_routes(PARA, reagents=(WATER,ACOH,ANH), available=(AMP,), max_depth=1).receipt.status
+                     is PARTIAL_DEPTH_LIMIT with depth_truncated_branches>0; at max_depth=3 it is
+                     COMPLETE_WITHIN_BOUNDS with depth_truncated_branches==0 and strictly more routes. The
+                     acetic-anhydride elemental no-route is PARTIAL_DEPTH_LIMIT at --max-depth 1 (a route may exist
+                     deeper) and a genuine COMPLETE no-route at --max-depth 2 (nothing left to expand).
+human-output check:  the experiment CLI receipt render and exit codes key off complete_within_bounds, so a
+                     depth-truncated search with candidates now exits 4 (partial), and its render names
+                     PARTIAL_DEPTH_LIMIT / PARTIAL_MULTIPLE_LIMITS -- never a false COMPLETE. Pinned by the
+                     corrected test_cli tests.
+residual limitations:
+  1. depth_truncated_branches is CONSERVATIVE like the result cap: it fires whenever an expandable branch is cut
+     by depth, even if that branch would have dead-ended deeper -- it errs toward "there may be more", never a
+     false COMPLETE.
+  2. Not yet in a shared JSON response (CLI-JSON-01) or the four-outcome renderer (SRCH-NO-01), both still open.
 ```
 
 ### 3.2 Decompiler/recompiler unity

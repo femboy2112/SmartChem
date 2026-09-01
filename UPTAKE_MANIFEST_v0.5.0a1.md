@@ -96,7 +96,7 @@ They passed focused regressions and the final full suite; none implies release c
 | `SRCH-NO-01` | No-route wording distinguishes complete from incomplete | Linear human output distinguishes partial absence, and DAG `search_dags` distinguishes complete-empty from incomplete-empty at the receipt level (`4a958b8`); the formula receipt reports partial-vs-complete too (though a formula graph always has edges, so it has no empty-candidate no-route case). No human/JSON renderer surfaces the four-outcome matrix uniformly yet | Implement the four-outcome matrix in the shared response and all renderers | Empty incomplete -> `INCOMPLETE_NO_ROUTE_OBSERVED`; empty complete -> `NO_ROUTE_IN_DECLARED_SPACE` everywhere | `SRCH-RCT-01` | `IN_PROGRESS` |
 | `SRCH-BUD-01` | Budget scope is accurately named | All three receipts name their budget scope: linear/DAG say cut budget per expansion; the formula receipt names its per-node search-node budget and whole-graph edge cap distinctly (`PARTIAL_SEARCH_BUDGET` vs `PARTIAL_RESULT_LIMIT`, `454d2a0`) | Keep the named scopes when the receipts fold into a shared response | Every receipt says `PER_NODE`/per-expansion or enforces one global counter | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `SRCH-DEPTH-01` | A depth-limited search is never laundered into a complete one | A route/DAG search that cut an expandable branch at the `max_depth` bound reported `COMPLETE_WITHIN_BOUNDS` with no diagnostic; a depth-1 "complete" hid routes that provably exist at depth 2+. Fixed (`ba69169`): `SearchStatus.PARTIAL_DEPTH_LIMIT` (this codebase's name for the standard's `INCOMPLETE_DEPTH_LIMIT`, section 8.2) plus a `depth_truncated_branches` counter on both receipts, folded into `status`/`complete_within_bounds`. A >=2-missing linear branch stays a grammar boundary (not depth); a node with no cleavages stays genuinely complete | Carry the depth-limit signal into the future shared response/JSON and the four-outcome renderer | Lowering `max_depth` below a fixture's true route depth reports `PARTIAL_DEPTH_LIMIT`, never a complete/no-route | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
-| `SRCH-RCT-8.1` | The search receipt carries the full section 8.1 engine counters | `RouteSearchReceipt` now records the section 8.1 telemetry (`2e4fbea`, schema -> v1alpha2): `nodes_visited`, `transforms_considered`, `candidates_emitted`, `candidates_rejected_by_reason{}` (sorted (reason,count): `duplicate`/`result_limit`), `search_kind`/`cut_budget_scope`, and derived `cut_enumeration_complete`/`candidate_enumeration_complete`. `search_routes` instruments them; every counter is a real measurement or explicit UNKNOWN (None), never a silent zero (section 8.1 "null, not zero"). The invariant `candidates_emitted == results_returned + sum(rejected)` is enforced and caught a real double-counting bug in the same change. **All three receipts now carry the counters** (`dc9bd21`: DAGSearchReceipt + FormulaSearchReceipt, schemas v1alpha2, the route/DAG validation shared, the formula receipt formula-shaped with its own). Remaining: the three identity digests (target/terminal/transform-registry -- transform-registry has a layering wrinkle) and the section 8.2 status-vocabulary reconciliation | Add the identity digests (relocate the registry descriptors to a shared leaf first); reconcile section 8.2 status names | A real search on all three engines reports honest counters with the emitted==results+rejected (route/DAG) and transforms>=edges (formula) invariants; an in-stock target records genuine zeros; a hand-built receipt reports UNKNOWN not zero | `SRCH-RCT-01` (done) | `IN_PROGRESS` |
+| `SRCH-RCT-8.1` | The search receipt carries the full section 8.1 engine counters | `RouteSearchReceipt` now records the section 8.1 telemetry (`2e4fbea`, schema -> v1alpha2): `nodes_visited`, `transforms_considered`, `candidates_emitted`, `candidates_rejected_by_reason{}` (sorted (reason,count): `duplicate`/`result_limit`), `search_kind`/`cut_budget_scope`, and derived `cut_enumeration_complete`/`candidate_enumeration_complete`. `search_routes` instruments them; every counter is a real measurement or explicit UNKNOWN (None), never a silent zero (section 8.1 "null, not zero"). The invariant `candidates_emitted == results_returned + sum(rejected)` is enforced and caught a real double-counting bug in the same change. **All three receipts now carry the counters** (`dc9bd21`) **and the three section 8.1 identity digests** (`453331a`: target/terminal/transform-registry, schemas v1alpha3; the transform-registry layering wrinkle resolved by a shared leaf `smartchem/transform_registry.py` so receipts and the IR stamp the SAME registry digest). Only the section 8.2 status-vocabulary reconciliation remains | Reconcile this engine's status names (COMPLETE_WITHIN_BOUNDS/PARTIAL_*) with section 8.2's (COMPLETE_WITHIN_DECLARED_SPACE/INCOMPLETE_*) | All three engines report honest counters (emitted==results+rejected; transforms>=edges) AND name their target/terminal/transform-registry, with the receipt and IR registry digests agreeing cross-layer | `SRCH-RCT-01` (done) | `IN_PROGRESS` |
 | `SRCH-DIG-01` | Equivalent inventory order has equal request/result digest | Formula inventory is now canonicalized/deduplicated and permutation-tested; shared request identity does not exist | Extend canonical set/multiset inputs to structural/material request IR | Formula permutations match now; future request/result digests also match | Shared request IR | `IN_PROGRESS` |
 
 **Uptake record — DAG search receipt** (closes `SRCH-RCT-02`, `SRCH-CAP-01` for the DAG path; advances
@@ -294,6 +294,40 @@ residual limitations (the remaining SRCH-RCT-8.1 sub-bricks):
      (search layer cannot import the IR layer) needs the registry descriptors relocated to a shared leaf first.
   2. The receipts' status vocabulary is still this engine's (COMPLETE_WITHIN_BOUNDS/PARTIAL_*), not section 8.2's;
      reconciling the names is the last sub-brick.
+```
+
+**Uptake record — section 8.1 identity digests + shared transform-registry leaf** (advances `SRCH-RCT-8.1`;
+sub-brick 3 -- every receipt now names WHAT it searched):
+
+```text
+ID:                  SRCH-RCT-8.1 (identity digests)
+commit:              453331a
+files:               smartchem/transform_registry.py (new), smartchem/compilation_ir.py, smartchem/decompiler.py,
+                     smartchem/experiment/routes.py, tests/test_routes.py, tests/test_decompiler.py,
+                     tests/test_compilation_ir.py
+tests:               tests/test_routes.py::TestSection81IdentityDigests (6) + formula digest items (2) + the
+                     relocated registry test (test_compilation_ir.py::TestTransformRegistryDigest) -- 12 new/moved
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2692 passed, 14 skipped, 1 xfailed (the full run was 2690 + 2 stale v1alpha2 assertions this
+                     session had written in sub-bricks 1-2, which the run flagged; fixed to v1alpha3 and confirmed,
+                     no shipped code changed since). ruff clean; git diff --check clean.
+built:               all three receipts (RouteSearchReceipt/DAGSearchReceipt/FormulaSearchReceipt, schemas
+                     v1alpha3) gain target_identity_digest, terminal_policy_digest, transform_registry_digest,
+                     populated by search_routes/search_dags/search_decomposition (UNKNOWN None when a receipt is
+                     hand-built; a genuine value even for an in-stock/trivial termination). RESOLVES THE LAYERING
+                     WRINKLE: the transform-registry identity moved to a new shared leaf
+                     smartchem/transform_registry.py (below both the search and IR layers), imported by both, so
+                     the receipts and the IR stamp the SAME registry digest. compilation_ir re-exports
+                     transform_registry_digest under its historical private name; the monkeypatch test targets the
+                     shared dict.
+falsifier fixture:   recompile_to_ir(...).transform_registry_digest == search_routes(...).receipt
+                     .transform_registry_digest (cross-layer agreement -- the relocation's payoff). Each receipt's
+                     transform_registry_digest == transform_registry_digest(<its kind>). terminal_policy_digest
+                     changes when the on-hand set changes. Every schema ends v1alpha3; an empty identity digest is
+                     refused on all three receipts.
+residual limitations (the last SRCH-RCT-8.1 sub-brick):
+  1. The receipts' status vocabulary is still this engine's (COMPLETE_WITHIN_BOUNDS/PARTIAL_*), not section 8.2's
+     (COMPLETE_WITHIN_DECLARED_SPACE/INCOMPLETE_*); reconciling the two names is sub-brick 4, the last one.
 ```
 
 ### 3.2 Decompiler/recompiler unity

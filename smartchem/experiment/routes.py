@@ -42,7 +42,7 @@ __all__ = [
     "enumerate_dags",
 ]
 
-ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/route-search-receipt-v1alpha1"
+ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/route-search-receipt-v1alpha2"
 ROUTE_SEARCH_RESULT_SCHEMA = "smartchem.experiment/route-search-result-v1alpha2"
 DAG_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/dag-search-receipt-v1alpha1"
 DAG_SEARCH_RESULT_SCHEMA = "smartchem.experiment/dag-search-result-v1alpha1"
@@ -67,6 +67,17 @@ class RouteSearchReceipt(Digestible):
     # a linear-expandable branch (exactly one missing precursor) cut solely because the recursion hit max_depth;
     # trailing default keeps the first-brick positional constructions valid. See SearchStatus.PARTIAL_DEPTH_LIMIT.
     depth_truncated_branches: int = 0
+    # -- section 8.1 telemetry (added v1alpha2). Every field below has a default so a search that does not measure
+    # it reports it honestly as UNKNOWN (None) / empty, per section 8.1's "null, not zero" rule; search_routes
+    # populates them with real counts. search_kind/cut_budget_scope are constants for a linear route search.
+    search_kind: str = "LINEAR_ROUTE"
+    cut_budget_scope: str = "PER_NODE"          # this engine caps candidates per expansion node, not globally
+    nodes_visited: "int | None" = None          # routes_making entries (incl. depth-pruned) -- the search tree size
+    transforms_considered: "int | None" = None  # capped-scission steps examined across all expansions
+    candidates_emitted: "int | None" = None      # routes yielded BEFORE dedup/cap (>= results_returned)
+    candidates_rejected_by_reason: tuple[tuple[str, int], ...] = ()  # sorted (reason, positive count) pairs
+
+    _CUT_BUDGET_SCOPES = ("PER_NODE", "GLOBAL")
 
     def __post_init__(self) -> None:
         if self.schema_version != ROUTE_SEARCH_RECEIPT_SCHEMA:
@@ -85,6 +96,50 @@ class RouteSearchReceipt(Digestible):
             raise ValueError("incomplete_expansions cannot exceed expansions_attempted")
         if self.results_returned > self.result_limit:
             raise ValueError("results_returned cannot exceed result_limit")
+        self._validate_section_8_1_telemetry()
+
+    def _validate_section_8_1_telemetry(self) -> None:
+        if not isinstance(self.search_kind, str) or not self.search_kind:
+            raise ValueError("search_kind must be a non-empty string")
+        if self.cut_budget_scope not in self._CUT_BUDGET_SCOPES:
+            raise ValueError(f"cut_budget_scope must be one of {self._CUT_BUDGET_SCOPES}")
+        # counters are UNKNOWN (None) or a non-negative int -- never a silent zero standing in for "not measured"
+        for name in ("nodes_visited", "transforms_considered", "candidates_emitted"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError(f"{name} must be None (UNKNOWN) or a non-negative integer")
+        if self.nodes_visited is not None and self.nodes_visited < self.expansions_attempted:
+            raise ValueError("nodes_visited cannot be fewer than expansions_attempted")
+        if self.candidates_emitted is not None and self.candidates_emitted < self.results_returned:
+            raise ValueError("candidates_emitted cannot be fewer than results_returned (emitted includes dups/cap)")
+        seen_reasons: set[str] = set()
+        prev: "str | None" = None
+        if type(self.candidates_rejected_by_reason) is not tuple:
+            raise TypeError("candidates_rejected_by_reason must be a tuple of (reason, count) pairs")
+        for pair in self.candidates_rejected_by_reason:
+            if type(pair) is not tuple or len(pair) != 2:
+                raise TypeError("each candidates_rejected_by_reason entry must be a (reason, count) pair")
+            reason, count = pair
+            if not isinstance(reason, str) or not reason:
+                raise ValueError("a rejection reason must be a non-empty string")
+            if type(count) is not int or count <= 0:
+                raise ValueError(f"rejection count for {reason!r} must be a positive int (drop zero-count reasons)")
+            if reason in seen_reasons:
+                raise ValueError(f"rejection reason {reason!r} appears twice; reasons must be distinct")
+            if prev is not None and reason < prev:
+                raise ValueError("candidates_rejected_by_reason must be sorted by reason (canonical order)")
+            seen_reasons.add(reason)
+            prev = reason
+
+    @property
+    def cut_enumeration_complete(self) -> bool:
+        """Section 8.1: whether the per-node cut budget fully enumerated every node's candidates."""
+        return not self.cut_budget_exhausted
+
+    @property
+    def candidate_enumeration_complete(self) -> bool:
+        """Section 8.1: whether candidate enumeration finished (no depth truncation and no result-cap stop)."""
+        return not self.depth_limited and not self.result_limit_saturated
 
     @property
     def cut_budget_exhausted(self) -> bool:
@@ -115,12 +170,16 @@ class RouteSearchReceipt(Digestible):
         return active[0]
 
     def render(self) -> str:
+        def _n(v: "int | None") -> str:
+            return "UNKNOWN" if v is None else str(v)
+        rejected = ", ".join(f"{r}={c}" for r, c in self.candidates_rejected_by_reason) or "none"
         return (
-            f"SEARCH RECEIPT: {self.status.value}; results={self.results_returned}/{self.result_limit}; "
-            f"depth<={self.max_depth}; expansions={self.expansions_attempted}; "
-            f"incomplete cut expansions={self.incomplete_expansions}; "
+            f"SEARCH RECEIPT ({self.search_kind}): {self.status.value}; results={self.results_returned}/{self.result_limit}; "
+            f"depth<={self.max_depth}; nodes visited={_n(self.nodes_visited)}; expansions={self.expansions_attempted}; "
+            f"transforms considered={_n(self.transforms_considered)}; candidates emitted={_n(self.candidates_emitted)}; "
+            f"rejected[{rejected}]; incomplete cut expansions={self.incomplete_expansions}; "
             f"depth-truncated branches={self.depth_truncated_branches}; "
-            f"cut budget={self.cut_budget_per_expansion} candidates per expansion. "
+            f"cut budget={self.cut_budget_per_expansion} candidates per expansion ({self.cut_budget_scope}). "
             "Scope: linear acyclic routes in the current capped-scission rewrite grammar; not all chemistry."
         )
 
@@ -308,6 +367,8 @@ def search_routes(
             raise ValueError(f"{name} must be a positive integer")
     on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
     if _ident(target) in on_hand:
+        # the search DID run and terminated immediately: the counters are a genuine measurement of zero
+        # (0 nodes expanded, 0 transforms, 0 candidates), not UNKNOWN.
         receipt = RouteSearchReceipt(
             ROUTE_SEARCH_RECEIPT_SCHEMA,
             max_depth,
@@ -317,6 +378,9 @@ def search_routes(
             0,
             False,
             0,
+            nodes_visited=0,
+            transforms_considered=0,
+            candidates_emitted=0,
         )
         return RouteSearchResult(ROUTE_SEARCH_RESULT_SCHEMA, (), receipt, True)
     seen_routes: dict[str, ExperimentRoute] = {}
@@ -324,9 +388,16 @@ def search_routes(
     incomplete_expansions = 0
     depth_truncated = 0
     result_limit_saturated = False
+    # section 8.1 telemetry counters
+    nodes_visited = 0
+    transforms_considered = 0
+    candidates_emitted = 0
+    rejected: dict[str, int] = {}
 
     def routes_making(t: Molecule, depth: int, ancestors: frozenset[str]):
         nonlocal expansions_attempted, incomplete_expansions, depth_truncated
+        nonlocal nodes_visited, transforms_considered
+        nodes_visited += 1  # this node was visited even if the depth guard turns it back
         if depth > max_depth:
             return
         expansions_attempted += 1
@@ -334,6 +405,7 @@ def search_routes(
         if not complete:
             incomplete_expansions += 1
         for cs in cleavages:
+            transforms_considered += 1
             step = ExperimentStep.from_capped_scission(cs, envelope=_conditions_for(cs))
             # distinct precursors this step consumes, minus what is already on hand
             distinct: dict[str, Molecule] = {}
@@ -352,11 +424,17 @@ def search_routes(
                 # branch is a LINEAR-grammar boundary (search_dags' job), not a depth limit, so it is not counted.
                 depth_truncated += 1
 
+    # candidates_emitted counts the COMPLETE routes the generator emits to be collected (one per pull), NOT the
+    # intermediate partial assemblies inside the recursion -- so the honest invariant holds:
+    #   candidates_emitted == results_returned + sum(candidates_rejected_by_reason).
     for route in routes_making(target, 1, frozenset()):
+        candidates_emitted += 1
         if route.digest in seen_routes:
+            rejected["duplicate"] = rejected.get("duplicate", 0) + 1
             continue
         if len(seen_routes) == max_routes:
             result_limit_saturated = True
+            rejected["result_limit"] = rejected.get("result_limit", 0) + 1
             break
         seen_routes[route.digest] = route
     routes = tuple(seen_routes.values())
@@ -370,6 +448,10 @@ def search_routes(
         result_limit_saturated,
         len(routes),
         depth_truncated,
+        nodes_visited=nodes_visited,
+        transforms_considered=transforms_considered,
+        candidates_emitted=candidates_emitted,
+        candidates_rejected_by_reason=tuple(sorted(rejected.items())),
     )
     return RouteSearchResult(ROUTE_SEARCH_RESULT_SCHEMA, routes, receipt, False)
 

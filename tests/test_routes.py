@@ -11,8 +11,10 @@ from smartchem.experiment.drafter import rank_routes
 from smartchem.experiment.routes import (
     DAG_SEARCH_RECEIPT_SCHEMA,
     DAG_SEARCH_RESULT_SCHEMA,
+    ROUTE_SEARCH_RECEIPT_SCHEMA,
     DAGSearchReceipt,
     DAGSearchResult,
+    RouteSearchReceipt,
     SearchStatus,
     enumerate_dags,
     enumerate_routes,
@@ -350,3 +352,75 @@ class TestCLI:
         from smartchem.experiment.cli import main
         assert main(["not-a-smiles-@@@", "--offline"]) == 2
         assert "could not parse" in capsys.readouterr().err
+
+
+class TestSection81RouteReceiptTelemetry:
+    """RouteSearchReceipt now carries the section 8.1 engine counters, instrumented honestly by search_routes.
+
+    The whole point of section 8.1 is that an audit can see HOW MUCH search actually happened; the counters are
+    real measurements or an explicit UNKNOWN (None), never a silent zero standing in for "not measured".
+    """
+
+    def test_a_real_search_populates_the_counters_with_honest_measurements(self):
+        r = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=3)
+        rc = r.receipt
+        assert rc.search_kind == "LINEAR_ROUTE" and rc.cut_budget_scope == "PER_NODE"
+        assert rc.nodes_visited is not None and rc.transforms_considered is not None
+        assert rc.nodes_visited >= rc.expansions_attempted          # a visited node may be depth-turned-back
+        assert rc.transforms_considered > 0                          # scissions were actually examined
+        assert rc.candidates_emitted >= rc.results_returned          # emitted counts pre-dedup/cap
+        assert rc.cut_enumeration_complete and rc.candidate_enumeration_complete  # a clean COMPLETE search
+
+    def test_the_result_cap_is_recorded_as_a_rejection_reason_and_incompleteness(self):
+        r = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=3, max_routes=2)
+        rc = r.receipt
+        reasons = dict(rc.candidates_rejected_by_reason)
+        assert reasons.get("result_limit", 0) >= 1
+        assert rc.status is SearchStatus.PARTIAL_RESULT_LIMIT
+        assert rc.candidate_enumeration_complete is False           # the cap stopped enumeration -- honestly flagged
+
+    def test_duplicate_routes_are_counted_as_a_rejection_reason(self):
+        r = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=3)
+        reasons = dict(r.receipt.candidates_rejected_by_reason)
+        # the same route reachable by more than one enumeration order is deduped, and the dedup is COUNTED
+        assert reasons.get("duplicate", 0) >= 1
+        assert r.receipt.candidates_emitted == r.receipt.results_returned + sum(reasons.values())
+
+    def test_an_in_stock_target_records_genuine_zero_counters_not_unknown(self):
+        r = search_routes(PARA, reagents=(WATER,), available=(PARA,), max_depth=1)
+        rc = r.receipt
+        assert r.target_in_terminal_stock
+        # the search DID run and terminated at once: 0 is a measurement, not UNKNOWN
+        assert rc.nodes_visited == 0 and rc.transforms_considered == 0 and rc.candidates_emitted == 0
+        assert rc.candidates_rejected_by_reason == ()
+
+    def test_an_exhaustive_dead_end_records_the_work_it_did(self):
+        # water from H2/O2 -- visited the node, examined no valid scission, emitted nothing, but COMPLETE
+        r = search_routes(WATER, reagents=(parse_smiles("[H][H]"), parse_smiles("O=O")), max_depth=2)
+        rc = r.receipt
+        assert rc.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
+        assert rc.nodes_visited >= 1 and rc.candidates_emitted == 0
+
+    def test_the_schema_version_was_bumped_for_the_new_shape(self):
+        assert ROUTE_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha2")
+
+    def test_unmeasured_counters_are_unknown_not_zero(self):
+        # a hand-built receipt that does not measure the counters reports UNKNOWN (None), and render says so
+        rc = RouteSearchReceipt(ROUTE_SEARCH_RECEIPT_SCHEMA, 2, 100, 20_000, 0, 0, False, 0)
+        assert rc.nodes_visited is None and rc.candidates_emitted is None
+        assert "UNKNOWN" in rc.render()
+
+    def test_construction_guards_reject_incoherent_telemetry(self):
+        base = (ROUTE_SEARCH_RECEIPT_SCHEMA, 2, 100, 20_000, 1, 0, False, 1, 0)  # positional up to depth_truncated
+        with pytest.raises(ValueError, match="candidates_emitted cannot be fewer than results_returned"):
+            RouteSearchReceipt(*base, candidates_emitted=0)         # emitted < results(=1)
+        with pytest.raises(ValueError, match="nodes_visited cannot be fewer than expansions_attempted"):
+            RouteSearchReceipt(*base, nodes_visited=0)              # nodes(0) < expansions(=1)
+        with pytest.raises(ValueError, match="cut_budget_scope must be one of"):
+            RouteSearchReceipt(*base, cut_budget_scope="SIDEWAYS")
+        with pytest.raises(ValueError, match="search_kind must be a non-empty string"):
+            RouteSearchReceipt(*base, search_kind="")
+        with pytest.raises(ValueError, match="must be a positive int"):
+            RouteSearchReceipt(*base, candidates_rejected_by_reason=(("duplicate", 0),))  # zero-count reason
+        with pytest.raises(ValueError, match="sorted by reason"):
+            RouteSearchReceipt(*base, candidates_rejected_by_reason=(("result_limit", 1), ("duplicate", 1)))

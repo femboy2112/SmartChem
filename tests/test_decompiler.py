@@ -10,15 +10,21 @@ import pytest
 from smartchem.contracts import canonical_digest
 from smartchem.decompiler import (
     DECOMPILER_SCHEMA,
+    DECOMPOSITION_SEARCH_RESULT_SCHEMA,
+    FORMULA_SEARCH_RECEIPT_SCHEMA,
     DecompilerError,
     DecompositionEdge,
     DecompositionGraph,
+    DecompositionSearchResult,
     Formula,
+    FormulaSearchReceipt,
     admissible_edges,
     build_decomposition,
     example_inventory,
+    search_decomposition,
     standard_state_equation,
 )
+from smartchem.search import SearchStatus
 
 H = Formula.bucket("H")
 OX = Formula.bucket("O")
@@ -265,3 +271,97 @@ class TestStandardStatePackaging:
     def test_nonpositive_equation_count_is_refused(self, count):
         with pytest.raises(ValueError, match="positive integer"):
             standard_state_equation(Formula.parse("H2O"), count=count)
+
+
+# ======================================================================================
+# search_decomposition -- the formula path's completeness receipt (section 8.1)
+# ======================================================================================
+class TestFormulaSearchReceipt:
+    """The formula decompiler now returns a first-class SearchReceipt like the route/DAG searches (SRCH-RCT-01),
+    over the ONE shared smartchem.search.SearchStatus vocabulary; build_decomposition stays the graph-only wrapper.
+
+    The elemental descent is structurally depth-1 in v1 (every product is a declared-inventory bucket or an
+    element bucket, both terminal), so the receipt does not fake a per-node expansion counter -- its meaningful
+    fields are the search bounds, the edge count, and the completeness status/reason."""
+
+    def test_complete_search_returns_a_complete_receipt(self):
+        r = search_decomposition("C8H9NO2", example_inventory())
+        assert r.receipt.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
+        assert r.receipt.complete_within_bounds
+        assert r.graph.is_complete
+        assert r.receipt.stop_reason == ""
+        assert r.receipt.edges_emitted == len(r.graph.edges) > 0
+
+    def test_search_node_budget_exhaustion_is_partial_not_complete(self):
+        # The headline: a budget-starved formula search is a loud PARTIAL, never a silent or complete-looking graph.
+        r = search_decomposition("C8H9NO2", example_inventory(), budget=1)
+        assert r.receipt.status is SearchStatus.PARTIAL_SEARCH_BUDGET
+        assert not r.receipt.complete_within_bounds
+        assert not r.graph.is_complete
+        assert "budget" in r.receipt.stop_reason
+
+    def test_edge_cap_saturation_is_partial_result_limit(self):
+        r = search_decomposition("C8H9NO2", example_inventory(), max_edges=1)
+        assert r.receipt.status is SearchStatus.PARTIAL_RESULT_LIMIT
+        assert not r.graph.is_complete
+        assert "edge budget" in r.receipt.stop_reason
+
+    def test_the_two_W2_walls_are_named_distinctly(self):
+        # A caller must know WHICH knob to raise: node budget and edge cap are different stops, different statuses.
+        node = search_decomposition("C8H9NO2", example_inventory(), budget=1).receipt.status
+        edge = search_decomposition("C8H9NO2", example_inventory(), max_edges=1).receipt.status
+        assert node is SearchStatus.PARTIAL_SEARCH_BUDGET
+        assert edge is SearchStatus.PARTIAL_RESULT_LIMIT
+        assert node is not edge
+
+    def test_build_decomposition_is_exactly_the_graph_of_the_search(self):
+        g = build_decomposition("C8H9NO2", example_inventory())
+        assert g == search_decomposition("C8H9NO2", example_inventory()).graph
+
+    def test_receipt_uses_the_one_shared_search_status_vocabulary(self):
+        # the formula receipt speaks the SAME enum the route/DAG receipts do -- one vocabulary, three searches.
+        from smartchem.experiment.routes import SearchStatus as RouteSearchStatus
+        assert SearchStatus is RouteSearchStatus
+        assert isinstance(search_decomposition("H2O").receipt.status, SearchStatus)
+
+    @pytest.mark.parametrize("field", ["max_multiplicity", "budget", "max_edges"])
+    def test_search_bounds_must_be_positive(self, field):
+        kwargs = dict(max_multiplicity=1, budget=100, max_edges=100)
+        kwargs[field] = 0
+        with pytest.raises(ValueError, match="positive integer"):
+            search_decomposition("H2O", **kwargs)
+
+    def test_receipt_render_states_status_and_bounded_scope(self):
+        text = search_decomposition("H2O").receipt.render()
+        assert "COMPLETE_WITHIN_BOUNDS" in text
+        assert "not chemistry" in text  # conservation only, said out loud -- W3
+
+    def test_receipt_rejects_a_complete_status_carrying_a_stop_reason(self):
+        with pytest.raises(ValueError, match="complete search carries no stop reason"):
+            FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 0,
+                                 SearchStatus.COMPLETE_WITHIN_BOUNDS, "spurious reason")
+
+    def test_receipt_rejects_a_partial_status_without_a_reason(self):
+        with pytest.raises(ValueError, match="partial search must state its stop reason"):
+            FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 0,
+                                 SearchStatus.PARTIAL_SEARCH_BUDGET, "")
+
+    def test_receipt_rejects_the_unreachable_multiple_limits_status(self):
+        # the formula descent stops on exactly one budget at a time; PARTIAL_MULTIPLE_LIMITS is not a real outcome.
+        with pytest.raises(ValueError, match="PARTIAL_MULTIPLE_LIMITS is not"):
+            FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 0,
+                                 SearchStatus.PARTIAL_MULTIPLE_LIMITS, "two at once")
+
+    def test_result_rejects_a_receipt_that_disagrees_with_graph_completeness(self):
+        g = search_decomposition("H2O").graph  # a COMPLETE graph
+        partial = FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, len(g.edges),
+                                       SearchStatus.PARTIAL_SEARCH_BUDGET, "claims partial")
+        with pytest.raises(ValueError, match="completeness must agree"):
+            DecompositionSearchResult(DECOMPOSITION_SEARCH_RESULT_SCHEMA, g, partial)
+
+    def test_result_rejects_a_receipt_edge_count_that_disagrees_with_the_graph(self):
+        g = search_decomposition("H2O").graph  # exactly one edge
+        wrong = FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 999,
+                                     SearchStatus.COMPLETE_WITHIN_BOUNDS, "")
+        with pytest.raises(ValueError, match="edges_emitted must equal"):
+            DecompositionSearchResult(DECOMPOSITION_SEARCH_RESULT_SCHEMA, g, wrong)

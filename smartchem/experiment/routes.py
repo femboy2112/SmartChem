@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass
-from enum import Enum
 
 from ..category import Molecule
 from ..conditions import ConditionEnvelope
 from ..contracts import Digestible, canonical_digest
 from ..decompiler_conditions import assembly_conditions
+from ..search import SearchStatus
 from ..structure_descent import capped_scissions
 from .dag import DAGError, SynthesisDAG
 from .step import ExperimentRoute, ExperimentStep
@@ -46,15 +46,6 @@ ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/route-search-receipt-v1alpha
 ROUTE_SEARCH_RESULT_SCHEMA = "smartchem.experiment/route-search-result-v1alpha2"
 DAG_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/dag-search-receipt-v1alpha1"
 DAG_SEARCH_RESULT_SCHEMA = "smartchem.experiment/dag-search-result-v1alpha1"
-
-
-class SearchStatus(str, Enum):
-    """Whether the declared bounded search actually exhausted its admitted candidate space."""
-
-    COMPLETE_WITHIN_BOUNDS = "COMPLETE_WITHIN_BOUNDS"
-    PARTIAL_CUT_BUDGET = "PARTIAL_CUT_BUDGET"
-    PARTIAL_RESULT_LIMIT = "PARTIAL_RESULT_LIMIT"
-    PARTIAL_MULTIPLE_LIMITS = "PARTIAL_MULTIPLE_LIMITS"
 
 
 @dataclass(frozen=True)

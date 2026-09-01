@@ -64,20 +64,28 @@ from math import gcd
 
 from .contracts import Digestible
 from .data.periodic_table import ATOMIC_NUMBER
+from .search import SearchStatus
 
 __all__ = [
     "DECOMPILER_SCHEMA",
+    "FORMULA_SEARCH_RECEIPT_SCHEMA",
+    "DECOMPOSITION_SEARCH_RESULT_SCHEMA",
     "DecompilerError",
     "Formula",
     "DecompositionEdge",
     "DecompositionGraph",
+    "FormulaSearchReceipt",
+    "DecompositionSearchResult",
     "admissible_edges",
     "build_decomposition",
+    "search_decomposition",
     "standard_state_equation",
     "example_inventory",
 ]
 
 DECOMPILER_SCHEMA = "smartchem.decompiler/elemental-descent-v1"
+FORMULA_SEARCH_RECEIPT_SCHEMA = "smartchem.decompiler/formula-search-receipt-v1alpha1"
+DECOMPOSITION_SEARCH_RESULT_SCHEMA = "smartchem.decompiler/decomposition-search-result-v1alpha1"
 
 #: Atom count at which an element's familiar molecular packaging groups.  This is *bookkeeping*
 #: for repackaging atom buckets into conventional molecules (report 2 H atoms as one H2), never
@@ -557,22 +565,115 @@ class DecompositionGraph(Digestible):
         return self.digest
 
 
-def build_decomposition(
+@dataclass(frozen=True)
+class FormulaSearchReceipt(Digestible):
+    """Auditable termination facts for one formula-decomposition graph search.
+
+    The formula sibling of :class:`~smartchem.experiment.routes.RouteSearchReceipt` /
+    :class:`~smartchem.experiment.routes.DAGSearchReceipt`, over the shared :class:`~smartchem.search.SearchStatus`
+    vocabulary.  The elemental descent is well-founded (W1) so it always REACHES the element/inventory buckets;
+    the only ways it stops short are the two W2 budgets -- the per-node search-node ``budget`` and the whole-graph
+    ``max_edges`` cap -- and this receipt names which one bit (``PARTIAL_SEARCH_BUDGET`` vs ``PARTIAL_RESULT_LIMIT``)
+    so a partial graph is never read as a complete enumeration.  ``COMPLETE_WITHIN_BOUNDS`` is exhaustive only
+    within the declared closed inventory and multiplicity; it is not a claim about chemistry (W3).
+    """
+
+    schema_version: str
+    max_multiplicity: int
+    budget: int
+    max_edges: int
+    edges_emitted: int
+    status: SearchStatus
+    stop_reason: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != FORMULA_SEARCH_RECEIPT_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {FORMULA_SEARCH_RECEIPT_SCHEMA!r}")
+        for name in ("max_multiplicity", "budget", "max_edges"):
+            value = getattr(self, name)
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if type(self.edges_emitted) is not int or self.edges_emitted < 0:
+            raise ValueError("edges_emitted must be a non-negative integer")
+        if not isinstance(self.status, SearchStatus):
+            raise TypeError("status must be a SearchStatus")
+        if type(self.stop_reason) is not str:
+            raise TypeError("stop_reason must be a string")
+        if self.status is SearchStatus.COMPLETE_WITHIN_BOUNDS and self.stop_reason:
+            raise ValueError("a complete search carries no stop reason")
+        if self.status is not SearchStatus.COMPLETE_WITHIN_BOUNDS and not self.stop_reason:
+            raise ValueError("a partial search must state its stop reason")
+        if self.status is SearchStatus.PARTIAL_MULTIPLE_LIMITS:
+            raise ValueError(
+                "the formula descent stops on exactly one budget at a time; PARTIAL_MULTIPLE_LIMITS is not "
+                "reachable here"
+            )
+
+    @property
+    def complete_within_bounds(self) -> bool:
+        return self.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
+
+    def render(self) -> str:
+        reason = f"{self.stop_reason} " if self.stop_reason else ""
+        return (
+            f"FORMULA SEARCH RECEIPT: {self.status.value}; edges={self.edges_emitted}; "
+            f"search-node budget={self.budget}; edge cap={self.max_edges}; "
+            f"max multiplicity={self.max_multiplicity}. {reason}"
+            "Scope: primitive conserving decompositions over the declared closed inventory; conservation only, "
+            "not chemistry."
+        )
+
+
+@dataclass(frozen=True)
+class DecompositionSearchResult(Digestible):
+    """A decomposition graph plus its explicit completeness receipt (standard section 8.1).
+
+    The receipt-bearing sibling of :func:`build_decomposition`: :func:`search_decomposition` returns this, while
+    ``build_decomposition`` stays the graph-only compatibility wrapper.  The graph already carries a loud
+    ``COMPLETE``/``REFUSED_BUDGET`` status; the receipt lifts that into the shared :class:`SearchStatus`
+    vocabulary with counters, so the formula path answers the same auditable question as the route and DAG
+    searches.
+    """
+
+    schema_version: str
+    graph: DecompositionGraph
+    receipt: FormulaSearchReceipt
+
+    def __post_init__(self) -> None:
+        if self.schema_version != DECOMPOSITION_SEARCH_RESULT_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {DECOMPOSITION_SEARCH_RESULT_SCHEMA!r}")
+        if type(self.graph) is not DecompositionGraph:
+            raise TypeError("graph must be a DecompositionGraph")
+        if type(self.receipt) is not FormulaSearchReceipt:
+            raise TypeError("receipt must be a FormulaSearchReceipt")
+        if self.receipt.complete_within_bounds != self.graph.is_complete:
+            raise ValueError("receipt completeness must agree with the graph status")
+        if self.receipt.edges_emitted != len(self.graph.edges):
+            raise ValueError("receipt.edges_emitted must equal the number of graph edges")
+
+
+def search_decomposition(
     target: "str | dict[str, int] | Formula",
     inventory: "tuple[Formula, ...] | tuple[str, ...]" = (),
     *,
     max_multiplicity: int = 1,
     budget: int = 100_000,
     max_edges: int = 5_000,
-) -> DecompositionGraph:
-    """Build the elemental-descent hypergraph of ``target`` over a closed ``inventory``.
+) -> DecompositionSearchResult:
+    """Build the elemental-descent hypergraph of ``target`` and return it plus an explicit completeness receipt.
 
-    ``target`` and ``inventory`` accept formula strings, atom-count mappings, or ``Formula``
-    values. Inventory species are terminal buckets: they may be products but are not expanded further.
-    The descent is well-founded (W1), so it reaches declared stock or element buckets; the only
-    non-completion is a **loud** ``REFUSED_BUDGET`` when the graph exceeds ``budget`` search
-    nodes or ``max_edges`` collected edges (W2) -- the returned partial graph says so in its
-    status and is never a silent truncation.
+    The receipt-bearing form of :func:`build_decomposition`, exactly as
+    :func:`~smartchem.experiment.routes.search_routes` is to ``enumerate_routes``.  It instruments the same graph
+    descent -- adding a ``nodes_expanded`` counter and mapping the graph's own ``COMPLETE``/``REFUSED_BUDGET``
+    status onto the shared :class:`~smartchem.search.SearchStatus` vocabulary -- so the formula path returns a
+    first-class receipt (standard section 8.1) like the route and DAG searches do.
+
+    ``target`` and ``inventory`` accept formula strings, atom-count mappings, or ``Formula`` values. Inventory
+    species are terminal buckets: they may be products but are not expanded further.  The descent is well-founded
+    (W1), so it reaches declared stock or element buckets; the only non-completion is a **loud** partial result
+    when the graph exceeds ``budget`` search nodes (``PARTIAL_SEARCH_BUDGET``) or ``max_edges`` collected edges
+    (``PARTIAL_RESULT_LIMIT``) (W2) -- the returned partial graph says so in its status and receipt and is never a
+    silent truncation.
     """
     target_f = _coerce(target)
     inv = tuple(sorted(set(_coerce(s) for s in inventory), key=_sort_key))
@@ -589,6 +690,18 @@ def build_decomposition(
     frontier: list[Formula] = [target_f]
     work_budget = [budget]
 
+    def _result(status: SearchStatus, reason: str) -> DecompositionSearchResult:
+        graph_status = "COMPLETE" if status is SearchStatus.COMPLETE_WITHIN_BOUNDS else "REFUSED_BUDGET"
+        graph = DecompositionGraph(
+            DECOMPILER_SCHEMA, target_f, inv, max_multiplicity, budget,
+            graph_status, tuple(sorted(collected.values(), key=_edge_key)), reason,
+        )
+        receipt = FormulaSearchReceipt(
+            FORMULA_SEARCH_RECEIPT_SCHEMA, max_multiplicity, budget, max_edges,
+            len(graph.edges), status, reason,
+        )
+        return DecompositionSearchResult(DECOMPOSITION_SEARCH_RESULT_SCHEMA, graph, receipt)
+
     while frontier:
         node = frontier.pop()
         if node in expanded or node.is_element or node in inv:
@@ -598,28 +711,42 @@ def build_decomposition(
             node, inv, max_multiplicity=max_multiplicity, budget=work_budget[0]
         )
         if not complete:
-            return DecompositionGraph(
-                DECOMPILER_SCHEMA, target_f, inv, max_multiplicity, budget,
-                "REFUSED_BUDGET", tuple(sorted(collected.values(), key=_edge_key)),
+            return _result(
+                SearchStatus.PARTIAL_SEARCH_BUDGET,
                 f"search budget exhausted while decomposing {node!r}; graph is partial",
             )
         expanded.add(node)
         for edge in node_edges:
             collected[edge.digest] = edge
             if len(collected) > max_edges:
-                return DecompositionGraph(
-                    DECOMPILER_SCHEMA, target_f, inv, max_multiplicity, budget,
-                    "REFUSED_BUDGET", tuple(sorted(collected.values(), key=_edge_key)),
+                return _result(
+                    SearchStatus.PARTIAL_RESULT_LIMIT,
                     f"edge budget ({max_edges}) exceeded; graph is partial",
                 )
             for product, _ in edge.products:
                 if product not in expanded and not product.is_element and product not in inv:
                     frontier.append(product)
 
-    return DecompositionGraph(
-        DECOMPILER_SCHEMA, target_f, inv, max_multiplicity, budget,
-        "COMPLETE", tuple(sorted(collected.values(), key=_edge_key)),
-    )
+    return _result(SearchStatus.COMPLETE_WITHIN_BOUNDS, "")
+
+
+def build_decomposition(
+    target: "str | dict[str, int] | Formula",
+    inventory: "tuple[Formula, ...] | tuple[str, ...]" = (),
+    *,
+    max_multiplicity: int = 1,
+    budget: int = 100_000,
+    max_edges: int = 5_000,
+) -> DecompositionGraph:
+    """Build the elemental-descent hypergraph of ``target`` over a closed ``inventory`` (graph only).
+
+    Compatibility wrapper returning just the :class:`DecompositionGraph`; use :func:`search_decomposition` for the
+    completeness receipt.  The graph still carries its own loud ``COMPLETE``/``REFUSED_BUDGET`` status and reason,
+    so a graph-only caller is not deprived of the completeness truth -- only of the shared-vocabulary counters.
+    """
+    return search_decomposition(
+        target, inventory, max_multiplicity=max_multiplicity, budget=budget, max_edges=max_edges
+    ).graph
 
 
 def _coerce(value: "str | dict[str, int] | Formula") -> Formula:

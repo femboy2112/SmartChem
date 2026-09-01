@@ -197,7 +197,7 @@ affordability and safety regressions are green. The final full suite completed w
 passed, 51 skipped, 1 expected failure in 205.04 seconds**; `git diff --check` and bytecode
 compilation are also clean.
 
-Implementation commit: `PENDING_REMOTE_COMMIT`
+Implementation commit: `834db704d3425cb2ab9b34b3644e0cada3aaba4c`
 
 Remaining stabilization work is to preserve every audit fix as a focused regression and never
 weaken a verdict-changing test merely to extend chemistry coverage.

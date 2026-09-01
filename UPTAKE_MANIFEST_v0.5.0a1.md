@@ -384,6 +384,7 @@ residual limitations / next probes:
 | `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural (route/DAG) producer now exists too: `recompile_to_ir` (`43dbcb1`) packages `search_routes`/`search_dags` as canonical `ROUTE`/`DAG` candidates over a STRUCTURE-layer identity, with the same presentation-invariant/semantic-sensitive digest (a bound change alters it via `request_digest`; the reagent helper pool is distinguished from plain stock). IR (de)serialization now round-trips digest-stably too (`serialize_ir`/`deserialize_ir`, canonical JSON; deserialize re-validates and refuses a tampered payload). The recompiler now CONSUMES a serialized decompile artifact end to end via `recompile_from_serialized` (`2e21490`, `IR-INV-01` closed on the refusal clause): it gates the structural hypothesis on the decompiled formula and classifies the inverse outcome, with water rendering a precise mode+bounds-scoped no-route refusal (no fabricated transform). The IR now also carries a first-class `transform_registry_digest` (`7268231`) naming WHICH grammar produced its candidates (section 8.4) and making the IR digest sensitive to the grammar version (section 4.1). First-class loss records (`IR-LOSS-01`) and the fuller section 8.1 SearchReceipt (the other ~15 counters) remain | Add `IdentityLoss` records (`IR-LOSS-01`) and the full section 8.1 SearchReceipt | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
 | `IR-LOSS-01` | Formula/structure forgetting is explicit | `--smiles` formula path discards topology without a first-class loss record | Add `IdentityLoss`; downgrade or refuse dependent claims | `CCO` vs `COC` remain distinct as input identities; formula view announces collapse | `ID-LAYER-01` | `TODO` |
 | `IR-INV-01` | Claimed inverse scope is executable | `recompile_from_serialized` (`2e21490`) consumes a serialized decompile artifact end to end: it gates the structural hypothesis on the decompiled formula (section 5.4) and classifies the inverse outcome (six-way `InverseStatus`). Water (H2O from H2/O2) renders a PRECISE unsupported-transform refusal (`NO_ROUTE_IN_GRAMMAR`), scoped to the mode+bounds, with no fabricated transform (W3) — the acceptance's refusal clause. An EXHAUSTIVE empty search is distinguished from a TRUNCATED one (`INCONCLUSIVE_BOUNDS_HIT`) | Refusal clause met; a named inter-grammar transform registry that SUCCEEDS on water remains a future, SOURCED brick (narrowed naming/docs, never a fabricated reaction) | Water renders a precise unsupported-transform refusal (**met**) OR succeeds within a named transform registry (future) | `IR-CHEM-01` | `DONE` (refusal clause) |
+| `IR-8.2-01` | The IR speaks the section 8.2 terminal-status vocabulary | `ChemicalCompilationIR` now carries a stored `standard_status` (a section 8.2 name) set at construction from the live `receipt.standard_status` -- the only place `PARTIAL_MULTIPLE_LIMITS` resolves to one primary (`54d5731`, schema -> v1alpha2). A `__post_init__` guard makes it impossible to carry a section 8.2 status contradicting the native `search_status` (single-limit: exactly `search_status.standard_name`; MULTIPLE: a resolvable primary from `PRIMARY_RESOLVABLE_8_2_STATUSES`, never a completion, never `INCOMPLETE_CANDIDATE_LIMIT`). `render()` leads with the section 8.2 status and labels the native one `engine:`; the `INCONCLUSIVE_BOUNDS_HIT` refusal now prints an actual section 8.2 status (closing the SB4 red-team's finding 4) and cross-references section 8.3's `INCOMPLETE_NO_ROUTE_OBSERVED`. Round-trip digest-stable. A 3-bearing red-team found the code faithful on every reachable path (no W2 laundering, no section-4.1 digest-law break, no reachable guard hole, schema bump safe) + 2 comment-precision fixes | The section 8.1 receipt-on-refusal path (REFUSED_*/ERROR_INTERNAL still RAISE, no receipt); adopting section 8.3's four required no-route/candidate tokens across ALL cells is a separate systemic brick | The IR renders a section 8.2 status for every producer; a hand-built IR whose section 8.2 status contradicts its native one is refused; the section-8.2-citing refusal prints a real section 8.2 token | `SRCH-RCT-8.1` (done), `IR-CHEM-01` | `IMPLEMENTED_AND_VERIFIED` |
 
 **Uptake record — ChemicalCompilationIR first brick** (advances `IR-CHEM-01` TODO -> IN_PROGRESS):
 
@@ -570,6 +571,63 @@ residual limitations:
      plus ~15 other counters -- nodes_visited, transforms_considered, candidates_rejected_by_reason{}, the
      enumeration-complete flags) is a broader, later conformance arc. This brick surfaces the ONE field section 4.1
      requires for digest sensitivity, not the whole receipt schema.
+```
+
+**Uptake record — the IR speaks section 8.2** (`IR-8.2-01`; the SB4 follow-up: the IR now renders the standard's
+terminal-status vocabulary, not the engine's native word):
+
+```text
+ID:                  IR-8.2-01 (section 8.2 status face on ChemicalCompilationIR)
+commit:              54d5731
+files:               smartchem/compilation_ir.py, smartchem/search.py, tests/test_compilation_ir.py
+tests:               tests/test_compilation_ir.py::TestSection82IRFace (12 new) + the 3 positional constructions
+                     threaded; tests/test_search.py unchanged but re-exercises PRIMARY_RESOLVABLE_8_2_STATUSES
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2732 passed, 14 skipped, 1 xfailed (baseline 2720; +12). ruff clean on every changed file;
+                     git diff --check clean.
+built:               a stored standard_status:str field on ChemicalCompilationIR (schema v1alpha1 -> v1alpha2),
+                     set at construction from the LIVE receipt.standard_status -- the only place a
+                     PARTIAL_MULTIPLE_LIMITS receipt resolves to one section 8.2 primary (the IR keeps only the
+                     receipt DIGEST, not the per-limit flags).  A __post_init__ guard forbids a section 8.2 status
+                     that contradicts the native search_status: single-limit must equal search_status.standard_name;
+                     PARTIAL_MULTIPLE_LIMITS must be one of PRIMARY_RESOLVABLE_8_2_STATUSES (= INCOMPLETE_CUT_BUDGET
+                     / INCOMPLETE_DEPTH_LIMIT / INCOMPLETE_RESULT_LIMIT), so a completion status or an unsourced
+                     INCOMPLETE_CANDIDATE_LIMIT / REFUSED_* / ERROR_INTERNAL is refused.  render() leads with the
+                     section 8.2 status and labels the native one 'engine:'; ir_to_payload/ir_from_payload thread
+                     the field (round-trip digest-stable).  The InverseResult render + the INCONCLUSIVE_BOUNDS_HIT
+                     refusal now print standard_status -- closing the SB4 red-team's finding 4 (the refusal cited
+                     section 8.2 while printing a native token) -- and that refusal now also names section 8.3's
+                     INCOMPLETE_NO_ROUTE_OBSERVED for its zero-candidate/incomplete no-route cell, matching its
+                     sibling NO_ROUTE_IN_GRAMMAR branch.
+falsifier fixture:   a decompile IR reports COMPLETE_WITHIN_DECLARED_SPACE, a depth-limited recompile IR reports
+                     INCOMPLETE_DEPTH_LIMIT; a hand-built IR pairing COMPLETE native with an INCOMPLETE_* label is
+                     refused, as is a MULTIPLE native with COMPLETE_WITHIN_DECLARED_SPACE or INCOMPLETE_CANDIDATE_
+                     LIMIT; the engine's own native token (e.g. PARTIAL_CUT_BUDGET) is refused as not a section 8.2
+                     name; deserialize(serialize(ir)).digest == ir.digest with the new field; the INCONCLUSIVE
+                     refusal contains a section 8.2 status, contains no 'PARTIAL_' token, and names section 8.3 +
+                     INCOMPLETE_NO_ROUTE_OBSERVED.
+red-team:            3 attack bearings + 3 verify agents (workflow, 513k subagent tokens). The CODE survived every
+                     attack on every reachable path (3 boundaries: the guard rejects exactly the right set and
+                     never crashes a real producer; standard_status never leaks into request_digest and never
+                     splits two semantically-equal producer IRs; the schema bump has no dangling v1alpha1 ref and
+                     old payloads fail closed).  It CONFIRMED (PARTIAL) 2 comment-precision over-claims, both fixed
+                     in 54d5731: the guard docstring's unconditional 'tampered payload is refused' is now scoped to
+                     what the guard can pin (MULTIPLE cannot pin WHICH primary without the flags -- reachable only
+                     by a hand-built, internally-inconsistent, still-INCOMPLETE payload, never a real producer,
+                     never toward complete); and the refusal gained its section 8.3 cross-reference.  One finding
+                     REFUTED (a diagnostic printing a native token -- conceded acceptable, no iron-rule breach).
+residual limitations / next probes:
+  1. The MULTIPLE-case guard checks the primary is one resolution CAN legally produce, not the one THIS receipt's
+     flags imply -- structurally, because the IR carries only search_receipt_digest.  This is W2-safe (every value
+     is INCOMPLETE_*), never reachable by a real producer (which passes receipt.standard_status), and documented in
+     the guard comment.  True per-receipt pinning would need the IR to carry the per-limit flags (a later schema).
+  2. A superseded v1alpha1 IR payload fails closed with KeyError('standard_status') rather than the schema-version
+     ValueError (ir_from_payload reads the field before __post_init__ runs).  Both fail closed; there is no
+     backward-compat contract for a pre-release alpha and no persisted v1alpha1 payloads, so this is a documented
+     boundary, not a defect.
+  3. Adopting section 8.3's four Required no-route/candidate tokens (NO_ROUTE_IN_DECLARED_SPACE /
+     INCOMPLETE_NO_ROUTE_OBSERVED / COMPLETE_CANDIDATE_SET / PARTIAL_CANDIDATE_SET) uniformly across every renderer
+     is a separate systemic brick; this change added the one where it was directly editing.
 ```
 
 ### 3.3 Identity and evidence

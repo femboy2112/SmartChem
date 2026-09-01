@@ -1,0 +1,170 @@
+"""STOCK-01 (first brick) -- StockMaterial: a real bottle, which is NOT the same as a pure identity.
+
+The prime material-honesty rule of the standard (section 10): a chemical IDENTITY match is not a MATERIAL claim.
+"Vinegar contains acetic acid" is true; "this bottle of vinegar is a suitable pure-acetic-acid feedstock" is
+false -- household vinegar is only a few percent acetic acid in water.  A ``CommodityReagent``
+(:mod:`smartchem.data.reagents`) is a source LEAD (an identity that MAY occur in an accessible source); a
+``StockMaterial`` is a typed material with components, a phase, and an ASSAY interval, and it REFUSES to satisfy a
+pure-reagent requirement it cannot prove it meets.
+
+This first brick implements the core falsifier (section 10.2): a dilute mixture cannot satisfy a pure input
+without a proven assay -- the honest verdicts are ``INSUFFICIENT_ASSAY`` (even the best case falls short, so
+preprocessing is required) and ``UNKNOWN_ASSAY`` (the interval straddles the requirement, so a measurement is
+required), never a silent pass.  The full section 10.2 schema (quantity, container, cost, jurisdiction, impurity
+profile) and canonical-structure component keying (ID-LAYER-01) are later bricks, named as such.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+from ..contracts import Digestible
+
+__all__ = [
+    "STOCK_MATERIAL_SCHEMA",
+    "MATERIAL_COMPONENT_SCHEMA",
+    "Phase",
+    "FitnessVerdict",
+    "MaterialComponent",
+    "StockMaterial",
+]
+
+STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha1"
+MATERIAL_COMPONENT_SCHEMA = "smartchem.experiment/material-component-v1alpha1"
+
+_FRACTION_EPS = 1e-9
+
+
+class Phase(str, Enum):
+    SOLID = "SOLID"
+    LIQUID = "LIQUID"
+    GAS = "GAS"
+    AQUEOUS_SOLUTION = "AQUEOUS_SOLUTION"
+    UNKNOWN = "UNKNOWN"
+
+
+class FitnessVerdict(str, Enum):
+    """Whether a :class:`StockMaterial` satisfies a required pure-identity assay -- never a silent yes."""
+
+    SATISFIES = "SATISFIES"                     # the WORST-case active fraction already meets the requirement
+    INSUFFICIENT_ASSAY = "INSUFFICIENT_ASSAY"   # even the BEST case falls short -> preprocessing required
+    UNKNOWN_ASSAY = "UNKNOWN_ASSAY"             # the interval straddles the requirement / is unknown -> measure
+    IDENTITY_ABSENT = "IDENTITY_ABSENT"         # the material does not contain the required identity at all
+
+
+def _norm(identity: str) -> str:
+    return identity.strip().casefold()
+
+
+@dataclass(frozen=True)
+class MaterialComponent(Digestible):
+    """One declared component of a material: its identity key, role, and a fraction INTERVAL ``[lo, hi]``.
+
+    An unknown fraction is the honest full interval ``[0.0, 1.0]``, never a point guess.  ``identity_key`` is a
+    normalized name/formula string in this first brick; canonical-structure keying is ID-LAYER-01.
+    """
+
+    schema_version: str
+    identity_key: str
+    role: str
+    min_fraction: float
+    max_fraction: float
+
+    def __post_init__(self) -> None:
+        if self.schema_version != MATERIAL_COMPONENT_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {MATERIAL_COMPONENT_SCHEMA!r}")
+        for name in ("identity_key", "role"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        for name in ("min_fraction", "max_fraction"):
+            v = getattr(self, name)
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not (0.0 <= float(v) <= 1.0):
+                raise ValueError(f"{name} must be a fraction in [0, 1]")
+        if self.min_fraction > self.max_fraction:
+            raise ValueError("min_fraction cannot exceed max_fraction")
+
+    @classmethod
+    def known(cls, identity_key: str, role: str, min_fraction: float, max_fraction: float) -> "MaterialComponent":
+        return cls(MATERIAL_COMPONENT_SCHEMA, identity_key, role, float(min_fraction), float(max_fraction))
+
+    @classmethod
+    def unknown_fraction(cls, identity_key: str, role: str) -> "MaterialComponent":
+        """A component known to be PRESENT but of unknown fraction -- the honest full interval [0, 1]."""
+        return cls(MATERIAL_COMPONENT_SCHEMA, identity_key, role, 0.0, 1.0)
+
+
+@dataclass(frozen=True)
+class StockMaterial(Digestible):
+    """A real material: one or more components (each a fraction interval), a phase, and provenance.
+
+    Unlike a pure identity or a commodity source lead, a ``StockMaterial`` can be ASKED whether it satisfies a
+    pure-reagent requirement, and it answers honestly with an interval verdict (:meth:`satisfies`).
+    """
+
+    schema_version: str
+    material_id: str
+    display_name: str
+    components: tuple[MaterialComponent, ...]
+    phase: Phase
+    provenance: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != STOCK_MATERIAL_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {STOCK_MATERIAL_SCHEMA!r}")
+        for name in ("material_id", "display_name", "provenance"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        if not isinstance(self.phase, Phase):
+            raise TypeError("phase must be a Phase")
+        if type(self.components) is not tuple or not self.components or any(
+            type(c) is not MaterialComponent for c in self.components
+        ):
+            raise TypeError("components must be a non-empty tuple of MaterialComponent values")
+        if sum(c.min_fraction for c in self.components) > 1.0 + _FRACTION_EPS:
+            raise ValueError("component minimum fractions sum above 1.0 -- an infeasible material")
+
+    def active_fraction_interval(self, required_identity: str) -> tuple[float, float] | None:
+        """The summed fraction interval ``(lo, hi)`` of components matching ``required_identity``, or ``None``.
+
+        Several components can share an identity (e.g. two additives of the same species); their intervals sum,
+        capped at 1.0 on the high side.  ``None`` means the identity is not a declared component at all.
+        """
+        key = _norm(required_identity)
+        matches = [c for c in self.components if _norm(c.identity_key) == key]
+        if not matches:
+            return None
+        lo = sum(c.min_fraction for c in matches)
+        hi = min(1.0, sum(c.max_fraction for c in matches))
+        return (lo, hi)
+
+    def satisfies(self, required_identity: str, *, min_assay: float) -> FitnessVerdict:
+        """Whether this material meets a ``min_assay`` (mass/mole fraction) requirement for ``required_identity``.
+
+        Rigorous interval logic, never a silent yes: the material SATISFIES only if its worst-case (lower-bound)
+        active fraction already clears ``min_assay``; it is ``INSUFFICIENT_ASSAY`` (preprocessing required) only
+        if even its best case (upper bound) falls short; and anywhere the interval straddles the requirement -- or
+        the fraction is unknown -- it is ``UNKNOWN_ASSAY`` (a measurement is required), because assuming the
+        favourable end of an interval is exactly the identity-is-purity error section 10 forbids.
+        """
+        if isinstance(min_assay, bool) or not isinstance(min_assay, (int, float)) or not (0.0 < float(min_assay) <= 1.0):
+            raise ValueError("min_assay must be a fraction in (0, 1]")
+        interval = self.active_fraction_interval(required_identity)
+        if interval is None:
+            return FitnessVerdict.IDENTITY_ABSENT
+        lo, hi = interval
+        if lo >= min_assay:
+            return FitnessVerdict.SATISFIES
+        if hi < min_assay:
+            return FitnessVerdict.INSUFFICIENT_ASSAY
+        return FitnessVerdict.UNKNOWN_ASSAY
+
+    def render(self) -> str:
+        comps = "; ".join(
+            f"{c.identity_key} ({c.role}) {c.min_fraction * 100:.0f}-{c.max_fraction * 100:.0f}%"
+            for c in self.components
+        )
+        return (
+            f"STOCK MATERIAL {self.display_name!r} [{self.phase.value}] -- {comps}. "
+            f"Source: {self.provenance}. A material, not a pure identity: assay is an interval, and a pure-reagent "
+            "requirement is met only when the interval PROVES it (section 10)."
+        )

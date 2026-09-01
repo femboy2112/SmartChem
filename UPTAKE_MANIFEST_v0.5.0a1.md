@@ -312,7 +312,7 @@ residual limitations (the rest of IR-CHEM-01, unchanged and named):
 | `TERM-COM-02` | Disabled/custom commodity inventory is authoritative everywhere | Current linear compile shortcut/termination/shopping respects the active inventory and `commodities=()` regression passes | Preserve through shared terminal/material policy and DAG work | `commodities=()` never uses global catalogue to stop/rank/shop | `TERM-POL-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `FEED-AMT-01` | Identity-only flags never invent quantity | Experimental CLI no longer maps identities to one mole and emits no finite ceiling without feed | Add explicit quantity+unit/assay input and optional symbolic ceiling separately | Identity-only poor-man fixture has no finite ceiling and no crash | `STOCK-01` desirable | `IMPLEMENTED_AND_VERIFIED` |
 | `FEED-ERR-01` | Missing feed cannot abort an otherwise valid dossier | Route dossier now renders without a ceiling when feed is absent | Preserve structured diagnostic in shared response/JSON | Missing commodity amount preserves route dossier and non-internal exit status | `FEED-AMT-01` | `IMPLEMENTED_AND_VERIFIED` |
-| `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | `StockMaterial` + `MaterialComponent` + `FitnessVerdict` exist (`smartchem/experiment/stock.py`, `7d27e3c`): a typed material of components (each a fraction INTERVAL), a phase, and provenance, with a rigorous `satisfies(identity, min_assay)` interval gate (vinegar -> `INSUFFICIENT_ASSAY`, a straddling requirement -> `UNKNOWN_ASSAY`, an unknown fraction never passes). The full section 10.2 schema (quantity, container, cost, jurisdiction, impurity profile), canonical-structure component keying, and recompiler/shopping integration remain | Extend to the full section 10.2 schema; key components by canonical structure; bridge `CommodityReagent` -> `StockMaterial` as an UNKNOWN-assay source lead; wire the gate into route/shopping selection | Vinegar cannot satisfy pure acetic-acid input without assay/preprocessing | `ID-LAYER-01` | `IN_PROGRESS` |
+| `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | `StockMaterial` + `MaterialComponent` + `FitnessVerdict` exist (`smartchem/experiment/stock.py`, `7d27e3c`): a typed material of components (each a fraction INTERVAL), a phase, and provenance, with a rigorous `satisfies(identity, min_assay)` interval gate (vinegar -> `INSUFFICIENT_ASSAY`, a straddling requirement -> `UNKNOWN_ASSAY`, an unknown fraction never passes). The full section 10.2 schema is now built too (`3ace975`): typed `StockQuantity` (positive-finite value+unit), a `CostObservation` that cannot be constructed unless dated AND sourced (section 10.4, no invented price), plus assay method, container/storage, opened/age, jurisdiction/availability, formulation notes and known impurities -- every field keyword-optional and defaulting to an honest UNKNOWN. Canonical-structure component keying, the `CommodityReagent` bridge, and recompiler/shopping integration remain | Key components by canonical structure; bridge `CommodityReagent` -> `StockMaterial` as an UNKNOWN-assay source lead; wire the gate into route/shopping selection | Vinegar cannot satisfy pure acetic-acid input without assay/preprocessing | `ID-LAYER-01` | `IN_PROGRESS` |
 | `SHOP-LEAF-02` | Shopping list is external, quantity-aware route input | Linear external-leaf identity logic is implemented and tested; quantities, DAG fan-out and purchased supplements are absent | Extend across DAGs, purchased supplements and quantity | Internally produced acid is absent now; purchased deficits must later include amount/unknown | `DAG-FLOW-01`, `STOCK-01` | `IN_PROGRESS` |
 
 **Uptake record — StockMaterial first brick** (advances `STOCK-01` TODO -> IN_PROGRESS):
@@ -337,6 +337,36 @@ residual limitations (the rest of STOCK-01, named in code and its row):
   2. Components are keyed by a normalized name/formula string, not canonical structure (ID-LAYER-01).
   3. Not yet wired into the recompiler / shopping / affordability (SHOP-LEAF-02, COST-VEC-01), and there is no
      CommodityReagent -> StockMaterial source-lead bridge yet (a commodity match must map to UNKNOWN assay).
+```
+
+**Uptake record — StockMaterial full section 10.2 schema** (advances `STOCK-01`; the first-brick assay gate is
+now backed by the full typed material record):
+
+```text
+ID:                  STOCK-01 (full schema)
+commit:              3ace975
+files:               smartchem/experiment/stock.py, smartchem/experiment/__init__.py, tests/test_stock.py
+tests:               tests/test_stock.py::TestFullSchemaFields (10 new adversarial items)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2632 passed, 14 skipped, 1 xfailed (with the depth-fix + recompile bricks on the tree). ruff
+                     clean on every changed file; git diff --check clean.
+built:               StockQuantity (positive-finite value+unit, value kept as an exact string), CostObservation
+                     (amount+currency+date+source, region optional -- unconstructible without being dated AND
+                     sourced), and the StockMaterial section 10.2 fields quantity / assay_method /
+                     container_and_storage / opened_or_age_state / jurisdiction_and_availability / cost_observation
+                     / formulation_notes[] / known_impurities[]. All keyword-optional, defaulting to UNKNOWN.
+falsifier fixture:   CostObservation.of("1","USD","2026-01-01","   ") raises (a price must be sourced); a blank
+                     amount/currency/date each raise; a negative/nonnumeric amount raises -- there is no path to a
+                     fabricated price, the honest state is cost_observation=None -> render "cost: UNKNOWN".
+                     StockQuantity.of("0"/"-5"/"inf"/"nan","g") each raise. Two materials differing only in the
+                     declared quantity have distinct digests (quantity is semantic). The 6-positional-arg
+                     first-brick form still constructs with every extra defaulting to UNKNOWN (backward compat).
+residual limitations:
+  1. MaterialComponent is still keyed by a normalized name/formula string; canonical-structure keying is
+     ID-LAYER-01. The component fraction INTERVAL encodes its uncertainty; a separate point-value +/- uncertainty
+     field was deliberately NOT added as a hollow null (it would churn every digest for no honesty gain).
+  2. Still not wired into recompiler / shopping / affordability, and no CommodityReagent -> StockMaterial bridge
+     yet -- the next two bricks (SHOP-LEAF-02, COST-VEC-01, and the source-lead bridge).
 ```
 
 ### 3.6 Readiness and safety

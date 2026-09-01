@@ -121,6 +121,28 @@ class TestConstraintFitting:
         fit = fit_route(_anhydride_route(pres=(1, 1)), box)
         assert fit.status is RouteFitStatus.FITS
 
+    def test_an_empty_box_is_unconstrained_never_a_silent_fit(self):
+        # FIT-SEM-01: with NO bench constraint declared, nothing was assessed -- the route is UNCONSTRAINED,
+        # never FITS (which would read as confirmed bench compatibility).  Same route that FITS a real box.
+        fit = fit_route(_anhydride_route(pres=(1, 1)), ConstraintBox())
+        assert fit.status is RouteFitStatus.UNCONSTRAINED
+        assert not fit.fits
+        assert fit.exclusions == () and fit.gaps == ()  # nothing wrong -- there was just nothing to check
+
+    def test_fits_requires_the_box_to_actually_constrain_something(self):
+        # the ONLY difference between UNCONSTRAINED and FITS for this route is whether the box declared a bound.
+        route = _anhydride_route(pres=(1, 1))
+        assert not fit_route(route, ConstraintBox()).fits
+        assert fit_route(route, ConstraintBox(max_temperature_k=1473, max_pressure_atm=Fraction(3, 2))).fits
+
+    def test_constrains_anything_reflects_declared_bounds(self):
+        assert not ConstraintBox().constrains_anything
+        assert ConstraintBox(max_temperature_k=1473).constrains_anything
+        assert ConstraintBox(max_pressure_atm=Fraction(3, 2)).constrains_anything
+        assert ConstraintBox(min_pressure_atm=Fraction(1, 2)).constrains_anything
+        assert ConstraintBox(available_reagents=frozenset({"water"})).constrains_anything
+        assert ConstraintBox(available_equipment=frozenset({EquipmentKind.VESSEL})).constrains_anything
+
     def test_an_undeclared_constrained_dimension_is_unknown_not_a_silent_fit(self):
         # the bench caps pressure but the step declares none -> cannot confirm fit -> UNKNOWN, never FITS
         box = ConstraintBox(max_pressure_atm=Fraction(3, 2))

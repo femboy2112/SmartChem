@@ -105,6 +105,25 @@ class TestConversionClosedForm:
         assert e.conversion_fraction > 0.5
 
 
+class TestEquilibriumRenderDeniesYield:
+    """EQUIL-NAME-01: the ideal K/conversion must never read as an expected practical/isolated yield (9.5)."""
+
+    def test_conversion_render_names_the_ideal_model_and_denies_practical_yield(self):
+        e = equilibrium_of_step(water_gas_shift())          # Δn=0 -> a conversion fraction IS reported
+        assert e.conversion_fraction is not None
+        # the step reason presents the number as an IDEAL-MODEL equilibrium extent, never an expected yield/rate
+        assert "ideal-model equilibrium" in e.reason
+        assert "NOT an expected isolated/practical yield" in e.reason
+        assert "NOT a rate" in e.reason
+        # and the standalone conversion finding carries the same denial, so reading it alone is not misleading
+        assert "NOT an expected isolated/practical yield" in e.conversion_finding.provenance
+
+    def test_the_conversion_percentage_never_appears_without_the_ideal_qualifier(self):
+        e = equilibrium_of_step(water_gas_shift())
+        # wherever the conversion percentage is shown it is framed as ideal-model, not a naked practical yield %
+        assert "ideal-model equilibrium conversion" in e.reason
+
+
 class TestDeltaNNonZeroIsHonest:
     """Where the mole count changes, the conversion needs a reference state -- a loud UNKNOWN, K still DERIVED."""
 

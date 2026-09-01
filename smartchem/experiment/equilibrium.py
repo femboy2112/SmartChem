@@ -209,21 +209,23 @@ def equilibrium_of_step(
     else:
         conversion_finding = Quantity(
             "equilibrium-conversion", f"{conversion:.3f}", "fraction", Bucket.KNOWN_SOURCED,
-            f"{grade.value}: {conv_note}",
+            f"{grade.value}: {conv_note} -- an ideal-model equilibrium fraction, NOT an expected "
+            "isolated/practical yield",
         )
 
     extrap = "" if grade is FeasibilityGrade.DERIVED else (
         " [PREDICTED: extrapolated from the 298.15 K reference via constant ΔH/ΔS]"
     )
     conv_str = (
-        f"; equilibrium conversion ~{conversion * 100:.0f}% ({conv_note})"
+        f"; ideal-model equilibrium conversion ~{conversion * 100:.0f}% ({conv_note})"
         if conversion is not None
         else f"; conversion UNKNOWN ({conv_note})"
     )
     reason = (
         f"{extent.value}: K = {_format_k(log10_k)} at {temperature:.1f} K "
         f"(log10 K = {log10_k:.2f}; from ΔG = {feas.delta_g_kj:.1f} kJ/mol via K = exp(-ΔG/RT))"
-        f"{conv_str}{extrap} -- equilibrium extent, NOT a rate"
+        f"{conv_str}{extrap} -- ideal-model equilibrium extent, NOT a rate and NOT an expected "
+        "isolated/practical yield (standard section 9.5)"
     )
     return StepEquilibrium(
         extent, grade, temperature, feas.delta_g_kj, log10_k, conversion, k_finding, conversion_finding,

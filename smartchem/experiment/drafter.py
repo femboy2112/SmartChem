@@ -16,9 +16,11 @@ claim it makes wears its grade and envelope; it never contradicts a sourced fact
   hand -- and the fitter selects the routes that RUN on that bench and refuses the ones that do not, citing
   the exact bound each violated.  A route whose steps declare conditions outside the box is ``EXCLUDED``; a
   route that cannot be confirmed to fit (an undeclared dimension the box constrains, or a composability gap)
-  is ``UNKNOWN`` -- never silently "fits"; a route within the box and composable is ``FITS``.  Ranking floats
-  ``FITS`` + sourced above ``UNKNOWN`` above ``EXCLUDED``/``DEGENERATE`` -- exactly as ``evidence_ranking``
-  floats a sourced edge above an unranked one.
+  is ``UNKNOWN`` -- never silently "fits"; a route within a box that actually constrains something is
+  ``FITS``; and a route judged against an EMPTY box (no bench constraint at all) is ``UNCONSTRAINED`` --
+  nothing was assessed, so it is NOT a pass (standard section 11: ``UNCONSTRAINED`` MUST NOT render as
+  ``FITS``).  Ranking floats ``FITS`` + sourced above ``UNKNOWN`` above ``EXCLUDED``/``DEGENERATE`` -- exactly
+  as ``evidence_ranking`` floats a sourced edge above an unranked one.
 
 Universal: any route of certified steps flows through; unsourced dimensions surface as ``UNKNOWN``, never a
 crash and never a guess.
@@ -149,11 +151,29 @@ class ConstraintBox(Digestible):
         if self.available_equipment is not None and type(self.available_equipment) is not frozenset:
             raise TypeError("available_equipment must be a frozenset of EquipmentKind or None")
 
+    @property
+    def constrains_anything(self) -> bool:
+        """True iff the box declares at least one real bench constraint.
+
+        An all-``None`` box constrains nothing; a route judged against it is ``UNCONSTRAINED`` (nothing was
+        assessed), never ``FITS`` (standard section 11: ``UNCONSTRAINED`` MUST NOT render as a pass).
+        """
+        return any(
+            getattr(self, name) is not None
+            for name in ("max_temperature_k", "min_pressure_atm", "max_pressure_atm",
+                         "available_reagents", "available_equipment")
+        )
+
 
 class RouteFitStatus(str, Enum):
-    FITS = "FITS"          # within the box on every declared dimension, and composable
-    UNKNOWN = "UNKNOWN"    # cannot be confirmed to fit (undeclared constrained dimension, or a comp. gap)
-    EXCLUDED = "EXCLUDED"  # exceeds a hard bound of the box, or the route is degenerate
+    # NOTE: the standard (section 11) names these ASSESSED_FIT / UNKNOWN_FIT / UNCONSTRAINED / EXCLUDED / BLOCKED;
+    # SmartChem keeps the shorter FITS/UNKNOWN names for now (a user-visible rename is deferred to the shared-
+    # response work under the section 18 migration-alias discipline). BLOCKED belongs to the readiness/safety
+    # layer and is not modeled here yet.
+    FITS = "FITS"                    # a box that ACTUALLY constrains something, and the route is within it everywhere declared
+    UNKNOWN = "UNKNOWN"              # cannot be confirmed to fit (undeclared constrained dimension, or a comp. gap)
+    EXCLUDED = "EXCLUDED"            # exceeds a hard bound of the box, or the route is degenerate
+    UNCONSTRAINED = "UNCONSTRAINED"  # the bench box declares NO constraint -- nothing to fit, so NOT a pass (section 11)
 
 
 @dataclass(frozen=True)
@@ -266,8 +286,12 @@ def fit_route(
         status = RouteFitStatus.EXCLUDED
     elif gaps:
         status = RouteFitStatus.UNKNOWN
-    else:
+    elif box.constrains_anything:
         status = RouteFitStatus.FITS
+    else:
+        # an empty box constrains nothing, so there is nothing to fit: UNCONSTRAINED, never a silent FITS
+        # (FIT-SEM-01; standard section 11).  The route's composability/thermo verdicts still ride along.
+        status = RouteFitStatus.UNCONSTRAINED
     return RouteFit(route, status, tuple(exclusions), tuple(gaps), comp, sel, feas, equi, kin)
 
 
@@ -297,7 +321,11 @@ def _route_score(fit: RouteFit) -> tuple:
     sinks -- also neutral on ignorance (UNKNOWN in the middle), and it NEVER enters any L2 grade (that
     orthogonality is the whole point of the kinetics module).
     """
-    status_rank = {RouteFitStatus.FITS: 0, RouteFitStatus.UNKNOWN: 1, RouteFitStatus.EXCLUDED: 2}
+    # UNCONSTRAINED shares the top tier with FITS: with no bench box, no route is penalised for the missing
+    # constraint and the finer tiebreakers decide.  Because the box is shared across a fit_routes call,
+    # UNCONSTRAINED is all-or-nothing and never actually mixes with FITS/UNKNOWN/EXCLUDED in one ranking.
+    status_rank = {RouteFitStatus.FITS: 0, RouteFitStatus.UNCONSTRAINED: 0,
+                   RouteFitStatus.UNKNOWN: 1, RouteFitStatus.EXCLUDED: 2}
     comp_rank = {"COMPOSABLE": 0, "SINGLE_STEP": 1, "UNKNOWN": 2, "DEGENERATE": 3}
     sel_rank = {"FAVORED": 0, "NOT_APPLICABLE": 1, "UNKNOWN": 1, "DISFAVORED": 2}
     feas_rank = {"FAVORABLE": 0, "BORDERLINE": 1, "UNKNOWN": 1, "UNFAVORABLE": 2}

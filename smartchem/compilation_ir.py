@@ -42,12 +42,15 @@ __all__ = [
     "ChemicalIdentity",
     "CandidateSummary",
     "ChemicalCompilationIR",
+    "InverseStatus",
+    "InverseResult",
     "decompile_to_ir",
     "recompile_to_ir",
     "ir_to_payload",
     "ir_from_payload",
     "serialize_ir",
     "deserialize_ir",
+    "recompile_from_serialized",
 ]
 
 CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha1"
@@ -402,6 +405,20 @@ def recompile_to_ir(
         )
     elif not receipt.complete_within_bounds:
         diagnostics = (f"search incomplete within bounds: {receipt.status.value}",)
+    elif not candidates:
+        # complete-within-bounds AND zero candidates AND not in stock: NO limit fired, so this mode's search
+        # EXHAUSTED its grammar at these bounds and found no conservation-valid assembly terminating in stock.
+        # This MUST be said precisely -- a silent "complete + empty" is indistinguishable from a truncated
+        # search that gave up (the laundering SRCH-DEPTH-01 outlawed one layer down).  But the claim is scoped
+        # EXACTLY to what the receipt proves: exhaustion of THIS mode's grammar at THESE bounds -- NOT a
+        # registry-wide "no route exists anywhere" (a different mode or higher bounds is not excluded; the same
+        # request under mode='dags' can still be truncated).  Overclaiming that scope was a red-team finding.
+        diagnostics = (
+            f"no route to the target from the declared terminals exists within the '{mode}' search grammar at "
+            f"the declared bounds (max_depth={max_depth}); the search was exhaustive there (no limit fired), but "
+            f"that is exhaustion of THIS grammar/mode at THESE bounds -- not a proof that no route exists under a "
+            f"different mode or higher bounds (section 8.3, no-route: exhaustive-within-bounds)",
+        )
     else:
         diagnostics = ()
     return ChemicalCompilationIR(
@@ -505,3 +522,221 @@ def deserialize_ir(text: str) -> ChemicalCompilationIR:
     if not isinstance(text, str):
         raise TypeError("deserialize_ir needs a str")
     return ir_from_payload(json.loads(text))
+
+
+# == IR-INV-01: the recompiler consumes a SERIALIZED decompile artifact, end to end =======================
+#
+# This is where the two compiler directions actually MEET across the serialization boundary (section 4.1): a
+# decompile artifact is emitted, serialized to a transportable string, and then a recompile is driven FROM it.
+#
+# The load-bearing honesty is the formula->structure gap (section 5.4).  A decompile artifact is a FORMULA-layer
+# fact ("H2O decomposes to the {H, O} buckets"); the recompiler is a STRUCTURE-layer search (it needs a Molecule
+# and structural terminals).  A formula does NOT determine a structure -- so the caller MUST supply the structural
+# hypothesis, and the bridge's one non-trivial consumption of the artifact is to GATE that hypothesis on the
+# decompiled formula: the reconstitution target's formula must equal the formula the decompile analysed, or the
+# request is not an inverse of that artifact at all and is refused.
+#
+# The named acceptance (IR-INV-01): water.  ``recompile`` cannot build H2O from H2/O2 terminals -- elemental
+# redox is outside the capped-scission organic grammar.  We do NOT invent a water transform (that would fabricate
+# a reaction, W3-forbidden); instead the bridge classifies the outcome and, for water, returns a PRECISE
+# unsupported-transform refusal (``NO_ROUTE_IN_GRAMMAR``).  The one distinction that makes the refusal honest is
+# separating an EXHAUSTIVE empty search (a real grammar dead end) from a TRUNCATED empty search (inconclusive) --
+# the same split SRCH-DEPTH-01 enforced one layer down; a truncated search is NEVER reported as a dead end.
+
+
+class InverseStatus(str, Enum):
+    """The verdict of driving a recompile FROM a decompile artifact (section 4.1 / IR-INV-01).
+
+    Two of these are pre-search refusals (no recompile IR is produced); the rest classify a recompile that ran.
+    Only ``ROUTES_FOUND`` and ``TARGET_ALREADY_TERMINAL`` are successes; every other member carries a ``refusal``
+    explaining precisely why the inverse did not (or could not) reconstitute the target.
+    """
+
+    NOT_A_DECOMPILE_ARTIFACT = "NOT_A_DECOMPILE_ARTIFACT"  # the serialized IR is not a DECOMPILE/FORMULA artifact
+    FORMULA_MISMATCH = "FORMULA_MISMATCH"                  # the structural hypothesis is not the decompiled species
+    TARGET_ALREADY_TERMINAL = "TARGET_ALREADY_TERMINAL"    # trivially reconstituted: target is itself on-hand stock
+    ROUTES_FOUND = "ROUTES_FOUND"                          # >=1 formal-candidate route/DAG (completeness: see the IR)
+    NO_ROUTE_IN_GRAMMAR = "NO_ROUTE_IN_GRAMMAR"            # EXHAUSTIVE empty search: a real grammar-level dead end
+    INCONCLUSIVE_BOUNDS_HIT = "INCONCLUSIVE_BOUNDS_HIT"    # TRUNCATED empty search: cannot conclude no-route
+
+
+@dataclass(frozen=True)
+class InverseResult:
+    """The end-to-end outcome of consuming a serialized decompile artifact and driving a recompile from it.
+
+    ``decompile_ir`` is always the (re-validated) artifact that was consumed.  ``recompile_ir`` is the structural
+    recompilation that ran, or ``None`` for a pre-search refusal (``NOT_A_DECOMPILE_ARTIFACT``/``FORMULA_MISMATCH``).
+    ``refusal`` is a precise, human-readable explanation for every non-success status and ``None`` for a success.
+
+    This is deliberately NOT a :class:`Digestible`: it is a report bundling two already-identified IRs plus a
+    verdict, not a new identity.  The transportable identities are the two IRs it carries.
+    """
+
+    decompile_ir: ChemicalCompilationIR
+    recompile_ir: "ChemicalCompilationIR | None"
+    inverse_status: InverseStatus
+    refusal: "str | None"
+
+    def __post_init__(self) -> None:
+        if type(self.decompile_ir) is not ChemicalCompilationIR:
+            raise TypeError("decompile_ir must be a ChemicalCompilationIR")
+        if self.recompile_ir is not None and type(self.recompile_ir) is not ChemicalCompilationIR:
+            raise TypeError("recompile_ir must be a ChemicalCompilationIR or None")
+        if not isinstance(self.inverse_status, InverseStatus):
+            raise TypeError("inverse_status must be an InverseStatus")
+        # the two slots must actually carry the operations the field names advertise -- a DECOMPILE artifact in
+        # the recompile slot (or vice versa) is an incoherent bundle even if every other invariant holds
+        # (red-team finding: enforce the coherence the docstring promises, do not merely document it).  The ONE
+        # exemption is NOT_A_DECOMPILE_ARTIFACT, whose whole job is to report the wrong-operation artifact it was
+        # handed -- so the decompile slot there deliberately carries a non-DECOMPILE op.
+        if self.inverse_status is not InverseStatus.NOT_A_DECOMPILE_ARTIFACT:
+            if self.decompile_ir.operation is not CompilationOperation.DECOMPILE:
+                raise ValueError("decompile_ir must carry the DECOMPILE operation")
+        if self.recompile_ir is not None and self.recompile_ir.operation is not CompilationOperation.RECOMPILE:
+            raise ValueError("recompile_ir must carry the RECOMPILE operation")
+        _successes = (InverseStatus.ROUTES_FOUND, InverseStatus.TARGET_ALREADY_TERMINAL)
+        if self.inverse_status in _successes:
+            if self.refusal is not None:
+                raise ValueError("a success status carries no refusal")
+        elif not isinstance(self.refusal, str) or not self.refusal:
+            raise ValueError("a non-success status must carry a non-empty refusal string")
+        # a pre-search refusal produced no recompile IR; a post-search status must carry one
+        _pre_search = (InverseStatus.NOT_A_DECOMPILE_ARTIFACT, InverseStatus.FORMULA_MISMATCH)
+        if self.inverse_status in _pre_search and self.recompile_ir is not None:
+            raise ValueError("a pre-search refusal must not carry a recompile IR")
+        if self.inverse_status not in _pre_search and self.recompile_ir is None:
+            raise ValueError("a post-search status must carry a recompile IR")
+
+    @property
+    def reconstituted(self) -> bool:
+        """True iff the inverse produced at least one route (or the target was already terminal stock)."""
+        return self.inverse_status in (InverseStatus.ROUTES_FOUND, InverseStatus.TARGET_ALREADY_TERMINAL)
+
+    def render(self) -> str:
+        head = (
+            f"INVERSE COMPILATION ({self.inverse_status.value})\n"
+            f"  decompiled: {self.decompile_ir.target.canonical_repr} "
+            f"[{self.decompile_ir.target.layer.value}] -> {self.decompile_ir.candidate_count} bucket edge(s)\n"
+        )
+        if self.recompile_ir is not None:
+            head += (
+                f"  recompiled: {self.recompile_ir.target.canonical_repr} "
+                f"[{self.recompile_ir.target.layer.value}]; search {self.recompile_ir.search_status.value}; "
+                f"{self.recompile_ir.candidate_count} candidate(s)\n"
+            )
+        # NB: a decompile artifact is formula-level, so a success confirms only that the SUPPLIED structural
+        # hypothesis routes -- never that the artifact was about that specific isomer (a formula does not fix
+        # one). Say exactly that, so the word does not read as structure-level identity confirmation.
+        head += f"  refusal: {self.refusal}" if self.refusal else "  refusal: none (routes for the supplied structure)"
+        return head
+
+
+def recompile_from_serialized(
+    decompile_ir_text: str,
+    *,
+    structure: "object",
+    reagents: tuple,
+    available: tuple = (),
+    commodities: tuple = (),
+    max_depth: int = 2,
+    max_results: int = 100,
+    cut_budget: int = 20_000,
+    mode: str = "routes",
+    tool_version: str | None = None,
+) -> InverseResult:
+    """Consume a SERIALIZED decompile artifact and drive a recompile from it, end to end (IR-INV-01).
+
+    ``decompile_ir_text`` is a :func:`serialize_ir` string of a DECOMPILE artifact (as produced by
+    :func:`decompile_to_ir`); ``structure`` is the caller's STRUCTURE-layer hypothesis (a
+    :class:`~smartchem.category.Molecule`) for the decompiled species.  The bridge:
+
+    1. deserializes and re-validates the artifact (a tampered payload is refused on read);
+    2. refuses unless the artifact is a DECOMPILE at the FORMULA layer (``NOT_A_DECOMPILE_ARTIFACT``);
+    3. gates the structural hypothesis on the decompiled formula -- the reconstitution target's formula MUST
+       equal the analysed formula, else the request is not an inverse of THIS artifact (``FORMULA_MISMATCH``);
+       this is the one place the artifact genuinely CONSTRAINS the recompile across the section 5.4 gap;
+    4. runs :func:`recompile_to_ir` over the structural hypothesis and terminals; and
+    5. classifies the outcome, keeping the honest distinction between an EXHAUSTIVE empty search
+       (``NO_ROUTE_IN_GRAMMAR`` -- a real grammar dead end, e.g. water from H2/O2) and a TRUNCATED empty
+       search (``INCONCLUSIVE_BOUNDS_HIT`` -- cannot conclude no-route).
+
+    W3 unchanged: a ``ROUTES_FOUND`` verdict means conservation-valid formal candidates exist within the grammar
+    and bounds, never that any synthesis is validated; read ``recompile_ir.search_status`` for completeness.
+    """
+    from .category import Molecule
+
+    decompile_ir = deserialize_ir(decompile_ir_text)
+
+    if decompile_ir.operation is not CompilationOperation.DECOMPILE or decompile_ir.target.layer is not IdentityLayer.FORMULA:
+        return InverseResult(
+            decompile_ir,
+            None,
+            InverseStatus.NOT_A_DECOMPILE_ARTIFACT,
+            (
+                f"the serialized artifact is {decompile_ir.operation.value} at the "
+                f"{decompile_ir.target.layer.value} layer; recompile_from_serialized inverts a DECOMPILE/FORMULA "
+                f"artifact (section 4.1)"
+            ),
+        )
+
+    if type(structure) is not Molecule:
+        raise TypeError("structure must be a smartchem.category.Molecule (the structural hypothesis)")
+
+    struct_formula = ChemicalIdentity.of_formula(Formula.of(structure.formula, structure.charge))
+    if struct_formula.identity_digest != decompile_ir.target.identity_digest:
+        return InverseResult(
+            decompile_ir,
+            None,
+            InverseStatus.FORMULA_MISMATCH,
+            (
+                f"the structural hypothesis has formula {struct_formula.canonical_repr}, but the decompile artifact "
+                f"analysed {decompile_ir.target.canonical_repr}; the inverse must reconstitute the SAME species "
+                f"(section 5.4: a formula does not fix a structure, but the target's formula must equal the "
+                f"decompiled formula)"
+            ),
+        )
+
+    recompile_ir = recompile_to_ir(
+        structure,
+        reagents=reagents,
+        available=available,
+        commodities=commodities,
+        max_depth=max_depth,
+        max_results=max_results,
+        cut_budget=cut_budget,
+        mode=mode,
+        tool_version=tool_version,
+    )
+
+    # classify from STRUCTURED facts, never by string-matching a diagnostic.  target-in-stock is decided the same
+    # way the search decides it: the target's structure identity lies in the union of the declared terminals.
+    terminal_idents = frozenset(_structure_ident(m) for m in (*available, *reagents, *commodities))
+    target_terminal = _structure_ident(structure) in terminal_idents
+
+    if target_terminal:
+        return InverseResult(decompile_ir, recompile_ir, InverseStatus.TARGET_ALREADY_TERMINAL, None)
+    if recompile_ir.candidate_count > 0:
+        return InverseResult(decompile_ir, recompile_ir, InverseStatus.ROUTES_FOUND, None)
+    if recompile_ir.complete_within_bounds:
+        return InverseResult(
+            decompile_ir,
+            recompile_ir,
+            InverseStatus.NO_ROUTE_IN_GRAMMAR,
+            (
+                f"no route reconstitutes {decompile_ir.target.canonical_repr} from the declared terminals within "
+                f"the '{mode}' grammar at the declared bounds (max_depth={max_depth}); the search was exhaustive "
+                f"there (no limit fired), but exhaustion is of THIS grammar/mode at THESE bounds -- NOT a proof "
+                f"that no route exists under a different mode or higher bounds. No bridge reaction is invented "
+                f"(W3, section 8.3, no-route: exhaustive-within-bounds)."
+            ),
+        )
+    return InverseResult(
+        decompile_ir,
+        recompile_ir,
+        InverseStatus.INCONCLUSIVE_BOUNDS_HIT,
+        (
+            f"the recompile search for {decompile_ir.target.canonical_repr} was TRUNCATED "
+            f"({recompile_ir.search_status.value}) before finding any route or exhausting the grammar; no-route "
+            f"cannot be concluded -- raise the bounds to decide (section 8.2)"
+        ),
+    )

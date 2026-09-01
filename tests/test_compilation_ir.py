@@ -15,10 +15,13 @@ from smartchem.compilation_ir import (
     ChemicalIdentity,
     CompilationOperation,
     IdentityLayer,
+    InverseResult,
+    InverseStatus,
     decompile_to_ir,
     deserialize_ir,
     ir_from_payload,
     ir_to_payload,
+    recompile_from_serialized,
     recompile_to_ir,
     serialize_ir,
 )
@@ -37,6 +40,8 @@ ACOH = parse_smiles("CC(=O)O")
 ANH = parse_smiles("CC(=O)OC(=O)C")                # acetic anhydride
 ETAC = parse_smiles("CCOC(=O)C")                   # ethyl acetate (a convergent retro-synthesis)
 DAG_REAGENTS = tuple(parse_smiles(s) for s in ("O", "CO", "CC(=O)O", "C=C", "CCO", "C=C=O"))
+H2 = parse_smiles("[H][H]")                         # elemental terminals for the water litmus (IR-INV-01)
+O2 = parse_smiles("O=O")
 
 
 class TestDecompileToIR:
@@ -267,3 +272,182 @@ class TestIRSerialization:
             ir_to_payload("not an ir")
         with pytest.raises(TypeError):
             deserialize_ir(123)
+
+
+class TestRecompileNoRouteDiagnostic:
+    """The producer fix under IR-INV-01: a complete-within-bounds, zero-candidate, not-in-stock recompile is an
+    EXHAUSTIVE grammar-level dead end and MUST say so -- a silent empty is the SRCH-DEPTH-01 laundering one layer up.
+    """
+
+    def test_complete_empty_not_in_stock_emits_a_precise_dead_end_diagnostic(self):
+        # water from H2/O2: outside the capped-scission grammar -> exhaustive empty
+        ir = recompile_to_ir(WATER, reagents=(H2, O2), max_depth=2)
+        assert ir.search_status is SearchStatus.COMPLETE_WITHIN_BOUNDS
+        assert ir.candidate_count == 0
+        assert ir.diagnostics, "a complete-empty search MUST NOT be silent -- that is the SRCH-DEPTH-01 disease"
+        msg = ir.diagnostics[0].lower()
+        assert "exhaustive" in msg
+        # the claim is SCOPED to this mode+bounds, never a registry-wide "no route anywhere" (red-team finding 1)
+        assert "these bounds" in msg and "'routes'" in msg
+        assert "not a proof" in msg
+        assert "outside the current registry" not in msg
+
+    def test_the_no_route_diagnostic_does_not_overclaim_registry_wide(self):
+        # red-team finding 1: complete_within_bounds proves exhaustion of THIS mode at THESE bounds only. The
+        # SAME request under mode='dags' can still be truncated -- so the wording must not assert a registry fact.
+        ir = recompile_to_ir(WATER, reagents=(H2, O2), max_depth=2)
+        msg = ir.diagnostics[0].lower()
+        assert "different mode or higher bounds" in msg  # explicitly names what it does NOT exclude
+        for overclaim in ("no route exists anywhere", "outside the current registry", "no bridge exists"):
+            assert overclaim not in msg
+
+    def test_a_truncated_empty_search_is_never_called_a_dead_end(self):
+        # same target family but starved: PARTIAL, and its diagnostic must speak of incompleteness, not exhaustion
+        ir = recompile_to_ir(PARA, reagents=(WATER,), max_depth=1, cut_budget=1)
+        assert not ir.complete_within_bounds
+        assert ir.candidate_count == 0
+        joined = " ".join(ir.diagnostics).lower()
+        assert "incomplete" in joined
+        assert "exhaustive" not in joined and "dead end" not in joined
+
+    def test_target_in_stock_keeps_its_own_diagnostic_not_the_dead_end_one(self):
+        ir = recompile_to_ir(PARA, reagents=(WATER,), available=(PARA,), max_depth=1)
+        assert ir.candidate_count == 0
+        assert "already present" in ir.diagnostics[0]
+        assert "dead end" not in ir.diagnostics[0]
+
+    def test_a_search_with_candidates_carries_no_diagnostic(self):
+        ir = recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=3)
+        assert ir.candidate_count > 0
+        assert ir.diagnostics == ()
+
+
+class TestRecompileFromSerialized:
+    """IR-INV-01: the recompiler consumes a SERIALIZED decompile artifact end to end.
+
+    The named acceptance is water: recompile cannot build H2O from H2/O2 (elemental redox is outside the
+    capped-scission grammar), so the bridge renders a PRECISE unsupported-transform refusal rather than a
+    fabricated water reaction or a silent empty (manifest IR-INV-01: the second, refusal clause).
+    """
+
+    def _water_artifact(self) -> str:
+        return serialize_ir(decompile_to_ir("H2O"))
+
+    def _para_artifact(self) -> str:
+        return serialize_ir(decompile_to_ir("C8H9NO2"))
+
+    # -- the headline: water is a precise, NON-laundered dead end -----------------------------------------
+    def test_water_from_elements_is_a_precise_no_route_refusal_not_a_fabricated_transform(self):
+        res = recompile_from_serialized(self._water_artifact(), structure=WATER, reagents=(H2, O2), max_depth=2)
+        assert type(res) is InverseResult
+        assert res.inverse_status is InverseStatus.NO_ROUTE_IN_GRAMMAR
+        assert not res.reconstituted
+        refusal = res.refusal.lower()
+        assert res.refusal and "exhaustive" in refusal
+        # the refusal is SCOPED to this mode+bounds, not a fabricated registry-wide claim (red-team finding 1)
+        assert "not a proof" in refusal and "different mode or higher bounds" in refusal
+        assert "outside the current registry" not in refusal
+        # W3: no water reaction was invented -- the recompile IR genuinely has zero candidates
+        assert res.recompile_ir is not None and res.recompile_ir.candidate_count == 0
+
+    def test_the_water_dead_end_is_distinguished_from_a_truncated_search(self):
+        # exhaustive empty -> NO_ROUTE_IN_GRAMMAR; truncated empty -> INCONCLUSIVE_BOUNDS_HIT. Never conflated.
+        dead_end = recompile_from_serialized(self._water_artifact(), structure=WATER, reagents=(H2, O2), max_depth=2)
+        starved = recompile_from_serialized(
+            self._para_artifact(), structure=PARA, reagents=(WATER,), max_depth=1, cut_budget=1
+        )
+        assert dead_end.inverse_status is InverseStatus.NO_ROUTE_IN_GRAMMAR
+        assert dead_end.recompile_ir.complete_within_bounds is True
+        assert starved.inverse_status is InverseStatus.INCONCLUSIVE_BOUNDS_HIT
+        assert starved.recompile_ir.complete_within_bounds is False
+        assert "cannot be concluded" in starved.refusal
+
+    # -- the artifact genuinely CONSTRAINS the recompile (section 5.4 coherence) --------------------------
+    def test_a_structure_whose_formula_is_not_the_decompiled_species_is_refused(self):
+        res = recompile_from_serialized(self._water_artifact(), structure=PARA, reagents=(ANH,), available=(AMP,))
+        assert res.inverse_status is InverseStatus.FORMULA_MISMATCH
+        assert res.recompile_ir is None          # refused BEFORE running any search
+        assert "C8H9NO2" in res.refusal and "H2O" in res.refusal
+
+    def test_same_formula_isomer_passes_the_formula_gate(self):
+        # PARA and its O-acetyl isomer share C8H9NO2 -- both are legitimate structural hypotheses for that artifact
+        for isomer in (PARA, PARA_O_ESTER):
+            res = recompile_from_serialized(
+                self._para_artifact(), structure=isomer, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1
+            )
+            assert res.inverse_status is not InverseStatus.FORMULA_MISMATCH
+            assert res.recompile_ir is not None
+            # and the two isomers key on DISTINCT structure identities (section 5.4), never collapsed to formula
+        a = recompile_from_serialized(self._para_artifact(), structure=PARA, reagents=(ANH,), available=(AMP,), max_depth=1)
+        b = recompile_from_serialized(self._para_artifact(), structure=PARA_O_ESTER, reagents=(ANH,), available=(AMP,), max_depth=1)
+        assert a.recompile_ir.target.identity_digest != b.recompile_ir.target.identity_digest
+
+    def test_a_recompile_artifact_is_refused_as_input(self):
+        recompile_text = serialize_ir(recompile_to_ir(PARA, reagents=(ANH,), available=(AMP,), max_depth=1))
+        res = recompile_from_serialized(recompile_text, structure=PARA, reagents=(ANH,), available=(AMP,))
+        assert res.inverse_status is InverseStatus.NOT_A_DECOMPILE_ARTIFACT
+        assert res.recompile_ir is None
+        assert "RECOMPILE" in res.refusal
+
+    # -- the two success shapes ---------------------------------------------------------------------------
+    def test_a_reachable_target_reconstitutes_with_routes(self):
+        res = recompile_from_serialized(
+            self._para_artifact(), structure=PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=3
+        )
+        assert res.inverse_status is InverseStatus.ROUTES_FOUND
+        assert res.reconstituted and res.refusal is None
+        assert res.recompile_ir.candidate_count > 0
+
+    def test_a_target_already_in_stock_is_trivially_reconstituted(self):
+        res = recompile_from_serialized(
+            self._para_artifact(), structure=PARA, reagents=(WATER,), available=(PARA,), max_depth=1
+        )
+        assert res.inverse_status is InverseStatus.TARGET_ALREADY_TERMINAL
+        assert res.reconstituted and res.refusal is None
+
+    # -- it truly consumes the TEXT, and re-validates it --------------------------------------------------
+    def test_it_consumes_a_serialized_string_not_an_object(self):
+        # the artifact crosses the serialization boundary: only the string is handed in
+        text = self._water_artifact()
+        assert isinstance(text, str)
+        res = recompile_from_serialized(text, structure=WATER, reagents=(H2, O2), max_depth=2)
+        assert res.decompile_ir.operation is CompilationOperation.DECOMPILE
+        # the consumed artifact round-trips to the same identity it was serialized from
+        assert res.decompile_ir.digest == decompile_to_ir("H2O").digest
+
+    def test_a_tampered_artifact_is_refused_on_read(self):
+        # deserialize re-validates: a broken candidate order in the artifact is rejected before any recompile
+        payload = ir_to_payload(decompile_to_ir("C8H9NO2", INV))
+        assert len(payload["candidates"]) >= 2
+        payload["candidates"] = list(reversed(payload["candidates"]))
+        import json
+
+        with pytest.raises(ValueError, match="canonical .*order"):
+            recompile_from_serialized(json.dumps(payload), structure=PARA, reagents=(ANH,), available=(AMP,))
+
+    # -- construction invariants of the result record ----------------------------------------------------
+    def test_result_rejects_incoherent_construction(self):
+        d = decompile_to_ir("H2O")
+        r = recompile_to_ir(WATER, reagents=(H2,), max_depth=1)
+        with pytest.raises(ValueError, match="success status carries no refusal"):
+            InverseResult(d, r, InverseStatus.ROUTES_FOUND, "spurious")     # success must NOT carry a refusal
+        with pytest.raises(ValueError, match="non-success status must carry"):
+            InverseResult(d, None, InverseStatus.NOT_A_DECOMPILE_ARTIFACT, None)  # non-success NEEDS a refusal
+        with pytest.raises(ValueError, match="pre-search refusal must not carry"):
+            InverseResult(d, r, InverseStatus.FORMULA_MISMATCH, "x")        # pre-search must not carry a recompile IR
+        with pytest.raises(ValueError, match="post-search status must carry"):
+            InverseResult(d, None, InverseStatus.ROUTES_FOUND, None)        # post-search must carry a recompile IR
+
+    def test_result_enforces_operation_coherence_of_its_two_irs(self):
+        # red-team finding 2: the slots must carry the operations their names advertise -- a DECOMPILE artifact
+        # in the recompile slot (or a RECOMPILE in the decompile slot) is incoherent even if all else is valid.
+        d = decompile_to_ir("H2O")
+        r = recompile_to_ir(WATER, reagents=(H2,), max_depth=1)
+        with pytest.raises(ValueError, match="recompile_ir must carry the RECOMPILE operation"):
+            InverseResult(d, d, InverseStatus.ROUTES_FOUND, None)           # DECOMPILE ir in the recompile slot
+        with pytest.raises(ValueError, match="decompile_ir must carry the DECOMPILE operation"):
+            InverseResult(r, r, InverseStatus.ROUTES_FOUND, None)           # RECOMPILE ir in the decompile slot
+
+    def test_type_guard_on_a_non_molecule_structure(self):
+        with pytest.raises(TypeError):
+            recompile_from_serialized(self._water_artifact(), structure="O", reagents=(H2, O2))

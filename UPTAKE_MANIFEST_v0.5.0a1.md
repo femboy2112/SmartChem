@@ -50,8 +50,9 @@ regression; the collected total (2566) reconciles across both environments. Cont
 `4a958b8` (DAG search receipt, +11 tests) -> 2562 passed; `454d2a0` (formula receipt + the shared
 `smartchem.search.SearchStatus`, +15 tests) -> 2577 passed; `a34cc69` (two render-honesty fixes -- empty box
 != FITS, ideal K != practical yield; +5 tests) -> 2582 passed; `09b3072` (ChemicalCompilationIR first brick, the
-shared artifact emitted by the formula decompiler; +13 tests) -> **2595 passed, 14 skipped, 1 expected
-failure**. See the uptake records after §3.1, §3.2 and §4.
+shared artifact emitted by the formula decompiler; +13 tests) -> 2595 passed; `7d27e3c` (StockMaterial first
+brick -- a chemical identity is not a material; +14 tests) -> **2609 passed, 14 skipped, 1 expected failure**.
+See the uptake records after §3.1, §3.2, §3.5 and §4.
 
 ## 2. Audit-branch patches already present
 
@@ -232,8 +233,32 @@ residual limitations (the rest of IR-CHEM-01, named in code and its row):
 | `TERM-COM-02` | Disabled/custom commodity inventory is authoritative everywhere | Current linear compile shortcut/termination/shopping respects the active inventory and `commodities=()` regression passes | Preserve through shared terminal/material policy and DAG work | `commodities=()` never uses global catalogue to stop/rank/shop | `TERM-POL-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `FEED-AMT-01` | Identity-only flags never invent quantity | Experimental CLI no longer maps identities to one mole and emits no finite ceiling without feed | Add explicit quantity+unit/assay input and optional symbolic ceiling separately | Identity-only poor-man fixture has no finite ceiling and no crash | `STOCK-01` desirable | `IMPLEMENTED_AND_VERIFIED` |
 | `FEED-ERR-01` | Missing feed cannot abort an otherwise valid dossier | Route dossier now renders without a ceiling when feed is absent | Preserve structured diagnostic in shared response/JSON | Missing commodity amount preserves route dossier and non-internal exit status | `FEED-AMT-01` | `IMPLEMENTED_AND_VERIFIED` |
-| `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | Commodity is a pure molecule plus editorial source lead | Add schema and validators; keep source leads distinct | Vinegar cannot satisfy pure acetic-acid input without assay/preprocessing | `ID-LAYER-01` | `TODO` |
+| `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | `StockMaterial` + `MaterialComponent` + `FitnessVerdict` exist (`smartchem/experiment/stock.py`, `7d27e3c`): a typed material of components (each a fraction INTERVAL), a phase, and provenance, with a rigorous `satisfies(identity, min_assay)` interval gate (vinegar -> `INSUFFICIENT_ASSAY`, a straddling requirement -> `UNKNOWN_ASSAY`, an unknown fraction never passes). The full section 10.2 schema (quantity, container, cost, jurisdiction, impurity profile), canonical-structure component keying, and recompiler/shopping integration remain | Extend to the full section 10.2 schema; key components by canonical structure; bridge `CommodityReagent` -> `StockMaterial` as an UNKNOWN-assay source lead; wire the gate into route/shopping selection | Vinegar cannot satisfy pure acetic-acid input without assay/preprocessing | `ID-LAYER-01` | `IN_PROGRESS` |
 | `SHOP-LEAF-02` | Shopping list is external, quantity-aware route input | Linear external-leaf identity logic is implemented and tested; quantities, DAG fan-out and purchased supplements are absent | Extend across DAGs, purchased supplements and quantity | Internally produced acid is absent now; purchased deficits must later include amount/unknown | `DAG-FLOW-01`, `STOCK-01` | `IN_PROGRESS` |
+
+**Uptake record — StockMaterial first brick** (advances `STOCK-01` TODO -> IN_PROGRESS):
+
+```text
+ID:                  STOCK-01 (first brick)
+commit:              7d27e3c
+files:               smartchem/experiment/stock.py (new), smartchem/experiment/__init__.py, tests/test_stock.py
+tests:               tests/test_stock.py (14 new adversarial items)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2609 passed, 14 skipped, 1 xfailed (baseline 2595; +14). ruff clean; git diff --check clean.
+built:               StockMaterial (typed material: components x fraction interval, phase, provenance),
+                     MaterialComponent (fraction interval [lo,hi]; unknown -> [0,1]), FitnessVerdict, and the
+                     satisfies(identity, min_assay) interval gate.
+falsifier fixture:   vinegar (acetic acid 0.04-0.07 in water).satisfies("acetic acid", min_assay=0.99)
+                     -> INSUFFICIENT_ASSAY; min_assay=0.05 -> UNKNOWN_ASSAY (straddles, must measure);
+                     min_assay=0.03 -> SATISFIES. glacial acetic acid (0.99-1.0) vs 0.99 -> SATISFIES.
+                     An unknown-fraction component never SATISFIES a real requirement.
+residual limitations (the rest of STOCK-01, named in code and its row):
+  1. First-brick schema only: quantity, container/storage, cost, jurisdiction/availability, impurity profile,
+     assay method (the full section 10.2 fields) are absent.
+  2. Components are keyed by a normalized name/formula string, not canonical structure (ID-LAYER-01).
+  3. Not yet wired into the recompiler / shopping / affordability (SHOP-LEAF-02, COST-VEC-01), and there is no
+     CommodityReagent -> StockMaterial source-lead bridge yet (a commodity match must map to UNKNOWN assay).
+```
 
 ### 3.6 Readiness and safety
 

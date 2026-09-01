@@ -47,9 +47,10 @@ at `bb4b238`):** the truth-envelope work continues on a new non-main branch. Its
 environment measured **2551 passed, 14 skipped, 1 expected failure** — the higher pass / lower skip counts
 vs the 2510/51 above reflect PySCF and slow paths being *available* here rather than skipped, not a
 regression; the collected total (2566) reconciles across both environments. Continuation increments so far:
-`4a958b8` (DAG search receipt, +11 adversarial tests) took the suite to 2562 passed; `454d2a0` (formula receipt
-+ the shared `smartchem.search.SearchStatus`, +15 adversarial tests) took it to **2577 passed, 14 skipped, 1
-expected failure**. See the uptake records after §3.1.
+`4a958b8` (DAG search receipt, +11 tests) -> 2562 passed; `454d2a0` (formula receipt + the shared
+`smartchem.search.SearchStatus`, +15 tests) -> 2577 passed; `a34cc69` (two render-honesty fixes -- empty box
+!= FITS, ideal K != practical yield; +5 tests) -> **2582 passed, 14 skipped, 1 expected failure**. See the
+uptake records after §3.1 and §4.
 
 ## 2. Audit-branch patches already present
 
@@ -240,17 +241,40 @@ stronger result.
 | ID | Requirement | Present issue | Acceptance test | Status |
 |---|---|---|---|---|
 | `PTABLE-01` | Formula validation uses one supported periodic-table authority and positive integer counts | Complete table is now used; zero/negative/non-integer formula counts are refused | CaO, representative heavy elements and invalid-count regressions pass | `IMPLEMENTED_AND_VERIFIED` |
-| `THERMO-UNC-01` | Carry reported uncertainty, phase, standard state and source | Thermochemical uncertainty/context can be dropped | Round-trip fixture preserves every field; incompatible phases do not match | `TODO` |
+| `THERMO-UNC-01` | Carry reported uncertainty, phase, standard state and source | `ThermoRef` already carries phase, provenance and grade; the missing piece is a reported UNCERTAINTY field. Assessed and DEFERRED from the P2 honesty batch: real values need sourced CODATA/JANAF uncertainties (fabricating them is forbidden), and a hollow null-field add would change every `ThermoRef` digest for no honesty gain -- this is a focused sourcing pass, not a render fix | Round-trip fixture preserves every field; incompatible phases do not match | `TODO` |
 | `THERMO-DIG-01` | Evidence grade/provider semantics affect artifact digest | Some grade fields are excluded from comparison/digest | Change grade/source fixture -> semantic digest changes | `TODO` |
-| `EQUIL-NAME-01` | Equilibrium diagnostic is not called practical extent/yield | `K`-derived label can read as conversion | Golden render names ideal model and denies expected yield | `TODO` |
+| `EQUIL-NAME-01` | Equilibrium diagnostic is not called practical extent/yield | The ideal K/conversion render now names the ideal model and denies practical yield explicitly (`a34cc69`): the reason reads "ideal-model equilibrium extent, NOT a rate and NOT an expected isolated/practical yield" (section 9.5) and the standalone conversion finding carries the same denial | Golden render names ideal model and denies expected yield | `IMPLEMENTED_AND_VERIFIED` |
 | `KIN-CTX-01` | Kinetics key includes conditions, order, units and composition requirements | Rate can be reused outside context; higher-order half-life underdetermined | Wrong temperature/order/unit refuses; missing concentration stays unknown | `TODO` |
 | `SELECT-SRC-01` | Curated selectivity paths have accepted exact source locators | Default promoted records carry accepted DOI locators; missing/malformed/unreviewed citations remain `UNKNOWN`; acceptance still lacks curator/date/provider identity | Add review metadata and exact reaction-context governance | `IN_PROGRESS` |
 | `CONSTR-VAL-01` | Constraints are finite, physical and ordered | Finite, positive and ordered validation is implemented | Negative/nonfinite/inverted T/P bounds fail in targeted regressions | `IMPLEMENTED_AND_VERIFIED` |
-| `FIT-SEM-01` | `UNCONSTRAINED` differs from assessed fit | Empty box can yield `FITS` | Empty box -> `UNCONSTRAINED`; unknown bounded dimension -> `UNKNOWN_FIT` | `TODO` |
+| `FIT-SEM-01` | `UNCONSTRAINED` differs from assessed fit | An empty `ConstraintBox` now yields `UNCONSTRAINED`, never `FITS`; `FITS` requires the box to actually constrain a dimension the route satisfies, and an undeclared constrained dimension stays `UNKNOWN` (`a34cc69`). NAMING RESIDUAL: SmartChem keeps the shorter `FITS`/`UNKNOWN` where the standard section 11 says `ASSESSED_FIT`/`UNKNOWN_FIT`; the user-visible rename (and `BLOCKED`) is deferred to the shared-response work under the section 18 migration-alias discipline | Empty box -> `UNCONSTRAINED`; unknown bounded dimension -> `UNKNOWN`(_FIT) | `IMPLEMENTED_AND_VERIFIED` |
 | `COST-VEC-01` | Rank affordability by sourced multi-objective cost vector | No cost/price ranking exists | Unknown price stays unknown; hard blocker dominates cheapest route | `TODO` |
 | `COST-PROV-01` | Price/availability have region, currency, date and source | Availability is editorial/static | Snapshot round-trip and stale-data warning | `TODO` |
 | `POOR-PARETO-01` | Poor-man mode exposes Pareto frontier, not one opaque score | Accessibility not integrated into ranking | Two trade-off fixtures both appear on frontier; dominated route removed | `TODO` |
 | `MAT-PRE-01` | Commodity mixtures can add explicit preprocessing/analysis | Pure identity currently stands in for source mixture | Dilute/impure source requires typed operation and revised balance/cost/waste | `TODO` |
+
+**Uptake record — two render-honesty defects** (closes `FIT-SEM-01`, `EQUIL-NAME-01`):
+
+```text
+ID:                  FIT-SEM-01, EQUIL-NAME-01
+commit:              a34cc69
+files:               smartchem/experiment/drafter.py, tests/test_drafter.py,
+                     smartchem/experiment/equilibrium.py, tests/test_equilibrium.py
+tests:               tests/test_drafter.py::TestConstraintFitting (3 new), tests/test_equilibrium.py::
+                     TestEquilibriumRenderDeniesYield (2 new)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2582 passed, 14 skipped, 1 xfailed (baseline 2577; +5). ruff clean; git diff --check clean.
+falsifier fixture:   fit_route(anhydride_route, ConstraintBox()) -> UNCONSTRAINED, .fits False (an empty box is
+                     not a pass); the same route against a real temp/pressure box -> FITS.
+                     equilibrium_of_step(water_gas_shift()).reason contains "ideal-model equilibrium extent, NOT a
+                     rate and NOT an expected isolated/practical yield".
+residual limitations:
+  1. FIT-SEM-01 naming: SmartChem keeps FITS/UNKNOWN where the standard section 11 says ASSESSED_FIT/UNKNOWN_FIT;
+     the user-visible rename (and the BLOCKED tier, which belongs to the readiness/safety layer) is deferred to
+     the shared-response work under the section 18 migration-alias discipline.
+  2. THERMO-UNC-01 was assessed and left TODO in this batch (see its row): real uncertainties need sourced
+     CODATA/JANAF values, and a hollow null-field add would churn every ThermoRef digest for no honesty gain.
+```
 
 ## 5. P2 strengthening backlog
 

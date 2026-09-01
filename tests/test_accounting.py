@@ -4,6 +4,7 @@ from smartchem.contracts import EvidenceStatus
 from smartchem.experiment.accounting import account_route, account_step
 from smartchem.experiment.bucket import Bucket
 from smartchem.experiment.step import ExperimentRoute, ExperimentStep
+from smartchem.provenance import SourceCitation, SourceReview
 from smartchem.smiles import parse_smiles
 
 KETENE = parse_smiles("C=C=O")
@@ -33,18 +34,31 @@ class TestHeatIsEstablishedOrUnknown:
 
 
 class TestConditionsAreSourcedOrUnknown:
-    def test_declared_conditions_are_known_sourced_undeclared_are_unknown(self):
+    def test_free_text_declared_conditions_are_not_laundered_to_known_sourced(self):
         env = ConditionEnvelope(
             temperature=Interval(295, 320, "K"), medium="aqueous, mild acid",
             status=EvidenceStatus.EXPERIMENTAL, provenance="teaching synthesis",
         )
         sa = account_step(ExperimentStep.assembling(PARA, (AMP, ANH), (PARA, ACOH),
                                                     reagents=(ANH,), envelope=env))
-        assert sa.temperature.bucket is Bucket.KNOWN_SOURCED
-        assert sa.medium.bucket is Bucket.KNOWN_SOURCED
+        assert sa.temperature.bucket is Bucket.COMPOSABILITY
+        assert sa.medium.bucket is Bucket.COMPOSABILITY
         # pressure and duration were not declared -> loud UNKNOWN, not a default
         assert sa.pressure.bucket is Bucket.UNKNOWN
         assert sa.duration.bucket is Bucket.UNKNOWN
+
+    def test_typed_citation_conditions_are_known_sourced(self):
+        env = ConditionEnvelope(
+            temperature=Interval(295, 320, "K"),
+            status=EvidenceStatus.EXPERIMENTAL,
+            provenance="DOI 10.1021/acs.jchemed.0c01512",
+            source=SourceCitation(
+                "https://doi.org/10.1021/acs.jchemed.0c01512", SourceReview.ACCEPTED
+            ),
+        )
+        sa = account_step(ExperimentStep.assembling(PARA, (AMP, ANH), (PARA, ACOH), envelope=env))
+        assert sa.temperature.bucket is Bucket.KNOWN_SOURCED
+        assert "https://doi.org/10.1021/acs.jchemed.0c01512" in sa.temperature.provenance
 
     def test_a_bare_step_degrades_to_all_unknown_conditions_without_crashing(self):
         sa = account_step(ExperimentStep.assembling(PARA, (AMP, ANH), (PARA, ACOH)))

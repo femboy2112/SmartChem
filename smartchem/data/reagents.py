@@ -175,14 +175,19 @@ def is_commodity(molecule: Molecule) -> bool:
 
 
 def shopping_list(route) -> tuple[CommodityReagent, ...]:
-    """The commodity reagents a route consumes -- the chemist's buy-list, deduplicated, ordered by name.
+    """The commodity EXTERNAL LEAVES of a route/DAG -- deduplicated and ordered by name.
 
-    Scans every step's reactants; a reactant that matches a commodity by canonical identity is on the list.
-    (A route generated with ``available=commodity_inventory()`` bottoms out at exactly these.)
+    A commodity made by an earlier step and consumed later is an intermediate, not something the user must
+    buy.  The old all-reactants scan incorrectly listed such intermediates.  A leaf is a reactant whose
+    identity is produced by no step in the selected synthesis.  Quantities and commercial formulation remain
+    a separate, currently unmodelled material-specification problem.
     """
     found: dict[str, CommodityReagent] = {}
+    made = {_identity(step.target) for step in route.steps}
     for step in route.steps:
         for m in step.reactants:
+            if _identity(m) in made:
+                continue
             r = commodity_for(m)
             if r is not None:
                 found[r.name] = r

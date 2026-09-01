@@ -140,6 +140,15 @@ class TestReactionKey:
         assert list(r) == sorted(r) and list(p) == sorted(p)  # canonical (sorted) form
         assert _resolve_record(DEFAULT_KINETICS, _n2o5_decomposition()) is not None  # the seed matches it
 
+    def test_uniform_equation_scaling_preserves_the_reaction_key_and_rate_lookup(self) -> None:
+        base = _n2o5_decomposition()
+        scaled = ExperimentStep.assembling(base.target, base.reactants * 3, base.products * 3)
+        assert reaction_key_of(scaled) == reaction_key_of(base)
+        assert _resolve_record(DEFAULT_KINETICS, scaled) is not None
+        assert kinetics_of_step(scaled, temperature_k=310.0).log10_k == pytest.approx(
+            kinetics_of_step(base, temperature_k=310.0).log10_k
+        )
+
     def test_a_same_formula_isomer_does_NOT_inherit_the_rate(self) -> None:
         # a peroxide isomer of N2O5 (same formula N2O5, different structure) must NOT borrow N2O5's rate
         peroxy = parse_smiles("O=[N+]([O-])OO[N]=O")

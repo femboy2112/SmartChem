@@ -71,6 +71,18 @@ class TestInstrumentCalibration:
         assert e.extent is EquilibriumExtent.NEGLIGIBLE
         assert e.log10_k < -50.0
 
+    def test_uniformly_rescaling_an_equation_does_not_change_delta_g_or_k(self):
+        base = water_gas_shift()
+        scaled = ExperimentStep.assembling(
+            CO2, base.reactants * 6, base.products * 6
+        )
+        e1 = equilibrium_of_step(base)
+        e6 = equilibrium_of_step(scaled)
+        assert e6.delta_g_kj == pytest.approx(e1.delta_g_kj)
+        assert e6.log10_k == pytest.approx(e1.log10_k)
+        assert e6.conversion_fraction == pytest.approx(e1.conversion_fraction)
+        assert e6.extent is e1.extent
+
 
 class TestConversionClosedForm:
     """The exactly-solvable Δn=0 ideal-reference conversion, checked against an independent recomputation."""

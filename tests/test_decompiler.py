@@ -45,9 +45,22 @@ class TestFormula:
         # "CO" is carbon+oxygen, never cobalt
         assert Formula.parse("CO").as_dict == {"C": 1, "O": 1}
 
+    def test_the_complete_periodic_table_is_accepted(self):
+        assert Formula.parse("CaO").as_dict == {"Ca": 1, "O": 1}
+        assert Formula.parse("LiAlH4").as_dict == {"Li": 1, "Al": 1, "H": 4}
+
     def test_unknown_element_is_refused_by_name(self):
-        with pytest.raises(DecompilerError, match="Ca"):
-            Formula.parse("CaO")
+        with pytest.raises(DecompilerError, match="Xx"):
+            Formula.parse("XxO")
+
+    @pytest.mark.parametrize("mapping", [{}, {"H": 0}, {"H": -1}])
+    def test_empty_or_nonpositive_formulas_are_refused(self, mapping):
+        with pytest.raises(ValueError):
+            Formula.of(mapping)
+
+    def test_fractional_counts_are_refused_instead_of_truncated(self):
+        with pytest.raises(TypeError):
+            Formula.of({"H": 1.9})
 
     def test_representation_independence_isomer_collapse(self):
         # string, mapping, and reordered mapping are one Formula (formula-level v1 contract)
@@ -172,7 +185,7 @@ class TestDecompositionGraph:
         g = build_decomposition("C3H6O", example_inventory())
         assert g.is_complete
         assert len(g.edges) > 1 and len(g.nodes()) > len(g.terminals())
-        assert g.terminals() == {C, H, OX}
+        assert {C, H, OX} <= g.terminals()
 
     def test_denser_target_has_a_denser_graph(self):
         inv = example_inventory()
@@ -184,8 +197,25 @@ class TestDecompositionGraph:
     def test_every_nonterminal_node_reaches_elements(self):
         g = build_decomposition("C3H6O", example_inventory())
         for node in g.nodes():
-            if not node.is_element:
+            if not node.is_element and node not in g.inventory:
                 assert g.edges_from(node), f"{node!r} is a non-terminal dead end"
+
+    def test_declared_inventory_is_a_terminal_bucket_not_an_expansion_hint(self):
+        g = build_decomposition("CO2", ("CO2",))
+        assert g.is_complete and g.edges == ()
+        assert Formula.parse("CO2") in g.terminals()
+
+    def test_inventory_order_and_duplicates_do_not_change_graph_identity(self):
+        a = build_decomposition("C3H6O", ("H2O", "CO", "CH4", "H2O"))
+        b = build_decomposition("C3H6O", ("CH4", "CO", "H2O"))
+        assert a.identity == b.identity
+
+    @pytest.mark.parametrize("kwargs", [
+        {"max_multiplicity": 0}, {"budget": 0}, {"max_edges": 0},
+    ])
+    def test_nonpositive_graph_bounds_are_refused(self, kwargs):
+        with pytest.raises(ValueError, match="positive integer"):
+            build_decomposition("H2O", **kwargs)
 
     def test_budget_refusal_is_loud_never_a_silent_partial(self):
         g = build_decomposition("C3H6O", example_inventory(), max_edges=3)
@@ -230,3 +260,8 @@ class TestStandardStatePackaging:
     def test_odd_hydrogen_forces_a_scale(self):
         # CH4: H is diatomic and count 4 is even -> no scaling; C monatomic
         assert standard_state_equation(Formula.parse("CH4")) == "CH4 -> C + 2 H2"
+
+    @pytest.mark.parametrize("count", [0, -1])
+    def test_nonpositive_equation_count_is_refused(self, count):
+        with pytest.raises(ValueError, match="positive integer"):
+            standard_state_equation(Formula.parse("H2O"), count=count)

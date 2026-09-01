@@ -9,7 +9,9 @@ favored route above the disfavored one.  The universality lever (inject a record
 """
 import pytest
 
+from smartchem.contracts import EvidenceStatus
 from smartchem.decompiler import Formula
+from smartchem.experiment.bucket import Bucket
 from smartchem.experiment.drafter import draft_procedure, rank_routes
 from smartchem.experiment.selectivity import (
     DEFAULT_SELECTIVITY,
@@ -21,6 +23,7 @@ from smartchem.experiment.selectivity import (
     verify_selectivity,
 )
 from smartchem.experiment.step import ExperimentRoute, ExperimentStep
+from smartchem.provenance import SourceCitation, SourceReview
 from smartchem.smiles import parse_smiles
 
 PARA = parse_smiles("CC(=O)Nc1ccc(O)cc1")      # paracetamol, the N-acetyl amide
@@ -50,6 +53,11 @@ class TestStepSelectivity:
         assert sel.status is SelectivityStatus.FAVORED
         assert "paracetamol" in sel.reason
         assert sel.finding.bucket.name == "KNOWN_SOURCED"
+
+    def test_uniform_equation_scaling_preserves_selectivity_lookup(self):
+        base = _para_via_anhydride()
+        scaled = ExperimentStep.assembling(PARA, base.reactants * 4, base.products * 4)
+        assert selectivity_of_step(scaled, table=DEFAULT_SELECTIVITY).status is SelectivityStatus.FAVORED
 
     def test_the_o_acetyl_ester_from_the_same_reactants_is_disfavored(self):
         sel = selectivity_of_step(_ester_via_anhydride(), table=DEFAULT_SELECTIVITY)
@@ -109,6 +117,9 @@ class TestInjectabilityLever:
                 product_formula=Formula.parse("C2H6O").counts,
                 major_isomer_name="ethanol",
                 provenance="test: acid-catalysed Markovnikov hydration of ethylene gives ethanol",
+                source=SourceCitation(
+                    "https://example.test/reviewed-ethylene-hydration", SourceReview.ACCEPTED
+                ),
             )
         )
         assert selectivity_of_step(step, table=injected).status is SelectivityStatus.FAVORED
@@ -148,6 +159,41 @@ class TestSourcedDiscipline:
                 provenance="test",
                 reactant_names=("",),
             )
+
+    def test_an_unsupported_record_cannot_promote_a_reaction(self):
+        with pytest.raises(ValueError, match="cannot be UNSUPPORTED"):
+            SelectivityRecord(
+                reactant_key=_formulas_key("C2H4", "H2O"),
+                product_formula=Formula.parse("C2H6O").counts,
+                major_isomer_name="ethanol",
+                provenance="test negative record",
+                status=EvidenceStatus.UNSUPPORTED,
+            )
+
+    def test_free_text_provenance_cannot_promote_a_reaction(self):
+        step = ExperimentStep.assembling(ETHANOL, (ETHYLENE, WATER), (ETHANOL,))
+        declared = SelectivityTable((SelectivityRecord(
+            reactant_key=_formulas_key("C2H4", "H2O"),
+            product_formula=Formula.parse("C2H6O").counts,
+            major_isomer_name="ethanol",
+            provenance="because I said so",
+        ),))
+        result = selectivity_of_step(step, table=declared)
+        assert result.status is SelectivityStatus.UNKNOWN
+        assert result.finding.bucket is Bucket.UNKNOWN
+
+    def test_unreviewed_or_malformed_locator_cannot_promote(self):
+        with pytest.raises(ValueError, match="source locator"):
+            SourceCitation("doi:", SourceReview.ACCEPTED)
+        step = ExperimentStep.assembling(ETHANOL, (ETHYLENE, WATER), (ETHANOL,))
+        unreviewed = SelectivityTable((SelectivityRecord(
+            reactant_key=_formulas_key("C2H4", "H2O"),
+            product_formula=Formula.parse("C2H6O").counts,
+            major_isomer_name="ethanol",
+            provenance="citation supplied but not accepted",
+            source=SourceCitation("https://example.test/pending-review"),
+        ),))
+        assert selectivity_of_step(step, table=unreviewed).status is SelectivityStatus.UNKNOWN
 
 
 # Mid-1: two more sourced regiochemical facts beyond the paracetamol N-/O-acetylation record --
@@ -197,6 +243,9 @@ class TestS2ReactantSideIsomerKeying:
                 major_isomer_name="paracetamol",
                 provenance="test: N-selective acetylation, keyed to the 4-aminophenol isomer specifically",
                 reactant_names=("4-aminophenol",),
+                source=SourceCitation(
+                    "https://example.test/reviewed-paracetamol-selectivity", SourceReview.ACCEPTED
+                ),
             )
         )
 

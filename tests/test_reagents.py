@@ -75,6 +75,19 @@ class TestRetrosynthesisTermination:
         assert all(is_commodity(r.molecule) for r in sl)
         assert [r.name for r in sl] == sorted({r.name for r in sl})
 
+    def test_internally_produced_commodity_is_not_a_purchase(self):
+        from smartchem.experiment.step import ExperimentRoute, ExperimentStep
+        from smartchem.smiles import parse_smiles
+
+        ethanol, oxygen, acid, water, anhydride = (
+            parse_smiles(s) for s in ("CCO", "O=O", "CC(=O)O", "O", "CC(=O)OC(=O)C")
+        )
+        make_acid = ExperimentStep.assembling(acid, (ethanol, oxygen), (acid, water))
+        use_acid = ExperimentStep.assembling(anhydride, (acid, acid), (anhydride, water))
+        names = {r.name for r in shopping_list(ExperimentRoute.of(make_acid, use_acid))}
+        assert "acetic acid" not in names
+        assert "ethanol" in names
+
 
 def structure_salt():
     from smartchem.category import Bond, Molecule

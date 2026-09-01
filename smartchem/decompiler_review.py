@@ -539,7 +539,7 @@ def decompile_and_review(
     """The unified chemist-facing view of one target's direct decompositions.
 
     Generates both the plain (own-atoms) edges and the mediated (solution-assisted) edges over the
-    declared ``inventory`` + ``medium``, then reviews them together — so the real runnable reaction
+    declared ``inventory`` + ``medium``, then reviews them together — so a mediated formal candidate
     (a hydrolysis, say) surfaces ranked and safety-screened alongside the anhydrous backbone. No
     edge is dropped; ``ENERGETICS_UNKNOWN`` is loud where reference data is absent.
     """
@@ -550,15 +550,30 @@ def decompile_and_review(
         s if isinstance(s, Formula) else (Formula.parse(s) if isinstance(s, str) else Formula.of(s))
         for s in inventory
     )
-    plain, _pc = admissible_edges(tf, inv, budget=budget)
-    mediated, _mc = mediated_edges(
+    plain, plain_complete = admissible_edges(tf, inv, budget=budget)
+    mediated, mediated_complete = mediated_edges(
         tf, inv, medium, max_reagent_instances=max_reagent_instances, budget=budget
     )
-    return review_edges(
+    banner, reviews = review_edges(
         plain + mediated,
         exotherm_threshold_ev=exotherm_threshold_ev,
         conditions_source=conditions_source,
     )
+    if plain_complete and mediated_complete:
+        search_line = (
+            "SEARCH STATUS: COMPLETE_WITHIN_DECLARED_DIRECT-EDGE BOUNDS (formula/mediated grammar only; "
+            "not all chemistry)."
+        )
+    else:
+        incomplete = ", ".join(
+            name for name, complete in (("plain", plain_complete), ("mediated", mediated_complete))
+            if not complete
+        )
+        search_line = (
+            f"SEARCH STATUS: INCOMPLETE_BUDGET ({incomplete}); returned reviews are a partial sample and "
+            "absence is not evidence that an edge does not exist."
+        )
+    return f"{banner}\n{search_line}", reviews
 
 
 def structures_of(capped) -> "dict[Formula, Molecule]":

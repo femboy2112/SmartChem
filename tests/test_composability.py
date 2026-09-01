@@ -138,7 +138,7 @@ class TestNonVacuity:
         )
         comp = verify_composability(route)
         assert comp.verdict == "SINGLE_STEP"
-        assert not comp.is_runnable  # nothing was composed; it is not a pass
+        assert not comp.transitions_cleared  # nothing was composed; it is not a pass
 
     def test_a_transition_count_mismatch_is_refused(self):
         from smartchem.experiment.composability import Composability

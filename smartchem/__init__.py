@@ -30,6 +30,8 @@ import importlib
 import importlib.util
 from typing import TYPE_CHECKING
 
+__version__ = "0.5.0a1"
+
 # The public API is served lazily (PEP 562). The eager imports live under TYPE_CHECKING
 # so type checkers and IDEs still see every re-export, but at runtime importing a single
 # submodule (e.g. ``smartchem.evidence``, ``smartchem.contracts``) no longer drags in
@@ -533,7 +535,7 @@ _EXPORTS: dict[str, tuple[object, ...]] = {
     "geometry": ("GeometryError", "RelaxResult", "VibrationalAnalysis", "harmonic_analysis", "is_linear", "relax", "seed_bond_length", "seed_coordinates",),
     "decompiler": ("Formula", "DecompositionEdge", "DecompositionGraph", "DecompilerError", "admissible_edges", "build_decomposition",),
     "decompiler_mediated": ("MediatedEdge", "mediated_edges", "mediated_decompose",),
-    "decompiler_conditions": ("reaction_conditions",),
+    "decompiler_conditions": ("ReactionDirection", "ConditionRecord", "reaction_conditions", "assembly_conditions",),
     "structure": ("NamedStructure", "StructureError", "known_compounds", "resolve_names", "resolve_structure", "registered_structures",),
     "structure_descent": ("Fragment", "ScissionEdge", "CappedScission", "HeterolyticScission", "StructureDecompositionGraph", "IonicDecompositionGraph", "RadicalLedger", "ScissionError", "scission_edges", "capped_scissions", "heterolytic_scissions", "structure_decompose", "ionic_decompose", "verify_radical_ledger",),
     "decompiler_review": ("HazardFlag", "HazardProfile", "EdgeReview", "EnergyAssessment", "SAFETY_BANNER", "coherence_score", "screen_edge", "assess_edge_energy", "decompile_and_review", "review_capped_scission", "molecule_name", "molecule_hazards", "molecule_dfh_0k_kj",),
@@ -996,6 +998,9 @@ __all__ = [
     "mediated_edges",
     "mediated_decompose",
     "reaction_conditions",
+    "assembly_conditions",
+    "ReactionDirection",
+    "ConditionRecord",
     "NamedStructure",
     "StructureError",
     "known_compounds",

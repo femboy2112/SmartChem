@@ -106,3 +106,17 @@ class TestRouteLinearity:
             ExperimentStep.assembling(ea, (acoh, etoh), (ea, water), envelope=_env())
         )
         assert route.n_transitions == 0
+
+    def test_a_spectator_on_both_sides_is_not_a_carried_intermediate(self):
+        anh = parse_smiles("CC(=O)OC(=O)C")
+        water = parse_smiles("O")
+        acoh = parse_smiles("CC(=O)O")
+        ethanol = parse_smiles("CCO")
+        ethene = parse_smiles("C=C")
+        make_acid = ExperimentStep.assembling(acoh, (anh, water), (acoh, acoh), envelope=_env())
+        acid_as_spectator = ExperimentStep.assembling(
+            ethene, (ethanol, acoh), (ethene, water, acoh), envelope=_env()
+        )
+        assert acid_as_spectator.consumes(acoh) and not acid_as_spectator.net_consumes(acoh)
+        with pytest.raises(StepError, match="net-consumed"):
+            ExperimentRoute.of(make_acid, acid_as_spectator)

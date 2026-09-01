@@ -2,8 +2,8 @@
 
 The three comonad laws are swept over representative (envelope, value) pairs with
 context-*reading* functions (so `extend` is non-trivial), and every honesty gate on the
-envelope is isolated: the unknown default is the only unsourced envelope, a declared
-condition demands a provenance, and the status can never reach the certified lane.
+envelope is isolated: a declared condition demands provenance, source citation is typed separately,
+and the status can never reach the certified lane.
 """
 
 import math
@@ -22,6 +22,7 @@ from smartchem.conditions import (
 )
 from smartchem.contracts import EvidenceStatus, canonical_digest
 from smartchem.decompiler import DecompositionEdge, Formula
+from smartchem.provenance import SourceCitation, SourceReview
 
 UNKNOWN = ConditionEnvelope.unknown()
 AQUEOUS = ConditionEnvelope(medium="aqueous", status=EvidenceStatus.EXPERIMENTAL, provenance="lit:acetylation")
@@ -100,6 +101,26 @@ class TestInterval:
 
 
 class TestConditionEnvelopeTiering:
+    def test_free_text_is_declared_not_source_attested(self):
+        env = ConditionEnvelope(
+            medium="aqueous", status=EvidenceStatus.EXPERIMENTAL, provenance="because I said so"
+        )
+        assert env.is_declared and not env.is_sourced
+
+    @pytest.mark.parametrize("locator", ["DOI:", "https://"])
+    def test_source_attestation_requires_reviewable_locator(self, locator):
+        with pytest.raises(ValueError, match="source locator"):
+            SourceCitation(locator, SourceReview.ACCEPTED)
+
+    def test_unreviewed_citation_does_not_become_sourced(self):
+        env = ConditionEnvelope(
+            medium="aqueous",
+            status=EvidenceStatus.EXPERIMENTAL,
+            provenance="declared citation awaiting review",
+            source=SourceCitation("https://example.test/paper"),
+        )
+        assert not env.is_sourced
+
     def test_unknown_is_the_only_unsourced_envelope(self):
         u = ConditionEnvelope.unknown()
         assert u.status is EvidenceStatus.UNSUPPORTED and not u.is_declared
@@ -110,7 +131,7 @@ class TestConditionEnvelopeTiering:
             ConditionEnvelope(medium="aqueous")
 
     def test_declared_condition_without_provenance_is_refused(self):
-        with pytest.raises(ValueError, match="fabricated"):
+        with pytest.raises(ValueError, match="non-empty provenance"):
             ConditionEnvelope(medium="aqueous", status=EvidenceStatus.EXPERIMENTAL, provenance="")
 
     def test_status_is_capped_below_the_certified_lane(self):

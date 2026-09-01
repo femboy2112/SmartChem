@@ -9,9 +9,9 @@ Nothing is invented.
   NIST/CCCBDB).  It is ``KNOWN_SOURCED`` when every species is in the reference, and ``UNKNOWN`` the moment
   one is not -- so a drug-sized target with no tabulated dfH is honestly ``UNKNOWN``, not guessed.
 * **Temperature / pressure / time / medium / catalysts** are read off the step's DECLARED
-  :class:`~smartchem.conditions.ConditionEnvelope`.  A declared field (which already required a sourced
-  provenance to exist) is ``KNOWN_SOURCED``; an undeclared field is ``UNKNOWN``.  The envelope machinery
-  guarantees conditions are sourced or absent, never fabricated.
+  :class:`~smartchem.conditions.ConditionEnvelope`.  A field with typed citation evidence is
+  ``KNOWN_SOURCED``; an operator-declared field is ``COMPOSABILITY`` (a constraint/input, not scientific
+  evidence); an undeclared field is ``UNKNOWN``.
 
 The boundary E3 does NOT cross
 ------------------------------
@@ -46,16 +46,24 @@ __all__ = [
 ]
 
 
+def _condition_provenance(envelope: ConditionEnvelope) -> str:
+    """Render declaration text plus the accepted locator when the field is actually sourced."""
+    base = envelope.provenance or "operator-declared condition envelope"
+    if envelope.is_sourced:
+        return f"{base}; accepted source: {envelope.source.locator}"
+    return base
+
+
 def _interval_quantity(interval: Interval | None, envelope: ConditionEnvelope, label: str) -> Quantity:
-    """A KNOWN_SOURCED quantity from a declared interval, or a loud UNKNOWN if the field is undeclared."""
+    """A cited or declared interval, or a loud UNKNOWN if the field is absent."""
     if interval is None:
         return unknown(label, "", f"no sourced {label} declared for this step")
     return Quantity(
         label=label,
         value=f"[{interval.lo}, {interval.hi}]",
         unit=interval.unit,
-        bucket=Bucket.KNOWN_SOURCED,
-        provenance=envelope.provenance or "declared condition envelope",
+        bucket=Bucket.KNOWN_SOURCED if envelope.is_sourced else Bucket.COMPOSABILITY,
+        provenance=_condition_provenance(envelope),
     )
 
 
@@ -164,13 +172,13 @@ def account_step(step: ExperimentStep) -> StepAccounting:
     if type(step) is not ExperimentStep:
         raise TypeError("step must be an ExperimentStep")
     env = step.envelope
+    condition_bucket = Bucket.KNOWN_SOURCED if env.is_sourced else Bucket.COMPOSABILITY
     medium = (
-        Quantity("medium", env.medium, "", Bucket.KNOWN_SOURCED, env.provenance or "declared envelope")
+        Quantity("medium", env.medium, "", condition_bucket, _condition_provenance(env))
         if env.medium else unknown("medium", "", "no sourced solvent/medium declared")
     )
     catalysts = (
-        Quantity("catalysts", list(env.catalysts), "", Bucket.KNOWN_SOURCED,
-                 env.provenance or "declared envelope")
+        Quantity("catalysts", list(env.catalysts), "", condition_bucket, _condition_provenance(env))
         if env.catalysts else unknown("catalysts", "", "no sourced catalyst declared")
     )
     return StepAccounting(

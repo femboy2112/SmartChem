@@ -46,9 +46,9 @@ v1 scope (decisions fixed with the owner, 2026-08-30)
 * **Formula-level** (atom multiset), not structure-level.  Consequence, stated loudly: *every
   structural isomer of a formula shares one decomposition graph* -- correct and honest for a
   stoichiometric decomposer.  Bond-graph-aware descent is v2.
-* **Closed declared inventory**: the caller declares which intermediate species are admissible;
-  element buckets are always admissible terminals.  Open generative enumeration of intermediates
-  is v2.
+* **Closed declared inventory**: the caller declares molecular terminal buckets; those species may appear
+  in a split but are not recursively decomposed. Element buckets are always terminals. Open generative
+  enumeration of intermediates is v2.
 * **Terminals are element buckets counted in atoms** (``O`` and ``O2`` are the same bucket);
   the familiar molecular packaging (``O2``, ``H2``) is a *reporting* layer
   (:meth:`Formula.reference_form` / :func:`standard_state_equation`), never a separate identity.
@@ -57,12 +57,13 @@ v1 scope (decisions fixed with the owner, 2026-08-30)
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import reduce
 from math import gcd
 
-from .atoms import PT
 from .contracts import Digestible
+from .data.periodic_table import ATOMIC_NUMBER
 
 __all__ = [
     "DECOMPILER_SCHEMA",
@@ -85,6 +86,7 @@ DECOMPILER_SCHEMA = "smartchem.decompiler/elemental-descent-v1"
 _REFERENCE_MOLECULARITY: dict[str, int] = {
     "H": 2, "D": 2, "T": 2, "N": 2, "O": 2, "F": 2, "Cl": 2, "Br": 2, "I": 2,
 }
+_FORMULA_SYMBOLS = frozenset(ATOMIC_NUMBER) | {"D", "T"}  # isotope shorthand retained by the v1 API
 
 
 class DecompilerError(ValueError):
@@ -117,6 +119,8 @@ class Formula(Digestible):
             not isinstance(pair, tuple) or len(pair) != 2 for pair in self.counts
         ):
             raise TypeError("counts must be a tuple of (symbol, count) pairs")
+        if not self.counts:
+            raise ValueError("a chemical formula must contain at least one atom")
         seen: set[str] = set()
         prev: str | None = None
         for symbol, count in self.counts:
@@ -124,10 +128,10 @@ class Formula(Digestible):
                 raise TypeError("element symbol must be a non-empty string")
             if type(count) is not int or count <= 0:
                 raise ValueError(f"count for {symbol!r} must be a positive int, got {count!r}")
-            if symbol not in PT:
+            if symbol not in _FORMULA_SYMBOLS:
                 raise DecompilerError(
-                    f"unknown element {symbol!r}; v1 validates against the bundled element "
-                    f"table (smartchem.atoms.PT) and refuses rather than guess"
+                    f"unknown element {symbol!r}; formulas validate against SmartChem's complete sourced "
+                    f"periodic table and refuse rather than guess"
                 )
             if symbol in seen:
                 raise ValueError(f"element {symbol!r} appears twice; counts must be a multiset")
@@ -141,10 +145,20 @@ class Formula(Digestible):
     # -- construction ------------------------------------------------------------
     @classmethod
     def of(cls, mapping: "dict[str, int] | Formula", charge: int = 0) -> "Formula":
-        """Build from an element->count mapping (unsorted, zero counts dropped) or copy a Formula."""
+        """Build from an element->positive-integer-count mapping (unsorted), or copy a Formula."""
         if isinstance(mapping, Formula):
             return mapping
-        clean = {s: int(k) for s, k in mapping.items() if int(k) != 0}
+        if not isinstance(mapping, Mapping):
+            raise TypeError("mapping must be a dict of element symbols to positive integer counts")
+        clean: dict[str, int] = {}
+        for symbol, count in mapping.items():
+            if type(count) is not int:
+                raise TypeError(f"count for {symbol!r} must be an int, got {type(count).__name__}")
+            if count <= 0:
+                raise ValueError(f"count for {symbol!r} must be positive, got {count!r}")
+            clean[symbol] = count
+        if not clean:
+            raise ValueError("a chemical formula must contain at least one atom")
         return cls(tuple(sorted(clean.items())), charge)
 
     @classmethod
@@ -397,6 +411,10 @@ def admissible_edges(
     """
     if type(reactant) is not Formula:
         raise TypeError("reactant must be a Formula")
+    if type(max_multiplicity) is not int or max_multiplicity <= 0:
+        raise ValueError("max_multiplicity must be a positive integer")
+    if type(budget) is not int or budget <= 0:
+        raise ValueError("budget must be a positive integer")
     if reactant.charge != 0:
         raise DecompilerError("v1 decomposes neutral species only")
     if reactant.is_element:
@@ -482,7 +500,7 @@ class DecompositionGraph(Digestible):
 
     ``edges`` collects every admissible edge over every non-terminal node reached from the
     target (the AND-OR DAG: nodes are compounds, hyperedges their alternative decompositions,
-    leaves are element buckets).  ``status`` is ``COMPLETE`` only when the whole reachable
+    leaves are element buckets or declared inventory buckets).  ``status`` is ``COMPLETE`` only when the whole reachable
     graph was built within budget; ``REFUSED_BUDGET`` carries a partial ``edges`` and a reason,
     and must never be read as a complete enumeration (W2).
     """
@@ -527,7 +545,8 @@ class DecompositionGraph(Digestible):
         return frozenset(seen)
 
     def terminals(self) -> frozenset[Formula]:
-        return frozenset(n for n in self.nodes() if n.is_element)
+        declared = set(self.inventory)
+        return frozenset(n for n in self.nodes() if n.is_element or n in declared)
 
     def edges_from(self, node: Formula) -> tuple[DecompositionEdge, ...]:
         return tuple(e for e in self.edges if e.reactant == node)
@@ -549,15 +568,21 @@ def build_decomposition(
     """Build the elemental-descent hypergraph of ``target`` over a closed ``inventory``.
 
     ``target`` and ``inventory`` accept formula strings, atom-count mappings, or ``Formula``
-    values.  The descent is well-founded (W1), so it always reaches element buckets; the only
+    values. Inventory species are terminal buckets: they may be products but are not expanded further.
+    The descent is well-founded (W1), so it reaches declared stock or element buckets; the only
     non-completion is a **loud** ``REFUSED_BUDGET`` when the graph exceeds ``budget`` search
     nodes or ``max_edges`` collected edges (W2) -- the returned partial graph says so in its
     status and is never a silent truncation.
     """
     target_f = _coerce(target)
-    inv = tuple(_coerce(s) for s in inventory)
+    inv = tuple(sorted(set(_coerce(s) for s in inventory), key=_sort_key))
     if target_f.charge != 0:
         raise DecompilerError("v1 decomposes neutral targets only")
+    for name, value in (
+        ("max_multiplicity", max_multiplicity), ("budget", budget), ("max_edges", max_edges)
+    ):
+        if type(value) is not int or value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
 
     collected: dict[str, DecompositionEdge] = {}
     expanded: set[Formula] = set()
@@ -566,7 +591,7 @@ def build_decomposition(
 
     while frontier:
         node = frontier.pop()
-        if node in expanded or node.is_element:
+        if node in expanded or node.is_element or node in inv:
             expanded.add(node)
             continue
         node_edges, complete = admissible_edges(
@@ -588,7 +613,7 @@ def build_decomposition(
                     f"edge budget ({max_edges}) exceeded; graph is partial",
                 )
             for product, _ in edge.products:
-                if product not in expanded and not product.is_element:
+                if product not in expanded and not product.is_element and product not in inv:
                     frontier.append(product)
 
     return DecompositionGraph(
@@ -626,6 +651,8 @@ def standard_state_equation(target: Formula, count: int = 1) -> str:
     of reference molecules -- the coherent "2 part" bookkeeping.  This is a reporting
     convenience over conservation, not a physical standard-state or reaction claim.
     """
+    if type(count) is not int or count <= 0:
+        raise ValueError("count must be a positive integer")
     if target.is_element:
         return repr(target)
     # minimal integer scale s so every bucket is a whole number of reference molecules.

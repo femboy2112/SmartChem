@@ -110,6 +110,22 @@ class TestCappedScissionCertificate:
         edge = _hydrolysis()
         assert all(len(p.atoms) < len(PARACETAMOL.atoms) for p in edge.products)
 
+    def test_duplicate_reagent_types_do_not_change_work_or_completeness(self):
+        once = capped_scissions(PARACETAMOL, (WATER,), budget=150)
+        duplicate = capped_scissions(PARACETAMOL, (WATER, WATER), budget=150)
+        assert once[1] == duplicate[1]
+        assert tuple(edge.digest for edge in once[0]) == tuple(edge.digest for edge in duplicate[0])
+
+    def test_charged_input_is_refused_before_products_can_be_neutralised(self):
+        charged = Molecule(PARACETAMOL.atoms, PARACETAMOL.bonds, charge=1)
+        with pytest.raises(ScissionError, match="neutral input species only"):
+            capped_scissions(charged, (WATER,))
+
+    @pytest.mark.parametrize("kw", [{"max_reactant_cuts": 0}, {"budget": 0}])
+    def test_nonpositive_search_bounds_are_refused(self, kw):
+        with pytest.raises(ValueError, match="positive integer"):
+            capped_scissions(PARACETAMOL, (WATER,), **kw)
+
 
 # ======================================================================================
 # The bridge: forget() -> MediatedEdge, straight into the existing review layer

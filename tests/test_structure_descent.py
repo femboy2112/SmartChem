@@ -63,6 +63,28 @@ class TestScissionCertificate:
         # every atom's parent degree == its surviving valence + its opened valence
         assert verify_valence_integrity(PARACETAMOL, edge.cut_bonds)
 
+    def test_scission_identity_keeps_the_atom_that_owns_each_open_valence(self):
+        # These two non-automorphic two-cuts leave the same unrooted C3 fragment and the same multiset of
+        # open-bond orders, but one puts both open ends on one carbon and the other separates them.  They are
+        # distinct radical topologies and must not be deduplicated.
+        parent = Molecule(
+            ("C",) * 5,
+            frozenset({Bond(0, 2), Bond(1, 2), Bond(2, 4), Bond(3, 4)}),
+        )
+        cut_a = tuple(sorted((Bond(0, 2), Bond(1, 2))))
+        cut_b = tuple(sorted((Bond(0, 2), Bond(3, 4))))
+        edges, complete = scission_edges(parent, max_cut_bonds=2)
+        assert complete
+        emitted = {edge.cut_bonds for edge in edges}
+        assert cut_a in emitted and cut_b in emitted
+        signatures = {edge.cut_bonds: edge.signature for edge in edges}
+        assert signatures[cut_a] != signatures[cut_b]
+
+    def test_charged_homolytic_input_is_refused_before_charge_can_be_erased(self):
+        charged = Molecule(("C", "C"), frozenset({Bond(0, 1)}), charge=1)
+        with pytest.raises(ScissionError, match="neutral molecules only"):
+            scission_edges(charged)
+
     def test_open_valence_lands_on_the_nitrogen_and_the_carbonyl_carbon(self):
         edge = _amide_scission()
         by_formula = {repr(f.formula): f for f in edge.fragments}

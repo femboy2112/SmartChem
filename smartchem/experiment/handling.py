@@ -24,7 +24,8 @@ Doctrine, inherited verbatim from the hazard/stability layers and load-bearing
 -----------------------------------------------------------------------------
 * **Inform, never neuter.**  A handling profile ATTACHES facts; it never refuses or hides a step.  The chemist
   owns the decision.
-* **UNKNOWN is not "safe".**  The safe verdict :attr:`CareLevel.PROCEED_UNATTENDED` is reachable ONLY when
+* **UNKNOWN is not "safe".**  :attr:`CareLevel.PROCEED_UNATTENDED` is retained for schema compatibility but
+  is not emitted by the current analyzer: species records alone cannot establish unattended operation.
   EVERY species present carries a positive (assessed) hazard record -- one unassessed species holds the step
   at :attr:`CareLevel.UNKNOWN`, never a green light over ignorance.  This is the same non-vacuity guard E1's
   ``COMPOSABLE`` uses, and the same "vacuous green over an empty subject" disease it is written against.
@@ -107,7 +108,7 @@ class CareLevel(str, Enum):
     #                                                walk-away blocker on its own
     UNKNOWN = "UNKNOWN"                            # at least one species present is UNASSESSED -- cannot
     #                                                certify either way (never a false "safe")
-    PROCEED_UNATTENDED = "PROCEED_UNATTENDED"      # every species assessed AND benign: no dangerous off-gas,
+    PROCEED_UNATTENDED = "PROCEED_UNATTENDED"      # reserved compatibility value; not currently emitted
     #                                                all isolable, no known hazard -- it can run unattended
 
 
@@ -427,10 +428,11 @@ def handling_of_step(
             "leave unattended (UNKNOWN is not 'safe')",
         )
     else:
-        care = CareLevel.PROCEED_UNATTENDED
+        care = CareLevel.UNKNOWN
         reasons = (
-            "every species present carries a positive (assessed) hazard record and none triggers active "
-            "control -- no dangerous off-gas, all isolable, no known hazard: it can run unattended",
+            "no trigger was found in the loaded species records, but scale, concentrations, addition rate, "
+            "heat release, equipment state, and experiment-specific controls are not represented; unattended "
+            "operation is therefore NOT established",
         )
     if unassessed and care is not CareLevel.UNKNOWN:  # surface the gaps even when a known hazard dominates
         reasons = (*reasons, f"NOTE: {len(unassessed)} species unassessed -- the true care level may be higher")

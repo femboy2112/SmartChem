@@ -1,10 +1,10 @@
-"""E4 -- the procedure drafter and the constraint fitter (the compiler's backend).
+"""E4 -- the route-dossier renderer and constraint fitter (the compiler's backend).
 
 Two capstone jobs, both composing E1-E3 and the equipment layer, both under one banner: what comes out is a
 COMPOSED, EVIDENCE-GRADED DRAFT over known chemistry -- not a guarantee of a successful synthesis.  Every
 claim it makes wears its grade and envelope; it never contradicts a sourced fact and never invents a law.
 
-* **:func:`draft_procedure`** turns a route into the human-readable draft a chemist reads: per-step balanced
+* **:func:`draft_route_dossier`** turns a route into the human-readable evidence dossier a chemist reviews:
   equation, the sourced/UNKNOWN physical accounting (E3), the standard apparatus (the "Bunsen and flasks"
   click), the composability verdict (E1), and -- given charged amounts -- the propagated 100%-efficiency
   ceiling (E2).  Every number wears its bucket, so a chemist can act on what is KNOWN and see exactly where
@@ -25,6 +25,7 @@ crash and never a guess.
 """
 from __future__ import annotations
 
+import math
 import numbers
 from dataclasses import dataclass
 from enum import Enum
@@ -52,6 +53,9 @@ __all__ = [
     "ConstraintBox",
     "RouteFitStatus",
     "RouteFit",
+    "ProcedureReadiness",
+    "RouteDossier",
+    "draft_route_dossier",
     "DraftedProcedure",
     "draft_procedure",
     "fit_routes",
@@ -59,12 +63,33 @@ __all__ = [
 ]
 
 DRAFT_BANNER = (
-    "DRAFT -- a composed, evidence-graded synthesis over known chemistry. NOT a predicted successful "
+    "ROUTE EVIDENCE DOSSIER -- a composed, evidence-graded formal candidate. NOT a predicted successful "
     "synthesis: it is no guarantee the reaction succeeds, and it asserts no reaction RATE or "
     "time-to-completion (the repo carries no established kinetics model). Every claim it DOES make -- "
     "selectivity, feasibility, the equilibrium extent, the conservation ceiling, sourced conditions -- wears "
     "its epistemic grade and envelope; UNKNOWN marks a genuine gap, never a cleared one, and nothing here "
     "contradicts a sourced fact or invents a law."
+)
+
+
+class ProcedureReadiness(str, Enum):
+    """Bench-readiness vocabulary for compiled chemistry artifacts.
+
+    The present drafter emits only ``FORMAL_CANDIDATE``.  The additional values reserve the standard's
+    progression without pretending current route equations contain scale, operations, workup, or controls.
+    """
+
+    FORMAL_CANDIDATE = "FORMAL_CANDIDATE"
+    LITERATURE_SUPPORTED = "LITERATURE_SUPPORTED"
+    BENCH_DRAFT = "BENCH_DRAFT"
+    BLOCKED = "BLOCKED"
+
+
+_MISSING_BENCH_FIELDS = (
+    "scale and material amounts/assays",
+    "addition order and rate, agitation, and endpoint",
+    "quench, workup, isolation, purification, and analytical acceptance",
+    "waste routing, equipment ratings, and experiment-specific emergency controls",
 )
 
 
@@ -75,6 +100,19 @@ def _names_of(molecule: Molecule) -> frozenset[str]:
     if named is not None:
         ids.update(named.all_names)
     return frozenset(ids)
+
+
+def _chemist_label(molecule: Molecule) -> str:
+    formula = repr(Formula.of(molecule.formula, molecule.charge))
+    named = resolve_structure(molecule)
+    if named is None:
+        return formula
+    details = [named.name, formula]
+    if named.iupac and named.iupac.casefold() != named.name.casefold():
+        details.append(f"IUPAC {named.iupac}")
+    if named.cas:
+        details.append(f"CAS {named.cas}")
+    return " | ".join(details)
 
 
 @dataclass(frozen=True)
@@ -98,6 +136,14 @@ class ConstraintBox(Digestible):
             v = getattr(self, name)
             if v is not None and (isinstance(v, bool) or not isinstance(v, numbers.Real)):
                 raise TypeError(f"{name} must be a real number or None")
+            if v is not None and (not math.isfinite(float(v)) or v <= 0):
+                raise ValueError(f"{name} must be finite and positive")
+        if (
+            self.min_pressure_atm is not None
+            and self.max_pressure_atm is not None
+            and self.min_pressure_atm > self.max_pressure_atm
+        ):
+            raise ValueError("min_pressure_atm cannot exceed max_pressure_atm")
         if self.available_reagents is not None and type(self.available_reagents) is not frozenset:
             raise TypeError("available_reagents must be a frozenset of strings or None")
         if self.available_equipment is not None and type(self.available_equipment) is not frozenset:
@@ -283,7 +329,8 @@ def rank_routes(
     The north-star litmus: given several candidate routes to the same target, float the ones that FIT and
     are COMPOSABLE and sourced above those with UNKNOWN gaps above those EXCLUDED or DEGENERATE -- and, among
     otherwise-comparable routes, the one whose steps make the SOURCED major isomer and are thermodynamically
-    FAVORABLE above those that make the minor isomer or are endergonic -- surfacing what is runnable-and-known.
+    FAVORABLE above those that make the minor isomer or are endergonic -- surfacing better-evidenced formal
+    candidates without asserting procedure readiness.
     """
     effective_box = box if box is not None else ConstraintBox()
     fits = fit_routes(routes, effective_box, stability=stability, selectivity=selectivity, thermo=thermo,
@@ -292,8 +339,8 @@ def rank_routes(
 
 
 @dataclass(frozen=True)
-class DraftedProcedure(Digestible):
-    """The full human-readable draft of a route: equations + accounting + equipment + composability + ceiling."""
+class RouteDossier(Digestible):
+    """A human-readable route evidence dossier; never, by this type alone, a bench-ready procedure."""
 
     route: ExperimentRoute
     composability: Composability
@@ -305,10 +352,26 @@ class DraftedProcedure(Digestible):
     equilibrium: RouteEquilibrium  # equilibrium extent K=exp(-ΔG/RT) per step (DERIVED, or a loud UNKNOWN)
     handling: RouteHandling  # E6 bench handling: byproducts, off-gasses, and the care level per step
 
+    @property
+    def readiness(self) -> ProcedureReadiness:
+        # ProcedureIR does not yet represent the operational fields named below.  A route may carry useful
+        # sourced facts, but this aggregate cannot honestly promote itself beyond a formal candidate.
+        return ProcedureReadiness.FORMAL_CANDIDATE
+
     def render(self) -> str:
-        lines = [DRAFT_BANNER, "", f"TARGET: {self.route.final_target!r}", ""]
+        lines = [
+            DRAFT_BANNER,
+            f"READINESS: {self.readiness.value} -- NOT a bench-ready procedure",
+            "MISSING BEFORE BENCH USE:",
+            *(f"  - {field}" for field in _MISSING_BENCH_FIELDS),
+            "",
+            f"TARGET: {self.route.final_target!r}",
+            "",
+        ]
         for idx, step in enumerate(self.route.steps):
             lines.append(f"STEP {idx + 1}: {step.equation()}")
+            lines.append(f"    reactant identities: {' + '.join(_chemist_label(m) for m in step.reactants)}")
+            lines.append(f"    product identities: {' + '.join(_chemist_label(m) for m in step.products)}")
             for q in self.accounting.per_step[idx].quantities():
                 lines.append(f"    {q.render()}")
             lines.append(f"    {self.feasibility.per_step[idx].finding.render()}")
@@ -348,17 +411,20 @@ class DraftedProcedure(Digestible):
         return "\n".join(lines)
 
 
-def draft_procedure(
+def draft_route_dossier(
     route: ExperimentRoute,
     feed: Mapping[Molecule, "int | Fraction"] | None = None,
     *,
     stability=None,
     selectivity: SelectivityTable | None = None,
     thermo=None,
-) -> DraftedProcedure:
-    """Compose the full drafted procedure for a route: E1 composability, E3 accounting, equipment, E2 ceiling,
+) -> RouteDossier:
+    """Compose a formal-candidate route evidence dossier from the available analysis layers.
+
+    The dossier includes E1 composability, E3 accounting, equipment, the optional E2 ceiling,
     the sourced regiochemical selectivity (which isomer each step makes), the DERIVED thermodynamic
-    feasibility (ΔG per step), and the DERIVED equilibrium extent (M2: K = exp(-ΔG/RT) per step).
+    feasibility (ΔG per step), and the DERIVED equilibrium diagnostic (M2: K = exp(-ΔG/RT) per step).
+    It is not a complete procedure and cannot earn bench readiness from this aggregate.
 
     ``feed`` (external reactant amounts in mol) turns on the propagated 100%-efficiency ceiling; omit it to
     skip the outcome bound.  ``stability`` / ``selectivity`` / ``thermo`` optionally extend the sourced data
@@ -376,4 +442,20 @@ def draft_procedure(
     ceiling = None
     if feed is not None:
         ceiling = route_ceiling(route, feed)
-    return DraftedProcedure(route, comp, accounting, equipment, ceiling, sel, feas, equi, handling)
+    return RouteDossier(route, comp, accounting, equipment, ceiling, sel, feas, equi, handling)
+
+
+# Compatibility spellings retained for one deprecation cycle.  Canonical code and rendered output use
+# route-dossier language; these aliases confer no procedure-readiness claim.
+DraftedProcedure = RouteDossier
+
+
+def draft_procedure(*args, **kwargs) -> RouteDossier:
+    """Deprecated compatibility wrapper for :func:`draft_route_dossier`."""
+    import warnings
+    warnings.warn(
+        "draft_procedure is deprecated; use draft_route_dossier (the result is not a bench procedure)",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return draft_route_dossier(*args, **kwargs)

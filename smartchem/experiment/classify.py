@@ -18,8 +18,9 @@ The six grades, each earned by a CHECKABLE condition (never a vibe)
   does not even build a :class:`~smartchem.category.Reaction` (E0); (2) a SOURCED fact forbids a handoff --
   an E1 ``DEGENERATE`` transition (an intermediate that is not isolable, or is boiled off by a declared
   pressure drop).  This is the one permanent refusal: contradicting established sourced physics.
-* ``KNOWN`` -- a SOURCED record attests *this exact reaction*: a sourced regiochemistry record matches it
-  (:mod:`~smartchem.experiment.selectivity`), or the step carries a sourced (declared) condition envelope.
+* ``KNOWN`` -- a SOURCED record attests *this exact reaction*: currently a sourced, direction-specific
+  regiochemistry record matches it (:mod:`~smartchem.experiment.selectivity`).  A condition envelope is
+  context, not proof that the net reaction occurs, and never promotes a step by itself.
   Direct literature attestation of the reaction ITSELF -- a step above a model computation.  A reaction can
   be KNOWN yet have UNKNOWN thermodynamics (paracetamol acetylation: a documented ACS teaching synthesis
   whose ΔG has no sourced formation data); the grade reflects the sourced attestation, and the thermo gap is
@@ -197,14 +198,16 @@ def _feas_summary(feas: StepFeasibility) -> str:
     return f"ΔG = {feas.delta_g_kj:.1f} kJ/mol ({feas.direction.value}, {feas.grade.value})"
 
 
-def _step_grade(feas: StepFeasibility, sel: StepSelectivity, is_declared: bool) -> Grade:
+def _step_grade(feas: StepFeasibility, sel: StepSelectivity) -> Grade:
     """The KNOWN / DERIVED / PREDICTED / HYPOTHESIZED grade of ONE conserving step (never REFUTED/UNKNOWN).
 
     Conservation is a precondition (the step exists), so the floor is HYPOTHESIZED.  A sourced attestation of
-    the reaction itself (a matched selectivity record, or a sourced/declared envelope) earns KNOWN; else an
-    established ΔG earns DERIVED (in-envelope) or PREDICTED (extrapolated); else HYPOTHESIZED.
+    the reaction itself (currently a matched selectivity record) earns KNOWN; else an established ΔG earns
+    DERIVED (in-envelope) or PREDICTED (extrapolated); else HYPOTHESIZED.  A declared condition envelope says
+    where a reaction is alleged or documented to run; it is not itself a direction-specific reaction
+    attestation and cannot promote arbitrary user text to KNOWN.
     """
-    attested = sel.status in (SelectivityStatus.FAVORED, SelectivityStatus.DISFAVORED) or is_declared
+    attested = sel.status in (SelectivityStatus.FAVORED, SelectivityStatus.DISFAVORED)
     if attested:
         return Grade.KNOWN
     if feas.grade is FeasibilityGrade.DERIVED:
@@ -214,13 +217,11 @@ def _step_grade(feas: StepFeasibility, sel: StepSelectivity, is_declared: bool) 
     return Grade.HYPOTHESIZED
 
 
-def _attestation(sel: StepSelectivity, is_declared: bool) -> str:
+def _attestation(sel: StepSelectivity) -> str:
     """Name the sourced fact that makes a step KNOWN (for the headline)."""
     if sel.status in (SelectivityStatus.FAVORED, SelectivityStatus.DISFAVORED):
         minor = " (this route makes the MINOR isomer)" if sel.status is SelectivityStatus.DISFAVORED else ""
         return f"a sourced regiochemistry record for this reaction{minor}"
-    if is_declared:
-        return "a sourced (declared) condition envelope for this reaction"
     return "a sourced record"  # unreachable when grade is KNOWN, kept total
 
 
@@ -247,11 +248,11 @@ def classify_step(
     sel = selectivity_of_step(step, table=selectivity)
     kin = kinetics_of_step(step, kinetics=kinetics, temperature_k=temperature_k)
     eyr = eyring_of_step(step, barriers=barriers, temperature_k=temperature_k)
-    grade = _step_grade(feas, sel, step.is_declared)  # rate is deliberately NOT an input -- it is orthogonal
+    grade = _step_grade(feas, sel)  # rate and condition declaration are deliberately orthogonal
 
     if grade is Grade.KNOWN:
         headline = (
-            f"KNOWN: {step.equation()} -- attested by {_attestation(sel, step.is_declared)}; "
+            f"KNOWN: {step.equation()} -- attested by {_attestation(sel)}; "
             f"{_feas_summary(feas)}"
         )
     elif grade in (Grade.DERIVED, Grade.PREDICTED):
@@ -403,10 +404,7 @@ def classify_route(
             eyring=reyr,
         )
 
-    step_grades = tuple(
-        _step_grade(f, s, st.is_declared)
-        for f, s, st in zip(rfeas.per_step, rsel.per_step, route.steps)
-    )
+    step_grades = tuple(_step_grade(f, s) for f, s in zip(rfeas.per_step, rsel.per_step))
     grade = _aggregate_grade(step_grades)  # rate is deliberately NOT aggregated into the grade
     headline = (
         f"{grade.value}: {len(route.steps)}-step route -> {route.final_target!r} (weakest step: "
@@ -470,9 +468,7 @@ def classify_dag(
             feasibility=None, equilibrium=None, selectivity=None, composability=comp,
         )
 
-    step_grades = tuple(
-        _step_grade(f, s, st.is_declared) for f, s, st in zip(feas, sels, dag.steps)
-    )
+    step_grades = tuple(_step_grade(f, s) for f, s in zip(feas, sels))
     grade = _aggregate_grade(step_grades)  # rate is deliberately NOT aggregated into the grade
     feas_verdict = _worst_feasibility(tuple(f.direction for f in feas))
     equi_verdict = _worst_equilibrium(tuple(e.extent for e in equi))

@@ -155,14 +155,30 @@ class TestAdversarialHardening:
 
 
 class TestSynthesisConditions:
-    def test_the_ketene_and_anhydride_routes_now_carry_declared_conditions(self):
+    def test_formula_decomposition_does_not_borrow_reverse_assembly_conditions(self):
         _b, reviews = decompile_and_review(
             "C8H9NO2", inventory=LITMUS_INVENTORY, medium=["H2O", "C2H4O2"]
         )
         by_eq = {r.edge.equation(): r for r in reviews}
         ketene_route = by_eq.get("C8H9NO2 -> C2H2O + C6H7NO")
-        assert ketene_route is not None and ketene_route.conditions.is_declared
-        assert "in situ" in ketene_route.conditions.medium
+        assert ketene_route is not None and not ketene_route.conditions.is_declared
         anhydride_route = by_eq.get("C8H9NO2 + C2H4O2 -> C4H6O3 + C6H7NO")
-        assert anhydride_route is not None and anhydride_route.conditions.is_declared
-        assert anhydride_route.conditions.provenance  # sourced, reverse-direction synthesis
+        assert anhydride_route is not None and not anhydride_route.conditions.is_declared
+
+    def test_exact_structural_assembly_can_carry_its_own_directional_conditions(self):
+        from smartchem.experiment.routes import enumerate_routes
+        from smartchem.structure import structure_by_name
+
+        mol = lambda name: structure_by_name(name).molecule
+        routes = enumerate_routes(
+            mol("paracetamol"),
+            reagents=(mol("water"), mol("acetic acid"), mol("acetic anhydride")),
+            available=(mol("4-aminophenol"),),
+            max_depth=1,
+        )
+        anhydride = next(
+            step for route in routes for step in route.steps
+            if step.equation().startswith("C4H6O3 + C6H7NO")
+        )
+        assert anhydride.envelope.is_declared
+        assert anhydride.envelope.provenance

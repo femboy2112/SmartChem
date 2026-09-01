@@ -1,0 +1,308 @@
+# SmartChem chemical compiler uptake manifest — v0.5.0a1
+
+**Manifest date:** 2026-09-01  
+**Target:** `0.5.0a1`  
+**Audit base:** `main` at `b5faf7da460377e37f3a6ab70cdcbe542d88b666`  
+**Work branch:** `codex/chemical-compiler-standard-2026-09-01`  
+**Normative contract:** `CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md`  
+**Evidence and rationale:** `AUDIT_CHEMICAL_COMPILER_2026-09-01.md`
+
+## 1. How to use this manifest
+
+This is an uptake contract, not a wish list. An item is complete only when its code, adversarial
+test, public rendering, and truth label agree. Passing the pre-existing suite is necessary but
+does not close a new semantic gate.
+
+Status vocabulary:
+
+| Status | Meaning |
+|---|---|
+| `IMPLEMENTED_AND_VERIFIED` | Code and named acceptance test pass on the branch. |
+| `PATCHED_NEEDS_GREEN` | Code and usually a test edit exist, but a post-change verification result was not recorded when this manifest was written. |
+| `IN_PROGRESS` | Partial implementation exists; a known residual defect prevents closure. |
+| `TODO` | No conforming implementation is known on the branch. |
+| `DECISION` | A public semantic choice must be fixed before implementation. |
+| `DEFERRED` | Explicitly outside the alpha only if the release boundary remains honest without it. |
+| `BLOCKED` | A dependency or contradiction prevents responsible uptake. |
+
+Priority vocabulary:
+
+- `P0`: blocks the `0.5.0a1` public chemical-compiler contract;
+- `P1`: required before broader material/procedure claims, but may remain an explicit alpha
+  limitation where named;
+- `P2`: strengthening or coverage work after the honesty gates.
+
+No item below should be marked complete solely by editing this file. Replace the status and add
+the exact test/commit evidence in the same change that closes it.
+
+**Reconciled verification:** the targeted chemistry/CLI/safety suite completed with **405 passed
+in 144.24 seconds**. The final post-change full suite completed with **2510 passed, 51 skipped,
+1 expected failure in 205.04 seconds**.
+`IMPLEMENTED_AND_VERIFIED` applies only to the exact scoped row; a broader
+cross-path requirement remains `IN_PROGRESS` when formula, DAG, JSON, material, or shared-service
+coverage is absent.
+
+## 2. Audit-branch patches already present
+
+These are the scoped uptake items credited to the working branch at the reconciled snapshot.
+They passed focused regressions and the final full suite; none implies release completion.
+
+| ID | Priority | Branch change | Snapshot status | Verification / residual boundary |
+|---|:---:|---|---|---|
+| `EVD-DIR-01` | P0 | Direction-tagged condition records and exact structure-keyed assembly lookup after primitive formula indexing | `IMPLEMENTED_AND_VERIFIED` | Same-formula isomer and reverse-hydrolysis regressions pass; broader evidence-key fields remain in `EVD-KEY-01`. |
+| `UNIT-ENV-01` | P0 | `ConditionEnvelope` refuses temperature units other than K and pressure units other than atm | `IMPLEMENTED_AND_VERIFIED` | Construction/unit regressions pass; conversion UX remains future service work. |
+| `SAFE-HEAT-01` | P0 | Strong heat requests controlled electric heater/furnace; no automatic Bunsen recommendation | `IMPLEMENTED_AND_VERIFIED` | Targeted equipment/render regressions pass. |
+| `SAFE-FLAM-01` | P0 | Positive flammability data veto open flame independently of medium spelling | `IMPLEMENTED_AND_VERIFIED` | Alias-independent hazard regression passes. |
+| `SAFE-HOOD-01` | P1 | Benign hazard records such as water no longer trigger fume-hood containment merely by existing | `IMPLEMENTED_AND_VERIFIED` | Benign-water and positive-hazard regressions pass. |
+| `TERM-COM-01` | P0 | Target commodity short-circuit is limited to the active commodity inventory | `IMPLEMENTED_AND_VERIFIED` | `commodities=()` regression passes; shared policy remains `TERM-POL-01`. |
+| `MAT-CAVEAT-01` | P0 | Human commodity render states identity-only match and disclaims purity/concentration/phase/grade/impurity equivalence | `IMPLEMENTED_AND_VERIFIED` | Human render regression passes; JSON equivalent remains `CLI-JSON-01`. |
+| `SHOP-LEAF-01` | P0 | Linear shopping list excludes a reactant made by an internal route step | `IMPLEMENTED_AND_VERIFIED` | Two-step regression passes; DAG quantity/fan-out remains `SHOP-LEAF-02`. |
+| `EVD-GRADE-01` | P0 | Free-text conditions remain declared constraints; accounting/equipment do not relabel them sourced | `IMPLEMENTED_AND_VERIFIED` | “because I said so” and structural-toy regressions stay below `KNOWN_SOURCED`; equipment render carries its bucket. |
+| `EVD-SEL-01` | P0 | Selectivity promotion requires an accepted typed `SourceCitation`; weak statuses, malformed locators and unreviewed citations cannot promote | `IMPLEMENTED_AND_VERIFIED` | Free-text, locator-shell, unreviewed, `UNSUPPORTED`, and `STRUCTURAL_TOY` regressions pass. |
+| `SRCH-LIN-01` | P0 | Linear `search_routes` returns a receipt and partial/complete human no-route rendering | `IMPLEMENTED_AND_VERIFIED` | Cut-budget and result-limit regressions pass; formula/DAG/shared JSON remain `SRCH-RCT-01`. |
+| `STO-SCALE-01` | P0 | Primitive coefficients drive feasibility/equilibrium/kinetics and scale-normalized selectivity | `IMPLEMENTED_AND_VERIFIED` | Named scaling regressions pass; global identity remains `STO-PRIM-01`. |
+| `ROUTE-NET-01` | P0 | Linear continuity requires positive net consumption | `IMPLEMENTED_AND_VERIFIED` | Equal-spectator regression passes. |
+| `TERM-FORM-01` | P0 | Formula inventory entries terminate and are canonicalized/deduplicated | `IMPLEMENTED_AND_VERIFIED` | Target-terminal and inventory permutation/duplication regressions pass. |
+| `TERM-ACTIVE-01` | P0 | Exact target in active structural terminal stock returns a zero-expansion inventory result | `IMPLEMENTED_AND_VERIFIED` | Receipt records zero expansions; render disclaims quantity/assay/fitness. |
+| `FORM-VAL-01` | P0 | Formula parsing uses the complete periodic table and positive integer counts/bounds | `IMPLEMENTED_AND_VERIFIED` | Representative element and invalid-count regressions pass. |
+| `SCISS-ID-01` | P0 | Rooted open-valence scission identity; neutral-only refusal; duplicate reagent-type deduplication | `IMPLEMENTED_AND_VERIFIED` | Root/charge/duplicate-reagent regressions pass; broad identity layers remain TODO. |
+| `FEED-CLI-01` | P0 | Identity-only CLI inventory no longer invents a one-mole feed/ceiling | `IMPLEMENTED_AND_VERIFIED` | Poor-man route dossier renders without ceiling or crash. |
+| `READY-DOSS-01` | P0 | Renderer emits `FORMAL_CANDIDATE` evidence dossier and missing-operation checklist | `IMPLEMENTED_AND_VERIFIED` | Golden readiness/render regressions pass; `ProcedureIR` remains TODO. |
+| `SAFE-AUTH-BR-01` | P0 | `PROCEED_UNATTENDED` is not emitted; compatibility enum remains | `IMPLEMENTED_AND_VERIFIED` | Handling/render regressions pass. |
+| `CONSTR-BR-01` | P0 | Constraints require finite, positive, ordered values | `IMPLEMENTED_AND_VERIFIED` | Invalid/nonfinite/inverted bound regressions pass. |
+| `CLI-BR-01` | P0 | Registered names, entry point/version, strict bounds/diagnostics, and codes 0/2/3/4/5 on named synthesis outcomes | `IMPLEMENTED_AND_VERIFIED` | Subprocess probes cover complete route, invalid input, complete no-route, partial search and model refusal; shared service, code 70, input breadth and JSON remain. |
+
+## 3. P0 truth-envelope backlog
+
+### 3.1 Search completeness and result semantics
+
+| ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| `SRCH-RCT-01` | Every formula, route, and DAG search returns a `SearchReceipt` | Linear `search_routes` now returns a versioned result/receipt; compatibility tuple wrapper, formula graph and DAG path do not | Extend the same receipt-bearing contract to formula/DAG and shared response/JSON | Low cut budget reports partial for all three search kinds | None | `IN_PROGRESS` |
+| `SRCH-RCT-02` | Preserve `capped_scissions.complete` across recursion | Linear search now aggregates incomplete expansions into its receipt; DAG still drops `_complete` | Extend aggregation to DAG and any shared search | Acetic-anhydride budget fixture is partial in linear and DAG paths; high budget complete within bounds | `SRCH-RCT-01` | `IN_PROGRESS` |
+| `SRCH-CAP-01` | Route/DAG result-cap saturation is visible | Linear unique-result saturation is receipt-visible and tested; DAG cap is still bare | Add DAG receipt/saturation and shared JSON | Low linear and DAG result caps are partial; caps above fixture count are complete | `SRCH-RCT-01` | `IN_PROGRESS` |
+| `SRCH-NO-01` | No-route wording distinguishes complete from incomplete | Linear human compile/experiment output now distinguishes partial absence; no shared JSON/formula/DAG matrix | Implement the four-outcome matrix in the shared response and all renderers | Empty incomplete -> `INCOMPLETE_NO_ROUTE_OBSERVED`; empty complete -> `NO_ROUTE_IN_DECLARED_SPACE` everywhere | `SRCH-RCT-01` | `IN_PROGRESS` |
+| `SRCH-BUD-01` | Budget scope is accurately named | Linear receipt explicitly says cut budget per expansion; formula/DAG presentation is not unified | Carry scope/counters through all receipts or implement a global counter | Every receipt says `PER_NODE`/per-expansion or enforces one global counter | `SRCH-RCT-01` | `IN_PROGRESS` |
+| `SRCH-DIG-01` | Equivalent inventory order has equal request/result digest | Formula inventory is now canonicalized/deduplicated and permutation-tested; shared request identity does not exist | Extend canonical set/multiset inputs to structural/material request IR | Formula permutations match now; future request/result digests also match | Shared request IR | `IN_PROGRESS` |
+
+### 3.2 Decompiler/recompiler unity
+
+| ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | Formula graph and structural capped-scission search are separate | Define shared target, loss, transform, receipt and candidate records | Recompiler consumes a serialized decompile artifact without reconstructing hidden defaults | `SRCH-RCT-01`, identity work | `TODO` |
+| `IR-LOSS-01` | Formula/structure forgetting is explicit | `--smiles` formula path discards topology without a first-class loss record | Add `IdentityLoss`; downgrade or refuse dependent claims | `CCO` vs `COC` remain distinct as input identities; formula view announces collapse | `ID-LAYER-01` | `TODO` |
+| `IR-INV-01` | Claimed inverse scope is executable | Route compiler cannot construct water from H/O or H2/O2 terminals | Either add an explicit transform that bridges the shared IR or narrow naming/docs | Water fixture succeeds within named transform registry or renders a precise unsupported-transform refusal | `IR-CHEM-01` | `TODO` |
+
+### 3.3 Identity and evidence
+
+| ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| `ID-LAYER-01` | Formula, molecule/formula-unit, and stock material are distinct values | Molecule/formula boundaries are partial; mixtures and salts are unsafe | Add typed layers and conversion/loss rules | Disconnected salt, chiral, isotope and mixture fixtures preserve identity or refuse | None | `TODO` |
+| `ID-PARSE-01` | Explicit name/SMILES/InChI/formula parsing with echoed normalization | Synthesis CLIs now accept registered offline names and explicit `name:`/`smiles:` prefixes; no one parser/receipt or InChI/formula parity | Build one parser service with source/policy receipt and every identity form | Registered names pass now; add ambiguous name and all explicit-form round trips | `ID-LAYER-01` | `IN_PROGRESS` |
+| `ID-STEREO-01` | Stereo/isotope/local-charge/component loss never silent | Unsupported features may be erased or represented misleadingly | Detect features at parse/canonicalize boundary; refuse or record blocker | Enantiomer, isotope, zwitterion, disconnected salt do not collide with simplified analogues | `ID-LAYER-01` | `TODO` |
+| `ID-SCISS-01` | Structural scission preserves the represented rooted open valence and refuses unsupported charge | Rooted open-valence identity and neutral-only refusal are implemented; duplicate reagent types are deduplicated | Keep this scoped refusal while broader identity layers are built | Rooted isomers remain distinct; non-neutral target refuses; duplicate reagent spellings do not multiply candidates | None | `IMPLEMENTED_AND_VERIFIED` |
+| `EVD-KEY-01` | Evidence key includes structure, primitive stoichiometry, direction, context and source | Assembly conditions now require exact represented structures and direction after a primitive formula candidate index; broader identity/context/source key is absent | Generalize into `ReactionEvidenceKey`; migrate all evidence providers | Same-formula isomer test passes now; add stereo/isotope/charge/phase/context/source fixtures | `STO-PRIM-01`, `ID-LAYER-01` | `IN_PROGRESS` |
+| `EVD-DIR-02` | Decomposition evidence cannot promote reverse assembly | Direction-specific exact-structure assembly lookup is implemented and tested | Preserve through general provider/serialization work | Hydrolysis source yields unknown reverse-condensation envelope unless separately sourced | `EVD-KEY-01` | `IMPLEMENTED_AND_VERIFIED` |
+| `EVD-SRC-01` | Sourced records have inspectable exact locators and context | Conditions/selectivity now distinguish typed accepted citations from unreviewed/free-text declarations; other providers and full context keys remain uneven | Generalize `SourceCitation` and exact context validation across providers | Missing/malformed/unreviewed locator cannot promote now; add phase/context/provider fixtures | `EVD-KEY-01` | `IN_PROGRESS` |
+| `EVD-CONF-01` | Provider conflicts are visible | First-loaded/first-wins behavior can hide disagreement | Emit `ProviderConflict`; serialize priority choice | Conflicting fixture never changes silently with provider order | `EVD-SRC-01` | `TODO` |
+| `EVD-GRADE-02` | Assumptions cannot raise evidence tier | Free-text conditions map to declared constraint buckets; selectivity needs an accepted typed citation | Audit future provider/import promotion paths under the same rule | Free text and unreviewed citation never exceed declared/formal grade | None | `IMPLEMENTED_AND_VERIFIED` |
+
+### 3.4 Stoichiometry, continuity, and route identity
+
+| ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| `STO-PRIM-01` | Canonical primitive signed stoichiometry drives identity and intensive physics | Primitive coefficient vector now drives feasibility/equilibrium/kinetics and scale-normalized selectivity; not yet every provider/digest/DAG/extent identity | Promote the canonicalizer to the single public reaction/evidence identity | Named scaling regressions pass; add provider/digest/DAG-wide invariance | None | `IN_PROGRESS` |
+| `ROUTE-CONT-01` | Prior target must have positive net consumption in next step | Net-consumption check is implemented; equal spectator no longer connects steps | Preserve when roles/DAG IR are generalized | Equal amount on both sides fails continuity | `STO-PRIM-01` | `IMPLEMENTED_AND_VERIFIED` |
+| `ROUTE-ID-01` | Structural route ID, not displayed equation, deduplicates alternatives | Rendered equation can collapse isomer-distinct routes | Use ordered generator/structure identity or DAG semantic digest | Same formula/different structure alternatives both survive | `ID-LAYER-01` | `TODO` |
+| `DAG-FLOW-01` | Fan-out conserves intermediate quantities | Merge/dedup can mint usable intermediate copies | Add quantity-flow edges or block quantitative claims | One mole produced and two consumed yields deficit/blocker | Material quantities | `TODO` |
+
+### 3.5 Terminal, feed, and material truth
+
+| ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| `TERM-POL-01` | One explicit terminal policy powers formula and route search | Formula inventory terminates; exact structural active stock now stops before expansion; commodities/available still use separate policy machinery | Implement shared `TerminalPolicy` with layer/match mode | Formula and structural target-terminal tests pass now; add equal material-policy fixtures | Shared request IR | `IN_PROGRESS` |
+| `TERM-ELEM-01` | Element bucket packaging is explicit | “elements” can mean atom counts, standard-state species or stock | Serialize packaging policy in request/artifact | H/O atom buckets cannot be rendered as H2/O2 stock without declared conversion | `TERM-POL-01` | `TODO` |
+| `TERM-COM-02` | Disabled/custom commodity inventory is authoritative everywhere | Current linear compile shortcut/termination/shopping respects the active inventory and `commodities=()` regression passes | Preserve through shared terminal/material policy and DAG work | `commodities=()` never uses global catalogue to stop/rank/shop | `TERM-POL-01` | `IMPLEMENTED_AND_VERIFIED` |
+| `FEED-AMT-01` | Identity-only flags never invent quantity | Experimental CLI no longer maps identities to one mole and emits no finite ceiling without feed | Add explicit quantity+unit/assay input and optional symbolic ceiling separately | Identity-only poor-man fixture has no finite ceiling and no crash | `STOCK-01` desirable | `IMPLEMENTED_AND_VERIFIED` |
+| `FEED-ERR-01` | Missing feed cannot abort an otherwise valid dossier | Route dossier now renders without a ceiling when feed is absent | Preserve structured diagnostic in shared response/JSON | Missing commodity amount preserves route dossier and non-internal exit status | `FEED-AMT-01` | `IMPLEMENTED_AND_VERIFIED` |
+| `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | Commodity is a pure molecule plus editorial source lead | Add schema and validators; keep source leads distinct | Vinegar cannot satisfy pure acetic-acid input without assay/preprocessing | `ID-LAYER-01` | `TODO` |
+| `SHOP-LEAF-02` | Shopping list is external, quantity-aware route input | Linear external-leaf identity logic is implemented and tested; quantities, DAG fan-out and purchased supplements are absent | Extend across DAGs, purchased supplements and quantity | Internally produced acid is absent now; purchased deficits must later include amount/unknown | `DAG-FLOW-01`, `STOCK-01` | `IN_PROGRESS` |
+
+### 3.6 Readiness and safety
+
+| ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| `READY-TIER-01` | Every current route dossier states its readiness | `ProcedureReadiness` exists; current drafter deliberately emits only `FORMAL_CANDIDATE` and cannot self-promote | Preserve this floor; `ProcedureIR` must govern any future higher tier | Missing operational fields produce `FORMAL_CANDIDATE`, never `BENCH_DRAFT` | Procedure IR for future promotion | `IMPLEMENTED_AND_VERIFIED` |
+| `READY-NAME-01` | Sparse output is called route dossier, not runnable/full procedure | Canonical API is `RouteDossier`/`draft_route_dossier`; renderer/docs use formal-candidate language. `DraftedProcedure`/`draft_procedure` and `Composability.is_runnable` remain explicit deprecated aliases | Remove compatibility aliases in a future breaking release | Canonical type/render carry readiness boundary and unresolved checklist | `READY-TIER-01` | `IMPLEMENTED_AND_VERIFIED` |
+| `PROC-IR-01` | Typed procedure operations underlie any bench draft | Essential scale/addition/quench/workup/purification/analysis/waste fields absent | Add `ProcedureIR` with completeness validator | Delete any required field from fixture -> lower tier or construction failure | `STOCK-01`, hazard work | `TODO` |
+| `SAFE-AUTH-01` | No emitted `PROCEED_UNATTENDED` or automatic safety authorization | Output no longer emits the label; enum member remains for compatibility only | Deprecate/remove compatibility symbol later without restoring output authority | Missing hazard record cannot yield authorization; rendered label absent | None | `IMPLEMENTED_AND_VERIFIED` |
+| `SAFE-HEAT-02` | Open flame never inferred from temperature alone | Controlled electric heat is used; known flammability vetoes flame | Preserve across future equipment providers | Hot unknown/flammable medium has no flame recommendation | None | `IMPLEMENTED_AND_VERIFIED` |
+| `SAFE-HAZ-01` | Missing hazard/stability data are visible blockers/unknowns | Registry missing 7/15 hazard and 13/15 stability records | Add coverage report and missing-data semantics; source records | Every commodity has positive record or explicit unknown; no unknown clears a route | `STOCK-01` | `TODO` |
+| `SAFE-PROC-01` | Safety considers quantity, concentration, conditions, incompatibility, off-gas and waste | Current checks are species/free-text heuristics | Typed process hazard inputs and qualified-review gate | Same species at different concentration/scale can yield different scoped assessment | `PROC-IR-01`, `STOCK-01` | `TODO` |
+
+### 3.7 CLI and service
+
+| ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| `SVC-REQ-01` | One typed request/service powers chemical commands | `compile` and `synthesize` bypass/share different rungs and defaults | Implement `CompilationRequest/Response`; route aliases through it | Equal flags across aliases produce equal request/result digests | `IR-CHEM-01` | `TODO` |
+| `CLI-CAN-01` | Canonical `decompile` and `recompile`; legacy aliases share defaults | Current commands diverge | Add canonical verbs; deprecate aliases without duplicate logic | Command matrix gives equal request JSON | `SVC-REQ-01` | `TODO` |
+| `CLI-NAME-01` | Normal names accepted without private formatting | Registered offline names and explicit `name:`/`smiles:` prefixes work in synthesis CLIs; InChI/formula/echo/shared parser are incomplete | Finish unified identity parser and echo receipt | Registered-name and SMILES tests pass; add InChI/formula/ambiguity matrix | `ID-PARSE-01` | `IN_PROGRESS` |
+| `CLI-EXIT-01` | Stable exit codes separate route/no-route/partial/refusal/invalid/internal | Synthesis front doors now use 0/2/3/4/5 for named outcomes; decompile uses 0/2/4; shared code 70/internal mapping is absent | Finish standard table through one shared service and subprocess matrix | Codes 0/2/3/4/5 observed; add controlled internal-error fixture for 70 | `SRCH-RCT-01`, `SVC-REQ-01` | `IN_PROGRESS` |
+| `CLI-ERR-01` | Invalid chemistry/numeric input yields domain error without traceback | Invalid formula/name/SMILES and charged-model refusal are concise and mapped to 2/5; no one central mapping covers every format/path | Centralize error mapping and strict validation | Current invalid/refusal probes pass; add InChI/formula-file/nonfinite subprocess matrix | `ID-PARSE-01`, constraints | `IN_PROGRESS` |
+| `CLI-VERS-01` | Package installs `smartchem`, supports `--version`, exposes consistent `__version__` | Entry point, package metadata and `__version__` report `0.5.0a1` | Preserve single-source consistency in release packaging | Targeted script/module/version tests pass | None | `IMPLEMENTED_AND_VERIFIED` |
+| `CLI-JSON-01` | Stable JSON contains request, identity, receipt, tier, blockers and route IDs | Human-oriented paths dominate | Add versioned serializer/schema and golden fixtures | Human and JSON agree on all semantic fields | `SVC-REQ-01`, `READY-TIER-01` | `TODO` |
+
+## 4. P1 physical, data, and affordability backlog
+
+These items may remain explicit alpha limitations only where the public renderer cannot imply a
+stronger result.
+
+| ID | Requirement | Present issue | Acceptance test | Status |
+|---|---|---|---|---|
+| `PTABLE-01` | Formula validation uses one supported periodic-table authority and positive integer counts | Complete table is now used; zero/negative/non-integer formula counts are refused | CaO, representative heavy elements and invalid-count regressions pass | `IMPLEMENTED_AND_VERIFIED` |
+| `THERMO-UNC-01` | Carry reported uncertainty, phase, standard state and source | Thermochemical uncertainty/context can be dropped | Round-trip fixture preserves every field; incompatible phases do not match | `TODO` |
+| `THERMO-DIG-01` | Evidence grade/provider semantics affect artifact digest | Some grade fields are excluded from comparison/digest | Change grade/source fixture -> semantic digest changes | `TODO` |
+| `EQUIL-NAME-01` | Equilibrium diagnostic is not called practical extent/yield | `K`-derived label can read as conversion | Golden render names ideal model and denies expected yield | `TODO` |
+| `KIN-CTX-01` | Kinetics key includes conditions, order, units and composition requirements | Rate can be reused outside context; higher-order half-life underdetermined | Wrong temperature/order/unit refuses; missing concentration stays unknown | `TODO` |
+| `SELECT-SRC-01` | Curated selectivity paths have accepted exact source locators | Default promoted records carry accepted DOI locators; missing/malformed/unreviewed citations remain `UNKNOWN`; acceptance still lacks curator/date/provider identity | Add review metadata and exact reaction-context governance | `IN_PROGRESS` |
+| `CONSTR-VAL-01` | Constraints are finite, physical and ordered | Finite, positive and ordered validation is implemented | Negative/nonfinite/inverted T/P bounds fail in targeted regressions | `IMPLEMENTED_AND_VERIFIED` |
+| `FIT-SEM-01` | `UNCONSTRAINED` differs from assessed fit | Empty box can yield `FITS` | Empty box -> `UNCONSTRAINED`; unknown bounded dimension -> `UNKNOWN_FIT` | `TODO` |
+| `COST-VEC-01` | Rank affordability by sourced multi-objective cost vector | No cost/price ranking exists | Unknown price stays unknown; hard blocker dominates cheapest route | `TODO` |
+| `COST-PROV-01` | Price/availability have region, currency, date and source | Availability is editorial/static | Snapshot round-trip and stale-data warning | `TODO` |
+| `POOR-PARETO-01` | Poor-man mode exposes Pareto frontier, not one opaque score | Accessibility not integrated into ranking | Two trade-off fixtures both appear on frontier; dominated route removed | `TODO` |
+| `MAT-PRE-01` | Commodity mixtures can add explicit preprocessing/analysis | Pure identity currently stands in for source mixture | Dilute/impure source requires typed operation and revised balance/cost/waste | `TODO` |
+
+## 5. P2 strengthening backlog
+
+| ID | Direction | Why it matters | Status |
+|---|---|---|---|
+| `TRANSFORM-REG-01` | Versioned reaction transform/provider plugin registry | Makes the bounded candidate space extensible and receipt-addressable | `TODO` |
+| `OPEN-SEARCH-01` | Optional generative intermediates behind explicit stronger bounds | Broadens decompiler without pretending a closed registry is nature-complete | `DEFERRED` |
+| `MECH-IR-01` | Mechanism/elementary-step representation distinct from net equations | Prevents net balance from masquerading as mechanism | `DEFERRED` |
+| `ACTIVITY-01` | Phase/activity/solvent-aware equilibrium model | Needed before practical conversion claims | `DEFERRED` |
+| `RATE-MODEL-01` | Condition-sensitive kinetic/rate-law integration | Needed before time-to-completion claims | `DEFERRED` |
+| `PROC-EXEC-01` | Execution log and observations distinct from planned procedure | Enables learn/compare loop without retroactive evidence inflation | `DEFERRED` |
+| `LIT-IMPORT-01` | Structured ORD-like import with identity/context validation | Scales source coverage while preserving provenance | `DEFERRED` |
+| `AFFORD-SNAP-01` | User-controlled regional material/price snapshots | Makes affordability reproducible rather than universally asserted | `DEFERRED` |
+
+## 6. Uptake sequence
+
+The sequence is dependency-driven. Adding reaction breadth before the truth envelope would make
+the system more persuasive without making it more reliable.
+
+### Milestone A — Stabilize the audit branch
+
+The direction/isomer/selectivity, receipt, formula, scission, CLI, dossier, constraint,
+affordability and safety regressions are green. The final full suite completed with **2510
+passed, 51 skipped, 1 expected failure in 205.04 seconds**; `git diff --check` and bytecode
+compilation are also clean.
+
+Implementation commit: `PENDING_REMOTE_COMMIT`
+
+Remaining stabilization work is to preserve every audit fix as a focused regression and never
+weaken a verdict-changing test merely to extend chemistry coverage.
+
+Exit criterion: all branch patches are either `IMPLEMENTED_AND_VERIFIED` or honestly reverted/
+returned to `TODO`.
+
+### Milestone B — Build the truth envelope
+
+Implement together:
+
+- extend linear `SearchReceipt` and no-route semantics to formula/DAG/shared JSON;
+- extend primitive stoichiometry from the tested physics/selectivity paths to global
+  reaction/evidence/digest identity;
+- identity layers/loss records;
+- generalize the tested exact structural/directional assembly key to all evidence contexts;
+- generalize tested formula-terminal behavior into `TerminalPolicy`;
+- retain tested route-dossier readiness and non-authorizing safety language while adding the
+  missing typed identity/material boundaries.
+
+Exit criterion: gates G1–G5 and the non-procedure half of G7 pass.
+
+### Milestone C — One public compiler
+
+Implement `CompilationRequest/Response`, versioned JSON, unified parser, canonical CLI, exit
+codes, package entry point and `0.5.0a1` version.
+
+Exit criterion: G0 and G8 pass; legacy aliases generate equal request digests.
+
+### Milestone D — Material reality and poor-man mode
+
+Implement `StockMaterial`, typed quantities/assay, inventory flow, source-lead migration,
+quantity-safe shopping, cost vectors and Pareto ranking.
+
+Exit criterion: G6 passes. An identity-only source can help discovery but never manufacture an
+amount, purity, fitness or price claim.
+
+### Milestone E — Bench-draft ladder
+
+Implement `ProcedureIR`, hazard/process fields, completeness validation and qualified-review
+state. Expand evidence and transform coverage only through exact provider contracts.
+
+Exit criterion: G7 passes. No automatic path can earn `BENCH_DRAFT` from a balanced equation and
+condition envelope alone.
+
+## 7. Required test matrix
+
+Every milestone should add tests at four layers:
+
+| Layer | Required evidence |
+|---|---|
+| Value construction | Invalid identity, evidence, units, bounds and readiness states refuse. |
+| Algorithm | Completeness, invariance, termination, deduplication and quantity-flow properties hold. |
+| Service/serialization | Request digest, JSON schema, provider snapshots and result semantics round-trip. |
+| CLI/golden render | Exit code and human text cannot contradict JSON truth state. |
+
+Property tests should include:
+
+- coefficient rescaling invariance;
+- input/inventory permutation invariance;
+- same-formula structural non-equivalence;
+- cap monotonicity: raising a bound cannot turn a formerly complete receipt into another complete
+  receipt with fewer candidates under the same registry;
+- source-order invariance or explicit provider conflict;
+- route/DAG atom, charge and quantity flow;
+- all unknowns remain unknown across render/serialize/parse.
+
+## 8. Evidence record for closing an item
+
+When an item moves to `IMPLEMENTED_AND_VERIFIED`, append a compact record:
+
+```text
+ID:
+commit:
+files:
+tests:
+command:
+result:
+falsifier fixture:
+human-output check:
+JSON/schema check:
+residual limitations:
+```
+
+Do not paste a passing count without naming the new verdict-changing test. Do not mark a human
+wording fix complete if the machine schema still claims the stronger state.
+
+## 9. Alpha definition of done
+
+The `0.5.0a1` uptake is complete when:
+
+- every P0 row is `IMPLEMENTED_AND_VERIFIED`, or a narrower release contract removes the claim
+  that made it P0;
+- the full non-optional suite and all new adversarial tests pass;
+- canonical and legacy CLIs use the same typed service and version;
+- every result carries exact identity/loss, terminal policy, search receipt, readiness, blockers,
+  provider versions and stable IDs;
+- incomplete search never looks complete, and incomplete empty search never looks like a proof
+  of absence;
+- reverse equations do not inherit forward evidence;
+- common stoichiometric scaling cannot change intensive verdicts;
+- identity-only commodities cannot invent purity, quantity, price or fitness;
+- sparse output is a route dossier with missing operations visible;
+- no route is automatically authorized as safe or unattended;
+- the release declaration in the standard document is true for every public code path.
+
+Anything less can still be valuable development work. It is not yet the standard-setting
+chemical compiler release described here.

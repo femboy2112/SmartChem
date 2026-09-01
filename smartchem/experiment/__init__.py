@@ -1,4 +1,4 @@
-"""M-5 -- the Experiment Compiler: a decompiler route, verified and drafted as a runnable experiment.
+"""M-5 -- the Experiment Compiler: a decompiler route assessed and rendered as an evidence dossier.
 
 The decompiler (``smartchem.structure_descent`` / ``smartchem.decompiler``) answers *what could this
 compound come apart into, conserving everything?*  Read backwards, a descent is an **assembly** -- a
@@ -80,8 +80,11 @@ from .dag import (
 from .drafter import (
     ConstraintBox,
     DraftedProcedure,
+    ProcedureReadiness,
+    RouteDossier,
     RouteFit,
     RouteFitStatus,
+    draft_route_dossier,
     draft_procedure,
     fit_route,
     fit_routes,
@@ -125,7 +128,14 @@ from .kinetics import (
     verify_kinetics,
     worst_regime,
 )
-from .routes import enumerate_routes
+from .routes import (
+    RouteSearchReceipt,
+    RouteSearchResult,
+    SearchStatus,
+    enumerate_dags,
+    enumerate_routes,
+    search_routes,
+)
 from .selectivity import (
     RouteSelectivity,
     SelectivityRecord,
@@ -165,11 +175,19 @@ __all__ = [
     "RouteFit",
     "RouteFitStatus",
     "DraftedProcedure",
+    "RouteDossier",
+    "ProcedureReadiness",
     "fit_route",
     "fit_routes",
     "rank_routes",
     "draft_procedure",
+    "draft_route_dossier",
     "enumerate_routes",
+    "enumerate_dags",
+    "search_routes",
+    "SearchStatus",
+    "RouteSearchReceipt",
+    "RouteSearchResult",
     "SelectivityStatus",
     "SelectivityRecord",
     "SelectivityTable",

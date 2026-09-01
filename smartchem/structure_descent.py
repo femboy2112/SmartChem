@@ -221,6 +221,26 @@ class Fragment(Digestible):
         except NotImplementedError:
             return "asgiven:" + canonical_digest(self.molecule)
 
+    @property
+    def rooted_open_identity(self) -> str:
+        """Relabel-invariant identity of the fragment graph *and where each open valence lives*.
+
+        Marker vertices with reserved labels turn open-valence locations into ordinary colored-graph
+        structure for canonicalisation.  This distinguishes, for example, two open ends on one carbon from
+        one end on each terminal carbon without depending on atom indices.
+        """
+        atoms = list(self.molecule.atoms)
+        bonds = set(self.molecule.bonds)
+        for local_index, order in self.open_valences:
+            marker_index = len(atoms)
+            atoms.append(f"__SMARTCHEM_OPEN_VALENCE_{order}__")
+            bonds.add(Bond(local_index, marker_index, 1))
+        augmented = Molecule(tuple(atoms), frozenset(bonds), self.molecule.charge, self.molecule.state)
+        try:
+            return canonical_digest(augmented.canonical())
+        except NotImplementedError:
+            return "asgiven:" + canonical_digest(augmented)
+
 
 @dataclass(frozen=True)
 class ScissionEdge(Digestible):
@@ -337,10 +357,7 @@ class ScissionEdge(Digestible):
         orders, so it does not distinguish which symmetry-equivalent atom carried an open valence --
         which is correct, because those are the same fragment.
         """
-        frag_sigs = sorted(
-            (f.canonical_identity, tuple(sorted(o for _, o in f.open_valences)))
-            for f in self.fragments
-        )
+        frag_sigs = sorted(f.rooted_open_identity for f in self.fragments)
         return (
             tuple(sorted(f"{s}{c if c > 1 else ''}" for s, c in
                          Counter(self.reactant.atoms).items())),
@@ -431,6 +448,15 @@ def scission_edges(
     """
     if type(molecule) is not Molecule:
         raise TypeError("molecule must be a smartchem.category.Molecule")
+    if molecule.charge != 0:
+        raise ScissionError(
+            "homolytic scission currently supports neutral molecules only; fragment charge localisation is "
+            "not represented, so charged input is refused rather than silently neutralised"
+        )
+    if type(max_cut_bonds) is not int or max_cut_bonds <= 0:
+        raise ValueError("max_cut_bonds must be a positive integer")
+    if type(budget) is not int or budget <= 0:
+        raise ValueError("budget must be a positive integer")
     n = len(molecule.atoms)
     if n < 2 or not molecule.bonds:
         return (), True
@@ -561,6 +587,11 @@ class CappedScission(Digestible):
             type(r) is not Molecule for r in self.reagents
         ):
             raise ScissionError("reagents must be a non-empty tuple of Molecules (the consumed mediators)")
+        if self.reactant.charge != 0 or any(r.charge != 0 for r in self.reagents):
+            raise ScissionError(
+                "capped scission currently supports neutral input species only; fragment charge localisation "
+                "is not represented"
+            )
         for name, seq in (("cut", self.cut), ("caps", self.caps)):
             if type(seq) is not tuple or any(type(b) is not Bond for b in seq):
                 raise ScissionError(f"{name} must be a tuple of Bond values")
@@ -777,7 +808,25 @@ def capped_scissions(
         raise TypeError("reactant must be a Molecule")
     if type(reagents) is not tuple or not reagents or any(type(r) is not Molecule for r in reagents):
         raise TypeError("reagents must be a non-empty tuple of reagent-TYPE Molecules")
-    reagent_types = [r for r in reagents if r.bonds]
+    if reactant.charge != 0 or any(r.charge != 0 for r in reagents):
+        raise ScissionError(
+            "capped scission currently supports neutral input species only; charged chemistry requires an "
+            "explicit charge-localising rewrite model"
+        )
+    if type(max_reactant_cuts) is not int or max_reactant_cuts <= 0:
+        raise ValueError("max_reactant_cuts must be a positive integer")
+    if type(budget) is not int or budget <= 0:
+        raise ValueError("budget must be a positive integer")
+    # The pool declares reagent TYPES. Duplicate spellings must not double the work or alter completeness.
+    unique_reagents: dict[str, Molecule] = {}
+    for reagent in reagents:
+        if reagent.bonds:
+            try:
+                key = canonical_digest(reagent.canonical())
+            except NotImplementedError:
+                key = "asgiven:" + canonical_digest(reagent)
+            unique_reagents.setdefault(key, reagent)
+    reagent_types = list(unique_reagents.values())
     if not reagent_types:
         return (), True
     r_bonds = sorted(reactant.bonds)

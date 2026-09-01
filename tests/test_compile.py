@@ -45,12 +45,44 @@ class TestCompileEndToEnd:
         assert cs.verdict is None
         assert "no cleavage reached the buckets" in " ".join(cs.ledger) or cs.shopping == ()
 
+    def test_partial_empty_search_says_absence_is_not_evidence(self):
+        cs = compile_synthesis(
+            _mol("paracetamol"), reagents=(_mol("water"),), commodities=(), max_depth=1, cut_budget=1
+        )
+        assert not cs.found_route
+        assert cs.search_receipt is not None and not cs.search_receipt.complete_within_bounds
+        text = cs.render()
+        assert "SEARCH WAS PARTIAL" in text
+        assert "Absence is not evidence" in text
+
     def test_commodities_can_be_disabled(self):
         # with commodity termination OFF and no reagents, acetic anhydride cannot bottom out at commodities,
         # so its shopping list is empty (the flag genuinely gates termination)
         an = _mol("acetic anhydride")
         off = compile_synthesis(an, reagents=(), commodities=(), max_depth=1)
         assert off.shopping == ()
+
+    def test_commodities_disabled_prevents_global_target_short_circuit(self):
+        off = compile_synthesis(_mol("ethanol"), commodities=(), max_depth=1)
+        assert off.already_obtainable is None
+
+    def test_explicit_available_target_is_an_honest_zero_expansion_outcome(self):
+        ethanol = _mol("ethanol")
+        cs = compile_synthesis(ethanol, commodities=(), available=(ethanol,), max_depth=1)
+        assert cs.found_route
+        assert cs.already_in_active_inventory
+        assert cs.best_draft is None
+        assert cs.search_receipt is not None and cs.search_receipt.expansions_attempted == 0
+        text = cs.render()
+        assert "ACTIVE INVENTORY MATCH" in text
+        assert "quantity" in text and "assay" in text
+
+    def test_commodity_match_is_not_rendered_as_pure_material_equivalence(self):
+        cs = compile_synthesis(_mol("acetic acid"))
+        text = cs.render()
+        assert "IDENTITY ONLY" in text
+        assert "does NOT establish" in text
+        assert "purity" in text and "concentration" in text
 
 
 class TestLedgerHonesty:
@@ -67,7 +99,7 @@ class TestRedTeamFixes:
         assert cs.already_obtainable is not None
         assert cs.best_draft is None
         assert cs.found_route  # "obtainable" counts as found
-        assert "IS ITSELF A COMMODITY" in cs.render()
+        assert "COMMODITY SOURCE MATCH" in cs.render()
 
     def test_grade_first_ranking_is_stable_when_grades_tie(self):
         # when every candidate shares a grade, the fit-order tiebreaker preserves the prior best (no churn)

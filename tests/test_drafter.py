@@ -1,19 +1,21 @@
-"""E4 -- the procedure drafter and the constraint fitter (the compiler backend), on the paracetamol litmus.
+"""E4 -- the route dossier and constraint fitter (the compiler backend), on the paracetamol litmus.
 
-The north-star: given candidate routes to the same target, float the runnable-and-sourced ones above the
-degenerate ones; and given a target BENCH (max T, max P, reagents on hand) select what runs and refuse what
-does not, citing the exact bound.  The draft that comes out is a composability-checked draft over KNOWN
-data, with every number bucket-labelled and every gap loud.
+The north-star: given candidate routes to the same target, float the better-evidenced formal candidates above
+degenerate ones; and given declared bounds, identify fits/exclusions without asserting bench readiness.
+Every dossier number is bucket-labelled and every gap remains loud.
 """
 from fractions import Fraction
+
+import pytest
 
 from smartchem.conditions import ConditionEnvelope, Interval
 from smartchem.contracts import EvidenceStatus
 from smartchem.experiment.drafter import (
     ConstraintBox,
+    RouteDossier,
     RouteFitStatus,
     _route_score,
-    draft_procedure,
+    draft_route_dossier,
     fit_route,
     rank_routes,
 )
@@ -94,6 +96,19 @@ class TestRateAwareRanking:
 
 
 class TestConstraintFitting:
+    @pytest.mark.parametrize("kwargs", [
+        {"max_temperature_k": 0},
+        {"max_pressure_atm": -1},
+        {"max_temperature_k": float("inf")},
+    ])
+    def test_physical_bounds_must_be_finite_and_positive(self, kwargs):
+        with pytest.raises(ValueError):
+            ConstraintBox(**kwargs)
+
+    def test_pressure_floor_cannot_exceed_ceiling(self):
+        with pytest.raises(ValueError, match="cannot exceed"):
+            ConstraintBox(min_pressure_atm=2, max_pressure_atm=1)
+
     def test_a_bench_that_cannot_reach_the_temperature_excludes_the_route(self):
         # a burner that only reaches 1200 C = 1473 K cannot run the 1000 K ketene pyrolysis
         box = ConstraintBox(max_temperature_k=1473)
@@ -127,9 +142,10 @@ class TestConstraintFitting:
         assert fit.status is RouteFitStatus.EXCLUDED
 
 
-class TestDraft:
-    def test_the_draft_carries_banner_equipment_and_ceiling(self):
-        d = draft_procedure(_anhydride_route(), feed={AMP: 1, ANH: Fraction(6, 5)})
+class TestDossier:
+    def test_the_dossier_carries_banner_equipment_and_ceiling(self):
+        d = draft_route_dossier(_anhydride_route(), feed={AMP: 1, ANH: Fraction(6, 5)})
+        assert type(d) is RouteDossier
         text = d.render()
         assert "NOT a predicted successful synthesis" in text  # the honesty banner
         assert "Bunsen" in text or "hotplate" in text or "water bath" in text  # the equipment click
@@ -140,6 +156,6 @@ class TestDraft:
             for q in sa.quantities():
                 assert q.bucket.value in {"CONSERVATION", "COMPOSABILITY", "KNOWN_SOURCED", "UNKNOWN"}
 
-    def test_draft_without_feed_omits_the_ceiling(self):
-        d = draft_procedure(_anhydride_route())
+    def test_dossier_without_feed_omits_the_ceiling(self):
+        d = draft_route_dossier(_anhydride_route())
         assert d.ceiling is None

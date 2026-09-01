@@ -125,6 +125,13 @@ class TestCoherenceRanking:
 
 
 class TestUnifiedPlainAndMediatedReview:
+    def test_budget_exhaustion_is_visible_in_the_chemist_facing_banner(self):
+        banner, _reviews = decompile_and_review(
+            "C8H9NO2", inventory=["C6H7NO", "C2H4O2"], medium=["H2O"], budget=1
+        )
+        assert "INCOMPLETE_BUDGET" in banner
+        assert "absence is not evidence" in banner
+
     def test_the_real_hydrolysis_surfaces_ranked_and_screened(self):
         _banner, reviews = decompile_and_review(
             "C8H9NO2", inventory=["C6H7NO", "C2H4O2", "CO", "CO2", "CH4"], medium=["H2O"]

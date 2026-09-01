@@ -4,7 +4,7 @@ These tests pin the honesty invariants the layer exists to enforce:
 * the byproduct ledger is EXACT stoichiometry (a CONSERVATION fact), including coefficients > 1;
 * off-gasses are detected by TWO sourced signals (a GHS gas classification, or a Clausius-Clapeyron phase
   call at the step's own conditions), and by neither where the data is absent (a loud UNKNOWN fate);
-* the care level is worst-dominated over SOURCED facts, and PROCEED_UNATTENDED is reachable ONLY when every
+* the care level is worst-dominated over SOURCED facts, and species records alone never license unattended
   species present is positively assessed -- an unassessed species holds it at UNKNOWN (never a false "safe");
 * resolution is isomer-keyed (ethanol and dimethyl ether, both C2H6O, never borrow each other's record).
 """
@@ -153,7 +153,8 @@ class TestCareLadder:
         cp, pr = parse_smiles("C1CC1"), parse_smiles("CC=C")
         step = ExperimentStep.assembling(pr, (cp,), (pr,))
         h = handling_of_step(step)
-        assert h.care is CareLevel.PROCEED_UNATTENDED
+        assert h.care is CareLevel.UNKNOWN
+        assert "NOT established" in " ".join(h.care_reasons)
         assert h.unassessed == ()
 
     def test_known_hazard_not_masked_by_unknown(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -211,7 +212,7 @@ class TestRouteHandling:
         assert any(b.hazard_name == "ketene" for b in rh.all_offgases)
         assert len(rh.all_byproducts) >= 2  # acetic acid + ketene across the two steps
 
-    def test_route_all_benign_would_proceed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_route_all_benign_still_cannot_license_unattended_operation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         benign = HazardRef(
             formula="X", name="benign-test", ghs_codes=(), summary="assessed benign",
             reactivity=(), exposure="", regulatory="", provenance="test",
@@ -221,7 +222,7 @@ class TestRouteHandling:
         monkeypatch.setattr("smartchem.experiment.handling.resolve_stability", lambda m, t: None)
         cp, pr = parse_smiles("C1CC1"), parse_smiles("CC=C")
         route = ExperimentRoute.of(ExperimentStep.assembling(pr, (cp,), (pr,)))
-        assert verify_handling(route).care is CareLevel.PROCEED_UNATTENDED
+        assert verify_handling(route).care is CareLevel.UNKNOWN
 
 
 class TestInputValidation:

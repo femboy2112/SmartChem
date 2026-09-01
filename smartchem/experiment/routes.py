@@ -1,7 +1,7 @@
 """E5 -- enumerate candidate synthesis routes from the decompiler, closing the loop.
 
 E0-E4 *consume* a route; E5 *generates* candidate routes from the decompiler's own conservation-valid
-cleavages, so a chemist can hand the compiler a target + an inventory and get back ranked, runnable drafts.
+cleavages, so a chemist can hand the compiler a target + an inventory and get back ranked route candidates.
 
 It is a bounded retrosynthesis over :func:`~smartchem.structure_descent.capped_scissions`: to make ``target``,
 enumerate its capped cleavages against a declared ``reagents`` pool, read each backward as an assembly step
@@ -19,16 +19,124 @@ assemblies and lets the E-rungs judge them.
 from __future__ import annotations
 
 import itertools
+from dataclasses import dataclass
+from enum import Enum
 
 from ..category import Molecule
 from ..conditions import ConditionEnvelope
-from ..contracts import canonical_digest
-from ..decompiler_conditions import reaction_conditions
+from ..contracts import Digestible, canonical_digest
+from ..decompiler_conditions import assembly_conditions
 from ..structure_descent import capped_scissions
 from .dag import DAGError, SynthesisDAG
 from .step import ExperimentRoute, ExperimentStep
 
-__all__ = ["enumerate_routes", "enumerate_dags"]
+__all__ = [
+    "SearchStatus",
+    "RouteSearchReceipt",
+    "RouteSearchResult",
+    "search_routes",
+    "enumerate_routes",
+    "enumerate_dags",
+]
+
+ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/route-search-receipt-v1alpha1"
+ROUTE_SEARCH_RESULT_SCHEMA = "smartchem.experiment/route-search-result-v1alpha2"
+
+
+class SearchStatus(str, Enum):
+    """Whether the declared bounded search actually exhausted its admitted candidate space."""
+
+    COMPLETE_WITHIN_BOUNDS = "COMPLETE_WITHIN_BOUNDS"
+    PARTIAL_CUT_BUDGET = "PARTIAL_CUT_BUDGET"
+    PARTIAL_RESULT_LIMIT = "PARTIAL_RESULT_LIMIT"
+    PARTIAL_MULTIPLE_LIMITS = "PARTIAL_MULTIPLE_LIMITS"
+
+
+@dataclass(frozen=True)
+class RouteSearchReceipt(Digestible):
+    """Auditable termination facts for one linear route search.
+
+    ``COMPLETE_WITHIN_BOUNDS`` never means complete chemistry.  It means exhaustive only within the current
+    linear, acyclic, capped-scission grammar, the stated depth, and the attempted per-expansion cut budget.
+    """
+
+    schema_version: str
+    max_depth: int
+    result_limit: int
+    cut_budget_per_expansion: int
+    expansions_attempted: int
+    incomplete_expansions: int
+    result_limit_saturated: bool
+    results_returned: int
+
+    def __post_init__(self) -> None:
+        if self.schema_version != ROUTE_SEARCH_RECEIPT_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {ROUTE_SEARCH_RECEIPT_SCHEMA!r}")
+        for name in ("max_depth", "result_limit", "cut_budget_per_expansion"):
+            value = getattr(self, name)
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        for name in ("expansions_attempted", "incomplete_expansions", "results_returned"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if type(self.result_limit_saturated) is not bool:
+            raise TypeError("result_limit_saturated must be bool")
+        if self.incomplete_expansions > self.expansions_attempted:
+            raise ValueError("incomplete_expansions cannot exceed expansions_attempted")
+        if self.results_returned > self.result_limit:
+            raise ValueError("results_returned cannot exceed result_limit")
+
+    @property
+    def cut_budget_exhausted(self) -> bool:
+        return self.incomplete_expansions > 0
+
+    @property
+    def complete_within_bounds(self) -> bool:
+        return not self.cut_budget_exhausted and not self.result_limit_saturated
+
+    @property
+    def status(self) -> SearchStatus:
+        if self.cut_budget_exhausted and self.result_limit_saturated:
+            return SearchStatus.PARTIAL_MULTIPLE_LIMITS
+        if self.cut_budget_exhausted:
+            return SearchStatus.PARTIAL_CUT_BUDGET
+        if self.result_limit_saturated:
+            return SearchStatus.PARTIAL_RESULT_LIMIT
+        return SearchStatus.COMPLETE_WITHIN_BOUNDS
+
+    def render(self) -> str:
+        return (
+            f"SEARCH RECEIPT: {self.status.value}; results={self.results_returned}/{self.result_limit}; "
+            f"depth<={self.max_depth}; expansions={self.expansions_attempted}; "
+            f"incomplete cut expansions={self.incomplete_expansions}; "
+            f"cut budget={self.cut_budget_per_expansion} candidates per expansion. "
+            "Scope: linear acyclic routes in the current capped-scission rewrite grammar; not all chemistry."
+        )
+
+
+@dataclass(frozen=True)
+class RouteSearchResult(Digestible):
+    schema_version: str
+    routes: tuple[ExperimentRoute, ...]
+    receipt: RouteSearchReceipt
+    target_in_terminal_stock: bool = False
+
+    def __post_init__(self) -> None:
+        if self.schema_version != ROUTE_SEARCH_RESULT_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {ROUTE_SEARCH_RESULT_SCHEMA!r}")
+        if type(self.routes) is not tuple or any(type(route) is not ExperimentRoute for route in self.routes):
+            raise TypeError("routes must be a tuple of ExperimentRoute values")
+        if type(self.receipt) is not RouteSearchReceipt:
+            raise TypeError("receipt must be a RouteSearchReceipt")
+        if type(self.target_in_terminal_stock) is not bool:
+            raise TypeError("target_in_terminal_stock must be bool")
+        if self.receipt.results_returned != len(self.routes):
+            raise ValueError("receipt.results_returned must equal len(routes)")
+        if self.target_in_terminal_stock and self.routes:
+            raise ValueError("an already-stocked target cannot also carry synthesis routes")
+        if self.target_in_terminal_stock and self.receipt.expansions_attempted:
+            raise ValueError("an already-stocked target must terminate before expansion")
 
 
 def _ident(m: Molecule) -> str:
@@ -41,9 +149,101 @@ def _ident(m: Molecule) -> str:
 def _conditions_for(capped) -> ConditionEnvelope:
     """The sourced conditions for a capped cleavage (via its forgetful mediated edge), or unknown()."""
     try:
-        return reaction_conditions(capped.forget())
+        # The capped edge is a DECOMPOSITION but this module reads it backward as an ASSEMBLY.  Conditions
+        # are directional experimental evidence, not algebraic decoration: hydrolysis conditions cannot be
+        # copied onto the reverse condensation merely because the balance is reversible.
+        return assembly_conditions(capped)
     except Exception:  # noqa: BLE001 -- a conditions lookup miss must never break route generation
         return ConditionEnvelope.unknown()
+
+
+def search_routes(
+    target: Molecule,
+    *,
+    reagents: tuple[Molecule, ...],
+    available: tuple[Molecule, ...] = (),
+    commodities: tuple[Molecule, ...] = (),
+    max_depth: int = 2,
+    max_routes: int = 100,
+    cut_budget: int = 20_000,
+) -> RouteSearchResult:
+    """Search for candidate routes and return candidates plus an explicit completeness receipt.
+
+    ``reagents`` are the small helpers the cleavage may consume (water, an anhydride, an acid); ``available``
+    are precursors the chemist already has, which terminate the backward search (the ``reagents`` are treated
+    as available too).  ``commodities`` are widely-obtainable stock (the "poor-man's buckets" -- table salt,
+    vinegar, baking soda; see :mod:`smartchem.data.reagents`) that ALSO terminate a branch: a route can bottom
+    out at stuff a chemist can actually buy instead of at pure elements.  All three sets terminate identically
+    -- they are keyed by the same canonical identity (:func:`_ident`), never by formula, so a same-formula
+    isomer never wrongly terminates (the ``a-reaction-key-by-formula-borrows-a-rate`` fail-open).  Linear
+    routes only (a step with at most one not-yet-available precursor is recursed on); a step whose precursors
+    are all on hand is a complete route.  The receipt distinguishes an exhaustive empty result *within this
+    bounded rewrite grammar* from a search cut short by a candidate budget or unique-result limit.
+    """
+    if type(target) is not Molecule:
+        raise TypeError("target must be a Molecule")
+    for name, value in (("max_depth", max_depth), ("max_routes", max_routes), ("cut_budget", cut_budget)):
+        if type(value) is not int or value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+    on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
+    if _ident(target) in on_hand:
+        receipt = RouteSearchReceipt(
+            ROUTE_SEARCH_RECEIPT_SCHEMA,
+            max_depth,
+            max_routes,
+            cut_budget,
+            0,
+            0,
+            False,
+            0,
+        )
+        return RouteSearchResult(ROUTE_SEARCH_RESULT_SCHEMA, (), receipt, True)
+    seen_routes: dict[str, ExperimentRoute] = {}
+    expansions_attempted = 0
+    incomplete_expansions = 0
+    result_limit_saturated = False
+
+    def routes_making(t: Molecule, depth: int, ancestors: frozenset[str]):
+        nonlocal expansions_attempted, incomplete_expansions
+        if depth > max_depth:
+            return
+        expansions_attempted += 1
+        cleavages, complete = capped_scissions(t, reagents, budget=cut_budget)
+        if not complete:
+            incomplete_expansions += 1
+        for cs in cleavages:
+            step = ExperimentStep.from_capped_scission(cs, envelope=_conditions_for(cs))
+            # distinct precursors this step consumes, minus what is already on hand
+            distinct: dict[str, Molecule] = {}
+            for m in step.reactants:
+                distinct.setdefault(_ident(m), m)
+            missing = [m for k, m in distinct.items() if k not in on_hand and k not in ancestors]
+            if not missing:
+                yield ExperimentRoute.of(step)
+            elif len(missing) == 1 and depth < max_depth:
+                precursor = missing[0]
+                for sub in routes_making(precursor, depth + 1, ancestors | {_ident(t)}):
+                    yield ExperimentRoute.of(*sub.steps, step)
+
+    for route in routes_making(target, 1, frozenset()):
+        if route.digest in seen_routes:
+            continue
+        if len(seen_routes) == max_routes:
+            result_limit_saturated = True
+            break
+        seen_routes[route.digest] = route
+    routes = tuple(seen_routes.values())
+    receipt = RouteSearchReceipt(
+        ROUTE_SEARCH_RECEIPT_SCHEMA,
+        max_depth,
+        max_routes,
+        cut_budget,
+        expansions_attempted,
+        incomplete_expansions,
+        result_limit_saturated,
+        len(routes),
+    )
+    return RouteSearchResult(ROUTE_SEARCH_RESULT_SCHEMA, routes, receipt, False)
 
 
 def enumerate_routes(
@@ -56,50 +256,16 @@ def enumerate_routes(
     max_routes: int = 100,
     cut_budget: int = 20_000,
 ) -> tuple[ExperimentRoute, ...]:
-    """Enumerate candidate synthesis routes to ``target`` from an ``available`` inventory + a ``reagents`` pool.
-
-    ``reagents`` are the small helpers the cleavage may consume (water, an anhydride, an acid); ``available``
-    are precursors the chemist already has, which terminate the backward search (the ``reagents`` are treated
-    as available too).  ``commodities`` are widely-obtainable stock (the "poor-man's buckets" -- table salt,
-    vinegar, baking soda; see :mod:`smartchem.data.reagents`) that ALSO terminate a branch: a route can bottom
-    out at stuff a chemist can actually buy instead of at pure elements.  All three sets terminate identically
-    -- they are keyed by the same canonical identity (:func:`_ident`), never by formula, so a same-formula
-    isomer never wrongly terminates (the ``a-reaction-key-by-formula-borrows-a-rate`` fail-open).  Linear
-    routes only (a step with at most one not-yet-available precursor is recursed on); a step whose precursors
-    are all on hand is a complete route.  Returns deduplicated routes, ready for
-    :func:`~smartchem.experiment.drafter.rank_routes`.  Empty if nothing within ``max_depth`` reaches the
-    inventory -- a loud "no route found", never a fabricated one.
-    """
-    if type(target) is not Molecule:
-        raise TypeError("target must be a Molecule")
-    on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
-    seen_routes: dict[str, ExperimentRoute] = {}
-
-    def routes_making(t: Molecule, depth: int, ancestors: frozenset[str]) -> list[ExperimentRoute]:
-        out: list[ExperimentRoute] = []
-        if depth > max_depth or len(seen_routes) >= max_routes:
-            return out
-        cleavages, _complete = capped_scissions(t, reagents, budget=cut_budget)
-        for cs in cleavages:
-            step = ExperimentStep.from_capped_scission(cs, envelope=_conditions_for(cs))
-            # distinct precursors this step consumes, minus what is already on hand
-            distinct: dict[str, Molecule] = {}
-            for m in step.reactants:
-                distinct.setdefault(_ident(m), m)
-            missing = [m for k, m in distinct.items() if k not in on_hand and k not in ancestors]
-            if not missing:
-                out.append(ExperimentRoute.of(step))
-            elif len(missing) == 1 and depth < max_depth:
-                precursor = missing[0]
-                for sub in routes_making(precursor, depth + 1, ancestors | {_ident(t)}):
-                    out.append(ExperimentRoute.of(*sub.steps, step))
-            if len(out) + len(seen_routes) >= max_routes:
-                break
-        return out
-
-    for route in routes_making(target, 1, frozenset()):
-        seen_routes.setdefault(route.digest, route)
-    return tuple(seen_routes.values())
+    """Compatibility wrapper returning only routes; use :func:`search_routes` for completeness facts."""
+    return search_routes(
+        target,
+        reagents=reagents,
+        available=available,
+        commodities=commodities,
+        max_depth=max_depth,
+        max_routes=max_routes,
+        cut_budget=cut_budget,
+    ).routes
 
 
 def _prune_to_sink(steps: tuple[ExperimentStep, ...]) -> tuple[ExperimentStep, ...]:

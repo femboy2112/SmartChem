@@ -1,4 +1,4 @@
-"""The front door: an arbitrary target -> a COMPLETE synthesis, terminating at buckets you can actually buy.
+"""The front door: an arbitrary target -> a bounded synthesis analysis over declared terminal stock.
 
 `compile_synthesis(target)` is the one entry that composes the whole stack a chemist needs, reusing every
 rung and inventing no physics:
@@ -8,7 +8,7 @@ rung and inventing no physics:
   :mod:`smartchem.data.reagents`), so a route ends at stock a chemist can obtain, not at elemental sodium;
 * it ranks them and picks the best by L2 GRADE FIRST (a KNOWN documented synthesis beats a HYPOTHESIZED
   longer chain), then the fit ranking (composability, sourced feasibility/selectivity, rate) as tiebreaker,
-  and drafts the winner in FULL chemist detail (:func:`~smartchem.experiment.drafter.draft_procedure`:
+  and renders the best returned route as an evidence dossier (:func:`~smartchem.experiment.drafter.draft_route_dossier`:
   balanced equations, conditions, ΔG feasibility, equilibrium extent, selectivity, the E6 byproduct/off-gas/
   hazard/care ledger, equipment, the conservation ceiling);
 * it grades the whole thing with the single L2 verdict (:func:`~smartchem.experiment.classify.classify_route`)
@@ -31,11 +31,13 @@ from dataclasses import dataclass, field
 from ..category import Molecule
 from ..contracts import canonical_digest
 from ..data.reagents import CommodityReagent, commodity_for, commodity_inventory
+from ..decompiler import Formula
+from ..structure import resolve_structure
 from .classify import Grade, UnifiedVerdict, classify_route
-from .drafter import DraftedProcedure, RouteFit, draft_procedure, rank_routes
+from .drafter import RouteDossier, RouteFit, draft_route_dossier, rank_routes
 from .eyring import RouteEyring, verify_eyring
 from .kinetics import RouteKinetics, verify_kinetics
-from .routes import enumerate_routes
+from .routes import RouteSearchReceipt, search_routes
 from .step import ExperimentRoute
 
 __all__ = ["CompiledSynthesis", "compile_synthesis"]
@@ -46,15 +48,17 @@ _GRADE_RANK = {
     Grade.KNOWN: 0, Grade.DERIVED: 1, Grade.PREDICTED: 2, Grade.HYPOTHESIZED: 3,
     Grade.UNKNOWN: 4, Grade.REFUTED: 5,
 }
-#: how many top fit-ranked routes to actually classify (classification is not free); the rest are counted.
-_CLASSIFY_TOP = 12
-
-
 def _ident(m: Molecule) -> str:
     try:
         return canonical_digest(m.canonical())
     except NotImplementedError:
         return "asgiven:" + canonical_digest(m)
+
+
+def _chemist_label(m: Molecule) -> str:
+    formula = repr(Formula.of(m.formula, m.charge))
+    named = resolve_structure(m)
+    return f"{named.name} [{formula}]" if named is not None else formula
 
 
 def _leaf_inputs(route: ExperimentRoute) -> tuple[Molecule, ...]:
@@ -71,12 +75,12 @@ def _leaf_inputs(route: ExperimentRoute) -> tuple[Molecule, ...]:
 
 @dataclass(frozen=True)
 class CompiledSynthesis:
-    """A compiled target: routes ranked BY GRADE, the best drafted in full, its grade + rate, and the
-    commodity shopping list -- with a scope ledger.  A presentation aggregate; adds no physics."""
+    """A compiled target: bounded routes ranked by grade, the best rendered as an evidence dossier,
+    and identity-level sourcing leads -- with a scope ledger.  A presentation aggregate; adds no physics."""
 
     target: Molecule
     ranked: tuple[RouteFit, ...]
-    best_draft: DraftedProcedure | None
+    best_draft: RouteDossier | None
     verdict: UnifiedVerdict | None
     kinetics: RouteKinetics | None
     eyring: RouteEyring | None
@@ -85,28 +89,69 @@ class CompiledSynthesis:
     alternatives: tuple[tuple[str, str], ...] = ()   # (grade, equation) for the other classified routes
     already_obtainable: CommodityReagent | None = None  # set when the target IS itself a commodity
     ledger: tuple[str, ...] = field(default_factory=tuple)
+    search_receipt: RouteSearchReceipt | None = None
+    already_in_active_inventory: bool = False
 
     @property
     def found_route(self) -> bool:
-        return self.best_draft is not None or self.already_obtainable is not None
+        return (
+            self.best_draft is not None
+            or self.already_obtainable is not None
+            or self.already_in_active_inventory
+        )
 
     def render(self) -> str:
         lines: list[str] = []
-        tgt = repr(self.target.formula) if hasattr(self.target, "formula") else repr(self.target)
+        tgt = _chemist_label(self.target)
         lines.append(f"COMPILED SYNTHESIS -- target {tgt}")
         lines.append("=" * 88)
 
+        if self.search_receipt is not None:
+            lines.append(self.search_receipt.render())
+            if not self.search_receipt.complete_within_bounds and self.search_receipt.results_returned:
+                lines.append(
+                    "PARTIAL SEARCH: ranking applies only to returned candidates; the selected route is not "
+                    "proven best within the declared bounds."
+                )
+
+        if self.already_in_active_inventory:
+            lines.append(
+                "ACTIVE INVENTORY MATCH (EXACT CHEMICAL IDENTITY): the target is already present in the "
+                "declared terminal stock; no synthesis expansion was attempted."
+            )
+            lines.append(
+                "This identity match does not establish quantity, assay, concentration, phase, grade, "
+                "impurities, or fitness for a particular operation."
+            )
+            for note in self.ledger:
+                lines.append(f"  - {note}")
+            return "\n".join(lines)
+
         if self.already_obtainable is not None:
             r = self.already_obtainable
-            lines.append(f"THE TARGET IS ITSELF A COMMODITY: just obtain it -- {r.name} ({r.common_source}) "
-                         f"[{r.availability.value}]. No synthesis needed.")
+            lines.append(
+                f"COMMODITY SOURCE MATCH (CHEMICAL IDENTITY ONLY): {r.name} occurs in {r.common_source} "
+                f"[{r.availability.value}]."
+            )
+            lines.append(
+                "This does NOT establish that the retail material meets the target's purity, concentration, "
+                "phase, grade, or impurity specification. Accept that source only if its material specification "
+                "is adequate; otherwise purification and analytical verification remain open operations."
+            )
             for note in self.ledger:
                 lines.append(f"  - {note}")
             return "\n".join(lines)
 
         if self.best_draft is None:
-            lines.append("NO ROUTE FOUND to the given buckets within the search horizon "
-                         "(a loud 'no route', never a fabricated one).")
+            if self.search_receipt is not None and not self.search_receipt.complete_within_bounds:
+                lines.append(
+                    "NO ROUTE RETURNED; SEARCH WAS PARTIAL. Absence is not evidence that no route exists."
+                )
+            else:
+                lines.append(
+                    "NO ROUTE FOUND WITHIN THE DECLARED BOUNDED SEARCH SPACE. This is not a claim about all "
+                    "chemistry outside the stated rewrite grammar and bounds."
+                )
             for note in self.ledger:
                 lines.append(f"  - {note}")
             return "\n".join(lines)
@@ -114,9 +159,9 @@ class CompiledSynthesis:
         refuted = self.verdict is not None and self.verdict.grade is Grade.REFUTED
         lines.append(f"OVERALL GRADE (L2): {self.verdict.grade.value} -- {self.verdict.headline}")
         if refuted:
-            # a refuted route is not a synthesis; do not dress it up in full runnable detail.
-            lines.append("This route is REFUTED by a named law -- it is NOT a runnable synthesis and is not "
-                         "drafted in full. See the headline for the law it violates.")
+            # a refuted route is not a synthesis; do not dress it up as a procedure.
+            lines.append("This route is REFUTED by a named law -- it is NOT a synthesis procedure and is not "
+                         "rendered as a route dossier. See the headline for the law it violates.")
             if self.alternatives:
                 lines.append("Other routes considered (grade -- equation):")
                 for g, eq in self.alternatives:
@@ -137,13 +182,17 @@ class CompiledSynthesis:
                 lines.append(f"  * {r.name} -- {r.common_source} [{r.availability.value}]")
         else:
             lines.append("  (none of the route's starting materials matched a known commodity)")
+        lines.append(
+            "  MATERIAL NOTE: matches are identity-level source leads, not pure-reagent equivalence; assay, "
+            "concentration, formulation, impurities, grade, region, quantity, and price are not yet modelled."
+        )
         if self.other_leaves:
             lines.append("  other starting materials (not a known commodity -- source separately):")
             for lbl in self.other_leaves:
                 lines.append(f"    - {lbl}")
         lines.append("")
 
-        lines.append("SYNTHESIS (buckets -> target), full detail:")
+        lines.append("SYNTHESIS (buckets -> target) CANDIDATE -- evidence dossier:")
         lines.append(self.best_draft.render())
         lines.append("")
 
@@ -176,12 +225,15 @@ def compile_synthesis(
     kinetics=None,
     barriers=None,
     feed=None,
+    max_routes: int = 100,
+    cut_budget: int = 20_000,
 ) -> CompiledSynthesis:
-    """Compile ``target`` into a complete, bucket-terminated synthesis with all chemist detail.
+    """Compile ``target`` into a bounded, bucket-terminated candidate-route evidence dossier.
 
     ``commodities`` defaults to the full poor-man's inventory (:func:`commodity_inventory`) so routes bottom
-    out at obtainable stock; pass ``()`` to disable commodity termination (elemental/``available`` only), or
-    a custom tuple to restrict the bench.  All the sourced-data levers (``stability``/``thermo``/
+    out at curated source leads; pass ``()`` to disable commodity termination (only explicit reagents and
+    ``available`` stock then terminate structural search), or a custom tuple to restrict the bench.  All the
+    sourced-data levers (``stability``/``thermo``/
     ``selectivity``/``kinetics``/``barriers``) and the E2 ``feed`` thread straight through to the rungs.
     """
     if type(target) is not Molecule:
@@ -196,25 +248,46 @@ def compile_synthesis(
 
     ledger = [
         "best route is a LINEAR chain; convergent (multi-precursor) trees are a roadmap item",
-        "commodity buckets are a curated obtainability set; identity is grounded, availability is editorial",
+        "commodity terminals are curated source leads; identity is grounded, availability is editorial, and "
+        "no purity/concentration/formulation equivalence is implied",
     ]
 
     # target-is-itself-a-commodity short-circuit: don't hand back a synthesis for something you can just buy.
-    self_commodity = commodity_for(target)
+    commodity_idents = {_ident(m) for m in commodity_stock}
+    self_commodity = commodity_for(target) if _ident(target) in commodity_idents else None
     if self_commodity is not None:
         return CompiledSynthesis(
             target, (), None, None, None, None, (), (), (), self_commodity,
             tuple(ledger) + ("the target is itself a commodity -- synthesis is unnecessary",),
         )
 
-    routes = enumerate_routes(
+    search = search_routes(
         target, reagents=reagents, available=available, commodities=commodity_stock, max_depth=max_depth,
+        max_routes=max_routes, cut_budget=cut_budget,
     )
+    if search.target_in_terminal_stock:
+        return CompiledSynthesis(
+            target=target,
+            ranked=(),
+            best_draft=None,
+            verdict=None,
+            kinetics=None,
+            eyring=None,
+            shopping=(),
+            other_leaves=(),
+            ledger=tuple(ledger) + (
+                "the target matched the active exact-identity terminal stock; no synthesis was searched",
+            ),
+            search_receipt=search.receipt,
+            already_in_active_inventory=True,
+        )
+    routes = search.routes
     if not routes:
         return CompiledSynthesis(
             target, (), None, None, None, None, (), (), (), None,
             tuple(ledger) + ("no cleavage reached the buckets within max_depth -- raise --max-depth or "
                              "widen the inventory",),
+            search.receipt,
         )
 
     ranked = rank_routes(
@@ -225,9 +298,10 @@ def compile_synthesis(
         ("kinetics", kinetics), ("barriers", barriers),
     ) if v is not None}
 
-    # Re-rank the top fit-ranked routes by L2 GRADE first (fit order as the tiebreaker), so a 1-step KNOWN
-    # documented synthesis surfaces above a longer HYPOTHESIZED chain -- the fit-ranking never sees the grade.
-    head = ranked[:_CLASSIFY_TOP]
+    # Re-rank every returned route by L2 GRADE first (fit order as the tiebreaker), so a 1-step KNOWN
+    # documented synthesis surfaces above a longer HYPOTHESIZED chain.  The search receipt already bounds the
+    # result set; silently classifying only a prefix would make "best returned" false.
+    head = ranked
     graded = []
     for i, rf in enumerate(head):
         v = classify_route(rf.route, **kw)
@@ -236,11 +310,10 @@ def compile_synthesis(
     _, _, best_fit, verdict = graded[0]
     best = best_fit.route
 
-    draft = draft_procedure(best, feed=feed, stability=stability, selectivity=selectivity, thermo=thermo)
+    draft = draft_route_dossier(best, feed=feed, stability=stability, selectivity=selectivity, thermo=thermo)
     kin = verify_kinetics(best, kinetics=kinetics)
     eyr = verify_eyring(best, barriers=barriers)
 
-    commodity_idents = {_ident(m) for m in commodity_stock}
     shopping: dict[str, CommodityReagent] = {}
     others: list[str] = []
     for m in _leaf_inputs(best):
@@ -249,11 +322,10 @@ def compile_synthesis(
             if r is not None:
                 shopping[r.name] = r
                 continue
-        others.append(repr(m.formula) if hasattr(m, "formula") else repr(m))
+        others.append(_chemist_label(m))
 
-    best_eq = _equation(best)
     alternatives = tuple(
-        (v.grade.value, _equation(rf.route)) for _, _, rf, v in graded if _equation(rf.route) != best_eq
+        (v.grade.value, _equation(rf.route)) for _, _, rf, v in graded if rf.route.digest != best.digest
     )
 
     return CompiledSynthesis(
@@ -268,4 +340,5 @@ def compile_synthesis(
         alternatives=alternatives,
         already_obtainable=None,
         ledger=tuple(ledger),
+        search_receipt=search.receipt,
     )

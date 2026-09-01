@@ -42,10 +42,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import gcd
+from collections import Counter
 
 from ..category import Molecule
 from ..contracts import Digestible, EvidenceStatus
 from ..decompiler import Formula
+from ..provenance import SourceCitation, SourceReview
 from ..structure import known_compounds, resolve_structure
 from .bucket import Bucket, Quantity, unknown
 from .step import ExperimentRoute, ExperimentStep
@@ -80,12 +83,22 @@ def _composition(molecule: Molecule) -> CompositionKey:
 
 
 def _reactant_key(reactants: tuple[Molecule, ...]) -> CompositionKey:
-    """The scale-independent multiset of reactant compositions (order-independent)."""
-    return tuple(sorted(_composition(m) for m in reactants))
+    """The primitive, scale-independent multiset of reactant compositions (order-independent)."""
+    counts = Counter(_composition(m) for m in reactants)
+    divisor = 0
+    for coefficient in counts.values():
+        divisor = gcd(divisor, coefficient)
+    divisor = divisor or 1
+    return tuple(sorted(composition for composition, n in counts.items() for _ in range(n // divisor)))
 
 
 def _formulas_key(*formula_strings: str) -> CompositionKey:
-    return tuple(sorted(Formula.parse(f).counts for f in formula_strings))
+    counts = Counter(Formula.parse(f).counts for f in formula_strings)
+    divisor = 0
+    for coefficient in counts.values():
+        divisor = gcd(divisor, coefficient)
+    divisor = divisor or 1
+    return tuple(sorted(composition for composition, n in counts.items() for _ in range(n // divisor)))
 
 
 @dataclass(frozen=True)
@@ -107,6 +120,7 @@ class SelectivityRecord(Digestible):
     provenance: str
     status: EvidenceStatus = EvidenceStatus.EXPERIMENTAL
     reactant_names: tuple[str, ...] = ()
+    source: SourceCitation | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.major_isomer_name, str) or not self.major_isomer_name:
@@ -115,10 +129,22 @@ class SelectivityRecord(Digestible):
             raise ValueError("a selectivity record must carry a provenance (no unsourced preference)")
         if not isinstance(self.status, EvidenceStatus):
             raise TypeError("status must be an EvidenceStatus")
+        if self.status in (EvidenceStatus.UNSUPPORTED, EvidenceStatus.STRUCTURAL_TOY):
+            raise ValueError(
+                "a selectivity record is a positive experimental attestation and cannot be UNSUPPORTED or "
+                "STRUCTURAL_TOY; omit the record to represent UNKNOWN"
+            )
         if type(self.reactant_names) is not tuple or any(
             not isinstance(n, str) or not n for n in self.reactant_names
         ):
             raise TypeError("reactant_names must be a tuple of non-empty strings")
+        if self.source is not None and type(self.source) is not SourceCitation:
+            raise TypeError("source must be a SourceCitation or None")
+
+    @property
+    def is_source_attested(self) -> bool:
+        """Whether this record's typed locator was explicitly accepted by data review."""
+        return self.source is not None and self.source.accepted
 
 
 @dataclass(frozen=True)
@@ -245,6 +271,14 @@ def selectivity_of_step(step: ExperimentStep, *, table: SelectivityTable) -> Ste
             unknown("selectivity", "", f"{len(isomers)} isomers compete; no sourced regiochemical fact"),
         )
 
+    if not rec.is_source_attested:
+        return StepSelectivity(
+            SelectivityStatus.UNKNOWN,
+            "UNKNOWN: a selectivity preference was declared, but it has no accepted typed source citation "
+            "and cannot earn a sourced grade",
+            unknown("selectivity", "", "free text or an unreviewed citation is not accepted source evidence"),
+        )
+
     if rec.reactant_names:
         # S2: composition got us here, but a composition can hide more than one starting isomer
         # (4-aminophenol is not 3-aminophenol just because both are C6H7NO) -- check the ACTUAL structure
@@ -285,16 +319,20 @@ def selectivity_of_step(step: ExperimentStep, *, table: SelectivityTable) -> Ste
     if named.name == rec.major_isomer_name:
         return StepSelectivity(
             SelectivityStatus.FAVORED,
-            f"FAVORED: {named.name} is the SOURCED major product of this reaction ({rec.provenance})",
-            Quantity("selectivity", f"major:{named.name}", "", Bucket.KNOWN_SOURCED, rec.provenance),
+            f"FAVORED: {named.name} is the SOURCED major product of this reaction "
+            f"({rec.provenance}; {rec.source.locator})",
+            Quantity(
+                "selectivity", f"major:{named.name}", "", Bucket.KNOWN_SOURCED,
+                f"{rec.provenance}; {rec.source.locator}",
+            ),
         )
     return StepSelectivity(
         SelectivityStatus.DISFAVORED,
         f"DISFAVORED: the SOURCED major product of this reaction is {rec.major_isomer_name}, but this step "
-        f"makes {named.name} -- the minor isomer ({rec.provenance})",
+        f"makes {named.name} -- the minor isomer ({rec.provenance}; {rec.source.locator})",
         Quantity(
             "selectivity", f"minor:{named.name} (sourced major: {rec.major_isomer_name})", "",
-            Bucket.KNOWN_SOURCED, rec.provenance,
+            Bucket.KNOWN_SOURCED, f"{rec.provenance}; {rec.source.locator}",
         ),
     )
 
@@ -324,17 +362,8 @@ SEED_SELECTIVITY_RECORDS: tuple[SelectivityRecord, ...] = (
             "phenol -OH, so acetic-anhydride acetylation is N-selective and gives the amide (paracetamol) "
             "as the major product (ACS J. Chem. Educ. teaching synthesis; standard regiochemistry)"
         ),
-    ),
-    # 4-aminophenol + acetic acid -> C8H9NO2 (+ water): the same N-selectivity for the condensation route.
-    SelectivityRecord(
-        reactant_key=_formulas_key("C6H7NO", "C2H4O2"),
-        product_formula=Formula.parse("C8H9NO2").counts,
-        major_isomer_name="paracetamol",
-        reactant_names=("4-aminophenol", "acetic acid"),
-        provenance=(
-            "N- vs O-acetylation of 4-aminophenol: the amine outcompetes the phenol -OH, so the acetic-acid "
-            "condensation is likewise N-selective, giving the amide (paracetamol) as the major product "
-            "(standard amine>alcohol acylation regiochemistry)"
+        source=SourceCitation(
+            "https://doi.org/10.1021/acs.jchemed.0c01512", SourceReview.ACCEPTED
         ),
     ),
     # Mid-1: propene + water -> C3H8O, Markovnikov addition -> propan-2-ol (major).
@@ -349,6 +378,9 @@ SEED_SELECTIVITY_RECORDS: tuple[SelectivityRecord, ...] = (
             "propan-1-ol is minor. Sourced: AUS-e-TUTE hydration-of-alkenes tutorial; rule from V. "
             "Markovnikov 1870, Annalen der Chemie 153:228-259."
         ),
+        source=SourceCitation(
+            "https://doi.org/10.1002/jlac.18701530204", SourceReview.ACCEPTED
+        ),
     ),
     # Mid-1: nitrobenzene + nitric acid -> C6H4N2O4, meta-director -> 1,3-dinitrobenzene (major).
     SelectivityRecord(
@@ -361,6 +393,9 @@ SEED_SELECTIVITY_RECORDS: tuple[SelectivityRecord, ...] = (
             "1,3-dinitrobenzene as the MAJOR product (93%; ortho 6%, para 1%) because the -NO2 group is a "
             "deactivating meta-director. Sourced: Buddrus 2003, Grundlagen der organischen Chemie 3rd ed. "
             "p.360 (via Wikipedia '1,3-Dinitrobenzene'); corroborated by OCLUE (Cooper & Klymkowsky) 8.11."
+        ),
+        source=SourceCitation(
+            "https://doi.org/10.1021/jo0609475", SourceReview.ACCEPTED
         ),
     ),
 )

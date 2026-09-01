@@ -190,16 +190,16 @@ class TestDispatcherAndEvidence:
         assert Bucket.CONSERVATION in buckets
         assert Bucket.KNOWN_SOURCED in buckets
 
-    def test_a_declared_sourced_envelope_also_earns_known(self):
-        # the second KNOWN signal: an attested reaction need not pose an isomer question -- a sourced
-        # (declared) condition envelope is direct attestation too.
+    def test_a_declared_envelope_is_context_not_reaction_attestation(self):
+        # Arbitrary provenance-bearing context must not promote a formal candidate to KNOWN.  A typed,
+        # direction-specific reaction attestation is a separate object; ConditionEnvelope is not one.
         declared = ConditionEnvelope(
-            temperature=Interval(295.0, 300.0, "K"), provenance="sourced bench conditions (test)",
+            temperature=Interval(295.0, 300.0, "K"), provenance="because I said so",
             status=EvidenceStatus.EXPERIMENTAL,
         )
-        step = ExperimentStep.assembling(H2O, (H2, H2, O2), (H2O, H2O), envelope=declared)
+        step = ExperimentStep.assembling(ISOCYANIDE, (ACETONITRILE,), (ISOCYANIDE,), envelope=declared)
         assert step.is_declared
-        assert classify_step(step).grade is Grade.KNOWN
+        assert classify_step(step).grade is Grade.HYPOTHESIZED
 
     def test_explain_names_the_grade(self):
         text = classify_step(haber()).explain()

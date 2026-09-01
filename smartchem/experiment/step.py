@@ -151,6 +151,13 @@ class ExperimentStep(Digestible):
         key = _ident(molecule)
         return any(_ident(m) == key for m in self.reactants)
 
+    def net_consumes(self, molecule: Molecule) -> bool:
+        """Does the balanced equation consume a positive net amount of ``molecule``?"""
+        key = _ident(molecule)
+        lhs = sum(_ident(m) == key for m in self.reactants)
+        rhs = sum(_ident(m) == key for m in self.products)
+        return lhs > rhs
+
     def equation(self) -> str:
         """A human-readable balanced equation for this step."""
         lhs = " + ".join(repr(m) for m in self.reactants)
@@ -234,11 +241,11 @@ class ExperimentRoute(Digestible):
             raise StepError("a route must be a non-empty tuple of ExperimentStep values")
         for k in range(len(self.steps) - 1):
             carried = self.steps[k].target
-            if not self.steps[k + 1].consumes(carried):
+            if not self.steps[k + 1].net_consumes(carried):
                 raise StepError(
-                    f"route is not linear: step {k}'s target {carried!r} is not consumed by step "
-                    f"{k + 1} -- the intermediate is not carried forward, so there is no transition to "
-                    f"check.  Order the steps so each intermediate feeds the next"
+                    f"route is not linear: step {k}'s target {carried!r} is not net-consumed by step "
+                    f"{k + 1} -- merely appearing unchanged on both sides would make it a spectator, not a "
+                    f"carried synthesis intermediate. Order the steps so each intermediate feeds the next"
                 )
 
     @property

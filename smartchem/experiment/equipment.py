@@ -12,8 +12,9 @@ table, so it works for ANY chemical: the conditions drive the glassware.  Two ho
 
 * an UNDECLARED envelope yields a single ``UNKNOWN`` item -- *equipment undetermined, no declared
   conditions* -- never a guessed apparatus;
-* every inferred item is ``KNOWN_SOURCED`` to standard practice and carries the triggering condition as its
-  reason, so a chemist sees *why* each piece is on the list and can overrule it with their own judgement.
+* every inferred item carries the triggering condition as its reason. A source-attested envelope yields
+  ``KNOWN_SOURCED`` apparatus guidance; an operator declaration stays ``COMPOSABILITY`` and is never
+  relabelled as scientific evidence.
 
 This selects standard apparatus for the declared conditions.  It is not a claim the reaction proceeds, and
 it never overrides a chemist's safety call -- it informs (fume-hood/containment items are attached from the
@@ -21,7 +22,7 @@ step's sourced hazards, inform-never-neuter, the same doctrine as the review lay
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 from ..conditions import ConditionEnvelope
@@ -40,7 +41,6 @@ __all__ = [
 _AMBIENT_K = 298.15
 _WARM_K = 313.0            # ~40 C: above here, active heating is needed
 _WATER_BATH_MAX_K = 373.0  # ~100 C: a water bath / hotplate covers up to boiling water
-_STRONG_FLAME_MAX_K = 1773.0  # a Bunsen burner reaches ~1500 C
 _SUBAMBIENT_K = 288.0     # ~15 C: below here, a cooling/ice bath is needed
 _ELEVATED_ATM = 1.5       # above here, a sealed/pressure vessel
 _VACUUM_ATM = 0.5         # below here, a vacuum line
@@ -78,7 +78,11 @@ class EquipmentItem(Digestible):
             raise ValueError("reason must be a non-empty string (the triggering condition)")
 
     def render(self) -> str:
-        return f"{self.name} ({self.kind.value.lower()}) -- {self.reason}"
+        provenance = f": {self.provenance}" if self.provenance else ""
+        return (
+            f"{self.name} ({self.kind.value.lower()}) -- {self.reason} "
+            f"[{self.bucket.value}{provenance}]"
+        )
 
 
 def _flammable(medium: str) -> bool:
@@ -131,15 +135,12 @@ def equipment_for_envelope(envelope: ConditionEnvelope) -> tuple[EquipmentItem, 
                 "heating mantle or hotplate (NO open flame -- flammable medium)", EquipmentKind.HEATING,
                 f"heating a flammable medium to {temp.hi} K: a mantle/hotplate, not a burner",
             ))
-        elif temp.hi <= _STRONG_FLAME_MAX_K:
-            items.append(EquipmentItem(
-                "Bunsen burner", EquipmentKind.HEATING,
-                f"strong heating to {temp.hi} K in a non-flammable medium -- a burner reaches this",
-            ))
         else:
             items.append(EquipmentItem(
-                "furnace / high-temperature source", EquipmentKind.HEATING,
-                f"{temp.hi} K exceeds a Bunsen burner's ~1500 C reach -- a furnace is needed",
+                "controlled electric heater / furnace (open-flame compatibility UNASSESSED)",
+                EquipmentKind.HEATING,
+                f"heating to {temp.hi} K needs a temperature-rated source; free-text medium labels and "
+                "species-level records are not a process flame-safety assessment, so no open flame is cleared",
             ))
 
     # -- cooling -----------------------------------------------------------------------------------
@@ -179,7 +180,27 @@ def equipment_for_envelope(envelope: ConditionEnvelope) -> tuple[EquipmentItem, 
                 "an anhydrous/inert/air-sensitive medium needs an inert atmosphere",
             ))
 
-    return tuple(items)
+    if not envelope.is_sourced:
+        return tuple(
+            replace(
+                item,
+                bucket=Bucket.COMPOSABILITY,
+                provenance=(
+                    "apparatus inferred from an operator-declared condition constraint; the condition is "
+                    "not source-attested"
+                ),
+            )
+            for item in items
+        )
+    return tuple(
+        replace(
+            item,
+            provenance=(
+                f"{item.provenance}; triggering condition accepted from {envelope.source.locator}"
+            ),
+        )
+        for item in items
+    )
 
 
 def equipment_for_step(step: ExperimentStep) -> tuple[EquipmentItem, ...]:
@@ -193,13 +214,29 @@ def equipment_for_step(step: ExperimentStep) -> tuple[EquipmentItem, ...]:
         raise TypeError("step must be an ExperimentStep")
     items = list(equipment_for_envelope(step.envelope))
 
-    # hazard-driven containment (isomer-resolved via the review layer's molecule_hazards)
+    # hazard-driven containment (isomer-resolved via the review layer's molecule_hazards).  A positive
+    # *benign* assessment such as water's empty GHS profile is evidence of assessment, not a reason to buy or
+    # use a hood.  Conversely, any flammability code vetoes an open-flame suggestion even when the free-text
+    # medium used an unrecognised alias (EtOH/IPA/etc.).
     from ..decompiler_review import molecule_hazards
     hazardous: list[str] = []
+    flammable: list[str] = []
+    flammable_codes = {"H220", "H221", "H222", "H223", "H224", "H225", "H226", "H227", "H228"}
     for m in (*step.reactants, *step.products):
         haz = molecule_hazards(m)
-        if haz is not None:
+        if haz is not None and haz.ghs_codes:
             hazardous.append(haz.name)
+            if flammable_codes.intersection(haz.ghs_codes):
+                flammable.append(haz.name)
+    if flammable:
+        items = [i for i in items if "Bunsen" not in i.name and "open flame" not in i.name.lower()]
+        if step.envelope.temperature is not None and step.envelope.temperature.hi > _WARM_K:
+            names = ", ".join(sorted(set(flammable)))
+            items.append(EquipmentItem(
+                "controlled non-flame heating source", EquipmentKind.HEATING,
+                f"sourced flammability classification for {names} vetoes an open flame",
+                provenance="smartchem.data.hazards GHS flammability codes; process review still required",
+            ))
     if hazardous:
         names = ", ".join(sorted(set(hazardous)))
         items.append(EquipmentItem(

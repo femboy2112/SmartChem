@@ -26,12 +26,12 @@ in ``tests/test_conditions.py``.
 The boundary that keeps this honest (formal ≠ physical, one layer up)
 --------------------------------------------------------------------
 A :class:`ConditionEnvelope` is a **declared context, never a prediction**. It carries an
-:class:`~smartchem.contracts.EvidenceStatus` and a provenance, and:
+:class:`~smartchem.contracts.EvidenceStatus`, provenance, and an optional typed source citation, and:
 
 * the only ``UNSUPPORTED`` envelope is the empty :meth:`ConditionEnvelope.unknown` — the honest
   default for the overwhelming majority of formal edges, which have no sourced conditions;
 * any *declared* condition (a temperature, a medium, a catalyst, …) **requires a non-empty
-  provenance** — conditions are never fabricated;
+  provenance**, but free text remains ``DECLARED`` and is not laundered into sourced evidence;
 * the status is **capped at ``EXPERIMENTAL``** — a decorator layer never raises a condition to a
   certified-lane status (`VALIDATED_WITHIN_REGIME`/`ESTABLISHED`), because that vocabulary carries
   governance the conditions layer's machinery does not run (the label-borrowing constraint the
@@ -50,6 +50,7 @@ from dataclasses import dataclass
 from typing import Callable, Generic, TypeVar
 
 from .contracts import Digestible, EvidenceStatus
+from .provenance import SourceCitation
 
 __all__ = [
     "Interval",
@@ -100,8 +101,8 @@ class ConditionEnvelope(Digestible):
     """The comonadic context: the declared conditions under which a step is claimed possible.
 
     Every field is optional; the empty envelope (:meth:`unknown`) is the honest "no declared
-    conditions" default. A non-empty envelope is a *sourced claim* and is refused unless it carries
-    a provenance and a below-certified status (see the module docstring).
+    conditions" default. A non-empty envelope is a *declaration* and is refused unless it carries
+    provenance and a below-certified status. Only an accepted :class:`SourceCitation` earns a sourced label.
     """
 
     temperature: Interval | None = None
@@ -112,12 +113,25 @@ class ConditionEnvelope(Digestible):
     applied_field: str = ""
     status: EvidenceStatus = EvidenceStatus.UNSUPPORTED
     provenance: str = ""
+    source: SourceCitation | None = None
 
     def __post_init__(self) -> None:
         for name in ("temperature", "pressure", "duration"):
             v = getattr(self, name)
             if v is not None and type(v) is not Interval:
                 raise TypeError(f"{name} must be an Interval or None")
+        # Every downstream consumer compares these raw magnitudes against K / atm thresholds.  Accepting an
+        # arbitrary unit here would make a perfectly valid-looking envelope catastrophically ambiguous (for
+        # example 20--100 C was previously read as 20--100 K and triggered an ice-bath recommendation).
+        # Convert before construction or refuse; silent unit reinterpretation is never a convenience.
+        if self.temperature is not None and self.temperature.unit != "K":
+            raise ValueError(
+                f"temperature intervals must use unit 'K', got {self.temperature.unit!r}; convert explicitly"
+            )
+        if self.pressure is not None and self.pressure.unit != "atm":
+            raise ValueError(
+                f"pressure intervals must use unit 'atm', got {self.pressure.unit!r}; convert explicitly"
+            )
         for name in ("medium", "applied_field", "provenance"):
             if not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} must be a string")
@@ -128,6 +142,8 @@ class ConditionEnvelope(Digestible):
         object.__setattr__(self, "catalysts", tuple(sorted(set(self.catalysts))))
         if not isinstance(self.status, EvidenceStatus):
             raise TypeError("status must be an EvidenceStatus")
+        if self.source is not None and type(self.source) is not SourceCitation:
+            raise TypeError("source must be a SourceCitation or None")
         if self.status not in _ALLOWED_STATUS:
             raise ValueError(
                 f"a declared-condition envelope never claims a certified-lane status; "
@@ -155,8 +171,10 @@ class ConditionEnvelope(Digestible):
             if not self.provenance.strip():
                 raise ValueError(
                     "a declared envelope must carry a non-empty provenance; conditions are never "
-                    "fabricated, only sourced"
+                    "anonymous (state whether the provenance is a declaration or source citation)"
                 )
+        if self.source is not None and self.status is not EvidenceStatus.EXPERIMENTAL:
+            raise ValueError("a cited condition must carry EXPERIMENTAL evidence status")
 
     @classmethod
     def unknown(cls) -> "ConditionEnvelope":
@@ -166,6 +184,11 @@ class ConditionEnvelope(Digestible):
     @property
     def is_declared(self) -> bool:
         return self.status is not EvidenceStatus.UNSUPPORTED
+
+    @property
+    def is_sourced(self) -> bool:
+        """True only for a declared envelope whose typed source was explicitly accepted by review."""
+        return self.is_declared and self.source is not None and self.source.accepted
 
 
 @dataclass(frozen=True)

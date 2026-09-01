@@ -24,7 +24,7 @@ green over an empty subject" disease:
 * ``DEGENERATE`` -- at least one transition is degenerate.
 * ``COMPOSABLE`` -- at least one transition, and EVERY transition was affirmatively cleared on sourced data.
 * ``UNKNOWN`` -- at least one transition, none degenerate, but at least one could not be judged (a gap).
-  A route is not "runnable" until its gaps are closed; this is ``DRAFT``, never a silent pass.
+  The handoff is not transition-cleared; this is ``UNKNOWN``, never a silent pass.
 
 Independence (why this is not self-certifying)
 ----------------------------------------------
@@ -319,9 +319,23 @@ class Composability(Digestible):
         return self.verdict == "DEGENERATE"
 
     @property
-    def is_runnable(self) -> bool:
-        """True only for a route with transitions, all affirmatively cleared on sourced data."""
+    def transitions_cleared(self) -> bool:
+        """Whether every inter-step survival transition is affirmatively cleared; not procedure readiness."""
         return self.verdict == "COMPOSABLE"
+
+    @property
+    def is_runnable(self) -> bool:
+        """Deprecated compatibility alias for :attr:`transitions_cleared`.
+
+        The name predates procedure-readiness tiers and must not be read as a bench-readiness claim.
+        """
+        import warnings
+        warnings.warn(
+            "Composability.is_runnable only means inter-step transitions cleared; use transitions_cleared",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.transitions_cleared
 
     @property
     def degenerate_reasons(self) -> tuple[str, ...]:

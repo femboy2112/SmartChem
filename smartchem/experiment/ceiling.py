@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
+from math import gcd
 from typing import Mapping
 
 from ..category import Molecule
@@ -111,7 +112,11 @@ class StoichiometricCeiling(Digestible):
 
 
 def _coefficient_vector(step: ExperimentStep) -> tuple[tuple[Molecule, ...], tuple[int, ...]]:
-    """The distinct species of the step and its signed net coefficient vector (reactant +, product -)."""
+    """The distinct species and primitive signed net coefficient vector (reactant +, product -).
+
+    A reaction written twice is the same thermodynamic/kinetic reaction, not twice as favorable or a lookup
+    miss.  Dividing the net vector by its common gcd makes every downstream reaction identity scale-invariant.
+    """
     react = Counter(_ident(m) for m in step.reactants)
     prod = Counter(_ident(m) for m in step.products)
     by_ident: dict[str, Molecule] = {}
@@ -125,7 +130,11 @@ def _coefficient_vector(step: ExperimentStep) -> tuple[tuple[Molecule, ...], tup
             continue  # a pure spectator/catalyst (equal on both sides) is not in the balance vector
         species.append(m)
         nu.append(net)
-    return tuple(species), tuple(nu)
+    divisor = 0
+    for coefficient in nu:
+        divisor = gcd(divisor, abs(coefficient))
+    divisor = divisor or 1
+    return tuple(species), tuple(coefficient // divisor for coefficient in nu)
 
 
 def _verify_balances(step: ExperimentStep) -> None:

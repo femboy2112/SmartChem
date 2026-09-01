@@ -129,11 +129,14 @@ from .kinetics import (
     worst_regime,
 )
 from .routes import (
+    DAGSearchReceipt,
+    DAGSearchResult,
     RouteSearchReceipt,
     RouteSearchResult,
     SearchStatus,
     enumerate_dags,
     enumerate_routes,
+    search_dags,
     search_routes,
 )
 from .selectivity import (
@@ -185,9 +188,12 @@ __all__ = [
     "enumerate_routes",
     "enumerate_dags",
     "search_routes",
+    "search_dags",
     "SearchStatus",
     "RouteSearchReceipt",
     "RouteSearchResult",
+    "DAGSearchReceipt",
+    "DAGSearchResult",
     "SelectivityStatus",
     "SelectivityRecord",
     "SelectivityTable",

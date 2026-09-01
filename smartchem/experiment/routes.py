@@ -36,11 +36,16 @@ __all__ = [
     "RouteSearchResult",
     "search_routes",
     "enumerate_routes",
+    "DAGSearchReceipt",
+    "DAGSearchResult",
+    "search_dags",
     "enumerate_dags",
 ]
 
 ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/route-search-receipt-v1alpha1"
 ROUTE_SEARCH_RESULT_SCHEMA = "smartchem.experiment/route-search-result-v1alpha2"
+DAG_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/dag-search-receipt-v1alpha1"
+DAG_SEARCH_RESULT_SCHEMA = "smartchem.experiment/dag-search-result-v1alpha1"
 
 
 class SearchStatus(str, Enum):
@@ -135,6 +140,103 @@ class RouteSearchResult(Digestible):
             raise ValueError("receipt.results_returned must equal len(routes)")
         if self.target_in_terminal_stock and self.routes:
             raise ValueError("an already-stocked target cannot also carry synthesis routes")
+        if self.target_in_terminal_stock and self.receipt.expansions_attempted:
+            raise ValueError("an already-stocked target must terminate before expansion")
+
+
+@dataclass(frozen=True)
+class DAGSearchReceipt(Digestible):
+    """Auditable termination facts for one convergent-DAG synthesis search.
+
+    The exact sibling of :class:`RouteSearchReceipt` for the convergent generalisation (:func:`search_dags`):
+    ``COMPLETE_WITHIN_BOUNDS`` means exhaustive only within the current capped-scission rewrite grammar, the
+    stated depth, and the attempted per-expansion cut budget -- never complete chemistry.
+
+    One honesty caveat is specific to the DAG search and stated loudly: ``result_limit_saturated`` is
+    *conservative*.  ``max_dags`` caps the distinct syntheses collected at *every* recursion level (a scarce
+    precursor may itself have more ways to make it than the cap allows), so the flag is set whenever any level
+    filled its cap and stopped enumerating.  When the true distinct count happened to equal ``max_dags`` exactly,
+    this reports PARTIAL where COMPLETE would also have been defensible -- an error that always points toward
+    "there may be more", never toward a false claim of completeness (W2: a truncated search is never silently a
+    full one).
+    """
+
+    schema_version: str
+    max_depth: int
+    result_limit: int
+    cut_budget_per_expansion: int
+    expansions_attempted: int
+    incomplete_expansions: int
+    result_limit_saturated: bool
+    results_returned: int
+
+    def __post_init__(self) -> None:
+        if self.schema_version != DAG_SEARCH_RECEIPT_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {DAG_SEARCH_RECEIPT_SCHEMA!r}")
+        for name in ("max_depth", "result_limit", "cut_budget_per_expansion"):
+            value = getattr(self, name)
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        for name in ("expansions_attempted", "incomplete_expansions", "results_returned"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if type(self.result_limit_saturated) is not bool:
+            raise TypeError("result_limit_saturated must be bool")
+        if self.incomplete_expansions > self.expansions_attempted:
+            raise ValueError("incomplete_expansions cannot exceed expansions_attempted")
+        if self.results_returned > self.result_limit:
+            raise ValueError("results_returned cannot exceed result_limit")
+
+    @property
+    def cut_budget_exhausted(self) -> bool:
+        return self.incomplete_expansions > 0
+
+    @property
+    def complete_within_bounds(self) -> bool:
+        return not self.cut_budget_exhausted and not self.result_limit_saturated
+
+    @property
+    def status(self) -> SearchStatus:
+        if self.cut_budget_exhausted and self.result_limit_saturated:
+            return SearchStatus.PARTIAL_MULTIPLE_LIMITS
+        if self.cut_budget_exhausted:
+            return SearchStatus.PARTIAL_CUT_BUDGET
+        if self.result_limit_saturated:
+            return SearchStatus.PARTIAL_RESULT_LIMIT
+        return SearchStatus.COMPLETE_WITHIN_BOUNDS
+
+    def render(self) -> str:
+        return (
+            f"DAG SEARCH RECEIPT: {self.status.value}; distinct syntheses={self.results_returned}/"
+            f"{self.result_limit}; depth<={self.max_depth}; expansions={self.expansions_attempted}; "
+            f"incomplete cut expansions={self.incomplete_expansions}; "
+            f"cut budget={self.cut_budget_per_expansion} candidates per expansion. "
+            "Scope: convergent + linear synthesis DAGs in the current capped-scission rewrite grammar; "
+            "not all chemistry."
+        )
+
+
+@dataclass(frozen=True)
+class DAGSearchResult(Digestible):
+    schema_version: str
+    dags: tuple[SynthesisDAG, ...]
+    receipt: DAGSearchReceipt
+    target_in_terminal_stock: bool = False
+
+    def __post_init__(self) -> None:
+        if self.schema_version != DAG_SEARCH_RESULT_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {DAG_SEARCH_RESULT_SCHEMA!r}")
+        if type(self.dags) is not tuple or any(type(d) is not SynthesisDAG for d in self.dags):
+            raise TypeError("dags must be a tuple of SynthesisDAG values")
+        if type(self.receipt) is not DAGSearchReceipt:
+            raise TypeError("receipt must be a DAGSearchReceipt")
+        if type(self.target_in_terminal_stock) is not bool:
+            raise TypeError("target_in_terminal_stock must be bool")
+        if self.receipt.results_returned != len(self.dags):
+            raise ValueError("receipt.results_returned must equal len(dags)")
+        if self.target_in_terminal_stock and self.dags:
+            raise ValueError("an already-stocked target cannot also carry synthesis DAGs")
         if self.target_in_terminal_stock and self.receipt.expansions_attempted:
             raise ValueError("an already-stocked target must terminate before expansion")
 
@@ -317,7 +419,7 @@ def _merge_branches(branches: tuple[tuple[ExperimentStep, ...], ...]) -> tuple[E
     return tuple(order)
 
 
-def enumerate_dags(
+def search_dags(
     target: Molecule,
     *,
     reagents: tuple[Molecule, ...],
@@ -326,35 +428,54 @@ def enumerate_dags(
     max_depth: int = 2,
     max_dags: int = 100,
     cut_budget: int = 20_000,
-) -> tuple[SynthesisDAG, ...]:
-    """Enumerate candidate CONVERGENT synthesis DAGs to ``target`` -- the multi-precursor generalisation of
-    :func:`enumerate_routes`.
+) -> DAGSearchResult:
+    """Search for candidate CONVERGENT synthesis DAGs and return them plus an explicit completeness receipt.
 
-    :func:`enumerate_routes` recurses on exactly ONE missing precursor per step and silently drops any cleavage
-    whose join needs two-or-more precursors both made from scratch -- so a genuinely convergent target (make A
-    down one branch, B down another, then a step consuming both) never compiled.  This function lifts that: at a
-    step with several missing precursors it recurses on EACH, takes the cartesian product of the ways to make
-    them, merges the branches (deduping shared intermediates, :func:`_merge_branches`), and appends the joining
-    step -- yielding a :class:`~smartchem.experiment.dag.SynthesisDAG`.
+    The receipt-bearing sibling of :func:`enumerate_dags`, exactly as :func:`search_routes` is to
+    :func:`enumerate_routes`.  It *instruments* -- never rewrites -- the enumeration hardened at ``b5faf7d``
+    (against the ``max_dags`` pre-dedup truncation and the shared-intermediate orphan), adding three auditable
+    facts the receipt-free tuple API discarded:
 
-    Every proposed step-list is handed to :meth:`SynthesisDAG.of`, which is the single source of DAG-invariant
-    truth: it refuses a duplicate-target, a cycle (a sub-branch that consumes an ancestor, the bounded-recursion
-    escape hatch here), or a disconnected orphan, and any such candidate is skipped rather than special-cased
-    out.  The linear route is the special case where the DAG is a path (:attr:`SynthesisDAG.is_convergent` is
-    ``False``); this enumerator is a strict superset of :func:`enumerate_routes`, adding the convergent shapes it
-    could not reach.  Termination and identity discipline are inherited unchanged (strictly-smaller precursors,
-    ``max_depth`` bound, identity-keyed inventory termination -- never by formula).
+    * ``expansions_attempted`` / ``incomplete_expansions`` -- how many sub-searches ran and how many hit an
+      incomplete cut budget (the ``complete`` flag from :func:`~smartchem.structure_descent.capped_scissions`
+      that :func:`enumerate_dags` dropped on the floor at every level);
+    * ``result_limit_saturated`` -- whether the distinct-result cap ``max_dags`` truncated any level's
+      enumeration.
 
-    Returns deduplicated DAGs (by digest); empty if nothing within ``max_depth`` reaches the inventory -- a loud
-    "no route found", never a fabricated one.  ``max_dags`` bounds the number of DISTINCT syntheses at every
-    recursion level (candidates are deduped by an order-invariant step-set signature AS they are built, so the
-    cap counts unique results, not the duplicate-heavy raw ``itertools.product`` combos -- a cap that throttled
-    the raw candidates would truncate before the dedup and silently drop most of the answer, including linear
-    routes, breaking the superset guarantee).
+    Without these, a DAG "no route" was indistinguishable from "the cut budget was too small" or "``max_dags``
+    was too small" -- the exact silent-sample defect P0-1 forbids.  ``COMPLETE_WITHIN_BOUNDS`` on the receipt
+    never means complete chemistry: only exhaustive within this bounded rewrite grammar, depth and cut budget.
+
+    The enumeration itself is unchanged.  :func:`enumerate_routes` recurses on exactly ONE missing precursor per
+    step and silently drops any cleavage whose join needs two-or-more from-scratch precursors; this lifts that by
+    recursing on EACH missing precursor, taking the cartesian product of the ways to make them, merging the
+    branches (deduping shared intermediates, :func:`_merge_branches`), pruning any branch orphaned by that dedup
+    (:func:`_prune_to_sink`), and appending the joining step -- a strict superset of :func:`enumerate_routes`.
+    Every step-list is handed to :meth:`SynthesisDAG.of`, the single source of DAG-invariant truth (refusing
+    duplicate targets, cycles, orphans).  ``max_dags`` bounds the number of DISTINCT syntheses at every recursion
+    level -- deduped by an order-invariant step-set signature AS built, so the cap counts unique results, not the
+    duplicate-heavy raw ``itertools.product`` combos.
+
+    A target already present in ``available``/``reagents``/``commodities`` terminates before expansion
+    (standard §7: a node matching the active terminal policy MUST terminate; the target need not be synthesised)
+    and returns ``target_in_terminal_stock=True`` with no DAGs and no expansions -- exactly as
+    :func:`search_routes` does, so the two directions share one terminal semantics.
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
+    for name, value in (("max_depth", max_depth), ("max_dags", max_dags), ("cut_budget", cut_budget)):
+        if type(value) is not int or value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
     on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
+    if _ident(target) in on_hand:
+        receipt = DAGSearchReceipt(
+            DAG_SEARCH_RECEIPT_SCHEMA, max_depth, max_dags, cut_budget, 0, 0, False, 0
+        )
+        return DAGSearchResult(DAG_SEARCH_RESULT_SCHEMA, (), receipt, True)
+
+    expansions_attempted = 0
+    incomplete_expansions = 0
+    result_limit_saturated = False
 
     def _sig(steps: tuple[ExperimentStep, ...]) -> frozenset[str]:
         """Order-invariant identity of a synthesis: the SET of its step digests (a DAG is not an ordered list)."""
@@ -362,20 +483,34 @@ def enumerate_dags(
 
     def syntheses_making(t: Molecule, depth: int, ancestors: frozenset[str]) -> list[tuple[ExperimentStep, ...]]:
         """The DISTINCT step-lists (deduped by :func:`_sig`) that make ``t`` -- capped at ``max_dags`` UNIQUE."""
+        nonlocal expansions_attempted, incomplete_expansions, result_limit_saturated
         out: list[tuple[ExperimentStep, ...]] = []
         seen: set[frozenset[str]] = set()
         if depth > max_depth:
             return out
 
         def offer(cand: tuple[ExperimentStep, ...]) -> bool:
-            """Record a candidate if it is new; return False once the distinct cap is reached (stop the caller)."""
+            """Record a candidate if it is new; return False once the distinct cap is reached (stop the caller).
+
+            Reaching the cap is a real truncation of *this level's* candidate set, so it flags the whole search
+            partial -- conservatively (see :class:`DAGSearchReceipt`): the flag also fires when the level's true
+            distinct count merely equalled ``max_dags``, which errs toward "there may be more", never toward a
+            false COMPLETE.
+            """
+            nonlocal result_limit_saturated
             sig = _sig(cand)
             if sig not in seen:
                 seen.add(sig)
                 out.append(cand)
-            return len(out) < max_dags
+            if len(out) >= max_dags:
+                result_limit_saturated = True
+                return False
+            return True
 
-        cleavages, _complete = capped_scissions(t, reagents, budget=cut_budget)
+        expansions_attempted += 1
+        cleavages, complete = capped_scissions(t, reagents, budget=cut_budget)
+        if not complete:
+            incomplete_expansions += 1
         for cs in cleavages:
             step = ExperimentStep.from_capped_scission(cs, envelope=_conditions_for(cs))
             distinct: dict[str, Molecule] = {}
@@ -413,10 +548,50 @@ def enumerate_dags(
     seen_dags: dict[str, SynthesisDAG] = {}
     for steps in syntheses_making(target, 1, frozenset()):
         if len(seen_dags) >= max_dags:
+            result_limit_saturated = True
             break
         try:
             dag = SynthesisDAG.of(*steps)
         except DAGError:
             continue  # a cyclic / duplicate-target / orphaned candidate -- refused by the invariant, skipped
         seen_dags.setdefault(dag.digest, dag)
-    return tuple(seen_dags.values())
+    dags = tuple(seen_dags.values())
+    receipt = DAGSearchReceipt(
+        DAG_SEARCH_RECEIPT_SCHEMA,
+        max_depth,
+        max_dags,
+        cut_budget,
+        expansions_attempted,
+        incomplete_expansions,
+        result_limit_saturated,
+        len(dags),
+    )
+    return DAGSearchResult(DAG_SEARCH_RESULT_SCHEMA, dags, receipt, False)
+
+
+def enumerate_dags(
+    target: Molecule,
+    *,
+    reagents: tuple[Molecule, ...],
+    available: tuple[Molecule, ...] = (),
+    commodities: tuple[Molecule, ...] = (),
+    max_depth: int = 2,
+    max_dags: int = 100,
+    cut_budget: int = 20_000,
+) -> tuple[SynthesisDAG, ...]:
+    """Compatibility wrapper returning only the DAGs; use :func:`search_dags` for completeness facts.
+
+    One deliberate, standard-driven behaviour change over the pre-receipt enumerator: a target already present
+    in ``available``/``reagents``/``commodities`` now terminates before expansion (§7) and yields ``()`` -- you
+    do not synthesise what you already hold, and the linear :func:`enumerate_routes` already behaved this way.
+    Every other input is unchanged.
+    """
+    return search_dags(
+        target,
+        reagents=reagents,
+        available=available,
+        commodities=commodities,
+        max_depth=max_depth,
+        max_dags=max_dags,
+        cut_budget=cut_budget,
+    ).dags

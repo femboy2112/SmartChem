@@ -8,7 +8,17 @@ import pytest
 
 from smartchem.experiment.dag import SynthesisDAG, verify_dag
 from smartchem.experiment.drafter import rank_routes
-from smartchem.experiment.routes import SearchStatus, enumerate_dags, enumerate_routes, search_routes
+from smartchem.experiment.routes import (
+    DAG_SEARCH_RECEIPT_SCHEMA,
+    DAG_SEARCH_RESULT_SCHEMA,
+    DAGSearchReceipt,
+    DAGSearchResult,
+    SearchStatus,
+    enumerate_dags,
+    enumerate_routes,
+    search_dags,
+    search_routes,
+)
 from smartchem.experiment.step import ExperimentRoute
 from smartchem.smiles import parse_smiles
 
@@ -165,6 +175,91 @@ class TestConvergentDAGEnumeration:
         dags = enumerate_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=3, max_dags=40)
         assert dags and len(dags) <= 40
         assert all(isinstance(d, SynthesisDAG) and d.final_target == ETAC for d in dags)
+
+
+class TestConvergentDAGReceipt:
+    """The DAG path now carries the same completeness receipt the linear search does (P0-1 / SRCH-RCT-02 /
+    SRCH-CAP-01).  Before this, ``enumerate_dags`` dropped ``capped_scissions.complete`` on the floor at every
+    level and the ``max_dags`` cap truncated silently -- so a DAG "no route" was indistinguishable from "the cut
+    budget was too small" or "``max_dags`` was too small".  ``search_dags`` makes that distinction auditable
+    while ``enumerate_dags`` stays a tuple-returning compatibility wrapper."""
+
+    def test_target_in_exact_terminal_stock_stops_before_expansion(self):
+        # §7 terminal policy, now shared with search_routes: a target already on hand is not synthesised.
+        result = search_dags(PARA, reagents=(WATER,), available=(PARA,), max_depth=1)
+        assert result.dags == ()
+        assert result.target_in_terminal_stock
+        assert result.receipt.expansions_attempted == 0
+        assert result.receipt.complete_within_bounds
+
+    def test_rich_dag_api_matches_tuple_wrapper_and_reports_completion(self):
+        result = search_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5000)
+        assert result.dags == enumerate_dags(
+            ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5000
+        )
+        assert result.receipt.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
+        assert result.receipt.results_returned == len(result.dags)
+        assert result.receipt.incomplete_expansions == 0
+        assert not result.target_in_terminal_stock
+
+    def test_cut_budget_exhaustion_is_not_laundered_into_no_route(self):
+        # THE headline falsifier (P0-1) for the DAG path: an empty result under an exhausted cut budget is a
+        # PARTIAL search, never a certified "no route in the declared space".
+        starved = search_dags(PARA, reagents=(WATER,), available=(), max_depth=1, cut_budget=1)
+        assert starved.dags == ()
+        assert starved.receipt.status is SearchStatus.PARTIAL_CUT_BUDGET
+        assert starved.receipt.cut_budget_exhausted
+        assert starved.receipt.incomplete_expansions > 0
+        # ...whereas the SAME query at full budget is a genuine complete-empty (NO_ROUTE_IN_DECLARED_SPACE),
+        # and only the receipt tells the two empties apart.
+        complete = search_dags(PARA, reagents=(WATER,), available=(), max_depth=1)
+        assert complete.dags == ()
+        assert complete.receipt.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
+        assert complete.receipt.complete_within_bounds
+
+    def test_distinct_result_cap_saturation_is_visible(self):
+        # A cap below the true distinct count must be reported partial (SRCH-CAP-01), not passed off as complete.
+        result = search_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5)
+        assert len(result.dags) <= 5
+        assert result.receipt.status is SearchStatus.PARTIAL_RESULT_LIMIT
+        assert result.receipt.result_limit_saturated
+
+    def test_result_cap_saturation_is_conservative_at_the_exact_count(self):
+        # DOCUMENTED BOUNDARY: max_dags caps DISTINCT syntheses at every recursion level, so proving "there was
+        # nothing more" would defeat the cap.  A cap equal to the true count therefore still flags PARTIAL while
+        # returning the whole set -- an over-report that always points toward "there may be more", never toward a
+        # false COMPLETE (contrast the linear search, which is precise here).  Pinned so a "fix" can't silently
+        # flip it to the dangerous direction.
+        full = search_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5000)
+        n = len(full.dags)
+        assert full.receipt.status is SearchStatus.COMPLETE_WITHIN_BOUNDS  # a cap well above the count is complete
+        at_n = search_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=n)
+        assert len(at_n.dags) == n  # the whole set is still returned
+        assert at_n.receipt.status is SearchStatus.PARTIAL_RESULT_LIMIT  # conservatively flagged partial
+
+    @pytest.mark.parametrize("field", ["max_depth", "max_dags", "cut_budget"])
+    def test_search_bounds_must_be_positive(self, field):
+        kwargs = dict(reagents=DAG_REAGENTS, max_depth=2, max_dags=5, cut_budget=1)
+        kwargs[field] = 0
+        with pytest.raises(ValueError, match="positive integer"):
+            search_dags(ETAC, **kwargs)
+
+    def test_receipt_render_states_status_and_bounded_scope(self):
+        receipt = search_dags(ETAC, reagents=DAG_REAGENTS, available=(), max_depth=2, max_dags=5).receipt
+        text = receipt.render()
+        assert receipt.status.value in text
+        assert "not all chemistry" in text  # the scope is bounded to the capped-scission grammar, said out loud
+
+    def test_result_rejects_a_receipt_count_that_disagrees_with_the_dags(self):
+        # Value-construction layer: the result cannot claim a different number of syntheses than it carries.
+        liar = DAGSearchReceipt(DAG_SEARCH_RECEIPT_SCHEMA, 2, 100, 20_000, 0, 0, False, 1)
+        with pytest.raises(ValueError, match="results_returned must equal len"):
+            DAGSearchResult(DAG_SEARCH_RESULT_SCHEMA, (), liar)
+
+    def test_result_rejects_a_stocked_target_that_also_expanded(self):
+        expanded = DAGSearchReceipt(DAG_SEARCH_RECEIPT_SCHEMA, 2, 100, 20_000, 3, 0, False, 0)
+        with pytest.raises(ValueError, match="terminate before expansion"):
+            DAGSearchResult(DAG_SEARCH_RESULT_SCHEMA, (), expanded, True)
 
 
 class TestOrphanPrune:

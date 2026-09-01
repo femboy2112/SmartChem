@@ -96,7 +96,7 @@ They passed focused regressions and the final full suite; none implies release c
 | `SRCH-NO-01` | No-route wording distinguishes complete from incomplete | Linear human output distinguishes partial absence, and DAG `search_dags` distinguishes complete-empty from incomplete-empty at the receipt level (`4a958b8`); the formula receipt reports partial-vs-complete too (though a formula graph always has edges, so it has no empty-candidate no-route case). No human/JSON renderer surfaces the four-outcome matrix uniformly yet | Implement the four-outcome matrix in the shared response and all renderers | Empty incomplete -> `INCOMPLETE_NO_ROUTE_OBSERVED`; empty complete -> `NO_ROUTE_IN_DECLARED_SPACE` everywhere | `SRCH-RCT-01` | `IN_PROGRESS` |
 | `SRCH-BUD-01` | Budget scope is accurately named | All three receipts name their budget scope: linear/DAG say cut budget per expansion; the formula receipt names its per-node search-node budget and whole-graph edge cap distinctly (`PARTIAL_SEARCH_BUDGET` vs `PARTIAL_RESULT_LIMIT`, `454d2a0`) | Keep the named scopes when the receipts fold into a shared response | Every receipt says `PER_NODE`/per-expansion or enforces one global counter | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `SRCH-DEPTH-01` | A depth-limited search is never laundered into a complete one | A route/DAG search that cut an expandable branch at the `max_depth` bound reported `COMPLETE_WITHIN_BOUNDS` with no diagnostic; a depth-1 "complete" hid routes that provably exist at depth 2+. Fixed (`ba69169`): `SearchStatus.PARTIAL_DEPTH_LIMIT` (this codebase's name for the standard's `INCOMPLETE_DEPTH_LIMIT`, section 8.2) plus a `depth_truncated_branches` counter on both receipts, folded into `status`/`complete_within_bounds`. A >=2-missing linear branch stays a grammar boundary (not depth); a node with no cleavages stays genuinely complete | Carry the depth-limit signal into the future shared response/JSON and the four-outcome renderer | Lowering `max_depth` below a fixture's true route depth reports `PARTIAL_DEPTH_LIMIT`, never a complete/no-route | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
-| `SRCH-RCT-8.1` | The search receipt carries the full section 8.1 engine counters | `RouteSearchReceipt` now records the section 8.1 telemetry (`2e4fbea`, schema -> v1alpha2): `nodes_visited`, `transforms_considered`, `candidates_emitted`, `candidates_rejected_by_reason{}` (sorted (reason,count): `duplicate`/`result_limit`), `search_kind`/`cut_budget_scope`, and derived `cut_enumeration_complete`/`candidate_enumeration_complete`. `search_routes` instruments them; every counter is a real measurement or explicit UNKNOWN (None), never a silent zero (section 8.1 "null, not zero"). The invariant `candidates_emitted == results_returned + sum(rejected)` is enforced and caught a real double-counting bug in the same change. **All three receipts now carry the counters** (`dc9bd21`) **and the three section 8.1 identity digests** (`453331a`: target/terminal/transform-registry, schemas v1alpha3; the transform-registry layering wrinkle resolved by a shared leaf `smartchem/transform_registry.py` so receipts and the IR stamp the SAME registry digest). Only the section 8.2 status-vocabulary reconciliation remains | Reconcile this engine's status names (COMPLETE_WITHIN_BOUNDS/PARTIAL_*) with section 8.2's (COMPLETE_WITHIN_DECLARED_SPACE/INCOMPLETE_*) | All three engines report honest counters (emitted==results+rejected; transforms>=edges) AND name their target/terminal/transform-registry, with the receipt and IR registry digests agreeing cross-layer | `SRCH-RCT-01` (done) | `IN_PROGRESS` |
+| `SRCH-RCT-8.1` | The search receipt carries the full section 8.1 engine counters | `RouteSearchReceipt` now records the section 8.1 telemetry (`2e4fbea`, schema -> v1alpha2): `nodes_visited`, `transforms_considered`, `candidates_emitted`, `candidates_rejected_by_reason{}` (sorted (reason,count): `duplicate`/`result_limit`), `search_kind`/`cut_budget_scope`, and derived `cut_enumeration_complete`/`candidate_enumeration_complete`. `search_routes` instruments them; every counter is a real measurement or explicit UNKNOWN (None), never a silent zero (section 8.1 "null, not zero"). The invariant `candidates_emitted == results_returned + sum(rejected)` is enforced and caught a real double-counting bug in the same change. **All three receipts now carry the counters** (`dc9bd21`) **and the three section 8.1 identity digests** (`453331a`: target/terminal/transform-registry, schemas v1alpha3; the transform-registry layering wrinkle resolved by a shared leaf `smartchem/transform_registry.py` so receipts and the IR stamp the SAME registry digest). **Section 8.2 status-vocabulary reconciliation now BUILT** (`5c5b619`, sub-brick 4): all three receipts gain a `standard_status` that speaks the section 8.2 vocabulary via `SearchStatus.standard_name` + `primary_standard_status` (additive, no rename); the non-1:1 residue is pinned by tests, and a 3-bearing adversarial red-team confirmed the mapping faithful (no laundering, no None leak, precedence section-8.2-legitimate) and caught 3 comment-faithfulness defects, all fixed | `IR-8.2-01` (the IR still renders the native status word; give it a section 8.2 face) and the section 8.1 receipt-on-refusal path (REFUSED_*/ERROR_INTERNAL currently RAISE, returning no receipt -- an acknowledged unbuilt section 8.1 gap) | All three engines report honest counters (emitted==results+rejected; transforms>=edges), name their target/terminal/transform-registry, AND speak the section 8.2 terminal-status vocabulary; the receipt and IR registry digests agree cross-layer | `SRCH-RCT-01` (done) | `IMPLEMENTED_AND_VERIFIED` |
 | `SRCH-DIG-01` | Equivalent inventory order has equal request/result digest | Formula inventory is now canonicalized/deduplicated and permutation-tested; shared request identity does not exist | Extend canonical set/multiset inputs to structural/material request IR | Formula permutations match now; future request/result digests also match | Shared request IR | `IN_PROGRESS` |
 
 **Uptake record — DAG search receipt** (closes `SRCH-RCT-02`, `SRCH-CAP-01` for the DAG path; advances
@@ -328,6 +328,53 @@ falsifier fixture:   recompile_to_ir(...).transform_registry_digest == search_ro
 residual limitations (the last SRCH-RCT-8.1 sub-brick):
   1. The receipts' status vocabulary is still this engine's (COMPLETE_WITHIN_BOUNDS/PARTIAL_*), not section 8.2's
      (COMPLETE_WITHIN_DECLARED_SPACE/INCOMPLETE_*); reconciling the two names is sub-brick 4, the last one.
+```
+
+**Uptake record — section 8.2 status-vocabulary reconciliation** (CLOSES `SRCH-RCT-8.1`; sub-brick 4 -- every
+receipt now speaks the standard's terminal-status vocabulary):
+
+```text
+ID:                  SRCH-RCT-8.1 (section 8.2 status vocabulary)
+commit:              5c5b619
+files:               smartchem/search.py, smartchem/experiment/routes.py, smartchem/decompiler.py,
+                     tests/test_search.py (new), tests/test_routes.py, tests/test_decompiler.py
+tests:               test_search.py::TestStandardNameMap (8) + ::TestPrimaryStandardStatus (7) +
+                     test_routes.py::TestSection82StandardStatus (8) + test_decompiler.py::
+                     TestSection82FormulaStandardStatus (5) -- 28 new
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2720 passed, 14 skipped, 1 xfailed. ruff clean; git diff --check clean.
+built:               ADDITIVE section 8.2 reconciliation (no rename -- SearchStatus is referenced across the
+                     decompiler/routes/DAG/IR layers). smartchem/search.py: SearchStatus.standard_name property,
+                     STANDARD_8_2_STATUSES (the standard's 8 names verbatim), primary_standard_status(active).
+                     RouteSearchReceipt/DAGSearchReceipt/FormulaSearchReceipt each gain a standard_status property;
+                     route/DAG share a new _active_limits property so native status and standard_status read ONE
+                     source. Non-1:1 BOTH ways: PARTIAL_CUT_BUDGET + PARTIAL_SEARCH_BUDGET collapse onto section
+                     8.2's single INCOMPLETE_CUT_BUDGET; INCOMPLETE_CANDIDATE_LIMIT + REFUSED_* + ERROR_INTERNAL
+                     have no engine source. PARTIAL_MULTIPLE_LIMITS.standard_name is None (the bare enum cannot
+                     name one primary), but the receipt resolves the one primary section 8.2 requires from its
+                     recorded limit flags via a most-severe-first precedence that always yields an INCOMPLETE_*
+                     member -- never laundered toward complete (W2).
+falsifier fixture:   a receipt with cut+result both firing has native status PARTIAL_MULTIPLE_LIMITS
+                     (standard_name None) yet standard_status == INCOMPLETE_CUT_BUDGET (in STANDARD_8_2_STATUSES);
+                     a total-coverage tripwire iterates the live enum (a future member with no mapping -> KeyError);
+                     the documented residue is asserted EXACTLY equal to the four unsourced 8.2 names;
+                     primary_standard_status is exercised over all 15 non-empty subsets and raises on the empty set.
+red-team:            3 attack bearings + 6 verify agents (workflow, 784k subagent tokens). The mapping OUTPUT
+                     survived every attack (3 boundaries: no laundering, no None leak, vocabulary byte-exact,
+                     precedence 8.2-permitted). It CONFIRMED 3 comment-faithfulness defects, all fixed in 5c5b619:
+                     (1) the cut_budget_scope disambiguation was inoperative -- the field is uniformly PER_NODE and
+                     orthogonal to the cut-vs-search distinction; the real discriminator is search_kind + native
+                     status. (2) the REFUSED_*/ERROR_INTERNAL residue was mislabeled "by design" -- section 8.1
+                     mandates a receipt on refusal, but the engine RAISES; reworded to an acknowledged unbuilt gap.
+                     (3) the precedence rationale wrongly said result-limit means "fully enumerated" -- false for
+                     the conservative DAG cap; reworded to a severity convention with the DAG caveat.
+residual limitations / next probes:
+  1. IR-8.2-01: ChemicalCompilationIR.render() still emits the native status word (and one refusal string cites
+     section 8.2 while printing a native token). The IR stores only receipt.status, not the per-limit flags, so
+     resolving a MULTIPLE primary needs a schema field set at construction -- a digest-changing IR brick.
+  2. The section 8.1 receipt-on-refusal path is unbuilt: an invalid/unsupported request (e.g. a charged decompile
+     target, section 5.3) RAISES rather than returning a REFUSED_IDENTITY_UNSUPPORTED / REFUSED_INVALID_REQUEST
+     receipt. Building it would give the three REFUSED_*/ERROR_INTERNAL statuses a real engine source.
 ```
 
 ### 3.2 Decompiler/recompiler unity

@@ -365,3 +365,41 @@ class TestFormulaSearchReceipt:
                                      SearchStatus.COMPLETE_WITHIN_BOUNDS, "")
         with pytest.raises(ValueError, match="edges_emitted must equal"):
             DecompositionSearchResult(DECOMPOSITION_SEARCH_RESULT_SCHEMA, g, wrong)
+
+
+class TestSection81FormulaReceiptTelemetry:
+    """FormulaSearchReceipt carries the section 8.1 counters, instrumented by search_decomposition.
+
+    Formula-shaped: each admissible edge is one transform application (one candidate), and edges_emitted is the
+    DISTINCT collected result, so transforms_considered (pre-dedup) >= edges_emitted.
+    """
+
+    def test_a_real_decomposition_populates_honest_counters(self):
+        r = search_decomposition("C8H9NO2", example_inventory())
+        rc = r.receipt
+        assert rc.search_kind == "FORMULA_DECOMPOSITION" and rc.cut_budget_scope == "PER_NODE"
+        assert rc.nodes_visited is not None and rc.nodes_visited >= 1
+        assert rc.transforms_considered is not None and rc.transforms_considered >= rc.edges_emitted
+
+    def test_the_formula_schema_was_bumped(self):
+        assert FORMULA_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha2")
+
+    def test_unmeasured_formula_counters_are_unknown_not_zero(self):
+        rc = FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 0,
+                                  SearchStatus.COMPLETE_WITHIN_BOUNDS, "")
+        assert rc.nodes_visited is None and rc.transforms_considered is None
+        assert "UNKNOWN" in rc.render()
+
+    def test_formula_construction_guards_reject_incoherent_telemetry(self):
+        # edges_emitted=3, transforms_considered must be >= 3 (pre-dedup >= distinct)
+        with pytest.raises(ValueError, match="transforms_considered cannot be fewer than edges_emitted"):
+            FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 3,
+                                 SearchStatus.COMPLETE_WITHIN_BOUNDS, "", transforms_considered=2)
+        with pytest.raises(ValueError, match="sorted by reason"):
+            FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 0,
+                                 SearchStatus.COMPLETE_WITHIN_BOUNDS, "",
+                                 candidates_rejected_by_reason=(("z", 1), ("a", 1)))
+        with pytest.raises(ValueError, match="must be a positive int"):
+            FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 0,
+                                 SearchStatus.COMPLETE_WITHIN_BOUNDS, "",
+                                 candidates_rejected_by_reason=(("duplicate", 0),))

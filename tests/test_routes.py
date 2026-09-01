@@ -424,3 +424,43 @@ class TestSection81RouteReceiptTelemetry:
             RouteSearchReceipt(*base, candidates_rejected_by_reason=(("duplicate", 0),))  # zero-count reason
         with pytest.raises(ValueError, match="sorted by reason"):
             RouteSearchReceipt(*base, candidates_rejected_by_reason=(("result_limit", 1), ("duplicate", 1)))
+
+
+class TestSection81DAGReceiptTelemetry:
+    """DAGSearchReceipt carries the same section 8.1 counters as the route receipt, instrumented by search_dags."""
+
+    def test_a_real_dag_search_populates_honest_counters(self):
+        d = search_dags(ETAC, reagents=DAG_REAGENTS, max_depth=2)
+        rc = d.receipt
+        assert rc.search_kind == "CONVERGENT_DAG" and rc.cut_budget_scope == "PER_NODE"
+        assert rc.nodes_visited >= rc.expansions_attempted
+        assert rc.transforms_considered > 0
+        assert rc.candidates_emitted >= rc.results_returned
+        # the honest invariant holds for the final collection loop
+        assert rc.candidates_emitted == rc.results_returned + sum(c for _, c in rc.candidates_rejected_by_reason)
+
+    def test_an_in_stock_dag_target_records_genuine_zero_counters(self):
+        d = search_dags(ETAC, reagents=DAG_REAGENTS, available=(ETAC,), max_depth=1)
+        rc = d.receipt
+        assert d.target_in_terminal_stock
+        assert rc.nodes_visited == 0 and rc.transforms_considered == 0 and rc.candidates_emitted == 0
+        assert rc.candidates_rejected_by_reason == ()
+
+    def test_the_dag_schema_was_bumped(self):
+        assert DAG_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha2")
+
+    def test_unmeasured_dag_counters_are_unknown_not_zero(self):
+        rc = DAGSearchReceipt(DAG_SEARCH_RECEIPT_SCHEMA, 2, 100, 20_000, 0, 0, False, 0)
+        assert rc.nodes_visited is None and rc.candidates_emitted is None
+        assert "UNKNOWN" in rc.render()
+
+    def test_dag_construction_guards_reject_incoherent_telemetry(self):
+        base = (DAG_SEARCH_RECEIPT_SCHEMA, 2, 100, 20_000, 1, 0, False, 1, 0)
+        with pytest.raises(ValueError, match="candidates_emitted cannot be fewer than results_returned"):
+            DAGSearchReceipt(*base, candidates_emitted=0)
+        with pytest.raises(ValueError, match="nodes_visited cannot be fewer than expansions_attempted"):
+            DAGSearchReceipt(*base, nodes_visited=0)
+        with pytest.raises(ValueError, match="sorted by reason"):
+            DAGSearchReceipt(*base, candidates_rejected_by_reason=(("result_limit", 1), ("duplicate", 1)))
+        with pytest.raises(ValueError, match="must be a positive int"):
+            DAGSearchReceipt(*base, candidates_rejected_by_reason=(("dag_invalid", 0),))

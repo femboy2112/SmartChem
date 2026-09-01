@@ -44,8 +44,49 @@ __all__ = [
 
 ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/route-search-receipt-v1alpha2"
 ROUTE_SEARCH_RESULT_SCHEMA = "smartchem.experiment/route-search-result-v1alpha2"
-DAG_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/dag-search-receipt-v1alpha1"
+DAG_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/dag-search-receipt-v1alpha2"
 DAG_SEARCH_RESULT_SCHEMA = "smartchem.experiment/dag-search-result-v1alpha1"
+
+_CUT_BUDGET_SCOPES = ("PER_NODE", "GLOBAL")
+
+
+def _validate_section_8_1_telemetry(receipt: "RouteSearchReceipt | DAGSearchReceipt") -> None:
+    """Shared section 8.1 telemetry invariants for both the route and DAG receipts (identical structure).
+
+    Counters are UNKNOWN (None) or a non-negative int -- never a silent zero standing in for "not measured".
+    candidates_emitted counts the complete candidates the generator emits to be collected, so it is >=
+    results_returned; candidates_rejected_by_reason is a sorted tuple of (reason, positive count) pairs.
+    """
+    if not isinstance(receipt.search_kind, str) or not receipt.search_kind:
+        raise ValueError("search_kind must be a non-empty string")
+    if receipt.cut_budget_scope not in _CUT_BUDGET_SCOPES:
+        raise ValueError(f"cut_budget_scope must be one of {_CUT_BUDGET_SCOPES}")
+    for name in ("nodes_visited", "transforms_considered", "candidates_emitted"):
+        value = getattr(receipt, name)
+        if value is not None and (type(value) is not int or value < 0):
+            raise ValueError(f"{name} must be None (UNKNOWN) or a non-negative integer")
+    if receipt.nodes_visited is not None and receipt.nodes_visited < receipt.expansions_attempted:
+        raise ValueError("nodes_visited cannot be fewer than expansions_attempted")
+    if receipt.candidates_emitted is not None and receipt.candidates_emitted < receipt.results_returned:
+        raise ValueError("candidates_emitted cannot be fewer than results_returned (emitted includes dups/cap)")
+    if type(receipt.candidates_rejected_by_reason) is not tuple:
+        raise TypeError("candidates_rejected_by_reason must be a tuple of (reason, count) pairs")
+    seen_reasons: set[str] = set()
+    prev: "str | None" = None
+    for pair in receipt.candidates_rejected_by_reason:
+        if type(pair) is not tuple or len(pair) != 2:
+            raise TypeError("each candidates_rejected_by_reason entry must be a (reason, count) pair")
+        reason, count = pair
+        if not isinstance(reason, str) or not reason:
+            raise ValueError("a rejection reason must be a non-empty string")
+        if type(count) is not int or count <= 0:
+            raise ValueError(f"rejection count for {reason!r} must be a positive int (drop zero-count reasons)")
+        if reason in seen_reasons:
+            raise ValueError(f"rejection reason {reason!r} appears twice; reasons must be distinct")
+        if prev is not None and reason < prev:
+            raise ValueError("candidates_rejected_by_reason must be sorted by reason (canonical order)")
+        seen_reasons.add(reason)
+        prev = reason
 
 
 @dataclass(frozen=True)
@@ -77,8 +118,6 @@ class RouteSearchReceipt(Digestible):
     candidates_emitted: "int | None" = None      # routes yielded BEFORE dedup/cap (>= results_returned)
     candidates_rejected_by_reason: tuple[tuple[str, int], ...] = ()  # sorted (reason, positive count) pairs
 
-    _CUT_BUDGET_SCOPES = ("PER_NODE", "GLOBAL")
-
     def __post_init__(self) -> None:
         if self.schema_version != ROUTE_SEARCH_RECEIPT_SCHEMA:
             raise ValueError(f"schema_version must be exactly {ROUTE_SEARCH_RECEIPT_SCHEMA!r}")
@@ -96,40 +135,7 @@ class RouteSearchReceipt(Digestible):
             raise ValueError("incomplete_expansions cannot exceed expansions_attempted")
         if self.results_returned > self.result_limit:
             raise ValueError("results_returned cannot exceed result_limit")
-        self._validate_section_8_1_telemetry()
-
-    def _validate_section_8_1_telemetry(self) -> None:
-        if not isinstance(self.search_kind, str) or not self.search_kind:
-            raise ValueError("search_kind must be a non-empty string")
-        if self.cut_budget_scope not in self._CUT_BUDGET_SCOPES:
-            raise ValueError(f"cut_budget_scope must be one of {self._CUT_BUDGET_SCOPES}")
-        # counters are UNKNOWN (None) or a non-negative int -- never a silent zero standing in for "not measured"
-        for name in ("nodes_visited", "transforms_considered", "candidates_emitted"):
-            value = getattr(self, name)
-            if value is not None and (type(value) is not int or value < 0):
-                raise ValueError(f"{name} must be None (UNKNOWN) or a non-negative integer")
-        if self.nodes_visited is not None and self.nodes_visited < self.expansions_attempted:
-            raise ValueError("nodes_visited cannot be fewer than expansions_attempted")
-        if self.candidates_emitted is not None and self.candidates_emitted < self.results_returned:
-            raise ValueError("candidates_emitted cannot be fewer than results_returned (emitted includes dups/cap)")
-        seen_reasons: set[str] = set()
-        prev: "str | None" = None
-        if type(self.candidates_rejected_by_reason) is not tuple:
-            raise TypeError("candidates_rejected_by_reason must be a tuple of (reason, count) pairs")
-        for pair in self.candidates_rejected_by_reason:
-            if type(pair) is not tuple or len(pair) != 2:
-                raise TypeError("each candidates_rejected_by_reason entry must be a (reason, count) pair")
-            reason, count = pair
-            if not isinstance(reason, str) or not reason:
-                raise ValueError("a rejection reason must be a non-empty string")
-            if type(count) is not int or count <= 0:
-                raise ValueError(f"rejection count for {reason!r} must be a positive int (drop zero-count reasons)")
-            if reason in seen_reasons:
-                raise ValueError(f"rejection reason {reason!r} appears twice; reasons must be distinct")
-            if prev is not None and reason < prev:
-                raise ValueError("candidates_rejected_by_reason must be sorted by reason (canonical order)")
-            seen_reasons.add(reason)
-            prev = reason
+        _validate_section_8_1_telemetry(self)
 
     @property
     def cut_enumeration_complete(self) -> bool:
@@ -236,6 +242,14 @@ class DAGSearchReceipt(Digestible):
     # a convergent branch (any missing precursor) cut solely because the recursion hit max_depth; trailing
     # default keeps the first-brick positional constructions valid. See SearchStatus.PARTIAL_DEPTH_LIMIT.
     depth_truncated_branches: int = 0
+    # -- section 8.1 telemetry (added v1alpha2), mirroring RouteSearchReceipt. Every field defaults so a search
+    # that does not measure it reports it honestly as UNKNOWN (None) / empty (section 8.1 "null, not zero").
+    search_kind: str = "CONVERGENT_DAG"
+    cut_budget_scope: str = "PER_NODE"
+    nodes_visited: "int | None" = None          # syntheses_making entries (incl. depth-pruned)
+    transforms_considered: "int | None" = None  # capped-scission steps examined across all expansions
+    candidates_emitted: "int | None" = None      # DAG step-lists offered to the final collector (>= results)
+    candidates_rejected_by_reason: tuple[tuple[str, int], ...] = ()  # sorted (reason, positive count) pairs
 
     def __post_init__(self) -> None:
         if self.schema_version != DAG_SEARCH_RECEIPT_SCHEMA:
@@ -254,6 +268,17 @@ class DAGSearchReceipt(Digestible):
             raise ValueError("incomplete_expansions cannot exceed expansions_attempted")
         if self.results_returned > self.result_limit:
             raise ValueError("results_returned cannot exceed result_limit")
+        _validate_section_8_1_telemetry(self)
+
+    @property
+    def cut_enumeration_complete(self) -> bool:
+        """Section 8.1: whether the per-node cut budget fully enumerated every node's candidates."""
+        return not self.cut_budget_exhausted
+
+    @property
+    def candidate_enumeration_complete(self) -> bool:
+        """Section 8.1: whether candidate enumeration finished (no depth truncation and no result-cap stop)."""
+        return not self.depth_limited and not self.result_limit_saturated
 
     @property
     def cut_budget_exhausted(self) -> bool:
@@ -284,12 +309,17 @@ class DAGSearchReceipt(Digestible):
         return active[0]
 
     def render(self) -> str:
+        def _n(v: "int | None") -> str:
+            return "UNKNOWN" if v is None else str(v)
+        rejected = ", ".join(f"{r}={c}" for r, c in self.candidates_rejected_by_reason) or "none"
         return (
-            f"DAG SEARCH RECEIPT: {self.status.value}; distinct syntheses={self.results_returned}/"
-            f"{self.result_limit}; depth<={self.max_depth}; expansions={self.expansions_attempted}; "
+            f"DAG SEARCH RECEIPT ({self.search_kind}): {self.status.value}; distinct syntheses={self.results_returned}/"
+            f"{self.result_limit}; depth<={self.max_depth}; nodes visited={_n(self.nodes_visited)}; "
+            f"expansions={self.expansions_attempted}; transforms considered={_n(self.transforms_considered)}; "
+            f"candidates emitted={_n(self.candidates_emitted)}; rejected[{rejected}]; "
             f"incomplete cut expansions={self.incomplete_expansions}; "
             f"depth-truncated branches={self.depth_truncated_branches}; "
-            f"cut budget={self.cut_budget_per_expansion} candidates per expansion. "
+            f"cut budget={self.cut_budget_per_expansion} candidates per expansion ({self.cut_budget_scope}). "
             "Scope: convergent + linear synthesis DAGs in the current capped-scission rewrite grammar; "
             "not all chemistry."
         )
@@ -576,8 +606,10 @@ def search_dags(
             raise ValueError(f"{name} must be a positive integer")
     on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
     if _ident(target) in on_hand:
+        # the search ran and terminated at once: the counters are a genuine measurement of zero, not UNKNOWN
         receipt = DAGSearchReceipt(
-            DAG_SEARCH_RECEIPT_SCHEMA, max_depth, max_dags, cut_budget, 0, 0, False, 0
+            DAG_SEARCH_RECEIPT_SCHEMA, max_depth, max_dags, cut_budget, 0, 0, False, 0,
+            nodes_visited=0, transforms_considered=0, candidates_emitted=0,
         )
         return DAGSearchResult(DAG_SEARCH_RESULT_SCHEMA, (), receipt, True)
 
@@ -585,6 +617,11 @@ def search_dags(
     incomplete_expansions = 0
     depth_truncated = 0
     result_limit_saturated = False
+    # section 8.1 telemetry counters
+    nodes_visited = 0
+    transforms_considered = 0
+    candidates_emitted = 0
+    rejected: dict[str, int] = {}
 
     def _sig(steps: tuple[ExperimentStep, ...]) -> frozenset[str]:
         """Order-invariant identity of a synthesis: the SET of its step digests (a DAG is not an ordered list)."""
@@ -593,8 +630,10 @@ def search_dags(
     def syntheses_making(t: Molecule, depth: int, ancestors: frozenset[str]) -> list[tuple[ExperimentStep, ...]]:
         """The DISTINCT step-lists (deduped by :func:`_sig`) that make ``t`` -- capped at ``max_dags`` UNIQUE."""
         nonlocal expansions_attempted, incomplete_expansions, result_limit_saturated, depth_truncated
+        nonlocal nodes_visited, transforms_considered
         out: list[tuple[ExperimentStep, ...]] = []
         seen: set[frozenset[str]] = set()
+        nodes_visited += 1  # this node was visited even if the depth guard turns it back
         if depth > max_depth:
             return out
 
@@ -621,6 +660,7 @@ def search_dags(
         if not complete:
             incomplete_expansions += 1
         for cs in cleavages:
+            transforms_considered += 1
             step = ExperimentStep.from_capped_scission(cs, envelope=_conditions_for(cs))
             distinct: dict[str, Molecule] = {}
             for m in step.reactants:
@@ -660,15 +700,24 @@ def search_dags(
         return out
 
     seen_dags: dict[str, SynthesisDAG] = {}
+    # candidates_emitted counts the DAG step-lists the top-level enumeration offers to be collected; each one is
+    # kept, refused by the DAG invariant (dag_invalid), a digest duplicate, or dropped by the result cap, so the
+    # honest invariant holds: candidates_emitted == results_returned + sum(candidates_rejected_by_reason).
     for steps in syntheses_making(target, 1, frozenset()):
+        candidates_emitted += 1
         if len(seen_dags) >= max_dags:
             result_limit_saturated = True
+            rejected["result_limit"] = rejected.get("result_limit", 0) + 1
             break
         try:
             dag = SynthesisDAG.of(*steps)
         except DAGError:
+            rejected["dag_invalid"] = rejected.get("dag_invalid", 0) + 1
             continue  # a cyclic / duplicate-target / orphaned candidate -- refused by the invariant, skipped
-        seen_dags.setdefault(dag.digest, dag)
+        if dag.digest in seen_dags:
+            rejected["duplicate"] = rejected.get("duplicate", 0) + 1
+            continue
+        seen_dags[dag.digest] = dag
     dags = tuple(seen_dags.values())
     receipt = DAGSearchReceipt(
         DAG_SEARCH_RECEIPT_SCHEMA,
@@ -680,6 +729,10 @@ def search_dags(
         result_limit_saturated,
         len(dags),
         depth_truncated,
+        nodes_visited=nodes_visited,
+        transforms_considered=transforms_considered,
+        candidates_emitted=candidates_emitted,
+        candidates_rejected_by_reason=tuple(sorted(rejected.items())),
     )
     return DAGSearchResult(DAG_SEARCH_RESULT_SCHEMA, dags, receipt, False)
 

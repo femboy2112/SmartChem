@@ -84,7 +84,7 @@ __all__ = [
 ]
 
 DECOMPILER_SCHEMA = "smartchem.decompiler/elemental-descent-v1"
-FORMULA_SEARCH_RECEIPT_SCHEMA = "smartchem.decompiler/formula-search-receipt-v1alpha1"
+FORMULA_SEARCH_RECEIPT_SCHEMA = "smartchem.decompiler/formula-search-receipt-v1alpha2"
 DECOMPOSITION_SEARCH_RESULT_SCHEMA = "smartchem.decompiler/decomposition-search-result-v1alpha1"
 
 #: Atom count at which an element's familiar molecular packaging groups.  This is *bookkeeping*
@@ -585,6 +585,15 @@ class FormulaSearchReceipt(Digestible):
     edges_emitted: int
     status: SearchStatus
     stop_reason: str
+    # -- section 8.1 telemetry (added v1alpha2). Formula-shaped: each admissible decomposition edge IS one
+    # transform application (one candidate), and edges_emitted is the DISTINCT collected result -- so
+    # transforms_considered (pre-dedup) >= edges_emitted. Every counter is a real measurement or an explicit
+    # UNKNOWN (None); search_kind/cut_budget_scope are constants for the elemental descent.
+    search_kind: str = "FORMULA_DECOMPOSITION"
+    cut_budget_scope: str = "PER_NODE"          # the search-node `budget` is spent per decomposition node
+    nodes_visited: "int | None" = None          # frontier pops (incl. terminals popped and skipped)
+    transforms_considered: "int | None" = None  # admissible edges produced across all expanded nodes (pre-dedup)
+    candidates_rejected_by_reason: tuple[tuple[str, int], ...] = ()  # sorted (reason, positive count): duplicate/...
 
     def __post_init__(self) -> None:
         if self.schema_version != FORMULA_SEARCH_RECEIPT_SCHEMA:
@@ -608,17 +617,52 @@ class FormulaSearchReceipt(Digestible):
                 "the formula descent stops on exactly one budget at a time; PARTIAL_MULTIPLE_LIMITS is not "
                 "reachable here"
             )
+        self._validate_section_8_1_telemetry()
+
+    def _validate_section_8_1_telemetry(self) -> None:
+        if not isinstance(self.search_kind, str) or not self.search_kind:
+            raise ValueError("search_kind must be a non-empty string")
+        if self.cut_budget_scope not in ("PER_NODE", "GLOBAL"):
+            raise ValueError("cut_budget_scope must be one of ('PER_NODE', 'GLOBAL')")
+        for name in ("nodes_visited", "transforms_considered"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError(f"{name} must be None (UNKNOWN) or a non-negative integer")
+        if self.transforms_considered is not None and self.transforms_considered < self.edges_emitted:
+            raise ValueError("transforms_considered cannot be fewer than edges_emitted (pre-dedup >= distinct)")
+        if type(self.candidates_rejected_by_reason) is not tuple:
+            raise TypeError("candidates_rejected_by_reason must be a tuple of (reason, count) pairs")
+        seen_reasons: set[str] = set()
+        prev: "str | None" = None
+        for pair in self.candidates_rejected_by_reason:
+            if type(pair) is not tuple or len(pair) != 2:
+                raise TypeError("each candidates_rejected_by_reason entry must be a (reason, count) pair")
+            reason, count = pair
+            if not isinstance(reason, str) or not reason:
+                raise ValueError("a rejection reason must be a non-empty string")
+            if type(count) is not int or count <= 0:
+                raise ValueError(f"rejection count for {reason!r} must be a positive int (drop zero-count reasons)")
+            if reason in seen_reasons:
+                raise ValueError(f"rejection reason {reason!r} appears twice; reasons must be distinct")
+            if prev is not None and reason < prev:
+                raise ValueError("candidates_rejected_by_reason must be sorted by reason (canonical order)")
+            seen_reasons.add(reason)
+            prev = reason
 
     @property
     def complete_within_bounds(self) -> bool:
         return self.status is SearchStatus.COMPLETE_WITHIN_BOUNDS
 
     def render(self) -> str:
+        def _n(v: "int | None") -> str:
+            return "UNKNOWN" if v is None else str(v)
         reason = f"{self.stop_reason} " if self.stop_reason else ""
+        rejected = ", ".join(f"{r}={c}" for r, c in self.candidates_rejected_by_reason) or "none"
         return (
-            f"FORMULA SEARCH RECEIPT: {self.status.value}; edges={self.edges_emitted}; "
-            f"search-node budget={self.budget}; edge cap={self.max_edges}; "
-            f"max multiplicity={self.max_multiplicity}. {reason}"
+            f"FORMULA SEARCH RECEIPT ({self.search_kind}): {self.status.value}; edges={self.edges_emitted}; "
+            f"nodes visited={_n(self.nodes_visited)}; transforms considered={_n(self.transforms_considered)}; "
+            f"rejected[{rejected}]; search-node budget={self.budget} ({self.cut_budget_scope}); "
+            f"edge cap={self.max_edges}; max multiplicity={self.max_multiplicity}. {reason}"
             "Scope: primitive conserving decompositions over the declared closed inventory; conservation only, "
             "not chemistry."
         )
@@ -689,6 +733,10 @@ def search_decomposition(
     expanded: set[Formula] = set()
     frontier: list[Formula] = [target_f]
     work_budget = [budget]
+    # section 8.1 telemetry (read by _result via closure at each return point)
+    nodes_visited = 0
+    transforms_considered = 0
+    rejected: dict[str, int] = {}
 
     def _result(status: SearchStatus, reason: str) -> DecompositionSearchResult:
         graph_status = "COMPLETE" if status is SearchStatus.COMPLETE_WITHIN_BOUNDS else "REFUSED_BUDGET"
@@ -699,11 +747,15 @@ def search_decomposition(
         receipt = FormulaSearchReceipt(
             FORMULA_SEARCH_RECEIPT_SCHEMA, max_multiplicity, budget, max_edges,
             len(graph.edges), status, reason,
+            nodes_visited=nodes_visited,
+            transforms_considered=transforms_considered,
+            candidates_rejected_by_reason=tuple(sorted(rejected.items())),
         )
         return DecompositionSearchResult(DECOMPOSITION_SEARCH_RESULT_SCHEMA, graph, receipt)
 
     while frontier:
         node = frontier.pop()
+        nodes_visited += 1  # this node was visited even if it is a terminal we skip
         if node in expanded or node.is_element or node in inv:
             expanded.add(node)
             continue
@@ -717,8 +769,13 @@ def search_decomposition(
             )
         expanded.add(node)
         for edge in node_edges:
+            transforms_considered += 1                       # each admissible edge is one transform application
+            if edge.digest in collected:
+                rejected["duplicate"] = rejected.get("duplicate", 0) + 1  # same edge reached via another node
             collected[edge.digest] = edge
             if len(collected) > max_edges:
+                # the edge cap stopped enumeration; the incompleteness is carried by the status, not a per-edge
+                # rejection count (we simply stop collecting -- an unknown number of future edges are dropped).
                 return _result(
                     SearchStatus.PARTIAL_RESULT_LIMIT,
                     f"edge budget ({max_edges}) exceeded; graph is partial",

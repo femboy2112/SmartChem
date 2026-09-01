@@ -46,9 +46,10 @@ coverage is absent.
 at `bb4b238`):** the truth-envelope work continues on a new non-main branch. Its own baseline on this
 environment measured **2551 passed, 14 skipped, 1 expected failure** — the higher pass / lower skip counts
 vs the 2510/51 above reflect PySCF and slow paths being *available* here rather than skipped, not a
-regression; the collected total (2566) reconciles across both environments. The first continuation increment
-(commit `4a958b8`, the DAG search receipt) took the suite to **2562 passed, 14 skipped, 1 expected failure**
-(+11 = the new adversarial tests). See the uptake record after §3.1.
+regression; the collected total (2566) reconciles across both environments. Continuation increments so far:
+`4a958b8` (DAG search receipt, +11 adversarial tests) took the suite to 2562 passed; `454d2a0` (formula receipt
++ the shared `smartchem.search.SearchStatus`, +15 adversarial tests) took it to **2577 passed, 14 skipped, 1
+expected failure**. See the uptake records after §3.1.
 
 ## 2. Audit-branch patches already present
 
@@ -86,11 +87,11 @@ They passed focused regressions and the final full suite; none implies release c
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `SRCH-RCT-01` | Every formula, route, and DAG search returns a `SearchReceipt` | Linear `search_routes` and DAG `search_dags` now return versioned result/receipt values (`RouteSearchReceipt`/`DAGSearchReceipt`); the formula `DecompositionGraph` still carries only `status`+`refusal_reason`, not the unified receipt, and no shared response/JSON unifies the three | Extend the receipt-bearing contract to the formula graph and a shared response/JSON | Low cut budget reports partial for all three search kinds | None | `IN_PROGRESS` |
+| `SRCH-RCT-01` | Every formula, route, and DAG search returns a `SearchReceipt` | All three searches now return a first-class receipt over the shared `smartchem.search.SearchStatus` vocabulary: `search_routes`->`RouteSearchReceipt`, `search_dags`->`DAGSearchReceipt`, `search_decomposition`->`FormulaSearchReceipt` (`454d2a0`); the `build_*`/`enumerate_*` calls stay graph/tuple wrappers. Folding the three receipts into one response object is separate (`CLI-JSON-01`) | Unify the three receipts under one response schema | Low cut budget reports partial for all three search kinds | None | `IMPLEMENTED_AND_VERIFIED` |
 | `SRCH-RCT-02` | Preserve `capped_scissions.complete` across recursion | Linear and DAG searches both aggregate `capped_scissions.complete` across recursion into their receipts (`4a958b8`); the formula descent keeps its own loud `REFUSED_BUDGET` | Carry the same aggregation into any future shared search | Acetic-anhydride budget fixture is partial in linear and DAG paths; high budget complete within bounds | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `SRCH-CAP-01` | Route/DAG result-cap saturation is visible | Linear and DAG result-cap saturation are both receipt-visible and tested (`4a958b8`); DAG saturation is conservative — a cap equal to the true distinct count flags `PARTIAL_RESULT_LIMIT`, never a false complete | Add shared JSON exposure of the saturation flag | Low linear and DAG result caps are partial; caps above fixture count are complete | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
-| `SRCH-NO-01` | No-route wording distinguishes complete from incomplete | Linear human compile/experiment output distinguishes partial absence, and DAG `search_dags` distinguishes complete-empty from incomplete-empty at the receipt level (`4a958b8`); no human/JSON renderer surfaces the DAG matrix yet, and formula stays separate | Implement the four-outcome matrix in the shared response and all renderers | Empty incomplete -> `INCOMPLETE_NO_ROUTE_OBSERVED`; empty complete -> `NO_ROUTE_IN_DECLARED_SPACE` everywhere | `SRCH-RCT-01` | `IN_PROGRESS` |
-| `SRCH-BUD-01` | Budget scope is accurately named | Linear and DAG receipts both name the cut budget per expansion (`4a958b8`); formula presentation is not unified | Carry scope/counters through all receipts or implement a global counter | Every receipt says `PER_NODE`/per-expansion or enforces one global counter | `SRCH-RCT-01` | `IN_PROGRESS` |
+| `SRCH-NO-01` | No-route wording distinguishes complete from incomplete | Linear human output distinguishes partial absence, and DAG `search_dags` distinguishes complete-empty from incomplete-empty at the receipt level (`4a958b8`); the formula receipt reports partial-vs-complete too (though a formula graph always has edges, so it has no empty-candidate no-route case). No human/JSON renderer surfaces the four-outcome matrix uniformly yet | Implement the four-outcome matrix in the shared response and all renderers | Empty incomplete -> `INCOMPLETE_NO_ROUTE_OBSERVED`; empty complete -> `NO_ROUTE_IN_DECLARED_SPACE` everywhere | `SRCH-RCT-01` | `IN_PROGRESS` |
+| `SRCH-BUD-01` | Budget scope is accurately named | All three receipts name their budget scope: linear/DAG say cut budget per expansion; the formula receipt names its per-node search-node budget and whole-graph edge cap distinctly (`PARTIAL_SEARCH_BUDGET` vs `PARTIAL_RESULT_LIMIT`, `454d2a0`) | Keep the named scopes when the receipts fold into a shared response | Every receipt says `PER_NODE`/per-expansion or enforces one global counter | `SRCH-RCT-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `SRCH-DIG-01` | Equivalent inventory order has equal request/result digest | Formula inventory is now canonicalized/deduplicated and permutation-tested; shared request identity does not exist | Extend canonical set/multiset inputs to structural/material request IR | Formula permutations match now; future request/result digests also match | Shared request IR | `IN_PROGRESS` |
 
 **Uptake record — DAG search receipt** (closes `SRCH-RCT-02`, `SRCH-CAP-01` for the DAG path; advances
@@ -131,6 +132,38 @@ receipt object + a partial-vs-complete-empty distinction). (b) A shared response
 the four-outcome no-route matrix for all three search kinds (`SRCH-NO-01`, `CLI-JSON-01`). (c) Then the shared
 `ChemicalCompilationIR` (`IR-CHEM-01`) that lets the recompiler consume a decompile artifact — the point at
 which "one coherent compiler" becomes a single typed calculation rather than two adjacent search kinds.
+
+**Uptake record — formula search receipt + shared vocabulary** (closes `SRCH-RCT-01`, `SRCH-BUD-01`; advances
+`SRCH-NO-01`) — this is probe (a) above, now done:
+
+```text
+ID:                  SRCH-RCT-01, SRCH-BUD-01
+commit:              454d2a01c7201df14aaee71f653801d48c87c0e0
+files:               smartchem/search.py (new), smartchem/decompiler.py, smartchem/experiment/routes.py,
+                     smartchem/__init__.py, tests/test_decompiler.py
+tests:               tests/test_decompiler.py::TestFormulaSearchReceipt (15 new adversarial items)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2577 passed, 14 skipped, 1 xfailed (baseline 2562; +15 = the new tests). ruff clean; git
+                     diff --check clean.
+falsifier fixture:   search_decomposition("C8H9NO2", example_inventory(), budget=1) -> status
+                     PARTIAL_SEARCH_BUDGET, graph REFUSED_BUDGET (a starved formula search is a loud partial, not
+                     a complete-looking graph); max_edges=1 -> PARTIAL_RESULT_LIMIT (the two W2 walls are named
+                     distinctly). build_decomposition(...) == search_decomposition(...).graph (compat).
+human-output check:  none new -- the formula CLI already renders the graph's COMPLETE/REFUSED_BUDGET status; the
+                     receipt adds the shared-vocabulary object for the future unified response.
+JSON/schema check:   n/a -- shared JSON is CLI-JSON-01 (TODO). FormulaSearchReceipt/DecompositionSearchResult are
+                     frozen Digestible values with pinned schema strings.
+architecture:        SearchStatus now lives in smartchem/search.py (a stdlib-only leaf module), shared by the
+                     top-level decompiler and the experiment package with no layering cycle; re-exported from
+                     experiment.routes for compatibility. All three search kinds speak one status vocabulary.
+residual limitations:
+  1. No fake per-node counter on the formula receipt: the v1 closed-inventory descent is structurally depth-1
+     (every product is a declared bucket or an element bucket, both terminal), so a nodes_expanded field would be
+     a constant 1. Dropped rather than shipped as dishonest noise; it becomes meaningful only if v2 adds open
+     generative intermediates (OPEN-SEARCH-01, DEFERRED).
+  2. The three receipts share a vocabulary but are not yet one response object (SRCH-NO-01 renderer / CLI-JSON-01
+     still open); the formula path has no empty-candidate no-route case (a formula graph always has edges).
+```
 
 ### 3.2 Decompiler/recompiler unity
 

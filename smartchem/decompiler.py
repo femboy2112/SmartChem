@@ -62,7 +62,8 @@ from dataclasses import dataclass, field
 from functools import reduce
 from math import gcd
 
-from .contracts import Digestible
+from .contracts import Digestible, canonical_digest
+from .transform_registry import transform_registry_digest
 from .data.periodic_table import ATOMIC_NUMBER
 from .search import SearchStatus
 
@@ -84,7 +85,7 @@ __all__ = [
 ]
 
 DECOMPILER_SCHEMA = "smartchem.decompiler/elemental-descent-v1"
-FORMULA_SEARCH_RECEIPT_SCHEMA = "smartchem.decompiler/formula-search-receipt-v1alpha2"
+FORMULA_SEARCH_RECEIPT_SCHEMA = "smartchem.decompiler/formula-search-receipt-v1alpha3"
 DECOMPOSITION_SEARCH_RESULT_SCHEMA = "smartchem.decompiler/decomposition-search-result-v1alpha1"
 
 #: Atom count at which an element's familiar molecular packaging groups.  This is *bookkeeping*
@@ -594,6 +595,10 @@ class FormulaSearchReceipt(Digestible):
     nodes_visited: "int | None" = None          # frontier pops (incl. terminals popped and skipped)
     transforms_considered: "int | None" = None  # admissible edges produced across all expanded nodes (pre-dedup)
     candidates_rejected_by_reason: tuple[tuple[str, int], ...] = ()  # sorted (reason, positive count): duplicate/...
+    # -- section 8.1 identity digests (added v1alpha3): WHAT was searched. Default UNKNOWN (None).
+    target_identity_digest: "str | None" = None
+    terminal_policy_digest: "str | None" = None
+    transform_registry_digest: "str | None" = None
 
     def __post_init__(self) -> None:
         if self.schema_version != FORMULA_SEARCH_RECEIPT_SCHEMA:
@@ -630,6 +635,10 @@ class FormulaSearchReceipt(Digestible):
                 raise ValueError(f"{name} must be None (UNKNOWN) or a non-negative integer")
         if self.transforms_considered is not None and self.transforms_considered < self.edges_emitted:
             raise ValueError("transforms_considered cannot be fewer than edges_emitted (pre-dedup >= distinct)")
+        for name in ("target_identity_digest", "terminal_policy_digest", "transform_registry_digest"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value):
+                raise ValueError(f"{name} must be None (UNKNOWN) or a non-empty string")
         if type(self.candidates_rejected_by_reason) is not tuple:
             raise TypeError("candidates_rejected_by_reason must be a tuple of (reason, count) pairs")
         seen_reasons: set[str] = set()
@@ -750,6 +759,9 @@ def search_decomposition(
             nodes_visited=nodes_visited,
             transforms_considered=transforms_considered,
             candidates_rejected_by_reason=tuple(sorted(rejected.items())),
+            target_identity_digest=target_f.digest,
+            terminal_policy_digest=canonical_digest(("terminal-policy", "FORMULA_ONLY") + tuple(inv)),
+            transform_registry_digest=transform_registry_digest("formula-decomposition"),
         )
         return DecompositionSearchResult(DECOMPOSITION_SEARCH_RESULT_SCHEMA, graph, receipt)
 

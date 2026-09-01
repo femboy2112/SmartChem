@@ -23,6 +23,7 @@ from smartchem.experiment.routes import (
 )
 from smartchem.experiment.step import ExperimentRoute
 from smartchem.smiles import parse_smiles
+from smartchem.transform_registry import transform_registry_digest
 
 PARA = parse_smiles("CC(=O)Nc1ccc(O)cc1")
 PARA_O_ESTER = parse_smiles("CC(=O)Oc1ccc(N)cc1")
@@ -402,7 +403,7 @@ class TestSection81RouteReceiptTelemetry:
         assert rc.nodes_visited >= 1 and rc.candidates_emitted == 0
 
     def test_the_schema_version_was_bumped_for_the_new_shape(self):
-        assert ROUTE_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha2")
+        assert ROUTE_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha3")
 
     def test_unmeasured_counters_are_unknown_not_zero(self):
         # a hand-built receipt that does not measure the counters reports UNKNOWN (None), and render says so
@@ -447,7 +448,7 @@ class TestSection81DAGReceiptTelemetry:
         assert rc.candidates_rejected_by_reason == ()
 
     def test_the_dag_schema_was_bumped(self):
-        assert DAG_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha2")
+        assert DAG_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha3")
 
     def test_unmeasured_dag_counters_are_unknown_not_zero(self):
         rc = DAGSearchReceipt(DAG_SEARCH_RECEIPT_SCHEMA, 2, 100, 20_000, 0, 0, False, 0)
@@ -464,3 +465,38 @@ class TestSection81DAGReceiptTelemetry:
             DAGSearchReceipt(*base, candidates_rejected_by_reason=(("result_limit", 1), ("duplicate", 1)))
         with pytest.raises(ValueError, match="must be a positive int"):
             DAGSearchReceipt(*base, candidates_rejected_by_reason=(("dag_invalid", 0),))
+
+
+class TestSection81IdentityDigests:
+    """Section 8.1 / 8.4: a receipt names WHAT was searched -- target identity, terminal policy, transform grammar."""
+
+    def test_route_receipt_carries_the_three_identity_digests(self):
+        r = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=2)
+        rc = r.receipt
+        assert rc.target_identity_digest and rc.terminal_policy_digest and rc.transform_registry_digest
+        assert rc.transform_registry_digest == transform_registry_digest("capped-scission-linear")
+
+    def test_dag_receipt_names_the_convergent_grammar(self):
+        d = search_dags(ETAC, reagents=DAG_REAGENTS, max_depth=2)
+        assert d.receipt.transform_registry_digest == transform_registry_digest("capped-scission-convergent")
+
+    def test_the_terminal_policy_digest_changes_with_the_terminals(self):
+        a = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1).receipt
+        b = search_routes(PARA, reagents=(WATER, ACOH), available=(AMP,), max_depth=1).receipt
+        assert a.terminal_policy_digest != b.terminal_policy_digest   # a different on-hand set is a different policy
+
+    def test_schemas_bumped_to_v1alpha3_for_the_digest_fields(self):
+        assert ROUTE_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha3")
+        assert DAG_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha3")
+
+    def test_an_empty_identity_digest_is_refused(self):
+        base = (ROUTE_SEARCH_RECEIPT_SCHEMA, 2, 100, 20_000, 0, 0, False, 0)
+        with pytest.raises(ValueError, match="transform_registry_digest must be None"):
+            RouteSearchReceipt(*base, transform_registry_digest="")
+        with pytest.raises(ValueError, match="target_identity_digest must be None"):
+            DAGSearchReceipt(DAG_SEARCH_RECEIPT_SCHEMA, 2, 100, 20_000, 0, 0, False, 0, target_identity_digest="")
+
+    def test_an_in_stock_target_still_names_what_it_searched(self):
+        # even a trivially-terminated search records the target/terminal/grammar it was asked about
+        r = search_routes(PARA, reagents=(WATER,), available=(PARA,), max_depth=1).receipt
+        assert r.target_identity_digest and r.terminal_policy_digest and r.transform_registry_digest

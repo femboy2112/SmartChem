@@ -25,6 +25,7 @@ from smartchem.decompiler import (
     standard_state_equation,
 )
 from smartchem.search import SearchStatus
+from smartchem.transform_registry import transform_registry_digest
 
 H = Formula.bucket("H")
 OX = Formula.bucket("O")
@@ -382,7 +383,17 @@ class TestSection81FormulaReceiptTelemetry:
         assert rc.transforms_considered is not None and rc.transforms_considered >= rc.edges_emitted
 
     def test_the_formula_schema_was_bumped(self):
-        assert FORMULA_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha2")
+        assert FORMULA_SEARCH_RECEIPT_SCHEMA.endswith("v1alpha3")
+
+    def test_the_formula_receipt_names_what_it_searched(self):
+        rc = search_decomposition("C8H9NO2", example_inventory()).receipt
+        assert rc.target_identity_digest and rc.terminal_policy_digest and rc.transform_registry_digest
+        assert rc.transform_registry_digest == transform_registry_digest("formula-decomposition")
+
+    def test_an_empty_formula_identity_digest_is_refused(self):
+        with pytest.raises(ValueError, match="target_identity_digest must be None"):
+            FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 0,
+                                 SearchStatus.COMPLETE_WITHIN_BOUNDS, "", target_identity_digest="")
 
     def test_unmeasured_formula_counters_are_unknown_not_zero(self):
         rc = FormulaSearchReceipt(FORMULA_SEARCH_RECEIPT_SCHEMA, 1, 100, 100, 0,

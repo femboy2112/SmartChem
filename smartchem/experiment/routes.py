@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from ..category import Molecule
 from ..conditions import ConditionEnvelope
 from ..contracts import Digestible, canonical_digest
+from ..transform_registry import transform_registry_digest
 from ..decompiler_conditions import assembly_conditions
 from ..search import SearchStatus
 from ..structure_descent import capped_scissions
@@ -42,9 +43,9 @@ __all__ = [
     "enumerate_dags",
 ]
 
-ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/route-search-receipt-v1alpha2"
+ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/route-search-receipt-v1alpha3"
 ROUTE_SEARCH_RESULT_SCHEMA = "smartchem.experiment/route-search-result-v1alpha2"
-DAG_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/dag-search-receipt-v1alpha2"
+DAG_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment/dag-search-receipt-v1alpha3"
 DAG_SEARCH_RESULT_SCHEMA = "smartchem.experiment/dag-search-result-v1alpha1"
 
 _CUT_BUDGET_SCOPES = ("PER_NODE", "GLOBAL")
@@ -69,6 +70,10 @@ def _validate_section_8_1_telemetry(receipt: "RouteSearchReceipt | DAGSearchRece
         raise ValueError("nodes_visited cannot be fewer than expansions_attempted")
     if receipt.candidates_emitted is not None and receipt.candidates_emitted < receipt.results_returned:
         raise ValueError("candidates_emitted cannot be fewer than results_returned (emitted includes dups/cap)")
+    for name in ("target_identity_digest", "terminal_policy_digest", "transform_registry_digest"):
+        value = getattr(receipt, name)
+        if value is not None and (not isinstance(value, str) or not value):
+            raise ValueError(f"{name} must be None (UNKNOWN) or a non-empty string")
     if type(receipt.candidates_rejected_by_reason) is not tuple:
         raise TypeError("candidates_rejected_by_reason must be a tuple of (reason, count) pairs")
     seen_reasons: set[str] = set()
@@ -117,6 +122,11 @@ class RouteSearchReceipt(Digestible):
     transforms_considered: "int | None" = None  # capped-scission steps examined across all expansions
     candidates_emitted: "int | None" = None      # routes yielded BEFORE dedup/cap (>= results_returned)
     candidates_rejected_by_reason: tuple[tuple[str, int], ...] = ()  # sorted (reason, positive count) pairs
+    # -- section 8.1 identity digests (added v1alpha3): WHAT was searched. Default UNKNOWN (None); search_routes
+    # populates them so a receipt names its target, terminal policy, and transform grammar (section 8.1 / 8.4).
+    target_identity_digest: "str | None" = None
+    terminal_policy_digest: "str | None" = None
+    transform_registry_digest: "str | None" = None
 
     def __post_init__(self) -> None:
         if self.schema_version != ROUTE_SEARCH_RECEIPT_SCHEMA:
@@ -250,6 +260,10 @@ class DAGSearchReceipt(Digestible):
     transforms_considered: "int | None" = None  # capped-scission steps examined across all expansions
     candidates_emitted: "int | None" = None      # DAG step-lists offered to the final collector (>= results)
     candidates_rejected_by_reason: tuple[tuple[str, int], ...] = ()  # sorted (reason, positive count) pairs
+    # -- section 8.1 identity digests (added v1alpha3), populated by search_dags. Default UNKNOWN (None).
+    target_identity_digest: "str | None" = None
+    terminal_policy_digest: "str | None" = None
+    transform_registry_digest: "str | None" = None
 
     def __post_init__(self) -> None:
         if self.schema_version != DAG_SEARCH_RECEIPT_SCHEMA:
@@ -396,6 +410,12 @@ def search_routes(
         if type(value) is not int or value <= 0:
             raise ValueError(f"{name} must be a positive integer")
     on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
+    # section 8.1 identity digests: WHAT was searched (target, terminal policy, transform grammar)
+    _identity = dict(
+        target_identity_digest=_ident(target),
+        terminal_policy_digest=canonical_digest(("terminal-policy", "STRUCTURE", frozenset(on_hand))),
+        transform_registry_digest=transform_registry_digest("capped-scission-linear"),
+    )
     if _ident(target) in on_hand:
         # the search DID run and terminated immediately: the counters are a genuine measurement of zero
         # (0 nodes expanded, 0 transforms, 0 candidates), not UNKNOWN.
@@ -411,6 +431,7 @@ def search_routes(
             nodes_visited=0,
             transforms_considered=0,
             candidates_emitted=0,
+            **_identity,
         )
         return RouteSearchResult(ROUTE_SEARCH_RESULT_SCHEMA, (), receipt, True)
     seen_routes: dict[str, ExperimentRoute] = {}
@@ -482,6 +503,7 @@ def search_routes(
         transforms_considered=transforms_considered,
         candidates_emitted=candidates_emitted,
         candidates_rejected_by_reason=tuple(sorted(rejected.items())),
+        **_identity,
     )
     return RouteSearchResult(ROUTE_SEARCH_RESULT_SCHEMA, routes, receipt, False)
 
@@ -605,11 +627,17 @@ def search_dags(
         if type(value) is not int or value <= 0:
             raise ValueError(f"{name} must be a positive integer")
     on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
+    # section 8.1 identity digests: WHAT was searched (target, terminal policy, transform grammar)
+    _identity = dict(
+        target_identity_digest=_ident(target),
+        terminal_policy_digest=canonical_digest(("terminal-policy", "STRUCTURE", frozenset(on_hand))),
+        transform_registry_digest=transform_registry_digest("capped-scission-convergent"),
+    )
     if _ident(target) in on_hand:
         # the search ran and terminated at once: the counters are a genuine measurement of zero, not UNKNOWN
         receipt = DAGSearchReceipt(
             DAG_SEARCH_RECEIPT_SCHEMA, max_depth, max_dags, cut_budget, 0, 0, False, 0,
-            nodes_visited=0, transforms_considered=0, candidates_emitted=0,
+            nodes_visited=0, transforms_considered=0, candidates_emitted=0, **_identity,
         )
         return DAGSearchResult(DAG_SEARCH_RESULT_SCHEMA, (), receipt, True)
 
@@ -733,6 +761,7 @@ def search_dags(
         transforms_considered=transforms_considered,
         candidates_emitted=candidates_emitted,
         candidates_rejected_by_reason=tuple(sorted(rejected.items())),
+        **_identity,
     )
     return DAGSearchResult(DAG_SEARCH_RESULT_SCHEMA, dags, receipt, False)
 

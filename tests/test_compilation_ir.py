@@ -17,8 +17,6 @@ from smartchem.compilation_ir import (
     IdentityLayer,
     InverseResult,
     InverseStatus,
-    _TRANSFORM_REGISTRIES,
-    _transform_registry_digest,
     decompile_to_ir,
     deserialize_ir,
     ir_from_payload,
@@ -27,6 +25,7 @@ from smartchem.compilation_ir import (
     recompile_to_ir,
     serialize_ir,
 )
+from smartchem.transform_registry import TRANSFORM_REGISTRIES, transform_registry_digest
 from smartchem.decompiler import Formula, example_inventory
 from smartchem.search import SearchStatus
 from smartchem.smiles import parse_smiles
@@ -462,15 +461,15 @@ class TestTransformRegistryDigest:
 
     def test_the_ir_carries_the_declared_registry_digest_for_its_grammar(self):
         dec = decompile_to_ir("C8H9NO2", INV)
-        assert dec.transform_registry_digest == _transform_registry_digest("formula-decomposition")
+        assert dec.transform_registry_digest == transform_registry_digest("formula-decomposition")
         routes = recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1, mode="routes")
-        assert routes.transform_registry_digest == _transform_registry_digest("capped-scission-linear")
+        assert routes.transform_registry_digest == transform_registry_digest("capped-scission-linear")
         dags = recompile_to_ir(ETAC, reagents=DAG_REAGENTS, max_depth=2, mode="dags")
-        assert dags.transform_registry_digest == _transform_registry_digest("capped-scission-convergent")
+        assert dags.transform_registry_digest == transform_registry_digest("capped-scission-convergent")
 
     def test_the_three_grammars_have_distinct_registry_digests(self):
         digests = {
-            _transform_registry_digest(k)
+            transform_registry_digest(k)
             for k in ("formula-decomposition", "capped-scission-linear", "capped-scission-convergent")
         }
         assert len(digests) == 3  # a formula edge, a linear route, and a convergent DAG are DIFFERENT grammars
@@ -479,9 +478,9 @@ class TestTransformRegistryDigest:
         # section 4.1 falsifier: the digest MUST move when the transform-provider version changes, even though
         # nothing else -- target, terminals, bounds, candidate set -- differs.
         before = decompile_to_ir("C8H9NO2", INV)
-        bumped = (*_TRANSFORM_REGISTRIES["formula-decomposition"][:2], "v2-TEST",
-                  *_TRANSFORM_REGISTRIES["formula-decomposition"][3:])
-        monkeypatch.setitem(_TRANSFORM_REGISTRIES, "formula-decomposition", bumped)
+        bumped = (*TRANSFORM_REGISTRIES["formula-decomposition"][:2], "v2-TEST",
+                  *TRANSFORM_REGISTRIES["formula-decomposition"][3:])
+        monkeypatch.setitem(TRANSFORM_REGISTRIES, "formula-decomposition", bumped)
         after = decompile_to_ir("C8H9NO2", INV)
         assert [c.candidate_digest for c in after.candidates] == [c.candidate_digest for c in before.candidates]
         assert after.transform_registry_digest != before.transform_registry_digest
@@ -509,4 +508,4 @@ class TestTransformRegistryDigest:
 
     def test_unknown_registry_kind_is_refused(self):
         with pytest.raises(ValueError, match="unknown transform-registry kind"):
-            _transform_registry_digest("nonexistent-grammar")
+            transform_registry_digest("nonexistent-grammar")

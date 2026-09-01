@@ -13,6 +13,7 @@ from smartchem.experiment.stock import (
     Phase,
     StockMaterial,
     StockQuantity,
+    stock_material_from_commodity,
 )
 
 
@@ -201,3 +202,40 @@ class TestFullSchemaFields:
             StockQuantity("wrong", "5", "g")
         with pytest.raises(ValueError, match="schema_version"):
             CostObservation("wrong", "1", "USD", "2026-01-01", "vendor X")
+
+
+class TestCommodityBridge:
+    """STOCK-01 bridge (section 10.1): a commodity is a SOURCE LEAD, never a proven pure material."""
+
+    def _lead(self):
+        from smartchem.data.reagents import Availability, CommodityReagent
+        from smartchem.smiles import parse_smiles
+        return CommodityReagent(
+            "acetic acid", parse_smiles("CC(=O)O"), Availability.GROCERY, "white vinegar, ~5% aqueous", "registry",
+        )
+
+    def test_bridge_maps_a_commodity_to_an_unknown_assay_material(self):
+        mat = stock_material_from_commodity(self._lead())
+        assert isinstance(mat, StockMaterial)
+        assert mat.phase is Phase.UNKNOWN                      # a commodity record does not fix a phase
+        assert len(mat.components) == 1
+        (lo, hi) = mat.active_fraction_interval("acetic acid")
+        assert (lo, hi) == (0.0, 1.0)                          # unknown fraction -- the honest full interval
+        assert "source lead" in mat.provenance.lower() and "section 10.1" in mat.provenance
+
+    def test_a_bridged_commodity_never_silently_satisfies_a_pure_requirement(self):
+        # THE section 10.1 falsifier: a commodity identity match must NOT stand in for a proven pure material.
+        mat = stock_material_from_commodity(self._lead())
+        assert mat.satisfies("acetic acid", min_assay=0.99) is FitnessVerdict.UNKNOWN_ASSAY
+        assert mat.satisfies("acetic acid", min_assay=0.50) is FitnessVerdict.UNKNOWN_ASSAY
+        # ...and its cost/quantity are honestly UNKNOWN, never invented from the commodity record
+        assert mat.quantity is None and mat.cost_observation is None
+
+    def test_bridge_works_on_the_real_commodity_registry(self):
+        from smartchem.data.reagents import COMMODITY_REAGENTS
+        mat = stock_material_from_commodity(COMMODITY_REAGENTS[0])
+        assert mat.satisfies(COMMODITY_REAGENTS[0].name, min_assay=0.99) is FitnessVerdict.UNKNOWN_ASSAY
+
+    def test_bridge_rejects_a_non_commodity(self):
+        with pytest.raises(TypeError, match="CommodityReagent"):
+            stock_material_from_commodity("acetic acid")

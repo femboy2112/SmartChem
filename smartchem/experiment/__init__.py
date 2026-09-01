@@ -156,6 +156,7 @@ from .stock import (
     Phase,
     StockMaterial,
     StockQuantity,
+    stock_material_from_commodity,
 )
 
 __all__ = [
@@ -169,6 +170,7 @@ __all__ = [
     "MaterialComponent",
     "StockQuantity",
     "CostObservation",
+    "stock_material_from_commodity",
     "Phase",
     "FitnessVerdict",
     "Transition",

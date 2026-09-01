@@ -32,6 +32,7 @@ __all__ = [
     "StockQuantity",
     "CostObservation",
     "StockMaterial",
+    "stock_material_from_commodity",
 ]
 
 STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha1"
@@ -299,3 +300,32 @@ class StockMaterial(Digestible):
             "A material, not a pure identity: assay is an interval, and a pure-reagent requirement is met only "
             "when the interval PROVES it (section 10). Unknown fields are UNKNOWN, never an assumed value."
         )
+
+
+def stock_material_from_commodity(commodity: "object") -> StockMaterial:
+    """Bridge a :class:`~smartchem.data.reagents.CommodityReagent` (a SOURCE LEAD) to an UNKNOWN-assay material.
+
+    Section 10.1: a commodity record states an identity MAY occur in a type of accessible source; it is NOT
+    evidence that an arbitrary retail material has a suitable assay, purity, phase, or grade, and it MUST NOT
+    silently satisfy a :class:`StockMaterial` requirement.  This bridge enforces exactly that: the commodity's
+    identity becomes a single component of UNKNOWN fraction ``[0, 1]`` in a phase-``UNKNOWN`` material, so
+    :meth:`StockMaterial.satisfies` can never return ``SATISFIES`` for it -- a pure-reagent query gets the honest
+    ``UNKNOWN_ASSAY`` ("measure it") rather than a fabricated pass.  The everyday-source note and availability
+    tier ride along as provenance/formulation, explicitly labelled a curated editorial judgment, not an assay.
+    """
+    from ..data.reagents import CommodityReagent
+    if type(commodity) is not CommodityReagent:
+        raise TypeError("stock_material_from_commodity needs a smartchem.data.reagents.CommodityReagent")
+    return StockMaterial(
+        STOCK_MATERIAL_SCHEMA,
+        f"commodity-lead:{commodity.name}",
+        commodity.name,
+        (MaterialComponent.unknown_fraction(commodity.name, "active"),),
+        Phase.UNKNOWN,
+        (
+            f"commodity source lead: {commodity.name!r} (commonly found in {commodity.common_source}); "
+            f"availability {commodity.availability.value!r} is a curated editorial obtainability judgment, not an "
+            "assay -- a SOURCE LEAD, not a proven material (section 10.1). Assay, purity, phase and grade are UNKNOWN."
+        ),
+        formulation_notes=(f"everyday source: {commodity.common_source}",),
+    )

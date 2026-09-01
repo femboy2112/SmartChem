@@ -25,6 +25,7 @@ about chemistry.  A formula-level candidate is ``FORMAL_CANDIDATE`` and is never
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
 
@@ -43,6 +44,10 @@ __all__ = [
     "ChemicalCompilationIR",
     "decompile_to_ir",
     "recompile_to_ir",
+    "ir_to_payload",
+    "ir_from_payload",
+    "serialize_ir",
+    "deserialize_ir",
 ]
 
 CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha1"
@@ -288,6 +293,7 @@ def decompile_to_ir(
         candidates,
         diagnostics,
     )
+    # -- decompile_to_ir sentinel above; the recompile producer is below ------------------------------------
 
 
 def _recompile_terminal_policy_digest(
@@ -411,3 +417,91 @@ def recompile_to_ir(
         candidates,
         diagnostics,
     )
+
+
+# -- serialization (advancing IR-CHEM-01: the IR is a transportable artifact, not just an in-memory value) --
+#
+# The one property that must survive the round trip is IDENTITY: deserialize(serialize(ir)).digest == ir.digest.
+# So the payload captures exactly the semantic fields (enums by their .value, nested records as nested dicts,
+# tuples as lists) and from_payload rebuilds the SAME frozen dataclasses -- which re-run their __post_init__
+# invariants, so a tampered payload (unsorted/duplicate candidates, an unknown enum, a bad schema) is REFUSED on
+# read rather than silently trusted. json is written sort_keys=True, so the serialized string is canonical too.
+
+
+def ir_to_payload(ir: ChemicalCompilationIR) -> dict:
+    """A JSON-compatible dict capturing every SEMANTIC field of ``ir`` (enums by value, tuples as lists)."""
+    if type(ir) is not ChemicalCompilationIR:
+        raise TypeError("ir_to_payload needs a ChemicalCompilationIR")
+    return {
+        "schema_version": ir.schema_version,
+        "tool_version": ir.tool_version,
+        "operation": ir.operation.value,
+        "target": {
+            "schema_version": ir.target.schema_version,
+            "layer": ir.target.layer.value,
+            "canonical_repr": ir.target.canonical_repr,
+            "identity_digest": ir.target.identity_digest,
+        },
+        "request_digest": ir.request_digest,
+        "identity_losses": list(ir.identity_losses),
+        "terminal_policy_digest": ir.terminal_policy_digest,
+        "search_status": ir.search_status.value,
+        "search_receipt_digest": ir.search_receipt_digest,
+        "candidates": [
+            {
+                "schema_version": c.schema_version,
+                "candidate_kind": c.candidate_kind,
+                "candidate_digest": c.candidate_digest,
+                "equation": c.equation,
+                "readiness_tier": c.readiness_tier,
+            }
+            for c in ir.candidates
+        ],
+        "diagnostics": list(ir.diagnostics),
+    }
+
+
+def ir_from_payload(payload: dict) -> ChemicalCompilationIR:
+    """Rebuild a :class:`ChemicalCompilationIR` from :func:`ir_to_payload`'s dict, re-validating every invariant.
+
+    Every frozen record is reconstructed and its ``__post_init__`` re-runs, so a payload that violates a schema
+    string, an enum domain, or the canonical/distinct candidate ordering is REFUSED here -- deserialization never
+    trusts a value it would not have constructed itself.
+    """
+    if not isinstance(payload, dict):
+        raise TypeError("ir_from_payload needs a dict")
+    t = payload["target"]
+    target = ChemicalIdentity(
+        t["schema_version"], IdentityLayer(t["layer"]), t["canonical_repr"], t["identity_digest"]
+    )
+    candidates = tuple(
+        CandidateSummary(
+            c["schema_version"], c["candidate_kind"], c["candidate_digest"], c["equation"], c["readiness_tier"]
+        )
+        for c in payload["candidates"]
+    )
+    return ChemicalCompilationIR(
+        payload["schema_version"],
+        payload["tool_version"],
+        CompilationOperation(payload["operation"]),
+        target,
+        payload["request_digest"],
+        tuple(payload["identity_losses"]),
+        payload["terminal_policy_digest"],
+        SearchStatus(payload["search_status"]),
+        payload["search_receipt_digest"],
+        candidates,
+        tuple(payload["diagnostics"]),
+    )
+
+
+def serialize_ir(ir: ChemicalCompilationIR) -> str:
+    """A canonical JSON string for ``ir`` -- deterministic (``sort_keys``) and round-trip identity-preserving."""
+    return json.dumps(ir_to_payload(ir), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def deserialize_ir(text: str) -> ChemicalCompilationIR:
+    """Parse a :func:`serialize_ir` string back into a validated :class:`ChemicalCompilationIR`."""
+    if not isinstance(text, str):
+        raise TypeError("deserialize_ir needs a str")
+    return ir_from_payload(json.loads(text))

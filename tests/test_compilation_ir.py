@@ -16,7 +16,11 @@ from smartchem.compilation_ir import (
     CompilationOperation,
     IdentityLayer,
     decompile_to_ir,
+    deserialize_ir,
+    ir_from_payload,
+    ir_to_payload,
     recompile_to_ir,
+    serialize_ir,
 )
 from smartchem.decompiler import Formula, example_inventory
 from smartchem.search import SearchStatus
@@ -208,3 +212,58 @@ class TestRecompileToIR:
             recompile_to_ir("CC(=O)Nc1ccc(O)cc1", reagents=(ANH,))
         with pytest.raises(ValueError, match="mode"):
             recompile_to_ir(PARA, reagents=(ANH,), available=(AMP,), mode="sideways")
+
+
+class TestIRSerialization:
+    """IR-CHEM-01 serialization: the IR is a transportable artifact whose ROUND TRIP preserves identity."""
+
+    def _decompile_ir(self):
+        return decompile_to_ir("C8H9NO2", INV)
+
+    def _recompile_ir(self):
+        return recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1)
+
+    def test_round_trip_preserves_the_digest_for_both_producers(self):
+        for ir in (self._decompile_ir(), self._recompile_ir()):
+            back = deserialize_ir(serialize_ir(ir))
+            assert back.digest == ir.digest          # the load-bearing property: serialize/deserialize is identity
+            assert back == ir
+
+    def test_round_trip_preserves_every_semantic_field(self):
+        ir = self._recompile_ir()
+        back = deserialize_ir(serialize_ir(ir))
+        assert back.operation is ir.operation
+        assert back.target.layer is ir.target.layer and back.target.identity_digest == ir.target.identity_digest
+        assert back.search_status is ir.search_status
+        assert [c.candidate_digest for c in back.candidates] == [c.candidate_digest for c in ir.candidates]
+        assert back.diagnostics == ir.diagnostics
+        assert back.request_digest == ir.request_digest
+
+    def test_serialized_string_is_canonical_and_stable(self):
+        ir = self._decompile_ir()
+        assert serialize_ir(ir) == serialize_ir(deserialize_ir(serialize_ir(ir)))
+
+    def test_deserialize_revalidates_and_refuses_a_tampered_payload(self):
+        ir = self._decompile_ir()
+        assert len(ir.candidates) >= 2
+        payload = ir_to_payload(ir)
+        payload["candidates"] = list(reversed(payload["candidates"]))  # break the canonical digest order
+        with pytest.raises(ValueError, match="canonical .*order"):
+            ir_from_payload(payload)
+
+    def test_deserialize_refuses_an_unknown_enum_value(self):
+        payload = ir_to_payload(self._recompile_ir())
+        payload["operation"] = "TRANSMOGRIFY"
+        with pytest.raises(ValueError):
+            ir_from_payload(payload)
+
+    def test_serialize_is_presentation_invariant_across_permuted_inputs(self):
+        a = recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1)
+        b = recompile_to_ir(PARA, reagents=(ANH, WATER, ACOH), available=(AMP,), max_depth=1)
+        assert serialize_ir(a) == serialize_ir(b)
+
+    def test_type_guards(self):
+        with pytest.raises(TypeError):
+            ir_to_payload("not an ir")
+        with pytest.raises(TypeError):
+            deserialize_ir(123)

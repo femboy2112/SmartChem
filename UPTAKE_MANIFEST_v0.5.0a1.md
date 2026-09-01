@@ -216,7 +216,7 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural (route/DAG) producer now exists too: `recompile_to_ir` (`43dbcb1`) packages `search_routes`/`search_dags` as canonical `ROUTE`/`DAG` candidates over a STRUCTURE-layer identity, with the same presentation-invariant/semantic-sensitive digest (a bound change alters it via `request_digest`; the reagent helper pool is distinguished from plain stock). IR (de)serialization now round-trips digest-stably too (`serialize_ir`/`deserialize_ir`, canonical JSON; deserialize re-validates and refuses a tampered payload). The recompiler now CONSUMES a serialized decompile artifact end to end via `recompile_from_serialized` (`2e21490`, `IR-INV-01` closed on the refusal clause): it gates the structural hypothesis on the decompiled formula and classifies the inverse outcome, with water rendering a precise mode+bounds-scoped no-route refusal (no fabricated transform). First-class loss records (`IR-LOSS-01`) and registry receipts remain | Add `IdentityLoss` records (`IR-LOSS-01`) and registry receipts | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
+| `IR-CHEM-01` | One `ChemicalCompilationIR` connects both directions | The shared IR envelope exists (`smartchem/compilation_ir.py`) and the formula decompiler emits it via `decompile_to_ir` (`09b3072`): a versioned value with a presentation-invariant, semantic-input-sensitive digest (a search-bound change alters it even when the candidate set is identical, via `request_digest`), carrying a typed target identity, terminal-policy digest, search status/receipt digest, and canonical digest-sorted candidates. The structural (route/DAG) producer now exists too: `recompile_to_ir` (`43dbcb1`) packages `search_routes`/`search_dags` as canonical `ROUTE`/`DAG` candidates over a STRUCTURE-layer identity, with the same presentation-invariant/semantic-sensitive digest (a bound change alters it via `request_digest`; the reagent helper pool is distinguished from plain stock). IR (de)serialization now round-trips digest-stably too (`serialize_ir`/`deserialize_ir`, canonical JSON; deserialize re-validates and refuses a tampered payload). The recompiler now CONSUMES a serialized decompile artifact end to end via `recompile_from_serialized` (`2e21490`, `IR-INV-01` closed on the refusal clause): it gates the structural hypothesis on the decompiled formula and classifies the inverse outcome, with water rendering a precise mode+bounds-scoped no-route refusal (no fabricated transform). The IR now also carries a first-class `transform_registry_digest` (`7268231`) naming WHICH grammar produced its candidates (section 8.4) and making the IR digest sensitive to the grammar version (section 4.1). First-class loss records (`IR-LOSS-01`) and the fuller section 8.1 SearchReceipt (the other ~15 counters) remain | Add `IdentityLoss` records (`IR-LOSS-01`) and the full section 8.1 SearchReceipt | `SRCH-RCT-01` (done), `ID-LAYER-01` | `IN_PROGRESS` |
 | `IR-LOSS-01` | Formula/structure forgetting is explicit | `--smiles` formula path discards topology without a first-class loss record | Add `IdentityLoss`; downgrade or refuse dependent claims | `CCO` vs `COC` remain distinct as input identities; formula view announces collapse | `ID-LAYER-01` | `TODO` |
 | `IR-INV-01` | Claimed inverse scope is executable | `recompile_from_serialized` (`2e21490`) consumes a serialized decompile artifact end to end: it gates the structural hypothesis on the decompiled formula (section 5.4) and classifies the inverse outcome (six-way `InverseStatus`). Water (H2O from H2/O2) renders a PRECISE unsupported-transform refusal (`NO_ROUTE_IN_GRAMMAR`), scoped to the mode+bounds, with no fabricated transform (W3) — the acceptance's refusal clause. An EXHAUSTIVE empty search is distinguished from a TRUNCATED one (`INCONCLUSIVE_BOUNDS_HIT`) | Refusal clause met; a named inter-grammar transform registry that SUCCEEDS on water remains a future, SOURCED brick (narrowed naming/docs, never a fabricated reaction) | Water renders a precise unsupported-transform refusal (**met**) OR succeeds within a named transform registry (future) | `IR-CHEM-01` | `DONE` (refusal clause) |
 
@@ -367,6 +367,44 @@ residual limitations:
      precise ValueError/TypeError from a lower frame rather than a bridge-level message -- a documented boundary
      (red-team finding 3, LOW): the errors are already exact, so no ceremony re-guard was added.
   4. identity_losses is still empty (IR-LOSS-01, gated on ID-LAYER-01); registry receipts still absent.
+```
+
+**Uptake record — ChemicalCompilationIR transform-registry identity** (advances `IR-CHEM-01`; the IR now names
+WHICH grammar produced its candidates, section 8.4, and its digest is sensitive to the grammar version,
+section 4.1):
+
+```text
+ID:                  IR-CHEM-01 (transform-registry identity)
+commit:              7268231
+files:               smartchem/compilation_ir.py, tests/test_compilation_ir.py
+tests:               tests/test_compilation_ir.py::TestTransformRegistryDigest (7 new adversarial items) +
+                     round-trip/construction updates
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2667 passed, 14 skipped, 1 xfailed (baseline 2660; +7). ruff clean on every changed file;
+                     git diff --check clean.
+built:               transform_registry_digest -- a first-class ChemicalCompilationIR field naming the transform
+                     grammar (registry) that generated the candidates. _TRANSFORM_REGISTRIES declares one
+                     descriptor per search kind (formula-decomposition / capped-scission-linear /
+                     capped-scission-convergent); _transform_registry_digest(kind) is its canonical digest. Both
+                     producers stamp it AND fold it into request_digest, so a grammar-version change alters the
+                     IR digest (section 4.1) even when target/terminals/bounds/candidates are byte-identical. This
+                     is the identity section 8.4's "all pathways generated by transform registry <digest>" names.
+falsifier fixture:   monkeypatching a registry descriptor's version token to 'v2-TEST' leaves the candidate set
+                     byte-identical yet changes transform_registry_digest, request_digest, AND the full IR digest
+                     (the section 4.1 provider-version sensitivity, pinned). The three grammars carry DISTINCT
+                     registry digests. The digest is presentation-invariant (permuting the inventory never changes
+                     it -- it is a property of the grammar, not the request order). Round-trip preserves it; an
+                     empty registry digest is refused at construction; an unknown kind is refused.
+residual limitations:
+  1. A grammar here is imperative code (no enumerable rule table to hash), so the registry identity is a DECLARED
+     version token -- operator-maintained, the same discipline as every schema_version. The digest changes only
+     when the descriptor's version is bumped; a structural output change is caught downstream (it bumps STEP/ROUTE
+     candidate schemas), but a pure rule-set change with identical output structure needs the manual bump. This is
+     documented in code (W3) and is the honest limit until the grammar becomes a hashable rule set.
+  2. The digest lives on the IR; the full section 8.1 SearchReceipt (which also mandates transform_registry_digest
+     plus ~15 other counters -- nodes_visited, transforms_considered, candidates_rejected_by_reason{}, the
+     enumeration-complete flags) is a broader, later conformance arc. This brick surfaces the ONE field section 4.1
+     requires for digest sensitivity, not the whole receipt schema.
 ```
 
 ### 3.3 Identity and evidence

@@ -100,15 +100,21 @@ __all__ = [
     "EXIT_INTERNAL",
 ]
 
-# v1alpha2 (ID-LAYER-02): IdentityPolicy now carries a match_layer field, a genuine request-payload shape change.
-COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha2"
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha1"
+# v1alpha3 (SVC-REQ-01 alias-collapse): CompilationRequest gains a stored ``normalized_identity`` field -- the
+# canonical structure identity the semantic digest keys on so ``name:X``/``X``/``smiles:X`` collapse -- a genuine
+# request-payload shape change.  (v1alpha2 added ID-LAYER-02's match_layer.)
+COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha3"
+# v1alpha2 (SVC-REQ-01 alias-collapse): CompilationResponse gains a ``parse_receipt_summary`` field -- the section
+# 14.2 identity-resolution echo, pulled OUT of ``diagnostics`` (where it rode as a free-text last line) into a
+# first-class field, so it is surfaced as the section 14.3 receipt yet EXCLUDED from ``result_digest`` (it is
+# provenance -- how the string was READ -- not part of the search RESULT).  (v1alpha1 was the first brick.)
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha2"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
-# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha2: IR-LOSS-01
-# turned compilation_ir.identity_losses from array[str] into array[object(identity-loss)] (a shape change), and the
-# request schema it references bumped for ID-LAYER-02's match_layer.
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha2"
+# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha3: the
+# ``parse_receipt_summary`` response field (above) and the ``normalized_identity`` request field.  (v1alpha2:
+# IR-LOSS-01 turned identity_losses into array[object]; the request schema bumped for ID-LAYER-02's match_layer.)
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha3"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -378,12 +384,22 @@ class CompilationRequest(Digestible):
     identity (excludes ``origins`` and ``output_policy``); the inherited :attr:`digest` is the full identity
     including provenance.  ``stock_materials``/``helper_reagents`` are kept in canonical (sorted, de-duplicated)
     order and digested as sets, so listing the same bench in a different order does not change the search.
+
+    ``normalized_identity`` (SVC-REQ-01 alias-collapse) is the canonical STRUCTURE identity the builder resolved the
+    target to, stored so the :attr:`semantic_digest` can key on WHAT the target IS rather than HOW it was spelled --
+    so ``paracetamol``, ``name:paracetamol`` and ``smiles:CC(=O)Nc1ccc(O)cc1`` (which run the byte-identical search)
+    collapse to ONE search identity.  It is ``""`` when the builder could not resolve the target to a feature-free
+    molecule (an unresolvable/formula/InChI target, or one declaring finer stereo/isotope/charge features that
+    become section-5.3 losses); in that case the digest falls back to keying on the raw ``(target_input,
+    input_kind)`` pair.  Because it is set ONLY for a feature-free molecule, keying on it can never MERGE two
+    requests whose searches differ by a loss -- it only ever collapses genuine spelling aliases (the one-way law).
     """
 
     schema_version: str
     operation: CompilationOperation
     target_input: str
     input_kind: InputKind
+    normalized_identity: str
     identity_policy: IdentityPolicy
     terminal_policy: TerminalPolicy
     stock_materials: tuple[str, ...]
@@ -405,6 +421,8 @@ class CompilationRequest(Digestible):
             raise ValueError("target_input must be a non-empty string")
         if not isinstance(self.input_kind, InputKind):
             raise TypeError("input_kind must be an InputKind")
+        if not isinstance(self.normalized_identity, str):
+            raise TypeError("normalized_identity must be a string ('' when the target keys on its raw input)")
         for name, typ in (
             ("identity_policy", IdentityPolicy),
             ("terminal_policy", TerminalPolicy),
@@ -470,6 +488,23 @@ class CompilationRequest(Digestible):
             raise ValueError("origins must name each field at most once")
 
     @property
+    def _target_identity_key(self) -> tuple:
+        """The target's contribution to the SEARCH identity (SVC-REQ-01 alias-collapse).
+
+        When the builder resolved the target to a feature-free molecule it stored the canonical STRUCTURE identity
+        in :attr:`normalized_identity`; the digest keys on THAT, so every spelling of the same molecule
+        (``paracetamol`` / ``name:paracetamol`` / ``smiles:CC(=O)Nc1ccc(O)cc1``) -- which run the byte-identical
+        search -- shares one identity.  ``input_kind`` (which spelling was used) is provenance here and is
+        DROPPED, exactly as :func:`run_compilation` drops it once the molecule is resolved.  When
+        ``normalized_identity`` is ``""`` (an unresolvable/formula/InChI target, or one declaring finer features
+        that become section-5.3 losses) the key falls back to the raw ``(target_input, input_kind)`` pair -- so a
+        feature-bearing input keeps its own identity and can never be MERGED with a bare one.
+        """
+        if self.normalized_identity:
+            return ("normalized-identity", self.normalized_identity)
+        return ("raw-input", self.target_input, self.input_kind)
+
+    @property
     def semantic_digest(self) -> str:
         """The alias-independent SEARCH identity, with a ONE-WAY guarantee: equal ``semantic_digest`` => the SAME
         search (standard section 13.1).
@@ -477,23 +512,29 @@ class CompilationRequest(Digestible):
         It hashes every SEMANTIC field (section 4.1's list) and DELIBERATELY EXCLUDES ``origins`` (provenance) and
         ``output_policy`` (a display choice), so a value reached by default and the same value passed explicitly,
         or a JSON vs human render choice, never split the search identity.  It is deliberately a SUPERSET of what
-        the current bounded engine consumes (the placeholder policies and ``input_kind`` on a formula descent are
-        hashed but not yet read by :func:`run_compilation`); that can only SPLIT requests, never MERGE two different
-        searches, so the one-way law is never violated.  ``stock_materials``/``helper_reagents`` enter as
-        frozensets, so bench ORDER is not part of the search identity (matching the IR's terminal-policy discipline).
+        the current bounded engine consumes (the placeholder policies are hashed but not yet read by
+        :func:`run_compilation`); that can only SPLIT requests, never MERGE two different searches, so the one-way
+        law is never violated.  ``stock_materials``/``helper_reagents`` enter as frozensets, so bench ORDER is not
+        part of the search identity (matching the IR's terminal-policy discipline).
 
-        BOUNDARY (ID-PARSE-01): the target enters as the raw ``(target_input, input_kind)`` pair, so alias
-        equality holds for equal flag values.  Collapsing ``name:paracetamol`` and ``paracetamol`` to one
-        normalised identity in this digest requires the unified identity parser to be the single normalisation
-        authority and is deferred to ID-PARSE-01; until then this digest keys on the input as typed.
+        The TARGET enters via :attr:`_target_identity_key` (SVC-REQ-01 alias-collapse): a resolvable feature-free
+        molecule keys on its canonical STRUCTURE identity, so spellings of the same target collapse and the digest
+        finally matches the search :func:`run_compilation` actually runs; every other target keys on the raw
+        ``(target_input, input_kind)`` pair.  Collapse is set ONLY for a feature-free molecule (see
+        :meth:`_recompile_normalized_identity`), so it never merges two requests whose searches differ by a loss --
+        keeping the collapse strictly on the safe (only-SPLIT-relative-to-execution) side of the one-way law.
+
+        BOUNDARY (decompile): only RECOMPILE targets collapse in this brick.  A DECOMPILE has no CLI aliases (a
+        single ``decompile`` command), so no alias-equality property rides on it, and its target is a FORMULA-layer
+        identity, not a structure -- so it keeps the raw keying (which only ever SPLITS, preserving the one-way
+        law).  Collapsing the formula-layer descent is a named follow-on.
         """
         return canonical_digest(
             (
-                "compilation-request-semantic-v1alpha1",
+                "compilation-request-semantic-v1alpha2",
                 self.schema_version,
                 self.operation,
-                self.target_input,
-                self.input_kind,
+                self._target_identity_key,
                 self.identity_policy,
                 self.terminal_policy,
                 frozenset(self.stock_materials),
@@ -536,6 +577,40 @@ def _resolve_identity_policy(
     if match_layer is not None:
         return IdentityPolicy(match_layer=match_layer)
     return IdentityPolicy(match_layer=default_layer)
+
+
+def _recompile_normalized_identity(target_input: str, input_kind: InputKind) -> str:
+    """The canonical STRUCTURE identity for the semantic-digest alias-collapse, or ``""`` if it must not collapse.
+
+    Best-effort: resolve the target through the ONE parser service (the same resolution :func:`run_compilation`
+    runs) and return :func:`~smartchem.compilation_ir._structure_ident` of the perceived molecule -- but ONLY when
+    the input declares NO finer feature that would become a section-5.3 loss.  A SMILES stashes its stereo/isotope/
+    charge in ``features`` while its ``losses`` stay empty, so a ``losses``-only gate would wrongly collapse a
+    stereo SMILES with its flat twin; the gate therefore MIRRORS the run path (``_run_recompile``) and computes
+    ``representation_losses_for(target_input, features)``, refusing to collapse when it is non-empty.  Any of
+    (unresolvable, no molecule perceived, parser losses, feature losses) yields ``""`` -- the digest then keys on
+    the raw input, so this can never MERGE two requests whose IRs differ by a loss.  It NEVER raises: a resolution
+    failure is a normal "does not collapse" signal here, resolved for real (and refused if truly invalid) at run
+    time.
+    """
+    from .identity import representation_losses_for
+    from .identity_parse import IdentityParseError, resolve_identity
+    # A TARGET_FILE is a MUTABLE external source: the file's contents can differ between this build-time resolution
+    # and run_compilation's re-resolution, so a build-time normalized_identity could go stale and MERGE with a name
+    # request that no longer names the same molecule (a build/run skew, red-team fix).  Its identity is the path, so
+    # it keeps raw keying and never collapses -- the same "only a form the string fully determines may collapse" rule.
+    if input_kind is InputKind.TARGET_FILE:
+        return ""
+    try:
+        resolved = resolve_identity(target_input, input_kind)
+    except IdentityParseError:
+        return ""
+    if resolved.molecule is None or resolved.losses:
+        return ""
+    feature_losses = representation_losses_for(target_input, resolved.features) if resolved.features else ()
+    if feature_losses:
+        return ""
+    return _structure_ident(resolved.molecule)
 
 
 def build_recompile_request(
@@ -582,11 +657,15 @@ def build_recompile_request(
     grammar = grammar if grammar is not None else TransformGrammar.CAPPED_SCISSION_LINEAR
     if grammar not in _RECOMPILE_GRAMMARS:
         raise ValueError("a recompile grammar must be CAPPED_SCISSION_LINEAR or CAPPED_SCISSION_CONVERGENT")
+    effective_kind = input_kind if input_kind is not None else InputKind.AUTO
     return CompilationRequest(
         COMPILATION_REQUEST_SCHEMA,
         CompilationOperation.RECOMPILE,
         target_input,
-        input_kind if input_kind is not None else InputKind.AUTO,
+        effective_kind,
+        # SVC-REQ-01 alias-collapse: the canonical structure identity of the resolved target (or "" if it must
+        # keep raw keying), so the semantic digest keys on WHAT the target is, not HOW it was spelled.
+        _recompile_normalized_identity(target_input, effective_kind),
         # default recompile matching is at CONSTITUTION (the IdentityPolicy dataclass default), the one layer the
         # structural engine honestly honors; an explicit match_layer or identity_policy overrides.
         _resolve_identity_policy(identity_policy, match_layer, MatchLayer.CONSTITUTION),
@@ -649,6 +728,9 @@ def build_decompile_request(
         CompilationOperation.DECOMPILE,
         target_input,
         input_kind if input_kind is not None else InputKind.AUTO,
+        # SVC-REQ-01 alias-collapse is RECOMPILE-only in this brick: a decompile has no CLI aliases and its target
+        # is a FORMULA-layer identity, so it keeps raw keying ("") -- collapsing the formula descent is a follow-on.
+        "",
         # a formula descent matches at FORMULA -- the one layer it perceives; an explicit override is enforced
         # (a decompile declaring a structural layer is refused by run_compilation, since a formula cannot see it).
         _resolve_identity_policy(identity_policy, match_layer, MatchLayer.FORMULA),
@@ -689,6 +771,13 @@ class CompilationResponse:
     ``ranked_route_dossiers`` and ``affordability_frontier`` are section 13.2 fields whose producers are not built
     yet (READY-TIER-01 / COST-VEC-01); they are present and empty rather than absent, so the shape is stable.
 
+    ``parse_receipt_summary`` (SVC-REQ-01 alias-collapse) is the section-14.2 identity-resolution echo (how the
+    target STRING was read: source, normalised form, layer).  It is a FIRST-CLASS field, not a line buried in
+    ``diagnostics``, precisely because it is PROVENANCE: it is surfaced in both views (the section 14.3 receipt) but
+    is DELIBERATELY EXCLUDED from :attr:`result_digest`, because two spellings of the same target run the same
+    search and MUST share a result even though they were read differently.  ``diagnostics`` therefore carries only
+    genuine search facts (the IR's own diagnostics), which is exactly what :attr:`result_digest` may hash.
+
     Not a :class:`~smartchem.contracts.Digestible`: it has nullable fields (``standard_status``,
     ``compilation_ir``) that the canonical encoder rejects, so identity is exposed as :attr:`result_digest`, which
     handles the null cases explicitly.
@@ -702,6 +791,7 @@ class CompilationResponse:
     diagnostics: tuple[str, ...] = ()
     ranked_route_dossiers: tuple = ()
     affordability_frontier: tuple = ()
+    parse_receipt_summary: "str | None" = None
 
     def __post_init__(self) -> None:
         if self.schema_version != COMPILATION_RESPONSE_SCHEMA:
@@ -716,6 +806,8 @@ class CompilationResponse:
             raise ValueError("standard_status must be a section 8.2 status or None")
         if type(self.diagnostics) is not tuple or any(not isinstance(x, str) for x in self.diagnostics):
             raise TypeError("diagnostics must be a tuple of strings")
+        if self.parse_receipt_summary is not None and not isinstance(self.parse_receipt_summary, str):
+            raise TypeError("parse_receipt_summary must be a string or None")
         if self.ranked_route_dossiers != () or self.affordability_frontier != ():
             raise ValueError(
                 "ranked_route_dossiers/affordability_frontier are not populated in this brick "
@@ -813,6 +905,12 @@ class CompilationResponse:
         Because :func:`run_compilation` reads ONLY the request's resolved semantic fields (never its origins or
         output policy), equal :attr:`CompilationRequest.semantic_digest` => equal execution => equal
         ``result_digest``.  That is the "equal result digests across aliases" half of the SVC-REQ-01 acceptance.
+
+        PROVENANCE IS EXCLUDED (SVC-REQ-01 alias-collapse): it hashes ``diagnostics`` (genuine search facts) but
+        NOT :attr:`parse_receipt_summary`, which lives in its own field.  This is load-bearing now that the target
+        collapses: ``paracetamol`` and ``smiles:CC(=O)Nc1ccc(O)cc1`` share a ``semantic_digest``, so they MUST
+        share a ``result_digest`` -- but they were READ differently (their receipts differ), so the receipt cannot
+        enter the result identity or the one-way law would break the moment the aliases collapsed.
         """
         return canonical_digest(
             (
@@ -940,9 +1038,17 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
                 f"{resolved.receipt.requested_kind.value} target resolved to a {resolved.receipt.identity_layer}-"
                 f"layer identity ({resolved.receipt.normalized}) with no molecule; use NAME or SMILES (section 5.4)",
             )
-        target, target_features = resolved.molecule, resolved.features
-        reagents = tuple(resolve_target(s, InputKind.AUTO) for s in request.helper_reagents)
-        available = tuple(resolve_target(s, InputKind.AUTO) for s in request.stock_materials)
+        # CANONICALISE every molecule entering the search (SVC-REQ-01 alias-collapse, red-team fix).  The route/
+        # candidate digests recompile_to_ir emits embed each Molecule POSITIONALLY (its atom tuple), so a molecule
+        # in a different atom ORDER yields different candidate digests -> a different IR digest -> a different
+        # result_digest, EVEN for the identical species and route.  The offline NAME registry stores non-canonical
+        # atom orders while the SMILES parser canonicalises, so ``name:X`` and ``smiles:X`` -- which the semantic
+        # digest COLLAPSES onto the canonical structure identity -- would otherwise produce diverging result_digests
+        # (a one-way-law break, invisible on paracetamol only because its search is INCOMPLETE with zero candidates).
+        # Canonicalising here makes the EXECUTION presentation-invariant, so the collapse the digest claims is real.
+        target, target_features = resolved.molecule.canonical(), resolved.features
+        reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.helper_reagents)
+        available = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.stock_materials)
     except IdentityParseError as exc:
         return _invalid(request, str(exc))
     identity_losses = (
@@ -961,7 +1067,7 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
 
     if request.terminal_policy.commodities_enabled:
         from .data.reagents import commodity_inventory
-        commodities = commodity_inventory()
+        commodities = tuple(m.canonical() for m in commodity_inventory())  # canonical, per the target/reagent note above
     else:
         commodities = ()
 
@@ -987,11 +1093,13 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         return _refused(request, f"refused at the chemistry-model boundary: {exc}")
 
     outcome = _classify(ir, target_available)
-    # echo the identity resolution (ID-PARSE-01) into the response diagnostics so both the human and --json views
-    # report how the target string was read (source, normalised form, layer) -- provenance, not search identity.
+    # echo the identity resolution (ID-PARSE-01) as the FIRST-CLASS parse_receipt_summary, NOT a diagnostics line
+    # (SVC-REQ-01 alias-collapse): both views still report how the target string was read, but it is provenance --
+    # kept out of ``diagnostics`` so it never enters ``result_digest`` and the aliased spellings share a result.
     return CompilationResponse(
         COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir,
-        (*ir.diagnostics, resolved.receipt.summary()),
+        tuple(ir.diagnostics),
+        parse_receipt_summary=resolved.receipt.summary(),
     )
 
 
@@ -1099,9 +1207,11 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
     already_terminal = ir.complete_within_bounds and ir.candidate_count == 0
     target_available = (ir.target.identity_digest in inventory_ids) or already_terminal
     outcome = _classify(ir, target_available=target_available)
-    diagnostics = (*ir.diagnostics, receipt_summary) if receipt_summary else tuple(ir.diagnostics)
+    # the identity-resolution echo rides the first-class parse_receipt_summary field (SVC-REQ-01 alias-collapse),
+    # not diagnostics, so diagnostics stays receipt-free and the receipt is provenance excluded from result_digest.
     return CompilationResponse(
-        COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir, diagnostics
+        COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir, tuple(ir.diagnostics),
+        parse_receipt_summary=receipt_summary,
     )
 
 
@@ -1115,6 +1225,7 @@ def request_to_payload(request: CompilationRequest) -> dict:
         "operation": request.operation.value,
         "target_input": request.target_input,
         "input_kind": request.input_kind.value,
+        "normalized_identity": request.normalized_identity,
         "identity_policy": {
             "policy_id": request.identity_policy.policy_id,
             "match_layer": request.identity_policy.match_layer.value,
@@ -1140,13 +1251,34 @@ def request_to_payload(request: CompilationRequest) -> dict:
 
 
 def request_from_payload(payload: dict) -> CompilationRequest:
-    """Reconstruct a request from :func:`request_to_payload`; re-validates via the frozen records' guards."""
+    """Reconstruct a request from :func:`request_to_payload`; re-validates via the frozen records' guards.
+
+    ``normalized_identity`` is DERIVED, not trusted: it is RECOMPUTED from ``(operation, target_input, input_kind)``
+    and a payload whose stored value disagrees is REFUSED (red-team fix).  Because it is the target's contribution
+    to the SEARCH identity, a hand-forged value could otherwise give one molecule's request another molecule's
+    ``normalized_identity`` -> an equal ``semantic_digest`` over two DIFFERENT searches (a section-13.1 break: "same
+    semantic digest MUST execute the same search").  Recomputing here makes deserialization authoritative.
+    """
     tp = payload["terminal_policy"]
+    operation = CompilationOperation(payload["operation"])
+    target_input = payload["target_input"]
+    input_kind = InputKind(payload["input_kind"])
+    expected_normalized = (
+        _recompile_normalized_identity(target_input, input_kind)
+        if operation is CompilationOperation.RECOMPILE
+        else ""
+    )
+    if payload["normalized_identity"] != expected_normalized:
+        raise ValueError(
+            f"normalized_identity {payload['normalized_identity']!r} does not match the target's resolution "
+            f"{expected_normalized!r} (a forged or stale search identity)"
+        )
     return CompilationRequest(
         payload["schema_version"],
-        CompilationOperation(payload["operation"]),
-        payload["target_input"],
-        InputKind(payload["input_kind"]),
+        operation,
+        target_input,
+        input_kind,
+        expected_normalized,
         IdentityPolicy(
             payload["identity_policy"]["policy_id"],
             MatchLayer(payload["identity_policy"]["match_layer"]),
@@ -1184,6 +1316,7 @@ def response_to_payload(response: CompilationResponse) -> dict:
         "exit_code": response.exit_code,
         "compilation_ir": None if response.compilation_ir is None else ir_to_payload(response.compilation_ir),
         "diagnostics": list(response.diagnostics),
+        "parse_receipt_summary": response.parse_receipt_summary,
         "ranked_route_dossiers": list(response.ranked_route_dossiers),
         "affordability_frontier": list(response.affordability_frontier),
         "result_digest": response.result_digest,
@@ -1202,6 +1335,7 @@ def response_from_payload(payload: dict) -> CompilationResponse:
         tuple(payload["diagnostics"]),
         tuple(payload["ranked_route_dossiers"]),
         tuple(payload["affordability_frontier"]),
+        parse_receipt_summary=payload["parse_receipt_summary"],
     )
 
 
@@ -1231,12 +1365,13 @@ def response_schema() -> dict:
         "request_schema_version": COMPILATION_REQUEST_SCHEMA,
         "response_fields": {
             "schema_version": "str",
-            "request": "object(compilation-request-v1alpha2)",
+            "request": "object(compilation-request-v1alpha3)",
             "outcome": "enum(ResponseOutcome)",
             "standard_status": "str|null (section 8.2 status)",
             "exit_code": "int (section 14.4: 0/2/3/4/5/70)",
             "compilation_ir": "object(chemical-compilation-ir)|null",
             "diagnostics": "array[str] (blockers)",
+            "parse_receipt_summary": "str|null (section 14.2 identity-resolution receipt; provenance)",
             "ranked_route_dossiers": "array (empty until READY-TIER-01)",
             "affordability_frontier": "array (empty until COST-VEC-01)",
             "result_digest": "str (sha256)",
@@ -1300,6 +1435,9 @@ def response_semantic_fields(response: CompilationResponse) -> dict:
         # ride the machine payload (ir_to_payload); the human render prints these same summaries.
         "identity_losses": tuple(response.identity_loss_summaries),
         "blockers": tuple(response.diagnostics),
+        # the section-14.2 identity-resolution echo (how the target was READ) -- provenance surfaced in both views
+        # (SVC-REQ-01 alias-collapse); distinct from search_receipt_digest (the section-8.1 search receipt).
+        "parse_receipt": response.parse_receipt_summary,
         "search_receipt_digest": response.search_receipt_digest,
         "candidate_ids": () if ir is None else tuple(c.candidate_digest for c in ir.candidates),
         "candidate_tiers": () if ir is None else tuple(sorted({c.readiness_tier for c in ir.candidates})),

@@ -188,19 +188,22 @@ class TestFailClosed:
 class TestServiceWiring:
     def test_recompile_response_echoes_the_resolution_receipt(self):
         resp = run_compilation(build_recompile_request("water", helper_reagents=("water",)))
-        assert any("IDENTITY RESOLVED" in d for d in resp.diagnostics)
+        # SVC-REQ-01 alias-collapse: the receipt is now a first-class field, NOT a diagnostics line (so it stays
+        # out of result_digest as provenance) -- but it is still surfaced.
+        assert "IDENTITY RESOLVED" in (resp.parse_receipt_summary or "")
+        assert not any("IDENTITY RESOLVED" in d for d in resp.diagnostics)
 
     def test_decompile_inchi_carries_the_constitution_blocker_and_descends(self):
         resp = run_compilation(build_decompile_request(_PARACETAMOL_INCHI, input_kind=InputKind.INCHI))
         features = {loss.feature for loss in resp.identity_losses}
         assert "molecular-constitution" in features
-        assert any("IDENTITY RESOLVED" in d for d in resp.diagnostics)
+        assert "IDENTITY RESOLVED" in (resp.parse_receipt_summary or "")
         # it actually ran a formula descent (an IR was produced), not a refusal
         assert resp.compilation_ir is not None
 
     def test_decompile_formula_echoes_a_formula_layer_receipt(self):
         resp = run_compilation(build_decompile_request("C8H9NO2"))
-        assert any("FORMULA_PARSER" in d for d in resp.diagnostics)
+        assert "FORMULA_PARSER" in (resp.parse_receipt_summary or "")
 
     def test_recompile_of_a_bare_formula_is_invalid_not_a_wrong_search(self):
         # a structure search on a bare formula is refused (section 5.4), never silently run on a guessed structure.

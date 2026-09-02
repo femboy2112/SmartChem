@@ -226,6 +226,8 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
     if ir is None:  # a refusal/invalid outcome carries no IR -- surface every diagnostic, quiet or not.
         lines.append(f"recompile: {response.outcome.value} (exit {response.exit_code})")
         lines.extend(f"  {d}" for d in response.diagnostics)
+        if response.parse_receipt_summary:  # provenance echo, if the target got far enough to be read
+            lines.append(f"  {response.parse_receipt_summary}")
         return "\n".join(lines)
 
     lines.append(f"recompile {ir.target.canonical_repr!r}  --  outcome: {response.outcome.value} "
@@ -241,11 +243,13 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
     # response's semantic projection exposes -- so the human and JSON views cannot disagree (CLI-JSON-01 agreement).
     for loss in ir.identity_losses:
         lines.append(f"  {loss.summary()}")
-    # ID-PARSE-01: surface the service diagnostics (the identity-resolution receipt + any status note) in the
-    # SUCCESS path too, so the human view reports how the target string was read exactly as --json does.  Without
-    # this the receipt reached only the machine view, breaking the CLI-JSON-01 human/JSON agreement on `diagnostics`.
+    # SVC-REQ-01 alias-collapse: the real search diagnostics AND the identity-resolution RECEIPT (now a first-class
+    # parse_receipt_summary field, no longer a diagnostics line) both reach the human view, so it reports how the
+    # target was read exactly as --json does (CLI-JSON-01 agreement) -- while the receipt stays out of result_digest.
     for d in response.diagnostics:
         lines.append(f"  {d}")
+    if response.parse_receipt_summary:
+        lines.append(f"  {response.parse_receipt_summary}")
     if not ir.complete_within_bounds:
         lines.append("  SEARCH WAS PARTIAL: absence of a route is not evidence one does not exist -- "
                      "raise --cut-budget/--max-routes/--max-depth or widen the inventory.")
@@ -399,10 +403,13 @@ def _cmd_decompile(argv: list[str]) -> int:
     # ID-STEREO-01 stereo/isotope/local-charge blocker the input declared -- structure/features never silently lost.
     for _summary in _resp.identity_loss_summaries:
         print(f"  {_summary}")
-    # ID-PARSE-01: surface the service diagnostics (the identity-resolution receipt) so the human view reports how
-    # the target was read exactly as --json does (CLI-JSON-01 human/JSON agreement on `diagnostics`).
+    # the real search diagnostics AND the identity-resolution RECEIPT (now the first-class parse_receipt_summary
+    # field, no longer a diagnostics line; SVC-REQ-01 alias-collapse) both reach the human view, so it reports how
+    # the target was read exactly as --json does (CLI-JSON-01 agreement) -- receipt kept out of result_digest.
     for _d in _resp.diagnostics:
         print(f"  {_d}")
+    if _resp.parse_receipt_summary:
+        print(f"  {_resp.parse_receipt_summary}")
     if graph.refusal_reason:
         print(f"  (partial: {graph.refusal_reason})")
     print(f"  inventory (buckets): {', '.join(repr(f) for f in inventory) or '(pure elements)'}")

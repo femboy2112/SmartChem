@@ -6,6 +6,7 @@
   ],
   "exit_code": 2,
   "outcome": "INVALID_INPUT",
+  "parse_receipt_summary": null,
   "ranked_route_dossiers": [],
   "request": {
     "constraints": {
@@ -22,6 +23,7 @@
       "policy_id": "DEFAULT"
     },
     "input_kind": "AUTO",
+    "normalized_identity": "",
     "operation": "RECOMPILE",
     "origins": [
       [
@@ -84,7 +86,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha2",
+    "schema_version": "smartchem.service/compilation-request-v1alpha3",
     "search_bounds": [
       [
         "cut_budget",
@@ -108,7 +110,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "d3641c8581d61e9e9ebbdd8343f5a04a830f612d9d027184eb13d72be585666b",
-  "schema_version": "smartchem.service/compilation-response-v1alpha1",
+  "result_digest": "925314c2863a4eaac4603890b4e707f569c1ddc638c7c3d5b7dc3b5a4b585a87",
+  "schema_version": "smartchem.service/compilation-response-v1alpha2",
   "standard_status": "REFUSED_INVALID_REQUEST"
 }

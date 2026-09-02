@@ -59,9 +59,10 @@ class TestSchemaDescriptor:
 
     def test_descriptor_is_versioned(self):
         schema = response_schema()
-        # v1alpha2: IR-LOSS-01 made identity_losses array[object] and ID-LAYER-02 bumped the referenced request schema.
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha2"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha1"
+        # v1alpha3: SVC-REQ-01 alias-collapse added the parse_receipt_summary response field and the request schema
+        # bumped for the normalized_identity field (v1alpha2 was IR-LOSS-01's array[object] + ID-LAYER-02).
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha3"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha2"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the

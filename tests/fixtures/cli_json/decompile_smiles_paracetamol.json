@@ -951,11 +951,10 @@
     "tool_version": "0.5.0a1",
     "transform_registry_digest": "9fe39ec4ecf94914aac37cacd6bc4d33ff7da15e0fe66415d7926f55419f3e88"
   },
-  "diagnostics": [
-    "IDENTITY RESOLVED [SMILES] via SMILES_PARSER: C8H9NO2 (CONSTITUTION layer)"
-  ],
+  "diagnostics": [],
   "exit_code": 0,
   "outcome": "ROUTES_FOUND",
+  "parse_receipt_summary": "IDENTITY RESOLVED [SMILES] via SMILES_PARSER: C8H9NO2 (CONSTITUTION layer)",
   "ranked_route_dossiers": [],
   "request": {
     "constraints": {
@@ -970,6 +969,7 @@
       "policy_id": "DEFAULT"
     },
     "input_kind": "SMILES",
+    "normalized_identity": "",
     "operation": "DECOMPILE",
     "origins": [
       [
@@ -1016,7 +1016,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha2",
+    "schema_version": "smartchem.service/compilation-request-v1alpha3",
     "search_bounds": [
       [
         "budget",
@@ -1052,7 +1052,7 @@
     },
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
-  "result_digest": "597db744729474b5bc1abe86dbcde4db162b49db68296cab40de7fa53b68dfaf",
-  "schema_version": "smartchem.service/compilation-response-v1alpha1",
+  "result_digest": "4d7051e517dfaa3ac816e19d6d2824f62e90f5be5badd878a64ac9d9d6dbe618",
+  "schema_version": "smartchem.service/compilation-response-v1alpha2",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

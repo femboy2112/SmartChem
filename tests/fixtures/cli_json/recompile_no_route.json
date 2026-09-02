@@ -23,11 +23,11 @@
     "transform_registry_digest": "18034da6ac94265b997f614eecf4249504439e1db44a60240e7df04fb790b9ef"
   },
   "diagnostics": [
-    "no route to the target from the declared terminals exists within the 'routes' search grammar at the declared bounds (max_depth=2); the search was exhaustive there (no limit fired), but that is exhaustion of THIS grammar/mode at THESE bounds -- not a proof that no route exists under a different mode or higher bounds (section 8.3, no-route: exhaustive-within-bounds)",
-    "IDENTITY RESOLVED [AUTO->NAME] via OFFLINE_REGISTRY: C4H6O3 (CONSTITUTION layer); resolved offline name 'acetic anhydride'"
+    "no route to the target from the declared terminals exists within the 'routes' search grammar at the declared bounds (max_depth=2); the search was exhaustive there (no limit fired), but that is exhaustion of THIS grammar/mode at THESE bounds -- not a proof that no route exists under a different mode or higher bounds (section 8.3, no-route: exhaustive-within-bounds)"
   ],
   "exit_code": 3,
   "outcome": "NO_ROUTE_COMPLETE",
+  "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->NAME] via OFFLINE_REGISTRY: C4H6O3 (CONSTITUTION layer); resolved offline name 'acetic anhydride'",
   "ranked_route_dossiers": [],
   "request": {
     "constraints": {
@@ -44,6 +44,7 @@
       "policy_id": "DEFAULT"
     },
     "input_kind": "AUTO",
+    "normalized_identity": "b0a70a2130f9c14a5ee39d75c91d63d3a8c89599b95bc60afb076341edbfdf59",
     "operation": "RECOMPILE",
     "origins": [
       [
@@ -106,7 +107,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha2",
+    "schema_version": "smartchem.service/compilation-request-v1alpha3",
     "search_bounds": [
       [
         "cut_budget",
@@ -130,7 +131,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "f0177b13c46124c01d6ef21c863ec43c378d99b70a7c22a346407297f5a606a8",
-  "schema_version": "smartchem.service/compilation-response-v1alpha1",
+  "result_digest": "7067dd49a1a598c88123ec3d43f01c083f41ef6162fc8dc8b3c7f89ca52aba4b",
+  "schema_version": "smartchem.service/compilation-response-v1alpha2",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

@@ -3,14 +3,14 @@
   "compilation_ir": {
     "candidates": [
       {
-        "candidate_digest": "3b34f5bbcebecf3b5213f4ed5a2565acb06a6a95d749653c96e6b6b765a9975b",
+        "candidate_digest": "ac6ec5cf43a1776e04e89f9e6335abad9e5628ad05ac51f999a0f861e998c5c2",
         "candidate_kind": "ROUTE",
         "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
         "readiness_tier": "FORMAL_CANDIDATE",
         "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
       },
       {
-        "candidate_digest": "69c31c0e64af8b5f616f2bd0f4c7cee795ae17803835fa9ef32e8a39f0e9834f",
+        "candidate_digest": "e709e4a706d5c8280479835d6fa258ee6ef416905798bc2bcd4263197059eacb",
         "candidate_kind": "ROUTE",
         "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
         "readiness_tier": "FORMAL_CANDIDATE",
@@ -35,11 +35,10 @@
     "tool_version": "0.5.0a1",
     "transform_registry_digest": "18034da6ac94265b997f614eecf4249504439e1db44a60240e7df04fb790b9ef"
   },
-  "diagnostics": [
-    "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C3H6O2 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested"
-  ],
+  "diagnostics": [],
   "exit_code": 0,
   "outcome": "ROUTES_FOUND",
+  "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C3H6O2 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested",
   "ranked_route_dossiers": [],
   "request": {
     "constraints": {
@@ -56,6 +55,7 @@
       "policy_id": "DEFAULT"
     },
     "input_kind": "AUTO",
+    "normalized_identity": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
     "operation": "RECOMPILE",
     "origins": [
       [
@@ -118,7 +118,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha2",
+    "schema_version": "smartchem.service/compilation-request-v1alpha3",
     "search_bounds": [
       [
         "cut_budget",
@@ -142,7 +142,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "0f9c414f8f2c9b52308f7ca655f9ca1d63d2dfa87253d18f10ea0a963ca97d12",
-  "schema_version": "smartchem.service/compilation-response-v1alpha1",
+  "result_digest": "99eba39d009c5bcfb93bfc5cb463ed705058a5b45252b6d0a87640fb487e2583",
+  "schema_version": "smartchem.service/compilation-response-v1alpha2",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

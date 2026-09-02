@@ -44,37 +44,25 @@ def _positive_int(value: str) -> int:
 
 
 def _parse_molecule(value: str):
-    """Accept an offline registered name or SMILES, with optional explicit ``name:``/``smiles:`` prefix."""
-    from .smiles import SmilesError, parse_smiles
-    from .structure import structure_by_name
+    """Accept an offline registered name or SMILES, with optional explicit ``name:``/``smiles:`` prefix.
 
-    kind = None
-    payload = value
-    if ":" in value:
-        prefix, rest = value.split(":", 1)
-        if prefix.casefold() in {"name", "smiles"}:
-            kind, payload = prefix.casefold(), rest
-    if kind != "smiles":
-        named = structure_by_name(payload)
-        if named is not None:
-            return named.molecule
-        if kind == "name":
-            raise ValueError(
-                f"unknown offline chemical name {payload!r}; provide SMILES (optionally smiles:...) or use "
-                "a registered name"
-            )
-    try:
-        return parse_smiles(payload)
-    except SmilesError as exc:
-        raise ValueError(
-            f"could not resolve {value!r} as an offline name or parse it as SMILES: {exc}; "
-            "use name:... or smiles:... to make the input form explicit"
-        ) from exc
+    Delegates to the one shared identity parser (:func:`smartchem.identity_parse.resolve_target`) so the CLI and
+    the typed service (:mod:`smartchem.service`) can never drift apart on the same string -- the whole point of
+    SVC-REQ-01.  Behaviour and error messages are unchanged; ``IdentityParseError`` is a ``ValueError`` subclass,
+    so the ``exit 2`` handlers below keep catching it.
+    """
+    from .identity_parse import InputKind, resolve_target
+    return resolve_target(value, InputKind.AUTO)
 
 
 def _parse_smiles(smiles: str):
-    """Compatibility alias for callers that used the old private helper."""
-    return _parse_molecule("smiles:" + smiles)
+    """Compatibility alias for callers that used the old private helper.
+
+    Routes through the AUTO path with an explicit ``smiles:`` prefix -- byte-for-byte the old
+    ``_parse_molecule("smiles:" + smiles)`` behaviour, including the error string, which quotes the prefixed form.
+    """
+    from .identity_parse import InputKind, resolve_target
+    return resolve_target("smiles:" + smiles, InputKind.AUTO)
 
 
 def _edge_line(edge) -> str:

@@ -31,9 +31,11 @@ The verdicts, and the non-vacuity guard (W2)
 
 Independence (why this is not self-certifying)
 ----------------------------------------------
-The selectivity fact comes from a SEPARATE sourced table, keyed by the reactant composition and matched
-against the product's STRUCTURAL identity (resolved independently through the registry) -- never from the
-route's own declaration.  The table is injectable per call (:meth:`SelectivityTable.with_records`) so any
+The selectivity fact comes from a SEPARATE sourced table, indexed by the reactant composition but fired only
+against STRUCTURAL identity on BOTH sides -- the product resolves to a registered isomer, and every reactant
+must resolve to an isomer the record NAMES (EVD-KEY-01: composition is not identity, so a keyless or
+partial-names record never borrows a verdict across same-composition isomers) -- never from the route's own
+declaration.  The table is injectable per call (:meth:`SelectivityTable.with_records`) so any
 chemical's sourced selectivity can be brought without editing the seed: the universal-engine / sourced-data
 split, exactly as for stability and conditions.  The seed is tiny and every record carries a provenance;
 the point is the mechanism, not coverage.
@@ -107,14 +109,13 @@ class SelectivityRecord(Digestible):
     isomer is the MAJOR product.  Keyed structurally on the product (by the major isomer's registered name),
     scale-independent on the reactants.
 
-    ``reactant_names`` isomer-keys the REACTANT side (S2): when non-empty, the record fires only when the
-    step's reactants actually resolve, structurally, to *those* named isomers -- not merely by matching
-    composition.  A composition can hide more than one starting isomer (4-aminophenol vs 3-aminophenol are
-    both ``C6H7NO``), and a sourced regiochemical preference for one is not license to fire for the other.
-    Empty means composition-only matching, but that is NOT a blanket pass (EVD-KEY-01): a composition-only
-    record fires ONLY when every reactant is the UNIQUE registered isomer of its composition (it resolves and
-    has no registered siblings, so composition pins identity); a reactant that does not resolve or has siblings
-    is a loud UNKNOWN, never a borrow across isomers.  Name the reactants to key an ambiguous composition.
+    ``reactant_names`` isomer-keys the REACTANT side (EVD-KEY-01): a sourced verdict fires ONLY when this tuple
+    covers EVERY reactant and each reactant structurally resolves (by the registry's exact canonical identity) to
+    a named isomer.  Composition is NOT identity -- a composition can hide more than one starting isomer
+    (4-aminophenol vs 3-aminophenol are both ``C6H7NO``), and a sourced regiochemical preference for one is not
+    license to fire for another.  So a record that names NO reactants, or only SOME of them, is a loud UNKNOWN for
+    any un-named reactant -- never a composition borrow (naming only a safe co-reactant does NOT bypass the check).
+    The seed records name all their reactants; an injected record must do the same to fire.
     """
 
     reactant_key: CompositionKey
@@ -290,59 +291,55 @@ def selectivity_of_step(
             unknown("selectivity", "", "free text or an unreviewed citation is not accepted source evidence"),
         )
 
-    if rec.reactant_names:
-        # S2: composition got us here, but a composition can hide more than one starting isomer
-        # (4-aminophenol is not 3-aminophenol just because both are C6H7NO) -- check the ACTUAL structure
-        # resolved, greedily, one distinct reactant per required name.  Match against the reactant's FULL
-        # name set (common / IUPAC / synonyms), so a record may key by any registered label, the way
-        # structure_by_name resolves -- an EMPTY set for an unresolved reactant matches nothing.
-        namesets = [
-            set(resolved.all_names) if resolved is not None else set()
-            for resolved in (resolve_structure(reactant) for reactant in step.reactants)
-        ]
-        missing: str | None = None
-        for name in rec.reactant_names:
-            idx = next((i for i, ns in enumerate(namesets) if name in ns), None)
-            if idx is None:
-                missing = name
-                break
-            namesets[idx] = set()  # consume this reactant -- one distinct reactant per required name
-        if missing is not None:
+    # EVD-KEY-01 (reactant-side isomer key): a sourced verdict fires only when EVERY reactant is pinned to a NAMED
+    # isomer.  Composition is NOT identity -- a same-composition isomer (3-aminophenol for 4-aminophenol; both
+    # C6H7NO) would BORROW the sourced verdict (the "a-reaction-key-by-formula-borrows-a-rate" fail-open, on the
+    # reactant side).  The airtight close: the record's ``reactant_names`` must cover ALL of this step's reactants,
+    # and each must structurally resolve (via the registry's exact canonical identity) to a named isomer.  This
+    # closes THREE holes a composition-only or partial-names key leaves open (red-team folds):
+    #   * a keyless (empty reactant_names) record firing on composition alone;
+    #   * a PARTIAL-names record (names only the safe co-reactant) skipping the check for the ambiguous substrate --
+    #     strictly WORSE than naming nothing, because naming a subset used to bypass the guard entirely;
+    #   * "unique registered isomer" is NOT unique REAL isomer -- the registry undercounts (C6H7NO has three real
+    #     aminophenols, one registered), so a composition-only "unique" match still borrows from the unregistered
+    #     siblings.  Only an EXPLICIT name, matched to the resolved structure, avoids every registry-completeness
+    #     assumption.  The default seed records already name all reactants, so this fires exactly as before for them.
+    named_set = set(rec.reactant_names)
+    expected = ", ".join(sorted(named_set)) if named_set else "none named"
+    matched_names: set[str] = set()
+    for reactant in step.reactants:
+        resolved = resolve_structure(reactant)
+        overlap = (set(resolved.all_names) if resolved is not None else set()) & named_set
+        if not overlap:
+            # this reactant resolves to NO named isomer -- a composition match cannot attribute the verdict to it
+            # (it may be a same-composition isomer the source never covered), so refuse rather than borrow.  This
+            # fires for a keyless record (named_set empty), a partial-names record (the unnamed reactant), and a
+            # wrong reactant isomer (it does not resolve to the required name) alike.  Multiplicity is irrelevant:
+            # a scale-repeated reactant is checked the same, matching the scale-invariant composition key.
+            which = resolved.name if resolved is not None else repr(reactant)
             return StepSelectivity(
                 SelectivityStatus.UNKNOWN,
-                f"UNKNOWN: a sourced selectivity exists (major: {rec.major_isomer_name}) but a required "
-                f"reactant isomer ({missing}) is not present — not fired for the wrong reactant isomer",
+                f"UNKNOWN: a sourced selectivity exists (major: {rec.major_isomer_name}), but reactant {which} "
+                f"does not resolve to any reactant isomer the record names ({expected}) -- composition is not "
+                f"identity, so firing here would borrow the verdict across same-composition isomers; name every "
+                f"reactant to key it structurally (EVD-KEY-01)",
                 unknown(
                     "selectivity", "",
-                    f"required reactant isomer {missing} did not resolve among this step's reactants",
+                    f"reactant {which} is not covered by the record's reactant_names ({expected}) -- no borrow",
                 ),
             )
-    else:
-        # EVD-KEY-01: a record with NO reactant_names matched by reactant COMPOSITION alone.  Composition is not
-        # identity -- a same-composition isomer (3-aminophenol for 4-aminophenol; both C6H7NO) would BORROW the
-        # sourced verdict (the "a-reaction-key-by-formula-borrows-a-rate" fail-open, on the reactant side).  It is
-        # attributable to THIS step's reactants only when every reactant is the UNIQUE registered isomer of its
-        # composition: it resolves structurally AND its composition has exactly one registered isomer, so composition
-        # DOES pin identity here.  A reactant that does not resolve (an unregistered isomer) or whose composition has
-        # registered siblings is ambiguous -- fire only with a reactant_names key, never a composition borrow.  The
-        # guard is structural (it fires on the condition, not on a data convention), so it protects default AND
-        # injected records alike.
-        for reactant in step.reactants:
-            resolved_reactant = resolve_structure(reactant)
-            siblings = known_compounds(Formula.of(reactant.formula, reactant.charge))
-            if resolved_reactant is None or len(siblings) != 1:
-                which = resolved_reactant.name if resolved_reactant is not None else repr(reactant)
-                return StepSelectivity(
-                    SelectivityStatus.UNKNOWN,
-                    f"UNKNOWN: a sourced selectivity exists (major: {rec.major_isomer_name}), but it names no "
-                    f"reactant isomers and a reactant ({which}) is not the UNIQUE registered isomer of its "
-                    f"composition, so the composition-only record cannot be attributed to it without borrowing "
-                    f"across isomers — add reactant_names to key it structurally (EVD-KEY-01)",
-                    unknown(
-                        "selectivity", "",
-                        f"composition-only record: reactant {which} is not a uniquely-registered structure",
-                    ),
-                )
+        matched_names |= overlap
+    missing = named_set - matched_names
+    if missing:
+        return StepSelectivity(
+            SelectivityStatus.UNKNOWN,
+            f"UNKNOWN: a sourced selectivity exists (major: {rec.major_isomer_name}) but a required reactant "
+            f"isomer ({sorted(missing)[0]}) is not present — not fired for the wrong reactant isomer",
+            unknown(
+                "selectivity", "",
+                f"required reactant isomer {sorted(missing)[0]} did not resolve among this step's reactants",
+            ),
+        )
 
     named = resolve_structure(target)
     if named is None:

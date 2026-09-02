@@ -117,6 +117,7 @@ class TestInjectabilityLever:
                 product_formula=Formula.parse("C2H6O").counts,
                 major_isomer_name="ethanol",
                 provenance="test: acid-catalysed Markovnikov hydration of ethylene gives ethanol",
+                reactant_names=("ethylene", "water"),  # EVD-KEY-01: a sourced verdict names every reactant isomer
                 source=SourceCitation(
                     "https://example.test/reviewed-ethylene-hydration", SourceReview.ACCEPTED
                 ),
@@ -242,7 +243,7 @@ class TestS2ReactantSideIsomerKeying:
                 product_formula=Formula.parse("C8H9NO2").counts,
                 major_isomer_name="paracetamol",
                 provenance="test: N-selective acetylation, keyed to the 4-aminophenol isomer specifically",
-                reactant_names=("4-aminophenol",),
+                reactant_names=("4-aminophenol", "acetic anhydride"),  # EVD-KEY-01: name EVERY reactant
                 source=SourceCitation(
                     "https://example.test/reviewed-paracetamol-selectivity", SourceReview.ACCEPTED
                 ),
@@ -266,48 +267,56 @@ class TestS2ReactantSideIsomerKeying:
         assert sel.finding.bucket.name == "UNKNOWN"
 
 
-class TestCompositionOnlyAttributability:
-    """EVD-KEY-01: a record with NO reactant_names (composition-only) is attributable ONLY when every reactant is
-    the UNIQUE registered isomer of its composition -- else it would BORROW across same-composition isomers."""
+class TestReactantSideMustBeFullyNamed:
+    """EVD-KEY-01 (red-team-hardened): a sourced verdict fires ONLY when reactant_names covers EVERY reactant and
+    each resolves to a named isomer -- composition is not identity, so a keyless OR partial-names record cannot
+    attribute the verdict to a specific reactant isomer without borrowing across same-composition isomers."""
 
-    def _composition_only_para_record(self) -> SelectivityTable:
-        # deliberately NO reactant_names -- the residual fail-open surface.
-        return SelectivityTable((
-            SelectivityRecord(
-                reactant_key=_formulas_key("C6H7NO", "C4H6O3"),
-                product_formula=Formula.parse("C8H9NO2").counts,
-                major_isomer_name="paracetamol",
-                provenance="test: composition-only acetylation, no reactant_names",
-                source=SourceCitation("https://example.test/reviewed", SourceReview.ACCEPTED),
-            ),
-        ))
+    def _para_record(self, **over) -> SelectivityTable:
+        base = dict(
+            reactant_key=_formulas_key("C6H7NO", "C4H6O3"),
+            product_formula=Formula.parse("C8H9NO2").counts,
+            major_isomer_name="paracetamol",
+            provenance="test: N-selective acetylation of 4-aminophenol",
+            source=SourceCitation("https://example.test/reviewed", SourceReview.ACCEPTED),
+        )
+        base.update(over)
+        return SelectivityTable((SelectivityRecord(**base),))
 
-    def test_composition_only_borrow_is_refused_for_an_unregistered_isomer(self):
-        # 3-aminophenol is C6H7NO but does NOT resolve to a registered isomer -> the composition-only record must
-        # NOT fire for it (the borrow the reactant_names key exists to prevent, now closed for keyless records too).
-        step = ExperimentStep.assembling(PARA, (AMINOPHENOL_3, ANH), (PARA, ACOH))
-        sel = selectivity_of_step(step, table=self._composition_only_para_record())
+    def test_a_keyless_record_does_not_fire(self):
+        # NO reactant_names at all: composition alone cannot attribute the verdict -> UNKNOWN, never a borrow.
+        step = ExperimentStep.assembling(PARA, (AMP, ANH), (PARA, ACOH))
+        sel = selectivity_of_step(step, table=self._para_record())   # reactant_names defaults to ()
         assert sel.status is SelectivityStatus.UNKNOWN
-        assert "UNIQUE registered isomer" in sel.reason and "EVD-KEY-01" in sel.reason
+        assert "does not resolve to any reactant isomer the record names" in sel.reason
+        assert "EVD-KEY-01" in sel.reason and sel.finding.bucket.name == "UNKNOWN"
+
+    def test_partial_names_do_not_reopen_the_borrow(self):
+        # red-team HIGH: naming ONLY the safe co-reactant (acetic anhydride) used to skip the check for the
+        # ambiguous substrate, so 3-aminophenol borrowed 4-aminophenol's verdict. The unnamed substrate is now UNKNOWN.
+        step = ExperimentStep.assembling(PARA, (AMINOPHENOL_3, ANH), (PARA, ACOH))
+        sel = selectivity_of_step(step, table=self._para_record(reactant_names=("acetic anhydride",)))
+        assert sel.status is SelectivityStatus.UNKNOWN
         assert sel.finding.bucket.name == "UNKNOWN"
 
-    def test_composition_only_fires_when_every_reactant_is_uniquely_registered(self):
-        # ethylene + water -> ethanol: each reactant resolves and is the UNIQUE registered isomer of its
-        # composition, so composition DOES pin identity -- the composition-only record fires safely (no over-refusal).
-        injected = DEFAULT_SELECTIVITY.with_records(
-            SelectivityRecord(
-                reactant_key=_formulas_key("C2H4", "H2O"),
-                product_formula=Formula.parse("C2H6O").counts,
-                major_isomer_name="ethanol",
-                provenance="test: Markovnikov hydration, composition-only",
-                source=SourceCitation("https://example.test/eth", SourceReview.ACCEPTED),
-            )
-        )
-        step = ExperimentStep.assembling(ETHANOL, (ETHYLENE, WATER), (ETHANOL,))
-        assert selectivity_of_step(step, table=injected).status is SelectivityStatus.FAVORED
+    def test_composition_only_does_not_borrow_via_the_registrys_lone_isomer(self):
+        # red-team MED: "unique registered isomer" != unique REAL isomer -- the registry carries only 4-aminophenol
+        # for C6H7NO, so a keyless record would have borrowed for the registered isomer. Now keyless -> UNKNOWN.
+        step = ExperimentStep.assembling(PARA, (AMP, ANH), (PARA, ACOH))
+        assert selectivity_of_step(step, table=self._para_record()).status is SelectivityStatus.UNKNOWN
 
-    def test_the_default_seed_records_are_unaffected(self):
-        # every default record carries reactant_names, so it takes the S2 path, never the composition-only guard --
-        # the sourced propene->propan-2-ol and nitration verdicts still fire.
+    def test_a_fully_named_record_fires_for_the_right_isomers(self):
+        step = ExperimentStep.assembling(PARA, (AMP, ANH), (PARA, ACOH))
+        sel = selectivity_of_step(step, table=self._para_record(reactant_names=("4-aminophenol", "acetic anhydride")))
+        assert sel.status is SelectivityStatus.FAVORED
+
+    def test_a_fully_named_record_still_refuses_the_wrong_isomer(self):
+        step = ExperimentStep.assembling(PARA, (AMINOPHENOL_3, ANH), (PARA, ACOH))
+        sel = selectivity_of_step(step, table=self._para_record(reactant_names=("4-aminophenol", "acetic anhydride")))
+        assert sel.status is SelectivityStatus.UNKNOWN
+        assert "4-aminophenol" in sel.reason
+
+    def test_the_default_seed_records_still_fire(self):
+        # every default record names all its reactants, so the shipped data is unaffected.
         step = ExperimentStep.assembling(PROP2OL, (PROPENE, WATER), (PROP2OL,))
         assert selectivity_of_step(step, table=DEFAULT_SELECTIVITY).status is SelectivityStatus.FAVORED

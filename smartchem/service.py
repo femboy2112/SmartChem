@@ -808,6 +808,16 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     except IdentityParseError as exc:
         return _invalid(request, str(exc))
 
+    # The capped-scission grammar requires at least one cutting reagent; an empty pool is not a runnable search.
+    # Fail CLOSED here (exit 2) so a programmatic/deserialized request carrying no helper_reagents becomes a typed
+    # INVALID_INPUT rather than a raw TypeError escaping the engine to an undefined exit code (section 14.4).  The
+    # CLI coerces an empty `--reagents` to the water default upstream, so this guards only non-CLI callers.
+    if not reagents:
+        return _invalid(
+            request,
+            "the capped-scission grammar requires at least one helper reagent, but the reagent pool is empty",
+        )
+
     if request.terminal_policy.commodities_enabled:
         from .data.reagents import commodity_inventory
         commodities = commodity_inventory()
@@ -876,7 +886,15 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
             inventory_ids.add(ChemicalIdentity.of_formula(Formula.parse(inv)).identity_digest)
         except (DecompilerError, ValueError):
             continue
-    target_available = ir.target.identity_digest in inventory_ids
+    # A decompile target is "already available" when it is a declared bucket OR an INTRINSIC terminal -- a bare
+    # element (a universal atom bucket the decompiler bottoms out at) or a formula that needs no decomposition.  The
+    # tell for the intrinsic case is a COMPLETE search that produced ZERO edges: the target did not (need to)
+    # decompose, so it is terminal, exactly what the human edge-list path reports as "already a bucket" (exit 0).
+    # Without this, a bare element absent from the DECLARED inventory (e.g. `decompile He`/`Fe`) was miscoded
+    # NO_ROUTE_COMPLETE -- a confident section-8.3 claim of absence over something already elemental, and a drift
+    # from the human path the CLI-CAN-01 routing promises cannot happen (exit 0 vs 3 for one command).
+    already_terminal = ir.complete_within_bounds and ir.candidate_count == 0
+    target_available = (ir.target.identity_digest in inventory_ids) or already_terminal
     outcome = _classify(ir, target_available=target_available)
     return CompilationResponse(
         COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir, tuple(ir.diagnostics)

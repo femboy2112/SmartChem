@@ -1,0 +1,145 @@
+{
+  "affordability_frontier": [],
+  "compilation_ir": {
+    "candidates": [
+      {
+        "candidate_digest": "3b34f5bbcebecf3b5213f4ed5a2565acb06a6a95d749653c96e6b6b765a9975b",
+        "candidate_kind": "ROUTE",
+        "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "69c31c0e64af8b5f616f2bd0f4c7cee795ae17803835fa9ef32e8a39f0e9834f",
+        "candidate_kind": "ROUTE",
+        "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      }
+    ],
+    "diagnostics": [],
+    "identity_losses": [],
+    "operation": "RECOMPILE",
+    "request_digest": "f336190648c8db2f74ae93b29762b55172df15caa7e5a286f637cfb08c993cf3",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha2",
+    "search_receipt_digest": "bf5fc4aaf9a1d4f06abc42d0f719340948264f982ba46f988022a85d796bd210",
+    "search_status": "COMPLETE_WITHIN_BOUNDS",
+    "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+    "target": {
+      "canonical_repr": "C3H6O2",
+      "identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
+      "layer": "STRUCTURE",
+      "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
+    },
+    "terminal_policy_digest": "308abd7c4f8905353fec2eda637b4f541fdd1ee5a4980b5fcba09b3c6ce54b48",
+    "tool_version": "0.5.0a1",
+    "transform_registry_digest": "18034da6ac94265b997f614eecf4249504439e1db44a60240e7df04fb790b9ef"
+  },
+  "diagnostics": [],
+  "exit_code": 0,
+  "outcome": "ROUTES_FOUND",
+  "ranked_route_dossiers": [],
+  "request": {
+    "constraints": {
+      "constraint_id": "UNCONSTRAINED"
+    },
+    "evidence_provider_selection": {
+      "selection_id": "DEFAULT_OFFLINE"
+    },
+    "helper_reagents": [
+      "water"
+    ],
+    "identity_policy": {
+      "policy_id": "DEFAULT"
+    },
+    "input_kind": "AUTO",
+    "operation": "RECOMPILE",
+    "origins": [
+      [
+        "commodities_enabled",
+        "DEFAULT"
+      ],
+      [
+        "constraints",
+        "DEFAULT"
+      ],
+      [
+        "cut_budget",
+        "DEFAULT"
+      ],
+      [
+        "evidence_provider_selection",
+        "DEFAULT"
+      ],
+      [
+        "helper_reagents",
+        "DEFAULT"
+      ],
+      [
+        "identity_policy",
+        "DEFAULT"
+      ],
+      [
+        "input_kind",
+        "DEFAULT"
+      ],
+      [
+        "max_depth",
+        "EXPLICIT"
+      ],
+      [
+        "max_routes",
+        "DEFAULT"
+      ],
+      [
+        "output_policy",
+        "DEFAULT"
+      ],
+      [
+        "ranking_policy",
+        "DEFAULT"
+      ],
+      [
+        "stock_materials",
+        "DEFAULT"
+      ],
+      [
+        "transform_grammar",
+        "DEFAULT"
+      ]
+    ],
+    "output_policy": {
+      "quiet": false,
+      "render_mode": "HUMAN"
+    },
+    "ranking_policy": {
+      "policy_id": "DEFAULT_PRECEDENCE_V1"
+    },
+    "schema_version": "smartchem.service/compilation-request-v1alpha1",
+    "search_bounds": [
+      [
+        "cut_budget",
+        20000
+      ],
+      [
+        "max_depth",
+        2
+      ],
+      [
+        "max_results",
+        100
+      ]
+    ],
+    "stock_materials": [],
+    "target_input": "smiles:CC(=O)OC",
+    "terminal_policy": {
+      "commodities_enabled": true,
+      "formula_inventory": [],
+      "match_mode": "STRUCTURE"
+    },
+    "transform_grammar": "CAPPED_SCISSION_LINEAR"
+  },
+  "result_digest": "cedf1de5febf0f1bc54907d606b43db8595940084786e0114257cb6235a95c6e",
+  "schema_version": "smartchem.service/compilation-response-v1alpha1",
+  "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
+}

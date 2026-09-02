@@ -1,0 +1,134 @@
+{
+  "affordability_frontier": [],
+  "compilation_ir": {
+    "candidates": [],
+    "diagnostics": [
+      "no route to the target from the declared terminals exists within the 'routes' search grammar at the declared bounds (max_depth=2); the search was exhaustive there (no limit fired), but that is exhaustion of THIS grammar/mode at THESE bounds -- not a proof that no route exists under a different mode or higher bounds (section 8.3, no-route: exhaustive-within-bounds)"
+    ],
+    "identity_losses": [],
+    "operation": "RECOMPILE",
+    "request_digest": "590ddb997965733ba4447728408e1780517396dc61290b85aa8f061547718869",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha2",
+    "search_receipt_digest": "22c500de5201ebde204211b42e76e4f7401f3107f16a34144e370e51e4c49249",
+    "search_status": "COMPLETE_WITHIN_BOUNDS",
+    "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+    "target": {
+      "canonical_repr": "C4H6O3",
+      "identity_digest": "b0a70a2130f9c14a5ee39d75c91d63d3a8c89599b95bc60afb076341edbfdf59",
+      "layer": "STRUCTURE",
+      "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
+    },
+    "terminal_policy_digest": "59115ea2c066a980a42f86a2a0074b905d0407a74db95f09d4dcf2a4db054e14",
+    "tool_version": "0.5.0a1",
+    "transform_registry_digest": "18034da6ac94265b997f614eecf4249504439e1db44a60240e7df04fb790b9ef"
+  },
+  "diagnostics": [
+    "no route to the target from the declared terminals exists within the 'routes' search grammar at the declared bounds (max_depth=2); the search was exhaustive there (no limit fired), but that is exhaustion of THIS grammar/mode at THESE bounds -- not a proof that no route exists under a different mode or higher bounds (section 8.3, no-route: exhaustive-within-bounds)"
+  ],
+  "exit_code": 3,
+  "outcome": "NO_ROUTE_COMPLETE",
+  "ranked_route_dossiers": [],
+  "request": {
+    "constraints": {
+      "constraint_id": "UNCONSTRAINED"
+    },
+    "evidence_provider_selection": {
+      "selection_id": "DEFAULT_OFFLINE"
+    },
+    "helper_reagents": [
+      "water"
+    ],
+    "identity_policy": {
+      "policy_id": "DEFAULT"
+    },
+    "input_kind": "AUTO",
+    "operation": "RECOMPILE",
+    "origins": [
+      [
+        "commodities_enabled",
+        "EXPLICIT"
+      ],
+      [
+        "constraints",
+        "DEFAULT"
+      ],
+      [
+        "cut_budget",
+        "DEFAULT"
+      ],
+      [
+        "evidence_provider_selection",
+        "DEFAULT"
+      ],
+      [
+        "helper_reagents",
+        "DEFAULT"
+      ],
+      [
+        "identity_policy",
+        "DEFAULT"
+      ],
+      [
+        "input_kind",
+        "DEFAULT"
+      ],
+      [
+        "max_depth",
+        "EXPLICIT"
+      ],
+      [
+        "max_routes",
+        "DEFAULT"
+      ],
+      [
+        "output_policy",
+        "DEFAULT"
+      ],
+      [
+        "ranking_policy",
+        "DEFAULT"
+      ],
+      [
+        "stock_materials",
+        "DEFAULT"
+      ],
+      [
+        "transform_grammar",
+        "DEFAULT"
+      ]
+    ],
+    "output_policy": {
+      "quiet": false,
+      "render_mode": "HUMAN"
+    },
+    "ranking_policy": {
+      "policy_id": "DEFAULT_PRECEDENCE_V1"
+    },
+    "schema_version": "smartchem.service/compilation-request-v1alpha1",
+    "search_bounds": [
+      [
+        "cut_budget",
+        20000
+      ],
+      [
+        "max_depth",
+        2
+      ],
+      [
+        "max_results",
+        100
+      ]
+    ],
+    "stock_materials": [],
+    "target_input": "acetic anhydride",
+    "terminal_policy": {
+      "commodities_enabled": false,
+      "formula_inventory": [],
+      "match_mode": "STRUCTURE"
+    },
+    "transform_grammar": "CAPPED_SCISSION_LINEAR"
+  },
+  "result_digest": "f6b477abc6a17c32b8047331015e3dc2ccfd9ef88fcd5b97998dca9c9d608029",
+  "schema_version": "smartchem.service/compilation-response-v1alpha1",
+  "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
+}

@@ -1,0 +1,113 @@
+{
+  "affordability_frontier": [],
+  "compilation_ir": null,
+  "diagnostics": [
+    "could not resolve 'not-a-real-name-zzz' as an offline name or parse it as SMILES: unexpected character 't' at position 2; use name:... or smiles:... to make the input form explicit"
+  ],
+  "exit_code": 2,
+  "outcome": "INVALID_INPUT",
+  "ranked_route_dossiers": [],
+  "request": {
+    "constraints": {
+      "constraint_id": "UNCONSTRAINED"
+    },
+    "evidence_provider_selection": {
+      "selection_id": "DEFAULT_OFFLINE"
+    },
+    "helper_reagents": [
+      "water"
+    ],
+    "identity_policy": {
+      "policy_id": "DEFAULT"
+    },
+    "input_kind": "AUTO",
+    "operation": "RECOMPILE",
+    "origins": [
+      [
+        "commodities_enabled",
+        "DEFAULT"
+      ],
+      [
+        "constraints",
+        "DEFAULT"
+      ],
+      [
+        "cut_budget",
+        "DEFAULT"
+      ],
+      [
+        "evidence_provider_selection",
+        "DEFAULT"
+      ],
+      [
+        "helper_reagents",
+        "DEFAULT"
+      ],
+      [
+        "identity_policy",
+        "DEFAULT"
+      ],
+      [
+        "input_kind",
+        "DEFAULT"
+      ],
+      [
+        "max_depth",
+        "DEFAULT"
+      ],
+      [
+        "max_routes",
+        "DEFAULT"
+      ],
+      [
+        "output_policy",
+        "DEFAULT"
+      ],
+      [
+        "ranking_policy",
+        "DEFAULT"
+      ],
+      [
+        "stock_materials",
+        "DEFAULT"
+      ],
+      [
+        "transform_grammar",
+        "DEFAULT"
+      ]
+    ],
+    "output_policy": {
+      "quiet": false,
+      "render_mode": "HUMAN"
+    },
+    "ranking_policy": {
+      "policy_id": "DEFAULT_PRECEDENCE_V1"
+    },
+    "schema_version": "smartchem.service/compilation-request-v1alpha1",
+    "search_bounds": [
+      [
+        "cut_budget",
+        20000
+      ],
+      [
+        "max_depth",
+        3
+      ],
+      [
+        "max_results",
+        100
+      ]
+    ],
+    "stock_materials": [],
+    "target_input": "not-a-real-name-zzz",
+    "terminal_policy": {
+      "commodities_enabled": true,
+      "formula_inventory": [],
+      "match_mode": "STRUCTURE"
+    },
+    "transform_grammar": "CAPPED_SCISSION_LINEAR"
+  },
+  "result_digest": "d812d0785e315ddce8dffc7c38370f8946c5c63ed62cd7e7f64963f587b2ecf8",
+  "schema_version": "smartchem.service/compilation-response-v1alpha1",
+  "standard_status": "REFUSED_INVALID_REQUEST"
+}

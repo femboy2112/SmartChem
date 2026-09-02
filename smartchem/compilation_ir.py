@@ -280,6 +280,7 @@ def decompile_to_ir(
     max_multiplicity: int = 1,
     budget: int = 100_000,
     max_edges: int = 5_000,
+    identity_losses: "tuple[str, ...]" = (),
     tool_version: str | None = None,
 ) -> ChemicalCompilationIR:
     """Emit a :class:`ChemicalCompilationIR` for the formula decomposition of ``target`` over ``inventory``.
@@ -327,7 +328,11 @@ def decompile_to_ir(
         CompilationOperation.DECOMPILE,
         target_id,
         request_digest,
-        (),  # identity_losses -- formula decompile forgets topology; first-class loss records are IR-LOSS-01 (TODO)
+        # A formula decompile forgets topology; when the target REACHED this producer as a structure (a SMILES the
+        # caller reduced), that reduction is a section-5.3 loss the caller passes in here so the machine response
+        # carries it.  Sorted for canonical (presentation-invariant) IR identity.  First-class TYPED loss records
+        # inside the IR are IR-LOSS-01 (TODO); these are their string form.
+        tuple(sorted(identity_losses)),
         terminal_digest,
         registry_digest,
         receipt.status,

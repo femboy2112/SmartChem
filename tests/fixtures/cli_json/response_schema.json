@@ -1,0 +1,45 @@
+{
+  "candidate_summary_fields": {
+    "candidate_digest": "str (sha256; the stable route/candidate ID)",
+    "candidate_kind": "enum(FORMULA_EDGE/ROUTE/DAG)",
+    "equation": "str",
+    "readiness_tier": "str (readiness/epistemic tier)",
+    "schema_version": "str"
+  },
+  "chemical_identity_fields": {
+    "canonical_repr": "str",
+    "identity_digest": "str (sha256)",
+    "layer": "enum(IdentityLayer)",
+    "schema_version": "str"
+  },
+  "compilation_ir_fields": {
+    "candidates": "array[object(candidate-summary)]",
+    "diagnostics": "array[str]",
+    "identity_losses": "array[str]",
+    "operation": "enum(CompilationOperation)",
+    "request_digest": "str (sha256)",
+    "schema_version": "str",
+    "search_receipt_digest": "str (sha256)",
+    "search_status": "enum(SearchStatus)",
+    "standard_status": "str (section 8.2 status)",
+    "target": "object(chemical-identity)",
+    "terminal_policy_digest": "str (sha256)",
+    "tool_version": "str",
+    "transform_registry_digest": "str (sha256)"
+  },
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha1",
+  "request_schema_version": "smartchem.service/compilation-request-v1alpha1",
+  "response_fields": {
+    "affordability_frontier": "array (empty until COST-VEC-01)",
+    "compilation_ir": "object(chemical-compilation-ir)|null",
+    "diagnostics": "array[str] (blockers)",
+    "exit_code": "int (section 14.4: 0/2/3/4/5/70)",
+    "outcome": "enum(ResponseOutcome)",
+    "ranked_route_dossiers": "array (empty until READY-TIER-01)",
+    "request": "object(compilation-request-v1alpha1)",
+    "result_digest": "str (sha256)",
+    "schema_version": "str",
+    "standard_status": "str|null (section 8.2 status)"
+  },
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha1"
+}

@@ -1,0 +1,1037 @@
+{
+  "affordability_frontier": [],
+  "compilation_ir": {
+    "candidates": [
+      {
+        "candidate_digest": "012dafd704df3bddcf15c3c96f182177bef868e29706d75e7bcfc981baa1e377",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H6 + H + H2O2 + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "02de8851a20af68856c2e6a71572753f4c3e65d3d4731fce95bc58de584fe82e",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 4 H + H2O2 + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "03ca3bdbadb9df9a4d654f71c192fbfbaa010c59e5868ba27d8ace628f10925a",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO2 + C2H4 + 2 H + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "05fa93cdda37cd338f180bbb0a090f0f69b837c0e940d4e66328ced5439d066d",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + 2 C2H4 + H + NO + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "073ddd7889fbd56c50ed82ebe5cfa8dfc18fc6fb1f3b7f13f30fe861ddac9e48",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H6 + 3 H + N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "09a4c89eb920f52e7b79f1f0ad898a26b91547e074fb3b5f20c210dc2b700eb9",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + 2 CH4 + CO + H + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "0fe5e020a4437a82f4188c2f544010f6c373573f40dcf3262892802c52b5dbc2",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 9 H + NO + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "10e7e2f1ee561130f87c90bc0365b93a6fe6418077e9bb2ba7cacbb7c6ffafe7",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H4 + 3 H + H2O + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "15418f808caab1f02e5b896b08aa53fb361fc0d58aebe2ca38cd5f07c302809f",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + 2 CH4 + 2 CO + H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "1717e3898994d84649ab05e4ab483be62b3c6bcf579686ddf47011147d1e29d5",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CH4 + C2H4 + H + NO + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "18c0cdd77731efb7b1155b081aef95198d24575dad91fe6f367607750fee2313",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CH4 + CO2 + 2 H + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "25559a4f0aa85bee689097fed6cf06504e892bd6f11a6a8bfa7b5e1766a8ae5c",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + C2H4 + 2 H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "26ebdf12a136d47efe95f893d6e5bbc994173f04cc5ef2b6239e8d1f12b75d6a",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + C2H4 + 2 H + H2O2",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "273f5adcf512c290f5e647dadbf0480dd5f572fee7a7f0655d28640408bcbf35",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CH4 + 3 H + H2O + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "28e9d4f7a7142040381a67958730b849ab40712c34312a41d337663c5f0c77f2",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CH4 + 2 H + H3N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "29d9d7d7f151015e05193d55a52cd7f4e3fae1502181f8390cffad2719f7744e",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 7 H + H2O2 + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "2b3ae5db9feea004e394831efeeac40469954065642ed7e5e1c1e3dd30b2a410",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + CH4 + CO + 4 H + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "2caf5e625864ac73f31d26560e9b58909c778a699bb1bd9a8c9d10a6c5d0aaed",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CO + 6 H + H3N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "2f60b7668bfc35fb3a8dd84bf86430cb77846b82ee11cb462fb86c64edced27a",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CH4 + H2O2 + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "31522744889a587eb8f7c4690d75cb182371658e59b88b219b84afbe6eb92d5c",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + 2 CO + C2H6 + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "34ca61d07c74d52090cf2a49e79e4caf0af2cfcdd5dda84526446777bfb57c6d",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CH4 + CO + 5 H + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "38e790b3bd0e7c951994503ca8eb0cc1327af4612a60a06fd49e243af28ece38",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CHN + 2 CO + C2H4 + 4 H",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "3b6d21c0c727c2bf1cf9c51016aa0d581721f3cc300aa92cfcb8da633c40405d",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CH4 + H2O + H3N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "3e094cb07a2998747db8ab5509f582692bfc05fa1e3e4f239d2e3ec346704378",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CHN + CH4 + 4 H + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "4060aa99eb6b5e7d119d8ae5e0c7000117dc10aba202ed4f4c3caa8b4085e2ed",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 7 H + H2O + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "4173227929f3789db583acbac7af9671e77fbe972d7a4e191b69970eba1e25bb",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + 2 CH4 + CO + H + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "418839616080d7571b4152ed752e4e9bd6f6418f3e47e732d5473b8b70f0b540",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CO + 9 H + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "41da6b53bbcb53bf1ec2db112e1de1e7101d9b9322d1f316d2420fd014f27d9d",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + C2H6 + H2O + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "42567b580a77129ecfd7c7d7407b075a3a4c9f1eb01d95efefd30e04c9eab087",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H4 + 3 H + H2O + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "47c240158be2d80345897164eafa7e6d9cc1a78d6129ca5c743187bddd8dbf09",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CO2 + 9 H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "4953aab2036fd9823205cd4192af1369ca816942e7e9a6be5e3d683d4d1e1305",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H4 + 5 H + N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "4a97549017edfb9bcb395bf03dee19de39949836c2f68602c8ce880588c2ed03",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CHN + 8 H + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "4c5c30de49c568bfbd5000085bdf14a23b530558d56f542f80589f75a0a9d847",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + 2 CO + C2H4 + 5 H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "4d517ae75463d5ccf6b077a41fc26a8e0380effb78b2ce0a33453fa7a140d2c8",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + 2 CH4 + H + N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "4ef8f29e83daf5ccd0e8d0c9d37ce8ca8d0a748a3a0506273ac667df6087b555",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CH4 + 2 CO + 5 H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "4f4afca8b85e3f5ac57293833090ed0dd783c4ac3babb42d98cdc2ef4224e970",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H6 + H + H2O + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "4f7bfa8f7d230c5f8235dc5e7fe6b642f3e0c70d53c2ce1daabc1129f6ef0894",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CHN + CH4 + CO2 + C2H4",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "5001c9950994dd4e5ceadfa2b4e72f88721885c3337c127fc6c131f9dca11d0b",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CO2 + 2 C2H4 + H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "50c71ff85021e1f35a8ef33fcdd16cf82d397a51024efc4b7587f8a2fd31f37f",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CO + 4 H + H2O + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "513a11546cd56f95dbec189b03ff2be08dd397899793c1035d81fef1397dba0c",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + 2 CH4 + CO2 + H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "525a4a952358e4337fd0e0b1e2ea1fc465e9f3fc363ad9ad8751038d18dd3d65",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CO + 7 H + H2O + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "52f3c8929e24dc1647e44d7f3e73d8425d3c23cebe090ca2d4a85fa2bfeaac78",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CH4 + 2 CO + 2 H + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "532dfc85230601f8dcfec1f0f761363f12e382a796f042973741f388b356ef5d",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CH4 + CO + 2 H + H3N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "546df796e46f68519a566047024579488ff8566eae712b7bcc362d83817901c7",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 2 H + 2 H2O + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "55f925776d6460d51a66ba427ab55e45ed5327840307d85132ebce6ba42ae87d",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CH4 + 2 CO + C2H4 + H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "561cc421f5ce03bed27606f13f819e17d2cb96064d089dc36c416ffc670a11d1",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + C2H4 + 2 H + H2O + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "56afe804dda725937b5d5ebb7193cccd7f4e72412417776f7a20740454a7f699",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 6 H + H3N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "5cac8acfeeb9c9a10c22a23cc874f0f80585e0f374c21220bcf60177403342f3",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CHN + 6 H + H2O2",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "5ecbdbe81ba5c82815a4739def7f84aff791756a31a1d85c6f04ac406192df87",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + CH4 + CO + 2 H + H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "5f7b70747a071270eb65042a97167d9ccdee64d0206664b3d122962b36dc76e4",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CHN + CH4 + 2 H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "60d57e6e5325d12587548267273cb3df07063d1b811398d60ca6e21449278c37",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CH4 + CO + 3 H + H2O + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "623ee24357427e6d239cf148f4fecc3cf1ed87859d37307d6bc906665b2793d9",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CHN + 6 H + H2O + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "62a622d9e54f50a9f3c36e54e7f3324ad7cb2130dc342d7e1a0d73312b84f625",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CHN + 4 H + 2 H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "64dc06c73b20ec128d37a63326c11699535f687caf979fba9244ec03c9c4f4e3",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CH4 + 5 H + N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "6579ec235faccdac1b22e3c1667ad4badb85eeb016bc4622def9a12b0c08e838",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + 2 CO + C2H4 + 2 H + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "663680bce6c2fe959c8e931cde65ae6d4f99e24c3194de2dc78bdf6ec220cd7d",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + 2 CO + 8 H",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "6fd53018559444872415455cec2b20680794286047fdf4a79ad7415470363154",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CH4 + 3 H + H2O + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "72a7c18eb53d79a69fb223fc3b9fc04af81b8dac788303bb475ec0e417031fb2",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CH4 + CO + C2H4 + H + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "74e65a8570e32a5e03d609d797c1aa3c2ab2ff7fbde6e7f31c0c0fcc24fa7b26",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CH4 + 5 H + NO + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "74f777bbf0a656fe0cdea3344a4e75268a0451ab61eaccb95d99f5e7f73ea1d3",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + CO + C2H4 + 2 H + H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "75dffd6b30ddddf091d1f625945acf8e73c0e424b53e64863eb77fbcf9a678da",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 4 H + H2O + H3N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "790b86f148a2941d278f0f58489335f83865ff52cca0b4791b9f9e50baceaf18",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + C2H6 + H2O2",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "79c36075f157ae7c8f02a94740f27086706c1bfa5359c9b143fbc4626b296b32",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO + C2H4 + 5 H + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "79fcabfa3f7e39e060ec6cab171b76d928f418ef217e7389ab087c85adcf6c00",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H4 + H + 2 H2O + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "81dcc63793ddef69bd4877a4131adb2ec3a42777c6ab358a86a831a85fe8eee7",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CH4 + CO + C2H4 + H + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "832a5447f4537c0a7ccf2817f35ffad8a113a976d1b67ed236911be39611ab5d",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CHN + 2 C2H4 + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "87366ca8e780dde1d587238a6f47abc7feb53a46cbbdd2d9440d5518c2813efd",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + 2 CH4 + H + NO + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "88c7867a66479952ecf13d3bd9d1081106ff368599d3f8dd04f8c682db18f29a",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CH4 + CO2 + C2H4 + H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "8905b649d5e4d7d4f70392fd2dcbe45e452bf8c9ab4834c600a8f8a1d58a8e8b",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + 2 CO + 9 H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "8a7b54d87ef9b842855748600c7d7047c2772a9b5335855d6dd7bef2bc8c7ca8",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + C2H4 + 4 H + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "8ba605877af8a522aa38ac54e066a83cbc1dbf4972bc36df731edeff96968a24",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO + C2H4 + 5 H + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "8d9748052e087b2f9674b3e1098e20cca3a6338ec0b8bc056fbceb9a30db1f1e",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CHN + CO2 + 8 H",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "8e5b4ab8ea4e38d7d8ddbdfe4beba51fd9095e97d6c58cef2bc73a3631c667c9",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + 2 CO + 6 H + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "91a1821797976c3572ace9b14cf70d5ff91656d5fbfd8091dd204f1e8d636a7e",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H6 + H + H2O + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "91f97d255eac3442003fe5cab718ff4d9c917247844cae9c4eb7965e64d56938",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + 2 CO + C2H6 + 3 H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "9267400ed9ce3963a1720c38186e206fc15fbe03268e16086afd210d0af09d09",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H4 + H2O2 + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "92772a6c11920a8b8c28097b8b10a16e6e456805f28b678c33813e151a85e002",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CHN + CO + 8 H + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "95c56fa77aa8f3e1bdc252fc0d8d11e85e8fa4675c9f380fe12b987a406903e6",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + CO + C2H6 + 2 H + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "9c53a5bf437bda89939b4c83c40d399f6cd95a75d2e290407b3386b79734307e",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO + C2H6 + H + H2O + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "9c996fac585b62e087dd4c01a81fcdc9a797935db482b52d940730ef18017b60",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CH4 + H + 2 H2O + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "a04a361f04a26dc8f53df7819400c6b6e8d79eb716dbe1c1b08ce0d8c8096949",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H6 + H3N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "a0e7ea0bc36b86da42c70df764b37298a0daaa3e9ea67b078fe5c140bfcd9095",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CH4 + CO + 5 H + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "a373453f483808977ab96e182efb2516f9187288c52e5c11fcbfcc9bd0625638",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H4 + 5 H + NO + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "a3e5fa43e31c36d2f90b1ccc59174afc3dbe3a93265b5287dc67c2ba66f5183a",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO + C2H4 + H2O + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "a573d27c1a894d70b15e96bdeb952f2126c4c91df79127c75c51a89457ff9646",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CHN + CH4 + CO + C2H4 + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "a9a4a03c37b7b10b9914719a32345180433eee8a0131d04706d5c57f7ced3397",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO + C2H4 + 2 H + H3N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "ab1fa09cedca5de6e489fc61205e3d0c886ebb75e98235ad5dea46496edfd077",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + CO + C2H4 + 4 H + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "aca8281d220877b8ce951b1a6186107616e7aef7ddb5b448163dbaa407c2fe22",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 9 H + N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "ad79eb1ea1d621b10a62bb2e1ccf47df41d104f1480d3a843701bc8dffeef03c",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + 2 C2H4 + H + N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "af21c5338a0e2a9b6c895c1ff5b19bd8cdf5f20c56c50ac102916f5e00f23243",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CHN + 2 CO + C2H6 + 2 H",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "b10985cb2a4dc4e6c9cb7b0055500d18797ae258f193de9cf8c28c0734ef5a20",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H6 + 3 H + NO + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "b4efadc3bd6b922eabca67f33a4621c54806b30596f022f93a0225f45eca463f",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CO + 9 H + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "b7dc60e99ea5760fb0a3ed294092a302cb339497cbeb30fc2a34c67bb63b014f",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + C2H6 + 2 H + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "b9425d0a47ce83bbfb177ad859f10ecacb6875c084ef2be2e9c679090fe937df",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> C + CHN + 2 CO + 2 C2H4",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "b9f921665445e193eeaf9f35d1e0850a1f1dda9eaa6cf84ff70d75f6f88f6f43",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + CH4 + 2 CO + 4 H",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "ba7ce5b9c703fa7d316bfe05f7c8fe30e761d1f1ecb38403f086e7acd03066ea",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H4 + 2 H + H3N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "bb050e669b9dbc32ef77a1751ee38cba5a683fa9a8cbb2c85048c86a2fec5844",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO + C2H6 + 3 H + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "bbdbe37fa54ec81179a9af5fe1401e67d29fc90153d1d4bbd7aa5834d8e396fc",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 2 C + CHN + CH4 + 2 CO + C2H4",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "bc716721a26bf4635f23749df279609679639418846ee9e44776fae382745071",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + 2 CH4 + CO + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "bc7ed058d29e03cea99e9ff1657a54cdc0d4ce4a08f8f803e8ef5dcda6c990f1",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 2 C + CHN + CO + 2 C2H4 + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "bef3f69c44379d44b865a7cb256ccf28d2eff5bf62a13e53bf00ff4b208ab62b",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H4 + H2O + H3N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "bf1c8d02841332acbaac6f2927cb892fd336f703599b56efdd989d070d25a2e0",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + CO2 + C2H6 + 2 H",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "c1cdb8bc93fe9f49251f90f69fce8278e7b20719325d4555a552ea1d65d47d3c",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CHN + 2 CH4 + 2 CO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "c36f05d61ee18f8acdf9e519714f34c0e71b6856031bd88914759e2968ad1afe",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + CO + C2H6 + H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "c4beaf9eeabc959bd14e3132ecfb0b9cc07c9b4263ade88e223cca6e773bd384",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CH4 + CO2 + 5 H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "c69f3ad402717110ed0df16d7bf163f2ebd02c3a061db609b55bb0b9332d0b82",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO2 + C2H6 + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "c8e59bcdcfd3e02f423b5fa310a1008dda7ef47de681434488c6c02554ed8713",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + CH4 + C2H4 + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "c9430e5b381314de80cf64a61973fab53d2f81acffa0277b2c35bec5c5902d50",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CO + 2 C2H4 + H + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "d30568b1a8d24a98458183b3967dc262dc0028082bec9d1007fced7fd0d0f2af",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO + C2H4 + 3 H + H2O + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "d4ad278ba769bac58f2610924537496abe09798607fce86f36cfe8547183059e",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + 2 CH4 + CO2",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "d706ff7efafa7695eb7fd5bfb9ec356b38470ce4340cbf5b3e24d8c21b2e8829",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 2 C + CHN + CO2 + 2 C2H4",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "daef331d8fa3214ba6b9a8c6d7e21b6ddfc9bcf4d6fb567cf26995a59de5af3c",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO2 + C2H6 + 3 H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "dd1193e51d7b0e7455aa68bd5d44cb7f76b6eff3e1bcc595c04692b0d6c042a8",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 3 C + CO + 2 C2H4 + H + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "e1254c38a94a0bfa4d96796eab843168c301e818839de557bd9433b13610f0ac",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CO2 + 6 H + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "e22336baaf532d08d7993965d785eea7f0a75a3ee9e7551c05b5f93ea82c3af4",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO + C2H6 + 3 H + NO",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "e3856637f7e3ad16c3cacad66fd010a43e115f9497d531d6a18a2cc084c01cf3",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CH4 + C2H4 + H + N + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "e4154821f956518b3a7b1e49acdc44f3dab1a80b7d9cf751a9ee86b57f13d6f5",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CH4 + CO + H2O + H3N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "e5d8f402ecbdb6c5031774f7b2a57a3e374a81bed828ce4514ca3cbf6c5f1005",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO + C2H6 + H3N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "e8518f4a1de4b67c1220aa3587f0290fc070106cd8d0f695400099f0adf8d116",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 7 H + H2O + N + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "e8fe65fad7bdab363e350af90171d98debfd3dce51d3493a68f093c769be962c",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CHN + CH4 + 2 H + H2O2",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "e95a55ccf330dfde0ec451e452b9758d75fe8ae7c57bf27ee7bb4ce5e942c27b",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CHN + CH4 + 2 H + H2O + O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "ea35e8775d402e9c76d1a1638013735da532537cebaa84ea5a3dfb4cf2320858",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CO2 + C2H4 + 5 H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "eeeab94a910aa94058cedd6dd60c10755f211e105cff1a44ecb1eed1575bcc3d",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + C2H4 + 3 H + H2O2 + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "f073695286e059bc74feea8a3bf42776449deff516bbe163035bbb1e9987813a",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + 2 CH4 + 2 O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "f23384a04dfdbd9f19b7d6b877e7b59511d5bcdc6ce6c6a13e05e688edee6ba7",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 7 C + CH4 + 3 H + H2O2 + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "f34707ccc6e5a4e42346146e72c279a027d8a60cc0836729059291ca70e29ba1",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 8 C + 5 H + 2 H2O + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "fa099734975592d1ad0fb221da662b407acdae10eba22117ad481c0af60d544e",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 5 C + CHN + CH4 + CO2 + 4 H",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "fe83b0a31919cba9051d151337387b42f1e10d272cfaea655b4668959731d6d0",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 6 C + CHN + CO + 6 H + H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "ff8b551c115c8b193172949c22afb500fdfb2a5092360673ae50312fe7f2f8f6",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 2 C + 2 CO + 2 C2H4 + H + N",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "ff9e2087860b445ae5625da5ce41d6448b41f787e3de9c0bbcf3a98be6ff10a6",
+        "candidate_kind": "FORMULA_EDGE",
+        "equation": "C8H9NO2 -> 4 C + CHN + CO2 + C2H4 + 4 H",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      }
+    ],
+    "diagnostics": [],
+    "identity_losses": [
+      "IDENTITY LOSS [BLOCKER]: molecular-constitution -- the target was reduced to its elemental formula; connectivity, stereochemistry, isotope labels and local charge are not represented (input CC(=O)Nc1ccc(O)cc1, retained C8H9NO2 (FORMULA layer)); affected: conditions, hazard, isomer-distinction, kinetics, product-identity, purity, selectivity, stereochemistry, structure-identity"
+    ],
+    "operation": "DECOMPILE",
+    "request_digest": "6df11e58bff3aa38962120d48a2b8f71bc1d0401c51c3afc45cbf5f33e87a478",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha2",
+    "search_receipt_digest": "3d8ad84101ce76f331708e3a5d797c931135ab6b3dddacab108e70fc33bd04ce",
+    "search_status": "COMPLETE_WITHIN_BOUNDS",
+    "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+    "target": {
+      "canonical_repr": "C8H9NO2",
+      "identity_digest": "0a9a51bfd1d0bf5fd43fd38125e7f08488b711ba9422cd800a0db47afd18d71c",
+      "layer": "FORMULA",
+      "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
+    },
+    "terminal_policy_digest": "56f768feb6ae4702382f7178712af491f991ea0be6aa9e5dfbb0ef8f7a9d5866",
+    "tool_version": "0.5.0a1",
+    "transform_registry_digest": "9fe39ec4ecf94914aac37cacd6bc4d33ff7da15e0fe66415d7926f55419f3e88"
+  },
+  "diagnostics": [],
+  "exit_code": 0,
+  "outcome": "ROUTES_FOUND",
+  "ranked_route_dossiers": [],
+  "request": {
+    "constraints": {
+      "constraint_id": "UNCONSTRAINED"
+    },
+    "evidence_provider_selection": {
+      "selection_id": "DEFAULT_OFFLINE"
+    },
+    "helper_reagents": [],
+    "identity_policy": {
+      "policy_id": "DEFAULT"
+    },
+    "input_kind": "SMILES",
+    "operation": "DECOMPILE",
+    "origins": [
+      [
+        "budget",
+        "EXPLICIT"
+      ],
+      [
+        "evidence_provider_selection",
+        "DEFAULT"
+      ],
+      [
+        "formula_inventory",
+        "EXPLICIT"
+      ],
+      [
+        "identity_policy",
+        "DEFAULT"
+      ],
+      [
+        "input_kind",
+        "EXPLICIT"
+      ],
+      [
+        "max_edges",
+        "EXPLICIT"
+      ],
+      [
+        "max_multiplicity",
+        "EXPLICIT"
+      ],
+      [
+        "output_policy",
+        "DEFAULT"
+      ],
+      [
+        "ranking_policy",
+        "DEFAULT"
+      ]
+    ],
+    "output_policy": {
+      "quiet": false,
+      "render_mode": "HUMAN"
+    },
+    "ranking_policy": {
+      "policy_id": "DEFAULT_PRECEDENCE_V1"
+    },
+    "schema_version": "smartchem.service/compilation-request-v1alpha1",
+    "search_bounds": [
+      [
+        "budget",
+        100000
+      ],
+      [
+        "max_edges",
+        5000
+      ],
+      [
+        "max_multiplicity",
+        1
+      ]
+    ],
+    "stock_materials": [],
+    "target_input": "CC(=O)Nc1ccc(O)cc1",
+    "terminal_policy": {
+      "commodities_enabled": false,
+      "formula_inventory": [
+        "C2H4",
+        "C2H6",
+        "CH4",
+        "CHN",
+        "CO",
+        "CO2",
+        "H2O",
+        "H2O2",
+        "H3N",
+        "N2O",
+        "NO"
+      ],
+      "match_mode": "FORMULA_ONLY"
+    },
+    "transform_grammar": "FORMULA_DECOMPOSITION"
+  },
+  "result_digest": "8a994a17e4a8fb428064e18b5ab1749555f4afd6517e4a5c9e286eb2c66724a6",
+  "schema_version": "smartchem.service/compilation-response-v1alpha1",
+  "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
+}

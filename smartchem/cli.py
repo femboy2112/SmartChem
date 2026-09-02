@@ -271,29 +271,37 @@ def _cmd_decompile(argv: list[str]) -> int:
         print(f"decompile: invalid chemistry input: {exc}", file=sys.stderr)
         return 2
 
+    # `example_inventory()` yields `Formula` OBJECTS while `--inventory` yields strings; the typed request keys on
+    # canonical formula TEXT (which `_run_decompile` re-parses with `Formula.parse`).  Normalise both to `repr` --
+    # the formula text the decompiler uses throughout, and a proven `Formula.parse` round-trip.
+    inventory_text = tuple(item if isinstance(item, str) else repr(item) for item in inventory)
+
+    def _decompile_request():
+        """Build the typed decompile request the machine views serialize and the human view reads its outcome from.
+
+        For --smiles the SMILES (not the pre-reduced formula) is handed to the service with input_kind=SMILES, so the
+        service performs the reduction AND records the section-5.3 IdentityLoss into the response -- the same BLOCKER
+        the human render prints, so the two views never disagree and structure is never silently discarded.
+        """
+        from .identity_parse import InputKind
+        from .service import build_decompile_request
+        return build_decompile_request(
+            args.target if args.smiles else target,
+            input_kind=InputKind.SMILES if args.smiles else None,
+            formula_inventory=inventory_text,
+            max_multiplicity=args.max_multiplicity,
+            budget=args.budget,
+            max_edges=args.max_edges,
+        )
+
     # --json/--emit-request route through the ONE typed service over the SAME resolved target + inventory, so the
     # machine views cannot drift from the human edge list below (CLI-CAN-01).  The service default inventory is
     # pure elements; the decompile CLI defaults to the richer example inventory, so the resolved `inventory` (not
     # the builder default) is what is threaded in -- the two defaults are reconciled here, not left to diverge.
     if args.emit_request or args.json:
-        from .service import (
-            build_decompile_request,
-            run_compilation,
-            serialize_request,
-            serialize_response,
-        )
-        # `example_inventory()` yields `Formula` OBJECTS while `--inventory` yields strings; the typed request keys
-        # on canonical formula TEXT (which `_run_decompile` re-parses with `Formula.parse`).  Normalise both to
-        # `repr` -- the formula text the decompiler uses throughout, and a proven `Formula.parse` round-trip.
-        inventory_text = tuple(item if isinstance(item, str) else repr(item) for item in inventory)
+        from .service import run_compilation, serialize_request, serialize_response
         try:
-            req = build_decompile_request(
-                target,
-                formula_inventory=inventory_text,
-                max_multiplicity=args.max_multiplicity,
-                budget=args.budget,
-                max_edges=args.max_edges,
-            )
+            req = _decompile_request()
         except (ValueError, TypeError) as exc:
             print(f"decompile: invalid request: {exc}", file=sys.stderr)
             return 2
@@ -317,11 +325,18 @@ def _cmd_decompile(argv: list[str]) -> int:
         return 2
 
     print(f"decompile {graph.target!r}  --  status: {graph.status}")
+    # Surface the typed service outcome + section 8.2 status the --json view carries, from the SAME request, so the
+    # human and machine views agree on them (CLI-JSON-01).  A formula decompile is cheap, so deriving these from the
+    # service here (while the rich edge list below still comes from build_decomposition) costs nothing meaningful;
+    # collapsing the two decompile calculations into one is the same two-view seam named for recompile.
+    from .service import run_compilation
+    _resp = run_compilation(_decompile_request())
+    print(f"  outcome: {_resp.outcome.value}; status: {_resp.standard_status}")
     if args.smiles:
-        print(
-            "  IDENTITY LOSS: this command used only the SMILES-derived formula; connectivity, isomer, "
-            "stereochemistry, isotope placement, and local charge are not represented in this graph."
-        )
+        # section 5.3: the SMILES->formula reduction is a real information loss, recorded as a typed IdentityLoss
+        # (ID-LAYER-01) via the SAME summary() the machine identity_losses carries -- so the two views agree exactly.
+        from .identity import formula_reduction_loss
+        print(f"  {formula_reduction_loss(args.target, target).summary()}")
     if graph.refusal_reason:
         print(f"  (partial: {graph.refusal_reason})")
     print(f"  inventory (buckets): {', '.join(repr(f) for f in inventory) or '(pure elements)'}")

@@ -65,6 +65,9 @@ from .search import REFUSED_8_2_STATUSES, STANDARD_8_2_STATUSES
 __all__ = [
     "COMPILATION_REQUEST_SCHEMA",
     "COMPILATION_RESPONSE_SCHEMA",
+    "COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR",
+    "response_schema",
+    "response_semantic_fields",
     "FieldOrigin",
     "TransformGrammar",
     "ResponseOutcome",
@@ -98,6 +101,10 @@ __all__ = [
 
 COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha1"
 COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha1"
+# The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
+# bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
+# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha1"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -854,24 +861,38 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
     from .compilation_ir import ChemicalIdentity
     from .decompiler import DecompilerError, Formula
 
-    # This brick reads the decompile target as FORMULA TEXT (the standard's --formula form).  Resolving a
-    # NAME/SMILES/InChI target to a formula is CLI-CAN-01 (the decompile argv path); until then a declared
-    # non-formula input_kind is REFUSED, never silently treated as a formula -- a silently-discarded kind on a
-    # formula-parseable string would ship a WRONG species as a green result (the forbidden confident-wrong answer).
-    if request.input_kind not in (InputKind.AUTO, InputKind.FORMULA):
+    # A decompile normally reads the target as FORMULA TEXT.  A SMILES target is resolved to its formula HERE, and
+    # that structure->formula reduction is RECORDED as a typed section-5.3 IdentityLoss (a BLOCKER) carried into the
+    # IR, so the machine response surfaces exactly the loss the human render shows -- structure is never silently
+    # discarded on the machine path (section 5.3), and the two views agree (CLI-JSON-01).  NAME/InChI remain a named
+    # follow-on (ID-PARSE-01) and are refused rather than mis-parsed.
+    decompile_target = request.target_input
+    identity_losses: tuple[str, ...] = ()
+    if request.input_kind is InputKind.SMILES:
+        from .identity import formula_reduction_loss
+        try:
+            molecule = resolve_target(request.target_input, InputKind.SMILES)
+        except IdentityParseError as exc:
+            return _invalid(request, str(exc))
+        decompile_target = "".join(
+            f"{el}{n if n > 1 else ''}" for el, n in sorted(molecule.formula.items())
+        )
+        identity_losses = (formula_reduction_loss(request.target_input, decompile_target).summary(),)
+    elif request.input_kind not in (InputKind.AUTO, InputKind.FORMULA):
         return _invalid(
             request,
-            f"decompile currently reads the target as formula text; input_kind {request.input_kind.value} is not "
-            "yet resolved for a formula descent (CLI-CAN-01)",
+            f"decompile reads the target as formula text or (with --smiles) a SMILES; input_kind "
+            f"{request.input_kind.value} is not yet resolved for a formula descent (ID-PARSE-01)",
         )
 
     try:
         ir = decompile_to_ir(
-            request.target_input,
+            decompile_target,
             request.terminal_policy.formula_inventory,
             max_multiplicity=request.search_bounds.value("max_multiplicity"),
             budget=request.search_bounds.value("budget"),
             max_edges=request.search_bounds.value("max_edges"),
+            identity_losses=identity_losses,
         )
     except (DecompilerError, ValueError) as exc:
         return _invalid(request, f"invalid chemistry input: {exc}")
@@ -1001,3 +1022,86 @@ def serialize_response(response: CompilationResponse) -> str:
 
 def deserialize_response(text: str) -> CompilationResponse:
     return response_from_payload(json.loads(text))
+
+
+# -- the versioned JSON schema + the semantic-field projection (CLI-JSON-01) -------------------------------------
+
+
+def response_schema() -> dict:
+    """A versioned, introspectable descriptor of the ``--json`` response SHAPE (standard 14.3).
+
+    It names every field and its type at each nesting level, plus the three schema versions the payload carries.
+    It DELIBERATELY excludes the derived digests (they are values, not schema), so it changes only when a field is
+    added/removed/renamed -- which is exactly what a golden pin should force to be intentional (CLI-JSON-01).  A
+    test cross-checks these field names against a REAL payload so the descriptor can never silently drift from what
+    :func:`response_to_payload` actually emits.
+    """
+    return {
+        "descriptor_version": COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR,
+        "response_schema_version": COMPILATION_RESPONSE_SCHEMA,
+        "request_schema_version": COMPILATION_REQUEST_SCHEMA,
+        "response_fields": {
+            "schema_version": "str",
+            "request": "object(compilation-request-v1alpha1)",
+            "outcome": "enum(ResponseOutcome)",
+            "standard_status": "str|null (section 8.2 status)",
+            "exit_code": "int (section 14.4: 0/2/3/4/5/70)",
+            "compilation_ir": "object(chemical-compilation-ir)|null",
+            "diagnostics": "array[str] (blockers)",
+            "ranked_route_dossiers": "array (empty until READY-TIER-01)",
+            "affordability_frontier": "array (empty until COST-VEC-01)",
+            "result_digest": "str (sha256)",
+        },
+        "compilation_ir_fields": {
+            "schema_version": "str",
+            "tool_version": "str",
+            "operation": "enum(CompilationOperation)",
+            "target": "object(chemical-identity)",
+            "request_digest": "str (sha256)",
+            "identity_losses": "array[str]",
+            "terminal_policy_digest": "str (sha256)",
+            "transform_registry_digest": "str (sha256)",
+            "search_status": "enum(SearchStatus)",
+            "standard_status": "str (section 8.2 status)",
+            "search_receipt_digest": "str (sha256)",
+            "candidates": "array[object(candidate-summary)]",
+            "diagnostics": "array[str]",
+        },
+        "chemical_identity_fields": {
+            "schema_version": "str",
+            "layer": "enum(IdentityLayer)",
+            "canonical_repr": "str",
+            "identity_digest": "str (sha256)",
+        },
+        "candidate_summary_fields": {
+            "schema_version": "str",
+            "candidate_kind": "enum(FORMULA_EDGE/ROUTE/DAG)",
+            "candidate_digest": "str (sha256; the stable route/candidate ID)",
+            "equation": "str",
+            "readiness_tier": "str (readiness/epistemic tier)",
+        },
+    }
+
+
+def response_semantic_fields(response: CompilationResponse) -> dict:
+    """Project a response onto its SEMANTIC facts -- the standard 14.3 list: identity, receipt, tier, blockers, and
+    route IDs, plus the outcome/exit/status the verdict rests on.
+
+    This is the single source both the ``--json`` payload and the human render must AGREE on (CLI-JSON-01's
+    acceptance, "human and JSON agree on all semantic fields"): a field present here must be recoverable from the
+    JSON and surfaced in the human render, so neither view can silently carry a fact the other drops.
+    """
+    ir = response.compilation_ir
+    return {
+        "outcome": response.outcome.value,
+        "exit_code": response.exit_code,
+        "standard_status": response.standard_status,
+        "target_repr": None if ir is None else ir.target.canonical_repr,
+        "target_layer": None if ir is None else ir.target.layer.value,
+        "identity_losses": tuple(response.identity_losses),
+        "blockers": tuple(response.diagnostics),
+        "search_receipt_digest": response.search_receipt_digest,
+        "candidate_ids": () if ir is None else tuple(c.candidate_digest for c in ir.candidates),
+        "candidate_tiers": () if ir is None else tuple(sorted({c.readiness_tier for c in ir.candidates})),
+        "result_digest": response.result_digest,
+    }

@@ -812,7 +812,7 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `SVC-REQ-01` | One typed request/service powers chemical commands | First brick landed (`67b8ae4`): `smartchem/service.py` provides the typed `CompilationRequest`/`CompilationResponse`, an alias-independent `semantic_digest` (equal flags across aliases → equal search identity → equal result), per-field `origin` provenance, `run_compilation` + the section 14.4 exit map, and canonical serialization; the two synthesis aliases still build their own requests (routing the live CLI argv through the service is `CLI-CAN-01`) | Implement `CompilationRequest/Response`; route aliases through it | Equal flags across aliases produce equal request/result digests | `IR-CHEM-01` | `IN_PROGRESS` |
+| `SVC-REQ-01` | One typed request/service powers chemical commands | First brick landed (`67b8ae4`): typed `CompilationRequest`/`CompilationResponse`, per-field `origin` provenance, `run_compilation` + the section 14.4 exit map, canonical serialization. **Alias-collapse landed** (this arc): the `semantic_digest` now keys on the NORMALIZED structure identity, not the raw spelling, so `paracetamol` / `name:paracetamol` / `smiles:CC(=O)Nc1ccc(O)cc1` collapse to ONE search identity AND one result (the ParseReceipt provenance moved to its own `parse_receipt_summary` field, excluded from `result_digest`; the recompile execution is canonicalised so the collapse is real end to end); a feature-bearing (stereo/isotope/charge) input keeps its own identity. `compile`/`recompile` route through the service (CLI-CAN-01); `synthesize`'s uptake is `CLI-CAN-02` | Route `synthesize` through the shared request (CLI-CAN-02); decompile-side collapse (follow-on) | Equal flags across aliases → equal digests **DONE**; every spelling of one molecule → equal request/result digest **DONE** (red-teamed: a non-canonical registry name matches its canonical SMILES on `result_digest` under real routes) | `IR-CHEM-01` | `IN_PROGRESS` |
 | `CLI-CAN-01` | Canonical `decompile` and `recompile`; legacy aliases share defaults | Canonical `recompile` verb landed (`df93b8c`), routed through the typed service (`run_compilation`); `decompile` gained `--json`/`--emit-request` through the same service; the legacy `compile` alias now builds the SAME typed request from the ONE shared builder (no divergent defaults) + prints a deprecation notice, so `compile … --emit-request` and `recompile … --emit-request` are byte-identical. `synthesize`'s deeper uptake (its `--max-temp`/`--max-pressure` constraints + `--offline` provider levers) is the named follow-on `CLI-CAN-02` | Add canonical verbs; deprecate aliases without duplicate logic | Command matrix gives equal request JSON — DONE (7-row grid, `--emit-request` byte-identical) | `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-NAME-01` | Normal names accepted without private formatting | Registered offline names and explicit `name:`/`smiles:` prefixes work in synthesis CLIs; InChI/formula/echo/shared parser are incomplete | Finish unified identity parser and echo receipt | Registered-name and SMILES tests pass; add InChI/formula/ambiguity matrix | `ID-PARSE-01` | `IN_PROGRESS` |
 | `CLI-EXIT-01` | Stable exit codes separate route/no-route/partial/refusal/invalid/internal | The top-level guarded service is now BUILT: `main()` wraps command dispatch and maps ANY escaping exception to exit 70 (`ERROR_INTERNAL`) with a concise stderr line — never a raw traceback, never Python's default exit 1; argparse's own `SystemExit` (a `BaseException`, not `Exception`) passes through, so `--help` stays 0 and a bad flag stays 2. The full 0/2/3/4/5 table is observed both in-process AND through a real `python -m smartchem` subprocess, plus the controlled internal-error fixture for 70 (`tests/test_cli_exit.py`). Acceptance MET. Central error mapping across every format/path is `CLI-ERR-01`; the decompile human path still returns 0/2/4 by its own status | Central error mapping (`CLI-ERR-01`) | Codes 0/2/3/4/5 observed; controlled internal-error fixture for 70 — **DONE** (`tests/test_cli_exit.py`) | `SRCH-RCT-01`, `SVC-REQ-01` | `IN_PROGRESS` |
@@ -1191,6 +1191,69 @@ residual / follow-on: ID-PARSE-01 -- semantic_digest alias-collapse. ID-STEREO-0
                      parity) stereo perception + the MatchLayer lattice ISOTOPIC slot. EVD-KEY-01 -- migrate the
                      FORMULA-keyed providers (conditions/selectivity/review) onto ReactionEvidenceKey to close their
                      isomer-borrow; the formula-edge review path lacks structural certainty until it carries graphs.
+```
+
+**Uptake record — SVC-REQ-01 semantic_digest alias-collapse** (advances `SVC-REQ-01`; closes the ID-PARSE-01
+follow-on the first brick's docstring confessed -- the target keyed on its raw spelling, so aliases split):
+
+```text
+ID:                  SVC-REQ-01 (alias-collapse -- the semantic digest keys on WHAT the target is, not how spelled)
+files:               smartchem/service.py, smartchem/cli.py, tests/test_svc_collapse.py (new),
+                     tests/test_id_parse.py, tests/test_cli_json.py, tests/fixtures/cli_json/*.json (regen)
+tests:               tests/test_svc_collapse.py -- TestAliasCollapse, TestCollapseIsSound,
+                     TestProvenanceExcludedFromResult, TestUnresolvableFallsBackToRawKeying, TestDecompileKeepsRawKeying,
+                     TestRoundTrip, TestHumanJsonAgreeOnTheReceipt, TestRedTeamRegressions
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              3158 passed, 14 skipped, 1 xfailed (baseline 3127; +31). ruff clean on every changed file;
+                     git diff --check clean.
+built:               The `semantic_digest` used to key on the raw `(target_input, input_kind)` pair, so
+                     `paracetamol` / `name:paracetamol` / `smiles:CC(=O)Nc1ccc(O)cc1` -- which run the byte-identical
+                     search -- got THREE different digests (the digest OVER-SPLIT relative to the execution).
+                     (1) CompilationRequest gains a stored `normalized_identity` (schema v1alpha2->v1alpha3): the
+                     builder resolves the target via the ONE parser and stores `_structure_ident(molecule)` (the
+                     canonical STRUCTURE identity the engine already searches on) -- but ONLY for a FEATURE-FREE
+                     molecule (empty parser-losses AND empty `representation_losses_for(...)`), else "" (raw keying).
+                     `semantic_digest` keys on that via `_target_identity_key`, dropping `input_kind` (provenance)
+                     once resolved -- so spellings of one molecule collapse, while a stereo/isotope/charge-declaring
+                     input keeps its own identity (it can never MERGE two requests whose IRs differ by a loss).
+                     (2) The ParseReceipt (provenance) is pulled OUT of `diagnostics` into a first-class
+                     `CompilationResponse.parse_receipt_summary` (response schema v1alpha1->v1alpha2), surfaced in
+                     both views (the section 14.3 receipt) but EXCLUDED from `result_digest`, so collapsed aliases --
+                     which were READ differently -- still share a result (the section 13.1 one-way law).
+                     (3) `_run_recompile` now CANONICALISES every molecule entering the search (target, reagents,
+                     available, commodities), so the execution is presentation-invariant and the collapse the digest
+                     claims is genuinely real end to end. Decompile keeps raw keying (no aliases; formula-layer
+                     target) -- a documented follow-on.
+falsifier fixture:   paracetamol / name:paracetamol / smiles:<paracetamol> -> ONE semantic_digest, ONE result_digest,
+                     ONE `ir.digest` (not a hash coincidence); a ROUTES-producing molecule (dimethyl ether, acetic
+                     anhydride, methylamine, all stored NON-CANONICALLY in the offline registry) matches its
+                     canonical SMILES on `result_digest` -- the non-vacuous control. A stereo/isotope SMILES resolves
+                     to "" and stays split from its flat twin. A TARGET_FILE never collapses. A forged
+                     `normalized_identity` is refused on deserialize. Mutating only `parse_receipt_summary` leaves
+                     `result_digest` unchanged.
+red-team:            workflow wmw8d912y, 3 attack bearings + per-finding refute-by-default verify (7 agents, 660k
+                     subagent tokens). 4 CONFIRMED, 0 refuted -- ALL folded before this commit (pinned by
+                     TestRedTeamRegressions): (F1+F2, HIGH, one root) the search ran on the RAW molecule and the
+                     route/candidate digests embed each Molecule POSITIONALLY, so a non-canonically-stored NAME and
+                     its parser-canonicalised SMILES collapsed to one semantic_digest yet produced DIFFERENT
+                     result_digests whenever the search yielded routes -- a one-way-law break the flagship paracetamol
+                     example MASKED because its search is INCOMPLETE with zero candidates (a vacuous-green trap in my
+                     own first test); fixed by canonicalising the search inputs (verifier-proven:
+                     recompile_to_ir(name.canonical()).digest == recompile_to_ir(smiles.canonical()).digest) + a
+                     ROUTES_FOUND positive control. (F3, MED) `normalized_identity` frozen at BUILD time from a
+                     TARGET_FILE's then-contents could go stale vs run_compilation's re-read and MERGE with a name
+                     request; fixed -- a TARGET_FILE (mutable source) never collapses. (F4, MED) request_from_payload
+                     trusted a free-string `normalized_identity`, so a forged value could give one molecule's request
+                     another's search identity (section 13.1 break); fixed -- deserialize RECOMPUTES it and refuses a
+                     mismatch. LESSON reaffirmed: the digest collapse was sound in isolation, but it EXPOSED a latent
+                     raw-order leak in the execution -- collapsing an identity ahead of the execution's real
+                     invariance is itself the defect, and a positive control on the ACTUAL path (routes, not an
+                     incomplete search) is what caught it.
+residual / follow-on: `synthesize`'s uptake onto the shared request (CLI-CAN-02) is the remaining "route aliases
+                     through it" clause; decompile-side collapse (formula-layer) is a named follow-on; the broader
+                     recompile_to_ir raw-order leak is fixed at the service boundary here (a direct recompile_to_ir
+                     caller still gets a raw-order-dependent digest -- canonicalising inside the IR producer is a
+                     separate, wider-blast follow-on).
 ```
 
 ## 4. P1 physical, data, and affordability backlog

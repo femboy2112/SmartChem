@@ -356,12 +356,23 @@ class TestValidation:
         with pytest.raises(ValueError, match="distinct"):
             replace(good, stock_materials=("a", "a"))
 
-    def test_response_rejects_populated_dossiers(self):
+    def test_response_rejects_untyped_ranked_dossiers(self):
+        # CLI-CAN-02 brick 2: ranked_route_dossiers is now POPULATED, but only with typed RankedRouteSummary values;
+        # a hand-built/deserialized response cannot smuggle an untyped blob past the coherence checks.
         req = build_recompile_request("name:water")
-        with pytest.raises(ValueError, match="READY-TIER-01"):
+        with pytest.raises(TypeError, match="RankedRouteSummary"):
             CompilationResponse(
                 COMPILATION_RESPONSE_SCHEMA, req, ResponseOutcome.REFUSED, None, None,
-                ("x",), ("a dossier",), (),
+                ("x",), ("a raw dossier",), (),
+            )
+
+    def test_response_rejects_populated_affordability_frontier(self):
+        # affordability_frontier stays empty until COST-VEC-01: present-and-empty, never a populated placeholder.
+        req = build_recompile_request("name:water")
+        with pytest.raises(ValueError, match="COST-VEC-01"):
+            CompilationResponse(
+                COMPILATION_RESPONSE_SCHEMA, req, ResponseOutcome.REFUSED, None, None,
+                ("x",), (), ("a cost point",),
             )
 
 

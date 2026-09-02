@@ -34,7 +34,7 @@ from ..data.reagents import CommodityReagent, commodity_for, commodity_inventory
 from ..decompiler import Formula
 from ..structure import resolve_structure
 from .classify import Grade, UnifiedVerdict, classify_route
-from .drafter import RouteDossier, RouteFit, draft_route_dossier, rank_routes
+from .drafter import ConstraintBox, RouteDossier, RouteFit, draft_route_dossier, rank_routes
 from .eyring import RouteEyring, verify_eyring
 from .kinetics import RouteKinetics, verify_kinetics
 from .routes import RouteSearchReceipt, search_routes
@@ -228,8 +228,15 @@ def compile_synthesis(
     max_routes: int = 100,
     cut_budget: int = 20_000,
     losses: tuple = (),
+    box: ConstraintBox | None = None,
 ) -> CompiledSynthesis:
     """Compile ``target`` into a bounded, bucket-terminated candidate-route evidence dossier.
+
+    ``box`` (CLI-CAN-02 brick 2): the section-11 bench constraint (T/P) the candidate routes are ranked against.
+    ``None`` (or an empty box) ranks on an UNCONSTRAINED bench -- byte-identical to before -- so every current
+    caller is unchanged; a constraint EXCLUDES a route that needs conditions outside the bench, which can change
+    which route surfaces as ``best``.  It rides the SAME ``rank_routes`` the service uses, so ``compile`` and
+    ``recompile`` apply one constraint, one way (alias coherence, CLI-CAN-01).
 
     ``losses`` (EVD-KEY-01): the section-5.3 :class:`~smartchem.identity.IdentityLoss` records the TARGET identity
     carries (e.g. a stereo/isotope BLOCKER when the target was parsed from a SMILES that declared a feature the
@@ -298,7 +305,8 @@ def compile_synthesis(
         )
 
     ranked = rank_routes(
-        routes, stability=stability, selectivity=selectivity, thermo=thermo, kinetics=kinetics, losses=losses,
+        routes, box=box, stability=stability, selectivity=selectivity, thermo=thermo, kinetics=kinetics,
+        losses=losses,
     )
     kw = {k: v for k, v in (
         ("thermo", thermo), ("stability", stability), ("selectivity", selectivity),

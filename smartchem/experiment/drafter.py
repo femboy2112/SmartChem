@@ -155,6 +155,19 @@ class ConstraintBox(Digestible):
             max_pressure_atm=self.max_pressure_atm,
         )
 
+    @classmethod
+    def of_bounds(cls, bounds: PhysicalBounds) -> "ConstraintBox":
+        """A bench box carrying only the shared section-11 T/P ``bounds`` (no reagent/equipment inventory).
+
+        The ONE place a :class:`~smartchem.constraints.PhysicalBounds` becomes a bench box, so the service's
+        ranked dossiers and the ``compile`` dossier fit against a byte-identical box (CLI-CAN-02 brick 2; the
+        inverse of :attr:`physical_bounds`)."""
+        return cls(
+            max_temperature_k=bounds.max_temperature_k,
+            min_pressure_atm=bounds.min_pressure_atm,
+            max_pressure_atm=bounds.max_pressure_atm,
+        )
+
     @property
     def constrains_anything(self) -> bool:
         """True iff the box declares at least one real bench constraint.

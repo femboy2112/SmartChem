@@ -141,14 +141,14 @@ def _add_recompile_flags(p) -> None:
     p.add_argument("--cut-budget", type=_positive_int, default=None, metavar="N",
                    help="candidate rewrite budget per expanded target (default 20000)")
     p.add_argument("--max-temp", type=float, default=None, metavar="K",
-                   help="section-11 bench temperature ceiling in K. DECLARED as part of the request identity; route "
-                        "grading against it is a CLI-CAN-02 follow-on -- routes are NOT yet filtered by it")
+                   help="section-11 bench temperature ceiling in K. Part of the request identity AND APPLIED: routes "
+                        "are ranked against the bench, and a route needing a hotter step is EXCLUDED (CLI-CAN-02)")
     p.add_argument("--max-pressure", type=float, default=None, metavar="ATM",
-                   help="section-11 bench pressure ceiling in atm. DECLARED (see --max-temp): not yet applied to "
-                        "route grading")
+                   help="section-11 bench pressure ceiling in atm. APPLIED to route ranking (see --max-temp): a route "
+                        "needing higher pressure is EXCLUDED")
     p.add_argument("--min-pressure", type=float, default=None, metavar="ATM",
-                   help="section-11 bench pressure floor in atm. DECLARED (see --max-temp): not yet applied to "
-                        "route grading; must not exceed --max-pressure")
+                   help="section-11 bench pressure floor in atm. APPLIED to route ranking (see --max-temp); a route "
+                        "needing lower pressure is EXCLUDED; must not exceed --max-pressure")
     p.add_argument(
         "--no-commodities", "--elements", dest="no_commodities", action="store_true",
         help=(
@@ -276,6 +276,19 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
             lines.append(f"    [{c.candidate_kind}/{c.readiness_tier}] {c.equation}  #{c.candidate_digest[:12]}")
         if ir.candidate_count > 20:
             lines.append(f"    ... and {ir.candidate_count - 20} more candidate(s)")
+    # CLI-CAN-02 brick 2: the section-11 bench-fit ranking (best first).  The APPLIED/DECLARED note is already in
+    # diagnostics (always shown); this surfaces the per-route disposition + reasons so the human view carries the
+    # same facts the --json ranked_route_dossiers do (CLI-JSON-01 agreement).  Shown when not --quiet, like candidates.
+    if not quiet and response.ranked_route_dossiers:
+        lines.append("  ranked routes (best first; section-11 bench fit):")
+        for i, r in enumerate(response.ranked_route_dossiers[:20], 1):
+            lines.append(f"    {i}. [{r.fit_status}/{r.readiness_tier}] {r.equation}  #{r.route_digest[:12]}")
+            for e in r.exclusions:
+                lines.append(f"        EXCLUDED: {e}")
+            for g in r.gaps:
+                lines.append(f"        GAP: {g}")
+        if len(response.ranked_route_dossiers) > 20:
+            lines.append(f"    ... and {len(response.ranked_route_dossiers) - 20} more ranked route(s)")
     return "\n".join(lines)
 
 
@@ -474,6 +487,7 @@ def _cmd_compile(argv: list[str]) -> int:
         losses = () if target_features is None else representation_losses_for(request.target_input, target_features)
         reagents = tuple(_parse_molecule(s) for s in request.helper_reagents)
         available = tuple(_parse_molecule(s) for s in request.stock_materials)
+        from .experiment.drafter import ConstraintBox
         compiled = compile_synthesis(
             target,
             reagents=reagents,
@@ -484,15 +498,21 @@ def _cmd_compile(argv: list[str]) -> int:
             commodities=() if not request.terminal_policy.commodities_enabled else None,
             thermo=extended_thermo(),
             losses=losses,
+            # CLI-CAN-02 brick 2: APPLY the section-11 bench box to route ranking here too, so `compile --max-temp`
+            # genuinely fits the routes -- the SAME rank_routes(box) the recompile service uses (alias coherence).
+            box=ConstraintBox.of_bounds(request.constraints.bounds),
         )
     except Exception as exc:  # noqa: BLE001 -- ScissionError -> 5, ValueError -> 2 via the ONE classifier; else 70
         return _domain_exit(exc, "compile")
-    # CLI-CAN-02 (HON-CLI-01 red-team fix): `compile`'s human path renders a compile_synthesis dossier instead of the
-    # typed response, so it would otherwise ACCEPT --max-temp/--max-pressure (the shared builder carries them) yet
-    # never disclose the caveat that reaches the recompile/--json views -- a silent, undisclosed constraint drop.
-    # Emit the SAME disclosure here so `compile paracetamol --max-temp 500` cannot read as constraint-fitted.
-    from .service import constraint_declared_note
-    _note = constraint_declared_note(request.constraints.bounds)
+    # CLI-CAN-02 brick 2 (was HON-CLI-01, brick 1): `compile`'s human path renders a compile_synthesis dossier, so it
+    # discloses the section-11 constraint from its OWN applied ranking (compiled.ranked, now box-fitted) via the ONE
+    # note authority -- APPLIED with the real fit/excluded/unknown tally when routes were ranked, DECLARED otherwise.
+    # This can never drift from the recompile/--json disclosure (same constraint_note function).
+    from .service import _fit_counts, constraint_note
+    _note = constraint_note(
+        request.constraints.bounds,
+        fit_counts=_fit_counts(compiled.ranked) if compiled.ranked else None,
+    )
     if _note is not None:
         print(f"  {_note}")
     print(compiled.render())

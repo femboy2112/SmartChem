@@ -59,10 +59,11 @@ class TestSchemaDescriptor:
 
     def test_descriptor_is_versioned(self):
         schema = response_schema()
-        # v1alpha4: CLI-CAN-02 gave ConstraintPolicy a real PhysicalBounds box, bumping the referenced request schema
-        # (v1alpha3 was SVC-REQ-01's parse_receipt_summary + normalized_identity; v1alpha2 IR-LOSS-01's array[object]).
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha4"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha2"
+        # v1alpha5: CLI-CAN-02 brick 2 populated ranked_route_dossiers with the RankedRouteSummary shape, and the
+        # per-value response schema bumped to v1alpha3.  (v1alpha4: the request schema bumped for ConstraintPolicy's
+        # PhysicalBounds box; v1alpha3: SVC-REQ-01's parse_receipt_summary + normalized_identity; v1alpha2 IR-LOSS-01.)
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha5"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha3"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the
@@ -75,6 +76,10 @@ class TestSchemaDescriptor:
         assert set(payload["compilation_ir"]) == set(schema["compilation_ir_fields"])
         assert set(payload["compilation_ir"]["target"]) == set(schema["chemical_identity_fields"])
         assert set(payload["compilation_ir"]["candidates"][0]) == set(schema["candidate_summary_fields"])
+        # CLI-CAN-02 brick 2: the descriptor's ranked_route_summary_fields must match a REAL ranked payload -- the
+        # methyl-acetate search finds routes, so its response carries a populated ranked_route_dossiers[0].
+        assert payload["ranked_route_dossiers"], "the routes-found payload must carry a ranked dossier to check"
+        assert set(payload["ranked_route_dossiers"][0]) == set(schema["ranked_route_summary_fields"])
         # IR-LOSS-01: the descriptor's identity_loss_fields must match a REAL structured loss payload (the routes
         # payload has none, so drive a SMILES decompile, whose formula reduction is a first-class BLOCKER loss).
         loss_payload = response_to_payload(

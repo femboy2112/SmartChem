@@ -134,7 +134,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "30d60404df824c2b4e3ff25891c96126eeaa0ea3c99bc5809ec0cfec08a7b44f",
-  "schema_version": "smartchem.service/compilation-response-v1alpha2",
+  "result_digest": "b51a12889ccbeff8be26f28540369318f4db1f06ae661793b6907fd3ab1b15dc",
+  "schema_version": "smartchem.service/compilation-response-v1alpha3",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

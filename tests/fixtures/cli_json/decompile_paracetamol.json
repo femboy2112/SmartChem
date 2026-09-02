@@ -1035,7 +1035,7 @@
     },
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
-  "result_digest": "022060920c5a16b2da7555429494a298969931b8d571bb441c07d9813a7d1f30",
-  "schema_version": "smartchem.service/compilation-response-v1alpha2",
+  "result_digest": "2345d153c628aff1ea84366e7d8de51422fc433c91936960c0b972d1b999bf30",
+  "schema_version": "smartchem.service/compilation-response-v1alpha3",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

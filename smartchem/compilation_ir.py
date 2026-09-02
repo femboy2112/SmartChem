@@ -390,6 +390,7 @@ def recompile_to_ir(
     mode: str = "routes",
     identity_losses: "tuple[IdentityLoss, ...]" = (),
     tool_version: str | None = None,
+    search_result: "object | None" = None,
 ) -> ChemicalCompilationIR:
     """Emit a :class:`ChemicalCompilationIR` for the *structural* recompilation (synthesis) of ``target``.
 
@@ -408,6 +409,13 @@ def recompile_to_ir(
 
     W3 unchanged: every candidate is a ``FORMAL_CANDIDATE`` -- a conservation-valid assembly within the current
     capped-scission grammar and the declared search bounds, never a claim that the synthesis works.
+
+    ``search_result`` (CLI-CAN-02 brick 2): a precomputed :class:`~smartchem.experiment.routes.RouteSearchResult`
+    (mode ``'routes'``) or ``DAGSearchResult`` (mode ``'dags'``) to package INSTEAD of searching again.  The
+    recompiler service searches ONCE and reuses the very same result both here (to package the IR) and to rank the
+    routes against the section-11 bench box -- so the IR's candidates and the ranked dossiers describe the identical
+    search.  It MUST have been produced with the same ``target``/terminal policy/bounds; a mismatched result would
+    silently package a foreign search, so the mode/type is validated but the search identity is the caller's to keep.
     """
     from .category import Molecule
     if type(target) is not Molecule:
@@ -416,8 +424,13 @@ def recompile_to_ir(
         raise ValueError("mode must be 'routes' or 'dags'")
     from .experiment.routes import search_dags, search_routes
 
+    if search_result is not None:
+        needed = "routes" if mode == "routes" else "dags"
+        if not hasattr(search_result, needed):
+            raise TypeError(f"a precomputed search_result for mode={mode!r} must expose .{needed}")
+
     if mode == "routes":
-        result = search_routes(
+        result = search_result if search_result is not None else search_routes(
             target, reagents=reagents, available=available, commodities=commodities,
             max_depth=max_depth, max_routes=max_results, cut_budget=cut_budget,
         )
@@ -426,7 +439,7 @@ def recompile_to_ir(
         def _equation(obj) -> str:
             return " ; ".join(obj.equation_lines())
     else:
-        result = search_dags(
+        result = search_result if search_result is not None else search_dags(
             target, reagents=reagents, available=available, commodities=commodities,
             max_depth=max_depth, max_dags=max_results, cut_budget=cut_budget,
         )

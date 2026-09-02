@@ -148,18 +148,22 @@ class TestCliConstraintFlags:
         _, cc, _ = _cli(["compile", "water", "--max-temp", "400", "--emit-request"])
         assert rc == cc
 
-    def test_human_render_declares_the_constraint_but_does_not_imply_filtering(self):
+    def test_human_render_shows_the_constraint_is_applied(self):
+        # CLI-CAN-02 brick 2: the constraint is now APPLIED -- the routes are ranked against the bench box.  The
+        # methyl-acetate search finds routes, so the note reports the real fit tally and the ranked block is shown.
         code, out, _ = _cli(["recompile", "smiles:CC(=O)OC", "--max-depth", "2", "--max-temp", "500"])
-        assert "constraint DECLARED" in out
-        assert "NOT yet filtered" in out and "CLI-CAN-02" in out    # honest: routes are not constraint-fitted
+        assert "constraint APPLIED" in out and "T<=500 K" in out
+        assert "ranked routes (best first" in out    # the per-route fit disposition is surfaced, not just declared
 
     def test_the_caveat_appears_in_BOTH_human_and_json(self):
-        # the disclosure lives in the RESPONSE diagnostics, so --json carries it too (CLI-JSON-01 agreement): a
-        # machine consumer must not read the unfiltered routes as constraint-fitted any more than a human can.
+        # the disclosure lives in the RESPONSE diagnostics, so --json carries it too (CLI-JSON-01 agreement): human
+        # and machine read the SAME applied-constraint note; neither view can drift from the other.
         _, human, _ = _cli(["recompile", "smiles:CC(=O)OC", "--max-depth", "2", "--max-temp", "500"])
         _, jout, _ = _cli(["recompile", "smiles:CC(=O)OC", "--max-depth", "2", "--max-temp", "500", "--json"])
-        note = next(d for d in json.loads(jout)["diagnostics"] if "constraint DECLARED" in d)
+        payload = json.loads(jout)
+        note = next(d for d in payload["diagnostics"] if "constraint APPLIED" in d)
         assert note in human    # the exact same caveat string in both views
+        assert payload["ranked_route_dossiers"], "the machine payload must carry the ranked fit dispositions"
 
     def test_no_constraint_note_when_unconstrained(self):
         _, out, _ = _cli(["recompile", "smiles:CC(=O)OC", "--max-depth", "2"])
@@ -182,9 +186,11 @@ class TestCliConstraintFlags:
         assert code == 2
         assert "Traceback" not in err and "Traceback" not in out
 
-    def test_compile_human_dossier_also_discloses_the_caveat(self):
-        # HON-CLI-01 (red-team, MEDIUM): `compile`'s human path renders a compile_synthesis dossier (not the typed
-        # response), so it ACCEPTS --max-temp via the shared builder yet used to disclose NOTHING -- a silent
-        # constraint drop. It must now surface the SAME caveat so a dossier can never read as constraint-fitted.
+    def test_compile_human_dossier_also_applies_and_discloses_the_constraint(self):
+        # CLI-CAN-02 brick 2: `compile`'s human path renders a compile_synthesis dossier that now APPLIES the same
+        # section-11 box (ConstraintBox.of_bounds) the recompile service uses -- alias coherence.  Its note comes from
+        # its OWN applied ranking via the ONE constraint_note authority, so it can never drift from recompile's.
         _, out, _ = _cli(["compile", "acetic anhydride", "--max-depth", "2", "--max-temp", "500"])
-        assert "constraint DECLARED" in out and "NOT yet filtered" in out
+        assert "constraint APPLIED" in out and "T<=500 K" in out
+        # and it must NEVER read as constraint-fitted beyond what was checked: an undeclared-dimension route is UNKNOWN
+        assert "never a silent pass" in out

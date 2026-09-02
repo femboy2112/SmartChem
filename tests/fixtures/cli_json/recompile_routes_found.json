@@ -39,7 +39,36 @@
   "exit_code": 0,
   "outcome": "ROUTES_FOUND",
   "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C3H6O2 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested",
-  "ranked_route_dossiers": [],
+  "ranked_route_dossiers": [
+    {
+      "composability_verdict": "COMPOSABLE",
+      "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
+      "equilibrium_verdict": "ESSENTIALLY_COMPLETE",
+      "exclusions": [],
+      "feasibility_verdict": "FAVORABLE",
+      "fit_status": "UNCONSTRAINED",
+      "gaps": [],
+      "kinetics_verdict": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "e709e4a706d5c8280479835d6fa258ee6ef416905798bc2bcd4263197059eacb",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha1",
+      "selectivity_verdict": "NOT_APPLICABLE"
+    },
+    {
+      "composability_verdict": "SINGLE_STEP",
+      "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
+      "equilibrium_verdict": "ESSENTIALLY_COMPLETE",
+      "exclusions": [],
+      "feasibility_verdict": "FAVORABLE",
+      "fit_status": "UNCONSTRAINED",
+      "gaps": [],
+      "kinetics_verdict": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "ac6ec5cf43a1776e04e89f9e6335abad9e5628ad05ac51f999a0f861e998c5c2",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha1",
+      "selectivity_verdict": "NOT_APPLICABLE"
+    }
+  ],
   "request": {
     "constraints": {
       "max_pressure_atm": null,
@@ -145,7 +174,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "eb637bf36555b6254678894add8557751e9c19689e0fbf6949a23f4b000dcc23",
-  "schema_version": "smartchem.service/compilation-response-v1alpha2",
+  "result_digest": "8453893fae14f95356b12cb353786b5eae81c647c611039f89f8b199d13be39e",
+  "schema_version": "smartchem.service/compilation-response-v1alpha3",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

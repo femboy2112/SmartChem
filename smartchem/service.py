@@ -109,13 +109,22 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha4"
 # 14.2 identity-resolution echo, pulled OUT of ``diagnostics`` (where it rode as a free-text last line) into a
 # first-class field, so it is surfaced as the section 14.3 receipt yet EXCLUDED from ``result_digest`` (it is
 # provenance -- how the string was READ -- not part of the search RESULT).  (v1alpha1 was the first brick.)
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha2"
+# v1alpha3 (CLI-CAN-02 brick 2): ``ranked_route_dossiers`` is now POPULATED (routes mode) with typed
+# ``RankedRouteSummary`` objects -- the section-11 bench-fit disposition per route -- so the array elements gain
+# structure and the payload shape genuinely changes.
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha3"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
-# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha4: the
-# referenced request schema bumped for CLI-CAN-02's ConstraintPolicy.bounds.  (v1alpha3: the parse_receipt_summary
-# response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's array[object] identity_losses.)
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha4"
+# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha5: the
+# ranked_route_dossiers element shape (CLI-CAN-02 brick 2).  (v1alpha4: the request schema bumped for
+# ConstraintPolicy.bounds; v1alpha3: the parse_receipt_summary response field + the normalized_identity request
+# field; v1alpha2: IR-LOSS-01's array[object] identity_losses.)
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha5"
+# CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
+# ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
+# heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
+# disposition (FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED with exact reasons) and the ranking's sourced verdicts.
+RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha1"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -805,6 +814,78 @@ def build_decompile_request(
 
 
 @dataclass(frozen=True)
+class RankedRouteSummary(Digestible):
+    """One route's section-11 bench-fit disposition, ranked best-first in the response (CLI-CAN-02 brick 2).
+
+    A thin, presentation-invariant projection of a drafter :class:`~smartchem.experiment.drafter.RouteFit`: it keeps
+    the decision-relevant facts (the candidate identity, the fit verdict with exact reasons, the readiness floor, and
+    the ranking's sourced verdicts) WITHOUT dragging the full ``ExperimentRoute``/thermo object graph into the
+    response.  ``route_digest`` is byte-identical to the matching IR :class:`CandidateSummary.candidate_digest`, so a
+    ranked entry links back to its candidate.  ``fit_status`` is the applied section-11 verdict: ``FITS`` (within
+    every declared bound), ``EXCLUDED`` (a hard over/under-bound, in ``exclusions``), ``UNKNOWN`` (a constrained
+    dimension the route leaves undeclared -- a ``gaps`` entry, NEVER a silent pass), or ``UNCONSTRAINED`` (the bench
+    box declares nothing to fit).  ``readiness_tier`` is the honest READY-TIER-01 floor: ``FORMAL_CANDIDATE`` always,
+    never self-promoted.  The four verdict strings are the ranking tiebreakers, exposed so the order is inspectable
+    (a ranking you cannot read is multiple choice); they are ranking-only and NEVER a bench-readiness grade.
+    """
+
+    schema_version: str
+    route_digest: str
+    equation: str
+    fit_status: str
+    readiness_tier: str
+    exclusions: tuple[str, ...]
+    gaps: tuple[str, ...]
+    composability_verdict: str
+    selectivity_verdict: str
+    feasibility_verdict: str
+    equilibrium_verdict: str
+    kinetics_verdict: str
+
+    _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
+
+    def __post_init__(self) -> None:
+        if self.schema_version != RANKED_ROUTE_SUMMARY_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {RANKED_ROUTE_SUMMARY_SCHEMA!r}")
+        if self.fit_status not in self._FIT_STATUSES:
+            raise ValueError(f"fit_status must be one of {self._FIT_STATUSES}")
+        if self.readiness_tier != "FORMAL_CANDIDATE":
+            raise ValueError("readiness_tier must be FORMAL_CANDIDATE (the READY-TIER-01 floor)")
+        for name in ("route_digest", "equation", "composability_verdict", "selectivity_verdict",
+                     "feasibility_verdict", "equilibrium_verdict", "kinetics_verdict"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name):
+                raise ValueError(f"{name} must be a non-empty string")
+        for name in ("exclusions", "gaps"):
+            seq = getattr(self, name)
+            if type(seq) is not tuple or any(not isinstance(x, str) or not x for x in seq):
+                raise TypeError(f"{name} must be a tuple of non-empty strings")
+        # A structural coherence check: EXCLUDED must give a reason, and a route with hard exclusions can never read
+        # as FITS -- so the disposition can never contradict its own reasons (the no-laundering discipline, section 11).
+        if self.fit_status == "EXCLUDED" and not self.exclusions:
+            raise ValueError("an EXCLUDED route must carry at least one exclusion reason")
+        if self.fit_status == "FITS" and self.exclusions:
+            raise ValueError("a FITS route cannot carry exclusion reasons")
+
+    @classmethod
+    def of_fit(cls, fit: "object") -> "RankedRouteSummary":
+        """Project a drafter ``RouteFit`` (already box-checked and ranked) onto the thin response summary."""
+        return cls(
+            RANKED_ROUTE_SUMMARY_SCHEMA,
+            fit.route.digest,
+            " ; ".join(fit.route.equation_lines()) or repr(fit.route),
+            fit.status.value,
+            "FORMAL_CANDIDATE",
+            tuple(fit.exclusions),
+            tuple(fit.gaps),
+            fit.composability.verdict,
+            fit.selectivity.verdict,
+            fit.feasibility.verdict,
+            fit.equilibrium.verdict,
+            fit.kinetics.verdict,
+        )
+
+
+@dataclass(frozen=True)
 class CompilationResponse:
     """One typed response for either compiler direction (standard section 13.2).
 
@@ -854,10 +935,17 @@ class CompilationResponse:
             raise TypeError("diagnostics must be a tuple of strings")
         if self.parse_receipt_summary is not None and not isinstance(self.parse_receipt_summary, str):
             raise TypeError("parse_receipt_summary must be a string or None")
-        if self.ranked_route_dossiers != () or self.affordability_frontier != ():
+        # CLI-CAN-02 brick 2: ``ranked_route_dossiers`` is populated (routes mode) with typed RankedRouteSummary
+        # values -- the section-11 fit disposition per route.  The type is guarded so a hand-built/deserialized
+        # response cannot smuggle an untyped blob past the coherence checks.  ``affordability_frontier`` stays empty
+        # (COST-VEC-01 unbuilt): present-and-empty, never absent, so the shape is stable and the empty is HONEST.
+        if type(self.ranked_route_dossiers) is not tuple or any(
+            type(r) is not RankedRouteSummary for r in self.ranked_route_dossiers
+        ):
+            raise TypeError("ranked_route_dossiers must be a tuple of RankedRouteSummary values")
+        if self.affordability_frontier != ():
             raise ValueError(
-                "ranked_route_dossiers/affordability_frontier are not populated in this brick "
-                "(READY-TIER-01 / COST-VEC-01); they must be empty"
+                "affordability_frontier is not populated in this brick (COST-VEC-01); it must be empty"
             )
         self._check_outcome_coherence()
 
@@ -960,12 +1048,17 @@ class CompilationResponse:
         """
         return canonical_digest(
             (
-                "compilation-result-v1alpha1",
+                # v1alpha2 (CLI-CAN-02 brick 2): the ranked dossiers' digests are folded in so the result identity is
+                # a TRUE content hash of the whole payload.  They are a deterministic function of inputs already
+                # covered (the routes come from the IR-packaged search; the section-11 box rides semantic_digest), so
+                # this never splits two aliases that share a semantic_digest -- it only makes a tamper detectable.
+                "compilation-result-v1alpha2",
                 self.request.semantic_digest,
                 self.outcome,
                 self.standard_status or "",
                 "" if self.compilation_ir is None else self.compilation_ir.digest,
                 self.diagnostics,
+                tuple(r.digest for r in self.ranked_route_dossiers),
             )
         )
 
@@ -1044,20 +1137,68 @@ def _classify(ir: ChemicalCompilationIR, target_available: bool) -> ResponseOutc
     return ResponseOutcome.ROUTES_FOUND if ir.candidate_count > 0 else ResponseOutcome.NO_ROUTE_COMPLETE
 
 
-def constraint_declared_note(bounds: PhysicalBounds) -> "str | None":
-    """The section-11 constraint DISCLOSURE (CLI-CAN-02), or ``None`` when nothing is declared.
+def _fit_counts(fits: "tuple") -> "tuple[int, int, int]":
+    """(fits, excluded, unknown) over a tuple of RankedRouteSummary (or drafter RouteFit) dispositions.
 
-    ONE caveat text for every surface -- the ``run_compilation`` response diagnostic (which reaches the recompile
-    human AND --json views) and the ``compile`` human dossier both use it -- so a DECLARED constraint that is not
-    yet applied to route grading is disclosed identically wherever routes are shown.  Never imply the routes honor
-    a bench limit they do not.
+    Reads the string ``fit_status`` / enum ``status.value`` structurally.  ``UNCONSTRAINED`` is neither a fit nor a
+    miss (there was nothing to fit), so it is counted nowhere -- an unconstrained bench yields (0, 0, 0)."""
+    fit = exc = unk = 0
+    for f in fits:
+        status = getattr(f, "fit_status", None) or f.status.value
+        if status == "FITS":
+            fit += 1
+        elif status == "EXCLUDED":
+            exc += 1
+        elif status == "UNKNOWN":
+            unk += 1
+    return fit, exc, unk
+
+
+def constraint_note(bounds: PhysicalBounds, *, fit_counts: "tuple[int, int, int] | None") -> "str | None":
+    """The ONE section-11 constraint disclosure (CLI-CAN-02), or ``None`` when nothing is declared.
+
+    ONE caveat text for every surface -- the ``run_compilation`` response diagnostic (recompile human AND --json)
+    and the ``compile`` human dossier both call it -- so the disclosure can never drift between them.  It reports the
+    TRUTH of what happened, per path:
+
+    * ``fit_counts is None`` -- the constraint is DECLARED and part of the request identity, but no routes were
+      ranked against it here (a no-route/refusal result, or a path that does not rank -- e.g. DAG mode).  Never
+      implies the routes honor a bench limit they were not checked against.
+    * ``fit_counts = (fits, excluded, unknown)`` -- the constraint was APPLIED: the routes are ranked against the
+      bench box, ``excluded`` fall outside a hard bound, and ``unknown`` leave a constrained dimension undeclared
+      (a GAP -- never a silent pass, section 11).
     """
     if not bounds.constrains_anything:
         return None
+    if fit_counts is None:
+        return (
+            f"section-11 constraint DECLARED ({bounds.describe()}): part of the request identity, but no routes "
+            "were ranked against it here (a no-route result, or a path that does not rank the routes)"
+        )
+    fits, excluded, unknown = fit_counts
     return (
-        f"section-11 constraint DECLARED ({bounds.describe()}): part of the request identity, but the routes "
-        "are NOT yet filtered or ranked by it (grading against it is a CLI-CAN-02 follow-on)"
+        f"section-11 constraint APPLIED ({bounds.describe()}): the routes are ranked against the bench -- "
+        f"{fits} FIT, {excluded} EXCLUDED (outside a hard bound), {unknown} UNKNOWN-fit (a constrained dimension "
+        "the route leaves undeclared -- never a silent pass); see ranked_route_dossiers"
     )
+
+
+def _ranked_summaries(
+    routes: "tuple", bounds: PhysicalBounds, losses: "tuple",
+) -> "tuple[RankedRouteSummary, ...]":
+    """Rank ``routes`` against the section-11 bench ``bounds`` and project to thin response summaries (CLI-CAN-02).
+
+    The drafter (the heavy analysis layer: composability/thermo/selectivity/kinetics) is imported LAZILY here so
+    ``smartchem.service`` never drags that object graph at module load (the layering discipline).  ``losses``
+    threads the target's section-5.3 blockers into the sourced verdicts (EVD-KEY-01), so a loss-bearing target
+    never floats on a sourced verdict its dropped feature forbids.  An empty route set yields ``()`` -- there is
+    nothing to rank, which the caller discloses via ``constraint_note(..., fit_counts=None)``.
+    """
+    if not routes:
+        return ()
+    from .experiment.drafter import ConstraintBox, rank_routes
+    fits = rank_routes(routes, box=ConstraintBox.of_bounds(bounds), losses=losses)
+    return tuple(RankedRouteSummary.of_fit(f) for f in fits)
 
 
 def run_compilation(request: CompilationRequest) -> CompilationResponse:
@@ -1139,28 +1280,57 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     target_available = _structure_ident(target) in terminal_idents
 
     mode = _GRAMMAR_TO_MODE[request.transform_grammar]
+    max_depth = request.search_bounds.value("max_depth")
+    max_results = request.search_bounds.value("max_results")
+    cut_budget = request.search_bounds.value("cut_budget")
     try:
+        # Search ONCE and reuse it BOTH ways (CLI-CAN-02 brick 2): the very same RouteSearchResult packages the IR
+        # (its constraint-FREE candidates) AND is ranked against the section-11 bench box (the constraint-DEPENDENT
+        # ranking).  No second search: the ranked dossiers describe exactly the candidates the IR carries.  The
+        # section-11 box is deliberately NOT inside the IR -- the IR is the presentation-invariant search artifact
+        # that two different constraints share; the constraint lives in the RESPONSE's ranked_route_dossiers.
+        from .experiment.routes import search_dags, search_routes
+        if mode == "routes":
+            search_result = search_routes(
+                target, reagents=reagents, available=available, commodities=commodities,
+                max_depth=max_depth, max_routes=max_results, cut_budget=cut_budget,
+            )
+            routes_for_ranking: tuple = search_result.routes
+        else:
+            search_result = search_dags(
+                target, reagents=reagents, available=available, commodities=commodities,
+                max_depth=max_depth, max_dags=max_results, cut_budget=cut_budget,
+            )
+            # rank_routes fits LINEAR ExperimentRoutes; convergent-DAG bench fitting is a separate roadmap item, so
+            # a DAG-mode search ranks nothing here -- the constraint is DECLARED (constraint_note fit_counts=None),
+            # never silently reported as applied.
+            routes_for_ranking = ()
         ir = recompile_to_ir(
             target,
             reagents=reagents,
             available=available,
             commodities=commodities,
-            max_depth=request.search_bounds.value("max_depth"),
-            max_results=request.search_bounds.value("max_results"),
-            cut_budget=request.search_bounds.value("cut_budget"),
+            max_depth=max_depth,
+            max_results=max_results,
+            cut_budget=cut_budget,
             mode=mode,
             identity_losses=identity_losses,
+            search_result=search_result,
         )
     except ScissionError as exc:  # a ValueError subclass -> caught FIRST: a model-boundary refusal (exit 5)
         return _refused(request, f"refused at the chemistry-model boundary: {exc}")
 
     outcome = _classify(ir, target_available)
-    # CLI-CAN-02: a DECLARED section-11 T/P constraint rides the request identity but is NOT yet applied to route
-    # grading.  Disclose that in the RESPONSE diagnostics (not just the CLI render) so BOTH the human and --json
-    # views carry the caveat (CLI-JSON-01 agreement) -- a consumer must never read the unfiltered routes as
-    # constraint-fitted.  A route is genuinely unchanged by the constraint here; only its honest disclosure is added.
+    # CLI-CAN-02 brick 2: APPLY the section-11 T/P constraint -- rank the routes against the bench box and populate
+    # ranked_route_dossiers with the per-route fit disposition.  The DECLARED-vs-APPLIED disclosure rides the RESPONSE
+    # diagnostics (not just the CLI render) so BOTH the human and --json views agree (CLI-JSON-01): fit_counts=None
+    # when nothing was ranked (no routes, or DAG mode), else the (fit/excluded/unknown) tally.  A consumer can now
+    # read which routes fall inside the bench and which are EXCLUDED -- and can never mistake an UNKNOWN-fit for a pass.
+    ranked = _ranked_summaries(routes_for_ranking, request.constraints.bounds, identity_losses)
     diagnostics = tuple(ir.diagnostics)
-    _note = constraint_declared_note(request.constraints.bounds)
+    _note = constraint_note(
+        request.constraints.bounds, fit_counts=_fit_counts(ranked) if ranked else None
+    )
     if _note is not None:
         diagnostics = (*diagnostics, _note)
     # echo the identity resolution (ID-PARSE-01) as the FIRST-CLASS parse_receipt_summary, NOT a diagnostics line
@@ -1169,6 +1339,7 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     return CompilationResponse(
         COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir,
         diagnostics,
+        ranked_route_dossiers=ranked,
         parse_receipt_summary=resolved.receipt.summary(),
     )
 
@@ -1388,6 +1559,42 @@ def deserialize_request(text: str) -> CompilationRequest:
     return request_from_payload(json.loads(text))
 
 
+def ranked_summary_to_payload(summary: RankedRouteSummary) -> dict:
+    """A canonical JSON-ready dict for one ranked-route summary (CLI-CAN-02 brick 2)."""
+    return {
+        "schema_version": summary.schema_version,
+        "route_digest": summary.route_digest,
+        "equation": summary.equation,
+        "fit_status": summary.fit_status,
+        "readiness_tier": summary.readiness_tier,
+        "exclusions": list(summary.exclusions),
+        "gaps": list(summary.gaps),
+        "composability_verdict": summary.composability_verdict,
+        "selectivity_verdict": summary.selectivity_verdict,
+        "feasibility_verdict": summary.feasibility_verdict,
+        "equilibrium_verdict": summary.equilibrium_verdict,
+        "kinetics_verdict": summary.kinetics_verdict,
+    }
+
+
+def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
+    """Reconstruct a ranked-route summary; re-validates via its __post_init__ coherence checks."""
+    return RankedRouteSummary(
+        payload["schema_version"],
+        payload["route_digest"],
+        payload["equation"],
+        payload["fit_status"],
+        payload["readiness_tier"],
+        tuple(payload["exclusions"]),
+        tuple(payload["gaps"]),
+        payload["composability_verdict"],
+        payload["selectivity_verdict"],
+        payload["feasibility_verdict"],
+        payload["equilibrium_verdict"],
+        payload["kinetics_verdict"],
+    )
+
+
 def response_to_payload(response: CompilationResponse) -> dict:
     """A canonical JSON-ready dict for a response (CLI-JSON-01 leans on this)."""
     return {
@@ -1399,7 +1606,7 @@ def response_to_payload(response: CompilationResponse) -> dict:
         "compilation_ir": None if response.compilation_ir is None else ir_to_payload(response.compilation_ir),
         "diagnostics": list(response.diagnostics),
         "parse_receipt_summary": response.parse_receipt_summary,
-        "ranked_route_dossiers": list(response.ranked_route_dossiers),
+        "ranked_route_dossiers": [ranked_summary_to_payload(r) for r in response.ranked_route_dossiers],
         "affordability_frontier": list(response.affordability_frontier),
         "result_digest": response.result_digest,
     }
@@ -1415,7 +1622,7 @@ def response_from_payload(payload: dict) -> CompilationResponse:
         payload["standard_status"],
         None if ir_payload is None else ir_from_payload(ir_payload),
         tuple(payload["diagnostics"]),
-        tuple(payload["ranked_route_dossiers"]),
+        tuple(ranked_summary_from_payload(r) for r in payload["ranked_route_dossiers"]),
         tuple(payload["affordability_frontier"]),
         parse_receipt_summary=payload["parse_receipt_summary"],
     )
@@ -1454,7 +1661,7 @@ def response_schema() -> dict:
             "compilation_ir": "object(chemical-compilation-ir)|null",
             "diagnostics": "array[str] (blockers)",
             "parse_receipt_summary": "str|null (section 14.2 identity-resolution receipt; provenance)",
-            "ranked_route_dossiers": "array (empty until READY-TIER-01)",
+            "ranked_route_dossiers": "array[object(ranked-route-summary)] (section-11 fit, best-first; CLI-CAN-02)",
             "affordability_frontier": "array (empty until COST-VEC-01)",
             "result_digest": "str (sha256)",
         },
@@ -1494,6 +1701,20 @@ def response_schema() -> dict:
             "candidate_digest": "str (sha256; the stable route/candidate ID)",
             "equation": "str",
             "readiness_tier": "str (readiness/epistemic tier)",
+        },
+        "ranked_route_summary_fields": {
+            "schema_version": "str",
+            "route_digest": "str (sha256; == the matching candidate_digest)",
+            "equation": "str",
+            "fit_status": "enum(FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED)",
+            "readiness_tier": "str (READY-TIER-01 floor: FORMAL_CANDIDATE)",
+            "exclusions": "array[str] (hard section-11 over/under-bounds)",
+            "gaps": "array[str] (undeclared constrained dimensions / composability UNKNOWNs)",
+            "composability_verdict": "str",
+            "selectivity_verdict": "str",
+            "feasibility_verdict": "str",
+            "equilibrium_verdict": "str",
+            "kinetics_verdict": "str (ranking-only; NEVER a grade)",
         },
     }
 

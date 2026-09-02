@@ -69,9 +69,12 @@ def _cli(argv):
 class TestUnsupportedInputKindsAreLoudInvalid:
     @pytest.mark.parametrize("kind", ["inchi", "formula", "target-file"])
     def test_declared_but_unresolved_kind_is_exit_2_in_process(self, kind):
+        # ID-PARSE-01 FINISHED: 'paracetamol' is a NAME, so reading it as an InChI/formula/file is a wrong-payload
+        # INVALID (a bad formula char, a malformed InChI, a missing file) -- still a LOUD, concise exit 2, never a
+        # traceback and never a silent mis-parse.  (These kinds now RESOLVE for a well-formed payload of their form.)
         code, err = _cli(["recompile", "paracetamol", "--input-kind", kind, "--max-depth", "1"])
         assert code == 2
-        assert "ID-PARSE-01" in err or "not yet" in err
+        assert err.strip() and "Traceback (most recent call last)" not in err
 
     @pytest.mark.parametrize("kind", ["inchi", "formula", "target-file"])
     def test_declared_but_unresolved_kind_is_exit_2_via_subprocess(self, kind):

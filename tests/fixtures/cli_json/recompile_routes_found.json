@@ -35,7 +35,9 @@
     "tool_version": "0.5.0a1",
     "transform_registry_digest": "18034da6ac94265b997f614eecf4249504439e1db44a60240e7df04fb790b9ef"
   },
-  "diagnostics": [],
+  "diagnostics": [
+    "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C3H6O2 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested"
+  ],
   "exit_code": 0,
   "outcome": "ROUTES_FOUND",
   "ranked_route_dossiers": [],
@@ -140,7 +142,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "322e74911c5c00dce30be5d12c6dcc83461c7302c1d98e1c9fcde4837d1febb8",
+  "result_digest": "0f9c414f8f2c9b52308f7ca655f9ca1d63d2dfa87253d18f10ea0a963ca97d12",
   "schema_version": "smartchem.service/compilation-response-v1alpha1",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

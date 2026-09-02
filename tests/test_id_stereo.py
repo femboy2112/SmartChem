@@ -26,7 +26,13 @@ from smartchem.identity import (
 )
 from smartchem.identity_parse import InputKind
 from smartchem.service import build_decompile_request, build_recompile_request, run_compilation
-from smartchem.smiles import SmilesError, SmilesFeatures, parse_smiles, parse_smiles_features
+from smartchem.smiles import (
+    SmilesError,
+    SmilesFeatures,
+    isotope_refined_key,
+    parse_smiles,
+    parse_smiles_features,
+)
 
 
 class TestSmilesFeatureDetection:
@@ -184,6 +190,74 @@ class TestServiceWiring:
         back = deserialize_response(serialize_response(resp))
         assert {loss.feature for loss in back.identity_losses} == {loss.feature for loss in resp.identity_losses}
         assert all(type(loss) is IdentityLoss for loss in back.identity_losses)
+
+
+class TestSoundIsotopePerception:
+    """ID-STEREO-01 PERCEPTION half: a canonical, presentation-invariant isotope-refined-constitution key.
+
+    The detection arm records the DROP as a blocker; this key perceives the isotope PLACEMENT soundly, so two
+    isotopologues are distinguishable (not merely both-blocked).  It rides the proven graph canonicaliser over an
+    isotope-coloured copy of the graph, so its relabel-invariance is the canonicaliser's, not a new bespoke proof.
+    """
+
+    def test_relabel_invariance_two_spellings_of_one_isotopologue_agree(self):
+        # acetic-acid-2-13C written two ways -> ONE key (presentation-invariant).
+        assert isotope_refined_key("[13CH3]C(=O)O") == isotope_refined_key("OC(=O)[13CH3]")
+
+    def test_symmetric_position_invariance(self):
+        # a label on EITHER of two symmetric ends (propane C1/C3) is ONE identity -- the canonicaliser minimises
+        # over the symmetry, so which symmetric site was labelled cannot leak into the key.
+        assert isotope_refined_key("[13CH3]CC") == isotope_refined_key("CC[13CH3]")
+
+    def test_positional_distinction(self):
+        # a label at a DIFFERENT (non-symmetric) site is a DIFFERENT isotopologue.
+        assert isotope_refined_key("[13CH3]C(=O)O") != isotope_refined_key("C[13C](=O)O")
+        assert isotope_refined_key("[13CH3]CC") != isotope_refined_key("C[13CH2]C")
+
+    def test_labelled_differs_from_unlabelled_but_shares_constitution(self):
+        labelled, plain = "[13CH3]C(=O)O", "CC(=O)O"
+        assert isotope_refined_key(labelled) != isotope_refined_key(plain)      # finer than constitution
+        # ... yet the CONSTITUTION is identical (the key strictly refines it, never forks it)
+        assert canonical_digest(parse_smiles(labelled).canonical()) == canonical_digest(parse_smiles(plain).canonical())
+
+    def test_aromatic_isotopologue_is_resonance_and_spelling_invariant(self):
+        # a ring-bearing input: two spellings of unlabelled toluene collapse (resonance-canonical), and a methyl
+        # label makes a distinct, stable key.
+        assert isotope_refined_key("Cc1ccccc1") == isotope_refined_key("c1ccccc1C")
+        assert isotope_refined_key("[13CH3]c1ccccc1") != isotope_refined_key("Cc1ccccc1")
+
+    def test_fused_benzenoid_does_not_split_across_aromatic_vs_kekule_spelling(self):
+        # ID-STEREO-01-SPLIT-KEKULE (red-team, HIGH): a fused benzenoid (naphthalene) has non-isomorphic Kekule
+        # structures; the key MUST commit to the SAME resonance structure the constitution does, so an aromatic
+        # spelling and an explicit-Kekule spelling of ONE species share ONE key (never split into two identities).
+        aromatic, kekule = "c1ccc2ccccc2c1", "C1=CC2=C(C=C1)C=CC=C2"
+        assert canonical_digest(parse_smiles(aromatic).canonical()) == canonical_digest(parse_smiles(kekule).canonical())
+        assert isotope_refined_key(aromatic) == isotope_refined_key(kekule)
+        # ... and a labelled aromatic ring is likewise spelling-invariant
+        assert isotope_refined_key("[13CH3]c1ccccc1") == isotope_refined_key("[13CH3]C1=CC=CC=C1")
+
+    def test_deuterium_bracket_hydrogen_is_perceived(self):
+        # [2H] (deuterium) is an isotope-labelled hydrogen; heavy-water D2O differs from H2O at the isotope layer.
+        assert isotope_refined_key("[2H]O[2H]") != isotope_refined_key("O")
+
+    def test_multiple_labels_distinguish_from_single(self):
+        assert isotope_refined_key("[13CH3][13CH3]") != isotope_refined_key("[13CH3]C")
+
+    def test_features_carry_the_isotopic_digest_only_when_labelled(self):
+        _m, labelled = parse_smiles_features("[13CH3]C(=O)O")
+        _m2, plain = parse_smiles_features("CC(=O)O")
+        assert labelled.isotopic_digest is not None and labelled.isotopic_digest == isotope_refined_key("[13CH3]C(=O)O")
+        assert plain.isotopic_digest is None
+
+    def test_honest_boundary_key_is_modulo_stereochemistry(self):
+        # DOCUMENTED boundary (never faked): the key is the isotope refinement of CONSTITUTION, not the lattice
+        # ISOTOPIC slot -- it does NOT encode chirality, so two enantiomeric isotopologues share it.  Filling the
+        # MatchLayer ISOTOPIC slot needs sound stereo (CIP) perception, which stays the ID-STEREO-01 deferral.
+        assert isotope_refined_key("[13CH3][C@H](F)Cl") == isotope_refined_key("[13CH3][C@@H](F)Cl")
+
+    def test_malformed_smiles_is_refused_loudly(self):
+        with pytest.raises(SmilesError):
+            isotope_refined_key("[Na+].[Cl-]")   # disconnected -> loud, never a silent partial key
 
 
 class TestSmilesFeaturesValue:

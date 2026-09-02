@@ -429,10 +429,19 @@ class TestIdentityParse:
     def test_parse_error_is_a_value_error(self):
         assert issubclass(IdentityParseError, ValueError)
 
-    @pytest.mark.parametrize("kind", [InputKind.INCHI, InputKind.FORMULA, InputKind.TARGET_FILE])
-    def test_unsupported_kinds_fail_loudly(self, kind):
-        with pytest.raises(IdentityParseError, match="not yet supported"):
-            resolve_target("anything", kind)
+    @pytest.mark.parametrize("target,kind", [
+        ("C8H9NO2", InputKind.FORMULA),
+        ("InChI=1S/C8H9NO2/c1-6(10)9-7-2-4-8(11)5-3-7/h2-5,10H,1H3,(H,9,10)", InputKind.INCHI),
+    ])
+    def test_formula_only_kinds_resolve_but_refuse_a_structure_search(self, target, kind):
+        # ID-PARSE-01 FINISHED: FORMULA and an InChI's formula sublayer now RESOLVE (no longer "not yet supported"),
+        # but only to a FORMULA-layer identity -- so resolve_target (which needs a MOLECULE for a structure search)
+        # refuses them loudly per section 5.4, never guessing a structure.
+        from smartchem.identity_parse import resolve_identity
+        r = resolve_identity(target, kind)
+        assert not r.structure_perceived
+        with pytest.raises(IdentityParseError, match="no perceived structure"):
+            resolve_target(target, kind)
 
     def test_cli_parse_molecule_still_delegates(self):
         from smartchem.cli import _parse_molecule

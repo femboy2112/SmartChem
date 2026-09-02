@@ -241,6 +241,11 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
     # response's semantic projection exposes -- so the human and JSON views cannot disagree (CLI-JSON-01 agreement).
     for loss in ir.identity_losses:
         lines.append(f"  {loss.summary()}")
+    # ID-PARSE-01: surface the service diagnostics (the identity-resolution receipt + any status note) in the
+    # SUCCESS path too, so the human view reports how the target string was read exactly as --json does.  Without
+    # this the receipt reached only the machine view, breaking the CLI-JSON-01 human/JSON agreement on `diagnostics`.
+    for d in response.diagnostics:
+        lines.append(f"  {d}")
     if not ir.complete_within_bounds:
         lines.append("  SEARCH WAS PARTIAL: absence of a route is not evidence one does not exist -- "
                      "raise --cut-budget/--max-routes/--max-depth or widen the inventory.")
@@ -394,6 +399,10 @@ def _cmd_decompile(argv: list[str]) -> int:
     # ID-STEREO-01 stereo/isotope/local-charge blocker the input declared -- structure/features never silently lost.
     for _summary in _resp.identity_loss_summaries:
         print(f"  {_summary}")
+    # ID-PARSE-01: surface the service diagnostics (the identity-resolution receipt) so the human view reports how
+    # the target was read exactly as --json does (CLI-JSON-01 human/JSON agreement on `diagnostics`).
+    for _d in _resp.diagnostics:
+        print(f"  {_d}")
     if graph.refusal_reason:
         print(f"  (partial: {graph.refusal_reason})")
     print(f"  inventory (buckets): {', '.join(repr(f) for f in inventory) or '(pure elements)'}")

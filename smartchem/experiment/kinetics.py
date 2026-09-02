@@ -45,6 +45,7 @@ from enum import Enum
 
 from ..contracts import Digestible, canonical_digest
 from ..data.kinetics import DEFAULT_KINETICS, KineticRef, KineticTable
+from ..evidence_key import ReactionEvidenceKey
 from ..smiles import parse_smiles
 from .bucket import Bucket, Quantity, unknown
 from .ceiling import _coefficient_vector
@@ -58,6 +59,8 @@ __all__ = [
     "StepKinetics",
     "RouteKinetics",
     "reaction_key_of",
+    "reaction_evidence_key",
+    "record_evidence_key",
     "kinetics_of_step",
     "verify_kinetics",
     "worst_regime",
@@ -140,17 +143,28 @@ def _canonical_side(pairs) -> tuple:
     return tuple(sorted((canonical_digest(m.canonical()), int(c)) for m, c in pairs))
 
 
+def reaction_evidence_key(step: ExperimentStep) -> ReactionEvidenceKey:
+    """The section-9.1 :class:`~smartchem.evidence_key.ReactionEvidenceKey` of a step's reaction (EVD-KEY-01).
+
+    Built from the same signed coefficient vector feasibility uses (so the rate lookup can never disagree with the
+    balance) and keyed by canonical STRUCTURE, not formula -- a same-formula isomer is a different reaction.  This
+    is the ONE unified key the standard names; the kinetics and Eyring providers both resolve records against it.
+    """
+    species, nu = _coefficient_vector(step)
+    return ReactionEvidenceKey.from_molecules(
+        ((m, n) for m, n in zip(species, nu) if n > 0),
+        ((m, -n) for m, n in zip(species, nu) if n < 0),
+    )
+
+
 def reaction_key_of(step: ExperimentStep) -> tuple[tuple, tuple]:
     """The canonical, direction-specific ``(reactants, products)`` STRUCTURE signature of a step's reaction.
 
-    Built from the same signed coefficient vector feasibility uses (so the rate lookup can never disagree with
-    the balance) and keyed by canonical STRUCTURE, not formula -- a same-formula isomer is a different reaction.
-    Each side is a sorted tuple of ``(structure-digest, coefficient)`` pairs, coefficients > 0.
+    The ``(reactants, products)`` VIEW of :func:`reaction_evidence_key` -- each side a sorted tuple of
+    ``(structure-digest, coefficient)`` pairs -- kept for callers that want the bare tuple.  It is exactly
+    ``reaction_evidence_key(step).sides``, so the tuple and the unified key can never disagree.
     """
-    species, nu = _coefficient_vector(step)
-    reactants = _canonical_side((m, n) for m, n in zip(species, nu) if n > 0)
-    products = _canonical_side((m, -n) for m, n in zip(species, nu) if n < 0)
-    return reactants, products
+    return reaction_evidence_key(step).sides
 
 
 @functools.lru_cache(maxsize=None)
@@ -159,16 +173,23 @@ def _side_key_from_smiles(smiles_pairs: tuple) -> tuple:
     return _canonical_side((parse_smiles(s), c) for s, c in smiles_pairs)
 
 
+def record_evidence_key(rec: "object") -> ReactionEvidenceKey:
+    """The section-9.1 :class:`ReactionEvidenceKey` of a sourced record (KineticRef/EyringRef) from its SMILES form."""
+    return ReactionEvidenceKey.of(
+        _side_key_from_smiles(rec.reactant_smiles), _side_key_from_smiles(rec.product_smiles)
+    )
+
+
 def _record_key(rec: KineticRef) -> tuple[tuple, tuple]:
-    """The canonical ``(reactants, products)`` structure key of a sourced record (from its SMILES source form)."""
-    return _side_key_from_smiles(rec.reactant_smiles), _side_key_from_smiles(rec.product_smiles)
+    """The canonical ``(reactants, products)`` structure key of a sourced record -- ``record_evidence_key(rec).sides``."""
+    return record_evidence_key(rec).sides
 
 
 def _resolve_record(kinetics: KineticTable, step: ExperimentStep) -> KineticRef | None:
     """The sourced record whose canonical reaction structure matches this step's, direction-specific, or None."""
-    key = reaction_key_of(step)
+    key = reaction_evidence_key(step)
     for rec in kinetics.records:
-        if _record_key(rec) == key:
+        if record_evidence_key(rec) == key:
             return rec
     return None
 

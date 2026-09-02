@@ -920,16 +920,27 @@ def run_compilation(request: CompilationRequest) -> CompilationResponse:
 
 def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     from .identity import representation_losses_for
-    from .identity_parse import resolve_target_with_features
+    from .identity_parse import resolve_identity
     from .structure_descent import ScissionError
 
     try:
         # the STRUCTURE layer keeps the target's constitution but drops finer features it may declare (stereo,
-        # isotope, net-neutral local charge).  Resolve the target WITH those features so the IR carries the typed
-        # section-5.3 blockers (ID-STEREO-01) -- an enantiomer/isotopologue/zwitterion target no longer flattens
-        # silently.  A registered name declares no such features (features is None); reagents/available are helper
-        # inputs whose finer features do not bear on the TARGET's identity claims, so they resolve plainly.
-        target, target_features = resolve_target_with_features(request.target_input, request.input_kind)
+        # isotope, net-neutral local charge).  Resolve the target through the ONE parser service (ID-PARSE-01) so
+        # the IR carries the typed section-5.3 blockers (ID-STEREO-01) -- an enantiomer/isotopologue/zwitterion
+        # target no longer flattens silently -- AND the response echoes how the input string was read (the
+        # ParseReceipt).  A structure search needs a perceived structure, so a FORMULA/INCHI target (which perceives
+        # composition, not a molecule) is a loud INVALID here: a bare formula does not name a structure (section 5.4).
+        # A registered name declares no finer features (features is None); reagents/available are helper inputs whose
+        # finer features do not bear on the TARGET's identity claims, so they resolve plainly.
+        resolved = resolve_identity(request.target_input, request.input_kind)
+        if resolved.molecule is None:
+            return _invalid(
+                request,
+                f"a structure search (recompile) needs a perceived structure, but the "
+                f"{resolved.receipt.requested_kind.value} target resolved to a {resolved.receipt.identity_layer}-"
+                f"layer identity ({resolved.receipt.normalized}) with no molecule; use NAME or SMILES (section 5.4)",
+            )
+        target, target_features = resolved.molecule, resolved.features
         reagents = tuple(resolve_target(s, InputKind.AUTO) for s in request.helper_reagents)
         available = tuple(resolve_target(s, InputKind.AUTO) for s in request.stock_materials)
     except IdentityParseError as exc:
@@ -976,8 +987,11 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         return _refused(request, f"refused at the chemistry-model boundary: {exc}")
 
     outcome = _classify(ir, target_available)
+    # echo the identity resolution (ID-PARSE-01) into the response diagnostics so both the human and --json views
+    # report how the target string was read (source, normalised form, layer) -- provenance, not search identity.
     return CompilationResponse(
-        COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir, tuple(ir.diagnostics)
+        COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir,
+        (*ir.diagnostics, resolved.receipt.summary()),
     )
 
 
@@ -992,13 +1006,15 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
     # follow-on (ID-PARSE-01) and are refused rather than mis-parsed.
     decompile_target = request.target_input
     identity_losses: tuple[IdentityLoss, ...] = ()
+    receipt_summary: "str | None" = None
     if request.input_kind is InputKind.SMILES:
         from .identity import formula_reduction_loss, representation_losses_for
-        from .identity_parse import resolve_target_with_features
+        from .identity_parse import resolve_identity
         try:
-            molecule, features = resolve_target_with_features(request.target_input, InputKind.SMILES)
+            resolved = resolve_identity(request.target_input, InputKind.SMILES)
         except IdentityParseError as exc:
             return _invalid(request, str(exc))
+        molecule, features = resolved.molecule, resolved.features
         decompile_target = "".join(
             f"{el}{n if n > 1 else ''}" for el, n in sorted(molecule.formula.items())
         )
@@ -1010,12 +1026,46 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
             formula_reduction_loss(request.target_input, decompile_target),
             *representation_losses_for(request.target_input, features),
         )
-    elif request.input_kind not in (InputKind.AUTO, InputKind.FORMULA):
+        receipt_summary = resolved.receipt.summary()
+    elif request.input_kind in (InputKind.INCHI, InputKind.TARGET_FILE):
+        # ID-PARSE-01: an InChI resolves via its FORMULA SUBLAYER (its /c connectivity + any /t,/b,/i stereo/isotope
+        # recorded as section-5.3 BLOCKERS the parser already built); a TARGET_FILE resolves its contents (a molecule
+        # -> reduced to formula exactly like the SMILES path, or a formula used directly).  Both descend by formula
+        # here, carrying the parser's typed losses into the IR so the machine and human views agree on the drop.
+        from .identity import formula_reduction_loss, representation_losses_for
+        from .identity_parse import resolve_identity
+        try:
+            resolved = resolve_identity(request.target_input, request.input_kind)
+        except IdentityParseError as exc:
+            return _invalid(request, str(exc))
+        if resolved.molecule is not None:                # a file that named a NAME/SMILES: reduce structure->formula
+            decompile_target = "".join(
+                f"{el}{n if n > 1 else ''}" for el, n in sorted(resolved.molecule.formula.items())
+            )
+            identity_losses = (
+                formula_reduction_loss(request.target_input, decompile_target),
+                *(representation_losses_for(request.target_input, resolved.features) if resolved.features else ()),
+            )
+        else:                                            # a formula-layer identity (formula-only file, or an InChI)
+            decompile_target = "".join(
+                f"{el}{n if n > 1 else ''}" for el, n in resolved.formula.counts
+            )
+            identity_losses = resolved.losses
+        receipt_summary = resolved.receipt.summary()
+    elif request.input_kind is InputKind.NAME:
         return _invalid(
             request,
-            f"decompile reads the target as formula text or (with --smiles) a SMILES; input_kind "
-            f"{request.input_kind.value} is not yet resolved for a formula descent (ID-PARSE-01)",
+            "decompile reads the target as formula text or a resolved structure; a bare NAME is resolved by "
+            "recompile (a structure search), not by a formula descent -- give the formula or use recompile",
         )
+    else:
+        # AUTO / FORMULA: the target is read as formula text.  Echo the resolution (best-effort: a genuinely bad
+        # formula still reaches decompile_to_ir's canonical parse error below, so its exact message is preserved).
+        from .identity_parse import resolve_identity
+        try:
+            receipt_summary = resolve_identity(request.target_input, InputKind.FORMULA).receipt.summary()
+        except IdentityParseError:
+            receipt_summary = None
 
     try:
         ir = decompile_to_ir(
@@ -1049,8 +1099,9 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
     already_terminal = ir.complete_within_bounds and ir.candidate_count == 0
     target_available = (ir.target.identity_digest in inventory_ids) or already_terminal
     outcome = _classify(ir, target_available=target_available)
+    diagnostics = (*ir.diagnostics, receipt_summary) if receipt_summary else tuple(ir.diagnostics)
     return CompilationResponse(
-        COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir, tuple(ir.diagnostics)
+        COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir, diagnostics
     )
 
 

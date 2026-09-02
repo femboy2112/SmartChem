@@ -124,7 +124,9 @@ from .kinetics import (
     RouteKinetics,
     StepKinetics,
     kinetics_of_step,
+    reaction_evidence_key,
     reaction_key_of,
+    record_evidence_key,
     verify_kinetics,
     worst_regime,
 )
@@ -235,6 +237,8 @@ __all__ = [
     "kinetics_of_step",
     "verify_kinetics",
     "reaction_key_of",
+    "reaction_evidence_key",
+    "record_evidence_key",
     "worst_regime",
     "RouteEyring",
     "StepEyring",

@@ -951,7 +951,9 @@
     "tool_version": "0.5.0a1",
     "transform_registry_digest": "9fe39ec4ecf94914aac37cacd6bc4d33ff7da15e0fe66415d7926f55419f3e88"
   },
-  "diagnostics": [],
+  "diagnostics": [
+    "IDENTITY RESOLVED [SMILES] via SMILES_PARSER: C8H9NO2 (CONSTITUTION layer)"
+  ],
   "exit_code": 0,
   "outcome": "ROUTES_FOUND",
   "ranked_route_dossiers": [],
@@ -1050,7 +1052,7 @@
     },
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
-  "result_digest": "99bbb79de8600e2a6adf1abd66a66d6678eb331ed6f330633b56a097cc696976",
+  "result_digest": "597db744729474b5bc1abe86dbcde4db162b49db68296cab40de7fa53b68dfaf",
   "schema_version": "smartchem.service/compilation-response-v1alpha1",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

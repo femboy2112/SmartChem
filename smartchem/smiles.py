@@ -54,7 +54,13 @@ from .atoms import PT
 from .category import Bond, Molecule
 from .contracts import canonical_digest
 
-__all__ = ["SmilesError", "SmilesFeatures", "parse_smiles", "parse_smiles_features"]
+__all__ = [
+    "SmilesError",
+    "SmilesFeatures",
+    "parse_smiles",
+    "parse_smiles_features",
+    "isotope_refined_key",
+]
 
 
 class SmilesError(ValueError):
@@ -78,6 +84,7 @@ class SmilesFeatures:
     double_bond_stereo: bool         # any '/' or '\\' double-bond configuration marker
     charged_atoms: int               # how many atoms bear a nonzero FORMAL charge (per-atom, pre-summing)
     net_charge: int                  # the molecular total charge (the only charge the Molecule keeps)
+    isotopic_digest: "str | None" = None  # the canonical isotope-refined-constitution key (ID-STEREO-01 perception)
 
     @property
     def has_isotope(self) -> bool:
@@ -446,6 +453,84 @@ def _build_molecule(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> 
     return best
 
 
+def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> str:
+    """The canonical ISOTOPE-REFINED-CONSTITUTION key: constitution + per-atom isotope labels (ID-STEREO-01).
+
+    Sound stereo/isotope PERCEPTION is the piece the detection arm (``isotope_loss`` etc.) deferred.  This builds
+    the isotope half of it, and it does so WITHOUT a bespoke canonicaliser or an atom-coloured ``Molecule``: it runs
+    the SAME proven graph canonicaliser the constitution digest uses (:func:`category._canonical_by_individualisation`,
+    with its false-twin pruning and pinned relabel-invariance) over an ISOTOPE-COLOURED copy of the graph, so a
+    labelled atom seeds a distinct colour class and the canonical form distinguishes isotopologues by PLACEMENT while
+    staying invariant under presentation.  Aromatic inputs are handled resonance-canonically (the minimum key over
+    every Kekule matching), exactly like :func:`_build_molecule`, so two Kekule drawings of one isotopologue collapse.
+
+    Soundness the tests pin: (1) relabel-invariance -- two SMILES spellings of one isotopologue share the key;
+    (2) symmetric-position invariance -- a label on either of two symmetric sites gives ONE key (the canonicaliser
+    minimises over the symmetry); (3) positional distinction -- a label at a different site gives a different key;
+    (4) it REFINES constitution -- equal key implies equal constitution (stripping the colour prefix leaves the
+    identical graph).  BOUNDARY (never faked): this is the isotope refinement of CONSTITUTION, MODULO stereochemistry
+    -- it does NOT encode chirality/cis-trans, so two enantiomeric isotopologues share it.  It is therefore NOT the
+    MatchLayer ISOTOPIC slot (the lattice puts ISOTOPIC above CONFIGURATION, so that slot additionally needs sound
+    stereo perception -- a canonical CIP parity, which graph canonicalisation cannot supply because chirality is a
+    reflection); that, and CONFIGURATION, stay the named ID-STEREO-01 deferral.
+    """
+    from .category import _canonical_by_individualisation
+
+    work = [list(b) for b in bonds]                       # a private copy: never disturb the caller's pending bonds
+    arom_bonds, matchings = _aromatic_matchings(atoms, work)
+
+    def colored_key() -> str:
+        out_atoms, out_bonds = _fill_hydrogens(atoms, work)
+        # colour ONLY the atoms that carried an isotope (k < len(atoms); implicit H are appended after and unlabelled).
+        # 'iso:El' can never collide with a bare element symbol, so the colouring is injective over the symbol set.
+        colored = tuple(
+            f"{atoms[k].isotope}:{out_atoms[k]}" if k < len(atoms) and atoms[k].isotope else out_atoms[k]
+            for k in range(len(out_atoms))
+        )
+        symbols, edges = _canonical_by_individualisation(colored, frozenset(out_bonds))
+        return canonical_digest((symbols, edges, charge))
+
+    if not matchings:
+        return colored_key()
+    # Resonance-canonical: commit to the EXACT Kekule structure :func:`_build_molecule` commits to -- the matching
+    # that minimises the CONSTITUTION digest ``canonical_digest(Molecule.canonical())``, NOT the coloured key.  This
+    # alignment is load-bearing for soundness: whenever the constitution unifies two spellings (an aromatic spelling
+    # and an explicit-Kekule spelling of one fused benzenoid), this key MUST unify them too.  Minimising the coloured
+    # key instead could pick a different Kekule than the constitution and split ONE species into two identities
+    # (red-team ID-STEREO-01-SPLIT-KEKULE: naphthalene aromatic vs explicit-Kekule).  Every matching that ties on the
+    # constitution digest is the SAME canonical molecule, so it yields the SAME coloured key -- the tie-break is moot.
+    best_matching = matchings[0]
+    best_constitution: str | None = None
+    for doubles in matchings:
+        for k in arom_bonds:
+            work[k][2] = 2 if k in doubles else 1
+        out_atoms, out_bonds = _fill_hydrogens(atoms, work)
+        constitution = canonical_digest(Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical())
+        if best_constitution is None or constitution < best_constitution:
+            best_constitution, best_matching = constitution, doubles
+    for k in arom_bonds:
+        work[k][2] = 2 if k in best_matching else 1
+    return colored_key()
+
+
+def isotope_refined_key(text: str) -> str:
+    """The canonical isotope-refined-constitution key of ``text`` (ID-STEREO-01), a string for ANY input.
+
+    For an unlabelled molecule this is a constitution-equivalent key (two same-constitution spellings share it); a
+    label makes it finer.  Use it to tell isotopologues apart soundly: ``isotope_refined_key(a) == isotope_refined_
+    key(b)`` iff ``a`` and ``b`` are the same species AT THE ISOTOPE-REFINED-CONSTITUTION level (modulo stereo, see
+    :func:`_isotopic_identity`).  Raises :class:`SmilesError` on a malformed/out-of-scope SMILES, like the parser.
+    """
+    if not isinstance(text, str):
+        raise SmilesError("SMILES input must be a string")
+    stripped = text.strip()
+    if not stripped:
+        raise SmilesError("empty SMILES")
+    atoms, bonds = _parse_skeleton(stripped)
+    charge = sum(a.charge for a in atoms)
+    return _isotopic_identity(atoms, bonds, charge)
+
+
 def parse_smiles(text: str) -> Molecule:
     """Parse a SMILES string into a canonical :class:`~smartchem.category.Molecule`.
 
@@ -485,6 +570,9 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
         raise SmilesError("empty SMILES")
     atoms, bonds = _parse_skeleton(stripped)
     charge = sum(a.charge for a in atoms)
+    # The isotope-refined key must see the PRISTINE aromatic bonds (_build_molecule mutates them during Kekulisation),
+    # so compute it FIRST -- it takes a private copy of `bonds` and leaves the caller's list untouched.
+    isotopic_digest = _isotopic_identity(atoms, bonds, charge) if any(a.isotope for a in atoms) else None
     molecule = _build_molecule(atoms, bonds, charge)
     features = SmilesFeatures(
         isotopes=tuple(sorted({a.isotope for a in atoms if a.isotope})),
@@ -492,5 +580,6 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
         double_bond_stereo=("/" in stripped or "\\" in stripped),
         charged_atoms=sum(1 for a in atoms if a.charge != 0),
         net_charge=charge,
+        isotopic_digest=isotopic_digest,
     )
     return molecule, features

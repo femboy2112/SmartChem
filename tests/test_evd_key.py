@@ -134,17 +134,34 @@ class TestProductionPathBite:
         assert gated.selectivity.status is SelectivityStatus.UNKNOWN
 
     def test_classify_route_kinetics_is_gated_by_an_isotope_blocker(self):
-        # the CLAIM-CLASS gap fix: an isotope BLOCKER (kinetics class) downgrades every step's sourced rate.
+        # VG-KINETICS-GATE-NOPOSCTRL (red-team): the para route has NO sourced rate, so "all UNKNOWN under a blocker"
+        # alone proves nothing (it was UNKNOWN anyway).  POSITIVE CONTROL: a reaction WITH a sourced rate (the N2O5
+        # decomposition) resolves to a real regime, and the SAME isotope blocker downgrades it to a loud UNKNOWN
+        # that CITES the section-5.3 kinetics gate -- so the UNKNOWN is caused by the gate, not by a missing record.
+        from smartchem.experiment.kinetics import kinetics_of_step
+        n2o5 = parse_smiles("O=[N+]([O-])O[N+](=O)[O-]")
+        no2 = parse_smiles("[N+](=O)[O-]")
+        o2 = parse_smiles("O=O")
+        sourced = ExperimentStep.assembling(o2, (n2o5, n2o5), (no2, no2, no2, no2, o2))
+        assert kinetics_of_step(sourced, temperature_k=310.0).regime.value != "UNKNOWN"   # baseline: a real rate
+        gated = kinetics_of_step(sourced, temperature_k=310.0, losses=(isotope_loss("[13C]", (13,)),))
+        assert gated.regime.value == "UNKNOWN" and "5.3" in gated.reason                  # the gate CAUSED it
+        # ... and end-to-end through the public classify_route the blocker gags every step's rate
         from smartchem.experiment.classify import classify_route
         graded = classify_route(self._route(), losses=(isotope_loss("[13C]", (13,)),))
         assert all(s.regime.value == "UNKNOWN" for s in graded.kinetics.per_step)
 
-    def test_compile_synthesis_threads_losses_to_the_dossier(self):
-        # compile_synthesis passes losses to rank/classify/draft; a step selectivity under a blocker is UNKNOWN.
+    def test_losses_thread_through_the_compile_dossier_builder(self):
+        # VG-COMPILE-SYNTH-DEAD-ASSERT (red-team): the old assertion was DEAD -- compile_synthesis(PARA) surfaces no
+        # best_draft, so the `if c.best_draft is not None` body never ran.  Prove the threading at the dossier builder
+        # compile_synthesis actually calls (draft_route_dossier) with a POSITIVE control, then that compile threads it.
         from smartchem.experiment.compile import compile_synthesis
-        c = compile_synthesis(PARA, reagents=(AMP, ANH), available=(AMP, ANH), commodities=(),
-                              losses=(stereo_loss("x"),))
-        # whatever route it surfaces, no step may carry a sourced FAVORED/DISFAVORED under the blocker
+        from smartchem.experiment.drafter import draft_route_dossier
+        route = self._route()
+        assert draft_route_dossier(route).selectivity.verdict == "FAVORED"                       # baseline: real verdict
+        assert draft_route_dossier(route, losses=(stereo_loss("x"),)).selectivity.verdict == "UNKNOWN"  # gated
+        # compile_synthesis accepts + threads losses into that SAME gated builder without error
+        c = compile_synthesis(PARA, reagents=(AMP, ANH), losses=(stereo_loss("x"),))
         if c.best_draft is not None:
             assert c.best_draft.selectivity.verdict in ("UNKNOWN", "NOT_APPLICABLE")
 

@@ -36,9 +36,9 @@ from .kinetics import (
     _LN10,
     _LOG10_LN2,
     _format_magnitude,
-    _record_key,
     _regime_of,
-    reaction_key_of,
+    reaction_evidence_key,
+    record_evidence_key,
     worst_regime,
 )
 from .step import ExperimentRoute, ExperimentStep
@@ -66,12 +66,13 @@ _LOG10_KB_OVER_H = math.log10(BOLTZMANN_J_PER_K / PLANCK_J_S)
 def _resolve_barrier(barriers: EyringTable, step: ExperimentStep) -> EyringRef | None:
     """The sourced record whose canonical reaction structure matches this step's, direction-specific, or None.
 
-    Reuses the Arrhenius provider's canonical-structure keying (:func:`~smartchem.experiment.kinetics.
-    reaction_key_of` and ``_record_key``) verbatim, so an isomer never inherits another reaction's barrier.
+    Resolves against the ONE unified section-9.1 key (:func:`~smartchem.experiment.kinetics.reaction_evidence_key`
+    / :func:`~smartchem.experiment.kinetics.record_evidence_key`, EVD-KEY-01), so an isomer never inherits another
+    reaction's barrier and the Eyring and Arrhenius providers key evidence identically.
     """
-    key = reaction_key_of(step)
+    key = reaction_evidence_key(step)
     for rec in barriers.records:
-        if _record_key(rec) == key:
+        if record_evidence_key(rec) == key:
             return rec
     return None
 

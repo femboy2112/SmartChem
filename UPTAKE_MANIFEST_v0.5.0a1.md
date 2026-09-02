@@ -800,7 +800,7 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `READY-TIER-01` | Every current route dossier states its readiness | `ProcedureReadiness` exists; current drafter deliberately emits only `FORMAL_CANDIDATE` and cannot self-promote | Preserve this floor; `ProcedureIR` must govern any future higher tier | Missing operational fields produce `FORMAL_CANDIDATE`, never `BENCH_DRAFT` | Procedure IR for future promotion | `IMPLEMENTED_AND_VERIFIED` |
+| `READY-TIER-01` | Every current route dossier states its readiness | `ProcedureReadiness` exists; current drafter deliberately emits only `FORMAL_CANDIDATE` and cannot self-promote. The typed RESPONSE now carries this floor too: `ranked_route_dossiers` (CLI-CAN-02 brick 2) is populated with `RankedRouteSummary` records whose `readiness_tier` is guarded to `FORMAL_CANDIDATE` (a self-promoted tier is refused on construction) | Preserve this floor; `ProcedureIR` must govern any future higher tier | Missing operational fields produce `FORMAL_CANDIDATE`, never `BENCH_DRAFT`; the ranked response summary cannot self-promote | Procedure IR for future promotion | `IMPLEMENTED_AND_VERIFIED` |
 | `READY-NAME-01` | Sparse output is called route dossier, not runnable/full procedure | Canonical API is `RouteDossier`/`draft_route_dossier`; renderer/docs use formal-candidate language. `DraftedProcedure`/`draft_procedure` and `Composability.is_runnable` remain explicit deprecated aliases | Remove compatibility aliases in a future breaking release | Canonical type/render carry readiness boundary and unresolved checklist | `READY-TIER-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `PROC-IR-01` | Typed procedure operations underlie any bench draft | Essential scale/addition/quench/workup/purification/analysis/waste fields absent | Add `ProcedureIR` with completeness validator | Delete any required field from fixture -> lower tier or construction failure | `STOCK-01`, hazard work | `TODO` |
 | `SAFE-AUTH-01` | No emitted `PROCEED_UNATTENDED` or automatic safety authorization | Output no longer emits the label; enum member remains for compatibility only | Deprecate/remove compatibility symbol later without restoring output authority | Missing hazard record cannot yield authorization; rendered label absent | None | `IMPLEMENTED_AND_VERIFIED` |
@@ -818,7 +818,7 @@ residual limitations:
 | `CLI-EXIT-01` | Stable exit codes separate route/no-route/partial/refusal/invalid/internal | The top-level guarded service is now BUILT: `main()` wraps command dispatch and maps ANY escaping exception to exit 70 (`ERROR_INTERNAL`) with a concise stderr line — never a raw traceback, never Python's default exit 1; argparse's own `SystemExit` (a `BaseException`, not `Exception`) passes through, so `--help` stays 0 and a bad flag stays 2. The full 0/2/3/4/5 table is observed both in-process AND through a real `python -m smartchem` subprocess, plus the controlled internal-error fixture for 70 (`tests/test_cli_exit.py`). Acceptance MET. Central error mapping across every format/path is `CLI-ERR-01`; the decompile human path still returns 0/2/4 by its own status | Central error mapping (`CLI-ERR-01`) | Codes 0/2/3/4/5 observed; controlled internal-error fixture for 70 — **DONE** (`tests/test_cli_exit.py`) | `SRCH-RCT-01`, `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-ERR-01` | Invalid chemistry/numeric input yields domain error without traceback | **One central error-classification authority BUILT.** `cli.py` `_domain_exit` maps a raised domain exception to its section-14.4 code — a chemistry-MODEL-boundary refusal (`ScissionError`/`IdentityUnsupportedError`, checked FIRST since both are `ValueError` subclasses) → exit 5; an INVALID input (`IdentityParseError`/`DecompilerError`/`SmilesError`/`ValueError`/`TypeError`) → exit 2, concise stderr, NEVER a traceback; an exception in NEITHER family is RE-RAISED, so a genuine internal bug reaches `main()`'s exit-70 guard and is never laundered into a domain 2/5. `recompile`/`decompile`/`compile` all route through it (no per-command hand-rolled mapping). A `--input-kind`{auto,name,smiles,inchi,formula,target-file} flag surfaces the section-14.2 kinds; inchi/formula/target-file are a loud INVALID_INPUT (exit 2) on the human AND `--json` path of BOTH `recompile` and `compile` (the `compile`-human `--input-kind`-bypass red-team finding is fixed), never a mis-parse. REMAINING: full ID-PARSE-01 resolution of those kinds; a nonfinite-float constraint matrix awaits the synthesize constraint uptake (CLI-CAN-02) | Full ID-PARSE-01 kinds; nonfinite-float constraints (CLI-CAN-02) | Invalid/refusal probes concise + no traceback; InChI/formula/target-file subprocess matrix exit 2 — **DONE** (`tests/test_cli_err.py`) | `ID-PARSE-01`, constraints | `IN_PROGRESS` |
 | `CLI-VERS-01` | Package installs `smartchem`, supports `--version`, exposes consistent `__version__` | Entry point, package metadata and `__version__` report `0.5.0a1` | Preserve single-source consistency in release packaging | Targeted script/module/version tests pass | None | `IMPLEMENTED_AND_VERIFIED` |
-| `CLI-JSON-01` | Stable JSON contains request, identity, receipt, tier, blockers and route IDs | Landed (`67b4715`): `recompile`/`decompile` `--json` emit the versioned response schema; `response_schema()` is a first-class versioned descriptor of the SHAPE, cross-checked against a real payload so a golden cannot certify a drifted schema; golden fixtures (schema + 6 command responses) + an idempotent regen script; a human↔JSON agreement matrix + `response_semantic_fields()` prove neither view drops or contradicts a semantic field. `ranked_route_dossiers`/`affordability_frontier` still empty (READY-TIER/COST-VEC); the receipt is a digest, not the full object | Add versioned serializer/schema and golden fixtures | Human and JSON agree on all semantic fields — DONE (agreement matrix over recompile + decompile, incl. the SMILES-reduction BLOCKER carried identically to both views) | `SVC-REQ-01`, `READY-TIER-01` | `IN_PROGRESS` |
+| `CLI-JSON-01` | Stable JSON contains request, identity, receipt, tier, blockers and route IDs | Landed (`67b4715`): `recompile`/`decompile` `--json` emit the versioned response schema; `response_schema()` is a first-class versioned descriptor of the SHAPE, cross-checked against a real payload so a golden cannot certify a drifted schema; golden fixtures (schema + 6 command responses) + an idempotent regen script; a human↔JSON agreement matrix + `response_semantic_fields()` prove neither view drops or contradicts a semantic field. **`ranked_route_dossiers` is now POPULATED** (CLI-CAN-02 brick 2): the descriptor carries a `ranked_route_summary_fields` block cross-checked against a REAL routes-found payload, the human render shows the per-route fit block, and `--json` carries the `RankedRouteSummary` objects, so the two views still agree; `affordability_frontier` stays empty (COST-VEC-01); the receipt is a digest, not the full object | Add versioned serializer/schema and golden fixtures | Human and JSON agree on all semantic fields — DONE (agreement matrix over recompile + decompile, incl. the SMILES-reduction BLOCKER and the ranked fit disposition carried identically to both views) | `SVC-REQ-01`, `READY-TIER-01` | `IN_PROGRESS` |
 
 **Uptake record — typed compilation service, first brick** (`SVC-REQ-01` `TODO` → `IN_PROGRESS`; the lever the
 CLI rows `CLI-CAN`/`CLI-JSON`/`CLI-EXIT`/`CLI-ERR` hang off):
@@ -1311,6 +1311,58 @@ residual / follow-on: the constraint is DECLARED but not yet APPLIED -- run_comp
                      it (bringing the dossier's ConstraintBox fitting onto the typed response is brick 2); the section-9
                      provider levers (`--offline`) and unifying run_compilation to RETURN the graded dossier are the
                      rest of CLI-CAN-02; min_pressure_atm is a builder kwarg with no CLI flag yet.
+```
+
+**Uptake record — CLI-CAN-02 brick 2: APPLY the section-11 constraint + populate `ranked_route_dossiers`** (advances
+`CLI-CAN-02`, and converges `READY-TIER-01`'s "every route dossier states its readiness" onto the typed response):
+
+```text
+ID:                  CLI-CAN-02 (brick 2 -- apply the section-11 box to route ranking + the ranked response field)
+files:               smartchem/service.py, smartchem/compilation_ir.py, smartchem/cli.py,
+                     smartchem/experiment/compile.py, smartchem/experiment/drafter.py, tests/test_cli_can2.py (new),
+                     tests/test_constraints.py, tests/test_service.py, tests/test_cli_json.py,
+                     tests/fixtures/cli_json/*.json (regen)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              3222 passed, 14 skipped, 1 xfailed (baseline 3192; +30). ruff clean on every changed file.
+built:               Brick 1 made the request DECLARE the T/P constraint; brick 2 APPLIES it and fills the response's
+                     ranked_route_dossiers (empty since the first service brick -- the READY-TIER-01 floor).
+                     (1) recompile_to_ir gains an additive `search_result=` (default None). The service searches ONCE
+                     (search_routes) and reuses the SAME RouteSearchResult both to package the IR (constraint-FREE
+                     candidates) and to rank the routes against the section-11 box (constraint-DEPENDENT) -- no double
+                     search; a mode-mismatched precomputed result is a loud TypeError, never a silent foreign search.
+                     The box stays OUT of the IR by design: the IR is the presentation-invariant search artifact two
+                     different constraints share; the constraint lives in the RESPONSE.
+                     (2) NEW `RankedRouteSummary` (service): a thin Digestible projection of a drafter RouteFit --
+                     route_digest (== the IR candidate_digest), the fit_status (FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED)
+                     with exact exclusions/gaps, the READY-TIER-01 readiness floor (FORMAL_CANDIDATE, guarded against
+                     self-promotion), and the ranking's four sourced verdicts so the order is inspectable. It is
+                     coherence-guarded (EXCLUDED must give a reason; FITS cannot carry exclusions), (de)serialized, and
+                     its digest is folded into result_digest (v1alpha1->v1alpha2) so the result identity is a TRUE
+                     content hash. Response schema v1alpha2->v1alpha3; descriptor v1alpha4->v1alpha5.
+                     (3) ONE note authority `constraint_note(bounds, fit_counts=...)` replaces constraint_declared_note:
+                     APPLIED with the real (fit, excluded, unknown) tally when routes were ranked, DECLARED otherwise
+                     (no routes, or DAG mode which does not rank yet). A constrained dimension a route leaves undeclared
+                     is UNKNOWN-fit -- a GAP, never a silent pass (section 11).
+                     (4) Alias coherence: compile_synthesis gains an optional `box=` (default None -> UNCONSTRAINED,
+                     zero blast radius for every current caller), and `compile --max-temp` applies the SAME
+                     ConstraintBox.of_bounds the recompile service uses. Both aliases surface the SAME applied note; the
+                     recompile human render shows the per-route fit block and --json carries ranked_route_dossiers, so
+                     the two views agree (CLI-JSON-01). The flag help text flipped from "NOT yet filtered" to APPLIED.
+falsifier fixture:   RankedRouteSummary refuses a bad schema/status, a self-promoted tier, EXCLUDED-without-reason, and
+                     FITS-with-exclusion; payload round-trip is identity. search_result reuse yields a byte-identical
+                     IR to a fresh search; a routes/dags mode mismatch raises. A routes-found response populates ranked
+                     (UNCONSTRAINED with no box; UNKNOWN under a T ceiling on an undeclared step -- never a silent
+                     pass); the ranked route_digests equal the IR candidate_digests. A declared constraint moves
+                     result_digest; the SAME constraint is deterministic; the SVC-REQ-01 alias-collapse SURVIVES the
+                     ranked fold (name and canonical SMILES share byte-identical ranked summaries + result_digest,
+                     constrained and unconstrained). serialize/deserialize preserves ranked + digest. `compile` and
+                     `recompile` both report APPLIED for the same flag.
+red-team:            pending -- a multi-bearing attack workflow (Ultracode) runs post-push; any confirmed fold is
+                     recorded in a follow-up docs commit (per this arc's design -> tests -> green -> commit -> push ->
+                     red-team cadence).
+residual / follow-on: DAG-mode bench fitting (convergent trees) still ranks nothing -- the note honestly says DECLARED
+                     there. The section-9 provider levers (`--offline`) and returning the FULL graded dossier through
+                     run_compilation are the rest of CLI-CAN-02. affordability_frontier stays empty until COST-VEC-01.
 ```
 
 ## 4. P1 physical, data, and affordability backlog

@@ -173,6 +173,9 @@ pretending every reagent is elemental. Both directions share one typed
   `REFUSED_*` status, not a bare exception;
 - a candidate is a `FORMAL_CANDIDATE`, never a validated bench procedure; missing operations
   are shown, not hidden;
+- a declared bench constraint (§11 temperature/pressure) is part of the request identity **and
+  applied** to route ranking: each route is reported as fitting, excluded, or — when it leaves
+  a constrained dimension undeclared — *unknown-fit*, which is a gap, never a silent pass;
 - chemical identity is never equated with purity, concentration, grade, phase, availability,
   or price; every price is dated and sourced or it is `UNKNOWN`;
 - derived, estimated, and unsupported claims are labelled distinctly — a loud refusal beats a
@@ -202,7 +205,7 @@ Current maintained fast-suite result (in a dev environment with the optional PyS
 installed; environments without it skip additional real-wavefunction tests):
 
 ```text
-3190 passed, 14 skipped, 1 xfailed
+3222 passed, 14 skipped, 1 xfailed
 ```
 
 The skipped tests require the explicit slow-test gate and are not represented as passed.

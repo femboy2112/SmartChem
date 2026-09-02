@@ -1357,9 +1357,20 @@ falsifier fixture:   RankedRouteSummary refuses a bad schema/status, a self-prom
                      ranked fold (name and canonical SMILES share byte-identical ranked summaries + result_digest,
                      constrained and unconstrained). serialize/deserialize preserves ranked + digest. `compile` and
                      `recompile` both report APPLIED for the same flag.
-red-team:            pending -- a multi-bearing attack workflow (Ultracode) runs post-push; any confirmed fold is
-                     recorded in a follow-up docs commit (per this arc's design -> tests -> green -> commit -> push ->
-                     red-team cadence).
+red-team:            workflow wo95gxk8l, 3 blind attack bearings (identity/one-way-law, honesty/vacuous-green,
+                     guard/blast-radius) + per-finding refute-by-default verify (9 agents, 668k subagent tokens). 6
+                     CONFIRMED, 0 refuted -- all folded in `3c41c6c` (pinned by TestRedTeamFolds). (HIGH) the
+                     `--min-pressure` FLOOR in `_step_box_check` lacked the undeclared-dimension GAP the two ceilings
+                     have, so a route whose step left pressure undeclared read as FITS -- a silent pass, and the "never
+                     a silent pass" APPLIED note LIED; the floor now gaps an undeclared pressure -> UNKNOWN-fit.
+                     (MED) RankedRouteSummary.__post_init__ enforced only EXCLUDED-needs-reason + FITS-no-exclusion;
+                     now the FULL producer invariant (a PASS carries neither gap nor exclusion; UNKNOWN carries a gap
+                     and no exclusion), so a deserialized summary cannot smuggle a silent pass. (MED)
+                     _check_outcome_coherence guarded affordability-empty but not ranked-empty on the ir=None branch,
+                     so a REFUSED response could smuggle a dossier into result_digest -> now refused. (MED/MED/LOW)
+                     three docstrings (module scope, ConstraintPolicy HONESTY, CompilationResponse class) still
+                     described the brick-1 declared-not-applied/empty behavior -> rewritten to the applied/populated
+                     reality. Suite 3222 -> 3229.
 residual / follow-on: DAG-mode bench fitting (convergent trees) still ranks nothing -- the note honestly says DECLARED
                      there. The section-9 provider levers (`--offline`) and returning the FULL graded dossier through
                      run_compilation are the rest of CLI-CAN-02. affordability_frontier stays empty until COST-VEC-01.

@@ -813,7 +813,7 @@ residual limitations:
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
 | `SVC-REQ-01` | One typed request/service powers chemical commands | First brick landed (`67b8ae4`): `smartchem/service.py` provides the typed `CompilationRequest`/`CompilationResponse`, an alias-independent `semantic_digest` (equal flags across aliases → equal search identity → equal result), per-field `origin` provenance, `run_compilation` + the section 14.4 exit map, and canonical serialization; the two synthesis aliases still build their own requests (routing the live CLI argv through the service is `CLI-CAN-01`) | Implement `CompilationRequest/Response`; route aliases through it | Equal flags across aliases produce equal request/result digests | `IR-CHEM-01` | `IN_PROGRESS` |
-| `CLI-CAN-01` | Canonical `decompile` and `recompile`; legacy aliases share defaults | Current commands diverge | Add canonical verbs; deprecate aliases without duplicate logic | Command matrix gives equal request JSON | `SVC-REQ-01` | `TODO` |
+| `CLI-CAN-01` | Canonical `decompile` and `recompile`; legacy aliases share defaults | Canonical `recompile` verb landed (`df93b8c`), routed through the typed service (`run_compilation`); `decompile` gained `--json`/`--emit-request` through the same service; the legacy `compile` alias now builds the SAME typed request from the ONE shared builder (no divergent defaults) + prints a deprecation notice, so `compile … --emit-request` and `recompile … --emit-request` are byte-identical. `synthesize`'s deeper uptake (its `--max-temp`/`--max-pressure` constraints + `--offline` provider levers) is the named follow-on `CLI-CAN-02` | Add canonical verbs; deprecate aliases without duplicate logic | Command matrix gives equal request JSON — DONE (7-row grid, `--emit-request` byte-identical) | `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-NAME-01` | Normal names accepted without private formatting | Registered offline names and explicit `name:`/`smiles:` prefixes work in synthesis CLIs; InChI/formula/echo/shared parser are incomplete | Finish unified identity parser and echo receipt | Registered-name and SMILES tests pass; add InChI/formula/ambiguity matrix | `ID-PARSE-01` | `IN_PROGRESS` |
 | `CLI-EXIT-01` | Stable exit codes separate route/no-route/partial/refusal/invalid/internal | Synthesis front doors now use 0/2/3/4/5 for named outcomes; decompile uses 0/2/4; shared code 70/internal mapping is absent | Finish standard table through one shared service and subprocess matrix | Codes 0/2/3/4/5 observed; add controlled internal-error fixture for 70 | `SRCH-RCT-01`, `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-ERR-01` | Invalid chemistry/numeric input yields domain error without traceback | Invalid formula/name/SMILES and charged-model refusal are concise and mapped to 2/5; no one central mapping covers every format/path | Centralize error mapping and strict validation | Current invalid/refusal probes pass; add InChI/formula-file/nonfinite subprocess matrix | `ID-PARSE-01`, constraints | `IN_PROGRESS` |
@@ -890,6 +890,65 @@ residual limitations / next bricks:
   3. ranked_route_dossiers and affordability_frontier are present-and-empty (READY-TIER-01 / COST-VEC-01); the
      section 13.2 search_receipt is exposed as a digest, not the full receipt object. Quantitative StockMaterial
      binding is STOCK-01. The exit-code 70 path awaits the top-level guarded service.
+
+**Uptake record — canonical CLI verbs routed through the typed service** (`CLI-CAN-01` `TODO` → `IN_PROGRESS`;
+the first row the SVC-REQ-01 lever actually pulls):
+
+```text
+ID:                  CLI-CAN-01 (canonical recompile/decompile verbs + alias-equal request construction)
+commit:              df93b8c
+files:               smartchem/cli.py, smartchem/service.py, tests/test_cli_canonical.py (new)
+tests:               tests/test_cli_canonical.py -- TestCommandMatrixEqualRequestJson, TestCliOriginLaw,
+                     TestRecompileOutcomes, TestRecompileJson, TestQuietNeverHidesABlocker,
+                     TestCrossEngineExitCoherence, TestDecompileServiceViews, TestDeprecationAndUsage,
+                     TestRedTeamRegressions (49 total, counting parametrize)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2895 passed, 14 skipped, 1 xfailed (baseline 2848; +47). ruff clean on every changed file;
+                     git diff --check clean.
+built:               the canonical `recompile` verb, routed through run_compilation (SVC-REQ-01's service). ONE
+                     shared argv->request builder (_recompile_request_from_args) feeds compile AND recompile from
+                     the service's single default table, so equal flags -> byte-identical requests (standard 14.1:
+                     a legacy alias MUST construct the same typed request and MUST NOT keep divergent defaults).
+                     recompile renders the typed response (retaining status/receipt-digest/identity-losses/candidate
+                     IDs), and gains --json (versioned response schema), --emit-request (a DRY request echo -- no
+                     search), --quiet (drops narrative but NEVER a blocker in a successful-looking result, 14.3) and
+                     the section 14.4 exit codes 0/2/3/4/5 from one service authority. `compile` keeps its rich
+                     graded dossier (deprecated one cycle) but sources its request from the shared builder + prints
+                     a stderr deprecation notice. `decompile` gained --json/--emit-request through the service, with
+                     example_inventory()'s Formula OBJECTS normalised to canonical formula text (the typed request
+                     keys on text). Both recompile-engines (the legacy graded compile_synthesis and the service's
+                     recompile_to_ir) wrap the SAME search_routes, so their exit codes provably agree -- a
+                     cross-engine coherence tripwire guards that seam.
+acceptance:          the command matrix -- compile vs recompile with equal flags -> byte-identical --emit-request
+                     JSON across a 7-row grid; a differing semantic flag SPLITS the request; a default-vs-explicit
+                     equal value shares semantic_digest but differs in origins/full-digest (the section-13.1 law at
+                     the CLI surface); cross-engine exit coherence (compile human vs recompile --json) across the
+                     outcome grid.
+red-team:            3 attack bearings + 6 verify agents (workflow, 9 agents, 788k subagent tokens). 4 CONFIRMED
+                     real (2 refuted correctly: the SMILES->formula loss is the documented IR-LOSS-01 TODO; an
+                     --emit-request exit 0 is a request-echo, not a false search success) -- ALL folded before this
+                     commit: (CLI-CAN-01-B, HIGH) an empty `--reagents` list emitted an IDENTICAL request across
+                     compile/recompile but executed two DIFFERENT searches -- compile silently injected water,
+                     recompile searched () -- the exact "invisible default branch" (section 13.1) this brick exists
+                     to kill; fixed so the CLI coerces an empty pool to the VISIBLE water default (both aliases
+                     agree, and the emitted request shows the water). (CLI-CAN-01-A, MEDIUM) that same empty pool
+                     crashed recompile with a raw TypeError to exit 1 (no section-14.4 code), because _run_recompile
+                     caught only ScissionError; fixed so the service refuses a genuinely-empty reagent pool as exit-2
+                     INVALID_INPUT (defense-in-depth for programmatic callers). (F1 + DEC-ELEM-EXIT-DIVERGE, HIGH) a
+                     bare element (a universal terminal bucket the decompiler bottoms out at, absent from the DECLARED
+                     inventory) decompiled to human exit 0 (already a bucket) but service --json exit 3
+                     (NO_ROUTE_COMPLETE) -- a confident section-8.3 claim of absence over elemental oxygen, and a
+                     drift the routing promises cannot happen; fixed so a COMPLETE decompile with zero edges is
+                     TARGET_ALREADY_AVAILABLE (exit 0), matching the human path. Each fix is pinned in
+                     TestRedTeamRegressions.
+residual / follow-on: synthesize's full uptake is CLI-CAN-02 (its constraints §11 + provider §9 levers). recompile's
+                     human render is the typed response; the rich graded compile_synthesis dossier stays under legacy
+                     `compile` one cycle -- unifying run_compilation to RETURN the dossier (so there is literally one
+                     calculation, not two views over the same search_routes) is future. The exit-70 internal path
+                     still awaits the top-level guarded service. --json is the response schema, but
+                     ranked_route_dossiers/affordability_frontier remain empty (READY-TIER-01 / COST-VEC-01). The
+                     target still enters the digest as typed (ID-PARSE-01).
+```
 
 ## 4. P1 physical, data, and affordability backlog
 

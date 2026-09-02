@@ -59,6 +59,7 @@ from .compilation_ir import (
     recompile_to_ir,
 )
 from .contracts import Digestible, canonical_digest
+from .identity import IdentityLoss, MatchLayer, refines
 from .identity_parse import IdentityParseError, InputKind, resolve_target
 from .search import REFUSED_8_2_STATUSES, STANDARD_8_2_STATUSES
 
@@ -99,12 +100,15 @@ __all__ = [
     "EXIT_INTERNAL",
 ]
 
-COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha1"
+# v1alpha2 (ID-LAYER-02): IdentityPolicy now carries a match_layer field, a genuine request-payload shape change.
+COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha2"
 COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha1"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
-# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha1"
+# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha2: IR-LOSS-01
+# turned compilation_ir.identity_losses from array[str] into array[object(identity-loss)] (a shape change), and the
+# request schema it references bumped for ID-LAYER-02's match_layer.
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha2"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -152,6 +156,24 @@ _GRAMMAR_TO_MODE = {
 }
 _RECOMPILE_GRAMMARS = frozenset(_GRAMMAR_TO_MODE)
 
+# The ONE identity layer each direction's engine can HONESTLY match at today (ID-LAYER-02).  A recompile's
+# structural search matches terminals at CONSTITUTION (the atom/bond graph -- today's STRUCTURE layer); a
+# formula descent matches at FORMULA.  A request that declares any OTHER layer is refused by run_compilation,
+# because the engine cannot perceive a finer layer (stereo/isotope) and section 5.4 forbids a structure search
+# terminating on a coarser (formula-only) match -- both would be a fabricated identity claim, not a real match.
+_HONORED_MATCH_LAYER = {
+    CompilationOperation.RECOMPILE: MatchLayer.CONSTITUTION,
+    CompilationOperation.DECOMPILE: MatchLayer.FORMULA,
+}
+
+# The layers the current Molecule model can perceive AT ALL (smartchem.identity.LayeredIdentity.of_molecule
+# resolves FORMULA and CONSTITUTION and stops there).  A finer refusal must distinguish a layer that is genuinely
+# unperceivable by the model (CONFIGURATION/ISOTOPIC -- stereo/isotope, ID-STEREO-01) from a layer the model DOES
+# perceive in principle but that THIS operation's engine does not build (CONSTITUTION on a formula descent) -- the
+# two have different honest reasons, and conflating them fabricates an "unbuilt perception" story that is false
+# for the second case (a red-team finding).
+_PERCEIVABLE_LAYERS = frozenset({MatchLayer.FORMULA, MatchLayer.CONSTITUTION})
+
 # The bound-name vocabulary each direction's engine looks up (run_compilation reads bounds BY NAME).  A request
 # whose bound-names do not match its operation is incoherent and is refused at construction, so a tampered or
 # deserialized payload fails CLOSED here rather than as a KeyError deep inside run_compilation.
@@ -190,10 +212,11 @@ _EXIT_BY_OUTCOME = {
 
 
 # -- policy sub-records ------------------------------------------------------------------------------------------
-# Each is a frozen, digestible semantic record.  The placeholder members (IdentityPolicy/ConstraintPolicy/
-# RankingPolicy/EvidenceProviderSelection) carry the ONE knob that has real meaning at the current build depth and
-# default to today's behaviour; they are typed and versionable now so the request shape is stable while the arcs
-# they front (ID-LAYER-01, constraints, section 15 ranking, provider selection) are built out behind them.
+# Each is a frozen, digestible semantic record carrying the knob(s) that have real meaning at the current build
+# depth.  IdentityPolicy now ENFORCES its match_layer (ID-LAYER-02): it is no longer a pure placeholder.  The
+# remaining placeholder members (ConstraintPolicy/RankingPolicy/EvidenceProviderSelection) default to today's
+# behaviour and are typed/versionable now so the request shape is stable while the arcs they front (constraints,
+# section 15 ranking, provider selection) are built out behind them.
 
 
 @dataclass(frozen=True)
@@ -267,14 +290,25 @@ class TerminalPolicy(Digestible):
 
 @dataclass(frozen=True)
 class IdentityPolicy(Digestible):
-    """Identity-comparison policy (section 5).  Minimal first cut: one id; the full stereo/isotope/salt/mixture
-    model is ID-LAYER-01 (TODO)."""
+    """Identity-comparison policy (section 5): the LAYER at which this request's identity matches are made.
+
+    ID-LAYER-02 wires the section 5.1 :class:`~smartchem.identity.MatchLayer` lattice into the request: a request
+    DECLARES the layer at which terminal matching / route dedup are performed (``match_layer``).  It rides the
+    :attr:`CompilationRequest.semantic_digest`, so two requests that match at different layers are different
+    searches.  :func:`run_compilation` enforces that the engine only ever operates at a layer it can HONESTLY
+    honor -- a declared layer finer than it can perceive, or one section 5.4 forbids, is REFUSED (exit 5), never
+    silently matched at a coarser layer and reported as if it were the finer one.  Salt/mixture COMPONENT policy
+    stays with the material model (StockMaterial); this record carries the layer knob that has meaning today.
+    """
 
     policy_id: str = "DEFAULT"
+    match_layer: MatchLayer = MatchLayer.CONSTITUTION
 
     def __post_init__(self) -> None:
         if not isinstance(self.policy_id, str) or not self.policy_id:
             raise ValueError("policy_id must be a non-empty string")
+        if not isinstance(self.match_layer, MatchLayer):
+            raise TypeError("match_layer must be a MatchLayer")
 
 
 @dataclass(frozen=True)
@@ -488,6 +522,22 @@ def _canon(values: "tuple[str, ...]") -> tuple[str, ...]:
     return tuple(sorted(set(values)))
 
 
+def _resolve_identity_policy(
+    identity_policy: "IdentityPolicy | None",
+    match_layer: "MatchLayer | None",
+    default_layer: MatchLayer,
+) -> IdentityPolicy:
+    """Resolve the request's :class:`IdentityPolicy` (ID-LAYER-02): an explicit policy wins whole; else a bare
+    ``match_layer`` sets just the layer; else the operation's honest default layer.  A caller may not pass both."""
+    if identity_policy is not None:
+        if match_layer is not None:
+            raise ValueError("pass either identity_policy or match_layer, not both")
+        return identity_policy
+    if match_layer is not None:
+        return IdentityPolicy(match_layer=match_layer)
+    return IdentityPolicy(match_layer=default_layer)
+
+
 def build_recompile_request(
     target_input: str,
     *,
@@ -500,6 +550,7 @@ def build_recompile_request(
     max_routes: "int | None" = None,
     cut_budget: "int | None" = None,
     identity_policy: "IdentityPolicy | None" = None,
+    match_layer: "MatchLayer | None" = None,
     constraints: "ConstraintPolicy | None" = None,
     ranking_policy: "RankingPolicy | None" = None,
     evidence_provider_selection: "EvidenceProviderSelection | None" = None,
@@ -521,7 +572,8 @@ def build_recompile_request(
         "max_depth": max_depth is not None,
         "max_routes": max_routes is not None,
         "cut_budget": cut_budget is not None,
-        "identity_policy": identity_policy is not None,
+        # one origin covers the identity policy however it was set -- as a whole object or via the match_layer knob.
+        "identity_policy": identity_policy is not None or match_layer is not None,
         "constraints": constraints is not None,
         "ranking_policy": ranking_policy is not None,
         "evidence_provider_selection": evidence_provider_selection is not None,
@@ -535,7 +587,9 @@ def build_recompile_request(
         CompilationOperation.RECOMPILE,
         target_input,
         input_kind if input_kind is not None else InputKind.AUTO,
-        identity_policy if identity_policy is not None else IdentityPolicy(),
+        # default recompile matching is at CONSTITUTION (the IdentityPolicy dataclass default), the one layer the
+        # structural engine honestly honors; an explicit match_layer or identity_policy overrides.
+        _resolve_identity_policy(identity_policy, match_layer, MatchLayer.CONSTITUTION),
         TerminalPolicy(
             "STRUCTURE",
             commodities_enabled if commodities_enabled is not None else True,
@@ -566,6 +620,7 @@ def build_decompile_request(
     budget: "int | None" = None,
     max_edges: "int | None" = None,
     identity_policy: "IdentityPolicy | None" = None,
+    match_layer: "MatchLayer | None" = None,
     ranking_policy: "RankingPolicy | None" = None,
     evidence_provider_selection: "EvidenceProviderSelection | None" = None,
     output_policy: "OutputPolicy | None" = None,
@@ -584,7 +639,7 @@ def build_decompile_request(
         "max_multiplicity": max_multiplicity is not None,
         "budget": budget is not None,
         "max_edges": max_edges is not None,
-        "identity_policy": identity_policy is not None,
+        "identity_policy": identity_policy is not None or match_layer is not None,
         "ranking_policy": ranking_policy is not None,
         "evidence_provider_selection": evidence_provider_selection is not None,
         "output_policy": output_policy is not None,
@@ -594,7 +649,9 @@ def build_decompile_request(
         CompilationOperation.DECOMPILE,
         target_input,
         input_kind if input_kind is not None else InputKind.AUTO,
-        identity_policy if identity_policy is not None else IdentityPolicy(),
+        # a formula descent matches at FORMULA -- the one layer it perceives; an explicit override is enforced
+        # (a decompile declaring a structural layer is refused by run_compilation, since a formula cannot see it).
+        _resolve_identity_policy(identity_policy, match_layer, MatchLayer.FORMULA),
         TerminalPolicy(
             "FORMULA_ONLY",
             False,
@@ -732,8 +789,14 @@ class CompilationResponse:
         return None if self.compilation_ir is None else self.compilation_ir.target
 
     @property
-    def identity_losses(self) -> tuple[str, ...]:
+    def identity_losses(self) -> tuple[IdentityLoss, ...]:
+        """The wrapped IR's first-class typed section-5.3 loss records (IR-LOSS-01)."""
         return () if self.compilation_ir is None else self.compilation_ir.identity_losses
+
+    @property
+    def identity_loss_summaries(self) -> tuple[str, ...]:
+        """The one-line human/JSON-agreement string of each loss (CLI-JSON-01) -- derived from the typed records."""
+        return () if self.compilation_ir is None else self.compilation_ir.identity_loss_summaries
 
     @property
     def candidates(self) -> tuple:
@@ -777,10 +840,56 @@ def _invalid(request: CompilationRequest, reason: str) -> CompilationResponse:
     )
 
 
-def _refused(request: CompilationRequest, reason: str) -> CompilationResponse:
+def _refused(
+    request: CompilationRequest, reason: str, *, standard_status: "str | None" = None
+) -> CompilationResponse:
     return CompilationResponse(
-        COMPILATION_RESPONSE_SCHEMA, request, ResponseOutcome.REFUSED, None, None, (reason,)
+        COMPILATION_RESPONSE_SCHEMA, request, ResponseOutcome.REFUSED, standard_status, None, (reason,)
     )
+
+
+def _check_identity_layer(request: CompilationRequest) -> "CompilationResponse | None":
+    """Enforce ID-LAYER-02: refuse a request whose declared match layer the engine cannot HONESTLY honor.
+
+    Returns a REFUSED response (``REFUSED_IDENTITY_UNSUPPORTED``, exit 5) when the declared
+    :attr:`IdentityPolicy.match_layer` is not the single layer this operation's engine matches at, else ``None``
+    (the request proceeds).  THREE distinct failures, each with its own HONEST reason (never conflated):
+
+    * a finer layer the model cannot perceive at all (CONFIGURATION/ISOTOPIC): stereo/isotope perception is
+      unbuilt, so a match there would be fabricated -- refused rather than silently downgraded (section 5.3);
+    * a finer layer the model perceives in principle but THIS engine does not build (CONSTITUTION on a formula
+      descent): a formula descent constructs no structure, so there is nothing to match at that layer -- refused,
+      NOT blamed on unbuilt perception (which would be a false explanation -- constitution IS perceivable);
+    * a layer COARSER than honored (recompile declaring FORMULA): section 5.4 forbids a structure search
+      terminating on formula-only equality -- refused, never allowed to collapse isomers.
+    """
+    honored = _HONORED_MATCH_LAYER[request.operation]
+    declared = request.identity_policy.match_layer
+    if declared is honored:
+        return None
+    if refines(declared, honored):
+        if declared not in _PERCEIVABLE_LAYERS:
+            reason = (
+                f"the {request.operation.value} engine matches identity at the {honored.value} layer and cannot "
+                f"perceive the finer {declared.value} layer at all (stereo/isotope perception is unbuilt; "
+                f"ID-STEREO-01), so a {declared.value}-layer match would be fabricated -- refused rather than "
+                f"silently matched at {honored.value} (section 5.3 information-loss rule)"
+            )
+        else:
+            # the model CAN perceive this layer (e.g. CONSTITUTION), but this operation's engine does not build it.
+            reason = (
+                f"a {request.operation.value} search matches identity at the {honored.value} layer and constructs "
+                f"no {declared.value}-layer representation (a formula descent yields only the elemental formula, "
+                f"not a structure), so a {declared.value}-layer match is not available on this path -- refused "
+                f"rather than silently matched at {honored.value} (section 5.4)"
+            )
+    else:
+        reason = (
+            f"a {request.operation.value} search matches identity at the {honored.value} layer; it must not "
+            f"terminate on the coarser {declared.value} layer, because formula-only equality does not fix a "
+            f"structure (section 5.4 / gate G3) -- refused"
+        )
+    return _refused(request, reason, standard_status="REFUSED_IDENTITY_UNSUPPORTED")
 
 
 def _classify(ir: ChemicalCompilationIR, target_available: bool) -> ResponseOutcome:
@@ -800,6 +909,10 @@ def run_compilation(request: CompilationRequest) -> CompilationResponse:
     """
     if type(request) is not CompilationRequest:
         raise TypeError("run_compilation needs a CompilationRequest")
+    # ID-LAYER-02: refuse (exit 5) a declared match layer the engine cannot honestly honor, BEFORE any search runs.
+    layer_refusal = _check_identity_layer(request)
+    if layer_refusal is not None:
+        return layer_refusal
     if request.operation is CompilationOperation.RECOMPILE:
         return _run_recompile(request)
     return _run_decompile(request)
@@ -867,7 +980,7 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
     # discarded on the machine path (section 5.3), and the two views agree (CLI-JSON-01).  NAME/InChI remain a named
     # follow-on (ID-PARSE-01) and are refused rather than mis-parsed.
     decompile_target = request.target_input
-    identity_losses: tuple[str, ...] = ()
+    identity_losses: tuple[IdentityLoss, ...] = ()
     if request.input_kind is InputKind.SMILES:
         from .identity import formula_reduction_loss
         try:
@@ -877,7 +990,8 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
         decompile_target = "".join(
             f"{el}{n if n > 1 else ''}" for el, n in sorted(molecule.formula.items())
         )
-        identity_losses = (formula_reduction_loss(request.target_input, decompile_target).summary(),)
+        # the TYPED section-5.3 record (IR-LOSS-01), not its summary string -- the IR carries the first-class loss.
+        identity_losses = (formula_reduction_loss(request.target_input, decompile_target),)
     elif request.input_kind not in (InputKind.AUTO, InputKind.FORMULA):
         return _invalid(
             request,
@@ -932,7 +1046,10 @@ def request_to_payload(request: CompilationRequest) -> dict:
         "operation": request.operation.value,
         "target_input": request.target_input,
         "input_kind": request.input_kind.value,
-        "identity_policy": {"policy_id": request.identity_policy.policy_id},
+        "identity_policy": {
+            "policy_id": request.identity_policy.policy_id,
+            "match_layer": request.identity_policy.match_layer.value,
+        },
         "terminal_policy": {
             "match_mode": request.terminal_policy.match_mode,
             "commodities_enabled": request.terminal_policy.commodities_enabled,
@@ -961,7 +1078,10 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         CompilationOperation(payload["operation"]),
         payload["target_input"],
         InputKind(payload["input_kind"]),
-        IdentityPolicy(payload["identity_policy"]["policy_id"]),
+        IdentityPolicy(
+            payload["identity_policy"]["policy_id"],
+            MatchLayer(payload["identity_policy"]["match_layer"]),
+        ),
         TerminalPolicy(
             tp["match_mode"], tp["commodities_enabled"], tuple(tp["formula_inventory"])
         ),
@@ -1042,7 +1162,7 @@ def response_schema() -> dict:
         "request_schema_version": COMPILATION_REQUEST_SCHEMA,
         "response_fields": {
             "schema_version": "str",
-            "request": "object(compilation-request-v1alpha1)",
+            "request": "object(compilation-request-v1alpha2)",
             "outcome": "enum(ResponseOutcome)",
             "standard_status": "str|null (section 8.2 status)",
             "exit_code": "int (section 14.4: 0/2/3/4/5/70)",
@@ -1058,7 +1178,7 @@ def response_schema() -> dict:
             "operation": "enum(CompilationOperation)",
             "target": "object(chemical-identity)",
             "request_digest": "str (sha256)",
-            "identity_losses": "array[str]",
+            "identity_losses": "array[object(identity-loss)]",
             "terminal_policy_digest": "str (sha256)",
             "transform_registry_digest": "str (sha256)",
             "search_status": "enum(SearchStatus)",
@@ -1072,6 +1192,15 @@ def response_schema() -> dict:
             "layer": "enum(IdentityLayer)",
             "canonical_repr": "str",
             "identity_digest": "str (sha256)",
+        },
+        "identity_loss_fields": {
+            "schema_version": "str",
+            "feature": "str",
+            "input_representation": "str",
+            "retained_representation": "str",
+            "reason": "str",
+            "affected_claims": "array[str] (sorted, distinct)",
+            "severity": "enum(WARNING/BLOCKER)",
         },
         "candidate_summary_fields": {
             "schema_version": "str",
@@ -1098,7 +1227,9 @@ def response_semantic_fields(response: CompilationResponse) -> dict:
         "standard_status": response.standard_status,
         "target_repr": None if ir is None else ir.target.canonical_repr,
         "target_layer": None if ir is None else ir.target.layer.value,
-        "identity_losses": tuple(response.identity_losses),
+        # the one-line summary strings: the surface both views must AGREE on (CLI-JSON-01). The structured records
+        # ride the machine payload (ir_to_payload); the human render prints these same summaries.
+        "identity_losses": tuple(response.identity_loss_summaries),
         "blockers": tuple(response.diagnostics),
         "search_receipt_digest": response.search_receipt_digest,
         "candidate_ids": () if ir is None else tuple(c.candidate_digest for c in ir.candidates),

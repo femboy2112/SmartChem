@@ -917,7 +917,7 @@
     "identity_losses": [],
     "operation": "DECOMPILE",
     "request_digest": "6df11e58bff3aa38962120d48a2b8f71bc1d0401c51c3afc45cbf5f33e87a478",
-    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha2",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha3",
     "search_receipt_digest": "3d8ad84101ce76f331708e3a5d797c931135ab6b3dddacab108e70fc33bd04ce",
     "search_status": "COMPLETE_WITHIN_BOUNDS",
     "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
@@ -944,6 +944,7 @@
     },
     "helper_reagents": [],
     "identity_policy": {
+      "match_layer": "FORMULA",
       "policy_id": "DEFAULT"
     },
     "input_kind": "AUTO",
@@ -993,7 +994,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha1",
+    "schema_version": "smartchem.service/compilation-request-v1alpha2",
     "search_bounds": [
       [
         "budget",
@@ -1029,7 +1030,7 @@
     },
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
-  "result_digest": "408c75b15ae4b8400c5fb2d3b0cdb586b410792c7c09b1c9e77e207fbf716338",
+  "result_digest": "94f294069c4690329ca17e302c1a9c9eed8a3844996aea6f364a75dc38a7a50c",
   "schema_version": "smartchem.service/compilation-response-v1alpha1",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

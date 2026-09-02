@@ -515,8 +515,10 @@ class TestSection82IRFace:
     """IR-8.2-01: the IR speaks the standard's section 8.2 terminal-status vocabulary, faithfully to its own
     native search_status, and a refusal string that cites section 8.2 now prints an actual section 8.2 status."""
 
-    def test_schema_bumped_to_v1alpha2_for_the_standard_status_field(self):
-        assert CHEMICAL_COMPILATION_IR_SCHEMA.endswith("v1alpha2")
+    def test_schema_bumped_for_the_standard_status_and_loss_fields(self):
+        # v1alpha2 added the section 8.2 standard_status field; v1alpha3 (IR-LOSS-01) turned identity_losses into
+        # first-class typed records (array[str] -> array[object]) -- another serialized-shape change.
+        assert CHEMICAL_COMPILATION_IR_SCHEMA.endswith("v1alpha3")
 
     def test_decompile_ir_carries_a_faithful_8_2_status(self):
         ir = decompile_to_ir("C8H9NO2", INV)

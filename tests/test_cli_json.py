@@ -17,7 +17,10 @@ from pathlib import Path
 import pytest
 
 from smartchem.cli import main
+from smartchem.identity import identity_loss_from_payload
+from smartchem.identity_parse import InputKind
 from smartchem.service import (
+    build_decompile_request,
     build_recompile_request,
     response_schema,
     response_semantic_fields,
@@ -56,7 +59,8 @@ class TestSchemaDescriptor:
 
     def test_descriptor_is_versioned(self):
         schema = response_schema()
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha1"
+        # v1alpha2: IR-LOSS-01 made identity_losses array[object] and ID-LAYER-02 bumped the referenced request schema.
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha2"
         assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha1"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
@@ -70,6 +74,12 @@ class TestSchemaDescriptor:
         assert set(payload["compilation_ir"]) == set(schema["compilation_ir_fields"])
         assert set(payload["compilation_ir"]["target"]) == set(schema["chemical_identity_fields"])
         assert set(payload["compilation_ir"]["candidates"][0]) == set(schema["candidate_summary_fields"])
+        # IR-LOSS-01: the descriptor's identity_loss_fields must match a REAL structured loss payload (the routes
+        # payload has none, so drive a SMILES decompile, whose formula reduction is a first-class BLOCKER loss).
+        loss_payload = response_to_payload(
+            run_compilation(build_decompile_request("CC(=O)Nc1ccc(O)cc1", input_kind=InputKind.SMILES))
+        )["compilation_ir"]["identity_losses"][0]
+        assert set(loss_payload) == set(schema["identity_loss_fields"])
 
 
 class TestGoldenResponses:
@@ -138,9 +148,10 @@ class TestHumanAndJsonAgree:
             # every route ID appears (as its human prefix) -- no candidate is JSON-only
             for cand in ir["candidates"]:
                 assert cand["candidate_digest"][:12] in human_out
-            # every identity loss appears in both
+            # every identity loss appears in both: the machine record is structured (IR-LOSS-01), and its
+            # reconstructed one-line summary is exactly the human line (CLI-JSON-01 agreement).
             for loss in ir["identity_losses"]:
-                assert loss in human_out
+                assert identity_loss_from_payload(loss).summary() in human_out
         else:
             # a refusal/invalid: every blocker in the JSON is surfaced to the human
             for blocker in payload["diagnostics"]:
@@ -153,9 +164,15 @@ class TestHumanAndJsonAgree:
         _, jout, _ = _cli(["decompile", "CC(=O)Nc1ccc(O)cc1", "--smiles", "--json"])
         losses = json.loads(jout)["compilation_ir"]["identity_losses"]
         assert losses, "the SMILES->formula loss must reach the machine response, not be silently discarded"
-        assert "IDENTITY LOSS [BLOCKER]" in losses[0]
+        # IR-LOSS-01: the machine loss is a STRUCTURED record -- a consumer reads severity/affected_claims directly.
+        loss = losses[0]
+        assert loss["severity"] == "BLOCKER"
+        assert "structure-identity" in loss["affected_claims"]
+        # ... and its reconstructed one-line summary is byte-identical to the human line (the two views agree).
+        summary = identity_loss_from_payload(loss).summary()
+        assert "IDENTITY LOSS [BLOCKER]" in summary
         human_loss = next(line.strip() for line in human.splitlines() if "IDENTITY LOSS" in line)
-        assert human_loss == losses[0]  # the two views carry the identical loss string
+        assert human_loss == summary
 
     def test_decompile_smiles_emit_request_records_the_smiles_origin(self):
         # red-team: --emit-request formerly showed target_input=formula with input_kind AUTO -- no trace of the SMILES.

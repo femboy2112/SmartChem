@@ -915,11 +915,29 @@
     ],
     "diagnostics": [],
     "identity_losses": [
-      "IDENTITY LOSS [BLOCKER]: molecular-constitution -- the target was reduced to its elemental formula; connectivity, stereochemistry, isotope labels and local charge are not represented (input CC(=O)Nc1ccc(O)cc1, retained C8H9NO2 (FORMULA layer)); affected: conditions, hazard, isomer-distinction, kinetics, product-identity, purity, selectivity, stereochemistry, structure-identity"
+      {
+        "affected_claims": [
+          "conditions",
+          "hazard",
+          "isomer-distinction",
+          "kinetics",
+          "product-identity",
+          "purity",
+          "selectivity",
+          "stereochemistry",
+          "structure-identity"
+        ],
+        "feature": "molecular-constitution",
+        "input_representation": "CC(=O)Nc1ccc(O)cc1",
+        "reason": "the target was reduced to its elemental formula; connectivity, stereochemistry, isotope labels and local charge are not represented",
+        "retained_representation": "C8H9NO2 (FORMULA layer)",
+        "schema_version": "smartchem.identity/identity-loss-v1alpha1",
+        "severity": "BLOCKER"
+      }
     ],
     "operation": "DECOMPILE",
     "request_digest": "6df11e58bff3aa38962120d48a2b8f71bc1d0401c51c3afc45cbf5f33e87a478",
-    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha2",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha3",
     "search_receipt_digest": "3d8ad84101ce76f331708e3a5d797c931135ab6b3dddacab108e70fc33bd04ce",
     "search_status": "COMPLETE_WITHIN_BOUNDS",
     "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
@@ -946,6 +964,7 @@
     },
     "helper_reagents": [],
     "identity_policy": {
+      "match_layer": "FORMULA",
       "policy_id": "DEFAULT"
     },
     "input_kind": "SMILES",
@@ -995,7 +1014,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha1",
+    "schema_version": "smartchem.service/compilation-request-v1alpha2",
     "search_bounds": [
       [
         "budget",
@@ -1031,7 +1050,7 @@
     },
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
-  "result_digest": "8a994a17e4a8fb428064e18b5ab1749555f4afd6517e4a5c9e286eb2c66724a6",
+  "result_digest": "99bbb79de8600e2a6adf1abd66a66d6678eb331ed6f330633b56a097cc696976",
   "schema_version": "smartchem.service/compilation-response-v1alpha1",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

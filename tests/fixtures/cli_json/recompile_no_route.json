@@ -8,7 +8,7 @@
     "identity_losses": [],
     "operation": "RECOMPILE",
     "request_digest": "590ddb997965733ba4447728408e1780517396dc61290b85aa8f061547718869",
-    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha2",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha3",
     "search_receipt_digest": "22c500de5201ebde204211b42e76e4f7401f3107f16a34144e370e51e4c49249",
     "search_status": "COMPLETE_WITHIN_BOUNDS",
     "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
@@ -39,6 +39,7 @@
       "water"
     ],
     "identity_policy": {
+      "match_layer": "CONSTITUTION",
       "policy_id": "DEFAULT"
     },
     "input_kind": "AUTO",
@@ -104,7 +105,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha1",
+    "schema_version": "smartchem.service/compilation-request-v1alpha2",
     "search_bounds": [
       [
         "cut_budget",
@@ -128,7 +129,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "f6b477abc6a17c32b8047331015e3dc2ccfd9ef88fcd5b97998dca9c9d608029",
+  "result_digest": "27b66bbe45f742bc9e93332b8a89602d674a4bb0c24e7c79974821a77dbb8215",
   "schema_version": "smartchem.service/compilation-response-v1alpha1",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

@@ -31,6 +31,16 @@ __all__ = ["main"]
 
 _WIKI = "https://github.com/femboy2112/SmartChem/wiki"
 
+# The section 14.4 internal-error code, kept as a LOCAL literal (deliberately NOT imported from .service) so the
+# top-level guard in main() can still report exit 70 even when the failure IS a broken import of the heavy
+# service/chemistry stack -- if the constant were imported at the guard, that very import could be the thing that
+# fails.  tests/test_cli_exit.py pins it equal to smartchem.service.EXIT_INTERNAL so the two never drift.
+_EXIT_INTERNAL = 70
+# The conventional exit code for a process whose downstream pipe reader closed early (128 + SIGPIPE=13).  A broken
+# pipe (`| head`, `| less`) is a normal shell condition, NOT an internal software error, and this is none of the
+# section-14.4 outcome codes, so it is never confused with a route/no-route/refusal verdict.
+_EXIT_SIGPIPE = 141
+
 _USAGE = f"""python -m smartchem <command> [args]
 
 commands:
@@ -101,6 +111,14 @@ def _add_recompile_flags(p) -> None:
             "element terminals to the current structural search"
         ),
     )
+    p.add_argument(
+        "--match-layer", choices=["formula", "constitution", "configuration", "isotopic"], default=None,
+        help=(
+            "the section 5.1 identity layer terminal matching is performed at (default: constitution, the "
+            "structural layer). A finer layer (configuration/isotopic) is REFUSED until stereo/isotope perception "
+            "lands, and formula is refused for a structure search (section 5.4) -- never silently downgraded"
+        ),
+    )
     p.add_argument("--json", action="store_true",
                    help="emit the stable versioned response schema instead of the human render (standard 14.3)")
     p.add_argument("--emit-request", action="store_true",
@@ -119,6 +137,7 @@ def _recompile_request_from_args(args):
     omitted knob is passed as ``None`` so the builder records it ``DEFAULT``; ``--no-commodities`` is the sole
     explicit toggle of the commodity terminal, recorded ``EXPLICIT`` only when opted out.
     """
+    from .identity import MatchLayer
     from .service import build_recompile_request
     # An empty `--reagents` list (the flag given with no values) is coerced to the DEFAULT reagent pool, exactly as
     # the legacy `compile` did (`compile_synthesis` injected water on an empty pool).  This keeps the two aliases on
@@ -134,6 +153,7 @@ def _recompile_request_from_args(args):
         max_depth=args.max_depth,
         max_routes=args.max_routes,
         cut_budget=args.cut_budget,
+        match_layer=MatchLayer[args.match_layer.upper()] if args.match_layer else None,
     )
 
 
@@ -174,12 +194,15 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
                  f"(exit {response.exit_code})")
     if not quiet:
         lines.append(f"  target: {ir.target.canonical_repr} [{ir.target.layer.value}]")
+        lines.append(f"  identity match layer: {response.request.identity_policy.match_layer.value} (ID-LAYER-02)")
         lines.append(f"  search: {response.standard_status} (engine: {ir.search_status.value}); "
                      f"candidates: {ir.candidate_count}")
         lines.append(f"  receipt: {ir.search_receipt_digest[:16]}")
-    # blockers/unknowns are NEVER suppressed by --quiet.
+    # blockers/unknowns are NEVER suppressed by --quiet.  A loss is a first-class typed record (IR-LOSS-01); the
+    # machine --json payload carries the STRUCTURED record, and this same summary() line is the derived string the
+    # response's semantic projection exposes -- so the human and JSON views cannot disagree (CLI-JSON-01 agreement).
     for loss in ir.identity_losses:
-        lines.append(f"  IDENTITY LOSS: {loss}")
+        lines.append(f"  {loss.summary()}")
     if not ir.complete_within_bounds:
         lines.append("  SEARCH WAS PARTIAL: absence of a route is not evidence one does not exist -- "
                      "raise --cut-budget/--max-routes/--max-depth or widen the inventory.")
@@ -405,16 +428,8 @@ def _cmd_compile(argv: list[str]) -> int:
     return 0 if compiled.found_route else 3
 
 
-def main(argv: list[str] | None = None) -> int:
-    argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] in ("-V", "--version"):
-        from . import __version__
-        print(f"smartchem {__version__}")
-        return 0
-    if not argv or argv[0] in ("-h", "--help", "help"):
-        print(_USAGE)
-        return 0
-    command, rest = argv[0], argv[1:]
+def _dispatch(command: str, rest: list[str]) -> int:
+    """Route one command to its handler, returning its section-14.4 exit code (2 for an unknown command)."""
     if command == "decompile":
         return _cmd_decompile(rest)
     if command == "recompile":
@@ -430,3 +445,40 @@ def main(argv: list[str] | None = None) -> int:
     print(f"python -m smartchem: unknown command {command!r}\n", file=sys.stderr)
     print(_USAGE, file=sys.stderr)
     return 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in ("-V", "--version"):
+        from . import __version__
+        print(f"smartchem {__version__}")
+        return 0
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(_USAGE)
+        return 0
+    command, rest = argv[0], argv[1:]
+    # CLI-EXIT-01: the top-level guarded service.  A DOMAIN error is already caught inside each command and mapped
+    # to its section-14.4 code (2 invalid / 5 refused / ...); anything that ESCAPES that is a genuine internal bug,
+    # which the standard (section 14.4) requires to exit 70 (ERROR_INTERNAL) with a concise message -- never a raw
+    # traceback and never Python's default exit 1.  argparse's own SystemExit (a BaseException, not Exception) and
+    # a KeyboardInterrupt pass through untouched, so --help stays 0 and a bad-argument parse stays 2.  The exit-70
+    # code is a LOCAL literal, so this guard reports it even when the escaping bug is a broken .service import.
+    try:
+        return _dispatch(command, rest)
+    except BrokenPipeError:
+        # a downstream reader (`| head`, `| less`) closed the pipe -- a NORMAL shell condition, never an internal
+        # software error.  Do NOT launder it into exit 70 or a false ERROR_INTERNAL.  Redirect stdout to devnull so
+        # the interpreter's shutdown flush cannot raise a SECOND BrokenPipeError, then exit with the conventional
+        # SIGPIPE code.
+        import os
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except (OSError, ValueError):
+            pass
+        return _EXIT_SIGPIPE
+    except Exception as exc:
+        print(
+            f"python -m smartchem: internal error [ERROR_INTERNAL]: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return _EXIT_INTERNAL

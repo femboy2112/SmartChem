@@ -2,9 +2,9 @@
 
 The standard (section 4.1) requires ONE versioned intermediate representation that ``decompile`` emits and
 ``recompile`` consumes, so the two operations are views of a single typed artifact rather than two adjacent
-search kinds.  This module builds the IR *envelope* and wires the formula decompiler to emit it; the structural
-producer, the recompiler's consumption of a serialized artifact, and the full identity/loss records remain
-open (IR-LOSS-01, IR-INV-01, ID-LAYER-01), and are named as such.
+search kinds.  This module builds the IR *envelope*, wires both compiler directions to emit it, and carries
+first-class typed section-5.3 :class:`~smartchem.identity.IdentityLoss` records inside the IR (IR-LOSS-01); the
+fuller section 8.1 SearchReceipt content (the other counters) remains open and is named as such.
 
 The one property that makes this an IR and not a display struct (section 4.1, verbatim)
 ------------------------------------------------------------------------------------------
@@ -31,6 +31,7 @@ from enum import Enum
 
 from .contracts import Digestible, canonical_digest
 from .decompiler import DecompositionGraph, Formula, search_decomposition
+from .identity import IdentityLoss, identity_loss_from_payload, identity_loss_to_payload
 from .search import PRIMARY_RESOLVABLE_8_2_STATUSES, STANDARD_8_2_STATUSES, SearchStatus
 # the transform-registry identity lives in a shared leaf (below both the search and IR layers) so the receipts
 # and the IR stamp the SAME digest (see smartchem.transform_registry).
@@ -56,7 +57,9 @@ __all__ = [
     "recompile_from_serialized",
 ]
 
-CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha2"
+# v1alpha3 (IR-LOSS-01): identity_losses is now a tuple of first-class typed IdentityLoss records, not summary
+# strings -- a genuine serialized-shape change (array[str] -> array[object]), so the schema version bumps.
+CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha3"
 CHEMICAL_IDENTITY_SCHEMA = "smartchem.compilation-ir/chemical-identity-v1alpha1"
 CANDIDATE_SUMMARY_SCHEMA = "smartchem.compilation-ir/candidate-summary-v1alpha1"
 
@@ -161,7 +164,7 @@ class ChemicalCompilationIR(Digestible):
     operation: CompilationOperation
     target: ChemicalIdentity
     request_digest: str
-    identity_losses: tuple[str, ...]
+    identity_losses: tuple[IdentityLoss, ...]
     terminal_policy_digest: str
     transform_registry_digest: str
     search_status: SearchStatus
@@ -211,10 +214,20 @@ class ChemicalCompilationIR(Digestible):
         for name in ("request_digest", "terminal_policy_digest", "transform_registry_digest", "search_receipt_digest"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise ValueError(f"{name} must be a non-empty string")
-        for name in ("identity_losses", "diagnostics"):
-            value = getattr(self, name)
-            if type(value) is not tuple or any(not isinstance(x, str) for x in value):
-                raise TypeError(f"{name} must be a tuple of strings")
+        if type(self.diagnostics) is not tuple or any(not isinstance(x, str) for x in self.diagnostics):
+            raise TypeError("diagnostics must be a tuple of strings")
+        # identity_losses are first-class typed section-5.3 records (IR-LOSS-01), carried in canonical
+        # (digest-sorted, distinct) order so presentation order is never part of the IR identity -- the same
+        # discipline the candidate tuple obeys.
+        if type(self.identity_losses) is not tuple or any(
+            type(x) is not IdentityLoss for x in self.identity_losses
+        ):
+            raise TypeError("identity_losses must be a tuple of IdentityLoss records")
+        loss_digests = [x.digest for x in self.identity_losses]
+        if loss_digests != sorted(loss_digests):
+            raise ValueError("identity_losses must be in canonical (digest-sorted) order; display order is not identity")
+        if len(set(loss_digests)) != len(loss_digests):
+            raise ValueError("identity_losses must be distinct by digest")
         if type(self.candidates) is not tuple or any(type(c) is not CandidateSummary for c in self.candidates):
             raise TypeError("candidates must be a tuple of CandidateSummary values")
         # canonical order: candidates are sorted by their digest, so presentation order is not part of identity
@@ -231,6 +244,12 @@ class ChemicalCompilationIR(Digestible):
     @property
     def candidate_count(self) -> int:
         return len(self.candidates)
+
+    @property
+    def identity_loss_summaries(self) -> tuple[str, ...]:
+        """The one-line ``summary()`` of each carried loss -- the human/JSON-agreement string form of the typed
+        records (CLI-JSON-01).  Derived, never stored: the IR's identity is the typed records themselves."""
+        return tuple(loss.summary() for loss in self.identity_losses)
 
     def render(self) -> str:
         return (
@@ -280,7 +299,7 @@ def decompile_to_ir(
     max_multiplicity: int = 1,
     budget: int = 100_000,
     max_edges: int = 5_000,
-    identity_losses: "tuple[str, ...]" = (),
+    identity_losses: "tuple[IdentityLoss, ...]" = (),
     tool_version: str | None = None,
 ) -> ChemicalCompilationIR:
     """Emit a :class:`ChemicalCompilationIR` for the formula decomposition of ``target`` over ``inventory``.
@@ -329,10 +348,10 @@ def decompile_to_ir(
         target_id,
         request_digest,
         # A formula decompile forgets topology; when the target REACHED this producer as a structure (a SMILES the
-        # caller reduced), that reduction is a section-5.3 loss the caller passes in here so the machine response
-        # carries it.  Sorted for canonical (presentation-invariant) IR identity.  First-class TYPED loss records
-        # inside the IR are IR-LOSS-01 (TODO); these are their string form.
-        tuple(sorted(identity_losses)),
+        # caller reduced), that reduction is a first-class typed section-5.3 IdentityLoss (IR-LOSS-01) the caller
+        # passes in here so the machine response carries the structured record, not a string.  Digest-sorted for
+        # canonical (presentation-invariant) IR identity.
+        tuple(sorted(identity_losses, key=lambda loss: loss.digest)),
         terminal_digest,
         registry_digest,
         receipt.status,
@@ -476,7 +495,7 @@ def recompile_to_ir(
         CompilationOperation.RECOMPILE,
         target_id,
         request_digest,
-        (),  # identity_losses -- structural assembly forgets nothing at the structure layer; IR-LOSS-01 (TODO)
+        (),  # identity_losses: structural assembly forgets nothing at the structure layer (IR-LOSS-01: typed, empty)
         terminal_digest,
         registry_digest,
         receipt.status,
@@ -511,7 +530,7 @@ def ir_to_payload(ir: ChemicalCompilationIR) -> dict:
             "identity_digest": ir.target.identity_digest,
         },
         "request_digest": ir.request_digest,
-        "identity_losses": list(ir.identity_losses),
+        "identity_losses": [identity_loss_to_payload(loss) for loss in ir.identity_losses],
         "terminal_policy_digest": ir.terminal_policy_digest,
         "transform_registry_digest": ir.transform_registry_digest,
         "search_status": ir.search_status.value,
@@ -556,7 +575,7 @@ def ir_from_payload(payload: dict) -> ChemicalCompilationIR:
         CompilationOperation(payload["operation"]),
         target,
         payload["request_digest"],
-        tuple(payload["identity_losses"]),
+        tuple(identity_loss_from_payload(loss) for loss in payload["identity_losses"]),
         payload["terminal_policy_digest"],
         payload["transform_registry_digest"],
         SearchStatus(payload["search_status"]),

@@ -40,6 +40,8 @@ __all__ = [
     "same_identity_at",
     "refines",
     "formula_reduction_loss",
+    "identity_loss_to_payload",
+    "identity_loss_from_payload",
 ]
 
 IDENTITY_LOSS_SCHEMA = "smartchem.identity/identity-loss-v1alpha1"
@@ -125,13 +127,55 @@ class IdentityLoss(Digestible):
     def summary(self) -> str:
         """One canonical line naming the loss, its severity and its affected claims.
 
-        Rendered identically by the human CLI and carried verbatim into the machine ``identity_losses`` field, so the
-        two views cannot disagree on what was lost (CLI-JSON-01 human/JSON agreement)."""
+        The machine ``identity_losses`` field carries the STRUCTURED record (IR-LOSS-01), not this string; this
+        summary is the DERIVED one-line form that the human CLI prints and that the response's semantic projection
+        (``identity_loss_summaries`` / ``response_semantic_fields``) exposes, so the two views cannot disagree on
+        what was lost (CLI-JSON-01 human/JSON agreement)."""
         return (
             f"IDENTITY LOSS [{self.severity.value}]: {self.feature} -- {self.reason} "
             f"(input {self.input_representation}, retained {self.retained_representation}); "
             f"affected: {', '.join(self.affected_claims)}"
         )
+
+
+def identity_loss_to_payload(loss: IdentityLoss) -> dict:
+    """A JSON-compatible dict of a section 5.3 :class:`IdentityLoss` -- its structured, machine-readable form.
+
+    This is the FIRST-CLASS record the IR carries (IR-LOSS-01): a consumer reads ``severity``/``affected_claims``
+    programmatically, never by parsing the one-line ``summary()``.  The enum rides by its ``.value``; nothing
+    derived (the summary) is stored, so the payload is exactly the record's semantic fields.
+    """
+    if type(loss) is not IdentityLoss:
+        raise TypeError("identity_loss_to_payload needs an IdentityLoss")
+    return {
+        "schema_version": loss.schema_version,
+        "feature": loss.feature,
+        "input_representation": loss.input_representation,
+        "retained_representation": loss.retained_representation,
+        "reason": loss.reason,
+        "affected_claims": list(loss.affected_claims),
+        "severity": loss.severity.value,
+    }
+
+
+def identity_loss_from_payload(payload: dict) -> IdentityLoss:
+    """Rebuild an :class:`IdentityLoss` from :func:`identity_loss_to_payload`, re-validating every invariant.
+
+    The frozen record's ``__post_init__`` re-runs, so a tampered loss payload (an empty ``feature``, unsorted or
+    duplicate ``affected_claims``, or the fail-open BLOCKER that names no claim) is REFUSED on read rather than
+    silently trusted -- deserialization never constructs a loss record it would have rejected itself.
+    """
+    if not isinstance(payload, dict):
+        raise TypeError("identity_loss_from_payload needs a dict")
+    return IdentityLoss(
+        payload["schema_version"],
+        payload["feature"],
+        payload["input_representation"],
+        payload["retained_representation"],
+        payload["reason"],
+        tuple(payload["affected_claims"]),
+        LossSeverity(payload["severity"]),
+    )
 
 
 @dataclass(frozen=True)

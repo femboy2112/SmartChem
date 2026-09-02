@@ -18,6 +18,7 @@
       "water"
     ],
     "identity_policy": {
+      "match_layer": "CONSTITUTION",
       "policy_id": "DEFAULT"
     },
     "input_kind": "AUTO",
@@ -83,7 +84,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha1",
+    "schema_version": "smartchem.service/compilation-request-v1alpha2",
     "search_bounds": [
       [
         "cut_budget",
@@ -107,7 +108,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "d812d0785e315ddce8dffc7c38370f8946c5c63ed62cd7e7f64963f587b2ecf8",
+  "result_digest": "d3641c8581d61e9e9ebbdd8343f5a04a830f612d9d027184eb13d72be585666b",
   "schema_version": "smartchem.service/compilation-response-v1alpha1",
   "standard_status": "REFUSED_INVALID_REQUEST"
 }

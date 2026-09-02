@@ -8,6 +8,7 @@ model cannot perceive is UNKNOWN, never fabricated.
 from __future__ import annotations
 
 import io
+import json
 from contextlib import redirect_stderr, redirect_stdout
 
 import pytest
@@ -24,6 +25,15 @@ from smartchem.identity import (
     formula_reduction_loss,
     refines,
     same_identity_at,
+)
+from smartchem.service import (
+    IdentityPolicy,
+    ResponseOutcome,
+    build_decompile_request,
+    build_recompile_request,
+    deserialize_request,
+    run_compilation,
+    serialize_request,
 )
 from smartchem.smiles import parse_smiles
 
@@ -195,3 +205,115 @@ class TestRedTeamRegressions:
         s = loss.summary()
         assert "\n" not in s
         assert "[BLOCKER]" in s and "hazard" in s and "C2H6O" in s
+
+
+# == ID-LAYER-02: MatchLayer wired into the service IdentityPolicy =================================================
+
+
+def _cli(argv):
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = main(argv)
+    return code, out.getvalue(), err.getvalue()
+
+
+class TestIdentityPolicyCarriesAMatchLayer:
+    def test_default_layers_are_the_engine_honored_ones(self):
+        # recompile's structural engine matches at CONSTITUTION; a formula descent at FORMULA. The builders default
+        # to exactly the layer each engine can honestly honor.
+        assert build_recompile_request("water").identity_policy.match_layer is MatchLayer.CONSTITUTION
+        assert build_decompile_request("H2O").identity_policy.match_layer is MatchLayer.FORMULA
+
+    def test_match_layer_rides_the_semantic_digest(self):
+        base = build_recompile_request("name:water")
+        moved = build_recompile_request("name:water", match_layer=MatchLayer.CONFIGURATION)
+        assert base.semantic_digest != moved.semantic_digest  # the layer is part of the SEARCH identity
+
+    def test_policy_validates_its_layer(self):
+        with pytest.raises(TypeError, match="match_layer must be a MatchLayer"):
+            IdentityPolicy("DEFAULT", "CONSTITUTION")  # a string, not a MatchLayer
+
+    def test_request_round_trip_preserves_the_layer(self):
+        req = build_recompile_request("name:water", match_layer=MatchLayer.ISOTOPIC)
+        back = deserialize_request(serialize_request(req))
+        assert back.identity_policy.match_layer is MatchLayer.ISOTOPIC
+        assert back.digest == req.digest
+
+    def test_cannot_pass_both_identity_policy_and_match_layer(self):
+        with pytest.raises(ValueError, match="either identity_policy or match_layer"):
+            build_recompile_request(
+                "name:water", identity_policy=IdentityPolicy(), match_layer=MatchLayer.FORMULA
+            )
+
+
+class TestUnhonorableLayerIsRefusedNotFaked:
+    """The section-5.4 enforcement: the engine only matches at a layer it can HONESTLY honor; anything else is a
+    REFUSED response (exit 5, REFUSED_IDENTITY_UNSUPPORTED), never a silent match at a coarser layer."""
+
+    @pytest.mark.parametrize("layer", [MatchLayer.CONFIGURATION, MatchLayer.ISOTOPIC])
+    def test_recompile_refuses_an_unperceived_finer_layer(self, layer):
+        resp = run_compilation(build_recompile_request("water", match_layer=layer))
+        assert resp.outcome is ResponseOutcome.REFUSED
+        assert resp.exit_code == 5
+        assert resp.standard_status == "REFUSED_IDENTITY_UNSUPPORTED"
+        assert "cannot perceive" in resp.diagnostics[0] and layer.value in resp.diagnostics[0]
+
+    def test_recompile_refuses_the_coarser_formula_layer_per_5_4(self):
+        # a structure search must not terminate on formula-only equality (section 5.4 / gate G3).
+        resp = run_compilation(build_recompile_request("water", match_layer=MatchLayer.FORMULA))
+        assert resp.outcome is ResponseOutcome.REFUSED
+        assert resp.exit_code == 5
+        assert "5.4" in resp.diagnostics[0]
+
+    @pytest.mark.parametrize("layer", [MatchLayer.CONSTITUTION, MatchLayer.CONFIGURATION, MatchLayer.ISOTOPIC])
+    def test_decompile_refuses_any_layer_finer_than_formula(self, layer):
+        resp = run_compilation(build_decompile_request("H2O", match_layer=layer))
+        assert resp.outcome is ResponseOutcome.REFUSED
+        assert resp.exit_code == 5
+
+    def test_decompile_constitution_refusal_reason_is_honest_not_fabricated(self):
+        # red-team IDLAYER02-01: a formula descent PERCEIVES constitution in principle (it is the recompile-honored
+        # layer), so the refusal must NOT falsely blame "unbuilt stereo/isotope perception". The honest reason is
+        # that a formula descent constructs no structure to match at constitution (section 5.4).
+        reason = run_compilation(build_decompile_request("H2O", match_layer=MatchLayer.CONSTITUTION)).diagnostics[0]
+        assert "perception is unbuilt" not in reason
+        assert "constructs no" in reason and "5.4" in reason
+
+    @pytest.mark.parametrize("layer", [MatchLayer.CONFIGURATION, MatchLayer.ISOTOPIC])
+    def test_a_genuinely_unperceived_layer_keeps_the_perception_reason(self, layer):
+        # CONFIGURATION/ISOTOPIC are genuinely unperceived (stereo/isotope), so THAT reason is the honest one.
+        for op in (build_recompile_request("water", match_layer=layer), build_decompile_request("H2O", match_layer=layer)):
+            reason = run_compilation(op).diagnostics[0]
+            assert "cannot perceive the finer" in reason and "unbuilt" in reason
+
+    def test_the_honored_layer_runs(self):
+        assert run_compilation(build_recompile_request("water")).outcome is not ResponseOutcome.REFUSED
+        assert run_compilation(build_decompile_request("H2O")).outcome is not ResponseOutcome.REFUSED
+
+    def test_refusal_is_alias_independent(self):
+        # the refusal is a function of the SEARCH identity: two requests with equal semantic_digest refuse identically.
+        a = run_compilation(build_recompile_request("water", match_layer=MatchLayer.CONFIGURATION))
+        b = run_compilation(build_recompile_request("water", match_layer=MatchLayer.CONFIGURATION))
+        assert a.result_digest == b.result_digest
+
+
+class TestMatchLayerCLI:
+    def test_flag_default_runs_at_constitution(self):
+        code, out, _ = _cli(["recompile", "water", "--json"])
+        assert code == 0
+        assert json.loads(out)["request"]["identity_policy"]["match_layer"] == "CONSTITUTION"
+
+    def test_flag_declares_the_layer_in_the_emitted_request(self):
+        code, out, _ = _cli(["recompile", "water", "--match-layer", "configuration", "--emit-request"])
+        assert code == 0  # emit does not run the search, so it does not refuse
+        assert json.loads(out)["identity_policy"]["match_layer"] == "CONFIGURATION"
+
+    def test_flag_unperceived_layer_refused_exit_5(self):
+        # the human render (incl. the refusal outcome + diagnostics) goes to stdout; the exit code is 5.
+        code, out, _ = _cli(["recompile", "water", "--match-layer", "configuration"])
+        assert code == 5
+        assert "REFUSED" in out and "cannot perceive" in out
+
+    def test_human_render_surfaces_the_match_layer(self):
+        _, out, _ = _cli(["recompile", "water"])
+        assert "identity match layer: CONSTITUTION" in out

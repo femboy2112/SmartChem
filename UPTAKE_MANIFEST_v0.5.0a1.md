@@ -685,7 +685,7 @@ residual limitations / next probes:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `ID-LAYER-01` | Formula, molecule/formula-unit, and stock material are distinct values | Molecule/formula boundaries are partial; mixtures and salts are unsafe | Add typed layers and conversion/loss rules | Disconnected salt, chiral, isotope and mixture fixtures preserve identity or refuse | None | `TODO` |
+| `ID-LAYER-01` | Formula, molecule/formula-unit, and stock material are distinct values | First brick landed (`67b4715`): `smartchem/identity.py` provides the section 5.1 `MatchLayer` lattice (FORMULA<CONSTITUTION<CONFIGURATION<ISOTOPIC + `refines`), `LayeredIdentity` (per-layer digests byte-congruent with `ChemicalIdentity.of_molecule`/`of_formula`; FORMULA carries total charge; perceives FORMULA+CONSTITUTION, finer layers ABSENT not guessed), `same_identity_at` (section 5.4 layer-relative equality, honest `None` when a layer is unperceived — a formula match is NEVER promoted to structure), and the section 5.3 `IdentityLoss` record + `formula_reduction_loss` (a BLOCKER over the four named evidence classes + structure claims; a blocker that blocks nothing is refused). Consumer: `decompile --smiles` records the typed loss on every path. Stereo/isotope PERCEPTION, salt/mixture COMPONENT identity, and `MatchLayer`→`IdentityPolicy` wiring (ID-LAYER-02) remain | Add typed layers and conversion/loss rules | Disconnected salt, chiral, isotope and mixture fixtures preserve identity or refuse — section 5.4 probe DONE (same-formula isomers agree at FORMULA, distinct at CONSTITUTION; unperceived layers UNKNOWN not fabricated) | None | `IN_PROGRESS` |
 | `ID-PARSE-01` | Explicit name/SMILES/InChI/formula parsing with echoed normalization | Synthesis CLIs now accept registered offline names and explicit `name:`/`smiles:` prefixes; no one parser/receipt or InChI/formula parity | Build one parser service with source/policy receipt and every identity form | Registered names pass now; add ambiguous name and all explicit-form round trips | `ID-LAYER-01` | `IN_PROGRESS` |
 | `ID-STEREO-01` | Stereo/isotope/local-charge/component loss never silent | Unsupported features may be erased or represented misleadingly | Detect features at parse/canonicalize boundary; refuse or record blocker | Enantiomer, isotope, zwitterion, disconnected salt do not collide with simplified analogues | `ID-LAYER-01` | `TODO` |
 | `ID-SCISS-01` | Structural scission preserves the represented rooted open valence and refuses unsupported charge | Rooted open-valence identity and neutral-only refusal are implemented; duplicate reagent types are deduplicated | Keep this scoped refusal while broader identity layers are built | Rooted isomers remain distinct; non-neutral target refuses; duplicate reagent spellings do not multiply candidates | None | `IMPLEMENTED_AND_VERIFIED` |
@@ -818,7 +818,7 @@ residual limitations:
 | `CLI-EXIT-01` | Stable exit codes separate route/no-route/partial/refusal/invalid/internal | Synthesis front doors now use 0/2/3/4/5 for named outcomes; decompile uses 0/2/4; shared code 70/internal mapping is absent | Finish standard table through one shared service and subprocess matrix | Codes 0/2/3/4/5 observed; add controlled internal-error fixture for 70 | `SRCH-RCT-01`, `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-ERR-01` | Invalid chemistry/numeric input yields domain error without traceback | Invalid formula/name/SMILES and charged-model refusal are concise and mapped to 2/5; no one central mapping covers every format/path | Centralize error mapping and strict validation | Current invalid/refusal probes pass; add InChI/formula-file/nonfinite subprocess matrix | `ID-PARSE-01`, constraints | `IN_PROGRESS` |
 | `CLI-VERS-01` | Package installs `smartchem`, supports `--version`, exposes consistent `__version__` | Entry point, package metadata and `__version__` report `0.5.0a1` | Preserve single-source consistency in release packaging | Targeted script/module/version tests pass | None | `IMPLEMENTED_AND_VERIFIED` |
-| `CLI-JSON-01` | Stable JSON contains request, identity, receipt, tier, blockers and route IDs | Human-oriented paths dominate | Add versioned serializer/schema and golden fixtures | Human and JSON agree on all semantic fields | `SVC-REQ-01`, `READY-TIER-01` | `TODO` |
+| `CLI-JSON-01` | Stable JSON contains request, identity, receipt, tier, blockers and route IDs | Landed (`67b4715`): `recompile`/`decompile` `--json` emit the versioned response schema; `response_schema()` is a first-class versioned descriptor of the SHAPE, cross-checked against a real payload so a golden cannot certify a drifted schema; golden fixtures (schema + 6 command responses) + an idempotent regen script; a human↔JSON agreement matrix + `response_semantic_fields()` prove neither view drops or contradicts a semantic field. `ranked_route_dossiers`/`affordability_frontier` still empty (READY-TIER/COST-VEC); the receipt is a digest, not the full object | Add versioned serializer/schema and golden fixtures | Human and JSON agree on all semantic fields — DONE (agreement matrix over recompile + decompile, incl. the SMILES-reduction BLOCKER carried identically to both views) | `SVC-REQ-01`, `READY-TIER-01` | `IN_PROGRESS` |
 
 **Uptake record — typed compilation service, first brick** (`SVC-REQ-01` `TODO` → `IN_PROGRESS`; the lever the
 CLI rows `CLI-CAN`/`CLI-JSON`/`CLI-EXIT`/`CLI-ERR` hang off):
@@ -948,6 +948,59 @@ residual / follow-on: synthesize's full uptake is CLI-CAN-02 (its constraints §
                      still awaits the top-level guarded service. --json is the response schema, but
                      ranked_route_dossiers/affordability_frontier remain empty (READY-TIER-01 / COST-VEC-01). The
                      target still enters the digest as typed (ID-PARSE-01).
+```
+
+**Uptake record — versioned --json schema + the layered identity model** (`CLI-JSON-01` and `ID-LAYER-01`
+`TODO` → `IN_PROGRESS`; two bricks that meet at the decompile agreement surface, landed together in `67b4715`):
+
+```text
+ID:                  CLI-JSON-01 (versioned --json response schema) + ID-LAYER-01 first brick (layered identity)
+commit:              67b4715
+files:               smartchem/identity.py (new), smartchem/service.py, smartchem/compilation_ir.py, smartchem/cli.py,
+                     tests/test_identity.py (new), tests/test_cli_json.py (new), tests/regen_cli_json.py (new),
+                     tests/fixtures/cli_json/*.json (new: schema descriptor + 6 command responses)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2942 passed, 14 skipped, 1 xfailed (baseline 2895; +47). ruff clean on every changed file.
+CLI-JSON-01:         response_schema() -- a versioned descriptor of the --json response SHAPE (14.3 "stable versioned
+                     response schema"), cross-checked field-for-field against a REAL response_to_payload output so a
+                     golden can never certify a schema that drifted from what is emitted. response_semantic_fields()
+                     -- the projection both the JSON and the human render must agree on (identity/receipt/tier/
+                     blockers/route-IDs + outcome/exit/status). Golden fixtures compared parsed-equal + an idempotent
+                     regen script (tests/regen_cli_json.py). The acceptance ("human and JSON agree on all semantic
+                     fields") is a matrix over recompile AND decompile: outcome/exit agree, the human render surfaces
+                     every JSON route ID (as a prefix) and every identity loss, and neither view silently drops a field.
+ID-LAYER-01:         smartchem/identity.py -- the section 5.1 MatchLayer lattice + refines(); LayeredIdentity with
+                     per-layer digests byte-congruent with the pipeline's identities (does NOT fork a new identity),
+                     FORMULA carrying total charge; same_identity_at() = section 5.4 layer-relative equality returning
+                     an honest None at any layer the current Molecule model cannot perceive (CONFIGURATION/ISOTOPIC),
+                     so a formula match is never promoted to a structure match. IdentityLoss (section 5.3 record, the
+                     one IR-LOSS-01 will carry) + formula_reduction_loss. The section 5.4 probe is mechanized:
+                     ethanol vs dimethyl ether agree at FORMULA, differ at CONSTITUTION, UNKNOWN above.
+acceptance:          section 5.4 -- same-formula isomers share formula balance, distinct wherever a structural claim
+                     is made, unperceived layers UNKNOWN not fabricated; CLI-JSON-01 -- human and JSON agree.
+red-team:            3 attack bearings + 6 verify agents (workflow, 9 agents, 617k subagent tokens). The verify phase
+                     mis-fired on an authoring bug in my OWN workflow script (an unsubstituted prompt template -- the
+                     verifiers correctly refused to invent findings), so the 6 attack findings were self-reproduced
+                     and folded before this commit: (HIGH) decompile --smiles dropped its BLOCKER identity loss from
+                     --json (identity_losses []) -- human and JSON disagreed and structure was silently discarded on
+                     the machine path (5.3/5.4); fixed -- the service resolves the SMILES and records the loss into
+                     the IR, both views carrying the identical summary() string. (HIGH) the FORMULA layer dropped
+                     total charge (matched [NH4+] to neutral NH4, against its own "counts + total charge" definition);
+                     fixed with Formula.of(counts, charge). (MEDIUM) the legacy decompile human render omitted the
+                     outcome + section 8.2 status the --json view carries; fixed -- both surfaced from the same
+                     service request. (MEDIUM) aromatic-vs-Kekule naphthalene distinct at CONSTITUTION -- an inherited
+                     shared-canonicalizer limitation, now named honestly in the docstrings rather than over-claimed
+                     past. (LOW) a BLOCKER IdentityLoss with empty affected_claims blocked nothing (the recurring
+                     vacuous-guard fail-open); fixed -- a BLOCKER must name >=1 affected claim; also folded
+                     kinetics+hazard into the loss (the four evidence classes section 5.3 names). Each pinned in
+                     TestRedTeamRegressions.
+residual / follow-on: ID-LAYER-02 (MatchLayer into the service IdentityPolicy so a request declares its comparison
+                     layer); stereo/isotope PERCEPTION (CONFIGURATION/ISOTOPIC are declared but return UNKNOWN);
+                     salt/mixture COMPONENT identity (material model, section 10); typed IdentityLoss records INSIDE
+                     the IR (IR-LOSS-01; today the IR carries the loss as a string). CLI-JSON-01: the receipt is a
+                     digest not the full object; ranked_route_dossiers/affordability_frontier stay empty (READY-TIER/
+                     COST-VEC); the decompile human edge-list and its --json view remain two calculations over the
+                     same search (the two-view seam named for recompile).
 ```
 
 ## 4. P1 physical, data, and affordability backlog

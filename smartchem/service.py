@@ -37,11 +37,11 @@ Scope of THIS brick (named honestly, W3)
 This brick builds the types, the digest laws, the origin discipline, fail-closed validation, canonical
 serialization, and :func:`run_compilation` -- a deterministic producer that delegates to the EXISTING IR
 producers (:func:`~smartchem.compilation_ir.recompile_to_ir` / ``decompile_to_ir``) and maps the outcome to the
-standard's exit codes (section 14.4).  It does NOT yet rewire the live ``argv`` dispatch onto this service
-(CLI-CAN-01), populate ranking dossiers or the affordability frontier (READY-TIER-01 / COST-VEC-01), bind
-quantitative :class:`~smartchem.experiment.stock.StockMaterial` (STOCK-01), resolve INCHI/FORMULA/name-normalised
-targets into the digest (ID-PARSE-01), or turn an uncaught bug into an ``ERROR_INTERNAL`` receipt (the top-level
-guarded service).  Each of those is a named follow-on, not a silent gap.
+standard's exit codes (section 14.4).  The live ``argv`` dispatch now routes through this service (CLI-CAN-01), the
+ranked route dossiers are populated with the section-11 fit disposition (CLI-CAN-02 brick 2), and an uncaught bug
+becomes an ``ERROR_INTERNAL`` receipt (CLI-EXIT-01).  It does NOT yet populate the affordability frontier
+(COST-VEC-01), bind quantitative :class:`~smartchem.experiment.stock.StockMaterial` (STOCK-01), or fully resolve
+INCHI/FORMULA targets into the digest (ID-PARSE-01).  Each open item is a named follow-on, not a silent gap.
 """
 from __future__ import annotations
 
@@ -336,11 +336,13 @@ class ConstraintPolicy(Digestible):
     It rides the :attr:`CompilationRequest.semantic_digest` -- two requests declaring different bounds are
     different searches (section 4.1: the constraint is part of the request's MEANING).
 
-    HONESTY (this brick): the bounds are DECLARED and identity-bearing, but ``run_compilation`` does not yet apply
-    them to route grading -- a route is not filtered/ranked by T/P here.  That grading (bringing the dossier's
-    ConstraintBox fitting onto this typed request) is the CLI-CAN-02 follow-on; the CLI render says so plainly.
-    An all-``None`` box is UNCONSTRAINED (nothing declared), never a pass (section 11).  The bench's reagent and
-    equipment inventory stay in the request's own ``helper_reagents``/``stock_materials`` fields, not here.
+    APPLIED (CLI-CAN-02 brick 2): the bounds are DECLARED, identity-bearing, AND now applied to route ranking --
+    ``run_compilation`` ranks the routes against ``ConstraintBox.of_bounds(bounds)`` and reports the per-route fit
+    disposition in :attr:`CompilationResponse.ranked_route_dossiers` (FITS / EXCLUDED / UNKNOWN-fit / UNCONSTRAINED),
+    with the DECLARED-vs-APPLIED tally in ``constraint_note``.  An all-``None`` box is UNCONSTRAINED (nothing
+    declared), never a pass (section 11); a constrained dimension a route leaves undeclared is UNKNOWN-fit, a GAP,
+    never a silent pass.  The bench's reagent and equipment inventory stay in the request's own
+    ``helper_reagents``/``stock_materials`` fields, not here.
     """
 
     bounds: PhysicalBounds = field(default_factory=PhysicalBounds.unconstrained)
@@ -859,12 +861,21 @@ class RankedRouteSummary(Digestible):
             seq = getattr(self, name)
             if type(seq) is not tuple or any(not isinstance(x, str) or not x for x in seq):
                 raise TypeError(f"{name} must be a tuple of non-empty strings")
-        # A structural coherence check: EXCLUDED must give a reason, and a route with hard exclusions can never read
-        # as FITS -- so the disposition can never contradict its own reasons (the no-laundering discipline, section 11).
-        if self.fit_status == "EXCLUDED" and not self.exclusions:
-            raise ValueError("an EXCLUDED route must carry at least one exclusion reason")
-        if self.fit_status == "FITS" and self.exclusions:
-            raise ValueError("a FITS route cannot carry exclusion reasons")
+        # The FULL structural coherence table the producer (drafter fit_route) guarantees, enforced so a hand-built or
+        # deserialized summary can never contradict its own reasons (the no-laundering discipline, section 11; red-team
+        # fold). fit_route sets: EXCLUDED iff exclusions; else UNKNOWN iff gaps; else FITS (box constrains) /
+        # UNCONSTRAINED. So a PASS disposition (FITS/UNCONSTRAINED) has NEITHER a hard exclusion NOR a gap -- a FITS or
+        # UNCONSTRAINED with a gap would be a silent pass over an unassessed dimension. EXCLUDED must give a reason;
+        # UNKNOWN must give the gap that makes it unknown and must NOT carry a hard exclusion (that would be EXCLUDED).
+        if self.fit_status == "EXCLUDED":
+            if not self.exclusions:
+                raise ValueError("an EXCLUDED route must carry at least one exclusion reason")
+        elif self.exclusions:
+            raise ValueError(f"a {self.fit_status} route cannot carry exclusion reasons (only EXCLUDED may)")
+        if self.fit_status == "UNKNOWN" and not self.gaps:
+            raise ValueError("an UNKNOWN-fit route must carry at least one gap (the unassessed dimension)")
+        if self.fit_status in ("FITS", "UNCONSTRAINED") and self.gaps:
+            raise ValueError(f"a {self.fit_status} route cannot carry gaps -- a gap is an UNKNOWN-fit, not a pass")
 
     @classmethod
     def of_fit(cls, fit: "object") -> "RankedRouteSummary":
@@ -895,8 +906,10 @@ class CompilationResponse:
     section 13.2 ``search_receipt`` is exposed here only as its DIGEST (:attr:`search_receipt_digest`): the IR
     carries the receipt's digest, not the full ``SearchReceipt`` object, so the mandated receipt CONTENT (per-limit
     counters/flags) is not yet recoverable from the response -- embedding it is a named follow-on.
-    ``ranked_route_dossiers`` and ``affordability_frontier`` are section 13.2 fields whose producers are not built
-    yet (READY-TIER-01 / COST-VEC-01); they are present and empty rather than absent, so the shape is stable.
+    ``ranked_route_dossiers`` (section 13.2) is POPULATED on a routes-mode search (CLI-CAN-02 brick 2) with typed
+    :class:`RankedRouteSummary` values -- the per-route section-11 bench-fit disposition, best-first.
+    ``affordability_frontier`` is the one section 13.2 field whose producer is still unbuilt (COST-VEC-01); it stays
+    present-and-empty rather than absent, so the shape is stable.
 
     ``parse_receipt_summary`` (SVC-REQ-01 alias-collapse) is the section-14.2 identity-resolution echo (how the
     target STRING was read: source, normalised form, layer).  It is a FIRST-CLASS field, not a line buried in
@@ -992,6 +1005,11 @@ class CompilationResponse:
         else:
             if ir is not None:
                 raise ValueError(f"{o.value} must not carry a compilation_ir")
+            # No IR means no search ran, so there are no routes to rank: an unsearched outcome
+            # (REFUSED/INVALID_INPUT/INTERNAL_ERROR) MUST carry no ranked_route_dossiers, or a hand-built/deserialized
+            # response could smuggle a dossier past the guard and into result_digest (red-team fold).
+            if self.ranked_route_dossiers:
+                raise ValueError(f"{o.value} ran no search, so it must carry no ranked_route_dossiers")
             if not self.diagnostics:
                 raise ValueError(f"{o.value} must state a diagnostic reason")
             if o is ResponseOutcome.INVALID_INPUT and self.standard_status != "REFUSED_INVALID_REQUEST":

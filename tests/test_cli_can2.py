@@ -19,8 +19,11 @@ from smartchem.data.reagents import commodity_inventory
 from smartchem.experiment.drafter import ConstraintBox, fit_route
 from smartchem.experiment.routes import search_routes
 from smartchem.service import (
+    COMPILATION_RESPONSE_SCHEMA,
+    CompilationResponse,
     RankedRouteSummary,
     RANKED_ROUTE_SUMMARY_SCHEMA,
+    ResponseOutcome,
     _fit_counts,
     build_recompile_request,
     constraint_note,
@@ -250,3 +253,51 @@ class TestCompileAliasApplies:
         _, rc, _ = _cli(["recompile", "acetic anhydride", "--max-depth", "2", "--max-temp", "500"])
         _, cc, _ = _cli(["compile", "acetic anhydride", "--max-depth", "2", "--max-temp", "500"])
         assert "constraint APPLIED" in rc and "constraint APPLIED" in cc
+
+
+# -- H. red-team folds (b97256e review) -----------------------------------------------------------------------------
+
+
+class TestRedTeamFolds:
+    def test_min_pressure_over_undeclared_pressure_is_unknown_not_a_silent_fit(self):
+        # HIGH fold: the min_pressure FLOOR lacked the undeclared-dimension gap the two ceilings have, so a route whose
+        # step left pressure undeclared read as FITS -- a silent pass on a constrained dimension, and the "never a
+        # silent pass" note then lied. A floor over an undeclared pressure must be UNKNOWN-fit (a gap), never FITS.
+        r = run_compilation(build_recompile_request("acetic anhydride", min_pressure_atm=2.0))
+        assert r.ranked_route_dossiers
+        assert all(s.fit_status != "FITS" for s in r.ranked_route_dossiers)
+        note = next(d for d in r.diagnostics if "section-11 constraint APPLIED" in d)
+        assert "0 FIT" in note   # the honest tally: nothing was confirmed to fit an undeclared dimension
+
+    def _summary(self, **over):
+        base = dict(
+            schema_version=RANKED_ROUTE_SUMMARY_SCHEMA, route_digest="d" * 64, equation="A -> B",
+            fit_status="UNCONSTRAINED", readiness_tier="FORMAL_CANDIDATE", exclusions=(), gaps=(),
+            composability_verdict="COMPOSABLE", selectivity_verdict="NOT_APPLICABLE",
+            feasibility_verdict="FAVORABLE", equilibrium_verdict="BALANCED", kinetics_verdict="UNKNOWN",
+        )
+        base.update(over)
+        return RankedRouteSummary(**base)
+
+    @pytest.mark.parametrize("label,over", [
+        ("unknown-without-gap", dict(fit_status="UNKNOWN")),                       # a silent pass hiding as UNKNOWN
+        ("fits-with-gap", dict(fit_status="FITS", gaps=("step 1: T undeclared",))),   # a gap is not a pass
+        ("unconstrained-with-gap", dict(fit_status="UNCONSTRAINED", gaps=("g",))),
+        ("unknown-with-exclusion", dict(fit_status="UNKNOWN", gaps=("g",), exclusions=("e",))),
+        ("unconstrained-with-exclusion", dict(exclusions=("e",))),
+    ])
+    def test_the_full_coherence_table_is_enforced(self, label, over):
+        # MED fold: the guard only rejected EXCLUDED-without-reason and FITS-with-exclusion; the producer's full
+        # invariant (a PASS carries neither gap nor exclusion; UNKNOWN carries a gap and no exclusion) is now enforced.
+        with pytest.raises(ValueError):
+            self._summary(**over)
+
+    def test_an_unsearched_outcome_cannot_carry_ranked_dossiers(self):
+        # MED fold: _check_outcome_coherence guarded affordability_frontier but not ranked_route_dossiers, so a
+        # REFUSED/INVALID response (no IR, no search) could smuggle a dossier into result_digest.
+        req = build_recompile_request("name:water")
+        with pytest.raises(ValueError, match="no search"):
+            CompilationResponse(
+                COMPILATION_RESPONSE_SCHEMA, req, ResponseOutcome.REFUSED, None, None,
+                ("x",), (self._summary(),), (),
+            )

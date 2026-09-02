@@ -251,11 +251,16 @@ def _step_box_check(step, box: ConstraintBox, equip: tuple[EquipmentItem, ...],
             exclusions.append(
                 f"{tag}: needs up to {env.pressure.hi} atm but the bench caps at {box.max_pressure_atm} atm"
             )
-    if box.min_pressure_atm is not None and env.pressure is not None \
-            and env.pressure.lo < box.min_pressure_atm:
-        exclusions.append(
-            f"{tag}: needs down to {env.pressure.lo} atm but the bench floor is {box.min_pressure_atm} atm"
-        )
+    if box.min_pressure_atm is not None:
+        # The floor gets the SAME undeclared-dimension GAP the two ceilings above have (red-team HIGH fold): a route
+        # whose step leaves pressure undeclared cannot be CONFIRMED to sit above a pressure floor, so it is a GAP
+        # (UNKNOWN-fit), never a silent FITS on a constrained dimension (section 11).
+        if env.pressure is None:
+            gaps.append(f"{tag}: pressure undeclared, but the bench floor is {box.min_pressure_atm} atm")
+        elif env.pressure.lo < box.min_pressure_atm:
+            exclusions.append(
+                f"{tag}: needs down to {env.pressure.lo} atm but the bench floor is {box.min_pressure_atm} atm"
+            )
 
     if box.available_reagents is not None:
         for r in step.reactants:

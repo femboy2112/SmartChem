@@ -812,7 +812,7 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `SVC-REQ-01` | One typed request/service powers chemical commands | First brick landed (`67b8ae4`): typed `CompilationRequest`/`CompilationResponse`, per-field `origin` provenance, `run_compilation` + the section 14.4 exit map, canonical serialization. **Alias-collapse landed** (this arc): the `semantic_digest` now keys on the NORMALIZED structure identity, not the raw spelling, so `paracetamol` / `name:paracetamol` / `smiles:CC(=O)Nc1ccc(O)cc1` collapse to ONE search identity AND one result (the ParseReceipt provenance moved to its own `parse_receipt_summary` field, excluded from `result_digest`; the recompile execution is canonicalised so the collapse is real end to end); a feature-bearing (stereo/isotope/charge) input keeps its own identity. `compile`/`recompile` route through the service (CLI-CAN-01); `synthesize`'s uptake is `CLI-CAN-02` | Route `synthesize` through the shared request (CLI-CAN-02); decompile-side collapse (follow-on) | Equal flags across aliases → equal digests **DONE**; every spelling of one molecule → equal request/result digest **DONE** (red-teamed: a non-canonical registry name matches its canonical SMILES on `result_digest` under real routes) | `IR-CHEM-01` | `IN_PROGRESS` |
+| `SVC-REQ-01` | One typed request/service powers chemical commands | First brick landed (`67b8ae4`): typed `CompilationRequest`/`CompilationResponse`, per-field `origin` provenance, `run_compilation` + the section 14.4 exit map, canonical serialization. **Alias-collapse landed** (this arc): the `semantic_digest` now keys on the NORMALIZED structure identity, not the raw spelling, so `paracetamol` / `name:paracetamol` / `smiles:CC(=O)Nc1ccc(O)cc1` collapse to ONE search identity AND one result (the ParseReceipt provenance moved to its own `parse_receipt_summary` field, excluded from `result_digest`; the recompile execution is canonicalised so the collapse is real end to end); a feature-bearing (stereo/isotope/charge) input keeps its own identity. `compile`/`recompile` route through the service (CLI-CAN-01); `synthesize`'s uptake is `CLI-CAN-02` (brick 1 landed: the request now EXPRESSES the §11 T/P constraint via a shared `PhysicalBounds` leaf, digest-bearing + honestly declared-not-applied; applying it to grading + the §9 provider levers remain) | Route `synthesize` through the shared request (CLI-CAN-02); decompile-side collapse (follow-on) | Equal flags across aliases → equal digests **DONE**; every spelling of one molecule → equal request/result digest **DONE** (red-teamed: a non-canonical registry name matches its canonical SMILES on `result_digest` under real routes) | `IR-CHEM-01` | `IN_PROGRESS` |
 | `CLI-CAN-01` | Canonical `decompile` and `recompile`; legacy aliases share defaults | Canonical `recompile` verb landed (`df93b8c`), routed through the typed service (`run_compilation`); `decompile` gained `--json`/`--emit-request` through the same service; the legacy `compile` alias now builds the SAME typed request from the ONE shared builder (no divergent defaults) + prints a deprecation notice, so `compile … --emit-request` and `recompile … --emit-request` are byte-identical. `synthesize`'s deeper uptake (its `--max-temp`/`--max-pressure` constraints + `--offline` provider levers) is the named follow-on `CLI-CAN-02` | Add canonical verbs; deprecate aliases without duplicate logic | Command matrix gives equal request JSON — DONE (7-row grid, `--emit-request` byte-identical) | `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-NAME-01` | Normal names accepted without private formatting | Registered offline names and explicit `name:`/`smiles:` prefixes work in synthesis CLIs; InChI/formula/echo/shared parser are incomplete | Finish unified identity parser and echo receipt | Registered-name and SMILES tests pass; add InChI/formula/ambiguity matrix | `ID-PARSE-01` | `IN_PROGRESS` |
 | `CLI-EXIT-01` | Stable exit codes separate route/no-route/partial/refusal/invalid/internal | The top-level guarded service is now BUILT: `main()` wraps command dispatch and maps ANY escaping exception to exit 70 (`ERROR_INTERNAL`) with a concise stderr line — never a raw traceback, never Python's default exit 1; argparse's own `SystemExit` (a `BaseException`, not `Exception`) passes through, so `--help` stays 0 and a bad flag stays 2. The full 0/2/3/4/5 table is observed both in-process AND through a real `python -m smartchem` subprocess, plus the controlled internal-error fixture for 70 (`tests/test_cli_exit.py`). Acceptance MET. Central error mapping across every format/path is `CLI-ERR-01`; the decompile human path still returns 0/2/4 by its own status | Central error mapping (`CLI-ERR-01`) | Codes 0/2/3/4/5 observed; controlled internal-error fixture for 70 — **DONE** (`tests/test_cli_exit.py`) | `SRCH-RCT-01`, `SVC-REQ-01` | `IN_PROGRESS` |
@@ -1254,6 +1254,63 @@ residual / follow-on: `synthesize`'s uptake onto the shared request (CLI-CAN-02)
                      recompile_to_ir raw-order leak is fixed at the service boundary here (a direct recompile_to_ir
                      caller still gets a raw-order-dependent digest -- canonicalising inside the IR producer is a
                      separate, wider-blast follow-on).
+```
+
+**Uptake record — CLI-CAN-02 brick 1: the typed request expresses the section-11 T/P constraint** (advances
+`SVC-REQ-01`/`CLI-CAN-02`; the first step of bringing `synthesize`'s constraint levers onto the typed request):
+
+```text
+ID:                  CLI-CAN-02 (brick 1 -- the shared PhysicalBounds leaf + ConstraintPolicy carries it)
+files:               smartchem/constraints.py (new), smartchem/service.py, smartchem/cli.py,
+                     smartchem/experiment/drafter.py, tests/test_constraints.py (new), tests/test_service.py,
+                     tests/test_cli_json.py, tests/fixtures/cli_json/*.json (regen)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              3190 passed, 14 skipped, 1 xfailed (baseline 3158; +32). ruff clean on every changed file;
+                     git diff --check clean.
+built:               Constraints lived only in the synthesize path (experiment/cli.py -> ConstraintBox -> dossier);
+                     the typed request's ConstraintPolicy was a placeholder `constraint_id` string. This makes the
+                     request express a REAL section-11 T/P constraint, dodging both hazards: ONE model (no duplicate)
+                     and NO layering drag.
+                     (1) NEW leaf smartchem/constraints.py -- `PhysicalBounds` (max_temperature_k / min_pressure_atm /
+                     max_pressure_atm), a Digestible with the CONSTR-VAL-01 finite/positive/ordered validation. It is
+                     a pure leaf (contracts + stdlib only), so the service carries it WITHOUT importing drafter.py's
+                     whole experiment stack.
+                     (2) ConstraintBox (drafter.py) now DELEGATES its T/P validation to PhysicalBounds -- so the
+                     finite/positive/ordered rules live in exactly ONE place -- while keeping its flat fields, so its
+                     digest and every consumer are unchanged (verified: full raise-parity across a good/bad matrix).
+                     (3) service ConstraintPolicy replaced its `constraint_id` placeholder with `bounds:
+                     PhysicalBounds` (request schema v1alpha3 -> v1alpha4). It rides the `semantic_digest`, so two
+                     requests declaring different bounds are different searches (section 4.1); build_recompile_request
+                     grew `max_temperature_k`/`min_pressure_atm`/`max_pressure_atm` kwargs (a caller may pass a whole
+                     `constraints=` policy OR bounds, not both); the CLI `recompile`/`compile` grew `--max-temp`/
+                     `--max-pressure`, threaded through the ONE shared builder so the two aliases stay byte-identical.
+                     HONESTY: run_compilation does NOT yet apply the constraint to route grading (verified: routes are
+                     byte-identical with and without the bound); a `constraint_declared_note` disclosure rides the
+                     response diagnostics AND the compile dossier, so the human AND --json views all say the bound is
+                     declared-but-not-applied -- never implying the routes honor a bench limit they do not.
+falsifier fixture:   PhysicalBounds refuses negative/zero/nonfinite/bool/inverted-window bounds; ConstraintBox raises
+                     IFF PhysicalBounds raises on the same matrix (the ONE authority). A declared bound moves the
+                     semantic_digest; the same bound shares it; the both-passed guard fires; serialize/deserialize
+                     preserves the bounds + digest. CLI: `--max-temp 400 --emit-request` records the bound;
+                     `compile`/`recompile` stay byte-identical under `--max-temp`; a bad `--max-temp` is exit 2 with no
+                     traceback; the declared-not-applied caveat appears in recompile human, recompile --json, compile
+                     --json, AND the compile human dossier.
+red-team:            workflow woczmadde, 3 attack bearings + per-finding refute-by-default verify (7 agents, 507k
+                     subagent tokens). 1 CONFIRMED, 3 refuted -- folded before this commit (pinned by
+                     TestCliConstraintFlags): (HON-CLI-01, MED) the shared flag set let `compile` accept
+                     --max-temp/--max-pressure, but `compile`'s HUMAN path renders a compile_synthesis dossier (not
+                     the typed response), so it disclosed the caveat in recompile human/--json AND compile --json but
+                     NOT the compile human dossier -- a silent, undisclosed constraint drop that falsified the
+                     "the CLI render says so plainly" docstring claim; fixed by emitting the shared
+                     `constraint_declared_note` in the compile dossier path too. Correctly REFUTED: (a)
+                     PhysicalBounds.describe()'s 6-sig-fig rounding collapses 400.0 vs 400.00000001 in the human LABEL
+                     -- by-design (a label, never an identity key; the digest still splits them, a 1e-8 K difference);
+                     (b) an int `400` vs float `400.0` builder kwarg SPLITS the digest -- the SAFE direction of the
+                     one-way law, and CLI-unreachable (--max-temp is type=float).
+residual / follow-on: the constraint is DECLARED but not yet APPLIED -- run_compilation does not filter/rank routes by
+                     it (bringing the dossier's ConstraintBox fitting onto the typed response is brick 2); the section-9
+                     provider levers (`--offline`) and unifying run_compilation to RETURN the graded dossier are the
+                     rest of CLI-CAN-02; min_pressure_atm is a builder kwarg with no CLI flag yet.
 ```
 
 ## 4. P1 physical, data, and affordability backlog

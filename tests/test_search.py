@@ -12,7 +12,12 @@ from itertools import combinations
 import pytest
 
 from smartchem.search import (
+    ERROR_8_2_STATUSES,
+    NON_SEARCH_8_2_STATUSES,
+    PRIMARY_RESOLVABLE_8_2_STATUSES,
+    REFUSED_8_2_STATUSES,
     STANDARD_8_2_STATUSES,
+    RefusalReceipt,
     SearchStatus,
     primary_standard_status,
 )
@@ -118,3 +123,74 @@ class TestPrimaryStandardStatus:
             primary_standard_status((SearchStatus.COMPLETE_WITHIN_BOUNDS,))
         with pytest.raises(ValueError, match="no active limit"):
             primary_standard_status((SearchStatus.PARTIAL_MULTIPLE_LIMITS,))
+
+
+class TestRefusalReceiptVocabulary:
+    """The section 8.1 refusal-axis vocabulary: REFUSED_*/ERROR_INTERNAL are the terminal statuses of a request
+    that produced NO search, and are held in a type separate from the SearchStatus completeness receipts."""
+
+    def test_the_non_search_statuses_are_exactly_refused_plus_error(self):
+        assert NON_SEARCH_8_2_STATUSES == REFUSED_8_2_STATUSES | ERROR_8_2_STATUSES
+        assert REFUSED_8_2_STATUSES == {"REFUSED_INVALID_REQUEST", "REFUSED_IDENTITY_UNSUPPORTED"}
+        assert ERROR_8_2_STATUSES == {"ERROR_INTERNAL"}
+
+    def test_refusal_statuses_are_real_8_2_members(self):
+        assert NON_SEARCH_8_2_STATUSES <= set(STANDARD_8_2_STATUSES)
+
+    def test_refusal_axis_is_disjoint_from_the_search_completeness_image(self):
+        # load-bearing "different axis" claim: nothing a SearchStatus resolves to is a refusal status, and vice
+        # versa. A refusal can never be spelled as a completeness verdict, or the two axes would collide.
+        search_image = {m.standard_name for m in SearchStatus if m.standard_name is not None}
+        assert search_image.isdisjoint(NON_SEARCH_8_2_STATUSES)
+        assert PRIMARY_RESOLVABLE_8_2_STATUSES.isdisjoint(NON_SEARCH_8_2_STATUSES)
+
+    def test_the_eight_8_2_statuses_partition_into_search_and_non_search(self):
+        # every 8.2 status is either a search-completeness outcome (in the SearchStatus image OR the still-unsourced
+        # INCOMPLETE_CANDIDATE_LIMIT) or a non-search outcome -- never both, never neither.
+        search_image = {m.standard_name for m in SearchStatus if m.standard_name is not None}
+        search_axis = search_image | {"INCOMPLETE_CANDIDATE_LIMIT"}
+        assert search_axis.isdisjoint(NON_SEARCH_8_2_STATUSES)
+        assert search_axis | NON_SEARCH_8_2_STATUSES == set(STANDARD_8_2_STATUSES)
+
+
+class TestRefusalReceipt:
+    def test_a_refused_receipt_carries_its_8_2_status_reason_and_echo(self):
+        rc = RefusalReceipt("REFUSED_IDENTITY_UNSUPPORTED", "charged target", request="Na^1+")
+        assert rc.standard_status == "REFUSED_IDENTITY_UNSUPPORTED"
+        assert rc.reason == "charged target"
+        assert rc.request == "Na^1+"
+        assert rc.is_refusal is True
+
+    def test_error_internal_is_admissible_but_is_not_a_refusal(self):
+        rc = RefusalReceipt("ERROR_INTERNAL", "an internal invariant broke")
+        assert rc.is_refusal is False  # a bug, not a chemical-domain refusal
+        assert rc.request == ""  # request echo is optional
+
+    @pytest.mark.parametrize("bad", ["COMPLETE_WITHIN_DECLARED_SPACE", "INCOMPLETE_CUT_BUDGET",
+                                     "INCOMPLETE_RESULT_LIMIT", "PARTIAL_CUT_BUDGET", "nonsense", ""])
+    def test_a_non_refusal_status_is_refused_at_construction(self, bad):
+        # the guard's whole job: a completeness status (or garbage) can never masquerade as a refusal receipt.
+        with pytest.raises(ValueError, match="refusal/error status"):
+            RefusalReceipt(bad, "some reason")
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n "])
+    def test_an_empty_or_whitespace_reason_is_refused(self, blank):
+        # red-team: a whitespace-only reason is truthy but not "human-readable"; the guard must strip.
+        with pytest.raises(ValueError, match="human-readable reason"):
+            RefusalReceipt("REFUSED_INVALID_REQUEST", blank)
+
+    def test_render_prefix_tracks_is_refusal(self):
+        # red-team: render must never call an ERROR_INTERNAL (is_refusal False) a "refused:" outcome.
+        assert RefusalReceipt("ERROR_INTERNAL", "internal invariant broke").render().startswith("error:")
+        assert RefusalReceipt("REFUSED_IDENTITY_UNSUPPORTED", "charged").render().startswith("refused:")
+
+    def test_render_leads_with_the_8_2_status(self):
+        out = RefusalReceipt("REFUSED_IDENTITY_UNSUPPORTED", "charged", request="Na^+").render()
+        assert out.startswith("refused: REFUSED_IDENTITY_UNSUPPORTED")
+        assert "Na^+" in out and "charged" in out
+
+    def test_the_receipt_is_frozen_and_hashable(self):
+        rc = RefusalReceipt("ERROR_INTERNAL", "boom")
+        with pytest.raises(Exception):
+            rc.reason = "changed"  # type: ignore[misc]
+        assert isinstance(hash(rc), int)

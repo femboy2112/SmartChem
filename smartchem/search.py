@@ -11,6 +11,7 @@ higher :mod:`smartchem.experiment` package can import it without a layering cycl
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 
 __all__ = [
@@ -18,6 +19,10 @@ __all__ = [
     "STANDARD_8_2_STATUSES",
     "PRIMARY_RESOLVABLE_8_2_STATUSES",
     "primary_standard_status",
+    "REFUSED_8_2_STATUSES",
+    "ERROR_8_2_STATUSES",
+    "NON_SEARCH_8_2_STATUSES",
+    "RefusalReceipt",
 ]
 
 
@@ -83,16 +88,23 @@ class SearchStatus(str, Enum):
 #     PARTIAL_MULTIPLE_LIMITS  -> None                    (no single 8.2 name; a receipt resolves the primary
 #                                                          from its own recorded limit flags -- see below)
 #
-#   8.2 -> engine  (these 8.2 statuses have no engine SearchStatus source in THIS engine):
-#     INCOMPLETE_CANDIDATE_LIMIT   -- no search here stops on a distinct emitted-candidate cap; the caps that DO
-#                                     bite are the cut budget and the result limit, already mapped above
-#     REFUSED_INVALID_REQUEST      -- an invalid/unsupported request currently RAISES (an exception) rather than
-#     REFUSED_IDENTITY_UNSUPPORTED -- returning a REFUSED_* receipt (e.g. decompiler.py refusing a charged target,
-#                                     the formula<->structure gate).  Section 8.1 mandates a SearchReceipt even on
-#                                     refusal, so this is an ACKNOWLEDGED, not-yet-built section 8.1 gap -- NOT a
-#     ERROR_INTERNAL               -- conformant "by design" choice; an internal error likewise propagates as an
-#                                     exception, not a terminal status.  Building the receipt-returning refusal
-#                                     path (so REFUSED_*/ERROR_INTERNAL gain a real source) is a separate brick.
+#   8.2 -> engine  (these 8.2 statuses are NOT SearchStatus members -- they live on a different axis):
+#     REFUSED_INVALID_REQUEST      -- NOW SOURCED, not by a SearchStatus but by a RefusalReceipt on the refusal
+#     REFUSED_IDENTITY_UNSUPPORTED -- axis (see the RefusalReceipt note below).  A receipt-returning front door
+#                                     (decompiler.decompile_or_refuse) catches the engine's raised refusal and
+#                                     returns a RefusalReceipt carrying the section 8.2 name: a malformed request
+#                                     -> REFUSED_INVALID_REQUEST, an unsupported chemical identity (a charged
+#                                     target, via IdentityUnsupportedError) -> REFUSED_IDENTITY_UNSUPPORTED.  The
+#                                     low-level raising API is unchanged; the front door SOURCES the section 8.2
+#                                     STATUS on the refusal axis (it does not yet emit the full section 8.1
+#                                     SearchReceipt schema on refusal -- that null-counter step is a later brick).
+#     INCOMPLETE_CANDIDATE_LIMIT   -- still no engine source: no search here stops on a distinct emitted-candidate
+#                                     cap; the caps that DO bite are the cut budget and the result limit (mapped
+#                                     above).  This one really is a SearchStatus gap, not a refusal-axis one.
+#     ERROR_INTERNAL               -- still no engine source in THIS layer: an internal error propagates as an
+#                                     exception.  Turning an uncaught bug into an ERROR_INTERNAL RefusalReceipt is
+#                                     the province of a top-level guarded service (a later brick), not a domain
+#                                     front door, which catches only DecompilerError (a chemical-domain refusal).
 STANDARD_8_2_STATUSES = (
     "COMPLETE_WITHIN_DECLARED_SPACE",
     "INCOMPLETE_CUT_BUDGET",
@@ -152,3 +164,71 @@ def primary_standard_status(active: "tuple[SearchStatus, ...]") -> str:
 # is a bare enum lacking the per-limit flags) uses this to check that a MULTIPLE status resolved to a legal
 # primary and not, say, INCOMPLETE_CANDIDATE_LIMIT (which no engine limit produces).
 PRIMARY_RESOLVABLE_8_2_STATUSES = frozenset(_STANDARD_NAME_BY_MEMBER[m] for m in _PRIMARY_PRECEDENCE)
+
+
+# -- Section 8.1 receipt on a REFUSED/ERROR request (the non-search terminal outcomes) ----------------------------
+# Section 8.1 mandates a receipt even when a request produces NO bounded search: a request that is refused or
+# errors out before searching.  The section 8.2 statuses for that case (REFUSED_*/ERROR_INTERNAL) live on a
+# DIFFERENT AXIS than search completeness.  SearchStatus answers "did the search exhaust its declared space?"; a
+# refused request never produced a search to ask that of.  So these are deliberately NOT SearchStatus members --
+# adding them would silently mis-bucket a refusal in every "COMPLETE_WITHIN_BOUNDS else treat-as-partial" branch
+# that reads a SearchStatus.  Instead a receipt-returning front door catches the engine's raised refusal and
+# packages it here, carrying the section 8.2 name directly.
+REFUSED_8_2_STATUSES = frozenset({"REFUSED_INVALID_REQUEST", "REFUSED_IDENTITY_UNSUPPORTED"})
+ERROR_8_2_STATUSES = frozenset({"ERROR_INTERNAL"})
+#: The section 8.2 statuses a bounded search never produces -- the terminal outcomes of a request that did not
+#: search.  Exactly the RefusalReceipt-admissible statuses; disjoint from the SearchStatus image by construction.
+NON_SEARCH_8_2_STATUSES = REFUSED_8_2_STATUSES | ERROR_8_2_STATUSES
+
+
+@dataclass(frozen=True)
+class RefusalReceipt:
+    """The section 8.2 terminal status of a request REFUSED or ERRORED before it produced any bounded search.
+
+    This is the refusal-axis outcome that gives section 8.2's ``REFUSED_*`` names a real return-path source: a
+    receipt-returning front door catches the engine's raised refusal and carries the section 8.2 name here instead
+    of letting it escape as a bare exception.  It is deliberately MINIMAL and is NOT the full section 8.1
+    ``SearchReceipt`` schema (the ~20 mandated counters): on a refusal no search ran, so those counters are all
+    "not applicable", and emitting a full SearchReceipt-on-refusal with them pinned to UNKNOWN/None is a further
+    step (tracked in the uptake manifest).  What this value DOES guarantee is the two things section 8 most cares
+    about: a refusal never escapes with NO terminal status, and it never borrows a search-completeness status it
+    did not earn.
+
+    ``standard_status`` is a section 8.2 ``REFUSED_*``/``ERROR_INTERNAL`` name, kept in a type separate from the
+    ``SearchStatus`` completeness receipts on purpose (see the reconciliation note above).  ``reason`` is the
+    human-readable cause (typically the raised message); ``request`` echoes the offending request for the audit
+    trail.  A RefusalReceipt carries no candidate digest -- a refusal enumerated nothing, and pretending otherwise
+    would be the exact "incomplete looks complete" defect section 8 forbids, one axis over.
+    """
+
+    standard_status: str
+    reason: str
+    request: str = ""
+
+    def __post_init__(self) -> None:
+        if self.standard_status not in NON_SEARCH_8_2_STATUSES:
+            raise ValueError(
+                "a RefusalReceipt.standard_status must be a section 8.2 refusal/error status (one of "
+                f"{sorted(NON_SEARCH_8_2_STATUSES)}), got {self.standard_status!r}; a completed or partial search "
+                "is a SearchStatus receipt, not a refusal"
+            )
+        if not self.reason.strip():
+            raise ValueError("a RefusalReceipt must state a human-readable reason for the refusal")
+
+    @property
+    def is_refusal(self) -> bool:
+        """True for a REFUSED_* request (a chemical-domain refusal), False for an ERROR_INTERNAL one (a bug)."""
+        return self.standard_status in REFUSED_8_2_STATUSES
+
+    def render(self) -> str:
+        """One-line audit rendering that leads with the section 8.2 status (never a bare native message).
+
+        The lead word tracks :attr:`is_refusal`, so the rendering can never contradict the receipt's own
+        classification: a ``REFUSED_*`` request reads ``refused:``; an ``ERROR_INTERNAL`` one reads ``error:``
+        (an internal bug is not a chemical-domain refusal).
+        """
+        lead = "refused" if self.is_refusal else "error"
+        head = f"{lead}: {self.standard_status}"
+        if self.request:
+            head += f" [{self.request}]"
+        return f"{head} -- {self.reason}"

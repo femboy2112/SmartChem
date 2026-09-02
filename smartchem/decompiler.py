@@ -65,13 +65,15 @@ from math import gcd
 from .contracts import Digestible, canonical_digest
 from .transform_registry import transform_registry_digest
 from .data.periodic_table import ATOMIC_NUMBER
-from .search import SearchStatus
+from .search import RefusalReceipt, SearchStatus
 
 __all__ = [
     "DECOMPILER_SCHEMA",
     "FORMULA_SEARCH_RECEIPT_SCHEMA",
     "DECOMPOSITION_SEARCH_RESULT_SCHEMA",
     "DecompilerError",
+    "IdentityUnsupportedError",
+    "RefusalReceipt",
     "Formula",
     "DecompositionEdge",
     "DecompositionGraph",
@@ -80,6 +82,8 @@ __all__ = [
     "admissible_edges",
     "build_decomposition",
     "search_decomposition",
+    "decompile_or_refuse",
+    "classify_decompiler_refusal",
     "standard_state_equation",
     "example_inventory",
 ]
@@ -100,6 +104,16 @@ _FORMULA_SYMBOLS = frozenset(ATOMIC_NUMBER) | {"D", "T"}  # isotope shorthand re
 
 class DecompilerError(ValueError):
     """A formula, edge, or decomposition request was not admissible for v1."""
+
+
+class IdentityUnsupportedError(DecompilerError):
+    """The request names a chemical identity v1 cannot decompose (a charged species, a non-neutral edge).
+
+    A *subclass* of :class:`DecompilerError`, so every existing ``except DecompilerError`` still catches it and no
+    caller or test breaks.  It exists so the receipt-returning front door (:func:`decompile_or_refuse`) can map an
+    unsupported-IDENTITY refusal to section 8.2's ``REFUSED_IDENTITY_UNSUPPORTED``, distinct from a merely
+    malformed request (``REFUSED_INVALID_REQUEST``) -- the two section 8.2 refusal names need distinct sources.
+    """
 
 
 def _multi_gcd(values: tuple[int, ...]) -> int:
@@ -129,14 +143,14 @@ class Formula(Digestible):
         ):
             raise TypeError("counts must be a tuple of (symbol, count) pairs")
         if not self.counts:
-            raise ValueError("a chemical formula must contain at least one atom")
+            raise DecompilerError("a chemical formula must contain at least one atom")
         seen: set[str] = set()
         prev: str | None = None
         for symbol, count in self.counts:
             if not isinstance(symbol, str) or not symbol:
                 raise TypeError("element symbol must be a non-empty string")
             if type(count) is not int or count <= 0:
-                raise ValueError(f"count for {symbol!r} must be a positive int, got {count!r}")
+                raise DecompilerError(f"count for {symbol!r} must be a positive int, got {count!r}")
             if symbol not in _FORMULA_SYMBOLS:
                 raise DecompilerError(
                     f"unknown element {symbol!r}; formulas validate against SmartChem's complete sourced "
@@ -164,10 +178,10 @@ class Formula(Digestible):
             if type(count) is not int:
                 raise TypeError(f"count for {symbol!r} must be an int, got {type(count).__name__}")
             if count <= 0:
-                raise ValueError(f"count for {symbol!r} must be positive, got {count!r}")
+                raise DecompilerError(f"count for {symbol!r} must be positive, got {count!r}")
             clean[symbol] = count
         if not clean:
-            raise ValueError("a chemical formula must contain at least one atom")
+            raise DecompilerError("a chemical formula must contain at least one atom")
         return cls(tuple(sorted(clean.items())), charge)
 
     @classmethod
@@ -312,7 +326,7 @@ class DecompositionEdge(Digestible):
         if type(self.products) is not tuple or not self.products:
             raise TypeError("products must be a non-empty tuple of (Formula, multiplicity)")
         if self.reactant.charge != 0:
-            raise DecompilerError("v1 decomposes neutral species only; reactant is charged")
+            raise IdentityUnsupportedError("v1 decomposes neutral species only; reactant is charged")
 
         instances = 0
         for pair in self.products:
@@ -324,7 +338,7 @@ class DecompositionEdge(Digestible):
             if type(mult) is not int or mult < 1:
                 raise ValueError("each product multiplicity must be an int >= 1")
             if product.charge != 0:
-                raise DecompilerError("v1 products are neutral; a product is charged")
+                raise IdentityUnsupportedError("v1 products are neutral; a product is charged")
             if product.rank >= self.reactant.rank:
                 raise DecompilerError(
                     f"non-descending product {product!r} (rank {product.rank}) for reactant "
@@ -425,7 +439,7 @@ def admissible_edges(
     if type(budget) is not int or budget <= 0:
         raise ValueError("budget must be a positive integer")
     if reactant.charge != 0:
-        raise DecompilerError("v1 decomposes neutral species only")
+        raise IdentityUnsupportedError("v1 decomposes neutral species only")
     if reactant.is_element:
         return (), True  # an element bucket is terminal: no decomposition
 
@@ -539,7 +553,7 @@ class DecompositionGraph(Digestible):
         if any(type(e) is not DecompositionEdge for e in self.edges):
             raise TypeError("edges must be DecompositionEdge values")
         if any(e.reactant.charge != 0 for e in self.edges):
-            raise DecompilerError("graph edges must be neutral")
+            raise IdentityUnsupportedError("graph edges must be neutral")
 
     @property
     def is_complete(self) -> bool:
@@ -741,7 +755,7 @@ def search_decomposition(
     target_f = _coerce(target)
     inv = tuple(sorted(set(_coerce(s) for s in inventory), key=_sort_key))
     if target_f.charge != 0:
-        raise DecompilerError("v1 decomposes neutral targets only")
+        raise IdentityUnsupportedError("v1 decomposes neutral targets only")
     for name, value in (
         ("max_multiplicity", max_multiplicity), ("budget", budget), ("max_edges", max_edges)
     ):
@@ -826,6 +840,65 @@ def build_decomposition(
     return search_decomposition(
         target, inventory, max_multiplicity=max_multiplicity, budget=budget, max_edges=max_edges
     ).graph
+
+
+def classify_decompiler_refusal(exc: DecompilerError) -> str:
+    """Map a raised decompiler refusal to its section 8.2 terminal-status name.
+
+    An :class:`IdentityUnsupportedError` (a charged target, a non-neutral edge -- a well-formed but unsupported
+    chemical identity) maps to ``REFUSED_IDENTITY_UNSUPPORTED``; every other :class:`DecompilerError` (a malformed
+    formula, a non-conserving or non-primitive edge -- a request the engine could not even admit) maps to
+    ``REFUSED_INVALID_REQUEST``.  These are the two section 8.2 refusal names that this engine can source.
+    """
+    if isinstance(exc, IdentityUnsupportedError):
+        return "REFUSED_IDENTITY_UNSUPPORTED"
+    return "REFUSED_INVALID_REQUEST"
+
+
+def _refusal_echo(target: "str | dict[str, int] | Formula") -> str:
+    """A short, safe echo of a refused request for the audit trail (the target may not even be a valid Formula)."""
+    if isinstance(target, str):
+        return target
+    if isinstance(target, Formula):
+        return repr(target)
+    return str(target)
+
+
+def decompile_or_refuse(
+    target: "str | dict[str, int] | Formula",
+    inventory: "tuple[Formula, ...] | tuple[str, ...]" = (),
+    *,
+    max_multiplicity: int = 1,
+    budget: int = 100_000,
+    max_edges: int = 5_000,
+) -> "DecompositionSearchResult | RefusalReceipt":
+    """Build the decomposition search result, OR return a :class:`RefusalReceipt` instead of raising on a refusal.
+
+    Section 8.1 mandates a terminal status even when a request produces no search.  The low-level
+    :func:`search_decomposition` RAISES a :class:`DecompilerError` on a chemical-domain refusal (a
+    charged/unsupported target; a malformed formula -- bad text, a zero/negative subscript, or an empty formula);
+    this front door catches exactly that and returns a ``RefusalReceipt`` carrying the section 8.2 terminal status
+    (:func:`classify_decompiler_refusal`) -- an unsupported identity is ``REFUSED_IDENTITY_UNSUPPORTED``, any other
+    inadmissible request is ``REFUSED_INVALID_REQUEST``.  The receipt sources the section 8.2 STATUS on the refusal
+    axis; it is not the full section 8.1 ``SearchReceipt`` schema (see :class:`~smartchem.search.RefusalReceipt`).
+    A COMPLETE or partial search returns the :class:`DecompositionSearchResult` unchanged: its own
+    :class:`~smartchem.search.SearchStatus` receipt carries completeness, and this front door never overrides it
+    (a real search is never a refusal, and a refusal never borrows a completeness status).
+
+    Deliberately narrow: only ``DecompilerError`` (the chemical-domain refusal, of which malformed-formula content
+    is now a member) is caught.  A parameter-contract violation -- a non-positive ``budget``/``max_edges``, or a
+    target of the wrong Python TYPE (not str/dict/Formula) -- raises its ``ValueError``/``TypeError`` as before:
+    that is a caller bug, not a chemical refusal, and turning an arbitrary uncaught bug into an ``ERROR_INTERNAL``
+    receipt belongs to a top-level guarded service, not this domain door.
+    """
+    try:
+        return search_decomposition(
+            target, inventory, max_multiplicity=max_multiplicity, budget=budget, max_edges=max_edges
+        )
+    except DecompilerError as exc:
+        return RefusalReceipt(
+            classify_decompiler_refusal(exc), str(exc), request=_refusal_echo(target)
+        )
 
 
 def _coerce(value: "str | dict[str, int] | Formula") -> Formula:

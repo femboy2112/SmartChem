@@ -18,13 +18,16 @@ from smartchem.decompiler import (
     DecompositionSearchResult,
     Formula,
     FormulaSearchReceipt,
+    IdentityUnsupportedError,
     admissible_edges,
     build_decomposition,
+    classify_decompiler_refusal,
+    decompile_or_refuse,
     example_inventory,
     search_decomposition,
     standard_state_equation,
 )
-from smartchem.search import STANDARD_8_2_STATUSES, SearchStatus
+from smartchem.search import NON_SEARCH_8_2_STATUSES, STANDARD_8_2_STATUSES, RefusalReceipt, SearchStatus
 from smartchem.transform_registry import transform_registry_digest
 
 H = Formula.bucket("H")
@@ -451,3 +454,74 @@ class TestSection82FormulaStandardStatus:
     def test_a_live_decomposition_receipt_speaks_8_2(self):
         r = search_decomposition("C8H9NO2", example_inventory())
         assert r.receipt.standard_status in STANDARD_8_2_STATUSES
+
+
+class TestSection81ReceiptOnRefusal:
+    """Section 8.1 mandates a receipt even when a request produces no search. ``decompile_or_refuse`` returns a
+    RefusalReceipt carrying the right section 8.2 refusal status instead of raising -- giving REFUSED_* a real,
+    return-path source -- while a real search is NEVER laundered into a refusal."""
+
+    def test_identity_unsupported_error_is_a_decompiler_error(self):
+        # the subclass must be catchable by every existing ``except DecompilerError`` -- no caller/test breaks.
+        assert issubclass(IdentityUnsupportedError, DecompilerError)
+        with pytest.raises(DecompilerError):
+            search_decomposition(Formula.of({"Na": 1}, charge=1))
+
+    def test_a_charged_target_is_refused_as_identity_unsupported(self):
+        result = decompile_or_refuse(Formula.of({"Na": 1}, charge=1))
+        assert isinstance(result, RefusalReceipt)
+        assert result.standard_status == "REFUSED_IDENTITY_UNSUPPORTED"
+        assert result.is_refusal is True
+        assert "Na" in result.request  # the offending request is echoed for the audit trail
+
+    def test_a_malformed_target_is_refused_as_invalid_request(self):
+        result = decompile_or_refuse("this is not a formula")
+        assert isinstance(result, RefusalReceipt)
+        assert result.standard_status == "REFUSED_INVALID_REQUEST"
+
+    def test_a_malformed_inventory_entry_is_refused_as_invalid_request(self):
+        result = decompile_or_refuse("CH4", ("!!not-a-formula!!",))
+        assert isinstance(result, RefusalReceipt)
+        assert result.standard_status == "REFUSED_INVALID_REQUEST"
+
+    @pytest.mark.parametrize("target", ["C0", "H2O0", "(CH)0", "N2O0", {"C": 0}, {"C": -1}, {}])
+    def test_malformed_formula_content_is_refused_not_crashed(self, target):
+        # red-team axis-escape: a zero/negative subscript or empty formula (a DecompilerError-category malformed
+        # request, of the RIGHT Python type) must return a receipt -- not escape as a raw ValueError.
+        result = decompile_or_refuse(target)
+        assert isinstance(result, RefusalReceipt), f"{target!r} escaped as {type(result).__name__}"
+        assert result.standard_status == "REFUSED_INVALID_REQUEST"
+
+    def test_a_wrong_python_type_target_still_raises_not_refuses(self):
+        # a target that is not str/dict/Formula is a caller bug (wrong TYPE), not a chemical-domain refusal.
+        with pytest.raises(TypeError):
+            decompile_or_refuse(123)
+
+    def test_a_valid_target_returns_the_search_result_never_a_refusal(self):
+        # the load-bearing non-laundering invariant: a genuine (possibly partial) search is never a refusal.
+        result = decompile_or_refuse("C8H9NO2", example_inventory())
+        assert isinstance(result, DecompositionSearchResult)
+        assert result.receipt.standard_status in STANDARD_8_2_STATUSES
+        assert result.receipt.standard_status not in NON_SEARCH_8_2_STATUSES
+
+    def test_a_partial_search_is_still_a_result_not_a_refusal(self):
+        # squeeze the budget so the search truncates: it must STILL be a DecompositionSearchResult (a partial
+        # SearchStatus), never a RefusalReceipt -- an incomplete search is not a refused request.
+        result = decompile_or_refuse("C8H9NO2", example_inventory(), budget=3, max_edges=2)
+        assert isinstance(result, DecompositionSearchResult)
+        assert result.receipt.status is not SearchStatus.COMPLETE_WITHIN_BOUNDS  # genuinely truncated
+        assert result.receipt.standard_status not in NON_SEARCH_8_2_STATUSES
+
+    def test_a_parameter_contract_violation_still_raises_not_refuses(self):
+        # a non-positive budget is a caller bug, not a chemical-domain refusal: it must raise, not become a receipt.
+        with pytest.raises(ValueError):
+            decompile_or_refuse("CH4", budget=0)
+
+    def test_the_classifier_maps_each_refusal_kind_to_its_8_2_status(self):
+        assert classify_decompiler_refusal(IdentityUnsupportedError("x")) == "REFUSED_IDENTITY_UNSUPPORTED"
+        assert classify_decompiler_refusal(DecompilerError("x")) == "REFUSED_INVALID_REQUEST"
+
+    def test_a_neutral_element_bucket_target_is_a_result_not_a_refusal(self):
+        # a neutral element (a terminal) is a COMPLETE empty-edge search, not a refusal -- boundary between the axes.
+        result = decompile_or_refuse("O2")
+        assert isinstance(result, DecompositionSearchResult)

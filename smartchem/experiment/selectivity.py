@@ -111,7 +111,10 @@ class SelectivityRecord(Digestible):
     step's reactants actually resolve, structurally, to *those* named isomers -- not merely by matching
     composition.  A composition can hide more than one starting isomer (4-aminophenol vs 3-aminophenol are
     both ``C6H7NO``), and a sourced regiochemical preference for one is not license to fire for the other.
-    Empty (the default) means composition-only matching, unchanged from before S2 -- back-compat, ooh yeah.
+    Empty means composition-only matching, but that is NOT a blanket pass (EVD-KEY-01): a composition-only
+    record fires ONLY when every reactant is the UNIQUE registered isomer of its composition (it resolves and
+    has no registered siblings, so composition pins identity); a reactant that does not resolve or has siblings
+    is a loud UNKNOWN, never a borrow across isomers.  Name the reactants to key an ambiguous composition.
     """
 
     reactant_key: CompositionKey
@@ -314,6 +317,32 @@ def selectivity_of_step(
                     f"required reactant isomer {missing} did not resolve among this step's reactants",
                 ),
             )
+    else:
+        # EVD-KEY-01: a record with NO reactant_names matched by reactant COMPOSITION alone.  Composition is not
+        # identity -- a same-composition isomer (3-aminophenol for 4-aminophenol; both C6H7NO) would BORROW the
+        # sourced verdict (the "a-reaction-key-by-formula-borrows-a-rate" fail-open, on the reactant side).  It is
+        # attributable to THIS step's reactants only when every reactant is the UNIQUE registered isomer of its
+        # composition: it resolves structurally AND its composition has exactly one registered isomer, so composition
+        # DOES pin identity here.  A reactant that does not resolve (an unregistered isomer) or whose composition has
+        # registered siblings is ambiguous -- fire only with a reactant_names key, never a composition borrow.  The
+        # guard is structural (it fires on the condition, not on a data convention), so it protects default AND
+        # injected records alike.
+        for reactant in step.reactants:
+            resolved_reactant = resolve_structure(reactant)
+            siblings = known_compounds(Formula.of(reactant.formula, reactant.charge))
+            if resolved_reactant is None or len(siblings) != 1:
+                which = resolved_reactant.name if resolved_reactant is not None else repr(reactant)
+                return StepSelectivity(
+                    SelectivityStatus.UNKNOWN,
+                    f"UNKNOWN: a sourced selectivity exists (major: {rec.major_isomer_name}), but it names no "
+                    f"reactant isomers and a reactant ({which}) is not the UNIQUE registered isomer of its "
+                    f"composition, so the composition-only record cannot be attributed to it without borrowing "
+                    f"across isomers — add reactant_names to key it structurally (EVD-KEY-01)",
+                    unknown(
+                        "selectivity", "",
+                        f"composition-only record: reactant {which} is not a uniquely-registered structure",
+                    ),
+                )
 
     named = resolve_structure(target)
     if named is None:

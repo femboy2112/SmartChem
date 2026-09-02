@@ -46,7 +46,7 @@ guarded service).  Each of those is a named follow-on, not a silent gap.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from .compilation_ir import (
@@ -58,6 +58,7 @@ from .compilation_ir import (
     ir_to_payload,
     recompile_to_ir,
 )
+from .constraints import PhysicalBounds
 from .contracts import Digestible, canonical_digest
 from .identity import IdentityLoss, MatchLayer, refines
 from .identity_parse import IdentityParseError, InputKind, resolve_target
@@ -100,10 +101,10 @@ __all__ = [
     "EXIT_INTERNAL",
 ]
 
-# v1alpha3 (SVC-REQ-01 alias-collapse): CompilationRequest gains a stored ``normalized_identity`` field -- the
-# canonical structure identity the semantic digest keys on so ``name:X``/``X``/``smiles:X`` collapse -- a genuine
-# request-payload shape change.  (v1alpha2 added ID-LAYER-02's match_layer.)
-COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha3"
+# v1alpha4 (CLI-CAN-02): ConstraintPolicy carries a real PhysicalBounds (T/P) box instead of a placeholder
+# constraint_id string -- a genuine request-payload shape change.  (v1alpha3 added SVC-REQ-01's normalized_identity;
+# v1alpha2 added ID-LAYER-02's match_layer.)
+COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha4"
 # v1alpha2 (SVC-REQ-01 alias-collapse): CompilationResponse gains a ``parse_receipt_summary`` field -- the section
 # 14.2 identity-resolution echo, pulled OUT of ``diagnostics`` (where it rode as a free-text last line) into a
 # first-class field, so it is surfaced as the section 14.3 receipt yet EXCLUDED from ``result_digest`` (it is
@@ -111,10 +112,10 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha3"
 COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha2"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
-# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha3: the
-# ``parse_receipt_summary`` response field (above) and the ``normalized_identity`` request field.  (v1alpha2:
-# IR-LOSS-01 turned identity_losses into array[object]; the request schema bumped for ID-LAYER-02's match_layer.)
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha3"
+# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha4: the
+# referenced request schema bumped for CLI-CAN-02's ConstraintPolicy.bounds.  (v1alpha3: the parse_receipt_summary
+# response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's array[object] identity_losses.)
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha4"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -319,14 +320,25 @@ class IdentityPolicy(Digestible):
 
 @dataclass(frozen=True)
 class ConstraintPolicy(Digestible):
-    """Constraint box (section 11).  Minimal first cut: ``UNCONSTRAINED`` by default; the typed T/P/selectivity
-    box is wired in a later brick."""
+    """The section-11 constraint box the request declares (CLI-CAN-02): the physical (T/P) bounds a route must fit.
 
-    constraint_id: str = "UNCONSTRAINED"
+    ``bounds`` is the shared :class:`~smartchem.constraints.PhysicalBounds` leaf (the SAME model
+    :class:`~smartchem.experiment.drafter.ConstraintBox` validates through), so there is ONE T/P constraint model.
+    It rides the :attr:`CompilationRequest.semantic_digest` -- two requests declaring different bounds are
+    different searches (section 4.1: the constraint is part of the request's MEANING).
+
+    HONESTY (this brick): the bounds are DECLARED and identity-bearing, but ``run_compilation`` does not yet apply
+    them to route grading -- a route is not filtered/ranked by T/P here.  That grading (bringing the dossier's
+    ConstraintBox fitting onto this typed request) is the CLI-CAN-02 follow-on; the CLI render says so plainly.
+    An all-``None`` box is UNCONSTRAINED (nothing declared), never a pass (section 11).  The bench's reagent and
+    equipment inventory stay in the request's own ``helper_reagents``/``stock_materials`` fields, not here.
+    """
+
+    bounds: PhysicalBounds = field(default_factory=PhysicalBounds.unconstrained)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.constraint_id, str) or not self.constraint_id:
-            raise ValueError("constraint_id must be a non-empty string")
+        if type(self.bounds) is not PhysicalBounds:
+            raise TypeError("bounds must be a PhysicalBounds")
 
 
 @dataclass(frozen=True)
@@ -579,6 +591,32 @@ def _resolve_identity_policy(
     return IdentityPolicy(match_layer=default_layer)
 
 
+def _resolve_constraints(
+    constraints: "ConstraintPolicy | None",
+    max_temperature_k: "float | None",
+    min_pressure_atm: "float | None",
+    max_pressure_atm: "float | None",
+) -> "tuple[ConstraintPolicy, bool]":
+    """Resolve the request's :class:`ConstraintPolicy` (CLI-CAN-02) from an explicit policy OR bare T/P bound
+    kwargs (a caller may not pass both).  Returns ``(policy, was_explicit)`` -- ``was_explicit`` is the
+    ``constraints`` field's origin (a declared bound OR a passed policy is EXPLICIT; the unconstrained default is
+    DEFAULT)."""
+    any_bound = any(b is not None for b in (max_temperature_k, min_pressure_atm, max_pressure_atm))
+    if constraints is not None:
+        if any_bound:
+            raise ValueError("pass either constraints or the T/P bound kwargs, not both")
+        return constraints, True
+    if any_bound:
+        return ConstraintPolicy(
+            PhysicalBounds.of(
+                max_temperature_k=max_temperature_k,
+                min_pressure_atm=min_pressure_atm,
+                max_pressure_atm=max_pressure_atm,
+            )
+        ), True
+    return ConstraintPolicy(), False
+
+
 def _recompile_normalized_identity(target_input: str, input_kind: InputKind) -> str:
     """The canonical STRUCTURE identity for the semantic-digest alias-collapse, or ``""`` if it must not collapse.
 
@@ -627,6 +665,9 @@ def build_recompile_request(
     identity_policy: "IdentityPolicy | None" = None,
     match_layer: "MatchLayer | None" = None,
     constraints: "ConstraintPolicy | None" = None,
+    max_temperature_k: "float | None" = None,
+    min_pressure_atm: "float | None" = None,
+    max_pressure_atm: "float | None" = None,
     ranking_policy: "RankingPolicy | None" = None,
     evidence_provider_selection: "EvidenceProviderSelection | None" = None,
     output_policy: "OutputPolicy | None" = None,
@@ -636,8 +677,13 @@ def build_recompile_request(
     This is the alias-independence engine: ``compile``, ``synthesize`` and ``recompile`` all build their request
     HERE, from ONE default table, so equal explicit flags always resolve to equal values and thus an equal
     :attr:`~CompilationRequest.semantic_digest`.  A value passed explicitly and the same value reached by default
-    share the search identity but differ in :attr:`~CompilationRequest.origins`.
+    share the search identity but differ in :attr:`~CompilationRequest.origins`.  The section-11 T/P constraint is
+    supplied either as a whole ``constraints`` policy or via the ``max_temperature_k``/``*_pressure_atm`` bound
+    kwargs (CLI-CAN-02); it rides the search identity but is not yet applied to route grading (a follow-on).
     """
+    resolved_constraints, constraints_explicit = _resolve_constraints(
+        constraints, max_temperature_k, min_pressure_atm, max_pressure_atm
+    )
     explicit = {
         "input_kind": input_kind is not None,
         "helper_reagents": helper_reagents is not None,
@@ -649,7 +695,7 @@ def build_recompile_request(
         "cut_budget": cut_budget is not None,
         # one origin covers the identity policy however it was set -- as a whole object or via the match_layer knob.
         "identity_policy": identity_policy is not None or match_layer is not None,
-        "constraints": constraints is not None,
+        "constraints": constraints_explicit,
         "ranking_policy": ranking_policy is not None,
         "evidence_provider_selection": evidence_provider_selection is not None,
         "output_policy": output_policy is not None,
@@ -683,7 +729,7 @@ def build_recompile_request(
             max_results=max_routes if max_routes is not None else 100,
             cut_budget=cut_budget if cut_budget is not None else 20_000,
         ),
-        constraints if constraints is not None else ConstraintPolicy(),
+        resolved_constraints,
         ranking_policy if ranking_policy is not None else RankingPolicy(),
         output_policy if output_policy is not None else OutputPolicy(),
         _origins(explicit),
@@ -998,6 +1044,22 @@ def _classify(ir: ChemicalCompilationIR, target_available: bool) -> ResponseOutc
     return ResponseOutcome.ROUTES_FOUND if ir.candidate_count > 0 else ResponseOutcome.NO_ROUTE_COMPLETE
 
 
+def constraint_declared_note(bounds: PhysicalBounds) -> "str | None":
+    """The section-11 constraint DISCLOSURE (CLI-CAN-02), or ``None`` when nothing is declared.
+
+    ONE caveat text for every surface -- the ``run_compilation`` response diagnostic (which reaches the recompile
+    human AND --json views) and the ``compile`` human dossier both use it -- so a DECLARED constraint that is not
+    yet applied to route grading is disclosed identically wherever routes are shown.  Never imply the routes honor
+    a bench limit they do not.
+    """
+    if not bounds.constrains_anything:
+        return None
+    return (
+        f"section-11 constraint DECLARED ({bounds.describe()}): part of the request identity, but the routes "
+        "are NOT yet filtered or ranked by it (grading against it is a CLI-CAN-02 follow-on)"
+    )
+
+
 def run_compilation(request: CompilationRequest) -> CompilationResponse:
     """Execute ``request`` and return the typed response, delegating to the existing IR producers.
 
@@ -1093,12 +1155,20 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         return _refused(request, f"refused at the chemistry-model boundary: {exc}")
 
     outcome = _classify(ir, target_available)
+    # CLI-CAN-02: a DECLARED section-11 T/P constraint rides the request identity but is NOT yet applied to route
+    # grading.  Disclose that in the RESPONSE diagnostics (not just the CLI render) so BOTH the human and --json
+    # views carry the caveat (CLI-JSON-01 agreement) -- a consumer must never read the unfiltered routes as
+    # constraint-fitted.  A route is genuinely unchanged by the constraint here; only its honest disclosure is added.
+    diagnostics = tuple(ir.diagnostics)
+    _note = constraint_declared_note(request.constraints.bounds)
+    if _note is not None:
+        diagnostics = (*diagnostics, _note)
     # echo the identity resolution (ID-PARSE-01) as the FIRST-CLASS parse_receipt_summary, NOT a diagnostics line
     # (SVC-REQ-01 alias-collapse): both views still report how the target string was read, but it is provenance --
     # kept out of ``diagnostics`` so it never enters ``result_digest`` and the aliased spellings share a result.
     return CompilationResponse(
         COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir,
-        tuple(ir.diagnostics),
+        diagnostics,
         parse_receipt_summary=resolved.receipt.summary(),
     )
 
@@ -1240,7 +1310,12 @@ def request_to_payload(request: CompilationRequest) -> dict:
         "transform_grammar": request.transform_grammar.value,
         "evidence_provider_selection": {"selection_id": request.evidence_provider_selection.selection_id},
         "search_bounds": [list(pair) for pair in request.search_bounds.bounds],
-        "constraints": {"constraint_id": request.constraints.constraint_id},
+        "constraints": {
+            "schema_version": request.constraints.bounds.schema_version,
+            "max_temperature_k": request.constraints.bounds.max_temperature_k,
+            "min_pressure_atm": request.constraints.bounds.min_pressure_atm,
+            "max_pressure_atm": request.constraints.bounds.max_pressure_atm,
+        },
         "ranking_policy": {"policy_id": request.ranking_policy.policy_id},
         "output_policy": {
             "render_mode": request.output_policy.render_mode,
@@ -1291,7 +1366,14 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         TransformGrammar(payload["transform_grammar"]),
         EvidenceProviderSelection(payload["evidence_provider_selection"]["selection_id"]),
         SearchBounds(tuple((name, value) for name, value in payload["search_bounds"])),
-        ConstraintPolicy(payload["constraints"]["constraint_id"]),
+        ConstraintPolicy(
+            PhysicalBounds(
+                payload["constraints"]["schema_version"],
+                payload["constraints"]["max_temperature_k"],
+                payload["constraints"]["min_pressure_atm"],
+                payload["constraints"]["max_pressure_atm"],
+            )
+        ),
         RankingPolicy(payload["ranking_policy"]["policy_id"]),
         OutputPolicy(payload["output_policy"]["render_mode"], payload["output_policy"]["quiet"]),
         tuple((name, FieldOrigin(origin)) for name, origin in payload["origins"]),
@@ -1365,7 +1447,7 @@ def response_schema() -> dict:
         "request_schema_version": COMPILATION_REQUEST_SCHEMA,
         "response_fields": {
             "schema_version": "str",
-            "request": "object(compilation-request-v1alpha3)",
+            "request": "object(compilation-request-v1alpha4)",
             "outcome": "enum(ResponseOutcome)",
             "standard_status": "str|null (section 8.2 status)",
             "exit_code": "int (section 14.4: 0/2/3/4/5/70)",

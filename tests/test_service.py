@@ -18,7 +18,6 @@ from smartchem.identity_parse import IdentityParseError, InputKind, resolve_targ
 from smartchem.service import (
     COMPILATION_RESPONSE_SCHEMA,
     CompilationResponse,
-    ConstraintPolicy,
     EvidenceProviderSelection,
     FieldOrigin,
     IdentityPolicy,
@@ -133,7 +132,7 @@ class TestAliasEquality:
             dict(stock_materials=("benzene",)),
             dict(input_kind=InputKind.NAME),
             dict(identity_policy=IdentityPolicy("STRICT")),
-            dict(constraints=ConstraintPolicy("T<400K")),
+            dict(max_temperature_k=400.0),
             dict(ranking_policy=RankingPolicy("COST_FIRST")),
             dict(evidence_provider_selection=EvidenceProviderSelection("PUBCHEM")),
         ],

@@ -42,7 +42,10 @@
   "ranked_route_dossiers": [],
   "request": {
     "constraints": {
-      "constraint_id": "UNCONSTRAINED"
+      "max_pressure_atm": null,
+      "max_temperature_k": null,
+      "min_pressure_atm": null,
+      "schema_version": "smartchem.constraints/physical-bounds-v1alpha1"
     },
     "evidence_provider_selection": {
       "selection_id": "DEFAULT_OFFLINE"
@@ -118,7 +121,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha3",
+    "schema_version": "smartchem.service/compilation-request-v1alpha4",
     "search_bounds": [
       [
         "cut_budget",
@@ -142,7 +145,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "99eba39d009c5bcfb93bfc5cb463ed705058a5b45252b6d0a87640fb487e2583",
+  "result_digest": "eb637bf36555b6254678894add8557751e9c19689e0fbf6949a23f4b000dcc23",
   "schema_version": "smartchem.service/compilation-response-v1alpha2",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

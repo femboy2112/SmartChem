@@ -59,9 +59,9 @@ class TestSchemaDescriptor:
 
     def test_descriptor_is_versioned(self):
         schema = response_schema()
-        # v1alpha3: SVC-REQ-01 alias-collapse added the parse_receipt_summary response field and the request schema
-        # bumped for the normalized_identity field (v1alpha2 was IR-LOSS-01's array[object] + ID-LAYER-02).
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha3"
+        # v1alpha4: CLI-CAN-02 gave ConstraintPolicy a real PhysicalBounds box, bumping the referenced request schema
+        # (v1alpha3 was SVC-REQ-01's parse_receipt_summary + normalized_identity; v1alpha2 IR-LOSS-01's array[object]).
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha4"
         assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha2"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):

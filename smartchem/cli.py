@@ -140,6 +140,12 @@ def _add_recompile_flags(p) -> None:
                    help="maximum unique routes returned (default 100)")
     p.add_argument("--cut-budget", type=_positive_int, default=None, metavar="N",
                    help="candidate rewrite budget per expanded target (default 20000)")
+    p.add_argument("--max-temp", type=float, default=None, metavar="K",
+                   help="section-11 bench temperature ceiling in K. DECLARED as part of the request identity; route "
+                        "grading against it is a CLI-CAN-02 follow-on -- routes are NOT yet filtered by it")
+    p.add_argument("--max-pressure", type=float, default=None, metavar="ATM",
+                   help="section-11 bench pressure ceiling in atm. DECLARED (see --max-temp): not yet applied to "
+                        "route grading")
     p.add_argument(
         "--no-commodities", "--elements", dest="no_commodities", action="store_true",
         help=(
@@ -192,6 +198,8 @@ def _recompile_request_from_args(args):
         max_routes=args.max_routes,
         cut_budget=args.cut_budget,
         match_layer=MatchLayer[args.match_layer.upper()] if args.match_layer else None,
+        max_temperature_k=args.max_temp,
+        max_pressure_atm=args.max_pressure,
     )
 
 
@@ -475,6 +483,14 @@ def _cmd_compile(argv: list[str]) -> int:
         )
     except Exception as exc:  # noqa: BLE001 -- ScissionError -> 5, ValueError -> 2 via the ONE classifier; else 70
         return _domain_exit(exc, "compile")
+    # CLI-CAN-02 (HON-CLI-01 red-team fix): `compile`'s human path renders a compile_synthesis dossier instead of the
+    # typed response, so it would otherwise ACCEPT --max-temp/--max-pressure (the shared builder carries them) yet
+    # never disclose the caveat that reaches the recompile/--json views -- a silent, undisclosed constraint drop.
+    # Emit the SAME disclosure here so `compile paracetamol --max-temp 500` cannot read as constraint-fitted.
+    from .service import constraint_declared_note
+    _note = constraint_declared_note(request.constraints.bounds)
+    if _note is not None:
+        print(f"  {_note}")
     print(compiled.render())
     if compiled.search_receipt is not None and not compiled.search_receipt.complete_within_bounds:
         return 4

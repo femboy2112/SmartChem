@@ -27,14 +27,13 @@ crash and never a guess.
 """
 from __future__ import annotations
 
-import math
-import numbers
 from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction  # noqa: F401  (used in a string type annotation)
 from typing import Mapping
 
 from ..category import Molecule
+from ..constraints import PhysicalBounds
 from ..contracts import Digestible
 from ..data.kinetics import KineticTable
 from ..decompiler import Formula
@@ -134,22 +133,27 @@ class ConstraintBox(Digestible):
     available_equipment: frozenset[EquipmentKind] | None = None
 
     def __post_init__(self) -> None:
-        for name in ("max_temperature_k", "min_pressure_atm", "max_pressure_atm"):
-            v = getattr(self, name)
-            if v is not None and (isinstance(v, bool) or not isinstance(v, numbers.Real)):
-                raise TypeError(f"{name} must be a real number or None")
-            if v is not None and (not math.isfinite(float(v)) or v <= 0):
-                raise ValueError(f"{name} must be finite and positive")
-        if (
-            self.min_pressure_atm is not None
-            and self.max_pressure_atm is not None
-            and self.min_pressure_atm > self.max_pressure_atm
-        ):
-            raise ValueError("min_pressure_atm cannot exceed max_pressure_atm")
+        # CONSTR-VAL-01 T/P validation is delegated to the shared PhysicalBounds leaf (CLI-CAN-02): the
+        # finite/positive/ordered rules live in ONE place, and constructing it raises the identical
+        # TypeError/ValueError.  ConstraintBox keeps its flat fields, so its digest and every consumer are unchanged.
+        PhysicalBounds.of(
+            max_temperature_k=self.max_temperature_k,
+            min_pressure_atm=self.min_pressure_atm,
+            max_pressure_atm=self.max_pressure_atm,
+        )
         if self.available_reagents is not None and type(self.available_reagents) is not frozenset:
             raise TypeError("available_reagents must be a frozenset of strings or None")
         if self.available_equipment is not None and type(self.available_equipment) is not frozenset:
             raise TypeError("available_equipment must be a frozenset of EquipmentKind or None")
+
+    @property
+    def physical_bounds(self) -> PhysicalBounds:
+        """The section-11 T/P bounds as the shared :class:`~smartchem.constraints.PhysicalBounds` leaf."""
+        return PhysicalBounds.of(
+            max_temperature_k=self.max_temperature_k,
+            min_pressure_atm=self.min_pressure_atm,
+            max_pressure_atm=self.max_pressure_atm,
+        )
 
     @property
     def constrains_anything(self) -> bool:

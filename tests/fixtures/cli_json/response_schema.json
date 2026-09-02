@@ -27,7 +27,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha3",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha4",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -37,7 +37,7 @@
     "schema_version": "str",
     "severity": "enum(WARNING/BLOCKER)"
   },
-  "request_schema_version": "smartchem.service/compilation-request-v1alpha3",
+  "request_schema_version": "smartchem.service/compilation-request-v1alpha4",
   "response_fields": {
     "affordability_frontier": "array (empty until COST-VEC-01)",
     "compilation_ir": "object(chemical-compilation-ir)|null",
@@ -46,7 +46,7 @@
     "outcome": "enum(ResponseOutcome)",
     "parse_receipt_summary": "str|null (section 14.2 identity-resolution receipt; provenance)",
     "ranked_route_dossiers": "array (empty until READY-TIER-01)",
-    "request": "object(compilation-request-v1alpha3)",
+    "request": "object(compilation-request-v1alpha4)",
     "result_digest": "str (sha256)",
     "schema_version": "str",
     "standard_status": "str|null (section 8.2 status)"

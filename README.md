@@ -155,6 +155,38 @@ general multiphysics category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](MANIFEST.md).
 
+## Chemical compiler (v0.5.0a1 — an alpha in progress)
+
+A newer line of work turns the chemistry core into a bidirectional *chemical compiler*: a
+**decompiler** that descends a target compound to its elemental buckets as an AND–OR
+hypergraph (conservation- and valence-respecting — formal accounting, not a physical
+mechanism claim), and a **recompiler** that reads that descent back into candidate synthesis
+routes, ranked by sourced evidence and terminated on real commodity buckets rather than
+pretending every reagent is elemental. Both directions share one typed
+`ChemicalCompilationIR` and one honesty contract:
+
+- a bounded search returns a **SearchReceipt** that says whether it *exhausted its declared
+  space* or stopped at a budget/depth/result cap; an incomplete search never looks complete,
+  and an empty incomplete search never looks like a proof of absence;
+- terminal outcomes speak the standard's fixed vocabulary (§8.2), including a receipt-bearing
+  refusal path — a charged or malformed request returns a `RefusalReceipt` carrying a
+  `REFUSED_*` status, not a bare exception;
+- a candidate is a `FORMAL_CANDIDATE`, never a validated bench procedure; missing operations
+  are shown, not hidden;
+- chemical identity is never equated with purity, concentration, grade, phase, availability,
+  or price; every price is dated and sourced or it is `UNKNOWN`;
+- derived, estimated, and unsupported claims are labelled distinctly — a loud refusal beats a
+  plausible, unearned answer.
+
+This is an **alpha under active construction, not a finished release.** The normative
+contract is
+[CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md](CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md);
+[UPTAKE_MANIFEST_v0.5.0a1.md](UPTAKE_MANIFEST_v0.5.0a1.md) is an honest, per-requirement
+ledger of exactly what is implemented-and-verified versus still open (the alpha is *done*
+only when every P0 row is verified); and
+[AUDIT_CHEMICAL_COMPILER_2026-09-01.md](AUDIT_CHEMICAL_COMPILER_2026-09-01.md) records the
+evidence and rationale.
+
 ## Reproduce
 
 ```bash
@@ -166,10 +198,11 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current maintained fast-suite result:
+Current maintained fast-suite result (in a dev environment with the optional PySCF stack
+installed; environments without it skip additional real-wavefunction tests):
 
 ```text
-1896 passed, 14 skipped, 1 xfailed
+2756 passed, 14 skipped, 1 xfailed
 ```
 
 The skipped tests require the explicit slow-test gate and are not represented as passed.

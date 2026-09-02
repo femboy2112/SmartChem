@@ -919,14 +919,24 @@ def run_compilation(request: CompilationRequest) -> CompilationResponse:
 
 
 def _run_recompile(request: CompilationRequest) -> CompilationResponse:
+    from .identity import representation_losses_for
+    from .identity_parse import resolve_target_with_features
     from .structure_descent import ScissionError
 
     try:
-        target = resolve_target(request.target_input, request.input_kind)
+        # the STRUCTURE layer keeps the target's constitution but drops finer features it may declare (stereo,
+        # isotope, net-neutral local charge).  Resolve the target WITH those features so the IR carries the typed
+        # section-5.3 blockers (ID-STEREO-01) -- an enantiomer/isotopologue/zwitterion target no longer flattens
+        # silently.  A registered name declares no such features (features is None); reagents/available are helper
+        # inputs whose finer features do not bear on the TARGET's identity claims, so they resolve plainly.
+        target, target_features = resolve_target_with_features(request.target_input, request.input_kind)
         reagents = tuple(resolve_target(s, InputKind.AUTO) for s in request.helper_reagents)
         available = tuple(resolve_target(s, InputKind.AUTO) for s in request.stock_materials)
     except IdentityParseError as exc:
         return _invalid(request, str(exc))
+    identity_losses = (
+        () if target_features is None else representation_losses_for(request.target_input, target_features)
+    )
 
     # The capped-scission grammar requires at least one cutting reagent; an empty pool is not a runnable search.
     # Fail CLOSED here (exit 2) so a programmatic/deserialized request carrying no helper_reagents becomes a typed
@@ -960,6 +970,7 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
             max_results=request.search_bounds.value("max_results"),
             cut_budget=request.search_bounds.value("cut_budget"),
             mode=mode,
+            identity_losses=identity_losses,
         )
     except ScissionError as exc:  # a ValueError subclass -> caught FIRST: a model-boundary refusal (exit 5)
         return _refused(request, f"refused at the chemistry-model boundary: {exc}")
@@ -982,16 +993,23 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
     decompile_target = request.target_input
     identity_losses: tuple[IdentityLoss, ...] = ()
     if request.input_kind is InputKind.SMILES:
-        from .identity import formula_reduction_loss
+        from .identity import formula_reduction_loss, representation_losses_for
+        from .identity_parse import resolve_target_with_features
         try:
-            molecule = resolve_target(request.target_input, InputKind.SMILES)
+            molecule, features = resolve_target_with_features(request.target_input, InputKind.SMILES)
         except IdentityParseError as exc:
             return _invalid(request, str(exc))
         decompile_target = "".join(
             f"{el}{n if n > 1 else ''}" for el, n in sorted(molecule.formula.items())
         )
-        # the TYPED section-5.3 record (IR-LOSS-01), not its summary string -- the IR carries the first-class loss.
-        identity_losses = (formula_reduction_loss(request.target_input, decompile_target),)
+        # the TYPED section-5.3 records (IR-LOSS-01), not summary strings -- the IR carries the first-class losses.
+        # The formula reduction is the coarse blocker (structure -> formula); the ID-STEREO-01 finer losses NAME the
+        # specific dropped features (which stereocentre/isotope/charge) the input actually declared -- additive and
+        # fail-closed (features is a SmilesFeatures for a SMILES input, never None).
+        identity_losses = (
+            formula_reduction_loss(request.target_input, decompile_target),
+            *representation_losses_for(request.target_input, features),
+        )
     elif request.input_kind not in (InputKind.AUTO, InputKind.FORMULA):
         return _invalid(
             request,

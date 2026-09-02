@@ -40,9 +40,20 @@ __all__ = [
     "same_identity_at",
     "refines",
     "formula_reduction_loss",
+    "stereo_loss",
+    "isotope_loss",
+    "local_charge_loss",
+    "representation_losses_for",
+    "blocking_losses",
+    "is_blocked",
+    "blocked_claim_classes",
     "identity_loss_to_payload",
     "identity_loss_from_payload",
 ]
+
+# The section-5.3 evidence classes a sourced record MUST NOT survive a blocker for ("sourced conditions,
+# selectivity, kinetics, and hazard records"), named once so every producer and consumer keys on the same strings.
+EVIDENCE_CLAIM_CLASSES = ("conditions", "hazard", "kinetics", "selectivity")
 
 IDENTITY_LOSS_SCHEMA = "smartchem.identity/identity-loss-v1alpha1"
 LAYERED_IDENTITY_SCHEMA = "smartchem.identity/layered-identity-v1alpha1"
@@ -335,3 +346,129 @@ def formula_reduction_loss(
         tuple(sorted(claims)),
         LossSeverity.BLOCKER,
     )
+
+
+# -- ID-STEREO-01: finer-layer features a constitution-only parse DECLARES but cannot keep -----------------------
+#
+# The current Molecule model perceives constitution (atoms + bonds), so a SMILES that names a stereocenter, an
+# isotope label, or an internal (net-neutral) charge separation collapses to the same graph as its flat analogue
+# (an enantiomer, an isotopologue, a zwitterion all become the flat species).  That collapse is CORRECT at the
+# CONSTITUTION layer, but section 5.3 forbids it being SILENT.  These constructors record the drop as a typed
+# BLOCKER, so a downstream sourced claim that depends on the dropped feature cannot survive (checked via
+# :func:`is_blocked` -- the EVD-KEY-01 consumer).  This is the standard's "record blocker" arm; it is NOT stereo/
+# isotope PERCEPTION (a sound CONFIGURATION/ISOTOPIC digest needs canonical CIP / positioned-isotopologue keys and
+# the atom-coloured Molecule extension), which stays deferred and named -- never faked here.
+
+
+def stereo_loss(input_representation: str, *, double_bond: bool = False) -> IdentityLoss:
+    """A section 5.3 BLOCKER for a stereochemical marker (``@``/``@@`` or ``/``/``\\``) the graph cannot keep.
+
+    Two enantiomers, or two double-bond geometric isomers, share one constitution and so collapse to one
+    ``Molecule``; a configuration-dependent sourced fact (a stereospecific rate, an enantiomer-specific hazard, a
+    diastereoselective condition) must not attach to that flattened identity.
+    """
+    kind = "double-bond configuration (cis/trans)" if double_bond else "tetrahedral chirality (R/S)"
+    marker = "'/'/'\\'" if double_bond else "'@'/'@@'"
+    # NOT "hazard": the modeled hazard is a CONSTITUTION-level physical handling class (flammability, toxicity
+    # flags) that two enantiomers share, so a dropped stereocentre does not change it -- listing it would
+    # over-refuse a legitimate, gated handling claim.  Enantiomer-specific toxicology (thalidomide) is a
+    # configuration-keyed hazard model this system does not have (deferred, not faked).
+    return IdentityLoss(
+        IDENTITY_LOSS_SCHEMA,
+        "stereochemistry",
+        input_representation,
+        "constitution only (CONSTITUTION layer; stereochemistry not represented)",
+        f"{kind} was declared ({marker}) but the constitution-only model does not represent it, so enantiomers / "
+        f"geometric isomers collapse to one identity",
+        ("conditions", "configuration-identity", "kinetics", "product-identity", "selectivity", "stereochemistry"),
+        LossSeverity.BLOCKER,
+    )
+
+
+def isotope_loss(input_representation: str, isotopes: "tuple[int, ...]" = ()) -> IdentityLoss:
+    """A section 5.3 BLOCKER for isotope labels (e.g. ``[13C]``, ``[2H]``) the graph cannot keep.
+
+    Isotopologues share one constitution; a kinetic isotope effect or an isotope-tracer identity claim must not
+    survive the collapse to the unlabelled graph.
+    """
+    seen = f" ({', '.join(str(m) for m in isotopes)})" if isotopes else ""
+    return IdentityLoss(
+        IDENTITY_LOSS_SCHEMA,
+        "isotope-labeling",
+        input_representation,
+        "constitution only (CONSTITUTION layer; isotope labels not represented)",
+        f"an isotope label{seen} was declared but the model does not represent isotopes, so isotopologues collapse "
+        f"to one identity",
+        ("isotope-identity", "kinetics", "product-identity"),
+        LossSeverity.BLOCKER,
+    )
+
+
+def local_charge_loss(input_representation: str) -> IdentityLoss:
+    """A section 5.3 BLOCKER for a per-atom (net-neutral) charge separation the scalar total cannot keep.
+
+    A zwitterion / ylide (``[NH3+]CC(=O)[O-]``) is net neutral, so the one total-charge scalar the ``Molecule``
+    keeps hides the internal ``+``/``-`` distribution; a protonation-state-dependent condition or product-identity
+    claim must not attach to the flattened form.
+    """
+    return IdentityLoss(
+        IDENTITY_LOSS_SCHEMA,
+        "local-charge",
+        input_representation,
+        "constitution + total charge only (per-atom formal charge not represented)",
+        "a per-atom formal-charge separation (a net-neutral zwitterion/ylide) was declared, but only the molecular "
+        "total charge is represented, so the internal +/- distribution is not distinguished",
+        ("conditions", "product-identity", "protonation-state"),
+        LossSeverity.BLOCKER,
+    )
+
+
+def representation_losses_for(input_representation: str, features: "object") -> "tuple[IdentityLoss, ...]":
+    """Map a :class:`~smartchem.smiles.SmilesFeatures` to the typed section-5.3 losses it implies (ID-STEREO-01).
+
+    Only features actually PRESENT produce a loss (a flat, unlabelled, neutral molecule yields ``()``), so this is
+    never a vacuous blanket blocker.  Tetrahedral and double-bond stereo collapse to one ``stereo_loss`` per kind
+    present; isotopes and net-neutral local charge each produce their own.  Digest order is imposed by the IR, not
+    here.
+    """
+    from .smiles import SmilesFeatures
+    if type(features) is not SmilesFeatures:
+        raise TypeError("representation_losses_for needs a smartchem.smiles.SmilesFeatures")
+    losses: list[IdentityLoss] = []
+    if features.tetrahedral_stereo:
+        losses.append(stereo_loss(input_representation, double_bond=False))
+    if features.double_bond_stereo:
+        losses.append(stereo_loss(input_representation, double_bond=True))
+    if features.has_isotope:
+        losses.append(isotope_loss(input_representation, features.isotopes))
+    if features.has_local_charge_structure:
+        losses.append(local_charge_loss(input_representation))
+    return tuple(losses)
+
+
+# -- EVD-KEY-01 (consumer half): a sourced claim MUST NOT survive a BLOCKER for its class (section 5.3) ----------
+
+
+def blocking_losses(losses: "tuple[IdentityLoss, ...]", claim: str) -> "tuple[IdentityLoss, ...]":
+    """The losses in ``losses`` that BLOCK ``claim`` (severity BLOCKER and ``claim`` in ``affected_claims``)."""
+    if type(losses) is not tuple or any(type(x) is not IdentityLoss for x in losses):
+        raise TypeError("blocking_losses needs a tuple of IdentityLoss records")
+    if not isinstance(claim, str) or not claim:
+        raise ValueError("claim must be a non-empty string")
+    return tuple(loss for loss in losses if loss.blocks(claim))
+
+
+def is_blocked(losses: "tuple[IdentityLoss, ...]", claim: str) -> bool:
+    """Whether any loss in ``losses`` is a BLOCKER for ``claim`` -- the consumer's section-5.3 gate."""
+    return bool(blocking_losses(losses, claim))
+
+
+def blocked_claim_classes(losses: "tuple[IdentityLoss, ...]") -> "tuple[str, ...]":
+    """The sorted union of every claim class any BLOCKER loss in ``losses`` forbids."""
+    if type(losses) is not tuple or any(type(x) is not IdentityLoss for x in losses):
+        raise TypeError("blocked_claim_classes needs a tuple of IdentityLoss records")
+    classes: set[str] = set()
+    for loss in losses:
+        if loss.severity is LossSeverity.BLOCKER:
+            classes.update(loss.affected_claims)
+    return tuple(sorted(classes))

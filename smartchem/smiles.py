@@ -48,15 +48,58 @@ stated resonance boundary, not a silent one). A giant PAH beyond the enumeration
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .atoms import PT
 from .category import Bond, Molecule
 from .contracts import canonical_digest
 
-__all__ = ["SmilesError", "parse_smiles"]
+__all__ = ["SmilesError", "SmilesFeatures", "parse_smiles", "parse_smiles_features"]
 
 
 class SmilesError(ValueError):
     """A SMILES string is malformed or uses a feature outside this parser's declared scope."""
+
+
+@dataclass(frozen=True)
+class SmilesFeatures:
+    """The configuration/isotope/local-charge features a SMILES DECLARES that the constitution-only
+    :class:`~smartchem.category.Molecule` cannot represent (ID-STEREO-01).
+
+    :func:`parse_smiles` deliberately drops these (a bond graph is constitution, W3), so an enantiomer, an
+    isotopologue and a net-neutral zwitterion collapse to the same ``Molecule`` as their flat analogue.  That
+    collapse is correct AT the constitution layer, but it must never be SILENT (standard section 5.3): this record
+    reports exactly which finer features were seen and dropped, so a caller can record the typed ``IdentityLoss``
+    blockers (:func:`smartchem.identity.representation_losses_for`) rather than let the drop pass unremarked.
+    """
+
+    isotopes: tuple[int, ...]        # sorted, distinct isotope mass numbers that appeared (e.g. (2, 13))
+    tetrahedral_stereo: bool         # any '@' / '@@' tetrahedral chirality marker
+    double_bond_stereo: bool         # any '/' or '\\' double-bond configuration marker
+    charged_atoms: int               # how many atoms bear a nonzero FORMAL charge (per-atom, pre-summing)
+    net_charge: int                  # the molecular total charge (the only charge the Molecule keeps)
+
+    @property
+    def has_isotope(self) -> bool:
+        return bool(self.isotopes)
+
+    @property
+    def has_stereo(self) -> bool:
+        return self.tetrahedral_stereo or self.double_bond_stereo
+
+    @property
+    def has_local_charge_structure(self) -> bool:
+        """True when per-atom formal charge is present but NOT recoverable from the scalar molecular total.
+
+        Fires in two provable cases: (1) a net-NEUTRAL species that still bears formal charge on an atom -- the
+        zwitterion/ylide (``[NH3+]CC(=O)[O-]``, net 0), where the single total-charge scalar the ``Molecule`` keeps
+        is 0 and thus provably hides the internal ``+``/``-`` separation; (2) TWO OR MORE charged atoms regardless of
+        the net, since one scalar cannot encode a multi-site distribution (which atom carries which charge).  A
+        single charged atom whose charge IS the net (a simple monopole such as ``[OH-]``, ``[NH4+]``) is recoverable
+        from the scalar and is NOT flagged.  Over-flagging here is fail-CLOSED (section 5.3): recording a blocker
+        that turns out unnecessary is safe; missing a real charge separation is not.
+        """
+        return self.charged_atoms >= 1 and (self.net_charge == 0 or self.charged_atoms >= 2)
 
 
 # organic-subset bare atoms (two-char symbols must be tried before one-char in the tokeniser)
@@ -72,13 +115,23 @@ _AROMATIC = -1  # sentinel bond order for an as-yet-unkekulised aromatic bond
 
 
 class _Atom:
-    __slots__ = ("element", "aromatic", "charge", "h_explicit")
+    __slots__ = ("element", "aromatic", "charge", "h_explicit", "isotope", "chirality")
 
-    def __init__(self, element: str, aromatic: bool, charge: int, h_explicit: int | None):
+    def __init__(
+        self,
+        element: str,
+        aromatic: bool,
+        charge: int,
+        h_explicit: int | None,
+        isotope: int = 0,
+        chirality: bool = False,
+    ):
         self.element = element
         self.aromatic = aromatic
         self.charge = charge
         self.h_explicit = h_explicit          # None => fill implicitly; int => bracket, exact
+        self.isotope = isotope                # 0 => unspecified; else the mass number (ID-STEREO-01 capture)
+        self.chirality = chirality            # a tetrahedral '@'/'@@' marker was present (dropped from the graph)
 
 
 def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
@@ -88,8 +141,11 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
         raise SmilesError(f"unclosed bracket atom at position {start}")
     body = text[start + 1:end]
     i = 0
-    while i < len(body) and body[i].isdigit():      # isotope: parsed and ignored
+    iso = ""
+    while i < len(body) and body[i].isdigit():      # isotope: CAPTURED (ID-STEREO-01), dropped from the graph
+        iso += body[i]
         i += 1
+    isotope = int(iso) if iso else 0
     if i >= len(body):
         raise SmilesError(f"bracket atom {text[start:end + 1]!r} has no element")
     aromatic = body[i].islower()
@@ -101,8 +157,10 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
         element, i = body[i].upper(), i + 1
     else:
         raise SmilesError(f"unknown element in bracket atom {text[start:end + 1]!r}")
-    # chirality markers @ / @@: parsed and ignored (constitutional only, W3)
+    # chirality markers @ / @@: CAPTURED (ID-STEREO-01) but dropped from the graph (constitutional only, W3)
+    chirality = False
     while i < len(body) and body[i] == "@":
+        chirality = True
         i += 1
     h_count = 0
     if i < len(body) and body[i] == "H":
@@ -129,7 +187,7 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
                 i += 1
     if i != len(body):
         raise SmilesError(f"could not parse bracket atom {text[start:end + 1]!r}")
-    return _Atom(element, aromatic, charge, h_count), end + 1
+    return _Atom(element, aromatic, charge, h_count, isotope, chirality), end + 1
 
 
 def _parse_skeleton(
@@ -357,20 +415,12 @@ def _fill_hydrogens(atoms: list[_Atom], bonds: list[list[int]]) -> tuple[list[st
     return out_atoms, out_bonds
 
 
-def parse_smiles(text: str) -> Molecule:
-    """Parse a SMILES string into a canonical :class:`~smartchem.category.Molecule`.
+def _build_molecule(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> Molecule:
+    """Kekulise (resonance-canonical, R2) and materialise the canonical constitution-only Molecule.
 
-    Raises :class:`SmilesError` for a malformed string or an out-of-scope feature (an aromatic
-    heteroatom outside {C, N, O, S}, a disconnected ``.``), never returning a wrong graph silently.
-    The returned molecule is canonicalised, so two spellings of the same structure compare equal.
+    Shared by :func:`parse_smiles` and :func:`parse_smiles_features` so the ONE Kekulé/canonicalisation path
+    cannot drift between the plain door and the feature-capturing one.
     """
-    if not isinstance(text, str):
-        raise SmilesError("SMILES input must be a string")
-    stripped = text.strip()
-    if not stripped:
-        raise SmilesError("empty SMILES")
-    atoms, bonds = _parse_skeleton(stripped)
-    charge = sum(a.charge for a in atoms)
     arom_bonds, matchings = _aromatic_matchings(atoms, bonds)
 
     if not matchings:                                  # no aromatic system: a single deterministic form
@@ -394,3 +444,53 @@ def parse_smiles(text: str) -> Molecule:
             best, best_key = cand, key
     assert best is not None                            # matchings is non-empty here
     return best
+
+
+def parse_smiles(text: str) -> Molecule:
+    """Parse a SMILES string into a canonical :class:`~smartchem.category.Molecule`.
+
+    Raises :class:`SmilesError` for a malformed string or an out-of-scope feature (an aromatic
+    heteroatom outside {C, N, O, S}, a disconnected ``.``), never returning a wrong graph silently.
+    The returned molecule is canonicalised, so two spellings of the same structure compare equal.
+    """
+    if not isinstance(text, str):
+        raise SmilesError("SMILES input must be a string")
+    stripped = text.strip()
+    if not stripped:
+        raise SmilesError("empty SMILES")
+    atoms, bonds = _parse_skeleton(stripped)
+    charge = sum(a.charge for a in atoms)
+    return _build_molecule(atoms, bonds, charge)
+
+
+def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
+    """Parse a SMILES and ALSO report the finer-layer features it declares that the graph cannot keep.
+
+    Identical Molecule to :func:`parse_smiles` (same tokeniser, same Kekulé canonicalisation), plus a
+    :class:`SmilesFeatures` naming the isotope labels, tetrahedral/double-bond stereochemistry and net-neutral
+    local-charge separation that were parsed and dropped (ID-STEREO-01).  Isotope/chirality/charge are captured per
+    atom during the parse.
+
+    ``double_bond_stereo`` is a CONSERVATIVE presence scan: ``'/'``/``'\\'`` appear ONLY as bond-configuration
+    tokens in SMILES, so the scan never MISSES a declared marker -- but it does not perceive whether a real
+    geometric isomer exists, so a chemically-redundant directional bond (an alkene end bearing two identical
+    substituents) is OVER-flagged.  That errs toward recording a stereo blocker (fail-CLOSED, section 5.3) rather
+    than dropping a real one; precise perception of whether a stereoisomer actually exists is deferred with the rest
+    of stereochemistry perception (never faked here).
+    """
+    if not isinstance(text, str):
+        raise SmilesError("SMILES input must be a string")
+    stripped = text.strip()
+    if not stripped:
+        raise SmilesError("empty SMILES")
+    atoms, bonds = _parse_skeleton(stripped)
+    charge = sum(a.charge for a in atoms)
+    molecule = _build_molecule(atoms, bonds, charge)
+    features = SmilesFeatures(
+        isotopes=tuple(sorted({a.isotope for a in atoms if a.isotope})),
+        tetrahedral_stereo=any(a.chirality for a in atoms),
+        double_bond_stereo=("/" in stripped or "\\" in stripped),
+        charged_atoms=sum(1 for a in atoms if a.charge != 0),
+        net_charge=charge,
+    )
+    return molecule, features

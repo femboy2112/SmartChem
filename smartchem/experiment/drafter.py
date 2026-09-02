@@ -259,16 +259,20 @@ def _step_box_check(step, box: ConstraintBox, equip: tuple[EquipmentItem, ...],
 def fit_route(
     route: ExperimentRoute, box: ConstraintBox, *,
     stability=None, selectivity: SelectivityTable | None = None, thermo=None,
-    kinetics: KineticTable | None = None,
+    kinetics: KineticTable | None = None, losses: tuple = (),
 ) -> RouteFit:
-    """Judge whether one route runs on the target bench described by ``box``."""
+    """Judge whether one route runs on the target bench described by ``box``.
+
+    ``losses`` (EVD-KEY-01): a section-5.3 BLOCKER downgrades the sourced selectivity/kinetics verdicts feeding the
+    ranking, so a loss-bearing target never floats on a sourced verdict the dropped feature forbids.
+    """
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     comp = verify_composability(route) if stability is None else verify_composability(route, stability=stability)
-    sel = verify_selectivity(route, table=selectivity)
+    sel = verify_selectivity(route, table=selectivity, losses=losses)
     feas = verify_feasibility(route, thermo=thermo)
     equi = verify_equilibrium(route, thermo=thermo)
-    kin = verify_kinetics(route, kinetics=kinetics)  # ORTHOGONAL rate; a ranking tiebreaker only, never a grade
+    kin = verify_kinetics(route, kinetics=kinetics, losses=losses)  # ORTHOGONAL rate; ranking tiebreaker only
 
     exclusions: list[str] = []
     gaps: list[str] = []
@@ -298,11 +302,12 @@ def fit_route(
 def fit_routes(
     routes, box: ConstraintBox, *,
     stability=None, selectivity: SelectivityTable | None = None, thermo=None,
-    kinetics: KineticTable | None = None,
+    kinetics: KineticTable | None = None, losses: tuple = (),
 ) -> tuple[RouteFit, ...]:
     """Judge every route against the bench ``box`` (order preserved)."""
     return tuple(
-        fit_route(r, box, stability=stability, selectivity=selectivity, thermo=thermo, kinetics=kinetics)
+        fit_route(r, box, stability=stability, selectivity=selectivity, thermo=thermo, kinetics=kinetics,
+                  losses=losses)
         for r in routes
     )
 
@@ -350,7 +355,7 @@ def _route_score(fit: RouteFit) -> tuple:
 def rank_routes(
     routes, box: ConstraintBox | None = None, *,
     stability=None, selectivity: SelectivityTable | None = None, thermo=None,
-    kinetics: KineticTable | None = None,
+    kinetics: KineticTable | None = None, losses: tuple = (),
 ) -> tuple[RouteFit, ...]:
     """Rank routes best-first for a bench (or, with ``box=None``, an unconstrained bench).
 
@@ -362,7 +367,7 @@ def rank_routes(
     """
     effective_box = box if box is not None else ConstraintBox()
     fits = fit_routes(routes, effective_box, stability=stability, selectivity=selectivity, thermo=thermo,
-                      kinetics=kinetics)
+                      kinetics=kinetics, losses=losses)
     return tuple(sorted(fits, key=_route_score))
 
 
@@ -446,6 +451,7 @@ def draft_route_dossier(
     stability=None,
     selectivity: SelectivityTable | None = None,
     thermo=None,
+    losses: tuple = (),
 ) -> RouteDossier:
     """Compose a formal-candidate route evidence dossier from the available analysis layers.
 
@@ -461,7 +467,7 @@ def draft_route_dossier(
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     comp = verify_composability(route) if stability is None else verify_composability(route, stability=stability)
-    sel = verify_selectivity(route, table=selectivity)
+    sel = verify_selectivity(route, table=selectivity, losses=losses)  # EVD-KEY-01: a BLOCKER gags the sourced verdict
     feas = verify_feasibility(route, thermo=thermo)
     equi = verify_equilibrium(route, thermo=thermo)
     handling = verify_handling(route) if stability is None else verify_handling(route, stability=stability)

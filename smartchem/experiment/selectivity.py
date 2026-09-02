@@ -243,13 +243,21 @@ class RouteSelectivity(Digestible):
         return "\n".join(lines)
 
 
-def selectivity_of_step(step: ExperimentStep, *, table: SelectivityTable) -> StepSelectivity:
+def selectivity_of_step(
+    step: ExperimentStep, *, table: SelectivityTable, losses: tuple = ()
+) -> StepSelectivity:
     """The regiochemical selectivity of one assembly step: does it make the sourced major isomer?
 
     NOT_APPLICABLE when the product formula has a single registered isomer (no competition); UNKNOWN when
     isomers compete but no sourced fact reaches this reactant set (or the product does not resolve); FAVORED
     / DISFAVORED against a sourced record.  Never a fabricated preference.
+
+    ``losses`` (EVD-KEY-01, the consumer half): the section-5.3 :class:`~smartchem.identity.IdentityLoss` records
+    the target identity carries.  If any is a BLOCKER for the ``"selectivity"`` claim class -- because the input
+    dropped a feature selectivity can depend on (a stereocentre, an isotope, a charge state) -- a SOURCED FAVORED /
+    DISFAVORED verdict MUST NOT survive it (section 5.3): it is downgraded to a loud UNKNOWN naming the blocker.
     """
+    from ..identity import blocking_losses
     if type(step) is not ExperimentStep:
         raise TypeError("step must be an ExperimentStep")
     target = step.target
@@ -316,6 +324,20 @@ def selectivity_of_step(step: ExperimentStep, *, table: SelectivityTable) -> Ste
             unknown("selectivity", "", "product structure did not resolve; cannot compare to the major isomer"),
         )
 
+    # EVD-KEY-01 (section 5.3): a sourced record matched, but if a BLOCKER loss forbids a selectivity claim on this
+    # identity, the sourced verdict MUST NOT survive -- the input dropped a feature selectivity can depend on, so a
+    # FAVORED/DISFAVORED here would be a sourced fact attached to an under-determined identity.  Downgrade to UNKNOWN.
+    blockers = blocking_losses(tuple(losses), "selectivity")
+    if blockers:
+        b = blockers[0]
+        return StepSelectivity(
+            SelectivityStatus.UNKNOWN,
+            f"UNKNOWN: a sourced selectivity exists (major product: {rec.major_isomer_name}), but a section-5.3 "
+            f"BLOCKER ({b.feature}) forbids a sourced selectivity claim on this identity -- the dropped feature is "
+            f"one selectivity can depend on, so the sourced record must not survive it (section 5.3)",
+            unknown("selectivity", "", f"section-5.3 blocker: {b.feature} forbids a sourced selectivity claim"),
+        )
+
     if named.name == rec.major_isomer_name:
         return StepSelectivity(
             SelectivityStatus.FAVORED,
@@ -337,12 +359,18 @@ def selectivity_of_step(step: ExperimentStep, *, table: SelectivityTable) -> Ste
     )
 
 
-def verify_selectivity(route: ExperimentRoute, *, table: SelectivityTable = None) -> RouteSelectivity:
-    """The regiochemical selectivity of every step of a route (against the sourced, injectable table)."""
+def verify_selectivity(
+    route: ExperimentRoute, *, table: SelectivityTable = None, losses: tuple = ()
+) -> RouteSelectivity:
+    """The regiochemical selectivity of every step of a route (against the sourced, injectable table).
+
+    ``losses`` are the section-5.3 identity-loss records the target carries; a BLOCKER for ``"selectivity"``
+    downgrades every step's sourced verdict to UNKNOWN (EVD-KEY-01), so no sourced selectivity survives a blocker.
+    """
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     tbl = DEFAULT_SELECTIVITY if table is None else table
-    per_step = tuple(selectivity_of_step(s, table=tbl) for s in route.steps)
+    per_step = tuple(selectivity_of_step(s, table=tbl, losses=losses) for s in route.steps)
     return RouteSelectivity(route, per_step)
 
 

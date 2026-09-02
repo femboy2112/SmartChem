@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-__all__ = ["InputKind", "IdentityParseError", "resolve_target"]
+__all__ = ["InputKind", "IdentityParseError", "resolve_target", "resolve_target_with_features"]
 
 
 class InputKind(str, Enum):
@@ -50,7 +50,23 @@ def resolve_target(target_input: str, input_kind: "InputKind | str" = InputKind.
     Raises :class:`IdentityParseError` on an unresolvable/ambiguous string or an as-yet-unsupported kind -- never a
     raw traceback and never a silent mis-parse.
     """
-    from .smiles import SmilesError, parse_smiles
+    return _resolve(target_input, input_kind)[0]
+
+
+def resolve_target_with_features(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO):
+    """Like :func:`resolve_target`, but also return the SMILES features that were dropped (ID-STEREO-01).
+
+    Returns ``(molecule, features)`` where ``features`` is a :class:`~smartchem.smiles.SmilesFeatures` when the
+    input resolved via SMILES (so a caller can record the section-5.3 representation-loss blockers), or ``None``
+    when it resolved as a registered NAME (a name carries no such per-input stereo/isotope declaration).  Shares
+    the exact resolution path with :func:`resolve_target`, so the two can never disagree on the molecule.
+    """
+    return _resolve(target_input, input_kind)
+
+
+def _resolve(target_input: str, input_kind: "InputKind | str"):
+    """Shared resolution: ``(molecule, SmilesFeatures | None)``.  ``None`` features iff resolved as a NAME."""
+    from .smiles import SmilesError, parse_smiles_features
     from .structure import structure_by_name
 
     if not isinstance(target_input, str):
@@ -76,7 +92,7 @@ def resolve_target(target_input: str, input_kind: "InputKind | str" = InputKind.
     if resolved_kind is not InputKind.SMILES:
         named = structure_by_name(payload)
         if named is not None:
-            return named.molecule
+            return named.molecule, None                # a registered name declares no stereo/isotope features
         if resolved_kind is InputKind.NAME:
             raise IdentityParseError(
                 f"unknown offline chemical name {payload!r}; provide SMILES (optionally smiles:...) or use "
@@ -84,7 +100,7 @@ def resolve_target(target_input: str, input_kind: "InputKind | str" = InputKind.
             )
 
     try:
-        return parse_smiles(payload)
+        return parse_smiles_features(payload)          # (molecule, SmilesFeatures)
     except SmilesError as exc:
         raise IdentityParseError(
             f"could not resolve {target_input!r} as an offline name or parse it as SMILES: {exc}; "

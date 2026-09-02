@@ -172,16 +172,22 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
 
 
 def reaction_conditions(
-    edge, *, direction: ReactionDirection = ReactionDirection.DECOMPOSITION,
+    edge, *, direction: ReactionDirection = ReactionDirection.DECOMPOSITION, losses: tuple = (),
 ) -> ConditionEnvelope:
     """The conditions sourced for ``edge`` in exactly ``direction``, else loud ``unknown()``.
 
     The default preserves the decompiler-facing API: an edge is read in its written decomposition direction.
     Retrosynthesis callers MUST request :attr:`ReactionDirection.ASSEMBLY`; algebraic reversibility is not
     experimental provenance.
+
+    ``losses`` (EVD-KEY-01): if a section-5.3 BLOCKER forbids a ``"conditions"`` claim on this identity, no sourced
+    envelope survives (section 5.3) -- ``unknown()`` is returned before the lookup.
     """
+    from .identity import is_blocked
     if not isinstance(direction, ReactionDirection):
         raise TypeError("direction must be a ReactionDirection")
+    if is_blocked(tuple(losses), "conditions"):
+        return ConditionEnvelope.unknown()
     record = SEED_CONDITIONS.get(_reaction_signature(edge))
     if record is None or direction not in record.directions:
         return ConditionEnvelope.unknown()
@@ -192,14 +198,21 @@ def reaction_conditions(
     return record.envelope
 
 
-def assembly_conditions(capped) -> ConditionEnvelope:
+def assembly_conditions(capped, *, losses: tuple = ()) -> ConditionEnvelope:
     """Conditions for reversing one structural capped scission, only after exact identity matches.
 
     Any unresolved structure or selector mismatch returns ``unknown()``.  This deliberately refuses a
     formula-only fallback: paracetamol and 4-aminophenyl acetate are both C8H9NO2 but are not interchangeable.
+
+    ``losses`` (EVD-KEY-01): a section-5.3 BLOCKER for ``"conditions"`` refuses a sourced envelope (section 5.3),
+    even when the structure resolves and the selector matches -- the dropped feature (stereo/isotope/charge) is one
+    the sourced bench conditions may depend on.
     """
+    from .identity import is_blocked
     from .structure import resolve_structure
 
+    if is_blocked(tuple(losses), "conditions"):
+        return ConditionEnvelope.unknown()
     try:
         record = SEED_CONDITIONS.get(_reaction_signature(capped.forget()))
         if record is None or ReactionDirection.ASSEMBLY not in record.directions:

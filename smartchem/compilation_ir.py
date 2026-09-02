@@ -388,6 +388,7 @@ def recompile_to_ir(
     max_results: int = 100,
     cut_budget: int = 20_000,
     mode: str = "routes",
+    identity_losses: "tuple[IdentityLoss, ...]" = (),
     tool_version: str | None = None,
 ) -> ChemicalCompilationIR:
     """Emit a :class:`ChemicalCompilationIR` for the *structural* recompilation (synthesis) of ``target``.
@@ -495,7 +496,10 @@ def recompile_to_ir(
         CompilationOperation.RECOMPILE,
         target_id,
         request_digest,
-        (),  # identity_losses: structural assembly forgets nothing at the structure layer (IR-LOSS-01: typed, empty)
+        # identity_losses: the structure layer keeps constitution but drops finer features (stereo/isotope/local
+        # charge).  A structural target parsed from a plain graph forgets nothing (()), but a SMILES target that
+        # DECLARED those finer features carries the typed section-5.3 blockers here (ID-STEREO-01), digest-sorted.
+        tuple(sorted(identity_losses, key=lambda loss: loss.digest)),
         terminal_digest,
         registry_digest,
         receipt.status,

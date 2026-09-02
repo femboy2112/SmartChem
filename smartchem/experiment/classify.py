@@ -233,6 +233,7 @@ def classify_step(
     kinetics: KineticTable = DEFAULT_KINETICS,
     barriers: EyringTable = DEFAULT_EYRING,
     temperature_k: float | None = None,
+    losses: tuple = (),
 ) -> UnifiedVerdict:
     """Grade one conserving :class:`ExperimentStep` -- the atomic case of the unified classifier.
 
@@ -245,8 +246,8 @@ def classify_step(
         raise TypeError("step must be an ExperimentStep")
     feas = feasibility_of_step(step, thermo=thermo, temperature_k=temperature_k)
     equi = equilibrium_of_step(step, thermo=thermo, temperature_k=temperature_k)
-    sel = selectivity_of_step(step, table=selectivity)
-    kin = kinetics_of_step(step, kinetics=kinetics, temperature_k=temperature_k)
+    sel = selectivity_of_step(step, table=selectivity, losses=losses)  # EVD-KEY-01: a BLOCKER gags the sourced verdict
+    kin = kinetics_of_step(step, kinetics=kinetics, temperature_k=temperature_k, losses=losses)
     eyr = eyring_of_step(step, barriers=barriers, temperature_k=temperature_k)
     grade = _step_grade(feas, sel)  # rate and condition declaration are deliberately orthogonal
 
@@ -379,6 +380,7 @@ def classify_route(
     kinetics: KineticTable = DEFAULT_KINETICS,
     barriers: EyringTable = DEFAULT_EYRING,
     temperature_k: float | None = None,
+    losses: tuple = (),
 ) -> UnifiedVerdict:
     """Grade a linear :class:`ExperimentRoute` -- worst-step-dominated, a ``DEGENERATE`` handoff => REFUTED."""
     if type(route) is not ExperimentRoute:
@@ -386,8 +388,8 @@ def classify_route(
     comp = verify_composability(route, stability=stability)
     rfeas = verify_feasibility(route, thermo=thermo, temperature_k=temperature_k)
     requi = verify_equilibrium(route, thermo=thermo, temperature_k=temperature_k)
-    rsel = verify_selectivity(route, table=selectivity)
-    rkin = verify_kinetics(route, kinetics=kinetics, temperature_k=temperature_k)  # orthogonal rate dimension
+    rsel = verify_selectivity(route, table=selectivity, losses=losses)  # EVD-KEY-01: a BLOCKER gags the sourced verdict
+    rkin = verify_kinetics(route, kinetics=kinetics, temperature_k=temperature_k, losses=losses)  # rate dimension
     reyr = verify_eyring(route, barriers=barriers, temperature_k=temperature_k)  # second (Eyring) rate provider
 
     findings = (_conservation_finding(),)
@@ -435,6 +437,7 @@ def classify_dag(
     kinetics: KineticTable = DEFAULT_KINETICS,
     barriers: EyringTable = DEFAULT_EYRING,
     temperature_k: float | None = None,
+    losses: tuple = (),
 ) -> UnifiedVerdict:
     """Grade a convergent :class:`~smartchem.experiment.dag.SynthesisDAG` -- the same worst-step-dominated
     rule over a partial order instead of a chain, reusing M4's per-edge composability and per-step rungs.
@@ -451,8 +454,8 @@ def classify_dag(
     comp = dag_composability(dag, stability=stability)
     feas = tuple(feasibility_of_step(s, thermo=thermo, temperature_k=temperature_k) for s in dag.steps)
     equi = tuple(equilibrium_of_step(s, thermo=thermo, temperature_k=temperature_k) for s in dag.steps)
-    sels = tuple(selectivity_of_step(s, table=selectivity) for s in dag.steps)
-    kins = tuple(kinetics_of_step(s, kinetics=kinetics, temperature_k=temperature_k) for s in dag.steps)
+    sels = tuple(selectivity_of_step(s, table=selectivity, losses=losses) for s in dag.steps)
+    kins = tuple(kinetics_of_step(s, kinetics=kinetics, temperature_k=temperature_k, losses=losses) for s in dag.steps)
     eyrs = tuple(eyring_of_step(s, barriers=barriers, temperature_k=temperature_k) for s in dag.steps)
 
     shape = "convergent" if dag.is_convergent else "linear"

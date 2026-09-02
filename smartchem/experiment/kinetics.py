@@ -203,19 +203,36 @@ class StepKinetics(Digestible):
 
 
 def kinetics_of_step(
-    step: ExperimentStep, *, kinetics: KineticTable = DEFAULT_KINETICS, temperature_k: float | None = None
+    step: ExperimentStep, *, kinetics: KineticTable = DEFAULT_KINETICS, temperature_k: float | None = None,
+    losses: tuple = (),
 ) -> StepKinetics:
     """The Arrhenius rate constant and regime for one step, over sourced kinetic data.
 
     Looks the step's exact (direction-specific) reaction up in the table; a miss makes the whole verdict a
     LOUD ``UNKNOWN`` rate -- never a fabricated k, never a barrier guessed from bond energies.
+
+    ``losses`` (EVD-KEY-01): if a section-5.3 BLOCKER forbids the ``"kinetics"`` claim class -- the target dropped a
+    feature the rate depends on (a kinetic isotope effect, a stereospecific rate) -- a SOURCED k MUST NOT survive
+    (section 5.3): the rate is a loud UNKNOWN naming the blocker, never a fabricated-by-omission KNOWN_SOURCED.
     """
+    from ..identity import blocking_losses
     if type(step) is not ExperimentStep:
         raise TypeError("step must be an ExperimentStep")
     temperature = temperature_k if temperature_k is not None else _temperature_of(step)
     if temperature <= 0:
         raise ValueError("temperature must be a positive absolute temperature (K); k = A*exp(-Ea/RT) is "
                          "undefined at or below 0 K")
+    kin_blockers = blocking_losses(tuple(losses), "kinetics")
+    if kin_blockers:
+        b = kin_blockers[0]
+        return StepKinetics(
+            RateRegime.UNKNOWN, RateGrade.UNKNOWN, temperature, None, None, None, None, "",
+            unknown("rate-constant-k", "", f"section-5.3 blocker: {b.feature} forbids a sourced kinetics claim"),
+            f"UNKNOWN: a section-5.3 BLOCKER ({b.feature}) forbids a sourced kinetics claim on this identity -- a "
+            f"kinetic isotope effect / stereospecific rate depends on the dropped feature, so a sourced k must not "
+            f"survive it (section 5.3)",
+            (step.equation(),),
+        )
     rec = _resolve_record(kinetics, step)
     if rec is None:
         return StepKinetics(
@@ -304,11 +321,16 @@ class RouteKinetics(Digestible):
 
 
 def verify_kinetics(
-    route: ExperimentRoute, *, kinetics: KineticTable = None, temperature_k: float | None = None
+    route: ExperimentRoute, *, kinetics: KineticTable = None, temperature_k: float | None = None, losses: tuple = (),
 ) -> RouteKinetics:
-    """The Arrhenius rate of every step of a route, over the sourced (injectable) kinetic table."""
+    """The Arrhenius rate of every step of a route, over the sourced (injectable) kinetic table.
+
+    ``losses`` (EVD-KEY-01): a section-5.3 BLOCKER for ``"kinetics"`` downgrades every step's sourced rate to UNKNOWN.
+    """
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     tbl = DEFAULT_KINETICS if kinetics is None else kinetics
-    per_step = tuple(kinetics_of_step(s, kinetics=tbl, temperature_k=temperature_k) for s in route.steps)
+    per_step = tuple(
+        kinetics_of_step(s, kinetics=tbl, temperature_k=temperature_k, losses=losses) for s in route.steps
+    )
     return RouteKinetics(route, per_step)

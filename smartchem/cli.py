@@ -85,6 +85,34 @@ def _parse_smiles(smiles: str):
     return resolve_target("smiles:" + smiles, InputKind.AUTO)
 
 
+def _domain_exit(exc: BaseException, prog: str) -> int:
+    """Map a raised DOMAIN exception to its section-14.4 exit code, with a concise stderr line (CLI-ERR-01).
+
+    The ONE error-classification authority every command routes through, so a refusal is exit 5 and an invalid
+    input is exit 2 IDENTICALLY on every command/path/format -- no per-command hand-rolled mapping that could drift:
+
+    * a chemistry-MODEL-boundary refusal (an unsupported scission, a charged/unsupported identity) -> 5 REFUSED;
+    * an INVALID input (an unparseable identity/formula, an as-yet-unsupported input kind, a bad value) -> 2.
+
+    A model-boundary refusal is checked FIRST because ``ScissionError``/``IdentityUnsupportedError`` are themselves
+    ``ValueError`` subclasses -- classifying by the generic ValueError first would mislabel a refusal as invalid.
+    An exception in NEITHER family is RE-RAISED untouched, so a genuine internal bug propagates to ``main()``'s
+    top-level guard and becomes exit 70 -- it is never laundered into a domain 2/5 (the inverse of the 70 guard's
+    own sin).  argparse's ``SystemExit`` / ``KeyboardInterrupt`` are ``BaseException``s the ``except Exception``
+    call sites never catch, so they never reach here (a bad flag stays argparse's exit 2, ``--help`` stays 0).
+    """
+    from .decompiler import IdentityUnsupportedError
+    from .structure_descent import ScissionError
+    if isinstance(exc, (ScissionError, IdentityUnsupportedError)):
+        print(f"{prog}: request refused at the current chemistry-model boundary: {exc}", file=sys.stderr)
+        return 5
+    if isinstance(exc, (ValueError, TypeError)):
+        # IdentityParseError, DecompilerError, SmilesError are ValueErrors; a bad numeric/argument value is one too.
+        print(f"{prog}: invalid chemistry input: {exc}", file=sys.stderr)
+        return 2
+    raise exc
+
+
 def _add_recompile_flags(p) -> None:
     """The ONE argv surface shared by ``recompile`` and its ``compile`` alias (CLI-CAN-01).
 
@@ -94,6 +122,14 @@ def _add_recompile_flags(p) -> None:
     section 13.1).
     """
     p.add_argument("target", help="compound name or SMILES (name:... and smiles:... are accepted explicitly)")
+    p.add_argument(
+        "--input-kind", choices=["auto", "name", "smiles", "inchi", "formula", "target-file"], default=None,
+        help=(
+            "how to read TARGET (standard section 14.2; default AUTO: a registered name, else SMILES, honouring an "
+            "inline name:/smiles: prefix). inchi/formula/target-file are DECLARED but not yet resolved offline "
+            "(ID-PARSE-01): they are refused as a loud INVALID_INPUT (exit 2), never silently mis-parsed"
+        ),
+    )
     p.add_argument("--reagents", nargs="*", default=None, metavar="TARGET",
                    help="small helper reagents by name or SMILES (default: water; an empty list means the default)")
     p.add_argument("--have", nargs="*", default=None, metavar="TARGET",
@@ -138,6 +174,7 @@ def _recompile_request_from_args(args):
     explicit toggle of the commodity terminal, recorded ``EXPLICIT`` only when opted out.
     """
     from .identity import MatchLayer
+    from .identity_parse import InputKind
     from .service import build_recompile_request
     # An empty `--reagents` list (the flag given with no values) is coerced to the DEFAULT reagent pool, exactly as
     # the legacy `compile` did (`compile_synthesis` injected water on an empty pool).  This keeps the two aliases on
@@ -147,6 +184,7 @@ def _recompile_request_from_args(args):
     # left as-is.
     return build_recompile_request(
         args.target,
+        input_kind=InputKind[args.input_kind.upper().replace("-", "_")] if args.input_kind else None,
         helper_reagents=tuple(args.reagents) if args.reagents else None,
         stock_materials=tuple(args.have) if args.have is not None else None,
         commodities_enabled=False if args.no_commodities else None,
@@ -233,9 +271,8 @@ def _cmd_recompile(argv: list[str]) -> int:
 
     try:
         request = _recompile_request_from_args(args)
-    except (ValueError, TypeError) as exc:
-        print(f"recompile: invalid request: {exc}", file=sys.stderr)
-        return 2
+    except Exception as exc:  # noqa: BLE001 -- classified by the ONE authority; a non-domain error re-raises to 70
+        return _domain_exit(exc, "recompile")
 
     handled = _emit_or_json(args, request)
     if handled is not None:
@@ -259,7 +296,7 @@ def _edge_line(edge) -> str:
 def _cmd_decompile(argv: list[str]) -> int:
     import argparse
 
-    from .decompiler import DecompilerError, build_decomposition, example_inventory
+    from .decompiler import build_decomposition, example_inventory
 
     p = argparse.ArgumentParser(
         prog="python -m smartchem decompile",
@@ -290,9 +327,8 @@ def _cmd_decompile(argv: list[str]) -> int:
         else:
             target = args.target
         inventory = tuple(args.inventory) if args.inventory is not None else example_inventory()
-    except (DecompilerError, ValueError) as exc:
-        print(f"decompile: invalid chemistry input: {exc}", file=sys.stderr)
-        return 2
+    except Exception as exc:  # noqa: BLE001 -- routed to the ONE classifier; a non-domain error re-raises to 70
+        return _domain_exit(exc, "decompile")
 
     # `example_inventory()` yields `Formula` OBJECTS while `--inventory` yields strings; the typed request keys on
     # canonical formula TEXT (which `_run_decompile` re-parses with `Formula.parse`).  Normalise both to `repr` --
@@ -325,9 +361,8 @@ def _cmd_decompile(argv: list[str]) -> int:
         from .service import run_compilation, serialize_request, serialize_response
         try:
             req = _decompile_request()
-        except (ValueError, TypeError) as exc:
-            print(f"decompile: invalid request: {exc}", file=sys.stderr)
-            return 2
+        except Exception as exc:  # noqa: BLE001 -- routed to the ONE classifier; a non-domain error re-raises to 70
+            return _domain_exit(exc, "decompile")
         if args.emit_request:
             print(serialize_request(req))
             return 0
@@ -343,9 +378,8 @@ def _cmd_decompile(argv: list[str]) -> int:
             budget=args.budget,
             max_edges=args.max_edges,
         )
-    except (DecompilerError, ValueError) as exc:
-        print(f"decompile: invalid chemistry input: {exc}", file=sys.stderr)
-        return 2
+    except Exception as exc:  # noqa: BLE001 -- routed to the ONE classifier; a non-domain error re-raises to 70
+        return _domain_exit(exc, "decompile")
 
     print(f"decompile {graph.target!r}  --  status: {graph.status}")
     # Surface the typed service outcome + section 8.2 status the --json view carries, from the SAME request, so the
@@ -355,11 +389,11 @@ def _cmd_decompile(argv: list[str]) -> int:
     from .service import run_compilation
     _resp = run_compilation(_decompile_request())
     print(f"  outcome: {_resp.outcome.value}; status: {_resp.standard_status}")
-    if args.smiles:
-        # section 5.3: the SMILES->formula reduction is a real information loss, recorded as a typed IdentityLoss
-        # (ID-LAYER-01) via the SAME summary() the machine identity_losses carries -- so the two views agree exactly.
-        from .identity import formula_reduction_loss
-        print(f"  {formula_reduction_loss(args.target, target).summary()}")
+    # every section-5.3 loss the service RECORDED, via the SAME summary strings the machine --json view carries, so
+    # the two views cannot disagree (CLI-JSON-01).  For --smiles that is the SMILES->formula reduction PLUS any
+    # ID-STEREO-01 stereo/isotope/local-charge blocker the input declared -- structure/features never silently lost.
+    for _summary in _resp.identity_loss_summaries:
+        print(f"  {_summary}")
     if graph.refusal_reason:
         print(f"  (partial: {graph.refusal_reason})")
     print(f"  inventory (buckets): {', '.join(repr(f) for f in inventory) or '(pure elements)'}")
@@ -376,7 +410,6 @@ def _cmd_compile(argv: list[str]) -> int:
 
     from .data.thermo_extended import extended_thermo
     from .experiment.compile import compile_synthesis
-    from .structure_descent import ScissionError
 
     p = argparse.ArgumentParser(
         prog="python -m smartchem compile",
@@ -391,9 +424,8 @@ def _cmd_compile(argv: list[str]) -> int:
     # then runs off the request's RESOLVED parameters, so there is exactly one default table, not two.
     try:
         request = _recompile_request_from_args(args)
-    except (ValueError, TypeError) as exc:
-        print(f"compile: invalid request: {exc}", file=sys.stderr)
-        return 2
+    except Exception as exc:  # noqa: BLE001 -- classified by the ONE authority; a non-domain error re-raises to 70
+        return _domain_exit(exc, "compile")
 
     print("compile: `compile` is a deprecated alias of `recompile`; prefer `python -m smartchem recompile` "
           "(kept one deprecation cycle -- standard section 14.1).", file=sys.stderr)
@@ -403,7 +435,15 @@ def _cmd_compile(argv: list[str]) -> int:
         return handled
 
     try:
-        target = _parse_molecule(request.target_input)
+        from .identity import representation_losses_for
+        from .identity_parse import resolve_target_with_features
+        # Resolve the target HONOURING request.input_kind (CLIERR-COMPILE-INPUTKIND-BYPASS red-team fix): a declared
+        # but unresolved kind (inchi/formula/target-file) raises IdentityParseError -> _domain_exit -> exit 2, so the
+        # human path matches the --json/recompile paths instead of silently AUTO-mis-parsing to a confident dossier.
+        # WITH features, so a stereo/isotope/zwitterion target threads its section-5.3 losses into the sourced-evidence
+        # rungs (EVD-KEY-01 end-to-end bite): a sourced selectivity/kinetics verdict cannot survive a matching blocker.
+        target, target_features = resolve_target_with_features(request.target_input, request.input_kind)
+        losses = () if target_features is None else representation_losses_for(request.target_input, target_features)
         reagents = tuple(_parse_molecule(s) for s in request.helper_reagents)
         available = tuple(_parse_molecule(s) for s in request.stock_materials)
         compiled = compile_synthesis(
@@ -415,13 +455,10 @@ def _cmd_compile(argv: list[str]) -> int:
             cut_budget=request.search_bounds.value("cut_budget"),
             commodities=() if not request.terminal_policy.commodities_enabled else None,
             thermo=extended_thermo(),
+            losses=losses,
         )
-    except ScissionError as exc:
-        print(f"compile: request refused at the current chemistry-model boundary: {exc}", file=sys.stderr)
-        return 5
-    except ValueError as exc:
-        print(f"compile: unsupported or invalid chemistry request: {exc}", file=sys.stderr)
-        return 2
+    except Exception as exc:  # noqa: BLE001 -- ScissionError -> 5, ValueError -> 2 via the ONE classifier; else 70
+        return _domain_exit(exc, "compile")
     print(compiled.render())
     if compiled.search_receipt is not None and not compiled.search_receipt.complete_within_bounds:
         return 4

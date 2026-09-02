@@ -227,8 +227,15 @@ def compile_synthesis(
     feed=None,
     max_routes: int = 100,
     cut_budget: int = 20_000,
+    losses: tuple = (),
 ) -> CompiledSynthesis:
     """Compile ``target`` into a bounded, bucket-terminated candidate-route evidence dossier.
+
+    ``losses`` (EVD-KEY-01): the section-5.3 :class:`~smartchem.identity.IdentityLoss` records the TARGET identity
+    carries (e.g. a stereo/isotope BLOCKER when the target was parsed from a SMILES that declared a feature the
+    constitution-only model drops).  They thread to every sourced-evidence rung -- ranking, grading and the dossier
+    -- so a sourced selectivity/kinetics verdict cannot SURVIVE a blocker for its class on a real compile run (the
+    end-to-end bite ID-STEREO-01 records and this consumer enforces).
 
     ``commodities`` defaults to the full poor-man's inventory (:func:`commodity_inventory`) so routes bottom
     out at curated source leads; pass ``()`` to disable commodity termination (only explicit reagents and
@@ -291,7 +298,7 @@ def compile_synthesis(
         )
 
     ranked = rank_routes(
-        routes, stability=stability, selectivity=selectivity, thermo=thermo, kinetics=kinetics,
+        routes, stability=stability, selectivity=selectivity, thermo=thermo, kinetics=kinetics, losses=losses,
     )
     kw = {k: v for k, v in (
         ("thermo", thermo), ("stability", stability), ("selectivity", selectivity),
@@ -304,14 +311,15 @@ def compile_synthesis(
     head = ranked
     graded = []
     for i, rf in enumerate(head):
-        v = classify_route(rf.route, **kw)
+        v = classify_route(rf.route, losses=losses, **kw)
         graded.append((_GRADE_RANK.get(v.grade, 99), i, rf, v))
     graded.sort(key=lambda t: (t[0], t[1]))
     _, _, best_fit, verdict = graded[0]
     best = best_fit.route
 
-    draft = draft_route_dossier(best, feed=feed, stability=stability, selectivity=selectivity, thermo=thermo)
-    kin = verify_kinetics(best, kinetics=kinetics)
+    draft = draft_route_dossier(best, feed=feed, stability=stability, selectivity=selectivity, thermo=thermo,
+                                losses=losses)
+    kin = verify_kinetics(best, kinetics=kinetics, losses=losses)
     eyr = verify_eyring(best, barriers=barriers)
 
     shopping: dict[str, CommodityReagent] = {}

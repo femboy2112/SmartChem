@@ -812,13 +812,84 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `SVC-REQ-01` | One typed request/service powers chemical commands | `compile` and `synthesize` bypass/share different rungs and defaults | Implement `CompilationRequest/Response`; route aliases through it | Equal flags across aliases produce equal request/result digests | `IR-CHEM-01` | `TODO` |
+| `SVC-REQ-01` | One typed request/service powers chemical commands | First brick landed (`67b8ae4`): `smartchem/service.py` provides the typed `CompilationRequest`/`CompilationResponse`, an alias-independent `semantic_digest` (equal flags across aliases → equal search identity → equal result), per-field `origin` provenance, `run_compilation` + the section 14.4 exit map, and canonical serialization; the two synthesis aliases still build their own requests (routing the live CLI argv through the service is `CLI-CAN-01`) | Implement `CompilationRequest/Response`; route aliases through it | Equal flags across aliases produce equal request/result digests | `IR-CHEM-01` | `IN_PROGRESS` |
 | `CLI-CAN-01` | Canonical `decompile` and `recompile`; legacy aliases share defaults | Current commands diverge | Add canonical verbs; deprecate aliases without duplicate logic | Command matrix gives equal request JSON | `SVC-REQ-01` | `TODO` |
 | `CLI-NAME-01` | Normal names accepted without private formatting | Registered offline names and explicit `name:`/`smiles:` prefixes work in synthesis CLIs; InChI/formula/echo/shared parser are incomplete | Finish unified identity parser and echo receipt | Registered-name and SMILES tests pass; add InChI/formula/ambiguity matrix | `ID-PARSE-01` | `IN_PROGRESS` |
 | `CLI-EXIT-01` | Stable exit codes separate route/no-route/partial/refusal/invalid/internal | Synthesis front doors now use 0/2/3/4/5 for named outcomes; decompile uses 0/2/4; shared code 70/internal mapping is absent | Finish standard table through one shared service and subprocess matrix | Codes 0/2/3/4/5 observed; add controlled internal-error fixture for 70 | `SRCH-RCT-01`, `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-ERR-01` | Invalid chemistry/numeric input yields domain error without traceback | Invalid formula/name/SMILES and charged-model refusal are concise and mapped to 2/5; no one central mapping covers every format/path | Centralize error mapping and strict validation | Current invalid/refusal probes pass; add InChI/formula-file/nonfinite subprocess matrix | `ID-PARSE-01`, constraints | `IN_PROGRESS` |
 | `CLI-VERS-01` | Package installs `smartchem`, supports `--version`, exposes consistent `__version__` | Entry point, package metadata and `__version__` report `0.5.0a1` | Preserve single-source consistency in release packaging | Targeted script/module/version tests pass | None | `IMPLEMENTED_AND_VERIFIED` |
 | `CLI-JSON-01` | Stable JSON contains request, identity, receipt, tier, blockers and route IDs | Human-oriented paths dominate | Add versioned serializer/schema and golden fixtures | Human and JSON agree on all semantic fields | `SVC-REQ-01`, `READY-TIER-01` | `TODO` |
+
+**Uptake record — typed compilation service, first brick** (`SVC-REQ-01` `TODO` → `IN_PROGRESS`; the lever the
+CLI rows `CLI-CAN`/`CLI-JSON`/`CLI-EXIT`/`CLI-ERR` hang off):
+
+```text
+ID:                  SVC-REQ-01 (first brick -- the typed request/response + digest law + producer)
+commit:              67b8ae4
+files:               smartchem/service.py (new), smartchem/identity_parse.py (new), smartchem/cli.py,
+                     tests/test_service.py (new)
+tests:               tests/test_service.py -- TestAliasEquality, TestOrigins, TestOutcomes, TestCoherenceGuard,
+                     TestValidation, TestSerialization, TestIdentityParse, TestRedTeamRegressions (81 total,
+                     counting parametrize)
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              2848 passed, 14 skipped, 1 xfailed (baseline 2767; +81). ruff clean on every changed file;
+                     git diff --check clean.
+built:               smartchem/service.py -- the typed CompilationRequest (section 13.1) and CompilationResponse
+                     (section 13.2). The load-bearing law is a TWO-DIGEST split: `semantic_digest` is the
+                     alias-independent SEARCH identity (it excludes the per-field `origins` provenance and the
+                     `output_policy` display choice), and the inherited `digest` is the full identity including
+                     provenance. build_recompile_request/build_decompile_request record a `FieldOrigin`
+                     (EXPLICIT/DEFAULT) per knob, so a default is a VISIBLE field, never an invisible command branch
+                     (section 13.1). run_compilation delegates to the existing IR producers
+                     (recompile_to_ir/decompile_to_ir), classifies a TOTAL ResponseOutcome, and maps it to the
+                     section 14.4 exit codes (0/2/3/4/5; 70 is reserved for the top-level guarded service). The
+                     CompilationResponse coherence guard reads only STRUCTURED facts (complete_within_bounds,
+                     candidate_count, standard_status) -- never diagnostic text -- so a partial can never surface as
+                     complete and a no-route claim rests on a genuinely complete+empty search (section 8.3).
+                     smartchem/identity_parse.py -- the ONE shared target parser (resolve_target/InputKind/
+                     IdentityParseError); cli._parse_molecule now delegates to it, so the CLI and the service cannot
+                     drift on the same string (the exact failure this brick exists to prevent).
+falsifier fixture:   a `compile`-style request (defaults grammar/kind) and a `recompile`-style request (states them,
+                     equal to the defaults) with equal flags -> equal semantic_digest AND equal run_compilation
+                     result_digest, but DIFFERENT origins/full-digest; two requests differing only in output_policy
+                     -> equal semantic_digest; changing any one semantic field -> different semantic_digest (a
+                     12-case tripwire). run_compilation: methyl acetate (smiles:CC(=O)OC) -> ROUTES_FOUND/exit 0;
+                     benzene, commodities off -> NO_ROUTE_COMPLETE/exit 3; paracetamol, max_depth=2 ->
+                     INCOMPLETE/exit 4; ethanol (a commodity) -> TARGET_ALREADY_AVAILABLE/exit 0; an unknown name ->
+                     INVALID_INPUT/exit 2 (REFUSED_INVALID_REQUEST); H2O decompile -> ROUTES_FOUND/exit 0. Request
+                     and response serialize/deserialize with a stable digest; a tampered payload (negative bound,
+                     unknown enum, contradictory standard_status, off-operation bound-names) is REFUSED on read.
+red-team:            3 attack bearings + 10 verify agents (workflow, 13 agents, 557k subagent tokens). 9 CONFIRMED
+                     + 1 PLAUSIBLE, 0 refuted -- ALL folded in before this commit landed: (F5, MEDIUM) _run_decompile
+                     silently discarded a declared non-formula input_kind -> a formula-parseable NAME/SMILES could
+                     ship a WRONG species at exit 0; now fails CLOSED (INVALID_INPUT) on any kind but AUTO/FORMULA.
+                     (F3, MEDIUM) the response standard_status was never cross-checked against its wrapped IR, so a
+                     hand-built/deserialized response could smuggle an engine-impossible stop reason
+                     (INCOMPLETE_CANDIDATE_LIMIT) past the family checks; now standard_status MUST equal the IR's.
+                     (F6, MEDIUM) operation<->search-bound-name coherence was unchecked -> a crafted RECOMPILE
+                     payload carrying DECOMPILE bound-names deserialized and then crashed run_compilation with a raw
+                     KeyError; now refused at construction (with terminal-mode and direction-field coherence too,
+                     closing F2's spurious recompile split). (F4, LOW) a decompile target that is itself a declared
+                     bucket was miscoded NO_ROUTE_COMPLETE (exit 3, a section 8.3 claim of absence) with an empty
+                     diagnostic; now TARGET_ALREADY_AVAILABLE (exit 0), keyed by canonical FORMULA identity.
+                     (F7, LOW) _parse_smiles dropped the "smiles:" prefix from its error string vs the old helper;
+                     restored to message-identical. (F1/F8/PLAUSIBLE, LOW) the semantic_digest docstrings asserted a
+                     false biconditional ("exactly the fields that change the search, and nothing else") while the
+                     digest is a section-4.1 semantic SUPERSET (it hashes not-yet-wired policy placeholders and
+                     input_kind on a formula descent); reworded to the TRUE one-way law -- equal digest => same
+                     search -- with the over-inclusion named as safe (it can only SPLIT, never MERGE two searches).
+                     (F9, LOW) the CompilationResponse docstring said search_receipt "reads through" to the IR, but
+                     only its DIGEST is exposed; reworded. Each fix is pinned by a test in TestRedTeamRegressions.
+residual limitations / next bricks:
+  1. The live CLI argv is NOT yet routed through the service; `compile`/`synthesize` still build their own requests.
+     Routing them (and adding the canonical `decompile`/`recompile` verbs) is CLI-CAN-01, and the versioned JSON
+     view is CLI-JSON-01 -- both now unblocked by this service.
+  2. run_compilation reads the target as typed (raw target_input + input_kind); collapsing `name:X` and `X` to one
+     normalised identity inside the digest is ID-PARSE-01, as is resolving INCHI/FORMULA/name-normalised decompile
+     targets. The service decompile path currently reads the target as FORMULA text only.
+  3. ranked_route_dossiers and affordability_frontier are present-and-empty (READY-TIER-01 / COST-VEC-01); the
+     section 13.2 search_receipt is exposed as a digest, not the full receipt object. Quantitative StockMaterial
+     binding is STOCK-01. The exit-code 70 path awaits the top-level guarded service.
 
 ## 4. P1 physical, data, and affordability backlog
 

@@ -171,6 +171,17 @@ class TestCliConstraintFlags:
         assert code == 2
         assert "Traceback" not in err and "Traceback" not in out
 
+    def test_min_pressure_flag_rides_the_request(self):
+        _, out, _ = _cli(["recompile", "water", "--min-pressure", "0.5", "--emit-request"])
+        req = json.loads(out)
+        assert req["constraints"]["min_pressure_atm"] == 0.5
+
+    def test_inverted_pressure_window_via_cli_is_a_loud_exit_2(self):
+        # min > max is a physically empty window -- PhysicalBounds refuses it -> exit 2, no traceback (CLI-ERR-01).
+        code, out, err = _cli(["recompile", "water", "--min-pressure", "5", "--max-pressure", "2"])
+        assert code == 2
+        assert "Traceback" not in err and "Traceback" not in out
+
     def test_compile_human_dossier_also_discloses_the_caveat(self):
         # HON-CLI-01 (red-team, MEDIUM): `compile`'s human path renders a compile_synthesis dossier (not the typed
         # response), so it ACCEPTS --max-temp via the shared builder yet used to disclose NOTHING -- a silent

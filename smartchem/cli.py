@@ -146,6 +146,9 @@ def _add_recompile_flags(p) -> None:
     p.add_argument("--max-pressure", type=float, default=None, metavar="ATM",
                    help="section-11 bench pressure ceiling in atm. DECLARED (see --max-temp): not yet applied to "
                         "route grading")
+    p.add_argument("--min-pressure", type=float, default=None, metavar="ATM",
+                   help="section-11 bench pressure floor in atm. DECLARED (see --max-temp): not yet applied to "
+                        "route grading; must not exceed --max-pressure")
     p.add_argument(
         "--no-commodities", "--elements", dest="no_commodities", action="store_true",
         help=(
@@ -199,6 +202,7 @@ def _recompile_request_from_args(args):
         cut_budget=args.cut_budget,
         match_layer=MatchLayer[args.match_layer.upper()] if args.match_layer else None,
         max_temperature_k=args.max_temp,
+        min_pressure_atm=args.min_pressure,
         max_pressure_atm=args.max_pressure,
     )
 

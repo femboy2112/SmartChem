@@ -42,6 +42,9 @@ BUTENE = parse_smiles("C=CCC")        # 1-butene  C4H8
 BUTADIENE = parse_smiles("C=CC=C")    # 1,3-butadiene C4H6
 BUTANE = parse_smiles("CCCC")         # C4H10
 ETOAC = parse_smiles("CC(=O)OCC")     # ethyl acetate
+CPROP = parse_smiles("C1CC1")         # cyclopropane C3H6
+PROPENE = parse_smiles("CC=C")        # propene C3H6 -- an isomer of cyclopropane (distinct canonical identity)
+PROPANE = parse_smiles("CCC")         # C3H8
 
 
 def _amount(pairs, molecule) -> Fraction | None:
@@ -176,11 +179,70 @@ class TestDifferentialOracleHolds:
 
 class TestCoupledRefuses:
     def test_a_species_produced_by_two_steps_refuses_rather_than_fabricate(self):
-        with pytest.raises(ShoppingUnderdeterminedError, match="produced by more than one step"):
+        with pytest.raises(ShoppingUnderdeterminedError, match="more than one NET producer"):
             dag_shopping_requirement(coupled_dag(), 1)
 
     def test_the_refusal_names_the_offending_species_and_the_followon(self):
         with pytest.raises(ShoppingUnderdeterminedError, match="COST-VEC-01"):
+            dag_shopping_requirement(coupled_dag(), 1)
+
+
+def spectator_medium_dag():
+    """WATER is a reaction MEDIUM in the hydration: consumed 2, regenerated 1 (net 1).  Its producer must not
+    over-run.  mk_water = 2 H2 + O2 -> 2 H2O (target WATER); hydrate = ETHENE + 2 WATER -> ETOH + WATER (sink)."""
+    mk_water = ExperimentStep.assembling(WATER, (H2, H2, O2), (WATER, WATER))
+    hydrate = ExperimentStep.assembling(ETOH, (ETHENE, WATER, WATER), (ETOH, WATER))
+    return SynthesisDAG.of(mk_water, hydrate)
+
+
+def autocatalytic_dag():
+    """s1 = cyclopropane + propene -> 2 propene (target propene CONSUMES its own target -- autocatalytic); the
+    extent is the internal-make FLOOR.  s2 = propene + H2 -> propane (sink)."""
+    isomerize = ExperimentStep.assembling(PROPENE, (CPROP, PROPENE), (PROPENE, PROPENE))
+    hydro = ExperimentStep.assembling(PROPANE, (PROPENE, H2), (PROPANE,))
+    return SynthesisDAG.of(isomerize, hydro)
+
+
+class TestRedTeamFolds:
+    """SHOP-LEAF-02 red-team folds (workflow wj716si7g): the guard now counts NET producers (not gross), the
+    back-propagation charges NET consumption (a regenerated medium does not over-run its producer), the oracle is
+    TWO-SIDED (tightness certifies each buy is a real lower bound, not merely sufficient), and a self-consuming
+    step's requirement is the internal-make floor.  The genuine multi-net-producer range still refuses."""
+
+    def test_a_regenerated_medium_does_not_over_run_its_producer(self):
+        # gross-vs-net over-refusal + over-run fold: water is a partly-regenerated medium (net consumed 1, not 2),
+        # so mk_water runs at extent 1/2 -> buy H2=1, O2=1/2, ETHENE=1 -- NOT H2=2/O2=1 (the gross over-buy), and
+        # NOT a ShoppingUnderdeterminedError (the old gross guard's false "it's a range" refusal).
+        req = dag_shopping_requirement(spectator_medium_dag(), 1)
+        assert _amount(req.requirements, ETHENE) == 1
+        assert _amount(req.requirements, H2) == 1
+        assert _amount(req.requirements, O2) == Fraction(1, 2)
+        assert _amount(req.requirements, WATER) is None       # the regenerated medium nets to zero
+        assert _amount(req.co_products, WATER) is None
+
+    def test_a_self_consuming_autocatalytic_step_gives_the_internal_make_floor(self):
+        # cyclopropane and propene are distinct isomers (C3H6); the isomerization consumes its own target.  Making
+        # every intermediate internally, the floor is buy 1 cyclopropane + 1 H2 (the self-seed is internal).
+        assert _ident(CPROP) != _ident(PROPENE)               # genuinely distinct species, an admissible DAG
+        req = dag_shopping_requirement(autocatalytic_dag(), 1)
+        assert _amount(req.requirements, CPROP) == 1
+        assert _amount(req.requirements, H2) == 1
+
+    def test_every_reported_quantity_is_tight_a_real_lower_bound(self):
+        # the two-sided oracle made explicit: for the by-product DAG, H2=1 is TIGHT -- feeding the reported amount
+        # makes exactly the target, but HALVING it makes strictly less.  A dropped-credit over-report (H2=2) would
+        # NOT be tight (H2=1 already suffices via the liberated H2), which is exactly what the oracle now rejects.
+        dag = butadiene_dag()
+        req = dag_shopping_requirement(dag, 1)
+        h2 = _amount(req.requirements, H2)
+        assert h2 == 1
+        assert dag_ceiling(dag, {m: a for m, a in req.requirements}).final_target_mol == 1        # sufficient
+        halved = {m: (a / 2 if _ident(m) == _ident(H2) else a) for m, a in req.requirements}
+        assert dag_ceiling(dag, halved).final_target_mol < 1                                      # and tight
+
+    def test_a_genuine_multi_net_producer_still_refuses(self):
+        # the legit refusal is preserved: coupled_dag's water is NET-produced by TWO steps (a real range).
+        with pytest.raises(ShoppingUnderdeterminedError, match="more than one NET producer"):
             dag_shopping_requirement(coupled_dag(), 1)
 
 

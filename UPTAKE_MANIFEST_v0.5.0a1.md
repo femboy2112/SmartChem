@@ -792,7 +792,7 @@ residual limitations / next probes:
 | `FEED-AMT-01` | Identity-only flags never invent quantity | Experimental CLI no longer maps identities to one mole and emits no finite ceiling without feed | Add explicit quantity+unit/assay input and optional symbolic ceiling separately | Identity-only poor-man fixture has no finite ceiling and no crash | `STOCK-01` desirable | `IMPLEMENTED_AND_VERIFIED` |
 | `FEED-ERR-01` | Missing feed cannot abort an otherwise valid dossier | Route dossier now renders without a ceiling when feed is absent | Preserve structured diagnostic in shared response/JSON | Missing commodity amount preserves route dossier and non-internal exit status | `FEED-AMT-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | `StockMaterial` + `MaterialComponent` + `FitnessVerdict` exist (`smartchem/experiment/stock.py`, `7d27e3c`): a typed material of components (each a fraction INTERVAL), a phase, and provenance, with a rigorous `satisfies(identity, min_assay)` interval gate (vinegar -> `INSUFFICIENT_ASSAY`, a straddling requirement -> `UNKNOWN_ASSAY`, an unknown fraction never passes). The full section 10.2 schema is now built too (`3ace975`): typed `StockQuantity` (positive-finite value+unit), a `CostObservation` that cannot be constructed unless dated AND sourced (section 10.4, no invented price), plus assay method, container/storage, opened/age, jurisdiction/availability, formulation notes and known impurities -- every field keyword-optional and defaulting to an honest UNKNOWN. The `CommodityReagent` -> `StockMaterial` source-lead bridge is now built too (`stock_material_from_commodity`, §10.1): a commodity maps to an UNKNOWN-fraction, phase-UNKNOWN material so it can never silently satisfy a pure requirement. Canonical-structure component keying and recompiler/shopping integration remain | Key components by canonical structure; wire the gate into route/shopping selection | Vinegar cannot satisfy pure acetic-acid input without assay/preprocessing | `ID-LAYER-01` | `IN_PROGRESS` |
-| `SHOP-LEAF-02` | Shopping list is external, quantity-aware route input | Linear external-leaf identity logic is implemented and tested; quantities, DAG fan-out and purchased supplements are absent | Extend across DAGs, purchased supplements and quantity | Internally produced acid is absent now; purchased deficits must later include amount/unknown | `DAG-FLOW-01`, `STOCK-01` | `IN_PROGRESS` |
+| `SHOP-LEAF-02` | Shopping list is external, quantity-aware route input | The DAG-level quantity engine is now built (`dag_shopping_requirement`, `smartchem/experiment/dag.py`): the INVERSE of `dag_ceiling` -- given a desired final-target amount, the exact conserved per-species EXTERNAL-PURCHASE requirement. Unlike the forward ceiling's allocation range, the inverse is UNIQUELY determined: distinct-targets gives each intermediate one producer, so producing D forces every reaction extent by back-propagation, and the net (consumed minus produced, by-products CREDITED) is exact -- buy 1 mol H2 not 2 when a prior step liberates one; a fan-out is determined here though its forward ceiling is a range; a surplus co-product is reported, not bought. Each quantity is a 100%-efficiency LOWER BOUND on purchase (a real yield needs MORE), never a predicted amount. Two agreeing derivations, not the arithmetic's say-so: every step balance-checked, the final-target net asserted `== D`, and the requirement fed FORWARD through `dag_ceiling` must reproduce D exactly (the differential oracle). The ONE coupled case -- a species produced by >1 step (a target that is also a by-product) -- REFUSES (`ShoppingUnderdeterminedError`) rather than fabricate a range, naming `COST-VEC-01`. Still a latent path (no production caller, mirroring `dag_ceiling`); CLI/compile wiring, per-requirement commodity classification and purchased supplements remain | Wire into a DAG-mode caller (CLI shopping quantity) + classify each requirement against the commodity registry; the coupled range needs `COST-VEC-01` | Buy 1 mol H2 not 2 when a step liberates it; a fan-out is determined though its ceiling is a range; a coupled DAG refuses rather than fabricate — **DONE** (`tests/test_dag_shopping.py`) | `DAG-FLOW-01`, `STOCK-01` | `IN_PROGRESS` |
 
 **Uptake record — StockMaterial first brick** (advances `STOCK-01` TODO -> IN_PROGRESS):
 
@@ -1949,6 +1949,67 @@ residual limitations:
      the shared-response work under the section 18 migration-alias discipline.
   2. THERMO-UNC-01 was assessed and left TODO in this batch (see its row): real uncertainties need sourced
      CODATA/JANAF values, and a hollow null-field add would churn every ThermoRef digest for no honesty gain.
+```
+
+**Uptake record — SHOP-LEAF-02: the quantity-aware shopping requirement over a DAG (the inverse ceiling)**
+(advances `SHOP-LEAF-02` -- the DAG quantity+by-product-credit dimensions land; CLI/commodity wiring remains, so
+the row stays `IN_PROGRESS`; the first consumer DAG-FLOW-01's real accounting unblocked):
+
+```text
+ID:                  SHOP-LEAF-02 (dag_shopping_requirement -- given a target amount, the exact conserved
+                     external-purchase requirement; the INVERSE of dag_ceiling)
+files:               smartchem/experiment/dag.py, tests/test_dag_shopping.py (NEW),
+                     UPTAKE_MANIFEST_v0.5.0a1.md, README.md
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              3383 passed, 14 skipped, 1 xfailed (baseline 3361; +22, all tests/test_dag_shopping.py).
+                     ruff clean on changed files (smartchem/experiment/dag.py, tests/test_dag_shopping.py).
+the question:        DAG-FLOW-01 answered the FORWARD ceiling ("given this feed, what is the most final target I
+                     can make?"), whose fan-out allocation is a RANGE. A chemist shops with the INVERSE ("to make
+                     THIS much final target, how much of each external input must I buy?"). The non-obvious result:
+                     the inverse is UNIQUELY DETERMINED for an admissible DAG even where the forward ceiling is a
+                     range -- the distinct-targets invariant gives every intermediate exactly one producer, so
+                     producing a fixed amount forces every reaction extent (demand propagates back uniquely), and
+                     the per-species net is exact. No allocation policy, no LP-vertex ambiguity: the forward
+                     range collapses because the OUTPUT is fixed, not the input.
+built:               dag_shopping_requirement(dag, final_target_mol) -> DAGShoppingRequirement. (1) Back-propagate
+                     the extents in REVERSE topological order: the sink's extent is fixed by the demanded amount /
+                     its target multiplicity; each consumed intermediate adds to its unique producer's demand.
+                     (2) Net accounting over the forced extents: consumed minus produced per species, so a
+                     by-product is CREDITED against a downstream purchase (buy 1 mol H2, not 2, when the
+                     dehydrogenation liberates one -- the DAG-FLOW-01 butadiene fold, inverted). requirements =
+                     species with net > 0 (buy); co_products = species with net < 0 (surplus outputs), the final
+                     target excluded (it is THE product). Each requirement is a 100%-efficiency LOWER BOUND on
+                     purchase (a real yield needs MORE), Bucket.CONSERVATION, exact Fraction.
+hand-computed proof: butadiene DAG (butene -> butadiene + H2 ; butadiene + 2 H2 -> butane), make 1 butane: the
+                     hydrogenation needs 2 H2, the dehydrogenation liberates 1 -> buy butene 1, H2 1 (NOT 2).
+                     Fan-out fixture (ethanol made once, consumed by two steps), make 1 DIOL: ethanol extent 2
+                     (both consumers) -> buy ethene 2, O2 1, H2 1; the two by-product waters exactly feed the
+                     hydration -> water net 0, neither bought nor surplus. Convergent tree with a 2-ACOH-per-run
+                     branch, make 1 ester: that branch runs at extent 1/2 -> O2 = 1/2 mol (exact rational).
+guards vs a silent-wrong number: (a) every step balance-checked (ceiling._verify_balances -- two agreeing
+                     derivations, not the step's say-so); (b) self-check: the forced extents net EXACTLY the
+                     requested amount of the final target (asserted == -D); (c) the DIFFERENTIAL ORACLE -- the
+                     computed requirement is fed FORWARD through dag_ceiling and must reproduce D exactly, a
+                     derivation sharing no arithmetic with the back-propagation; (d) non-vacuity: a real synthesis
+                     consumes some external input, so an empty requirement is a bug (asserted).
+the refusal:         the inverse is under-determined in exactly ONE case -- a species produced by MORE THAN ONE
+                     step (a step's target that is ALSO a by-product of another step). Then how much to buy
+                     depends on how that shared internal supply is allocated across its sources: a RANGE, not a
+                     number. dag_shopping_requirement raises ShoppingUnderdeterminedError naming the species, the
+                     offending steps and the follow-on (COST-VEC-01) -- it does not fabricate a number, exactly as
+                     dag_ceiling refuses an unbounded target. Proven on a water DAG where water is the target of
+                     one step and the by-product of another (TestCoupledRefuses).
+faithfulness:        the quantities are the conservation-level inverse of the same 100%-efficiency bound
+                     dag_ceiling reports, honestly labelled a LOWER BOUND on purchase (real yield < 100% needs
+                     more; and a late by-product credited against an early consumption assumes recycling -- the
+                     mass-balance floor, consistent with the forward LP's timing-blind global conservation). It
+                     never claims a predicted purchase.
+residual / follow-on: latent, mirroring dag_ceiling -- no production caller yet. The remaining SHOP-LEAF-02
+                     dimensions: wire into a DAG-mode CLI (shopping-quantity output), classify each requirement
+                     against the commodity registry (commodity vs other-leaf, as compile.py already does for the
+                     linear route), model purchased supplements, and -- the coupled range -- COST-VEC-01. STOCK-01
+                     canonical-structure component keying + the satisfies-gate wiring is the adjacent material-
+                     reality brick.
 ```
 
 ## 5. P2 strengthening backlog

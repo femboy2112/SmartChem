@@ -207,23 +207,27 @@ def assembly_conditions(capped, *, losses: tuple = ()) -> ConditionEnvelope:
     ``losses`` (EVD-KEY-01): a section-5.3 BLOCKER for ``"conditions"`` refuses a sourced envelope (section 5.3),
     even when the structure resolves and the selector matches -- the dropped feature (stereo/isotope/charge) is one
     the sourced bench conditions may depend on.
+
+    Expected-absence contract (ERR-EVIDENCE-01): the ONLY reasons this returns ``unknown()`` are the explicit,
+    anticipated ones below -- a section-5.3 ``"conditions"`` blocker, no seed record for the reaction signature, a
+    record that carries no ASSEMBLY direction, an unresolved reactant/precursor structure, or a selector-name
+    mismatch.  It does NOT catch exceptions.  An unexpected fault in signature computation or structure resolution
+    is an INTERNAL DEFECT, not the scientific statement "conditions unknown"; it propagates to the
+    ``ERROR_INTERNAL`` / exit-70 boundary rather than being laundered into an epistemic UNKNOWN.
     """
     from .identity import is_blocked
     from .structure import resolve_structure
 
     if is_blocked(tuple(losses), "conditions"):
         return ConditionEnvelope.unknown()
-    try:
-        record = SEED_CONDITIONS.get(_reaction_signature(capped.forget()))
-        if record is None or ReactionDirection.ASSEMBLY not in record.directions:
-            return ConditionEnvelope.unknown()
-        target = resolve_structure(capped.reactant)
-        precursors = tuple(resolve_structure(m) for m in capped.products)
-        if target is None or any(p is None for p in precursors):
-            return ConditionEnvelope.unknown()
-        names = tuple(sorted(p.name for p in precursors if p is not None))
-        if target.name != record.assembly_target_name or names != record.assembly_precursor_names:
-            return ConditionEnvelope.unknown()
-        return record.envelope
-    except Exception:  # lookup failure is epistemic UNKNOWN, never a route-generation failure
+    record = SEED_CONDITIONS.get(_reaction_signature(capped.forget()))
+    if record is None or ReactionDirection.ASSEMBLY not in record.directions:
         return ConditionEnvelope.unknown()
+    target = resolve_structure(capped.reactant)
+    precursors = tuple(resolve_structure(m) for m in capped.products)
+    if target is None or any(p is None for p in precursors):
+        return ConditionEnvelope.unknown()
+    names = tuple(sorted(p.name for p in precursors if p is not None))
+    if target.name != record.assembly_target_name or names != record.assembly_precursor_names:
+        return ConditionEnvelope.unknown()
+    return record.envelope

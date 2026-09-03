@@ -415,14 +415,18 @@ def _ident(m: Molecule) -> str:
 
 
 def _conditions_for(capped) -> ConditionEnvelope:
-    """The sourced conditions for a capped cleavage (via its forgetful mediated edge), or unknown()."""
-    try:
-        # The capped edge is a DECOMPOSITION but this module reads it backward as an ASSEMBLY.  Conditions
-        # are directional experimental evidence, not algebraic decoration: hydrolysis conditions cannot be
-        # copied onto the reverse condensation merely because the balance is reversible.
-        return assembly_conditions(capped)
-    except Exception:  # noqa: BLE001 -- a conditions lookup miss must never break route generation
-        return ConditionEnvelope.unknown()
+    """The sourced conditions for a capped cleavage (via its forgetful mediated edge), or unknown().
+
+    ERR-EVIDENCE-01: :func:`assembly_conditions` returns ``unknown()`` for every ANTICIPATED miss -- no sourced
+    record, wrong direction, unresolved structure, selector mismatch, section-5.3 blocker -- as an ordinary
+    return, so a genuine conditions absence never travels as an exception.  An exception escaping it is therefore
+    an INTERNAL DEFECT, not a scientific "unknown": it must propagate to the ``ERROR_INTERNAL`` / exit-70 boundary,
+    never be laundered here into ``ConditionEnvelope.unknown()`` (which would disguise a bug as a bench fact).
+    """
+    # The capped edge is a DECOMPOSITION but this module reads it backward as an ASSEMBLY.  Conditions
+    # are directional experimental evidence, not algebraic decoration: hydrolysis conditions cannot be
+    # copied onto the reverse condensation merely because the balance is reversible.
+    return assembly_conditions(capped)
 
 
 def search_routes(

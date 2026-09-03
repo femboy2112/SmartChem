@@ -1,20 +1,33 @@
-"""DAG-FLOW-01: a fan-out conserves intermediate quantities -- or the quantitative claim is BLOCKED, not fabricated.
+"""DAG-FLOW-01: a fan-out CONSERVES intermediate quantities -- computed exactly, never minted, never fabricated.
 
-A convergent JOIN (a step fed by several intermediates) the ceiling already handles: the scarcer branch limits it.
-The DUAL -- a FAN-OUT, one intermediate consumed by several steps -- it did NOT: :func:`dag_ceiling`'s ``available``
-cache is never decremented, so two consumers each read the FULL amount a single producer made, minting usable copies
-(one mole produced, two consumed, with no deficit).  Per the repo's discipline (block quantitative claims rather than
-fabricate an unmodelled allocation split), a fan-out DAG now raises :class:`DAGFlowError`.
+A convergent JOIN (a step fed by several intermediates) the limiting-reagent propagation already handled: the
+scarcer branch limits it.  The DUAL -- a FAN-OUT, one intermediate consumed by several steps -- it did NOT:
+:func:`dag_ceiling`'s ``available`` cache never decremented, so two consumers each read the FULL amount a single
+producer made, minting usable copies (one mole produced, two consumed, with no deficit).  The first cut BLOCKED
+that (raised); this brick REPLACES the block with the real accounting: the conserved max-yield LINEAR PROGRAM
+(:mod:`smartchem.experiment.exact_lp`), which allocates the shared reactant across its competing consumers to
+maximize the final target.  Choosing the yield-maximizing split invents no allocation policy -- a *ceiling* is by
+definition the maximum over ALL conserved allocations, so the LP optimum IS the honest 100%-efficiency upper bound.
 
-These tests pin: the fan-out is detected (:attr:`SynthesisDAG.fanout_points`, the structural DUAL of the join), a
-valid fan-out STRUCTURE still constructs (only the ceiling is unsound), the ceiling BLOCKS it with an honest message,
-and a join-shaped or linear DAG is unaffected (no false positive, no regression to the existing convergent ceiling).
+These tests pin: the fan-out is detected (:attr:`SynthesisDAG.fanout_points`), a fan-out ceiling is the exact
+conserved number (half of the old mint, hand-computed), the solution never over-consumes any species (an
+independent no-mint/no-deficit re-derivation), the LP EQUALS the propagation on non-fan-out DAGs (the differential
+oracle guarding the simplex), a genuinely unbounded target refuses with :class:`CeilingError` rather than
+fabricating a number, and join-shaped / linear DAGs are unaffected.
 """
+from collections import Counter
 from fractions import Fraction
 
 import pytest
 
-from smartchem.experiment.dag import DAGError, DAGFlowError, SynthesisDAG, dag_ceiling
+from smartchem.experiment import dag as dag_module
+from smartchem.experiment.ceiling import CeilingError
+from smartchem.experiment.dag import (
+    DAGFlow,
+    SynthesisDAG,
+    _max_yield_ceiling,
+    dag_ceiling,
+)
 from smartchem.experiment.step import ExperimentStep
 from smartchem.smiles import parse_smiles
 
@@ -27,6 +40,7 @@ H2 = parse_smiles("[H][H]")
 ETHANE = parse_smiles("CC")       # C2H6
 DIOL = parse_smiles("OCCCCO")     # C4H10O2 -- the joined final target
 ALD = parse_smiles("CC=O")        # acetaldehyde (for the join-only control DAG)
+CH4 = parse_smiles("C")
 
 
 def _producer():        # C2H4 + H2O -> C2H6O           (make ethanol, the shared intermediate)
@@ -59,10 +73,33 @@ def join_only_dag():
     return SynthesisDAG.of(acid, alcohol, esterify)
 
 
+def _conserved(dag, feed, flow):
+    """Independently re-derive per-species consumed vs supplied from the LP extents (no simplex bookkeeping).
+
+    Returns the set of species (by repr) that are OVER-consumed -- a mint/deficit.  Empty means conserved.
+    """
+    cons = Counter()
+    supp = Counter()
+    for step, extent in flow.step_extents:
+        for m in step.reactants:
+            cons[repr(m)] += extent
+        for m in step.products:
+            supp[repr(m)] += extent
+    for m, amount in feed.items():
+        supp[repr(m)] += Fraction(amount)
+    produced = {repr(m) for step, _ in flow.step_extents for m in step.products}
+    fed = {repr(m) for m in feed}
+    violated = set()
+    for species in cons:
+        if species not in produced and species not in fed:
+            continue  # excess leaf: unbounded supply, conservation trivially satisfiable
+        if cons[species] > supp[species]:
+            violated.add(species)
+    return violated
+
+
 class TestFanoutDetection:
     def test_a_fanout_dag_is_a_valid_structure(self):
-        # a fan-out is admissible: an intermediate CAN legitimately feed two steps.  Only the CEILING is unsound,
-        # so construction must NOT refuse it (the block belongs to the quantity computation, not the structure).
         dag = fanout_dag()
         assert repr(dag.final_target) == "C4H10O2"
 
@@ -78,53 +115,47 @@ class TestFanoutDetection:
         assert set(dag.convergence_points).isdisjoint(dag.fanout_points)
 
     def test_a_join_only_dag_has_no_fanout(self):
-        assert join_only_dag().fanout_points == ()                   # a join is not a fork -- no false positive
+        assert join_only_dag().fanout_points == ()
 
     def test_a_linear_dag_has_no_fanout(self):
-        # acid-maker -> join (with ethane as an external leaf): a path, out-degree 1 at every producer
         assert SynthesisDAG.of(_consume_to_acid(), _join()).fanout_points == ()
 
 
-class TestFanoutCeilingIsBlocked:
-    def test_dag_ceiling_blocks_a_fanout_one_produced_two_consumed(self):
-        # the DAG-FLOW-01 acceptance: an intermediate produced ONCE, consumed by TWO steps.  The old accounting
-        # handed each consumer the full produced amount (mint); the quantitative claim is now BLOCKED.
+class TestFanoutCeilingIsComputed:
+    """The DAG-FLOW-01 acceptance: a fan-out ceiling is the EXACT conserved max-yield number, not a block."""
+
+    def test_dag_ceiling_computes_the_conserved_fanout_max(self):
+        # 1 mol ethanol is produced and both consumers want it; the LP splits it 1/2 + 1/2, so the conserved
+        # ceiling is 1/2 mol DIOL.  The old never-decrementing cache MINTED it to 1 (each consumer read the full
+        # mole) -- exactly double.  This is the honest half.
         dag = fanout_dag()
-        with pytest.raises(DAGFlowError):
-            dag_ceiling(dag, {ETHENE: 1, WATER: 2, O2: 1, H2: 1})    # 1 mol ethanol produced; two consumers want it
+        c = dag_ceiling(dag, {ETHENE: 1, WATER: 2, O2: 1, H2: 1})
+        assert c.final_target_mol == Fraction(1, 2)
 
-    def test_the_block_names_the_shared_intermediate_and_cites_the_rule(self):
-        # faithfulness: the refusal must say WHY (the named fanned-out intermediate) and cite the rule, so it can
-        # never be mistaken for a generic failure or silently swallowed.
-        dag = fanout_dag()
-        with pytest.raises(DAGFlowError) as exc:
-            dag_ceiling(dag, {ETHENE: 1, WATER: 2, O2: 1, H2: 1})
-        msg = str(exc.value)
-        assert "C2H6O" in msg                                        # the fanned-out intermediate is named
-        assert "DAG-FLOW-01" in msg and "BLOCKED" in msg
+    def test_a_fanout_ceiling_carries_the_lp_flow_not_a_per_step_chain(self):
+        # a single per-step 'limiting_reactant' would be a FALSE local claim about the coupled optimum, so per_step
+        # is empty and the honest solution rides `flow` (the LP extents + the fed reactants fully consumed).
+        c = dag_ceiling(fanout_dag(), {ETHENE: 1, WATER: 2, O2: 1, H2: 1})
+        assert isinstance(c.flow, DAGFlow)
+        assert c.per_step == ()
+        assert len(c.flow.step_extents) == 4
+        assert [repr(m) for m in c.flow.binding_reagents] == ["C2H4"]   # ethylene caps ethanol, which caps the join
+        assert c.quantity.bucket.name == "CONSERVATION"
+        assert "conserved max-yield LP" in c.explain()
 
-    def test_dagflowerror_is_a_dagerror(self):
-        # an existing `except DAGError` still catches it -- the block is a typed DAG error, not an escaping surprise.
-        with pytest.raises(DAGError):
-            dag_ceiling(fanout_dag(), {ETHENE: 1, WATER: 2, O2: 1, H2: 1})
+    def test_the_fanout_solution_conserves_every_species(self):
+        # independent of the simplex's own bookkeeping: no species is consumed beyond what is fed + produced.
+        feed = {ETHENE: 1, WATER: 2, O2: 1, H2: 1}
+        c = dag_ceiling(fanout_dag(), feed)
+        assert _conserved(fanout_dag(), feed, c.flow) == set()
 
-
-class TestNoFalsePositiveOnConservingShapes:
-    def test_a_join_dag_still_ceilings_unchanged(self):
-        # the existing convergent ceiling (the scarcer branch limits the join) is untouched: a JOIN is not a fan-out.
-        dag = join_only_dag()
-        assert dag.fanout_points == ()
-        c = dag_ceiling(dag, {ALD: 2, O2: 1, ETHENE: 1, WATER: 1})
-        assert c.final_target_mol == Fraction(1)                     # branch B (1 ethanol) limits the join
-
-    def test_a_linear_dag_still_ceilings(self):
-        dag = SynthesisDAG.of(_consume_to_acid(), _join())
-        assert dag.fanout_points == ()
-        c = dag_ceiling(dag, {ETOH: 1, O2: 1, ETHANE: 1})
-        assert c.final_target_mol == Fraction(1)                     # a plain path: 1 acid -> 1 diol
+    def test_starving_the_shared_leaf_scales_the_fanout_ceiling(self):
+        # halve the ethylene -> only 1/2 mol ethanol -> the two consumers split 1/4 each -> 1/4 mol DIOL.
+        c = dag_ceiling(fanout_dag(), {ETHENE: Fraction(1, 2), WATER: 2, O2: 1, H2: 1})
+        assert c.final_target_mol == Fraction(1, 4)
 
 
-CH4 = parse_smiles("C")
+CH4b = CH4
 
 
 def _shared_leaf_linear_dag():
@@ -134,27 +165,30 @@ def _shared_leaf_linear_dag():
     return SynthesisDAG.of(s1, s2)
 
 
-class TestSharedBoundedLeafIsBlocked:
-    """Red-team fold (workflow wr3itesl1): the block is NOT intermediate-only. A finite LEAF reagent shared across
-    steps mints by the SAME never-decremented `available` cache, yet `fanout_points` (produced-intermediate edges
-    only) is blind to it. dag_ceiling's block is broadened to any BOUNDED reactant consumed by >=2 steps."""
+class TestSharedBoundedLeafIsComputed:
+    """A finite LEAF shared across steps mints by the same never-decremented cache but `fanout_points` (produced
+    intermediates only) is blind to it; `dag_ceiling`'s coupling detection is feed-aware and routes it to the LP."""
 
-    def test_a_bounded_leaf_shared_across_steps_is_blocked(self):
+    def test_a_bounded_leaf_shared_across_steps_is_computed_conserved(self):
         dag = _shared_leaf_linear_dag()
         assert dag.fanout_points == ()                               # structural detector is blind to a leaf mint
-        with pytest.raises(DAGFlowError) as exc:
-            dag_ceiling(dag, {ETHENE: 10, H2: 1})                    # H2 fed at 1 mol, consumed by two steps -> mint
-        msg = str(exc.value)
-        assert "H2" in msg and "BLOCKED" in msg and "DAG-FLOW-01" in msg
+        # H2 fed at 1 mol, consumed by both steps: the LP splits it (e1=e2=1/2), 2*CH4 per s2 -> 1 mol CH4.
+        # The mint would have given 2 (each step read the full mole of H2).
+        c = dag_ceiling(dag, {ETHENE: 10, H2: 1})
+        assert c.final_target_mol == Fraction(1)
+        assert isinstance(c.flow, DAGFlow)
+        assert [repr(m) for m in c.flow.binding_reagents] == ["H2"]
+        assert _conserved(dag, {ETHENE: 10, H2: 1}, c.flow) == set()
 
-    def test_the_same_leaf_in_excess_is_not_blocked(self):
-        # a leaf ABSENT from feed is charged in excess (unbounded): it cannot mint, so the ceiling is sound + returned.
+    def test_the_same_leaf_in_excess_still_ceilings_by_propagation(self):
+        # a leaf ABSENT from feed is charged in excess (unbounded): it cannot mint, so it is not coupling and the
+        # plain propagation ceilings it -- unchanged at 20 (10 C2H4 -> 10 C2H6 -> 20 CH4).
         dag = _shared_leaf_linear_dag()
-        c = dag_ceiling(dag, {ETHENE: 10})                           # H2 unbounded -> limited only by ethylene
-        assert c.final_target_mol == Fraction(20)                    # 10 C2H4 -> 10 C2H6 -> 20 CH4
+        c = dag_ceiling(dag, {ETHENE: 10})
+        assert c.final_target_mol == Fraction(20)
+        assert c.flow is None                                        # non-coupled -> the per-step propagation path
 
-    def test_a_bounded_leaf_shared_across_convergent_branches_is_blocked(self):
-        # the convergent shape the red-team hit: two branches hydrogenate with the SAME bounded H2 leaf, then join.
+    def test_a_bounded_leaf_shared_across_convergent_branches_is_computed(self):
         acro = parse_smiles("C=CC=O")          # acrolein  C3H4O
         allyloh = parse_smiles("C=CCO")        # allyl alcohol C3H6O
         ether = parse_smiles("CCOCC=C")        # ethyl allyl ether C5H10O
@@ -163,5 +197,67 @@ class TestSharedBoundedLeafIsBlocked:
         s = ExperimentStep.assembling(ether, (ETOH, allyloh), (ether, WATER))
         dag = SynthesisDAG.of(a, b, s)
         assert dag.fanout_points == ()                               # H2 is a leaf; no INTERMEDIATE fan-out
-        with pytest.raises(DAGFlowError):
-            dag_ceiling(dag, {ALD: 1, acro: 1, H2: 1})               # H2 shared by both branches -> block
+        # both branches hydrogenate with the SAME 1 mol H2 -> split 1/2 each -> 1/2 mol ether.
+        c = dag_ceiling(dag, {ALD: 1, acro: 1, H2: 1})
+        assert c.final_target_mol == Fraction(1, 2)
+        assert _conserved(dag, {ALD: 1, acro: 1, H2: 1}, c.flow) == set()
+
+
+class TestDifferentialOracleAgainstPropagation:
+    """The strongest cheap guard against a silently-wrong simplex: on a DAG with NO shared reactant the LP optimum
+    EQUALS the greedy topological propagation by construction (nothing competes), so forcing the LP path on a
+    non-fan-out fixture must reproduce dag_ceiling's propagation number exactly."""
+
+    def test_lp_equals_propagation_on_the_join_only_dag(self):
+        dag = join_only_dag()
+        feed = {ALD: 2, O2: 1, ETHENE: 1, WATER: 1}
+        propagated = dag_ceiling(dag, feed)                         # takes the propagation path (no sharing)
+        assert propagated.flow is None
+        forced_lp = _max_yield_ceiling(dag, feed)                   # force the LP on the same non-fan-out DAG
+        assert forced_lp.final_target_mol == propagated.final_target_mol
+
+    def test_lp_equals_propagation_on_a_linear_chain(self):
+        dag = SynthesisDAG.of(_consume_to_acid(), _join())
+        feed = {ETOH: 1, O2: 1, ETHANE: 1}
+        propagated = dag_ceiling(dag, feed)
+        assert propagated.flow is None
+        assert _max_yield_ceiling(dag, feed).final_target_mol == propagated.final_target_mol
+
+
+class TestUnboundedTargetRefuses:
+    def test_a_target_bounded_by_no_finite_feed_raises_ceilingerror(self):
+        # empty feed: every leaf is charged in excess, so nothing bounds DIOL -> no finite ceiling, refuse (not a
+        # fabricated number, not a hang, not a crash).
+        with pytest.raises(CeilingError):
+            dag_ceiling(fanout_dag(), {})
+
+    def test_a_partial_feed_leaving_a_sink_path_all_excess_raises(self):
+        # feed only WATER (a co-product side input): no bounded reactant limits the ethanol->...->DIOL path.
+        with pytest.raises(CeilingError):
+            dag_ceiling(fanout_dag(), {WATER: 5})
+
+
+class TestNoFalsePositiveOnConservingShapes:
+    def test_a_join_dag_still_ceilings_unchanged(self):
+        dag = join_only_dag()
+        assert dag.fanout_points == ()
+        c = dag_ceiling(dag, {ALD: 2, O2: 1, ETHENE: 1, WATER: 1})
+        assert c.final_target_mol == Fraction(1)                     # branch B (1 ethanol) limits the join
+        assert c.flow is None
+
+    def test_a_linear_dag_still_ceilings(self):
+        dag = SynthesisDAG.of(_consume_to_acid(), _join())
+        assert dag.fanout_points == ()
+        c = dag_ceiling(dag, {ETOH: 1, O2: 1, ETHANE: 1})
+        assert c.final_target_mol == Fraction(1)                     # a plain path: 1 acid -> 1 diol
+        assert c.flow is None
+
+
+class TestBlockIsRetired:
+    def test_dagflowerror_is_gone(self):
+        # the honest first cut BLOCKED with DAGFlowError; the real accounting COMPUTES, so the exception is retired.
+        assert not hasattr(dag_module, "DAGFlowError")
+
+    def test_dag_ceiling_still_type_guards(self):
+        with pytest.raises(TypeError):
+            dag_ceiling(_producer(), {})                            # a step is not a DAG

@@ -39,8 +39,9 @@ from ..contracts import Digestible, canonical_digest
 from ..data.stability import DEFAULT_STABILITY, StabilityTable
 from ..data.thermo import DEFAULT_THERMO, ThermoTable
 from .bucket import Bucket, Quantity
-from .ceiling import StoichiometricCeiling, stoichiometric_ceiling
+from .ceiling import CeilingError, StoichiometricCeiling, _verify_balances, stoichiometric_ceiling
 from .composability import Transition, TransitionStatus, _judge_transition
+from .exact_lp import LPUnbounded, maximize
 from .equilibrium import EquilibriumExtent, StepEquilibrium, equilibrium_of_step
 from .feasibility import FeasibilityDirection, StepFeasibility, feasibility_of_step
 from .step import ExperimentStep
@@ -48,9 +49,9 @@ from .step import ExperimentStep
 __all__ = [
     "DAG_SCHEMA",
     "DAGError",
-    "DAGFlowError",
     "SynthesisDAG",
     "DAGCeiling",
+    "DAGFlow",
     "DAGComposability",
     "DAGVerification",
     "dag_ceiling",
@@ -63,18 +64,6 @@ DAG_SCHEMA = "smartchem.experiment/synthesis-dag-v1"
 
 class DAGError(ValueError):
     """A proposed synthesis DAG is not an admissible convergent structure."""
-
-
-class DAGFlowError(DAGError):
-    """A DAG is a valid STRUCTURE but a conserved quantitative claim cannot be made over it (DAG-FLOW-01).
-
-    Raised by :func:`dag_ceiling` when a BOUNDED reactant is consumed by more than one step -- a produced
-    intermediate that fans out, OR a finite leaf reagent (present in ``feed``) shared across steps.  The
-    limiting-reagent accounting does not decrement such a shared reactant between its consumers, so it would MINT
-    usable copies (charged once, consumed twice, with no deficit).  Blocking the quantitative claim is honest;
-    fabricating an allocation split across the competing consumers is not (section 10 material reality).  A subclass
-    of :class:`DAGError`, so an existing ``except DAGError`` still catches it.
-    """
 
 
 def _ident(m: Molecule) -> str:
@@ -249,11 +238,12 @@ class SynthesisDAG(Digestible):
         """Producer indices whose single produced intermediate is consumed by TWO OR MORE distinct steps (a fan-out).
 
         The structural DUAL of :attr:`convergence_points` (a step's in-degree -- the joins): this is a producer's
-        out-degree -- one intermediate feeding several consumers.  A fan-out is an admissible STRUCTURE, but the
-        limiting-reagent :func:`dag_ceiling` cannot CONSERVE a shared intermediate across it (it would mint copies),
-        so a quantitative ceiling is BLOCKED (DAG-FLOW-01), never fabricated.  NOTE this is the INTERMEDIATE fan-out
-        only (produced targets); ``dag_ceiling``'s block is broader and feed-aware -- it also refuses a finite LEAF
-        reagent shared across steps, which this structural property (built from produced-intermediate edges) cannot see.
+        out-degree -- one intermediate feeding several consumers.  A fan-out is an admissible STRUCTURE whose shared
+        intermediate the naive limiting-reagent propagation cannot conserve (it would mint copies).  :func:`dag_ceiling`
+        detects exactly this coupling (an intermediate here, OR a finite leaf shared across steps -- which this
+        produced-intermediate property cannot see) and solves the conserved max-yield LP for it instead of the naive
+        chain (DAG-FLOW-01), allocating the shared reactant across its competing consumers to maximize the final
+        target -- an exact conserved number, never a minted or fabricated one.
         """
         consumers: dict[int, set[int]] = {}
         for i, j, _m in self.edges:
@@ -283,27 +273,73 @@ class SynthesisDAG(Digestible):
 
 # -- E2 over a DAG: the convergent ceiling --------------------------------------------------------------
 @dataclass(frozen=True)
-class DAGCeiling(Digestible):
-    """The 100%-efficiency ceiling propagated through a convergent DAG in topological order.
+class DAGFlow(Digestible):
+    """The conserved max-yield LP solution over a fan-out DAG (DAG-FLOW-01's real quantity-flow accounting).
 
-    Each step is limited by whichever of its inputs -- an external reagent or an intermediate a branch could
-    make -- is scarcest; a convergent step naturally takes the min over ALL its branches.  The sink's max is
-    the DAG's ceiling.  ``CONSERVATION`` -- an idealised upper bound over the whole convergent synthesis.
+    Used when a shared BOUNDED reactant couples the steps -- a produced intermediate consumed by two or more
+    steps, or a finite leaf reagent shared across them.  There the naive per-step limiting-reagent propagation
+    would MINT (it reads the shared reactant at full amount for every consumer), and a single per-step
+    ``limiting_reactant`` would be a FALSE local claim about a GLOBAL optimum: the true constraint is how a
+    shared reactant is allocated across its competing consumers.  So the ceiling is the maximum of the final
+    target over ALL conserved allocations -- a linear program, solved exactly (:mod:`~smartchem.experiment.exact_lp`).
+    Choosing the yield-maximizing allocation invents no policy: a *ceiling* is by definition the best case over
+    every feasible allocation, so the LP's optimum IS the honest 100%-efficiency upper bound.
+
+    :attr:`step_extents` is each step's reaction EXTENT (mol of that reaction run) at the optimum, in topological
+    order; the mol of a step's target produced is ``extent * (target's product multiplicity)``.
+    :attr:`binding_reagents` names the FED reactants whose charged supply is fully consumed at the optimum -- a
+    factual observation about the yield-maximizing operating point, not a claim that each uniquely bounds the yield.
+    """
+
+    step_extents: tuple[tuple[ExperimentStep, Fraction], ...]  # topological order; mol of reaction run per step
+    binding_reagents: tuple[Molecule, ...]                     # fed reactants fully consumed at the optimum
+
+
+@dataclass(frozen=True)
+class DAGCeiling(Digestible):
+    """The exact 100%-efficiency conserved ceiling of a convergent DAG.
+
+    For a DAG with NO shared bounded reactant, the ceiling is the limiting-reagent maximum propagated in
+    topological order -- each step limited by whichever of its inputs (an external reagent or an intermediate a
+    branch could make) is scarcest, a join taking the min over its branches -- and :attr:`per_step` carries that
+    honest per-step breakdown.  When a shared bounded reactant COUPLES the steps (a fan-out or a shared leaf),
+    the naive propagation would mint, so the ceiling is the conserved max-yield LP instead: :attr:`flow` carries
+    the solution and :attr:`per_step` is empty (a single per-step ``limiting_reactant`` would misrepresent the
+    coupled optimum).  Either way the number is ``CONSERVATION`` -- an exact rational upper bound, never a yield.
     """
 
     dag: SynthesisDAG
-    per_step: tuple[StoichiometricCeiling, ...]  # in topological order
+    per_step: tuple[StoichiometricCeiling, ...]  # topological order; () when a shared reactant coupled the solve
     final_target_mol: Fraction
+    flow: "DAGFlow | None" = None                # the LP solution when a shared bounded reactant coupled the steps
 
     @property
     def quantity(self) -> Quantity:
+        if self.flow is not None:
+            provenance = (
+                "conserved max-yield LP over the fan-out (a shared reactant allocated across its competing "
+                "consumers to maximize the final target); exact rational"
+            )
+        else:
+            provenance = (
+                "limiting-reagent conservation propagated through the DAG; exact rational, per-step kernel-checked"
+            )
         return Quantity(
             "max final target (100% efficiency, convergent)", str(self.final_target_mol), "mol",
-            Bucket.CONSERVATION,
-            "limiting-reagent conservation propagated through the DAG; exact rational, per-step kernel-checked",
+            Bucket.CONSERVATION, provenance,
         )
 
     def explain(self) -> str:
+        if self.flow is not None:
+            binding = ", ".join(repr(m) for m in self.flow.binding_reagents) or "none"
+            lines = [
+                f"convergent ceiling (conserved max-yield LP): {self.final_target_mol} mol "
+                f"{self.dag.final_target!r} at 100% efficiency [CONSERVATION -- exact rational; a shared reactant "
+                f"is split across its consumers to maximize yield; fed reactants fully consumed: {binding}]"
+            ]
+            for step, extent in self.flow.step_extents:
+                lines.append(f"  {step.target!r} step at extent {extent} mol")
+            return "\n".join(lines)
         lines = [
             f"convergent ceiling: {self.final_target_mol} mol {self.dag.final_target!r} at 100% efficiency "
             f"[CONSERVATION -- an idealised upper bound over the whole convergent synthesis]"
@@ -313,56 +349,103 @@ class DAGCeiling(Digestible):
         return "\n".join(lines)
 
 
-def dag_ceiling(dag: SynthesisDAG, feed: Mapping[Molecule, "int | Fraction"]) -> DAGCeiling:
-    """The exact convergent ceiling of ``dag`` for external ``feed`` amounts (mol per leaf input).
-
-    ``feed`` must cover the leaf inputs (:attr:`SynthesisDAG.leaf_inputs`) you want counted; a leaf absent from
-    ``feed`` is treated as charged in excess by the per-step E2 kernel.  Intermediates are supplied
-    automatically as the branches that make them are ceilinged, in topological order.
-
-    A JOIN (a step fed by several intermediates -- :attr:`SynthesisDAG.convergence_points`) is handled correctly:
-    the join takes the min over its branches.  A shared BOUNDED reactant consumed by MORE THAN ONE step is NOT: this
-    accounting reads it at full amount for every consumer (the ``available`` cache never decrements), so it would
-    mint copies (charged once, consumed twice, no deficit).  That bites a produced INTERMEDIATE that fans out
-    (:attr:`SynthesisDAG.fanout_points`) AND a finite LEAF present in ``feed`` shared across steps; either raises
-    :class:`DAGFlowError` -- the quantitative claim is BLOCKED, never fabricated (DAG-FLOW-01).  A leaf ABSENT from
-    ``feed`` is charged in excess, cannot mint, and is fine -- so any ceiling actually RETURNED is genuinely
-    conserved (which is what keeps the ``exact rational`` quantity label honest).
-    """
-    if type(dag) is not SynthesisDAG:
-        raise TypeError("dag must be a SynthesisDAG")
-    # DAG-FLOW-01: refuse a conserved quantitative claim over any BOUNDED reactant consumed by MORE THAN ONE step.
-    # The `available` cache below never decrements, so such a reactant is read at full amount by every consumer,
-    # minting copies.  This bites a produced INTERMEDIATE (always finite) AND a finite LEAF present in `feed`; a leaf
-    # ABSENT from feed is charged in excess (unbounded), cannot mint, and is safe.  (A red-team fold: the first cut
-    # blocked only the INTERMEDIATE fan-out via `fanout_points`, but a shared bounded leaf mints by the identical
-    # never-decremented cache and slipped through -- `_edges`/`fanout_points` see only produced intermediates.)  A
-    # real conserved flow across a shared reactant needs an allocation policy over the competing consumers (the
-    # follow-on); until then the answer is to BLOCK, not fabricate an unmodelled split (section 10 material reality).
-    # Because this now covers EVERY mint, any DAGCeiling that IS returned is genuinely conserved.
+def _shared_bounded_reactants(dag: SynthesisDAG, feed: Mapping[Molecule, "int | Fraction"]) -> set[str]:
+    """The identities of BOUNDED reactants consumed by two or more steps -- the coupling the naive propagation
+    mints on.  A produced INTERMEDIATE (always finite) or a finite LEAF present in ``feed``; a leaf ABSENT from
+    ``feed`` is charged in excess (unbounded) and cannot mint, so it is not coupling."""
     fed = {_ident(m) for m in feed}
     producers = dag._producer_map
     consumers: dict[str, set[int]] = {}
-    reactant_by_key: dict[str, Molecule] = {}
     for j, step in enumerate(dag.steps):
         for r in step.reactants:
-            key = _ident(r)
-            consumers.setdefault(key, set()).add(j)
-            reactant_by_key.setdefault(key, r)
-    minted = sorted(
-        (key for key, js in consumers.items() if len(js) >= 2 and (key in producers or key in fed)),
-        key=lambda k: (repr(reactant_by_key[k]), k),
-    )
-    if minted:
-        shared = ", ".join(repr(reactant_by_key[key]) for key in minted)
-        raise DAGFlowError(
-            f"cannot compute a conserved quantitative ceiling: the bounded reactant(s) {shared} are each consumed "
-            "by two or more steps, and the limiting-reagent accounting does not decrement a shared reactant between "
-            "its consumers -- it would mint usable copies (charged once, consumed twice, with no deficit). A "
-            "conserved quantity flow across a shared reactant (an allocation policy over competing consumers) is the "
-            "DAG-FLOW-01 follow-on; until then the quantitative claim is BLOCKED, not fabricated (section 10 "
-            "material reality)."
+            consumers.setdefault(_ident(r), set()).add(j)
+    return {key for key, js in consumers.items() if len(js) >= 2 and (key in producers or key in fed)}
+
+
+def _max_yield_ceiling(dag: SynthesisDAG, feed: Mapping[Molecule, "int | Fraction"]) -> DAGCeiling:
+    """The conserved max-yield ceiling of a fan-out DAG via the exact LP (DAG-FLOW-01's real accounting).
+
+    Maximize the final target's net production subject to per-species conservation: for every finite-bounded
+    species X (a fed leaf, or a produced intermediate) the total CONSUMED across steps must not exceed the total
+    PRODUCED plus what was fed.  Reaction extents are >= 0.  A species that is only an excess leaf (not produced,
+    not fed) imposes no constraint -- it is unbounded.  The optimum is the exact best-case ceiling: no allocation
+    policy is invented, because a ceiling is by definition the maximum over all conserved allocations.
+    """
+    steps = dag.topological_order()
+    for step in steps:
+        _verify_balances(step)  # two agreeing derivations (ceiling module discipline), not the step's own say-so
+    n = len(steps)
+    cons = [Counter(_ident(m) for m in s.reactants) for s in steps]
+    prod = [Counter(_ident(m) for m in s.products) for s in steps]
+    by_ident: dict[str, Molecule] = {}
+    for step in steps:
+        for m in (*step.reactants, *step.products):
+            by_ident.setdefault(_ident(m), m)
+    produced = set().union(*(set(p) for p in prod)) if prod else set()
+    feed_by: dict[str, Fraction] = {}
+    for m, amount in feed.items():
+        if isinstance(amount, bool) or not isinstance(amount, (int, Fraction)):
+            raise CeilingError("feed amounts must be exact int or Fraction (mol)")
+        if amount < 0:
+            raise CeilingError(f"feed amount for {m!r} must be non-negative")
+        feed_by[_ident(m)] = feed_by.get(_ident(m), Fraction(0)) + Fraction(amount)
+
+    final_key = _ident(dag.final_target)
+    # constrained species: finite-bounded (produced or fed), excluding the sink (its net production is the objective)
+    constrained = [k for k in sorted(by_ident) if k != final_key and (k in produced or k in feed_by)]
+    A = [[cons[s].get(k, 0) - prod[s].get(k, 0) for s in range(n)] for k in constrained]
+    b = [feed_by.get(k, Fraction(0)) for k in constrained]
+    c = [prod[s].get(final_key, 0) - cons[s].get(final_key, 0) for s in range(n)]
+    try:
+        value, extents = maximize(c, A, b)
+    except LPUnbounded:
+        raise CeilingError(
+            "the DAG's final target is not bounded by any feed on a sink-reaching path (every such reactant is "
+            "charged in excess); there is no finite conserved ceiling. Charge a finite amount of a reactant that "
+            "limits the target so the CONSERVATION bound is a real number, not infinity."
         )
+    # Self-check independent of the simplex's own bookkeeping: no species is over-consumed (no mint, no deficit).
+    # This is exactly the conservation the never-decrementing cache used to violate; assert it on the CLAIMED point.
+    for k in constrained:
+        consumed = sum(cons[s].get(k, 0) * extents[s] for s in range(n))
+        supplied = feed_by.get(k, Fraction(0)) + sum(prod[s].get(k, 0) * extents[s] for s in range(n))
+        if consumed > supplied:  # pragma: no cover -- a simplex/formulation bug; loud, never silently minted
+            raise AssertionError(
+                f"max-yield LP violated conservation for {by_ident[k]!r} (consumed {consumed} > supplied "
+                f"{supplied}); refusing to report a minted ceiling"
+            )
+    # binding_reagents: FED reactants whose charged supply is fully consumed at the optimum (a factual observation).
+    binding = tuple(
+        by_ident[k] for k in constrained
+        if k in feed_by and feed_by[k] > 0
+        and sum(cons[s].get(k, 0) * extents[s] for s in range(n)) == feed_by[k]
+    )
+    step_extents = tuple((steps[s], extents[s]) for s in range(n))
+    return DAGCeiling(dag, (), value, DAGFlow(step_extents, binding))
+
+
+def dag_ceiling(dag: SynthesisDAG, feed: Mapping[Molecule, "int | Fraction"]) -> DAGCeiling:
+    """The exact conserved 100%-efficiency ceiling of ``dag`` for external ``feed`` amounts (mol per leaf input).
+
+    ``feed`` covers the leaf inputs (:attr:`SynthesisDAG.leaf_inputs`) you want counted; a leaf absent from
+    ``feed`` is charged in EXCESS (never limiting).  Intermediates are supplied automatically as the branches that
+    make them are computed, in topological order.
+
+    Two regimes, one exact conserved answer (DAG-FLOW-01):
+
+    * **No shared bounded reactant** -- the limiting-reagent maximum propagated through the DAG: each step limited
+      by its scarcest input, a JOIN (:attr:`SynthesisDAG.convergence_points`) taking the min over its branches.
+      Nothing is shared, so nothing mints; :attr:`DAGCeiling.per_step` carries the per-step breakdown.
+    * **A shared bounded reactant couples the steps** (a produced intermediate that fans out, or a finite leaf
+      shared across steps): the naive propagation would MINT it (read at full amount for every consumer), so the
+      ceiling is the conserved max-yield LP instead -- the shared reactant is allocated across its competing
+      consumers to maximize the final target.  :attr:`DAGCeiling.flow` carries that solution.  A DAG whose target
+      is bounded by no feed on any sink-reaching path has no finite ceiling and raises :class:`CeilingError`.
+    """
+    if type(dag) is not SynthesisDAG:
+        raise TypeError("dag must be a SynthesisDAG")
+    if _shared_bounded_reactants(dag, feed):
+        return _max_yield_ceiling(dag, feed)
     available: dict[str, tuple[Molecule, Fraction]] = {}
     for m, amount in feed.items():
         available[_ident(m)] = (m, Fraction(amount))

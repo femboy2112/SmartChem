@@ -82,15 +82,17 @@ def _syn_domain_exit(exc: BaseException) -> int:
 def _synthesize_request(args):
     """Build the ONE shared typed ``CompilationRequest`` (SVC-REQ-01) from ``synthesize``'s argv.
 
-    ``synthesize`` keeps its own route engine below; this request carries the alias-independent identity (so
-    ``synthesize --emit-request`` is comparable to ``recompile --emit-request``) and, load-bearing, the section-9
-    :class:`~smartchem.service.EvidenceProviderSelection` that DRIVES the network autoload -- ``--offline`` selects
-    the offline provider, its absence the network provider.  Reagents and stock are passed as the RAW arg lists
-    (``tuple(args.reagents)`` / ``tuple(args.have)``), so the emitted identity matches what the search receives even
-    when a flag is given empty -- ``synthesize``'s own defaults (depth 2, commodities only under ``--poor-mans``) are
-    threaded explicitly.  The builder VALIDATES the target and reagents, so it MAY raise a domain error (an empty or
-    invalid target, an empty-string reagent); the caller wraps this build in the same 5/2 handler as the search, so
-    such an input is a clean section-14.4 exit 2, never a traceback or a laundered exit-70 (red-team fold).
+    ``synthesize`` renders its human dossier through the SHARED engine (``compile_synthesis``) built from THIS
+    request's resolved params -- it no longer keeps its own route engine (CLI-CAN-02 remainder).  The request carries
+    the alias-independent identity (so ``synthesize --emit-request`` / ``--json`` are comparable to ``recompile``'s)
+    and, load-bearing, the section-9 :class:`~smartchem.service.EvidenceProviderSelection` that DRIVES the stability
+    autoload -- ``--offline`` selects the offline provider, its absence the network provider.  Reagents and stock are
+    passed as the RAW arg lists (``tuple(args.reagents)`` / ``tuple(args.have)``), so the emitted identity matches
+    what the shared engine searches even when a flag is given empty -- ``synthesize``'s own defaults (depth 2,
+    commodities only under ``--poor-mans``) are threaded explicitly.  The builder VALIDATES the target and reagents,
+    so it MAY raise a domain error (an empty or invalid target, an empty-string reagent); the caller wraps this build
+    in the same 5/2 handler as the render, so such an input is a clean section-14.4 exit 2, never a traceback or a
+    laundered exit-70 (red-team fold).
     """
     from ..service import NETWORK_PROVIDER, OFFLINE_PROVIDER, build_recompile_request
     return build_recompile_request(

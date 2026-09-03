@@ -46,7 +46,7 @@ def _view_for(native: SearchStatus) -> Section81ReceiptView:
     cand_complete = native is not SearchStatus.PARTIAL_DEPTH_LIMIT and not result_saturated
     stop = "" if native is SearchStatus.COMPLETE_WITHIN_BOUNDS else std
     return Section81ReceiptView(
-        SEARCH_RECEIPT_VIEW_SCHEMA, "TEST_KIND", native.value, std, "PER_NODE",
+        SEARCH_RECEIPT_VIEW_SCHEMA, "LINEAR_ROUTE", native.value, std, "PER_NODE",
         None, None, None, None, None, None, None, None, None, None, None, (),
         cut_complete, cand_complete, result_saturated, stop,
     )
@@ -690,3 +690,62 @@ class TestSection81ReceiptView:
                 None, None, None, 2, 20000, None, 100, 5, 5, 5, 5, (),
                 True, True, True, "",   # result_limit_saturated=True under a COMPLETE status -> incoherent
             )
+
+
+class TestIRChemRedTeamRegressions:
+    """Red-team fold (workflow wo5cy5gnw, 10 confirmed): tamper-soundness + faithfulness holes in the section-8.1
+    view now closed and pinned.  Real producers were always fine; these are hand-tampered-payload defenses."""
+
+    def _formula_payload(self):
+        return ir_to_payload(decompile_to_ir("H2O", ("H2", "O2", "H2O")))
+
+    def _tamper(self, field, value):
+        p = json.loads(json.dumps(self._formula_payload()))
+        p["search_receipt"][field] = value
+        return p
+
+    def test_a_foreign_target_digest_is_refused(self):
+        # HIGH: the view must describe the SAME search -- a foreign target/policy/grammar rode inside before.
+        for field in ("target_identity_digest", "terminal_policy_digest", "transform_registry_digest"):
+            with pytest.raises(ValueError, match="SAME search|must equal the IR"):
+                ir_from_payload(self._tamper(field, "f" * 64))
+
+    def test_a_bogus_search_kind_is_refused(self):
+        with pytest.raises(ValueError, match="search_kind must be one of"):
+            ir_from_payload(self._tamper("search_kind", "TOTALLY_BOGUS"))
+
+    def test_candidate_limit_must_be_null_on_read(self):
+        with pytest.raises(ValueError, match="candidate_limit must be None"):
+            ir_from_payload(self._tamper("candidate_limit", 7))
+
+    def test_a_formula_view_forbids_a_depth_and_an_emit_count(self):
+        with pytest.raises(ValueError, match="no depth bound"):
+            ir_from_payload(self._tamper("max_depth", 42))
+        with pytest.raises(ValueError, match="no candidates_emitted"):
+            ir_from_payload(self._tamper("candidates_emitted", 3))
+
+    def test_a_formula_view_enforces_transforms_ge_results(self):
+        p = json.loads(json.dumps(self._formula_payload()))
+        p["search_receipt"]["transforms_considered"] = 0
+        p["search_receipt"]["results_returned"] = 5      # 5 distinct edges from 0 transforms: impossible
+        with pytest.raises(ValueError, match="transforms_considered cannot be fewer"):
+            ir_from_payload(p)
+
+    def test_formula_candidate_enumeration_complete_is_false_on_a_search_budget_abort(self):
+        from smartchem.decompiler import example_inventory, search_decomposition
+        r = search_decomposition("C8H9NO2", example_inventory(), budget=5).receipt
+        assert r.status is SearchStatus.PARTIAL_SEARCH_BUDGET
+        assert r.candidate_enumeration_complete is False     # a fatal abort did NOT finish enumeration
+        assert search_decomposition("C8H9NO2", example_inventory()).receipt.candidate_enumeration_complete is True
+
+    def test_an_old_v1alpha3_payload_fails_with_a_clear_schema_error(self):
+        p = json.loads(json.dumps(self._formula_payload()))
+        p["schema_version"] = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha3"
+        p["search_receipt_digest"] = "a" * 64
+        del p["search_receipt"]
+        with pytest.raises(ValueError, match="schema_version must be exactly"):
+            ir_from_payload(p)
+
+    def test_the_view_type_is_exported_at_the_package_level(self):
+        import smartchem
+        assert smartchem.Section81ReceiptView is Section81ReceiptView

@@ -70,6 +70,10 @@ CHEMICAL_IDENTITY_SCHEMA = "smartchem.compilation-ir/chemical-identity-v1alpha1"
 CANDIDATE_SUMMARY_SCHEMA = "smartchem.compilation-ir/candidate-summary-v1alpha1"
 SEARCH_RECEIPT_VIEW_SCHEMA = "smartchem.compilation-ir/search-receipt-view-v1alpha1"
 
+# The closed set of section-8.1 search kinds the three engine receipts emit (routes.py / decompiler.py).  A view
+# is a projection off exactly one of them, so a search_kind outside this set is a tampered payload (red-team fold).
+_KNOWN_SEARCH_KINDS = ("LINEAR_ROUTE", "CONVERGENT_DAG", "FORMULA_DECOMPOSITION")
+
 
 class CompilationOperation(str, Enum):
     DECOMPILE = "DECOMPILE"
@@ -243,8 +247,8 @@ class Section81ReceiptView(Digestible):
     def __post_init__(self) -> None:
         if self.schema_version != SEARCH_RECEIPT_VIEW_SCHEMA:
             raise ValueError(f"schema_version must be exactly {SEARCH_RECEIPT_VIEW_SCHEMA!r}")
-        if not isinstance(self.search_kind, str) or not self.search_kind:
-            raise ValueError("search_kind must be a non-empty string")
+        if self.search_kind not in _KNOWN_SEARCH_KINDS:
+            raise ValueError(f"search_kind must be one of {_KNOWN_SEARCH_KINDS}, not {self.search_kind!r}")
         # native status must be a real SearchStatus, and standard_status a real section-8.2 name that AGREES with
         # it -- for a single-limit member exactly its standard_name; for PARTIAL_MULTIPLE_LIMITS (no single 8.2
         # name) a resolvable primary.  A tampered payload whose standard_status contradicts its status is refused.
@@ -282,6 +286,27 @@ class Section81ReceiptView(Digestible):
         if (self.candidates_emitted is not None and self.results_returned is not None
                 and self.candidates_emitted < self.results_returned):
             raise ValueError("candidates_emitted cannot be fewer than results_returned")
+        # The section-8.1 "honest null" bridging fields are enforced ON READ, not just at projection time (red-team
+        # fold): candidate_limit has no engine source anywhere, so it is null on EVERY receipt; and the formula
+        # descent has no depth bound and measures no separate pre-dedup emit count, so a FORMULA view's max_depth
+        # and candidates_emitted are null.  A tampered payload fabricating any of these is refused.
+        if self.candidate_limit is not None:
+            raise ValueError("candidate_limit must be None -- no search stops on a distinct emitted-candidate cap")
+        if self.search_kind == "FORMULA_DECOMPOSITION":
+            if self.max_depth is not None:
+                raise ValueError("a FORMULA_DECOMPOSITION view has no depth bound; max_depth must be None")
+            if self.candidates_emitted is not None:
+                raise ValueError("a FORMULA_DECOMPOSITION view measures no candidates_emitted; it must be None")
+            # the native formula invariant (transforms_considered >= edges_emitted): a distinct decomposition edge
+            # needs >=1 admissible transform, and edges_emitted is projected to results_returned.  candidates_emitted
+            # is None for a formula view, so the generic candidates_emitted>=results_returned check above is vacuous
+            # here -- re-impose the pre-dedup>=distinct invariant on transforms_considered, exactly as the receipt does.
+            if (self.transforms_considered is not None and self.results_returned is not None
+                    and self.transforms_considered < self.results_returned):
+                raise ValueError(
+                    "a FORMULA_DECOMPOSITION view's transforms_considered cannot be fewer than results_returned "
+                    "(each distinct edge needs >=1 transform application)"
+                )
         for name in ("cut_enumeration_complete", "candidate_enumeration_complete", "result_limit_saturated"):
             if type(getattr(self, name)) is not bool:
                 raise TypeError(f"{name} must be bool")
@@ -391,8 +416,12 @@ class ChemicalCompilationIR(Digestible):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise ValueError(f"{name} must be a non-empty string")
         # the section 8.1 receipt view must be a real one, and it must describe the SAME search this IR does: its
-        # native status and section-8.2 status must match the IR's own (a hand-built payload pairing a receipt
-        # view with a contradicting IR status is refused -- the two describe one search or neither is trusted).
+        # native status and section-8.2 status must match the IR's own, AND its non-null identity digests (WHAT
+        # was searched -- target, terminal policy, transform grammar) must equal the IR's own.  A hand-built payload
+        # pairing a receipt view with a contradicting status OR a FOREIGN target/policy/grammar is refused -- the
+        # two describe one search or neither is trusted (red-team fold: the digest agreement was documented but not
+        # enforced, so a foreign-search receipt -- incl. a forged section-8.4 transform_registry_digest -- rode
+        # inside the IR and passed deserialize_ir; now it is enforced, not merely asserted in the comment).
         if type(self.search_receipt) is not Section81ReceiptView:
             raise TypeError("search_receipt must be a Section81ReceiptView")
         if self.search_receipt.status != self.search_status.value:
@@ -405,6 +434,17 @@ class ChemicalCompilationIR(Digestible):
                 f"search_receipt.standard_status {self.search_receipt.standard_status!r} must equal the IR "
                 f"standard_status {self.standard_status!r}"
             )
+        for _view_field, _ir_value in (
+            ("target_identity_digest", self.target.identity_digest),
+            ("terminal_policy_digest", self.terminal_policy_digest),
+            ("transform_registry_digest", self.transform_registry_digest),
+        ):
+            _view_value = getattr(self.search_receipt, _view_field)
+            if _view_value is not None and _view_value != _ir_value:
+                raise ValueError(
+                    f"search_receipt.{_view_field} {_view_value!r} must equal the IR's {_ir_value!r} -- the "
+                    "receipt must describe the SAME search (target/terminal policy/transform grammar) as the IR"
+                )
         if type(self.diagnostics) is not tuple or any(not isinstance(x, str) for x in self.diagnostics):
             raise TypeError("diagnostics must be a tuple of strings")
         # identity_losses are first-class typed section-5.3 records (IR-LOSS-01), carried in canonical
@@ -808,6 +848,14 @@ def ir_from_payload(payload: dict) -> ChemicalCompilationIR:
     """
     if not isinstance(payload, dict):
         raise TypeError("ir_from_payload needs a dict")
+    # check the schema version FIRST, before dereferencing any versioned key: an older payload (e.g. v1alpha3,
+    # which carried search_receipt_digest and NO search_receipt object) must fail with a CLEAR cross-version
+    # message, not an opaque KeyError from a missing key while assembling constructor args (red-team fold).
+    if payload.get("schema_version") != CHEMICAL_COMPILATION_IR_SCHEMA:
+        raise ValueError(
+            f"schema_version must be exactly {CHEMICAL_COMPILATION_IR_SCHEMA!r}, got "
+            f"{payload.get('schema_version')!r}; this reader does not consume an older IR payload shape"
+        )
     t = payload["target"]
     target = ChemicalIdentity(
         t["schema_version"], IdentityLayer(t["layer"]), t["canonical_repr"], t["identity_digest"]

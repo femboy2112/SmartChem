@@ -688,7 +688,11 @@ class FormulaSearchReceipt(Digestible):
 
     # -- section 8.1 completeness flags, the same three the route/DAG receipts expose as properties, so every
     # receipt presents ONE uniform section-8.1 face for a shared projection (IR-CHEM-01's Section81ReceiptView).
-    # The descent has no depth bound; its only stops are the per-node search-node `budget` and the `max_edges` cap.
+    # The descent has no depth bound; its two stops are the per-node search-node `budget` and the `max_edges` cap,
+    # and -- unlike the route/DAG cut budget, which is LOCAL and non-fatal (the walk continues) -- the descent's
+    # `budget` stop is a FATAL immediate return that abandons the frontier.  So BOTH stops truncate the candidate
+    # walk here: candidate_enumeration_complete is true only when the descent COMPLETED (red-team fold -- it used
+    # to read `not result_limit_saturated`, wrongly reporting True on a fatally-aborted PARTIAL_SEARCH_BUDGET run).
     @property
     def cut_enumeration_complete(self) -> bool:
         """Section 8.1: whether the per-node search-node ``budget`` fully enumerated each node (nothing cut)."""
@@ -701,9 +705,9 @@ class FormulaSearchReceipt(Digestible):
 
     @property
     def candidate_enumeration_complete(self) -> bool:
-        """Section 8.1: whether candidate enumeration finished (the descent has no depth bound, so only the
-        ``max_edges`` cap can truncate it)."""
-        return not self.result_limit_saturated
+        """Section 8.1: whether candidate enumeration finished.  BOTH the search-node ``budget`` (a fatal abort)
+        and the ``max_edges`` cap truncate the descent, so this is true only when the search COMPLETED."""
+        return self.complete_within_bounds
 
     def render(self) -> str:
         def _n(v: "int | None") -> str:

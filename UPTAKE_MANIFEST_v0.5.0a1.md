@@ -702,7 +702,7 @@ residual limitations / next probes:
 | `STO-PRIM-01` | Canonical primitive signed stoichiometry drives identity and intensive physics | Primitive coefficient vector now drives feasibility/equilibrium/kinetics and scale-normalized selectivity; not yet every provider/digest/DAG/extent identity | Promote the canonicalizer to the single public reaction/evidence identity | Named scaling regressions pass; add provider/digest/DAG-wide invariance | None | `IN_PROGRESS` |
 | `ROUTE-CONT-01` | Prior target must have positive net consumption in next step | Net-consumption check is implemented; equal spectator no longer connects steps | Preserve when roles/DAG IR are generalized | Equal amount on both sides fails continuity | `STO-PRIM-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `ROUTE-ID-01` | Structural route ID, not displayed equation, deduplicates alternatives | Rendered equation can collapse isomer-distinct routes | Use ordered generator/structure identity or DAG semantic digest | Same formula/different structure alternatives both survive | `ID-LAYER-01` | `TODO` |
-| `DAG-FLOW-01` | Fan-out conserves intermediate quantities | The mint is now BLOCKED (honest first cut, red-team-hardened): `dag_ceiling` raises `DAGFlowError` on any BOUNDED reactant consumed by >=2 steps -- a produced intermediate that fans out (`SynthesisDAG.fanout_points`, the structural DUAL of `convergence_points`) OR a finite leaf shared across steps (feed-aware; the leaf case was a red-team fold `ba79c49`) -- rather than mint copies via its non-decrementing `available` cache; a leaf in excess (absent from feed) cannot mint and still ceilings. Latent path (no production caller yet -- `service.py` declines DAG-mode ranking). The real conserved quantity-flow accounting (an allocation policy over competing consumers) is the follow-on -- inventing a split would be fabrication | Real quantity-flow accounting (allocation policy); unblocks `SHOP-LEAF-02`/`STOCK-01` shopping-quantity + affordability | One mole produced and two consumed yields deficit/blocker — **DONE** (block, incl. shared bounded leaves, `tests/test_dag_flow.py`) | Material quantities | `IN_PROGRESS` |
+| `DAG-FLOW-01` | Fan-out conserves intermediate quantities | The mint is now COMPUTED exactly, not blocked (the `DAGFlowError` block was the honest first cut; this is the real accounting the follow-on promised). `dag_ceiling` detects any BOUNDED reactant consumed by >=2 steps (a produced intermediate that fans out, or a finite leaf shared across steps -- feed-aware) and, instead of the naive never-decrementing propagation (which minted) or the interim block, solves the conserved MAX-YIELD LINEAR PROGRAM (new leaf `smartchem/experiment/exact_lp.py`, an exact-rational Bland's-rule simplex): maximize the final target's net production subject to per-species conservation (consumed <= fed + produced for every finite-bounded species; extents >= 0), allocating the shared reactant across its competing consumers. Choosing the yield-maximizing split invents NO allocation policy -- a ceiling is by definition the max over ALL conserved allocations, so the LP optimum IS the honest 100%-efficiency upper bound (fan-out DIOL = 1/2, exactly half the old 2x mint; shared-leaf CH4 = 1; convergent-shared = 1/2). A non-fan-out DAG keeps the byte-identical topological propagation (the LP EQUALS it -- a differential-oracle test guards the simplex); an unbounded target (no finite feed on a sink-reaching path) raises `CeilingError` rather than fabricate a number; a no-mint/no-deficit re-derivation self-checks every returned solution. `DAGCeiling.flow` (new `DAGFlow`) carries the LP extents + the fed reactants fully consumed; `per_step` stays the honest per-step breakdown for the non-coupled case (a single per-step `limiting_reactant` would misrepresent a coupled optimum). `DAGFlowError` is RETIRED. Still a latent path (no production caller; `service.py` declines DAG-mode ranking) | Wire into a DAG-mode caller: `SHOP-LEAF-02`/`STOCK-01` shopping-quantity + affordability | One mole produced and two consumed yields the exact conserved half (1/2), never a mint or a block; LP == propagation on non-fan-out; unbounded refuses — **DONE** (`tests/test_dag_flow.py`, `tests/test_exact_lp.py`) | Material quantities | `IMPLEMENTED_AND_VERIFIED` |
 
 ### 3.5 Terminal, feed, and material truth
 
@@ -1558,6 +1558,68 @@ red-team:            workflow wr3itesl1, 4 blind bearings (detection soundness; 
 residual / follow-on: the real conserved quantity-flow accounting across a fan-out (an allocation policy) is DAG-FLOW-01's
                      next brick, and it unblocks SHOP-LEAF-02 / STOCK-01 shopping-quantity + affordability; when DAG-mode
                      bench fitting lands (service.py), its caller must catch DAGFlowError and surface the BLOCK.
+```
+
+**Uptake record — DAG-FLOW-01: the real conserved quantity-flow accounting (max-yield LP)** (advances `DAG-FLOW-01`
+`IN_PROGRESS` → `IMPLEMENTED_AND_VERIFIED`; the follow-on the block record promised -- COMPUTE the fan-out exactly,
+retire the block):
+
+```text
+ID:                  DAG-FLOW-01 (fan-out real accounting -- dag_ceiling computes the conserved max-yield ceiling
+                     via an exact-rational LP; DAGFlowError retired)
+files:               smartchem/experiment/exact_lp.py (NEW), smartchem/experiment/dag.py,
+                     smartchem/experiment/__init__.py, tests/test_exact_lp.py (NEW), tests/test_dag_flow.py,
+                     UPTAKE_MANIFEST_v0.5.0a1.md, README.md
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              3320 passed, 14 skipped, 1 xfailed (baseline 3300; +20 net: +13 exact_lp, test_dag_flow
+                     reshaped block->compute + honesty tests). ruff clean on changed files.
+the dissolved wall:  the block record said the real flow needs "an ALLOCATION POLICY over competing consumers
+                     (proportional? priority? sourced?) -- a modeling decision the repo has not made", and blocking
+                     until it was made. That framing was WRONG for a CEILING: a ceiling is the max achievable at 100%
+                     efficiency, i.e. the maximum over ALL conserved allocations. The yield-maximizing allocation is a
+                     CONSEQUENCE of that maximization, not a policy chosen ahead of it. So no policy is invented; the
+                     honest ceiling is a linear program, and the LP's optimum IS the answer.
+built:               (1) smartchem/experiment/exact_lp.py -- a pure leaf (stdlib + Fraction only): `maximize(c, A, b)`
+                     solves `max c.x s.t. Ax <= b, x >= 0` with b >= 0 in EXACT Fraction arithmetic, single-phase
+                     (the all-slack basis starts feasible), Bland's rule (no cycling), raising LPUnbounded on an
+                     unbounded ray. Chosen over scipy.optimize (float) precisely to keep the CONSERVATION bound's
+                     "exact rational" label true -- a float LP would import binary imprecision into a bound whose
+                     whole claim is exactness. (2) dag_ceiling now ROUTES: no shared bounded reactant -> the existing
+                     topological limiting-reagent propagation, BYTE-IDENTICAL (per_step StoichiometricCeilings, the
+                     honest per-step limiting reagent); a shared bounded reactant -> _max_yield_ceiling, which builds
+                     the conservation LP (one <= row per finite-bounded species: consumed - produced <= fed; the sink's
+                     net production is the objective; coefficients are multiset multiplicity, each step cross-checked
+                     via ceiling._verify_balances -- the module's two-agreeing-derivations discipline) and solves it.
+                     (3) DAGCeiling gains `flow: DAGFlow | None`; DAGFlow carries the per-step extents (topological)
+                     and the fed reactants fully consumed at the optimum. per_step is () in the coupled case because a
+                     single limiting_reactant would be a FALSE local claim about a global optimum (a fan-out step's O2
+                     at extent 1/2 is NOT what binds when 1 mol shared ethanol is split two ways). (4) DAGFlowError and
+                     its detection-and-raise block are DELETED -- the fan-out is computed, not refused, so the class
+                     has no remaining trigger.
+hand-computed proof: fan-out fixture (1 mol ethanol -> two consumers -> join) at feed {ETHENE:1,WATER:2,O2:1,H2:1}:
+                     max e3 s.t. e0<=1, e1<=1, e2<=1, e1+e2<=e0 (shared ethanol), e3<=e1, e3<=e2 -> e1=e2=1/2,
+                     e3=1/2. So DIOL = 1/2 mol -- exactly HALF the old mint of 1 (each consumer had read the full
+                     mole). Shared-leaf linear DAG (H2 shared, 2*CH4 per s2) at {ETHENE:10,H2:1}: max 2e2 s.t.
+                     e1+e2<=1 (shared H2), e2<=e1 -> e1=e2=1/2, CH4 = 1 (mint would give 2). The SAME DAG with H2 in
+                     excess ({ETHENE:10}) is not coupled -> propagation -> 20, UNCHANGED (a re-verified cross-check
+                     that the LP formulation does not regress the currently-passing excess case).
+faithfulness:        the LP is the faithful generalization of the "100%-efficiency idealised upper bound" the label
+                     already claims -- it is that upper bound, now correctly conserved across contention instead of
+                     minted. It never claims a predicted yield. Unboundedness is the ONE new honest refusal (a
+                     sink-reaching path fed entirely in excess has no finite ceiling -> CeilingError), not a fabricated
+                     infinity. Every returned solution is re-derived independently (no species over-consumed) before
+                     it is trusted -- exactly the conservation the never-decrementing cache used to violate.
+guards vs a silent-wrong simplex: (a) the exact-rational kernel is unit-pinned in isolation (tests/test_exact_lp.py:
+                     known optima, a textbook anti-cycling degenerate LP, unbounded detection, exactness, shape/sign
+                     contracts); (b) the DIFFERENTIAL ORACLE -- on any non-fan-out DAG the LP EQUALS the greedy
+                     propagation by construction (nothing competes), asserted on the join-only and linear fixtures;
+                     (c) the no-mint/no-deficit re-derivation asserted on every fan-out solution; (d) exact hand-
+                     computed optima pinned for each fan-out fixture (a feasible-but-non-optimal answer would fail).
+residual / follow-on: still a latent path -- dag_ceiling has no production caller (service.py declines DAG-mode
+                     ranking). This unblocks SHOP-LEAF-02 / STOCK-01 (shopping-quantity + affordability over a DAG):
+                     a DAG-mode caller can now read a real conserved final-target ceiling. Non-uniqueness of the
+                     optimal ALLOCATION (several vertices, same value) is expected and harmless -- the ceiling VALUE
+                     is unique; only the reported extents may vary, and Bland's rule makes even those deterministic.
 ```
 
 ## 4. P1 physical, data, and affordability backlog

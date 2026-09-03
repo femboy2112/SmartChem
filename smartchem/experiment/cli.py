@@ -20,9 +20,15 @@ from __future__ import annotations
 import argparse
 import sys
 
+from ..decompiler import IdentityUnsupportedError
 from ..smiles import SmilesError, parse_smiles
 from ..structure_descent import ScissionError
 from .drafter import ConstraintBox
+
+# CLI-EXIT-01 exit codes as LOCAL literals (so main()'s top-level guard reports them even when the escaping bug is a
+# broken import): 70 == internal software error (ERROR_INTERNAL); 141 == the conventional SIGPIPE code.
+_EXIT_INTERNAL = 70
+_EXIT_SIGPIPE = 141
 
 __all__ = ["main"]
 
@@ -65,14 +71,19 @@ def _parse(value: str):
 def _syn_domain_exit(exc: BaseException) -> int:
     """Map a synthesize build/search DOMAIN error to its section-14.4 exit code, concise stderr, never a traceback.
 
-    A chemistry-MODEL-boundary refusal (an unsupported scission) -> 5; an INVALID input (an unparseable identity, an
-    empty/invalid target or reagent, a bad value) -> 2.  This is the SAME 5/2 split the recompile/compile verbs give
-    the identical builder error, so `synthesize ''` is a clean exit 2 like `recompile ''` -- it no longer laundered an
-    INVALID_INPUT into ERROR_INTERNAL/exit-70 by validating the request OUTSIDE the handler (red-team fold).  A
-    non-domain error is NOT caught by the call sites (`except (ValueError, TypeError)`), so a genuine internal bug
-    still escapes to the top-level exit-70 guard -- it is never laundered into a domain 2/5.
+    A chemistry-MODEL-boundary refusal (an unsupported scission or an unperceived identity layer) -> 5; an INVALID
+    input (an unparseable identity, an empty/invalid target or reagent, a bad value) -> 2 -- the SAME 5/2 split the
+    recompile/compile verbs give the identical error (and the same families the main CLI's ``_domain_exit`` uses).
+
+    ERR-EVIDENCE-01: this is called ONLY on genuine DOMAIN exceptions.  The input stages catch ``(ScissionError,
+    ValueError, TypeError)`` because a raised ValueError/TypeError THERE is invalid input; the ENGINE stage
+    (``compile_synthesis``, which runs the conditions/route/DAG search) catches ONLY the model-boundary family
+    ``(ScissionError, IdentityUnsupportedError)``, so an internal fault from the engine (a ValueError/TypeError bug --
+    the exact class ERR-EVIDENCE-01 stopped ``assembly_conditions`` from laundering into a false "conditions unknown")
+    is NOT re-laundered here into a false "invalid chemistry request".  It escapes to ``main()``'s top-level exit-70
+    guard (ERROR_INTERNAL), matching the ``--json`` path's ``run_compilation`` contract.
     """
-    if isinstance(exc, ScissionError):
+    if isinstance(exc, (ScissionError, IdentityUnsupportedError)):
         print(f"synthesize: request refused at the current chemistry-model boundary: {exc}", file=sys.stderr)
         return 5
     print(f"synthesize: unsupported or invalid chemistry request: {exc}", file=sys.stderr)
@@ -156,7 +167,34 @@ def main(argv: list[str] | None = None) -> int:
                    help="run the request through the ONE service (run_compilation) and print the typed response "
                         "JSON with its section-14.4 exit code, instead of the human dossier (SVC-REQ-01)")
     args = p.parse_args(argv)
+    # CLI-EXIT-01 (ERR-EVIDENCE-01 fold): the top-level guarded service, mirroring `python -m smartchem`.  A DOMAIN
+    # error is already caught inside _run and mapped to its section-14.4 code (2 invalid / 5 refused); anything that
+    # ESCAPES -- e.g. an internal fault from the conditions/route/DAG engine now that ERR-EVIDENCE-01 stopped it being
+    # laundered into a false "conditions unknown" -- is a genuine internal bug and exits 70 (ERROR_INTERNAL) with a
+    # concise message, never a raw traceback.  argparse's SystemExit (a BaseException) passes through, so a bad flag
+    # stays exit 2.  The 70/141 are LOCAL literals, robust to a broken .service import.
+    try:
+        return _run(args)
+    except BrokenPipeError:
+        # a downstream `| head`/`| less` close is a NORMAL shell condition, never an internal error -- do not launder
+        # it into exit 70 (mirrors the main CLI's CLI-EXIT-01-F1 red-team fold).
+        import os
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except (OSError, ValueError):
+            pass
+        return _EXIT_SIGPIPE
+    except Exception as exc:  # noqa: BLE001 -- the top-level exit-70 net; a domain error was already mapped in _run
+        print(
+            f"python -m smartchem.experiment: internal error [ERROR_INTERNAL]: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return _EXIT_INTERNAL
 
+
+def _run(args) -> int:
+    """Execute one parsed ``synthesize`` invocation.  DOMAIN errors are mapped to their section-14.4 code (2/5) here;
+    an internal fault escapes to :func:`main`'s top-level exit-70 guard (ERR-EVIDENCE-01)."""
     # CLI-CAN-02 (remainder): synthesize builds the ONE shared typed request (SVC-REQ-01) and no longer runs a second
     # search or a second argv parse.  The build VALIDATES the target/reagents, so it is wrapped in the SAME 5/2 domain
     # handler as the render below: an invalid target/reagent is a clean section-14.4 exit (2/5) like recompile/compile,
@@ -242,7 +280,10 @@ def main(argv: list[str] | None = None) -> int:
             box=ConstraintBox.of_bounds(request.constraints.bounds),
             stability_loader=_load_stability,
         )
-    except (ScissionError, ValueError, TypeError) as exc:
+    except (ScissionError, IdentityUnsupportedError) as exc:
+        # ERR-EVIDENCE-01: the ENGINE stage catches ONLY the genuine model-boundary refusal family (-> exit 5).  A
+        # ValueError/TypeError raised HERE is an internal fault (target/reagents were already validated above), NOT
+        # invalid input, so it PROPAGATES to main()'s exit-70 guard instead of being laundered to a false domain 2/5.
         return _syn_domain_exit(exc)
 
     # The section-11 constraint disclosure through the ONE note authority -- APPLIED with the real fit/excluded/

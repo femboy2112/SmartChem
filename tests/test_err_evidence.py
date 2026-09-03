@@ -146,3 +146,55 @@ class TestEndToEndExit70:
         code, _, err = _cli(["recompile", "paracetamol", "--max-depth", "2"])
         assert code != EXIT_INTERNAL
         assert "ERROR_INTERNAL" not in err
+
+
+class TestSynthesizeEntryPointRedTeamFold:
+    """Red-team fold (confirmed HIGH): the `synthesize` entry point (the SEPARATE experiment CLI) must honor
+    ERR-EVIDENCE-01's exit-70 contract too.  Its human path used to RE-LAUNDER an internal engine fault into a false
+    'invalid chemistry request' (exit 2) via `except (ScissionError, ValueError, TypeError)` around compile_synthesis,
+    and the CLI had NO top-level exit-70 guard at all (the --json path escaped as a raw traceback).  The fold narrows
+    the ENGINE catch to the model-boundary family (ScissionError, IdentityUnsupportedError) and adds the guard.
+    """
+
+    SYN_ARGV = ["smiles:CC(=O)Nc1ccc(O)cc1", "--offline", "--have", "Nc1ccc(O)cc1", "--reagents", "O", "CC(=O)OC(=O)C"]
+
+    def _syn_cli(self, argv):
+        from smartchem.experiment.cli import main as syn_main
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = syn_main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_human_path_maps_an_engine_fault_to_exit_70_not_a_false_domain_verdict(self, monkeypatch):
+        def boom(_capped):
+            raise AssertionError("injected condition-provider fault")
+
+        monkeypatch.setattr("smartchem.experiment.routes.assembly_conditions", boom)
+        code, out, err = self._syn_cli(self.SYN_ARGV)
+        assert code == EXIT_INTERNAL == 70
+        assert "ERROR_INTERNAL" in err
+        # NOT re-laundered into a domain verdict, and NOT a raw traceback:
+        assert "invalid chemistry request" not in err
+        assert "refused at the current chemistry-model boundary" not in err
+        assert "Traceback (most recent call last)" not in err and "Traceback (most recent call last)" not in out
+
+    def test_json_path_maps_an_engine_fault_to_exit_70_without_a_raw_traceback(self, monkeypatch):
+        def boom(_capped):
+            raise AssertionError("injected condition-provider fault")
+
+        monkeypatch.setattr("smartchem.experiment.routes.assembly_conditions", boom)
+        code, out, err = self._syn_cli([*self.SYN_ARGV, "--json"])
+        assert code == EXIT_INTERNAL == 70
+        assert "ERROR_INTERNAL" in err
+        assert "Traceback (most recent call last)" not in err
+
+    def test_a_genuine_domain_refusal_is_not_pushed_into_a_false_70(self):
+        # narrowing the engine catch must NOT push a legitimate domain code into a false internal error:
+        refused, _, err5 = self._syn_cli(["smiles:[Na+]", "--offline", "--reagents", "O"])
+        assert refused == 5 and "ERROR_INTERNAL" not in err5      # charged input: model-boundary refusal stays 5
+        invalid, _, err2 = self._syn_cli(["C8H9NO2xxx", "--offline"])
+        assert invalid == 2 and "ERROR_INTERNAL" not in err2      # unparseable input stays 2
+
+    def test_a_normal_synthesize_is_not_a_false_70(self):
+        code, _, err = self._syn_cli(self.SYN_ARGV)
+        assert code != EXIT_INTERNAL and "ERROR_INTERNAL" not in err

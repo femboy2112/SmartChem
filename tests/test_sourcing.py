@@ -146,6 +146,15 @@ class TestQuantityAxis:
         line = _line(plan_sourcing(req, (wide, _pure(O2, "oxygen", 0.99, 1.0, qty=5))), ETOH)
         assert line.available_mol == Fraction(3, 2) and line.coverage is QuantityCoverage.COVERED
 
+    def test_a_worst_case_fraction_just_below_one_is_not_rounded_up_to_covered(self):
+        # red-team fails-open fold: a 1 mol bottle whose declared worst-case fraction is 0.9999999999 guarantees
+        # only 0.9999999999 mol -- strictly short of a 1 mol requirement.  COVERED must NOT be reported (a prior
+        # limit_denominator rounded the lower bound UP to 1.0 and read a false green).
+        req = _oxidation_requirement(1)
+        just_under = _pure(ETOH, "ethanol", 0.9999999999, 1.0, qty=1)
+        line = _line(plan_sourcing(req, (just_under, _pure(O2, "oxygen", 0.99, 1.0, qty=5))), ETOH)
+        assert line.coverage is QuantityCoverage.UNKNOWN and not line.is_sourced   # straddle -> measure, not COVERED
+
 
 class TestNonVacuous:
     def test_an_empty_inventory_is_never_vacuously_sourced(self):

@@ -50,7 +50,9 @@ class QuantityCoverage(str, Enum):
 
     COVERED = "COVERED"        # the worst-case available mol of the species already meets the requirement
     SHORT = "SHORT"            # even the best-case available mol falls short -> buy more / a bigger bottle
-    UNKNOWN = "UNKNOWN"        # amount undeclared, unit not mol, or assay unknown -> cannot check coverage
+    UNKNOWN = "UNKNOWN"        # coverage cannot be proven: amount undeclared, unit not mol, worst-case fraction zero,
+    #                            OR a known amount whose interval STRADDLES the requirement (worst-case short, best-
+    #                            case enough) -> a measurement is required, exactly as the assay straddle is
 
 
 @dataclass(frozen=True)
@@ -117,7 +119,8 @@ class SourcingPlan(Digestible):
 def _best_source(
     species: Molecule, required_mol: Fraction, inventory: tuple[StockMaterial, ...], min_assay: float
 ) -> RequirementSourcing:
-    """Judge ``species`` against the inventory: the best material by fitness, then coverage, then worst-case assay."""
+    """Judge ``species`` against the inventory: the best material by fitness, then coverage, then the largest
+    guaranteed amount on hand (``available_mol`` = amount x worst-case fraction)."""
     candidates: list[RequirementSourcing] = []
     for material in inventory:
         interval = material.active_fraction_interval(species)   # STRUCTURE-keyed match (None if absent)
@@ -153,12 +156,15 @@ def _coverage(
         return QuantityCoverage.UNKNOWN, None
     try:
         amount = Fraction(quantity.value)                  # exact: StockQuantity.value is a numeric source string
-    except ValueError:                                     # a non-decimal literal (e.g. scientific "1e3") -- cannot
-        return QuantityCoverage.UNKNOWN, None              # convert exactly, so coverage is honestly UNKNOWN
-    available_lo = amount * Fraction(lo).limit_denominator(10**9)
-    available_hi = amount * Fraction(hi).limit_denominator(10**9)
+    except ValueError:  # pragma: no cover -- defensive: StockQuantity's float() validation makes a value Fraction
+        return QuantityCoverage.UNKNOWN, None              # cannot parse unreachable in practice; coverage is UNKNOWN
     if lo <= 0.0:                                           # an unknown/zero worst-case fraction cannot prove cover
         return QuantityCoverage.UNKNOWN, None
+    # EXACT worst/best-case mol: Fraction(lo)/Fraction(hi) are the exact values of the (float) fraction bounds, so
+    # available_lo NEVER rounds ABOVE the declared worst case -- COVERED stays a PROVEN cover.  (A prior
+    # limit_denominator() rounded the lower bound UP and produced a false COVERED -- the red-team fails-open fold.)
+    available_lo = amount * Fraction(lo)
+    available_hi = amount * Fraction(hi)
     if available_lo >= required_mol:
         return QuantityCoverage.COVERED, available_lo
     if available_hi < required_mol:

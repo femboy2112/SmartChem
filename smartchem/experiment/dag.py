@@ -48,6 +48,7 @@ from .step import ExperimentStep
 __all__ = [
     "DAG_SCHEMA",
     "DAGError",
+    "DAGFlowError",
     "SynthesisDAG",
     "DAGCeiling",
     "DAGComposability",
@@ -62,6 +63,17 @@ DAG_SCHEMA = "smartchem.experiment/synthesis-dag-v1"
 
 class DAGError(ValueError):
     """A proposed synthesis DAG is not an admissible convergent structure."""
+
+
+class DAGFlowError(DAGError):
+    """A DAG is a valid STRUCTURE but a conserved quantitative claim cannot be made over it (DAG-FLOW-01).
+
+    Raised by :func:`dag_ceiling` when an intermediate FANS OUT -- is consumed by more than one step.  The current
+    limiting-reagent accounting does not decrement a shared intermediate between its consumers, so it would MINT
+    usable copies (one mole produced, two consumed, with no deficit).  Blocking the quantitative claim is honest;
+    fabricating an allocation split across the competing consumers is not (section 10 material reality).  A subclass
+    of :class:`DAGError`, so an existing ``except DAGError`` still catches it.
+    """
 
 
 def _ident(m: Molecule) -> str:
@@ -232,6 +244,20 @@ class SynthesisDAG(Digestible):
         return bool(self.convergence_points)
 
     @property
+    def fanout_points(self) -> tuple[int, ...]:
+        """Producer indices whose single produced intermediate is consumed by TWO OR MORE distinct steps (a fan-out).
+
+        The structural DUAL of :attr:`convergence_points` (a step's in-degree -- the joins): this is a producer's
+        out-degree -- one intermediate feeding several consumers.  A fan-out is an admissible STRUCTURE, but the
+        limiting-reagent :func:`dag_ceiling` cannot CONSERVE a shared intermediate across it (it would mint copies),
+        so a quantitative ceiling over a fan-out DAG is BLOCKED (DAG-FLOW-01), never fabricated.
+        """
+        consumers: dict[int, set[int]] = {}
+        for i, j, _m in self.edges:
+            consumers.setdefault(i, set()).add(j)
+        return tuple(sorted(i for i, js in consumers.items() if len(js) >= 2))
+
+    @property
     def leaf_inputs(self) -> tuple[Molecule, ...]:
         """The reactant molecules produced by no step -- the external starting materials and reagents."""
         producers = self._producer_map
@@ -290,9 +316,28 @@ def dag_ceiling(dag: SynthesisDAG, feed: Mapping[Molecule, "int | Fraction"]) ->
     ``feed`` must cover the leaf inputs (:attr:`SynthesisDAG.leaf_inputs`) you want counted; a leaf absent from
     ``feed`` is treated as charged in excess by the per-step E2 kernel.  Intermediates are supplied
     automatically as the branches that make them are ceilinged, in topological order.
+
+    A JOIN (a step fed by several intermediates -- :attr:`SynthesisDAG.convergence_points`) is handled correctly:
+    the join takes the min over its branches.  A FAN-OUT (one intermediate feeding several steps --
+    :attr:`SynthesisDAG.fanout_points`) is NOT: this accounting does not decrement a shared intermediate between its
+    consumers, so it would mint copies (one mole produced, two consumed, no deficit).  A fan-out DAG therefore
+    raises :class:`DAGFlowError` -- the quantitative claim is BLOCKED, never fabricated (DAG-FLOW-01).
     """
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
+    # DAG-FLOW-01: refuse a conserved quantitative claim over a FAN-OUT.  A shared intermediate consumed by two
+    # steps would be read at full amount by BOTH (the `available` cache below never decrements), minting usable
+    # copies.  A real conserved flow needs an allocation policy over the competing consumers (the follow-on); until
+    # then the honest answer is to BLOCK the number, not fabricate an unmodelled split (section 10 material reality).
+    if dag.fanout_points:
+        shared = ", ".join(repr(dag.steps[i].target) for i in dag.fanout_points)
+        raise DAGFlowError(
+            f"cannot compute a conserved quantitative ceiling for a fan-out DAG: the intermediate(s) {shared} are "
+            "each consumed by two or more steps, and the limiting-reagent accounting does not decrement a shared "
+            "intermediate between its consumers -- it would mint usable copies (one mole produced, two consumed, "
+            "with no deficit). A conserved quantity flow across a fan-out is the DAG-FLOW-01 follow-on; until then "
+            "the quantitative claim is BLOCKED, not fabricated (section 10 material reality)."
+        )
     available: dict[str, tuple[Molecule, Fraction]] = {}
     for m, amount in feed.items():
         available[_ident(m)] = (m, Fraction(amount))

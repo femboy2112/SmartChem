@@ -676,6 +676,30 @@ residual / follow-on: the human render shows a digest + the top counters (nodes/
                      fuller human table of the whole receipt is a display follow-on, not a semantics gap (the --json
                      view already carries every field). The response's search_receipt_digest is retained as a
                      convenience derived from the view (a stable section-13.2 surface), not a separate stored fact.
+red-team:            workflow wo5cy5gnw, 4 blind bearings (bridge-correctness; tamper-soundness; faithfulness;
+                     regression) + per-finding refute-by-default verify. The per-type field mapping came back a
+                     PROVEN NEGATIVE (a non-circular type-aware oracle diffed every field over 15 cases + 2 real
+                     searches: zero mismatches). 9 real defects CONFIRMED / 0 refuted, ALL folded before the merge:
+                     (HIGH) the IR cross-checked only the view's status/standard_status, NOT its identity digests, so
+                     a tampered view attributing the search to a FOREIGN target / terminal policy / transform grammar
+                     (incl. a forged section-8.4 transform_registry_digest) rode inside the IR and passed
+                     deserialize_ir -- the comment PROMISED "the same search" but did not ENFORCE it; now the view's
+                     non-null target/terminal/transform digests MUST equal the IR's own (the InverseResult lesson:
+                     enforce the coherence, do not merely document it). (MEDIUM) FormulaSearchReceipt.candidate_
+                     enumeration_complete read `not result_limit_saturated`, so it was True on a PARTIAL_SEARCH_BUDGET
+                     descent -- but the formula budget stop is a FATAL abort (zero candidates), so True over-claimed;
+                     now `complete_within_bounds`, and the false docstring ("only max_edges can truncate") corrected.
+                     (MEDIUM) the view dropped the native formula invariant transforms_considered >= edges_emitted
+                     (the generic candidates_emitted>=results_returned check is vacuous for formula, where
+                     candidates_emitted is None) -- now re-imposed for a FORMULA view. (LOW x4) search_kind was any
+                     non-empty string (now the closed 3-kind set); candidate_limit / formula max_depth / formula
+                     candidates_emitted were "honest nulls" only at projection time, not enforced on read (now
+                     enforced); an old v1alpha3 payload failed with a bare KeyError not the clean schema message (now
+                     schema_version is checked FIRST in ir_from_payload); Section81ReceiptView was in
+                     compilation_ir.__all__ but not re-exported at the package level (now added). All pinned by
+                     TestIRChemRedTeamRegressions. LESSON reaffirmed: the happy path was faithful (the NEGATIVE
+                     proves it) -- every defect was a tamper-soundness / doc-truth gap on the untrusted deserialize
+                     path, exactly where "a tampered payload is refused on read" had to be MADE true, not asserted.
 ```
 
 **Uptake record — the IR speaks section 8.2** (`IR-8.2-01`; the SB4 follow-up: the IR now renders the standard's
@@ -868,7 +892,7 @@ residual limitations:
 |---|---|---|---|---|---|---|
 | `SVC-REQ-01` | One typed request/service powers chemical commands | First brick landed (`67b8ae4`): typed `CompilationRequest`/`CompilationResponse`, per-field `origin` provenance, `run_compilation` + the section 14.4 exit map, canonical serialization. **Alias-collapse landed** (this arc): the `semantic_digest` now keys on the NORMALIZED structure identity, not the raw spelling, so `paracetamol` / `name:paracetamol` / `smiles:CC(=O)Nc1ccc(O)cc1` collapse to ONE search identity AND one result (the ParseReceipt provenance moved to its own `parse_receipt_summary` field, excluded from `result_digest`; the recompile execution is canonicalised so the collapse is real end to end); a feature-bearing (stereo/isotope/charge) input keeps its own identity. `compile`/`recompile` route through the service (CLI-CAN-01); `synthesize`'s uptake is `CLI-CAN-02` (brick 1 EXPRESSED the §11 T/P constraint via a shared `PhysicalBounds` leaf; brick 2 APPLIED it to route grading + populated `ranked_route_dossiers`; the provider-lever brick (`83a078d`) made `synthesize` BUILD the shared request with its `--offline` as the LIVE §9 `EvidenceProviderSelection` that governs the network autoload, + `synthesize --emit-request`; the REMAINDER now landed -- `synthesize` renders its graded dossier through the SAME shared engine `compile` uses (`compile_synthesis`) built from the request, gained `--json`/`--emit-request` as run_compilation's machine views, and its second search/resolver is DELETED (the §9 provider lever drives the shared engine via a `stability_loader` seam; empty-reagents agrees across both views)) | Decompile-side alias-collapse (follow-on); convergent-DAG bench fitting (DAG-mode ranks nothing yet) | Equal flags across aliases → equal digests **DONE**; every spelling of one molecule → equal request/result digest **DONE** (red-teamed: a non-canonical registry name matches its canonical SMILES on `result_digest` under real routes) | `IR-CHEM-01` | `IN_PROGRESS` |
 | `CLI-CAN-01` | Canonical `decompile` and `recompile`; legacy aliases share defaults | Canonical `recompile` verb landed (`df93b8c`), routed through the typed service (`run_compilation`); `decompile` gained `--json`/`--emit-request` through the same service; the legacy `compile` alias now builds the SAME typed request from the ONE shared builder (no divergent defaults) + prints a deprecation notice, so `compile … --emit-request` and `recompile … --emit-request` are byte-identical. `synthesize` now builds the shared request too (its `--max-temp`/`--max-pressure` ride the identity and its `--offline` is the LIVE §9 provider lever, `CLI-CAN-02` `83a078d`); and the CLI-CAN-02 remainder landed -- `synthesize` renders its dossier through the shared `compile_synthesis` engine (from the request) and gained `--json`/`--emit-request` through run_compilation, so its own second search/resolver is deleted | Add canonical verbs; deprecate aliases without duplicate logic | Command matrix gives equal request JSON — DONE (7-row grid, `--emit-request` byte-identical) | `SVC-REQ-01` | `IN_PROGRESS` |
-| `CLI-NAME-01` | Normal names accepted without private formatting | Registered offline names and explicit `name:`/`smiles:` prefixes work in synthesis CLIs; InChI/formula/echo/shared parser are incomplete | Finish unified identity parser and echo receipt | Registered-name and SMILES tests pass; add InChI/formula/ambiguity matrix | `ID-PARSE-01` | `IN_PROGRESS` |
+| `CLI-NAME-01` | Normal names accepted without private formatting | The full section-14.2 explicit-form surface is now exposed on the structure-search verbs. A shared resolver `identity_parse.resolve_cli_target` (the ONE place the positional target, `--input-kind`, and the explicit value-form flags `--name`/`--smiles`/`--inchi`/`--formula`/`--target-file` are reconciled -- so `recompile`/`compile`/`synthesize` cannot drift) maps every form to the ONE parser (ID-PARSE-01). Giving the target more than one way, or none, or a value-form together with `--input-kind`, is a loud INVALID_INPUT (exit 2), never a silent guess; a bare inchi/formula names composition not structure, so a STRUCTURE search refuses it (exit 2, section 5.4) -- resolved, never mis-parsed. `synthesize` gained `--input-kind` (it had none) and the value-form flags, and now ECHOES the section-14.2 ParseReceipt in its human dossier (it silently dropped it before). The stale `--input-kind` help ("inchi/formula not yet resolved offline") is corrected -- the parser resolves them; the refusal is the section-5.4 structure/composition boundary | Optional: value-forms on `decompile` (its `--smiles` is a formula-first boolean -- deferred to avoid the collision) | Registered-name and SMILES resolve; the explicit forms round-trip; ambiguity is a loud exit 2 not a guess; a bare InChI/formula is a section-5.4 exit 2 — **DONE** (`tests/test_cli_name.py`) | `ID-PARSE-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `CLI-EXIT-01` | Stable exit codes separate route/no-route/partial/refusal/invalid/internal | The top-level guarded service is now BUILT: `main()` wraps command dispatch and maps ANY escaping exception to exit 70 (`ERROR_INTERNAL`) with a concise stderr line — never a raw traceback, never Python's default exit 1; argparse's own `SystemExit` (a `BaseException`, not `Exception`) passes through, so `--help` stays 0 and a bad flag stays 2. The full 0/2/3/4/5 table is observed both in-process AND through a real `python -m smartchem` subprocess, plus the controlled internal-error fixture for 70 (`tests/test_cli_exit.py`). Acceptance MET. Central error mapping across every format/path is `CLI-ERR-01`; the decompile human path still returns 0/2/4 by its own status | Central error mapping (`CLI-ERR-01`) | Codes 0/2/3/4/5 observed; controlled internal-error fixture for 70 — **DONE** (`tests/test_cli_exit.py`) | `SRCH-RCT-01`, `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-ERR-01` | Invalid chemistry/numeric input yields domain error without traceback | **One central error-classification authority BUILT.** `cli.py` `_domain_exit` maps a raised domain exception to its section-14.4 code — a chemistry-MODEL-boundary refusal (`ScissionError`/`IdentityUnsupportedError`, checked FIRST since both are `ValueError` subclasses) → exit 5; an INVALID input (`IdentityParseError`/`DecompilerError`/`SmilesError`/`ValueError`/`TypeError`) → exit 2, concise stderr, NEVER a traceback; an exception in NEITHER family is RE-RAISED, so a genuine internal bug reaches `main()`'s exit-70 guard and is never laundered into a domain 2/5. `recompile`/`decompile`/`compile` all route through it (no per-command hand-rolled mapping). A `--input-kind`{auto,name,smiles,inchi,formula,target-file} flag surfaces the section-14.2 kinds; inchi/formula/target-file are a loud INVALID_INPUT (exit 2) on the human AND `--json` path of BOTH `recompile` and `compile` (the `compile`-human `--input-kind`-bypass red-team finding is fixed), never a mis-parse. REMAINING: full ID-PARSE-01 resolution of those kinds; a nonfinite-float constraint matrix awaits the synthesize constraint uptake (CLI-CAN-02) | Full ID-PARSE-01 kinds; nonfinite-float constraints (CLI-CAN-02) | Invalid/refusal probes concise + no traceback; InChI/formula/target-file subprocess matrix exit 2 — **DONE** (`tests/test_cli_err.py`) | `ID-PARSE-01`, constraints | `IN_PROGRESS` |
 | `CLI-VERS-01` | Package installs `smartchem`, supports `--version`, exposes consistent `__version__` | Entry point, package metadata and `__version__` report `0.5.0a1` | Preserve single-source consistency in release packaging | Targeted script/module/version tests pass | None | `IMPLEMENTED_AND_VERIFIED` |
@@ -1694,6 +1718,47 @@ residual / follow-on: still a latent path -- dag_ceiling has no production calle
                      a DAG-mode caller can now read a real conserved final-target ceiling. Non-uniqueness of the
                      optimal ALLOCATION (several vertices, same value) is expected and harmless -- the ceiling VALUE
                      is unique; only the reported extents may vary, and Bland's rule makes even those deterministic.
+```
+
+**Uptake record — CLI-NAME-01: the section-14.2 explicit-form CLI surface** (advances `CLI-NAME-01`
+`IN_PROGRESS` → `IMPLEMENTED_AND_VERIFIED`; normal names accepted without private formatting, via the ONE parser):
+
+```text
+ID:                  CLI-NAME-01 (section-14.2 explicit forms --name/--smiles/--inchi/--formula/--target-file on
+                     the structure-search verbs, one shared resolver, receipt echo, honest --input-kind help)
+files:               smartchem/identity_parse.py, smartchem/cli.py, smartchem/experiment/cli.py,
+                     tests/test_cli_name.py, UPTAKE_MANIFEST_v0.5.0a1.md
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              full suite green (see the combined count below). ruff clean on changed files.
+the gap:             ID-PARSE-01's parser already resolves every section-14.2 form, but the CLI SURFACE lagged:
+                     recompile/compile had only a positional + --input-kind; synthesize had NEITHER an --input-kind
+                     nor the explicit forms and it SILENTLY DROPPED the ParseReceipt from its human dossier; and the
+                     --input-kind help still claimed inchi/formula were "not yet resolved offline" -- a STALE LIE
+                     (they resolve; a bare inchi/formula is refused because it names composition, not structure).
+built:               (1) identity_parse.EXPLICIT_CLI_FORMS + resolve_cli_target -- the ONE resolver reconciling the
+                     positional target, --input-kind, and the five value-form flags, shared by every chemical CLI so
+                     they cannot drift. Exactly ONE source of the target is required: more than one, or none, or a
+                     value-form combined with --input-kind (the form IS the kind), is a loud IdentityParseError ->
+                     exit 2 (a concise domain error, never a silent guess). (2) recompile/compile: the positional is
+                     now optional (nargs='?'), the five --name/--smiles/--inchi/--formula/--target-file flags added,
+                     the request built from resolve_cli_target; the stale --input-kind help corrected to the true
+                     section-5.4 structure/composition boundary. (3) synthesize: gained --input-kind + the value
+                     forms (same resolver), and now resolves the target ONCE via resolve_identity and ECHOES the
+                     section-14.2 ParseReceipt ("IDENTITY RESOLVED [...] via ...") in its human dossier -- the same
+                     provenance recompile/decompile surface.
+faithfulness:        a bare inchi/formula for a structure search is a section-5.4 exit 2 (resolved to a FORMULA-layer
+                     identity that a structure search cannot use), NOT a fabricated structure and NOT a false
+                     "unimplemented" -- the help now says so. An unregistered --name is a loud exit 2, never a guess.
+                     One resolver = recompile/compile/synthesize cannot disagree on how a name is read.
+scoped honestly:     decompile keeps its formula-first --smiles BOOLEAN idiom (a value-form --smiles there would
+                     collide); the value forms live on the structure-search verbs where "a normal name" is the point.
+verified:            tests/test_cli_name.py -- the resolver unit matrix (positional/kind/each form/none/two/positional+
+                     form/form+kind); recompile + synthesize value-form round-trips (name/smiles resolve and search;
+                     inchi/formula -> section-5.4 exit 2; ambiguity -> exit 2); synthesize --input-kind parity; the
+                     synthesize receipt echo; and the --input-kind help no longer carries the stale "not yet resolved
+                     offline" claim (iron-rule doc-truth).
+residual / follow-on: value forms on decompile (deferred -- the --smiles-boolean collision); a fuller human render of
+                     the receipt is a display nicety, not a gap (the summary line + --json already carry it).
 ```
 
 ## 4. P1 physical, data, and affordability backlog

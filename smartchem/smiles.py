@@ -38,8 +38,13 @@ Aromatic identity is resonance-canonical (R2): a fused benzenoid such as naphtha
 non-isomorphic Kekulé structures, so picking one arbitrarily would give one molecule several
 identities (and several decomposition menus). Instead the parser builds the canonical form of EVERY
 Kekulé structure and returns the minimal one -- a canonical representative of the resonance orbit --
-so any two Kekulé drawings of the same molecule collapse to ONE identity. Symmetric rings (benzene,
-mono-/para-substituted) already had isomorphic Kekulé forms, so their identity is unchanged. The
+so any two Kekulé drawings of the same molecule collapse to ONE identity. This holds whether the ring
+is drawn AROMATIC (lowercase / ``:``) or as an EXPLICIT Kekulé (uppercase atoms, ``=`` bonds): an
+explicit drawing is resonance-canonicalised the same way, over every multiple-bond placement its fixed
+sigma-skeleton and per-atom pi-demand allow (:func:`_min_constitution_placement`, CANON-KEKULE-01), so
+a fused aromatic never fails to match its own aromatic spelling. A localised double bond is pi-demand-
+pinned (1-butene's stays on C1=C2; a tautomer keeps its H-placement), so only genuine resonance
+collapses. Symmetric rings (benzene, mono-/para-substituted) already had isomorphic Kekulé forms. The
 remaining honest boundary is finer: this fixes the molecule's *identity*, not the aromatic bond model
 -- a scission still cuts the specific single/double bonds of the chosen canonical form, so cutting an
 aromatic ring bond is reported against that representative rather than a delocalised 1.5-order bond (a
@@ -422,6 +427,91 @@ def _fill_hydrogens(atoms: list[_Atom], bonds: list[list[int]]) -> tuple[list[st
     return out_atoms, out_bonds
 
 
+def _min_constitution_placement(
+    atoms: list[_Atom], bonds: list[list[int]], charge: int
+) -> tuple[int, ...]:
+    """The bond-order assignment that minimises the constitution digest over EVERY multiple-bond placement
+    consistent with the fixed sigma-skeleton and per-atom pi-demand -- resonance-canonical for an EXPLICIT
+    (unflagged) structure (CANON-KEKULE-01).
+
+    The current aromatic path (:func:`_aromatic_matchings`) resonance-canonicalises only bonds the INPUT flagged
+    aromatic (lowercase / ``:``); an explicit-Kekulé drawing (uppercase atoms, ``=`` bonds) carries no flags, so a
+    fused aromatic written that way kept its authored double bonds and a molecule could fail to match its OWN
+    aromatic spelling.  This closes it WITHOUT aromaticity perception: each atom's pi-demand ``need[a] =
+    sum(order-1)`` is fixed by the drawn structure (so the input's H-counts pin a LOCALISED double -- 1-butene's
+    is forced onto C1=C2, and a tautomer keeps its distinct H-placement), and every placement satisfying that
+    demand exactly is a resonance form of the SAME constitutional molecule.  Minimising the constitution digest
+    over them is the canonical representative -- the exact R2 move, generalised from aromatic-flagged bonds to the
+    pi-system.  A molecule with a UNIQUE placement (every localised/pinned double, i.e. most molecules) returns its
+    drawn orders unchanged, so this is byte-identical for everything except a genuinely resonance-degenerate
+    unflagged system.  Refuses (never truncates to a non-deterministic minimum) if the placements exceed the bound.
+    """
+    n = len(atoms)
+    need = [0] * n
+    for a, b, o in bonds:
+        need[a] += o - 1
+        need[b] += o - 1
+    incident: list[list[int]] = [[] for _ in range(n)]
+    for bi, (a, b, _o) in enumerate(bonds):
+        incident[a].append(bi)
+        incident[b].append(bi)
+    remaining = need[:]
+    extra = [0] * len(bonds)
+    best: list = [None, None]  # [orders_tuple, digest_key]
+    count = [0]
+
+    def _other(bi: int, a: int) -> int:
+        x, y, _o = bonds[bi]
+        return y if x == a else x
+
+    def _consider() -> None:
+        count[0] += 1
+        if count[0] > _MAX_KEKULE_MATCHINGS:
+            raise SmilesError(
+                f"structure has more than {_MAX_KEKULE_MATCHINGS} resonance placements; a resonance-canonical "
+                "identity for it is out of scope (give an aromatic-lowercase SMILES for the aromatic ring)"
+            )
+        for k in range(len(bonds)):
+            bonds[k][2] = 1 + extra[k]
+        out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
+        key = canonical_digest(Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical())
+        if best[1] is None or key < best[1]:
+            best[0], best[1] = tuple(1 + e for e in extra), key
+
+    def _rec(a: int) -> None:
+        while a < n and remaining[a] == 0:
+            a += 1
+        if a == n:
+            _consider()
+            return
+        forward = [bi for bi in incident[a] if _other(bi, a) > a]  # bonds to not-yet-fixed atoms
+
+        def _dist(idx: int, left: int) -> None:
+            if left == 0:
+                _rec(a + 1)
+                return
+            if idx >= len(forward):
+                return  # atom a's demand cannot be met from here -- a dead branch, not a placement
+            bi = forward[idx]
+            b = _other(bi, a)
+            cap = min(left, remaining[b], 2 - extra[bi])  # a bond order never exceeds 3 (extra <= 2)
+            for add in range(cap, -1, -1):
+                extra[bi] += add
+                remaining[a] -= add
+                remaining[b] -= add
+                _dist(idx + 1, left - add)
+                extra[bi] -= add
+                remaining[a] += add
+                remaining[b] += add
+
+        _dist(0, remaining[a])
+
+    _rec(0)
+    if best[0] is None:  # pragma: no cover -- the drawn structure is always a valid placement
+        raise SmilesError("could not assign a valid multiple-bond placement to the structure")
+    return best[0]
+
+
 def _build_molecule(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> Molecule:
     """Kekulise (resonance-canonical, R2) and materialise the canonical constitution-only Molecule.
 
@@ -430,7 +520,10 @@ def _build_molecule(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> 
     """
     arom_bonds, matchings = _aromatic_matchings(atoms, bonds)
 
-    if not matchings:                                  # no aromatic system: a single deterministic form
+    if not matchings:                                  # no aromatic-FLAGGED system: resonance-canonicalise the
+        orders = _min_constitution_placement(atoms, bonds, charge)  # pi placement so an explicit-Kekulé fused
+        for k in range(len(bonds)):                    # aromatic collapses to its aromatic spelling (CANON-KEKULE-01)
+            bonds[k][2] = orders[k]
         out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
         return Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical()
 
@@ -491,6 +584,12 @@ def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) 
         return canonical_digest((symbols, edges, charge))
 
     if not matchings:
+        # no aromatic-FLAGGED system: commit to the SAME constitution-minimal pi placement _build_molecule commits
+        # to (CANON-KEKULE-01), so the isotope key can never split an explicit-Kekulé fused aromatic from its
+        # aromatic spelling -- the isotopic key MUST refine constitution.
+        orders = _min_constitution_placement(atoms, work, charge)
+        for k in range(len(work)):
+            work[k][2] = orders[k]
         return colored_key()
     # Resonance-canonical: commit to the EXACT Kekule structure :func:`_build_molecule` commits to -- the matching
     # that minimises the CONSTITUTION digest ``canonical_digest(Molecule.canonical())``, NOT the coloured key.  This

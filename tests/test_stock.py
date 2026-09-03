@@ -329,16 +329,11 @@ class TestCanonicalStructureKeying:
         )
         assert light.satisfies(parse_smiles("[2H]O[2H]"), min_assay=0.99) is FitnessVerdict.SATISFIES
 
-    @pytest.mark.xfail(
-        reason="canonicalizer does not yet normalise explicit-Kekule fused aromatics -- CANON-KEKULE-01",
-        strict=True,
-    )
-    def test_a_material_satisfies_its_own_identity_written_kekule_the_desired_invariant(self):
+    def test_a_material_satisfies_its_own_identity_written_kekule(self):
         from smartchem.smiles import parse_smiles
-        # THE DESIRED INVARIANT (currently BROKEN): a naphthalene material must satisfy a query for naphthalene
-        # written as an explicit Kekule -- it is the SAME molecule.  It does not, because the aromatic and
-        # explicit-Kekule spellings of a FUSED aromatic get different canonical digests (benzene is unaffected).
-        # Pinned strict-xfail so fixing CANON-KEKULE-01 turns this GREEN and forces removing the marker.
+        # CANON-KEKULE-01 (now FIXED): a naphthalene material satisfies a query for naphthalene written as an
+        # explicit Kekule -- it is the SAME molecule, and the canonicalizer now normalises the pi-bond placement so
+        # the aromatic and explicit-Kekule spellings of a fused aromatic share ONE identity.  (Was a strict-xfail.)
         naph = StockMaterial(
             STOCK_MATERIAL_SCHEMA, "naph", "naphthalene",
             (MaterialComponent.of_molecule(parse_smiles("c1ccc2ccccc2c1"), "active", 0.99, 1.0),), Phase.SOLID, "GC",

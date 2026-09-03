@@ -94,11 +94,9 @@ def _structure_key(molecule: Molecule) -> str:
         and ISOTOPE-BLIND (H2O and D2O share a key).  Distinguishing configuration needs real CIP R/S-parity (the
         BLOCKED ID-STEREO layer) and isotopes an isotope-aware digest; this key never claims to do either.  So the
         soundness guarantee is: a same-formula CONSTITUTIONAL isomer never borrows -- NOT every isomer.
-      * RESONANCE non-invariance: ``canonical()`` normalises an AROMATIC spelling and simple rings (benzene) to one
-        Kekule form, but does NOT yet normalise an EXPLICIT-Kekule spelling of a FUSED aromatic (naphthalene,
-        indole, ...): the aromatic and explicit-Kekule spellings of the SAME such molecule get DIFFERENT digests, so
-        a material can fail to satisfy its OWN identity written the other way (a fails-CLOSED false negative).  This
-        is a canonicalizer limitation (tracked ``CANON-KEKULE-01``), pinned as an xfail, NOT faked here.
+    RESONANCE invariance (CANON-KEKULE-01, fixed): ``canonical()`` normalises the pi-bond placement, so the
+    AROMATIC and explicit-KEKULE spellings of the same molecule -- fused aromatics (naphthalene, indole) included --
+    share one digest; a material satisfies its own identity however its rings were drawn.
     """
     try:
         return _STRUCT_PREFIX + canonical_digest(molecule.canonical())
@@ -164,8 +162,8 @@ class MaterialComponent(Digestible):
 
         Robust across the molecule's NAME and, crucially, CONSTITUTIONAL-isomer-proof: a same-formula species of
         different connectivity has a different canonical digest, so it can never borrow this component's assay.  It
-        is NOT proof against stereo/isotope isomers or every SMILES spelling -- see :func:`_structure_key` for the
-        honest scope (stereo/isotope-blind; explicit-Kekule fused aromatics not yet normalised, CANON-KEKULE-01).
+        is NOT proof against stereo/isotope isomers -- see :func:`_structure_key` for the honest scope
+        (stereo/isotope-blind; resonance/Kekule spellings ARE normalised now, CANON-KEKULE-01).
         This is the key a route/shopping Molecule is matched against; prefer it over :meth:`known` wherever the
         structure is in hand.
         """

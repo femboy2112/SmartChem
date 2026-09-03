@@ -2203,6 +2203,24 @@ honesty pins:        DME (C2H6O) does NOT source an ethanol requirement (isomer 
                      mol bottle is QUANTITY_SHORT; a grams bottle is coverage-UNKNOWN (SATISFIES but not sourced); an
                      empty inventory is non-vacuously all-gaps; min_assay governs the verdict (relaxed 0.90 SATISFIES
                      where strict 0.99 is UNKNOWN). tests/test_sourcing.py.
+red-team:            workflow w6hqxlv8v, 4 blind bearings (false-source; coverage-honesty; doc-faithfulness;
+                     crash-edge) + refute-by-default verify. 7 CONFIRMED / 0 refuted, all folded -- but ONE real
+                     root (a HIGH fails-open) plus doc fixes. THE ROOT (#1 HIGH + 3 restatements): `_coverage`
+                     computed the guaranteed worst-case as `amount * Fraction(lo).limit_denominator(10**9)`, and
+                     limit_denominator returns the NEAREST bounded-denominator rational -- which can round the LOWER
+                     bound UP (Fraction(0.9999999999).limit_denominator(1e9) == 1). So a 1 mol bottle declared at
+                     worst-case 0.9999999999 against a 1 mol requirement read COVERED / is_sourced / fully_sourced
+                     though the declared assay guarantees only 0.9999999999 mol -- a FALSE proven cover, falsifying
+                     the "COVERED is a PROVEN cover" docstring. FOLD: drop limit_denominator entirely -- Fraction(lo)
+                     is ALREADY the exact value of the (float) bound, so `available_lo = amount * Fraction(lo)` never
+                     rounds above the declared worst case (regression test at fraction 0.9999999999 -> UNKNOWN, not
+                     COVERED). DOC folds: the UNKNOWN enum doc now lists the reachable STRADDLE case (worst-case
+                     short, best-case enough -> measure); the _best_source tie-break doc says "largest guaranteed
+                     amount" (what the code ranks by), not "worst-case assay"; the _coverage except-ValueError branch
+                     is marked defensive/unreachable (Fraction parses every numeric string StockQuantity's float()
+                     accepts, incl. "1e3" -- the old comment's example was false). LESSON: a "cleanup" rounding on a
+                     bound is a soundness bug when the bound is one-sided -- exactness beats prettiness. Suite 3437 ->
+                     3438 (+1 fails-open regression).
 residual / follow-on: latent like its inputs -- no CLI/service surface yet (surfacing the sourcing plan is the next
                      brick); gram/volume->mol coverage needs a molar-mass/density layer; affordability over the
                      sourced plan needs COST-VEC-01 (sourced prices, still BLOCKED -- do NOT fake). Picks ONE best

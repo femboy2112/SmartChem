@@ -219,23 +219,89 @@ class TestCommodityBridge:
         assert isinstance(mat, StockMaterial)
         assert mat.phase is Phase.UNKNOWN                      # a commodity record does not fix a phase
         assert len(mat.components) == 1
-        (lo, hi) = mat.active_fraction_interval("acetic acid")
+        (lo, hi) = mat.active_fraction_interval(self._lead().molecule)   # STRUCTURE-keyed now (ID-LAYER-01)
         assert (lo, hi) == (0.0, 1.0)                          # unknown fraction -- the honest full interval
         assert "source lead" in mat.provenance.lower() and "section 10.1" in mat.provenance
 
     def test_a_bridged_commodity_never_silently_satisfies_a_pure_requirement(self):
         # THE section 10.1 falsifier: a commodity identity match must NOT stand in for a proven pure material.
         mat = stock_material_from_commodity(self._lead())
-        assert mat.satisfies("acetic acid", min_assay=0.99) is FitnessVerdict.UNKNOWN_ASSAY
-        assert mat.satisfies("acetic acid", min_assay=0.50) is FitnessVerdict.UNKNOWN_ASSAY
+        mol = self._lead().molecule
+        assert mat.satisfies(mol, min_assay=0.99) is FitnessVerdict.UNKNOWN_ASSAY
+        assert mat.satisfies(mol, min_assay=0.50) is FitnessVerdict.UNKNOWN_ASSAY
         # ...and its cost/quantity are honestly UNKNOWN, never invented from the commodity record
         assert mat.quantity is None and mat.cost_observation is None
 
     def test_bridge_works_on_the_real_commodity_registry(self):
         from smartchem.data.reagents import COMMODITY_REAGENTS
         mat = stock_material_from_commodity(COMMODITY_REAGENTS[0])
-        assert mat.satisfies(COMMODITY_REAGENTS[0].name, min_assay=0.99) is FitnessVerdict.UNKNOWN_ASSAY
+        assert mat.satisfies(COMMODITY_REAGENTS[0].molecule, min_assay=0.99) is FitnessVerdict.UNKNOWN_ASSAY
 
     def test_bridge_rejects_a_non_commodity(self):
         with pytest.raises(TypeError, match="CommodityReagent"):
             stock_material_from_commodity("acetic acid")
+
+
+class TestCanonicalStructureKeying:
+    """STOCK-01 canonical keying (ID-LAYER-01): fitness is judged on canonical STRUCTURE, not a fragile name.
+
+    The lesson made LIVE: a component keyed by canonical structure never lets a same-formula isomer borrow its
+    assay (the "keyed by formula fails open" hazard), matches across name synonyms, and is the key a route/shopping
+    Molecule is checked against.  A bare name can never stand in for a proven structure, nor a structure for a name.
+    """
+
+    def _ethanol_bottle(self, lo=0.99, hi=1.0):
+        from smartchem.smiles import parse_smiles
+        return StockMaterial(
+            STOCK_MATERIAL_SCHEMA, "etoh", "anhydrous ethanol",
+            (MaterialComponent.of_molecule(parse_smiles("CCO"), "active", lo, hi),), Phase.LIQUID, "reagent label",
+        )
+
+    def test_a_structure_query_matches_across_a_fresh_molecule_object(self):
+        from smartchem.smiles import parse_smiles
+        # a DIFFERENT Molecule object of the same structure still matches -- structure, not object identity.
+        assert self._ethanol_bottle().satisfies(parse_smiles("CCO"), min_assay=0.99) is FitnessVerdict.SATISFIES
+
+    def test_a_same_formula_isomer_never_borrows_the_assay(self):
+        from smartchem.smiles import parse_smiles
+        # ethanol (CCO) and dimethyl ether (COC) share the formula C2H6O but NOT the structure: no borrow.
+        assert self._ethanol_bottle().satisfies(parse_smiles("COC"), min_assay=0.5) is FitnessVerdict.IDENTITY_ABSENT
+
+    def test_the_isomer_guard_is_live_on_the_bridge_default_data(self):
+        from smartchem.smiles import parse_smiles
+        from smartchem.data.reagents import Availability, CommodityReagent
+        # acetic acid (CC(=O)O) and glycolaldehyde (OCC=O) are both C2H4O2 -- a bridged acetic material must NOT
+        # satisfy a glycolaldehyde requirement.  The guard is on the LIVE bridge path, not just injectable.
+        lead = CommodityReagent("acetic acid", parse_smiles("CC(=O)O"), Availability.GROCERY, "vinegar", "reg")
+        mat = stock_material_from_commodity(lead)
+        assert mat.satisfies(parse_smiles("CC(=O)O"), min_assay=0.99) is FitnessVerdict.UNKNOWN_ASSAY
+        assert mat.satisfies(parse_smiles("OCC=O"), min_assay=0.99) is FitnessVerdict.IDENTITY_ABSENT
+
+    def test_a_name_key_cannot_satisfy_a_structure_query(self):
+        from smartchem.smiles import parse_smiles
+        # a human-declared NAME component cannot prove a structure -- a Molecule query does not match it (sound).
+        named = StockMaterial(
+            STOCK_MATERIAL_SCHEMA, "n", "named bottle",
+            (MaterialComponent.known("ethanol", "active", 0.99, 1.0),), Phase.LIQUID, "label",
+        )
+        assert named.satisfies(parse_smiles("CCO"), min_assay=0.99) is FitnessVerdict.IDENTITY_ABSENT
+
+    def test_a_structure_key_cannot_satisfy_a_name_query(self):
+        # the reverse: a structure-keyed component is not matched by a bare name string (the namespaces are disjoint).
+        assert self._ethanol_bottle().satisfies("ethanol", min_assay=0.99) is FitnessVerdict.IDENTITY_ABSENT
+
+    def test_the_name_constructors_reject_a_reserved_structure_prefix(self):
+        with pytest.raises(ValueError, match="structure-key prefix"):
+            MaterialComponent.known("struct:deadbeef", "active", 0.0, 1.0)
+        with pytest.raises(ValueError, match="structure-key prefix"):
+            MaterialComponent.unknown_fraction("struct-asgiven:x", "active")
+
+    def test_active_fraction_interval_rejects_a_bad_required_type(self):
+        with pytest.raises(TypeError, match="Molecule.*or a str|str.*declared name"):
+            self._ethanol_bottle().active_fraction_interval(42)
+
+    def test_of_molecule_carries_the_full_assay_interval(self):
+        from smartchem.smiles import parse_smiles
+        bottle = self._ethanol_bottle(0.90, 0.95)
+        assert bottle.active_fraction_interval(parse_smiles("CCO")) == pytest.approx((0.90, 0.95))
+        assert bottle.satisfies(parse_smiles("CCO"), min_assay=0.99) is FitnessVerdict.INSUFFICIENT_ASSAY

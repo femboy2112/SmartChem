@@ -19,7 +19,8 @@ import math
 from dataclasses import dataclass, field
 from enum import Enum
 
-from ..contracts import Digestible
+from ..category import Molecule
+from ..contracts import Digestible, canonical_digest
 
 __all__ = [
     "STOCK_MATERIAL_SCHEMA",
@@ -75,6 +76,29 @@ def _norm(identity: str) -> str:
     return identity.strip().casefold()
 
 
+_STRUCT_PREFIX = "struct:"
+_STRUCT_ASGIVEN = "struct-asgiven:"
+
+
+def _structure_key(molecule: Molecule) -> str:
+    """The canonical STRUCTURE digest of ``molecule`` -- keyed on structure, not a fragile name (ID-LAYER-01).
+
+    This is the same canonical identity routes and shopping key on (``canonical_digest(m.canonical())``, with the
+    as-given fallback for a molecule that cannot canonicalise), namespaced with a ``struct:`` prefix so a
+    structure key and a human-declared NAME key can never collide inside ``identity_key``.  Keying on structure is
+    what makes fitness SOUND: a same-formula isomer (ethanol vs dimethyl ether, both C2H6O) has a DIFFERENT
+    structure digest, so one can never borrow the other's assay -- the exact "keyed by formula fails open" hazard.
+    """
+    try:
+        return _STRUCT_PREFIX + canonical_digest(molecule.canonical())
+    except NotImplementedError:
+        return _STRUCT_ASGIVEN + canonical_digest(molecule)
+
+
+def _is_structure_key(identity_key: str) -> bool:
+    return identity_key.startswith(_STRUCT_PREFIX) or identity_key.startswith(_STRUCT_ASGIVEN)
+
+
 @dataclass(frozen=True)
 class MaterialComponent(Digestible):
     """One declared component of a material: its identity key, role, and a fraction INTERVAL ``[lo, hi]``.
@@ -104,12 +128,39 @@ class MaterialComponent(Digestible):
 
     @classmethod
     def known(cls, identity_key: str, role: str, min_fraction: float, max_fraction: float) -> "MaterialComponent":
+        """A component identified by declared NAME -- the weaker human-declaration key (prefer :meth:`of_molecule`).
+
+        A name is what a person can write off a label; it is honest but weaker than a structure (synonyms do not
+        match, and it cannot be checked against a route's Molecule).  For a component whose structure is known,
+        :meth:`of_molecule` keys on the canonical structure instead -- the sound, isomer-proof key.
+        """
+        if isinstance(identity_key, str) and _is_structure_key(identity_key):
+            raise ValueError("a declared NAME key must not use the reserved structure-key prefix")
         return cls(MATERIAL_COMPONENT_SCHEMA, identity_key, role, float(min_fraction), float(max_fraction))
 
     @classmethod
     def unknown_fraction(cls, identity_key: str, role: str) -> "MaterialComponent":
-        """A component known to be PRESENT but of unknown fraction -- the honest full interval [0, 1]."""
+        """A NAME-identified component known PRESENT but of unknown fraction -- the honest full interval [0, 1]."""
+        if isinstance(identity_key, str) and _is_structure_key(identity_key):
+            raise ValueError("a declared NAME key must not use the reserved structure-key prefix")
         return cls(MATERIAL_COMPONENT_SCHEMA, identity_key, role, 0.0, 1.0)
+
+    @classmethod
+    def of_molecule(
+        cls, molecule: Molecule, role: str, min_fraction: float, max_fraction: float
+    ) -> "MaterialComponent":
+        """A component identified by canonical STRUCTURE (ID-LAYER-01) -- the sound key.
+
+        Robust across name synonyms and, crucially, isomer-proof: a same-formula different-structure species has a
+        different canonical digest, so it can never borrow this component's assay.  This is the key a route/shopping
+        Molecule is matched against; prefer it over :meth:`known` wherever the structure is in hand.
+        """
+        return cls(MATERIAL_COMPONENT_SCHEMA, _structure_key(molecule), role, float(min_fraction), float(max_fraction))
+
+    @classmethod
+    def unknown_molecule(cls, molecule: Molecule, role: str) -> "MaterialComponent":
+        """A STRUCTURE-identified component known PRESENT but of unknown fraction -- the honest full interval [0, 1]."""
+        return cls(MATERIAL_COMPONENT_SCHEMA, _structure_key(molecule), role, 0.0, 1.0)
 
 
 @dataclass(frozen=True)
@@ -242,21 +293,33 @@ class StockMaterial(Digestible):
             if type(seq) is not tuple or any(not isinstance(x, str) or not x.strip() for x in seq):
                 raise TypeError(f"{name} must be a tuple of non-empty strings")
 
-    def active_fraction_interval(self, required_identity: str) -> tuple[float, float] | None:
+    def active_fraction_interval(self, required_identity: "Molecule | str") -> tuple[float, float] | None:
         """The summed fraction interval ``(lo, hi)`` of components matching ``required_identity``, or ``None``.
 
-        Several components can share an identity (e.g. two additives of the same species); their intervals sum,
-        capped at 1.0 on the high side.  ``None`` means the identity is not a declared component at all.
+        ``required_identity`` may be a :class:`~smartchem.category.Molecule` -- matched by canonical STRUCTURE, the
+        SOUND key (a same-formula isomer never borrows another's assay; a name synonym still matches) -- or a
+        ``str`` name, matched by the weaker declared-name key.  A structure query matches ONLY structure-keyed
+        components and a name query ONLY name-keyed components: a bare name can never stand in for a proven
+        structure, nor a structure for a name.  Several components may share an identity (two additives of the same
+        species); their intervals sum, capped at 1.0 on the high side.  ``None`` means the identity is not present.
         """
-        key = _norm(required_identity)
-        matches = [c for c in self.components if _norm(c.identity_key) == key]
+        if isinstance(required_identity, Molecule):
+            want = _structure_key(required_identity)
+            matches = [c for c in self.components if c.identity_key == want]
+        elif isinstance(required_identity, str):
+            want = _norm(required_identity)
+            matches = [
+                c for c in self.components if not _is_structure_key(c.identity_key) and _norm(c.identity_key) == want
+            ]
+        else:
+            raise TypeError("required_identity must be a Molecule (canonical structure) or a str (declared name)")
         if not matches:
             return None
         lo = sum(c.min_fraction for c in matches)
         hi = min(1.0, sum(c.max_fraction for c in matches))
         return (lo, hi)
 
-    def satisfies(self, required_identity: str, *, min_assay: float) -> FitnessVerdict:
+    def satisfies(self, required_identity: "Molecule | str", *, min_assay: float) -> FitnessVerdict:
         """Whether this material meets a ``min_assay`` (mass/mole fraction) requirement for ``required_identity``.
 
         Rigorous interval logic, never a silent yes: the material SATISFIES only if its worst-case (lower-bound)
@@ -316,11 +379,14 @@ def stock_material_from_commodity(commodity: "object") -> StockMaterial:
     from ..data.reagents import CommodityReagent
     if type(commodity) is not CommodityReagent:
         raise TypeError("stock_material_from_commodity needs a smartchem.data.reagents.CommodityReagent")
+    # keyed by canonical STRUCTURE (ID-LAYER-01), not the commodity NAME: this is the LIVE default-data path, so a
+    # commodity material is matched against a route/shopping Molecule the sound way -- and never satisfies a query
+    # for a same-formula isomer.  The human name still rides along as the display name and provenance.
     return StockMaterial(
         STOCK_MATERIAL_SCHEMA,
         f"commodity-lead:{commodity.name}",
         commodity.name,
-        (MaterialComponent.unknown_fraction(commodity.name, "active"),),
+        (MaterialComponent.unknown_molecule(commodity.molecule, "active"),),
         Phase.UNKNOWN,
         (
             f"commodity source lead: {commodity.name!r} (commonly found in {commodity.common_source}); "

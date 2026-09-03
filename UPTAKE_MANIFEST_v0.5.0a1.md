@@ -1490,7 +1490,17 @@ falsifier fixture:   the second-engine names (search_routes/rank_routes/draft_ro
                      species (target present) and, with NO loader, autoload is never called (it booms if it is).
                      test_routes TestCLI updated to the shared engine's output strings -- the engine changed, the facts and
                      exit codes did not (0 routes / 3 no-route complete / 4 partial / 2 bad-input).
-red-team:            (pending -- run + folded + recorded in the follow-up docs commit, as the provider-lever brick was)
+red-team:            workflow wy3qd17qj, 4 blind orthogonal bearings (digest/golden-safety + one-way law; two-corridors
+                     human<->--json consistency; provider-lever teeth / dead-switch; regression + faithfulness) +
+                     per-finding refute-by-default verify. THREE bearings found the CORE SOUND: no golden churn and
+                     run_compilation UNTOUCHED (compile_synthesis with no loader is byte-identical); the human and --json
+                     corridors AGREE across the matrix; the section-9 lever has REAL teeth on the new path and the loader
+                     covers the route species -- not a dead switch. 1 CONFIRMED, 0 refuted. (MEDIUM, faithfulness) the
+                     `_synthesize_request` docstring still said "synthesize keeps its own route engine below" -- the exact
+                     thing this brick DELETED -- contradicting the module docstring + the inline comment in the SAME file
+                     (a stale line the provider-lever commit authored when it was true). Folded in `3640a76` (the docstring
+                     now states it renders through the shared compile_synthesis engine; the two stale "the search"
+                     references corrected). Docstring-only -- suite unchanged at 3287.
 residual / follow-on: convergent-DAG bench fitting still ranks nothing (DAG-mode); the decompile-side alias-collapse and
                      provider-VERSION digest sensitivity stay deferred; affordability_frontier empty until COST-VEC-01.
 ```

@@ -112,8 +112,16 @@ class TestSynthesizeProviderLeverIsLive:
         captured = self._spy_autoload(monkeypatch)
 
         def forced_network(args):
-            # a request whose provider is NETWORK regardless of --offline (target kept so the search still runs)
-            return build_recompile_request(args.target, evidence_provider_selection=NETWORK_PROVIDER)
+            # a FULL request (reagents/stock kept, so the search still produces routes) whose provider is NETWORK
+            # regardless of --offline -- the only way to force the request field and argv --offline to disagree while
+            # the search still reaches the autoload, now that the main sources its search inputs from the REQUEST.
+            return build_recompile_request(
+                args.target,
+                helper_reagents=tuple(args.reagents),
+                stock_materials=tuple(args.have),
+                max_depth=args.max_depth,
+                evidence_provider_selection=NETWORK_PROVIDER,
+            )
 
         monkeypatch.setattr(syn_cli, "_synthesize_request", forced_network)
         code = main([*_ROUTE_ARGV, "--offline"])  # argv SAYS offline...
@@ -125,11 +133,15 @@ class TestSynthesizeEmitRequest:
     """--emit-request echoes the canonical identity, carrying the provider selection, WITHOUT searching."""
 
     def test_emit_request_offline_carries_offline_provider_and_does_not_search(self, monkeypatch, capsys):
-        def _boom(*a, **k):
-            raise AssertionError("search must not run under --emit-request")
+        # synthesize now renders through the shared compile_synthesis engine (lazily imported); patch it at its source
+        # module so a search under --emit-request would boom.  It must not: --emit-request exits before the engine.
+        import smartchem.experiment.compile as compile_mod
 
-        monkeypatch.setattr(syn_cli, "search_routes", _boom)
-        code = main(["paracetamol", "--offline", "--emit-request"])  # _boom never fires -> emit exits before search
+        def _boom(*a, **k):
+            raise AssertionError("the shared engine must not run under --emit-request")
+
+        monkeypatch.setattr(compile_mod, "compile_synthesis", _boom)
+        code = main(["paracetamol", "--offline", "--emit-request"])  # _boom never fires -> emit exits before the engine
         assert code == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["evidence_provider_selection"]["selection_id"] == "DEFAULT_OFFLINE"
@@ -196,6 +208,102 @@ class TestRedTeamFolds:
     def test_emit_request_carries_the_given_reagent_set(self, capsys):
         payload = json.loads(_run_capsys(capsys, ["CC(=O)O", "--reagents", "acetic acid", "--emit-request"]))
         assert payload["helper_reagents"] == ["acetic acid"]
+
+
+class TestSynthesizeRendersThroughSharedEngine:
+    """CLI-CAN-02 remainder: synthesize's human dossier renders through the ONE shared engine (compile_synthesis),
+    built from the typed request -- its own second search/rank/resolve engine is DELETED."""
+
+    def test_the_second_engine_names_are_gone_from_synthesize(self):
+        # importing search_routes/rank_routes/draft_route_dossier into experiment.cli WAS the second engine; their
+        # absence from the module namespace is the structural proof synthesize no longer runs its own search here.
+        assert not hasattr(syn_cli, "search_routes")
+        assert not hasattr(syn_cli, "rank_routes")
+        assert not hasattr(syn_cli, "draft_route_dossier")
+
+    def test_human_dossier_is_the_shared_compile_synthesis_render(self, capsys):
+        code = main([*_ROUTE_ARGV, "--offline"])
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "COMPILED SYNTHESIS" in out       # the shared engine's header
+        assert "OVERALL GRADE (L2)" in out       # graded through the shared engine (the old inline path never graded)
+
+    def test_an_unresolvable_target_is_a_clean_exit_2_through_the_one_parser(self, capsys):
+        # the target resolves through the ONE parser service (resolve_target_with_features), not a second resolver;
+        # an unresolvable target is a clean section-14.4 exit 2 -- concise, no traceback.
+        assert main(["definitely-not-a-molecule-@@@", "--offline"]) == 2
+        err = capsys.readouterr().err
+        assert "Traceback" not in err and "synthesize:" in err
+
+
+class TestSynthesizeJsonThroughService:
+    """--json runs the request through the ONE service (run_compilation): synthesize's machine contract IS
+    run_compilation's typed response, describing the SAME request --emit-request echoes."""
+
+    def test_json_returns_the_service_exit_code_and_a_typed_response(self, capsys):
+        code = main(["paracetamol", "--offline", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert "result_digest" in payload
+        assert payload["outcome"] in {
+            "ROUTES_FOUND", "NO_ROUTE_COMPLETE", "INCOMPLETE", "TARGET_ALREADY_AVAILABLE", "REFUSED", "INVALID_INPUT"
+        }
+        assert code == payload["exit_code"]      # the CLI returns run_compilation's own section-14.4 exit code
+
+    def test_json_and_emit_request_describe_the_same_request(self, capsys):
+        main(["paracetamol", "--offline", "--json"])
+        resp = json.loads(capsys.readouterr().out)
+        main(["paracetamol", "--offline", "--emit-request"])
+        emit = json.loads(capsys.readouterr().out)
+        assert resp["request"] == emit           # one request identity, two machine views
+
+    def test_empty_reagents_is_exit_2_on_both_json_and_human(self, capsys):
+        # the two corridors AGREE: a valueless --reagents is INVALID on run_compilation (--json) AND the human path.
+        assert main(["CC(=O)O", "--reagents", "--offline", "--json"]) == 2
+        assert main(["CC(=O)O", "--reagents", "--offline"]) == 2
+        assert "Traceback" not in capsys.readouterr().err
+
+
+class TestStabilityLoaderSeam:
+    """The compile_synthesis stability_loader (CLI-CAN-02 remainder): invoked AFTER the search with the discovered
+    species (intermediates included); None for every non-synthesize caller so the ranked result is unmoved."""
+
+    @staticmethod
+    def _target_reagents_available():
+        from smartchem.experiment.cli import _parse
+        from smartchem.identity_parse import resolve_target
+        target = resolve_target("CC(=O)Nc1ccc(O)cc1")
+        reagents = tuple(_parse(s) for s in ("O", "CC(=O)O", "CC(=O)OC(=O)C"))
+        available = (resolve_target("Nc1ccc(O)cc1"),)
+        return target, reagents, available
+
+    def test_loader_is_invoked_with_the_discovered_route_species(self):
+        from smartchem.experiment.compile import _ident, compile_synthesis
+        target, reagents, available = self._target_reagents_available()
+        captured = {}
+
+        def loader(species):
+            captured["species"] = species
+            return None                          # None -> seed stability; we assert only WHAT the loader received
+
+        compile_synthesis(target, reagents=reagents, available=available, commodities=(), max_depth=3,
+                          stability_loader=loader)
+        assert captured.get("species")           # the loader ran, post-search, over a non-empty species set
+        # the species cover the ROUTE the search discovered, not merely the CLI inputs: the target is present
+        assert _ident(target) in {_ident(m) for m in captured["species"]}
+
+    def test_no_loader_means_no_autoload(self, monkeypatch):
+        # every non-synthesize caller (compile) passes no loader, so the loader branch is skipped and no autoload
+        # runs -- the ranked result stays byte-identical (goldens safe).  Prove it: autoload booms if ever called.
+        import smartchem.data.autoload as autoload_mod
+
+        def _boom(*a, **k):
+            raise AssertionError("no stability_loader -> autoload must not run")
+
+        monkeypatch.setattr(autoload_mod, "autoload_stability", _boom)
+        target, reagents, available = self._target_reagents_available()
+        from smartchem.experiment.compile import compile_synthesis
+        compiled = compile_synthesis(target, reagents=reagents, available=available, commodities=(), max_depth=3)
+        assert compiled.found_route              # still compiled -- with seed stability, no autoload
 
 
 def _run_capsys(capsys, argv) -> str:

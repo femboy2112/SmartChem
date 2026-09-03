@@ -4,23 +4,25 @@
         --have "Nc1ccc(O)cc1" --reagents "O" "CC(=O)O" "CC(=O)OC(=O)C" \\
         --max-temp 1473 --max-pressure 1.5
 
-It enumerates candidate synthesis routes from the decompiler (E5), autoloads sourced stability data for
-every species (PubChem/Wikidata/Bradley, cached; ``--offline`` uses seed + cache only), fits and ranks the
-routes against the target bench (``--max-temp`` K, ``--max-pressure`` atm, the reagents on hand), and prints
-the top route as a chemist-facing DOSSIER -- under the honesty banner (no success guarantee, no
-kinetic rate; every other claim graded), every number in its epistemic bucket.  This is the "download and
-go" entry point.
+It builds the ONE shared typed ``CompilationRequest`` (SVC-REQ-01) from its argv and renders its dossier through
+the SAME shared engine ``compile`` uses (:func:`~smartchem.experiment.compile.compile_synthesis`), built from the
+request's RESOLVED parameters -- so it no longer runs a second search or a second argv parse (CLI-CAN-02 remainder).
+``--emit-request`` and ``--json`` expose the machine views through :func:`~smartchem.service.run_compilation`,
+exactly as ``recompile``/``compile`` do.  The human dossier still enumerates candidate routes from the decompiler
+(E5), autoloads sourced stability for every discovered species (PubChem/Wikidata/Bradley, cached; ``--offline``
+uses seed + cache only) via the request's section-9 provider lever, ranks them against the bench (``--max-temp`` K,
+``--max-pressure`` atm), and prints the top route as a chemist-facing DOSSIER -- under the honesty banner (no
+success guarantee, no kinetic rate; every other claim graded), every number in its epistemic bucket.  This is the
+"download and go" entry point.
 """
 from __future__ import annotations
 
 import argparse
 import sys
-from fractions import Fraction
 
 from ..smiles import SmilesError, parse_smiles
 from ..structure_descent import ScissionError
-from .drafter import ConstraintBox, draft_route_dossier, rank_routes
-from .routes import search_routes
+from .drafter import ConstraintBox
 
 __all__ = ["main"]
 
@@ -122,7 +124,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cut-budget", type=_positive_int, default=20_000,
                    help="candidate rewrite budget per expanded target (default 20000)")
     p.add_argument("--offline", action="store_true", help="do not fetch; use the seed + cache only")
-    p.add_argument("--show", type=int, default=5, help="how many ranked routes to list (default 5)")
     p.add_argument("--poor-mans", action="store_true",
                    help="also terminate routes at WIDELY-AVAILABLE commodity compounds (table salt, "
                         "vinegar, baking soda, ...) and print a shopping list -- so a route can bottom out "
@@ -130,113 +131,102 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--emit-request", action="store_true",
                    help="print the ONE typed request JSON (SVC-REQ-01) and exit WITHOUT searching -- the "
                         "canonical, alias-independent request identity, including the section-9 provider selection")
+    p.add_argument("--json", action="store_true",
+                   help="run the request through the ONE service (run_compilation) and print the typed response "
+                        "JSON with its section-14.4 exit code, instead of the human dossier (SVC-REQ-01)")
     args = p.parse_args(argv)
 
-    # CLI-CAN-02 (provider lever): synthesize builds the ONE shared typed request (SVC-REQ-01).  Its --offline choice
-    # rides the request identity as the section-9 EvidenceProviderSelection and, below, GOVERNS the network autoload
-    # -- one source of truth, no second offline flag hidden in the engine call.  The build VALIDATES the target and
-    # reagents, so it is wrapped in the SAME 5/2 domain handler as the search: an invalid target/reagent is a clean
-    # section-14.4 exit (2/5) like recompile/compile, never a traceback or a laundered exit-70 (red-team fold).
+    # CLI-CAN-02 (remainder): synthesize builds the ONE shared typed request (SVC-REQ-01) and no longer runs a second
+    # search or a second argv parse.  The build VALIDATES the target/reagents, so it is wrapped in the SAME 5/2 domain
+    # handler as the render below: an invalid target/reagent is a clean section-14.4 exit (2/5) like recompile/compile,
+    # never a traceback or a laundered exit-70 (red-team fold).
     try:
         request = _synthesize_request(args)
     except (ScissionError, ValueError, TypeError) as exc:
         return _syn_domain_exit(exc)
 
-    # --emit-request echoes the canonical identity and exits WITHOUT searching, exactly as recompile/compile do.
+    # The MACHINE views go through the ONE service (run_compilation), exactly as recompile/compile do: --emit-request
+    # echoes the canonical request identity WITHOUT searching; --json runs the request and emits the typed response
+    # with its section-14.4 exit code.  So synthesize's machine contract IS run_compilation's, not a second one.
     if args.emit_request:
         from ..service import serialize_request
         print(serialize_request(request))
         return 0
+    if args.json:
+        from ..service import run_compilation, serialize_response
+        response = run_compilation(request)
+        print(serialize_response(response))
+        return response.exit_code
 
+    # The HUMAN dossier renders through the ONE shared engine `compile` uses (compile_synthesis), built from the
+    # REQUEST's resolved parameters -- so synthesize no longer parses argv a second time or runs its own
+    # search_routes/rank_routes/draft.  The TARGET resolves through the one parser service (the same resolution the
+    # request and run_compilation use), carrying its section-5.3 losses; reagents/stock are helper inputs.
     try:
-        target = _parse(args.target)
-        have = tuple(_parse(s) for s in args.have)
-        reagents = tuple(_parse(s) for s in args.reagents)
-        smiles_by_mol = {}
-        for mol, smi in [(target, args.target), *zip(have, args.have), *zip(reagents, args.reagents)]:
-            smiles_by_mol[mol] = smi
+        from ..identity import representation_losses_for
+        from ..identity_parse import resolve_target_with_features
+        target, target_features = resolve_target_with_features(request.target_input, request.input_kind)
+        losses = () if target_features is None else representation_losses_for(request.target_input, target_features)
+        reagents = tuple(_parse(s) for s in request.helper_reagents)
+        available = tuple(_parse(s) for s in request.stock_materials)
+    except (ScissionError, ValueError, TypeError) as exc:
+        return _syn_domain_exit(exc)
 
-        commodities = ()
-        if args.poor_mans:
-            from ..data.reagents import commodity_inventory
-            commodities = commodity_inventory()
-        search = search_routes(
-            target, reagents=reagents, available=have, commodities=commodities,
-            max_depth=args.max_depth, max_routes=args.max_routes, cut_budget=args.cut_budget,
+    # An empty reagent pool has nothing for the capped-scission grammar to cut with.  run_compilation (the --json
+    # path) returns INVALID here, so the human path agrees -- ONE contract, both views (a valueless --reagents is a
+    # clean exit 2 on both, never a water-defaulted human dossier that disagrees with its own --json; red-team fold).
+    if not reagents:
+        return _syn_domain_exit(ValueError(
+            "the capped-scission grammar requires at least one helper reagent, but the reagent pool is empty"
+        ))
+
+    # synthesize's unique download-and-go feature: source stability for the discovered route species (intermediates
+    # included) under the request's section-9 provider lever.  The loader is invoked by compile_synthesis AFTER its
+    # search -- so --offline is expressed ONCE, in the request identity, and read back HERE; there is no second
+    # offline flag the engine could silently disagree with (CLI-CAN-02).  identifiers map the resolved input molecules
+    # to their request strings so a provider has something to query by; intermediates fall back to seed + cache.
+    identifiers = {}
+    for mol, s in [(target, request.target_input), *zip(reagents, request.helper_reagents),
+                   *zip(available, request.stock_materials)]:
+        identifiers.setdefault(mol, s)
+    allow_network = request.evidence_provider_selection.allow_network
+
+    def _load_stability(species):
+        from ..data.autoload import autoload_stability
+        return autoload_stability(list(species), identifiers=identifiers, allow_network=allow_network)
+
+    from ..data.thermo_extended import extended_thermo
+    from .compile import compile_synthesis
+    try:
+        compiled = compile_synthesis(
+            target,
+            reagents=reagents,
+            available=available,
+            commodities=None if args.poor_mans else (),
+            max_depth=request.search_bounds.value("max_depth"),
+            max_routes=request.search_bounds.value("max_results"),
+            cut_budget=request.search_bounds.value("cut_budget"),
+            thermo=extended_thermo(),
+            losses=losses,
+            box=ConstraintBox.of_bounds(request.constraints.bounds),
+            stability_loader=_load_stability,
         )
     except (ScissionError, ValueError, TypeError) as exc:
         return _syn_domain_exit(exc)
-    routes = search.routes
-    print(search.receipt.render())
-    if search.target_in_terminal_stock:
-        print(
-            f"target {args.target!r} is already present in the active exact-identity terminal stock; "
-            "no synthesis expansion was attempted. Quantity, assay, phase, grade, and fitness remain "
-            "unassessed."
-        )
-        return 0
-    if not routes:
-        if search.receipt.complete_within_bounds:
-            print(f"no synthesis route to {args.target!r} in the declared bounded search space. "
-                  "This does not claim that no route exists outside the current rewrite grammar or bounds.")
-            return 3
-        else:
-            print(f"no route returned for {args.target!r}; SEARCH WAS PARTIAL. Absence is not evidence that "
-                  "no route exists. Raise --cut-budget/--max-routes or change the inventory.")
-            return 4
 
-    # autoload sourced stability for every species across the routes.  Whether it may reach the network is the
-    # section-9 provider lever ON THE TYPED REQUEST (CLI-CAN-02) -- so --offline is expressed ONCE, in the request
-    # identity, and read back here; there is no second offline flag the engine call could silently disagree with.
-    species = {}
-    for r in routes:
-        for step in r.steps:
-            for m in (*step.reactants, *step.products):
-                species.setdefault(m, m)
-    from ..data.autoload import autoload_stability
-    stability = autoload_stability(
-        list(species.values()), identifiers=smiles_by_mol,
-        allow_network=request.evidence_provider_selection.allow_network,
+    # The section-11 constraint disclosure through the ONE note authority -- APPLIED with the real fit/excluded/
+    # unknown tally when routes were ranked against a bench box, DECLARED otherwise; identical to recompile/compile.
+    from ..service import _fit_counts, constraint_note
+    note = constraint_note(
+        request.constraints.bounds, fit_counts=_fit_counts(compiled.ranked) if compiled.ranked else None
     )
-    # M3: the broader sourced 298 K ΔfH°/S° table, so ΔG feasibility (M1) and equilibrium K (M2) reach
-    # beyond the litmus seed (every common organic here unlocks its combustion). Degrades to UNKNOWN, never
-    # a fabricated value, for anything it does not cover.
-    from ..data.thermo_extended import extended_thermo
-    thermo = extended_thermo()
-
-    box = ConstraintBox(
-        max_temperature_k=args.max_temp,
-        max_pressure_atm=Fraction(str(args.max_pressure)) if args.max_pressure is not None else None,
-        available_reagents=None,  # the CLI ranks; reagent availability is implied by the inventory it built
-    )
-    ranked = rank_routes(list(routes), box, stability=stability, thermo=thermo)
-
-    print(f"{len(routes)} candidate route(s) to {args.target!r}; ranked best-first:\n")
-    for i, rf in enumerate(ranked[:args.show], 1):
-        eqns = " ; ".join(s.equation() for s in rf.route.steps)
-        print(f"  {i}. [{rf.status.value}] composability={rf.composability.verdict}  {eqns}")
-        for ex in rf.exclusions[:2]:
-            print(f"       EXCLUDED: {ex}")
-    best = ranked[0]
-    print("\n" + "=" * 90)
-    print("TOP ROUTE -- evidence dossier (not a bench-ready procedure):\n")
-    # --have/--reagents declare identity and availability, not amount.  The old CLI silently invented
-    # 1 mol of each and could then print a false material ceiling (or crash).  A ceiling is emitted only
-    # when an explicit quantitative feed is supplied through the API.
-    print(draft_route_dossier(best.route, feed=None, stability=stability, thermo=thermo).render())
-
-    if args.poor_mans:
-        from ..data.reagents import shopping_list
-        buy = shopping_list(best.route)
-        print("\n" + "=" * 90)
-        print("SHOPPING LIST -- commodity buckets this route can bottom out at:")
-        if buy:
-            for r in buy:
-                print(f"  * {r.name} -- {r.common_source} [{r.availability.value}]")
-        else:
-            print("  (this route's starting materials did not match a known commodity; "
-                  "raise --max-depth or add precursors)")
-    return 0 if search.receipt.complete_within_bounds else 4
+    if note is not None:
+        print(f"  {note}")
+    print(compiled.render())
+    # Exit codes mirror recompile/compile: a partial search is exit 4; else routes/target-in-stock is 0, no-route is 3.
+    if compiled.search_receipt is not None and not compiled.search_receipt.complete_within_bounds:
+        return 4
+    return 0 if compiled.found_route else 3
 
 
 if __name__ == "__main__":

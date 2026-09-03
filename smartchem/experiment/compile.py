@@ -229,6 +229,7 @@ def compile_synthesis(
     cut_budget: int = 20_000,
     losses: tuple = (),
     box: ConstraintBox | None = None,
+    stability_loader=None,
 ) -> CompiledSynthesis:
     """Compile ``target`` into a bounded, bucket-terminated candidate-route evidence dossier.
 
@@ -249,6 +250,12 @@ def compile_synthesis(
     ``available`` stock then terminate structural search), or a custom tuple to restrict the bench.  All the
     sourced-data levers (``stability``/``thermo``/
     ``selectivity``/``kinetics``/``barriers``) and the E2 ``feed`` thread straight through to the rungs.
+
+    ``stability_loader`` (CLI-CAN-02 remainder): an optional ``Callable[[tuple[Molecule, ...]], StabilityTable]``
+    invoked AFTER the search with exactly the species it discovered, and only when ``stability`` was not passed.
+    It lets a caller (``synthesize``) source stability for the route species -- intermediates included -- under its
+    section-9 provider lever, without this engine importing the autoload stack.  ``None`` (every non-synthesize
+    caller) means no autoload, so the ranked result is byte-identical to before.
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
@@ -303,6 +310,23 @@ def compile_synthesis(
                              "widen the inventory",),
             search.receipt,
         )
+
+    # CLI-CAN-02 remainder: when a stability LOADER is supplied (synthesize's --offline / section-9 provider lever),
+    # source stability for exactly the species THIS search discovered -- run AFTER the search so route intermediates
+    # are covered too -- then thread it through ranking/grading/draft below.  Every other caller passes no loader, so
+    # ``stability`` stays exactly as given (no autoload) and the ranked result is byte-identical -- the deterministic
+    # run_compilation ranking and the golden fixtures never move.
+    if stability is None and stability_loader is not None:
+        _seen: set[str] = set()
+        _species: list[Molecule] = []
+        for r in routes:
+            for step in r.steps:
+                for m in (*step.reactants, *step.products):
+                    k = _ident(m)
+                    if k not in _seen:
+                        _seen.add(k)
+                        _species.append(m)
+        stability = stability_loader(tuple(_species))
 
     ranked = rank_routes(
         routes, box=box, stability=stability, selectivity=selectivity, thermo=thermo, kinetics=kinetics,

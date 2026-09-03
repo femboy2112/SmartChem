@@ -326,8 +326,10 @@ class TestCLI:
         ])
         out = capsys.readouterr().out
         assert code == 0
-        assert "candidate route(s)" in out
-        assert "NOT a predicted successful synthesis" in out  # the draft banner
+        # synthesize now renders through the ONE shared engine `compile` uses (compile_synthesis), from the typed
+        # request -- so its dossier carries the shared COMPILED SYNTHESIS header (CLI-CAN-02 remainder).
+        assert "COMPILED SYNTHESIS" in out
+        assert "NOT a predicted successful synthesis" in out  # the draft banner still rides the top-route dossier
         assert "route ceiling" not in out  # no quantities were supplied; the CLI must not invent one mole
 
     def test_cli_reports_no_route_loudly(self, capsys):
@@ -335,7 +337,7 @@ class TestCLI:
         code = main(["CC(=O)Nc1ccc(O)cc1", "--reagents", "O", "--max-depth", "1", "--offline"])
         out = capsys.readouterr().out
         assert code == 3
-        assert "no synthesis route" in out
+        assert "NO ROUTE FOUND WITHIN THE DECLARED BOUNDED SEARCH SPACE" in out
 
     def test_cli_returns_partial_status_even_when_candidates_exist(self, capsys):
         from smartchem.experiment.cli import main
@@ -353,7 +355,8 @@ class TestCLI:
     def test_cli_rejects_bad_smiles(self, capsys):
         from smartchem.experiment.cli import main
         assert main(["not-a-smiles-@@@", "--offline"]) == 2
-        assert "could not parse" in capsys.readouterr().err
+        # the ONE parser service's message (synthesize resolves the target through resolve_target_with_features now)
+        assert "could not resolve" in capsys.readouterr().err
 
 
 class TestSection81RouteReceiptTelemetry:

@@ -94,9 +94,17 @@ def _synthesize_request(args):
     in the same 5/2 handler as the render, so such an input is a clean section-14.4 exit 2, never a traceback or a
     laundered exit-70 (red-team fold).
     """
+    from ..identity_parse import EXPLICIT_CLI_FORMS, resolve_cli_target
     from ..service import NETWORK_PROVIDER, OFFLINE_PROVIDER, build_recompile_request
+    # the section-14.2 identity surface, via the ONE shared resolver (same as recompile/compile): the positional
+    # target (+ --input-kind) OR one explicit value-form flag; more than one, or none, is a loud domain error.
+    target, input_kind = resolve_cli_target(
+        args.target, args.input_kind,
+        {form: getattr(args, form.replace("-", "_")) for form, _kind in EXPLICIT_CLI_FORMS},
+    )
     return build_recompile_request(
-        args.target,
+        target,
+        input_kind=input_kind,
         helper_reagents=tuple(args.reagents),
         stock_materials=tuple(args.have),
         commodities_enabled=bool(args.poor_mans),
@@ -110,8 +118,19 @@ def _synthesize_request(args):
 
 
 def main(argv: list[str] | None = None) -> int:
+    from ..identity_parse import EXPLICIT_CLI_FORMS
     p = argparse.ArgumentParser(prog="python -m smartchem.experiment", description=__doc__)
-    p.add_argument("target", help="compound name or SMILES; explicit name:.../smiles:... prefixes are accepted")
+    p.add_argument("target", nargs="?", default=None,
+                   help="compound name or SMILES (name:.../smiles:... prefixes accepted), or use a section-14.2 "
+                        "explicit form below")
+    p.add_argument("--input-kind", choices=["auto", "name", "smiles", "inchi", "formula", "target-file"],
+                   default=None,
+                   help="how to read TARGET (standard section 14.2; default AUTO). A bare inchi/formula names "
+                        "composition, not structure, so this structure search refuses it (exit 2, section 5.4)")
+    for _form, _kind in EXPLICIT_CLI_FORMS:
+        p.add_argument(f"--{_form}", default=None, metavar="TARGET",
+                       help=f"give the target as {_kind.replace('_', ' ').lower()} (section-14.2 explicit form; "
+                            f"mutually exclusive with the positional target and --input-kind)")
     p.add_argument("--have", nargs="*", default=[], metavar="TARGET",
                    help="precursors already on the bench (names or SMILES)")
     p.add_argument("--reagents", nargs="*", default=["water"], metavar="TARGET",
@@ -166,8 +185,18 @@ def main(argv: list[str] | None = None) -> int:
     # request and run_compilation use), carrying its section-5.3 losses; reagents/stock are helper inputs.
     try:
         from ..identity import representation_losses_for
-        from ..identity_parse import resolve_target_with_features
-        target, target_features = resolve_target_with_features(request.target_input, request.input_kind)
+        from ..identity_parse import IdentityParseError, resolve_identity
+        # resolve ONCE through the one parser service: molecule + dropped features + the section-14.2 ParseReceipt.
+        resolved = resolve_identity(request.target_input, request.input_kind)
+        if resolved.molecule is None:
+            raise IdentityParseError(
+                f"{resolved.receipt.requested_kind.value} input resolved to a "
+                f"{resolved.receipt.identity_layer}-layer identity ({resolved.receipt.normalized}) with no "
+                "perceived structure; a synthesis search needs a molecule (a name or SMILES), not a bare "
+                "formula/InChI (section 5.4)"
+            )
+        target, target_features = resolved.molecule, resolved.features
+        parse_receipt_summary = resolved.receipt.summary()
         losses = () if target_features is None else representation_losses_for(request.target_input, target_features)
         reagents = tuple(_parse(s) for s in request.helper_reagents)
         available = tuple(_parse(s) for s in request.stock_materials)
@@ -224,6 +253,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     if note is not None:
         print(f"  {note}")
+    # echo HOW the target was read (the section-14.2 ParseReceipt) -- the same provenance recompile/decompile
+    # surface, so synthesize's human view no longer silently drops it (CLI-NAME-01).
+    print(f"  {parse_receipt_summary}")
     print(compiled.render())
     # Exit codes mirror recompile/compile: a partial search is exit 4; else routes/target-in-stock is 0, no-route is 3.
     if compiled.search_receipt is not None and not compiled.search_receipt.complete_within_bounds:

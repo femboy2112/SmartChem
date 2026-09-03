@@ -52,7 +52,20 @@ __all__ = [
     "resolve_identity",
     "resolve_target",
     "resolve_target_with_features",
+    "EXPLICIT_CLI_FORMS",
+    "resolve_cli_target",
 ]
+
+# The section-14.2 explicit value-form flags (``--name "X"`` etc.), in the order they are offered, mapped to the
+# InputKind each forces.  ONE shared spec so the ``recompile``/``compile`` and ``synthesize`` CLIs cannot drift on
+# which forms exist or what kind each means (the CLI-NAME-01 / SVC-REQ-01 "one front door" discipline).
+EXPLICIT_CLI_FORMS = (
+    ("name", "NAME"),
+    ("smiles", "SMILES"),
+    ("inchi", "INCHI"),
+    ("formula", "FORMULA"),
+    ("target-file", "TARGET_FILE"),
+)
 
 # The prefixes an explicit inline ``kind:payload`` may name, mapped to the kind they force.  Recognised on the
 # AUTO path (and inside a TARGET_FILE), so an ambiguous string is never silently guessed when the caller was
@@ -414,6 +427,47 @@ def resolve_target_with_features(target_input: str, input_kind: "InputKind | str
     with :func:`resolve_identity`, so the two can never disagree on the molecule.
     """
     return _require_molecule(resolve_identity(target_input, input_kind))
+
+
+def resolve_cli_target(
+    positional: "str | None",
+    input_kind_flag: "str | None",
+    explicit_forms: "dict[str, str | None]",
+) -> "tuple[str, InputKind | None]":
+    """Resolve the section-14.2 CLI identity surface to ``(target_string, input_kind)`` -- the ONE place the
+    positional target, the ``--input-kind`` flag, and the explicit value-form flags (``--name``/``--smiles``/
+    ``--inchi``/``--formula``/``--target-file``) are reconciled, shared by every chemical CLI so they cannot drift.
+
+    Exactly ONE source of the target is required: the positional (optionally with ``--input-kind``), OR exactly one
+    explicit value-form flag.  Zero sources, more than one, or an explicit form combined with ``--input-kind`` (the
+    form already IS the kind) is a loud :class:`IdentityParseError` -- a concise domain error (section 14.2), never
+    a silent guess.  ``explicit_forms`` maps each form name in :data:`EXPLICIT_CLI_FORMS` to its flag value (or
+    ``None`` if absent).  Returns the ``InputKind`` the chosen form forces, or ``None`` (AUTO / the raw flag) for the
+    positional so the caller's default table still records the origin.
+    """
+    given = [(name, value) for name, value in explicit_forms.items() if value is not None]
+    if len(given) > 1:
+        names = ", ".join(f"--{n}" for n, _ in given)
+        raise IdentityParseError(f"give the target ONE way, not several: {names} are mutually exclusive")
+    if given:
+        name, value = given[0]
+        if positional is not None:
+            raise IdentityParseError(
+                f"give the target ONE way: both a positional target and --{name} were supplied"
+            )
+        if input_kind_flag is not None:
+            raise IdentityParseError(
+                f"--{name} already fixes the input kind; do not also pass --input-kind"
+            )
+        forced = dict(EXPLICIT_CLI_FORMS)[name]
+        return value, InputKind(forced)
+    if positional is None:
+        raise IdentityParseError(
+            "no target given: supply a positional target or one of "
+            + ", ".join(f"--{n}" for n, _ in EXPLICIT_CLI_FORMS)
+        )
+    kind = InputKind[input_kind_flag.upper().replace("-", "_")] if input_kind_flag else None
+    return positional, kind
 
 
 def _require_molecule(resolved: ResolvedIdentity):

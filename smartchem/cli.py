@@ -121,15 +121,25 @@ def _add_recompile_flags(p) -> None:
     faithfully -- a default is then a VISIBLE ``origin=DEFAULT`` field, never an invisible command branch (standard
     section 13.1).
     """
-    p.add_argument("target", help="compound name or SMILES (name:... and smiles:... are accepted explicitly)")
+    from .identity_parse import EXPLICIT_CLI_FORMS
+    p.add_argument("target", nargs="?", default=None,
+                   help="compound name or SMILES (name:... and smiles:... are accepted explicitly). Alternatively "
+                        "name the target with one of the section-14.2 explicit forms below")
     p.add_argument(
         "--input-kind", choices=["auto", "name", "smiles", "inchi", "formula", "target-file"], default=None,
         help=(
             "how to read TARGET (standard section 14.2; default AUTO: a registered name, else SMILES, honouring an "
-            "inline name:/smiles: prefix). inchi/formula/target-file are DECLARED but not yet resolved offline "
-            "(ID-PARSE-01): they are refused as a loud INVALID_INPUT (exit 2), never silently mis-parsed"
+            "inline name:/smiles: prefix). The parser resolves every form (ID-PARSE-01), but a bare inchi/formula "
+            "names composition, not structure, so a STRUCTURE search refuses it as INVALID_INPUT (exit 2, section "
+            "5.4) -- resolved, never silently mis-parsed; use name/smiles for a structure target"
         ),
     )
+    for _form, _kind in EXPLICIT_CLI_FORMS:
+        p.add_argument(
+            f"--{_form}", default=None, metavar="TARGET",
+            help=f"give the target as {_kind.replace('_', ' ').lower()} (standard section 14.2 explicit form; "
+                 f"mutually exclusive with the positional target and --input-kind)",
+        )
     p.add_argument("--reagents", nargs="*", default=None, metavar="TARGET",
                    help="small helper reagents by name or SMILES (default: water; an empty list means the default)")
     p.add_argument("--have", nargs="*", default=None, metavar="TARGET",
@@ -183,8 +193,15 @@ def _recompile_request_from_args(args):
     explicit toggle of the commodity terminal, recorded ``EXPLICIT`` only when opted out.
     """
     from .identity import MatchLayer
-    from .identity_parse import InputKind
+    from .identity_parse import EXPLICIT_CLI_FORMS, resolve_cli_target
     from .service import build_recompile_request
+    # The section-14.2 identity surface -- the positional target (+ --input-kind) OR one explicit value-form flag
+    # (--name/--smiles/--inchi/--formula/--target-file) -- is reconciled by the ONE shared resolver, so recompile,
+    # compile and synthesize cannot drift on it; giving the target more than one way (or none) is a loud exit-2.
+    target, input_kind = resolve_cli_target(
+        args.target, args.input_kind,
+        {form: getattr(args, form.replace("-", "_")) for form, _kind in EXPLICIT_CLI_FORMS},
+    )
     # An empty `--reagents` list (the flag given with no values) is coerced to the DEFAULT reagent pool, exactly as
     # the legacy `compile` did (`compile_synthesis` injected water on an empty pool).  This keeps the two aliases on
     # ONE default -- an empty pool is not a runnable capped-scission search, so treating it as "use the default"
@@ -192,8 +209,8 @@ def _recompile_request_from_args(args):
     # two different searches for a byte-identical emitted request.  `--have` empty is a legitimate empty stock and is
     # left as-is.
     return build_recompile_request(
-        args.target,
-        input_kind=InputKind[args.input_kind.upper().replace("-", "_")] if args.input_kind else None,
+        target,
+        input_kind=input_kind,
         helper_reagents=tuple(args.reagents) if args.reagents else None,
         stock_materials=tuple(args.have) if args.have is not None else None,
         commodities_enabled=False if args.no_commodities else None,

@@ -812,8 +812,8 @@ residual limitations:
 
 | ID | Requirement | Current truth | Uptake action | Verdict-changing acceptance test | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| `SVC-REQ-01` | One typed request/service powers chemical commands | First brick landed (`67b8ae4`): typed `CompilationRequest`/`CompilationResponse`, per-field `origin` provenance, `run_compilation` + the section 14.4 exit map, canonical serialization. **Alias-collapse landed** (this arc): the `semantic_digest` now keys on the NORMALIZED structure identity, not the raw spelling, so `paracetamol` / `name:paracetamol` / `smiles:CC(=O)Nc1ccc(O)cc1` collapse to ONE search identity AND one result (the ParseReceipt provenance moved to its own `parse_receipt_summary` field, excluded from `result_digest`; the recompile execution is canonicalised so the collapse is real end to end); a feature-bearing (stereo/isotope/charge) input keeps its own identity. `compile`/`recompile` route through the service (CLI-CAN-01); `synthesize`'s uptake is `CLI-CAN-02` (brick 1 landed: the request now EXPRESSES the §11 T/P constraint via a shared `PhysicalBounds` leaf, digest-bearing + honestly declared-not-applied; applying it to grading + the §9 provider levers remain) | Route `synthesize` through the shared request (CLI-CAN-02); decompile-side collapse (follow-on) | Equal flags across aliases → equal digests **DONE**; every spelling of one molecule → equal request/result digest **DONE** (red-teamed: a non-canonical registry name matches its canonical SMILES on `result_digest` under real routes) | `IR-CHEM-01` | `IN_PROGRESS` |
-| `CLI-CAN-01` | Canonical `decompile` and `recompile`; legacy aliases share defaults | Canonical `recompile` verb landed (`df93b8c`), routed through the typed service (`run_compilation`); `decompile` gained `--json`/`--emit-request` through the same service; the legacy `compile` alias now builds the SAME typed request from the ONE shared builder (no divergent defaults) + prints a deprecation notice, so `compile … --emit-request` and `recompile … --emit-request` are byte-identical. `synthesize`'s deeper uptake (its `--max-temp`/`--max-pressure` constraints + `--offline` provider levers) is the named follow-on `CLI-CAN-02` | Add canonical verbs; deprecate aliases without duplicate logic | Command matrix gives equal request JSON — DONE (7-row grid, `--emit-request` byte-identical) | `SVC-REQ-01` | `IN_PROGRESS` |
+| `SVC-REQ-01` | One typed request/service powers chemical commands | First brick landed (`67b8ae4`): typed `CompilationRequest`/`CompilationResponse`, per-field `origin` provenance, `run_compilation` + the section 14.4 exit map, canonical serialization. **Alias-collapse landed** (this arc): the `semantic_digest` now keys on the NORMALIZED structure identity, not the raw spelling, so `paracetamol` / `name:paracetamol` / `smiles:CC(=O)Nc1ccc(O)cc1` collapse to ONE search identity AND one result (the ParseReceipt provenance moved to its own `parse_receipt_summary` field, excluded from `result_digest`; the recompile execution is canonicalised so the collapse is real end to end); a feature-bearing (stereo/isotope/charge) input keeps its own identity. `compile`/`recompile` route through the service (CLI-CAN-01); `synthesize`'s uptake is `CLI-CAN-02` (brick 1 EXPRESSED the §11 T/P constraint via a shared `PhysicalBounds` leaf; brick 2 APPLIED it to route grading + populated `ranked_route_dossiers`; the provider-lever brick (`83a078d`) made `synthesize` BUILD the shared request with its `--offline` as the LIVE §9 `EvidenceProviderSelection` that governs the network autoload, + `synthesize --emit-request`; returning synthesize's full graded dossier THROUGH run_compilation is the remaining CLI-CAN-02 work) | Full graded dossier through run_compilation (CLI-CAN-02 remainder); decompile-side collapse (follow-on) | Equal flags across aliases → equal digests **DONE**; every spelling of one molecule → equal request/result digest **DONE** (red-teamed: a non-canonical registry name matches its canonical SMILES on `result_digest` under real routes) | `IR-CHEM-01` | `IN_PROGRESS` |
+| `CLI-CAN-01` | Canonical `decompile` and `recompile`; legacy aliases share defaults | Canonical `recompile` verb landed (`df93b8c`), routed through the typed service (`run_compilation`); `decompile` gained `--json`/`--emit-request` through the same service; the legacy `compile` alias now builds the SAME typed request from the ONE shared builder (no divergent defaults) + prints a deprecation notice, so `compile … --emit-request` and `recompile … --emit-request` are byte-identical. `synthesize` now builds the shared request too (its `--max-temp`/`--max-pressure` ride the identity and its `--offline` is the LIVE §9 provider lever, `CLI-CAN-02` `83a078d`); returning its full graded dossier through run_compilation is the CLI-CAN-02 remainder | Add canonical verbs; deprecate aliases without duplicate logic | Command matrix gives equal request JSON — DONE (7-row grid, `--emit-request` byte-identical) | `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-NAME-01` | Normal names accepted without private formatting | Registered offline names and explicit `name:`/`smiles:` prefixes work in synthesis CLIs; InChI/formula/echo/shared parser are incomplete | Finish unified identity parser and echo receipt | Registered-name and SMILES tests pass; add InChI/formula/ambiguity matrix | `ID-PARSE-01` | `IN_PROGRESS` |
 | `CLI-EXIT-01` | Stable exit codes separate route/no-route/partial/refusal/invalid/internal | The top-level guarded service is now BUILT: `main()` wraps command dispatch and maps ANY escaping exception to exit 70 (`ERROR_INTERNAL`) with a concise stderr line — never a raw traceback, never Python's default exit 1; argparse's own `SystemExit` (a `BaseException`, not `Exception`) passes through, so `--help` stays 0 and a bad flag stays 2. The full 0/2/3/4/5 table is observed both in-process AND through a real `python -m smartchem` subprocess, plus the controlled internal-error fixture for 70 (`tests/test_cli_exit.py`). Acceptance MET. Central error mapping across every format/path is `CLI-ERR-01`; the decompile human path still returns 0/2/4 by its own status | Central error mapping (`CLI-ERR-01`) | Codes 0/2/3/4/5 observed; controlled internal-error fixture for 70 — **DONE** (`tests/test_cli_exit.py`) | `SRCH-RCT-01`, `SVC-REQ-01` | `IN_PROGRESS` |
 | `CLI-ERR-01` | Invalid chemistry/numeric input yields domain error without traceback | **One central error-classification authority BUILT.** `cli.py` `_domain_exit` maps a raised domain exception to its section-14.4 code — a chemistry-MODEL-boundary refusal (`ScissionError`/`IdentityUnsupportedError`, checked FIRST since both are `ValueError` subclasses) → exit 5; an INVALID input (`IdentityParseError`/`DecompilerError`/`SmilesError`/`ValueError`/`TypeError`) → exit 2, concise stderr, NEVER a traceback; an exception in NEITHER family is RE-RAISED, so a genuine internal bug reaches `main()`'s exit-70 guard and is never laundered into a domain 2/5. `recompile`/`decompile`/`compile` all route through it (no per-command hand-rolled mapping). A `--input-kind`{auto,name,smiles,inchi,formula,target-file} flag surfaces the section-14.2 kinds; inchi/formula/target-file are a loud INVALID_INPUT (exit 2) on the human AND `--json` path of BOTH `recompile` and `compile` (the `compile`-human `--input-kind`-bypass red-team finding is fixed), never a mis-parse. REMAINING: full ID-PARSE-01 resolution of those kinds; a nonfinite-float constraint matrix awaits the synthesize constraint uptake (CLI-CAN-02) | Full ID-PARSE-01 kinds; nonfinite-float constraints (CLI-CAN-02) | Invalid/refusal probes concise + no traceback; InChI/formula/target-file subprocess matrix exit 2 — **DONE** (`tests/test_cli_err.py`) | `ID-PARSE-01`, constraints | `IN_PROGRESS` |
@@ -1374,6 +1374,55 @@ red-team:            workflow wo95gxk8l, 3 blind attack bearings (identity/one-w
 residual / follow-on: DAG-mode bench fitting (convergent trees) still ranks nothing -- the note honestly says DECLARED
                      there. The section-9 provider levers (`--offline`) and returning the FULL graded dossier through
                      run_compilation are the rest of CLI-CAN-02. affordability_frontier stays empty until COST-VEC-01.
+```
+
+**Uptake record — CLI-CAN-02: `synthesize`'s `--offline` becomes the typed request's LIVE section-9 provider lever**
+(advances `CLI-CAN-02`, `SVC-REQ-01` and `CLI-CAN-01`; closes the "section-9 provider levers" residual the brick-2
+record named -- the last chemical verb joins the shared typed request):
+
+```text
+ID:                  CLI-CAN-02 (provider lever -- synthesize builds the shared request; --offline IS the section-9
+                     EvidenceProviderSelection, and that field GOVERNS the real network autoload)
+files:               smartchem/service.py, smartchem/experiment/cli.py, tests/test_synthesize_provider.py (new),
+                     README.md
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              3271 passed, 14 skipped, 1 xfailed (baseline 3259; +12). ruff clean on every changed file.
+scoped first:        `synthesize` was the ONE chemical verb still bypassing the typed request: it delegated wholesale to
+                     smartchem/experiment/cli.py, whose `--offline` drove `autoload_stability(allow_network=not
+                     args.offline)` DIRECTLY. recompile/compile/decompile already route through run_compilation; this
+                     brick brings synthesize onto the shared request for the PROVIDER lever. Its own route engine still
+                     runs below -- returning the FULL graded dossier THROUGH run_compilation is the remaining
+                     CLI-CAN-02 follow-on, deliberately untouched here.
+built:               (1) EvidenceProviderSelection keeps `selection_id` as its SOLE digested field, so the offline
+                     default (`DEFAULT_OFFLINE`) digests byte-for-byte as before -- ZERO golden churn, every pinned
+                     offline digest unmoved. It gains a fail-CLOSED `allow_network` PROPERTY (never a field, so it never
+                     enters the digest): True only for an id in the closed `_NETWORK_PROVIDER_IDS` set (`DEFAULT_NETWORK`
+                     today); the offline default AND any unrecognised id (even one that SOUNDS online, like "PUBCHEM")
+                     resolve to offline -- an unknown provider can NEVER silently fetch, the same "decline the unknown
+                     rather than guess" rule the phase normaliser uses. Module constants OFFLINE_PROVIDER/NETWORK_PROVIDER.
+                     (2) synthesize builds the shared request via `_synthesize_request(args)` -> build_recompile_request,
+                     passing every knob EXPLICITLY from its own resolved args (so --emit-request is faithful to the
+                     search it actually runs: depth 2, commodities only under --poor-mans) with the provider selection
+                     from --offline. The autoload's allow_network is now READ FROM
+                     `request.evidence_provider_selection.allow_network` -- ONE source of truth; the direct
+                     `not args.offline` is gone.
+                     (3) synthesize gains `--emit-request`, echoing the canonical request identity (provider selection
+                     included) and exiting WITHOUT searching, exactly as recompile/compile do.
+digest law:          online is a genuinely different search (it may source evidence offline cannot), so NETWORK_PROVIDER
+                     SPLITS `semantic_digest`; offline == the historical default on the search identity. This only ever
+                     SPLITS identity, never MERGES -- the safe direction the one-way superset law (test_service) permits.
+falsifier fixture:   allow_network is False for default/offline/unknown-id and True only for DEFAULT_NETWORK;
+                     OFFLINE_PROVIDER is byte-identical to the default (digest unmoved); NETWORK splits semantic_digest
+                     while offline leaves it unchanged. Through the PUBLIC synthesize main (a route-producing
+                     invocation): --offline requests allow_network=False, no --offline requests True. The dropped-kwarg
+                     KILLER forces the request to say NETWORK while argv says --offline and asserts the autoload followed
+                     the REQUEST (True) -- the ONLY case where args.offline and the field disagree, so a silent revert to
+                     `not args.offline` is caught. --emit-request carries the right selection_id and does NOT search.
+red-team:            pending -- workflow run + any folds recorded in a follow-up docs commit (the EVD-KEY-CTX-01 flow).
+residual / follow-on: returning synthesize's FULL graded dossier THROUGH run_compilation (not just the shared request +
+                     provider lever) is the remaining CLI-CAN-02 work; DAG-mode bench fitting still ranks nothing;
+                     provider-VERSION sensitivity of the digest is still deferred; affordability_frontier stays empty
+                     until COST-VEC-01.
 ```
 
 ## 4. P1 physical, data, and affordability backlog

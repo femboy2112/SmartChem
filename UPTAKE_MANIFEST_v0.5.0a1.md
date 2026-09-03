@@ -702,7 +702,7 @@ residual limitations / next probes:
 | `STO-PRIM-01` | Canonical primitive signed stoichiometry drives identity and intensive physics | Primitive coefficient vector now drives feasibility/equilibrium/kinetics and scale-normalized selectivity; not yet every provider/digest/DAG/extent identity | Promote the canonicalizer to the single public reaction/evidence identity | Named scaling regressions pass; add provider/digest/DAG-wide invariance | None | `IN_PROGRESS` |
 | `ROUTE-CONT-01` | Prior target must have positive net consumption in next step | Net-consumption check is implemented; equal spectator no longer connects steps | Preserve when roles/DAG IR are generalized | Equal amount on both sides fails continuity | `STO-PRIM-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `ROUTE-ID-01` | Structural route ID, not displayed equation, deduplicates alternatives | Rendered equation can collapse isomer-distinct routes | Use ordered generator/structure identity or DAG semantic digest | Same formula/different structure alternatives both survive | `ID-LAYER-01` | `TODO` |
-| `DAG-FLOW-01` | Fan-out conserves intermediate quantities | Merge/dedup can mint usable intermediate copies | Add quantity-flow edges or block quantitative claims | One mole produced and two consumed yields deficit/blocker | Material quantities | `TODO` |
+| `DAG-FLOW-01` | Fan-out conserves intermediate quantities | The fan-out mint is now BLOCKED (honest first cut): `SynthesisDAG.fanout_points` (the structural DUAL of `convergence_points`) detects an intermediate consumed by >=2 steps, and `dag_ceiling` raises `DAGFlowError` rather than mint copies via its non-decrementing `available` cache. Latent path (no production caller yet -- `service.py` declines DAG-mode ranking). The real conserved quantity-flow accounting (an allocation policy over competing consumers) is the follow-on -- inventing a split would be fabrication | Real quantity-flow accounting (allocation policy); unblocks `SHOP-LEAF-02`/`STOCK-01` shopping-quantity + affordability | One mole produced and two consumed yields deficit/blocker — **DONE** (block, `tests/test_dag_flow.py`) | Material quantities | `IN_PROGRESS` |
 
 ### 3.5 Terminal, feed, and material truth
 
@@ -1503,6 +1503,48 @@ red-team:            workflow wy3qd17qj, 4 blind orthogonal bearings (digest/gol
                      references corrected). Docstring-only -- suite unchanged at 3287.
 residual / follow-on: convergent-DAG bench fitting still ranks nothing (DAG-mode); the decompile-side alias-collapse and
                      provider-VERSION digest sensitivity stay deferred; affordability_frontier empty until COST-VEC-01.
+```
+
+**Uptake record — DAG-FLOW-01: block a fabricated quantitative ceiling over a fan-out DAG** (advances `DAG-FLOW-01`
+`TODO` → `IN_PROGRESS`; the honest first cut -- BLOCK the unconserved claim, do not fabricate an allocation split):
+
+```text
+ID:                  DAG-FLOW-01 (fan-out block -- dag_ceiling refuses a conserved quantity over a fanned-out
+                     intermediate; the real quantity-flow accounting is the named follow-on)
+files:               smartchem/experiment/dag.py, tests/test_dag_flow.py, UPTAKE_MANIFEST_v0.5.0a1.md, README.md
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              3297 passed, 14 skipped, 1 xfailed (baseline 3287; +10 new tests). ruff clean on changed files.
+the defect:          `dag_ceiling` propagates the limiting-reagent max through the DAG in topological order via an
+                     `available` cache set when a step produces its target but NEVER decremented when a step CONSUMES an
+                     intermediate. A JOIN (a step fed by several intermediates -- convergence_points) is fine: it takes
+                     the min over its branches. A FAN-OUT (one intermediate consumed by TWO steps) is NOT: each consumer
+                     reads the FULL amount the single producer made, MINTING usable copies -- one mole produced, two
+                     consumed, no deficit reported. Verified by a fan-out probe before the fix.
+scoped honestly:     a LATENT-path guard, not a live-bug fix: `dag_ceiling` has NO production caller today (service.py
+                     declines to rank DAG-mode results at all -- "DAG-mode ranks nothing"); its only callers are
+                     test_dag.py and one experiments/ harness, both using JOIN-shaped (not fan-out) DAGs, so nothing in
+                     the tree trips it. The brick closes the fabrication hazard BEFORE a future DAG-mode caller could.
+built:               (1) SynthesisDAG.fanout_points -- the structural DUAL of convergence_points: producer indices whose
+                     single produced intermediate is consumed by >=2 distinct steps (a producer's out-degree over the
+                     edge list). (2) dag_ceiling raises the new DAGFlowError (a DAGError SUBCLASS, so an existing
+                     `except DAGError` still catches it) when the DAG has any fan-out, naming the fanned-out
+                     intermediate(s) and citing DAG-FLOW-01 -- the quantitative claim is BLOCKED, never a fabricated number.
+why block, not conserve: a real conserved flow across a fan-out needs an ALLOCATION POLICY over the competing consumers
+                     (proportional? priority by topological order? sourced?) -- a modeling decision the repo has not made.
+                     Per the standing discipline (known physics not new; fabrication forbidden; section 10 material
+                     reality), inventing a split would be fabrication. Blocking is the honest first cut; the real
+                     quantity-flow accounting is the DAG-FLOW-01 follow-on.
+falsifier fixture:   a constructed fan-out DAG (ethanol produced once, consumed by two steps, joined at a sink) is a
+                     VALID structure (construction does not refuse it -- the STRUCTURE is admissible, only the ceiling is
+                     unsound); fanout_points names the producer and is the DUAL of convergence_points (disjoint);
+                     dag_ceiling RAISES DAGFlowError on it (the acceptance: one produced, two consumed -> blocker), the
+                     message names the intermediate + cites the rule + says BLOCKED; DAGFlowError is a DAGError. NO false
+                     positive: a join-shaped DAG (ethyl acetate) and a linear DAG have empty fanout_points and still
+                     ceiling exactly as before.
+red-team:            (pending -- run + folded + recorded in the follow-up docs commit, as the CLI-CAN-02 bricks were)
+residual / follow-on: the real conserved quantity-flow accounting across a fan-out (an allocation policy) is DAG-FLOW-01's
+                     next brick, and it unblocks SHOP-LEAF-02 / STOCK-01 shopping-quantity + affordability; when DAG-mode
+                     bench fitting lands (service.py), its caller must catch DAGFlowError and surface the BLOCK.
 ```
 
 ## 4. P1 physical, data, and affordability backlog

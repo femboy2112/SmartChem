@@ -466,8 +466,19 @@ def resolve_cli_target(
             "no target given: supply a positional target or one of "
             + ", ".join(f"--{n}" for n, _ in EXPLICIT_CLI_FORMS)
         )
-    kind = InputKind[input_kind_flag.upper().replace("-", "_")] if input_kind_flag else None
-    return positional, kind
+    if input_kind_flag is None:
+        return positional, None
+    # self-validate the kind rather than trust the caller to pre-restrict it: an unknown/empty --input-kind is a
+    # loud domain error (exit 2), never a bare KeyError that would launder to exit-70 ERROR_INTERNAL if a future
+    # caller (a new CLI, the typed service) hands the shared resolver an unvalidated string (red-team fold).  A
+    # present-but-empty flag is "given but invalid" -- checked via `is not None`, matching the value-form branch.
+    try:
+        return positional, InputKind[input_kind_flag.upper().replace("-", "_")]
+    except KeyError:
+        raise IdentityParseError(
+            f"unknown input kind {input_kind_flag!r}; expected one of "
+            + ", ".join(k.value.lower().replace("_", "-") for k in InputKind)
+        ) from None
 
 
 def _require_molecule(resolved: ResolvedIdentity):

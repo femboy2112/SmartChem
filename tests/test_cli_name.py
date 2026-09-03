@@ -66,6 +66,15 @@ class TestResolveCliTargetUnit:
         with pytest.raises(IdentityParseError, match="already fixes the input kind"):
             resolve_cli_target(None, "smiles", forms)
 
+    def test_an_unknown_input_kind_is_a_domain_error_not_a_raw_keyerror(self):
+        # red-team fold: the shared resolver SELF-validates the kind -- an unknown/empty --input-kind is a loud
+        # IdentityParseError (exit 2), never a bare KeyError that would launder to exit-70 for a future caller.
+        forms = {f: None for f, _ in EXPLICIT_CLI_FORMS}
+        with pytest.raises(IdentityParseError, match="unknown input kind"):
+            resolve_cli_target("water", "banana", forms)
+        with pytest.raises(IdentityParseError, match="unknown input kind"):
+            resolve_cli_target("water", "", forms)   # present-but-empty is invalid, not silently AUTO
+
 
 class TestRecompileExplicitForms:
     def test_name_form_resolves_and_searches(self):

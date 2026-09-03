@@ -71,7 +71,7 @@ class TestIRCarriesTypedLossRecords:
             ChemicalCompilationIR(
                 ir.schema_version, ir.tool_version, ir.operation, ir.target, ir.request_digest,
                 tuple(reversed(ir.identity_losses)), ir.terminal_policy_digest, ir.transform_registry_digest,
-                ir.search_status, ir.standard_status, ir.search_receipt_digest, ir.candidates, ir.diagnostics,
+                ir.search_status, ir.standard_status, ir.search_receipt, ir.candidates, ir.diagnostics,
             )
 
     def test_construction_rejects_a_non_loss_in_the_tuple(self):
@@ -80,7 +80,7 @@ class TestIRCarriesTypedLossRecords:
             ChemicalCompilationIR(
                 ir.schema_version, ir.tool_version, ir.operation, ir.target, ir.request_digest,
                 ("a summary string, not a record",), ir.terminal_policy_digest, ir.transform_registry_digest,
-                ir.search_status, ir.standard_status, ir.search_receipt_digest, ir.candidates, ir.diagnostics,
+                ir.search_status, ir.standard_status, ir.search_receipt, ir.candidates, ir.diagnostics,
             )
 
 

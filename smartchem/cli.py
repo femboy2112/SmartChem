@@ -249,7 +249,13 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
         lines.append(f"  identity match layer: {response.request.identity_policy.match_layer.value} (ID-LAYER-02)")
         lines.append(f"  search: {response.standard_status} (engine: {ir.search_status.value}); "
                      f"candidates: {ir.candidate_count}")
-        lines.append(f"  receipt: {ir.search_receipt_digest[:16]}")
+        _r = ir.search_receipt
+        _u = lambda v: "UNKNOWN" if v is None else v  # noqa: E731 -- section 8.1 "null, not zero" display
+        lines.append(
+            f"  receipt ({_r.search_kind}) {_r.digest[:16]}: nodes={_u(_r.nodes_visited)}, "
+            f"transforms={_u(_r.transforms_considered)}, results={_u(_r.results_returned)}"
+            + (f"; stopped: {_r.stop_reason}" if _r.stop_reason else "")
+        )
     # blockers/unknowns are NEVER suppressed by --quiet.  A loss is a first-class typed record (IR-LOSS-01); the
     # machine --json payload carries the STRUCTURED record, and this same summary() line is the derived string the
     # response's semantic projection exposes -- so the human and JSON views cannot disagree (CLI-JSON-01 agreement).

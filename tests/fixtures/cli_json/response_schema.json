@@ -19,7 +19,7 @@
     "operation": "enum(CompilationOperation)",
     "request_digest": "str (sha256)",
     "schema_version": "str",
-    "search_receipt_digest": "str (sha256)",
+    "search_receipt": "object(search-receipt-view) (the full section 8.1 receipt; IR-CHEM-01)",
     "search_status": "enum(SearchStatus)",
     "standard_status": "str (section 8.2 status)",
     "target": "object(chemical-identity)",
@@ -65,5 +65,28 @@
     "schema_version": "str",
     "standard_status": "str|null (section 8.2 status)"
   },
-  "response_schema_version": "smartchem.service/compilation-response-v1alpha3"
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha3",
+  "search_receipt_view_fields": {
+    "candidate_enumeration_complete": "bool",
+    "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",
+    "candidates_emitted": "int|null (null for the formula descent)",
+    "candidates_rejected_by_reason": "array[[str, int]] (sorted, distinct, positive counts)",
+    "cut_budget": "int|null",
+    "cut_budget_scope": "enum(PER_NODE/GLOBAL)",
+    "cut_enumeration_complete": "bool",
+    "max_depth": "int|null (null for the formula descent -- no depth bound)",
+    "nodes_visited": "int|null",
+    "result_limit": "int|null",
+    "result_limit_saturated": "bool",
+    "results_returned": "int|null",
+    "schema_version": "str",
+    "search_kind": "str",
+    "standard_status": "str (section 8.2 status)",
+    "status": "enum(SearchStatus)",
+    "stop_reason": "str ('' when complete)",
+    "target_identity_digest": "str|null",
+    "terminal_policy_digest": "str|null",
+    "transform_registry_digest": "str|null",
+    "transforms_considered": "int|null"
+  }
 }

@@ -111,7 +111,8 @@ class TestJsonCarriesEverySection143Field:
         p = json.loads(out)
         assert p["request"]["operation"] == "RECOMPILE"                      # request
         assert p["compilation_ir"]["target"]["identity_digest"]              # identity
-        assert p["compilation_ir"]["search_receipt_digest"]                  # receipt (as a digest)
+        _rcpt = p["compilation_ir"]["search_receipt"]                        # the FULL section 8.1 receipt (IR-CHEM-01)
+        assert _rcpt["search_kind"] == "LINEAR_ROUTE" and "nodes_visited" in _rcpt and "candidates_rejected_by_reason" in _rcpt
         assert p["compilation_ir"]["candidates"][0]["readiness_tier"]        # tier
         assert p["compilation_ir"]["candidates"][0]["candidate_digest"]      # route ID
         assert "diagnostics" in p                                           # blockers channel present
@@ -206,6 +207,10 @@ class TestHumanAndJsonAgree:
         assert fields["outcome"] == payload["outcome"]
         assert fields["exit_code"] == payload["exit_code"]
         assert fields["target_repr"] == payload["compilation_ir"]["target"]["canonical_repr"]
-        assert fields["search_receipt_digest"] == payload["compilation_ir"]["search_receipt_digest"]
+        # the receipt now rides in FULL (IR-CHEM-01); the response's convenience digest is recoverable from it.
+        from smartchem.compilation_ir import _receipt_view_from_payload
+        assert fields["search_receipt_digest"] == _receipt_view_from_payload(
+            payload["compilation_ir"]["search_receipt"]
+        ).digest
         assert list(fields["candidate_ids"]) == [c["candidate_digest"] for c in payload["compilation_ir"]["candidates"]]
         assert fields["result_digest"] == payload["result_digest"]

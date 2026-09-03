@@ -933,9 +933,10 @@ class CompilationResponse:
     It wraps the request, the produced :class:`~smartchem.compilation_ir.ChemicalCompilationIR` (the core of the
     section 13.2 fields -- ``normalized_target``, ``identity_losses`` and ``candidates`` read through to it in
     full), a TOTAL :class:`ResponseOutcome`, and the section 8.2 ``standard_status`` where a search ran.  The
-    section 13.2 ``search_receipt`` is exposed here only as its DIGEST (:attr:`search_receipt_digest`): the IR
-    carries the receipt's digest, not the full ``SearchReceipt`` object, so the mandated receipt CONTENT (per-limit
-    counters/flags) is not yet recoverable from the response -- embedding it is a named follow-on.
+    section 13.2 ``search_receipt`` now rides in FULL inside the IR (``compilation_ir.search_receipt``, a
+    :class:`~smartchem.compilation_ir.Section81ReceiptView` with the ~20 mandated counters -- IR-CHEM-01), so the
+    receipt CONTENT is recoverable from the response's machine payload; :attr:`search_receipt_digest` remains as a
+    convenience digest of that view.
     ``ranked_route_dossiers`` (section 13.2) is POPULATED on a routes-mode search (CLI-CAN-02 brick 2) with typed
     :class:`RankedRouteSummary` values -- the per-route section-11 bench-fit disposition, best-first.
     ``affordability_frontier`` is the one section 13.2 field whose producer is still unbuilt (COST-VEC-01); it stays
@@ -1078,7 +1079,9 @@ class CompilationResponse:
 
     @property
     def search_receipt_digest(self) -> "str | None":
-        return None if self.compilation_ir is None else self.compilation_ir.search_receipt_digest
+        # a convenience digest of the full section 8.1 receipt view the IR now carries (IR-CHEM-01); the content
+        # itself is compilation_ir.search_receipt, recoverable from the machine payload.
+        return None if self.compilation_ir is None else self.compilation_ir.search_receipt.digest
 
     @property
     def result_digest(self) -> str:
@@ -1724,9 +1727,32 @@ def response_schema() -> dict:
             "transform_registry_digest": "str (sha256)",
             "search_status": "enum(SearchStatus)",
             "standard_status": "str (section 8.2 status)",
-            "search_receipt_digest": "str (sha256)",
+            "search_receipt": "object(search-receipt-view) (the full section 8.1 receipt; IR-CHEM-01)",
             "candidates": "array[object(candidate-summary)]",
             "diagnostics": "array[str]",
+        },
+        "search_receipt_view_fields": {
+            "schema_version": "str",
+            "search_kind": "str",
+            "status": "enum(SearchStatus)",
+            "standard_status": "str (section 8.2 status)",
+            "cut_budget_scope": "enum(PER_NODE/GLOBAL)",
+            "target_identity_digest": "str|null",
+            "terminal_policy_digest": "str|null",
+            "transform_registry_digest": "str|null",
+            "max_depth": "int|null (null for the formula descent -- no depth bound)",
+            "cut_budget": "int|null",
+            "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",
+            "result_limit": "int|null",
+            "nodes_visited": "int|null",
+            "transforms_considered": "int|null",
+            "candidates_emitted": "int|null (null for the formula descent)",
+            "results_returned": "int|null",
+            "candidates_rejected_by_reason": "array[[str, int]] (sorted, distinct, positive counts)",
+            "cut_enumeration_complete": "bool",
+            "candidate_enumeration_complete": "bool",
+            "result_limit_saturated": "bool",
+            "stop_reason": "str ('' when complete)",
         },
         "chemical_identity_fields": {
             "schema_version": "str",

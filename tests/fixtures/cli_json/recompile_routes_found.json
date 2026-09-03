@@ -21,8 +21,35 @@
     "identity_losses": [],
     "operation": "RECOMPILE",
     "request_digest": "f336190648c8db2f74ae93b29762b55172df15caa7e5a286f637cfb08c993cf3",
-    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha3",
-    "search_receipt_digest": "bf5fc4aaf9a1d4f06abc42d0f719340948264f982ba46f988022a85d796bd210",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha4",
+    "search_receipt": {
+      "candidate_enumeration_complete": true,
+      "candidate_limit": null,
+      "candidates_emitted": 12,
+      "candidates_rejected_by_reason": [
+        [
+          "duplicate",
+          10
+        ]
+      ],
+      "cut_budget": 20000,
+      "cut_budget_scope": "PER_NODE",
+      "cut_enumeration_complete": true,
+      "max_depth": 2,
+      "nodes_visited": 3,
+      "result_limit": 100,
+      "result_limit_saturated": false,
+      "results_returned": 2,
+      "schema_version": "smartchem.compilation-ir/search-receipt-view-v1alpha1",
+      "search_kind": "LINEAR_ROUTE",
+      "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+      "status": "COMPLETE_WITHIN_BOUNDS",
+      "stop_reason": "",
+      "target_identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
+      "terminal_policy_digest": "308abd7c4f8905353fec2eda637b4f541fdd1ee5a4980b5fcba09b3c6ce54b48",
+      "transform_registry_digest": "18034da6ac94265b997f614eecf4249504439e1db44a60240e7df04fb790b9ef",
+      "transforms_considered": 28
+    },
     "search_status": "COMPLETE_WITHIN_BOUNDS",
     "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
     "target": {
@@ -174,7 +201,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "8453893fae14f95356b12cb353786b5eae81c647c611039f89f8b199d13be39e",
+  "result_digest": "7f0bf628b1bfe6e208e5486e9ba83fd5b96d18e2bb2e13c048ea216886cdeb9c",
   "schema_version": "smartchem.service/compilation-response-v1alpha3",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

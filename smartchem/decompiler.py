@@ -686,6 +686,25 @@ class FormulaSearchReceipt(Digestible):
         """
         return self.status.standard_name
 
+    # -- section 8.1 completeness flags, the same three the route/DAG receipts expose as properties, so every
+    # receipt presents ONE uniform section-8.1 face for a shared projection (IR-CHEM-01's Section81ReceiptView).
+    # The descent has no depth bound; its only stops are the per-node search-node `budget` and the `max_edges` cap.
+    @property
+    def cut_enumeration_complete(self) -> bool:
+        """Section 8.1: whether the per-node search-node ``budget`` fully enumerated each node (nothing cut)."""
+        return self.status is not SearchStatus.PARTIAL_SEARCH_BUDGET
+
+    @property
+    def result_limit_saturated(self) -> bool:
+        """Section 8.1: whether the whole-graph ``max_edges`` cap saturated before exhaustion."""
+        return self.status is SearchStatus.PARTIAL_RESULT_LIMIT
+
+    @property
+    def candidate_enumeration_complete(self) -> bool:
+        """Section 8.1: whether candidate enumeration finished (the descent has no depth bound, so only the
+        ``max_edges`` cap can truncate it)."""
+        return not self.result_limit_saturated
+
     def render(self) -> str:
         def _n(v: "int | None") -> str:
             return "UNKNOWN" if v is None else str(v)

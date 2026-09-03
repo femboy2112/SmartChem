@@ -2,9 +2,11 @@
 
 The standard (section 4.1) requires ONE versioned intermediate representation that ``decompile`` emits and
 ``recompile`` consumes, so the two operations are views of a single typed artifact rather than two adjacent
-search kinds.  This module builds the IR *envelope*, wires both compiler directions to emit it, and carries
-first-class typed section-5.3 :class:`~smartchem.identity.IdentityLoss` records inside the IR (IR-LOSS-01); the
-fuller section 8.1 SearchReceipt content (the other counters) remains open and is named as such.
+search kinds.  This module builds the IR *envelope*, wires both compiler directions to emit it, carries
+first-class typed section-5.3 :class:`~smartchem.identity.IdentityLoss` records inside the IR (IR-LOSS-01), and
+carries the FULL section 8.1 :class:`Section81ReceiptView` -- the ~20 mandated search-receipt counters
+(nodes_visited, transforms_considered, candidates_rejected_by_reason, the enumeration-complete flags, ...) --
+so a consumer reading the transported IR sees the whole receipt, not just its digest (IR-CHEM-01).
 
 The one property that makes this an IR and not a display struct (section 4.1, verbatim)
 ------------------------------------------------------------------------------------------
@@ -41,10 +43,12 @@ __all__ = [
     "CHEMICAL_COMPILATION_IR_SCHEMA",
     "CHEMICAL_IDENTITY_SCHEMA",
     "CANDIDATE_SUMMARY_SCHEMA",
+    "SEARCH_RECEIPT_VIEW_SCHEMA",
     "CompilationOperation",
     "IdentityLayer",
     "ChemicalIdentity",
     "CandidateSummary",
+    "Section81ReceiptView",
     "ChemicalCompilationIR",
     "InverseStatus",
     "InverseResult",
@@ -57,11 +61,14 @@ __all__ = [
     "recompile_from_serialized",
 ]
 
-# v1alpha3 (IR-LOSS-01): identity_losses is now a tuple of first-class typed IdentityLoss records, not summary
-# strings -- a genuine serialized-shape change (array[str] -> array[object]), so the schema version bumps.
-CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha3"
+# v1alpha3 (IR-LOSS-01): identity_losses became typed IdentityLoss records (array[str] -> array[object]).
+# v1alpha4 (IR-CHEM-01): the IR carries the FULL section 8.1 receipt (Section81ReceiptView) instead of only its
+# digest -- search_receipt_digest (str) -> search_receipt (object with the ~20 mandated counters).  Both are
+# genuine serialized-shape changes, so the schema version bumps with each.
+CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha4"
 CHEMICAL_IDENTITY_SCHEMA = "smartchem.compilation-ir/chemical-identity-v1alpha1"
 CANDIDATE_SUMMARY_SCHEMA = "smartchem.compilation-ir/candidate-summary-v1alpha1"
+SEARCH_RECEIPT_VIEW_SCHEMA = "smartchem.compilation-ir/search-receipt-view-v1alpha1"
 
 
 class CompilationOperation(str, Enum):
@@ -146,6 +153,171 @@ class CandidateSummary(Digestible):
                 raise ValueError(f"{name} must be a non-empty string")
 
 
+def _receipt_first(receipt: "object", *names: str) -> "object | None":
+    """The first attribute among ``names`` the receipt actually has -- the bridge for the section-8.1 fields the
+    three receipts name differently (``cut_budget_per_expansion`` vs ``budget``; ``result_limit`` vs
+    ``max_edges``; ``results_returned`` vs ``edges_emitted``)."""
+    for name in names:
+        if hasattr(receipt, name):
+            return getattr(receipt, name)
+    return None
+
+
+@dataclass(frozen=True)
+class Section81ReceiptView(Digestible):
+    """The full section 8.1 ``SearchReceipt`` the standard mandates, projected off ANY of the three engine
+    receipts (route / DAG / formula) into ONE canonical shape carried inside the IR (IR-CHEM-01).
+
+    Section 8.1 requires every search to return a receipt with the ~20 counters below, and "counters that are not
+    yet available MUST be null/UNKNOWN, not zero".  The three engine receipts already MEASURE these, but the IR
+    used to carry only their DIGEST -- a fingerprint a consumer cannot read.  This view carries the counters
+    THEMSELVES, so a transported IR exposes nodes_visited, transforms_considered, the rejection histogram, the
+    enumeration-complete flags and the rest, not just a hash of them.
+
+    It is a lossy PROJECTION of the native receipt (it drops engine-private fields the standard does not ask for),
+    so it cannot be cross-checked against the native receipt's own digest on deserialize.  Instead its
+    ``__post_init__`` re-validates its OWN internal consistency -- the section-8.1 counter invariants and the
+    status/standard_status agreement -- exactly as the engine receipts do, so a tampered payload is refused on
+    read rather than trusted.  As a :class:`Digestible` field of the IR it is covered by the IR's own digest.
+
+    Per-receipt bridging (never a fabricated value): ``max_depth`` is ``None`` for the formula descent (it has no
+    depth bound); ``candidate_limit`` is ``None`` on every current receipt (no engine stops on a distinct
+    emitted-candidate cap); ``candidates_emitted`` is ``None`` for the formula descent (it does not measure a
+    separate pre-dedup emit count); ``stop_reason`` is the formula receipt's own text, or the section-8.2 status
+    for a truncated route/DAG search (which name the stop via their flags, not a text field), or "" when complete.
+    """
+
+    schema_version: str
+    search_kind: str
+    status: str                      # SearchStatus.value (native completeness enum)
+    standard_status: str             # the section 8.2 terminal-status name
+    cut_budget_scope: str
+    target_identity_digest: "str | None"
+    terminal_policy_digest: "str | None"
+    transform_registry_digest: "str | None"
+    max_depth: "int | None"
+    cut_budget: "int | None"
+    candidate_limit: "int | None"
+    result_limit: "int | None"
+    nodes_visited: "int | None"
+    transforms_considered: "int | None"
+    candidates_emitted: "int | None"
+    results_returned: "int | None"
+    candidates_rejected_by_reason: tuple[tuple[str, int], ...]
+    cut_enumeration_complete: bool
+    candidate_enumeration_complete: bool
+    result_limit_saturated: bool
+    stop_reason: str
+
+    @classmethod
+    def from_receipt(cls, receipt: "object") -> "Section81ReceiptView":
+        """Project a route / DAG / formula search receipt onto the canonical section-8.1 view (never fabricating a
+        counter a receipt does not measure -- an absent field maps to ``None``, per section 8.1's "null, not zero")."""
+        stop_reason = _receipt_first(receipt, "stop_reason")
+        if stop_reason is None:  # route/DAG name the stop via their flags, not a text field
+            stop_reason = "" if receipt.complete_within_bounds else receipt.standard_status
+        return cls(
+            SEARCH_RECEIPT_VIEW_SCHEMA,
+            receipt.search_kind,
+            receipt.status.value,
+            receipt.standard_status,
+            receipt.cut_budget_scope,
+            receipt.target_identity_digest,
+            receipt.terminal_policy_digest,
+            receipt.transform_registry_digest,
+            _receipt_first(receipt, "max_depth"),
+            _receipt_first(receipt, "cut_budget_per_expansion", "budget"),
+            None,  # candidate_limit: no engine stops on a distinct emitted-candidate cap (section 8.1 UNKNOWN)
+            _receipt_first(receipt, "result_limit", "max_edges"),
+            receipt.nodes_visited,
+            receipt.transforms_considered,
+            _receipt_first(receipt, "candidates_emitted"),
+            _receipt_first(receipt, "results_returned", "edges_emitted"),
+            receipt.candidates_rejected_by_reason,
+            receipt.cut_enumeration_complete,
+            receipt.candidate_enumeration_complete,
+            receipt.result_limit_saturated,
+            stop_reason,
+        )
+
+    def __post_init__(self) -> None:
+        if self.schema_version != SEARCH_RECEIPT_VIEW_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {SEARCH_RECEIPT_VIEW_SCHEMA!r}")
+        if not isinstance(self.search_kind, str) or not self.search_kind:
+            raise ValueError("search_kind must be a non-empty string")
+        # native status must be a real SearchStatus, and standard_status a real section-8.2 name that AGREES with
+        # it -- for a single-limit member exactly its standard_name; for PARTIAL_MULTIPLE_LIMITS (no single 8.2
+        # name) a resolvable primary.  A tampered payload whose standard_status contradicts its status is refused.
+        try:
+            native = SearchStatus(self.status)
+        except ValueError as exc:
+            raise ValueError(f"status must be a SearchStatus value, got {self.status!r}") from exc
+        if self.standard_status not in STANDARD_8_2_STATUSES:
+            raise ValueError(f"standard_status must be one of the section 8.2 statuses {STANDARD_8_2_STATUSES}")
+        native_8_2 = native.standard_name
+        if native_8_2 is not None:
+            if self.standard_status != native_8_2:
+                raise ValueError(
+                    f"standard_status {self.standard_status!r} must equal {native_8_2!r} for {self.status}"
+                )
+        elif self.standard_status not in PRIMARY_RESOLVABLE_8_2_STATUSES:
+            raise ValueError(
+                f"a {self.status} view must resolve to a primary in {sorted(PRIMARY_RESOLVABLE_8_2_STATUSES)}, "
+                f"not {self.standard_status!r}"
+            )
+        if self.cut_budget_scope not in ("PER_NODE", "GLOBAL"):
+            raise ValueError("cut_budget_scope must be 'PER_NODE' or 'GLOBAL'")
+        for name in ("target_identity_digest", "terminal_policy_digest", "transform_registry_digest", "stop_reason"):
+            value = getattr(self, name)
+            if name == "stop_reason":
+                if not isinstance(value, str):
+                    raise TypeError("stop_reason must be a string ('' when complete)")
+            elif value is not None and (not isinstance(value, str) or not value):
+                raise ValueError(f"{name} must be None (UNKNOWN) or a non-empty string")
+        for name in ("max_depth", "cut_budget", "candidate_limit", "result_limit", "nodes_visited",
+                     "transforms_considered", "candidates_emitted", "results_returned"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError(f"{name} must be None (UNKNOWN) or a non-negative integer")
+        if (self.candidates_emitted is not None and self.results_returned is not None
+                and self.candidates_emitted < self.results_returned):
+            raise ValueError("candidates_emitted cannot be fewer than results_returned")
+        for name in ("cut_enumeration_complete", "candidate_enumeration_complete", "result_limit_saturated"):
+            if type(getattr(self, name)) is not bool:
+                raise TypeError(f"{name} must be bool")
+        # completeness coherence: a search complete within its declared space cannot also report the result cap
+        # saturated, and a COMPLETE native status must carry all three flags consistent with completeness.
+        if native is SearchStatus.COMPLETE_WITHIN_BOUNDS:
+            if self.result_limit_saturated or not self.cut_enumeration_complete or not self.candidate_enumeration_complete:
+                raise ValueError("a COMPLETE_WITHIN_BOUNDS view cannot report a truncating limit")
+            if self.stop_reason:
+                raise ValueError("a complete search view carries no stop reason")
+        _validate_rejection_histogram(self.candidates_rejected_by_reason)
+
+
+def _validate_rejection_histogram(rejected: "object") -> None:
+    """The shared section-8.1 invariant on ``candidates_rejected_by_reason``: a tuple of ``(reason, positive
+    count)`` pairs, sorted by reason, distinct -- the same shape the engine receipts enforce at the source."""
+    if type(rejected) is not tuple:
+        raise TypeError("candidates_rejected_by_reason must be a tuple of (reason, count) pairs")
+    seen: set[str] = set()
+    prev: "str | None" = None
+    for pair in rejected:
+        if type(pair) is not tuple or len(pair) != 2:
+            raise TypeError("each candidates_rejected_by_reason entry must be a (reason, count) pair")
+        reason, count = pair
+        if not isinstance(reason, str) or not reason:
+            raise ValueError("a rejection reason must be a non-empty string")
+        if type(count) is not int or count <= 0:
+            raise ValueError(f"rejection count for {reason!r} must be a positive int")
+        if reason in seen:
+            raise ValueError(f"rejection reason {reason!r} appears twice; reasons must be distinct")
+        if prev is not None and reason < prev:
+            raise ValueError("candidates_rejected_by_reason must be sorted by reason (canonical order)")
+        seen.add(reason)
+        prev = reason
+
+
 @dataclass(frozen=True)
 class ChemicalCompilationIR(Digestible):
     """The versioned shared artifact both compiler directions consume or emit (standard section 4.1).
@@ -173,7 +345,10 @@ class ChemicalCompilationIR(Digestible):
     # because the engine's PARTIAL_MULTIPLE_LIMITS has no single section 8.2 name -- it must be resolved to one
     # primary from the receipt's per-limit flags at construction, where the receipt is live (the IR is not).
     standard_status: str
-    search_receipt_digest: str
+    # the FULL section 8.1 SearchReceipt (the ~20 mandated counters), not just its digest (IR-CHEM-01): a
+    # consumer reading the transported IR sees nodes_visited/transforms_considered/the rejection histogram/the
+    # enumeration-complete flags themselves.  As a Digestible field it is covered by the IR's own digest.
+    search_receipt: Section81ReceiptView
     candidates: tuple[CandidateSummary, ...]
     diagnostics: tuple[str, ...]
 
@@ -192,11 +367,12 @@ class ChemicalCompilationIR(Digestible):
         # that maps 1:1 it must be exactly search_status.standard_name; for PARTIAL_MULTIPLE_LIMITS (no single 8.2
         # name) it must be one of the primaries that resolution can LEGALLY produce.  This forbids a section 8.2
         # status that contradicts the native one -- for a single-limit status exactly, and for PARTIAL_MULTIPLE_
-        # LIMITS up to the primary CHOICE: the IR carries only search_receipt_digest, not the live per-limit flags,
-        # so the guard cannot pin WHICH resolvable primary THIS receipt implies (that is pinned upstream in
-        # SearchReceipt.standard_status, where the flags are live).  Every value it admits is INCOMPLETE_*, so a
-        # partial is never laundered toward complete either way; every real producer passes receipt.standard_status,
-        # so the looseness is reachable only by a hand-built, internally-inconsistent payload.
+        # LIMITS up to the primary CHOICE: the enum member alone cannot pin WHICH resolvable primary THIS receipt
+        # implies (that is pinned upstream in SearchReceipt.standard_status, where the per-limit flags are live).
+        # Every value it admits is INCOMPLETE_*, so a partial is never laundered toward complete either way; every
+        # real producer passes receipt.standard_status, so the looseness is reachable only by a hand-built,
+        # internally-inconsistent payload -- and the search_receipt view's own status/standard_status must match
+        # this IR's (checked below), so such a payload is caught there too.
         if self.standard_status not in STANDARD_8_2_STATUSES:
             raise ValueError(f"standard_status must be one of the section 8.2 statuses {STANDARD_8_2_STATUSES}")
         _native_8_2 = self.search_status.standard_name
@@ -211,9 +387,24 @@ class ChemicalCompilationIR(Digestible):
                 f"a {self.search_status.value} status must resolve to a primary stop reason in "
                 f"{sorted(PRIMARY_RESOLVABLE_8_2_STATUSES)}, not {self.standard_status!r}"
             )
-        for name in ("request_digest", "terminal_policy_digest", "transform_registry_digest", "search_receipt_digest"):
+        for name in ("request_digest", "terminal_policy_digest", "transform_registry_digest"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise ValueError(f"{name} must be a non-empty string")
+        # the section 8.1 receipt view must be a real one, and it must describe the SAME search this IR does: its
+        # native status and section-8.2 status must match the IR's own (a hand-built payload pairing a receipt
+        # view with a contradicting IR status is refused -- the two describe one search or neither is trusted).
+        if type(self.search_receipt) is not Section81ReceiptView:
+            raise TypeError("search_receipt must be a Section81ReceiptView")
+        if self.search_receipt.status != self.search_status.value:
+            raise ValueError(
+                f"search_receipt.status {self.search_receipt.status!r} must equal the IR search_status "
+                f"{self.search_status.value!r} (they describe one search)"
+            )
+        if self.search_receipt.standard_status != self.standard_status:
+            raise ValueError(
+                f"search_receipt.standard_status {self.search_receipt.standard_status!r} must equal the IR "
+                f"standard_status {self.standard_status!r}"
+            )
         if type(self.diagnostics) is not tuple or any(not isinstance(x, str) for x in self.diagnostics):
             raise TypeError("diagnostics must be a tuple of strings")
         # identity_losses are first-class typed section-5.3 records (IR-LOSS-01), carried in canonical
@@ -356,7 +547,7 @@ def decompile_to_ir(
         registry_digest,
         receipt.status,
         receipt.standard_status,
-        receipt.digest,
+        Section81ReceiptView.from_receipt(receipt),
         candidates,
         diagnostics,
     )
@@ -517,7 +708,7 @@ def recompile_to_ir(
         registry_digest,
         receipt.status,
         receipt.standard_status,
-        receipt.digest,
+        Section81ReceiptView.from_receipt(receipt),
         candidates,
         diagnostics,
     )
@@ -530,6 +721,47 @@ def recompile_to_ir(
 # tuples as lists) and from_payload rebuilds the SAME frozen dataclasses -- which re-run their __post_init__
 # invariants, so a tampered payload (unsorted/duplicate candidates, an unknown enum, a bad schema) is REFUSED on
 # read rather than silently trusted. json is written sort_keys=True, so the serialized string is canonical too.
+
+
+def _receipt_view_to_payload(view: Section81ReceiptView) -> dict:
+    """A JSON-compatible dict of the full section 8.1 receipt view (nulls preserved, histogram as [reason, count])."""
+    return {
+        "schema_version": view.schema_version,
+        "search_kind": view.search_kind,
+        "status": view.status,
+        "standard_status": view.standard_status,
+        "cut_budget_scope": view.cut_budget_scope,
+        "target_identity_digest": view.target_identity_digest,
+        "terminal_policy_digest": view.terminal_policy_digest,
+        "transform_registry_digest": view.transform_registry_digest,
+        "max_depth": view.max_depth,
+        "cut_budget": view.cut_budget,
+        "candidate_limit": view.candidate_limit,
+        "result_limit": view.result_limit,
+        "nodes_visited": view.nodes_visited,
+        "transforms_considered": view.transforms_considered,
+        "candidates_emitted": view.candidates_emitted,
+        "results_returned": view.results_returned,
+        "candidates_rejected_by_reason": [[r, c] for r, c in view.candidates_rejected_by_reason],
+        "cut_enumeration_complete": view.cut_enumeration_complete,
+        "candidate_enumeration_complete": view.candidate_enumeration_complete,
+        "result_limit_saturated": view.result_limit_saturated,
+        "stop_reason": view.stop_reason,
+    }
+
+
+def _receipt_view_from_payload(p: dict) -> Section81ReceiptView:
+    """Rebuild a :class:`Section81ReceiptView` from its payload, re-running its __post_init__ (a tampered view --
+    a status that contradicts its standard_status, a negative counter, an unsorted histogram -- is refused here)."""
+    return Section81ReceiptView(
+        p["schema_version"], p["search_kind"], p["status"], p["standard_status"], p["cut_budget_scope"],
+        p["target_identity_digest"], p["terminal_policy_digest"], p["transform_registry_digest"],
+        p["max_depth"], p["cut_budget"], p["candidate_limit"], p["result_limit"], p["nodes_visited"],
+        p["transforms_considered"], p["candidates_emitted"], p["results_returned"],
+        tuple((r, c) for r, c in p["candidates_rejected_by_reason"]),
+        p["cut_enumeration_complete"], p["candidate_enumeration_complete"], p["result_limit_saturated"],
+        p["stop_reason"],
+    )
 
 
 def ir_to_payload(ir: ChemicalCompilationIR) -> dict:
@@ -552,7 +784,7 @@ def ir_to_payload(ir: ChemicalCompilationIR) -> dict:
         "transform_registry_digest": ir.transform_registry_digest,
         "search_status": ir.search_status.value,
         "standard_status": ir.standard_status,
-        "search_receipt_digest": ir.search_receipt_digest,
+        "search_receipt": _receipt_view_to_payload(ir.search_receipt),
         "candidates": [
             {
                 "schema_version": c.schema_version,
@@ -597,7 +829,7 @@ def ir_from_payload(payload: dict) -> ChemicalCompilationIR:
         payload["transform_registry_digest"],
         SearchStatus(payload["search_status"]),
         payload["standard_status"],
-        payload["search_receipt_digest"],
+        _receipt_view_from_payload(payload["search_receipt"]),
         candidates,
         tuple(payload["diagnostics"]),
     )

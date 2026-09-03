@@ -3,6 +3,7 @@
 Pins the DEFINING property (standard section 4.1): the value's digest changes on any semantic input and never on
 a display/ordering difference; plus the value-construction invariants that keep the IR honest.
 """
+import json
 import random
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from smartchem.compilation_ir import (
     CANDIDATE_SUMMARY_SCHEMA,
     CHEMICAL_COMPILATION_IR_SCHEMA,
+    SEARCH_RECEIPT_VIEW_SCHEMA,
     CandidateSummary,
     ChemicalCompilationIR,
     ChemicalIdentity,
@@ -17,6 +19,7 @@ from smartchem.compilation_ir import (
     IdentityLayer,
     InverseResult,
     InverseStatus,
+    Section81ReceiptView,
     decompile_to_ir,
     deserialize_ir,
     ir_from_payload,
@@ -27,8 +30,27 @@ from smartchem.compilation_ir import (
 )
 from smartchem.transform_registry import TRANSFORM_REGISTRIES, transform_registry_digest
 from smartchem.decompiler import Formula, example_inventory
-from smartchem.search import STANDARD_8_2_STATUSES, SearchStatus
+from smartchem.search import PRIMARY_RESOLVABLE_8_2_STATUSES, STANDARD_8_2_STATUSES, SearchStatus
 from smartchem.smiles import parse_smiles
+
+
+def _view_for(native: SearchStatus) -> Section81ReceiptView:
+    """A minimal internally-consistent section 8.1 view whose native status is ``native`` -- so a hand-built IR
+    can exercise the IR's OWN standard_status guard without tripping the view<->IR status-agreement check first."""
+    if native.standard_name is not None:
+        std = native.standard_name
+    else:  # PARTIAL_MULTIPLE_LIMITS: pick any resolvable primary so the view itself is valid
+        std = sorted(PRIMARY_RESOLVABLE_8_2_STATUSES)[0]
+    result_saturated = native is SearchStatus.PARTIAL_RESULT_LIMIT
+    cut_complete = native not in (SearchStatus.PARTIAL_CUT_BUDGET, SearchStatus.PARTIAL_SEARCH_BUDGET)
+    cand_complete = native is not SearchStatus.PARTIAL_DEPTH_LIMIT and not result_saturated
+    stop = "" if native is SearchStatus.COMPLETE_WITHIN_BOUNDS else std
+    return Section81ReceiptView(
+        SEARCH_RECEIPT_VIEW_SCHEMA, "TEST_KIND", native.value, std, "PER_NODE",
+        None, None, None, None, None, None, None, None, None, None, None, (),
+        cut_complete, cand_complete, result_saturated, stop,
+    )
+
 
 INV = example_inventory()
 
@@ -108,7 +130,7 @@ class TestIRConstructionInvariants:
             ChemicalCompilationIR(
                 CHEMICAL_COMPILATION_IR_SCHEMA, ir.tool_version, ir.operation, ir.target, ir.request_digest,
                 ir.identity_losses, ir.terminal_policy_digest, ir.transform_registry_digest, ir.search_status,
-                ir.standard_status, ir.search_receipt_digest, tuple(reversed(ir.candidates)), ir.diagnostics,
+                ir.standard_status, ir.search_receipt, tuple(reversed(ir.candidates)), ir.diagnostics,
             )
 
     def test_construction_rejects_duplicate_candidates(self):
@@ -117,7 +139,7 @@ class TestIRConstructionInvariants:
             ChemicalCompilationIR(
                 CHEMICAL_COMPILATION_IR_SCHEMA, ir.tool_version, ir.operation, ir.target, ir.request_digest,
                 ir.identity_losses, ir.terminal_policy_digest, ir.transform_registry_digest, ir.search_status,
-                ir.standard_status, ir.search_receipt_digest, ir.candidates + ir.candidates, ir.diagnostics,
+                ir.standard_status, ir.search_receipt, ir.candidates + ir.candidates, ir.diagnostics,
             )
 
     def test_identity_of_formula_records_the_formula_layer(self):
@@ -503,7 +525,7 @@ class TestTransformRegistryDigest:
             ChemicalCompilationIR(
                 CHEMICAL_COMPILATION_IR_SCHEMA, ir.tool_version, ir.operation, ir.target, ir.request_digest,
                 ir.identity_losses, ir.terminal_policy_digest, "", ir.search_status, ir.standard_status,
-                ir.search_receipt_digest, ir.candidates, ir.diagnostics,
+                ir.search_receipt, ir.candidates, ir.diagnostics,
             )
 
     def test_unknown_registry_kind_is_refused(self):
@@ -516,9 +538,9 @@ class TestSection82IRFace:
     native search_status, and a refusal string that cites section 8.2 now prints an actual section 8.2 status."""
 
     def test_schema_bumped_for_the_standard_status_and_loss_fields(self):
-        # v1alpha2 added the section 8.2 standard_status field; v1alpha3 (IR-LOSS-01) turned identity_losses into
-        # first-class typed records (array[str] -> array[object]) -- another serialized-shape change.
-        assert CHEMICAL_COMPILATION_IR_SCHEMA.endswith("v1alpha3")
+        # v1alpha2 added standard_status; v1alpha3 (IR-LOSS-01) made identity_losses typed records; v1alpha4
+        # (IR-CHEM-01) carries the FULL section 8.1 receipt (search_receipt_digest str -> search_receipt object).
+        assert CHEMICAL_COMPILATION_IR_SCHEMA.endswith("v1alpha4")
 
     def test_decompile_ir_carries_a_faithful_8_2_status(self):
         ir = decompile_to_ir("C8H9NO2", INV)
@@ -549,11 +571,13 @@ class TestSection82IRFace:
 
     # -- the faithfulness guard: the IR cannot carry a section 8.2 status contradicting its native status ----
     def _ir_with(self, native, standard):
+        # the search_receipt view matches `native` (so the view<->IR status-agreement check passes), leaving the
+        # IR's own standard_status guard -- (native, standard) coherence -- as the thing under test.
         base = decompile_to_ir("H2O")
         return ChemicalCompilationIR(
             CHEMICAL_COMPILATION_IR_SCHEMA, base.tool_version, base.operation, base.target, base.request_digest,
             base.identity_losses, base.terminal_policy_digest, base.transform_registry_digest, native, standard,
-            base.search_receipt_digest, base.candidates, base.diagnostics,
+            _view_for(native), base.candidates, base.diagnostics,
         )
 
     def test_a_single_limit_status_must_match_its_standard_name(self):
@@ -592,3 +616,77 @@ class TestSection82IRFace:
         assert "section 8.2" in starved.refusal                          # the stop-reason citation is accurate
         # and this zero-candidate/incomplete cell also names its section 8.3 no-route wording (sibling symmetry)
         assert "section 8.3" in starved.refusal and "INCOMPLETE_NO_ROUTE_OBSERVED" in starved.refusal
+
+
+class TestSection81ReceiptView:
+    """IR-CHEM-01: the IR carries the FULL section 8.1 SearchReceipt (the ~20 counters), not just its digest."""
+
+    def test_a_route_view_carries_the_mandated_counters(self):
+        ir = recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=2)
+        v = ir.search_receipt
+        assert v.schema_version == SEARCH_RECEIPT_VIEW_SCHEMA
+        assert v.search_kind == "LINEAR_ROUTE"
+        assert v.status == ir.search_status.value and v.standard_status == ir.standard_status
+        assert v.max_depth == 2                                  # route search HAS a depth bound
+        assert v.cut_budget == 20000 and v.result_limit == 100   # cut_budget_per_expansion / result_limit
+        assert v.nodes_visited is not None and v.nodes_visited >= 0
+        assert v.transforms_considered is not None
+        assert isinstance(v.candidates_rejected_by_reason, tuple)
+        assert isinstance(v.cut_enumeration_complete, bool) and isinstance(v.result_limit_saturated, bool)
+
+    def test_a_formula_view_reports_absent_counters_as_null_not_zero(self):
+        ir = decompile_to_ir("C8H9NO2", INV)
+        v = ir.search_receipt
+        assert v.search_kind == "FORMULA_DECOMPOSITION"
+        assert v.max_depth is None            # the elemental descent has NO depth bound -- null, never a fake 0
+        assert v.candidate_limit is None      # no engine stops on a distinct emitted-candidate cap
+        assert v.candidates_emitted is None   # the descent does not measure a separate pre-dedup emit count
+        assert v.cut_budget == 100000 and v.result_limit == 5000   # budget / max_edges
+        assert v.results_returned == len(ir.candidates)            # edges_emitted == the candidate count
+
+    def test_candidate_limit_is_null_on_every_receipt_kind(self):
+        for ir in (decompile_to_ir("H2O"), recompile_to_ir(PARA, reagents=(ANH,), available=(AMP,), max_depth=1)):
+            assert ir.search_receipt.candidate_limit is None
+
+    def test_the_view_round_trips_inside_the_ir_digest(self):
+        ir = decompile_to_ir("C8H9NO2", INV)
+        back = deserialize_ir(serialize_ir(ir))
+        assert back.search_receipt == ir.search_receipt
+        assert back.digest == ir.digest                            # the receipt content rides the IR identity
+
+    def test_a_tampered_view_is_refused_on_read(self):
+        ir = recompile_to_ir(PARA, reagents=(WATER, ANH), available=(AMP,), max_depth=2)
+        payload = ir_to_payload(ir)
+        # a negative counter (section 8.1: null-or-nonneg, never a silent bad value)
+        bad = json.loads(json.dumps(payload))
+        bad["search_receipt"]["nodes_visited"] = -1
+        with pytest.raises(ValueError, match="non-negative"):
+            ir_from_payload(bad)
+        # a standard_status contradicting the native status
+        bad2 = json.loads(json.dumps(payload))
+        bad2["search_receipt"]["standard_status"] = "REFUSED_INVALID_REQUEST"
+        with pytest.raises(ValueError):
+            ir_from_payload(bad2)
+        # an unsorted rejection histogram
+        bad3 = json.loads(json.dumps(payload))
+        bad3["search_receipt"]["candidates_rejected_by_reason"] = [["zeta", 1], ["alpha", 2]]
+        with pytest.raises(ValueError, match="sorted|distinct|positive"):
+            ir_from_payload(bad3)
+
+    def test_a_view_whose_status_contradicts_the_ir_is_refused(self):
+        # the view and the IR must describe ONE search: a COMPLETE view under a PARTIAL IR status is refused.
+        ir = decompile_to_ir("H2O")             # COMPLETE
+        payload = ir_to_payload(ir)
+        payload["search_status"] = "PARTIAL_DEPTH_LIMIT"
+        payload["standard_status"] = "INCOMPLETE_DEPTH_LIMIT"
+        with pytest.raises(ValueError, match="describe one search|must equal"):
+            ir_from_payload(payload)
+
+    def test_a_complete_view_cannot_report_a_truncating_limit(self):
+        with pytest.raises(ValueError, match="cannot report a truncating limit"):
+            Section81ReceiptView(
+                SEARCH_RECEIPT_VIEW_SCHEMA, "LINEAR_ROUTE", "COMPLETE_WITHIN_BOUNDS",
+                "COMPLETE_WITHIN_DECLARED_SPACE", "PER_NODE",
+                None, None, None, 2, 20000, None, 100, 5, 5, 5, 5, (),
+                True, True, True, "",   # result_limit_saturated=True under a COMPLETE status -> incoherent
+            )

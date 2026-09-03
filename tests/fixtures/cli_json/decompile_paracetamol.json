@@ -917,8 +917,30 @@
     "identity_losses": [],
     "operation": "DECOMPILE",
     "request_digest": "6df11e58bff3aa38962120d48a2b8f71bc1d0401c51c3afc45cbf5f33e87a478",
-    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha3",
-    "search_receipt_digest": "3d8ad84101ce76f331708e3a5d797c931135ab6b3dddacab108e70fc33bd04ce",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha4",
+    "search_receipt": {
+      "candidate_enumeration_complete": true,
+      "candidate_limit": null,
+      "candidates_emitted": null,
+      "candidates_rejected_by_reason": [],
+      "cut_budget": 100000,
+      "cut_budget_scope": "PER_NODE",
+      "cut_enumeration_complete": true,
+      "max_depth": null,
+      "nodes_visited": 1,
+      "result_limit": 5000,
+      "result_limit_saturated": false,
+      "results_returned": 130,
+      "schema_version": "smartchem.compilation-ir/search-receipt-view-v1alpha1",
+      "search_kind": "FORMULA_DECOMPOSITION",
+      "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+      "status": "COMPLETE_WITHIN_BOUNDS",
+      "stop_reason": "",
+      "target_identity_digest": "0a9a51bfd1d0bf5fd43fd38125e7f08488b711ba9422cd800a0db47afd18d71c",
+      "terminal_policy_digest": "56f768feb6ae4702382f7178712af491f991ea0be6aa9e5dfbb0ef8f7a9d5866",
+      "transform_registry_digest": "9fe39ec4ecf94914aac37cacd6bc4d33ff7da15e0fe66415d7926f55419f3e88",
+      "transforms_considered": 130
+    },
     "search_status": "COMPLETE_WITHIN_BOUNDS",
     "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
     "target": {
@@ -1035,7 +1057,7 @@
     },
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
-  "result_digest": "2345d153c628aff1ea84366e7d8de51422fc433c91936960c0b972d1b999bf30",
+  "result_digest": "e2f8d88b10e9b9033670e0aa7999c7ad7e0f419eae95a2e3c695f75bcc8c18f1",
   "schema_version": "smartchem.service/compilation-response-v1alpha3",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

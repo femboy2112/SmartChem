@@ -8,8 +8,30 @@
     "identity_losses": [],
     "operation": "RECOMPILE",
     "request_digest": "590ddb997965733ba4447728408e1780517396dc61290b85aa8f061547718869",
-    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha3",
-    "search_receipt_digest": "22c500de5201ebde204211b42e76e4f7401f3107f16a34144e370e51e4c49249",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha4",
+    "search_receipt": {
+      "candidate_enumeration_complete": true,
+      "candidate_limit": null,
+      "candidates_emitted": 0,
+      "candidates_rejected_by_reason": [],
+      "cut_budget": 20000,
+      "cut_budget_scope": "PER_NODE",
+      "cut_enumeration_complete": true,
+      "max_depth": 2,
+      "nodes_visited": 5,
+      "result_limit": 100,
+      "result_limit_saturated": false,
+      "results_returned": 0,
+      "schema_version": "smartchem.compilation-ir/search-receipt-view-v1alpha1",
+      "search_kind": "LINEAR_ROUTE",
+      "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+      "status": "COMPLETE_WITHIN_BOUNDS",
+      "stop_reason": "",
+      "target_identity_digest": "b0a70a2130f9c14a5ee39d75c91d63d3a8c89599b95bc60afb076341edbfdf59",
+      "terminal_policy_digest": "59115ea2c066a980a42f86a2a0074b905d0407a74db95f09d4dcf2a4db054e14",
+      "transform_registry_digest": "18034da6ac94265b997f614eecf4249504439e1db44a60240e7df04fb790b9ef",
+      "transforms_considered": 40
+    },
     "search_status": "COMPLETE_WITHIN_BOUNDS",
     "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
     "target": {
@@ -134,7 +156,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "b51a12889ccbeff8be26f28540369318f4db1f06ae661793b6907fd3ab1b15dc",
+  "result_digest": "e96faa5a33681edd3465e064bb3b5f5a79e1df63011ecdec10b9fd11b34e2be6",
   "schema_version": "smartchem.service/compilation-response-v1alpha3",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

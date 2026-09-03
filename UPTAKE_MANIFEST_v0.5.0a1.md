@@ -791,7 +791,7 @@ residual limitations / next probes:
 | `TERM-COM-02` | Disabled/custom commodity inventory is authoritative everywhere | Current linear compile shortcut/termination/shopping respects the active inventory and `commodities=()` regression passes | Preserve through shared terminal/material policy and DAG work | `commodities=()` never uses global catalogue to stop/rank/shop | `TERM-POL-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `FEED-AMT-01` | Identity-only flags never invent quantity | Experimental CLI no longer maps identities to one mole and emits no finite ceiling without feed | Add explicit quantity+unit/assay input and optional symbolic ceiling separately | Identity-only poor-man fixture has no finite ceiling and no crash | `STOCK-01` desirable | `IMPLEMENTED_AND_VERIFIED` |
 | `FEED-ERR-01` | Missing feed cannot abort an otherwise valid dossier | Route dossier now renders without a ceiling when feed is absent | Preserve structured diagnostic in shared response/JSON | Missing commodity amount preserves route dossier and non-internal exit status | `FEED-AMT-01` | `IMPLEMENTED_AND_VERIFIED` |
-| `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | `StockMaterial` + `MaterialComponent` + `FitnessVerdict` exist (`smartchem/experiment/stock.py`, `7d27e3c`): a typed material of components (each a fraction INTERVAL), a phase, and provenance, with a rigorous `satisfies(identity, min_assay)` interval gate (vinegar -> `INSUFFICIENT_ASSAY`, a straddling requirement -> `UNKNOWN_ASSAY`, an unknown fraction never passes). The full section 10.2 schema is now built too (`3ace975`): typed `StockQuantity` (positive-finite value+unit), a `CostObservation` that cannot be constructed unless dated AND sourced (section 10.4, no invented price), plus assay method, container/storage, opened/age, jurisdiction/availability, formulation notes and known impurities -- every field keyword-optional and defaulting to an honest UNKNOWN. The `CommodityReagent` -> `StockMaterial` source-lead bridge is now built too (`stock_material_from_commodity`, §10.1): a commodity maps to an UNKNOWN-fraction, phase-UNKNOWN material so it can never silently satisfy a pure requirement. Canonical-structure component keying and recompiler/shopping integration remain | Key components by canonical structure; wire the gate into route/shopping selection | Vinegar cannot satisfy pure acetic-acid input without assay/preprocessing | `ID-LAYER-01` | `IN_PROGRESS` |
+| `STOCK-01` | `StockMaterial` represents mixture, assay, quantity, source and cost | `StockMaterial` + `MaterialComponent` + `FitnessVerdict` exist (`smartchem/experiment/stock.py`, `7d27e3c`): a typed material of components (each a fraction INTERVAL), a phase, and provenance, with a rigorous `satisfies(identity, min_assay)` interval gate (vinegar -> `INSUFFICIENT_ASSAY`, a straddling requirement -> `UNKNOWN_ASSAY`, an unknown fraction never passes). The full section 10.2 schema is now built too (`3ace975`): typed `StockQuantity` (positive-finite value+unit), a `CostObservation` that cannot be constructed unless dated AND sourced (section 10.4, no invented price), plus assay method, container/storage, opened/age, jurisdiction/availability, formulation notes and known impurities -- every field keyword-optional and defaulting to an honest UNKNOWN. The `CommodityReagent` -> `StockMaterial` source-lead bridge is now built too (`stock_material_from_commodity`, §10.1): a commodity maps to an UNKNOWN-fraction, phase-UNKNOWN material so it can never silently satisfy a pure requirement. Canonical-structure component keying is now built too (ID-LAYER-01): `MaterialComponent.of_molecule`/`unknown_molecule` key a component on the canonical STRUCTURE digest (`_structure_key` -- the same `canonical_digest(m.canonical())` routes/shopping key on), and `satisfies`/`active_fraction_interval` accept a `Molecule` (structure query, the SOUND key) OR a name `str` (the weaker human-declaration key), namespaces disjoint: a same-formula isomer never borrows another's assay (ethanol vs dimethyl ether; acetic vs glycolaldehyde LIVE on the bridge), a bare name never stands in for a proven structure, and the `stock_material_from_commodity` bridge is now structure-keyed (the LIVE default-data path, not merely injectable). Wiring the satisfies-gate into route/shopping selection remains | Wire the structure-keyed gate into route/shopping selection (match a SHOP-LEAF-02 requirement Molecule against inventory) | Vinegar cannot satisfy pure acetic-acid input; a same-formula isomer never borrows fitness | `ID-LAYER-01` | `IN_PROGRESS` |
 | `SHOP-LEAF-02` | Shopping list is external, quantity-aware route input | The DAG-level quantity engine is now built (`dag_shopping_requirement`, `smartchem/experiment/dag.py`): the INVERSE of `dag_ceiling` -- given a desired final-target amount, the exact conserved per-species EXTERNAL-PURCHASE requirement. Unlike the forward ceiling's allocation range, the inverse is UNIQUELY determined: distinct-targets gives each intermediate one producer, so producing D forces every reaction extent by back-propagation, and the net (consumed minus produced, by-products CREDITED) is exact -- buy 1 mol H2 not 2 when a prior step liberates one; a fan-out is determined here though its forward ceiling is a range; a surplus co-product is reported, not bought. Each quantity is a 100%-efficiency LOWER BOUND on purchase (a real yield needs MORE), never a predicted amount. Two agreeing derivations, not the arithmetic's say-so: every step balance-checked, the final-target net asserted `== D`, and the requirement fed FORWARD through `dag_ceiling` must reproduce D exactly (the differential oracle). The ONE coupled case -- a species produced by >1 step (a target that is also a by-product) -- REFUSES (`ShoppingUnderdeterminedError`) rather than fabricate a range, naming `COST-VEC-01`. Still a latent path (no production caller, mirroring `dag_ceiling`); CLI/compile wiring, per-requirement commodity classification and purchased supplements remain | Wire into a DAG-mode caller (CLI shopping quantity) + classify each requirement against the commodity registry; the coupled range needs `COST-VEC-01` | Buy 1 mol H2 not 2 when a step liberates it; a fan-out is determined though its ceiling is a range; a coupled DAG refuses rather than fabricate — **DONE** (`tests/test_dag_shopping.py`) | `DAG-FLOW-01`, `STOCK-01` | `IN_PROGRESS` |
 
 **Uptake record — StockMaterial first brick** (advances `STOCK-01` TODO -> IN_PROGRESS):
@@ -2004,12 +2004,76 @@ faithfulness:        the quantities are the conservation-level inverse of the sa
                      more; and a late by-product credited against an early consumption assumes recycling -- the
                      mass-balance floor, consistent with the forward LP's timing-blind global conservation). It
                      never claims a predicted purchase.
+red-team:            workflow wj716si7g, 4 blind bearings (silent-wrong-number; refuse-escape; faithfulness;
+                     guard-vacuity) + per-finding refute-by-default verify. 4 CONFIRMED / 1 refuted, ALL folded
+                     before this commit -- two ROOTS. ROOT 1, the DETERMINACY GUARD counted GROSS producers: a
+                     species merely written on both sides of a step while net-CONSUMED (a spectator / reaction
+                     medium / partly-regenerated reagent) was miscounted as a producer, so a DETERMINED DAG was
+                     over-REFUSED with a FALSE "it's a range" message (MEDIUM); AND the back-propagation charged the
+                     GROSS consumption, so a consumer that regenerates part of its own input (water medium: consume
+                     2, make 1) over-ran its producer. FOLD: the guard now counts NET producers (prod-cons>0) and the
+                     back-prop charges NET consumption -- the spectator DAG now COMPUTES its unique floor (ETHENE 1,
+                     H2 1, O2 1/2), not a refusal, not an over-buy (TestRedTeamFolds). ROOT 2, the DIFFERENTIAL
+                     ORACLE was ONE-SIDED (sufficiency only): feeding the requirement made D, but so did an
+                     OVER-report (a dropped by-product credit, H2=2 vs 1, still caps at D), so all four internal
+                     guards were vacuous against the headline by-product credit (MEDIUM); a self-consuming
+                     (autocatalytic) step (cyclopropane + propene -> 2 propene) slipped the guard and the docstring's
+                     "distinct-targets => uniquely determined" inference was imprecise (HIGH/LOW). FOLD: the oracle is
+                     now TWO-SIDED -- halving ANY bought species must strictly DROP the ceiling below D (TIGHTNESS),
+                     certifying every quantity is BINDING (a real lower bound), which catches the dropped-credit
+                     over-report AND certifies the autocatalytic floor is correct; and the docs now state the model
+                     precisely (buy external leaves, make intermediates internally; a lower bound FOR THIS ROUTE, not
+                     the cheapest alternative sourcing -- buying an intermediate is the deferred supplement feature).
+                     LESSON (again, cf. DAG-FLOW-01): a structural predicate is a place to be wrong; a two-sided
+                     numeric certificate on every call is not. Suite 3391 -> 3395 (+4 fold regressions).
 residual / follow-on: latent, mirroring dag_ceiling -- no production caller yet. The remaining SHOP-LEAF-02
                      dimensions: wire into a DAG-mode CLI (shopping-quantity output), classify each requirement
                      against the commodity registry (commodity vs other-leaf, as compile.py already does for the
                      linear route), model purchased supplements, and -- the coupled range -- COST-VEC-01. STOCK-01
                      canonical-structure component keying + the satisfies-gate wiring is the adjacent material-
                      reality brick.
+```
+
+**Uptake record — STOCK-01: canonical-structure component keying (ID-LAYER-01)** (advances `STOCK-01`; the
+sound-key dimension lands, the satisfies-gate WIRING into route/shopping selection remains, so the row stays
+`IN_PROGRESS`):
+
+```text
+ID:                  STOCK-01 (canonical-structure keying -- MaterialComponent/satisfies key on structure, not a
+                     fragile name; the LIVE commodity bridge is structure-keyed)
+files:               smartchem/experiment/stock.py, tests/test_stock.py, UPTAKE_MANIFEST_v0.5.0a1.md, README.md
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              3395 passed, 14 skipped, 1 xfailed (this brick's +8 over the 3383 SHOP-LEAF-02 baseline, plus
+                     the concurrent SHOP-LEAF-02 red-team fold's +4). ruff clean on changed files.
+the hazard closed:   fitness was keyed by a NAME string (casefold match).  A name is fragile both ways: a synonym
+                     ("acetic acid" vs "ethanoic acid") fails to match a material it should, and -- the "keyed by
+                     formula/name fails OPEN" hazard -- a query cannot be checked against a route's Molecule at all.
+                     ID-LAYER-01 keys a component on the CANONICAL STRUCTURE digest instead (the same
+                     canonical_digest(m.canonical()) routes/shopping use), so fitness is judged on structure.
+built:               (1) `_structure_key(molecule)` -- the canonical structure digest, namespaced `struct:` so a
+                     structure key and a NAME key never collide in identity_key (with the as-given fallback for a
+                     molecule that cannot canonicalise). (2) `MaterialComponent.of_molecule` / `unknown_molecule` --
+                     structure-keyed constructors; `known`/`unknown_fraction` stay the human-declaration NAME path
+                     and now reject the reserved prefix. (3) `satisfies`/`active_fraction_interval` accept a
+                     `Molecule` (structure query, matched by exact digest -- the SOUND key) OR a `str` name (matched
+                     by casefold, the weaker key), the namespaces DISJOINT: a structure query matches only
+                     structure-keyed components and a name query only name-keyed ones, so a bare name can never
+                     stand in for a proven structure nor the reverse. (4) `stock_material_from_commodity` is now
+                     STRUCTURE-keyed -- the LIVE default-data path, not merely an injectable option.
+falsifier fixtures:  ethanol (CCO) and dimethyl ether (COC) share the formula C2H6O; an ethanol material does NOT
+                     satisfy a dimethyl-ether Molecule query (IDENTITY_ABSENT -- no isomer borrow).  LIVE on the
+                     bridge: a bridged acetic-acid commodity does NOT satisfy a glycolaldehyde (OCC=O, also C2H4O2)
+                     query, while it DOES answer an acetic-acid Molecule query UNKNOWN_ASSAY (present, unproven
+                     fraction).  A NAME-keyed "ethanol" component does not satisfy an ethanol Molecule query (a name
+                     cannot prove a structure), and vice versa (TestCanonicalStructureKeying).
+faithfulness:        the interval logic (SATISFIES only if the worst-case fraction clears the requirement, else
+                     INSUFFICIENT/UNKNOWN) is unchanged -- only the KEY the components are matched on is now sound.
+                     The name path is retained, honestly labelled the weaker human-declaration key, not removed.
+residual / follow-on: the satisfies-gate is not yet WIRED into route/shopping selection -- the payoff is matching a
+                     SHOP-LEAF-02 requirement Molecule against a StockMaterial inventory (structure-keyed, so the
+                     match is sound), the adjacent brick.  A structure-keyed component renders its identity as the
+                     digest (a display-label resolver is a display follow-on).  COST-VEC-01 (sourced prices) and the
+                     purchased-supplement range stay BLOCKED on real data / the follow-on, do NOT fake.
 ```
 
 ## 5. P2 strengthening backlog

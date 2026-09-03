@@ -1615,6 +1615,26 @@ guards vs a silent-wrong simplex: (a) the exact-rational kernel is unit-pinned i
                      propagation by construction (nothing competes), asserted on the join-only and linear fixtures;
                      (c) the no-mint/no-deficit re-derivation asserted on every fan-out solution; (d) exact hand-
                      computed optima pinned for each fan-out fixture (a feasible-but-non-optimal answer would fail).
+red-team:            workflow wonfm36zz, 4 blind bearings (silent-wrong-number; mint/refuse-escape; faithfulness;
+                     regression) + per-finding refute-by-default verify. 7 CONFIRMED / 1 refuted -- ALL ONE ROOT,
+                     folded before the merge: the FIRST cut's ROUTING was wrong. It routed to the exact LP only when
+                     a shared bounded reactant was a step TARGET or was FED (a predicate `_shared_bounded_reactants`);
+                     a shared bounded CO-PRODUCT / reused BY-PRODUCT (produced but no step's target, and not fed) was
+                     invisible, so the DAG fell through to the naive propagation -- whose `available` cache credits
+                     ONLY step targets, never by-products -- and MINTED, SILENTLY (the no-mint self-check lived only
+                     on the LP path). Proven empirically: butene -> butadiene + H2 (H2 a by-product) then
+                     butadiene + 2 H2 -> butane at feed {butene:1} returned 1 where the true conserved max is 1/2
+                     (H2 over-consumed 2 vs 1); a co-product water reused by two hydration steps, the same 2x mint.
+                     FOLD (bulletproof, no fragile predicate): the NUMBER is now ALWAYS the exact LP (`_max_yield_lp`,
+                     which counts EVERY produced species -- by-products included -- so it cannot mint on any shape);
+                     the propagation is kept ONLY for the per-step display and ONLY when its number MATCHES the LP (a
+                     per-CALL agreement check -- two agreeing derivations); on any DAG where they differ the
+                     propagation is discarded and `flow` carries the LP. This also fixed the MEDIUM: the
+                     "LP == propagation on every non-fan-out DAG" claim was false (a by-product-reuse DAG is non-fan-out
+                     yet mints), so the tests/docs now say "a simple tree/chain" and pin the by-product-reuse mint as a
+                     regression (TestByproductReuseIsConservedNotMinted). LESSON: a structural routing predicate is a
+                     place to be wrong; comparing the two derivations' NUMBERS on every call is not. Suite 3320 -> (see
+                     the IR-CHEM-01 record for the combined count; +2 regression tests here).
 residual / follow-on: still a latent path -- dag_ceiling has no production caller (service.py declines DAG-mode
                      ranking). This unblocks SHOP-LEAF-02 / STOCK-01 (shopping-quantity + affordability over a DAG):
                      a DAG-mode caller can now read a real conserved final-target ceiling. Non-uniqueness of the

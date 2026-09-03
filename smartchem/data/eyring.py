@@ -31,6 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..contracts import Digestible
+from ..evidence_key import normalize_phase
 from .kinetics import SpeciesSpec, _is_species_spec
 
 __all__ = [
@@ -107,8 +108,10 @@ class EyringRef(Digestible):
 class EyringTable(Digestible):
     """An immutable set of sourced :class:`EyringRef` records, mirroring
     :class:`~smartchem.data.kinetics.KineticTable`: the compiler holds a table, a caller extends it with
-    :meth:`with_records`, records are deduplicated by their ``(reactant_smiles, product_smiles)`` source form
-    (a later record wins)."""
+    :meth:`with_records`, records are deduplicated by their ``(reactant_smiles, product_smiles, normalized-phase)``
+    source form (a later record wins).  EVD-KEY-CTX-01: the NORMALIZED phase is part of the dedup identity so a
+    caller can hold both phase-variants of one reaction structure -- the distinction
+    :meth:`~smartchem.evidence_key.ReactionEvidenceKey.applies_to` resolves on."""
 
     records: tuple[EyringRef, ...]
 
@@ -117,14 +120,15 @@ class EyringTable(Digestible):
             raise TypeError("records must be a tuple of EyringRef values")
 
     def with_records(self, *records: EyringRef) -> "EyringTable":
-        by_key: dict[tuple[SpeciesSpec, SpeciesSpec], EyringRef] = {
-            (r.reactant_smiles, r.product_smiles): r for r in self.records
-        }
+        def key(r: EyringRef) -> "tuple[SpeciesSpec, SpeciesSpec, str]":
+            return (r.reactant_smiles, r.product_smiles, normalize_phase(r.phase))
+
+        by_key: dict[tuple[SpeciesSpec, SpeciesSpec, str], EyringRef] = {key(r): r for r in self.records}
         for r in records:
             if type(r) is not EyringRef:
                 raise TypeError("with_records takes EyringRef values")
-            by_key[(r.reactant_smiles, r.product_smiles)] = r
-        return EyringTable(tuple(sorted(by_key.values(), key=lambda r: (r.reactant_smiles, r.product_smiles))))
+            by_key[key(r)] = r
+        return EyringTable(tuple(sorted(by_key.values(), key=key)))
 
 
 #: The SEED -- sourced transition-state activation parameters for CALIBRATION reaction(s) whose rate constant
@@ -148,8 +152,9 @@ SEED_EYRING_REFS: tuple[EyringRef, ...] = (
         ds_dagger_j_per_mol_k=-131.0,
         a_units="M^-1 s^-1",
         temperature_range_k=(298.0, 323.0),
-        phase="aqueous",  # EVD-KEY-CTX-01: alkaline hydrolysis by aqueous OH- (bimolecular, M^-1 s^-1) -- a
-        # SOLUTION-phase rate, definitively not gas; a gas-phase step must not borrow it, and vice versa
+        phase="aqueous",  # EVD-KEY-CTX-01: aqueous DERIVED from the mechanism (alkaline OH- hydrolysis,
+        # bimolecular M^-1 s^-1 = a molar solution rate, definitively not gas); the provenance states the
+        # mechanism/units, not the medium word -- a gas-phase step must not borrow it, and vice versa
 
         provenance=(
             "CH3COOC2H5 + OH- -> CH3COO- + C2H5OH (bimolecular, rate = k[ester][OH-]). ΔH‡ = 38.6±0.5 kJ/mol, "

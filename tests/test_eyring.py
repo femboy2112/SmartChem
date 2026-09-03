@@ -235,6 +235,17 @@ class TestPhaseBorrow:
         sk = eyring_of_step(_saponification(), temperature_k=298.15)  # unspecified medium
         assert sk.regime is RateRegime.MODERATE
 
+    def test_with_records_holds_both_phase_variants_of_one_structure(self):
+        # EVD-KEY-CTX-01 dedup fold (mirror of the kinetics side): the Eyring container's dedup identity is
+        # phase-aware too, so a gas and an aqueous barrier for one structure co-reside rather than one clobbering
+        # the other -- the footgun the red-team confirmed on both containers.
+        gas = EyringRef((("C1CC1", 1),), (("CC=C", 1),), "cp gas", 266.0, 29.3, "s^-1", (300.0, 900.0),
+                        "TEST gas", phase="gas")
+        aq = EyringRef((("C1CC1", 1),), (("CC=C", 1),), "cp aqueous", 100.0, 0.0, "s^-1", (300.0, 900.0),
+                       "TEST aqueous", phase="aqueous")
+        tbl = EyringTable(()).with_records(gas, aq)
+        assert len(tbl.records) == 2  # neither silently dropped
+
 
 class TestRouteAggregation:
     def test_route_verdict_is_bottleneck_dominated(self):

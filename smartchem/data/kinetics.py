@@ -38,6 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..contracts import Digestible
+from ..evidence_key import normalize_phase
 
 __all__ = [
     "SpeciesSpec",
@@ -137,8 +138,11 @@ class KineticTable(Digestible):
     canonical reaction structure; this container just holds and deduplicates them.
 
     Mirrors :class:`~smartchem.data.thermo.ThermoTable`: the compiler holds a table, a caller extends it with
-    :meth:`with_records`, records are deduplicated by their ``(reactant_smiles, product_smiles)`` source form
-    (a later record wins).
+    :meth:`with_records`, records are deduplicated by their ``(reactant_smiles, product_smiles, normalized-phase)``
+    source form (a later record wins).  EVD-KEY-CTX-01: the NORMALIZED phase is part of the dedup identity so a
+    caller can hold BOTH a gas and an aqueous rate for the SAME reaction structure -- exactly the phase-variants
+    :meth:`~smartchem.evidence_key.ReactionEvidenceKey.applies_to` was built to distinguish; two records that
+    normalise to the SAME phase (``"gas"`` and ``"gaseous"``, or two context-free unrecognised media) still dedup.
     """
 
     records: tuple[KineticRef, ...]
@@ -148,14 +152,15 @@ class KineticTable(Digestible):
             raise TypeError("records must be a tuple of KineticRef values")
 
     def with_records(self, *records: KineticRef) -> "KineticTable":
-        by_key: dict[tuple[SpeciesSpec, SpeciesSpec], KineticRef] = {
-            (r.reactant_smiles, r.product_smiles): r for r in self.records
-        }
+        def key(r: KineticRef) -> "tuple[SpeciesSpec, SpeciesSpec, str]":
+            return (r.reactant_smiles, r.product_smiles, normalize_phase(r.phase))
+
+        by_key: dict[tuple[SpeciesSpec, SpeciesSpec, str], KineticRef] = {key(r): r for r in self.records}
         for r in records:
             if type(r) is not KineticRef:
                 raise TypeError("with_records takes KineticRef values")
-            by_key[(r.reactant_smiles, r.product_smiles)] = r
-        return KineticTable(tuple(sorted(by_key.values(), key=lambda r: (r.reactant_smiles, r.product_smiles))))
+            by_key[key(r)] = r
+        return KineticTable(tuple(sorted(by_key.values(), key=key)))
 
 
 #: The SEED -- sourced Arrhenius parameters for CALIBRATION reaction(s) whose rate is measured and tabulated,
@@ -173,7 +178,9 @@ SEED_KINETIC_REFS: tuple[KineticRef, ...] = (
         log10_a=13.69,
         a_units="s^-1",
         temperature_range_k=(298.0, 338.0),
-        phase="gas",  # EVD-KEY-CTX-01: the FIRST-ORDER GAS-PHASE calibration reaction (provenance states so)
+        phase="gas",  # EVD-KEY-CTX-01: gas DERIVED from the reaction's identity (first-order s^-1 Arrhenius, the
+        # classic gas-phase N2O5 decomposition); the provenance states the order/params, not the medium word
+
         provenance=(
             "2 N2O5 -> 4 NO2 + O2, first order in N2O5 (convention: -d[N2O5]/dt = k[N2O5], the per-N2O5-"
             "consumed rate, NOT the reaction-rate convention which is half this). Ea = 103.5 kJ/mol, "

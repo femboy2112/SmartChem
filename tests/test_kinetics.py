@@ -59,7 +59,9 @@ class TestSeedIntegrity:
         assert "N2O5 decomposition" in names
 
     def test_the_gas_phase_calibration_records_declare_their_sourced_phase(self) -> None:
-        # EVD-KEY-CTX-01: both Arrhenius seeds are gas-phase (their provenance says so) and now declare it.
+        # EVD-KEY-CTX-01: both Arrhenius seeds are gas-phase and now declare it -- cyclopropane's provenance says
+        # "gas-phase" verbatim; N2O5's gas is DERIVED from its first-order s^-1 Arrhenius identity (its provenance
+        # states the order/params, not the medium word), which is chemically correct but not a literal citation.
         by_name = {r.name: r for r in SEED_KINETIC_REFS}
         assert by_name["N2O5 decomposition"].phase == "gas"
         assert by_name["cyclopropane isomerization"].phase == "gas"
@@ -304,3 +306,42 @@ class TestPhaseBorrow:
         # refusal from an unclassifiable medium; the conservative-decline discipline, no worse than before).
         sk = kinetics_of_step(self._n2o5_in("aqueous, mild acid"), temperature_k=310.0)
         assert sk.regime is not RateRegime.UNKNOWN
+
+    def test_with_records_holds_both_phase_variants_of_one_structure(self) -> None:
+        # EVD-KEY-CTX-01 dedup fold (red-team `with-records-phase-blind-dedup-drops-a-sourced-rate`): the
+        # container's dedup identity includes the normalized phase, so a caller can hold BOTH a gas and an
+        # aqueous rate for ONE reaction structure -- exactly the variants applies_to distinguishes -- and each
+        # phase-declared step resolves its OWN record instead of one silently clobbering the other.
+        gas = KineticRef(
+            reactant_smiles=(("C1CC1", 1),), product_smiles=(("CC=C", 1),), name="cp gas",
+            ea_kj_per_mol=272.0, log10_a=15.2, a_units="s^-1", temperature_range_k=(300.0, 900.0),
+            provenance="TEST gas variant", phase="gas",
+        )
+        aq = KineticRef(
+            reactant_smiles=(("C1CC1", 1),), product_smiles=(("CC=C", 1),), name="cp aqueous",
+            ea_kj_per_mol=100.0, log10_a=12.0, a_units="s^-1", temperature_range_k=(300.0, 900.0),
+            provenance="TEST aqueous variant", phase="aqueous",
+        )
+        tbl = KineticTable(()).with_records(gas, aq)
+        assert len(tbl.records) == 2  # NEITHER silently dropped (was 1 before the fold)
+
+        def cp_in(medium: str) -> ExperimentStep:
+            from smartchem.conditions import ConditionEnvelope
+            from smartchem.contracts import EvidenceStatus
+            env = ConditionEnvelope(medium=medium, status=EvidenceStatus.EXPERIMENTAL, provenance="test")
+            return ExperimentStep.assembling(parse_smiles("CC=C"), (parse_smiles("C1CC1"),),
+                                             (parse_smiles("CC=C"),), envelope=env)
+
+        assert _resolve_record(tbl, cp_in("gas")).name == "cp gas"          # gas step -> gas record
+        assert _resolve_record(tbl, cp_in("aqueous")).name == "cp aqueous"  # aqueous step -> aqueous record
+
+    def test_same_normalized_phase_still_dedups(self) -> None:
+        # two records that NORMALIZE to the same phase ("gas" and "gaseous") are one record (a later win),
+        # so the fold widens the identity only by REAL phase, never by a spelling.
+        base = dict(reactant_smiles=(("C1CC1", 1),), product_smiles=(("CC=C", 1),),
+                    ea_kj_per_mol=272.0, log10_a=15.2, a_units="s^-1", temperature_range_k=(300.0, 900.0),
+                    provenance="TEST")
+        tbl = KineticTable(()).with_records(
+            KineticRef(name="a", phase="gas", **base), KineticRef(name="b", phase="gaseous", **base)
+        )
+        assert len(tbl.records) == 1 and tbl.records[0].name == "b"  # gaseous normalizes to gas -> later wins

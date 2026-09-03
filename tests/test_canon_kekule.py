@@ -80,3 +80,10 @@ class TestBoundDoesNotFalseTrigger:
         # a plain large chain has NO resonance freedom (every placement is H-pinned to one), so the enumeration is
         # linear and the bound (which REFUSES rather than truncate to a non-deterministic minimum) never fires.
         assert _k("C" * 60) == _k("C" * 60)
+
+    def test_a_large_pinned_conjugated_system_does_not_crash(self):
+        # red-team fold: the pi-placement walk used to recurse O(n) deep and raise an UNCAUGHT RecursionError on a
+        # large cumulene/polyene (unique placement, far below the 5000 bound) -- a regression, since such a molecule
+        # parsed fine before CANON-KEKULE-01. The walk is now iterative (explicit stack), so it parses correctly.
+        assert _k("C" + "=C" * 329)                          # a 330-carbon cumulene: unique placement, no crash
+        assert _k("C=CC=CC=CC=CC=CC=CC=C")                    # a long conjugated polyene, likewise unique

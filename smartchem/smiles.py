@@ -478,35 +478,69 @@ def _min_constitution_placement(
         if best[1] is None or key < best[1]:
             best[0], best[1] = tuple(1 + e for e in extra), key
 
-    def _rec(a: int) -> None:
-        while a < n and remaining[a] == 0:
-            a += 1
-        if a == n:
-            _consider()
-            return
+    def _atom_distributions(a: int) -> list[list[tuple[int, int]]]:
+        """Every way to meet ``remaining[a]`` over a's forward bonds, as lists of ``(bond, extra_order)`` with
+        extra_order > 0.  Recurses only over a's OWN bonds (a handful), never over the molecule -- so this stays
+        shallow whatever the molecule's size (the atom-walk below is iterative, not recursive)."""
         forward = [bi for bi in incident[a] if _other(bi, a) > a]  # bonds to not-yet-fixed atoms
+        out: list[list[tuple[int, int]]] = []
 
-        def _dist(idx: int, left: int) -> None:
+        def _go(idx: int, left: int, acc: list[tuple[int, int]]) -> None:
             if left == 0:
-                _rec(a + 1)
+                out.append(list(acc))
                 return
             if idx >= len(forward):
-                return  # atom a's demand cannot be met from here -- a dead branch, not a placement
+                return  # a's demand cannot be met from here -- a dead branch, not a placement
             bi = forward[idx]
             b = _other(bi, a)
             cap = min(left, remaining[b], 2 - extra[bi])  # a bond order never exceeds 3 (extra <= 2)
             for add in range(cap, -1, -1):
-                extra[bi] += add
-                remaining[a] -= add
-                remaining[b] -= add
-                _dist(idx + 1, left - add)
-                extra[bi] -= add
-                remaining[a] += add
-                remaining[b] += add
+                if add:
+                    acc.append((bi, add))
+                _go(idx + 1, left - add, acc)
+                if add:
+                    acc.pop()
 
-        _dist(0, remaining[a])
+        _go(0, remaining[a], [])
+        return out
 
-    _rec(0)
+    def _next_pi(a: int) -> int:
+        while a < n and remaining[a] == 0:
+            a += 1
+        return a
+
+    def _apply(a: int, dist: list[tuple[int, int]], sign: int) -> None:
+        for bi, add in dist:
+            extra[bi] += sign * add
+            remaining[a] -= sign * add
+            remaining[_other(bi, a)] -= sign * add
+
+    # Iterative DFS over the pi-atoms (an explicit list stack, so a large pinned/conjugated system -- which the
+    # atom-walk descends one frame per pi-atom -- never blows the Python recursion limit; the earlier recursive
+    # walk crashed with an uncaught RecursionError on a ~330-atom cumulene, the red-team fold).
+    start = _next_pi(0)
+    if start == n:
+        _consider()  # no multiple bond at all: the single all-single placement (a saturated molecule)
+    else:
+        stack: list[dict] = [{"atom": start, "dists": _atom_distributions(start), "idx": -1, "applied": None}]
+        while stack:
+            top = stack[-1]
+            if top["applied"] is not None:                 # backtrack: undo the distribution we had applied
+                _apply(top["atom"], top["applied"], -1)
+                top["applied"] = None
+            top["idx"] += 1
+            if top["idx"] >= len(top["dists"]):
+                stack.pop()
+                continue
+            dist = top["dists"][top["idx"]]
+            _apply(top["atom"], dist, +1)
+            top["applied"] = dist
+            nxt = _next_pi(top["atom"] + 1)
+            if nxt == n:
+                _consider()                                # a complete placement (every pi-demand met)
+            else:
+                stack.append({"atom": nxt, "dists": _atom_distributions(nxt), "idx": -1, "applied": None})
+
     if best[0] is None:  # pragma: no cover -- the drawn structure is always a valid placement
         raise SmilesError("could not assign a valid multiple-bond placement to the structure")
     return best[0]

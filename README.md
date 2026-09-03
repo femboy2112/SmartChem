@@ -205,7 +205,7 @@ Current maintained fast-suite result (in a dev environment with the optional PyS
 installed; environments without it skip additional real-wavefunction tests):
 
 ```text
-3320 passed, 14 skipped, 1 xfailed
+3329 passed, 14 skipped, 1 xfailed
 ```
 
 The skipped tests require the explicit slow-test gate and are not represented as passed.

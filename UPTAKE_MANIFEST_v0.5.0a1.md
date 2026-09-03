@@ -113,7 +113,7 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 | ID | P | Lane | Status | Acceptance test (verdict-changing) | Depends on |
 |---|:---:|:---:|---|---|---|
 | `CANON-KEKULE-01` | P0 | B | **`IMPLEMENTED_AND_VERIFIED`** | Aromatic and explicit-Kekulé spellings of a fused aromatic share one constitution digest; constitutional isomers stay distinct; relabel-invariant (`c126055`+`6a8c5a6`; `tests/test_canon_kekule.py`, `tests/test_stock.py::…kekule`). | shared `_ident` |
-| `ERR-EVIDENCE-01` | P0 | A | **`IMPLEMENTED_AND_VERIFIED`** | A genuine no-record lookup → `UNKNOWN`; an injected internal provider fault → `ERROR_INTERNAL`/exit 70, no raw traceback and no false "conditions unknown". Fixed **both** `assembly_conditions` (the deep root the audit missed) and `_conditions_for`; proven non-vacuous (reverting either fails exactly the 3 fault controls). `1265efe`; `tests/test_err_evidence.py`. | route search, `CLI-EXIT-01` |
+| `ERR-EVIDENCE-01` | P0 | A | **`IMPLEMENTED_AND_VERIFIED`** | A genuine no-record lookup → `UNKNOWN`; an injected internal provider fault → `ERROR_INTERNAL`/exit 70, no raw traceback and no false "conditions unknown". Fixed **both** `assembly_conditions` (the deep root the audit missed) and `_conditions_for`, and (red-team fold `69a1ffd`) the separate `synthesize` CLI's engine catch + its missing top-level exit-70 guard; proven non-vacuous. `1265efe`+`69a1ffd`; `tests/test_err_evidence.py`. | route search, `CLI-EXIT-01` |
 | `IR-STRUCT-01` | P1 | B | `TODO` | A first-class structural candidate transform rides `ChemicalCompilationIR` (parent/product structure identities, edit/scission witness, primitive stoichiometry, direction, identity layer, formal/evidence status, exact formula projection, provider id/version, loss records). | `structure_descent`, `IR-CHEM-01` |
 | `IR-FORGET-01` | P1 | B | `TODO` | `forget(decompile_structure(S)) == project_formula(decompile_structure(S))` at the declared boundary, commuting through canonical serialization; mismatch is refused, not silently coerced. | `IR-STRUCT-01` |
 | `TRANSFORM-PROVIDER-01` | P1 | B | `TODO` | Capped-scission runs **exclusively** through a typed closed provider boundary; the registry digest changes whenever the provider set / id / version / capability manifest changes; provider-local partiality never collapses into a false aggregate "complete". | `IR-STRUCT-01` |
@@ -192,6 +192,20 @@ acceptance:    tests/test_err_evidence.py -- the audit's four controls:
 non-vacuous:   git-stashing only the two source fixes and rerunning fails exactly the 3 fault controls
                (the end-to-end one as `assert 4 == 70` -- the laundering demonstrated live), 5 pass.
 scope:         the conditions/evidence lookup path only; no chemistry behavior change on any success path.
+
+red-team:      wl52pwo43 (5 blind orthogonal bearings, refute-by-default verify) -- 1 CONFIRMED HIGH, 1 REFUTED.
+  CONFIRMED:   a RESIDUAL launderer the recompile-only end-to-end test missed.  `synthesize` is a SEPARATE CLI
+               (smartchem/experiment/cli.py) that (a) wrapped the ENGINE (compile_synthesis -> _conditions_for)
+               in `except (ScissionError, ValueError, TypeError)`, re-laundering an internal ValueError/TypeError
+               fault into a false domain "invalid chemistry request" (exit 2) on the human path, and (b) had NO
+               top-level exit-70 guard, so the --json path escaped as a raw traceback.  FOLDED (69a1ffd): the
+               engine catch narrowed to the model-boundary family (ScissionError, IdentityUnsupportedError -> 5);
+               main() gained the exit-70 guard smartchem/cli.py already had (body extracted to _run); both human
+               and --json paths now map the fault to exit 70 (concise message, no traceback), while a genuine
+               refusal stays 5 and invalid input stays 2.  4 regression tests (TestSynthesizeEntryPointRedTeamFold),
+               proven non-vacuous; full suite 3450 passed, 14 skipped, 1 xfailed.
+  REFUTED:     a "false docstring" claim on _syn_domain_exit -- the verifier confirmed the docstring accurately
+               named its caught set; no defect.
 ```
 
 ## 3. P0 truth-envelope backlog

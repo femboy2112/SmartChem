@@ -2104,11 +2104,59 @@ residual / follow-on: the satisfies-gate is not yet WIRED into route/shopping se
                      purchased-supplement range stay BLOCKED on real data / the follow-on, do NOT fake.
 ```
 
+**Uptake record — CANON-KEKULE-01: resonance/Kekule-invariant canonical identity** (the STOCK-01 red-team's HIGH,
+now RESOLVED at the source; a system-wide `_ident` correctness fix, `TODO` → `IMPLEMENTED_AND_VERIFIED`):
+
+```text
+ID:                  CANON-KEKULE-01 (canonical() normalises the pi-bond placement, so aromatic and explicit-Kekule
+                     spellings of one molecule share one digest)
+files:               smartchem/smiles.py, tests/test_canon_kekule.py (NEW), smartchem/experiment/stock.py (doc +
+                     the pinned-invariant test flips xfail -> pass), UPTAKE_MANIFEST_v0.5.0a1.md, README.md
+command:             .venv/bin/python -m pytest -q -p no:cacheprovider
+result:              3418 passed, 14 skipped, 1 xfailed (baseline 3397/2xfailed; +20 test_canon_kekule, +1 the
+                     STOCK-01 Kekule xfail now PASSES, so 2 -> 1 xfailed). ZERO fixture churn. ruff clean on changed.
+the defect:          the resonance-canonical R2 move ran ONLY over bonds the INPUT flagged aromatic (lowercase /
+                     ':'). An explicit-Kekule spelling (uppercase atoms, '=' bonds) carried no flags, so a FUSED
+                     aromatic (naphthalene, indole, anthracene) kept its authored double-bond graph and got a
+                     DIFFERENT canonical_digest than its aromatic spelling -- a molecule failed to match itself
+                     (fails CLOSED). In the shared canonicalizer EVERY _ident caller uses (routes/DAGs/steps/
+                     shopping/stock), so a system-wide correctness gap, not a stock-only one. (Benzene was fine --
+                     symmetric, one Kekule class.)
+built:               _min_constitution_placement(atoms, bonds, charge) -- WITHOUT aromaticity perception (no Huckel,
+                     no ring-aromaticity judgment, so nothing to get wrong). Each atom's pi-demand need[a] =
+                     sum(order-1) is FIXED by the drawn structure; every assignment of double/triple bonds satisfying
+                     that demand exactly is a resonance form of the SAME constitutional molecule; the identity is the
+                     one MINIMISING canonical_digest(Molecule.canonical()) over them -- the exact R2 move, generalised
+                     from aromatic-flagged bonds to the whole pi-system. Wired into the no-flag branch of BOTH
+                     _build_molecule (constitution) and _isotopic_identity (the finer isotope key commits to the SAME
+                     constitution-minimal placement, so it can never split what constitution unifies). A bounded
+                     recursive enumeration; REFUSES (never truncates to a non-deterministic minimum) beyond the same
+                     5000-placement cap the aromatic path uses.
+soundness:           localised doubles are pi-demand-PINNED, so nothing over-collapses: 1-butene's double is forced
+                     onto C1=C2 (need=[1,1,0,0]) and stays distinct from 2-butene (need=[0,1,1,0]); a keto/enol pair
+                     keeps its distinct H-placement; a constitutional isomer keeps its skeleton. Only genuine
+                     resonance (aromatic rings) has multiple placements and collapses. Verified: aromatic==Kekule for
+                     benzene/naphthalene/anthracene/pyridine/furan/pyrrole/toluene/phenol/styrene/2-naphthol, and
+                     ethanol!=DME, acetic!=glycolaldehyde, 1-!=2-butene, 1,3-!=1,4-cyclohexadiene, keto!=enol
+                     (tests/test_canon_kekule.py). ZERO existing fixtures changed (the aromatic-flagged path is
+                     byte-identical; only genuinely-resonant UNFLAGGED input moves), so the blast radius the row
+                     feared did not materialise -- the fix is additive.
+faithfulness:        the smiles.py module docstring's "any two Kekule drawings collapse to ONE identity" (the exact
+                     claim the STOCK-01 red-team proved false for explicit-Kekule fused aromatics) is now TRUE and
+                     says so, covering both the aromatic and explicit spellings; the STOCK-01 _structure_key/of_molecule
+                     scope notes drop the "not yet normalised" caveat (stereo/isotope-blindness remains the honest
+                     residual). The stereo/isotope walls are UNAFFECTED and still honestly named -- this fix is
+                     constitutional-resonance only, not stereo perception.
+residual / follow-on: an aromatic bond is still reported against the chosen Kekule representative, not a delocalised
+                     1.5-order bond (the pre-existing, stated R2 boundary -- unchanged). Stereo (ID-STEREO
+                     CONFIGURATION) and isotope distinction stay their own deferred layers.
+```
+
 ## 5. P2 strengthening backlog
 
 | ID | Direction | Why it matters | Status |
 |---|---|---|---|
-| `CANON-KEKULE-01` | `canonical()` normalises resonance/Kekule spellings of FUSED aromatics to one digest | The AROMATIC and explicit-KEKULE spellings of the same fused aromatic (naphthalene, indole, ...) currently get DIFFERENT `canonical_digest`s (benzene is fine); a NON-INVARIANCE affecting the whole `_ident` layer (routes/DAGs/steps/shopping/stock) -- a molecule can fail to match itself written the other way. Surfaced by the STOCK-01 red-team (wg3b1u0ts); desired invariant pinned as a strict xfail in `tests/test_stock.py`. Fix = normalise aromaticity/Kekule on ALL inputs in `smiles.py`/`category.py` (high blast radius -- its own brick + red-team) | `TODO` |
+| `CANON-KEKULE-01` | `canonical()` normalises resonance/Kekule spellings of FUSED aromatics to one digest | **IMPLEMENTED_AND_VERIFIED** (`smiles._min_constitution_placement`): the AROMATIC and explicit-KEKULE spellings of the same molecule -- fused aromatics (naphthalene/indole/anthracene) and heteroaromatics (pyridine/furan/pyrrole) included -- now share one `canonical_digest`, WITHOUT aromaticity perception (each atom's pi-demand is fixed by the drawn structure, so localised doubles stay H-pinned and tautomers/constitutional isomers never collapse; the identity is the constitution-minimal placement over the pi-system, the R2 move generalised from aromatic-flagged bonds). Touches only the no-flag path, so aromatic-spelled molecules are byte-identical (zero fixture churn); the whole `_ident` layer (routes/DAGs/steps/shopping/stock) inherits it. `tests/test_canon_kekule.py` | `IMPLEMENTED_AND_VERIFIED` |
 | `TRANSFORM-REG-01` | Versioned reaction transform/provider plugin registry | Makes the bounded candidate space extensible and receipt-addressable | `TODO` |
 | `OPEN-SEARCH-01` | Optional generative intermediates behind explicit stronger bounds | Broadens decompiler without pretending a closed registry is nature-complete | `DEFERRED` |
 | `MECH-IR-01` | Mechanism/elementary-step representation distinct from net equations | Prevents net balance from masquerading as mechanism | `DEFERRED` |

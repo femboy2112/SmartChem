@@ -305,3 +305,42 @@ class TestCanonicalStructureKeying:
         bottle = self._ethanol_bottle(0.90, 0.95)
         assert bottle.active_fraction_interval(parse_smiles("CCO")) == pytest.approx((0.90, 0.95))
         assert bottle.satisfies(parse_smiles("CCO"), min_assay=0.99) is FitnessVerdict.INSUFFICIENT_ASSAY
+
+    def test_stereoisomers_share_a_key_the_documented_ID_STEREO_limitation(self):
+        from smartchem.smiles import parse_smiles
+        # HONEST SCOPE: the canonical digest is CONSTITUTIONAL (connectivity), stereo-BLIND. R and S alanine share a
+        # key, so a material of one currently satisfies a query for the other. Distinguishing configuration needs
+        # real CIP R/S-parity -- the BLOCKED ID-STEREO layer -- which this key does not claim. Pinned so no future
+        # change silently claims stereo-soundness (and so the limitation is visible, not a hidden fails-open).
+        r_ala = StockMaterial(
+            STOCK_MATERIAL_SCHEMA, "r-ala", "R-alanine",
+            (MaterialComponent.of_molecule(parse_smiles("N[C@@H](C)C(=O)O"), "active", 0.99, 1.0),),
+            Phase.SOLID, "reagent label",
+        )
+        assert r_ala.satisfies(parse_smiles("N[C@H](C)C(=O)O"), min_assay=0.99) is FitnessVerdict.SATISFIES
+
+    def test_isotopologues_share_a_key_the_canonical_digest_is_isotope_blind(self):
+        from smartchem.smiles import parse_smiles
+        # HONEST SCOPE (cf. stereo): the digest is also isotope-blind -- H2O and D2O share a key, so a material of
+        # one currently satisfies a query for the other. An isotope-aware digest is a separate deferred layer.
+        light = StockMaterial(
+            STOCK_MATERIAL_SCHEMA, "h2o", "water",
+            (MaterialComponent.of_molecule(parse_smiles("O"), "active", 0.99, 1.0),), Phase.LIQUID, "label",
+        )
+        assert light.satisfies(parse_smiles("[2H]O[2H]"), min_assay=0.99) is FitnessVerdict.SATISFIES
+
+    @pytest.mark.xfail(
+        reason="canonicalizer does not yet normalise explicit-Kekule fused aromatics -- CANON-KEKULE-01",
+        strict=True,
+    )
+    def test_a_material_satisfies_its_own_identity_written_kekule_the_desired_invariant(self):
+        from smartchem.smiles import parse_smiles
+        # THE DESIRED INVARIANT (currently BROKEN): a naphthalene material must satisfy a query for naphthalene
+        # written as an explicit Kekule -- it is the SAME molecule.  It does not, because the aromatic and
+        # explicit-Kekule spellings of a FUSED aromatic get different canonical digests (benzene is unaffected).
+        # Pinned strict-xfail so fixing CANON-KEKULE-01 turns this GREEN and forces removing the marker.
+        naph = StockMaterial(
+            STOCK_MATERIAL_SCHEMA, "naph", "naphthalene",
+            (MaterialComponent.of_molecule(parse_smiles("c1ccc2ccccc2c1"), "active", 0.99, 1.0),), Phase.SOLID, "GC",
+        )
+        assert naph.satisfies(parse_smiles("C1=CC=C2C=CC=CC2=C1"), min_assay=0.9) is FitnessVerdict.SATISFIES

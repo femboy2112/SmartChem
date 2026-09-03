@@ -86,8 +86,19 @@ def _structure_key(molecule: Molecule) -> str:
     This is the same canonical identity routes and shopping key on (``canonical_digest(m.canonical())``, with the
     as-given fallback for a molecule that cannot canonicalise), namespaced with a ``struct:`` prefix so a
     structure key and a human-declared NAME key can never collide inside ``identity_key``.  Keying on structure is
-    what makes fitness SOUND: a same-formula isomer (ethanol vs dimethyl ether, both C2H6O) has a DIFFERENT
-    structure digest, so one can never borrow the other's assay -- the exact "keyed by formula fails open" hazard.
+    what makes fitness SOUND against the "keyed by formula fails open" hazard: a same-formula CONSTITUTIONAL isomer
+    (ethanol vs dimethyl ether, both C2H6O) has a DIFFERENT digest, so one can never borrow the other's assay.
+
+    Scope, stated honestly -- this key inherits the canonicalizer's guarantees AND its current limitations:
+      * CONSTITUTIONAL only: the digest is the molecular graph, so it is STEREO-BLIND (R/S, cis/trans share a key)
+        and ISOTOPE-BLIND (H2O and D2O share a key).  Distinguishing configuration needs real CIP R/S-parity (the
+        BLOCKED ID-STEREO layer) and isotopes an isotope-aware digest; this key never claims to do either.  So the
+        soundness guarantee is: a same-formula CONSTITUTIONAL isomer never borrows -- NOT every isomer.
+      * RESONANCE non-invariance: ``canonical()`` normalises an AROMATIC spelling and simple rings (benzene) to one
+        Kekule form, but does NOT yet normalise an EXPLICIT-Kekule spelling of a FUSED aromatic (naphthalene,
+        indole, ...): the aromatic and explicit-Kekule spellings of the SAME such molecule get DIFFERENT digests, so
+        a material can fail to satisfy its OWN identity written the other way (a fails-CLOSED false negative).  This
+        is a canonicalizer limitation (tracked ``CANON-KEKULE-01``), pinned as an xfail, NOT faked here.
     """
     try:
         return _STRUCT_PREFIX + canonical_digest(molecule.canonical())
@@ -151,9 +162,12 @@ class MaterialComponent(Digestible):
     ) -> "MaterialComponent":
         """A component identified by canonical STRUCTURE (ID-LAYER-01) -- the sound key.
 
-        Robust across name synonyms and, crucially, isomer-proof: a same-formula different-structure species has a
-        different canonical digest, so it can never borrow this component's assay.  This is the key a route/shopping
-        Molecule is matched against; prefer it over :meth:`known` wherever the structure is in hand.
+        Robust across the molecule's NAME and, crucially, CONSTITUTIONAL-isomer-proof: a same-formula species of
+        different connectivity has a different canonical digest, so it can never borrow this component's assay.  It
+        is NOT proof against stereo/isotope isomers or every SMILES spelling -- see :func:`_structure_key` for the
+        honest scope (stereo/isotope-blind; explicit-Kekule fused aromatics not yet normalised, CANON-KEKULE-01).
+        This is the key a route/shopping Molecule is matched against; prefer it over :meth:`known` wherever the
+        structure is in hand.
         """
         return cls(MATERIAL_COMPONENT_SCHEMA, _structure_key(molecule), role, float(min_fraction), float(max_fraction))
 
@@ -297,8 +311,9 @@ class StockMaterial(Digestible):
         """The summed fraction interval ``(lo, hi)`` of components matching ``required_identity``, or ``None``.
 
         ``required_identity`` may be a :class:`~smartchem.category.Molecule` -- matched by canonical STRUCTURE, the
-        SOUND key (a same-formula isomer never borrows another's assay; a name synonym still matches) -- or a
-        ``str`` name, matched by the weaker declared-name key.  A structure query matches ONLY structure-keyed
+        SOUND key (a same-formula CONSTITUTIONAL isomer never borrows another's assay; a name synonym still matches;
+        stereoisomers share a key -- the blocked ID-STEREO layer) -- or a ``str`` name, matched by the weaker
+        declared-name key.  A structure query matches ONLY structure-keyed
         components and a name query ONLY name-keyed components: a bare name can never stand in for a proven
         structure, nor a structure for a name.  Several components may share an identity (two additives of the same
         species); their intervals sum, capped at 1.0 on the high side.  ``None`` means the identity is not present.

@@ -58,6 +58,12 @@ class TestSeedIntegrity:
         names = {r.name for r in SEED_KINETIC_REFS}
         assert "N2O5 decomposition" in names
 
+    def test_the_gas_phase_calibration_records_declare_their_sourced_phase(self) -> None:
+        # EVD-KEY-CTX-01: both Arrhenius seeds are gas-phase (their provenance says so) and now declare it.
+        by_name = {r.name: r for r in SEED_KINETIC_REFS}
+        assert by_name["N2O5 decomposition"].phase == "gas"
+        assert by_name["cyclopropane isomerization"].phase == "gas"
+
     def test_a_kinetic_ref_requires_a_provenance(self) -> None:
         with pytest.raises(ValueError):
             KineticRef(
@@ -258,3 +264,43 @@ class TestKineticBreadth:
 
     def test_the_saponification_arrhenius_units_gap_is_documented(self) -> None:
         assert any("saponification" in k for k in KINETIC_GAPS)
+
+
+class TestPhaseBorrow:
+    """EVD-KEY-CTX-01: a gas-phase sourced rate is NOT borrowed by a step declared in a conflicting phase.
+
+    The condition-domain analogue of the isomer-borrow (EVD-KEY-01): N2O5's decomposition rate is sourced in
+    the GAS phase, and aqueous N2O5 chemistry is genuinely different, so an AQUEOUS N2O5 step must get a loud
+    UNKNOWN rather than silently inherit the gas rate -- while a phase-unspecified step must NOT regress.
+    """
+
+    def _n2o5_in(self, medium: str) -> ExperimentStep:
+        from smartchem.conditions import ConditionEnvelope
+        from smartchem.contracts import EvidenceStatus
+        n2o5 = parse_smiles("O=[N+]([O-])O[N+](=O)[O-]")
+        no2 = parse_smiles("[N+](=O)[O-]")
+        o2 = parse_smiles("O=O")
+        env = ConditionEnvelope(medium=medium, status=EvidenceStatus.EXPERIMENTAL, provenance="test:phase")
+        return ExperimentStep.assembling(o2, (n2o5, n2o5), (no2, no2, no2, no2, o2), envelope=env)
+
+    def test_an_aqueous_step_does_not_borrow_the_gas_phase_rate(self) -> None:
+        sk = kinetics_of_step(self._n2o5_in("aqueous"), temperature_k=310.0)
+        assert sk.regime is RateRegime.UNKNOWN  # the phase-borrow closed: a loud UNKNOWN, not the gas rate
+        assert sk.k_finding.bucket is Bucket.UNKNOWN
+        assert sk.k_finding.value is None
+
+    def test_a_matching_gas_step_still_resolves_the_gas_rate(self) -> None:
+        sk = kinetics_of_step(self._n2o5_in("gas phase"), temperature_k=310.0)
+        assert sk.regime is not RateRegime.UNKNOWN  # a step declared IN the record's phase resolves it
+        assert sk.grade is RateGrade.DERIVED
+
+    def test_a_phase_unspecified_step_does_not_regress(self) -> None:
+        # the whole no-regression guarantee: an unspecified medium is context-free and still resolves the record.
+        sk = kinetics_of_step(_n2o5_decomposition(), temperature_k=310.0)
+        assert sk.regime is not RateRegime.UNKNOWN
+
+    def test_an_unrecognised_medium_declines_to_context_free_not_a_false_refusal(self) -> None:
+        # "aqueous, mild acid" is NOT in the controlled vocabulary -> context-free -> still resolves (no false
+        # refusal from an unclassifiable medium; the conservative-decline discipline, no worse than before).
+        sk = kinetics_of_step(self._n2o5_in("aqueous, mild acid"), temperature_k=310.0)
+        assert sk.regime is not RateRegime.UNKNOWN

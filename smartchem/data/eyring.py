@@ -54,7 +54,10 @@ class EyringRef(Digestible):
     honesty since ``k``'s units and half-life interpretation depend on the reaction order);
     ``temperature_range_k`` is the ``(lo, hi)`` window the activation parameters are stated valid over (inside
     it a rate is DERIVED, outside it a flagged PREDICTED extrapolation).  ``provenance`` (author + year) is
-    REQUIRED.
+    REQUIRED.  ``phase`` (EVD-KEY-CTX-01, OPTIONAL, default ``""``) is the SOURCED condition domain the
+    ``(ΔH‡, ΔS‡)`` were measured in -- normalised (:func:`~smartchem.evidence_key.normalize_phase`) into the
+    section-9.1 ``"phase"`` context so a rate measured in one phase is never borrowed by a step declared in a
+    conflicting one; empty/unrecognised leaves the record context-free (answers any phase, as before).
     """
 
     reactant_smiles: SpeciesSpec
@@ -65,12 +68,15 @@ class EyringRef(Digestible):
     a_units: str
     temperature_range_k: tuple[float, float]
     provenance: str
+    phase: str = ""
 
     def __post_init__(self) -> None:
         for field_name in ("name", "a_units", "provenance"):
             v = getattr(self, field_name)
             if not isinstance(v, str) or not v:
                 raise ValueError(f"{field_name} must be a non-empty string")
+        if not isinstance(self.phase, str):
+            raise TypeError("phase must be a string (a medium/condition-domain; '' = unspecified)")
         for field_name in ("dh_dagger_kj_per_mol", "ds_dagger_j_per_mol_k"):
             v = getattr(self, field_name)
             if isinstance(v, bool) or not isinstance(v, (int, float)):
@@ -142,6 +148,9 @@ SEED_EYRING_REFS: tuple[EyringRef, ...] = (
         ds_dagger_j_per_mol_k=-131.0,
         a_units="M^-1 s^-1",
         temperature_range_k=(298.0, 323.0),
+        phase="aqueous",  # EVD-KEY-CTX-01: alkaline hydrolysis by aqueous OH- (bimolecular, M^-1 s^-1) -- a
+        # SOLUTION-phase rate, definitively not gas; a gas-phase step must not borrow it, and vice versa
+
         provenance=(
             "CH3COOC2H5 + OH- -> CH3COO- + C2H5OH (bimolecular, rate = k[ester][OH-]). ΔH‡ = 38.6±0.5 kJ/mol, "
             "ΔS‡ = -131.0±1.4 J/mol/K (=> ΔG‡(298 K) = 77.7 kJ/mol), obtained by transition-state theory "
@@ -169,6 +178,8 @@ SEED_EYRING_REFS: tuple[EyringRef, ...] = (
         ds_dagger_j_per_mol_k=29.3,
         a_units="s^-1",
         temperature_range_k=(700.0, 800.0),
+        phase="gas",  # EVD-KEY-CTX-01: Benson & O'Neal gas-phase unimolecular; matches the gas Arrhenius twin
+
         provenance=(
             "cyclopropane -> propene, first order (rate = -d[c-C3H6]/dt = k[c-C3H6]; a 1:1 isomerization, no "
             "stoichiometric-convention ambiguity). ΔS‡ = +29.3 J/mol/K (+7.0 cal/mol/K) INDEPENDENTLY "

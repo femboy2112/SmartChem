@@ -45,7 +45,7 @@ from enum import Enum
 
 from ..contracts import Digestible, canonical_digest
 from ..data.kinetics import DEFAULT_KINETICS, KineticRef, KineticTable
-from ..evidence_key import ReactionEvidenceKey
+from ..evidence_key import ReactionEvidenceKey, phase_context
 from ..smiles import parse_smiles
 from .bucket import Bucket, Quantity, unknown
 from .ceiling import _coefficient_vector
@@ -149,11 +149,17 @@ def reaction_evidence_key(step: ExperimentStep) -> ReactionEvidenceKey:
     Built from the same signed coefficient vector feasibility uses (so the rate lookup can never disagree with the
     balance) and keyed by canonical STRUCTURE, not formula -- a same-formula isomer is a different reaction.  This
     is the ONE unified key the standard names; the kinetics and Eyring providers both resolve records against it.
+
+    EVD-KEY-CTX-01: the step's DECLARED medium (:attr:`~smartchem.conditions.ConditionEnvelope.medium`) populates
+    the section-9.1 ``"phase"`` context (via :func:`~smartchem.evidence_key.phase_context`), so a step declared in
+    an explicit phase only resolves a record measured in that phase; a phase-unspecified step is context-free and
+    resolves as it always did.
     """
     species, nu = _coefficient_vector(step)
     return ReactionEvidenceKey.from_molecules(
         ((m, n) for m, n in zip(species, nu) if n > 0),
         ((m, -n) for m, n in zip(species, nu) if n < 0),
+        context=phase_context(step.envelope.medium),
     )
 
 
@@ -174,9 +180,16 @@ def _side_key_from_smiles(smiles_pairs: tuple) -> tuple:
 
 
 def record_evidence_key(rec: "object") -> ReactionEvidenceKey:
-    """The section-9.1 :class:`ReactionEvidenceKey` of a sourced record (KineticRef/EyringRef) from its SMILES form."""
+    """The section-9.1 :class:`ReactionEvidenceKey` of a sourced record (KineticRef/EyringRef) from its SMILES form.
+
+    EVD-KEY-CTX-01: the record's SOURCED ``phase`` (if any) populates the ``"phase"`` context, so the LOOKUP
+    (:meth:`~smartchem.evidence_key.ReactionEvidenceKey.applies_to`) withholds a gas-phase rate from a step
+    declared in a conflicting phase.  A record with no (or an unrecognised) ``phase`` is context-free and answers
+    any phase, exactly as records did before this field existed.
+    """
     return ReactionEvidenceKey.of(
-        _side_key_from_smiles(rec.reactant_smiles), _side_key_from_smiles(rec.product_smiles)
+        _side_key_from_smiles(rec.reactant_smiles), _side_key_from_smiles(rec.product_smiles),
+        context=phase_context(getattr(rec, "phase", "")),
     )
 
 
@@ -186,10 +199,14 @@ def _record_key(rec: KineticRef) -> tuple[tuple, tuple]:
 
 
 def _resolve_record(kinetics: KineticTable, step: ExperimentStep) -> KineticRef | None:
-    """The sourced record whose canonical reaction structure matches this step's, direction-specific, or None."""
+    """The sourced record whose canonical reaction structure matches this step's, direction-specific, or None.
+
+    EVD-KEY-CTX-01: matched by the ``applies_to`` LOOKUP (structure+direction+stoichiometry exact, ``"phase"``
+    context SUBSUMED), not raw ``==``, so a record's phase and the step's declared phase must not conflict.
+    """
     key = reaction_evidence_key(step)
     for rec in kinetics.records:
-        if record_evidence_key(rec) == key:
+        if record_evidence_key(rec).applies_to(key):
             return rec
     return None
 

@@ -81,7 +81,11 @@ class KineticRef(Digestible):
     interpretation depend on the reaction order); ``temperature_range_k`` is the ``(lo, hi)`` window the
     Arrhenius fit is stated valid over (inside it a rate is DERIVED, outside it a flagged PREDICTED
     extrapolation).  ``provenance`` (author + year) is REQUIRED, exactly as for a
-    :class:`~smartchem.data.thermo.ThermoRef`.
+    :class:`~smartchem.data.thermo.ThermoRef`.  ``phase`` (EVD-KEY-CTX-01, OPTIONAL, default ``""``) is the
+    SOURCED condition domain the ``(Ea, A)`` were measured in -- a free-text medium the engine normalises
+    (:func:`~smartchem.evidence_key.normalize_phase`) into the section-9.1 ``"phase"`` context, so a gas-phase
+    rate is never borrowed by a step declared in a conflicting phase; an empty/unrecognised ``phase`` leaves the
+    record context-free (it answers any phase, exactly as before this field existed).
     """
 
     reactant_smiles: SpeciesSpec
@@ -92,12 +96,15 @@ class KineticRef(Digestible):
     a_units: str
     temperature_range_k: tuple[float, float]
     provenance: str
+    phase: str = ""
 
     def __post_init__(self) -> None:
         for field_name in ("name", "a_units", "provenance"):
             v = getattr(self, field_name)
             if not isinstance(v, str) or not v:
                 raise ValueError(f"{field_name} must be a non-empty string")
+        if not isinstance(self.phase, str):
+            raise TypeError("phase must be a string (a medium/condition-domain; '' = unspecified)")
         for field_name in ("ea_kj_per_mol", "log10_a"):
             v = getattr(self, field_name)
             if isinstance(v, bool) or not isinstance(v, (int, float)):
@@ -166,6 +173,7 @@ SEED_KINETIC_REFS: tuple[KineticRef, ...] = (
         log10_a=13.69,
         a_units="s^-1",
         temperature_range_k=(298.0, 338.0),
+        phase="gas",  # EVD-KEY-CTX-01: the FIRST-ORDER GAS-PHASE calibration reaction (provenance states so)
         provenance=(
             "2 N2O5 -> 4 NO2 + O2, first order in N2O5 (convention: -d[N2O5]/dt = k[N2O5], the per-N2O5-"
             "consumed rate, NOT the reaction-rate convention which is half this). Ea = 103.5 kJ/mol, "
@@ -188,6 +196,7 @@ SEED_KINETIC_REFS: tuple[KineticRef, ...] = (
         log10_a=15.20,
         a_units="s^-1",
         temperature_range_k=(700.0, 800.0),
+        phase="gas",  # EVD-KEY-CTX-01: Benson's "Gas Phase Unimolecular Reactions"; the high-pressure gas regime
         provenance=(
             "cyclopropane -> propene, first order (rate = -d[c-C3H6]/dt = k[c-C3H6]; a 1:1 isomerization, so "
             "no stoichiometric-convention ambiguity). Ea = 272 kJ/mol, A = 1.58e15 s^-1 (log10 A = 15.20) "

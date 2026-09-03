@@ -68,11 +68,13 @@ def _resolve_barrier(barriers: EyringTable, step: ExperimentStep) -> EyringRef |
 
     Resolves against the ONE unified section-9.1 key (:func:`~smartchem.experiment.kinetics.reaction_evidence_key`
     / :func:`~smartchem.experiment.kinetics.record_evidence_key`, EVD-KEY-01), so an isomer never inherits another
-    reaction's barrier and the Eyring and Arrhenius providers key evidence identically.
+    reaction's barrier and the Eyring and Arrhenius providers key evidence identically.  EVD-KEY-CTX-01: matched by
+    the ``applies_to`` LOOKUP (``"phase"`` context SUBSUMED), so a barrier measured in one phase is not borrowed by
+    a step declared in a conflicting one.
     """
     key = reaction_evidence_key(step)
     for rec in barriers.records:
-        if record_evidence_key(rec) == key:
+        if record_evidence_key(rec).applies_to(key):
             return rec
     return None
 

@@ -64,6 +64,13 @@ class TestSeedIntegrity:
         assert cp.a_units == "s^-1"
         assert "Benson" in cp.provenance and "NSRDS-NBS 21" in cp.provenance  # the open-access primary
 
+    def test_the_seeds_declare_their_sourced_phase(self):
+        # EVD-KEY-CTX-01: the Eyring seed spans TWO phases -- saponification is aqueous (OH- hydrolysis,
+        # M^-1 s^-1), cyclopropane is gas (matching its Arrhenius twin) -- and each now declares it.
+        by_name = {r.name: r for r in SEED_EYRING_REFS}
+        assert by_name["ethyl acetate saponification"].phase == "aqueous"
+        assert by_name["cyclopropane isomerization"].phase == "gas"
+
     def test_the_constants_are_the_si_2019_exact_values(self):
         assert BOLTZMANN_J_PER_K == 1.380649e-23
         assert PLANCK_J_S == 6.62607015e-34
@@ -201,6 +208,32 @@ class TestCyclopropaneRealCrossCheck:
         ds_inversion = 8.314462618 * (15.20 * math.log(10.0) - math.log(
             math.e * BOLTZMANN_J_PER_K * T / PLANCK_J_S))
         assert abs(rec.ds_dagger_j_per_mol_k - ds_inversion) > 0.1  # sourced value differs from the inversion
+
+
+class TestPhaseBorrow:
+    """EVD-KEY-CTX-01, the aqueous side: the saponification barrier is sourced in AQUEOUS solution, so a step
+    declared GAS-phase must not borrow it, while an unspecified or matching-phase step resolves as before."""
+
+    def _sap_in(self, medium: str) -> ExperimentStep:
+        from smartchem.conditions import ConditionEnvelope
+        from smartchem.contracts import EvidenceStatus
+        ea, oh = parse_smiles("CCOC(C)=O"), parse_smiles("[OH-]")
+        ac, et = parse_smiles("CC(=O)[O-]"), parse_smiles("CCO")
+        env = ConditionEnvelope(medium=medium, status=EvidenceStatus.EXPERIMENTAL, provenance="test:phase")
+        return ExperimentStep.assembling(et, (ea, oh), (ac, et), envelope=env)
+
+    def test_a_gas_declared_step_does_not_borrow_the_aqueous_barrier(self):
+        sk = eyring_of_step(self._sap_in("gas phase"), temperature_k=298.15)
+        assert sk.regime is RateRegime.UNKNOWN  # aqueous barrier withheld from a gas step (borrow closed)
+        assert sk.log10_k is None
+
+    def test_an_aqueous_declared_step_resolves_the_aqueous_barrier(self):
+        sk = eyring_of_step(self._sap_in("aqueous"), temperature_k=298.15)
+        assert sk.regime is RateRegime.MODERATE  # matching phase -> resolves
+
+    def test_a_phase_unspecified_step_does_not_regress(self):
+        sk = eyring_of_step(_saponification(), temperature_k=298.15)  # unspecified medium
+        assert sk.regime is RateRegime.MODERATE
 
 
 class TestRouteAggregation:

@@ -12,7 +12,11 @@ ADOPTION, stated honestly (not "everywhere" yet): the sound rate providers -- ``
 ``record_evidence_key``), so it is LIVE in production, not a dead switch.  Migrating the FORMULA-keyed providers
 (``decompiler_conditions``' decomposition path, ``selectivity``, and ``decompiler_review``) onto it -- which is
 what would close their isomer-borrow hazard -- is the remaining EVD-KEY-01 work; those providers do NOT key on
-this type yet.  The ``context`` field is likewise declared but not yet populated by any provider.
+this type yet.  The ``context`` field is now LIVE too (EVD-KEY-CTX-01): those same two rate providers populate a
+``"phase"`` dimension -- from a record's SOURCED phase and a step's DECLARED medium -- and resolve through the
+:meth:`ReactionEvidenceKey.applies_to` LOOKUP relation, which subsumes context rather than equating it, so a
+gas-phase sourced rate no longer silently answers a step declared to run in a conflicting phase (the phase-borrow,
+the condition-domain analogue of the isomer-borrow) while a phase-unspecified step still resolves as before.
 
 Fields (section 9.1):
 
@@ -22,9 +26,13 @@ Fields (section 9.1):
   structurally: which side a species sits on -- a decomposition and its algebraic reverse are different keys.
 * stoichiometry is PRIMITIVE: coefficients are gcd-reduced across both sides, so a reaction written at any scale
   (``2A -> 2B`` vs ``A -> B``) yields ONE key -- the scale-invariance the kinetics provider already relied on.
-* ``context`` -- the optional ``(dimension, value)`` pairs (phase / standard state / condition domain) section 9.1
-  adds.  Empty by default (no provider populates it yet), so it never SPLITS a key a provider did not mean to
-  distinguish; when populated it can only make a key FINER, never merge two distinct contexts.
+* ``context`` -- the optional, canonically-sorted ``(dimension, value)`` pairs (phase / standard state / condition
+  domain) section 9.1 adds.  Empty by default, so it never SPLITS a key a provider did not mean to distinguish; as
+  part of the key's IDENTITY (``==``) a declared context makes the key strictly FINER, and it can never merge two
+  distinct contexts.  The rate providers populate the ``"phase"`` dimension via :func:`phase_context` (a record's
+  sourced phase, a step's declared medium), and the LOOKUP is :meth:`ReactionEvidenceKey.applies_to`, which SUBSUMES
+  context (a dimension both sides declare must AGREE; a dimension only one side declares is unconstrained) -- so an
+  explicit phase conflict withholds a borrow, an unspecified phase does not regress, and identity stays exact.
 
 This is the STRUCTURE-and-stoichiometry identity of a reaction.  It deliberately carries no rate, condition, or
 source PAYLOAD -- those are the VALUES a provider stores AGAINST this key; the source/citation lives with the
@@ -37,9 +45,57 @@ from math import gcd
 
 from .contracts import Digestible, canonical_digest
 
-__all__ = ["REACTION_EVIDENCE_KEY_SCHEMA", "ReactionEvidenceKey"]
+__all__ = [
+    "REACTION_EVIDENCE_KEY_SCHEMA",
+    "PHASE_DIMENSION",
+    "ReactionEvidenceKey",
+    "normalize_phase",
+    "phase_context",
+]
 
 REACTION_EVIDENCE_KEY_SCHEMA = "smartchem.evidence/reaction-evidence-key-v1alpha1"
+
+#: The ``context`` dimension name the rate providers populate: the reaction's phase / condition domain.
+PHASE_DIMENSION = "phase"
+
+#: The initial controlled phase vocabulary for the ``"phase"`` context dimension.  DELIBERATELY SMALL and
+#: EXACT-MATCH (case/whitespace-insensitive): a medium string is recognised only as one of these canonical
+#: phases, and ANY unrecognised medium normalises to ``""`` -- it declines.  Declining is the SOUND default:
+#: an unrecognised phase leaves the key context-free on that dimension, so it matches ANY phase exactly as it
+#: did before this field existed -- a missing or wrong entry can only FAIL to close a borrow, never manufacture
+#: a false refusal or a false match.  A fuzzy / substring match WOULD manufacture one ("non-aqueous" contains
+#: "aqueous"; "gas" is a substring of many words), which is why this is a closed dictionary, never a heuristic.
+#: Extend it with more canonical phases as sourced data needs them; never loosen it to substring matching.
+_PHASE_ALIASES: dict[str, str] = {
+    "gas": "gas", "gaseous": "gas", "gas phase": "gas", "gas-phase": "gas",
+    "vapor": "gas", "vapour": "gas", "g": "gas",
+    "aqueous": "aqueous", "aqueous solution": "aqueous", "water": "aqueous", "aq": "aqueous",
+}
+
+
+def normalize_phase(medium: "object") -> str:
+    """Map a free-text medium/phase string to a canonical phase token, or ``""`` when unrecognised.
+
+    Conservative by construction: an exact (case- and whitespace-insensitive) lookup against the small
+    controlled :data:`_PHASE_ALIASES` vocabulary, declining everything else.  Declining is SOUND -- a
+    context-free key matches any phase, so an unclassifiable medium never falsely refuses nor falsely
+    resolves a record; a fuzzy match would not be sound.  A non-string returns ``""``.
+    """
+    if not isinstance(medium, str):
+        return ""
+    return _PHASE_ALIASES.get(medium.strip().lower(), "")
+
+
+def phase_context(medium: "object") -> "tuple[tuple[str, str], ...]":
+    """The section-9.1 ``context`` a medium contributes: ``(("phase", token),)`` if recognised, else ``()``.
+
+    The single bridge from a free-text medium (a record's sourced phase, a step's declared
+    :attr:`~smartchem.conditions.ConditionEnvelope.medium`) to the canonical, key-ready context tuple.  An
+    unrecognised or empty medium yields ``()`` -- a context-free key -- so the reaction still resolves exactly
+    as it did before a phase was declared.
+    """
+    token = normalize_phase(medium)
+    return ((PHASE_DIMENSION, token),) if token else ()
 
 
 def _merge(pairs: "object") -> "dict[str, int]":
@@ -148,6 +204,25 @@ class ReactionEvidenceKey(Digestible):
     def sides(self) -> "tuple[tuple[tuple[str, int], ...], tuple[tuple[str, int], ...]]":
         """The ``(reactants, products)`` structure-key tuple -- the shape the kinetics provider's key has always had."""
         return self.reactant_identities, self.product_identities
+
+    def applies_to(self, step_key: "ReactionEvidenceKey") -> bool:
+        """Does a sourced record with THIS key answer a step whose key is ``step_key``?  (the section-9.1 LOOKUP.)
+
+        The lookup relation, deliberately NOT identity (``==``).  Structure, stoichiometry, and DIRECTION must
+        match EXACTLY -- ``self.sides == step_key.sides`` -- so an isomer or the reverse direction never answers.
+        ``context`` is SUBSUMED, not equated: on every dimension BOTH keys declare, the values must AGREE (a
+        gas-phase record does not answer an aqueous step -- the phase-borrow closed), while a dimension only ONE
+        side declares is unconstrained (a phase-unspecified step still resolves a phase-tagged record, and an
+        untagged record still answers any step -- neither regresses).  The relation is symmetric in context and
+        strictly weaker than ``==``: ``a == b`` implies ``a.applies_to(b)``, never the reverse.
+        """
+        if type(step_key) is not ReactionEvidenceKey:
+            raise TypeError("applies_to takes a ReactionEvidenceKey")
+        if self.sides != step_key.sides:
+            return False
+        mine = dict(self.context)
+        theirs = dict(step_key.context)
+        return all(mine[dim] == theirs[dim] for dim in mine.keys() & theirs.keys())
 
     def with_context(self, context: "object") -> "ReactionEvidenceKey":
         """The same reaction key at a declared context (phase/standard-state/condition-domain), section 9.1."""

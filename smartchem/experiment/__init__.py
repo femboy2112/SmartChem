@@ -72,10 +72,13 @@ from .dag import (
     DAGComposability,
     DAGError,
     DAGFlow,
+    DAGShoppingRequirement,
     DAGVerification,
+    ShoppingUnderdeterminedError,
     SynthesisDAG,
     dag_ceiling,
     dag_composability,
+    dag_shopping_requirement,
     verify_dag,
 )
 from .drafter import (
@@ -151,6 +154,12 @@ from .selectivity import (
     selectivity_of_step,
     verify_selectivity,
 )
+from .sourcing import (
+    QuantityCoverage,
+    RequirementSourcing,
+    SourcingPlan,
+    plan_sourcing,
+)
 from .step import ExperimentRoute, ExperimentStep, StepError
 from .stock import (
     CostObservation,
@@ -176,6 +185,13 @@ __all__ = [
     "stock_material_from_commodity",
     "Phase",
     "FitnessVerdict",
+    "DAGShoppingRequirement",
+    "ShoppingUnderdeterminedError",
+    "dag_shopping_requirement",
+    "SourcingPlan",
+    "RequirementSourcing",
+    "QuantityCoverage",
+    "plan_sourcing",
     "Transition",
     "TransitionStatus",
     "Composability",

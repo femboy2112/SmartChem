@@ -49,12 +49,15 @@ from .step import ExperimentStep
 __all__ = [
     "DAG_SCHEMA",
     "DAGError",
+    "ShoppingUnderdeterminedError",
     "SynthesisDAG",
     "DAGCeiling",
     "DAGFlow",
+    "DAGShoppingRequirement",
     "DAGComposability",
     "DAGVerification",
     "dag_ceiling",
+    "dag_shopping_requirement",
     "dag_composability",
     "verify_dag",
 ]
@@ -473,6 +476,172 @@ def dag_ceiling(dag: SynthesisDAG, feed: Mapping[Molecule, "int | Fraction"]) ->
     if prop_final == value:                          # exact-rational agreement: the per-step breakdown is faithful
         return DAGCeiling(dag, per_step, value, flow=None)
     return DAGCeiling(dag, (), value, flow=flow)     # propagation would mint/over-report -> the LP wins, flow only
+
+
+# -- the inverse of the ceiling: the quantity-aware shopping requirement (SHOP-LEAF-02) -----------------
+class ShoppingUnderdeterminedError(DAGError):
+    """The external-purchase requirement is not a single conserved number.
+
+    A species is produced by MORE THAN ONE step (a step's target is ALSO a by-product of another step), so how
+    much to buy depends on how that shared internal supply is allocated across its sources -- a *range*, not a
+    fabricated number.  Pinning one value needs a cost/allocation policy (the SHOP-LEAF-02 follow-on, tied to
+    ``COST-VEC-01``); until then this refuses rather than invent, exactly as ``dag_ceiling`` refuses an unbounded
+    target.
+    """
+
+
+@dataclass(frozen=True)
+class DAGShoppingRequirement(Digestible):
+    """The exact conserved EXTERNAL-PURCHASE requirement to make ``final_target_mol`` of the DAG's final target.
+
+    The INVERSE of :func:`dag_ceiling` (feed -> max target): given a desired amount of the final target, how much
+    of each external input must be acquired?  Where the FORWARD ceiling's fan-out allocation is a range, the
+    inverse is UNIQUELY determined for an admissible DAG -- every intermediate has exactly one producer (the
+    distinct-targets invariant), so producing ``final_target_mol`` forces every step's reaction extent, and the
+    per-species net (total consumed minus total produced, with by-products CREDITED) is exact.
+
+    :attr:`requirements` are the species whose consumption exceeds internal production -- what a chemist must
+    BUY -- each a 100%-EFFICIENCY LOWER BOUND (a real yield < 100% needs MORE; this is a conserved floor on
+    purchase, never a predicted amount).  :attr:`co_products` are species produced in surplus (the final target
+    excluded -- it is THE product, not a co-product).  :attr:`step_extents` is each reaction's extent (mol run)
+    at this operating point, in topological order.
+    """
+
+    dag: SynthesisDAG
+    final_target_mol: Fraction
+    step_extents: tuple[tuple[ExperimentStep, Fraction], ...]   # topological order; mol of each reaction run
+    requirements: tuple[tuple[Molecule, Fraction], ...]         # external species -> mol to buy (net consumed > 0)
+    co_products: tuple[tuple[Molecule, Fraction], ...]          # surplus species (net produced > 0), excl. final
+
+    @property
+    def quantity(self) -> Quantity:
+        return Quantity(
+            f"external purchase to make {self.final_target_mol} mol {self.dag.final_target!r} (100% efficiency)",
+            str(self.final_target_mol), "mol", Bucket.CONSERVATION,
+            "conserved inverse of the max-yield flow: reaction extents forced by the target amount (one producer "
+            "per intermediate), by-products credited; exact rational, a 100%-efficiency LOWER BOUND on purchase",
+        )
+
+    def explain(self) -> str:
+        lines = [
+            f"shopping requirement: to make {self.final_target_mol} mol {self.dag.final_target!r} at 100% "
+            f"efficiency buy [CONSERVATION -- a conserved LOWER BOUND on purchase; a real yield needs MORE]:"
+        ]
+        for m, amount in self.requirements:
+            lines.append(f"  {amount} mol {m!r}")
+        if self.co_products:
+            lines.append("co-products (produced in surplus, credited -- not bought):")
+            for m, amount in self.co_products:
+                lines.append(f"  {amount} mol {m!r}")
+        return "\n".join(lines)
+
+
+def dag_shopping_requirement(
+    dag: SynthesisDAG, final_target_mol: "int | Fraction"
+) -> DAGShoppingRequirement:
+    """The exact conserved external-purchase requirement to make ``final_target_mol`` of ``dag``'s final target.
+
+    The inverse of :func:`dag_ceiling`.  Producing a fixed amount of the final target forces every step's
+    reaction EXTENT (each intermediate has exactly one producer -- the distinct-targets invariant -- so demand
+    propagates back uniquely), and the external requirement is the per-species net over those extents: total
+    consumed minus total produced, so a by-product is CREDITED against a downstream purchase (the case the naive
+    forward propagation could not see).  ``requirements`` is every species whose net consumption is positive
+    (what must be bought), each an exact 100%-efficiency LOWER BOUND; ``co_products`` is every species produced in
+    surplus (the final target excluded).
+
+    Two agreeing derivations, never the arithmetic's own say-so: every step is balance-checked, the net production
+    of the final target is asserted to equal ``final_target_mol`` exactly, and -- the differential oracle -- the
+    computed requirement is fed FORWARD through :func:`dag_ceiling` and must reproduce ``final_target_mol`` exactly.
+
+    Refuses with :class:`ShoppingUnderdeterminedError` when a species is produced by more than one step (a target
+    that is also another step's by-product): there the amount to buy is a range, not a number, and inventing one
+    would need a cost/allocation policy (``COST-VEC-01``).
+    """
+    if type(dag) is not SynthesisDAG:
+        raise TypeError("dag must be a SynthesisDAG")
+    if isinstance(final_target_mol, bool) or not isinstance(final_target_mol, (int, Fraction)):
+        raise CeilingError("final_target_mol must be an exact int or Fraction (mol)")
+    demand_final = Fraction(final_target_mol)
+    if demand_final <= 0:
+        raise CeilingError("final_target_mol must be a positive quantity")
+
+    steps = list(dag.topological_order())
+    for step in steps:
+        _verify_balances(step)  # two agreeing derivations (ceiling-module discipline), not the step's own say-so
+    n = len(steps)
+    cons = [Counter(_ident(m) for m in s.reactants) for s in steps]
+    prod = [Counter(_ident(m) for m in s.products) for s in steps]
+    by_ident: dict[str, Molecule] = {}
+    for step in steps:
+        for m in (*step.reactants, *step.products):
+            by_ident.setdefault(_ident(m), m)
+    target_key = [_ident(s.target) for s in steps]
+    final_key = _ident(dag.final_target)
+
+    # determinacy guard: a species produced by MORE THAN ONE step (a target that is ALSO a by-product elsewhere)
+    # makes the buy quantity a range, not a number -- refuse rather than fabricate one.
+    producers_of: dict[str, set[int]] = {}
+    for s in range(n):
+        for k in prod[s]:
+            producers_of.setdefault(k, set()).add(s)
+    for s in range(n):
+        others = producers_of.get(target_key[s], set()) - {s}
+        if others:
+            raise ShoppingUnderdeterminedError(
+                f"species {steps[s].target!r} is produced by more than one step (step {s + 1}'s target is also a "
+                f"by-product of step(s) {sorted(o + 1 for o in others)}); how much to buy depends on how that "
+                "shared internal supply is allocated -- a range, not a single conserved number. Pinning it needs "
+                "a cost/allocation policy (the SHOP-LEAF-02 follow-on, tied to COST-VEC-01)."
+            )
+
+    # back-propagate the UNIQUE reaction extents: consumers before producers (reverse topological order).
+    demand: dict[str, Fraction] = {final_key: demand_final}
+    extent = [Fraction(0)] * n
+    for s in reversed(range(n)):
+        tk = target_key[s]
+        mult = prod[s].get(tk, 0) - cons[s].get(tk, 0)  # the step's net production of its own target
+        if mult <= 0:
+            raise DAGError(
+                f"step {s + 1} does not net-produce its target {steps[s].target!r}; the DAG cannot be inverted"
+            )
+        x = demand.get(tk, Fraction(0)) / mult
+        extent[s] = x
+        for r_key, c in cons[s].items():
+            demand[r_key] = demand.get(r_key, Fraction(0)) + c * x
+
+    # per-species net over the forced extents: consumed minus produced (by-products credited).
+    net: dict[str, Fraction] = {}
+    for s in range(n):
+        for k, c in cons[s].items():
+            net[k] = net.get(k, Fraction(0)) + c * extent[s]
+        for k, p in prod[s].items():
+            net[k] = net.get(k, Fraction(0)) - p * extent[s]
+
+    # self-check 1: the extents net exactly the requested amount of the final target (not the arithmetic's say-so).
+    if net.get(final_key, Fraction(0)) != -demand_final:
+        raise AssertionError(  # pragma: no cover -- a back-propagation bug; loud, never a silent wrong number
+            f"inverse accounting did not net {demand_final} mol of the final target "
+            f"(got {-net.get(final_key, Fraction(0))}); refusing to report it"
+        )
+
+    requirements = tuple((by_ident[k], net[k]) for k in sorted(net) if net[k] > 0)
+    co_products = tuple((by_ident[k], -net[k]) for k in sorted(net) if net[k] < 0 and k != final_key)
+    if not requirements:  # a real synthesis consumes some external input -- non-vacuous by construction
+        raise AssertionError(  # pragma: no cover
+            "a synthesis DAG must consume some external input; an empty requirement is a bug"
+        )
+
+    # self-check 2 (the differential oracle): feed the requirement FORWARD through the max-yield ceiling and
+    # confirm it reproduces exactly the requested amount -- a derivation that shares no arithmetic with the above.
+    forward = dag_ceiling(dag, {m: amount for m, amount in requirements})
+    if forward.final_target_mol != demand_final:
+        raise AssertionError(  # pragma: no cover -- a determinacy escape; refuse rather than report a wrong number
+            f"forward LP disagreement: feeding the computed requirement makes {forward.final_target_mol} mol of "
+            f"the final target, not {demand_final} -- the requirement is not the exact conserved inverse"
+        )
+
+    return DAGShoppingRequirement(dag, demand_final, tuple((steps[s], extent[s]) for s in range(n)),
+                                  requirements, co_products)
 
 
 # -- E1 over a DAG: composability across every edge -----------------------------------------------------

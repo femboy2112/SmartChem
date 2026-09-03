@@ -11,9 +11,10 @@ definition the maximum over ALL conserved allocations, so the LP optimum IS the 
 
 These tests pin: the fan-out is detected (:attr:`SynthesisDAG.fanout_points`), a fan-out ceiling is the exact
 conserved number (half of the old mint, hand-computed), the solution never over-consumes any species (an
-independent no-mint/no-deficit re-derivation), the LP EQUALS the propagation on non-fan-out DAGs (the differential
-oracle guarding the simplex), a genuinely unbounded target refuses with :class:`CeilingError` rather than
-fabricating a number, and join-shaped / linear DAGs are unaffected.
+independent no-mint/no-deficit re-derivation), the LP is ALWAYS the number and the propagation is trusted for the
+per-step breakdown only where it AGREES with the LP (a simple tree/chain -- NOT every non-fan-out DAG: a reused
+by-product is non-fan-out yet the propagation mints on it, the red-team fold), a genuinely unbounded target refuses
+with :class:`CeilingError` rather than fabricating a number, and join-shaped / linear DAGs are unaffected.
 """
 from collections import Counter
 from fractions import Fraction
@@ -25,7 +26,8 @@ from smartchem.experiment.ceiling import CeilingError
 from smartchem.experiment.dag import (
     DAGFlow,
     SynthesisDAG,
-    _max_yield_ceiling,
+    _max_yield_lp,
+    _propagate,
     dag_ceiling,
 )
 from smartchem.experiment.step import ExperimentStep
@@ -204,24 +206,25 @@ class TestSharedBoundedLeafIsComputed:
 
 
 class TestDifferentialOracleAgainstPropagation:
-    """The strongest cheap guard against a silently-wrong simplex: on a DAG with NO shared reactant the LP optimum
-    EQUALS the greedy topological propagation by construction (nothing competes), so forcing the LP path on a
-    non-fan-out fixture must reproduce dag_ceiling's propagation number exactly."""
+    """dag_ceiling's number is ALWAYS the LP; the propagation is trusted for the per-step breakdown ONLY when its
+    number matches the LP (a per-call agreement check).  On a simple tree/chain (no shared reactant, no reused
+    by-product) they agree by construction, so per_step is exposed and the LP re-derivation reproduces it exactly."""
 
     def test_lp_equals_propagation_on_the_join_only_dag(self):
         dag = join_only_dag()
         feed = {ALD: 2, O2: 1, ETHENE: 1, WATER: 1}
-        propagated = dag_ceiling(dag, feed)                         # takes the propagation path (no sharing)
-        assert propagated.flow is None
-        forced_lp = _max_yield_ceiling(dag, feed)                   # force the LP on the same non-fan-out DAG
-        assert forced_lp.final_target_mol == propagated.final_target_mol
+        c = dag_ceiling(dag, feed)
+        assert c.flow is None and c.per_step                       # they agreed -> per-step breakdown exposed
+        lp_value, _ = _max_yield_lp(dag, feed)                     # the LP re-derivation on the same DAG
+        prop_per, prop_final = _propagate(dag, feed)
+        assert lp_value == prop_final == c.final_target_mol        # three agreeing derivations
 
     def test_lp_equals_propagation_on_a_linear_chain(self):
         dag = SynthesisDAG.of(_consume_to_acid(), _join())
         feed = {ETOH: 1, O2: 1, ETHANE: 1}
-        propagated = dag_ceiling(dag, feed)
-        assert propagated.flow is None
-        assert _max_yield_ceiling(dag, feed).final_target_mol == propagated.final_target_mol
+        c = dag_ceiling(dag, feed)
+        assert c.flow is None
+        assert _max_yield_lp(dag, feed)[0] == _propagate(dag, feed)[1] == c.final_target_mol
 
 
 class TestUnboundedTargetRefuses:
@@ -261,3 +264,43 @@ class TestBlockIsRetired:
     def test_dag_ceiling_still_type_guards(self):
         with pytest.raises(TypeError):
             dag_ceiling(_producer(), {})                            # a step is not a DAG
+
+
+BUTENE = parse_smiles("C=CCC")     # C4H8
+BUTADIENE = parse_smiles("C=CC=C") # C4H6
+BUTANE = parse_smiles("CCCC")      # C4H10
+
+
+def _byproduct_reuse_dag():
+    """A LINEAR DAG whose downstream step reuses a BY-PRODUCT of the upstream one: X makes butadiene AND H2 (H2 is
+    a by-product, not X's target, not fed); Z consumes butadiene + 2 H2.  The H2 is a finite produced species the
+    naive propagation NEVER credits (its cache tracks only step targets) -- so propagation reads H2 as excess and
+    MINTS. `fanout_points` is blind to it (H2 is a leaf-shaped reactant, not a produced-intermediate edge), and the
+    old routing predicate (target-or-fed only) missed it too.  The red-team's HIGH finding, pinned."""
+    x = ExperimentStep.assembling(BUTADIENE, (BUTENE,), (BUTADIENE, H2))        # C4H8 -> C4H6 + H2  (H2 by-product)
+    z = ExperimentStep.assembling(BUTANE, (BUTADIENE, H2, H2), (BUTANE,))       # C4H6 + 2 H2 -> C4H10 (sink)
+    return SynthesisDAG.of(x, z)
+
+
+class TestByproductReuseIsConservedNotMinted:
+    """Red-team fold (workflow wonfm36zz, 2 HIGH one root): the number is ALWAYS the LP, which counts by-products,
+    so a reused by-product can no longer mint through the propagation path."""
+
+    def test_a_reused_byproduct_is_conserved_by_the_lp(self):
+        dag = _byproduct_reuse_dag()
+        assert dag.fanout_points == ()                             # structural detector is blind to the by-product
+        # 1 mol butene -> 1 butadiene + 1 H2; the sink needs 1 butadiene + 2 H2 but only 1 H2 exists -> H2 limits.
+        # true conserved max = 1/2 mol butane (uses 1/2 butadiene + 1 H2). The naive propagation MINTS it to 1.
+        c = dag_ceiling(dag, {BUTENE: 1})
+        assert c.final_target_mol == Fraction(1, 2)
+        assert isinstance(c.flow, DAGFlow)                         # the LP won; per-step chain discarded
+        assert c.per_step == ()
+        assert _conserved(dag, {BUTENE: 1}, c.flow) == set()       # H2 not over-consumed
+
+    def test_the_naive_propagation_alone_would_have_minted(self):
+        # pin the defect the fold closes: the propagation, used alone, over-reports (reads the by-product H2 as
+        # excess), so dag_ceiling's number DIFFERS from it -- which is exactly why the LP is always the authority.
+        dag = _byproduct_reuse_dag()
+        _, prop_final = _propagate(dag, {BUTENE: 1})
+        assert prop_final == Fraction(1)                           # the mint (H2 treated as infinite)
+        assert dag_ceiling(dag, {BUTENE: 1}).final_target_mol == Fraction(1, 2)   # the LP corrects it

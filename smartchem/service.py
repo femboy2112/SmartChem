@@ -79,6 +79,8 @@ __all__ = [
     "ConstraintPolicy",
     "RankingPolicy",
     "EvidenceProviderSelection",
+    "OFFLINE_PROVIDER",
+    "NETWORK_PROVIDER",
     "OutputPolicy",
     "CompilationRequest",
     "CompilationResponse",
@@ -364,16 +366,44 @@ class RankingPolicy(Digestible):
             raise ValueError("policy_id must be a non-empty string")
 
 
+# The section-9 provider selection ids whose evidence autoload is permitted to reach the NETWORK.  Everything
+# NOT in this set -- the offline default AND any unrecognised id -- resolves to offline in
+# ``EvidenceProviderSelection.allow_network`` (fail-CLOSED): an unknown provider can never silently fetch.  An id
+# is added here only once a real fetcher backs it, so the lever cannot outrun the capability.
+_NETWORK_PROVIDER_IDS = frozenset({"DEFAULT_NETWORK"})
+
+
 @dataclass(frozen=True)
 class EvidenceProviderSelection(Digestible):
-    """Which evidence/data providers are in play (section 9).  Minimal first cut: an offline-default selection
-    id; provider-version sensitivity of the digest is a later concern."""
+    """Which evidence/data providers are in play (section 9).
+
+    ``selection_id`` is the SOLE digested field, and thus the provider identity: two requests naming different
+    providers are different SEARCHES -- an online run may source evidence an offline run cannot -- so the id rides
+    :attr:`CompilationRequest.semantic_digest` (and the offline default keeps its historical digest, byte for byte).
+
+    :attr:`allow_network` is the LIVE section-9 lever DERIVED from that id through the closed, FAIL-CLOSED map
+    :data:`_NETWORK_PROVIDER_IDS`: only an explicitly network-enabled selection permits fetching; the offline
+    default and every unrecognised id resolve to offline -- the same conservative "decline the unknown rather than
+    guess" rule the phase normaliser uses.  It is a PROPERTY, not a field, so it never enters the digest: the id
+    alone is the identity.  Provider-VERSION sensitivity of the digest is still a later concern.
+    """
 
     selection_id: str = "DEFAULT_OFFLINE"
 
     def __post_init__(self) -> None:
         if not isinstance(self.selection_id, str) or not self.selection_id:
             raise ValueError("selection_id must be a non-empty string")
+
+    @property
+    def allow_network(self) -> bool:
+        """Whether this selection permits network evidence fetching (fail-closed on any unrecognised id)."""
+        return self.selection_id in _NETWORK_PROVIDER_IDS
+
+
+#: The two section-9 provider selections the CLI wires today: offline-only (seed + cache) and network-allowed.
+#: ``OFFLINE_PROVIDER`` is byte-identical to the ``EvidenceProviderSelection()`` default, so it changes no digest.
+OFFLINE_PROVIDER = EvidenceProviderSelection("DEFAULT_OFFLINE")
+NETWORK_PROVIDER = EvidenceProviderSelection("DEFAULT_NETWORK")
 
 
 @dataclass(frozen=True)

@@ -60,6 +60,32 @@ def _parse(value: str):
         raise ValueError(f"could not parse or resolve {value!r} as an offline name or SMILES: {exc}") from exc
 
 
+def _synthesize_request(args):
+    """Build the ONE shared typed ``CompilationRequest`` (SVC-REQ-01) from ``synthesize``'s argv.
+
+    ``synthesize`` keeps its own route engine below; this request carries the alias-independent identity (so
+    ``synthesize --emit-request`` is comparable to ``recompile --emit-request``) and, load-bearing, the section-9
+    :class:`~smartchem.service.EvidenceProviderSelection` that DRIVES the network autoload -- ``--offline`` selects
+    the offline provider, its absence the network provider.  Every knob is passed EXPLICITLY from ``synthesize``'s
+    resolved args so the emitted identity is faithful to the search this command actually runs (its own defaults:
+    depth 2, and commodity terminals only under ``--poor-mans``).  The builder resolves the target best-effort and
+    never raises on an unparseable one (it keeps raw keying); a truly invalid target is caught by the search below.
+    """
+    from ..service import NETWORK_PROVIDER, OFFLINE_PROVIDER, build_recompile_request
+    return build_recompile_request(
+        args.target,
+        helper_reagents=tuple(args.reagents) if args.reagents else None,
+        stock_materials=tuple(args.have) if args.have else None,
+        commodities_enabled=bool(args.poor_mans),
+        max_depth=args.max_depth,
+        max_routes=args.max_routes,
+        cut_budget=args.cut_budget,
+        max_temperature_k=args.max_temp,
+        max_pressure_atm=args.max_pressure,
+        evidence_provider_selection=OFFLINE_PROVIDER if args.offline else NETWORK_PROVIDER,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m smartchem.experiment", description=__doc__)
     p.add_argument("target", help="compound name or SMILES; explicit name:.../smiles:... prefixes are accepted")
@@ -82,7 +108,21 @@ def main(argv: list[str] | None = None) -> int:
                    help="also terminate routes at WIDELY-AVAILABLE commodity compounds (table salt, "
                         "vinegar, baking soda, ...) and print a shopping list -- so a route can bottom out "
                         "at stuff you can actually buy instead of at pure elements")
+    p.add_argument("--emit-request", action="store_true",
+                   help="print the ONE typed request JSON (SVC-REQ-01) and exit WITHOUT searching -- the "
+                        "canonical, alias-independent request identity, including the section-9 provider selection")
     args = p.parse_args(argv)
+
+    # CLI-CAN-02 (provider lever): synthesize now builds the ONE shared typed request (SVC-REQ-01).  Its --offline
+    # choice rides the request identity as the section-9 EvidenceProviderSelection and, below, GOVERNS the network
+    # autoload -- one source of truth, no second offline flag hidden in the engine call.  --emit-request echoes this
+    # canonical identity and exits WITHOUT searching, exactly as recompile/compile do (build never raises here; a
+    # truly invalid target is caught by the search).
+    request = _synthesize_request(args)
+    if args.emit_request:
+        from ..service import serialize_request
+        print(serialize_request(request))
+        return 0
 
     try:
         target = _parse(args.target)
@@ -125,7 +165,9 @@ def main(argv: list[str] | None = None) -> int:
                   "no route exists. Raise --cut-budget/--max-routes or change the inventory.")
             return 4
 
-    # autoload sourced stability for every species across the routes (unless offline)
+    # autoload sourced stability for every species across the routes.  Whether it may reach the network is the
+    # section-9 provider lever ON THE TYPED REQUEST (CLI-CAN-02) -- so --offline is expressed ONCE, in the request
+    # identity, and read back here; there is no second offline flag the engine call could silently disagree with.
     species = {}
     for r in routes:
         for step in r.steps:
@@ -133,7 +175,8 @@ def main(argv: list[str] | None = None) -> int:
                 species.setdefault(m, m)
     from ..data.autoload import autoload_stability
     stability = autoload_stability(
-        list(species.values()), identifiers=smiles_by_mol, allow_network=not args.offline,
+        list(species.values()), identifiers=smiles_by_mol,
+        allow_network=request.evidence_provider_selection.allow_network,
     )
     # M3: the broader sourced 298 K ΔfH°/S° table, so ΔG feasibility (M1) and equilibrium K (M2) reach
     # beyond the litmus seed (every common organic here unlocks its combustion). Degrades to UNKNOWN, never

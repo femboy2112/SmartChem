@@ -1759,6 +1759,24 @@ verified:            tests/test_cli_name.py -- the resolver unit matrix (positio
                      offline" claim (iron-rule doc-truth).
 residual / follow-on: value forms on decompile (deferred -- the --smiles-boolean collision); a fuller human render of
                      the receipt is a display nicety, not a gap (the summary line + --json already carry it).
+red-team:            workflow wt52oqzwb, 4 blind bearings (resolver-soundness; cross-verb-drift; refusal-faithfulness;
+                     regression) + refute-by-default verify. 2 CONFIRMED (both LOW) / 1 refuted. FOLDED: (LOW) the
+                     shared resolve_cli_target was billed fail-closed but did NOT self-validate input_kind_flag --
+                     an unknown/empty kind raised a bare KeyError (would launder to exit-70 for a future caller),
+                     and an empty string was silently coerced to AUTO (truthiness) while the value-form branch used
+                     `is not None`.  CLI-unreachable today (argparse `choices` pre-restricts), but a latent fail-open
+                     in the ONE authority; now an unknown/empty kind is a loud IdentityParseError -> exit 2, checked
+                     via `is not None` (pinned by test_cli_name.py). ACKNOWLEDGED, not folded (correct by design):
+                     (LOW) a FEATURE-BEARING target (stereo/isotope/multi-charge) does not collapse across spellings
+                     -- but that is the DELIBERATE SVC-REQ-01 boundary (`_recompile_normalized_identity` returns ''
+                     on any feature loss so a loss-bearing input keeps its OWN identity and can never MERGE two
+                     loss-differing searches); the one-way law holds (it over-splits, never wrongly merges), the
+                     chemistry output is identical, and it is documented at the source -- "fixing" it would REINTRODUCE
+                     the very merge hazard that boundary exists to prevent.  REFUTED (verifier's own conclusion): a
+                     bare formula that is coincidentally valid SMILES (e.g. `CO`) resolving as SMILES on AUTO is the
+                     DOCUMENTED intended AUTO behaviour and is NOT silent (the ParseReceipt echoes `AUTO->SMILES`);
+                     the section-5.4 refusal guarantee is scoped to inputs DECLARED formula/inchi, and holds on every
+                     path tested (--formula/--inchi/--input-kind/formula: prefix all exit 2).
 ```
 
 ## 4. P1 physical, data, and affordability backlog

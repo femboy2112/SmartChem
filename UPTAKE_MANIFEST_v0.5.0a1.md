@@ -113,7 +113,7 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 | ID | P | Lane | Status | Acceptance test (verdict-changing) | Depends on |
 |---|:---:|:---:|---|---|---|
 | `CANON-KEKULE-01` | P0 | B | **`IMPLEMENTED_AND_VERIFIED`** | Aromatic and explicit-Kekulé spellings of a fused aromatic share one constitution digest; constitutional isomers stay distinct; relabel-invariant (`c126055`+`6a8c5a6`; `tests/test_canon_kekule.py`, `tests/test_stock.py::…kekule`). | shared `_ident` |
-| `ERR-EVIDENCE-01` | P0 | A | `TODO` | A genuine no-record lookup → `UNKNOWN`; an injected internal provider fault → `ERROR_INTERNAL`/exit 70, no raw traceback and no false "conditions unknown". Fixes **both** `assembly_conditions` and `_conditions_for`. | route search, `CLI-EXIT-01` |
+| `ERR-EVIDENCE-01` | P0 | A | **`IMPLEMENTED_AND_VERIFIED`** | A genuine no-record lookup → `UNKNOWN`; an injected internal provider fault → `ERROR_INTERNAL`/exit 70, no raw traceback and no false "conditions unknown". Fixed **both** `assembly_conditions` (the deep root the audit missed) and `_conditions_for`; proven non-vacuous (reverting either fails exactly the 3 fault controls). `1265efe`; `tests/test_err_evidence.py`. | route search, `CLI-EXIT-01` |
 | `IR-STRUCT-01` | P1 | B | `TODO` | A first-class structural candidate transform rides `ChemicalCompilationIR` (parent/product structure identities, edit/scission witness, primitive stoichiometry, direction, identity layer, formal/evidence status, exact formula projection, provider id/version, loss records). | `structure_descent`, `IR-CHEM-01` |
 | `IR-FORGET-01` | P1 | B | `TODO` | `forget(decompile_structure(S)) == project_formula(decompile_structure(S))` at the declared boundary, commuting through canonical serialization; mismatch is refused, not silently coerced. | `IR-STRUCT-01` |
 | `TRANSFORM-PROVIDER-01` | P1 | B | `TODO` | Capped-scission runs **exclusively** through a typed closed provider boundary; the registry digest changes whenever the provider set / id / version / capability manifest changes; provider-local partiality never collapses into a false aggregate "complete". | `IR-STRUCT-01` |
@@ -156,6 +156,43 @@ The `CANON-KEKULE-01` strict xfail that existed at the audit base (`4774a26`, th
 `IR-STRUCT-01` → `IR-FORGET-01` → `TRANSFORM-PROVIDER-01` → freeze `HOLDOUT-RXN-01` → `CHEM-ALG-01`
 (first diverse provider) → `TERM-MAT-01` (production wiring) → **alpha RC when Lane A is green** →
 `ProcedureIR` only under the separate Lane-C bench-readiness contract.
+
+**Uptake record — ERR-EVIDENCE-01, the reoriented Lane-A first brick** (`ERR-EVIDENCE-01` `TODO` →
+`IMPLEMENTED_AND_VERIFIED`; the failure/unknown separation the audit's §10 / G8 demands):
+
+```text
+ID:            ERR-EVIDENCE-01 (an internal provider fault is not a scientific "conditions unknown")
+commit:        1265efe (fix) + this docs record
+base:          161ef0f -> suite 3446 passed, 14 skipped, 1 xfailed (was 3438; +8 adversarial tests)
+
+finding:       assembly_conditions() AND routes._conditions_for() each wrapped the sourced-conditions
+               lookup in `except Exception: return ConditionEnvelope.unknown()`.  A bug in reaction-
+               signature computation or structure resolution (AssertionError, AttributeError, ...) was
+               therefore laundered into the epistemic statement "conditions unknown" -- a false bench
+               fact.  The audit (§10) named only the OUTER routes._conditions_for; verification against
+               the code found the DEEPER root is assembly_conditions' OWN `except Exception`, which fires
+               first, so an outer-only fix would have been VACUOUS (the mutation control proves this).
+
+fix:           removed BOTH blanket catches.  Every anticipated miss remains an explicit unknown()
+               return (section-5.3 conditions blocker; no seed record; record carries no ASSEMBLY
+               direction; unresolved reactant/precursor structure; selector-name mismatch) -- these
+               explicit guards are now the SOLE path to unknown().  Any unexpected fault propagates to
+               the existing ERROR_INTERNAL / exit-70 boundary (CLI-EXIT-01).  No new broad superclass
+               was substituted; the expected-absence contract is the explicit guard set, documented in
+               both functions' docstrings.
+
+acceptance:    tests/test_err_evidence.py -- the audit's four controls:
+                 POSITIVE   a seeded acetic-anhydride ASSEMBLY record still resolves to its sourced envelope;
+                 NULL       a legitimate miss (paracetamol hydrolysis is DECOMPOSITION-only) is a quiet
+                            unknown() that does not abort route generation; a section-5.3 blocker short-circuits;
+                 MUTATION   an injected AssertionError propagates at BOTH layers (assembly_conditions directly,
+                            and through search_routes) -- never becomes unknown();
+                 END-TO-END through `recompile`, the injected fault is exit 70 / ERROR_INTERNAL, concise
+                            message, no raw traceback; and a genuine miss is NOT a false 70.
+non-vacuous:   git-stashing only the two source fixes and rerunning fails exactly the 3 fault controls
+               (the end-to-end one as `assert 4 == 70` -- the laundering demonstrated live), 5 pass.
+scope:         the conditions/evidence lookup path only; no chemistry behavior change on any success path.
+```
 
 ## 3. P0 truth-envelope backlog
 

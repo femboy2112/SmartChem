@@ -68,9 +68,10 @@ class DAGError(ValueError):
 class DAGFlowError(DAGError):
     """A DAG is a valid STRUCTURE but a conserved quantitative claim cannot be made over it (DAG-FLOW-01).
 
-    Raised by :func:`dag_ceiling` when an intermediate FANS OUT -- is consumed by more than one step.  The current
-    limiting-reagent accounting does not decrement a shared intermediate between its consumers, so it would MINT
-    usable copies (one mole produced, two consumed, with no deficit).  Blocking the quantitative claim is honest;
+    Raised by :func:`dag_ceiling` when a BOUNDED reactant is consumed by more than one step -- a produced
+    intermediate that fans out, OR a finite leaf reagent (present in ``feed``) shared across steps.  The
+    limiting-reagent accounting does not decrement such a shared reactant between its consumers, so it would MINT
+    usable copies (charged once, consumed twice, with no deficit).  Blocking the quantitative claim is honest;
     fabricating an allocation split across the competing consumers is not (section 10 material reality).  A subclass
     of :class:`DAGError`, so an existing ``except DAGError`` still catches it.
     """
@@ -250,7 +251,9 @@ class SynthesisDAG(Digestible):
         The structural DUAL of :attr:`convergence_points` (a step's in-degree -- the joins): this is a producer's
         out-degree -- one intermediate feeding several consumers.  A fan-out is an admissible STRUCTURE, but the
         limiting-reagent :func:`dag_ceiling` cannot CONSERVE a shared intermediate across it (it would mint copies),
-        so a quantitative ceiling over a fan-out DAG is BLOCKED (DAG-FLOW-01), never fabricated.
+        so a quantitative ceiling is BLOCKED (DAG-FLOW-01), never fabricated.  NOTE this is the INTERMEDIATE fan-out
+        only (produced targets); ``dag_ceiling``'s block is broader and feed-aware -- it also refuses a finite LEAF
+        reagent shared across steps, which this structural property (built from produced-intermediate edges) cannot see.
         """
         consumers: dict[int, set[int]] = {}
         for i, j, _m in self.edges:
@@ -318,25 +321,47 @@ def dag_ceiling(dag: SynthesisDAG, feed: Mapping[Molecule, "int | Fraction"]) ->
     automatically as the branches that make them are ceilinged, in topological order.
 
     A JOIN (a step fed by several intermediates -- :attr:`SynthesisDAG.convergence_points`) is handled correctly:
-    the join takes the min over its branches.  A FAN-OUT (one intermediate feeding several steps --
-    :attr:`SynthesisDAG.fanout_points`) is NOT: this accounting does not decrement a shared intermediate between its
-    consumers, so it would mint copies (one mole produced, two consumed, no deficit).  A fan-out DAG therefore
-    raises :class:`DAGFlowError` -- the quantitative claim is BLOCKED, never fabricated (DAG-FLOW-01).
+    the join takes the min over its branches.  A shared BOUNDED reactant consumed by MORE THAN ONE step is NOT: this
+    accounting reads it at full amount for every consumer (the ``available`` cache never decrements), so it would
+    mint copies (charged once, consumed twice, no deficit).  That bites a produced INTERMEDIATE that fans out
+    (:attr:`SynthesisDAG.fanout_points`) AND a finite LEAF present in ``feed`` shared across steps; either raises
+    :class:`DAGFlowError` -- the quantitative claim is BLOCKED, never fabricated (DAG-FLOW-01).  A leaf ABSENT from
+    ``feed`` is charged in excess, cannot mint, and is fine -- so any ceiling actually RETURNED is genuinely
+    conserved (which is what keeps the ``exact rational`` quantity label honest).
     """
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
-    # DAG-FLOW-01: refuse a conserved quantitative claim over a FAN-OUT.  A shared intermediate consumed by two
-    # steps would be read at full amount by BOTH (the `available` cache below never decrements), minting usable
-    # copies.  A real conserved flow needs an allocation policy over the competing consumers (the follow-on); until
-    # then the honest answer is to BLOCK the number, not fabricate an unmodelled split (section 10 material reality).
-    if dag.fanout_points:
-        shared = ", ".join(repr(dag.steps[i].target) for i in dag.fanout_points)
+    # DAG-FLOW-01: refuse a conserved quantitative claim over any BOUNDED reactant consumed by MORE THAN ONE step.
+    # The `available` cache below never decrements, so such a reactant is read at full amount by every consumer,
+    # minting copies.  This bites a produced INTERMEDIATE (always finite) AND a finite LEAF present in `feed`; a leaf
+    # ABSENT from feed is charged in excess (unbounded), cannot mint, and is safe.  (A red-team fold: the first cut
+    # blocked only the INTERMEDIATE fan-out via `fanout_points`, but a shared bounded leaf mints by the identical
+    # never-decremented cache and slipped through -- `_edges`/`fanout_points` see only produced intermediates.)  A
+    # real conserved flow across a shared reactant needs an allocation policy over the competing consumers (the
+    # follow-on); until then the answer is to BLOCK, not fabricate an unmodelled split (section 10 material reality).
+    # Because this now covers EVERY mint, any DAGCeiling that IS returned is genuinely conserved.
+    fed = {_ident(m) for m in feed}
+    producers = dag._producer_map
+    consumers: dict[str, set[int]] = {}
+    reactant_by_key: dict[str, Molecule] = {}
+    for j, step in enumerate(dag.steps):
+        for r in step.reactants:
+            key = _ident(r)
+            consumers.setdefault(key, set()).add(j)
+            reactant_by_key.setdefault(key, r)
+    minted = sorted(
+        (key for key, js in consumers.items() if len(js) >= 2 and (key in producers or key in fed)),
+        key=lambda k: (repr(reactant_by_key[k]), k),
+    )
+    if minted:
+        shared = ", ".join(repr(reactant_by_key[key]) for key in minted)
         raise DAGFlowError(
-            f"cannot compute a conserved quantitative ceiling for a fan-out DAG: the intermediate(s) {shared} are "
-            "each consumed by two or more steps, and the limiting-reagent accounting does not decrement a shared "
-            "intermediate between its consumers -- it would mint usable copies (one mole produced, two consumed, "
-            "with no deficit). A conserved quantity flow across a fan-out is the DAG-FLOW-01 follow-on; until then "
-            "the quantitative claim is BLOCKED, not fabricated (section 10 material reality)."
+            f"cannot compute a conserved quantitative ceiling: the bounded reactant(s) {shared} are each consumed "
+            "by two or more steps, and the limiting-reagent accounting does not decrement a shared reactant between "
+            "its consumers -- it would mint usable copies (charged once, consumed twice, with no deficit). A "
+            "conserved quantity flow across a shared reactant (an allocation policy over competing consumers) is the "
+            "DAG-FLOW-01 follow-on; until then the quantitative claim is BLOCKED, not fabricated (section 10 "
+            "material reality)."
         )
     available: dict[str, tuple[Molecule, Fraction]] = {}
     for m, amount in feed.items():

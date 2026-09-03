@@ -122,3 +122,46 @@ class TestNoFalsePositiveOnConservingShapes:
         assert dag.fanout_points == ()
         c = dag_ceiling(dag, {ETOH: 1, O2: 1, ETHANE: 1})
         assert c.final_target_mol == Fraction(1)                     # a plain path: 1 acid -> 1 diol
+
+
+CH4 = parse_smiles("C")
+
+
+def _shared_leaf_linear_dag():
+    """A LINEAR DAG whose only shared reactant is a LEAF: H2 (external) is consumed by BOTH steps."""
+    s1 = ExperimentStep.assembling(ETHANE, (ETHENE, H2), (ETHANE,))   # C2H4 + H2 -> C2H6
+    s2 = ExperimentStep.assembling(CH4, (ETHANE, H2), (CH4, CH4))     # C2H6 + H2 -> 2 CH4
+    return SynthesisDAG.of(s1, s2)
+
+
+class TestSharedBoundedLeafIsBlocked:
+    """Red-team fold (workflow wr3itesl1): the block is NOT intermediate-only. A finite LEAF reagent shared across
+    steps mints by the SAME never-decremented `available` cache, yet `fanout_points` (produced-intermediate edges
+    only) is blind to it. dag_ceiling's block is broadened to any BOUNDED reactant consumed by >=2 steps."""
+
+    def test_a_bounded_leaf_shared_across_steps_is_blocked(self):
+        dag = _shared_leaf_linear_dag()
+        assert dag.fanout_points == ()                               # structural detector is blind to a leaf mint
+        with pytest.raises(DAGFlowError) as exc:
+            dag_ceiling(dag, {ETHENE: 10, H2: 1})                    # H2 fed at 1 mol, consumed by two steps -> mint
+        msg = str(exc.value)
+        assert "H2" in msg and "BLOCKED" in msg and "DAG-FLOW-01" in msg
+
+    def test_the_same_leaf_in_excess_is_not_blocked(self):
+        # a leaf ABSENT from feed is charged in excess (unbounded): it cannot mint, so the ceiling is sound + returned.
+        dag = _shared_leaf_linear_dag()
+        c = dag_ceiling(dag, {ETHENE: 10})                           # H2 unbounded -> limited only by ethylene
+        assert c.final_target_mol == Fraction(20)                    # 10 C2H4 -> 10 C2H6 -> 20 CH4
+
+    def test_a_bounded_leaf_shared_across_convergent_branches_is_blocked(self):
+        # the convergent shape the red-team hit: two branches hydrogenate with the SAME bounded H2 leaf, then join.
+        acro = parse_smiles("C=CC=O")          # acrolein  C3H4O
+        allyloh = parse_smiles("C=CCO")        # allyl alcohol C3H6O
+        ether = parse_smiles("CCOCC=C")        # ethyl allyl ether C5H10O
+        a = ExperimentStep.assembling(ETOH, (ALD, H2), (ETOH,))          # CH3CHO + H2 -> ethanol
+        b = ExperimentStep.assembling(allyloh, (acro, H2), (allyloh,))   # acrolein + H2 -> allyl alcohol
+        s = ExperimentStep.assembling(ether, (ETOH, allyloh), (ether, WATER))
+        dag = SynthesisDAG.of(a, b, s)
+        assert dag.fanout_points == ()                               # H2 is a leaf; no INTERMEDIATE fan-out
+        with pytest.raises(DAGFlowError):
+            dag_ceiling(dag, {ALD: 1, acro: 1, H2: 1})               # H2 shared by both branches -> block

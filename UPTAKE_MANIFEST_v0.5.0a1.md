@@ -1386,7 +1386,7 @@ ID:                  CLI-CAN-02 (provider lever -- synthesize builds the shared 
 files:               smartchem/service.py, smartchem/experiment/cli.py, tests/test_synthesize_provider.py (new),
                      README.md
 command:             .venv/bin/python -m pytest -q -p no:cacheprovider
-result:              3271 passed, 14 skipped, 1 xfailed (baseline 3259; +12). ruff clean on every changed file.
+result:              3279 passed, 14 skipped, 1 xfailed (baseline 3259; +12 feat, +8 red-team fold = +20). ruff clean.
 scoped first:        `synthesize` was the ONE chemical verb still bypassing the typed request: it delegated wholesale to
                      smartchem/experiment/cli.py, whose `--offline` drove `autoload_stability(allow_network=not
                      args.offline)` DIRECTLY. recompile/compile/decompile already route through run_compilation; this
@@ -1401,11 +1401,12 @@ built:               (1) EvidenceProviderSelection keeps `selection_id` as its S
                      resolve to offline -- an unknown provider can NEVER silently fetch, the same "decline the unknown
                      rather than guess" rule the phase normaliser uses. Module constants OFFLINE_PROVIDER/NETWORK_PROVIDER.
                      (2) synthesize builds the shared request via `_synthesize_request(args)` -> build_recompile_request,
-                     passing every knob EXPLICITLY from its own resolved args (so --emit-request is faithful to the
-                     search it actually runs: depth 2, commodities only under --poor-mans) with the provider selection
-                     from --offline. The autoload's allow_network is now READ FROM
-                     `request.evidence_provider_selection.allow_network` -- ONE source of truth; the direct
-                     `not args.offline` is gone.
+                     threading its own resolved args (depth 2, commodities only under --poor-mans) with the provider
+                     selection from --offline. Reagents/stock are passed as the RAW arg lists (tuple(args.reagents)/
+                     tuple(args.have)) so --emit-request matches what the search receives even for an empty flag (a
+                     red-team fold: the earlier `... if args.reagents else None` diverged for a valueless --reagents).
+                     The autoload's allow_network is now READ FROM `request.evidence_provider_selection.allow_network`
+                     -- ONE source of truth; the direct `not args.offline` is gone.
                      (3) synthesize gains `--emit-request`, echoing the canonical request identity (provider selection
                      included) and exiting WITHOUT searching, exactly as recompile/compile do.
 digest law:          online is a genuinely different search (it may source evidence offline cannot), so NETWORK_PROVIDER
@@ -1418,7 +1419,24 @@ falsifier fixture:   allow_network is False for default/offline/unknown-id and T
                      KILLER forces the request to say NETWORK while argv says --offline and asserts the autoload followed
                      the REQUEST (True) -- the ONLY case where args.offline and the field disagree, so a silent revert to
                      `not args.offline` is caught. --emit-request carries the right selection_id and does NOT search.
-red-team:            pending -- workflow run + any folds recorded in a follow-up docs commit (the EVD-KEY-CTX-01 flow).
+red-team:            workflow wqpxvm0lh, 4 blind bearings (dead-switch/non-inertness, digest-law/fail-closed,
+                     emit-faithfulness, regression) + per-finding refute-by-default verify (7 agents, 548k subagent
+                     tokens). The two hardest bearings found the CORE SOUND: dead-switch proved the lever non-inert
+                     with REAL network teeth (allow_network=True fired live pubchem/wikidata fetches, offline fired
+                     zero) and the field -- not args.offline -- feeds the gate; digest-law byte-compared the pre/post
+                     trees (git archive of 27bc9fd) and proved every offline digest UNMOVED + the fail-closed map robust
+                     across 13 adversarial ids. 3 CONFIRMED, 0 refuted, all folded in `1ae5b14` (pinned by
+                     TestRedTeamFolds). (MEDIUM) building the request BEFORE the exit-2/5 handler let an empty/whitespace
+                     target or empty-string --reagents/--have regress from a clean exit 2 to exit 70 (ERROR_INTERNAL,
+                     top level) / a raw traceback (exit 1, experiment entry) -- and `synthesize ''` disagreed with
+                     `recompile ''` (2) on the SAME builder error, against SVC-REQ-01 alias-independence. Fixed: one
+                     `_syn_domain_exit` authority wraps the build in the same 5/2 handler as the search (extended to
+                     TypeError), so synthesize '' == recompile '' == exit 2 and the valueless-`--reagents` search
+                     TypeError also maps to a clean 2. (LOW) --emit-request with a valueless --reagents emitted
+                     helper_reagents:['water'] while the search runs with ZERO reagents -- a false identity; the manifest
+                     + docstring "every knob EXPLICIT/faithful" claim was FALSE. Fixed (raw arg lists, and this record).
+                     (LOW) the _synthesize_request docstring/comment "build never raises here" was false -> rewritten.
+                     Suite 3271 -> 3279.
 residual / follow-on: returning synthesize's FULL graded dossier THROUGH run_compilation (not just the shared request +
                      provider lever) is the remaining CLI-CAN-02 work; DAG-mode bench fitting still ranks nothing;
                      provider-VERSION sensitivity of the digest is still deferred; affordability_frontier stays empty

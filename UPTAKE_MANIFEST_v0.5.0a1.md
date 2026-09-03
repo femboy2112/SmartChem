@@ -702,7 +702,7 @@ residual limitations / next probes:
 | `STO-PRIM-01` | Canonical primitive signed stoichiometry drives identity and intensive physics | Primitive coefficient vector now drives feasibility/equilibrium/kinetics and scale-normalized selectivity; not yet every provider/digest/DAG/extent identity | Promote the canonicalizer to the single public reaction/evidence identity | Named scaling regressions pass; add provider/digest/DAG-wide invariance | None | `IN_PROGRESS` |
 | `ROUTE-CONT-01` | Prior target must have positive net consumption in next step | Net-consumption check is implemented; equal spectator no longer connects steps | Preserve when roles/DAG IR are generalized | Equal amount on both sides fails continuity | `STO-PRIM-01` | `IMPLEMENTED_AND_VERIFIED` |
 | `ROUTE-ID-01` | Structural route ID, not displayed equation, deduplicates alternatives | Rendered equation can collapse isomer-distinct routes | Use ordered generator/structure identity or DAG semantic digest | Same formula/different structure alternatives both survive | `ID-LAYER-01` | `TODO` |
-| `DAG-FLOW-01` | Fan-out conserves intermediate quantities | The fan-out mint is now BLOCKED (honest first cut): `SynthesisDAG.fanout_points` (the structural DUAL of `convergence_points`) detects an intermediate consumed by >=2 steps, and `dag_ceiling` raises `DAGFlowError` rather than mint copies via its non-decrementing `available` cache. Latent path (no production caller yet -- `service.py` declines DAG-mode ranking). The real conserved quantity-flow accounting (an allocation policy over competing consumers) is the follow-on -- inventing a split would be fabrication | Real quantity-flow accounting (allocation policy); unblocks `SHOP-LEAF-02`/`STOCK-01` shopping-quantity + affordability | One mole produced and two consumed yields deficit/blocker — **DONE** (block, `tests/test_dag_flow.py`) | Material quantities | `IN_PROGRESS` |
+| `DAG-FLOW-01` | Fan-out conserves intermediate quantities | The mint is now BLOCKED (honest first cut, red-team-hardened): `dag_ceiling` raises `DAGFlowError` on any BOUNDED reactant consumed by >=2 steps -- a produced intermediate that fans out (`SynthesisDAG.fanout_points`, the structural DUAL of `convergence_points`) OR a finite leaf shared across steps (feed-aware; the leaf case was a red-team fold `ba79c49`) -- rather than mint copies via its non-decrementing `available` cache; a leaf in excess (absent from feed) cannot mint and still ceilings. Latent path (no production caller yet -- `service.py` declines DAG-mode ranking). The real conserved quantity-flow accounting (an allocation policy over competing consumers) is the follow-on -- inventing a split would be fabrication | Real quantity-flow accounting (allocation policy); unblocks `SHOP-LEAF-02`/`STOCK-01` shopping-quantity + affordability | One mole produced and two consumed yields deficit/blocker — **DONE** (block, incl. shared bounded leaves, `tests/test_dag_flow.py`) | Material quantities | `IN_PROGRESS` |
 
 ### 3.5 Terminal, feed, and material truth
 
@@ -1539,9 +1539,22 @@ falsifier fixture:   a constructed fan-out DAG (ethanol produced once, consumed 
                      unsound); fanout_points names the producer and is the DUAL of convergence_points (disjoint);
                      dag_ceiling RAISES DAGFlowError on it (the acceptance: one produced, two consumed -> blocker), the
                      message names the intermediate + cites the rule + says BLOCKED; DAGFlowError is a DAGError. NO false
-                     positive: a join-shaped DAG (ethyl acetate) and a linear DAG have empty fanout_points and still
-                     ceiling exactly as before.
-red-team:            (pending -- run + folded + recorded in the follow-up docs commit, as the CLI-CAN-02 bricks were)
+                     positive: a join-shaped DAG (ethyl acetate) and a linear DAG WITHOUT a shared bounded reactant have
+                     empty fanout_points and still ceiling exactly as before.
+red-team:            workflow wr3itesl1, 4 blind bearings (detection soundness; block correctness/completeness;
+                     faithfulness/latent-path; regression + other mint paths) + per-finding refute-by-default verify.
+                     3 CONFIRMED, 0 refuted -- all three converged on ONE root: the block was LEAF-BLIND. fanout_points
+                     (built from `_edges`, which SKIPS leaf reactants) sees only produced-intermediate fan-out, so a
+                     shared BOUNDED LEAF reagent consumed by >=2 steps mints by the IDENTICAL never-decremented cache and
+                     slipped through -- proven empirically (a leaf H2 fed at 1 mol, consumed by two steps, gave a ceiling
+                     of 2 vs a true max of 1; a convergent DAG whose only finite charge is a shared leaf gave 1 vs 1/2).
+                     Folded (`ba79c49`): the guard is now FEED-AWARE -- it blocks any BOUNDED reactant (a produced
+                     intermediate, OR a leaf present in `feed`) consumed by >=2 distinct steps; a leaf ABSENT from feed is
+                     excess and cannot mint, so it is not blocked (the same DAG with the leaf excess ceilings soundly).
+                     Because the block now covers EVERY mint, any DAGCeiling that IS returned is genuinely conserved --
+                     which keeps its "exact rational" label honest. Suite 3297 -> 3300 (+3 fold tests). The asymmetry with
+                     route_ceiling (which LABELS a shared external reagent a loose upper bound rather than blocking) is
+                     deliberate: the DAG ceiling promises exact conservation, so it BLOCKS what it cannot conserve.
 residual / follow-on: the real conserved quantity-flow accounting across a fan-out (an allocation policy) is DAG-FLOW-01's
                      next brick, and it unblocks SHOP-LEAF-02 / STOCK-01 shopping-quantity + affordability; when DAG-mode
                      bench fitting lands (service.py), its caller must catch DAGFlowError and surface the BLOCK.

@@ -60,22 +60,41 @@ def _parse(value: str):
         raise ValueError(f"could not parse or resolve {value!r} as an offline name or SMILES: {exc}") from exc
 
 
+def _syn_domain_exit(exc: BaseException) -> int:
+    """Map a synthesize build/search DOMAIN error to its section-14.4 exit code, concise stderr, never a traceback.
+
+    A chemistry-MODEL-boundary refusal (an unsupported scission) -> 5; an INVALID input (an unparseable identity, an
+    empty/invalid target or reagent, a bad value) -> 2.  This is the SAME 5/2 split the recompile/compile verbs give
+    the identical builder error, so `synthesize ''` is a clean exit 2 like `recompile ''` -- it no longer laundered an
+    INVALID_INPUT into ERROR_INTERNAL/exit-70 by validating the request OUTSIDE the handler (red-team fold).  A
+    non-domain error is NOT caught by the call sites (`except (ValueError, TypeError)`), so a genuine internal bug
+    still escapes to the top-level exit-70 guard -- it is never laundered into a domain 2/5.
+    """
+    if isinstance(exc, ScissionError):
+        print(f"synthesize: request refused at the current chemistry-model boundary: {exc}", file=sys.stderr)
+        return 5
+    print(f"synthesize: unsupported or invalid chemistry request: {exc}", file=sys.stderr)
+    return 2
+
+
 def _synthesize_request(args):
     """Build the ONE shared typed ``CompilationRequest`` (SVC-REQ-01) from ``synthesize``'s argv.
 
     ``synthesize`` keeps its own route engine below; this request carries the alias-independent identity (so
     ``synthesize --emit-request`` is comparable to ``recompile --emit-request``) and, load-bearing, the section-9
     :class:`~smartchem.service.EvidenceProviderSelection` that DRIVES the network autoload -- ``--offline`` selects
-    the offline provider, its absence the network provider.  Every knob is passed EXPLICITLY from ``synthesize``'s
-    resolved args so the emitted identity is faithful to the search this command actually runs (its own defaults:
-    depth 2, and commodity terminals only under ``--poor-mans``).  The builder resolves the target best-effort and
-    never raises on an unparseable one (it keeps raw keying); a truly invalid target is caught by the search below.
+    the offline provider, its absence the network provider.  Reagents and stock are passed as the RAW arg lists
+    (``tuple(args.reagents)`` / ``tuple(args.have)``), so the emitted identity matches what the search receives even
+    when a flag is given empty -- ``synthesize``'s own defaults (depth 2, commodities only under ``--poor-mans``) are
+    threaded explicitly.  The builder VALIDATES the target and reagents, so it MAY raise a domain error (an empty or
+    invalid target, an empty-string reagent); the caller wraps this build in the same 5/2 handler as the search, so
+    such an input is a clean section-14.4 exit 2, never a traceback or a laundered exit-70 (red-team fold).
     """
     from ..service import NETWORK_PROVIDER, OFFLINE_PROVIDER, build_recompile_request
     return build_recompile_request(
         args.target,
-        helper_reagents=tuple(args.reagents) if args.reagents else None,
-        stock_materials=tuple(args.have) if args.have else None,
+        helper_reagents=tuple(args.reagents),
+        stock_materials=tuple(args.have),
         commodities_enabled=bool(args.poor_mans),
         max_depth=args.max_depth,
         max_routes=args.max_routes,
@@ -113,12 +132,17 @@ def main(argv: list[str] | None = None) -> int:
                         "canonical, alias-independent request identity, including the section-9 provider selection")
     args = p.parse_args(argv)
 
-    # CLI-CAN-02 (provider lever): synthesize now builds the ONE shared typed request (SVC-REQ-01).  Its --offline
-    # choice rides the request identity as the section-9 EvidenceProviderSelection and, below, GOVERNS the network
-    # autoload -- one source of truth, no second offline flag hidden in the engine call.  --emit-request echoes this
-    # canonical identity and exits WITHOUT searching, exactly as recompile/compile do (build never raises here; a
-    # truly invalid target is caught by the search).
-    request = _synthesize_request(args)
+    # CLI-CAN-02 (provider lever): synthesize builds the ONE shared typed request (SVC-REQ-01).  Its --offline choice
+    # rides the request identity as the section-9 EvidenceProviderSelection and, below, GOVERNS the network autoload
+    # -- one source of truth, no second offline flag hidden in the engine call.  The build VALIDATES the target and
+    # reagents, so it is wrapped in the SAME 5/2 domain handler as the search: an invalid target/reagent is a clean
+    # section-14.4 exit (2/5) like recompile/compile, never a traceback or a laundered exit-70 (red-team fold).
+    try:
+        request = _synthesize_request(args)
+    except (ScissionError, ValueError, TypeError) as exc:
+        return _syn_domain_exit(exc)
+
+    # --emit-request echoes the canonical identity and exits WITHOUT searching, exactly as recompile/compile do.
     if args.emit_request:
         from ..service import serialize_request
         print(serialize_request(request))
@@ -140,12 +164,8 @@ def main(argv: list[str] | None = None) -> int:
             target, reagents=reagents, available=have, commodities=commodities,
             max_depth=args.max_depth, max_routes=args.max_routes, cut_budget=args.cut_budget,
         )
-    except ScissionError as exc:
-        print(f"synthesize: request refused at the current chemistry-model boundary: {exc}", file=sys.stderr)
-        return 5
-    except ValueError as exc:
-        print(f"synthesize: unsupported or invalid chemistry request: {exc}", file=sys.stderr)
-        return 2
+    except (ScissionError, ValueError, TypeError) as exc:
+        return _syn_domain_exit(exc)
     routes = search.routes
     print(search.receipt.render())
     if search.target_in_terminal_stock:

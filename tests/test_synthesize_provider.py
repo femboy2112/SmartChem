@@ -148,6 +148,56 @@ class TestSynthesizeEmitRequest:
         assert off != on  # the emitted identity genuinely differs by the provider selection (no digest key is emitted)
 
 
+class TestRedTeamFolds:
+    """Folds for the CLI-CAN-02 provider-lever red-team (workflow wqpxvm0lh): building the request early moved its
+    validation OUTSIDE the domain-error handler, so a degenerate input regressed from a clean exit 2 to exit 70 /
+    a raw traceback; and --emit-request misrepresented an empty --reagents. Both are now fixed and pinned here."""
+
+    def test_empty_target_is_a_clean_exit_2_not_internal_error(self, capsys):
+        # was: build-time ValueError escaped -> exit 70 (top) / traceback (experiment entry). Now: clean exit 2.
+        assert main([""]) == 2
+        err = capsys.readouterr().err
+        assert "Traceback" not in err
+        assert "synthesize:" in err
+
+    def test_whitespace_target_is_a_clean_exit_2(self, capsys):
+        assert main(["   "]) == 2
+        assert "Traceback" not in capsys.readouterr().err
+
+    def test_empty_string_reagent_is_a_clean_exit_2(self, capsys):
+        assert main(["name:water", "--reagents", ""]) == 2  # '' is an invalid reagent -> TypeError at build -> 2
+        assert "Traceback" not in capsys.readouterr().err
+
+    def test_empty_string_have_is_a_clean_exit_2(self, capsys):
+        assert main(["name:water", "--have", ""]) == 2
+        assert "Traceback" not in capsys.readouterr().err
+
+    def test_valueless_reagents_flag_is_a_clean_exit_2_not_a_traceback(self, capsys):
+        # `--reagents` with no values -> the search runs with () reagents and raises TypeError; the extended handler
+        # now maps it to a clean exit 2 instead of letting the traceback escape (a bonus of the same fold).
+        assert main(["CC(=O)O", "--reagents", "--offline"]) == 2
+        assert "Traceback" not in capsys.readouterr().err
+
+    def test_top_level_synthesize_matches_recompile_exit_code_on_the_same_builder_error(self, capsys):
+        # the red-team's sharpest point: `recompile ''` and `synthesize ''` raise the IDENTICAL builder error and
+        # must not disagree on the exit code (SVC-REQ-01 alias-independence). Both are exit 2 through the top-level
+        # guarded CLI -- synthesize no longer launders it into exit 70 (ERROR_INTERNAL).
+        from smartchem.cli import main as top_main
+        assert top_main(["synthesize", ""]) == 2
+        assert top_main(["recompile", ""]) == 2
+        assert "ERROR_INTERNAL" not in capsys.readouterr().err
+
+    def test_emit_request_faithfully_carries_empty_reagents(self, capsys):
+        # Finding 1: a valueless --reagents means ZERO reagents in the real search; emit must show that, not the
+        # builder's water default. The raw arg list is now passed through, so the identity matches the search.
+        payload = json.loads(_run_capsys(capsys, ["CC(=O)O", "--reagents", "--emit-request"]))
+        assert payload["helper_reagents"] == []
+
+    def test_emit_request_carries_the_given_reagent_set(self, capsys):
+        payload = json.loads(_run_capsys(capsys, ["CC(=O)O", "--reagents", "acetic acid", "--emit-request"]))
+        assert payload["helper_reagents"] == ["acetic acid"]
+
+
 def _run_capsys(capsys, argv) -> str:
     assert main(argv) == 0
     return capsys.readouterr().out

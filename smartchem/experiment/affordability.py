@@ -1,0 +1,196 @@
+"""COST-VEC-01 (2b): the section-10.4 vector-affordability core -- a CostVector and a Pareto frontier.
+
+Section 10.4 makes affordability MULTI-OBJECTIVE: a conformant cost is a VECTOR of independent axes (cash, equipment,
+material quantity/waste, energy, labor/time, preprocessing, analytical, waste-disposal, supply confidence, evidence
+tier), ranked by a Pareto frontier -- never collapsed into one hidden scalar -- and it "MUST NOT trade away a hard
+safety, identity, legal, or equipment constraint for lower cost."  This module is that discipline, as a tested
+primitive:
+
+* :class:`CostVector` -- the axes, every one honestly ``None`` when UNKNOWN (section 10.4: "Unknown values remain
+  unknown"; a bare 0 would be a fabricated free lunch).  Only the axes we have real data for are ever populated today
+  (cash from a 2a :class:`~smartchem.experiment.stock.CostObservation`, access difficulty from a commodity's curated
+  availability, evidence-tier rank from the compiler); the rest stay UNKNOWN, not invented.
+* :func:`dominates` / :func:`pareto_frontier` -- Pareto dominance with two honest rules: a hard blocker DOMINATES cost
+  (an option with an unmet hard safety/identity/legal/equipment constraint is worse than any option without one, at
+  any price -- G6), and UNKNOWN axes are INCOMPARABLE (a value cannot claim to beat an unknown, and an unknown cannot
+  claim to beat a value), so the frontier refuses to over-rank on data it does not have.
+* :func:`basket_cost_vector` -- aggregate the commodity costs a route/basket consumes into one vector (cash sums,
+  access is the worst leaf, a hard blocker on any leaf blocks the basket), so a route's affordability is the
+  affordability of the materials it actually buys -- the shape the route-level frontier will consume.
+
+Boundary (named, not hidden): the LIVE route-level wiring -- populating ``CompilationResponse.affordability_frontier``
+from each ranked route's commodity basket -- is a follow-on (it needs the response schema bump + guard relaxation +
+golden regen).  This module is the correct, tested engine that wiring will call; it does not itself populate the
+service response yet.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+#: The numeric affordability axes, ALL minimized (lower is better/cheaper/easier).  Kept as a tuple so `dominates`
+#: iterates exactly the section-10.4 axes and a new axis is added in one place.
+_AXES: tuple[str, ...] = (
+    "cash",                 # cash outlay, in the vector's `currency` per `unit` (from a CostObservation)
+    "access_difficulty",    # supply-confidence proxy: 0 = easiest to obtain (grocery) ... larger = harder
+    "evidence_tier_rank",   # 0 = most ready/established ... larger = more speculative
+    "new_equipment",        # required new equipment burden
+    "material_quantity",    # material quantity + package waste
+    "energy",               # energy estimate
+    "labor_time",           # labor / elapsed-time estimate
+    "preprocessing",        # preprocessing / purification burden
+    "analytical",           # analytical burden
+    "waste_disposal",       # waste-treatment / disposal burden
+)
+
+
+@dataclass(frozen=True)
+class CostVector:
+    """A section-10.4 cost vector: independent minimized axes, each ``None`` when UNKNOWN, plus the hard-constraint
+    blockers that dominate cost.  ``currency``/``unit``/``region`` label the cash axis (never enter dominance)."""
+
+    cash: "float | None" = None
+    access_difficulty: "int | None" = None
+    evidence_tier_rank: "int | None" = None
+    new_equipment: "float | None" = None
+    material_quantity: "float | None" = None
+    energy: "float | None" = None
+    labor_time: "float | None" = None
+    preprocessing: "float | None" = None
+    analytical: "float | None" = None
+    waste_disposal: "float | None" = None
+    #: unmet hard safety / identity / legal / equipment constraints; a non-empty tuple dominates cost (section 10.4).
+    hard_blockers: tuple[str, ...] = ()
+    currency: str = ""
+    unit: str = ""
+    region: str = ""
+
+    def __post_init__(self) -> None:
+        if type(self.hard_blockers) is not tuple or any(not isinstance(b, str) or not b for b in self.hard_blockers):
+            raise TypeError("hard_blockers must be a tuple of non-empty reason strings")
+        for axis in _AXES:
+            v = getattr(self, axis)
+            if v is not None and (not isinstance(v, (int, float)) or isinstance(v, bool) or v != v):
+                raise TypeError(f"{axis} must be a real number or None (UNKNOWN), not {v!r}")
+
+    @property
+    def is_hard_blocked(self) -> bool:
+        return bool(self.hard_blockers)
+
+    def known_axes(self) -> dict[str, float]:
+        return {a: float(getattr(self, a)) for a in _AXES if getattr(self, a) is not None}
+
+
+def dominates(a: CostVector, b: CostVector) -> bool:
+    """Does ``a`` Pareto-dominate ``b``?  True iff ``a`` is no worse than ``b`` on every comparable axis and strictly
+    better on at least one -- with two honest section-10.4 rules layered on:
+
+    * HARD BLOCKER DOMINATES COST (G6): a clean option beats a hard-blocked one at any price; a hard-blocked option
+      never dominates a clean one; if both are blocked (or both clean) the numeric axes decide.  This rule takes
+      PRECEDENCE over the UNKNOWN rule below: a clean vector dominates a hard-blocked one even when the clean vector's
+      cost axes are entirely UNKNOWN (section 10.4 -- an unmet hard safety/identity/legal/equipment constraint is
+      never traded for cost, so "not blocked, cost unknown" still beats "blocked", and the "all-unknown b is
+      dominated by nothing" clause holds only among vectors of EQUAL blocked-status).
+    * UNKNOWN IS INCOMPARABLE: dominance is judged against the axes ``b`` KNOWS.  To dominate ``b``, ``a`` must be
+      KNOWN and no worse on EVERY axis ``b`` knows (an axis ``a`` leaves UNKNOWN where ``b`` has a value blocks
+      domination -- ``a`` cannot claim to beat a dimension it does not measure), and strictly better on at least one
+      of them.  An axis ``a`` knows but ``b`` does not is ignored (``a`` cannot be BEATEN by an unknown either).  So
+      an all-unknown ``b`` is dominated by nothing, and the frontier never over-ranks on data it does not have.
+    """
+    # hard-blocker rule first -- it overrides the cost axes entirely (a hard blocker dominates cost, G6).
+    if a.is_hard_blocked and not b.is_hard_blocked:
+        return False
+    if b.is_hard_blocked and not a.is_hard_blocked:
+        return True
+    # both clean, or both blocked: a must be known-and-no-worse on every axis b knows, strictly better on one.
+    b_known = {ax: float(getattr(b, ax)) for ax in _AXES if getattr(b, ax) is not None}
+    if not b_known:
+        return False  # nothing b knows -> nothing to be strictly better ON -> cannot dominate
+    strictly_better_somewhere = False
+    for ax, bv in b_known.items():
+        a_raw = getattr(a, ax)
+        if a_raw is None:
+            return False  # a is UNKNOWN where b is known -> cannot claim no-worse -> cannot dominate
+        av = float(a_raw)
+        if av > bv:
+            return False  # worse on an axis b knows -> not dominating
+        if av < bv:
+            strictly_better_somewhere = True
+    return strictly_better_somewhere
+
+
+def pareto_frontier(items: "list") -> "list":
+    """The non-dominated subset of ``items`` (order preserved).  Each item must expose a ``.cost_vector`` of type
+    :class:`CostVector`.  An item is on the frontier iff no OTHER item strictly dominates it."""
+    vecs = []
+    for it in items:
+        v = getattr(it, "cost_vector", None)
+        if type(v) is not CostVector:
+            raise TypeError("every item must expose a .cost_vector of type CostVector")
+        vecs.append(v)
+    frontier = []
+    for i, it in enumerate(items):
+        if not any(j != i and dominates(vecs[j], vecs[i]) for j in range(len(items))):
+            frontier.append(it)
+    return frontier
+
+
+# access-difficulty ordinal for a commodity's curated availability (easiest-first == smallest, section reagents.py).
+_ACCESS_ORDINAL = {"grocery": 0, "pharmacy": 1, "hardware": 2, "pool_garden": 3}
+
+
+def basket_cost_vector(commodity_molecules: "list", *, hard_blockers: tuple[str, ...] = ()) -> CostVector:
+    """Aggregate the commodity leaves a route/basket buys (each a :class:`~smartchem.category.Molecule`) into ONE
+    section-10.4 vector -- the shape the route-level frontier will build from a route's terminal reagents.
+
+    Cash is the SUM of the leaves' 2a prices (a basket costs the sum of its parts), KNOWN only if EVERY leaf is
+    priced AND all agree on currency+unit -- one unpriced or incommensurable leaf drops cash to UNKNOWN rather than
+    under-count the basket (fail to UNKNOWN, never fabricate a cheaper total; section 10.4).  Access difficulty is the
+    WORST (hardest) leaf -- a basket is only as obtainable as its least-obtainable part -- and is UNKNOWN if any leaf
+    is not a known commodity (never assume easy).  A hard blocker passed in blocks the whole basket.  Unmodeled axes
+    stay UNKNOWN.  An EMPTY basket has no known cash/access (all UNKNOWN) -- a route buying nothing is not "free".
+    """
+    from .commodity_pricing import cost_observation_for  # forward dep, at call time to keep import light
+    from ..data.reagents import commodity_for
+
+    cash_total = 0.0
+    any_priced = False
+    all_priced = bool(commodity_molecules)  # an empty basket is not "fully priced" -> cash stays UNKNOWN
+    currency = ""
+    unit = ""
+    worst_access: "int | None" = None
+    all_known_commodity = bool(commodity_molecules)
+
+    for mol in commodity_molecules:
+        obs = cost_observation_for(mol)
+        if obs is None:
+            all_priced = False
+        else:
+            if any_priced and (obs.currency != currency or obs.unit != unit):
+                all_priced = False  # incommensurable cash -> cannot sum honestly
+            else:
+                currency, unit = obs.currency, obs.unit
+            cash_total += float(obs.amount)
+            any_priced = True
+
+        commodity = commodity_for(mol)
+        if commodity is None:
+            all_known_commodity = False
+        else:
+            access = _ACCESS_ORDINAL.get(commodity.availability.value)
+            if access is None:
+                # a known commodity whose availability is not mapped to an ordinal (a future Availability member):
+                # its obtainability is UNKNOWN, not "easy" -- drop access to UNKNOWN rather than silently skip it
+                # (fail-SAFE; `test_access_ordinal_covers_every_availability` also fails-fast on this at CI).
+                all_known_commodity = False
+            else:
+                worst_access = access if worst_access is None else max(worst_access, access)
+
+    cash = cash_total if (any_priced and all_priced) else None
+    access_difficulty = worst_access if all_known_commodity else None
+    return CostVector(
+        cash=cash,
+        access_difficulty=access_difficulty,
+        hard_blockers=tuple(hard_blockers),
+        currency=currency if cash is not None else "",
+        unit=unit if cash is not None else "",
+    )

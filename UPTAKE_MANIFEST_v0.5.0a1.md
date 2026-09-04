@@ -105,7 +105,7 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 | Lane | Finish line | State |
 |---|---|---|
 | **A — Alpha conformance** | A truthful bounded compiler conforming to `v0.5.0a1`. | **Near.** Shared IR, typed request/response, search receipts, identity/evidence gates, exact DAG flow + inverse shopping, `StockMaterial`, fail-closed errors all landed. Remaining: `ERR-EVIDENCE-01`, the final P0 integrations, a clean RC freeze. |
-| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **The active research frontier.** `CANON-KEKULE-01` (Lane-B prerequisite), `IR-STRUCT-01` (structural candidate rides the IR) and `IR-FORGET-01` (forgetful square enforced) are **DONE** (`0aac8a1`). `TRANSFORM-PROVIDER-01`, `HOLDOUT-RXN-01`, `CHEM-ALG-01` are `TODO` — the structural vehicle now exists; the next moves are the typed provider registry (multiple families) and the structure-rebuilding inverse. |
+| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **Thesis DEMONSTRATED.** `CANON-KEKULE-01`, `IR-STRUCT-01`, `IR-FORGET-01` (`0aac8a1`+`fd10792`), `TRANSFORM-PROVIDER-01` and `CHEM-ALG-01` (`ea47f3d`) are **DONE**: the search is now parameterized by a transform algebra, and a second family (bond-order edit) composes through the unchanged search with no engine fork. Remaining Lane-B: `HOLDOUT-RXN-01` (freeze the family-stratified coverage benchmark) `TODO`; further follow-ons: charged families (ionic/redox need a charged forget), the recompile-IR registry threading, and the structure-rebuilding inverse (unblocked — the graph rides). |
 | **C — Bench readiness** | `ProcedureIR`, quantities, assays, operations, process hazards, analytical acceptance, waste, equipment ratings, qualified review. | **Deliberately outside the alpha.** `TERM-MAT-01` down-paid by `sourcing.plan_sourcing`; `COST-VEC-01` blocked on real data; `ProcedureIR` deferred. The `FORMAL_CANDIDATE` floor stays immovable until these obligations exist. |
 
 ### 2A.2 Reoriented roadmap IDs (the audit's additions + the elevated canonical repair)
@@ -116,9 +116,9 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 | `ERR-EVIDENCE-01` | P0 | A | **`IMPLEMENTED_AND_VERIFIED`** | A genuine no-record lookup → `UNKNOWN`; an injected internal provider fault → `ERROR_INTERNAL`/exit 70, no raw traceback and no false "conditions unknown". Fixed **both** `assembly_conditions` (the deep root the audit missed) and `_conditions_for`, and (red-team fold `69a1ffd`) the separate `synthesize` CLI's engine catch + its missing top-level exit-70 guard; proven non-vacuous. `1265efe`+`69a1ffd`; `tests/test_err_evidence.py`. | route search, `CLI-EXIT-01` |
 | `IR-STRUCT-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | A first-class typed `StructuralCandidate` rides `ChemicalCompilationIR` (schema `v1alpha5`): parent/product STRUCTURE identities + exact formula + **canonical molecular graph** (each `StructuralSpecies` carries atoms/bonds/charge/state, so its identity/formula are RE-VERIFIABLE on read — a forged or isomer-swapped structure is refused, not a trusted label; red-team fold), primitive stoichiometry, the capped-scission edit witness (digest + equation), `DECOMPOSE` direction, provider id/version, `FORMAL_CANDIDATE` tier, loss records, and the exact forgetful projection. `decompile_structure_to_ir` emits the structure-preserving decompile (paracetamol's real amide hydrolysis is among the candidates — two distinct witnesses sharing one projection: the IR carries MORE than its formula image); round-trips digest-stably; a candidate whose parent is not the IR target, or on a non-STRUCTURE/non-DECOMPILE IR, is refused. `0aac8a1` + fold `fd10792`; `tests/test_ir_struct.py`. | `structure_descent`, `IR-CHEM-01` |
 | `IR-FORGET-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | The forgetful square is a FORMULA-level invariant enforced across three layers so no single unverified field is load-bearing (red-team fold closed a vacuity where it trusted the structure identity blindly): (1) `StructuralCandidate.__post_init__` recomputes the projection from the stored species FORMULAS and refuses unless it equals the stored projection byte-for-byte (digest AND equation), commuting through serialization, mismatch refused-not-coerced; (2) each species' formula/identity are graph-backed (a forged isomer is refused at the species); (3) the parent is pinned to the IR target. `0aac8a1` + fold `fd10792`; `tests/test_ir_struct.py::{TestForgetfulSquare,TestRedTeamFold}`. Exact PRODUCT-isomer edit-fidelity (beyond formula) is the witness label; the cross-producer reconciliation (audit §7.3 `== D_formula(forget(S))`) and the graph-scission witness replay are named follow-ons. | `IR-STRUCT-01` |
-| `TRANSFORM-PROVIDER-01` | P1 | B | `TODO` | Capped-scission runs **exclusively** through a typed closed provider boundary; the registry digest changes whenever the provider set / id / version / capability manifest changes; provider-local partiality never collapses into a false aggregate "complete". | `IR-STRUCT-01` |
+| `TRANSFORM-PROVIDER-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | The bounded search is parameterized by a typed closed `TransformProviderRegistry` (`smartchem/transform_provider.py`): capped-scission enumeration runs EXCLUSIVELY inside `CappedScissionProvider` (the `routes.py` seams and the structural decompile reach it via `registry.enumerate`, never a direct call). The registry digest moves on any provider set / id / version / capability-manifest change; aggregate completeness is the AND of every provider's own, so provider-local partiality never fakes a complete. The DEFAULT registry (capped-only) is behavior-AND-digest identical — the whole 3483-test suite is transparent to the reroute. `ea47f3d`; `tests/test_transform_provider.py`. | `IR-STRUCT-01` |
 | `HOLDOUT-RXN-01` | P1 | B | `TODO` | A frozen, family-stratified benchmark (train/dev/**holdout** split) classifies each target: constructible-in-closure / representable-but-unsupported / blocked-by-identity-loss / blocked-by-missing-evidence / incomplete-within-bounds / outside-closure / invalid. Holdout hashes frozen before any provider fitting. | `TRANSFORM-PROVIDER-01` |
-| `CHEM-ALG-01` | P1 | B | `TODO` | ≥1 qualitatively distinct transform family (partial bond-order edit / ionic / redox / ring form-open) registers through `TransformProvider`, composes through **unchanged** core route/DAG search, rides the IR, obeys the forgetful square, is gated by existing evidence/material gates — no bespoke search-engine branch. Stays `FORMAL_CANDIDATE` absent separate evidence. | `HOLDOUT-RXN-01`, `IR-FORGET-01` |
+| `CHEM-ALG-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | A second, qualitatively distinct family — the partial bond-order edit (dehydrogenation `alkane → alkene + H2`, `smartchem/bond_order_edit.py`, distinct from the whole-bond rewrites capped-scission excludes) — registers through `BondOrderEditProvider` and composes through the UNCHANGED core route AND DAG search: with the extended algebra the hydrogenation route `H2 + C2H4 → C2H6` is found; with the default (capped-only) algebra it is NOT — no engine branch, only the registry parameter. It rides the structural IR (a `BOND_ORDER_EDIT` candidate with a `DECOMPOSITION_EDGE` projection, alongside capped scissions), obeys the forgetful square (recompute-verified, a tampered projection refused), and stays `FORMAL_CANDIDATE` — no sourced conditions → `unknown()` through the UNCHANGED conditions gate (the pipeline was already duck-typed on the uniform transform interface). `ea47f3d`; `tests/test_bond_order_edit.py`. The frozen family-stratified benchmark `HOLDOUT-RXN-01` (MEASURES cross-family coverage) is a named follow-on — this brick delivers the family + composition, not the benchmark. | `IR-FORGET-01`; `HOLDOUT-RXN-01` (follow-on) |
 | `TERM-MAT-01` | P1 | C | `IN_PROGRESS` | `StockMaterial.satisfies()` gates terminal/production selection: same-structure / sufficient-assay / insufficient / unknown / formulation mismatch / quantity known-unknown are all distinguished; a commodity lead stays UNKNOWN-assay, never terminates a route as a pure reagent; DAG shopping quantities wire in without relabeling a 100%-efficiency lower bound as a predicted purchase. | `STOCK-01`✓, `SHOP-LEAF-02`✓, `sourcing`✓ |
 | `COST-VEC-01` | P1 | C | `BLOCKED` | Vector affordability (cost/access/evidence/equipment/hazard/time as separate axes, a Pareto frontier not a hidden scalar), and the coupled/underdetermined shopping refusal resolved. **Blocked: needs sourced, dated prices — §10.4 forbids inventing them.** | `TERM-MAT-01`, real price data |
 
@@ -305,6 +305,69 @@ red-team:      w2qze2es3 / wf_86c0b53e-dc3 (5 blind orthogonal bearings, refute-
                not guarded" -- refuted as not-a-false-claim, but the guard was added anyway (cheap coherence).
   non-vacuous: each confirmed finding reproduced ACCEPTED pre-fold (the isomer swap I reproduced myself) and REFUSED
                post-fold by tests/test_ir_struct.py::TestRedTeamFold; the honest full IR still round-trips unchanged.
+```
+
+**Uptake record — TRANSFORM-PROVIDER-01 + CHEM-ALG-01, the genericity payoff** (`TRANSFORM-PROVIDER-01` /
+`CHEM-ALG-01` `TODO` → `IMPLEMENTED_AND_VERIFIED`; the transform algebra becomes a PARAMETER of the bounded search
+and a second family composes through it with no engine fork — the central genericity thesis, demonstrated):
+
+```text
+ID:            TRANSFORM-PROVIDER-01 (the search is parameterized by a typed closed provider registry)
+               CHEM-ALG-01 (a second, qualitatively distinct family composes through the UNCHANGED search)
+commit:        ea47f3d (feat) + this docs record
+base:          785f2b7 -> suite 3508 passed, 14 skipped, 1 xfailed (was 3483; +25: test_transform_provider (10) +
+               test_bond_order_edit (15))
+
+thesis:        the reorientation's central verdict is that SmartChem is a generic bounded SEARCH compiler
+               parameterized by a still-NARROW transform algebra -- a pathway gap, not a search-budget gap. This
+               makes the algebra a PARAMETER and proves a second family widens it with NO search-engine fork.
+
+TRANSFORM-PROVIDER-01 (smartchem/transform_provider.py):
+  - StructuralTransform: the uniform interface every family exposes (reactant / reagents / products / forget() /
+    equation() / digest); CappedScission already satisfies it. The recompiler step-builder
+    (ExperimentStep.from_transform), the conditions gate (assembly_conditions), and the structural decompile were
+    ALREADY duck-typed on exactly this interface, so no downstream change was needed -- the coupling was contained
+    (from_capped_scission touched only .reactant/.reagents/.products; _reaction_signature getattr's reagents
+    defaulting to ()).  This is the compiler validating its own layering.
+  - TransformProvider (id/version/capability_manifest/enumerate_transforms) + CappedScissionProvider -- now the ONE
+    place capped_scissions is called (exclusivity, grep-verified: routes.py + compilation_ir reroute through it).
+  - TransformProviderRegistry: a CLOSED ordered set (order = dedup PRIORITY, a semantic parameter); digest over
+    each provider's identity (id+version+manifest, section 8.4/4.1); enumerate() unions the families (dedup by
+    transform digest, canonical order) with completeness = AND of every provider's own (partiality never fakes a
+    complete).
+  - Reroute: search_routes / search_dags / decompile_structure_to_ir gain a `registry` param (default =
+    DEFAULT_TRANSFORM_REGISTRY = capped-only), which is behavior-AND-digest identical -- the full 3483-test suite
+    passed on the reroute ALONE (confirmed) before CHEM-ALG-01 was added. The structural decompile now stamps the
+    PROVIDER-registry digest (the whole algebra) as its transform_registry_digest.
+
+CHEM-ALG-01 (smartchem/bond_order_edit.py):
+  - BondOrderEdit + bond_order_edits: the dehydrogenation family (raise one bond's order, shed one H per endpoint
+    as H2; reactant -> precursor + H2). Neutral, stable closed products (an alkene + H2, not radicals/ions, so it
+    terminates a retro search at stock), forgets to a REAGENTLESS DecompositionEdge. Real chemistry: ethane ->
+    ethene + H2, cyclohexane -> cyclohexene + H2, methane/acetylene -> nothing.
+  - BondOrderEditProvider registers it; StructuralCandidate generalized: _WITNESS_PROJECTION gains BOND_ORDER_EDIT
+    -> DECOMPOSITION_EDGE, _recompute_projection gains the reagentless DecompositionEdge branch, _check_stoich
+    allows empty reagents for a reagentless family (a bond-order candidate MUST carry none; a capped candidate MUST
+    NOT -- both enforced).
+  - COMPOSES through the UNCHANGED route AND DAG search: with the extended algebra search_routes/search_dags on
+    ethane over available=(ethene, H2) find the hydrogenation route H2 + C2H4 -> C2H6; the default capped-only
+    algebra finds ZERO. Same search code, wider algebra, no engine branch -- the acceptance's "composes through
+    unchanged core route/DAG search".
+  - Rides the IR (BOND_ORDER_EDIT candidate alongside capped scissions in one decompile IR), obeys the forgetful
+    square (recompute-verified; a tampered projection refused), stays FORMAL_CANDIDATE (no sourced conditions ->
+    unknown() through the untouched gate). W3 unchanged.
+
+acceptance:    tests/test_transform_provider.py (10): behavior-identity, provenance, registry-digest sensitivity
+               (version/set/manifest), partiality-never-fakes-complete, closed-set.  tests/test_bond_order_edit.py
+               (15): family enumeration + certificate, riding the IR + forgetful square (tamper refused), the
+               compose-through-unchanged-search contrast (extended finds the hydrogenation route in routes AND
+               DAGs, default finds neither), reagentless coherence.
+scope:         Lane B. Two structural families now first-class. Follow-ons (named, not built): charged families
+               (ionic/redox need a charged forget projection -- HeterolyticScission/RedoxHalfReaction exist but
+               have no neutral composition edge); the recompile-IR registry threading (route/DAG IR stamping the
+               algebra digest); the frozen family-stratified benchmark HOLDOUT-RXN-01 that MEASURES cross-family
+               coverage; the structure-rebuilding inverse (unblocked by the graph-carrying species).
+red-team:      blind-bearing workflow to follow (this session); its result is appended on fold.
 ```
 
 ## 3. P0 truth-envelope backlog

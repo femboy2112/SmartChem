@@ -34,7 +34,8 @@ ceiling divides by, so feasibility and the ceiling can never disagree on the bal
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 from enum import Enum
 
 from ..category import Molecule
@@ -131,13 +132,24 @@ def resolve_thermo(
             dhf, s, phase, grade, prov = (
                 est.dhf_kj_per_mol, est.s_j_per_mol_k, est.phase, est.grade, est.provenance,
             )
+            # THERMO-UNC-01: thread the group-additivity uncertainty bands (computed by quadrature in
+            # thermo_groups.estimate_thermo) into the record -- they were previously DROPPED here, so every DERIVED
+            # value read as sigma=None, indistinguishable from a sourced value that honestly has no stated sigma.
+            unc_dhf: "float | None" = est.dhf_uncertainty_kj
+            unc_s: "float | None" = est.s_uncertainty_j_per_k
             if condensed:
                 pc = _resolve_phase_change(molecule, phase_change)
                 if pc is not None:
                     dhf, s, phase = to_condensed(dhf, s, pc)
                     grade = "PREDICTED"  # a gas estimate + a sourced phase correction is a two-step estimate
-                    prov = f"{prov}; corrected GAS->{phase} via {pc.transition.value} ({pc.provenance})"
-            return ThermoRef(_formula_str(molecule), _label(molecule), dhf, s, phase, prov, grade=grade)
+                    prov = (
+                        f"{prov}; corrected GAS->{phase} via {pc.transition.value} ({pc.provenance}); "
+                        f"the ± is a LOWER BOUND (the phase-change correction carries no sourced sigma)"
+                    )
+            return ThermoRef(
+                _formula_str(molecule), _label(molecule), dhf, s, phase, prov, grade=grade,
+                uncertainty_dhf_kj=unc_dhf, uncertainty_s_j_per_mol_k=unc_s,
+            )
     return None
 
 
@@ -162,6 +174,14 @@ class StepFeasibility(Digestible):
     reason: str
     finding: Quantity
     missing: tuple[str, ...]
+    #: THERMO-UNC-01: the 1-sigma uncertainty on ΔG (kJ/mol), propagated in quadrature from the inputs' sourced/
+    #: derived sigmas -- ``None`` when ANY contributing species lacks a sigma (the honest mixed sourced/derived edge:
+    #: a partial sum would understate it).  ``sigma_delta_g_is_lower_bound`` is True when >=2 species are group-
+    #: additivity DERIVED, whose shared-Benson-group errors are correlated, so the independent-quadrature value
+    #: UNDERSTATES the true sigma (cf. formation.DerivedFormation).  Both are ``compare=False`` metadata (like
+    #: ThermoRef's sigmas), so they move no digest and no golden -- a derived uncertainty is provenance, not identity.
+    sigma_delta_g_kj: "float | None" = field(default=None, compare=False)
+    sigma_delta_g_is_lower_bound: bool = field(default=False, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.direction, FeasibilityDirection):
@@ -247,10 +267,40 @@ def feasibility_of_step(
         "non-standard conditions / product removal can still drive it)"
     )
     source_desc = "sourced ΔfH°/S°" if not derived_labels else "sourced + group-derived (gas) ΔfH°/S°"
+
+    # THERMO-UNC-01: propagate the inputs' 1σ uncertainties to σ(ΔG) in quadrature.  _coefficient_vector already
+    # dedupes species + nets pure spectators to 0, so each surviving species appears once with a NET coefficient and
+    # no σ is double-counted (the category.py:1071 "one number appearing twice, minus itself" hazard is pre-handled).
+    # σ(ΔH)² = Σ (nu_i · σ_ΔfH_i)², σ(ΔS)² = Σ (nu_i · σ_S_i)², σ(ΔG)² = σ(ΔH)² + (T·σ(ΔS)/1000)².  Each is computable
+    # ONLY if EVERY species carries that σ -- one missing (a sourced value with no published ±) makes it UNKNOWN,
+    # never a partial sum that silently understates it (the honest mixed sourced/derived edge).
+    dhf_sigmas = [r.uncertainty_dhf_kj for _m, _n, r in resolved]
+    s_sigmas = [r.uncertainty_s_j_per_mol_k for _m, _n, r in resolved]
+    sigma_dh = (
+        math.sqrt(sum((n * sig) ** 2 for (_m, n, _r), sig in zip(resolved, dhf_sigmas)))
+        if all(sig is not None for sig in dhf_sigmas) else None
+    )
+    sigma_ds = (
+        math.sqrt(sum((n * sig) ** 2 for (_m, n, _r), sig in zip(resolved, s_sigmas)))
+        if all(sig is not None for sig in s_sigmas) else None
+    )
+    sigma_dg = (
+        math.sqrt(sigma_dh ** 2 + (temperature * sigma_ds / 1000.0) ** 2)
+        if (sigma_dh is not None and sigma_ds is not None) else None
+    )
+    # σ(ΔG) is a LOWER BOUND when the independent-quadrature assumption is violated: ≥2 group-additivity DERIVED
+    # species share Benson-group anchors (correlated errors), or a cross-phase sum omits the Δsub/Δvap term.  Both
+    # UNDERSTATE the true σ (cf. formation.DerivedFormation, pathway.Tally) -- flag it, never over-claim precision.
+    sigma_lower_bound = sigma_dg is not None and (len(set(derived_labels)) >= 2 or phase_mixed)
+    sigma_note = "" if sigma_dg is None else (
+        f" [σ(ΔG) {'≥' if sigma_lower_bound else '≈'} {sigma_dg:.1f} kJ/mol (1σ, quadrature"
+        + ("; LOWER BOUND: correlated group / cross-phase inputs)]" if sigma_lower_bound else ")]")
+    )
+
     reason = (
         f"{direction.value}: ΔG = {delta_g:.1f} kJ/mol at {temperature:.1f} K "
         f"(ΔH = {delta_h:.1f} kJ, ΔS = {delta_s:.1f} J/K; Hess's law + Gibbs over {source_desc})"
-        f"{disfavour}{extrap}{derived_note}{phase_note} -- thermodynamic feasibility, not a rate"
+        f"{disfavour}{extrap}{derived_note}{phase_note}{sigma_note} -- thermodynamic feasibility, not a rate"
     )
     finding = Quantity(
         "delta-G-rxn", f"{delta_g:.1f}", "kJ/mol", Bucket.KNOWN_SOURCED,
@@ -259,6 +309,7 @@ def feasibility_of_step(
     )
     return StepFeasibility(
         direction, grade, temperature, delta_h, delta_s, delta_g, reason, finding, (),
+        sigma_delta_g_kj=sigma_dg, sigma_delta_g_is_lower_bound=sigma_lower_bound,
     )
 
 

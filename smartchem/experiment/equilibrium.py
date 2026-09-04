@@ -40,7 +40,7 @@ by (:func:`~smartchem.experiment.ceiling._coefficient_vector`).
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from ..contracts import Digestible
@@ -153,6 +153,11 @@ class StepEquilibrium(Digestible):
     conversion_finding: Quantity
     reason: str
     missing: tuple[str, ...]
+    #: THERMO-UNC-01: the 1σ uncertainty on log10 K, propagated linearly from σ(ΔG) (log10 K = -ΔG·1000/(R·T·ln10),
+    #: so σ(log10 K) = σ(ΔG)·1000/(R·T·ln10)).  ``None`` when σ(ΔG) is unknown; ``sigma_log10_k_is_lower_bound``
+    #: carries forward feasibility's correlated/cross-phase caveat.  ``compare=False`` metadata: moves no digest.
+    sigma_log10_k: "float | None" = field(default=None, compare=False)
+    sigma_log10_k_is_lower_bound: bool = field(default=False, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.extent, EquilibriumExtent):
@@ -197,6 +202,17 @@ def equilibrium_of_step(
     extent = _extent_of(log10_k)
     grade = feas.grade
 
+    # THERMO-UNC-01: log10 K is LINEAR in ΔG, so σ(log10 K) = σ(ΔG)·1000/(R·T·ln10) -- the same denominator as
+    # log10_k above.  None when σ(ΔG) is unknown; feasibility's correlated/cross-phase lower-bound flag rides forward.
+    sigma_log10_k = (
+        feas.sigma_delta_g_kj * 1000.0 / (GAS_CONSTANT_J_PER_MOL_K * temperature * math.log(10.0))
+        if feas.sigma_delta_g_kj is not None else None
+    )
+    sigma_note = "" if sigma_log10_k is None else (
+        f"; σ(log10 K) {'≥' if feas.sigma_delta_g_is_lower_bound else '≈'} {sigma_log10_k:.2f}"
+        + (" (LOWER BOUND)" if feas.sigma_delta_g_is_lower_bound else "")
+    )
+
     conversion, conv_note = _ideal_conversion(step, log10_k)
 
     k_finding = Quantity(
@@ -224,12 +240,13 @@ def equilibrium_of_step(
     reason = (
         f"{extent.value}: K = {_format_k(log10_k)} at {temperature:.1f} K "
         f"(log10 K = {log10_k:.2f}; from ΔG = {feas.delta_g_kj:.1f} kJ/mol via K = exp(-ΔG/RT))"
-        f"{conv_str}{extrap} -- ideal-model equilibrium extent, NOT a rate and NOT an expected "
+        f"{sigma_note}{conv_str}{extrap} -- ideal-model equilibrium extent, NOT a rate and NOT an expected "
         "isolated/practical yield (standard section 9.5)"
     )
     return StepEquilibrium(
         extent, grade, temperature, feas.delta_g_kj, log10_k, conversion, k_finding, conversion_finding,
         reason, (),
+        sigma_log10_k=sigma_log10_k, sigma_log10_k_is_lower_bound=feas.sigma_delta_g_is_lower_bound,
     )
 
 

@@ -1330,6 +1330,12 @@ def heterolytic_scissions(molecule: Molecule) -> tuple[HeterolyticScission, ...]
 # ======================================================================================
 # G4 -- redox (electron-transfer) half-reactions and the unified ionic edge view
 # ======================================================================================
+#: The highest oxidation state any element exhibits is +8 (Os, Ru, Xe), so a species of A atoms cannot shed more
+#: than 8*A electrons.  This is the PHYSICAL ceiling the RedoxHalfReaction certificate enforces LIVE (red-team fold:
+#: it caps the deserialize/replay path, not only the enumerator's max_electrons).
+_MAX_OXIDATION_STATE_PER_ATOM = 8
+
+
 @dataclass(frozen=True)
 class ElectronTransferEdge(Digestible):
     """A composition-level ELECTRON-TRANSFER (redox) edge ``n . reduced(q) -> n . oxidized(q+e) + (n*e) e-``,
@@ -1430,10 +1436,27 @@ class RedoxHalfReaction(Digestible):
                 f"charge not conserved: oxidized {self.oxidized.charge} - {self.electrons} e- "
                 f"!= reduced {self.reduced.charge}"
             )
+        # UPPER bound (red-team fold): electrons is otherwise checked only >= 1, and the charge certificate is
+        # TAUTOLOGICAL in n -- oxidized.charge = reduced.charge + n makes "oxidized.charge - n == reduced.charge"
+        # hold for ANY n.  So a crafted DESERIALIZED witness could carry an absurd n (e.g. 10**18), pass every
+        # digest/conservation check (none of which touch the lazy .products), and only THEN materialize a
+        # (ELECTRON,)*n tuple -> a MemoryError / slow-burn DoS from a few-KB payload through the public
+        # deserialize_ir boundary.  No atom is oxidised beyond the +8 state (Os/Ru/Xe), so a species of A atoms
+        # cannot shed more than 8*A electrons; enforce that physical ceiling LIVE at the certificate so it holds on
+        # the replay/deserialize path, not only in the enumerator's max_electrons (the injectable-but-not-live-guard
+        # pattern the fold closes).
+        ceiling = _MAX_OXIDATION_STATE_PER_ATOM * len(self.reduced.atoms)
+        if self.electrons > ceiling:
+            raise ScissionError(
+                f"a redox half-reaction transfers at most {ceiling} electrons for a {len(self.reduced.atoms)}-atom "
+                f"species (no atom exceeds the +{_MAX_OXIDATION_STATE_PER_ATOM} oxidation state); got {self.electrons}"
+            )
 
     @property
     def products(self) -> tuple[Molecule, ...]:
-        """The oxidised species plus the ``n`` released electrons (each a massless charge carrier)."""
+        """The oxidised species plus the ``n`` released electrons (each a massless charge carrier).  ``n`` is bounded
+        at construction (<= 8 * atom count), so this tuple is always small (a crafted absurd count is refused by the
+        certificate before it can be materialized here -- red-team fold)."""
         return (self.oxidized,) + (ELECTRON,) * self.electrons
 
     @property
@@ -1476,8 +1499,12 @@ def redox_couples(species: Molecule, *, max_electrons: int = 2) -> tuple[RedoxHa
         raise TypeError("species must be a Molecule")
     if type(max_electrons) is not int or max_electrons < 1:
         raise ValueError("max_electrons must be >= 1")
+    # never enumerate past the physical oxidation ceiling the certificate enforces (8 * atom count) -- so a
+    # generous max_electrons on a small species does not try to construct a half-reaction the certificate refuses
+    # (red-team fold: the enumerator and the certificate agree on the bound).
+    top = min(max_electrons, _MAX_OXIDATION_STATE_PER_ATOM * len(species.atoms))
     out: list[RedoxHalfReaction] = []
-    for n in range(1, max_electrons + 1):
+    for n in range(1, top + 1):
         oxidized = Molecule(species.atoms, species.bonds, species.charge + n, species.state)
         out.append(RedoxHalfReaction(REDOX_SCHEMA, species, oxidized, n))
     return tuple(out)

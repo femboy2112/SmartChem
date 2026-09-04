@@ -23,7 +23,9 @@ from smartchem.category import Bond, Molecule
 from smartchem.decompiler import Formula
 from smartchem.structure_descent import (
     ELECTRON,
+    REDOX_SCHEMA,
     ElectronTransferEdge,
+    RedoxHalfReaction,
     ScissionError,
     redox_couples,
 )
@@ -211,3 +213,43 @@ class TestProviderIdentityAndScope:
         water = Molecule(("O", "H", "H"), frozenset({Bond(0, 1, 1), Bond(0, 2, 1)}), 0, "")
         ir = decompile_structure_to_ir(NO, reagents=(water,), registry=MIXED_REGISTRY)
         assert "REDOX_HALF_REACTION" in {sc.witness_kind for sc in ir.structural_candidates}
+
+
+class TestRedTeamFold:
+    """Fold of the item-1 red-team (1 CONFIRMED MEDIUM). The electron count was validated only with a LOWER bound
+    (>= 1) and the charge certificate is TAUTOLOGICAL in n, so a crafted serialized artifact could carry an absurd
+    count (e.g. 10**18) that passed every digest/conservation check and then materialized a (ELECTRON,)*n tuple --
+    a MemoryError / slow-burn DoS through the public deserialize_ir boundary. Fixed: a LIVE physical UPPER bound
+    (8 * atom count, the max +8 oxidation state) at the RedoxHalfReaction certificate, so an absurd count is refused
+    on read (and on replay) BEFORE .products is ever touched."""
+
+    def test_the_electron_count_has_a_live_physical_upper_bound(self):
+        # a 1-atom species (Na) cannot shed more than 8*1 electrons; AT the bound is accepted, one OVER is refused.
+        RedoxHalfReaction(REDOX_SCHEMA, NA, Molecule(("Na",), frozenset(), 8, ""), 8)         # 8 == 8*1: accepted
+        with pytest.raises(ScissionError, match="at most|oxidation state"):
+            RedoxHalfReaction(REDOX_SCHEMA, NA, Molecule(("Na",), frozenset(), 9, ""), 9)     # 9 > 8: refused
+        # NO (2 atoms) -> ceiling 16
+        RedoxHalfReaction(REDOX_SCHEMA, NO, Molecule(("N", "O"), frozenset({Bond(0, 1, 2)}), 16, ""), 16)
+        with pytest.raises(ScissionError, match="at most|oxidation state"):
+            RedoxHalfReaction(REDOX_SCHEMA, NO, Molecule(("N", "O"), frozenset({Bond(0, 1, 2)}), 17, ""), 17)
+
+    def test_an_absurd_electron_count_is_refused_on_deserialize_without_a_dos(self):
+        # THE attack: a serialized artifact carrying electrons=10**18 must be REFUSED on read, NOT materialize a
+        # (ELECTRON,)*10**18 tuple. The bound fires at the witness replay -> RedoxHalfReaction certificate, before
+        # .products (a lazy property) is ever touched, so the refusal is instant on a few-KB payload.
+        import json
+        import time
+        ir = _redox_ir()
+        payload = ir_to_payload(ir)
+        payload["structural_candidates"][0]["witness"]["electrons"] = 10**18
+        text = json.dumps(payload, sort_keys=True)
+        t0 = time.time()
+        with pytest.raises((ScissionError, ValueError)):
+            deserialize_ir(text)
+        assert time.time() - t0 < 5.0, "the refusal must be instant -- no (ELECTRON,)*n materialization (the DoS)"
+
+    def test_redox_couples_never_enumerates_past_the_physical_ceiling(self):
+        # a generous max_electrons on a 1-atom species is capped at 8*1=8, so the enumerator never constructs a
+        # half-reaction the certificate would refuse (enumerator and certificate agree on the bound).
+        couples = redox_couples(NA, max_electrons=1000)
+        assert len(couples) == 8 and all(c.electrons <= 8 for c in couples)

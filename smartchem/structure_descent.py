@@ -1240,11 +1240,12 @@ class ChargedDecompositionEdge(Digestible):
             raise ScissionError("reactant must be a Formula")
         if type(self.reactant_multiplicity) is not int or self.reactant_multiplicity < 1:
             raise ScissionError("reactant_multiplicity must be an int >= 1")
-        if type(self.products) is not tuple or len(self.products) < 2:
-            raise ScissionError("a charged decomposition edge has >= 2 product formulas (a genuine split)")
+        if type(self.products) is not tuple or not self.products:
+            raise ScissionError("a charged decomposition edge has product formulas")
         keys: list = []
         mass: dict[str, int] = {}
         charge = 0
+        instances = 0
         for pair in self.products:
             if type(pair) is not tuple or len(pair) != 2:
                 raise ScissionError("each product is a (Formula, multiplicity) pair")
@@ -1256,7 +1257,13 @@ class ChargedDecompositionEdge(Digestible):
             for sym, cnt in f.counts:
                 mass[sym] = mass.get(sym, 0) + cnt * m
             charge += f.charge * m
+            instances += m
             keys.append((_fkey(f), m))
+        # a GENUINE split needs >= 2 product INSTANCES (not >= 2 distinct formulas): a symmetric split into two
+        # IDENTICAL ions (O2(2-) -> O(-) + O(-), Hg2(2+) -> 2 Hg(+)) merges to ONE formula with multiplicity 2, and
+        # must be accepted, not crash (red-team fold: it took down the whole charged decompile).
+        if instances < 2:
+            raise ScissionError("a charged decomposition edge has >= 2 product instances (a genuine split)")
         if keys != sorted(keys):
             raise ScissionError("charged edge products must be sorted canonically")
         if len({f for f, _ in self.products}) != len(self.products):

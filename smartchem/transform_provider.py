@@ -114,9 +114,14 @@ class CappedScissionProvider(TransformProvider):
         )
 
     def enumerate_transforms(self, reactant, reagents, *, budget):
+        # the boundary contract: a family that CANNOT apply enumerates nothing and is trivially complete -- it never
+        # raises (so it composes in a mixed registry without taking the whole decompile down; red-team fold).
+        if reactant.charge != 0:
+            # capped scission is neutral-only (its CappedScission certificate refuses a charged reactant); in a
+            # mixed registry a charged target must fall through to a charged family, not crash the capped provider.
+            return (), True
         if not reagents:
-            # a mediated cleavage needs at least one reagent to cap the broken bond; with none, this family
-            # enumerates nothing and is trivially complete (never a raise -- the boundary contract).
+            # a mediated cleavage needs at least one reagent to cap the broken bond; with none, nothing to enumerate.
             return (), True
         return capped_scissions(
             reactant, reagents, max_reactant_cuts=self.max_reactant_cuts, budget=budget, ring_aware=self.ring_aware

@@ -499,8 +499,10 @@ class TestStructureRebuildingInverse:
         assert res.inverted_count == len(ir.structural_candidates) and res.deferred_count == 0
 
     def test_the_inverse_returns_the_real_structure_not_a_constant(self):
-        # rebuild_parent is structure-SPECIFIC: an aspirin decomposition reconstitutes ASPIRIN, a paracetamol one
-        # reconstitutes PARACETAMOL -- distinct structures, so it is not returning a fixed/echoed value.
+        # reconstitute is structure-SPECIFIC: an aspirin decomposition reconstitutes ASPIRIN, a paracetamol one
+        # PARACETAMOL -- distinct structures (not a fixed constant).  NB the genuine NON-vacuity (that it CONSUMES the
+        # products, not just echoes the reactant) is proven by TestRedTeamFoldRound2::
+        # test_reconstitute_parent_consumes_the_products_not_just_the_reactant_edit; this only pins structure-specificity.
         para_ir = _para_ir()
         asp_ir = decompile_structure_to_ir(ASPIRIN, reagents=(WATER,))
         assert asp_ir.structural_candidates, "aspirin must have a capped-scission decomposition"
@@ -548,6 +550,43 @@ class TestStructureRebuildingInverse:
         import json
         with pytest.raises(ValueError, match="GRAPH level|does not replay|sorted|distinct"):
             recompile_structure_from_serialized(json.dumps(payload, sort_keys=True))
+
+
+class TestRedTeamFoldRound2:
+    """Fold of the items-4/1/3/2 red-team (6 CONFIRMED). Each defect reproduced pre-fold and is refused/fixed here."""
+
+    def test_reconstitute_parent_consumes_the_products_not_just_the_reactant_edit(self):
+        # CONFIRMED MEDIUM (inverse-vacuity): rebuild_parent alone echoes the reactant, so its ==parent check could
+        # never fail. reconstitute_parent now RE-VERIFIES the stored products against the witness replay (step 1), so
+        # a swapped product set is refused -- proven by swapping products on a live candidate (bypassing __post_init__
+        # via object.__setattr__ to hit reconstitute_parent's OWN guard, not the constructor's).
+        ir = _para_ir()
+        sc = ir.structural_candidates[0]
+        assert sc.reconstitute_parent() == PARA.canonical()          # honest candidate reconstitutes
+        object.__setattr__(sc, "products", ((StructuralSpecies.of_molecule(ASPIRIN), 1),))
+        with pytest.raises(ValueError, match="stored products are not the witness|cannot be reconstituted"):
+            sc.reconstitute_parent()
+
+    def test_a_tampered_edit_equation_is_refused_on_read(self):
+        # CONFIRMED LOW/MEDIUM (edit_equation is the HUMAN twin of witness_digest): a candidate whose machine identity
+        # is honest but whose readable equation states false chemistry is refused, not trusted.
+        payload = ir_to_payload(_para_ir())
+        one = payload["structural_candidates"][0]
+        one["edit_equation"] = "N2 + 3 H2 -> 2 NH3 (a reaction this edit does NOT perform)"
+        payload["structural_candidates"] = [one]
+        with pytest.raises(ValueError, match="edit_equation is not the witness edit's own equation"):
+            ir_from_payload(payload)
+
+    def test_the_recompile_note_names_the_rebuilt_molecule_not_the_target_repr(self):
+        # CONFIRMED LOW: target.canonical_repr is a free field a tampered artifact can set to any string; the
+        # RECONSTITUTED note must name the ACTUAL rebuilt molecule, not that unverified field.
+        import json
+        from smartchem.compilation_ir import recompile_structure_from_serialized
+        payload = ir_to_payload(_para_ir())
+        payload["target"]["canonical_repr"] = "TOTALLY_NOT_PARACETAMOL"
+        res = recompile_structure_from_serialized(json.dumps(payload, sort_keys=True))
+        assert "TOTALLY_NOT_PARACETAMOL" not in res.note
+        assert "C8H9NO2" in res.note and res.reconstituted_target == PARA.canonical()
 
 
 class TestExistingProducersUnaffected:

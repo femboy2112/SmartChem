@@ -438,18 +438,20 @@ class StructuralWitness(Digestible):
         raise ValueError(f"no graph replay defined for witness_kind {self.witness_kind!r}")
 
     def rebuild_parent(self) -> "Molecule":
-        """The structure-rebuilding INVERSE (item 1): reconstitute the parent STRUCTURE by inverting the edit on the
-        product graph.
+        """The structure-rebuilding INVERSE of the witness EDIT (item 1): recover the parent STRUCTURE by running the
+        family edit backwards.
 
-        Forward, a capped scission takes ``join(reactant, reagents)`` to the product graph via ``-cut +caps``.  This
-        runs it backwards -- ``(product_graph - caps) | cut`` -- recovering the joined parent+reagent graph, and
-        reads off the reactant-atom component as the parent.  It verifies genuine structural invertibility, not a
-        trivial echo: the inverse edit must re-form a CONNECTED parent over the reactant atoms (a cap that overlapped
-        a surviving bond, or a cut that failed to reconnect, would leave the reactant component broken and raise).
-        Composed with the item-4 graph-scission replay -- which pins THIS product graph to the stored product species
-        byte-for-byte -- the parent is thereby recovered from the (verified) decomposition products, with no
-        caller-supplied structure: that composition is what :meth:`StructuralCandidate.reconstitute_parent` and
-        :func:`recompile_structure_from_serialized` rely on to close the decompile->recompile loop at the graph level.
+        HONEST SCOPE (red-team fold): this inverts the witness's OWN edit -- the product graph it derives is
+        ``(join(reactant, reagents) - cut) | caps``, computed from the witness's reactant+edit, so the recovered
+        parent is the witness reactant.  It is therefore NOT a product-consuming check on its own (it does not read
+        the candidate's stored product species); on its own it certifies only that the edit is structurally
+        INVERTIBLE -- the inverse re-forms a CONNECTED parent over the reactant atoms (a cap overlapping a surviving
+        bond, or a cut that failed to reconnect, raises).  The PRODUCT-consuming step -- demanding the stored products
+        be exactly this edit's graph-replay -- lives in :meth:`StructuralCandidate.reconstitute_parent` (step 1),
+        which calls this only after that check; together they close the decompile->recompile loop at the graph level
+        with no caller-supplied structure.  (Forward: ``join(reactant, reagents) --(-cut +caps)--> product graph``;
+        inverse: ``(product graph - caps) | cut`` -> the joined parent+reagent graph, its reactant-atom component the
+        parent.)
 
         The two families whose product fragments carry the parent's whole atom skeleton invert this way: the
         reagent-mediated capped scission (fragments the cut/caps re-glue) and the reagentless CHARGED heterolytic
@@ -650,6 +652,15 @@ class StructuralCandidate(Digestible):
                 f"(graph replays to {witness_transform.digest}, candidate claims {self.witness_digest}); "
                 "a witness digest inconsistent with its own graph is refused"
             )
+        # edit_equation is the HUMAN twin of witness_digest -- the string a chemist reads (the paracetamol litmus).
+        # It must be the witness edit's OWN equation, not a free field: a candidate whose machine identity is honest
+        # but whose readable equation states false chemistry is refused, not trusted (red-team fold).
+        if witness_transform.equation() != self.edit_equation:
+            raise ValueError(
+                "the stored edit_equation is not the witness edit's own equation "
+                f"(witness says {witness_transform.equation()!r}, candidate claims {self.edit_equation!r}); "
+                "a human-readable edit equation that misstates the chemistry is refused, not trusted"
+            )
         if _canon(witness_transform.reactant) != self.parent.molecule:
             raise ValueError(
                 "the witness edit acts on a different structure than the candidate's parent; the graph replay must "
@@ -804,17 +815,34 @@ class StructuralCandidate(Digestible):
         )
 
     def reconstitute_parent(self) -> "Molecule":
-        """The structure-rebuilding inverse of THIS candidate (item 1): reconstitute the parent STRUCTURE from the
-        product graph + edit and confirm it equals the stored parent -- proving the decomposition is structurally
-        INVERTIBLE (the decompile->recompile loop closes at the graph level, with no caller-supplied structure).
+        """The structure-rebuilding inverse of THIS candidate (item 1): reconstitute the parent STRUCTURE and confirm
+        it equals the stored parent, closing the decompile->recompile loop at the graph level with no caller-supplied
+        structure.
 
-        Raises ``ValueError`` if the rebuilt parent disagrees with the stored parent (a non-invertible candidate); a
-        reagentless family whose inverse is a follow-on propagates ``NotImplementedError`` from the witness."""
+        Two steps, so the check genuinely CONSUMES the stored products rather than only the reactant-derived edit
+        (red-team fold: ``rebuild_parent`` alone is a reactant echo -- it inverts the edit and recovers the reactant
+        without reading the products, so its ``== parent`` check could never fail; the product-consuming step is
+        HERE):
+          (1) the stored product species MUST be the graph-replay of the witness edit -- re-verified here, so a
+              corrupted or swapped product set is refused (this is the load-bearing, product-consuming step);
+          (2) the (now product-verified) witness edit is INVERTED to recover the parent, which must equal the stored
+              parent.
+        Together: the stored products replay to the witness edit (1), and that edit inverts to the parent (2), so the
+        products reconstitute the parent THROUGH the witness. Raises ``ValueError`` on either mismatch; a reagentless
+        family whose inverse is a named follow-on propagates ``NotImplementedError`` from
+        :meth:`StructuralWitness.rebuild_parent`."""
+        witness_transform = self.witness.replay_transform()
+        stored = tuple(species.molecule for species, mult in self.products for _ in range(mult))
+        if _canonical_multiset(witness_transform.products) != _canonical_multiset(stored):
+            raise ValueError(
+                "the stored products are not the witness edit's products; the decomposition cannot be reconstituted "
+                "(a corrupted or swapped product set is refused, not reconstituted)"
+            )
         rebuilt = self.witness.rebuild_parent()
         if rebuilt != self.parent.molecule:
             raise ValueError(
-                "the structure-rebuilding inverse did not reconstitute the stored parent from the products + edit; "
-                "the decomposition is not invertible as recorded"
+                "the inverse of the (product-verified) witness edit did not reconstitute the stored parent; the "
+                "decomposition is not invertible as recorded"
             )
         return rebuilt
 
@@ -2249,10 +2277,14 @@ def recompile_structure_from_serialized(decompile_ir_text: str) -> StructureRebu
                 f"(e.g. the reagentless bond-order edit); no candidate reconstituted the target"
             ),
         )
+    # name the ACTUAL rebuilt molecule (re-derived from the candidates), NOT decompile_ir.target.canonical_repr --
+    # that repr is a free field a tampered artifact can set to any string (red-team fold), so a note sourced from it
+    # would advertise the wrong compound; the reconstituted molecule is the verified one.
+    rebuilt_repr = ChemicalIdentity.of_molecule(reconstituted).canonical_repr
     return StructureRebuildResult(
         decompile_ir, reconstituted, inverted, deferred, StructureInverseStatus.RECONSTITUTED,
         (
-            f"reconstituted {decompile_ir.target.canonical_repr} from {inverted} decomposition candidate(s) with NO "
+            f"reconstituted {rebuilt_repr} from {inverted} decomposition candidate(s) with NO "
             f"caller-supplied structure ({deferred} deferred to a follow-on family); the decompile->recompile loop "
             f"closes at the graph level (W3: invertibility of the recorded decomposition, not a validated synthesis)"
         ),

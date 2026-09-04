@@ -27,9 +27,26 @@ from ..conditions import ConditionEnvelope
 from ..contracts import Digestible, canonical_digest
 from ..decompiler_conditions import assembly_conditions
 from ..search import SearchStatus, primary_standard_status
+from ..structure_descent import ScissionError
 from ..transform_provider import DEFAULT_TRANSFORM_REGISTRY, TransformProviderRegistry, search_algebra_digest
 from .dag import DAGError, SynthesisDAG
 from .step import ExperimentRoute, ExperimentStep
+
+
+def _refuse_charged_target(t: "Molecule") -> None:
+    """The recompile route/DAG search is NEUTRAL (its terminals are neutral stock and its default grammar is
+    capped scission), so a charged species cannot route -- refuse it at the chemistry-model boundary (exit 5).
+
+    This refusal used to be an implicit side effect of ``capped_scissions`` raising on a charged reactant; that
+    raise was removed from the provider (so a MIXED registry with a charged family no longer crashes on a charged
+    DECOMPILE target -- red-team fold), so the neutral route search now enforces its own invariant EXPLICITLY here
+    rather than relying on the provider to crash.  In a capped route only the target can be charged (capped scission
+    yields neutral fragments), so checking each expanded node is equivalent to checking the target."""
+    if t.charge != 0:
+        raise ScissionError(
+            "capped scission currently supports neutral input species only; charged chemistry requires an "
+            "explicit charge-localising rewrite model"
+        )
 
 __all__ = [
     "SearchStatus",
@@ -501,6 +518,7 @@ def search_routes(
         if depth > max_depth:
             return
         expansions_attempted += 1
+        _refuse_charged_target(t)   # neutral-only route/DAG search: a charged species is a model-boundary refusal
         cleavages, complete = registry.enumerate(t, reagents, budget=cut_budget)
         if not complete:
             incomplete_expansions += 1
@@ -735,6 +753,7 @@ def search_dags(
             return True
 
         expansions_attempted += 1
+        _refuse_charged_target(t)   # neutral-only route/DAG search: a charged species is a model-boundary refusal
         cleavages, complete = registry.enumerate(t, reagents, budget=cut_budget)
         if not complete:
             incomplete_expansions += 1

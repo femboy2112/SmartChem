@@ -176,3 +176,39 @@ class TestProviderIdentityAndScope:
         # redox (electron-transfer) is NOT wired as a provider yet -- electrons as massless carriers complicate the
         # species/forget; documented as a follow-on, not silently faked.
         assert not any("redox" in pid for pid in MIXED_REGISTRY.provider_ids)
+
+
+class TestChargedRedTeamFold:
+    """Fold of the charged-family red-team (2 CONFIRMED crashes). Each reproduced pre-fold; fixed and pinned here."""
+
+    def test_a_symmetric_heterolytic_split_does_not_crash_the_decompile(self):
+        # CONFIRMED MEDIUM: O2(2-) -> O(-) + O(-) is TWO IDENTICAL ions, which merge to one formula x mult 2. The old
+        # "count DISTINCT product formulas >= 2" check rejected it and crashed HeterolyticScission.forget() (and the
+        # whole decompile). The edge now requires >= 2 INSTANCES, so a symmetric split is a valid genuine split.
+        o2_2minus = Molecule(("O", "O"), frozenset({Bond(0, 1, 1)}), -2, "")
+        ir = _charged_ir(reactant=o2_2minus)
+        assert ir.structural_candidates, "the symmetric heterolytic split must be enumerated, not crash"
+        assert deserialize_ir(serialize_ir(ir)).digest == ir.digest
+
+    def test_the_charged_edge_accepts_a_symmetric_two_instance_split(self):
+        from smartchem.structure_descent import ChargedDecompositionEdge
+        # one distinct formula (O^-) with multiplicity 2, reactant O2^2- : mass 2 O, charge -2 -> valid.
+        edge = ChargedDecompositionEdge(Formula.of({"O": 2}, -2), 1, ((Formula.of({"O": 1}, -1), 2),))
+        assert sum(m for _, m in edge.products) == 2
+
+    def test_a_mixed_registry_does_not_crash_on_a_charged_target(self):
+        # CONFIRMED MEDIUM: CappedScissionProvider RAISED on a charged reactant instead of returning ((), True), so a
+        # MIXED (capped + heterolytic) registry crashed end-to-end on any charged target -- the heterolytic
+        # candidates were never reached. The capped provider now yields nothing (complete) for a charged reactant.
+        no_plus = Molecule(("N", "O"), frozenset({Bond(0, 1, 1)}), 1, "")
+        water = Molecule(("O", "H", "H"), frozenset({Bond(0, 1, 1), Bond(0, 2, 1)}), 0, "")
+        ir = decompile_structure_to_ir(no_plus, reagents=(water,), registry=MIXED_REGISTRY)
+        assert ir.structural_candidates, "the mixed registry must reach the heterolytic candidates, not crash"
+        assert all(sc.witness_kind == "HETEROLYTIC_SCISSION" for sc in ir.structural_candidates)
+
+    def test_the_capped_provider_yields_nothing_complete_on_a_charged_reactant(self):
+        from smartchem.transform_provider import CappedScissionProvider
+        water = Molecule(("O", "H", "H"), frozenset({Bond(0, 1, 1), Bond(0, 2, 1)}), 0, "")
+        no_plus = Molecule(("N", "O"), frozenset({Bond(0, 1, 1)}), 1, "")
+        transforms, complete = CappedScissionProvider().enumerate_transforms(no_plus, (water,), budget=10_000)
+        assert transforms == () and complete is True   # never raises: the boundary contract

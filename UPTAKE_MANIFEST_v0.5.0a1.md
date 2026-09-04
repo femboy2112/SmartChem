@@ -105,7 +105,7 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 | Lane | Finish line | State |
 |---|---|---|
 | **A — Alpha conformance** | A truthful bounded compiler conforming to `v0.5.0a1`. | **Near.** Shared IR, typed request/response, search receipts, identity/evidence gates, exact DAG flow + inverse shopping, `StockMaterial`, fail-closed errors all landed. Remaining: `ERR-EVIDENCE-01`, the final P0 integrations, a clean RC freeze. |
-| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **Thesis DEMONSTRATED, loop CLOSED, coverage MEASURED.** `CANON-KEKULE-01`, `IR-STRUCT-01`, `IR-FORGET-01`, `TRANSFORM-PROVIDER-01`, `CHEM-ALG-01` are **DONE**. `IR-REPLAY-01` (the witness is a re-verifiable graph edit) and `IR-INVERT-01` (a STRUCTURE artifact reconstitutes its target with NO caller structure) closed the decompile→recompile loop at the graph level (`846e8bc`). `CHARGED-ALG-01` added the **first charged family** (heterolytic scission) with a charge-carrying `ChargedDecompositionEdge` forget — the algebra now reaches past neutral rewrites. `HOLDOUT-RXN-01` **froze the family-stratified coverage benchmark** and MEASURES the payoff (default capped 8/18, +bond-order +2, +heterolytic +5, 3/18 genuinely outside-closure). Remaining Lane-B follow-ons: redox (electron-transfer) family, the bond-order structure-rebuilding inverse (the recompile-IR registry threading landed `c70afc7`, item 4 below). |
+| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **Thesis DEMONSTRATED, loop CLOSED, coverage MEASURED.** `CANON-KEKULE-01`, `IR-STRUCT-01`, `IR-FORGET-01`, `TRANSFORM-PROVIDER-01`, `CHEM-ALG-01` are **DONE**. `IR-REPLAY-01` (the witness is a re-verifiable graph edit) and `IR-INVERT-01` (a STRUCTURE artifact reconstitutes its target with NO caller structure) closed the decompile→recompile loop at the graph level (`846e8bc`). `CHARGED-ALG-01` added the **first charged family** (heterolytic scission) with a charge-carrying `ChargedDecompositionEdge` forget — the algebra now reaches past neutral rewrites. `HOLDOUT-RXN-01` **froze the family-stratified coverage benchmark** and MEASURES the payoff (default capped 8/18, +bond-order +2, +heterolytic +5, 3/18 genuinely outside-closure). Remaining Lane-B follow-on: the redox (electron-transfer) family (the recompile-IR registry threading landed `c70afc7` (item 4) and the bond-order structure-rebuilding inverse `65af346` (item 3a); item 3b — the graph-scission witness replay for products — was already landed under `IR-REPLAY-01`). |
 | **C — Bench readiness** | `ProcedureIR`, quantities, assays, operations, process hazards, analytical acceptance, waste, equipment ratings, qualified review. | **Deliberately outside the alpha.** `TERM-MAT-01` down-paid by `sourcing.plan_sourcing`; `COST-VEC-01` blocked on real data; `ProcedureIR` deferred. The `FORMAL_CANDIDATE` floor stays immovable until these obligations exist. |
 
 ### 2A.2 Reoriented roadmap IDs (the audit's additions + the elevated canonical repair)
@@ -555,6 +555,44 @@ scope:         Lane B. This is a provenance-honesty completion, not a new family
                serialized (the STRUCTURE-artifact inverse) needs no registry -- it inverts stored witnesses, it
                does not re-search. Next Lane-B follow-ons: the bond-order structure-rebuilding inverse (item 3a),
                the redox family (item 1).
+```
+
+**Uptake record — item 3a: the bond-order structure-rebuilding inverse** (a Lane-B follow-on named in §2A.1;
+the reagentless bond-order family's inverse, previously deferred, is now built -- every current family inverts):
+
+```text
+ID:            item 3a (the bond-order structure-rebuilding inverse; item 3b -- the graph-scission witness
+               replay for products -- was already landed under IR-REPLAY-01)
+commit:        65af346 (feat)  |  no schema bump (a new rebuild_parent branch + a note fix; no serialized change)
+gap:           StructuralWitness.rebuild_parent RAISED NotImplementedError for BOND_ORDER_EDIT. The refusal's
+               reason ("H2 carries no skeleton, needs a canonical-precursor index recovery") is real ONLY for
+               inverting from the STORED canonical PRODUCT species (the precursor is reindexed there, so the
+               shed hydrogens' attachment sites are lost). But rebuild_parent works in the witness's OWN reactant
+               index space (as the capped and heterolytic inverses do), where bond_i/bond_j/h_i/h_j ARE known
+               indices -- so no recovery is needed and the refusal was over-cautious.
+fix:           the BOND_ORDER_EDIT branch now derives the forward product connectivity (precursor + H2) in the
+               reactant index space, inverts it (drop the shed pair's H-H bond, lower the raised bond one order,
+               restore the two shed C-H bonds), and checks a single connected parent is reconstituted -- exactly
+               parallel to the other two families. Product-consumption stays reconstitute_parent step 1's job (a
+               swapped product set is still refused there), so this is NOT the vacuous reactant-echo the earlier
+               refusal guarded against. The recompile_structure_from_serialized deferral note that named "the
+               reagentless bond-order edit" is generalized (no CURRENT family defers -- the guard is for a FUTURE
+               family whose products carry no reconstructable skeleton).
+tests:         tests/test_ir_struct.py::TestStructureRebuildingInverse (2 refusal tests FLIPPED + 2 added, +2 net):
+                 - a bond-order-ONLY ethane artifact now RECONSTITUTES ethane from ethene + H2, no caller
+                   structure, no deferral (was: NO_INVERTIBLE_FAMILY);
+                 - witness.rebuild_parent() == ethane.canonical() and agrees with reconstitute_parent (was: raises);
+                 - NON-VACUOUS: swapping the bond-order candidate's products to aspirin is REFUSED at step 1
+                   (soundness is not a reactant echo);
+                 - the NO_INVERTIBLE_FAMILY deferral path stays LIVE-tested via a mock forcing rebuild_parent to
+                   raise NotImplementedError (now that every real family inverts, an untested branch would be
+                   vacuous-green -- [[vacuous-green-over-an-empty-subject]]).
+command:       .venv/bin/python -m pytest -q -p no:cacheprovider
+result:        3563 passed, 14 skipped, 1 xfailed (baseline 3561; flipped 2 + added 2 = +2 net). EXIT=0. ruff
+               clean on the changed files.
+scope:         Lane B. All three current families (capped, heterolytic, bond-order) now invert their decomposition
+               to reconstitute the parent STRUCTURE with no caller structure. Next Lane-B follow-on: the redox
+               (electron-transfer) family (item 1).
 ```
 
 ## 3. P0 truth-envelope backlog

@@ -42,7 +42,7 @@ __all__ = [
     "zero_k_records",
 ]
 
-DECOMPILER_THERMO_SCHEMA = "smartchem.data.decompiler_thermo/tiered-v1"
+DECOMPILER_THERMO_SCHEMA = "smartchem.data.decompiler_thermo/tiered-v2"  # v2: ThermoRef gains a typed uncertainty_kj
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,7 @@ class ThermoRef(Digestible):
     status: EvidenceStatus
     provenance: str
     second_source: str = ""     # the independent corroborating source, "" if single-source
+    uncertainty_kj: float | None = None  # THERMO-UNC-01: the SOURCED +/- on dfh_kj (kJ/mol); None = not sourced
 
     def __post_init__(self) -> None:
         if not isinstance(self.formula, str) or not self.formula:
@@ -80,6 +81,15 @@ class ThermoRef(Digestible):
             raise ValueError(
                 "ESTABLISHED status claims two independent sources agree; name the second source"
             )
+        # THERMO-UNC-01: a stored uncertainty is a SOURCED +/- (a positive kJ/mol magnitude); None means the +/-
+        # was genuinely not sourced (honest absence, not a hollow value). A zero/negative "uncertainty" is a hollow
+        # claim and is REFUSED -- so the field is non-vacuous: it carries a real magnitude or is explicitly absent,
+        # never a fake 0 that would churn the digest while asserting a precision the source did not give.
+        if self.uncertainty_kj is not None:
+            if type(self.uncertainty_kj) not in (int, float):
+                raise TypeError("uncertainty_kj must be a number (kJ/mol) or None")
+            if self.uncertainty_kj <= 0:
+                raise ValueError("a stored uncertainty_kj is a sourced +/- and must be > 0; use None for not-sourced")
 
     @property
     def usable_at_0k(self) -> bool:
@@ -95,6 +105,7 @@ DECOMPILER_THERMO: tuple[ThermoRef, ...] = (
         status=EvidenceStatus.ESTABLISHED,
         provenance="CCCBDB experimental (ATcT / Ruscic et al. 2005), CAS 463-51-4; 0 K = -44.51 +- 1.60",
         second_source="NIST WebBook (Nuttall, Laufer et al. 1971), -48 +- 2 kJ/mol at 298 K (agrees)",
+        uncertainty_kj=1.60,   # the +/- already cited in the 0 K provenance (ATcT / Ruscic et al. 2005)
     ),
     ThermoRef(
         formula="C2H4O2",
@@ -116,6 +127,7 @@ DECOMPILER_THERMO: tuple[ThermoRef, ...] = (
             "DOI 10.1007/s10973-009-0634-y; gas 298 K = -280.5 +- 1.9 (crystal -410.4 + sublimation)"
         ),
         second_source="",  # single source; no independent gas-phase replicate found -> EXPERIMENTAL
+        uncertainty_kj=1.9,   # the +/- already cited in the 298 K provenance (Picciochi et al. 2010)
     ),
     # -- the C2H6O isomer pair: SAME composition, DIFFERENT 0 K value. Structure-resolved thermo
     # returns the exact per-isomer number where formula-level can only offer the [-217.1, -166.6]

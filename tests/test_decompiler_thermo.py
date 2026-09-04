@@ -32,6 +32,34 @@ class TestUsableValues:
                 assert r.second_source
 
 
+class TestUncertaintyField:
+    """THERMO-UNC-01: ThermoRef carries a typed, SOURCED uncertainty_kj (or an honest None), never a hollow 0."""
+
+    def test_cited_uncertainties_are_typed_from_their_provenance(self):
+        # the +/- already documented in each entry's provenance text is now a first-class field (not free-text).
+        ket = records_for("C2H2O")[0]
+        para = records_for("C8H9NO2")[0]
+        assert ket.uncertainty_kj == 1.60      # "0 K = -44.51 +- 1.60"
+        assert para.uncertainty_kj == 1.9       # "298 K = -280.5 +- 1.9"
+
+    def test_an_unsourced_uncertainty_is_honest_none_not_a_hollow_zero(self):
+        # acetic acid's 0 K value has no stated +/- in its provenance -> None (honest absence), NOT a fabricated 0.
+        aa = records_for("C2H4O2")[0]
+        assert aa.uncertainty_kj is None
+
+    def test_a_hollow_zero_or_negative_uncertainty_is_refused(self):
+        # a stored uncertainty is a SOURCED +/- (> 0); a 0/negative "uncertainty" is a hollow precision claim, refused.
+        with pytest.raises(ValueError, match="sourced|> 0|not-sourced"):
+            ThermoRef("X2", "x", -1.0, 0, EvidenceStatus.EXPERIMENTAL, "src", uncertainty_kj=0.0)
+        with pytest.raises(ValueError, match="sourced|> 0|not-sourced"):
+            ThermoRef("X2", "x", -1.0, 0, EvidenceStatus.EXPERIMENTAL, "src", uncertainty_kj=-2.0)
+
+    def test_none_uncertainty_is_allowed(self):
+        # the default -- a value whose +/- was not sourced is honestly absent, not blocked.
+        r = ThermoRef("X2", "x", -1.0, 0, EvidenceStatus.EXPERIMENTAL, "src")
+        assert r.uncertainty_kj is None
+
+
 class TestConventionFilterBites:
     def test_paracetamol_is_stored_for_display_but_excluded_from_the_0k_balance(self):
         # present at 298 K...

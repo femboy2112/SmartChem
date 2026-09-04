@@ -58,6 +58,14 @@ class ThermoRef(Digestible):
     #: of equality (``contracts.canonical_payload`` skips ``field.compare is False`` fields), so tagging a
     #: record's provenance-grade never moves any fingerprint -- it is metadata, not identity.
     grade: str = field(default="SOURCED", compare=False)
+    #: THERMO-UNC-01: the reported measurement uncertainty (one sigma / stated ±) on ΔfH° (kJ/mol) and S°
+    #: (J/mol/K), when the source states one -- ``None`` is an HONEST absence (no ± was sourced), never a hollow
+    #: 0.0.  Populated from the same dated CODATA Key Values seed as :mod:`experiments.thermo_codata_seed` (see the
+    #: SEED below).  Like ``grade`` these are ``compare=False`` metadata: a sourced ± is provenance, not identity, so
+    #: adding it moves no digest and no golden.  A dfH uncertainty of exactly 0.0 is legitimate ONLY for a reference
+    #: state (ΔfH° = 0 by convention); anywhere else a 0/negative "uncertainty" is a hollow precision claim, refused.
+    uncertainty_dhf_kj: float | None = field(default=None, compare=False)
+    uncertainty_s_j_per_mol_k: float | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         for field_name in ("formula", "name", "phase", "provenance", "grade"):
@@ -70,6 +78,26 @@ class ThermoRef(Digestible):
                 raise TypeError(f"{field_name} must be a real number")
         if self.s_j_per_mol_k < 0:
             raise ValueError("standard molar entropy S° cannot be negative (third law)")
+        # THERMO-UNC-01 non-vacuity: a stored uncertainty is a SOURCED ± -- None (honest absence) or a real value.
+        # dfH's ± may be exactly 0.0 ONLY at a reference state (ΔfH° = 0 by convention, a definition, not hollow);
+        # S's ± is never a convention-zero, and a 0/negative anywhere else is a hollow precision claim -> refused.
+        if self.uncertainty_dhf_kj is not None:
+            if isinstance(self.uncertainty_dhf_kj, bool) or not isinstance(self.uncertainty_dhf_kj, (int, float)):
+                raise TypeError("uncertainty_dhf_kj must be a real number or None")
+            reference_zero = self.uncertainty_dhf_kj == 0.0 and self.dhf_kj_per_mol == 0.0
+            if self.uncertainty_dhf_kj < 0 or (self.uncertainty_dhf_kj == 0.0 and not reference_zero):
+                raise ValueError(
+                    "uncertainty_dhf_kj must be a real sourced ± (> 0), or exactly 0.0 at a reference state "
+                    "(ΔfH° = 0 by convention); a hollow/negative uncertainty is refused (THERMO-UNC-01)"
+                )
+        if self.uncertainty_s_j_per_mol_k is not None:
+            if isinstance(self.uncertainty_s_j_per_mol_k, bool) or not isinstance(self.uncertainty_s_j_per_mol_k, (int, float)):
+                raise TypeError("uncertainty_s_j_per_mol_k must be a real number or None")
+            if self.uncertainty_s_j_per_mol_k <= 0:
+                raise ValueError(
+                    "uncertainty_s_j_per_mol_k must be a real sourced ± (> 0) or None; a hollow/zero/negative "
+                    "entropy uncertainty is refused (THERMO-UNC-01)"
+                )
 
 
 @dataclass(frozen=True)
@@ -113,14 +141,24 @@ class ThermoTable(Digestible):
 _CODATA = "CODATA Key Values for Thermodynamics (Cox, Wagman & Medvedev 1989)"
 _NIST = "NIST Chemistry WebBook / CRC Handbook 97th ed."
 
+# THERMO-UNC-01: each ± is the source's stated uncertainty, attached ONLY where it shares the VALUE's source, so no
+# record mixes provenance -- the CODATA-sourced values carry their CODATA ± (see experiments.thermo_codata_seed,
+# the frozen cited seed these mirror), the reference-state ΔfH° carries the convention-zero (0 by definition), and a
+# NIST-sourced value with no sourced ± (N2's S°, ammonia, methane) keeps an HONEST None rather than a borrowed ±.
 SEED_THERMO_REFS: tuple[ThermoRef, ...] = (
-    ThermoRef("H2", "hydrogen", 0.0, 130.68, "gas", f"element reference state; S° {_CODATA}"),
-    ThermoRef("O2", "oxygen", 0.0, 205.15, "gas", f"element reference state; S° {_CODATA}"),
-    ThermoRef("N2", "nitrogen", 0.0, 191.61, "gas", f"element reference state; S° {_NIST}"),
-    ThermoRef("H2O", "water", -285.83, 69.95, "liquid", f"ΔfH° and S° (liquid, 298.15 K) {_CODATA}"),
+    ThermoRef("H2", "hydrogen", 0.0, 130.68, "gas", f"element reference state; S° {_CODATA}",
+              uncertainty_dhf_kj=0.0, uncertainty_s_j_per_mol_k=0.003),
+    ThermoRef("O2", "oxygen", 0.0, 205.15, "gas", f"element reference state; S° {_CODATA}",
+              uncertainty_dhf_kj=0.0, uncertainty_s_j_per_mol_k=0.005),
+    ThermoRef("N2", "nitrogen", 0.0, 191.61, "gas", f"element reference state; S° {_NIST}",
+              uncertainty_dhf_kj=0.0),  # ΔfH° = 0 by convention; N2's S° here is NIST-cited with no stated ±
+    ThermoRef("H2O", "water", -285.83, 69.95, "liquid", f"ΔfH° and S° (liquid, 298.15 K) {_CODATA}",
+              uncertainty_dhf_kj=0.040, uncertainty_s_j_per_mol_k=0.03),
     ThermoRef("H3N", "ammonia", -45.9, 192.8, "gas", f"ΔfH° and S° (gas, 298.15 K) {_NIST}"),
-    ThermoRef("CO2", "carbon dioxide", -393.51, 213.79, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}"),
-    ThermoRef("CO", "carbon monoxide", -110.53, 197.66, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}"),
+    ThermoRef("CO2", "carbon dioxide", -393.51, 213.79, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}",
+              uncertainty_dhf_kj=0.13, uncertainty_s_j_per_mol_k=0.010),
+    ThermoRef("CO", "carbon monoxide", -110.53, 197.66, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}",
+              uncertainty_dhf_kj=0.17, uncertainty_s_j_per_mol_k=0.004),
     ThermoRef("CH4", "methane", -74.6, 186.3, "gas", f"ΔfH° and S° (gas, 298.15 K) {_NIST}"),
 )
 

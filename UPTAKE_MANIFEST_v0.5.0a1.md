@@ -114,8 +114,8 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 |---|:---:|:---:|---|---|---|
 | `CANON-KEKULE-01` | P0 | B | **`IMPLEMENTED_AND_VERIFIED`** | Aromatic and explicit-Kekulé spellings of a fused aromatic share one constitution digest; constitutional isomers stay distinct; relabel-invariant (`c126055`+`6a8c5a6`; `tests/test_canon_kekule.py`, `tests/test_stock.py::…kekule`). | shared `_ident` |
 | `ERR-EVIDENCE-01` | P0 | A | **`IMPLEMENTED_AND_VERIFIED`** | A genuine no-record lookup → `UNKNOWN`; an injected internal provider fault → `ERROR_INTERNAL`/exit 70, no raw traceback and no false "conditions unknown". Fixed **both** `assembly_conditions` (the deep root the audit missed) and `_conditions_for`, and (red-team fold `69a1ffd`) the separate `synthesize` CLI's engine catch + its missing top-level exit-70 guard; proven non-vacuous. `1265efe`+`69a1ffd`; `tests/test_err_evidence.py`. | route search, `CLI-EXIT-01` |
-| `IR-STRUCT-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | A first-class typed `StructuralCandidate` rides `ChemicalCompilationIR` (schema `v1alpha5`): parent/product STRUCTURE identities + exact formula, primitive stoichiometry, the capped-scission edit witness (digest + equation), `DECOMPOSE` direction, provider id/version, `FORMAL_CANDIDATE` tier, loss records, and the exact forgetful projection. `decompile_structure_to_ir` emits the structure-preserving decompile (paracetamol's real amide hydrolysis is among the candidates — two distinct witnesses sharing one projection: the IR carries MORE than its formula image); round-trips digest-stably; structural candidates over a non-STRUCTURE target are refused. `0aac8a1`; `tests/test_ir_struct.py`. | `structure_descent`, `IR-CHEM-01` |
-| `IR-FORGET-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | Each structural candidate's stored formula projection MUST equal the forget of its stored structure — recomputed in `StructuralCandidate.__post_init__` from the stored species (a certificate independent of the live scission the producer forgot), byte-for-byte on digest AND equation, commuting through canonical serialization; a tampered projection or a tampered species is REFUSED on read, not coerced (proven non-vacuous by neutering the square). `0aac8a1`; `tests/test_ir_struct.py::TestForgetfulSquare`. The stronger cross-producer reconciliation (audit §7.3 `forget(D_struct(S)) == D_formula(forget(S))`, against the INDEPENDENT formula decomposer's edge set) is a named follow-on. | `IR-STRUCT-01` |
+| `IR-STRUCT-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | A first-class typed `StructuralCandidate` rides `ChemicalCompilationIR` (schema `v1alpha5`): parent/product STRUCTURE identities + exact formula + **canonical molecular graph** (each `StructuralSpecies` carries atoms/bonds/charge/state, so its identity/formula are RE-VERIFIABLE on read — a forged or isomer-swapped structure is refused, not a trusted label; red-team fold), primitive stoichiometry, the capped-scission edit witness (digest + equation), `DECOMPOSE` direction, provider id/version, `FORMAL_CANDIDATE` tier, loss records, and the exact forgetful projection. `decompile_structure_to_ir` emits the structure-preserving decompile (paracetamol's real amide hydrolysis is among the candidates — two distinct witnesses sharing one projection: the IR carries MORE than its formula image); round-trips digest-stably; a candidate whose parent is not the IR target, or on a non-STRUCTURE/non-DECOMPILE IR, is refused. `0aac8a1` + fold `fd10792`; `tests/test_ir_struct.py`. | `structure_descent`, `IR-CHEM-01` |
+| `IR-FORGET-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | The forgetful square is a FORMULA-level invariant enforced across three layers so no single unverified field is load-bearing (red-team fold closed a vacuity where it trusted the structure identity blindly): (1) `StructuralCandidate.__post_init__` recomputes the projection from the stored species FORMULAS and refuses unless it equals the stored projection byte-for-byte (digest AND equation), commuting through serialization, mismatch refused-not-coerced; (2) each species' formula/identity are graph-backed (a forged isomer is refused at the species); (3) the parent is pinned to the IR target. `0aac8a1` + fold `fd10792`; `tests/test_ir_struct.py::{TestForgetfulSquare,TestRedTeamFold}`. Exact PRODUCT-isomer edit-fidelity (beyond formula) is the witness label; the cross-producer reconciliation (audit §7.3 `== D_formula(forget(S))`) and the graph-scission witness replay are named follow-ons. | `IR-STRUCT-01` |
 | `TRANSFORM-PROVIDER-01` | P1 | B | `TODO` | Capped-scission runs **exclusively** through a typed closed provider boundary; the registry digest changes whenever the provider set / id / version / capability manifest changes; provider-local partiality never collapses into a false aggregate "complete". | `IR-STRUCT-01` |
 | `HOLDOUT-RXN-01` | P1 | B | `TODO` | A frozen, family-stratified benchmark (train/dev/**holdout** split) classifies each target: constructible-in-closure / representable-but-unsupported / blocked-by-identity-loss / blocked-by-missing-evidence / incomplete-within-bounds / outside-closure / invalid. Holdout hashes frozen before any provider fitting. | `TRANSFORM-PROVIDER-01` |
 | `CHEM-ALG-01` | P1 | B | `TODO` | ≥1 qualitatively distinct transform family (partial bond-order edit / ionic / redox / ring form-open) registers through `TransformProvider`, composes through **unchanged** core route/DAG search, rides the IR, obeys the forgetful square, is gated by existing evidence/material gates — no bespoke search-engine branch. Stays `FORMAL_CANDIDATE` absent separate evidence. | `HOLDOUT-RXN-01`, `IR-FORGET-01` |
@@ -276,7 +276,35 @@ ripple:        schema v1alpha4 -> v1alpha5 shifts every IR value digest, so the 
                (tests/regen_cli_json.py): each IR-bearing fixture gained "structural_candidates": [] + a new
                result_digest; request_digest unchanged (the field is result, not request); no candidate/equation
                drift; no fixture hand-edited.
-red-team:      blind-bearing workflow to follow (this session); its result is appended on fold.
+red-team:      w2qze2es3 / wf_86c0b53e-dc3 (5 blind orthogonal bearings, refute-by-default verify; 11 agents).
+               6 raw findings -> 4 CONFIRMED, 2 REFUTED.  All four confirmed shared one spine: the STRUCTURE
+               identity was an unverifiable one-way label, so a transported payload could lie about it.  Folded in
+               fd10792; fold suite 3483 passed, 14 skipped, 1 xfailed; 7 regression tests (TestRedTeamFold).
+  CONFIRMED 1 (HIGH, forgetful-square-evasion) + 2 (MEDIUM, serialization-tamper-surface), same root: the forgetful
+               square was VACUOUS on the structure->formula link.  _recompute_projection forgets the stored
+               FORMULAS only; StructuralSpecies stored `structure` (a one-way ChemicalIdentity digest) and `formula`
+               as INDEPENDENT fields with no cross-check.  A payload swapping the parent/product structure identity
+               for a DIFFERENT real isomer (o-acetamidophenol for paracetamol, same formula C8H9NO2) while leaving
+               the formula PASSED the square byte-for-byte AND deserialize_ir -- defeating the exact isomer-level
+               content IR-STRUCT-01 adds over a formula edge, and falsifying the brick's own docstring.  Reproduced
+               on the filesystem myself (accepted pre-fold).  FIX: StructuralSpecies now carries its canonical
+               molecular GRAPH (atoms/bonds/charge/state); __post_init__ rebuilds the Molecule and refuses unless
+               the stored identity AND formula are exactly what that graph is -- the structure identity is no longer
+               a trusted label, it is re-derived.  Species schema v1alpha1 -> v1alpha2.
+  CONFIRMED 4 (HIGH, w3-coherence-scope): a candidate's parent identity was never cross-checked against the IR
+               target, so an IR advertising target X deserialized clean while carrying a decomposition of Y (a
+               same-formula isomer parent passes the formula-level square; ONLY a target pin catches it).  FIX:
+               ChemicalCompilationIR.__post_init__ pins every candidate's parent.structure == target, and guards
+               that structural candidates ride only a STRUCTURE-layer DECOMPILE IR.
+  CONFIRMED 3 (MEDIUM, digest-identity-law): provider_id/version rode only inside each candidate, so an EMPTY
+               structural decompile (methane, no cleavage) laundered the provider out of ir.digest entirely --
+               section 4.1 names "transform/evidence provider version" a semantic input.  FIX: the provider is
+               folded into request_digest, so it is in the IR identity regardless of the candidate set.
+  REFUTED:     (a) "witness_digest/edit_equation are not re-derived" -- correctly a scoped provenance LABEL, no
+               false claim (re-derivation needs the graph-scission replay, the inverse follow-on); (b) "operation
+               not guarded" -- refuted as not-a-false-claim, but the guard was added anyway (cheap coherence).
+  non-vacuous: each confirmed finding reproduced ACCEPTED pre-fold (the isomer swap I reproduced myself) and REFUSED
+               post-fold by tests/test_ir_struct.py::TestRedTeamFold; the honest full IR still round-trips unchanged.
 ```
 
 ## 3. P0 truth-envelope backlog

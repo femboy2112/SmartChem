@@ -1,10 +1,24 @@
-"""G5 -- widened byproduct evidence coverage, sourced under the second-source discipline.
+"""Decomposition-byproduct HAZARD evidence coverage, under the second-source sourcing discipline.
 
 Six common decomposition products (benzene, hydrogen sulfide, acetaldehyde, ethylene, acetylene,
-phenol) are now registered structures carrying sourced hazard records, so a decomposition that
-reaches them attaches real safety data instead of a loud UNKNOWN. These tests prove the coverage is
-live AND honest: every new record names its source, is ESTABLISHED only with corroboration, and pins
-exactly one registered isomer (the isomer-keyed contract).
+phenol) are registered structures carrying sourced hazard records, so a decomposition that reaches
+them attaches real safety data instead of a loud UNKNOWN. These tests prove the coverage is live AND
+honest: every new record names its source, is ESTABLISHED only with corroboration, and pins exactly
+one registered isomer (the isomer-keyed contract).
+
+Gate mapping (this file was formerly ``test_g5_coverage.py`` -- its docstring's informal "G5" collided
+with two unrelated "G5"s; see manifest section 2A.8, the canonical G-numbering cross-reference). What
+it ACTUALLY guards:
+
+  * standard section 16 **G4** (direction and evidence: a sourced record must name real provenance,
+    free-text provenance cannot earn ``KNOWN``, and unsupported evidence fails construction) applied to
+    hazard records; and
+  * it feeds standard section 16 **G7** (missing hazards cannot produce a safety clearance).
+
+It is NOT standard section 16 G5 (stoichiometric invariance and route topology), and NOT manifest
+section 2A.3 G5 (identity monotonicity -- guarded in ``test_identity.py`` / ``test_id_stereo.py`` /
+``test_ir_loss.py``). The rename removes the "G5" token from the filename so a "G5" grep is no longer
+misattributed to this evidence-coverage test.
 """
 
 import pytest

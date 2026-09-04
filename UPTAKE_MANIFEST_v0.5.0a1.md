@@ -212,10 +212,13 @@ blocker;** a structural/AST guard is a named follow-on.
 xfail as `…::TestScheduledProduct::…`, a node-id pytest reports "not found" — corrected to the real enclosing class
 `TestObjectProductAndScheduledProduct` (`tests/test_laws.py:257`). **Doc-hazard flagged (not a false enforcement
 claim):** a tri-modal "G" numbering collision — manifest §2A.3 `G1–G8` (G5 = identity monotonicity) vs standard §16
-`G0–G8` (G5 = byproduct/stoichiometric coverage) vs informal per-test docstring "G" numbers — and
-`tests/test_g5_coverage.py` enforces the STANDARD's G5, NOT manifest-G5 (whose real guards live in
-`test_identity.py` / `test_id_stereo.py` / `test_ir_loss.py`); an auditor grepping "G5" misattributes the guard.
-Relabelling is a named doc-hygiene follow-on (a rename touches a test file, deferred from this doc brick).
+`G0–G8` (G5 = **stoichiometric invariance and route topology**, standard line 774) vs informal per-test docstring
+"G" numbers. The prior flag also mis-stated this: `tests/test_g5_coverage.py` does **not** enforce standard-G5
+either — verified against the code, it tests decomposition-**byproduct hazard** evidence coverage, which is the
+standard's **G4** (evidence/provenance discipline) applied to hazard records and feeds **G7** (safety), matching
+NEITHER "G5". **RESOLVED this brick (2026-09-04, freeze-checklist step 4):** the file is renamed
+`tests/test_byproduct_hazard_coverage.py` (the "G5" token removed from the filename) with a corrected docstring, and
+the canonical **§2A.8 G-numbering cross-reference** below is the single authority a "G5" grep should land on.
 
 **Freeze checklist (the ordered path to a clean alpha RC):**
 
@@ -272,8 +275,91 @@ two behavioral blockers, checklist steps 1–3):**
 
 **Updated verdict (item 1 + item 4):** both behavioral RC blockers are resolved (1) or narrowed to named,
 non-truth-hole alpha limitations (2). The residual freeze-checklist items are the doc-hygiene "G" relabel (4) and
-the final gate/DoD confirmation run (5) — **no behavioral RC blocker remains on Lane A.** G3's architectural
-regression guard stays a named follow-on. The Operator still owns the freeze/tag decision.
+the final gate/DoD confirmation run (5) — **no behavioral RC blocker remains on Lane A.** The Operator still owns
+the freeze/tag decision.
+
+**UPDATE — freeze-checklist steps 4 & the G3 guard closed, step 5 confirmed (2026-09-04, this brick):**
+
+* **G3 architectural regression guard — BUILT (closes the §2A.7 "named follow-on"), then red-team-hardened.**
+  `tests/test_provider_locality.py` (`d100c3e`; AST-based, red-team `evil-morty`, 6 findings, ALL folded pre-commit) asserts:
+  (a) neither core-recursion file (`experiment/routes.py`, `compilation_ir.py`) references a family enumerator, a
+  concrete `*Provider` class, OR a second-recursion entry point (`structure_decompose`/`ionic_decompose`), NOR
+  dynamic-dispatches to a family via a `getattr`/`import_module`/`__import__` STRING (the string-literal fork a bare
+  identifier scan misses; scoped to those call args so `getattr(self, name)` reflection is untouched); (b) the
+  `registry.enumerate` seam is present on a `registry` receiver in each; (c) repo-wide, a family enumerator is
+  referenced in CODE only by its defining module + the provider module(s) that call it. The policed inventory is
+  **DERIVED from the live provider layer** (every `class *(TransformProvider)`; the package-level functions each
+  provider's `enumerate_transforms` calls), so a family #5 lands auto-policed — closing the red-team's silent-drift
+  (F2) and provider-relocation false-red (F3) gaps. AST-based on purpose: a family name in a docstring (as
+  `routes.py` has for `capped_scissions`) is invisible; a real import/call/getattr-string is not. Non-vacuity: the
+  derivation is asserted to rediscover the known 4 families (a floor), and the guard is watched to REDDEN on four
+  planted fork vectors (import+call, module.attr, getattr-string, second-recursion) then GREEN on the clean tree.
+  **Honest boundary (stated, not over-claimed — the red-team's F1):** a static guard CANNOT catch a wholly inline,
+  hand-rolled family written into core with NO shared symbol; that residual is covered by G3's behavioral half (a
+  real family is found only with an extended `registry=`, `tests/test_bond_order_edit.py`) and code review. So G3's
+  architectural "never a rewrite of core recursion" half is now regression-guarded, within a named boundary.
+* **Freeze-checklist step 4 (doc-hygiene "G" relabel) — DONE.** See the corrected doc-hazard note above + **§2A.8**.
+* **Freeze-checklist step 5 (final §16 G0–G8 / §9 DoD confirmation run) — see the item-1c confirmation record after
+  §2A.8.** The freeze/tag itself remains the Operator's call.
+
+### 2A.8 Canonical "G" numbering cross-reference (resolves the tri-modal collision)
+
+Three unrelated numbering schemes share the "G" prefix. **They are independent; a shared number means nothing.**
+This table is the single authority a "G5" (or any "G") grep should land on.
+
+| # | **Standard §16 gate** (release gates for `0.5.0a1`) | **Manifest §2A.3 invariant** (architectural law) |
+|---|---|---|
+| G0 | Baseline and version (suite green; `0.5.0a1` reported consistently across package/CLI/JSON/artifact) | *(no manifest G0)* |
+| G1 | Identity (explicit name/SMILES/InChI/formula paths; same-formula isomers distinct; losses refuse/record) | Semantic request law (equal semantic request digests ⇒ same search/policies) |
+| G2 | Search receipt (every result has a receipt; low caps ⇒ incomplete; only complete-empty ⇒ NO_ROUTE) | Structural forgetful square (every structural decompile projects to a valid formula-level transform) |
+| G3 | Terminal policy (an exact terminal is not decomposed; commodities-off blocks shortcuts) | **Provider locality** (a new family = provider + tests + registry inclusion, **never** a core-recursion rewrite) — guarded by `tests/test_provider_locality.py` |
+| G4 | Direction and evidence (decomp conditions don't attach to reversed assembly; no isomer borrow; free-text can't earn KNOWN) | Search honesty (provider exhaustion/budgets/rejections never vanish into one aggregate "complete") |
+| G5 | **Stoichiometric invariance and route topology** (R≡nR intensive; scale-invariant lookups; spectators don't connect; DAG fan-out can't mint) | **Identity monotonicity** (a claim uses only layers its path perceived; forgetting a layer may weaken/refuse, never strengthen) |
+| G6 | Material and affordability honesty (identity-only ⇒ no invented amount/ceiling/price; unknown costs stay unknown) | Evidence separation (a formal transform witness ≠ a sourced reaction record; algebraic reversal doesn't reverse conditions) |
+| G7 | Dossier readiness and safety (route dossier not full procedure; missing hazards can't clear safety) | Material non-substitutability (a structural identity match ≠ a stock-material fitness match) |
+| G8 | CLI/service unity (aliases serialize equal requests under equal flags; no verb networks by default; codes/diagnostics) | Failure separation ("unknown evidence" / "unsupported model" / "incomplete search" / "invalid input" / "internal failure" stay distinct) |
+
+**Guarding tests (verified this brick, not asserted):** **manifest §2A.3**-G3 provider-locality (NOT standard-G3, which is terminal policy) → `tests/test_provider_locality.py`;
+manifest-G5 identity-monotonicity → `tests/test_identity.py` / `tests/test_id_stereo.py` (loss records → `tests/test_ir_loss.py`);
+decomposition-byproduct hazard evidence (standard-G4 applied to hazards, feeds standard-G7) → `tests/test_byproduct_hazard_coverage.py`
+(**formerly `test_g5_coverage.py`** — the renamed file whose old "G5" self-label caused the collision). The remaining
+gates are guarded distributedly across the suite and the standard §17 falsification matrix; this table fixes the
+NAME collision, it does not claim a single file per gate where the guard is genuinely distributed.
+
+### 2A.9 Item-1c: the final §16 G0–G8 / §9 DoD confirmation run (2026-09-04)
+
+Freeze-checklist step 5. This is a **confirmation of readiness**, not the freeze — the freeze/tag remains the
+Operator's call. Every claim below was checked against the code/run this brick, not asserted.
+
+**Suite (the final tree, `.venv`, `-p no:cacheprovider`, exit 0):** `3650 passed, 14 skipped, 1 xfailed`
+(`suite_item1c.log`; +11 vs the 3639 base = the new `tests/test_provider_locality.py`; the 1 xfail is the
+interchange-law architecture debt of §2A.4, off the compiler path — not an RC blocker).
+
+**Standard §16 gates G0–G8:**
+
+| Gate | Standard §16 name | Confirmation |
+|---|---|---|
+| G0 | Baseline and version | `0.5.0a1` reported consistently — package `__version__`, `python -m smartchem --version` (`smartchem 0.5.0a1`), `pyproject.toml`, and the `--json` fixtures all agree; `python -m smartchem` and the console script share one `__version__` (`cli.py:569`). Suite green. |
+| G1 | Identity | explicit name/SMILES/InChI/formula paths (`ID-PARSE-01` ✓); same-formula isomers distinct (`CANON-KEKULE-01` ✓); losses refuse/record (`ID-LAYER`/`ID-STEREO` ✓). |
+| G2 | Search receipt | every result carries a receipt; low caps ⇒ incomplete; complete-empty ⇒ `NO_ROUTE_IN_DECLARED_SPACE`; inventory order digest-invariant (`SRCH-RCT-8.1`, `SRCH-DIG-01`/`TestInventoryOrderInvariance` ✓). |
+| G3 | Terminal policy | exact terminal not decomposed; commodities-off blocks shortcuts; structure search never terminates on formula-only isomer equality (`TERM-POL`/`terminal_policy` tests ✓). |
+| G4 | Direction and evidence | reversed assembly doesn't inherit decomposition conditions; no same-formula isomer borrow; free-text can't earn `KNOWN`; unsupported evidence fails construction (`EVD-KEY-01`, `G4`/evidence tests ✓). |
+| G5 | Stoichiometric invariance and route topology | R≡nR intensive; scale-invariant lookups; spectators don't connect; DAG fan-out can't mint (`DAG-FLOW-01` exact LP; §17 primitive-invariance/linear-continuity probes ✓). |
+| G6 | Material and affordability honesty | identity-only ⇒ no invented amount/ceiling/price; unknown costs stay unknown (`STOCK-01`/`SHOP-LEAF-02`/`sourcing` ✓). **`affordability_frontier` stays present-and-empty** — a named, honest alpha limitation until `COST-VEC-01` (§2A.1 Lane C). |
+| G7 | Dossier readiness and safety | sparse output renders as a route dossier, not a runnable procedure; missing hazards can't clear safety; no auto-`PROCEED_UNATTENDED` (`handling`/dossier tests ✓). |
+| G8 | CLI/service unity | aliases serialize equal requests under equal flags **incl. `synthesize`** (item 1, the live `test_synthesize_is_request_equal_to_recompile_G8` pass); no verb networks by default (`--network` opt-in); §14.4 codes; concise domain diagnostics; human/JSON agree (`CLI-CAN-01`/`CLI-EXIT-01`/`CLI-ERR-01`/`CLI-JSON-01` ✓). |
+
+**Manifest §9 Alpha-DoD:** every P0 row is `IMPLEMENTED_AND_VERIFIED` or carries a recorded narrower alpha contract
+(§2A.7 item-1+4 UPDATE); the full non-optional suite + new adversarial tests pass; canonical and legacy CLIs use the
+one typed service + version; incomplete never looks complete and incomplete-empty never reads as proof-of-absence
+(§9 bullet 5, retested); reverse equations don't inherit forward evidence; scaling can't change intensive verdicts;
+identity-only commodities invent no purity/quantity/price/fitness; sparse output is a dossier with missing operations
+visible; no route is auto-authorized safe/unattended. The **release-declaration** bullet ("true for every public code
+path") and the affordability/dated-provider-snapshot items are the named, honest alpha limitations (Lane C /
+`COST-VEC-01`, and the §13.2 dated snapshot §16-G8 records as separate-and-open) — not truth holes.
+
+**Verdict:** no behavioral RC blocker remains on Lane A; freeze-checklist steps 1–5 are addressed. The alpha RC
+freeze/tag is the Operator's to cut.
 
 **Uptake record — ERR-EVIDENCE-01, the reoriented Lane-A first brick** (`ERR-EVIDENCE-01` `TODO` →
 `IMPLEMENTED_AND_VERIFIED`; the failure/unknown separation the audit's §10 / G8 demands):

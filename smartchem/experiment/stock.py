@@ -39,7 +39,7 @@ __all__ = [
 STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha1"
 MATERIAL_COMPONENT_SCHEMA = "smartchem.experiment/material-component-v1alpha1"
 STOCK_QUANTITY_SCHEMA = "smartchem.experiment/stock-quantity-v1alpha1"
-COST_OBSERVATION_SCHEMA = "smartchem.experiment/cost-observation-v1alpha1"
+COST_OBSERVATION_SCHEMA = "smartchem.experiment/cost-observation-v1alpha2"
 
 _FRACTION_EPS = 1e-9
 
@@ -210,14 +210,19 @@ class CostObservation(Digestible):
     """A DATED, SOURCED price observation (section 10.4: prices MUST be dated and sourced; the compiler MUST NOT
     invent a price).
 
-    There is deliberately no way to construct one without an amount, currency, observation date, and source: an
-    unpriced material carries ``cost_observation=None`` (UNKNOWN), never a guessed number.  ``region`` is the one
+    There is deliberately no way to construct one without an amount, currency, unit, observation date, and source:
+    an unpriced material carries ``cost_observation=None`` (UNKNOWN), never a guessed number.  ``region`` is the one
     optional field (an empty string means unspecified market).
+
+    ``unit`` is the price DENOMINATOR (what one ``amount`` buys, e.g. ``"metric ton"``).  Section 9.2 requires the
+    reported value's units to be retained -- a bare number is nonconformant -- so ``amount`` + ``currency`` + ``unit``
+    together are the full price ("52.95 USD per metric ton"), never just a scalar with an implied basis.
     """
 
     schema_version: str
     amount: str
     currency: str
+    unit: str
     observed_date: str
     source: str
     region: str = ""
@@ -225,7 +230,7 @@ class CostObservation(Digestible):
     def __post_init__(self) -> None:
         if self.schema_version != COST_OBSERVATION_SCHEMA:
             raise ValueError(f"schema_version must be exactly {COST_OBSERVATION_SCHEMA!r}")
-        for name in ("amount", "currency", "observed_date", "source"):
+        for name in ("amount", "currency", "unit", "observed_date", "source"):
             v = getattr(self, name)
             if not isinstance(v, str) or not v.strip():
                 raise ValueError(
@@ -243,13 +248,17 @@ class CostObservation(Digestible):
 
     @classmethod
     def of(
-        cls, amount: "str | int | float", currency: str, observed_date: str, source: str, region: str = ""
+        cls, amount: "str | int | float", currency: str, unit: str, observed_date: str, source: str,
+        region: str = "",
     ) -> "CostObservation":
-        return cls(COST_OBSERVATION_SCHEMA, str(amount), currency, observed_date, source, region)
+        return cls(COST_OBSERVATION_SCHEMA, str(amount), currency, unit, observed_date, source, region)
 
     def render(self) -> str:
         where = f", {self.region}" if self.region else ""
-        return f"{self.amount} {self.currency} (observed {self.observed_date}{where}; source: {self.source})"
+        return (
+            f"{self.amount} {self.currency}/{self.unit} (observed {self.observed_date}{where}; "
+            f"source: {self.source})"
+        )
 
 
 @dataclass(frozen=True)
@@ -392,6 +401,11 @@ def stock_material_from_commodity(commodity: "object") -> StockMaterial:
     from ..data.reagents import CommodityReagent
     if type(commodity) is not CommodityReagent:
         raise TypeError("stock_material_from_commodity needs a smartchem.data.reagents.CommodityReagent")
+    # COST-VEC-01: attach a dated, SOURCED bulk price where one exists (lazy import breaks the stock<->pricing cycle;
+    # commodity_pricing already keys on the canonical structure via commodity_for, so no same-formula isomer borrows a
+    # price).  An unpriced commodity keeps cost_observation=None -- honest UNKNOWN, never a fabricated number (10.4).
+    from .commodity_pricing import cost_observation_for
+    cost = cost_observation_for(commodity.molecule)
     # keyed by canonical STRUCTURE (ID-LAYER-01), not the commodity NAME: this is the LIVE default-data path, so a
     # commodity material is matched against a route/shopping Molecule the sound way -- and never satisfies a query
     # for a same-formula isomer.  The human name still rides along as the display name and provenance.
@@ -406,5 +420,6 @@ def stock_material_from_commodity(commodity: "object") -> StockMaterial:
             f"availability {commodity.availability.value!r} is a curated editorial obtainability judgment, not an "
             "assay -- a SOURCE LEAD, not a proven material (section 10.1). Assay, purity, phase and grade are UNKNOWN."
         ),
+        cost_observation=cost,
         formulation_notes=(f"everyday source: {commodity.common_source}",),
     )

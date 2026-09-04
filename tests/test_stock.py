@@ -123,7 +123,7 @@ class TestFullSchemaFields:
             container_and_storage="amber glass, ambient",
             opened_or_age_state="unopened",
             jurisdiction_and_availability="US, general laboratory supply",
-            cost_observation=CostObservation.of("42.50", "USD", "2026-08-31", "vendor catalogue X"),
+            cost_observation=CostObservation.of("42.50", "USD", "each", "2026-08-31", "vendor catalogue X"),
             known_impurities=("water",),
             formulation_notes=("glacial (>99%)",),
         )
@@ -158,17 +158,19 @@ class TestFullSchemaFields:
 
     def test_cost_observation_cannot_be_built_without_being_dated_and_sourced(self):
         # section 10.4: prices MUST be dated and sourced; an unpriced material uses cost_observation=None.
-        for missing in ("amount", "currency", "observed_date", "source"):
-            kwargs = {"amount": "1", "currency": "USD", "observed_date": "2026-01-01", "source": "vendor X"}
+        for missing in ("amount", "currency", "unit", "observed_date", "source"):
+            kwargs = {"amount": "1", "currency": "USD", "unit": "each", "observed_date": "2026-01-01",
+                      "source": "vendor X"}
             kwargs[missing] = "   "
             with pytest.raises(ValueError):
-                CostObservation.of(kwargs["amount"], kwargs["currency"], kwargs["observed_date"], kwargs["source"])
+                CostObservation.of(kwargs["amount"], kwargs["currency"], kwargs["unit"], kwargs["observed_date"],
+                                   kwargs["source"])
 
     def test_cost_observation_refuses_a_negative_or_nonnumeric_amount(self):
         with pytest.raises(ValueError, match="amount"):
-            CostObservation.of("-1", "USD", "2026-01-01", "vendor X")
+            CostObservation.of("-1", "USD", "each", "2026-01-01", "vendor X")
         with pytest.raises(ValueError, match="amount"):
-            CostObservation.of("cheap", "USD", "2026-01-01", "vendor X")
+            CostObservation.of("cheap", "USD", "each", "2026-01-01", "vendor X")
 
     def test_impurities_and_notes_must_be_tuples_of_nonempty_strings(self):
         with pytest.raises(TypeError, match="known_impurities"):
@@ -201,7 +203,7 @@ class TestFullSchemaFields:
         with pytest.raises(ValueError, match="schema_version"):
             StockQuantity("wrong", "5", "g")
         with pytest.raises(ValueError, match="schema_version"):
-            CostObservation("wrong", "1", "USD", "2026-01-01", "vendor X")
+            CostObservation("wrong", "1", "USD", "metric ton", "2026-01-01", "vendor X")
 
 
 class TestCommodityBridge:

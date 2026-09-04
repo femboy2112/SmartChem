@@ -104,7 +104,7 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 
 | Lane | Finish line | State |
 |---|---|---|
-| **A — Alpha conformance** | A truthful bounded compiler conforming to `v0.5.0a1`. | **Near.** Shared IR, typed request/response, search receipts, identity/evidence gates, exact DAG flow + inverse shopping, `StockMaterial`, fail-closed errors all landed. Remaining: `ERR-EVIDENCE-01`, the final P0 integrations, a clean RC freeze. |
+| **A — Alpha conformance** | A truthful bounded compiler conforming to `v0.5.0a1`. | **Near.** Shared IR, typed request/response, search receipts, identity/evidence gates, exact DAG flow + inverse shopping, `StockMaterial`, fail-closed errors all landed. Remaining: the final P0 integrations and a clean RC freeze (`ERR-EVIDENCE-01` is **DONE** — §2A.2 marks it `IMPLEMENTED_AND_VERIFIED`; the RC-readiness audit §2A.7 enumerates the actual remaining blockers). |
 | **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **Thesis DEMONSTRATED, loop CLOSED, coverage MEASURED.** `CANON-KEKULE-01`, `IR-STRUCT-01`, `IR-FORGET-01`, `TRANSFORM-PROVIDER-01`, `CHEM-ALG-01` are **DONE**. `IR-REPLAY-01` (the witness is a re-verifiable graph edit) and `IR-INVERT-01` (a STRUCTURE artifact reconstitutes its target with NO caller structure) closed the decompile→recompile loop at the graph level (`846e8bc`). `CHARGED-ALG-01` added the **first charged family** (heterolytic scission) with a charge-carrying `ChargedDecompositionEdge` forget — the algebra now reaches past neutral rewrites. `HOLDOUT-RXN-01` **froze the family-stratified coverage benchmark** and MEASURES the payoff (default capped 8/18, +bond-order +2, +heterolytic +5, 3/18 genuinely outside-closure). **All named Lane-B follow-ons now landed**: redox `757aeb4` (item 1), the recompile-IR registry threading `c70afc7` (item 4), the bond-order structure-rebuilding inverse `65af346` (item 3a); item 3b (the graph-scission witness replay for products) was already under `IR-REPLAY-01`. The algebra now spans **four qualitatively distinct families** through the unchanged core search — neutral capped scission, neutral bond-order edit, charged heterolytic scission, and charge-only redox (the chem↔EM bridge). |
 | **C — Bench readiness** | `ProcedureIR`, quantities, assays, operations, process hazards, analytical acceptance, waste, equipment ratings, qualified review. | **Deliberately outside the alpha.** `TERM-MAT-01` down-paid by `sourcing.plan_sourcing`; `COST-VEC-01` blocked on real data; `ProcedureIR` deferred. The `FORMAL_CANDIDATE` floor stays immovable until these obligations exist. |
 
@@ -143,7 +143,8 @@ These govern by law, not by feature name. A violation is a compiler bug or an ex
 
 | xfail | Requirement | Exact test | Scope | Reason | Removal condition | Blast radius |
 |---|---|---|---|---|---|---|
-| Interchange law | (architecture debt; unassigned to a lane) | `tests/test_laws.py::TestScheduledProduct::test_true_parallel_interchange_is_architecture_debt` | The categorical interchange law `(f∘g)⊗(k∘ℓ) == (f⊗k)∘(g⊗ℓ)` for true independent parallel events. | Linear reaction histories cannot quotient independent concurrent events by interchange. | A non-linear (partial-order / true-concurrency) history representation. | Contained to `scheduled_product`/`then`; does **not** touch identity, routes, DAGs, or any audit lane. |
+| Interchange law | (architecture debt; unassigned to a lane) | `tests/test_laws.py::TestObjectProductAndScheduledProduct::test_true_parallel_interchange_is_architecture_debt` | The categorical interchange law `(f∘g)⊗(k∘ℓ) == (f⊗k)∘(g⊗ℓ)` for true independent parallel events. | Linear reaction histories cannot quotient independent concurrent events by interchange. | A non-linear (partial-order / true-concurrency) history representation. | Contained to `scheduled_product`/`then`; does **not** touch identity, routes, DAGs, or any audit lane. |
+| `synthesize` alias G8 | Lane A (standard §14.1 alias-unity / §16 gate G8) | `tests/test_cli_canonical.py::TestCommandMatrixEqualRequestJson::test_synthesize_is_request_equal_to_recompile_G8` | `synthesize <t> --emit-request` MUST equal `recompile <t> --emit-request` (same typed request, no divergent defaults). | The legacy `synthesize` alias keeps divergent defaults (max_depth 2 vs 3, commodities off vs on, provider NETWORK vs OFFLINE, EXPLICIT vs DEFAULT origins) — live-verified. Added (item 2) as a VISIBLE guard so the violation is no longer vacuously green (the compile/recompile matrix never ran `synthesize`). | An Operator decision: align `synthesize`'s defaults to `build_recompile_request` (erasing its distinct download-and-go behavior) OR revise the §14.1/§822 alias mandate. `strict=True`, so its resolution XPASS-fails the guard, forcing the xfail's removal. | **RC blocker** for Lane A (§2A.7); no truth-hole (the divergence is a defaults/labelling gap, not a wrong answer). |
 
 The `CANON-KEKULE-01` strict xfail that existed at the audit base (`4774a26`, the second of "2 xfailed") is **removed** — the fix landed, dropping the count to 1.
 
@@ -160,6 +161,75 @@ The `CANON-KEKULE-01` strict xfail that existed at the audit base (`4774a26`, th
 `IR-STRUCT-01` → `IR-FORGET-01` → `TRANSFORM-PROVIDER-01` → freeze `HOLDOUT-RXN-01` → `CHEM-ALG-01`
 (first diverse provider) → `TERM-MAT-01` (production wiring) → **alpha RC when Lane A is green** →
 `ProcedureIR` only under the separate Lane-C bench-readiness contract.
+
+### 2A.7 Lane-A RC-readiness assessment (item 2, 2026-09-04)
+
+**Verdict: NOT ready for an alpha RC freeze.** A read-only multi-bearing audit (workflow `wv1svy3pt`) mapped the
+§3 P0 rows against the code, judged the §2A.3 invariants for non-vacuous enforcement, and checked the §9 DoD;
+**every load-bearing claim below was then independently reproduced against the filesystem**, not taken on the
+audit's word. The truth-honesty core is genuinely solid — but three RC conditions fail.
+
+**RC blockers (verified):**
+
+1. **G8 / standard §14.1 alias-unity — RED (behavioral, live-confirmed).** The standard (§14.1 lines 662–663,
+   release gate §16 G8, the §17 CLI-unity probe) mandates that the legacy alias `synthesize` "MUST construct the
+   same typed request as `recompile` and MUST NOT keep divergent defaults." It does not: `synthesize <t>
+   --emit-request` vs `recompile <t> --emit-request` differ in `search_bounds.max_depth` (2 vs 3),
+   `terminal_policy.commodities_enabled` (false vs true), `evidence_provider_selection` (DEFAULT_NETWORK vs
+   DEFAULT_OFFLINE), and per-field `origins` (EXPLICIT vs DEFAULT) — reproduced live via `--emit-request`. And it
+   is **vacuously green**: `tests/test_cli_canonical.py::TestCommandMatrixEqualRequestJson` loops only
+   `compile`-vs-`recompile` (both on the one `_add_recompile_flags` builder) and NEVER invokes `synthesize` — so
+   the full suite passes OVER the violation ([[vacuous-green-over-an-empty-subject]]). This brick adds a **live
+   xfail guard** (`test_synthesize_is_request_equal_to_recompile_G8`) that runs `synthesize` through the
+   equal-request assertion, making the violation VISIBLE and tracked (an XPASS will flag its resolution).
+   **The FIX is an Operator design decision, deliberately not taken here:** either align `synthesize`'s defaults to
+   `recompile`'s — which ERASES `synthesize`'s distinct download-and-go (network), poor-man's-commodity, and
+   shallow-depth defaults, i.e. makes it a pure alias, and revises the `--offline`/`--poor-mans` flag semantics —
+   OR formally revise the standard's "synthesize is an alias" mandate (§822). Both change user-facing behavior or
+   the standard, so they are the Operator's call, not a unilateral tail-of-round edit.
+
+2. **§9 DoD bullet 1 — UNMET (open Lane-A P0 rows, no recorded narrowing).** In §3, `SRCH-NO-01` (no renderer
+   surfaces the four-outcome no-route matrix uniformly), `SRCH-DIG-01` (no shared cross-path request/result digest
+   beyond the formula path), and the CLI/service rows `SVC-REQ-01`, `CLI-CAN-01`, `CLI-EXIT-01`, `CLI-ERR-01`,
+   `CLI-JSON-01` are all `IN_PROGRESS`. Bullet 1 requires each P0 either `IMPLEMENTED_AND_VERIFIED` or a recorded
+   narrower release contract; only `ID-PARSE-01` was reconciled (§2A.5). The underlying truth-honesty already holds
+   on the tested public paths (incomplete never looks complete; incomplete-empty never reads as proof of absence —
+   §9 bullet 5, independently confirmed), so the residual is uniform four-outcome LABELING and cross-path request
+   identity, not a truth hole — but the rows must be closed or narrowed before a freeze.
+
+**Invariant enforcement (audit bearing 2, spot-verified):** the §2A.3 invariants G1/G2/G4/G5/G6/G7/G8 are
+non-vacuously enforced by live tests (each has a test that reproduces the exact failure mode it forbids). The one
+gap is **G3 (provider locality)**: its operational half is proven (a new family composes through the UNCHANGED
+search, found only with an extended `registry=`), but its architectural "never a rewrite of core recursion" half
+is demonstrated once, not regression-guarded — the current core seams (`experiment/routes.py`, `compilation_ir.py`
+`decompile_structure_to_ir`) all route through `registry.enumerate`, so the code obeys G3 today. **Not an RC
+blocker;** a structural/AST guard is a named follow-on.
+
+**Doc-truth defects fixed this brick:** (a) §2A.1 listed `ERR-EVIDENCE-01` under "Remaining" though §2A.2 marks it
+`IMPLEMENTED_AND_VERIFIED` and `tests/test_err_evidence.py` passes — corrected; (b) §2A.4 cited the interchange
+xfail as `…::TestScheduledProduct::…`, a node-id pytest reports "not found" — corrected to the real enclosing class
+`TestObjectProductAndScheduledProduct` (`tests/test_laws.py:257`). **Doc-hazard flagged (not a false enforcement
+claim):** a tri-modal "G" numbering collision — manifest §2A.3 `G1–G8` (G5 = identity monotonicity) vs standard §16
+`G0–G8` (G5 = byproduct/stoichiometric coverage) vs informal per-test docstring "G" numbers — and
+`tests/test_g5_coverage.py` enforces the STANDARD's G5, NOT manifest-G5 (whose real guards live in
+`test_identity.py` / `test_id_stereo.py` / `test_ir_loss.py`); an auditor grepping "G5" misattributes the guard.
+Relabelling is a named doc-hygiene follow-on (a rename touches a test file, deferred from this doc brick).
+
+**Freeze checklist (the ordered path to a clean alpha RC):**
+
+1. Resolve the `synthesize` G8 decision (align defaults to `build_recompile_request`, OR revise the §14.1/§822
+   alias mandate). Then flip the xfail guard to a passing equal-request assertion covering `synthesize`.
+2. Close `SRCH-NO-01` (uniform four-outcome no-route matrix across all renderers + `--json`) and `SRCH-DIG-01`
+   (shared cross-path request/result digest beyond the formula path) — OR record the narrower release contract §9
+   bullet 1 permits and mark them explicit named alpha limitations; flip the status rows only in the closing commit
+   with test evidence.
+3. Reconcile the residual Lane-A CLI/service P0 rows (`SVC-REQ-01`, `CLI-CAN-01`, `CLI-EXIT-01`, `CLI-ERR-01`,
+   `CLI-JSON-01`): promote each to `IMPLEMENTED_AND_VERIFIED` or record the narrowing for any deferred scope.
+4. Relabel `test_g5_coverage.py` / annotate the tri-modal "G" numbering so a "G5" grep is not misattributed.
+5. Confirm every standard §16 gate `G0–G8` passes (G8 now green) and every §9 DoD bullet is satisfied or explicitly
+   narrowed; re-run the full non-optional suite; only THEN cut the RC freeze/tag.
+
+The interchange-law xfail (§2A.4) is contained architecture debt off the compiler path — NOT an RC blocker.
 
 **Uptake record — ERR-EVIDENCE-01, the reoriented Lane-A first brick** (`ERR-EVIDENCE-01` `TODO` →
 `IMPLEMENTED_AND_VERIFIED`; the failure/unknown separation the audit's §10 / G8 demands):
@@ -643,6 +713,37 @@ result:        3583 passed, 14 skipped, 1 xfailed (baseline 3563; +20 the redox 
 next:          Lane B's four-family algebra is complete for this arc. The genericity thesis stands: neutral capped
                scission, neutral bond-order edit, charged heterolytic scission, and charge-only redox all compose
                through the UNCHANGED core search and IR, each obeying the forgetful square + graph replay + inverse.
+```
+
+**Red-team fold — item 1 / REDOX-ALG-01** (blind-bearing workflow `we968mh0o`, 5 attack bearings × refute-by-default
+verify, 9 agents; **1 CONFIRMED MEDIUM**, reproduced on the filesystem before folding; 4 bearings clean):
+
+```text
+CONFIRMED (1 MEDIUM: an unbounded-electrons DoS on the public deserialize path):
+  The redox electron count was validated only with a LOWER bound (>= 1) at RedoxHalfReaction.__post_init__ and the
+  StructuralWitness REDOX branch, and the charge certificate is TAUTOLOGICAL in n (oxidized.charge = reduced.charge
+  + n makes "oxidized.charge - n == reduced.charge" hold for ANY n). The provider's max_electrons ceiling bounds
+  only ENUMERATION, not the read path -- the codebase's own "injectable-but-not-live-guard" anti-pattern. So a
+  crafted serialized artifact carrying electrons=10**18 passed the schema check, the field discipline, the witness
+  graph-replay, the forgetful-square recompute, AND the witness_digest check (none of which touch the LAZY
+  .products), and only THEN materialized a (ELECTRON,)*n tuple in the product-multiset checks -> a MemoryError
+  (hard crash) or a slow-burn CPU DoS from a ~3.5 KB payload, reachable through the public deserialize_ir boundary
+  (the IR-INVERT-01 / recompile_structure_from_serialized transport path). Reproduced here: n=2,000,000 constructs
+  in ~0s (lower-bound-only) and .products materializes 2M items -- linear -> OOM at 10**18.
+  FIX (structure_descent.py): a LIVE physical UPPER bound -- no atom exceeds the +8 oxidation state (Os/Ru/Xe), so
+  a species of A atoms sheds at most 8*A electrons. Enforced at the RedoxHalfReaction CERTIFICATE (electrons <=
+  8*len(reduced.atoms)), so it holds on EVERY construction incl. replay/deserialize, BEFORE .products is touched
+  (the RedoxHalfReaction/witness __post_init__ never access the lazy .products). redox_couples caps its range at
+  min(max_electrons, 8*atoms) so the enumerator and the certificate agree. No schema/serialized-shape change.
+non-vacuous:   reproduced pre-fold (n=2M accepted, .products = 2M items); post-fold n=10**18 in a serialized witness
+  is REFUSED instantly on deserialize_ir (ScissionError, before any tuple materialization). Pinned by
+  tests/test_redox_family.py::TestRedTeamFold (the bound at the certificate for Na/NO; the deserialize attack
+  refused fast; redox_couples capped at the ceiling).
+REFUTED/clean: the other 4 bearings (redox conservation/forgetful-square, redox graph-replay + inverse vacuity,
+  bond-order inverse over rings/multi-bond/higher-order, provider opt-in isolation & no-forced-route-recursion)
+  found no defect -- the core soundness held.
+commit:        071f4ba (fix)   |   suite 3586 passed, 14 skipped, 1 xfailed (fold-only; the item-2 G8 xfail
+               guard lands separately -> 2 xfailed). EXIT=0. ruff clean.
 ```
 
 ## 3. P0 truth-envelope backlog

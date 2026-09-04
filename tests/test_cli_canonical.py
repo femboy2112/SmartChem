@@ -55,6 +55,27 @@ class TestCommandMatrixEqualRequestJson:
         assert compile_out.strip(), "emit-request must print the request JSON"
         assert compile_out == recompile_out  # byte-identical -- the whole point of one shared request builder
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "G8 / standard 14.1 alias-unity BLOCKER (manifest 2A.7): the legacy `synthesize` alias keeps DIVERGENT "
+            "defaults vs `recompile` (max_depth 2 vs 3, commodities off vs on, provider NETWORK vs OFFLINE, EXPLICIT "
+            "vs DEFAULT origins), violating 14.1's 'MUST construct the same typed request ... MUST NOT keep divergent "
+            "defaults' and release gate 16.G8. The compile-vs-recompile matrix above NEVER runs `synthesize`, so the "
+            "suite was vacuously green over the one alias the requirement names; this guard makes the violation "
+            "VISIBLE (an XPASS flags its resolution). Closing it is an Operator design decision (align synthesize's "
+            "defaults -- erasing its distinct download-and-go behavior -- or revise the 14.1/822 alias mandate)."
+        ),
+    )
+    def test_synthesize_is_request_equal_to_recompile_G8(self, capsys):
+        # standard 14.1 (lines 662-663) + release gate 16.G8 + the 17 CLI-unity probe: `synthesize` MUST construct
+        # the SAME typed request as `recompile` under equal flags. It currently does NOT -- this guard runs
+        # `synthesize` through the equal-request assertion the compile/recompile matrix never covered.
+        _, synth_out, _ = _run(capsys, ["synthesize", "paracetamol", "--emit-request"])
+        _, recompile_out, _ = _run(capsys, ["recompile", "paracetamol", "--emit-request"])
+        assert synth_out.strip() and recompile_out.strip(), "emit-request must print the request JSON"
+        assert synth_out == recompile_out
+
     def test_emit_request_is_deterministic(self, capsys):
         _, a, _ = _run(capsys, ["recompile", "paracetamol", "--emit-request"])
         _, b, _ = _run(capsys, ["recompile", "paracetamol", "--emit-request"])

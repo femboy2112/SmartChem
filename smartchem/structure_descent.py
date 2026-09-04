@@ -66,6 +66,7 @@ __all__ = [
     "CappedScission",
     "HeterolyticScission",
     "ChargedDecompositionEdge",
+    "ElectronTransferEdge",
     "RedoxHalfReaction",
     "IonicEdges",
     "StructureDecompositionGraph",
@@ -1330,6 +1331,59 @@ def heterolytic_scissions(molecule: Molecule) -> tuple[HeterolyticScission, ...]
 # G4 -- redox (electron-transfer) half-reactions and the unified ionic edge view
 # ======================================================================================
 @dataclass(frozen=True)
+class ElectronTransferEdge(Digestible):
+    """A composition-level ELECTRON-TRANSFER (redox) edge ``n . reduced(q) -> n . oxidized(q+e) + (n*e) e-``,
+    conserving mass (electrons are massless) AND charge -- the forget target of a :class:`RedoxHalfReaction` and the
+    chemical<->EM bridge.  It is the ionic analogue of a scission's :class:`ChargedDecompositionEdge`, but the
+    conserved thing on the RHS besides the (single) oxidised species is CHARGE carried by electrons, not a second
+    atomic fragment.
+
+    An electron has no atoms, so it can NEVER be a :class:`~smartchem.decompiler.Formula` (``Formula.of`` refuses an
+    atom-less species) -- hence the transferred electrons ride as an explicit integer ``electrons`` count (per
+    reactant unit), NOT a product formula.  ``oxidized`` carries the SAME atoms as ``reactant`` (a redox step moves
+    electrons; it makes and breaks no bonds) and a charge raised by ``electrons`` per unit.  Reagentless.
+
+    W3 unchanged: the composition-level image of a charge-and-mass-consistent electron transfer, never a claim the
+    oxidation occurs, at what potential, or that the oxidation state is accessible (physical selectivity the engine
+    enumerates)."""
+
+    reactant: Formula
+    reactant_multiplicity: int
+    oxidized: Formula
+    electrons: int
+
+    def __post_init__(self) -> None:
+        if type(self.reactant) is not Formula or type(self.oxidized) is not Formula:
+            raise ScissionError("reactant and oxidized must be Formulas")
+        if type(self.reactant_multiplicity) is not int or self.reactant_multiplicity < 1:
+            raise ScissionError("reactant_multiplicity must be an int >= 1")
+        if type(self.electrons) is not int or self.electrons < 1:
+            raise ScissionError("an electron-transfer edge moves at least one electron")
+        # mass: an electron is massless, so the oxidised species carries EXACTLY the reactant's atoms (per unit).
+        if dict(self.reactant.counts) != dict(self.oxidized.counts):
+            raise ScissionError(
+                f"mass not conserved in the electron-transfer edge: oxidized atoms {dict(self.oxidized.counts)} "
+                f"!= reactant {dict(self.reactant.counts)} (a redox step moves electrons, not atoms)"
+            )
+        # charge: oxidising by n electrons raises the charge by n (per unit); the n electrons carry -n.
+        if self.oxidized.charge - self.electrons != self.reactant.charge:
+            raise ScissionError(
+                f"charge not conserved in the electron-transfer edge: oxidized {self.oxidized.charge} - "
+                f"{self.electrons} e- != reactant {self.reactant.charge}"
+            )
+
+    def equation(self) -> str:
+        def _term(f: Formula, m: int) -> str:
+            return f"{m} {f!r}" if m > 1 else repr(f)
+        total_e = self.electrons * self.reactant_multiplicity
+        e = f"{total_e} e-" if total_e > 1 else "e-"
+        return (
+            f"{_term(self.reactant, self.reactant_multiplicity)} -> "
+            f"{_term(self.oxidized, self.reactant_multiplicity)} + {e}"
+        )
+
+
+@dataclass(frozen=True)
 class RedoxHalfReaction(Digestible):
     """One electron-transfer half-reaction: ``reduced -> oxidized + n e-`` (an OXIDATION).
 
@@ -1381,6 +1435,27 @@ class RedoxHalfReaction(Digestible):
     def products(self) -> tuple[Molecule, ...]:
         """The oxidised species plus the ``n`` released electrons (each a massless charge carrier)."""
         return (self.oxidized,) + (ELECTRON,) * self.electrons
+
+    @property
+    def reactant(self) -> Molecule:
+        """The uniform transform interface (TRANSFORM-PROVIDER-01): the species entering the half-reaction (the
+        reduced form)."""
+        return self.reduced
+
+    @property
+    def reagents(self) -> tuple:
+        """A redox half-reaction consumes no reagent -- the uniform transform interface exposes an empty tuple."""
+        return ()
+
+    def forget(self) -> ElectronTransferEdge:
+        """The forgetful image: the composition-level :class:`ElectronTransferEdge` ``reduced -> oxidized + n e-``
+        (charge-and-mass conserving; the electrons ride as an explicit count, an electron being atom-less)."""
+        return ElectronTransferEdge(
+            Formula.of(self.reduced.formula, self.reduced.charge),
+            1,
+            Formula.of(self.oxidized.formula, self.oxidized.charge),
+            self.electrons,
+        )
 
     def equation(self) -> str:
         e = f"{self.electrons} e-" if self.electrons > 1 else "e-"

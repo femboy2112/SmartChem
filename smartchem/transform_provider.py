@@ -34,12 +34,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .contracts import canonical_digest
-from .structure_descent import capped_scissions, heterolytic_scissions
+from .structure_descent import capped_scissions, heterolytic_scissions, redox_couples
 
 __all__ = [
     "TransformProvider",
     "CappedScissionProvider",
     "HeterolyticScissionProvider",
+    "RedoxHalfReactionProvider",
     "EnumeratedTransform",
     "TransformProviderRegistry",
     "DEFAULT_TRANSFORM_REGISTRY",
@@ -155,6 +156,40 @@ class HeterolyticScissionProvider(TransformProvider):
         # reagentless: the reagent pool is ignored.  heterolytic_scissions enumerates every single-bond bridge split
         # exhaustively (no budget dimension), so it is always complete within its family.
         return heterolytic_scissions(reactant), True
+
+
+@dataclass(frozen=True)
+class RedoxHalfReactionProvider(TransformProvider):
+    """The redox (electron-transfer) family (item 1): oxidation half-reactions ``reduced -> oxidized + n e-``,
+    reagentless, CHARGE-ONLY (a redox step makes and breaks no bonds -- same atoms, same bonds).  The chemical<->EM
+    bridge family: it forgets to an :class:`~smartchem.structure_descent.ElectronTransferEdge` (mass conserved
+    trivially since electrons are massless; CHARGE is the conserved quantity the certificate turns on).
+
+    DECOMPILE-only and OPT-IN (absent from the DEFAULT registry): a redox step does NOT reduce a species' size (its
+    product is the SAME molecule but charged, plus electrons), so it is not a size-reducing descent and is not forced
+    through the neutral route search -- it widens the DECOMPILE algebra only.  ``max_electrons`` bounds the oxidation
+    states enumerated and rides the capability manifest, so bumping it changes the registry digest."""
+
+    provider_id: str = "redox-half-reaction"
+    provider_version: str = "v1"
+    witness_kind: str = "REDOX_HALF_REACTION"
+    max_electrons: int = 2
+
+    @property
+    def capability_manifest(self) -> tuple:
+        return (
+            ("family", "redox-half-reaction"),
+            ("mechanism", "electron-transfer (oxidation) half-reaction, reagentless, charge-only (same atoms/bonds)"),
+            ("witness_kind", self.witness_kind),
+            ("projection_kind", "ELECTRON_TRANSFER_EDGE"),
+            ("charged", True),
+            ("max_electrons", self.max_electrons),
+        )
+
+    def enumerate_transforms(self, reactant, reagents, *, budget):
+        # reagentless: the reagent pool is ignored.  redox_couples enumerates n=1..max_electrons oxidations
+        # exhaustively within the declared max_electrons (no budget dimension), so it is complete within its family.
+        return redox_couples(reactant, max_electrons=self.max_electrons), True
 
 
 @dataclass(frozen=True)

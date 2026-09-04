@@ -38,6 +38,7 @@ from .decompiler_mediated import MediatedEdge
 from .structure_descent import (
     _fkey, _join, _components, CappedScission, CAPPED_SCISSION_SCHEMA,
     ChargedDecompositionEdge, HeterolyticScission, HETEROLYTIC_SCHEMA,
+    ElectronTransferEdge, RedoxHalfReaction, REDOX_SCHEMA, ELECTRON,
 )
 from .bond_order_edit import BondOrderEdit, BOND_ORDER_EDIT_SCHEMA
 from .identity import IdentityLoss, identity_loss_from_payload, identity_loss_to_payload
@@ -87,7 +88,7 @@ __all__ = [
 # producing provider's id/version, and the EXACT forgetful formula projection) rides INSIDE the IR, no longer
 # reduced to a formula edge as the sole shared artifact.  All are genuine serialized-shape changes, so the schema
 # version bumps with each (and the value digest shifts, since structural_candidates is a covered field).
-CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha7"
+CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8"
 CHEMICAL_IDENTITY_SCHEMA = "smartchem.compilation-ir/chemical-identity-v1alpha1"
 CANDIDATE_SUMMARY_SCHEMA = "smartchem.compilation-ir/candidate-summary-v1alpha1"
 SEARCH_RECEIPT_VIEW_SCHEMA = "smartchem.compilation-ir/search-receipt-view-v1alpha1"
@@ -103,8 +104,12 @@ STRUCTURAL_SPECIES_SCHEMA = "smartchem.compilation-ir/structural-species-v1alpha
 # v1alpha3 (item 3): the candidate admits a third, CHARGED family (heterolytic scission), whose witness carries the
 # ion fragment graphs and whose projection is a charge-carrying ChargedDecompositionEdge -- a serialized-shape change
 # (the witness gains a fragments field), so the record and IR schemas bump again (candidate v1alpha3, IR v1alpha7).
-STRUCTURAL_CANDIDATE_SCHEMA = "smartchem.compilation-ir/structural-candidate-v1alpha3"
-STRUCTURAL_WITNESS_SCHEMA = "smartchem.compilation-ir/structural-witness-v1alpha2"
+# v1alpha4 (item 1): the candidate admits a fourth family, redox (electron transfer) -- a CHARGE-ONLY step (same
+# atoms and bonds) forgetting to an ElectronTransferEdge.  Its witness carries an integer `electrons` count (an
+# electron is atom-less, so it can never be a StructuralSpecies nor a Formula), a serialized-shape change -- so the
+# witness schema bumps (v1alpha3), the candidate with it (v1alpha4), and the IR with them (v1alpha8).
+STRUCTURAL_CANDIDATE_SCHEMA = "smartchem.compilation-ir/structural-candidate-v1alpha4"
+STRUCTURAL_WITNESS_SCHEMA = "smartchem.compilation-ir/structural-witness-v1alpha3"
 
 # The closed set of section-8.1 search kinds the engine receipts emit (routes.py / decompiler.py) plus the
 # structural decompile descent (structure_descent.capped_scissions, IR-STRUCT-01).  A view is a projection off
@@ -322,9 +327,12 @@ _WITNESS_PROJECTION = {
     # a heterolytic scission (item 3) is CHARGED -- it forgets to a charge-carrying ChargedDecompositionEdge, the
     # first family whose forgetful square is a charge-AND-mass invariant, not merely mass.
     "HETEROLYTIC_SCISSION": "CHARGED_DECOMPOSITION_EDGE",
+    # a redox half-reaction (item 1) is CHARGE-ONLY (same atoms and bonds) -- it forgets to an ElectronTransferEdge
+    # carrying the oxidised species and an integer electron count (the chemical<->EM bridge family).
+    "REDOX_HALF_REACTION": "ELECTRON_TRANSFER_EDGE",
 }
 # families whose transform consumes NO reagent (its LHS is just the parent) -- their candidate carries empty reagents.
-_REAGENTLESS_WITNESS = frozenset({"BOND_ORDER_EDIT", "HETEROLYTIC_SCISSION"})
+_REAGENTLESS_WITNESS = frozenset({"BOND_ORDER_EDIT", "HETEROLYTIC_SCISSION", "REDOX_HALF_REACTION"})
 
 
 def _canon(mol: "Molecule") -> "Molecule":
@@ -385,6 +393,7 @@ class StructuralWitness(Digestible):
     caps: tuple                # CAPPED_SCISSION: the (i, j, order) bonds formed, sorted; () for other families
     bond_edit: tuple           # BOND_ORDER_EDIT: (bond_i, bond_j, h_i, h_j); () for other families
     fragments: tuple           # HETEROLYTIC_SCISSION: (anion_graph, cation_graph) graph payloads; () for other families
+    electrons: int = 0         # REDOX_HALF_REACTION: the transferred electron count (>=1); 0 for every other family
 
     def __post_init__(self) -> None:
         if self.schema_version != STRUCTURAL_WITNESS_SCHEMA:
@@ -394,27 +403,35 @@ class StructuralWitness(Digestible):
         for name in ("reactant", "reagents", "cut", "caps", "bond_edit", "fragments"):
             if type(getattr(self, name)) is not tuple:
                 raise TypeError(f"{name} must be a tuple")
+        if type(self.electrons) is not int:
+            raise TypeError("electrons must be an int")
         # kind-specific field discipline: exactly the fields the family uses are populated (a stray field on the
-        # wrong family is a malformed witness, refused before the reconstruction can silently ignore it).
+        # wrong family is a malformed witness, refused before the reconstruction can silently ignore it).  electrons
+        # is a REDOX_HALF_REACTION-only field, so it must be 0 for every other family.
         if self.witness_kind == "CAPPED_SCISSION":
             if not self.reagents:
                 raise ValueError("a CAPPED_SCISSION witness carries its consumed reagent graphs")
             if not self.cut:
                 raise ValueError("a CAPPED_SCISSION witness carries at least one cut bond")
-            if self.bond_edit or self.fragments:
-                raise ValueError("a CAPPED_SCISSION witness carries no bond_edit/fragments (wrong-family fields)")
+            if self.bond_edit or self.fragments or self.electrons:
+                raise ValueError("a CAPPED_SCISSION witness carries no bond_edit/fragments/electrons (wrong-family fields)")
         elif self.witness_kind == "BOND_ORDER_EDIT":
-            if self.reagents or self.cut or self.caps or self.fragments:
+            if self.reagents or self.cut or self.caps or self.fragments or self.electrons:
                 raise ValueError("a BOND_ORDER_EDIT witness carries only bond_edit (a reagentless bond raise)")
             if len(self.bond_edit) != 4 or any(type(x) is not int for x in self.bond_edit):
                 raise ValueError("a BOND_ORDER_EDIT witness carries bond_edit = (bond_i, bond_j, h_i, h_j)")
         elif self.witness_kind == "HETEROLYTIC_SCISSION":
-            if self.reagents or self.caps or self.bond_edit:
+            if self.reagents or self.caps or self.bond_edit or self.electrons:
                 raise ValueError("a HETEROLYTIC_SCISSION witness carries only its cut bond + ion fragments")
             if len(self.cut) != 1:
                 raise ValueError("a HETEROLYTIC_SCISSION witness cleaves exactly one bond")
             if len(self.fragments) != 2:
                 raise ValueError("a HETEROLYTIC_SCISSION witness carries exactly two ion fragment graphs")
+        elif self.witness_kind == "REDOX_HALF_REACTION":
+            if self.reagents or self.cut or self.caps or self.bond_edit or self.fragments:
+                raise ValueError("a REDOX_HALF_REACTION witness carries only its reactant graph + electron count")
+            if self.electrons < 1:
+                raise ValueError("a REDOX_HALF_REACTION witness transfers at least one electron")
         # THE RECONSTRUCTION: rebuild the exact family transform -- this re-runs the family certificate, so a witness
         # whose graph edit is not a valid transform (bad valence, non-closed products, non-descent) is refused HERE.
         self.replay_transform()
@@ -435,6 +452,12 @@ class StructuralWitness(Digestible):
             anion = _graph_from_payload(self.fragments[0])
             cation = _graph_from_payload(self.fragments[1])
             return HeterolyticScission(HETEROLYTIC_SCHEMA, reactant, cut_bond, anion, cation)
+        if self.witness_kind == "REDOX_HALF_REACTION":
+            # a redox step is charge-only: the oxidised species is the reduced graph with the charge raised by the
+            # transferred electron count (same atoms, same bonds).  Re-running the RedoxHalfReaction certificate here
+            # re-checks that (charge conservation, same-species-but-for-charge).
+            oxidized = Molecule(reactant.atoms, reactant.bonds, reactant.charge + self.electrons, reactant.state)
+            return RedoxHalfReaction(REDOX_SCHEMA, reactant, oxidized, self.electrons)
         raise ValueError(f"no graph replay defined for witness_kind {self.witness_kind!r}")
 
     def rebuild_parent(self) -> "Molecule":
@@ -453,7 +476,7 @@ class StructuralWitness(Digestible):
         inverse: ``(product graph - caps) | cut`` -> the joined parent+reagent graph, its reactant-atom component the
         parent.)
 
-        All three current families invert this way, each in the witness's OWN reactant index space:
+        All four current families invert this way, each in the witness's OWN reactant index space:
           * the reagent-mediated CAPPED scission (the cut/caps re-glue the fragments);
           * the reagentless CHARGED heterolytic scission (the cut bond re-joins the two ions -- the parent charge
             is the sum of the ion charges, which the certificate already conserves);
@@ -463,7 +486,10 @@ class StructuralWitness(Digestible):
             reindexed/canonicalised there, so the shed hydrogens' attachment sites are lost); working in the
             witness's OWN reactant index space, ``bond_i``/``bond_j``/``h_i``/``h_j`` ARE known indices, so no
             canonical-precursor recovery is needed and the inverse is exact -- NOT the vacuous reactant-echo the
-            earlier refusal guarded against (product-consumption stays reconstitute_parent step 1's job).
+            earlier refusal guarded against (product-consumption stays reconstitute_parent step 1's job);
+          * the reagentless charge-only REDOX half-reaction (item 1): a redox step makes/breaks no bonds, so the
+            parent's STRUCTURE is identical to the product's -- there is no skeleton to rebuild; the inverse recovers
+            the parent by re-adding the n transferred electrons (lowering the oxidised charge by n).
         """
         if self.witness_kind == "BOND_ORDER_EDIT":
             reactant = _graph_from_payload(self.reactant)
@@ -498,6 +524,13 @@ class StructuralWitness(Digestible):
             if len(_components(len(reactant.atoms), recovered)) != 1:
                 raise ValueError("the heterolytic rejoin did not reconstitute a single connected parent")
             return Molecule(tuple(reactant.atoms), recovered, reactant.charge, reactant.state).canonical()
+        if self.witness_kind == "REDOX_HALF_REACTION":
+            # a redox step is charge-only (same atoms AND bonds), so the parent's STRUCTURE is identical to the
+            # product's -- there is no bond skeleton to rebuild.  The inverse recovers the parent by RE-ADDING the n
+            # transferred electrons (lowering the oxidised charge by n); the witness reactant IS the reduced (parent)
+            # species.  Product-consumption (the stored oxidised species + n electrons must replay the witness)
+            # stays reconstitute_parent step 1's job, exactly as for the other families.
+            return _graph_from_payload(self.reactant).canonical()
         if self.witness_kind != "CAPPED_SCISSION":
             raise ValueError(f"no structure-rebuilding inverse defined for witness_kind {self.witness_kind!r}")
         reactant = _graph_from_payload(self.reactant)
@@ -551,6 +584,20 @@ class StructuralWitness(Digestible):
                 (),
                 (),
                 (_graph_payload(transform.anion), _graph_payload(transform.cation)),
+            )
+        if witness_kind == "REDOX_HALF_REACTION":
+            # charge-only: the witness stores the reduced (reactant) graph and the transferred electron count; the
+            # oxidised species is derivable (same graph, charge + electrons) so it is not stored separately.
+            return cls(
+                STRUCTURAL_WITNESS_SCHEMA,
+                witness_kind,
+                _graph_payload(transform.reactant),
+                (),
+                (),
+                (),
+                (),
+                (),
+                transform.electrons,
             )
         raise ValueError(f"unknown witness_kind {witness_kind!r}; known: {tuple(_WITNESS_PROJECTION)}")
 
@@ -698,7 +745,13 @@ class StructuralCandidate(Digestible):
                 "the witness edit consumes different reagents than the candidate's stored reagent species; a "
                 "witness inconsistent with the stored structure is refused"
             )
-        if _canonical_multiset(witness_transform.products) != _canonical_multiset(_expand(self.products)):
+        # the witness replay's products include any massless electron carriers (REDOX_HALF_REACTION); the candidate
+        # stores only atom-bearing species, so the expected products are the stored species PLUS `electrons` copies
+        # of the electron carrier (0 for every non-redox family -> byte-identical to before).  Reconstructing the
+        # full multiset (rather than filtering electrons out of the replay) keeps the comparison EXACT, and the
+        # electron count is pinned by witness_digest, so a tampered count is caught by the witness_digest check above.
+        expected_products = _expand(self.products) + (ELECTRON,) * self.witness.electrons
+        if _canonical_multiset(witness_transform.products) != _canonical_multiset(expected_products):
             raise ValueError(
                 "the witness edit does not replay to the stored product species at the GRAPH level (a same-formula "
                 "isomer swap that passes the formula square is caught HERE): forget-blind product identities are "
@@ -769,6 +822,13 @@ class StructuralCandidate(Digestible):
                 merged[species.formula] = merged.get(species.formula, 0) + mult
             products = tuple(sorted(merged.items(), key=lambda pm: (_fkey(pm[0]), pm[1])))
             return ChargedDecompositionEdge(self.parent.formula, 1, products)
+        if self.witness_kind == "REDOX_HALF_REACTION":
+            # a CHARGE-ONLY edge: exactly one product species (the oxidised form -- same atoms as the parent, charge
+            # raised by the electron count).  The transferred electrons are atom-less, so they ride as the edge's
+            # explicit `electrons` count (read from the digest-pinned witness), NOT a product formula.  Mirrors
+            # RedoxHalfReaction.forget verbatim, so an honest candidate's recompute is byte-identical.
+            (oxidized, _mult), = self.products
+            return ElectronTransferEdge(self.parent.formula, 1, oxidized.formula, self.witness.electrons)
         raise ValueError(f"no forgetful projection defined for witness_kind {self.witness_kind!r}")
 
     @classmethod
@@ -793,6 +853,11 @@ class StructuralCandidate(Digestible):
         def _group(mols: "tuple[object, ...]") -> tuple[tuple[StructuralSpecies, int], ...]:
             by_digest: dict[str, list] = {}
             for m in mols:
+                if not m.atoms:
+                    # a massless charge carrier (an electron) is NOT a species -- it has no atoms, so it can never be
+                    # a StructuralSpecies (or a Formula).  It rides the witness's electron count + the
+                    # ElectronTransferEdge projection instead (REDOX_HALF_REACTION).
+                    continue
                 species = StructuralSpecies.of_molecule(m)
                 slot = by_digest.setdefault(species.structure.identity_digest, [species, 0])
                 slot[1] += 1
@@ -855,7 +920,10 @@ class StructuralCandidate(Digestible):
         family whose inverse is a named follow-on propagates ``NotImplementedError`` from
         :meth:`StructuralWitness.rebuild_parent`."""
         witness_transform = self.witness.replay_transform()
+        # include the massless electron carriers the redox witness releases (0 for every non-redox family), so the
+        # product-consuming check is EXACT for a REDOX_HALF_REACTION too (the electron count is witness_digest-pinned).
         stored = tuple(species.molecule for species, mult in self.products for _ in range(mult))
+        stored = stored + (ELECTRON,) * self.witness.electrons
         if _canonical_multiset(witness_transform.products) != _canonical_multiset(stored):
             raise ValueError(
                 "the stored products are not the witness edit's products; the decomposition cannot be reconstituted "
@@ -1809,6 +1877,7 @@ def _structural_witness_to_payload(w: "StructuralWitness") -> dict:
         "caps": [[i, j, o] for i, j, o in w.caps],
         "bond_edit": list(w.bond_edit),
         "fragments": [_graph_to_json(f) for f in w.fragments],
+        "electrons": w.electrons,
     }
 
 
@@ -1822,6 +1891,7 @@ def _structural_witness_from_payload(p: dict) -> "StructuralWitness":
         tuple((i, j, o) for i, j, o in p["caps"]),
         tuple(p["bond_edit"]),
         tuple(_graph_from_json(f) for f in p["fragments"]),
+        p["electrons"],
     )
 
 

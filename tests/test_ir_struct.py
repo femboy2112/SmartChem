@@ -436,17 +436,28 @@ class TestGraphScissionReplay:
             _structural_candidate_from_payload(pay)
 
     def test_a_witness_lifted_from_a_different_candidate_is_refused(self):
-        # graft candidate B's witness onto candidate A: B's edit replays to B's products, not A's -> refused.
+        # graft a witness whose edit replays to DIFFERENT products/reagents onto candidate A -> refused (the graph
+        # replay catches that the witness does not produce A's stored species).  NB two candidates CAN legitimately
+        # share products via different edits ("two witnesses, one projection"), and grafting such a witness is
+        # internally consistent -- NOT a tamper -- so we deliberately pick B whose products differ from A's.
         ir = _para_ir()
         assert len(ir.structural_candidates) >= 2
-        a = _structural_candidate_to_payload(ir.structural_candidates[0])
-        b = _structural_candidate_to_payload(ir.structural_candidates[1])
+        a_cand = ir.structural_candidates[0]
+        a_products = {s.structure.identity_digest for s, m in a_cand.products}
+        b_cand = next(
+            (c for c in ir.structural_candidates[1:]
+             if {s.structure.identity_digest for s, m in c.products} != a_products),
+            None,
+        )
+        assert b_cand is not None, "paracetamol must have a candidate with products differing from candidate[0]'s"
+        a = _structural_candidate_to_payload(a_cand)
+        b = _structural_candidate_to_payload(b_cand)
         assert a["witness_digest"] != b["witness_digest"]
         a_grafted = dict(a)
         a_grafted["witness"] = b["witness"]
         a_grafted["witness_digest"] = b["witness_digest"]
         a_grafted["edit_equation"] = b["edit_equation"]
-        with pytest.raises(ValueError, match="different structure|does not replay|GRAPH level"):
+        with pytest.raises(ValueError, match="different structure|does not replay|GRAPH level|different reagents"):
             _structural_candidate_from_payload(a_grafted)
 
     def test_the_witness_is_a_required_serialized_field(self):
@@ -626,7 +637,7 @@ class TestExistingProducersUnaffected:
         ir = decompile_to_ir("C8H9NO2")
         assert ir.structural_candidates == ()
         assert ir.target.layer is IdentityLayer.FORMULA
-        assert deserialize_ir(serialize_ir(ir)).digest == ir.digest    # v1alpha7 round-trip intact
+        assert deserialize_ir(serialize_ir(ir)).digest == ir.digest    # v1alpha8 round-trip intact
 
     def test_recompile_still_works_and_carries_no_structural_candidates(self):
         ir = recompile_to_ir(PARA, reagents=(WATER,), available=(AMINOPHENOL,), max_depth=1)

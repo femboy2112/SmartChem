@@ -65,6 +65,15 @@ ETAC = parse_smiles("CCOC(=O)C")                   # ethyl acetate (a convergent
 DAG_REAGENTS = tuple(parse_smiles(s) for s in ("O", "CO", "CC(=O)O", "C=C", "CCO", "C=C=O"))
 H2 = parse_smiles("[H][H]")                         # elemental terminals for the water litmus (IR-INV-01)
 O2 = parse_smiles("O=O")
+ETHANE = parse_smiles("CC")                         # item 4: the bond-order re-search litmus (CHEM-ALG-01)
+ETHENE = parse_smiles("C=C")
+
+
+def _ext_registry():
+    """The capped + bond-order algebra (item 4 / CHEM-ALG-01): finds the hydrogenation the default cannot."""
+    from smartchem.bond_order_edit import BondOrderEditProvider
+    from smartchem.transform_provider import CappedScissionProvider, TransformProviderRegistry
+    return TransformProviderRegistry((CappedScissionProvider(), BondOrderEditProvider()))
 
 
 class TestDecompileToIR:
@@ -385,6 +394,43 @@ class TestRecompileFromSerialized:
         assert starved.inverse_status is InverseStatus.INCONCLUSIVE_BOUNDS_HIT
         assert starved.recompile_ir.complete_within_bounds is False
         assert "cannot be concluded" in starved.refusal
+
+    # -- item 4: the re-search runs under the CALLER's transform algebra, not the narrow default ----------
+    def test_the_research_runs_under_the_passed_registry_not_the_default(self):
+        """A wider-algebra artifact must re-search with that SAME algebra (item 4: registry threading).  With the
+        bond-order registry the hydrogenation H2 + C2H4 -> C2H6 composes into the re-search (ROUTES_FOUND); with
+        the default capped-only algebra it does NOT (NO_ROUTE_IN_GRAMMAR) -- and the returned IR discloses WHICH
+        algebra it searched (section 8.4 provenance), so the digests differ (non-vacuous: the registry moved it)."""
+        artifact = serialize_ir(decompile_to_ir("C2H6"))
+        ext = _ext_registry()
+        wide = recompile_from_serialized(
+            artifact, structure=ETHANE, reagents=(WATER,), available=(ETHENE, H2), max_depth=1, registry=ext
+        )
+        narrow = recompile_from_serialized(
+            artifact, structure=ETHANE, reagents=(WATER,), available=(ETHENE, H2), max_depth=1
+        )
+        # non-vacuous: the wider algebra finds the hydrogenation, the default does not -- the outcomes DIFFER
+        assert wide.inverse_status is InverseStatus.ROUTES_FOUND
+        assert wide.recompile_ir.candidate_count > 0
+        assert narrow.inverse_status is InverseStatus.NO_ROUTE_IN_GRAMMAR
+        assert narrow.recompile_ir.candidate_count == 0
+        # the returned IR names the algebra it actually searched (not a fixed default) -> the digests differ
+        assert (
+            wide.recompile_ir.transform_registry_digest
+            != narrow.recompile_ir.transform_registry_digest
+        )
+
+    def test_the_default_registry_is_behaviour_identical_to_the_pre_threading_call(self):
+        """The default registry keeps every existing caller behaviour- and digest-identical: the water litmus
+        is unchanged whether the default is passed explicitly or left implicit."""
+        implicit = recompile_from_serialized(self._water_artifact(), structure=WATER, reagents=(H2, O2), max_depth=2)
+        from smartchem.transform_provider import DEFAULT_TRANSFORM_REGISTRY
+        explicit = recompile_from_serialized(
+            self._water_artifact(), structure=WATER, reagents=(H2, O2), max_depth=2,
+            registry=DEFAULT_TRANSFORM_REGISTRY,
+        )
+        assert implicit.inverse_status is explicit.inverse_status is InverseStatus.NO_ROUTE_IN_GRAMMAR
+        assert implicit.recompile_ir.digest == explicit.recompile_ir.digest
 
     # -- the artifact genuinely CONSTRAINS the recompile (section 5.4 coherence) --------------------------
     def test_a_structure_whose_formula_is_not_the_decompiled_species_is_refused(self):

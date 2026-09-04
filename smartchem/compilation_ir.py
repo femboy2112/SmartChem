@@ -2057,6 +2057,7 @@ def recompile_from_serialized(
     cut_budget: int = 20_000,
     mode: str = "routes",
     tool_version: str | None = None,
+    registry: "TransformProviderRegistry" = DEFAULT_TRANSFORM_REGISTRY,
 ) -> InverseResult:
     """Consume a SERIALIZED decompile artifact and drive a recompile from it, end to end (IR-INV-01).
 
@@ -2073,6 +2074,14 @@ def recompile_from_serialized(
     5. classifies the outcome, keeping the honest distinction between an EXHAUSTIVE empty search
        (``NO_ROUTE_IN_GRAMMAR`` -- a real grammar dead end, e.g. water from H2/O2) and a TRUNCATED empty
        search (``INCONCLUSIVE_BOUNDS_HIT`` -- cannot conclude no-route).
+
+    ``registry`` is the transform algebra the re-search runs under (item 4: registry threading).  It defaults to
+    the capped-only :data:`~smartchem.transform_provider.DEFAULT_TRANSFORM_REGISTRY`, so every existing caller is
+    behaviour- and digest-identical; a caller inverting an artifact produced under a WIDER algebra (bond-order,
+    heterolytic, ...) MUST pass the SAME registry, else the re-search silently runs the narrower default and its
+    ``NO_ROUTE_IN_GRAMMAR`` verdict is a claim about the wrong grammar (section 8.4: the no-route/exhaustion
+    scope is only ever THIS registry at THESE bounds).  The recompile IR's ``transform_registry_digest`` names
+    exactly which algebra was searched, so the returned artifact discloses it rather than implying the default.
 
     W3 unchanged: a ``ROUTES_FOUND`` verdict means conservation-valid formal candidates exist within the grammar
     and bounds, never that any synthesis is validated; read ``recompile_ir.search_status`` for completeness.
@@ -2120,6 +2129,7 @@ def recompile_from_serialized(
         cut_budget=cut_budget,
         mode=mode,
         tool_version=tool_version,
+        registry=registry,
     )
 
     # classify from STRUCTURED facts, never by string-matching a diagnostic.  target-in-stock is decided the same

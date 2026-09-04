@@ -31,6 +31,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 
+from .category import Bond, Molecule
 from .contracts import Digestible, canonical_digest
 from .decompiler import DecompositionGraph, Formula, search_decomposition
 from .decompiler_mediated import MediatedEdge
@@ -80,7 +81,10 @@ CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-
 CHEMICAL_IDENTITY_SCHEMA = "smartchem.compilation-ir/chemical-identity-v1alpha1"
 CANDIDATE_SUMMARY_SCHEMA = "smartchem.compilation-ir/candidate-summary-v1alpha1"
 SEARCH_RECEIPT_VIEW_SCHEMA = "smartchem.compilation-ir/search-receipt-view-v1alpha1"
-STRUCTURAL_SPECIES_SCHEMA = "smartchem.compilation-ir/structural-species-v1alpha1"
+# v1alpha2 (IR-STRUCT-01 red-team fold): the species carries its canonical molecular graph (atoms/bonds/charge/
+# state) so its structure identity and formula are RE-VERIFIABLE on read -- a forged identity/formula/isomer swap
+# is refused, not trusted.  A genuine serialized-shape change, so the record schema bumps.
+STRUCTURAL_SPECIES_SCHEMA = "smartchem.compilation-ir/structural-species-v1alpha2"
 STRUCTURAL_CANDIDATE_SCHEMA = "smartchem.compilation-ir/structural-candidate-v1alpha1"
 
 # The closed set of section-8.1 search kinds the engine receipts emit (routes.py / decompiler.py) plus the
@@ -184,17 +188,28 @@ class TransformDirection(str, Enum):
 
 @dataclass(frozen=True)
 class StructuralSpecies(Digestible):
-    """One species in a :class:`StructuralCandidate`, pinned at BOTH identity layers (IR-STRUCT-01).
+    """One species in a :class:`StructuralCandidate`, carrying its canonical molecular GRAPH (IR-STRUCT-01).
 
     ``structure`` is the STRUCTURE-layer identity -- WHICH isomer; a same-formula isomer is a distinct species
-    here (section 5.4), never collapsed to its formula.  ``formula`` is the exact composition it forgets to.
-    Carrying both is what lets a candidate's forgetful square be re-checked from stored fields alone: the
-    structure says which molecule, the formula is the forgetful-projection target that molecule maps to.
+    here (section 5.4), never collapsed to its formula.  ``formula`` is the exact composition it forgets to.  But
+    an identity digest is one-way and a formula is a free field, so a payload could once forge either -- swapping
+    the structure identity for a DIFFERENT real isomer while leaving the formula (hence the whole forgetful square)
+    intact (red-team fold).  So the species now also carries the canonical molecular graph (``atoms``/``bonds``/
+    ``charge``/``state``) as the RE-VERIFIABLE source of truth: ``__post_init__`` rebuilds the
+    :class:`~smartchem.category.Molecule` and refuses unless the stored ``structure`` identity AND ``formula`` are
+    exactly what that graph actually is.  A forged identity, ``canonical_repr``, formula, or isomer swap is thus
+    refused on read; and the structure genuinely RIDES inside the artifact (the point of IR-STRUCT-01), not as an
+    opaque digest a tampered payload could reassign.  The graph is stored CANONICAL, so the record's identity is
+    presentation-invariant (two presentations of one molecule store one graph).
     """
 
     schema_version: str
     structure: ChemicalIdentity
     formula: Formula
+    atoms: tuple[str, ...]
+    bonds: tuple[tuple[int, int, int], ...]
+    charge: int
+    state: str
 
     def __post_init__(self) -> None:
         if self.schema_version != STRUCTURAL_SPECIES_SCHEMA:
@@ -205,16 +220,75 @@ class StructuralSpecies(Digestible):
             raise ValueError("a structural species' structure identity must be at the STRUCTURE layer")
         if type(self.formula) is not Formula:
             raise TypeError("formula must be a Formula")
+        if type(self.atoms) is not tuple or not self.atoms or any(not isinstance(a, str) or not a for a in self.atoms):
+            raise ValueError("atoms must be a non-empty tuple of element-symbol strings")
+        if type(self.bonds) is not tuple:
+            raise TypeError("bonds must be a tuple of (i, j, order) triples")
+        n = len(self.atoms)
+        prev: "tuple[int, int, int] | None" = None
+        seen: set[tuple[int, int]] = set()
+        for triple in self.bonds:
+            if type(triple) is not tuple or len(triple) != 3 or any(type(x) is not int for x in triple):
+                raise TypeError("each bond must be an (i, j, order) triple of ints")
+            i, j, order = triple
+            if not (0 <= i < j < n):
+                raise ValueError(f"bond ({i}, {j}) must have 0 <= i < j < {n} (canonical undirected order)")
+            if order < 1:
+                raise ValueError("bond order must be a positive int")
+            if prev is not None and triple < prev:
+                raise ValueError("bonds must be in canonical sorted order")
+            if (i, j) in seen:
+                raise ValueError(f"bond ({i}, {j}) appears twice")
+            seen.add((i, j))
+            prev = triple
+        if type(self.charge) is not int:
+            raise TypeError("charge must be an int")
+        if type(self.state) is not str:
+            raise TypeError("state must be a str")
+        # THE CERTIFICATE: the stored identity and formula MUST be what the stored graph actually is.  A forged
+        # structure identity (a different real isomer's digest), canonical_repr, or formula that disagrees with the
+        # graph is refused here -- the structure identity is no longer an unverifiable label (red-team fold).
+        rebuilt = self.molecule
+        if rebuilt.charge != self.charge:
+            raise ValueError("charge disagrees with the rebuilt molecular graph")
+        actual_identity = ChemicalIdentity.of_molecule(rebuilt)
+        if actual_identity != self.structure:
+            raise ValueError(
+                "the stored structure identity does not match the stored molecular graph "
+                f"(graph is {actual_identity.identity_digest}, stored {self.structure.identity_digest}); "
+                "a forged or isomer-swapped structure identity is refused, not trusted"
+            )
+        if Formula.of(rebuilt.formula, rebuilt.charge) != self.formula:
+            raise ValueError("the stored formula does not match the stored molecular graph; a forged formula is refused")
+
+    @property
+    def molecule(self) -> "Molecule":
+        """Rebuild the :class:`~smartchem.category.Molecule` from the stored canonical graph (its
+        ``__post_init__`` re-validates the graph itself)."""
+        return Molecule(tuple(self.atoms), frozenset(Bond(i, j, order) for i, j, order in self.bonds),
+                        self.charge, self.state)
 
     @classmethod
     def of_molecule(cls, molecule: "object") -> "StructuralSpecies":
-        """The species record for a :class:`~smartchem.category.Molecule`: its STRUCTURE identity and its exact
-        formula (the same ``canonical()``/``asgiven:`` identity the route/DAG search keys on, via
-        :func:`ChemicalIdentity.of_molecule`)."""
+        """The species record for a :class:`~smartchem.category.Molecule`: its STRUCTURE identity, its exact
+        formula, AND its canonical molecular graph (the re-verifiable source of truth).  The graph is stored
+        ``canonical()`` where the canonicaliser succeeds (presentation-invariant), else the graph as given (the
+        ``asgiven:`` fallback the identity system uses for a graph it cannot canonicalise)."""
+        if type(molecule) is not Molecule:
+            raise TypeError("of_molecule needs a smartchem.category.Molecule")
+        try:
+            canon = molecule.canonical()
+        except NotImplementedError:
+            canon = molecule
+        bonds = tuple(sorted((b.i, b.j, b.order) for b in canon.bonds))
         return cls(
             STRUCTURAL_SPECIES_SCHEMA,
-            ChemicalIdentity.of_molecule(molecule),
-            Formula.of(molecule.formula, molecule.charge),
+            ChemicalIdentity.of_molecule(canon),
+            Formula.of(canon.formula, canon.charge),
+            tuple(canon.atoms),
+            bonds,
+            canon.charge,
+            canon.state,
         )
 
 
@@ -237,13 +311,22 @@ class StructuralCandidate(Digestible):
     ``FORMAL_CANDIDATE`` -- structure enumerates a conservation- and valence-valid rewrite within a grammar,
     never a claim the reaction runs or under what conditions.
 
-    THE FORGETFUL SQUARE (IR-FORGET-01, section 7.3).  The stored formula projection MUST equal the forget of the
-    stored species -- recomputed here in :meth:`_recompute_projection` from the parent/reagent/product FORMULAS,
-    independently of the live scission the producer forgot -- so a transported candidate whose projection
-    contradicts its own structure is REFUSED on read, never silently coerced.  This makes the commuting square
-    ``forget(structural candidate) == its stored formula projection`` a construction invariant, checked from
-    stored fields alone (the repo's "no check derived from its own subject" discipline: the certificate is
-    recomputed from the stored species, a different object than the live edge the producer called ``forget`` on).
+    THE FORGETFUL SQUARE (IR-FORGET-01, section 7.3) is a FORMULA-level statement, enforced across three layers so
+    no single unverified field is load-bearing (this discipline is the red-team fold that closed a vacuity where
+    the square trusted the structure identity blindly):
+      * the square proper -- :meth:`_recompute_projection` rebuilds the forgetful edge from the parent/reagent/
+        product FORMULAS and refuses unless it equals the stored projection byte-for-byte (digest AND equation),
+        independently of the live scission the producer forgot: ``forget(structural candidate) == its stored
+        formula projection``, a construction invariant checked from stored fields, mismatch refused not coerced;
+      * the structure identities are NOT trusted as bare digests -- each :class:`StructuralSpecies` carries its
+        canonical molecular GRAPH and re-derives its own identity/formula, so a forged or isomer-swapped structure
+        is refused THERE (the formula the square consumes is thus itself graph-backed, not a free field);
+      * the parent is pinned to the IR target at the :class:`ChemicalCompilationIR` level (a wrong-subject
+        artifact -- a decomposition of Y advertised under target X -- is refused).
+    Exact edit-fidelity (which same-formula isomer each PRODUCT is, beyond its formula) is carried by the witness
+    (``witness_digest`` / ``edit_equation``) as a provenance label; re-deriving it needs the graph-level scission
+    replay that is the structure-rebuilding inverse's job (a named follow-on), so the square itself, being
+    formula-level, does not distinguish a product's same-formula isomers.
     """
 
     schema_version: str
@@ -732,11 +815,30 @@ class ChemicalCompilationIR(Digestible):
             )
         if len(set(struct_digests)) != len(struct_digests):
             raise ValueError("structural_candidates must be distinct by digest")
-        if self.structural_candidates and self.target.layer is not IdentityLayer.STRUCTURE:
-            raise ValueError(
-                "structural_candidates require a STRUCTURE-layer target (they carry structure-level claims); "
-                f"this IR's target is at the {self.target.layer.value} layer"
-            )
+        if self.structural_candidates:
+            # a structural candidate is a DECOMPOSE primitive keyed on a STRUCTURE-layer parent; it can only ride a
+            # STRUCTURE-layer DECOMPILE of that exact target.  (red-team fold, two confirmed coherence holes:)
+            #  * a formula-layer target would assert structure over a target known only at the formula layer;
+            #  * a candidate whose parent is NOT the IR target is a wrong-subject artifact -- an IR advertising
+            #    target X carrying a decomposition OF Y -- which defeats IR-STRUCT-01's whole point (retain the
+            #    structure the transform acted on).  The honest producer always sets parent == target; enforce it.
+            if self.target.layer is not IdentityLayer.STRUCTURE:
+                raise ValueError(
+                    "structural_candidates require a STRUCTURE-layer target (they carry structure-level claims); "
+                    f"this IR's target is at the {self.target.layer.value} layer"
+                )
+            if self.operation is not CompilationOperation.DECOMPILE:
+                raise ValueError(
+                    "structural_candidates are DECOMPOSE primitives and ride only a DECOMPILE IR; "
+                    f"this IR's operation is {self.operation.value}"
+                )
+            for _sc in self.structural_candidates:
+                if _sc.parent.structure.identity_digest != self.target.identity_digest:
+                    raise ValueError(
+                        "every structural candidate's parent must be the IR target (a structural decompile OF this "
+                        f"target); a candidate's parent is {_sc.parent.structure.identity_digest} but the target is "
+                        f"{self.target.identity_digest} -- a wrong-subject artifact is refused"
+                    )
 
     @property
     def complete_within_bounds(self) -> bool:
@@ -1154,6 +1256,11 @@ def decompile_structure_to_ir(
             terminal_digest,
             ("reagent-pool", reagent_pool),
             ("transform-registry", registry_digest),
+            # the transform PROVIDER (id + version) is a section-4.1 semantic input in its own right (the manifest
+            # names "transform/evidence provider version"); it must sit in the REQUEST identity, not only inside
+            # each candidate -- else an EMPTY structural decompile (e.g. methane, no cleavage) would launder the
+            # provider out of ir.digest entirely (red-team fold).
+            ("provider", provider_id, provider_version),
             ("bounds", max_reactant_cuts, budget, ring_aware),
         )
     )
@@ -1275,12 +1382,22 @@ def _structural_species_to_payload(species: StructuralSpecies) -> dict:
         "schema_version": species.schema_version,
         "structure": _identity_to_payload(species.structure),
         "formula": _formula_to_payload(species.formula),
+        "atoms": list(species.atoms),
+        "bonds": [[i, j, order] for i, j, order in species.bonds],
+        "charge": species.charge,
+        "state": species.state,
     }
 
 
 def _structural_species_from_payload(p: dict) -> StructuralSpecies:
     return StructuralSpecies(
-        p["schema_version"], _identity_from_payload(p["structure"]), _formula_from_payload(p["formula"])
+        p["schema_version"],
+        _identity_from_payload(p["structure"]),
+        _formula_from_payload(p["formula"]),
+        tuple(p["atoms"]),
+        tuple((i, j, order) for i, j, order in p["bonds"]),
+        p["charge"],
+        p["state"],
     )
 
 

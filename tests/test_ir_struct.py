@@ -29,6 +29,7 @@ from smartchem.compilation_ir import (
     CompilationOperation,
     IdentityLayer,
     StructuralCandidate,
+    StructuralSpecies,
     decompile_structure_to_ir,
     decompile_to_ir,
     deserialize_ir,
@@ -38,6 +39,7 @@ from smartchem.compilation_ir import (
     serialize_ir,
     _structural_candidate_from_payload,
     _structural_candidate_to_payload,
+    _structural_species_to_payload,
 )
 from smartchem.search import SearchStatus
 from smartchem.smiles import parse_smiles
@@ -268,6 +270,78 @@ class TestSection81ReceiptHonesty:
         assert len(ir.structural_candidates) == 0
         assert ir.diagnostics and "exhaustive" in ir.diagnostics[0]
         assert "no valence-preserving capped scission" in ir.diagnostics[0]
+
+
+class TestRedTeamFold:
+    """Red-team fold (blind-bearing workflow, 4 CONFIRMED findings): the structure identity was an unverifiable
+    one-way label, so a transported payload could forge WHICH isomer a species is, advertise a decomposition of the
+    wrong subject, or launder the provider out of an empty-candidate IR. The fold binds each species to a
+    re-verifiable canonical graph, pins the parent to the IR target, guards the operation, and folds the provider
+    into the request identity. Each finding is now REFUSED (proven here) while the honest path is unchanged.
+    """
+
+    ORTHO = parse_smiles("CC(=O)Nc1ccccc1O")   # o-acetamidophenol: C8H9NO2, a DISTINCT isomer of paracetamol
+
+    def test_a_species_carries_its_canonical_graph_and_it_round_trips(self):
+        # the structure genuinely RIDES the artifact now (not an opaque digest): atoms/bonds survive serialization.
+        ir = _para_ir()
+        back = deserialize_ir(serialize_ir(ir))
+        for before, after in zip(ir.structural_candidates, back.structural_candidates):
+            assert after.parent.atoms == before.parent.atoms and after.parent.bonds == before.parent.bonds
+            assert after.parent.molecule.canonical() == before.parent.molecule.canonical()
+
+    def test_a_forged_structure_identity_isomer_swap_is_refused(self):
+        # HIGH #1/#2: swap the parent's structure IDENTITY to a different real isomer while leaving the graph -- the
+        # graph-bound species certificate refuses it (the square alone was blind to this: same formula).
+        payload = ir_to_payload(_para_ir())
+        one = payload["structural_candidates"][0]
+        forged = ChemicalIdentity.of_molecule(self.ORTHO)   # ortho's digest, C8H9NO2 (same formula as para)
+        one["parent"]["structure"] = {
+            "schema_version": forged.schema_version, "layer": forged.layer.value,
+            "canonical_repr": forged.canonical_repr, "identity_digest": forged.identity_digest,
+        }
+        payload["structural_candidates"] = [one]
+        with pytest.raises(ValueError, match="does not match the stored molecular graph"):
+            ir_from_payload(payload)
+
+    def test_a_forged_formula_inconsistent_with_the_graph_is_refused(self):
+        payload = ir_to_payload(_para_ir())
+        one = payload["structural_candidates"][0]
+        one["parent"]["formula"]["counts"] = [
+            [s, (c + 3 if s == "H" else c)] for s, c in one["parent"]["formula"]["counts"]
+        ]
+        payload["structural_candidates"] = [one]
+        with pytest.raises(ValueError, match="does not match the stored molecular graph|forget"):
+            ir_from_payload(payload)
+
+    def test_a_wrong_subject_parent_same_formula_isomer_is_refused_by_the_parent_pin(self):
+        # HIGH #4: a fully-coherent parent that is a DIFFERENT same-formula isomer than the IR target. The forgetful
+        # square passes (formula-level: C8H9NO2 either way); ONLY the parent==target pin catches it.
+        payload = ir_to_payload(_para_ir())
+        one = payload["structural_candidates"][0]
+        one["parent"] = _structural_species_to_payload(StructuralSpecies.of_molecule(self.ORTHO))
+        payload["structural_candidates"] = [one]
+        with pytest.raises(ValueError, match="parent must be the IR target"):
+            ir_from_payload(payload)
+
+    def test_structural_candidates_on_a_recompile_operation_are_refused(self):
+        # coherence: a DECOMPOSE candidate rides only a DECOMPILE IR, not a RECOMPILE (assembly) artifact.
+        payload = ir_to_payload(_para_ir())
+        payload["operation"] = CompilationOperation.RECOMPILE.value
+        with pytest.raises(ValueError, match="ride only a DECOMPILE IR"):
+            ir_from_payload(payload)
+
+    def test_the_provider_is_in_the_ir_identity_even_with_an_empty_candidate_set(self):
+        # MEDIUM #3: methane has no cleavage (empty candidate set); the provider must still move ir.digest, else it
+        # is laundered out of the identity entirely (section 4.1 names "transform/evidence provider version").
+        a = decompile_structure_to_ir(METHANE, reagents=(WATER,), provider_id="capped-scission-mediated")
+        b = decompile_structure_to_ir(METHANE, reagents=(WATER,), provider_id="a-different-provider")
+        assert len(a.structural_candidates) == 0 and len(b.structural_candidates) == 0
+        assert a.digest != b.digest
+
+    def test_the_honest_full_ir_still_round_trips_unchanged(self):
+        ir = _para_ir()
+        assert deserialize_ir(serialize_ir(ir)).digest == ir.digest
 
 
 class TestExistingProducersUnaffected:

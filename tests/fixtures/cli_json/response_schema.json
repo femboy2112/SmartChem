@@ -22,6 +22,7 @@
     "search_receipt": "object(search-receipt-view) (the full section 8.1 receipt; IR-CHEM-01)",
     "search_status": "enum(SearchStatus)",
     "standard_status": "str (section 8.2 status)",
+    "structural_candidates": "array[object(structural-candidate)] (structure-preserving decompile; IR-STRUCT-01)",
     "target": "object(chemical-identity)",
     "terminal_policy_digest": "str (sha256)",
     "tool_version": "str",

@@ -539,8 +539,9 @@ class TestSection82IRFace:
 
     def test_schema_bumped_for_the_standard_status_and_loss_fields(self):
         # v1alpha2 added standard_status; v1alpha3 (IR-LOSS-01) made identity_losses typed records; v1alpha4
-        # (IR-CHEM-01) carries the FULL section 8.1 receipt (search_receipt_digest str -> search_receipt object).
-        assert CHEMICAL_COMPILATION_IR_SCHEMA.endswith("v1alpha4")
+        # (IR-CHEM-01) carries the FULL section 8.1 receipt (search_receipt_digest str -> search_receipt object);
+        # v1alpha5 (IR-STRUCT-01) adds first-class structural_candidates (structure-preserving decompile records).
+        assert CHEMICAL_COMPILATION_IR_SCHEMA.endswith("v1alpha5")
 
     def test_decompile_ir_carries_a_faithful_8_2_status(self):
         ir = decompile_to_ir("C8H9NO2", INV)

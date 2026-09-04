@@ -33,6 +33,7 @@ from enum import Enum
 
 from .contracts import Digestible, canonical_digest
 from .decompiler import DecompositionGraph, Formula, search_decomposition
+from .decompiler_mediated import MediatedEdge
 from .identity import IdentityLoss, identity_loss_from_payload, identity_loss_to_payload
 from .search import PRIMARY_RESOLVABLE_8_2_STATUSES, STANDARD_8_2_STATUSES, SearchStatus
 # the transform-registry identity lives in a shared leaf (below both the search and IR layers) so the receipts
@@ -44,16 +45,22 @@ __all__ = [
     "CHEMICAL_IDENTITY_SCHEMA",
     "CANDIDATE_SUMMARY_SCHEMA",
     "SEARCH_RECEIPT_VIEW_SCHEMA",
+    "STRUCTURAL_SPECIES_SCHEMA",
+    "STRUCTURAL_CANDIDATE_SCHEMA",
     "CompilationOperation",
     "IdentityLayer",
+    "TransformDirection",
     "ChemicalIdentity",
     "CandidateSummary",
+    "StructuralSpecies",
+    "StructuralCandidate",
     "Section81ReceiptView",
     "ChemicalCompilationIR",
     "InverseStatus",
     "InverseResult",
     "decompile_to_ir",
     "recompile_to_ir",
+    "decompile_structure_to_ir",
     "ir_to_payload",
     "ir_from_payload",
     "serialize_ir",
@@ -63,16 +70,23 @@ __all__ = [
 
 # v1alpha3 (IR-LOSS-01): identity_losses became typed IdentityLoss records (array[str] -> array[object]).
 # v1alpha4 (IR-CHEM-01): the IR carries the FULL section 8.1 receipt (Section81ReceiptView) instead of only its
-# digest -- search_receipt_digest (str) -> search_receipt (object with the ~20 mandated counters).  Both are
-# genuine serialized-shape changes, so the schema version bumps with each.
-CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha4"
+# digest -- search_receipt_digest (str) -> search_receipt (object with the ~20 mandated counters).
+# v1alpha5 (IR-STRUCT-01): the IR carries first-class typed StructuralCandidate records -- a structural
+# decomposition (parent/product STRUCTURE identities, the scission edit witness, primitive stoichiometry, the
+# producing provider's id/version, and the EXACT forgetful formula projection) rides INSIDE the IR, no longer
+# reduced to a formula edge as the sole shared artifact.  All are genuine serialized-shape changes, so the schema
+# version bumps with each (and the value digest shifts, since structural_candidates is a covered field).
+CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha5"
 CHEMICAL_IDENTITY_SCHEMA = "smartchem.compilation-ir/chemical-identity-v1alpha1"
 CANDIDATE_SUMMARY_SCHEMA = "smartchem.compilation-ir/candidate-summary-v1alpha1"
 SEARCH_RECEIPT_VIEW_SCHEMA = "smartchem.compilation-ir/search-receipt-view-v1alpha1"
+STRUCTURAL_SPECIES_SCHEMA = "smartchem.compilation-ir/structural-species-v1alpha1"
+STRUCTURAL_CANDIDATE_SCHEMA = "smartchem.compilation-ir/structural-candidate-v1alpha1"
 
-# The closed set of section-8.1 search kinds the three engine receipts emit (routes.py / decompiler.py).  A view
-# is a projection off exactly one of them, so a search_kind outside this set is a tampered payload (red-team fold).
-_KNOWN_SEARCH_KINDS = ("LINEAR_ROUTE", "CONVERGENT_DAG", "FORMULA_DECOMPOSITION")
+# The closed set of section-8.1 search kinds the engine receipts emit (routes.py / decompiler.py) plus the
+# structural decompile descent (structure_descent.capped_scissions, IR-STRUCT-01).  A view is a projection off
+# exactly one of them, so a search_kind outside this set is a tampered payload (red-team fold).
+_KNOWN_SEARCH_KINDS = ("LINEAR_ROUTE", "CONVERGENT_DAG", "FORMULA_DECOMPOSITION", "STRUCTURE_DECOMPOSITION")
 
 
 class CompilationOperation(str, Enum):
@@ -155,6 +169,237 @@ class CandidateSummary(Digestible):
         for name in ("candidate_digest", "equation", "readiness_tier"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise ValueError(f"{name} must be a non-empty string")
+
+
+class TransformDirection(str, Enum):
+    """The direction a structural transform primitive is stated in.
+
+    A ``DECOMPOSE`` primitive reads a parent into products (its reverse is the assembly step a synthesis route
+    takes).  A structural DECOMPILE emits ``DECOMPOSE`` candidates; the reverse orientation is the recompiler's
+    job and is represented by the route/DAG candidates, not by flipping this field.
+    """
+
+    DECOMPOSE = "DECOMPOSE"
+
+
+@dataclass(frozen=True)
+class StructuralSpecies(Digestible):
+    """One species in a :class:`StructuralCandidate`, pinned at BOTH identity layers (IR-STRUCT-01).
+
+    ``structure`` is the STRUCTURE-layer identity -- WHICH isomer; a same-formula isomer is a distinct species
+    here (section 5.4), never collapsed to its formula.  ``formula`` is the exact composition it forgets to.
+    Carrying both is what lets a candidate's forgetful square be re-checked from stored fields alone: the
+    structure says which molecule, the formula is the forgetful-projection target that molecule maps to.
+    """
+
+    schema_version: str
+    structure: ChemicalIdentity
+    formula: Formula
+
+    def __post_init__(self) -> None:
+        if self.schema_version != STRUCTURAL_SPECIES_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {STRUCTURAL_SPECIES_SCHEMA!r}")
+        if type(self.structure) is not ChemicalIdentity:
+            raise TypeError("structure must be a ChemicalIdentity")
+        if self.structure.layer is not IdentityLayer.STRUCTURE:
+            raise ValueError("a structural species' structure identity must be at the STRUCTURE layer")
+        if type(self.formula) is not Formula:
+            raise TypeError("formula must be a Formula")
+
+    @classmethod
+    def of_molecule(cls, molecule: "object") -> "StructuralSpecies":
+        """The species record for a :class:`~smartchem.category.Molecule`: its STRUCTURE identity and its exact
+        formula (the same ``canonical()``/``asgiven:`` identity the route/DAG search keys on, via
+        :func:`ChemicalIdentity.of_molecule`)."""
+        return cls(
+            STRUCTURAL_SPECIES_SCHEMA,
+            ChemicalIdentity.of_molecule(molecule),
+            Formula.of(molecule.formula, molecule.charge),
+        )
+
+
+# The closed witness->projection pairing: a capped-scission (valence-preserving bond rewrite consuming reagents)
+# forgets to a MediatedEdge.  IR-STRUCT-01 lands exactly this one structural family first-class; the typed
+# provider registry that admits qualitatively distinct families is TRANSFORM-PROVIDER-01 (the provider_id/version
+# fields are the seam it will register through).
+_WITNESS_PROJECTION = {"CAPPED_SCISSION": "MEDIATED_EDGE"}
+
+
+@dataclass(frozen=True)
+class StructuralCandidate(Digestible):
+    """A first-class structural decomposition candidate carried INSIDE the IR (IR-STRUCT-01).
+
+    Where a :class:`CandidateSummary` is a formula edge reduced to a digest and a string, a StructuralCandidate
+    RETAINS the structure the transform acted on: the parent and product species at both layers, the primitive
+    stoichiometry (species + multiplicity on each side), the scission EDIT witness (which specific
+    valence-preserving bond rewrite, by its own digest and human equation), the producing provider's id and
+    version, and the EXACT forgetful formula projection this structure refines.  W3 is unchanged: it is a
+    ``FORMAL_CANDIDATE`` -- structure enumerates a conservation- and valence-valid rewrite within a grammar,
+    never a claim the reaction runs or under what conditions.
+
+    THE FORGETFUL SQUARE (IR-FORGET-01, section 7.3).  The stored formula projection MUST equal the forget of the
+    stored species -- recomputed here in :meth:`_recompute_projection` from the parent/reagent/product FORMULAS,
+    independently of the live scission the producer forgot -- so a transported candidate whose projection
+    contradicts its own structure is REFUSED on read, never silently coerced.  This makes the commuting square
+    ``forget(structural candidate) == its stored formula projection`` a construction invariant, checked from
+    stored fields alone (the repo's "no check derived from its own subject" discipline: the certificate is
+    recomputed from the stored species, a different object than the live edge the producer called ``forget`` on).
+    """
+
+    schema_version: str
+    direction: TransformDirection
+    provider_id: str
+    provider_version: str
+    parent: StructuralSpecies
+    reagents: tuple[tuple[StructuralSpecies, int], ...]
+    products: tuple[tuple[StructuralSpecies, int], ...]
+    witness_kind: str
+    witness_digest: str
+    edit_equation: str
+    projection_kind: str
+    projection_digest: str
+    projection_equation: str
+    readiness_tier: str
+    identity_losses: tuple[IdentityLoss, ...]
+
+    def __post_init__(self) -> None:
+        if self.schema_version != STRUCTURAL_CANDIDATE_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {STRUCTURAL_CANDIDATE_SCHEMA!r}")
+        if not isinstance(self.direction, TransformDirection):
+            raise TypeError("direction must be a TransformDirection")
+        for name in ("provider_id", "provider_version", "witness_digest", "edit_equation",
+                     "projection_digest", "projection_equation"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name):
+                raise ValueError(f"{name} must be a non-empty string")
+        if type(self.parent) is not StructuralSpecies:
+            raise TypeError("parent must be a StructuralSpecies")
+        # a capped (mediated) scission consumes at least one reagent and yields at least two products; the stoich
+        # tuples are canonical (species-digest-sorted, one entry per distinct species with its multiplicity).
+        self._check_stoich("reagents", self.reagents)
+        self._check_stoich("products", self.products)
+        if self.witness_kind not in _WITNESS_PROJECTION:
+            raise ValueError(f"witness_kind must be one of {tuple(_WITNESS_PROJECTION)}, not {self.witness_kind!r}")
+        expected_projection = _WITNESS_PROJECTION[self.witness_kind]
+        if self.projection_kind != expected_projection:
+            raise ValueError(
+                f"projection_kind for a {self.witness_kind} witness must be {expected_projection!r}, "
+                f"not {self.projection_kind!r}"
+            )
+        if self.readiness_tier != "FORMAL_CANDIDATE":
+            raise ValueError(
+                "a structural candidate is a FORMAL_CANDIDATE (W3: structure enumerates a valence-valid rewrite, "
+                "it never claims the reaction runs)"
+            )
+        if type(self.identity_losses) is not tuple or any(type(x) is not IdentityLoss for x in self.identity_losses):
+            raise TypeError("identity_losses must be a tuple of IdentityLoss records")
+        loss_digests = [x.digest for x in self.identity_losses]
+        if loss_digests != sorted(loss_digests):
+            raise ValueError("identity_losses must be in canonical (digest-sorted) order; display order is not identity")
+        if len(set(loss_digests)) != len(loss_digests):
+            raise ValueError("identity_losses must be distinct by digest")
+        # THE FORGETFUL SQUARE: rebuild the forgetful edge from the stored species and demand it equal the stored
+        # projection -- byte-for-byte (its digest AND its human equation).  A mismatch is refused, not coerced.
+        try:
+            edge = self._recompute_projection()
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"the stored structural species do not forget to a valid formula edge: {exc}"
+            ) from exc
+        if edge.digest != self.projection_digest or edge.equation() != self.projection_equation:
+            raise ValueError(
+                "the stored formula projection is not the forget of the stored structure (section-7.3 commuting "
+                "square broken: forget(structure) != stored projection); a mismatch is refused, not coerced"
+            )
+
+    @staticmethod
+    def _check_stoich(name: str, pairs: "object") -> None:
+        if type(pairs) is not tuple or not pairs:
+            raise TypeError(f"{name} must be a non-empty tuple of (StructuralSpecies, multiplicity) pairs")
+        digests: list[str] = []
+        for pair in pairs:
+            if type(pair) is not tuple or len(pair) != 2:
+                raise TypeError(f"each {name} entry must be a (StructuralSpecies, multiplicity) pair")
+            species, mult = pair
+            if type(species) is not StructuralSpecies:
+                raise TypeError(f"each {name} species must be a StructuralSpecies")
+            if type(mult) is not int or mult < 1:
+                raise ValueError(f"each {name} multiplicity must be an int >= 1")
+            digests.append(species.digest)
+        if digests != sorted(digests):
+            raise ValueError(f"{name} must be in canonical (species-digest-sorted) order; display order is not identity")
+        if len(set(digests)) != len(digests):
+            raise ValueError(f"a {name} species appears twice; merge its multiplicity")
+
+    def _recompute_projection(self) -> MediatedEdge:
+        """Independently rebuild the forgetful composition edge from the STORED species formulas.
+
+        Mirrors :meth:`smartchem.structure_descent.CappedScission.forget` verbatim -- the element-bucket merge
+        (a single-element product/reagent collapses to its unit bucket carrying the atom count as multiplicity)
+        and the same canonical sort -- so an HONEST candidate's recompute is byte-identical to what the producer
+        forgot, and any drift makes the producer fail its own construction (and the tests catch it).  It is the
+        certificate the forgetful-square check compares the stored projection against.
+        """
+        if self.witness_kind != "CAPPED_SCISSION":  # pragma: no cover - guarded by __post_init__ pairing
+            raise ValueError(f"no forgetful projection defined for witness_kind {self.witness_kind!r}")
+
+        def _merge(pairs: "tuple[tuple[StructuralSpecies, int], ...]") -> tuple[tuple[Formula, int], ...]:
+            counts: dict[Formula, int] = {}
+            for species, mult in pairs:
+                f = species.formula
+                if f.is_element:
+                    (symbol, count), = f.counts
+                    bucket = Formula.bucket(symbol)
+                    counts[bucket] = counts.get(bucket, 0) + count * mult
+                else:
+                    counts[f] = counts.get(f, 0) + mult
+            return tuple(sorted(counts.items(), key=lambda pm: ((pm[0].counts, pm[0].charge), pm[1])))
+
+        return MediatedEdge(self.parent.formula, 1, _merge(self.reagents), _merge(self.products))
+
+    @classmethod
+    def from_capped_scission(
+        cls,
+        edge: "object",
+        *,
+        provider_id: str = "capped-scission-mediated",
+        provider_version: str = "v1",
+        identity_losses: "tuple[IdentityLoss, ...]" = (),
+    ) -> "StructuralCandidate":
+        """Build the structural candidate for one :class:`~smartchem.structure_descent.CappedScission`.
+
+        Carries its structure witnesses (parent + grouped product/reagent species) and its EXACT forgetful
+        projection (``edge.forget()``, a :class:`~smartchem.decompiler_mediated.MediatedEdge`).  The candidate then
+        re-checks that projection against a recompute from its own stored species in ``__post_init__``, so this
+        producer path is self-verifying: a mapping error here fails construction immediately.
+        """
+        def _group(mols: "tuple[object, ...]") -> tuple[tuple[StructuralSpecies, int], ...]:
+            by_digest: dict[str, list] = {}
+            for m in mols:
+                species = StructuralSpecies.of_molecule(m)
+                slot = by_digest.setdefault(species.structure.identity_digest, [species, 0])
+                slot[1] += 1
+            return tuple(
+                sorted(((slot[0], slot[1]) for slot in by_digest.values()), key=lambda pm: pm[0].digest)
+            )
+
+        projection = edge.forget()
+        return cls(
+            STRUCTURAL_CANDIDATE_SCHEMA,
+            TransformDirection.DECOMPOSE,
+            provider_id,
+            provider_version,
+            StructuralSpecies.of_molecule(edge.reactant),
+            _group(edge.reagents),
+            _group(edge.products),
+            "CAPPED_SCISSION",
+            edge.digest,
+            edge.equation(),
+            "MEDIATED_EDGE",
+            projection.digest,
+            projection.equation(),
+            "FORMAL_CANDIDATE",
+            tuple(sorted(identity_losses, key=lambda loss: loss.digest)),
+        )
 
 
 def _receipt_first(receipt: "object", *names: str) -> "object | None":
@@ -376,6 +621,11 @@ class ChemicalCompilationIR(Digestible):
     search_receipt: Section81ReceiptView
     candidates: tuple[CandidateSummary, ...]
     diagnostics: tuple[str, ...]
+    # IR-STRUCT-01 (v1alpha5): first-class typed structural decomposition candidates ride INSIDE the IR.  A
+    # structural DECOMPILE (decompile_structure_to_ir) populates these; the formula/route/DAG producers leave them
+    # empty.  Digest-sorted/distinct like every other candidate tuple and covered by the IR's own digest.  Given a
+    # default so the formula/route/DAG producers' positional constructions are unchanged by the new field.
+    structural_candidates: tuple[StructuralCandidate, ...] = ()
 
     def __post_init__(self) -> None:
         if self.schema_version != CHEMICAL_COMPILATION_IR_SCHEMA:
@@ -467,6 +717,26 @@ class ChemicalCompilationIR(Digestible):
             raise ValueError("candidates must be in canonical (digest-sorted) order; display order is not identity")
         if len(set(digests)) != len(digests):
             raise ValueError("candidates must be distinct by digest")
+        # structural_candidates obey the same canonical/distinct discipline, and their presence is coherent only on
+        # a STRUCTURE-layer target: a structural candidate carries structure-level claims (a specific isomer parent,
+        # its scission), so a formula-layer IR carrying one would assert structure over a target known only at the
+        # formula layer -- refused.
+        if type(self.structural_candidates) is not tuple or any(
+            type(s) is not StructuralCandidate for s in self.structural_candidates
+        ):
+            raise TypeError("structural_candidates must be a tuple of StructuralCandidate values")
+        struct_digests = [s.digest for s in self.structural_candidates]
+        if struct_digests != sorted(struct_digests):
+            raise ValueError(
+                "structural_candidates must be in canonical (digest-sorted) order; display order is not identity"
+            )
+        if len(set(struct_digests)) != len(struct_digests):
+            raise ValueError("structural_candidates must be distinct by digest")
+        if self.structural_candidates and self.target.layer is not IdentityLayer.STRUCTURE:
+            raise ValueError(
+                "structural_candidates require a STRUCTURE-layer target (they carry structure-level claims); "
+                f"this IR's target is at the {self.target.layer.value} layer"
+            )
 
     @property
     def complete_within_bounds(self) -> bool:
@@ -483,11 +753,18 @@ class ChemicalCompilationIR(Digestible):
         return tuple(loss.summary() for loss in self.identity_losses)
 
     def render(self) -> str:
+        structural = (
+            f"  structural candidates: {len(self.structural_candidates)} (structure-preserving, forgetful "
+            f"projection carried)\n"
+            if self.structural_candidates
+            else ""
+        )
         return (
             f"CHEMICAL COMPILATION IR ({self.operation.value}, {self.schema_version}, tool {self.tool_version})\n"
             f"  target: {self.target.canonical_repr} [{self.target.layer.value}]\n"
             f"  search: {self.standard_status} (engine: {self.search_status.value}); "
             f"candidates: {self.candidate_count}\n"
+            f"{structural}"
             f"  request digest: {self.request_digest}\n"
             f"  transform registry: {self.transform_registry_digest}\n"
             f"  losses: {len(self.identity_losses)}; diagnostics: {len(self.diagnostics)}\n"
@@ -754,6 +1031,174 @@ def recompile_to_ir(
     )
 
 
+def _structure_decompile_terminal_digest(reagents: tuple) -> str:
+    """The structural-decompile 'terminal policy': the reagent TYPE set the capper may consume.
+
+    A one-step capped-scission enumeration has no on-hand stock to terminate at (section 7's terminal set is a
+    search concept); its one policy parameter is WHICH reagent types the capper may draw from.  A frozenset of the
+    reagent structure identities makes the digest order-invariant (permuting the reagent list leaves it unchanged).
+    """
+    reagent_types = frozenset(_structure_ident(m) for m in reagents)
+    return canonical_digest(("terminal-policy", "STRUCTURE_DECOMPOSE", reagent_types))
+
+
+def _structure_decompose_receipt_view(
+    *,
+    complete: bool,
+    results_returned: int,
+    target_identity_digest: str,
+    terminal_policy_digest: str,
+    transform_registry_digest: str,
+    cut_budget: int,
+) -> Section81ReceiptView:
+    """An honest section-8.1 receipt view for one capped-scission descent (``capped_scissions``).
+
+    The descent returns only ``(edges, complete)``, so every counter it does not measure is UNKNOWN (``None``),
+    per section 8.1's "null, not zero" -- nodes_visited, transforms_considered, candidates_emitted are null; only
+    ``results_returned`` (the distinct emitted candidates) and the completeness flags are known.  ``complete`` is
+    the capper's own flag (``False`` iff its budget was hit), which maps to COMPLETE_WITHIN_BOUNDS /
+    PARTIAL_SEARCH_BUDGET -- never a fabricated exhaustion.
+    """
+    status = SearchStatus.COMPLETE_WITHIN_BOUNDS if complete else SearchStatus.PARTIAL_SEARCH_BUDGET
+    return Section81ReceiptView(
+        SEARCH_RECEIPT_VIEW_SCHEMA,
+        "STRUCTURE_DECOMPOSITION",
+        status.value,
+        status.standard_name,
+        "GLOBAL",                    # the capper's budget is a single global cut budget, not a per-node one
+        target_identity_digest,
+        terminal_policy_digest,
+        transform_registry_digest,
+        None,                        # max_depth: a one-step scission enumeration has no descent-depth bound
+        cut_budget,
+        None,                        # candidate_limit: no distinct-candidate cap anywhere (section 8.1 UNKNOWN)
+        None,                        # result_limit: the capper has no result cap, only the cut budget
+        None,                        # nodes_visited: not measured -> UNKNOWN
+        None,                        # transforms_considered: not measured -> UNKNOWN
+        None,                        # candidates_emitted: no separate pre-dedup emit count -> UNKNOWN
+        results_returned,            # results_returned: the distinct capped scissions emitted
+        (),                          # candidates_rejected_by_reason: not attributed by reason at this layer
+        complete,                    # cut_enumeration_complete
+        complete,                    # candidate_enumeration_complete
+        False,                       # result_limit_saturated: no result cap to saturate
+        "" if complete else status.standard_name,   # stop_reason ("" only when complete)
+    )
+
+
+def decompile_structure_to_ir(
+    target: "object",
+    *,
+    reagents: tuple,
+    max_reactant_cuts: int = 1,
+    budget: int = 50_000,
+    ring_aware: bool = False,
+    identity_losses: "tuple[IdentityLoss, ...]" = (),
+    provider_id: str = "capped-scission-mediated",
+    provider_version: str = "v1",
+    tool_version: str | None = None,
+) -> ChemicalCompilationIR:
+    """Emit a STRUCTURE-layer DECOMPILE IR whose candidates are first-class :class:`StructuralCandidate` records.
+
+    The structure-preserving decompile path (IR-STRUCT-01).  Where :func:`decompile_to_ir` reduces the target to a
+    formula and emits formula edges (the sole shared artifact being a composition), this runs
+    :func:`~smartchem.structure_descent.capped_scissions` on ``target`` over the declared reagent TYPES and
+    packages each valence-preserving cleavage as a structural candidate that RETAINS the structure: parent/product
+    STRUCTURE identities, primitive stoichiometry, the scission edit witness, the producing provider's id/version,
+    and the EXACT forgetful formula projection (``edge.forget()``).  Each candidate re-checks that projection
+    against a recompute from its own stored species (the section-7.3 commuting square), so this producer is
+    self-verifying.
+
+    The IR digest keeps the section 4.1 discipline: presentation-invariant (permuting ``reagents`` does not change
+    it -- the terminal policy is a frozenset and candidates are digest-sorted) and semantic-input-sensitive (a
+    bound or transform-registry change alters ``request_digest``, hence the value digest).  W3 unchanged: every
+    candidate is a ``FORMAL_CANDIDATE`` -- a conservation- and valence-valid rewrite within the capped-scission
+    grammar and the declared bounds, never a claim any synthesis works.
+    """
+    from .category import Molecule
+    from .structure_descent import capped_scissions
+
+    if type(target) is not Molecule:
+        raise TypeError("decompile_structure_to_ir target must be a smartchem.category.Molecule")
+    if type(reagents) is not tuple or not reagents or any(type(r) is not Molecule for r in reagents):
+        raise TypeError("reagents must be a non-empty tuple of reagent-TYPE Molecules")
+
+    edges, complete = capped_scissions(
+        target, reagents, max_reactant_cuts=max_reactant_cuts, budget=budget, ring_aware=ring_aware
+    )
+    losses_sorted = tuple(sorted(identity_losses, key=lambda loss: loss.digest))
+    structural_candidates = tuple(
+        sorted(
+            (
+                StructuralCandidate.from_capped_scission(
+                    edge,
+                    provider_id=provider_id,
+                    provider_version=provider_version,
+                    identity_losses=losses_sorted,
+                )
+                for edge in edges
+            ),
+            key=lambda s: s.digest,
+        )
+    )
+    target_id = ChemicalIdentity.of_molecule(target)
+    terminal_digest = _structure_decompile_terminal_digest(reagents)
+    registry_digest = _transform_registry_digest("capped-scission-decompose")
+    # request_digest identifies the REQUEST: target + reagent-type policy + transform registry + bounds -- so a
+    # bound change (or a transform-registry version bump) changes the IR digest even when the candidate set is
+    # identical.  ring_aware is a bound (it widens which cuts are attempted), so it rides here.
+    reagent_pool = frozenset(_structure_ident(m) for m in reagents)
+    request_digest = canonical_digest(
+        (
+            "structure-decompile-request",
+            target_id.identity_digest,
+            terminal_digest,
+            ("reagent-pool", reagent_pool),
+            ("transform-registry", registry_digest),
+            ("bounds", max_reactant_cuts, budget, ring_aware),
+        )
+    )
+    status = SearchStatus.COMPLETE_WITHIN_BOUNDS if complete else SearchStatus.PARTIAL_SEARCH_BUDGET
+    receipt_view = _structure_decompose_receipt_view(
+        complete=complete,
+        results_returned=len(edges),
+        target_identity_digest=target_id.identity_digest,
+        terminal_policy_digest=terminal_digest,
+        transform_registry_digest=registry_digest,
+        cut_budget=budget,
+    )
+    if not complete:
+        diagnostics: tuple[str, ...] = (
+            f"structural decompile incomplete within bounds: {status.value} (cut budget {budget} hit); the "
+            f"enumerated candidates are a partial sample, not an exhaustive set",
+        )
+    elif not structural_candidates:
+        diagnostics = (
+            f"no valence-preserving capped scission of the target exists over the declared reagent types within "
+            f"the grammar at the declared bounds (max_reactant_cuts={max_reactant_cuts}); the enumeration was "
+            f"exhaustive there (no budget fired), but that is exhaustion of THIS grammar at THESE bounds -- not a "
+            f"proof that no cleavage exists under more reagents or higher bounds (section 8.3, no-route: "
+            f"exhaustive-within-bounds)",
+        )
+    else:
+        diagnostics = ()
+    return ChemicalCompilationIR(
+        CHEMICAL_COMPILATION_IR_SCHEMA,
+        tool_version or _tool_version(),
+        CompilationOperation.DECOMPILE,
+        target_id,
+        request_digest,
+        losses_sorted,
+        terminal_digest,
+        registry_digest,
+        status,
+        status.standard_name,
+        receipt_view,
+        (),   # no formula-edge CandidateSummary candidates: the structural candidates carry the decompile payload
+        diagnostics,
+        structural_candidates,
+    )
+
+
 # -- serialization (advancing IR-CHEM-01: the IR is a transportable artifact, not just an in-memory value) --
 #
 # The one property that must survive the round trip is IDENTITY: deserialize(serialize(ir)).digest == ir.digest.
@@ -804,6 +1249,89 @@ def _receipt_view_from_payload(p: dict) -> Section81ReceiptView:
     )
 
 
+def _identity_to_payload(identity: ChemicalIdentity) -> dict:
+    return {
+        "schema_version": identity.schema_version,
+        "layer": identity.layer.value,
+        "canonical_repr": identity.canonical_repr,
+        "identity_digest": identity.identity_digest,
+    }
+
+
+def _identity_from_payload(p: dict) -> ChemicalIdentity:
+    return ChemicalIdentity(p["schema_version"], IdentityLayer(p["layer"]), p["canonical_repr"], p["identity_digest"])
+
+
+def _formula_to_payload(formula: Formula) -> dict:
+    return {"counts": [[symbol, count] for symbol, count in formula.counts], "charge": formula.charge}
+
+
+def _formula_from_payload(p: dict) -> Formula:
+    return Formula(tuple((symbol, count) for symbol, count in p["counts"]), p["charge"])
+
+
+def _structural_species_to_payload(species: StructuralSpecies) -> dict:
+    return {
+        "schema_version": species.schema_version,
+        "structure": _identity_to_payload(species.structure),
+        "formula": _formula_to_payload(species.formula),
+    }
+
+
+def _structural_species_from_payload(p: dict) -> StructuralSpecies:
+    return StructuralSpecies(
+        p["schema_version"], _identity_from_payload(p["structure"]), _formula_from_payload(p["formula"])
+    )
+
+
+def _stoich_to_payload(pairs: "tuple[tuple[StructuralSpecies, int], ...]") -> list:
+    return [{"species": _structural_species_to_payload(s), "multiplicity": m} for s, m in pairs]
+
+
+def _stoich_from_payload(items: list) -> tuple:
+    return tuple((_structural_species_from_payload(i["species"]), i["multiplicity"]) for i in items)
+
+
+def _structural_candidate_to_payload(candidate: StructuralCandidate) -> dict:
+    return {
+        "schema_version": candidate.schema_version,
+        "direction": candidate.direction.value,
+        "provider_id": candidate.provider_id,
+        "provider_version": candidate.provider_version,
+        "parent": _structural_species_to_payload(candidate.parent),
+        "reagents": _stoich_to_payload(candidate.reagents),
+        "products": _stoich_to_payload(candidate.products),
+        "witness_kind": candidate.witness_kind,
+        "witness_digest": candidate.witness_digest,
+        "edit_equation": candidate.edit_equation,
+        "projection_kind": candidate.projection_kind,
+        "projection_digest": candidate.projection_digest,
+        "projection_equation": candidate.projection_equation,
+        "readiness_tier": candidate.readiness_tier,
+        "identity_losses": [identity_loss_to_payload(loss) for loss in candidate.identity_losses],
+    }
+
+
+def _structural_candidate_from_payload(p: dict) -> StructuralCandidate:
+    return StructuralCandidate(
+        p["schema_version"],
+        TransformDirection(p["direction"]),
+        p["provider_id"],
+        p["provider_version"],
+        _structural_species_from_payload(p["parent"]),
+        _stoich_from_payload(p["reagents"]),
+        _stoich_from_payload(p["products"]),
+        p["witness_kind"],
+        p["witness_digest"],
+        p["edit_equation"],
+        p["projection_kind"],
+        p["projection_digest"],
+        p["projection_equation"],
+        p["readiness_tier"],
+        tuple(identity_loss_from_payload(loss) for loss in p["identity_losses"]),
+    )
+
+
 def ir_to_payload(ir: ChemicalCompilationIR) -> dict:
     """A JSON-compatible dict capturing every SEMANTIC field of ``ir`` (enums by value, tuples as lists)."""
     if type(ir) is not ChemicalCompilationIR:
@@ -836,6 +1364,7 @@ def ir_to_payload(ir: ChemicalCompilationIR) -> dict:
             for c in ir.candidates
         ],
         "diagnostics": list(ir.diagnostics),
+        "structural_candidates": [_structural_candidate_to_payload(s) for s in ir.structural_candidates],
     }
 
 
@@ -880,6 +1409,7 @@ def ir_from_payload(payload: dict) -> ChemicalCompilationIR:
         _receipt_view_from_payload(payload["search_receipt"]),
         candidates,
         tuple(payload["diagnostics"]),
+        tuple(_structural_candidate_from_payload(s) for s in payload["structural_candidates"]),
     )
 
 

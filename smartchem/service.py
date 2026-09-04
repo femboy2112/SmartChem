@@ -1730,6 +1730,7 @@ def response_schema() -> dict:
             "search_receipt": "object(search-receipt-view) (the full section 8.1 receipt; IR-CHEM-01)",
             "candidates": "array[object(candidate-summary)]",
             "diagnostics": "array[str]",
+            "structural_candidates": "array[object(structural-candidate)] (structure-preserving decompile; IR-STRUCT-01)",
         },
         "search_receipt_view_fields": {
             "schema_version": "str",

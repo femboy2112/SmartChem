@@ -37,6 +37,11 @@ TRANSFORM_REGISTRIES: dict[str, tuple] = {
         "transform-registry", "capped-scission-convergent", "v1",
         "valence-capped bond-scission retro-steps, convergent synthesis DAGs (section 8)",
     ),
+    "capped-scission-decompose": (
+        "transform-registry", "capped-scission-decompose", "v1",
+        "one-step valence-preserving capped scissions as structure-preserving decompile candidates "
+        "(section 7.3 / IR-STRUCT-01): the structural refinement whose forgetful image is a mediated edge",
+    ),
 }
 
 

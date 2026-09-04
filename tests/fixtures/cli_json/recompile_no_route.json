@@ -8,7 +8,7 @@
     "identity_losses": [],
     "operation": "RECOMPILE",
     "request_digest": "590ddb997965733ba4447728408e1780517396dc61290b85aa8f061547718869",
-    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha4",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha5",
     "search_receipt": {
       "candidate_enumeration_complete": true,
       "candidate_limit": null,
@@ -34,6 +34,7 @@
     },
     "search_status": "COMPLETE_WITHIN_BOUNDS",
     "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+    "structural_candidates": [],
     "target": {
       "canonical_repr": "C4H6O3",
       "identity_digest": "b0a70a2130f9c14a5ee39d75c91d63d3a8c89599b95bc60afb076341edbfdf59",
@@ -156,7 +157,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "e96faa5a33681edd3465e064bb3b5f5a79e1df63011ecdec10b9fd11b34e2be6",
+  "result_digest": "3530fe5f9abf1c1c1eb378f3a3029d6655767f1cb26941a3cb97aeee7d0ab301",
   "schema_version": "smartchem.service/compilation-response-v1alpha3",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

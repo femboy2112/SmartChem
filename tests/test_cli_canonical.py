@@ -55,26 +55,33 @@ class TestCommandMatrixEqualRequestJson:
         assert compile_out.strip(), "emit-request must print the request JSON"
         assert compile_out == recompile_out  # byte-identical -- the whole point of one shared request builder
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "G8 / standard 14.1 alias-unity BLOCKER (manifest 2A.7): the legacy `synthesize` alias keeps DIVERGENT "
-            "defaults vs `recompile` (max_depth 2 vs 3, commodities off vs on, provider NETWORK vs OFFLINE, EXPLICIT "
-            "vs DEFAULT origins), violating 14.1's 'MUST construct the same typed request ... MUST NOT keep divergent "
-            "defaults' and release gate 16.G8. The compile-vs-recompile matrix above NEVER runs `synthesize`, so the "
-            "suite was vacuously green over the one alias the requirement names; this guard makes the violation "
-            "VISIBLE (an XPASS flags its resolution). Closing it is an Operator design decision (align synthesize's "
-            "defaults -- erasing its distinct download-and-go behavior -- or revise the 14.1/822 alias mandate)."
-        ),
-    )
-    def test_synthesize_is_request_equal_to_recompile_G8(self, capsys):
-        # standard 14.1 (lines 662-663) + release gate 16.G8 + the 17 CLI-unity probe: `synthesize` MUST construct
-        # the SAME typed request as `recompile` under equal flags. It currently does NOT -- this guard runs
-        # `synthesize` through the equal-request assertion the compile/recompile matrix never covered.
-        _, synth_out, _ = _run(capsys, ["synthesize", "paracetamol", "--emit-request"])
-        _, recompile_out, _ = _run(capsys, ["recompile", "paracetamol", "--emit-request"])
+    @pytest.mark.parametrize("tail", _MATRIX)
+    def test_synthesize_is_request_equal_to_recompile_G8(self, capsys, tail):
+        # standard 14.1 (lines 662-663) + release gate 16.G8 + the section-17 CLI-unity probe: the legacy
+        # `synthesize` alias MUST construct the SAME typed request as `recompile` under equal flags, with NO
+        # divergent defaults. RESOLVED (item 1): synthesize now threads every omitted knob as None through the ONE
+        # builder, so its default request is byte-identical to recompile's (offline provider, depth 3, commodities
+        # on -- the reality-respecting default). This was the G8 BLOCKER (a strict-xfail guard); it is now a live
+        # PASS across the SAME matrix compile/recompile satisfy, so the alias-unity is no longer vacuous.
+        _, synth_out, _ = _run(capsys, ["synthesize", *tail, "--emit-request"])
+        _, recompile_out, _ = _run(capsys, ["recompile", *tail, "--emit-request"])
         assert synth_out.strip() and recompile_out.strip(), "emit-request must print the request JSON"
         assert synth_out == recompile_out
+
+    def test_synthesize_network_is_an_explicit_optin_that_splits_the_request(self, capsys):
+        # the reality-respecting resolution PRESERVES synthesize's download-and-go capability -- but as an EXPLICIT,
+        # honestly-marked opt-in (origin=EXPLICIT), never a hidden default. `--network` genuinely splits the request
+        # identity vs the offline default, so a live-fetched artifact is distinguishable from a reproducible one
+        # (non-vacuous: the != assertion fires, and the origin flip is asserted directly).
+        _, default_out, _ = _run(capsys, ["synthesize", "paracetamol", "--emit-request"])
+        _, network_out, _ = _run(capsys, ["synthesize", "paracetamol", "--network", "--emit-request"])
+        assert default_out != network_out
+        default_req = deserialize_request(default_out.strip())
+        network_req = deserialize_request(network_out.strip())
+        assert default_req.evidence_provider_selection.selection_id == "DEFAULT_OFFLINE"
+        assert network_req.evidence_provider_selection.selection_id == "DEFAULT_NETWORK"
+        assert dict(default_req.origins)["evidence_provider_selection"] is FieldOrigin.DEFAULT
+        assert dict(network_req.origins)["evidence_provider_selection"] is FieldOrigin.EXPLICIT
 
     def test_emit_request_is_deterministic(self, capsys):
         _, a, _ = _run(capsys, ["recompile", "paracetamol", "--emit-request"])
@@ -104,6 +111,33 @@ class TestCommandMatrixEqualRequestJson:
         req = deserialize_request(out.strip())
         assert req.operation is CompilationOperation.RECOMPILE
         assert req.target_input == "definitely-not-a-real-name-xyz"
+
+
+class TestInventoryOrderInvariance:
+    """SRCH-DIG-01: equivalent inventory ORDER yields an equal request AND result digest. The shared request
+    canonicalizes the reagent/stock inventory (SVC-REQ-01), so the structural/material request path now has the
+    order-invariance the formula path already had -- the row's 'shared request identity does not exist' is stale."""
+
+    def test_reagent_order_gives_a_byte_identical_request(self, capsys):
+        _, a, _ = _run(capsys, ["recompile", "paracetamol", "--reagents", "water", "acetic acid", "--emit-request"])
+        _, b, _ = _run(capsys, ["recompile", "paracetamol", "--reagents", "acetic acid", "water", "--emit-request"])
+        assert a.strip() and a == b  # byte-identical: the inventory is canonicalized, not display-ordered
+
+    def test_stock_order_gives_a_byte_identical_request(self, capsys):
+        _, a, _ = _run(capsys, ["recompile", "paracetamol",
+                                "--have", "4-aminophenol", "acetic anhydride", "--emit-request"])
+        _, b, _ = _run(capsys, ["recompile", "paracetamol",
+                                "--have", "acetic anhydride", "4-aminophenol", "--emit-request"])
+        assert a.strip() and a == b
+
+    def test_reagent_order_gives_an_equal_result_digest(self, capsys):
+        # the acceptance's RESULT half: reordering the inventory does not change the search, so the result_digest is
+        # equal -- proven end-to-end through the service (--json), not merely on the request identity.
+        _, a, _ = _run(capsys, ["recompile", "name:water",
+                                "--reagents", "smiles:O", "smiles:[H][H]", "--max-depth", "1", "--json"])
+        _, b, _ = _run(capsys, ["recompile", "name:water",
+                                "--reagents", "smiles:[H][H]", "smiles:O", "--max-depth", "1", "--json"])
+        assert json.loads(a)["result_digest"] == json.loads(b)["result_digest"]
 
 
 class TestCliOriginLaw:

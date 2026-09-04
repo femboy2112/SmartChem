@@ -660,7 +660,15 @@ smartchem --version
 ```
 
 `compile` and `synthesize` MAY remain aliases for one deprecation cycle. They MUST construct the
-same typed request as `recompile` and MUST NOT keep divergent defaults.
+same typed request as `recompile` under equal flags and MUST NOT keep divergent defaults — in
+particular, an alias MUST NOT default to a shallower search, a different terminal policy, or a
+live-network provider that its canonical verb reaches only on request.
+
+The default evidence provider MUST be the offline, reproducible seed/cache: a request built from
+defaults is byte-reproducible and its response replayable. A live-network fetch is an explicit
+opt-in (e.g. `--network`), and per §13.2 its provider data MUST carry snapshot IDs or timestamps
+so the response stays reproducible. This holds for every verb; no command reaches the network by
+default.
 
 An `inspect ARTIFACT` convenience command MAY render an existing artifact, but it is not a
 release gate for this alpha.
@@ -789,6 +797,8 @@ The following are release gates for `0.5.0a1`.
 ### G8 — CLI/service unity
 
 - canonical and legacy aliases serialize equal request objects under equal flags;
+- no verb reaches the network by default: the default provider is the offline, reproducible
+  seed/cache, and a live fetch is an explicit, snapshot-stamped opt-in;
 - no-route, partial, refusal, invalid input and internal error use the specified codes;
 - bad numeric and chemical inputs yield concise domain diagnostics without tracebacks;
 - human and JSON views agree on identity, receipt, tier, blockers, and route IDs.
@@ -819,7 +829,9 @@ The alpha may preserve source compatibility where it does not preserve a false c
   the receipt and claim tier.
 - Existing `enumerate_routes` / `enumerate_dags` may remain convenience wrappers only if the new
   result-bearing API is primary and wrappers cannot be mistaken for completion-certified calls.
-- Existing `compile` and `synthesize` commands become aliases of `recompile`.
+- Existing `compile` and `synthesize` commands become aliases of `recompile` with no divergent
+  defaults (offline provider, full depth, commodity terminals on); `synthesize`'s distinctive
+  download-and-go behavior is an explicit `--network` opt-in, not a divergent default.
 - Existing condition records need explicit direction and structural key migration; ambiguous
   formula records are downgraded.
 - Current drafts become `RouteDossier`; `DraftedProcedure` MAY remain a deprecated type alias but

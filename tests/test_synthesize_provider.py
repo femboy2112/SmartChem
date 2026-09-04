@@ -1,15 +1,17 @@
-"""CLI-CAN-02 (provider lever): ``synthesize``'s ``--offline`` is the typed request's LIVE section-9 lever.
+"""CLI-CAN-02 (provider lever): ``synthesize``'s provider selection is the typed request's LIVE section-9 lever.
 
-The last chemical verb (``synthesize``) now builds the ONE shared ``CompilationRequest`` (SVC-REQ-01), and its
-``--offline`` choice is carried as the request's :class:`EvidenceProviderSelection` -- which GOVERNS the real
-network autoload.  These tests pin three things the arc's engineering lessons say a lever like this fails on:
+The last chemical verb (``synthesize``) builds the ONE shared ``CompilationRequest`` (SVC-REQ-01), and its provider
+choice is carried as the request's :class:`EvidenceProviderSelection` -- which GOVERNS the real network autoload.
+Item 1 (the standard-14.1 alias-unity fix) made the reality-respecting default OFFLINE (reproducible seed + cache)
+for every verb; the "download and go" live fetch is now the EXPLICIT ``--network`` opt-in (``--offline`` explicitly
+stamps the default).  These tests pin what the arc's engineering lessons say a lever like this fails on:
 
 * the lever is NON-INERT -- it is read from the request field on the LIVE production path (through the public
   ``synthesize`` ``main``), not merely settable in isolation (the "dead switch" hazard);
-* it is sourced from the REQUEST, not from ``args.offline`` -- proven by forcing the two to disagree, the only
-  test that catches a silent revert to the old ``allow_network=not args.offline`` (the dropped-kwarg hazard);
-* the digest law is honest -- an ONLINE selection SPLITS the search identity while the OFFLINE default's digest is
-  byte-unchanged (so the goldens do not move), and the split assertion actually fires (non-vacuous).
+* it is sourced from the REQUEST, not from ``args`` -- proven by forcing the two to disagree, the only test that
+  catches a silent revert to reading the flag directly (the dropped-kwarg hazard);
+* the digest law is honest -- the explicit ``--network`` selection SPLITS the search identity while the OFFLINE
+  default's digest is byte-unchanged (so the goldens do not move), and the split assertion actually fires.
 """
 from __future__ import annotations
 
@@ -29,7 +31,10 @@ from smartchem.service import (
 # the existing end-to-end route test).  ``--offline`` is appended/omitted per case.
 _ROUTE_ARGV = [
     "CC(=O)Nc1ccc(O)cc1", "--have", "Nc1ccc(O)cc1",
-    "--reagents", "O", "CC(=O)O", "CC(=O)OC(=O)C", "--max-depth", "3",
+    # --no-commodities keeps this provider-lever fixture a COMPLETE search (exit 0): with commodity terminals now ON
+    # by default (item 1, the reality-respecting alias-unity), the extra expansions push this depth-3 search PARTIAL
+    # (exit 4). These tests probe the network lever, not the terminal policy, so the complete fixture is restored.
+    "--reagents", "O", "CC(=O)O", "CC(=O)OC(=O)C", "--max-depth", "3", "--no-commodities",
 ]
 
 
@@ -99,9 +104,18 @@ class TestSynthesizeProviderLeverIsLive:
         assert code == 0  # the known route-producing case
         assert captured and captured[-1] is False
 
-    def test_no_offline_flag_requests_network(self, monkeypatch, capsys):
+    def test_default_no_provider_flag_stays_offline(self, monkeypatch, capsys):
+        # the reality-respecting default (item 1): with NO provider flag the request is OFFLINE, so the live
+        # autoload is asked for no network -- a defaulted `synthesize` is reproducible, never a silent live fetch.
         captured = self._spy_autoload(monkeypatch)
-        code = main(list(_ROUTE_ARGV))  # no --offline
+        code = main(list(_ROUTE_ARGV))  # no provider flag
+        assert code == 0
+        assert captured and captured[-1] is False
+
+    def test_network_flag_requests_network(self, monkeypatch, capsys):
+        # the download-and-go opt-in: --network is the ONE way to reach the live provider, honestly marked.
+        captured = self._spy_autoload(monkeypatch)
+        code = main([*_ROUTE_ARGV, "--network"])
         assert code == 0
         assert captured and captured[-1] is True
 
@@ -120,6 +134,7 @@ class TestSynthesizeProviderLeverIsLive:
                 helper_reagents=tuple(args.reagents),
                 stock_materials=tuple(args.have),
                 max_depth=args.max_depth,
+                commodities_enabled=False,  # complete-search fixture (see _ROUTE_ARGV): probe the provider, not terminals
                 evidence_provider_selection=NETWORK_PROVIDER,
             )
 
@@ -146,15 +161,22 @@ class TestSynthesizeEmitRequest:
         payload = json.loads(capsys.readouterr().out)
         assert payload["evidence_provider_selection"]["selection_id"] == "DEFAULT_OFFLINE"
 
-    def test_emit_request_online_carries_network_provider(self, capsys):
-        code = main(["paracetamol", "--emit-request"])  # no --offline -> network provider on the identity
+    def test_emit_request_network_carries_network_provider(self, capsys):
+        code = main(["paracetamol", "--network", "--emit-request"])  # --network -> network provider on the identity
         assert code == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["evidence_provider_selection"]["selection_id"] == "DEFAULT_NETWORK"
 
-    def test_emit_request_offline_and_online_are_different_identities(self, capsys):
+    def test_emit_request_default_carries_offline_provider(self, capsys):
+        # the reality-respecting default: NO provider flag -> the reproducible offline provider on the identity.
+        code = main(["paracetamol", "--emit-request"])
+        assert code == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["evidence_provider_selection"]["selection_id"] == "DEFAULT_OFFLINE"
+
+    def test_emit_request_offline_and_network_are_different_identities(self, capsys):
         off = json.loads(_run_capsys(capsys, ["paracetamol", "--offline", "--emit-request"]))
-        on = json.loads(_run_capsys(capsys, ["paracetamol", "--emit-request"]))
+        on = json.loads(_run_capsys(capsys, ["paracetamol", "--network", "--emit-request"]))
         assert off["evidence_provider_selection"]["selection_id"] == "DEFAULT_OFFLINE"
         assert on["evidence_provider_selection"]["selection_id"] == "DEFAULT_NETWORK"
         assert off != on  # the emitted identity genuinely differs by the provider selection (no digest key is emitted)
@@ -184,10 +206,12 @@ class TestRedTeamFolds:
         assert main(["name:water", "--have", ""]) == 2
         assert "Traceback" not in capsys.readouterr().err
 
-    def test_valueless_reagents_flag_is_a_clean_exit_2_not_a_traceback(self, capsys):
-        # `--reagents` with no values -> the search runs with () reagents and raises TypeError; the extended handler
-        # now maps it to a clean exit 2 instead of letting the traceback escape (a bonus of the same fold).
-        assert main(["CC(=O)O", "--reagents", "--offline"]) == 2
+    def test_valueless_reagents_flag_takes_the_default_pool_like_recompile(self, capsys):
+        # item 1 alias-unity: a VALUELESS `--reagents` (both falsy: omitted or empty) takes the DEFAULT water pool,
+        # EXACTLY as `recompile` does -- so it runs a real search (not the old exit-2), and no traceback escapes.
+        # (This unifies the deprecated alias with the canonical verb, per the revised standard 14.1; the empty-
+        # reagents red-team fold's principle -- emit MATCHES the search -- still holds: both use the water default.)
+        assert main(["CC(=O)O", "--reagents", "--offline"]) == 0
         assert "Traceback" not in capsys.readouterr().err
 
     def test_top_level_synthesize_matches_recompile_exit_code_on_the_same_builder_error(self, capsys):
@@ -199,11 +223,18 @@ class TestRedTeamFolds:
         assert top_main(["recompile", ""]) == 2
         assert "ERROR_INTERNAL" not in capsys.readouterr().err
 
-    def test_emit_request_faithfully_carries_empty_reagents(self, capsys):
-        # Finding 1: a valueless --reagents means ZERO reagents in the real search; emit must show that, not the
-        # builder's water default. The raw arg list is now passed through, so the identity matches the search.
-        payload = json.loads(_run_capsys(capsys, ["CC(=O)O", "--reagents", "--emit-request"]))
-        assert payload["helper_reagents"] == []
+    def test_valueless_reagents_takes_the_default_water_pool_matching_recompile(self, capsys):
+        # item 1 alias-unity (revised standard 14.1 "same request under equal flags"): a valueless --reagents takes
+        # the DEFAULT water pool, so emit shows ["water"] -- and it is BYTE-IDENTICAL to recompile's emit for the
+        # same flag (the old divergent-edge where synthesize alone carried [] is closed). The emit still faithfully
+        # matches the real search (both use water), which is what the empty-reagents red-team fold required.
+        from smartchem.cli import main as top_main
+        top_main(["synthesize", "CC(=O)O", "--reagents", "--emit-request"])
+        syn = json.loads(capsys.readouterr().out)
+        top_main(["recompile", "CC(=O)O", "--reagents", "--emit-request"])
+        rec = json.loads(capsys.readouterr().out)
+        assert syn["helper_reagents"] == ["water"]
+        assert syn == rec  # byte-identical request under the equal (valueless) flag
 
     def test_emit_request_carries_the_given_reagent_set(self, capsys):
         payload = json.loads(_run_capsys(capsys, ["CC(=O)O", "--reagents", "acetic acid", "--emit-request"]))
@@ -256,10 +287,13 @@ class TestSynthesizeJsonThroughService:
         emit = json.loads(capsys.readouterr().out)
         assert resp["request"] == emit           # one request identity, two machine views
 
-    def test_empty_reagents_is_exit_2_on_both_json_and_human(self, capsys):
-        # the two corridors AGREE: a valueless --reagents is INVALID on run_compilation (--json) AND the human path.
-        assert main(["CC(=O)O", "--reagents", "--offline", "--json"]) == 2
-        assert main(["CC(=O)O", "--reagents", "--offline"]) == 2
+    def test_valueless_reagents_agrees_across_json_and_human(self, capsys):
+        # the two corridors AGREE (item 1 alias-unity): a valueless --reagents takes the default water pool on BOTH
+        # the --json (run_compilation) and the human path, so their exit codes match -- neither corridor invents a
+        # different reagent set. (Was exit-2-on-both under the old zero-reagent edge; now the unified water default.)
+        json_code = main(["CC(=O)O", "--reagents", "--offline", "--json"])
+        human_code = main(["CC(=O)O", "--reagents", "--offline"])
+        assert json_code == human_code == 0
         assert "Traceback" not in capsys.readouterr().err
 
 

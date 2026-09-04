@@ -321,7 +321,10 @@ class TestCLI:
         code = main([
             "CC(=O)Nc1ccc(O)cc1", "--have", "Nc1ccc(O)cc1",
             "--reagents", "O", "CC(=O)O", "CC(=O)OC(=O)C",
-            "--max-depth", "3", "--offline",  # depth 3 genuinely exhausts, so the search is COMPLETE -> exit 0
+            # depth 3 with the commodity terminals OFF genuinely exhausts, so the search is COMPLETE -> exit 0.
+            # (Commodity terminals are ON by default since item 1; --no-commodities keeps this an end-to-end
+            # COMPLETE-search test -- the commodities-on PARTIAL case is covered by test_cli_returns_partial_status.)
+            "--max-depth", "3", "--offline", "--no-commodities",
         ])
         out = capsys.readouterr().out
         assert code == 0
@@ -333,7 +336,10 @@ class TestCLI:
 
     def test_cli_reports_no_route_loudly(self, capsys):
         from smartchem.experiment.cli import main
-        code = main(["CC(=O)Nc1ccc(O)cc1", "--reagents", "O", "--max-depth", "1", "--offline"])
+        # --no-commodities so this stays a COMPLETE no-route search (exit 3): with commodity terminals ON by default
+        # (item 1) the depth-1 expansion is PARTIAL (exit 4), which is a different message. This test pins the
+        # complete-no-route wording, so it disables commodities to keep the search complete.
+        code = main(["CC(=O)Nc1ccc(O)cc1", "--reagents", "O", "--max-depth", "1", "--offline", "--no-commodities"])
         out = capsys.readouterr().out
         assert code == 3
         assert "NO ROUTE FOUND WITHIN THE DECLARED BOUNDED SEARCH SPACE" in out

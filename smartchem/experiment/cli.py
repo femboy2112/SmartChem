@@ -9,11 +9,16 @@ the SAME shared engine ``compile`` uses (:func:`~smartchem.experiment.compile.co
 request's RESOLVED parameters -- so it no longer runs a second search or a second argv parse (CLI-CAN-02 remainder).
 ``--emit-request`` and ``--json`` expose the machine views through :func:`~smartchem.service.run_compilation`,
 exactly as ``recompile``/``compile`` do.  The human dossier still enumerates candidate routes from the decompiler
-(E5), autoloads sourced stability for every discovered species (PubChem/Wikidata/Bradley, cached; ``--offline``
-uses seed + cache only) via the request's section-9 provider lever, ranks them against the bench (``--max-temp`` K,
-``--max-pressure`` atm), and prints the top route as a chemist-facing DOSSIER -- under the honesty banner (no
-success guarantee, no kinetic rate; every other claim graded), every number in its epistemic bucket.  This is the
-"download and go" entry point.
+(E5), autoloads sourced stability for every discovered species (PubChem/Wikidata/Bradley, cached) via the
+request's section-9 provider lever, ranks them against the bench (``--max-temp`` K, ``--max-pressure`` atm), and
+prints the top route as a chemist-facing DOSSIER -- under the honesty banner (no success guarantee, no kinetic
+rate; every other claim graded), every number in its epistemic bucket.
+
+As a DEPRECATED alias of ``recompile`` (standard section 14.1, one deprecation cycle), it builds the byte-identical
+typed request under equal flags and keeps NO divergent defaults: the reality-respecting default is the OFFLINE,
+reproducible seed + cache provider, a full depth-3 search, and commodity terminals ON.  Its "download and go" live
+fetch is the EXPLICIT ``--network`` opt-in -- a network fetch is never the default, and section 9/13 requires the
+fetched data to carry a snapshot, so a defaulted request stays byte-reproducible and its response replayable.
 """
 from __future__ import annotations
 
@@ -97,13 +102,14 @@ def _synthesize_request(args):
     request's resolved params -- it no longer keeps its own route engine (CLI-CAN-02 remainder).  The request carries
     the alias-independent identity (so ``synthesize --emit-request`` / ``--json`` are comparable to ``recompile``'s)
     and, load-bearing, the section-9 :class:`~smartchem.service.EvidenceProviderSelection` that DRIVES the stability
-    autoload -- ``--offline`` selects the offline provider, its absence the network provider.  Reagents and stock are
-    passed as the RAW arg lists (``tuple(args.reagents)`` / ``tuple(args.have)``), so the emitted identity matches
-    what the shared engine searches even when a flag is given empty -- ``synthesize``'s own defaults (depth 2,
-    commodities only under ``--poor-mans``) are threaded explicitly.  The builder VALIDATES the target and reagents,
-    so it MAY raise a domain error (an empty or invalid target, an empty-string reagent); the caller wraps this build
-    in the same 5/2 handler as the render, so such an input is a clean section-14.4 exit 2, never a traceback or a
-    laundered exit-70 (red-team fold).
+    autoload.  SVC-REQ-01 alias-unity (standard section 14.1): every OMITTED knob is threaded as ``None`` so the ONE
+    builder records it ``origin=DEFAULT`` and applies recompile's SAME default table -- so ``synthesize X`` emits the
+    byte-identical request as ``recompile X`` with NO divergent defaults (offline provider, depth 3, commodities on).
+    The reality-respecting default is OFFLINE (reproducible seed + cache); the "download and go" live fetch is the
+    EXPLICIT ``--network`` opt-in (``--offline`` explicitly stamps the default).  The builder VALIDATES the target and
+    reagents, so it MAY raise a domain error (an empty or invalid target, an empty-string reagent); the caller wraps
+    this build in the same 5/2 handler as the render, so such an input is a clean section-14.4 exit 2, never a
+    traceback or a laundered exit-70 (red-team fold).
     """
     from ..identity_parse import EXPLICIT_CLI_FORMS, resolve_cli_target
     from ..service import NETWORK_PROVIDER, OFFLINE_PROVIDER, build_recompile_request
@@ -116,15 +122,24 @@ def _synthesize_request(args):
     return build_recompile_request(
         target,
         input_kind=input_kind,
-        helper_reagents=tuple(args.reagents),
-        stock_materials=tuple(args.have),
-        commodities_enabled=bool(args.poor_mans),
+        # SVC-REQ-01 alias-unity (standard 14.1 "same request under equal flags"): reagents/stock follow recompile's
+        # rule EXACTLY -- an OMITTED or VALUELESS ``--reagents`` (both falsy) takes the default water pool, so
+        # `synthesize X --reagents` and `recompile X --reagents` build the byte-identical request; an empty ``--have``
+        # stays the honest empty stock (``is not None``, matching recompile). The emit still faithfully matches the
+        # search (both use the water default), which is what the empty-reagents red-team fold actually required.
+        helper_reagents=tuple(args.reagents) if args.reagents else None,
+        stock_materials=tuple(args.have) if args.have is not None else None,
+        commodities_enabled=False if args.no_commodities else None,
         max_depth=args.max_depth,
         max_routes=args.max_routes,
         cut_budget=args.cut_budget,
         max_temperature_k=args.max_temp,
         max_pressure_atm=args.max_pressure,
-        evidence_provider_selection=OFFLINE_PROVIDER if args.offline else NETWORK_PROVIDER,
+        # the reality-respecting provider lever: OFFLINE (reproducible) unless --network opts into the download-and-go
+        # fetch; --offline stamps the default value EXPLICIT; neither -> None -> the builder's DEFAULT-origin offline.
+        evidence_provider_selection=(
+            NETWORK_PROVIDER if args.network else OFFLINE_PROVIDER if args.offline else None
+        ),
     )
 
 
@@ -142,24 +157,37 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument(f"--{_form}", default=None, metavar="TARGET",
                        help=f"give the target as {_kind.replace('_', ' ').lower()} (section-14.2 explicit form; "
                             f"mutually exclusive with the positional target and --input-kind)")
-    p.add_argument("--have", nargs="*", default=[], metavar="TARGET",
+    # SVC-REQ-01 alias-unity: list/numeric knobs default to None (an OMITTED flag) so the ONE builder records them
+    # origin=DEFAULT and applies recompile's SAME default table -- `synthesize X` emits recompile's byte-identical
+    # request (default reagents=water, depth 3, routes 100, budget 20000).  A passed value is origin=EXPLICIT.
+    p.add_argument("--have", nargs="*", default=None, metavar="TARGET",
                    help="precursors already on the bench (names or SMILES)")
-    p.add_argument("--reagents", nargs="*", default=["water"], metavar="TARGET",
+    p.add_argument("--reagents", nargs="*", default=None, metavar="TARGET",
                    help="small helper reagents the cleavage may use (default: water)")
     p.add_argument("--max-temp", type=_positive_float, default=None, metavar="K",
                    help="the bench's maximum temperature in kelvin")
     p.add_argument("--max-pressure", type=_positive_float, default=None, metavar="ATM",
                    help="the bench's maximum pressure in atm")
-    p.add_argument("--max-depth", type=_positive_int, default=2, help="retrosynthesis depth (default 2)")
-    p.add_argument("--max-routes", type=_positive_int, default=100,
+    p.add_argument("--max-depth", type=_positive_int, default=None, help="retrosynthesis depth (default 3)")
+    p.add_argument("--max-routes", type=_positive_int, default=None,
                    help="maximum unique routes returned (default 100)")
-    p.add_argument("--cut-budget", type=_positive_int, default=20_000,
+    p.add_argument("--cut-budget", type=_positive_int, default=None,
                    help="candidate rewrite budget per expanded target (default 20000)")
-    p.add_argument("--offline", action="store_true", help="do not fetch; use the seed + cache only")
-    p.add_argument("--poor-mans", action="store_true",
-                   help="also terminate routes at WIDELY-AVAILABLE commodity compounds (table salt, "
-                        "vinegar, baking soda, ...) and print a shopping list -- so a route can bottom out "
-                        "at stuff you can actually buy instead of at pure elements")
+    p.add_argument(
+        "--no-commodities", "--elements", dest="no_commodities", action="store_true",
+        help="disable the poor-man's commodity terminals (table salt, vinegar, baking soda, ...), which are ON by "
+             "default like `recompile`; routes then bottom out at pure elements instead of buyable stock",
+    )
+    # The reality-respecting provider lever (standard 14.1): OFFLINE (reproducible seed + cache) is the DEFAULT for
+    # every verb; the "download and go" live fetch is the EXPLICIT --network opt-in.  --offline stamps the default
+    # EXPLICIT.  Mutually exclusive; neither given -> the builder's DEFAULT-origin offline selection.
+    _provider = p.add_mutually_exclusive_group()
+    _provider.add_argument("--offline", action="store_true",
+                           help="explicitly use the seed + cache only (already the default)")
+    _provider.add_argument("--network", action="store_true",
+                           help="the download-and-go opt-in: fetch sourced stability for discovered species from "
+                                "the section-9 network provider (PubChem/Wikidata/Bradley). A live fetch is never "
+                                "the default; fetched data carries a snapshot so the request stays replayable (14.1)")
     p.add_argument("--emit-request", action="store_true",
                    help="print the ONE typed request JSON (SVC-REQ-01) and exit WITHOUT searching -- the "
                         "canonical, alias-independent request identity, including the section-9 provider selection")
@@ -271,7 +299,10 @@ def _run(args) -> int:
             target,
             reagents=reagents,
             available=available,
-            commodities=None if args.poor_mans else (),
+            # commodities are sourced from the REQUEST's terminal policy (ON by default, --no-commodities/--elements
+            # to disable) -- the SAME single source of truth `compile` reads, so the human search cannot diverge from
+            # the request `--emit-request`/`--json` describe (SVC-REQ-01 alias-unity).
+            commodities=() if not request.terminal_policy.commodities_enabled else None,
             max_depth=request.search_bounds.value("max_depth"),
             max_routes=request.search_bounds.value("max_results"),
             cut_budget=request.search_bounds.value("cut_budget"),

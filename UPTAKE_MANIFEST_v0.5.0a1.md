@@ -105,7 +105,7 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 | Lane | Finish line | State |
 |---|---|---|
 | **A — Alpha conformance** | A truthful bounded compiler conforming to `v0.5.0a1`. | **Near.** Shared IR, typed request/response, search receipts, identity/evidence gates, exact DAG flow + inverse shopping, `StockMaterial`, fail-closed errors all landed. Remaining: `ERR-EVIDENCE-01`, the final P0 integrations, a clean RC freeze. |
-| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **The next research frontier.** All of `IR-STRUCT-01`, `IR-FORGET-01`, `TRANSFORM-PROVIDER-01`, `HOLDOUT-RXN-01`, `CHEM-ALG-01` are `TODO`. `CANON-KEKULE-01` (a Lane-B prerequisite) is **DONE**. |
+| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **The active research frontier.** `CANON-KEKULE-01` (Lane-B prerequisite), `IR-STRUCT-01` (structural candidate rides the IR) and `IR-FORGET-01` (forgetful square enforced) are **DONE** (`0aac8a1`). `TRANSFORM-PROVIDER-01`, `HOLDOUT-RXN-01`, `CHEM-ALG-01` are `TODO` — the structural vehicle now exists; the next moves are the typed provider registry (multiple families) and the structure-rebuilding inverse. |
 | **C — Bench readiness** | `ProcedureIR`, quantities, assays, operations, process hazards, analytical acceptance, waste, equipment ratings, qualified review. | **Deliberately outside the alpha.** `TERM-MAT-01` down-paid by `sourcing.plan_sourcing`; `COST-VEC-01` blocked on real data; `ProcedureIR` deferred. The `FORMAL_CANDIDATE` floor stays immovable until these obligations exist. |
 
 ### 2A.2 Reoriented roadmap IDs (the audit's additions + the elevated canonical repair)
@@ -114,8 +114,8 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 |---|:---:|:---:|---|---|---|
 | `CANON-KEKULE-01` | P0 | B | **`IMPLEMENTED_AND_VERIFIED`** | Aromatic and explicit-Kekulé spellings of a fused aromatic share one constitution digest; constitutional isomers stay distinct; relabel-invariant (`c126055`+`6a8c5a6`; `tests/test_canon_kekule.py`, `tests/test_stock.py::…kekule`). | shared `_ident` |
 | `ERR-EVIDENCE-01` | P0 | A | **`IMPLEMENTED_AND_VERIFIED`** | A genuine no-record lookup → `UNKNOWN`; an injected internal provider fault → `ERROR_INTERNAL`/exit 70, no raw traceback and no false "conditions unknown". Fixed **both** `assembly_conditions` (the deep root the audit missed) and `_conditions_for`, and (red-team fold `69a1ffd`) the separate `synthesize` CLI's engine catch + its missing top-level exit-70 guard; proven non-vacuous. `1265efe`+`69a1ffd`; `tests/test_err_evidence.py`. | route search, `CLI-EXIT-01` |
-| `IR-STRUCT-01` | P1 | B | `TODO` | A first-class structural candidate transform rides `ChemicalCompilationIR` (parent/product structure identities, edit/scission witness, primitive stoichiometry, direction, identity layer, formal/evidence status, exact formula projection, provider id/version, loss records). | `structure_descent`, `IR-CHEM-01` |
-| `IR-FORGET-01` | P1 | B | `TODO` | `forget(decompile_structure(S)) == project_formula(decompile_structure(S))` at the declared boundary, commuting through canonical serialization; mismatch is refused, not silently coerced. | `IR-STRUCT-01` |
+| `IR-STRUCT-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | A first-class typed `StructuralCandidate` rides `ChemicalCompilationIR` (schema `v1alpha5`): parent/product STRUCTURE identities + exact formula, primitive stoichiometry, the capped-scission edit witness (digest + equation), `DECOMPOSE` direction, provider id/version, `FORMAL_CANDIDATE` tier, loss records, and the exact forgetful projection. `decompile_structure_to_ir` emits the structure-preserving decompile (paracetamol's real amide hydrolysis is among the candidates — two distinct witnesses sharing one projection: the IR carries MORE than its formula image); round-trips digest-stably; structural candidates over a non-STRUCTURE target are refused. `0aac8a1`; `tests/test_ir_struct.py`. | `structure_descent`, `IR-CHEM-01` |
+| `IR-FORGET-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | Each structural candidate's stored formula projection MUST equal the forget of its stored structure — recomputed in `StructuralCandidate.__post_init__` from the stored species (a certificate independent of the live scission the producer forgot), byte-for-byte on digest AND equation, commuting through canonical serialization; a tampered projection or a tampered species is REFUSED on read, not coerced (proven non-vacuous by neutering the square). `0aac8a1`; `tests/test_ir_struct.py::TestForgetfulSquare`. The stronger cross-producer reconciliation (audit §7.3 `forget(D_struct(S)) == D_formula(forget(S))`, against the INDEPENDENT formula decomposer's edge set) is a named follow-on. | `IR-STRUCT-01` |
 | `TRANSFORM-PROVIDER-01` | P1 | B | `TODO` | Capped-scission runs **exclusively** through a typed closed provider boundary; the registry digest changes whenever the provider set / id / version / capability manifest changes; provider-local partiality never collapses into a false aggregate "complete". | `IR-STRUCT-01` |
 | `HOLDOUT-RXN-01` | P1 | B | `TODO` | A frozen, family-stratified benchmark (train/dev/**holdout** split) classifies each target: constructible-in-closure / representable-but-unsupported / blocked-by-identity-loss / blocked-by-missing-evidence / incomplete-within-bounds / outside-closure / invalid. Holdout hashes frozen before any provider fitting. | `TRANSFORM-PROVIDER-01` |
 | `CHEM-ALG-01` | P1 | B | `TODO` | ≥1 qualitatively distinct transform family (partial bond-order edit / ionic / redox / ring form-open) registers through `TransformProvider`, composes through **unchanged** core route/DAG search, rides the IR, obeys the forgetful square, is gated by existing evidence/material gates — no bespoke search-engine branch. Stays `FORMAL_CANDIDATE` absent separate evidence. | `HOLDOUT-RXN-01`, `IR-FORGET-01` |
@@ -206,6 +206,77 @@ red-team:      wl52pwo43 (5 blind orthogonal bearings, refute-by-default verify)
                proven non-vacuous; full suite 3450 passed, 14 skipped, 1 xfailed.
   REFUTED:     a "false docstring" claim on _syn_domain_exit -- the verifier confirmed the docstring accurately
                named its caught set; no defect.
+```
+
+**Uptake record — IR-STRUCT-01 + IR-FORGET-01, the reoriented Lane-B first brick** (`IR-STRUCT-01` /
+`IR-FORGET-01` `TODO` → `IMPLEMENTED_AND_VERIFIED`; the structure-preserving decompile IR + the section-7.3
+commuting square the audit's §7.2-7.3 / B0 / Probe P1 / G2 demand):
+
+```text
+ID:            IR-STRUCT-01 (structural decompilation is first-class on the IR, not reduced to a formula edge)
+               IR-FORGET-01 (its forgetful projection is enforced, and a mismatch is refused not coerced)
+commit:        0aac8a1 (feat) + this docs record
+base:          0611f0a -> suite 3476 passed, 14 skipped, 1 xfailed (was 3450; +26 tests, tests/test_ir_struct.py)
+
+finding:       (audit §7.2, line 476) structural decompilation reduced its target to a FORMULA as the sole
+               shared artifact, so recompile_from_serialized had to be HANDED a caller-supplied structure --
+               "a formula-compatibility-constrained structural search, not a structure-reconstructing inverse
+               of the decompile artifact".  The structural scission machinery (structure_descent) and the
+               forgetful maps (CappedScission.forget -> MediatedEdge) existed, but the structure never rode
+               the shared IR: a CandidateSummary was a digest + a string, structurally blind.
+
+fix:           StructuralCandidate + StructuralSpecies (compilation_ir.py): a first-class typed record carrying
+               parent/product STRUCTURE identities + exact formula, primitive stoichiometry (species+multiplicity
+               per side), the capped-scission edit witness (its own digest + human equation), DECOMPOSE
+               direction, provider id/version (the TRANSFORM-PROVIDER-01 seam), FORMAL_CANDIDATE tier (W3),
+               loss records, and the EXACT forgetful projection (edge.forget()).  It rides ChemicalCompilationIR
+               as a new covered field structural_candidates (schema v1alpha4 -> v1alpha5).  New producer
+               decompile_structure_to_ir runs capped_scissions and packages each cleavage over a STRUCTURE-layer
+               target, with an honestly-sparse section-8.1 receipt (STRUCTURE_DECOMPOSITION: what the descent
+               does not measure is UNKNOWN/null, never a false zero).  New closed-registry grammar
+               "capped-scission-decompose" (transform_registry).  Full JSON (de)serialization; deserialize
+               re-runs every __post_init__ so a tampered payload is refused on read.  response_schema() gains the
+               structural_candidates descriptor field (its drift-guard caught the omission live).
+
+               THE FORGETFUL SQUARE (IR-FORGET-01): StructuralCandidate.__post_init__ recomputes the forgetful
+               composition edge from its OWN stored species formulas -- mirroring CappedScission.forget's
+               element-bucket merge, a certificate independent of the live scission -- and refuses unless it
+               equals the stored projection byte-for-byte (digest AND equation).  This makes the producer
+               self-verifying (a mapping error fails construction on the first molecule) and makes a transported
+               candidate whose projection contradicts its structure a REFUSAL on read, not a silent coercion.
+
+acceptance:    tests/test_ir_struct.py (26 tests):
+                 PRODUCER   a STRUCTURE-layer DECOMPILE with structural (not formula) candidates; the REAL amide
+                            hydrolysis (-> 4-aminophenol + acetic acid) is among them, via two distinct witnesses
+                            that share one forgetful projection (structure carries more than its formula image);
+                 SQUARE     every stored projection IS the forget of the live edge; a tampered projection
+                            (digest or equation) or a tampered product formula is REFUSED on read;
+                 TRANSPORT  structure identities + edit witnesses survive serialization byte-for-byte, digest-stable;
+                 DIGEST     the provider version and the search bounds are in the identity; reagent order is not;
+                 GUARDS     canonical/distinct order, STRUCTURE-layer coherence, witness/projection pairing, W3
+                            FORMAL_CANDIDATE tier, positive multiplicity -- each enforced and each refused when broken;
+                 RECEIPT    the STRUCTURE_DECOMPOSITION receipt nulls what it does not measure; a budget-hit run is
+                            PARTIAL_SEARCH_BUDGET (not a false complete); an exhausted-but-empty run (methane) is
+                            said as exhaustion-within-bounds, never a false miss;
+                 UNAFFECTED decompile_to_ir / recompile_to_ir still work, carry empty structural_candidates, and
+                            round-trip under v1alpha5.
+non-vacuous:   the crown guard (the forgetful square) proven by neutering ONLY its equality check: the two
+               projection-tamper tests go red (they fall through to the weaker canonical-order guard with the
+               wrong message), confirming the square is the precise first-line refusal; restored.
+scope:         Lane B (chemical genericity) ONLY.  ONE structural family (capped-scission -> mediated edge) is
+               first-class; the typed closed provider registry admitting qualitatively distinct families is
+               TRANSFORM-PROVIDER-01 (the provider_id/version fields are its seam).  The structure-REBUILDING
+               inverse (recompile a structural artifact with NO caller-supplied structure -- audit B0 headline)
+               needs a Molecule graph serializer and is the next brick; this lands the necessary first half
+               (the structure + witness now RIDE the artifact and survive transport).  Lanes A and C untouched.
+               IR-FORGET-01 meets its manifest acceptance (projection == forget, commuting through serialization,
+               refuse-on-mismatch); the stronger cross-producer reconciliation (audit §7.3 == D_formula(forget(S)))
+               is a named follow-on, not claimed here.
+ripple:        schema v1alpha4 -> v1alpha5 shifts every IR value digest, so the CLI-JSON goldens regenerated
+               (tests/regen_cli_json.py): each IR-bearing fixture gained "structural_candidates": [] + a new
+               result_digest; request_digest unchanged (the field is result, not request); no candidate/equation
+               drift; no fixture hand-edited.
+red-team:      blind-bearing workflow to follow (this session); its result is appended on fold.
 ```
 
 ## 3. P0 truth-envelope backlog

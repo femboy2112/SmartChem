@@ -204,9 +204,12 @@ def equilibrium_of_step(
 
     # THERMO-UNC-01: log10 K is LINEAR in ΔG, so σ(log10 K) = σ(ΔG)·1000/(R·T·ln10) -- the same denominator as
     # log10_k above.  None when σ(ΔG) is unknown; feasibility's correlated/cross-phase lower-bound flag rides forward.
+    # guard temperature > 0: σ is linear in 1/T, so a nonphysical T < 0 would flip it NEGATIVE (a nonsense
+    # uncertainty, red-team fold) -- report UNKNOWN instead.  (T == 0 already raises upstream at the log10_k line;
+    # a general nonphysical-T refusal for the whole equilibrium result is a separate, pre-existing concern.)
     sigma_log10_k = (
         feas.sigma_delta_g_kj * 1000.0 / (GAS_CONSTANT_J_PER_MOL_K * temperature * math.log(10.0))
-        if feas.sigma_delta_g_kj is not None else None
+        if (feas.sigma_delta_g_kj is not None and temperature > 0) else None
     )
     sigma_note = "" if sigma_log10_k is None else (
         f"; σ(log10 K) {'≥' if feas.sigma_delta_g_is_lower_bound else '≈'} {sigma_log10_k:.2f}"

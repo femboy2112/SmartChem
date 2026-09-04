@@ -137,18 +137,24 @@ def resolve_thermo(
             # value read as sigma=None, indistinguishable from a sourced value that honestly has no stated sigma.
             unc_dhf: "float | None" = est.dhf_uncertainty_kj
             unc_s: "float | None" = est.s_uncertainty_j_per_k
+            sigma_lb = False
             if condensed:
                 pc = _resolve_phase_change(molecule, phase_change)
                 if pc is not None:
                     dhf, s, phase = to_condensed(dhf, s, pc)
                     grade = "PREDICTED"  # a gas estimate + a sourced phase correction is a two-step estimate
+                    # the gas band is kept but the Δsub/Δvap correction carries no sourced sigma, so the condensed ±
+                    # is UNDERSTATED -- mark it a lower bound so a σ-propagating consumer forwards the caveat (the
+                    # red-team's HIGH: a phase correction drives phase_mixed False, so the reaction-level flag alone
+                    # would miss this and report a tight σ over an understated one).
+                    sigma_lb = True
                     prov = (
                         f"{prov}; corrected GAS->{phase} via {pc.transition.value} ({pc.provenance}); "
                         f"the ± is a LOWER BOUND (the phase-change correction carries no sourced sigma)"
                     )
             return ThermoRef(
                 _formula_str(molecule), _label(molecule), dhf, s, phase, prov, grade=grade,
-                uncertainty_dhf_kj=unc_dhf, uncertainty_s_j_per_mol_k=unc_s,
+                uncertainty_dhf_kj=unc_dhf, uncertainty_s_j_per_mol_k=unc_s, sigma_is_lower_bound=sigma_lb,
             )
     return None
 
@@ -288,13 +294,23 @@ def feasibility_of_step(
         math.sqrt(sigma_dh ** 2 + (temperature * sigma_ds / 1000.0) ** 2)
         if (sigma_dh is not None and sigma_ds is not None) else None
     )
-    # σ(ΔG) is a LOWER BOUND when the independent-quadrature assumption is violated: ≥2 group-additivity DERIVED
-    # species share Benson-group anchors (correlated errors), or a cross-phase sum omits the Δsub/Δvap term.  Both
-    # UNDERSTATE the true σ (cf. formation.DerivedFormation, pathway.Tally) -- flag it, never over-claim precision.
-    sigma_lower_bound = sigma_dg is not None and (len(set(derived_labels)) >= 2 or phase_mixed)
+    # σ(ΔG) is a LOWER BOUND when the independent-quadrature assumption is violated, three ways: (a) ≥2 group-
+    # additivity DERIVED values share the SAME Benson group DATABASE + additivity assumption -- a common-mode
+    # systematic model error the quadrature (which treats them as independent) cannot see; this holds for ANY two
+    # derived estimates, NOT only ones sharing a specific group (ethanol+ethylene share ZERO groups yet are still
+    # method-correlated -- the earlier "shared Benson-group anchors" wording was too narrow, red-team fold); (b) a
+    # cross-phase sum omits the Δsub/Δvap term; (c) a phase-corrected input whose band was not widened for the
+    # correction (``r.sigma_is_lower_bound`` -- the red-team's HIGH, else a successful phase correction drives
+    # phase_mixed False and this flag would miss it).  All UNDERSTATE the true σ (cf. formation.DerivedFormation).
+    sigma_lower_bound = sigma_dg is not None and (
+        len(set(derived_labels)) >= 2
+        or phase_mixed
+        or any(r.sigma_is_lower_bound for _m, _n, r in resolved)
+    )
     sigma_note = "" if sigma_dg is None else (
         f" [σ(ΔG) {'≥' if sigma_lower_bound else '≈'} {sigma_dg:.1f} kJ/mol (1σ, quadrature"
-        + ("; LOWER BOUND: correlated group / cross-phase inputs)]" if sigma_lower_bound else ")]")
+        + ("; LOWER BOUND: correlated group-model / cross-phase / phase-corrected inputs)]"
+           if sigma_lower_bound else ")]")
     )
 
     reason = (

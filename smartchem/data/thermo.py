@@ -66,6 +66,11 @@ class ThermoRef(Digestible):
     #: state (ΔfH° = 0 by convention); anywhere else a 0/negative "uncertainty" is a hollow precision claim, refused.
     uncertainty_dhf_kj: float | None = field(default=None, compare=False)
     uncertainty_s_j_per_mol_k: float | None = field(default=None, compare=False)
+    #: THERMO-UNC-01: True when the ± above is a LOWER BOUND, not the full uncertainty -- set when a group-additivity
+    #: value was phase-corrected (``resolve_thermo``): the gas band is kept but the Δsub/Δvap correction carries no
+    #: sourced sigma, so the true condensed-phase ± is larger.  ``compare=False`` metadata, like the sigmas.  A
+    #: consumer propagating sigma must forward this as its own lower-bound flag (feasibility_of_step does).
+    sigma_is_lower_bound: bool = field(default=False, compare=False)
 
     def __post_init__(self) -> None:
         for field_name in ("formula", "name", "phase", "provenance", "grade"):

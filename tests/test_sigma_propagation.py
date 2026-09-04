@@ -69,14 +69,48 @@ def test_a_species_with_no_sourced_sigma_makes_sigma_delta_g_unknown():
 
 
 def test_two_derived_species_flag_sigma_as_a_lower_bound():
-    """≥2 group-additivity DERIVED species share Benson-group anchors (correlated errors), so the independent
-    quadrature UNDERSTATES σ(ΔG) -- it is reported as a LOWER BOUND, not a tight value."""
+    """≥2 group-additivity DERIVED species share the SAME Benson group DATABASE + the additivity assumption -- a
+    common-mode systematic model error the independent quadrature cannot see -- so σ(ΔG) is a LOWER BOUND. This holds
+    even though ethanol and ethylene share NO specific group (the correlation is through the shared MODEL, not a
+    shared anchor -- the red-team-corrected rationale)."""
     step = ExperimentStep.assembling(ETHYLENE, (ETHANOL,), (ETHYLENE, H2O))  # ethanol + ethylene both DERIVED
     f = feasibility_of_step(step)
     assert f.delta_g_kj is not None
     assert f.sigma_delta_g_kj is not None            # every species has a σ (derived bands + water's ±)
-    assert f.sigma_delta_g_is_lower_bound is True     # correlated derived inputs -> lower bound
+    assert f.sigma_delta_g_is_lower_bound is True     # common-mode group-model error -> lower bound
     assert "LOWER BOUND" in f.reason
+
+
+def test_a_lone_phase_corrected_derived_species_still_flags_lower_bound():
+    """The red-team's HIGH: a group-DERIVED species phase-corrected (gas->liquid) keeps its gas band but the Δvap
+    correction carries no sourced σ, so its ± is a LOWER BOUND. Esterification isolates it: ethanol is the SOLE
+    derived species (acetic acid + ethyl acetate injected as SOURCED liquid, water is sourced liquid), all partners
+    are liquid, so neither the ≥2-derived nor the phase-mixed trigger fires -- ONLY ethanol's per-record
+    ``sigma_is_lower_bound`` marker can. Without the fold the flag would read False (tight) over an understated σ."""
+    from smartchem.data.thermo import DEFAULT_THERMO, ThermoRef
+
+    tbl = DEFAULT_THERMO.with_records(
+        ThermoRef("C2H4O2", "acetic acid", -484.3, 159.8, "liquid", "test-injected sourced liquid",
+                  uncertainty_dhf_kj=0.5, uncertainty_s_j_per_mol_k=0.4),
+        ThermoRef("C4H8O2", "ethyl acetate", -479.0, 259.4, "liquid", "test-injected sourced liquid",
+                  uncertainty_dhf_kj=0.6, uncertainty_s_j_per_mol_k=0.5),
+    )
+    ref = resolve_thermo(ETHANOL, tbl, condensed=True)  # ethanol has a vaporization record -> corrected to liquid
+    assert ref.grade == "PREDICTED" and ref.sigma_is_lower_bound is True
+    step = ExperimentStep.assembling(  # ethanol + acetic acid -> ethyl acetate + water (mass-conserving)
+        parse_smiles("CCOC(C)=O"), (ETHANOL, parse_smiles("CC(=O)O")), (parse_smiles("CCOC(C)=O"), H2O),
+    )
+    f = feasibility_of_step(step, thermo=tbl)
+    assert f.sigma_delta_g_kj is not None
+    assert f.sigma_delta_g_is_lower_bound is True
+    assert "LOWER BOUND" in f.reason
+
+
+def test_nonphysical_negative_temperature_yields_unknown_not_negative_sigma():
+    """The red-team's F3: σ(log10 K) is linear in 1/T, so a nonphysical T < 0 would flip it NEGATIVE -- a nonsense
+    uncertainty. Guarded to UNKNOWN instead."""
+    e = equilibrium_of_step(water_synthesis(), temperature_k=-50.0)
+    assert e.sigma_log10_k is None
 
 
 def test_sigma_log10_k_propagates_linearly_from_sigma_delta_g():

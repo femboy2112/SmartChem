@@ -21,7 +21,7 @@
     "identity_losses": [],
     "operation": "RECOMPILE",
     "request_digest": "92f7cfb46b76a324be213005ef6b2bd80bddf9d354f3b0889fd195ed6d85b857",
-    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha5",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha6",
     "search_receipt": {
       "candidate_enumeration_complete": true,
       "candidate_limit": null,
@@ -202,7 +202,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "76725ceeba9ff88eb24ffc04876bd25805aad2b66fc4b06bb04071497cd05f74",
+  "result_digest": "fff47031d84333adb439f5af413d7eca2d0ddaf54984ca44207dba5cd162eb87",
   "schema_version": "smartchem.service/compilation-response-v1alpha3",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

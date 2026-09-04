@@ -30,6 +30,7 @@ from smartchem.compilation_ir import (
     IdentityLayer,
     StructuralCandidate,
     StructuralSpecies,
+    StructuralWitness,
     decompile_structure_to_ir,
     decompile_to_ir,
     deserialize_ir,
@@ -315,12 +316,16 @@ class TestRedTeamFold:
             ir_from_payload(payload)
 
     def test_a_wrong_subject_parent_same_formula_isomer_is_refused_by_the_parent_pin(self):
-        # HIGH #4: a fully-coherent parent that is a DIFFERENT same-formula isomer than the IR target. The forgetful
-        # square passes (formula-level: C8H9NO2 either way); ONLY the parent==target pin catches it.
-        payload = ir_to_payload(_para_ir())
-        one = payload["structural_candidates"][0]
-        one["parent"] = _structural_species_to_payload(StructuralSpecies.of_molecule(self.ORTHO))
-        payload["structural_candidates"] = [one]
+        # HIGH #4: a FULLY-COHERENT candidate for a DIFFERENT same-formula isomer (o-acetamidophenol) -- its parent,
+        # witness, and products all agree internally (so both the formula square AND the item-4 graph-scission replay
+        # pass), but its parent is not the IR target (paracetamol). ONLY the IR-level parent==target pin catches it.
+        # (Grafting merely the ORTHO parent onto a PARA candidate is caught EARLIER, by the witness-reactant check;
+        # a genuinely coherent wrong-subject candidate is what isolates the parent pin.)
+        ortho_ir = decompile_structure_to_ir(self.ORTHO, reagents=(WATER,))
+        assert ortho_ir.structural_candidates, "o-acetamidophenol must have a structural decomposition"
+        ortho_candidate = _structural_candidate_to_payload(ortho_ir.structural_candidates[0])
+        payload = ir_to_payload(_para_ir())                       # target = paracetamol
+        payload["structural_candidates"] = [ortho_candidate]      # a coherent ortho candidate on a para IR
         with pytest.raises(ValueError, match="parent must be the IR target"):
             ir_from_payload(payload)
 
@@ -348,12 +353,209 @@ class TestRedTeamFold:
         assert deserialize_ir(serialize_ir(ir)).digest == ir.digest
 
 
+ORTHO_AMINOPHENOL = parse_smiles("Nc1ccccc1O")   # 2-aminophenol: C6H7NO, a same-formula isomer of 4-aminophenol
+ETHANE = parse_smiles("CC")
+
+
+def _extended_registry():
+    from smartchem.transform_provider import CappedScissionProvider, TransformProviderRegistry
+    from smartchem.bond_order_edit import BondOrderEditProvider
+    return TransformProviderRegistry((CappedScissionProvider(), BondOrderEditProvider()))
+
+
+def _species_digest_of_payload(entry):
+    from smartchem.compilation_ir import _structural_species_from_payload
+    return _structural_species_from_payload(entry["species"]).digest
+
+
+class TestGraphScissionReplay:
+    """Item 4 -- the graph-scission replay: the witness is a RE-VERIFIABLE graph edit, not a one-way label.
+
+    IR-STRUCT-01 stored the scission only as a digest + equation, so a deserialized candidate could pair a
+    witness_digest for edit A with product species that are edit B's same-formula isomers -- the formula-level
+    forgetful square is blind to a product's structure, so it passed (the differently-witnessed-formal-candidate
+    gap the IR-STRUCT-01 red-team named and LEFT as a follow-on). This closes it: the candidate now carries a
+    :class:`StructuralWitness` whose stored graph edit is reconstructed and replayed on read, and its GRAPH-level
+    products are demanded to equal the stored product species. Each guarantee below is non-vacuous.
+    """
+
+    def test_every_honest_candidate_carries_a_witness_that_replays_to_its_products(self):
+        # POSITIVE, non-vacuous: the witness genuinely reproduces the stored products at the graph level (not just
+        # asserting no-raise -- assert the replayed product multiset EQUALS the stored one).
+        from collections import Counter
+        ir = _para_ir()
+        assert ir.structural_candidates
+        for sc in ir.structural_candidates:
+            assert isinstance(sc.witness, StructuralWitness)
+            t = sc.witness.replay_transform()
+            assert t.digest == sc.witness_digest
+            replayed = Counter(m.canonical() for m in t.products)
+            stored = Counter(s.molecule.canonical() for s, mult in sc.products for _ in range(mult))
+            assert replayed == stored
+
+    def test_the_witness_survives_serialization_and_still_replays(self):
+        ir = _para_ir()
+        back = deserialize_ir(serialize_ir(ir))
+        assert back.digest == ir.digest
+        for sc in back.structural_candidates:
+            assert sc.witness.replay_transform().digest == sc.witness_digest
+
+    def _amide_hydrolysis_candidate_payload(self):
+        # the real amide hydrolysis: paracetamol + water -> 4-aminophenol + acetic acid
+        ir = _para_ir()
+        p4 = StructuralSpecies.of_molecule(AMINOPHENOL).structure
+        target = next((sc for sc in ir.structural_candidates
+                       if any(s.structure == p4 for s, m in sc.products)), None)
+        assert target is not None, "the amide-hydrolysis candidate producing 4-aminophenol was not enumerated"
+        return _structural_candidate_to_payload(target)
+
+    def test_a_product_isomer_swap_that_passes_the_formula_square_is_refused_by_the_replay(self):
+        # THE headline: swap 4-aminophenol -> 2-aminophenol (SAME formula C6H7NO, DIFFERENT structure, itself a
+        # VALID species). The formula square passes (identical formulas) and the species certificate passes (2-AP is
+        # real) -- ONLY the graph replay catches that the witness edit produces 4-AP, not the swapped 2-AP.
+        four = StructuralSpecies.of_molecule(AMINOPHENOL)
+        two = StructuralSpecies.of_molecule(ORTHO_AMINOPHENOL)
+        assert four.formula == two.formula and four.structure != two.structure   # the swap is formula-blind
+        pay = self._amide_hydrolysis_candidate_payload()
+        for entry in pay["products"]:
+            if entry["species"]["structure"] == _structural_species_to_payload(four)["structure"]:
+                entry["species"] = _structural_species_to_payload(two)
+        pay["products"].sort(key=_species_digest_of_payload)   # keep canonical order so ONLY the replay fires
+        with pytest.raises(ValueError, match="GRAPH level|does not replay"):
+            _structural_candidate_from_payload(pay)
+
+    def test_a_witness_whose_graph_edit_is_tampered_is_refused(self):
+        # tamper the witness's cut so the reconstructed edit no longer matches the advertised witness_digest.
+        pay = self._amide_hydrolysis_candidate_payload()
+        assert pay["witness"]["cut"], "a capped-scission witness carries cut bonds"
+        # bump the bond order of the first cut bond -> a different (or invalid) edit: it is caught either at the
+        # family certificate (reconstructing the transform) or at the witness_digest/replay check -- both are the
+        # tamper being refused on read, never a silently-trusted witness.
+        pay["witness"]["cut"][0][2] += 1
+        with pytest.raises(ValueError, match="witness|replay|valence|reconstruct|cut bond|bond of the joined"):
+            _structural_candidate_from_payload(pay)
+
+    def test_a_witness_lifted_from_a_different_candidate_is_refused(self):
+        # graft candidate B's witness onto candidate A: B's edit replays to B's products, not A's -> refused.
+        ir = _para_ir()
+        assert len(ir.structural_candidates) >= 2
+        a = _structural_candidate_to_payload(ir.structural_candidates[0])
+        b = _structural_candidate_to_payload(ir.structural_candidates[1])
+        assert a["witness_digest"] != b["witness_digest"]
+        a_grafted = dict(a)
+        a_grafted["witness"] = b["witness"]
+        a_grafted["witness_digest"] = b["witness_digest"]
+        a_grafted["edit_equation"] = b["edit_equation"]
+        with pytest.raises(ValueError, match="different structure|does not replay|GRAPH level"):
+            _structural_candidate_from_payload(a_grafted)
+
+    def test_the_witness_is_a_required_serialized_field(self):
+        # the witness rides IN the candidate payload (hence in the candidate/IR digest, which is why the schema
+        # bumped v1alpha5 -> v1alpha6); a payload missing it is refused on read, not silently defaulted.
+        pay = self._amide_hydrolysis_candidate_payload()
+        assert "witness" in pay and pay["witness"]["witness_kind"] == "CAPPED_SCISSION"
+        del pay["witness"]
+        with pytest.raises((KeyError, ValueError, TypeError)):
+            _structural_candidate_from_payload(pay)
+
+    def test_a_bond_order_edit_witness_replays_through_the_reagentless_family(self):
+        # CHEM-ALG-01's reagentless family also carries a re-verifiable witness (bond_edit, no cut/caps/reagents).
+        ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=_extended_registry())
+        boe = [sc for sc in ir.structural_candidates if sc.witness_kind == "BOND_ORDER_EDIT"]
+        assert boe, "ethane must yield a bond-order (dehydrogenation) candidate under the extended algebra"
+        for sc in boe:
+            w = sc.witness
+            assert w.reagents == () and w.cut == () and w.caps == () and len(w.bond_edit) == 4
+            assert w.replay_transform().digest == sc.witness_digest
+        assert deserialize_ir(serialize_ir(ir)).digest == ir.digest
+
+
+ASPIRIN = parse_smiles("CC(=O)Oc1ccccc1C(=O)O")   # acetylsalicylic acid, C9H8O4
+
+
+class TestStructureRebuildingInverse:
+    """Item 1 -- the structure-rebuilding inverse: reconstitute the target STRUCTURE from a decompile artifact with
+    NO caller-supplied structure (the audit's B0 headline). recompile_from_serialized needs a caller structure
+    because a FORMULA does not fix one; a STRUCTURE artifact carries molecular graphs + re-verifiable witnesses, so
+    the target is READ FROM the artifact and each capped-scission candidate's inverse reconstitutes it -- the
+    decompile->recompile loop closing at the graph level. W3 unchanged: invertibility, never a validated synthesis.
+    """
+
+    def test_every_capped_candidate_reconstitutes_its_parent(self):
+        ir = _para_ir()
+        assert ir.structural_candidates
+        for sc in ir.structural_candidates:
+            rebuilt = sc.reconstitute_parent()
+            assert rebuilt == sc.parent.molecule == PARA.canonical()
+
+    def test_the_headline_reconstitutes_the_target_with_no_caller_structure(self):
+        from smartchem.compilation_ir import recompile_structure_from_serialized, StructureInverseStatus
+        ir = _para_ir()
+        # NOTE: no structure= argument anywhere -- the target is rebuilt from the artifact alone.
+        res = recompile_structure_from_serialized(serialize_ir(ir))
+        assert res.status is StructureInverseStatus.RECONSTITUTED
+        assert res.reconstituted
+        assert res.reconstituted_target == PARA.canonical()
+        assert res.inverted_count == len(ir.structural_candidates) and res.deferred_count == 0
+
+    def test_the_inverse_returns_the_real_structure_not_a_constant(self):
+        # rebuild_parent is structure-SPECIFIC: an aspirin decomposition reconstitutes ASPIRIN, a paracetamol one
+        # reconstitutes PARACETAMOL -- distinct structures, so it is not returning a fixed/echoed value.
+        para_ir = _para_ir()
+        asp_ir = decompile_structure_to_ir(ASPIRIN, reagents=(WATER,))
+        assert asp_ir.structural_candidates, "aspirin must have a capped-scission decomposition"
+        p = para_ir.structural_candidates[0].reconstitute_parent()
+        a = asp_ir.structural_candidates[0].reconstitute_parent()
+        assert p == PARA.canonical() and a == ASPIRIN.canonical() and p != a
+
+    def test_a_formula_artifact_is_routed_out_not_misinverted(self):
+        from smartchem.compilation_ir import recompile_structure_from_serialized, StructureInverseStatus
+        res = recompile_structure_from_serialized(serialize_ir(decompile_to_ir("C8H9NO2")))
+        assert res.status is StructureInverseStatus.NOT_A_STRUCTURE_DECOMPILE
+        assert res.reconstituted_target is None
+
+    def test_a_bond_order_only_artifact_defers_and_does_not_fake(self):
+        # the reagentless bond-order family's inverse is a NAMED FOLLOW-ON (H2 carries no skeleton); it is reported
+        # as deferred, never faked with a vacuous echo of the stored reactant.
+        from smartchem.compilation_ir import recompile_structure_from_serialized, StructureInverseStatus
+        from smartchem.transform_provider import TransformProviderRegistry
+        from smartchem.bond_order_edit import BondOrderEditProvider
+        ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,),
+                                       registry=TransformProviderRegistry((BondOrderEditProvider(),)))
+        assert ir.structural_candidates
+        res = recompile_structure_from_serialized(serialize_ir(ir))
+        assert res.status is StructureInverseStatus.NO_INVERTIBLE_FAMILY
+        assert res.deferred_count == len(ir.structural_candidates) and res.reconstituted_target is None
+
+    def test_the_bond_order_inverse_raises_rather_than_echo(self):
+        ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=_extended_registry())
+        boe = next(sc for sc in ir.structural_candidates if sc.witness_kind == "BOND_ORDER_EDIT")
+        with pytest.raises(NotImplementedError, match="follow-on|skeleton"):
+            boe.witness.rebuild_parent()
+
+    def test_a_tampered_structure_artifact_is_refused_before_the_inverse_runs(self):
+        # the recompile input is the item-4-guarded artifact: an isomer-swapped product is refused on deserialize,
+        # so the inverse never runs on a corrupt decomposition.
+        from smartchem.compilation_ir import recompile_structure_from_serialized
+        four = StructuralSpecies.of_molecule(AMINOPHENOL)
+        two = StructuralSpecies.of_molecule(ORTHO_AMINOPHENOL)
+        payload = ir_to_payload(_para_ir())
+        for cand in payload["structural_candidates"]:
+            for entry in cand["products"]:
+                if entry["species"]["structure"] == _structural_species_to_payload(four)["structure"]:
+                    entry["species"] = _structural_species_to_payload(two)
+            cand["products"].sort(key=_species_digest_of_payload)
+        import json
+        with pytest.raises(ValueError, match="GRAPH level|does not replay|sorted|distinct"):
+            recompile_structure_from_serialized(json.dumps(payload, sort_keys=True))
+
+
 class TestExistingProducersUnaffected:
     def test_formula_decompile_still_works_and_carries_no_structural_candidates(self):
         ir = decompile_to_ir("C8H9NO2")
         assert ir.structural_candidates == ()
         assert ir.target.layer is IdentityLayer.FORMULA
-        assert deserialize_ir(serialize_ir(ir)).digest == ir.digest    # v1alpha5 round-trip intact
+        assert deserialize_ir(serialize_ir(ir)).digest == ir.digest    # v1alpha6 round-trip intact
 
     def test_recompile_still_works_and_carries_no_structural_candidates(self):
         ir = recompile_to_ir(PARA, reagents=(WATER,), available=(AMINOPHENOL,), max_depth=1)

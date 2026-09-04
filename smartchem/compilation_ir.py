@@ -1042,6 +1042,7 @@ def recompile_to_ir(
     max_results: int = 100,
     cut_budget: int = 20_000,
     mode: str = "routes",
+    registry: "TransformProviderRegistry" = DEFAULT_TRANSFORM_REGISTRY,
     identity_losses: "tuple[IdentityLoss, ...]" = (),
     tool_version: str | None = None,
     search_result: "object | None" = None,
@@ -1086,7 +1087,7 @@ def recompile_to_ir(
     if mode == "routes":
         result = search_result if search_result is not None else search_routes(
             target, reagents=reagents, available=available, commodities=commodities,
-            max_depth=max_depth, max_routes=max_results, cut_budget=cut_budget,
+            max_depth=max_depth, max_routes=max_results, cut_budget=cut_budget, registry=registry,
         )
         candidate_kind = "ROUTE"
         candidate_objs: tuple = result.routes
@@ -1095,7 +1096,7 @@ def recompile_to_ir(
     else:
         result = search_result if search_result is not None else search_dags(
             target, reagents=reagents, available=available, commodities=commodities,
-            max_depth=max_depth, max_dags=max_results, cut_budget=cut_budget,
+            max_depth=max_depth, max_dags=max_results, cut_budget=cut_budget, registry=registry,
         )
         candidate_kind = "DAG"
         candidate_objs = result.dags
@@ -1117,12 +1118,14 @@ def recompile_to_ir(
             key=lambda c: c.candidate_digest,
         )
     )
-    registry_digest = _transform_registry_digest(
-        "capped-scission-linear" if mode == "routes" else "capped-scission-convergent"
-    )
+    # the IR's transform_registry_digest is the SEARCH receipt's own (topology + provider-registry algebra, via
+    # search_algebra_digest) -- read from the receipt so the IR and its receipt agree by construction, and so a
+    # non-default `registry` (a wider algebra) is reflected honestly in the section-8.4 provenance instead of a
+    # fixed capped-scission string (red-team fold: the receipt used to ignore the registry parameter entirely).
+    registry_digest = receipt.transform_registry_digest
     # request_digest identifies the REQUEST: target + terminal set + the reagent HELPER pool (distinct from
-    # plain stock) + the transform registry + mode + bounds -- so a bound change (or a reagent-vs-available move,
-    # or a transform-registry version bump) changes the IR digest even when the candidate set is identical.
+    # plain stock) + the transform registry (the algebra) + mode + bounds -- so a bound change (or a
+    # reagent-vs-available move, or an algebra/provider-version change) changes the IR digest.
     reagent_pool = frozenset(_structure_ident(m) for m in reagents)
     request_digest = canonical_digest(
         (

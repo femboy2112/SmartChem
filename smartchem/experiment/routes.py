@@ -25,10 +25,9 @@ from dataclasses import dataclass
 from ..category import Molecule
 from ..conditions import ConditionEnvelope
 from ..contracts import Digestible, canonical_digest
-from ..transform_registry import transform_registry_digest
 from ..decompiler_conditions import assembly_conditions
 from ..search import SearchStatus, primary_standard_status
-from ..transform_provider import DEFAULT_TRANSFORM_REGISTRY, TransformProviderRegistry
+from ..transform_provider import DEFAULT_TRANSFORM_REGISTRY, TransformProviderRegistry, search_algebra_digest
 from .dag import DAGError, SynthesisDAG
 from .step import ExperimentRoute, ExperimentStep
 
@@ -464,7 +463,7 @@ def search_routes(
     _identity = dict(
         target_identity_digest=_ident(target),
         terminal_policy_digest=canonical_digest(("terminal-policy", "STRUCTURE", frozenset(on_hand))),
-        transform_registry_digest=transform_registry_digest("capped-scission-linear"),
+        transform_registry_digest=search_algebra_digest("linear-route", registry),
     )
     if _ident(target) in on_hand:
         # the search DID run and terminated immediately: the counters are a genuine measurement of zero
@@ -683,7 +682,7 @@ def search_dags(
     _identity = dict(
         target_identity_digest=_ident(target),
         terminal_policy_digest=canonical_digest(("terminal-policy", "STRUCTURE", frozenset(on_hand))),
-        transform_registry_digest=transform_registry_digest("capped-scission-convergent"),
+        transform_registry_digest=search_algebra_digest("convergent-dag", registry),
     )
     if _ident(target) in on_hand:
         # the search ran and terminated at once: the counters are a genuine measurement of zero, not UNKNOWN

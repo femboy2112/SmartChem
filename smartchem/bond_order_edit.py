@@ -98,6 +98,14 @@ class BondOrderEdit(Digestible):
             raise ScissionError("(bond_i, bond_j) is not a bond of the reactant")
         if raised.order >= _MAX_BOND_ORDER:
             raise ScissionError("the bond is already at maximal order and cannot be raised")
+        # the raised bond must be between two NON-hydrogen atoms: a hydrogen forms no higher-order bond, and raising
+        # an H-X bond while shedding that same H (H is X's only H neighbour for an H-H bond) would remove BOTH the
+        # raised bond's endpoints -> an empty precursor whose forget() raises (red-team fold: H2's only candidate edit
+        # did exactly this and crashed the enumerator/search with an uncaught DecompilerError).
+        if self.reactant.atoms[self.bond_i] == "H" or self.reactant.atoms[self.bond_j] == "H":
+            raise ScissionError(
+                "a bond-order edit raises a bond between two non-hydrogen atoms; a hydrogen forms no higher-order bond"
+            )
         if self.h_i not in _h_neighbors(self.reactant, self.bond_i):
             raise ScissionError("h_i must be an order-1 hydrogen bonded to bond_i")
         if self.h_j not in _h_neighbors(self.reactant, self.bond_j):
@@ -181,6 +189,8 @@ def bond_order_edits(
     for b in sorted(reactant.bonds):
         if b.order >= _MAX_BOND_ORDER:
             continue
+        if reactant.atoms[b.i] == "H" or reactant.atoms[b.j] == "H":
+            continue  # a hydrogen forms no higher-order bond (and an H-H raise would shed both endpoints)
         h_is = _h_neighbors(reactant, b.i)
         h_js = _h_neighbors(reactant, b.j)
         for h_i in h_is:

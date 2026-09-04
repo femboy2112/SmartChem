@@ -482,12 +482,15 @@ class TestTransformRegistryDigest:
     the grammar version (section 4.1: the digest MUST change on a transform-provider version change)."""
 
     def test_the_ir_carries_the_declared_registry_digest_for_its_grammar(self):
+        from smartchem.transform_provider import DEFAULT_TRANSFORM_REGISTRY, search_algebra_digest
         dec = decompile_to_ir("C8H9NO2", INV)
         assert dec.transform_registry_digest == transform_registry_digest("formula-decomposition")
+        # a route/DAG recompile stamps the SEARCH provenance: topology + the transform-provider ALGEBRA (so a wider
+        # registry moves it -- TRANSFORM-PROVIDER-01 red-team fold), read from the search receipt.
         routes = recompile_to_ir(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1, mode="routes")
-        assert routes.transform_registry_digest == transform_registry_digest("capped-scission-linear")
+        assert routes.transform_registry_digest == search_algebra_digest("linear-route", DEFAULT_TRANSFORM_REGISTRY)
         dags = recompile_to_ir(ETAC, reagents=DAG_REAGENTS, max_depth=2, mode="dags")
-        assert dags.transform_registry_digest == transform_registry_digest("capped-scission-convergent")
+        assert dags.transform_registry_digest == search_algebra_digest("convergent-dag", DEFAULT_TRANSFORM_REGISTRY)
 
     def test_the_three_grammars_have_distinct_registry_digests(self):
         digests = {

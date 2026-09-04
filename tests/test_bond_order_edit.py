@@ -145,6 +145,28 @@ class TestComposesThroughUnchangedSearch:
         default = search_dags(ETHANE, reagents=(WATER,), available=(ETHENE, H2), max_depth=1)
         assert len(ext.dags) >= 1 and len(default.dags) == 0
 
+    def test_the_receipt_provenance_names_the_wider_algebra_not_a_fixed_grammar(self):
+        # red-team fold: the extended algebra generates a route capped-scission cannot; the receipt's section-8.4
+        # provenance must SAY so (move), not name a fixed capped-scission grammar invisible to the registry.
+        default = search_routes(ETHANE, reagents=(WATER,), available=(ETHENE, H2), max_depth=1)
+        extended = search_routes(ETHANE, reagents=(WATER,), available=(ETHENE, H2), max_depth=1, registry=EXT)
+        assert default.receipt.transform_registry_digest != extended.receipt.transform_registry_digest
+
+
+class TestBondOrderEditDoesNotCrashTheSearch:
+    def test_a_bare_hydrogen_molecule_has_no_bond_order_edit(self):
+        # red-team fold (HIGH): H2's only candidate edit sheds BOTH bond endpoints -> an empty precursor whose
+        # forget() raised DecompilerError and crashed the enumerator/search. A bond-order edit now raises a bond
+        # between two NON-hydrogen atoms only, so H2 yields nothing (never a crash).
+        edits, complete = bond_order_edits(H2)
+        assert edits == () and complete is True
+
+    def test_a_search_that_recurses_on_h2_does_not_crash(self):
+        # H2 is a product of every bond-order edit; a search where H2 is NOT on hand must expand it. Before the fold
+        # that raised an uncaught DecompilerError; now it completes.
+        res = search_routes(ETHANE, reagents=(WATER,), available=(ETHENE,), max_depth=3, registry=EXT)
+        assert res.receipt is not None   # completed without an uncaught exception
+
 
 class TestReagentlessCoherence:
     def test_a_bond_order_candidate_carrying_a_reagent_is_refused(self):

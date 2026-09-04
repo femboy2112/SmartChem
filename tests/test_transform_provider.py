@@ -93,6 +93,32 @@ class TestPartialityNeverFakesComplete:
         assert aggregate_complete is False   # one provider's partiality is not masked by the other's completeness
 
 
+class TestSearchReceiptProvenance:
+    """Red-team fold: a route/DAG search receipt's transform_registry_digest (its section-8.4 provenance) must
+    reflect the transform ALGEBRA (the provider registry it was given), not a FIXED capped-scission grammar string
+    that ignored the `registry` parameter entirely."""
+
+    def test_a_route_receipt_digest_moves_with_the_provider_version(self):
+        from smartchem.experiment.routes import search_routes
+        r_v2 = TransformProviderRegistry((CappedScissionProvider(provider_version="v2"),))
+        a = search_routes(PARA, reagents=(WATER,), max_depth=1)
+        b = search_routes(PARA, reagents=(WATER,), max_depth=1, registry=r_v2)
+        assert a.receipt.transform_registry_digest != b.receipt.transform_registry_digest
+
+    def test_a_dag_receipt_digest_moves_with_the_provider_version(self):
+        from smartchem.experiment.routes import search_dags
+        r_v2 = TransformProviderRegistry((CappedScissionProvider(provider_version="v2"),))
+        a = search_dags(PARA, reagents=(WATER,), max_depth=1)
+        b = search_dags(PARA, reagents=(WATER,), max_depth=1, registry=r_v2)
+        assert a.receipt.transform_registry_digest != b.receipt.transform_registry_digest
+
+    def test_the_route_receipt_digest_equals_the_search_algebra_digest(self):
+        from smartchem.experiment.routes import search_routes
+        from smartchem.transform_provider import search_algebra_digest
+        a = search_routes(PARA, reagents=(WATER,), max_depth=1)
+        assert a.receipt.transform_registry_digest == search_algebra_digest("linear-route", DEFAULT_TRANSFORM_REGISTRY)
+
+
 class TestClosedSet:
     def test_a_registry_needs_at_least_one_provider(self):
         with pytest.raises(ValueError, match="at least one provider"):

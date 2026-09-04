@@ -24,7 +24,6 @@ from smartchem.experiment.routes import (
 from smartchem.experiment.step import ExperimentRoute
 from smartchem.search import STANDARD_8_2_STATUSES
 from smartchem.smiles import parse_smiles
-from smartchem.transform_registry import transform_registry_digest
 
 PARA = parse_smiles("CC(=O)Nc1ccc(O)cc1")
 PARA_O_ESTER = parse_smiles("CC(=O)Oc1ccc(N)cc1")
@@ -475,14 +474,18 @@ class TestSection81IdentityDigests:
     """Section 8.1 / 8.4: a receipt names WHAT was searched -- target identity, terminal policy, transform grammar."""
 
     def test_route_receipt_carries_the_three_identity_digests(self):
+        from smartchem.transform_provider import DEFAULT_TRANSFORM_REGISTRY, search_algebra_digest
         r = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=2)
         rc = r.receipt
         assert rc.target_identity_digest and rc.terminal_policy_digest and rc.transform_registry_digest
-        assert rc.transform_registry_digest == transform_registry_digest("capped-scission-linear")
+        # the receipt provenance is topology + the transform ALGEBRA (TRANSFORM-PROVIDER-01 red-team fold), so it
+        # moves when a wider registry is passed -- not a fixed capped-scission grammar string.
+        assert rc.transform_registry_digest == search_algebra_digest("linear-route", DEFAULT_TRANSFORM_REGISTRY)
 
     def test_dag_receipt_names_the_convergent_grammar(self):
+        from smartchem.transform_provider import DEFAULT_TRANSFORM_REGISTRY, search_algebra_digest
         d = search_dags(ETAC, reagents=DAG_REAGENTS, max_depth=2)
-        assert d.receipt.transform_registry_digest == transform_registry_digest("capped-scission-convergent")
+        assert d.receipt.transform_registry_digest == search_algebra_digest("convergent-dag", DEFAULT_TRANSFORM_REGISTRY)
 
     def test_the_terminal_policy_digest_changes_with_the_terminals(self):
         a = search_routes(PARA, reagents=(WATER, ACOH, ANH), available=(AMP,), max_depth=1).receipt

@@ -106,7 +106,7 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 |---|---|---|
 | **A — Alpha conformance** | A truthful bounded compiler conforming to `v0.5.0a1`. | **Near.** Shared IR, typed request/response, search receipts, identity/evidence gates, exact DAG flow + inverse shopping, `StockMaterial`, fail-closed errors all landed. Remaining: the final P0 integrations and a clean RC freeze (`ERR-EVIDENCE-01` is **DONE** — §2A.2 marks it `IMPLEMENTED_AND_VERIFIED`; the RC-readiness audit §2A.7 enumerates the actual remaining blockers). |
 | **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **Thesis DEMONSTRATED, loop CLOSED, coverage MEASURED.** `CANON-KEKULE-01`, `IR-STRUCT-01`, `IR-FORGET-01`, `TRANSFORM-PROVIDER-01`, `CHEM-ALG-01` are **DONE**. `IR-REPLAY-01` (the witness is a re-verifiable graph edit) and `IR-INVERT-01` (a STRUCTURE artifact reconstitutes its target with NO caller structure) closed the decompile→recompile loop at the graph level (`846e8bc`). `CHARGED-ALG-01` added the **first charged family** (heterolytic scission) with a charge-carrying `ChargedDecompositionEdge` forget — the algebra now reaches past neutral rewrites. `HOLDOUT-RXN-01` **froze the family-stratified coverage benchmark** and MEASURES the payoff (default capped 8/18, +bond-order +2, +heterolytic +5, 3/18 genuinely outside-closure). **All named Lane-B follow-ons now landed**: redox `757aeb4` (item 1), the recompile-IR registry threading `c70afc7` (item 4), the bond-order structure-rebuilding inverse `65af346` (item 3a); item 3b (the graph-scission witness replay for products) was already under `IR-REPLAY-01`. The algebra now spans **four qualitatively distinct families** through the unchanged core search — neutral capped scission, neutral bond-order edit, charged heterolytic scission, and charge-only redox (the chem↔EM bridge). |
-| **C — Bench readiness** | `ProcedureIR`, quantities, assays, operations, process hazards, analytical acceptance, waste, equipment ratings, qualified review. | **Deliberately outside the alpha.** `TERM-MAT-01` down-paid by `sourcing.plan_sourcing`; `COST-VEC-01` blocked on real data; `ProcedureIR` deferred. The `FORMAL_CANDIDATE` floor stays immovable until these obligations exist. |
+| **C — Bench readiness** | `ProcedureIR`, quantities, assays, operations, process hazards, analytical acceptance, waste, equipment ratings, qualified review. | **Deliberately outside the alpha.** `TERM-MAT-01` down-paid by `sourcing.plan_sourcing`; **`THERMO-UNC-01` sourcing down-paid (item 5): a frozen, cited CODATA seed + a typed `uncertainty_kj` with a non-vacuous guard (see its §3 row + the item-5 record)**; `COST-VEC-01` still blocked on verifiable dated price data (USGS commodity prices were found but the sandbox could not verify the figures — held, not fabricated); `ProcedureIR` deferred. The `FORMAL_CANDIDATE` floor stays immovable until these obligations exist. |
 
 ### 2A.2 Reoriented roadmap IDs (the audit's additions + the elevated canonical repair)
 
@@ -744,6 +744,41 @@ REFUTED/clean: the other 4 bearings (redox conservation/forgetful-square, redox 
   found no defect -- the core soundness held.
 commit:        071f4ba (fix)   |   suite 3586 passed, 14 skipped, 1 xfailed (fold-only; the item-2 G8 xfail
                guard lands separately -> 2 xfailed). EXIT=0. ruff clean.
+```
+
+**Uptake record — item 5 / THERMO-UNC-01: the sourced CODATA uncertainty seed** (`THERMO-UNC-01` `TODO` →
+`IN_PROGRESS`; the Lane-C sourcing the Operator released "on go, if sources exist online" -- they do):
+
+```text
+ID:            THERMO-UNC-01 (item 5)  |  commit 59acf60 (feat)  |  decompiler_thermo schema tiered-v1 -> tiered-v2
+source hunt:   workflow wwom7qo7j (3 data-class bearings x adversarial DO/BLOCKED adjudication). THERMO-UNC -> DO
+               (CODATA Key Values 1989, real +/- , NIST-WebBook cross-verified); COST-VEC -> PARTIAL (USGS MCS
+               commodity prices, dated/DOI'd, but the sandbox 403'd the fetch so the FIGURES are unverified);
+               TERM-MAT -> PARTIAL (USGS MCS + USITC HTS commodity-existence leads).
+did (verifiable, committed):
+  * experiments/thermo_codata_seed.py -- a FROZEN, dated, cited, sha256-pinned reference dataset: 9 CODATA key
+    species (H2O l/g, CO, CO2, NH3, O2, H2, N2, C-graphite) with +/- on dfH(298.15K) AND S(298.15K), transcribed
+    from Cox/Wagman/Medvedev 1989 and cross-checked against the free NIST WebBook (access 2026-09-04). Values are
+    textbook CODATA (H2O(l) -285.830+-0.040, CO2 -393.51+-0.13, ...), verifiable, not fabricated.
+  * THE non-vacuity discipline (the source-hunt adjudicator's condition, and the standing vacuous-green lesson):
+    the validator REFUSES a hollow uncertainty on a non-reference value -- and fires on the RECORD, not merely on
+    an empty set -- while ACCEPTING a reference-state convention-zero (O2/H2/N2/graphite dfH=0+-0 is a definition;
+    their S still carries a real +-). A zero/negative "uncertainty" on a sourced value is refused.
+  * decompiler_thermo.ThermoRef gains a typed `uncertainty_kj: float | None`, populated from the +/- already cited
+    in each entry's provenance (ketene 1.60, paracetamol 1.9) with honest None where the source gave none, same
+    guard. Backward compatible (default None; the dfH consumers unchanged).
+did NOT (held honest, no fabrication):
+  * COST-VEC-01 stays BLOCKED: the only free dated price source (USGS Mineral Commodity Summaries) was found, but
+    the sandbox could not fetch/verify the actual figures (pubs.usgs.gov 403s automation), and section 10.4 forbids
+    committing a price this session did not verify. The sourcing PLAN is recorded; the numbers are not committed.
+  * TERM-MAT-01 commodity-existence leads (USGS MCS chapters + USITC HTS headings) were found but likewise await
+    an in-repo verification pass before any lead is written -- not committed on a search-index snippet.
+  * CH4 and any non-CODATA-key species are ABSENT from the seed (not fabricated); widening needs ATcT/JANAF.
+remaining (named): wire uncertainty_kj into data/thermo.py's ThermoRef (the phase/grade type the row first named)
+               + its group-additivity/feasibility consumers; verify + commit the USGS commodity leads/prices.
+tests:         tests/test_thermo_codata_seed.py (10) + tests/test_decompiler_thermo.py::TestUncertaintyField (4).
+command:       .venv/bin/python -m pytest -q -p no:cacheprovider
+result:        3600 passed, 14 skipped, 2 xfailed (baseline 3586; +14). EXIT=0. ruff clean.
 ```
 
 ## 3. P0 truth-envelope backlog
@@ -2449,7 +2484,7 @@ stronger result.
 | ID | Requirement | Present issue | Acceptance test | Status |
 |---|---|---|---|---|
 | `PTABLE-01` | Formula validation uses one supported periodic-table authority and positive integer counts | Complete table is now used; zero/negative/non-integer formula counts are refused | CaO, representative heavy elements and invalid-count regressions pass | `IMPLEMENTED_AND_VERIFIED` |
-| `THERMO-UNC-01` | Carry reported uncertainty, phase, standard state and source | `ThermoRef` already carries phase, provenance and grade; the missing piece is a reported UNCERTAINTY field. Assessed and DEFERRED from the P2 honesty batch: real values need sourced CODATA/JANAF uncertainties (fabricating them is forbidden), and a hollow null-field add would change every `ThermoRef` digest for no honesty gain -- this is a focused sourcing pass, not a render fix | Round-trip fixture preserves every field; incompatible phases do not match | `TODO` |
+| `THERMO-UNC-01` | Carry reported uncertainty, phase, standard state and source | **Sourcing DONE + the non-vacuity discipline demonstrated (item 5, 2026-09-04); the block is LIFTED.** A fanned-out source hunt (workflow `wwom7qo7j`) established that the CODATA Key Values for Thermodynamics (Cox/Wagman/Medvedev 1989) carry REAL ± uncertainties for the common small molecules, cross-verifiable for free via the NIST WebBook -- so the old "no sourced uncertainties, fabrication forbidden" block no longer applies to that closed set. Committed as a FROZEN, dated, cited, hash-pinned reference dataset (`experiments/thermo_codata_seed.py`: 9 species with ± on both ΔfH and S°) whose validator is NON-VACUOUS -- it REFUSES a hollow uncertainty on a non-reference value while accepting a reference-state convention-zero (O2/H2/N2/graphite ΔfH=0±0 is a definition, not a hollow value). `decompiler_thermo.ThermoRef` gains a first-class `uncertainty_kj` (schema `tiered-v2`), populated from the ± already cited in each entry's provenance (ketene 1.60, paracetamol 1.9; honest `None` where the source gave none) under the same guard. REMAINING (named next step, NOT done): wire the typed `uncertainty_kj` into `data/thermo.py`'s `ThermoRef` (the phase/grade type this row first named) + its group-additivity/feasibility consumers, and widen the seed past the CODATA key set (CH4 etc. via version-pinned ATcT/JANAF, never fabricated). | The seed validates and its frozen hash matches; a hollow uncertainty is refused (non-vacuous); ketene/paracetamol carry their cited ±; CH4 is honestly absent (`tests/test_thermo_codata_seed.py`, `tests/test_decompiler_thermo.py::TestUncertaintyField`) | `IN_PROGRESS` |
 | `THERMO-DIG-01` | Evidence grade/provider semantics affect artifact digest | Some grade fields are excluded from comparison/digest | Change grade/source fixture -> semantic digest changes | `TODO` |
 | `EQUIL-NAME-01` | Equilibrium diagnostic is not called practical extent/yield | The ideal K/conversion render now names the ideal model and denies practical yield explicitly (`a34cc69`): the reason reads "ideal-model equilibrium extent, NOT a rate and NOT an expected isolated/practical yield" (section 9.5) and the standalone conversion finding carries the same denial | Golden render names ideal model and denies expected yield | `IMPLEMENTED_AND_VERIFIED` |
 | `KIN-CTX-01` | Kinetics key includes conditions, order, units and composition requirements | Rate can be reused outside context; higher-order half-life underdetermined | Wrong temperature/order/unit refuses; missing concentration stays unknown | `TODO` |

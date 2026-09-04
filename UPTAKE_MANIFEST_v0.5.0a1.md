@@ -105,7 +105,7 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 | Lane | Finish line | State |
 |---|---|---|
 | **A — Alpha conformance** | A truthful bounded compiler conforming to `v0.5.0a1`. | **Near.** Shared IR, typed request/response, search receipts, identity/evidence gates, exact DAG flow + inverse shopping, `StockMaterial`, fail-closed errors all landed. Remaining: `ERR-EVIDENCE-01`, the final P0 integrations, a clean RC freeze. |
-| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **Thesis DEMONSTRATED.** `CANON-KEKULE-01`, `IR-STRUCT-01`, `IR-FORGET-01` (`0aac8a1`+`fd10792`), `TRANSFORM-PROVIDER-01` and `CHEM-ALG-01` (`ea47f3d`) are **DONE**: the search is now parameterized by a transform algebra, and a second family (bond-order edit) composes through the unchanged search with no engine fork. Remaining Lane-B: `HOLDOUT-RXN-01` (freeze the family-stratified coverage benchmark) `TODO`; further follow-ons: charged families (ionic/redox need a charged forget), the recompile-IR registry threading, and the structure-rebuilding inverse (unblocked — the graph rides). |
+| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **Thesis DEMONSTRATED, loop CLOSING.** `CANON-KEKULE-01`, `IR-STRUCT-01`, `IR-FORGET-01` (`0aac8a1`+`fd10792`), `TRANSFORM-PROVIDER-01` and `CHEM-ALG-01` (`ea47f3d`) are **DONE**: the search is parameterized by a transform algebra, and a second family composes through the unchanged search with no engine fork. `IR-REPLAY-01` (the graph-scission replay — the witness is a re-verifiable graph edit, an isomer-swapped product refused) and `IR-INVERT-01` (the structure-rebuilding inverse — a STRUCTURE artifact reconstitutes its target with NO caller-supplied structure) are now **DONE** too (`846e8bc`), closing the decompile→recompile loop at the graph level. Remaining Lane-B: `HOLDOUT-RXN-01` (freeze the family-stratified coverage benchmark) `TODO`; further follow-ons: charged families (ionic/redox need a charged forget) and the recompile-IR registry threading. |
 | **C — Bench readiness** | `ProcedureIR`, quantities, assays, operations, process hazards, analytical acceptance, waste, equipment ratings, qualified review. | **Deliberately outside the alpha.** `TERM-MAT-01` down-paid by `sourcing.plan_sourcing`; `COST-VEC-01` blocked on real data; `ProcedureIR` deferred. The `FORMAL_CANDIDATE` floor stays immovable until these obligations exist. |
 
 ### 2A.2 Reoriented roadmap IDs (the audit's additions + the elevated canonical repair)
@@ -119,6 +119,8 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 | `TRANSFORM-PROVIDER-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | The bounded search is parameterized by a typed closed `TransformProviderRegistry` (`smartchem/transform_provider.py`): capped-scission enumeration runs EXCLUSIVELY inside `CappedScissionProvider` (the `routes.py` seams and the structural decompile reach it via `registry.enumerate`, never a direct call). The registry digest moves on any provider set / id / version / capability-manifest change; aggregate completeness is the AND of every provider's own, so provider-local partiality never fakes a complete. The DEFAULT registry (capped-only) is behavior-AND-digest identical — the whole 3483-test suite is transparent to the reroute. `ea47f3d` + red-team fold `5bdac74` (registry-blind receipt provenance); `tests/test_transform_provider.py`. | `IR-STRUCT-01` |
 | `HOLDOUT-RXN-01` | P1 | B | `TODO` | A frozen, family-stratified benchmark (train/dev/**holdout** split) classifies each target: constructible-in-closure / representable-but-unsupported / blocked-by-identity-loss / blocked-by-missing-evidence / incomplete-within-bounds / outside-closure / invalid. Holdout hashes frozen before any provider fitting. | `TRANSFORM-PROVIDER-01` |
 | `CHEM-ALG-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | A second, qualitatively distinct family — the partial bond-order edit (dehydrogenation `alkane → alkene + H2`, `smartchem/bond_order_edit.py`, distinct from the whole-bond rewrites capped-scission excludes) — registers through `BondOrderEditProvider` and composes through the UNCHANGED core route AND DAG search: with the extended algebra the hydrogenation route `H2 + C2H4 → C2H6` is found; with the default (capped-only) algebra it is NOT — no engine branch, only the registry parameter. It rides the structural IR (a `BOND_ORDER_EDIT` candidate with a `DECOMPOSITION_EDGE` projection, alongside capped scissions), obeys the forgetful square (recompute-verified, a tampered projection refused), and stays `FORMAL_CANDIDATE` — no sourced conditions → `unknown()` through the UNCHANGED conditions gate (the pipeline was already duck-typed on the uniform transform interface). `ea47f3d` + red-team fold `5bdac74` (the H2-node crash); `tests/test_bond_order_edit.py`. The frozen family-stratified benchmark `HOLDOUT-RXN-01` (MEASURES cross-family coverage) is a named follow-on — this brick delivers the family + composition, not the benchmark. | `IR-FORGET-01`; `HOLDOUT-RXN-01` (follow-on) |
+| `IR-REPLAY-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | The scission witness is a RE-VERIFIABLE graph edit, not a one-way label. Each `StructuralCandidate` carries a first-class `StructuralWitness` (the family transform's own graph edit in its own index space); `__post_init__` reconstructs the exact transform (re-running its family certificate) and demands its GRAPH-level products/reagents/reactant equal the stored species and its digest equal `witness_digest`. This is strictly stronger than the formula square, which is blind to a product's same-formula isomers: the 4-aminophenol→2-aminophenol swap (same formula `C6H7NO`) that passes the formula square is REFUSED here (reproduced, proven non-vacuous). Rides + round-trips digest-stably (IR `v1alpha6`, candidate `v1alpha2`, witness `v1alpha1`). `846e8bc`; `tests/test_ir_struct.py::TestGraphScissionReplay`. | `IR-FORGET-01` |
+| `IR-INVERT-01` | P1 | B | **`IMPLEMENTED_AND_VERIFIED`** | The structure-rebuilding inverse (audit B0 headline). `recompile_from_serialized` inverts a FORMULA artifact and REQUIRES a caller-supplied structure (a formula does not fix one); the new `recompile_structure_from_serialized` reads a STRUCTURE artifact whose candidates carry graphs + the re-verifiable witness, so the target is READ FROM the artifact — **NO caller structure** — and `StructuralCandidate.reconstitute_parent` inverts each capped scission (product graph + edit → the parent), reconstituting the target and closing the decompile→recompile loop at the graph level (paracetamol reconstitutes from all 14 decompositions). A FORMULA artifact routes out; the reagentless bond-order family's inverse is refused as a named follow-on (H2 carries no skeleton), never a vacuous echo. W3 unchanged: invertibility, never a validated synthesis. `846e8bc`; `tests/test_ir_struct.py::TestStructureRebuildingInverse`. | `IR-REPLAY-01`, `IR-STRUCT-01` |
 | `TERM-MAT-01` | P1 | C | `IN_PROGRESS` | `StockMaterial.satisfies()` gates terminal/production selection: same-structure / sufficient-assay / insufficient / unknown / formulation mismatch / quantity known-unknown are all distinguished; a commodity lead stays UNKNOWN-assay, never terminates a route as a pure reagent; DAG shopping quantities wire in without relabeling a 100%-efficiency lower bound as a predicted purchase. | `STOCK-01`✓, `SHOP-LEAF-02`✓, `sourcing`✓ |
 | `COST-VEC-01` | P1 | C | `BLOCKED` | Vector affordability (cost/access/evidence/equipment/hazard/time as separate axes, a Pareto frontier not a hidden scalar), and the coupled/underdetermined shopping refusal resolved. **Blocked: needs sourced, dated prices — §10.4 forbids inventing them.** | `TERM-MAT-01`, real price data |
 
@@ -400,6 +402,48 @@ red-team:      whg2vhwtk / wf_cdcb0acd-9cc (5 blind orthogonal bearings, refute-
   non-vacuous: the H2 crash reproduced (DecompilerError) pre-fold and is gone post-fold; the receipt-digest
                default==extended reproduced pre-fold and now differs -- pinned by TestBondOrderEditDoesNotCrash-
                TheSearch + TestSearchReceiptProvenance + the extended-algebra receipt test.
+```
+
+**Uptake record — IR-REPLAY-01 + IR-INVERT-01, the graph-scission replay and its inverse** (`IR-REPLAY-01` /
+`IR-INVERT-01` `TODO` → `IMPLEMENTED_AND_VERIFIED`; the two IR-STRUCT-01 follow-ons closed — the loop closes at
+the graph level):
+
+```text
+ID:            IR-REPLAY-01 (the scission witness is a re-verifiable graph edit, not a one-way label)
+               IR-INVERT-01 (the structure-rebuilding inverse: reconstitute a STRUCTURE target with no caller structure)
+commit:        846e8bc (feat: item 4 + item 1)  |  IR schema v1alpha5 -> v1alpha6, candidate v1alpha1 -> v1alpha2,
+               new StructuralWitness v1alpha1  |  suite 3514 -> 3528 (+14 adversarial), 14 skipped, 1 xfailed.
+IR-REPLAY-01:  the gap the IR-STRUCT-01 red-team named (finding (b) above, "differently-witnessed formal candidate").
+               The witness was stored only as a digest + equation, so a deserialized candidate could pair a
+               witness_digest for edit A with product species that are edit B's SAME-FORMULA isomers; the
+               formula-level forgetful square is blind to a product's structure, so it passed. FIX: each
+               StructuralCandidate now carries a first-class StructuralWitness -- the family transform's own graph
+               edit in ITS OWN index space (reactant graph, ordered reagent graphs, cut/caps for a capped scission,
+               the raised bond + shed hydrogens for a bond-order edit). __post_init__ RECONSTRUCTS the exact
+               transform (re-running its family certificate -- valence, closed products, descent) and demands
+               (a) transform.digest == witness_digest, (b) the reactant canonical == the parent, (c) the reagent and
+               PRODUCT canonical multisets == the stored species. (c) is the teeth: strictly stronger than the
+               formula square. Reproduced the 4-aminophenol -> 2-aminophenol swap (same formula C6H7NO, different
+               structure, itself a valid species): it passes the formula square and the species certificate, and is
+               REFUSED by the graph replay. tests/test_ir_struct.py::TestGraphScissionReplay (7).
+IR-INVERT-01:  the audit B0 headline. recompile_from_serialized inverts a FORMULA artifact and REQUIRES a caller
+               structure (a formula does not fix one). recompile_structure_from_serialized reads a STRUCTURE
+               artifact -- its candidates carry graphs + the re-verifiable witness -- so the target is READ FROM the
+               artifact (NO structure= argument), and StructuralCandidate.reconstitute_parent inverts each capped
+               scission (product graph + edit -> the joined parent+reagent graph, its reactant-atom component the
+               parent, connectedness checked). Paracetamol reconstitutes from all 14 decompositions; a FORMULA
+               artifact -> NOT_A_STRUCTURE_DECOMPILE; a bond-order-only artifact -> NO_INVERTIBLE_FAMILY (the
+               reagentless family's inverse is a NAMED follow-on -- H2 carries no skeleton -- refused, never a
+               vacuous echo of the stored reactant). tests/test_ir_struct.py::TestStructureRebuildingInverse (7).
+square/W3:     both obey the existing invariants -- the candidate is still FORMAL_CANDIDATE (structure enumerates,
+               evidence identifies), the forgetful square still holds, and a RECONSTITUTED verdict means the recorded
+               decomposition is INVERTIBLE, never that any synthesis is validated.
+fixtures:      the 4 structural CLI-JSON goldens regen (only the IR schema string + dependent digests moved; the CLI
+               decompile is the FORMULA path so structural_candidates stays []); test_compilation_ir schema pin
+               v1alpha5 -> v1alpha6; one TestRedTeamFold case rewritten to isolate the IR parent-pin (the new
+               candidate-level witness-reactant check catches a bare parent-swap earlier -- correct, so the test now
+               grafts a fully-coherent wrong-subject candidate).
+next:          charged families (IR-INVERT-01 generalizes to a charged rejoin); HOLDOUT-RXN-01 measures the coverage.
 ```
 
 ## 3. P0 truth-envelope backlog

@@ -488,6 +488,42 @@ scope:         Lane B. THREE structural families now first-class (capped / bond-
                benchmark. Named follow-ons: redox family; recompile-IR registry threading; the bond-order inverse.
 ```
 
+**Red-team fold — items 4/1/3/2** (blind-bearing workflow `w7gfe6ljw`, 5 orthogonal bearings × refute-by-default
+verify, 11 agents; **6 CONFIRMED** across 4 distinct defects, each reproduced on the filesystem before folding):
+
+```text
+CONFIRMED (2 crashes, 1 vacuity, 1 false-provenance -- 6 findings, 4 distinct roots):
+  MEDIUM inverse-vacuity: StructuralCandidate.reconstitute_parent / StructuralWitness.rebuild_parent was a
+    reactant ECHO -- rebuild_parent derives the product graph from the witness REACTANT (join - cut + caps == the
+    reactant), never reading the stored products, so its `== parent` check could never fail and its connectivity
+    guards were dead (swapping a candidate's products to aspirin still returned paracetamol). The inverse's
+    soundness rested ENTIRELY on the separate item-4 __post_init__ replay. FIX: reconstitute_parent now RE-VERIFIES
+    the stored products against the witness replay (step 1, the product-consuming step) BEFORE inverting the edit
+    (step 2); a swapped product set is refused. rebuild_parent's docstring corrected to state its honest scope (it
+    inverts the EDIT; it is not itself product-consuming). The false-assurance test reworded.
+  MEDIUM charged-crash-A: a SYMMETRIC heterolytic split (O2(2-) -> O(-) + O(-), two IDENTICAL ions) merges to ONE
+    formula x multiplicity 2, which ChargedDecompositionEdge's "count DISTINCT formulas >= 2" check REJECTED ->
+    uncaught ScissionError crashed the whole charged decompile. FIX: require >= 2 INSTANCES (sum of multiplicities),
+    so a symmetric split is a valid genuine split.
+  MEDIUM charged-crash-B: CappedScissionProvider.enumerate_transforms RAISED on a charged reactant (CappedScission
+    is neutral-only) instead of returning ((), True), so a MIXED (capped + heterolytic) registry crashed end-to-end
+    on ANY charged target -- the heterolytic candidates were never reached. FIX: the capped provider yields nothing
+    (complete) for a charged reactant (the boundary contract: a family that cannot apply never raises).
+  LOW/MEDIUM edit_equation (2 bearings, one root): the human-readable edit_equation was a free string never
+    cross-checked against the witness's OWN equation -- a candidate with an honest machine identity (digest, graph,
+    products, projection all re-verified) could carry a readable equation stating false chemistry (the paracetamol
+    litmus a chemist reads). FIX: __post_init__ now asserts witness_transform.equation() == edit_equation (the human
+    twin of the witness_digest check). LOW recompile-note: the RECONSTITUTED note named decompile_ir.target.
+    canonical_repr (a free field a tampered artifact can set to any string) instead of the ACTUAL rebuilt molecule;
+    FIX: the note names ChemicalIdentity.of_molecule(reconstituted).canonical_repr.
+non-vacuous:   each reproduced pre-fold (product-swap echo; O2(2-)/mixed-registry crashes; tampered edit_equation
+    accepted; note naming a lie) and is refused/fixed post-fold; pinned by TestRedTeamFoldRound2 (tests/test_ir_
+    struct.py) + TestChargedRedTeamFold (tests/test_charged_family.py). No serialized-shape change (validation +
+    logic + docstrings only), so no schema bump and no golden regen.
+REFUTED:       none reported -- every bearing that fired produced a reproducible finding; the machine-load-bearing
+    identity (forgetful square, graph-scission replay, digest law) held under all five bearings.
+```
+
 ## 3. P0 truth-envelope backlog
 
 ### 3.1 Search completeness and result semantics

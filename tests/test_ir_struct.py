@@ -516,24 +516,56 @@ class TestStructureRebuildingInverse:
         assert res.status is StructureInverseStatus.NOT_A_STRUCTURE_DECOMPILE
         assert res.reconstituted_target is None
 
-    def test_a_bond_order_only_artifact_defers_and_does_not_fake(self):
-        # the reagentless bond-order family's inverse is a NAMED FOLLOW-ON (H2 carries no skeleton); it is reported
-        # as deferred, never faked with a vacuous echo of the stored reactant.
+    def test_a_bond_order_only_artifact_now_reconstitutes(self):
+        # item 3a: the reagentless bond-order inverse is BUILT (in the witness's own reactant index space), so a
+        # bond-order-ONLY artifact reconstitutes its target -- ethane from ethene + H2 -- with no caller structure,
+        # no deferral, no vacuous echo.
         from smartchem.compilation_ir import recompile_structure_from_serialized, StructureInverseStatus
         from smartchem.transform_provider import TransformProviderRegistry
         from smartchem.bond_order_edit import BondOrderEditProvider
         ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,),
                                        registry=TransformProviderRegistry((BondOrderEditProvider(),)))
         assert ir.structural_candidates
+        assert all(sc.witness_kind == "BOND_ORDER_EDIT" for sc in ir.structural_candidates)
         res = recompile_structure_from_serialized(serialize_ir(ir))
-        assert res.status is StructureInverseStatus.NO_INVERTIBLE_FAMILY
-        assert res.deferred_count == len(ir.structural_candidates) and res.reconstituted_target is None
+        assert res.status is StructureInverseStatus.RECONSTITUTED
+        assert res.reconstituted_target == ETHANE.canonical()
+        assert res.inverted_count == len(ir.structural_candidates) and res.deferred_count == 0
 
-    def test_the_bond_order_inverse_raises_rather_than_echo(self):
+    def test_the_bond_order_inverse_reconstitutes_in_the_reactant_index_space(self):
+        # item 3a: rebuild_parent now inverts the bond-order edit exactly (drop the shed H-H bond, lower the raised
+        # bond, restore the two C-H bonds) rather than raising -- ethane recovered from the ethene+H2 edit.
         ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=_extended_registry())
         boe = next(sc for sc in ir.structural_candidates if sc.witness_kind == "BOND_ORDER_EDIT")
-        with pytest.raises(NotImplementedError, match="follow-on|skeleton"):
-            boe.witness.rebuild_parent()
+        assert boe.witness.rebuild_parent() == ETHANE.canonical()
+        assert boe.reconstitute_parent() == ETHANE.canonical()   # the full product-consuming inverse agrees
+
+    def test_the_bond_order_inverse_is_non_vacuous_a_swapped_product_is_refused(self):
+        # the inverse's soundness is NOT a reactant echo: reconstitute_parent step 1 re-verifies the stored products
+        # against the witness replay BEFORE inverting, so swapping the bond-order candidate's products to a different
+        # molecule is REFUSED (reproduced on a live candidate, bypassing __post_init__ to hit the OWN guard).
+        ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=_extended_registry())
+        boe = next(sc for sc in ir.structural_candidates if sc.witness_kind == "BOND_ORDER_EDIT")
+        assert boe.reconstitute_parent() == ETHANE.canonical()          # honest candidate reconstitutes
+        object.__setattr__(boe, "products", ((StructuralSpecies.of_molecule(ASPIRIN), 1),))
+        with pytest.raises(ValueError, match="stored products are not the witness|cannot be reconstituted"):
+            boe.reconstitute_parent()
+
+    def test_the_deferral_path_still_guards_a_future_non_invertible_family(self):
+        # after item 3a every CURRENT family inverts (capped, heterolytic, bond-order), so no real family exercises
+        # the NO_INVERTIBLE_FAMILY branch -- it must stay LIVE for a FUTURE family whose products carry no
+        # reconstructable skeleton ([[vacuous-green-over-an-empty-subject]]: an untested branch is a lie waiting).
+        # Simulate one by forcing the witness inverse to raise NotImplementedError.
+        from unittest.mock import patch
+        from smartchem.compilation_ir import (
+            StructuralWitness, StructureInverseStatus, recompile_structure_from_serialized,
+        )
+        ir = _para_ir()
+        text = serialize_ir(ir)
+        with patch.object(StructuralWitness, "rebuild_parent", side_effect=NotImplementedError("future family")):
+            res = recompile_structure_from_serialized(text)
+        assert res.status is StructureInverseStatus.NO_INVERTIBLE_FAMILY
+        assert res.deferred_count == len(ir.structural_candidates) and res.reconstituted_target is None
 
     def test_a_tampered_structure_artifact_is_refused_before_the_inverse_runs(self):
         # the recompile input is the item-4-guarded artifact: an isomer-swapped product is refused on deserialize,

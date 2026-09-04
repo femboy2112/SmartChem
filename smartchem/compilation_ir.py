@@ -453,20 +453,43 @@ class StructuralWitness(Digestible):
         inverse: ``(product graph - caps) | cut`` -> the joined parent+reagent graph, its reactant-atom component the
         parent.)
 
-        The two families whose product fragments carry the parent's whole atom skeleton invert this way: the
-        reagent-mediated capped scission (fragments the cut/caps re-glue) and the reagentless CHARGED heterolytic
-        scission (two ions the cut bond re-joins -- the parent charge is the sum of the ion charges, which the
-        certificate already conserves).  The reagentless BOND-ORDER family sheds H2, whose two atoms carry NO
-        skeleton, so reconstituting its parent from the products needs a canonical-precursor -> reactant index
-        recovery not built here; ``rebuild_parent`` refuses it rather than echo the stored reactant graph (a vacuous
-        'inverse').  It is a named follow-on.
+        All three current families invert this way, each in the witness's OWN reactant index space:
+          * the reagent-mediated CAPPED scission (the cut/caps re-glue the fragments);
+          * the reagentless CHARGED heterolytic scission (the cut bond re-joins the two ions -- the parent charge
+            is the sum of the ion charges, which the certificate already conserves);
+          * the reagentless BOND-ORDER edit (item 3a): the shed pair's H-H bond is removed, the raised bond lowered
+            one order, and the two shed C-H bonds restored -- the parent connectivity.  The "H2 carries no
+            skeleton" worry is real ONLY for inverting from the STORED canonical PRODUCT species (the precursor is
+            reindexed/canonicalised there, so the shed hydrogens' attachment sites are lost); working in the
+            witness's OWN reactant index space, ``bond_i``/``bond_j``/``h_i``/``h_j`` ARE known indices, so no
+            canonical-precursor recovery is needed and the inverse is exact -- NOT the vacuous reactant-echo the
+            earlier refusal guarded against (product-consumption stays reconstitute_parent step 1's job).
         """
         if self.witness_kind == "BOND_ORDER_EDIT":
-            raise NotImplementedError(
-                "the reagentless bond-order family's structure-rebuilding inverse is a named follow-on: H2 carries no "
-                "skeleton, so reconstituting the reactant from the products needs a canonical-precursor index "
-                "recovery not built here; a vacuous echo of the stored reactant is deliberately not returned"
-            )
+            reactant = _graph_from_payload(self.reactant)
+            bond_i, bond_j, h_i, h_j = self.bond_edit
+
+            def _bond(a: int, b: int) -> "Bond":
+                for bond in reactant.bonds:
+                    if {bond.i, bond.j} == {a, b}:
+                        return bond
+                raise ValueError(f"the bond-order witness names a bond ({a},{b}) absent from its reactant graph")
+
+            raised = _bond(bond_i, bond_j)      # the bond the forward edit raised (its ORIGINAL order)
+            ch_i = _bond(bond_i, h_i)           # the C-H bond shed from the first endpoint
+            ch_j = _bond(bond_j, h_j)           # the C-H bond shed from the second endpoint
+            lo, hi = sorted((bond_i, bond_j))
+            hlo, hhi = sorted((h_i, h_j))
+            hh = Bond(hlo, hhi, 1)                          # the shed pair as H2 (in reactant index space)
+            raised_up = Bond(lo, hi, raised.order + 1)      # the raised (precursor) bond
+            # forward product connectivity (precursor + H2) in the reactant's OWN index space:
+            product_graph = (reactant.bonds - {raised, ch_i, ch_j}) | {raised_up, hh}
+            # INVERSE edit: drop the shed pair's H-H bond, lower the raised bond one order, restore the two shed C-H
+            # bonds -> the parent connectivity (the product graph genuinely consumed, mirroring the other families).
+            recovered = (product_graph - {hh, raised_up}) | {Bond(lo, hi, raised.order), ch_i, ch_j}
+            if len(_components(len(reactant.atoms), recovered)) != 1:
+                raise ValueError("the bond-order inverse did not reconstitute a single connected parent")
+            return Molecule(tuple(reactant.atoms), recovered, reactant.charge, reactant.state).canonical()
         if self.witness_kind == "HETEROLYTIC_SCISSION":
             reactant = _graph_from_payload(self.reactant)
             cut_bond = Bond(*self.cut[0])
@@ -2284,7 +2307,8 @@ def recompile_structure_from_serialized(decompile_ir_text: str) -> StructureRebu
             decompile_ir, None, 0, deferred, StructureInverseStatus.NO_INVERTIBLE_FAMILY,
             (
                 f"all {deferred} candidate(s) carry a family whose structure-rebuilding inverse is a named follow-on "
-                f"(e.g. the reagentless bond-order edit); no candidate reconstituted the target"
+                f"(no CURRENT family defers -- capped, heterolytic and bond-order all invert; this guards a FUTURE "
+                f"family whose products carry no reconstructable skeleton); no candidate reconstituted the target"
             ),
         )
     # name the ACTUAL rebuilt molecule (re-derived from the candidates), NOT decompile_ir.target.canonical_repr --

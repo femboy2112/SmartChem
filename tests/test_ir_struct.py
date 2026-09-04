@@ -555,7 +555,7 @@ class TestExistingProducersUnaffected:
         ir = decompile_to_ir("C8H9NO2")
         assert ir.structural_candidates == ()
         assert ir.target.layer is IdentityLayer.FORMULA
-        assert deserialize_ir(serialize_ir(ir)).digest == ir.digest    # v1alpha6 round-trip intact
+        assert deserialize_ir(serialize_ir(ir)).digest == ir.digest    # v1alpha7 round-trip intact
 
     def test_recompile_still_works_and_carries_no_structural_candidates(self):
         ir = recompile_to_ir(PARA, reagents=(WATER,), available=(AMINOPHENOL,), max_depth=1)

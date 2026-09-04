@@ -543,9 +543,9 @@ class TestSection82IRFace:
     def test_schema_bumped_for_the_standard_status_and_loss_fields(self):
         # v1alpha2 added standard_status; v1alpha3 (IR-LOSS-01) made identity_losses typed records; v1alpha4
         # (IR-CHEM-01) carries the FULL section 8.1 receipt (search_receipt_digest str -> search_receipt object);
-        # v1alpha6 (item 4) adds the re-verifiable StructuralWitness (graph-scission replay) to each candidate;
-        # v1alpha5 (IR-STRUCT-01) first added the structure-preserving structural_candidates.
-        assert CHEMICAL_COMPILATION_IR_SCHEMA.endswith("v1alpha6")
+        # v1alpha7 (item 3) admits the charged heterolytic family (the witness gains a fragments field); v1alpha6
+        # (item 4) added the re-verifiable StructuralWitness; v1alpha5 (IR-STRUCT-01) the structural_candidates.
+        assert CHEMICAL_COMPILATION_IR_SCHEMA.endswith("v1alpha7")
 
     def test_decompile_ir_carries_a_faithful_8_2_status(self):
         ir = decompile_to_ir("C8H9NO2", INV)

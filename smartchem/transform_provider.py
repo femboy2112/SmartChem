@@ -34,11 +34,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .contracts import canonical_digest
-from .structure_descent import capped_scissions
+from .structure_descent import capped_scissions, heterolytic_scissions
 
 __all__ = [
     "TransformProvider",
     "CappedScissionProvider",
+    "HeterolyticScissionProvider",
     "EnumeratedTransform",
     "TransformProviderRegistry",
     "DEFAULT_TRANSFORM_REGISTRY",
@@ -120,6 +121,35 @@ class CappedScissionProvider(TransformProvider):
         return capped_scissions(
             reactant, reagents, max_reactant_cuts=self.max_reactant_cuts, budget=budget, ring_aware=self.ring_aware
         )
+
+
+@dataclass(frozen=True)
+class HeterolyticScissionProvider(TransformProvider):
+    """The heterolytic-scission family (item 3): single-bond heterolysis into two CHARGED ions, reagentless, under
+    the localized-charge model.  The first CHARGED family to ride the transform algebra -- it forgets to a
+    charge-carrying :class:`~smartchem.structure_descent.ChargedDecompositionEdge` (the neutral MediatedEdge/
+    DecompositionEdge refuse a charged species), demonstrating the algebra widening past neutral rewrites with no
+    engine fork.  Enumerates through the UNCHANGED registry seam; charged fragments do not terminate at neutral
+    stock, so this widens the DECOMPILE algebra (it is not forced through the neutral route search)."""
+
+    provider_id: str = "heterolytic-scission"
+    provider_version: str = "v1"
+    witness_kind: str = "HETEROLYTIC_SCISSION"
+
+    @property
+    def capability_manifest(self) -> tuple:
+        return (
+            ("family", "heterolytic-scission"),
+            ("mechanism", "single-bond heterolysis into two charged ions (localized-charge model), reagentless"),
+            ("witness_kind", self.witness_kind),
+            ("projection_kind", "CHARGED_DECOMPOSITION_EDGE"),
+            ("charged", True),
+        )
+
+    def enumerate_transforms(self, reactant, reagents, *, budget):
+        # reagentless: the reagent pool is ignored.  heterolytic_scissions enumerates every single-bond bridge split
+        # exhaustively (no budget dimension), so it is always complete within its family.
+        return heterolytic_scissions(reactant), True
 
 
 @dataclass(frozen=True)

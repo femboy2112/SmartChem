@@ -65,6 +65,7 @@ __all__ = [
     "ScissionEdge",
     "CappedScission",
     "HeterolyticScission",
+    "ChargedDecompositionEdge",
     "RedoxHalfReaction",
     "IonicEdges",
     "StructureDecompositionGraph",
@@ -1187,11 +1188,94 @@ class HeterolyticScission(Digestible):
         if want != got:
             raise ScissionError("anion/cation are not the two connected pieces of the cut reactant")
 
+    # -- the uniform transform interface (item 3): a heterolytic scission is a reagentless CHARGED family that
+    #    rides the same TransformProvider / StructuralCandidate machinery as the neutral families, forgetting to a
+    #    charge-carrying ChargedDecompositionEdge (MediatedEdge/DecompositionEdge refuse a charged species).
+    @property
+    def reagents(self) -> tuple:
+        """A heterolysis consumes no reagent (reagentless, like a bond-order edit): the LHS is just the parent."""
+        return ()
+
+    @property
+    def products(self) -> tuple[Molecule, ...]:
+        """The two charged ions, deterministically ordered (the anion and cation, canonical)."""
+        return tuple(sorted((self.anion.canonical(), self.cation.canonical()),
+                            key=lambda m: (len(m.atoms), m.charge, repr(m))))
+
+    def forget(self) -> "ChargedDecompositionEdge":
+        """The forgetful image: the composition-level CHARGED edge ``reactant(q) -> ion+ + ion-``, dropping the graph
+        but KEEPING each ion's charge (so the section-7.3 square is a charge-and-mass invariant here, not merely
+        mass).  No neutral element bucketing -- a charged element (``Cl^-``) must not collapse to a neutral bucket."""
+        merged: dict[Formula, int] = {}
+        for m in self.products:
+            f = Formula.of(m.formula, m.charge)
+            merged[f] = merged.get(f, 0) + 1
+        products = tuple(sorted(merged.items(), key=lambda pm: (_fkey(pm[0]), pm[1])))
+        return ChargedDecompositionEdge(Formula.of(self.reactant.formula, self.reactant.charge), 1, products)
+
     def equation(self) -> str:
         return f"{self.reactant!r} -> {self.cation!r} + {self.anion!r}"
 
     def __repr__(self) -> str:
         return f"HeterolyticScission({self.equation()})"
+
+
+@dataclass(frozen=True)
+class ChargedDecompositionEdge(Digestible):
+    """A composition-level CHARGED decomposition ``n . reactant(q) -> charged product formulas``, conserving mass
+    AND charge -- the charged analogue of the neutral :class:`~smartchem.decompiler.DecompositionEdge` (which refuses
+    a charged species).  The forget target of a heterolytic scission (and any future charged family): it drops the
+    graph but keeps each fragment's CHARGE, so a charged family's forgetful square is a charge-and-mass invariant.
+    Reagentless (its LHS is just the parent); ``products`` is >= 2 charged formulas, canonically sorted.
+
+    W3 unchanged: this is the composition-level image of a charge-and-valence-consistent split, never a claim the
+    ionisation occurs, at what potential, or how the charge localizes (physical selectivity the engine enumerates)."""
+
+    reactant: Formula
+    reactant_multiplicity: int
+    products: tuple[tuple[Formula, int], ...]
+
+    def __post_init__(self) -> None:
+        if type(self.reactant) is not Formula:
+            raise ScissionError("reactant must be a Formula")
+        if type(self.reactant_multiplicity) is not int or self.reactant_multiplicity < 1:
+            raise ScissionError("reactant_multiplicity must be an int >= 1")
+        if type(self.products) is not tuple or len(self.products) < 2:
+            raise ScissionError("a charged decomposition edge has >= 2 product formulas (a genuine split)")
+        keys: list = []
+        mass: dict[str, int] = {}
+        charge = 0
+        for pair in self.products:
+            if type(pair) is not tuple or len(pair) != 2:
+                raise ScissionError("each product is a (Formula, multiplicity) pair")
+            f, m = pair
+            if type(f) is not Formula:
+                raise ScissionError("each product must be a Formula")
+            if type(m) is not int or m < 1:
+                raise ScissionError("each product multiplicity must be an int >= 1")
+            for sym, cnt in f.counts:
+                mass[sym] = mass.get(sym, 0) + cnt * m
+            charge += f.charge * m
+            keys.append((_fkey(f), m))
+        if keys != sorted(keys):
+            raise ScissionError("charged edge products must be sorted canonically")
+        if len({f for f, _ in self.products}) != len(self.products):
+            raise ScissionError("a charged edge product appears twice; merge its multiplicity")
+        want = {s: self.reactant_multiplicity * k for s, k in self.reactant.counts}
+        if mass != want:
+            raise ScissionError(f"mass not conserved in the charged edge: products {mass} != reactant {want}")
+        if charge != self.reactant.charge * self.reactant_multiplicity:
+            raise ScissionError(
+                f"charge not conserved in the charged edge: products sum to {charge} != reactant "
+                f"{self.reactant.charge * self.reactant_multiplicity}"
+            )
+
+    def equation(self) -> str:
+        def _term(f: Formula, m: int) -> str:
+            return f"{m} {f!r}" if m > 1 else repr(f)
+        lhs = _term(self.reactant, self.reactant_multiplicity)
+        rhs = " + ".join(_term(f, m) for f, m in self.products)
+        return f"{lhs} -> {rhs}"
 
 
 def heterolytic_scissions(molecule: Molecule) -> tuple[HeterolyticScission, ...]:

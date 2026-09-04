@@ -35,7 +35,10 @@ from .category import Bond, Molecule
 from .contracts import Digestible, canonical_digest
 from .decompiler import DecompositionEdge, DecompositionGraph, Formula, search_decomposition
 from .decompiler_mediated import MediatedEdge
-from .structure_descent import _fkey, _join, _components, CappedScission, CAPPED_SCISSION_SCHEMA
+from .structure_descent import (
+    _fkey, _join, _components, CappedScission, CAPPED_SCISSION_SCHEMA,
+    ChargedDecompositionEdge, HeterolyticScission, HETEROLYTIC_SCHEMA,
+)
 from .bond_order_edit import BondOrderEdit, BOND_ORDER_EDIT_SCHEMA
 from .identity import IdentityLoss, identity_loss_from_payload, identity_loss_to_payload
 from .search import PRIMARY_RESOLVABLE_8_2_STATUSES, STANDARD_8_2_STATUSES, SearchStatus
@@ -84,7 +87,7 @@ __all__ = [
 # producing provider's id/version, and the EXACT forgetful formula projection) rides INSIDE the IR, no longer
 # reduced to a formula edge as the sole shared artifact.  All are genuine serialized-shape changes, so the schema
 # version bumps with each (and the value digest shifts, since structural_candidates is a covered field).
-CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha6"
+CHEMICAL_COMPILATION_IR_SCHEMA = "smartchem.compilation-ir/chemical-compilation-ir-v1alpha7"
 CHEMICAL_IDENTITY_SCHEMA = "smartchem.compilation-ir/chemical-identity-v1alpha1"
 CANDIDATE_SUMMARY_SCHEMA = "smartchem.compilation-ir/candidate-summary-v1alpha1"
 SEARCH_RECEIPT_VIEW_SCHEMA = "smartchem.compilation-ir/search-receipt-view-v1alpha1"
@@ -97,8 +100,11 @@ STRUCTURAL_SPECIES_SCHEMA = "smartchem.compilation-ir/structural-species-v1alpha
 # products compared against the stored product species -- so the witness is a re-derived fact, not a one-way label
 # (closes the differently-witnessed-formal-candidate gap the IR-STRUCT-01 red-team named).  A serialized-shape
 # change, so the record schema bumps and the IR schema with it (v1alpha6).
-STRUCTURAL_CANDIDATE_SCHEMA = "smartchem.compilation-ir/structural-candidate-v1alpha2"
-STRUCTURAL_WITNESS_SCHEMA = "smartchem.compilation-ir/structural-witness-v1alpha1"
+# v1alpha3 (item 3): the candidate admits a third, CHARGED family (heterolytic scission), whose witness carries the
+# ion fragment graphs and whose projection is a charge-carrying ChargedDecompositionEdge -- a serialized-shape change
+# (the witness gains a fragments field), so the record and IR schemas bump again (candidate v1alpha3, IR v1alpha7).
+STRUCTURAL_CANDIDATE_SCHEMA = "smartchem.compilation-ir/structural-candidate-v1alpha3"
+STRUCTURAL_WITNESS_SCHEMA = "smartchem.compilation-ir/structural-witness-v1alpha2"
 
 # The closed set of section-8.1 search kinds the engine receipts emit (routes.py / decompiler.py) plus the
 # structural decompile descent (structure_descent.capped_scissions, IR-STRUCT-01).  A view is a projection off
@@ -313,9 +319,12 @@ class StructuralSpecies(Digestible):
 _WITNESS_PROJECTION = {
     "CAPPED_SCISSION": "MEDIATED_EDGE",
     "BOND_ORDER_EDIT": "DECOMPOSITION_EDGE",
+    # a heterolytic scission (item 3) is CHARGED -- it forgets to a charge-carrying ChargedDecompositionEdge, the
+    # first family whose forgetful square is a charge-AND-mass invariant, not merely mass.
+    "HETEROLYTIC_SCISSION": "CHARGED_DECOMPOSITION_EDGE",
 }
 # families whose transform consumes NO reagent (its LHS is just the parent) -- their candidate carries empty reagents.
-_REAGENTLESS_WITNESS = frozenset({"BOND_ORDER_EDIT"})
+_REAGENTLESS_WITNESS = frozenset({"BOND_ORDER_EDIT", "HETEROLYTIC_SCISSION"})
 
 
 def _canon(mol: "Molecule") -> "Molecule":
@@ -372,16 +381,17 @@ class StructuralWitness(Digestible):
     witness_kind: str
     reactant: tuple            # _graph_payload of the transform's reactant (its own index space)
     reagents: tuple            # tuple of _graph_payload, in the transform's reagent order (empty for a reagentless family)
-    cut: tuple                 # CAPPED_SCISSION: the (i, j, order) bonds broken, sorted; () for other families
+    cut: tuple                 # CAPPED_SCISSION / HETEROLYTIC_SCISSION: the (i, j, order) bond(s); () for others
     caps: tuple                # CAPPED_SCISSION: the (i, j, order) bonds formed, sorted; () for other families
     bond_edit: tuple           # BOND_ORDER_EDIT: (bond_i, bond_j, h_i, h_j); () for other families
+    fragments: tuple           # HETEROLYTIC_SCISSION: (anion_graph, cation_graph) graph payloads; () for other families
 
     def __post_init__(self) -> None:
         if self.schema_version != STRUCTURAL_WITNESS_SCHEMA:
             raise ValueError(f"schema_version must be exactly {STRUCTURAL_WITNESS_SCHEMA!r}")
         if self.witness_kind not in _WITNESS_PROJECTION:
             raise ValueError(f"witness_kind must be one of {tuple(_WITNESS_PROJECTION)}, not {self.witness_kind!r}")
-        for name in ("reactant", "reagents", "cut", "caps", "bond_edit"):
+        for name in ("reactant", "reagents", "cut", "caps", "bond_edit", "fragments"):
             if type(getattr(self, name)) is not tuple:
                 raise TypeError(f"{name} must be a tuple")
         # kind-specific field discipline: exactly the fields the family uses are populated (a stray field on the
@@ -391,13 +401,20 @@ class StructuralWitness(Digestible):
                 raise ValueError("a CAPPED_SCISSION witness carries its consumed reagent graphs")
             if not self.cut:
                 raise ValueError("a CAPPED_SCISSION witness carries at least one cut bond")
-            if self.bond_edit:
-                raise ValueError("a CAPPED_SCISSION witness carries no bond_edit (that is the BOND_ORDER_EDIT field)")
+            if self.bond_edit or self.fragments:
+                raise ValueError("a CAPPED_SCISSION witness carries no bond_edit/fragments (wrong-family fields)")
         elif self.witness_kind == "BOND_ORDER_EDIT":
-            if self.reagents or self.cut or self.caps:
-                raise ValueError("a BOND_ORDER_EDIT witness carries no reagents/cut/caps (it is a reagentless edit)")
+            if self.reagents or self.cut or self.caps or self.fragments:
+                raise ValueError("a BOND_ORDER_EDIT witness carries only bond_edit (a reagentless bond raise)")
             if len(self.bond_edit) != 4 or any(type(x) is not int for x in self.bond_edit):
                 raise ValueError("a BOND_ORDER_EDIT witness carries bond_edit = (bond_i, bond_j, h_i, h_j)")
+        elif self.witness_kind == "HETEROLYTIC_SCISSION":
+            if self.reagents or self.caps or self.bond_edit:
+                raise ValueError("a HETEROLYTIC_SCISSION witness carries only its cut bond + ion fragments")
+            if len(self.cut) != 1:
+                raise ValueError("a HETEROLYTIC_SCISSION witness cleaves exactly one bond")
+            if len(self.fragments) != 2:
+                raise ValueError("a HETEROLYTIC_SCISSION witness carries exactly two ion fragment graphs")
         # THE RECONSTRUCTION: rebuild the exact family transform -- this re-runs the family certificate, so a witness
         # whose graph edit is not a valid transform (bad valence, non-closed products, non-descent) is refused HERE.
         self.replay_transform()
@@ -413,6 +430,11 @@ class StructuralWitness(Digestible):
         if self.witness_kind == "BOND_ORDER_EDIT":
             bond_i, bond_j, h_i, h_j = self.bond_edit
             return BondOrderEdit(BOND_ORDER_EDIT_SCHEMA, reactant, bond_i, bond_j, h_i, h_j)
+        if self.witness_kind == "HETEROLYTIC_SCISSION":
+            cut_bond = Bond(*self.cut[0])
+            anion = _graph_from_payload(self.fragments[0])
+            cation = _graph_from_payload(self.fragments[1])
+            return HeterolyticScission(HETEROLYTIC_SCHEMA, reactant, cut_bond, anion, cation)
         raise ValueError(f"no graph replay defined for witness_kind {self.witness_kind!r}")
 
     def rebuild_parent(self) -> "Molecule":
@@ -429,11 +451,13 @@ class StructuralWitness(Digestible):
         caller-supplied structure: that composition is what :meth:`StructuralCandidate.reconstitute_parent` and
         :func:`recompile_structure_from_serialized` rely on to close the decompile->recompile loop at the graph level.
 
-        Only the reagent-mediated capped-scission family reassembles a parent this way -- its product fragments carry
-        the parent's whole atom skeleton, split across pieces the cut/caps re-glue.  The reagentless bond-order
-        family sheds H2, whose two atoms carry NO skeleton, so reconstituting its parent from the products needs a
-        canonical-precursor -> reactant index recovery not built here; ``rebuild_parent`` refuses it rather than echo
-        the stored reactant graph (which would be a vacuous 'inverse').  It is a named follow-on.
+        The two families whose product fragments carry the parent's whole atom skeleton invert this way: the
+        reagent-mediated capped scission (fragments the cut/caps re-glue) and the reagentless CHARGED heterolytic
+        scission (two ions the cut bond re-joins -- the parent charge is the sum of the ion charges, which the
+        certificate already conserves).  The reagentless BOND-ORDER family sheds H2, whose two atoms carry NO
+        skeleton, so reconstituting its parent from the products needs a canonical-precursor -> reactant index
+        recovery not built here; ``rebuild_parent`` refuses it rather than echo the stored reactant graph (a vacuous
+        'inverse').  It is a named follow-on.
         """
         if self.witness_kind == "BOND_ORDER_EDIT":
             raise NotImplementedError(
@@ -441,6 +465,14 @@ class StructuralWitness(Digestible):
                 "skeleton, so reconstituting the reactant from the products needs a canonical-precursor index "
                 "recovery not built here; a vacuous echo of the stored reactant is deliberately not returned"
             )
+        if self.witness_kind == "HETEROLYTIC_SCISSION":
+            reactant = _graph_from_payload(self.reactant)
+            cut_bond = Bond(*self.cut[0])
+            product_graph = frozenset(b for b in reactant.bonds if b != cut_bond)   # the two ions' connectivity
+            recovered = product_graph | {cut_bond}                                  # rejoin the ions across the cut
+            if len(_components(len(reactant.atoms), recovered)) != 1:
+                raise ValueError("the heterolytic rejoin did not reconstitute a single connected parent")
+            return Molecule(tuple(reactant.atoms), recovered, reactant.charge, reactant.state).canonical()
         if self.witness_kind != "CAPPED_SCISSION":
             raise ValueError(f"no structure-rebuilding inverse defined for witness_kind {self.witness_kind!r}")
         reactant = _graph_from_payload(self.reactant)
@@ -470,6 +502,7 @@ class StructuralWitness(Digestible):
                 tuple(sorted((b.i, b.j, b.order) for b in transform.cut)),
                 tuple(sorted((b.i, b.j, b.order) for b in transform.caps)),
                 (),
+                (),
             )
         if witness_kind == "BOND_ORDER_EDIT":
             return cls(
@@ -480,6 +513,19 @@ class StructuralWitness(Digestible):
                 (),
                 (),
                 (transform.bond_i, transform.bond_j, transform.h_i, transform.h_j),
+                (),
+            )
+        if witness_kind == "HETEROLYTIC_SCISSION":
+            b = transform.cut_bond
+            return cls(
+                STRUCTURAL_WITNESS_SCHEMA,
+                witness_kind,
+                _graph_payload(transform.reactant),
+                (),
+                ((b.i, b.j, b.order),),
+                (),
+                (),
+                (_graph_payload(transform.anion), _graph_payload(transform.cation)),
             )
         raise ValueError(f"unknown witness_kind {witness_kind!r}; known: {tuple(_WITNESS_PROJECTION)}")
 
@@ -680,6 +726,15 @@ class StructuralCandidate(Digestible):
             return DecompositionEdge(
                 self.parent.formula, 1, _bucket_merge(self.products, lambda pm: (_fkey(pm[0]), pm[1]))
             )
+        if self.witness_kind == "HETEROLYTIC_SCISSION":
+            # a CHARGED edge: merge product species by their (charge-bearing) FORMULA -- NO element bucketing, which
+            # would collapse a charged element (Cl^-) to a neutral bucket and drop its charge.  Mirrors
+            # HeterolyticScission.forget verbatim, so an honest candidate's recompute is byte-identical.
+            merged: dict[Formula, int] = {}
+            for species, mult in self.products:
+                merged[species.formula] = merged.get(species.formula, 0) + mult
+            products = tuple(sorted(merged.items(), key=lambda pm: (_fkey(pm[0]), pm[1])))
+            return ChargedDecompositionEdge(self.parent.formula, 1, products)
         raise ValueError(f"no forgetful projection defined for witness_kind {self.witness_kind!r}")
 
     @classmethod
@@ -1702,6 +1757,7 @@ def _structural_witness_to_payload(w: "StructuralWitness") -> dict:
         "cut": [[i, j, o] for i, j, o in w.cut],
         "caps": [[i, j, o] for i, j, o in w.caps],
         "bond_edit": list(w.bond_edit),
+        "fragments": [_graph_to_json(f) for f in w.fragments],
     }
 
 
@@ -1714,6 +1770,7 @@ def _structural_witness_from_payload(p: dict) -> "StructuralWitness":
         tuple((i, j, o) for i, j, o in p["cut"]),
         tuple((i, j, o) for i, j, o in p["caps"]),
         tuple(p["bond_edit"]),
+        tuple(_graph_from_json(f) for f in p["fragments"]),
     )
 
 

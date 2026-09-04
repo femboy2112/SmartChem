@@ -187,7 +187,9 @@ def main(argv: list[str] | None = None) -> int:
     _provider.add_argument("--network", action="store_true",
                            help="the download-and-go opt-in: fetch sourced stability for discovered species from "
                                 "the section-9 network provider (PubChem/Wikidata/Bradley). A live fetch is never "
-                                "the default; fetched data carries a snapshot so the request stays replayable (14.1)")
+                                "the default; the request identity stays byte-reproducible (fetched data rides the "
+                                "RESPONSE, not the request) and results are value-cached -- a dated section-13.2 "
+                                "provider snapshot is a conformance item, not yet stamped")
     p.add_argument("--emit-request", action="store_true",
                    help="print the ONE typed request JSON (SVC-REQ-01) and exit WITHOUT searching -- the "
                         "canonical, alias-independent request identity, including the section-9 provider selection")

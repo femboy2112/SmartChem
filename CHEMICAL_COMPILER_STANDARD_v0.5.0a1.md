@@ -798,7 +798,9 @@ The following are release gates for `0.5.0a1`.
 
 - canonical and legacy aliases serialize equal request objects under equal flags;
 - no verb reaches the network by default: the default provider is the offline, reproducible
-  seed/cache, and a live fetch is an explicit, snapshot-stamped opt-in;
+  seed/cache, and a live fetch is an explicit opt-in (its dated §13.2 provider snapshot is a
+  separate, still-open conformance item — the alpha value-caches fetched data but does not yet
+  stamp a dated snapshot);
 - no-route, partial, refusal, invalid input and internal error use the specified codes;
 - bad numeric and chemical inputs yield concise domain diagnostics without tracebacks;
 - human and JSON views agree on identity, receipt, tier, blockers, and route IDs.

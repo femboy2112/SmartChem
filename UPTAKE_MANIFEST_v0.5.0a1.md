@@ -243,7 +243,8 @@ two behavioral blockers, checklist steps 1–3):**
   by byte-diff. Its distinctive download-and-go behavior is PRESERVED as the EXPLICIT `--network` opt-in
   (origin=EXPLICIT; a live fetch is never the default; `--poor-mans` → `--no-commodities`/`--elements`, mirroring
   `recompile`). The standard was REVISED: §14.1 (aliases build the same request under equal flags AND no verb
-  reaches the network by default — a live fetch is an explicit, snapshot-stamped opt-in, per §13.2), release gate
+  reaches the network by default — a live fetch is an explicit opt-in; its dated §13.2 provider snapshot stays a
+  separate, still-open conformance item, the alpha value-caches but does not stamp it), release gate
   §16 G8, and the §18 migration note. The strict-xfail guard is now a LIVE PASS parametrized across the full
   command matrix (`test_synthesize_is_request_equal_to_recompile_G8`), plus a non-vacuous `--network`-splits-the-
   request test. Full suite green.
@@ -839,8 +840,8 @@ did (item 1 -- the reality-respecting fix + the standard revision):
     default); `--offline` stamps the default; `--poor-mans` -> `--no-commodities`/`--elements` (mirrors recompile);
     the human dossier reads commodities from the REQUEST (one source of truth).
   * CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md REVISED: §14.1 (aliases build the same request under equal flags AND no
-    verb reaches the network by default -- a live fetch is an explicit, snapshot-stamped opt-in per §13.2), the §16
-    G8 gate (a new offline-default bullet), the §18 migration note.
+    verb reaches the network by default -- a live fetch is an explicit opt-in; its dated §13.2 provider snapshot is a
+    separate, still-open conformance item, value-cached but not stamped -- red-team fold), the §16 G8 gate (a new offline-default bullet), the §18 migration note.
   * the strict-xfail G8 guard is now a LIVE PASS parametrized across the full 7-row command matrix; a non-vacuous
     `--network`-splits-the-request test proves the opt-in is honestly marked (the origin flip is asserted).
 did (item 4 -- the Lane-A P0 reconciliation, each claim verified against code):

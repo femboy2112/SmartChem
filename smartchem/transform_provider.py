@@ -1,0 +1,178 @@
+"""TRANSFORM-PROVIDER-01: the typed closed provider boundary the bounded search is parameterized by.
+
+The genericity reorientation's central verdict is that SmartChem is a generic bounded chemical-SEARCH compiler
+parameterized by a still-NARROW transform algebra.  This module is the seam that makes the algebra a PARAMETER: the
+recompiler's route/DAG search and the structural decompile no longer call one hard-wired enumeration
+(:func:`~smartchem.structure_descent.capped_scissions`) directly -- they call a :class:`TransformProviderRegistry`,
+a CLOSED ordered set of typed :class:`TransformProvider` s, each of which enumerates one transform FAMILY behind a
+stable typed identity (id + version + capability manifest).
+
+Two honesty contracts hold at this boundary:
+
+* **exclusivity** -- capped-scission enumeration now runs ONLY inside :class:`CappedScissionProvider`; the search
+  and the IR reach it through the registry, never by calling ``capped_scissions`` directly.  A new family is added
+  by registering a provider, NOT by forking the search (that is the whole point -- CHEM-ALG-01 composes through the
+  UNCHANGED search).
+* **partiality never aggregates to a false complete** -- the registry's completeness is the AND of every provider's
+  own completeness, so one provider hitting its budget makes the aggregate incomplete; a provider that exhausted
+  its family cannot mask another that did not.
+
+The DEFAULT registry holds exactly the one capped-scission provider, so rerouting through it is behavior-identical
+to the direct call it replaces -- the search is now generic, and passing a different registry (a wider algebra) is
+the ONLY thing that changes what it enumerates.
+
+A "transform" here is any family's structural rewrite exposing the uniform interface the recompiler's step-builder
+(:meth:`~smartchem.experiment.step.ExperimentStep.from_transform`), the conditions gate
+(:func:`~smartchem.decompiler_conditions.assembly_conditions`), and the structural decompile IR all consume:
+``reactant`` (a :class:`~smartchem.category.Molecule`), ``reagents`` (a tuple of consumed mediator Molecules, empty
+for a family that consumes none), ``products`` (the derived product Molecules), ``forget()`` (its forgetful
+composition edge), ``equation()``, and ``digest``.  :class:`~smartchem.structure_descent.CappedScission` already
+satisfies it structurally.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .contracts import canonical_digest
+from .structure_descent import capped_scissions
+
+__all__ = [
+    "TransformProvider",
+    "CappedScissionProvider",
+    "EnumeratedTransform",
+    "TransformProviderRegistry",
+    "DEFAULT_TRANSFORM_REGISTRY",
+]
+
+
+class TransformProvider:
+    """One transform FAMILY behind a typed identity.  Subclasses declare ``provider_id`` / ``provider_version``,
+    a ``capability_manifest`` (a declared descriptor of what the family does -- bond operations, charge handling,
+    the witness/projection kinds it emits), and ``enumerate_transforms``.  The identity (id + version + manifest)
+    is what the registry digest is built from, so a family whose rules change MUST bump its version or manifest --
+    the same declared-version discipline every ``schema_version`` obeys (the grammar is imperative code, not a
+    hashable rule table)."""
+
+    provider_id: str
+    provider_version: str
+    #: the witness/projection kind pair the family's StructuralCandidate carries (IR-STRUCT-01); the IR's
+    #: ``_WITNESS_PROJECTION`` map is the authority on which pairs are admissible.
+    witness_kind: str
+
+    @property
+    def capability_manifest(self) -> tuple:
+        raise NotImplementedError
+
+    @property
+    def identity(self) -> tuple:
+        return (self.provider_id, self.provider_version, self.capability_manifest)
+
+    def enumerate_transforms(self, reactant, reagents, *, budget):
+        """Return ``(transforms, complete)`` for this family: a tuple of transform objects (each exposing the
+        uniform interface) and whether the family's enumeration was exhaustive within ``budget`` (False iff a
+        budget was hit).  MUST NOT raise on an empty reagent pool -- a family that consumes no reagents ignores it,
+        one that requires reagents returns ``((), True)``."""
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class CappedScissionProvider(TransformProvider):
+    """The capped-scission family (valence-preserving whole-bond rewrites, reagent-mediated, neutral) as a typed
+    provider.  The one and only place :func:`~smartchem.structure_descent.capped_scissions` is now called."""
+
+    provider_id: str = "capped-scission-mediated"
+    provider_version: str = "v1"
+    witness_kind: str = "CAPPED_SCISSION"
+    max_reactant_cuts: int = 1
+    ring_aware: bool = False
+
+    @property
+    def capability_manifest(self) -> tuple:
+        return (
+            ("family", "capped-scission"),
+            ("mechanism", "valence-preserving whole-bond rewrite, reagent-mediated, neutral"),
+            ("witness_kind", self.witness_kind),
+            ("projection_kind", "MEDIATED_EDGE"),
+            ("max_reactant_cuts", self.max_reactant_cuts),
+            ("ring_aware", self.ring_aware),
+        )
+
+    def enumerate_transforms(self, reactant, reagents, *, budget):
+        if not reagents:
+            # a mediated cleavage needs at least one reagent to cap the broken bond; with none, this family
+            # enumerates nothing and is trivially complete (never a raise -- the boundary contract).
+            return (), True
+        return capped_scissions(
+            reactant, reagents, max_reactant_cuts=self.max_reactant_cuts, budget=budget, ring_aware=self.ring_aware
+        )
+
+
+@dataclass(frozen=True)
+class EnumeratedTransform:
+    """One transform the registry produced, tagged with the provider that produced it (so a candidate can record
+    WHICH family/version made it -- the IR-STRUCT-01 provider provenance) and the family's ``witness_kind`` (so the
+    structural candidate knows which witness/projection pair it carries without dispatching on the transform type)."""
+
+    transform: object
+    provider_id: str
+    provider_version: str
+    witness_kind: str
+
+
+@dataclass(frozen=True)
+class TransformProviderRegistry:
+    """A CLOSED, ordered set of transform providers -- the transform algebra the bounded search is parameterized by.
+
+    ``digest`` changes whenever the provider SET, any provider's id/version, or any capability manifest changes
+    (section 8.4 / section 4.1: "all pathways generated by transform registry <digest>").  ``enumerate`` fans out
+    to every provider and returns the union of their transforms (deduped by transform digest, canonical order) with
+    completeness = AND of every provider's completeness -- so provider-local partiality never becomes a false
+    aggregate "complete".
+    """
+
+    providers: tuple
+
+    def __post_init__(self) -> None:
+        if type(self.providers) is not tuple or not self.providers:
+            raise ValueError("a transform registry needs at least one provider")
+        if any(not isinstance(p, TransformProvider) for p in self.providers):
+            raise TypeError("every registry member must be a TransformProvider")
+        ids = [p.provider_id for p in self.providers]
+        if len(set(ids)) != len(ids):
+            raise ValueError("provider ids must be distinct (a registry is a closed set, not a multiset)")
+
+    @property
+    def digest(self) -> str:
+        # ORDER-SENSITIVE by design: the provider list is an ordered PRIORITY list, not a bare set -- when two
+        # families would emit the same transform digest, the earlier provider owns it (its id/version tags the
+        # candidate), so provider order is a semantic parameter (dedup provenance), not presentation.  Two registries
+        # with the same providers in a different order are different configurations and get different digests.
+        return canonical_digest(("transform-provider-registry-v1",) + tuple(p.identity for p in self.providers))
+
+    @property
+    def provider_ids(self) -> tuple:
+        return tuple(p.provider_id for p in self.providers)
+
+    def enumerate(self, reactant, reagents, *, budget) -> "tuple[tuple[EnumeratedTransform, ...], bool]":
+        merged: dict[str, EnumeratedTransform] = {}
+        complete = True
+        for provider in self.providers:
+            transforms, provider_complete = provider.enumerate_transforms(reactant, reagents, budget=budget)
+            complete = complete and provider_complete
+            for transform in transforms:
+                # first provider to emit a given transform digest owns it; a later provider re-emitting the SAME
+                # rewrite does not double-count (canonical dedup across the union).
+                merged.setdefault(
+                    transform.digest,
+                    EnumeratedTransform(
+                        transform, provider.provider_id, provider.provider_version, provider.witness_kind
+                    ),
+                )
+        ordered = tuple(sorted(merged.values(), key=lambda et: et.transform.digest))
+        return ordered, complete
+
+
+#: The default algebra: exactly the capped-scission family.  Rerouting through this is behavior-identical to the
+#: direct ``capped_scissions`` call it replaces, so the whole existing suite is unaffected; a wider algebra is a
+#: different registry passed explicitly.
+DEFAULT_TRANSFORM_REGISTRY = TransformProviderRegistry((CappedScissionProvider(),))

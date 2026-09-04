@@ -189,6 +189,37 @@ class ExperimentStep(Digestible):
         )
 
     @classmethod
+    def from_transform(
+        cls,
+        transform,
+        *,
+        envelope: ConditionEnvelope | None = None,
+        reagents: tuple[Molecule, ...] = (),
+    ) -> "ExperimentStep":
+        """The SYNTHESIS step that assembles ``transform.reactant`` -- ANY structural transform read backwards.
+
+        The family-agnostic step builder (TRANSFORM-PROVIDER-01): a transform is a *decomposition*
+        ``reactant + reagents -> products`` (a capped scission, a bond-order edit, ...) exposing the uniform
+        interface (``reactant`` / ``reagents`` / ``products``).  Its reverse assembles ``reactant``: the
+        decomposition's ``products`` are the synthesis *precursors*, and its ``reactant`` plus consumed
+        ``reagents`` are the synthesis *products* (the target plus liberated byproducts).  Conservation is
+        inherited (a balanced reaction is balanced either way) and independently re-checked by the
+        :class:`ExperimentStep` certificate, so a second transform family composes here with no bespoke branch.
+
+        ``reagents`` optionally flags which of the synthesis precursors are ancillary (e.g. the acetylating agent)
+        for the drafter; it defaults to none and never affects conservation.
+        """
+        synth_reactants = tuple(transform.products)
+        synth_products = (transform.reactant,) + tuple(transform.reagents)
+        return cls.assembling(
+            transform.reactant,
+            synth_reactants,
+            synth_products,
+            reagents=reagents,
+            envelope=envelope,
+        )
+
+    @classmethod
     def from_capped_scission(
         cls,
         capped,
@@ -196,27 +227,9 @@ class ExperimentStep(Digestible):
         envelope: ConditionEnvelope | None = None,
         reagents: tuple[Molecule, ...] = (),
     ) -> "ExperimentStep":
-        """The SYNTHESIS step that assembles ``capped.reactant`` -- a capped scission read backwards.
-
-        A :class:`~smartchem.structure_descent.CappedScission` is a *decomposition*
-        ``reactant + reagents -> products`` (an amide/ester hydrolysis, say).  Its reverse is the
-        assembly of ``reactant``: the decomposition's ``products`` are the synthesis *precursors*, and
-        the decomposition's ``reactant`` plus consumed ``reagents`` are the synthesis *products* (the
-        target plus liberated byproducts).  Conservation is inherited (a balanced reaction is balanced
-        either way) and independently re-checked by the :class:`ExperimentStep` certificate.
-
-        ``reagents`` optionally flags which of the synthesis precursors are ancillary (e.g. the
-        acetylating agent) for the drafter; it defaults to none and never affects conservation.
-        """
-        synth_reactants = tuple(capped.products)
-        synth_products = (capped.reactant,) + tuple(capped.reagents)
-        return cls.assembling(
-            capped.reactant,
-            synth_reactants,
-            synth_products,
-            reagents=reagents,
-            envelope=envelope,
-        )
+        """The capped-scission-named entry to :meth:`from_transform` (a :class:`CappedScission` satisfies the
+        uniform transform interface).  Kept for callers that name the family explicitly."""
+        return cls.from_transform(capped, envelope=envelope, reagents=reagents)
 
 
 @dataclass(frozen=True)

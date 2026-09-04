@@ -3,9 +3,10 @@
 E0-E4 *consume* a route; E5 *generates* candidate routes from the decompiler's own conservation-valid
 cleavages, so a chemist can hand the compiler a target + an inventory and get back ranked route candidates.
 
-It is a bounded retrosynthesis over :func:`~smartchem.structure_descent.capped_scissions`: to make ``target``,
-enumerate its capped cleavages against a declared ``reagents`` pool, read each backward as an assembly step
-(``products -> target`` via :meth:`ExperimentStep.from_capped_scission`), attach any SOURCED conditions
+It is a bounded retrosynthesis over a typed :class:`~smartchem.transform_provider.TransformProviderRegistry`
+(TRANSFORM-PROVIDER-01; the default algebra is the one capped-scission family, so behaviour is unchanged): to make
+``target``, enumerate its structural transforms against a declared ``reagents`` pool, read each backward as an
+assembly step (``products -> target`` via :meth:`ExperimentStep.from_transform`), attach any SOURCED conditions
 (:func:`~smartchem.decompiler_conditions.reaction_conditions`), and -- for a precursor not already on hand --
 recurse to make it, up to ``max_depth``.  Structure ENUMERATES the candidates; evidence (composability,
 conditions, the constraint box) IDENTIFIES the good ones, exactly the repo's standing doctrine -- so
@@ -27,7 +28,7 @@ from ..contracts import Digestible, canonical_digest
 from ..transform_registry import transform_registry_digest
 from ..decompiler_conditions import assembly_conditions
 from ..search import SearchStatus, primary_standard_status
-from ..structure_descent import capped_scissions
+from ..transform_provider import DEFAULT_TRANSFORM_REGISTRY, TransformProviderRegistry
 from .dag import DAGError, SynthesisDAG
 from .step import ExperimentRoute, ExperimentStep
 
@@ -438,6 +439,7 @@ def search_routes(
     max_depth: int = 2,
     max_routes: int = 100,
     cut_budget: int = 20_000,
+    registry: TransformProviderRegistry = DEFAULT_TRANSFORM_REGISTRY,
 ) -> RouteSearchResult:
     """Search for candidate routes and return candidates plus an explicit completeness receipt.
 
@@ -500,12 +502,13 @@ def search_routes(
         if depth > max_depth:
             return
         expansions_attempted += 1
-        cleavages, complete = capped_scissions(t, reagents, budget=cut_budget)
+        cleavages, complete = registry.enumerate(t, reagents, budget=cut_budget)
         if not complete:
             incomplete_expansions += 1
-        for cs in cleavages:
+        for et in cleavages:
             transforms_considered += 1
-            step = ExperimentStep.from_capped_scission(cs, envelope=_conditions_for(cs))
+            cs = et.transform
+            step = ExperimentStep.from_transform(cs, envelope=_conditions_for(cs))
             # distinct precursors this step consumes, minus what is already on hand
             distinct: dict[str, Molecule] = {}
             for m in step.reactants:
@@ -636,6 +639,7 @@ def search_dags(
     max_depth: int = 2,
     max_dags: int = 100,
     cut_budget: int = 20_000,
+    registry: TransformProviderRegistry = DEFAULT_TRANSFORM_REGISTRY,
 ) -> DAGSearchResult:
     """Search for candidate CONVERGENT synthesis DAGs and return them plus an explicit completeness receipt.
 
@@ -645,8 +649,8 @@ def search_dags(
     facts the receipt-free tuple API discarded:
 
     * ``expansions_attempted`` / ``incomplete_expansions`` -- how many sub-searches ran and how many hit an
-      incomplete cut budget (the ``complete`` flag from :func:`~smartchem.structure_descent.capped_scissions`
-      that :func:`enumerate_dags` dropped on the floor at every level);
+      incomplete cut budget (the aggregate ``complete`` flag from the transform registry -- AND of every
+      provider's own completeness -- that :func:`enumerate_dags` dropped on the floor at every level);
     * ``result_limit_saturated`` -- whether the distinct-result cap ``max_dags`` truncated any level's
       enumeration.
 
@@ -732,12 +736,13 @@ def search_dags(
             return True
 
         expansions_attempted += 1
-        cleavages, complete = capped_scissions(t, reagents, budget=cut_budget)
+        cleavages, complete = registry.enumerate(t, reagents, budget=cut_budget)
         if not complete:
             incomplete_expansions += 1
-        for cs in cleavages:
+        for et in cleavages:
             transforms_considered += 1
-            step = ExperimentStep.from_capped_scission(cs, envelope=_conditions_for(cs))
+            cs = et.transform
+            step = ExperimentStep.from_transform(cs, envelope=_conditions_for(cs))
             distinct: dict[str, Molecule] = {}
             for m in step.reactants:
                 distinct.setdefault(_ident(m), m)

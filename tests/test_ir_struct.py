@@ -269,7 +269,7 @@ class TestSection81ReceiptHonesty:
         assert ir.complete_within_bounds                      # the grammar was exhausted (no budget fired)
         assert len(ir.structural_candidates) == 0
         assert ir.diagnostics and "exhaustive" in ir.diagnostics[0]
-        assert "no valence-preserving capped scission" in ir.diagnostics[0]
+        assert "no structural transform" in ir.diagnostics[0] and "within the algebra" in ir.diagnostics[0]
 
 
 class TestRedTeamFold:
@@ -332,10 +332,14 @@ class TestRedTeamFold:
             ir_from_payload(payload)
 
     def test_the_provider_is_in_the_ir_identity_even_with_an_empty_candidate_set(self):
-        # MEDIUM #3: methane has no cleavage (empty candidate set); the provider must still move ir.digest, else it
-        # is laundered out of the identity entirely (section 4.1 names "transform/evidence provider version").
-        a = decompile_structure_to_ir(METHANE, reagents=(WATER,), provider_id="capped-scission-mediated")
-        b = decompile_structure_to_ir(METHANE, reagents=(WATER,), provider_id="a-different-provider")
+        # MEDIUM #3 (now via the registry, TRANSFORM-PROVIDER-01): methane has no cleavage (empty candidate set);
+        # the transform algebra must still move ir.digest, else the provider is laundered out of the identity
+        # entirely (section 4.1 names "transform/evidence provider version").
+        from smartchem.transform_provider import CappedScissionProvider, TransformProviderRegistry
+        r_v1 = TransformProviderRegistry((CappedScissionProvider(provider_version="v1"),))
+        r_v2 = TransformProviderRegistry((CappedScissionProvider(provider_version="v2"),))
+        a = decompile_structure_to_ir(METHANE, reagents=(WATER,), registry=r_v1)
+        b = decompile_structure_to_ir(METHANE, reagents=(WATER,), registry=r_v2)
         assert len(a.structural_candidates) == 0 and len(b.structural_candidates) == 0
         assert a.digest != b.digest
 

@@ -105,7 +105,7 @@ Progress in one lane never implies completion of another. This is a hard rule, n
 | Lane | Finish line | State |
 |---|---|---|
 | **A — Alpha conformance** | A truthful bounded compiler conforming to `v0.5.0a1`. | **Near.** Shared IR, typed request/response, search receipts, identity/evidence gates, exact DAG flow + inverse shopping, `StockMaterial`, fail-closed errors all landed. Remaining: `ERR-EVIDENCE-01`, the final P0 integrations, a clean RC freeze. |
-| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **Thesis DEMONSTRATED, loop CLOSED, coverage MEASURED.** `CANON-KEKULE-01`, `IR-STRUCT-01`, `IR-FORGET-01`, `TRANSFORM-PROVIDER-01`, `CHEM-ALG-01` are **DONE**. `IR-REPLAY-01` (the witness is a re-verifiable graph edit) and `IR-INVERT-01` (a STRUCTURE artifact reconstitutes its target with NO caller structure) closed the decompile→recompile loop at the graph level (`846e8bc`). `CHARGED-ALG-01` added the **first charged family** (heterolytic scission) with a charge-carrying `ChargedDecompositionEdge` forget — the algebra now reaches past neutral rewrites. `HOLDOUT-RXN-01` **froze the family-stratified coverage benchmark** and MEASURES the payoff (default capped 8/18, +bond-order +2, +heterolytic +5, 3/18 genuinely outside-closure). Remaining Lane-B follow-ons: redox (electron-transfer) family, the recompile-IR registry threading, the bond-order structure-rebuilding inverse. |
+| **B — Chemical genericity** | A structure-preserving decompile/recompile IR + a typed `TransformProvider` registry supporting qualitatively distinct transform families through **unchanged** core search. | **Thesis DEMONSTRATED, loop CLOSED, coverage MEASURED.** `CANON-KEKULE-01`, `IR-STRUCT-01`, `IR-FORGET-01`, `TRANSFORM-PROVIDER-01`, `CHEM-ALG-01` are **DONE**. `IR-REPLAY-01` (the witness is a re-verifiable graph edit) and `IR-INVERT-01` (a STRUCTURE artifact reconstitutes its target with NO caller structure) closed the decompile→recompile loop at the graph level (`846e8bc`). `CHARGED-ALG-01` added the **first charged family** (heterolytic scission) with a charge-carrying `ChargedDecompositionEdge` forget — the algebra now reaches past neutral rewrites. `HOLDOUT-RXN-01` **froze the family-stratified coverage benchmark** and MEASURES the payoff (default capped 8/18, +bond-order +2, +heterolytic +5, 3/18 genuinely outside-closure). Remaining Lane-B follow-ons: redox (electron-transfer) family, the bond-order structure-rebuilding inverse (the recompile-IR registry threading landed `c70afc7`, item 4 below). |
 | **C — Bench readiness** | `ProcedureIR`, quantities, assays, operations, process hazards, analytical acceptance, waste, equipment ratings, qualified review. | **Deliberately outside the alpha.** `TERM-MAT-01` down-paid by `sourcing.plan_sourcing`; `COST-VEC-01` blocked on real data; `ProcedureIR` deferred. The `FORMAL_CANDIDATE` floor stays immovable until these obligations exist. |
 
 ### 2A.2 Reoriented roadmap IDs (the audit's additions + the elevated canonical repair)
@@ -522,6 +522,39 @@ non-vacuous:   each reproduced pre-fold (product-swap echo; O2(2-)/mixed-registr
     logic + docstrings only), so no schema bump and no golden regen.
 REFUTED:       none reported -- every bearing that fired produced a reproducible finding; the machine-load-bearing
     identity (forgetful square, graph-scission replay, digest law) held under all five bearings.
+```
+
+**Uptake record — item 4: the recompile-IR registry threading** (a Lane-B follow-on named in §2A.1; the
+serialized inverse now re-searches under the CALLER's transform algebra, not a hard-wired default):
+
+```text
+ID:            item 4 (recompile-IR registry threading; the last of the CHEM-ALG-01 fold's "search-receipt
+               half did it, the serialized inverse did not")
+commit:        c70afc7 (feat)  |  no schema bump (a new keyword param with a behaviour-preserving default)
+gap:           recompile_from_serialized (the FORMULA-artifact inverse, IR-INV-01) re-ran recompile_to_ir with
+               NO registry argument -> the DEFAULT capped-only algebra. recompile_to_ir and
+               decompile_structure_to_ir already took `registry=`; the serialized inverse was the one search
+               entry point that did not, so inverting an artifact produced under a WIDER algebra silently
+               re-searched the narrow default and its NO_ROUTE_IN_GRAMMAR verdict named the wrong grammar
+               (section 8.4: the exhaustion scope is only ever THIS registry at THESE bounds).
+fix:           added `registry: TransformProviderRegistry = DEFAULT_TRANSFORM_REGISTRY` and threaded it into the
+               recompile_to_ir call; the docstring states the algebra-scope obligation. The default keeps every
+               existing caller behaviour- AND digest-identical (the whole suite is transparent to the param).
+tests:         tests/test_compilation_ir.py::TestRecompileFromSerialized (+2):
+                 - the bond-order registry finds the hydrogenation H2 + C2H4 -> C2H6 in the re-search
+                   (ROUTES_FOUND); the default capped-only algebra does NOT (NO_ROUTE_IN_GRAMMAR). NON-VACUOUS:
+                   the outcomes DIFFER and the returned IR's transform_registry_digest differs (it names WHICH
+                   algebra it searched, not a fixed default).
+                 - the default passed explicitly == left implicit (inverse_status AND recompile_ir.digest equal),
+                   pinning behaviour-identity for the pre-threading callers.
+command:       .venv/bin/python -m pytest -q -p no:cacheprovider
+result:        3561 passed, 14 skipped, 1 xfailed (baseline 3559; +2 the new tests). EXIT=0. ruff clean on the
+               changed files.
+scope:         Lane B. This is a provenance-honesty completion, not a new family: recompile_from_serialized can
+               now honestly invert a wider-algebra artifact under the SAME algebra. recompile_structure_from_
+               serialized (the STRUCTURE-artifact inverse) needs no registry -- it inverts stored witnesses, it
+               does not re-search. Next Lane-B follow-ons: the bond-order structure-rebuilding inverse (item 3a),
+               the redox family (item 1).
 ```
 
 ## 3. P0 truth-envelope backlog

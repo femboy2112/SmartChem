@@ -25,10 +25,28 @@ The reconciliation the square needs, made explicit here:
   * the formula descent runs to the elemental floor while the structure descent is single-step, so the relation is
     a SUBSET (the structural projections all appear among the formula candidates), not raw set equality.
 
-Boundary (named, not hidden): this closes the square for the BOND_ORDER_EDIT family.  The capped-scission family has
-a formula-layer mediated search (``decompiler_mediated.mediated_decompose``) that is not yet wired into
-``compilation_ir``; the heterolytic/redox families have no formula-layer producer at all.  Extending the square to
-those is the remaining IR-FORGET-01 follow-on.
+Multi-family lift (IR-COMMUTE, this round): the CAPPED-SCISSION family is now closed too, against a DIFFERENT
+formula-layer producer.  A capped scission forgets to a ``MEDIATED_EDGE`` (not the ``DECOMPOSITION_EDGE`` that
+``decompile_to_ir`` emits), so its formula-side oracle is ``decompiler_mediated.mediated_decompose`` -- the recursive
+mediated descent, the analogue of ``decompile_to_ir``.  Fed the SAME derived closure (inventory from the structural
+products) PLUS a ``medium`` derived from the structural reagents (a capped scission draws a reagent from a declared
+reservoir), the capped-scission structural projections are a SUBSET of that producer's ``.mediated`` edges.  The
+two families forget to DISTINCT edge TYPES -- capped scission to a reagent-drawn ``MEDIATED_EDGE``, bond order to an
+own-atoms ``DECOMPOSITION_EDGE`` -- which is WHY they need distinct producers (``mediated_decompose`` vs
+``decompile_to_ir``).  That type distinction is asserted on ``projection_kind``, NOT on a cross-producer digest
+non-subset: a digest ``⊄`` across the two producers is over-determined by the canonical class tag
+(``contracts.canonical_payload`` embeds the fully-qualified class -- ``contracts.py:149``), so their digest namespaces
+are disjoint by construction regardless of whether either ``forget()`` convention is correct.  The convention
+agreement is therefore proven ONLY by the same-class POSITIVE subsets (capped ⊆ mediated, bond order ⊆ plain), never
+by a vacuous cross-class ⊄ (the honesty the wrong-family control below already carries, applied here too).
+
+Boundary (named, not hidden): this closes the square for BOND_ORDER_EDIT and CAPPED_SCISSION under the DEFAULT
+single-cut registry (``max_reactant_cuts == 1``, matching ``mediated_decompose``'s default ``max_reagent_instances``).
+The k>=2 multi-cut / mixed-reagent-type case is CONJECTURED to close by the same recipe (bump ``max_reagent_instances``
+to the provider's cut count, widen the derived medium) but is NOT verified here -- it is combinatorially large and off
+the DEFAULT-registry lane.  The heterolytic/redox families still have NO formula-layer producer at all (an
+``ElectronTransferEdge``/charged edge has no mediated or plain descent wired), so extending the square to those
+remains the IR-FORGET-01 follow-on.
 """
 from __future__ import annotations
 
@@ -39,6 +57,7 @@ from smartchem.compilation_ir import (
     decompile_to_ir,
 )
 from smartchem.decompiler import Formula
+from smartchem.decompiler_mediated import mediated_decompose
 from smartchem.smiles import parse_smiles
 from smartchem.transform_provider import TransformProviderRegistry
 
@@ -99,3 +118,79 @@ def test_a_different_family_does_not_commute_so_the_registry_pinning_is_load_bea
     default_ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=DEFAULT_TRANSFORM_REGISTRY)
     default_projections = {sc.projection_digest for sc in default_ir.structural_candidates}
     assert default_projections and not (default_projections <= formula_digests)
+
+
+# ======================================================================================
+# IR-COMMUTE multi-family lift: the CAPPED-SCISSION square, against the mediated producer
+# ======================================================================================
+def _derive_mediated_closure(struct_ir) -> tuple:
+    """The common closure for the mediated square: the non-elemental product formulas handed to the mediated
+    descent as its selectable INVENTORY, and the reagent formulas handed to it as the MEDIUM (a capped scission
+    draws a reagent from a declared reservoir -- ``mediated_decompose`` filters/dedups both internally)."""
+    inv = []
+    for sc in struct_ir.structural_candidates:
+        for species, _mult in sc.products:
+            counts = species.molecule.formula
+            if sum(counts.values()) > 1:
+                inv.append(Formula(tuple(counts.items())))
+    medium = [
+        Formula(tuple(species.molecule.formula.items()))
+        for sc in struct_ir.structural_candidates
+        for species, _mult in sc.reagents
+    ]
+    return tuple(inv), tuple(medium)
+
+
+def test_the_forgetful_square_commutes_for_capped_scission_via_the_mediated_producer():
+    # The DEFAULT registry is the capped-scission family; its forget() yields a MEDIATED_EDGE, so its formula-side
+    # oracle is mediated_decompose (NOT decompile_to_ir).  forget(D_structure_capped(S)) ⊆ mediated_decompose(forget(S)).
+    struct_ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=DEFAULT_TRANSFORM_REGISTRY)
+    assert struct_ir.structural_candidates, "the capped-scission family must produce a candidate for ethane+water"
+    # the family really IS capped scission forgetting to a mediated edge (not a mislabelled bond-order run)
+    assert all(sc.witness_kind == "CAPPED_SCISSION" for sc in struct_ir.structural_candidates)
+    assert all(sc.projection_kind == "MEDIATED_EDGE" for sc in struct_ir.structural_candidates)
+    struct_projections = {sc.projection_digest for sc in struct_ir.structural_candidates}
+    inventory, medium = _derive_mediated_closure(struct_ir)
+    assert medium, "the structural reagents must yield a non-empty medium (a capped scission draws water)"
+    graph = mediated_decompose(ETHANE.formula, inventory, medium)
+    assert graph.is_complete, "the mediated descent must be complete within budget for this small target"
+    mediated_digests = {e.digest for e in graph.mediated}
+    # the byte-for-byte cross-producer agreement: CappedScission.forget()'s MediatedEdge convention == mediated_edges'
+    assert struct_projections <= mediated_digests
+
+
+def test_dropping_the_medium_breaks_the_capped_scission_square():
+    # NON-VACUITY: without the reagent MEDIUM, the mediated descent cannot draw water, so the capped-scission
+    # projection (C2H6 + H2O -> CH4 + CH4O) is ABSENT -- the subset fails.  Proves the medium is load-bearing and
+    # the positive test is not vacuously true.
+    struct_ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=DEFAULT_TRANSFORM_REGISTRY)
+    struct_projections = {sc.projection_digest for sc in struct_ir.structural_candidates}
+    inventory, _medium = _derive_mediated_closure(struct_ir)
+    graph_no_medium = mediated_decompose(ETHANE.formula, inventory, ())  # no reservoir -> no mediated water draw
+    assert struct_projections and not (struct_projections <= {e.digest for e in graph_no_medium.mediated})
+
+
+def test_the_two_families_forget_to_distinct_edge_types_each_into_its_own_producer():
+    # The multi-family lift's real content is a TYPE distinction: capped scission forgets to a reagent-drawn
+    # MEDIATED_EDGE, bond order to an own-atoms DECOMPOSITION_EDGE -- which is WHY they need distinct producers.
+    # This is asserted on projection_kind (real content), NOT on a cross-producer digest non-subset: because
+    # contracts.canonical_payload embeds the fully-qualified class (contracts.py:149), a MediatedEdge digest and a
+    # DecompositionEdge digest are disjoint by construction, so "capped projections not-a-subset-of plain candidates"
+    # is a VACUOUS class-tag tautology (it survives even a wholly WRONG forget() convention -- reproduced) and proves
+    # nothing about conventions.  The convention agreement is proven by the same-class POSITIVE subsets below.
+    capped_ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=DEFAULT_TRANSFORM_REGISTRY)
+    bo_ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=BOND_ORDER)
+    assert capped_ir.structural_candidates and bo_ir.structural_candidates
+    # the SUBSTANTIVE distinction: different forgetful codomains -> different producers
+    assert {sc.projection_kind for sc in capped_ir.structural_candidates} == {"MEDIATED_EDGE"}
+    assert {sc.projection_kind for sc in bo_ir.structural_candidates} == {"DECOMPOSITION_EDGE"}
+    # each family's convention agrees with ITS OWN producer -- the load-bearing same-class positive subsets:
+    capped_projections = {sc.projection_digest for sc in capped_ir.structural_candidates}
+    cap_inventory, cap_medium = _derive_mediated_closure(capped_ir)
+    mediated_digests = {e.digest for e in mediated_decompose(ETHANE.formula, cap_inventory, cap_medium).mediated}
+    assert capped_projections <= mediated_digests  # capped -> mediated producer (byte-for-byte, same class)
+
+    bo_projections = {sc.projection_digest for sc in bo_ir.structural_candidates}
+    bo_inventory = _derive_formula_inventory(bo_ir)
+    plain_digests = {c.candidate_digest for c in decompile_to_ir(ETHANE.formula, bo_inventory).candidates}
+    assert bo_projections <= plain_digests  # bond order -> plain producer (byte-for-byte, same class)

@@ -59,7 +59,12 @@ from smartchem.compilation_ir import (
 from smartchem.decompiler import Formula
 from smartchem.decompiler_mediated import mediated_decompose
 from smartchem.smiles import parse_smiles
-from smartchem.transform_provider import TransformProviderRegistry
+from smartchem.structure_descent import redox_edges
+from smartchem.transform_provider import (
+    CappedScissionProvider,
+    RedoxHalfReactionProvider,
+    TransformProviderRegistry,
+)
 
 ETHANE = parse_smiles("CC")
 WATER = parse_smiles("O")
@@ -194,3 +199,55 @@ def test_the_two_families_forget_to_distinct_edge_types_each_into_its_own_produc
     bo_inventory = _derive_formula_inventory(bo_ir)
     plain_digests = {c.candidate_digest for c in decompile_to_ir(ETHANE.formula, bo_inventory).candidates}
     assert bo_projections <= plain_digests  # bond order -> plain producer (byte-for-byte, same class)
+
+
+# ======================================================================================
+# IR-COMMUTE k>=2: the capped-scission square past the DEFAULT single cut
+# ======================================================================================
+def test_the_capped_scission_square_commutes_at_k2_multi_cut():
+    # methanol + water under max_reactant_cuts=2 produces a genuine k=2 projection consuming water at multiplicity 2
+    # (two cuts in one rewrite); it commutes into mediated_decompose ONLY at max_reagent_instances=2, closing the
+    # boundary the ROUND-6 brick named as conjectured.  (A tiny target on purpose -- k=2 is combinatorially large;
+    # propane/diester+water blow the budget, methanol+water is the minimal clean witness.)
+    reg2 = TransformProviderRegistry((CappedScissionProvider(max_reactant_cuts=2),))
+    struct_ir = decompile_structure_to_ir(parse_smiles("CO"), reagents=(WATER,), registry=reg2, budget=5000)
+    assert struct_ir.diagnostics == ()  # exhaustive within budget -- not a partial search silently passing
+    assert struct_ir.structural_candidates
+    assert all(sc.projection_kind == "MEDIATED_EDGE" for sc in struct_ir.structural_candidates)
+    # a genuine k=2 witness: some projection consumes a reagent at multiplicity 2 (not just the k=1 single cut)
+    assert any(m == 2 for sc in struct_ir.structural_candidates for _s, m in sc.reagents)
+    struct_projections = {sc.projection_digest for sc in struct_ir.structural_candidates}
+    inventory, medium = _derive_mediated_closure(struct_ir)
+    methanol_formula = parse_smiles("CO").formula
+    g1 = mediated_decompose(methanol_formula, inventory, medium, max_reagent_instances=1)
+    g2 = mediated_decompose(methanol_formula, inventory, medium, max_reagent_instances=2)
+    assert g1.is_complete and g2.is_complete
+    # non-vacuity control (for free): the k=2 projections are ABSENT at the single-cut default, present at max=2
+    assert not (struct_projections <= {e.digest for e in g1.mediated})
+    assert struct_projections <= {e.digest for e in g2.mediated}
+
+
+# ======================================================================================
+# IR-COMMUTE: a THIRD family -- the redox (electron-transfer) square, at EQUALITY
+# ======================================================================================
+def test_the_redox_forgetful_square_commutes_at_equality():
+    # Redox forgets to an ELECTRON_TRANSFER_EDGE, whose formula-side producer is redox_edges.  Redox is charge-only and
+    # mass-trivial -- the oxidized formula is fully DETERMINED by the reactant atoms + n, so there is NO inventory,
+    # medium, or search, and the square closes at == (set equality), STRONGER than the neutral families' ⊆.  The
+    # substantive content is the convention agreement + type-disjointness, not a search-correctness claim.
+    for smiles, max_e, n_expected in (("[Na]", 2, 2), ("N=O", 3, 3)):
+        target = parse_smiles(smiles)
+        reg = TransformProviderRegistry((RedoxHalfReactionProvider(max_electrons=max_e),))
+        struct_ir = decompile_structure_to_ir(target, reagents=(WATER,), registry=reg)
+        assert {sc.projection_kind for sc in struct_ir.structural_candidates} == {"ELECTRON_TRANSFER_EDGE"}
+        struct_projections = {sc.projection_digest for sc in struct_ir.structural_candidates}
+        formula_edges = {e.digest for e in redox_edges(Formula.of(target.formula, target.charge), max_electrons=max_e)}
+        assert len(struct_projections) == n_expected  # non-vacuous: the family actually produced n edges
+        assert struct_projections == formula_edges     # == , not merely ⊆ (no formula-side search asymmetry exists)
+        # non-vacuity: dropping one electron from the formula producer breaks the equality (a strict subset), so the
+        # == is CONTENT-load-bearing.  Mechanism (red-team clarification): the == catches a wrong ELECTRON-COUNT /
+        # asymmetric-set convention; a wrong CHARGE convention (sign flip / off-by-one) is caught UPSTREAM by
+        # ElectronTransferEdge's charge certificate (it RAISES in __post_init__), so it can never produce a
+        # matching-but-wrong set -- either way a broken convention turns this test red, never vacuously green.
+        fewer = {e.digest for e in redox_edges(Formula.of(target.formula, target.charge), max_electrons=max_e - 1)}
+        assert fewer < struct_projections

@@ -74,6 +74,7 @@ __all__ = [
     "capped_scissions",
     "heterolytic_scissions",
     "redox_couples",
+    "redox_edges",
     "ionic_edges",
     "structure_decompose",
     "verify_valence_integrity",
@@ -1508,6 +1509,34 @@ def redox_couples(species: Molecule, *, max_electrons: int = 2) -> tuple[RedoxHa
         oxidized = Molecule(species.atoms, species.bonds, species.charge + n, species.state)
         out.append(RedoxHalfReaction(REDOX_SCHEMA, species, oxidized, n))
     return tuple(out)
+
+
+def redox_edges(reduced: "Formula", *, max_electrons: int = 2) -> tuple[ElectronTransferEdge, ...]:
+    """The FORMULA-layer oxidation edges of ``reduced`` removing ``1..max_electrons`` electrons -- the composition
+    analogue of :func:`redox_couples`, and the formula-side producer of the IR-COMMUTE redox commuting square.
+
+    A redox half-reaction is charge-only and mass-trivial: the oxidized species has the SAME atoms as the reduced one
+    and a charge higher by the electron count (an electron is atom-less).  So -- UNLIKE the neutral bond-order/capped
+    families whose formula producers run a real bucket/mediated SEARCH over an inventory -- this needs NO inventory,
+    medium, or search: the oxidized Formula is fully DETERMINED by the reactant atoms plus ``n``.  Consequently the
+    forgetful square closes at ``==`` (set equality), not merely ``⊆``:
+    ``{c.forget().digest for c in redox_couples(S)} == {e.digest for e in redox_edges(forget(S))}`` for a neutral
+    ``S`` (proven in ``tests/test_ir_commute.py``).  The physical oxidation ceiling (``8 * atom count``) mirrors
+    :func:`redox_couples` and :class:`RedoxHalfReaction`'s own certificate, so the enumerator never builds an edge the
+    certificate would refuse.  Because there is no search, the substantive content of the redox square is the
+    convention agreement (the ``==`` byte-for-byte match of the ``forget()`` and ``redox_edges`` edges) plus the
+    ``projection_kind`` TYPE distinction -- NOT a search-correctness claim, and NOT a cross-family digest-disjointness
+    (that is a canonical class-tag consequence, vacuous as a test -- the same honesty the cross-producer note carries).
+    """
+    if type(reduced) is not Formula:
+        raise TypeError("reduced must be a Formula")
+    if type(max_electrons) is not int or max_electrons < 1:
+        raise ValueError("max_electrons must be >= 1")
+    top = min(max_electrons, _MAX_OXIDATION_STATE_PER_ATOM * sum(k for _, k in reduced.counts))
+    return tuple(
+        ElectronTransferEdge(reduced, 1, Formula.of(dict(reduced.counts), reduced.charge + n), n)
+        for n in range(1, top + 1)
+    )
 
 
 @dataclass(frozen=True)

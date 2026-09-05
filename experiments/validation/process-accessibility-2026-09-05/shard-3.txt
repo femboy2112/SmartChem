@@ -1,0 +1,23 @@
+........................................................................ [ 10%]
+........................................................................ [ 20%]
+........................................................................ [ 30%]
+..............................................ssssssssss......sss.ss.... [ 40%]
+........................................................................ [ 50%]
+........................................................................ [ 60%]
+........................................................................ [ 70%]
+........................................................................ [ 80%]
+........................................................................ [ 90%]
+.......................................................................  [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_domain.py:184: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_domain.py:201: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [4] tests/test_domain.py:223: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_domain.py:232: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_domain.py:241: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_domain.py:263: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_domain.py:275: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_domain.py:388: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_domain.py:400: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_domain.py:410: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [2] tests/test_domain.py:441: could not import 'pyscf': No module named 'pyscf'
+704 passed, 15 skipped in 13.65s

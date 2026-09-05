@@ -3418,3 +3418,34 @@ The `0.5.0a1` uptake is complete when:
 
 Anything less can still be valuable development work. It is not yet the standard-setting
 chemical compiler release described here.
+
+## 10. Process accessibility audit — 2026-09-05
+
+ID: PROCESS-FIT-01 / ADMISSION-INTEGRITY-01 / AUDIT-CORRECTNESS-2026-09-05
+
+State: IMPLEMENTED_AND_VERIFIED within the comparison and selection boundary below.
+
+- Audited main: `2fc759542a2858605c25cd6bf660fdb56afe6975`.
+- Repairs commit: `e038d734b5ef9444c389e20cbe3263f592b2f90c`.
+- Process and integration commit: `5a71af75d3010bcdaf91e041cafb84c3d8af7f8d`.
+- Files: `smartchem/process_constraints.py`, condition/service/CLI integration, experiment fitting and
+  selection, selectivity, reagent identity, affordability/units, Arrhenius/Eyring no-net handling.
+- Tests: process model/service/synthesis, workup-extrema mutations, imported-admission tampering,
+  formula/isomer and sparse-registry controls, currency/invalid-number and no-net reaction regressions.
+- Result: baseline 3,745 passed / 51 skipped / 1 xfailed; final 4,014 passed / 51 skipped / 1 xfailed.
+  The final run partitions every test file into six deterministic shards; optional PySCF was absent.
+- Human-output check: all three synthesis commands share process flags and retain no-fit blockers in
+  quiet mode. No admissible candidate yields no best dossier or shopping recommendation. Complete
+  no-fit searches refuse with exit 5; partial searches remain exit 4.
+- JSON/schema check: request v1alpha5, response v1alpha9, descriptor v1alpha10. Unknown or excluded
+  routes cannot enter the admitted route list or process-constrained affordability frontier. Returned
+  candidate membership and derived admission fields are checked on import.
+- Command/file inventory, environment, and raw final output:
+  [validation receipt](experiments/validation/process-accessibility-2026-09-05/receipt.json).
+- Residual limits: no shipped whole-process chemistry records or general importer; source applicability,
+  material assays/scale, convergent process scheduling, and procedure readiness remain open. Filtering
+  is over the bounded returned candidate set, not a proof that no fitting route exists elsewhere.
+
+The complete design, audit scope, counterexamples, commands, and next acceptance contract are in
+[the process accessibility audit](AUDIT_PROCESS_ACCESSIBILITY_2026-09-05.md). This does not close the
+alpha's other P0 rows or promote formal candidates to bench procedures.

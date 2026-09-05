@@ -1,0 +1,29 @@
+..........................s...ssssss............................s.s..... [ 10%]
+................ssssssssssss............................................ [ 20%]
+........................................................................ [ 31%]
+........................................................................ [ 41%]
+...............................s........................................ [ 52%]
+........................................................................ [ 62%]
+........................................................................ [ 72%]
+........................................................................ [ 83%]
+........................................................................ [ 93%]
+...........................................                              [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_basis_policy.py:59: parsing the vendored basis requires PySCF
+SKIPPED [6] tests/test_basis_policy.py:87: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_basis_policy.py:191: registry correctly omits PySCF when its backend is absent
+SKIPPED [1] tests/test_basis_policy.py:214: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_basis_policy.py:415: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_basis_policy.py:421: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_basis_policy.py:430: could not import 'pyscf': No module named 'pyscf'
+SKIPPED [1] tests/test_basis_policy.py:454: coverage is a question for the basis library
+SKIPPED [1] tests/test_basis_policy.py:458: coverage is a question for the basis library
+SKIPPED [1] tests/test_basis_policy.py:462: coverage is a question for the basis library
+SKIPPED [1] tests/test_basis_policy.py:470: coverage is a question for the basis library
+SKIPPED [1] tests/test_basis_policy.py:476: coverage is a question for the basis library
+SKIPPED [1] tests/test_basis_policy.py:524: the roster is defined by basis coverage
+SKIPPED [1] tests/test_basis_policy.py:527: the roster is defined by basis coverage
+SKIPPED [1] tests/test_basis_policy.py:530: the roster is defined by basis coverage
+SKIPPED [1] tests/test_basis_policy.py:542: the roster is defined by basis coverage
+SKIPPED [1] tests/test_findings.py:256: needs --runslow (real oracle calls)
+669 passed, 22 skipped in 106.01s (0:01:46)

@@ -3672,3 +3672,100 @@ a fragment with its parsed form. Aspirin compiles to its real route.
 - **Residual:** a large conjugated fragment over the caps keeps its literal identity (won't unify across Kekulé
   spellings) — a non-issue for the current bounded drug-like targets, documented not hidden. A cheaper
   min-placement selection (avoiding a full canonicalization per placement) would lift the caps; named follow-on.
+
+## 12. ROUND 12 — the four best-next-steps full-blast round (2026-09-05)
+
+Off ROUND 11 (`main` at `7b99873`; the dev branch fast-forwarded onto it, untouched during the build). The four
+deliverables are the ROUND-11 report's ranked best-next-steps: (1) cheaper resonance placement, (2) DAG
+critical-path admission, (3) more sourced records + an organic-priced commodity, (4) ID-STEREO CONFIGURATION (the
+flagship wall). Each: design → 4× Citadel recon → build → REPRODUCE every finding myself → evil-morty red-team →
+fold → verify. Final full suite **4116 passed, 14 skipped, 1 xfailed** (dev venv, PySCF present). `result_digest` untouched (no response
+schema shape change this round). evil-morty cleared items 2 and 3 with real differential fuzzing and caught a
+CRITICAL ring-stereocentre bug in item 4 (fixed + pinned) and an over-reaching claim in item 1's tripwire
+(corrected) — both folded below.
+
+### 12.1 item 2 — sound critical-path DAG process gate (Lane C; `54404c0`)
+
+The ROUND-11 `dag_process_fit` serial-summed a convergent DAG's branches (sound but over-conservative on time).
+ROUND 12 makes it SOUND on the elapsed axis: **FITS** is certified by the serial-achievable ceiling (unchanged —
+always achievable one step at a time), **EXCLUDED** now fires on the critical-path FLOOR (unfittable even with
+fully concurrent branches — a strictly tighter, still-sound exclude), and the band between is an honest **UNKNOWN**
+(fittable only if branches overlap, which the single-operator bounds cannot confirm). **ACTIVE time stays
+serial-summed** — one operator's hands-on time does not shrink when vessels run in parallel, so parallelising it
+would be an unsound relaxation (the recon's key correction). The per-step + active logic is extracted into
+`_collect_step_checks` so the LINEAR gate is byte-identical (verified: 218 process tests; evil-morty
+differential-fuzz **0 divergences**). `_critical_path` is a Kahn longest-path (evil-morty: **0 mismatches** vs
+brute force over 3000 random DAGs; cycles raise cleanly). The DAG diagnostic now reports the sound
+FITS/EXCLUDED/UNKNOWN tally and names the unmodeled joint-single-operator schedulability boundary.
+`process_selection_status` stays UNASSESSED — formal RouteDossier admission is a named next-step (the
+`ranked_route_dossiers`/frontier/fit_counts blast radius + the flat-re-derivation coherence fork are deferred
+deliberately; the FITS case is fork-safe because a serial-sum FITS re-derives as FITS).
+
+### 12.2 item 3 — aspirin sourced whole-process FITS demo on the flagship (Lane C; `4d52d7b`)
+
+A FOURTH sourced record — **ASPIRIN** (salicylic acid + acetic anhydride → aspirin + acetic acid), LibreTexts
+"Experiment 1: Synthesis of Aspirin" (CC BY-NC-SA 4.0, the same family as the paracetamol/isopentyl records).
+Every value re-verified by fetching the page and grepping each quote from raw HTML: `min_elapsed_minutes=10.0`
+("for at least 10 minutes"), `agitation=MANUAL` ("swirl the flask gently"), equipment nouns each quoted, and
+crucially **`workup_included=True`** — the source describes a genuinely PREPARATIVE isolation (Buchner vacuum
+filtration → recrystallise → dry → weigh → melting point), so this record produces the **first sourced FITS on the
+flagship reaction** (ROUND-11 unblocked aspirin's compilation; this makes it FIT, not just UNKNOWN/EXCLUDE).
+
+**Enabling fix (a ROUND-11 completeness gap):** the record could not attach because `resolve_structure` keyed on
+plain `canonical()`, so the ortho-salicylate scission FRAGMENT did not resolve to registered salicylic acid. It now
+keys on `resonance_identity` — SOUND because it is idempotent on the (already parse-canonical) registered
+structures (**verified 0/41 registered identities move**), so only previously mis-split fragments now resolve;
+`structure_identity` stays plain-canonical, unchanged. evil-morty confirmed no over-unification (isomer groups stay
+distinct, unregistered isomers → None). Demo verified end to end (`tests/test_process_records.py`): covering bench →
+FITS_FOUND; missing equipment / a 350 K ceiling / a 5-min step budget → EXCLUDED; an undeclared check interval →
+UNKNOWN.
+
+**Price half deferred, honestly:** salicylic acid $103.73/kg (Lab Alley, re-verified static JSON-LD) is a real,
+mass-clean datum, but salicylic acid is NOT a registered `CommodityReagent` (pricing it is a search-behaviour
+change with a dubious "commodity" claim), and every registered ORGANIC commodity is a LIQUID (volume-priced, needing
+a sourced-density volume→mass layer). Both are self-contained follow-ons; no dead/mislabelled price was wired.
+
+### 12.3 item 1 — resonance-cost investigation refuted the easy win (Lane B; `7e0e487`)
+
+The ask was a cheaper resonance placement to lift the ROUND-11 caps. The investigation **refuted the two obvious
+cheap wins** and ships tripwires, not a risky change (`smiles.py` unchanged from HEAD — no regression):
+
+- The "canonicalise the DRAWN Kekulé form" shortcut is UNSOUND (naphthalene's two Kekulé forms are one molecule but
+  have distinct plain-canonical digests — enumerate-and-minimise is required). **evil-morty fold:** the tripwire
+  originally over-claimed that a constitution-SIGNATURE key is unsound; it is not (that partition unifies the forms
+  correctly). The real barrier to a cheap win is that such a key emits different digest VALUES (fixture ripple), and
+  reproducing the enumeration's minimum VALUE cheaply still needs the placement search. The claim was narrowed to
+  the drawn-form shortcut only.
+- No cheap PREDICTIVE cost proxy bounds per-placement `canonical()` cost (measured: a 72-heavy asymmetric phenylene
+  grinds despite low symmetry; coronene proxy 72 = 62 ms vs triphenylene proxy 36 = 4 s — a symmetry-only gate both
+  misses the former and mis-ranks the latter, and regressed a DoS on measurement). The robust fix is a running
+  work-meter inside the canonicaliser, which conflicts with `Molecule.canonical()`'s `lru_cache` — a measured core
+  change, named next-step.
+
+Tripwires (`tests/test_resonance_cost.py`): the drawn-form falsification, the fused-aromatic
+minimal-representative identity, a fused-aromatic unification regression net, and a `resolve_structure`
+resonance-fragment resolution net.
+
+### 12.4 item 4 — ID-STEREO CONFIGURATION: sound chirality-parity perception (Lane B; `825e367`)
+
+The flagship stereo wall, advanced with a sound bounded slice — a canonical chirality-PARITY descriptor that
+distinguishes enantiomers, the CONFIGURATION half of stereo perception the isotope work explicitly deferred ("a
+canonical CIP parity, which graph canonicalisation cannot supply because chirality is a reflection"). The parser now
+captures the tetrahedral SENSE losslessly (`chirality` bool → int: 0 none / 1 `@` / 2 `@@`), closing the recon's
+"one-field-behind" hazard. `configuration_key` / `SmilesFeatures.configuration_digest` compute, for each perceivable
+ACYCLIC tetrahedral centre with four 1-WL-distinct neighbours, `handedness = perm_parity(neighbours by WL colour)
+XOR sense` — spelling-invariant (a neighbour transposition flips the SMILES sense) and opposite for the mirror.
+
+- **Sound + verified:** enantiomers distinct; provably-same spellings agree (swap-flips-sense, re-rooting,
+  F-ahead-of-centre, H-position); achiral reduces to constitution (**`Molecule`/`canonical_digest` UNTOUCHED → zero
+  fixture ripple**); and — the conclusive subtle case — **meso == its own mirror while (R,R) ≠ (S,S)**. The `chirality`
+  bool→int change breaks no consumer (`tetrahedral_stereo` stays a bool).
+- **evil-morty CRITICAL fold (verified + fixed):** a ring-OPENING stereocentre slipped the incomplete `incoming>1`
+  guard and got a WRONG descriptor — a false split AND a false conflation of ring enantiomers (latent: the key is
+  not yet consumed downstream, but it was a landmine for the moment it is). `_on_cycle` now scopes EVERY ring
+  stereocentre out to an honest `None` (its written neighbour order depends on the ring-closure digit position the
+  bond list does not preserve); a ring SUBSTITUENT on an acyclic centre stays perceivable. Pinned by a ring-→-None
+  tripwire (`tests/test_configuration_identity.py`), the coverage hole that let it ship.
+- **Deferred, honest, named:** E/Z double-bond config, CIP R/S *naming*, ring stereocentres, and the match-layer
+  wiring (`_PERCEIVABLE_LAYERS → CONFIGURATION` — deferred for the isotope layer too, they land together). The
+  section-5.3 stereo BLOCKER is unchanged.

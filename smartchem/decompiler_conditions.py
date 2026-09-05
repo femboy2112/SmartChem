@@ -292,6 +292,60 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
         "methyl salicylate",
         ("methanol", "salicylic acid"),
     ),
+    # ROUND 12 item 3: a FOURTH sourced whole-process record -- ASPIRIN, the flagship reaction (unblocked for
+    # compilation in ROUND 11 by resonance-canonical identity).  Unlike methyl salicylate, this source describes a
+    # genuinely PREPARATIVE workup (vacuum filter -> recrystallise -> dry -> weigh -> melting point), so
+    # workup_included=True and this record can produce a real FITS -- the first sourced FITS demo on aspirin itself.
+    # Every value re-verified by fetching the LibreTexts page directly and grepping the raw HTML for each quote.
+    _sig("C9H8O4", ("C2H4O2",), ("C7H6O3", "C4H6O3")): ConditionRecord(
+        ConditionEnvelope(
+            medium="steam bath; acetylation of salicylic acid with acetic anhydride (acid-catalyzed)",
+            status=EvidenceStatus.EXPERIMENTAL,
+            provenance=(
+                "assembly direction: acetylation of salicylic acid with acetic anhydride -> acetylsalicylic acid "
+                "(aspirin) + acetic acid; LibreTexts 'Experiment 1: Synthesis of Aspirin' (Chickos/Garin/D'Souza, "
+                "University of Missouri-St. Louis, CC BY-NC-SA 4.0)"
+            ),
+            source=SourceCitation(
+                "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/"
+                "Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+                SourceReview.ACCEPTED,
+            ),
+            # PROCESS-FIT record, SOURCED (CC BY-NC-SA 4.0); every value quote-backed against the raw page (item 3).
+            process=ProcessRequirements(
+                min_elapsed_minutes=10.0,   # SOURCED floor: "Heat the flask gently on the steam bath for at least 10 minutes."
+                attention=Attention.PERIODIC,   # INTERPRETIVE (existing convention): swirl -> heat 10 min -> cool -> scratch/wait -> ice bath -> filter (monitor-and-return)
+                agitation=Agitation.MANUAL,   # SOURCED: "swirl the flask gently until the salicylic acid dissolves."
+                equipment=(
+                    "125-mL Erlenmeyer flask", "steam bath", "glass rod", "ice bath",
+                    "Buchner funnel", "150 mL beaker", "dropper",
+                ),
+                # SOURCED preparative workup: "Vacuum filter the product using a Buchner funnel", recrystallise
+                # ("heating on a steam bath. Cool ... in a ice-bath. Collect the product by vacuum filtration"),
+                # "air dry", then "weigh ... determine its melting point ... calculate the percentage yield".
+                workup_included=True,
+                peak_temperature_k=373.15,   # DERIVED (existing convention): "steam bath" = open boiling-water bath ~100 C; no numeric T quoted
+                min_pressure_atm=1.0, max_pressure_atm=1.0,   # DERIVED: open-vessel benchtop at ambient
+                provenance=(
+                    "whole-process record, SOURCED from LibreTexts 'Experiment 1: Synthesis of Aspirin' "
+                    "(CC BY-NC-SA 4.0). Re-verified by fetching the page and grepping each quote from raw HTML "
+                    "(item 3). min_elapsed 10 min is the SOURCED heating LOWER BOUND ('for at least 10 minutes'); "
+                    "the whole-step CEILING is untimed -> UNKNOWN (a floor can only EXCLUDE). agitation=MANUAL "
+                    "('swirl the flask gently'). Equipment nouns each directly quoted. workup_included=True: the "
+                    "source describes a genuinely PREPARATIVE isolation (Buchner vacuum filtration -> recrystallise "
+                    "-> air dry -> weigh -> melting point -> percent yield), UNLIKE the qualitative methyl-salicylate "
+                    "prep -- so this record CAN produce a FITS. attention PERIODIC and peak 373.15 K ('steam bath') "
+                    "are the same interpretive/derivational convention the three existing records use, not new "
+                    "fabricated values. Pressure ambient (open apparatus). SINGLE-SOURCED. NOTE: the source uses a "
+                    "1:3.3 salicylic-acid:anhydride molar excess (normal for this prep); the composition-only _sig is "
+                    "unaffected, but a future quantity-weighted demo must read the real ratio, not 1:1."
+                ),
+            ),
+        ),
+        (ReactionDirection.ASSEMBLY,),
+        "aspirin",
+        ("acetic anhydride", "salicylic acid"),   # MUST be sorted (assembly_conditions compares sorted precursor names)
+    ),
 }
 
 

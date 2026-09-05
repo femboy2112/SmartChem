@@ -81,9 +81,11 @@ CODATA_KEY_VALUES: tuple[CodataRef, ...] = (
     CodataRef("carbon monoxide", "CO", "gas", "[C-]#[O+]", -110.53, 0.17, 197.660, 0.004, False),
     CodataRef("carbon dioxide", "CO2", "gas", "O=C=O", -393.51, 0.13, 213.785, 0.010, False),
     CodataRef("ammonia", "NH3", "gas", "N", -45.94, 0.35, 192.77, 0.05, False),
+    CodataRef("hydrogen chloride", "HCl", "gas", "Cl", -92.31, 0.10, 186.902, 0.005, False),
     CodataRef("dioxygen", "O2", "gas", "O=O", 0.0, 0.0, 205.152, 0.005, True),
     CodataRef("dihydrogen", "H2", "gas", "[H][H]", 0.0, 0.0, 130.680, 0.003, True),
     CodataRef("dinitrogen", "N2", "gas", "N#N", 0.0, 0.0, 191.609, 0.004, True),
+    CodataRef("dichlorine", "Cl2", "gas", "ClCl", 0.0, 0.0, 223.081, 0.010, True),
     CodataRef("carbon (graphite)", "C", "solid", "", 0.0, 0.0, 5.74, 0.10, True),
     # NOTE: atomic hydrogen H(g) is a CODATA key species (dfH = 217.998 +/- 0.006 kJ/mol) but the source hunt did
     # NOT transcribe its S, so it is DELIBERATELY omitted rather than shipped with an unsourced entropy -- add it
@@ -134,7 +136,7 @@ def content_hash(rows: "tuple[CodataRef, ...]" = CODATA_KEY_VALUES) -> str:
 
 #: The frozen hash of the committed CODATA seed (regenerate DELIBERATELY, only after re-transcribing from the dated
 #: source, by running this module as __main__).
-FROZEN_HASH = "9edc41d176f7aff6462976268e6cfd941f4618a21c2fc37fac69c50f32c833aa"
+FROZEN_HASH = "569304785e9cbe6cfbeb9f5d3fbaa95dffe34206f8dc6b2ce516c7b60698e3a5"  # +HCl,+Cl2 (CODATA, fetched 2026-09-04)
 
 
 def report() -> dict:

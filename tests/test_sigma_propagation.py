@@ -74,6 +74,22 @@ def test_a_species_with_no_sourced_sigma_makes_sigma_delta_g_unknown():
     assert f.sigma_delta_g_is_lower_bound is False
 
 
+def test_the_widen_makes_hcl_synthesis_sigma_delta_g_informative():
+    """ROUND-7 widen: wiring HCl and Cl2 (both CODATA, both σ) turns H2 + Cl2 -> 2 HCl into an INFORMATIVE σ(ΔG) case.
+    Every species now carries both a ΔfH° ± and an S° ±, so σ(ΔG) is the exact hand quadrature; HCl's ΔfH° ±0.10
+    (×2) dominates.  All independent CODATA/reference inputs, so NOT a lower bound."""
+    H2, Cl2, HCl = parse_smiles("[H][H]"), parse_smiles("ClCl"), parse_smiles("Cl")
+    f = feasibility_of_step(ExperimentStep.assembling(HCl, (H2, Cl2), (HCl, HCl)))
+    assert f.delta_g_kj is not None and f.sigma_delta_g_kj is not None
+    t = f.temperature_k
+    # net ν: H2=+1 (0.0, 0.003), Cl2=+1 (0.0, 0.010), HCl=-2 (0.10, 0.005)
+    sdh = math.sqrt((2 * 0.10) ** 2)
+    sds = math.sqrt((1 * 0.003) ** 2 + (1 * 0.010) ** 2 + (2 * 0.005) ** 2)
+    expected = math.sqrt(sdh ** 2 + (t * sds / 1000.0) ** 2)
+    assert abs(f.sigma_delta_g_kj - expected) < 1e-9
+    assert f.sigma_delta_g_is_lower_bound is False
+
+
 def test_the_widened_seed_makes_haber_sigma_delta_g_informative():
     """THERMO-UNC-01-widen: wiring N2's S° ± and NH3's ΔfH°+S° ± from the frozen CODATA seed turns Haber from the old
     σ(ΔG)=UNKNOWN case into an INFORMATIVE one. σ(ΔG) is the exact hand quadrature; NH3's ΔfH° ±0.35 (×2) dominates.

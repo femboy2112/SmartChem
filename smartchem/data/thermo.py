@@ -176,6 +176,15 @@ SEED_THERMO_REFS: tuple[ThermoRef, ...] = (
               uncertainty_dhf_kj=0.17, uncertainty_s_j_per_mol_k=0.004),
     ThermoRef("CH4", "methane", -74.6, 186.3, "gas", f"ΔfH° {_GURVICH}, ±0.3; S° {_NIST} (no single stated ±)",
               uncertainty_dhf_kj=0.3),  # THERMO-UNC-01-widen: past-CODATA ΔfH° ±; S° ± honestly None
+    # THERMO-UNC-01-widen (ROUND 7): two more CODATA key values, both ± wired from the frozen seed.  These also FIX
+    # broken inorganic group-additivity: resolve_thermo(HCl) previously fell through to a degenerate Benson estimate
+    # (ΔfH°=0, S°=0) and resolve_thermo(Cl2) CRASHED (a negative group-additivity S°); the sourced rows are found by
+    # for_formula FIRST, so the crash/garbage are pre-empted by real data.  The formula key is Hill order (_formula_str:
+    # carbon-free -> alphabetical), so hydrogen chloride is "ClH", matching the lookup.
+    ThermoRef("ClH", "hydrogen chloride", -92.31, 186.902, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}",
+              uncertainty_dhf_kj=0.10, uncertainty_s_j_per_mol_k=0.005),
+    ThermoRef("Cl2", "chlorine", 0.0, 223.081, "gas", f"element reference state; S° {_CODATA}",
+              uncertainty_dhf_kj=0.0, uncertainty_s_j_per_mol_k=0.010),
 )
 
 #: A convenience default seed; extended per call for any other chemical, NOT a whitelist.

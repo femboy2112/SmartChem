@@ -107,9 +107,11 @@ class TestLiveSeedMirrorsFrozenCodata:
         ("CO", "gas"): ("CO", "gas"),
         ("CO2", "gas"): ("CO2", "gas"),
         ("H3N", "gas"): ("NH3", "gas"),
+        ("ClH", "gas"): ("HCl", "gas"),   # live Hill formula "ClH" <-> frozen human "HCl" (ROUND-7 widen)
         ("O2", "gas"): ("O2", "gas"),
         ("H2", "gas"): ("H2", "gas"),
         ("N2", "gas"): ("N2", "gas"),
+        ("Cl2", "gas"): ("Cl2", "gas"),   # ROUND-7 widen: a CODATA element reference state
     }
 
     def test_every_wired_codata_sigma_matches_the_frozen_source(self):
@@ -128,4 +130,21 @@ class TestLiveSeedMirrorsFrozenCodata:
             assert abs(live.dhf_kj_per_mol - fr.dfh_kj) < 0.05, f"{live_f}: ΔfH° value drifted from frozen CODATA"
             assert abs(live.s_j_per_mol_k - fr.s_j_per_k) < 0.05, f"{live_f}: S° value drifted from frozen CODATA"
             checked += 1
-        assert checked == 7  # non-vacuous: all seven CODATA species were actually compared
+        assert checked == 9  # non-vacuous: all nine wired CODATA species were actually compared
+
+
+class TestTheWidenFixesBrokenInorganicThermo:
+    """ROUND-7 widen: HCl and Cl2 are CODATA key values whose group-additivity estimates were broken (HCl -> a
+    degenerate ΔfH°=0/S°=0; Cl2 -> a NEGATIVE S° that CRASHED resolve_thermo).  The sourced seed rows are found by
+    for_formula FIRST, so the sourced values pre-empt the broken estimates."""
+
+    def test_hcl_resolves_to_the_sourced_codata_record_not_a_degenerate_estimate(self):
+        ref = resolve_thermo(parse_smiles("Cl"))  # SMILES "Cl" == hydrogen chloride (implicit H)
+        assert ref is not None and ref.grade == "SOURCED"
+        assert ref.dhf_kj_per_mol == -92.31 and ref.s_j_per_mol_k == 186.902  # not the old 0/0 garbage
+        assert ref.uncertainty_dhf_kj == 0.10 and ref.uncertainty_s_j_per_mol_k == 0.005
+
+    def test_cl2_resolves_without_crashing_on_a_negative_group_additivity_entropy(self):
+        ref = resolve_thermo(parse_smiles("ClCl"))  # previously CRASHED (negative Benson S°) before the sourced row
+        assert ref is not None and ref.grade == "SOURCED"
+        assert ref.dhf_kj_per_mol == 0.0 and ref.s_j_per_mol_k == 223.081  # element reference state, sourced S°

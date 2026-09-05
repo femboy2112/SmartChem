@@ -36,6 +36,8 @@ class TestCodataSeedIsSourcedAndFrozen:
         assert by_key[("CO2", "gas")].dfh_kj == -393.51 and by_key[("CO2", "gas")].dfh_unc_kj == 0.13
         assert by_key[("CO", "gas")].dfh_kj == -110.53
         assert by_key[("NH3", "gas")].dfh_kj == -45.94
+        assert by_key[("HCl", "gas")].dfh_kj == -92.31 and by_key[("HCl", "gas")].s_unc_j_per_k == 0.005
+        assert by_key[("Cl2", "gas")].s_j_per_k == 223.081 and by_key[("Cl2", "gas")].is_reference_state
 
     def test_keys_are_distinct(self):
         keys = [r.key() for r in CODATA_KEY_VALUES]
@@ -72,5 +74,5 @@ class TestNonVacuousUncertaintyDiscipline:
 def test_report_is_self_consistent():
     r = report()
     assert r["hash_matches"] is True
-    assert r["reference_states"] == 4  # O2, H2, N2, C-graphite
-    assert r["with_real_dfh_uncertainty"] >= 3  # H2O(l), H2O(g), CO, CO2, NH3 all carry a real +/-
+    assert r["reference_states"] == 5  # O2, H2, N2, Cl2, C-graphite
+    assert r["with_real_dfh_uncertainty"] >= 3  # H2O(l), H2O(g), CO, CO2, NH3, HCl all carry a real +/-

@@ -102,3 +102,59 @@ def test_sourced_isopentyl_acetate_fits_a_bench():
         max_depth=1, process=bench))
     assert resp.process_selection_status == "FITS_FOUND"
     assert resp.admissible_route_digests
+
+
+# --- ROUND 11 item 4: a THIRD sourced record (methyl salicylate, LibreTexts 'Experiment 731', CC BY).
+# The source is a QUALITATIVE test-tube prep: it times the heating (a floor) but describes no preparative
+# workup and no reaction-step agitation, so this record HONESTLY can never FITS (workup+agitation undeclared)
+# -- it exercises the gate's real-data UNKNOWN and EXCLUDED verdicts, the complement to the two FITS records.
+MS = "name:methyl salicylate"
+MS_KW = dict(stock_materials=("salicylic acid", "methanol"), max_depth=1)
+# A bench that covers every SOURCED dimension of the record (equipment/attention). It still cannot FIT,
+# because the source declares neither a preparative workup nor a reaction-step agitation.
+MS_BENCH = ProcessBounds(
+    allowed_attention=(Attention.PERIODIC,),
+    allowed_agitation=(Agitation.MANUAL, Agitation.NONE),
+    available_equipment=("hot plate", "250 mL beaker (warm water bath)", "small (~10 mL) test tubes",
+                         "test tube clamp", "test tube rack", "pipet", "watch glass"),
+)
+
+
+def _ms(process=None, **kw):
+    return run_compilation(build_recompile_request(MS, process=process, **MS_KW, **kw))
+
+
+def _esterification(resp):
+    return next(r for r in resp.ranked_route_dossiers if "C7H6O3" in r.equation and "CH4O" in r.equation)
+
+
+def test_sourced_methyl_salicylate_unknown_without_a_workup_or_agitation():
+    # A covering bench cannot be told the route FITS: the SOURCE documents no preparative workup and no
+    # reaction-step agitation, so both are honestly UNKNOWN -> the gate refuses a FITS with named gaps.
+    resp = _ms(process=MS_BENCH)
+    assert resp.process_selection_status == "NO_FIT_FOUND"
+    assert not resp.admissible_route_digests
+    d = _esterification(resp)
+    assert d.fit_status == "UNKNOWN"
+    assert any("workup" in g for g in d.gaps)
+    assert any("agitation" in g for g in d.gaps)
+
+
+def test_sourced_methyl_salicylate_excluded_by_a_stricter_temperature_ceiling():
+    # SOURCED whole-process peak is 338.15 K (65 C water bath); an operator capped at 330 K cannot run it.
+    d = _esterification(_ms(process=MS_BENCH, max_temperature_k=330.0))
+    assert d.fit_status == "EXCLUDED"
+    assert any("peak_temperature_k" in e for e in d.exclusions)
+
+
+def test_sourced_methyl_salicylate_excluded_by_missing_equipment():
+    d = _esterification(_ms(process=replace(MS_BENCH, available_equipment=("hot plate",))))
+    assert d.fit_status == "EXCLUDED"
+    assert any("equipment is unavailable" in e for e in d.exclusions)
+
+
+def test_sourced_methyl_salicylate_excluded_when_too_slow_for_a_tight_step_budget():
+    # The SOURCED elapsed floor is 10 min ('for 10 minutes or longer'); a 5-min step budget is proven too tight.
+    d = _esterification(_ms(process=replace(MS_BENCH, max_step_minutes=5.0)))
+    assert d.fit_status == "EXCLUDED"
+    assert any("minimum elapsed" in e for e in d.exclusions)

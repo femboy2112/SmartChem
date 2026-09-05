@@ -155,3 +155,58 @@ def test_a_populated_frontier_round_trips_through_the_json_payload():
     back = response_from_payload(response_to_payload(injected))
     assert back.affordability_frontier == (entry,)
     assert back.affordability_frontier[0].cost_vector == entry.cost_vector
+
+
+# ---- COST-VEC-01 quantity/stoich axis: material_quantity via dag_shopping_requirement ----
+
+def test_route_material_quantity_is_the_conserved_external_mol_per_product():
+    from smartchem.experiment.step import ExperimentStep
+    from smartchem.service import _route_material_quantity
+    H2, O2, H2O = parse_smiles("[H][H]"), parse_smiles("O=O"), parse_smiles("O")
+    route = ExperimentRoute.of(ExperimentStep.assembling(H2O, (H2, H2, O2), (H2O, H2O)))  # 2 H2 + O2 -> 2 H2O
+    # per 1 mol H2O (extent 0.5): buy 1 mol H2 + 0.5 mol O2 = 1.5 mol external -- a conserved 100%-eff lower bound.
+    assert _route_material_quantity(route) == 1.5
+
+
+def test_route_material_quantity_is_none_when_shopping_is_underdetermined(monkeypatch):
+    # the honest UNKNOWN: a coupled multi-net-producer route makes the buy a genuine range, so dag_shopping_requirement
+    # raises ShoppingUnderdeterminedError -> _route_material_quantity returns None, never a fabricated allocation.
+    import smartchem.experiment.dag as dagmod
+    from smartchem.experiment.step import ExperimentStep
+    from smartchem.service import _route_material_quantity
+    H2, O2, H2O = parse_smiles("[H][H]"), parse_smiles("O=O"), parse_smiles("O")
+    route = ExperimentRoute.of(ExperimentStep.assembling(H2O, (H2, H2, O2), (H2O, H2O)))
+
+    def _raise(*_a, **_k):
+        raise dagmod.ShoppingUnderdeterminedError("coupled multi-producer (test)")
+
+    monkeypatch.setattr(dagmod, "dag_shopping_requirement", _raise)
+    assert _route_material_quantity(route) is None  # DAGError family caught -> honest None, not a crash, not a number
+
+
+def test_route_material_quantity_is_none_for_a_degenerate_no_net_species_step():
+    # red-team fold: a degenerate step (identity 2 H2O -> 2 H2O) is a VALID DAG but has no net species, so
+    # dag_shopping_requirement raises CeilingError -- a SIBLING of DAGError, not a subclass.  _route_material_quantity
+    # must catch it too (honest None), else a degenerate-but-valid route crashes the whole compilation response.
+    from smartchem.experiment.step import ExperimentStep
+    from smartchem.service import _route_material_quantity
+    H2O = parse_smiles("O")
+    route = ExperimentRoute.of(ExperimentStep.assembling(H2O, (H2O, H2O), (H2O, H2O)))  # identity, no net species
+    assert _route_material_quantity(route) is None  # CeilingError caught -> None, NOT a crash
+
+
+def test_the_frontier_populates_and_ranks_by_material_quantity():
+    # the quantity axis is LIVE and DISCRIMINATING: methyl acetate at depth 2 yields routes with different external
+    # material burdens (mol/product); the leaner route dominates the heavier on material_quantity (same access), so the
+    # heavier route is dropped OFF the frontier -- a ranking the per-unit cash axis (cash UNKNOWN here) cannot make.
+    from smartchem.service import _route_material_quantity
+    result = search_routes(
+        parse_smiles("CC(=O)OC"), reagents=(parse_smiles("O"),), commodities=_commodities(), max_depth=2,
+    )
+    mqs = sorted(_route_material_quantity(r) for r in result.routes)
+    assert len(mqs) >= 2 and mqs[0] is not None and mqs[-1] is not None and mqs[0] < mqs[-1]  # routes differ on burden
+    resp = run_compilation(build_recompile_request("smiles:CC(=O)OC", max_depth=2))
+    frontier = resp.affordability_frontier
+    front_mqs = [e.cost_vector.material_quantity for e in frontier]
+    assert frontier and all(m is not None for m in front_mqs)  # the axis is POPULATED on the frontier (non-vacuous)
+    assert max(front_mqs) < mqs[-1]  # the heaviest-material route was dominated OFF -- the quantity axis ranked it out

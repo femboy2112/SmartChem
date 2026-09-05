@@ -211,7 +211,9 @@ def pareto_frontier(items: "list") -> "list":
 _ACCESS_ORDINAL = {"grocery": 0, "pharmacy": 1, "hardware": 2, "pool_garden": 3}
 
 
-def basket_cost_vector(commodity_molecules: "list", *, hard_blockers: tuple[str, ...] = ()) -> CostVector:
+def basket_cost_vector(
+    commodity_molecules: "list", *, material_quantity: "float | None" = None, hard_blockers: tuple[str, ...] = (),
+) -> CostVector:
     """Aggregate the commodity leaves a route/basket buys (each a :class:`~smartchem.category.Molecule`) into ONE
     section-10.4 vector -- the shape the route-level frontier will build from a route's terminal reagents.
 
@@ -270,10 +272,16 @@ def basket_cost_vector(commodity_molecules: "list", *, hard_blockers: tuple[str,
 
     access_difficulty = worst_access if all_known_commodity else None
     has_cash = cash is not None or cash_floor is not None
+    # TERM-MAT / quantity axis: ``material_quantity`` (optional) is the route's total external-leaf MOLES per unit of
+    # final product (a conserved 100%-efficiency LOWER BOUND from ``dag_shopping_requirement``), a stoichiometric
+    # material-burden weight the per-unit cash axis is blind to.  It is deliberately a MOL count, NOT a mass or a
+    # cash weight -- quantity-weighted CASH needs a molar-mass + price-unit-conversion layer this code does not have
+    # (and treats as opaque; a named follow-on), so a mol axis is the honest scope, never a fabricated weighted total.
     return CostVector(
         cash=cash,
         cash_floor=cash_floor,
         access_difficulty=access_difficulty,
+        material_quantity=material_quantity,
         hard_blockers=tuple(hard_blockers),
         currency=currency if has_cash else "",
         unit=unit if has_cash else "",

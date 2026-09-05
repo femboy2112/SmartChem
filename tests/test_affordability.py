@@ -289,3 +289,25 @@ def test_a_floor_only_vector_carries_frontier_signal():
     assert not floor_only.known_axes()            # a floor is not a "known" point axis...
     assert floor_only.cash_floor == 25.0          # ...but it is real signal
     assert not CostVector().has_cost_signal()     # a truly blank vector carries none
+
+
+# ---- COST-VEC-01 quantity/stoich axis: material_quantity (mol external per mol product) ----
+
+def test_basket_cost_vector_accepts_an_optional_material_quantity():
+    # additive keyword: existing positional callers are unchanged (material_quantity defaults None); when supplied it
+    # populates the material_quantity axis (the route's total external-leaf moles per mol product).
+    v = basket_cost_vector([_mol("sodium chloride")], material_quantity=2.5)
+    assert v.material_quantity == 2.5
+    assert basket_cost_vector([_mol("sodium chloride")]).material_quantity is None  # default: UNKNOWN
+
+
+def test_material_quantity_enters_dominance_as_a_minimized_axis():
+    # the quantity axis is a real §10.4 minimized axis: a route needing LESS external material (same everything else)
+    # dominates a heavier one -- the discrimination the per-unit cash axis is blind to.
+    lean = CostVector(access_difficulty=2, material_quantity=2.0)
+    heavy = CostVector(access_difficulty=2, material_quantity=3.0)
+    assert dominates(lean, heavy)
+    assert not dominates(heavy, lean)
+    # UNKNOWN material_quantity stays incomparable on that axis (never over-ranked)
+    unknown = CostVector(access_difficulty=2)
+    assert not dominates(lean, unknown) and not dominates(unknown, lean)  # tie on access, material incomparable

@@ -125,7 +125,9 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha4"
 # reproducible.  EXCLUDED from result_digest (a fetch time is provenance, not a search result).
 # v1alpha7 (COST-VEC-01-coupled): the affordability_frontier's flattened CostVector gains a ``cash_floor`` axis (an
 # honest partial-basket lower bound), so the response value shape changed.
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha7"
+# v1alpha8 (COST-VEC-01 quantity axis): the frontier's ``material_quantity`` axis is now POPULATED (routes mode) with
+# each route's total external-leaf MOLES per mol product -- a previously-always-null field now carries a value.
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha8"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
@@ -1304,13 +1306,45 @@ def _ranked_summaries(
     return tuple(RankedRouteSummary.of_fit(f) for f in fits)
 
 
+def _route_material_quantity(route: "object") -> "float | None":
+    """The route's TOTAL external-leaf MOLES per 1 mol of final product (COST-VEC-01 quantity/stoich axis).
+
+    A conserved 100%-efficiency LOWER BOUND from ``dag_shopping_requirement`` (by-products credited), summed across
+    the external species -- a stoichiometric material-burden weight the per-unit cash axis is blind to.  ``None`` (an
+    honest UNKNOWN, never a fabricated allocation) for the EXPECTED structural-refusal domains: shopping is
+    UNDERDETERMINED (a coupled multi-net-producer fan-out -> ``ShoppingUnderdeterminedError``), the steps do not form a
+    valid DAG (``DAGError`` -- duplicate target / cycle / no single sink), or a DEGENERATE step has no net species
+    (``CeilingError`` -- e.g. an identity/spectator-only rewrite, so there is no material requirement to compute).
+    Only those expected fault domains are caught -- an unexpected fault propagates (an internal bug is never laundered
+    into a scientific "unknown"; the ERR-EVIDENCE-01 discipline).  It is deliberately a MOL count, NOT a mass or a
+    quantity-weighted cash: quantity-weighted cash needs a molar-mass + price-unit-conversion layer this code does not
+    have (a named follow-on)."""
+    steps = getattr(route, "steps", None)
+    if not steps:
+        return None
+    from fractions import Fraction
+
+    from .experiment.ceiling import CeilingError
+    from .experiment.dag import DAGError, SynthesisDAG, dag_shopping_requirement
+    try:
+        req = dag_shopping_requirement(SynthesisDAG.of(*steps), Fraction(1))
+    except (DAGError, CeilingError):
+        # DAGError covers ShoppingUnderdeterminedError (the coupled refusal) AND the DAG-construction guards; CeilingError
+        # (a SIBLING of DAGError, NOT a subclass -- red-team fold) covers a degenerate no-net-species step.  All are
+        # honest UNKNOWN cases; without catching CeilingError a degenerate-but-valid-DAG route crashes the whole response.
+        return None
+    return float(sum(amount for _m, amount in req.requirements))
+
+
 def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
     """The section-10.4 Pareto affordability frontier over the ranked routes (COST-VEC-01 live wiring).
 
-    For each ranked route, price its commodity leaf inputs into a CostVector (``basket_cost_vector``) and wrap it in
-    an ``AffordabilityFrontierEntry`` keyed by the SAME ``route_digest`` the ranked summary carries, so a consumer
-    links a frontier entry back to its ranked route.  A route EXCLUDED by a hard section-11 bound carries its
-    exclusions as ``hard_blockers`` so it is G6-dominated (a hard blocker dominates cost) by any in-bound route.
+    For each ranked route, price its commodity leaf inputs into a CostVector (``basket_cost_vector``) -- plus its
+    stoichiometric ``material_quantity`` (total external-leaf moles per mol product, a conserved lower bound via
+    ``_route_material_quantity``; None when the route's shopping is underdetermined) -- and wrap it in an
+    ``AffordabilityFrontierEntry`` keyed by the SAME ``route_digest`` the ranked summary carries, so a consumer links a
+    frontier entry back to its ranked route.  A route EXCLUDED by a hard section-11 bound carries its exclusions as
+    ``hard_blockers`` so it is G6-dominated (a hard blocker dominates cost) by any in-bound route.
 
     The SIGNAL GATE (honest emptiness): run dominance FIRST, then return the Pareto set only if at least one
     SURVIVING entry carries affordability SIGNAL -- a known cost axis OR a hard blocker.  Gating the survivors (not
@@ -1331,7 +1365,9 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
         if route is None:
             continue  # a ranked summary with no matching route object (should not happen) contributes nothing
         hard = tuple(summary.exclusions) if summary.fit_status == "EXCLUDED" else ()
-        vector = basket_cost_vector(list(route.leaf_inputs), hard_blockers=hard)
+        vector = basket_cost_vector(
+            list(route.leaf_inputs), material_quantity=_route_material_quantity(route), hard_blockers=hard,
+        )
         entries.append(AffordabilityFrontierEntry.of(summary.route_digest, vector))
     # Run dominance FIRST, then gate on the SURVIVORS.  The signal must be checked on the POST-dominance frontier,
     # not on all entries: G6 can strip the only signal-bearing entry (a hard-blocked route dominated by a clean one),

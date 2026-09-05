@@ -5,6 +5,7 @@
         "access_difficulty": 2,
         "analytical": null,
         "cash": null,
+        "cash_floor": null,
         "currency": "",
         "energy": null,
         "evidence_tier_rank": null,
@@ -18,13 +19,14 @@
         "waste_disposal": null
       },
       "route_digest": "e709e4a706d5c8280479835d6fa258ee6ef416905798bc2bcd4263197059eacb",
-      "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha1"
+      "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha2"
     },
     {
       "cost_vector": {
         "access_difficulty": 2,
         "analytical": null,
         "cash": null,
+        "cash_floor": null,
         "currency": "",
         "energy": null,
         "evidence_tier_rank": null,
@@ -38,7 +40,7 @@
         "waste_disposal": null
       },
       "route_digest": "ac6ec5cf43a1776e04e89f9e6335abad9e5628ad05ac51f999a0f861e998c5c2",
-      "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha1"
+      "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha2"
     }
   ],
   "compilation_ir": {
@@ -245,7 +247,7 @@
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
   "result_digest": "bf06bc815ef43255ea5454f7c744fb219f35d7bd94e033bbbae4e552ce1828d4",
-  "schema_version": "smartchem.service/compilation-response-v1alpha6",
+  "schema_version": "smartchem.service/compilation-response-v1alpha7",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

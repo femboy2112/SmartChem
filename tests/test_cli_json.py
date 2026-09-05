@@ -59,13 +59,14 @@ class TestSchemaDescriptor:
 
     def test_descriptor_is_versioned(self):
         schema = response_schema()
-        # v1alpha8: SNAPSHOT-13.2 added the provider_snapshots field, and the per-value response schema bumped to
-        # v1alpha6.  (v1alpha7: COST-VEC-01's affordability_frontier shape, response v1alpha5; v1alpha6: SRCH-NO-01's
+        # v1alpha9: COST-VEC-01-coupled added the affordability_frontier cost_vector's cash_floor axis, and the
+        # per-value response schema bumped to v1alpha7.  (v1alpha8: SNAPSHOT-13.2's provider_snapshots field, response
+        # v1alpha6; v1alpha7: COST-VEC-01's affordability_frontier shape, response v1alpha5; v1alpha6: SRCH-NO-01's
         # section-8.3 search_space_status field, response v1alpha4; v1alpha5: CLI-CAN-02 brick 2's
         # ranked_route_dossiers shape; v1alpha4: the request schema bumped for ConstraintPolicy's PhysicalBounds box;
         # v1alpha3: SVC-REQ-01's parse_receipt_summary + normalized_identity; v1alpha2 IR-LOSS-01.)
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha8"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha6"
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha9"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha7"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the

@@ -134,10 +134,17 @@ def test_dominance_is_a_sound_strict_partial_order():
     import random
 
     rng = random.Random(1234)
-    axes = ["cash", "access_difficulty", "evidence_tier_rank", "new_equipment", "material_quantity"]
+    axes = ["access_difficulty", "evidence_tier_rank", "new_equipment", "material_quantity"]
 
     def rand_vec() -> CostVector:
         kw: dict = {a: float(rng.randint(0, 3)) for a in axes if rng.random() < 0.5}
+        # the cash axis is INTERVAL-valued (COST-VEC-01-coupled): exercise all three states -- a known cash, an honest
+        # floor [F, +inf), and entirely UNKNOWN -- so the necessary-dominance interval logic is under the proof too.
+        r = rng.random()
+        if r < 0.4:
+            kw["cash"] = float(rng.randint(0, 3))
+        elif r < 0.7:
+            kw["cash_floor"] = float(rng.randint(0, 3))
         if rng.random() < 0.3:
             kw["hard_blockers"] = ("blk",)
         return CostVector(**kw)
@@ -165,19 +172,25 @@ def test_basket_sums_real_prices_and_takes_the_worst_access():
     assert v.access_difficulty == 0  # both grocery -> worst is still grocery(0)
 
 
-def test_one_unpriced_leaf_drops_basket_cash_to_unknown():
+def test_a_partially_priced_basket_reports_an_honest_cash_floor_not_bare_unknown():
+    # COST-VEC-01-coupled: the exact total is UNKNOWN (ethanol unpriced) but the priced leaf proves a LOWER BOUND --
+    # you need at least the salt, so the basket costs AT LEAST its price.  Report that honest floor, never a fabricated
+    # total and never a blind UNKNOWN that throws the real signal away.
     salt, ethanol = _mol("sodium chloride"), _mol("ethanol")  # ethanol is a commodity but unpriced (2a)
     v = basket_cost_vector([salt, ethanol])
-    assert v.cash is None                    # fail-SAFE: not the salt price alone, not a fabricated total
+    assert v.cash is None                    # exact total still UNKNOWN -- never a fabricated full basket cost
+    assert v.cash_floor == pytest.approx(52.95)   # the honest lower bound: at least the priced salt
+    assert v.currency == "USD" and v.unit == "metric ton"  # the floor is labelled in its currency
     assert v.access_difficulty == 0          # both are known grocery commodities -> access still known
 
 
-def test_a_non_commodity_leaf_drops_access_to_unknown():
+def test_a_non_commodity_leaf_drops_access_to_unknown_but_keeps_the_priced_floor():
     from smartchem.smiles import parse_smiles
     salt = _mol("sodium chloride")
     v = basket_cost_vector([salt, parse_smiles("CCCCCCCCO")])  # octan-1-ol: not a commodity
     assert v.access_difficulty is None       # cannot assume an unknown material is easy to obtain
-    assert v.cash is None                    # the octanol leaf is unpriced -> basket cash UNKNOWN
+    assert v.cash is None                    # the octanol leaf is unpriced -> exact basket cash UNKNOWN
+    assert v.cash_floor == pytest.approx(52.95)   # but the priced salt still floors the basket cost honestly
 
 
 def test_empty_basket_is_unknown_not_free():
@@ -219,7 +232,8 @@ def test_incommensurable_units_drop_basket_cash_to_unknown(monkeypatch):
     monkeypatch.setattr(commodity_pricing, "cost_observation_for",
                         lambda mol: usd_ton if mol is salt else eur_kg)
     v = basket_cost_vector([salt, soda])
-    assert v.cash is None and v.currency == "" and v.unit == ""  # incommensurable -> UNKNOWN, labels blanked
+    # incommensurable -> neither an exact cash NOR a floor (you cannot sum across currencies honestly), labels blanked
+    assert v.cash is None and v.cash_floor is None and v.currency == "" and v.unit == ""
 
 
 def test_hard_blocker_rule_precedes_the_unknown_rule():
@@ -231,3 +245,47 @@ def test_hard_blocker_rule_precedes_the_unknown_rule():
     assert dominates(clean_all_unknown, blocked)
     assert not dominates(blocked, clean_all_unknown)
     assert not dominates(CostVector(), CostVector())  # equal blocked-status all-unknowns: mutually non-dominating
+
+
+# ---- COST-VEC-01-coupled: the honest cash floor (interval-valued cash axis) ----
+
+def test_cash_floor_and_cash_are_mutually_exclusive():
+    # a KNOWN cash carries no separate floor -- the two together is a contradiction, refused.
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        CostVector(cash=10.0, cash_floor=5.0)
+
+
+def test_cash_floor_rejects_a_negative_lower_bound():
+    # a floor is a lower bound on a sum of non-negative prices; a negative "floor" is meaningless, refused.
+    with pytest.raises(ValueError, match="cannot be negative"):
+        CostVector(cash_floor=-1.0)
+
+
+def test_a_known_cash_below_a_floor_dominates_the_floored_vector():
+    # necessary dominance on the cash interval: known 5 vs floor [10, +inf) -> 5 < 10 <= true, so the known-cheap
+    # vector is necessarily cheaper and dominates.  This is the whole point of the floor entering dominance.
+    known_cheap = CostVector(cash=5.0, access_difficulty=0)
+    floored_dear = CostVector(cash_floor=10.0, access_difficulty=0)
+    assert dominates(known_cheap, floored_dear)
+    assert not dominates(floored_dear, known_cheap)
+
+
+def test_a_floor_cannot_dominate_a_known_cost_or_another_floor():
+    # a floor's interval is [F, +inf): its MAX possible cost is unbounded, so it can never be "necessarily no worse"
+    # -- a floor never dominates on cash (only ever gets dominated by a known cost below it).
+    floor_low = CostVector(cash_floor=1.0, access_difficulty=0)
+    known_high = CostVector(cash=100.0, access_difficulty=0)
+    assert not dominates(floor_low, known_high)   # true cost could exceed 100 -> cannot claim no-worse
+    floor_high = CostVector(cash_floor=50.0, access_difficulty=0)
+    assert not dominates(floor_low, floor_high)   # two floors: both upper-unbounded -> incomparable on cash
+    assert not dominates(floor_high, floor_low)
+
+
+def test_a_floor_only_vector_carries_frontier_signal():
+    # a route whose cash is only bounded BELOW still carries real affordability signal -- it must NOT be gated off as
+    # a blank vector (the service signal-gate uses has_cost_signal, which counts a floor).
+    floor_only = CostVector(cash_floor=25.0)
+    assert floor_only.has_cost_signal()
+    assert not floor_only.known_axes()            # a floor is not a "known" point axis...
+    assert floor_only.cash_floor == 25.0          # ...but it is real signal
+    assert not CostVector().has_cost_signal()     # a truly blank vector carries none

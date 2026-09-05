@@ -123,15 +123,18 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha4"
 # v1alpha6 (SNAPSHOT-13.2): the response gains a ``provider_snapshots`` field -- the dated section-13.2 provenance of
 # any LIVE provider fetch that serviced the request (empty on an offline/default run), so a --network response is
 # reproducible.  EXCLUDED from result_digest (a fetch time is provenance, not a search result).
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha6"
+# v1alpha7 (COST-VEC-01-coupled): the affordability_frontier's flattened CostVector gains a ``cash_floor`` axis (an
+# honest partial-basket lower bound), so the response value shape changed.
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha7"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
-# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha8: the
-# provider_snapshots field (SNAPSHOT-13.2).  v1alpha7: the affordability_frontier element shape (COST-VEC-01).
-# v1alpha6: the search_space_status section-8.3 field (SRCH-NO-01).  v1alpha5: the ranked_route_dossiers element
-# shape (CLI-CAN-02 brick 2).  (v1alpha4: the request schema bumped for ConstraintPolicy.bounds; v1alpha3: the
-# parse_receipt_summary response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's identity_losses.)
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha8"
+# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
+# affordability_frontier cost_vector gains cash_floor (COST-VEC-01-coupled).  v1alpha8: the provider_snapshots field
+# (SNAPSHOT-13.2).  v1alpha7: the affordability_frontier element shape (COST-VEC-01).  v1alpha6: the
+# search_space_status section-8.3 field (SRCH-NO-01).  v1alpha5: the ranked_route_dossiers element shape (CLI-CAN-02
+# brick 2).  (v1alpha4: the request schema bumped for ConstraintPolicy.bounds; v1alpha3: the parse_receipt_summary
+# response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's identity_losses.)
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha9"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -1336,7 +1339,7 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
     # honest-emptiness rule forbids.  Gating the survivors returns () in that case (no affordability info survived),
     # never a blank-vector list (red-team fold).
     frontier = pareto_frontier(entries)
-    if not any(e.cost_vector.known_axes() or e.cost_vector.is_hard_blocked for e in frontier):
+    if not any(e.cost_vector.has_cost_signal() for e in frontier):
         return ()
     return tuple(frontier)
 
@@ -1764,6 +1767,7 @@ def affordability_entry_to_payload(entry) -> dict:
         "route_digest": entry.route_digest,
         "cost_vector": {
             "cash": v.cash,
+            "cash_floor": v.cash_floor,
             "access_difficulty": v.access_difficulty,
             "evidence_tier_rank": v.evidence_tier_rank,
             "new_equipment": v.new_equipment,
@@ -1791,6 +1795,7 @@ def affordability_entry_from_payload(payload: dict):
         payload["route_digest"],
         CostVector(
             cash=cv["cash"],
+            cash_floor=cv["cash_floor"],
             access_difficulty=cv["access_difficulty"],
             evidence_tier_rank=cv["evidence_tier_rank"],
             new_equipment=cv["new_equipment"],
@@ -1994,8 +1999,9 @@ def response_schema() -> dict:
             "route_digest": "str (sha256; == the matching ranked_route_dossiers.route_digest)",
             "cost_vector": "object(cost-vector): 10 minimized section-10.4 axes (cash/access_difficulty/"
                            "evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/"
-                           "analytical/waste_disposal), each number|null (UNKNOWN); hard_blockers array[str]; "
-                           "currency/unit/region str (labels only, never enter dominance)",
+                           "analytical/waste_disposal), each number|null (UNKNOWN); cash_floor number|null (an honest "
+                           "partial-basket LOWER BOUND when the exact cash is UNKNOWN, mutually exclusive with cash -- "
+                           "COST-VEC-01-coupled); hard_blockers array[str]; currency/unit/region str (labels only)",
         },
         "provider_snapshot_fields": {
             "schema_version": "str",

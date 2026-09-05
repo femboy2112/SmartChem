@@ -1,6 +1,6 @@
 {
   "affordability_frontier_entry_fields": {
-    "cost_vector": "object(cost-vector): 10 minimized section-10.4 axes (cash/access_difficulty/evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/analytical/waste_disposal), each number|null (UNKNOWN); hard_blockers array[str]; currency/unit/region str (labels only, never enter dominance)",
+    "cost_vector": "object(cost-vector): 10 minimized section-10.4 axes (cash/access_difficulty/evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/analytical/waste_disposal), each number|null (UNKNOWN); cash_floor number|null (an honest partial-basket LOWER BOUND when the exact cash is UNKNOWN, mutually exclusive with cash -- COST-VEC-01-coupled); hard_blockers array[str]; currency/unit/region str (labels only)",
     "route_digest": "str (sha256; == the matching ranked_route_dossiers.route_digest)",
     "schema_version": "str"
   },
@@ -33,7 +33,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha8",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha9",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -81,7 +81,7 @@
     "search_space_status": "str|null (section 8.3 no-route matrix: NO_ROUTE_IN_DECLARED_SPACE/INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; null when no route search ran)",
     "standard_status": "str|null (section 8.2 status)"
   },
-  "response_schema_version": "smartchem.service/compilation-response-v1alpha6",
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha7",
   "search_receipt_view_fields": {
     "candidate_enumeration_complete": "bool",
     "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",

@@ -143,15 +143,25 @@ def resolve_thermo(
                 if pc is not None:
                     dhf, s, phase = to_condensed(dhf, s, pc)
                     grade = "PREDICTED"  # a gas estimate + a sourced phase correction is a two-step estimate
-                    # the gas band is kept but the Δsub/Δvap correction carries no sourced sigma, so the condensed ±
-                    # is UNDERSTATED -- mark it a lower bound so a σ-propagating consumer forwards the caveat (the
-                    # red-team's HIGH: a phase correction drives phase_mixed False, so the reaction-level flag alone
-                    # would miss this and report a tight σ over an understated one).
-                    sigma_lb = True
-                    prov = (
-                        f"{prov}; corrected GAS->{phase} via {pc.transition.value} ({pc.provenance}); "
-                        f"the ± is a LOWER BOUND (the phase-change correction carries no sourced sigma)"
+                    # PHASE-CHANGE-SIGMA: propagate the condensed ± PER LEG in quadrature.  A leg whose phase-change
+                    # correction carries a SOURCED ± (ΔH for ΔfH°, ΔS for S°) becomes a proper quadrature of the gas
+                    # band and that ± -- no longer understated.  A leg whose correction ± is None keeps the gas band,
+                    # so THAT leg stays a LOWER BOUND.  The record's lower-bound flag lifts ONLY when BOTH legs are
+                    # sourced; else it stays True (the red-team's HIGH: a phase correction drives phase_mixed False, so
+                    # the reaction-level flag alone would miss an understated leg).
+                    dh_sourced = pc.uncertainty_dh_kj_per_mol is not None and unc_dhf is not None
+                    ds_sourced = pc.uncertainty_ds_j_per_mol_k is not None and unc_s is not None
+                    if dh_sourced:
+                        unc_dhf = math.sqrt(unc_dhf ** 2 + pc.uncertainty_dh_kj_per_mol ** 2)
+                    if ds_sourced:
+                        unc_s = math.sqrt(unc_s ** 2 + pc.uncertainty_ds_j_per_mol_k ** 2)
+                    sigma_lb = not (dh_sourced and ds_sourced)
+                    caveat = (
+                        f"the condensed ± is the quadrature of the gas band and the sourced ΔH/ΔS ± ({pc.provenance})"
+                        if not sigma_lb else
+                        "the ± is a LOWER BOUND (the phase-change correction ± is not fully sourced)"
                     )
+                    prov = f"{prov}; corrected GAS->{phase} via {pc.transition.value} ({pc.provenance}); {caveat}"
             return ThermoRef(
                 _formula_str(molecule), _label(molecule), dhf, s, phase, prov, grade=grade,
                 uncertainty_dhf_kj=unc_dhf, uncertainty_s_j_per_mol_k=unc_s, sigma_is_lower_bound=sigma_lb,

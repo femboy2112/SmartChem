@@ -128,6 +128,39 @@ def test_a_lone_phase_corrected_derived_species_still_flags_lower_bound():
     assert "LOWER BOUND" in f.reason
 
 
+def test_phase_change_enthalpy_sigma_narrows_the_condensed_enthalpy_leg():
+    """PHASE-CHANGE-SIGMA: ethanol's vaporization ref carries a SOURCED ΔvapH ± (0.4), so resolve_thermo makes the
+    condensed ΔfH° ± the quadrature of the gas band and that ± -- strictly larger than the bare gas band, no longer
+    understating the enthalpy leg. Its ΔvapS ± is None, so the S° leg keeps the gas band and the record stays flagged
+    lower-bound overall (honest: one leg is still understated)."""
+    gas = resolve_thermo(ETHANOL, condensed=False)
+    cond = resolve_thermo(ETHANOL, condensed=True)  # ethanol has a vaporization ref carrying ΔvapH ± 0.4
+    assert cond.uncertainty_dhf_kj == math.sqrt(gas.uncertainty_dhf_kj ** 2 + 0.4 ** 2)  # enthalpy leg quadratured
+    assert cond.uncertainty_dhf_kj > gas.uncertainty_dhf_kj                              # strictly larger -> ± is sourced
+    # honest: the effect is SMALL -- the ±0.4 is ~25x below the dominating group-additivity band (~9.8), so the
+    # narrowing is ~0.008 kJ/mol.  The mechanism is correct and ready; the payoff scales with tighter gas-band data.
+    assert cond.uncertainty_dhf_kj - gas.uncertainty_dhf_kj < 0.05
+    assert cond.uncertainty_s_j_per_mol_k == gas.uncertainty_s_j_per_mol_k              # S° leg unchanged (ΔvapS ± None)
+    assert cond.sigma_is_lower_bound is True                                            # entropy leg still understated
+
+
+def test_a_fully_sourced_phase_change_sigma_lifts_the_lower_bound():
+    """The lift mechanism: when a phase-change ref carries BOTH a sourced ΔH ± and a sourced ΔS ±, the condensed σ is a
+    proper quadrature on both legs and the lower-bound caveat LIFTS. Demonstrated with an injected both-± ethanol
+    vaporization ref -- the default seed's ΔvapS ± is None (the named THERMO-PHASE-ENTROPY-SIGMA follow-on, ΔS ± being
+    not cleanly reported by free sources), so the caveat correctly stands on the default data."""
+    from smartchem.data.phase_change import DEFAULT_PHASE_CHANGE, PhaseChangeRef, PhaseTransition
+    gas = resolve_thermo(ETHANOL, condensed=False)
+    tbl = DEFAULT_PHASE_CHANGE.with_records(
+        PhaseChangeRef("C2H6O", "ethanol", PhaseTransition.VAPORIZATION, 42.3, 120.70,
+                       "injected both-± vaporization", uncertainty_dh_kj_per_mol=0.4, uncertainty_ds_j_per_mol_k=1.0),
+    )
+    cond = resolve_thermo(ETHANOL, condensed=True, phase_change=tbl)
+    assert cond.sigma_is_lower_bound is False  # BOTH legs sourced -> the caveat lifts
+    assert cond.uncertainty_dhf_kj == math.sqrt(gas.uncertainty_dhf_kj ** 2 + 0.4 ** 2)
+    assert cond.uncertainty_s_j_per_mol_k == math.sqrt(gas.uncertainty_s_j_per_mol_k ** 2 + 1.0 ** 2)
+
+
 def test_nonphysical_negative_temperature_yields_unknown_not_negative_sigma():
     """The red-team's F3: σ(log10 K) is linear in 1/T, so a nonphysical T < 0 would flip it NEGATIVE -- a nonsense
     uncertainty. Guarded to UNKNOWN instead."""

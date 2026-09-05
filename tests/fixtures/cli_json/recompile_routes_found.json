@@ -91,6 +91,7 @@
   "outcome": "ROUTES_FOUND",
   "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C3H6O2 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested",
   "process_selection_status": "NOT_REQUESTED",
+  "producer_signature": null,
   "provider_snapshots": [],
   "ranked_route_dossiers": [
     {
@@ -245,7 +246,7 @@
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
   "result_digest": "d01d42406672338938fca6de57d332e90dc3653d299e5b624bd53c5cc7754653",
-  "schema_version": "smartchem.service/compilation-response-v1alpha10",
+  "schema_version": "smartchem.service/compilation-response-v1alpha11",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

@@ -68,8 +68,10 @@ class TestSchemaDescriptor:
         # v1alpha3: SVC-REQ-01's parse_receipt_summary + normalized_identity; v1alpha2 IR-LOSS-01.)
         # Process constraints add request fields and explicit admission output.  v1alpha11 (descriptor) / v1alpha10
         # (response): PROCESS-ADMIT-01 adds per-step process_requirements to each ranked route (re-derived on load).
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha11"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha10"
+        # v1alpha12 (descriptor) / v1alpha11 (response): COMBINED-VERDICT-AUTH adds the top-level producer_signature
+        # field (an optional HMAC over result_digest; null unless signed).
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha12"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha11"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the

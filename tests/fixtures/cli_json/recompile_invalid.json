@@ -9,6 +9,7 @@
   "outcome": "INVALID_INPUT",
   "parse_receipt_summary": null,
   "process_selection_status": "NOT_REQUESTED",
+  "producer_signature": null,
   "provider_snapshots": [],
   "ranked_route_dossiers": [],
   "request": {
@@ -127,7 +128,7 @@
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
   "result_digest": "8bad7e941d34fe3821948b84b465cd2c113eac3fc94b2931abaa793afd0e78a0",
-  "schema_version": "smartchem.service/compilation-response-v1alpha10",
+  "schema_version": "smartchem.service/compilation-response-v1alpha11",
   "search_space_status": null,
   "standard_status": "REFUSED_INVALID_REQUEST"
 }

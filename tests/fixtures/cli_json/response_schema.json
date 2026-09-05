@@ -33,7 +33,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha11",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha12",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -76,6 +76,7 @@
     "outcome": "enum(ResponseOutcome)",
     "parse_receipt_summary": "str|null (section 14.2 identity-resolution receipt; provenance)",
     "process_selection_status": "enum(NOT_REQUESTED/NOT_REQUIRED/UNASSESSED/NO_FIT_FOUND/FITS_FOUND)",
+    "producer_signature": "str|null (optional HMAC-SHA256 over result_digest; null unless signed; COMBINED-VERDICT-AUTH out-of-band-tamper close)",
     "provider_snapshots": "array[object(provider-snapshot)] (section-13.2 dated provenance of any LIVE provider fetch; SNAPSHOT-13.2. Empty on an offline/default run)",
     "ranked_route_dossiers": "array[object(ranked-route-summary)] (section-11 fit, best-first; CLI-CAN-02)",
     "request": "object(compilation-request-v1alpha5)",
@@ -84,7 +85,7 @@
     "search_space_status": "str|null (section 8.3 no-route matrix: NO_ROUTE_IN_DECLARED_SPACE/INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; null when no route search ran)",
     "standard_status": "str|null (section 8.2 status)"
   },
-  "response_schema_version": "smartchem.service/compilation-response-v1alpha10",
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha11",
   "search_receipt_view_fields": {
     "candidate_enumeration_complete": "bool",
     "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",

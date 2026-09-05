@@ -32,7 +32,10 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
+
+if TYPE_CHECKING:
+    from ..process_constraints import ProcessBounds, ProcessFit
 
 from ..category import Molecule
 from ..contracts import Digestible, canonical_digest
@@ -59,6 +62,7 @@ __all__ = [
     "dag_ceiling",
     "dag_shopping_requirement",
     "dag_composability",
+    "dag_process_fit",
     "verify_dag",
 ]
 
@@ -732,6 +736,33 @@ def dag_composability(dag: SynthesisDAG, *, stability: StabilityTable = DEFAULT_
         for i, j, intermediate in dag.edges
     )
     return DAGComposability(dag, transitions)
+
+
+def dag_process_fit(dag: "SynthesisDAG", bounds: "ProcessBounds") -> "ProcessFit":
+    """Conservative process admission for a convergent DAG (closes the DAG-mode process UNASSESSED gap).
+
+    Reuses the LINEAR route-total gate (:func:`~smartchem.process_constraints.evaluate_process_requirements`) over a
+    topological flattening of the DAG.  Sound-and-conservative, with an axis-dependent boundary that the CALLER must
+    respect when reporting:
+
+    * The order-agnostic per-step checks (attention / agitation / check-interval / equipment / workup / whole-process
+      heat & pressure extrema) are EXACTLY correct on a DAG -- a step's requirement does not care what ran alongside
+      it -- so a FITS is sound and a non-time EXCLUSION is sound.
+    * The route-total elapsed / active SUMS treat every branch as if it ran SERIALLY.  That never yields a false FITS
+      (serial time is an upper bound on wall-clock), but a TIME-based EXCLUSION can be OVER-conservative: a genuinely
+      convergent bench whose branches overlap might fit a budget the serial sum exceeds.  A correct (non-conservative)
+      elapsed gate needs critical-path propagation over ``dag.edges`` -- a deliberate, unmade design fork, not wired here.
+
+    So: FITS is definite; EXCLUDED is definite ONLY when its reasons are non-time; a time-driven EXCLUDED/UNKNOWN is a
+    conservative lower bound on admission, never a formal refusal.  This function returns the raw conservative verdict;
+    callers that surface it MUST label it as such and MUST NOT promote a DAG to formal admission on its basis.
+    """
+    from ..process_constraints import evaluate_process_requirements
+    if type(dag) is not SynthesisDAG:
+        raise TypeError("dag must be a SynthesisDAG")
+    return evaluate_process_requirements(
+        tuple(step.envelope.process for step in dag.topological_order()), bounds
+    )
 
 
 # -- the bundled DAG verdict (E1 + M1 + M2 over the convergent structure) --------------------------------

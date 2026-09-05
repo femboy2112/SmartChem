@@ -45,9 +45,14 @@ INCHI/FORMULA targets into the digest (ID-PARSE-01).  Each open item is a named 
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import os
+import secrets
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 from .compilation_ir import (
     ChemicalCompilationIR,
@@ -99,6 +104,7 @@ __all__ = [
     "response_from_payload",
     "serialize_response",
     "deserialize_response",
+    "resolve_producer_key",
     "EXIT_SUCCESS",
     "EXIT_INVALID_INPUT",
     "EXIT_NO_ROUTE",
@@ -133,7 +139,9 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # each route's total external-leaf MOLES per mol product -- a previously-always-null field now carries a value.
 # v1alpha10 (PROCESS-ADMIT-01): each ranked_route_dossiers entry now carries its per-step ``process_requirements`` so
 # process admission is RE-DERIVED on load (the deserialization trust-boundary close), not trusted from ``fit_status``.
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha10"
+# v1alpha11 (COMBINED-VERDICT-AUTH): the payload carries a top-level ``producer_signature`` field (an optional HMAC over
+# ``result_digest``; ``null`` unless signed) so a consumer with the producer key can reject an out-of-band tamper.
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha11"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
@@ -143,7 +151,8 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha10"
 # brick 2).  (v1alpha4: the request schema bumped for ConstraintPolicy.bounds; v1alpha3: the parse_receipt_summary
 # response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's identity_losses.)  v1alpha11
 # (PROCESS-ADMIT-01): the ranked_route_summary gains a per-step ``process_requirements`` field (re-derived on load).
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha11"
+# v1alpha12 (COMBINED-VERDICT-AUTH): the response gains a top-level ``producer_signature`` field.
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha12"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -1450,6 +1459,30 @@ def constraint_note(bounds: PhysicalBounds, *, fit_counts: "tuple[int, int, int]
     )
 
 
+def _dag_process_note(dags: "tuple", process: "ProcessBounds") -> "str | None":
+    """A conservative, clearly-bounded process assessment for DAG-mode routes (item 5b).
+
+    DAG (convergent) routes are not LINEARLY ranked -- they get no RouteDossier and no formal admission -- so
+    ``process_selection_status`` stays ``UNASSESSED`` for a DAG-mode compile.  This diagnostic closes the *silent*
+    part of that gap: it reports what the conservative serial-flattening gate
+    (:func:`~smartchem.experiment.dag.dag_process_fit`) can HONESTLY say -- how many DAGs conservatively FIT, which is
+    sound because a route that fits even run serially certainly fits.  It deliberately reports ONLY that sound lower
+    bound: it never claims formal admission, and it never reports a time-based non-fit as definite (the serial sum
+    over-excludes a genuinely concurrent route -- see dag_process_fit's boundary).
+    """
+    from .experiment.dag import dag_process_fit
+    from .process_constraints import ProcessFitStatus
+    if not dags or not process.constrains_anything:
+        return None
+    fits = sum(1 for d in dags if dag_process_fit(d, process).status is ProcessFitStatus.FITS)
+    return (
+        f"section-11 process (DAG mode): {len(dags)} convergent route(s) conservatively assessed over a serial "
+        f"flattening -- {fits} would FIT even run serially (a SOUND lower bound on admission). NOT formal admission "
+        "(DAG routes are not yet ranked/admitted, so process_selection_status stays UNASSESSED); a time-based non-fit "
+        "may be over-conservative because concurrent branches are summed as if serial"
+    )
+
+
 def _ranked_summaries(
     routes: "tuple", bounds: PhysicalBounds, losses: "tuple",
     process: "ProcessBounds | None" = None,
@@ -1721,6 +1754,12 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     )
     if _note is not None:
         diagnostics = (*diagnostics, _note)
+    # item 5b: DAG mode ranks nothing linearly, but a convergent route's process fit CAN be conservatively assessed.
+    # Surface only the SOUND lower bound (how many DAGs fit even run serially); admission stays UNASSESSED.
+    if mode == "dags":
+        _dag_note = _dag_process_note(getattr(search_result, "dags", ()), request.constraints.process)
+        if _dag_note is not None:
+            diagnostics = (*diagnostics, _dag_note)
     # echo the identity resolution (ID-PARSE-01) as the FIRST-CLASS parse_receipt_summary, NOT a diagnostics line
     # (SVC-REQ-01 alias-collapse): both views still report how the target string was read, but it is provenance --
     # kept out of ``diagnostics`` so it never enters ``result_digest`` and the aliased spellings share a result.
@@ -2170,8 +2209,77 @@ def provider_snapshot_from_payload(payload: dict):
     )
 
 
-def response_to_payload(response: CompilationResponse) -> dict:
-    """A canonical JSON-ready dict for a response (CLI-JSON-01 leans on this)."""
+# -- COMBINED-VERDICT-AUTH: an optional producer signature over the response identity ----------------------------
+#
+# ``response_from_payload`` already RE-DERIVES process admission on load (PROCESS-ADMIT-01), but that binds only the
+# PROCESS axis, and every other self-declared field is trusted from a payload anyone can mint.  A producer signature
+# closes the OUT-OF-BAND tamper: the producer signs ``result_digest`` -- a content hash that transitively covers every
+# ranked route's ``fit_status``/``process_requirements``/``exclusions``/``gaps`` (see ``result_digest``) -- with a secret
+# key; a consumer holding the same key verifies it and REFUSES a payload whose bytes were altered without the key.
+#
+# HONEST SCOPE -- what a signature can and cannot do:
+#   * CLOSES: an attacker WITHOUT the key who edits a serialized response (relabel a route's ``fit_status`` to FITS, swap
+#     the admissible list, even coherently recompute ``result_digest``) -- the HMAC no longer matches, so verification
+#     with ``require_signature`` raises.  This is the transport/storage-tamper threat.
+#   * DOES NOT CLOSE: a controlling forger who runs code INSIDE the producing process (or holds the key) can always
+#     construct-then-sign a lie -- a signature proves "these bytes came from a key-holder, unmodified", NEVER "this
+#     verdict was honestly derived".  That residual (test_admission_residual_needs_a_signature_to_close) is not closable
+#     by ANY signature; it would need an independent re-derivation service the thin projection deliberately omits.
+#   * It is a SYMMETRIC, same-owner tag: it does not defend against an attacker who can read the key.
+#
+# Signing is strictly OPT-IN: with no key the payload is byte-identical to the unsigned form (``producer_signature`` is
+# ``null``), so every existing caller and golden fixture is unchanged.
+
+_PRODUCER_KEY_ENV = "SMARTCHEM_PRODUCER_KEY"
+_PRODUCER_KEY_PATH = Path.home() / ".smartchem" / "producer.key"
+_PRODUCER_KEY_MIN_BYTES = 16
+
+
+def resolve_producer_key(*, create: bool = False) -> bytes | None:
+    """The local producer key for signing/verifying responses, or ``None`` when unavailable.
+
+    Resolution order: the ``SMARTCHEM_PRODUCER_KEY`` env var (hex-encoded), then a ``~/.smartchem/producer.key``
+    keyfile (raw bytes).  With ``create=True`` a fresh 32-byte key is written to the keyfile (mode ``0600``) if none
+    exists -- the zero-config path for a same-machine producer/consumer.  Returns ``None`` for a missing key (never
+    raises), so an unsigned default stays the graceful, explicit fallback rather than a crash; it raises only for a
+    malformed env value, which is an operator error worth surfacing loudly.
+    """
+    env = os.environ.get(_PRODUCER_KEY_ENV)
+    if env:
+        try:
+            key = bytes.fromhex(env.strip())
+        except ValueError as exc:
+            raise ValueError(f"{_PRODUCER_KEY_ENV} must be hex-encoded") from exc
+        if len(key) < _PRODUCER_KEY_MIN_BYTES:
+            raise ValueError(f"{_PRODUCER_KEY_ENV} must decode to at least {_PRODUCER_KEY_MIN_BYTES} bytes")
+        return key
+    if _PRODUCER_KEY_PATH.exists():
+        return _PRODUCER_KEY_PATH.read_bytes()
+    if create:
+        _PRODUCER_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        key = secrets.token_bytes(32)
+        _PRODUCER_KEY_PATH.write_bytes(key)
+        _PRODUCER_KEY_PATH.chmod(0o600)
+        return key
+    return None
+
+
+def _sign_result_digest(result_digest: str, key: bytes) -> str:
+    """The producer signature: an HMAC-SHA256 over the response's ``result_digest`` (hex).
+
+    ``result_digest`` transitively covers every admission-bearing field, so signing it authenticates the whole
+    admissible verdict without carrying the heavy ExperimentRoute graph the thin projection omits.
+    """
+    return hmac.new(key, result_digest.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def response_to_payload(response: CompilationResponse, *, signing_key: bytes | None = None) -> dict:
+    """A canonical JSON-ready dict for a response (CLI-JSON-01 leans on this).
+
+    When ``signing_key`` is given, ``producer_signature`` carries an HMAC-SHA256 over ``result_digest``
+    (COMBINED-VERDICT-AUTH); with no key it is ``null`` and the payload is byte-identical to the unsigned form.
+    """
+    digest = response.result_digest
     return {
         "schema_version": response.schema_version,
         "request": request_to_payload(response.request),
@@ -2187,11 +2295,13 @@ def response_to_payload(response: CompilationResponse) -> dict:
         "ranked_route_dossiers": [ranked_summary_to_payload(r) for r in response.ranked_route_dossiers],
         "affordability_frontier": [affordability_entry_to_payload(e) for e in response.affordability_frontier],
         "provider_snapshots": [provider_snapshot_to_payload(s) for s in response.provider_snapshots],
-        "result_digest": response.result_digest,
+        "result_digest": digest,
+        "producer_signature": None if signing_key is None else _sign_result_digest(digest, signing_key),
     }
 
 
-def response_from_payload(payload: dict) -> CompilationResponse:
+def response_from_payload(payload: dict, *, verification_key: bytes | None = None,
+                          require_signature: bool = False) -> CompilationResponse:
     """Reconstruct a response from :func:`response_to_payload`; re-runs the coherence guard.
 
     Two layers now guard admission on load.  (1) The round-trip check below re-derives
@@ -2205,18 +2315,26 @@ def response_from_payload(payload: dict) -> CompilationResponse:
     PROCESS evidence cannot support it.  This closes the LOCKSTEP forgery ON THE PROCESS AXIS -- relabel a
     route that is process-``UNKNOWN``/``EXCLUDED`` to ``FITS`` and recompute the derived fields -- because
     the carried requirements still re-derive to the stricter PROCESS verdict.
-    RESIDUAL (two parts, both needing a producer signature to close):
+    RESIDUAL WITHOUT A SIGNATURE (two parts, both closed by COMBINED-VERDICT-AUTH's ``verification_key`` path below):
     (a) ``fit_status`` is the COMBINED verdict, and its OTHER two components -- composability and the
     physical/reagent/equipment box -- are NOT re-derived (they carry only free-text ``exclusions``/``gaps``,
     and re-deriving them needs the per-step physical conditions and the full ExperimentRoute graph the thin
     projection omits), so a route EXCLUDED for a NON-process reason can still be bare-relabeled to ``FITS``.
     (b) even on the process axis, the evidence is not cryptographically bound to the route STRUCTURE, so a
     fully controlling forger who ALSO fabricates coherent lenient ``process_requirements`` and recomputes
-    ``result_digest`` can still mint a FITS.  A deserialized response is authenticated on the process axis
-    only; full authentication is a producer signature over the payload (out of scope here).  Boundary pinned by
+    ``result_digest`` can still mint a FITS.
+    COMBINED-VERDICT-AUTH: pass a ``verification_key`` to check the payload's ``producer_signature`` (an HMAC over the
+    RECONSTRUCTED ``result_digest``); an OUT-OF-BAND tamper by an attacker WITHOUT the key -- including a coherent one
+    that recomputes ``result_digest`` -- is then refused, closing (a) and the keyless part of (b).  With
+    ``require_signature`` an unsigned payload is itself refused.  What NO signature can close (see the honest-scope
+    note above the signing helpers) is a controlling forger who runs code inside the producing process or holds the
+    key -- test_key_holding_forger_residual_is_not_closable_by_a_signature pins that irreducible residual.  With no key
+    the signature is not checked (an unsigned response stays producer-declared, as before).  Boundary pins:
     tests/test_process_service.py (test_deserialized_admission_is_re_derived_not_blindly_trusted +
-    test_non_process_axis_relabel_is_not_yet_authenticated).
+    test_non_process_axis_relabel_is_not_yet_authenticated + test_signed_response_rejects_out_of_band_tamper).
     """
+    if require_signature and verification_key is None:
+        raise ValueError("require_signature needs a verification_key")
     ir_payload = payload["compilation_ir"]
     response = CompilationResponse(
         payload["schema_version"],
@@ -2234,15 +2352,25 @@ def response_from_payload(payload: dict) -> CompilationResponse:
         expected = list(response.admissible_route_digests) if name == "admissible_route_digests" else getattr(response, name)
         if payload[name] != expected:
             raise ValueError(f"{name} does not match the reconstructed response")
+    if verification_key is not None:
+        signature = payload.get("producer_signature")
+        if signature is None:
+            if require_signature:
+                raise ValueError("producer_signature is required but the payload is unsigned")
+        elif not hmac.compare_digest(str(signature), _sign_result_digest(response.result_digest, verification_key)):
+            raise ValueError("producer_signature does not verify: the payload was tampered or signed by another key")
     return response
 
 
-def serialize_response(response: CompilationResponse) -> str:
-    return json.dumps(response_to_payload(response), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+def serialize_response(response: CompilationResponse, *, signing_key: bytes | None = None) -> str:
+    return json.dumps(response_to_payload(response, signing_key=signing_key), ensure_ascii=False,
+                      separators=(",", ":"), sort_keys=True)
 
 
-def deserialize_response(text: str) -> CompilationResponse:
-    return response_from_payload(json.loads(text))
+def deserialize_response(text: str, *, verification_key: bytes | None = None,
+                         require_signature: bool = False) -> CompilationResponse:
+    return response_from_payload(json.loads(text), verification_key=verification_key,
+                                 require_signature=require_signature)
 
 
 # -- the versioned JSON schema + the semantic-field projection (CLI-JSON-01) -------------------------------------
@@ -2282,6 +2410,8 @@ def response_schema() -> dict:
             "provider_snapshots": "array[object(provider-snapshot)] (section-13.2 dated provenance of any LIVE "
                                   "provider fetch; SNAPSHOT-13.2. Empty on an offline/default run)",
             "result_digest": "str (sha256)",
+            "producer_signature": "str|null (optional HMAC-SHA256 over result_digest; null unless signed; "
+                                  "COMBINED-VERDICT-AUTH out-of-band-tamper close)",
         },
         "compilation_ir_fields": {
             "schema_version": "str",

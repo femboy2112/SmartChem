@@ -73,6 +73,7 @@ __all__ = [
     "scission_edges",
     "capped_scissions",
     "heterolytic_scissions",
+    "heterolytic_formula_edges",
     "redox_couples",
     "redox_edges",
     "ionic_edges",
@@ -1326,6 +1327,68 @@ def heterolytic_scissions(molecule: Molecule) -> tuple[HeterolyticScission, ...]
                     continue  # a candidate outside the localized-charge model -> dropped, never faked
                 out.setdefault(edge.digest, edge)
     return tuple(sorted(out.values(), key=lambda e: e.digest))
+
+
+def heterolytic_formula_edges(
+    reactant: "Formula", *, budget: int = 50_000
+) -> "tuple[tuple[ChargedDecompositionEdge, ...], bool]":
+    """The FORMULA-layer heterolytic producer: every atom-multiset 2-partition of ``reactant`` under the
+    localized-charge model, as :class:`ChargedDecompositionEdge` s -- the composition analogue of
+    :func:`heterolytic_scissions` and the formula-side producer that closes the IR-COMMUTE **heterolytic** square
+    (the 4th and last transform family to gain a formula producer).
+
+    Where :func:`redox_edges` needs NO search (the oxidised formula is fully DETERMINED by the reactant atoms + ``n``,
+    so its square closes at ``==``), heterolysis DOES: the bond graph is forgotten, so *which atoms land on which ion*
+    is a partition SEARCH.  This producer therefore OVER-produces relative to the structure side -- it splits the atom
+    multiset every way, including partitions no order-1 bridge bond can realise (``H2O`` yields the ``H2 | O`` split a
+    real O-H cut never makes) -- so the forgetful square closes at ``⊆`` (like the bond-order and capped families),
+    NOT ``==``.  Charge is assigned under the SAME localized-charge model as :class:`HeterolyticScission`: one
+    fragment carries only the bond electron pair (``+/-1``), the reactant's pre-existing charge ``q`` localises on the
+    other -- the two pairs ``(q-1, 1)`` and ``(-1, q+1)`` over both partition orderings (deduplicated by digest),
+    reducing to the neutral ``(-1, +1)`` pair at ``q = 0``.
+
+    Each edge is built EXACTLY as :meth:`HeterolyticScission.forget` builds it (the same merge of identical charged
+    products, the same canonical sort), so a structural heterolysis' ``forget().digest`` is byte-identical to this
+    producer's edge for the matching partition -- which is what makes the ``⊆`` a real SAME-CLASS content check, never
+    a vacuous cross-class tag disjointness (both sides are :class:`ChargedDecompositionEdge` digests, so the
+    namespaces OVERLAP and ``⊆`` genuinely constrains).
+
+    W2 -- the partition powerset is exponential in the DISTINCT elements, so the enumeration is bounded by ``budget``
+    (a candidate count).  Returns ``(edges, complete)``; ``complete`` is ``False`` iff the budget was hit -- a partial
+    result is never silently sold as a full one.
+    """
+    if type(reactant) is not Formula:
+        raise TypeError("reactant must be a Formula")
+    if type(budget) is not int or budget <= 0:
+        raise ValueError("budget must be a positive integer")
+    q = reactant.charge
+    counts = dict(reactant.counts)
+    syms = sorted(counts)
+    total = sum(counts.values())
+    out: dict[str, ChargedDecompositionEdge] = {}
+    work = 0
+    for combo in product(*(range(counts[s] + 1) for s in syms)):
+        n_a = sum(combo)
+        if not (0 < n_a < total):
+            continue  # A must be a PROPER non-empty sub-multiset (excludes the empty part and the whole) -> each part
+            #           strictly smaller than the reactant (W1 by atom count alone), exactly two non-empty parts
+        a_counts = {s: k for s, k in zip(syms, combo) if k > 0}
+        b_counts = {s: counts[s] - k for s, k in zip(syms, combo) if counts[s] - k > 0}
+        for ca, cb in ((q - 1, 1), (-1, q + 1)):
+            work += 1
+            if work > budget:
+                return tuple(sorted(out.values(), key=lambda e: e.digest)), False
+            merged: dict[Formula, int] = {}
+            for cnts, ch in ((a_counts, ca), (b_counts, cb)):
+                f = Formula.of(cnts, ch)
+                merged[f] = merged.get(f, 0) + 1
+            products = tuple(sorted(merged.items(), key=lambda pm: (_fkey(pm[0]), pm[1])))
+            try:
+                edge = ChargedDecompositionEdge(reactant, 1, products)
+            except ScissionError:
+                continue  # a candidate the charged-edge certificate refuses -> dropped, never faked
+            out.setdefault(edge.digest, edge)
+    return tuple(sorted(out.values(), key=lambda e: e.digest)), True
 
 
 # ======================================================================================

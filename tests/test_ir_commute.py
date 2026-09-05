@@ -59,9 +59,10 @@ from smartchem.compilation_ir import (
 from smartchem.decompiler import Formula
 from smartchem.decompiler_mediated import mediated_decompose
 from smartchem.smiles import parse_smiles
-from smartchem.structure_descent import redox_edges
+from smartchem.structure_descent import heterolytic_formula_edges, redox_edges
 from smartchem.transform_provider import (
     CappedScissionProvider,
+    HeterolyticScissionProvider,
     RedoxHalfReactionProvider,
     TransformProviderRegistry,
 )
@@ -251,3 +252,79 @@ def test_the_redox_forgetful_square_commutes_at_equality():
         # matching-but-wrong set -- either way a broken convention turns this test red, never vacuously green.
         fewer = {e.digest for e in redox_edges(Formula.of(target.formula, target.charge), max_electrons=max_e - 1)}
         assert fewer < struct_projections
+
+
+# ======================================================================================
+# IR-COMMUTE: the FOURTH (and last) family -- the heterolytic (ionic) square, at ⊆
+# ======================================================================================
+def test_the_heterolytic_forgetful_square_commutes_via_the_formula_producer():
+    # The 4th and last family to gain a formula producer: heterolysis forgets to a CHARGED_DECOMPOSITION_EDGE, whose
+    # formula-side oracle is heterolytic_formula_edges (an atom-partition + localized-charge search).  UNLIKE redox
+    # (==, no search: the oxidised formula is fully determined), the bond graph is FORGOTTEN here, so which atoms land
+    # on which ion is a real partition SEARCH and the producer OVER-produces -> the square closes at ⊆, like the
+    # bond-order and capped families.
+    reg = TransformProviderRegistry((HeterolyticScissionProvider(),))
+    struct_ir = decompile_structure_to_ir(ETHANE, reagents=(WATER,), registry=reg)
+    assert struct_ir.structural_candidates, "heterolysis must produce a candidate for ethane"
+    # the family really IS heterolysis forgetting to a charged edge (not a mislabelled neutral run)
+    assert {sc.witness_kind for sc in struct_ir.structural_candidates} == {"HETEROLYTIC_SCISSION"}
+    assert {sc.projection_kind for sc in struct_ir.structural_candidates} == {"CHARGED_DECOMPOSITION_EDGE"}
+    struct_projections = {sc.projection_digest for sc in struct_ir.structural_candidates}
+    formula_edges, complete = heterolytic_formula_edges(Formula.of(ETHANE.formula, ETHANE.charge))
+    assert complete, "the formula producer must exhaust ethane's partition search within budget"
+    formula_digests = {e.digest for e in formula_edges}
+    # ⊆ , byte-for-byte, SAME class (both ChargedDecompositionEdge digests): every structural forget image appears
+    # among the formula producer's edges -- a real content check (overlapping namespaces), never a vacuous cross-class
+    # tag disjointness.  This is the exact convention agreement the redox == and the capped/bond-order ⊆ prove.
+    assert struct_projections <= formula_digests
+    # STRICT subset (non-vacuity): the formula producer splits the atom MULTISET every way, so it emits partitions no
+    # order-1 bridge bond realises (a C|C-split / H2-on-one-side split of ethane that no single cut can make) -> edges
+    # ABSENT from the structural set.  This proves the relation is a genuine ⊆ and NOT a secret == -- the honest
+    # asymmetry the graph search creates, exactly like bond-order/capped and UNLIKE redox's search-free ==.
+    assert struct_projections < formula_digests
+
+
+def test_heterolytic_formula_producer_mirrors_the_localized_model_and_conserves():
+    # A direct producer check, independent of the IR machinery, with only NON-VACUOUS assertions (red-team fold: the
+    # old bare `product_charge == reactant.charge` re-check was dead -- ChargedDecompositionEdge.__post_init__ RAISES
+    # on charge non-conservation, so a violating edge can never reach the assert; the "checks-derived-from-its-own-
+    # subject" trap).  Every assertion here checks something the certificate does NOT already guarantee:
+    from smartchem.structure_descent import heterolytic_scissions
+    # (a) it really MIRRORS the structural model: for water the producer's edges CONTAIN every structural heterolysis'
+    #     forget image (the ⊆ direction proven at the producer level, no IR machinery) -- and it CAN fail (an emitted
+    #     wrong-convention edge would make a structural forget absent), so it is load-bearing.
+    water = parse_smiles("O")
+    edges, complete = heterolytic_formula_edges(Formula.of(water.formula, water.charge))
+    assert complete
+    producer_digests = {e.digest for e in edges}
+    structural_forgets = {h.forget().digest for h in heterolytic_scissions(water)}
+    assert structural_forgets and structural_forgets <= producer_digests
+    # (b) the LOCALIZED-CHARGE signature holds on EVERY producer edge (one fragment exactly ±1) -- a PRODUCER choice,
+    #     NOT a certificate invariant (ChargedDecompositionEdge conserves charge but would happily accept a (-2,+2)
+    #     split), so this assertion genuinely CAN fail if the charge-pair logic drifts.
+    for e in edges:
+        product_charges = [f.charge for f, m in e.products for _ in range(m)]
+        assert any(abs(c) == 1 for c in product_charges), e.equation()
+    # (c) HCl (neutral, one bridge) yields exactly the two localized splits H^+ + Cl^- and H^- + Cl^+ (count check)
+    assert len(heterolytic_formula_edges(Formula.parse("HCl"))[0]) == 2
+    # (d) a starved budget returns a LOUD partial, never a silent full result (W2)
+    _partial, partial_complete = heterolytic_formula_edges(Formula.parse("HCl"), budget=1)
+    assert partial_complete is False
+
+
+def test_heterolytic_formula_producer_handles_a_charged_reactant():
+    # Coverage fold (red-team gap): the docstring claims the GENERAL localized model (any reactant charge q), but the
+    # committed square/HCl tests only exercise neutral S.  A charged reactant: hydronium H3O^+ (q=+1).  Every emitted
+    # edge must conserve charge to q AND carry the localized signature -- both FALSIFIABLE (the certificate conserves
+    # charge, but the ±1 signature and the "== q, not == 0" target are producer choices a drift would break).
+    h3o = Formula.parse("H3O", charge=1)
+    edges, complete = heterolytic_formula_edges(h3o)
+    assert complete and edges
+    for e in edges:
+        product_charge = sum(f.charge * m for f, m in e.products)
+        assert product_charge == 1  # conserved to the reactant's q=+1 (not silently neutralized to 0)
+        product_charges = [f.charge for f, m in e.products for _ in range(m)]
+        assert any(abs(c) == 1 for c in product_charges), e.equation()
+    # non-vacuity that the q actually threads: at least one edge splits the pre-existing charge onto a polyatomic ion
+    # (e.g. H2O^0 + H^+ , or OH^- + H2^2+ ) -- a q=0 producer could never emit a net-+1 product set
+    assert any(sum(f.charge * m for f, m in e.products) == 1 for e in edges)

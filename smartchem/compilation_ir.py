@@ -1334,16 +1334,15 @@ def _tool_version() -> str:
 
 
 def _structure_ident(molecule: "object") -> str:
-    """The pipeline's presentation-invariant molecular identity: canonical digest, ``asgiven:`` for a graph the
-    canonicaliser refuses (a symmetric ring).  Byte-for-byte the ``_ident`` used in routes/step/dag, so a
-    structural IR keys on the SAME identity the search does."""
+    """The pipeline's presentation-invariant molecular identity: resonance-canonical digest, ``asgiven:`` for a graph
+    the canonicaliser refuses (a symmetric ring).  Byte-for-byte the ``_ident`` used in routes/step/dag (both delegate
+    to :func:`~smartchem.smiles.resonance_identity`), so a structural IR keys on the SAME identity the search does --
+    including the CANON-KEKULE-01 fragment/parse unification (item 3)."""
     from .category import Molecule
+    from .smiles import resonance_identity
     if type(molecule) is not Molecule:
         raise TypeError("_structure_ident needs a smartchem.category.Molecule")
-    try:
-        return canonical_digest(molecule.canonical())
-    except NotImplementedError:
-        return "asgiven:" + canonical_digest(molecule)
+    return resonance_identity(molecule)
 
 
 def _terminal_policy_digest(inventory: tuple[Formula, ...]) -> str:

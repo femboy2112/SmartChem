@@ -64,6 +64,7 @@ class TestRankedRouteSummaryType:
             fit_status="UNCONSTRAINED", readiness_tier="FORMAL_CANDIDATE", exclusions=(), gaps=(),
             composability_verdict="COMPOSABLE", selectivity_verdict="NOT_APPLICABLE",
             feasibility_verdict="FAVORABLE", equilibrium_verdict="BALANCED", kinetics_verdict="UNKNOWN",
+            process_requirements=(),
         )
         base.update(over)
         return RankedRouteSummary(**base)
@@ -275,6 +276,7 @@ class TestRedTeamFolds:
             fit_status="UNCONSTRAINED", readiness_tier="FORMAL_CANDIDATE", exclusions=(), gaps=(),
             composability_verdict="COMPOSABLE", selectivity_verdict="NOT_APPLICABLE",
             feasibility_verdict="FAVORABLE", equilibrium_verdict="BALANCED", kinetics_verdict="UNKNOWN",
+            process_requirements=(),
         )
         base.update(over)
         return RankedRouteSummary(**base)

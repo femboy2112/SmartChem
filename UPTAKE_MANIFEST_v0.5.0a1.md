@@ -3524,3 +3524,151 @@ round fills real, open-license data so the gate can honestly say FITS/EXCLUDED, 
 - **Residual limits:** whole-step elapsed CEILINGS are UNKNOWN in the current benign-prep sources, so
   time-based FIT (vs EXCLUSION) needs sources that state total elapsed. Aspirin route needs a wider grammar.
   DAG-mode process admission stays UNASSESSED. The §10.1 deserialization boundary remains deferred.
+
+### 10.3 Deserialization admission re-derivation — 2026-09-05 (ROUND 10, item 1)
+
+ID: PROCESS-ADMIT-01
+
+State: IMPLEMENTED_AND_VERIFIED on the PROCESS axis (scope + residual stated below); this is the go-live
+fix the §10.1/§10.2 residual deferred ("the IR must carry per-route process evidence so admission is
+re-derived on load").
+
+The boundary §10.1 recorded: `response_from_payload`'s round-trip recompute of `admissible_route_digests`
+was CIRCULAR over each route's `fit_status` (a relational check over a shared term), and the response IR
+carried no per-route process evidence to re-derive from, so a LOCKSTEP relabel forgery (a real route's
+`fit_status` → FITS) was accepted. Now closed on the process axis:
+
+- **Carry the evidence.** `RankedRouteSummary` gains `process_requirements: tuple[ProcessRequirements|None]`
+  — the exact per-step declared process facts the fit was computed from, one per route step in order. It is
+  route identity (folded into `result_digest`), serialized/round-tripped (new `_process_requirements_*`,
+  `_interval_*`, `_source_*` payload helpers). Schema bumps: response v1alpha9→v1alpha10, ranked-summary
+  v1alpha1→v1alpha2, descriptor v1alpha10→v1alpha11 (request UNCHANGED).
+- **Re-derive on load.** `process_constraints.evaluate_process_requirements` re-derives the process fit
+  straight from carried requirements (byte-for-byte what `evaluate_process` computes from the matching
+  envelopes — it now delegates through the shared `_evaluate_requirements` core).
+  `CompilationResponse._check_process_admission_coherence` (in `__post_init__`, so it fires at construction
+  AND on load) enforces the SOUND one-directional rule: the process component is a lower bound on the
+  combined verdict, so a declared FITS/UNKNOWN whose PROCESS evidence re-derives to a stricter verdict is
+  refused. Gated on `process.constrains_anything` (zero overhead on the default path). Verified it never
+  false-rejects an honest response (rank-time bounds == load-time bounds, service.py:1692 vs :1100).
+- **SCOPE (honest, not overclaimed).** `fit_status` is the COMBINED verdict (composability + physical bounds
+  + process); this re-derives ONLY the process component. The blind `evil-morty` red-team CONFIRMED (I
+  reproduced it independently, `scratchpad/verify_finding1.py`) that a route EXCLUDED for a NON-process
+  reason (e.g. a reaction over a physical temperature cap) whose process evidence is FITS can still be
+  bare-relabeled to FITS and admitted — the physical/reagent/equipment/composability axes carry only
+  free-text exclusions/gaps, and re-deriving them needs the per-step physical conditions + the full
+  ExperimentRoute graph the thin projection deliberately omits. The red-team's overclaim finding (my
+  docstrings said the bare relabel was closed *generally*) is FOLDED: docstrings on
+  `admissible_route_digests` / `response_from_payload` / `_check_process_admission_coherence` now state the
+  process-axis scope precisely, and `tests/test_process_service.py::test_non_process_axis_relabel_is_not_yet_authenticated`
+  PINS the true boundary. Red-team clean bills earned: soundness/no-false-reject, byte-for-byte
+  re-derivation, no construction-skip read path, edge cases (empty tuple / None-vs-unknown), alias-collapse,
+  no fabrication.
+- **Tests.** `tests/test_process_service.py`: the old boundary-pin test INVERTED
+  (`test_deserialized_admission_is_re_derived_not_blindly_trusted` — the bare process-axis relabel is now
+  rejected at construction AND on load) + `test_admission_residual_needs_a_signature_to_close` (the
+  controlling-forger residual) + the new non-process-axis boundary pin. Goldens regenerated.
+- **Result:** full suite 4078 passed / 14 skipped / 1 xfailed (PySCF-present dev venv), exit 0. ruff clean.
+- **Residual → next-step (COMBINED-VERDICT-AUTH):** full authentication of a deserialized
+  `admissible_route_digests` (all three verdict axes + a fully controlling forger who fabricates coherent
+  evidence and recomputes `result_digest`) needs a PRODUCER SIGNATURE over the payload, or a full
+  re-derivation that carries the ExperimentRoute graph (contradicting the thin projection). Named on the
+  roadmap; not attempted here.
+
+### 10.4 Whole-step total-elapsed sourcing — 2026-09-05 (ROUND 10, item 2)
+
+ID: PROCESS-TIME-CEILING-01
+
+State: VERIFIED NEGATIVE (committed, reproducible). No code change to the gate — the honest outcome is that
+no sound ceiling is sourceable, and the anti-fabrication directive forbids inventing one.
+
+The §10.2 residual asked for whole-step total-elapsed data to unlock a time-based FIT (a ceiling), not just
+floor-based EXCLUSION. A fan-out workflow (find → adversarial verify) swept five open-license source families
+(LibreTexts, Organic Syntheses, OER lab manuals, Wikipedia/Wikibooks, PubChem/NIST) for a whole-process total
+elapsed (start to dried product, INCLUDING untimed workup/drying) for the two seeded preps.
+
+- **Result: 9 candidate values, 0 confirmed totals.** Every value the finders surfaced was a PARTIAL step
+  time (reaction/reflux, ice-bath sit, decolorizing, recrystallization interval); the verify stage rejected
+  all nine because none is a whole-process total — workup and drying are left untimed across the benign-prep
+  literature. So no sound whole-step CEILING exists to encode.
+- **Consequence.** Time-based process admission stays FLOOR-ONLY (a sourced minimum can EXCLUDE, never
+  CONFIRM). The ROUND-9 floor-only model is thus DILIGENCE-BACKED, not a shortcut. The search also
+  independently re-verified every sourced step time behind the ROUND-9 floors (paracetamol 84/14 min,
+  isopentyl 60 min) — corroboration, not a change.
+- **Anti-fabrication.** A DERIVED ceiling was refused: bounding the untimed manual workup/drying would
+  require inventing operator behavior, which is not known-physics derivation.
+- **Artifact (committed, reproducible):** `experiments/validation/total-elapsed-sourcing-2026-09-05/`
+  (`receipt.json` with the five families, nine findings, all rejections, and the corroborated floors; plus
+  the committed workflow script).
+- **Residual → next-step:** a time-based FIT needs a source genre that states whole-process totals
+  (industrial/pilot process docs with cycle times, patent examples with run+workup schedules) — none is an
+  open-license benign teaching prep. Stays open on the roadmap.
+
+## 11. ROUND 11 — the four-item full-blast round (2026-09-05)
+
+Off ROUND 10 (`main` at `122a6b2`, untouched during the build). Four deliverables, each
+design → Citadel recon → build → REPRODUCE the finding myself → evil-morty red-team → fold → verify.
+Final full suite **4097 passed, 14 skipped, 1 xfailed** (dev venv, PySCF present). All committed on the dev
+branch `chem-genericity-reorient-2026-09-03`; merged to `main` this round (see the release note below).
+
+### 11.1 COMBINED-VERDICT-AUTH — the producer signature (★; `f32b0b4`)
+
+The honest close of the evil-morty Finding-1 deserialization boundary (ROUND 10 §10.3 residual), for the ONE
+threat a signature can actually address. `response_to_payload`/`serialize_response` take an optional
+`signing_key` and emit a `producer_signature` (HMAC-SHA256 over `result_digest`, which transitively covers every
+route's `fit_status`/`process_requirements`/`exclusions`); `response_from_payload`/`deserialize_response` take a
+`verification_key` + `require_signature` and refuse a KEYLESS out-of-band tamper — even a coherent one that
+recomputes `result_digest`, and even on the physical/composability axes PROCESS-ADMIT-01 cannot re-derive.
+`resolve_producer_key()` reads an env var or an auto-created 0600 keyfile. **Strictly OPT-IN**: with no key the
+payload is byte-identical (`producer_signature` null), so every existing caller and golden fixture is unchanged.
+**Honest scope:** it does NOT close a key-holding / in-process forger (they construct-then-sign); NO signature
+can, and `test_key_holding_forger_residual_is_not_closable_by_a_signature` pins that irreducible residual.
+Schemas: response `v1alpha10 → v1alpha11`, descriptor `v1alpha11 → v1alpha12`. Verified: transport-tamper
+rejection + wrong-key + require-signature enforcement (`tests/test_process_service.py`).
+
+### 11.2 item 4 — a third sourced whole-process record (`2990717`)
+
+Methyl salicylate (oil of wintergreen): salicylic acid + methanol → methyl salicylate, a Fischer esterification
+the capped-scission search already produces. Sourced from LibreTexts "Experiment 731: Esters" (Los Medanos
+College, **CC BY**, license re-confirmed verbatim). A find → adversarial-verify fan-out **killed a `agitation=MANUAL`
+value** (misattributed from a post-reaction workup step, not the reaction) and **refused two candidates** —
+acetanilide (license "not declared") and ethyl acetate (zero numeric process data) — as honest negatives, no
+fabrication. `workup_included=False` (the source's only post-reaction step is a QUALITATIVE detection, not a
+preparative isolation), so this record can EXCLUDE or be UNKNOWN, **never a false FITS**. Acceptance on the real
+search (`tests/test_process_records.py`): UNKNOWN on a covering bench (workup + agitation undeclared), EXCLUDED
+by stricter temperature / missing equipment / too-slow step budget.
+
+### 11.3 item 5b — DAG-mode process admission (`f32b0b4`); item 5a — honest defer
+
+`dag_process_fit` runs the linear process gate over a topological flattening of a convergent DAG — **sound**
+(never a false FITS) but **over-conservative on time** (it serial-sums concurrent branches). A DAG-mode compile
+now surfaces a clearly-bounded diagnostic reporting only the SOUND lower bound (how many DAGs fit even run
+serially); `process_selection_status` stays UNASSESSED (DAGs get no formal admission yet). The correct
+critical-path elapsed aggregation + full DAG RouteDossier admission remain a named next step (a genuine design
+fork). **item 5a** (richer check_interval / drying modeling) is an honest DEFER: it needs a `ProcessPhase`
+sub-step schema, not more data — fabricating a drying ceiling is refused (§10.4).
+
+### 11.4 item 3 — resonance-canonical identity unblocks aspirin (CANON-KEKULE-01; `fb6dc4c`)
+
+**The brief was re-diagnosed.** It asked to "widen the grammar for aspirin"; recon (reproduced) proved aspirin's
+NO_ROUTE was NOT a grammar gap — capped-scission ALREADY emits aspirin + acetic acid → acetic anhydride +
+salicylic acid (the reverse of the real industrial synthesis). The bug was in the CANONICALIZER: `Molecule.canonical()`
+minimizes over literal bond orders with no resonance notion, so an ORTHO-disubstituted salicylate FRAGMENT cut
+out of aspirin carried a different Kekulé pattern than the SAME species parsed from SMILES, and `_ident` called
+them distinct (para/paracetamol survived by geometric accident; ortho/meta did not). Fix: `resonance_canonical`
+lifts the parser's proven `_min_constitution_placement` onto an arbitrary Molecule; `resonance_identity` (now
+shared byte-identical by `routes._ident`, `step._ident`, `dag._ident`, `compilation_ir._structure_ident`) unifies
+a fragment with its parsed form. Aspirin compiles to its real route.
+
+- **Sound, not over-unifying (evil-morty verified):** it only re-distributes multiple-bond orders preserving each
+  atom's per-atom pi-demand + fixed H-envelope = one constitution; positional isomers / tautomers / constitutional
+  isomers / regioisomers stay DISTINCT. **Idempotent on parsed molecules** — no existing digest, frozen hash, or
+  golden fixture moves. Differential tripwires in `tests/test_resonance_identity.py` (relabel-invariance,
+  over-unification guards, fragment/parse unification, idempotence, byte-identity).
+- **evil-morty DoS fold (HIGH, verified + closed):** `_ident` is the search hot path and each Kekulé placement is
+  a full canonicalization, so a submittable 122-atom oligophenylene ground ~18 s. Two O(1) guards now bound it —
+  skip resonance over 64 heavy atoms, cap placements at 128 — falling back to the plain literal identity (no worse
+  than pre-fix) above either. The 122-atom attack is now ~3 ms; pinned by a bounded-time regression test.
+- **Residual:** a large conjugated fragment over the caps keeps its literal identity (won't unify across Kekulé
+  spellings) — a non-issue for the current bounded drug-like targets, documented not hidden. A cheaper
+  min-placement selection (avoiding a full canonicalization per placement) would lift the caps; named follow-on.

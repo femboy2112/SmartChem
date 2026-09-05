@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 __all__ = [
     "PROCESS_BOUNDS_SCHEMA", "Attention", "Agitation", "ProcessRequirements",
     "ProcessBounds", "ProcessFitStatus", "ProcessFit", "evaluate_process",
+    "evaluate_process_requirements",
 ]
 
 PROCESS_BOUNDS_SCHEMA = "smartchem.constraints/process-bounds-v1alpha1"
@@ -316,23 +317,44 @@ def evaluate_process(envelopes: Iterable[ConditionEnvelope], bounds: ProcessBoun
     """
     from .conditions import ConditionEnvelope
 
-    if type(bounds) is not ProcessBounds:
-        raise TypeError("bounds must be a ProcessBounds")
     steps = tuple(envelopes)
     if any(type(envelope) is not ConditionEnvelope for envelope in steps):
         raise TypeError("envelopes must contain ConditionEnvelope values")
+    return evaluate_process_requirements(tuple(envelope.process for envelope in steps), bounds)
+
+
+def evaluate_process_requirements(
+    requirements: "Iterable[ProcessRequirements | None]", bounds: ProcessBounds
+) -> ProcessFit:
+    """Re-derive the process fit straight from a route's per-step ``ProcessRequirements`` (no envelope needed).
+
+    The load-time authority behind admission re-derivation (PROCESS-ADMIT-01): a serialized response carries the
+    per-route ``ProcessRequirements`` and admission is recomputed from THEM here rather than trusting a declared
+    ``fit_status``.  This is byte-for-byte the verdict :func:`evaluate_process` produces from the matching
+    envelopes -- that function reads ONLY ``envelope.process`` and delegates here -- so ``None`` marks an
+    undeclared step exactly as a missing envelope process does.
+    """
+    if type(bounds) is not ProcessBounds:
+        raise TypeError("bounds must be a ProcessBounds")
+    reqs = tuple(requirements)
+    if any(r is not None and type(r) is not ProcessRequirements for r in reqs):
+        raise TypeError("requirements must contain ProcessRequirements or None values")
+    return _evaluate_requirements(reqs, bounds)
+
+
+def _evaluate_requirements(reqs: "tuple[ProcessRequirements | None, ...]", bounds: ProcessBounds) -> ProcessFit:
     if not bounds.constrains_anything:
         return ProcessFit(ProcessFitStatus.UNCONSTRAINED)
     exclusions: list[str] = []
     gaps: list[str] = []
-    if not steps:
+    if not reqs:
         return ProcessFit(ProcessFitStatus.UNKNOWN, gaps=("route has no declared process steps",))
     elapsed_upper: list[float] = []
     active_upper: list[float] = []
     elapsed_floors: list[float] = []
     active_floors: list[float] = []
-    for index, envelope in enumerate(steps, start=1):
-        requirement = envelope.process if envelope.process is not None else ProcessRequirements.unknown()
+    for index, req in enumerate(reqs, start=1):
+        requirement = req if req is not None else ProcessRequirements.unknown()
         if type(requirement) is not ProcessRequirements:
             raise TypeError("envelope.process must be a ProcessRequirements")
         prefix = f"step {index}"

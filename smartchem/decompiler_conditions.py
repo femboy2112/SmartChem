@@ -244,6 +244,54 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
         "isopentyl acetate",
         ("acetic acid", "isopentyl alcohol"),
     ),
+    # methyl salicylate (oil of wintergreen): salicylic acid + methanol -> methyl salicylate + water.
+    # ROUND 11 item 4: a THIRD sourced whole-process record. Every value is quote-backed and passed an
+    # adversarial fabrication guard (a MANUAL agitation value was KILLED as a workup-step misattribution).
+    _sig("C8H8O3", ("H2O",), ("C7H6O3", "CH4O")): ConditionRecord(
+        ConditionEnvelope(
+            medium="warm water bath (60-65 C); Fischer esterification of salicylic acid with methanol",
+            status=EvidenceStatus.EXPERIMENTAL,
+            provenance=(
+                "assembly direction: Fischer esterification of salicylic acid with methanol (methyl salicylate, "
+                "oil of wintergreen); LibreTexts 'Experiment 731: Esters' (Los Medanos College, CC BY)"
+            ),
+            source=SourceCitation(
+                "https://chem.libretexts.org/Courses/Los_Medanos_College/"
+                "Chemistry_6_and_Chemistry_7_Combined_Laboratory_Manual_(Los_Medanos_College)/"
+                "01:_Experiments/1.31:_Experiment_731_Esters__1_0",
+                SourceReview.ACCEPTED,
+            ),
+            # PROCESS-FIT record, SOURCED (CC BY); every value quote-backed + adversarially verified (item 4).
+            process=ProcessRequirements(
+                min_elapsed_minutes=10.0,   # SOURCED floor: "Heat ... for 10 minutes or longer" (whole-step ceiling untimed -> UNKNOWN)
+                attention=Attention.PERIODIC,   # SOURCED: "Be sure to monitor the temperature to maintain it within the specified range."
+                equipment=(
+                    "hot plate", "250 mL beaker (warm water bath)", "small (~10 mL) test tubes",
+                    "test tube clamp", "test tube rack", "pipet", "watch glass",
+                ),
+                # HONEST: the ONLY post-reaction step the source describes is a QUALITATIVE detection
+                # (add water, two layers form, pipet the top layer to a watch glass and smell) -- NOT a
+                # preparative isolation/drying/purification, so whole-step workup coverage stays UNKNOWN.
+                # workup_included defaults to False -> this record can EXCLUDE or be UNKNOWN, never a false FITS.
+                peak_temperature_k=338.15,   # SOURCED: 65 C, top of the quoted 60-65 C water-bath range
+                min_pressure_atm=1.0, max_pressure_atm=1.0,   # DERIVED: open test-tube heating at ambient
+                provenance=(
+                    "whole-process record, SOURCED from LibreTexts 'Experiment 731: Esters' (Los Medanos College, "
+                    "CC BY). Every value is quote-backed and passed an adversarial fabrication guard (item 4): "
+                    "min_elapsed 10 min is the SOURCED heating LOWER BOUND ('for 10 minutes or longer'); the "
+                    "whole-step CEILING is untimed -> UNKNOWN (a floor can only EXCLUDE). PERIODIC attention and "
+                    "peak 338.15 K (65 C) are directly quoted. agitation is UNKNOWN: the source's only mixing "
+                    "instruction is a POST-REACTION workup dilution, not a reaction condition (the guard KILLED a "
+                    "MANUAL agitation value as a step misattribution). workup_included=False: the post-reaction step "
+                    "is a QUALITATIVE detection (phase-separate + smell), not a preparative isolation, so whole-step "
+                    "workup coverage is honestly UNKNOWN. Pressure ambient (open apparatus). SINGLE-SOURCED."
+                ),
+            ),
+        ),
+        (ReactionDirection.ASSEMBLY,),
+        "methyl salicylate",
+        ("methanol", "salicylic acid"),
+    ),
 }
 
 

@@ -475,6 +475,15 @@ _REGISTERED: tuple[NamedStructure, ...] = (
         synonyms=("isoamyl alcohol", "isopentanol", "isobutylcarbinol"),
         provenance="std organic alcohol; the isopentyl-acetate precursor; SMILES CC(C)CCO",
     ),
+    # --- ROUND 11 (item 4): a third sourced process-record target. Fischer esterification
+    #     salicylic acid + methanol -> methyl salicylate. ORTHO-disubstituted like salicylic acid;
+    #     parse-canonical-invariant confirmed (identical digest across SMILES spellings).
+    NamedStructure(
+        "methyl salicylate", parse_smiles("COC(=O)c1ccccc1O"), "C8H8O3",
+        iupac="methyl 2-hydroxybenzoate", cas="119-36-8",
+        synonyms=("oil of wintergreen", "methyl 2-hydroxybenzoate", "wintergreen oil"),
+        provenance="std organic ester; the item-4 Fischer-esterification process-record target; SMILES COC(=O)c1ccccc1O",
+    ),
 )
 
 

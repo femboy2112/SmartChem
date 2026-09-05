@@ -102,9 +102,13 @@
       "fit_status": "UNCONSTRAINED",
       "gaps": [],
       "kinetics_verdict": "UNKNOWN",
+      "process_requirements": [
+        null,
+        null
+      ],
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "c2286c642f22e6fafae4477dc3c940bf6afe2c86865413b0abbac8ed18e640fb",
-      "schema_version": "smartchem.service/ranked-route-summary-v1alpha1",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha2",
       "selectivity_verdict": "UNKNOWN"
     },
     {
@@ -116,9 +120,12 @@
       "fit_status": "UNCONSTRAINED",
       "gaps": [],
       "kinetics_verdict": "UNKNOWN",
+      "process_requirements": [
+        null
+      ],
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "ceb2d476bde3f206110670346e55dc42b9e85d22b41d2e755cd4f9b478482de9",
-      "schema_version": "smartchem.service/ranked-route-summary-v1alpha1",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha2",
       "selectivity_verdict": "UNKNOWN"
     }
   ],
@@ -237,8 +244,8 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "740efa628260175e968cb6f3860acef9e1a34c4ae7ef69ed44f740ee8ac80fac",
-  "schema_version": "smartchem.service/compilation-response-v1alpha9",
+  "result_digest": "d01d42406672338938fca6de57d332e90dc3653d299e5b624bd53c5cc7754653",
+  "schema_version": "smartchem.service/compilation-response-v1alpha10",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

@@ -104,23 +104,16 @@ def test_imported_frontier_cannot_bypass_process_admission():
         replace(restricted, affordability_frontier=donor.affordability_frontier)
 
 
-def test_deserialized_admission_is_producer_declared_not_reverified():
-    """Pinned trust boundary: a route's ``fit_status`` is TRUSTED on load, never re-derived.
+def test_deserialized_admission_is_re_derived_not_blindly_trusted():
+    """PROCESS-ADMIT-01: a route's ``fit_status`` is RE-DERIVED from its carried evidence, not trusted.
 
-    The response IR carries no per-route ``ProcessRequirements`` (only candidate
-    digest/equation/readiness), so ``response_from_payload`` cannot re-run ``evaluate_process``
-    to recompute admission.  A LOCKSTEP forgery -- relabel a REAL route's ``fit_status`` to
-    ``FITS`` (empty gaps/exclusions) so the derived admissible/selection/exit fields recompute
-    consistently -- is therefore ACCEPTED, at construction AND through a serialize round-trip.
-    Contrast test_nonexistent_or_duplicate_ranked_routes_cannot_be_admitted (a FAKE digest IS
-    caught by the membership guard) and test_derived_admission_fields_are_checked_when_loading
-    (an INCONSISTENT edit IS caught).  The round-trip recompute is blind to this because both
-    sides derive from the same trusted ``fit_status`` (a relational check over a shared term).
-
-    This documents the boundary so no caller assumes a deserialized ``admissible_route_digests``
-    is vetted ground truth.  Closing it needs the IR to carry per-route process evidence so
-    admission is re-derived on load; deferred to the go-live milestone (the path is dark until
-    sourced process records exist).  If that fix lands, this test SHOULD fail and be updated.
+    Each ranked route now carries its per-step ``process_requirements``, so
+    ``_check_process_admission_coherence`` re-runs ``evaluate_process_requirements`` at construction AND on load
+    and refuses a ``fit_status`` the evidence cannot support.  The old LOCKSTEP forgery -- relabel a REAL UNKNOWN
+    route to ``FITS`` and recompute the derived admissible/selection/exit fields -- is therefore REJECTED, because
+    the untouched (undeclared) evidence still re-derives to ``UNKNOWN``.  Contrast
+    test_nonexistent_or_duplicate_ranked_routes_cannot_be_admitted (a FAKE digest is caught by the membership
+    guard) and test_admission_residual_needs_a_signature_to_close (the one remaining, documented, gap).
     """
     result = run_compilation(request())
     # Ground truth on the real catalog: every route is UNKNOWN; nothing is admitted.
@@ -128,19 +121,75 @@ def test_deserialized_admission_is_producer_declared_not_reverified():
     victim = result.ranked_route_dossiers[0]
     assert victim.fit_status == "UNKNOWN"
 
-    # Relabel the REAL route's disposition; its identity (route_digest) is untouched.
+    # Relabel the disposition but leave the carried process evidence (undeclared -> re-derives to UNKNOWN).
     forged = replace(victim, fit_status="FITS", gaps=(), exclusions=())
+    with pytest.raises(ValueError, match="re-derive"):
+        replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:]))
+
+    # The same forgery smuggled through the JSON payload is refused on load, not silently admitted.
+    payload = response_to_payload(result)
+    payload["ranked_route_dossiers"][0]["fit_status"] = "FITS"
+    payload["ranked_route_dossiers"][0]["gaps"] = []
+    with pytest.raises(ValueError):
+        response_from_payload(payload)
+
+
+def test_admission_residual_needs_a_signature_to_close():
+    """The documented residual: a controlling forger who ALSO fabricates coherent evidence still passes.
+
+    Re-derivation binds ``fit_status`` to the CARRIED ``process_requirements``, but that evidence is not
+    cryptographically bound to the route STRUCTURE, so replacing BOTH the label and the requirements with an
+    internally coherent FITS-supporting set is accepted -- and round-trips.  Closing this last gap needs a producer
+    signature over the payload; until then a deserialized admissible list is authoritative only from a trusted
+    producer.  Pinned so the boundary stays explicit, never mistaken for a full authentication.
+    """
+    result = run_compilation(request())
+    victim = result.ranked_route_dossiers[0]
+    fabricated = (requirements(),) * len(victim.process_requirements)
+    forged = replace(victim, fit_status="FITS", gaps=(), exclusions=(), process_requirements=fabricated)
     promoted = replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:]))
-
-    # Accepted at construction: membership holds, FITS-internal coherence holds.
     assert promoted.admissible_route_digests == (victim.route_digest,)
-    assert promoted.process_selection_status == "FITS_FOUND"
     assert promoted.exit_code == 0
-
-    # And it survives the "authoritative" round-trip, which is circular over fit_status.
     reloaded = deserialize_response(serialize_response(promoted))
     assert reloaded.admissible_route_digests == (victim.route_digest,)
-    assert reloaded.exit_code == 0
+
+
+def test_non_process_axis_relabel_is_not_yet_authenticated(monkeypatch):
+    """Boundary pin (evil-morty Finding 1): PROCESS-ADMIT-01 re-derives ONLY the process component.
+
+    ``fit_status`` is the COMBINED verdict (composability + physical bounds + process).  A route EXCLUDED for a
+    NON-process reason -- here a reaction over a physical temperature cap -- whose PROCESS evidence is FITS can
+    still be bare-relabeled to FITS: the carried ``process_requirements`` re-derive to FITS, so
+    ``_check_process_admission_coherence`` sees nothing wrong on its (process-only) axis.  Re-deriving the
+    physical/reagent/equipment/composability axes needs the per-step physical conditions and the full route graph
+    the thin summary deliberately omits; the complete close is a producer signature.  Pinned so no caller mistakes
+    a deserialized admissible list for a fully authenticated one.  When a signature (or full re-derivation across
+    all three axes) lands, this test SHOULD fail and be updated.
+    """
+    from smartchem.contracts import EvidenceStatus
+    declared = ProcessRequirements(
+        elapsed_minutes=Interval(5, 10, "min"), active_minutes=Interval(1, 2, "min"),
+        agitation=Agitation.NONE, workup_included=True,
+        provenance="synthetic control; no experimental claim",
+    )
+    hot = ConditionEnvelope(
+        temperature=Interval(400, 400, "K"), status=EvidenceStatus.EXPERIMENTAL,
+        provenance="synthetic physical control; no experimental claim", process=declared,
+    )
+    monkeypatch.setattr(routes, "_conditions_for", lambda t: hot)
+    result = run_compilation(build_recompile_request(
+        "smiles:CC(=O)OC", max_depth=2, process=ProcessBounds.quick(), max_temperature_k=350))
+    victim = result.ranked_route_dossiers[0]
+    assert victim.fit_status == "EXCLUDED"
+    assert any("caps at 350" in e for e in victim.exclusions)  # excluded for a PHYSICAL reason, not a process one
+
+    # Bare relabel: FITS, clear the text, leave process_requirements untouched (still process-FITS).
+    forged = replace(victim, fit_status="FITS", exclusions=(), gaps=())
+    assert forged.process_requirements == victim.process_requirements
+    promoted = replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:]))
+    # ACCEPTED today: the physical axis is not re-derived -- the documented residual (needs a signature).
+    assert promoted.admissible_route_digests == (victim.route_digest,)
+    assert deserialize_response(serialize_response(promoted)).admissible_route_digests == (victim.route_digest,)
 
 
 @pytest.mark.parametrize("field,value,bounds", [

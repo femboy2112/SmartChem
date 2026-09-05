@@ -33,7 +33,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha10",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha11",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -60,6 +60,7 @@
     "fit_status": "enum(FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED)",
     "gaps": "array[str] (undeclared constrained dimensions / composability UNKNOWNs)",
     "kinetics_verdict": "str (ranking-only; NEVER a grade)",
+    "process_requirements": "array[object(per-step declared process facts)|null] (PROCESS-ADMIT-01: the evidence process admission is RE-DERIVED from on load, one entry per route step in order, null for an undeclared step; part of route identity)",
     "readiness_tier": "str (READY-TIER-01 floor: FORMAL_CANDIDATE)",
     "route_digest": "str (sha256; == the matching candidate_digest)",
     "schema_version": "str",
@@ -83,7 +84,7 @@
     "search_space_status": "str|null (section 8.3 no-route matrix: NO_ROUTE_IN_DECLARED_SPACE/INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; null when no route search ran)",
     "standard_status": "str|null (section 8.2 status)"
   },
-  "response_schema_version": "smartchem.service/compilation-response-v1alpha9",
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha10",
   "search_receipt_view_fields": {
     "candidate_enumeration_complete": "bool",
     "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",

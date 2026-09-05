@@ -59,7 +59,10 @@ from .compilation_ir import (
     recompile_to_ir,
 )
 from .constraints import PhysicalBounds
-from .process_constraints import ProcessBounds, Attention, Agitation
+from .process_constraints import (
+    ProcessBounds, ProcessRequirements, ProcessFitStatus, Attention, Agitation,
+    evaluate_process_requirements,
+)
 from .contracts import Digestible, canonical_digest
 from .identity import IdentityLoss, MatchLayer, refines
 from .identity_parse import IdentityParseError, InputKind, resolve_target
@@ -128,7 +131,9 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # honest partial-basket lower bound), so the response value shape changed.
 # v1alpha8 (COST-VEC-01 quantity axis): the frontier's ``material_quantity`` axis is now POPULATED (routes mode) with
 # each route's total external-leaf MOLES per mol product -- a previously-always-null field now carries a value.
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha9"
+# v1alpha10 (PROCESS-ADMIT-01): each ranked_route_dossiers entry now carries its per-step ``process_requirements`` so
+# process admission is RE-DERIVED on load (the deserialization trust-boundary close), not trusted from ``fit_status``.
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha10"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
@@ -136,13 +141,14 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha9"
 # (SNAPSHOT-13.2).  v1alpha7: the affordability_frontier element shape (COST-VEC-01).  v1alpha6: the
 # search_space_status section-8.3 field (SRCH-NO-01).  v1alpha5: the ranked_route_dossiers element shape (CLI-CAN-02
 # brick 2).  (v1alpha4: the request schema bumped for ConstraintPolicy.bounds; v1alpha3: the parse_receipt_summary
-# response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's identity_losses.)
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha10"
+# response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's identity_losses.)  v1alpha11
+# (PROCESS-ADMIT-01): the ranked_route_summary gains a per-step ``process_requirements`` field (re-derived on load).
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha11"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
 # disposition (FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED with exact reasons) and the ranking's sourced verdicts.
-RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha1"
+RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha2"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -895,6 +901,13 @@ class RankedRouteSummary(Digestible):
     feasibility_verdict: str
     equilibrium_verdict: str
     kinetics_verdict: str
+    #: The per-step declared process facts the section-11 fit was computed from, one entry per route step in order
+    #: (``None`` = an undeclared step, exactly as ``envelope.process`` is ``None``).  Carried so process admission is
+    #: RE-DERIVED on load (PROCESS-ADMIT-01) via ``evaluate_process_requirements`` rather than trusting ``fit_status``:
+    #: a declared FITS/UNKNOWN whose evidence re-derives to a stricter PROCESS verdict is refused (see
+    #: ``CompilationResponse._check_process_admission_coherence``).  Part of route identity -- folded into
+    #: ``result_digest`` -- so tampering with the evidence is a detectable identity change, not a silent relabel.
+    process_requirements: "tuple[ProcessRequirements | None, ...]"
 
     _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
 
@@ -913,6 +926,10 @@ class RankedRouteSummary(Digestible):
             seq = getattr(self, name)
             if type(seq) is not tuple or any(not isinstance(x, str) or not x for x in seq):
                 raise TypeError(f"{name} must be a tuple of non-empty strings")
+        if type(self.process_requirements) is not tuple or any(
+            r is not None and type(r) is not ProcessRequirements for r in self.process_requirements
+        ):
+            raise TypeError("process_requirements must be a tuple of ProcessRequirements or None values")
         # The FULL structural coherence table the producer (drafter fit_route) guarantees, enforced so a hand-built or
         # deserialized summary can never contradict its own reasons (the no-laundering discipline, section 11; red-team
         # fold). fit_route sets: EXCLUDED iff exclusions; else UNKNOWN iff gaps; else FITS (box constrains) /
@@ -945,6 +962,8 @@ class RankedRouteSummary(Digestible):
             fit.feasibility.verdict,
             fit.equilibrium.verdict,
             fit.kinetics.verdict,
+            # The exact per-step process evidence the fit was computed from, so admission is re-derivable on load.
+            tuple(step.envelope.process for step in fit.route.steps),
         )
 
 
@@ -1053,7 +1072,71 @@ class CompilationResponse:
             from .data.provider_snapshot import ProviderSnapshot
             if any(type(s) is not ProviderSnapshot for s in self.provider_snapshots):
                 raise TypeError("provider_snapshots must be a tuple of ProviderSnapshot values")
+        self._check_process_admission_coherence()
         self._check_outcome_coherence()
+
+    def _check_process_admission_coherence(self) -> None:
+        """Re-derive each route's PROCESS fit from its carried per-step ``process_requirements`` and refuse a
+        ``fit_status`` the evidence cannot support (PROCESS-ADMIT-01 -- the deserialization trust-boundary close).
+
+        ``fit_status`` is the COMBINED section-11 verdict (composability + physical bounds + process), so the process
+        component is a LOWER BOUND on it: an honest combined status is always at least as severe as its process
+        component (the drafter takes ``EXCLUDED`` > ``UNKNOWN`` > ``FITS`` over all components).  This enforces exactly
+        that ONE direction on the PROCESS component, so it never rejects a producer's honest response, but it DOES
+        catch a relabel that hides a stricter PROCESS verdict (a process-``UNKNOWN``/``EXCLUDED`` route relabeled to
+        ``FITS``, or a hidden process gap/exclusion) because the carried requirements still re-derive to that verdict
+        via :func:`evaluate_process_requirements` -- the SAME function the drafter's fit used.  Fires wherever a
+        response is built, so an in-memory ``replace`` relabel is caught, not only a deserialized one.  Gated on a
+        process-constrained request: with no process bounds every route is process-``UNCONSTRAINED`` and there is
+        nothing to re-derive (zero overhead on the default path).
+
+        BOUNDARY -- this checks ONLY the process component of the combined verdict:
+        * The OTHER two components (composability, and the physical/reagent/equipment box) are NOT re-derived here.
+          They carry only free-text ``exclusions``/``gaps``, so a route that is non-``FITS`` for one of THOSE reasons
+          (e.g. a reaction over a bench temperature cap) can still be bare-relabeled to ``FITS`` and admitted --
+          re-deriving them needs the per-step physical conditions and the full ExperimentRoute graph the thin
+          RankedRouteSummary projection deliberately omits.
+        * Even on the process axis, the carried evidence is not cryptographically bound to the route structure, so a
+          fully controlling forger who fabricates internally coherent lenient ``process_requirements`` AND recomputes
+          ``result_digest`` can still mint a FITS.
+        Both gaps close only with a producer signature over the payload (an authentication layer, out of scope here).
+        Pinned by tests/test_process_service.py.
+        """
+        if not self.request.constraints.process.constrains_anything:
+            return
+        bounds = self.request.constraints.process
+        for r in self.ranked_route_dossiers:
+            proc = evaluate_process_requirements(r.process_requirements, bounds)
+            status = proc.status
+            if r.fit_status == "FITS":
+                if status not in (ProcessFitStatus.FITS, ProcessFitStatus.UNCONSTRAINED):
+                    raise ValueError(
+                        f"route {r.route_digest} declares fit_status FITS but its carried process requirements "
+                        f"re-derive to {status.value} (a forged or inconsistent process admission)"
+                    )
+            elif r.fit_status == "UNCONSTRAINED":
+                if status is not ProcessFitStatus.UNCONSTRAINED:
+                    raise ValueError(
+                        f"route {r.route_digest} declares fit_status UNCONSTRAINED but its carried process "
+                        f"requirements re-derive to {status.value}"
+                    )
+            elif r.fit_status == "UNKNOWN":
+                if status is ProcessFitStatus.EXCLUDED:
+                    raise ValueError(
+                        f"route {r.route_digest} declares fit_status UNKNOWN but its carried process requirements "
+                        f"re-derive to EXCLUDED (a hidden hard process violation)"
+                    )
+                hidden = sorted(set(proc.gaps) - set(r.gaps))
+                if hidden:
+                    raise ValueError(
+                        f"route {r.route_digest} (UNKNOWN) hides re-derived process gaps: {hidden}"
+                    )
+            else:  # EXCLUDED
+                hidden = sorted(set(proc.exclusions) - set(r.exclusions))
+                if hidden:
+                    raise ValueError(
+                        f"route {r.route_digest} (EXCLUDED) hides re-derived process exclusions: {hidden}"
+                    )
 
     def _check_outcome_coherence(self) -> None:
         """The no-laundering guard: an outcome can never contradict the search status it reports.
@@ -1135,11 +1218,18 @@ class CompilationResponse:
     def admissible_route_digests(self) -> tuple[str, ...]:
         """Returned candidates satisfying every assessed limit; never a bench-readiness claim.
 
-        Derived from each route's ``fit_status``.  On a DESERIALIZED response this value is
-        producer-DECLARED, not re-verified: the response IR carries no per-route
-        ``ProcessRequirements`` (only candidate digest/equation/readiness), so a forged
-        ``fit_status`` cannot be re-derived here (see :func:`response_from_payload`).  Trust
-        this list as vetted-FITS only from a trusted producer.
+        Derived from each route's ``fit_status``.  That ``fit_status`` is the COMBINED section-11 verdict
+        (composability + physical bounds + process), and only its PROCESS component is re-derived on load:
+        every ranked route carries its per-step ``process_requirements``, and
+        :meth:`_check_process_admission_coherence` (run at construction AND on load) RE-DERIVES the process fit
+        from that evidence and refuses a ``FITS``/``UNKNOWN`` whose PROCESS evidence cannot support it
+        (PROCESS-ADMIT-01).  So a bare relabel of a route that is non-``FITS`` on the PROCESS axis can no longer
+        inflate this list.  It does NOT authenticate the other two axes: a route EXCLUDED for a physical/reagent/
+        equipment bound or a composability defect can still be bare-relabeled to ``FITS`` (those axes carry only
+        free-text ``exclusions``/``gaps``, and re-deriving them needs the per-step physical conditions and the full
+        ExperimentRoute graph the thin projection deliberately omits).  So a deserialized ``admissible_route_digests``
+        is authenticated on the process axis only; the complete close (all axes + a controlling forger) needs a
+        producer signature -- see :func:`response_from_payload`.
         """
         if not self.request.constraints.process.constrains_anything:
             return ()
@@ -1785,6 +1875,78 @@ def _process_from_payload(payload: dict) -> ProcessBounds:
     return ProcessBounds(**values)
 
 
+def _interval_to_payload(interval) -> "dict | None":
+    return None if interval is None else {"lo": interval.lo, "hi": interval.hi, "unit": interval.unit}
+
+
+def _interval_from_payload(payload) -> "object | None":
+    if payload is None:
+        return None
+    from .conditions import Interval
+    if type(payload) is not dict or set(payload) != {"lo", "hi", "unit"}:
+        raise ValueError("interval must contain exactly lo, hi, unit")
+    return Interval(payload["lo"], payload["hi"], payload["unit"])
+
+
+def _source_to_payload(source) -> "dict | None":
+    return None if source is None else {"locator": source.locator, "review": source.review.value}
+
+
+def _source_from_payload(payload) -> "object | None":
+    if payload is None:
+        return None
+    from .provenance import SourceCitation, SourceReview
+    if type(payload) is not dict or set(payload) != {"locator", "review"}:
+        raise ValueError("source citation must contain exactly locator, review")
+    return SourceCitation(payload["locator"], SourceReview(payload["review"]))
+
+
+def _process_requirements_to_payload(req: "ProcessRequirements | None") -> "dict | None":
+    """A canonical JSON-ready dict for one step's declared process facts (PROCESS-ADMIT-01), or ``null`` for an
+    undeclared step.  Intervals/enums/citation are flattened; unknown fields stay ``null``, never a fabricated 0."""
+    if req is None:
+        return None
+    return {
+        "elapsed_minutes": _interval_to_payload(req.elapsed_minutes),
+        "active_minutes": _interval_to_payload(req.active_minutes),
+        "attention": None if req.attention is None else req.attention.value,
+        "check_interval_minutes": req.check_interval_minutes,
+        "agitation": None if req.agitation is None else req.agitation.value,
+        "equipment": None if req.equipment is None else list(req.equipment),
+        "workup_included": req.workup_included,
+        "provenance": req.provenance,
+        "source": _source_to_payload(req.source),
+        "peak_temperature_k": req.peak_temperature_k,
+        "min_pressure_atm": req.min_pressure_atm,
+        "max_pressure_atm": req.max_pressure_atm,
+        "min_elapsed_minutes": req.min_elapsed_minutes,
+        "min_active_minutes": req.min_active_minutes,
+    }
+
+
+_PROCESS_REQUIREMENTS_FIELDS = frozenset(_process_requirements_to_payload(ProcessRequirements()))
+
+
+def _process_requirements_from_payload(payload: "dict | None") -> "ProcessRequirements | None":
+    """Reconstruct one step's process requirements; ``ProcessRequirements.__post_init__`` re-validates every field.
+    An exact field-set guard means a payload cannot silently drop or smuggle a requirement past the re-derivation."""
+    if payload is None:
+        return None
+    if type(payload) is not dict or set(payload) != _PROCESS_REQUIREMENTS_FIELDS:
+        raise ValueError("process requirements must contain exactly the versioned fields")
+    values = dict(payload)
+    values["elapsed_minutes"] = _interval_from_payload(values["elapsed_minutes"])
+    values["active_minutes"] = _interval_from_payload(values["active_minutes"])
+    values["attention"] = None if values["attention"] is None else Attention(values["attention"])
+    values["agitation"] = None if values["agitation"] is None else Agitation(values["agitation"])
+    if values["equipment"] is not None:
+        if type(values["equipment"]) is not list:
+            raise TypeError("equipment must be an array or null")
+        values["equipment"] = tuple(values["equipment"])
+    values["source"] = _source_from_payload(values["source"])
+    return ProcessRequirements(**values)
+
+
 def request_to_payload(request: CompilationRequest) -> dict:
     """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable."""
     return {
@@ -1904,6 +2066,7 @@ def ranked_summary_to_payload(summary: RankedRouteSummary) -> dict:
         "feasibility_verdict": summary.feasibility_verdict,
         "equilibrium_verdict": summary.equilibrium_verdict,
         "kinetics_verdict": summary.kinetics_verdict,
+        "process_requirements": [_process_requirements_to_payload(r) for r in summary.process_requirements],
     }
 
 
@@ -1922,6 +2085,7 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
         payload["feasibility_verdict"],
         payload["equilibrium_verdict"],
         payload["kinetics_verdict"],
+        tuple(_process_requirements_from_payload(p) for p in payload["process_requirements"]),
     )
 
 
@@ -2030,21 +2194,28 @@ def response_to_payload(response: CompilationResponse) -> dict:
 def response_from_payload(payload: dict) -> CompilationResponse:
     """Reconstruct a response from :func:`response_to_payload`; re-runs the coherence guard.
 
-    SCOPE of the round-trip check below (and its LIMIT).  It re-derives
-    ``process_selection_status``, ``admissible_route_digests``, ``exit_code`` and
-    ``result_digest`` and REFUSES a payload whose stored values disagree.  That catches an
-    INCONSISTENT edit (e.g. an admissible list edited without editing the ``fit_status`` it
-    derives from) and, via the ``__post_init__`` guard, a non-member or duplicate route
-    digest.  It is NOT ground-truth authentication of process admission: unlike the request's
-    ``normalized_identity`` (recomputed from carried inputs -> authoritative), a route's
-    ``fit_status`` cannot be recomputed here because the response carries no per-route
-    ``ProcessRequirements`` to re-run ``evaluate_process`` against.  A LOCKSTEP forgery
-    -- relabel a REAL route's ``fit_status`` to ``FITS`` so the derived fields recompute
-    consistently -- is therefore ACCEPTED; a deserialized response is authoritative only from a
-    trusted producer.  Closing this needs the response IR to carry per-route process evidence so
-    admission is re-derived on load (deferred to the go-live milestone; the feature is dark until
-    sourced process records exist).  Boundary pinned by
-    tests/test_process_service.py::test_deserialized_admission_is_producer_declared_not_reverified.
+    Two layers now guard admission on load.  (1) The round-trip check below re-derives
+    ``process_selection_status``, ``admissible_route_digests``, ``exit_code`` and ``result_digest``
+    and REFUSES a payload whose stored values disagree -- catching an INCONSISTENT edit (e.g. an
+    admissible list edited without editing the ``fit_status`` it derives from) and, via the
+    ``__post_init__`` guard, a non-member or duplicate route digest.  (2) PROCESS-ADMIT-01: each
+    ranked route now carries its per-step ``process_requirements``, so the ``__post_init__`` guard
+    (:meth:`CompilationResponse._check_process_admission_coherence`) RE-DERIVES the process fit from
+    that evidence via :func:`evaluate_process_requirements` and refuses a ``FITS``/``UNKNOWN`` whose
+    PROCESS evidence cannot support it.  This closes the LOCKSTEP forgery ON THE PROCESS AXIS -- relabel a
+    route that is process-``UNKNOWN``/``EXCLUDED`` to ``FITS`` and recompute the derived fields -- because
+    the carried requirements still re-derive to the stricter PROCESS verdict.
+    RESIDUAL (two parts, both needing a producer signature to close):
+    (a) ``fit_status`` is the COMBINED verdict, and its OTHER two components -- composability and the
+    physical/reagent/equipment box -- are NOT re-derived (they carry only free-text ``exclusions``/``gaps``,
+    and re-deriving them needs the per-step physical conditions and the full ExperimentRoute graph the thin
+    projection omits), so a route EXCLUDED for a NON-process reason can still be bare-relabeled to ``FITS``.
+    (b) even on the process axis, the evidence is not cryptographically bound to the route STRUCTURE, so a
+    fully controlling forger who ALSO fabricates coherent lenient ``process_requirements`` and recomputes
+    ``result_digest`` can still mint a FITS.  A deserialized response is authenticated on the process axis
+    only; full authentication is a producer signature over the payload (out of scope here).  Boundary pinned by
+    tests/test_process_service.py (test_deserialized_admission_is_re_derived_not_blindly_trusted +
+    test_non_process_axis_relabel_is_not_yet_authenticated).
     """
     ir_payload = payload["compilation_ir"]
     response = CompilationResponse(
@@ -2186,6 +2357,9 @@ def response_schema() -> dict:
             "feasibility_verdict": "str",
             "equilibrium_verdict": "str",
             "kinetics_verdict": "str (ranking-only; NEVER a grade)",
+            "process_requirements": "array[object(per-step declared process facts)|null] (PROCESS-ADMIT-01: the "
+                                    "evidence process admission is RE-DERIVED from on load, one entry per route step "
+                                    "in order, null for an undeclared step; part of route identity)",
         },
         "affordability_frontier_entry_fields": {
             "schema_version": "str",

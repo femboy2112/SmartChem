@@ -739,30 +739,33 @@ def dag_composability(dag: SynthesisDAG, *, stability: StabilityTable = DEFAULT_
 
 
 def dag_process_fit(dag: "SynthesisDAG", bounds: "ProcessBounds") -> "ProcessFit":
-    """Conservative process admission for a convergent DAG (closes the DAG-mode process UNASSESSED gap).
+    """SOUND process admission for a convergent DAG (ROUND-12: closes the ROUND-11 serial-sum over-conservatism).
 
-    Reuses the LINEAR route-total gate (:func:`~smartchem.process_constraints.evaluate_process_requirements`) over a
-    topological flattening of the DAG.  Sound-and-conservative, with an axis-dependent boundary that the CALLER must
-    respect when reporting:
+    Delegates to :func:`~smartchem.process_constraints.evaluate_dag_process_requirements`, which shares every
+    order-agnostic per-step check and the ACTIVE serial-total with the linear gate, but aggregates the ELAPSED
+    route-total over ``dag.edges`` so INDEPENDENT branches overlap instead of being summed as if serial:
 
-    * The order-agnostic per-step checks (attention / agitation / check-interval / equipment / workup / whole-process
-      heat & pressure extrema) are EXACTLY correct on a DAG -- a step's requirement does not care what ran alongside
-      it -- so a FITS is sound and a non-time EXCLUSION is sound.
-    * The route-total elapsed / active SUMS treat every branch as if it ran SERIALLY.  That never yields a false FITS
-      (serial time is an upper bound on wall-clock), but a TIME-based EXCLUSION can be OVER-conservative: a genuinely
-      convergent bench whose branches overlap might fit a budget the serial sum exceeds.  A correct (non-conservative)
-      elapsed gate needs critical-path propagation over ``dag.edges`` -- a deliberate, unmade design fork, not wired here.
+    * The order-agnostic per-step checks (attention / agitation / check-interval / equipment / workup / per-step
+      elapsed) are EXACTLY correct on a DAG -- a step's requirement does not care what ran alongside it.
+    * **FITS** is certified by the SERIAL-sum ceiling (achievable one-step-at-a-time with a single set of hands) --
+      unchanged, still sound.  **EXCLUDED** now fires on the CRITICAL-PATH floor (unfittable even with fully
+      concurrent branches) -- a strictly TIGHTER, still-sound exclude than the ROUND-11 floor-SUM.  Between them
+      (serial run over budget, parallel floor under it) is an honest **UNKNOWN**, never the old over-conservative
+      EXCLUDED nor a guessed FITS.
 
-    So: FITS is definite; EXCLUDED is definite ONLY when its reasons are non-time; a time-driven EXCLUDED/UNKNOWN is a
-    conservative lower bound on admission, never a formal refusal.  This function returns the raw conservative verdict;
-    callers that surface it MUST label it as such and MUST NOT promote a DAG to formal admission on its basis.
+    BOUNDARY (unmodeled, do NOT read a FITS as more than it proves): the gate assumes a step's declared attention is
+    legal in isolation; it does NOT check JOINT single-operator schedulability -- two independent branches that each
+    demand CONTINUOUS attention at overlapping wall-clock cannot both be served by one operator, yet each passes its
+    own per-step check.  A whole-DAG resourcing/scheduling model is a named next-step.  This function returns the
+    sound verdict; formal RouteDossier admission (flipping ``process_selection_status`` off UNASSESSED) is likewise a
+    named next-step -- the caller surfaces this as a diagnostic, not yet as admission.
     """
-    from ..process_constraints import evaluate_process_requirements
+    from ..process_constraints import evaluate_dag_process_requirements
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
-    return evaluate_process_requirements(
-        tuple(step.envelope.process for step in dag.topological_order()), bounds
-    )
+    reqs = tuple(step.envelope.process for step in dag.steps)
+    edges = tuple((producer, consumer) for producer, consumer, _intermediate in dag.edges)
+    return evaluate_dag_process_requirements(reqs, edges, bounds)
 
 
 # -- the bundled DAG verdict (E1 + M1 + M2 over the convergent structure) --------------------------------

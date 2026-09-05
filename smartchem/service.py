@@ -1460,26 +1460,30 @@ def constraint_note(bounds: PhysicalBounds, *, fit_counts: "tuple[int, int, int]
 
 
 def _dag_process_note(dags: "tuple", process: "ProcessBounds") -> "str | None":
-    """A conservative, clearly-bounded process assessment for DAG-mode routes (item 5b).
+    """A SOUND, clearly-bounded process assessment for DAG-mode routes (ROUND-12; supersedes item 5b's serial note).
 
     DAG (convergent) routes are not LINEARLY ranked -- they get no RouteDossier and no formal admission -- so
-    ``process_selection_status`` stays ``UNASSESSED`` for a DAG-mode compile.  This diagnostic closes the *silent*
-    part of that gap: it reports what the conservative serial-flattening gate
-    (:func:`~smartchem.experiment.dag.dag_process_fit`) can HONESTLY say -- how many DAGs conservatively FIT, which is
-    sound because a route that fits even run serially certainly fits.  It deliberately reports ONLY that sound lower
-    bound: it never claims formal admission, and it never reports a time-based non-fit as definite (the serial sum
-    over-excludes a genuinely concurrent route -- see dag_process_fit's boundary).
+    ``process_selection_status`` stays ``UNASSESSED`` for a DAG-mode compile.  This diagnostic closes the *silent* part
+    of that gap with the SOUND per-DAG verdict from :func:`~smartchem.experiment.dag.dag_process_fit`: FITS is
+    certified by the serial-achievable ceiling, EXCLUDED by the critical-path floor (unfittable even fully concurrent),
+    and the honest UNKNOWN band between them -- no longer the ROUND-11 serial-sum that OVER-excluded a concurrent route.
+    It reports the tally without CLAIMING formal admission (that RouteDossier projection is a named next-step) and
+    names the unmodeled joint-single-operator schedulability boundary that a FITS does not cover.
     """
     from .experiment.dag import dag_process_fit
     from .process_constraints import ProcessFitStatus
     if not dags or not process.constrains_anything:
         return None
-    fits = sum(1 for d in dags if dag_process_fit(d, process).status is ProcessFitStatus.FITS)
+    verdicts = [dag_process_fit(d, process).status for d in dags]
+    fits = sum(1 for s in verdicts if s is ProcessFitStatus.FITS)
+    excluded = sum(1 for s in verdicts if s is ProcessFitStatus.EXCLUDED)
+    unknown = sum(1 for s in verdicts if s is ProcessFitStatus.UNKNOWN)
     return (
-        f"section-11 process (DAG mode): {len(dags)} convergent route(s) conservatively assessed over a serial "
-        f"flattening -- {fits} would FIT even run serially (a SOUND lower bound on admission). NOT formal admission "
-        "(DAG routes are not yet ranked/admitted, so process_selection_status stays UNASSESSED); a time-based non-fit "
-        "may be over-conservative because concurrent branches are summed as if serial"
+        f"section-11 process (DAG mode): {len(dags)} convergent route(s) SOUNDLY assessed -- {fits} FIT "
+        f"(serial-achievable), {excluded} EXCLUDED (over budget even with fully concurrent branches), {unknown} "
+        "UNKNOWN-fit (fittable only if branches overlap -- undeclared; never a silent pass). NOT formal admission "
+        "(DAG routes are not yet ranked/admitted, so process_selection_status stays UNASSESSED); a FITS assumes each "
+        "step's attention is legal in isolation, NOT joint single-operator schedulability of concurrent branches"
     )
 
 

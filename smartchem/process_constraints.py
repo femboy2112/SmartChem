@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 __all__ = [
     "PROCESS_BOUNDS_SCHEMA", "Attention", "Agitation", "ProcessRequirements",
     "ProcessBounds", "ProcessFitStatus", "ProcessFit", "evaluate_process",
-    "evaluate_process_requirements",
+    "evaluate_process_requirements", "evaluate_dag_process_requirements",
 ]
 
 PROCESS_BOUNDS_SCHEMA = "smartchem.constraints/process-bounds-v1alpha1"
@@ -342,16 +342,33 @@ def evaluate_process_requirements(
     return _evaluate_requirements(reqs, bounds)
 
 
-def _evaluate_requirements(reqs: "tuple[ProcessRequirements | None, ...]", bounds: ProcessBounds) -> ProcessFit:
-    if not bounds.constrains_anything:
-        return ProcessFit(ProcessFitStatus.UNCONSTRAINED)
+def _total(values: "list[float]") -> float:
+    # fsum can overflow even though each supplied bound is finite; that subtotal unambiguously
+    # exceeds every finite limit and must be excluded, never crash.  Order-independent (exact sum).
+    try:
+        return math.fsum(values)
+    except OverflowError:
+        return math.inf
+
+
+def _collect_step_checks(
+    reqs: "tuple[ProcessRequirements | None, ...]", bounds: ProcessBounds
+) -> "tuple[list[str], list[str], list[float | None], list[float | None], list[float], list[float]]":
+    """The per-step + ACTIVE-total process checks shared by the LINEAR serial-sum gate and the DAG critical-path
+    gate, so the two can never drift apart on them.
+
+    Returns ``(exclusions, gaps, elapsed_upper_per_step, elapsed_floor_per_step)``.  The two elapsed lists are
+    aligned to ``reqs`` (``None`` where a step leaves that bound undeclared) so the CALLER aggregates the ELAPSED
+    route-total its own way -- a linear route sums them (serial time IS its wall-clock), a DAG takes the critical
+    path (independent branches overlap).  Everything order-agnostic -- every per-step check, and the ACTIVE
+    route-total (a single operator's hands-on time does not shrink when vessels run in parallel, so it stays a
+    serial sum for BOTH shapes) -- is done here.
+    """
     exclusions: list[str] = []
     gaps: list[str] = []
-    if not reqs:
-        return ProcessFit(ProcessFitStatus.UNKNOWN, gaps=("route has no declared process steps",))
-    elapsed_upper: list[float] = []
+    elapsed_upper: list[float | None] = []   # aligned to reqs; None where a step's ceiling is undeclared
+    elapsed_floor: list[float | None] = []   # aligned to reqs; None where a step declares no known minimum
     active_upper: list[float] = []
-    elapsed_floors: list[float] = []
     active_floors: list[float] = []
     for index, req in enumerate(reqs, start=1):
         requirement = req if req is not None else ProcessRequirements.unknown()
@@ -360,27 +377,25 @@ def _evaluate_requirements(reqs: "tuple[ProcessRequirements | None, ...]", bound
         prefix = f"step {index}"
         if not requirement.workup_included:
             gaps.append(f"{prefix}: whole-step requirements do not explicitly include workup")
+        # The step's KNOWN minimum elapsed is the tightest declared lower bound (an explicit floor and/or an
+        # interval's .lo); the ceiling is the interval's .hi.  Both are collected for EVERY step (aligned to reqs)
+        # so the caller can aggregate the route-total; the per-step EXCLUSIONS and the undeclared GAP below fire
+        # only under a time bound.  A SOURCED minimum can only EXCLUDE, never confirm a fit -- a missing ceiling
+        # stays a gap, so a floor never launders UNKNOWN to a pass.
+        step_floor = _known_min(requirement.min_elapsed_minutes,
+                                requirement.elapsed_minutes.lo if requirement.elapsed_minutes is not None else None)
+        elapsed_upper.append(requirement.elapsed_minutes.hi if requirement.elapsed_minutes is not None else None)
+        elapsed_floor.append(step_floor)
         if bounds.max_step_minutes is not None or bounds.max_total_minutes is not None:
-            # A SOURCED minimum can only EXCLUDE (already over the limit), never confirm a fit;
-            # a missing ceiling below still leaves a gap, so a floor never launders UNKNOWN to a pass.
             if (requirement.min_elapsed_minutes is not None and bounds.max_step_minutes is not None
                     and requirement.min_elapsed_minutes > bounds.max_step_minutes):
                 exclusions.append(f"{prefix}: minimum elapsed {requirement.min_elapsed_minutes:g} min "
                                   f"exceeds step limit {bounds.max_step_minutes:g} min")
-            # The step's KNOWN minimum elapsed for the route total is the tightest declared lower
-            # bound -- an explicit floor and/or an interval's .lo -- so a known minimum TOTAL over
-            # the route limit is never missed just because some step ceilings are undeclared.
-            step_floor = _known_min(requirement.min_elapsed_minutes,
-                                    requirement.elapsed_minutes.lo if requirement.elapsed_minutes is not None else None)
-            if step_floor is not None:
-                elapsed_floors.append(step_floor)
             if requirement.elapsed_minutes is None:
                 gaps.append(f"{prefix}: elapsed_minutes is undeclared")
-            else:
-                elapsed_upper.append(requirement.elapsed_minutes.hi)
-                if bounds.max_step_minutes is not None and requirement.elapsed_minutes.hi > bounds.max_step_minutes:
-                    exclusions.append(f"{prefix}: elapsed upper bound {requirement.elapsed_minutes.hi:g} min "
-                                      f"exceeds step limit {bounds.max_step_minutes:g} min")
+            elif bounds.max_step_minutes is not None and requirement.elapsed_minutes.hi > bounds.max_step_minutes:
+                exclusions.append(f"{prefix}: elapsed upper bound {requirement.elapsed_minutes.hi:g} min "
+                                  f"exceeds step limit {bounds.max_step_minutes:g} min")
         if bounds.max_active_minutes is not None:
             if (requirement.min_active_minutes is not None
                     and requirement.min_active_minutes > bounds.max_active_minutes):
@@ -428,31 +443,121 @@ def _evaluate_requirements(reqs: "tuple[ProcessRequirements | None, ...]", bound
                 missing = sorted(set(requirement.equipment) - set(bounds.available_equipment))
                 if missing:
                     exclusions.append(f"{prefix}: required equipment is unavailable: {', '.join(missing)}")
+    return exclusions, gaps, elapsed_upper, elapsed_floor, active_upper, active_floors
 
-    # fsum can overflow even though each supplied bound is finite; that subtotal
-    # unambiguously exceeds every finite limit and must be excluded, never crash.
-    def total(values: list[float]) -> float:
-        try:
-            return math.fsum(values)
-        except OverflowError:
-            return math.inf
 
+def _evaluate_requirements(reqs: "tuple[ProcessRequirements | None, ...]", bounds: ProcessBounds) -> ProcessFit:
+    if not bounds.constrains_anything:
+        return ProcessFit(ProcessFitStatus.UNCONSTRAINED)
+    if not reqs:
+        return ProcessFit(ProcessFitStatus.UNKNOWN, gaps=("route has no declared process steps",))
+    exclusions, gaps, elapsed_upper, elapsed_floor, active_upper, active_floors = _collect_step_checks(reqs, bounds)
+    # LINEAR route-total: serial sums -- a linear route runs step after step, so its wall-clock IS the sum.
     for values, limit, label in (
-        (elapsed_upper, bounds.max_total_minutes, "elapsed"),
+        ([x for x in elapsed_upper if x is not None], bounds.max_total_minutes, "elapsed"),
         (active_upper, bounds.max_active_minutes, "active"),
     ):
-        if limit is not None and total(values) > limit:
-            exclusions.append(f"route: known {label} upper-bound sum {total(values):g} min exceeds "
+        if limit is not None and _total(values) > limit:
+            exclusions.append(f"route: known {label} upper-bound sum {_total(values):g} min exceeds "
                               f"route limit {limit:g} min")
     # Route-total floor sums exclude on the same principle: a known MINIMUM total already over the
     # route limit is proof, even when every step's ceiling is unknown.
     for values, limit, label in (
-        (elapsed_floors, bounds.max_total_minutes, "elapsed"),
+        ([x for x in elapsed_floor if x is not None], bounds.max_total_minutes, "elapsed"),
         (active_floors, bounds.max_active_minutes, "active"),
     ):
-        if limit is not None and total(values) > limit:
-            exclusions.append(f"route: known minimum {label} sum {total(values):g} min exceeds "
+        if limit is not None and _total(values) > limit:
+            exclusions.append(f"route: known minimum {label} sum {_total(values):g} min exceeds "
                               f"route limit {limit:g} min")
+    status = (ProcessFitStatus.EXCLUDED if exclusions else
+              ProcessFitStatus.UNKNOWN if gaps else ProcessFitStatus.FITS)
+    return ProcessFit(status, tuple(exclusions), tuple(gaps))
+
+
+def _critical_path(weights: "list[float | None]", edges: "tuple[tuple[int, int], ...]", n: int) -> float:
+    """Longest weighted path (makespan) through a DAG of ``n`` nodes given per-node ``weights`` and ``edges``
+    as ``(producer, consumer)`` index pairs.  A ``None`` weight counts as 0 (an unknown floor is a lower bound
+    of zero -- sound for the EXCLUDE test, which only fires when even this under-count already exceeds the limit).
+    Independent branches overlap, so this is the minimum achievable wall-clock under unlimited resources -- the
+    tightest sound LOWER bound on elapsed, never an achievable schedule (that is the serial sum).
+    """
+    w = [float(x) if x is not None else 0.0 for x in weights]
+    preds: list[list[int]] = [[] for _ in range(n)]
+    indeg = [0] * n
+    succ: list[list[int]] = [[] for _ in range(n)]
+    for a, b in edges:
+        preds[b].append(a)
+        succ[a].append(b)
+        indeg[b] += 1
+    dist = [0.0] * n
+    queue = [i for i in range(n) if indeg[i] == 0]
+    seen = 0
+    while queue:
+        i = queue.pop()
+        seen += 1
+        dist[i] = w[i] + (max((dist[p] for p in preds[i]), default=0.0))
+        for j in succ[i]:
+            indeg[j] -= 1
+            if indeg[j] == 0:
+                queue.append(j)
+    if seen != n:  # a cycle would make longest-path ill-defined; a SynthesisDAG is acyclic, so this never fires
+        raise ValueError("critical path requires an acyclic graph")
+    return max(dist, default=0.0)
+
+
+def evaluate_dag_process_requirements(
+    reqs: "tuple[ProcessRequirements | None, ...]", edges: "tuple[tuple[int, int], ...]", bounds: ProcessBounds
+) -> ProcessFit:
+    """The SOUND process gate for a convergent DAG (ROUND-12): identical to the linear gate on every order-agnostic
+    dimension (:func:`_collect_step_checks`), but the ELAPSED route-total respects that INDEPENDENT branches overlap.
+
+    The soundness rests on which aggregate proves what:
+
+    * **FITS certificate = the SERIAL-sum ceiling.**  ``sum(step ceilings) <= max_total`` proves the route fits even
+      run one step after another with a single set of hands -- always achievable, so it is a sound FITS, exactly as
+      for a linear route.  Critical-path is NOT used to grant a FITS (it presumes concurrency the single-operator
+      ``ProcessBounds`` never declares, so it could not certify an achievable schedule).
+    * **EXCLUDE = the CRITICAL-PATH floor.**  If even the best-case fully-parallel schedule's KNOWN MINIMUM (the
+      longest dependency chain of floors) already exceeds ``max_total``, no schedule can fit -- a sound, and strictly
+      tighter, EXCLUDE than the linear floor-SUM (which over-excludes a convergent route by summing overlapping branches).
+    * **Between them -> honest UNKNOWN.**  ``serial_ceiling > max_total`` but ``critical_floor <= max_total`` cannot be
+      resolved either way without a concurrency/resourcing model the bounds do not carry, so it is UNKNOWN, never a
+      guessed FITS and never an over-conservative EXCLUDE.
+
+    ACTIVE time stays a serial sum (done in the shared helper): one operator's hands-on total does not shrink when
+    branches run in parallel vessels.  ``max_step_minutes`` per-step checks are order-agnostic and already applied.
+    """
+    if any(r is not None and type(r) is not ProcessRequirements for r in reqs):
+        raise TypeError("requirements must contain ProcessRequirements or None values")
+    if not bounds.constrains_anything:
+        return ProcessFit(ProcessFitStatus.UNCONSTRAINED)
+    if not reqs:
+        return ProcessFit(ProcessFitStatus.UNKNOWN, gaps=("route has no declared process steps",))
+    exclusions, gaps, elapsed_upper, elapsed_floor, active_upper, active_floors = _collect_step_checks(reqs, bounds)
+    n = len(reqs)
+    if bounds.max_total_minutes is not None:
+        limit = bounds.max_total_minutes
+        # EXCLUDE only when even the fully-parallel KNOWN-MINIMUM critical path is already over the budget.
+        critical_floor = _critical_path(elapsed_floor, edges, n)
+        if critical_floor > limit:
+            exclusions.append(f"route: known minimum elapsed critical-path {critical_floor:g} min exceeds "
+                              f"route limit {limit:g} min (unfittable even with fully concurrent branches)")
+        elif all(x is not None for x in elapsed_upper):
+            serial_ceiling = _total([x for x in elapsed_upper if x is not None])
+            if serial_ceiling > limit:
+                # Serial run is over budget, but the parallel floor is not -- fittable ONLY if branches overlap,
+                # which the single-operator bounds cannot confirm.  Honest UNKNOWN (a gap), never EXCLUDED or FITS.
+                gaps.append(f"route: serial elapsed sum {serial_ceiling:g} min exceeds route limit {limit:g} min; "
+                            "may fit only if independent branches run concurrently (undeclared)")
+    # ACTIVE route-total: a SERIAL sum for a DAG too -- one operator's hands-on time does not shrink when branches
+    # run in parallel vessels, so this is NOT critical-pathed (matching the linear gate's active-total, by design).
+    if bounds.max_active_minutes is not None:
+        if _total(active_upper) > bounds.max_active_minutes:
+            exclusions.append(f"route: known active upper-bound sum {_total(active_upper):g} min exceeds "
+                              f"route limit {bounds.max_active_minutes:g} min")
+        if _total(active_floors) > bounds.max_active_minutes:
+            exclusions.append(f"route: known minimum active sum {_total(active_floors):g} min exceeds "
+                              f"route limit {bounds.max_active_minutes:g} min")
     status = (ProcessFitStatus.EXCLUDED if exclusions else
               ProcessFitStatus.UNKNOWN if gaps else ProcessFitStatus.FITS)
     return ProcessFit(status, tuple(exclusions), tuple(gaps))

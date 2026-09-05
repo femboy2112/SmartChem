@@ -135,3 +135,22 @@ class TestDomainErrorsAreConciseNotTracebacks:
         got, err = _cli(argv)
         assert got == code
         assert "Traceback (most recent call last)" not in err
+
+
+class TestNonfiniteConstraintIsACleanDomainError:
+    """CLI-ERR-01 remainder CLOSED: a nonfinite (inf/nan) section-11 constraint is a clean INVALID_INPUT (exit 2)
+    with a concise domain message and NO traceback -- the model-layer PhysicalBounds validation (constraints.py, the
+    finite-and-positive rule) reaches the CLI through the ONE classifier, now that the synthesize constraint uptake
+    (CLI-CAN-02) is landed and the T/P bounds ride the shared request identity."""
+
+    @pytest.mark.parametrize("value", ["inf", "nan"])
+    def test_recompile_nonfinite_max_temp_is_exit_2_no_traceback(self, value):
+        got, err = _cli(["recompile", "water", "--max-temp", value, "--max-depth", "1"])
+        assert got == 2
+        assert "finite and positive" in err  # the model-layer CONSTR-VAL-01 rule, surfaced as a domain error
+        assert "Traceback (most recent call last)" not in err
+
+    def test_recompile_nonfinite_max_pressure_is_exit_2_no_traceback(self):
+        got, err = _cli(["recompile", "water", "--max-pressure", "inf", "--max-depth", "1"])
+        assert got == 2
+        assert "Traceback (most recent call last)" not in err

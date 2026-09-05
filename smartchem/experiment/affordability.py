@@ -24,11 +24,18 @@ And the coupled/partial case is now honest (COST-VEC-01-coupled): a basket that 
 ``cash_floor`` -- a proven LOWER BOUND -- instead of collapsing cash to a bare UNKNOWN, and ``dominates`` treats the
 cash axis as an interval so a known-cheap route can still dominate a floored-dear one without fabricating the unknown.
 
-Boundary (named, not hidden): the basket is still PER-UNIT -- ``basket_cost_vector`` prices ONE ``unit`` of each leaf,
-so both the exact ``cash`` and the ``cash_floor`` assume unit quantities; a route needing a sub-unit amount is not
-lower-bounded by the full per-unit price (the named "quantity/stoich axis" follow-on, not yet built).  A mixed-currency
-basket reports NEITHER cash nor floor (conservative -- it never sums across currencies, even though a same-currency
-sub-basket floor provably exists); tightening that to a per-currency floor is a further follow-on.
+The quantity/stoich layer (TERM-MAT, now built): ``basket_cost_vector``'s per-unit cash prices ONE package ``unit`` of
+each leaf, blind to how much a route consumes.  Given a route's per-leaf ``(molecule, moles)`` requirement it instead
+emits a QUANTITY-WEIGHTED ``cash_floor`` -- moles x price_per_mol via :mod:`smartchem.experiment.units` (the sourced
+molar-mass + definitional mass-unit layer) -- a per-mol-of-PRODUCT material-cost lower bound.  Its role is honest and
+narrow: it is an INFORMATIONAL lower bound, NOT a cash-axis dominance discriminator.  It is always a floor (100%-yield
+mol bound x UNKNOWN-assay commodity), and by the necessary-dominance discipline a floor can never dominate on cash
+(only a KNOWN point cash below it can); a weighted floor's denomination ("mol product") is also INCOMPARABLE with the
+per-unit path's ("metric ton") -- ``dominates`` refuses to compare cash across denominations (the ``unit`` field is
+load-bearing there, a red-team fold).  So material-burden RANKING is carried by the ``material_quantity`` (mol) axis; the
+weighted cash floor is the $-annotation on top.  Boundaries still standing: a mixed-CURRENCY basket reports NEITHER cash
+nor floor (never sums across currencies); and the weighted floor is DARK on any route whose leaves are unpriced (today
+only NaCl / Na2CO3 are priced, so organic bench routes carry no weighted cash yet -- a DATA boundary, not faked).
 """
 from __future__ import annotations
 
@@ -148,7 +155,10 @@ def dominates(a: CostVector, b: CostVector) -> bool:
       dominance: ``a`` is no-worse-on-cash iff ``a``'s max possible cost <= ``b``'s min (``a_hi <= b_lo``) and
       strictly better iff ``a_hi < b_lo``.  Consequently a floor (``a_hi = +inf``) can NEVER dominate on cash -- it
       can only be dominated by a KNOWN cost strictly below its floor -- so the frontier never claims a cost ordering
-      it cannot guarantee (two floors, or a floor above a known, are incomparable on cash).
+      it cannot guarantee (two floors, or a floor above a known, are incomparable on cash).  Cash is ALSO compared
+      only WITHIN one denomination: the ``unit`` label ("metric ton" per package vs "mol product" for a
+      quantity-weighted floor) is load-bearing here -- a different denomination is incomparable, like an unknown axis
+      (red-team fold: without this, $/package and $/mol were compared as if commensurable).
     """
     # hard-blocker rule first -- it overrides the cost axes entirely (a hard blocker dominates cost, G6).
     if a.is_hard_blocked and not b.is_hard_blocked:
@@ -178,8 +188,13 @@ def dominates(a: CostVector, b: CostVector) -> bool:
     if b_cash is not None:
         b_constrains_something = True
         a_cash = _cash_interval(a)
-        if a_cash is None:
-            return False  # a's cash is entirely UNKNOWN where b's is bounded -> cannot claim no-worse
+        # a can claim no-worse-on-cash ONLY if its cash is bounded AND in the SAME denomination as b's (the ``unit``
+        # field: "metric ton" for a per-unit package price vs "mol product" for a quantity-weighted floor).  Comparing
+        # $/package against $/mol-of-product as if commensurable would be a false ordering (red-team fold: dominance
+        # treated ``unit`` as decorative and let $5/ton "dominate" $10/mol) -- so a different denomination is treated
+        # exactly like an UNKNOWN cash: a cannot claim no-worse, so it cannot dominate on this axis.
+        if a_cash is None or a.unit != b.unit:
+            return False  # a's cash is UNKNOWN, or in a different denomination -> cannot claim no-worse
         a_lo, a_hi = a_cash
         b_lo, b_hi = b_cash
         if a_hi > b_lo:
@@ -211,8 +226,51 @@ def pareto_frontier(items: "list") -> "list":
 _ACCESS_ORDINAL = {"grocery": 0, "pharmacy": 1, "hardware": 2, "pool_garden": 3}
 
 
+def _weighted_cash_floor(leaf_requirements: "list") -> "tuple[float | None, str]":
+    """TERM-MAT: the QUANTITY-WEIGHTED cash floor of a route's per-leaf stoichiometric requirement, or ``(None, "")``.
+
+    ``leaf_requirements`` is the per-leaf ``(molecule, moles)`` shopping requirement (``dag_shopping_requirement``'s
+    output).  Each priced+mass-convertible leaf contributes ``moles * price_per_mol`` (the molar-mass + price-unit
+    layer, :mod:`smartchem.experiment.units`); the sum over those leaves is a PROVEN LOWER BOUND on the route's
+    material cash for one unit of product -- and it is ALWAYS a floor, never an exact total, for three compounding
+    reasons, each of which can only push the true cost UP: (1) the mol requirement is a conserved 100%-yield lower
+    bound; (2) a priced commodity is UNKNOWN-assay (you need at least the pure-reagent mass of an impure commodity);
+    (3) an unpriced or non-mass-denominated leaf is simply omitted (a partial basket).  A leaf priced in a currency
+    different from the others yields ``(None, "")`` -- currencies are never summed.  ``(None, "")`` when NO leaf is
+    priced-and-convertible (the honest UNKNOWN)."""
+    from .commodity_pricing import cost_observation_for
+    from .units import price_per_mol
+
+    total = 0.0
+    currency = ""
+    any_priced = False
+    for mol, moles in leaf_requirements:
+        # a moles requirement is a non-negative amount; a negative/NaN one is not an honest requirement (a shopping
+        # requirement is always net>0, so this never fires on the wire) -> skip it rather than build a negative floor
+        # that would crash the CostVector (its cash_floor rejects negatives) -- the guard molar_mass already has on count.
+        if not isinstance(moles, (int, float)) or isinstance(moles, bool) or moles != moles or moles < 0:
+            continue
+        obs = cost_observation_for(mol)
+        if obs is None:
+            continue
+        per_mol = price_per_mol(obs, mol.formula)  # `formula` is a property returning a dict
+        if per_mol is None:
+            continue  # priced but not mass-convertible (e.g. a per-litre price) -> omit (a partial basket -> floor)
+        value, cur = per_mol
+        if not any_priced:
+            currency = cur
+        elif cur != currency:
+            return None, ""  # incommensurable currencies -> refuse to sum, no honest floor
+        total += value * float(moles)
+        any_priced = True
+    if not any_priced:
+        return None, ""
+    return total, currency
+
+
 def basket_cost_vector(
-    commodity_molecules: "list", *, material_quantity: "float | None" = None, hard_blockers: tuple[str, ...] = (),
+    commodity_molecules: "list", *, material_quantity: "float | None" = None,
+    weighted_cash_leaves: "list | None" = None, hard_blockers: tuple[str, ...] = (),
 ) -> CostVector:
     """Aggregate the commodity leaves a route/basket buys (each a :class:`~smartchem.category.Molecule`) into ONE
     section-10.4 vector -- the shape the route-level frontier will build from a route's terminal reagents.
@@ -223,6 +281,21 @@ def basket_cost_vector(
     WORST (hardest) leaf -- a basket is only as obtainable as its least-obtainable part -- and is UNKNOWN if any leaf
     is not a known commodity (never assume easy).  A hard blocker passed in blocks the whole basket.  Unmodeled axes
     stay UNKNOWN.  An EMPTY basket has no known cash/access (all UNKNOWN) -- a route buying nothing is not "free".
+
+    TERM-MAT (``weighted_cash_leaves``): the per-unit package cash above prices ONE unit of each leaf, blind to HOW
+    MUCH the route actually consumes -- a coarse proxy the frontier compares across routes by package COUNT, not real
+    outlay.  When the caller supplies the route's per-leaf ``(molecule, moles)`` stoichiometric requirement, this
+    computes the QUANTITY-WEIGHTED cash instead (:func:`_weighted_cash_floor`: moles x price_per_mol via the molar-mass
+    + price-unit layer) and uses it as the ``cash_floor`` -- a physically-meaningful lower bound on the material cash
+    for one unit of product, in place of the per-unit package proxy.  Its role is honest and NARROW (red-team fold, not
+    an overclaim): it is an INFORMATIONAL per-product cost floor, NOT a cash-axis dominance discriminator.  It is ALWAYS
+    a floor (100%-yield mol bound x UNKNOWN-assay commodity x possibly-partial coverage -- all push the true cost only
+    UP), and by the necessary-dominance rule a floor never dominates on cash (two floors are incomparable, and its
+    "mol product" denomination is incomparable with the per-unit "metric ton"), so it contributes NO cash ranking --
+    material-burden RANKING is the ``material_quantity`` (mol) axis's job; this is the $-annotation.  It enters the
+    vector with ``unit="mol product"`` and OVERRIDES the per-unit cash only when computable (>=1 priced,
+    mass-convertible leaf); otherwise the per-unit path stands.  ``weighted_cash_leaves=None`` (the default) leaves the
+    per-unit behaviour byte-identical -- zero churn for every existing caller.
     """
     from .commodity_pricing import cost_observation_for  # forward dep, at call time to keep import light
     from ..data.reagents import commodity_for
@@ -270,13 +343,29 @@ def basket_cost_vector(
             else:
                 cash_floor = total    # partial -> an honest lower bound, not a fabricated total
 
+    # TERM-MAT: prefer the QUANTITY-WEIGHTED cash floor when the per-leaf stoichiometric requirement is supplied and
+    # yields one -- the physically-meaningful per-mol-of-product material cash, where the per-unit sum above is a
+    # package-count proxy.  It is ALWAYS a floor (an INFORMATIONAL lower bound, not a dominance signal -- see the
+    # docstring), so it replaces BOTH the exact cash and the per-unit floor (mutually exclusive with cash on the
+    # CostVector) and is labelled "mol product".  When it is not computable (no priced, mass-convertible leaf, or mixed
+    # currencies) the per-unit path above stands unchanged.
+    weighted_unit = ""
+    if weighted_cash_leaves is not None:
+        w_floor, w_currency = _weighted_cash_floor(weighted_cash_leaves)
+        if w_floor is not None:
+            cash = None
+            cash_floor = w_floor
+            currency = w_currency
+            weighted_unit = "mol product"
+
     access_difficulty = worst_access if all_known_commodity else None
     has_cash = cash is not None or cash_floor is not None
     # TERM-MAT / quantity axis: ``material_quantity`` (optional) is the route's total external-leaf MOLES per unit of
     # final product (a conserved 100%-efficiency LOWER BOUND from ``dag_shopping_requirement``), a stoichiometric
-    # material-burden weight the per-unit cash axis is blind to.  It is deliberately a MOL count, NOT a mass or a
-    # cash weight -- quantity-weighted CASH needs a molar-mass + price-unit-conversion layer this code does not have
-    # (and treats as opaque; a named follow-on), so a mol axis is the honest scope, never a fabricated weighted total.
+    # material-burden weight the per-unit cash axis is blind to -- and, being a POINT value, the axis that actually
+    # RANKS material burden between routes (the quantity-weighted cash floor above is a $-annotation, not a ranker).
+    # The molar-mass + price-unit layer that turns these moles into the weighted cash floor is now built
+    # (:mod:`smartchem.experiment.units`, wired via ``weighted_cash_leaves``); the mol count remains the honest axis.
     return CostVector(
         cash=cash,
         cash_floor=cash_floor,
@@ -284,7 +373,9 @@ def basket_cost_vector(
         material_quantity=material_quantity,
         hard_blockers=tuple(hard_blockers),
         currency=currency if has_cash else "",
-        unit=unit if has_cash else "",
+        # the cash denominator label: "mol product" when a quantity-weighted floor replaced the per-unit sum, else
+        # the per-leaf package unit (e.g. "metric ton").  Informational only -- it never enters dominance.
+        unit=(weighted_unit or unit) if has_cash else "",
     )
 
 

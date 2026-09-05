@@ -311,3 +311,70 @@ def test_material_quantity_enters_dominance_as_a_minimized_axis():
     # UNKNOWN material_quantity stays incomparable on that axis (never over-ranked)
     unknown = CostVector(access_difficulty=2)
     assert not dominates(lean, unknown) and not dominates(unknown, lean)  # tie on access, material incomparable
+
+
+# ---- TERM-MAT: quantity-weighted cash floor (per-leaf moles x price_per_mol) ----
+
+def test_weighted_cash_leaves_gives_a_quantity_weighted_cash_floor():
+    # the payoff of the molar-mass + price-unit layer: 2 mol of NaCl at the USGS 52.95 $/t price, weighted by the
+    # sourced molar mass 58.44 g/mol -> a real per-mol-product material cash, where the per-unit axis only knew
+    # "one metric ton = $52.95".  It is ALWAYS a floor (100%-yield x UNKNOWN-assay), labelled per mol of product.
+    salt = _mol("sodium chloride")
+    v = basket_cost_vector([salt], weighted_cash_leaves=[(salt, 2.0)])
+    expected = 2.0 * (52.95 / 1_000_000.0) * 58.44   # moles x price_per_gram x molar_mass
+    assert v.cash is None                              # a weighted floor is never an exact total
+    assert v.cash_floor == pytest.approx(expected, rel=1e-3)
+    assert v.unit == "mol product" and v.currency == "USD"
+
+
+def test_weighted_cash_default_is_byte_identical_to_the_per_unit_path():
+    # the gate: without weighted_cash_leaves the per-unit behaviour is UNCHANGED (exact cash from the package price) --
+    # zero churn for every existing caller.
+    salt = _mol("sodium chloride")
+    assert basket_cost_vector([salt]).cash == pytest.approx(52.95)
+    assert basket_cost_vector([salt]).unit == "metric ton"
+
+
+def test_weighted_cash_is_a_partial_floor_when_a_leaf_is_unpriced():
+    # a route needing an unpriced leaf (ethanol) alongside a priced one contributes only the priced leaf's weighted
+    # cost -- a PARTIAL floor (you need at least that much), never a fabricated total for the unpriced remainder.
+    salt, ethanol = _mol("sodium chloride"), _mol("ethanol")  # ethanol: a commodity, but unpriced (no 2a price)
+    v = basket_cost_vector([salt, ethanol], weighted_cash_leaves=[(salt, 1.0), (ethanol, 5.0)])
+    expected = 1.0 * (52.95 / 1_000_000.0) * 58.44
+    assert v.cash is None
+    assert v.cash_floor == pytest.approx(expected, rel=1e-3)  # only the salt's weighted cost enters the floor
+    assert v.unit == "mol product"
+
+
+def test_weighted_cash_falls_back_to_per_unit_when_no_leaf_is_convertible():
+    # if NO supplied leaf is priced-and-mass-convertible, the weighted floor is UNKNOWN and the per-unit path STANDS
+    # (never silently blanks the real per-unit signal).  Here the weighted leaves are all unpriced -> fall back to the
+    # exact per-unit cash of the priced commodity_molecules.
+    salt, ethanol = _mol("sodium chloride"), _mol("ethanol")
+    v = basket_cost_vector([salt], weighted_cash_leaves=[(ethanol, 3.0)])
+    assert v.cash == pytest.approx(52.95)   # per-unit path preserved
+    assert v.cash_floor is None
+    assert v.unit == "metric ton"
+
+
+def test_cash_is_incomparable_across_denominations():
+    # red-team fold (Finding 1): a per-unit package cash ("metric ton") and a quantity-weighted floor ("mol product")
+    # are DIFFERENT denominations; dominance must NOT compare them numerically (it used to let $5/ton "dominate"
+    # $10/mol).  The `unit` field is load-bearing on the cash axis: a different denomination is incomparable.
+    per_ton = CostVector(cash=5.0, unit="metric ton")
+    per_mol = CostVector(cash_floor=10.0, unit="mol product")
+    assert not dominates(per_ton, per_mol) and not dominates(per_mol, per_ton)  # incomparable, both ways
+    # NON-VACUITY: the guard does NOT over-block -- SAME-denomination cash still compares (a cheaper ton dominates a
+    # dearer ton), so the fix isolates the denomination mismatch and nothing else.
+    cheap_ton = CostVector(cash=5.0, unit="metric ton")
+    dear_ton = CostVector(cash=9.0, unit="metric ton")
+    assert dominates(cheap_ton, dear_ton) and not dominates(dear_ton, cheap_ton)
+
+
+def test_weighted_cash_negative_moles_is_skipped_not_a_crash():
+    # red-team fold (Finding 4): a negative/NaN moles is not an honest requirement (never happens on the wire -- dag
+    # requirements are net>0) but must not crash the vector build (a negative floor is rejected by CostVector); it is
+    # skipped, so an all-negative weighted set falls back to the per-unit path rather than raising.
+    salt = _mol("sodium chloride")
+    v = basket_cost_vector([salt], weighted_cash_leaves=[(salt, -5.0)])
+    assert v.cash == pytest.approx(52.95) and v.cash_floor is None  # negative leaf skipped -> per-unit fallback

@@ -1306,19 +1306,17 @@ def _ranked_summaries(
     return tuple(RankedRouteSummary.of_fit(f) for f in fits)
 
 
-def _route_material_quantity(route: "object") -> "float | None":
-    """The route's TOTAL external-leaf MOLES per 1 mol of final product (COST-VEC-01 quantity/stoich axis).
+def _route_shopping_requirements(route: "object") -> "tuple[tuple[object, float], ...] | None":
+    """The route's per-external-leaf ``(molecule, moles)`` shopping requirement per 1 mol of final product.
 
-    A conserved 100%-efficiency LOWER BOUND from ``dag_shopping_requirement`` (by-products credited), summed across
-    the external species -- a stoichiometric material-burden weight the per-unit cash axis is blind to.  ``None`` (an
+    A conserved 100%-efficiency LOWER BOUND from ``dag_shopping_requirement`` (by-products credited).  ``None`` (an
     honest UNKNOWN, never a fabricated allocation) for the EXPECTED structural-refusal domains: shopping is
     UNDERDETERMINED (a coupled multi-net-producer fan-out -> ``ShoppingUnderdeterminedError``), the steps do not form a
     valid DAG (``DAGError`` -- duplicate target / cycle / no single sink), or a DEGENERATE step has no net species
     (``CeilingError`` -- e.g. an identity/spectator-only rewrite, so there is no material requirement to compute).
     Only those expected fault domains are caught -- an unexpected fault propagates (an internal bug is never laundered
-    into a scientific "unknown"; the ERR-EVIDENCE-01 discipline).  It is deliberately a MOL count, NOT a mass or a
-    quantity-weighted cash: quantity-weighted cash needs a molar-mass + price-unit-conversion layer this code does not
-    have (a named follow-on)."""
+    into a scientific "unknown"; the ERR-EVIDENCE-01 discipline).  It is the shared worker behind both the
+    ``material_quantity`` axis (total moles) and the TERM-MAT quantity-weighted cash floor (per-leaf moles x price)."""
     steps = getattr(route, "steps", None)
     if not steps:
         return None
@@ -1333,7 +1331,21 @@ def _route_material_quantity(route: "object") -> "float | None":
         # (a SIBLING of DAGError, NOT a subclass -- red-team fold) covers a degenerate no-net-species step.  All are
         # honest UNKNOWN cases; without catching CeilingError a degenerate-but-valid-DAG route crashes the whole response.
         return None
-    return float(sum(amount for _m, amount in req.requirements))
+    return tuple((m, float(amount)) for m, amount in req.requirements)
+
+
+def _route_material_quantity(route: "object") -> "float | None":
+    """The route's TOTAL external-leaf MOLES per 1 mol of final product (COST-VEC-01 quantity/stoich axis).
+
+    The sum of :func:`_route_shopping_requirements` -- a conserved 100%-efficiency LOWER BOUND, a stoichiometric
+    material-burden weight the per-unit cash axis is blind to.  ``None`` (honest UNKNOWN) in exactly the shopping's
+    refusal domains (see the worker).  It is deliberately a MOL count, NOT a cash: the quantity-weighted CASH version
+    (per-leaf moles x price_per_mol, via the TERM-MAT molar-mass + price-unit layer) rides the cash axis instead, wired
+    below through ``basket_cost_vector``'s ``weighted_cash_leaves``."""
+    reqs = _route_shopping_requirements(route)
+    if reqs is None:
+        return None
+    return float(sum(amount for _m, amount in reqs))
 
 
 def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
@@ -1365,8 +1377,14 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
         if route is None:
             continue  # a ranked summary with no matching route object (should not happen) contributes nothing
         hard = tuple(summary.exclusions) if summary.fit_status == "EXCLUDED" else ()
+        # compute the shopping requirement ONCE and feed both the material_quantity axis (total moles) AND the
+        # TERM-MAT quantity-weighted cash floor (per-leaf moles x price_per_mol); basket_cost_vector prefers the
+        # weighted floor over the per-unit package cash when it is computable, else the per-unit path stands.
+        reqs = _route_shopping_requirements(route)
+        mq = None if reqs is None else float(sum(amount for _m, amount in reqs))
         vector = basket_cost_vector(
-            list(route.leaf_inputs), material_quantity=_route_material_quantity(route), hard_blockers=hard,
+            list(route.leaf_inputs), material_quantity=mq,
+            weighted_cash_leaves=(list(reqs) if reqs is not None else None), hard_blockers=hard,
         )
         entries.append(AffordabilityFrontierEntry.of(summary.route_digest, vector))
     # Run dominance FIRST, then gate on the SURVIVORS.  The signal must be checked on the POST-dominance frontier,

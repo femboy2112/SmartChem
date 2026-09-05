@@ -3603,3 +3603,72 @@ elapsed (start to dried product, INCLUDING untimed workup/drying) for the two se
 - **Residual → next-step:** a time-based FIT needs a source genre that states whole-process totals
   (industrial/pilot process docs with cycle times, patent examples with run+workup schedules) — none is an
   open-license benign teaching prep. Stays open on the roadmap.
+
+## 11. ROUND 11 — the four-item full-blast round (2026-09-05)
+
+Off ROUND 10 (`main` at `122a6b2`, untouched during the build). Four deliverables, each
+design → Citadel recon → build → REPRODUCE the finding myself → evil-morty red-team → fold → verify.
+Final full suite **4097 passed, 14 skipped, 1 xfailed** (dev venv, PySCF present). All committed on the dev
+branch `chem-genericity-reorient-2026-09-03`; merged to `main` this round (see the release note below).
+
+### 11.1 COMBINED-VERDICT-AUTH — the producer signature (★; `f32b0b4`)
+
+The honest close of the evil-morty Finding-1 deserialization boundary (ROUND 10 §10.3 residual), for the ONE
+threat a signature can actually address. `response_to_payload`/`serialize_response` take an optional
+`signing_key` and emit a `producer_signature` (HMAC-SHA256 over `result_digest`, which transitively covers every
+route's `fit_status`/`process_requirements`/`exclusions`); `response_from_payload`/`deserialize_response` take a
+`verification_key` + `require_signature` and refuse a KEYLESS out-of-band tamper — even a coherent one that
+recomputes `result_digest`, and even on the physical/composability axes PROCESS-ADMIT-01 cannot re-derive.
+`resolve_producer_key()` reads an env var or an auto-created 0600 keyfile. **Strictly OPT-IN**: with no key the
+payload is byte-identical (`producer_signature` null), so every existing caller and golden fixture is unchanged.
+**Honest scope:** it does NOT close a key-holding / in-process forger (they construct-then-sign); NO signature
+can, and `test_key_holding_forger_residual_is_not_closable_by_a_signature` pins that irreducible residual.
+Schemas: response `v1alpha10 → v1alpha11`, descriptor `v1alpha11 → v1alpha12`. Verified: transport-tamper
+rejection + wrong-key + require-signature enforcement (`tests/test_process_service.py`).
+
+### 11.2 item 4 — a third sourced whole-process record (`2990717`)
+
+Methyl salicylate (oil of wintergreen): salicylic acid + methanol → methyl salicylate, a Fischer esterification
+the capped-scission search already produces. Sourced from LibreTexts "Experiment 731: Esters" (Los Medanos
+College, **CC BY**, license re-confirmed verbatim). A find → adversarial-verify fan-out **killed a `agitation=MANUAL`
+value** (misattributed from a post-reaction workup step, not the reaction) and **refused two candidates** —
+acetanilide (license "not declared") and ethyl acetate (zero numeric process data) — as honest negatives, no
+fabrication. `workup_included=False` (the source's only post-reaction step is a QUALITATIVE detection, not a
+preparative isolation), so this record can EXCLUDE or be UNKNOWN, **never a false FITS**. Acceptance on the real
+search (`tests/test_process_records.py`): UNKNOWN on a covering bench (workup + agitation undeclared), EXCLUDED
+by stricter temperature / missing equipment / too-slow step budget.
+
+### 11.3 item 5b — DAG-mode process admission (`f32b0b4`); item 5a — honest defer
+
+`dag_process_fit` runs the linear process gate over a topological flattening of a convergent DAG — **sound**
+(never a false FITS) but **over-conservative on time** (it serial-sums concurrent branches). A DAG-mode compile
+now surfaces a clearly-bounded diagnostic reporting only the SOUND lower bound (how many DAGs fit even run
+serially); `process_selection_status` stays UNASSESSED (DAGs get no formal admission yet). The correct
+critical-path elapsed aggregation + full DAG RouteDossier admission remain a named next step (a genuine design
+fork). **item 5a** (richer check_interval / drying modeling) is an honest DEFER: it needs a `ProcessPhase`
+sub-step schema, not more data — fabricating a drying ceiling is refused (§10.4).
+
+### 11.4 item 3 — resonance-canonical identity unblocks aspirin (CANON-KEKULE-01; `fb6dc4c`)
+
+**The brief was re-diagnosed.** It asked to "widen the grammar for aspirin"; recon (reproduced) proved aspirin's
+NO_ROUTE was NOT a grammar gap — capped-scission ALREADY emits aspirin + acetic acid → acetic anhydride +
+salicylic acid (the reverse of the real industrial synthesis). The bug was in the CANONICALIZER: `Molecule.canonical()`
+minimizes over literal bond orders with no resonance notion, so an ORTHO-disubstituted salicylate FRAGMENT cut
+out of aspirin carried a different Kekulé pattern than the SAME species parsed from SMILES, and `_ident` called
+them distinct (para/paracetamol survived by geometric accident; ortho/meta did not). Fix: `resonance_canonical`
+lifts the parser's proven `_min_constitution_placement` onto an arbitrary Molecule; `resonance_identity` (now
+shared byte-identical by `routes._ident`, `step._ident`, `dag._ident`, `compilation_ir._structure_ident`) unifies
+a fragment with its parsed form. Aspirin compiles to its real route.
+
+- **Sound, not over-unifying (evil-morty verified):** it only re-distributes multiple-bond orders preserving each
+  atom's per-atom pi-demand + fixed H-envelope = one constitution; positional isomers / tautomers / constitutional
+  isomers / regioisomers stay DISTINCT. **Idempotent on parsed molecules** — no existing digest, frozen hash, or
+  golden fixture moves. Differential tripwires in `tests/test_resonance_identity.py` (relabel-invariance,
+  over-unification guards, fragment/parse unification, idempotence, byte-identity).
+- **evil-morty DoS fold (HIGH, verified + closed):** `_ident` is the search hot path and each Kekulé placement is
+  a full canonicalization, so a submittable 122-atom oligophenylene ground ~18 s. Two O(1) guards now bound it —
+  skip resonance over 64 heavy atoms, cap placements at 128 — falling back to the plain literal identity (no worse
+  than pre-fix) above either. The 122-atom attack is now ~3 ms; pinned by a bounded-time regression test.
+- **Residual:** a large conjugated fragment over the caps keeps its literal identity (won't unify across Kekulé
+  spellings) — a non-issue for the current bounded drug-like targets, documented not hidden. A cheaper
+  min-placement selection (avoiding a full canonicalization per placement) would lift the caps; named follow-on.

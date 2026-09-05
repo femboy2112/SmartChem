@@ -57,7 +57,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from .atoms import PT
-from .category import Bond, Molecule
+from .category import Bond, Molecule, _wl_colours
 from .contracts import canonical_digest
 
 __all__ = [
@@ -66,6 +66,7 @@ __all__ = [
     "parse_smiles",
     "parse_smiles_features",
     "isotope_refined_key",
+    "configuration_key",
     "resonance_canonical",
     "resonance_identity",
 ]
@@ -93,6 +94,7 @@ class SmilesFeatures:
     charged_atoms: int               # how many atoms bear a nonzero FORMAL charge (per-atom, pre-summing)
     net_charge: int                  # the molecular total charge (the only charge the Molecule keeps)
     isotopic_digest: "str | None" = None  # the canonical isotope-refined-constitution key (ID-STEREO-01 perception)
+    configuration_digest: "str | None" = None  # canonical chirality-parity-refined key, or None if no perceivable stereocentre (ID-STEREO-01)
 
     @property
     def has_isotope(self) -> bool:
@@ -139,14 +141,14 @@ class _Atom:
         charge: int,
         h_explicit: int | None,
         isotope: int = 0,
-        chirality: bool = False,
+        chirality: int = 0,
     ):
         self.element = element
         self.aromatic = aromatic
         self.charge = charge
         self.h_explicit = h_explicit          # None => fill implicitly; int => bracket, exact
         self.isotope = isotope                # 0 => unspecified; else the mass number (ID-STEREO-01 capture)
-        self.chirality = chirality            # a tetrahedral '@'/'@@' marker was present (dropped from the graph)
+        self.chirality = chirality            # tetrahedral SENSE: 0 none, 1 '@' (anticlockwise), 2 '@@' (clockwise)
 
 
 def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
@@ -172,11 +174,17 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
         element, i = body[i].upper(), i + 1
     else:
         raise SmilesError(f"unknown element in bracket atom {text[start:end + 1]!r}")
-    # chirality markers @ / @@: CAPTURED (ID-STEREO-01) but dropped from the graph (constitutional only, W3)
-    chirality = False
+    # chirality markers @ / @@: CAPTURED LOSSLESSLY as the tetrahedral SENSE (ID-STEREO-01): 0 = none, 1 = '@'
+    # (TH1, anticlockwise from the first neighbour), 2 = '@@' (TH2, clockwise).  ROUND-12 widened this from a bare
+    # boolean -- the sense is what a chirality PARITY descriptor needs; it is still dropped from the constitution
+    # GRAPH (W3), but no longer discarded (the recon's "one-field-behind" hazard: the CIP path must read THIS, not a
+    # boolean).  ``tetrahedral_stereo`` (a bool) stays derivable as ``bool(chirality)``.
+    chirality = 0
     while i < len(body) and body[i] == "@":
-        chirality = True
+        chirality += 1
         i += 1
+    if chirality > 2:
+        raise SmilesError(f"bracket atom {text[start:end + 1]!r} has more than two '@' chirality marks")
     h_count = 0
     if i < len(body) and body[i] == "H":
         i += 1
@@ -750,6 +758,153 @@ def isotope_refined_key(text: str) -> str:
     return _isotopic_identity(atoms, bonds, charge)
 
 
+def _perm_parity(seq: "list[int]") -> int:
+    """Parity (0 even / 1 odd) of the permutation that sorts ``seq`` -- its inversion count mod 2."""
+    inv = 0
+    for i in range(len(seq)):
+        for j in range(i + 1, len(seq)):
+            if seq[i] > seq[j]:
+                inv ^= 1
+    return inv
+
+
+def _kekulize_in_place(atoms: list[_Atom], work: list[list[int]], charge: int) -> None:
+    """Assign a CONSTITUTION-canonical Kekulé structure to ``work`` (order column) IN PLACE, preserving the caller's
+    heavy-atom indices -- the same index-stable canonicalisation :func:`_isotopic_identity` uses, so a chirality key
+    keyed on the resulting WL colours is spelling-invariant and refines the constitution the parser commits to."""
+    arom_bonds, matchings = _aromatic_matchings(atoms, work)
+    if not matchings:
+        orders = _min_constitution_placement(atoms, [list(b) for b in work], charge)
+        for k in range(len(work)):
+            work[k][2] = orders[k]
+        return
+    best_constitution, best_matching = None, matchings[0]
+    for doubles in matchings:
+        for k in arom_bonds:
+            work[k][2] = 2 if k in doubles else 1
+        out_atoms, out_bonds = _fill_hydrogens(atoms, work)
+        constitution = canonical_digest(Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical())
+        if best_constitution is None or constitution < best_constitution:
+            best_constitution, best_matching = constitution, doubles
+    for k in arom_bonds:
+        work[k][2] = 2 if k in best_matching else 1
+
+
+def _on_cycle(a: int, neighbours: "dict[int, list[int]]", n_atoms: int) -> bool:
+    """True iff atom ``a`` lies ON a ring (a cycle passes through it): two of its neighbours stay connected in the
+    graph with ``a`` removed.  A ring stereocentre is scoped OUT of chirality perception (its written neighbour order
+    depends on the ring-closure DIGIT position, which the bond list does not preserve) -- this is the check that makes
+    the docstring's "a ring centre contributes nothing" TRUE, not just claimed.  A ring SUBSTITUENT (e.g. a phenyl arm
+    on an acyclic centre) does NOT put the centre on a cycle, so such centres stay perceivable."""
+    nbrs = neighbours[a]
+    if len(nbrs) < 2:
+        return False
+    component: dict[int, int] = {}
+    cid = 0
+    for start in range(n_atoms):
+        if start == a or start in component:
+            continue
+        cid += 1
+        stack = [start]
+        component[start] = cid
+        while stack:
+            x = stack.pop()
+            for y in neighbours[x]:
+                if y != a and y not in component:
+                    component[y] = cid
+                    stack.append(y)
+    seen: set[int] = set()
+    for nb in nbrs:
+        c = component.get(nb)
+        if c in seen:
+            return True                                   # two neighbours share a component sans a -> a is on a cycle
+        seen.add(c)
+    return False
+
+
+def _configuration_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> "str | None":
+    """The canonical CONFIGURATION key: constitution refined by tetrahedral chirality PARITY (ID-STEREO-01), or
+    ``None`` when the input declares no PERCEIVABLE stereocentre.
+
+    This is the chirality half of the stereo PERCEPTION the isotope work explicitly deferred (see
+    :func:`_isotopic_identity`'s boundary: "a canonical CIP parity, which graph canonicalisation cannot supply
+    because chirality is a reflection").  Graph canonicalisation genuinely CANNOT see chirality -- two enantiomers are
+    the SAME graph -- so the extra handedness bit is captured EXPLICITLY: for each declared stereocentre, the parity of
+    its four neighbours' WRITTEN order relative to their canonical (1-WL colour) order, XORed with the ``@``/``@@``
+    sense.  A neighbour transposition flips the SMILES sense, so ``parity XOR sense`` is invariant across spellings of
+    one enantiomer and OPPOSITE for its mirror image -- verified by construction (swap-flips-sense pairs agree,
+    enantiomers differ) and on meso vs (R,R)/(S,S) (a meso form equals its own mirror; the chiral pair does not).
+
+    SOUND, with a NAMED boundary (never faked):
+    * It REFINES constitution -- the key is ``canonical_digest((constitution, sorted (WL-colour, handedness) per
+      centre))`` -- so equal configuration implies equal constitution, and an achiral molecule (``None``) is left to
+      match at CONSTITUTION, never silently split.
+    * Scope is the SOUNDLY perceivable subset: an ACYCLIC tetrahedral centre with four neighbours (implicit H placed
+      per OpenSMILES: after the preceding atom, or first when the centre opens the string) whose four 1-WL colours are
+      DISTINCT.  A centre WL cannot separate (a symmetric or WL-degenerate environment) or a RING centre (whose
+      written neighbour order also depends on ring-closure digit position) contributes NOTHING -- an honest gap, never
+      a guessed parity.  Double-bond (E/Z) configuration and CIP R/S *naming* (a different, harder algorithm) are the
+      remaining ID-STEREO-01 deferrals; this establishes IDENTITY (are two species the same stereoisomer?), which does
+      not require the R/S label.
+    """
+    if not any(a.chirality for a in atoms):
+        return None
+    work = [list(b) for b in bonds]
+    _kekulize_in_place(atoms, work, charge)
+    filled_atoms, filled_bonds = _fill_hydrogens(atoms, work)     # heavy indices 0..n-1 preserved; H appended after
+    wl = _wl_colours(tuple(filled_atoms), frozenset(filled_bonds))
+    n = len(atoms)
+    neighbours: dict[int, list[int]] = {i: [] for i in range(len(filled_atoms))}
+    for b in filled_bonds:
+        neighbours[b.i].append(b.j)
+        neighbours[b.j].append(b.i)
+    descriptors: list[tuple[int, int]] = []
+    for a in range(n):
+        if not atoms[a].chirality:
+            continue
+        if _on_cycle(a, neighbours, len(filled_atoms)):
+            continue                                             # RING stereocentre: out of the acyclic scope ->
+            # honest None (its written neighbour order depends on the ring-closure DIGIT position, which the bond
+            # list does not preserve -- reconstructing it, and E/Z + CIP R/S, are the named ID-STEREO-01 deferrals).
+        incoming = [bd[0] for bd in bonds if bd[1] == a]          # the preceding atom (a is the bond's 2nd endpoint)
+        outgoing = [bd[1] for bd in bonds if bd[0] == a]          # branch/chain children, in written order
+        h_neighbours = [j for j in neighbours[a] if j >= n and filled_atoms[j] == "H"]   # a's implicit/explicit H
+        if len(incoming) > 1:
+            continue                                             # defensive: any residual multi-incoming -> skip
+        written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
+        if len(written) != 4:
+            continue                                             # not a four-coordinate centre in scope
+        colours = [wl[x] for x in written]
+        if len(set(colours)) != 4:
+            continue                                             # WL cannot separate the four -> not perceivable here
+        handedness = _perm_parity(colours) ^ (0 if atoms[a].chirality == 1 else 1)
+        descriptors.append((wl[a], handedness))
+    if not descriptors:
+        return None
+    constitution = canonical_digest(Molecule(tuple(filled_atoms), frozenset(filled_bonds), charge).canonical())
+    return canonical_digest((constitution, tuple(sorted(descriptors))))
+
+
+def configuration_key(text: str) -> str:
+    """The canonical CONFIGURATION-refined key of ``text`` (ID-STEREO-01), a string for ANY input.
+
+    For an achiral molecule (or one whose stereocentres are not soundly perceivable) this is a constitution-equivalent
+    key -- two same-constitution spellings share it; a perceivable stereocentre makes it finer.  So
+    ``configuration_key(a) == configuration_key(b)`` iff ``a`` and ``b`` are the same species at the
+    CONFIGURATION-refined-constitution level for the perceivable subset (:func:`_configuration_identity`): enantiomers
+    differ, a meso form matches its mirror, and every non-chiral pair reduces to constitution.  Raises
+    :class:`SmilesError` on a malformed/out-of-scope SMILES, like the parser."""
+    if not isinstance(text, str):
+        raise SmilesError("SMILES input must be a string")
+    stripped = text.strip()
+    if not stripped:
+        raise SmilesError("empty SMILES")
+    atoms, bonds = _parse_skeleton(stripped)
+    charge = sum(a.charge for a in atoms)
+    configuration = _configuration_identity(atoms, bonds, charge)
+    return configuration if configuration is not None else resonance_identity(_build_molecule(atoms, bonds, charge))
+
+
 def parse_smiles(text: str) -> Molecule:
     """Parse a SMILES string into a canonical :class:`~smartchem.category.Molecule`.
 
@@ -792,6 +947,9 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
     # The isotope-refined key must see the PRISTINE aromatic bonds (_build_molecule mutates them during Kekulisation),
     # so compute it FIRST -- it takes a private copy of `bonds` and leaves the caller's list untouched.
     isotopic_digest = _isotopic_identity(atoms, bonds, charge) if any(a.isotope for a in atoms) else None
+    # Chirality PERCEPTION (ID-STEREO-01), the isotope work's named deferral: a canonical parity descriptor for the
+    # perceivable acyclic tetrahedral centres (None when none), computed BEFORE _build_molecule mutates bond orders.
+    configuration_digest = _configuration_identity(atoms, bonds, charge) if any(a.chirality for a in atoms) else None
     molecule = _build_molecule(atoms, bonds, charge)
     features = SmilesFeatures(
         isotopes=tuple(sorted({a.isotope for a in atoms if a.isotope})),
@@ -800,5 +958,6 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
         charged_atoms=sum(1 for a in atoms if a.charge != 0),
         net_charge=charge,
         isotopic_digest=isotopic_digest,
+        configuration_digest=configuration_digest,
     )
     return molecule, features

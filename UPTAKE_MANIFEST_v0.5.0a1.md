@@ -3524,3 +3524,82 @@ round fills real, open-license data so the gate can honestly say FITS/EXCLUDED, 
 - **Residual limits:** whole-step elapsed CEILINGS are UNKNOWN in the current benign-prep sources, so
   time-based FIT (vs EXCLUSION) needs sources that state total elapsed. Aspirin route needs a wider grammar.
   DAG-mode process admission stays UNASSESSED. The §10.1 deserialization boundary remains deferred.
+
+### 10.3 Deserialization admission re-derivation — 2026-09-05 (ROUND 10, item 1)
+
+ID: PROCESS-ADMIT-01
+
+State: IMPLEMENTED_AND_VERIFIED on the PROCESS axis (scope + residual stated below); this is the go-live
+fix the §10.1/§10.2 residual deferred ("the IR must carry per-route process evidence so admission is
+re-derived on load").
+
+The boundary §10.1 recorded: `response_from_payload`'s round-trip recompute of `admissible_route_digests`
+was CIRCULAR over each route's `fit_status` (a relational check over a shared term), and the response IR
+carried no per-route process evidence to re-derive from, so a LOCKSTEP relabel forgery (a real route's
+`fit_status` → FITS) was accepted. Now closed on the process axis:
+
+- **Carry the evidence.** `RankedRouteSummary` gains `process_requirements: tuple[ProcessRequirements|None]`
+  — the exact per-step declared process facts the fit was computed from, one per route step in order. It is
+  route identity (folded into `result_digest`), serialized/round-tripped (new `_process_requirements_*`,
+  `_interval_*`, `_source_*` payload helpers). Schema bumps: response v1alpha9→v1alpha10, ranked-summary
+  v1alpha1→v1alpha2, descriptor v1alpha10→v1alpha11 (request UNCHANGED).
+- **Re-derive on load.** `process_constraints.evaluate_process_requirements` re-derives the process fit
+  straight from carried requirements (byte-for-byte what `evaluate_process` computes from the matching
+  envelopes — it now delegates through the shared `_evaluate_requirements` core).
+  `CompilationResponse._check_process_admission_coherence` (in `__post_init__`, so it fires at construction
+  AND on load) enforces the SOUND one-directional rule: the process component is a lower bound on the
+  combined verdict, so a declared FITS/UNKNOWN whose PROCESS evidence re-derives to a stricter verdict is
+  refused. Gated on `process.constrains_anything` (zero overhead on the default path). Verified it never
+  false-rejects an honest response (rank-time bounds == load-time bounds, service.py:1692 vs :1100).
+- **SCOPE (honest, not overclaimed).** `fit_status` is the COMBINED verdict (composability + physical bounds
+  + process); this re-derives ONLY the process component. The blind `evil-morty` red-team CONFIRMED (I
+  reproduced it independently, `scratchpad/verify_finding1.py`) that a route EXCLUDED for a NON-process
+  reason (e.g. a reaction over a physical temperature cap) whose process evidence is FITS can still be
+  bare-relabeled to FITS and admitted — the physical/reagent/equipment/composability axes carry only
+  free-text exclusions/gaps, and re-deriving them needs the per-step physical conditions + the full
+  ExperimentRoute graph the thin projection deliberately omits. The red-team's overclaim finding (my
+  docstrings said the bare relabel was closed *generally*) is FOLDED: docstrings on
+  `admissible_route_digests` / `response_from_payload` / `_check_process_admission_coherence` now state the
+  process-axis scope precisely, and `tests/test_process_service.py::test_non_process_axis_relabel_is_not_yet_authenticated`
+  PINS the true boundary. Red-team clean bills earned: soundness/no-false-reject, byte-for-byte
+  re-derivation, no construction-skip read path, edge cases (empty tuple / None-vs-unknown), alias-collapse,
+  no fabrication.
+- **Tests.** `tests/test_process_service.py`: the old boundary-pin test INVERTED
+  (`test_deserialized_admission_is_re_derived_not_blindly_trusted` — the bare process-axis relabel is now
+  rejected at construction AND on load) + `test_admission_residual_needs_a_signature_to_close` (the
+  controlling-forger residual) + the new non-process-axis boundary pin. Goldens regenerated.
+- **Result:** full suite 4078 passed / 14 skipped / 1 xfailed (PySCF-present dev venv), exit 0. ruff clean.
+- **Residual → next-step (COMBINED-VERDICT-AUTH):** full authentication of a deserialized
+  `admissible_route_digests` (all three verdict axes + a fully controlling forger who fabricates coherent
+  evidence and recomputes `result_digest`) needs a PRODUCER SIGNATURE over the payload, or a full
+  re-derivation that carries the ExperimentRoute graph (contradicting the thin projection). Named on the
+  roadmap; not attempted here.
+
+### 10.4 Whole-step total-elapsed sourcing — 2026-09-05 (ROUND 10, item 2)
+
+ID: PROCESS-TIME-CEILING-01
+
+State: VERIFIED NEGATIVE (committed, reproducible). No code change to the gate — the honest outcome is that
+no sound ceiling is sourceable, and the anti-fabrication directive forbids inventing one.
+
+The §10.2 residual asked for whole-step total-elapsed data to unlock a time-based FIT (a ceiling), not just
+floor-based EXCLUSION. A fan-out workflow (find → adversarial verify) swept five open-license source families
+(LibreTexts, Organic Syntheses, OER lab manuals, Wikipedia/Wikibooks, PubChem/NIST) for a whole-process total
+elapsed (start to dried product, INCLUDING untimed workup/drying) for the two seeded preps.
+
+- **Result: 9 candidate values, 0 confirmed totals.** Every value the finders surfaced was a PARTIAL step
+  time (reaction/reflux, ice-bath sit, decolorizing, recrystallization interval); the verify stage rejected
+  all nine because none is a whole-process total — workup and drying are left untimed across the benign-prep
+  literature. So no sound whole-step CEILING exists to encode.
+- **Consequence.** Time-based process admission stays FLOOR-ONLY (a sourced minimum can EXCLUDE, never
+  CONFIRM). The ROUND-9 floor-only model is thus DILIGENCE-BACKED, not a shortcut. The search also
+  independently re-verified every sourced step time behind the ROUND-9 floors (paracetamol 84/14 min,
+  isopentyl 60 min) — corroboration, not a change.
+- **Anti-fabrication.** A DERIVED ceiling was refused: bounding the untimed manual workup/drying would
+  require inventing operator behavior, which is not known-physics derivation.
+- **Artifact (committed, reproducible):** `experiments/validation/total-elapsed-sourcing-2026-09-05/`
+  (`receipt.json` with the five families, nine findings, all rejections, and the corroborated floors; plus
+  the committed workflow script).
+- **Residual → next-step:** a time-based FIT needs a source genre that states whole-process totals
+  (industrial/pilot process docs with cycle times, patent examples with run+workup schedules) — none is an
+  open-license benign teaching prep. Stays open on the roadmap.

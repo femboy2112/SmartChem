@@ -1,0 +1,30 @@
+{
+  "record": "total-elapsed-sourcing-2026-09-05",
+  "goal": "Source a WHOLE-PROCESS TOTAL ELAPSED time (start to dried, purified product, INCLUDING untimed workup/drying) from open-license references, to unlock a time-based process FIT (a ceiling) rather than only floor-based EXCLUSION, for the two seeded benign preps.",
+  "method": {
+    "harness": "smartchem Workflow fan-out (find -> adversarial verify); script committed under the session workflows dir (source-total-elapsed).",
+    "source_families": ["LibreTexts (CC BY-NC-SA 4.0)", "Organic Syntheses (orgsyn.org)", "OER lab manuals (pressbooks/oercommons/.edu)", "Wikipedia/Wikibooks (CC BY-SA)", "PubChem/NIST + freely-abstracted primary literature"],
+    "verify_stage": "Each finding independently re-fetched; CONFIRM requires ALL of: real fetchable URL, genuinely open license, the exact quoted sentence present on the page, the value is a WHOLE-PROCESS TOTAL incl. workup+drying (NOT a reaction/step time relabeled), correct transcription. A partial time mislabeled as a total is a REJECT."
+  },
+  "reactions": {
+    "A": "Paracetamol (acetaminophen) by acetylation of 4-aminophenol with acetic anhydride, then filtration/washing/drying.",
+    "B": "Isopentyl acetate (isoamyl acetate) by Fischer esterification of isopentyl alcohol + glacial acetic acid (conc. H2SO4, reflux), then aqueous wash, drying, and distillation."
+  },
+  "tallies": {"families": 5, "candidate_findings": 9, "confirmed_any": 0, "confirmed_total_elapsed": 0},
+  "findings": [
+    {"reaction": "A", "source": "LibreTexts, Synthesis of Acetaminophen (Experiment), CC BY-NC-SA 4.0", "raw_value": "10 minutes", "quote": "Continue heating on the steam bath while swirling vigorously for 10 minutes.", "is_total": false, "verdict": "REJECT", "why": "acetylation/heating STEP only, not a total"},
+    {"reaction": "A", "source": "LibreTexts, Synthesis of Acetaminophen (Experiment), CC BY-NC-SA 4.0", "raw_value": "almost an hour", "quote": "After crystallization begins, allow the solution to sit in the ice bath for almost an hour.", "is_total": false, "verdict": "REJECT", "why": "ice-bath crystallization sit only; filtration/washing/drying follow untimed"},
+    {"reaction": "A", "source": "LibreTexts, Synthesis of Acetaminophen (Experiment), CC BY-NC-SA 4.0", "raw_value": "4-8 minutes", "quote": "swirl the solution on a steam bath for 4-8 minutes and periodically check to see if the solution is decolorizing", "is_total": false, "verdict": "REJECT", "why": "charcoal decolorizing step at the start, not a total"},
+    {"reaction": "A", "source": "LibreTexts, Synthesis of Acetaminophen (Experiment), CC BY-NC-SA 4.0", "raw_value": "15 minutes", "quote": "When crystallization ceases (15 minutes), collect the crystals as before, rinsing once with a few mL of cold water", "is_total": false, "verdict": "REJECT", "why": "recrystallization interval (optional purification); final air-drying given NO duration"},
+    {"reaction": "B", "source": "LibreTexts, Synthesis of Isopentyl Acetate (Experiment), CC BY-NC-SA 4.0", "raw_value": "1 hour", "quote": "Attach a reflux condenser and, using a heating mantel, reflux the mixture for 1 hour", "is_total": false, "verdict": "REJECT", "why": "reflux step only; MgSO4 drying + simple distillation untimed"},
+    {"reaction": "B", "source": "UTSA Pressbooks, CHE 1014 Elementary Organic and Biochemistry Lab", "raw_value": "10 minutes or longer (warm water bath, 60-65 C)", "quote": "Heat all the test tubes together in the warm water bath (60-65 C) for 10 minutes or longer.", "is_total": false, "verdict": "REJECT", "why": "micro-scale heating step only; corroborates that only step times are published, no total"},
+    {"reaction": "B", "source": "'Optimization of green ... synthesis of isoamyl acetate' (journal)", "raw_value": "219 min", "quote": "the optimum values of the factors under solvent-free conditions ...", "is_total": false, "verdict": "REJECT", "why": "a solvent-free catalyst-optimization run, not the standard prep; is_total false; open-license status not established"}
+  ],
+  "conclusion": "NEGATIVE (verified). Across five source families and nine candidate values, ZERO whole-process total-elapsed times were confirmed. The open-license benign-prep literature times INDIVIDUAL operations (reflux, acylation, decolorizing, crystallization intervals) but leaves the workup and drying UNTIMED, so no sound whole-step CEILING is available. Therefore time-based process admission stays FLOOR-ONLY: a sourced minimum can EXCLUDE (too slow for the operator) but can never CONFIRM a fit. This is a genuine limit of the source genre, not a gap in diligence -- do NOT fabricate a ceiling (the anti-fabrication directive outranks shipping a time-based FIT).",
+  "corroborated_floors": {
+    "note": "This search independently re-verified every sourced step time behind the ROUND-9 floors in smartchem/decompiler_conditions.py.",
+    "paracetamol": {"min_elapsed_minutes": 84.0, "min_active_minutes": 14.0, "components": "4-min charcoal swirl + 10-min acetylation + ~55-min ('almost an hour', read conservatively) ice-bath crystallization + 15-min recrystallization cooling"},
+    "isopentyl_acetate": {"min_elapsed_minutes": 60.0, "components": "the quoted 1-hour reflux; untimed workup/distillation on top -> ceiling UNKNOWN"}
+  },
+  "residual": "A time-based FIT (ceiling) requires a source genre that states whole-process totals: an industrial/pilot process document with cycle times, a patent example with an explicit run-plus-workup schedule, or a completion-time model that ALSO bounds the manual workup/drying. None of these is an open-license benign teaching prep, so this remains open on the roadmap; a DERIVED ceiling is refused here because bounding untimed manual operations would require inventing operator behavior (not known-physics derivation)."
+}

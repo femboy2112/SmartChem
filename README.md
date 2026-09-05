@@ -227,16 +227,17 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Process accessibility audit validation (Python 3.12.13, six deterministic file shards,
-optional PySCF stack absent; all default fast-suite tests included):
+Current maintained fast-suite result (dev environment with the optional PySCF stack installed):
 
 ```text
-4014 passed, 51 skipped, 1 xfailed
+4076 passed, 14 skipped, 1 xfailed
 ```
 
-The skips include optional-backend coverage and the explicit slow-test gate; they are not represented as passed.
+The skips are optional-backend coverage and the explicit slow-test gate; they are not represented as passed.
+An environment WITHOUT PySCF skips additional real-wavefunction tests (the process-accessibility audit
+receipt records such a run: 4014 passed / 51 skipped / 1 xfailed).
 The [validation receipt](experiments/validation/process-accessibility-2026-09-05/receipt.json) records the
-environment, complete file partition, raw outputs, and baseline comparison.
+audit environment, complete file partition, raw outputs, and baseline comparison.
 Run selected real-wavefunction integration coverage with:
 
 ```bash

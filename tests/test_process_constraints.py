@@ -402,3 +402,69 @@ def test_description_reports_selected_dimensions_and_empty_inventory():
     for part in ("step<=5 min", "route<=10 min", "active route<=2 min", "attention=passive",
                  "agitation=none", "check interval>=60 min", "equipment=none"):
         assert part in text
+
+
+class TestElapsedFloor:
+    """A SOURCED lower bound (whole-step ceiling unknown) may only EXCLUDE, never confirm a fit."""
+
+    def test_floor_over_a_step_limit_excludes_even_with_no_ceiling(self):
+        # min_elapsed 84, no ceiling; step limit 60 -> proven too long -> EXCLUDED.
+        req = requirement(elapsed_minutes=None, min_elapsed_minutes=84)
+        result = fit(ProcessBounds(max_step_minutes=60), req)
+        assert result.status is ProcessFitStatus.EXCLUDED
+        assert any("minimum elapsed 84 min exceeds step limit 60 min" in e for e in result.exclusions)
+
+    def test_floor_under_a_limit_never_launders_an_unknown_ceiling_into_a_pass(self):
+        # THE soundness point: floor 30 < limit 60, but the ceiling is unknown -> UNKNOWN (a gap), NOT FITS.
+        req = requirement(elapsed_minutes=None, min_elapsed_minutes=30)
+        result = fit(ProcessBounds(max_step_minutes=60), req)
+        assert result.status is ProcessFitStatus.UNKNOWN
+        assert any("elapsed_minutes is undeclared" in g for g in result.gaps)
+
+    def test_active_floor_over_the_active_limit_excludes(self):
+        req = requirement(active_minutes=None, elapsed_minutes=None, min_active_minutes=70)
+        result = fit(ProcessBounds(max_active_minutes=60), req)
+        assert result.status is ProcessFitStatus.EXCLUDED
+        assert any("minimum active 70 min exceeds active limit 60 min" in e for e in result.exclusions)
+
+    def test_route_total_floor_sum_excludes_despite_unknown_ceilings(self):
+        # Two steps, each a known 40-min floor, no ceilings; route total limit 60 -> sum 80 > 60 -> EXCLUDED.
+        step = requirement(elapsed_minutes=None, min_elapsed_minutes=40)
+        result = fit(ProcessBounds(max_total_minutes=60), step, step)
+        assert result.status is ProcessFitStatus.EXCLUDED
+        assert any("known minimum elapsed sum" in e for e in result.exclusions)
+
+    def test_a_floor_makes_the_record_declared(self):
+        assert ProcessRequirements(min_elapsed_minutes=30, provenance="fixture").is_declared
+
+    def test_floor_cannot_exceed_a_declared_ceiling(self):
+        with pytest.raises(ValueError):
+            ProcessRequirements(min_elapsed_minutes=50, elapsed_minutes=Interval(10, 40, "min"),
+                                provenance="fixture")
+
+    def test_min_active_cannot_exceed_min_elapsed(self):
+        with pytest.raises(ValueError):
+            ProcessRequirements(min_active_minutes=50, min_elapsed_minutes=40, provenance="fixture")
+
+    def test_min_active_cannot_exceed_the_declared_elapsed_ceiling(self):
+        # active is a subset of elapsed: an active floor above the elapsed ceiling is impossible
+        # (mirrors the interval guard active_minutes.lo <= elapsed_minutes.hi).
+        with pytest.raises(ValueError):
+            ProcessRequirements(min_active_minutes=100, elapsed_minutes=Interval(0, 50, "min"),
+                                provenance="fixture")
+
+    def test_route_total_floor_sum_counts_interval_lower_bounds_too(self):
+        # A mixed route: step A a floor-only 40 min (no ceiling), step B an interval [40, 50]. The
+        # per-step ceiling check sees only B (50 <= 60) and a floors-only sum would see only A, but
+        # the KNOWN minimum total 40 + 40 = 80 > the 60-min route limit must EXCLUDE -- an interval
+        # .lo is a known minimum too, so it cannot be ignored by the route floor sum.
+        a = requirement(elapsed_minutes=None, min_elapsed_minutes=40)
+        b = requirement(elapsed_minutes=Interval(40, 50, "min"))
+        result = fit(ProcessBounds(max_total_minutes=60), a, b)
+        assert result.status is ProcessFitStatus.EXCLUDED
+        assert any("known minimum elapsed sum 80 min" in e for e in result.exclusions)
+
+    @pytest.mark.parametrize("bad", [-5, 0, float("inf"), float("nan")])
+    def test_a_nonpositive_or_nonfinite_floor_is_rejected(self, bad):
+        with pytest.raises((ValueError, TypeError)):
+            ProcessRequirements(min_elapsed_minutes=bad, provenance="fixture")

@@ -68,6 +68,13 @@ def _equipment(record: object, name: str) -> None:
     object.__setattr__(record, name, tuple(sorted({item.strip() for item in value})))
 
 
+def _known_min(*values: "float | None") -> "float | None":
+    """The tightest declared lower bound among the values (an explicit floor and/or an interval's
+    .lo), or None when none is declared.  Used only to EXCLUDE on a known minimum, never to fit."""
+    present = [v for v in values if v is not None]
+    return max(present) if present else None
+
+
 @dataclass(frozen=True)
 class ProcessRequirements(Digestible):
     """Supplied whole-step requirements, including workup when explicitly declared.
@@ -95,6 +102,12 @@ class ProcessRequirements(Digestible):
     peak_temperature_k: float | None = None
     min_pressure_atm: float | None = None
     max_pressure_atm: float | None = None
+    #: A SOURCED lower bound on time when the whole-step ceiling is unknown (e.g. a source
+    #: that times the reaction but not the untimed workup/drying).  A floor NEVER confirms a
+    #: fit -- it can only EXCLUDE (a known minimum already over the operator's limit is proof
+    #: the step is too long), so a missing ceiling stays a gap/UNKNOWN, never a silent pass.
+    min_elapsed_minutes: float | None = None
+    min_active_minutes: float | None = None
 
     def __post_init__(self) -> None:
         # Lazy import keeps this leaf usable by ConditionEnvelope without a module cycle.
@@ -125,6 +138,22 @@ class ProcessRequirements(Digestible):
         if (self.min_pressure_atm is not None and self.max_pressure_atm is not None
                 and self.min_pressure_atm > self.max_pressure_atm):
             raise ValueError("min_pressure_atm cannot exceed max_pressure_atm")
+        for name in ("min_elapsed_minutes", "min_active_minutes"):
+            _number(self, name, positive=True)
+        if (self.min_active_minutes is not None and self.min_elapsed_minutes is not None
+                and self.min_active_minutes > self.min_elapsed_minutes):
+            raise ValueError("min_active_minutes cannot exceed min_elapsed_minutes")
+        if (self.min_elapsed_minutes is not None and self.elapsed_minutes is not None
+                and self.min_elapsed_minutes > self.elapsed_minutes.hi):
+            raise ValueError("min_elapsed_minutes cannot exceed the declared elapsed ceiling")
+        if (self.min_active_minutes is not None and self.active_minutes is not None
+                and self.min_active_minutes > self.active_minutes.hi):
+            raise ValueError("min_active_minutes cannot exceed the declared active ceiling")
+        # Active time is a subset of elapsed time, so the active floor can never exceed the
+        # elapsed ceiling either (mirrors the interval guard active_minutes.lo <= elapsed.hi).
+        if (self.min_active_minutes is not None and self.elapsed_minutes is not None
+                and self.min_active_minutes > self.elapsed_minutes.hi):
+            raise ValueError("min_active_minutes cannot exceed the declared elapsed ceiling")
         _equipment(self, "equipment")
         if type(self.workup_included) is not bool:
             raise TypeError("workup_included must be a bool")
@@ -148,6 +177,7 @@ class ProcessRequirements(Digestible):
             getattr(self, name) is not None for name in (
                 "elapsed_minutes", "active_minutes", "attention", "check_interval_minutes",
                 "agitation", "equipment", "peak_temperature_k", "min_pressure_atm", "max_pressure_atm",
+                "min_elapsed_minutes", "min_active_minutes",
             )
         )
 
@@ -299,6 +329,8 @@ def evaluate_process(envelopes: Iterable[ConditionEnvelope], bounds: ProcessBoun
         return ProcessFit(ProcessFitStatus.UNKNOWN, gaps=("route has no declared process steps",))
     elapsed_upper: list[float] = []
     active_upper: list[float] = []
+    elapsed_floors: list[float] = []
+    active_floors: list[float] = []
     for index, envelope in enumerate(steps, start=1):
         requirement = envelope.process if envelope.process is not None else ProcessRequirements.unknown()
         if type(requirement) is not ProcessRequirements:
@@ -307,6 +339,19 @@ def evaluate_process(envelopes: Iterable[ConditionEnvelope], bounds: ProcessBoun
         if not requirement.workup_included:
             gaps.append(f"{prefix}: whole-step requirements do not explicitly include workup")
         if bounds.max_step_minutes is not None or bounds.max_total_minutes is not None:
+            # A SOURCED minimum can only EXCLUDE (already over the limit), never confirm a fit;
+            # a missing ceiling below still leaves a gap, so a floor never launders UNKNOWN to a pass.
+            if (requirement.min_elapsed_minutes is not None and bounds.max_step_minutes is not None
+                    and requirement.min_elapsed_minutes > bounds.max_step_minutes):
+                exclusions.append(f"{prefix}: minimum elapsed {requirement.min_elapsed_minutes:g} min "
+                                  f"exceeds step limit {bounds.max_step_minutes:g} min")
+            # The step's KNOWN minimum elapsed for the route total is the tightest declared lower
+            # bound -- an explicit floor and/or an interval's .lo -- so a known minimum TOTAL over
+            # the route limit is never missed just because some step ceilings are undeclared.
+            step_floor = _known_min(requirement.min_elapsed_minutes,
+                                    requirement.elapsed_minutes.lo if requirement.elapsed_minutes is not None else None)
+            if step_floor is not None:
+                elapsed_floors.append(step_floor)
             if requirement.elapsed_minutes is None:
                 gaps.append(f"{prefix}: elapsed_minutes is undeclared")
             else:
@@ -315,6 +360,14 @@ def evaluate_process(envelopes: Iterable[ConditionEnvelope], bounds: ProcessBoun
                     exclusions.append(f"{prefix}: elapsed upper bound {requirement.elapsed_minutes.hi:g} min "
                                       f"exceeds step limit {bounds.max_step_minutes:g} min")
         if bounds.max_active_minutes is not None:
+            if (requirement.min_active_minutes is not None
+                    and requirement.min_active_minutes > bounds.max_active_minutes):
+                exclusions.append(f"{prefix}: minimum active {requirement.min_active_minutes:g} min "
+                                  f"exceeds active limit {bounds.max_active_minutes:g} min")
+            step_active_floor = _known_min(requirement.min_active_minutes,
+                                           requirement.active_minutes.lo if requirement.active_minutes is not None else None)
+            if step_active_floor is not None:
+                active_floors.append(step_active_floor)
             if requirement.active_minutes is None:
                 gaps.append(f"{prefix}: active_minutes is undeclared")
             else:
@@ -368,6 +421,15 @@ def evaluate_process(envelopes: Iterable[ConditionEnvelope], bounds: ProcessBoun
     ):
         if limit is not None and total(values) > limit:
             exclusions.append(f"route: known {label} upper-bound sum {total(values):g} min exceeds "
+                              f"route limit {limit:g} min")
+    # Route-total floor sums exclude on the same principle: a known MINIMUM total already over the
+    # route limit is proof, even when every step's ceiling is unknown.
+    for values, limit, label in (
+        (elapsed_floors, bounds.max_total_minutes, "elapsed"),
+        (active_floors, bounds.max_active_minutes, "active"),
+    ):
+        if limit is not None and total(values) > limit:
+            exclusions.append(f"route: known minimum {label} sum {total(values):g} min exceeds "
                               f"route limit {limit:g} min")
     status = (ProcessFitStatus.EXCLUDED if exclusions else
               ProcessFitStatus.UNKNOWN if gaps else ProcessFitStatus.FITS)

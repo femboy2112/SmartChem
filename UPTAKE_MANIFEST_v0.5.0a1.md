@@ -3482,3 +3482,45 @@ independently reviewed before acceptance.
   admission is re-derived on load — this becomes load-bearing exactly when sourced whole-process records
   start flowing, and should be bundled with that work. A deserialized response is, until then, authoritative
   only from a trusted producer.
+
+### 10.2 Process data fill — 2026-09-05 (ROUND 9)
+
+ID: PROCESS-FIT-02 / PROCESS-DATA-SEED-01
+
+State: IMPLEMENTED_AND_VERIFIED within the sourcing/comparison boundary below.
+
+The process-fit gate was DARK (no shipped whole-process records, so every route was UNKNOWN-fit). This
+round fills real, open-license data so the gate can honestly say FITS/EXCLUDED, not only refuse.
+
+- **Sourcing (anti-fabrication).** A fan-out workflow extracted → cross-sourced → adversarially re-verified
+  each record; the verify stage DROPPED every value not backed by a quote or a labeled derivation (it
+  killed fabricated elapsed/active CEILINGS the extractor had invented). Every encoded value traces to an
+  open source (LibreTexts CC BY-NC-SA 4.0, cross-checked where possible; provenance in
+  `smartchem/decompiler_conditions.py`) or a labeled DERIVED constant (steam bath = 373.15 K; open vessel =
+  1 atm; distillation fraction). No process fact was invented.
+- **Records added (both producible by the real capped-scission search):**
+  - Paracetamol acetic-anhydride acetylation — `process=` added to the existing seed record.
+  - Isopentyl acetate (Fischer esterification) — new seed record. Honestly single-sourced (noted).
+  - Aspirin + salicylic acid + isopentyl acetate + isopentyl alcohol registered as named structures
+    (canonical-identity-invariant + Kekulé-stable, verified). Aspirin's route is NOT producible by the
+    capped-scission grammar (exhaustive NO_ROUTE at depth 2-3), so it is structure-only this round
+    (honest `NO_ROUTE`, not a dead seed) — a grammar-widening follow-on.
+- **Floor enhancement (PROCESS-FIT-02).** Sources bound individual operations (10-min acetylation, 1-h
+  reflux) but not whole-step elapsed (untimed workup/drying) — a floor with no ceiling. Added optional
+  `min_elapsed_minutes`/`min_active_minutes` to `ProcessRequirements` + floor-based exclusion in
+  `evaluate_process`: a SOURCED minimum already over the operator's limit EXCLUDES (the "too slow for the
+  poor man" signal), while a missing ceiling stays a gap/UNKNOWN — a floor can only exclude, never confirm
+  a fit. The route-total floor sum counts an interval's `.lo` as a known minimum too.
+- **Acceptance (real search, not monkeypatched):** `tests/test_process_records.py` — paracetamol FITS a
+  manual/periodic bench; EXCLUDED as too slow for `quick` (sourced 84-min floor > 60); EXCLUDED by missing
+  equipment / stricter temperature; UNKNOWN when a constrained dimension is undeclared; does not leak to an
+  unseeded reaction; isopentyl acetate FITS. Plus floor unit tests in `tests/test_process_constraints.py`.
+- **Result:** full suite 4076 passed / 14 skipped / 1 xfailed (PySCF-present dev venv), exit 0.
+- **Red-team (3-dimension workflow: fabrication / floor-soundness / unknown-leak+scope):** CLEAN BILLS on
+  all three load-bearing dimensions (no fabricated fact; a floor cannot launder UNKNOWN→FITS; no scope or
+  unknown leak). 3 confirmed findings, all LOW, all folded pre-commit: an under-documenting inline comment,
+  a construction-time validation gap (`min_active` > declared elapsed ceiling now rejected), and the
+  route-total floor sum now counting interval `.lo`.
+- **Residual limits:** whole-step elapsed CEILINGS are UNKNOWN in the current benign-prep sources, so
+  time-based FIT (vs EXCLUSION) needs sources that state total elapsed. Aspirin route needs a wider grammar.
+  DAG-mode process admission stays UNASSESSED. The §10.1 deserialization boundary remains deferred.

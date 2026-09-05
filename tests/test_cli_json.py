@@ -66,8 +66,9 @@ class TestSchemaDescriptor:
         # section-8.3 search_space_status field, response v1alpha4; v1alpha5: CLI-CAN-02 brick 2's
         # ranked_route_dossiers shape; v1alpha4: the request schema bumped for ConstraintPolicy's PhysicalBounds box;
         # v1alpha3: SVC-REQ-01's parse_receipt_summary + normalized_identity; v1alpha2 IR-LOSS-01.)
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha9"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha8"
+        # Process constraints add request fields and explicit admission output.
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha10"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha9"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the

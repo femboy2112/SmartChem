@@ -113,6 +113,51 @@ def _domain_exit(exc: BaseException, prog: str) -> int:
     raise exc
 
 
+def _add_process_flags(p) -> None:
+    """Shared operator limits for all synthesis frontends; minutes are explicit."""
+    p.add_argument("--process-profile", choices=("quick", "low-touch"), default=None,
+                   help="editable operator preferences; unknown whole-step requirements never pass")
+    for flag, description in (
+        ("max-step-minutes", "elapsed minutes per step, including workup"),
+        ("max-total-minutes", "sum of elapsed step minutes, including workup"),
+        ("max-active-minutes", "sum of hands-on minutes across the route"),
+        ("min-check-interval", "shortest interval in minutes at which you can return to check"),
+    ):
+        p.add_argument("--" + flag, type=float, default=None, metavar="MIN", help=description)
+    p.add_argument("--attention", nargs="+", choices=("continuous", "periodic", "passive"), default=None,
+                   help="permitted declared attention modes")
+    p.add_argument("--agitation", nargs="+", choices=("none", "manual", "periodic", "continuous"), default=None,
+                   help="permitted declared agitation modes; no inference from temperature")
+    p.add_argument("--equipment", nargs="*", default=None, metavar="ID",
+                   help="exact available equipment identifiers; empty list declares none")
+
+
+def _process_bounds_from_args(args):
+    from dataclasses import replace
+    from .process_constraints import ProcessBounds, Attention, Agitation
+    profile = getattr(args, "process_profile", None)
+    values = {}
+    for arg, field in (("max_step_minutes", "max_step_minutes"),
+                       ("max_total_minutes", "max_total_minutes"),
+                       ("max_active_minutes", "max_active_minutes"),
+                       ("min_check_interval", "min_check_interval_minutes")):
+        value = getattr(args, arg, None)
+        if value is not None:
+            values[field] = value
+    for arg, field, enum in (("attention", "allowed_attention", Attention),
+                              ("agitation", "allowed_agitation", Agitation)):
+        value = getattr(args, arg, None)
+        if value is not None:
+            values[field] = tuple(enum(x.upper()) for x in value)
+    equipment = getattr(args, "equipment", None)
+    if equipment is not None:
+        values["available_equipment"] = tuple(equipment)
+    if profile is None and not values:
+        return None
+    bounds = ProcessBounds.preset(profile) if profile else ProcessBounds.unconstrained()
+    return replace(bounds, **values)
+
+
 def _add_recompile_flags(p) -> None:
     """The ONE argv surface shared by ``recompile`` and its ``compile`` alias (CLI-CAN-01).
 
@@ -122,6 +167,7 @@ def _add_recompile_flags(p) -> None:
     section 13.1).
     """
     from .identity_parse import EXPLICIT_CLI_FORMS
+    _add_process_flags(p)
     p.add_argument("target", nargs="?", default=None,
                    help="compound name or SMILES (name:... and smiles:... are accepted explicitly). Alternatively "
                         "name the target with one of the section-14.2 explicit forms below")
@@ -221,6 +267,7 @@ def _recompile_request_from_args(args):
         max_temperature_k=args.max_temp,
         min_pressure_atm=args.min_pressure,
         max_pressure_atm=args.max_pressure,
+        process=_process_bounds_from_args(args),
     )
 
 
@@ -261,6 +308,9 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
 
     lines.append(f"recompile {ir.target.canonical_repr!r}  --  outcome: {response.outcome.value} "
                  f"(exit {response.exit_code})")
+    if response.request.constraints.process.constrains_anything:
+        lines.append(f"  process selection: {response.process_selection_status}; "
+                     f"{len(response.admissible_route_digests)} admissible returned routes")
     if not quiet:
         lines.append(f"  target: {ir.target.canonical_repr} [{ir.target.layer.value}]")
         lines.append(f"  identity match layer: {response.request.identity_policy.match_layer.value} (ID-LAYER-02)")
@@ -529,7 +579,7 @@ def _cmd_compile(argv: list[str]) -> int:
             losses=losses,
             # CLI-CAN-02 brick 2: APPLY the section-11 bench box to route ranking here too, so `compile --max-temp`
             # genuinely fits the routes -- the SAME rank_routes(box) the recompile service uses (alias coherence).
-            box=ConstraintBox.of_bounds(request.constraints.bounds),
+            box=ConstraintBox.of_bounds(request.constraints.bounds, process=request.constraints.process),
         )
     except Exception as exc:  # noqa: BLE001 -- ScissionError -> 5, ValueError -> 2 via the ONE classifier; else 70
         return _domain_exit(exc, "compile")
@@ -541,12 +591,15 @@ def _cmd_compile(argv: list[str]) -> int:
     _note = constraint_note(
         request.constraints.bounds,
         fit_counts=_fit_counts(compiled.ranked) if compiled.ranked else None,
+        process=request.constraints.process,
     )
     if _note is not None:
         print(f"  {_note}")
     print(compiled.render())
     if compiled.search_receipt is not None and not compiled.search_receipt.complete_within_bounds:
         return 4
+    if compiled.ranked and not compiled.found_route:
+        return 5
     return 0 if compiled.found_route else 3
 
 

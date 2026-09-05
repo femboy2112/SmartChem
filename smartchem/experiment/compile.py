@@ -3,11 +3,11 @@
 `compile_synthesis(target)` is the one entry that composes the whole stack a chemist needs, reusing every
 rung and inventing no physics:
 
-* it DECOMPILES the target and enumerates candidate synthesis routes that bottom out at either the classic
-  ELEMENTAL buckets or -- the default -- the POOR-MAN'S commodity buckets (table salt, vinegar, baking soda;
-  :mod:`smartchem.data.reagents`), so a route ends at stock a chemist can obtain, not at elemental sodium;
-* it ranks them and picks the best by L2 GRADE FIRST (a KNOWN documented synthesis beats a HYPOTHESIZED
-  longer chain), then the fit ranking (composability, sourced feasibility/selectivity, rate) as tiebreaker,
+* it DECOMPILES the target and enumerates candidate synthesis routes that bottom out at declared terminal stock
+  or -- enabled by default -- the POOR-MAN'S commodity buckets (table salt, vinegar, baking soda;
+  :mod:`smartchem.data.reagents`), retaining the distinction between chemical identity and material suitability;
+* it enforces hard bench exclusions, then picks the best eligible candidate by L2 grade (a KNOWN documented
+  synthesis beats a HYPOTHESIZED longer chain), with fit ranking as tiebreaker,
   and renders the best returned route as an evidence dossier (:func:`~smartchem.experiment.drafter.draft_route_dossier`:
   balanced equations, conditions, ΔG feasibility, equilibrium extent, selectivity, the E6 byproduct/off-gas/
   hazard/care ledger, equipment, the conservation ceiling);
@@ -35,7 +35,7 @@ from ..decompiler import Formula
 from ..search import PARTIAL_CANDIDATE_SET, SECTION_8_3_NOTE, section_8_3_label
 from ..structure import resolve_structure
 from .classify import Grade, UnifiedVerdict, classify_route
-from .drafter import ConstraintBox, RouteDossier, RouteFit, draft_route_dossier, rank_routes
+from .drafter import ConstraintBox, RouteDossier, RouteFit, RouteFitStatus, draft_route_dossier, rank_routes
 from .eyring import RouteEyring, verify_eyring
 from .kinetics import RouteKinetics, verify_kinetics
 from .routes import RouteSearchReceipt, search_routes
@@ -119,8 +119,9 @@ class CompiledSynthesis:
                 )
                 note = SECTION_8_3_NOTE[label]
                 if label == PARTIAL_CANDIDATE_SET:
-                    note += (". Ranking applies only to returned candidates; the selected route is not proven best "
-                             "within the declared bounds.")
+                    note += ". Ranking applies only to returned candidates; additional candidates may be missing."
+                    if self.best_draft is not None:
+                        note += " The selected route is not proven best within the declared bounds."
                 lines.append(f"[{label}] {note}")
 
         if self.already_in_active_inventory:
@@ -152,6 +153,22 @@ class CompiledSynthesis:
             return "\n".join(lines)
 
         if self.best_draft is None:
+            if self.ranked:
+                lines.append(
+                    "[NO_ADMISSIBLE_RETURNED_ROUTE] Candidates were returned, but none qualifies for selection "
+                    "under the declared bench constraints. No synthesis dossier or shopping recommendation is selected."
+                )
+                lines.append("RETURNED CANDIDATES -- diagnostic evidence only:")
+                for fit in self.ranked:
+                    lines.append(f"  route {fit.route.digest[:12]}: {_equation(fit.route)}")
+                    lines.append(fit.explain())
+                if self.alternatives:
+                    lines.append("Candidate epistemic grades (independent of bench admissibility):")
+                    for grade, equation in self.alternatives:
+                        lines.append(f"  [{grade}] {equation}")
+                for note in self.ledger:
+                    lines.append(f"  - {note}")
+                return "\n".join(lines)
             # SRCH-NO-01: route the no-route wording through the ONE section-8.3 label so the compile Dossier reads
             # the same four-outcome vocabulary as recompile/decompile.  No route was returned, so candidate_count=0;
             # the receipt's completeness picks NO_ROUTE_IN_DECLARED_SPACE (complete) vs INCOMPLETE_NO_ROUTE_OBSERVED
@@ -165,6 +182,10 @@ class CompiledSynthesis:
 
         refuted = self.verdict is not None and self.verdict.grade is Grade.REFUTED
         lines.append(f"OVERALL GRADE (L2): {self.verdict.grade.value} -- {self.verdict.headline}")
+        for fit in self.ranked:
+            if fit.route.digest == self.best_draft.route.digest:
+                lines.append(fit.explain())
+                break
         if refuted:
             # a refuted route is not a synthesis; do not dress it up as a procedure.
             lines.append("This route is REFUTED by a named law -- it is NOT a synthesis procedure and is not "
@@ -207,6 +228,10 @@ class CompiledSynthesis:
             lines.append("ALTERNATIVE ROUTES considered (grade -- equation; best is drafted above):")
             for g, eq in self.alternatives:
                 lines.append(f"  [{g}] {eq}")
+            for fit in self.ranked:
+                if fit.route.digest != self.best_draft.route.digest and (fit.exclusions or fit.gaps):
+                    lines.append(f"  candidate {fit.route.digest[:12]} constraint diagnostics:")
+                    lines.append(fit.explain())
         if self.ledger:
             lines.append("LEDGER (scope of this compile; per-value derived/sourced/UNKNOWN labels are on the "
                          "drafted quantities above):")
@@ -240,11 +265,11 @@ def compile_synthesis(
 ) -> CompiledSynthesis:
     """Compile ``target`` into a bounded, bucket-terminated candidate-route evidence dossier.
 
-    ``box`` (CLI-CAN-02 brick 2): the section-11 bench constraint (T/P) the candidate routes are ranked against.
-    ``None`` (or an empty box) ranks on an UNCONSTRAINED bench -- byte-identical to before -- so every current
-    caller is unchanged; a constraint EXCLUDES a route that needs conditions outside the bench, which can change
-    which route surfaces as ``best``.  It rides the SAME ``rank_routes`` the service uses, so ``compile`` and
-    ``recompile`` apply one constraint, one way (alias coherence, CLI-CAN-01).
+    ``box`` carries physical and process limits through the same ``rank_routes`` used by the service.
+    ``None`` leaves the bench unconstrained. Hard EXCLUDED candidates cannot be selected, regardless of grade.
+    When process limits are active, only assessed FITS candidates qualify for a dossier; UNKNOWN candidates
+    remain diagnostic evidence until the missing whole-step requirements are supplied. A fit assesses the
+    selected constraints, not reaction success or bench readiness.
 
     ``losses`` (EVD-KEY-01): the section-5.3 :class:`~smartchem.identity.IdentityLoss` records the TARGET identity
     carries (e.g. a stereo/isotope BLOCKER when the target was parsed from a SMILES that declared a feature the
@@ -275,7 +300,7 @@ def compile_synthesis(
     commodity_stock = commodity_inventory() if commodities is None else tuple(commodities)
 
     ledger = [
-        "best route is a LINEAR chain; convergent (multi-precursor) trees are a roadmap item",
+        "candidate routes are LINEAR chains; convergent (multi-precursor) trees are a roadmap item",
         "commodity terminals are curated source leads; identity is grounded, availability is editorial, and "
         "no purity/concentration/formulation equivalence is implied",
     ]
@@ -344,16 +369,36 @@ def compile_synthesis(
         ("kinetics", kinetics), ("barriers", barriers),
     ) if v is not None}
 
-    # Re-rank every returned route by L2 GRADE first (fit order as the tiebreaker), so a 1-step KNOWN
-    # documented synthesis surfaces above a longer HYPOTHESIZED chain.  The search receipt already bounds the
-    # result set; silently classifying only a prefix would make "best returned" false.
+    # A known reaction outside the declared bench is still inadmissible. Grade is
+    # a preference only after this hard gate, never permission to override it.
+    # Under process bounds, UNKNOWN fit remains diagnostic evidence: it cannot
+    # support the requested claim that the route is manageable on this bench.
+    process_constrained = box is not None and box.process.constrains_anything
     head = ranked
     graded = []
     for i, rf in enumerate(head):
         v = classify_route(rf.route, losses=losses, **kw)
-        graded.append((_GRADE_RANK.get(v.grade, 99), i, rf, v))
-    graded.sort(key=lambda t: (t[0], t[1]))
-    _, _, best_fit, verdict = graded[0]
+        admissible = rf.status is not RouteFitStatus.EXCLUDED and (
+            not process_constrained or rf.status is RouteFitStatus.FITS
+        )
+        graded.append((not admissible, _GRADE_RANK.get(v.grade, 99), i, rf, v))
+    graded.sort(key=lambda t: (t[0], t[1], t[2]))
+    inadmissible, _, _, best_fit, verdict = graded[0]
+    if inadmissible:
+        reason = (
+            "process constraints require assessed FITS for selection; UNKNOWN candidates are retained for "
+            "evidence review, and EXCLUDED candidates cannot be selected"
+            if process_constrained else
+            "all returned routes are EXCLUDED by hard bench bounds or composability; an epistemic grade "
+            "cannot override those exclusions"
+        )
+        return CompiledSynthesis(
+            target=target, ranked=ranked, best_draft=None, verdict=None,
+            kinetics=None, eyring=None, shopping=(), other_leaves=(),
+            alternatives=tuple((v.grade.value, _equation(rf.route)) for _, _, _, rf, v in graded),
+            ledger=tuple(ledger) + (reason, "no admissible route was observed among the returned candidates"),
+            search_receipt=search.receipt,
+        )
     best = best_fit.route
 
     draft = draft_route_dossier(best, feed=feed, stability=stability, selectivity=selectivity, thermo=thermo,
@@ -372,7 +417,7 @@ def compile_synthesis(
         others.append(_chemist_label(m))
 
     alternatives = tuple(
-        (v.grade.value, _equation(rf.route)) for _, _, rf, v in graded if rf.route.digest != best.digest
+        (v.grade.value, _equation(rf.route)) for _, _, _, rf, v in graded if rf.route.digest != best.digest
     )
 
     return CompiledSynthesis(

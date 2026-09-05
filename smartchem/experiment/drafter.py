@@ -27,13 +27,14 @@ crash and never a guess.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from fractions import Fraction  # noqa: F401  (used in a string type annotation)
 from typing import Mapping
 
 from ..category import Molecule
 from ..constraints import PhysicalBounds
+from ..process_constraints import ProcessBounds, evaluate_process
 from ..contracts import Digestible
 from ..data.kinetics import KineticTable
 from ..decompiler import Formula
@@ -131,8 +132,11 @@ class ConstraintBox(Digestible):
     max_pressure_atm: float | None = None
     available_reagents: frozenset[str] | None = None
     available_equipment: frozenset[EquipmentKind] | None = None
+    process: ProcessBounds = field(default_factory=ProcessBounds.unconstrained)
 
     def __post_init__(self) -> None:
+        if type(self.process) is not ProcessBounds:
+            raise TypeError("process must be a ProcessBounds")
         # CONSTR-VAL-01 T/P validation is delegated to the shared PhysicalBounds leaf (CLI-CAN-02): the
         # finite/positive/ordered rules live in ONE place, and constructing it raises the identical
         # TypeError/ValueError.  ConstraintBox keeps its flat fields, so its digest and every consumer are unchanged.
@@ -156,7 +160,7 @@ class ConstraintBox(Digestible):
         )
 
     @classmethod
-    def of_bounds(cls, bounds: PhysicalBounds) -> "ConstraintBox":
+    def of_bounds(cls, bounds: PhysicalBounds, process: ProcessBounds | None = None) -> "ConstraintBox":
         """A bench box carrying only the shared section-11 T/P ``bounds`` (no reagent/equipment inventory).
 
         The ONE place a :class:`~smartchem.constraints.PhysicalBounds` becomes a bench box, so the service's
@@ -166,6 +170,7 @@ class ConstraintBox(Digestible):
             max_temperature_k=bounds.max_temperature_k,
             min_pressure_atm=bounds.min_pressure_atm,
             max_pressure_atm=bounds.max_pressure_atm,
+            process=process if process is not None else ProcessBounds.unconstrained(),
         )
 
     @property
@@ -175,7 +180,7 @@ class ConstraintBox(Digestible):
         An all-``None`` box constrains nothing; a route judged against it is ``UNCONSTRAINED`` (nothing was
         assessed), never ``FITS`` (standard section 11: ``UNCONSTRAINED`` MUST NOT render as a pass).
         """
-        return any(
+        return self.process.constrains_anything or any(
             getattr(self, name) is not None
             for name in ("max_temperature_k", "min_pressure_atm", "max_pressure_atm",
                          "available_reagents", "available_equipment")
@@ -237,6 +242,24 @@ def _step_box_check(step, box: ConstraintBox, equip: tuple[EquipmentItem, ...],
     env = step.envelope
     tag = f"step {idx + 1}"
 
+    # Reaction conditions alone cannot bound a hotter workup or a vacuum isolation.
+    # With operator process limits, require extrema over the whole operation set.
+    if box.process.constrains_anything:
+        requirements = env.process
+        for name, op, label in (
+            ("max_temperature_k", "max", "peak_temperature_k"),
+            ("min_pressure_atm", "min", "min_pressure_atm"),
+            ("max_pressure_atm", "max", "max_pressure_atm"),
+        ):
+            bound = getattr(box, name)
+            if bound is None:
+                continue
+            value = None if requirements is None else getattr(requirements, label)
+            if value is None:
+                gaps.append(f"{tag}: whole-process {label} including workup is undeclared")
+            elif (op == "max" and value > bound) or (op == "min" and value < bound):
+                exclusions.append(f"{tag}: whole-process {label} {value:g} violates {name} {bound:g}")
+
     if box.max_temperature_k is not None:
         if env.temperature is None:
             gaps.append(f"{tag}: temperature undeclared, but the bench caps at {box.max_temperature_k} K")
@@ -264,7 +287,16 @@ def _step_box_check(step, box: ConstraintBox, equip: tuple[EquipmentItem, ...],
 
     if box.available_reagents is not None:
         for r in step.reactants:
-            if not (_names_of(r) & box.available_reagents):
+            formula = repr(Formula.of(r.formula, r.charge))
+            names = _names_of(r) - {formula}
+            if names & box.available_reagents:
+                continue  # a registered name identifies this exact constitutional structure
+            if formula in box.available_reagents:
+                gaps.append(
+                    f"{tag}: reactant {r!r} matches only formula {formula} in the available-reagent "
+                    "inventory; structural identity is unresolved (a formula does not identify an isomer)"
+                )
+            else:
                 exclusions.append(f"{tag}: reactant {r!r} is not in the available-reagent inventory")
 
     if box.available_equipment is not None:
@@ -307,6 +339,10 @@ def fit_route(
         ex, gp = _step_box_check(step, box, equip, idx)
         exclusions.extend(ex)
         gaps.extend(gp)
+
+    process_fit = evaluate_process(tuple(step.envelope for step in route.steps), box.process)
+    exclusions.extend(process_fit.exclusions)
+    gaps.extend(process_fit.gaps)
 
     if exclusions:
         status = RouteFitStatus.EXCLUDED

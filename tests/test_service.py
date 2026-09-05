@@ -377,14 +377,12 @@ class TestValidation:
             )
 
     def test_response_accepts_a_typed_affordability_frontier(self):
-        # the guard relaxation: a frontier of real AffordabilityFrontierEntry values is accepted (no longer refused).
+        # Typed costs must also refer to a real returned candidate.
         from smartchem.experiment.affordability import AffordabilityFrontierEntry, CostVector
-        req = build_recompile_request("name:water")
-        entry = AffordabilityFrontierEntry.of("deadbeef", CostVector(cash=1.0, currency="USD", unit="kg"))
-        resp = CompilationResponse(
-            COMPILATION_RESPONSE_SCHEMA, req, ResponseOutcome.REFUSED, None, None,
-            ("x",), (), (entry,),
-        )
+        base = run_compilation(build_recompile_request("smiles:CC(=O)OC", max_depth=2))
+        entry = AffordabilityFrontierEntry.of(base.candidates[0].candidate_digest,
+                                             CostVector(cash=1.0, currency="USD", unit="kg"))
+        resp = replace(base, affordability_frontier=(entry,))
         assert resp.affordability_frontier == (entry,)
 
 

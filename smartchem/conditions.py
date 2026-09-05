@@ -51,6 +51,7 @@ from typing import Callable, Generic, TypeVar
 
 from .contracts import Digestible, EvidenceStatus
 from .provenance import SourceCitation
+from .process_constraints import ProcessRequirements
 
 __all__ = [
     "Interval",
@@ -114,8 +115,11 @@ class ConditionEnvelope(Digestible):
     status: EvidenceStatus = EvidenceStatus.UNSUPPORTED
     provenance: str = ""
     source: SourceCitation | None = None
+    process: ProcessRequirements | None = None
 
     def __post_init__(self) -> None:
+        if self.process is not None and type(self.process) is not ProcessRequirements:
+            raise TypeError("process must be a ProcessRequirements or None")
         for name in ("temperature", "pressure", "duration"):
             v = getattr(self, name)
             if v is not None and type(v) is not Interval:
@@ -132,6 +136,12 @@ class ConditionEnvelope(Digestible):
             raise ValueError(
                 f"pressure intervals must use unit 'atm', got {self.pressure.unit!r}; convert explicitly"
             )
+        for name in ("temperature", "pressure"):
+            value = getattr(self, name)
+            if value is not None and value.lo <= 0:
+                raise ValueError(f"{name} must be positive")
+        if self.duration is not None and self.duration.lo < 0:
+            raise ValueError("duration must be nonnegative")
         for name in ("medium", "applied_field", "provenance"):
             if not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} must be a string")

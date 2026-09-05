@@ -1,6 +1,6 @@
 {
   "affordability_frontier_entry_fields": {
-    "cost_vector": "object(cost-vector): 10 minimized section-10.4 axes (cash/access_difficulty/evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/analytical/waste_disposal), each number|null (UNKNOWN); cash_floor number|null (an honest partial-basket LOWER BOUND when the exact cash is UNKNOWN, mutually exclusive with cash -- COST-VEC-01-coupled); hard_blockers array[str]; currency/unit/region str (labels only)",
+    "cost_vector": "object(cost-vector): 10 minimized section-10.4 axes (cash/access_difficulty/evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/analytical/waste_disposal), each number|null (UNKNOWN); cash_floor number|null (an honest partial-basket LOWER BOUND when the exact cash is UNKNOWN, mutually exclusive with cash -- COST-VEC-01-coupled); hard_blockers array[str]; currency/unit str (must match for cash comparison); region str",
     "route_digest": "str (sha256; == the matching ranked_route_dossiers.route_digest)",
     "schema_version": "str"
   },
@@ -33,7 +33,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha9",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha10",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -65,23 +65,25 @@
     "schema_version": "str",
     "selectivity_verdict": "str"
   },
-  "request_schema_version": "smartchem.service/compilation-request-v1alpha4",
+  "request_schema_version": "smartchem.service/compilation-request-v1alpha5",
   "response_fields": {
+    "admissible_route_digests": "array[str] (FITS returned candidates under requested process constraints; not bench validation)",
     "affordability_frontier": "array[object(affordability-frontier-entry)] (section-10.4 Pareto frontier over the ranked routes; COST-VEC-01. Empty when no route carries affordability signal -- a known cost axis or a hard blocker)",
     "compilation_ir": "object(chemical-compilation-ir)|null",
     "diagnostics": "array[str] (blockers)",
     "exit_code": "int (section 14.4: 0/2/3/4/5/70)",
     "outcome": "enum(ResponseOutcome)",
     "parse_receipt_summary": "str|null (section 14.2 identity-resolution receipt; provenance)",
+    "process_selection_status": "enum(NOT_REQUESTED/NOT_REQUIRED/UNASSESSED/NO_FIT_FOUND/FITS_FOUND)",
     "provider_snapshots": "array[object(provider-snapshot)] (section-13.2 dated provenance of any LIVE provider fetch; SNAPSHOT-13.2. Empty on an offline/default run)",
     "ranked_route_dossiers": "array[object(ranked-route-summary)] (section-11 fit, best-first; CLI-CAN-02)",
-    "request": "object(compilation-request-v1alpha4)",
+    "request": "object(compilation-request-v1alpha5)",
     "result_digest": "str (sha256)",
     "schema_version": "str",
     "search_space_status": "str|null (section 8.3 no-route matrix: NO_ROUTE_IN_DECLARED_SPACE/INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; null when no route search ran)",
     "standard_status": "str|null (section 8.2 status)"
   },
-  "response_schema_version": "smartchem.service/compilation-response-v1alpha8",
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha9",
   "search_receipt_view_fields": {
     "candidate_enumeration_complete": "bool",
     "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",

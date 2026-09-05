@@ -59,6 +59,7 @@ from .compilation_ir import (
     recompile_to_ir,
 )
 from .constraints import PhysicalBounds
+from .process_constraints import ProcessBounds, Attention, Agitation
 from .contracts import Digestible, canonical_digest
 from .identity import IdentityLoss, MatchLayer, refines
 from .identity_parse import IdentityParseError, InputKind, resolve_target
@@ -106,7 +107,7 @@ __all__ = [
 # v1alpha4 (CLI-CAN-02): ConstraintPolicy carries a real PhysicalBounds (T/P) box instead of a placeholder
 # constraint_id string -- a genuine request-payload shape change.  (v1alpha3 added SVC-REQ-01's normalized_identity;
 # v1alpha2 added ID-LAYER-02's match_layer.)
-COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha4"
+COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # v1alpha2 (SVC-REQ-01 alias-collapse): CompilationResponse gains a ``parse_receipt_summary`` field -- the section
 # 14.2 identity-resolution echo, pulled OUT of ``diagnostics`` (where it rode as a free-text last line) into a
 # first-class field, so it is surfaced as the section 14.3 receipt yet EXCLUDED from ``result_digest`` (it is
@@ -127,7 +128,7 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha4"
 # honest partial-basket lower bound), so the response value shape changed.
 # v1alpha8 (COST-VEC-01 quantity axis): the frontier's ``material_quantity`` axis is now POPULATED (routes mode) with
 # each route's total external-leaf MOLES per mol product -- a previously-always-null field now carries a value.
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha8"
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha9"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
@@ -136,7 +137,7 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha8"
 # search_space_status section-8.3 field (SRCH-NO-01).  v1alpha5: the ranked_route_dossiers element shape (CLI-CAN-02
 # brick 2).  (v1alpha4: the request schema bumped for ConstraintPolicy.bounds; v1alpha3: the parse_receipt_summary
 # response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's identity_losses.)
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha9"
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha10"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -363,10 +364,13 @@ class ConstraintPolicy(Digestible):
     """
 
     bounds: PhysicalBounds = field(default_factory=PhysicalBounds.unconstrained)
+    process: ProcessBounds = field(default_factory=ProcessBounds.unconstrained)
 
     def __post_init__(self) -> None:
         if type(self.bounds) is not PhysicalBounds:
             raise TypeError("bounds must be a PhysicalBounds")
+        if type(self.process) is not ProcessBounds:
+            raise TypeError("process must be a ProcessBounds")
 
 
 @dataclass(frozen=True)
@@ -652,15 +656,16 @@ def _resolve_constraints(
     max_temperature_k: "float | None",
     min_pressure_atm: "float | None",
     max_pressure_atm: "float | None",
+    process: "ProcessBounds | None" = None,
 ) -> "tuple[ConstraintPolicy, bool]":
     """Resolve the request's :class:`ConstraintPolicy` (CLI-CAN-02) from an explicit policy OR bare T/P bound
     kwargs (a caller may not pass both).  Returns ``(policy, was_explicit)`` -- ``was_explicit`` is the
     ``constraints`` field's origin (a declared bound OR a passed policy is EXPLICIT; the unconstrained default is
     DEFAULT)."""
-    any_bound = any(b is not None for b in (max_temperature_k, min_pressure_atm, max_pressure_atm))
+    any_bound = any(b is not None for b in (max_temperature_k, min_pressure_atm, max_pressure_atm, process))
     if constraints is not None:
         if any_bound:
-            raise ValueError("pass either constraints or the T/P bound kwargs, not both")
+            raise ValueError("pass either constraints or the T/P bound and process kwargs, not both")
         return constraints, True
     if any_bound:
         return ConstraintPolicy(
@@ -668,7 +673,8 @@ def _resolve_constraints(
                 max_temperature_k=max_temperature_k,
                 min_pressure_atm=min_pressure_atm,
                 max_pressure_atm=max_pressure_atm,
-            )
+            ),
+            process=process if process is not None else ProcessBounds.unconstrained(),
         ), True
     return ConstraintPolicy(), False
 
@@ -721,6 +727,7 @@ def build_recompile_request(
     identity_policy: "IdentityPolicy | None" = None,
     match_layer: "MatchLayer | None" = None,
     constraints: "ConstraintPolicy | None" = None,
+    process: "ProcessBounds | None" = None,
     max_temperature_k: "float | None" = None,
     min_pressure_atm: "float | None" = None,
     max_pressure_atm: "float | None" = None,
@@ -738,7 +745,7 @@ def build_recompile_request(
     kwargs (CLI-CAN-02); it rides the search identity but is not yet applied to route grading (a follow-on).
     """
     resolved_constraints, constraints_explicit = _resolve_constraints(
-        constraints, max_temperature_k, min_pressure_atm, max_pressure_atm
+        constraints, max_temperature_k, min_pressure_atm, max_pressure_atm, process
     )
     explicit = {
         "input_kind": input_kind is not None,
@@ -1009,6 +1016,13 @@ class CompilationResponse:
             type(r) is not RankedRouteSummary for r in self.ranked_route_dossiers
         ):
             raise TypeError("ranked_route_dossiers must be a tuple of RankedRouteSummary values")
+        if self.ranked_route_dossiers and self.compilation_ir is not None:
+            candidate_ids = {c.candidate_digest for c in self.compilation_ir.candidates}
+            ranked_ids = tuple(r.route_digest for r in self.ranked_route_dossiers)
+            if len(ranked_ids) != len(set(ranked_ids)):
+                raise ValueError("ranked route digests must be unique")
+            if not set(ranked_ids) <= candidate_ids:
+                raise ValueError("ranked route digest must identify a returned IR candidate")
         # COST-VEC-01: ``affordability_frontier`` is now POPULATED (routes mode) with typed AffordabilityFrontierEntry
         # values -- the section-10.4 Pareto frontier.  The type is guarded (like ranked_route_dossiers) so a
         # hand-built/deserialized response cannot smuggle an untyped blob past the coherence checks.  The import is
@@ -1020,6 +1034,16 @@ class CompilationResponse:
             from .experiment.affordability import AffordabilityFrontierEntry
             if any(type(e) is not AffordabilityFrontierEntry for e in self.affordability_frontier):
                 raise TypeError("affordability_frontier must be a tuple of AffordabilityFrontierEntry values")
+            frontier_ids = tuple(e.route_digest for e in self.affordability_frontier)
+            candidate_ids = set() if self.compilation_ir is None else {
+                c.candidate_digest for c in self.compilation_ir.candidates
+            }
+            if len(frontier_ids) != len(set(frontier_ids)) or not set(frontier_ids) <= candidate_ids:
+                raise ValueError("affordability frontier must identify unique returned IR candidates")
+            if self.request.constraints.process.constrains_anything and not set(frontier_ids) <= set(
+                self.admissible_route_digests
+            ):
+                raise ValueError("process-constrained affordability frontier may contain only admitted FITS routes")
         # SNAPSHOT-13.2: provider_snapshots carries the dated provenance of any LIVE fetch that serviced the request
         # (empty on an offline/default run).  Typed-guarded like the tuples above; the lazy import stays off the
         # common empty path (the layering discipline).  It is NOT in result_digest -- a fetch time is provenance.
@@ -1095,7 +1119,38 @@ class CompilationResponse:
 
     @property
     def exit_code(self) -> int:
+        # Search outcome remains structural; process admission is a separate decision.
+        # A partial search stays partial even when no returned route fits.
+        if self.outcome is ResponseOutcome.ROUTES_FOUND and self.process_selection_status in (
+            "NO_FIT_FOUND", "UNASSESSED"
+        ):
+            return EXIT_REFUSED
+        if self.outcome is ResponseOutcome.ROUTES_FOUND and self.ranked_route_dossiers and all(
+            r.fit_status == "EXCLUDED" for r in self.ranked_route_dossiers
+        ):
+            return EXIT_REFUSED
         return _EXIT_BY_OUTCOME[self.outcome]
+
+    @property
+    def admissible_route_digests(self) -> tuple[str, ...]:
+        """Returned candidates satisfying every assessed limit; never a bench-readiness claim."""
+        if not self.request.constraints.process.constrains_anything:
+            return ()
+        return tuple(r.route_digest for r in self.ranked_route_dossiers if r.fit_status == "FITS")
+
+    @property
+    def process_selection_status(self) -> str:
+        if not self.request.constraints.process.constrains_anything:
+            return "NOT_REQUESTED"
+        if self.outcome is ResponseOutcome.TARGET_ALREADY_AVAILABLE:
+            return "NOT_REQUIRED"
+        if self.compilation_ir is None:
+            return "UNASSESSED"
+        if self.admissible_route_digests:
+            return "FITS_FOUND"
+        if self.compilation_ir.candidate_count and not self.ranked_route_dossiers:
+            return "UNASSESSED"
+        return "NO_FIT_FOUND"
 
     @property
     def normalized_target(self):
@@ -1259,7 +1314,8 @@ def _fit_counts(fits: "tuple") -> "tuple[int, int, int]":
     return fit, exc, unk
 
 
-def constraint_note(bounds: PhysicalBounds, *, fit_counts: "tuple[int, int, int] | None") -> "str | None":
+def constraint_note(bounds: PhysicalBounds, *, fit_counts: "tuple[int, int, int] | None",
+                    process: "ProcessBounds | None" = None) -> "str | None":
     """The ONE section-11 constraint disclosure (CLI-CAN-02), or ``None`` when nothing is declared.
 
     ONE caveat text for every surface -- the ``run_compilation`` response diagnostic (recompile human AND --json)
@@ -1273,23 +1329,33 @@ def constraint_note(bounds: PhysicalBounds, *, fit_counts: "tuple[int, int, int]
       bench box, ``excluded`` fall outside a hard bound, and ``unknown`` leave a constrained dimension undeclared
       (a GAP -- never a silent pass, section 11).
     """
-    if not bounds.constrains_anything:
+    process = process if process is not None else ProcessBounds.unconstrained()
+    if not bounds.constrains_anything and not process.constrains_anything:
         return None
+    description = bounds.describe()
+    if process.constrains_anything:
+        description += "; process: " + process.describe()
+    selection = (
+        "; process selection admits only FITS routes; UNKNOWN and EXCLUDED remain diagnostics. "
+        "Fit compares declared requirements including workup; it does not validate a bench procedure"
+        if process.constrains_anything else ""
+    )
     if fit_counts is None:
         return (
-            f"section-11 constraint DECLARED ({bounds.describe()}): part of the request identity, but no routes "
-            "were ranked against it here (a no-route result, or a path that does not rank the routes)"
+            f"section-11 constraint DECLARED ({description}): part of the request identity, but no routes "
+            "were ranked against it here (a no-route result, or a path that does not rank the routes)" + selection
         )
     fits, excluded, unknown = fit_counts
     return (
-        f"section-11 constraint APPLIED ({bounds.describe()}): the routes are ranked against the bench -- "
+        f"section-11 constraint APPLIED ({description}): the routes are ranked against the bench -- "
         f"{fits} FIT, {excluded} EXCLUDED (outside a hard bound), {unknown} UNKNOWN-fit (a constrained dimension "
-        "the route leaves undeclared -- never a silent pass); see ranked_route_dossiers"
+        "the route leaves undeclared -- never a silent pass); see ranked_route_dossiers" + selection
     )
 
 
 def _ranked_summaries(
     routes: "tuple", bounds: PhysicalBounds, losses: "tuple",
+    process: "ProcessBounds | None" = None,
 ) -> "tuple[RankedRouteSummary, ...]":
     """Rank ``routes`` against the section-11 bench ``bounds`` and project to thin response summaries (CLI-CAN-02).
 
@@ -1302,7 +1368,7 @@ def _ranked_summaries(
     if not routes:
         return ()
     from .experiment.drafter import ConstraintBox, rank_routes
-    fits = rank_routes(routes, box=ConstraintBox.of_bounds(bounds), losses=losses)
+    fits = rank_routes(routes, box=ConstraintBox.of_bounds(bounds, process=process), losses=losses)
     return tuple(RankedRouteSummary.of_fit(f) for f in fits)
 
 
@@ -1538,14 +1604,23 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     # diagnostics (not just the CLI render) so BOTH the human and --json views agree (CLI-JSON-01): fit_counts=None
     # when nothing was ranked (no routes, or DAG mode), else the (fit/excluded/unknown) tally.  A consumer can now
     # read which routes fall inside the bench and which are EXCLUDED -- and can never mistake an UNKNOWN-fit for a pass.
-    ranked = _ranked_summaries(routes_for_ranking, request.constraints.bounds, identity_losses)
+    ranked = _ranked_summaries(routes_for_ranking, request.constraints.bounds, identity_losses,
+                               process=request.constraints.process)
     # COST-VEC-01: the section-10.4 Pareto affordability frontier over the SAME ranked routes -- each route's
     # commodity leaves priced into a CostVector, EXCLUDED routes G6-dominated by their hard bounds.  Empty when no
     # route carries affordability signal (honest), so this never fabricates a cost ranking from absent price data.
-    frontier = _affordability_frontier(routes_for_ranking, ranked)
+    if request.constraints.process.constrains_anything:
+        admitted = tuple(r for r in ranked if r.fit_status == "FITS")
+        admitted_ids = {r.route_digest for r in admitted}
+        frontier = _affordability_frontier(
+            tuple(r for r in routes_for_ranking if r.digest in admitted_ids), admitted
+        )
+    else:
+        frontier = _affordability_frontier(routes_for_ranking, ranked)
     diagnostics = tuple(ir.diagnostics)
     _note = constraint_note(
-        request.constraints.bounds, fit_counts=_fit_counts(ranked) if ranked else None
+        request.constraints.bounds, fit_counts=_fit_counts(ranked) if ranked else None,
+        process=request.constraints.process,
     )
     if _note is not None:
         diagnostics = (*diagnostics, _note)
@@ -1676,6 +1751,33 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
 # -- serialization (the request/response are transportable artifacts: CLI-JSON-01 leans on this) -----------------
 
 
+def _process_to_payload(bounds: ProcessBounds) -> dict:
+    from dataclasses import asdict
+    payload = asdict(bounds)
+    for name in ("allowed_attention", "allowed_agitation"):
+        value = payload[name]
+        payload[name] = None if value is None else [x.value for x in value]
+    value = payload["available_equipment"]
+    payload["available_equipment"] = None if value is None else list(value)
+    return payload
+
+
+def _process_from_payload(payload: dict) -> ProcessBounds:
+    if type(payload) is not dict or set(payload) != set(_process_to_payload(ProcessBounds())):
+        raise ValueError("process bounds must contain exactly the versioned fields")
+    values = dict(payload)
+    for name, enum in (("allowed_attention", Attention), ("allowed_agitation", Agitation)):
+        if values[name] is not None:
+            if type(values[name]) is not list:
+                raise TypeError(f"{name} must be an array or null")
+            values[name] = tuple(enum(x) for x in values[name])
+    if values["available_equipment"] is not None:
+        if type(values["available_equipment"]) is not list:
+            raise TypeError("available_equipment must be an array or null")
+        values["available_equipment"] = tuple(values["available_equipment"])
+    return ProcessBounds(**values)
+
+
 def request_to_payload(request: CompilationRequest) -> dict:
     """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable."""
     return {
@@ -1703,6 +1805,7 @@ def request_to_payload(request: CompilationRequest) -> dict:
             "max_temperature_k": request.constraints.bounds.max_temperature_k,
             "min_pressure_atm": request.constraints.bounds.min_pressure_atm,
             "max_pressure_atm": request.constraints.bounds.max_pressure_atm,
+            "process": _process_to_payload(request.constraints.process),
         },
         "ranking_policy": {"policy_id": request.ranking_policy.policy_id},
         "output_policy": {
@@ -1722,6 +1825,8 @@ def request_from_payload(payload: dict) -> CompilationRequest:
     ``normalized_identity`` -> an equal ``semantic_digest`` over two DIFFERENT searches (a section-13.1 break: "same
     semantic digest MUST execute the same search").  Recomputing here makes deserialization authoritative.
     """
+    if payload.get("schema_version") != COMPILATION_REQUEST_SCHEMA:
+        raise ValueError(f"request schema_version must be exactly {COMPILATION_REQUEST_SCHEMA!r}")
     tp = payload["terminal_policy"]
     operation = CompilationOperation(payload["operation"])
     target_input = payload["target_input"]
@@ -1760,7 +1865,8 @@ def request_from_payload(payload: dict) -> CompilationRequest:
                 payload["constraints"]["max_temperature_k"],
                 payload["constraints"]["min_pressure_atm"],
                 payload["constraints"]["max_pressure_atm"],
-            )
+            ),
+            process=_process_from_payload(payload["constraints"]["process"]),
         ),
         RankingPolicy(payload["ranking_policy"]["policy_id"]),
         OutputPolicy(payload["output_policy"]["render_mode"], payload["output_policy"]["quiet"]),
@@ -1905,6 +2011,8 @@ def response_to_payload(response: CompilationResponse) -> dict:
         "diagnostics": list(response.diagnostics),
         "parse_receipt_summary": response.parse_receipt_summary,
         "search_space_status": response.search_space_status,
+        "process_selection_status": response.process_selection_status,
+        "admissible_route_digests": list(response.admissible_route_digests),
         "ranked_route_dossiers": [ranked_summary_to_payload(r) for r in response.ranked_route_dossiers],
         "affordability_frontier": [affordability_entry_to_payload(e) for e in response.affordability_frontier],
         "provider_snapshots": [provider_snapshot_to_payload(s) for s in response.provider_snapshots],
@@ -1915,7 +2023,7 @@ def response_to_payload(response: CompilationResponse) -> dict:
 def response_from_payload(payload: dict) -> CompilationResponse:
     """Reconstruct a response from :func:`response_to_payload`; re-validates via the coherence guard."""
     ir_payload = payload["compilation_ir"]
-    return CompilationResponse(
+    response = CompilationResponse(
         payload["schema_version"],
         request_from_payload(payload["request"]),
         ResponseOutcome(payload["outcome"]),
@@ -1927,6 +2035,11 @@ def response_from_payload(payload: dict) -> CompilationResponse:
         tuple(provider_snapshot_from_payload(s) for s in payload.get("provider_snapshots", [])),
         parse_receipt_summary=payload["parse_receipt_summary"],
     )
+    for name in ("process_selection_status", "admissible_route_digests", "exit_code", "result_digest"):
+        expected = list(response.admissible_route_digests) if name == "admissible_route_digests" else getattr(response, name)
+        if payload[name] != expected:
+            raise ValueError(f"{name} does not match the reconstructed response")
+    return response
 
 
 def serialize_response(response: CompilationResponse) -> str:
@@ -1955,7 +2068,7 @@ def response_schema() -> dict:
         "request_schema_version": COMPILATION_REQUEST_SCHEMA,
         "response_fields": {
             "schema_version": "str",
-            "request": "object(compilation-request-v1alpha4)",
+            "request": "object(compilation-request-v1alpha5)",
             "outcome": "enum(ResponseOutcome)",
             "standard_status": "str|null (section 8.2 status)",
             "exit_code": "int (section 14.4: 0/2/3/4/5/70)",
@@ -1966,6 +2079,8 @@ def response_schema() -> dict:
                                    "INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; "
                                    "null when no route search ran)",
             "ranked_route_dossiers": "array[object(ranked-route-summary)] (section-11 fit, best-first; CLI-CAN-02)",
+            "process_selection_status": "enum(NOT_REQUESTED/NOT_REQUIRED/UNASSESSED/NO_FIT_FOUND/FITS_FOUND)",
+            "admissible_route_digests": "array[str] (FITS returned candidates under requested process constraints; not bench validation)",
             "affordability_frontier": "array[object(affordability-frontier-entry)] (section-10.4 Pareto frontier "
                                       "over the ranked routes; COST-VEC-01. Empty when no route carries "
                                       "affordability signal -- a known cost axis or a hard blocker)",
@@ -2055,7 +2170,7 @@ def response_schema() -> dict:
                            "evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/"
                            "analytical/waste_disposal), each number|null (UNKNOWN); cash_floor number|null (an honest "
                            "partial-basket LOWER BOUND when the exact cash is UNKNOWN, mutually exclusive with cash -- "
-                           "COST-VEC-01-coupled); hard_blockers array[str]; currency/unit/region str (labels only)",
+                           "COST-VEC-01-coupled); hard_blockers array[str]; currency/unit str (must match for cash comparison); region str",
         },
         "provider_snapshot_fields": {
             "schema_version": "str",

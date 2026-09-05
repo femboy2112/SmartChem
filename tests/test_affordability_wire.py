@@ -140,7 +140,8 @@ def test_the_frontier_is_excluded_from_result_digest():
     # prices are dated DATA, not search identity: a response with a populated frontier must share the result_digest
     # of the same response without one, or two aliases that ran the same search would split on price data.
     resp = run_compilation(build_recompile_request("smiles:CC(=O)OC", max_depth=2))
-    entry = AffordabilityFrontierEntry.of("deadbeef", CostVector(cash=1.0, currency="USD", unit="kg"))
+    entry = AffordabilityFrontierEntry.of(resp.candidates[0].candidate_digest,
+                                         CostVector(cash=1.0, currency="USD", unit="kg"))
     injected = dataclasses.replace(resp, affordability_frontier=(entry,))
     assert injected.affordability_frontier == (entry,)
     assert injected.result_digest == resp.result_digest
@@ -149,7 +150,8 @@ def test_the_frontier_is_excluded_from_result_digest():
 def test_a_populated_frontier_round_trips_through_the_json_payload():
     resp = run_compilation(build_recompile_request("smiles:CC(=O)OC", max_depth=2))
     entry = AffordabilityFrontierEntry.of(
-        "cafe1234", CostVector(cash=52.95, access_difficulty=0, currency="USD", unit="t", hard_blockers=()),
+        resp.candidates[0].candidate_digest,
+        CostVector(cash=52.95, access_difficulty=0, currency="USD", unit="t", hard_blockers=()),
     )
     injected = dataclasses.replace(resp, affordability_frontier=(entry,))
     back = response_from_payload(response_to_payload(injected))

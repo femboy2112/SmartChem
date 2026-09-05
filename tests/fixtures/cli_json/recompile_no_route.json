@@ -1,4 +1,5 @@
 {
+  "admissible_route_digests": [],
   "affordability_frontier": [],
   "compilation_ir": {
     "candidates": [],
@@ -51,6 +52,7 @@
   "exit_code": 3,
   "outcome": "NO_ROUTE_COMPLETE",
   "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->NAME] via OFFLINE_REGISTRY: C4H6O3 (CONSTITUTION layer); resolved offline name 'acetic anhydride'",
+  "process_selection_status": "NOT_REQUESTED",
   "provider_snapshots": [],
   "ranked_route_dossiers": [],
   "request": {
@@ -58,6 +60,16 @@
       "max_pressure_atm": null,
       "max_temperature_k": null,
       "min_pressure_atm": null,
+      "process": {
+        "allowed_agitation": null,
+        "allowed_attention": null,
+        "available_equipment": null,
+        "max_active_minutes": null,
+        "max_step_minutes": null,
+        "max_total_minutes": null,
+        "min_check_interval_minutes": null,
+        "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
+      },
       "schema_version": "smartchem.constraints/physical-bounds-v1alpha1"
     },
     "evidence_provider_selection": {
@@ -134,7 +146,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha4",
+    "schema_version": "smartchem.service/compilation-request-v1alpha5",
     "search_bounds": [
       [
         "cut_budget",
@@ -158,8 +170,8 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "5be4ce065fe6c26d424f80a2c4fc35849bdf4ac93eaa93dcae794a6fc255367a",
-  "schema_version": "smartchem.service/compilation-response-v1alpha8",
+  "result_digest": "8e680799397fc1eb7308b591ee95df7e8948d22870b02840926cb3014ffbfc07",
+  "schema_version": "smartchem.service/compilation-response-v1alpha9",
   "search_space_status": "NO_ROUTE_IN_DECLARED_SPACE",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

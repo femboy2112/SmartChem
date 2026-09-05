@@ -279,39 +279,52 @@ def _dag_note(resp):
     return next((d for d in resp.diagnostics if "DAG mode" in d), None)
 
 
-def test_dag_mode_process_is_soundly_assessed_not_silently_unassessed():
-    """ROUND-12 (supersedes item 5b): a DAG-mode compile with a process constraint is SOUNDLY assessed, not silent.
+def test_dag_mode_process_is_formally_admitted_not_left_unassessed():
+    """DAG-ADMIT-01 (ROUND-13, supersedes ROUND-12's diagnostic-only close): a DAG-mode compile with a process
+    constraint is FORMALLY admitted on the process axis -- process_selection_status flips off UNASSESSED.
 
-    DAG (convergent) routes are not linearly ranked, so process_selection_status stays UNASSESSED and nothing is
-    formally admitted -- but the SOUND gate (dag_process_fit: serial-achievable FITS, critical-path-floor EXCLUDE,
-    honest UNKNOWN band) reports the per-DAG verdict as a clearly-bounded diagnostic.  On a bench that covers the
-    seeded paracetamol record, at least one DAG soundly FITS.
+    Each convergent DAG carries a RankedDAGSummary (in ranked_dag_dossiers) whose process_fit_status is the SOUND
+    dag_process_fit verdict.  On a bench that covers the seeded paracetamol record at least one DAG soundly FITS, so
+    process_selection_status is FITS_FOUND.  The DAG dossiers are a DISTINCT admission from linear routes -- they never
+    enter admissible_route_digests (that is the linear combined-fit list; the DAG bench-box fit is a named next-step).
     """
     resp = run_compilation(build_recompile_request(
         "smiles:CC(=O)Nc1ccc(O)cc1", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
         process=_PARA_BENCH, **_PARA_DAG))
-    assert resp.process_selection_status == "UNASSESSED"     # DAGs are not formally admitted (a named next-step)
-    assert not resp.admissible_route_digests                 # ... and never appear in the admissible list
+    assert resp.process_selection_status == "FITS_FOUND"     # no longer UNASSESSED -- formally admitted
+    assert not resp.admissible_route_digests                 # ... but a DAG is not in the LINEAR admissible list
+    assert resp.ranked_dag_dossiers                           # the formal per-DAG process admissions
+    assert any(d.process_fit_status == "FITS" for d in resp.ranked_dag_dossiers)
     note = _dag_note(resp)
-    assert note is not None and "SOUNDLY assessed" in note
+    assert note is not None and "FORMALLY admitted" in note
     assert "1 FIT (serial-achievable)" in note               # the covering bench admits the seeded route
 
 
-def test_dag_mode_sound_fit_never_claims_more_than_it_proves():
-    """The DAG gate is SOUND (never a false FITS): a stricter bench reports zero fits and a sound exclusion.
+def test_dag_mode_admission_re_derives_and_survives_round_trip():
+    """The DAG admission is RE-DERIVED on load (the convergent PROCESS-ADMIT-01 close), not trusted from the payload.
 
-    'quick' caps a step at 60 min and the seeded paracetamol floor is 84 min, so that step is EXCLUDED on an
-    order-agnostic per-step bound (sound on a DAG, not a serial-sum artifact) -- the note reports 0 FIT and surfaces
-    the exclusion, and the constraint is still not silently dropped.
+    A serialize->deserialize round-trip reconstructs the dossiers and re-runs the coherence guard, and a relabel of a
+    DAG's process_fit_status from a stricter verdict to FITS is REFUSED because the carried process_requirements+edges
+    still re-derive to the stricter verdict (a forged admission).
     """
     resp = run_compilation(build_recompile_request(
         "smiles:CC(=O)Nc1ccc(O)cc1", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
-        process=ProcessBounds.quick(), **_PARA_DAG))
-    assert resp.process_selection_status == "UNASSESSED"
-    note = _dag_note(resp)
-    assert note is not None
-    assert "0 FIT (serial-achievable)" in note
-    assert "EXCLUDED" in note                                 # the per-step cap is a sound exclusion, not over-conservative
+        process=ProcessBounds.quick(), **_PARA_DAG))                 # 'quick' excludes the seeded DAG on a step cap
+    assert resp.process_selection_status == "NO_FIT_FOUND"           # assessed, none FITS -> not UNASSESSED
+    assert resp.ranked_dag_dossiers and all(d.process_fit_status == "EXCLUDED" for d in resp.ranked_dag_dossiers)
+    # a clean round-trip preserves the admission and re-derives it without complaint.
+    back = deserialize_response(serialize_response(resp))
+    assert back.process_selection_status == "NO_FIT_FOUND"
+    assert back.result_digest == resp.result_digest
+    # forge: relabel an EXCLUDED DAG to a COHERENT-looking FITS (clear BOTH exclusions and gaps so the __post_init__
+    # coherence table passes) -> the load-time RE-DERIVATION still catches it, because the carried requirements+edges
+    # re-derive to EXCLUDED.  (Clearing only exclusions is caught one layer earlier, by the FITS-cannot-carry-gaps rule.)
+    payload = response_to_payload(resp)
+    payload["ranked_dag_dossiers"][0]["process_fit_status"] = "FITS"
+    payload["ranked_dag_dossiers"][0]["exclusions"] = []
+    payload["ranked_dag_dossiers"][0]["gaps"] = []
+    with pytest.raises(ValueError, match="re-derive"):
+        response_from_payload(payload)
 
 
 def _convergent_40min_dag():

@@ -19,7 +19,9 @@ import pytest
 from smartchem.cli import main
 from smartchem.identity import identity_loss_from_payload
 from smartchem.identity_parse import InputKind
+from smartchem.process_constraints import ProcessBounds
 from smartchem.service import (
+    TransformGrammar,
     build_decompile_request,
     build_recompile_request,
     response_schema,
@@ -70,8 +72,10 @@ class TestSchemaDescriptor:
         # (response): PROCESS-ADMIT-01 adds per-step process_requirements to each ranked route (re-derived on load).
         # v1alpha12 (descriptor) / v1alpha11 (response): COMBINED-VERDICT-AUTH adds the top-level producer_signature
         # field (an optional HMAC over result_digest; null unless signed).
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha12"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha11"
+        # v1alpha13 (descriptor) / v1alpha12 (response): DAG-ADMIT-01 adds the ranked_dag_dossiers field (per-DAG
+        # PROCESS admission for a convergent compile, re-derived on load).
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha13"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha12"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the
@@ -88,6 +92,13 @@ class TestSchemaDescriptor:
         # methyl-acetate search finds routes, so its response carries a populated ranked_route_dossiers[0].
         assert payload["ranked_route_dossiers"], "the routes-found payload must carry a ranked dossier to check"
         assert set(payload["ranked_route_dossiers"][0]) == set(schema["ranked_route_summary_fields"])
+        # DAG-ADMIT-01: the descriptor's ranked_dag_summary_fields must match a REAL DAG process admission -- a
+        # convergent, process-constrained methyl-acetate compile carries a populated ranked_dag_dossiers[0].
+        dag_payload = response_to_payload(run_compilation(build_recompile_request(
+            "smiles:CC(=O)OC", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT, max_depth=2,
+            process=ProcessBounds.quick())))
+        assert dag_payload["ranked_dag_dossiers"], "the DAG payload must carry a DAG admission to check"
+        assert set(dag_payload["ranked_dag_dossiers"][0]) == set(schema["ranked_dag_summary_fields"])
         # IR-LOSS-01: the descriptor's identity_loss_fields must match a REAL structured loss payload (the routes
         # payload has none, so drive a SMILES decompile, whose formula reduction is a first-class BLOCKER loss).
         loss_payload = response_to_payload(

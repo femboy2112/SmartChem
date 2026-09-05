@@ -66,7 +66,7 @@ from .compilation_ir import (
 from .constraints import PhysicalBounds
 from .process_constraints import (
     ProcessBounds, ProcessRequirements, ProcessFitStatus, Attention, Agitation,
-    evaluate_process_requirements,
+    evaluate_process_requirements, evaluate_dag_process_requirements,
 )
 from .contracts import Digestible, canonical_digest
 from .identity import IdentityLoss, MatchLayer, refines
@@ -141,7 +141,11 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # process admission is RE-DERIVED on load (the deserialization trust-boundary close), not trusted from ``fit_status``.
 # v1alpha11 (COMBINED-VERDICT-AUTH): the payload carries a top-level ``producer_signature`` field (an optional HMAC over
 # ``result_digest``; ``null`` unless signed) so a consumer with the producer key can reject an out-of-band tamper.
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha11"
+# v1alpha12 (DAG-ADMIT-01): the response gains a ``ranked_dag_dossiers`` field -- the FORMAL, load-re-derived PROCESS
+# admission of each convergent-DAG candidate (was a throwaway diagnostic), so ``process_selection_status`` is no longer
+# UNASSESSED for a DAG-mode compile.  Folded into ``result_digest`` ONLY when non-empty, so a linear/DAG-less response
+# stays byte-identical to v1alpha11 (zero ripple); a DAG-mode process-constrained response's result_digest changes.
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha12"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
@@ -152,12 +156,17 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha11"
 # response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's identity_losses.)  v1alpha11
 # (PROCESS-ADMIT-01): the ranked_route_summary gains a per-step ``process_requirements`` field (re-derived on load).
 # v1alpha12 (COMBINED-VERDICT-AUTH): the response gains a top-level ``producer_signature`` field.
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha12"
+# v1alpha13 (DAG-ADMIT-01): the response gains a ``ranked_dag_dossiers`` field (per-DAG process admission).
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha13"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
 # disposition (FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED with exact reasons) and the ranking's sourced verdicts.
 RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha2"
+# DAG-ADMIT-01: the thin, digestible per-DAG PROCESS admission that populates the response's ``ranked_dag_dossiers``.
+# Distinct from RANKED_ROUTE_SUMMARY_SCHEMA on purpose -- a DAG carries ONLY the process axis + its edges (the combined
+# composability/physical bench fit for convergent DAGs is a named next-step), so it is not a RankedRouteSummary.
+RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha1"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -976,6 +985,151 @@ class RankedRouteSummary(Digestible):
         )
 
 
+def _validate_dag_edges(edges: "tuple[tuple[int, int], ...]", n: int) -> None:
+    """Validate that ``edges`` form a LEGAL DAG SHAPE over ``n`` step indices (DAG-ADMIT-01): unique pairs of distinct
+    in-range indices, acyclic, with exactly ONE sink (out-degree-0 final target) that every step reaches.
+
+    This is the convergent analogue of a linear route's implicit "tuple order IS the topology" -- the shape a carried
+    ``edges`` field must satisfy before its critical path means anything.  It enforces exactly the structural
+    invariants :meth:`SynthesisDAG.__post_init__` does (acyclic / single sink / no orphan branch), on bare indices
+    rather than ExperimentStep objects, so a deserialized or hand-built DAG summary fails CLOSED on a malformed graph.
+    It does NOT (cannot) check the carried edges match the real molecule flow -- that residual is closed by the
+    ``result_digest`` the edges are folded into plus the opt-in producer signature, exactly as for the linear axis.
+    """
+    if type(edges) is not tuple or any(
+        type(e) is not tuple or len(e) != 2 or type(e[0]) is not int or type(e[1]) is not int for e in edges
+    ):
+        raise TypeError("edges must be a tuple of (int, int) index pairs")
+    if type(n) is not int or n <= 0:
+        raise ValueError("a DAG summary must carry at least one process step")
+    for a, b in edges:
+        if not (0 <= a < n) or not (0 <= b < n):
+            raise ValueError(f"edge ({a}, {b}) is out of range for {n} steps")
+        if a == b:
+            raise ValueError(f"edge ({a}, {b}) is a self-loop")
+    if len(set(edges)) != len(edges):
+        raise ValueError("edges must be unique")
+    outdeg = [0] * n
+    indeg = [0] * n
+    succ: "list[list[int]]" = [[] for _ in range(n)]
+    for a, b in edges:
+        outdeg[a] += 1
+        indeg[b] += 1
+        succ[a].append(b)
+    # Kahn pass: a leftover node means a cycle (longest-path/critical-path would be ill-defined).
+    work = list(indeg)
+    queue = [i for i in range(n) if work[i] == 0]
+    seen = 0
+    while queue:
+        i = queue.pop()
+        seen += 1
+        for j in succ[i]:
+            work[j] -= 1
+            if work[j] == 0:
+                queue.append(j)
+    if seen != n:
+        raise ValueError("edges contain a cycle; a synthesis DAG must be acyclic")
+    sinks = [i for i in range(n) if outdeg[i] == 0]
+    if len(sinks) != 1:
+        raise ValueError(f"a DAG must have exactly one sink (final target); found {len(sinks)}")
+    reaching = {sinks[0]}
+    changed = True
+    while changed:
+        changed = False
+        for a, b in edges:
+            if b in reaching and a not in reaching:
+                reaching.add(a)
+                changed = True
+    if len(reaching) != n:
+        raise ValueError("every step must reach the final target; a DAG may not carry an orphan branch")
+
+
+@dataclass(frozen=True)
+class RankedDAGSummary(Digestible):
+    """One convergent-DAG candidate's PROCESS admission, carried so a DAG-mode compile's process gate is a FORMAL,
+    load-re-derived admission rather than a throwaway diagnostic (DAG-ADMIT-01).
+
+    Deliberately DISTINCT from :class:`RankedRouteSummary`: a linear route carries the COMBINED section-11 verdict
+    (composability + physical box + process), but a convergent DAG is not yet ranked against the composability/physical
+    bench box (a named next-step), so this summary carries ONLY the PROCESS axis.  ``process_fit_status`` is exactly
+    :func:`~smartchem.experiment.dag.dag_process_fit`'s verdict -- never a combined bench-fit claim.  It carries the
+    per-step ``process_requirements`` AND the DAG ``edges`` (producer->consumer index pairs, indexing the DAG's own
+    step order) so the process fit is RE-DERIVED on load via
+    :func:`~smartchem.process_constraints.evaluate_dag_process_requirements` (the convergent analogue of
+    PROCESS-ADMIT-01, which the critical-path elapsed aggregation needs the topology for).  ``route_digest`` is
+    byte-identical to the DAG's IR :class:`CandidateSummary.candidate_digest` (both ``SynthesisDAG.digest``), so a
+    dossier links back to its candidate.
+
+    SOUNDNESS BOUNDARY (identical in kind to the linear axis): ``edges`` is carried, not re-derived from the molecule
+    graph (the thin projection omits the ExperimentStep objects), so ``__post_init__`` validates only that ``edges``
+    form a LEGAL DAG SHAPE (:func:`_validate_dag_edges`).  A forger who relabels ``edges`` to a DIFFERENT legal DAG
+    (shortening the critical path to dodge an EXCLUDE) is caught exactly as the linear PROCESS-ADMIT-01 forger is -- by
+    the ``result_digest`` the ``edges`` are folded into, closed by the opt-in producer signature (COMBINED-VERDICT-AUTH).
+    """
+
+    schema_version: str
+    route_digest: str
+    equation: str
+    process_fit_status: str
+    exclusions: tuple[str, ...]
+    gaps: tuple[str, ...]
+    process_requirements: "tuple[ProcessRequirements | None, ...]"
+    edges: "tuple[tuple[int, int], ...]"
+
+    _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
+
+    def __post_init__(self) -> None:
+        if self.schema_version != RANKED_DAG_SUMMARY_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {RANKED_DAG_SUMMARY_SCHEMA!r}")
+        if self.process_fit_status not in self._FIT_STATUSES:
+            raise ValueError(f"process_fit_status must be one of {self._FIT_STATUSES}")
+        for name in ("route_digest", "equation"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name):
+                raise ValueError(f"{name} must be a non-empty string")
+        for name in ("exclusions", "gaps"):
+            seq = getattr(self, name)
+            if type(seq) is not tuple or any(not isinstance(x, str) or not x for x in seq):
+                raise TypeError(f"{name} must be a tuple of non-empty strings")
+        if type(self.process_requirements) is not tuple or any(
+            r is not None and type(r) is not ProcessRequirements for r in self.process_requirements
+        ):
+            raise TypeError("process_requirements must be a tuple of ProcessRequirements or None values")
+        # The ProcessFit coherence table (mirrors ProcessFit.__post_init__): EXCLUDED iff exclusions; UNKNOWN iff gaps;
+        # FITS/UNCONSTRAINED carry NEITHER -- so a hand-built/deserialized summary can never launder a lenient status.
+        if self.process_fit_status == "EXCLUDED":
+            if not self.exclusions:
+                raise ValueError("an EXCLUDED DAG must carry at least one exclusion reason")
+        elif self.exclusions:
+            raise ValueError(f"a {self.process_fit_status} DAG cannot carry exclusion reasons (only EXCLUDED may)")
+        if self.process_fit_status == "UNKNOWN" and not self.gaps:
+            raise ValueError("an UNKNOWN-fit DAG must carry at least one gap (the unassessed dimension)")
+        if self.process_fit_status in ("FITS", "UNCONSTRAINED") and self.gaps:
+            raise ValueError(f"a {self.process_fit_status} DAG cannot carry gaps -- a gap is an UNKNOWN-fit, not a pass")
+        _validate_dag_edges(self.edges, len(self.process_requirements))
+
+    @classmethod
+    def of_dag(cls, dag: "object", bounds: ProcessBounds) -> "RankedDAGSummary":
+        """Project a SynthesisDAG's SOUND process fit (:func:`dag_process_fit`) onto the thin response summary.
+
+        The ``process_requirements`` and ``edges`` are taken in the DAG's OWN step order (``dag.steps`` /
+        ``dag.edges``), the exact indexing ``dag_process_fit`` uses, so the load-time re-derivation reproduces this
+        verdict byte-for-byte."""
+        from .experiment.dag import dag_process_fit
+        fit = dag_process_fit(dag, bounds)
+        edges = tuple((producer, consumer) for producer, consumer, _intermediate in dag.edges)
+        equation = " ; ".join(s.equation() for s in dag.topological_order())
+        return cls(
+            RANKED_DAG_SUMMARY_SCHEMA,
+            dag.digest,
+            equation or repr(dag),
+            fit.status.value,
+            tuple(fit.exclusions),
+            tuple(fit.gaps),
+            tuple(step.envelope.process for step in dag.steps),
+            edges,
+        )
+
+
 @dataclass(frozen=True)
 class CompilationResponse:
     """One typed response for either compiler direction (standard section 13.2).
@@ -1020,6 +1174,12 @@ class CompilationResponse:
     affordability_frontier: tuple = ()
     provider_snapshots: tuple = ()
     parse_receipt_summary: "str | None" = None
+    #: DAG-ADMIT-01: the per-DAG PROCESS admission for a convergent (DAG-mode) compile -- typed ``RankedDAGSummary``
+    #: values carrying each candidate's ``dag_process_fit`` verdict + its per-step ``process_requirements`` + ``edges``,
+    #: so admission is RE-DERIVED on load (the convergent analogue of ``ranked_route_dossiers``' PROCESS-ADMIT-01).
+    #: Empty in routes/decompile mode and on an unconstrained-process request; present-and-populated only for a
+    #: process-constrained DAG-mode compile.  Folded into ``result_digest`` ONLY when non-empty (zero linear ripple).
+    ranked_dag_dossiers: tuple = ()
 
     def __post_init__(self) -> None:
         if self.schema_version != COMPILATION_RESPONSE_SCHEMA:
@@ -1081,7 +1241,22 @@ class CompilationResponse:
             from .data.provider_snapshot import ProviderSnapshot
             if any(type(s) is not ProviderSnapshot for s in self.provider_snapshots):
                 raise TypeError("provider_snapshots must be a tuple of ProviderSnapshot values")
+        # DAG-ADMIT-01: ranked_dag_dossiers is the per-DAG process admission (DAG mode).  Typed-guarded like the tuples
+        # above, and each dossier's route_digest must identify a returned IR DAG candidate (both are SynthesisDAG.digest)
+        # -- so a hand-built/deserialized response cannot smuggle a dossier for a candidate the search never produced.
+        if type(self.ranked_dag_dossiers) is not tuple or any(
+            type(d) is not RankedDAGSummary for d in self.ranked_dag_dossiers
+        ):
+            raise TypeError("ranked_dag_dossiers must be a tuple of RankedDAGSummary values")
+        if self.ranked_dag_dossiers and self.compilation_ir is not None:
+            candidate_ids = {c.candidate_digest for c in self.compilation_ir.candidates}
+            dag_ids = tuple(d.route_digest for d in self.ranked_dag_dossiers)
+            if len(dag_ids) != len(set(dag_ids)):
+                raise ValueError("ranked DAG digests must be unique")
+            if not set(dag_ids) <= candidate_ids:
+                raise ValueError("ranked DAG digest must identify a returned IR candidate")
         self._check_process_admission_coherence()
+        self._check_dag_process_admission_coherence()
         self._check_outcome_coherence()
 
     def _check_process_admission_coherence(self) -> None:
@@ -1146,6 +1321,55 @@ class CompilationResponse:
                     raise ValueError(
                         f"route {r.route_digest} (EXCLUDED) hides re-derived process exclusions: {hidden}"
                     )
+
+    def _check_dag_process_admission_coherence(self) -> None:
+        """Re-derive each DAG's PROCESS fit from its carried ``process_requirements`` + ``edges`` and refuse a
+        ``process_fit_status`` the evidence cannot support (DAG-ADMIT-01 -- the convergent analogue of PROCESS-ADMIT-01).
+
+        Mirrors :meth:`_check_process_admission_coherence` exactly, but re-derives via
+        :func:`~smartchem.process_constraints.evaluate_dag_process_requirements` (critical-path elapsed, serial active)
+        so the load-time verdict is the SOUND convergent one.  Enforces the same ONE direction -- an honest status is
+        at least as severe as its process evidence -- so it never rejects an honest response but catches a relabel that
+        hides a stricter verdict (a process-``UNKNOWN``/``EXCLUDED`` DAG relabeled to ``FITS``, or a hidden gap/exclusion).
+        The carried ``edges`` are already shape-validated in ``RankedDAGSummary.__post_init__`` (:func:`_validate_dag_edges`),
+        so the critical path is well-defined here.  Gated on a process-constrained request (zero overhead otherwise).
+
+        BOUNDARY -- identical in kind to the linear check: the carried evidence is not cryptographically bound to the
+        DAG structure, so a fully controlling forger who fabricates internally coherent lenient ``process_requirements``
+        AND ``edges`` (any legal DAG shape) AND recomputes ``result_digest`` can still mint a FITS -- closed only by the
+        opt-in producer signature (COMBINED-VERDICT-AUTH).  Pinned by tests/test_process_service.py.
+        """
+        if not self.request.constraints.process.constrains_anything:
+            return
+        bounds = self.request.constraints.process
+        for d in self.ranked_dag_dossiers:
+            proc = evaluate_dag_process_requirements(d.process_requirements, d.edges, bounds)
+            status = proc.status
+            if d.process_fit_status == "FITS":
+                if status not in (ProcessFitStatus.FITS, ProcessFitStatus.UNCONSTRAINED):
+                    raise ValueError(
+                        f"DAG {d.route_digest} declares process_fit_status FITS but its carried process requirements "
+                        f"re-derive to {status.value} (a forged or inconsistent DAG process admission)"
+                    )
+            elif d.process_fit_status == "UNCONSTRAINED":
+                if status is not ProcessFitStatus.UNCONSTRAINED:
+                    raise ValueError(
+                        f"DAG {d.route_digest} declares process_fit_status UNCONSTRAINED but its carried process "
+                        f"requirements re-derive to {status.value}"
+                    )
+            elif d.process_fit_status == "UNKNOWN":
+                if status is ProcessFitStatus.EXCLUDED:
+                    raise ValueError(
+                        f"DAG {d.route_digest} declares process_fit_status UNKNOWN but its carried process "
+                        f"requirements re-derive to EXCLUDED (a hidden hard process violation)"
+                    )
+                hidden = sorted(set(proc.gaps) - set(d.gaps))
+                if hidden:
+                    raise ValueError(f"DAG {d.route_digest} (UNKNOWN) hides re-derived process gaps: {hidden}")
+            else:  # EXCLUDED
+                hidden = sorted(set(proc.exclusions) - set(d.exclusions))
+                if hidden:
+                    raise ValueError(f"DAG {d.route_digest} (EXCLUDED) hides re-derived process exclusions: {hidden}")
 
     def _check_outcome_coherence(self) -> None:
         """The no-laundering guard: an outcome can never contradict the search status it reports.
@@ -1254,6 +1478,14 @@ class CompilationResponse:
             return "UNASSESSED"
         if self.admissible_route_digests:
             return "FITS_FOUND"
+        # DAG-ADMIT-01: convergent DAGs are FORMALLY admitted on the PROCESS axis (not the combined bench fit -- the
+        # composability/physical bench box for DAGs is a named next-step).  A DAG whose SOUND process fit is FITS
+        # (re-derived on load) makes the process selection FITS_FOUND; an assessed DAG set with none FITS is NO_FIT_FOUND.
+        # This is what flips DAG mode off UNASSESSED; the per-DAG dossiers carry the exact verdicts and their boundary.
+        if self.ranked_dag_dossiers:
+            if any(d.process_fit_status == "FITS" for d in self.ranked_dag_dossiers):
+                return "FITS_FOUND"
+            return "NO_FIT_FOUND"
         if self.compilation_ir.candidate_count and not self.ranked_route_dossiers:
             return "UNASSESSED"
         return "NO_FIT_FOUND"
@@ -1325,6 +1557,11 @@ class CompilationResponse:
                 "" if self.compilation_ir is None else self.compilation_ir.digest,
                 self.diagnostics,
                 tuple(r.digest for r in self.ranked_route_dossiers),
+                # DAG-ADMIT-01: the DAG process admissions fold in the SAME way (a deterministic function of the IR's
+                # DAG candidates + the request's process bounds -- never splits an alias, only makes a tamper
+                # detectable), but ONLY when present, so a linear/decompile/DAG-less response stays byte-identical to
+                # the v1alpha2 formula (zero ripple); a process-constrained DAG-mode response's digest changes here.
+                *((tuple(d.digest for d in self.ranked_dag_dossiers),) if self.ranked_dag_dossiers else ()),
             )
         )
 
@@ -1460,15 +1697,14 @@ def constraint_note(bounds: PhysicalBounds, *, fit_counts: "tuple[int, int, int]
 
 
 def _dag_process_note(dags: "tuple", process: "ProcessBounds") -> "str | None":
-    """A SOUND, clearly-bounded process assessment for DAG-mode routes (ROUND-12; supersedes item 5b's serial note).
+    """The human-readable summary of the DAG-mode PROCESS admission (ROUND-13 DAG-ADMIT-01 formalized item 5b's note).
 
-    DAG (convergent) routes are not LINEARLY ranked -- they get no RouteDossier and no formal admission -- so
-    ``process_selection_status`` stays ``UNASSESSED`` for a DAG-mode compile.  This diagnostic closes the *silent* part
-    of that gap with the SOUND per-DAG verdict from :func:`~smartchem.experiment.dag.dag_process_fit`: FITS is
-    certified by the serial-achievable ceiling, EXCLUDED by the critical-path floor (unfittable even fully concurrent),
-    and the honest UNKNOWN band between them -- no longer the ROUND-11 serial-sum that OVER-excluded a concurrent route.
-    It reports the tally without CLAIMING formal admission (that RouteDossier projection is a named next-step) and
-    names the unmodeled joint-single-operator schedulability boundary that a FITS does not cover.
+    Convergent DAGs are now FORMALLY admitted on the process axis: each carries a :class:`RankedDAGSummary` (in
+    ``ranked_dag_dossiers``) whose ``process_fit_status`` is the SOUND per-DAG verdict from
+    :func:`~smartchem.experiment.dag.dag_process_fit` -- FITS certified by the serial-achievable ceiling, EXCLUDED by
+    the critical-path floor (unfittable even fully concurrent), the honest UNKNOWN band between -- RE-DERIVED on load,
+    so ``process_selection_status`` now reflects it (FITS_FOUND / NO_FIT_FOUND) instead of ``UNASSESSED``.  This line
+    is the one-string tally for both views, and it names the two live boundaries so a FITS is never over-read.
     """
     from .experiment.dag import dag_process_fit
     from .process_constraints import ProcessFitStatus
@@ -1479,11 +1715,12 @@ def _dag_process_note(dags: "tuple", process: "ProcessBounds") -> "str | None":
     excluded = sum(1 for s in verdicts if s is ProcessFitStatus.EXCLUDED)
     unknown = sum(1 for s in verdicts if s is ProcessFitStatus.UNKNOWN)
     return (
-        f"section-11 process (DAG mode): {len(dags)} convergent route(s) SOUNDLY assessed -- {fits} FIT "
-        f"(serial-achievable), {excluded} EXCLUDED (over budget even with fully concurrent branches), {unknown} "
-        "UNKNOWN-fit (fittable only if branches overlap -- undeclared; never a silent pass). NOT formal admission "
-        "(DAG routes are not yet ranked/admitted, so process_selection_status stays UNASSESSED); a FITS assumes each "
-        "step's attention is legal in isolation, NOT joint single-operator schedulability of concurrent branches"
+        f"section-11 process (DAG mode): {len(dags)} convergent route(s) SOUNDLY assessed and FORMALLY admitted -- "
+        f"{fits} FIT (serial-achievable), {excluded} EXCLUDED (over budget even with fully concurrent branches), "
+        f"{unknown} UNKNOWN-fit (fittable only if branches overlap -- undeclared; never a silent pass); see "
+        "ranked_dag_dossiers. BOUNDARY: this admits the PROCESS axis only (the combined composability/physical bench "
+        "fit for convergent DAGs is a named next-step), and a FITS assumes each step's attention is legal in "
+        "isolation, NOT joint single-operator schedulability of concurrent branches"
     )
 
 
@@ -1758,10 +1995,18 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     )
     if _note is not None:
         diagnostics = (*diagnostics, _note)
-    # item 5b: DAG mode ranks nothing linearly, but a convergent route's process fit CAN be conservatively assessed.
-    # Surface only the SOUND lower bound (how many DAGs fit even run serially); admission stays UNASSESSED.
+    # DAG-ADMIT-01: DAG mode ranks nothing LINEARLY, but each convergent route's PROCESS fit is now formally admitted
+    # -- a RankedDAGSummary per DAG (process axis only), re-derived on load, so process_selection_status is no longer
+    # UNASSESSED.  Built ONLY when the process box constrains anything (otherwise there is nothing to admit); the
+    # human-readable tally still rides diagnostics via _dag_process_note.
+    dag_dossiers: tuple = ()
     if mode == "dags":
-        _dag_note = _dag_process_note(getattr(search_result, "dags", ()), request.constraints.process)
+        _dags = getattr(search_result, "dags", ())
+        if request.constraints.process.constrains_anything:
+            dag_dossiers = tuple(
+                RankedDAGSummary.of_dag(d, request.constraints.process) for d in _dags
+            )
+        _dag_note = _dag_process_note(_dags, request.constraints.process)
         if _dag_note is not None:
             diagnostics = (*diagnostics, _dag_note)
     # echo the identity resolution (ID-PARSE-01) as the FIRST-CLASS parse_receipt_summary, NOT a diagnostics line
@@ -1773,6 +2018,7 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         ranked_route_dossiers=ranked,
         affordability_frontier=frontier,
         parse_receipt_summary=resolved.receipt.summary(),
+        ranked_dag_dossiers=dag_dossiers,
     )
 
 
@@ -2132,6 +2378,35 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
     )
 
 
+def ranked_dag_summary_to_payload(summary: RankedDAGSummary) -> dict:
+    """A canonical JSON-ready dict for one convergent-DAG process admission (DAG-ADMIT-01)."""
+    return {
+        "schema_version": summary.schema_version,
+        "route_digest": summary.route_digest,
+        "equation": summary.equation,
+        "process_fit_status": summary.process_fit_status,
+        "exclusions": list(summary.exclusions),
+        "gaps": list(summary.gaps),
+        "process_requirements": [_process_requirements_to_payload(r) for r in summary.process_requirements],
+        "edges": [[a, b] for a, b in summary.edges],
+    }
+
+
+def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
+    """Reconstruct a DAG process admission; re-validates via its __post_init__ (edge-shape + coherence) guards.
+    ``edges`` is coerced back to a tuple of 2-tuples -- the shape guard rejects a list, so the round-trip is exact."""
+    return RankedDAGSummary(
+        payload["schema_version"],
+        payload["route_digest"],
+        payload["equation"],
+        payload["process_fit_status"],
+        tuple(payload["exclusions"]),
+        tuple(payload["gaps"]),
+        tuple(_process_requirements_from_payload(p) for p in payload["process_requirements"]),
+        tuple((int(a), int(b)) for a, b in payload["edges"]),
+    )
+
+
 def affordability_entry_to_payload(entry) -> dict:
     """A canonical JSON-ready dict for one affordability-frontier entry (COST-VEC-01).  The CostVector is flattened
     inline; a ``None`` axis stays ``null`` (UNKNOWN), never a fabricated 0."""
@@ -2297,6 +2572,7 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
         "process_selection_status": response.process_selection_status,
         "admissible_route_digests": list(response.admissible_route_digests),
         "ranked_route_dossiers": [ranked_summary_to_payload(r) for r in response.ranked_route_dossiers],
+        "ranked_dag_dossiers": [ranked_dag_summary_to_payload(d) for d in response.ranked_dag_dossiers],
         "affordability_frontier": [affordability_entry_to_payload(e) for e in response.affordability_frontier],
         "provider_snapshots": [provider_snapshot_to_payload(s) for s in response.provider_snapshots],
         "result_digest": digest,
@@ -2351,6 +2627,9 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         tuple(affordability_entry_from_payload(e) for e in payload["affordability_frontier"]),
         tuple(provider_snapshot_from_payload(s) for s in payload.get("provider_snapshots", [])),
         parse_receipt_summary=payload["parse_receipt_summary"],
+        ranked_dag_dossiers=tuple(
+            ranked_dag_summary_from_payload(d) for d in payload.get("ranked_dag_dossiers", [])
+        ),
     )
     for name in ("process_selection_status", "admissible_route_digests", "exit_code", "result_digest"):
         expected = list(response.admissible_route_digests) if name == "admissible_route_digests" else getattr(response, name)
@@ -2406,6 +2685,9 @@ def response_schema() -> dict:
                                    "INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; "
                                    "null when no route search ran)",
             "ranked_route_dossiers": "array[object(ranked-route-summary)] (section-11 fit, best-first; CLI-CAN-02)",
+            "ranked_dag_dossiers": "array[object(ranked-dag-summary)] (DAG-ADMIT-01: per-DAG PROCESS admission for a "
+                                   "convergent (DAG-mode) compile, re-derived on load; empty in routes/decompile mode "
+                                   "and on an unconstrained-process request)",
             "process_selection_status": "enum(NOT_REQUESTED/NOT_REQUIRED/UNASSESSED/NO_FIT_FOUND/FITS_FOUND)",
             "admissible_route_digests": "array[str] (FITS returned candidates under requested process constraints; not bench validation)",
             "affordability_frontier": "array[object(affordability-frontier-entry)] (section-10.4 Pareto frontier "
@@ -2494,6 +2776,20 @@ def response_schema() -> dict:
             "process_requirements": "array[object(per-step declared process facts)|null] (PROCESS-ADMIT-01: the "
                                     "evidence process admission is RE-DERIVED from on load, one entry per route step "
                                     "in order, null for an undeclared step; part of route identity)",
+        },
+        "ranked_dag_summary_fields": {
+            "schema_version": "str",
+            "route_digest": "str (sha256; == the matching DAG candidate_digest)",
+            "equation": "str",
+            "process_fit_status": "enum(FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED) (the PROCESS axis ONLY; the combined "
+                                  "composability/physical bench fit for convergent DAGs is a named next-step)",
+            "exclusions": "array[str] (hard process over/under-bounds)",
+            "gaps": "array[str] (undeclared constrained process dimensions)",
+            "process_requirements": "array[object(per-step declared process facts)|null] (DAG-ADMIT-01: re-derived on "
+                                    "load via evaluate_dag_process_requirements, one entry per DAG step in the DAG's "
+                                    "own order, null for an undeclared step; part of candidate identity)",
+            "edges": "array[[int, int]] (producer->consumer step-index pairs -- the DAG topology the critical-path "
+                     "elapsed aggregation re-derives against; shape-validated on load)",
         },
         "affordability_frontier_entry_fields": {
             "schema_version": "str",

@@ -982,6 +982,7 @@
   "process_selection_status": "NOT_REQUESTED",
   "producer_signature": null,
   "provider_snapshots": [],
+  "ranked_dag_dossiers": [],
   "ranked_route_dossiers": [],
   "request": {
     "constraints": {
@@ -1093,7 +1094,7 @@
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
   "result_digest": "cf416ce5d303e9f1a21f574cdf083281d458db5f196592750a26575f82d0f642",
-  "schema_version": "smartchem.service/compilation-response-v1alpha11",
+  "schema_version": "smartchem.service/compilation-response-v1alpha12",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

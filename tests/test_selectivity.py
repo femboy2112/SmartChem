@@ -4,7 +4,7 @@ The formal engine and the composability check are blind to *which isomer* an ass
 (N-acetyl amide) and 4-aminophenyl acetate (O-acetyl ester) share the formula C8H9NO2.  These tests pin
 that the sourced selectivity table resolves the fork structurally: the amide is the sourced-FAVORED major
 product of acetylating 4-aminophenol, the ester is DISFAVORED, an unsourced reactant set is a loud UNKNOWN,
-a single-isomer product is NOT_APPLICABLE (never a manufactured preference), and the ranking floats the
+a sparsely registered product remains UNKNOWN (never a manufactured non-applicability), and ranking floats the
 favored route above the disfavored one.  The universality lever (inject a record -> resolve a gap) is proven.
 """
 import pytest
@@ -72,11 +72,12 @@ class TestStepSelectivity:
         assert sel.status is SelectivityStatus.UNKNOWN
         assert sel.finding.bucket.name == "UNKNOWN"
 
-    def test_a_single_isomer_product_has_no_selectivity_question(self):
-        # benzene is the only registered C6H6 isomer: no regiochemistry to rank, never a fabricated FAVORED
+    def test_a_single_registered_isomer_does_not_clear_selectivity(self):
+        # Registry coverage does not prove benzene is the only possible C6H6 product.
         step = ExperimentStep.assembling(BENZENE, (ACETYLENE, ACETYLENE, ACETYLENE), (BENZENE,))
         sel = selectivity_of_step(step, table=DEFAULT_SELECTIVITY)
-        assert sel.status is SelectivityStatus.NOT_APPLICABLE
+        assert sel.status is SelectivityStatus.UNKNOWN
+        assert "incomplete registry coverage" in sel.reason
 
 
 class TestRouteVerdict:
@@ -133,12 +134,12 @@ class TestDraftSurfacesSelectivity:
         assert "selectivity: FAVORED" in text
         assert "major:paracetamol" in text
 
-    def test_the_draft_omits_selectivity_for_a_single_isomer_product(self):
+    def test_the_draft_surfaces_selectivity_gap_for_a_single_registered_isomer(self):
         route = ExperimentRoute.of(
             ExperimentStep.assembling(BENZENE, (ACETYLENE, ACETYLENE, ACETYLENE), (BENZENE,))
         )
         text = draft_procedure(route).render()
-        assert "selectivity:" not in text
+        assert "selectivity: UNKNOWN" in text
 
 
 class TestSourcedDiscipline:

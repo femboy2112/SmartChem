@@ -37,7 +37,7 @@ from .kinetics import (
     _LOG10_LN2,
     _format_magnitude,
     _regime_of,
-    reaction_evidence_key,
+    _reaction_evidence_key_or_none,
     record_evidence_key,
     worst_regime,
 )
@@ -72,7 +72,9 @@ def _resolve_barrier(barriers: EyringTable, step: ExperimentStep) -> EyringRef |
     the ``applies_to`` LOOKUP (``"phase"`` context SUBSUMED), so a barrier measured in one phase is not borrowed by
     a step declared in a conflicting one.
     """
-    key = reaction_evidence_key(step)
+    key = _reaction_evidence_key_or_none(step)
+    if key is None:
+        return None
     for rec in barriers.records:
         if record_evidence_key(rec).applies_to(key):
             return rec
@@ -130,6 +132,15 @@ def eyring_of_step(
                          "is undefined at or below 0 K")
     rec = _resolve_barrier(barriers, step)
     if rec is None:
+        if _reaction_evidence_key_or_none(step) is None:
+            reason = (
+                "UNKNOWN: no net chemical transformation after cancelling identical species; "
+                "the reaction-rate model does not describe handling or physical changes of unchanged species"
+            )
+            return StepEyring(
+                RateRegime.UNKNOWN, RateGrade.UNKNOWN, temperature, None, None, None, None, None, "",
+                unknown("rate-constant-k-eyring", "", reason), reason, (step.equation(),),
+            )
         return StepEyring(
             RateRegime.UNKNOWN, RateGrade.UNKNOWN, temperature, None, None, None, None, None, "",
             unknown("rate-constant-k-eyring", "", "no sourced ΔH‡/ΔS‡ for this exact reaction"),

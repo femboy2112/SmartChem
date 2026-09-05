@@ -23,11 +23,10 @@ The verdicts, and the non-vacuity guard (W2)
 * ``FAVORED`` -- SOURCED: this step makes the MAJOR isomer of the product formula for this reaction.
 * ``DISFAVORED`` -- SOURCED: a *different* registered isomer is the major product; this step makes a minor
   one (a real, sourced demerit -- the reaction preferentially gives something else).
-* ``UNKNOWN`` -- two or more registered isomers of the product formula compete, but no sourced selectivity
-  reaches this reactant set (a loud gap), or the product did not resolve to a registered isomer.
-* ``NOT_APPLICABLE`` -- the product formula has a single registered isomer: there is no regiochemical
-  selectivity question at all.  A ``FAVORED`` verdict is NEVER manufactured where no isomers compete -- the
-  repo's recurring "vacuous green over an empty subject" guard, applied to selectivity.
+* ``UNKNOWN`` -- no sourced selectivity reaches this reactant set, or the product did not resolve to a
+  registered isomer. A sparse registry cannot establish that alternative products do not exist.
+* ``NOT_APPLICABLE`` -- reserved for an explicit justification that no selectivity question applies.
+  The current evidence schema has no such justification, so this producer never infers it from registry size.
 
 Independence (why this is not self-certifying)
 ----------------------------------------------
@@ -77,7 +76,7 @@ class SelectivityStatus(str, Enum):
     FAVORED = "FAVORED"                # sourced: this step makes the MAJOR isomer of the product formula
     DISFAVORED = "DISFAVORED"          # sourced: a different registered isomer is the major product
     UNKNOWN = "UNKNOWN"                # isomers compete, but no sourced selectivity (a loud gap)
-    NOT_APPLICABLE = "NOT_APPLICABLE"  # a single registered isomer -- no selectivity question
+    NOT_APPLICABLE = "NOT_APPLICABLE"  # reserved: requires an explicit non-applicability justification
 
 
 def _composition(molecule: Molecule) -> CompositionKey:
@@ -252,9 +251,9 @@ def selectivity_of_step(
 ) -> StepSelectivity:
     """The regiochemical selectivity of one assembly step: does it make the sourced major isomer?
 
-    NOT_APPLICABLE when the product formula has a single registered isomer (no competition); UNKNOWN when
-    isomers compete but no sourced fact reaches this reactant set (or the product does not resolve); FAVORED
-    / DISFAVORED against a sourced record.  Never a fabricated preference.
+    UNKNOWN when no sourced fact reaches this reactant set (or the product does not resolve); FAVORED /
+    DISFAVORED against a sourced record. Registry membership is incomplete: zero or one registered isomer
+    cannot establish non-applicability. An exact sourced match may still fire with sparse registry coverage.
 
     ``losses`` (EVD-KEY-01, the consumer half): the section-5.3 :class:`~smartchem.identity.IdentityLoss` records
     the target identity carries.  If any is a BLOCKER for the ``"selectivity"`` claim class -- because the input
@@ -267,15 +266,16 @@ def selectivity_of_step(
     target = step.target
     formula = Formula.of(target.formula, target.charge)
     isomers = known_compounds(formula)
-    if len(isomers) < 2:
-        return StepSelectivity(
-            SelectivityStatus.NOT_APPLICABLE,
-            f"{formula!r}: a single registered isomer -- no regiochemical selectivity question",
-            unknown("selectivity", "", "no isomeric competition for this product formula"),
-        )
-
     rec = table.lookup(step.reactants, formula.counts)
     if rec is None:
+        if len(isomers) < 2:
+            return StepSelectivity(
+                SelectivityStatus.UNKNOWN,
+                f"UNKNOWN: no sourced selectivity for this reactant set forming {formula!r}; "
+                f"{len(isomers)} registered isomer(s) is incomplete registry coverage, not evidence "
+                "that alternative products or a selectivity question are absent",
+                unknown("selectivity", "", "no sourced selectivity; registry completeness is not established"),
+            )
         return StepSelectivity(
             SelectivityStatus.UNKNOWN,
             f"UNKNOWN: {len(isomers)} registered isomers of {formula!r} compete, but no sourced selectivity "

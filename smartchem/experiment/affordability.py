@@ -39,6 +39,7 @@ only NaCl / Na2CO3 are priced, so organic bench routes carry no weighted cash ye
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ..contracts import Digestible
@@ -80,7 +81,8 @@ def _cash_interval(v: "CostVector") -> "tuple[float, float] | None":
 @dataclass(frozen=True)
 class CostVector:
     """A section-10.4 cost vector: independent minimized axes, each ``None`` when UNKNOWN, plus the hard-constraint
-    blockers that dominate cost.  ``currency``/``unit``/``region`` label the cash axis (never enter dominance)."""
+    blockers that dominate cost.  Known axes are finite and non-negative; ordinal ranks are integral.
+    Cash compares only within matching ``currency`` and ``unit`` labels; ``region`` is descriptive metadata."""
 
     cash: "float | None" = None
     #: COST-VEC-01-coupled: an honest LOWER BOUND on cash when the exact total is UNKNOWN -- the sum of the priced,
@@ -107,19 +109,29 @@ class CostVector:
     region: str = ""
 
     def __post_init__(self) -> None:
-        if type(self.hard_blockers) is not tuple or any(not isinstance(b, str) or not b for b in self.hard_blockers):
+        if type(self.hard_blockers) is not tuple or any(not isinstance(b, str) or not b.strip() for b in self.hard_blockers):
             raise TypeError("hard_blockers must be a tuple of non-empty reason strings")
-        for axis in _AXES:
+        for label in ("currency", "unit", "region"):
+            if not isinstance(getattr(self, label), str):
+                raise TypeError(f"{label} must be a string")
+        for axis in (*_AXES, "cash_floor"):
             v = getattr(self, axis)
-            if v is not None and (not isinstance(v, (int, float)) or isinstance(v, bool) or v != v):
+            if v is None:
+                continue
+            if not isinstance(v, (int, float)) or isinstance(v, bool) or v != v:
                 raise TypeError(f"{axis} must be a real number or None (UNKNOWN), not {v!r}")
-        if self.cash_floor is not None:
-            if not isinstance(self.cash_floor, (int, float)) or isinstance(self.cash_floor, bool) or self.cash_floor != self.cash_floor:
-                raise TypeError(f"cash_floor must be a real number or None (UNKNOWN), not {self.cash_floor!r}")
-            if self.cash_floor < 0:
-                raise ValueError("cash_floor is a lower bound on a sum of non-negative prices; it cannot be negative")
-            if self.cash is not None:
-                raise ValueError("cash_floor and cash are mutually exclusive: a KNOWN cash carries no separate floor")
+            try:
+                finite = math.isfinite(v)
+            except OverflowError:
+                finite = False
+            if not finite:
+                raise ValueError(f"{axis} must be finite; use None for UNKNOWN")
+            if v < 0:
+                raise ValueError(f"{axis} cannot be negative")
+            if axis in ("access_difficulty", "evidence_tier_rank") and v != int(v):
+                raise ValueError(f"{axis} must be an integral, non-negative rank")
+        if self.cash_floor is not None and self.cash is not None:
+            raise ValueError("cash_floor and cash are mutually exclusive: a KNOWN cash carries no separate floor")
 
     @property
     def is_hard_blocked(self) -> bool:
@@ -156,9 +168,10 @@ def dominates(a: CostVector, b: CostVector) -> bool:
       strictly better iff ``a_hi < b_lo``.  Consequently a floor (``a_hi = +inf``) can NEVER dominate on cash -- it
       can only be dominated by a KNOWN cost strictly below its floor -- so the frontier never claims a cost ordering
       it cannot guarantee (two floors, or a floor above a known, are incomparable on cash).  Cash is ALSO compared
-      only WITHIN one denomination: the ``unit`` label ("metric ton" per package vs "mol product" for a
+      only WITHIN one currency and denomination: the ``unit`` label ("metric ton" per package vs "mol product" for a
       quantity-weighted floor) is load-bearing here -- a different denomination is incomparable, like an unknown axis
-      (red-team fold: without this, $/package and $/mol were compared as if commensurable).
+      (red-team fold: without this, $/package and $/mol were compared as if commensurable).  Different ``currency``
+      labels are likewise incomparable: no foreign-exchange conversion is supplied by this module.
     """
     # hard-blocker rule first -- it overrides the cost axes entirely (a hard blocker dominates cost, G6).
     if a.is_hard_blocked and not b.is_hard_blocked:
@@ -193,8 +206,8 @@ def dominates(a: CostVector, b: CostVector) -> bool:
         # $/package against $/mol-of-product as if commensurable would be a false ordering (red-team fold: dominance
         # treated ``unit`` as decorative and let $5/ton "dominate" $10/mol) -- so a different denomination is treated
         # exactly like an UNKNOWN cash: a cannot claim no-worse, so it cannot dominate on this axis.
-        if a_cash is None or a.unit != b.unit:
-            return False  # a's cash is UNKNOWN, or in a different denomination -> cannot claim no-worse
+        if a_cash is None or (a.currency, a.unit) != (b.currency, b.unit):
+            return False  # UNKNOWN or incommensurable cash -> cannot claim no-worse
         a_lo, a_hi = a_cash
         b_lo, b_hi = b_cash
         if a_hi > b_lo:
@@ -245,10 +258,16 @@ def _weighted_cash_floor(leaf_requirements: "list") -> "tuple[float | None, str]
     currency = ""
     any_priced = False
     for mol, moles in leaf_requirements:
-        # a moles requirement is a non-negative amount; a negative/NaN one is not an honest requirement (a shopping
+        # a moles requirement is a finite non-negative amount; an invalid one is not an honest requirement (a shopping
         # requirement is always net>0, so this never fires on the wire) -> skip it rather than build a negative floor
         # that would crash the CostVector (its cash_floor rejects negatives) -- the guard molar_mass already has on count.
         if not isinstance(moles, (int, float)) or isinstance(moles, bool) or moles != moles or moles < 0:
+            continue
+        try:
+            finite_moles = math.isfinite(moles)
+        except OverflowError:
+            finite_moles = False
+        if not finite_moles:
             continue
         obs = cost_observation_for(mol)
         if obs is None:
@@ -374,7 +393,7 @@ def basket_cost_vector(
         hard_blockers=tuple(hard_blockers),
         currency=currency if has_cash else "",
         # the cash denominator label: "mol product" when a quantity-weighted floor replaced the per-unit sum, else
-        # the per-leaf package unit (e.g. "metric ton").  Informational only -- it never enters dominance.
+        # the per-leaf package unit (e.g. "metric ton").  Cash comparison requires matching currency and unit.
         unit=(weighted_unit or unit) if has_cash else "",
     )
 

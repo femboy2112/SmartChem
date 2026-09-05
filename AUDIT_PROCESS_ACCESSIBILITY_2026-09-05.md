@@ -210,3 +210,15 @@ properly sourced process record through the existing typed condition seam, then 
 profile fits; a stricter heat, attention, or apparatus limit excludes; deleting one constrained fact yields
 unknown; changing a material/condition outside source scope removes the supporting claim; and a fresh held-out
 example behaves as predicted. Do not loosen unknown handling to make the demo return a route.
+
+## Integration-review addendum (2026-09-05, uptake)
+
+This branch was reviewed and fast-forwarded onto `chem-genericity-reorient-2026-09-03` (main untouched).
+Independent reproduction in a PySCF-present dev venv: 4055 passed / 14 skipped / 1 xfailed. One correction
+to the "Selection and protocol contract" above: the round-trip re-check of a loaded response verifies that
+the derived admission fields are *consistent with the stored per-route `fit_status`* and that route digests
+are members of the returned IR — it does **not** re-derive `fit_status` from process evidence, because the
+response IR carries none. A lockstep-forged deserialized response (a real route relabeled `FITS`) is
+therefore accepted; a deserialized response is authoritative only from a trusted producer. Full detail,
+the pinning regression test, and the deferred fix (carry per-route process evidence at go-live) are in
+[UPTAKE_MANIFEST_v0.5.0a1.md §10.1](UPTAKE_MANIFEST_v0.5.0a1.md).

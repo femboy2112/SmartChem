@@ -3449,3 +3449,36 @@ State: IMPLEMENTED_AND_VERIFIED within the comparison and selection boundary bel
 The complete design, audit scope, counterexamples, commands, and next acceptance contract are in
 [the process accessibility audit](AUDIT_PROCESS_ACCESSIBILITY_2026-09-05.md). This does not close the
 alpha's other P0 rows or promote formal candidates to bench procedures.
+
+### 10.1 Integration-review fold — 2026-09-05 (uptake into the dev branch)
+
+The `audit/process-accessibility-2026-09-05` work (commits `e038d73`/`5a71af7`/`327bd39`) was
+fast-forwarded onto `chem-genericity-reorient-2026-09-03` (`main` untouched, nothing pushed) and
+independently reviewed before acceptance.
+
+- Independent reproduction: full suite **4055 passed / 14 skipped / 1 xfailed** (exit 0) in the dev
+  venv (Python 3.12.3, PySCF 2.14.0 PRESENT — so this run's skip profile differs from the receipt's
+  PySCF-absent 51-skip profile; the +270-passed delta over the local baseline is the new process/audit
+  test files, `269 passed` when run alone). The 1 xfail is the pre-existing `test_laws.py` interchange
+  debt (orthogonal). The live CLI path was exercised end to end: `recompile ... --process-profile quick`
+  finds routes but admits none → `exit 5`, `NO_FIT_FOUND`, empty `admissible_route_digests` and frontier.
+  UNKNOWN did not become FITS on the shipping path.
+- Both LIVE selection predicates verified sound directly: `CompilationResponse.admissible_route_digests`
+  filters `fit_status == "FITS"` (service.py), and `compile_synthesis` gates `admissible = not EXCLUDED and
+  (not process_constrained or FITS)` with grade a strictly post-gate preference (compile.py) — grade
+  cannot override a hard exclusion, and UNKNOWN is inadmissible under active bounds.
+- **Red-team finding (CONFIRMED, folded):** the §10 line "derived admission fields are checked on import"
+  OVERSTATES the guarantee on the DESERIALIZATION boundary. `response_from_payload` re-derives
+  `process_selection_status`/`admissible_route_digests`/`exit_code`/`result_digest` and refuses an
+  inconsistent payload, but all of them derive from the per-route `fit_status`, and the response IR carries
+  no per-route `ProcessRequirements` to re-run `evaluate_process` against. So a LOCKSTEP forgery (relabel a
+  REAL route's `fit_status` to `FITS`) is accepted through construction and a serialize round-trip — a
+  relational check blind to a shared term, and an auditor trusting the field it polices. It is a
+  trust-boundary overclaim, NOT a live exploit: the compiler never forges its own responses, and the path
+  is dark on the real catalog (no route carries process metadata yet). Fix folded: honest scope docstrings
+  on `admissible_route_digests` and `response_from_payload`, plus a pinning regression
+  `tests/test_process_service.py::test_deserialized_admission_is_producer_declared_not_reverified`.
+- **Deferred real fix (go-live milestone):** carry per-route process evidence in the response IR so
+  admission is re-derived on load — this becomes load-bearing exactly when sourced whole-process records
+  start flowing, and should be bundled with that work. A deserialized response is, until then, authoritative
+  only from a trusted producer.

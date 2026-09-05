@@ -1133,7 +1133,14 @@ class CompilationResponse:
 
     @property
     def admissible_route_digests(self) -> tuple[str, ...]:
-        """Returned candidates satisfying every assessed limit; never a bench-readiness claim."""
+        """Returned candidates satisfying every assessed limit; never a bench-readiness claim.
+
+        Derived from each route's ``fit_status``.  On a DESERIALIZED response this value is
+        producer-DECLARED, not re-verified: the response IR carries no per-route
+        ``ProcessRequirements`` (only candidate digest/equation/readiness), so a forged
+        ``fit_status`` cannot be re-derived here (see :func:`response_from_payload`).  Trust
+        this list as vetted-FITS only from a trusted producer.
+        """
         if not self.request.constraints.process.constrains_anything:
             return ()
         return tuple(r.route_digest for r in self.ranked_route_dossiers if r.fit_status == "FITS")
@@ -2021,7 +2028,24 @@ def response_to_payload(response: CompilationResponse) -> dict:
 
 
 def response_from_payload(payload: dict) -> CompilationResponse:
-    """Reconstruct a response from :func:`response_to_payload`; re-validates via the coherence guard."""
+    """Reconstruct a response from :func:`response_to_payload`; re-runs the coherence guard.
+
+    SCOPE of the round-trip check below (and its LIMIT).  It re-derives
+    ``process_selection_status``, ``admissible_route_digests``, ``exit_code`` and
+    ``result_digest`` and REFUSES a payload whose stored values disagree.  That catches an
+    INCONSISTENT edit (e.g. an admissible list edited without editing the ``fit_status`` it
+    derives from) and, via the ``__post_init__`` guard, a non-member or duplicate route
+    digest.  It is NOT ground-truth authentication of process admission: unlike the request's
+    ``normalized_identity`` (recomputed from carried inputs -> authoritative), a route's
+    ``fit_status`` cannot be recomputed here because the response carries no per-route
+    ``ProcessRequirements`` to re-run ``evaluate_process`` against.  A LOCKSTEP forgery
+    -- relabel a REAL route's ``fit_status`` to ``FITS`` so the derived fields recompute
+    consistently -- is therefore ACCEPTED; a deserialized response is authoritative only from a
+    trusted producer.  Closing this needs the response IR to carry per-route process evidence so
+    admission is re-derived on load (deferred to the go-live milestone; the feature is dark until
+    sourced process records exist).  Boundary pinned by
+    tests/test_process_service.py::test_deserialized_admission_is_producer_declared_not_reverified.
+    """
     ir_payload = payload["compilation_ir"]
     response = CompilationResponse(
         payload["schema_version"],

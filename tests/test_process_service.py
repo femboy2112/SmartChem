@@ -104,6 +104,45 @@ def test_imported_frontier_cannot_bypass_process_admission():
         replace(restricted, affordability_frontier=donor.affordability_frontier)
 
 
+def test_deserialized_admission_is_producer_declared_not_reverified():
+    """Pinned trust boundary: a route's ``fit_status`` is TRUSTED on load, never re-derived.
+
+    The response IR carries no per-route ``ProcessRequirements`` (only candidate
+    digest/equation/readiness), so ``response_from_payload`` cannot re-run ``evaluate_process``
+    to recompute admission.  A LOCKSTEP forgery -- relabel a REAL route's ``fit_status`` to
+    ``FITS`` (empty gaps/exclusions) so the derived admissible/selection/exit fields recompute
+    consistently -- is therefore ACCEPTED, at construction AND through a serialize round-trip.
+    Contrast test_nonexistent_or_duplicate_ranked_routes_cannot_be_admitted (a FAKE digest IS
+    caught by the membership guard) and test_derived_admission_fields_are_checked_when_loading
+    (an INCONSISTENT edit IS caught).  The round-trip recompute is blind to this because both
+    sides derive from the same trusted ``fit_status`` (a relational check over a shared term).
+
+    This documents the boundary so no caller assumes a deserialized ``admissible_route_digests``
+    is vetted ground truth.  Closing it needs the IR to carry per-route process evidence so
+    admission is re-derived on load; deferred to the go-live milestone (the path is dark until
+    sourced process records exist).  If that fix lands, this test SHOULD fail and be updated.
+    """
+    result = run_compilation(request())
+    # Ground truth on the real catalog: every route is UNKNOWN; nothing is admitted.
+    assert result.exit_code == 5 and not result.admissible_route_digests
+    victim = result.ranked_route_dossiers[0]
+    assert victim.fit_status == "UNKNOWN"
+
+    # Relabel the REAL route's disposition; its identity (route_digest) is untouched.
+    forged = replace(victim, fit_status="FITS", gaps=(), exclusions=())
+    promoted = replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:]))
+
+    # Accepted at construction: membership holds, FITS-internal coherence holds.
+    assert promoted.admissible_route_digests == (victim.route_digest,)
+    assert promoted.process_selection_status == "FITS_FOUND"
+    assert promoted.exit_code == 0
+
+    # And it survives the "authoritative" round-trip, which is circular over fit_status.
+    reloaded = deserialize_response(serialize_response(promoted))
+    assert reloaded.admissible_route_digests == (victim.route_digest,)
+    assert reloaded.exit_code == 0
+
+
 @pytest.mark.parametrize("field,value,bounds", [
     ("peak_temperature_k", 500, PhysicalBounds.of(max_temperature_k=350)),
     ("max_pressure_atm", 5, PhysicalBounds.of(max_pressure_atm=2)),

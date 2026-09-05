@@ -271,6 +271,32 @@ class ExperimentRoute(Digestible):
         return tuple(s.target for s in self.steps[:-1])
 
     @property
+    def leaf_inputs(self) -> tuple[Molecule, ...]:
+        """The purchased leaf reactants: every reactant produced by NO step in the route (COST-VEC-01).
+
+        The route's steps produce their targets AND any byproducts; a reactant that is not among ANY step's PRODUCTS
+        is an EXTERNAL input the route must source (buy) -- reagents and starting materials alike.  A species a step
+        liberates as a byproduct and a later step re-consumes is NOT a purchased leaf (it is made internally), so
+        ``produced`` is drawn from every step's ``products``, not merely the step targets -- otherwise a re-consumed
+        byproduct (e.g. water in a condensation-then-hydrolysis chain) would be double-billed as a buy.  Deduplicated
+        by canonical structure identity (the same ``_ident`` the linearity invariant uses), first-appearance order
+        preserved.  This is the basket ``affordability.basket_cost_vector`` prices; note it is quantity-BLIND -- one
+        equivalent of each DISTINCT leaf (a per-unit lower bound, never quantity-weighted -- a named TERM-MAT
+        follow-on), never a fabricated multi-equivalent total.
+        """
+        produced = {_ident(p) for step in self.steps for p in step.products}
+        leaves: list[Molecule] = []
+        seen: set[str] = set()
+        for step in self.steps:
+            for reactant in step.reactants:
+                key = _ident(reactant)
+                if key in produced or key in seen:
+                    continue
+                seen.add(key)
+                leaves.append(reactant)
+        return tuple(leaves)
+
+    @property
     def n_transitions(self) -> int:
         return len(self.steps) - 1
 

@@ -958,6 +958,7 @@
   "exit_code": 0,
   "outcome": "ROUTES_FOUND",
   "parse_receipt_summary": "IDENTITY RESOLVED [FORMULA] via FORMULA_PARSER: C8H9NO2 (FORMULA layer)",
+  "provider_snapshots": [],
   "ranked_route_dossiers": [],
   "request": {
     "constraints": {
@@ -1059,6 +1060,7 @@
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
   "result_digest": "783f30dbcd87bf07a1bc69dc80c569a78d848d75e6ae9c0117059139d53a73ef",
-  "schema_version": "smartchem.service/compilation-response-v1alpha3",
+  "schema_version": "smartchem.service/compilation-response-v1alpha6",
+  "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

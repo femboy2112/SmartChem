@@ -243,6 +243,13 @@ def _run(args) -> int:
         return 0
     if args.json:
         from ..service import run_compilation, serialize_response
+        # SNAPSHOT-13.2: the --json machine response carries NO provider snapshot in the alpha, and that is the honest
+        # state -- run_compilation's search is offline-deterministic and consumes NO fetched provider evidence, so a
+        # --json result depends on no fetch and has nothing to stamp for reproducibility (present-and-empty, a named
+        # limitation; carrying a snapshot for a fetch the result ignored would be misleading provenance -- red-team
+        # fold).  The synthesize HUMAN dossier below DOES consume fetched stability in its grading, so THAT surface
+        # renders the fetch's dated snapshot.  The field + run_compilation's provider_snapshots kwarg remain as the
+        # §13.2 shape and the seam for when the machine search itself consumes fetched evidence (a follow-on).
         response = run_compilation(request)
         print(serialize_response(response))
         return response.exit_code
@@ -290,9 +297,14 @@ def _run(args) -> int:
         identifiers.setdefault(mol, s)
     allow_network = request.evidence_provider_selection.allow_network
 
+    captured_snapshots: list = []  # SNAPSHOT-13.2: the dated provenance of any LIVE fetch the loader performed
+
     def _load_stability(species):
         from ..data.autoload import autoload_stability
-        return autoload_stability(list(species), identifiers=identifiers, allow_network=allow_network)
+        table = autoload_stability(list(species), identifiers=identifiers, allow_network=allow_network)
+        if table.provider_snapshot is not None:
+            captured_snapshots.append(table.provider_snapshot)
+        return table
 
     from ..data.thermo_extended import extended_thermo
     from .compile import compile_synthesis
@@ -331,6 +343,13 @@ def _run(args) -> int:
     # surface, so synthesize's human view no longer silently drops it (CLI-NAME-01).
     print(f"  {parse_receipt_summary}")
     print(compiled.render())
+    # SNAPSHOT-13.2: if the --network fetch produced dated provider data, surface its provenance so the human view is
+    # reproducible (which providers, when, a content id) -- the same fact the --json response carries.
+    for snap in captured_snapshots:
+        # "consulted", not "from": provider_ids lists every provider queried, including ones that contributed no
+        # record -- so this reads as consultation, not attribution of the record_count to all of them (red-team fold).
+        print(f"  provider snapshot [{snap.content_digest[:12]}] fetched {snap.fetched_at}; "
+              f"consulted {', '.join(snap.provider_ids)}; {snap.record_count} record(s)")
     # Exit codes mirror recompile/compile: a partial search is exit 4; else routes/target-in-stock is 0, no-route is 3.
     if compiled.search_receipt is not None and not compiled.search_receipt.complete_within_bounds:
         return 4

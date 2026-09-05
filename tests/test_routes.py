@@ -342,7 +342,9 @@ class TestCLI:
         code = main(["CC(=O)Nc1ccc(O)cc1", "--reagents", "O", "--max-depth", "1", "--offline", "--no-commodities"])
         out = capsys.readouterr().out
         assert code == 3
-        assert "NO ROUTE FOUND WITHIN THE DECLARED BOUNDED SEARCH SPACE" in out
+        # SRCH-NO-01: the compile/synthesize Dossier's no-route wording now rides the uniform section-8.3 label -- a
+        # complete, empty declared space is NO_ROUTE_IN_DECLARED_SPACE (the old free-text phrasing was replaced).
+        assert "NO_ROUTE_IN_DECLARED_SPACE" in out
 
     def test_cli_returns_partial_status_even_when_candidates_exist(self, capsys):
         from smartchem.experiment.cli import main

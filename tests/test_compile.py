@@ -52,8 +52,10 @@ class TestCompileEndToEnd:
         assert not cs.found_route
         assert cs.search_receipt is not None and not cs.search_receipt.complete_within_bounds
         text = cs.render()
-        assert "SEARCH WAS PARTIAL" in text
-        assert "Absence is not evidence" in text
+        # SRCH-NO-01: the compile Dossier now speaks the section-8.3 vocabulary -- an empty INCOMPLETE search is the
+        # INCOMPLETE_NO_ROUTE_OBSERVED cell (absence observed, nothing proven), never a certified no-route.
+        assert "INCOMPLETE_NO_ROUTE_OBSERVED" in text
+        assert "absence is not evidence" in text
 
     def test_commodities_can_be_disabled(self):
         # with commodity termination OFF and no reagents, acetic anhydride cannot bottom out at commodities,

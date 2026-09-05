@@ -50,7 +50,7 @@ Right-to-Know fact sheets.  These are well-established physical constants, not c
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..conditions import Interval
 from ..contracts import Digestible, EvidenceStatus
@@ -142,6 +142,10 @@ class StabilityTable(Digestible):
     """
 
     records: tuple[StabilityRef, ...]
+    #: SNAPSHOT-13.2: the dated provenance of a LIVE fetch that produced (some of) these records, or ``None`` for a
+    #: pure seed/cache table.  ``compare=False`` so it NEVER enters the table's digest -- the table's identity is its
+    #: records, not when they happened to be fetched -- so the on-disk cache and every golden stay byte-stable.
+    provider_snapshot: "object | None" = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if type(self.records) is not tuple or any(

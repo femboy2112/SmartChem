@@ -285,15 +285,16 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
         lines.append(f"  {d}")
     if response.parse_receipt_summary:
         lines.append(f"  {response.parse_receipt_summary}")
-    if not ir.complete_within_bounds:
-        lines.append("  SEARCH WAS PARTIAL: absence of a route is not evidence one does not exist -- "
-                     "raise --cut-budget/--max-routes/--max-depth or widen the inventory.")
+    # SRCH-NO-01: the ONE section-8.3 no-route matrix label, uniform across the human render AND --json.  This one
+    # line replaces the old split ("SEARCH WAS PARTIAL" for either incomplete cell + a separate NO_ROUTE_COMPLETE
+    # line) so the four outcomes -- incomplete-empty vs complete-empty especially -- read distinctly everywhere.
+    if response.search_space_status is not None:
+        from .search import SECTION_8_3_NOTE
+        lines.append(f"  search space [{response.search_space_status}]: "
+                     f"{SECTION_8_3_NOTE[response.search_space_status]}")
     if response.outcome is ResponseOutcome.TARGET_ALREADY_AVAILABLE:
         lines.append("  TARGET ALREADY AVAILABLE on the declared terminal stock; no synthesis was searched. "
                      "Quantity, assay, phase, grade and fitness remain unassessed.")
-    if response.outcome is ResponseOutcome.NO_ROUTE_COMPLETE:
-        lines.append("  NO ROUTE within the declared bounded search space. The search was COMPLETE; this is not a "
-                     "claim about routes outside the current grammar or bounds.")
     if not quiet:
         for c in ir.candidates[:20]:
             lines.append(f"    [{c.candidate_kind}/{c.readiness_tier}] {c.equation}  #{c.candidate_digest[:12]}")
@@ -446,6 +447,11 @@ def _cmd_decompile(argv: list[str]) -> int:
     from .service import run_compilation
     _resp = run_compilation(_decompile_request())
     print(f"  outcome: {_resp.outcome.value}; status: {_resp.standard_status}")
+    # SRCH-NO-01: the section-8.3 no-route matrix label, the SAME token the --json view carries, so the human and
+    # machine decompile views agree on the four-outcome distinction (not only outcome + section-8.2 status).
+    if _resp.search_space_status is not None:
+        from .search import SECTION_8_3_NOTE
+        print(f"  search space [{_resp.search_space_status}]: {SECTION_8_3_NOTE[_resp.search_space_status]}")
     # every section-5.3 loss the service RECORDED, via the SAME summary strings the machine --json view carries, so
     # the two views cannot disagree (CLI-JSON-01).  For --smiles that is the SMILES->formula reduction PLUS any
     # ID-STEREO-01 stereo/isotope/local-charge blocker the input declared -- structure/features never silently lost.

@@ -1,5 +1,46 @@
 {
-  "affordability_frontier": [],
+  "affordability_frontier": [
+    {
+      "cost_vector": {
+        "access_difficulty": 2,
+        "analytical": null,
+        "cash": null,
+        "currency": "",
+        "energy": null,
+        "evidence_tier_rank": null,
+        "hard_blockers": [],
+        "labor_time": null,
+        "material_quantity": null,
+        "new_equipment": null,
+        "preprocessing": null,
+        "region": "",
+        "unit": "",
+        "waste_disposal": null
+      },
+      "route_digest": "e709e4a706d5c8280479835d6fa258ee6ef416905798bc2bcd4263197059eacb",
+      "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha1"
+    },
+    {
+      "cost_vector": {
+        "access_difficulty": 2,
+        "analytical": null,
+        "cash": null,
+        "currency": "",
+        "energy": null,
+        "evidence_tier_rank": null,
+        "hard_blockers": [],
+        "labor_time": null,
+        "material_quantity": null,
+        "new_equipment": null,
+        "preprocessing": null,
+        "region": "",
+        "unit": "",
+        "waste_disposal": null
+      },
+      "route_digest": "ac6ec5cf43a1776e04e89f9e6335abad9e5628ad05ac51f999a0f861e998c5c2",
+      "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha1"
+    }
+  ],
   "compilation_ir": {
     "candidates": [
       {
@@ -67,6 +108,7 @@
   "exit_code": 0,
   "outcome": "ROUTES_FOUND",
   "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C3H6O2 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested",
+  "provider_snapshots": [],
   "ranked_route_dossiers": [
     {
       "composability_verdict": "COMPOSABLE",
@@ -203,6 +245,7 @@
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
   "result_digest": "bf06bc815ef43255ea5454f7c744fb219f35d7bd94e033bbbae4e552ce1828d4",
-  "schema_version": "smartchem.service/compilation-response-v1alpha3",
+  "schema_version": "smartchem.service/compilation-response-v1alpha6",
+  "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

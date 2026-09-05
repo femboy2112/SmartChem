@@ -62,7 +62,7 @@ from .constraints import PhysicalBounds
 from .contracts import Digestible, canonical_digest
 from .identity import IdentityLoss, MatchLayer, refines
 from .identity_parse import IdentityParseError, InputKind, resolve_target
-from .search import REFUSED_8_2_STATUSES, STANDARD_8_2_STATUSES
+from .search import REFUSED_8_2_STATUSES, STANDARD_8_2_STATUSES, section_8_3_label
 
 __all__ = [
     "COMPILATION_REQUEST_SCHEMA",
@@ -114,14 +114,24 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha4"
 # v1alpha3 (CLI-CAN-02 brick 2): ``ranked_route_dossiers`` is now POPULATED (routes mode) with typed
 # ``RankedRouteSummary`` objects -- the section-11 bench-fit disposition per route -- so the array elements gain
 # structure and the payload shape genuinely changes.
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha3"
+# v1alpha4 (SRCH-NO-01): the response gains a first-class ``search_space_status`` field -- the section-8.3
+# no-route matrix label (NO_ROUTE_IN_DECLARED_SPACE / INCOMPLETE_NO_ROUTE_OBSERVED / COMPLETE_CANDIDATE_SET /
+# PARTIAL_CANDIDATE_SET), so the four-outcome distinction rides the machine payload uniformly, not only the render.
+# v1alpha5 (COST-VEC-01): ``affordability_frontier`` is now POPULATED (routes mode) with typed
+# ``AffordabilityFrontierEntry`` objects -- the section-10.4 Pareto affordability frontier over the ranked routes --
+# so the array elements gain structure (the old "must be empty" placeholder is retired).
+# v1alpha6 (SNAPSHOT-13.2): the response gains a ``provider_snapshots`` field -- the dated section-13.2 provenance of
+# any LIVE provider fetch that serviced the request (empty on an offline/default run), so a --network response is
+# reproducible.  EXCLUDED from result_digest (a fetch time is provenance, not a search result).
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha6"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
-# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha5: the
-# ranked_route_dossiers element shape (CLI-CAN-02 brick 2).  (v1alpha4: the request schema bumped for
-# ConstraintPolicy.bounds; v1alpha3: the parse_receipt_summary response field + the normalized_identity request
-# field; v1alpha2: IR-LOSS-01's array[object] identity_losses.)
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha5"
+# pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha8: the
+# provider_snapshots field (SNAPSHOT-13.2).  v1alpha7: the affordability_frontier element shape (COST-VEC-01).
+# v1alpha6: the search_space_status section-8.3 field (SRCH-NO-01).  v1alpha5: the ranked_route_dossiers element
+# shape (CLI-CAN-02 brick 2).  (v1alpha4: the request schema bumped for ConstraintPolicy.bounds; v1alpha3: the
+# parse_receipt_summary response field + the normalized_identity request field; v1alpha2: IR-LOSS-01's identity_losses.)
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha8"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -939,8 +949,14 @@ class CompilationResponse:
     convenience digest of that view.
     ``ranked_route_dossiers`` (section 13.2) is POPULATED on a routes-mode search (CLI-CAN-02 brick 2) with typed
     :class:`RankedRouteSummary` values -- the per-route section-11 bench-fit disposition, best-first.
-    ``affordability_frontier`` is the one section 13.2 field whose producer is still unbuilt (COST-VEC-01); it stays
-    present-and-empty rather than absent, so the shape is stable.
+    ``affordability_frontier`` (section 13.2) is POPULATED on a routes-mode search (COST-VEC-01) with typed
+    ``AffordabilityFrontierEntry`` values -- the section-10.4 Pareto affordability frontier over the ranked routes;
+    empty when no route carries affordability signal (honest, not "unbuilt").  ``provider_snapshots`` (SNAPSHOT-13.2)
+    is the dated section-13.2 provenance seam for a response whose RESULT depends on a live provider fetch; the alpha
+    machine search is offline-deterministic and consumes no fetched evidence, so it is present-and-empty on every
+    current path (a named limitation -- the synthesize HUMAN dossier is where a fetch's snapshot is rendered).  Both
+    are DELIBERATELY EXCLUDED from :attr:`result_digest` (a price/fetch-time is dated data, not search identity, so
+    two aliases that ran the same search share a result_digest regardless of them).
 
     ``parse_receipt_summary`` (SVC-REQ-01 alias-collapse) is the section-14.2 identity-resolution echo (how the
     target STRING was read: source, normalised form, layer).  It is a FIRST-CLASS field, not a line buried in
@@ -962,6 +978,7 @@ class CompilationResponse:
     diagnostics: tuple[str, ...] = ()
     ranked_route_dossiers: tuple = ()
     affordability_frontier: tuple = ()
+    provider_snapshots: tuple = ()
     parse_receipt_summary: "str | None" = None
 
     def __post_init__(self) -> None:
@@ -987,10 +1004,26 @@ class CompilationResponse:
             type(r) is not RankedRouteSummary for r in self.ranked_route_dossiers
         ):
             raise TypeError("ranked_route_dossiers must be a tuple of RankedRouteSummary values")
-        if self.affordability_frontier != ():
-            raise ValueError(
-                "affordability_frontier is not populated in this brick (COST-VEC-01); it must be empty"
-            )
+        # COST-VEC-01: ``affordability_frontier`` is now POPULATED (routes mode) with typed AffordabilityFrontierEntry
+        # values -- the section-10.4 Pareto frontier.  The type is guarded (like ranked_route_dossiers) so a
+        # hand-built/deserialized response cannot smuggle an untyped blob past the coherence checks.  The import is
+        # lazy AND only on a non-empty frontier, so the common empty-frontier path never drags the experiment layer
+        # (the service's layering discipline).  An empty frontier is HONEST: no route carried affordability signal.
+        if type(self.affordability_frontier) is not tuple:
+            raise TypeError("affordability_frontier must be a tuple")
+        if self.affordability_frontier:
+            from .experiment.affordability import AffordabilityFrontierEntry
+            if any(type(e) is not AffordabilityFrontierEntry for e in self.affordability_frontier):
+                raise TypeError("affordability_frontier must be a tuple of AffordabilityFrontierEntry values")
+        # SNAPSHOT-13.2: provider_snapshots carries the dated provenance of any LIVE fetch that serviced the request
+        # (empty on an offline/default run).  Typed-guarded like the tuples above; the lazy import stays off the
+        # common empty path (the layering discipline).  It is NOT in result_digest -- a fetch time is provenance.
+        if type(self.provider_snapshots) is not tuple:
+            raise TypeError("provider_snapshots must be a tuple")
+        if self.provider_snapshots:
+            from .data.provider_snapshot import ProviderSnapshot
+            if any(type(s) is not ProviderSnapshot for s in self.provider_snapshots):
+                raise TypeError("provider_snapshots must be a tuple of ProviderSnapshot values")
         self._check_outcome_coherence()
 
     def _check_outcome_coherence(self) -> None:
@@ -1082,6 +1115,22 @@ class CompilationResponse:
         # a convenience digest of the full section 8.1 receipt view the IR now carries (IR-CHEM-01); the content
         # itself is compilation_ir.search_receipt, recoverable from the machine payload.
         return None if self.compilation_ir is None else self.compilation_ir.search_receipt.digest
+
+    @property
+    def search_space_status(self) -> "str | None":
+        """The section-8.3 no-route matrix label for this response, or ``None`` when no route search ran (SRCH-NO-01).
+
+        DERIVED (never stored) from the wrapped IR's ``(complete_within_bounds, candidate_count)`` so it can never
+        drift from the search it reports -- one of NO_ROUTE_IN_DECLARED_SPACE / INCOMPLETE_NO_ROUTE_OBSERVED /
+        COMPLETE_CANDIDATE_SET / PARTIAL_CANDIDATE_SET.  ``None`` for a refusal/invalid/internal response or a
+        TARGET_ALREADY_AVAILABLE match, where there was no bounded route search to label (the four labels are about
+        the route search, not "the target was already on the shelf").  It is a deterministic function of the outcome
+        and the IR, both already folded into :attr:`result_digest`, so it adds no new identity term.
+        """
+        searched = {ResponseOutcome.ROUTES_FOUND, ResponseOutcome.NO_ROUTE_COMPLETE, ResponseOutcome.INCOMPLETE}
+        if self.outcome not in searched or self.compilation_ir is None:
+            return None
+        return section_8_3_label(self.compilation_ir.complete_within_bounds, self.compilation_ir.candidate_count)
 
     @property
     def result_digest(self) -> str:
@@ -1252,22 +1301,77 @@ def _ranked_summaries(
     return tuple(RankedRouteSummary.of_fit(f) for f in fits)
 
 
-def run_compilation(request: CompilationRequest) -> CompilationResponse:
+def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
+    """The section-10.4 Pareto affordability frontier over the ranked routes (COST-VEC-01 live wiring).
+
+    For each ranked route, price its commodity leaf inputs into a CostVector (``basket_cost_vector``) and wrap it in
+    an ``AffordabilityFrontierEntry`` keyed by the SAME ``route_digest`` the ranked summary carries, so a consumer
+    links a frontier entry back to its ranked route.  A route EXCLUDED by a hard section-11 bound carries its
+    exclusions as ``hard_blockers`` so it is G6-dominated (a hard blocker dominates cost) by any in-bound route.
+
+    The SIGNAL GATE (honest emptiness): run dominance FIRST, then return the Pareto set only if at least one
+    SURVIVING entry carries affordability SIGNAL -- a known cost axis OR a hard blocker.  Gating the survivors (not
+    all entries) is load-bearing: G6 can dominate the only signal-bearing entry off the frontier (a hard-blocked
+    route beaten by a clean one), and returning the blank survivors would be exactly the "list of every route wearing
+    a blank vector" that falsely implies a cost ranking happened.  When signal survives, the full Pareto set is
+    returned, and UNKNOWN-cost routes stay on it (incomparable, never over- or under-ranked; section 10.4).  This is
+    populated only in routes mode (DAG-mode/decompile rank nothing, so ``ranked`` is empty there) -- the same scope as
+    ``ranked_route_dossiers``, introducing no new asymmetry.
+    """
+    if not routes or not ranked:
+        return ()
+    from .experiment.affordability import AffordabilityFrontierEntry, basket_cost_vector, pareto_frontier
+    by_digest = {r.digest: r for r in routes}
+    entries = []
+    for summary in ranked:
+        route = by_digest.get(summary.route_digest)
+        if route is None:
+            continue  # a ranked summary with no matching route object (should not happen) contributes nothing
+        hard = tuple(summary.exclusions) if summary.fit_status == "EXCLUDED" else ()
+        vector = basket_cost_vector(list(route.leaf_inputs), hard_blockers=hard)
+        entries.append(AffordabilityFrontierEntry.of(summary.route_digest, vector))
+    # Run dominance FIRST, then gate on the SURVIVORS.  The signal must be checked on the POST-dominance frontier,
+    # not on all entries: G6 can strip the only signal-bearing entry (a hard-blocked route dominated by a clean one),
+    # leaving a frontier of blank UNKNOWN vectors -- exactly the "list of every route wearing a blank vector" the
+    # honest-emptiness rule forbids.  Gating the survivors returns () in that case (no affordability info survived),
+    # never a blank-vector list (red-team fold).
+    frontier = pareto_frontier(entries)
+    if not any(e.cost_vector.known_axes() or e.cost_vector.is_hard_blocked for e in frontier):
+        return ()
+    return tuple(frontier)
+
+
+def run_compilation(
+    request: CompilationRequest, *, provider_snapshots: tuple = (),
+) -> CompilationResponse:
     """Execute ``request`` and return the typed response, delegating to the existing IR producers.
 
     Determinism is load-bearing: this reads ONLY the request's resolved semantic fields, so equal
     :attr:`CompilationRequest.semantic_digest` guarantees an equal response (section 13.1, "same semantic digest
     MUST execute the same search").  The outcome maps to the section 14.4 exit codes via :attr:`ResponseOutcome`.
+
+    ``provider_snapshots`` (SNAPSHOT-13.2) is the seam for a caller to carry the dated provenance of a LIVE provider
+    fetch onto a response whose RESULT depends on that fetch.  In the alpha the machine search here is
+    offline-deterministic and consumes NO fetched provider evidence, so no CLI path passes a snapshot (the --json
+    response is present-and-empty -- a named limitation, honest: a result that depends on no fetch has nothing to
+    stamp).  The synthesize HUMAN dossier is where fetched stability actually feeds grading, and it renders the
+    fetch's snapshot there.  Whatever IS passed here enters neither the search nor ``result_digest`` (a fetch date is
+    provenance, not identity), so a fetch-dependent response would still be reproducible run-to-run.  Empty by default.
     """
     if type(request) is not CompilationRequest:
         raise TypeError("run_compilation needs a CompilationRequest")
     # ID-LAYER-02: refuse (exit 5) a declared match layer the engine cannot honestly honor, BEFORE any search runs.
     layer_refusal = _check_identity_layer(request)
     if layer_refusal is not None:
-        return layer_refusal
-    if request.operation is CompilationOperation.RECOMPILE:
-        return _run_recompile(request)
-    return _run_decompile(request)
+        response = layer_refusal
+    elif request.operation is CompilationOperation.RECOMPILE:
+        response = _run_recompile(request)
+    else:
+        response = _run_decompile(request)
+    if provider_snapshots:
+        from dataclasses import replace
+        response = replace(response, provider_snapshots=tuple(provider_snapshots))
+    return response
 
 
 def _run_recompile(request: CompilationRequest) -> CompilationResponse:
@@ -1378,6 +1482,10 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     # when nothing was ranked (no routes, or DAG mode), else the (fit/excluded/unknown) tally.  A consumer can now
     # read which routes fall inside the bench and which are EXCLUDED -- and can never mistake an UNKNOWN-fit for a pass.
     ranked = _ranked_summaries(routes_for_ranking, request.constraints.bounds, identity_losses)
+    # COST-VEC-01: the section-10.4 Pareto affordability frontier over the SAME ranked routes -- each route's
+    # commodity leaves priced into a CostVector, EXCLUDED routes G6-dominated by their hard bounds.  Empty when no
+    # route carries affordability signal (honest), so this never fabricates a cost ranking from absent price data.
+    frontier = _affordability_frontier(routes_for_ranking, ranked)
     diagnostics = tuple(ir.diagnostics)
     _note = constraint_note(
         request.constraints.bounds, fit_counts=_fit_counts(ranked) if ranked else None
@@ -1391,6 +1499,7 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         COMPILATION_RESPONSE_SCHEMA, request, outcome, ir.standard_status, ir,
         diagnostics,
         ranked_route_dossiers=ranked,
+        affordability_frontier=frontier,
         parse_receipt_summary=resolved.receipt.summary(),
     )
 
@@ -1646,6 +1755,85 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
     )
 
 
+def affordability_entry_to_payload(entry) -> dict:
+    """A canonical JSON-ready dict for one affordability-frontier entry (COST-VEC-01).  The CostVector is flattened
+    inline; a ``None`` axis stays ``null`` (UNKNOWN), never a fabricated 0."""
+    v = entry.cost_vector
+    return {
+        "schema_version": entry.schema_version,
+        "route_digest": entry.route_digest,
+        "cost_vector": {
+            "cash": v.cash,
+            "access_difficulty": v.access_difficulty,
+            "evidence_tier_rank": v.evidence_tier_rank,
+            "new_equipment": v.new_equipment,
+            "material_quantity": v.material_quantity,
+            "energy": v.energy,
+            "labor_time": v.labor_time,
+            "preprocessing": v.preprocessing,
+            "analytical": v.analytical,
+            "waste_disposal": v.waste_disposal,
+            "hard_blockers": list(v.hard_blockers),
+            "currency": v.currency,
+            "unit": v.unit,
+            "region": v.region,
+        },
+    }
+
+
+def affordability_entry_from_payload(payload: dict):
+    """Reconstruct an affordability-frontier entry; re-validates via its (and the CostVector's) __post_init__.
+    ``hard_blockers`` is coerced back to a tuple -- the CostVector guard rejects a list, so the round-trip is exact."""
+    from .experiment.affordability import AffordabilityFrontierEntry, CostVector
+    cv = payload["cost_vector"]
+    return AffordabilityFrontierEntry(
+        payload["schema_version"],
+        payload["route_digest"],
+        CostVector(
+            cash=cv["cash"],
+            access_difficulty=cv["access_difficulty"],
+            evidence_tier_rank=cv["evidence_tier_rank"],
+            new_equipment=cv["new_equipment"],
+            material_quantity=cv["material_quantity"],
+            energy=cv["energy"],
+            labor_time=cv["labor_time"],
+            preprocessing=cv["preprocessing"],
+            analytical=cv["analytical"],
+            waste_disposal=cv["waste_disposal"],
+            hard_blockers=tuple(cv["hard_blockers"]),
+            currency=cv["currency"],
+            unit=cv["unit"],
+            region=cv["region"],
+        ),
+    )
+
+
+def provider_snapshot_to_payload(snap) -> dict:
+    """A canonical JSON-ready dict for one dated provider snapshot (SNAPSHOT-13.2)."""
+    return {
+        "schema_version": snap.schema_version,
+        "provider_ids": list(snap.provider_ids),
+        "record_count": snap.record_count,
+        "content_digest": snap.content_digest,
+        "fetched_at": snap.fetched_at,
+        "allow_network": snap.allow_network,
+    }
+
+
+def provider_snapshot_from_payload(payload: dict):
+    """Reconstruct a provider snapshot; re-validates via its __post_init__.  ``provider_ids`` is coerced back to a
+    tuple (the guard rejects a list), so the round-trip is exact."""
+    from .data.provider_snapshot import ProviderSnapshot
+    return ProviderSnapshot(
+        payload["schema_version"],
+        tuple(payload["provider_ids"]),
+        payload["record_count"],
+        payload["content_digest"],
+        payload["fetched_at"],
+        payload["allow_network"],
+    )
+
+
 def response_to_payload(response: CompilationResponse) -> dict:
     """A canonical JSON-ready dict for a response (CLI-JSON-01 leans on this)."""
     return {
@@ -1657,8 +1845,10 @@ def response_to_payload(response: CompilationResponse) -> dict:
         "compilation_ir": None if response.compilation_ir is None else ir_to_payload(response.compilation_ir),
         "diagnostics": list(response.diagnostics),
         "parse_receipt_summary": response.parse_receipt_summary,
+        "search_space_status": response.search_space_status,
         "ranked_route_dossiers": [ranked_summary_to_payload(r) for r in response.ranked_route_dossiers],
-        "affordability_frontier": list(response.affordability_frontier),
+        "affordability_frontier": [affordability_entry_to_payload(e) for e in response.affordability_frontier],
+        "provider_snapshots": [provider_snapshot_to_payload(s) for s in response.provider_snapshots],
         "result_digest": response.result_digest,
     }
 
@@ -1674,7 +1864,8 @@ def response_from_payload(payload: dict) -> CompilationResponse:
         None if ir_payload is None else ir_from_payload(ir_payload),
         tuple(payload["diagnostics"]),
         tuple(ranked_summary_from_payload(r) for r in payload["ranked_route_dossiers"]),
-        tuple(payload["affordability_frontier"]),
+        tuple(affordability_entry_from_payload(e) for e in payload["affordability_frontier"]),
+        tuple(provider_snapshot_from_payload(s) for s in payload.get("provider_snapshots", [])),
         parse_receipt_summary=payload["parse_receipt_summary"],
     )
 
@@ -1712,8 +1903,15 @@ def response_schema() -> dict:
             "compilation_ir": "object(chemical-compilation-ir)|null",
             "diagnostics": "array[str] (blockers)",
             "parse_receipt_summary": "str|null (section 14.2 identity-resolution receipt; provenance)",
+            "search_space_status": "str|null (section 8.3 no-route matrix: NO_ROUTE_IN_DECLARED_SPACE/"
+                                   "INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; "
+                                   "null when no route search ran)",
             "ranked_route_dossiers": "array[object(ranked-route-summary)] (section-11 fit, best-first; CLI-CAN-02)",
-            "affordability_frontier": "array (empty until COST-VEC-01)",
+            "affordability_frontier": "array[object(affordability-frontier-entry)] (section-10.4 Pareto frontier "
+                                      "over the ranked routes; COST-VEC-01. Empty when no route carries "
+                                      "affordability signal -- a known cost axis or a hard blocker)",
+            "provider_snapshots": "array[object(provider-snapshot)] (section-13.2 dated provenance of any LIVE "
+                                  "provider fetch; SNAPSHOT-13.2. Empty on an offline/default run)",
             "result_digest": "str (sha256)",
         },
         "compilation_ir_fields": {
@@ -1791,6 +1989,22 @@ def response_schema() -> dict:
             "equilibrium_verdict": "str",
             "kinetics_verdict": "str (ranking-only; NEVER a grade)",
         },
+        "affordability_frontier_entry_fields": {
+            "schema_version": "str",
+            "route_digest": "str (sha256; == the matching ranked_route_dossiers.route_digest)",
+            "cost_vector": "object(cost-vector): 10 minimized section-10.4 axes (cash/access_difficulty/"
+                           "evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/"
+                           "analytical/waste_disposal), each number|null (UNKNOWN); hard_blockers array[str]; "
+                           "currency/unit/region str (labels only, never enter dominance)",
+        },
+        "provider_snapshot_fields": {
+            "schema_version": "str",
+            "provider_ids": "array[str] (the providers consulted in the live fetch)",
+            "record_count": "int (records the fetch yielded)",
+            "content_digest": "str (sha256; deterministic over the fetched records -- the reproducibility anchor)",
+            "fetched_at": "str (ISO-8601 UTC wall-clock; provenance, NOT in result_digest)",
+            "allow_network": "bool",
+        },
     }
 
 
@@ -1817,6 +2031,10 @@ def response_semantic_fields(response: CompilationResponse) -> dict:
         # (SVC-REQ-01 alias-collapse); distinct from search_receipt_digest (the section-8.1 search receipt).
         "parse_receipt": response.parse_receipt_summary,
         "search_receipt_digest": response.search_receipt_digest,
+        # the section-8.3 no-route matrix label -- the surface both views must AGREE on (SRCH-NO-01): the --json
+        # payload carries it and every human renderer that ran a search prints it, so an incomplete-empty search is
+        # never shown as a complete no-route on one view and hidden on the other.
+        "search_space_status": response.search_space_status,
         "candidate_ids": () if ir is None else tuple(c.candidate_digest for c in ir.candidates),
         "candidate_tiers": () if ir is None else tuple(sorted({c.readiness_tier for c in ir.candidates})),
         "result_digest": response.result_digest,

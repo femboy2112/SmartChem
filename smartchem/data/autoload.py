@@ -214,6 +214,7 @@ def autoload_stability(
     cache = cache if cache is not None else StabilityCache.load()
 
     new_refs: list[StabilityRef] = []
+    fetched_refs: list[StabilityRef] = []  # SNAPSHOT-13.2: only the LIVE-fetched refs (step 3), for the dated stamp
     seen: set[str] = set()
     dirty = False
     for m in molecules:
@@ -242,10 +243,26 @@ def autoload_stability(
             if ref is not None:
                 cache.put(struct_key, ref)
                 new_refs.append(ref)
+                fetched_refs.append(ref)
                 dirty = True
     if dirty:
         cache.save()
-    return base.with_records(*new_refs)
+    table = base.with_records(*new_refs)
+    if fetched_refs:
+        # SNAPSHOT-13.2 / G8: a LIVE fetch happened, so stamp the returned provider data with a dated snapshot
+        # (which providers, how many records, a deterministic content id, and the wall-clock).  A pure seed/cache
+        # read never reaches here, so a reproducible offline run is never stamped with a spurious fetch time.
+        from dataclasses import replace
+        from datetime import datetime, timezone
+        from .provider_snapshot import provider_snapshot
+        snap = provider_snapshot(
+            tuple(r.digest for r in fetched_refs),
+            tuple(type(p).__name__ for p in providers),
+            fetched_at=datetime.now(timezone.utc).isoformat(),
+            allow_network=allow_network,
+        )
+        table = replace(table, provider_snapshot=snap)
+    return table
 
 
 def _thermo_ref_to_json(ref: ThermoRef) -> dict:

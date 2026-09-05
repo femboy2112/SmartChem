@@ -51,6 +51,7 @@
   "exit_code": 3,
   "outcome": "NO_ROUTE_COMPLETE",
   "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->NAME] via OFFLINE_REGISTRY: C4H6O3 (CONSTITUTION layer); resolved offline name 'acetic anhydride'",
+  "provider_snapshots": [],
   "ranked_route_dossiers": [],
   "request": {
     "constraints": {
@@ -158,6 +159,7 @@
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
   "result_digest": "5be4ce065fe6c26d424f80a2c4fc35849bdf4ac93eaa93dcae794a6fc255367a",
-  "schema_version": "smartchem.service/compilation-response-v1alpha3",
+  "schema_version": "smartchem.service/compilation-response-v1alpha6",
+  "search_space_status": "NO_ROUTE_IN_DECLARED_SPACE",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

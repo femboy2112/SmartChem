@@ -366,14 +366,26 @@ class TestValidation:
                 ("x",), ("a raw dossier",), (),
             )
 
-    def test_response_rejects_populated_affordability_frontier(self):
-        # affordability_frontier stays empty until COST-VEC-01: present-and-empty, never a populated placeholder.
+    def test_response_rejects_an_untyped_affordability_frontier(self):
+        # COST-VEC-01: the frontier is now POPULATED (routes mode), but only with typed AffordabilityFrontierEntry
+        # values -- a raw blob can never be smuggled past the coherence guard (mirrors ranked_route_dossiers).
         req = build_recompile_request("name:water")
-        with pytest.raises(ValueError, match="COST-VEC-01"):
+        with pytest.raises(TypeError, match="AffordabilityFrontierEntry"):
             CompilationResponse(
                 COMPILATION_RESPONSE_SCHEMA, req, ResponseOutcome.REFUSED, None, None,
-                ("x",), (), ("a cost point",),
+                ("x",), (), ("a raw cost point",),
             )
+
+    def test_response_accepts_a_typed_affordability_frontier(self):
+        # the guard relaxation: a frontier of real AffordabilityFrontierEntry values is accepted (no longer refused).
+        from smartchem.experiment.affordability import AffordabilityFrontierEntry, CostVector
+        req = build_recompile_request("name:water")
+        entry = AffordabilityFrontierEntry.of("deadbeef", CostVector(cash=1.0, currency="USD", unit="kg"))
+        resp = CompilationResponse(
+            COMPILATION_RESPONSE_SCHEMA, req, ResponseOutcome.REFUSED, None, None,
+            ("x",), (), (entry,),
+        )
+        assert resp.affordability_frontier == (entry,)
 
 
 # -- F. canonical serialization ----------------------------------------------------------------------------------

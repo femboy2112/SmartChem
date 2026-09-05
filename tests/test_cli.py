@@ -73,7 +73,9 @@ class TestCompile:
         # exist deeper), which is exit 4 -- so a bumped bound is required to reach the genuine complete-empty.
         assert main(["compile", "acetic anhydride", "--elements", "--max-depth", "2"]) == 3
         out = capsys.readouterr().out
-        assert "COMPLETE_WITHIN_BOUNDS" in out and "NO ROUTE FOUND WITHIN" in out
+        # SRCH-NO-01: the receipt still reports the engine's COMPLETE_WITHIN_BOUNDS, and the no-route wording now
+        # rides the uniform section-8.3 label -- a complete, empty declared space is NO_ROUTE_IN_DECLARED_SPACE.
+        assert "COMPLETE_WITHIN_BOUNDS" in out and "NO_ROUTE_IN_DECLARED_SPACE" in out
 
     def test_partial_candidates_use_the_partial_exit_status(self, capsys):
         code = main([

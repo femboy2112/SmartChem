@@ -23,6 +23,13 @@ __all__ = [
     "ERROR_8_2_STATUSES",
     "NON_SEARCH_8_2_STATUSES",
     "RefusalReceipt",
+    "NO_ROUTE_IN_DECLARED_SPACE",
+    "INCOMPLETE_NO_ROUTE_OBSERVED",
+    "COMPLETE_CANDIDATE_SET",
+    "PARTIAL_CANDIDATE_SET",
+    "STANDARD_8_3_LABELS",
+    "SECTION_8_3_NOTE",
+    "section_8_3_label",
 ]
 
 
@@ -157,6 +164,64 @@ def primary_standard_status(active: "tuple[SearchStatus, ...]") -> str:
         if member in active_set:
             return _STANDARD_NAME_BY_MEMBER[member]
     raise ValueError("no active limit to resolve to a section 8.2 primary stop reason")
+
+
+# -- Section 8.3 no-route matrix ----------------------------------------------------------------------------------
+# Section 8.3 fixes a SECOND axis, orthogonal to the 8.2 stop-reason above: what the (candidates present?, search
+# complete?) pair MEANS to a user.  The 2x2 has exactly four user-facing outcomes, and the standard forbids the
+# bare phrase "no route found" without the receipt state -- so every PUBLIC CLI renderer (the recompile + decompile
+# --json/human views via ``CompilationResponse.search_space_status``, and the compile/synthesize Dossier) routes its
+# outcome wording through the ONE function below, and the four labels read UNIFORMLY across those surfaces
+# (SRCH-NO-01).  The load-bearing distinction is empty-COMPLETE (a real no-route) vs empty-INCOMPLETE (absence
+# observed, nothing proven) -- an incomplete empty search must NEVER be laundered into a certified no-route.
+NO_ROUTE_IN_DECLARED_SPACE = "NO_ROUTE_IN_DECLARED_SPACE"      # no candidates, search COMPLETE
+INCOMPLETE_NO_ROUTE_OBSERVED = "INCOMPLETE_NO_ROUTE_OBSERVED"  # no candidates, search INCOMPLETE (absence != evidence)
+COMPLETE_CANDIDATE_SET = "COMPLETE_CANDIDATE_SET"              # candidate(s) present, search COMPLETE
+PARTIAL_CANDIDATE_SET = "PARTIAL_CANDIDATE_SET"                # candidate(s) present, search INCOMPLETE
+
+STANDARD_8_3_LABELS = (
+    NO_ROUTE_IN_DECLARED_SPACE,
+    INCOMPLETE_NO_ROUTE_OBSERVED,
+    COMPLETE_CANDIDATE_SET,
+    PARTIAL_CANDIDATE_SET,
+)
+
+
+def section_8_3_label(complete_within_bounds: bool, candidate_count: int) -> str:
+    """The one section-8.3 user-facing label for a ``(complete_within_bounds, candidate_count)`` pair.
+
+    The standard's 2x2 (section 8.3): an EMPTY search that was COMPLETE is a real
+    ``NO_ROUTE_IN_DECLARED_SPACE``; an EMPTY search that was INCOMPLETE only OBSERVED no route and proved nothing
+    (``INCOMPLETE_NO_ROUTE_OBSERVED`` -- absence is not evidence); a non-empty COMPLETE search is a
+    ``COMPLETE_CANDIDATE_SET``; a non-empty INCOMPLETE one is a ``PARTIAL_CANDIDATE_SET``.  Every renderer routes
+    through this so the incomplete-empty cell is never collapsed into (nor laundered as) the complete-empty
+    no-route cell.  ``candidate_count`` is a count, so a negative value is a caller bug, not a fifth outcome.
+    """
+    if candidate_count < 0:
+        raise ValueError("candidate_count cannot be negative")
+    if candidate_count == 0:
+        return NO_ROUTE_IN_DECLARED_SPACE if complete_within_bounds else INCOMPLETE_NO_ROUTE_OBSERVED
+    return COMPLETE_CANDIDATE_SET if complete_within_bounds else PARTIAL_CANDIDATE_SET
+
+
+# The ONE human note per section-8.3 label, shared by every renderer so the wording cannot drift between the
+# recompile, decompile, and compile surfaces (SRCH-NO-01).  Keyed by the label so a caller writes
+# ``f"{label}: {SECTION_8_3_NOTE[label]}"`` and the four outcomes always read identically.
+SECTION_8_3_NOTE = {
+    NO_ROUTE_IN_DECLARED_SPACE: (
+        "no route within the declared bounded search space; the search was COMPLETE, so this is a real absence "
+        "in the current grammar/bounds -- not a claim about chemistry outside them"
+    ),
+    INCOMPLETE_NO_ROUTE_OBSERVED: (
+        "no route was OBSERVED, but the search was INCOMPLETE -- absence is not evidence; raise the search "
+        "budget/depth bounds or widen the inventory before concluding no route exists"
+    ),
+    COMPLETE_CANDIDATE_SET: "candidate route(s) found; the search was COMPLETE within the declared bounds",
+    PARTIAL_CANDIDATE_SET: (
+        "candidate route(s) found, but the search was INCOMPLETE -- more may exist beyond the declared bounds; "
+        "raise the search budget/depth bounds to search further"
+    ),
+}
 
 
 # The exact section 8.2 names PARTIAL_MULTIPLE_LIMITS can resolve to via primary_standard_status -- derived from

@@ -27,6 +27,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..contracts import Digestible
+
 #: The numeric affordability axes, ALL minimized (lower is better/cheaper/easier).  Kept as a tuple so `dominates`
 #: iterates exactly the section-10.4 axes and a new axis is added in one place.
 _AXES: tuple[str, ...] = (
@@ -194,3 +196,37 @@ def basket_cost_vector(commodity_molecules: "list", *, hard_blockers: tuple[str,
         currency=currency if cash is not None else "",
         unit=unit if cash is not None else "",
     )
+
+
+# -- the route-level frontier entry (COST-VEC-01 wiring shape) -----------------------------------------------------
+
+AFFORDABILITY_FRONTIER_ENTRY_SCHEMA = "smartchem.experiment/affordability-frontier-entry-v1alpha1"
+
+
+@dataclass(frozen=True)
+class AffordabilityFrontierEntry(Digestible):
+    """One route's place on the section-10.4 affordability frontier: its route identity + its basket CostVector.
+
+    ``route_digest`` is byte-identical to the matching ``RankedRouteSummary.route_digest``, so a frontier entry
+    links back to the ranked route it prices.  ``cost_vector`` is the ``basket_cost_vector`` of that route's
+    commodity leaves.  It is a :class:`~smartchem.contracts.Digestible` -- its digest folds in the CostVector via
+    ``canonical_payload`` (which recurses into the nested dataclass), so a serialized/round-tripped frontier is
+    tamper-checkable.  The entry exposes ``.cost_vector`` exactly as :func:`pareto_frontier` requires, so a tuple of
+    entries is a valid frontier input directly.
+    """
+
+    schema_version: str
+    route_digest: str
+    cost_vector: CostVector
+
+    def __post_init__(self) -> None:
+        if self.schema_version != AFFORDABILITY_FRONTIER_ENTRY_SCHEMA:
+            raise ValueError(f"schema_version must be exactly {AFFORDABILITY_FRONTIER_ENTRY_SCHEMA!r}")
+        if not isinstance(self.route_digest, str) or not self.route_digest:
+            raise ValueError("route_digest must be a non-empty string")
+        if type(self.cost_vector) is not CostVector:
+            raise TypeError("cost_vector must be a CostVector")
+
+    @classmethod
+    def of(cls, route_digest: str, cost_vector: CostVector) -> "AffordabilityFrontierEntry":
+        return cls(AFFORDABILITY_FRONTIER_ENTRY_SCHEMA, route_digest, cost_vector)

@@ -32,6 +32,7 @@ from ..category import Molecule
 from ..contracts import canonical_digest
 from ..data.reagents import CommodityReagent, commodity_for, commodity_inventory
 from ..decompiler import Formula
+from ..search import PARTIAL_CANDIDATE_SET, SECTION_8_3_NOTE, section_8_3_label
 from ..structure import resolve_structure
 from .classify import Grade, UnifiedVerdict, classify_route
 from .drafter import ConstraintBox, RouteDossier, RouteFit, draft_route_dossier, rank_routes
@@ -108,11 +109,19 @@ class CompiledSynthesis:
 
         if self.search_receipt is not None:
             lines.append(self.search_receipt.render())
-            if not self.search_receipt.complete_within_bounds and self.search_receipt.results_returned:
-                lines.append(
-                    "PARTIAL SEARCH: ranking applies only to returned candidates; the selected route is not "
-                    "proven best within the declared bounds."
+            # SRCH-NO-01: when candidate(s) were returned, emit the section-8.3 label for the candidate cell so this
+            # renderer covers ALL FOUR outcomes uniformly (COMPLETE_CANDIDATE_SET / PARTIAL_CANDIDATE_SET here; the
+            # two empty cells are labelled in the no-route branch below).  The ranking caveat rides only the PARTIAL
+            # cell, where the returned set is not proven exhaustive.
+            if self.search_receipt.results_returned:
+                label = section_8_3_label(
+                    self.search_receipt.complete_within_bounds, self.search_receipt.results_returned
                 )
+                note = SECTION_8_3_NOTE[label]
+                if label == PARTIAL_CANDIDATE_SET:
+                    note += (". Ranking applies only to returned candidates; the selected route is not proven best "
+                             "within the declared bounds.")
+                lines.append(f"[{label}] {note}")
 
         if self.already_in_active_inventory:
             lines.append(
@@ -143,15 +152,13 @@ class CompiledSynthesis:
             return "\n".join(lines)
 
         if self.best_draft is None:
-            if self.search_receipt is not None and not self.search_receipt.complete_within_bounds:
-                lines.append(
-                    "NO ROUTE RETURNED; SEARCH WAS PARTIAL. Absence is not evidence that no route exists."
-                )
-            else:
-                lines.append(
-                    "NO ROUTE FOUND WITHIN THE DECLARED BOUNDED SEARCH SPACE. This is not a claim about all "
-                    "chemistry outside the stated rewrite grammar and bounds."
-                )
+            # SRCH-NO-01: route the no-route wording through the ONE section-8.3 label so the compile Dossier reads
+            # the same four-outcome vocabulary as recompile/decompile.  No route was returned, so candidate_count=0;
+            # the receipt's completeness picks NO_ROUTE_IN_DECLARED_SPACE (complete) vs INCOMPLETE_NO_ROUTE_OBSERVED
+            # (incomplete).  A missing receipt is treated as complete, as the prior wording did.
+            complete = self.search_receipt is None or self.search_receipt.complete_within_bounds
+            label = section_8_3_label(complete, 0)
+            lines.append(f"[{label}] {SECTION_8_3_NOTE[label]}.")
             for note in self.ledger:
                 lines.append(f"  - {note}")
             return "\n".join(lines)

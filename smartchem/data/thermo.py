@@ -145,26 +145,37 @@ class ThermoTable(Digestible):
 #: -33 kJ and its ~465 K sign-flip).  Tiny by design; injectable per call for any chemical, NOT a whitelist.
 _CODATA = "CODATA Key Values for Thermodynamics (Cox, Wagman & Medvedev 1989)"
 _NIST = "NIST Chemistry WebBook / CRC Handbook 97th ed."
+#: THERMO-UNC-01-widen: the past-CODATA source for CH4 (NOT a CODATA key species).  NIST Chemistry WebBook reproduces
+#: the Gurvich/JANAF tabulation with a stated ± on ΔfH°; cross-checked (a second bearing) against JANAF (Chase 1998,
+#: −74.87 kJ/mol) which agrees within the stated ±0.3.  Fetched + cross-checked 2026-09-04, never fabricated (§10.4).
+_GURVICH = "NIST WebBook / Gurvich, Veyts & Alcock 1991 (Manion 2002); cross-checked vs JANAF (Chase 1998)"
 
-# THERMO-UNC-01: each ± is the source's stated uncertainty, attached ONLY where it shares the VALUE's source, so no
-# record mixes provenance -- the CODATA-sourced values carry their CODATA ± (see experiments.thermo_codata_seed,
-# the frozen cited seed these mirror), the reference-state ΔfH° carries the convention-zero (0 by definition), and a
-# NIST-sourced value with no sourced ± (N2's S°, ammonia, methane) keeps an HONEST None rather than a borrowed ±.
+# THERMO-UNC-01(-widen): each ± is the source's stated uncertainty, attached ONLY where it shares the VALUE's source,
+# so no record mixes provenance.  The CODATA-sourced values carry their CODATA ± (see experiments.thermo_codata_seed,
+# the frozen cited seed these mirror -- N2's S° ±, ammonia's ΔfH°+S° ± are now WIRED IN from it, closing the gap the
+# frozen seed's docstring named as "the next brick").  The reference-state ΔfH° carries the convention-zero (0 by
+# definition).  CH4 is NOT a CODATA key species: its ΔfH° ± is the past-CODATA Gurvich/JANAF widen (_GURVICH,
+# cross-checked); its S° has NO single clean stated ± (the statistical 186.25 vs calorimetric 188.66 J/mol/K sources
+# disagree), so it keeps an HONEST None there rather than a fabricated ± -- a σ-less axis that keeps σ(ΔG) UNKNOWN for
+# any reaction using it, exactly as the honesty rule requires.  All ± are ``compare=False`` metadata: adding them
+# moves no ThermoRef fingerprint and no golden; the VALUES are unchanged (each is its cited value to stored precision).
 SEED_THERMO_REFS: tuple[ThermoRef, ...] = (
     ThermoRef("H2", "hydrogen", 0.0, 130.68, "gas", f"element reference state; S° {_CODATA}",
               uncertainty_dhf_kj=0.0, uncertainty_s_j_per_mol_k=0.003),
     ThermoRef("O2", "oxygen", 0.0, 205.15, "gas", f"element reference state; S° {_CODATA}",
               uncertainty_dhf_kj=0.0, uncertainty_s_j_per_mol_k=0.005),
-    ThermoRef("N2", "nitrogen", 0.0, 191.61, "gas", f"element reference state; S° {_NIST}",
-              uncertainty_dhf_kj=0.0),  # ΔfH° = 0 by convention; N2's S° here is NIST-cited with no stated ±
+    ThermoRef("N2", "nitrogen", 0.0, 191.61, "gas", f"element reference state; S° {_CODATA}",
+              uncertainty_dhf_kj=0.0, uncertainty_s_j_per_mol_k=0.004),  # ΔfH° = 0 by convention; S° ± now CODATA-wired
     ThermoRef("H2O", "water", -285.83, 69.95, "liquid", f"ΔfH° and S° (liquid, 298.15 K) {_CODATA}",
               uncertainty_dhf_kj=0.040, uncertainty_s_j_per_mol_k=0.03),
-    ThermoRef("H3N", "ammonia", -45.9, 192.8, "gas", f"ΔfH° and S° (gas, 298.15 K) {_NIST}"),
+    ThermoRef("H3N", "ammonia", -45.9, 192.8, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}",
+              uncertainty_dhf_kj=0.35, uncertainty_s_j_per_mol_k=0.05),  # a CODATA key value; ± now wired from the frozen seed
     ThermoRef("CO2", "carbon dioxide", -393.51, 213.79, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}",
               uncertainty_dhf_kj=0.13, uncertainty_s_j_per_mol_k=0.010),
     ThermoRef("CO", "carbon monoxide", -110.53, 197.66, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}",
               uncertainty_dhf_kj=0.17, uncertainty_s_j_per_mol_k=0.004),
-    ThermoRef("CH4", "methane", -74.6, 186.3, "gas", f"ΔfH° and S° (gas, 298.15 K) {_NIST}"),
+    ThermoRef("CH4", "methane", -74.6, 186.3, "gas", f"ΔfH° {_GURVICH}, ±0.3; S° {_NIST} (no single stated ±)",
+              uncertainty_dhf_kj=0.3),  # THERMO-UNC-01-widen: past-CODATA ΔfH° ±; S° ± honestly None
 )
 
 #: A convenience default seed; extended per call for any other chemical, NOT a whitelist.

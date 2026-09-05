@@ -27,9 +27,14 @@ def water_synthesis():   # 2 H2 + O2 -> 2 H2O(l): every species is sourced WITH 
     return ExperimentStep.assembling(H2O, (H2, H2, O2), (H2O, H2O))
 
 
-def haber():             # N2 + 3 H2 -> 2 NH3: N2's S° and NH3 have NO sourced ±
+def haber():             # N2 + 3 H2 -> 2 NH3: now FULLY sourced -- N2's S° ± and NH3's ± are CODATA-wired (widen)
     N2, NH3 = parse_smiles("N#N"), parse_smiles("N")
     return ExperimentStep.assembling(NH3, (N2, H2, H2, H2), (NH3, NH3))
+
+
+def methane_combustion():   # CH4 + 2 O2 -> CO2 + 2 H2O: CH4's ΔfH° has a (Gurvich/JANAF) ± but its S° has NO stated ±
+    CH4, CO2 = parse_smiles("C"), parse_smiles("O=C=O")
+    return ExperimentStep.assembling(CO2, (CH4, O2, O2), (CO2, H2O, H2O))
 
 
 def test_the_group_additivity_sigma_is_now_threaded_not_dropped():
@@ -59,12 +64,29 @@ def test_sigma_delta_g_is_the_exact_quadrature_of_the_sourced_uncertainties():
 
 
 def test_a_species_with_no_sourced_sigma_makes_sigma_delta_g_unknown():
-    """The honest mixed edge: Haber uses N2 (S° has no sourced ±) and NH3 (no ± at all), so σ(ΔG) is UNKNOWN -- a
-    partial sum over only the σ-bearing species would understate it. ΔG itself is still known (the value is not
-    gated on the uncertainty)."""
-    f = feasibility_of_step(haber())
+    """The honest mixed edge: methane combustion uses CH4, whose S° has NO single stated ± (the statistical vs
+    calorimetric sources disagree), so even though its ΔfH° ± IS sourced (Gurvich/JANAF), σ(ΔS) is UNKNOWN and thus
+    σ(ΔG) is UNKNOWN -- a partial sum over only the σ-bearing axes would understate it. ΔG itself is still known.
+    (After the THERMO-UNC-01 widen this is CH4's job -- Haber is now fully sourced; see the test below.)"""
+    f = feasibility_of_step(methane_combustion())
     assert f.delta_g_kj is not None       # ΔG computed
     assert f.sigma_delta_g_kj is None     # but σ(ΔG) honestly UNKNOWN, not a fabricated/partial number
+    assert f.sigma_delta_g_is_lower_bound is False
+
+
+def test_the_widened_seed_makes_haber_sigma_delta_g_informative():
+    """THERMO-UNC-01-widen: wiring N2's S° ± and NH3's ΔfH°+S° ± from the frozen CODATA seed turns Haber from the old
+    σ(ΔG)=UNKNOWN case into an INFORMATIVE one. σ(ΔG) is the exact hand quadrature; NH3's ΔfH° ±0.35 (×2) dominates.
+    All inputs are independent CODATA/reference values, so it is NOT a lower bound. ΔG itself is unchanged (the values
+    were untouched -- only the ± were added, compare=False)."""
+    f = feasibility_of_step(haber())
+    assert f.delta_g_kj is not None and f.sigma_delta_g_kj is not None
+    t = f.temperature_k
+    # net ν: N2=+1 (σ_ΔfH 0.0, σ_S 0.004), H2=+3 (0.0, 0.003), NH3=-2 (0.35, 0.05)
+    sdh = math.sqrt((1 * 0.0) ** 2 + (3 * 0.0) ** 2 + (2 * 0.35) ** 2)
+    sds = math.sqrt((1 * 0.004) ** 2 + (3 * 0.003) ** 2 + (2 * 0.05) ** 2)
+    expected = math.sqrt(sdh ** 2 + (t * sds / 1000.0) ** 2)
+    assert abs(f.sigma_delta_g_kj - expected) < 1e-9
     assert f.sigma_delta_g_is_lower_bound is False
 
 
@@ -123,5 +145,5 @@ def test_sigma_log10_k_propagates_linearly_from_sigma_delta_g():
     assert abs(e.sigma_log10_k - expected) < 1e-12
     assert e.sigma_log10_k_is_lower_bound is False
 
-    haber_eq = equilibrium_of_step(haber())
-    assert haber_eq.sigma_log10_k is None  # σ(ΔG) UNKNOWN -> σ(log10 K) UNKNOWN
+    methane_eq = equilibrium_of_step(methane_combustion())  # CH4's S° has no ± -> σ(ΔG) UNKNOWN
+    assert methane_eq.sigma_log10_k is None  # σ(ΔG) UNKNOWN -> σ(log10 K) UNKNOWN

@@ -29,12 +29,24 @@ class TestSeedCarriesSourcedUncertainties:
             r = _ref(f, n)
             assert r.dhf_kj_per_mol == 0.0 and r.uncertainty_dhf_kj == 0.0
 
-    def test_a_nist_value_without_a_sourced_pm_is_honest_none(self):
-        # ammonia and methane are NIST-sourced here with no stated ± -> None (honest absence), NOT a borrowed CODATA
-        # ± (no provenance mixing) and NOT a fabricated 0.0.
-        assert _ref("H3N", "ammonia").uncertainty_dhf_kj is None
-        assert _ref("CH4", "methane").uncertainty_dhf_kj is None
-        assert _ref("N2", "nitrogen").uncertainty_s_j_per_mol_k is None  # N2 S° is NIST-cited, no ± stated
+    def test_the_widen_wires_the_codata_uncertainties_previously_missing(self):
+        # THERMO-UNC-01-widen: N2's S° ± and ammonia's ΔfH°+S° ± are now wired in from the frozen CODATA seed (they
+        # ARE CODATA key values -- the earlier NIST citation understated them).  This is the gap the frozen seed's
+        # docstring named as the "next brick", now closed.
+        assert _ref("N2", "nitrogen").uncertainty_s_j_per_mol_k == 0.004
+        assert _ref("H3N", "ammonia").uncertainty_dhf_kj == 0.35
+        assert _ref("H3N", "ammonia").uncertainty_s_j_per_mol_k == 0.05
+
+    def test_the_widen_carries_the_past_codata_gurvich_uncertainty_for_methane(self):
+        # THERMO-UNC-01-widen past the CODATA key set: CH4 is NOT a CODATA key species; its ΔfH° ± is the Gurvich/JANAF
+        # value (via the NIST WebBook, cross-checked against JANAF Chase 1998), never fabricated (§10.4).
+        assert _ref("CH4", "methane").uncertainty_dhf_kj == 0.3
+
+    def test_methane_entropy_uncertainty_stays_an_honest_none(self):
+        # the ONE remaining honest absence: CH4's S° has no single stated ± (the statistical 186.25 vs calorimetric
+        # 188.66 J/mol/K sources disagree), so it is None -- NOT a fabricated ± -- keeping σ(ΔG) UNKNOWN for any
+        # reaction that uses methane (the honesty property, now carried by CH4 rather than by N2/NH3).
+        assert _ref("CH4", "methane").uncertainty_s_j_per_mol_k is None
 
 
 class TestNonVacuousGuard:
@@ -80,3 +92,40 @@ class TestConsumerReachesIt:
         ref = resolve_thermo(water)
         assert ref is not None
         assert ref.uncertainty_dhf_kj == 0.040
+
+
+class TestLiveSeedMirrorsFrozenCodata:
+    """The live seed's wired ± must AGREE, value-for-value, with the frozen, dated, cross-checked CODATA source
+    (experiments.thermo_codata_seed). This ties the live σ to the frozen reference so a future edit that drifts a live
+    ± away from the source it cites reddens here -- the σ can never silently diverge from its provenance."""
+
+    # (live formula, phase) -> frozen (formula, phase); only the CODATA key species (CH4 is the past-CODATA Gurvich
+    # widen, deliberately excluded -- it is not in the frozen CODATA set).  Ammonia's live formula "H3N" maps to the
+    # frozen "NH3"; the reference-state elements map identically.
+    _LIVE_TO_FROZEN = {
+        ("H2O", "liquid"): ("H2O", "liquid"),
+        ("CO", "gas"): ("CO", "gas"),
+        ("CO2", "gas"): ("CO2", "gas"),
+        ("H3N", "gas"): ("NH3", "gas"),
+        ("O2", "gas"): ("O2", "gas"),
+        ("H2", "gas"): ("H2", "gas"),
+        ("N2", "gas"): ("N2", "gas"),
+    }
+
+    def test_every_wired_codata_sigma_matches_the_frozen_source(self):
+        from experiments.thermo_codata_seed import CODATA_KEY_VALUES
+        frozen = {(r.formula, r.phase): r for r in CODATA_KEY_VALUES}
+        checked = 0
+        for (live_f, live_ph), frozen_key in self._LIVE_TO_FROZEN.items():
+            live = _ref(live_f, next(r.name for r in DEFAULT_THERMO.records
+                                     if r.formula == live_f and r.phase == live_ph))
+            fr = frozen[frozen_key]
+            assert live.uncertainty_dhf_kj == fr.dfh_unc_kj, f"{live_f}: ΔfH° ± drifted from frozen CODATA"
+            assert live.uncertainty_s_j_per_mol_k == fr.s_unc_j_per_k, f"{live_f}: S° ± drifted from frozen CODATA"
+            # also pin the VALUES to the frozen source (to stored precision) -- a ± is only honest if it sits on the
+            # value it was measured for.  This catches a future value drift that leaves the ± intact (the provenance
+            # mismatch the standing lesson warns of); the tolerance covers the live seed's 1-2 dp rounding of CODATA.
+            assert abs(live.dhf_kj_per_mol - fr.dfh_kj) < 0.05, f"{live_f}: ΔfH° value drifted from frozen CODATA"
+            assert abs(live.s_j_per_mol_k - fr.s_j_per_k) < 0.05, f"{live_f}: S° value drifted from frozen CODATA"
+            checked += 1
+        assert checked == 7  # non-vacuous: all seven CODATA species were actually compared

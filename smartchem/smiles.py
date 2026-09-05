@@ -54,6 +54,7 @@ stated resonance boundary, not a silent one). A giant PAH beyond the enumeration
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 from .atoms import PT
 from .category import Bond, Molecule
@@ -65,6 +66,8 @@ __all__ = [
     "parse_smiles",
     "parse_smiles_features",
     "isotope_refined_key",
+    "resonance_canonical",
+    "resonance_identity",
 ]
 
 
@@ -297,6 +300,17 @@ def _parse_skeleton(
 _MAX_AROMATIC_CARBONS = 30
 _MAX_KEKULE_MATCHINGS = 5000
 
+# CANON-KEKULE-01 identity path (resonance_canonical): ``_ident`` is the search HOT PATH, and each Kekulé placement
+# costs a full canonicalization, so a highly-conjugated fragment could grind (a submittable 122-atom oligophenylene
+# enumerated ~4000 placements ~= 18 s -- the evil-morty DoS fold).  Two O(1) guards keep ``_ident`` bounded: skip
+# resonance for a molecule over ``_RESONANCE_MAX_HEAVY`` heavy atoms, and cap the placement enumeration at
+# ``_RESONANCE_MAX_MATCHINGS``.  Above either, the fragment falls back to the plain literal-bond-order identity (no
+# worse than pre-fix -- it just won't unify across Kekulé spellings, a non-issue for a system this large under the
+# current bounded targets).  Real drug-like targets (a handful of small aromatic rings, a few dozen placements) are
+# comfortably under both.  These are DISTINCT from the parser's 5000 cap, which stays unchanged.
+_RESONANCE_MAX_HEAVY = 64
+_RESONANCE_MAX_MATCHINGS = 128
+
 
 def _aromatic_matchings(
     atoms: list[_Atom], bonds: list[list[int]]
@@ -428,7 +442,7 @@ def _fill_hydrogens(atoms: list[_Atom], bonds: list[list[int]]) -> tuple[list[st
 
 
 def _min_constitution_placement(
-    atoms: list[_Atom], bonds: list[list[int]], charge: int
+    atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS
 ) -> tuple[int, ...]:
     """The bond-order assignment that minimises the constitution digest over EVERY multiple-bond placement
     consistent with the fixed sigma-skeleton and per-atom pi-demand -- resonance-canonical for an EXPLICIT
@@ -466,9 +480,9 @@ def _min_constitution_placement(
 
     def _consider() -> None:
         count[0] += 1
-        if count[0] > _MAX_KEKULE_MATCHINGS:
+        if count[0] > max_matchings:
             raise SmilesError(
-                f"structure has more than {_MAX_KEKULE_MATCHINGS} resonance placements; a resonance-canonical "
+                f"structure has more than {max_matchings} resonance placements; a resonance-canonical "
                 "identity for it is out of scope (give an aromatic-lowercase SMILES for the aromatic ring)"
             )
         for k in range(len(bonds)):
@@ -544,6 +558,78 @@ def _min_constitution_placement(
     if best[0] is None:  # pragma: no cover -- the drawn structure is always a valid placement
         raise SmilesError("could not assign a valid multiple-bond placement to the structure")
     return best[0]
+
+
+@lru_cache(maxsize=8192)
+def resonance_canonical(molecule: Molecule) -> Molecule:
+    """The resonance-canonical representative of ``molecule`` (CANON-KEKULE-01, generalised off the SMILES parser).
+
+    ``parse_smiles`` already resonance-canonicalises everything it parses (via :func:`_min_constitution_placement` /
+    :func:`_aromatic_matchings`), so two SMILES spellings of one molecule share an identity.  A ``Molecule`` built by
+    FRAGMENT SURGERY -- every scission/redox/heterolytic producer in ``structure_descent`` slices an existing graph and
+    NEVER re-parses -- skips that path, so an explicit-Kekulé fragment (e.g. an ORTHO-disubstituted salicylate cut out
+    of aspirin) can carry a different ring bond-order pattern than the SAME species parsed from SMILES, and
+    ``Molecule.canonical()`` -- which has no resonance notion, only literal bond orders -- then calls them distinct.
+    That is the aspirin NO_ROUTE bug: a real disconnection is emitted but its fragment fails to match its registered
+    stock.  This applies the identical minimal-constitution placement to an arbitrary ``Molecule``, so a fragment
+    unifies with its parsed form.
+
+    It is SOUND (never over-unifies): the placement fixes each atom's pi-demand ``need[a] = sum(order-1)`` from the
+    drawn bonds and only re-distributes multiple-bond orders that satisfy the SAME per-atom demand -- a genuine
+    resonance form of the SAME constitution.  Two molecules with different constitution or different pi-demand (a real
+    double-bond-position tautomer: 1-butene vs 2-butene) keep DISTINCT identities.  It is idempotent on an
+    already-parsed (already resonance-canonical) molecule, so wiring it into an identity comparison changes ONLY the
+    fragments that were previously mis-split -- no parsed molecule's digest moves.  A molecule whose Kekulé placements
+    exceed the enumeration bound raises (never truncates to a non-deterministic minimum), exactly as the parser does.
+    """
+    atoms, bonds = molecule.atoms, molecule.bonds
+    if len(atoms) <= 1:
+        return molecule.canonical()
+    heavy = [i for i, s in enumerate(atoms) if s != "H"]
+    if not heavy or len(heavy) > _RESONANCE_MAX_HEAVY:
+        # O(1) DoS guard: a molecule too large to canonicalise per-placement cheaply keeps its literal identity
+        # (no worse than pre-fix -- it simply won't unify across Kekulé spellings; see the cap note above).
+        return molecule.canonical()
+    old_to_new = {old: new for new, old in enumerate(heavy)}
+    h_count = [0] * len(heavy)
+    heavy_bonds: list[list[int]] = []
+    for b in bonds:
+        i_is_h, j_is_h = atoms[b.i] == "H", atoms[b.j] == "H"
+        if i_is_h and j_is_h:
+            continue  # an H2 fragment carries no pi-system; the heavy walk ignores it
+        if i_is_h or j_is_h:
+            h_count[old_to_new[b.j if i_is_h else b.i]] += 1  # tally each heavy atom's explicit H neighbours
+        else:
+            heavy_bonds.append([old_to_new[b.i], old_to_new[b.j], b.order])
+    # Rebuild the heavy skeleton as parser-shaped atoms whose H is pinned EXACTLY (never implicitly refilled), so the
+    # placement re-materialises the identical hydrogen envelope and the digest it minimises is this molecule's own.
+    heavy_atoms = [_Atom(atoms[old], False, 0, h_count[new]) for new, old in enumerate(heavy)]
+    orders = _min_constitution_placement(heavy_atoms, heavy_bonds, molecule.charge,
+                                         max_matchings=_RESONANCE_MAX_MATCHINGS)
+    for k in range(len(heavy_bonds)):
+        heavy_bonds[k][2] = orders[k]
+    out_atoms, out_bonds = _fill_hydrogens(heavy_atoms, heavy_bonds)
+    return Molecule(tuple(out_atoms), frozenset(out_bonds), molecule.charge, molecule.state).canonical()
+
+
+def resonance_identity(molecule: Molecule) -> str:
+    """The resonance-canonical identity string shared by route search (``_ident``) and the structural IR
+    (``_structure_ident``), so both key on the SAME identity a fragment and its parsed form now agree on.
+
+    Falls back to the literal canonical digest when the canonicaliser refuses the graph (``NotImplementedError`` ->
+    the ``asgiven:`` sentinel, unchanged) or when the resonance enumeration is out of scope for a huge fused system
+    (``SmilesError`` -> the plain ``canonical()`` digest); in that last case the fragment simply won't unify across
+    Kekulé spellings, which is exactly the pre-fix behaviour, never worse.
+    """
+    try:
+        return canonical_digest(resonance_canonical(molecule))
+    except NotImplementedError:
+        return "asgiven:" + canonical_digest(molecule)
+    except SmilesError:
+        try:
+            return canonical_digest(molecule.canonical())
+        except NotImplementedError:
+            return "asgiven:" + canonical_digest(molecule)
 
 
 def _build_molecule(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> Molecule:

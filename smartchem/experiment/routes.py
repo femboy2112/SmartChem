@@ -425,10 +425,11 @@ class DAGSearchResult(Digestible):
 
 
 def _ident(m: Molecule) -> str:
-    try:
-        return canonical_digest(m.canonical())
-    except NotImplementedError:
-        return "asgiven:" + canonical_digest(m)
+    # CANON-KEKULE-01 (item 3): resonance-canonical identity, so a scission FRAGMENT unifies with the SAME species
+    # parsed from SMILES (aspirin's disconnection was emitted but its ortho-salicylate fragment failed to match its
+    # registered stock on a Kekulé-pattern difference).  Byte-identical to _structure_ident via resonance_identity.
+    from ..smiles import resonance_identity
+    return resonance_identity(m)
 
 
 def _conditions_for(capped) -> ConditionEnvelope:

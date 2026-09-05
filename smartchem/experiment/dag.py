@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from ..process_constraints import ProcessBounds, ProcessFit
 
 from ..category import Molecule
-from ..contracts import Digestible, canonical_digest
+from ..contracts import Digestible
 from ..data.stability import DEFAULT_STABILITY, StabilityTable
 from ..data.thermo import DEFAULT_THERMO, ThermoTable
 from .bucket import Bucket, Quantity
@@ -74,10 +74,10 @@ class DAGError(ValueError):
 
 
 def _ident(m: Molecule) -> str:
-    try:
-        return canonical_digest(m.canonical())
-    except NotImplementedError:
-        return "asgiven:" + canonical_digest(m)
+    # CANON-KEKULE-01 (item 3): resonance-canonical, shared with routes/step/compilation_ir via resonance_identity,
+    # so a convergent DAG keys intermediates on the SAME identity the search matches on.
+    from ..smiles import resonance_identity
+    return resonance_identity(m)
 
 
 def _producers(steps: tuple[ExperimentStep, ...]) -> dict[str, int]:

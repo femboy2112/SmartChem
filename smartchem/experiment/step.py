@@ -33,7 +33,7 @@ from dataclasses import dataclass
 
 from ..category import Config, ConservationError, Molecule, Reaction
 from ..conditions import ConditionEnvelope
-from ..contracts import Digestible, canonical_digest
+from ..contracts import Digestible
 
 __all__ = [
     "STEP_SCHEMA",
@@ -52,11 +52,14 @@ class StepError(ValueError):
 
 
 def _ident(molecule: Molecule) -> str:
-    """A presentation-invariant identity for a molecule (``asgiven:`` fallback for symmetric rings)."""
-    try:
-        return canonical_digest(molecule.canonical())
-    except NotImplementedError:
-        return "asgiven:" + canonical_digest(molecule)
+    """A presentation-invariant identity for a molecule (``asgiven:`` fallback for symmetric rings).
+
+    CANON-KEKULE-01 (item 3): resonance-canonical, shared with routes/dag/compilation_ir via
+    :func:`~smartchem.smiles.resonance_identity`, so conservation and stoichiometry key on the SAME identity the
+    search matches on -- and two Kekulé forms of one intermediate cancel across a reaction instead of spuriously
+    imbalancing it."""
+    from ..smiles import resonance_identity
+    return resonance_identity(molecule)
 
 
 def _multiset_subset(sub: tuple[Molecule, ...], whole: tuple[Molecule, ...]) -> bool:

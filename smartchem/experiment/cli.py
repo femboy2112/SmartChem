@@ -111,6 +111,7 @@ def _synthesize_request(args):
     this build in the same 5/2 handler as the render, so such an input is a clean section-14.4 exit 2, never a
     traceback or a laundered exit-70 (red-team fold).
     """
+    from ..cli import _process_bounds_from_args
     from ..identity_parse import EXPLICIT_CLI_FORMS, resolve_cli_target
     from ..service import NETWORK_PROVIDER, OFFLINE_PROVIDER, build_recompile_request
     # the section-14.2 identity surface, via the ONE shared resolver (same as recompile/compile): the positional
@@ -134,7 +135,9 @@ def _synthesize_request(args):
         max_routes=args.max_routes,
         cut_budget=args.cut_budget,
         max_temperature_k=args.max_temp,
+        min_pressure_atm=args.min_pressure,
         max_pressure_atm=args.max_pressure,
+        process=_process_bounds_from_args(args),
         # the reality-respecting provider lever: OFFLINE (reproducible) unless --network opts into the download-and-go
         # fetch; --offline stamps the default value EXPLICIT; neither -> None -> the builder's DEFAULT-origin offline.
         evidence_provider_selection=(
@@ -144,6 +147,7 @@ def _synthesize_request(args):
 
 
 def main(argv: list[str] | None = None) -> int:
+    from ..cli import _add_process_flags
     from ..identity_parse import EXPLICIT_CLI_FORMS
     p = argparse.ArgumentParser(prog="python -m smartchem.experiment", description=__doc__)
     p.add_argument("target", nargs="?", default=None,
@@ -168,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="the bench's maximum temperature in kelvin")
     p.add_argument("--max-pressure", type=_positive_float, default=None, metavar="ATM",
                    help="the bench's maximum pressure in atm")
+    p.add_argument("--min-pressure", type=_positive_float, default=None, metavar="ATM",
+                   help="the bench's minimum pressure in atm")
+    _add_process_flags(p)
     p.add_argument("--max-depth", type=_positive_int, default=None, help="retrosynthesis depth (default 3)")
     p.add_argument("--max-routes", type=_positive_int, default=None,
                    help="maximum unique routes returned (default 100)")
@@ -176,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--no-commodities", "--elements", dest="no_commodities", action="store_true",
         help="disable the poor-man's commodity terminals (table salt, vinegar, baking soda, ...), which are ON by "
-             "default like `recompile`; routes then bottom out at pure elements instead of buyable stock",
+             "default like `recompile`; the legacy --elements spelling does not add automatic element terminals",
     )
     # The reality-respecting provider lever (standard 14.1): OFFLINE (reproducible seed + cache) is the DEFAULT for
     # every verb; the "download and go" live fetch is the EXPLICIT --network opt-in.  --offline stamps the default
@@ -322,7 +329,7 @@ def _run(args) -> int:
             cut_budget=request.search_bounds.value("cut_budget"),
             thermo=extended_thermo(),
             losses=losses,
-            box=ConstraintBox.of_bounds(request.constraints.bounds),
+            box=ConstraintBox.of_bounds(request.constraints.bounds, process=request.constraints.process),
             stability_loader=_load_stability,
         )
     except (ScissionError, IdentityUnsupportedError) as exc:
@@ -335,7 +342,8 @@ def _run(args) -> int:
     # unknown tally when routes were ranked against a bench box, DECLARED otherwise; identical to recompile/compile.
     from ..service import _fit_counts, constraint_note
     note = constraint_note(
-        request.constraints.bounds, fit_counts=_fit_counts(compiled.ranked) if compiled.ranked else None
+        request.constraints.bounds, fit_counts=_fit_counts(compiled.ranked) if compiled.ranked else None,
+        process=request.constraints.process,
     )
     if note is not None:
         print(f"  {note}")
@@ -350,9 +358,12 @@ def _run(args) -> int:
         # record -- so this reads as consultation, not attribution of the record_count to all of them (red-team fold).
         print(f"  provider snapshot [{snap.content_digest[:12]}] fetched {snap.fetched_at}; "
               f"consulted {', '.join(snap.provider_ids)}; {snap.record_count} record(s)")
-    # Exit codes mirror recompile/compile: a partial search is exit 4; else routes/target-in-stock is 0, no-route is 3.
+    # Search incompleteness is 4; returned but inadmissible candidates are 5;
+    # target-in-stock or a selected route is 0, and an empty complete search is 3.
     if compiled.search_receipt is not None and not compiled.search_receipt.complete_within_bounds:
         return 4
+    if compiled.ranked and not compiled.found_route:
+        return 5
     return 0 if compiled.found_route else 3
 
 

@@ -1,0 +1,19 @@
+
+==============================================================================
+COVERAGE  (read this before any accuracy number below)
+==============================================================================
+  elements required by reference set : 19
+  elements available                 : 19
+  reference bonds                    : 28 attemptable of 28
+  split evaluated                    : test
+  reference uncertainty fields       : retained as curation/source scales; not folded into MAE
+
+==============================================================================
+oracle                  cond MAE   kcal/mol   max err    n  refused      sec
+------------------------------------------------------------------------------
+heuristic (legacy)        3.4950      80.60     7.207    6        5     0.00
+
+VERDICT
+  heuristic (legacy)     INCOMPLETE COVERAGE (conditional MAE only; no accuracy tier)   [declined 5/11; conditional MAE excludes them]
+
+  chemical accuracy threshold = 0.04336419418486156 eV (1.00 kcal/mol)

@@ -22,6 +22,7 @@ from types import SimpleNamespace
 from .conditions import ConditionEnvelope
 from .contracts import Digestible, EvidenceStatus
 from .decompiler import Formula
+from .process_constraints import Agitation, Attention, ProcessRequirements
 from .provenance import SourceCitation, SourceReview
 
 __all__ = [
@@ -163,10 +164,85 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
             source=SourceCitation(
                 "https://doi.org/10.1021/acs.jchemed.0c01512", SourceReview.ACCEPTED
             ),
+            # PROCESS-FIT-02: the poor-man's whole-process record for this route, SOURCED from an
+            # open-license bench procedure (never fabricated; every value below traces to a quote,
+            # a DERIVED open-vessel constant, or is left UNKNOWN).
+            process=ProcessRequirements(
+                min_elapsed_minutes=84.0,   # SOURCED floor = the 4 timed steps: 4-min charcoal swirl + 10-min acetylation + ~55-min ("almost an hour") ice-bath crystallization + 15-min recrystallization cooling
+                min_active_minutes=14.0,    # SOURCED floor: 4-min charcoal swirl + 10-min acetylation swirl (the two hands-on timed steps)
+                attention=Attention.PERIODIC,     # active swirl, then "allow to sit ... for almost an hour", then filter
+                agitation=Agitation.MANUAL,       # every agitation verb is a hand action ("swirl", "stir with a glass rod")
+                equipment=(
+                    "erlenmeyer flask", "steam bath", "glass rod", "ice bath",
+                    "fluted filter paper", "buchner funnel", "water aspirator",
+                ),
+                workup_included=True,             # crystallize + Buchner vacuum filtration + wash + recrystallize
+                peak_temperature_k=373.15,        # SOURCED: steam bath / "boiling water"
+                max_pressure_atm=1.0,             # DERIVED: open-vessel benchtop (ambient)
+                provenance=(
+                    "whole-process record, SOURCED from LibreTexts 'Synthesis of Acetaminophen (Experiment)' "
+                    "(CC BY-NC-SA 4.0); reaction identity + temperature cross-checked against Kurnianto & "
+                    "Fahrurrozi, J. Rekayasa Proses (Univ. Gadjah Mada, CC BY-SA 4.0). SOURCED: peak 373.15 K "
+                    "(steam bath), MANUAL agitation, PERIODIC attention, workup included. min_elapsed 84 min / "
+                    "min_active 14 min are SOURCED LOWER BOUNDS (timed steps); the whole-step CEILING (incl. "
+                    "untimed drying) is UNKNOWN, so elapsed/active ceilings stay UNKNOWN -- a floor can only "
+                    "exclude, never confirm a fit. max_pressure 1 atm DERIVED (open vessel); min_pressure "
+                    "(aspirator vacuum, unquantified) left UNKNOWN. 'house vacuum line' is a source-accepted "
+                    "equivalent to the water aspirator."
+                ),
+                source=SourceCitation(
+                    "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/"
+                    "Organic_Chemistry_Labs/Experiments/2:__Synthesis_of_Acetaminophen_(Experiment)",
+                    SourceReview.ACCEPTED,
+                ),
+            ),
         ),
         (ReactionDirection.ASSEMBLY,),
         "paracetamol",
         ("4-aminophenol", "acetic anhydride"),
+    ),
+    # Mediated C7H14O2 + H2O -> C5H12O + C2H4O2. Its REVERSE (assembly) is the acid-catalyzed
+    # Fischer esterification: isopentyl alcohol + acetic acid -> isopentyl acetate + water.
+    _sig("C7H14O2", ("H2O",), ("C5H12O", "C2H4O2")): ConditionRecord(
+        ConditionEnvelope(
+            medium="neat; acid-catalyzed (conc. H2SO4); reflux then fractional distillation",
+            status=EvidenceStatus.EXPERIMENTAL,
+            provenance=(
+                "assembly direction: acid-catalyzed Fischer esterification of isopentyl alcohol with "
+                "acetic acid; LibreTexts 'Synthesis of Isopentyl Acetate (Experiment)' (CC BY-NC-SA 4.0)"
+            ),
+            source=SourceCitation(
+                "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/"
+                "Organic_Chemistry_Labs/Experiments/5:_Synthesis_of_Isopentyl_Acetate_(Experiment)",
+                SourceReview.ACCEPTED,
+            ),
+            # PROCESS-FIT-02 whole-process record, SOURCED (open license); single-sourced (see provenance).
+            process=ProcessRequirements(
+                min_elapsed_minutes=60.0,   # SOURCED floor: the quoted 1-hour reflux (untimed workup/distillation on top -> ceiling UNKNOWN)
+                attention=Attention.PERIODIC,     # reflux then leave; return for the sep-funnel extractions and distillation
+                agitation=Agitation.MANUAL,       # sep-funnel extractions are hand-shaken (reflux itself uses boiling stones)
+                equipment=(
+                    "round-bottom flask", "reflux condenser", "heating mantle", "boiling stones",
+                    "separatory funnel", "distillation apparatus", "thermometer",
+                ),
+                workup_included=True,             # sequential extractions + MgSO4 dry + fractional distillation
+                peak_temperature_k=416.15,        # DERIVED from the SOURCED distillation fraction (134-143 C); ~143 C peak
+                min_pressure_atm=1.0, max_pressure_atm=1.0,  # DERIVED: open reflux/distillation at ambient
+                provenance=(
+                    "whole-process record, SOURCED from LibreTexts 'Synthesis of Isopentyl Acetate (Experiment)' "
+                    "(CC BY-NC-SA 4.0). SINGLE-SOURCED within the open literature: the located cross-source "
+                    "(Sci. Rep. 2023, PMC9935880, CC BY 4.0) is a DIFFERENT (solvent-free, seashell-catalyzed) "
+                    "method, so it corroborates reaction identity only, not these conventional bench numbers. "
+                    "SOURCED: MANUAL agitation, PERIODIC attention, workup included. min_elapsed 60 min is the "
+                    "SOURCED 1-hour reflux LOWER BOUND; the whole-step CEILING (untimed workup + distillation) "
+                    "is UNKNOWN, so elapsed ceiling stays UNKNOWN. peak 416.15 K DERIVED from the sourced "
+                    "134-143 C distillation fraction; pressure ambient (open apparatus)."
+                ),
+            ),
+        ),
+        (ReactionDirection.ASSEMBLY,),
+        "isopentyl acetate",
+        ("acetic acid", "isopentyl alcohol"),
     ),
 }
 

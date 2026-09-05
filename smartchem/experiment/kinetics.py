@@ -143,6 +143,18 @@ def _canonical_side(pairs) -> tuple:
     return tuple(sorted((canonical_digest(m.canonical()), int(c)) for m, c in pairs))
 
 
+def _reaction_evidence_key_or_none(step: ExperimentStep) -> ReactionEvidenceKey | None:
+    """A net-reaction key, or no key when every identical species cancels."""
+    species, nu = _coefficient_vector(step)
+    if not nu:
+        return None
+    return ReactionEvidenceKey.from_molecules(
+        ((m, n) for m, n in zip(species, nu) if n > 0),
+        ((m, -n) for m, n in zip(species, nu) if n < 0),
+        context=phase_context(step.envelope.medium),
+    )
+
+
 def reaction_evidence_key(step: ExperimentStep) -> ReactionEvidenceKey:
     """The section-9.1 :class:`~smartchem.evidence_key.ReactionEvidenceKey` of a step's reaction (EVD-KEY-01).
 
@@ -154,13 +166,14 @@ def reaction_evidence_key(step: ExperimentStep) -> ReactionEvidenceKey:
     the section-9.1 ``"phase"`` context (via :func:`~smartchem.evidence_key.phase_context`), so a step declared in
     an explicit phase only resolves a record measured in that phase; a phase-unspecified step is context-free and
     resolves as it always did.
+
+    Identity/spectator-only steps have no net-reaction key and raise ``ValueError``;
+    rate consumers handle that explicit absence before attempting evidence lookup.
     """
-    species, nu = _coefficient_vector(step)
-    return ReactionEvidenceKey.from_molecules(
-        ((m, n) for m, n in zip(species, nu) if n > 0),
-        ((m, -n) for m, n in zip(species, nu) if n < 0),
-        context=phase_context(step.envelope.medium),
-    )
+    key = _reaction_evidence_key_or_none(step)
+    if key is None:
+        raise ValueError("no net chemical transformation after cancelling identical species; no reaction evidence key")
+    return key
 
 
 def reaction_key_of(step: ExperimentStep) -> tuple[tuple, tuple]:
@@ -204,7 +217,9 @@ def _resolve_record(kinetics: KineticTable, step: ExperimentStep) -> KineticRef 
     EVD-KEY-CTX-01: matched by the ``applies_to`` LOOKUP (structure+direction+stoichiometry exact, ``"phase"``
     context SUBSUMED), not raw ``==``, so a record's phase and the step's declared phase must not conflict.
     """
-    key = reaction_evidence_key(step)
+    key = _reaction_evidence_key_or_none(step)
+    if key is None:
+        return None
     for rec in kinetics.records:
         if record_evidence_key(rec).applies_to(key):
             return rec
@@ -273,6 +288,15 @@ def kinetics_of_step(
         )
     rec = _resolve_record(kinetics, step)
     if rec is None:
+        if not _coefficient_vector(step)[1]:
+            reason = (
+                "UNKNOWN: no net chemical transformation after cancelling identical species; "
+                "the reaction-rate model does not describe handling or physical changes of unchanged species"
+            )
+            return StepKinetics(
+                RateRegime.UNKNOWN, RateGrade.UNKNOWN, temperature, None, None, None, None, "",
+                unknown("rate-constant-k", "", reason), reason, (step.equation(),),
+            )
         return StepKinetics(
             RateRegime.UNKNOWN, RateGrade.UNKNOWN, temperature, None, None, None, None, "",
             unknown("rate-constant-k", "", "no sourced Arrhenius (Ea, A) for this exact reaction"),

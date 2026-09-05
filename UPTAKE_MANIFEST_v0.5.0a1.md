@@ -3418,3 +3418,109 @@ The `0.5.0a1` uptake is complete when:
 
 Anything less can still be valuable development work. It is not yet the standard-setting
 chemical compiler release described here.
+
+## 10. Process accessibility audit — 2026-09-05
+
+ID: PROCESS-FIT-01 / ADMISSION-INTEGRITY-01 / AUDIT-CORRECTNESS-2026-09-05
+
+State: IMPLEMENTED_AND_VERIFIED within the comparison and selection boundary below.
+
+- Audited main: `2fc759542a2858605c25cd6bf660fdb56afe6975`.
+- Repairs commit: `e038d734b5ef9444c389e20cbe3263f592b2f90c`.
+- Process and integration commit: `5a71af75d3010bcdaf91e041cafb84c3d8af7f8d`.
+- Files: `smartchem/process_constraints.py`, condition/service/CLI integration, experiment fitting and
+  selection, selectivity, reagent identity, affordability/units, Arrhenius/Eyring no-net handling.
+- Tests: process model/service/synthesis, workup-extrema mutations, imported-admission tampering,
+  formula/isomer and sparse-registry controls, currency/invalid-number and no-net reaction regressions.
+- Result: baseline 3,745 passed / 51 skipped / 1 xfailed; final 4,014 passed / 51 skipped / 1 xfailed.
+  The final run partitions every test file into six deterministic shards; optional PySCF was absent.
+- Human-output check: all three synthesis commands share process flags and retain no-fit blockers in
+  quiet mode. No admissible candidate yields no best dossier or shopping recommendation. Complete
+  no-fit searches refuse with exit 5; partial searches remain exit 4.
+- JSON/schema check: request v1alpha5, response v1alpha9, descriptor v1alpha10. Unknown or excluded
+  routes cannot enter the admitted route list or process-constrained affordability frontier. Returned
+  candidate membership and derived admission fields are checked on import.
+- Command/file inventory, environment, and raw final output:
+  [validation receipt](experiments/validation/process-accessibility-2026-09-05/receipt.json).
+- Residual limits: no shipped whole-process chemistry records or general importer; source applicability,
+  material assays/scale, convergent process scheduling, and procedure readiness remain open. Filtering
+  is over the bounded returned candidate set, not a proof that no fitting route exists elsewhere.
+
+The complete design, audit scope, counterexamples, commands, and next acceptance contract are in
+[the process accessibility audit](AUDIT_PROCESS_ACCESSIBILITY_2026-09-05.md). This does not close the
+alpha's other P0 rows or promote formal candidates to bench procedures.
+
+### 10.1 Integration-review fold — 2026-09-05 (uptake into the dev branch)
+
+The `audit/process-accessibility-2026-09-05` work (commits `e038d73`/`5a71af7`/`327bd39`) was
+fast-forwarded onto `chem-genericity-reorient-2026-09-03` (`main` untouched, nothing pushed) and
+independently reviewed before acceptance.
+
+- Independent reproduction: full suite **4055 passed / 14 skipped / 1 xfailed** (exit 0) in the dev
+  venv (Python 3.12.3, PySCF 2.14.0 PRESENT — so this run's skip profile differs from the receipt's
+  PySCF-absent 51-skip profile; the +270-passed delta over the local baseline is the new process/audit
+  test files, `269 passed` when run alone). The 1 xfail is the pre-existing `test_laws.py` interchange
+  debt (orthogonal). The live CLI path was exercised end to end: `recompile ... --process-profile quick`
+  finds routes but admits none → `exit 5`, `NO_FIT_FOUND`, empty `admissible_route_digests` and frontier.
+  UNKNOWN did not become FITS on the shipping path.
+- Both LIVE selection predicates verified sound directly: `CompilationResponse.admissible_route_digests`
+  filters `fit_status == "FITS"` (service.py), and `compile_synthesis` gates `admissible = not EXCLUDED and
+  (not process_constrained or FITS)` with grade a strictly post-gate preference (compile.py) — grade
+  cannot override a hard exclusion, and UNKNOWN is inadmissible under active bounds.
+- **Red-team finding (CONFIRMED, folded):** the §10 line "derived admission fields are checked on import"
+  OVERSTATES the guarantee on the DESERIALIZATION boundary. `response_from_payload` re-derives
+  `process_selection_status`/`admissible_route_digests`/`exit_code`/`result_digest` and refuses an
+  inconsistent payload, but all of them derive from the per-route `fit_status`, and the response IR carries
+  no per-route `ProcessRequirements` to re-run `evaluate_process` against. So a LOCKSTEP forgery (relabel a
+  REAL route's `fit_status` to `FITS`) is accepted through construction and a serialize round-trip — a
+  relational check blind to a shared term, and an auditor trusting the field it polices. It is a
+  trust-boundary overclaim, NOT a live exploit: the compiler never forges its own responses, and the path
+  is dark on the real catalog (no route carries process metadata yet). Fix folded: honest scope docstrings
+  on `admissible_route_digests` and `response_from_payload`, plus a pinning regression
+  `tests/test_process_service.py::test_deserialized_admission_is_producer_declared_not_reverified`.
+- **Deferred real fix (go-live milestone):** carry per-route process evidence in the response IR so
+  admission is re-derived on load — this becomes load-bearing exactly when sourced whole-process records
+  start flowing, and should be bundled with that work. A deserialized response is, until then, authoritative
+  only from a trusted producer.
+
+### 10.2 Process data fill — 2026-09-05 (ROUND 9)
+
+ID: PROCESS-FIT-02 / PROCESS-DATA-SEED-01
+
+State: IMPLEMENTED_AND_VERIFIED within the sourcing/comparison boundary below.
+
+The process-fit gate was DARK (no shipped whole-process records, so every route was UNKNOWN-fit). This
+round fills real, open-license data so the gate can honestly say FITS/EXCLUDED, not only refuse.
+
+- **Sourcing (anti-fabrication).** A fan-out workflow extracted → cross-sourced → adversarially re-verified
+  each record; the verify stage DROPPED every value not backed by a quote or a labeled derivation (it
+  killed fabricated elapsed/active CEILINGS the extractor had invented). Every encoded value traces to an
+  open source (LibreTexts CC BY-NC-SA 4.0, cross-checked where possible; provenance in
+  `smartchem/decompiler_conditions.py`) or a labeled DERIVED constant (steam bath = 373.15 K; open vessel =
+  1 atm; distillation fraction). No process fact was invented.
+- **Records added (both producible by the real capped-scission search):**
+  - Paracetamol acetic-anhydride acetylation — `process=` added to the existing seed record.
+  - Isopentyl acetate (Fischer esterification) — new seed record. Honestly single-sourced (noted).
+  - Aspirin + salicylic acid + isopentyl acetate + isopentyl alcohol registered as named structures
+    (canonical-identity-invariant + Kekulé-stable, verified). Aspirin's route is NOT producible by the
+    capped-scission grammar (exhaustive NO_ROUTE at depth 2-3), so it is structure-only this round
+    (honest `NO_ROUTE`, not a dead seed) — a grammar-widening follow-on.
+- **Floor enhancement (PROCESS-FIT-02).** Sources bound individual operations (10-min acetylation, 1-h
+  reflux) but not whole-step elapsed (untimed workup/drying) — a floor with no ceiling. Added optional
+  `min_elapsed_minutes`/`min_active_minutes` to `ProcessRequirements` + floor-based exclusion in
+  `evaluate_process`: a SOURCED minimum already over the operator's limit EXCLUDES (the "too slow for the
+  poor man" signal), while a missing ceiling stays a gap/UNKNOWN — a floor can only exclude, never confirm
+  a fit. The route-total floor sum counts an interval's `.lo` as a known minimum too.
+- **Acceptance (real search, not monkeypatched):** `tests/test_process_records.py` — paracetamol FITS a
+  manual/periodic bench; EXCLUDED as too slow for `quick` (sourced 84-min floor > 60); EXCLUDED by missing
+  equipment / stricter temperature; UNKNOWN when a constrained dimension is undeclared; does not leak to an
+  unseeded reaction; isopentyl acetate FITS. Plus floor unit tests in `tests/test_process_constraints.py`.
+- **Result:** full suite 4076 passed / 14 skipped / 1 xfailed (PySCF-present dev venv), exit 0.
+- **Red-team (3-dimension workflow: fabrication / floor-soundness / unknown-leak+scope):** CLEAN BILLS on
+  all three load-bearing dimensions (no fabricated fact; a floor cannot launder UNKNOWN→FITS; no scope or
+  unknown leak). 3 confirmed findings, all LOW, all folded pre-commit: an under-documenting inline comment,
+  a construction-time validation gap (`min_active` > declared elapsed ceiling now rejected), and the
+  route-total floor sum now counting interval `.lo`.
+- **Residual limits:** whole-step elapsed CEILINGS are UNKNOWN in the current benign-prep sources, so
+  time-based FIT (vs EXCLUSION) needs sources that state total elapsed. Aspirin route needs a wider grammar.
+  DAG-mode process admission stays UNASSESSED. The §10.1 deserialization boundary remains deferred.

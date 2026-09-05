@@ -28,6 +28,7 @@ LOWER BOUND, not an exact total -- the caller labels it as such.
 """
 from __future__ import annotations
 
+from math import isfinite
 from typing import Iterable, Mapping
 
 from ..data.periodic_table import has_standard_atomic_weight, standard_atomic_weight
@@ -98,6 +99,16 @@ def _counts(composition: "Mapping[str, int] | Iterable[tuple[str, int]]") -> "li
     return list(composition)
 
 
+def _finite_nonnegative(value: object) -> bool:
+    """Reject invalid inputs and unrepresentable numeric magnitudes before conversion."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return isfinite(value) and value >= 0
+    except OverflowError:
+        return False
+
+
 def molar_mass(composition: "Mapping[str, int] | Iterable[tuple[str, int]]") -> "float | None":
     """Grams per mole of ``composition`` (a ``{symbol: count}`` mapping or ``(symbol, count)`` pairs), or ``None``.
 
@@ -110,12 +121,12 @@ def molar_mass(composition: "Mapping[str, int] | Iterable[tuple[str, int]]") -> 
         return None
     total = 0.0
     for symbol, count in pairs:
-        if not isinstance(count, (int, float)) or isinstance(count, bool) or count <= 0:
+        if not _finite_nonnegative(count) or count <= 0:
             return None  # a non-positive / non-numeric count is not an honest composition -> UNKNOWN
         if not has_standard_atomic_weight(symbol):
             return None  # unknown symbol, or a mass-number-only radioactive/synthetic element -> no molar mass
         total += standard_atomic_weight(symbol) * count
-    return total
+    return total if _finite_nonnegative(total) else None
 
 
 def price_per_gram(observation: "object") -> "tuple[float, str] | None":
@@ -132,13 +143,16 @@ def price_per_gram(observation: "object") -> "tuple[float, str] | None":
     grams = grams_per_unit(unit)
     if grams is None or grams <= 0:
         return None
+    if isinstance(amount, bool):
+        return None
     try:
         value = float(amount)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
-    if value != value or value < 0:  # NaN / negative price -> not an honest price
+    if not _finite_nonnegative(value):
         return None
-    return value / grams, currency
+    converted = value / grams
+    return (converted, currency) if _finite_nonnegative(converted) else None
 
 
 def price_per_mol(
@@ -155,7 +169,8 @@ def price_per_mol(
     if mm is None or mm <= 0:
         return None
     value, currency = per_gram
-    return value * mm, currency
+    converted = value * mm
+    return (converted, currency) if _finite_nonnegative(converted) else None
 
 
 def grams_to_moles(
@@ -163,12 +178,13 @@ def grams_to_moles(
 ) -> "float | None":
     """Moles in ``grams`` of ``composition`` (the SHOP-LEAF gram->mol bridge), or ``None`` if the molar mass is
     unknown / the input is not a finite non-negative mass."""
-    if not isinstance(grams, (int, float)) or isinstance(grams, bool) or grams != grams or grams < 0:
+    if not _finite_nonnegative(grams):
         return None
     mm = molar_mass(composition)
     if mm is None or mm <= 0:
         return None
-    return grams / mm
+    converted = grams / mm
+    return converted if _finite_nonnegative(converted) else None
 
 
 def moles_to_grams(
@@ -176,9 +192,10 @@ def moles_to_grams(
 ) -> "float | None":
     """Grams in ``moles`` of ``composition`` (the mol->gram bridge), or ``None`` if the molar mass is unknown / the
     input is not a finite non-negative amount."""
-    if not isinstance(moles, (int, float)) or isinstance(moles, bool) or moles != moles or moles < 0:
+    if not _finite_nonnegative(moles):
         return None
     mm = molar_mass(composition)
     if mm is None or mm <= 0:
         return None
-    return moles * mm
+    converted = moles * mm
+    return converted if _finite_nonnegative(converted) else None

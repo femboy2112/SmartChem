@@ -192,6 +192,32 @@ evidence and rationale.
 
 ## Reproduce
 
+### Process limits for synthesis candidates
+
+Operator time and apparatus can be constrained alongside the existing material buckets:
+
+```bash
+python -m smartchem recompile 'smiles:CC(=O)OC' --max-depth 2 \
+  --process-profile quick --max-active-minutes 30
+
+python -m smartchem recompile 'smiles:CC(=O)OC' --max-depth 2 \
+  --process-profile low-touch --max-temp 333.15 --min-check-interval 90 --json
+```
+
+`quick` and `low-touch` are editable operator preferences. Flags also constrain total elapsed time,
+per-step time, attention, agitation, and exact equipment identifiers. Whole-step requirements must explicitly
+include workup; combined heat/pressure limits also require whole-process extrema. Missing process evidence
+remains `UNKNOWN`. The current chemistry catalog has no whole-process annotations, so these examples find
+formal candidates but admit none (exit 5 after a complete search, 4 if incomplete).
+
+The response keeps structural candidates and diagnostics while exposing `process_selection_status` and
+`admissible_route_digests`. Only fitting routes enter process-constrained recommendations. `FITS` compares
+declared requirements with selected limits; readiness remains `FORMAL_CANDIDATE`. `compile` and `synthesize`
+accept the same flags. See the [audit and process contract](AUDIT_PROCESS_ACCESSIBILITY_2026-09-05.md) for
+presets, protocol migration, tests, and the remaining chemistry-evidence work.
+
+### Test commands
+
 ```bash
 python -m venv .venv
 . .venv/bin/activate
@@ -201,14 +227,17 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current maintained fast-suite result (in a dev environment with the optional PySCF stack
-installed; environments without it skip additional real-wavefunction tests):
+Current maintained fast-suite result (dev environment with the optional PySCF stack installed):
 
 ```text
-3785 passed, 14 skipped, 1 xfailed
+4076 passed, 14 skipped, 1 xfailed
 ```
 
-The skipped tests require the explicit slow-test gate and are not represented as passed.
+The skips are optional-backend coverage and the explicit slow-test gate; they are not represented as passed.
+An environment WITHOUT PySCF skips additional real-wavefunction tests (the process-accessibility audit
+receipt records such a run: 4014 passed / 51 skipped / 1 xfailed).
+The [validation receipt](experiments/validation/process-accessibility-2026-09-05/receipt.json) records the
+audit environment, complete file partition, raw outputs, and baseline comparison.
 Run selected real-wavefunction integration coverage with:
 
 ```bash

@@ -447,6 +447,34 @@ _REGISTERED: tuple[NamedStructure, ...] = (
         synonyms=("aqua fortis",),
         provenance="std mineral acid; the nitrating agent; SMILES O[N+](=O)[O-]",
     ),
+    # --- ROUND 9 (PROCESS-FIT): benign-reaction targets/precursors for sourced whole-process
+    #     records. Structures parsed from SMILES (G1); each verified canonical-identity-invariant
+    #     AND Kekulé-stable (the two aromatics resolve to one stable canonical form -- the
+    #     [[canonicalizer-invariant-needs-differential-tripwires]] hazard was checked, not assumed).
+    NamedStructure(
+        "aspirin", parse_smiles("CC(=O)Oc1ccccc1C(=O)O"), "C9H8O4",
+        iupac="2-(acetyloxy)benzoic acid", cas="50-78-2",
+        synonyms=("acetylsalicylic acid", "ASA", "2-acetoxybenzoic acid"),
+        provenance="std organic structure; the aspirin process-record target; SMILES CC(=O)Oc1ccccc1C(=O)O",
+    ),
+    NamedStructure(
+        "salicylic acid", parse_smiles("O=C(O)c1ccccc1O"), "C7H6O3",
+        iupac="2-hydroxybenzoic acid", cas="69-72-7",
+        synonyms=("o-hydroxybenzoic acid",),
+        provenance="std organic structure; the aspirin precursor; SMILES O=C(O)c1ccccc1O",
+    ),
+    NamedStructure(
+        "isopentyl acetate", parse_smiles("CC(=O)OCCC(C)C"), "C7H14O2",
+        iupac="3-methylbutyl acetate", cas="123-92-2",
+        synonyms=("isoamyl acetate", "banana oil"),
+        provenance="std organic ester; the Fischer-esterification process-record target; SMILES CC(=O)OCCC(C)C",
+    ),
+    NamedStructure(
+        "isopentyl alcohol", parse_smiles("CC(C)CCO"), "C5H12O",
+        iupac="3-methylbutan-1-ol", cas="123-51-3",
+        synonyms=("isoamyl alcohol", "isopentanol", "isobutylcarbinol"),
+        provenance="std organic alcohol; the isopentyl-acetate precursor; SMILES CC(C)CCO",
+    ),
 )
 
 

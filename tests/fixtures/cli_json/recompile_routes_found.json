@@ -1,4 +1,5 @@
 {
+  "admissible_route_digests": [],
   "affordability_frontier": [
     {
       "cost_vector": {
@@ -18,23 +19,23 @@
         "unit": "",
         "waste_disposal": null
       },
-      "route_digest": "ac6ec5cf43a1776e04e89f9e6335abad9e5628ad05ac51f999a0f861e998c5c2",
+      "route_digest": "ceb2d476bde3f206110670346e55dc42b9e85d22b41d2e755cd4f9b478482de9",
       "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha2"
     }
   ],
   "compilation_ir": {
     "candidates": [
       {
-        "candidate_digest": "ac6ec5cf43a1776e04e89f9e6335abad9e5628ad05ac51f999a0f861e998c5c2",
+        "candidate_digest": "c2286c642f22e6fafae4477dc3c940bf6afe2c86865413b0abbac8ed18e640fb",
         "candidate_kind": "ROUTE",
-        "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
+        "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
         "readiness_tier": "FORMAL_CANDIDATE",
         "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
       },
       {
-        "candidate_digest": "e709e4a706d5c8280479835d6fa258ee6ef416905798bc2bcd4263197059eacb",
+        "candidate_digest": "ceb2d476bde3f206110670346e55dc42b9e85d22b41d2e755cd4f9b478482de9",
         "candidate_kind": "ROUTE",
-        "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
+        "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
         "readiness_tier": "FORMAL_CANDIDATE",
         "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
       }
@@ -89,6 +90,7 @@
   "exit_code": 0,
   "outcome": "ROUTES_FOUND",
   "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C3H6O2 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested",
+  "process_selection_status": "NOT_REQUESTED",
   "provider_snapshots": [],
   "ranked_route_dossiers": [
     {
@@ -101,9 +103,9 @@
       "gaps": [],
       "kinetics_verdict": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
-      "route_digest": "e709e4a706d5c8280479835d6fa258ee6ef416905798bc2bcd4263197059eacb",
+      "route_digest": "c2286c642f22e6fafae4477dc3c940bf6afe2c86865413b0abbac8ed18e640fb",
       "schema_version": "smartchem.service/ranked-route-summary-v1alpha1",
-      "selectivity_verdict": "NOT_APPLICABLE"
+      "selectivity_verdict": "UNKNOWN"
     },
     {
       "composability_verdict": "SINGLE_STEP",
@@ -115,9 +117,9 @@
       "gaps": [],
       "kinetics_verdict": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
-      "route_digest": "ac6ec5cf43a1776e04e89f9e6335abad9e5628ad05ac51f999a0f861e998c5c2",
+      "route_digest": "ceb2d476bde3f206110670346e55dc42b9e85d22b41d2e755cd4f9b478482de9",
       "schema_version": "smartchem.service/ranked-route-summary-v1alpha1",
-      "selectivity_verdict": "NOT_APPLICABLE"
+      "selectivity_verdict": "UNKNOWN"
     }
   ],
   "request": {
@@ -125,6 +127,16 @@
       "max_pressure_atm": null,
       "max_temperature_k": null,
       "min_pressure_atm": null,
+      "process": {
+        "allowed_agitation": null,
+        "allowed_attention": null,
+        "available_equipment": null,
+        "max_active_minutes": null,
+        "max_step_minutes": null,
+        "max_total_minutes": null,
+        "min_check_interval_minutes": null,
+        "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
+      },
       "schema_version": "smartchem.constraints/physical-bounds-v1alpha1"
     },
     "evidence_provider_selection": {
@@ -201,7 +213,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha4",
+    "schema_version": "smartchem.service/compilation-request-v1alpha5",
     "search_bounds": [
       [
         "cut_budget",
@@ -225,8 +237,8 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "bf06bc815ef43255ea5454f7c744fb219f35d7bd94e033bbbae4e552ce1828d4",
-  "schema_version": "smartchem.service/compilation-response-v1alpha8",
+  "result_digest": "740efa628260175e968cb6f3860acef9e1a34c4ae7ef69ed44f740ee8ac80fac",
+  "schema_version": "smartchem.service/compilation-response-v1alpha9",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

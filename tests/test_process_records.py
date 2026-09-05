@@ -158,3 +158,64 @@ def test_sourced_methyl_salicylate_excluded_when_too_slow_for_a_tight_step_budge
     d = _esterification(_ms(process=replace(MS_BENCH, max_step_minutes=5.0)))
     assert d.fit_status == "EXCLUDED"
     assert any("minimum elapsed" in e for e in d.exclusions)
+
+
+# --- ROUND 12 item 3: a FOURTH sourced record -- ASPIRIN, the FLAGSHIP reaction (unblocked for compilation in
+# ROUND 11 by resonance-canonical identity; its ortho-salicylate FRAGMENT now also RESOLVES to registered salicylic
+# acid via the ROUND-12 resonance-identity fix in resolve_structure, which is what lets the sourced record attach).
+# Unlike methyl salicylate, the source describes a genuinely PREPARATIVE workup, so workup_included=True and this
+# record produces the FIRST sourced FITS on aspirin itself -- the complement to the qualitative records' UNKNOWN.
+ASP = "smiles:CC(=O)Oc1ccccc1C(=O)O"
+ASP_KW = dict(helper_reagents=("acetic acid",), stock_materials=("salicylic acid", "acetic anhydride"), max_depth=2)
+# A bench that covers every SOURCED dimension of the aspirin record (equipment / attention / agitation).
+ASP_BENCH = ProcessBounds(
+    allowed_attention=(Attention.PERIODIC,),
+    allowed_agitation=(Agitation.MANUAL, Agitation.NONE),
+    available_equipment=("125-mL Erlenmeyer flask", "steam bath", "glass rod", "ice bath",
+                         "Buchner funnel", "150 mL beaker", "dropper"),
+)
+
+
+def _asp(process=None, **kw):
+    return run_compilation(build_recompile_request(ASP, process=process, **ASP_KW, **kw))
+
+
+def _asp_acetylation(resp):
+    """The seeded acetylation route: acetic anhydride (C4H6O3) + salicylic acid (C7H6O3)."""
+    return next(r for r in resp.ranked_route_dossiers if "C7H6O3" in r.equation and "C4H6O3" in r.equation)
+
+
+def test_sourced_aspirin_fits_a_covering_bench():
+    # THE first sourced FITS on the flagship reaction: the record's PREPARATIVE workup (Buchner vacuum filtration ->
+    # recrystallise -> dry -> melting point) makes a genuine FITS reachable, unlike the qualitative-prep records.
+    resp = _asp(process=ASP_BENCH)
+    assert resp.process_selection_status == "FITS_FOUND"
+    assert resp.admissible_route_digests
+    assert _asp_acetylation(resp).fit_status == "FITS"
+
+
+def test_sourced_aspirin_excluded_by_missing_equipment():
+    d = _asp_acetylation(_asp(process=replace(ASP_BENCH, available_equipment=("steam bath",))))
+    assert d.fit_status == "EXCLUDED"
+    assert any("equipment is unavailable" in e for e in d.exclusions)
+
+
+def test_sourced_aspirin_excluded_by_a_stricter_temperature_ceiling():
+    # The SOURCED whole-process peak is 373.15 K (steam bath); an operator capped at 350 K cannot run it.
+    d = _asp_acetylation(_asp(process=ASP_BENCH, max_temperature_k=350.0))
+    assert d.fit_status == "EXCLUDED"
+    assert any("peak_temperature_k" in e for e in d.exclusions)
+
+
+def test_sourced_aspirin_excluded_when_too_slow_for_a_tight_step_budget():
+    # The SOURCED elapsed floor is 10 min ('for at least 10 minutes'); a 5-min step budget is proven too tight.
+    d = _asp_acetylation(_asp(process=replace(ASP_BENCH, max_step_minutes=5.0)))
+    assert d.fit_status == "EXCLUDED"
+    assert any("minimum elapsed" in e for e in d.exclusions)
+
+
+def test_sourced_aspirin_unknown_when_a_constrained_dimension_is_undeclared():
+    # The record declares no check interval; an operator who constrains it cannot be told the route fits -> UNKNOWN.
+    d = _asp_acetylation(_asp(process=replace(ASP_BENCH, min_check_interval_minutes=90.0)))
+    assert d.fit_status == "UNKNOWN"
+    assert any("check_interval" in g for g in d.gaps)

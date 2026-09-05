@@ -279,30 +279,30 @@ def _dag_note(resp):
     return next((d for d in resp.diagnostics if "DAG mode" in d), None)
 
 
-def test_dag_mode_process_is_conservatively_assessed_not_silently_unassessed():
-    """Item 5b: a DAG-mode compile with a process constraint no longer leaves it SILENTLY unassessed.
+def test_dag_mode_process_is_soundly_assessed_not_silently_unassessed():
+    """ROUND-12 (supersedes item 5b): a DAG-mode compile with a process constraint is SOUNDLY assessed, not silent.
 
     DAG (convergent) routes are not linearly ranked, so process_selection_status stays UNASSESSED and nothing is
-    formally admitted -- but the conservative serial-flattening gate (dag_process_fit) reports the SOUND lower bound
-    on admission (how many DAGs fit even run serially) as a clearly-bounded diagnostic.  On a bench that covers the
-    seeded paracetamol record, at least one DAG conservatively FITS.
+    formally admitted -- but the SOUND gate (dag_process_fit: serial-achievable FITS, critical-path-floor EXCLUDE,
+    honest UNKNOWN band) reports the per-DAG verdict as a clearly-bounded diagnostic.  On a bench that covers the
+    seeded paracetamol record, at least one DAG soundly FITS.
     """
     resp = run_compilation(build_recompile_request(
         "smiles:CC(=O)Nc1ccc(O)cc1", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
         process=_PARA_BENCH, **_PARA_DAG))
-    assert resp.process_selection_status == "UNASSESSED"     # DAGs are not formally admitted
+    assert resp.process_selection_status == "UNASSESSED"     # DAGs are not formally admitted (a named next-step)
     assert not resp.admissible_route_digests                 # ... and never appear in the admissible list
     note = _dag_note(resp)
-    assert note is not None and "SOUND lower bound" in note
-    assert "1 would FIT even run serially" in note           # the covering bench admits the seeded route serially
+    assert note is not None and "SOUNDLY assessed" in note
+    assert "1 FIT (serial-achievable)" in note               # the covering bench admits the seeded route
 
 
-def test_dag_mode_conservative_fit_never_claims_more_than_it_proves():
-    """The serial-flattening gate is SOUND (never a false FITS): a stricter bench reports fewer/zero sound fits.
+def test_dag_mode_sound_fit_never_claims_more_than_it_proves():
+    """The DAG gate is SOUND (never a false FITS): a stricter bench reports zero fits and a sound exclusion.
 
-    'quick' caps a step at 60 min and the seeded paracetamol floor is 84 min, so the serial gate cannot claim the
-    route fits -- the note reports 0 sound fits, and the constraint is still not silently dropped.  A time-based
-    non-fit is explicitly flagged as possibly over-conservative, never as a formal exclusion.
+    'quick' caps a step at 60 min and the seeded paracetamol floor is 84 min, so that step is EXCLUDED on an
+    order-agnostic per-step bound (sound on a DAG, not a serial-sum artifact) -- the note reports 0 FIT and surfaces
+    the exclusion, and the constraint is still not silently dropped.
     """
     resp = run_compilation(build_recompile_request(
         "smiles:CC(=O)Nc1ccc(O)cc1", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
@@ -310,18 +310,70 @@ def test_dag_mode_conservative_fit_never_claims_more_than_it_proves():
     assert resp.process_selection_status == "UNASSESSED"
     note = _dag_note(resp)
     assert note is not None
-    assert "0 would FIT even run serially" in note
-    assert "over-conservative" in note                       # honest about the serial-sum boundary
+    assert "0 FIT (serial-achievable)" in note
+    assert "EXCLUDED" in note                                 # the per-step cap is a sound exclusion, not over-conservative
 
 
-def test_dag_process_fit_is_sound_but_over_conservative_on_time():
-    """dag_process_fit itself: unconstrained bounds -> UNCONSTRAINED; a serial-sum total-time cap can over-EXCLUDE.
+def _convergent_40min_dag():
+    """A genuinely convergent DAG: two independent 40-min branches join at a third 40-min step.
+    Serial flattening = 120 min; critical path (either branch -> join) = 80 min."""
+    from smartchem.contracts import EvidenceStatus
+    from smartchem.experiment.dag import SynthesisDAG
+    from smartchem.experiment.step import ExperimentStep
+    from smartchem.smiles import parse_smiles
+    acoh, etoh, ea, water, ald, ethene, o2 = (parse_smiles(s) for s in
+        ("CC(=O)O", "CCO", "CC(=O)OCC", "O", "CC=O", "C=C", "O=O"))
 
-    A genuinely convergent DAG (two branches join at the esterification) with each step declaring a 40-min floor sums
-    to 120 min on a SERIAL flattening.  A 90-min total budget therefore EXCLUDES it on the serial gate -- the
-    documented over-conservatism: a bench that overlaps the branches might fit a budget the serial sum exceeds.  The
-    gate never fabricates a fit (unconstrained bounds give UNCONSTRAINED, not FITS), and the exclusion here is the time
-    axis.
+    def step(target, reactants, products):
+        env = ConditionEnvelope(
+            temperature=Interval(300, 300, "K"), status=EvidenceStatus.EXPERIMENTAL,
+            provenance="synthetic process control; no experimental claim",
+            process=requirements(elapsed_minutes=Interval(40, 40, "min")),
+        )
+        return ExperimentStep.assembling(target, reactants, products, envelope=env)
+
+    return SynthesisDAG.of(
+        step(acoh, (ald, ald, o2), (acoh, acoh)),   # branch 1: -> acetic acid
+        step(etoh, (ethene, water), (etoh,)),        # branch 2: -> ethanol
+        step(ea, (acoh, etoh), (ea, water)),         # join: genuinely convergent
+    )
+
+
+def test_dag_process_fit_uses_a_sound_critical_path_not_a_serial_sum():
+    """ROUND-12: the DAG gate aggregates ELAPSED over the critical path, so it stops OVER-excluding a concurrent route.
+
+    The convergent DAG has critical path 80 min (a branch + the join) and serial sum 120 min.  The verdict now depends
+    on WHICH aggregate a budget can prove against, and each branch is sound:
+
+    * unconstrained -> UNCONSTRAINED (never fabricates a fit);
+    * 130-min total >= serial 120 -> FITS (serial-achievable, the sound FITS certificate);
+    * 90-min total: serial 120 > 90 but critical-path 80 <= 90 -> UNKNOWN, not the old over-conservative EXCLUDED
+      (fittable only if the branches overlap -- undeclared, so honestly unknown, never a silent pass);
+    * 70-min total: critical-path floor 80 > 70 -> EXCLUDED (unfittable even with fully concurrent branches -- a
+      strictly TIGHTER, still-sound exclude than the serial-sum would give).
+    """
+    from smartchem.experiment.dag import dag_process_fit
+    from smartchem.process_constraints import ProcessFitStatus
+    dag = _convergent_40min_dag()
+    assert dag_process_fit(dag, ProcessBounds.unconstrained()).status is ProcessFitStatus.UNCONSTRAINED
+    assert dag_process_fit(dag, ProcessBounds(max_total_minutes=130.0)).status is ProcessFitStatus.FITS
+    middle = dag_process_fit(dag, ProcessBounds(max_total_minutes=90.0))
+    assert middle.status is ProcessFitStatus.UNKNOWN                      # was EXCLUDED under the serial-sum gate
+    assert any("concurrent" in g for g in middle.gaps)
+    assert not middle.exclusions                                          # the honest UNKNOWN never fabricates an exclusion
+    tight = dag_process_fit(dag, ProcessBounds(max_total_minutes=70.0))
+    assert tight.status is ProcessFitStatus.EXCLUDED                      # critical-path floor 80 > 70: sound exclude
+    assert any("critical-path" in e for e in tight.exclusions)
+
+
+def test_dag_active_time_stays_serial_a_single_operator_does_not_parallelize():
+    """ROUND-12 soundness crux: ACTIVE (hands-on) time is serial-summed even on a DAG.
+
+    One operator cannot do two branches' hands-on work at the same moment, so parallelizing active time would be an
+    UNSOUND relaxation (unlike elapsed wall-clock, which genuinely overlaps).  A convergent DAG whose three 40-min-
+    ACTIVE steps serial-sum to 120 min is therefore EXCLUDED at a 90-min ACTIVE budget -- NOT relaxed to the 80-min
+    critical path.  (Contrast the sibling test: the SAME shape's ELAPSED at a 90-min total is only UNKNOWN, because
+    wall-clock does overlap.)
     """
     from smartchem.contracts import EvidenceStatus
     from smartchem.experiment.dag import SynthesisDAG, dag_process_fit
@@ -335,19 +387,22 @@ def test_dag_process_fit_is_sound_but_over_conservative_on_time():
         env = ConditionEnvelope(
             temperature=Interval(300, 300, "K"), status=EvidenceStatus.EXPERIMENTAL,
             provenance="synthetic process control; no experimental claim",
-            process=requirements(elapsed_minutes=Interval(40, 40, "min")),
+            process=requirements(elapsed_minutes=Interval(40, 40, "min"), active_minutes=Interval(40, 40, "min")),
         )
         return ExperimentStep.assembling(target, reactants, products, envelope=env)
 
     dag = SynthesisDAG.of(
-        step(acoh, (ald, ald, o2), (acoh, acoh)),   # branch 1: -> acetic acid
-        step(etoh, (ethene, water), (etoh,)),        # branch 2: -> ethanol
-        step(ea, (acoh, etoh), (ea, water)),         # join: genuinely convergent
+        step(acoh, (ald, ald, o2), (acoh, acoh)),
+        step(etoh, (ethene, water), (etoh,)),
+        step(ea, (acoh, etoh), (ea, water)),
     )
-    assert dag_process_fit(dag, ProcessBounds.unconstrained()).status is ProcessFitStatus.UNCONSTRAINED
-    capped = dag_process_fit(dag, ProcessBounds(max_total_minutes=90.0))
-    assert capped.status is ProcessFitStatus.EXCLUDED
-    assert any("elapsed" in e or "total" in e for e in capped.exclusions)
+    # ELAPSED at a 90-min TOTAL is only UNKNOWN (wall-clock overlaps: critical path 80 <= 90 < serial 120) ...
+    elapsed_view = dag_process_fit(dag, ProcessBounds(max_total_minutes=90.0))
+    assert elapsed_view.status is ProcessFitStatus.UNKNOWN
+    # ... but ACTIVE at the SAME 90 is EXCLUDED: hands-on time is serial-summed (120 > 90), never relaxed to 80.
+    fit = dag_process_fit(dag, ProcessBounds(max_active_minutes=90.0))
+    assert fit.status is ProcessFitStatus.EXCLUDED
+    assert any("active" in e for e in fit.exclusions)
 
 
 @pytest.mark.parametrize("field,value,bounds", [

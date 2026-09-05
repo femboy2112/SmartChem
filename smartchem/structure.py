@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from .category import Bond, Molecule
 from .contracts import Digestible, canonical_digest
 from .decompiler import Formula
-from .smiles import parse_smiles
+from .smiles import parse_smiles, resonance_identity
 
 __all__ = [
     "STRUCTURE_SCHEMA",
@@ -527,10 +527,16 @@ def resolve_structure(molecule: Molecule) -> "NamedStructure | None":
     candidates = known_compounds(Formula.of(molecule.formula, molecule.charge))
     if not candidates:
         return None
-    try:
-        key = canonical_digest(molecule.canonical())
-    except NotImplementedError:
-        return None
+    # RESONANCE identity (ROUND-12): completes the ROUND-11 unification into structure resolution.  A scission
+    # FRAGMENT can carry a different Kekulé pattern than its registered parsed form (an ortho-salicylate cut out of
+    # aspirin is the case that blocked the aspirin sourced-conditions attachment), which plain ``canonical()`` calls
+    # distinct.  ``resonance_identity`` re-distributes bond orders over the fixed sigma-skeleton + per-atom pi-demand
+    # so the fragment unifies with its parsed form.  SOUND: idempotent on the (already parse-canonical) registered
+    # structures, so ``structure_identity`` -- which stays plain-canonical -- is byte-identical to this for every
+    # registered species (verified: 0 registered identities move), and only previously-mis-split FRAGMENTS now
+    # resolve.  ``resonance_identity`` never raises (NotImplementedError -> ``asgiven:`` won't match an invariant
+    # structure -> None, the same confident-match-or-nothing contract as before).
+    key = resonance_identity(molecule)
     for structure in candidates:
         if structure.canonical_identity_is_invariant and structure.structure_identity == key:
             return structure

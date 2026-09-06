@@ -72,6 +72,27 @@ def test_multiple_distinct_z_centres_are_each_named():
     assert len(labels) == 2 and set(labels) <= {"R", "S"}
 
 
+def test_the_general_cip_digraph_wall_defers_branch_vs_chain_never_mislabels_it():
+    """ROUND-14 item-4b REFUTATION tripwire: a naive hierarchical-digraph CIP (nested-tuple LEXICOGRAPHIC key ordering)
+    is UNSOUND -- it compares DEPTH-first, but true CIP Rule 1a is BREADTH-first (sphere-by-sphere).  The two total
+    orders disagree on the common branch-vs-chain alkyl motif: for ``C[C@H](CCC)C(C)C`` (n-propyl vs isopropyl), a DFS
+    key emits (S) but the truth is (R) -- isopropyl's first carbon carries (C,C,H) and out-ranks n-propyl's (C,H,H) at
+    the sphere, a decision DFS wrongly defers past by descending the longer chain first (evil-morty, ROUND-14; verified
+    against a breadth-first oracle: 740 order-flips in an alkyl-only pool).
+
+    A correct general CIP needs the full breadth-first hierarchical comparison + phantom-0 padding + aromatic/Rule-1b
+    handling, a large correctness-critical build we cannot exhaustively validate WITHOUT an independent oracle (RDKit is
+    out of the dependency-light core), and a WRONG R/S in a chemist's dossier is worse than none.  So the general CIP is
+    a NAMED DEFERRAL and the SOUND distinct-atomic-number slice stands: this tripwire pins that the branch-vs-chain
+    family gets NO label (fail-closed), so nobody re-ships the naive DFS digraph as a fresh idea."""
+    # every one of these WOULD be mislabelled by a lexicographic-key digraph; the sound slice DEFERS them all.
+    assert cip_labels("C[C@H](CCC)C(C)C") == ()           # n-propyl vs isopropyl -- the fully-worked counterexample
+    assert cip_labels("C[C@H](CCC)C(C)CC") == ()          # sec-butyl vs n-propyl
+    assert cip_labels("CCCC[C@H](CC(C)C)C") == ()         # isobutyl vs n-butyl
+    # and the sound slice still NAMES what it can prove (the distinct-Z base case), so it is not vacuously safe.
+    assert cip_labels("[C@H](F)(Cl)Br") == ("S",)
+
+
 def test_malformed_input_raises_like_the_parser():
     import pytest
     from smartchem.smiles import SmilesError

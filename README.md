@@ -264,6 +264,10 @@ outcomes, scientific scope, evidence status, omissions, casualties, and negative
 
 ## Roadmap
 
+> **The live chemical-compiler (v0.5.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
+> next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
+> re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.
+
 The current short-term seam is hardened: `PhysicalIR` owns member/reference/evidence
 integrity, transforms bind the approved model and contracts, all nine executors own their
 model/transform inventory before a calculation or journal, and resolved runners cannot be

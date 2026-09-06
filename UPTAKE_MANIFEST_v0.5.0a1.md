@@ -3973,6 +3973,11 @@ digraph is never re-shipped.
 
 ### 14.6 next-steps (ROUND 14)
 
+> **The live, ground-truthed queue is now pinned in [`ROADMAP.md`](ROADMAP.md) (the canonical source).** The list below
+> is the ROUND-14 snapshot; `ROADMAP.md` supersedes it with recon-corrected sizes (items (a),(b),(c) are all **Large**,
+> not Medium, once costed honestly), a new item — DAG best-first ranking (`rank_dags`, absent today) — and the
+> correction that E/Z belongs under the CIP wall (a), not the time axis (c).
+
 - **(a)** the FULL breadth-first hierarchical CIP (item 4b's wall) — needs an independent validation oracle
   (a from-scratch 3D-geometry chirality oracle, since RDKit is out of scope) to ship a chemist-facing R/S soundly.
 - **(b)** the combined DAG PHYSICAL box / composability re-derivation on load (item 1 re-derives only the process

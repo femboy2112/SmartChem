@@ -3986,3 +3986,60 @@ digraph is never re-shipped.
 - **(d)** the true runtime-metered canonicaliser as an additive >64-heavy escape valve (item 3's characterized sound
   path) — only worth building when a real >64-heavy target appears (repo max is 24 heavy today).
 - **(e)** more sourced organic prices (item 4a lifted methanol only; each needs its own PRIMARY source READ).
+
+## 15. ROUND 15 — DAG best-first ranking + serial-hold disclosure; organic-price DEFER (2026-09-06)
+
+> Governed by [`ROADMAP.md`](ROADMAP.md) (the canonical live queue). 2 builds + 1 honest DEFER; each build
+> `design → recon → build → reproduce → evil-morty → fold → verify`, red-teamed by an independent evil-morty; both
+> MEDIUM findings folded and pinned by tests. Commit `96730ae`. Suite `4157/14/1` (+12 from the 4145 ROUND-14 base).
+
+### 15.1 item 1 — DAG-HOLD-01, the serial-schedule hold disclosure (Lane C·B; `96730ae`)
+A convergent DAG's serial schedule holds an early branch's intermediate through its sibling branches before the join
+consumes it; E1 composability is time-blind (adjacent-handoff only), so DAG-BENCH-01 *documented* that hold's
+UNVERIFIED stability but never surfaced it. Now `_serial_hold_minutes(dag)` (`dag.py`) computes each edge's hold as the
+sum of the intervening steps' known-minimum elapsed (the same `_known_min(min_elapsed, elapsed.lo)` floor the process
+gate uses; unknown floors → 0, a sound LOWER bound over the DAG's own `topological_order`); `dag_composability`
+attaches it as an **observation-only** `serial-hold-minutes` finding (mirrors `_pressure_note` — it NEVER changes a
+transition status or the composability verdict), exposed via `DAGComposability.serial_hold_notes` + `explain()`.
+**evil-morty fold 1 (MEDIUM, Verified):** the disclosure reached NO product output path (`explain()` has no product
+caller; `RankedDAGSummary` drops composability) — loud in an empty room. Fixed: `_dag_bench_note` (`service.py`, the one
+human tally DAG mode emits) now surfaces the CONCRETE hold magnitude, not just the generic boundary sentence; a no-hold
+DAG set keeps the byte-identical old sentence (zero ripple — why no golden moved). **evil-morty fold 2 (LOW-MED):**
+schedule-relative wording, so a flagged edge never implies its sibling is safe (for independent branches, which one
+waits is a topological tiebreak, not chemistry). `tests/test_dag_hold_disclosure.py`.
+
+### 15.2 item 2 — DAG-RANK-01, best-first ranking of convergent DAGs (Lane C; `96730ae`)
+DAG-BENCH-01 made a convergent DAG a first-class bench citizen but left the dossiers in raw discovery order
+(`service.py` said so: "DAG mode ranks nothing LINEARLY"), so a chemist handed several admissible convergent routes got
+no signal on which is best — the paracetamol-litmus asymmetry. `_dag_score`/`rank_dags` (`drafter.py`) are the DAG
+analogue of `_route_score`/`rank_routes`: status → composability → gap → exclusion counts, on exactly what the combined
+`DAGBenchFit` carries; `service.py` maps `of_dag` over `rank_dags(_dags, _box)`. The per-reaction thermochemical
+tiebreakers a linear route gets are a NAMED next-step (a DAG does not aggregate them yet — ROADMAP queue item 1).
+**evil-morty fold 1 (MEDIUM, Verified):** the service ranking test was vacuous twice (a singleton paracetamol fixture,
+and a constant `fit_status` so the status-only assert never touched the real reorder) → replaced with a real
+multi-dossier scenario (ethyl acetate → 5 UNKNOWN dossiers reordered on gap count 2,5,5,7,7). **evil-morty fold 2
+(LOW):** removed `rank_dags`'s unused `stability=` param (`of_dag` cannot honor it → a latent divergence trap). Ranking
+changes ORDER only, never membership; `result_digest` round-trips (verified). `tests/test_dag_rank.py`.
+
+### 15.3 item 3 — a second sourced ORGANIC price: honest DEFER on sourcing (Lane C)
+Attempted at full effort (acetic acid — highest value, ripples the methyl-acetate golden — and ethanol). Wall: organic
+producers post price *increases* (Celanese +$50/MT Feb, +$0.10/lb Mar 2026), not absolute reference sheets; absolutes
+are aggregator-walled. Ethanol's only primaries are a government *projection* (EIA AEO Table 12) or a foreign regulated
+denatured fuel-grade price (IPART NSW, needing FX+density+unit conversions) — neither clears the bar methanol set. Per
+§10.4, anti-fabrication OUTRANKS the demo → DEFER, not a fabricated price (the R13 item-4a call). Pivot candidate:
+bromine (USGS-priced) via the DOW-bromine litmus.
+
+### 15.4 the DOW bromine litmus (a second north star, folded into ROADMAP.md)
+Recorded as a north-star acceptance gate alongside paracetamol: predict Br₂ decomposition/synthesis, enumerate + rank
+the synthesis paths QUANTITATIVELY on cost, and reproduce why Dow undercut the German bromine cartel. Forces the whole
+stack at once — the redox IR-COMMUTE family (Cl₂ + 2Br⁻ → Br₂ + 2Cl⁻), the electromagnetic scope (electrolytic bromide
+oxidation — the one litmus bridging chemistry and the electron layer), thermodynamics/feasibility, and the
+cost/affordability buckets down to the poor-man's evidence buckets. Bromine is USGS-priced, so its cost axis is
+sourceable (unlike the organic wall). Spawns ROADMAP queue items 2 (bromine synthesis + USGS pricing) and 6 (the
+electrochemical/EM bridge).
+
+### 15.5 next-steps (ROUND 15)
+See [`ROADMAP.md`](ROADMAP.md) for the ranked live queue. Freshest: (1) a per-node thermochemical roll-up so `rank_dags`
+tiebreaks like a linear route; (2) bromine synthesis paths + USGS bromine pricing (DOW litmus phase 1); then the
+standing L items (general CIP oracle-first; DAG+linear re-derivation on load; the full duration-aware stability axis;
+the electrochemical/EM bridge).

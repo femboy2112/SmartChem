@@ -4160,3 +4160,78 @@ See [`ROADMAP.md`](ROADMAP.md) for the ranked live queue. Freshest post-ROUND-17
 extends this round's VERIFICATION bucket); general CIP oracle-first; DAG+linear re-derivation on load; the full
 duration-aware stability axis; and the electrochemical/EM bridge (now unblocked by the half-reaction combiner). DEFERRED:
 the DOW brine-vs-mined cost ranking (Cl₂ sourcing wall); a second organic price.
+
+## 18. ROUND 18 — the Observability Score + the electrochemical/EM bridge (2026-09-06)
+
+Two builds, each `design → recon → build → reproduce → evil-morty → fold → verify`. Recon: read the exact seams inline
+(the `ProcessObservationIR` VERIFICATION bucket, the `CostVector` axes, the `cell.py` electrochemical prior art, the
+`redox_displacement` couples). Both items red-teamed by a 6-lens evil-morty workflow (3 attack lenses × 2 modules); it
+found **6 real weaknesses**, all folded (4 code folds) or documented (1 boundary + 1 docstring) and pinned below.
+**Additive**: 6 new files + 1 package `__init__` re-export (new exports only — no schema, no golden, no compiler-behaviour
+change; the `smartchem/observation/` sibling is never imported by the compiler). Suite **4242 / 14 / 1**. Commit `5f83f6a`
+on branch `observability-electrochem-2026-09-06`.
+
+### 18.1 item 1 — OBSERVABILITY-01, the three-axis Observability Score (Lane C·B; DOW)
+The poor-man ethos made a RANKING objective: affordable chemistry is also cheap EPISTEMOLOGY — prefer routes whose
+success/failure is legible from cheap, redundant, chemistry-supplied signals over ones that fail silently.
+`smartchem/observation/observability.py` (in the read-only observation sibling) adds a SOURCED `OBSERVABLE_SIGNATURES`
+table keyed on **canonical product structure** (Br₂ the DOW flagship — orange-red colour + dense phase separation, the
+free sensor Herbert Dow watched; I₂ the contrast, with the cheap starch-iodine identity test), an `ObservableSignature`
+(modality × axis × cost, citation REQUIRED — you cannot fabricate "turns orange", §10.4), and an `ObservabilityProfile`
+that keeps **three SEPARATE axes** — process-indicator / identity / purity — and NEVER collapses them to one number
+(invariants 5 & 7: there is deliberately no `overall_score`). Ranking is Pareto over the three cheap-axis strengths
+(`observability_dominates` / `observability_frontier`, the same shape as `affordability.dominates`), so a route strong on
+PROCESS but weak on IDENTITY does NOT dominate one weak on PROCESS but strong on IDENTITY — they are incomparable, exactly
+as the honesty requires. Non-vacuous: Br₂ = (2,1,0) Pareto-dominates I₂ = (1,1,0). Builds on ROUND-17's VERIFICATION
+bucket via a negation-aware `observation_corroborates` bridge (an observation can corroborate that a sourced signal was
+SEEN, but never mint a new signature). Does NOT wire into the `CostVector` (that would edit `_AXES` + the frontier-entry
+schema + goldens) — a self-contained ranking primitive; the CostVector verification-axis wire-in is an honest deferred
+schema bump. `tests/test_observability.py` (19 tests). evil-morty folds F1/F2/F4 (below).
+
+### 18.2 item 2 — ELECTROCHEM-01, the electrochemical/EM bridge (Lane B·EM; DOW)
+Dow's process reaches the electron/circuit layer ([electromagnetic scope]). Recon found the prior art:
+`smartchem/cell.py` already models an electrochemical `Cell` (electron balancing), Faraday's law
+(`theoretical_capacity_coulombs`) and a `VoltageEstimate` — but `Cell.open_circuit_voltage` FAILS CLOSED, documenting the
+exact hole: "requires Gibbs free energy under specified thermodynamic/electrochemical conditions". `smartchem/electrochemistry.py`
+fills it for the standard-state case: a SOURCED `STANDARD_REDUCTION_POTENTIALS` table (CRC Handbook 97th ed. / Bard &
+Faulkner App. C — KNOWN physics, not invented; keyed on the couple's structural digest, fail-closed UNKNOWN elsewhere),
+from which `standard_cell_potential` (E°cell = E°cathode − E°anode), `gibbs_free_energy_j_per_mol` (ΔG° = −nFE°),
+`spontaneity`, `nernst_potential` (the 59.16 mV/decade slope), and `minimum_electrolysis_voltage` (the reversible drive
+for the electrolytic anode leg) follow. **Closes the DOW loop with ROUND-17's REDOX-DISPLACE-01**: the enumerated
+`Cl2 + 2 Br- -> Br2 + 2 Cl-` is not only reachable but SPONTANEOUS (E°cell = 1.358 − 1.087 = **+0.271 V**,
+ΔG° = **−52.3 kJ/mol**), and the reverse pairing comes back −0.271 V (NON-spontaneous) — reproducing WHY chlorine
+displaces bromide but bromine does not displace chloride (the known-answer instrument calibration). W3 unchanged: a
+standard potential certifies a thermodynamic tendency, never a rate. Reuses `cell.FARADAY_C_PER_MOL` (pinned equal by
+test). `tests/test_electrochemistry.py` (15 tests). evil-morty folds F3/F5/F6 (below).
+
+### 18.3 evil-morty folds (ROUND 18) — 6 real findings, 6 lenses
+- **F1 (HIGH, observability)** `observation_corroborates` was negation-blind to MORPHOLOGICAL absence: "the solution
+  remained colourless" matched the COLOUR keyword by bare substring ("colour" ⊂ "colourless") with no cue firing, so a
+  FAILURE signal was read as positive corroboration — the ROUND-17 fold reincarnated in a phrasing the hand-list missed.
+  Fixed with a WORD-BOUNDARY modality match + an extended negation veto (morphological + phrasal), fail-closed.
+  [[a-keyword-match-is-negation-blind]]
+- **F2 (MEDIUM, observability)** corroboration used only `signature.modality`, never `signature.axis`, so a bare
+  process-grade "a colour appeared" corroborated an IDENTITY signature — the process→identity upgrade the module forbids.
+  Fixed to be AXIS-AWARE: an identity/purity signature additionally needs axis-appropriate discrimination/purity evidence.
+- **F3 (MEDIUM, electrochemistry)** `CellPotential.gibbs_j_per_mol` took `n` as an unvalidated guess, so a caller passing
+  one couple's own electron count silently got a ΔG off by an integer factor. Fixed to DERIVE `n = lcm(cathode.electrons,
+  anode.electrons)` from the object and refuse a mismatched supplied `n`. [[a-conservation-check-does-not-prove-the-mechanism]]
+- **F4 (MEDIUM, observability)** `ObservabilityProfile.sourced` was a stored, forgeable flag — a hand-built profile over
+  FABRICATED signatures could claim `sourced=True` and evict the real route from the frontier. Fixed to a COMPUTED
+  property checking table provenance (mirroring the sibling's `provenance_digest`-computed discipline), so a forgery is
+  never sourced and stays incomparable. [[declarative-auditor-trusts-the-field-it-polices]]
+- **F5 (MEDIUM, electrochemistry) — documented, not code-folded.** The Br₂ potential is aqueous-specific (Br₂(l) = +1.066 V),
+  but the halogen couple is phaseless. This is already fail-closed for an explicitly-phased couple (returns UNKNOWN, never
+  a wrong number), and the aqueous +1.087 V is the CORRECT value for the aqueous DOW displacement, so the module documents
+  the aqueous scoping; phase-keyed potentials are YAGNI until a phase-carrying couple API exists (see ROADMAP tracked debt).
+- **F6 (LOW, electrochemistry)** the `StandardReductionPotential` docstring overclaimed a citation is "refused at
+  construction / must be a real reference" when only non-emptiness is checked. Corrected: the citation is caller-asserted
+  provenance (content not machine-verified); `couple_potential`/the curated table is the sourced authority.
+
+### 18.4 next-steps (ROUND 18)
+See [`ROADMAP.md`](ROADMAP.md) for the ranked live queue. Post-ROUND-18 the queue is L-heavy: general CIP oracle-first;
+DAG+linear composability/physical re-derivation on load; the full duration-aware stability axis; and — now that the
+electrochemical primitive exists — the DOW litmus is two-thirds standing (pricing R16 ✓, mechanism R17 ✓, spontaneity +
+electrolytic voltage R18 ✓), leaving the brine-vs-mined **cost ranking** gated only on a sourced Cl₂/NaBr price. DEFERRED:
+that cost ranking (Cl₂ aggregator wall); a second organic price. TRACKED DEBT: phase-specific electrode potentials (F5);
+the CostVector verification-axis wire-in for the Observability Score.

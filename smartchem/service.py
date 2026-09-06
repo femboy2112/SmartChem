@@ -162,7 +162,10 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha12"
 # v1alpha15 (DAG-THERMO-01): the ranked_dag_summary element gains composability/selectivity/feasibility/equilibrium/
 # kinetics verdict fields (the per-node thermochemical roll-up feeding the DAG ranking), reaching parity with the
 # ranked_route_summary's verdict fields so a DAG dossier's best-first order is as inspectable as a linear one's.
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha15"
+# v1alpha16 (item 2b): the ranked_dag_summary element gains a machine-readable ``serial_holds`` field (the DAG-HOLD-01
+# serial-schedule hold as (producer, consumer, minutes) triples) -- a descriptor-only bump (the field is disclosure,
+# digest-excluded, so no result_digest ripple, and it is empty for every non-holding/linear-shaped DAG).
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha16"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -176,7 +179,11 @@ RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha2"
 # and widened from the process axis alone to the combined bench fit.  v1alpha3 (DAG-THERMO-01): gains the five ranking
 # verdict fields (composability/selectivity/feasibility/equilibrium/kinetics) so the DAG dossier exposes the same
 # sourced tiebreakers the ranked_route_summary does -- parity, and the best-first order made inspectable.
-RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha3"
+# v1alpha4 (item 2b): gains a machine-readable ``serial_holds`` field -- the DAG-HOLD-01 serial-schedule hold as
+# (producer, consumer, minutes) triples.  DISCLOSURE only (never changes fit_status) and digest-EXCLUDED (it is
+# fully determined by edges + process_requirements), so no existing DAG digest moves; the version bumps because
+# the element's serialized SHAPE gained a field.
+RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha4"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -1095,6 +1102,13 @@ class RankedDAGSummary(Digestible):
     feasibility_verdict: str = "UNKNOWN"
     equilibrium_verdict: str = "UNKNOWN"
     kinetics_verdict: str = "UNKNOWN"
+    # DAG-HOLD-01 made machine-readable (item 2b): the per-edge serial-schedule hold as (producer, consumer,
+    # hold_minutes) triples, so a consumer reads the hold structurally instead of parsing the human note.  It is
+    # DISCLOSURE, not a gate (it never changes fit_status), and it is FULLY DETERMINED by the digest-bearing
+    # ``edges`` + ``process_requirements`` (via _serial_hold_minutes) -- so it adds no identity and is EXCLUDED
+    # from the digest (compare=False): existing DAG digests are byte-stable, and a consumer who distrusts it can
+    # re-derive it from the digest-protected fields.
+    serial_holds: "tuple[tuple[int, int, float], ...]" = field(default=(), compare=False)
 
     _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
 
@@ -1127,6 +1141,21 @@ class RankedDAGSummary(Digestible):
         if self.fit_status in ("FITS", "UNCONSTRAINED") and self.gaps:
             raise ValueError(f"a {self.fit_status} DAG cannot carry gaps -- a gap is an UNKNOWN-fit, not a pass")
         _validate_dag_edges(self.edges, len(self.process_requirements))
+        # serial_holds: well-formed (producer, consumer, minutes>=0) triples, each over a REAL carried edge
+        # (a hold is the extra hold on an existing producer->consumer intermediate), never a fabricated pair.
+        if type(self.serial_holds) is not tuple:
+            raise TypeError("serial_holds must be a tuple of (producer, consumer, hold_minutes) triples")
+        edge_set = set(self.edges)
+        for hold in self.serial_holds:
+            if type(hold) is not tuple or len(hold) != 3:
+                raise TypeError("each serial_holds entry must be a (producer, consumer, hold_minutes) triple")
+            i, j, minutes = hold
+            if isinstance(i, bool) or isinstance(j, bool) or type(i) is not int or type(j) is not int:
+                raise TypeError("serial_holds producer/consumer indices must be ints")
+            if (i, j) not in edge_set:
+                raise ValueError(f"serial_holds entry {(i, j)} is not one of the DAG's carried edges")
+            if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or minutes < 0:
+                raise ValueError("serial_holds hold_minutes must be a non-negative real number")
 
     @classmethod
     def of_dag(cls, dag: "object", box: "object") -> "RankedDAGSummary":
@@ -1138,10 +1167,17 @@ class RankedDAGSummary(Digestible):
         ``edges`` are taken in the DAG's OWN step order (``dag.steps`` / ``dag.edges``), the exact indexing
         :func:`~smartchem.process_constraints.evaluate_dag_process_requirements` uses, so the load-time re-derivation of
         the PROCESS COMPONENT reproduces that component byte-for-byte."""
+        from .experiment.dag import _serial_hold_minutes
         from .experiment.drafter import dag_bench_fit
         fit = dag_bench_fit(dag, box)
         edges = tuple((producer, consumer) for producer, consumer, _intermediate in dag.edges)
         equation = " ; ".join(s.equation() for s in dag.topological_order())
+        # DAG-HOLD-01 made machine-readable (item 2b): the same per-edge serial-schedule hold ROUND 15 surfaced
+        # as a human note, now as sorted (producer, consumer, minutes) triples over the edges that actually hold
+        # (> 0).  Disclosure only -- it does not touch fit_status -- so a zero-hold linear-shaped DAG carries ().
+        serial_holds = tuple(
+            (i, j, minutes) for (i, j), minutes in sorted(_serial_hold_minutes(dag).items()) if minutes > 0
+        )
         return cls(
             RANKED_DAG_SUMMARY_SCHEMA,
             dag.digest,
@@ -1158,6 +1194,7 @@ class RankedDAGSummary(Digestible):
             fit.feasibility_verdict,
             fit.equilibrium_verdict,
             fit.kinetics_verdict,
+            serial_holds,
         )
 
 
@@ -2497,6 +2534,7 @@ def ranked_dag_summary_to_payload(summary: RankedDAGSummary) -> dict:
         "feasibility_verdict": summary.feasibility_verdict,
         "equilibrium_verdict": summary.equilibrium_verdict,
         "kinetics_verdict": summary.kinetics_verdict,
+        "serial_holds": [[i, j, minutes] for i, j, minutes in summary.serial_holds],
     }
 
 
@@ -2517,6 +2555,9 @@ def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
         payload["feasibility_verdict"],
         payload["equilibrium_verdict"],
         payload["kinetics_verdict"],
+        # serial_holds is optional for backward tolerance; coerce back to (int,int,float) triples (the shape
+        # guard rejects a list, so the round-trip is exact).  Absent -> () (a pre-2b payload had no holds field).
+        tuple((int(i), int(j), float(m)) for i, j, m in payload.get("serial_holds", [])),
     )
 
 
@@ -2909,6 +2950,10 @@ def response_schema() -> dict:
             "feasibility_verdict": "str (DAG-THERMO-01: worst-node thermodynamic feasibility)",
             "equilibrium_verdict": "str (DAG-THERMO-01: worst-node equilibrium extent)",
             "kinetics_verdict": "str (DAG-THERMO-01: worst-node rate regime; ranking-only, NEVER a grade)",
+            "serial_holds": "array[[int, int, number]] (item 2b: the DAG-HOLD-01 serial-schedule hold as "
+                            "(producer, consumer, hold_minutes) triples over the edges that hold; DISCLOSURE only "
+                            "-- never changes fit_status -- and digest-EXCLUDED, so it is re-derivable from "
+                            "edges + process_requirements and does not move the route identity)",
         },
         "affordability_frontier_entry_fields": {
             "schema_version": "str",

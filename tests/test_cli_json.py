@@ -82,7 +82,11 @@ class TestSchemaDescriptor:
         # selectivity/feasibility/equilibrium/kinetics -- the per-node thermochemical roll-up, parity with the
         # ranked_route_summary).  Per-value response schema STILL v1alpha12: only the nested ranked-dag-summary element
         # bumped (ranked-dag-summary-v1alpha3), and a linear payload (empty ranked_dag_dossiers) stays byte-identical.
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha15"
+        # v1alpha16 (descriptor only): item 2b adds the ranked_dag_summary's machine-readable serial_holds field (the
+        # DAG-HOLD-01 serial-schedule hold as (producer, consumer, minutes) triples).  Per-value response schema STILL
+        # v1alpha12: serial_holds is DISCLOSURE, digest-excluded, and empty for a linear/non-holding DAG -- only the
+        # nested ranked-dag-summary element bumped (ranked-dag-summary-v1alpha4).
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha16"
         assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha12"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):

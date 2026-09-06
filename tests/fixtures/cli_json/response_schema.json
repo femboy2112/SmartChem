@@ -33,7 +33,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha15",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha16",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -64,7 +64,8 @@
     "process_requirements": "array[object(per-step declared process facts)|null] (DAG-BENCH-01: the PROCESS component is re-derived on load via evaluate_dag_process_requirements, one entry per DAG step in the DAG's own order, null for an undeclared step; part of identity)",
     "route_digest": "str (sha256; == the matching DAG candidate_digest)",
     "schema_version": "str",
-    "selectivity_verdict": "str (DAG-THERMO-01: worst-node sourced selectivity)"
+    "selectivity_verdict": "str (DAG-THERMO-01: worst-node sourced selectivity)",
+    "serial_holds": "array[[int, int, number]] (item 2b: the DAG-HOLD-01 serial-schedule hold as (producer, consumer, hold_minutes) triples over the edges that hold; DISCLOSURE only -- never changes fit_status -- and digest-EXCLUDED, so it is re-derivable from edges + process_requirements and does not move the route identity)"
   },
   "ranked_route_summary_fields": {
     "composability_verdict": "str",

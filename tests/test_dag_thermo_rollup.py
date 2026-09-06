@@ -122,3 +122,26 @@ def test_the_verdicts_reach_the_dossier_and_survive_the_json_roundtrip():
     rt = ranked_dag_summary_from_payload(ranked_dag_summary_to_payload(summ))
     assert rt.digest == summ.digest                            # the verdicts are part of identity: exact round-trip
     assert rt.feasibility_verdict == "BORDERLINE" and rt.kinetics_verdict == summ.kinetics_verdict
+
+
+def test_serial_holds_reach_the_dossier_machine_readable_and_are_digest_stable():
+    # item 2b: DAG-HOLD-01's serial hold, previously a human note only, is now a machine-readable field.
+    from dataclasses import replace
+
+    from smartchem.service import (
+        RankedDAGSummary, ranked_dag_summary_from_payload, ranked_dag_summary_to_payload,
+    )
+    box = ConstraintBox(process=ProcessBounds(max_total_minutes=600.0))
+    summ = RankedDAGSummary.of_dag(_convergent_40min_dag(), box)
+    # NON-vacuous: the 40-min DAG holds its first intermediate through the intervening step.
+    assert summ.serial_holds == ((0, 2, 40.0),)
+    # survives the JSON round-trip as (int, int, float) triples.
+    rt = ranked_dag_summary_from_payload(ranked_dag_summary_to_payload(summ))
+    assert rt.serial_holds == summ.serial_holds
+    # DISCLOSURE, not identity: stripping the holds leaves the digest byte-identical (compare=False), so no
+    # existing DAG digest moved when the field was added.
+    assert replace(summ, serial_holds=()).digest == summ.digest
+    # fail-closed: a hold over a NON-edge is refused (never a fabricated (producer, consumer) pair).
+    import pytest
+    with pytest.raises(ValueError, match="not one of the DAG's carried edges"):
+        replace(summ, serial_holds=((0, 1, 5.0),))

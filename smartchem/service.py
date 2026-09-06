@@ -1764,6 +1764,7 @@ def _dag_bench_note(dags: "tuple", box: "object") -> "str | None":
     ``exit_code`` to success), because a process FITS is serial-achievable.  This line is the one-string tally for both
     views, and it names the residual boundaries so a FITS is never over-read.
     """
+    from .experiment.dag import _serial_hold_minutes
     from .experiment.drafter import RouteFitStatus, dag_bench_fit
     if not dags or not box.constrains_anything:
         return None
@@ -1774,6 +1775,21 @@ def _dag_bench_note(dags: "tuple", box: "object") -> "str | None":
     # The FIT parenthetical is PROCESS-axis language ("serial-achievable"), so it is only honest when the process box
     # actually constrains the time/attention axis; a physical-only compile assessed no time axis (evil-morty cosmetic fold).
     fit_note = "serial-achievable" if box.process.constrains_anything else "within the physical bench"
+    # DAG-HOLD-01 (evil-morty fold: the disclosure must reach a real product surface, not just a dead explain()): surface
+    # the CONCRETE serial-schedule hold here, in the one human tally DAG mode actually emits -- not merely the generic
+    # boundary sentence.  Observation-only (it never changed a verdict) and schedule-relative.  A no-hold DAG set (e.g. a
+    # single-step or timing-free route) yields the byte-identical generic clause below, so it ripples nothing.
+    hold_vals = [v for d in dags for v in _serial_hold_minutes(d).values() if v > 0]
+    if hold_vals:
+        hold_clause = (
+            f"serial-hold stability is UNVERIFIED and now DISCLOSED (DAG-HOLD-01): {len(hold_vals)} intermediate "
+            f"handoff(s) across the assessed routes wait up to {max(hold_vals):g} min through sibling branches under "
+            "the serial schedule computed here (schedule-relative -- a different valid order shifts WHICH intermediate "
+            "waits; E1 is time-blind, so survival over the hold is unmodeled until a max-hold stability axis exists)"
+        )
+    else:
+        hold_clause = ("serial-hold stability is UNVERIFIED (a strengthening a linear FITS does not carry, unmodeled "
+                       "until a max-hold stability axis exists)")
     return (
         f"section-11 bench (DAG mode): {len(dags)} convergent route(s) SOUNDLY assessed and FORMALLY admitted on the "
         f"COMBINED fit (composability + physical + process) -- {fits} FIT ({fit_note}), {excluded} EXCLUDED (a hard "
@@ -1782,9 +1798,8 @@ def _dag_bench_note(dags: "tuple", box: "object") -> "str | None":
         "is re-derived on load (composability/physical ride as free-text, as for a linear route); a FITS assumes each "
         "step's attention is legal in isolation, NOT joint single-operator schedulability of concurrent branches (that "
         "band is the UNKNOWN, never a FITS); and 'serial-achievable' is certified on the MODELED axes (time/attention/"
-        "equipment) only -- serial execution of a convergent DAG HOLDS an early branch's intermediate through its "
-        "sibling branches, and E1 composability is time-blind (adjacent-handoff only), so that serial-hold stability is "
-        "UNVERIFIED (a strengthening a linear FITS does not carry, unmodeled until a max-hold stability axis exists)"
+        f"equipment) only -- serial execution of a convergent DAG HOLDS an early branch's intermediate through its "
+        f"sibling branches, and E1 composability is time-blind (adjacent-handoff only), so that {hold_clause}"
     )
 
 
@@ -2059,18 +2074,20 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     )
     if _note is not None:
         diagnostics = (*diagnostics, _note)
-    # DAG-BENCH-01: DAG mode ranks nothing LINEARLY, but each convergent route's COMBINED section-11 bench fit is now
-    # formally admitted -- a RankedDAGSummary per DAG (composability + physical + process), the process component
-    # re-derived on load, so process_selection_status is no longer UNASSESSED and a combined-FITS DAG can flip exit to
-    # success.  Built when the bench box constrains ANYTHING (physical OR process) -- the same standard the linear
-    # ranking uses -- so a physical-only DAG constraint is admitted too; the human-readable tally rides _dag_bench_note.
+    # DAG-BENCH-01 + DAG-RANK-01: each convergent route's COMBINED section-11 bench fit is formally admitted -- a
+    # RankedDAGSummary per DAG (composability + physical + process), the process component re-derived on load, so
+    # process_selection_status is no longer UNASSESSED and a combined-FITS DAG can flip exit to success -- AND the DAGs
+    # are now RANKED best-first (rank_dags), the DAG analogue of the linear route ranking, so a chemist handed several
+    # admissible convergent routes sees the best-evidenced one first (the "DAG mode ranked nothing" gap, closed).
+    # Built when the bench box constrains ANYTHING (physical OR process) -- the same standard the linear ranking uses --
+    # so a physical-only DAG constraint is admitted too; the human-readable tally rides _dag_bench_note.
     dag_dossiers: tuple = ()
     if mode == "dags":
-        from .experiment.drafter import ConstraintBox
+        from .experiment.drafter import ConstraintBox, rank_dags
         _dags = getattr(search_result, "dags", ())
         _box = ConstraintBox.of_bounds(request.constraints.bounds, process=request.constraints.process)
         if _box.constrains_anything:
-            dag_dossiers = tuple(RankedDAGSummary.of_dag(d, _box) for d in _dags)
+            dag_dossiers = tuple(RankedDAGSummary.of_dag(d, _box) for d in rank_dags(_dags, _box))
         _dag_note = _dag_bench_note(_dags, _box)
         if _dag_note is not None:
             diagnostics = (*diagnostics, _dag_note)

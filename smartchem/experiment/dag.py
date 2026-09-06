@@ -720,19 +720,77 @@ class DAGComposability(Digestible):
     def gaps(self) -> tuple[str, ...]:
         return tuple(t.reason for t in self.transitions if t.status is TransitionStatus.UNKNOWN)
 
+    @property
+    def serial_hold_notes(self) -> tuple[str, ...]:
+        """Human disclosures of each edge's serial-schedule hold (DAG-HOLD-01): the intermediate idle time E1's
+        instantaneous survival verdict does not model.  A DISCLOSURE, never a verdict -- it does NOT degrade
+        ``COMPOSABLE`` (else every convergent DAG with a sibling branch would read ``UNKNOWN``); it is the honest,
+        non-vacuous widening of the serial-hold-stability boundary DAG-BENCH-01 documented, drawn straight from the
+        observation-only ``serial-hold-minutes`` findings ``dag_composability`` attaches per edge."""
+        notes = []
+        for t in self.transitions:
+            for f in t.findings:
+                if f.label == "serial-hold-minutes":
+                    notes.append(
+                        f"step {t.from_step + 1}->{t.to_step + 1}: intermediate held {f.value} {f.unit} under the "
+                        f"serial schedule computed here (schedule-relative -- a different valid order may hold a "
+                        f"sibling instead); survival over that hold is UNVERIFIED (E1 is time-blind)"
+                    )
+        return tuple(notes)
+
     def explain(self) -> str:
         lines = [f"composability (convergent DAG): {self.verdict}"]
         for t in self.transitions:
             lines.append(f"  step {t.from_step + 1}->{t.to_step + 1}: {t.reason}")
+        for note in self.serial_hold_notes:
+            lines.append(f"  NOTE {note}")
         return "\n".join(lines)
 
 
+def _serial_hold_minutes(dag: SynthesisDAG) -> dict[tuple[int, int], float]:
+    """The per-edge serial-schedule hold (minutes) for each producer->consumer intermediate: the sum of the sourced
+    MINIMUM elapsed times of the steps scheduled STRICTLY between the producer and the consumer under the DAG's own
+    topological order (DAG-HOLD-01).  A ``None`` floor counts as 0 (an unknown floor is a lower bound of zero -- so
+    the result is a sound LOWER bound on the hold, exactly as :func:`~smartchem.process_constraints._critical_path`
+    treats an unknown weight).  This is the EXTRA hold a convergent serial schedule imposes beyond the adjacent
+    handoff E1 judges: a linear chain (the consumer runs immediately after its producer) has zero intervening steps
+    and so a zero hold.  Schedule-relative by construction (the DAG's canonical ``topological_order``); it is surfaced
+    as an observation, never a certified bound over all schedules."""
+    from ..process_constraints import _known_min  # lazy: matches dag_process_fit's process_constraints edge
+    order = _topological_order(len(dag.steps), dag.edges)
+    pos = {idx: rank for rank, idx in enumerate(order)}
+    holds: dict[tuple[int, int], float] = {}
+    for i, j, _m in dag.edges:
+        floor = 0.0
+        for k in order:
+            if pos[i] < pos[k] < pos[j]:
+                proc = dag.steps[k].envelope.process
+                if proc is not None:
+                    # the SAME known-minimum floor the process gate uses (min_elapsed_minutes and/or interval .lo);
+                    # an unknown floor is 0, so the sum stays a sound LOWER bound on the hold.
+                    step_floor = _known_min(
+                        proc.min_elapsed_minutes,
+                        proc.elapsed_minutes.lo if proc.elapsed_minutes is not None else None,
+                    )
+                    if step_floor is not None:
+                        floor += step_floor
+        holds[(i, j)] = floor
+    return holds
+
+
 def dag_composability(dag: SynthesisDAG, *, stability: StabilityTable = DEFAULT_STABILITY) -> DAGComposability:
-    """Judge whether every intermediate survives its handoff across each DAG edge, over sourced stability."""
+    """Judge whether every intermediate survives its handoff across each DAG edge, over sourced stability.
+
+    Each edge's Transition also carries the sourced serial-schedule HOLD (DAG-HOLD-01, :func:`_serial_hold_minutes`)
+    as an observation-only finding: a convergent DAG's serial schedule holds an early branch's intermediate through
+    its siblings, a hold E1's instantaneous survival verdict is blind to.  It is a disclosure, never a status change
+    (it does not degrade COMPOSABLE), the honest widening of the serial-hold-stability boundary DAG-BENCH-01 named."""
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
+    holds = _serial_hold_minutes(dag)
     transitions = tuple(
-        _judge_transition(i, j, intermediate, dag.steps[i].envelope, dag.steps[j].envelope, stability)
+        _judge_transition(i, j, intermediate, dag.steps[i].envelope, dag.steps[j].envelope, stability,
+                          hold_minutes=holds.get((i, j)))
         for i, j, intermediate in dag.edges
     )
     return DAGComposability(dag, transitions)

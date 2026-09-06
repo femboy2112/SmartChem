@@ -121,6 +121,33 @@ def _pressure_note(a: ConditionEnvelope, b: ConditionEnvelope) -> Quantity | Non
     )
 
 
+def _serial_hold_note(hold_minutes: float | None) -> Quantity | None:
+    """A COMPOSABILITY observation of the serial-schedule hold imposed on this intermediate (DAG-only, DAG-HOLD-01).
+
+    ``hold_minutes`` is the sourced MINIMUM elapsed time the intermediate sits idle between its producer and its
+    consumer under the DAG's serial schedule -- the sum of the intervening sibling steps' floors (unknown floors
+    counted as 0, so it is a sound LOWER bound).  Surfaced ONLY when there IS such a hold (a convergent DAG whose
+    serial schedule runs sibling branches between a producer and its join); a linear/adjacent handoff passes ``None``
+    (or 0) and gets no note.  It is an observation, NOT a survival verdict: E1's decomposition check is INSTANTANEOUS
+    (onset-vs-exposure) and does NOT model how LONG the intermediate is held, so the chemist is shown the hold that
+    the COMPOSABLE verdict is blind to.  Mirrors :func:`_pressure_note` exactly -- a finding, never a status change
+    (time / max-hold stability is a sourced-model gap E1 does not attempt: the named next-step).
+    """
+    if hold_minutes is None or hold_minutes <= 0:
+        return None
+    return Quantity(
+        label="serial-hold-minutes",
+        value=f">={hold_minutes:g}",
+        unit="min",
+        bucket=Bucket.COMPOSABILITY,
+        provenance="under the serial schedule computed here (one of several valid orders -- a different order may "
+        "shift the hold to a sibling intermediate) the intermediate is held at least this long through sibling "
+        "branches before the join consumes it (sum of intervening steps' sourced minimum elapsed, unknown floors "
+        "counted as 0); E1's survival verdict is instantaneous and does not model this hold (time/max-hold "
+        "stability not assessed -- sourced-model gap)",
+    )
+
+
 def _pressure_phase_degeneracy(
     rec: StabilityRef, env_from: ConditionEnvelope, env_to: ConditionEnvelope
 ) -> tuple[str, Quantity] | None:
@@ -196,12 +223,17 @@ def _judge_transition(
     env_from: ConditionEnvelope,
     env_to: ConditionEnvelope,
     table: StabilityTable,
+    *,
+    hold_minutes: float | None = None,
 ) -> Transition:
     exposed = _temperature_union(env_from, env_to)
     findings: list[Quantity] = []
     pnote = _pressure_note(env_from, env_to)
     if pnote is not None:
         findings.append(pnote)
+    hnote = _serial_hold_note(hold_minutes)  # DAG-HOLD-01: the serial-schedule hold E1's instantaneous verdict misses
+    if hnote is not None:
+        findings.append(hnote)
 
     rec = resolve_stability(intermediate, table)
     if rec is None:

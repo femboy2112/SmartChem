@@ -1,13 +1,13 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ 96730ae` · suite **4157 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
+> `verified @ c9e0fed` · suite **4169 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
-> queue — one list, not three that drift. Full per-round build history lives in the manifest (`§1`–`§15`); this file is
-> the forward-looking plan plus a compact done-ledger. Sizes and first-steps were ground-truthed against the source (a
-> 5-bearing recon, 2026-09-06) and the load-bearing claims independently re-verified at their file:line anchors; each
-> shipped item was red-teamed by an independent evil-morty before it landed.
+> queue — one list, not three that drift. Full per-round build history lives in the manifest (`§1`–`§16`); this file is
+> the forward-looking plan plus a compact done-ledger. Sizes and first-steps were ground-truthed against the source and
+> the load-bearing claims independently re-verified at their file:line anchors; each shipped item was red-teamed by an
+> independent evil-morty before it landed.
 
 ## Governance — the 3-lane projection (authoritative)
 
@@ -19,6 +19,14 @@ Every item is tagged with the lane it advances. **Progress in one lane never imp
   families) driven through the **unchanged** bounded SEARCH core.
 - **Lane C — Bench-readiness.** Section-11 bench fit (composability[E1] + physical box + process) and section-10.4
   pricing (dated **and** sourced, never invented).
+
+**Poor-man ethos (the bench is a kitchen).** "The kitchen" and "my lab and equipment" mean the same thing: the
+whole-path capability model satisfies-or-BLOCKS against **household + outdoors** equipment by default, never assumed
+lab infrastructure. "Poor man's fume hood = experiment done outside" — outdoors is a valid *ventilation* control, but
+ventilation ≠ hazard clearance (a toxic/corrosive vapour like Br₂/Cl₂ is still surfaced). Affordability is a whole-path
+capability claim (material identity, controllable operations, measurement, containment, separation, verification,
+closure), not a cheap-reagent list — a route cheap in reagents but needing a control the kitchen can't provide is
+`CAPABILITY_BLOCKED`, surfaced, never papered over. See `docs/research/PROCESS_OBSERVATION_AND_TRANSPORT_CONTRACT_v0.1.md`.
 
 ## North-star litmus tests (the acceptance gates that keep the lanes honest)
 
@@ -33,24 +41,29 @@ Every item is tagged with the lane it advances. **Progress in one lane never imp
   buckets. A pass quantitatively shows the cheap-brine route beats the mineral route. **Sourcing is favorable:** bromine
   is a USGS-priced inorganic (same pattern as NaCl/Na₂CO₃), so unlike the organic-price wall this litmus's cost axis is
   genuinely achievable. Spawns the queue items marked *(DOW)* below.
+  **✅ Phase 1 DONE (ROUND 16, DOW-BROMINE-01):** elemental bromine is now a first-class SOURCED, USGS-priced commodity
+  ($2.70/kg 2024, MCS 2026), INDUSTRIAL-tier (not kitchen-obtainable — the DOW insight encoded), costed end-to-end
+  through the buckets. **Phase 2 (queued/deferred):** the Br₂ synthesis-path *enumeration* needs a coupled
+  half-reaction combiner no mechanism has today (queue #2), and the brine-vs-mined *cost ranking* is blocked on a
+  sourced Cl₂ price (deferred — the aggregator wall).
 
 ---
 
 ## ✅ DONE — current shipped capability
 
-**ROUND 15** (commit `96730ae` on branch `roadmap-pin-2026-09-06`) — 2 builds; each `design → recon → build →
-reproduce → evil-morty → fold → verify`; both evil-morty MEDIUM findings folded and pinned by tests:
+**ROUND 16** (commit `c9e0fed` on branch `dag-thermo-bromine-2026-09-06`) — 2 builds; each `design → recon →
+build → reproduce → evil-morty → fold → verify`; both evil-morty findings folded and pinned by tests:
 
 | Item | Lane | What shipped |
 |---|---|---|
-| DAG-HOLD-01 | C·B | A convergent DAG's serial-schedule **hold** (an early branch's intermediate waiting through its siblings) is now **disclosed concretely** in the emitted DAG bench note — a sound lower bound over the DAG's own topological schedule, observation-only (never changes a verdict), schedule-relative (a sibling isn't implied safe). Folds: surfaced to a real product surface (was a dead `explain()`); schedule-relative wording. |
-| DAG-RANK-01 | C | `rank_dags`/`_dag_score` rank convergent DAGs **best-first** (the DAG analogue of `rank_routes`), closing the "DAG mode ranks nothing" gap DAG-BENCH-01 left open. Folds: non-vacuous service test (real multi-dossier reorder); removed an unused `stability=` divergence trap. |
+| DAG-THERMO-01 | C·B | A **per-node thermochemical roll-up** feeds convergent-DAG ranking, so a DAG ranking is now as rich as a linear one. `dag_thermo_rollup` aggregates the four sourced per-reaction verdicts (selectivity/feasibility/equilibrium/kinetics) worst-node-dominated — reusing the *same* per-step providers, default tables, and worst-folds the linear `fit_route` runs; `_dag_score` now mirrors `_route_score` tier-for-tier; `RankedDAGSummary` (schema v1alpha3) surfaces all five verdicts, parity with the route summary. RANKING-ONLY — never changes a section-11 status. Folds: non-vacuous selectivity/kinetics wiring test (a real FAVORED DAG, was all-UNKNOWN); reverted a `rank_dags` table-param trap that re-opened the exact ROUND-15 divergence. |
+| DOW-BROMINE-01 | B·C | **Phase 1 of the DOW-bromine litmus:** elemental bromine is now a first-class **SOURCED, USGS-priced** commodity ($2.70/kg 2024, MCS 2026, bromine content), added to both the frozen provenance seed and the live copy; new `INDUSTRIAL` availability tier (not a kitchen commodity — the DOW insight, encoded); costed end-to-end through `basket_cost_vector`/`cash_floor`. Folds: the basis now discloses the figure is a compound-dominated import blend normalized to contained bromine, not an elemental-Br₂ spot price. |
 
-**ROUND 14** (PR #9, merge `574a3e2`) — DAG-BENCH-01 (combined DAG bench fit), STEREO-DOSSIER-01 (perceived R/S in the
-dossier), ORGANIC-PRICE-01 (first sourced organic price, methanol/Methanex), + 2 honest refutations (RESONANCE-WORK-01;
-general-CIP wall). **Prior rounds (R5–R13):** resonance-canonical identity + caps, the 4 IR-COMMUTE families, per-route/
-DAG process re-derivation, cost/affordability, USGS inorganic pricing, combined-verdict HMAC, the sound distinct-Z CIP
-slice. Full ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§15`.
+**ROUND 15** (merge `978da9b`) — DAG-HOLD-01 (serial-hold disclosure), DAG-RANK-01 (best-first DAG ranking, structural).
+**ROUND 14** (`574a3e2`) — DAG-BENCH-01, STEREO-DOSSIER-01, ORGANIC-PRICE-01 (methanol/Methanex) + 2 refutations.
+**Prior rounds (R5–R13):** resonance-canonical identity + caps, the 4 IR-COMMUTE families, per-route/DAG process
+re-derivation, cost/affordability, USGS inorganic pricing, combined-verdict HMAC, the sound distinct-Z CIP slice. Full
+ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 
 ---
 
@@ -61,26 +74,30 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| 1 | **Per-node thermochemical roll-up for `rank_dags`** | C | **M** | short | none — reuses the per-reaction providers |
-| 2 | **Bromine synthesis paths + USGS bromine pricing** *(DOW)* | B·C | **M** | short | a USGS bromine price READ (sourceable) |
+| 1 | **`ProcessObservationIR` — read-only evidence-ingress + whole-path capability passport** | C | **M** | short | a scope decision (P1 is bounded) |
+| 2 | **Coupled half-reaction combiner (redox displacement mechanism)** *(DOW)* | B | **L** | medium | a real two-species electron-balanced mechanism |
 | 3 | **General CIP — oracle first, then breadth-first namer** | B | **L** | medium | a committed, independent geometric oracle |
 | 4 | **Composability + physical re-derivation on load — DAG *and* linear** | C | **L** | medium | a scope decision |
 | 5 | **Duration-aware stability verdict** (the full time axis) | B·C | **L** | long | sourced decomposition-kinetics per compound |
 | 6 | **Electrochemical / EM bridge** (electrolytic bromide oxidation) *(DOW)* | B·EM | **L** | long | an electrolysis model reaching the electron layer |
 
-### 1 · Per-node thermochemical roll-up for `rank_dags` — **M, the natural next win**
-DAG-RANK-01 ranks on the **structural** tiers only (status → composability → gap/exclusion counts) — the three sourced
-thermochemical tiebreakers a *linear* route gets (selectivity / feasibility / equilibrium) and the kinetics tie are
-**per-reaction** verdicts a DAG does not aggregate yet (`DAGBenchFit` carries none). Aggregate them per node so a DAG
-ranking is as rich as a linear one. Reuses the existing selectivity/feasibility/equilibrium/kinetics providers; extends
-what ROUND 15 just shipped. *(Also optional, S: make the DAG-HOLD-01 hold **machine-readable per-route** via a
-`serial_hold_notes` field on `RankedDAGSummary` — a schema bump + golden regen; today the hold is in the human note only.)*
+### 1 · `ProcessObservationIR` — read-only evidence-ingress + whole-path capability passport — **M, the fresh high-value seam**
+From the creator-process research contract (`docs/research/PROCESS_OBSERVATION_AND_TRANSPORT_CONTRACT_v0.1.md`, distilled
+from NileRed / Applied Science / MIT-OCW / ORD / NIST): footage is a source of **scoped operational observations**, never
+a recipe corpus. Add an immutable `ProcessObservationIR` (one source-fragment record: reaction identity + direction +
+run-context + phase + claims with explicit unknowns) that may *enrich* existing condition/resource records only when
+identity, direction, and context match — never manufacture a procedure, never infer omitted fields, never lift a route's
+readiness tier. Reframes the poor-man buckets as **whole-path capability bundles** (material / capability / verification /
+closure / scale) evaluated against the kitchen+outdoors bench (see the poor-man ethos above). **P1 (this item, bounded M):**
+the read-only IR + source-fragment validation + the capability-bucket findings — no catalog expansion, no procedure
+generation. P2/P3 (transport bridges, `BenchCapability` passport, operation graph) are later L.
 
-### 2 · Bromine synthesis paths + USGS bromine pricing — **M, opens the DOW litmus** *(DOW)*
-The first concrete step of the DOW-bromine litmus, and cheap because bromine is **USGS-priced** (same seed pattern as
-NaCl/Na₂CO₃ in `commodity_pricing.py` — no organic-price wall). First move: source the USGS bromine price (READ the
-primary), then enumerate the Br₂ synthesis paths (Cl₂ + 2Br⁻ → Br₂ + 2Cl⁻ redox displacement first) and rank them on
-cost. Exercises the redox IR-COMMUTE family + the cost/affordability buckets end to end.
+### 2 · Coupled half-reaction combiner (redox displacement mechanism) — **L, unblocks the DOW enumeration** *(DOW)*
+DOW phase 2's enumeration wall, found by recon: `Cl₂ + 2Br⁻ → Br₂ + 2Cl⁻` is **not representable** by any current
+mechanism — `redox_edges` is single-species charge-only (same atoms/bonds), and `capped_scissions` ties reactant-cuts
+1:1 so it can't reach the 1:2 stoichiometry. Build a real combiner that pairs an oxidation half-reaction with a reduction
+half-reaction across two species and balances electrons, so a displacement route can be *enumerated* (not just costed).
+Foundational for both the DOW synthesis ranking and the EM bridge (#6).
 
 ### 3 · General CIP — the oracle first, then the breadth-first namer — **L, correctness-critical**
 The distinct-Z slice stands; the general R/S is a named deferral. **The wall isn't the namer — it's the oracle** (built
@@ -91,9 +108,10 @@ problem, no tie to a time axis).
 
 ### 4 · Composability + physical re-derivation on load — DAG **and** linear — **L**
 On load only the **process** component is re-derived; composability + physical ride as free-text (closed only by the
-opt-in HMAC). Bigger than "mirror item 1": needs brand-new payload (per-edge intermediate `Molecule`, full
-`ConditionEnvelope`, per-step reactant/product tuples) that contradicts the thin-projection design. Widen the fix to
-DAG **and** linear in one pass (the boundary is symmetric).
+opt-in HMAC). Needs brand-new payload (per-edge intermediate `Molecule`, full `ConditionEnvelope`, per-step
+reactant/product tuples) that contradicts the thin-projection design. Widen the fix to DAG **and** linear in one pass
+(the boundary is symmetric). *(Also optional, S: make the DAG-HOLD-01 hold **machine-readable per-route** via a
+`serial_hold_notes` field on `RankedDAGSummary` — a schema bump + golden regen; today the hold is in the human note only.)*
 
 ### 5 · Duration-aware stability verdict — **L, sourcing wall** *(and DOW: Br₂ decomposition)*
 The full version of the time axis: let E1 render a duration-aware COMPOSABLE/DEGENERATE verdict instead of an
@@ -104,12 +122,19 @@ per-compound primary-source wall. Also the home for the DOW litmus's Br₂-decom
 ### 6 · Electrochemical / EM bridge — **L, long horizon** *(DOW)*
 Dow's process is *electrolytic* oxidation of bromide — the DOW litmus's demand that we reach the electron/circuit layer
 ([electromagnetic scope]). Model anodic oxidation (electrons at an electrode) so bromide→bromine can be costed and
-ranked as an electrochemical route, bridging the chemistry core and the EM layer. The most ambitious lane; long horizon.
+ranked as an electrochemical route, bridging the chemistry core and the EM layer. Builds on the half-reaction combiner
+(#2). The most ambitious lane; long horizon.
 
 ---
 
 ## ⏸️ DEFERRED — attempted at full effort, honestly walled (not fabricated)
 
+- **The DOW brine-vs-mined *cost ranking*** (DOW phase 2, Lane C). Phase 1 (sourced bromine pricing) shipped; ranking
+  the brine route against the mined/market route quantitatively needs a sourced **Cl₂ price** (the oxidant) and a sourced
+  **NaBr feedstock** price. Chlorine hits the same aggregator wall as the organics (no directly-readable dated absolute);
+  NaBr's price would be DERIVED from the bromine-content figure via mass fraction (a known-physics derivation, but a
+  different epistemic class than the sourced seed — it does not belong in the sourced-absolute table). Deferred until a
+  Cl₂ primary is found or a labelled-DERIVED price path is built. Also gated on the enumeration mechanism (queue #2).
 - **A second sourced organic price** (was ROUND-15 item 3; Lane C). Attempted acetic acid (highest value — it ripples
   the methyl-acetate golden) and ethanol. **Wall:** organic producers post price *increases* (Celanese: +$50/MT Feb,
   +$0.10/lb Mar 2026), not absolute reference sheets; absolutes are aggregator-walled (Intratec/ChemAnalyst). Ethanol's
@@ -139,8 +164,9 @@ ranked as an electrochemical route, bridging the chemistry core and the EM layer
 - **Load-time free-text trust boundary** (Lane C) — composability/physical claims ride unsigned unless a consumer opts
   into the COMBINED-VERDICT-AUTH HMAC; applies to both DAG and linear. Structural closure = queue item 4.
 - **DAG `dag_bench_fit` compute multiplicity** (perf, correctness-neutral) — a DAG-mode compile runs `dag_bench_fit`
-  ~3×N (rank_dags key + `of_dag` + `_dag_bench_note`), bounded and compile-time. Reduce by threading one computed fit
-  through all three if it ever matters; not worth a refactor today.
+  ~3×N (rank_dags key + `of_dag` + `_dag_bench_note`), and each call now ALSO computes the four-provider thermo roll-up
+  per node (DAG-THERMO-01), so it is heavier. Still bounded and compile-time (real DAGs are small). Reduce by threading
+  one computed fit through all three if it ever matters; not worth a refactor today.
 
 ---
 

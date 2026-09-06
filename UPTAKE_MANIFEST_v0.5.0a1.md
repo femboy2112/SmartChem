@@ -4043,3 +4043,53 @@ See [`ROADMAP.md`](ROADMAP.md) for the ranked live queue. Freshest: (1) a per-no
 tiebreaks like a linear route; (2) bromine synthesis paths + USGS bromine pricing (DOW litmus phase 1); then the
 standing L items (general CIP oracle-first; DAG+linear re-derivation on load; the full duration-aware stability axis;
 the electrochemical/EM bridge).
+
+## 16. ROUND 16 — per-node DAG thermochemical roll-up + sourced USGS bromine (DOW phase 1) (2026-09-06)
+
+Two builds, each `design → recon → build → reproduce → evil-morty → fold → verify`. Recon: 2 Citadel Ricks (thermo/DAG
+terrain; cost/redox terrain) + the USGS bromine primary READ by hand + the creator-process research branch
+`aletheia/creator-process-research-2026-09-06` pulled (its `docs/research/PROCESS_OBSERVATION_AND_TRANSPORT_CONTRACT_v0.1.md`
+brought onto `main`, its stale pre-ROUND-15 reverts left behind). Both items red-teamed by an independent evil-morty
+(both sound; each yielded folds, pinned below).
+
+### 16.1 item 1 — DAG-THERMO-01, the per-node thermochemical roll-up (Lane C·B)
+`dag_thermo_rollup` (`smartchem/experiment/dag.py`) aggregates the four SOURCED per-reaction verdicts
+(selectivity/feasibility/equilibrium/kinetics) worst-node-dominated over a convergent DAG's nodes — the DAG analogue of
+the four `verify_*` folds `fit_route` runs, reusing the IDENTICAL per-step providers, default tables, and worst-folds
+(the M4 `verify_dag` feas/equi fold was already present since `ec69eae`; this completes it to four axes and wires it into
+ranking). `DAGBenchFit` gains the four verdict fields; `_dag_score` (`drafter.py`) now mirrors `_route_score`
+tier-for-tier (status → composability → selectivity → feasibility → equilibrium → gaps → exclusions → kinetics-last);
+`RankedDAGSummary` bumps to schema `ranked-dag-summary-v1alpha3` (descriptor v1alpha15) to surface all five verdicts,
+reaching parity with `RankedRouteSummary`. RANKING-ONLY: the verdicts are computed AFTER status and never enter it (a
+FITS stays a FITS). evil-morty folds: **(LOW-A)** the only real-DAG fixture was all-UNKNOWN on selectivity+kinetics, so
+their wiring was proven only to "not raise" (the vacuous-green class) → added a non-vacuous test on a real FAVORED DAG +
+a kinetics differential; **(LOW-B)** the `rank_dags` table params re-opened the exact ROUND-15 divergence trap (`of_dag`
+can't thread them) → reverted `rank_dags` to defaults-only. `tests/test_dag_thermo_rollup.py`.
+
+### 16.2 item 2 — DOW-BROMINE-01, elemental bromine as a first-class SOURCED commodity (Lane B·C; DOW phase 1)
+Elemental bromine (Br₂) added to the commodity registry as a new `INDUSTRIAL` availability tier (`data/reagents.py` +
+`affordability.py::_ACCESS_ORDINAL`) — honestly NOT a kitchen commodity (the DOW insight: you make bromine from cheap
+bromide, you don't buy it). Priced from the USGS MCS 2026 bromine chapter (READ from the primary PDF): "average unit
+value of imports (c.i.f.), $2.70/kg bromine content, 2024 final" ($3.00/kg 2025e), stored as $2700/t (×1000, a
+definitional unit conversion) in BOTH the frozen provenance seed (`experiments/usgs_commodity_seed.py`, FROZEN_HASH
+recomputed) and the live copy (`commodity_pricing.py`), structure-keyed to Br₂ (no isomer can borrow it), costed
+end-to-end through `basket_cost_vector`/`cash_floor`. evil-morty (sound, could not break it) fold: the basis now
+discloses the USGS figure is a COMPOUND-DOMINATED import blend (~90% bromide compounds) normalized to contained bromine,
+not an elemental-Br₂ spot price — a caveat the future DOW synthesis-ranking phase must respect. `tests/test_bromine_pricing.py`.
+The recompile golden (`recompile_routes_found.json`) regenerated: bromine legitimately joins the declared commodity
+terminal set, shifting that recompile's `terminal_policy_digest` (→ `request_digest`/`result_digest`); digests-only diff.
+
+### 16.3 creator-process research incorporated (the poor-man ethos, made computational)
+The pulled contract reframes footage as **scoped operational observations**, never a recipe corpus, and the poor-man
+buckets as **whole-path capability bundles** (material / capability / verification / closure / scale). Folded into
+ROADMAP governance as the poor-man ethos: the bench is a **kitchen + outdoors** (kitchen = lab; "poor man's fume hood =
+outside", a ventilation control but not a hazard clearance). Spawned queue item 1 (`ProcessObservationIR` read-only
+evidence-ingress + capability passport). The redox-displacement enumeration gap recon found (no coupled half-reaction
+combiner exists; `Cl₂ + 2Br⁻ → Br₂ + 2Cl⁻` is unreachable by `redox_edges` or `capped_scissions`) spawned queue item 2.
+
+### 16.4 next-steps (ROUND 16)
+See [`ROADMAP.md`](ROADMAP.md) for the ranked live queue. Freshest: (1) `ProcessObservationIR` read-only evidence-ingress
++ whole-path capability passport (the poor-man ethos made computational); (2) the coupled half-reaction combiner that
+makes the Br₂ displacement *enumerable* (DOW phase 2); then general CIP oracle-first, DAG+linear re-derivation, the full
+duration-aware stability axis, and the electrochemical/EM bridge. DEFERRED: the DOW brine-vs-mined cost ranking (Cl₂
+sourcing wall); a second organic price.

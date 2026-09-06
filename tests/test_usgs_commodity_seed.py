@@ -117,5 +117,5 @@ class TestHonestlyAbsent:
 def test_report_is_self_consistent():
     r = report()
     assert r["hash_matches"] is True
-    assert r["priced_forms"] == 8
-    assert set(r["commodities"]) == {"salt", "soda ash", "lime", "sulfur"}
+    assert r["priced_forms"] == 9   # +1: DOW-BROMINE-01 added the USGS bromine import unit value
+    assert set(r["commodities"]) == {"salt", "soda ash", "lime", "sulfur", "bromine"}

@@ -397,21 +397,40 @@ class DAGBenchFit:
     exclusions: tuple[str, ...]
     gaps: tuple[str, ...]
     composability: object  # DAGComposability (kept off the top-level import to preserve the drafter->dag one-way edge)
+    # DAG-THERMO-01: the four SOURCED per-reaction thermochemical verdicts, aggregated worst-node-dominated over the
+    # DAG's nodes (:func:`~smartchem.experiment.dag.dag_thermo_rollup`), reaching parity with RouteFit's sel/feas/eq/kin.
+    # RANKING-ONLY, never a grade: ``_dag_score`` orders otherwise-tied DAGs on them, but they NEVER change ``status``
+    # (exactly as the linear ``fit_route`` leaves ``status`` independent of its thermo verdicts).  Defaulted to the
+    # neutral "UNKNOWN" so a hand-built/stub DAGBenchFit stays valid; ``dag_bench_fit`` always computes them for real.
+    selectivity_verdict: str = "UNKNOWN"
+    feasibility_verdict: str = "UNKNOWN"
+    equilibrium_verdict: str = "UNKNOWN"
+    kinetics_verdict: str = "UNKNOWN"
 
     @property
     def fits(self) -> bool:
         return self.status is RouteFitStatus.FITS
 
 
-def dag_bench_fit(dag, box: ConstraintBox, *, stability=None) -> DAGBenchFit:
+def dag_bench_fit(
+    dag, box: ConstraintBox, *,
+    stability=None, selectivity=None, thermo=None, kinetics=None, losses: tuple = (),
+) -> DAGBenchFit:
     """Judge whether one convergent DAG runs on the target bench ``box`` -- the COMBINED section-11 admission.
 
     Mirrors :func:`fit_route` axis-for-axis (composability + per-step physical box + process), re-shaped for the
     convergent structure so a DAG is a FIRST-CLASS bench citizen, not a process-axis-only diagnostic (DAG-BENCH-01,
-    the named next-step DAG-ADMIT-01 left open).  ``dag_composability``/``dag_process_fit`` are imported LAZILY so
-    ``drafter`` never takes a module-load dependency on ``dag`` (the one-way layering edge; ``dag`` must not import
-    ``drafter``)."""
-    from .dag import SynthesisDAG, dag_composability, dag_process_fit
+    the named next-step DAG-ADMIT-01 left open).  ``dag_composability``/``dag_process_fit``/``dag_thermo_rollup`` are
+    imported LAZILY so ``drafter`` never takes a module-load dependency on ``dag`` (the one-way layering edge; ``dag``
+    must not import ``drafter``).
+
+    DAG-THERMO-01: it ALSO computes the four SOURCED per-reaction thermochemical verdicts
+    (:func:`~smartchem.experiment.dag.dag_thermo_rollup`, the DAG analogue of the four ``verify_*`` folds
+    ``fit_route`` runs) and carries them on the result for :func:`_dag_score` to rank on -- so a DAG ranking is as rich
+    as a linear one.  They are RANKING-ONLY: they never enter the ``status`` computation below (a FITS/EXCLUDED/UNKNOWN
+    is decided by composability + physical box + process alone, exactly as ``fit_route``'s ``status`` ignores its
+    thermo verdicts).  The sourced tables default to their seeds when ``None``, mirroring ``fit_route``."""
+    from .dag import SynthesisDAG, dag_composability, dag_process_fit, dag_thermo_rollup
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
     comp = dag_composability(dag) if stability is None else dag_composability(dag, stability=stability)
@@ -444,7 +463,12 @@ def dag_bench_fit(dag, box: ConstraintBox, *, stability=None) -> DAGBenchFit:
     else:
         # an empty box constrains nothing, so there is nothing to fit: UNCONSTRAINED, never a silent FITS (section 11).
         status = RouteFitStatus.UNCONSTRAINED
-    return DAGBenchFit(status, tuple(exclusions), tuple(gaps), comp)
+    # DAG-THERMO-01: the four sourced per-reaction thermochemical ranking verdicts (computed AFTER status, and never
+    # feeding it -- ranking-only, exactly as fit_route's thermo verdicts never touch its status).
+    rollup = dag_thermo_rollup(dag, selectivity=selectivity, thermo=thermo, kinetics=kinetics, losses=losses)
+    return DAGBenchFit(status, tuple(exclusions), tuple(gaps), comp,
+                       rollup.selectivity_verdict, rollup.feasibility_verdict,
+                       rollup.equilibrium_verdict, rollup.kinetics_verdict)
 
 
 def _route_score(fit: RouteFit) -> tuple:
@@ -519,19 +543,33 @@ def _dag_score(fit: DAGBenchFit) -> tuple:
     next-step DAG-BENCH-01 left open) so a chemist handed several admissible convergent routes sees the best-evidenced
     one first -- the north-star litmus.
 
-    BOUNDARY (why this is a COARSE ranking, not yet the full one): the three SOURCED thermochemical tiebreakers
-    :func:`_route_score` rides between composability and the counts (selectivity / feasibility / equilibrium) and its
-    last-resort kinetics tier are PER-REACTION verdicts a DAG does not aggregate today -- ``DAGBenchFit`` carries none
-    of them.  A per-node thermochemical roll-up is the named next-step; until then this is a sound STRUCTURAL best-first
-    order (status -> composability -> gap/exclusion counts), never a claim of thermochemical discrimination it lacks."""
+    DAG-THERMO-01: the three SOURCED thermochemical tiers :func:`_route_score` rides between composability and the
+    counts (selectivity / feasibility / equilibrium) and its last-resort kinetics tier are NOW aggregated per node
+    (:func:`~smartchem.experiment.dag.dag_thermo_rollup`, worst-node-dominated, carried on ``DAGBenchFit``), so this
+    ranks on EXACTLY the same tier order ``_route_score`` does -- a DAG ranking is as rich as a linear one.  Each is
+    NEUTRAL on ignorance (a sourced positive floats, a sourced negative sinks, UNKNOWN sits in the middle -- never a
+    penalty for missing data) and RANKING-ONLY (it orders otherwise-tied DAGs and NEVER enters ``fit.status``, exactly
+    as the linear kinetics tier never enters an L2 grade)."""
+    # This is _route_score's tuple, tier-for-tier: status -> composability -> selectivity -> feasibility ->
+    # equilibrium -> gap count -> exclusion count -> kinetics (dead last, ranking-only).  The rank dicts are byte-
+    # identical to _route_score's so a DAG and a linear route are ordered by the same sourced discipline.
     status_rank = {RouteFitStatus.FITS: 0, RouteFitStatus.UNCONSTRAINED: 0,
                    RouteFitStatus.UNKNOWN: 1, RouteFitStatus.EXCLUDED: 2}
     comp_rank = {"COMPOSABLE": 0, "NO_TRANSITIONS": 1, "SINGLE_STEP": 1, "UNKNOWN": 2, "DEGENERATE": 3}
+    sel_rank = {"FAVORED": 0, "NOT_APPLICABLE": 1, "UNKNOWN": 1, "DISFAVORED": 2}
+    feas_rank = {"FAVORABLE": 0, "BORDERLINE": 1, "UNKNOWN": 1, "UNFAVORABLE": 2}
+    eq_rank = {"ESSENTIALLY_COMPLETE": 0, "FAVORABLE": 1, "BALANCED": 2, "UNKNOWN": 2,
+               "LIMITED": 3, "NEGLIGIBLE": 4}
+    regime_rank = {"FAST": 0, "MODERATE": 1, "UNKNOWN": 2, "SLOW": 3, "FROZEN": 4}
     return (
         status_rank[fit.status],
         comp_rank.get(fit.composability.verdict, 4),
+        sel_rank.get(fit.selectivity_verdict, 1),
+        feas_rank.get(fit.feasibility_verdict, 1),
+        eq_rank.get(fit.equilibrium_verdict, 2),
         len(fit.gaps),
         len(fit.exclusions),
+        regime_rank.get(fit.kinetics_verdict, 2),
     )
 
 
@@ -543,11 +581,13 @@ def rank_dags(dags, box: ConstraintBox | None = None) -> tuple:
     convergent routes float above UNKNOWN-gap ones, above EXCLUDED/DEGENERATE ones.  The sort is STABLE, so DAGs that
     tie on every ranked dimension keep their discovery order -- a deterministic, reproducible ranking.
 
-    It scores each DAG under the DEFAULT stability table, EXACTLY as the caller's
-    :class:`~smartchem.service.RankedDAGSummary.of_dag` projects it -- so the ranked order can never disagree with the
-    ``fit_status`` each dossier carries.  (An earlier ``stability=`` param was removed as an evil-morty fold: ``of_dag``
-    takes no stability, so accepting one here would let a caller rank under one table and project under another -- a
-    latent divergence with no consumer.  If a non-default table is ever needed, thread it through BOTH or neither.)"""
+    It scores each DAG under the DEFAULT sourced tables (stability + the DAG-THERMO-01 selectivity/thermo/kinetics),
+    EXACTLY as the caller's :class:`~smartchem.service.RankedDAGSummary.of_dag` projects it -- so the ranked order can
+    never disagree with the ``fit_status``/verdicts each dossier carries.  Deliberately takes NO table params (the
+    ROUND-15 fold, re-affirmed for DAG-THERMO-01): ``of_dag`` takes none either, so accepting a table here would let a
+    caller rank under one table while the dossiers project under the defaults -- a latent divergence with no consumer.
+    ``dag_bench_fit`` still accepts the tables for a direct caller who owns BOTH sides; the ranking entry point does not
+    expose them until ``of_dag`` can thread them too, so BOTH move together or neither does."""
     effective_box = box if box is not None else ConstraintBox()
     scored = [(dag_bench_fit(dag, effective_box), dag) for dag in dags]
     scored.sort(key=lambda pair: _dag_score(pair[0]))

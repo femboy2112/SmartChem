@@ -33,7 +33,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha14",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha15",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -52,14 +52,19 @@
     "schema_version": "str"
   },
   "ranked_dag_summary_fields": {
+    "composability_verdict": "str (DAG-THERMO-01: worst-edge E1 composability verdict)",
     "edges": "array[[int, int]] (producer->consumer step-index pairs -- the DAG topology the critical-path elapsed aggregation re-derives against; shape-validated on load)",
     "equation": "str",
+    "equilibrium_verdict": "str (DAG-THERMO-01: worst-node equilibrium extent)",
     "exclusions": "array[str] (hard composability/physical/process over/under-bounds)",
+    "feasibility_verdict": "str (DAG-THERMO-01: worst-node thermodynamic feasibility)",
     "fit_status": "enum(FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED) (DAG-BENCH-01: the COMBINED section-11 verdict -- composability + physical box + process -- the SAME combined fit a linear route carries; only the PROCESS component is re-derived on load)",
     "gaps": "array[str] (undeclared constrained composability/physical/process dimensions)",
+    "kinetics_verdict": "str (DAG-THERMO-01: worst-node rate regime; ranking-only, NEVER a grade)",
     "process_requirements": "array[object(per-step declared process facts)|null] (DAG-BENCH-01: the PROCESS component is re-derived on load via evaluate_dag_process_requirements, one entry per DAG step in the DAG's own order, null for an undeclared step; part of identity)",
     "route_digest": "str (sha256; == the matching DAG candidate_digest)",
-    "schema_version": "str"
+    "schema_version": "str",
+    "selectivity_verdict": "str (DAG-THERMO-01: worst-node sourced selectivity)"
   },
   "ranked_route_summary_fields": {
     "composability_verdict": "str",

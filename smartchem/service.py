@@ -159,7 +159,10 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha12"
 # v1alpha13 (DAG-ADMIT-01): the response gains a ``ranked_dag_dossiers`` field (per-DAG process admission).
 # v1alpha14 (DAG-BENCH-01): the ranked_dag_summary element's ``process_fit_status`` field is RENAMED to ``fit_status``
 # and now carries the COMBINED section-11 verdict (composability + physical box + process), not the process axis alone.
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha14"
+# v1alpha15 (DAG-THERMO-01): the ranked_dag_summary element gains composability/selectivity/feasibility/equilibrium/
+# kinetics verdict fields (the per-node thermochemical roll-up feeding the DAG ranking), reaching parity with the
+# ranked_route_summary's verdict fields so a DAG dossier's best-first order is as inspectable as a linear one's.
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha15"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -170,8 +173,10 @@ RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha2"
 # carries its ``edges`` (so the critical-path PROCESS component is re-derived on load, the convergent PROCESS-ADMIT-01)
 # -- but ``fit_status`` is now the SAME combined verdict (composability + physical box + process) a linear route
 # carries, so a convergent DAG is a first-class bench citizen.  v1alpha2: ``process_fit_status`` renamed ``fit_status``
-# and widened from the process axis alone to the combined bench fit.
-RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha2"
+# and widened from the process axis alone to the combined bench fit.  v1alpha3 (DAG-THERMO-01): gains the five ranking
+# verdict fields (composability/selectivity/feasibility/equilibrium/kinetics) so the DAG dossier exposes the same
+# sourced tiebreakers the ranked_route_summary does -- parity, and the best-first order made inspectable.
+RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha3"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -1082,6 +1087,14 @@ class RankedDAGSummary(Digestible):
     gaps: tuple[str, ...]
     process_requirements: "tuple[ProcessRequirements | None, ...]"
     edges: "tuple[tuple[int, int], ...]"
+    # DAG-THERMO-01: the five ranking verdict strings, projected off dag_bench_fit -- parity with RankedRouteSummary.
+    # RANKING-ONLY (they order otherwise-tied DAGs; they NEVER change fit_status) and part of identity (folded into the
+    # digest, so a forger cannot relabel a DISFAVORED/UNFAVORABLE verdict to a favorable one without the digest moving).
+    composability_verdict: str = "UNKNOWN"
+    selectivity_verdict: str = "UNKNOWN"
+    feasibility_verdict: str = "UNKNOWN"
+    equilibrium_verdict: str = "UNKNOWN"
+    kinetics_verdict: str = "UNKNOWN"
 
     _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
 
@@ -1090,7 +1103,8 @@ class RankedDAGSummary(Digestible):
             raise ValueError(f"schema_version must be exactly {RANKED_DAG_SUMMARY_SCHEMA!r}")
         if self.fit_status not in self._FIT_STATUSES:
             raise ValueError(f"fit_status must be one of {self._FIT_STATUSES}")
-        for name in ("route_digest", "equation"):
+        for name in ("route_digest", "equation", "composability_verdict", "selectivity_verdict",
+                     "feasibility_verdict", "equilibrium_verdict", "kinetics_verdict"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise ValueError(f"{name} must be a non-empty string")
         for name in ("exclusions", "gaps"):
@@ -1137,6 +1151,13 @@ class RankedDAGSummary(Digestible):
             tuple(fit.gaps),
             tuple(step.envelope.process for step in dag.steps),
             edges,
+            # DAG-THERMO-01: the five ranking verdicts, the SAME dag_bench_fit that decided fit_status.  composability
+            # comes off the DAGComposability object; the four thermo verdicts ride on the DAGBenchFit itself.
+            fit.composability.verdict,
+            fit.selectivity_verdict,
+            fit.feasibility_verdict,
+            fit.equilibrium_verdict,
+            fit.kinetics_verdict,
         )
 
 
@@ -2471,6 +2492,11 @@ def ranked_dag_summary_to_payload(summary: RankedDAGSummary) -> dict:
         "gaps": list(summary.gaps),
         "process_requirements": [_process_requirements_to_payload(r) for r in summary.process_requirements],
         "edges": [[a, b] for a, b in summary.edges],
+        "composability_verdict": summary.composability_verdict,
+        "selectivity_verdict": summary.selectivity_verdict,
+        "feasibility_verdict": summary.feasibility_verdict,
+        "equilibrium_verdict": summary.equilibrium_verdict,
+        "kinetics_verdict": summary.kinetics_verdict,
     }
 
 
@@ -2486,6 +2512,11 @@ def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
         tuple(payload["gaps"]),
         tuple(_process_requirements_from_payload(p) for p in payload["process_requirements"]),
         tuple((int(a), int(b)) for a, b in payload["edges"]),
+        payload["composability_verdict"],
+        payload["selectivity_verdict"],
+        payload["feasibility_verdict"],
+        payload["equilibrium_verdict"],
+        payload["kinetics_verdict"],
     )
 
 
@@ -2873,6 +2904,11 @@ def response_schema() -> dict:
                                     "per DAG step in the DAG's own order, null for an undeclared step; part of identity)",
             "edges": "array[[int, int]] (producer->consumer step-index pairs -- the DAG topology the critical-path "
                      "elapsed aggregation re-derives against; shape-validated on load)",
+            "composability_verdict": "str (DAG-THERMO-01: worst-edge E1 composability verdict)",
+            "selectivity_verdict": "str (DAG-THERMO-01: worst-node sourced selectivity)",
+            "feasibility_verdict": "str (DAG-THERMO-01: worst-node thermodynamic feasibility)",
+            "equilibrium_verdict": "str (DAG-THERMO-01: worst-node equilibrium extent)",
+            "kinetics_verdict": "str (DAG-THERMO-01: worst-node rate regime; ranking-only, NEVER a grade)",
         },
         "affordability_frontier_entry_fields": {
             "schema_version": "str",

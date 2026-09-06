@@ -47,6 +47,8 @@ from .composability import Transition, TransitionStatus, _judge_transition
 from .exact_lp import LPUnbounded, maximize
 from .equilibrium import EquilibriumExtent, StepEquilibrium, equilibrium_of_step
 from .feasibility import FeasibilityDirection, StepFeasibility, feasibility_of_step
+from .kinetics import DEFAULT_KINETICS, kinetics_of_step, worst_regime
+from .selectivity import DEFAULT_SELECTIVITY, SelectivityStatus, selectivity_of_step
 from .step import ExperimentStep
 
 __all__ = [
@@ -59,11 +61,13 @@ __all__ = [
     "DAGShoppingRequirement",
     "DAGComposability",
     "DAGVerification",
+    "DAGThermoRollup",
     "dag_ceiling",
     "dag_shopping_requirement",
     "dag_composability",
     "dag_process_fit",
     "verify_dag",
+    "dag_thermo_rollup",
 ]
 
 DAG_SCHEMA = "smartchem.experiment/synthesis-dag-v1"
@@ -847,6 +851,18 @@ def _worst_equilibrium(extents: tuple[EquilibriumExtent, ...]) -> str:
     return EquilibriumExtent.ESSENTIALLY_COMPLETE.value
 
 
+def _worst_selectivity(statuses: tuple[SelectivityStatus, ...]) -> str:
+    """The route-shape-agnostic selectivity verdict (mirrors RouteSelectivity.verdict EXACTLY): a sourced
+    DISFAVORED step dominates, then any UNKNOWN, then a sourced FAVORED, else NOT_APPLICABLE."""
+    if any(s is SelectivityStatus.DISFAVORED for s in statuses):
+        return "DISFAVORED"
+    if any(s is SelectivityStatus.UNKNOWN for s in statuses):
+        return "UNKNOWN"
+    if any(s is SelectivityStatus.FAVORED for s in statuses):
+        return "FAVORED"
+    return "NOT_APPLICABLE"
+
+
 @dataclass(frozen=True)
 class DAGVerification(Digestible):
     """The full verdict on a convergent DAG: composability per edge, feasibility + equilibrium per step."""
@@ -890,3 +906,53 @@ def verify_dag(
     feas = tuple(feasibility_of_step(s, thermo=thermo) for s in dag.steps)
     equi = tuple(equilibrium_of_step(s, thermo=thermo) for s in dag.steps)
     return DAGVerification(dag, comp, feas, equi)
+
+
+# -- the per-node thermochemical roll-up feeding DAG RANKING (DAG-THERMO-01) -----------------------------
+@dataclass(frozen=True)
+class DAGThermoRollup:
+    """The four SOURCED per-reaction thermochemical verdicts a linear ``_route_score`` ranks on, aggregated
+    worst-node-dominated over a convergent DAG's nodes -- the DAG analogue of :class:`RouteFit`'s
+    selectivity/feasibility/equilibrium/kinetics verdicts, closing the "``DAGBenchFit`` carries no thermochem"
+    gap :func:`~smartchem.experiment.drafter._dag_score` named as its next-step.
+
+    RANKING-ONLY, never a grade (identical to the linear discipline): these verdicts order otherwise-tied DAGs
+    and NEVER enter a section-11 status -- a DAG's FITS/EXCLUDED/UNKNOWN is unaffected by them, exactly as a
+    linear route's ``fit_status`` is independent of its selectivity/feasibility/equilibrium/kinetics verdicts.
+    A plain record (not a :class:`~smartchem.contracts.Digestible`): an internal ranking computation the thin
+    :class:`~smartchem.service.RankedDAGSummary` projects the strings off, never itself a payload term."""
+
+    selectivity_verdict: str
+    feasibility_verdict: str
+    equilibrium_verdict: str
+    kinetics_verdict: str
+
+
+def dag_thermo_rollup(
+    dag, *, selectivity=None, thermo=None, kinetics=None, losses: tuple = (),
+) -> DAGThermoRollup:
+    """Aggregate the four SOURCED per-reaction thermochemical verdicts over a convergent DAG's nodes,
+    worst-node-dominated -- the DAG analogue of the four ``verify_*`` folds :func:`fit_route` runs, reusing the
+    IDENTICAL per-step providers (``selectivity_of_step`` / ``feasibility_of_step`` / ``equilibrium_of_step`` /
+    ``kinetics_of_step``), the IDENTICAL default sourced tables, and the IDENTICAL worst-precedence folds
+    (:func:`_worst_selectivity` / :func:`_worst_feasibility` / :func:`_worst_equilibrium` / :func:`worst_regime`).
+
+    A per-node verdict does not depend on the schedule, so this maps over ``dag.steps`` directly (order-agnostic,
+    exactly as ``dag_bench_fit``'s per-step physical box is).  Each table defaults to its sourced seed when ``None``,
+    mirroring ``verify_selectivity``/``verify_feasibility``/``verify_kinetics`` -- so the DAG ranks on the SAME
+    sourced facts a linear route does, never an invented one."""
+    if type(dag) is not SynthesisDAG:
+        raise TypeError("dag must be a SynthesisDAG")
+    sel_tbl = DEFAULT_SELECTIVITY if selectivity is None else selectivity
+    thermo_tbl = DEFAULT_THERMO if thermo is None else thermo
+    kin_tbl = DEFAULT_KINETICS if kinetics is None else kinetics
+    sel = tuple(selectivity_of_step(s, table=sel_tbl, losses=losses) for s in dag.steps)
+    feas = tuple(feasibility_of_step(s, thermo=thermo_tbl) for s in dag.steps)
+    equi = tuple(equilibrium_of_step(s, thermo=thermo_tbl) for s in dag.steps)
+    kin = tuple(kinetics_of_step(s, kinetics=kin_tbl, losses=losses) for s in dag.steps)
+    return DAGThermoRollup(
+        _worst_selectivity(tuple(s.status for s in sel)),
+        _worst_feasibility(tuple(f.direction for f in feas)),
+        _worst_equilibrium(tuple(e.extent for e in equi)),
+        worst_regime(k.regime for k in kin).value,
+    )

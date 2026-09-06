@@ -46,12 +46,18 @@ __all__ = [
 
 class Availability(str, Enum):
     """Where a layperson can commonly obtain the compound.  A CURATED obtainability judgment, ordered
-    easiest-first; NOT a sourced constant, a price, or a legal claim."""
+    easiest-first; NOT a sourced constant, a price, or a legal claim.
+
+    ``INDUSTRIAL`` is the hardest tier and the honest opposite of a "kitchen" commodity: a chemical-supplier /
+    industrial-only material a layperson CANNOT buy at a grocery/pharmacy/hardware/pool store (elemental bromine,
+    chlorine gas).  It is a load-bearing poor-man signal -- a route that needs an INDUSTRIAL reagent is not
+    kitchen-satisfiable and must be surfaced as such, never silently treated as obtainable."""
 
     GROCERY = "grocery"          # supermarket / kitchen staple
     PHARMACY = "pharmacy"        # drugstore
     HARDWARE = "hardware"        # hardware / DIY / automotive store
     POOL_GARDEN = "pool_garden"  # pool-supply / garden centre
+    INDUSTRIAL = "industrial"    # chemical-supplier / industrial only -- NOT a layperson/kitchen commodity (hardest)
 
 
 @dataclass(frozen=True)
@@ -138,6 +144,12 @@ COMMODITY_REAGENTS: tuple[CommodityReagent, ...] = (
                           {Bond(0, 1, 2), Bond(0, 2, 2), Bond(0, 3), Bond(0, 4), Bond(3, 5), Bond(4, 6)}),
                      Availability.HARDWARE, "concentrated drain opener, automotive battery acid",
                      "constructed: (HO)2S(=O)2"),
+    # elemental bromine: the DOW-bromine litmus's target commodity.  INDUSTRIAL, not a kitchen product -- a layperson
+    # cannot buy Br2 (the whole DOW insight is that you MAKE it from cheap bromide, not buy it).  USGS-priced (see
+    # commodity_pricing.py); the diatomic Lewis skeleton Br-Br is the identity the price binds to.
+    CommodityReagent("bromine", _mol(("Br", "Br"), {Bond(0, 1)}), Availability.INDUSTRIAL,
+                     "elemental bromine -- chemical-supplier / industrial only; NOT a consumer or kitchen product",
+                     "constructed: Br-Br"),
 )
 
 

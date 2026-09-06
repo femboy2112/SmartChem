@@ -64,7 +64,7 @@
     "diagnostics": [],
     "identity_losses": [],
     "operation": "RECOMPILE",
-    "request_digest": "92f7cfb46b76a324be213005ef6b2bd80bddf9d354f3b0889fd195ed6d85b857",
+    "request_digest": "67ce74d2e70eadededb082f236e21ca3bf2851ac979be329a401c8bc94514487",
     "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8",
     "search_receipt": {
       "candidate_enumeration_complete": true,
@@ -90,7 +90,7 @@
       "status": "COMPLETE_WITHIN_BOUNDS",
       "stop_reason": "",
       "target_identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
-      "terminal_policy_digest": "308abd7c4f8905353fec2eda637b4f541fdd1ee5a4980b5fcba09b3c6ce54b48",
+      "terminal_policy_digest": "c810b4823de0a4cd07d1f92e88e944b4bcce2ec7fe0cac90ee290d5ae4a22de3",
       "transform_registry_digest": "2e2bef05bd5fb83ef8794c339fcec655170aa214b13ca3225fcf044b49f5ffb0",
       "transforms_considered": 28
     },
@@ -103,7 +103,7 @@
       "layer": "STRUCTURE",
       "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
     },
-    "terminal_policy_digest": "308abd7c4f8905353fec2eda637b4f541fdd1ee5a4980b5fcba09b3c6ce54b48",
+    "terminal_policy_digest": "c810b4823de0a4cd07d1f92e88e944b4bcce2ec7fe0cac90ee290d5ae4a22de3",
     "tool_version": "0.5.0a1",
     "transform_registry_digest": "2e2bef05bd5fb83ef8794c339fcec655170aa214b13ca3225fcf044b49f5ffb0"
   },
@@ -267,7 +267,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "d01d42406672338938fca6de57d332e90dc3653d299e5b624bd53c5cc7754653",
+  "result_digest": "68255cf621319448ca888719c081af980fff49eecad7a2a1e97bf6cecf1fd2f1",
   "schema_version": "smartchem.service/compilation-response-v1alpha12",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"

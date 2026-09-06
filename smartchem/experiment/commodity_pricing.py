@@ -61,6 +61,16 @@ _USGS_UNIT_VALUES: tuple[_UnitValue, ...] = (
     _UnitValue("Ca(OH)2", "hydrated lime", 274.2, "average value at plant", "lime"),
     _UnitValue("S", "elemental sulfur", 46.42,
                "average unit value, f.o.b. mine and (or) plant, per metric ton of elemental sulfur", "sulfur"),
+    # DOW-bromine litmus (COST-VEC-01): bromine quoted PER KG of bromine content (2.70 $/kg 2024 final), scaled x1000
+    # to the seed's $/t unit -- a definitional conversion, not a fabricated number.  bromine is USGS-priced (unlike the
+    # organic wall), so its cost axis is genuinely sourceable.  The basis discloses (evil-morty fold) that the USGS
+    # figure is a compound-dominated import blend (~90% bromide compounds) normalized to contained bromine, not an
+    # elemental-Br2 spot price.  Byte-identical to the frozen seed's _BROM_BASIS.
+    _UnitValue("Br2", "bromine (import unit value)", 2700.0,
+               "average unit value of imports (c.i.f.), per kilogram of bromine content -- a compound-dominated import "
+               "blend (~90% bromide compounds) normalized to contained bromine, not an elemental-Br2 spot price "
+               "(2.70 $/kg in 2024; x1000 to $/t)",
+               "bromine"),
 )
 
 #: A registered commodity (by its registry name -- a structure-matched `commodity_for` result selects it) -> the
@@ -72,6 +82,7 @@ _USGS_UNIT_VALUES: tuple[_UnitValue, ...] = (
 _PRICED_COMMODITY_FORM: dict[str, tuple[str, str, dict[str, int]]] = {
     "sodium chloride": ("NaCl", "rock salt", {"Na": 1, "Cl": 1}),
     "sodium carbonate": ("Na2CO3", "soda ash (natural)", {"Na": 2, "C": 1, "O": 3}),
+    "bromine": ("Br2", "bromine (import unit value)", {"Br": 2}),
 }
 
 _BY_FORM: dict[tuple[str, str], _UnitValue] = {(uv.formula, uv.form): uv for uv in _USGS_UNIT_VALUES}

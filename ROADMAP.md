@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ 6761350` · suite **4209 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
+> `verified @ 5f83f6a` · suite **4242 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (`§1`–`§16`); this file is
@@ -30,7 +30,7 @@ closure), not a cheap-reagent list — a route cheap in reagents but needing a c
 **Cheap epistemology counts too:** the ethos prefers chemistry that *tells you what it is doing* — a route whose
 success/failure is legible from cheap, redundant, chemistry-supplied signals (colour change, precipitate, gas evolution,
 pH/temperature excursion) beats one that fails silently and needs a $20k instrument to notice. That is a *ranking*
-objective (the Observability Score, queue item 7), kept honest by the rule that a visible checkpoint is **not** chemical
+objective (the Observability Score, shipped ROUND 18), kept honest by the rule that a visible checkpoint is **not** chemical
 proof (process-indicator / identity / purity stay separate axes — invariants 5 & 7).
 
 ## North-star litmus tests (the acceptance gates that keep the lanes honest)
@@ -46,15 +46,29 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
   buckets. A pass quantitatively shows the cheap-brine route beats the mineral route. **Sourcing is favorable:** bromine
   is a USGS-priced inorganic (same pattern as NaCl/Na₂CO₃), so unlike the organic-price wall this litmus's cost axis is
   genuinely achievable. Spawns the queue items marked *(DOW)* below.
-  **✅ Phase 1 DONE (ROUND 16, DOW-BROMINE-01):** elemental bromine is now a first-class SOURCED, USGS-priced commodity
-  ($2.70/kg 2024, MCS 2026), INDUSTRIAL-tier (not kitchen-obtainable — the DOW insight encoded), costed end-to-end
-  through the buckets. **Phase 2 (queued/deferred):** the Br₂ synthesis-path *enumeration* needs a coupled
-  half-reaction combiner no mechanism has today (queue #2), and the brine-vs-mined *cost ranking* is blocked on a
-  sourced Cl₂ price (deferred — the aggregator wall).
+  **The litmus is now two-thirds standing:** **✅ Phase 1 — pricing (ROUND 16, DOW-BROMINE-01):** elemental bromine is a
+  first-class SOURCED, USGS-priced commodity ($2.70/kg 2024, MCS 2026), INDUSTRIAL-tier (the DOW insight encoded), costed
+  end-to-end through the buckets. **✅ Phase 2 — mechanism (ROUND 17, REDOX-DISPLACE-01):** the coupled half-reaction
+  combiner enumerates `Cl₂ + 2 Br⁻ → Br₂ + 2 Cl⁻`, the reaction no prior mechanism could reach. **✅ Phase 3 —
+  electrochemistry (ROUND 18, ELECTROCHEM-01):** sourced standard potentials prove that displacement is SPONTANEOUS
+  (E°cell = +0.271 V, ΔG° = −52.3 kJ/mol) and reproduce why chlorine displaces bromide but not the reverse; the
+  electrolytic anode leg is modelled (minimum decomposition voltage + Faraday charge). **Remaining — the cost ranking:**
+  the brine-vs-mined *quantitative cost ranking* is still gated on a sourced Cl₂ price + a NaBr feedstock (deferred — the
+  aggregator wall; see DEFERRED).
 
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 18** (commit `5f83f6a` on branch `observability-electrochem-2026-09-06`) — 2 builds; each `design → recon →
+build → reproduce → evil-morty → fold → verify`; **additive** (6 new files + 1 package `__init__` re-export — new exports
+only, no schema/golden/compiler-behaviour change); a 6-lens evil-morty workflow found **6 real weaknesses**, all folded
+(4 code) or documented (1 boundary + 1 docstring) and pinned by tests:
+
+| Item | Lane | What shipped |
+|---|---|---|
+| OBSERVABILITY-01 | C·B | The **three-axis Observability Score** (`smartchem/observation/observability.py`) — cheap epistemology as a ranking objective. A SOURCED `OBSERVABLE_SIGNATURES` table keyed on **canonical structure** (Br₂ the DOW flagship: orange-red colour + phase separation; I₂ the contrast with the starch test), citations REQUIRED (§10.4). The `ObservabilityProfile` keeps **process / identity / purity as three SEPARATE axes**, never one number (invariants 5 & 7 — there is no `overall_score`); Pareto ranking (`observability_dominates`/`_frontier`) that refuses to collapse (a process-strong route does NOT dominate an identity-strong one — incomparable). Non-vacuous: Br₂ (2,1,0) dominates I₂ (1,1,0). Negation-aware bridge to ROUND-17's VERIFICATION bucket. Self-contained (NOT wired into the CostVector — that axis wire-in is a deferred schema bump). Folds: **(HIGH)** corroboration read "colourless" as corroborating COLOUR (the ROUND-17 negation fold via morphological absence) → word-boundary + extended veto; **(MED)** corroboration ignored the signature axis (process→identity leak) → axis-aware evidence; **(MED)** `sourced` was a stored forgeable flag → a computed table-provenance property. |
+| ELECTROCHEM-01 | B·EM | The **electrochemical/EM bridge** (`smartchem/electrochemistry.py`) — SOURCED standard reduction potentials (CRC / Bard & Faulkner, known physics) → cell potential, ΔG° = −nFE°, spontaneity, Nernst, electrolysis voltage. Fills the documented fail-closed `open_circuit_voltage` hole in `smartchem/cell.py` for the standard-state case; reuses that module's Faraday law. **Closes the DOW loop with ROUND-17**: `Cl2 + 2 Br- -> Br2 + 2 Cl-` is not only enumerable but **SPONTANEOUS** (E°cell = +0.271 V, ΔG° = −52.3 kJ/mol), the reverse non-spontaneous — the known-answer calibration. Keyed on the couple's structural digest, fail-closed UNKNOWN, W3 (thermodynamic tendency, never rate). Folds: **(MED)** `gibbs_j_per_mol` took n as an unvalidated guess → derive n = lcm(cathode.e, anode.e), refuse a wrong one; **(MED, documented)** aqueous phase-scope boundary (F5, tracked debt); **(LOW)** citation-guarantee docstring overclaim corrected. |
 
 **ROUND 17** (commit `6761350` on branch `process-observation-redox-2026-09-06`) — 2 builds; each `design → recon →
 build → reproduce → evil-morty → fold → verify`; **purely additive** (`git diff --stat main` empty — six new files, zero
@@ -87,86 +101,49 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
-> ROUND 17 shipped queue items 1 (`ProcessObservationIR`) and 2 (the coupled half-reaction combiner) — see DONE above.
-> The remaining items are renumbered; the **DOW displacement now has its enumeration mechanism**, so its remaining gate is
-> purely the sourced Cl₂/NaBr pricing (see DEFERRED).
+> ROUND 18 shipped queue items 1 (the **Observability Score**) and 5 (the **electrochemical/EM bridge**) — see DONE above.
+> The remaining items are renumbered. The **DOW-bromine litmus is now two-thirds standing** — pricing (R16 ✓), mechanism
+> (R17 ✓), spontaneity + electrolytic voltage (R18 ✓) — so its one remaining gate is the sourced Cl₂/NaBr **cost ranking**
+> (see DEFERRED). The whole queue is now L-heavy: the cheap and short-horizon wins are used up.
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| 1 | **Observability Score — prefer routes with cheap, visible, redundant success/failure signatures** *(DOW)* | C·B | **L** | medium | a sourced per-reaction observable-signature table + the process/identity/purity axis separation |
-| 2 | **General CIP — oracle first, then breadth-first namer** | B | **L** | medium | a committed, independent geometric oracle |
-| 3 | **Composability + physical re-derivation on load — DAG *and* linear** | C | **L** | medium | a scope decision |
-| 4 | **Duration-aware stability verdict** (the full time axis) *(DOW)* | B·C | **L** | long | sourced decomposition-kinetics per compound |
-| 5 | **Electrochemical / EM bridge** (electrolytic bromide oxidation) *(DOW)* | B·EM | **L** | long | an electrolysis model (mechanism now unblocked by REDOX-DISPLACE-01) |
+| 1 | **General CIP — oracle first, then breadth-first namer** | B | **L** | medium | a committed, independent geometric oracle |
+| 2 | **Composability + physical re-derivation on load — DAG *and* linear** | C | **L** | medium | a scope decision |
+| 3 | **Duration-aware stability verdict** (the full time axis) *(DOW)* | B·C | **L** | long | sourced decomposition-kinetics per compound |
 
-### 1 · Observability Score — prefer routes whose success/failure is cheaply visible — **L** *(DOW)*
-The poor-man ethos is not only cheap reagents + cheap apparatus; it is cheap **epistemology** — *can I tell, with
-low-cost observations, whether the process is behaving correctly?* A route that needs chromatography/NMR/MS after every
-step is structurally hostile to the ethos even when its reagents are cheap. So make **observability a first-class ranking
-objective**: prefer a route with a *multimodal success signature* — an expected colour change AND a precipitate AND a
-pH/temperature excursion AND a yield window — over one that fails silently. A 70 %-yield route with three obvious
-checkpoints can beat a 90 % route that needs a $20k instrument to notice a silent failure.
-
-**Builds directly on ROUND-17's `ProcessObservationIR` VERIFICATION bucket** (PROCESS-OBS-01, shipped): that bucket already
-asks whether an evidence-backed observable/acceptance plan exists; the Observability Score *ranks* on how cheap,
-redundant, and chemistry-supplied those observables are — colour, gas evolution start/stop, precipitate, phase
-separation, crystal formation, a pH threshold crossing, conductivity, a temperature excursion, melting/freezing
-behaviour, mass change: free sensors the chemistry itself supplies.
-
-**The load-bearing honesty (why it is an L, not a quick win):** a visible checkpoint is **not** chemical proof. A blue
-solution turning clear is good evidence a *state changed*; it does not establish that the final material *is* the target
-or is *pure*. So the score keeps three axes SEPARATE and never collapses them to one number (contract invariants 5 & 7):
-**process indicators** ("something happened as expected") vs **identity tests** ("this behaves like target X") vs
-**purity tests** ("little enough else present"). A poor-man route ideally has redundant cheap indicators at all three
-levels; the score reports the three independently, and a strong process signal never silently upgrades to an
-identity/purity claim. **Gate/blocker:** the observable signatures are themselves CLAIMS that need SOURCING (you cannot
-fabricate "turns orange" — §10.4 anti-fabrication), so this needs a *sourced per-reaction observable-signature table*,
-tiny by design and UNKNOWN elsewhere — the same curation wall as `SEED_CONDITIONS`. It feeds the affordability cost
-vector's verification / failure-ambiguity terms as a new axis (never a hard blocker unless a *required* observable is
-absent). *(Further, P3-flavoured: a self-diagnosing step — advance / recover / abort gated on whether observables
-O₁..Oₙ fall in expected ranges — a poor-man's macroscopic process-control language, built on the operation graph of
-contract P3.)* **DOW tie-in:** bromine displacement (now enumerable, REDOX-DISPLACE-01) has a gorgeous cheap signature —
-elemental Br₂'s orange/red colour appearing and phase-separating into an organic/vapour layer (Herbert Dow literally
-blew it out as red vapour) — a natural first observability testbed.
-
-### 2 · General CIP — the oracle first, then the breadth-first namer — **L, correctness-critical**
+### 1 · General CIP — the oracle first, then the breadth-first namer — **L, correctness-critical**
 The distinct-Z slice stands; the general R/S is a named deferral. **The wall isn't the namer — it's the oracle** (built
 and discarded twice, R13/R14, both times missing the bug). First step, committed to `experiments/`: a standalone
 geometric signed-volume handedness oracle (a genuinely *different* computation from any digraph), green on a textbook
 battery, **before one line of the BFS namer**. A wrong R/S is worse than none. *Absorbs E/Z* (a constitutional + CIP
 problem, no tie to a time axis).
 
-### 3 · Composability + physical re-derivation on load — DAG **and** linear — **L**
+### 2 · Composability + physical re-derivation on load — DAG **and** linear — **L**
 On load only the **process** component is re-derived; composability + physical ride as free-text (closed only by the
 opt-in HMAC). Needs brand-new payload (per-edge intermediate `Molecule`, full `ConditionEnvelope`, per-step
 reactant/product tuples) that contradicts the thin-projection design. Widen the fix to DAG **and** linear in one pass
 (the boundary is symmetric). *(Also optional, S: make the DAG-HOLD-01 hold **machine-readable per-route** via a
 `serial_hold_notes` field on `RankedDAGSummary` — a schema bump + golden regen; today the hold is in the human note only.)*
 
-### 4 · Duration-aware stability verdict — **L, sourcing wall** *(and DOW: Br₂ decomposition)*
+### 3 · Duration-aware stability verdict — **L, sourcing wall** *(and DOW: Br₂ decomposition)*
 The full version of the time axis: let E1 render a duration-aware COMPOSABLE/DEGENERATE verdict instead of an
 instantaneous threshold (ROUND 15 shipped only the *diagnostic* half — the hold disclosure). Needs sourced
 decomposition-kinetics (Eₐ/A or half-life) — zero overlap today between `SEED_STABILITY_REFS` and `SEED_KINETIC_REFS`; a
 per-compound primary-source wall. Also the home for the DOW litmus's Br₂-decomposition prediction.
 
-### 5 · Electrochemical / EM bridge — **L, long horizon** *(DOW)*
-Dow's process is *electrolytic* oxidation of bromide — the DOW litmus's demand that we reach the electron/circuit layer
-([electromagnetic scope]). Model anodic oxidation (electrons at an electrode) so bromide→bromine can be costed and
-ranked as an electrochemical route, bridging the chemistry core and the EM layer. **The half-reaction primitive now
-exists** (REDOX-DISPLACE-01's `HalfReactionCouple` / electron-balancing, ROUND 17) — the remaining work is the electrode
-potential / current model. The most ambitious lane; long horizon.
-
 ---
 
 ## ⏸️ DEFERRED — attempted at full effort, honestly walled (not fabricated)
 
-- **The DOW brine-vs-mined *cost ranking*** (DOW phase 2, Lane C). Phase 1 (sourced bromine pricing) shipped; ranking
-  the brine route against the mined/market route quantitatively needs a sourced **Cl₂ price** (the oxidant) and a sourced
-  **NaBr feedstock** price. Chlorine hits the same aggregator wall as the organics (no directly-readable dated absolute);
-  NaBr's price would be DERIVED from the bromine-content figure via mass fraction (a known-physics derivation, but a
-  different epistemic class than the sourced seed — it does not belong in the sourced-absolute table). Deferred until a
-  Cl₂ primary is found or a labelled-DERIVED price path is built. **The enumeration mechanism is no longer a blocker** —
-  ROUND 17's REDOX-DISPLACE-01 makes `Cl₂ + 2Br⁻ → Br₂ + 2Cl⁻` enumerable; only the sourced pricing remains.
+- **The DOW brine-vs-mined *cost ranking*** (the DOW litmus's last lane, Lane C). Pricing (R16), mechanism (R17), and
+  electrochemistry (R18) all shipped; ranking the brine route against the mined/market route quantitatively needs a
+  sourced **Cl₂ price** (the oxidant) and a sourced **NaBr feedstock** price. Chlorine hits the same aggregator wall as
+  the organics (no directly-readable dated absolute); NaBr's price would be DERIVED from the bromine-content figure via
+  mass fraction (a known-physics derivation, but a different epistemic class than the sourced seed — it does not belong in
+  the sourced-absolute table). Deferred until a Cl₂ primary is found or a labelled-DERIVED price path is built. **Only the
+  sourced pricing remains a blocker** — the mechanism (ROUND 17's REDOX-DISPLACE-01 enumerates `Cl₂ + 2Br⁻ → Br₂ + 2Cl⁻`)
+  and its feasibility (ROUND 18's ELECTROCHEM-01: E°cell = +0.271 V, spontaneous) are both done.
 - **A second sourced organic price** (was ROUND-15 item 3; Lane C). Attempted acetic acid (highest value — it ripples
   the methyl-acetate golden) and ethanol. **Wall:** organic producers post price *increases* (Celanese: +$50/MT Feb,
   +$0.10/lb Mar 2026), not absolute reference sheets; absolutes are aggregator-walled (Intratec/ChemAnalyst). Ethanol's
@@ -194,11 +171,20 @@ potential / current model. The most ambitious lane; long horizon.
 - **Interchange-law xfail** (Lane A) — `tests/test_laws.py:330`: linear histories cannot quotient independent events by
   interchange. Orthogonal architecture debt; 1 xfail.
 - **Load-time free-text trust boundary** (Lane C) — composability/physical claims ride unsigned unless a consumer opts
-  into the COMBINED-VERDICT-AUTH HMAC; applies to both DAG and linear. Structural closure = queue item 4.
+  into the COMBINED-VERDICT-AUTH HMAC; applies to both DAG and linear. Structural closure = queue item 2.
 - **DAG `dag_bench_fit` compute multiplicity** (perf, correctness-neutral) — a DAG-mode compile runs `dag_bench_fit`
   ~3×N (rank_dags key + `of_dag` + `_dag_bench_note`), and each call now ALSO computes the four-provider thermo roll-up
   per node (DAG-THERMO-01), so it is heavier. Still bounded and compile-time (real DAGs are small). Reduce by threading
   one computed fit through all three if it ever matters; not worth a refactor today.
+- **Phase-specific electrode potentials** (Lane B·EM; ROUND-18 evil-morty F5) — the halogen couple is phaseless, so the
+  sourced `STANDARD_REDUCTION_POTENTIALS` are the AQUEOUS standard values. This is CORRECT for the aqueous DOW displacement
+  (+1.087 V) and fail-closed for an explicitly-phased couple (returns UNKNOWN, never a wrong number), but a liquid-phase
+  value (Br₂(l) = +1.066 V) is unreachable until a phase-carrying couple API exists. YAGNI today; revisit if a route ever
+  reasons about the liquid product.
+- **Observability Score → CostVector verification axis** (Lane C; ROUND-18) — the Observability Score is a self-contained
+  ranking primitive; feeding its process/identity/purity strengths into the affordability `CostVector` as a verification
+  axis needs a new `_AXES` entry + a frontier-entry schema bump + golden regen (a deliberate deferral, not an oversight —
+  the score is honest and usable standalone now).
 
 ---
 

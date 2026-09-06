@@ -59,6 +59,7 @@ from functools import lru_cache
 from .atoms import PT
 from .category import Bond, Molecule, _wl_colours
 from .contracts import canonical_digest
+from .data.periodic_table import ATOMIC_NUMBER
 
 __all__ = [
     "SmilesError",
@@ -67,6 +68,7 @@ __all__ = [
     "parse_smiles_features",
     "isotope_refined_key",
     "configuration_key",
+    "cip_labels",
     "resonance_canonical",
     "resonance_identity",
 ]
@@ -913,6 +915,73 @@ def configuration_key(text: str) -> str:
     charge = sum(a.charge for a in atoms)
     configuration = _configuration_identity(atoms, bonds, charge)
     return configuration if configuration is not None else resonance_identity(_build_molecule(atoms, bonds, charge))
+
+
+def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tuple[str, ...]:
+    """CIP R/S NAMES (ID-STEREO-01) for the SOUNDLY-nameable subset of stereocentres, sorted; ``()`` if none.
+
+    Names ONLY a centre whose four directly-bonded atoms have PAIRWISE-DISTINCT atomic numbers -- there CIP priority is
+    exactly descending atomic number and the notorious recursive hierarchical-digraph tie-break is CATEGORICALLY
+    irrelevant (no ties to break).  Every other stereocentre -- two same-element substituents (the COMMON case: amino
+    acids, sugars, any secondary/tertiary carbon centre), a ring centre, or a WL-unperceivable one -- is a NAMED
+    DEFERRAL and gets NO label, because a half-built CIP that guesses those would emit an UNSOUND R/S (worse than none).
+
+    The parity -> R/S sign convention is ANCHORED to a known truth, not memory: L-alanine (textbook (S)) has neighbour
+    order [N, H, CH3, COOH] with CIP ranks [1,4,3,2] and ``@@`` (sense bit 1), so
+    ``perm_parity([1,4,3,2]) ^ 1 == 0`` -- hence handedness 0 -> S, 1 -> R.  Cross-checked: ``[C@H](F)(Cl)Br`` computes
+    handedness 0 -> S.  (This is the SAME ``perm_parity ^ sense`` handedness :func:`_perceive_configuration` uses for
+    IDENTITY, only with the ordering key swapped from 1-WL colour to CIP atomic-number priority.)  The general recursive
+    CIP digraph (for the excluded common centres) and E/Z naming are the remaining ID-STEREO-01 deferrals.
+    """
+    marked = [a for a in range(len(atoms)) if atoms[a].chirality]
+    if not marked:
+        return ()
+    work = [list(b) for b in bonds]
+    _kekulize_in_place(atoms, work, charge)
+    filled_atoms, filled_bonds = _fill_hydrogens(atoms, work)     # heavy indices 0..n-1 preserved; H appended after
+    n = len(atoms)
+    neighbours: dict[int, list[int]] = {i: [] for i in range(len(filled_atoms))}
+    for b in filled_bonds:
+        neighbours[b.i].append(b.j)
+        neighbours[b.j].append(b.i)
+    labels: list[str] = []
+    for a in marked:                                             # SAME scope as _perceive_configuration (acyclic, 4-coord)
+        if _on_cycle(a, neighbours, len(filled_atoms)):
+            continue
+        incoming = [bd[0] for bd in bonds if bd[1] == a]
+        outgoing = [bd[1] for bd in bonds if bd[0] == a]
+        h_neighbours = [j for j in neighbours[a] if j >= n and filled_atoms[j] == "H"]
+        if len(incoming) > 1:
+            continue
+        written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
+        if len(written) != 4:
+            continue
+        z = [ATOMIC_NUMBER.get(filled_atoms[x]) for x in written]
+        if any(zx is None for zx in z) or len(set(z)) != 4:
+            continue                                             # a same-Z pair needs the recursive CIP tie-break -> defer
+        priority = sorted(z, reverse=True)                       # descending atomic number = CIP priority (index 0 = #1)
+        ranks = [priority.index(zx) for zx in z]                 # each written neighbour's priority rank (0 = highest)
+        handedness = _perm_parity(ranks) ^ (0 if atoms[a].chirality == 1 else 1)
+        labels.append("S" if handedness == 0 else "R")          # anchored to L-alanine = S (see docstring)
+    return tuple(sorted(labels))
+
+
+def cip_labels(text: str) -> tuple[str, ...]:
+    """The CIP R/S names of ``text``'s soundly-nameable stereocentres (ID-STEREO-01), sorted; ``()`` if none.
+
+    A centre is named ONLY when its four directly-bonded atoms differ by atomic number alone (priority = descending
+    atomic number, no recursive digraph) -- the anchored, unambiguous slice.  Two same-element substituents, a ring
+    centre, or an E/Z bond contribute NO name (a named deferral, never a guessed/unsound label).  Raises
+    :class:`SmilesError` on a malformed/out-of-scope SMILES, like the parser.  See :func:`_cip_labels` for the method
+    and its L-alanine = S sign-convention anchor."""
+    if not isinstance(text, str):
+        raise SmilesError("SMILES input must be a string")
+    stripped = text.strip()
+    if not stripped:
+        raise SmilesError("empty SMILES")
+    atoms, bonds = _parse_skeleton(stripped)
+    charge = sum(a.charge for a in atoms)
+    return _cip_labels(atoms, bonds, charge)
 
 
 def parse_smiles(text: str) -> Molecule:

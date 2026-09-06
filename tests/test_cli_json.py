@@ -74,7 +74,11 @@ class TestSchemaDescriptor:
         # field (an optional HMAC over result_digest; null unless signed).
         # v1alpha13 (descriptor) / v1alpha12 (response): DAG-ADMIT-01 adds the ranked_dag_dossiers field (per-DAG
         # PROCESS admission for a convergent compile, re-derived on load).
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha13"
+        # v1alpha14 (descriptor only): DAG-BENCH-01 renames the ranked_dag_summary element's process_fit_status ->
+        # fit_status and widens it to the COMBINED bench fit (composability + physical + process).  The per-value
+        # response schema is UNCHANGED (still v1alpha12): the response's own fields did not change and a linear payload
+        # stays byte-identical -- only the nested ranked-dag-summary element bumped (ranked-dag-summary-v1alpha2).
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha14"
         assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha12"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):

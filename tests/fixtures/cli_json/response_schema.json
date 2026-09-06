@@ -33,7 +33,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha13",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha14",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -54,10 +54,10 @@
   "ranked_dag_summary_fields": {
     "edges": "array[[int, int]] (producer->consumer step-index pairs -- the DAG topology the critical-path elapsed aggregation re-derives against; shape-validated on load)",
     "equation": "str",
-    "exclusions": "array[str] (hard process over/under-bounds)",
-    "gaps": "array[str] (undeclared constrained process dimensions)",
-    "process_fit_status": "enum(FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED) (the PROCESS axis ONLY; the combined composability/physical bench fit for convergent DAGs is a named next-step)",
-    "process_requirements": "array[object(per-step declared process facts)|null] (DAG-ADMIT-01: re-derived on load via evaluate_dag_process_requirements, one entry per DAG step in the DAG's own order, null for an undeclared step; part of candidate identity)",
+    "exclusions": "array[str] (hard composability/physical/process over/under-bounds)",
+    "fit_status": "enum(FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED) (DAG-BENCH-01: the COMBINED section-11 verdict -- composability + physical box + process -- the SAME combined fit a linear route carries; only the PROCESS component is re-derived on load)",
+    "gaps": "array[str] (undeclared constrained composability/physical/process dimensions)",
+    "process_requirements": "array[object(per-step declared process facts)|null] (DAG-BENCH-01: the PROCESS component is re-derived on load via evaluate_dag_process_requirements, one entry per DAG step in the DAG's own order, null for an undeclared step; part of identity)",
     "route_digest": "str (sha256; == the matching DAG candidate_digest)",
     "schema_version": "str"
   },
@@ -88,7 +88,7 @@
     "process_selection_status": "enum(NOT_REQUESTED/NOT_REQUIRED/UNASSESSED/NO_FIT_FOUND/FITS_FOUND)",
     "producer_signature": "str|null (optional HMAC-SHA256 over result_digest; null unless signed; COMBINED-VERDICT-AUTH out-of-band-tamper close)",
     "provider_snapshots": "array[object(provider-snapshot)] (section-13.2 dated provenance of any LIVE provider fetch; SNAPSHOT-13.2. Empty on an offline/default run)",
-    "ranked_dag_dossiers": "array[object(ranked-dag-summary)] (DAG-ADMIT-01: per-DAG PROCESS admission for a convergent (DAG-mode) compile, re-derived on load; empty in routes/decompile mode and on an unconstrained-process request)",
+    "ranked_dag_dossiers": "array[object(ranked-dag-summary)] (DAG-BENCH-01: per-DAG COMBINED section-11 bench admission for a convergent (DAG-mode) compile, the process component re-derived on load; empty in routes/decompile mode and on an unconstrained-bench request)",
     "ranked_route_dossiers": "array[object(ranked-route-summary)] (section-11 fit, best-first; CLI-CAN-02)",
     "request": "object(compilation-request-v1alpha5)",
     "result_digest": "str (sha256)",

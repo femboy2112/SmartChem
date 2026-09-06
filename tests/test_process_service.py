@@ -379,6 +379,49 @@ def test_dag_process_fit_uses_a_sound_critical_path_not_a_serial_sum():
     assert any("critical-path" in e for e in tight.exclusions)
 
 
+def test_unsearched_outcome_cannot_smuggle_a_dag_dossier():
+    """evil-morty fold (DAG-ADMIT-01, Finding 1): an unsearched outcome (REFUSED/INVALID/INTERNAL, ir None) must carry
+    NO ranked_dag_dossiers -- the __post_init__ membership check is gated on ir being present, so WITHOUT the
+    outcome-coherence fence a fabricated ghost dossier (a route_digest identifying no candidate) could ride into
+    result_digest.  This is the exact fence the linear ranked_route_dossiers already had."""
+    from dataclasses import replace as _replace
+
+    from smartchem.service import _invalid, _refused
+    resp = run_compilation(build_recompile_request(
+        "smiles:CC(=O)Nc1ccc(O)cc1", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+        process=_PARA_BENCH, **_PARA_DAG))
+    dossier = next(d for d in resp.ranked_dag_dossiers if d.process_fit_status == "FITS")
+    for base in (_invalid(resp.request, "control"), _refused(resp.request, "control")):
+        with pytest.raises(ValueError, match="must carry no ranked_dag_dossiers"):
+            _replace(base, ranked_dag_dossiers=(dossier,))
+
+
+def test_dag_process_admission_never_flips_exit_to_success():
+    """evil-morty fold (DAG-ADMIT-01, Finding 2): a DAG's PROCESS-only admission must NOT flip exit_code to 0.
+
+    exit_code SUCCESS for a process-constrained compile requires the COMBINED section-11 bench admission
+    (admissible_route_digests = linear combined-FITS).  A DAG assesses only the process axis, so a process-FITS DAG in a
+    complete (ROUTES_FOUND) search must stay EXIT_REFUSED -- exit 0 would over-claim 'a bench-usable route was found' on
+    a partial admission.  Realized on the reachable shape: a COMPLETE methyl-acetate DAG search (ROUTES_FOUND) carrying
+    a COHERENT process-FITS dossier (its carried requirements genuinely re-derive to FITS under the request's box)."""
+    from dataclasses import replace as _replace
+
+    from smartchem.service import EXIT_REFUSED, EXIT_SUCCESS, RANKED_DAG_SUMMARY_SCHEMA, RankedDAGSummary
+    box = ProcessBounds(max_total_minutes=1000.0)                       # constrains something; a declared step fits it
+    resp = run_compilation(build_recompile_request(
+        "smiles:CC(=O)OC", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT, max_depth=3, process=box))
+    assert resp.outcome.value == "ROUTES_FOUND" and resp.compilation_ir.complete_within_bounds  # a COMPLETE search
+    real_candidate = resp.compilation_ir.candidates[0].candidate_digest
+    fitting = RankedDAGSummary(
+        RANKED_DAG_SUMMARY_SCHEMA, real_candidate, "control step",
+        "FITS", (), (), (requirements(),), (),                          # one declared step, no edges -> re-derives FITS
+    )
+    admitted = _replace(resp, ranked_dag_dossiers=(fitting,))
+    assert admitted.process_selection_status == "FITS_FOUND"            # the DAG IS process-admitted ...
+    assert not admitted.admissible_route_digests                        # ... but never in the linear combined list ...
+    assert admitted.exit_code == EXIT_REFUSED and admitted.exit_code != EXIT_SUCCESS  # ... so exit never claims success
+
+
 def test_dag_active_time_stays_serial_a_single_operator_does_not_parallelize():
     """ROUND-12 soundness crux: ACTIVE (hands-on) time is serial-summed even on a DAG.
 

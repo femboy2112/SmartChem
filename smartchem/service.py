@@ -224,14 +224,6 @@ _HONORED_MATCH_LAYER = {
     CompilationOperation.DECOMPILE: MatchLayer.FORMULA,
 }
 
-# The layers the current Molecule model can perceive AT ALL (smartchem.identity.LayeredIdentity.of_molecule
-# resolves FORMULA and CONSTITUTION and stops there).  A finer refusal must distinguish a layer that is genuinely
-# unperceivable by the model (CONFIGURATION/ISOTOPIC -- stereo/isotope, ID-STEREO-01) from a layer the model DOES
-# perceive in principle but that THIS operation's engine does not build (CONSTITUTION on a formula descent) -- the
-# two have different honest reasons, and conflating them fabricates an "unbuilt perception" story that is false
-# for the second case (a red-team finding).
-_PERCEIVABLE_LAYERS = frozenset({MatchLayer.FORMULA, MatchLayer.CONSTITUTION})
-
 # The bound-name vocabulary each direction's engine looks up (run_compilation reads bounds BY NAME).  A request
 # whose bound-names do not match its operation is incoherent and is refused at construction, so a tampered or
 # deserialized payload fails CLOSED here rather than as a KeyError deep inside run_compilation.
@@ -1419,6 +1411,11 @@ class CompilationResponse:
             # response could smuggle a dossier past the guard and into result_digest (red-team fold).
             if self.ranked_route_dossiers:
                 raise ValueError(f"{o.value} ran no search, so it must carry no ranked_route_dossiers")
+            # DAG-ADMIT-01 (evil-morty fold): the SAME fence on the convergent dossiers -- with ir None the __post_init__
+            # membership check (gated on ir is not None) is skipped, so without THIS an unsearched outcome could smuggle
+            # a fabricated ranked_dag_dossier (a ghost route_digest identifying no candidate) into result_digest.
+            if self.ranked_dag_dossiers:
+                raise ValueError(f"{o.value} ran no search, so it must carry no ranked_dag_dossiers")
             if not self.diagnostics:
                 raise ValueError(f"{o.value} must state a diagnostic reason")
             if o is ResponseOutcome.INVALID_INPUT and self.standard_status != "REFUSED_INVALID_REQUEST":
@@ -1437,14 +1434,22 @@ class CompilationResponse:
     def exit_code(self) -> int:
         # Search outcome remains structural; process admission is a separate decision.
         # A partial search stays partial even when no returned route fits.
-        if self.outcome is ResponseOutcome.ROUTES_FOUND and self.process_selection_status in (
-            "NO_FIT_FOUND", "UNASSESSED"
-        ):
-            return EXIT_REFUSED
-        if self.outcome is ResponseOutcome.ROUTES_FOUND and self.ranked_route_dossiers and all(
-            r.fit_status == "EXCLUDED" for r in self.ranked_route_dossiers
-        ):
-            return EXIT_REFUSED
+        if self.outcome is ResponseOutcome.ROUTES_FOUND:
+            if self.request.constraints.process.constrains_anything:
+                # SUCCESS requires a route that passed the COMBINED section-11 bench admission -- admissible_route_digests
+                # is linear combined-FITS (composability + physical + process).  DAG-ADMIT-01 (evil-morty fold): a DAG
+                # mode compile assesses ONLY the process axis (ranked_dag_dossiers), never the combined bench box, so a
+                # process-admitted DAG (process_selection_status FITS_FOUND) must NOT flip the exit to success -- the exit
+                # would then over-claim "a bench-usable route was found" on a partial (process-only) admission.  It stays
+                # REFUSED here; the PROCESS admission is reported in process_selection_status / ranked_dag_dossiers and is
+                # never over-read as a combined bench pass.  (Behaviour-preserving for linear mode: with a process box,
+                # admissible non-empty iff process_selection_status is FITS_FOUND.)
+                if not self.admissible_route_digests:
+                    return EXIT_REFUSED
+            elif self.ranked_route_dossiers and all(
+                r.fit_status == "EXCLUDED" for r in self.ranked_route_dossiers
+            ):
+                return EXIT_REFUSED
         return _EXIT_BY_OUTCOME[self.outcome]
 
     @property
@@ -1593,41 +1598,49 @@ def _check_identity_layer(request: CompilationRequest) -> "CompilationResponse |
 
     Returns a REFUSED response (``REFUSED_IDENTITY_UNSUPPORTED``, exit 5) when the declared
     :attr:`IdentityPolicy.match_layer` is not the single layer this operation's engine matches at, else ``None``
-    (the request proceeds).  THREE distinct failures, each with its own HONEST reason (never conflated):
+    (the request proceeds).  THREE distinct failures, each with its own HONEST reason (never conflated), and the
+    reason turns on the OPERATION, not on whether perception exists -- because after ID-STEREO-02 it does:
 
-    * a finer layer the model cannot perceive at all (CONFIGURATION/ISOTOPIC): stereo/isotope perception is
-      unbuilt, so a match there would be fabricated -- refused rather than silently downgraded (section 5.3);
-    * a finer layer the model perceives in principle but THIS engine does not build (CONSTITUTION on a formula
-      descent): a formula descent constructs no structure, so there is nothing to match at that layer -- refused,
-      NOT blamed on unbuilt perception (which would be a false explanation -- constitution IS perceivable);
+    * a finer layer on a DECOMPILE (CONSTITUTION/CONFIGURATION/ISOTOPIC on a formula descent): a formula descent
+      constructs NO structure at all, so there is nothing to match at any finer layer -- refused (section 5.4);
+    * a finer layer on a RECOMPILE (CONFIGURATION/ISOTOPIC): the identity MODEL now PERCEIVES these layers
+      (ID-STEREO-02 -- enantiomers get distinct :class:`~smartchem.identity.LayeredIdentity`), but the SEARCH still
+      matches terminals on the achiral ``Molecule`` (CONSTITUTION), so a finer match in the SEARCH is not yet honored
+      -- refused, and honestly named as "perceivable but not wired into terminal matching" (a named next-step, §5.3),
+      NEVER the false "stereo perception is unbuilt";
     * a layer COARSER than honored (recompile declaring FORMULA): section 5.4 forbids a structure search
       terminating on formula-only equality -- refused, never allowed to collapse isomers.
     """
     honored = _HONORED_MATCH_LAYER[request.operation]
     declared = request.identity_policy.match_layer
+    op = request.operation.value
     if declared is honored:
         return None
-    if refines(declared, honored):
-        if declared not in _PERCEIVABLE_LAYERS:
+    if refines(declared, honored):                           # declared is FINER than the engine's honored layer
+        if request.operation is CompilationOperation.DECOMPILE:
+            # a formula descent constructs NO structure at all -- nothing to match at constitution or any finer layer.
             reason = (
-                f"the {request.operation.value} engine matches identity at the {honored.value} layer and cannot "
-                f"perceive the finer {declared.value} layer at all (stereo/isotope perception is unbuilt; "
-                f"ID-STEREO-01), so a {declared.value}-layer match would be fabricated -- refused rather than "
-                f"silently matched at {honored.value} (section 5.3 information-loss rule)"
+                f"a {op} search matches identity at the {honored.value} layer and constructs no {declared.value}-layer "
+                f"representation (a formula descent yields only the elemental formula, not a structure), so a "
+                f"{declared.value}-layer match is not available on this path -- refused rather than silently matched at "
+                f"{honored.value} (section 5.4)"
             )
         else:
-            # the model CAN perceive this layer (e.g. CONSTITUTION), but this operation's engine does not build it.
+            # RECOMPILE: perception of the finer layer IS built (ID-STEREO-02), but the search matches terminals at
+            # constitution (the achiral Molecule model), so a finer match in the SEARCH is not yet honored -- the
+            # honest wall is "perceivable but not wired into terminal matching" (a named next-step), never "unbuilt".
             reason = (
-                f"a {request.operation.value} search matches identity at the {honored.value} layer and constructs "
-                f"no {declared.value}-layer representation (a formula descent yields only the elemental formula, "
-                f"not a structure), so a {declared.value}-layer match is not available on this path -- refused "
-                f"rather than silently matched at {honored.value} (section 5.4)"
+                f"a {op} search matches terminals at the {honored.value} layer; the identity model can perceive the "
+                f"finer {declared.value} layer (ID-STEREO-02: enantiomers/isotopologues get distinct identities) but "
+                f"the search does not yet match terminals there (the achiral structure model is the search identity), "
+                f"so a {declared.value}-layer search match is not honored here -- refused rather than silently matched "
+                f"at {honored.value} (section 5.3; wiring perception into the search is a named next-step)"
             )
     else:
         reason = (
-            f"a {request.operation.value} search matches identity at the {honored.value} layer; it must not "
-            f"terminate on the coarser {declared.value} layer, because formula-only equality does not fix a "
-            f"structure (section 5.4 / gate G3) -- refused"
+            f"a {op} search matches identity at the {honored.value} layer; it must not terminate on the coarser "
+            f"{declared.value} layer, because formula-only equality does not fix a structure (section 5.4 / gate G3) "
+            f"-- refused"
         )
     return _refused(request, reason, standard_status="REFUSED_IDENTITY_UNSUPPORTED")
 

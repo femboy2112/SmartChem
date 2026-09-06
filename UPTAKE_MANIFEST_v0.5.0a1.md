@@ -4093,3 +4093,70 @@ See [`ROADMAP.md`](ROADMAP.md) for the ranked live queue. Freshest: (1) `Process
 makes the Br₂ displacement *enumerable* (DOW phase 2); then general CIP oracle-first, DAG+linear re-derivation, the full
 duration-aware stability axis, and the electrochemical/EM bridge. DEFERRED: the DOW brine-vs-mined cost ranking (Cl₂
 sourcing wall); a second organic price.
+
+## 17. ROUND 17 — ProcessObservationIR evidence-ingress + the coupled half-reaction combiner (2026-09-06)
+
+Two builds, each `design → recon → build → reproduce → evil-morty → fold → verify`. Recon: 4 Citadel Ricks (IR/dataclass/
+digest idioms; the redox mechanism + search seam; capability/affordability/handling; test/schema/golden discipline). Both
+items red-teamed by an INDEPENDENT evil-morty; each found REAL, sound weaknesses, all folded and pinned below. Both builds
+are **purely additive** — `git diff --stat main` is empty; the six subjects are new files only, so nothing existing moved
+and there is no schema/golden blast radius.
+
+### 17.1 item 1 — PROCESS-OBS-01, the read-only ProcessObservationIR evidence-ingress layer (Lane C)
+The poor-man ethos made computational (contract P1). A new read-only sibling package `smartchem/observation/` (modelled on
+`smartchem/evidence/`: reuses `contracts.Digestible` + `ReactionDirection`, never enters the executor registry, is never
+imported back, drags ZERO heavy modules). It carries: an immutable `ProcessObservationIR` (one source-fragment record —
+reaction identity + direction + run-context + phase + scoped claims with explicit unknowns); source-fragment validation;
+the five whole-path capability bundles (`capability_bundle` → MATERIAL / CAPABILITY / VERIFICATION / CLOSURE / SCALE, each
+EVIDENCED / GAP / BLOCKED, mirroring `ProcessFitStatus`' three-way, never a binary); a no-Frankenprocedure `merge_observations`;
+and a read-only `projection_gate`. All seven contract invariants are enforced in code — notably `provenance_digest` is a
+COMPUTED property (never a stored field, so it cannot fail open), the IR carries NO readiness/safety field (invariant 4:
+structurally cannot promote), and identity/direction are load-bearing in the projection gate. NOT wired into the
+`CompilationResponse` (a read-only sibling), so no schema bump and no golden regen. evil-morty folds (all sound):
+**(CRITICAL)** the capability engine routed through a bare-substring `_match` with no negation awareness, so a claim
+HONESTLY NARRATING a missing control ("there was NO containment") was read as evidence FOR it — inverting the CAPABILITY /
+CLOSURE / MATERIAL verdicts and erasing the hard-blocker `dominates()` relies on → fixed with `_claim_supports`, which
+vetoes a keyword match if a negation/absence cue appears ANYWHERE in the whole support text (subject + what-it-supports),
+fail-closed; **(HIGH)** a numeric conclusion with SILENTLY-omitted calibration reached VERIFICATION EVIDENCED (fail-open),
+and the test itself had codified the bug (the "calibrated" fixture had no calibration claim) → fixed so a numeric
+conclusion is UNVERIFIED/BLOCKED unless calibration/QC is POSITIVELY evidenced, and the test corrected to a real
+missing/flagged/positive differential; **(MEDIUM)** `merge_observations` guarded only on a self-declared `run_context_id`,
+so two different reactions (or a decomposition + an assembly) could splice under a forged shared label → fixed to also
+require reaction-identity and direction agreement across the fragments. `smartchem/observation/`,
+`tests/test_process_observation.py` (25 tests, the contract's own acceptance probes + the fold regressions).
+
+### 17.2 item 2 — REDOX-DISPLACE-01, the coupled half-reaction combiner (Lane B; DOW phase 2 mechanism)
+The DOW enumeration wall falls. `smartchem/redox_displacement.py` adds a `HalfReactionCouple` (a MOLECULAR redox couple
+`oxidized + n e- <-> reduced`, e.g. `Cl2 + 2 e- <-> 2 Cl-` — a level above the single-species `RedoxHalfReaction`, which is
+charge-only on identical atoms) and `combine_half_reactions`, which pairs a reduction couple (oxidant) with an oxidation
+couple (reductant), BALANCES ELECTRONS by their LCM, and returns a conservation-checked `RedoxDisplacementEdge`. That edge
+exposes the uniform transform interface, so it rides the UNCHANGED bounded search through a new `RedoxDisplacementProvider`
+registered into a wider algebra — OPT-IN, absent from `DEFAULT_TRANSFORM_REGISTRY` (exactly like the heterolytic and
+single-species redox families). It enumerates `Cl2 + 2 Br- -> Br2 + 2 Cl-` — the 1:2 displacement recon PROVED unreachable
+by `redox_edges` (single-species, same atoms) or `capped_scissions` (cuts tied 1:1, charged input refused). The "2" is not
+a hack: it falls out of electron-count balancing (Cl₂ gains 2 e⁻, each Br⁻ loses 1). Committed demonstration:
+`experiments/redox_displacement_probe.py` (the DOW displacement + a non-trivial LCM case `2 Fe3+ + Sn2+ -> 2 Fe2+ + Sn4+`,
+FROZEN_HASH-pinned). Lane-B genericity proof: `git diff --stat main` empty — the family was added with ZERO edits to
+`search_routes` / `search_dags` / `from_transform` / `DEFAULT_TRANSFORM_REGISTRY` / the category core. evil-morty fold
+(sound): the edge's `Reaction` certificate proved mass+charge but NOT redox-ness — a directly-built edge accepted a
+fabricated `electrons_transferred` (999), fictitious element labels, or an identity `Na -> Na` as a "displacement", and
+`electrons_transferred` rides the digest → fixed with an electron-ledger verification (`_electron_ledger`) that ties
+`electrons_transferred` and the two element labels to the reaction's ACTUAL charge redistribution and rejects a no-op.
+`tests/test_redox_displacement.py` (15 tests, incl. the wall differential + the electron-verification regression).
+
+### 17.3 Observability Score folded into the roadmap (queue item 7)
+Per the operator's steer + a distilled proposal: the poor-man ethos prefers cheap EPISTEMOLOGY, not only cheap reagents —
+*can I tell, with low-cost observations, whether the process is behaving correctly?* Added as a ranked queue item (Lane C·B,
+L): prefer routes with a multimodal, chemistry-supplied success signature (colour change, precipitate, gas evolution,
+pH/temperature excursion) over one that fails silently. Kept honest by the rule a visible checkpoint is NOT chemical proof —
+process-indicator / identity / purity stay three separate axes (invariants 5 & 7), never one collapsed score. Builds on this
+round's `ProcessObservationIR` VERIFICATION bucket; gated on a SOURCED per-reaction observable-signature table (you cannot
+fabricate "turns orange" — §10.4), the same curation wall as `SEED_CONDITIONS`. DOW tie-in: Br₂'s orange/red colour and
+phase separation is a natural first observability testbed.
+
+### 17.4 next-steps (ROUND 17)
+See [`ROADMAP.md`](ROADMAP.md) for the ranked live queue. Freshest post-ROUND-17: the DOW displacement **cost ranking**
+(now that the mechanism exists — still gated on a sourced Cl₂ price + a NaBr commodity); the **Observability Score** (item 7,
+extends this round's VERIFICATION bucket); general CIP oracle-first; DAG+linear re-derivation on load; the full
+duration-aware stability axis; and the electrochemical/EM bridge (now unblocked by the half-reaction combiner). DEFERRED:
+the DOW brine-vs-mined cost ranking (Cl₂ sourcing wall); a second organic price.

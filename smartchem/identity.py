@@ -260,8 +260,10 @@ class LayeredIdentity(Digestible):
         )
 
     @classmethod
-    def of_molecule(cls, molecule: "object") -> "LayeredIdentity":
-        """A layered identity for a :class:`~smartchem.category.Molecule`, perceiving FORMULA and CONSTITUTION.
+    def of_molecule(cls, molecule: "object", features: "object | None" = None) -> "LayeredIdentity":
+        """A layered identity for a :class:`~smartchem.category.Molecule`, perceiving FORMULA and CONSTITUTION -- and,
+        when ``features`` (a :class:`~smartchem.smiles.SmilesFeatures`) is supplied, CONFIGURATION and ISOTOPIC too
+        (ID-STEREO-02).
 
         The FORMULA digest is built from the atom counts AND the molecule's total charge (section 5.1's FormulaIdentity
         is "elemental counts and total charge"), so two species that differ only in charge -- e.g. ``[NH4+]`` and a
@@ -273,8 +275,25 @@ class LayeredIdentity(Digestible):
         (e.g. an explicit Kekulé structure vs its aromatic spelling) stays distinct.  That is a shared-canonicalizer
         boundary this layered identity reflects, never one it introduces.
 
-        CONFIGURATION/ISOTOPIC are not perceived by the current Molecule model, so they are absent (a match at them is
-        UNKNOWN, section 5.3's fail-closed rule) rather than fabricated from the constitution digest.
+        WITHOUT ``features`` (the historical call), the bare ``Molecule`` model cannot see chirality or isotope, so
+        CONFIGURATION/ISOTOPIC are absent (a match there is UNKNOWN, section 5.3's fail-closed rule) rather than
+        fabricated -- unchanged.  WITH ``features`` (ID-STEREO-02), the parser's perceived stereo/isotope is wired in,
+        FAIL-CLOSED on the completeness signal ``features.configuration_complete``:
+
+        * CONFIGURATION is perceived ONLY when the configuration is FULLY determined -- no marked stereocentre scoped
+          out and no unperceived double-bond (E/Z) stereo.  Its digest REFINES the CONSTITUTION digest --
+          ``canonical_digest(("configuration-layer-v1", constitution, features.configuration_digest or ""))`` -- so
+          CONFIGURATION-equal implies CONSTITUTION-equal BY CONSTRUCTION, enantiomers (same constitution, different
+          ``configuration_digest``) get DISTINCT identities, and an achiral molecule (``configuration_digest`` None ->
+          refinement "") reduces to a deterministic function of its constitution.  When perception is INCOMPLETE
+          CONFIGURATION is absent (honest UNKNOWN) -- never reduced to constitution, which would FALSELY MERGE two
+          enantiomers differing only at an unperceived centre.
+        * ISOTOPIC is perceived exactly when CONFIGURATION is (isotope labels are explicit, so always fully perceived).
+          Its digest REFINES the CONFIGURATION digest with the isotope key --
+          ``canonical_digest(("isotopic-layer-v1", configuration, features.isotopic_digest or ""))`` -- so
+          ISOTOPIC-equal implies CONFIGURATION-equal, isotopologues are distinguished, AND the enantiomeric-isotopologue
+          trap is closed: the bare ``isotopic_digest`` is chirality-blind, but folding it OVER the configuration digest
+          keeps two enantiomeric isotopologues distinct (same isotopes, different configuration -> different ISOTOPIC).
         """
         from .category import Molecule
         from .compilation_ir import _structure_ident
@@ -282,13 +301,29 @@ class LayeredIdentity(Digestible):
         if type(molecule) is not Molecule:
             raise TypeError("of_molecule needs a smartchem.category.Molecule")
         formula = Formula.of(dict(molecule.formula), molecule.charge)  # counts + TOTAL CHARGE (section 5.1)
+        constitution = _structure_ident(molecule)
         by_layer = {
             MatchLayer.FORMULA.value: canonical_digest(formula),
-            MatchLayer.CONSTITUTION.value: _structure_ident(molecule),
+            MatchLayer.CONSTITUTION.value: constitution,
         }
+        known = MatchLayer.CONSTITUTION
+        if features is not None:
+            from .smiles import SmilesFeatures
+            if type(features) is not SmilesFeatures:
+                raise TypeError("features must be a smartchem.smiles.SmilesFeatures or None")
+            if features.configuration_complete:
+                configuration = canonical_digest(
+                    ("configuration-layer-v1", constitution, features.configuration_digest or "")
+                )
+                by_layer[MatchLayer.CONFIGURATION.value] = configuration
+                isotopic = canonical_digest(
+                    ("isotopic-layer-v1", configuration, features.isotopic_digest or "")
+                )
+                by_layer[MatchLayer.ISOTOPIC.value] = isotopic
+                known = MatchLayer.ISOTOPIC
         return cls(
             LAYERED_IDENTITY_SCHEMA,
-            MatchLayer.CONSTITUTION,
+            known,
             repr(molecule),
             tuple(sorted(by_layer.items())),
         )

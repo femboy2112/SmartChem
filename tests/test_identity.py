@@ -35,11 +35,17 @@ from smartchem.service import (
     run_compilation,
     serialize_request,
 )
-from smartchem.smiles import parse_smiles
+from smartchem.smiles import parse_smiles, parse_smiles_features
 
 
 def _mol(smiles):
     return parse_smiles(smiles)
+
+
+def _layered(smiles):
+    """A LayeredIdentity WITH parsed features -- so CONFIGURATION/ISOTOPIC are perceived (ID-STEREO-02)."""
+    molecule, features = parse_smiles_features(smiles)
+    return LayeredIdentity.of_molecule(molecule, features)
 
 
 class TestSection54FormulaIsNotStructure:
@@ -77,6 +83,59 @@ class TestUnperceivedLayersAreUnknownNotFabricated:
         ethanol = LayeredIdentity.of_molecule(_mol("CCO"))
         assert ethanol.digest_at(MatchLayer.CONSTITUTION) is not None
         assert ethanol.digest_at(MatchLayer.CONFIGURATION) is None
+
+
+class TestConfigurationLayerWiring:
+    """ID-STEREO-02: with parsed features, of_molecule perceives CONFIGURATION and ISOTOPIC -- fail-closed on
+    incomplete perception, so enantiomers get DISTINCT identities while unperceived stereo stays honest UNKNOWN."""
+
+    def test_enantiomers_share_constitution_but_differ_at_configuration(self):
+        d, l_form = _layered("N[C@@H](C)C(=O)O"), _layered("N[C@H](C)C(=O)O")   # D- vs L-alanine
+        assert same_identity_at(d, l_form, MatchLayer.CONSTITUTION) is True       # same graph
+        assert same_identity_at(d, l_form, MatchLayer.CONFIGURATION) is False     # different handedness -- the refinement
+
+    def test_configuration_is_spelling_invariant_for_one_enantiomer(self):
+        a, b = _layered("N[C@@H](C)C(=O)O"), _layered("OC(=O)[C@H](C)N")          # same enantiomer, two spellings
+        assert same_identity_at(a, b, MatchLayer.CONFIGURATION) is True
+
+    def test_achiral_configuration_reduces_to_constitution_never_unknown(self):
+        a, b = _layered("CCO"), _layered("OCC")                                   # achiral: configuration is known
+        assert same_identity_at(a, b, MatchLayer.CONFIGURATION) is True           # perceived (not None), and equal
+        assert same_identity_at(_layered("CCO"), _layered("COC"), MatchLayer.CONFIGURATION) is False  # still separates isomers
+
+    def test_unperceived_ring_stereo_stays_unknown_never_a_false_merge(self):
+        # a RING stereocentre is not soundly perceivable, so CONFIGURATION is fail-closed to UNKNOWN -- NEVER reduced to
+        # constitution, which would falsely report two ring enantiomers as the same configuration (a false merge).
+        r1, r2 = _layered("N[C@]1(F)CCCCO1"), _layered("N[C@@]1(F)CCCCO1")
+        assert r1.digest_at(MatchLayer.CONFIGURATION) is None
+        assert same_identity_at(r1, r2, MatchLayer.CONFIGURATION) is None
+
+    def test_double_bond_stereo_makes_configuration_unknown(self):
+        # E/Z is unperceived (a named deferral), so a molecule declaring '/' or '\\' has UNKNOWN configuration -- never
+        # a spuriously-confident reduction to constitution.
+        ez = _layered("F/C=C/F")
+        assert ez.digest_at(MatchLayer.CONFIGURATION) is None
+
+    def test_enantiomeric_isotopologues_are_distinct_at_isotopic(self):
+        # the trap the combined key closes: the bare isotopic_digest is chirality-blind, so two enantiomers with the
+        # SAME isotope labels would share it -- but folding it OVER the configuration digest keeps them distinct.
+        di = _layered("N[C@@H]([13CH3])C(=O)O")
+        li = _layered("N[C@H]([13CH3])C(=O)O")
+        assert same_identity_at(di, li, MatchLayer.CONSTITUTION) is True          # same graph
+        assert same_identity_at(di, li, MatchLayer.ISOTOPIC) is False             # distinct isotopologue stereoisomers
+
+    def test_isotopic_refines_configuration_refines_constitution(self):
+        labeled = _layered("N[C@@H]([13CH3])C(=O)O")
+        unlabeled = _layered("N[C@@H](C)C(=O)O")
+        assert same_identity_at(labeled, unlabeled, MatchLayer.CONFIGURATION) is True   # same stereochemistry
+        assert same_identity_at(labeled, unlabeled, MatchLayer.ISOTOPIC) is False       # isotopes differ
+        assert labeled.known_layer is MatchLayer.ISOTOPIC                               # all four layers perceived
+
+    def test_bare_of_molecule_still_perceives_only_formula_and_constitution(self):
+        # WITHOUT features the historical behaviour is unchanged: no fabricated finer layer.
+        bare = LayeredIdentity.of_molecule(_mol("N[C@@H](C)C(=O)O"))
+        assert bare.known_layer is MatchLayer.CONSTITUTION
+        assert bare.digest_at(MatchLayer.CONFIGURATION) is None
 
 
 class TestDigestCongruence:
@@ -251,12 +310,17 @@ class TestUnhonorableLayerIsRefusedNotFaked:
     REFUSED response (exit 5, REFUSED_IDENTITY_UNSUPPORTED), never a silent match at a coarser layer."""
 
     @pytest.mark.parametrize("layer", [MatchLayer.CONFIGURATION, MatchLayer.ISOTOPIC])
-    def test_recompile_refuses_an_unperceived_finer_layer(self, layer):
+    def test_recompile_refuses_a_finer_layer_not_yet_honored_in_the_search(self, layer):
+        # ID-STEREO-02: the identity model now PERCEIVES configuration/isotopic (of_molecule with features gives
+        # enantiomers distinct identities), but the recompile SEARCH still matches terminals at CONSTITUTION, so a
+        # finer match is refused -- honestly named as perceivable-but-not-wired-into-search, NEVER "unbuilt".
         resp = run_compilation(build_recompile_request("water", match_layer=layer))
         assert resp.outcome is ResponseOutcome.REFUSED
         assert resp.exit_code == 5
         assert resp.standard_status == "REFUSED_IDENTITY_UNSUPPORTED"
-        assert "cannot perceive" in resp.diagnostics[0] and layer.value in resp.diagnostics[0]
+        reason = resp.diagnostics[0]
+        assert "can perceive the finer" in reason and layer.value in reason
+        assert "unbuilt" not in reason and "ID-STEREO-02" in reason      # the lie is gone; the honest wall is named
 
     def test_recompile_refuses_the_coarser_formula_layer_per_5_4(self):
         # a structure search must not terminate on formula-only equality (section 5.4 / gate G3).
@@ -280,11 +344,16 @@ class TestUnhonorableLayerIsRefusedNotFaked:
         assert "constructs no" in reason and "5.4" in reason
 
     @pytest.mark.parametrize("layer", [MatchLayer.CONFIGURATION, MatchLayer.ISOTOPIC])
-    def test_a_genuinely_unperceived_layer_keeps_the_perception_reason(self, layer):
-        # CONFIGURATION/ISOTOPIC are genuinely unperceived (stereo/isotope), so THAT reason is the honest one.
-        for op in (build_recompile_request("water", match_layer=layer), build_decompile_request("H2O", match_layer=layer)):
-            reason = run_compilation(op).diagnostics[0]
-            assert "cannot perceive the finer" in reason and "unbuilt" in reason
+    def test_no_refusal_reason_still_claims_perception_is_unbuilt(self, layer):
+        # ID-STEREO-02 built configuration/isotope perception, so NO refusal may still say "unbuilt" (that is now a
+        # lie).  The honest reason differs by operation: a recompile names "perceivable but not honored in the search";
+        # a decompile names "constructs no structure" (a formula descent builds nothing to match at any finer layer).
+        recompile_reason = run_compilation(build_recompile_request("water", match_layer=layer)).diagnostics[0]
+        assert "unbuilt" not in recompile_reason
+        assert "can perceive the finer" in recompile_reason and "ID-STEREO-02" in recompile_reason
+        decompile_reason = run_compilation(build_decompile_request("H2O", match_layer=layer)).diagnostics[0]
+        assert "unbuilt" not in decompile_reason
+        assert "constructs no" in decompile_reason and "5.4" in decompile_reason
 
     def test_the_honored_layer_runs(self):
         assert run_compilation(build_recompile_request("water")).outcome is not ResponseOutcome.REFUSED
@@ -308,11 +377,12 @@ class TestMatchLayerCLI:
         assert code == 0  # emit does not run the search, so it does not refuse
         assert json.loads(out)["identity_policy"]["match_layer"] == "CONFIGURATION"
 
-    def test_flag_unperceived_layer_refused_exit_5(self):
-        # the human render (incl. the refusal outcome + diagnostics) goes to stdout; the exit code is 5.
+    def test_flag_finer_layer_refused_exit_5(self):
+        # the human render (incl. the refusal outcome + diagnostics) goes to stdout; the exit code is 5.  ID-STEREO-02:
+        # the reason names configuration as perceivable-but-not-honored-in-the-search, never "cannot perceive".
         code, out, _ = _cli(["recompile", "water", "--match-layer", "configuration"])
         assert code == 5
-        assert "REFUSED" in out and "cannot perceive" in out
+        assert "REFUSED" in out and "can perceive the finer" in out
 
     def test_human_render_surfaces_the_match_layer(self):
         _, out, _ = _cli(["recompile", "water"])

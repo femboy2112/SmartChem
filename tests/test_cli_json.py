@@ -78,7 +78,11 @@ class TestSchemaDescriptor:
         # fit_status and widens it to the COMBINED bench fit (composability + physical + process).  The per-value
         # response schema is UNCHANGED (still v1alpha12): the response's own fields did not change and a linear payload
         # stays byte-identical -- only the nested ranked-dag-summary element bumped (ranked-dag-summary-v1alpha2).
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha14"
+        # v1alpha15 (descriptor only): DAG-THERMO-01 adds the ranked_dag_summary's five verdict fields (composability/
+        # selectivity/feasibility/equilibrium/kinetics -- the per-node thermochemical roll-up, parity with the
+        # ranked_route_summary).  Per-value response schema STILL v1alpha12: only the nested ranked-dag-summary element
+        # bumped (ranked-dag-summary-v1alpha3), and a linear payload (empty ranked_dag_dossiers) stays byte-identical.
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha15"
         assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha12"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):

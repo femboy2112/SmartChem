@@ -50,7 +50,7 @@ def test_priced_join_is_structure_consistent_and_forms_exist():
 def test_priced_commodities_carry_a_real_dated_sourced_observation():
     """Non-vacuity: the two priced commodities each resolve to a REAL section-10.4 CostObservation -- dated, sourced,
     positive, unit-bearing. A guard that fired only over an empty set would pass while pricing nothing."""
-    for name in ("sodium chloride", "sodium carbonate"):
+    for name in ("sodium chloride", "sodium carbonate", "bromine"):
         obs = cp.cost_observation_for(_BY_NAME[name].molecule)
         assert obs is not None, f"{name} should carry a sourced price"
         assert float(obs.amount) > 0

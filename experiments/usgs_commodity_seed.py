@@ -79,7 +79,17 @@ _SALT = "https://pubs.usgs.gov/periodicals/mcs2026/mcs2026-salt.pdf"
 _SODA = "https://pubs.usgs.gov/periodicals/mcs2026/mcs2026-soda-ash.pdf"
 _LIME = "https://pubs.usgs.gov/periodicals/mcs2026/mcs2026-lime.pdf"
 _SULF = "https://pubs.usgs.gov/periodicals/mcs2026/mcs2026-sulfur.pdf"
+_BROM = "https://pubs.usgs.gov/periodicals/mcs2026/mcs2026-bromine.pdf"
 _SALT_BASIS = "average unit value of bulk, pellets and packaged salt, f.o.b. mine and plant"
+# Bromine is quoted PER KILOGRAM of bromine content in the MCS chapter (2.70 $/kg 2024 final; 3.00 $/kg 2025e); the
+# seed stores $/metric ton, so these are the exact per-kg figures scaled x1000 -- a definitional unit conversion, NOT
+# a fabricated number.  The basis discloses the per-kg origin so the scale is auditable, AND (evil-morty fold) that
+# the figure is a COMPOUND-DOMINATED import blend (~90% bromide compounds per the MCS chapter) normalized to contained
+# bromine -- a contained-bromine cost anchor, NOT an elemental-Br2 spot price (a caveat the DOW synthesis-ranking
+# phase must respect before leaning on it as "the Br2 price").
+_BROM_BASIS = ("average unit value of imports (c.i.f.), per kilogram of bromine content -- a compound-dominated import "
+               "blend (~90% bromide compounds) normalized to contained bromine, not an elemental-Br2 spot price "
+               "(2.70 $/kg in 2024; x1000 to $/t)")
 
 USGS_COMMODITY_PRICES: tuple[CommodityPrice, ...] = (
     CommodityPrice("salt", "rock salt", "NaCl", 52.95, 54.0, _SALT_BASIS, _SALT),
@@ -92,6 +102,7 @@ USGS_COMMODITY_PRICES: tuple[CommodityPrice, ...] = (
     CommodityPrice("lime", "hydrated lime", "Ca(OH)2", 274.2, 280.0, "average value at plant", _LIME),
     CommodityPrice("sulfur", "elemental sulfur", "S", 46.42, 180.0,
                    "average unit value, f.o.b. mine and (or) plant, per metric ton of elemental sulfur", _SULF),
+    CommodityPrice("bromine", "bromine (import unit value)", "Br2", 2700.0, 3000.0, _BROM_BASIS, _BROM),
 )
 
 #: Commodities deliberately NOT priced here: no primary-source per-ton price exists (see the docstring). A test pins
@@ -143,7 +154,7 @@ def content_hash(rows: "tuple[CommodityPrice, ...]" = USGS_COMMODITY_PRICES) -> 
 
 #: The frozen hash of the committed USGS seed (regenerate DELIBERATELY, only after re-reading the dated source PDFs,
 #: by running this module as __main__).
-FROZEN_HASH = "dfc01d9f10845bc4fe2b8b4f7ae436b04b9108e32f68c0d179d6f32534e31e82"
+FROZEN_HASH = "dc2bcced49b7cbfeee0b609816362793291e28c0e4f1e960d59ff3d7b708d19d"
 
 
 def report() -> dict:

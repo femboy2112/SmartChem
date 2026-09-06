@@ -236,7 +236,7 @@ def pareto_frontier(items: "list") -> "list":
 
 
 # access-difficulty ordinal for a commodity's curated availability (easiest-first == smallest, section reagents.py).
-_ACCESS_ORDINAL = {"grocery": 0, "pharmacy": 1, "hardware": 2, "pool_garden": 3}
+_ACCESS_ORDINAL = {"grocery": 0, "pharmacy": 1, "hardware": 2, "pool_garden": 3, "industrial": 4}
 
 
 def _weighted_cash_floor(leaf_requirements: "list") -> "tuple[float | None, str]":

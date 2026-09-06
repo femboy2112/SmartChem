@@ -92,6 +92,27 @@ def _observation(uv: _UnitValue) -> CostObservation:
     )
 
 
+# -- the Methanex organic price (COST-VEC-01, ROUND-14): methanol, the FIRST sourced ORGANIC commodity price ---------
+# A DISTINCT source from USGS (a PRODUCER'S posted reference, not a government average unit value), transcribed from
+# the frozen ``experiments/methanex_methanol_seed.py`` and cross-checked by
+# ``tests/test_commodity_pricing.py::test_matches_the_frozen_methanex_seed`` (the same drift-proof discipline the USGS
+# copy uses).  It lifts the USGS seed's "USGS prices no organic acid" boundary for METHANOL ONLY; every other organic
+# stays UNPRICED (fail-SAFE None), never a borrowed or fabricated number.
+_METHANEX_METHANOL_USD_PER_T = "1414"     # North America, Aug 28 2026 sheet -- matches the frozen seed's 1414.0
+_METHANEX_OBSERVED_DATE = "2026-08-28"    # the sheet's posting date (effective Sep 1-30, 2026)
+_METHANEX_SOURCE = (
+    "Methanex Methanol Price Sheet (Aug 28, 2026), North America Non-Discounted Reference Price (valid Sep 1-30, "
+    "2026) -- a producer's posted bulk reference price, not retail"
+)
+_METHANOL_COUNTS = {"C": 1, "H": 4, "O": 1}   # the structure the price binds to (a repointed name yields None)
+
+
+def _methanex_methanol_observation() -> CostObservation:
+    return CostObservation.of(
+        _METHANEX_METHANOL_USD_PER_T, CURRENCY, UNIT, _METHANEX_OBSERVED_DATE, _METHANEX_SOURCE, region="North America",
+    )
+
+
 def cost_observation_for(molecule: Molecule) -> "CostObservation | None":
     """The dated, sourced section-10.4 price for a commodity ``molecule``, or ``None`` (honest UNKNOWN) if none.
 
@@ -105,11 +126,15 @@ def cost_observation_for(molecule: Molecule) -> "CostObservation | None":
     if commodity is None:
         return None
     priced = _PRICED_COMMODITY_FORM.get(commodity.name)
-    if priced is None:
-        return None
-    formula, form, expected_counts = priced
-    # structure-sound the join: the matched commodity's molecule must actually carry the priced form's composition,
-    # so repointing the registry NAME to a different structure yields None (fail-SAFE), never a borrowed price.
-    if commodity.molecule.formula != expected_counts:  # `formula` is a property (dict), not a method
-        return None
-    return _observation(_BY_FORM[(formula, form)])
+    if priced is not None:
+        formula, form, expected_counts = priced
+        # structure-sound the join: the matched commodity's molecule must actually carry the priced form's composition,
+        # so repointing the registry NAME to a different structure yields None (fail-SAFE), never a borrowed price.
+        if commodity.molecule.formula != expected_counts:  # `formula` is a property (dict), not a method
+            return None
+        return _observation(_BY_FORM[(formula, form)])
+    # ROUND-14: the Methanex organic price (methanol), a DISTINCT source from the USGS forms above.  Structure-matched
+    # the SAME way -- methanol's CH4O composition must hold, so a repointed "methanol" name yields None, never a price.
+    if commodity.name == "methanol" and commodity.molecule.formula == _METHANOL_COUNTS:
+        return _methanex_methanol_observation()
+    return None

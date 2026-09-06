@@ -7,6 +7,10 @@ form it prices (the solid rock-salt bulk value, not the cheaper aqueous brine).
 """
 from __future__ import annotations
 
+from experiments.methanex_methanol_seed import METHANEX_METHANOL_PRICES
+from experiments.methanex_methanol_seed import FROZEN_HASH as METHANEX_FROZEN_HASH
+from experiments.methanex_methanol_seed import content_hash as methanex_content_hash
+from experiments.methanex_methanol_seed import validate as validate_methanex_seed
 from experiments.usgs_commodity_seed import USGS_COMMODITY_PRICES
 from experiments.usgs_commodity_seed import validate as validate_seed
 
@@ -59,6 +63,37 @@ def test_unpriced_or_unregistered_is_honest_unknown():
     a borrowed or invented number."""
     assert cp.cost_observation_for(_BY_NAME["ethanol"].molecule) is None  # registered, no sourced price
     assert cp.cost_observation_for(parse_smiles("CCCCCCCCO")) is None      # octan-1-ol: not a commodity at all
+
+
+def test_matches_the_frozen_methanex_seed():
+    """COST-VEC-01 ROUND-14: the METHANOL organic price transcribed into commodity_pricing.py is byte-for-byte the
+    frozen Methanex seed, which is itself well-formed and hash-pinned -- so the two copies cannot drift and a fabricated
+    number/basis cannot slip in.  The Methanex source is DISTINCT from USGS (a producer's posted reference), so it gets
+    its own seed + cross-check, exactly as the USGS copy does."""
+    validate_methanex_seed()                                   # the provenance seed is well-formed (non-vacuous)
+    assert methanex_content_hash() == METHANEX_FROZEN_HASH     # tamper pin: the frozen set has not drifted
+    seed = METHANEX_METHANOL_PRICES[0]
+    assert seed.commodity == "methanol" and seed.region == "North America"
+    # the package transcription equals the seed value (the drift guard, both the number AND the sourcing basis).
+    assert float(cp._METHANEX_METHANOL_USD_PER_T) == seed.price_usd_per_t
+    assert seed.posted_date == cp._METHANEX_OBSERVED_DATE
+    assert "Non-Discounted Reference Price" in cp._METHANEX_SOURCE and "not retail" in cp._METHANEX_SOURCE
+
+
+def test_methanol_carries_the_methanex_sourced_organic_price_structure_matched():
+    """The FIRST sourced ORGANIC price lights up the cash floor for methanol: a real dated + sourced section-10.4
+    observation (lifting the USGS seed's 'no organic acid' boundary for methanol), and it is STRUCTURE-matched so a
+    repointed 'methanol' registry name yields None, never a borrowed price (the same fail-SAFE join the USGS path has)."""
+    obs = cp.cost_observation_for(_BY_NAME["methanol"].molecule)
+    assert obs is not None                                     # methanol is now priced (organic-price block lifted)
+    assert float(obs.amount) == 1414.0 and obs.currency == "USD" and obs.unit == "metric ton"
+    assert obs.observed_date == "2026-08-28" and "Methanex" in obs.source   # dated AND sourced (section 10.4)
+    assert obs.region == "North America"
+    # the price binds to methanol's ACTUAL structure (CH4O): the registry entry carries exactly that composition, so
+    # the join holds; the `commodity.molecule.formula == _METHANOL_COUNTS` guard would fail-SAFE to None on a repoint.
+    assert _BY_NAME["methanol"].molecule.formula == cp._METHANOL_COUNTS
+    # and a different registered commodity (ethanol) never borrows methanol's price through this path.
+    assert cp.cost_observation_for(_BY_NAME["ethanol"].molecule) is None
 
 
 def test_prices_the_named_solid_form_not_the_cheaper_brine():

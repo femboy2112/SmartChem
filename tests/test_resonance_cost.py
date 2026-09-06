@@ -108,6 +108,60 @@ def test_resolve_structure_resolves_a_kekule_flipped_aromatic_fragment():
     assert resolve_structure(flipped).name == "salicylic acid"
 
 
+def _perplacement_costs(smi: str) -> list[int]:
+    """The per-placement ``_canonical_cost`` (a deterministic candidate count, NOT a timing) that ``resonance_canonical``
+    pays canonicalising ``smi``.  Instruments the un-cached canonicaliser; restores it afterward."""
+    import smartchem.category as cat
+    costs: list[int] = []
+    orig = getattr(cat.Molecule.canonical, "__wrapped__", cat.Molecule.canonical)
+
+    def _rec(self):
+        costs.append(cat._canonical_cost(self.atoms, self.bonds))
+        return orig(self)
+
+    saved = cat.Molecule.canonical
+    cat.Molecule.canonical = _rec
+    try:
+        resonance_identity(parse_smiles(smi))
+    finally:
+        cat.Molecule.canonical = saved
+    return costs
+
+
+def test_round13_no_canonical_cost_proxy_separates_legit_slow_from_crafted_slow():
+    """ROUND-13 item 3 (the REFUTATION tripwire): the caps are NOT lifted by a ``_canonical_cost`` work budget, because
+    no such budget is a sound runtime bound.  Pinned by two structural facts (reproduced in
+    experiments/resonance_cost_proxy_probe.py), so nobody re-walks the recon's dead design (A):
+
+    1. A LEGIT PAH (triphenylene) has a per-placement PERMUTATION ``_canonical_cost`` at least as high as a crafted
+       under-cap grind -- so any per-placement-cost cut that bails the grind also bails legit molecules.
+    2. Real coronene is the fast one yet has an ASTRONOMICAL nominal ``_canonical_cost`` (individualisation branch), so a
+       raw ``_canonical_cost`` budget would bail a FAST molecule.  ``_canonical_cost`` tracks runtime in NEITHER branch.
+    """
+    from smartchem.smiles import _RESONANCE_MAX_HEAVY, _RESONANCE_MAX_MATCHINGS
+    from smartchem.category import _MAX_CANONICAL_CANDIDATES
+    # the naive lift was NOT shipped: the ROUND-11 caps stand unchanged.
+    assert (_RESONANCE_MAX_HEAVY, _RESONANCE_MAX_MATCHINGS) == (64, 128)
+
+    def _max_perm(smi):  # the most expensive PERMUTATION-branch placement (individualisation-branch ones are exempt)
+        return max((c for c in _perplacement_costs(smi) if c <= _MAX_CANONICAL_CANDIDATES), default=0)
+
+    grind = _max_perm("c1cc2ccc3ccc4ccc5ccc1c1c2c3c4c51")       # a 20-heavy under-cap crafted grind
+    triphenylene = _max_perm("c1ccc2c(c1)c1ccccc1c1ccccc21")    # a LEGIT fused PAH, also slow
+    assert grind > _MAX_CANONICAL_CANDIDATES // 10              # the grind IS an expensive permutation placement ...
+    assert triphenylene >= grind                                # ... yet a legit molecule out-costs it: no clean cut
+
+    # real coronene: the FAST molecule, but its own canonical cost is astronomically above the permutation threshold,
+    # so a raw _canonical_cost meter would (wrongly) bail it -- the over-charge half of the refutation.
+    coronene = parse_smiles("c1cc2ccc3ccc4ccc5ccc6ccc1c1c2c3c4c5c61")
+    assert _canonical_cost_of(coronene) > _MAX_CANONICAL_CANDIDATES * 1000
+
+
+def _canonical_cost_of(mol) -> int:
+    from smartchem.category import _canonical_cost
+    return _canonical_cost(mol.atoms, mol.bonds)
+
+
 def test_fused_aromatics_unify_across_spellings():
     """Regression net for any future placement optimisation: every fused aromatic below MUST keep ONE identity
     across its spellings (aromatic and explicit-Kekulé), and the three species MUST stay mutually distinct."""

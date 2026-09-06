@@ -580,6 +580,9 @@ def _cmd_compile(argv: list[str]) -> int:
             # CLI-CAN-02 brick 2: APPLY the section-11 bench box to route ranking here too, so `compile --max-temp`
             # genuinely fits the routes -- the SAME rank_routes(box) the recompile service uses (alias coherence).
             box=ConstraintBox.of_bounds(request.constraints.bounds, process=request.constraints.process),
+            # STEREO-DOSSIER-01: the SAME resolved target features already feeding the section-5.3 losses now ALSO
+            # surface the perceived CIP R/S + configuration completeness in the human dossier header (perception only).
+            target_features=target_features,
         )
     except Exception as exc:  # noqa: BLE001 -- ScissionError -> 5, ValueError -> 2 via the ONE classifier; else 70
         return _domain_exit(exc, "compile")

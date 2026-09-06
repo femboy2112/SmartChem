@@ -325,6 +325,9 @@ The compact continuation sheet is [ROADMAP_2026-07-27.md](docs/history/ROADMAP_2
 - [ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md](docs/history/ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md) —
   proposal (M-4): the chemical decompiler / elemental-descent hypergraph, its formal-not-physical
   frame, termination/budget walls, reuse map, and B0–B4 build ladder.
+- [PROCESS_OBSERVATION_AND_TRANSPORT_CONTRACT_v0.1.md](docs/research/PROCESS_OBSERVATION_AND_TRANSPORT_CONTRACT_v0.1.md) —
+  creator-process source ingress, context transport, capability, verification, and poor-man whole-path
+  research contract.
 
 The standing standard is simple: a loud refusal is acceptable; a plausible, unearned answer
 is not.

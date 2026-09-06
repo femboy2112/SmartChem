@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ 5f83f6a` · suite **4242 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
+> `verified @ 376d186` · suite **4265 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (`§1`–`§16`); this file is
@@ -60,6 +60,17 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 
 ## ✅ DONE — current shipped capability
 
+**ROUND 19** (branch `cip-load-stability-2026-09-06`) — 3 builds + 1 recorded decision; each build `design → recon →
+build → reproduce → evil-morty → fold → verify`; **additive** (5 new files + additive edits to `service.py`, no existing
+behaviour changed); two evil-morty passes found real weaknesses, all folded or documented and pinned by tests:
+
+| Item | Lane | What shipped |
+|---|---|---|
+| CIP-ORACLE-01 (item 1, the oracle) | B | The committed **geometric handedness oracle** (`experiments/cip_geometry_oracle_probe.py` + test) — meeting item 1's oracle gate. Builds synthetic tetrahedron coordinates from the OpenSMILES sense bit, reads R/S off a real signed volume (lowest priority away, trace 1→2→3), takes priorities as an INPUT so it decouples geometry from priority-ranking. Green on an exhaustive 48-case {F,Cl,Br,I} battery + two textbook absolute anchors ([C@H](F)(Cl)Br = S, L-alanine = S from one derived convention). **evil-morty (MED-HIGH) right-sized the claim:** it is algebraically `perm_parity ^ sense`, so the 48-case sweep confirms ONE constant, not 48 bearings — it buys one independent bit (a global convention-flip guard) + the decoupling instrument, NOT a ranking-bug catch. Folded: docstrings corrected to that honest scope, `cip_labels` pinned into the frozen hash (so a regression in the *audited* slice reddens it too), the algebraic identity + an external-absolute pipeline check baked into the tests, the dead degeneracy-guard overclaim fixed. |
+| DURATION-STABILITY-01 (item 3, the primitive) | B·C | The duration-aware **survival primitive** (`smartchem/experiment/stability_horizon.py` + harness + test) — the time axis on known physics. `f = exp(-k t)`, k = A·exp(-Ea/RT) mirroring the L1 rate engine (R pinned equal, no drift); non-vacuous on N₂O₅ (SURVIVES 60 s → MARGINAL 1 h → DEGRADES 6 h at 298 K), DERIVED/PREDICTED graded, instrument-calibrated (k(298) reproduces the measured 3.38e-5 to ~5%). Fail-closed UNKNOWN with no sourced rate; the compound→rate bridge is structure-keyed + direction-specific (cyclopropane/propene C₃H₆ collision proves no isomer or product borrows a rate). Standalone — NOT wired into core E1 (a stated boundary). **evil-morty SIGNED the anti-fabrication core** (no fail-open, no overflow/NaN reaches a verdict); folded 3 LOW: `is_sourced` docstring softened, an `isfinite` guard added (fail-closed on a non-finite injected record), the "decomposition"→"first-order consumption" naming fixed; documented the reactant-coefficient rate-convention assumption (tracked debt). |
+| DAG-HOLD-MR-01 (item 2b) | C | `serial_holds` on `RankedDAGSummary` — the DAG-HOLD-01 serial-schedule hold made machine-readable as `(producer, consumer, minutes)` triples (was a human note only). **Digest-EXCLUDED** (`compare=False`): fully determined by `edges` + `process_requirements`, so it adds no identity and every existing DAG digest stays byte-stable; schema `v1alpha3→v1alpha4`, descriptor `v1alpha15→v1alpha16`, one golden (`response_schema.json`) regenerated, non-vacuous (the 40-min DAG carries `(0,2,40.0)`). |
+| ONLOAD-REDERIVE (item 2, decided not built) | C | **Scope decision recorded, build-ready** (`docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.1.md`) — item 2's gate was "a scope decision". Resolved: opt-in **digest-excluded** thick per-step payload + a load-time coherence check (mirroring PROCESS-ADMIT-01), protection-equivalent to folding into `result_digest` without changing every route identity. The build (new Molecule/Envelope serializers + conservation-certified route reconstruction + 4 coherence checks) is larger than items 1+2b+3 combined and touches the module that gates every compile, so it is scheduled as its own round rather than rushed. |
+
 **ROUND 18** (commit `5f83f6a` on branch `observability-electrochem-2026-09-06`) — 2 builds; each `design → recon →
 build → reproduce → evil-morty → fold → verify`; **additive** (6 new files + 1 package `__init__` re-export — new exports
 only, no schema/golden/compiler-behaviour change); a 6-lens evil-morty workflow found **6 real weaknesses**, all folded
@@ -101,36 +112,51 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
-> ROUND 18 shipped queue items 1 (the **Observability Score**) and 5 (the **electrochemical/EM bridge**) — see DONE above.
-> The remaining items are renumbered. The **DOW-bromine litmus is now two-thirds standing** — pricing (R16 ✓), mechanism
-> (R17 ✓), spontaneity + electrolytic voltage (R18 ✓) — so its one remaining gate is the sourced Cl₂/NaBr **cost ranking**
-> (see DEFERRED). The whole queue is now L-heavy: the cheap and short-horizon wins are used up.
+> ROUND 19 advanced all three: item 1's **oracle** shipped (the namer remains), item 3's duration-aware **primitive**
+> shipped (the core wire-in + the DOW-Br₂ primary remain), item 2b (**serial_holds**) shipped, and item 2's **scope
+> decision is now resolved** (see `docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.1.md`). The queue stays L-heavy.
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| 1 | **General CIP — oracle first, then breadth-first namer** | B | **L** | medium | a committed, independent geometric oracle |
-| 2 | **Composability + physical re-derivation on load — DAG *and* linear** | C | **L** | medium | a scope decision |
-| 3 | **Duration-aware stability verdict** (the full time axis) *(DOW)* | B·C | **L** | long | sourced decomposition-kinetics per compound |
+| 1 | **General CIP — the breadth-first namer** (oracle shipped R19) | B | **L** | medium | a correct sphere-by-sphere digraph, validated against the committed oracle |
+| 2 | **Composability + physical re-derivation on load — DAG *and* linear** | C | **L** | medium | ~~a scope decision~~ **DECIDED R19** — now a pure build |
+| 3 | **Wire the duration-aware verdict into core E1 + the DOW-Br₂ primary** (primitive shipped R19) | B·C | **L** | long | a route intermediate with sourced kinetics + a Br₂ decomposition primary |
 
-### 1 · General CIP — the oracle first, then the breadth-first namer — **L, correctness-critical**
-The distinct-Z slice stands; the general R/S is a named deferral. **The wall isn't the namer — it's the oracle** (built
-and discarded twice, R13/R14, both times missing the bug). First step, committed to `experiments/`: a standalone
-geometric signed-volume handedness oracle (a genuinely *different* computation from any digraph), green on a textbook
-battery, **before one line of the BFS namer**. A wrong R/S is worse than none. *Absorbs E/Z* (a constitutional + CIP
-problem, no tie to a time axis).
+### 1 · General CIP — the breadth-first namer (the oracle is now committed) — **L, correctness-critical**
+**The oracle gate is met** (ROUND 19, `experiments/cip_geometry_oracle_probe.py`): a committed geometric signed-volume
+handedness instrument, green on an exhaustive {F,Cl,Br,I} battery + textbook anchors, that takes priorities as an INPUT
+so it decouples "are the priorities right" (the namer) from "is the geometry right" (the oracle). **Honest scope of what
+it buys** (an adversarial review right-sized it, baked into the tests): it is algebraically `perm_parity ^ sense`, so it
+buys ONE independent bit (a global convention-flip guard) + the decoupling instrument — NOT a ranking-bug catch on the
+distinct-Z slice. So the namer build is: the correct **breadth-first / sphere-by-sphere** hierarchical digraph (the exact
+DFS-vs-BFS bug that killed R14) + phantom atoms for multiple bonds + Rule 1b/2, validated by
+`namer(mol) == geometric_handedness(true_priorities, sense)` on textbook cases where priorities are known. A wrong R/S is
+worse than none. *Absorbs E/Z.* **Tracked seam:** the shared parser `@`/`@@` → written-order convention has no external
+(RDKit) oracle in the dependency-light core — validated only against hand-checkable textbook absolutes.
 
-### 2 · Composability + physical re-derivation on load — DAG **and** linear — **L**
+### 2 · Composability + physical re-derivation on load — DAG **and** linear — **L, scope DECIDED**
 On load only the **process** component is re-derived; composability + physical ride as free-text (closed only by the
-opt-in HMAC). Needs brand-new payload (per-edge intermediate `Molecule`, full `ConditionEnvelope`, per-step
-reactant/product tuples) that contradicts the thin-projection design. Widen the fix to DAG **and** linear in one pass
-(the boundary is symmetric). *(Also optional, S: make the DAG-HOLD-01 hold **machine-readable per-route** via a
-`serial_hold_notes` field on `RankedDAGSummary` — a schema bump + golden regen; today the hold is in the human note only.)*
+opt-in HMAC). **The scope fork is resolved (ROUND 19):** carry the thick per-step payload (target `Molecule`, reactants,
+products, reagents, full `ConditionEnvelope`) **opt-in and digest-EXCLUDED** (`compare=False`, like `provider_snapshots`
+and R19's `serial_holds`), and close the trust gap via a **load-time coherence check** that re-derives both axes and
+compares to the digest-protected claimed verdicts — protection-equivalent to folding into the digest, without changing
+every existing route identity. Full rationale + the measured build (new Molecule/Envelope serializers +
+conservation-certified route reconstruction + 4 coherence checks + schema bumps + goldens) in
+`docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.1.md`. It is now a pure build (larger than R19's items 1+2b+3
+combined, in the module that gates every compile — so its own round).
 
-### 3 · Duration-aware stability verdict — **L, sourcing wall** *(and DOW: Br₂ decomposition)*
-The full version of the time axis: let E1 render a duration-aware COMPOSABLE/DEGENERATE verdict instead of an
-instantaneous threshold (ROUND 15 shipped only the *diagnostic* half — the hold disclosure). Needs sourced
-decomposition-kinetics (Eₐ/A or half-life) — zero overlap today between `SEED_STABILITY_REFS` and `SEED_KINETIC_REFS`; a
-per-compound primary-source wall. Also the home for the DOW litmus's Br₂-decomposition prediction.
+### 3 · Wire the duration-aware verdict into core E1 + source the DOW-Br₂ primary — **L, sourcing wall** *(DOW)*
+**The primitive shipped (ROUND 19, `smartchem/experiment/stability_horizon.py`):** a duration-aware survival verdict
+`f = exp(-k t)`, k from the sourced Arrhenius fit, non-vacuous on N₂O₅ (SURVIVES→MARGINAL→DEGRADES across the hold),
+fail-closed UNKNOWN with no sourced rate, structure-keyed (no isomer/product borrows a rate). **What remains:** (a) wire
+it into `_judge_transition`'s COMPOSABLE/DEGENERATE flip — needs a route intermediate that carries a sourced
+decomposition rate **and** the unit-lock on `ConditionEnvelope.duration` (an unconsumed, unit-unchecked field today); and
+(b) the **DOW-Br₂ decomposition primary** — no Br₂ decomposition Arrhenius record is sourceable yet (the DOW half of the
+time axis is walled on that primary, independent of the machinery).
+
+### 2b (DONE R19) · machine-readable `serial_holds` on `RankedDAGSummary`
+Shipped — the DAG-HOLD-01 serial hold is now a `(producer, consumer, minutes)` triple field (digest-excluded disclosure),
+not just a human note. See the DONE ledger.
 
 ---
 
@@ -185,6 +211,18 @@ per-compound primary-source wall. Also the home for the DOW litmus's Br₂-decom
   ranking primitive; feeding its process/identity/purity strengths into the affordability `CostVector` as a verification
   axis needs a new `_AXES` entry + a frontier-entry schema bump + golden regen (a deliberate deferral, not an oversight —
   the score is honest and usable standalone now).
+- **CIP oracle's parser-convention seam** (Lane B; ROUND-19, evil-morty) — the geometric oracle validates the geometry→
+  label convention against textbook absolutes, but the shared parser's `@`/`@@` → written-neighbour-ORDER convention has
+  **no external (RDKit) oracle** in the dependency-light core; it is asserted from the OpenSMILES spec, not cross-checked
+  by a third party. A future namer validated against this oracle would inherit a silent parser-convention error. Revisit
+  if an external stereo oracle ever enters the toolchain.
+- **Duration-stability reactant-coefficient rate convention** (Lane B·C; ROUND-19, evil-morty) — `surviving_fraction`
+  assumes the sourced `k` is the per-species rate (`-d[A]/dt = k[A]`), which both seeded records pin in their provenance;
+  a future first-order record with coefficient > 1 sourced under the *reaction-rate* convention would be off by the
+  stoichiometric factor. The module can't detect the convention from the data — documented boundary, not a silent guess.
+- **`ConditionEnvelope.duration` unconsumed + unit-unlocked** (Lane B·C; ROUND-19) — the field is validated but has NO
+  consumer in `smartchem/` and (unlike temperature/pressure) NO unit guard. Wiring item 3's duration-aware verdict into
+  core E1 must close the unit lock first, or a caller mixing `min`/`h`/`s` durations feeds a silent unit error.
 
 ---
 

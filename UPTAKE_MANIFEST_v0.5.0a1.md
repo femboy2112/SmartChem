@@ -4235,3 +4235,74 @@ electrochemical primitive exists — the DOW litmus is two-thirds standing (pric
 electrolytic voltage R18 ✓), leaving the brine-vs-mined **cost ranking** gated only on a sourced Cl₂/NaBr price. DEFERRED:
 that cost ranking (Cl₂ aggregator wall); a second organic price. TRACKED DEBT: phase-specific electrode potentials (F5);
 the CostVector verification-axis wire-in for the Observability Score.
+
+## §19 — ROUND 19 (branch `cip-load-stability-2026-09-06`): CIP oracle, duration-stability primitive, serial_holds, and the on-load re-derivation decision
+
+3 builds + 1 recorded scope decision; **additive** (5 new files + additive edits to `service.py`; no existing behaviour
+changed). Went full-blast on queue items 1, 2, 2b, 3 — three shipped, one (item 2) resolved to a build-ready decision
+because its true cost (measured against the code) is larger than the other three combined and lives in the module that
+gates every compile.
+
+### 19.1 CIP-ORACLE-01 (item 1 — the oracle half) — Lane B
+`experiments/cip_geometry_oracle_probe.py` + `tests/test_cip_geometry_oracle.py`. Meets item 1's oracle gate ("the wall
+isn't the namer — it's the oracle", built and discarded twice R13/R14). `geometric_handedness(priorities, sense)` builds
+synthetic tetrahedron coordinates from the OpenSMILES sense bit and reads R/S off a real signed volume (lowest priority
+away, trace 1→2→3), taking priorities as an INPUT so it decouples geometry from priority-ranking. The sign convention is
+DERIVED (V>0↔S) and reproduces two independent textbook absolutes ([C@H](F)(Cl)Br = S, L-alanine = S) with one rule.
+Green on an exhaustive 48-case {F,Cl,Br,I} battery cross-checked against `cip_labels`. **Recon finding (load-bearing):**
+`Molecule` is a pure graph with NO coordinates and the one coordinate system (`geometry.py:seed_coordinates`) is
+deliberately stereo-blind — so the oracle is synthetic-coordinate, not `Molecule`-coordinate.
+
+### 19.2 DURATION-STABILITY-01 (item 3 — the primitive half) — Lane B·C
+`smartchem/experiment/stability_horizon.py` + harness + `tests/test_stability_horizon.py`. A duration-aware survival
+verdict `f = exp(-k t)`, k = A·exp(-Ea/RT) mirroring the L1 rate engine (R pinned equal by test, no drift). Non-vacuous on
+the sourced N₂O₅ record (SURVIVES 60 s → MARGINAL 1 h → DEGRADES 6 h at 298 K; faster at 338 K), DERIVED inside the
+298-338 K fit window / PREDICTED outside, instrument-calibrated (k(298) reproduces the measured 3.38e-5 to ~5%).
+Fail-closed UNKNOWN with no sourced rate; the compound→rate bridge is structure-keyed and direction-specific (the
+cyclopropane/propene C₃H₆ collision proves no same-formula isomer or product borrows a rate). Standalone — NOT wired into
+core E1 (a stated boundary; needs a route intermediate with sourced kinetics + a unit-lock on `ConditionEnvelope.duration`).
+The DOW-Br₂ half stays walled on a missing Br₂ decomposition primary.
+
+### 19.3 DAG-HOLD-MR-01 (item 2b) — Lane C
+`serial_holds` on `RankedDAGSummary` — the DAG-HOLD-01 serial-schedule hold made machine-readable as
+`(producer, consumer, minutes)` triples (was a human note only). **Digest-EXCLUDED** (`compare=False`): the triples are
+fully determined by the digest-bearing `edges` + `process_requirements`, so they add no identity and every existing DAG
+digest stays byte-stable (confirmed live). Schema `ranked-dag-summary v1alpha3→v1alpha4`, descriptor `v1alpha15→v1alpha16`;
+one golden regenerated (`response_schema.json`), the other four command goldens byte-unchanged (empty DAG dossiers,
+`COMPILATION_RESPONSE_SCHEMA` untouched). Non-vacuous: the 40-min DAG carries `(0,2,40.0)`.
+
+### 19.4 ONLOAD-REDERIVE (item 2 — decided, not built) — Lane C
+`docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.1.md`. Item 2's gate was literally "a scope decision"; resolved it.
+**Decision:** carry the thick per-step re-derivation payload (target `Molecule`, reactants, products, reagents, full
+`ConditionEnvelope`) **opt-in and digest-EXCLUDED** (`compare=False`, the `provider_snapshots`/`serial_holds` precedent),
+and close the free-text trust boundary via a **load-time coherence check** that re-derives composability + physical and
+compares to the digest-protected claimed verdicts (mirroring PROCESS-ADMIT-01). Protection-equivalent to folding the
+evidence into `result_digest`, without changing every existing route identity. Measured build (why it is its own round):
+new Molecule + full ConditionEnvelope serializers + conservation-certified `ExperimentStep`/`Route` reconstruction
+(`ExperimentStep.__post_init__` refuses a non-conserving step, so no partial reconstruction) + 4 coherence checks
+(composability/physical × linear/DAG) + schema bumps + golden regen — larger than items 1+2b+3 combined.
+
+### 19.5 evil-morty folds (ROUND 19) — 2 passes, both real
+- **CIP oracle (MED-HIGH → right-sized + hardened).** The adversary proved the oracle is ALGEBRAICALLY `perm_parity ^
+  sense` (a signed volume of permuted vertices is alternating; the base tetrahedron's global sign ε is +, so it reduces
+  bit-for-bit), so the 48-case agreement confirms ONE constant, not 48 independent bearings, and it is BLIND to a ranking
+  bug on the distinct-Z slice (priorities are copied). Folded: docstrings corrected to the honest scope (it buys one
+  independent bit — a global convention-flip guard checked against textbook reality — plus the decoupling instrument);
+  `cip_labels` pinned into the frozen hash so a regression in the AUDITED slice reddens it too; a test pinning the
+  algebraic identity + an external-absolute full-pipeline check baked in; the unreachable degeneracy-guard overclaim
+  fixed. New lesson: [[a-reframed-check-can-be-the-same-quantity]].
+- **Duration-stability (core SIGNED; 3 LOW folded + 1 boundary documented).** evil-morty signed the anti-fabrication core
+  (no wrong compound borrows a rate, no overflow/NaN/out-of-range reaches a verdict, the spread is genuine, the
+  calibration is honest). Folded: `is_sourced` docstring softened (computed-from-a-caller-field, not forge-proof against a
+  self-authored lie); an `isfinite` guard added to `surviving_fraction` (fail-closed on a non-finite injected `KineticRef`,
+  which the data layer accepts); the "decomposition"→"first-order consumption" naming corrected (a first-order
+  isomerization also resolves). Documented (not code-folded): the reactant-coefficient rate-CONVENTION assumption
+  (per-species `-d[A]/dt = k[A]`, which both seeds pin) — a latent trap for a future coeff>1 record, undetectable from the
+  data, tracked in ROADMAP.
+
+### 19.6 next-steps (ROUND 19)
+See [`ROADMAP.md`](ROADMAP.md). The three L items advanced but none fully closed: item 1's NAMER remains (a correct
+breadth-first digraph, validated against the now-committed oracle); item 2 is a pure build (decision recorded); item 3
+needs the core E1 wire-in (+ the `ConditionEnvelope.duration` unit-lock) and a Br₂ decomposition primary. TRACKED DEBT
+gained three (§ROADMAP): the CIP parser-convention seam (no external oracle), the duration-stability coefficient
+convention, the unconsumed/unit-unlocked `ConditionEnvelope.duration`.

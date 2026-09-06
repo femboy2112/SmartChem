@@ -506,6 +506,54 @@ def rank_routes(
     return tuple(sorted(fits, key=_route_score))
 
 
+def _dag_score(fit: DAGBenchFit) -> tuple:
+    """Sort key for a convergent DAG, lower = better -- the DAG analogue of :func:`_route_score`'s STRUCTURAL tiers.
+
+    Ranks on exactly what the combined :class:`DAGBenchFit` carries: the section-11 status (a FITS/UNCONSTRAINED DAG
+    floats above an UNKNOWN, above an EXCLUDED), then the E1 composability verdict, then fewer gaps, then fewer
+    exclusions.  The composability tier is ``COMPOSABLE`` (0) < ``NO_TRANSITIONS``/``SINGLE_STEP`` (1) < ``UNKNOWN``
+    handoff (2) < ``DEGENERATE`` (3): a multi-edge convergent route whose handoffs are all affirmatively cleared
+    outranks a trivial "nothing to compose" DAG, which outranks one with an unrefuted handoff -- MIRRORING
+    :func:`_route_score`'s ``SINGLE_STEP=1`` exactly (a positive composability cleared on sourced data is stronger
+    evidence than the vacuous absence of a handoff).  This closes the "DAG mode ranks nothing" gap (DAG-RANK-01, the
+    next-step DAG-BENCH-01 left open) so a chemist handed several admissible convergent routes sees the best-evidenced
+    one first -- the north-star litmus.
+
+    BOUNDARY (why this is a COARSE ranking, not yet the full one): the three SOURCED thermochemical tiebreakers
+    :func:`_route_score` rides between composability and the counts (selectivity / feasibility / equilibrium) and its
+    last-resort kinetics tier are PER-REACTION verdicts a DAG does not aggregate today -- ``DAGBenchFit`` carries none
+    of them.  A per-node thermochemical roll-up is the named next-step; until then this is a sound STRUCTURAL best-first
+    order (status -> composability -> gap/exclusion counts), never a claim of thermochemical discrimination it lacks."""
+    status_rank = {RouteFitStatus.FITS: 0, RouteFitStatus.UNCONSTRAINED: 0,
+                   RouteFitStatus.UNKNOWN: 1, RouteFitStatus.EXCLUDED: 2}
+    comp_rank = {"COMPOSABLE": 0, "NO_TRANSITIONS": 1, "SINGLE_STEP": 1, "UNKNOWN": 2, "DEGENERATE": 3}
+    return (
+        status_rank[fit.status],
+        comp_rank.get(fit.composability.verdict, 4),
+        len(fit.gaps),
+        len(fit.exclusions),
+    )
+
+
+def rank_dags(dags, box: ConstraintBox | None = None) -> tuple:
+    """Rank convergent DAGs best-first for a bench (or, with ``box=None``, an unconstrained bench) -- the DAG analogue
+    of :func:`rank_routes` (DAG-RANK-01), closing the "DAG mode ranks nothing" gap DAG-BENCH-01 left open.
+
+    Sorts by each DAG's COMBINED section-11 bench fit (:func:`dag_bench_fit`) via :func:`_dag_score`: FITS+COMPOSABLE
+    convergent routes float above UNKNOWN-gap ones, above EXCLUDED/DEGENERATE ones.  The sort is STABLE, so DAGs that
+    tie on every ranked dimension keep their discovery order -- a deterministic, reproducible ranking.
+
+    It scores each DAG under the DEFAULT stability table, EXACTLY as the caller's
+    :class:`~smartchem.service.RankedDAGSummary.of_dag` projects it -- so the ranked order can never disagree with the
+    ``fit_status`` each dossier carries.  (An earlier ``stability=`` param was removed as an evil-morty fold: ``of_dag``
+    takes no stability, so accepting one here would let a caller rank under one table and project under another -- a
+    latent divergence with no consumer.  If a non-default table is ever needed, thread it through BOTH or neither.)"""
+    effective_box = box if box is not None else ConstraintBox()
+    scored = [(dag_bench_fit(dag, effective_box), dag) for dag in dags]
+    scored.sort(key=lambda pair: _dag_score(pair[0]))
+    return tuple(dag for _fit, dag in scored)
+
+
 @dataclass(frozen=True)
 class RouteDossier(Digestible):
     """A human-readable route evidence dossier; never, by this type alone, a bench-ready procedure."""

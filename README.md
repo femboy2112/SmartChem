@@ -230,7 +230,7 @@ python -m smartchem.bench
 Current maintained fast-suite result (dev environment with the optional PySCF stack installed):
 
 ```text
-4145 passed, 14 skipped, 1 xfailed
+4157 passed, 14 skipped, 1 xfailed
 ```
 
 The skips are optional-backend coverage and the explicit slow-test gate; they are not represented as passed.
@@ -263,6 +263,10 @@ Raw journals are write-once local run artifacts. Receipts retain the relevant id
 outcomes, scientific scope, evidence status, omissions, casualties, and negative claims.
 
 ## Roadmap
+
+> **The live chemical-compiler (v0.5.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
+> next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
+> re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.
 
 The current short-term seam is hardened: `PhysicalIR` owns member/reference/evidence
 integrity, transforms bind the approved model and contracts, all nine executors own their

@@ -327,7 +327,10 @@ _MAX_KEKULE_MATCHINGS = 5000
 # ``_RESONANCE_MAX_MATCHINGS``.  Above either, the fragment falls back to the plain literal-bond-order identity (no
 # worse than pre-fix -- it just won't unify across Kekulé spellings, a non-issue for a system this large under the
 # current bounded targets).  Real drug-like targets (a handful of small aromatic rings, a few dozen placements) are
-# comfortably under both.  These are DISTINCT from the parser's 5000 cap, which stays unchanged.
+# comfortably under both.  These are DISTINCT from the parser's 5000 cap, which stays unchanged.  ROUND-14 measured an
+# ACTUAL-work meter as the named next-step to lifting these (tests/test_resonance_actual_work.py): it is a sound TIME
+# bound (fixes ROUND-13's nominal-cost over-charge) but NOT a malice filter -- a LEGIT PAH out-costs a crafted grind,
+# so no work budget separates them, and the caps stay a size proxy for a limit no real (<=24-heavy) target approaches.
 _RESONANCE_MAX_HEAVY = 64
 _RESONANCE_MAX_MATCHINGS = 128
 

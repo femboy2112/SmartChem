@@ -3769,3 +3769,114 @@ XOR sense` — spelling-invariant (a neighbour transposition flips the SMILES se
 - **Deferred, honest, named:** E/Z double-bond config, CIP R/S *naming*, ring stereocentres, and the match-layer
   wiring (`_PERCEIVABLE_LAYERS → CONFIGURATION` — deferred for the isotope layer too, they land together). The
   section-5.3 stereo BLOCKER is unchanged.
+
+## 13. ROUND 13 — the next four best-next-steps full-blast round (2026-09-05)
+
+Off ROUND 12 (`main` at `3251b16`). The four deliverables are the ROUND-12 report's ranked best-next-steps:
+(1) formal DAG RouteDossier admission, (2) ID-STEREO match-layer wiring (config + isotope), (3) work-metered
+canonicalizer, (4) organic-price wiring + CIP R/S naming. Each: design → 5× Citadel recon → build → REPRODUCE
+every finding myself → evil-morty red-team → fold → verify. Two of the four are HONEST outcomes, not builds
+(item 3 refuted by measurement; item 4a deferred on sourcing) — the anti-fabrication discipline over shipping a
+demo. evil-morty broke TWO of item 1's soundness claims (both folded) and cleared items 2, 3, and 4b. Final full suite **4134 passed, 14 skipped, 1 xfailed** (dev venv, PySCF present; +18 vs the 4116 ROUND-12 base).
+
+### 13.1 item 1 — formal DAG process admission (DAG-ADMIT-01; Lane C; `4e9ce06`)
+
+Convergent-DAG routes were assessed only as a throwaway diagnostic; `process_selection_status` stayed
+`UNASSESSED` for a DAG-mode compile. Now a FORMAL, load-re-derived PROCESS admission: a new
+`RankedDAGSummary(Digestible)` carries the process axis ONLY (`process_fit_status` = `dag_process_fit`'s
+verdict) + per-step `process_requirements` + the DAG `edges`; a new `ranked_dag_dossiers` response field; a
+`_check_dag_process_admission_coherence` (the convergent analogue of PROCESS-ADMIT-01) re-derives each DAG's fit
+via `evaluate_dag_process_requirements` on load and refuses a `process_fit_status` the evidence cannot support.
+`_validate_dag_edges` shape-guards the carried edges (acyclic / single sink / all-reachable), closing the
+"relabeled topology" forgery on SHAPE validity; the residual (edges not cryptographically bound to the molecule
+graph) is closed by the SAME producer signature as the linear axis. Deliberately NOT a combined bench fit — the
+composability/physical bench box for convergent DAGs is a named next-step. `result_digest` folds the DAG dossiers
+ONLY when non-empty, so every linear/decompile/DAG-less response stays byte-identical (verified: **zero
+result_digest drift** across all CLI-JSON fixtures). Schema: response v1alpha11→v1alpha12, descriptor
+v1alpha12→v1alpha13, new `ranked-dag-summary-v1alpha1`.
+- **evil-morty fold — Finding 1 (Medium, verified):** `_check_outcome_coherence` fenced `ranked_route_dossiers`
+  against an unsearched outcome (ir None) but NOT the new `ranked_dag_dossiers` (the membership check is skipped
+  when ir is None), so a REFUSED/INVALID response could smuggle a ghost dossier into `result_digest`. The fence is
+  now extended to the DAG field.
+- **evil-morty fold — Finding 2 (Medium, verified):** a DAG's process-only `FITS_FOUND` flipped `exit_code` to 0
+  (success), where a linear route's success requires the COMBINED bench fit. `exit_code` now gates a
+  process-constrained compile's success on `admissible_route_digests` (linear combined-FITS), so a process-FITS
+  DAG stays REFUSED with its process admission reported separately — never over-read as a bench pass.
+  Behaviour-preserving for linear mode.
+
+### 13.2 item 2 — ID-STEREO match-layer wiring (ID-STEREO-02; Lane B; `b6c261d`)
+
+The "enantiomers get distinct SYSTEM identities" goal in its full form is the §5.3 flagship wall (the search
+identity `compilation_ir.ChemicalIdentity` runs on the achiral `Molecule` model). The SOUND, right-sized slice:
+wire the ROUND-12 configuration perception (+ a proper isotope⊕chirality combined ISOTOPIC key — the bare
+`isotopic_digest` is chirality-blind, so it can't refine CONFIGURATION as-is) into `LayeredIdentity.of_molecule`
+via `SmilesFeatures`, so `same_identity_at(a, b, CONFIGURATION/ISOTOPIC)` returns a REAL enantiomer-distinguishing
+answer. The subtle soundness win: **fail-closed on completeness**. `configuration_digest` is `None` for BOTH a
+truly-achiral molecule AND one with an unperceived (ring / E/Z / degenerate) stereocentre — reducing to
+constitution in the latter would FALSELY MERGE two enantiomers. A new `SmilesFeatures.configuration_complete`
+(True iff every marked centre yielded a descriptor AND no E/Z) gates it: CONFIGURATION is perceived only when
+fully determined, else absent (honest UNKNOWN). The combined ISOTOPIC key folds the isotope digest OVER the
+configuration digest, closing the enantiomeric-isotopologue trap. Bare `of_molecule` (no features) is unchanged —
+zero ripple. `_check_identity_layer`'s refusal reason is now operation-based and honest (the stale "stereo
+perception is unbuilt" line — now false — replaced by "perceivable but not yet wired into the achiral search's
+terminal matching, §5.3"); dead `_PERCEIVABLE_LAYERS` removed. Live-search threading stays the named §5.3 wall.
+
+### 13.3 item 3 — work-metered canonicalizer REFUTED by measurement (Lane B; `787876f`)
+
+The recon proposed lifting the resonance DoS caps with a per-placement work budget from `category._canonical_cost`.
+**Measurement refutes the design** (harness: `experiments/resonance_cost_proxy_probe.py`): `_canonical_cost` is
+the NOMINAL candidate-permutation count, not a runtime, and tracks runtime in NEITHER of `canonical()`'s two
+regimes. In the INDIVIDUALISATION branch it OVER-predicts wildly (real coronene C24: `_canonical_cost` ~1.2e23 yet
+~4.6 ms/call — a raw budget would bail a FAST molecule); in the PERMUTATION branch it UNDER-predicts (per-candidate
+cost scales with molecule SIZE, so a 30-atom placement with count 16384 takes ~300 ms). Worst: the slow regime is
+asymmetric permutation-branch PAHs, and LEGIT ones out-cost the crafted grind (triphenylene per-placement cost
+32768 ≥ grind 16384), so no `_canonical_cost` cut separates crafted-slow from legit-slow without moving a frozen
+resonance-identity fixture. Conclusion (mirrors ROUND-12 item 1): the only sound lift is a TRUE runtime meter
+inside `canonical()`, which conflicts with its `lru_cache` (a budget-truncated result cached under `(self,)` alone
+would poison every later unrelated caller) — the measured core change, deferred. Caps retained unchanged (zero
+regression); `tests/test_resonance_cost.py` gains a structural (non-timing) tripwire pinning the refutation.
+
+### 13.4 item 4b — CIP R/S naming, the distinct-atomic-number slice (ID-STEREO-01; Lane B; `d305421`)
+
+`cip_labels` names a tetrahedral stereocentre's CIP R/S configuration WHEN its four directly-bonded atoms differ
+by atomic number alone — there CIP priority is exactly descending atomic number and the recursive
+hierarchical-digraph tie-break is categorically irrelevant. Every other centre (two same-element substituents —
+the COMMON case: amino acids, sugars, any secondary/tertiary carbon; a ring centre; an E/Z bond) is a NAMED
+DEFERRAL and gets NO label, never a guessed/unsound one. The label reuses the ROUND-12 handedness
+(`perm_parity XOR sense`) that IDENTITY already uses, swapping the ordering key from 1-WL colour to CIP
+atomic-number priority. The parity→R/S SIGN CONVENTION is ANCHORED to a known truth, not memory: L-alanine
+(textbook (S)) has ranks [1,4,3,2] with `@@` (sense bit 1), so `perm_parity([1,4,3,2]) ^ 1 == 0` → handedness 0
+maps to S; cross-checked, `[C@H](F)(Cl)Br` computes handedness 0 → (S). `tests/test_cip_naming.py` pins this
+ABSOLUTE anchor (a globally-flipped convention passes every relational test — the anchor is the only guard). Zero
+downstream consumers today (the parity bit already distinguishes enantiomers for identity; R/S is a human name).
+The general recursive CIP digraph (for the excluded common centres) and E/Z naming remain the High-complexity wall.
+- **evil-morty (clean bill):** built an INDEPENDENT 3D-geometry CIP oracle (never touching the parity code) and ran
+  it against `cip_labels` over **96/96 exhaustive** {F,Cl,Br,I} permutations + **4000/4000 random** distinct-Z
+  draws — **0 mismatches**. Sign convention derived correct from scratch, distinct-Z slice recursion-free, isotopes
+  (same-Z pair) and low-coordinate/ring centres correctly excluded, written-order and multi-centre independence held.
+  **Honest boundary:** a COMMON-MODE risk on the OpenSMILES `@` reading (if the oracle and the code share an inverted
+  front/behind reading, the fuzz cannot catch it) is closed by the two EXTERNAL anchors (documented L-alanine = (S),
+  hand geometry), but NOT machine-confirmed against a third-party parser — RDKit is absent in this environment. The
+  L-alanine textbook fact is the load-bearing anchor; a future RDKit `CIPLabeler` cross-check would add the last 1%.
+
+### 13.5 item 4a — organic-price wiring DEFERRED on sourcing (Lane C)
+
+The path is clear (the recon mapped it): salicylic acid is a registered STRUCTURE, needs a `CommodityReagent`
+entry + a priced-commodity module mirroring `commodity_pricing.py` + a pinning test; as a SOLID priced $/kg it
+needs no density layer. But the price could not be SOURCED in this environment: the ROUND-12 memory's Lab Alley
+$103.73/kg figure is committed nowhere and unverifiable via a static fetch (the retail price is behind
+client-side JS — no JSON-LD, no meta price, no static dollar string in the page HTML), and USGS (the one committed
+price provider) prices no organic acid. Per the anti-fabrication directive that outranks shipping a demo, no dead
+or invented price was wired. Named next-step: source a citable static price (a supplier with server-rendered
+pricing, or a published reference price) and wire the registration + frozen seed + pinning test.
+
+### 13.6 next-steps (ROUND 13)
+- **(a)** organic-price wiring once a citable static price is sourced (item 4a, unblocked by sourcing only).
+- **(b)** wire `cip_labels` / `configuration_digest` into a downstream consumer (a human dossier render, or the
+  match-layer's live search) — currently perception-only.
+- **(c)** the general recursive CIP digraph (names real chirality: amino acids, sugars) + E/Z naming — the
+  High-complexity wall item 4b's slice defers.
+- **(d)** formal combined bench fit for convergent DAGs (composability/physical box over a DAG), so a DAG's
+  `process_selection_status` FITS_FOUND becomes a full bench admission, not the process axis only (item 1 boundary).
+- **(e)** the true runtime-metered canonicaliser (lift the resonance caps value-preservingly) — needs resolving
+  the `lru_cache` conflict (item 3's deferred measured core change).

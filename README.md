@@ -31,7 +31,7 @@ SmartChem follows four rules:
    expose unknowns. It may not silently choose scientific meaning or promote a metaphor,
    finite check, converged calculation, or synthetic recovery into physical validation.
 
-The full policy is in [DIRECTION_AUDIT_2026-07-27.md](DIRECTION_AUDIT_2026-07-27.md).
+The full policy is in [DIRECTION_AUDIT_2026-07-27.md](docs/history/DIRECTION_AUDIT_2026-07-27.md).
 
 ## The executable seam
 
@@ -123,7 +123,7 @@ library, so the auditor never pulls in the numeric stack (`import smartchem` sta
 numpy loads only when a numeric domain is actually used). Exit code `0` = every manifest
 certified, `1` = at least one refused, `2` = a manifest could not be loaded. See
 `smartchem/evidence/README.md` for the manifest format and
-`FINEMAN_VERIFICATION_BRIDGE_2026-08-06.md` for the full bridge rationale.
+`docs/history/FINEMAN_VERIFICATION_BRIDGE_2026-08-06.md` for the full bridge rationale.
 
 ## Chemistry core
 
@@ -153,7 +153,7 @@ exact singular preflight. Topology itself still does not imply either set of equ
 This is not a `PhysicalIR` migration, general AC system, device model, or proof of a
 general multiphysics category.
 
-For the module-by-module map and scientific caveats, see [MANIFEST.md](MANIFEST.md).
+For the module-by-module map and scientific caveats, see [MANIFEST.md](docs/history/MANIFEST.md).
 
 ## Chemical compiler (v0.5.0a1 — an alpha in progress)
 
@@ -187,7 +187,7 @@ contract is
 [UPTAKE_MANIFEST_v0.5.0a1.md](UPTAKE_MANIFEST_v0.5.0a1.md) is an honest, per-requirement
 ledger of exactly what is implemented-and-verified versus still open (the alpha is *done*
 only when every P0 row is verified); and
-[AUDIT_CHEMICAL_COMPILER_2026-09-01.md](AUDIT_CHEMICAL_COMPILER_2026-09-01.md) records the
+[AUDIT_CHEMICAL_COMPILER_2026-09-01.md](docs/history/AUDIT_CHEMICAL_COMPILER_2026-09-01.md) records the
 evidence and rationale.
 
 ## Reproduce
@@ -296,33 +296,33 @@ Long term: a domain-extensible Physical IR, open-process semantics, model-chain 
 general validity/refinement runtime, and finally a conversational language that exposes rather
 than impersonates those transitions.
 
-The compact continuation sheet is [ROADMAP_2026-07-27.md](ROADMAP_2026-07-27.md).
+The compact continuation sheet is [ROADMAP_2026-07-27.md](docs/history/ROADMAP_2026-07-27.md).
 
 ## Research record
 
-- [DIRECTION_AUDIT_2026-07-27.md](DIRECTION_AUDIT_2026-07-27.md) — governing scientific,
+- [DIRECTION_AUDIT_2026-07-27.md](docs/history/DIRECTION_AUDIT_2026-07-27.md) — governing scientific,
   efficiency, shepherding, and cross-domain language audit.
-- [AUDIT_2026-07-20.md](AUDIT_2026-07-20.md) — detailed earlier scientific/multiphysics audit.
+- [AUDIT_2026-07-20.md](docs/history/AUDIT_2026-07-20.md) — detailed earlier scientific/multiphysics audit.
 - [THE_COMPILER.md](THE_COMPILER.md) — derived-menu, typed-ledger, termination, and compiler
   construction record.
 - [experiments/README.md](experiments/README.md) — reproducible probes and compiled harnesses.
-- [CAMPAIGN_HANDOFF_2026-07-27.md](CAMPAIGN_HANDOFF_2026-07-27.md) — five-cycle state,
+- [CAMPAIGN_HANDOFF_2026-07-27.md](docs/history/CAMPAIGN_HANDOFF_2026-07-27.md) — five-cycle state,
   calculations, commits, and next work.
-- [RESEARCH_ROUND_2026-07-27.md](RESEARCH_ROUND_2026-07-27.md) — this build/research
+- [RESEARCH_ROUND_2026-07-27.md](docs/history/RESEARCH_ROUND_2026-07-27.md) — this build/research
   round's target, falsifiers, calculation ledger, and claim state.
-- [RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md](RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md)
+- [RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md](docs/history/RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md)
   — selective S0 port, generated-law evidence, rejected remote E1, and compact-resume cut.
-- [RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md](RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md)
+- [RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md](docs/history/RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md)
   — independently verified E1 implementation, hostile repairs, calculation receipt, and
   compact-resume cut.
-- [RESEARCH_ROUND_RLC_AC_2026-07-28.md](RESEARCH_ROUND_RLC_AC_2026-07-28.md)
+- [RESEARCH_ROUND_RLC_AC_2026-07-28.md](docs/history/RESEARCH_ROUND_RLC_AC_2026-07-28.md)
   — independently verified E2 implementation, exact singular refusal, calculation ledger,
   decomposed roadmap, and compact-resume cut.
-- [RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md](RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md)
+- [RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md](docs/history/RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md)
   — bounded quotient adapter, plan-identity migration, category audit, and next semantic rung.
-- [CATEGORY_BACKBONE_ROADMAP_2026-07-27.md](CATEGORY_BACKBONE_ROADMAP_2026-07-27.md) —
+- [CATEGORY_BACKBONE_ROADMAP_2026-07-27.md](docs/history/CATEGORY_BACKBONE_ROADMAP_2026-07-27.md) —
   the staged open-diagram/domain-algebra architecture and its dominance boundary.
-- [ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md](ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md) —
+- [ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md](docs/history/ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md) —
   proposal (M-4): the chemical decompiler / elemental-descent hypergraph, its formal-not-physical
   frame, termination/budget walls, reuse map, and B0–B4 build ladder.
 

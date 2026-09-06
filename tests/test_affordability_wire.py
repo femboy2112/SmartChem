@@ -198,9 +198,13 @@ def test_route_material_quantity_is_none_for_a_degenerate_no_net_species_step():
 
 
 def test_the_frontier_populates_and_ranks_by_material_quantity():
-    # the quantity axis is LIVE and DISCRIMINATING: methyl acetate at depth 2 yields routes with different external
-    # material burdens (mol/product); the leaner route dominates the heavier on material_quantity (same access), so the
-    # heavier route is dropped OFF the frontier -- a ranking the per-unit cash axis (cash UNKNOWN here) cannot make.
+    # the material_quantity axis is LIVE and POPULATED: methyl acetate at depth 2 yields routes with different external
+    # material burdens (mol/product), and the frontier carries that axis, with the leanest-material route always admitted
+    # (nothing dominates it on material).  ORGANIC-PRICE-01 made METHANOL -- a leaf of this target's routes -- PRICED, so
+    # the per-unit CASH axis is now ALSO live here: the frontier is a genuine 2-axis Pareto, and a HEAVIER-material route
+    # SURVIVES precisely when it is non-dominated (it carries a cheaper/known cash the leaner route lacks).  So the axis
+    # ranks WITHIN the Pareto rather than collapsing it to one route (before methanol was priced, cash was UNKNOWN here
+    # and material_quantity alone dominated the heavier route off -- the single-axis behaviour the price wiring enriched).
     from smartchem.service import _route_material_quantity
     result = search_routes(
         parse_smiles("CC(=O)OC"), reagents=(parse_smiles("O"),), commodities=_commodities(), max_depth=2,
@@ -211,4 +215,5 @@ def test_the_frontier_populates_and_ranks_by_material_quantity():
     frontier = resp.affordability_frontier
     front_mqs = [e.cost_vector.material_quantity for e in frontier]
     assert frontier and all(m is not None for m in front_mqs)  # the axis is POPULATED on the frontier (non-vacuous)
-    assert max(front_mqs) < mqs[-1]  # the heaviest-material route was dominated OFF -- the quantity axis ranked it out
+    assert min(front_mqs) == mqs[0]     # the LEANEST-material route is admitted -- material_quantity is a live ranking axis
+    assert len(set(front_mqs)) >= 2     # ... alongside a heavier route non-dominated on cash: a genuine 2-axis Pareto

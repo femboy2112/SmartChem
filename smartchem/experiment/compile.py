@@ -92,6 +92,11 @@ class CompiledSynthesis:
     ledger: tuple[str, ...] = field(default_factory=tuple)
     search_receipt: RouteSearchReceipt | None = None
     already_in_active_inventory: bool = False
+    #: STEREO-DOSSIER-01: the human-readable TARGET STEREOCHEMISTRY perception block (CIP R/S + configuration
+    #: completeness), pre-rendered from the target's :class:`~smartchem.smiles.SmilesFeatures`.  Empty when the target
+    #: declared no perceivable stereo (achiral / a name / a formula).  PERCEPTION ONLY -- the search ran on the achiral
+    #: constitution, so this is a disclosure block, never a search-identity or bench claim.
+    target_stereo_lines: tuple[str, ...] = ()
 
     @property
     def found_route(self) -> bool:
@@ -105,6 +110,7 @@ class CompiledSynthesis:
         lines: list[str] = []
         tgt = _chemist_label(self.target)
         lines.append(f"COMPILED SYNTHESIS -- target {tgt}")
+        lines.extend(self.target_stereo_lines)   # STEREO-DOSSIER-01: the perceived R/S + configuration disclosure (if any)
         lines.append("=" * 88)
 
         if self.search_receipt is not None:
@@ -244,6 +250,57 @@ def _equation(route: ExperimentRoute) -> str:
     return " ; ".join(s.equation() for s in route.steps)
 
 
+def _target_stereo_lines(features: "object | None") -> tuple[str, ...]:
+    """The human-readable TARGET STEREOCHEMISTRY disclosure block from the target's SMILES features (STEREO-DOSSIER-01).
+
+    Surfaces the ID-STEREO-01 perception a chemist otherwise never sees: the CIP R/S names of the SOUNDLY-nameable
+    stereocentres (``features.cip_labels``) and whether the configuration is FULLY perceived
+    (``features.configuration_complete``).  Returns ``()`` -- nothing to disclose -- when the target declared no
+    perceivable stereo (achiral, or a name/formula target whose ``features`` is ``None`` or carries no marker).  It is
+    strictly PERCEPTION: the route search ran on the achiral constitution :class:`~smartchem.category.Molecule`, so this
+    block is a disclosure of the target-as-written, never a search-identity term or a bench-readiness claim (the §5.3
+    achiral-collapse the whole ID-STEREO arc is honest about).  A marked centre that could NOT be soundly named (a
+    same-element/ring priority, or an E/Z double bond) is disclosed as an explicit DEFERRAL, never dropped in silence.
+    """
+    if features is None:
+        return ()
+    cip = getattr(features, "cip_labels", ())
+    marked = getattr(features, "stereocentres_marked", 0)
+    tetrahedral = getattr(features, "tetrahedral_stereo", False)
+    double_bond = getattr(features, "double_bond_stereo", False)
+    complete = getattr(features, "configuration_complete", False)
+    if not (tetrahedral or double_bond):
+        return ()  # no declared stereo at all -- nothing to disclose (achiral as written)
+    lines = [
+        "TARGET STEREOCHEMISTRY (perceived from the target as written; PERCEPTION ONLY -- the route search ran on the "
+        "achiral constitution, so this is a disclosure, not a search-identity or bench claim):",
+    ]
+    # STEREO-DOSSIER-01 fold (evil-morty Finding 1): disclose the NAMED and the DEFERRED centres INDEPENDENTLY, against
+    # the marked-centre count, so a target with one nameable centre never hides the OTHER, deferred centres behind it.
+    if cip:
+        named = ", ".join(f"({label})" for label in cip)
+        lines.append(
+            f"  CIP R/S soundly named ({len(cip)} of {marked} marked tetrahedral centre(s), by descending-atomic-number "
+            f"priority): {named}  (an unordered set -- not tied to a specific atom)"
+        )
+    deferred = marked - len(cip)
+    if deferred > 0:
+        lines.append(
+            f"  {deferred} of {marked} marked tetrahedral centre(s) NOT soundly named -- a same-element/ring priority "
+            "needs the recursive CIP digraph (a named ID-STEREO-01 deferral, never a guessed label)"
+        )
+    if double_bond:
+        lines.append("  double-bond (E/Z) stereo: DECLARED but unperceived (E/Z naming is a named deferral)")
+    # A SEPARATE axis from naming (evil-morty Finding 2): 'complete' means every declared centre was PERCEIVED for
+    # identity/matching (WL parity), which a deferred centre still is -- so it must never be read as 'every centre named'.
+    lines.append(
+        "  configuration perception (for identity/matching, SEPARATE from the R/S naming above): "
+        + ("COMPLETE -- every declared centre distinguished" if complete else
+           "INCOMPLETE -- some declared configuration is unperceived, so it stays UNKNOWN (never a false merge)")
+    )
+    return tuple(lines)
+
+
 def compile_synthesis(
     target: Molecule,
     *,
@@ -262,6 +319,7 @@ def compile_synthesis(
     losses: tuple = (),
     box: ConstraintBox | None = None,
     stability_loader=None,
+    target_features: "object | None" = None,
 ) -> CompiledSynthesis:
     """Compile ``target`` into a bounded, bucket-terminated candidate-route evidence dossier.
 
@@ -291,6 +349,9 @@ def compile_synthesis(
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
+    # STEREO-DOSSIER-01: the target's perceived R/S + configuration disclosure, computed ONCE and threaded to every
+    # return path (a chiral target discloses its stereo whether or not a route was found).  () when no perceivable stereo.
+    stereo_lines = _target_stereo_lines(target_features)
     if not reagents:
         # the cleavage needs at least one cutting reagent; water is the universal default (as the CLI uses).
         from ..structure import structure_by_name
@@ -312,6 +373,7 @@ def compile_synthesis(
         return CompiledSynthesis(
             target, (), None, None, None, None, (), (), (), self_commodity,
             tuple(ledger) + ("the target is itself a commodity -- synthesis is unnecessary",),
+            target_stereo_lines=stereo_lines,
         )
 
     search = search_routes(
@@ -333,6 +395,7 @@ def compile_synthesis(
             ),
             search_receipt=search.receipt,
             already_in_active_inventory=True,
+            target_stereo_lines=stereo_lines,
         )
     routes = search.routes
     if not routes:
@@ -341,6 +404,7 @@ def compile_synthesis(
             tuple(ledger) + ("no cleavage reached the buckets within max_depth -- raise --max-depth or "
                              "widen the inventory",),
             search.receipt,
+            target_stereo_lines=stereo_lines,
         )
 
     # CLI-CAN-02 remainder: when a stability LOADER is supplied (synthesize's --offline / section-9 provider lever),
@@ -398,6 +462,7 @@ def compile_synthesis(
             alternatives=tuple((v.grade.value, _equation(rf.route)) for _, _, _, rf, v in graded),
             ledger=tuple(ledger) + (reason, "no admissible route was observed among the returned candidates"),
             search_receipt=search.receipt,
+            target_stereo_lines=stereo_lines,
         )
     best = best_fit.route
 
@@ -433,4 +498,5 @@ def compile_synthesis(
         already_obtainable=None,
         ledger=tuple(ledger),
         search_receipt=search.receipt,
+        target_stereo_lines=stereo_lines,
     )

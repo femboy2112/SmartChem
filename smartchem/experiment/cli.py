@@ -331,6 +331,8 @@ def _run(args) -> int:
             losses=losses,
             box=ConstraintBox.of_bounds(request.constraints.bounds, process=request.constraints.process),
             stability_loader=_load_stability,
+            # STEREO-DOSSIER-01: surface the resolved target's perceived CIP R/S + configuration in the human dossier.
+            target_features=target_features,
         )
     except (ScissionError, IdentityUnsupportedError) as exc:
         # ERR-EVIDENCE-01: the ENGINE stage catches ONLY the genuine model-boundary refusal family (-> exit 5).  A

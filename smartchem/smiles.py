@@ -100,6 +100,13 @@ class SmilesFeatures:
     configuration_complete: bool = False  # ID-STEREO-02: True iff the molecule's configuration is FULLY perceived (no
     # marked centre scoped out AND no double-bond stereo) -- the fail-closed signal that CONFIGURATION reduces soundly
     # to a match layer; when False some real stereo is unperceived, so CONFIGURATION stays UNKNOWN (never a false merge)
+    cip_labels: tuple[str, ...] = ()  # ID-STEREO-01: the sorted CIP R/S names of the SOUNDLY-nameable stereocentres
+    # (four distinct-atomic-number neighbours -- see :func:`cip_labels`); () when none are nameable (achiral, or every
+    # marked centre is a same-element/ring/E-Z deferral).  PERCEPTION ONLY: the constitution Molecule is achiral, so
+    # this is never a search-identity term -- it exists so a downstream dossier can SHOW the perceived R/S to a chemist.
+    stereocentres_marked: int = 0  # how many tetrahedral centres the SMILES marked (@/@@).  The DENOMINATOR the dossier
+    # discloses against: len(cip_labels) of these are soundly named, the rest are named DEFERRALS -- so a target with a
+    # nameable centre AND a deferred one never hides the deferred count behind the named one (STEREO-DOSSIER-01 fold).
 
     @property
     def has_isotope(self) -> bool:
@@ -320,7 +327,10 @@ _MAX_KEKULE_MATCHINGS = 5000
 # ``_RESONANCE_MAX_MATCHINGS``.  Above either, the fragment falls back to the plain literal-bond-order identity (no
 # worse than pre-fix -- it just won't unify across Kekulé spellings, a non-issue for a system this large under the
 # current bounded targets).  Real drug-like targets (a handful of small aromatic rings, a few dozen placements) are
-# comfortably under both.  These are DISTINCT from the parser's 5000 cap, which stays unchanged.
+# comfortably under both.  These are DISTINCT from the parser's 5000 cap, which stays unchanged.  ROUND-14 measured an
+# ACTUAL-work meter as the named next-step to lifting these (tests/test_resonance_actual_work.py): it is a sound TIME
+# bound (fixes ROUND-13's nominal-cost over-charge) but NOT a malice filter -- a LEGIT PAH out-costs a crafted grind,
+# so no work budget separates them, and the caps stay a size proxy for a limit no real (<=24-heavy) target approaches.
 _RESONANCE_MAX_HEAVY = 64
 _RESONANCE_MAX_MATCHINGS = 128
 
@@ -1030,6 +1040,9 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
     # perceivable acyclic tetrahedral centres (None when none), computed BEFORE _build_molecule mutates bond orders.
     # perception_complete (ID-STEREO-02) is True iff NO marked centre was scoped out -- the fail-closed match-layer signal.
     configuration_digest, perception_complete = _perceive_configuration(atoms, bonds, charge)
+    # CIP R/S NAMES (ID-STEREO-01) for the soundly-nameable centres -- computed on the SAME pristine atoms/bonds, BEFORE
+    # _build_molecule mutates bond orders (``_cip_labels`` copies ``bonds`` internally, so the caller's list is untouched).
+    cip = _cip_labels(atoms, bonds, charge)
     double_bond_stereo = ("/" in stripped or "\\" in stripped)
     molecule = _build_molecule(atoms, bonds, charge)
     features = SmilesFeatures(
@@ -1044,5 +1057,7 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
         # no unperceived double-bond (E/Z) stereo; otherwise some real configuration is unknown, so it must not reduce
         # to a match layer (ID-STEREO-02 fail-closed).
         configuration_complete=perception_complete and not double_bond_stereo,
+        cip_labels=cip,
+        stereocentres_marked=sum(1 for a in atoms if a.chirality),
     )
     return molecule, features

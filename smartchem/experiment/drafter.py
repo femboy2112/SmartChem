@@ -370,6 +370,83 @@ def fit_routes(
     )
 
 
+@dataclass(frozen=True)
+class DAGBenchFit:
+    """Whether one convergent DAG runs on the target bench: the COMBINED section-11 verdict (DAG-BENCH-01).
+
+    The convergent analogue of :class:`RouteFit`, composed from the SAME three axes a linear ``fit_route``
+    combines, only re-shaped for a DAG: E1 composability across every producer->consumer EDGE
+    (:func:`~smartchem.experiment.dag.dag_composability`, degeneracy excludes / an UNKNOWN handoff is a gap), the
+    per-step PHYSICAL box (the identical :func:`_step_box_check` the linear route runs -- a step's T/P/reagent/
+    equipment requirement is order-agnostic, so it transfers to a DAG node verbatim), and the CRITICAL-PATH-aware
+    PROCESS axis (:func:`~smartchem.experiment.dag.dag_process_fit`, whose FITS is the SERIAL-sum ceiling and so is
+    achievable one-step-at-a-time by a single operator -- the concurrency-schedulability boundary bites the UNKNOWN
+    band, NEVER a FITS).  ``status`` folds the three exactly as ``fit_route`` does: EXCLUDED if any hard exclusion,
+    else UNKNOWN if any gap, else FITS iff the box constrains something, else UNCONSTRAINED.
+
+    BOUNDARY (serial-hold stability, a strengthening over a linear FITS): a convergent-DAG FITS certifies
+    serial-achievability on the MODELED axes (time/attention/equipment), but a serial schedule of a convergent DAG
+    HOLDS an early branch's intermediate through the full elapsed time of its sibling branches before the join consumes
+    it -- a longer hold than any adjacent linear handoff.  ``dag_composability`` (E1) is time-blind (it judges only the
+    adjacent-handoff conditions), so that serial-hold stability is UNVERIFIED here; it is unmodeled until the stability
+    model grows a time / max-hold axis.  A plain record (not a
+    :class:`~smartchem.contracts.Digestible`): it is an internal computation result the thin
+    :class:`~smartchem.service.RankedDAGSummary` projects off, never itself a payload term."""
+
+    status: RouteFitStatus
+    exclusions: tuple[str, ...]
+    gaps: tuple[str, ...]
+    composability: object  # DAGComposability (kept off the top-level import to preserve the drafter->dag one-way edge)
+
+    @property
+    def fits(self) -> bool:
+        return self.status is RouteFitStatus.FITS
+
+
+def dag_bench_fit(dag, box: ConstraintBox, *, stability=None) -> DAGBenchFit:
+    """Judge whether one convergent DAG runs on the target bench ``box`` -- the COMBINED section-11 admission.
+
+    Mirrors :func:`fit_route` axis-for-axis (composability + per-step physical box + process), re-shaped for the
+    convergent structure so a DAG is a FIRST-CLASS bench citizen, not a process-axis-only diagnostic (DAG-BENCH-01,
+    the named next-step DAG-ADMIT-01 left open).  ``dag_composability``/``dag_process_fit`` are imported LAZILY so
+    ``drafter`` never takes a module-load dependency on ``dag`` (the one-way layering edge; ``dag`` must not import
+    ``drafter``)."""
+    from .dag import SynthesisDAG, dag_composability, dag_process_fit
+    if type(dag) is not SynthesisDAG:
+        raise TypeError("dag must be a SynthesisDAG")
+    comp = dag_composability(dag) if stability is None else dag_composability(dag, stability=stability)
+    exclusions: list[str] = []
+    gaps: list[str] = []
+    # E1 composability across the DAG's edges: a degenerate transition is a hard exclude; an UNKNOWN handoff is a gap
+    # (never a silent pass) -- the exact split fit_route applies to the linear Composability.
+    if comp.is_degenerate:
+        exclusions.extend(f"degenerate: {r}" for r in comp.degenerate_reasons)
+    gaps.extend(f"composability gap: {g}" for g in comp.gaps)
+    # The physical box PER STEP (T/P/reagent/equipment + whole-process extrema) -- order-agnostic, so the DAG's nodes
+    # reuse the linear per-step check verbatim.  Disjoint from the process axis below (ProcessBounds carries no T/P).
+    for idx, step in enumerate(dag.steps):
+        equip = equipment_for_step(step)
+        ex, gp = _step_box_check(step, box, equip, idx)
+        exclusions.extend(ex)
+        gaps.extend(gp)
+    # The PROCESS axis, critical-path aware (dag_process_fit): FITS is serial-achievable, so this whole verdict's FITS
+    # certificate needs no concurrency -- the joint-single-operator boundary is confined to the UNKNOWN band.
+    process_fit = dag_process_fit(dag, box.process)
+    exclusions.extend(process_fit.exclusions)
+    gaps.extend(process_fit.gaps)
+
+    if exclusions:
+        status = RouteFitStatus.EXCLUDED
+    elif gaps:
+        status = RouteFitStatus.UNKNOWN
+    elif box.constrains_anything:
+        status = RouteFitStatus.FITS
+    else:
+        # an empty box constrains nothing, so there is nothing to fit: UNCONSTRAINED, never a silent FITS (section 11).
+        status = RouteFitStatus.UNCONSTRAINED
+    return DAGBenchFit(status, tuple(exclusions), tuple(gaps), comp)
+
+
 def _route_score(fit: RouteFit) -> tuple:
     """Sort key, lower = better: excluded worst, then composability, then three sourced thermochemical tiers.
 

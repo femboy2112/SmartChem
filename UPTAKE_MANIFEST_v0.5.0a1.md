@@ -3880,3 +3880,104 @@ pricing, or a published reference price) and wire the registration + frozen seed
   `process_selection_status` FITS_FOUND becomes a full bench admission, not the process axis only (item 1 boundary).
 - **(e)** the true runtime-metered canonicaliser (lift the resonance caps value-preservingly) — needs resolving
   the `lru_cache` conflict (item 3's deferred measured core change).
+
+## 14. ROUND 14 — the next four best-next-steps full-blast round (2026-09-05)
+
+Off ROUND 13 (`main` at `8006b71`, housekeeping PR #8 on top of ROUND-13's `f29f68c`). The four deliverables are
+the ROUND-13 report's ranked best-next-steps: (1) formal combined DAG bench fit, (2) wire config/CIP into a
+downstream consumer, (3) the runtime-metered canonicalizer, (4) organic-price + general CIP. Each: design → recon
+→ build → REPRODUCE every finding myself → evil-morty red-team → fold → verify. TWO of the five commits are HONEST
+outcomes, not builds (item 3 refined-refutation by measurement; item 4b's general CIP refuted by evil-morty and
+reverted) — the "a wrong result is worse than none" discipline over shipping an unsound capability. evil-morty
+broke a claim on THREE items (item 1's two prose folds, item 2's silent-omission HIGH, item 3's cache-warm
+tripwire, item 4b's wrong-label HIGH → revert). Final full suite **4145 passed, 14 skipped, 1 xfailed** (dev venv,
+PySCF present; +11 vs the 4134 ROUND-13 base).
+
+### 14.1 item 1 — formal combined DAG bench fit (DAG-BENCH-01; Lane C; `5fc3b2b`)
+
+The ROUND-13 boundary lifted: a convergent DAG was admitted on the PROCESS axis ONLY. Now the full COMBINED
+section-11 bench fit, the true analogue of a linear route. New `dag_bench_fit(dag, box)` + `DAGBenchFit`
+(`experiment/drafter.py`) folds E1 composability across the edges (`dag_composability`), the per-step physical box
+(the identical `_step_box_check` the linear route runs — order-agnostic, transfers to a DAG node verbatim), and the
+critical-path process axis (`dag_process_fit`) into one `RouteFitStatus`. `RankedDAGSummary.process_fit_status`
+→ `fit_status` (now combined); `of_dag(dag, box)` takes the full `ConstraintBox`; new `admissible_dag_digests`;
+`exit_code` flips a complete process-constrained compile to SUCCESS on a combined-FITS DAG — SOUND because
+`dag_process_fit`'s FITS is the serial-sum ceiling = serial-achievable by one operator; the dossier build gate
+widens from process- to `box.constrains_anything` (physical-only DAG mode admitted too). Schema:
+`ranked-dag-summary-v1alpha1→v1alpha2`, descriptor v1alpha13→v1alpha14; response schema HELD at v1alpha12 (zero
+linear ripple, verified). **evil-morty:** five soundness pillars all Verified (serial-sum pillar real, exit boolean
+airtight across every route/dag combo, zero linear ripple, unsearched-outcome fence intact, no new smuggle path).
+TWO honest folds: (a) the serial-hold-stability boundary now documented — a convergent DAG's serial schedule holds
+an early branch's intermediate through its siblings and E1 is time-blind, so that hold's stability is UNVERIFIED (a
+strengthening a linear FITS does not carry, unmodeled until a max-hold axis); (b) the physical-only note no longer
+prints process-axis "serial-achievable" language.
+
+### 14.2 item 2 — CIP/config wired into the human synthesis dossier (STEREO-DOSSIER-01; Lane B; `4b05800`)
+
+`cip_labels`/`configuration_complete` were PERCEPTION-ONLY with ZERO consumers. The human synthesis dossier is now
+the first: `SmilesFeatures` gains `cip_labels` + `stereocentres_marked`; `CompiledSynthesis.target_stereo_lines` +
+`_target_stereo_lines(features)` build a "TARGET STEREOCHEMISTRY (…PERCEPTION ONLY…)" block; `compile_synthesis`
+takes `target_features` (threaded from both CLI human paths, reusing the SAME resolved features the §5.3 losses
+already ride); `render()` emits it under the header. Stamped PERCEPTION-ONLY (the search runs on the achiral
+constitution — the §5.3 wall). **evil-morty:** four surfaces HELD (perception-only boundary does not leak — neither
+new field feeds any identity/digest; parse mutation clean — molecule/configuration_digest byte-identical; no crash
+on isotope/zwitterion/ring/E-Z/name inputs; no wrong R/S symbol). One HIGH fold: the deferral disclosure lived in
+an `elif` that fired only when NO centre was nameable, so a target with one nameable AND one deferred centre
+silently dropped the deferred one (a di-stereocentre read as mono). Fixed: named and deferred disclosed
+INDEPENDENTLY against the marked count ("1 of 2 named … 1 of 2 NOT named"), the perception line separated from
+naming, with a regression test on the exact multi-centre case.
+
+### 14.3 item 3 — runtime-metered canonicalizer, refined refutation (RESONANCE-WORK-01; Lane B; `ca51570`)
+
+ROUND-13 refuted a NOMINAL `_canonical_cost` proxy for lifting the resonance caps. ROUND-14 measures the ACTUAL
+work meter directly (`experiments/resonance_actual_work_probe.py`) and characterizes it: (1) OVER-CHARGE FIXED —
+coronene's real per-placement work is ~12 leaves vs its astronomical nominal cost, so actual-work IS a sound TIME
+bound; (2) UNDER-SEPARATION PERSISTS — triphenylene (LEGIT) out-costs a crafted grind in actual total work too
+(both permutation-branch, actual==nominal), so NO work budget separates legit-from-crafted; the meter is a TIME
+bound, not a malice filter. The only sound lift (an additive >64-heavy escape valve) entangles the enumeration with
+an uncached work meter (the lru_cache-conflicting core change ROUND-13 deferred) and never fires (repo max 24
+heavy). Caps unchanged; `tests/test_resonance_actual_work.py` pins the two facts + a determinism guard. **evil-morty:**
+the refutation is CORRECT and was strengthened (12 legit PAHs × 4 budget formulations, every table topped by legit
+chemistry; the mirror bit-faithful; >64 valve never fires). One Verified defect FIXED: the harness claimed
+"uncached" but `resonance_canonical` is `@lru_cache`'d and `measure()` never cleared it, so a warm cache zeroed the
+reading and the tripwire was green only by cold-cache collection order. `measure()` now clears the cache (proven:
+warm-then-measure still reports the true value), the tripwire pins that determinism, the mixed-unit / mirror-ceiling
+caveats are documented.
+
+### 14.4 item 4a — the first sourced ORGANIC price (ORGANIC-PRICE-01; Lane C; `3919589`)
+
+ROUND-13 deferred the organic cash floor on SOURCING (USGS prices no organic acid; anti-fabrication outranks the
+demo). This round a PRIMARY authority was found and verified in-sandbox: the Methanex Methanol Price Sheet (Aug 28,
+2026) PDF was FETCHED AND READ DIRECTLY, the North America "Non-Discounted Reference Price" USD 1,414/MT read off
+the sheet (cross-checked against the same sheet's USD 4.25/Gal at its own 332.6 Gal/MT). A frozen provenance seed
+(`experiments/methanex_methanol_seed.py`, mirroring the USGS seed's validate/content_hash/FROZEN_HASH) + a
+byte-for-byte cross-check test. `commodity_pricing.py` prices methanol from that DISTINCT source, structure-matched
+to CH4O so a repointed name yields None; every other organic stays UNPRICED (fail-SAFE) until its own primary
+source is READ. Verified: methanol's cash floor lights through the stock bridge, and correctly rippled the
+methyl-acetate CLI-JSON golden (that route cuts to methanol).
+
+### 14.5 item 4b — general recursive CIP REFUTED by evil-morty; the sound slice stands (ID-STEREO-CIP-WALL; `3485d35`)
+
+Attempted the general recursive CIP (naming the common same-element centres the distinct-Z slice defers). A CIP
+Rule-1a hierarchical digraph was built and validated 13/13 against textbook R/S (incl. the L-cysteine=(R)
+exception) + spelling-invariance via `configuration_digest` (an independent in-repo oracle). But **evil-morty found
+a VERIFIED HIGH wrong-label bug, systematic**: the digraph compared its nested-tuple keys LEXICOGRAPHICally
+(DEPTH-first), while true CIP Rule 1a is BREADTH-first (sphere-by-sphere). On `C[C@H](CCC)C(C)C` (n-propyl vs
+isopropyl) it emitted (S) when the truth is (R), consistently wrong across the whole branch-vs-chain alkyl motif
+(~740 order-flips) — and STEREO-DOSSIER-01 would have surfaced that inverted descriptor to a chemist. A correct
+general CIP needs the full breadth-first hierarchical comparison + phantom-0 padding + aromatic/Rule-1b handling: a
+large correctness-critical build we cannot exhaustively validate WITHOUT an independent oracle (RDKit is out of the
+dependency-light core), and a WRONG R/S is worse than none. REVERTED: the SOUND distinct-atomic-number slice stands
+unchanged and DEFERS every branch-vs-chain centre (fail-closed). Pinned by a refutation tripwire so the naive DFS
+digraph is never re-shipped.
+
+### 14.6 next-steps (ROUND 14)
+
+- **(a)** the FULL breadth-first hierarchical CIP (item 4b's wall) — needs an independent validation oracle
+  (a from-scratch 3D-geometry chirality oracle, since RDKit is out of scope) to ship a chemist-facing R/S soundly.
+- **(b)** the combined DAG PHYSICAL box / composability re-derivation on load (item 1 re-derives only the process
+  component; composability/physical ride as free-text, same boundary as the linear axis — closed only by signature).
+- **(c)** a time / max-hold stability axis in the stability model (item 1's serial-hold boundary; item 4b's E/Z).
+- **(d)** the true runtime-metered canonicaliser as an additive >64-heavy escape valve (item 3's characterized sound
+  path) — only worth building when a real >64-heavy target appears (repo max is 24 heavy today).
+- **(e)** more sourced organic prices (item 4a lifted methanol only; each needs its own PRIMARY source READ).

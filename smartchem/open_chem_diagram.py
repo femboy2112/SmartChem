@@ -254,6 +254,16 @@ def _derive_provenance(core: OpenDiagram, lookup: dict[str, Molecule]) -> Proven
             for consumer in consumers_at.get(shared_node, ()):
                 if producer != consumer:
                     deps.add((producer, consumer))
+    # Fail closed on a content collision rather than silently merging (Rung-B open-debt 3): two
+    # structurally identical steps (same source, target, generator id) would collapse to one node in
+    # the frozenset and corrupt the dependency reading.  A valid route/DAG never collides (a DAG has
+    # distinct targets; a route's targets chain), so this only fires on a genuinely ambiguous input --
+    # where the honest answer is a refusal, not a guess.  Occurrence-aware provenance stays future work.
+    if len(steps) != len({step for step in steps}):
+        raise OpenDiagramError(
+            "two structurally identical generator steps share a provenance node; occurrence-aware "
+            "provenance is not supported -- this diagram's causal DAG is ambiguous"
+        )
     return Provenance(frozenset(steps), frozenset(deps))
 
 
@@ -358,6 +368,81 @@ class OpenChemDiagram:
         core = open_core.identity(interface, decoration=ConservationDecoration.identity())
         return cls(core, _registry_of(config.species), name)
 
+    @classmethod
+    def _assemble(
+        cls,
+        steps: tuple["object", ...],
+        flow: tuple[tuple[int, int, Molecule], ...],
+        *,
+        name: str = "",
+    ) -> "OpenChemDiagram":
+        """Compose a pipeline of steps into ONE open diagram, gluing only the shared intermediates.
+
+        Each step becomes a single-step diagram (``ExperimentStep.open()`` -- every reactant an EXTERNAL
+        input port, every product an EXTERNAL output port); all are ``tensor``'d into one diagram, and a
+        single :meth:`plug_all` glues, for every ``(producer, consumer, intermediate)`` in ``flow``, one
+        of the producer's product ports for that species to one of the consumer's reactant ports for it.
+        The glued nodes become INTERNAL; every leaf input and byproduct stays on the EXTERNAL boundary.
+        This is the general open-morphism composition the linear ``Reaction`` chain cannot express
+        (a real step carries byproducts and fresh reagents, so its cod never equals the next step's dom).
+        """
+        if not steps:
+            raise OpenDiagramError("cannot assemble an open diagram from zero steps")
+        diagrams = [step.open() for step in steps]
+        composite = diagrams[0]
+        for diagram in diagrams[1:]:
+            composite = composite.tensor(diagram)
+        in_base: list[int] = []
+        out_base: list[int] = []
+        offset_in = 0
+        offset_out = 0
+        for diagram in diagrams:
+            in_base.append(offset_in)
+            out_base.append(offset_out)
+            offset_in += len(diagram.core.dom.ports)
+            offset_out += len(diagram.core.cod.ports)
+        used_out: set[int] = set()
+        used_in: set[int] = set()
+        pairs: list[tuple[int, int]] = []
+        for producer, consumer, intermediate in flow:
+            token = species_key(intermediate)
+            out_pos = _first_free(diagrams[producer].core.cod.ports, token, out_base[producer], used_out)
+            in_pos = _first_free(diagrams[consumer].core.dom.ports, token, in_base[consumer], used_in)
+            if out_pos is None or in_pos is None:
+                raise OpenDiagramError(
+                    f"flow {producer}->{consumer} on {intermediate!r} has no free matching port to glue"
+                )
+            used_out.add(out_pos)
+            used_in.add(in_pos)
+            pairs.append((out_pos, in_pos))
+        return composite.plug_all(tuple(pairs))._named(name)
+
+    @classmethod
+    def from_route(cls, route: "object") -> "OpenChemDiagram":
+        """Project an :class:`~smartchem.experiment.step.ExperimentRoute` (its ``.open()``).
+
+        The route's linear chain glues each step's target output to the next step's reactant input; leaf
+        inputs and byproducts remain EXTERNAL, the carried intermediates become INTERNAL, so a conserving
+        route yields a saturated CONSERVING diagram whose provenance linearises to the step order (P4).
+        """
+        steps = route.steps
+        flow = tuple((k, k + 1, steps[k].target) for k in range(len(steps) - 1))
+        return cls._assemble(steps, flow, name=f"route->{steps[-1].target!r}")
+
+    @classmethod
+    def from_dag(cls, dag: "object") -> "OpenChemDiagram":
+        """Project a :class:`~smartchem.experiment.dag.SynthesisDAG` (its ``.open()``).
+
+        The DAG's ``edges`` (``(producer, consumer, intermediate)``) name exactly the internal gluings;
+        a convergent DAG uses ``tensor`` for its parallel branches and its provenance is the branching
+        causal DAG (P4).  A convergent assembly has no single linear ``Reaction.path`` -- ``close()``
+        refuses it -- but :meth:`net_reaction` gives its conservation-certified overall transformation.
+        """
+        return cls._assemble(dag.steps, dag.edges, name=f"dag->{dag.final_target!r}")
+
+    def _named(self, name: str) -> "OpenChemDiagram":
+        return self if not name else OpenChemDiagram(self.core, self.registry, name)
+
     # -- composition -------------------------------------------------------------------
     def then(self, other: "OpenChemDiagram") -> "OpenChemDiagram":
         if type(other) is not OpenChemDiagram:
@@ -379,20 +464,34 @@ class OpenChemDiagram:
             label,
         )
 
+    def plug_all(self, pairs: tuple[tuple[int, int], ...]) -> "OpenChemDiagram":
+        """Glue chosen EXTERNAL output ports to input ports (partial pushout); keep the registry.
+
+        Delegates to :meth:`smartchem.open_core.OpenDiagram.plug_all`.  This is how a tensored pipeline
+        of steps composes at only its shared intermediates -- the general open-morphism composition the
+        whole-vessel ``then`` cannot do when steps carry byproducts and fresh leaf inputs.
+        """
+        return OpenChemDiagram(self.core.plug_all(pairs), self.registry, self.name)
+
     # -- reads: the three port states --------------------------------------------------
     def _boundary_nodes(self) -> set[int]:
         return set(self.core.input_nodes) | set(self.core.output_nodes)
 
     def port_state(self, node: int) -> PortState:
-        incidence = self.core.terminal_incidence()[node]
+        incidence = self.core.edge_incidence()[node]
         if node in self._boundary_nodes():
             return PortState.EXTERNAL
         return PortState.OPEN if incidence <= 1 else PortState.INTERNAL
 
     def open_nodes(self) -> tuple[int, ...]:
-        """Every node in the OPEN state (an unfilled hyperedge slot)."""
+        """Every node in the OPEN state (an unfilled hyperedge slot).
+
+        Uses DISTINCT-edge incidence (``edge_incidence``), not raw terminal count, so a node shared
+        between two generator steps is INTERNAL while a node touched by a single step (even twice, in a
+        symmetric step) is an unfilled slot -- Rung-B open-debt 5.
+        """
         boundary = self._boundary_nodes()
-        incidence = self.core.terminal_incidence()
+        incidence = self.core.edge_incidence()
         return tuple(
             node
             for node in range(len(self.core.node_ports))
@@ -475,6 +574,31 @@ class OpenChemDiagram:
         cod = path[-1][1]
         return Reaction(dom, cod, self.name, path=path, generator_word=word)
 
+    def net_reaction(self) -> Reaction:
+        """The conservation-certified OVERALL transformation of a saturated diagram (its net equation).
+
+        Unlike :meth:`close` (which reduces a whole-vessel LINEAR chain to its step-by-step
+        ``Reaction.path`` and refuses a parallel history), :meth:`net_reaction` collapses any saturated
+        diagram -- multi-step route or convergent DAG, byproducts and all -- to the single balanced
+        transformation ``(all EXTERNAL inputs) -> (all EXTERNAL outputs)``.  The internal intermediates
+        cancel, so a diagram whose every step conserves yields a conserving net reaction (its
+        ``__post_init__`` re-derives the balance the independent way); an OPEN diagram is refused.
+        This is the "closure = the whole-process net reaction" read the open-diagram backbone adds.
+        """
+        if not self.is_saturated:
+            raise OpenDiagramError(
+                "cannot take the net reaction of a diagram with OPEN ports: it is UNDECIDED until saturated"
+            )
+        dom = self.external_input()
+        cod = self.external_output()
+        if not self.core.hyperedges:
+            # A bare wire diagram (no reaction hyperedge) IS the identity on its object.
+            return Reaction(dom, cod, self.name, path=())
+        # Any diagram with real chemistry emits the net transition EVEN WHEN dom == cod: a catalytic
+        # cycle or an isomerisation loop is a genuine endomorphism, NOT the identity (Reaction's own
+        # invariant -- "endomorphisms are not identities merely because their net state change is zero").
+        return Reaction(dom, cod, self.name, path=((dom, cod),), generator_word=((dom, cod, "net"),))
+
     def __repr__(self) -> str:
         return (
             f"OpenChemDiagram({self.external_input()!r} -> {self.external_output()!r}"
@@ -511,6 +635,15 @@ def braid(left: Config, right: Config) -> OpenChemDiagram:
         Interface(left_ports), Interface(right_ports), decoration=ConservationDecoration.identity()
     )
     return OpenChemDiagram(core, _registry_of(left.species + right.species), "braid")
+
+
+def _first_free(ports: tuple[str, ...], token: str, base: int, used: set[int]) -> int | None:
+    """The first global boundary position ``base + local`` whose port token matches and is unused."""
+    for local, port in enumerate(ports):
+        position = base + local
+        if port == token and position not in used:
+            return position
+    return None
 
 
 def _registry_of(molecules: tuple[Molecule, ...]) -> tuple[tuple[str, Molecule], ...]:

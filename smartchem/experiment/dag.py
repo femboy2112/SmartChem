@@ -35,6 +35,7 @@ from fractions import Fraction
 from typing import TYPE_CHECKING, Mapping
 
 if TYPE_CHECKING:
+    from ..open_chem_diagram import OpenChemDiagram
     from ..process_constraints import ProcessBounds, ProcessFit
 
 from ..category import Molecule
@@ -273,6 +274,21 @@ class SynthesisDAG(Digestible):
                 if key not in producers:
                     out.setdefault(key, r)
         return tuple(out.values())
+
+    def open(self) -> "OpenChemDiagram":
+        """Project the convergent synthesis onto one open chemistry diagram (Move-1 keystone Rung C).
+
+        Each step is a reaction hyperedge; the DAG's ``edges`` name exactly the internal gluings, so
+        parallel branches ride ``tensor`` and the diagram's provenance is the branching causal DAG (P4,
+        occurrence-aware over distinct steps).  Leaf inputs and byproducts stay EXTERNAL; a conserving
+        DAG yields a saturated CONSERVING diagram whose
+        :meth:`~smartchem.open_chem_diagram.OpenChemDiagram.net_reaction` is the overall balanced
+        equation.  A convergent DAG has no single linear ``Reaction.path`` (``close()`` refuses it -- the
+        honest boundary).  Lazily imported to avoid an import cycle.
+        """
+        from ..open_chem_diagram import OpenChemDiagram
+
+        return OpenChemDiagram.from_dag(self)
 
     @classmethod
     def of(cls, *steps: ExperimentStep) -> "SynthesisDAG":

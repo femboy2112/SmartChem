@@ -863,6 +863,13 @@ def estimate_thermo(molecule: Molecule) -> GroupThermoEstimate | None:
     labels = assign_groups(molecule)
     if labels is None:
         return None
+    if not labels:
+        # An EMPTY group assignment (a bare atom -- [Br], [Cl], a lone [O]) is OFF-COVERAGE, not a
+        # "sum of zero groups = 0".  Returning a (ΔfH°=0, S°=0) DERIVED record here fabricated a number
+        # with a fake Benson-additivity provenance -- exactly the forbidden fabrication (a DERIVED grade
+        # with no derivational chain).  The loud gap this docstring promises: None.  Fixes the DOW-Br₂
+        # safety so it rests on Br• being genuinely UNKNOWN, not on Br₂'s symmetry-number accident.
+        return None
     groups = [_GROUP_BY_LABEL.get(lbl) for lbl in labels]
     if any(g is None for g in groups):
         return None  # a real, typed group with no sourced value -> loud gap

@@ -328,6 +328,20 @@ class ExperimentRoute(Digestible):
     def equation_lines(self) -> tuple[str, ...]:
         return tuple(f"step {k + 1}: {s.equation()}" for k, s in enumerate(self.steps))
 
+    def open(self) -> "OpenChemDiagram":
+        """Project the whole route onto one open chemistry diagram (Move-1 keystone Rung C).
+
+        Each step becomes a reaction hyperedge; the carried intermediates (step ``k``'s target consumed
+        by step ``k+1``) become INTERNAL nodes, while leaf inputs and byproducts stay on the EXTERNAL
+        boundary.  A conserving route yields a saturated CONSERVING diagram whose provenance linearises
+        to the step order; its :meth:`~smartchem.open_chem_diagram.OpenChemDiagram.net_reaction` is the
+        overall balanced equation.  This is the general open-morphism composition the whole-vessel
+        ``Reaction`` chain cannot express when steps carry byproducts.  Lazily imported (import cycle).
+        """
+        from ..open_chem_diagram import OpenChemDiagram
+
+        return OpenChemDiagram.from_route(self)
+
     @classmethod
     def of(cls, *steps: ExperimentStep) -> "ExperimentRoute":
         return cls(ROUTE_SCHEMA, tuple(steps))

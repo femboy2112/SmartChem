@@ -257,6 +257,20 @@ class OpenDiagram:
                 counts[terminal.node] += 1
         return tuple(counts)
 
+    def edge_incidence(self) -> tuple[int, ...]:
+        """Per-node count of DISTINCT hyperedges incident on it (a self-incidence counts once).
+
+        This is the semantically correct "is this node shared between generators?" measure: a node
+        touched twice by ONE hyperedge (a symmetric ``A + A -> ...`` on a single node) is incident to
+        one generator, not glued to a second, so it is NOT internal.  A chemistry node glued between a
+        producer step and a consumer step is incident to two distinct hyperedges.  (The chemistry layer
+        classifies port states off this, not the raw terminal count -- closes Rung-B open-debt 5.)"""
+        counts = [0] * len(self.node_ports)
+        for edge in self.hyperedges:
+            for node in {terminal.node for terminal in edge.terminals}:
+                counts[node] += 1
+        return tuple(counts)
+
     # -- composition -------------------------------------------------------------------
     def then(self, other: "OpenDiagram") -> "OpenDiagram":
         """Total boundary gluing (pushout along the shared interface).  Never canonicalises."""
@@ -323,6 +337,93 @@ class OpenDiagram:
             self.node_ports + other.node_ports,
             self.hyperedges + tuple(_remap_edge(edge, lambda x: x, offset) for edge in other.hyperedges),
             self.decoration.tensor_combine(other.decoration),
+        )
+
+    def plug_all(self, pairs: tuple[tuple[int, int], ...]) -> "OpenDiagram":
+        """Glue selected output ports to input ports in ONE partial pushout; keep the rest boundary.
+
+        ``pairs`` are ``(output_position, input_position)`` indices into ``self.output_nodes`` /
+        ``self.input_nodes``.  Each pair unions its two boundary nodes (which must carry the same port
+        token) into one node that leaves the boundary (it becomes INTERNAL -- incident to the two
+        generators the two ports belonged to); every UNMATCHED port stays on the composite boundary.
+
+        ``then`` is the special case that plugs every output to the matching input across two diagrams;
+        ``plug_all`` is the generalisation *within* one (already tensored) diagram, plugging only a
+        chosen subset -- which is exactly what lets a multi-step route/DAG, whose steps carry byproducts
+        and fresh leaf inputs, compose at only its shared intermediates.  It never canonicalises, and the
+        apex decoration rides through unchanged: plugging removes no hyperedge, so a homomorphic sum/
+        product apex quantity (conservation, and the future free-energy/survival functors) is invariant.
+        """
+        if type(pairs) is not tuple:
+            raise TypeError("pairs must be a tuple of (output_position, input_position) pairs")
+        out_positions = [op for op, _ in pairs]
+        in_positions = [ip for _, ip in pairs]
+        if len(set(out_positions)) != len(out_positions) or len(set(in_positions)) != len(in_positions):
+            raise DiagramCompositionError("each boundary port may be plugged at most once")
+        n = len(self.node_ports)
+        parent = list(range(n))
+
+        def find(node: int) -> int:
+            while parent[node] != node:
+                parent[node] = parent[parent[node]]
+                node = parent[node]
+            return node
+
+        def union(left: int, right: int) -> None:
+            left, right = find(left), find(right)
+            if left != right:
+                if left < right:
+                    parent[right] = left
+                else:
+                    parent[left] = right
+
+        for op, ip in pairs:
+            if not (0 <= op < len(self.output_nodes)) or not (0 <= ip < len(self.input_nodes)):
+                raise DiagramCompositionError("plug position is out of range")
+            out_node = self.output_nodes[op]
+            in_node = self.input_nodes[ip]
+            if out_node == in_node:
+                # An output and input that ALREADY name the same node (a wire whose one node is both):
+                # "plugging" it removes both boundary occurrences and leaves an orphan node with no
+                # boundary and no incident hyperedge.  Refuse -- a port cannot be plugged into itself.
+                raise DiagramCompositionError("cannot plug a port into its own node (would orphan it)")
+            if self.node_ports[out_node] != self.node_ports[in_node]:
+                raise DiagramCompositionError("plugged ports carry incompatible tokens")
+            union(out_node, in_node)
+
+        roots = sorted({find(node) for node in range(n)})
+        compact = {root: index for index, root in enumerate(roots)}
+
+        def remap(node: int) -> int:
+            return compact[find(node)]
+
+        node_ports: list[str | None] = [None] * len(roots)
+        for old, port in enumerate(self.node_ports):
+            target = remap(old)
+            previous = node_ports[target]
+            if previous is not None and previous != port:
+                raise DiagramCompositionError("glued nodes have incompatible port tokens")
+            node_ports[target] = port
+
+        matched_out = set(out_positions)
+        matched_in = set(in_positions)
+        new_output_nodes = tuple(
+            remap(node) for pos, node in enumerate(self.output_nodes) if pos not in matched_out
+        )
+        new_input_nodes = tuple(
+            remap(node) for pos, node in enumerate(self.input_nodes) if pos not in matched_in
+        )
+        new_cod = Interface(tuple(port for pos, port in enumerate(self.cod.ports) if pos not in matched_out))
+        new_dom = Interface(tuple(port for pos, port in enumerate(self.dom.ports) if pos not in matched_in))
+        hyperedges = tuple(_remap_edge(edge, remap, 0) for edge in self.hyperedges)
+        return OpenDiagram(
+            new_dom,
+            new_cod,
+            new_input_nodes,
+            new_output_nodes,
+            tuple(port for port in node_ports if port is not None),
+            hyperedges,
+            self.decoration,
         )
 
 

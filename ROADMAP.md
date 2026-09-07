@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ 944ad8c` (dev branch `move1-rung-b-open-chem-diagram-2026-09-07` — **NOT merged**, awaiting the user's go) · suite **4536 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches; = R23 baseline 4510 + 26 new Rung-B tests, skip/xfail unchanged ⇒ byte-stable P2) · updated **2026-09-07 UTC**
+> `verified @ d42d7a2` (branch `move1-rungs-c-d-m2fp-2026-09-07`, **ROUND 25** — Rung B MERGED via PR #19; Rungs C/D + M2-FP merging this round) · suite **4579 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches; = R24 baseline 4536 + 43 new C/D/M2-FP tests, skip/xfail unchanged ⇒ byte-stable P2) · updated **2026-09-07 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -61,7 +61,18 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 
 ## ✅ DONE — current shipped capability
 
-**ROUND 24 — Move-1 keystone Rung B** (branch `move1-rung-b-open-chem-diagram-2026-09-07`, docs-fold `de21c06` + code `944ad8c`; **BUILT + VERIFIED, NOT merged — awaiting the user's go**) — the open-diagram chemistry-morphism backbone's first buildable increment, **alongside** `Reaction`, additive/byte-stable/fail-closed. `smartchem/open_core.py` (domain-neutral open-SMC core: multi-terminal `Hyperedge`s, a monoidal `Decoration` slot, `then`/`tensor`/`identity`/`braid`, a hyperedge+decoration-aware `canonicalize` — WL + bounded brute force, `CanonicalizationBudgetExceeded` fail-closed; `open_diagram.py` untouched) + `smartchem/open_chem_diagram.py` (`OpenChemDiagram`: species-typed ports, reaction hyperedges, three `PortState`s, `from_reaction` functor, `close()` to a byte-identical `Reaction`) + `ExperimentStep.open()` (`+22` lines) + `tests/test_open_chem_diagram.py` (26 tests). Ritual: design-fold → recon (2) → build → reproduce → **evil-morty + birdperson** → fold → verify. **evil-morty [HIGH, VERIFIED] fold:** the first cut's `canonicalize`-equality was **not a congruence** — a `compare=False` provenance frontier that `then_combine` consumed to decide the compared `deps` made `f ≡ f;id` yet they diverged under a later `then` (and `(f;id);g` crashed on `close()`); **fixed** by deriving provenance from the composed **topology** (a node shared between a product terminal and a reactant terminal ⇒ a dependency) ⇒ a pure function of the canonical topology ⇒ congruent, wires handled for free. **Two apex kinds:** conservation is a genuine additive **decoration** (homomorphic sum over generators — the ΔG/survival shape); provenance is a topology **read** (not a decoration). **birdperson [SOUND-BUT-HEED]:** gate honestly delivered, legacy xfail (`test_laws.py:330`) preserved-not-flipped, P2 additive-only; added the conservation `is_balanced ⟺ CONSERVING` cross-check. Verified: full suite 4 batches **4536/14/1** (= 4510 + 26; skip/xfail unchanged ⇒ P2 holds). New lesson: `a-quotient-must-be-a-congruence`.
+**ROUND 25 — Move-1 keystone Rungs C + D and Move-2 M2-FP** (branch `move1-rungs-c-d-m2fp-2026-09-07`:
+Rung C `3e34265` + M2-FP `a8b61ce` + Rung D `35a5e64` + review fold `d42d7a2`) — three rungs of the
+categorical reorientation, additive/byte-stable/fail-closed, each reviewed (evil-morty ×2 + birdperson).
+Suite **4579 / 14 / 1** (= 4536 + 43; skip/xfail unchanged ⇒ P2 holds, legacy xfail preserved).
+
+| Item | Lane | What shipped |
+|---|---|---|
+| K-C · Move-1 keystone **Rung C** (the pipeline speaks open-diagram) | A·B | `ExperimentRoute.open()` / `SynthesisDAG.open()` project a whole multi-step synthesis onto ONE `OpenChemDiagram` via a new **port-level `plug_all`** partial-pushout primitive (a real step carries byproducts + fresh reagents, so its cod ≠ next dom — the whole-vessel `then`/`Reaction.then` cannot chain it; `plug_all` glues a chosen SUBSET, keeps the rest boundary — the open-morphism composition the contract promised). Gluing is BY TOKEN not port position. `net_reaction()` = the conserving overall equation of any saturated diagram (distinct from `close()`, which reduces only a whole-vessel linear chain; a catalytic/cyclic net is NOT the identity). Gates: saturation + conservation-as-closure (P1/P3), provenance DAG deps == `dag.edges` (P4), interchange invariance + a boundary-order tripwire. **Closes 3 Rung-B debts:** (2) token-gluing beats a canonical species re-sort; (3) `_derive_provenance` fails CLOSED on a structurally-identical-step collision; (5) `edge_incidence` (distinct generators) replaces terminal count. |
+| M2-FP · Move-2 functorial-physics product | B·C | `Δ_rG` recognized as the **additive functor** `G: Process→(ℝ,+,≤)` — Hess's law IS the functoriality (`net_ΔG(route)==Σ steps`, pinned non-vacuously on a sourced steam-reforming route). `RouteFeasibility.net_delta_g_kj` surfaces it as a property (no digest/golden move) — DISTINCT from `verdict`, the worst-node sign. `PhysicsProduct(ΔG, survival)` = the **Pareto product** with `dominates`/`pareto_optimal` (no scalar collapse; "favorable≠fast"; unknown axis incomparable, fail-closed). `FreeEnergyDecoration` = a 2nd instance of the `open_core` decoration slot (law-tested). **Anti-fabrication fix (both reviewers):** `estimate_thermo` empty-group assignment → None (was fabricating `(ΔfH°=0,S°=0) DERIVED` for bare halogens/HBr); DOW-Br₂ now fail-closes on Br• genuinely UNKNOWN. Scorer unchanged (survival still absent from `_route_score` — tracked debt). |
+| K-D · Move-1 keystone **Rung D** (closing = compiling) | A·B·C | `compile_open(target, ...)` treats "synthesise from stock" as the open spec, CLOSES it with the shipped bounded route search, projects each candidate via Rung C, and scores by the M2-FP objective — the **load-bearing call site** for Rungs B/C + M2-FP. `MetaCompilation.by_free_energy` (the LIVE additive-ΔG ranking, new over `compile_synthesis`) + `frontier` (the two-axis Pareto, DATA-GATED: survival is sourced-kinetics-gated so usually empty — the DOW-Br₂ discipline). Fail-closed: uncompilable spec → no closures. `ClosedCompilation` validates its route (no half-built objects). |
+
+**ROUND 24 — Move-1 keystone Rung B** (branch `move1-rung-b-open-chem-diagram-2026-09-07`, docs-fold `de21c06` + code `944ad8c`; **MERGED via PR #19 → `main@5f1b3e3`**) — the open-diagram chemistry-morphism backbone's first buildable increment, **alongside** `Reaction`, additive/byte-stable/fail-closed. `smartchem/open_core.py` (domain-neutral open-SMC core: multi-terminal `Hyperedge`s, a monoidal `Decoration` slot, `then`/`tensor`/`identity`/`braid`, a hyperedge+decoration-aware `canonicalize` — WL + bounded brute force, `CanonicalizationBudgetExceeded` fail-closed; `open_diagram.py` untouched) + `smartchem/open_chem_diagram.py` (`OpenChemDiagram`: species-typed ports, reaction hyperedges, three `PortState`s, `from_reaction` functor, `close()` to a byte-identical `Reaction`) + `ExperimentStep.open()` (`+22` lines) + `tests/test_open_chem_diagram.py` (26 tests). Ritual: design-fold → recon (2) → build → reproduce → **evil-morty + birdperson** → fold → verify. **evil-morty [HIGH, VERIFIED] fold:** the first cut's `canonicalize`-equality was **not a congruence** — a `compare=False` provenance frontier that `then_combine` consumed to decide the compared `deps` made `f ≡ f;id` yet they diverged under a later `then` (and `(f;id);g` crashed on `close()`); **fixed** by deriving provenance from the composed **topology** (a node shared between a product terminal and a reactant terminal ⇒ a dependency) ⇒ a pure function of the canonical topology ⇒ congruent, wires handled for free. **Two apex kinds:** conservation is a genuine additive **decoration** (homomorphic sum over generators — the ΔG/survival shape); provenance is a topology **read** (not a decoration). **birdperson [SOUND-BUT-HEED]:** gate honestly delivered, legacy xfail (`test_laws.py:330`) preserved-not-flipped, P2 additive-only; added the conservation `is_balanced ⟺ CONSERVING` cross-check. Verified: full suite 4 batches **4536/14/1** (= 4510 + 26; skip/xfail unchanged ⇒ P2 holds). New lesson: `a-quotient-must-be-a-congruence`.
 
 | Item | Lane | What shipped (dev branch) |
 |---|---|---|
@@ -182,33 +193,30 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| **M2-FP** | **Move-2 functorial-physics product** — recognize `feasibility.py`'s Δ_rG as the additive functor `G: Process → (ℝ,+,≤)` (Hess = functoriality), pair it with R23's survival functor `S: Process → ([0,1],×)` in an explicit **Pareto product**, and verify/repair the DAG rollup's worst-node-vs-additive conflation | B·C | **M** | **build-ready** *(new, the user's to schedule)* | both functors already computed; the rung is the categorical recognition + product order + a property test that `net_ΔG(route)==Σ steps` (Hess); enables the DOW-Br₂ **thermo** verdict once Br/Br₂ ΔH_f°/S° are sourced (a data add). Fold: `docs/research/FREE_ENERGY_FUNCTORIAL_PHYSICS_FOLD_2026-09-07.md` |
+| **M2b** | **Make the M2-FP objective LIVE in the ranking scorer** — feed the ΔG magnitude + survival Pareto product into `drafter._route_score`/`_dag_score` (today they use only the worst-node feasibility *sign*, no survival). This is the rung that pays off M2-FP's headline | B·C | **M** | medium (a deliberate ranking/schema-bump round — WILL re-order routes and churn goldens, so it is its own round, not a byte-stable add) | primitives shipped R25 (`PhysicsProduct`, `pareto_optimal`, `route_net_delta_g`, `route_surviving_fraction`); the work is wiring + a golden regen + a decision on the tie-break between the two axes |
 | 3b | **Model DOW-Br₂ collider / modified-Arrhenius kinetics** (the item-3 remainder; core-E1 wire-in DONE R23) | B·C | **M** | long | the recovered Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube T — needs a collider-state + modified-Arrhenius model + reverse/hold scope; NOT compatible with the concentration-free first-order seed |
+| DOW-thermo | **Source Br₂(g)/Br(g) ΔH_f°/S° → the DOW-Br₂ *thermodynamic* verdict** (`Br₂ → 2 Br•`) | B·C | **S** | data-gated | now genuinely unlocked by M2-FP + the anti-fabrication fix: inject sourced records via `ThermoTable.with_records` and `feasibility_of_step`/`route_net_delta_g` compute the dissociation ΔG. NO fabrication — needs a directly-readable dated primary (CODATA/NIST-JANAF), not recited values |
 
-### K-B · Move-1 keystone Rung B — ✅ **DONE (ROUND 24, dev branch — NOT merged, awaiting go)**
-Shipped on `move1-rung-b-open-chem-diagram-2026-09-07` (`944ad8c`): `smartchem/open_core.py` + `smartchem/open_chem_diagram.py`
-+ `ExperimentStep.open()` + `tests/test_open_chem_diagram.py`; the 3-part gate is GREEN and the legacy `Reaction` xfail
-(`tests/test_laws.py:330`) is preserved-not-flipped. The **v0.2 general-decoration-slot** refinement landed as the conservation
-decoration (a genuine additive monoid — the Δ_rG/survival shape); **provenance is a topology READ, not a decoration** (the
-evil-morty congruence fix — see the DONE ledger and `a-quotient-must-be-a-congruence`). Flagged design call resolved: a generic
-`open_core` + a chemistry construction layer (electrical `open_diagram.py` migration deferred to Rung C). See the DONE ledger.
-**Next in the arc:** Rung **C** (full open-step pipeline migration: `ExperimentStep`/`Route`/`SynthesisDAG`) and **D**
-(meta-compiler at `service.py`, closing = compiling), each its own round; plus **M2-FP** (queued above). Full spec + folds:
+### K-B/C/D · Move-1 keystone — ✅ **DONE (Rung B ROUND 24 / Rungs C+D ROUND 25)**
+**Rung B** (`944ad8c`, MERGED PR #19 → `main@5f1b3e3`): `open_core.py` + `open_chem_diagram.py` + `ExperimentStep.open()`
+— the generic open-SMC core + chemistry layer, 3-part gate GREEN, congruence pinned. **Rung C** (`3e34265`, ROUND 25):
+the pipeline speaks open-diagram — `ExperimentRoute.open()`/`SynthesisDAG.open()` via the port-level `plug_all` primitive +
+`net_reaction()`, closing 3 Rung-B debts (see DONE ledger). **Rung D** (`35a5e64`, ROUND 25): the meta-compiler
+`compile_open` — closing an open spec = compiling it, the load-bearing call site for B/C + M2-FP. Legacy `Reaction` xfail
+(`tests/test_laws.py:330`) preserved-not-flipped throughout. Full spec + folds:
 `docs/research/OPEN_SMC_CHEMISTRY_BACKBONE_CONTRACT_v0.1.md` (v0.2); `docs/research/FREE_ENERGY_FUNCTORIAL_PHYSICS_FOLD_2026-09-07.md`.
+**Next in the arc (the user's to steer):** wire the M2-FP objective LIVE into the ranking scorer (`drafter._route_score` —
+churns route ordering/goldens, a deliberate schema-bump round); Moves 3–6 (provider-as-free-category, quotient/CIP enrichment
++ tension-A, domain-neutral parameterization now that `open_core` IS domain-neutral, the conditions⤳effects distributive law).
 
-### M2-FP · Move-2 functorial-physics product — recognize + unify the two built physics functors — **M**, build-ready
-The free-energy-landscape fold (`docs/research/FREE_ENERGY_FUNCTORIAL_PHYSICS_FOLD_2026-09-07.md`) found that **two of Move 2's
-functors are already computed in code**, just never framed or unified as functors: the **kinetic-survival** functor
-`S: Process → ([0,1],×)` (R23, `composability.py:346-363`, `surviving_fraction = exp(−kt)`) and the **thermodynamic-drive**
-quantity `Δ_rG` (`feasibility.py:245-247`, Hess's law from sourced ΔH_f°/S°). The rung: (1) recognize `Δ_rG` as the additive
-functor `G: Process → (ℝ,+,≤)` — **Hess's law *is* the functoriality**, `Δ_rG(g∘f)=Δ_rG(f)+Δ_rG(g)`, pinned by a property test
-`net_ΔG(route)==Σ steps`; (2) put the two in an explicit **Pareto product** (no scalar collapse — "favorable ≠ fast"), and audit
-whether `_route_score`/`_dag_score`'s tier-folding is a true product or a lossy scalarization; (3) **candidate finding to verify**:
-DAG-THERMO-01 aggregates ΔG *worst-node-dominated*, which answers "any stuck step?" — **not** the additive net-ΔG (Hess); the two
-are distinct legitimate aggregations the current code may conflate. **Litmus win:** unlocks the DOW-Br₂ *thermodynamic* verdict
-(`Br₂ → 2 Br•`) the moment Br/Br₂ ΔH_f°/S° are sourced (a data add, not a build) — the walled item-3b *rate* stays walled.
-Precedent (verified): Baez–Pollard open reaction networks; de Donder affinity `𝒜=−Δ_rG`; detailed-balance caveat on the
-gradient-flow reading (Mielke/Maas). Data-gated only where a new species record is needed; otherwise additive/byte-stable.
+### M2-FP · Move-2 functorial-physics product — ✅ **DONE (ROUND 25)**
+Shipped (`a8b61ce` + fold `d42d7a2`): `Δ_rG` recognized as the additive functor `G: Process→(ℝ,+,≤)` (Hess = functoriality,
+`net_ΔG(route)==Σ steps` pinned non-vacuously); `RouteFeasibility.net_delta_g_kj` (property, digest-neutral, distinct from the
+worst-node `verdict`); `PhysicsProduct`/`pareto_optimal` (the Pareto product, no scalar collapse); `FreeEnergyDecoration` (2nd
+decoration-slot instance). **Anti-fabrication fix:** `estimate_thermo` empty-group → None (was fabricating `(0,0) DERIVED` for
+bare halogens/HBr — both reviewers converged); DOW-Br₂ now fail-closes on Br• genuinely UNKNOWN. **Scorer NOT changed**
+(survival still absent from `_route_score`, ΔG only as a sign — see TRACKED DEBT; making the product LIVE is the next-arc round).
+The DOW-Br₂ *thermodynamic* verdict is still a sourced Br/Br₂ ΔH_f°/S° data-add away (now genuinely unlocked). See DONE ledger + manifest §25.
 
 ### 1 · General CIP — the breadth-first namer — ✅ **DONE (ROUND 20, ID-STEREO-CIP-NAMER)**
 Shipped: `smartchem/smiles.py` `_cip_ranks`/`_cip_compare`/`_cip_digraph`, wired into `_cip_labels`; validated by
@@ -300,16 +308,25 @@ not just a human note. See the DONE ledger.
   quotient independent events by interchange. **ROUND 24's `OpenChemDiagram` supersedes it for parallel events** (interchange
   holds under the `canonicalize` quotient), but the legacy xfail is **preserved-and-annotated, not flipped** (flipping it in
   place was the zero-call-sites trap / a P2 violation, per the keystone contract). Orthogonal architecture debt; 1 xfail.
-- **Rung-B open-diagram carried debt** (Lane A·B; ROUND 24, from the pre-commit reviews — none blocking, all deferred not silent):
+- **Rung-B open-diagram carried debt** (Lane A·B; ROUND 24 → **debts 2/3/5 CLOSED by Rung C (ROUND 25)**):
   (1) the `Decoration` interchange-invariance obligation is enforced only by docstring + per-instance tests, not by a generic
-  guard (birdperson C) — a future decoration author could violate it; (2) the hexagon test hand-picks species (F<H<O) so
-  `tensor_obj`'s canonical species re-sort agrees with the diagram's positional port order — a latent coherence gap between the
-  two representations of a parallel object, to be resolved or confronted at **Rung C** (`Route`/`SynthesisDAG` migration);
-  (3) two *structurally identical* steps in one diagram collapse to one provenance `StepNode` (occurrence-aware provenance is
-  Rung C; Rung B's real closure path is a single step, so unreached); (4) WL completeness on highly symmetric chemistry apices
-  is not proven — the budget refusal fail-closes a *wrong* answer but a WL-indistinguishable non-isomorphic pair under budget
-  would over-merge silently (contract Open Q3); (5) `port_state` uses `incidence <= 1` — a node doubly-incident *within one
-  hyperedge* would misclassify as INTERNAL (unreachable via today's constructors; guard before Rung C hands the core out).
+  guard (birdperson C) — a future decoration author could violate it *[still open]*; (2) ✅ **CLOSED R25** — gluing is BY TOKEN
+  (`_first_free`), not port position, so a canonical species re-sort cannot misalign a port; (3) ✅ **CLOSED R25** (as a
+  fail-closed refusal, not full occurrence-aware provenance) — `_derive_provenance` now RAISES on a structurally-identical-step
+  collision instead of silently merging; a legitimate `A→B→A→B` route therefore fail-closes on `.open().apex`/`.close()` (a
+  refusal, documented, not a wrong answer — full occurrence-aware provenance keyed by hyperedge occurrence is still future work);
+  (4) WL completeness on highly symmetric chemistry apices is not proven — the budget refusal fail-closes a *wrong* answer but a
+  WL-indistinguishable non-isomorphic pair under budget would over-merge silently (contract Open Q3) *[still open]*; (5) ✅
+  **CLOSED R25** — `port_state`/`open_nodes` use distinct-EDGE incidence (`edge_incidence`), so a within-one-hyperedge
+  self-incidence is not misclassified INTERNAL, and `plug_all` refuses a self-plug.
+- **Rung-C/D + M2-FP carried debt** (Lane A·B·C; ROUND 25, from the evil-morty ×2 + birdperson reviews — none blocking):
+  (a) the **M2-FP two-axis Pareto `frontier` is DATA-GATED** — survival is `None` for single-step routes (no inter-step hold) and
+  for multi-step routes not hitting the two sourced kinetic records, so `compile_open(...).frontier` is usually EMPTY and the LIVE
+  ranking surface is `by_free_energy` (the additive-ΔG axis); the two-axis product fires only where sourced kinetics exist (the
+  DOW-Br₂ data-gating discipline). Making the product LIVE in the scorer is queue item **M2b**; (b) `MetaCompilation.by_free_energy`
+  silently OMITS unknown-ΔG closures from its ranked list (disclosed in the docstring; `.closures` retains all) — a count/marker
+  of the dropped set would be more honest; (c) the **Hess property test is genuine-but-relational** (net==Σ over the same thermo
+  table — a wrong ΔfH° cancels on both sides); the VALUE calibration lives in the Haber/water thermo tests, not this test.
 - **Load-time free-text trust boundary** (Lane C) — ✅ **STRUCTURALLY CLOSED (ROUND 21, item 2)** for a verified-admission
   consumer: `response_from_payload(require_verified_admission=True)` reconstructs the route/DAG from the thick
   `replay_payload` and re-derives all three axes + ranking, refusing a bare-relabel or substituted evidence with no key.

@@ -51,12 +51,20 @@ def test_labels_are_spelling_invariant_for_one_enantiomer():
         assert cip_labels(a) == cip_labels(b)
 
 
-def test_a_centre_with_two_same_element_substituents_is_a_named_deferral():
-    # the COMMON case -- CIP priority there needs the recursive digraph tie-break, which is NOT built, so NO label
-    # (never a guessed/unsound one).  Alanine, glyceraldehyde: both have two carbons on the centre.
-    assert cip_labels("N[C@@H](C)C(=O)O") == ()                  # L-alanine
-    assert cip_labels("OC[C@@H](O)C=O") == ()                    # glyceraldehyde
-    assert cip_labels("C[C@H](N)c1ccccc1") == ()                 # 1-phenylethylamine (two carbons: CH3 and phenyl)
+def test_a_centre_with_two_same_element_substituents_is_now_named_by_the_general_digraph():
+    # ROUND 20: the COMMON case the distinct-Z slice deferred is now NAMED by the Rule-1a breadth-first digraph --
+    # ties break one or more spheres out.  Labels are textbook/PubChem-checked and oracle-cross-validated in
+    # tests/test_cip_namer.py; here they pin that the same-element centre no longer silently defers.
+    assert cip_labels("N[C@@H](C)C(=O)O") == ("S",)             # L-alanine: COOH's phantom-O {O,O,O} beats CH3 {H,H,H}
+    assert cip_labels("OC[C@@H](O)C=O") == ("R",)               # D-glyceraldehyde: CHO's phantom-O beats CH2OH
+
+
+def test_an_aromatic_substituent_defers_pending_kekule_averaging():
+    # a centre whose priority digraph reaches an AROMATIC ring DEFERS: correct Rule 1a on a mancude ring needs
+    # Kekule-invariant atomic-number averaging (not built), and a single fixed Kekule structure would MISLABEL --
+    # e.g. wrongly NAME the false centre below (two identical 2-pyridyls).  Sound (no guess), not yet complete.
+    assert cip_labels("C[C@H](N)c1ccccc1") == ()                 # 1-phenylethylamine: aryl -> deferred (was a wrong target)
+    assert cip_labels("O[C@H](c1ccccn1)c1ccccn1") == ()          # di-2-pyridyl: a FALSE centre a fixed Kekule would name
 
 
 def test_ring_and_false_and_achiral_centres_get_no_label():
@@ -72,24 +80,18 @@ def test_multiple_distinct_z_centres_are_each_named():
     assert len(labels) == 2 and set(labels) <= {"R", "S"}
 
 
-def test_the_general_cip_digraph_wall_defers_branch_vs_chain_never_mislabels_it():
-    """ROUND-14 item-4b REFUTATION tripwire: a naive hierarchical-digraph CIP (nested-tuple LEXICOGRAPHIC key ordering)
-    is UNSOUND -- it compares DEPTH-first, but true CIP Rule 1a is BREADTH-first (sphere-by-sphere).  The two total
-    orders disagree on the common branch-vs-chain alkyl motif: for ``C[C@H](CCC)C(C)C`` (n-propyl vs isopropyl), a DFS
-    key emits (S) but the truth is (R) -- isopropyl's first carbon carries (C,C,H) and out-ranks n-propyl's (C,H,H) at
-    the sphere, a decision DFS wrongly defers past by descending the longer chain first (evil-morty, ROUND-14; verified
-    against a breadth-first oracle: 740 order-flips in an alkyl-only pool).
-
-    A correct general CIP needs the full breadth-first hierarchical comparison + phantom-0 padding + aromatic/Rule-1b
-    handling, a large correctness-critical build we cannot exhaustively validate WITHOUT an independent oracle (RDKit is
-    out of the dependency-light core), and a WRONG R/S in a chemist's dossier is worse than none.  So the general CIP is
-    a NAMED DEFERRAL and the SOUND distinct-atomic-number slice stands: this tripwire pins that the branch-vs-chain
-    family gets NO label (fail-closed), so nobody re-ships the naive DFS digraph as a fresh idea."""
-    # every one of these WOULD be mislabelled by a lexicographic-key digraph; the sound slice DEFERS them all.
-    assert cip_labels("C[C@H](CCC)C(C)C") == ()           # n-propyl vs isopropyl -- the fully-worked counterexample
-    assert cip_labels("C[C@H](CCC)C(C)CC") == ()          # sec-butyl vs n-propyl
-    assert cip_labels("CCCC[C@H](CC(C)C)C") == ()         # isobutyl vs n-butyl
-    # and the sound slice still NAMES what it can prove (the distinct-Z base case), so it is not vacuously safe.
+def test_the_branch_vs_chain_family_is_named_breadth_first_never_the_r14_depth_first_answer():
+    """ROUND-20: the branch-vs-chain family that killed the ROUND-14 depth-first attempt is now NAMED correctly by the
+    breadth-first hierarchical digraph.  A naive nested-tuple LEXICOGRAPHIC key compares DEPTH-first and emits the WRONG
+    label; true CIP Rule 1a is BREADTH-first (sphere-by-sphere).  For ``C[C@H](CCC)C(C)C`` (n-propyl vs isopropyl) the
+    DFS key emits (S), but the truth is (R) -- isopropyl's first carbon (C,C,H) out-ranks n-propyl's (C,H,H) AT the
+    sphere, the decision DFS defers past by descending the longer chain first.  All three labels are hand-derived via
+    the pinned convention and oracle-cross-validated in tests/test_cip_namer.py; this pins the FIX, so nobody re-ships
+    the naive DFS digraph (which would flip C[C@H](CCC)C(C)C to S)."""
+    assert cip_labels("C[C@H](CCC)C(C)C") == ("R",)       # n-propyl vs isopropyl -- (R), the DFS answer (S) is WRONG
+    assert cip_labels("C[C@H](CCC)C(C)CC") == ("R",)      # sec-butyl vs n-propyl -- (R)
+    assert cip_labels("CCCC[C@H](CC(C)C)C") == ("R",)     # isobutyl vs n-butyl -- (R), the tie breaks at sphere 2
+    # and the distinct-Z base case is unchanged (a strict extension, never a regression).
     assert cip_labels("[C@H](F)(Cl)Br") == ("S",)
 
 

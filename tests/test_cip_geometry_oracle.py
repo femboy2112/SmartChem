@@ -59,14 +59,13 @@ def test_enantiomeric_smiles_get_opposite_oracle_labels():
 
 # --- the ground-truth property: it labels what the shipped slice DEFERS, given priorities ------------
 
-def test_the_oracle_labels_a_same_z_centre_the_shipped_slice_defers_given_priorities():
-    # THE reason to commit this oracle: cip_labels DEFERS L-alanine (two carbons on the centre -> ()),
-    # because ranking same-Z substituents needs the recursive digraph.  The oracle, HANDED the true CIP
-    # priorities, returns the correct (S).  That decouples "are the priorities right" (the namer's job, the
-    # R14 bug locus) from "is the geometry right" (this oracle) -- the separation the common-mode R14
-    # cross-check structurally could not make.
-    assert cip_labels("N[C@@H](C)C(=O)O") == ()               # the shipped slice defers (same-Z)
-    assert geometric_handedness((1, 4, 3, 2), 2) == "S"       # the oracle, given the true priorities, names it
+def test_the_oracle_and_the_now_built_namer_agree_on_a_same_z_centre():
+    # THE reason this oracle was committed: it decoupled "are the priorities right" (the namer's job, the R14
+    # bug locus) from "is the geometry right" (this oracle), so the general namer could be BUILT against it.
+    # ROUND 20 did exactly that -- cip_labels now NAMES L-alanine (S) via the breadth-first digraph -- and the
+    # oracle, HANDED the true CIP priorities [N > COOH > CH3 > H], returns the SAME (S) from geometry alone.
+    assert cip_labels("N[C@@H](C)C(=O)O") == ("S",)          # the general namer now ranks the same-Z centre
+    assert geometric_handedness((1, 4, 3, 2), 2) == "S"       # and the oracle agrees from geometry, given priorities
 
 
 # --- honest scope of the "independence" (an adversarial review right-sized this) --------------------

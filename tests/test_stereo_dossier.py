@@ -25,12 +25,15 @@ def test_parse_smiles_features_now_carries_cip_labels():
     # L-alanine=S convention, cross-checked on this exact molecule in _cip_labels' docstring).
     _mol, distinct = parse_smiles_features("[C@H](F)(Cl)Br")
     assert distinct.cip_labels == ("S",) and distinct.tetrahedral_stereo
-    # L-alanine: chiral, but the centre has TWO carbons (CH3, COOH) -> same-element priority is a NAMED DEFERRAL, so it
-    # is marked-but-not-named (never a guessed label).  configuration perception (WL-parity for identity) is separate.
-    _m2, alanine = parse_smiles_features("C[C@@H](N)C(=O)O")
-    assert alanine.cip_labels == () and alanine.tetrahedral_stereo
+    # L-alanine: TWO carbons on the centre (CH3, COOH) -- ROUND 20's general Rule-1a digraph now NAMES it (S), the
+    # common same-element case the old distinct-Z slice deferred.
+    _m2, alanine = parse_smiles_features("N[C@@H](C)C(=O)O")
+    assert alanine.cip_labels == ("S",) and alanine.tetrahedral_stereo
+    # a RING stereocentre is still a NAMED DEFERRAL (out of the acyclic scope) -- marked but not named, never guessed.
+    _m3, ring = parse_smiles_features("N[C@]1(F)CCCCO1")
+    assert ring.cip_labels == () and ring.tetrahedral_stereo
     # achiral: no marker, no label.
-    _m3, para = parse_smiles_features("CC(=O)Nc1ccc(O)cc1")
+    _m4, para = parse_smiles_features("CC(=O)Nc1ccc(O)cc1")
     assert para.cip_labels == () and not para.tetrahedral_stereo
 
 
@@ -40,9 +43,10 @@ def test_target_stereo_lines_discloses_named_deferred_and_achiral():
     assert lines and "TARGET STEREOCHEMISTRY" in lines[0] and "PERCEPTION ONLY" in lines[0]
     assert any("soundly named" in ln and "1 of 1" in ln and "(S)" in ln for ln in lines)
     assert any("configuration perception" in ln and "COMPLETE" in ln for ln in lines)
-    # a marked-but-deferred centre is disclosed as an explicit deferral, never silently dropped.
-    _m2, alanine = parse_smiles_features("C[C@@H](N)C(=O)O")
-    deferred = _target_stereo_lines(alanine)
+    # a marked-but-deferred centre is disclosed as an explicit deferral, never silently dropped.  A RING stereocentre
+    # is still deferred (out of the acyclic scope) even though the general digraph now names same-element acyclic ones.
+    _m2, ring = parse_smiles_features("N[C@]1(F)CCCCO1")
+    deferred = _target_stereo_lines(ring)
     assert deferred and any("1 of 1" in ln and "NOT soundly named" in ln and "deferral" in ln for ln in deferred)
     # achiral target and a name/formula target (features None) disclose NOTHING (no noise on a flat molecule).
     _m3, para = parse_smiles_features("CC(=O)Nc1ccc(O)cc1")
@@ -54,10 +58,11 @@ def test_a_named_centre_never_hides_a_sibling_deferred_centre():
     """STEREO-DOSSIER-01 fold (evil-morty Finding 1): the deferral disclosure is INDEPENDENT of the named one, so a
     target with ONE nameable centre AND another deferred centre discloses BOTH -- never the earlier silent omission
     that read a di-stereocentre target as a mono one."""
-    # two genuine marked tetrahedral centres: the first (H,F,Cl,C) names S; the second (H,C,C,N) is a same-element
-    # DEFERRAL.  The block must show BOTH the '(S)' AND the '1 of 2 ... NOT soundly named' -- never just '1 ... named'.
-    _mol, feats = parse_smiles_features("[C@H](F)(Cl)[C@@H](C)N")
-    assert feats.stereocentres_marked == 2 and feats.cip_labels == ("S",)
+    # two genuine marked tetrahedral centres: the first (H,F,Cl,C ring atom) is distinct-Z and names R; the second is
+    # ON the ring -> a DEFERRAL (acyclic scope).  The block must show BOTH the '(R)' AND the '1 of 2 ... NOT soundly
+    # named' -- never just '1 ... named'.
+    _mol, feats = parse_smiles_features("F[C@H](Cl)C1CC[C@@]1(N)O")
+    assert feats.stereocentres_marked == 2 and feats.cip_labels == ("R",)
     lines = _target_stereo_lines(feats)
     assert any("1 of 2" in ln and "soundly named" in ln and "NOT" not in ln for ln in lines)      # the named one
     assert any("1 of 2" in ln and "NOT soundly named" in ln for ln in lines)                      # the deferred one

@@ -4,7 +4,8 @@ Pins: (1) **Hess's law IS functoriality** -- the additive net-ΔG of a multi-ste
 single net reaction (shared intermediates cancel), non-vacuously; (2) the :class:`FreeEnergyDecoration`
 monoid + interchange law (a second instance of the ``open_core`` decoration slot); (3) the
 :class:`PhysicsProduct` Pareto order forbids collapsing "favorable" and "fast" into one score; (4)
-anti-fabrication: the DOW-Br₂ dissociation stays UNKNOWN (no sourced Br thermo -> fail-closed, not guessed).
+anti-fabrication: the DOW-Br₂ dissociation verdict is now SOURCED (CODATA Br(g)/Br₂(g), DOW-thermo) and
+calibrated to the known Br-Br bond enthalpy, while a genuinely unsourced species (HBr) still fail-closes.
 """
 import pytest
 
@@ -69,9 +70,11 @@ class TestHessFunctoriality:
         assert rf.verdict in {"FAVORABLE", "BORDERLINE", "UNFAVORABLE", "UNKNOWN"}
 
     def test_an_unknown_step_makes_the_net_drive_unknown_fail_closed(self):
-        # a step with an unsourced species -> None net drive, never a partial sum
-        br2, br = M("BrBr"), M("[Br]")
-        s = _step([br2], [br, br], br)
+        # a step with an unsourced species -> None net drive, never a partial sum.  HBr ("BrH") has no sourced
+        # record and no Benson group, so it stays UNKNOWN even though Br(g)/Br₂(g) are now sourced (DOW-thermo):
+        # the sourced-by-formula lookup does NOT leak across a related formula (the anti-fabrication boundary).
+        hbr, ethylene, etbr = M("Br"), M("C=C"), M("CCBr")
+        s = _step([ethylene, hbr], [etbr], etbr)
         route = ExperimentRoute.of(s)
         assert route_net_delta_g(route) is None
         rf = RouteFeasibility(route, tuple(feasibility_of_step(x) for x in route.steps))
@@ -162,17 +165,40 @@ class TestParetoOptimal:
 
 
 # ======================================================================================
-# Anti-fabrication: the DOW-Br₂ thermodynamic verdict is DATA-GATED, never invented
+# DOW-thermo: the DOW-Br₂ thermodynamic verdict, now SOURCED (CODATA) and calibrated -- never invented
 # ======================================================================================
-class TestDowBromineThermoIsDataGated:
-    def test_bromine_dissociation_is_unknown_without_sourced_thermo(self):
-        # Br₂ -> 2 Br•: conserving, but no sourced Br ΔfH°/S° exists, so the verdict fail-closes to UNKNOWN
+class TestDowBromineThermodynamicVerdict:
+    """DOW-thermo (ROUND 26) supersedes the R25 data-gated fail-close: Br(g)/Br₂(g) ΔfH°/S° are now sourced
+    from the CODATA Key Values (Cox, Wagman et al. 1984; fetched + cross-checked 2026-09-07 vs NIST WebBook +
+    the official CODATA table), so the DOW-Br₂ dissociation verdict FIRES -- and it reproduces known chemistry
+    (Br₂ is thermodynamically stable against dissociation at 298 K), calibrated to the Br-Br bond enthalpy."""
+
+    def test_bromine_dissociation_verdict_is_now_sourced_and_endergonic(self):
+        # Br₂ -> 2 Br•: with sourced CODATA Br(g)/Br₂(g), the verdict is UNFAVORABLE (endergonic at 298 K) --
+        # the DOW-Br₂ THERMODYNAMIC verdict the R25 fail-close was waiting on a data add to unlock.
         br2, br = M("BrBr"), M("[Br]")
         step = _step([br2], [br, br], br)
         result = feasibility_of_step(step)
-        assert result.direction is FeasibilityDirection.UNKNOWN
-        assert result.delta_g_kj is None
-        # the safety must rest on Br• (the atom) being GENUINELY unknown, not on Br₂'s symmetry-number
-        # accident: the bare Br atom must be reported missing, never silently fabricated to (0, 0)
-        assert "Br" in result.missing        # the bromine ATOM, distinct from "Br2"
-        assert "Br2" in result.missing
+        assert result.direction is FeasibilityDirection.UNFAVORABLE  # Br₂ is stable against dissociation at RT
+        assert result.missing == ()                                   # nothing missing now -- both are sourced
+        # calibration to KNOWN chemistry: ΔH = 2·ΔfH°(Br,g) − ΔfH°(Br₂,g) = 2(111.87) − 30.91 = +192.83 kJ/mol,
+        # which IS the standard Br-Br bond dissociation enthalpy (~192.8 kJ/mol) -- not an invented number.
+        assert result.delta_h_kj == pytest.approx(192.83, abs=0.05)
+        assert result.delta_s_j_per_k == pytest.approx(104.568, abs=0.01)
+        assert result.delta_g_kj == pytest.approx(161.65, abs=0.1)    # +ΔG => endergonic, disfavored
+        # a real SOURCED band, propagated in quadrature from the CODATA ± -- never a hollow 0.0
+        assert result.sigma_delta_g_kj is not None and result.sigma_delta_g_kj > 0
+
+    def test_the_atom_and_the_molecule_are_distinctly_sourced_no_formula_borrow(self):
+        # the bromine ATOM ("Br") and the molecule ("Br2") each resolve to their OWN CODATA record; neither is
+        # fabricated to (0, 0), and a related formula (HBr = "BrH") does NOT borrow either value.
+        from smartchem.experiment.feasibility import resolve_thermo
+        assert resolve_thermo(M("[Br]")).dhf_kj_per_mol == pytest.approx(111.87)
+        assert resolve_thermo(M("BrBr")).dhf_kj_per_mol == pytest.approx(30.91)
+        assert resolve_thermo(M("Br")) is None   # HBr: unsourced, no Benson group -> a loud gap, no borrow
+
+    def test_the_dissociation_route_net_drive_equals_the_single_step(self):
+        # route_net_delta_g on the single-step dissociation route is the same endergonic drive (functoriality)
+        br2, br = M("BrBr"), M("[Br]")
+        route = ExperimentRoute.of(_step([br2], [br, br], br))
+        assert route_net_delta_g(route) == pytest.approx(161.65, abs=0.1)

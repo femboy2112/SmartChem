@@ -30,10 +30,14 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ..category import Config, ConservationError, Molecule, Reaction
 from ..conditions import ConditionEnvelope
 from ..contracts import Digestible
+
+if TYPE_CHECKING:
+    from ..open_chem_diagram import OpenChemDiagram
 
 __all__ = [
     "STEP_SCHEMA",
@@ -169,6 +173,24 @@ class ExperimentStep(Digestible):
 
     def __repr__(self) -> str:
         return f"ExperimentStep({self.equation()})"
+
+    # -- the open-diagram view (Move-1 keystone Rung B) --------------------------------------------
+    def open(self) -> "OpenChemDiagram":
+        """Represent this step as an open chemistry diagram (the ``Reaction`` -> open-diagram functor).
+
+        Builds the SAME conservation-certificate ``Reaction`` this step's ``__post_init__`` builds, then
+        maps it onto an :class:`~smartchem.open_chem_diagram.OpenChemDiagram` with EXTERNAL input ports =
+        the reactant species and EXTERNAL output ports = the product species.  ``self.open().close()`` is
+        the round-trip: :meth:`~smartchem.open_chem_diagram.OpenChemDiagram.close` reproduces this exact
+        certificate byte-for-byte (its ``canonical_digest`` is unchanged).  Lazily imported to avoid an
+        import cycle.
+        """
+        from ..open_chem_diagram import OpenChemDiagram
+
+        certificate = Reaction(
+            Config.of(*self.reactants), Config.of(*self.products), name="experiment-step"
+        )
+        return OpenChemDiagram.from_reaction(certificate)
 
     # -- construction from existing path objects (a descent read backwards = an assembly) ----------
     @classmethod

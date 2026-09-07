@@ -162,7 +162,10 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha12"
 # v1alpha15 (DAG-THERMO-01): the ranked_dag_summary element gains composability/selectivity/feasibility/equilibrium/
 # kinetics verdict fields (the per-node thermochemical roll-up feeding the DAG ranking), reaching parity with the
 # ranked_route_summary's verdict fields so a DAG dossier's best-first order is as inspectable as a linear one's.
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha15"
+# v1alpha16 (item 2b): the ranked_dag_summary element gains a machine-readable ``serial_holds`` field (the DAG-HOLD-01
+# serial-schedule hold as (producer, consumer, minutes) triples) -- a descriptor-only bump (the field is disclosure,
+# digest-excluded, so no result_digest ripple, and it is empty for every non-holding/linear-shaped DAG).
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha16"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -176,7 +179,11 @@ RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha2"
 # and widened from the process axis alone to the combined bench fit.  v1alpha3 (DAG-THERMO-01): gains the five ranking
 # verdict fields (composability/selectivity/feasibility/equilibrium/kinetics) so the DAG dossier exposes the same
 # sourced tiebreakers the ranked_route_summary does -- parity, and the best-first order made inspectable.
-RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha3"
+# v1alpha4 (item 2b): gains a machine-readable ``serial_holds`` field -- the DAG-HOLD-01 serial-schedule hold as
+# (producer, consumer, minutes) triples.  DISCLOSURE only (never changes fit_status) and digest-EXCLUDED (it is
+# fully determined by edges + process_requirements), so no existing DAG digest moves; the version bumps because
+# the element's serialized SHAPE gained a field.
+RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha4"
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -928,6 +935,14 @@ class RankedRouteSummary(Digestible):
     #: ``CompilationResponse._check_process_admission_coherence``).  Part of route identity -- folded into
     #: ``result_digest`` -- so tampering with the evidence is a detectable identity change, not a silent relabel.
     process_requirements: "tuple[ProcessRequirements | None, ...]"
+    #: ONLOAD-REDERIVE (item 2): the COMPLETE steps of the route this summary projects, as a thick replay payload
+    #: (each step's target/reactants/products/reagents + full 10-field envelope).  Carried so a verified-admission
+    #: consumer can RECONSTRUCT the exact ``ExperimentRoute`` and re-derive the WHOLE combined verdict (composability +
+    #: physical + process) AND the ranking verdicts on load -- not just the process axis -- binding the evidence to
+    #: ``route_digest`` (reconstruct(payload).digest == route_digest).  DIGEST-EXCLUDED (``compare=False``): route
+    #: identity stays byte-stable, so it is re-derived-and-checked at load, never trusted by hash.  ``None`` when the
+    #: producer did not attach it; a verified-admission consumer treats a FITS route without it as UNVERIFIED.
+    replay_payload: "list | None" = field(default=None, compare=False, repr=False)
 
     _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
 
@@ -984,6 +999,10 @@ class RankedRouteSummary(Digestible):
             fit.kinetics.verdict,
             # The exact per-step process evidence the fit was computed from, so admission is re-derivable on load.
             tuple(step.envelope.process for step in fit.route.steps),
+            # ONLOAD-REDERIVE (item 2): the thick replay payload -- the route's complete steps -- so a verified-admission
+            # consumer can reconstruct the exact route and re-derive ALL axes on load.  Built here (cheap serialization,
+            # no re-analysis); emitted to the wire only when the producer serializes with include_replay=True.
+            replay_payload=_steps_to_replay_payload(fit.route.steps),
         )
 
 
@@ -1095,6 +1114,18 @@ class RankedDAGSummary(Digestible):
     feasibility_verdict: str = "UNKNOWN"
     equilibrium_verdict: str = "UNKNOWN"
     kinetics_verdict: str = "UNKNOWN"
+    # DAG-HOLD-01 made machine-readable (item 2b): the per-edge serial-schedule hold as (producer, consumer,
+    # hold_minutes) triples, so a consumer reads the hold structurally instead of parsing the human note.  It is
+    # DISCLOSURE, not a gate (it never changes fit_status), and it is FULLY DETERMINED by the digest-bearing
+    # ``edges`` + ``process_requirements`` (via _serial_hold_minutes) -- so it adds no identity and is EXCLUDED
+    # from the digest (compare=False): existing DAG digests are byte-stable, and a consumer who distrusts it can
+    # re-derive it from the digest-protected fields.
+    serial_holds: "tuple[tuple[int, int, float], ...]" = field(default=(), compare=False)
+    #: ONLOAD-REDERIVE (item 2): the DAG's COMPLETE steps as a thick replay payload (mirrors
+    #: :attr:`RankedRouteSummary.replay_payload`), so a verified-admission consumer reconstructs the exact
+    #: ``SynthesisDAG`` and re-derives the whole combined verdict + edge/process projection + ranking verdicts on
+    #: load.  DIGEST-EXCLUDED (``compare=False``): DAG identity stays byte-stable; re-derived-and-checked, never trusted.
+    replay_payload: "list | None" = field(default=None, compare=False, repr=False)
 
     _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
 
@@ -1127,6 +1158,21 @@ class RankedDAGSummary(Digestible):
         if self.fit_status in ("FITS", "UNCONSTRAINED") and self.gaps:
             raise ValueError(f"a {self.fit_status} DAG cannot carry gaps -- a gap is an UNKNOWN-fit, not a pass")
         _validate_dag_edges(self.edges, len(self.process_requirements))
+        # serial_holds: well-formed (producer, consumer, minutes>=0) triples, each over a REAL carried edge
+        # (a hold is the extra hold on an existing producer->consumer intermediate), never a fabricated pair.
+        if type(self.serial_holds) is not tuple:
+            raise TypeError("serial_holds must be a tuple of (producer, consumer, hold_minutes) triples")
+        edge_set = set(self.edges)
+        for hold in self.serial_holds:
+            if type(hold) is not tuple or len(hold) != 3:
+                raise TypeError("each serial_holds entry must be a (producer, consumer, hold_minutes) triple")
+            i, j, minutes = hold
+            if isinstance(i, bool) or isinstance(j, bool) or type(i) is not int or type(j) is not int:
+                raise TypeError("serial_holds producer/consumer indices must be ints")
+            if (i, j) not in edge_set:
+                raise ValueError(f"serial_holds entry {(i, j)} is not one of the DAG's carried edges")
+            if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or minutes < 0:
+                raise ValueError("serial_holds hold_minutes must be a non-negative real number")
 
     @classmethod
     def of_dag(cls, dag: "object", box: "object") -> "RankedDAGSummary":
@@ -1138,10 +1184,17 @@ class RankedDAGSummary(Digestible):
         ``edges`` are taken in the DAG's OWN step order (``dag.steps`` / ``dag.edges``), the exact indexing
         :func:`~smartchem.process_constraints.evaluate_dag_process_requirements` uses, so the load-time re-derivation of
         the PROCESS COMPONENT reproduces that component byte-for-byte."""
+        from .experiment.dag import _serial_hold_minutes
         from .experiment.drafter import dag_bench_fit
         fit = dag_bench_fit(dag, box)
         edges = tuple((producer, consumer) for producer, consumer, _intermediate in dag.edges)
         equation = " ; ".join(s.equation() for s in dag.topological_order())
+        # DAG-HOLD-01 made machine-readable (item 2b): the same per-edge serial-schedule hold ROUND 15 surfaced
+        # as a human note, now as sorted (producer, consumer, minutes) triples over the edges that actually hold
+        # (> 0).  Disclosure only -- it does not touch fit_status -- so a zero-hold linear-shaped DAG carries ().
+        serial_holds = tuple(
+            (i, j, minutes) for (i, j), minutes in sorted(_serial_hold_minutes(dag).items()) if minutes > 0
+        )
         return cls(
             RANKED_DAG_SUMMARY_SCHEMA,
             dag.digest,
@@ -1158,6 +1211,10 @@ class RankedDAGSummary(Digestible):
             fit.feasibility_verdict,
             fit.equilibrium_verdict,
             fit.kinetics_verdict,
+            serial_holds,
+            # ONLOAD-REDERIVE (item 2): the thick replay payload -- the DAG's complete steps in its own step order --
+            # so a verified-admission consumer reconstructs the exact SynthesisDAG and re-derives all axes on load.
+            replay_payload=_steps_to_replay_payload(dag.steps),
         )
 
 
@@ -2339,6 +2396,168 @@ def _process_requirements_from_payload(payload: "dict | None") -> "ProcessRequir
     return ProcessRequirements(**values)
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# ONLOAD-REDERIVE (queue item 2): the thick per-step REPLAY payload + conservation-certified reconstruction.
+#
+# These codecs are the load-bearing new machinery for the composability + physical re-derivation on load.  A summary's
+# ``replay_payload`` carries the COMPLETE steps (target/reactants/products/reagents + full 10-field envelope), so the
+# loader can reconstruct the exact ``ExperimentRoute``/``SynthesisDAG`` and require ``reconstruct.digest == route_digest``
+# (the ROUTE-BINDING invariant, v0.2 scope decision).  Two rules keep the round trip DIGEST-STABLE and safe:
+#   * molecules are encoded POSITIONALLY (atoms tuple order + sorted bonds + charge + state), mirroring
+#     ``compilation_ir._graph_payload`` -- route_digest is over the raw positional graph, so re-parsing from SMILES or
+#     canonicalising would make an HONEST route fail the binding (a false reject).  Never canonicalise here.
+#   * every reconstruction runs the real constructor (``ExperimentStep.__post_init__`` conservation certificate,
+#     ``ConditionEnvelope.__post_init__`` unit/status/provenance validation), so a forged non-conserving step or an
+#     out-of-band unit swap is refused at reconstruction, not trusted.
+# ---------------------------------------------------------------------------------------------------------------------
+
+_MOLECULE_PAYLOAD_FIELDS = frozenset({"atoms", "bonds", "charge", "state"})
+
+
+def _molecule_to_payload(mol) -> dict:
+    """Order-PRESERVING structural encoding of a Molecule (mirrors ``compilation_ir._graph_payload``): the raw atoms
+    tuple, sorted ``[i, j, order]`` bonds, charge, and state.  Digest-identical on reconstruction (no canonical remap)."""
+    return {
+        "atoms": list(mol.atoms),
+        "bonds": sorted([b.i, b.j, b.order] for b in mol.bonds),
+        "charge": mol.charge,
+        "state": mol.state,
+    }
+
+
+def _molecule_from_payload(payload) -> "object":
+    """Rebuild a Molecule from its positional payload; wire types validated BEFORE construction (so a bool/float/str
+    can never be silently coerced into an atom index or charge -- the edges int-coercion trap, avoided here)."""
+    from .category import Bond, Molecule
+    if type(payload) is not dict or set(payload) != _MOLECULE_PAYLOAD_FIELDS:
+        raise ValueError("molecule payload must contain exactly atoms, bonds, charge, state")
+    atoms, bonds, charge, state = payload["atoms"], payload["bonds"], payload["charge"], payload["state"]
+    if type(atoms) is not list or any(type(a) is not str for a in atoms):
+        raise TypeError("molecule atoms must be a list of element strings")
+    if type(bonds) is not list:
+        raise TypeError("molecule bonds must be a list of [i, j, order] triples")
+    bond_objs = []
+    for b in bonds:
+        if type(b) is not list or len(b) != 3 or any(isinstance(x, bool) or type(x) is not int for x in b):
+            raise TypeError("each bond must be a [i, j, order] triple of ints")
+        bond_objs.append(Bond(b[0], b[1], b[2]))
+    if isinstance(charge, bool) or type(charge) is not int:
+        raise TypeError("molecule charge must be an int")
+    if type(state) is not str:
+        raise TypeError("molecule state must be a string")
+    return Molecule(tuple(atoms), frozenset(bond_objs), charge, state)
+
+
+_CONDITION_ENVELOPE_PAYLOAD_FIELDS = frozenset(
+    {"temperature", "pressure", "duration", "medium", "catalysts", "applied_field",
+     "status", "provenance", "source", "process"}
+)
+
+
+def _condition_envelope_to_payload(env) -> dict:
+    """Flatten all 10 condition-envelope fields.  Intervals/enum/citation/process reuse the existing flat codecs, so a
+    lossy round trip (an averaged interval, a promoted status, a dropped source review) cannot slip past reconstruction."""
+    return {
+        "temperature": _interval_to_payload(env.temperature),
+        "pressure": _interval_to_payload(env.pressure),
+        "duration": _interval_to_payload(env.duration),
+        "medium": env.medium,
+        "catalysts": list(env.catalysts),
+        "applied_field": env.applied_field,
+        "status": env.status.value,
+        "provenance": env.provenance,
+        "source": _source_to_payload(env.source),
+        "process": _process_requirements_to_payload(env.process),
+    }
+
+
+def _condition_envelope_from_payload(payload) -> "object":
+    """Rebuild a ConditionEnvelope; its ``__post_init__`` re-validates K/atm units, the EvidenceStatus cap, and the
+    declaration/provenance/source consistency, so a payload cannot smuggle an invalid or promoted envelope past load."""
+    from .conditions import ConditionEnvelope, EvidenceStatus
+    if type(payload) is not dict or set(payload) != _CONDITION_ENVELOPE_PAYLOAD_FIELDS:
+        raise ValueError("condition envelope payload must contain exactly the versioned fields")
+    catalysts = payload["catalysts"]
+    if type(catalysts) is not list or any(type(c) is not str for c in catalysts):
+        raise TypeError("catalysts must be a list of strings")
+    for name in ("medium", "applied_field", "provenance", "status"):
+        if type(payload[name]) is not str:
+            raise TypeError(f"envelope {name} must be a string")
+    return ConditionEnvelope(
+        _interval_from_payload(payload["temperature"]),
+        _interval_from_payload(payload["pressure"]),
+        _interval_from_payload(payload["duration"]),
+        payload["medium"],
+        tuple(catalysts),
+        payload["applied_field"],
+        EvidenceStatus(payload["status"]),
+        payload["provenance"],
+        _source_from_payload(payload["source"]),
+        _process_requirements_from_payload(payload["process"]),
+    )
+
+
+_STEP_PAYLOAD_FIELDS = frozenset({"schema_version", "target", "reactants", "products", "reagents", "envelope"})
+
+
+def _step_to_payload(step) -> dict:
+    """Encode one complete ExperimentStep: ordered reactant/product/reagent molecule multisets (multiplicity and
+    byproducts preserved -- never a set) + the full envelope."""
+    return {
+        "schema_version": step.schema_version,
+        "target": _molecule_to_payload(step.target),
+        "reactants": [_molecule_to_payload(m) for m in step.reactants],
+        "products": [_molecule_to_payload(m) for m in step.products],
+        "reagents": [_molecule_to_payload(m) for m in step.reagents],
+        "envelope": _condition_envelope_to_payload(step.envelope),
+    }
+
+
+def _step_from_payload(payload) -> "object":
+    """Rebuild one ExperimentStep; its ``__post_init__`` re-runs the mass+charge conservation certificate, the
+    target-in-products check, and the reagent-multiset-subset check -- a forged non-conserving step is refused here."""
+    from .experiment.step import ExperimentStep
+    if type(payload) is not dict or set(payload) != _STEP_PAYLOAD_FIELDS:
+        raise ValueError("step payload must contain exactly the versioned fields")
+    for name in ("reactants", "products", "reagents"):
+        if type(payload[name]) is not list:
+            raise TypeError(f"step {name} must be a list of molecule payloads")
+    if type(payload["schema_version"]) is not str:
+        raise TypeError("step schema_version must be a string")
+    return ExperimentStep(
+        payload["schema_version"],
+        _molecule_from_payload(payload["target"]),
+        tuple(_molecule_from_payload(m) for m in payload["reactants"]),
+        tuple(_molecule_from_payload(m) for m in payload["products"]),
+        tuple(_molecule_from_payload(m) for m in payload["reagents"]),
+        _condition_envelope_from_payload(payload["envelope"]),
+    )
+
+
+def _steps_to_replay_payload(steps) -> list:
+    """The thick replay payload for a route/DAG: its complete steps, in the route/DAG's own step order."""
+    return [_step_to_payload(s) for s in steps]
+
+
+def _replay_payload_to_steps(payload) -> tuple:
+    """Reconstruct the ordered step tuple from a replay payload (each step conservation-certified on the way in)."""
+    if type(payload) is not list or not payload:
+        raise ValueError("a replay payload must be a non-empty list of step payloads")
+    return tuple(_step_from_payload(sp) for sp in payload)
+
+
+def _reconstruct_route(payload) -> "object":
+    """Reconstruct the ExperimentRoute from a replay payload; ``__post_init__`` re-checks linearity (net-consumption)."""
+    from .experiment.step import ROUTE_SCHEMA, ExperimentRoute
+    return ExperimentRoute(ROUTE_SCHEMA, _replay_payload_to_steps(payload))
+
+
+def _reconstruct_dag(payload) -> "object":
+    """Reconstruct the SynthesisDAG from a replay payload; ``__post_init__`` re-checks the DAG shape (acyclic/single-sink)."""
+    from .experiment.dag import DAG_SCHEMA, SynthesisDAG
+    return SynthesisDAG(DAG_SCHEMA, _replay_payload_to_steps(payload))
+
+
 def request_to_payload(request: CompilationRequest) -> dict:
     """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable."""
     return {
@@ -2443,9 +2662,14 @@ def deserialize_request(text: str) -> CompilationRequest:
     return request_from_payload(json.loads(text))
 
 
-def ranked_summary_to_payload(summary: RankedRouteSummary) -> dict:
-    """A canonical JSON-ready dict for one ranked-route summary (CLI-CAN-02 brick 2)."""
-    return {
+def ranked_summary_to_payload(summary: RankedRouteSummary, *, include_replay: bool = False) -> dict:
+    """A canonical JSON-ready dict for one ranked-route summary (CLI-CAN-02 brick 2).
+
+    ``include_replay`` (default False) controls whether the ONLOAD-REDERIVE thick ``replay_payload`` is emitted to the
+    wire.  Off by default so an ordinary response is byte-identical to the pre-item-2 form (the payload is
+    ``compare=False`` -- outside ``result_digest`` -- so its presence/absence never moves route identity); a producer
+    serialising for a verified-admission consumer passes True."""
+    payload = {
         "schema_version": summary.schema_version,
         "route_digest": summary.route_digest,
         "equation": summary.equation,
@@ -2460,10 +2684,14 @@ def ranked_summary_to_payload(summary: RankedRouteSummary) -> dict:
         "kinetics_verdict": summary.kinetics_verdict,
         "process_requirements": [_process_requirements_to_payload(r) for r in summary.process_requirements],
     }
+    if include_replay and summary.replay_payload is not None:
+        payload["replay_payload"] = summary.replay_payload
+    return payload
 
 
 def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
-    """Reconstruct a ranked-route summary; re-validates via its __post_init__ coherence checks."""
+    """Reconstruct a ranked-route summary; re-validates via its __post_init__ coherence checks.  ``replay_payload`` is
+    optional (absent -> None): a verified-admission consumer treats a FITS route lacking it as UNVERIFIED, never admitted."""
     return RankedRouteSummary(
         payload["schema_version"],
         payload["route_digest"],
@@ -2478,12 +2706,16 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
         payload["equilibrium_verdict"],
         payload["kinetics_verdict"],
         tuple(_process_requirements_from_payload(p) for p in payload["process_requirements"]),
+        replay_payload=payload.get("replay_payload"),
     )
 
 
-def ranked_dag_summary_to_payload(summary: RankedDAGSummary) -> dict:
-    """A canonical JSON-ready dict for one convergent-DAG COMBINED bench admission (DAG-BENCH-01)."""
-    return {
+def ranked_dag_summary_to_payload(summary: RankedDAGSummary, *, include_replay: bool = False) -> dict:
+    """A canonical JSON-ready dict for one convergent-DAG COMBINED bench admission (DAG-BENCH-01).
+
+    ``include_replay`` (default False) controls emission of the ONLOAD-REDERIVE thick ``replay_payload`` -- off by
+    default so a response is byte-identical to the pre-item-2 form (compare=False, outside the digest)."""
+    payload = {
         "schema_version": summary.schema_version,
         "route_digest": summary.route_digest,
         "equation": summary.equation,
@@ -2497,12 +2729,28 @@ def ranked_dag_summary_to_payload(summary: RankedDAGSummary) -> dict:
         "feasibility_verdict": summary.feasibility_verdict,
         "equilibrium_verdict": summary.equilibrium_verdict,
         "kinetics_verdict": summary.kinetics_verdict,
+        "serial_holds": [[i, j, minutes] for i, j, minutes in summary.serial_holds],
     }
+    if include_replay and summary.replay_payload is not None:
+        payload["replay_payload"] = summary.replay_payload
+    return payload
+
+
+def _exact_int_pair(pair) -> "tuple[int, int]":
+    """An ``[i, j]`` edge as an exact-int 2-tuple, validating wire types BEFORE coercion so a bool/float/str index
+    (``[true, 1.9]``, ``["1", "2"]``) is REFUSED rather than silently coerced (the edges int-coercion trap)."""
+    if type(pair) not in (list, tuple) or len(pair) != 2:
+        raise TypeError("each edge must be an [i, j] pair")
+    a, b = pair
+    if isinstance(a, bool) or isinstance(b, bool) or type(a) is not int or type(b) is not int:
+        raise TypeError("edge indices must be exact ints (not bool/float/str)")
+    return (a, b)
 
 
 def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
     """Reconstruct a DAG combined bench admission; re-validates via its __post_init__ (edge-shape + coherence) guards.
-    ``edges`` is coerced back to a tuple of 2-tuples -- the shape guard rejects a list, so the round-trip is exact."""
+    ``edges`` wire types are validated BEFORE coercion (:func:`_exact_int_pair`), so a bool/float/string index cannot
+    be silently truncated into a legal-looking edge.  ``replay_payload`` is optional (absent -> None)."""
     return RankedDAGSummary(
         payload["schema_version"],
         payload["route_digest"],
@@ -2511,12 +2759,16 @@ def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
         tuple(payload["exclusions"]),
         tuple(payload["gaps"]),
         tuple(_process_requirements_from_payload(p) for p in payload["process_requirements"]),
-        tuple((int(a), int(b)) for a, b in payload["edges"]),
+        tuple(_exact_int_pair(e) for e in payload["edges"]),
         payload["composability_verdict"],
         payload["selectivity_verdict"],
         payload["feasibility_verdict"],
         payload["equilibrium_verdict"],
         payload["kinetics_verdict"],
+        # serial_holds is optional for backward tolerance; coerce back to (int,int,float) triples (the shape
+        # guard rejects a list, so the round-trip is exact).  Absent -> () (a pre-2b payload had no holds field).
+        tuple((int(i), int(j), float(m)) for i, j, m in payload.get("serial_holds", [])),
+        replay_payload=payload.get("replay_payload"),
     )
 
 
@@ -2665,11 +2917,95 @@ def _sign_result_digest(result_digest: str, key: bytes) -> str:
     return hmac.new(key, result_digest.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def response_to_payload(response: CompilationResponse, *, signing_key: bytes | None = None) -> dict:
+def _check_verified_admission(response: "CompilationResponse") -> None:
+    """ONLOAD-REDERIVE (item 2): the STRUCTURAL close of the composability + physical + ranking axes, with NO key.
+
+    For every ADMITTED (FITS) route/DAG dossier, RECONSTRUCT the exact route/DAG from its thick ``replay_payload``,
+    re-PROJECT it through the SAME producer path (``rank_routes`` -> ``RankedRouteSummary.of_fit``; ``RankedDAGSummary.of_dag``)
+    under the response's OWN eval-context, and require the re-projected summary to EQUAL the claimed one.  That single
+    equality subsumes every binding this round adds:
+
+    * ``reconstruct(payload).digest == route_digest`` -- the ROUTE-BINDING invariant (route_digest is a compared field
+      of the summary), closing the evidence-SUBSTITUTION hole: another route's genuinely-FITS payload under a different
+      route_digest re-projects to a summary with a different route_digest, so the equality fails.
+    * ``fit_status`` == the freshly re-folded COMBINED verdict (composability + physical box + process), closing the
+      bare-relabel hole the process-only re-derivation left open.
+    * the ``composability_verdict`` and the four ranking verdicts (selectivity/feasibility/equilibrium/kinetics), plus
+      the per-step ``process_requirements`` and (DAG) ``edges`` projection -- all re-derived and compared, closing the
+      ranking-fabrication gap.
+
+    A FITS dossier with NO ``replay_payload`` is UNVERIFIED and REFUSED (fail-CLOSED), so stripping the payload (the
+    deletion door) cannot admit a bare-relabel.
+
+    HONEST SCOPE (do NOT overclaim -- the residuals are two, not one):
+    * This re-derives every axis AGAINST THE RESPONSE'S OWN DECLARED CONTEXT -- the bench box built from
+      ``response.request.constraints`` (bounds + process), the ``identity_losses`` from the IR, and ``DEFAULT_STABILITY``
+      (the service never injects an extended table).  It authenticates that the verdicts are COHERENT with the routes
+      UNDER THAT CONTEXT; it does NOT authenticate the CONTEXT itself.  A keyless attacker who RELAXES the request in the
+      payload (e.g. drops a bench temperature cap) and recomputes the free public ``result_digest`` makes a genuinely
+      out-of-bounds route re-derive FITS against the relaxed box -- a false ACCEPT this check does NOT catch on its own
+      (evil-morty Finding 1, VERIFIED).  Closing it needs the request BOUND: pass ``expected_request_digest`` to
+      :func:`response_from_payload` (the consumer pins their own request's ``semantic_digest``), or a ``verification_key``
+      (the request is folded into ``result_digest``, so the HMAC breaks on relaxation).  A producer that judged against a
+      caller-injected extended stability table or an inventory box the request does not carry is likewise out of scope.
+    * A key-holding forger stays irreducible (as for the process axis / the signature -- unchanged).
+    This is structural (no key) coherence between the verdicts and the routes; it COMPLEMENTS, never replaces, the
+    request-binding and the producer signature.  Scoped to FITS dossiers: item 2 closes admit-bad, not hide-good (a
+    conservative FITS->EXCLUDED relabel is a suppression, not an admission, and is out of scope).  For a DAG it also
+    re-derives ``serial_holds`` (digest-excluded disclosure) and refuses a tampered hold value, closing that R19
+    disclosure-integrity gap for a verified-admission consumer.  Pinned by tests/test_onload_rederivation.py.
+    """
+    from .experiment.drafter import ConstraintBox, rank_routes
+    box = ConstraintBox.of_bounds(response.request.constraints.bounds,
+                                  process=response.request.constraints.process)
+    losses = response.identity_losses
+    for r in response.ranked_route_dossiers:
+        if r.fit_status != "FITS":
+            continue
+        if r.replay_payload is None:
+            raise ValueError(
+                f"verified admission: FITS route {r.route_digest} carries no replay_payload -- UNVERIFIED "
+                f"(a stripped or never-attached payload cannot be admitted; the producer must serialize with "
+                f"include_replay=True)"
+            )
+        route = _reconstruct_route(r.replay_payload)
+        resummary = RankedRouteSummary.of_fit(rank_routes((route,), box=box, losses=losses)[0])
+        if resummary != r:
+            raise ValueError(
+                f"verified admission: route {r.route_digest} re-projects to a DIFFERENT summary than declared -- the "
+                f"replay evidence does not support the claimed verdict (a forged verdict, substituted evidence, or "
+                f"tampered ranking); refused"
+            )
+    for d in response.ranked_dag_dossiers:
+        if d.fit_status != "FITS":
+            continue
+        if d.replay_payload is None:
+            raise ValueError(
+                f"verified admission: FITS DAG {d.route_digest} carries no replay_payload -- UNVERIFIED"
+            )
+        dag = _reconstruct_dag(d.replay_payload)
+        resummary = RankedDAGSummary.of_dag(dag, box)
+        # resummary != d compares the compare=True fields (verdict + edges + verdicts); serial_holds is compare=False
+        # (disclosure), so re-derive it explicitly -- a verified-admission consumer trusting a displayed hold gets an
+        # authenticated one (evil-morty Finding 2).
+        if resummary != d or resummary.serial_holds != d.serial_holds:
+            raise ValueError(
+                f"verified admission: DAG {d.route_digest} re-projects to a DIFFERENT summary than declared -- the "
+                f"replay evidence does not support the claimed verdict or serial-hold disclosure; refused"
+            )
+
+
+def response_to_payload(response: CompilationResponse, *, signing_key: bytes | None = None,
+                        include_replay: bool = False) -> dict:
     """A canonical JSON-ready dict for a response (CLI-JSON-01 leans on this).
 
     When ``signing_key`` is given, ``producer_signature`` carries an HMAC-SHA256 over ``result_digest``
     (COMBINED-VERDICT-AUTH); with no key it is ``null`` and the payload is byte-identical to the unsigned form.
+
+    ``include_replay`` (ONLOAD-REDERIVE, item 2; default False) emits each dossier's thick ``replay_payload`` so a
+    verified-admission consumer can reconstruct and re-derive every axis on load.  OFF by default: the replay payload
+    is ``compare=False`` (outside ``result_digest``), so an ordinary response stays byte-identical to the pre-item-2
+    form and existing goldens are unchanged.  A producer serving a verified-admission consumer passes True.
     """
     digest = response.result_digest
     return {
@@ -2684,8 +3020,10 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
         "search_space_status": response.search_space_status,
         "process_selection_status": response.process_selection_status,
         "admissible_route_digests": list(response.admissible_route_digests),
-        "ranked_route_dossiers": [ranked_summary_to_payload(r) for r in response.ranked_route_dossiers],
-        "ranked_dag_dossiers": [ranked_dag_summary_to_payload(d) for d in response.ranked_dag_dossiers],
+        "ranked_route_dossiers": [ranked_summary_to_payload(r, include_replay=include_replay)
+                                  for r in response.ranked_route_dossiers],
+        "ranked_dag_dossiers": [ranked_dag_summary_to_payload(d, include_replay=include_replay)
+                                for d in response.ranked_dag_dossiers],
         "affordability_frontier": [affordability_entry_to_payload(e) for e in response.affordability_frontier],
         "provider_snapshots": [provider_snapshot_to_payload(s) for s in response.provider_snapshots],
         "result_digest": digest,
@@ -2694,7 +3032,9 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
 
 
 def response_from_payload(payload: dict, *, verification_key: bytes | None = None,
-                          require_signature: bool = False) -> CompilationResponse:
+                          require_signature: bool = False,
+                          require_verified_admission: bool = False,
+                          expected_request_digest: str | None = None) -> CompilationResponse:
     """Reconstruct a response from :func:`response_to_payload`; re-runs the coherence guard.
 
     Two layers now guard admission on load.  (1) The round-trip check below re-derives
@@ -2755,18 +3095,41 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
                 raise ValueError("producer_signature is required but the payload is unsigned")
         elif not hmac.compare_digest(str(signature), _sign_result_digest(response.result_digest, verification_key)):
             raise ValueError("producer_signature does not verify: the payload was tampered or signed by another key")
+    # ONLOAD-REDERIVE (item 2): bind the REQUEST the re-derivation trusts.  The verified-admission re-derivation uses
+    # the response's OWN request as the bench box; a keyless attacker who relaxes that request (and recomputes the free
+    # public result_digest) could otherwise re-derive an out-of-bounds route to FITS (evil-morty Finding 1).  A consumer
+    # who knows their request pins it here (its semantic_digest); a mismatch means the response answers a DIFFERENT
+    # question than was asked.  Independent of verified-admission (useful in any mode); a verification_key closes the
+    # same gap cryptographically (the request is folded into result_digest).
+    if expected_request_digest is not None and response.request.semantic_digest != expected_request_digest:
+        raise ValueError(
+            "response.request does not match expected_request_digest: the response answers a DIFFERENT request than "
+            "the consumer asked for (e.g. relaxed bench bounds); refused"
+        )
+    # The opt-in STRUCTURAL close of the composability/physical/ranking axes (no key).  A verified-admission consumer
+    # requires every FITS route/DAG to carry a replay_payload that re-projects to the exact claimed summary; a missing
+    # payload is fail-closed (UNVERIFIED).  Off by default -> pre-item-2 behaviour.  NOTE the honest scope in
+    # _check_verified_admission: this authenticates verdict<->route COHERENCE under the response's declared context, not
+    # the context itself -- pass expected_request_digest (above) or a verification_key to bind the request too.
+    if require_verified_admission:
+        _check_verified_admission(response)
     return response
 
 
-def serialize_response(response: CompilationResponse, *, signing_key: bytes | None = None) -> str:
-    return json.dumps(response_to_payload(response, signing_key=signing_key), ensure_ascii=False,
-                      separators=(",", ":"), sort_keys=True)
+def serialize_response(response: CompilationResponse, *, signing_key: bytes | None = None,
+                       include_replay: bool = False) -> str:
+    return json.dumps(response_to_payload(response, signing_key=signing_key, include_replay=include_replay),
+                      ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
 def deserialize_response(text: str, *, verification_key: bytes | None = None,
-                         require_signature: bool = False) -> CompilationResponse:
+                         require_signature: bool = False,
+                         require_verified_admission: bool = False,
+                         expected_request_digest: str | None = None) -> CompilationResponse:
     return response_from_payload(json.loads(text), verification_key=verification_key,
-                                 require_signature=require_signature)
+                                 require_signature=require_signature,
+                                 require_verified_admission=require_verified_admission,
+                                 expected_request_digest=expected_request_digest)
 
 
 # -- the versioned JSON schema + the semantic-field projection (CLI-JSON-01) -------------------------------------
@@ -2909,6 +3272,10 @@ def response_schema() -> dict:
             "feasibility_verdict": "str (DAG-THERMO-01: worst-node thermodynamic feasibility)",
             "equilibrium_verdict": "str (DAG-THERMO-01: worst-node equilibrium extent)",
             "kinetics_verdict": "str (DAG-THERMO-01: worst-node rate regime; ranking-only, NEVER a grade)",
+            "serial_holds": "array[[int, int, number]] (item 2b: the DAG-HOLD-01 serial-schedule hold as "
+                            "(producer, consumer, hold_minutes) triples over the edges that hold; DISCLOSURE only "
+                            "-- never changes fit_status -- and digest-EXCLUDED, so it is re-derivable from "
+                            "edges + process_requirements and does not move the route identity)",
         },
         "affordability_frontier_entry_fields": {
             "schema_version": "str",

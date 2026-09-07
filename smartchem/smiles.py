@@ -54,7 +54,7 @@ stated resonance boundary, not a silent one). A giant PAH beyond the enumeration
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cmp_to_key, lru_cache
 
 from .atoms import PT
 from .category import Bond, Molecule, _wl_colours
@@ -100,10 +100,10 @@ class SmilesFeatures:
     configuration_complete: bool = False  # ID-STEREO-02: True iff the molecule's configuration is FULLY perceived (no
     # marked centre scoped out AND no double-bond stereo) -- the fail-closed signal that CONFIGURATION reduces soundly
     # to a match layer; when False some real stereo is unperceived, so CONFIGURATION stays UNKNOWN (never a false merge)
-    cip_labels: tuple[str, ...] = ()  # ID-STEREO-01: the sorted CIP R/S names of the SOUNDLY-nameable stereocentres
-    # (four distinct-atomic-number neighbours -- see :func:`cip_labels`); () when none are nameable (achiral, or every
-    # marked centre is a same-element/ring/E-Z deferral).  PERCEPTION ONLY: the constitution Molecule is achiral, so
-    # this is never a search-identity term -- it exists so a downstream dossier can SHOW the perceived R/S to a chemist.
+    cip_labels: tuple[str, ...] = ()  # the sorted CIP R/S names of the SOUNDLY-nameable stereocentres via the general
+    # Rule-1a breadth-first digraph (ROUND 20 -- see :func:`cip_labels`); () when none are nameable (achiral, or every
+    # marked centre is a Rule-1b/2/4/5-tie / ring / non-4-coordinate deferral).  PERCEPTION ONLY: the constitution
+    # Molecule is achiral, so this is never a search-identity term -- it exists so a dossier can SHOW the R/S to a chemist.
     stereocentres_marked: int = 0  # how many tetrahedral centres the SMILES marked (@/@@).  The DENOMINATOR the dossier
     # discloses against: len(cip_labels) of these are soundly named, the rest are named DEFERRALS -- so a target with a
     # nameable centre AND a deferred one never hides the deferred count behind the named one (STEREO-DOSSIER-01 fold).
@@ -927,21 +927,218 @@ def configuration_key(text: str) -> str:
     return configuration if configuration is not None else resonance_identity(_build_molecule(atoms, bonds, charge))
 
 
+# --- ROUND 20 (ID-STEREO-CIP-NAMER): the general CIP Rule-1a breadth-first hierarchical-digraph ranker ---
+#
+# CIP priority ranking is the HARD half of R/S naming and the wall the distinct-Z slice punts on.  Two prior
+# attempts died (ROUND 13/14) to a DEPTH-first tie-break (a nested-tuple lexicographic key), which descends the
+# first branch to its leaves before ever comparing the second branch's near sphere -- wrong for the common
+# branch-vs-chain motif (``C[C@H](CCC)C(C)C``: isopropyl's first carbon (C,C,H) outranks n-propyl's (C,H,H) AT
+# the sphere, a decision DFS defers past).  The correct rule is BREADTH-first, branch-by-branch (Hanson,
+# Musacchio, Mayfield, Vainio, Yerin, Redkin, *J. Chem. Inf. Model.* 2018, 58(9), 1755): compare a whole sphere
+# of children atomic numbers before descending, then resolve the highest-ranked branch pair fully before the
+# next (need-to-know).  Multiple bonds and ring closures become duplicate/phantom leaf atoms (real atomic
+# number, no substituents).  This ranker names ONLY when Rule 1a alone fully orders the four ligands; a genuine
+# tie (isotope-only Rule 2, pseudoasymmetric/E-Z Rule 4/5, or a true constitutional duplicate) is a NAMED
+# DEFERRAL -- a wrong R/S is worse than none.  Validated against the R19 geometric oracle and hand/PubChem
+# textbook absolutes (incl. the L-serine=S / L-cysteine=R flip) in ``experiments/cip_namer_probe.py``.
+
+_CIP_PHANTOM = (0, ())               #: the phantom (atomic-number-0) leaf a missing branch slot pads with
+_CIP_AROMATIC = object()             #: sentinel children of an AROMATIC atom: z is known, onward connectivity is withheld
+_CIP_NODE_BUDGET = 60000             #: digraph-construction cap; a pathological giant fails CLOSED (defer, never guess)
+_CIP_COMPARE_BUDGET = 400000         #: pairwise-comparison cap; likewise fail-closed
+
+
+class _CipTooBig(Exception):
+    """The digraph/comparison budget was exhausted -> fail-closed DEFERRAL (never a guessed label)."""
+
+
+class _CipAromatic(Exception):
+    """A comparison had to inspect an AROMATIC atom's onward connectivity to rank two ligands.  Correct Rule 1a on a
+    mancude ring needs Kekule-invariant atomic-number AVERAGING over the resonance forms (Hanson et al. 2018, Fig. 3):
+    a single fixed Kekule structure makes two equivalent aromatic ligands look different (e.g. the two pyridyls of a
+    di-2-pyridyl carbinol -- a false centre -- split into a WRONG label).  Averaging is not built, so a centre whose
+    RANKING depends on an aromatic atom's substituents is a NAMED DEFERRAL -- sound (never a guessed label), incomplete
+    (an aryl/heteroaryl tie gets no name until averaging ships).  A ranking decided by atomic number BEFORE reaching an
+    aromatic atom (e.g. a distinct-Z centre with a benzyl arm) is unaffected -- the aromatic node's z is still known,
+    only its onward connectivity is withheld."""
+
+
+def _cip_digraph(atom_idx, parent_idx, path, adj, elems, aromatic, budget):
+    """One node of the CIP hierarchical digraph, ``(atomic_number, children)``.
+
+    A multiple bond of order ``o`` contributes ``o - 1`` duplicate leaves of the bonded partner on each side;
+    a ring-closure bond (a neighbour already on the root->here path) contributes ``o`` duplicate leaves and is
+    NOT traversed -- so every root-to-leaf path visits each real atom at most once and the digraph is FINITE
+    (depth bounded by the atom count).  A duplicate/phantom leaf carries the real atomic number of the atom it
+    duplicates but no substituents (its own children are the atomic-number-0 phantoms, which the padded
+    comparison in :func:`_cip_compare` treats identically to an empty child list).  An AROMATIC atom is a BOUNDARY
+    node ``(z, _CIP_AROMATIC)``: its atomic number is known (so a ranking can still decide ON it), but its onward
+    connectivity is withheld because it is Kekule-dependent -- a comparison that tries to descend past it raises
+    :class:`_CipAromatic` and the centre defers (its phantom DUPLICATES, being z-only leaves, are always safe)."""
+    z = ATOMIC_NUMBER.get(elems[atom_idx], 0)
+    if atom_idx in aromatic:
+        return (z, _CIP_AROMATIC)                               # boundary: known z, Kekule-dependent onward -> lazy defer
+    budget[0] -= 1
+    if budget[0] < 0:
+        raise _CipTooBig
+    children: list = []
+    for nb, order in adj[atom_idx]:
+        znb = ATOMIC_NUMBER.get(elems[nb], 0)
+        if nb == parent_idx:
+            dup = order - 1                                      # sigma bond already traversed; (o-1) duplicates left
+        elif nb in path:
+            dup = order                                          # ring closure to an ancestor: whole bond -> duplicates
+        else:
+            if nb in aromatic and order > 1:
+                raise _CipAromatic                              # exocyclic multiple bond INTO an aromatic atom: the
+                # duplicate COUNT (order-1) is Kekule-dependent, generated here at the non-aromatic side before the
+                # boundary is consulted -- so defer rather than emit a Kekule-dependent phantom multiset (evil-morty
+                # residual A; unproven-reachable but discharged, not left to chance).
+            children.append(_cip_digraph(nb, atom_idx, path | {nb}, adj, elems, aromatic, budget))
+            dup = order - 1                                      # plus (o-1) multiple-bond duplicates of the real child
+        for _ in range(dup):
+            children.append((znb, ()))
+    return (z, tuple(children))
+
+
+def _cip_sorted_children(node, ctx) -> tuple:
+    """``node``'s children ranked by CIP priority, highest first; memoised per node in ``ctx['sc']`` so a
+    repeated subtree (e.g. every residue of a peptide backbone) is ranked once, not re-sorted on each visit.
+    An AROMATIC boundary node has no available children -- inspecting them would depend on the Kekule structure --
+    so this raises :class:`_CipAromatic`, deferring the centre (reached only when a tie forces a descent past it)."""
+    if node[1] is _CIP_AROMATIC:
+        raise _CipAromatic
+    sc = ctx["sc"]
+    cached = sc.get(node)
+    if cached is None:
+        cached = tuple(sorted(node[1], key=cmp_to_key(lambda x, y: _cip_compare(x, y, ctx)), reverse=True))
+        sc[node] = cached
+    return cached
+
+
+def _cip_compare(a, b, ctx) -> int:
+    """Rank two digraph nodes by CIP Rule 1a: ``+1`` if ``a`` outranks ``b``, ``-1`` if ``b``, ``0`` if tied.
+
+    Breadth-first, branch-by-branch (Hanson et al. 2018): equal atomic number -> rank each node's children and
+    compare the WHOLE immediate sphere of their atomic numbers before descending (the step a depth-first
+    nested-tuple key skips -- the ROUND-14 bug), and only if the entire sphere ties resolve the highest-ranked
+    branch pair fully before the next.  A duplicate leaf competes at its own sphere on its REAL atomic number
+    and only loses to a real atom of the same number ONE sphere later (its children are phantom-0), so the
+    naive "a real atom always beats a duplicate" shortcut -- which mislabels -- is deliberately NOT taken.  A
+    ``0`` is a genuine Rule-1a indistinguishability; the caller DEFERS rather than guess.
+
+    Step 3 (the immediate sphere) compares the children's ATOMIC NUMBERS directly -- each child's z is known even
+    for an aromatic child, and the ordering of same-z children does not change the z-sequence -- so a decision at
+    the sphere never ranks (never descends into) a child, and an aromatic ring in a branch the sphere already
+    decides is never consulted.  Only if the whole sphere ties does step 4 fully rank the children (which may then
+    descend past an aromatic boundary and raise :class:`_CipAromatic`).  Memoised in ``ctx['cmp']`` (nodes are
+    immutable tuples); the cheap unequal-atomic-number case short-circuits before the cache/budget.  ``ctx['budget']``
+    bounds the recursion fail-closed (raise -> DEFER) against a pathological digraph."""
+    if a[0] != b[0]:
+        return 1 if a[0] > b[0] else -1                        # cheap, exact, no memo/budget needed
+    cache = ctx["cmp"]
+    key = (a, b)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    ctx["budget"][0] -= 1
+    if ctx["budget"][0] < 0:
+        raise _CipTooBig
+    za = _cip_child_zs(a)                                       # step 3: the immediate sphere by atomic number ALONE --
+    zb = _cip_child_zs(b)                                       # no ranking, so a same-z aromatic grandchild is never consulted
+    m = max(len(za), len(zb))
+    r = 0
+    for k in range(m):
+        xa = za[k] if k < len(za) else 0
+        xb = zb[k] if k < len(zb) else 0
+        if xa != xb:
+            r = 1 if xa > xb else -1
+            break
+    if r == 0:
+        ca = _cip_sorted_children(a, ctx)                      # step 4: the sphere ties -> now fully rank the children
+        cb = _cip_sorted_children(b, ctx)                      # (may descend past an aromatic boundary -> _CipAromatic)
+        for k in range(max(len(ca), len(cb))):                 # resolve the top branch pair before the next (need-to-know)
+            na = ca[k] if k < len(ca) else _CIP_PHANTOM
+            nb = cb[k] if k < len(cb) else _CIP_PHANTOM
+            c = _cip_compare(na, nb, ctx)
+            if c != 0:
+                r = c
+                break
+    cache[key] = r
+    cache[(b, a)] = -r
+    return r
+
+
+def _cip_child_zs(node) -> tuple:
+    """The descending atomic numbers of ``node``'s children -- the immediate sphere, WITHOUT ranking them (so a
+    Kekule-dependent aromatic grandchild is never consulted, only its known atomic number counts).  An aromatic
+    BOUNDARY node has no available children, so this raises :class:`_CipAromatic` (its own z was already used by
+    the caller's atomic-number check; it is only the onward structure that is withheld)."""
+    if node[1] is _CIP_AROMATIC:
+        raise _CipAromatic
+    return tuple(sorted((c[0] for c in node[1]), reverse=True))
+
+
+def _cip_ranks(written, centre, adj, elems, aromatic) -> "list[int] | None":
+    """The CIP priority rank (``0`` = highest) of each of the four WRITTEN neighbours of ``centre`` via the
+    Rule-1a hierarchical digraph, or ``None`` when Rule 1a does NOT fully order them (a genuine tie needing
+    Rule 1b/2/4/5, a ranking whose decision depends on an aromatic atom's substituents, or an over-budget
+    digraph) -- then the centre is a NAMED DEFERRAL, never a guessed label.
+
+    Byte-identical to the old ``sorted(z, reverse=True)`` ranks on the distinct-atomic-number slice (there
+    :func:`_cip_compare` decides at sphere 0), so it strictly EXTENDS the shipped naming without changing it --
+    a distinct-Z centre with an aromatic arm still names (the aromatic node's z decides before its withheld
+    substituents are ever needed)."""
+    try:
+        roots = [_cip_digraph(w, centre, frozenset((centre, w)), adj, elems, aromatic, [_CIP_NODE_BUDGET])
+                 for w in written]
+    except (_CipTooBig, _CipAromatic):                          # build only raises _CipAromatic for the exocyclic guard
+        return None
+    ctx = {"cmp": {}, "sc": {}, "budget": [_CIP_COMPARE_BUDGET]}  # caches shared across all six pairwise compares
+    try:
+        ranks: list[int] = []
+        for k in range(4):
+            higher = 0
+            for j in range(4):
+                if j == k:
+                    continue
+                c = _cip_compare(roots[j], roots[k], ctx)
+                if c == 0:
+                    return None                                 # two ligands tie under Rule 1a -> DEFER (sound)
+                if c > 0:
+                    higher += 1
+            ranks.append(higher)
+    except (_CipTooBig, _CipAromatic):
+        return None
+    if sorted(ranks) != [0, 1, 2, 3]:
+        return None                                             # defensive: not a strict total order -> DEFER
+    return ranks
+
+
 def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tuple[str, ...]:
-    """CIP R/S NAMES (ID-STEREO-01) for the SOUNDLY-nameable subset of stereocentres, sorted; ``()`` if none.
+    """CIP R/S NAMES for the SOUNDLY-nameable acyclic stereocentres, sorted; ``()`` if none.
 
-    Names ONLY a centre whose four directly-bonded atoms have PAIRWISE-DISTINCT atomic numbers -- there CIP priority is
-    exactly descending atomic number and the notorious recursive hierarchical-digraph tie-break is CATEGORICALLY
-    irrelevant (no ties to break).  Every other stereocentre -- two same-element substituents (the COMMON case: amino
-    acids, sugars, any secondary/tertiary carbon centre), a ring centre, or a WL-unperceivable one -- is a NAMED
-    DEFERRAL and gets NO label, because a half-built CIP that guesses those would emit an UNSOUND R/S (worse than none).
+    Priority is computed by the general CIP **Rule 1a** hierarchical digraph (:func:`_cip_ranks`, ROUND 20): a
+    breadth-first, branch-by-branch ranking with duplicate/phantom atoms for multiple bonds and ring closures.
+    This NAMES the common case the earlier distinct-atomic-number slice deferred -- amino acids, sugars, any
+    secondary/tertiary carbon whose ties break one or more spheres out (L-alanine (S), L-serine (S) and its
+    cysteine flip (R), the branch-vs-chain motif ``C[C@H](CCC)C(C)C`` (R) that killed the ROUND-14 depth-first
+    attempt).  It stays SOUND: a centre whose four ligands are NOT fully separated by atomic number alone -- an
+    isotope-only tie (Rule 2), a pseudoasymmetric / E-Z-distinguished tie (Rules 4/5), or a true constitutional
+    duplicate (a false centre) -- is a NAMED DEFERRAL and gets NO label, because a guessed R/S is worse than
+    none.  A centre whose ranking DEPENDS on an AROMATIC atom's substituents also defers: correct Rule 1a on a
+    mancude ring needs Kekule-invariant atomic-number averaging (unbuilt), and a single fixed Kekule structure
+    would mislabel an aryl tie (e.g. split the two identical pyridyls of a false centre) -- but a ranking decided
+    by atomic number before reaching the ring (a distinct-Z centre with a benzyl arm) still names.  A ring
+    stereocentre (``_on_cycle``) and a non-four-coordinate marked centre also defer, as before.
+    On the distinct-atomic-number slice the digraph decides at sphere 0, so this is byte-identical to the prior
+    ``sorted(z, reverse=True)`` ranks there -- a strict extension, never a change.
 
-    The parity -> R/S sign convention is ANCHORED to a known truth, not memory: L-alanine (textbook (S)) has neighbour
-    order [N, H, CH3, COOH] with CIP ranks [1,4,3,2] and ``@@`` (sense bit 1), so
-    ``perm_parity([1,4,3,2]) ^ 1 == 0`` -- hence handedness 0 -> S, 1 -> R.  Cross-checked: ``[C@H](F)(Cl)Br`` computes
-    handedness 0 -> S.  (This is the SAME ``perm_parity ^ sense`` handedness :func:`_perceive_configuration` uses for
-    IDENTITY, only with the ordering key swapped from 1-WL colour to CIP atomic-number priority.)  The general recursive
-    CIP digraph (for the excluded common centres) and E/Z naming are the remaining ID-STEREO-01 deferrals.
+    The parity -> R/S sign convention is ANCHORED to a known truth, not memory: L-alanine (textbook (S)) has
+    neighbour order [N, H, CH3, COOH] with CIP ranks [1,4,3,2] and ``@@`` (sense bit 1), so
+    ``perm_parity([1,4,3,2]) ^ 1 == 0`` -- hence handedness 0 -> S, 1 -> R.  Cross-checked: ``[C@H](F)(Cl)Br``
+    computes handedness 0 -> S.  (This is the SAME ``perm_parity ^ sense`` handedness :func:`_perceive_configuration`
+    uses for IDENTITY, only with the ordering key swapped from 1-WL colour to CIP atomic-number priority.)
     """
     marked = [a for a in range(len(atoms)) if atoms[a].chirality]
     if not marked:
@@ -950,10 +1147,14 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
     _kekulize_in_place(atoms, work, charge)
     filled_atoms, filled_bonds = _fill_hydrogens(atoms, work)     # heavy indices 0..n-1 preserved; H appended after
     n = len(atoms)
+    aromatic = frozenset(i for i in range(n) if atoms[i].aromatic)  # a digraph reaching one of these DEFERS (no Kekule-averaging)
     neighbours: dict[int, list[int]] = {i: [] for i in range(len(filled_atoms))}
+    adj: dict[int, list[tuple[int, int]]] = {i: [] for i in range(len(filled_atoms))}
     for b in filled_bonds:
         neighbours[b.i].append(b.j)
         neighbours[b.j].append(b.i)
+        adj[b.i].append((b.j, b.order))                          # ordered adjacency for the CIP digraph (phantom counts)
+        adj[b.j].append((b.i, b.order))
     labels: list[str] = []
     for a in marked:                                             # SAME scope as _perceive_configuration (acyclic, 4-coord)
         if _on_cycle(a, neighbours, len(filled_atoms)):
@@ -966,24 +1167,27 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
         written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
         if len(written) != 4:
             continue
-        z = [ATOMIC_NUMBER.get(filled_atoms[x]) for x in written]
-        if any(zx is None for zx in z) or len(set(z)) != 4:
-            continue                                             # a same-Z pair needs the recursive CIP tie-break -> defer
-        priority = sorted(z, reverse=True)                       # descending atomic number = CIP priority (index 0 = #1)
-        ranks = [priority.index(zx) for zx in z]                 # each written neighbour's priority rank (0 = highest)
+        if any(ATOMIC_NUMBER.get(filled_atoms[x]) is None for x in written):
+            continue                                             # a non-periodic-table element -> out of scope
+        ranks = _cip_ranks(written, a, adj, filled_atoms, aromatic)   # general Rule-1a breadth-first digraph ranks
+        if ranks is None:
+            continue                                             # Rule 1a leaves a genuine tie -> NAMED DEFERRAL (never guess)
         handedness = _perm_parity(ranks) ^ (0 if atoms[a].chirality == 1 else 1)
         labels.append("S" if handedness == 0 else "R")          # anchored to L-alanine = S (see docstring)
     return tuple(sorted(labels))
 
 
 def cip_labels(text: str) -> tuple[str, ...]:
-    """The CIP R/S names of ``text``'s soundly-nameable stereocentres (ID-STEREO-01), sorted; ``()`` if none.
+    """The CIP R/S names of ``text``'s soundly-nameable acyclic stereocentres, sorted; ``()`` if none.
 
-    A centre is named ONLY when its four directly-bonded atoms differ by atomic number alone (priority = descending
-    atomic number, no recursive digraph) -- the anchored, unambiguous slice.  Two same-element substituents, a ring
-    centre, or an E/Z bond contribute NO name (a named deferral, never a guessed/unsound label).  Raises
-    :class:`SmilesError` on a malformed/out-of-scope SMILES, like the parser.  See :func:`_cip_labels` for the method
-    and its L-alanine = S sign-convention anchor."""
+    Priority comes from the general CIP **Rule 1a** hierarchical digraph -- breadth-first, branch-by-branch, with
+    duplicate/phantom atoms for multiple bonds and ring closures (ROUND 20) -- so the common same-element case
+    (amino acids, sugars, secondary/tertiary carbons) is now NAMED, not deferred.  A centre Rule 1a cannot fully
+    order (an isotope-only, pseudoasymmetric, or true-duplicate tie), one whose ranking depends on an AROMATIC
+    atom's substituents (Kekule-averaging unbuilt), a ring stereocentre, or a non-four-coordinate marked centre
+    contributes NO name -- a named deferral, never a guessed/unsound label.  Raises
+    :class:`SmilesError` on a malformed/out-of-scope SMILES, like the parser.  See :func:`_cip_labels` for the
+    method and its L-alanine = S sign-convention anchor."""
     if not isinstance(text, str):
         raise SmilesError("SMILES input must be a string")
     stripped = text.strip()

@@ -4235,3 +4235,217 @@ electrochemical primitive exists — the DOW litmus is two-thirds standing (pric
 electrolytic voltage R18 ✓), leaving the brine-vs-mined **cost ranking** gated only on a sourced Cl₂/NaBr price. DEFERRED:
 that cost ranking (Cl₂ aggregator wall); a second organic price. TRACKED DEBT: phase-specific electrode potentials (F5);
 the CostVector verification-axis wire-in for the Observability Score.
+
+## §19 — ROUND 19 (branch `cip-load-stability-2026-09-06`): CIP oracle, duration-stability primitive, serial_holds, and the on-load re-derivation decision
+
+3 builds + 1 recorded scope decision; **additive** (5 new files + additive edits to `service.py`; no existing behaviour
+changed). Went full-blast on queue items 1, 2, 2b, 3 — three shipped, one (item 2) resolved to a build-ready decision
+because its true cost (measured against the code) is larger than the other three combined and lives in the module that
+gates every compile.
+
+### 19.1 CIP-ORACLE-01 (item 1 — the oracle half) — Lane B
+`experiments/cip_geometry_oracle_probe.py` + `tests/test_cip_geometry_oracle.py`. Meets item 1's oracle gate ("the wall
+isn't the namer — it's the oracle", built and discarded twice R13/R14). `geometric_handedness(priorities, sense)` builds
+synthetic tetrahedron coordinates from the OpenSMILES sense bit and reads R/S off a real signed volume (lowest priority
+away, trace 1→2→3), taking priorities as an INPUT so it decouples geometry from priority-ranking. The sign convention is
+DERIVED (V>0↔S) and reproduces two independent textbook absolutes ([C@H](F)(Cl)Br = S, L-alanine = S) with one rule.
+Green on an exhaustive 48-case {F,Cl,Br,I} battery cross-checked against `cip_labels`. **Recon finding (load-bearing):**
+`Molecule` is a pure graph with NO coordinates and the one coordinate system (`geometry.py:seed_coordinates`) is
+deliberately stereo-blind — so the oracle is synthetic-coordinate, not `Molecule`-coordinate.
+
+### 19.2 DURATION-STABILITY-01 (item 3 — the primitive half) — Lane B·C
+`smartchem/experiment/stability_horizon.py` + harness + `tests/test_stability_horizon.py`. A duration-aware survival
+verdict `f = exp(-k t)`, k = A·exp(-Ea/RT) mirroring the L1 rate engine (R pinned equal by test, no drift). Non-vacuous on
+the sourced N₂O₅ record (SURVIVES 60 s → MARGINAL 1 h → DEGRADES 6 h at 298 K; faster at 338 K), DERIVED inside the
+298-338 K fit window / PREDICTED outside, instrument-calibrated (k(298) reproduces the measured 3.38e-5 to ~5%).
+Fail-closed UNKNOWN with no sourced rate; the compound→rate bridge is structure-keyed and direction-specific (the
+cyclopropane/propene C₃H₆ collision proves no same-formula isomer or product borrows a rate). Standalone — NOT wired into
+core E1 (a stated boundary; needs a route intermediate with sourced kinetics + a unit-lock on `ConditionEnvelope.duration`).
+The DOW-Br₂ half stays walled on a missing Br₂ decomposition primary.
+
+### 19.3 DAG-HOLD-MR-01 (item 2b) — Lane C
+`serial_holds` on `RankedDAGSummary` — the DAG-HOLD-01 serial-schedule hold made machine-readable as
+`(producer, consumer, minutes)` triples (was a human note only). **Digest-EXCLUDED** (`compare=False`): the triples are
+fully determined by the digest-bearing `edges` + `process_requirements`, so they add no identity and every existing DAG
+digest stays byte-stable (confirmed live). Schema `ranked-dag-summary v1alpha3→v1alpha4`, descriptor `v1alpha15→v1alpha16`;
+one golden regenerated (`response_schema.json`), the other four command goldens byte-unchanged (empty DAG dossiers,
+`COMPILATION_RESPONSE_SCHEMA` untouched). Non-vacuous: the 40-min DAG carries `(0,2,40.0)`.
+
+### 19.4 ONLOAD-REDERIVE (item 2 — decided, not built) — Lane C
+`docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.1.md`. Item 2's gate was literally "a scope decision"; resolved it.
+**Decision:** carry the thick per-step re-derivation payload (target `Molecule`, reactants, products, reagents, full
+`ConditionEnvelope`) **opt-in and digest-EXCLUDED** (`compare=False`, the `provider_snapshots`/`serial_holds` precedent),
+and close the free-text trust boundary via a **load-time coherence check** that re-derives composability + physical and
+compares to the digest-protected claimed verdicts (mirroring PROCESS-ADMIT-01). Protection-equivalent to folding the
+evidence into `result_digest`, without changing every existing route identity. Measured build (why it is its own round):
+new Molecule + full ConditionEnvelope serializers + conservation-certified `ExperimentStep`/`Route` reconstruction
+(`ExperimentStep.__post_init__` refuses a non-conserving step, so no partial reconstruction) + 4 coherence checks
+(composability/physical × linear/DAG) + schema bumps + golden regen — larger than items 1+2b+3 combined.
+
+### 19.5 evil-morty folds (ROUND 19) — 2 passes, both real
+- **CIP oracle (MED-HIGH → right-sized + hardened).** The adversary proved the oracle is ALGEBRAICALLY `perm_parity ^
+  sense` (a signed volume of permuted vertices is alternating; the base tetrahedron's global sign ε is +, so it reduces
+  bit-for-bit), so the 48-case agreement confirms ONE constant, not 48 independent bearings, and it is BLIND to a ranking
+  bug on the distinct-Z slice (priorities are copied). Folded: docstrings corrected to the honest scope (it buys one
+  independent bit — a global convention-flip guard checked against textbook reality — plus the decoupling instrument);
+  `cip_labels` pinned into the frozen hash so a regression in the AUDITED slice reddens it too; a test pinning the
+  algebraic identity + an external-absolute full-pipeline check baked in; the unreachable degeneracy-guard overclaim
+  fixed. New lesson: [[a-reframed-check-can-be-the-same-quantity]].
+- **Duration-stability (core SIGNED; 3 LOW folded + 1 boundary documented).** evil-morty signed the anti-fabrication core
+  (no wrong compound borrows a rate, no overflow/NaN/out-of-range reaches a verdict, the spread is genuine, the
+  calibration is honest). Folded: `is_sourced` docstring softened (computed-from-a-caller-field, not forge-proof against a
+  self-authored lie); an `isfinite` guard added to `surviving_fraction` (fail-closed on a non-finite injected `KineticRef`,
+  which the data layer accepts); the "decomposition"→"first-order consumption" naming corrected (a first-order
+  isomerization also resolves). Documented (not code-folded): the reactant-coefficient rate-CONVENTION assumption
+  (per-species `-d[A]/dt = k[A]`, which both seeds pin) — a latent trap for a future coeff>1 record, undetectable from the
+  data, tracked in ROADMAP.
+
+### 19.6 next-steps (ROUND 19)
+See [`ROADMAP.md`](ROADMAP.md). The three L items advanced but none fully closed: item 1's NAMER remains (a correct
+breadth-first digraph, validated against the now-committed oracle); item 2 is a pure build (decision recorded); item 3
+needs the core E1 wire-in (+ the `ConditionEnvelope.duration` unit-lock) and a Br₂ decomposition primary. TRACKED DEBT
+gained three (§ROADMAP): the CIP parser-convention seam (no external oracle), the duration-stability coefficient
+convention, the unconsumed/unit-unlocked `ConditionEnvelope.duration`.
+
+## §20 — ROUND 20 (branch `cip-load-stability-2026-09-06`): the general CIP breadth-first namer (queue item 1 closes)
+
+1 build (ID-STEREO-CIP-NAMER), full-blast on queue **item 1**. R19 met item 1's *oracle* gate; this builds the *namer* —
+the priority-ranking half that killed the R13/R14 attempts. **Additive to the engine** (new `_cip_*` functions in
+`smiles.py` + `experiments/cip_namer_probe.py` + `tests/test_cip_namer.py`), plus a **conscious supersession**: the general
+namer NAMES the common same-element case the distinct-Z slice deferred, so several ID-STEREO-01 *deferral* tests were
+updated to their correct labels (the deferral was "not built yet", now built). Byte-identical on the distinct-Z slice.
+
+### 20.1 the ranker (ID-STEREO-CIP-NAMER) — Lane B
+`smartchem/smiles.py`: `_cip_digraph` / `_cip_compare` / `_cip_sorted_children` / `_cip_child_zs` / `_cip_ranks`, wired into
+`_cip_labels`. CIP **Rule 1a** priority via a hierarchical digraph, **breadth-first, branch-by-branch with need-to-know
+pruning** (Hanson et al., *J. Chem. Inf. Model.* 2018, 58(9), 1755) — the fix for the R13/R14 **depth-first** nested-tuple
+key that mislabels branch-vs-chain (`C[C@H](CCC)C(C)C` → DFS says S, truth is **R**). Multiple bonds and ring closures
+become duplicate/phantom leaf atoms (real atomic number, phantom-0 children — so a real atom out-ranks a same-Z duplicate
+one sphere LATER, NOT the naive shortcut). The namer produces `ranks` (a permutation of {0,1,2,3}) and reuses the SHIPPED
+`_perm_parity(ranks) ^ sense` emit line, so it is **byte-identical** to the old `sorted(z, reverse=True)` on the distinct-Z
+slice (there the digraph decides at sphere 0) — a strict extension. **Memoised** + budget-bounded (fail-closed DEFER). It is
+**SOUND, not complete**: a centre Rule 1a cannot fully order (isotope-only Rule 2, pseudoasymmetric/E-Z Rules 4/5, a true
+constitutional duplicate) is a NAMED DEFERRAL — a wrong R/S is worse than none.
+
+### 20.2 recon (4 Citadel-Rick bearings, read-only)
+Parser data-structures (raw `bonds` preserve written direction + order, `Bond.order` is the phantom trigger, no phantom
+machinery existed); the correct Rule-1a algorithm + a discriminating textbook set (incl. the **L-serine (S) / L-cysteine
+(R) flip** — same skeleton and `@@` tag, opposite label because cysteine's real S out-ranks the carboxyl's phantom-O at
+sphere 1); the R14 autopsy (the reverted `3485d35` was test-only; the bug was DFS lexicographic; `C[C@H](CCC)C(C)C` is the
+exact discriminator); the soundness boundary + the six stereo test files not to regress.
+
+### 20.3 the committed harness — five validation layers
+`experiments/cip_namer_probe.py` (FROZEN_HASH): (1) ~18 textbook/PubChem absolutes incl. the serine/cysteine flip; (2)
+**oracle cross-check** — every named centre's label == `geometric_handedness(namer's priorities, sense)` (geometry
+validated independently of ranking, the exact decoupling R19's oracle was for); (3) the **R14 differential** — an inline
+depth-first comparator MISLABELS `C[C@H](CCC)C(C)C` as (S) while the shipped namer names (R); (4) the **branch-paired
+proof** — a synthetic divergence pair where a SPHERE-POOLING comparator (a different wrong bug) and the correct
+need-to-know branch-paired comparator disagree, and `_cip_compare` takes the branch-paired side; (5) a **840-case
+combinatorial alkyl pool** (the class the R14 bug hid in) — every named centre inverts under enantiomer reflection and is
+invariant under re-spelling, twin-substituent false centres defer.
+
+### 20.4 the conscious supersession (deferrals → names)
+`tests/test_cip_naming.py`: the same-element deferral test and the branch-vs-chain "wall" test flipped from `== ()` to the
+correct labels (alanine S, glyceraldehyde R, the R14 trio all R). `tests/test_stereo_dossier.py`: alanine now names;
+still-deferred examples swapped to a genuine ring stereocentre. `tests/test_cip_geometry_oracle.py`: the "slice defers a
+same-Z centre" test rewritten to "namer and oracle now agree". `smartchem/experiment/compile.py`: the dossier disclosure
+text corrected ("by the CIP Rule-1a breadth-first hierarchical digraph"; deferral reason is now ring/isotope/pseudoasymmetric,
+not same-element). No golden touched cip_labels or a chiral SMILES → zero golden regen.
+
+### 20.5 the aromatic Kekulé soundness bug (self-caught, before evil-morty) + the lazy fix
+Constructing the sharpest probe — a FALSE centre — surfaced a real unsoundness: `O[C@H](c1ccccn1)c1ccccn1` (two IDENTICAL
+2-pyridyls) was NAMED `(R)`. Correct Rule 1a on a mancude ring needs Kekulé-invariant atomic-number AVERAGING (Hanson Fig.
+3); the parser's one fixed Kekulé made the two identical pyridyls traverse to DIFFERENT digraphs and broke a true tie.
+**Fix (lazy aromatic boundary):** an aromatic atom is a boundary node whose atomic number is still usable (so a ranking
+decided before the ring still names — no regression on the distinct-Z slice, e.g. `Cl[C@H](F)CCc1ccccc1` = S) but whose
+Kekulé-dependent onward connectivity is withheld; a comparison that must descend past it raises `_CipAromatic` → DEFER.
+New lesson: [[comparing-fixed-representatives-fabricates-a-distinction]].
+
+### 20.6 evil-morty — "I could not make it lie"
+A full adversarial pass found **no wrong R/S**. It verified: all anchors; a **400-molecule parity-correct spelling fuzzer**
+(400/400 named, 0 disagreements); the phantom-timing trap (vinyl > isopropyl, ethynyl > vinyl, nitrile triples); every
+deferral obligation (isotope, constitutional-duplicate, pseudoasymmetric); and the aromatic hazard "closed and closed
+well". Folds: **finding #1 (LOW, over-defer)** — `Cl[C@H](C)C=Cc1ccccc1` (styryl) spuriously deferred where its tBu twin
+named, because `_cip_compare` eagerly full-sorted children before the atomic-number sphere check; **fixed** by comparing
+the immediate sphere on known atomic numbers first (`_cip_child_zs`) and only ranking children if the sphere ties — which
+also makes the code's own docstring true (a ranking decided before the ring now names). **Residual A** (exocyclic multiple
+bond into an aromatic atom → Kekulé-dependent phantom count) **discharged** by an explicit `_cip_digraph` guard. **Residual
+B** (comparator transitivity as a `cmp_to_key` sort key) **documented** — no counterexample, fuzzer-clean, the
+`sorted(ranks)==[0,1,2,3]` guard catches top-level cycles, but no proof in hand.
+
+### 20.7 tracked debt + next steps
+NEW tracked debt (§ROADMAP): **aryl/heteroaryl naming needs Kekulé-averaging** (aromatic-reaching ties defer until built —
+the clean completeness extension); the **comparator-transitivity residual**. Item 1's ORACLE + NAMER are both shipped;
+what remains for full CIP completeness is Rules 1b/2/4/5 + aromatic averaging (all sound-deferred today). Queue now
+L-heavy on items 2 (on-load re-derivation, decision recorded, a pure build) and 3 (duration wire-in + Br₂ primary).
+
+## §21 — ROUND 21 (branch `cip-load-stability-2026-09-06`, code `6e14d51`): on-load re-derivation of composability + physical + ranking (queue item 2 closes)
+
+The L round. Closes the free-text trust boundary PROCESS-ADMIT-01 left open: on load only the **process** component of a
+route's combined `fit_status` was re-derived; **composability** (E1) and the **physical box** rode as free-text
+`exclusions`/`gaps`, and the **ranking** verdicts rode unchecked — so a route non-FITS for one of those (or with fabricated
+ranking) could be bare-relabeled to FITS and admitted. Item 2 closes it **structurally, no key**.
+
+### 21.1 the external review, folded against the tree (not on faith)
+The item-2 spec was taken to ChatGPT during the R20 compact (`docs/research/ONLOAD_REDERIVATION_CHATGPT_PROMPT_v0.1.md`).
+Its response was **verified against the actual dev tree** (5 commits past the `main@8a312a5` it read) by an 8-agent
+workflow (`wf_c2a0e0f8-732`: 6 read-only Citadel-Rick recon bearings + 2 evil-morty adversaries). Result:
+`docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.2.md` (supersedes v0.1). The recon **confirmed** ChatGPT's central
+premise with measured probes — `route_digest` (== `ExperimentRoute.digest`/`SynthesisDAG.digest`) already hashes every
+`ExperimentStep` field incl. all 10 envelope fields + the reagent multiset, no collision — so binding to it binds
+everything. It also found the fold `F` is a faithful abstraction of the real fitters (`drafter.py:347-356`/`457-465`).
+
+### 21.2 the two holes v0.1 had (found before any code)
+- **HOLE 1 — coherence ≠ route binding (ChatGPT).** v0.1's check re-derived from the DECLARED payload and compared to the
+  DECLARED verdict; `route_digest` never entered the re-derivation (only a set-membership check, `service.py:1276-1282`).
+  A substitution attack lands: another route's genuinely-FITS payload under a bad `route_digest` passes coherence. **Fix:**
+  `reconstruct(payload).digest == route_digest`. Cheap (route_digest unchanged).
+- **HOLE 2 — the deletion door (adversary, ChatGPT missed).** v0.1's "gated on payload presence (zero overhead)" is
+  bypassable: a `compare=False` payload is invisible to `route_digest`, `result_digest`, AND the HMAC; the tree's uniform
+  fail-open loader idiom (`.get(default)`) would skip an absent payload. Attack: relabel EXCLUDED→FITS, recompute the free
+  public `result_digest`, DELETE the payload. **Fix:** verified admission is a **fail-CLOSED consumer policy** (a FITS route
+  with no payload is UNVERIFIED, refused) — which needed **NO schema bump** (route identity byte-stable, no golden churn),
+  strictly lower blast than the adversary's own schema-bump proposal.
+- **CORRECTION — the HMAC conflation.** v0.1 lines 52-60 said the signature "closes the key-holding-forger residual"; the
+  code's own `test_key_holding_forger_residual_is_not_closable_by_a_signature` says it is IRREDUCIBLE (a public digest
+  recompute is free; only a keyless out-of-band edit is closed by a signature). Corrected inline + in v0.2 + the new docstrings.
+
+### 21.3 what shipped (all in `smartchem/service.py`, additive; `tests/test_onload_rederivation.py`, 20 tests)
+- **Codecs + reconstruction:** `_molecule_to/_from_payload` (mirrors `compilation_ir._graph_payload` — POSITIONAL,
+  digest-preserving, no canonical remap; a re-parse-from-SMILES would false-reject an honest route), `_condition_envelope_to/_from_payload`
+  (all 10 fields, through the real `__post_init__` — K/atm units, EvidenceStatus cap, provenance/source consistency),
+  `_step_to/_from_payload`, `_steps_to_replay_payload`, `_reconstruct_route`/`_reconstruct_dag`. Reconstruction re-runs the
+  real `ExperimentStep`/`ExperimentRoute`/`SynthesisDAG` constructors (conservation certificate, linearity, acyclicity), so
+  a forged non-conserving step is refused at reconstruction.
+- **`replay_payload` field** on `RankedRouteSummary` + `RankedDAGSummary`, `compare=False`/`repr=False` (digest-excluded →
+  route identity byte-stable), built by `of_fit`/`of_dag`. **Emission opt-in** (`include_replay=False` default on
+  `ranked_summary_to_payload`/`ranked_dag_summary_to_payload`/`response_to_payload`/`serialize_response`) → default wire
+  byte-identical to pre-item-2, existing goldens unchanged.
+- **`_check_verified_admission`:** for every FITS route/DAG dossier, reconstruct, re-project via the SAME producer path
+  (`rank_routes`+`of_fit` / `of_dag`) under the response's pinned eval-context (`box` from `request.constraints`, `losses`
+  from the IR, `DEFAULT_STABILITY`), and require `resummary == claimed`. ONE equality subsumes route-binding, the combined
+  fold verdict, the composability + 4 ranking verdicts (fork resolved → INCLUDE), and the process/edge projections.
+  Fail-CLOSED on a missing payload. Wired via `response_from_payload(require_verified_admission=True)`; off by default.
+- **Edges int-coercion trap** (`service.py:2552`) fixed: `_exact_int_pair` validates wire types before coercion (a
+  `True`/`1.9`/`"1"` index is refused, not silently truncated).
+
+### 21.4 evil-morty fold (2 findings; everything else held "earned, not gifted")
+- **F1 (MEDIUM, VERIFIED) eval-context relaxation.** The re-derivation box is built from the response's OWN request; a
+  keyless attacker who relaxes that request (drops a temperature cap) + recomputes `result_digest` makes an out-of-bounds
+  route re-derive FITS → admitted. Same *class* as the v1 HMAC conflation: authenticates coherence UNDER the stated
+  context, not the context. **Fold:** docstring corrected (residuals are TWO — a key-holding forger AND a keyless request
+  relaxer); added `expected_request_digest` to `response_from_payload`/`deserialize_response` (consumer pins its request;
+  a `verification_key` closes it cryptographically). Not forced (the process axis trusts the request identically). Both
+  directions pinned (`test_request_relaxation_is_admitted_unless_the_request_is_pinned`). NEW lesson
+  [[a-keyless-check-trusts-the-context-it-reads]].
+- **F2 (LOW) `serial_holds` unauthenticated.** `compare=False` → ignored by `==`; not an admission break (never touches
+  `fit_status`) but a disclosure gap. **Fold:** the DAG branch re-derives + checks it (`test_serial_holds_are_re_derived_not_trusted`).
+- **Held:** substitution (route-binding), deletion door (fail-closed), physical bare-relabel, codec field-drop (exact
+  field-set + real constructors), reconstruction bypass, non-determinism/false-reject, edges coercion.
+
+### 21.5 tracked debt + next steps
+NEW tracked debt (§ROADMAP): the **keyless eval-context-relaxation boundary** (F1 — closed by `expected_request_digest` or a
+signature; not forced); the **verified-admission compute cost** (the full `rank_routes` fold per FITS dossier on load). The
+**load-time free-text trust boundary** debt is now STRUCTURALLY CLOSED for a verified-admission consumer. **Queue: only
+item 3 remains** (wire the duration-aware verdict into core E1 + the DOW-Br₂ decomposition primary — an L whose true
+rate-limiter is sourcing). Suite `4417 / 14 / 1` (+20 vs R20's 4397). NOT merged — held for the user's push/pr/merge go.

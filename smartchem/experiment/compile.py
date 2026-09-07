@@ -259,8 +259,9 @@ def _target_stereo_lines(features: "object | None") -> tuple[str, ...]:
     perceivable stereo (achiral, or a name/formula target whose ``features`` is ``None`` or carries no marker).  It is
     strictly PERCEPTION: the route search ran on the achiral constitution :class:`~smartchem.category.Molecule`, so this
     block is a disclosure of the target-as-written, never a search-identity term or a bench-readiness claim (the §5.3
-    achiral-collapse the whole ID-STEREO arc is honest about).  A marked centre that could NOT be soundly named (a
-    same-element/ring priority, or an E/Z double bond) is disclosed as an explicit DEFERRAL, never dropped in silence.
+    achiral-collapse the whole ID-STEREO arc is honest about).  A marked centre that could NOT be soundly named (a ring,
+    isotope, or pseudoasymmetric tie that needs a CIP rule beyond 1a, or an E/Z double bond) is disclosed as an explicit
+    DEFERRAL, never dropped in silence.
     """
     if features is None:
         return ()
@@ -280,14 +281,14 @@ def _target_stereo_lines(features: "object | None") -> tuple[str, ...]:
     if cip:
         named = ", ".join(f"({label})" for label in cip)
         lines.append(
-            f"  CIP R/S soundly named ({len(cip)} of {marked} marked tetrahedral centre(s), by descending-atomic-number "
-            f"priority): {named}  (an unordered set -- not tied to a specific atom)"
+            f"  CIP R/S soundly named ({len(cip)} of {marked} marked tetrahedral centre(s), by the CIP Rule-1a "
+            f"breadth-first hierarchical digraph): {named}  (an unordered set -- not tied to a specific atom)"
         )
     deferred = marked - len(cip)
     if deferred > 0:
         lines.append(
-            f"  {deferred} of {marked} marked tetrahedral centre(s) NOT soundly named -- a same-element/ring priority "
-            "needs the recursive CIP digraph (a named ID-STEREO-01 deferral, never a guessed label)"
+            f"  {deferred} of {marked} marked tetrahedral centre(s) NOT soundly named -- a ring, isotope, or "
+            "pseudoasymmetric/E-Z tie needs a CIP rule beyond 1a (a named deferral, never a guessed label)"
         )
     if double_bond:
         lines.append("  double-bond (E/Z) stereo: DECLARED but unperceived (E/Z naming is a named deferral)")

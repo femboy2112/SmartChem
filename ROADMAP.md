@@ -176,7 +176,8 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| **K-B** | **Move-1 keystone Rung B** — `OpenChemDiagram` alongside `Reaction` + the 3-part gate (spec merged; build-ready) | **A·B** | **L** | **build-ready** *(on the user's go)* | design gate cleared (contract merged PR #17); additive/byte-stable/fail-closed; the flagged design call is whether to factor `open_diagram.py` into a generic core + per-domain construction layer. **NEXT FULL-BLAST TARGET.** |
+| **K-B** | **Move-1 keystone Rung B** — `OpenChemDiagram` alongside `Reaction` + the 3-part gate (spec merged; build-ready) | **A·B** | **L** | **build-ready** *(on the user's go)* | design gate cleared (contract merged PR #17, sharpened v0.2 — general decoration slot); additive/byte-stable/fail-closed; the flagged design call is whether to factor `open_diagram.py` into a generic core + per-domain construction layer. **NEXT FULL-BLAST TARGET.** |
+| **M2-FP** | **Move-2 functorial-physics product** — recognize `feasibility.py`'s Δ_rG as the additive functor `G: Process → (ℝ,+,≤)` (Hess = functoriality), pair it with R23's survival functor `S: Process → ([0,1],×)` in an explicit **Pareto product**, and verify/repair the DAG rollup's worst-node-vs-additive conflation | B·C | **M** | **build-ready** *(new, the user's to schedule)* | both functors already computed; the rung is the categorical recognition + product order + a property test that `net_ΔG(route)==Σ steps` (Hess); enables the DOW-Br₂ **thermo** verdict once Br/Br₂ ΔH_f°/S° are sourced (a data add). Fold: `docs/research/FREE_ENERGY_FUNCTORIAL_PHYSICS_FOLD_2026-09-07.md` |
 | 3b | **Model DOW-Br₂ collider / modified-Arrhenius kinetics** (the item-3 remainder; core-E1 wire-in DONE R23) | B·C | **M** | long | the recovered Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube T — needs a collider-state + modified-Arrhenius model + reverse/hold scope; NOT compatible with the concentration-free first-order seed |
 
 ### K-B · Move-1 keystone Rung B — build the open backbone's first increment — **L**, build-ready *(on the user's go)*
@@ -189,9 +190,27 @@ reproducing today's `Reaction` certificate byte-for-byte (P3); (3) a **P4 proven
 only the spurious linearization quotiented). **Additive, byte-stable** (no `Reaction`/`scheduled_product` mutation → every
 existing digest unchanged, P2), **fail-closed**. The legacy `Reaction` xfail (`tests/test_laws.py:330`) is
 **preserved-and-annotated, not flipped**. Flagged design decision for the build: factor `open_diagram.py` into a generic
-core + per-domain construction layer (recommended) vs a parallel type. Full spec + review folds:
-`docs/research/OPEN_SMC_CHEMISTRY_BACKBONE_CONTRACT_v0.1.md`. Rungs **C** (full open-step pipeline migration:
-`ExperimentStep`/`Route`/`SynthesisDAG`) and **D** (meta-compiler at `service.py`, closing = compiling) follow, each its own round.
+core + per-domain construction layer (recommended) vs a parallel type. **v0.2 seam refinement (free-energy fold):** the
+factored core carries a **general monoidal-decoration slot** (payload + combine-under-`then`/`tensor` + interchange-invariance),
+of which Rung B instantiates *only* conservation + provenance — so the already-built Δ_rG (`feasibility.py`) and survival (R23)
+functors and later observability ride the same slot with no second refactor. Scope unchanged; seam sharpened. Full spec + review folds:
+`docs/research/OPEN_SMC_CHEMISTRY_BACKBONE_CONTRACT_v0.1.md` (v0.2); the fold: `docs/research/FREE_ENERGY_FUNCTORIAL_PHYSICS_FOLD_2026-09-07.md`.
+Rungs **C** (full open-step pipeline migration: `ExperimentStep`/`Route`/`SynthesisDAG`) and **D** (meta-compiler at `service.py`,
+closing = compiling) follow, each its own round.
+
+### M2-FP · Move-2 functorial-physics product — recognize + unify the two built physics functors — **M**, build-ready
+The free-energy-landscape fold (`docs/research/FREE_ENERGY_FUNCTORIAL_PHYSICS_FOLD_2026-09-07.md`) found that **two of Move 2's
+functors are already computed in code**, just never framed or unified as functors: the **kinetic-survival** functor
+`S: Process → ([0,1],×)` (R23, `composability.py:346-363`, `surviving_fraction = exp(−kt)`) and the **thermodynamic-drive**
+quantity `Δ_rG` (`feasibility.py:245-247`, Hess's law from sourced ΔH_f°/S°). The rung: (1) recognize `Δ_rG` as the additive
+functor `G: Process → (ℝ,+,≤)` — **Hess's law *is* the functoriality**, `Δ_rG(g∘f)=Δ_rG(f)+Δ_rG(g)`, pinned by a property test
+`net_ΔG(route)==Σ steps`; (2) put the two in an explicit **Pareto product** (no scalar collapse — "favorable ≠ fast"), and audit
+whether `_route_score`/`_dag_score`'s tier-folding is a true product or a lossy scalarization; (3) **candidate finding to verify**:
+DAG-THERMO-01 aggregates ΔG *worst-node-dominated*, which answers "any stuck step?" — **not** the additive net-ΔG (Hess); the two
+are distinct legitimate aggregations the current code may conflate. **Litmus win:** unlocks the DOW-Br₂ *thermodynamic* verdict
+(`Br₂ → 2 Br•`) the moment Br/Br₂ ΔH_f°/S° are sourced (a data add, not a build) — the walled item-3b *rate* stays walled.
+Precedent (verified): Baez–Pollard open reaction networks; de Donder affinity `𝒜=−Δ_rG`; detailed-balance caveat on the
+gradient-flow reading (Mielke/Maas). Data-gated only where a new species record is needed; otherwise additive/byte-stable.
 
 ### 1 · General CIP — the breadth-first namer — ✅ **DONE (ROUND 20, ID-STEREO-CIP-NAMER)**
 Shipped: `smartchem/smiles.py` `_cip_ranks`/`_cip_compare`/`_cip_digraph`, wired into `_cip_labels`; validated by

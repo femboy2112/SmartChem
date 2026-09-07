@@ -39,11 +39,12 @@ if TYPE_CHECKING:
 
 from ..category import Molecule
 from ..contracts import Digestible
+from ..data.kinetics import DEFAULT_KINETICS as _DEFAULT_DECOMP_KINETICS, KineticTable
 from ..data.stability import DEFAULT_STABILITY, StabilityTable
 from ..data.thermo import DEFAULT_THERMO, ThermoTable
 from .bucket import Bucket, Quantity
 from .ceiling import CeilingError, StoichiometricCeiling, _verify_balances, stoichiometric_ceiling
-from .composability import Transition, TransitionStatus, _judge_transition
+from .composability import Transition, TransitionStatus, _judge_transition, _survival_product
 from .exact_lp import LPUnbounded, maximize
 from .equilibrium import EquilibriumExtent, StepEquilibrium, equilibrium_of_step
 from .feasibility import FeasibilityDirection, StepFeasibility, feasibility_of_step
@@ -725,6 +726,13 @@ class DAGComposability(Digestible):
         return tuple(t.reason for t in self.transitions if t.status is TransitionStatus.UNKNOWN)
 
     @property
+    def route_surviving_fraction(self) -> float | None:
+        """The composite fraction surviving every duration-assessed edge hold -- the survival monoid functor's
+        value on the DAG's edges (:func:`~smartchem.experiment.composability._survival_product`).  ``None`` when
+        no edge was duration-assessed."""
+        return _survival_product(self.transitions)
+
+    @property
     def serial_hold_notes(self) -> tuple[str, ...]:
         """Human disclosures of each edge's serial-schedule hold (DAG-HOLD-01): the intermediate idle time E1's
         instantaneous survival verdict does not model.  A DISCLOSURE, never a verdict -- it does NOT degrade
@@ -782,7 +790,41 @@ def _serial_hold_minutes(dag: SynthesisDAG) -> dict[tuple[int, int], float]:
     return holds
 
 
-def dag_composability(dag: SynthesisDAG, *, stability: StabilityTable = DEFAULT_STABILITY) -> DAGComposability:
+def _serial_hold_segments(dag: SynthesisDAG) -> "dict[tuple[int, int], tuple[tuple[object, float], ...]]":
+    """The per-edge ordered hold SEGMENTS: for each producer->consumer intermediate, the ``(temperature, minutes)``
+    of every step scheduled STRICTLY between them under the DAG's topological order (DAG-HOLD-01) -- the sibling
+    steps the intermediate idles through.  ``temperature`` is that step's declared ``ConditionEnvelope.temperature``
+    (possibly ``None``); ``minutes`` is the SAME known-minimum elapsed floor :func:`_serial_hold_minutes` sums (a
+    ``None``/zero floor is dropped, so ``sum(minutes) == _serial_hold_minutes[(i, j)]`` -- the disclosure note and
+    the duration gate see one consistent hold).  E1's duration gate reads survival over THESE per-step temperatures
+    (never a producer/consumer endpoint's), so it renders a verdict only on temperatures the DAG actually declares
+    for the idle hold; an undeclared segment temperature makes the gate fail closed."""
+    from ..process_constraints import _known_min
+    order = _topological_order(len(dag.steps), dag.edges)
+    pos = {idx: rank for rank, idx in enumerate(order)}
+    segments: "dict[tuple[int, int], tuple[tuple[object, float], ...]]" = {}
+    for i, j, _m in dag.edges:
+        segs: "list[tuple[object, float]]" = []
+        for k in order:
+            if pos[i] < pos[k] < pos[j]:
+                proc = dag.steps[k].envelope.process
+                if proc is None:
+                    continue
+                floor = _known_min(
+                    proc.min_elapsed_minutes,
+                    proc.elapsed_minutes.lo if proc.elapsed_minutes is not None else None,
+                )
+                if floor is None or floor <= 0:
+                    continue
+                segs.append((dag.steps[k].envelope.temperature, float(floor)))
+        segments[(i, j)] = tuple(segs)
+    return segments
+
+
+def dag_composability(
+    dag: SynthesisDAG, *, stability: StabilityTable = DEFAULT_STABILITY,
+    kinetics: KineticTable = _DEFAULT_DECOMP_KINETICS,
+) -> DAGComposability:
     """Judge whether every intermediate survives its handoff across each DAG edge, over sourced stability.
 
     Each edge's Transition also carries the sourced serial-schedule HOLD (DAG-HOLD-01, :func:`_serial_hold_minutes`)
@@ -791,10 +833,10 @@ def dag_composability(dag: SynthesisDAG, *, stability: StabilityTable = DEFAULT_
     (it does not degrade COMPOSABLE), the honest widening of the serial-hold-stability boundary DAG-BENCH-01 named."""
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
-    holds = _serial_hold_minutes(dag)
+    segments = _serial_hold_segments(dag)
     transitions = tuple(
         _judge_transition(i, j, intermediate, dag.steps[i].envelope, dag.steps[j].envelope, stability,
-                          hold_minutes=holds.get((i, j)))
+                          hold_segments=segments.get((i, j)), kinetics=kinetics)
         for i, j, intermediate in dag.edges
     )
     return DAGComposability(dag, transitions)

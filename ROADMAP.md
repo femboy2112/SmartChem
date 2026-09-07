@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ c392c59` · suite **4397 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
+> `verified @ 6e14d51` · suite **4417 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (`§1`–`§16`); this file is
@@ -59,6 +59,16 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 21** (branch `cip-load-stability-2026-09-06`, code `6e14d51`) — 1 build, full-blast on **queue item 2** (the L
+round); `design → external review (ChatGPT, folded against the tree) → recon (8-agent) → build → reproduce → evil-morty →
+fold → verify`; **additive** (new codecs + a `compare=False` field + a load-time check in `service.py`, plus a new test
+file), **route identity byte-stable** (no schema bump, no golden churn — the default wire is byte-identical); one VERIFIED
+evil-morty finding + one LOW folded:
+
+| Item | Lane | What shipped |
+|---|---|---|
+| ONLOAD-REDERIVE (item 2) | C | **On-load re-derivation of the composability + physical + ranking axes** (`smartchem/service.py` + `tests/test_onload_rederivation.py`). Closes the free-text trust boundary PROCESS-ADMIT-01 left open: a route non-FITS for a **composability** or **physical** reason (or with fabricated **ranking** verdicts) could be bare-relabeled to FITS and admitted on load. Structural close, **no key**. A thick **replay payload** (the route's complete steps: target/reactants/products/reagents + full 10-field `ConditionEnvelope`) is carried `compare=False` (digest-excluded → route identity byte-stable) and emitted opt-in (`include_replay`, default off → default wire byte-identical). `response_from_payload(require_verified_admission=True)` **reconstructs** the exact route/DAG, re-projects it through the SAME producer path (`rank_routes`+`of_fit` / `of_dag`) under the response's pinned eval-context, and requires `resummary == claimed` — ONE equality subsuming route-binding (`reconstruct.digest == route_digest`, closing the substitution hole ChatGPT found), the combined fold verdict, the composability + 4 ranking verdicts, and the process/edge projections. **Fail-CLOSED**: a FITS dossier with no payload is UNVERIFIED, refused (the **deletion door** the adversary found — closed with NO schema bump, lower blast than the reviewer proposed). Reconstruction re-runs the real `ExperimentStep`/`Route`/`DAG` constructors (conservation, linearity, acyclicity); molecule codec mirrors the digest-stable `_graph_payload` (positional, no SMILES re-parse). Edges int-coercion trap fixed (`_exact_int_pair`). **evil-morty folds:** (F1 MEDIUM, VERIFIED) keyless **eval-context relaxation** — the box is built from the response's own request, so a keyless request-relaxer could re-derive an out-of-bounds route to FITS; corrected the docstring overclaim (residuals are TWO) + added `expected_request_digest` (consumer pins its request; a signature closes it cryptographically), both directions pinned. (F2 LOW) `serial_holds` was `compare=False` → the DAG branch now re-derives + checks it. Design: `docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.2.md` (folds the ChatGPT external review against the tree; supersedes v0.1). |
 
 **ROUND 20** (branch `cip-load-stability-2026-09-06`) — 1 build, full-blast on **queue item 1**; `design → recon → build →
 reproduce → evil-morty → fold → verify`; **additive to the engine** (new `_cip_*` in `smiles.py` + harness + test), plus a
@@ -122,14 +132,14 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
-> **ROUND 20 CLOSED item 1** — the general CIP breadth-first **namer** shipped (the R19 oracle unblocked it). Full CIP
-> completeness (Rules 1b/2/4/5 + aromatic Kekulé-averaging) is sound-deferred, tracked below. The two remaining queue items
-> are both **L**: item 2 (on-load re-derivation, decision recorded R19 — a pure build) and item 3 (duration wire-in + Br₂
-> primary). The queue stays L-heavy; the true rate-limiter on item 3 is sourcing, not build capacity.
+> **ROUND 21 CLOSED item 2** — on-load re-derivation of the composability + physical + ranking axes shipped (the ChatGPT
+> external review was folded against the tree first; two holes it/the adversary found were closed before code). **ROUND 20
+> CLOSED item 1** — the general CIP breadth-first **namer** (Rules 1b/2/4/5 + aromatic Kekulé-averaging sound-deferred,
+> tracked below). **One queue item remains: item 3** (duration wire-in + Br₂ primary), an **L** whose true rate-limiter is
+> sourcing, not build capacity.
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| 2 | **Composability + physical re-derivation on load — DAG *and* linear** | C | **L** | medium | ~~a scope decision~~ **DECIDED R19** — now a pure build |
 | 3 | **Wire the duration-aware verdict into core E1 + the DOW-Br₂ primary** (primitive shipped R19) | B·C | **L** | long | a route intermediate with sourced kinetics + a Br₂ decomposition primary |
 
 ### 1 · General CIP — the breadth-first namer — ✅ **DONE (ROUND 20, ID-STEREO-CIP-NAMER)**
@@ -140,19 +150,18 @@ validated `namer(mol) == geometric_handedness(true_priorities, sense)` on the te
 L-cysteine (R) flip). SOUND, not complete — Rules 1b/2/4/5 and aromatic-reaching ties DEFER. See the DONE ledger and
 manifest §20. What remains for full CIP completeness (Rule 1b/2/4/5 + aromatic Kekulé-averaging) is TRACKED DEBT below.
 
-### 2 · Composability + physical re-derivation on load — DAG **and** linear — **L, scope DECIDED**
-On load only the **process** component is re-derived; composability + physical ride as free-text (closed only by the
-opt-in HMAC). **The scope fork is resolved (ROUND 19):** carry the thick per-step payload (target `Molecule`, reactants,
-products, reagents, full `ConditionEnvelope`) **opt-in and digest-EXCLUDED** (`compare=False`, like `provider_snapshots`
-and R19's `serial_holds`), and close the trust gap via a **load-time coherence check** that re-derives both axes and
-compares to the digest-protected claimed verdicts — protection-equivalent to folding into the digest, without changing
-every existing route identity. Full rationale + the measured build (new Molecule/Envelope serializers +
-conservation-certified route reconstruction + 4 coherence checks + schema bumps + goldens) in
-`docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.1.md`. It is now a pure build (larger than R19's items 1+2b+3
-combined, in the module that gates every compile — so its own round). **External design review in flight:** the exact
-codebase-free prompt taken to ChatGPT (protection-equivalence hole-check + the sound-and-tight invariant + serialization
-contract + adversarial tests) is persisted at `docs/research/ONLOAD_REDERIVATION_CHATGPT_PROMPT_v0.1.md`; fold its
-answer against the scope doc before the build starts.
+### 2 · Composability + physical re-derivation on load — DAG **and** linear — ✅ **DONE (ROUND 21, ONLOAD-REDERIVE)**
+Shipped: `smartchem/service.py` (thick `replay_payload` + `_reconstruct_route`/`_reconstruct_dag` +
+`_check_verified_admission`) + `tests/test_onload_rederivation.py`. The ChatGPT external design review was folded
+**against the tree** (8-agent recon+adversary pass) before any code — see `docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.2.md`
+(supersedes v0.1). It corrected TWO holes in the v0.1 design: (1) the load-time coherence check did **not** bind the
+payload to `route_digest` (a substitution attack) — closed by `reconstruct(payload).digest == route_digest`, cheap because
+`route_digest` already covers the full step content; (2) the `compare=False` payload was bypassable by **deletion** —
+closed by a **fail-closed** consumer policy (verified-admission requires every FITS route to carry a matching payload),
+which needed **no schema bump** (route identity byte-stable, no golden churn — lower blast than the reviewer proposed).
+Plus the v0.1 HMAC conflation was corrected (a public digest recompute is free; the key-holding residual is irreducible).
+See the DONE ledger and manifest §21. TRACKED DEBT below: the keyless eval-context-relaxation boundary + the
+verified-admission cost lever (evil-morty F1/residual).
 
 ### 3 · Wire the duration-aware verdict into core E1 + source the DOW-Br₂ primary — **L, sourcing wall** *(DOW)*
 **The primitive shipped (ROUND 19, `smartchem/experiment/stability_horizon.py`):** a duration-aware survival verdict
@@ -205,8 +214,21 @@ not just a human note. See the DONE ledger.
 
 - **Interchange-law xfail** (Lane A) — `tests/test_laws.py:330`: linear histories cannot quotient independent events by
   interchange. Orthogonal architecture debt; 1 xfail.
-- **Load-time free-text trust boundary** (Lane C) — composability/physical claims ride unsigned unless a consumer opts
-  into the COMBINED-VERDICT-AUTH HMAC; applies to both DAG and linear. Structural closure = queue item 2.
+- **Load-time free-text trust boundary** (Lane C) — ✅ **STRUCTURALLY CLOSED (ROUND 21, item 2)** for a verified-admission
+  consumer: `response_from_payload(require_verified_admission=True)` reconstructs the route/DAG from the thick
+  `replay_payload` and re-derives all three axes + ranking, refusing a bare-relabel or substituted evidence with no key.
+  The default (non-verified) path is unchanged (still process-axis-only, HMAC-optional), so a consumer must **opt in** to
+  the close. Two residuals carried below.
+- **Verified-admission keyless eval-context relaxation** (Lane C; ROUND-21, evil-morty F1 VERIFIED) — the re-derivation
+  builds its bench box from the response's OWN request, so a keyless attacker who relaxes that request (and recomputes the
+  free public `result_digest`) can re-derive an out-of-bounds route to FITS. The check authenticates verdict↔route
+  coherence UNDER THE STATED context, not the context itself. Closed by pinning the request (`expected_request_digest`) or
+  a `verification_key` (the request is folded into `result_digest`); NOT forced (the process axis trusts the request
+  identically). Documented + pinned both directions.
+- **Verified-admission compute cost** (perf; ROUND-21) — `_check_verified_admission` runs the full `rank_routes` fold per
+  FITS dossier on load (amide-heavy targets pay the ~500 ms `Molecule.canonical()` resonance cost each). Opt-in and
+  bounded by candidate count; a verified-admission consumer pays for the assurance. Reduce (if it ever matters) by
+  caching the per-route fit; not worth it today.
 - **DAG `dag_bench_fit` compute multiplicity** (perf, correctness-neutral) — a DAG-mode compile runs `dag_bench_fit`
   ~3×N (rank_dags key + `of_dag` + `_dag_bench_note`), and each call now ALSO computes the four-provider thermo roll-up
   per node (DAG-THERMO-01), so it is heavier. Still bounded and compile-time (real DAGs are small). Reduce by threading

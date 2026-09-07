@@ -139,3 +139,35 @@ ChatGPT's full table (round-trip/identity preservation; every 3-axis status comb
 **DECISION FORK — ranking-verdict authentication → RESOLVED: (A) INCLUDE** (user decision, 2026-09-06). Item 2 re-derives + equality-checks the displayed `selectivity/feasibility/equilibrium/kinetics` against the reconstructed route (§2 step 7), closing the adversary's MED "fabricate ranking → float a bad route to #1 recommendation" gap. This is step (5b) in the build above and widens the golden/test surface modestly (the four verdicts are re-derived by the same per-step providers already invoked, so it is near-free given the reconstruction).
 
 Nothing here authorizes a merge of the held branch.
+
+---
+
+## 7. Post-build fold (evil-morty, on the shipped code)
+
+The built code was adversarially red-teamed. Everything the design promised held — substitution rejected (route-binding),
+the deletion door fail-closed, the physical bare-relabel rejected, codec field-drop impossible while `digest==route_digest`,
+reconstruction cannot bypass the constructors, the re-projection is deterministic (no honest false-reject), the edges
+coercion trap closed. Two findings were folded:
+
+- **Finding 1 — eval-context relaxation (MEDIUM, VERIFIED).** In *keyless* verified-admission mode, the re-derivation
+  builds its bench box from the response's **own** request (`ConstraintBox.of_bounds(response.request.constraints…)`).
+  A keyless attacker who **relaxes that request** in the payload (drops a temperature cap) and recomputes the free public
+  `result_digest` makes an out-of-bounds route re-derive `FITS` against the relaxed box → admitted. This is the same
+  *class* as the v1 HMAC conflation: the check authenticates verdict↔route **coherence under the stated context**, not the
+  **context itself**. **Fold:** (a) the `_check_verified_admission` docstring corrected — the residuals are **two** (a
+  key-holding forger *and* a keyless request/context relaxer), not one; do NOT call the keyless mode a full structural
+  close. (b) Added an optional `expected_request_digest` to `response_from_payload`/`deserialize_response`: a consumer pins
+  their own request's `semantic_digest` and a relaxed response is refused — the keyless tool that closes it (a
+  `verification_key` closes it cryptographically, the request being folded into `result_digest`). Not forced (consistent
+  with the pre-existing process axis, which trusts the request identically); documented + pinned both directions
+  (`test_request_relaxation_is_admitted_unless_the_request_is_pinned`).
+- **Finding 2 — `serial_holds` unauthenticated (LOW).** `serial_holds` is `compare=False`, so `resummary == d` ignored it.
+  Not an admission break (never touches `fit_status`), but a disclosure-integrity gap. **Fold:** the DAG branch now
+  re-derives `serial_holds` from the reconstructed DAG and refuses a tampered hold value
+  (`test_serial_holds_are_re_derived_not_trusted`).
+
+Tracked residuals (documented, not silently carried): the request-relaxation boundary above (closed by
+`expected_request_digest` **or** a signature); the DAG edge presence-vs-net-consumption seam (§2 boundary, no exploit
+found); and the verified-admission **cost lever** — it runs the full `rank_routes` fold per FITS dossier on load
+(amide-heavy targets pay the ~500 ms `Molecule.canonical()` cost each), bounded by candidate count and opt-in, but a
+verified-admission consumer pays for the assurance.

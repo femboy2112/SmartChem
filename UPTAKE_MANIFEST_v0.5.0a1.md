@@ -4378,3 +4378,74 @@ NEW tracked debt (§ROADMAP): **aryl/heteroaryl naming needs Kekulé-averaging**
 the clean completeness extension); the **comparator-transitivity residual**. Item 1's ORACLE + NAMER are both shipped;
 what remains for full CIP completeness is Rules 1b/2/4/5 + aromatic averaging (all sound-deferred today). Queue now
 L-heavy on items 2 (on-load re-derivation, decision recorded, a pure build) and 3 (duration wire-in + Br₂ primary).
+
+## §21 — ROUND 21 (branch `cip-load-stability-2026-09-06`, code `6e14d51`): on-load re-derivation of composability + physical + ranking (queue item 2 closes)
+
+The L round. Closes the free-text trust boundary PROCESS-ADMIT-01 left open: on load only the **process** component of a
+route's combined `fit_status` was re-derived; **composability** (E1) and the **physical box** rode as free-text
+`exclusions`/`gaps`, and the **ranking** verdicts rode unchecked — so a route non-FITS for one of those (or with fabricated
+ranking) could be bare-relabeled to FITS and admitted. Item 2 closes it **structurally, no key**.
+
+### 21.1 the external review, folded against the tree (not on faith)
+The item-2 spec was taken to ChatGPT during the R20 compact (`docs/research/ONLOAD_REDERIVATION_CHATGPT_PROMPT_v0.1.md`).
+Its response was **verified against the actual dev tree** (5 commits past the `main@8a312a5` it read) by an 8-agent
+workflow (`wf_c2a0e0f8-732`: 6 read-only Citadel-Rick recon bearings + 2 evil-morty adversaries). Result:
+`docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.2.md` (supersedes v0.1). The recon **confirmed** ChatGPT's central
+premise with measured probes — `route_digest` (== `ExperimentRoute.digest`/`SynthesisDAG.digest`) already hashes every
+`ExperimentStep` field incl. all 10 envelope fields + the reagent multiset, no collision — so binding to it binds
+everything. It also found the fold `F` is a faithful abstraction of the real fitters (`drafter.py:347-356`/`457-465`).
+
+### 21.2 the two holes v0.1 had (found before any code)
+- **HOLE 1 — coherence ≠ route binding (ChatGPT).** v0.1's check re-derived from the DECLARED payload and compared to the
+  DECLARED verdict; `route_digest` never entered the re-derivation (only a set-membership check, `service.py:1276-1282`).
+  A substitution attack lands: another route's genuinely-FITS payload under a bad `route_digest` passes coherence. **Fix:**
+  `reconstruct(payload).digest == route_digest`. Cheap (route_digest unchanged).
+- **HOLE 2 — the deletion door (adversary, ChatGPT missed).** v0.1's "gated on payload presence (zero overhead)" is
+  bypassable: a `compare=False` payload is invisible to `route_digest`, `result_digest`, AND the HMAC; the tree's uniform
+  fail-open loader idiom (`.get(default)`) would skip an absent payload. Attack: relabel EXCLUDED→FITS, recompute the free
+  public `result_digest`, DELETE the payload. **Fix:** verified admission is a **fail-CLOSED consumer policy** (a FITS route
+  with no payload is UNVERIFIED, refused) — which needed **NO schema bump** (route identity byte-stable, no golden churn),
+  strictly lower blast than the adversary's own schema-bump proposal.
+- **CORRECTION — the HMAC conflation.** v0.1 lines 52-60 said the signature "closes the key-holding-forger residual"; the
+  code's own `test_key_holding_forger_residual_is_not_closable_by_a_signature` says it is IRREDUCIBLE (a public digest
+  recompute is free; only a keyless out-of-band edit is closed by a signature). Corrected inline + in v0.2 + the new docstrings.
+
+### 21.3 what shipped (all in `smartchem/service.py`, additive; `tests/test_onload_rederivation.py`, 20 tests)
+- **Codecs + reconstruction:** `_molecule_to/_from_payload` (mirrors `compilation_ir._graph_payload` — POSITIONAL,
+  digest-preserving, no canonical remap; a re-parse-from-SMILES would false-reject an honest route), `_condition_envelope_to/_from_payload`
+  (all 10 fields, through the real `__post_init__` — K/atm units, EvidenceStatus cap, provenance/source consistency),
+  `_step_to/_from_payload`, `_steps_to_replay_payload`, `_reconstruct_route`/`_reconstruct_dag`. Reconstruction re-runs the
+  real `ExperimentStep`/`ExperimentRoute`/`SynthesisDAG` constructors (conservation certificate, linearity, acyclicity), so
+  a forged non-conserving step is refused at reconstruction.
+- **`replay_payload` field** on `RankedRouteSummary` + `RankedDAGSummary`, `compare=False`/`repr=False` (digest-excluded →
+  route identity byte-stable), built by `of_fit`/`of_dag`. **Emission opt-in** (`include_replay=False` default on
+  `ranked_summary_to_payload`/`ranked_dag_summary_to_payload`/`response_to_payload`/`serialize_response`) → default wire
+  byte-identical to pre-item-2, existing goldens unchanged.
+- **`_check_verified_admission`:** for every FITS route/DAG dossier, reconstruct, re-project via the SAME producer path
+  (`rank_routes`+`of_fit` / `of_dag`) under the response's pinned eval-context (`box` from `request.constraints`, `losses`
+  from the IR, `DEFAULT_STABILITY`), and require `resummary == claimed`. ONE equality subsumes route-binding, the combined
+  fold verdict, the composability + 4 ranking verdicts (fork resolved → INCLUDE), and the process/edge projections.
+  Fail-CLOSED on a missing payload. Wired via `response_from_payload(require_verified_admission=True)`; off by default.
+- **Edges int-coercion trap** (`service.py:2552`) fixed: `_exact_int_pair` validates wire types before coercion (a
+  `True`/`1.9`/`"1"` index is refused, not silently truncated).
+
+### 21.4 evil-morty fold (2 findings; everything else held "earned, not gifted")
+- **F1 (MEDIUM, VERIFIED) eval-context relaxation.** The re-derivation box is built from the response's OWN request; a
+  keyless attacker who relaxes that request (drops a temperature cap) + recomputes `result_digest` makes an out-of-bounds
+  route re-derive FITS → admitted. Same *class* as the v1 HMAC conflation: authenticates coherence UNDER the stated
+  context, not the context. **Fold:** docstring corrected (residuals are TWO — a key-holding forger AND a keyless request
+  relaxer); added `expected_request_digest` to `response_from_payload`/`deserialize_response` (consumer pins its request;
+  a `verification_key` closes it cryptographically). Not forced (the process axis trusts the request identically). Both
+  directions pinned (`test_request_relaxation_is_admitted_unless_the_request_is_pinned`). NEW lesson
+  [[a-keyless-check-trusts-the-context-it-reads]].
+- **F2 (LOW) `serial_holds` unauthenticated.** `compare=False` → ignored by `==`; not an admission break (never touches
+  `fit_status`) but a disclosure gap. **Fold:** the DAG branch re-derives + checks it (`test_serial_holds_are_re_derived_not_trusted`).
+- **Held:** substitution (route-binding), deletion door (fail-closed), physical bare-relabel, codec field-drop (exact
+  field-set + real constructors), reconstruction bypass, non-determinism/false-reject, edges coercion.
+
+### 21.5 tracked debt + next steps
+NEW tracked debt (§ROADMAP): the **keyless eval-context-relaxation boundary** (F1 — closed by `expected_request_digest` or a
+signature; not forced); the **verified-admission compute cost** (the full `rank_routes` fold per FITS dossier on load). The
+**load-time free-text trust boundary** debt is now STRUCTURALLY CLOSED for a verified-admission consumer. **Queue: only
+item 3 remains** (wire the duration-aware verdict into core E1 + the DOW-Br₂ decomposition primary — an L whose true
+rate-limiter is sourcing). Suite `4417 / 14 / 1` (+20 vs R20's 4397). NOT merged — held for the user's push/pr/merge go.

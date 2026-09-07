@@ -54,6 +54,7 @@ stated resonance boundary, not a silent one). A giant PAH beyond the enumeration
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 from functools import cmp_to_key, lru_cache
 
 from .atoms import PT
@@ -946,6 +947,137 @@ _CIP_PHANTOM = (0, ())               #: the phantom (atomic-number-0) leaf a mis
 _CIP_AROMATIC = object()             #: sentinel children of an AROMATIC atom: z is known, onward connectivity is withheld
 _CIP_NODE_BUDGET = 60000             #: digraph-construction cap; a pathological giant fails CLOSED (defer, never guess)
 _CIP_COMPARE_BUDGET = 400000         #: pairwise-comparison cap; likewise fail-closed
+_CIP_MANCUDE_MAX_ATOMS = 30          #: per ring system, independent of the parser's identity budget
+_CIP_MANCUDE_MAX_MATCHINGS = 128
+_CIP_MANCUDE_WORK_BUDGET = 10000
+
+
+def _cip_ring_edges(n, bonds) -> frozenset[int]:
+    """Ring edges are exactly the non-bridges of the undirected sigma graph (iterative Tarjan DFS)."""
+    adj = [[] for _ in range(n)]
+    for bi, (a, b, _order) in enumerate(bonds):
+        adj[a].append((b, bi))
+        adj[b].append((a, bi))
+    entered, low, parent = {}, {}, {}
+    bridges = set()
+    for root in range(n):
+        if root in entered:
+            continue
+        entered[root] = low[root] = len(entered)
+        parent[root] = (-1, -1)
+        stack = [(root, iter(adj[root]))]
+        while stack:
+            a, walk = stack[-1]
+            step = next(walk, None)
+            if step is None:
+                stack.pop()
+                p, edge = parent[a]
+                if p != -1:
+                    low[p] = min(low[p], low[a])
+                    if low[a] > entered[p]:
+                        bridges.add(edge)
+                continue
+            b, bi = step
+            if bi == parent[a][1]:
+                continue
+            if b in entered:
+                low[a] = min(low[a], entered[b])
+            else:
+                parent[b] = (a, bi)
+                entered[b] = low[b] = len(entered)
+                stack.append((b, iter(adj[b])))
+    return frozenset(set(range(len(bonds))) - bridges)
+
+
+def _cip_mancude(atoms, bonds, adj) -> tuple[frozenset[int], dict[int, Fraction]]:
+    """Unsupported ring boundaries and exact duplicate-Z values for bounded neutral mancude systems.
+
+    IUPAC P-92.1.4.4 averages over the POSSIBLE PARTNER POSITIONS, not over whole Kekule structures
+    with their unequal partner frequencies.  Enumerate perfect matchings only to establish which partners
+    are possible; average each distinct partner once.  The supported valences have one ring double per
+    neutral C / pyridine-N acceptor and none per fixed pyrrole-N / O / S donor.  Every real atom and every
+    ring-closure duplicate retains its integer Z; only multiple-bond duplicates receive this average.
+
+    Detection uses ring topology and filled valence, never lowercase flags as an admission shortcut: an
+    explicit Kekule spelling receives the same treatment. Charged, exocyclic-multiple, incompletely conjugated,
+    untyped and over-budget unsaturated ring systems remain lazy boundaries. Saturated rings keep their
+    existing ordinary digraph. This is a bounded Rule-1a extension, not general aromaticity perception.
+    """
+    ring_edges = _cip_ring_edges(len(atoms), bonds)
+    ring_adj = {}
+    for bi in ring_edges:
+        a, b, _order = bonds[bi]
+        ring_adj.setdefault(a, set()).add(b)
+        ring_adj.setdefault(b, set()).add(a)
+    blocked = {i for i, atom in enumerate(atoms) if atom.aromatic}
+    averages = {}
+    seen = set()
+    for start in ring_adj:
+        if start in seen:
+            continue
+        component, todo = set(), [start]
+        while todo:
+            a = todo.pop()
+            if a in component:
+                continue
+            component.add(a)
+            todo.extend(ring_adj[a] - component)
+        seen.update(component)
+        if not any(atoms[a].aromatic or any(o > 1 for _b, o in adj[a]) for a in component):
+            continue
+        blocked.update(component)
+        if len(component) > _CIP_MANCUDE_MAX_ATOMS:
+            continue
+        acceptors = set()
+        valid = True
+        for a in component:
+            atom = atoms[a]
+            orders = sorted(o for _b, o in adj[a])
+            ring_doubles = sum(o == 2 and b in ring_adj[a] for b, o in adj[a])
+            if atom.charge:
+                valid = False
+            elif atom.element == "C" and orders == [1, 1, 2] and ring_doubles == 1:
+                acceptors.add(a)
+            elif atom.element == "N" and orders == [1, 2] and ring_doubles == 1:
+                acceptors.add(a)
+            elif atom.element == "N" and orders == [1, 1, 1]:
+                pass
+            elif atom.element in ("O", "S") and orders == [1, 1]:
+                pass
+            else:
+                valid = False
+        if not valid or not acceptors:
+            continue
+        partners = {a: set() for a in acceptors}
+        matching_count, work = 0, _CIP_MANCUDE_WORK_BUDGET
+
+        def visit(left, chosen):
+            nonlocal matching_count, work
+            work -= 1
+            if work < 0:
+                raise _CipTooBig
+            if not left:
+                matching_count += 1
+                if matching_count > _CIP_MANCUDE_MAX_MATCHINGS:
+                    raise _CipTooBig
+                for a, b in chosen:
+                    partners[a].add(b)
+                    partners[b].add(a)
+                return
+            a = min(left)
+            for b in sorted(ring_adj[a] & left):
+                visit(left - {a, b}, chosen + ((a, b),))
+
+        try:
+            visit(acceptors, ())
+        except _CipTooBig:
+            continue                       # never publish a truncated matching/partner set
+        if not matching_count:
+            continue
+        averages.update({a: Fraction(sum(ATOMIC_NUMBER[atoms[b].element] for b in choices), len(choices))
+                         for a, choices in partners.items()})
+        blocked.difference_update(component)
+    return frozenset(blocked), averages
 
 
 class _CipTooBig(Exception):
@@ -953,25 +1085,25 @@ class _CipTooBig(Exception):
 
 
 class _CipAromatic(Exception):
-    """A comparison had to inspect an AROMATIC atom's onward connectivity to rank two ligands.  Correct Rule 1a on a
-    mancude ring needs Kekule-invariant atomic-number AVERAGING over the resonance forms (Hanson et al. 2018, Fig. 3):
-    a single fixed Kekule structure makes two equivalent aromatic ligands look different (e.g. the two pyridyls of a
-    di-2-pyridyl carbinol -- a false centre -- split into a WRONG label).  Averaging is not built, so a centre whose
-    RANKING depends on an aromatic atom's substituents is a NAMED DEFERRAL -- sound (never a guessed label), incomplete
-    (an aryl/heteroaryl tie gets no name until averaging ships).  A ranking decided by atomic number BEFORE reaching an
-    aromatic atom (e.g. a distinct-Z centre with a benzyl arm) is unaffected -- the aromatic node's z is still known,
-    only its onward connectivity is withheld."""
+    """A comparison needed onward connectivity of an unsupported/over-budget unsaturated ring.
+
+    A known atomic number can still decide before this lazy boundary is inspected. Supported neutral mancude
+    systems use exact duplicate-Z averaging; charged resonance and other unsupported systems do not guess.
+    """
 
 
-def _cip_digraph(atom_idx, parent_idx, path, adj, elems, aromatic, budget):
+def _cip_digraph(atom_idx, parent_idx, path, adj, elems, aromatic, budget, mancude=None):
     """One node of the CIP hierarchical digraph, ``(atomic_number, children)``.
 
     A multiple bond of order ``o`` contributes ``o - 1`` duplicate leaves of the bonded partner on each side;
-    a ring-closure bond (a neighbour already on the root->here path) contributes ``o`` duplicate leaves and is
-    NOT traversed -- so every root-to-leaf path visits each real atom at most once and the digraph is FINITE
-    (depth bounded by the atom count).  A duplicate/phantom leaf carries the real atomic number of the atom it
-    duplicates but no substituents (its own children are the atomic-number-0 phantoms, which the padded
-    comparison in :func:`_cip_compare` treats identically to an empty child list).  An AROMATIC atom is a BOUNDARY
+    a ring-closure bond (a neighbour already on the root->here path) is NOT traversed and contributes one
+    integer-Z closure leaf plus the usual ``o - 1`` multiple-bond duplicates -- so every root-to-leaf path
+    visits each real atom at most once and the digraph is FINITE (depth bounded by the atom count).  A
+    duplicate/phantom leaf carries the real atomic number of the atom it duplicates but no substituents (its
+    own children are the atomic-number-0 phantoms, which the padded comparison in :func:`_cip_compare` treats
+    identically to an empty child list). Mancude multiple-bond duplicates instead carry the OWNER's exact
+    partner-Z average; a ring-closure's own closure leaf stays integer-Z.
+    An unsupported unsaturated ring atom is a BOUNDARY
     node ``(z, _CIP_AROMATIC)``: its atomic number is known (so a ranking can still decide ON it), but its onward
     connectivity is withheld because it is Kekule-dependent -- a comparison that tries to descend past it raises
     :class:`_CipAromatic` and the centre defers (its phantom DUPLICATES, being z-only leaves, are always safe)."""
@@ -984,20 +1116,18 @@ def _cip_digraph(atom_idx, parent_idx, path, adj, elems, aromatic, budget):
     children: list = []
     for nb, order in adj[atom_idx]:
         znb = ATOMIC_NUMBER.get(elems[nb], 0)
-        if nb == parent_idx:
-            dup = order - 1                                      # sigma bond already traversed; (o-1) duplicates left
-        elif nb in path:
-            dup = order                                          # ring closure to an ancestor: whole bond -> duplicates
-        else:
+        if nb != parent_idx and nb in path:
+            children.append((znb, ()))                         # ring closure is an integer-Z duplicate
+        elif nb != parent_idx:
             if nb in aromatic and order > 1:
                 raise _CipAromatic                              # exocyclic multiple bond INTO an aromatic atom: the
                 # duplicate COUNT (order-1) is Kekule-dependent, generated here at the non-aromatic side before the
                 # boundary is consulted -- so defer rather than emit a Kekule-dependent phantom multiset (evil-morty
                 # residual A; unproven-reachable but discharged, not left to chance).
-            children.append(_cip_digraph(nb, atom_idx, path | {nb}, adj, elems, aromatic, budget))
-            dup = order - 1                                      # plus (o-1) multiple-bond duplicates of the real child
-        for _ in range(dup):
-            children.append((znb, ()))
+            children.append(_cip_digraph(nb, atom_idx, path | {nb}, adj, elems, aromatic, budget, mancude))
+        duplicate_z = mancude.get(atom_idx, znb) if mancude is not None else znb
+        for _ in range(order - 1):
+            children.append((duplicate_z, ()))
     return (z, tuple(children))
 
 
@@ -1079,10 +1209,10 @@ def _cip_child_zs(node) -> tuple:
     return tuple(sorted((c[0] for c in node[1]), reverse=True))
 
 
-def _cip_ranks(written, centre, adj, elems, aromatic) -> "list[int] | None":
+def _cip_ranks(written, centre, adj, elems, aromatic, mancude=None) -> "list[int] | None":
     """The CIP priority rank (``0`` = highest) of each of the four WRITTEN neighbours of ``centre`` via the
     Rule-1a hierarchical digraph, or ``None`` when Rule 1a does NOT fully order them (a genuine tie needing
-    Rule 1b/2/4/5, a ranking whose decision depends on an aromatic atom's substituents, or an over-budget
+    Rule 1b/2/4/5, a ranking whose decision depends on an unsupported ring's substituents, or an over-budget
     digraph) -- then the centre is a NAMED DEFERRAL, never a guessed label.
 
     Byte-identical to the old ``sorted(z, reverse=True)`` ranks on the distinct-atomic-number slice (there
@@ -1090,7 +1220,7 @@ def _cip_ranks(written, centre, adj, elems, aromatic) -> "list[int] | None":
     a distinct-Z centre with an aromatic arm still names (the aromatic node's z decides before its withheld
     substituents are ever needed)."""
     try:
-        roots = [_cip_digraph(w, centre, frozenset((centre, w)), adj, elems, aromatic, [_CIP_NODE_BUDGET])
+        roots = [_cip_digraph(w, centre, frozenset((centre, w)), adj, elems, aromatic, [_CIP_NODE_BUDGET], mancude)
                  for w in written]
     except (_CipTooBig, _CipAromatic):                          # build only raises _CipAromatic for the exocyclic guard
         return None
@@ -1126,10 +1256,10 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
     attempt).  It stays SOUND: a centre whose four ligands are NOT fully separated by atomic number alone -- an
     isotope-only tie (Rule 2), a pseudoasymmetric / E-Z-distinguished tie (Rules 4/5), or a true constitutional
     duplicate (a false centre) -- is a NAMED DEFERRAL and gets NO label, because a guessed R/S is worse than
-    none.  A centre whose ranking DEPENDS on an AROMATIC atom's substituents also defers: correct Rule 1a on a
-    mancude ring needs Kekule-invariant atomic-number averaging (unbuilt), and a single fixed Kekule structure
-    would mislabel an aryl tie (e.g. split the two identical pyridyls of a false centre) -- but a ranking decided
-    by atomic number before reaching the ring (a distinct-Z centre with a benzyl arm) still names.  A ring
+    none. Bounded neutral C/N/O/S mancude rings use exact atomic-number averaging of multiple-bond duplicates
+    (:func:`_cip_mancude`), equally for aromatic and explicit Kekule spellings. Charged, exocyclic-multiple,
+    incompletely conjugated, untyped and over-budget unsaturated ring systems retain a lazy deferral boundary;
+    a ranking decided by atomic number before reaching that boundary still names. A ring
     stereocentre (``_on_cycle``) and a non-four-coordinate marked centre also defer, as before.
     On the distinct-atomic-number slice the digraph decides at sphere 0, so this is byte-identical to the prior
     ``sorted(z, reverse=True)`` ranks there -- a strict extension, never a change.
@@ -1147,7 +1277,6 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
     _kekulize_in_place(atoms, work, charge)
     filled_atoms, filled_bonds = _fill_hydrogens(atoms, work)     # heavy indices 0..n-1 preserved; H appended after
     n = len(atoms)
-    aromatic = frozenset(i for i in range(n) if atoms[i].aromatic)  # a digraph reaching one of these DEFERS (no Kekule-averaging)
     neighbours: dict[int, list[int]] = {i: [] for i in range(len(filled_atoms))}
     adj: dict[int, list[tuple[int, int]]] = {i: [] for i in range(len(filled_atoms))}
     for b in filled_bonds:
@@ -1155,6 +1284,7 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
         neighbours[b.j].append(b.i)
         adj[b.i].append((b.j, b.order))                          # ordered adjacency for the CIP digraph (phantom counts)
         adj[b.j].append((b.i, b.order))
+    aromatic, mancude = _cip_mancude(atoms, work, adj)
     labels: list[str] = []
     for a in marked:                                             # SAME scope as _perceive_configuration (acyclic, 4-coord)
         if _on_cycle(a, neighbours, len(filled_atoms)):
@@ -1169,7 +1299,7 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
             continue
         if any(ATOMIC_NUMBER.get(filled_atoms[x]) is None for x in written):
             continue                                             # a non-periodic-table element -> out of scope
-        ranks = _cip_ranks(written, a, adj, filled_atoms, aromatic)   # general Rule-1a breadth-first digraph ranks
+        ranks = _cip_ranks(written, a, adj, filled_atoms, aromatic, mancude)
         if ranks is None:
             continue                                             # Rule 1a leaves a genuine tie -> NAMED DEFERRAL (never guess)
         handedness = _perm_parity(ranks) ^ (0 if atoms[a].chirality == 1 else 1)
@@ -1183,8 +1313,8 @@ def cip_labels(text: str) -> tuple[str, ...]:
     Priority comes from the general CIP **Rule 1a** hierarchical digraph -- breadth-first, branch-by-branch, with
     duplicate/phantom atoms for multiple bonds and ring closures (ROUND 20) -- so the common same-element case
     (amino acids, sugars, secondary/tertiary carbons) is now NAMED, not deferred.  A centre Rule 1a cannot fully
-    order (an isotope-only, pseudoasymmetric, or true-duplicate tie), one whose ranking depends on an AROMATIC
-    atom's substituents (Kekule-averaging unbuilt), a ring stereocentre, or a non-four-coordinate marked centre
+    order (an isotope-only, pseudoasymmetric, or true-duplicate tie), one whose ranking depends on an unsupported
+    unsaturated ring system, a ring stereocentre, or a non-four-coordinate marked centre
     contributes NO name -- a named deferral, never a guessed/unsound label.  Raises
     :class:`SmilesError` on a malformed/out-of-scope SMILES, like the parser.  See :func:`_cip_labels` for the
     method and its L-alanine = S sign-convention anchor."""

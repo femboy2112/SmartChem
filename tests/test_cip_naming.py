@@ -59,11 +59,9 @@ def test_a_centre_with_two_same_element_substituents_is_now_named_by_the_general
     assert cip_labels("OC[C@@H](O)C=O") == ("R",)               # D-glyceraldehyde: CHO's phantom-O beats CH2OH
 
 
-def test_an_aromatic_substituent_defers_pending_kekule_averaging():
-    # a centre whose priority digraph reaches an AROMATIC ring DEFERS: correct Rule 1a on a mancude ring needs
-    # Kekule-invariant atomic-number averaging (not built), and a single fixed Kekule structure would MISLABEL --
-    # e.g. wrongly NAME the false centre below (two identical 2-pyridyls).  Sound (no guess), not yet complete.
-    assert cip_labels("C[C@H](N)c1ccccc1") == ()                 # 1-phenylethylamine: aryl -> deferred (was a wrong target)
+def test_an_aromatic_substituent_is_named_with_kekule_invariant_averaging():
+    # Neutral mancude averaging now names the aryl centre; equal pyridyls remain equal.
+    assert cip_labels("C[C@H](N)c1ccccc1") == ("S",)
     assert cip_labels("O[C@H](c1ccccn1)c1ccccn1") == ()          # di-2-pyridyl: a FALSE centre a fixed Kekule would name
 
 

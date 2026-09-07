@@ -80,13 +80,11 @@ def test_rule_1a_ties_defer_never_guess():
     assert cip_labels("N[C@]1(F)CCCCO1") == ()                  # ring stereocentre (acyclic scope)
 
 
-def test_an_aromatic_digraph_defers_never_a_fixed_kekule_guess():
-    """Correct Rule 1a on a mancude ring needs Kekule-invariant atomic-number averaging (unbuilt).  A single fixed
-    Kekule structure would MISLABEL an aryl centre, so any centre whose digraph reaches an aromatic atom defers.
-    The di-2-pyridyl carbinol is the soundness pin: two identical 2-pyridyls = a FALSE centre; before this guard a
-    fixed Kekule split them and named a spurious (R)."""
+def test_mancude_averaging_names_aryl_but_keeps_identical_pyridyls_tied():
+    """A single fixed Kekule structure split two identical 2-pyridyls into a false centre.
+    Exact duplicate-Z averaging must preserve that tie while naming an ordinary aryl centre."""
     assert cip_labels("O[C@H](c1ccccn1)c1ccccn1") == ()         # false centre -- MUST defer (was wrongly named (R))
-    assert cip_labels("C[C@H](N)c1ccccc1") == ()                # a genuine aryl centre also defers (sound, incomplete)
+    assert cip_labels("C[C@H](N)c1ccccc1") == ("S",)
 
 
 def test_an_aromatic_ring_in_a_branch_decided_by_atomic_number_does_not_spuriously_defer():

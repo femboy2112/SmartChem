@@ -1,0 +1,382 @@
+{
+  "schema": "smartchem.sourcing_recon.v1",
+  "access_date_utc": "2026-09-07",
+  "access_date_local": "2026-09-06",
+  "local_timezone": "America/New_York",
+  "baseline_commit": "043a3cd87acdc33d1df9a3b8ad4b2215d93e8890",
+  "artifact_role": "research_receipt_not_production_seed",
+  "production_seed_modified": false,
+  "source_records": [
+    {
+      "id": "warshay_1966",
+      "family": "nasa_warshay_shock_tube",
+      "title": "Shock-Tube Investigation of Bromine Dissociation Rates in Presence of Argon, Neon, and Krypton",
+      "author": "Marvin Warshay",
+      "publication": "NASA TN D-3502",
+      "publication_date": "1966-07",
+      "url": "https://ntrs.nasa.gov/api/citations/19660020577/downloads/19660020577.pdf",
+      "pages": [
+        {
+          "pdf_page_1based": 3,
+          "printed_page": "1",
+          "anchor": "summary / gas composition and temperature"
+        },
+        {
+          "pdf_page_1based": 12,
+          "printed_page": "10",
+          "anchor": "equations (1)-(2), initial rate convention"
+        },
+        {
+          "pdf_page_1based": 14,
+          "printed_page": "12",
+          "anchor": "equations (8)-(10), fitted modified Arrhenius parameters"
+        },
+        {
+          "pdf_page_1based": 15,
+          "printed_page": "13",
+          "anchor": "Table I, representative run"
+        }
+      ],
+      "rendered_pages_1based": [
+        12,
+        14,
+        15
+      ],
+      "sha256": "c29f0b03e3cf7aec8da1ec9d9ca7055a5e067255f89b158cf44200c2243afdd7",
+      "bytes": 1469775,
+      "retrieval": {
+        "method": "python urllib.request.urlopen",
+        "http_status": 200,
+        "pdf_text_extractor": "pdftotext -layout",
+        "pdf_text_exit_code": 0
+      },
+      "scratch_path": "/tmp/smartchem-sourcing-20260907/nasa1966.pdf"
+    },
+    {
+      "id": "los_fresnos_2025_bid",
+      "family": "los_fresnos_2025_chemical_procurement",
+      "title": "2025/2026 chemical bid tabulation and Chemical Service Agreement",
+      "url": "https://mccmeetingspublic.blob.core.usgovcloudapi.net/losfrsnstx-meet-6084709cb2ef4da7a741e1246b1ab28c/ITEM-Attachment-001-9f5f937ee53b49ba9d06982257e264aa.pdf",
+      "pages": [
+        {
+          "pdf_page_1based": 7,
+          "anchor": "chlorine one-ton row, PVS DX bid and separate current columns"
+        },
+        {
+          "pdf_page_1based": 8,
+          "anchor": "PVS DX Chemical Service Agreement, offer and term; blank signatures"
+        }
+      ],
+      "rendered_pages_1based": [
+        8
+      ],
+      "sha256": "e92ec91dd6e8bffea00d3712063333d2dfa341e2e5de70db26faf28a7126f2a0",
+      "bytes": 329292,
+      "retrieval": {
+        "method": "python urllib.request.urlopen",
+        "http_status": 200,
+        "pdf_text_extractor": "pdftotext -layout",
+        "pdf_text_exit_code": 0
+      },
+      "scratch_path": "/tmp/smartchem-sourcing-20260907/losfresnos2025.pdf",
+      "document_date": "2025-09-09",
+      "date_role": "meeting/agreement date"
+    },
+    {
+      "id": "los_fresnos_2025_minutes",
+      "family": "los_fresnos_2025_chemical_procurement",
+      "title": "City Council Meeting Minutes, September 9, 2025",
+      "url": "https://mccmeetings.blob.core.usgovcloudapi.net/losfrsnstx-pubu/MEET-Minutes-6084709cb2ef4da7a741e1246b1ab28c.pdf",
+      "pages": [
+        {
+          "pdf_page_1based": 4,
+          "anchor": "F.3 approval of bids including Chemicals"
+        }
+      ],
+      "rendered_pages_1based": [
+        4
+      ],
+      "sha256": "c33c4cf9f0fc080cdd5e59b4fefa3e92bc5a2ffd754d865a345bd09fbbd74318",
+      "bytes": 386174,
+      "retrieval": {
+        "method": "python urllib.request.urlopen",
+        "http_status": 200,
+        "pdf_text_extractor": "pdftotext -layout",
+        "pdf_text_exit_code": 0
+      },
+      "scratch_path": "/tmp/smartchem-sourcing-20260907/losfresnos-minutes2025.pdf",
+      "document_date": "2025-09-09",
+      "date_role": "meeting/agreement date"
+    },
+    {
+      "id": "jackson_2025_bid",
+      "family": "jackson_2025_chemical_procurement",
+      "title": "2025 Chemicals - WTP WWTP, Bid Tabulation",
+      "url": "https://www.cityofjackson.org/DocumentCenter/View/13594/Bid-Tabulation---2025-Chemicals---WTP-and-WWTPpdf",
+      "pages": [
+        {
+          "pdf_page_1based": 1,
+          "anchor": "chlorine column"
+        }
+      ],
+      "rendered_pages_1based": [],
+      "sha256": "d0cb71f8ec13fd2d48f96ce7a19e5f36995704ecf93f41db7817fd1b409d99e9",
+      "bytes": 38857,
+      "retrieval": {
+        "method": "python urllib.request.urlopen",
+        "http_status": 200,
+        "pdf_text_extractor": "pdftotext -layout",
+        "pdf_text_exit_code": 0
+      },
+      "scratch_path": "/tmp/smartchem-sourcing-20260907/jackson2025.pdf",
+      "document_date": "2025-05-15",
+      "date_role": "bid tabulation date"
+    },
+    {
+      "id": "jackson_2026_bid",
+      "family": "jackson_2026_chemical_procurement",
+      "title": "2026 Chemicals - WTP, Bid Tabulation",
+      "url": "https://www.cityofjackson.org/DocumentCenter/View/14546/Bid-Tabulation---2026-CHEMICALS---WTPpdf",
+      "pages": [
+        {
+          "pdf_page_1based": 1,
+          "anchor": "line 1 chlorine, line 2 separate freight"
+        }
+      ],
+      "rendered_pages_1based": [],
+      "sha256": "f1f0b6425197aa0829bf95ee3dc962cac46d276fcdac48618f091504f543ca5c",
+      "bytes": 210602,
+      "retrieval": {
+        "method": "python urllib.request.urlopen",
+        "http_status": 200,
+        "pdf_text_extractor": "pdftotext -layout",
+        "pdf_text_exit_code": 0
+      },
+      "scratch_path": "/tmp/smartchem-sourcing-20260907/jackson2026.pdf",
+      "document_date": "2026-05-27",
+      "date_role": "bid tabulation date"
+    }
+  ],
+  "kinetic_candidate": {
+    "source_id": "warshay_1966",
+    "document_status": "observed_primary",
+    "production_admission": "rejected_for_current_first_order_primitive",
+    "species": "Br2",
+    "phase": "gas",
+    "equation": "Br2 + M <=> 2 Br + M",
+    "rate_convention": "initial per-species Br2 consumption: -d[Br2]/dt = kD [Br2][M]",
+    "rate_coefficient_units": "L mol^-1 s^-1",
+    "model": "modified_arrhenius",
+    "expression": "kD(T) = A * T^0.5 * exp(-Ea/(R*T))",
+    "temperature_units": "K",
+    "temperature_range_summary_k": [
+      1200,
+      1900
+    ],
+    "temperature_range_boundary": "Summary range for investigation; per-collider endpoint table not transcribed.",
+    "ea_units": "kcal mol^-1",
+    "a_units_dimensionally_inferred": "L mol^-1 s^-1 K^-0.5",
+    "fits": [
+      {
+        "collider": "Ar",
+        "a_raw": "2.18e8",
+        "temperature_exponent_raw": "0.5",
+        "ea_raw": "31.5",
+        "source_equation": "8"
+      },
+      {
+        "collider": "Ne",
+        "a_raw": "1.82e8",
+        "temperature_exponent_raw": "0.5",
+        "ea_raw": "31.3",
+        "source_equation": "9"
+      },
+      {
+        "collider": "Kr",
+        "a_raw": "4.32e8",
+        "temperature_exponent_raw": "0.5",
+        "ea_raw": "33.6",
+        "source_equation": "10"
+      }
+    ],
+    "composition": {
+      "Br2_mole_fraction": "0.01",
+      "noble_gas_mole_fraction": "0.99"
+    },
+    "representative_run": {
+      "source_anchor": "Table I, printed page 13 / PDF page 15",
+      "initial_temperature_k": "300.4",
+      "initial_pressure_mmHg": "26.1",
+      "shocked_temperature_k": "1825",
+      "argon_mol_per_l": "4.727e-3",
+      "bromine_mol_per_l": "4.770e-5",
+      "observed_kd_l_per_mol_s": "1.48e6",
+      "pressure_scope": "single initial-pressure example, not a validity range or hot-state pressure"
+    },
+    "checks": {
+      "fit_at_1825_k_l_per_mol_s": "1573741.1443242412",
+      "r_kcal_per_mol_k_used": "0.0019872042586408316",
+      "check_role": "same_dataset_transcription_sanity_not_independent_holdout",
+      "observed_kd_times_argon_per_s": "6995.96",
+      "pseudo_first_order_value_role": "derived_initial_loss_coefficient_for_this_run_only_not_survival_seed"
+    },
+    "boundaries": [
+      "Initial rates omit reverse reaction.",
+      "Dilute mixture permits omission of Br2 as collision partner.",
+      "Collider identity and concentration must be represented.",
+      "Current KineticRef lacks the temperature-power term.",
+      "Cannot change bimolecular units into s^-1.",
+      "Long-hold and reverse-reaction treatment require separate justification.",
+      "No ambient, aqueous, liquid, air, or pure-Br2 scope transport established.",
+      "Later primary disagreement/corrections not adjudicated."
+    ]
+  },
+  "price_candidate": {
+    "material": "chlorine gas",
+    "chemical_identity_intended": "Cl2",
+    "vendor": "PVS DX, Inc.",
+    "buyer": "City of Los Fresnos, Texas, USA",
+    "currency": "USD",
+    "status": "approved_offer",
+    "status_basis": {
+      "price_source_id": "los_fresnos_2025_bid",
+      "approval_source_id": "los_fresnos_2025_minutes",
+      "join": "Same September 9, 2025 meeting / F.3 Chemicals; attachment names vendor and prices, minutes approve chemical bids at category level.",
+      "line_level_price_repeated_in_minutes": false,
+      "executed_signed_agreement_observed": false,
+      "invoice_observed": false,
+      "payment_observed": false
+    },
+    "observation_date": "2025-09-09",
+    "validity_start": "2025-10-01",
+    "validity_end": "2026-09-30",
+    "raw_offer": {
+      "package": "1-ton cylinder",
+      "price_per_cylinder": "2480.00",
+      "price_per_lb": "1.24",
+      "rental_per_month_usd": "50.00"
+    },
+    "derived_units": {
+      "package_lb_from_price_ratio": "2000",
+      "kg_per_lb_exact": "0.45359237",
+      "package_kg": "907.18474000",
+      "material_usd_per_kg": "2.733732051092482000964875137",
+      "material_usd_per_metric_tonne": "2733.732051092482000964875137",
+      "derivation": "price_per_cylinder/price_per_lb=2000 lb; price_per_lb/0.45359237 converts to USD/kg"
+    },
+    "source_class": "municipal_packaged_delivery_procurement_offer",
+    "production_seed_admitted": false,
+    "assay_fraction": null,
+    "boundaries": [
+      "Material component excludes the separate monthly cylinder rental.",
+      "No complete new-offer tax/surcharge closure; do not borrow current-column fees.",
+      "Not an observed paid transaction.",
+      "Not a plant-gate, industrial spot, retail, or generally available present price.",
+      "Exact chemical assay not verified.",
+      "Do not add to USGS-only source seed.",
+      "DOW ranking still needs feedstock basis and complete route cost context."
+    ]
+  },
+  "other_leads": [
+    {
+      "source_id": "jackson_2025_bid",
+      "status": "offered_bid_only",
+      "raw_unit": "ton",
+      "raw_prices_usd": {
+        "JCI Jones Chemicals, Inc.": "1725.00",
+        "Alexander Chemical": "1729.00"
+      },
+      "boundary": "Exact ton definition, package specification, and award not recovered."
+    },
+    {
+      "source_id": "jackson_2026_bid",
+      "status": "offered_bid_only",
+      "raw_unit": "TON",
+      "raw_prices_usd": {
+        "JCI Jones Chemicals, Inc.": "1330.00",
+        "Alexander Chemical Corporation": "1624.00"
+      },
+      "boundary": "Exact ton definition, package specification, and award not recovered; freight No Bid is not proof of free delivery."
+    }
+  ],
+  "access_failures": [
+    {
+      "url": "https://ntrs.nasa.gov/api/citations/19660020577/downloads/19660020577.pdf",
+      "instrument": "web.open",
+      "result": "403",
+      "resolved_by": "urllib HTTP 200, same source URL"
+    },
+    {
+      "url": "https://www.cityofjackson.org/DocumentCenter/View/13594/Bid-Tabulation---2025-Chemicals---WTP-and-WWTPpdf",
+      "instrument": "web.open",
+      "result": "redirect loop",
+      "resolved_by": "urllib HTTP 200, same source URL"
+    },
+    {
+      "url": "https://connect.beaumonttexas.gov/files/purchasing/Bid_No_DF0324-14_extend_ltr_2_2025.pdf",
+      "instrument": "web.open / urllib",
+      "result": "404 / 403",
+      "admitted": false
+    },
+    {
+      "url": "https://cityoflosfresnos.com/sites/default/files/fileattachments/community/page/3361/chemical_bid_packet_2025-2026.pdf",
+      "instrument": "urllib",
+      "result": "RemoteDisconnected",
+      "admitted": false
+    }
+  ],
+  "next_contacts": [
+    {
+      "purpose": "signed agreement, matched invoice, fees and assay/specification",
+      "source_url": "https://cityoflosfresnos.com/community/page/request-proposals-chemicals-0",
+      "recipient_role": "Los Fresnos City Secretary",
+      "outreach_sent": false
+    },
+    {
+      "purpose": "compare later independent kinetic work before recommended-reference admission",
+      "primary_links": [
+        "https://doi.org/10.1063/1.1743272",
+        "https://pubs.rsc.org/en/content/articlelanding/1967/df/df9674400241",
+        "https://doi.org/10.1016/S0082-0784(75)80342-0"
+      ],
+      "review_complete": false
+    }
+  ],
+  "claim_ledger": [
+    {
+      "claim": "No Br2 gas dissociation primary is directly sourceable",
+      "status": "refuted_blanket_access_claim"
+    },
+    {
+      "claim": "Recovered NASA fit is eligible for current first-order survival primitive",
+      "status": "refuted"
+    },
+    {
+      "claim": "No dated absolute chlorine primary can be read",
+      "status": "refuted_blanket_access_claim"
+    },
+    {
+      "claim": "Los Fresnos chemical price is an approved procurement offer",
+      "status": "observed_with_explicit_category_approval_join"
+    },
+    {
+      "claim": "DOW ranking or Br2 survival is complete",
+      "status": "not_established"
+    }
+  ],
+  "provenance_boundaries": [
+    "Search, PDF text, and rendering share one underlying document.",
+    "Los Fresnos attachment and minutes share one procurement family.",
+    "Different buyers and years cannot be pooled into a homogeneous spot-price sample."
+  ],
+  "conditional_cost_obstruction": {
+    "status": "proved_conditional_algebra_not_empirical_brine_economics",
+    "premise": "NaBr unit price derives only by bromine mass fraction from the same q per mass of contained Br used as Br2 benchmark",
+    "nabr_unit_price": "q * M(Br) / M(NaBr)",
+    "nabr_mass_per_unit_br2_mass": "M(NaBr) / M(Br)",
+    "feedstock_cost_per_unit_br2_mass": "q",
+    "conclusion": "With positive oxidant cost, synthesized Br2 costs strictly more than q even at perfect yield and zero other costs.",
+    "boundary": "This says nothing about real brine cost; no empirical feedstock quote was supplied.",
+    "next_contact": "Independent brine/feedstock and extraction-cost basis; do not derive the undercut premise from its comparator."
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "smartchem.cip-mancude-adversarial-probe/v1",
+  "rdkit_version": "2026.03.6",
+  "oracle": "rdCIPLabeler.AssignCIPLabels(maxRecursiveIterations=100000)",
+  "boundary": "finite reviewer case panel; shared CIP specification; deferrals and refusals counted",
+  "source_file": "smartchem/smiles.py",
+  "source_sha256": "0ab99081c339f4451dc72d69c06a83ea7ca377a1d6ab09c6bcdc5b67408403c6",
+  "probe_file": "experiments/cip_mancude_adversarial_probe.py",
+  "probe_sha256": "ebe2af77563332b1ebf8cea37793b0d5221388d4ab63535d8d1816787b365456",
+  "anchors": 3,
+  "ligands": 27,
+  "base_cases": 378,
+  "representations_per_base": 3,
+  "rows_count": 1134,
+  "complete": true,
+  "counts": {
+    "named_match": 900,
+    "true_tie": 80,
+    "deferred": 101,
+    "parser_refusal": 53,
+    "mismatch": 0
+  },
+  "cap_controls": [
+    {
+      "cap": "_CIP_MANCUDE_MAX_ATOMS",
+      "value": 0,
+      "dependent_result": [],
+      "early_decision_result": [
+        "R"
+      ]
+    },
+    {
+      "cap": "_CIP_MANCUDE_MAX_MATCHINGS",
+      "value": 0,
+      "dependent_result": [],
+      "early_decision_result": [
+        "R"
+      ]
+    },
+    {
+      "cap": "_CIP_MANCUDE_WORK_BUDGET",
+      "value": 0,
+      "dependent_result": [],
+      "early_decision_result": [
+        "R"
+      ]
+    }
+  ],
+  "rows_sha256": "8596d411245cef006bc9cef71bac4fd622a4bdff17d022c75a161503dd84c3c6"
+}

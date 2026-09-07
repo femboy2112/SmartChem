@@ -1,0 +1,81 @@
+{
+  "baseline_commit": "043a3cd87acdc33d1df9a3b8ad4b2215d93e8890",
+  "reports": [
+    {
+      "schema": "smartchem.cip-external-probe/v1",
+      "rdkit_version": "2026.03.6",
+      "oracle": "rdCIPLabeler.AssignCIPLabels(maxRecursiveIterations=100000)",
+      "boundary": "finite external implementation comparison; shared CIP specification; deferrals counted",
+      "anchors": 4,
+      "base_cases": 306,
+      "representations_per_base": 4,
+      "counts": {
+        "named_match": 354,
+        "true_tie": 136,
+        "deferred": 732,
+        "parser_refusal": 0,
+        "mismatch": 2
+      },
+      "rows_sha256": "3b928842178d811c00250ee466aee026aee793af63e0a3c3339c923337d2a6b9",
+      "stage": "before",
+      "mismatches": [
+        {
+          "ligands": [
+            "c1ccccn1",
+            "c1nccnc1"
+          ],
+          "sense": "@",
+          "representation": "canonical_kekule",
+          "smiles": "O[C@H](C1=CC=CC=N1)C1=NC=CN=C1",
+          "expected": [
+            "R"
+          ],
+          "actual": [
+            "S"
+          ],
+          "status": "mismatch",
+          "error": null
+        },
+        {
+          "ligands": [
+            "c1ccccn1",
+            "c1nccnc1"
+          ],
+          "sense": "@@",
+          "representation": "canonical_kekule",
+          "smiles": "O[C@@H](C1=CC=CC=N1)C1=NC=CN=C1",
+          "expected": [
+            "S"
+          ],
+          "actual": [
+            "R"
+          ],
+          "status": "mismatch",
+          "error": null
+        }
+      ]
+    },
+    {
+      "schema": "smartchem.cip-external-probe/v1",
+      "rdkit_version": "2026.03.6",
+      "oracle": "rdCIPLabeler.AssignCIPLabels(maxRecursiveIterations=100000)",
+      "boundary": "finite external implementation comparison; shared CIP specification; deferrals counted",
+      "anchors": 4,
+      "base_cases": 306,
+      "representations_per_base": 4,
+      "counts": {
+        "named_match": 1088,
+        "true_tie": 136,
+        "deferred": 0,
+        "parser_refusal": 0,
+        "mismatch": 0
+      },
+      "rows_sha256": "881aa8f358ecefaeb185b9c42ca3af68364f236579974356b5adafd826b9cc84",
+      "stage": "after",
+      "mismatches": []
+    }
+  ],
+  "rdkit_wheel_sha256": "9f97b58f1962df73bdacf44347bfa013f4fcb9896e049f98af2183e70e7aab46",
+  "reproduction": "PYTHONPATH=/path/to/optional/rdkit python -m experiments.cip_external_oracle_probe --output /tmp/cip-external.json",
+  "boundary": "306 base cases, four transported representations each; implementation check with shared CIP specification; not universal correctness or completeness."
+}

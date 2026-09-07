@@ -21,8 +21,10 @@ whose measured k the engine already recovers to ~7%).
 Boundaries, stated loudly.  (1) This is a STANDALONE primitive; it is NOT yet wired into
 :func:`~smartchem.experiment.composability._judge_transition`'s COMPOSABLE/DEGENERATE flip -- that needs a
 route intermediate that actually carries a sourced decomposition rate plus a unit-locked hold duration
-(``ConditionEnvelope.duration`` is today an unconsumed, unit-unchecked field).  So it advances item 3's
-MACHINERY on known physics; the DOW-Br2 payoff stays walled on a missing Br2 decomposition primary.
+(``ConditionEnvelope.duration`` now requires minutes; this primitive requires explicitly converted seconds).
+The duration remains unconsumed by core E1. The DOW-Br2 payoff requires compatible kinetics: the recovered
+Warshay NASA TN D-3502 primary measures collider-dependent initial dissociation, not the concentration-free
+first-order hold law here (see ``docs/research/SOURCING_RECON_2026-09-07.md``).
 (2) The verdict is a kinetic TENDENCY under the SOURCED Arrhenius fit (W3): never a claim about the real
 process, its true rate, or which cleavage Nature takes.  (3) The 99%-/50%-remaining band edges are a
 DECLARED interpretive policy (essentially-intact vs majority-destroyed, with an explicit grey band), stated

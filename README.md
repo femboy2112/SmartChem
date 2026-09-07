@@ -230,7 +230,7 @@ python -m smartchem.bench
 Current maintained fast-suite result (dev environment with the optional PySCF stack installed):
 
 ```text
-4265 passed, 14 skipped, 1 xfailed
+4397 passed, 14 skipped, 1 xfailed
 ```
 
 The skips are optional-backend coverage and the explicit slow-test gate; they are not represented as passed.

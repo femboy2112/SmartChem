@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ 376d186` · suite **4265 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
+> `verified @ c392c59` · suite **4397 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (`§1`–`§16`); this file is
@@ -60,6 +60,16 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 
 ## ✅ DONE — current shipped capability
 
+**ROUND 20** (branch `cip-load-stability-2026-09-06`) — 1 build, full-blast on **queue item 1**; `design → recon → build →
+reproduce → evil-morty → fold → verify`; **additive to the engine** (new `_cip_*` in `smiles.py` + harness + test), plus a
+**conscious supersession** of the ID-STEREO-01 same-element *deferral* tests (the deferral was "not built yet", now built);
+byte-identical on the distinct-Z slice; one self-caught soundness bug + one evil-morty finding folded, two residuals
+discharged/documented:
+
+| Item | Lane | What shipped |
+|---|---|---|
+| ID-STEREO-CIP-NAMER (item 1, the namer) | B | The **general CIP R/S namer** (`smartchem/smiles.py` `_cip_ranks`/`_cip_compare`/`_cip_digraph` + `experiments/cip_namer_probe.py` + `tests/test_cip_namer.py`) — closing item 1 (the R19 oracle unblocked it). CIP **Rule 1a** priority via a hierarchical digraph, **breadth-first, branch-by-branch with need-to-know pruning** (Hanson et al. 2018) — the fix for the R13/R14 **depth-first** bug (`C[C@H](CCC)C(C)C`: DFS says S, truth **R**). Phantom atoms for multiple bonds + ring closures; reuses the shipped `_perm_parity ^ sense` emit line (byte-identical distinct-Z). Now NAMES the common same-element case (amino acids/sugars: L-alanine S, the **L-serine S / L-cysteine R flip**, glyceraldehyde R). **SOUND, not complete**: Rule 1b/2/4/5 ties and aromatic-reaching ties DEFER (a wrong R/S is worse than none). Committed harness with 5 layers (textbook absolutes, oracle cross-check, R14 differential, branch-paired-vs-pooling proof, 840-case alkyl pool), FROZEN_HASH. **Self-caught soundness fix:** a fixed Kekulé wrongly NAMED the di-2-pyridyl false centre → lazy aromatic-boundary guard (atomic number still decides, onward aromatic connectivity withheld). **evil-morty ("could not make it lie"):** folded a spurious over-defer on an aromatic ring in an already-decided branch; discharged the exocyclic-aromatic residual; documented the comparator-transitivity residual. |
+
 **ROUND 19** (branch `cip-load-stability-2026-09-06`) — 3 builds + 1 recorded decision; each build `design → recon →
 build → reproduce → evil-morty → fold → verify`; **additive** (5 new files + additive edits to `service.py`, no existing
 behaviour changed); two evil-morty passes found real weaknesses, all folded or documented and pinned by tests:
@@ -112,27 +122,23 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
-> ROUND 19 advanced all three: item 1's **oracle** shipped (the namer remains), item 3's duration-aware **primitive**
-> shipped (the core wire-in + the DOW-Br₂ primary remain), item 2b (**serial_holds**) shipped, and item 2's **scope
-> decision is now resolved** (see `docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.1.md`). The queue stays L-heavy.
+> **ROUND 20 CLOSED item 1** — the general CIP breadth-first **namer** shipped (the R19 oracle unblocked it). Full CIP
+> completeness (Rules 1b/2/4/5 + aromatic Kekulé-averaging) is sound-deferred, tracked below. The two remaining queue items
+> are both **L**: item 2 (on-load re-derivation, decision recorded R19 — a pure build) and item 3 (duration wire-in + Br₂
+> primary). The queue stays L-heavy; the true rate-limiter on item 3 is sourcing, not build capacity.
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| 1 | **General CIP — the breadth-first namer** (oracle shipped R19) | B | **L** | medium | a correct sphere-by-sphere digraph, validated against the committed oracle |
 | 2 | **Composability + physical re-derivation on load — DAG *and* linear** | C | **L** | medium | ~~a scope decision~~ **DECIDED R19** — now a pure build |
 | 3 | **Wire the duration-aware verdict into core E1 + the DOW-Br₂ primary** (primitive shipped R19) | B·C | **L** | long | a route intermediate with sourced kinetics + a Br₂ decomposition primary |
 
-### 1 · General CIP — the breadth-first namer (the oracle is now committed) — **L, correctness-critical**
-**The oracle gate is met** (ROUND 19, `experiments/cip_geometry_oracle_probe.py`): a committed geometric signed-volume
-handedness instrument, green on an exhaustive {F,Cl,Br,I} battery + textbook anchors, that takes priorities as an INPUT
-so it decouples "are the priorities right" (the namer) from "is the geometry right" (the oracle). **Honest scope of what
-it buys** (an adversarial review right-sized it, baked into the tests): it is algebraically `perm_parity ^ sense`, so it
-buys ONE independent bit (a global convention-flip guard) + the decoupling instrument — NOT a ranking-bug catch on the
-distinct-Z slice. So the namer build is: the correct **breadth-first / sphere-by-sphere** hierarchical digraph (the exact
-DFS-vs-BFS bug that killed R14) + phantom atoms for multiple bonds + Rule 1b/2, validated by
-`namer(mol) == geometric_handedness(true_priorities, sense)` on textbook cases where priorities are known. A wrong R/S is
-worse than none. *Absorbs E/Z.* **Tracked seam:** the shared parser `@`/`@@` → written-order convention has no external
-(RDKit) oracle in the dependency-light core — validated only against hand-checkable textbook absolutes.
+### 1 · General CIP — the breadth-first namer — ✅ **DONE (ROUND 20, ID-STEREO-CIP-NAMER)**
+Shipped: `smartchem/smiles.py` `_cip_ranks`/`_cip_compare`/`_cip_digraph`, wired into `_cip_labels`; validated by
+`experiments/cip_namer_probe.py` (5 layers, FROZEN_HASH) + `tests/test_cip_namer.py`. CIP **Rule 1a**, breadth-first,
+branch-by-branch with need-to-know pruning (the DFS-vs-BFS fix), phantom atoms for multiple bonds + ring closures,
+validated `namer(mol) == geometric_handedness(true_priorities, sense)` on the textbook battery (incl. the L-serine (S) /
+L-cysteine (R) flip). SOUND, not complete — Rules 1b/2/4/5 and aromatic-reaching ties DEFER. See the DONE ledger and
+manifest §20. What remains for full CIP completeness (Rule 1b/2/4/5 + aromatic Kekulé-averaging) is TRACKED DEBT below.
 
 ### 2 · Composability + physical re-derivation on load — DAG **and** linear — **L, scope DECIDED**
 On load only the **process** component is re-derived; composability + physical ride as free-text (closed only by the
@@ -211,11 +217,21 @@ not just a human note. See the DONE ledger.
   ranking primitive; feeding its process/identity/purity strengths into the affordability `CostVector` as a verification
   axis needs a new `_AXES` entry + a frontier-entry schema bump + golden regen (a deliberate deferral, not an oversight —
   the score is honest and usable standalone now).
-- **CIP oracle's parser-convention seam** (Lane B; ROUND-19, evil-morty) — the geometric oracle validates the geometry→
-  label convention against textbook absolutes, but the shared parser's `@`/`@@` → written-neighbour-ORDER convention has
-  **no external (RDKit) oracle** in the dependency-light core; it is asserted from the OpenSMILES spec, not cross-checked
-  by a third party. A future namer validated against this oracle would inherit a silent parser-convention error. Revisit
-  if an external stereo oracle ever enters the toolchain.
+- **CIP oracle/namer parser-convention seam** (Lane B; ROUND-19/20, evil-morty) — the namer + oracle validate the
+  geometry→label convention against textbook absolutes, but the shared parser's `@`/`@@` → written-neighbour-ORDER
+  convention has **no external (RDKit) oracle** in the dependency-light core; it is asserted from the OpenSMILES spec, not
+  cross-checked by a third party (a 400-molecule parity-correct spelling fuzzer found 0 inconsistencies, but that is
+  self-consistency, not an external absolute). Revisit if an external stereo oracle ever enters the toolchain.
+- **CIP full completeness — Rules 1b/2/4/5 + aromatic Kekulé-averaging** (Lane B; ROUND-20) — the namer is CIP **Rule 1a
+  only**. Isotope-only ties (Rule 2), pseudoasymmetric/E-Z ties (Rules 4/5), and any ranking that DEPENDS on an aromatic
+  atom's substituents all **DEFER** (sound, never a guessed label). The clean completeness extension is **Kekulé-invariant
+  atomic-number averaging** over mancude rings (Hanson et al. 2018) — that alone would let aryl/heteroaryl stereocentres
+  (common in pharma) be named instead of deferred. Its own build; not started.
+- **CIP comparator transitivity residual** (Lane B; ROUND-20, evil-morty) — `_cip_compare` is used as a `cmp_to_key` sort
+  key, which assumes transitivity; a deep degenerate tie tree could in principle violate it. No counterexample found
+  (fuzzer-clean) and the `sorted(ranks)==[0,1,2,3]` guard in `_cip_ranks` catches any top-level cycle (→ DEFER, sound),
+  but a transitivity PROOF is not in hand — documented, not eliminated. (The exocyclic-multiple-bond-into-aromatic path IS
+  discharged, by an explicit guard in `_cip_digraph`.)
 - **Duration-stability reactant-coefficient rate convention** (Lane B·C; ROUND-19, evil-morty) — `surviving_fraction`
   assumes the sourced `k` is the per-species rate (`-d[A]/dt = k[A]`), which both seeded records pin in their provenance;
   a future first-order record with coefficient > 1 sourced under the *reaction-rate* convention would be off by the

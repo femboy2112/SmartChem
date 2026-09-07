@@ -4306,3 +4306,75 @@ breadth-first digraph, validated against the now-committed oracle); item 2 is a 
 needs the core E1 wire-in (+ the `ConditionEnvelope.duration` unit-lock) and a Br₂ decomposition primary. TRACKED DEBT
 gained three (§ROADMAP): the CIP parser-convention seam (no external oracle), the duration-stability coefficient
 convention, the unconsumed/unit-unlocked `ConditionEnvelope.duration`.
+
+## §20 — ROUND 20 (branch `cip-load-stability-2026-09-06`): the general CIP breadth-first namer (queue item 1 closes)
+
+1 build (ID-STEREO-CIP-NAMER), full-blast on queue **item 1**. R19 met item 1's *oracle* gate; this builds the *namer* —
+the priority-ranking half that killed the R13/R14 attempts. **Additive to the engine** (new `_cip_*` functions in
+`smiles.py` + `experiments/cip_namer_probe.py` + `tests/test_cip_namer.py`), plus a **conscious supersession**: the general
+namer NAMES the common same-element case the distinct-Z slice deferred, so several ID-STEREO-01 *deferral* tests were
+updated to their correct labels (the deferral was "not built yet", now built). Byte-identical on the distinct-Z slice.
+
+### 20.1 the ranker (ID-STEREO-CIP-NAMER) — Lane B
+`smartchem/smiles.py`: `_cip_digraph` / `_cip_compare` / `_cip_sorted_children` / `_cip_child_zs` / `_cip_ranks`, wired into
+`_cip_labels`. CIP **Rule 1a** priority via a hierarchical digraph, **breadth-first, branch-by-branch with need-to-know
+pruning** (Hanson et al., *J. Chem. Inf. Model.* 2018, 58(9), 1755) — the fix for the R13/R14 **depth-first** nested-tuple
+key that mislabels branch-vs-chain (`C[C@H](CCC)C(C)C` → DFS says S, truth is **R**). Multiple bonds and ring closures
+become duplicate/phantom leaf atoms (real atomic number, phantom-0 children — so a real atom out-ranks a same-Z duplicate
+one sphere LATER, NOT the naive shortcut). The namer produces `ranks` (a permutation of {0,1,2,3}) and reuses the SHIPPED
+`_perm_parity(ranks) ^ sense` emit line, so it is **byte-identical** to the old `sorted(z, reverse=True)` on the distinct-Z
+slice (there the digraph decides at sphere 0) — a strict extension. **Memoised** + budget-bounded (fail-closed DEFER). It is
+**SOUND, not complete**: a centre Rule 1a cannot fully order (isotope-only Rule 2, pseudoasymmetric/E-Z Rules 4/5, a true
+constitutional duplicate) is a NAMED DEFERRAL — a wrong R/S is worse than none.
+
+### 20.2 recon (4 Citadel-Rick bearings, read-only)
+Parser data-structures (raw `bonds` preserve written direction + order, `Bond.order` is the phantom trigger, no phantom
+machinery existed); the correct Rule-1a algorithm + a discriminating textbook set (incl. the **L-serine (S) / L-cysteine
+(R) flip** — same skeleton and `@@` tag, opposite label because cysteine's real S out-ranks the carboxyl's phantom-O at
+sphere 1); the R14 autopsy (the reverted `3485d35` was test-only; the bug was DFS lexicographic; `C[C@H](CCC)C(C)C` is the
+exact discriminator); the soundness boundary + the six stereo test files not to regress.
+
+### 20.3 the committed harness — five validation layers
+`experiments/cip_namer_probe.py` (FROZEN_HASH): (1) ~18 textbook/PubChem absolutes incl. the serine/cysteine flip; (2)
+**oracle cross-check** — every named centre's label == `geometric_handedness(namer's priorities, sense)` (geometry
+validated independently of ranking, the exact decoupling R19's oracle was for); (3) the **R14 differential** — an inline
+depth-first comparator MISLABELS `C[C@H](CCC)C(C)C` as (S) while the shipped namer names (R); (4) the **branch-paired
+proof** — a synthetic divergence pair where a SPHERE-POOLING comparator (a different wrong bug) and the correct
+need-to-know branch-paired comparator disagree, and `_cip_compare` takes the branch-paired side; (5) a **840-case
+combinatorial alkyl pool** (the class the R14 bug hid in) — every named centre inverts under enantiomer reflection and is
+invariant under re-spelling, twin-substituent false centres defer.
+
+### 20.4 the conscious supersession (deferrals → names)
+`tests/test_cip_naming.py`: the same-element deferral test and the branch-vs-chain "wall" test flipped from `== ()` to the
+correct labels (alanine S, glyceraldehyde R, the R14 trio all R). `tests/test_stereo_dossier.py`: alanine now names;
+still-deferred examples swapped to a genuine ring stereocentre. `tests/test_cip_geometry_oracle.py`: the "slice defers a
+same-Z centre" test rewritten to "namer and oracle now agree". `smartchem/experiment/compile.py`: the dossier disclosure
+text corrected ("by the CIP Rule-1a breadth-first hierarchical digraph"; deferral reason is now ring/isotope/pseudoasymmetric,
+not same-element). No golden touched cip_labels or a chiral SMILES → zero golden regen.
+
+### 20.5 the aromatic Kekulé soundness bug (self-caught, before evil-morty) + the lazy fix
+Constructing the sharpest probe — a FALSE centre — surfaced a real unsoundness: `O[C@H](c1ccccn1)c1ccccn1` (two IDENTICAL
+2-pyridyls) was NAMED `(R)`. Correct Rule 1a on a mancude ring needs Kekulé-invariant atomic-number AVERAGING (Hanson Fig.
+3); the parser's one fixed Kekulé made the two identical pyridyls traverse to DIFFERENT digraphs and broke a true tie.
+**Fix (lazy aromatic boundary):** an aromatic atom is a boundary node whose atomic number is still usable (so a ranking
+decided before the ring still names — no regression on the distinct-Z slice, e.g. `Cl[C@H](F)CCc1ccccc1` = S) but whose
+Kekulé-dependent onward connectivity is withheld; a comparison that must descend past it raises `_CipAromatic` → DEFER.
+New lesson: [[comparing-fixed-representatives-fabricates-a-distinction]].
+
+### 20.6 evil-morty — "I could not make it lie"
+A full adversarial pass found **no wrong R/S**. It verified: all anchors; a **400-molecule parity-correct spelling fuzzer**
+(400/400 named, 0 disagreements); the phantom-timing trap (vinyl > isopropyl, ethynyl > vinyl, nitrile triples); every
+deferral obligation (isotope, constitutional-duplicate, pseudoasymmetric); and the aromatic hazard "closed and closed
+well". Folds: **finding #1 (LOW, over-defer)** — `Cl[C@H](C)C=Cc1ccccc1` (styryl) spuriously deferred where its tBu twin
+named, because `_cip_compare` eagerly full-sorted children before the atomic-number sphere check; **fixed** by comparing
+the immediate sphere on known atomic numbers first (`_cip_child_zs`) and only ranking children if the sphere ties — which
+also makes the code's own docstring true (a ranking decided before the ring now names). **Residual A** (exocyclic multiple
+bond into an aromatic atom → Kekulé-dependent phantom count) **discharged** by an explicit `_cip_digraph` guard. **Residual
+B** (comparator transitivity as a `cmp_to_key` sort key) **documented** — no counterexample, fuzzer-clean, the
+`sorted(ranks)==[0,1,2,3]` guard catches top-level cycles, but no proof in hand.
+
+### 20.7 tracked debt + next steps
+NEW tracked debt (§ROADMAP): **aryl/heteroaryl naming needs Kekulé-averaging** (aromatic-reaching ties defer until built —
+the clean completeness extension); the **comparator-transitivity residual**. Item 1's ORACLE + NAMER are both shipped;
+what remains for full CIP completeness is Rules 1b/2/4/5 + aromatic averaging (all sound-deferred today). Queue now
+L-heavy on items 2 (on-load re-derivation, decision recorded, a pure build) and 3 (duration wire-in + Br₂ primary).

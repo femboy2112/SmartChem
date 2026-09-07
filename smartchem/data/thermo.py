@@ -185,6 +185,16 @@ SEED_THERMO_REFS: tuple[ThermoRef, ...] = (
               uncertainty_dhf_kj=0.10, uncertainty_s_j_per_mol_k=0.005),
     ThermoRef("Cl2", "chlorine", 0.0, 223.081, "gas", f"element reference state; S° {_CODATA}",
               uncertainty_dhf_kj=0.0, uncertainty_s_j_per_mol_k=0.010),
+    # DOW-thermo (ROUND 26): bromine, mirrored from the frozen CODATA seed (experiments.thermo_codata_seed;
+    # Cox, Wagman et al. 1984, fetched + cross-checked 2026-09-07 vs NIST WebBook + the official CODATA table --
+    # both bearings agree; JANAF/Chase 1998 within ±).  Only the GAS-phase records enter the live table: they
+    # close the DOW-Br₂ dissociation verdict (Br₂ → 2 Br•, endergonic at 298 K), and keeping one record per formula
+    # leaves ``for_formula`` unambiguous.  Br₂'s true standard state is LIQUID (Br₂(l), ΔfH°=0, lives in the frozen
+    # seed as the reference state); no liquid-Br₂ reaction is reasoned about here, and the phase is carried honestly.
+    ThermoRef("Br", "bromine atom", 111.87, 175.018, "gas", f"ΔfH° and S° (gas atom, 298.15 K) {_CODATA}",
+              uncertainty_dhf_kj=0.12, uncertainty_s_j_per_mol_k=0.004),
+    ThermoRef("Br2", "bromine", 30.91, 245.468, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}",
+              uncertainty_dhf_kj=0.11, uncertainty_s_j_per_mol_k=0.005),
 )
 
 #: A convenience default seed; extended per call for any other chemical, NOT a whitelist.

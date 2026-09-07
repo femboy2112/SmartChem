@@ -83,9 +83,9 @@ class TestRateAwareRanking:
         frozen = fit_route(route, box, kinetics=self._table(200.0, 13.0))  # high barrier -> FROZEN
         empty = fit_route(route, box, kinetics=KineticTable(()))           # no data -> UNKNOWN
         sf, sfr, se = _route_score(fast), _route_score(frozen), _route_score(empty)
-        assert len(sf) == 8                     # a rate tier was appended as the final element
-        assert sf[:-1] == sfr[:-1] == se[:-1]   # tied on every prior (higher-priority) dimension
-        assert sf[-1] < se[-1] < sfr[-1]        # FAST < UNKNOWN(neutral middle) < FROZEN
+        assert len(sf) == 10                    # M2b inserted the Pareto-front + net-ΔG tiers; rate is STILL last
+        assert sf[:-1] == sfr[:-1] == se[:-1]   # tied on every prior (higher-priority) dimension (incl. the M2b tiers)
+        assert sf[-1] < se[-1] < sfr[-1]        # FAST < UNKNOWN(neutral middle) < FROZEN, the dead-last tiebreaker
         assert fast.kinetics.verdict == "FAST" and frozen.kinetics.verdict == "FROZEN"
 
     def test_unknown_rate_is_neutral_never_a_penalty_for_missing_data(self):

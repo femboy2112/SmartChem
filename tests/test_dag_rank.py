@@ -92,6 +92,16 @@ def test_the_service_returns_dag_dossiers_ranked_best_first_non_vacuously():
         process=ProcessBounds(max_total_minutes=600.0), max_depth=3))
     dossiers = resp.ranked_dag_dossiers
     assert len(dossiers) >= 2                                   # a real multi-route ranking subject
-    keys = [(_STATUS_RANK[d.fit_status], len(d.gaps)) for d in dossiers]
-    assert keys == sorted(keys)                                 # best-first: status, then fewer gaps
-    assert len({k[1] for k in keys}) >= 2                       # NON-VACUOUS: the gap counts genuinely vary
+    statuses = [_STATUS_RANK[d.fit_status] for d in dossiers]
+    assert statuses == sorted(statuses)                        # status is the TOP ranking tier (still monotone)
+    gap_counts = [len(d.gaps) for d in dossiers]
+    assert len(set(gap_counts)) >= 2                           # NON-VACUOUS: the evidence genuinely varies
+    # M2b: the sourced additive-ΔG DRIVE (net-ΔG magnitude, the Hess functor) now ranks ABOVE the gap count --
+    # a sourced thermo refinement, exactly as selectivity/feasibility-sign/equilibrium already outrank gaps.  This
+    # set is all UNKNOWN-status with a CONSTANT feasibility-sign and equilibrium (asserted below), so the ONLY
+    # tier that can reorder these DAGs ahead of the gap count is the net-ΔG magnitude -- and it does, so the
+    # returned gap counts are NO LONGER monotone (pre-M2b they WERE: this is the physics-first reorder reaching
+    # the service end-to-end).  A dropped/reversed sort still fails via the status check above.
+    assert len({d.feasibility_verdict for d in dossiers}) == 1  # feas-sign constant -> not the reorder driver
+    assert len({d.equilibrium_verdict for d in dossiers}) == 1  # equilibrium constant -> not the reorder driver
+    assert gap_counts != sorted(gap_counts)                    # so the reorder is the net-ΔG magnitude (M2b), live

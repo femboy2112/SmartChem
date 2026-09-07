@@ -86,6 +86,17 @@ CODATA_KEY_VALUES: tuple[CodataRef, ...] = (
     CodataRef("dihydrogen", "H2", "gas", "[H][H]", 0.0, 0.0, 130.680, 0.003, True),
     CodataRef("dinitrogen", "N2", "gas", "N#N", 0.0, 0.0, 191.609, 0.004, True),
     CodataRef("dichlorine", "Cl2", "gas", "ClCl", 0.0, 0.0, 223.081, 0.010, True),
+    # DOW-thermo: bromine is a CODATA key element (Cox, Wagman & Medvedev 1989; NIST tag "CODATA Review value,
+    # Cox, Wagman, et al., 1984" -- the 1984 recommendation year, 1989 book, per this file's SOURCE/SECOND_SOURCE).
+    # Fetched + cross-checked 2026-09-07
+    # from the NIST WebBook (which tags these "CODATA Review value") AND the official CODATA Key Values table
+    # (codata.info/resources/databases/key1.html) -- both bearings agree exactly, and JANAF/Chase 1998 agrees within
+    # the stated ± (Br(g) 111.86/175.02; Br2(g) 30.91/245.38).  Br2(l) is bromine's reference state (ΔfH°=0 by
+    # convention, standard state at 298 K is the liquid).  These unlock the DOW-Br2 dissociation verdict
+    # (Br2 -> 2 Br•, strongly endergonic at 298 K -- Br2 is thermodynamically stable against dissociation).
+    CodataRef("bromine atom", "Br", "gas", "[Br]", 111.87, 0.12, 175.018, 0.004, False),
+    CodataRef("dibromine", "Br2", "gas", "BrBr", 30.91, 0.11, 245.468, 0.005, False),
+    CodataRef("dibromine", "Br2", "liquid", "BrBr", 0.0, 0.0, 152.21, 0.30, True),
     CodataRef("carbon (graphite)", "C", "solid", "", 0.0, 0.0, 5.74, 0.10, True),
     # NOTE: atomic hydrogen H(g) is a CODATA key species (dfH = 217.998 +/- 0.006 kJ/mol) but the source hunt did
     # NOT transcribe its S, so it is DELIBERATELY omitted rather than shipped with an unsourced entropy -- add it
@@ -136,7 +147,7 @@ def content_hash(rows: "tuple[CodataRef, ...]" = CODATA_KEY_VALUES) -> str:
 
 #: The frozen hash of the committed CODATA seed (regenerate DELIBERATELY, only after re-transcribing from the dated
 #: source, by running this module as __main__).
-FROZEN_HASH = "569304785e9cbe6cfbeb9f5d3fbaa95dffe34206f8dc6b2ce516c7b60698e3a5"  # +HCl,+Cl2 (CODATA, fetched 2026-09-04)
+FROZEN_HASH = "7e563ad8ed327354ad16561f603f858e0b42725d1e6e0ab20aab9c976b930ea4"  # +HCl,+Cl2 (2026-09-04); +Br,+Br2(g),+Br2(l) (CODATA, fetched 2026-09-07)
 
 
 def report() -> dict:

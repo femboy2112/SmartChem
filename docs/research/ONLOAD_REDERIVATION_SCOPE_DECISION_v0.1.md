@@ -1,5 +1,13 @@
 # On-load re-derivation of composability + physical — scope decision (ROADMAP queue item 2)
 
+> ⚠️ **SUPERSEDED by [`ONLOAD_REDERIVATION_SCOPE_DECISION_v0.2.md`](ONLOAD_REDERIVATION_SCOPE_DECISION_v0.2.md).** After the external
+> ChatGPT design review was folded against the actual tree (8-agent recon+adversary pass), **two holes were found in the design below** and one
+> factual error corrected: (1) the load-time coherence check does **not** bind the payload to `route_digest` (a substitution attack lands) — v0.2
+> adds `reconstruct(payload).digest == route_digest`; (2) the `compare=False` payload is **bypassable by deletion** under the tree's fail-open
+> loader idiom (the "gated on presence" build below is the vulnerable shape) — v0.2 makes verified admission a fail-**closed** consumer policy;
+> and (3) the HMAC claim on lines 52–60 conflates a free public-checksum recompute with a MAC forge (corrected inline below). **Read v0.2 for the
+> build spec.** This file is kept for the rationale trail.
+
 > Status: **DECIDED, build-ready** (ROUND 19). This resolves the "scope decision" gate the roadmap attached to
 > item 2, and measures the build so it can be executed cleanly in a dedicated round rather than rushed into the
 > central response module. No code shipped for item 2 in ROUND 19 (items 1, 2b, 3 did); this is the decision that
@@ -52,9 +60,13 @@ incoherence. This mirrors PROCESS-ADMIT-01's *check* shape exactly.
 **Why this is protection-equivalent for the re-derivation purpose:**
 - A tamperer who edits the thick payload so it re-derives to a *different* verdict than the claimed (digest-protected)
   one is **caught by the coherence check** (mismatch → raise).
-- A tamperer who edits *both* the thick payload *and* the claimed verdict changes `result_digest` → the existing
-  key-holding-forger residual, closed only by the opt-in producer signature — **unchanged by item 2**, exactly as
-  PROCESS-ADMIT-01 leaves it.
+- A tamperer who edits *both* the thick payload *and* the claimed verdict changes `result_digest` → ~~the existing
+  key-holding-forger residual, closed only by the opt-in producer signature~~ **[CORRECTED in v0.2]**. This sentence
+  conflates two different things: `result_digest` is a **plain public SHA** any unsigned editor recomputes for free
+  (`contracts.py:183-191`), so changing it is *not* a barrier at all on the default path; and the **key-holding-forger
+  residual is IRREDUCIBLE** — a signature never closes it (`test_key_holding_forger_residual_is_not_closable_by_a_signature`).
+  The real closure for an unsigned bare-relabel/substitution is the **structural** route-binding + fail-closed re-derivation
+  v0.2 adds; the producer signature only closes a **keyless out-of-band** tamper.
 - So folding into the digest buys no additional protection *for this purpose* while costing every existing identity.
   The `compare=False` + coherence-check design is the minimal-blast, protection-equivalent choice — and it is the same
   pattern ROUND 19's item 2b used for `serial_holds` (digest-excluded disclosure, digests byte-stable).

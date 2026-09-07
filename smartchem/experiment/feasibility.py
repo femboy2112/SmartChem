@@ -162,19 +162,19 @@ def resolve_thermo(
                         "the ± is a LOWER BOUND (the phase-change correction ± is not fully sourced)"
                     )
                     prov = f"{prov}; corrected GAS->{phase} via {pc.transition.value} ({pc.provenance}); {caveat}"
-            try:
-                return ThermoRef(
-                    _formula_str(molecule), _label(molecule), dhf, s, phase, prov, grade=grade,
-                    uncertainty_dhf_kj=unc_dhf, uncertainty_s_j_per_mol_k=unc_s, sigma_is_lower_bound=sigma_lb,
-                )
-            except ValueError:
-                # An off-coverage group estimate can produce a physically invalid record (e.g. a
-                # negative third-law S° for a species the Benson groups cannot describe, like bare
-                # Br-Br).  That is NOT thermo data -- it is a loud gap.  Fail closed to None (the
-                # resolve_thermo contract is ThermoRef | None; it must never raise), so feasibility
-                # returns UNKNOWN rather than crashing the caller.  Anti-fabrication: a garbage estimate
-                # never becomes a verdict.
+            if s < 0 or not math.isfinite(s) or not math.isfinite(dhf):
+                # An off-coverage group estimate can be physically invalid (a negative third-law S° for
+                # a species the Benson groups cannot describe, or a non-finite value).  That is NOT
+                # thermo data -- it is a loud gap.  Fail closed to None (the resolve_thermo contract is
+                # ThermoRef | None; it must never raise a garbage record OR crash the caller).  A NARROW,
+                # EXPLICIT guard, not a blanket try/except: a genuine band-propagation bug in the
+                # quadrature above still surfaces loudly from ThermoRef rather than being masked here
+                # (adversarial fold).  Anti-fabrication: a garbage estimate never becomes a verdict.
                 return None
+            return ThermoRef(
+                _formula_str(molecule), _label(molecule), dhf, s, phase, prov, grade=grade,
+                uncertainty_dhf_kj=unc_dhf, uncertainty_s_j_per_mol_k=unc_s, sigma_is_lower_bound=sigma_lb,
+            )
     return None
 
 

@@ -151,3 +151,19 @@ class PhysicsProduct:
     def comparable_to(self, other: "PhysicsProduct") -> bool:
         """True iff the two are Pareto-ordered (one dominates), False iff incomparable."""
         return self.dominates(other) or other.dominates(self)
+
+
+def pareto_optimal(objectives: tuple[PhysicsProduct, ...]) -> tuple[int, ...]:
+    """Indices of the non-dominated objectives among those with a COMPLETE objective.
+
+    A point with an unknown (``None``) axis is never non-dominated (its objective is incomparable to
+    everything -- we do not certify a point on physics we do not have).  Ties are kept: two distinct
+    points with identical objectives never dominate each other (dominance requires a strict axis), so
+    both survive.  The frontier's index order follows the input order.
+    """
+    complete = [i for i, obj in enumerate(objectives) if obj.is_complete]
+    return tuple(
+        i
+        for i in complete
+        if not any(objectives[j].dominates(objectives[i]) for j in complete if j != i)
+    )

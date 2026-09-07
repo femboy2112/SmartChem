@@ -591,8 +591,12 @@ class OpenChemDiagram:
             )
         dom = self.external_input()
         cod = self.external_output()
-        if dom == cod:
+        if not self.core.hyperedges:
+            # A bare wire diagram (no reaction hyperedge) IS the identity on its object.
             return Reaction(dom, cod, self.name, path=())
+        # Any diagram with real chemistry emits the net transition EVEN WHEN dom == cod: a catalytic
+        # cycle or an isomerisation loop is a genuine endomorphism, NOT the identity (Reaction's own
+        # invariant -- "endomorphisms are not identities merely because their net state change is zero").
         return Reaction(dom, cod, self.name, path=((dom, cod),), generator_word=((dom, cod, "net"),))
 
     def __repr__(self) -> str:

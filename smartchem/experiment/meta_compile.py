@@ -29,7 +29,7 @@ from dataclasses import dataclass
 
 from ..category import Molecule, Reaction
 from .composability import DEFAULT_KINETICS, DEFAULT_STABILITY, verify_composability
-from .functorial_physics import PhysicsProduct, route_net_delta_g
+from .functorial_physics import PhysicsProduct, pareto_optimal, route_net_delta_g
 from ..transform_provider import DEFAULT_TRANSFORM_REGISTRY
 from .routes import search_routes
 from .step import ExperimentRoute
@@ -54,6 +54,13 @@ class ClosedCompilation:
     route: ExperimentRoute
     net_delta_g_kj: float | None
     surviving_fraction: float | None
+
+    def __post_init__(self) -> None:
+        # A closure is DERIVED FROM a route; a route-less compilation is a half-built object whose
+        # .diagram/.net_reaction() would raise a raw AttributeError (adversarial fold).  Refuse it -- the
+        # Pareto math is tested directly on PhysicsProduct via functorial_physics.pareto_optimal.
+        if type(self.route) is not ExperimentRoute:
+            raise TypeError("ClosedCompilation.route must be an ExperimentRoute")
 
     @property
     def objective(self) -> PhysicsProduct:
@@ -80,14 +87,10 @@ def pareto_frontier(closures: tuple[ClosedCompilation, ...]) -> tuple[ClosedComp
 
     A closure with an unknown ΔG or survival axis is never on the frontier (its objective is incomparable
     -- we do not certify a route on physics we do not have).  Order within the frontier is the input order.
+    Delegates the dominance math to :func:`functorial_physics.pareto_optimal` (tested there directly).
     """
-    complete = [c for c in closures if c.objective.is_complete]
-    frontier: list[ClosedCompilation] = []
-    for candidate in complete:
-        if any(other.objective.dominates(candidate.objective) for other in complete if other is not candidate):
-            continue
-        frontier.append(candidate)
-    return tuple(frontier)
+    keep = pareto_optimal(tuple(c.objective for c in closures))
+    return tuple(closures[i] for i in keep)
 
 
 @dataclass(frozen=True)

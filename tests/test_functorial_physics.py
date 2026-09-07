@@ -16,6 +16,7 @@ from smartchem.experiment.feasibility import (
 from smartchem.experiment.functorial_physics import (
     FreeEnergyDecoration,
     PhysicsProduct,
+    pareto_optimal,
     route_net_delta_g,
 )
 from smartchem.experiment.step import ExperimentRoute, ExperimentStep
@@ -135,6 +136,31 @@ class TestPhysicsProduct:
         assert unknown_survival.is_complete is False
 
 
+class TestParetoOptimal:
+    def test_dominated_points_are_excluded(self):
+        best = PhysicsProduct(-50.0, 0.9)
+        dominated = PhysicsProduct(-10.0, 0.5)
+        assert pareto_optimal((best, dominated)) == (0,)
+
+    def test_incomparable_points_are_both_kept(self):
+        favorable_fragile = PhysicsProduct(-80.0, 0.2)
+        marginal_durable = PhysicsProduct(-5.0, 0.99)
+        assert pareto_optimal((favorable_fragile, marginal_durable)) == (0, 1)
+
+    def test_identical_points_are_both_kept(self):
+        p = PhysicsProduct(-10.0, 0.8)
+        q = PhysicsProduct(-10.0, 0.8)
+        assert pareto_optimal((p, q)) == (0, 1)
+
+    def test_incomplete_objectives_are_never_optimal(self):
+        known = PhysicsProduct(-50.0, 0.9)
+        unknown = PhysicsProduct(-99.0, None)
+        assert pareto_optimal((known, unknown)) == (0,)
+
+    def test_all_incomplete_yields_empty_frontier(self):
+        assert pareto_optimal((PhysicsProduct(-10.0, None), PhysicsProduct(None, 0.5))) == ()
+
+
 # ======================================================================================
 # Anti-fabrication: the DOW-Br₂ thermodynamic verdict is DATA-GATED, never invented
 # ======================================================================================
@@ -146,4 +172,7 @@ class TestDowBromineThermoIsDataGated:
         result = feasibility_of_step(step)
         assert result.direction is FeasibilityDirection.UNKNOWN
         assert result.delta_g_kj is None
-        assert "Br" in "".join(result.missing) or result.missing  # the missing species is named
+        # the safety must rest on Br• (the atom) being GENUINELY unknown, not on Br₂'s symmetry-number
+        # accident: the bare Br atom must be reported missing, never silently fabricated to (0, 0)
+        assert "Br" in result.missing        # the bromine ATOM, distinct from "Br2"
+        assert "Br2" in result.missing

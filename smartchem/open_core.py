@@ -382,6 +382,11 @@ class OpenDiagram:
                 raise DiagramCompositionError("plug position is out of range")
             out_node = self.output_nodes[op]
             in_node = self.input_nodes[ip]
+            if out_node == in_node:
+                # An output and input that ALREADY name the same node (a wire whose one node is both):
+                # "plugging" it removes both boundary occurrences and leaves an orphan node with no
+                # boundary and no incident hyperedge.  Refuse -- a port cannot be plugged into itself.
+                raise DiagramCompositionError("cannot plug a port into its own node (would orphan it)")
             if self.node_ports[out_node] != self.node_ports[in_node]:
                 raise DiagramCompositionError("plugged ports carry incompatible tokens")
             union(out_node, in_node)

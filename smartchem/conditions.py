@@ -104,6 +104,11 @@ class ConditionEnvelope(Digestible):
     Every field is optional; the empty envelope (:meth:`unknown`) is the honest "no declared
     conditions" default. A non-empty envelope is a *declaration* and is refused unless it carries
     provenance and a below-certified status. Only an accepted :class:`SourceCitation` earns a sourced label.
+
+    Intervals use explicit units: temperature in ``K``, pressure in ``atm``, and duration in
+    ``min``. Convert other units before construction; no magnitude is silently reinterpreted.
+    Duration may include zero, remains distinct from whole-process elapsed/active time, and does
+    not by itself establish an intermediate hold or a kinetic survival verdict.
     """
 
     temperature: Interval | None = None
@@ -135,6 +140,12 @@ class ConditionEnvelope(Digestible):
         if self.pressure is not None and self.pressure.unit != "atm":
             raise ValueError(
                 f"pressure intervals must use unit 'atm', got {self.pressure.unit!r}; convert explicitly"
+            )
+        # Preserve the existing minute-valued declarations and their digests. The standalone
+        # stability primitive takes seconds; a future caller must convert explicitly at that boundary.
+        if self.duration is not None and self.duration.unit != "min":
+            raise ValueError(
+                f"duration intervals must use unit 'min', got {self.duration.unit!r}; convert explicitly"
             )
         for name in ("temperature", "pressure"):
             value = getattr(self, name)

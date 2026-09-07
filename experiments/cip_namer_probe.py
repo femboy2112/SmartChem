@@ -29,10 +29,10 @@ branch with need-to-know pruning (Hanson, Musacchio, Mayfield, Vainio, Yerin, Re
 
 SOUND, not complete: a centre Rule 1a cannot fully order -- an isotope-only tie (Rule 2), a pseudoasymmetric /
 E-Z-distinguished tie (Rules 4/5), or a true constitutional duplicate -- is a NAMED DEFERRAL (no label), because a
-guessed R/S is worse than none.  A centre whose priority digraph reaches an AROMATIC atom also defers: correct
-Rule 1a on a mancude ring needs Kekule-invariant atomic-number averaging (unbuilt), and a single fixed Kekule
-structure would MISLABEL an aryl centre -- the di-2-pyridyl false centre in the deferral pins exactly that (a fixed
-Kekule split its two identical pyridyls into a wrong (R) before this guard).  Those DEFER cases are pinned in layer 5.
+guessed R/S is worse than none. Bounded neutral mancude rings now use exact duplicate atomic-number averaging;
+the source-derived anchors and hostile aromatic/Kekule controls are in ``cip_mancude_probe``. The di-2-pyridyl
+false centre still defers: averaging must never split its two identical pyridyls. Unsupported unsaturated ring
+systems retain a lazy deferral boundary. Those DEFER cases are pinned in layer 5.
 A ranking DECIDED by atomic number before the ring is relevant still names (a distinct-Z centre with a benzyl or styryl
 arm -- pinned in the battery), because the sphere comparison uses each child's known atomic number without ranking it.
 
@@ -56,6 +56,7 @@ from smartchem.data.periodic_table import ATOMIC_NUMBER
 from smartchem.smiles import (
     _cip_compare,
     _cip_digraph,
+    _cip_mancude,
     _cip_ranks,
     _fill_hydrogens,
     _kekulize_in_place,
@@ -67,7 +68,7 @@ from experiments.cip_geometry_oracle_probe import geometric_handedness
 
 #: Tamper pin over the whole battery (labels + priorities + oracle agreement).  Regenerate ONLY on an intentional
 #: change: ``python -m experiments.cip_namer_probe`` and paste the printed value.
-FROZEN_HASH = "93f972617a1bb6f498c03154e3534be7ffbbc3bac2f1ac8d86486c1d57e2d9da"
+FROZEN_HASH = "bac7eb7bead37ed650e0641e1214697780156fdd2cc681afa4e4aaf11ed33a25"
 
 
 # --- textbook / PubChem absolutes (hand-derived R/S, the ground truth) -------------------------------
@@ -93,6 +94,7 @@ TEXTBOOK = [
     ("CCCC[C@H](CC(C)C)C", ("R",), "isobutyl > n-butyl (tie breaks at sphere 2) -> R"),
     ("Br[C@H](F)O[C@@H](F)Cl", ("S", "S"), "two distinct-Z centres (unchanged slice; labels from the anchored convention)"),
     ("C[C@@H](O)[C@H](N)C(=O)O", ("R", "S"), "threonine-like: two named centres"),
+    ("C[C@H](N)c1ccccc1", ("S",), "neutral mancude extension: N > phenyl {C,C,C} > methyl {H,H,H} > H"),
 ]
 
 #: The discriminator that a "carboxyl always wins" shortcut silently mislabels.
@@ -105,7 +107,6 @@ DEFERRALS = [
     ("CC[C@](CC)(N)O", "false centre: two identical ethyls"),
     ("N[C@]1(F)CCCCO1", "ring stereocentre (out of the acyclic scope)"),
     ("F[C@@](Cl)([2H])[3H]", "isotope-only tie among 2H/3H (Rule 2, not built)"),
-    ("C[C@H](N)c1ccccc1", "aryl substituent (phenyl): needs Kekule-averaging (not built) -> defer, never a fixed-Kekule guess"),
     ("O[C@H](c1ccccn1)c1ccccn1", "SOUNDNESS PIN: two identical 2-pyridyls = a FALSE centre; a fixed Kekule would wrongly name it"),
 ]
 
@@ -125,7 +126,6 @@ def _named_centres(text: str) -> "list[tuple[list[int], int, str]]":
     _kekulize_in_place(atoms, work, charge)
     elems, filled_bonds = _fill_hydrogens(atoms, work)
     n = len(atoms)
-    aromatic = frozenset(i for i in range(n) if atoms[i].aromatic)
     neighbours: dict[int, list[int]] = {i: [] for i in range(len(elems))}
     adj: dict[int, list[tuple[int, int]]] = {i: [] for i in range(len(elems))}
     for b in filled_bonds:
@@ -133,6 +133,7 @@ def _named_centres(text: str) -> "list[tuple[list[int], int, str]]":
         neighbours[b.j].append(b.i)
         adj[b.i].append((b.j, b.order))
         adj[b.j].append((b.i, b.order))
+    aromatic, mancude = _cip_mancude(atoms, work, adj)
     out: list[tuple[list[int], int, str]] = []
     for a in marked:
         if _on_cycle(a, neighbours, len(elems)):
@@ -145,7 +146,7 @@ def _named_centres(text: str) -> "list[tuple[list[int], int, str]]":
         written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
         if len(written) != 4 or any(ATOMIC_NUMBER.get(elems[x]) is None for x in written):
             continue
-        ranks = _cip_ranks(written, a, adj, elems, aromatic)
+        ranks = _cip_ranks(written, a, adj, elems, aromatic, mancude)
         if ranks is None:
             continue
         from smartchem.smiles import _perm_parity

@@ -2472,7 +2472,7 @@ def _condition_envelope_to_payload(env) -> dict:
 
 
 def _condition_envelope_from_payload(payload) -> "object":
-    """Rebuild a ConditionEnvelope; its ``__post_init__`` re-validates K/atm units, the EvidenceStatus cap, and the
+    """Rebuild a ConditionEnvelope; its ``__post_init__`` re-validates K/atm/min units, the EvidenceStatus cap, and the
     declaration/provenance/source consistency, so a payload cannot smuggle an invalid or promoted envelope past load."""
     from .conditions import ConditionEnvelope, EvidenceStatus
     if type(payload) is not dict or set(payload) != _CONDITION_ENVELOPE_PAYLOAD_FIELDS:

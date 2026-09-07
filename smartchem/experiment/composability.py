@@ -32,6 +32,20 @@ The thresholds come from a SEPARATE sourced table, not from the route's own decl
 compares the route's declared envelopes against externally-sourced facts, so a route cannot certify its own
 composability.
 
+Duration awareness (DURATION-SURVIVAL-01)
+-----------------------------------------
+The onset test is INSTANTANEOUS -- it asks only whether an exposure stays below a decomposition ONSET, not how
+LONG the intermediate is held.  Where a DAG's serial schedule imposes a sourced HOLD (DAG-HOLD-01) AND the
+intermediate has a SOURCED first-order decomposition rate (:mod:`smartchem.experiment.stability_horizon`,
+matched on CANONICAL STRUCTURE), :func:`_apply_duration_gate` reads the surviving fraction over that hold's
+intervening steps at their OWN declared temperatures (the temperatures the intermediate actually idles at -- NOT
+a producer/consumer endpoint's, and fail-closed if any intervening temperature is undeclared) and lets it MOVE
+the verdict: majority-destroyed -> ``DEGENERATE`` (even where the onset table was silent), a marginal survival ->
+``UNKNOWN``, a clean survival confirms the instantaneous verdict without upgrading it.  It only ever TIGHTENS;
+where no rate is sourced (the common case) the hold stays a pure disclosure, exactly as before.  A whole route's
+composite survival is the PRODUCT of the assessed per-transition fractions -- ``route_surviving_fraction``, the
+survival monoid functor ``S: Process -> ([0, 1], x)`` on the composite.
+
 The stated boundary (a sourced-model gap, not a silent guess)
 -------------------------------------------------------------
 Temperature-vs-decomposition and non-isolability are the hard teeth.  Pressure is reported honestly as a
@@ -41,17 +55,25 @@ tolerance injects it and extends the check; unassessed pressure stays a noted ``
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 from enum import Enum
 
 from ..category import Molecule
 from ..conditions import ConditionEnvelope, Interval
 from ..contracts import Digestible
+from ..data.kinetics import DEFAULT_KINETICS, KineticRef, KineticTable
 from ..data.stability import DEFAULT_STABILITY, StabilityRef, StabilityTable
 from ..decompiler import Formula
 from ..structure import resolve_structure
 from .bucket import Bucket, Quantity, unknown
 from .phase import estimate_phase
+from .stability_horizon import (
+    SurvivalVerdict,
+    decomposition_rate_for,
+    survival_verdict,
+    surviving_fraction,
+)
 from .step import ExperimentRoute
 
 __all__ = [
@@ -202,6 +224,12 @@ class Transition(Digestible):
     reason: str
     exposed_temperature: Interval | None
     findings: tuple[Quantity, ...]
+    #: DURATION-SURVIVAL-01: the fraction of this intermediate surviving the serial hold under SOURCED
+    #: first-order decomposition kinetics, or ``None`` when the handoff was not duration-assessed (no sourced
+    #: rate, or no modeled hold).  ``compare=False`` -> DIGEST-EXCLUDED disclosure: the survival reading rides
+    #: here while any verdict change it drives lands in ``status``/``reason`` (which ARE digested), so a route
+    #: whose intermediate has no sourced rate keeps its exact prior digest.
+    surviving_fraction: float | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, TransitionStatus):
@@ -210,13 +238,17 @@ class Transition(Digestible):
             raise TypeError("intermediate must be a Molecule")
         if not isinstance(self.reason, str) or not self.reason:
             raise ValueError("reason must be a non-empty string (cite the envelopes / threshold)")
+        if self.surviving_fraction is not None and (
+            type(self.surviving_fraction) is not float or not (0.0 <= self.surviving_fraction <= 1.0)
+        ):
+            raise ValueError("surviving_fraction must be None or a float in [0, 1]")
 
     @property
     def degenerate(self) -> bool:
         return self.status is TransitionStatus.DEGENERATE
 
 
-def _judge_transition(
+def _judge_transition_instant(
     from_step: int,
     to_step: int,
     intermediate: Molecule,
@@ -311,6 +343,149 @@ def _judge_transition(
     )
 
 
+def _survival_product(transitions: "tuple[Transition, ...]") -> float | None:
+    """The composite surviving fraction over a sequence of transitions: the PRODUCT of each duration-assessed
+    transition's ``surviving_fraction`` -- the survival monoid functor ``S: Process -> ([0, 1], x)``, whose
+    defining law is that survival composes multiplicatively along sequential composition
+    (``S(g . f) = S(g) * S(f)``).  ``None`` when NO transition was duration-assessed, so an unassessed route is
+    never misread as "100% survives" (the anti-vacuous-green discipline).
+
+    This is the product over the DURATION-ASSESSED handoffs ONLY -- it is NOT a whole-route survival
+    probability.  A route can carry a reassuring fraction here while its ``verdict`` is DEGENERATE for a
+    non-duration reason (a non-isolable intermediate, an onset exceeded).  Read it ALONGSIDE the verdict, never
+    instead of it."""
+    fractions = [t.surviving_fraction for t in transitions if t.surviving_fraction is not None]
+    if not fractions:
+        return None
+    product = 1.0
+    for fraction in fractions:
+        product *= fraction
+    return product
+
+
+def _hold_survival(
+    rec: KineticRef, segments: "tuple[tuple[Interval | None, float], ...]"
+) -> "tuple[float, bool, float, float]":
+    """Composite surviving fraction over the hold's ``(temperature, minutes)`` segments: the PRODUCT of the
+    per-segment first-order survivals ``prod_k exp(-k(T_k) t_k)`` -- the survival monoid applied ALONG the idle
+    hold, using each intervening step's OWN declared temperature (never a producer/consumer endpoint's), so the
+    reading rests on the temperatures the intermediate actually sits at.  Each segment takes the HIGH end of its
+    declared range (the worst case WITHIN that step).  Returns ``(fraction, all_in_fit_window, total_minutes,
+    peak_K)``.  The caller has already established that every segment carries a temperature, ``minutes > 0``, and
+    the rate's ``(Ea, A)`` are finite -- so ``surviving_fraction`` cannot raise here."""
+    fraction = 1.0
+    all_in_window = True
+    total_minutes = 0.0
+    peak = 0.0
+    lo, hi = rec.temperature_range_k
+    for temperature, minutes in segments:
+        t = temperature.hi                                   # worst case WITHIN this intervening step's range
+        fraction *= surviving_fraction(rec, t, minutes * 60.0)
+        total_minutes += minutes
+        peak = max(peak, t)
+        if not (lo <= t <= hi):
+            all_in_window = False
+    return fraction, all_in_window, total_minutes, peak
+
+
+def _apply_duration_gate(
+    base: Transition,
+    intermediate: Molecule,
+    *,
+    hold_segments: "tuple[tuple[Interval | None, float], ...] | None",
+    kinetics: KineticTable,
+) -> Transition:
+    """DURATION-SURVIVAL-01: fold a duration-aware survival reading into E1's instantaneous verdict.
+
+    E1's shipped check is instantaneous (onset-vs-exposure) and TIME-BLIND; DAG-HOLD-01 computes the sourced
+    serial hold but only DISCLOSED it (a note, never a verdict).  This consumes that hold.  The intermediate
+    sits through the intervening SIBLING steps, so the survival is computed over THEIR actual ``(temperature,
+    duration)`` segments (:func:`_hold_survival`) -- NOT the producer/consumer endpoint temperatures (those are
+    the reaction temperatures the instantaneous check already used, and are not where the intermediate idles).
+    Where the intermediate has a SOURCED first-order decomposition rate (matched on CANONICAL STRUCTURE, never
+    formula), the composite fraction moves the verdict -- the wire-in the primitive's own docstring named.
+
+    It only ever TIGHTENS, never loosens:
+
+    * ``DEGRADES`` (majority-destroyed over the hold, sourced) -> ``DEGENERATE`` -- even where the instantaneous
+      stability table was silent, because a sourced kinetic refutation is stronger than a missing record;
+    * ``MARGINAL`` -> ``UNKNOWN`` (a disclosed concern, not affirmatively cleared);
+    * ``SURVIVES`` leaves the instantaneous verdict as it stood -- a kinetic survival over a hold does NOT
+      establish isolability or cure a missing record, so it never UPGRADES a verdict.
+
+    Fail-closed: an already-``DEGENERATE`` base, no positive hold, ANY hold segment whose temperature is
+    undeclared (the hold temperature is then unmodeled -- the gate never borrows an endpoint's and never renders
+    a verdict on a temperature the model does not actually know), no sourced rate, or a non-finite sourced
+    ``(Ea, A)`` all return ``base`` untouched -- never fabricating a survival, a verdict, or a finding.
+    """
+    if base.status is TransitionStatus.DEGENERATE:
+        return base                                          # already refuted on sourced grounds; the hold is moot
+    material = [(t, m) for (t, m) in (hold_segments or ()) if m > 0]
+    if not material:
+        return base                                          # no positive serial hold (linear / adjacent handoff)
+    if any(temperature is None for temperature, _m in material):
+        return base                                          # a hold segment's temperature is unmodeled -> fail-closed
+    rec = decomposition_rate_for(intermediate, kinetics=kinetics)
+    if rec is None or not (math.isfinite(rec.ea_kj_per_mol) and math.isfinite(rec.log10_a)):
+        return base                                          # no SOURCED (finite) first-order rate -> silent
+    fraction, in_window, total_minutes, peak = _hold_survival(rec, material)
+    verdict = survival_verdict(fraction)
+    grade = "DERIVED" if in_window else "PREDICTED"
+    detail = (
+        f"{fraction * 100:.1f}% of '{rec.name}' remains over a {total_minutes:g} min serial hold (peak {peak:g} K, "
+        f"each intervening step held at its OWN declared temperature) by first-order consumption exp(-k t), "
+        f"k = A*exp(-Ea/RT) over the SOURCED Arrhenius fit (Ea = {rec.ea_kj_per_mol:.1f} kJ/mol, log10 A = "
+        f"{rec.log10_a:.2f}), grade {grade} -- a kinetic tendency under the sourced fit, NOT a claim about the "
+        f"real process or its true rate (W3)"
+    )
+    finding = Quantity("duration-survival-fraction", f"{fraction:.4g}", "", Bucket.KNOWN_SOURCED, detail)
+    findings = base.findings + (finding,)
+    if verdict is SurvivalVerdict.DEGRADES:
+        status = TransitionStatus.DEGENERATE
+        reason = (
+            f"DEGENERATE: over the serial hold this route imposes ({total_minutes:g} min through intervening "
+            f"steps, peak {peak:g} K) only {fraction * 100:.1f}% of the intermediate remains by SOURCED "
+            f"first-order decomposition kinetics -- majority-destroyed before the next step consumes it, a "
+            f"duration-aware refutation the instantaneous onset check is blind to ({detail})"
+        )
+    elif verdict is SurvivalVerdict.MARGINAL:
+        status = TransitionStatus.UNKNOWN
+        reason = (
+            f"UNKNOWN: over the serial hold this route imposes ({total_minutes:g} min through intervening steps, "
+            f"peak {peak:g} K) SOURCED first-order kinetics leave only {fraction * 100:.1f}% of the intermediate "
+            f"remaining -- a MARGINAL duration-survival concern (neither cleanly surviving nor majority-"
+            f"destroyed), so the handoff is not affirmatively cleared ({detail})"
+        )
+    else:                                                    # SURVIVES: confirm the instantaneous verdict, never upgrade
+        status, reason = base.status, base.reason
+    return Transition(
+        base.from_step, base.to_step, intermediate, status, reason,
+        base.exposed_temperature, findings, surviving_fraction=fraction,
+    )
+
+
+def _judge_transition(
+    from_step: int,
+    to_step: int,
+    intermediate: Molecule,
+    env_from: ConditionEnvelope,
+    env_to: ConditionEnvelope,
+    table: StabilityTable,
+    *,
+    hold_segments: "tuple[tuple[Interval | None, float], ...] | None" = None,
+    kinetics: KineticTable = DEFAULT_KINETICS,
+) -> Transition:
+    """E1's per-transition verdict: the instantaneous onset/isolability check, then the DURATION-SURVIVAL-01
+    duration gate (:func:`_apply_duration_gate`) over any sourced serial hold.  ``hold_segments`` is the ordered
+    ``(temperature, minutes)`` of the intervening sibling steps (DAG-only; a linear handoff has none); their
+    total drives the instantaneous check's DAG-HOLD-01 disclosure note, their per-step temperatures the survival."""
+    hold_minutes = sum(m for _t, m in hold_segments) if hold_segments else None
+    base = _judge_transition_instant(
+        from_step, to_step, intermediate, env_from, env_to, table, hold_minutes=hold_minutes,
+    )
+    return _apply_duration_gate(base, intermediate, hold_segments=hold_segments, kinetics=kinetics)
+
+
 @dataclass(frozen=True)
 class Composability(Digestible):
     """The composability of a whole route: one :class:`Transition` per step-to-step handoff, and the verdict.
@@ -377,6 +552,13 @@ class Composability(Digestible):
     def gaps(self) -> tuple[str, ...]:
         return tuple(t.reason for t in self.transitions if t.status is TransitionStatus.UNKNOWN)
 
+    @property
+    def route_surviving_fraction(self) -> float | None:
+        """The composite fraction surviving the whole route's duration-assessed inter-step holds -- the survival
+        monoid functor's value on this composite (see :func:`_survival_product`).  ``None`` when no handoff was
+        duration-assessed, never read as a full-survival pass."""
+        return _survival_product(self.transitions)
+
     def explain(self) -> str:
         head = f"composability: {self.verdict}"
         lines = [head]
@@ -386,7 +568,8 @@ class Composability(Digestible):
 
 
 def verify_composability(
-    route: ExperimentRoute, *, stability: StabilityTable = DEFAULT_STABILITY
+    route: ExperimentRoute, *, stability: StabilityTable = DEFAULT_STABILITY,
+    kinetics: KineticTable = DEFAULT_KINETICS,
 ) -> Composability:
     """Judge whether every intermediate survives its transition, over SOURCED stability windows.
 
@@ -401,6 +584,6 @@ def verify_composability(
         intermediate = route.steps[k].target
         transitions.append(_judge_transition(
             k, k + 1, intermediate,
-            route.steps[k].envelope, route.steps[k + 1].envelope, stability,
+            route.steps[k].envelope, route.steps[k + 1].envelope, stability, kinetics=kinetics,
         ))
     return Composability(route, tuple(transitions))

@@ -56,6 +56,7 @@ __all__ = [
     "StabilityHorizon",
     "decomposition_rate_for",
     "surviving_fraction",
+    "survival_verdict",
     "stability_horizon",
 ]
 
@@ -127,7 +128,10 @@ def surviving_fraction(rec: KineticRef, temperature_k: float, hold_seconds: floa
     return math.exp(-(10.0 ** log10_kt))
 
 
-def _verdict_of(fraction: float) -> SurvivalVerdict:
+def survival_verdict(fraction: float) -> SurvivalVerdict:
+    """The band verdict for a surviving fraction: >= 99% SURVIVES, <= 50% DEGRADES, else MARGINAL.  The SINGLE
+    source of the interpretive band edges, shared by the standalone horizon and E1's duration gate, so the two
+    can never drift to different band policies (the recurring shared-term hazard)."""
     if fraction >= _INTACT_FRACTION:
         return SurvivalVerdict.SURVIVES
     if fraction <= _DEGENERATE_FRACTION:
@@ -194,7 +198,7 @@ def stability_horizon(
             "NEVER fabricated (section 10.4) -- inject a sourced KineticRef to close this gap",
         )
     fraction = surviving_fraction(rec, temperature_k, hold_seconds)
-    verdict = _verdict_of(fraction)
+    verdict = survival_verdict(fraction)
     lo, hi = rec.temperature_range_k
     in_window = lo <= temperature_k <= hi
     grade = "DERIVED" if in_window else "PREDICTED"

@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ 07651a0` · suite **4493 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-07 UTC**
+> `verified @ 8e97664` · suite **4510 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-07 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -60,6 +60,16 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 23** (branch `categorical-duration-functor-2026-09-07`, code `8e97664`, from `main@404e863`) — the **categorical
+reorientation's first rung** (Move 2: physics as a functor): the duration-aware survival verdict wired into core E1, closing
+the core-E1 half of queue item 3. `design → recon (2 mappers) → build → reproduce → evil-morty → fold → verify`; **additive**
+(3 source files + 1 new test), **byte-stable** (the survival field is `compare=False` digest-excluded; the seed kinetics hold
+only N₂O₅/cyclopropane so no existing route is assessed → no golden churn). One evil-morty MEDIUM soundness fix folded before commit.
+
+| Item | Lane | What shipped |
+|---|---|---|
+| DURATION-SURVIVAL-01 (item 3, core-E1 half) | B·C | E1's `_judge_transition` now **consumes** the DAG-HOLD-01 serial hold: where an intermediate has a SOURCED first-order decomposition rate (`stability_horizon`, matched on canonical structure, never formula), a duration-aware survival reading MOVES the composability verdict (`smartchem/experiment/composability.py` `_apply_duration_gate`/`_hold_survival`/`_survival_product` + `dag.py` `_serial_hold_segments` + `tests/test_duration_survival_gate.py`). It only ever **TIGHTENS**: `DEGRADES → DEGENERATE` (even where the onset table was silent — a sourced kinetic refutation beats a missing record), `MARGINAL → UNKNOWN`, `SURVIVES` confirms without upgrading, and never touches an already-`DEGENERATE` base. The functor: `Transition.surviving_fraction` (digest-excluded) + `route_surviving_fraction` on `Composability`/`DAGComposability` = the product of per-transition fractions, the survival monoid functor `S: Process → ([0,1], ×)` (the hold survival itself composes multiplicatively over its segments). **evil-morty MEDIUM fold:** survival is read over the intervening SIBLING steps' OWN declared temperatures (the temperatures the intermediate idles at) — NOT a producer/consumer endpoint's, which could mint a false DEGENERATE *and* launder a real degradation — and **fails closed** on any undeclared hold temperature or non-finite rate (never a verdict on a temperature the model doesn't know). `survival_verdict` promoted to a shared public band-policy helper (no drift). **Still remaining on item 3:** the DOW-Br₂ collider/modified-Arrhenius half (sourcing/modeling-gated), and linear-route holds are unmodeled (only DAG serial holds carry a hold) — see QUEUE + TRACKED DEBT. |
 
 **ROUND 22** (branch `codex/mancude-duration-sourcing-2026-09-07`, code `07651a0`, isolated from `main@043a3cd`) — neutral mancude CIP
 extension, duration admission fix, and source-access corrections. Full verification and source hashes are recorded in
@@ -143,15 +153,17 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
-> **ROUND 21 CLOSED item 2** — on-load re-derivation of the composability + physical + ranking axes shipped (the ChatGPT
-> external review was folded against the tree first; two holes it/the adversary found were closed before code). **ROUND 20
-> CLOSED item 1** — the general CIP breadth-first **namer** (Rules 1b/2/4/5 + aromatic Kekulé-averaging sound-deferred,
-> tracked below). **One queue item remains: item 3** (duration wire-in + Br₂ primary), an **L** whose true rate-limiter is
-> sourcing, not build capacity.
+> **ROUND 23 CLOSED item 3's core-E1 half** — the duration-aware survival verdict is now wired into E1 (`DEGRADES →
+> DEGENERATE` over a sourced serial hold, the survival monoid functor `S: Process → ([0,1], ×)`). What remains of item 3 is
+> the **DOW-Br₂ collider/modified-Arrhenius kinetics** half (item 3b below), which is sourcing/modeling-gated, not
+> build-gated. **ROUND 21 CLOSED item 2** — on-load re-derivation of the composability + physical + ranking axes shipped (the
+> ChatGPT external review was folded against the tree first; two holes it/the adversary found were closed before code).
+> **ROUND 20 CLOSED item 1** — the general CIP breadth-first **namer** (Rules 1b/2/4/5 + aromatic Kekulé-averaging
+> sound-deferred, tracked below).
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| 3 | **Wire duration-aware core E1 + model DOW-Br₂ collider kinetics** (primitive R19, unit lock R22) | B·C | **L** | long | a source-compatible intermediate hold + explicit collider/modified-Arrhenius model |
+| 3b | **Model DOW-Br₂ collider / modified-Arrhenius kinetics** (the item-3 remainder; core-E1 wire-in DONE R23) | B·C | **M** | long | the recovered Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube T — needs a collider-state + modified-Arrhenius model + reverse/hold scope; NOT compatible with the concentration-free first-order seed |
 
 ### 1 · General CIP — the breadth-first namer — ✅ **DONE (ROUND 20, ID-STEREO-CIP-NAMER)**
 Shipped: `smartchem/smiles.py` `_cip_ranks`/`_cip_compare`/`_cip_digraph`, wired into `_cip_labels`; validated by
@@ -176,17 +188,23 @@ Plus the v0.1 HMAC conflation was corrected (a public digest recompute is free; 
 See the DONE ledger and manifest §21. TRACKED DEBT below: the keyless eval-context-relaxation boundary + the
 verified-admission cost lever (evil-morty F1/residual).
 
-### 3 · Wire the duration-aware verdict into core E1 + model the recovered DOW-Br₂ primary — **L** *(DOW)*
-**The primitive shipped (ROUND 19, `smartchem/experiment/stability_horizon.py`):** a duration-aware survival verdict
-`f = exp(-k t)`, k from the sourced Arrhenius fit, non-vacuous on N₂O₅ (SURVIVES→MARGINAL→DEGRADES across the hold),
-fail-closed UNKNOWN with no sourced rate, structure-keyed (no isomer/product borrows a rate). **What remains:** (a) wire
-it into `_judge_transition`'s COMPOSABLE/DEGENERATE flip — needs a route intermediate that carries a sourced
-decomposition rate and a defensible intermediate-hold mapping. **The duration unit lock shipped in ROUND 22:**
-`ConditionEnvelope.duration` requires `min`; seconds must be converted explicitly at the primitive boundary. The field
-still has no core-E1 consumer. (b) **A Br₂ primary is now recovered:** Warshay, NASA TN D-3502 (1966), gas-phase shock-tube
-initial dissociation in Ar/Ne/Kr. It measures `kD = A sqrt(T) exp(-Ea/RT)` and `-d[Br2]/dt = kD [Br2][M]`, so it cannot
-be inserted into the concentration-free first-order seed. The remaining gate is collider state, modified Arrhenius
-units and reverse/hold scope, not missing primary access. Source URLs, pages and hashes:
+### 3 · Wire the duration-aware verdict into core E1 — ✅ **DONE (ROUND 23, DURATION-SURVIVAL-01)**
+Shipped: `smartchem/experiment/composability.py` (`_apply_duration_gate`/`_hold_survival`/`_survival_product`) +
+`dag.py` (`_serial_hold_segments`) + `tests/test_duration_survival_gate.py`. E1's `_judge_transition` consumes the
+DAG-HOLD-01 serial hold: with a sourced first-order decomposition rate (R19 primitive, matched on canonical structure),
+the surviving fraction over the hold's intervening-step temperatures MOVES the verdict (`DEGRADES → DEGENERATE`, even
+where the onset table is silent; `MARGINAL → UNKNOWN`; `SURVIVES` confirms; only ever tightens, never touches an
+already-`DEGENERATE` base). Survival is the monoid functor `S: Process → ([0,1], ×)` — `route_surviving_fraction` is the
+product over duration-assessed handoffs. Fail-closed on undeclared hold temperatures or non-finite rates; the R22 unit
+lock (`ConditionEnvelope.duration = min`) is the declaration side, converted explicitly to the primitive's seconds. See
+the DONE ledger and manifest §23. TRACKED DEBT below: linear-route holds are unmodeled (only DAG serial holds carry a
+hold), and the R19 reactant-coefficient rate-convention residual still applies.
+
+### 3b · Model the recovered DOW-Br₂ collider / modified-Arrhenius primary — **M** *(DOW)*
+**The Br₂ primary is recovered but not first-order-seed-compatible:** Warshay, NASA TN D-3502 (1966), gas-phase
+shock-tube initial dissociation in Ar/Ne/Kr, `kD = A·√T·exp(-Ea/RT)`, `-d[Br₂]/dt = kD·[Br₂][M]`. It cannot enter the
+concentration-free first-order seed the R23 gate consumes. The remaining gate is collider state, modified-Arrhenius
+units and reverse/hold scope — a **modeling** wall, not missing primary access. Source URLs, pages and hashes:
 `docs/research/SOURCING_RECON_2026-09-07.md` and `experiments/sourcing_recon_2026_09_07.json`.
 
 ### 2b (DONE R19) · machine-readable `serial_holds` on `RankedDAGSummary`
@@ -283,10 +301,15 @@ not just a human note. See the DONE ledger.
   assumes the sourced `k` is the per-species rate (`-d[A]/dt = k[A]`), which both seeded records pin in their provenance;
   a future first-order record with coefficient > 1 sourced under the *reaction-rate* convention would be off by the
   stoichiometric factor. The module can't detect the convention from the data — documented boundary, not a silent guess.
-- **`ConditionEnvelope.duration` core-E1 consumer** (Lane B·C; ROUND-19/22) — the unit hazard is closed: construction and
-  replay require exactly `min`, preserving valid existing payloads and identities. Core E1 still does not consume the
-  field. Wiring item 3 must specify which duration bounds model an intermediate hold and convert explicitly to seconds;
-  a duration declaration alone is not a sourced survival claim.
+- **Duration-survival hold scope** (Lane B·C; ROUND-23) — ✅ core E1 **now consumes** the hold: `_apply_duration_gate`
+  turns a DAG serial hold + a sourced first-order rate into a verdict (DURATION-SURVIVAL-01), fail-closed on undeclared
+  hold temperatures or non-finite rates. Residuals carried, not silent: (1) only **DAG serial holds** carry a modeled
+  hold — a **linear route's** adjacent handoff passes no hold, so its intermediates are never duration-assessed (a linear
+  route has no idle-between-siblings time the model can source; a genuine bench hold would need an explicit hold
+  declaration the type does not yet carry); (2) each intervening segment uses the **hi end** of its declared temperature
+  range (worst-case within that step) — a policy, stated; (3) the R19 reactant-coefficient rate-convention residual
+  (below) still applies. The R22 unit lock (`ConditionEnvelope.duration = min`) remains the declaration side, converted
+  explicitly to the primitive's seconds.
 
 ---
 

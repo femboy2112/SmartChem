@@ -4680,3 +4680,69 @@ orphan guard; and the honest framing of the data-gated two-axis frontier. New le
 Full suite **4579 passed, 14 skipped, 1 xfailed** (= R24's 4536 plus 43 new C/D/M2-FP tests; skip/xfail unchanged ⇒ P2
 byte-stability holds and the legacy interchange xfail is preserved), four memory-bounded batches. Ruff clean on all
 changed files. The canonical remaining-work list is ROADMAP.md.
+
+## 26. ROUND 26 — Move-2 M2b (objective LIVE in the ranker) and DOW-thermo (sourced Br₂ dissociation) (2026-09-07 UTC)
+
+Branch `m2b-dow-thermo-2026-09-07` from `main@2d0e6e0`: DOW-thermo `67d6b14`, M2b `a6ad71b`, docs this commit. Two
+builds, `design → recon → build → reproduce → birdperson (M2b design) + evil-morty (both builds) → fold → verify`. Suite
+**4590 / 14 / 1** (= R25 4579 + 11 new; skip/xfail unchanged ⇒ P2 byte-stability holds, legacy interchange xfail
+preserved). Ranking-only + a sourced data add ⇒ no golden regen (`response_schema.json` byte-stable, all digests stable).
+
+### 26.1 DOW-thermo — the DOW-Br₂ *thermodynamic* verdict, now sourced (Lanes B·C)
+
+The R25 anti-fabrication fix left `Br₂ → 2 Br•` fail-closing to UNKNOWN because no sourced Br(g)/Br₂(g) thermo existed.
+This round SOURCES it — not recited: fetched + cross-checked 2026-09-07 on two agreeing bearings (NIST WebBook, which
+tags them "CODATA Review value", and the official CODATA Key Values table), JANAF/Chase 1998 within ±. Added to the
+frozen CODATA seed (`experiments/thermo_codata_seed.py`, FROZEN_HASH re-frozen from the dated source) and mirrored into
+the live `SEED_THERMO_REFS`: Br(g) ΔfH°=111.87±0.12, S°=175.018±0.004; Br₂(g) ΔfH°=30.91±0.11, S°=245.468±0.005; Br₂(l)
+ΔfH°=0 (reference state), S°=152.21±0.30 (frozen seed only). Only the GAS records enter the live table so `for_formula`
+stays single-valued for the gas-phase dissociation. The verdict now FIRES, calibrated to known chemistry: ΔH=+192.83
+kJ/mol (the standard Br–Br bond enthalpy), ΔS=+104.568 J/mol/K, ΔG₂₉₈=+161.65 kJ/mol, σ(ΔG)=0.26 (quadrature over the
+CODATA ±) ⇒ UNFAVORABLE — Br₂ is thermodynamically stable against dissociation at 298 K. Anti-fabrication boundary held:
+HBr ("BrH") stays UNKNOWN (no source, no Benson group) — no formula-borrow. The R25 data-gated test is consciously
+superseded (the verdict is no longer gated).
+
+### 26.2 M2b — the M2-FP objective made LIVE in the ranking scorer (Lanes B·C)
+
+M2-FP (R25) built `PhysicsProduct` / `pareto_optimal` / `route_net_delta_g` with ZERO call sites in the core ranker (the
+tracked debt). M2b wires them in: `_pareto_front_indices` (peeling `pareto_optimal` into non-dominated layers) runs on
+EVERY `rank_routes` / `rank_dags` call, and two NEW tiers ride `_route_score` / `_dag_score` (tier-identical, so the
+DAG-RANK-01 no-divergence promise holds) between the worst-node feasibility SIGN and equilibrium: a Pareto non-dominated
+FRONT over `PhysicsProduct(net ΔG, survival)`, then the additive-ΔG MAGNITUDE (the Hess functor). The tie-break decision
+(the ROADMAP flagged it): incomparable-complete routes SHARE a front (never a fabricated dominance) and present by ΔG
+then discovery order (a stable index sort) — a PRESENTATION order, the front index being the honest dominance datum; the
+two Pareto axes are NEVER collapsed into a weighted scalar. Honest scope: the ΔG-magnitude axis is the broadly-live
+surface; the two-axis front is DATA-GATED (survival None unless a DAG serial hold exposes a seeded first-order rate —
+R23), so on the default seed the front is inert (layer 0) and the ranking falls to the ΔG magnitude — the same discipline
+as the R25 two-axis `frontier`. Byte-stable: the physics tiers are ranking-only, never touching `status` or any digest.
+
+### 26.3 Design bearing (birdperson) and adversarial review (evil-morty)
+
+birdperson took the M2b **tie-break design** pre-build: SOUND-but-heed. Folded before building — the `pareto_optimal`
+peel-loop termination + sub-tuple→original index remap (a naive peel never terminates because `pareto_optimal` returns
+only complete-objective indices); worst-node feasibility-SIGN kept ABOVE the additive refinement (a stuck step gates);
+the incomplete→layer-0 leapfrog + the incomparable-tie presentation DISCLOSED, not silently collapsed; and the
+requirement that the front tier ship with a NON-VACUOUS test proving it flips a real order (built: two convergent DAGs,
+identical chemistry ⇒ identical net ΔG, different sibling-hold lengths ⇒ different REAL survival, one Pareto-dominating
+the other ⇒ the front layers 0/1 and the `_dag_score` tuples flip, driven by the front tier). Both scorers grow the
+tiers together (birdperson's DAG-RANK-01 doubt).
+
+evil-morty red-teamed both builds. What held: all five CODATA values + the calibration + sign convention; no
+formula-borrow (HBr None); the frozen-hash re-freeze legitimacy; `_pareto_front_indices` soundness (termination, remap,
+incomplete-exclusion); tier-parity; byte-stability. **Folded (KILL 1, Medium):** the ΔG-magnitude `None → 0.0` sentinel
+was NOT the neutral middle inside the UNFAVORABLE class — a route can be verdict-UNFAVORABLE (a sourced-endergonic step)
+yet net-`None` (another step unsourced), so `0.0` (borderline) would float an unsourced route ABOVE a fully-sourced
+endergonic one, rewarding ignorance. Fixed: the magnitude tier is applied ONLY in the FAVORABLE verdict class (net then
+guaranteed known + negative — no known/unknown net can mix), inert elsewhere. **Folded (KILL 3, Low):** a citation-year
+inconsistency in the bromine comment aligned to the file's 1989-book / 1984-recommendation convention. **Carried as
+tracked debt (KILL 2 + residuals, see ROADMAP):** the sourced Br₂(g) record would give the gas ΔfH° for a liquid-Br₂
+reaction (no phase context on `Molecule`; no current path reasons about liquid Br₂ through `feasibility_of_step`); no
+front-driven reorder is pinned THROUGH the public `rank_dags` (only the layering algorithm + wiring); the fan-out DAG
+double-count question for `route_net_delta_g` (pre-existing, orthogonal); and the new lesson
+`a-fabricated-neutral-sentinel-is-not-neutral`.
+
+### 26.4 Verification
+
+Full suite **4590 passed, 14 skipped, 1 xfailed** (= R25's 4579 + 11 new DOW-thermo/M2b tests; skip/xfail unchanged ⇒
+P2 holds, legacy xfail preserved), four memory-bounded batches. Ruff clean on all changed files. No golden regen (the
+data add and the ranking change are both byte-stable on route/DAG identity). Canonical remaining work: ROADMAP.md.

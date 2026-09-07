@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ d42d7a2` (branch `move1-rungs-c-d-m2fp-2026-09-07`, **ROUND 25** — Rung B MERGED via PR #19; Rungs C/D + M2-FP merging this round) · suite **4579 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches; = R24 baseline 4536 + 43 new C/D/M2-FP tests, skip/xfail unchanged ⇒ byte-stable P2) · updated **2026-09-07 UTC**
+> `verified @ a6ad71b` (branch `m2b-dow-thermo-2026-09-07`, **ROUND 26** — M2b + DOW-thermo, merging this round; R25 Rungs C/D + M2-FP MERGED via PR #20) · suite **4590 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches; = R25 baseline 4579 + 11 new M2b/DOW-thermo tests, skip/xfail unchanged ⇒ byte-stable P2) · updated **2026-09-07 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -60,6 +60,17 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 26 — Move-2 M2b (objective LIVE in the ranker) + DOW-thermo (sourced Br₂ dissociation)** (branch
+`m2b-dow-thermo-2026-09-07`: DOW-thermo `67d6b14`, M2b `a6ad71b`, docs this commit) — the M2-FP objective wired into
+the core route/DAG scorer, and the DOW-Br₂ *thermodynamic* verdict unlocked by a sourced data add. Two builds, each
+`design → recon → build → reproduce → review → fold → verify`; ranking-only + sourced data add ⇒ NO golden regen
+(digests byte-stable). Suite **4590 / 14 / 1** (= R25 4579 + 11; skip/xfail unchanged ⇒ P2 holds).
+
+| Item | Lane | What shipped |
+|---|---|---|
+| **M2b** · Move-2 objective LIVE in the ranker | B·C | `_pareto_front_indices` (peeling `pareto_optimal` into non-dominated layers) runs on EVERY `rank_routes`/`rank_dags` call; two NEW tiers ride `_route_score`/`_dag_score` (tier-identical — the DAG-RANK-01 promise) between the worst-node feasibility SIGN and equilibrium: a Pareto **FRONT** over `PhysicsProduct(net ΔG, survival)`, then the additive-**ΔG magnitude** (the Hess functor). Tie-break decision: incomparable-complete routes SHARE a front (never a fabricated dominance), presented by ΔG then discovery order — the front index is the honest dominance datum, the two axes never collapsed into a scalar. The ΔG-magnitude axis is the broadly-live surface; the two-axis front is DATA-GATED (survival None without a seeded serial-hold rate) — inert on the default seed, the R25-`frontier` discipline. **birdperson design-fold** (peel termination + index remap; SIGN above the additive refinement; leapfrog/tie DISCLOSED; a NON-VACUOUS front-flip test). **evil-morty KILL-1 fold:** the ΔG-magnitude `None→0.0` sentinel rewarded ignorance inside the UNFAVORABLE class → the magnitude tier now fires ONLY in the FAVORABLE class (net guaranteed known+negative). Ranking-only, byte-stable. |
+| **DOW-thermo** · the DOW-Br₂ thermodynamic verdict | B·C | Sourced Br(g)/Br₂(g)/Br₂(l) ΔfH°/S° from the CODATA Key Values (fetched + cross-checked 2026-09-07: NIST WebBook + the official CODATA table, two agreeing bearings; JANAF/Chase within ±), NOT recited. Frozen CODATA seed extended (FROZEN_HASH re-frozen), gas records mirrored into the live `SEED_THERMO_REFS` (single-valued `for_formula`). `Br₂ → 2 Br•` now FIRES, calibrated to known chemistry: ΔH=+192.83 kJ/mol (= the Br–Br bond enthalpy), ΔG₂₉₈=+161.65, σ=0.26 ⇒ UNFAVORABLE (Br₂ stable against dissociation at 298 K). HBr stays UNKNOWN (no formula-borrow). The R25 data-gated fail-close is consciously superseded. Reviewed by evil-morty (values/calibration/no-borrow/frozen-hash verified). |
 
 **ROUND 25 — Move-1 keystone Rungs C + D and Move-2 M2-FP** (branch `move1-rungs-c-d-m2fp-2026-09-07`:
 Rung C `3e34265` + M2-FP `a8b61ce` + Rung D `35a5e64` + review fold `d42d7a2`) — three rungs of the
@@ -191,11 +202,18 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > **ROUND 20 CLOSED item 1** — the general CIP breadth-first **namer** (Rules 1b/2/4/5 + aromatic Kekulé-averaging
 > sound-deferred, tracked below).
 
+> **ROUND 26 CLOSED M2b + DOW-thermo** (the user's numbered next-steps 1 & 2). M2b wired the M2-FP Pareto product
+> (`PhysicsProduct`/`pareto_optimal` + the additive-ΔG functor) LIVE into `_route_score`/`_dag_score`; DOW-thermo sourced
+> Br(g)/Br₂(g) and the DOW-Br₂ dissociation verdict now fires (UNFAVORABLE, calibrated). See the DONE ledger + manifest §26.
+> **⭐ The active queue is now the categorical-reorientation Moves 3–6** (the user's "move onto 3-6 next", awaiting go-ahead).
+
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| **M2b** | **Make the M2-FP objective LIVE in the ranking scorer** — feed the ΔG magnitude + survival Pareto product into `drafter._route_score`/`_dag_score` (today they use only the worst-node feasibility *sign*, no survival). This is the rung that pays off M2-FP's headline | B·C | **M** | medium (a deliberate ranking/schema-bump round — WILL re-order routes and churn goldens, so it is its own round, not a byte-stable add) | primitives shipped R25 (`PhysicsProduct`, `pareto_optimal`, `route_net_delta_g`, `route_surviving_fraction`); the work is wiring + a golden regen + a decision on the tie-break between the two axes |
+| **Move 3** | **Provider registry as the free open-monoidal category on typed generators** — providers already exist (`transform_provider.py`); IR-COMMUTE is the coherence law; "add a family without touching the shell" = "free on the generators". Formalize + earn call sites | B | **M** | medium | needs a design read of `transform_provider.py` against the open-SMC core (`open_core.py`); the generators/coherence framing is the deliverable, not a rewrite |
+| **Move 4** | **Quotient discipline for identity + tension-A** — CIP node enrichment `(z, mass, aux_descriptor, children)` + a canonical delocalized-bond form (Rules 1b/2/4/5 become representable); AND fix **tension A** — E1's `resolve_stability` formula-fallback vs the structure-keyed rest ([[a-reaction-key-by-formula-borrows-a-rate]]) | B | **M** | medium | the CIP enrichment is the larger half; tension-A is a small structural rung (key `resolve_stability` on canonical structure, not formula) |
+| **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | medium | `open_core` IS already domain-neutral (R24); this lifts the *pipeline* types onto it — larger, touches many types |
+| **Move 6** | **The conditions⤳effects distributive law** `λ: Conditions ⤳ Effects` (`THE_ORBITAL §IX`) so conditions compose lawfully through routes (the withdrawn adjunction, re-aimed) | B | **M** | medium | needs the distributive-law spec; the hardest categorical piece — spec as a contract first |
 | 3b | **Model DOW-Br₂ collider / modified-Arrhenius kinetics** (the item-3 remainder; core-E1 wire-in DONE R23) | B·C | **M** | long | the recovered Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube T — needs a collider-state + modified-Arrhenius model + reverse/hold scope; NOT compatible with the concentration-free first-order seed |
-| DOW-thermo | **Source Br₂(g)/Br(g) ΔH_f°/S° → the DOW-Br₂ *thermodynamic* verdict** (`Br₂ → 2 Br•`) | B·C | **S** | data-gated | now genuinely unlocked by M2-FP + the anti-fabrication fix: inject sourced records via `ThermoTable.with_records` and `feasibility_of_step`/`route_net_delta_g` compute the dissociation ΔG. NO fabrication — needs a directly-readable dated primary (CODATA/NIST-JANAF), not recited values |
 
 ### K-B/C/D · Move-1 keystone — ✅ **DONE (Rung B ROUND 24 / Rungs C+D ROUND 25)**
 **Rung B** (`944ad8c`, MERGED PR #19 → `main@5f1b3e3`): `open_core.py` + `open_chem_diagram.py` + `ExperimentStep.open()`
@@ -214,9 +232,10 @@ Shipped (`a8b61ce` + fold `d42d7a2`): `Δ_rG` recognized as the additive functor
 `net_ΔG(route)==Σ steps` pinned non-vacuously); `RouteFeasibility.net_delta_g_kj` (property, digest-neutral, distinct from the
 worst-node `verdict`); `PhysicsProduct`/`pareto_optimal` (the Pareto product, no scalar collapse); `FreeEnergyDecoration` (2nd
 decoration-slot instance). **Anti-fabrication fix:** `estimate_thermo` empty-group → None (was fabricating `(0,0) DERIVED` for
-bare halogens/HBr — both reviewers converged); DOW-Br₂ now fail-closes on Br• genuinely UNKNOWN. **Scorer NOT changed**
-(survival still absent from `_route_score`, ΔG only as a sign — see TRACKED DEBT; making the product LIVE is the next-arc round).
-The DOW-Br₂ *thermodynamic* verdict is still a sourced Br/Br₂ ΔH_f°/S° data-add away (now genuinely unlocked). See DONE ledger + manifest §25.
+bare halogens/HBr — both reviewers converged); DOW-Br₂ now fail-closes on Br• genuinely UNKNOWN. **Scorer wired LIVE in
+ROUND 26 (M2b):** the Pareto product (front over `PhysicsProduct(net ΔG, survival)`) + the additive-ΔG magnitude now ride
+`_route_score`/`_dag_score`; the DOW-Br₂ *thermodynamic* verdict was unlocked by the ROUND-26 DOW-thermo data add. See the
+DONE ledger + manifest §§25/26.
 
 ### 1 · General CIP — the breadth-first namer — ✅ **DONE (ROUND 20, ID-STEREO-CIP-NAMER)**
 Shipped: `smartchem/smiles.py` `_cip_ranks`/`_cip_compare`/`_cip_digraph`, wired into `_cip_labels`; validated by
@@ -304,6 +323,24 @@ not just a human note. See the DONE ledger.
 
 ## ⚠️ TRACKED DEBT — known, carried, not silently
 
+- **M2b carried debt** (Lane B·C; ROUND 26, from the evil-morty + birdperson reviews — none blocking):
+  (a) **Sourced Br₂(g) phase hazard** (evil-morty KILL 2) — only the GAS Br₂ record is in the live `SEED_THERMO_REFS`, and a
+  sourced `for_formula` hit gets NO phase correction (that path is Benson-only); `Molecule` carries no phase, so ANY reaction
+  treating Br₂ as its true standard-state LIQUID would silently get the gas ΔfH° (+30.91 kJ/mol error). No current path
+  reasons about liquid Br₂ through `feasibility_of_step` (the DOW displacement runs on electrode potentials), so nothing is
+  misled today — but the guard rests on nobody writing a liquid-Br₂ reaction, not on an enforced phase key. Closing needs a
+  phase-aware resolve (out of scope). Same species as the ROUND-18 F5 phase-scope debt.
+  (b) **No front-driven reorder pinned THROUGH the public `rank_dags`** — `_pareto_front_indices` runs on every ranking call
+  (a genuine call site) and `TestParetoFrontTierFiresOnRealSurvival` proves the layering flips a real survival-bearing
+  objective, but via `dag_composability(dag, kinetics=injected)` directly, because `dag_bench_fit`/`rank_dags` with the
+  DEFAULT tables don't thread kinetics to the duration gate. End-to-end the front fires only for a DEFAULT-seeded held
+  intermediate (N₂O₅/cyclopropane); the front is otherwise inert (the ΔG-magnitude axis carries M2b). Data-gated, honest —
+  the R25-`frontier` discipline; a fuller end-to-end pin awaits either a seeded-intermediate DAG fixture or threading
+  kinetics through `rank_dags` (which the ROUND-15 fold deliberately declined).
+  (c) **`route_net_delta_g` fan-out double-count** (evil-morty residual, pre-existing/orthogonal) — the additive Hess sum over
+  `dag.steps` is topology-independent when each step occurs once; a diamond DAG whose shared producer feeds two consumers with
+  molar multiplicity (if representable and not cross-node molar-balanced) could undercount the producer. No such construction
+  found; not introduced by M2b (it just sums); the DAG-model molar-balance question is the DAG's concern, carried not silent.
 - **Interchange-law xfail** (Lane A) — `tests/test_laws.py:330`: the *legacy linear `Reaction`* representation cannot
   quotient independent events by interchange. **ROUND 24's `OpenChemDiagram` supersedes it for parallel events** (interchange
   holds under the `canonicalize` quotient), but the legacy xfail is **preserved-and-annotated, not flipped** (flipping it in

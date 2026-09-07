@@ -4449,3 +4449,85 @@ signature; not forced); the **verified-admission compute cost** (the full `rank_
 **load-time free-text trust boundary** debt is now STRUCTURALLY CLOSED for a verified-admission consumer. **Queue: only
 item 3 remains** (wire the duration-aware verdict into core E1 + the DOW-Br₂ decomposition primary — an L whose true
 rate-limiter is sourcing). Suite `4417 / 14 / 1` (+20 vs R20's 4397). NOT merged — held for the user's push/pr/merge go.
+
+
+## 22. ROUND 22 — neutral mancude CIP, duration unit admission, and source-access corrections (2026-09-07 UTC)
+
+Base `043a3cd`; isolated branch `codex/mancude-duration-sourcing-2026-09-07`. The original main checkout
+was left unchanged because a Claude process remained attached. The implementation commit and aggregate
+verification are recorded in `experiments/validation/round22_2026_09_07.json` and the ROADMAP header.
+
+### 22.1 CIP-MANCUDE-01 (Lane B)
+
+`smartchem/smiles.py` now recognizes bounded neutral mancude ring systems by cyclic topology and filled
+valence on both aromatic and explicit Kekulé inputs. Multiple-bond duplicates carry exact `Fraction`
+atomic numbers averaged over distinct feasible partner positions. Real atoms and ring-closure duplicates
+retain integer atomic numbers. Match enumeration discovers partner membership; it does not weight
+partners by their frequency across Kekulé drawings. Supported neutral C/N/O/S and fused examples are
+pinned against IUPAC fractions and the authors' VS032/033 source anchors.
+
+The external baseline found a real hole in ROUND 20's soundness claim: uppercase Kekulé spellings bypassed
+its lowercase aromatic guard. `O[C@H](C1=CC=CC=N1)C1=NC=CN=C1` was named S but the accurate RDKit
+reference says R; its mirror was also reversed. Both are now correct on aromatic and explicit inputs.
+Identical di-2-pyridyl ligands remain a false centre and receive no label.
+
+The new dependency-free probe covers 12 families and 96 spelling/reflection/tie cases plus the two source
+anchors. Tests distinguish owner averages from ring-closure duplicates, exact 13/2 and 19/3 values, ring
+bridges, unsupported charged/exocyclic systems, and zero/small exhaustion of each of three caps. Limits
+are 30 atoms per ring component, 128 matchings, and 10,000 matching-search visits. No partial average is
+admitted. The existing comparator, geometry convention, search core and molecular identity remain intact.
+
+The external implementation panel uses optional RDKit 2026.03.6's accurate `rdCIPLabeler`, not its legacy
+labeler. The same 1,224 representation cases change from 354 correct names / 136 true ties / 732 deferred /
+2 wrong names to 1,088 correct names / 136 true ties / zero wrong names. A separate review panel of 1,134
+fresh cases gives 900 correct names, 80 true ties, 101 deferrals, 53 parser refusals and zero wrong names.
+Both external panels share the CIP specification and RDKit implementation family; they are finite
+implementation evidence, not independent proof of chemical truth or complete CIP. Their scripts, row
+hashes, wheel version and exact baseline counterexamples are retained in `experiments/validation/`.
+
+Remaining: Rules 1b/2/3/4/5 tie resolution, ring stereocentres, general charged resonance, unsupported
+ring valences, and the previously recorded comparator-transitivity proof gap. Some unsupported uppercase
+inputs now defer; some charged aromatic inputs already fail at the parser and still do. Scope and primary
+source pins: `docs/research/CIP_MANCUDE_SCOPE_2026-09-07.md`; external instrument audit:
+`docs/research/CIP_EXTERNAL_ORACLE_2026-09-07.md`.
+
+### 22.2 DURATION-UNIT-01 (Lanes B/C)
+
+`ConditionEnvelope.duration` requires exactly `min`, matching all existing declarations. Other units
+must be explicitly converted before construction. Replay uses the same constructor and rejects unit
+swaps. The 59 new tests cover invalid units/types/bounds, zero and fractional minutes, direct/JSON/route
+replay, explicit caller conversion, and exact pre-change envelope/route digests. The admission guard
+adds no fields, silently converts nothing and preserves valid minute payloads. Core E1 still has no
+duration consumer: choosing intermediate-hold bounds and converting minutes to the primitive's seconds
+is a separate semantic implementation, not implied by this validation fix.
+
+### 22.3 DOW-SOURCE-RECON-01 (Lanes B/C)
+
+Both broad primary-access walls were corrected with recovered records, inspected PDF pages, source
+hashes and arithmetic in `docs/research/SOURCING_RECON_2026-09-07.md` and
+`experiments/sourcing_recon_2026_09_07.json`. No production kinetics or pricing seed was changed.
+
+Warshay's NASA TN D-3502 (1966) reports initial gas-phase Br2 dissociation in Ar/Ne/Kr:
+`-d[Br2]/dt = kD [Br2][M]`, with `kD = A sqrt(T) exp(-Ea/RT)` in L mol^-1 s^-1. This is an accessible
+primary, but not a constant-A, concentration-free first-order hold law. Collider state, modified Arrhenius
+units and reverse/hold scope need modeling. Later primary measurements should also be reviewed before
+promoting this historical fit to a recommended modern reference.
+
+Los Fresnos's 2025/2026 procurement record offers chlorine gas at $1.24/lb in a 2,000-lb cylinder
+($2,480), plus $50/month cylinder rental. The September 9, 2025 minutes approve the bids by category;
+the attached vendor/price agreement has blank signature lines. The evidence is an approved municipal
+offer, not an invoice, delivered assay, industrial spot price, generally available current purchase price,
+or historical Dow cost. Future price integration must retain its exact procurement basis and exclusions;
+NaBr/feedstock coverage and whole-route quantitative cost superiority remain open. The proposed NaBr
+proxy derived from the same contained-Br benchmark cannot show an undercut: its price mass fraction and
+the stoichiometric feedstock mass cancel to the full benchmark cost before adding positive chlorine cost.
+An independent brine/feedstock and extraction-cost basis is required for a cheaper-brine claim.
+
+### 22.4 Verification and continuation
+
+Focused duration/integration checks: 335 passed. Focused CIP checks: 168 passed. External panels:
+zero wrong named labels after the patch, with deferrals and parser refusals separately counted.
+A real optional PySCF smoke calculation of H at HF/cc-pVDZ returned approximately -13.5861 eV.
+Aggregate baseline: **4417 passed, 14 skipped, 1 xfailed in 867.26 s**. Final implementation `07651a0`: **4493 passed, 14 skipped, 1 xfailed in 892.81 s**. Source hashes and exact commands are in the round receipt.
+The canonical remaining-work list is ROADMAP.md; no human bench, historical cost-ranking, or universal
+CIP claim is promoted by this round.

@@ -1,0 +1,146 @@
+{
+  "schema": "smartchem.round22-verification/v1",
+  "recorded_at_utc": "2026-09-07T03:21:07.558882+00:00",
+  "base_commit": "043a3cd87acdc33d1df9a3b8ad4b2215d93e8890",
+  "implementation_commit": "07651a0c9e331aec18573ca69266cf41b0d83701",
+  "branch": "codex/mancude-duration-sourcing-2026-09-07",
+  "worktree": "/home/leah/SmartChem-codex-20260907",
+  "original_worktree": "/home/leah/SmartChem",
+  "isolation": "original tracked/untracked source state remained clean; its running Claude process was not signaled",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "packages": {
+      "numpy": "2.5.1",
+      "scipy": "1.18.0",
+      "pytest": "9.1.1",
+      "hypothesis": "6.157.0",
+      "pyscf": "2.14.0"
+    },
+    "optional_external_rdkit": "2026.03.6",
+    "thread_limits": {
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1"
+    }
+  },
+  "baseline_suite": {
+    "cwd": "/home/leah/SmartChem",
+    "command": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 /home/leah/SmartChem/.venv/bin/python -m pytest -q -rs",
+    "exit_code": 0,
+    "passed": 4417,
+    "skipped": 14,
+    "xfailed": 1,
+    "wall_seconds": 867.26,
+    "stdout_summary": "=========================== short test summary info ============================\nSKIPPED [1] tests/test_findings.py:256: needs --runslow (real oracle calls)\nSKIPPED [13] tests/test_geometry.py: needs --runslow (real oracle calls)\n4417 passed, 14 skipped, 1 xfailed in 867.26s (0:14:27)",
+    "stdout_sha256": "d65f12c674643f82e9a08c4246034ffba2a6a9144f068c3784cbcee584cabcee",
+    "scratch_log": "/tmp/smartchem-043a3cd-baseline.log"
+  },
+  "final_suite": {
+    "cwd": "/home/leah/SmartChem-codex-20260907",
+    "command": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 /home/leah/SmartChem/.venv/bin/python -m pytest -q -rs",
+    "exit_code": 0,
+    "passed": 4493,
+    "skipped": 14,
+    "xfailed": 1,
+    "wall_seconds": 892.81,
+    "stdout_summary": "=========================== short test summary info ============================\nSKIPPED [1] tests/test_findings.py:256: needs --runslow (real oracle calls)\nSKIPPED [13] tests/test_geometry.py: needs --runslow (real oracle calls)\n4493 passed, 14 skipped, 1 xfailed in 892.81s (0:14:52)",
+    "stdout_sha256": "2e599ce854cae762e456707e1c8be503bee335d564c8575ec611136f60fd41d6",
+    "scratch_log": "/tmp/smartchem-round22-suite.log"
+  },
+  "focused_checks": [
+    {
+      "scope": "duration, conditions, on-load replay, accounting, process constraints",
+      "passed": 335,
+      "reported_by": "duration implementation worker"
+    },
+    {
+      "scope": "CIP mancude/namer/naming/geometric oracle",
+      "passed": 168,
+      "reported_by": "CIP implementation worker"
+    }
+  ],
+  "external_cip": {
+    "receipt": "experiments/validation/cip_external_oracle_2026_09_07.json",
+    "after": {
+      "schema": "smartchem.cip-external-probe/v1",
+      "rdkit_version": "2026.03.6",
+      "oracle": "rdCIPLabeler.AssignCIPLabels(maxRecursiveIterations=100000)",
+      "boundary": "finite external implementation comparison; shared CIP specification; deferrals counted",
+      "anchors": 4,
+      "base_cases": 306,
+      "representations_per_base": 4,
+      "counts": {
+        "named_match": 1088,
+        "true_tie": 136,
+        "deferred": 0,
+        "parser_refusal": 0,
+        "mismatch": 0
+      },
+      "rows_sha256": "881aa8f358ecefaeb185b9c42ca3af68364f236579974356b5adafd826b9cc84",
+      "stage": "after",
+      "mismatches": []
+    },
+    "exit_code_after": 0,
+    "exit_code_baseline": 1
+  },
+  "fresh_adversarial_cip": {
+    "receipt": "experiments/validation/cip_mancude_adversarial_2026_09_07.json",
+    "counts": {
+      "named_match": 900,
+      "true_tie": 80,
+      "deferred": 101,
+      "parser_refusal": 53,
+      "mismatch": 0
+    },
+    "rows_count": 1134,
+    "exit_code": 0
+  },
+  "optional_backend_smoke": {
+    "command": "from smartchem.category import Molecule; from smartchem.oracle.pyscf_oracle import PySCFOracle; result = PySCFOracle(\"HF\", \"cc-pVDZ\", max_atoms=1).energy(Molecule.atom(\"H\")); assert result is not None and result.method.startswith(\"HF/cc-pVDZ\")",
+    "exit_code": 0,
+    "observed": "-13.5861 +/- 0.0000 eV [HF/cc-pVDZ]"
+  },
+  "changed_file_sha256": {
+    "docs/research/CIP_EXTERNAL_ORACLE_2026-09-07.md": "ebfcaf15e7ef233ef57807088e15ccb70a984f170bd10254839bf073332f1316",
+    "docs/research/CIP_MANCUDE_SCOPE_2026-09-07.md": "7ccd88e6bfffc6a4b7fa048d873e6cf4c2ffe2a4276b6ee2a87018c5577f8a5a",
+    "docs/research/SOURCING_RECON_2026-09-07.md": "0bd722551dea364dfd6ba4ff5ab7eb6e555547a8d26d018e9640df8c1a76e166",
+    "experiments/cip_external_oracle_probe.py": "472f60cd8e9e0210bfcf552c14975930787b3affa4909c94221ccc1f68df4412",
+    "experiments/cip_mancude_adversarial_probe.py": "ebe2af77563332b1ebf8cea37793b0d5221388d4ab63535d8d1816787b365456",
+    "experiments/cip_mancude_probe.py": "6d9c04b79132323712b856888d20355f23239b3c3bedb09cfe69e54209acd47d",
+    "experiments/cip_namer_probe.py": "0019fdb289ab5bc8f76973788411684cbc2170ee1534b9d06e3a0f4cb081def0",
+    "experiments/sourcing_recon_2026_09_07.json": "8d9e5361e00e8857ce5ab45a8ba60f1e803395598a41ea3c76c67e2c4548f716",
+    "experiments/validation/cip_external_oracle_2026_09_07.json": "6698001e809a75140e968112d945df3334b166dd8dc046209fa284b110793287",
+    "experiments/validation/cip_mancude_adversarial_2026_09_07.json": "8ca5f8e4d611a2d5d8cb6badfcea5e1af17afae66f9db97ab1bd8d4e600cb295",
+    "smartchem/conditions.py": "679f919d478b82357d0eb89e40edb6b4e533ac152ddeccb6f70fffab3268c1a9",
+    "smartchem/experiment/stability_horizon.py": "452fe759904215e7d5f5d55895c6562dfea4cd08dd4e3ba8df7dcb4242dd5316",
+    "smartchem/service.py": "41211eef29acbe4813eb11a46fb6c91cb598292dab49bb29d631fe50144fb82b",
+    "smartchem/smiles.py": "0ab99081c339f4451dc72d69c06a83ea7ca377a1d6ab09c6bcdc5b67408403c6",
+    "tests/test_cip_mancude.py": "eb79dbffc1ea5a0e8c048c210bb61d9a2b9726deb7d69b1e90cca175bf981ae0",
+    "tests/test_cip_namer.py": "59249081e022abdd7ef35e7f2a1a8bdd226f60a5586a9dd292da6123ad03528a",
+    "tests/test_cip_naming.py": "b9205e341b10b42a9b225179e2dae39d289101f562ff34bc42d161dde9192f69",
+    "tests/test_duration_units.py": "98c147fd30bb2c395be9230b3efb79c67c2b02a2e3a6ccf27b86ab51c9a164bd"
+  },
+  "scope": {
+    "neutral_mancude_cip": "implemented_with_bounded_source_and_external_controls",
+    "duration_unit_guard": "implemented_minute_only_constructor_and_replay",
+    "br2_primary": "recovered_collider_dependent_modified_arrhenius_not_admitted_to_first_order_seed",
+    "chlorine_price": "recovered_approved_municipal_offer_not_default_price_or_observed_transaction",
+    "dow_quantitative_advantage": "open_requires_independent_feedstock_and_coherent_whole_path_costs",
+    "e1_duration_consumer": "not_implemented",
+    "cip_full_completeness": "not_claimed"
+  },
+  "next_actions": [
+    "Implement a source-compatible intermediate-hold mapping before wiring duration into E1.",
+    "Review later Br2 primary measurements and design collider/modified-Arrhenius/reversible-hold admission; do not relabel the NASA coefficients as first-order.",
+    "Design a separate municipal-procurement price path retaining packaging, rental, term, region, offer and source status.",
+    "Obtain independent brine/feedstock and extraction cost evidence; the same-benchmark NaBr proxy cannot establish an undercut."
+  ],
+  "publication": {
+    "pushed": false,
+    "merged": false,
+    "remote_ci": "not_run",
+    "status": "local_reviewable_branch"
+  },
+  "boundary": "Finite implementation/source-admission evidence; no full CIP, real-process, historical cost superiority, or universal chemistry claim."
+}

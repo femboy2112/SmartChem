@@ -181,6 +181,12 @@ pretending every reagent is elemental. Both directions share one typed
 - derived, estimated, and unsupported claims are labelled distinctly — a loud refusal beats a
   plausible, unearned answer.
 
+The CIP namer now handles bounded neutral aryl/heteroaryl ligands using exact mancude-ring
+averaging, including explicit Kekulé spellings. Unsupported priorities still defer. Declared
+duration intervals require `min`, including on replay. The latest source reconnaissance recovered
+Br₂ dissociation data and a dated Cl₂ procurement offer; their model and procurement limits remain
+explicit in the [current roadmap](ROADMAP.md).
+
 This is an **alpha under active construction, not a finished release.** The normative
 contract is
 [CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md](CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md);
@@ -230,7 +236,7 @@ python -m smartchem.bench
 Current maintained fast-suite result (dev environment with the optional PySCF stack installed):
 
 ```text
-4417 passed, 14 skipped, 1 xfailed
+4493 passed, 14 skipped, 1 xfailed
 ```
 
 The skips are optional-backend coverage and the explicit slow-test gate; they are not represented as passed.

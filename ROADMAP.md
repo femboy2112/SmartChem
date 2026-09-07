@@ -1,13 +1,13 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ 6e14d51` · suite **4417 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-06**
+> `verified @ 07651a0` · suite **4493 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-07 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
-> queue — one list, not three that drift. Full per-round build history lives in the manifest (`§1`–`§16`); this file is
+> queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
 > the forward-looking plan plus a compact done-ledger. Sizes and first-steps were ground-truthed against the source and
-> the load-bearing claims independently re-verified at their file:line anchors; each shipped item was red-teamed by an
-> independent evil-morty before it landed.
+> the load-bearing claims independently re-verified at their file:line anchors; earlier rounds used independent evil-morty passes;
+> ROUND 22 records its separate source, implementation and adversarial-review bearings explicitly.
 
 ## Governance — the 3-lane projection (authoritative)
 
@@ -53,12 +53,23 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
   electrochemistry (ROUND 18, ELECTROCHEM-01):** sourced standard potentials prove that displacement is SPONTANEOUS
   (E°cell = +0.271 V, ΔG° = −52.3 kJ/mol) and reproduce why chlorine displaces bromide but not the reverse; the
   electrolytic anode leg is modelled (minimum decomposition voltage + Faraday charge). **Remaining — the cost ranking:**
-  the brine-vs-mined *quantitative cost ranking* is still gated on a sourced Cl₂ price + a NaBr feedstock (deferred — the
-  aggregator wall; see DEFERRED).
+  the brine-vs-mined *quantitative cost ranking* still needs pricing integration + a NaBr feedstock. ROUND 22 recovered
+  an approved municipal Cl₂ offer, with packaging/rental terms; it is not an industrial spot or historical Dow price.
+  See DEFERRED and `docs/research/SOURCING_RECON_2026-09-07.md`.
 
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 22** (branch `codex/mancude-duration-sourcing-2026-09-07`, code `07651a0`, isolated from `main@043a3cd`) — neutral mancude CIP
+extension, duration admission fix, and source-access corrections. Full verification and source hashes are recorded in
+`experiments/validation/round22_2026_09_07.json`; the source and external-oracle reports preserve the claim boundaries.
+
+| Item | Lane | What changed |
+|---|---|---|
+| CIP-MANCUDE-01 | B | Exact rational multiple-bond duplicate atomic numbers over distinct feasible partner positions in bounded neutral C/N/O/S mancude rings, including supported fused systems. Ring topology recognizes aromatic and explicit Kekulé inputs through the same path. Fixes the independently discovered uppercase pyridyl/diazinyl **wrong-label** mirror pair; names aryl/heteroaryl centres while identical ligands remain unnamed. Primary VS032/033 anchors, fractional-number controls, three fail-closed work caps, and optional accurate-RDKit panels (1,224 + 1,134 representation cases) are reproducible. Higher-rule ties and unsupported ring chemistry remain deferred. |
+| DURATION-UNIT-01 | B·C | `ConditionEnvelope.duration` requires exactly `min`, through direct construction and replay. Non-minute callers must convert explicitly. Existing valid minute payloads and route digests are unchanged; 59 new unit/admission controls. Core E1 still needs an intermediate-hold interpretation and seconds conversion. |
+| DOW-SOURCE-RECON-01 | B·C | Recovered Warshay's NASA Br₂ initial-dissociation primary and an approved Los Fresnos Cl₂ procurement offer. Both blanket primary-access claims are corrected. These are source receipts, not new default seeds: collider/modified-Arrhenius/hold modeling and package-aware pricing/feedstock integration remain open. |
 
 **ROUND 21** (branch `cip-load-stability-2026-09-06`, code `6e14d51`) — 1 build, full-blast on **queue item 2** (the L
 round); `design → external review (ChatGPT, folded against the tree) → recon (8-agent) → build → reproduce → evil-morty →
@@ -140,15 +151,17 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| 3 | **Wire the duration-aware verdict into core E1 + the DOW-Br₂ primary** (primitive shipped R19) | B·C | **L** | long | a route intermediate with sourced kinetics + a Br₂ decomposition primary |
+| 3 | **Wire duration-aware core E1 + model DOW-Br₂ collider kinetics** (primitive R19, unit lock R22) | B·C | **L** | long | a source-compatible intermediate hold + explicit collider/modified-Arrhenius model |
 
 ### 1 · General CIP — the breadth-first namer — ✅ **DONE (ROUND 20, ID-STEREO-CIP-NAMER)**
 Shipped: `smartchem/smiles.py` `_cip_ranks`/`_cip_compare`/`_cip_digraph`, wired into `_cip_labels`; validated by
 `experiments/cip_namer_probe.py` (5 layers, FROZEN_HASH) + `tests/test_cip_namer.py`. CIP **Rule 1a**, breadth-first,
 branch-by-branch with need-to-know pruning (the DFS-vs-BFS fix), phantom atoms for multiple bonds + ring closures,
 validated `namer(mol) == geometric_handedness(true_priorities, sense)` on the textbook battery (incl. the L-serine (S) /
-L-cysteine (R) flip). SOUND, not complete — Rules 1b/2/4/5 and aromatic-reaching ties DEFER. See the DONE ledger and
-manifest §20. What remains for full CIP completeness (Rule 1b/2/4/5 + aromatic Kekulé-averaging) is TRACKED DEBT below.
+L-cysteine (R) flip). At R20, aromatic-reaching ties deferred. **ROUND 22 extends this with bounded neutral mancude
+averaging and corrects the R20 soundness claim:** uppercase Kekulé inputs bypassed the old guard and could emit a wrong
+label. The concrete mirror pair is now fixed and regression-tested. See the DONE ledger and manifest §§20/22;
+higher-rule ties and unsupported ring systems remain TRACKED DEBT below.
 
 ### 2 · Composability + physical re-derivation on load — DAG **and** linear — ✅ **DONE (ROUND 21, ONLOAD-REDERIVE)**
 Shipped: `smartchem/service.py` (thick `replay_payload` + `_reconstruct_route`/`_reconstruct_dag` +
@@ -163,14 +176,18 @@ Plus the v0.1 HMAC conflation was corrected (a public digest recompute is free; 
 See the DONE ledger and manifest §21. TRACKED DEBT below: the keyless eval-context-relaxation boundary + the
 verified-admission cost lever (evil-morty F1/residual).
 
-### 3 · Wire the duration-aware verdict into core E1 + source the DOW-Br₂ primary — **L, sourcing wall** *(DOW)*
+### 3 · Wire the duration-aware verdict into core E1 + model the recovered DOW-Br₂ primary — **L** *(DOW)*
 **The primitive shipped (ROUND 19, `smartchem/experiment/stability_horizon.py`):** a duration-aware survival verdict
 `f = exp(-k t)`, k from the sourced Arrhenius fit, non-vacuous on N₂O₅ (SURVIVES→MARGINAL→DEGRADES across the hold),
 fail-closed UNKNOWN with no sourced rate, structure-keyed (no isomer/product borrows a rate). **What remains:** (a) wire
 it into `_judge_transition`'s COMPOSABLE/DEGENERATE flip — needs a route intermediate that carries a sourced
-decomposition rate **and** the unit-lock on `ConditionEnvelope.duration` (an unconsumed, unit-unchecked field today); and
-(b) the **DOW-Br₂ decomposition primary** — no Br₂ decomposition Arrhenius record is sourceable yet (the DOW half of the
-time axis is walled on that primary, independent of the machinery).
+decomposition rate and a defensible intermediate-hold mapping. **The duration unit lock shipped in ROUND 22:**
+`ConditionEnvelope.duration` requires `min`; seconds must be converted explicitly at the primitive boundary. The field
+still has no core-E1 consumer. (b) **A Br₂ primary is now recovered:** Warshay, NASA TN D-3502 (1966), gas-phase shock-tube
+initial dissociation in Ar/Ne/Kr. It measures `kD = A sqrt(T) exp(-Ea/RT)` and `-d[Br2]/dt = kD [Br2][M]`, so it cannot
+be inserted into the concentration-free first-order seed. The remaining gate is collider state, modified Arrhenius
+units and reverse/hold scope, not missing primary access. Source URLs, pages and hashes:
+`docs/research/SOURCING_RECON_2026-09-07.md` and `experiments/sourcing_recon_2026_09_07.json`.
 
 ### 2b (DONE R19) · machine-readable `serial_holds` on `RankedDAGSummary`
 Shipped — the DAG-HOLD-01 serial hold is now a `(producer, consumer, minutes)` triple field (digest-excluded disclosure),
@@ -178,16 +195,20 @@ not just a human note. See the DONE ledger.
 
 ---
 
-## ⏸️ DEFERRED — attempted at full effort, honestly walled (not fabricated)
+## ⏸️ DEFERRED — explicit remaining gates (not fabricated)
 
 - **The DOW brine-vs-mined *cost ranking*** (the DOW litmus's last lane, Lane C). Pricing (R16), mechanism (R17), and
   electrochemistry (R18) all shipped; ranking the brine route against the mined/market route quantitatively needs a
-  sourced **Cl₂ price** (the oxidant) and a sourced **NaBr feedstock** price. Chlorine hits the same aggregator wall as
-  the organics (no directly-readable dated absolute); NaBr's price would be DERIVED from the bromine-content figure via
-  mass fraction (a known-physics derivation, but a different epistemic class than the sourced seed — it does not belong in
-  the sourced-absolute table). Deferred until a Cl₂ primary is found or a labelled-DERIVED price path is built. **Only the
-  sourced pricing remains a blocker** — the mechanism (ROUND 17's REDOX-DISPLACE-01 enumerates `Cl₂ + 2Br⁻ → Br₂ + 2Cl⁻`)
-  and its feasibility (ROUND 18's ELECTROCHEM-01: E°cell = +0.271 V, spontaneous) are both done.
+  correctly scoped **Cl₂ pricing integration** and a **NaBr feedstock** price. **ROUND 22 closes the chlorine primary-access
+  gap:** Los Fresnos's September 9, 2025 approved municipal offer gives $1.24/lb in a 2,000-lb cylinder ($2,480), plus
+  $50 monthly cylinder rental, effective October 2025–September 2026. The attachment is unsigned and no invoice was
+  recovered: an approved offer, not an observed transaction, industrial spot price or historical Dow price. It is
+  recorded as reconnaissance, not silently admitted into default commodity pricing. Integration needs structure-bound
+  Cl₂ registration and explicit package/rental/region/offer basis. NaBr's mass-fraction calculation would be a labelled
+  DERIVED bromine-content proxy, not a sourced NaBr purchase price. **That same-benchmark proxy cannot prove an undercut:**
+  its stoichiometric NaBr cost already equals the bromine benchmark before adding chlorine. A cheaper-brine claim needs
+  an independent feedstock/extraction-cost basis (conditional algebra in the sourcing report). The mechanism (ROUND 17) and aqueous standard
+  feasibility (ROUND 18) remain done; a quantitative whole-route or historical cost advantage is still unestablished.
 - **A second sourced organic price** (was ROUND-15 item 3; Lane C). Attempted acetic acid (highest value — it ripples
   the methyl-acetate golden) and ethanol. **Wall:** organic producers post price *increases* (Celanese: +$50/MT Feb,
   +$0.10/lb Mar 2026), not absolute reference sheets; absolutes are aggregator-walled (Intratec/ChemAnalyst). Ethanol's
@@ -242,16 +263,17 @@ not just a human note. See the DONE ledger.
   ranking primitive; feeding its process/identity/purity strengths into the affordability `CostVector` as a verification
   axis needs a new `_AXES` entry + a frontier-entry schema bump + golden regen (a deliberate deferral, not an oversight —
   the score is honest and usable standalone now).
-- **CIP oracle/namer parser-convention seam** (Lane B; ROUND-19/20, evil-morty) — the namer + oracle validate the
-  geometry→label convention against textbook absolutes, but the shared parser's `@`/`@@` → written-neighbour-ORDER
-  convention has **no external (RDKit) oracle** in the dependency-light core; it is asserted from the OpenSMILES spec, not
-  cross-checked by a third party (a 400-molecule parity-correct spelling fuzzer found 0 inconsistencies, but that is
-  self-consistency, not an external absolute). Revisit if an external stereo oracle ever enters the toolchain.
-- **CIP full completeness — Rules 1b/2/4/5 + aromatic Kekulé-averaging** (Lane B; ROUND-20) — the namer is CIP **Rule 1a
-  only**. Isotope-only ties (Rule 2), pseudoasymmetric/E-Z ties (Rules 4/5), and any ranking that DEPENDS on an aromatic
-  atom's substituents all **DEFER** (sound, never a guessed label). The clean completeness extension is **Kekulé-invariant
-  atomic-number averaging** over mancude rings (Hanson et al. 2018) — that alone would let aryl/heteroaryl stereocentres
-  (common in pharma) be named instead of deferred. Its own build; not started.
+- **CIP external-oracle scope** (Lane B; ROUND-22) — `experiments/cip_external_oracle_probe.py` now compares against the
+  accurate RDKit `rdCIPLabeler` through an external parser/graph/labeler, including aromatic, explicit-Kekulé and reversed
+  atom-order spellings. RDKit remains an optional probe dependency, absent from the runtime. Its implementation is
+  separate but the CIP specification is shared; finite agreement does not prove correctness on arbitrary graphs.
+- **CIP full completeness — higher rules and unsupported ring systems** (Lane B; ROUND-20/22) — the namer remains
+  **Rule 1a only**. Neutral mancude averaging is built for the bounded C/N/O/S valence slice, including supported fused
+  systems. Isotope/stereochemistry-dependent ties, ring stereocentres, and comparisons needing charged, exocyclic,
+  incompletely conjugated, untyped or over-budget ring connectivity still DEFER. Limits: 30 atoms per ring system,
+  128 complete matchings, 10,000 matching-search visits; a partial partner set is never used. The aromatic parser's
+  charged-donor limitations remain separate (some aromatic inputs refuse while explicit spellings reach CIP deferral).
+  See `docs/research/CIP_MANCUDE_SCOPE_2026-09-07.md`. External finite agreement does not prove full CIP soundness.
 - **CIP comparator transitivity residual** (Lane B; ROUND-20, evil-morty) — `_cip_compare` is used as a `cmp_to_key` sort
   key, which assumes transitivity; a deep degenerate tie tree could in principle violate it. No counterexample found
   (fuzzer-clean) and the `sorted(ranks)==[0,1,2,3]` guard in `_cip_ranks` catches any top-level cycle (→ DEFER, sound),
@@ -261,9 +283,10 @@ not just a human note. See the DONE ledger.
   assumes the sourced `k` is the per-species rate (`-d[A]/dt = k[A]`), which both seeded records pin in their provenance;
   a future first-order record with coefficient > 1 sourced under the *reaction-rate* convention would be off by the
   stoichiometric factor. The module can't detect the convention from the data — documented boundary, not a silent guess.
-- **`ConditionEnvelope.duration` unconsumed + unit-unlocked** (Lane B·C; ROUND-19) — the field is validated but has NO
-  consumer in `smartchem/` and (unlike temperature/pressure) NO unit guard. Wiring item 3's duration-aware verdict into
-  core E1 must close the unit lock first, or a caller mixing `min`/`h`/`s` durations feeds a silent unit error.
+- **`ConditionEnvelope.duration` core-E1 consumer** (Lane B·C; ROUND-19/22) — the unit hazard is closed: construction and
+  replay require exactly `min`, preserving valid existing payloads and identities. Core E1 still does not consume the
+  field. Wiring item 3 must specify which duration bounds model an intermediate hold and convert explicitly to seconds;
+  a duration declaration alone is not a sourced survival claim.
 
 ---
 

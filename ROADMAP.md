@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ 8e97664` · suite **4510 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv) · updated **2026-09-07 UTC**
+> `verified @ f6e887a` · suite **4510 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv; unchanged since R23 — PR #16 merged the R23 code, PR #17 the Move-1 keystone design contract, docs-only) · updated **2026-09-07 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -61,7 +61,20 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 
 ## ✅ DONE — current shipped capability
 
-**ROUND 23** (branch `categorical-duration-functor-2026-09-07`, code `8e97664`, from `main@404e863`) — the **categorical
+**Categorical reorientation — Move-1 keystone (design contract, no code)** (merged **PR #17 → `main@f6e887a`**; contract
+commit `d6c61cd`, `docs/research/OPEN_SMC_CHEMISTRY_BACKBONE_CONTRACT_v0.1.md`) — the **keystone** of the categorical
+reorientation, spec'd as a design gate. Proposes an open-SMC chemistry morphism backbone (reuse `open_diagram.py`'s
+already-lawful composition core; conservation as a **closure predicate** not a construction gate; the
+conservation-at-construction theorem preserved exactly as the closed-diagram special case — obligations P1–P4). Hardened
+pre-commit by two adversarial reviews (evil-morty + birdperson) that **converged on an unsound acceptance gate**; resolved
+via the **"central knot"** — two kinds of order (genuine causal DAG, preserved / spurious linearization of independent
+steps, quotiented) at two levels (coarse **structural ports** carry the SMC/interchange laws; an interchange-invariant
+**`Config` apex decoration** carries conservation-closure; a **partial-order record** carries provenance). Re-specified
+gate = interchange under the honest `canonicalize` quotient + a **real non-test consumer** (`ExperimentStep.open/.close`
+round-trip) + a P4 demonstration; the legacy `Reaction` xfail preserved-and-annotated, not flipped. **This is the build
+gate for Rung B (queued below).**
+
+**ROUND 23** (branch `categorical-duration-functor-2026-09-07`, code `8e97664`, merged **PR #16 → `main@0e6bba0`**) — the **categorical
 reorientation's first rung** (Move 2: physics as a functor): the duration-aware survival verdict wired into core E1, closing
 the core-E1 half of queue item 3. `design → recon (2 mappers) → build → reproduce → evil-morty → fold → verify`; **additive**
 (3 source files + 1 new test), **byte-stable** (the survival field is `compare=False` digest-excluded; the seed kinetics hold
@@ -163,7 +176,22 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
+| **K-B** | **Move-1 keystone Rung B** — `OpenChemDiagram` alongside `Reaction` + the 3-part gate (spec merged; build-ready) | **A·B** | **L** | **build-ready** *(on the user's go)* | design gate cleared (contract merged PR #17); additive/byte-stable/fail-closed; the flagged design call is whether to factor `open_diagram.py` into a generic core + per-domain construction layer. **NEXT FULL-BLAST TARGET.** |
 | 3b | **Model DOW-Br₂ collider / modified-Arrhenius kinetics** (the item-3 remainder; core-E1 wire-in DONE R23) | B·C | **M** | long | the recovered Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube T — needs a collider-state + modified-Arrhenius model + reverse/hold scope; NOT compatible with the concentration-free first-order seed |
+
+### K-B · Move-1 keystone Rung B — build the open backbone's first increment — **L**, build-ready *(on the user's go)*
+The Move-1 keystone contract is **merged** (design gate cleared, PR #17). Rung B is the first buildable increment:
+introduce `OpenChemDiagram` — a chemistry **multi-terminal hyperedge** construction layer over a factored `open_diagram.py`
+core — **alongside** `Reaction`, with a `Reaction → OpenChemDiagram` functor + a `.close()` round-trip. Land the **3-part
+acceptance gate**: (1) interchange/braid/hexagon proven on the new type **under the honest `canonicalize` quotient**
+(fail-closed on the budget refusal); (2) a **real non-test consumer** — `ExperimentStep.open(...)` representable + `.close()`
+reproducing today's `Reaction` certificate byte-for-byte (P3); (3) a **P4 provenance round-trip** (causal DAG preserved,
+only the spurious linearization quotiented). **Additive, byte-stable** (no `Reaction`/`scheduled_product` mutation → every
+existing digest unchanged, P2), **fail-closed**. The legacy `Reaction` xfail (`tests/test_laws.py:330`) is
+**preserved-and-annotated, not flipped**. Flagged design decision for the build: factor `open_diagram.py` into a generic
+core + per-domain construction layer (recommended) vs a parallel type. Full spec + review folds:
+`docs/research/OPEN_SMC_CHEMISTRY_BACKBONE_CONTRACT_v0.1.md`. Rungs **C** (full open-step pipeline migration:
+`ExperimentStep`/`Route`/`SynthesisDAG`) and **D** (meta-compiler at `service.py`, closing = compiling) follow, each its own round.
 
 ### 1 · General CIP — the breadth-first namer — ✅ **DONE (ROUND 20, ID-STEREO-CIP-NAMER)**
 Shipped: `smartchem/smiles.py` `_cip_ranks`/`_cip_compare`/`_cip_digraph`, wired into `_cip_labels`; validated by

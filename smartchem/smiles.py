@@ -1096,12 +1096,13 @@ def _cip_digraph(atom_idx, parent_idx, path, adj, elems, aromatic, budget, mancu
     """One node of the CIP hierarchical digraph, ``(atomic_number, children)``.
 
     A multiple bond of order ``o`` contributes ``o - 1`` duplicate leaves of the bonded partner on each side;
-    a ring-closure bond (a neighbour already on the root->here path) contributes ``o`` duplicate leaves and is
-    NOT traversed -- so every root-to-leaf path visits each real atom at most once and the digraph is FINITE
-    (depth bounded by the atom count).  A duplicate/phantom leaf carries the real atomic number of the atom it
-    duplicates but no substituents (its own children are the atomic-number-0 phantoms, which the padded
-    comparison in :func:`_cip_compare` treats identically to an empty child list). Mancude multiple-bond
-    duplicates instead carry the OWNER's exact partner-Z average; ring-closure duplicates stay integer-Z.
+    a ring-closure bond (a neighbour already on the root->here path) is NOT traversed and contributes one
+    integer-Z closure leaf plus the usual ``o - 1`` multiple-bond duplicates -- so every root-to-leaf path
+    visits each real atom at most once and the digraph is FINITE (depth bounded by the atom count).  A
+    duplicate/phantom leaf carries the real atomic number of the atom it duplicates but no substituents (its
+    own children are the atomic-number-0 phantoms, which the padded comparison in :func:`_cip_compare` treats
+    identically to an empty child list). Mancude multiple-bond duplicates instead carry the OWNER's exact
+    partner-Z average; a ring-closure's own closure leaf stays integer-Z.
     An unsupported unsaturated ring atom is a BOUNDARY
     node ``(z, _CIP_AROMATIC)``: its atomic number is known (so a ranking can still decide ON it), but its onward
     connectivity is withheld because it is Kekule-dependent -- a comparison that tries to descend past it raises

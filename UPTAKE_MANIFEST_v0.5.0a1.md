@@ -4531,3 +4531,68 @@ A real optional PySCF smoke calculation of H at HF/cc-pVDZ returned approximatel
 Aggregate baseline: **4417 passed, 14 skipped, 1 xfailed in 867.26 s**. Final implementation `07651a0`: **4493 passed, 14 skipped, 1 xfailed in 892.81 s**. Source hashes and exact commands are in the round receipt.
 The canonical remaining-work list is ROADMAP.md; no human bench, historical cost-ranking, or universal
 CIP claim is promoted by this round.
+
+## 23. ROUND 23 — the duration-survival monoid functor wired into core E1 (2026-09-07 UTC)
+
+Branch `categorical-duration-functor-2026-09-07`, from `main@404e863`, code `8e97664`. The first rung of the
+categorical reorientation the user asked for (Move 2: physical quantities as functors, not bolted-on scalars),
+and the core-E1 half of queue item 3. `design → recon (2 read-only mappers) → build → reproduce → evil-morty →
+fold → verify`. Additive: 3 source files + 1 new test, no schema/golden churn.
+
+### 23.1 DURATION-SURVIVAL-01 (Lanes B/C)
+
+E1's composability verifier was instantaneous (onset-vs-exposure) and time-blind; DAG-HOLD-01 (ROUND 15)
+computed the sourced serial-schedule hold but only DISCLOSED it as a note, never a verdict. This consumes it.
+`smartchem/experiment/composability.py` gains `_apply_duration_gate`, a post-process on the instantaneous
+per-transition verdict: where the intermediate has a SOURCED first-order decomposition rate (the ROUND-19
+`stability_horizon` primitive, matched on CANONICAL STRUCTURE, never formula), the surviving fraction over the
+hold MOVES the verdict. It only ever tightens — `DEGRADES → DEGENERATE` (even where the onset table was silent,
+because a sourced kinetic refutation is stronger than a missing record), `MARGINAL → UNKNOWN`, `SURVIVES`
+confirms the instantaneous verdict without upgrading it — and it never touches an already-`DEGENERATE` base.
+
+The survival is a monoid functor `S: Process → ([0,1], ×)`: `Transition.surviving_fraction` (a `compare=False`,
+digest-EXCLUDED disclosure, so an unassessed route keeps its exact prior digest) and `route_surviving_fraction`
+on `Composability`/`DAGComposability` are the product of the per-transition fractions, and the hold survival
+itself is the product over the hold's segments. `survival_verdict` was promoted from a private helper to a
+shared public band-policy function so the standalone primitive and the gate cannot drift to different band edges.
+
+`smartchem/experiment/dag.py` gains `_serial_hold_segments` (per edge, the intervening sibling steps'
+`(temperature, minutes)`), and `dag_composability` threads an injectable decomposition-kinetics table.
+
+Off by default and byte-stable: the seed kinetics hold only N₂O₅ and cyclopropane, so no existing route routes a
+held intermediate with a sourced rate; every prior golden is unchanged (the +17 tests are the only suite delta).
+
+### 23.2 Independent review (evil-morty) and the folds
+
+An adversarial pass attacked seven load-bearing claims; five held clean (byte-stability/digest-exclusion,
+only-tightens, structure-keying, the DAG kinetics-alias identity, and the fraction-range/fail-closed guards).
+It found one real MEDIUM soundness bug and two minor issues, all folded before commit:
+
+- **MEDIUM (folded):** the first cut applied the endpoint peak temperature (`exposed.hi`, max of producer/
+  consumer) across the whole hold. But the intermediate idles during the intervening SIBLING steps, whose
+  temperatures were never consulted — so the gate could mint a false `DEGENERATE` (hot producer, cool idle hold)
+  and, worse, launder a real degradation into near-survival (cool endpoints, hot sibling). Fixed: survival now
+  composes over each intervening step's OWN declared `(temperature, duration)` segment (`_hold_survival`), and
+  fails closed (silent) when any hold-segment temperature is undeclared — the gate never renders a verdict on a
+  temperature the model does not actually know. Pinned by a two-direction test.
+- **LOW (folded):** a non-finite injected `KineticRef` (the data layer has no `isfinite` guard) matched on
+  structure and then raised inside the gate, aborting the compile. The gate now checks the matched rate's
+  finiteness and stays silent; the primitive's own raise-on-non-finite (`surviving_fraction`) is unchanged.
+- **Docstring (folded):** `route_surviving_fraction` is the product over DURATION-ASSESSED handoffs only, not a
+  whole-route survival probability (a route can carry a reassuring fraction while its verdict is `DEGENERATE`
+  for a non-duration reason) — documented to be read alongside the verdict, never instead of it.
+
+### 23.3 Boundaries carried (TRACKED DEBT in ROADMAP.md)
+
+Only DAG serial holds carry a modeled hold — a linear route's adjacent handoff passes none, so its intermediates
+are never duration-assessed. Each intervening segment uses the hi end of its declared temperature range. The R19
+reactant-coefficient rate-convention residual still applies. The DOW-Br₂ half of item 3 remains: the recovered
+Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube temperatures, not the
+concentration-free first-order law the gate consumes (item 3b, a modeling wall, not missing access).
+
+### 23.4 Verification
+
+Full suite **4510 passed, 14 skipped, 1 xfailed** (= the pre-round 4493 plus 17 new tests; the 1 xfail is the
+orthogonal interchange-law debt), run in four memory-bounded batches (the box OOM-killed a monolithic run under
+memory pressure; the four alphabetical globs union to all 183 test files, confirmed). Ruff clean on all four
+changed files. The canonical remaining-work list is ROADMAP.md.

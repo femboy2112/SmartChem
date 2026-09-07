@@ -149,7 +149,10 @@ compares to the digest-protected claimed verdicts — protection-equivalent to f
 every existing route identity. Full rationale + the measured build (new Molecule/Envelope serializers +
 conservation-certified route reconstruction + 4 coherence checks + schema bumps + goldens) in
 `docs/research/ONLOAD_REDERIVATION_SCOPE_DECISION_v0.1.md`. It is now a pure build (larger than R19's items 1+2b+3
-combined, in the module that gates every compile — so its own round).
+combined, in the module that gates every compile — so its own round). **External design review in flight:** the exact
+codebase-free prompt taken to ChatGPT (protection-equivalence hole-check + the sound-and-tight invariant + serialization
+contract + adversarial tests) is persisted at `docs/research/ONLOAD_REDERIVATION_CHATGPT_PROMPT_v0.1.md`; fold its
+answer against the scope doc before the build starts.
 
 ### 3 · Wire the duration-aware verdict into core E1 + source the DOW-Br₂ primary — **L, sourcing wall** *(DOW)*
 **The primitive shipped (ROUND 19, `smartchem/experiment/stability_horizon.py`):** a duration-aware survival verdict

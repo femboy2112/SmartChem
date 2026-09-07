@@ -60,6 +60,8 @@ from .classify import (
     classify_step,
 )
 from .compile import CompiledSynthesis, compile_synthesis
+from .functorial_physics import FreeEnergyDecoration, PhysicsProduct, route_net_delta_g
+from .meta_compile import ClosedCompilation, MetaCompilation, compile_open, pareto_frontier
 from .formation import DerivedFormation, formation_enthalpy_0k
 from .composability import (
     Composability,
@@ -293,6 +295,13 @@ __all__ = [
     "classify_dag",
     "CompiledSynthesis",
     "compile_synthesis",
+    "ClosedCompilation",
+    "MetaCompilation",
+    "compile_open",
+    "pareto_frontier",
+    "FreeEnergyDecoration",
+    "PhysicsProduct",
+    "route_net_delta_g",
     "DerivedFormation",
     "formation_enthalpy_0k",
     "SynthesisAssemblyError",

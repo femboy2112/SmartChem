@@ -28,6 +28,17 @@ A "transform" here is any family's structural rewrite exposing the uniform inter
 for a family that consumes none), ``products`` (the derived product Molecules), ``forget()`` (its forgetful
 composition edge), ``equation()``, and ``digest``.  :class:`~smartchem.structure_descent.CappedScission` already
 satisfies it structurally.
+
+Categorically (Move 3, ``docs/research/PROVIDER_ALGEBRA_AS_SMC_GENERATORS_v0.1.md``): the providers are a
+*generating set* of morphisms, and ``ExperimentStep.from_transform(t).open()`` is the on-generators action of a
+*semantics functor* into the open SMC (:mod:`smartchem.open_chem_diagram`).  This is a functor, NOT a proven-free
+category; the ``(witness_kind, projection_kind)`` pairs are PROVENANCE tags, not composition-gating hom-types
+(composition at the Molecule altitude is total -- a charged family's products can feed a neutral one); and IR-COMMUTE
+(``tests/test_ir_commute.py``) is a forgetful NATURALITY square between two functors, not the monoidal coherence law
+(interchange/braid/hexagon coherence lives in and is proven on :mod:`smartchem.open_core`).
+``tests/test_provider_category.py`` pins the functor's laws: provenance is out of the categorical identity (the R24
+congruence discipline), F quotients symmetric cuts but stays faithful on distinct reactions, and forget/open agree
+per generator.
 """
 from __future__ import annotations
 

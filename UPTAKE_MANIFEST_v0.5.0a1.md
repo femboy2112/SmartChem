@@ -4746,3 +4746,87 @@ double-count question for `route_net_delta_g` (pre-existing, orthogonal); and th
 Full suite **4590 passed, 14 skipped, 1 xfailed** (= R25's 4579 + 11 new DOW-thermo/M2b tests; skip/xfail unchanged ⇒
 P2 holds, legacy xfail preserved), four memory-bounded batches. Ruff clean on all changed files. No golden regen (the
 data add and the ranking change are both byte-stable on route/DAG identity). Canonical remaining work: ROADMAP.md.
+
+## 27. ROUND 27 — Move-3 provider-algebra formalization + Move-4 tension-A; CIP enrichment spec'd (2026-09-07 UTC)
+
+Branch `moves-3-4-provider-category-cip-2026-09-07` off `main@b2a5518`. The user's "go full blast on move 3, do 4 as
+well if you're able." Two pre-build design bearings (birdperson soundness + butter-robot YAGNI) governed the scope;
+one evil-morty adversarial pass hardened it. Additive + one small logic fix. Move 3 is byte-stable; tension-A
+INTENTIONALLY moves one golden (`recompile_routes_found.json`) — a correct fabrication-removal, documented in §27.5.
+
+### 27.1 Move 3 — the provider algebra as a generating set of the open SMC (a formalization, NOT new machinery)
+
+Move 3's one-liner ("the free open-monoidal category on typed generators; IR-COMMUTE is the coherence law") was found
+by recon + both design bearings to be an OVER-CLAIM whose intended structure ALREADY EXISTS and is ALREADY LIVE:
+`open_core`/`OpenChemDiagram` IS the open SMC (coherence proven there), the registry's providers ARE a generating set
+(`enumerate` has 3 live call sites, AST-pinned by `test_provider_locality.py`), and the functor's action on words is
+live in `meta_compile` (`route.open()`). So building a `free_functor`/`TransformGenerator` runtime would be the
+zero-call-sites failure mode (THE_DIFFERENCE) reincarnated as a *trusted green mirror* — worse than a dead one. The
+honest deliverable, shipped:
+- `docs/research/PROVIDER_ALGEBRA_AS_SMC_GENERATORS_v0.1.md` — the honest categorical statement, correcting three
+  over-claims against the tree: NOT "free" (a *semantics functor* F, freeness unproven); NOT "IR-COMMUTE is the
+  coherence law" (it is a per-family *forgetful naturality square* at the Formula layer; coherence lives in
+  `open_core`); NOT "typed generators" (the (witness/projection) pairs are *provenance tags*, composition is total).
+- `tests/test_provider_category.py` — three non-vacuous laws over the live structure, each with a non-vacuity control:
+  (1) provenance-out-of-identity (a forward change-detector for the R24 congruence hazard `a-quotient-must-be-a-congruence`);
+  (2) F quotients the four symmetric ethane cuts to ONE diagram (`comparing-fixed-representatives-fabricates-a-distinction`
+  as a theorem) yet stays faithful on distinct reactions (capped vs bond-order); (3) forget/open naturality —
+  `net_reaction(F(t))` is the exact reverse of `t.forget()`.
+- a legibility pointer in `transform_provider.py`'s module docstring.
+A false fourth "branch-order interchange" law was DROPPED (grounding caught it before it shipped): the open boundary is
+ordered, so reordering independent branches gives genuinely distinct morphisms, reconcilable only up to a boundary
+braid = `open_core`'s already-proven law. No source runtime added; no digest/golden movement.
+
+### 27.2 Move 4 tension-A — resolve_stability keyed on canonical structure (a-reaction-key-by-formula-borrows-a-rate)
+
+`smartchem/experiment/composability.py::resolve_stability` no longer borrows a same-formula sibling's sourced record.
+Three cases, no borrow in any: a KNOWN isomer → its NAMED record or a loud None; an UNREGISTERED isomer of a KNOWN
+formula (`known_compounds` non-empty, none matched the resonance identity) → None (fail-closed, no borrow); a NOVEL
+formula (`known_compounds` empty) → the formula fallback (the injection lever, ethyl acetate/N2O5). The one instance
+live on default data (the ester 4-aminophenyl acetate inheriting paracetamol's 523 K onset + provenance) AND the
+general class (ethynol→ketene's `isolable=False`, 2-aminophenol→4-aminophenol's onset) are both closed. Regression:
+`test_composability.py::TestStabilityKeyIsStructureNotFormula` (3 live-on-default-data guards). The ester carries no
+golden route, but the GENERAL-class gate DOES correctly move one golden: see §27.5 (a non-acetic-acid C2H4O2
+intermediate on a recompile route was borrowing acetic acid's `isolable`; now an honest UNKNOWN).
+
+### 27.3 Move 4 CIP node enrichment — build-ready scope decision (NOT built this round)
+
+`docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md`. The CIP half is soundness-critical (a wrong R/S label is
+fabrication, `known-physics-not-new-physics`) AND moves `FROZEN_HASH`, so — the R19 ONLOAD-REDERIVE precedent — it is
+spec'd build-ready as its own reviewable round rather than rushed as a same-turn rider: node shape `(z, mass, children)`
+for Rule 2, a `(z, mass, dup_rank, children)` extension for Rule 1b, each rule its OWN full pass gated at the
+`smiles.py:1237` tie hand-off (never appended per-leaf — that inverts CIP precedence), Rule-2 pairing ambiguity
+fail-closed to DEFER, Rule 3 an explicit DEFER, Rules 4/5 kept `aux=None` (an aux slot without the recursive
+auxiliary-descriptor pre-pass would fabricate labels), the coupled edit sites, and the `FROZEN_HASH` re-freeze plan.
+
+### 27.4 Reviews and folds
+
+birdperson (SOUND-BUT-HEED, pre-build): the proposed law (a) "functoriality of `route.open()` vs a fold" is a
+common-mode MIRROR (the same bricks stacked two ways) → DROPPED; "free/coherence/typed" over-claims → corrected; the
+earn-call-sites bar named honestly (no fabricated lift combinator). butter-robot (pre-build): `free_functor` +
+`TransformGenerator` = the biggest over-engineering → cut; CIP → its own hash-moving round. evil-morty (post-build
+adversarial): **MEDIUM fold** — the tension-A v1 fix killed only the ester; the GENERAL borrow (an unregistered isomer
+of a seeded formula → a fabricated NAMED verdict) was still live and the docstring over-claimed `for_formula` as "the
+honest key available" → closed with the `known_compounds` gate + corrected docstring + a general-borrow regression.
+**Two LOW honesty folds:** Law 1 demoted to a forward change-detector (provenance is structurally absent from F's
+domain, not a proven congruence); Law 3 marked common-mode on the product multiset (it catches the reversal
+orientation + altitude, not product correctness). evil-morty SIGNED Law 2 as the one law that catches a broken functor
+(not a signature edit), and confirmed no legitimate stability path broke and no golden moved.
+
+### 27.5 Verification
+
+Full suite **4598 passed, 14 skipped, 1 xfailed** (= R26's 4590 + 8 new: 5 provider-category laws + 3 tension-A
+guards; skip/xfail unchanged, legacy xfail preserved), four memory-bounded batches. Ruff clean on all changed files.
+**One golden regenerated — `tests/fixtures/cli_json/recompile_routes_found.json` (`tests/regen_cli_json.py`), a
+correct fabrication-removal, NOT a silent regression:** the recompile of methyl acetate (`CC(=O)OC`) carried a 2-step
+route whose C2H4O2 intermediate is a *non-acetic-acid* isomer (`resolve_structure`→None; acetic acid IS registered),
+which was borrowing acetic acid's `isolable`/onset by formula → a fabricated `COMPOSABLE`. The general-borrow gate
+(evil-morty MEDIUM fold) turns it into an honest `UNKNOWN` ("no sourced stability data for C2H4O2"), and the ranking
+reorders downstream (the clean 1-step route now ranks first); `result_digest` moves accordingly. This is exactly
+`a-reaction-key-by-formula-borrows-a-rate` firing on a live golden route — the borrow WAS live and consequential. A
+matching process-service integration test (`test_process_service.py::test_synthetic_declared_control_fits_real_search_and_workup_mutation_kills_it`,
+same methyl-acetate recompile) was updated to the same corrected reality: the 2-step route is now correctly
+NOT admissible on a COMPOSABILITY gap the synthetic PROCESS control cannot close (the assertion previously read
+"all candidates admissible" only because of the fabricated verdict — now "the FITS routes are a non-empty proper
+subset", a stronger, honest claim distinguishing the process gate from the composability gate). All other goldens
+byte-identical; Move 3 moved nothing. Canonical remaining work: ROADMAP.md (Moves 5–6 + the CIP-enrichment build).

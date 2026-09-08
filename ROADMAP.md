@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ a6ad71b` (branch `m2b-dow-thermo-2026-09-07`, **ROUND 26** — M2b + DOW-thermo, merging this round; R25 Rungs C/D + M2-FP MERGED via PR #20) · suite **4590 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches; = R25 baseline 4579 + 11 new M2b/DOW-thermo tests, skip/xfail unchanged ⇒ byte-stable P2) · updated **2026-09-07 UTC**
+> `verified @ moves-3-4-provider-category-cip-2026-09-07` (**ROUND 27** — Move-3 provider-algebra formalization + Move-4 tension-A + CIP scope decision, merging this round; R26 M2b + DOW-thermo MERGED via PR #22 → `main@b2a5518`) · suite **4598 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches; = R26 baseline 4590 + 8 new: 5 provider-category laws + 3 tension-A guards, skip/xfail unchanged; ONE golden regenerated — `recompile_routes_found.json`, a correct tension-A fabrication-removal, see DONE ledger) · updated **2026-09-07 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -60,6 +60,20 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 27 — Move-3 provider-algebra formalization + Move-4 tension-A (CIP enrichment spec'd build-ready)** (branch
+`moves-3-4-provider-category-cip-2026-09-07`, off `main@b2a5518`) — the user's "go full blast on move 3, do 4 as well
+if you're able." Two pre-build design bearings (birdperson soundness + butter-robot YAGNI) + one evil-morty adversarial
+pass. Additive + one small logic fix. Move 3 byte-stable; **tension-A intentionally moves ONE golden**
+(`recompile_routes_found.json`) — a correct fabrication-removal (a non-acetic-acid C2H4O2 intermediate was borrowing
+acetic acid's `isolable` → now an honest UNKNOWN), NOT a silent regression. Suite **4598 / 14 / 1** (= R26 4590 + 8;
+skip/xfail unchanged). Full detail: manifest §27.
+
+| Item | Lane | What shipped |
+|---|---|---|
+| **Move 3** · provider algebra as a generating set of the open SMC | B | A **formalization, not new machinery** — both bearings + recon found the categorical structure ALREADY EXISTS and is ALREADY LIVE (`open_core`/`OpenChemDiagram` IS the SMC with proven coherence; the registry's providers ARE a generating set with 3 AST-pinned live `enumerate` call sites; `route.open()` is the functor's word-action, live in `meta_compile`), so a `free_functor`/`TransformGenerator` runtime would be the zero-call-sites failure (THE_DIFFERENCE) reincarnated as a *trusted green mirror*. Shipped: `docs/research/PROVIDER_ALGEBRA_AS_SMC_GENERATORS_v0.1.md` (the honest functor claim, **correcting three over-claims against the tree**: NOT "free" → a *semantics functor* F; NOT "IR-COMMUTE is the coherence law" → a *forgetful naturality square*, coherence lives in `open_core`; NOT "typed generators" → *provenance tags*, composition is total) + `tests/test_provider_category.py` (three non-vacuous laws w/ non-vacuity controls: provenance-out-of-identity, F quotients symmetric cuts / faithful on reactions, forget/open naturality) + a legibility docstring pointer. A false "branch-order interchange" law was DROPPED (grounding caught it: the ordered boundary makes it reconcilable only up to `open_core`'s already-proven braid). No source runtime, no digest churn. |
+| **Move 4 tension-A** · `resolve_stability` keyed on canonical structure | B·C | `smartchem/experiment/composability.py::resolve_stability` no longer borrows a same-formula sibling's sourced record ([[a-reaction-key-by-formula-borrows-a-rate]], the guard now LIVE on default data). A KNOWN isomer → its NAMED record or a loud None; an UNREGISTERED isomer of a KNOWN formula (`known_compounds` non-empty, none matched) → None (fail-closed); a NOVEL formula (`known_compounds` empty) → the formula fallback (the injection lever). Closes the ester borrow (4-aminophenyl acetate ↮ paracetamol's onset) AND — evil-morty MEDIUM fold — the GENERAL class (ethynol↮ketene, 2-aminophenol↮4-aminophenol). Regression: `test_composability.py::TestStabilityKeyIsStructureNotFormula` (3 guards). **Moves one golden** (`recompile_routes_found.json`): a non-acetic-acid C2H4O2 recompile intermediate stops borrowing acetic acid's `isolable` (fabricated COMPOSABLE → honest UNKNOWN, ranking reorders downstream) — a-reaction-key-by-formula-borrows-a-rate firing on a live route. |
+| **Move 4 CIP** · node enrichment | B | **Spec'd build-ready, NOT built** — `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md` (soundness-critical + `FROZEN_HASH`-moving ⇒ its own reviewed round; the R19 ONLOAD-REDERIVE precedent). Queued above. |
 
 **ROUND 26 — Move-2 M2b (objective LIVE in the ranker) + DOW-thermo (sourced Br₂ dissociation)** (branch
 `m2b-dow-thermo-2026-09-07`: DOW-thermo `67d6b14`, M2b `a6ad71b`, docs this commit) — the M2-FP objective wired into
@@ -209,8 +223,7 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| **Move 3** | **Provider registry as the free open-monoidal category on typed generators** — providers already exist (`transform_provider.py`); IR-COMMUTE is the coherence law; "add a family without touching the shell" = "free on the generators". Formalize + earn call sites | B | **M** | medium | needs a design read of `transform_provider.py` against the open-SMC core (`open_core.py`); the generators/coherence framing is the deliverable, not a rewrite |
-| **Move 4** | **Quotient discipline for identity + tension-A** — CIP node enrichment `(z, mass, aux_descriptor, children)` + a canonical delocalized-bond form (Rules 1b/2/4/5 become representable); AND fix **tension A** — E1's `resolve_stability` formula-fallback vs the structure-keyed rest ([[a-reaction-key-by-formula-borrows-a-rate]]) | B | **M** | medium | the CIP enrichment is the larger half; tension-A is a small structural rung (key `resolve_stability` on canonical structure, not formula) |
+| **Move 4 (CIP)** | **CIP node enrichment** `(z, mass, [dup_rank,] children)` + a canonical delocalized-bond form so Rules 1b/2 become representable and decidable (Rule 3 explicit-DEFER, Rules 4/5 stay `aux=None`) — the larger half of Move 4; **tension-A is DONE (ROUND 27)**, this is the CIP half | B | **M** | medium | **build-ready spec: `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md`** — soundness-critical (a wrong R/S is fabrication) + moves `FROZEN_HASH`, so its own reviewed round (the R19 precedent); Rung 1 = Rule 2 (mass/isotopes), Rung 2 = Rule 1b |
 | **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | medium | `open_core` IS already domain-neutral (R24); this lifts the *pipeline* types onto it — larger, touches many types |
 | **Move 6** | **The conditions⤳effects distributive law** `λ: Conditions ⤳ Effects` (`THE_ORBITAL §IX`) so conditions compose lawfully through routes (the withdrawn adjunction, re-aimed) | B | **M** | medium | needs the distributive-law spec; the hardest categorical piece — spec as a contract first |
 | 3b | **Model DOW-Br₂ collider / modified-Arrhenius kinetics** (the item-3 remainder; core-E1 wire-in DONE R23) | B·C | **M** | long | the recovered Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube T — needs a collider-state + modified-Arrhenius model + reverse/hold scope; NOT compatible with the concentration-free first-order seed |
@@ -323,6 +336,14 @@ not just a human note. See the DONE ledger.
 
 ## ⚠️ TRACKED DEBT — known, carried, not silently
 
+- **Move-3 law scope** (Lane B; ROUND 27, honestly bounded, none blocking): the three `test_provider_category.py`
+  laws are exactly scoped, not over-claimed (evil-morty LOW folds). Law 1 (provenance-out-of-identity) is a **forward
+  change-detector** — provenance is structurally absent from the functor's domain (`from_transform` never receives the
+  `EnumeratedTransform` wrapper), so it guards against a future edit threading provenance in, NOT a proven congruence.
+  Law 3 (forget/open naturality) is **common-mode on the product multiset** (both functors read the same `transform`
+  fields) — it catches the reversal orientation + Molecule↔Formula altitude, not product correctness (which the
+  conservation certificate owns). Law 2 is the one that catches a broken functor. The framing claims *a semantics
+  functor* F, never *freeness* (universal property unproven). SMC coherence itself is `open_core`'s, not re-proven here.
 - **M2b carried debt** (Lane B·C; ROUND 26, from the evil-morty + birdperson reviews — none blocking):
   (a) **Sourced Br₂(g) phase hazard** (evil-morty KILL 2) — only the GAS Br₂ record is in the live `SEED_THERMO_REFS`, and a
   sourced `for_formula` hit gets NO phase correction (that path is Benson-only); `Molecule` carries no phase, so ANY reaction

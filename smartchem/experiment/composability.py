@@ -374,7 +374,13 @@ def _survival_product(transitions: "tuple[Transition, ...]") -> float | None:
     This is the product over the DURATION-ASSESSED handoffs ONLY -- it is NOT a whole-route survival
     probability.  A route can carry a reassuring fraction here while its ``verdict`` is DEGENERATE for a
     non-duration reason (a non-isolable intermediate, an onset exceeded).  Read it ALONGSIDE the verdict, never
-    instead of it."""
+    instead of it.
+
+    Move 6 (order-invariance scope): the set of duration-assessed handoffs and each handoff's fraction are
+    functions of the causal partial order, so the VERDICT is EXACTLY invariant under any linear extension.  This
+    displayed product is invariant only up to IEEE float rounding -- with three or more distinct partial fractions
+    in ``(0, 1)`` the iteration order (which follows ``dag.edges``, and so the listing) can differ in the last ULP.
+    That cannot change a band (DEGENERATE/COMPOSABLE/UNKNOWN); the fraction is a disclosed magnitude, not a verdict."""
     fractions = [t.surviving_fraction for t in transitions if t.surviving_fraction is not None]
     if not fractions:
         return None
@@ -425,6 +431,18 @@ def _apply_duration_gate(
     the reaction temperatures the instantaneous check already used, and are not where the intermediate idles).
     Where the intermediate has a SOURCED first-order decomposition rate (matched on CANONICAL STRUCTURE, never
     formula), the composite fraction moves the verdict -- the wire-in the primitive's own docstring named.
+
+    Move 6: ``hold_segments`` here is strictly the **forced-between** (unavoidable) hold -- the steps that idle the
+    intermediate in EVERY linear extension of the DAG's causal order (:func:`~smartchem.experiment.dag._hold_segments`
+    with ``unavoidable=True``).  So a ``DEGENERATE`` from this gate holds under every valid schedule (no reordering
+    saves it), and the verdict is invariant under how independent branches were listed -- it never fabricates a
+    refutation a competent schedule would avoid.  Two honest boundaries follow: (1) COMPLETENESS -- a convergent join
+    where BOTH branches carry a fast decay has an empty forced-between set (neither forces the other), so the gate
+    stays silent and the verdict is ``UNKNOWN`` even though every single-vessel schedule destroys one intermediate;
+    that route-level (makespan) fact is out of scope here, so ``UNKNOWN`` must NOT be read as "just needs more data".
+    (2) The hold survival assumes the idle intermediate sits at each intervening step's OWN declared temperature (a
+    refrigerated bench would differ); a forced-between ``DEGENERATE`` inherits that W3 tendency (pre-existing R23
+    modelling), it is not a measurement of the real bench.
 
     It only ever TIGHTENS, never loosens:
 
@@ -493,18 +511,27 @@ def _judge_transition(
     env_to: ConditionEnvelope,
     table: StabilityTable,
     *,
-    hold_segments: "tuple[tuple[Interval | None, float], ...] | None" = None,
+    gate_segments: "tuple[tuple[Interval | None, float], ...] | None" = None,
+    disclosure_segments: "tuple[tuple[Interval | None, float], ...] | None" = None,
     kinetics: KineticTable = DEFAULT_KINETICS,
 ) -> Transition:
     """E1's per-transition verdict: the instantaneous onset/isolability check, then the DURATION-SURVIVAL-01
-    duration gate (:func:`_apply_duration_gate`) over any sourced serial hold.  ``hold_segments`` is the ordered
-    ``(temperature, minutes)`` of the intervening sibling steps (DAG-only; a linear handoff has none); their
-    total drives the instantaneous check's DAG-HOLD-01 disclosure note, their per-step temperatures the survival."""
-    hold_minutes = sum(m for _t, m in hold_segments) if hold_segments else None
+    duration gate (:func:`_apply_duration_gate`) over any sourced serial hold.
+
+    Move 6 (breach #4) threads TWO distinct DAG serial-hold sets, which MUST NOT be conflated (a linear handoff has
+    neither):
+
+    * ``gate_segments`` -- the FORCED-BETWEEN (unavoidable) ``(temperature, minutes)``: the hold suffered in EVERY
+      linear extension.  ONLY this may flip the verdict (:func:`_apply_duration_gate`), so the verdict is invariant
+      under how independent branches were linearized.  Feeding the possibly-between/worst set here would fabricate a
+      wrong ``DEGENERATE`` for a route a viable schedule saves.
+    * ``disclosure_segments`` -- the POSSIBLY-BETWEEN (schedule-relative) ``(temperature, minutes)``: their total
+      drives the instantaneous check's DAG-HOLD-01 disclosure note ONLY, never a verdict."""
+    hold_minutes = sum(m for _t, m in disclosure_segments) if disclosure_segments else None
     base = _judge_transition_instant(
         from_step, to_step, intermediate, env_from, env_to, table, hold_minutes=hold_minutes,
     )
-    return _apply_duration_gate(base, intermediate, hold_segments=hold_segments, kinetics=kinetics)
+    return _apply_duration_gate(base, intermediate, hold_segments=gate_segments, kinetics=kinetics)
 
 
 @dataclass(frozen=True)

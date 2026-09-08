@@ -133,8 +133,10 @@ def test_serial_holds_reach_the_dossier_machine_readable_and_are_digest_stable()
     )
     box = ConstraintBox(process=ProcessBounds(max_total_minutes=600.0))
     summ = RankedDAGSummary.of_dag(_convergent_40min_dag(), box)
-    # NON-vacuous: the 40-min DAG holds its first intermediate through the intervening step.
-    assert summ.serial_holds == ((0, 2, 40.0),)
+    # NON-vacuous: the 40-min convergent DAG can hold EITHER independent branch's intermediate through the other
+    # (Move 6: the disclosure is the POSSIBLY-BETWEEN, schedule-relative hold, order-independent -- both producer->
+    # join edges disclose 40 min, where the pre-Move-6 code reported only one under an arbitrary topological order).
+    assert summ.serial_holds == ((0, 2, 40.0), (1, 2, 40.0))
     # survives the JSON round-trip as (int, int, float) triples.
     rt = ranked_dag_summary_from_payload(ranked_dag_summary_to_payload(summ))
     assert rt.serial_holds == summ.serial_holds

@@ -106,24 +106,26 @@ class TestDeltaGMagnitudeIsLiveInRankRoutes:
 # ======================================================================================
 # The Pareto FRONT tier FIRES on a REAL survival (birdperson's non-vacuous requirement)
 # ======================================================================================
-def _synthetic_acoh_rate(ea_kj: float = 92.0, log10a: float = 13.0):
-    # a transparently SYNTHETIC first-order decomposition rate for the acetic-acid held intermediate -- a TEST
+def _synthetic_form_rate(ea_kj: float = 92.0, log10a: float = 13.0):
+    # a transparently SYNTHETIC first-order decomposition rate for the FORMALDEHYDE held intermediate -- a TEST
     # LEVER for the duration wire-in (the exact pattern test_duration_survival_gate uses), NOT fabricated data
-    # entering any seed.  Ea=92 kJ/mol, log10A=13 -> k ~ 1e-3 /s at 300 K, so a 5-min hold survives ~0.75 and a
-    # 120-min hold ~0.001 -- a clean survival spread for a domination flip.
+    # entering any seed.  Ea=92 kJ/mol, log10A=13 -> k ~ 1e-3 /s at 300 K, so a 5-min forced hold survives ~0.75 and
+    # a 120-min forced hold ~0.001 -- a clean survival spread for a domination flip.
     return DEFAULT_KINETICS.with_records(KineticRef(
-        reactant_smiles=(("CC(=O)O", 1),), product_smiles=(("C", 1), ("O=C=O", 1)),
-        name="acetic acid decomposition (SYNTHETIC TEST rate)", ea_kj_per_mol=ea_kj, log10_a=log10a,
+        reactant_smiles=(("C=O", 1),), product_smiles=(("[H][H]", 1), ("[C-]#[O+]", 1)),
+        name="formaldehyde decomposition (SYNTHETIC TEST rate)", ea_kj_per_mol=ea_kj, log10_a=log10a,
         a_units="s^-1", temperature_range_k=(1.0, 1000.0),
         provenance="SYNTHETIC TEST rate; exercises the M2b front tier on a real survival, not a measurement",
     ))
 
 
-def _convergent_dag(sibling_minutes: float) -> SynthesisDAG:
-    # branch 1 makes acetic acid; it idles while branch 2 (sibling_minutes long) runs; the join consumes it.  The
-    # longer the sibling branch, the longer the acetic-acid hold -> the lower its survival (with a matched rate).
-    acoh, etoh, ea, water, ald, ethene, o2 = (M(s) for s in
-        ("CC(=O)O", "CCO", "CC(=O)OCC", "O", "CC=O", "C=C", "O=O"))
+def _forced_between_dag(forced_minutes: float) -> SynthesisDAG:
+    # Move 6: a REAL survival fraction now requires an UNAVOIDABLE (forced-between) hold, not a schedule-avoidable
+    # one.  A genuine shortcut/diamond delivers it: formaldehyde (the held intermediate) is consumed by BOTH the
+    # methanol step and the glycol join, so the methanol step is UNAVOIDABLY between formaldehyde's producer and the
+    # join in every valid schedule.  The longer that forced middle step, the longer formaldehyde idles -> the lower
+    # its survival (with a matched rate).  (A bare convergent join's hold is schedule-avoidable -> survival None.)
+    gly, form, meoh, h2, egly = (M(s) for s in ("OCC=O", "C=O", "CO", "[H][H]", "OCCO"))
 
     def step(target, reactants, products, minutes):
         env = ConditionEnvelope(
@@ -134,9 +136,9 @@ def _convergent_dag(sibling_minutes: float) -> SynthesisDAG:
         return ExperimentStep.assembling(target, reactants, products, envelope=env)
 
     return SynthesisDAG.of(
-        step(acoh, (ald, ald, o2), (acoh, acoh), 40.0),          # branch 1 -> acetic acid (the held intermediate)
-        step(etoh, (ethene, water), (etoh,), sibling_minutes),   # branch 2 -> ethanol (sets the hold length)
-        step(ea, (acoh, etoh), (ea, water), 40.0),               # join
+        step(form, (gly,), (form, form), 40.0),           # glycolaldehyde -> 2 formaldehyde (the held intermediate)
+        step(meoh, (form, h2), (meoh,), forced_minutes),  # formaldehyde + H2 -> methanol (the UNAVOIDABLE middle step)
+        step(egly, (form, meoh), (egly,), 40.0),          # formaldehyde + methanol -> ethylene glycol (the join)
     )
 
 
@@ -147,11 +149,12 @@ def _requirements(minutes: float):
 
 class TestParetoFrontTierFiresOnRealSurvival:
     def test_the_front_layers_two_real_dag_objectives_and_flips_their_order(self):
-        # TWO convergent DAGs identical in chemistry (=> identical additive net ΔG, derivable for the esters) but
-        # with different sibling-branch hold lengths => different REAL survival (from Composability's R23 duration
-        # gate, via a matched synthetic rate).  The shorter hold survives more, so it Pareto-DOMINATES the longer
-        # one (equal ΔG, strictly higher survival), giving a COMPLETE, dominated objective pair -- the non-vacuous
-        # proof that the front tier (pareto_optimal) reorders real survival-bearing objectives.
+        # TWO forced-between DAGs identical in chemistry, differing ONLY in the length of the UNAVOIDABLE middle
+        # step => different REAL survival (from Composability's R23 duration gate over the FORCED hold, via a matched
+        # synthetic rate).  Move 6: a real survival now requires an UNAVOIDABLE (forced-between) hold -- a bare
+        # convergent join's hold is schedule-avoidable and yields None (its verdict must not depend on listing
+        # order).  The shorter forced hold survives more, so at TIED ΔG it Pareto-DOMINATES the longer one -- the
+        # non-vacuous proof that the front tier (pareto_optimal) reorders real survival-bearing objectives.
         #
         # HONEST CAVEAT: survival is read via dag_composability(dag, kinetics=...) directly, because dag_bench_fit
         # threads kinetics only to the thermo rollup, NOT to the duration gate (a pre-existing scope boundary), and
@@ -161,24 +164,27 @@ class TestParetoFrontTierFiresOnRealSurvival:
         # like the R25 two-axis `frontier`; this test exercises the layering on the real survival that gating admits.
         from smartchem.experiment.dag import dag_composability
         box = ConstraintBox()
-        kin = _synthetic_acoh_rate()
-        dag_short, dag_long = _convergent_dag(5.0), _convergent_dag(120.0)
+        kin = _synthetic_form_rate()
+        dag_short, dag_long = _forced_between_dag(5.0), _forced_between_dag(120.0)
         surv_short = dag_composability(dag_short, kinetics=kin).route_surviving_fraction
         surv_long = dag_composability(dag_long, kinetics=kin).route_surviving_fraction
-        assert surv_short is not None and surv_long is not None       # REAL survival, not None -- the front can fire
-        assert surv_short > surv_long                                  # the shorter hold survives more
-        # identical chemistry -> identical additive net ΔG (the hold is a timing attribute, not a reaction)
-        dg_short, dg_long = route_net_delta_g(dag_short), route_net_delta_g(dag_long)
-        assert dg_short is not None and dg_short == dg_long
-        products = (PhysicsProduct(dg_short, surv_short), PhysicsProduct(dg_long, surv_long))
+        assert surv_short is not None and surv_long is not None       # REAL survival from the UNAVOIDABLE hold
+        assert surv_short > surv_long                                  # the shorter forced hold survives more
+        # identical chemistry => identical additive net ΔG (the additive functor is blind to the timing attribute):
+        # route_net_delta_g agrees for the two (whether it derives to a number or fail-closes to None on this seed).
+        assert route_net_delta_g(dag_short) == route_net_delta_g(dag_long)
+        # the front must layer these by SURVIVAL when the ΔG axis TIES; use a common (favorable) ΔG so survival is
+        # the sole decider and the ΔG-magnitude tier (index 5) is equal-and-neutral between them.
+        dg = -100.0
+        products = (PhysicsProduct(dg, surv_short), PhysicsProduct(dg, surv_long))
         assert products[0].dominates(products[1])                      # short dominates long (equal ΔG, more survival)
         fronts = _pareto_front_indices(products)
         assert fronts == (0, 1)                                        # the front tier separates them -- NON-VACUOUS
         # and the full _dag_score tuples (the exact rank_dags key) put the dominator strictly first, DRIVEN by the
         # front tier (index 4), not the ΔG magnitude (index 5, equal here) -- the structural fit tiers are identical.
         fit_short, fit_long = dag_bench_fit(dag_short, box), dag_bench_fit(dag_long, box)
-        key_short = _dag_score(fit_short, fronts[0], dg_short)
-        key_long = _dag_score(fit_long, fronts[1], dg_long)
+        key_short = _dag_score(fit_short, fronts[0], dg)
+        key_long = _dag_score(fit_long, fronts[1], dg)
         assert key_short < key_long
         assert key_short[4] < key_long[4] and key_short[5] == key_long[5]
 

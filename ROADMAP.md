@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ move4-cip-rule2-enrichment-2026-09-07` (**ROUND 28** — Move-4 CIP half: node enrichment + CIP Rule 2 (mass number); stacked on the open R27 branch, PR #23; R26 M2b + DOW-thermo MERGED via PR #22 → `main@b2a5518`) · suite **4599 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches; = R27 baseline 4598 + 1 new Rule-2 test; skip/xfail unchanged; NO golden moved — 4 files, zero response fixtures) · updated **2026-09-07 UTC**
+> `verified @ move6-conditions-effects-distributive-law-2026-09-07` (**ROUND 29** — Move 6: conditions distribute through a route's CAUSAL order, the `THE_ORBITAL §IX` withdrawn λ re-aimed; stacked on the open R28 branch; R28 CIP Rule 2 on PR #24 stacked on R27 PR #23; R26 MERGED via PR #22 → `main@b2a5518`) · suite **4605 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches [a-e] 1770 · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997; = R28 baseline 4599 + 6 new linear-extension-invariance tests; skip/xfail unchanged, legacy xfail preserved; NO golden moved — `serial_holds` is digest-excluded and the seed kinetics match no DAG intermediate, so the bug was latent) · updated **2026-09-07 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -60,6 +60,17 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 29 — Move 6: conditions distribute through a route's CAUSAL order (the withdrawn λ, re-aimed)** (branch
+`move6-conditions-effects-distributive-law-2026-09-07`, stacked on the open R28 branch) — the user's "full blast move 6."
+Contract-first (`docs/research/CONDITIONS_EFFECTS_DISTRIBUTIVE_LAW_CONTRACT_v0.1.md`); a 3-way recon + a first-hand
+reproduction + two PARALLEL pre-build bearings (birdperson SOUND-BUT-HEED + butter-robot PASS) + one post-build
+adversarial pass. **Additive + one internal API split; byte-stable on all digests/goldens (NO golden moved).** Full
+detail: manifest §29.
+
+| Item | Lane | What shipped |
+|---|---|---|
+| **Move 6** · conditions distribute through the causal partial order | A·B·C | `THE_ORBITAL §IX`'s withdrawn distributive law `λ : T∘W ⇒ W∘T`, re-aimed to the live route pipeline (the literal pairing — `pathway.py` monad × `conditions.py Conditioned` comonad — are DEAD islands; a literal build = the zero-call-sites trap). Fixes a **VERIFIED** order-dependence bug: the whole-DAG duration-survival verdict flipped `DEGENERATE`↔`UNKNOWN` purely on which independent branch a caller listed first (`_serial_hold_segments` charged one arbitrary `_topological_order` window; R23's gate flips on it). The gate now charges only the **forced-between** hold `{k : i→*k→*j}` (unavoidable in every schedule → order-independent), the disclosure the **possibly-between** hold (schedule-relative, never a verdict); `_judge_transition` threads two distinct sets (birdperson breach #4 — feeding the gate the possibly set fabricates a wrong `DEGENERATE`). MIN not MAX (a wrong refutation = fabrication; matches the critical-path precedent). LAW pinned: **linear-extension invariance** (`tests/test_dag_linearization_invariance.py` — verdict + hold multiset invariant under every branch permutation; the convergent join no longer flips on a schedule-avoidable hold; a genuine forced-between hold still flips; goes RED on pre-Move-6 code). NO new runtime object (a naming + a law). **birdperson:** breach #4 folded + MIN mandated + the makespan completeness gap & W3 spoken in the docstring. **butter-robot:** PASS on the minimal gate fix; possibly-between kept for disclosure (its cut-condition met — R15's documented purpose is convergent-DAG disclosure). Makespan/schedulability is out-of-scope named debt; §IX's literal adjunction stays correctly withdrawn. |
 
 **ROUND 28 — Move-4 CIP half: node enrichment + CIP Rule 2 (mass number)** (branch
 `move4-cip-rule2-enrichment-2026-09-07`, stacked off the open R27 branch) — the user's "go full blast on Move-4 CIP
@@ -230,15 +241,20 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > **ROUND 26 CLOSED M2b + DOW-thermo** (the user's numbered next-steps 1 & 2). M2b wired the M2-FP Pareto product
 > (`PhysicsProduct`/`pareto_optimal` + the additive-ΔG functor) LIVE into `_route_score`/`_dag_score`; DOW-thermo sourced
 > Br(g)/Br₂(g) and the DOW-Br₂ dissociation verdict now fires (UNFAVORABLE, calibrated). See the DONE ledger + manifest §26.
-> **⭐ The active queue is the categorical-reorientation Moves 5–6, plus CIP Rung 2 (Rule 1b) when a consumer appears.**
-> Move 3 (provider-algebra formalization, R27), Move-4 tension-A (R27) and Move-4 CIP Rung 1 (Rule 2, R28) are DONE.
-> The user's "go full blast on Move-4 CIP node enrichment, when done move onto Move 5 if you can."
+> **ROUND 29 CLOSED Move 6** — conditions distribute through a route's CAUSAL order, not an incidental linearization
+> (the `THE_ORBITAL §IX` withdrawn λ, re-aimed to the live route pipeline). It fixed a VERIFIED order-dependence bug: the
+> whole-DAG duration-survival verdict flipped DEGENERATE<->UNKNOWN purely on which independent branch a caller listed
+> first. The gate now charges only the FORCED-BETWEEN (unavoidable-in-every-schedule) hold; the linear-extension
+> invariance law is pinned. See the DONE ledger + manifest §29.
+> **⭐ The active queue is CIP Rung 2 (Rule 1b) when a consumer appears, item 3b (DOW-Br₂ kinetics, a modeling wall),
+> and Move 5 (domain-neutral pipeline lift, DEFERRED until a second-domain consumer exists).** All six categorical-
+> reorientation Moves are now shipped or scoped: Moves 1–3 DONE (R24–R27), Move-4 tension-A + CIP Rung 1 DONE (R27/R28),
+> Move 5 DEFERRED-premature (R28), Move 6 DONE (R29).
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
 | **Move 4 CIP Rung 2** | **CIP Rule 1b** (duplicate atoms ranked by the hierarchical rank of the node they duplicate) — the deferred half of the CIP enrichment; needs a `dup_rank` slot on the 3-tuple node + a hierarchical-rank pre-pass. Rung 1 (Rule 2) is DONE (ROUND 28) | B | **M** | medium | **its own reviewed round** (both R28 reviewers: soundness asymmetry — a computed rank pre-pass is CIP's most error-prone region, a subtly-wrong rank MISLABELS not defers). No cited today-consumer yet; build only when a real Rule-1a+2-tied / 1b-decisive molecule appears. Spec: `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md` |
 | **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | **DEFERRED — premature** | **Scope decision (R28 recon): `docs/research/MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`.** No second-domain pipeline consumer exists (electrochem/cell are `Molecule`-typed; circuits are on `open_diagram.py` with no route/step/DAG shape; the `*_domain.py` files are oracle-coverage domains, not pipeline consumers) → building it now = a zero-call-sites abstraction. UNLOCK: a genuine multi-step non-chemistry process, or a concrete `Molecule`-forced-fit pain report. Prefer **Move 6** meanwhile. |
-| **Move 6** | **The conditions⤳effects distributive law** `λ: Conditions ⤳ Effects` (`THE_ORBITAL §IX`) so conditions compose lawfully through routes (the withdrawn adjunction, re-aimed) | B | **M** | medium | needs the distributive-law spec; the hardest categorical piece — spec as a contract first |
 | 3b | **Model DOW-Br₂ collider / modified-Arrhenius kinetics** (the item-3 remainder; core-E1 wire-in DONE R23) | B·C | **M** | long | the recovered Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube T — needs a collider-state + modified-Arrhenius model + reverse/hold scope; NOT compatible with the concentration-free first-order seed |
 
 ### K-B/C/D · Move-1 keystone — ✅ **DONE (Rung B ROUND 24 / Rungs C+D ROUND 25)**

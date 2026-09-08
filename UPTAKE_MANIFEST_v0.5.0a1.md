@@ -4899,3 +4899,82 @@ centres, which no golden uses, changed). Probe `validate()` all 5 layers green; 
 multi-sphere Rule-2 has no EXTERNAL oracle (RDKit absent; pinned by `_DIV_A`/`_DIV_B` + Hanson + the sphere-2/3 battery,
 not independently confirmed); ring-closure duplicate isotope mass is conjectured-safe not verified-safe (most rings
 defer); `_cip_compare` non-transitivity (pre-existing, Rule 2 MITIGATES via the all-pairs guard); Rule 1b/3/4/5 unbuilt.
+
+## 29. ROUND 29 — Move 6: conditions distribute through a route's causal order (the withdrawn λ, re-aimed) (2026-09-07 UTC)
+
+Branch `move6-conditions-effects-distributive-law-2026-09-07`, stacked on the open R28 branch. The user's "full blast
+move 6." Contract-first: `docs/research/CONDITIONS_EFFECTS_DISTRIBUTIVE_LAW_CONTRACT_v0.1.md`. Two PARALLEL pre-build
+bearings (birdperson soundness SOUND-BUT-HEED + butter-robot YAGNI PASS) + a 3-way read-only recon + a first-hand
+reproduction + one post-build adversarial pass. **Additive + one internal API split; byte-stable on all digests/goldens
+(NO golden moved).**
+
+### 29.1 The withdrawn claim, and why the literal λ is the zero-call-sites trap
+`THE_ORBITAL §IX` withdrew a distributive law `λ : T∘W ⇒ W∘T` (an environment comonad over an effect monad), "never
+constructed or checked." A 3-bearing recon found BOTH literal pieces are DEAD islands with zero call sites: `pathway.py`
+(the §V Writer/List effect monad T) has no production edge into `experiment/`; `conditions.py Conditioned` (the Env
+comonad W) is unused outside its own self-verifying law test (a common-mode mirror). So a literal construction would
+reincarnate the exact falsification this repo is built against (`THE_DIFFERENCE.md:9`, "categorical machinery … had zero
+call sites"), and worse, a trusted green mirror [[a-formalization-is-legibility-and-laws-not-machinery]]. The honest λ
+lives at the ROUTE level, where conditions and effects actually meet live.
+
+### 29.2 The consumer: a VERIFIED order-dependence bug in a live verdict path
+Conditions are not composed across a route (only compared pairwise, worst-folded). The one place ≥2 steps' conditions
+drive a whole-DAG verdict — the R15/R23 serial-hold/duration-survival mechanism — was NOT coherent. `_serial_hold_segments`
+charged an intermediate on edge `(i,j)` the elapsed time of every step in ONE arbitrary `_topological_order` window
+(`pos[i]<pos[k]<pos[j]`, Kahn step-index tie-break), and R23's `_apply_duration_gate` lets that hold flip the verdict to
+DEGENERATE. **Reproduced first-hand** (the shipped `_convergent_40min_dag`, synthetic acetic-acid rate injected, only the
+branch listing order permuted): `SynthesisDAG.of(s_acoh, s_etoh, s_join)` → **DEGENERATE**, `SynthesisDAG.of(s_etoh,
+s_acoh, s_join)` → **UNKNOWN** — same edges, same chemistry. The "spurious linearization of independent steps" pathology
+the open-SMC backbone already quotiented (R24, [[a-quotient-must-be-a-congruence]]), never extended to `dag.py`. Live-
+reachable through `assemble_synthesis`→`SynthesisDAG.of` (order passed verbatim), and untested.
+
+### 29.3 The fix (both reviews folded)
+Split the hold into two order-INDEPENDENT quantities, each a function of the causal partial order (the transitive
+closure `_forward_reach`, a new per-node forward-reachability helper), NEVER of a linearization:
+- **forced-between** `{k∉{i,j} : i→*k and k→*j}` — the hold suffered in EVERY schedule; drives the GATE
+  (`_hold_segments(dag, unavoidable=True)` → `_apply_duration_gate`). Only an UNAVOIDABLE hold may flip a verdict.
+- **possibly-between** `{k∉{i,j} : ¬(k→*i) and ¬(j→*k)}` — schedulable strictly between in SOME schedule; drives the
+  DISCLOSURE only (`_serial_hold_minutes` → serial-hold note + R19 `serial_holds`), never a verdict.
+**birdperson LOAD-BEARING breach #4 folded:** the gate and the note shared ONE segment set; feeding the gate the
+possibly-between/worst set would fabricate a wrong DEGENERATE. `_judge_transition` now threads TWO inputs — `gate_segments`
+(forced) + `disclosure_segments` (possibly) — the seam is impossible to reconflate. **#1 (MIN, not MAX):** forced-between
+is mandatory — MAX (worst interleaving) would condemn a route a viable schedule saves = a wrong refutation = forbidden;
+MIN matches the project's own critical-path precedent (`test_dag_process_fit_uses_a_sound_critical_path_not_a_serial_sum`).
+**#1 completeness gap + #8 W3 spoken in the `_apply_duration_gate` docstring** (a convergent join with BOTH branches
+decaying reads UNKNOWN though every schedule kills one — a named makespan debt, not "needs more data"; the hold assumes
+each step's declared temperature). **butter-robot:** PASS on the gate fix (minimal diff, reuse `_reaches` shape); it
+challenged possibly-between as gold-plating UNLESS a test asserts non-empty `serial_holds` on a convergent DAG — its own
+cut-condition is MET (`test_dag_thermo_rollup.py:137`, `test_onload_rederivation.py:251`), and R15 DAG-HOLD-01's documented
+purpose IS convergent-DAG disclosure (a linear chain has zero holds by design), so forced-between-only would gut a shipped
+feature — kept possibly-between for disclosure (principled deviation, recorded). NO new class/module; the "distributive
+law" is a NAMING + a LAW, not a runtime object.
+
+### 29.4 The law + tests (`tests/test_dag_linearization_invariance.py`, NEW)
+LINEAR-EXTENSION INVARIANCE: the whole-DAG verdict + disclosed holds are invariant under every linear extension of the
+causal partial order (the linearization quotient — the route-level realization of §IX's λ; the claim is INVARIANCE, not
+schedulability, per birdperson #3/#9). Tests: verdict + hold-minute MULTISET invariant under every branch-listing
+permutation over a family {convergent join, forced-between shortcut}; the convergent join does NOT flip even with an
+injected rate (the specific bug); a genuine forced-between hold STILL flips DEGENERATE order-invariantly (non-vacuity,
+birdperson #2 — the shortcut/diamond shape, not a bare join); possibly-between discloses BOTH branches order-invariantly;
+`_forward_reach` is the causal transitive closure. This test suite goes RED on the pre-Move-6 code (a real regression
+test, not a mirror).
+
+### 29.5 Coupled sites + verification + blast radius
+Sites: `dag.py` (`_forward_reach` NEW; `_hold_segments(dag, *, unavoidable)` NEW, replacing `_serial_hold_segments`;
+`_serial_hold_minutes` re-aimed to possibly-between; `dag_composability` computes both sets + passes both);
+`composability.py` (`_judge_transition` `hold_segments`→`gate_segments`+`disclosure_segments`; `_apply_duration_gate`
+docstring: forced-between + Case-B + W3). Re-pinned tests (disclosed correctness re-pins, not silent regressions):
+`test_duration_survival_gate.py` (the convergent-DAG flip test → now asserts it does NOT flip on a schedule-avoidable
+hold; 4 gate-unit callers `hold_segments=`→`gate_segments=`); `test_dag_hold_disclosure.py` (both branches disclosed:
+note count 1→2, holds `[0,40]`→`[40,40]`, held-transition soundness); `test_dag_thermo_rollup.py` (`serial_holds`
+`((0,2,40.0),)`→`((0,2,40.0),(1,2,40.0))`); `test_m2b_pareto_ranking.py` (the front test now drives real survival from a
+forced-between shortcut at tied ΔG — a bare join no longer yields survival). Full suite **4605 passed / 14 skipped /
+1 xfailed** (= R28's 4599 + 6 new invariance tests; skip/xfail unchanged, legacy xfail preserved), four memory-bounded
+batches ([a-e] 1770 · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997). evil-morty: NO KILL (the between-set logic proven
+EXACT vs the true partial-order semantics over 200k random DAGs / 680,557 checks; one CONJECTURED float-ULP wobble in
+the displayed `route_surviving_fraction`, not a verdict — folded as a docstring scope note).
+**NO golden moved** — `serial_holds` is `compare=False` (digest-excluded); the default kinetics seed (N₂O₅/cyclopropane)
+matches no synthesis-DAG intermediate, so no default-data DAG is duration-assessed (the bug was real but LATENT on the
+seed, reachable only via an injected rate). ruff clean. Tracked debt (ROADMAP): the route-level makespan/schedulability
+question (a route dead in EVERY schedule can read UNKNOWN — forced-between is per-edge) is out of scope, carried as named
+debt; the §IX literal `T∘W⇒W∘T` between `pathway.Pathway` and `Conditioned` stays correctly withdrawn (both dead islands).

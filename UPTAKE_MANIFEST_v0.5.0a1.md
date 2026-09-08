@@ -5100,3 +5100,53 @@ single-benchmark data (Theorem 1, the user's flag confirmed), and the historical
 one-sided ≳39–80 % bound (Theorem 2). **The only UNLOCK for a modern cost-undercut demonstration is a sourced, independent
 brine-feedstock/extraction cost basis** (Smackover/Dead Sea well-brine) — the open sourcing wall. Cost-as-a-ranker-tier
 stays a named DEFERRAL (a schema-bump round needing a real multi-route cost-ordering consumer).
+
+## §32 — ROUND 32: CIP Rule 1b (Rung 2) — oracle-verified consumer investigation → VERIFIED DEFER
+
+Branch `cip-rule1b-consumer-defer-2026-09-08`, stacked on the open R31 branch. The user's "then do 3 (CIP rung 2)." The
+sound way to "do" Rung 2 was to investigate whether Rule 1b can be built without fabricating — and the answer is that it
+**has no demonstrated consumer anywhere in the namer's scope**, so building the `dup_rank` machinery would be dead
+structure (the zero-call-sites trap) *and* mislabel-prone (a computed-rank pre-pass in CIP's most error-prone region, for a
+consumer that provably is not exercised). An external oracle (**RDKit `rdCIPLabeler`**, installed into the dev venv only —
+absent from runtime and from the committed suite) drove the investigation. Two pre-build bearings (birdperson SOUND-BUT-HEED
++ dalembert adversarial counterexample-hunt); no code-feature built — a committed evidence harness + a scope decision.
+
+### 32.1 The finding (three regimes, all reproduced by committed sweep generators)
+1. **Acyclic centres (tree digraphs):** a committed sweep of **992** acyclic stereocentres finds **0** cases where RDKit
+   labels and we defer. Structural reason: a double-bond duplicate represents a DIRECT neighbour already compared at Rule
+   1a, so acyclic Rule 1b is subsumed by Rule 1a (Rule 1b bites only with ring closures — Hanson 2018).
+2. **Ring-substituent, off-ring centres (NON-tree digraphs — the class birdperson flagged as unexamined):** a committed
+   sweep of **60** finds **24 in-scope deferrals where RDKit labels — ALL 24 triggered by ring UNSATURATION**, NOT a
+   Rule-1b tie. The contested ligands are Rule-1a-DISTINCT, and the isolation is exact: `[C@](C1CC1)(C)(F)Cl` (saturated
+   cyclopropyl) NAMES, `[C@](C1=CC1)(C)(F)Cl` (the same ring with a double bond) DEFERS. A distinct ring-digraph SCOPE gap
+   (unsaturated ring substituents), separate from Rule 1b and from `_on_cycle`.
+3. **Ring-on-centre:** filtered out of scope by `_on_cycle` before ranking (RDKit labels, we defer — a scope filter).
+
+### 32.2 Reviews + folds
+**birdperson SOUND-BUT-HEED:** the defer is sound and honorable ("investigate and defer with evidence" is a legitimate way
+to do item 3); the harness is a genuine differential validation (RDKit-baked labels, not a self-mirror), non-vacuous. Two
+folds: (a) the claim was over-scoped — the namer's scope is acyclic *centres*, and ring-substituent/off-ring-centre
+molecules are a non-tree class the first pass hadn't examined → **added the 60-molecule ring-substituent sweep**, which
+found the class defers only on ring unsaturation (NOT Rule 1b), and narrowed the claim honestly; (b) the "3782" sweep count
+was orphaned (unreproducible from committed code) → **committed two deterministic sweep generators** whose exact counts
+(992/0, 60→24) are re-run live by the cross-check.
+**dalembert (adversarial counterexample hunt): SURVIVED — and PROVED the claim.** Tasked to break it, dalembert instead
+proved the load-bearing lemma — *in an acyclic molecule two ligands tie under Rule 1a ⟺ identical rooted constitution* (a
+real C/N/O/S node always carries a Z≥1 child — an H or its duplicate-back atom — while a duplicate leaf has only phantom-0
+children; only terminal halogens/H are genuine empty leaves, and those never duplicate) — so Rule 1b, being *constitutional*,
+cannot fire acyclically. Corroborated exhaustively: 25,212 constitutions ≤5 heavy atoms → 0 Rule-1a collisions; 300,000
+distinct-constitution pairs through the shipped `_cip_compare` → 0 ties; 30,000 random acyclic stereocentres → 2,361
+RDKit-labelled, all identical to ours, 0 deferrals. Folds: (1) the crux invariant is now PINNED
+(`duplicate_never_collides_with_real()` + a test — a real terminal C/N/O/S node must outrank a same-Z duplicate leaf under
+`_cip_compare`, guarding against an H-filling/phantom-child regression that would re-open the gap); (2) the honest boundary —
+acyclic deferrals that DO exist are Rule 3 (E/Z geometry) on constitutionally-identical ligands, NOT Rule 1b
+(`C[C@](/C=C\\C)(/C=C/C)O` added to the battery as the boundary case).
+
+### 32.3 What is shipped + the real unlock
+`experiments/cip_rule1b_consumer_probe.py` (FROZEN_HASH; RDKit-free `validate()` + a gated live `_rdkit_cross_check`) +
+`tests/test_cip_rule1b_consumer.py` + `docs/research/CIP_RULE1B_CONSUMER_SCOPE_DECISION_v0.1.md`. Additive; the shipped
+Rule-1a+2 namer is UNTOUCHED (byte-stable, NO golden moved). The real next CIP consumer — should scope be extended — is
+**unsaturated-ring-substituent handling** (the 24-case gap), a ring-digraph improvement, NOT Rule 1b; ring-on-centre
+support remains the deferred Rule-4/5 auxiliary-descriptor round. UNLOCK for Rule 1b specifically: a real, oracle-verified
+molecule that ties under Rule 1a + Rule 2 yet splits under Rule 1b with a nameable centre (none exists among the 1052
+stereocentres swept).

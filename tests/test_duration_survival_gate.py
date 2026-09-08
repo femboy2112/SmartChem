@@ -53,7 +53,7 @@ def _judge(intermediate, t, *, hold, hold_temp=None, table=DEFAULT_STABILITY, ki
     if hold is not None:
         th = t if hold_temp is None else hold_temp
         segments = ((Interval(th, th, "K"), float(hold)),)
-    return _judge_transition(0, 1, intermediate, _env(t), _env(t), table, hold_segments=segments, kinetics=kinetics)
+    return _judge_transition(0, 1, intermediate, _env(t), _env(t), table, gate_segments=segments, kinetics=kinetics)
 
 
 # --- the affirmative DEGRADES -> DEGENERATE flip, even where the stability table is SILENT --------------
@@ -112,7 +112,7 @@ def test_an_undeclared_hold_segment_temperature_fails_closed():
     # a hold with a real duration but no declared temperature (the DAG could not model where the intermediate
     # idles): the gate never borrows an endpoint's temperature -- it stays silent (returns the base verdict).
     tr = _judge_transition(0, 1, _n2o5(), _env(298), _env(298), DEFAULT_STABILITY,
-                           hold_segments=((None, 600.0),), kinetics=DEFAULT_KINETICS)
+                           gate_segments=((None, 600.0),), kinetics=DEFAULT_KINETICS)
     assert tr.surviving_fraction is None
     assert tr.status is TransitionStatus.UNKNOWN  # the instantaneous base (no stability record), untouched
 
@@ -122,7 +122,7 @@ def test_the_composite_hold_survival_is_the_product_over_segments():
     # per-segment first-order survivals, each at its OWN temperature.
     rec = decomposition_rate_for(_n2o5())
     segments = ((Interval(298, 298, "K"), 30.0), (Interval(320, 320, "K"), 30.0))
-    tr = _judge_transition(0, 1, _n2o5(), _env(298), _env(298), DEFAULT_STABILITY, hold_segments=segments)
+    tr = _judge_transition(0, 1, _n2o5(), _env(298), _env(298), DEFAULT_STABILITY, gate_segments=segments)
     expected = surviving_fraction(rec, 298.0, 30.0 * 60.0) * surviving_fraction(rec, 320.0, 30.0 * 60.0)
     assert tr.surviving_fraction == pytest.approx(expected)
 
@@ -187,7 +187,7 @@ def test_the_gate_never_loosens_an_already_degenerate_base():
     # so a duration reading can never rescue a route the sourced isolability fact already refuted.
     ketene = parse_smiles("C=C=O")  # generated/consumed in situ -> isolable=False in the seed
     tr = _judge_transition(0, 1, ketene, _env(500), _env(500), DEFAULT_STABILITY,
-                           hold_segments=((Interval(500, 500, "K"), 600.0),), kinetics=DEFAULT_KINETICS)
+                           gate_segments=((Interval(500, 500, "K"), 600.0),), kinetics=DEFAULT_KINETICS)
     assert tr.status is TransitionStatus.DEGENERATE
     assert tr.surviving_fraction is None  # the gate did not even assess it
     assert "not isolable" in tr.reason
@@ -243,19 +243,26 @@ def _synthetic_acoh_decomposition_kinetics():
     ))
 
 
-def test_dag_composability_flips_a_held_edge_to_degenerate_only_with_the_injected_rate():
-    dag = _convergent_40min_dag()  # acetic-acid intermediate idles 40 min at 300 K through a sibling branch
-    # OFF by default: the seed kinetics have no acetic-acid rate, so NO edge is duration-assessed and the DAG is
-    # not degenerate (it is UNKNOWN here -- its ethanol edge has no stability record -- but crucially not flipped).
+def test_dag_composability_does_not_flip_a_convergent_join_on_a_schedule_avoidable_hold():
+    """Move 6 (this was previously ``..._flips_a_held_edge_to_degenerate_only_with_the_injected_rate``).
+
+    A convergent join's two branches are causally INDEPENDENT, so neither intermediate idles in EVERY schedule
+    (make the fast-decomposing branch last and it goes straight into the join).  Forced-between is therefore EMPTY
+    and the duration GATE stays silent: the DAG is ``UNKNOWN`` even WITH the injected acetic-acid rate.  The
+    pre-Move-6 ``DEGENERATE`` here was an artifact of one arbitrary topological order -- the verdict flipped
+    ``DEGENERATE``<->``UNKNOWN`` purely on which branch a caller listed first.  See
+    ``tests/test_dag_linearization_invariance.py`` for the invariance law and for
+    ``test_forced_between_hold_still_flips_degenerate_order_invariantly`` (a genuine UNAVOIDABLE hold that does flip)."""
+    dag = _convergent_40min_dag()
+    # OFF by default: the seed kinetics have no acetic-acid rate, so NO edge is duration-assessed.
     assert dag_composability(dag).verdict == "UNKNOWN"
     assert dag_composability(dag).route_surviving_fraction is None
 
-    # inject the synthetic rate: the held edge degrades over its 40-min hold (at the sibling's 300 K) -> flips.
+    # WITH the injected rate: STILL not degenerate -- no intermediate is UNAVOIDABLY held, so the gate cannot fire
+    # (a viable schedule saves the acetic-acid branch), and the verdict does not depend on the listing order.
     comp = dag_composability(dag, kinetics=_synthetic_acoh_decomposition_kinetics())
-    assert comp.verdict == "DEGENERATE"
-    flipped = [t for t in comp.transitions if t.status is TransitionStatus.DEGENERATE]
-    assert len(flipped) == 1 and flipped[0].surviving_fraction is not None and flipped[0].surviving_fraction < 0.5
-    assert comp.route_surviving_fraction is not None  # the assessed edge's fraction, the monoid product
+    assert comp.verdict != "DEGENERATE"
+    assert not [t for t in comp.transitions if t.status is TransitionStatus.DEGENERATE]
 
 
 def test_the_adjacent_zero_hold_edge_is_never_gated():

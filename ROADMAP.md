@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ moves-3-4-provider-category-cip-2026-09-07` (**ROUND 27** — Move-3 provider-algebra formalization + Move-4 tension-A + CIP scope decision, merging this round; R26 M2b + DOW-thermo MERGED via PR #22 → `main@b2a5518`) · suite **4598 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches; = R26 baseline 4590 + 8 new: 5 provider-category laws + 3 tension-A guards, skip/xfail unchanged; ONE golden regenerated — `recompile_routes_found.json`, a correct tension-A fabrication-removal, see DONE ledger) · updated **2026-09-07 UTC**
+> `verified @ move4-cip-rule2-enrichment-2026-09-07` (**ROUND 28** — Move-4 CIP half: node enrichment + CIP Rule 2 (mass number); stacked on the open R27 branch, PR #23; R26 M2b + DOW-thermo MERGED via PR #22 → `main@b2a5518`) · suite **4599 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches; = R27 baseline 4598 + 1 new Rule-2 test; skip/xfail unchanged; NO golden moved — 4 files, zero response fixtures) · updated **2026-09-07 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -60,6 +60,17 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 28 — Move-4 CIP half: node enrichment + CIP Rule 2 (mass number)** (branch
+`move4-cip-rule2-enrichment-2026-09-07`, stacked off the open R27 branch) — the user's "go full blast on Move-4 CIP
+node enrichment." Two PARALLEL pre-build bearings (birdperson SOUND-BUT-HEED + butter-robot YAGNI) + one evil-morty
+adversarial pass. ADDITIVE + a **conscious `FROZEN_HASH` re-freeze** (the isotope deferral now names); byte-identical on
+the distinct-Z slice; **NO response golden moved** (4 files changed, zero fixtures). Suite **4599 / 14 / 1** (= R27 4598
++ 1 new Rule-2 test). Full detail: manifest §28.
+
+| Item | Lane | What shipped |
+|---|---|---|
+| **Move 4 CIP** · node enrichment + CIP Rule 2 | B | The CIP digraph node `(z, children)` → `(z, mass, children)` and **CIP Rule 2 (mass number)** wired in as its OWN full pass at the Rule-1a tie hand-off (`smartchem/smiles.py`: `_cip_mass`, `_cip_compare_rule2`, `_cip_rank_compare`, `_CipAmbiguous`). The isotope-only deferral now NAMES — `F[C@@](Cl)([2H])[3H]`→R, `[2H]O[C@@](Br)(Cl)O[3H]`→S — at any sphere the pairing is unambiguous (spheres 0–3 pinned in the battery). SOUND, not complete: a Rule-1a-tied-sibling pairing, an unknown mass, or a Rule-1b/3/4/5 tie is a NAMED DEFERRAL (all-pairs + is-None guards, transitivity-free). REUSES the sourced `standard_atomic_weight` (no re-derived table). **birdperson SOUND-BUT-HEED: 3 breaches folded** (adjacent→all-pairs sibling guard + per-pair precondition enforcement; `is None` before compare; mancude-superposition duplicate mass=None→DEFER). **evil-morty: no wrong-label kill** (4845-case isotope fuzz all enantiomer-invert + spelling-invariant); 1 coverage fold — sphere-2/3 correctly NAME but were unpinned → added to the battery + unit test, scope claim corrected. **Rung 2 (Rule 1b) DEFERRED to its own round** (both reviewers: soundness asymmetry — computed rank pre-pass vs sourced lookup; no half-wired `dup_rank` slot). |
 
 **ROUND 27 — Move-3 provider-algebra formalization + Move-4 tension-A (CIP enrichment spec'd build-ready)** (branch
 `moves-3-4-provider-category-cip-2026-09-07`, off `main@b2a5518`) — the user's "go full blast on move 3, do 4 as well
@@ -219,12 +230,14 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > **ROUND 26 CLOSED M2b + DOW-thermo** (the user's numbered next-steps 1 & 2). M2b wired the M2-FP Pareto product
 > (`PhysicsProduct`/`pareto_optimal` + the additive-ΔG functor) LIVE into `_route_score`/`_dag_score`; DOW-thermo sourced
 > Br(g)/Br₂(g) and the DOW-Br₂ dissociation verdict now fires (UNFAVORABLE, calibrated). See the DONE ledger + manifest §26.
-> **⭐ The active queue is now the categorical-reorientation Moves 3–6** (the user's "move onto 3-6 next", awaiting go-ahead).
+> **⭐ The active queue is the categorical-reorientation Moves 5–6, plus CIP Rung 2 (Rule 1b) when a consumer appears.**
+> Move 3 (provider-algebra formalization, R27), Move-4 tension-A (R27) and Move-4 CIP Rung 1 (Rule 2, R28) are DONE.
+> The user's "go full blast on Move-4 CIP node enrichment, when done move onto Move 5 if you can."
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| **Move 4 (CIP)** | **CIP node enrichment** `(z, mass, [dup_rank,] children)` + a canonical delocalized-bond form so Rules 1b/2 become representable and decidable (Rule 3 explicit-DEFER, Rules 4/5 stay `aux=None`) — the larger half of Move 4; **tension-A is DONE (ROUND 27)**, this is the CIP half | B | **M** | medium | **build-ready spec: `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md`** — soundness-critical (a wrong R/S is fabrication) + moves `FROZEN_HASH`, so its own reviewed round (the R19 precedent); Rung 1 = Rule 2 (mass/isotopes), Rung 2 = Rule 1b |
-| **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | medium | `open_core` IS already domain-neutral (R24); this lifts the *pipeline* types onto it — larger, touches many types |
+| **Move 4 CIP Rung 2** | **CIP Rule 1b** (duplicate atoms ranked by the hierarchical rank of the node they duplicate) — the deferred half of the CIP enrichment; needs a `dup_rank` slot on the 3-tuple node + a hierarchical-rank pre-pass. Rung 1 (Rule 2) is DONE (ROUND 28) | B | **M** | medium | **its own reviewed round** (both R28 reviewers: soundness asymmetry — a computed rank pre-pass is CIP's most error-prone region, a subtly-wrong rank MISLABELS not defers). No cited today-consumer yet; build only when a real Rule-1a+2-tied / 1b-decisive molecule appears. Spec: `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md` |
+| **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | **DEFERRED — premature** | **Scope decision (R28 recon): `docs/research/MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`.** No second-domain pipeline consumer exists (electrochem/cell are `Molecule`-typed; circuits are on `open_diagram.py` with no route/step/DAG shape; the `*_domain.py` files are oracle-coverage domains, not pipeline consumers) → building it now = a zero-call-sites abstraction. UNLOCK: a genuine multi-step non-chemistry process, or a concrete `Molecule`-forced-fit pain report. Prefer **Move 6** meanwhile. |
 | **Move 6** | **The conditions⤳effects distributive law** `λ: Conditions ⤳ Effects` (`THE_ORBITAL §IX`) so conditions compose lawfully through routes (the withdrawn adjunction, re-aimed) | B | **M** | medium | needs the distributive-law spec; the hardest categorical piece — spec as a contract first |
 | 3b | **Model DOW-Br₂ collider / modified-Arrhenius kinetics** (the item-3 remainder; core-E1 wire-in DONE R23) | B·C | **M** | long | the recovered Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube T — needs a collider-state + modified-Arrhenius model + reverse/hold scope; NOT compatible with the concentration-free first-order seed |
 
@@ -417,17 +430,33 @@ not just a human note. See the DONE ledger.
   accurate RDKit `rdCIPLabeler` through an external parser/graph/labeler, including aromatic, explicit-Kekulé and reversed
   atom-order spellings. RDKit remains an optional probe dependency, absent from the runtime. Its implementation is
   separate but the CIP specification is shared; finite agreement does not prove correctness on arbitrary graphs.
-- **CIP full completeness — higher rules and unsupported ring systems** (Lane B; ROUND-20/22) — the namer remains
-  **Rule 1a only**. Neutral mancude averaging is built for the bounded C/N/O/S valence slice, including supported fused
-  systems. Isotope/stereochemistry-dependent ties, ring stereocentres, and comparisons needing charged, exocyclic,
-  incompletely conjugated, untyped or over-budget ring connectivity still DEFER. Limits: 30 atoms per ring system,
-  128 complete matchings, 10,000 matching-search visits; a partial partner set is never used. The aromatic parser's
-  charged-donor limitations remain separate (some aromatic inputs refuse while explicit spellings reach CIP deferral).
-  See `docs/research/CIP_MANCUDE_SCOPE_2026-09-07.md`. External finite agreement does not prove full CIP soundness.
-- **CIP comparator transitivity residual** (Lane B; ROUND-20, evil-morty) — `_cip_compare` is used as a `cmp_to_key` sort
+- **CIP full completeness — higher rules and unsupported ring systems** (Lane B; ROUND-20/22/28) — the namer implements
+  **Rules 1a + 2** (ROUND 28 added Rule 2 / mass number). Neutral mancude averaging is built for the bounded C/N/O/S
+  valence slice, including supported fused systems. **Rule 1b (Rung 2), Rule 3 (E/Z), Rules 4/5 (`aux`) remain UNBUILT** —
+  a tie needing any of them is a NAMED deferral (never guessed). Stereochemistry-dependent ties, ring stereocentres, and
+  comparisons needing charged, exocyclic, incompletely conjugated, untyped or over-budget ring connectivity still DEFER.
+  Limits: 30 atoms per ring system, 128 complete matchings, 10,000 matching-search visits; a partial partner set is never
+  used. The aromatic parser's charged-donor limitations remain separate (some aromatic inputs refuse while explicit
+  spellings reach CIP deferral). See `docs/research/CIP_MANCUDE_SCOPE_2026-09-07.md` and
+  `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md`. External finite agreement does not prove full CIP soundness.
+- **CIP Rule-2 sound scope + residuals** (Lane B; ROUND-28) — Rule 2 (mass number) is its own full pass at the Rule-1a
+  tie hand-off, mirroring the VALIDATED Rule-1a breadth-first shape on the mass slot; SOUND-not-complete via the all-pairs
+  sibling-tie guard + is-None guard (a Rule-1a-tied-sibling pairing, or an unknown mass — a mancude superposition duplicate
+  or a bracket-reachable radioactive/synthetic element with no true standard weight — DEFERS, never fabricates). Residuals,
+  carried not silent: (1) **no EXTERNAL oracle past sphere 1** — RDKit is absent; the geometric oracle validates only the
+  sign convention, not priority correctness. Multi-sphere Rule-2 names are pinned by `_DIV_A`/`_DIV_B` (branch-paired proof)
+  + Hanson-2018 + the committed sphere-2/3 battery cases, but not independently oracle-confirmed. Never a wrong label (the
+  guards DEFER on ambiguity), only possible incompleteness. (2) **ring-closure duplicate isotope mass** is conjectured-safe,
+  not verified-safe — a chain double/triple-bond duplicate's mass can never solo-decide (the real atom co-decides at the
+  same/earlier sphere), but a ring-closure leaf whose real atom is reached only via the other ring direction was not proven
+  safe; most rings defer (mancude None / `_on_cycle` / out-of-scope), so no live counterexample exists. (3) validate deeper
+  Rule-2 against an external CIP authority before leaning on it past the pinned cases.
+- **CIP comparator transitivity residual** (Lane B; ROUND-20/28, evil-morty) — `_cip_compare` is used as a `cmp_to_key` sort
   key, which assumes transitivity; a deep degenerate tie tree could in principle violate it. No counterexample found
   (fuzzer-clean) and the `sorted(ranks)==[0,1,2,3]` guard in `_cip_ranks` catches any top-level cycle (→ DEFER, sound),
-  but a transitivity PROOF is not in hand — documented, not eliminated. (The exocyclic-multiple-bond-into-aromatic path IS
+  but a transitivity PROOF is not in hand — documented, not eliminated. **ROUND 28 MITIGATES it for Rule 2**: the
+  `_cip_compare_rule2` all-pairs sibling guard + per-pair precondition enforcement DEFER rather than trust the sort order,
+  so a non-transitive mis-sort fails closed instead of mislabelling. (The exocyclic-multiple-bond-into-aromatic path IS
   discharged, by an explicit guard in `_cip_digraph`.)
 - **Duration-stability reactant-coefficient rate convention** (Lane B·C; ROUND-19, evil-morty) — `surviving_fraction`
   assumes the sourced `k` is the per-species rate (`-d[A]/dt = k[A]`), which both seeded records pin in their provenance;

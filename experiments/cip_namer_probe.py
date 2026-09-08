@@ -10,9 +10,10 @@ branch-vs-chain motif ``C[C@H](CCC)C(C)C`` (DFS -> S, truth -> R).  The correct 
 branch with need-to-know pruning (Hanson, Musacchio, Mayfield, Vainio, Yerin, Redkin, *J. Chem. Inf. Model.* 2018,
 58(9), 1755).  This harness is the anti-regression proof, in five layers:
 
-  1. TEXTBOOK ABSOLUTES -- ~18 molecules with hand-derived / PubChem-checked R/S, including the L-serine (S) /
+  1. TEXTBOOK ABSOLUTES -- ~26 molecules with hand-derived / PubChem-checked R/S, including the L-serine (S) /
      L-cysteine (R) flip (same skeleton and ``@@`` tag, OPPOSITE label because cysteine's real S out-ranks the
-     carboxyl's phantom-O at sphere 1 -- a shortcut that special-cases "carboxyl wins" silently mislabels it).
+     carboxyl's phantom-O at sphere 1 -- a shortcut that special-cases "carboxyl wins" silently mislabels it), and
+     the ROUND-28 CIP Rule-2 (isotope mass) cases at spheres 0/1/2/3 (each enantiomer-inverting).
   2. ORACLE CROSS-CHECK -- for every NAMED centre, the label equals ``geometric_handedness(priorities, sense)``
      (the ROUND-19 geometric oracle), with the priorities the namer computed: geometry validated independently of
      ranking, exactly the decoupling the oracle was committed for.
@@ -27,9 +28,11 @@ branch with need-to-know pruning (Hanson, Musacchio, Mayfield, Vainio, Yerin, Re
      core -- RDKit is absent -- so absolute ground truth is the hand/PubChem battery; the pool proves internal
      soundness on the combinatorial family curated anchors miss.)
 
-SOUND, not complete: a centre Rule 1a cannot fully order -- an isotope-only tie (Rule 2), a pseudoasymmetric /
-E-Z-distinguished tie (Rules 4/5), or a true constitutional duplicate -- is a NAMED DEFERRAL (no label), because a
-guessed R/S is worse than none. Bounded neutral mancude rings now use exact duplicate atomic-number averaging;
+SOUND, not complete: ROUND 28 added CIP Rule 2 (mass number), so an isotope-only tie now NAMES (at any sphere, as
+long as the pairing is unambiguous).  A centre the BUILT rules (1a, 2) still cannot fully order -- a tie needing
+Rule 1b/3/4/5, a Rule-2 pairing made ambiguous by Rule-1a-tied siblings (the all-pairs guard) or an unknown mass, or
+a true constitutional duplicate -- is a NAMED DEFERRAL (no label), because a guessed R/S is worse than none.
+Bounded neutral mancude rings now use exact duplicate atomic-number averaging;
 the source-derived anchors and hostile aromatic/Kekule controls are in ``cip_mancude_probe``. The di-2-pyridyl
 false centre still defers: averaging must never split its two identical pyridyls. Unsupported unsaturated ring
 systems retain a lazy deferral boundary. Those DEFER cases are pinned in layer 5.
@@ -57,6 +60,7 @@ from smartchem.smiles import (
     _cip_compare,
     _cip_digraph,
     _cip_mancude,
+    _cip_mass,
     _cip_ranks,
     _fill_hydrogens,
     _kekulize_in_place,
@@ -68,7 +72,7 @@ from experiments.cip_geometry_oracle_probe import geometric_handedness
 
 #: Tamper pin over the whole battery (labels + priorities + oracle agreement).  Regenerate ONLY on an intentional
 #: change: ``python -m experiments.cip_namer_probe`` and paste the printed value.
-FROZEN_HASH = "bac7eb7bead37ed650e0641e1214697780156fdd2cc681afa4e4aaf11ed33a25"
+FROZEN_HASH = "b074caae739ef475d7e40095da6a2b493eb7f41d1d8082b45c6338b4ed17c6b5"
 
 
 # --- textbook / PubChem absolutes (hand-derived R/S, the ground truth) -------------------------------
@@ -95,6 +99,21 @@ TEXTBOOK = [
     ("Br[C@H](F)O[C@@H](F)Cl", ("S", "S"), "two distinct-Z centres (unchanged slice; labels from the anchored convention)"),
     ("C[C@@H](O)[C@H](N)C(=O)O", ("R", "S"), "threonine-like: two named centres"),
     ("C[C@H](N)c1ccccc1", ("S",), "neutral mancude extension: N > phenyl {C,C,C} > methyl {H,H,H} > H"),
+    # ROUND 28 -- CIP Rule 2 (mass number).  A same-Z tie Rule 1a leaves is broken by the isotope mass, in the
+    # Rule-1a-established order (higher mass ranks higher; specified isotope carries its mass number, unspecified
+    # the CIAAW standard weight).  These NAME centres the R20/R22 Rule-1a-only namer DEFERRED.
+    ("F[C@@](Cl)([2H])[3H]", ("R",), "Rule 2 sphere-0: Cl>F>[3H](3)>[2H](2); the direct isotope tie breaks at the ligand atom"),
+    ("F[C@](Cl)([2H])[3H]", ("S",), "Rule 2 sphere-0 enantiomer (sense flip inverts the label)"),
+    ("F[C@@](Cl)([1H])[2H]", ("R",), "Rule 2 direction: protium [1H](1) < [2H](2), so 2H outranks 1H"),
+    ("[2H]O[C@@](Br)(Cl)O[3H]", ("S",), "Rule 2 sphere-1: two -OH tie under Rule 1a; -O[3H] > -O[2H] one sphere in (3>2)"),
+    ("[2H]O[C@](Br)(Cl)O[3H]", ("R",), "Rule 2 sphere-1 enantiomer"),
+    # ROUND-28 evil-morty coverage fold: Rule 2 also NAMES multi-sphere ties (it does NOT stop at sphere 1) -- pin
+    # sphere-2 and sphere-3 so a traversal refactor cannot silently reverse a deep mass verdict.  Both hand-derived
+    # (higher mass wins; branch order is Rule-1a-established) and blind-sign-checked by the geometric oracle (layer 2).
+    ("FC(F)O[C@@](Br)(Cl)O[13CH](F)F", ("S",), "Rule 2 sphere-2: two -O-CHF2 tie until [13C](13) > C(12.011) at the far carbon"),
+    ("FC(F)O[C@](Br)(Cl)O[13CH](F)F", ("R",), "Rule 2 sphere-2 enantiomer"),
+    ("F[13C](F)CO[C@@](Br)(Cl)OCC(F)F", ("S",), "Rule 2 sphere-3: the [13C] two carbons out breaks the tie"),
+    ("F[13C](F)CO[C@](Br)(Cl)OCC(F)F", ("R",), "Rule 2 sphere-3 enantiomer"),
 ]
 
 #: The discriminator that a "carboxyl always wins" shortcut silently mislabels.
@@ -106,7 +125,7 @@ DEFERRALS = [
     ("C[C@](C)(N)O", "false centre: two identical methyls (true constitutional duplicate)"),
     ("CC[C@](CC)(N)O", "false centre: two identical ethyls"),
     ("N[C@]1(F)CCCCO1", "ring stereocentre (out of the acyclic scope)"),
-    ("F[C@@](Cl)([2H])[3H]", "isotope-only tie among 2H/3H (Rule 2, not built)"),
+    ("[C@@](Br)(Cl)(C[2H])C[3H]", "Rule-2 pairing AMBIGUOUS: -CH2[2H] vs -CH2[3H] tie under Rule 1a AND the three H's on each carbon tie (all z=1), so the sibling pairing for the mass compare is arbitrary -> DEFER, never guess (ROUND-28 all-pairs guard)"),
     ("O[C@H](c1ccccn1)c1ccccn1", "SOUNDNESS PIN: two identical 2-pyridyls = a FALSE centre; a fixed Kekule would wrongly name it"),
 ]
 
@@ -126,6 +145,7 @@ def _named_centres(text: str) -> "list[tuple[list[int], int, str]]":
     _kekulize_in_place(atoms, work, charge)
     elems, filled_bonds = _fill_hydrogens(atoms, work)
     n = len(atoms)
+    mass = [_cip_mass(elems[i], atoms[i].isotope if i < n else 0) for i in range(len(elems))]
     neighbours: dict[int, list[int]] = {i: [] for i in range(len(elems))}
     adj: dict[int, list[tuple[int, int]]] = {i: [] for i in range(len(elems))}
     for b in filled_bonds:
@@ -146,7 +166,7 @@ def _named_centres(text: str) -> "list[tuple[list[int], int, str]]":
         written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
         if len(written) != 4 or any(ATOMIC_NUMBER.get(elems[x]) is None for x in written):
             continue
-        ranks = _cip_ranks(written, a, adj, elems, aromatic, mancude)
+        ranks = _cip_ranks(written, a, adj, elems, mass, aromatic, mancude)
         if ranks is None:
             continue
         from smartchem.smiles import _perm_parity
@@ -161,7 +181,7 @@ def _dfs_key(node):
     """A naive DEPTH-first CIP key: (atomic_number, sorted child keys) compared lexicographically.  This is the
     ROUND-14 bug -- Python's tuple ``<`` descends the first child's whole subtree before the second child's near
     atomic number, so it defers a sphere-1 decision past a longer chain and mislabels branch-vs-chain."""
-    return (node[0], tuple(sorted((_dfs_key(c) for c in node[1]), reverse=True)))
+    return (node[0], tuple(sorted((_dfs_key(c) for c in node[2]), reverse=True)))  # children moved to [2] (ROUND 28)
 
 
 def _dfs_labels(text: str) -> "tuple[str, ...]":
@@ -173,6 +193,7 @@ def _dfs_labels(text: str) -> "tuple[str, ...]":
     _kekulize_in_place(atoms, work, charge)
     elems, filled_bonds = _fill_hydrogens(atoms, work)
     n = len(atoms)
+    mass = [_cip_mass(elems[i], atoms[i].isotope if i < n else 0) for i in range(len(elems))]
     aromatic = frozenset(i for i in range(n) if atoms[i].aromatic)
     neighbours: dict[int, list[int]] = {i: [] for i in range(len(elems))}
     adj: dict[int, list[tuple[int, int]]] = {i: [] for i in range(len(elems))}
@@ -194,7 +215,7 @@ def _dfs_labels(text: str) -> "tuple[str, ...]":
         written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
         if len(written) != 4:
             continue
-        roots = [_cip_digraph(w, a, frozenset((a, w)), adj, elems, aromatic, [_CIP_NODE_BUDGET]) for w in written]
+        roots = [_cip_digraph(w, a, frozenset((a, w)), adj, elems, mass, aromatic, [_CIP_NODE_BUDGET]) for w in written]
         keys = [_dfs_key(r) for r in roots]
         if len(set(keys)) != 4:
             continue
@@ -224,17 +245,22 @@ def _pooled_compare(a, b) -> int:
         na: list = []
         nb: list = []
         for n in fa:
-            na += sorted(n[1], key=cmp_to_key(_pooled_compare), reverse=True)
+            na += sorted(n[2], key=cmp_to_key(_pooled_compare), reverse=True)  # children moved to [2] (ROUND 28)
         for n in fb:
-            nb += sorted(n[1], key=cmp_to_key(_pooled_compare), reverse=True)
+            nb += sorted(n[2], key=cmp_to_key(_pooled_compare), reverse=True)
         fa, fb = na, nb
     return 0
 
 
 #: A divergence pair.  A's high branch ties B's shallow but wins DEEP; A's low branch loses B's shallow.
 #: Correct (branch-paired, need-to-know): the high branch decides -> A > B.  Sphere-pooling: B > A (wrong).
-_DIV_A = (6, ((6, ((8, ((6, ((9, ()),)),)), (1, ()))), (6, ((7, ()), (1, ())))))
-_DIV_B = (6, ((6, ((8, ((6, ((7, ()),)),)), (1, ()))), (6, ((8, ()), (1, ())))))
+#: ROUND-28 node shape ``(z, mass, children)``: the ``mass`` slot carries the real standard weight of each z but
+#: is Rule-1a-INERT for this fixture (``_cip_compare``/``_pooled_compare`` read only ``[0]``/``[2]``); it exists
+#: only so the literals are valid enriched nodes.
+_DIV_A = (6, 12.011, ((6, 12.011, ((8, 15.999, ((6, 12.011, ((9, 18.998, ()),)),)), (1, 1.008, ()))),
+                      (6, 12.011, ((7, 14.007, ()), (1, 1.008, ())))))
+_DIV_B = (6, 12.011, ((6, 12.011, ((8, 15.999, ((6, 12.011, ((7, 14.007, ()),)),)), (1, 1.008, ()))),
+                      (6, 12.011, ((8, 15.999, ()), (1, 1.008, ())))))
 
 
 def _ctx():

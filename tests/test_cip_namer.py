@@ -72,12 +72,33 @@ def test_named_alkyl_centres_invert_and_are_spelling_invariant(base, mirror, res
 
 
 def test_rule_1a_ties_defer_never_guess():
-    """Sound, not complete: an isotope-only tie (Rule 2), a false centre (true duplicate), and a ring centre all
-    DEFER -- no label -- because a guessed R/S is worse than none."""
+    """Sound, not complete: a false centre (true duplicate), a ring centre, and a genuine higher-rule tie all
+    DEFER -- no label -- because a guessed R/S is worse than none.  (ROUND 28: the isotope-only tie is no longer
+    here -- Rule 2 now breaks it; see test_rule_2_isotope_mass_breaks_ties.)"""
     assert cip_labels("C[C@](C)(N)O") == ()                     # twin methyls: false centre
     assert cip_labels("CC[C@](CC)(N)O") == ()                   # twin ethyls
-    assert cip_labels("F[C@@](Cl)([2H])[3H]") == ()             # isotope-only tie
     assert cip_labels("N[C@]1(F)CCCCO1") == ()                  # ring stereocentre (acyclic scope)
+
+
+def test_rule_2_isotope_mass_breaks_ties():
+    """ROUND 28 -- CIP Rule 2 (mass number) breaks a same-Z tie Rule 1a leaves, in the Rule-1a-established order.
+    Higher mass ranks higher; a specified isotope carries its mass number, an unspecified atom the CIAAW standard
+    weight (so protium [1H]=1 < natural H=1.008 < [2H]=2 < [3H]=3).  Sound-not-complete: where the Rule-2 pairing
+    is ambiguous (Rule-1a-tied siblings) the centre still DEFERS, never guesses."""
+    assert cip_labels("F[C@@](Cl)([2H])[3H]") == ("R",)         # sphere-0: Cl>F>[3H]>[2H]
+    assert cip_labels("F[C@](Cl)([2H])[3H]") == ("S",)          # enantiomer inverts
+    assert cip_labels("F[C@@](Cl)([1H])[2H]") == ("R",)         # protium [1H] < [2H]
+    assert cip_labels("[2H]O[C@@](Br)(Cl)O[3H]") == ("S",)      # sphere-1: -O[3H] > -O[2H] one sphere in
+    assert cip_labels("[2H]O[C@](Br)(Cl)O[3H]") == ("R",)       # enantiomer inverts
+    # ROUND-28 evil-morty fold: Rule 2 NAMES multi-sphere ties too (not just sphere-0/1) -- pin sphere-2/3 so a
+    # traversal refactor cannot silently reverse a deep mass verdict (both blind-sign-checked by the oracle).
+    assert cip_labels("FC(F)O[C@@](Br)(Cl)O[13CH](F)F") == ("S",)   # sphere-2: [13C] vs C at the far carbon
+    assert cip_labels("FC(F)O[C@](Br)(Cl)O[13CH](F)F") == ("R",)
+    assert cip_labels("F[13C](F)CO[C@@](Br)(Cl)OCC(F)F") == ("S",)  # sphere-3
+    assert cip_labels("F[13C](F)CO[C@](Br)(Cl)OCC(F)F") == ("R",)
+    # Rule-2 pairing AMBIGUOUS -> DEFER (never guess): -CH2[2H] vs -CH2[3H] tie under Rule 1a and each carbon's
+    # three H's tie (all z=1), so the sibling pairing for the mass compare is arbitrary (the all-pairs guard).
+    assert cip_labels("[C@@](Br)(Cl)(C[2H])C[3H]") == ()
 
 
 def test_mancude_averaging_names_aryl_but_keeps_identical_pyridyls_tied():

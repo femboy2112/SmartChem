@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ dow-bromine-kinetics-2026-09-08` (**ROUND 30** — DOW-Br₂ collider/modified-Arrhenius kinetics, queue item 3b: the DOW-bromine litmus's decomposition RATE half; stacked on the open R29 branch; R29 Move 6 on PR #25 → R28 CIP Rule 2 PR #24 → R27 PR #23; R26 MERGED via PR #22 → `main@b2a5518`) · suite **4630 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches [a-e] 1795 · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997; = R29 baseline 4605 + 24 collider-kinetics tests + 1 gate anti-fabrication-guard test; skip/xfail unchanged, legacy xfail preserved; NO golden moved — additive new module + a gate guard latent on the seed) · updated **2026-09-08 UTC**
+> `verified @ dow-bromine-cost-ranking-2026-09-08` (**ROUND 31** — DOW bromine COST RANKING, queue item 2's last lane: the DOW-bromine litmus's final open question; stacked on the open R30 branch → R30 PR #26 → R29 Move 6 PR #25 → R28 CIP Rule 2 PR #24 → R27 PR #23; R26 MERGED via PR #22 → `main@b2a5518`) · suite **4639 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches [a-e] 1804 · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997; = R30 baseline 4630 + 9 DOW-cost tests; skip/xfail unchanged, legacy xfail preserved; NO golden moved — additive harness + receipt + doc + test, no module/ranker/seed change) · updated **2026-09-08 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -56,14 +56,31 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
   (ROUND 26 + ROUND 30):** `Br₂ → 2 Br•` is thermodynamically UNFAVORABLE at 298 K (ΔG = +161.65 kJ/mol, sourced CODATA,
   R26) AND the collisional dissociation KINETICS (Warshay NASA TN D-3502, modelled R30) confirm Br₂ SURVIVES at any
   kitchen-achievable T (a lower-bounded, thermo-corroborated verdict) and dissociates only at shock-tube T — the two
-  independent bearings agree Br₂ is stable. **Remaining — the cost ranking (the ONLY open lane):** the brine-vs-mined
-  *quantitative cost ranking* still needs pricing integration + a NaBr feedstock. ROUND 22 recovered an approved municipal
-  Cl₂ offer, with packaging/rental terms; it is not an industrial spot or historical Dow price. See DEFERRED and
-  `docs/research/SOURCING_RECON_2026-09-07.md`.
+  independent bearings agree Br₂ is stable. **✅ Phase 5 — cost ranking (ROUND 31, DOW-BROMINE-COST-01):** answered honestly
+  and layered — no *modern* undercut is demonstrable from sourced single-benchmark data (Theorem 1, the degeneracy: a NaBr
+  contained-Br proxy of the benchmark costs exactly the benchmark → brine ≥ mined; the user's "may not pass today" flag
+  confirmed), while the *historical* undercut IS reproduced from sourced period prices as a one-sided economic bound (Theorem
+  2: cartel 49 ¢/lb vs USGS-bounded US brine-route cost → ≈39 % pre-war, ≥ ≈80 % war-survival). **The DOW-bromine litmus is
+  now fully exercised across every lane.** The ONLY remaining open item is a sourcing wall (not a build): a modern undercut
+  demonstration needs a sourced INDEPENDENT brine-feedstock cost basis. See DEFERRED, the DONE ledger, manifest §31, and
+  `docs/research/DOW_BROMINE_COST_RANKING_CONTRACT_v0.1.md`.
 
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 31 — DOW bromine COST RANKING (queue item 2's last lane): the DOW-bromine litmus's final open question** (branch
+`dow-bromine-cost-ranking-2026-09-08`, stacked on the open R30 branch) — the user's "full blast do 2 (DOW cost ranking) ...
+the DOW litmus may not technically pass with today's prices vs early-1900s prices." That flag is CORRECT; confirming it
+rigorously (not fabricating a modern pass) is half the deliverable. Contract-first
+(`docs/research/DOW_BROMINE_COST_RANKING_CONTRACT_v0.1.md`); two PARALLEL pre-build bearings (butter-robot NO-MODULE +
+birdperson SOUND-BUT-HEED) + one evil-morty pass (math holds, 4 framing folds). **Additive** — a committed harness + a
+receipt + a doc + a test; **NO importable module, NO ranker change, NO Cl₂ committed → byte-stable, NO golden moved.** Full
+detail: manifest §31.
+
+| Item | Lane | What shipped |
+|---|---|---|
+| **2 (cost)** · DOW brine-vs-mined cost ranking *(DOW)* | C | `experiments/dow_bromine_cost_probe.py` (FROZEN_HASH) + `experiments/dow_bromine_cost_recon_2026_09_08.json` + `tests/test_dow_bromine_cost.py` (9). **Theorem 1 (modern degeneracy):** a NaBr feedstock priced by contained-Br mass fraction from the same benchmark `q` costs EXACTLY `q` per unit Br₂ (mass factors cancel), so `brine = q + Cl₂ + process ≥ q = mined`, strict → **NO_UNDERCUT**, SCOPED ("not demonstrable from the sourced same-benchmark proxy," NEVER "brine worse in reality" — real well-brine bromine DOES undercut via an independent basis we can't source). **Theorem 2 (historical, one-sided ECONOMIC bound, route/industry level):** the sustained USGS US bromine unit value (PRIMARY, DS-140, metric tonne) upper-bounds the US brine-route marginal cost; vs the cartel's 49 ¢/lb → ≈39 % undercut pre-war (USGS 1904 = 30 ¢) and **≥ ≈80 %** war-survival (USGS 1908 = 10 ¢). The German dumping floor (15/12/10.5 ¢) is the CARTEL's price and the 27 ¢ re-export is arbitrage — NEITHER used as Dow's cost; Dow attributed only under a LABELLED assumption; cross-subsidy caveat aloud (predatory pricing is the named exception — economic, defeasible, NOT R30's physical law). **The only UNLOCK for a modern undercut is a sourced independent brine-feedstock cost basis** (Smackover/Dead Sea). [[a-one-sided-model-certifies-only-its-safe-direction]] |
 
 **ROUND 30 — DOW-Br₂ collider/modified-Arrhenius kinetics (queue item 3b): the DOW-bromine litmus's rate half** (branch
 `dow-bromine-kinetics-2026-09-08`, stacked on the open R29 branch) — the user's "keep going, full blast" (DOW-Br₂ kinetics
@@ -358,18 +375,18 @@ not just a human note. See the DONE ledger.
 
 ## ⏸️ DEFERRED — explicit remaining gates (not fabricated)
 
-- **The DOW brine-vs-mined *cost ranking*** (the DOW litmus's last lane, Lane C). Pricing (R16), mechanism (R17), and
-  electrochemistry (R18) all shipped; ranking the brine route against the mined/market route quantitatively needs a
-  correctly scoped **Cl₂ pricing integration** and a **NaBr feedstock** price. **ROUND 22 closes the chlorine primary-access
-  gap:** Los Fresnos's September 9, 2025 approved municipal offer gives $1.24/lb in a 2,000-lb cylinder ($2,480), plus
-  $50 monthly cylinder rental, effective October 2025–September 2026. The attachment is unsigned and no invoice was
-  recovered: an approved offer, not an observed transaction, industrial spot price or historical Dow price. It is
-  recorded as reconnaissance, not silently admitted into default commodity pricing. Integration needs structure-bound
-  Cl₂ registration and explicit package/rental/region/offer basis. NaBr's mass-fraction calculation would be a labelled
-  DERIVED bromine-content proxy, not a sourced NaBr purchase price. **That same-benchmark proxy cannot prove an undercut:**
-  its stoichiometric NaBr cost already equals the bromine benchmark before adding chlorine. A cheaper-brine claim needs
-  an independent feedstock/extraction-cost basis (conditional algebra in the sourcing report). The mechanism (ROUND 17) and aqueous standard
-  feasibility (ROUND 18) remain done; a quantitative whole-route or historical cost advantage is still unestablished.
+- **The DOW brine-vs-mined *cost ranking*** — ✅ **ANSWERED (ROUND 31), honestly + layered** (the DOW litmus's last lane,
+  Lane C). Pricing (R16), mechanism (R17), electrochemistry (R18) shipped. R31 delivered the cost verdict: **Theorem 1** —
+  at today's sourced single-benchmark data, no undercut is *demonstrable* (a NaBr contained-Br proxy of the benchmark `q`
+  costs exactly `q` per unit Br₂ → `brine ≥ mined`; the user's "may not pass at today's prices" flag confirmed as a proven
+  algebraic degeneracy, SCOPED — never "brine worse in reality"); **Theorem 2** — the historical undercut IS reproduced from
+  sourced period prices as a one-sided ECONOMIC bound at the route/industry level (USGS DS-140 sustained unit value upper-
+  bounds the US brine-route marginal cost; vs the cartel's 49 ¢/lb → ≈39 % undercut pre-war, ≥ ≈80 % war-survival). See the
+  DONE ledger + manifest §31. **REMAINING UNLOCK (a sourcing wall, not a build):** a *modern* undercut demonstration needs a
+  sourced, INDEPENDENT brine-feedstock/extraction cost basis (Smackover/Dead Sea well-brine), distinct from the benchmark
+  being undercut — the same-benchmark proxy provably cannot show it. The R22 Los Fresnos Cl₂ offer ($1.24/lb, 2,000-lb
+  cylinder, +$50/mo rental, approved not invoiced) stays labelled reconnaissance, used only as a demonstration input, never
+  committed to default commodity pricing.
 - **A second sourced organic price** (was ROUND-15 item 3; Lane C). Attempted acetic acid (highest value — it ripples
   the methyl-acetate golden) and ethanol. **Wall:** organic producers post price *increases* (Celanese: +$50/MT Feb,
   +$0.10/lb Mar 2026), not absolute reference sheets; absolutes are aggregator-walled (Intratec/ChemAnalyst). Ethanol's

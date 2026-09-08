@@ -1,0 +1,69 @@
+{
+  "id": "DOW-BROMINE-COST-01",
+  "accessed_utc": "2026-09-08",
+  "purpose": "ROUND 31 sourcing receipt for the DOW-bromine litmus's cost-ranking lane. Historical figures are LABELLED HISTORICAL and recorded here, NEVER admitted to the modern USGS/Methanex commodity seeds (the R22 Los Fresnos discipline). Machine-readable companion to docs/research/DOW_BROMINE_COST_RANKING_CONTRACT_v0.1.md and experiments/dow_bromine_cost_probe.py.",
+
+  "theorem_1_modern_degeneracy": {
+    "claim": "A NaBr feedstock priced purely by contained-Br mass fraction from the SAME bromine benchmark q costs EXACTLY q per unit Br2 (p(NaBr)=q*M(Br)/M(NaBr); stoichiometry needs M(NaBr)/M(Br) NaBr per unit Br2; product = q). Any positive oxidant/process cost then makes brine STRICTLY > mined.",
+    "verdict": "NO_UNDERCUT",
+    "verdict_scope": "SCOPED NEGATIVE: 'no undercut is demonstrable from the sourced same-benchmark proxy'. NOT a claim that brine loses in reality -- real well-brine bromine (Smackover, Dead Sea) DOES undercut market Br2 via a nearly-free INDEPENDENT feedstock basis we cannot source today.",
+    "certification_gate": "An undercut is certifiable ONLY on a feedstock price that is BOTH independently sourced (not derived from the benchmark being undercut) AND separately observed/dated/labelled. The proxy fails this; an unsourced injected value fails it; a gate that opens on any handed-in value is not a gate (birdperson).",
+    "source": "docs/research/SOURCING_RECON_2026-09-07.md conditional cost obstruction (claim ledger: 'A same-benchmark Br-content-derived NaBr proxy can establish an undercut -> Refuted')."
+  },
+
+  "modern_prices": {
+    "bromine_benchmark_q": {"value_usd_per_kg": 2.70, "basis": "USGS import unit value, per kg contained Br, 2024 final (R16 seed)", "family": "USGS MCS"},
+    "chlorine_recon": {"value_usd_per_kg": 2.733732051, "basis": "Los Fresnos approved municipal offer $1.24/lb one-ton cylinder = $2,480/2000lb; 0.45359237 kg/lb", "status": "LABELLED reconnaissance, NOT a committed default price (R22)", "family": "municipal procurement"}
+  },
+
+  "theorem_2_historical_undercut": {
+    "claim": "The sustained multi-year USGS US bromine unit value is an upper bound on the US brine-route marginal cost (industry produced+sold at it for years; whole-industry multi-year cross-subsidy implausible). Against the cartel's administered 49 c/lb: ~39% undercut at normal pre-war prices, >= ~80% against the war-survival cost ceiling.",
+    "one_sidedness": "ECONOMIC and DEFEASIBLE (a firm/industry will not sustainably sell below marginal cost) -- the SAME one-sided shape as ROUND 30's kinetics bound but a WEAKER foundation than R30's physical law; the named exception (predatory cross-subsidy) is this episode's own theme and is carried aloud, NOT excluded.",
+    "attribution_caveat": "Dow specifically only under a LABELLED assumption (he was a leading continuing US brine-bromine producer 1904-1908; the sources do NOT disclose his own price or cost). The claim is stated at the route/industry level.",
+    "not_used_as_cost": "The German dumping floor (15/12/10.5 c/lb) is the CARTEL's aggressor price, presented as the price-war trajectory only. Dow's 27 c/lb re-export is ARBITRAGE (buy German @15, resell Europe), a spread not a production-cost datum. Neither is used to bound Dow's cost."
+  },
+
+  "historical_secondary": {
+    "family": "business-history narrative (SECONDARY, cross-corroborated across independent outlets)",
+    "sources": [
+      {"cite": "Folsom, Burton W. Jr., 'Herbert Dow and Predatory Pricing', FEE", "url": "https://fee.org/articles/herbert-dow-and-predatory-pricing/"},
+      {"cite": "Mackinac Center, 'Herbert Dow, the Monopoly Breaker' (V1997-13)", "url": "https://www.mackinac.org/V1997-13"}
+    ],
+    "figures_cents_per_lb": {
+      "cartel_fixed_world_price": 49,
+      "us_price_american_producers_prewar": 36,
+      "german_dumping_us_1905": 15,
+      "german_cut_2": 12,
+      "german_war_floor": 10.5,
+      "dow_reexport_to_europe": 27
+    },
+    "dates": "cartel price pre-1904; dumping/war 1904-1907; resolution 1907"
+  },
+
+  "historical_primary_usgs": {
+    "family": "USGS Data Series 140, bromine historical statistics (PRIMARY; same source family as the R16 USGS bromine price)",
+    "file_url": "https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/media/files/ds140-bromine-2022_0.xlsx",
+    "sha256": "1a4c1cf512ff48de60456c4f546f3d66eafac5b2549cbe3be9bb811438744258",
+    "bytes": 40481,
+    "last_modification": "August 7, 2023",
+    "ton_basis": "METRIC TONNE -- file header row A3: '[All values are in metric tons (t) bromine content unless otherwise noted]'. Conversion 1 t = 2204.6226 lb. (A short-ton misread would shift every c/lb figure ~10%.)",
+    "us_bromine_unit_value_nominal_usd_per_t": {"1900": 639, "1904": 661, "1905": 331, "1906": 282, "1907": 309, "1908": 220, "1909": 220, "1910": 287},
+    "cents_per_lb_derived": {"1904": 29.98, "1905": 15.01, "1906": 12.79, "1907": 14.02, "1908": 9.98},
+    "read_method": "urllib HTTP 200; xlsx parsed via stdlib zipfile+ElementTree (no openpyxl); sheet1 rows 6-16 = years 1900-1910"
+  },
+
+  "two_bearings": {
+    "diversity": "provenance-diverse: a narrative transaction price (secondary) vs a computed statistical unit value (USGS revenue/tonnage). NOT the reframed-check disease (not one quantity in two costumes).",
+    "what_the_agreement_buys": "The close ~1 c/lb agreement holds ONLY at the war-clearing years (USGS 1905 15.01 vs secondary 15; USGS 1908 9.98 vs 10.5) -- and there it is largely COMMON-MODE, because during the war the US revenue/tonnage unit value IS the depressed clearing price the cartel dumped at (one market number read twice, not two independent bearings; evil-morty F2). At the UNDISTORTED pre-war point (1904) the families DISAGREE by ~20% (USGS 29.98 vs secondary 36), so both pre-war undercuts (0.3881 and 0.2653) are reported side by side, never merged into a single 'corroborated' figure. Even where the price levels agree, it does NOT touch the price->cost upper-bound step (that rests on the economic premise), so no confidence is laundered from the price to Dow's cost.",
+    "independence_boundary": "Full independence-to-root is NOT proven -- at the war years the agreement is common-mode by construction (the depressed clearing price), and both families could ultimately draw on the same period trade-journal price reporting. Asserted-diverse, not established-independent."
+  },
+
+  "results": {
+    "modern_brine_minus_mined_usd_per_kg": 1.2128,
+    "historical_prewar_undercut_usgs_1904": 0.3881,
+    "historical_prewar_undercut_secondary_36c": 0.2653,
+    "historical_war_survival_undercut_lower_bound_1908": 0.7963,
+    "price_war_drop_1904_to_1905": 0.4992,
+    "method": "inflation-neutral ratios of same-era prices; one-sided ECONOMIC lower bounds at the route/industry level"
+  }
+}

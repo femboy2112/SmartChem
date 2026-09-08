@@ -4830,3 +4830,72 @@ NOT admissible on a COMPOSABILITY gap the synthetic PROCESS control cannot close
 "all candidates admissible" only because of the fabricated verdict — now "the FITS routes are a non-empty proper
 subset", a stronger, honest claim distinguishing the process gate from the composability gate). All other goldens
 byte-identical; Move 3 moved nothing. Canonical remaining work: ROADMAP.md (Moves 5–6 + the CIP-enrichment build).
+
+## 28. ROUND 28 — Move-4 CIP half: node enrichment + CIP Rule 2 (mass number) (2026-09-07 UTC)
+
+Branch `move4-cip-rule2-enrichment-2026-09-07`, stacked off the R27 branch HEAD (PR #23 still open). The user's "go
+full blast on Move-4 CIP node enrichment." Ritual: **design → pre-build review (birdperson SOUND-BUT-HEED + butter-robot
+YAGNI, PARALLEL) → build → reproduce → evil-morty → fold → verify.** ADDITIVE to the engine, a **conscious FROZEN_HASH
+re-freeze** (the isotope deferral now names), byte-identical on the distinct-Z slice, NO response golden moved.
+
+### 28.1 Scope decision — Rung 1 (Rule 2) only
+The spec (`docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md`) staged Rung 1 = Rule 2, Rung 2 = Rule 1b. **Both
+reviewers converged on Rung 1 ALONE:** butter-robot — no cited today-consumer for Rule 1b, spec stages it separately,
+"amortize the shape-churn" is speculative efficiency; birdperson — a soundness ASYMMETRY: Rule 2's per-node value is a
+sourced LOOKUP (a bad entry is caught by inspection), Rule 1b's is a COMPUTED hierarchical-rank pre-pass with a fixpoint
+flavour (CIP's most error-prone region; a subtly-wrong rank does NOT defer, it mislabels). Bundling HIGH-risk computed 1b
+with LOW-risk lookup 2 to spare one re-shape trades cheap insurance for expensive risk in a fabrication-forbidden domain.
+**Node is a 3-tuple, no `dup_rank` slot half-wired** (the spec's own warning); Rule 1b earns its own reviewed round.
+
+### 28.2 What shipped
+- Node `(z, children)` → `(z, mass, children)` (`smartchem/smiles.py`): `mass` at index 1, children/`_CIP_AROMATIC` at
+  index 2. `_CIP_PHANTOM → (0, 0, ())`. A parallel `mass` array keyed by atom index (`_cip_labels` builds it), threaded
+  as a REQUIRED positional (fail-loud at every call site, birdperson's dispatcher lesson).
+- `_cip_mass(el, iso)`: specified isotope → its mass NUMBER; else the SOURCED IUPAC/CIAAW standard atomic weight
+  (**REUSES** `smartchem/data/periodic_table.py::standard_atomic_weight` — butter-robot cut my hand-rolled 10-element
+  table, the `known-physics-not-new-physics` reflex against re-deriving a blessed sourced constant); `None` where no true
+  standard weight exists (radioactive/synthetic element, `has_standard_atomic_weight` False, no isotope) → Rule 2 DEFERS,
+  never fabricates a weight from a most-stable-isotope mass number. Direction `[1H](1)<H(1.008)<[2H](2)<[3H](3)`.
+- `_cip_compare_rule2` + `_cip_rank_compare`: Rule 2 as its OWN full pass, entered ONLY at the `_cip_compare==0` hand-off
+  (folding mass into the per-leaf tuple would invert CIP precedence). MIRRORS `_cip_compare`'s VALIDATED breadth-first
+  shape on the mass slot (own-mass → sphere-of-child-masses in Rule-1a order → descend ranked pairs), not depth-first.
+
+### 28.3 The three birdperson SOUND-BUT-HEED breaches, folded before build finished
+1. **Pairing-ambiguity guard was unsound as first spec'd** — an ADJACENT-only sibling-tie scan assumes `_cip_compare` is
+   a total order, but transitivity is an un-eliminated residual (a non-transitive triple x>y>z, x==z sorts with no adjacent
+   tie yet hides a tie → mis-pair → wrong label; the top-level `[0,1,2,3]` guard does NOT protect internal spheres).
+   FOLDED: (a) ALL-PAIRS sibling-tie check (transitivity-free); (b) per-pair `_cip_compare(ca[k],cb[k])!=0 → _CipAmbiguous`
+   precondition ENFORCEMENT before each recursion (both needed; neither subsumes the other).
+2. **`mass=None` leak** — `if a.mass != b.mass` returns a bogus `±1` for None and `>` raises. FOLDED: explicit
+   `is None → _CipAmbiguous` guard BEFORE any mass comparison (node entry AND each sphere position). LOAD-BEARING, not
+   dead: bracket atoms reach the 34 weightless (radioactive/synthetic) elements, not filtered by the stereocentre scope.
+3. **Mancude duplicate mass undefined** — an averaged-Z superposition duplicate has no single-atom mass referent → `None`
+   → DEFER (safe for the di-2-pyridyl pin, which defers either way). FOLDED + a test asserts the mancude dup's mass is None.
+
+### 28.4 evil-morty (post-build): NO wrong-label kill; one coverage/scope fold
+evil-morty could NOT make it emit a wrong R/S — it signed the boundaries: the pairing is genuinely forced (all-pairs +
+precondition guards, so no different valid Rule-1a ordering gives a different Rule-2 answer), `mass=None` never reaches a
+comparison, a duplicate's isotope mass cannot solo-flip a label (the real atom co-decides at the same-or-earlier sphere),
+precedence is not inverted, the di-2-pyridyl pin and exocyclic-into-aromatic guard hold, the node reshape is clean, and a
+**4845-case isotope fuzz** shows every named centre enantiomer-inverts and is spelling-invariant. **One real finding
+(LOW/MEDIUM, scope-honesty + coverage):** the code correctly NAMES sphere-2 AND sphere-3 Rule-2 decisions (evil-morty
+hand-derived them correct — higher mass wins, branch order Rule-1a-established), it does NOT stop at sphere 1 — but none
+were in the committed battery, so multi-sphere correctness was unpinned (a traversal refactor could silently reverse a
+deep verdict with no test reddening). **FOLDED:** added sphere-2 (`FC(F)O[C@@](Br)(Cl)O[13CH](F)F`→S) and sphere-3
+(`F[13C](F)CO[C@@](Br)(Cl)OCC(F)F`→S) + their enantiomers to `TEXTBOOK` (so the layer-2 blind geometric-oracle sign
+cross-check pins them) and to `tests/test_cip_namer.py`; re-froze FROZEN_HASH. Corrected the scope claim: Rule 2 names
+multi-sphere unambiguous ties, sound-not-complete via the guards. Residuals carried below as tracked debt.
+
+### 28.5 Coupled sites (lockstep) + verification
+Sites: `_CIP_PHANTOM`; `_cip_digraph` (signature + 4 writers + recursion); `_cip_sorted_children`/`_cip_child_zs`
+(`node[2]`); `_cip_ranks` (signature + `_cip_rank_compare` + `_CipAmbiguous` catch); `_cip_labels` (mass array). Probe:
+`_named_centres`/`_dfs_labels` (mass arrays), `_dfs_key`/`_pooled_compare` (`node[2]`), `_DIV_A`/`_DIV_B` (3-tuples, real
+weights, Rule-1a-inert), DEFERRALS→TEXTBOOK move + sibling-tie DEFER regression, FROZEN_HASH re-frozen. `test_cip_mancude.py`
+(call + unpack + mancude-mass-None). `test_cip_namer.py` (isotope-deferral test superseded → the Rule-2 test, spheres 0–3).
+Full suite **4599 passed, 14 skipped, 1 xfailed** (= R27's 4598 + 1 new Rule-2 test; skip/xfail unchanged, legacy xfail
+preserved), four memory-bounded batches ([a-e] 1764 · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997). **NO golden moved** —
+4 files changed, zero response fixtures (CIP labels live in `SmilesFeatures.cip_labels`; only isotope-substituted
+centres, which no golden uses, changed). Probe `validate()` all 5 layers green; ruff clean. Tracked debt (ROADMAP):
+multi-sphere Rule-2 has no EXTERNAL oracle (RDKit absent; pinned by `_DIV_A`/`_DIV_B` + Hanson + the sphere-2/3 battery,
+not independently confirmed); ring-closure duplicate isotope mass is conjectured-safe not verified-safe (most rings
+defer); `_cip_compare` non-transitivity (pre-existing, Rule 2 MITIGATES via the all-pairs guard); Rule 1b/3/4/5 unbuilt.

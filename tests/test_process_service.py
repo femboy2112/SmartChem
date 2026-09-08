@@ -68,7 +68,18 @@ def test_synthetic_declared_control_fits_real_search_and_workup_mutation_kills_i
     monkeypatch.setattr(routes, "_conditions_for", lambda t: replace(original(t), process=metadata))
     fit = run_compilation(request())
     assert fit.process_selection_status == "FITS_FOUND" and fit.exit_code == 0
-    assert set(fit.admissible_route_digests) == {c.candidate_digest for c in fit.candidates}
+    # Tension-A (ROUND 27): recompiling methyl acetate at depth 2 yields a 1-step route (no intermediate -> fits
+    # under the synthetic process control) and a 2-step route whose C2H4O2 intermediate is a NON-acetic-acid isomer.
+    # That intermediate no longer borrows acetic acid's stability record (a-reaction-key-by-formula-borrows-a-rate),
+    # so the 2-step route carries a genuine COMPOSABILITY gap the synthetic PROCESS control cannot close, and is
+    # correctly NOT admissible. The admissible set is therefore the FITS routes -- a NON-EMPTY PROPER subset of the
+    # candidates -- and the excluded route is excluded for a composability (not a process) reason.
+    admissible = set(fit.admissible_route_digests)
+    candidate_digests = {c.candidate_digest for c in fit.candidates}
+    assert admissible and admissible < candidate_digests
+    assert admissible == {r.route_digest for r in fit.ranked_route_dossiers if r.fit_status == "FITS"}
+    assert all(r.composability_verdict == "UNKNOWN" and r.fit_status == "UNKNOWN"
+               for r in fit.ranked_route_dossiers if r.route_digest not in admissible)
     assert all(r.readiness_tier == "FORMAL_CANDIDATE" for r in fit.ranked_route_dossiers)
     metadata = replace(metadata, workup_included=False)
     gap = run_compilation(request())

@@ -65,7 +65,7 @@ from ..contracts import Digestible
 from ..data.kinetics import DEFAULT_KINETICS, KineticRef, KineticTable
 from ..data.stability import DEFAULT_STABILITY, StabilityRef, StabilityTable
 from ..decompiler import Formula
-from ..structure import resolve_structure
+from ..structure import known_compounds, resolve_structure
 from .bucket import Bucket, Quantity, unknown
 from .phase import estimate_phase
 from .stability_horizon import (
@@ -100,15 +100,36 @@ def _formula_str(molecule: Molecule) -> str:
 def resolve_stability(
     molecule: Molecule, table: StabilityTable = DEFAULT_STABILITY
 ) -> StabilityRef | None:
-    """The sourced stability record for ``molecule`` -- named if the structure registry resolves it,
-    else formula-level (unambiguous only), else ``None``.  Consults the (possibly caller-extended) table,
-    so an arbitrary compound resolves once its sourced record is injected keyed by its formula string.
+    """The sourced stability record for ``molecule``, keyed on canonical STRUCTURE, never borrowed by formula.
+
+    Three cases, and no formula-borrow in any of them (tension-A, ``a-reaction-key-by-formula-borrows-a-rate``):
+
+    * ``molecule`` resolves to a KNOWN (canonical) isomer -> its NAMED record, or ``None`` (a loud gap for *this*
+      isomer), never a same-formula sibling's record. This was the one instance live on the DEFAULT table before the
+      fix: the ester 4-aminophenyl acetate, correctly identified as a distinct C8H9NO2 isomer, was inheriting
+      paracetamol's onset/isolability/provenance as if sourced for it.
+    * ``molecule`` is an UNREGISTERED isomer of a formula the registry DOES know (``known_compounds`` is non-empty
+      but none matched its resonance identity) -> ``None``. It is a *different compound* than every registered isomer
+      of that formula, so returning a seeded record keyed to one of them would fabricate a verdict for the wrong
+      compound (e.g. ethynol borrowing ketene's ``isolable=False`` -> a fabricated DEGENERATE; a 2-aminophenol
+      byproduct printing "4-aminophenol decomposes at >= 557 K"). The GENERAL form of the borrow, closed here --
+      not merely the ester (evil-morty MEDIUM fold).
+    * ``molecule``'s formula is NOVEL to the registry (``known_compounds`` is empty) -> the formula fallback fires.
+      There is no registered isomer for the query to be confused with, so a ``for_formula`` hit can only be a record
+      the caller INJECTED for exactly this formula -- the universality/injection lever (ethyl acetate, N2O5 in the
+      tests). ``for_formula`` still refuses a table holding several isomers of the formula.
+
+    Consults the (possibly caller-extended) table.
     """
     named = resolve_structure(molecule)
     if named is not None:
-        hit = table.for_named(named.expected_formula, named.name)
-        if hit is not None:
-            return hit
+        # KNOWN canonical isomer: match by name only. for_named's None is an honest gap, not a formula-borrow.
+        return table.for_named(named.expected_formula, named.name)
+    if known_compounds(Formula.of(molecule.formula, molecule.charge)):
+        # an UNREGISTERED isomer of a formula the registry KNOWS: fail closed rather than borrow a registered
+        # sibling's sourced record for what is a different compound. Only a formula the registry knows NOTHING of
+        # (below) may take the injected-record fallback.
+        return None
     return table.for_formula(_formula_str(molecule))
 
 

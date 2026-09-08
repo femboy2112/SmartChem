@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ dow-bromine-cost-ranking-2026-09-08` (**ROUND 31** — DOW bromine COST RANKING, queue item 2's last lane: the DOW-bromine litmus's final open question; stacked on the open R30 branch → R30 PR #26 → R29 Move 6 PR #25 → R28 CIP Rule 2 PR #24 → R27 PR #23; R26 MERGED via PR #22 → `main@b2a5518`) · suite **4639 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches [a-e] 1804 · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997; = R30 baseline 4630 + 9 DOW-cost tests; skip/xfail unchanged, legacy xfail preserved; NO golden moved — additive harness + receipt + doc + test, no module/ranker/seed change) · updated **2026-09-08 UTC**
+> `verified @ cip-rule1b-consumer-defer-2026-09-08` (**ROUND 32** — CIP Rule 1b (Rung 2) oracle-verified consumer investigation → VERIFIED DEFER; stacked on the open R31 branch → R31 PR #27 → R30 #26 → R29 #25 → R28 #24 → R27 #23; R26 MERGED via PR #22 → `main@b2a5518`) · suite **4645 passed / 15 skipped / 1 xfailed** (PySCF-present, RDKit-ABSENT committed env; 4 batches [a-e] 1810/1-skip · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997; = R31 4639 + 6 CIP-Rule-1b-consumer tests, +1 skip = the rdkit-gated cross-check that skips when rdkit is absent; legacy xfail preserved; NO golden moved — additive evidence harness + scope decision, the shipped namer UNTOUCHED) · updated **2026-09-08 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -68,6 +68,18 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 32 — CIP Rule 1b (Rung 2): oracle-verified consumer investigation → VERIFIED DEFER** (branch
+`cip-rule1b-consumer-defer-2026-09-08`, stacked on the open R31 branch) — the user's "then do 3 (CIP rung 2)." The sound way
+to *do* Rung 2 was to investigate whether Rule 1b can be built without fabricating; it cannot (no in-scope consumer), so
+building the `dup_rank` machinery = dead structure + mislabel-prone. RDKit `rdCIPLabeler` drove it as an external oracle
+(dev venv only). Two bearings (birdperson SOUND-BUT-HEED + dalembert adversarial hunt, which PROVED the claim). No
+code-feature built — a committed evidence harness + a scope decision. **The shipped Rule-1a+2 namer is UNTOUCHED —
+byte-stable, NO golden moved.** Full detail: manifest §32.
+
+| Item | Lane | What shipped |
+|---|---|---|
+| **Move 4 CIP Rung 2** · Rule 1b VERIFIED DEFER | B | `experiments/cip_rule1b_consumer_probe.py` (FROZEN_HASH; RDKit-free `validate()` + committed sweep generators + a gated live `_rdkit_cross_check`) + `tests/test_cip_rule1b_consumer.py` + `docs/research/CIP_RULE1B_CONSUMER_SCOPE_DECISION_v0.1.md`. **The finding:** Rule 1b has no in-scope consumer. **dalembert PROVED** the lemma (acyclic Rule-1a-tie ⟺ identical rooted constitution → Rule 1b constitutional → inert on trees; bites only with ring closures), corroborated by 25,212 constitutions + 300k shipped-comparator pairs + 30k molecules (0 Rule-1b consumers). In-scope deferrals are a distinct **unsaturated-ring-substituent** gap (992 acyclic → 0; 60 ring-sub → 24, ALL ring-unsaturation, ligands Rule-1a-distinct — isolation exact: `[C@](C1CC1)(C)(F)Cl` NAMES, `[C@](C1=CC1)(C)(F)Cl` DEFERS) + acyclic **Rule 3** (E/Z, `C[C@](/C=C\C)(/C=C/C)O`) — never Rule 1b. **birdperson** forced the 60-molecule ring-substituent sweep (the unexamined non-tree class) + reproducible committed counts; **dalembert** pinned the crux invariant (`duplicate_never_collides_with_real()`: a real terminal C/N/O/S node must outrank a same-Z duplicate leaf under `_cip_compare`) + the Rule-3 boundary. The harness doubles as a permanent differential validation of the shipped namer against the oracle. |
 
 **ROUND 31 — DOW bromine COST RANKING (queue item 2's last lane): the DOW-bromine litmus's final open question** (branch
 `dow-bromine-cost-ranking-2026-09-08`, stacked on the open R30 branch) — the user's "full blast do 2 (DOW cost ranking) ...
@@ -292,7 +304,7 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| **Move 4 CIP Rung 2** | **CIP Rule 1b** (duplicate atoms ranked by the hierarchical rank of the node they duplicate) — the deferred half of the CIP enrichment; needs a `dup_rank` slot on the 3-tuple node + a hierarchical-rank pre-pass. Rung 1 (Rule 2) is DONE (ROUND 28) | B | **M** | medium | **its own reviewed round** (both R28 reviewers: soundness asymmetry — a computed rank pre-pass is CIP's most error-prone region, a subtly-wrong rank MISLABELS not defers). No cited today-consumer yet; build only when a real Rule-1a+2-tied / 1b-decisive molecule appears. Spec: `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md` |
+| **Move 4 CIP Rung 2** | **CIP Rule 1b** — ✅ **VERIFIED DEFER (ROUND 32): proven to have no in-scope consumer.** dalembert PROVED the lemma (acyclic Rule-1a-tie ⟺ identical rooted constitution → Rule 1b, being constitutional, is inert on trees; it bites only with ring closures), exhaustively corroborated (25,212 constitutions, 300k shipped-comparator pairs, 30k molecules — 0 Rule-1b consumers). The in-scope deferrals that exist are a distinct **unsaturated-ring-substituent** ring-digraph gap (NOT Rule 1b) + acyclic **Rule 3** (E/Z). Building `dup_rank` now = dead structure + mislabel-prone. See the DONE ledger + manifest §32 + `docs/research/CIP_RULE1B_CONSUMER_SCOPE_DECISION_v0.1.md`. **UNLOCK:** a real oracle-verified Rule-1a+2-tied/1b-decisive molecule (none exists among 1052 swept). | B | — | **DEFERRED (proven)** | superseded — was "build when a consumer appears"; the consumer is proven not to exist in scope |
 | **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | **DEFERRED — premature** | **Scope decision (R28 recon): `docs/research/MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`.** No second-domain pipeline consumer exists (electrochem/cell are `Molecule`-typed; circuits are on `open_diagram.py` with no route/step/DAG shape; the `*_domain.py` files are oracle-coverage domains, not pipeline consumers) → building it now = a zero-call-sites abstraction. UNLOCK: a genuine multi-step non-chemistry process, or a concrete `Molecule`-forced-fit pain report. |
 | ~~3b~~ | ✅ **DONE (ROUND 30)** — DOW-Br₂ collider/modified-Arrhenius kinetics. See the DONE ledger + manifest §30. | B·C | — | — | The Warshay modified-Arrhenius bimolecular fit is modelled in a new sibling (`collider_kinetics.py`); Br₂ SURVIVES at bench (a lower-bounded PREDICTED read, thermo-corroborated), dissociates sub-ms at shock-tube T. Live wire-in of the collider model into E1's gate is TRACKED DEBT (verdict-inert today; no Br₂-intermediate DAG consumer). |
 
@@ -501,6 +513,14 @@ not just a human note. See the DONE ledger.
   used. The aromatic parser's charged-donor limitations remain separate (some aromatic inputs refuse while explicit
   spellings reach CIP deferral). See `docs/research/CIP_MANCUDE_SCOPE_2026-09-07.md` and
   `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md`. External finite agreement does not prove full CIP soundness.
+- **CIP unsaturated-ring-substituent gap — the real next CIP consumer** (Lane B; ROUND-32) — the R32 oracle investigation
+  found that a stereocentre with an OFF-ring centre but an UNSATURATED ring substituent (a ring double bond) DEFERS even
+  where Rule 1a trivially decides (isolation exact: `[C@](C1CC1)(C)(F)Cl` NAMES, `[C@](C1=CC1)(C)(F)Cl` DEFERS). This is a
+  ring-digraph handling limitation, distinct from Rule 1b (proven inert acyclically) and from `_on_cycle` (ring-on-centre).
+  It is the concrete next CIP improvement if scope is extended — 24/60 sweep cases; RDKit ranks them by Rule 1a. See
+  `docs/research/CIP_RULE1B_CONSUMER_SCOPE_DECISION_v0.1.md` + manifest §32. Rule 1b itself is a PROVEN no-in-scope-consumer
+  DEFER (dalembert's lemma); its crux invariant (a real C/N/O/S node outranks a same-Z duplicate leaf) is pinned by
+  `experiments/cip_rule1b_consumer_probe.py::duplicate_never_collides_with_real`.
 - **CIP Rule-2 sound scope + residuals** (Lane B; ROUND-28) — Rule 2 (mass number) is its own full pass at the Rule-1a
   tie hand-off, mirroring the VALIDATED Rule-1a breadth-first shape on the mass slot; SOUND-not-complete via the all-pairs
   sibling-tie guard + is-None guard (a Rule-1a-tied-sibling pairing, or an unknown mass — a mancude superposition duplicate

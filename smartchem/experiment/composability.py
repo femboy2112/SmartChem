@@ -446,8 +446,14 @@ def _apply_duration_gate(
 
     It only ever TIGHTENS, never loosens:
 
-    * ``DEGRADES`` (majority-destroyed over the hold, sourced) -> ``DEGENERATE`` -- even where the instantaneous
-      stability table was silent, because a sourced kinetic refutation is stronger than a missing record;
+    * ``DEGRADES`` **inside the sourced fit window** (majority-destroyed over the hold, sourced) -> ``DEGENERATE``
+      -- even where the instantaneous stability table was silent, because a sourced kinetic refutation is
+      stronger than a missing record;
+    * ``DEGRADES`` from an **out-of-window (extrapolated)** rate -> ``UNKNOWN``, NOT ``DEGENERATE`` -- a
+      verdict-flipping refutation resting on an extrapolated rate would be fabrication (a wrong refutation is
+      worse than none, the anti-fabrication asymmetry: an extrapolated SURVIVES is safe because colder is
+      monotonically slower, but an extrapolated DEGRADES needs the rate large where the fit does not vouch for
+      it), so it fails CLOSED, disclosing the extrapolated concern as a finding;
     * ``MARGINAL`` -> ``UNKNOWN`` (a disclosed concern, not affirmatively cleared);
     * ``SURVIVES`` leaves the instantaneous verdict as it stood -- a kinetic survival over a hold does NOT
       establish isolability or cure a missing record, so it never UPGRADES a verdict.
@@ -456,6 +462,12 @@ def _apply_duration_gate(
     undeclared (the hold temperature is then unmodeled -- the gate never borrows an endpoint's and never renders
     a verdict on a temperature the model does not actually know), no sourced rate, or a non-finite sourced
     ``(Ea, A)`` all return ``base`` untouched -- never fabricating a survival, a verdict, or a finding.
+
+    The out-of-window DEGRADES guard reads ``all_in_window`` (every forced-between segment in the fit window),
+    so a hold MIXING a legitimately-destroying in-window segment with a harmless out-of-window one conservatively
+    fails closed to UNKNOWN rather than DEGENERATE (evil-morty R30) -- a completeness cost in the SAFE direction
+    (a real in-window refutation is suppressed, never a fabricated one admitted); a per-segment "which segment
+    drove the destruction" refinement is tracked debt, not built.
     """
     if base.status is TransitionStatus.DEGENERATE:
         return base                                          # already refuted on sourced grounds; the hold is moot
@@ -479,13 +491,23 @@ def _apply_duration_gate(
     )
     finding = Quantity("duration-survival-fraction", f"{fraction:.4g}", "", Bucket.KNOWN_SOURCED, detail)
     findings = base.findings + (finding,)
-    if verdict is SurvivalVerdict.DEGRADES:
+    if verdict is SurvivalVerdict.DEGRADES and in_window:
         status = TransitionStatus.DEGENERATE
         reason = (
             f"DEGENERATE: over the serial hold this route imposes ({total_minutes:g} min through intervening "
             f"steps, peak {peak:g} K) only {fraction * 100:.1f}% of the intermediate remains by SOURCED "
             f"first-order decomposition kinetics -- majority-destroyed before the next step consumes it, a "
             f"duration-aware refutation the instantaneous onset check is blind to ({detail})"
+        )
+    elif verdict is SurvivalVerdict.DEGRADES:                # out-of-window: an extrapolated refutation is fabrication
+        status = TransitionStatus.UNKNOWN
+        reason = (
+            f"UNKNOWN: over the serial hold this route imposes ({total_minutes:g} min through intervening "
+            f"steps, peak {peak:g} K) SOURCED first-order kinetics leave only {fraction * 100:.1f}% of the "
+            f"intermediate -- but the peak {peak:g} K is OUTSIDE the sourced Arrhenius fit window, so the rate "
+            f"is an EXTRAPOLATION; a verdict-flipping refutation resting on an extrapolated rate would be "
+            f"fabrication (a wrong refutation is worse than none), so it fails CLOSED to UNKNOWN rather than "
+            f"DEGENERATE ({detail})"
         )
     elif verdict is SurvivalVerdict.MARGINAL:
         status = TransitionStatus.UNKNOWN

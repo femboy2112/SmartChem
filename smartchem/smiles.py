@@ -60,7 +60,7 @@ from functools import cmp_to_key, lru_cache
 from .atoms import PT
 from .category import Bond, Molecule, _wl_colours
 from .contracts import canonical_digest
-from .data.periodic_table import ATOMIC_NUMBER
+from .data.periodic_table import ATOMIC_NUMBER, has_standard_atomic_weight, standard_atomic_weight
 
 __all__ = [
     "SmilesError",
@@ -938,18 +938,39 @@ def configuration_key(text: str) -> str:
 # Musacchio, Mayfield, Vainio, Yerin, Redkin, *J. Chem. Inf. Model.* 2018, 58(9), 1755): compare a whole sphere
 # of children atomic numbers before descending, then resolve the highest-ranked branch pair fully before the
 # next (need-to-know).  Multiple bonds and ring closures become duplicate/phantom leaf atoms (real atomic
-# number, no substituents).  This ranker names ONLY when Rule 1a alone fully orders the four ligands; a genuine
-# tie (isotope-only Rule 2, pseudoasymmetric/E-Z Rule 4/5, or a true constitutional duplicate) is a NAMED
-# DEFERRAL -- a wrong R/S is worse than none.  Validated against the R19 geometric oracle and hand/PubChem
-# textbook absolutes (incl. the L-serine=S / L-cysteine=R flip) in ``experiments/cip_namer_probe.py``.
+# number, no substituents).  ROUND 28 adds CIP **Rule 2** (mass number) as its own full pass at the Rule-1a tie
+# hand-off (:func:`_cip_compare_rule2`): where Rule 1a leaves a same-Z tie, the isotope mass breaks it in the
+# Rule-1a-established order (so ``F[C@@](Cl)([2H])[3H]`` now NAMES).  Still SOUND, not complete: a tie needing an
+# UNBUILT rule (1b/3/4/5), one with an ambiguous Rule-2 pairing (Rule-1a-tied siblings), or an unknown mass, is a
+# NAMED DEFERRAL -- a wrong R/S is worse than none.  Validated against the R19 geometric oracle and hand/PubChem
+# textbook absolutes (incl. the L-serine=S / L-cysteine=R flip, and the ROUND-28 Rule-2 cases) in
+# ``experiments/cip_namer_probe.py``.
 
-_CIP_PHANTOM = (0, ())               #: the phantom (atomic-number-0) leaf a missing branch slot pads with
+_CIP_PHANTOM = (0, 0, ())            #: the phantom (atomic-number-0, mass-0) leaf a missing branch slot pads with
 _CIP_AROMATIC = object()             #: sentinel children of an AROMATIC atom: z is known, onward connectivity is withheld
 _CIP_NODE_BUDGET = 60000             #: digraph-construction cap; a pathological giant fails CLOSED (defer, never guess)
 _CIP_COMPARE_BUDGET = 400000         #: pairwise-comparison cap; likewise fail-closed
 _CIP_MANCUDE_MAX_ATOMS = 30          #: per ring system, independent of the parser's identity budget
 _CIP_MANCUDE_MAX_MATCHINGS = 128
 _CIP_MANCUDE_WORK_BUDGET = 10000
+
+
+def _cip_mass(element: str, isotope: int) -> "float | None":
+    """The CIP **Rule 2** mass of an atom (ROUND 28), in unified atomic mass units.
+
+    A SPECIFIED isotope (``[2H]``, ``[13C]``) carries its exact mass NUMBER (2013 IUPAC Rule 2); an
+    unspecified atom carries the SOURCED IUPAC/CIAAW standard atomic weight (``smartchem.data.periodic_table``),
+    so the natural-abundance average sits BETWEEN the light and heavy isotopes: ``[1H] (1) < H (1.008) < [2H]
+    (2) < [3H] (3)`` and ``[12C] (12) < C (12.011) < [13C] (13)``.  ``None`` when no true standard atomic weight
+    exists (a naturally-radioactive or synthetic element -- ``has_standard_atomic_weight`` is ``False``) AND no
+    isotope was specified: Rule 2 then DEFERS rather than fabricate a weight from a most-stable-isotope mass
+    number (``known-physics-not-new-physics``; those elements are bracket-reachable and NOT filtered by the
+    stereocentre scope, so this guard is load-bearing, not defensive garnish)."""
+    if isotope:
+        return float(isotope)
+    if has_standard_atomic_weight(element):
+        return standard_atomic_weight(element)
+    return None
 
 
 def _cip_ring_edges(n, bonds) -> frozenset[int]:
@@ -1092,8 +1113,21 @@ class _CipAromatic(Exception):
     """
 
 
-def _cip_digraph(atom_idx, parent_idx, path, adj, elems, aromatic, budget, mancude=None):
-    """One node of the CIP hierarchical digraph, ``(atomic_number, children)``.
+class _CipAmbiguous(Exception):
+    """A later-rule (Rule 2) comparison could not be made without an ARBITRARY choice -> fail-closed DEFERRAL.
+
+    Raised by :func:`_cip_compare_rule2` on an unknown mass (a mancude-superposition duplicate, or a
+    radioactive/synthetic element with no true standard weight and no specified isotope) OR a Rule-1a-tied
+    sibling set whose Rule-2 pairing is arbitrary.  A guessed pairing could yield a WRONG R/S label, so the
+    centre DEFERS instead (the ROUND-28 soundness discipline; a wrong label is worse than no label)."""
+
+
+def _cip_digraph(atom_idx, parent_idx, path, adj, elems, mass, aromatic, budget, mancude=None):
+    """One node of the CIP hierarchical digraph, ``(atomic_number, mass, children)`` (ROUND 28 enriched the
+    former ``(atomic_number, children)`` 2-tuple with a ``mass`` slot at index 1 for CIP Rule 2; children move
+    to index 2).  ``mass`` is a parallel array keyed by atom index (:func:`_cip_mass`), threaded in rather than
+    perturbing the element-string canonicalisation ``_kekulize_in_place``/``_wl_colours`` rely on; ``None`` where
+    no true standard weight exists (see :func:`_cip_mass`).
 
     A multiple bond of order ``o`` contributes ``o - 1`` duplicate leaves of the bonded partner on each side;
     a ring-closure bond (a neighbour already on the root->here path) is NOT traversed and contributes one
@@ -1101,15 +1135,19 @@ def _cip_digraph(atom_idx, parent_idx, path, adj, elems, aromatic, budget, mancu
     visits each real atom at most once and the digraph is FINITE (depth bounded by the atom count).  A
     duplicate/phantom leaf carries the real atomic number of the atom it duplicates but no substituents (its
     own children are the atomic-number-0 phantoms, which the padded comparison in :func:`_cip_compare` treats
-    identically to an empty child list). Mancude multiple-bond duplicates instead carry the OWNER's exact
-    partner-Z average; a ring-closure's own closure leaf stays integer-Z.
+    identically to an empty child list); a ring-closure or ordinary multiple-bond duplicate carries the MASS of
+    the real atom it duplicates.  Mancude multiple-bond duplicates instead carry the OWNER's exact partner-Z
+    average -- a Kekule/partner SUPERPOSITION, not one atom -- so their ``mass`` is ``None`` (no single-atom
+    referent; Rule 2 DEFERS on them rather than fabricate, the di-2-pyridyl pin defers either way); a ring-
+    closure's own closure leaf stays integer-Z with the duplicated atom's real mass.
     An unsupported unsaturated ring atom is a BOUNDARY
-    node ``(z, _CIP_AROMATIC)``: its atomic number is known (so a ranking can still decide ON it), but its onward
-    connectivity is withheld because it is Kekule-dependent -- a comparison that tries to descend past it raises
-    :class:`_CipAromatic` and the centre defers (its phantom DUPLICATES, being z-only leaves, are always safe)."""
+    node ``(z, mass, _CIP_AROMATIC)``: its atomic number AND its own (Kekule-independent) mass are known (so a
+    ranking can still decide ON it), but its onward connectivity is withheld because it is Kekule-dependent -- a
+    comparison that tries to descend past it raises :class:`_CipAromatic` and the centre defers (its phantom
+    DUPLICATES, being z-only leaves, are always safe)."""
     z = ATOMIC_NUMBER.get(elems[atom_idx], 0)
     if atom_idx in aromatic:
-        return (z, _CIP_AROMATIC)                               # boundary: known z, Kekule-dependent onward -> lazy defer
+        return (z, mass[atom_idx], _CIP_AROMATIC)               # boundary: known z+mass, Kekule-dependent onward -> lazy defer
     budget[0] -= 1
     if budget[0] < 0:
         raise _CipTooBig
@@ -1117,18 +1155,24 @@ def _cip_digraph(atom_idx, parent_idx, path, adj, elems, aromatic, budget, mancu
     for nb, order in adj[atom_idx]:
         znb = ATOMIC_NUMBER.get(elems[nb], 0)
         if nb != parent_idx and nb in path:
-            children.append((znb, ()))                         # ring closure is an integer-Z duplicate
+            children.append((znb, mass[nb], ()))               # ring closure is an integer-Z duplicate (real atom's mass)
         elif nb != parent_idx:
             if nb in aromatic and order > 1:
                 raise _CipAromatic                              # exocyclic multiple bond INTO an aromatic atom: the
                 # duplicate COUNT (order-1) is Kekule-dependent, generated here at the non-aromatic side before the
                 # boundary is consulted -- so defer rather than emit a Kekule-dependent phantom multiset (evil-morty
                 # residual A; unproven-reachable but discharged, not left to chance).
-            children.append(_cip_digraph(nb, atom_idx, path | {nb}, adj, elems, aromatic, budget, mancude))
-        duplicate_z = mancude.get(atom_idx, znb) if mancude is not None else znb
+            children.append(_cip_digraph(nb, atom_idx, path | {nb}, adj, elems, mass, aromatic, budget, mancude))
+        # A mancude multiple-bond duplicate carries the owner's averaged Z (a superposition) -> mass has no
+        # single-atom referent -> None (DEFER under Rule 2, never fabricate).  An ordinary duplicate carries
+        # the real partner atom's mass.
+        if mancude is not None and atom_idx in mancude:
+            duplicate_z, dup_mass = mancude[atom_idx], None
+        else:
+            duplicate_z, dup_mass = znb, mass[nb]
         for _ in range(order - 1):
-            children.append((duplicate_z, ()))
-    return (z, tuple(children))
+            children.append((duplicate_z, dup_mass, ()))
+    return (z, mass[atom_idx], tuple(children))
 
 
 def _cip_sorted_children(node, ctx) -> tuple:
@@ -1136,12 +1180,12 @@ def _cip_sorted_children(node, ctx) -> tuple:
     repeated subtree (e.g. every residue of a peptide backbone) is ranked once, not re-sorted on each visit.
     An AROMATIC boundary node has no available children -- inspecting them would depend on the Kekule structure --
     so this raises :class:`_CipAromatic`, deferring the centre (reached only when a tie forces a descent past it)."""
-    if node[1] is _CIP_AROMATIC:
+    if node[2] is _CIP_AROMATIC:
         raise _CipAromatic
     sc = ctx["sc"]
     cached = sc.get(node)
     if cached is None:
-        cached = tuple(sorted(node[1], key=cmp_to_key(lambda x, y: _cip_compare(x, y, ctx)), reverse=True))
+        cached = tuple(sorted(node[2], key=cmp_to_key(lambda x, y: _cip_compare(x, y, ctx)), reverse=True))
         sc[node] = cached
     return cached
 
@@ -1199,28 +1243,93 @@ def _cip_compare(a, b, ctx) -> int:
     return r
 
 
+def _cip_compare_rule2(a, b, ctx) -> int:
+    """Rank two Rule-1a-EQUAL digraph nodes by CIP **Rule 2** (mass number); ``+1``/``-1``/``0`` (ROUND 28).
+
+    Called ONLY on nodes :func:`_cip_compare` returned ``0`` for (Rule 1a exhausted over the whole digraph
+    first -- CIP hierarchy).  It MIRRORS ``_cip_compare``'s validated breadth-first, branch-by-branch shape but
+    on the ``mass`` slot: this node's own mass -> the immediate sphere of the children's masses (in the
+    Rule-1a-established order) -> only if the whole sphere ties, descend the ranked branch pairs (need-to-know).
+    That breadth-first-then-descend order is the SAME shape the ``_DIV_A``/``_DIV_B`` proof pins for Rule 1a
+    (NOT a depth-first dive into the top branch, which would be the ROUND-14 bug reincarnated for mass).
+
+    SOUND, not complete -- it fail-closes to a DEFERRAL (raises :class:`_CipAmbiguous`) rather than ever guess a
+    label, in three cases: (1) an unknown mass (``None``: a mancude superposition duplicate, or a radioactive/
+    synthetic element with no true standard weight and no specified isotope); (2) a Rule-1a-tie among SIBLINGS
+    (checked ALL-PAIRS, not adjacent-only -- ``_cip_compare`` is not proven transitive, so an adjacent-only scan
+    of a sorted sequence could miss a hidden non-adjacent tie), which makes the child pairing arbitrary; (3) a
+    paired-child Rule-1a MISMATCH (the recursion's own precondition, enforced not assumed -- if a non-transitive
+    mis-sort ever mispairs, this fails closed instead of mislabelling).  Only where the pairing is FORCED and
+    every mass is known does it return a verdict.  Higher-rule ties (1b/3/4/5) it leaves as ``0`` (the caller
+    DEFERS)."""
+    if a[1] is None or b[1] is None:
+        raise _CipAmbiguous                                    # unknown mass -> DEFER, never a bogus None comparison
+    if a[1] != b[1]:
+        return 1 if a[1] > b[1] else -1                        # this node's own mass decides
+    ca = _cip_sorted_children(a, ctx)                          # Rule-1a order (may raise _CipAromatic)
+    cb = _cip_sorted_children(b, ctx)
+    for seq in (ca, cb):                                       # (2) ALL-PAIRS sibling-tie guard: transitivity-free
+        for i in range(len(seq)):
+            for j in range(i + 1, len(seq)):
+                if _cip_compare(seq[i], seq[j], ctx) == 0:
+                    raise _CipAmbiguous                        # ambiguous pairing -> DEFER
+    paired = []
+    for k in range(max(len(ca), len(cb))):
+        na = ca[k] if k < len(ca) else _CIP_PHANTOM
+        nb = cb[k] if k < len(cb) else _CIP_PHANTOM
+        if _cip_compare(na, nb, ctx) != 0:                     # (3) enforce the Rule-1a-equal pairing precondition
+            raise _CipAmbiguous                                # a mispair (only under non-transitivity) -> DEFER
+        paired.append((na, nb))
+    for na, nb in paired:                                      # step 3: the sphere of child masses (breadth), Rule-1a order
+        if na[1] is None or nb[1] is None:
+            raise _CipAmbiguous
+        if na[1] != nb[1]:
+            return 1 if na[1] > nb[1] else -1
+    for na, nb in paired:                                      # step 4: sphere of masses tied -> descend ranked pairs
+        c = _cip_compare_rule2(na, nb, ctx)
+        if c != 0:
+            return c
+    return 0
+
+
+def _cip_rank_compare(a, b, ctx) -> int:
+    """The CIP hierarchical rank of two ligand digraphs (ROUND 28): Rule 1a exhausted over the WHOLE digraph
+    FIRST, then -- ONLY on a genuine Rule-1a tie -- Rule 2 (mass number) as its own full pass.  ``+1``/``-1``/
+    ``0``; a ``0`` is a tie no BUILT rule breaks, so the caller DEFERS.  Rule 2 may raise :class:`_CipAmbiguous`
+    or :class:`_CipAromatic` (both -> DEFER).  Rules 1b/3/4/5 are NOT built, so a Rule-1a+Rule-2 tie stays ``0``
+    (a NAMED deferral).  Keeping Rule 2 a separate pass entered only at the ``_cip_compare == 0`` hand-off is
+    soundness-required: folding mass into ``_cip_compare``'s per-leaf tuple would let a shallow mass tie override
+    a deeper Rule-1a atomic-number difference -- an inversion of CIP precedence."""
+    c = _cip_compare(a, b, ctx)
+    if c != 0:
+        return c
+    return _cip_compare_rule2(a, b, ctx)
+
+
 def _cip_child_zs(node) -> tuple:
     """The descending atomic numbers of ``node``'s children -- the immediate sphere, WITHOUT ranking them (so a
     Kekule-dependent aromatic grandchild is never consulted, only its known atomic number counts).  An aromatic
     BOUNDARY node has no available children, so this raises :class:`_CipAromatic` (its own z was already used by
     the caller's atomic-number check; it is only the onward structure that is withheld)."""
-    if node[1] is _CIP_AROMATIC:
+    if node[2] is _CIP_AROMATIC:
         raise _CipAromatic
-    return tuple(sorted((c[0] for c in node[1]), reverse=True))
+    return tuple(sorted((c[0] for c in node[2]), reverse=True))
 
 
-def _cip_ranks(written, centre, adj, elems, aromatic, mancude=None) -> "list[int] | None":
+def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None) -> "list[int] | None":
     """The CIP priority rank (``0`` = highest) of each of the four WRITTEN neighbours of ``centre`` via the
-    Rule-1a hierarchical digraph, or ``None`` when Rule 1a does NOT fully order them (a genuine tie needing
-    Rule 1b/2/4/5, a ranking whose decision depends on an unsupported ring's substituents, or an over-budget
-    digraph) -- then the centre is a NAMED DEFERRAL, never a guessed label.
+    hierarchical digraph, or ``None`` when the BUILT rules do NOT fully order them (a genuine tie still needing
+    Rule 1b/3/4/5, a ranking whose decision depends on an unsupported ring's substituents, an ambiguous Rule-2
+    pairing, or an over-budget digraph) -- then the centre is a NAMED DEFERRAL, never a guessed label.
 
-    Byte-identical to the old ``sorted(z, reverse=True)`` ranks on the distinct-atomic-number slice (there
-    :func:`_cip_compare` decides at sphere 0), so it strictly EXTENDS the shipped naming without changing it --
-    a distinct-Z centre with an aromatic arm still names (the aromatic node's z decides before its withheld
-    substituents are ever needed)."""
+    Ranking is by :func:`_cip_rank_compare`: Rule 1a exhausted over the whole digraph, then (only on a genuine
+    Rule-1a tie) Rule 2 (mass number, ROUND 28) as its own full pass.  ``mass`` is the per-atom-index mass array
+    (:func:`_cip_mass`) threaded into the digraph.  Byte-identical to the old ``sorted(z, reverse=True)`` ranks on
+    the distinct-atomic-number slice (there Rule 1a decides at sphere 0, so Rule 2 never runs), so it strictly
+    EXTENDS the shipped naming without changing it -- a distinct-Z centre with an aromatic arm still names (the
+    aromatic node's z decides before its withheld substituents are ever needed)."""
     try:
-        roots = [_cip_digraph(w, centre, frozenset((centre, w)), adj, elems, aromatic, [_CIP_NODE_BUDGET], mancude)
+        roots = [_cip_digraph(w, centre, frozenset((centre, w)), adj, elems, mass, aromatic, [_CIP_NODE_BUDGET], mancude)
                  for w in written]
     except (_CipTooBig, _CipAromatic):                          # build only raises _CipAromatic for the exocyclic guard
         return None
@@ -1232,13 +1341,13 @@ def _cip_ranks(written, centre, adj, elems, aromatic, mancude=None) -> "list[int
             for j in range(4):
                 if j == k:
                     continue
-                c = _cip_compare(roots[j], roots[k], ctx)
+                c = _cip_rank_compare(roots[j], roots[k], ctx)
                 if c == 0:
-                    return None                                 # two ligands tie under Rule 1a -> DEFER (sound)
+                    return None                                 # two ligands tie under Rule 1a AND Rule 2 -> DEFER (sound)
                 if c > 0:
                     higher += 1
             ranks.append(higher)
-    except (_CipTooBig, _CipAromatic):
+    except (_CipTooBig, _CipAromatic, _CipAmbiguous):
         return None
     if sorted(ranks) != [0, 1, 2, 3]:
         return None                                             # defensive: not a strict total order -> DEFER
@@ -1253,8 +1362,10 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
     This NAMES the common case the earlier distinct-atomic-number slice deferred -- amino acids, sugars, any
     secondary/tertiary carbon whose ties break one or more spheres out (L-alanine (S), L-serine (S) and its
     cysteine flip (R), the branch-vs-chain motif ``C[C@H](CCC)C(C)C`` (R) that killed the ROUND-14 depth-first
-    attempt).  It stays SOUND: a centre whose four ligands are NOT fully separated by atomic number alone -- an
-    isotope-only tie (Rule 2), a pseudoasymmetric / E-Z-distinguished tie (Rules 4/5), or a true constitutional
+    attempt).  ROUND 28 adds CIP **Rule 2** (mass number) as its own full pass at the Rule-1a tie hand-off
+    (:func:`_cip_rank_compare`), so a same-Z tie the isotope mass separates now NAMES too (``F[C@@](Cl)([2H])[3H]``
+    -> R).  It stays SOUND: a centre whose four ligands are NOT separated by a BUILT rule -- a tie needing Rule
+    1b/3/4/5, a Rule-2 pairing made ambiguous by Rule-1a-tied siblings or an unknown mass, or a true constitutional
     duplicate (a false centre) -- is a NAMED DEFERRAL and gets NO label, because a guessed R/S is worse than
     none. Bounded neutral C/N/O/S mancude rings use exact atomic-number averaging of multiple-bond duplicates
     (:func:`_cip_mancude`), equally for aromatic and explicit Kekule spellings. Charged, exocyclic-multiple,
@@ -1277,6 +1388,9 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
     _kekulize_in_place(atoms, work, charge)
     filled_atoms, filled_bonds = _fill_hydrogens(atoms, work)     # heavy indices 0..n-1 preserved; H appended after
     n = len(atoms)
+    # CIP Rule-2 mass, keyed by filled-atom index (ROUND 28): heavy atoms 0..n-1 carry their parsed isotope (0 =
+    # unspecified -> the standard weight); the implicit H's appended after n are unspecified natural H.
+    mass = [_cip_mass(filled_atoms[i], atoms[i].isotope if i < n else 0) for i in range(len(filled_atoms))]
     neighbours: dict[int, list[int]] = {i: [] for i in range(len(filled_atoms))}
     adj: dict[int, list[tuple[int, int]]] = {i: [] for i in range(len(filled_atoms))}
     for b in filled_bonds:
@@ -1299,9 +1413,9 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
             continue
         if any(ATOMIC_NUMBER.get(filled_atoms[x]) is None for x in written):
             continue                                             # a non-periodic-table element -> out of scope
-        ranks = _cip_ranks(written, a, adj, filled_atoms, aromatic, mancude)
+        ranks = _cip_ranks(written, a, adj, filled_atoms, mass, aromatic, mancude)
         if ranks is None:
-            continue                                             # Rule 1a leaves a genuine tie -> NAMED DEFERRAL (never guess)
+            continue                                             # Rule 1a+2 leave a genuine tie -> NAMED DEFERRAL (never guess)
         handedness = _perm_parity(ranks) ^ (0 if atoms[a].chirality == 1 else 1)
         labels.append("S" if handedness == 0 else "R")          # anchored to L-alanine = S (see docstring)
     return tuple(sorted(labels))
@@ -1311,10 +1425,12 @@ def cip_labels(text: str) -> tuple[str, ...]:
     """The CIP R/S names of ``text``'s soundly-nameable acyclic stereocentres, sorted; ``()`` if none.
 
     Priority comes from the general CIP **Rule 1a** hierarchical digraph -- breadth-first, branch-by-branch, with
-    duplicate/phantom atoms for multiple bonds and ring closures (ROUND 20) -- so the common same-element case
-    (amino acids, sugars, secondary/tertiary carbons) is now NAMED, not deferred.  A centre Rule 1a cannot fully
-    order (an isotope-only, pseudoasymmetric, or true-duplicate tie), one whose ranking depends on an unsupported
-    unsaturated ring system, a ring stereocentre, or a non-four-coordinate marked centre
+    duplicate/phantom atoms for multiple bonds and ring closures (ROUND 20) -- plus CIP **Rule 2** (mass number,
+    ROUND 28) as its own pass at the Rule-1a tie hand-off, so the common same-element case (amino acids, sugars,
+    secondary/tertiary carbons) AND a same-Z isotope tie are now NAMED, not deferred.  A centre the BUILT rules
+    (1a, 2) cannot fully order (a tie needing Rule 1b/3/4/5, a Rule-2 pairing made ambiguous by Rule-1a-tied
+    siblings or an unknown mass), one whose ranking depends on an unsupported unsaturated ring system, a ring
+    stereocentre, or a non-four-coordinate marked centre
     contributes NO name -- a named deferral, never a guessed/unsound label.  Raises
     :class:`SmilesError` on a malformed/out-of-scope SMILES, like the parser.  See :func:`_cip_labels` for the
     method and its L-alanine = S sign-convention anchor."""

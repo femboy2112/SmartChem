@@ -81,6 +81,26 @@ def test_hotter_exposure_destroys_it_faster_still():
     assert held.surviving_fraction < 1e-6
 
 
+# --- ANTI-FABRICATION: a refutation from an OUT-OF-WINDOW extrapolated rate is refused ------------------
+
+def test_out_of_window_degrades_fails_closed_to_unknown_not_a_fabricated_degenerate():
+    """A DEGENERATE from an EXTRAPOLATED rate is a fabricated refutation and must not flip the verdict.
+
+    N2O5's sourced Arrhenius fit is valid 298-338 K.  Held at 360 K (above the window), the extrapolated rate
+    destroys ~everything -> the pre-guard gate flipped this to DEGENERATE, a refutation resting on an
+    unvalidated extrapolation (fabrication -- a wrong refutation is worse than none).  It must fail CLOSED to
+    UNKNOWN, disclosing the extrapolated concern, NOT condemn the route.  This assertion goes RED on the
+    pre-guard code.  The asymmetry is intentional: an extrapolated SURVIVES (colder, monotonically slower) is
+    kept; only an extrapolated refutation is refused."""
+    out = _judge(_n2o5(), 360.0, hold=60.0)                  # 360 K is above the 298-338 K fit window
+    assert out.status is TransitionStatus.UNKNOWN
+    assert out.surviving_fraction is not None and out.surviving_fraction < 0.5  # the forward fraction IS tiny...
+    assert "EXTRAPOLAT" in out.reason.upper()                # ...but the verdict refuses to refute on it
+    # the guard is SURGICAL: an in-window DEGRADES (330 K, inside 298-338) is still a legitimate DEGENERATE.
+    in_win = _judge(_n2o5(), 330.0, hold=60.0)
+    assert in_win.status is TransitionStatus.DEGENERATE
+
+
 # --- MARGINAL holds the verdict at UNKNOWN, never a silent pass -----------------------------------------
 
 def test_marginal_survival_is_unknown_with_the_fraction_disclosed():

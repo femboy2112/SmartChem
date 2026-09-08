@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ move6-conditions-effects-distributive-law-2026-09-07` (**ROUND 29** — Move 6: conditions distribute through a route's CAUSAL order, the `THE_ORBITAL §IX` withdrawn λ re-aimed; stacked on the open R28 branch; R28 CIP Rule 2 on PR #24 stacked on R27 PR #23; R26 MERGED via PR #22 → `main@b2a5518`) · suite **4605 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches [a-e] 1770 · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997; = R28 baseline 4599 + 6 new linear-extension-invariance tests; skip/xfail unchanged, legacy xfail preserved; NO golden moved — `serial_holds` is digest-excluded and the seed kinetics match no DAG intermediate, so the bug was latent) · updated **2026-09-07 UTC**
+> `verified @ dow-bromine-kinetics-2026-09-08` (**ROUND 30** — DOW-Br₂ collider/modified-Arrhenius kinetics, queue item 3b: the DOW-bromine litmus's decomposition RATE half; stacked on the open R29 branch; R29 Move 6 on PR #25 → R28 CIP Rule 2 PR #24 → R27 PR #23; R26 MERGED via PR #22 → `main@b2a5518`) · suite **4630 passed / 14 skipped / 1 xfailed** (PySCF-present dev venv, 4 batches [a-e] 1795 · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997; = R29 baseline 4605 + 24 collider-kinetics tests + 1 gate anti-fabrication-guard test; skip/xfail unchanged, legacy xfail preserved; NO golden moved — additive new module + a gate guard latent on the seed) · updated **2026-09-08 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -46,20 +46,37 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
   buckets. A pass quantitatively shows the cheap-brine route beats the mineral route. **Sourcing is favorable:** bromine
   is a USGS-priced inorganic (same pattern as NaCl/Na₂CO₃), so unlike the organic-price wall this litmus's cost axis is
   genuinely achievable. Spawns the queue items marked *(DOW)* below.
-  **The litmus is now two-thirds standing:** **✅ Phase 1 — pricing (ROUND 16, DOW-BROMINE-01):** elemental bromine is a
-  first-class SOURCED, USGS-priced commodity ($2.70/kg 2024, MCS 2026), INDUSTRIAL-tier (the DOW insight encoded), costed
-  end-to-end through the buckets. **✅ Phase 2 — mechanism (ROUND 17, REDOX-DISPLACE-01):** the coupled half-reaction
-  combiner enumerates `Cl₂ + 2 Br⁻ → Br₂ + 2 Cl⁻`, the reaction no prior mechanism could reach. **✅ Phase 3 —
-  electrochemistry (ROUND 18, ELECTROCHEM-01):** sourced standard potentials prove that displacement is SPONTANEOUS
-  (E°cell = +0.271 V, ΔG° = −52.3 kJ/mol) and reproduce why chlorine displaces bromide but not the reverse; the
-  electrolytic anode leg is modelled (minimum decomposition voltage + Faraday charge). **Remaining — the cost ranking:**
-  the brine-vs-mined *quantitative cost ranking* still needs pricing integration + a NaBr feedstock. ROUND 22 recovered
-  an approved municipal Cl₂ offer, with packaging/rental terms; it is not an industrial spot or historical Dow price.
-  See DEFERRED and `docs/research/SOURCING_RECON_2026-09-07.md`.
+  **The litmus's DECOMPOSITION + synthesis question is now fully answered; only the COST RANKING remains.** **✅ Phase 1
+  — pricing (ROUND 16, DOW-BROMINE-01):** elemental bromine is a first-class SOURCED, USGS-priced commodity ($2.70/kg 2024,
+  MCS 2026), INDUSTRIAL-tier (the DOW insight encoded), costed end-to-end through the buckets. **✅ Phase 2 — mechanism
+  (ROUND 17, REDOX-DISPLACE-01):** the coupled half-reaction combiner enumerates `Cl₂ + 2 Br⁻ → Br₂ + 2 Cl⁻`, the reaction
+  no prior mechanism could reach. **✅ Phase 3 — electrochemistry (ROUND 18, ELECTROCHEM-01):** sourced standard potentials
+  prove displacement is SPONTANEOUS (E°cell = +0.271 V, ΔG° = −52.3 kJ/mol) and reproduce why chlorine displaces bromide
+  but not the reverse; the electrolytic anode leg is modelled. **✅ Phase 4 — Br₂ decomposition, thermo + kinetics
+  (ROUND 26 + ROUND 30):** `Br₂ → 2 Br•` is thermodynamically UNFAVORABLE at 298 K (ΔG = +161.65 kJ/mol, sourced CODATA,
+  R26) AND the collisional dissociation KINETICS (Warshay NASA TN D-3502, modelled R30) confirm Br₂ SURVIVES at any
+  kitchen-achievable T (a lower-bounded, thermo-corroborated verdict) and dissociates only at shock-tube T — the two
+  independent bearings agree Br₂ is stable. **Remaining — the cost ranking (the ONLY open lane):** the brine-vs-mined
+  *quantitative cost ranking* still needs pricing integration + a NaBr feedstock. ROUND 22 recovered an approved municipal
+  Cl₂ offer, with packaging/rental terms; it is not an industrial spot or historical Dow price. See DEFERRED and
+  `docs/research/SOURCING_RECON_2026-09-07.md`.
 
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 30 — DOW-Br₂ collider/modified-Arrhenius kinetics (queue item 3b): the DOW-bromine litmus's rate half** (branch
+`dow-bromine-kinetics-2026-09-08`, stacked on the open R29 branch) — the user's "keep going, full blast" (DOW-Br₂ kinetics
+chosen at the fork). Contract-first (`docs/research/DOW_BROMINE_KINETICS_CONTRACT_v0.1.md`); a first-hand source + arithmetic
+reproduction, two PARALLEL pre-build bearings (butter-robot PASS+TRIM + birdperson SOUND-BUT-HEED) + one evil-morty pass.
+Two commits (`44af121` the model, `adc4cee` a separate gate guard). **Additive** (new sibling module; `KineticRef`/
+`DEFAULT_KINETICS` untouched — recon-compliant) + one latent-on-seed gate guard; **byte-stable, NO golden moved.** Full
+detail: manifest §30.
+
+| Item | Lane | What shipped |
+|---|---|---|
+| **3b** · DOW-Br₂ collider / modified-Arrhenius kinetics *(DOW)* | B·C | `smartchem/experiment/collider_kinetics.py` — the modified-Arrhenius bimolecular collisional-dissociation model from the recovered Warshay primary (NASA TN D-3502; `kD = A·T^½·exp(-Ea/RT)`, `-d[Br₂]/dt = kD·[Br₂][M]`, 1200–1900 K). A NEW sibling because `KineticRef` is plain-Arrhenius s⁻¹ (the schema enforces the recon's "do not add to the first-order seed"). `dissociation_rate` reproduces kD(1825 K, Ar)≈1.574e6 (a TRANSCRIPTION self-consistency check, NOT independent validation); `pseudo_first_order_k` = `kD·[M]` ([M] REQUIRED, validated). **`collider_survival` certifies SURVIVES ONLY** — the irreversible forward fraction is a rigorous LOWER bound on the true reverse-inclusive fraction (the omitted reverse only adds Br₂ back), so a DEGRADES would be a fabricated refutation → every sub-SURVIVES fails closed to UNKNOWN; SURVIVES certified only in/below the window (above-window DEFERS — evil-morty F1). **The litmus answer:** Br₂ SURVIVES at kitchen T (PREDICTED, lower-bounded, cross-referenced to the INDEPENDENT R26 thermo ΔG₂₉₈=+161.65); dissociates sub-ms only at shock-tube T (the sourced reverse-free rate). Ar-only seed (Ne/Kr parked in the contract doc); committed harness (FROZEN_HASH) + 24 tests. |
+| **gate guard** · no refutation from an out-of-window extrapolation | A·B | A separate anti-fabrication fix the Br₂ work surfaced: `_apply_duration_gate` flipped `DEGRADES→DEGENERATE` from an out-of-window (PREDICTED) extrapolated rate (birdperson VERIFIED: N₂O₅ at 360 K → a fabricated DEGENERATE). Now an out-of-window DEGRADES fails closed to UNKNOWN; the in-window DEGENERATE is preserved (surgical). RED-first regression. Latent on the seed → byte-stable. |
 
 **ROUND 29 — Move 6: conditions distribute through a route's CAUSAL order (the withdrawn λ, re-aimed)** (branch
 `move6-conditions-effects-distributive-law-2026-09-07`, stacked on the open R28 branch) — the user's "full blast move 6."
@@ -246,16 +263,21 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > whole-DAG duration-survival verdict flipped DEGENERATE<->UNKNOWN purely on which independent branch a caller listed
 > first. The gate now charges only the FORCED-BETWEEN (unavoidable-in-every-schedule) hold; the linear-extension
 > invariance law is pinned. See the DONE ledger + manifest §29.
-> **⭐ The active queue is CIP Rung 2 (Rule 1b) when a consumer appears, item 3b (DOW-Br₂ kinetics, a modeling wall),
-> and Move 5 (domain-neutral pipeline lift, DEFERRED until a second-domain consumer exists).** All six categorical-
-> reorientation Moves are now shipped or scoped: Moves 1–3 DONE (R24–R27), Move-4 tension-A + CIP Rung 1 DONE (R27/R28),
-> Move 5 DEFERRED-premature (R28), Move 6 DONE (R29).
+> **ROUND 30 CLOSED item 3b** — DOW-Br₂ collider/modified-Arrhenius kinetics, the DOW litmus's decomposition RATE half.
+> The Warshay shock-tube fit is modelled in a new sibling; Br₂ SURVIVES at bench (a lower-bounded PREDICTED read,
+> cross-referenced to the independent R26 thermo), dissociates sub-ms only at shock-tube T. A separate commit fixed a
+> latent gate fabrication (an out-of-window extrapolated DEGRADES → UNKNOWN). See the DONE ledger + manifest §30.
+> **⭐ The active queue is CIP Rung 2 (Rule 1b) when a consumer appears, and the DOW brine-vs-mined COST RANKING (the
+> litmus's last open lane); Move 5 (domain-neutral pipeline lift) stays DEFERRED until a second-domain consumer exists.**
+> The DOW litmus's DECOMPOSITION question is now fully answered (thermo R26 + kinetics R30); only its cost ranking
+> remains. All six categorical-reorientation Moves are shipped or scoped: Moves 1–3 DONE (R24–R27), Move-4 tension-A +
+> CIP Rung 1 DONE (R27/R28), Move 5 DEFERRED-premature (R28), Move 6 DONE (R29).
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
 | **Move 4 CIP Rung 2** | **CIP Rule 1b** (duplicate atoms ranked by the hierarchical rank of the node they duplicate) — the deferred half of the CIP enrichment; needs a `dup_rank` slot on the 3-tuple node + a hierarchical-rank pre-pass. Rung 1 (Rule 2) is DONE (ROUND 28) | B | **M** | medium | **its own reviewed round** (both R28 reviewers: soundness asymmetry — a computed rank pre-pass is CIP's most error-prone region, a subtly-wrong rank MISLABELS not defers). No cited today-consumer yet; build only when a real Rule-1a+2-tied / 1b-decisive molecule appears. Spec: `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md` |
-| **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | **DEFERRED — premature** | **Scope decision (R28 recon): `docs/research/MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`.** No second-domain pipeline consumer exists (electrochem/cell are `Molecule`-typed; circuits are on `open_diagram.py` with no route/step/DAG shape; the `*_domain.py` files are oracle-coverage domains, not pipeline consumers) → building it now = a zero-call-sites abstraction. UNLOCK: a genuine multi-step non-chemistry process, or a concrete `Molecule`-forced-fit pain report. Prefer **Move 6** meanwhile. |
-| 3b | **Model DOW-Br₂ collider / modified-Arrhenius kinetics** (the item-3 remainder; core-E1 wire-in DONE R23) | B·C | **M** | long | the recovered Warshay primary is bimolecular `kD·[Br₂][M]` with a `√T` factor at shock-tube T — needs a collider-state + modified-Arrhenius model + reverse/hold scope; NOT compatible with the concentration-free first-order seed |
+| **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | **DEFERRED — premature** | **Scope decision (R28 recon): `docs/research/MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`.** No second-domain pipeline consumer exists (electrochem/cell are `Molecule`-typed; circuits are on `open_diagram.py` with no route/step/DAG shape; the `*_domain.py` files are oracle-coverage domains, not pipeline consumers) → building it now = a zero-call-sites abstraction. UNLOCK: a genuine multi-step non-chemistry process, or a concrete `Molecule`-forced-fit pain report. |
+| ~~3b~~ | ✅ **DONE (ROUND 30)** — DOW-Br₂ collider/modified-Arrhenius kinetics. See the DONE ledger + manifest §30. | B·C | — | — | The Warshay modified-Arrhenius bimolecular fit is modelled in a new sibling (`collider_kinetics.py`); Br₂ SURVIVES at bench (a lower-bounded PREDICTED read, thermo-corroborated), dissociates sub-ms at shock-tube T. Live wire-in of the collider model into E1's gate is TRACKED DEBT (verdict-inert today; no Br₂-intermediate DAG consumer). |
 
 ### K-B/C/D · Move-1 keystone — ✅ **DONE (Rung B ROUND 24 / Rungs C+D ROUND 25)**
 **Rung B** (`944ad8c`, MERGED PR #19 → `main@5f1b3e3`): `open_core.py` + `open_chem_diagram.py` + `ExperimentStep.open()`
@@ -314,12 +336,19 @@ lock (`ConditionEnvelope.duration = min`) is the declaration side, converted exp
 the DONE ledger and manifest §23. TRACKED DEBT below: linear-route holds are unmodeled (only DAG serial holds carry a
 hold), and the R19 reactant-coefficient rate-convention residual still applies.
 
-### 3b · Model the recovered DOW-Br₂ collider / modified-Arrhenius primary — **M** *(DOW)*
-**The Br₂ primary is recovered but not first-order-seed-compatible:** Warshay, NASA TN D-3502 (1966), gas-phase
-shock-tube initial dissociation in Ar/Ne/Kr, `kD = A·√T·exp(-Ea/RT)`, `-d[Br₂]/dt = kD·[Br₂][M]`. It cannot enter the
-concentration-free first-order seed the R23 gate consumes. The remaining gate is collider state, modified-Arrhenius
-units and reverse/hold scope — a **modeling** wall, not missing primary access. Source URLs, pages and hashes:
-`docs/research/SOURCING_RECON_2026-09-07.md` and `experiments/sourcing_recon_2026_09_07.json`.
+### 3b · Model the recovered DOW-Br₂ collider / modified-Arrhenius primary — ✅ **DONE (ROUND 30)** *(DOW)*
+Shipped: `smartchem/experiment/collider_kinetics.py` (the Warshay `kD = A·√T·exp(-Ea/RT)` bimolecular fit as a NEW
+sibling — the plain-Arrhenius first-order seed literally cannot represent it) + committed harness
+`experiments/dow_bromine_kinetics_probe.py` (FROZEN_HASH) + `tests/test_collider_kinetics.py`. The model reproduces the
+Warshay Table I point (a transcription check), turns the bimolecular coefficient into a *conditional derived*
+pseudo-first-order coefficient at a declared `[M]`, and reads a survival verdict that **certifies SURVIVES only** (the
+irreversible forward fraction is a rigorous lower bound on the true reverse-inclusive fraction). **The litmus answer:**
+Br₂ SURVIVES at kitchen T (a PREDICTED extrapolation ~900 K below the window, lower-bounded and cross-referenced to the
+independent R26 thermo ΔG₂₉₈=+161.65), and dissociates sub-ms only at shock-tube T (the sourced reverse-free rate). The
+reverse/hold "wall" is dissolved by the lower-bound argument (SURVIVES is sound WITHOUT a reverse model; a DEGRADES would
+be fabrication → refused). See the DONE ledger + manifest §30; spec `docs/research/DOW_BROMINE_KINETICS_CONTRACT_v0.1.md`;
+source receipts `docs/research/SOURCING_RECON_2026-09-07.md`. **Tracked debt:** the live wire-in of the collider model into
+E1's duration gate (verdict-inert today — Br₂ is SURVIVES; no Br₂-intermediate DAG with a declared collider state exists).
 
 ### 2b (DONE R19) · machine-readable `serial_holds` on `RankedDAGSummary`
 Shipped — the DAG-HOLD-01 serial hold is now a `(producer, consumer, minutes)` triple field (digest-excluded disclosure),
@@ -487,6 +516,20 @@ not just a human note. See the DONE ledger.
   range (worst-case within that step) — a policy, stated; (3) the R19 reactant-coefficient rate-convention residual
   (below) still applies. The R22 unit lock (`ConditionEnvelope.duration = min`) remains the declaration side, converted
   explicitly to the primitive's seconds.
+- **DOW-Br₂ collider-kinetics carried debt** (Lane B·C; ROUND-30, from the three reviews — none blocking): (1) the
+  **live wire-in** of `collider_kinetics` into E1's `_apply_duration_gate` is NOT built — the gate's contract is
+  first-order s⁻¹ single-reactant and carries no collider `[M]`, Br₂'s bench verdict is SURVIVES (verdict-inert in a
+  tightening-only gate), and no kitchen DAG reaches the 1200–1900 K in-window regime; building it now = machinery for a
+  caller that does not exist (UNLOCK: a real Br₂-intermediate DAG with a declared collider state — the R19→R23 precedent).
+  (2) the **reverse-recombination / falloff net-loss model** is deliberately unbuilt — the lower-bound argument makes the
+  SURVIVES verdict sound without it, and `collider_survival` refuses every DEGRADES rather than fabricate one. (3) the
+  gate guard's **`all_in_window` mixed-window over-reach** (a forced-between hold mixing an in-window destroying segment
+  with an out-of-window harmless one conservatively fails closed to UNKNOWN) — a completeness cost in the SAFE direction
+  (evil-morty F3), never a fabrication; a per-segment "which segment drove the destruction" refinement is not built.
+  (4) **Ne/Kr collider fits parked** in the contract doc, not seeded (no collider-comparison caller this round). (5) the
+  Warshay transcription check is a self-consistency reproduction (reuses the fit), NOT an independent validation; the next
+  research task (per the sourcing recon) is to compare the NASA fit with later primary corrections before leaning on it as
+  a modern reference.
 
 ---
 

@@ -10,9 +10,14 @@ import pytest
 from smartchem.conditions import ConditionEnvelope, Interval
 from smartchem.contracts import EvidenceStatus
 from smartchem.data.stability import DEFAULT_STABILITY, StabilityRef
-from smartchem.experiment.composability import TransitionStatus, verify_composability
+from smartchem.experiment.composability import (
+    TransitionStatus,
+    resolve_stability,
+    verify_composability,
+)
 from smartchem.experiment.step import ExperimentRoute, ExperimentStep
 from smartchem.smiles import parse_smiles
+from smartchem.structure import resolve_structure
 
 
 def _env(tlo, thi, prov, medium=""):
@@ -90,6 +95,56 @@ class TestUnknownIsLoudAndCloses:
         ))
         comp = verify_composability(self._route_with_ethyl_acetate_intermediate(), stability=table)
         assert comp.verdict == "COMPOSABLE"
+
+
+class TestStabilityKeyIsStructureNotFormula:
+    """Tension-A (Move 4, ``a-reaction-key-by-formula-borrows-a-rate``): a KNOWN isomer never borrows a same-formula
+    sibling's sourced record. This guards the LIVE default data -- 4-aminophenyl acetate (the O-acetyl ester) and
+    paracetamol are both registered C8H9NO2 isomers, but only paracetamol carries a default stability record, so the
+    ester USED to inherit paracetamol's 523 K onset + isolability + provenance as if sourced for it (a fabricated
+    derivational chain, live on the default table). The fix keys ``resolve_stability`` on canonical structure: a
+    resolved isomer gets its NAMED record or a loud ``None``, never the formula fallback."""
+
+    ESTER = parse_smiles("CC(=O)Oc1ccc(N)cc1")  # 4-aminophenyl acetate, a distinct C8H9NO2 isomer of paracetamol
+
+    def test_a_registered_isomer_does_not_borrow_a_sibling_record_on_default_data(self):
+        # both are the same formula AND both are registered, structurally-distinct isomers ...
+        assert self.ESTER.formula == PARA.formula
+        assert resolve_structure(self.ESTER).name == "4-aminophenyl acetate"
+        assert resolve_structure(PARA).name == "paracetamol"
+        # ... only paracetamol has a default stability record; the ester must NOT borrow it (a loud None) ...
+        assert resolve_stability(self.ESTER) is None
+        # ... while paracetamol still resolves to its OWN sourced record (the named path is intact, no regression).
+        para_rec = resolve_stability(PARA)
+        assert para_rec is not None and para_rec.name == "paracetamol"
+
+    def test_an_unregistered_isomer_of_a_seeded_formula_fails_closed_not_borrowed(self):
+        # evil-morty MEDIUM fold -- the GENERAL borrow, closed. An unregistered isomer of a SEEDED formula must not
+        # inherit a registered sibling's record (it is a different compound): ethynol (C2H2O) is an unregistered
+        # isomer of ketene, 2-aminophenol (C6H7NO) of 4-aminophenol. Pre-fix, ethynol borrowed ketene's
+        # isolable=False (a fabricated DEGENERATE) and 2-aminophenol borrowed 4-aminophenol's 557 K onset.
+        ethynol = parse_smiles("C#CO")            # C2H2O, unregistered isomer of ketene
+        aminophenol_2 = parse_smiles("Nc1ccccc1O")  # C6H7NO, unregistered isomer of 4-aminophenol
+        assert resolve_structure(ethynol) is None and resolve_structure(aminophenol_2) is None
+        # NON-VACUITY: the borrow-able seeded records really ARE present, so a None is the gate firing (an
+        # unregistered isomer of a KNOWN formula), never an empty table.
+        assert DEFAULT_STABILITY.for_formula("C2H2O") is not None   # ketene
+        assert DEFAULT_STABILITY.for_formula("C6H7NO") is not None  # 4-aminophenol
+        assert resolve_stability(ethynol) is None
+        assert resolve_stability(aminophenol_2) is None
+
+    def test_an_unregistered_compound_of_a_novel_formula_still_resolves_by_formula_the_injection_lever(self):
+        # the universality lever survives: a structure of a formula the registry knows NOTHING of (ethyl acetate,
+        # C4H8O2 -- known_compounds empty) falls through to the formula key, so a caller can still bring any such
+        # chemical by injecting a formula-keyed record. (An unregistered isomer of a KNOWN formula is fail-closed
+        # above; only a genuinely novel formula reaches this path, where there is no sibling to be confused with.)
+        assert resolve_structure(EA) is None
+        table = DEFAULT_STABILITY.with_records(StabilityRef(
+            "C4H8O2", "ethyl acetate", Interval(190, 190, "K"), Interval(350, 350, "K"), None, True,
+            "CRC: ethyl acetate isolable, no bench-range decomposition",
+        ))
+        rec = resolve_stability(EA, table)
+        assert rec is not None and rec.name == "ethyl acetate"
 
 
 H2O2 = parse_smiles("OO")

@@ -5041,3 +5041,62 @@ sourced rate). The DOW litmus decomposition question (thermo R26 + kinetics R30)
 Br₂-intermediate DAG with declared collider state — verdict-inert today since Br₂ is SURVIVES); the reverse/falloff
 net-loss model (deliberately out of scope — the lower-bound argument makes SURVIVES sound without it); the gate
 mixed-window per-segment refinement.
+
+## §31 — ROUND 31: DOW bromine COST RANKING (queue item 2's last lane; the litmus's final open question)
+
+Branch `dow-bromine-cost-ranking-2026-09-08`, stacked on the open R30 branch. The user's "full blast do 2 (DOW cost
+ranking) ... the DOW litmus may not technically pass with today's prices vs early-1900s prices" — a flag that is CORRECT,
+and confirming it rigorously (not fabricating a modern "pass") is half the deliverable. Contract-first
+(`docs/research/DOW_BROMINE_COST_RANKING_CONTRACT_v0.1.md`); two PARALLEL pre-build bearings (butter-robot YAGNI +
+birdperson soundness) + one evil-morty post-build pass. **Additive** — a committed harness + a receipt + a doc + a test;
+**NO importable module, NO ranker change, NO Cl₂ committed to default pricing → byte-stable, NO golden/seed/digest moved.**
+
+### 31.1 Two questions with opposite answers, kept separate (conflating them is the fabrication trap)
+**Modern:** on the ONLY sourceable feedstock basis (a NaBr price derived by contained-Br mass fraction from the same USGS
+bromine benchmark `q`), the brine route CANNOT undercut the mined route. **Historical:** the US brine route's sustainable
+marginal cost was far below the cartel's administered 49 ¢/lb, a one-sided lower-bound undercut of ≳39 % (undistorted) to
+≳80 % (war-survival). So the litmus's cost-undercut does NOT pass at today's *sourced* prices but DOES pass historically.
+
+### 31.2 Theorem 1 — the modern degeneracy (a SCOPED honest negative)
+`p(NaBr) = q·M(Br)/M(NaBr)`; stoichiometry needs `M(NaBr)/M(Br)` NaBr per unit Br₂ (Br₂ is pure Br); their product is
+**exactly `q`** (mass factors cancel, for ANY `q`), so `brine_total = q + Cl₂ + process ≥ q = mined_total`, strict once any
+oxidant cost is added. VERDICT `NO_UNDERCUT`, but **scoped**: it means "no undercut is demonstrable from the sourced
+same-benchmark proxy," NEVER "brine is worse in reality" (real Smackover/Dead Sea well-brine bromine DOES undercut market
+Br₂ via an INDEPENDENT feedstock basis we cannot source today). Concrete instantiation via the sourced Cl₂ recon price
+(Los Fresnos $2.7337/kg, LABELLED reconnaissance, never committed): brine = q + $1.21/kg > q.
+
+### 31.3 Theorem 2 — the historical undercut (a one-sided ECONOMIC bound, route/industry level; re-anchored per birdperson)
+The sustained multi-year **USGS US bromine unit value** (PRIMARY, DS-140, same family as R16) is an upper bound on the US
+brine-route marginal cost — the industry produced+sold at it for years, and a whole-industry multi-year cross-subsidy is
+implausible (competitive entry/exit). Against the cartel's 49 ¢/lb world price: pre-war undercut **≈39 %** (USGS 1904
+$661/t = 30.0 ¢/lb) / ≈26.5 % (secondary US 36 ¢); **war-survival lower bound ≈80 %** (USGS 1908 $220/t = 10.0 ¢/lb — the
+industry kept producing). Metric-tonne basis (file header "[All values are in metric tons (t) bromine content]"; a
+short-ton misread would shift every figure ~10 %). The one-sidedness is ECONOMIC + DEFEASIBLE (the named exception —
+predatory cross-subsidy — is this episode's own theme, carried aloud), the SAME shape as R30's kinetics bound but a WEAKER
+foundation than R30's physical law. The German dumping floor (15/12/10.5 ¢) is the CARTEL's aggressor price and the 27 ¢
+re-export is arbitrage — NEITHER used as Dow's cost; Dow attributed only under a LABELLED assumption
+[[a-one-sided-model-certifies-only-its-safe-direction]].
+
+### 31.4 Reviews + folds
+**butter-robot (pre-build): NO MODULE.** The two theorems are one-shot arithmetic over fixed numbers; a `modern_undercut`/
+`historical_undercut` API would be imported only by its own test (the zero-call-sites self-mirror), and the R30 analogy was
+the load-bearing error (R30's module computed a reusable rate law; this computes a fact). Folded: the whole build is a
+committed harness + receipt + doc + test, no importable `smartchem/` module.
+**birdperson (pre-build): SOUND-BUT-HEED.** Theorem 1 algebra VERIFIED exact; but (a) the negative must be SCOPED (never
+"brine worse in reality"), (b) the certification guard must require a SOURCED independent basis. Theorem 2 was UNSOUND as
+first anchored (10.5 ¢ is the German *dumping* price, not Dow's; re-export is arbitrage; the one-sidedness is economic not
+physical) → RE-ANCHORED on the USGS industry unit value at the route/industry level with the cross-subsidy caveat aloud.
+The two bearings: provenance-diverse but the agreement corroborates the PRICE LEVEL only, not the price→cost step.
+**evil-morty (post-build): math holds, framing leaks — 4 folds.** F1 the scope was stripped in `report()`/`content_hash()`
+→ the scope now travels with the token everywhere; F2 the "~1 ¢ agreement" is common-mode at the war years (the depressed
+clearing price read twice) and disagrees 20 % at the undistorted 1904 point → prose+test+receipt corrected; F3 the gate's
+UNDERCUT branch is structurally unreachable on the proxy → documented as the unlock/requirement, not a live computation;
+F4 a near-tautological test → a real mutation check (perturbing the dumping/re-export constants must NOT move the bound).
+
+### 31.5 The litmus + what remains
+The DOW-bromine litmus is now **fully exercised across every lane** (pricing R16, mechanism R17, electrochem R18, thermo
+R26, kinetics R30, cost R31). The cost verdict is honest and layered: no modern undercut is *demonstrable* from sourced
+single-benchmark data (Theorem 1, the user's flag confirmed), and the historical undercut is reproduced as a sourced
+one-sided ≳39–80 % bound (Theorem 2). **The only UNLOCK for a modern cost-undercut demonstration is a sourced, independent
+brine-feedstock/extraction cost basis** (Smackover/Dead Sea well-brine) — the open sourcing wall. Cost-as-a-ranker-tier
+stays a named DEFERRAL (a schema-bump round needing a real multi-route cost-ordering consumer).

@@ -4978,3 +4978,66 @@ matches no synthesis-DAG intermediate, so no default-data DAG is duration-assess
 seed, reachable only via an injected rate). ruff clean. Tracked debt (ROADMAP): the route-level makespan/schedulability
 question (a route dead in EVERY schedule can read UNKNOWN — forced-between is per-edge) is out of scope, carried as named
 debt; the §IX literal `T∘W⇒W∘T` between `pathway.Pathway` and `Conditioned` stays correctly withdrawn (both dead islands).
+
+## §30 — ROUND 30 (branch `dow-bromine-kinetics-2026-09-08`, stacked on the open R29 branch): DOW-Br₂ collider/modified-Arrhenius kinetics (queue item 3b), the litmus rate half
+
+The user's "keep going, full blast" (DOW-Br₂ kinetics chosen at the fork). The last modeling wall on the DOW-bromine
+litmus's *decomposition* question — the KINETIC half (R26 closed the thermodynamic half). Contract-first
+(`docs/research/DOW_BROMINE_KINETICS_CONTRACT_v0.1.md`); a first-hand source + arithmetic reproduction, two PARALLEL
+pre-build bearings (butter-robot PASS+TRIM + birdperson SOUND-BUT-HEED), one post-build adversarial pass (evil-morty).
+Two commits: `44af121` the Br₂ model, `adc4cee` a separate gate anti-fabrication guard the Br₂ work surfaced. Suite
+**4630 / 14 / 1** (= R29 4605 + 25 new; skip/xfail unchanged). Additive; **NO golden moved**.
+
+### 30.1 The primary + the schema wall
+Warshay, NASA TN D-3502 (1966), shock-tube Br₂ dissociation in Ar/Ne/Kr, **1200–1900 K**: `Br2 + M <=> 2 Br + M`,
+`kD = A·T^(1/2)·exp(-Ea/RT)`, bimolecular `-d[Br2]/dt = kD·[Br2]·[M]`. Ar: A=2.18e8, Ea=31.5 kcal/mol=131.80 kJ/mol.
+The recon (`SOURCING_RECON_2026-09-07.md`) warned "do not add to the first-order seed"; the schema ENFORCES it —
+`KineticRef` is plain-Arrhenius (`is_first_order == a_units=="s^-1"`), so the √T bimolecular form literally cannot be
+represented there. Verified first-hand: kD(1825 K, Ar)=1.5737e6 (Warshay's transcription check; +6.3% vs observed
+1.48e6), bench 298 K k'=1.25e-15 s⁻¹ → t½=17.6 Myr; Ea(fit)=131.8 < Br–Br bond enthalpy 192.83 (R26) — the known
+collisional-Ea-below-D₀ feature.
+
+### 30.2 The Br₂ model (`smartchem/experiment/collider_kinetics.py`, new sibling)
+`ColliderDissociationRef` (modified-Arrhenius fit, `t_exponent`, collider LABEL not a SMILES — `[Ar]`/`[Ne]` don't parse
+and a monatomic third body has no structure; `t_exponent >= 0` guarded). `dissociation_rate` = `A·T^n·exp(-Ea/RT)`
+(log-space, overflow-honest) — the reverse-free RATE (t½(1825 K, 1 atm)~66 µs, the fast-at-shock-T fact).
+`pseudo_first_order_k` = `kD·[M]`, [M] REQUIRED + validated finite>0. **`collider_survival` certifies SURVIVES ONLY**
+(never DEGRADES/MARGINAL): the irreversible `exp(-k' t)` forward fraction is a rigorous LOWER bound on the true
+reverse-inclusive fraction (the omitted reverse only adds Br₂ back), so SURVIVES is sound and every sub-SURVIVES fails
+CLOSED to UNKNOWN (a DEGRADES off the irreversible model = a fabricated refutation). SURVIVES certified only IN or BELOW
+the window (colder monotone-slower for n≥0); ABOVE-window SURVIVES-band DEFERS. The band policy + R are IMPORTED from
+`stability_horizon` (never re-declared). Bench verdict (the litmus answer): Br₂ SURVIVES at kitchen T (PREDICTED,
+lower-bounded, cross-referenced to the INDEPENDENT R26 thermo ΔG₂₉₈=+161.65 — different quantity + source family, verified
+no common-mode). Ar-only seed (Ne/Kr parked in the contract doc); no `ColliderKineticTable` class (a bare tuple + a
+canonical-keyed direction-specific lookup). Committed harness `experiments/dow_bromine_kinetics_probe.py` (FROZEN_HASH,
+ASSERTS) + 24 tests.
+
+### 30.3 The gate guard (commit `adc4cee`, a separate concern)
+Reading the R23/R29 duration gate surfaced a **latent fabrication**: `_apply_duration_gate` flipped `DEGRADES→DEGENERATE`
+even from an OUT-OF-WINDOW (PREDICTED) extrapolated rate (birdperson VERIFIED: N₂O₅ held at 360 K, outside its 298–338 K
+fit, → a fabricated DEGENERATE). Fixed as its OWN commit with its OWN reasoning (not bundled under the litmus): an
+out-of-window DEGRADES fails CLOSED to UNKNOWN; an in-window DEGENERATE is preserved (surgical, keyed on `all_in_window`).
+RED-first regression `test_out_of_window_degrades_fails_closed_to_unknown_not_a_fabricated_degenerate` (red on pre-guard).
+Latent (seed matches no DAG intermediate) → byte-stable.
+
+### 30.4 Reviews + folds
+**butter-robot PASS+TRIM:** standalone module = correct YAGNI (call site = the litmus verdict, not a self-mirror; R19
+precedent); TRIMs folded — Ar-only seed, cut the gate guard out of the Br₂ commit (→ its own commit), no table class.
+**birdperson SOUND-BUT-HEED:** bench SURVIVES-by-extrapolation is the CORRECT call (refusing would itself violate
+known-physics); the two bearings genuinely independent (checked — NOT the reframed-check disease); breaches folded —
+reverse-recombination via the lower-bound operational trigger (HIGH), the gate guard (HIGH), transcription-not-validation
+label (MED), import-not-redeclare (MED), the three-leg warrant in the reason (LOW-MED), validate [M] (LOW).
+**evil-morty core-signed** (lower-bound proven airtight by comparison; independence, transcription label, [M]/overflow/
+lookup all unbroken; gate guard surgical): **F1 (MED)** above-window SURVIVES shipped a false below-window warrant →
+above-window SURVIVES-band now DEFERS (fixes the false warrant + the Conjectured above-window residual at once); **F2
+(LOW)** isfinite guards; **negative-n residual** `t_exponent≥0` guard; **F3 (LOW, safe)** the gate `all_in_window`
+mixed-window over-reach is fail-closed (a completeness cost, never a fabrication) — documented as tracked debt.
+
+### 30.5 The litmus + what remains
+Item 3b closed as a MODEL + a sourced bench verdict: Br₂'s thermal collisional dissociation channel SURVIVES at any
+kitchen-achievable T (DERIVED-from-known-physics, thermo-corroborated), dissociates sub-ms only at shock-tube T (the
+sourced rate). The DOW litmus decomposition question (thermo R26 + kinetics R30) is answered; only the brine-vs-mined
+**cost ranking** (Lane C) remains open. Tracked debt: the live wire-in of the collider model into E1's gate (needs a real
+Br₂-intermediate DAG with declared collider state — verdict-inert today since Br₂ is SURVIVES); the reverse/falloff
+net-loss model (deliberately out of scope — the lower-bound argument makes SURVIVES sound without it); the gate
+mixed-window per-segment refinement.

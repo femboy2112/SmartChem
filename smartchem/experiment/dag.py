@@ -183,6 +183,30 @@ def _reaches(n: int, edges: tuple[tuple[int, int, Molecule], ...], sink: int) ->
     return reaching
 
 
+def _forward_reach(n: int, edges: tuple[tuple[int, int, Molecule], ...]) -> list[set[int]]:
+    """Per-node forward reachability over producer->consumer edges: ``reach[i] = {k : i ->* k}`` (``i`` itself
+    included).  ``k in reach[i]`` iff step ``i`` must complete before step ``k`` can run (``k`` is a causal
+    descendant of ``i``).  This is the transitive closure of the DAG's causal partial order -- the
+    order-INDEPENDENT structure the Move-6 hold sets are computed against (as opposed to :func:`_reaches`, which
+    gives only the ancestors of a single sink).  ``n`` is a route's step count (small), so the plain per-node
+    traversal is negligible."""
+    succ: list[list[int]] = [[] for _ in range(n)]
+    for i, j, _m in edges:
+        succ[i].append(j)
+    reach: list[set[int]] = []
+    for s in range(n):
+        seen = {s}
+        stack = [s]
+        while stack:
+            u = stack.pop()
+            for v in succ[u]:
+                if v not in seen:
+                    seen.add(v)
+                    stack.append(v)
+        reach.append(seen)
+    return reach
+
+
 @dataclass(frozen=True)
 class SynthesisDAG(Digestible):
     """A convergent synthesis as a DAG of certified steps: branches produce intermediates, a step joins them.
@@ -775,66 +799,77 @@ class DAGComposability(Digestible):
         return "\n".join(lines)
 
 
-def _serial_hold_minutes(dag: SynthesisDAG) -> dict[tuple[int, int], float]:
-    """The per-edge serial-schedule hold (minutes) for each producer->consumer intermediate: the sum of the sourced
-    MINIMUM elapsed times of the steps scheduled STRICTLY between the producer and the consumer under the DAG's own
-    topological order (DAG-HOLD-01).  A ``None`` floor counts as 0 (an unknown floor is a lower bound of zero -- so
-    the result is a sound LOWER bound on the hold, exactly as :func:`~smartchem.process_constraints._critical_path`
-    treats an unknown weight).  This is the EXTRA hold a convergent serial schedule imposes beyond the adjacent
-    handoff E1 judges: a linear chain (the consumer runs immediately after its producer) has zero intervening steps
-    and so a zero hold.  Schedule-relative by construction (the DAG's canonical ``topological_order``); it is surfaced
-    as an observation, never a certified bound over all schedules."""
+def _hold_segments(
+    dag: SynthesisDAG, *, unavoidable: bool
+) -> "dict[tuple[int, int], tuple[tuple[object, float], ...]]":
+    """Per-edge ordered hold SEGMENTS ``(temperature, minutes)`` -- the sibling steps an intermediate idles through
+    between its producer ``i`` and its consumer ``j`` (DAG-HOLD-01).  Which siblings count depends on ``unavoidable``,
+    and BOTH readings are functions of the causal partial order (the transitive closure :func:`_forward_reach`),
+    NEVER of a chosen linearization -- this is the Move-6 fix for the pre-existing arbitrary-``_topological_order``
+    window, which let the whole-DAG verdict depend on which order a caller happened to LIST independent branches in.
+
+    * ``unavoidable=True`` -> the **forced-between** steps: every ``k`` on a causal path ``i ->* k ->* j`` (a
+      descendant of the producer AND an ancestor of the consumer), so ``k`` idles the intermediate in EVERY valid
+      schedule.  This is what the duration GATE
+      (:func:`~smartchem.experiment.composability._apply_duration_gate`) consumes: only an UNAVOIDABLE hold may flip
+      a verdict to ``DEGENERATE``, so the verdict is invariant under every linear extension of the DAG (the Move-6
+      linear-extension-invariance law).  Empty for a linear chain AND for a bare convergent join (neither branch
+      forces the other), non-empty only for a genuine shortcut/diamond where ``j`` consumes ``i`` both directly and
+      through a longer chain.
+    * ``unavoidable=False`` -> the **possibly-between** steps: every sibling schedulable STRICTLY between ``i`` and
+      ``j`` in SOME linear extension (``k`` need not precede ``i`` -- ``i not in reach[k]`` -- and need not follow
+      ``j`` -- ``k not in reach[j]``).  This is the schedule-relative DISCLOSURE envelope (:func:`_serial_hold_minutes`
+      and the serial-hold note): the upper bound of what could delay the intermediate across all schedules.  It
+      NEVER changes a verdict.
+
+    ``temperature`` is the step's declared ``ConditionEnvelope.temperature`` (possibly ``None`` -> the gate fails
+    closed on it); ``minutes`` is the SAME ``_known_min`` elapsed floor the process gate uses (a ``None``/``<=0``
+    floor is dropped).  Segment ORDER is immaterial (the gate folds a commutative product and a max over them; the
+    disclosure sums them)."""
     from ..process_constraints import _known_min  # lazy: matches dag_process_fit's process_constraints edge
-    order = _topological_order(len(dag.steps), dag.edges)
-    pos = {idx: rank for rank, idx in enumerate(order)}
-    holds: dict[tuple[int, int], float] = {}
-    for i, j, _m in dag.edges:
-        floor = 0.0
-        for k in order:
-            if pos[i] < pos[k] < pos[j]:
-                proc = dag.steps[k].envelope.process
-                if proc is not None:
-                    # the SAME known-minimum floor the process gate uses (min_elapsed_minutes and/or interval .lo);
-                    # an unknown floor is 0, so the sum stays a sound LOWER bound on the hold.
-                    step_floor = _known_min(
-                        proc.min_elapsed_minutes,
-                        proc.elapsed_minutes.lo if proc.elapsed_minutes is not None else None,
-                    )
-                    if step_floor is not None:
-                        floor += step_floor
-        holds[(i, j)] = floor
-    return holds
-
-
-def _serial_hold_segments(dag: SynthesisDAG) -> "dict[tuple[int, int], tuple[tuple[object, float], ...]]":
-    """The per-edge ordered hold SEGMENTS: for each producer->consumer intermediate, the ``(temperature, minutes)``
-    of every step scheduled STRICTLY between them under the DAG's topological order (DAG-HOLD-01) -- the sibling
-    steps the intermediate idles through.  ``temperature`` is that step's declared ``ConditionEnvelope.temperature``
-    (possibly ``None``); ``minutes`` is the SAME known-minimum elapsed floor :func:`_serial_hold_minutes` sums (a
-    ``None``/zero floor is dropped, so ``sum(minutes) == _serial_hold_minutes[(i, j)]`` -- the disclosure note and
-    the duration gate see one consistent hold).  E1's duration gate reads survival over THESE per-step temperatures
-    (never a producer/consumer endpoint's), so it renders a verdict only on temperatures the DAG actually declares
-    for the idle hold; an undeclared segment temperature makes the gate fail closed."""
-    from ..process_constraints import _known_min
-    order = _topological_order(len(dag.steps), dag.edges)
-    pos = {idx: rank for rank, idx in enumerate(order)}
+    n = len(dag.steps)
+    reach = _forward_reach(n, dag.edges)
     segments: "dict[tuple[int, int], tuple[tuple[object, float], ...]]" = {}
     for i, j, _m in dag.edges:
         segs: "list[tuple[object, float]]" = []
-        for k in order:
-            if pos[i] < pos[k] < pos[j]:
-                proc = dag.steps[k].envelope.process
-                if proc is None:
-                    continue
-                floor = _known_min(
-                    proc.min_elapsed_minutes,
-                    proc.elapsed_minutes.lo if proc.elapsed_minutes is not None else None,
-                )
-                if floor is None or floor <= 0:
-                    continue
-                segs.append((dag.steps[k].envelope.temperature, float(floor)))
+        for k in range(n):
+            if k == i or k == j:
+                continue
+            if unavoidable:
+                between = k in reach[i] and j in reach[k]          # i ->* k ->* j : forced in every schedule
+            else:
+                between = i not in reach[k] and k not in reach[j]  # k need not precede i, nor follow j
+            if not between:
+                continue
+            proc = dag.steps[k].envelope.process
+            if proc is None:
+                continue
+            floor = _known_min(
+                proc.min_elapsed_minutes,
+                proc.elapsed_minutes.lo if proc.elapsed_minutes is not None else None,
+            )
+            if floor is None or floor <= 0:
+                continue
+            segs.append((dag.steps[k].envelope.temperature, float(floor)))
         segments[(i, j)] = tuple(segs)
     return segments
+
+
+def _serial_hold_minutes(dag: SynthesisDAG) -> dict[tuple[int, int], float]:
+    """The per-edge serial-schedule DISCLOSURE hold (minutes): for each producer->consumer intermediate, the sum of
+    the sourced MINIMUM elapsed times of the POSSIBLY-BETWEEN sibling steps -- those that could idle it in SOME valid
+    schedule (:func:`_hold_segments` with ``unavoidable=False``).  A ``None``/``<=0`` floor is dropped, so it is a
+    sound LOWER bound per step, exactly as :func:`~smartchem.process_constraints._critical_path` treats an unknown
+    weight.  It is surfaced as an OBSERVATION only (the serial-hold note, the machine-readable ``serial_holds``),
+    never a verdict -- the duration GATE reads the narrower FORCED-BETWEEN hold.  Computed from the causal partial
+    order, so -- unlike the pre-Move-6 version, which summed one arbitrary ``_topological_order`` window and so
+    differed under a branch-listing permutation -- it is INVARIANT under every linear extension of the DAG (Move 6;
+    this also repairs the on-load re-derivation tamper-guard, which re-computes it).  A linear/adjacent handoff has
+    an empty possibly-between set and so a zero hold."""
+    return {
+        edge: sum(m for _t, m in segs)
+        for edge, segs in _hold_segments(dag, unavoidable=False).items()
+    }
 
 
 def dag_composability(
@@ -849,10 +884,17 @@ def dag_composability(
     (it does not degrade COMPOSABLE), the honest widening of the serial-hold-stability boundary DAG-BENCH-01 named."""
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
-    segments = _serial_hold_segments(dag)
+    # Move 6 (breach #4): the GATE and the DISCLOSURE must NOT share one segment set.  The gate reads the
+    # FORCED-BETWEEN (unavoidable) hold -- only a hold suffered in EVERY schedule may flip a verdict, so the
+    # verdict is invariant under how independent branches are linearized.  The note reads the POSSIBLY-BETWEEN
+    # (schedule-relative) hold -- feeding THAT to the gate would fabricate a wrong DEGENERATE (the worst-order
+    # reading), so it stays disclosure-only.
+    gate_segments = _hold_segments(dag, unavoidable=True)
+    disclosure_segments = _hold_segments(dag, unavoidable=False)
     transitions = tuple(
         _judge_transition(i, j, intermediate, dag.steps[i].envelope, dag.steps[j].envelope, stability,
-                          hold_segments=segments.get((i, j)), kinetics=kinetics)
+                          gate_segments=gate_segments.get((i, j)),
+                          disclosure_segments=disclosure_segments.get((i, j)), kinetics=kinetics)
         for i, j, intermediate in dag.edges
     )
     return DAGComposability(dag, transitions)

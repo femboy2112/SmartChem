@@ -15,32 +15,37 @@ from smartchem.experiment.composability import TransitionStatus, _serial_hold_no
 from smartchem.experiment.dag import _serial_hold_minutes, dag_composability
 
 
-def test_the_serial_hold_is_disclosed_on_the_edge_whose_intermediate_waits_through_a_sibling():
-    # two 40-min branches join at a third step; the serial schedule holds the first branch's intermediate through the
-    # second branch (40 min) before the join consumes it.
+def test_the_serial_hold_is_disclosed_on_the_edges_whose_intermediate_can_wait_through_a_sibling():
+    # two INDEPENDENT 40-min branches join at a third step.  Move 6: the disclosure is now the POSSIBLY-BETWEEN
+    # (schedule-relative) hold -- in SOME valid schedule EITHER branch's intermediate idles 40 min through the other
+    # before the join, so BOTH producer->join edges disclose it (the pre-Move-6 code reported only one, arbitrarily,
+    # under a single topological order).  A disclosure, never a verdict.
     comp = dag_composability(_convergent_40min_dag())
     notes = comp.serial_hold_notes
-    assert len(notes) == 1                                       # exactly one edge carries a real serial hold
-    assert ">=40 min" in notes[0]                               # the intervening branch's 40-min floor
-    assert "UNVERIFIED" in notes[0] and "time-blind" in notes[0]
+    assert len(notes) == 2                                       # BOTH branches can be the held one, disclosed order-independently
+    assert all(">=40 min" in n for n in notes)                  # each intervening branch's 40-min floor
+    assert all("UNVERIFIED" in n and "time-blind" in n for n in notes)
 
 
 def test_the_hold_floor_matches_the_process_gate_known_minimum():
-    # the hold is the SUM of intervening steps' known-minimum elapsed (here each step declares elapsed_minutes=[40,40],
-    # so the .lo floor is 40) -- the same _known_min floor discipline the process gate uses, a sound LOWER bound.
+    # the hold is the SUM of the POSSIBLY-BETWEEN steps' known-minimum elapsed (here each branch declares
+    # elapsed_minutes=[40,40], so the .lo floor is 40) -- the same _known_min floor discipline the process gate uses,
+    # a sound LOWER bound.  Both producer->join edges disclose 40; only the (absent) adjacent handoff would be 0.
     holds = _serial_hold_minutes(_convergent_40min_dag())
-    assert sorted(holds.values()) == [0.0, 40.0]               # one held edge (40), one adjacent edge (0)
+    assert sorted(v for v in holds.values() if v > 0) == [40.0, 40.0]   # both held edges disclose 40 min
 
 
 def test_the_disclosure_never_degrades_the_composability_verdict():
-    # THE load-bearing soundness property: a COMPOSABLE transition that ALSO carries a hold stays COMPOSABLE -- the
-    # hold rides in FINDINGS, never in the verdict-affecting gaps/degenerate_reasons, so it can never flip a pass.
+    # THE load-bearing soundness property: a transition that ALSO carries a hold keeps its instantaneous status --
+    # the hold rides in FINDINGS, never in the verdict-affecting gaps/degenerate_reasons, so it can never flip a
+    # pass or mint a DEGENERATE (Move 6: only the FORCED-BETWEEN gate can degrade, and here that set is empty).
     comp = dag_composability(_convergent_40min_dag())
     held = [t for t in comp.transitions if any(f.label == "serial-hold-minutes" for f in t.findings)]
-    assert held and held[0].status is TransitionStatus.COMPOSABLE   # the acetic-acid edge: COMPOSABLE *and* held
-    note = comp.serial_hold_notes[0]
-    assert note not in comp.gaps                                    # not a gap => cannot turn a FITS into an UNKNOWN
-    assert note not in comp.degenerate_reasons                      # not a degeneracy => cannot exclude
+    assert held                                                     # at least one edge carries a serial-hold disclosure
+    assert all(t.status is not TransitionStatus.DEGENERATE for t in held)  # disclosure NEVER degrades to DEGENERATE
+    for note in comp.serial_hold_notes:
+        assert note not in comp.gaps                                # not a gap => cannot turn a FITS into an UNKNOWN
+        assert note not in comp.degenerate_reasons                  # not a degeneracy => cannot exclude
 
 
 def test_the_note_gate_is_silent_below_or_at_zero_minutes_the_linear_and_adjacent_path():

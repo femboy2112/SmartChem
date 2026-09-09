@@ -153,7 +153,7 @@ def _named_centres(text: str) -> "list[tuple[list[int], int, str]]":
         neighbours[b.j].append(b.i)
         adj[b.i].append((b.j, b.order))
         adj[b.j].append((b.i, b.order))
-    aromatic, mancude = _cip_mancude(atoms, work, adj)
+    aromatic, mancude, released = _cip_mancude(atoms, work, adj)
     out: list[tuple[list[int], int, str]] = []
     for a in marked:
         if _on_cycle(a, neighbours, len(elems)):
@@ -166,7 +166,7 @@ def _named_centres(text: str) -> "list[tuple[list[int], int, str]]":
         written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
         if len(written) != 4 or any(ATOMIC_NUMBER.get(elems[x]) is None for x in written):
             continue
-        ranks = _cip_ranks(written, a, adj, elems, mass, aromatic, mancude)
+        ranks = _cip_ranks(written, a, adj, elems, mass, aromatic, mancude, released)
         if ranks is None:
             continue
         from smartchem.smiles import _perm_parity

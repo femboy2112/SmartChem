@@ -5150,3 +5150,53 @@ Rule-1a+2 namer is UNTOUCHED (byte-stable, NO golden moved). The real next CIP c
 support remains the deferred Rule-4/5 auxiliary-descriptor round. UNLOCK for Rule 1b specifically: a real, oracle-verified
 molecule that ties under Rule 1a + Rule 2 yet splits under Rule 1b with a nameable centre (none exists among the 1052
 stereocentres swept).
+
+---
+
+## §33 — ROUND 33: localized unsaturated-ring substituents NAME (the R32-surfaced gap, closed)
+
+**The ask (the user's "unsaturated-ring-substituent CIP handling, full blast").** R32 proved Rule 1b has no consumer and
+surfaced the real next CIP gap: an off-ring stereocentre bearing a substituent ring with a double bond DEFERRED even where
+Rule 1a trivially decides. Isolation: `[C@](C1CC1)(C)(F)Cl` (saturated) NAMED, `[C@](C1=CC1)(C)(F)Cl` (same ring + double
+bond) DEFERRED.
+
+### 33.1 Root cause + fix
+`_cip_mancude` blocked the WHOLE unsaturated ring component as a Kekulé-dependent boundary whenever any ring atom fit no
+pi-acceptor/donor pattern (e.g. an sp³ CH₂ in cyclopropene). **Fix:** a LOCALIZED unsaturated ring — a UNIQUE perfect
+matching / single valid Kekulé structure — is released to the ordinary `_cip_digraph` with real Z + real mass, exactly as an
+acyclic double bond is handled. Two additions to `_cip_mancude` (over the UNCHANGED comparator): (a) admit a saturated sp³
+ring carbon (`orders==[1,1,1,1]`, all-single) as a pass-through spectator so a partially-unsaturated ring reaches the
+matching enumeration; (b) a **three-way release** — `matching_count==1` → release (real z/mass, recorded in a new `released`
+set); `≥2` with no spectator → today's benzene/pyridine averaging (BYTE-IDENTICAL); `≥2` WITH a spectator (indene/tetralin)
+→ DEFER. `_cip_mancude` now returns `(blocked, averages, released)`.
+
+### 33.2 Reviews + folds (the two soundness gates)
+**butter-robot (YAGNI):** cut the proposal to its bones — the "release to ordinary digraph" mechanism already exists; the
+bug is the classifier rejecting a real spectator atom. Sharpened to a per-atom forced-partner view.
+**birdperson (SOUND-BUT-HEED):** caught that naive spectator admission would newly route MIXED partially-saturated fused
+systems (indene = benzene fused to a cyclopentene-CH₂) into the mancude *averaging* path — an untested mislabel surface →
+the three-way split (defer `≥2`-with-spectator). Confirmed the unique-matching == single-Kekulé == real-mass release is
+sound (avg-of-one-partner == real Z, so Rule 1a byte-identical); flagged the furan/pyrrole/thiophene reroute (unique-matching
+aromatic heterocycles now carry real mass) as a conscious, oracle-tested gain.
+**dalembert (SURVIVED, with a proof + one gate):** proved `need[a]=Σ(order−1)` is Kekulé-invariant, so the acceptor
+matching count EQUALS the true Kekulé count under the `ring_doubles==1`/no-exocyclic/no-charge gate → `matching_count==1 ⟺
+unique Kekulé ⟹ spelling-invariant digraph`. **Found the one latent unsoundness:** `_cip_rank_compare` skips the unbuilt
+Rule 1b (R32 proved 1b inert only on TREES) — but releasing RING ligands enters the regime where 1b bites; an isotope
+asymmetry could let Rule 2 decide a Rule-1a tie the wrong way. **The Rule-1b gate:** Rule 2 may break a Rule-1a tie only when
+both ligands are trees; a ring closure → DEFER.
+**Oracle (RDKit `rdCIPLabeler`, dev-venv-only, uninstalled before the committed baseline):** a ~5,600-molecule sweep
+(curated fused/bridged/spiro/hetero-aromatic + 3,000 random single-ring + 1,500 random two-ring) found — and drove the fix
+of — TWO further mislabel classes the reviewers/theorem flagged as the fused/bridged ghost: (i) a released ring vs a
+mancude-AVERAGED aromatic (the pre-existing R22 averaging, not oracle-clean for complex conjugation); (ii) a released ring vs
+ANOTHER ring (ring-vs-ring is Rule-1b / clean-mancude territory). Both closed by one unified **multiring guard**: a released
+localized ring may only be ranked against ACYCLIC co-ligands — if the centre bears any other ring, DEFER. Final sweep: **0
+mismatches, 0 crashes**. Two SATURATED rings (never released) are unaffected — no regression.
+
+### 33.3 What is shipped
+`smartchem/smiles.py` (`_cip_mancude` three-way release + spectator; `_cip_rank_compare` Rule-1b gate; `_ligand_atoms` +
+`_cip_ranks` multiring guard) + `experiments/cip_localized_ring_probe.py` (FROZEN_HASH; RDKit-free `validate()` + gated live
+`_rdkit_cross_check` — 30-case battery + 192-case localized sweep, 0 mismatches) + `tests/test_cip_localized_ring.py` +
+`docs/research/CIP_LOCALIZED_RING_SCOPE_v0.1.md`. R32 harness/test updated (its localized frags now NAME → its ring-sub
+deferrals 24→12, now ring-vs-ring; the acyclic 992/0 finding + `duplicate_never_collides_with_real` crux UNCHANGED). The
+mancude averaging path (benzene/pyridine) is byte-identical. **Boundary (characterised next gaps, all sound deferrals):**
+exocyclic double bonds on a ring atom; aromatic-fused-to-saturated systems; ring-vs-ring; isotope-on-a-ring.

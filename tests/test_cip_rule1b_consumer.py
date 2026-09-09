@@ -25,7 +25,7 @@ def test_shipped_namer_agrees_with_the_oracle_never_mislabels():
     for smi, rd_label, expected, category, note in probe.BATTERY:
         got = tuple(cip_labels(smi))
         assert got == expected, f"{smi}: {got} != {expected} [{note}]"
-        if category in ("acyclic-name", "ring-sub-sat-name"):
+        if category in ("acyclic-name", "ring-sub-sat-name", "ring-sub-unsat-name"):
             assert got == rd_label, f"mislabel vs oracle on {smi}"
             agreements += 1
     assert agreements >= 10
@@ -37,11 +37,12 @@ def test_no_rule_1b_consumer_in_scope_every_inscope_deferral_is_ring_handling():
     assert probe.RING_SUB_UNSATURATED == probe.RING_SUB_INSCOPE_DEFERRALS   # all ring-sub defers are unsaturation
 
 
-def test_the_isolation_saturated_ring_names_unsaturated_ring_defers():
-    # spectators (C/F/Cl) can never tie a ring ligand at Rule 1a, so this deferral is a ring-UNSATURATION gap,
-    # NOT a Rule-1b tie-break: the ONLY change is the ring double bond.
+def test_the_isolation_ring_gap_was_never_rule_1b_and_is_closed_by_r33():
+    # spectators (C/F/Cl) can never tie a ring ligand at Rule 1a, so the R32 deferral was a ring-UNSATURATION gap,
+    # NOT a Rule-1b tie-break.  ROUND 33 closed it: the saturated ring names (as always) AND the SAME ring with a
+    # double bond now names too (see tests/test_cip_localized_ring.py).  Neither was ever a Rule-1b consumer.
     assert cip_labels("[C@](C1CC1)(C)(F)Cl") == ("R",)      # saturated cyclopropyl -> NAMES
-    assert cip_labels("[C@](C1=CC1)(C)(F)Cl") == ()          # unsaturated cyclopropenyl -> DEFERS
+    assert cip_labels("[C@](C1=CC1)(C)(F)Cl") == ("R",)     # localized cyclopropenyl -> NAMES (R33)
 
 
 def test_the_acyclic_soundness_crux_duplicate_never_collides_with_real():

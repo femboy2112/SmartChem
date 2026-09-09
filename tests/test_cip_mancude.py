@@ -55,12 +55,12 @@ def test_only_multiple_bond_duplicates_are_averaged_ring_closures_remain_integer
     mass = [smiles._cip_mass(e, 0) for e in ("C", "C", "N")]     # ROUND 28: mass array threaded into the digraph
     node = smiles._cip_digraph(0, 1, frozenset((0, 1, 2)), adj, ["C", "C", "N"], mass,
                                frozenset(), [20], {0: Fraction(13, 2)})
-    children = node[2]                                            # (z, mass, grandchildren) 3-tuples (ROUND 28)
-    assert sorted(z for z, _m, _c in children) == [Fraction(13, 2), 7]
+    children = node[2]                                            # (z, mass, grandchildren, ez) 4-tuples (R28 mass, R34 ez)
+    assert sorted(z for z, _m, _c, _e in children) == [Fraction(13, 2), 7]
     # ROUND 28 (birdperson LEAK 2): the mancude multiple-bond duplicate carries the OWNER's averaged Z -- a
     # Kekule/partner SUPERPOSITION, not one atom -- so its Rule-2 mass is None (no single-atom referent; Rule 2
     # DEFERS on it rather than fabricate).  The ring-closure integer-Z duplicate of the real N keeps a real mass.
-    by_z = {z: m for z, m, _c in children}
+    by_z = {z: m for z, m, _c, _e in children}
     assert by_z[Fraction(13, 2)] is None
     assert by_z[7] == smiles._cip_mass("N", 0)
 

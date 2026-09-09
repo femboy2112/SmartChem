@@ -25,7 +25,7 @@ def test_shipped_namer_agrees_with_the_oracle_never_mislabels():
     for smi, rd_label, expected, category, note in probe.BATTERY:
         got = tuple(cip_labels(smi))
         assert got == expected, f"{smi}: {got} != {expected} [{note}]"
-        if category in ("acyclic-name", "ring-sub-sat-name", "ring-sub-unsat-name"):
+        if category in ("acyclic-name", "ring-sub-sat-name", "ring-sub-unsat-name", "rule3-name"):
             assert got == rd_label, f"mislabel vs oracle on {smi}"
             agreements += 1
     assert agreements >= 10
@@ -53,10 +53,11 @@ def test_the_acyclic_soundness_crux_duplicate_never_collides_with_real():
     assert probe.duplicate_never_collides_with_real() == len(probe._DUPLICATE_CAPABLE)
 
 
-def test_acyclic_deferrals_that_exist_are_rule_3_not_rule_1b():
-    # honest boundary: acyclic deferrals where rdkit labels DO exist -- but they are Rule 3 (E/Z geometry) on
-    # constitutionally-identical ligands, never Rule 1b (which the lemma proves ties on identical constitution).
-    assert cip_labels(r"C[C@](/C=C\C)(/C=C/C)O") == ()      # rdkit: R; we defer soundly (Rule 3, not 1b)
+def test_acyclic_ez_tie_is_rule_3_not_rule_1b_and_is_closed_by_r34():
+    # the boundary R32 found: an acyclic tie where rdkit labels but Rule 1a+1b tie -- provably Rule 3 (E/Z) on
+    # constitutionally-identical ligands, never Rule 1b.  ROUND 34 item 1 BUILT Rule 3, so it now NAMES (R),
+    # confirming the deferral was Rule-3 territory all along (see tests/test_cip_rule3_ez.py).
+    assert cip_labels(r"C[C@](/C=C\C)(/C=C/C)O") == ("R",)   # rdkit: R; Rule 3 decides (NOT Rule 1b) -> NAMED
 
 
 def test_rdkit_cross_check_reproduces_both_sweeps_when_available():

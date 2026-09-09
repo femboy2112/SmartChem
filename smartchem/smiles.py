@@ -232,21 +232,38 @@ def _parse_skeleton(
     """Walk the SMILES, building atoms and explicit bonds ``[i, j, order]`` (order ``_AROMATIC`` pending).
 
     Standard stack walk: a branch ``(`` saves the current attachment atom, ``)`` restores it; ring-
-    closure digits pair a bond between their two occurrences.
+    closure digits pair a bond between their two occurrences.  Returns only ``(atoms, bonds)``; the
+    ``/``/``\\`` double-bond configuration markers (needed only by CIP Rule 3, ROUND 34 item 1) are
+    recovered by :func:`_parse_skeleton_dirs`, which shares this exact walk.
     """
+    atoms, bonds, _dirs = _parse_skeleton_dirs(text)
+    return atoms, bonds
+
+
+def _parse_skeleton_dirs(
+    text: str,
+) -> "tuple[list[_Atom], list[list[int]], dict[tuple[int, int], bool]]":
+    """As :func:`_parse_skeleton`, plus ``directions``: a ``{(written_from, written_to): is_slash}`` map of the
+    ``/`` (True) / ``\\`` (False) directional single bonds, keyed by the endpoint order the SMILES wrote them in
+    (so CIP Rule 3 can read double-bond cis/trans geometry).  Ring-closure directional bonds are recorded under the
+    (opening-atom, closing-atom) order.  The atom indices are IDENTICAL to :func:`_parse_skeleton` (same walk)."""
     atoms: list[_Atom] = []
     bonds: list[list[int]] = []
+    directions: dict[tuple[int, int], bool] = {}
     prev: int | None = None
     pending: int | None = None           # explicit bond order awaiting the next atom/ring-closure
+    pending_dir: "bool | None" = None    # the /,\\ direction awaiting the next atom/ring-closure (True='/')
     branch_stack: list[int] = []
-    ring_open: dict[str, tuple[int, int | None]] = {}   # label -> (atom, pending order)
+    ring_open: dict[str, tuple[int, int | None, "bool | None"]] = {}   # label -> (atom, pending order, pending dir)
     i, n = 0, len(text)
 
-    def connect(a: int, b: int, order: int | None, both_aromatic: bool) -> None:
+    def connect(a: int, b: int, order: int | None, both_aromatic: bool, direction: "bool | None") -> None:
         if a == b:
             raise SmilesError("a bond connects an atom to itself")
         o = order if order is not None else (_AROMATIC if both_aromatic else 1)
         bonds.append([a, b, o])
+        if direction is not None:
+            directions[(a, b)] = direction
 
     while i < n:
         ch = text[i]
@@ -262,6 +279,8 @@ def _parse_skeleton(
             i += 1
         elif ch in "-=#:/\\":
             pending = _AROMATIC if ch == ":" else _BOND_ORDER.get(ch, 1)
+            if ch in "/\\":
+                pending_dir = ch == "/"
             i += 1
         elif ch == ".":
             raise SmilesError("disconnected SMILES ('.'): a Molecule is one connected species")
@@ -275,12 +294,14 @@ def _parse_skeleton(
                 label = ch
                 i += 1
             if label in ring_open:
-                other, oorder = ring_open.pop(label)
+                other, oorder, odir = ring_open.pop(label)
                 order = pending if pending is not None else oorder
-                connect(other, prev, order, atoms[other].aromatic and atoms[prev].aromatic)
+                connect(other, prev, order, atoms[other].aromatic and atoms[prev].aromatic,
+                        odir if odir is not None else pending_dir)
             else:
-                ring_open[label] = (prev, pending)
+                ring_open[label] = (prev, pending, pending_dir)
             pending = None
+            pending_dir = None
         else:
             if ch == "[":
                 atom, i = _parse_bracket(text, i)
@@ -302,8 +323,9 @@ def _parse_skeleton(
             idx = len(atoms)
             atoms.append(atom)
             if prev is not None:
-                connect(prev, idx, pending, atoms[prev].aromatic and atom.aromatic)
+                connect(prev, idx, pending, atoms[prev].aromatic and atom.aromatic, pending_dir)
             pending = None
+            pending_dir = None
             prev = idx
 
     if branch_stack:
@@ -312,7 +334,7 @@ def _parse_skeleton(
         raise SmilesError(f"unclosed ring bond(s): {sorted(ring_open)}")
     if not atoms:
         raise SmilesError("empty SMILES")
-    return atoms, bonds
+    return atoms, bonds, directions
 
 
 # R2: bound the resonance enumeration. A benzenoid's Kekulé count is small (benzene 2, naphthalene 3,
@@ -946,7 +968,7 @@ def configuration_key(text: str) -> str:
 # textbook absolutes (incl. the L-serine=S / L-cysteine=R flip, and the ROUND-28 Rule-2 cases) in
 # ``experiments/cip_namer_probe.py``.
 
-_CIP_PHANTOM = (0, 0, ())            #: the phantom (atomic-number-0, mass-0) leaf a missing branch slot pads with
+_CIP_PHANTOM = (0, 0, (), 0)         #: the phantom (atomic-number-0, mass-0, no children, no E/Z) leaf a missing branch pads with
 _CIP_AROMATIC = object()             #: sentinel children of an AROMATIC atom: z is known, onward connectivity is withheld
 _CIP_NODE_BUDGET = 60000             #: digraph-construction cap; a pathological giant fails CLOSED (defer, never guess)
 _CIP_COMPARE_BUDGET = 400000         #: pairwise-comparison cap; likewise fail-closed
@@ -1210,12 +1232,13 @@ class _CipAmbiguous(Exception):
     centre DEFERS instead (the ROUND-28 soundness discipline; a wrong label is worse than no label)."""
 
 
-def _cip_digraph(atom_idx, parent_idx, path, adj, elems, mass, aromatic, budget, mancude=None):
-    """One node of the CIP hierarchical digraph, ``(atomic_number, mass, children)`` (ROUND 28 enriched the
-    former ``(atomic_number, children)`` 2-tuple with a ``mass`` slot at index 1 for CIP Rule 2; children move
-    to index 2).  ``mass`` is a parallel array keyed by atom index (:func:`_cip_mass`), threaded in rather than
-    perturbing the element-string canonicalisation ``_kekulize_in_place``/``_wl_colours`` rely on; ``None`` where
-    no true standard weight exists (see :func:`_cip_mass`).
+def _cip_digraph(atom_idx, parent_idx, path, adj, elems, mass, aromatic, budget, mancude=None, ez=None):
+    """One node of the CIP hierarchical digraph, ``(atomic_number, mass, children, ez)`` (ROUND 28 added the
+    ``mass`` slot at index 1 for CIP Rule 2 with children at index 2; ROUND 34 item 1 APPENDS an ``ez`` slot at
+    index 3 for CIP Rule 3 -- a double-bond configuration code 0/none, 2/'Z'(seqcis), 1/'E'(seqtrans), carried by
+    each stereogenic double-bond END atom, so the existing index-0/1/2 code is untouched).  ``mass`` and ``ez``
+    are parallel maps keyed by atom index, threaded in rather than perturbing the element-string canonicalisation
+    ``_kekulize_in_place``/``_wl_colours`` rely on; ``mass`` is ``None`` where no true standard weight exists.
 
     A multiple bond of order ``o`` contributes ``o - 1`` duplicate leaves of the bonded partner on each side;
     a ring-closure bond (a neighbour already on the root->here path) is NOT traversed and contributes one
@@ -1233,9 +1256,10 @@ def _cip_digraph(atom_idx, parent_idx, path, adj, elems, mass, aromatic, budget,
     ranking can still decide ON it), but its onward connectivity is withheld because it is Kekule-dependent -- a
     comparison that tries to descend past it raises :class:`_CipAromatic` and the centre defers (its phantom
     DUPLICATES, being z-only leaves, are always safe)."""
+    ez = ez or {}
     z = ATOMIC_NUMBER.get(elems[atom_idx], 0)
     if atom_idx in aromatic:
-        return (z, mass[atom_idx], _CIP_AROMATIC)               # boundary: known z+mass, Kekule-dependent onward -> lazy defer
+        return (z, mass[atom_idx], _CIP_AROMATIC, 0)            # boundary: known z+mass, Kekule-dependent onward -> lazy defer
     budget[0] -= 1
     if budget[0] < 0:
         raise _CipTooBig
@@ -1243,24 +1267,24 @@ def _cip_digraph(atom_idx, parent_idx, path, adj, elems, mass, aromatic, budget,
     for nb, order in adj[atom_idx]:
         znb = ATOMIC_NUMBER.get(elems[nb], 0)
         if nb != parent_idx and nb in path:
-            children.append((znb, mass[nb], ()))               # ring closure is an integer-Z duplicate (real atom's mass)
+            children.append((znb, mass[nb], (), 0))            # ring closure is an integer-Z duplicate (real atom's mass)
         elif nb != parent_idx:
             if nb in aromatic and order > 1:
                 raise _CipAromatic                              # exocyclic multiple bond INTO an aromatic atom: the
                 # duplicate COUNT (order-1) is Kekule-dependent, generated here at the non-aromatic side before the
                 # boundary is consulted -- so defer rather than emit a Kekule-dependent phantom multiset (evil-morty
                 # residual A; unproven-reachable but discharged, not left to chance).
-            children.append(_cip_digraph(nb, atom_idx, path | {nb}, adj, elems, mass, aromatic, budget, mancude))
+            children.append(_cip_digraph(nb, atom_idx, path | {nb}, adj, elems, mass, aromatic, budget, mancude, ez))
         # A mancude multiple-bond duplicate carries the owner's averaged Z (a superposition) -> mass has no
         # single-atom referent -> None (DEFER under Rule 2, never fabricate).  An ordinary duplicate carries
-        # the real partner atom's mass.
+        # the real partner atom's mass.  Duplicate leaves carry no E/Z (the descriptor lives on the real end atom).
         if mancude is not None and atom_idx in mancude:
             duplicate_z, dup_mass = mancude[atom_idx], None
         else:
             duplicate_z, dup_mass = znb, mass[nb]
         for _ in range(order - 1):
-            children.append((duplicate_z, dup_mass, ()))
-    return (z, mass[atom_idx], tuple(children))
+            children.append((duplicate_z, dup_mass, (), 0))
+    return (z, mass[atom_idx], tuple(children), ez.get(atom_idx, 0))
 
 
 def _cip_sorted_children(node, ctx) -> tuple:
@@ -1359,8 +1383,13 @@ def _cip_compare_rule2(a, b, ctx) -> int:
     for seq in (ca, cb):                                       # (2) ALL-PAIRS sibling-tie guard: transitivity-free
         for i in range(len(seq)):
             for j in range(i + 1, len(seq)):
-                if _cip_compare(seq[i], seq[j], ctx) == 0:
-                    raise _CipAmbiguous                        # ambiguous pairing -> DEFER
+                if _cip_compare(seq[i], seq[j], ctx) == 0 and seq[i] != seq[j]:
+                    raise _CipAmbiguous                        # tied by Rule 1a AND structurally DISTINCT (differ by
+                    # mass/E-Z/deeper) -> the child pairing is genuinely arbitrary -> DEFER.  Two STRUCTURALLY
+                    # IDENTICAL tied siblings (immutable nested tuples, so ``==`` is deep equality: a methyl's three
+                    # H's, two identical arms) are interchangeable -- pairing them cannot change the Rule-2/3 verdict
+                    # -- so they do NOT defer (R34 item 1: the old blanket raise defeated Rule 3 on any molecule with
+                    # a symmetric substituent, since Rule 2 has to descend past it to reach a genuine E/Z tie).
     paired = []
     for k in range(max(len(ca), len(cb))):
         na = ca[k] if k < len(ca) else _CIP_PHANTOM
@@ -1380,12 +1409,60 @@ def _cip_compare_rule2(a, b, ctx) -> int:
     return 0
 
 
+def _cip_compare_rule3(a, b, ctx) -> int:
+    """Rank two Rule-1a-AND-Rule-2-EQUAL digraph nodes by CIP **Rule 3** (double-bond geometry); ``+1``/``-1``/
+    ``0`` (ROUND 34 item 1).  seqcis ('Z', code 2) OUTRANKS seqtrans ('E', code 1); no descriptor is code 0.
+
+    Called ONLY at the ``_cip_compare_rule2 == 0`` hand-off (Rule 1a AND Rule 2 both exhausted -- CIP hierarchy),
+    so for acyclic ligands the two digraphs are isomorphic and mass-identical (R32: an acyclic Rule-1a tie <=>
+    identical constitution).  MIRRORS ``_cip_compare_rule2``'s validated breadth-first branch-by-branch shape on
+    the ``ez`` slot (node index 3): this node's own descriptor -> the immediate sphere of the children's
+    descriptors (Rule-1a order) -> only if the whole sphere ties, descend the ranked branch pairs.
+
+    SOUND, not complete -- fail-closes to :class:`_CipAmbiguous` (DEFER) rather than guess: (1) a
+    descriptor-present-vs-absent MISMATCH at paired nodes (must not occur for the isomorphic trees Rule 3 sees;
+    if it does, the pairing/perception is off -> DEFER); (2) a Rule-1a sibling tie (ambiguous pairing, all-pairs
+    guard); (3) a paired-child Rule-1a mismatch (the recursion's precondition).  A higher CIP rule (4/5) it leaves
+    ``0`` (the caller DEFERS).  The ``ez`` codes are the CIP-RELATIVE Z/E of each stereogenic acyclic double-bond
+    END atom, computed once in :func:`_cip_ez_by_atom` (which ranks the double-bond substituents with the SAME
+    Rule-1a comparator and DEFERS -- code 0 -- on any ambiguity, so a code is emitted only where sound)."""
+    if (a[3] == 0) != (b[3] == 0):
+        raise _CipAmbiguous                                    # descriptor present on one side only -> DEFER (should not occur)
+    if a[3] != b[3]:
+        return 1 if a[3] > b[3] else -1                        # Z (2) outranks E (1)
+    ca = _cip_sorted_children(a, ctx)                          # Rule-1a order (may raise _CipAromatic)
+    cb = _cip_sorted_children(b, ctx)
+    for seq in (ca, cb):                                       # (2) ALL-PAIRS sibling-tie guard (see Rule 2): raise
+        for i in range(len(seq)):                              # only on a tie that is STRUCTURALLY DISTINCT (a real
+            for j in range(i + 1, len(seq)):                   # ambiguous pairing); identical tied siblings are safe.
+                if _cip_compare(seq[i], seq[j], ctx) == 0 and seq[i] != seq[j]:
+                    raise _CipAmbiguous
+    paired = []
+    for k in range(max(len(ca), len(cb))):
+        na = ca[k] if k < len(ca) else _CIP_PHANTOM
+        nb = cb[k] if k < len(cb) else _CIP_PHANTOM
+        if _cip_compare(na, nb, ctx) != 0:                     # (3) enforce the Rule-1a-equal pairing precondition
+            raise _CipAmbiguous
+        paired.append((na, nb))
+    for na, nb in paired:                                      # step 3: the sphere of child descriptors (breadth)
+        if (na[3] == 0) != (nb[3] == 0):
+            raise _CipAmbiguous
+        if na[3] != nb[3]:
+            return 1 if na[3] > nb[3] else -1
+    for na, nb in paired:                                      # step 4: sphere tied -> descend ranked pairs
+        c = _cip_compare_rule3(na, nb, ctx)
+        if c != 0:
+            return c
+    return 0
+
+
 def _cip_rank_compare(a, b, ctx, both_acyclic=True) -> int:
     """The CIP hierarchical rank of two ligand digraphs (ROUND 28): Rule 1a exhausted over the WHOLE digraph
     FIRST, then -- ONLY on a genuine Rule-1a tie -- Rule 2 (mass number) as its own full pass.  ``+1``/``-1``/
     ``0``; a ``0`` is a tie no BUILT rule breaks, so the caller DEFERS.  Rule 2 may raise :class:`_CipAmbiguous`
-    or :class:`_CipAromatic` (both -> DEFER).  Rules 1b/3/4/5 are NOT built, so a Rule-1a+Rule-2 tie stays ``0``
-    (a NAMED deferral).  Keeping Rule 2 a separate pass entered only at the ``_cip_compare == 0`` hand-off is
+    or :class:`_CipAromatic` (both -> DEFER).  ROUND 34 item 1 adds Rule 3 (double-bond E/Z) as the next pass at
+    the Rule-1a+2 tie hand-off; Rules 1b/4/5 stay NOT built, so a Rule-1a+2+3 tie stays ``0`` (a NAMED deferral).
+    Keeping each later rule a separate pass entered only at the prior rule's ``== 0`` hand-off is
     soundness-required: folding mass into ``_cip_compare``'s per-leaf tuple would let a shallow mass tie override
     a deeper Rule-1a atomic-number difference -- an inversion of CIP precedence.
 
@@ -1403,7 +1480,10 @@ def _cip_rank_compare(a, b, ctx, both_acyclic=True) -> int:
         return c
     if not both_acyclic:
         return 0                    # Rule-1a tie on a ring-bearing ligand -> Rule 1b territory (unbuilt) -> DEFER
-    return _cip_compare_rule2(a, b, ctx)
+    c = _cip_compare_rule2(a, b, ctx)
+    if c != 0:
+        return c
+    return _cip_compare_rule3(a, b, ctx)   # ROUND 34 item 1: Rule 3 (Z>E) at the Rule-1a+2 tie hand-off
 
 
 def _ligand_atoms(w: int, centre: int, adj: "dict[int, list[tuple[int, int]]]") -> "tuple[bool, set[int]]":
@@ -1441,7 +1521,74 @@ def _cip_child_zs(node) -> tuple:
     return tuple(sorted((c[0] for c in node[2]), reverse=True))
 
 
-def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None, released=frozenset()) -> "list[int] | None":
+def _cip_ez_by_atom(work, directions, adj, elems, mass, aromatic, mancude) -> "dict[int, int]":
+    """Map each stereogenic ACYCLIC double-bond END atom -> its CIP E/Z code (2='Z'/seqcis, 1='E'/seqtrans), for
+    CIP Rule 3 (ROUND 34 item 1).  BOTH ends of a bond get the same code.  A double bond contributes a code ONLY
+    when its geometry is fully resolvable -- else it contributes NOTHING and Rule 3 finds no descriptor there
+    (a NAMED deferral, never a guessed Z/E):
+
+      * it is ACYCLIC (not a ring edge -- ring-double E/Z is out of scope, Rule-1b territory anyway);
+      * a directional ``/``/``\\`` marker sits on a substituent at EACH end (``directions`` from the parse);
+      * the higher-CIP-priority substituent at each end is UNIQUELY determined by Rule 1a (ranked with the SAME
+        ``_cip_compare`` -- a substituent tie, or an aromatic/over-budget substituent, DEFERS the bond).
+
+    The SMILES cis/trans convention is calibrated to ``F/C=C/F`` (trans/E) and ``F/C=C\\F`` (cis/Z): a directional
+    bond's ``side`` is its ``/``-ness read FROM the double-bond atom (flipped when the marker was written toward
+    it); two substituents are CIS iff their sides are EQUAL.  The descriptor is CIP-relative: the higher-priority
+    substituent's side is the marker's side (or its opposite when the marker sits on the lower-priority sub, since
+    an sp2 centre's two substituents lie on opposite sides).  Higher-priority substituents CIS -> Z (2), else E (1).
+    """
+    n = len(elems)
+    ring_edges = _cip_ring_edges(n, work)
+    ring_edge_pairs = {frozenset((work[bi][0], work[bi][1])) for bi in ring_edges}
+    ez: dict[int, int] = {}
+    ctx = {"cmp": {}, "sc": {}, "budget": [_CIP_COMPARE_BUDGET]}
+
+    def side(dbatom, sub):
+        if (dbatom, sub) in directions:
+            return directions[(dbatom, sub)]          # written dbatom->sub: side is the marker's /-ness
+        if (sub, dbatom) in directions:
+            return not directions[(sub, dbatom)]      # written sub->dbatom: flip
+        return None
+
+    def highest(dbatom, subs):
+        if len(subs) == 1:
+            return subs[0]
+        try:
+            roots = {s: _cip_digraph(s, dbatom, frozenset((dbatom, s)), adj, elems, mass, aromatic,
+                                     [_CIP_NODE_BUDGET], mancude) for s in subs}
+            best = subs[0]
+            for s in subs[1:]:
+                if _cip_compare(roots[s], roots[best], ctx) > 0:
+                    best = s
+            for s in subs:                            # a UNIQUE strict maximum, or None (ambiguous -> DEFER)
+                if s != best and _cip_compare(roots[best], roots[s], ctx) <= 0:
+                    return None
+            return best
+        except (_CipTooBig, _CipAromatic):
+            return None
+
+    for a, b, o in work:
+        if o != 2 or frozenset((a, b)) in ring_edge_pairs:
+            continue
+        subs_a = [x for x, _o in adj[a] if x != b]
+        subs_b = [x for x, _o in adj[b] if x != a]
+        if not subs_a or not subs_b:
+            continue                                   # a terminal =CH2 -- no geometry
+        ra = next((s for s in subs_a if side(a, s) is not None), None)
+        rb = next((s for s in subs_b if side(b, s) is not None), None)
+        if ra is None or rb is None:
+            continue                                   # no directional marker -> geometry unknown -> defer
+        ha, hb = highest(a, subs_a), highest(b, subs_b)
+        if ha is None or hb is None:
+            continue                                   # substituent priority ambiguous -> defer
+        side_ha = side(a, ra) if ha == ra else (not side(a, ra))
+        side_hb = side(b, rb) if hb == rb else (not side(b, rb))
+        ez[a] = ez[b] = 2 if side_ha == side_hb else 1
+    return ez
+
+
+def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None, released=frozenset(), ez=None) -> "list[int] | None":
     """The CIP priority rank (``0`` = highest) of each of the four WRITTEN neighbours of ``centre`` via the
     hierarchical digraph, or ``None`` when the BUILT rules do NOT fully order them (a genuine tie still needing
     Rule 1b/3/4/5, a ranking whose decision depends on an unsupported ring's substituents, an ambiguous Rule-2
@@ -1454,7 +1601,7 @@ def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None, releas
     EXTENDS the shipped naming without changing it -- a distinct-Z centre with an aromatic arm still names (the
     aromatic node's z decides before its withheld substituents are ever needed)."""
     try:
-        roots = [_cip_digraph(w, centre, frozenset((centre, w)), adj, elems, mass, aromatic, [_CIP_NODE_BUDGET], mancude)
+        roots = [_cip_digraph(w, centre, frozenset((centre, w)), adj, elems, mass, aromatic, [_CIP_NODE_BUDGET], mancude, ez)
                  for w in written]
     except (_CipTooBig, _CipAromatic):                          # build only raises _CipAromatic for the exocyclic guard
         return None
@@ -1492,7 +1639,7 @@ def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None, releas
     return ranks
 
 
-def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tuple[str, ...]:
+def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int, directions=None) -> tuple[str, ...]:
     """CIP R/S NAMES for the SOUNDLY-nameable acyclic stereocentres, sorted; ``()`` if none.
 
     Priority is computed by the general CIP **Rule 1a** hierarchical digraph (:func:`_cip_ranks`, ROUND 20): a
@@ -1502,9 +1649,12 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
     cysteine flip (R), the branch-vs-chain motif ``C[C@H](CCC)C(C)C`` (R) that killed the ROUND-14 depth-first
     attempt).  ROUND 28 adds CIP **Rule 2** (mass number) as its own full pass at the Rule-1a tie hand-off
     (:func:`_cip_rank_compare`), so a same-Z tie the isotope mass separates now NAMES too (``F[C@@](Cl)([2H])[3H]``
-    -> R).  It stays SOUND: a centre whose four ligands are NOT separated by a BUILT rule -- a tie needing Rule
-    1b/3/4/5, a Rule-2 pairing made ambiguous by Rule-1a-tied siblings or an unknown mass, or a true constitutional
-    duplicate (a false centre) -- is a NAMED DEFERRAL and gets NO label, because a guessed R/S is worse than
+    -> R).  ROUND 34 item 1 adds CIP **Rule 3** (double-bond E/Z, seqcis 'Z' > seqtrans 'E') as the next pass at
+    the Rule-1a+2 tie hand-off, so two acyclic ligands identical except in double-bond geometry now NAME
+    (``C[C@](/C=C\\C)(/C=C/C)O`` -> R).  It stays SOUND: a centre whose four ligands are NOT separated by a BUILT
+    rule -- a tie needing Rule 1b/4/5, a Rule-2 pairing made ambiguous by Rule-1a-tied siblings or an unknown mass,
+    an unresolvable double-bond geometry, or a true constitutional duplicate (a false centre) -- is a NAMED
+    DEFERRAL and gets NO label, because a guessed R/S is worse than
     none. Bounded neutral C/N/O/S mancude rings (>=2 Kekule structures: benzene, pyridine) use exact atomic-number
     averaging of multiple-bond duplicates (:func:`_cip_mancude`), equally for aromatic and explicit Kekule
     spellings; a LOCALIZED unsaturated ring (a UNIQUE Kekule structure -- cyclopropene, cyclohexene,
@@ -1541,6 +1691,10 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
         adj[b.i].append((b.j, b.order))                          # ordered adjacency for the CIP digraph (phantom counts)
         adj[b.j].append((b.i, b.order))
     aromatic, mancude, released = _cip_mancude(atoms, work, adj)
+    # CIP Rule 3 (ROUND 34 item 1): per-atom E/Z code for stereogenic ACYCLIC double bonds, from the parsed
+    # ``/``/``\\`` directional markers.  Empty (no descriptors) when directions are absent -> Rule 3 is inert
+    # and naming is byte-identical to the pre-R34-item-1 behaviour.
+    ez = _cip_ez_by_atom(work, directions or {}, adj, filled_atoms, mass, aromatic, mancude)
     labels: list[str] = []
     for a in marked:                                             # SAME scope as _perceive_configuration (acyclic, 4-coord)
         if _on_cycle(a, neighbours, len(filled_atoms)):
@@ -1555,7 +1709,7 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
             continue
         if any(ATOMIC_NUMBER.get(filled_atoms[x]) is None for x in written):
             continue                                             # a non-periodic-table element -> out of scope
-        ranks = _cip_ranks(written, a, adj, filled_atoms, mass, aromatic, mancude, released)
+        ranks = _cip_ranks(written, a, adj, filled_atoms, mass, aromatic, mancude, released, ez)
         if ranks is None:
             continue                                             # Rule 1a+2 leave a genuine tie -> NAMED DEFERRAL (never guess)
         handedness = _perm_parity(ranks) ^ (0 if atoms[a].chirality == 1 else 1)
@@ -1572,7 +1726,7 @@ def cip_labels(text: str) -> tuple[str, ...]:
     secondary/tertiary carbons) AND a same-Z isotope tie are now NAMED, not deferred.  A LOCALIZED unsaturated
     ring substituent (a unique Kekule structure -- cyclopropene, cyclohexene, cyclopentadiene, a cyclic enol
     ether, a localized fused bicyclic) is also NAMED (ROUND 33) when it is the only ring on the centre.  A centre
-    the BUILT rules (1a, 2) cannot fully order (a tie needing Rule 1b/3/4/5, a Rule-2 pairing made ambiguous by
+    the BUILT rules (1a, 2, 3) cannot fully order (a tie needing Rule 1b/4/5, a Rule-2 pairing made ambiguous by
     Rule-1a-tied siblings or an unknown mass), one whose ranking depends on an unsupported/delocalized ring, a
     released ring ranked against ANOTHER ring or an isotope-labelled ring tied under Rule 1a (Rule-1b territory),
     an exocyclic-double or aromatic-fused-to-saturated ring, a ring stereocentre, or a non-four-coordinate marked
@@ -1584,9 +1738,9 @@ def cip_labels(text: str) -> tuple[str, ...]:
     stripped = text.strip()
     if not stripped:
         raise SmilesError("empty SMILES")
-    atoms, bonds = _parse_skeleton(stripped)
+    atoms, bonds, directions = _parse_skeleton_dirs(stripped)
     charge = sum(a.charge for a in atoms)
-    return _cip_labels(atoms, bonds, charge)
+    return _cip_labels(atoms, bonds, charge, directions)
 
 
 def parse_smiles(text: str) -> Molecule:
@@ -1626,7 +1780,7 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
     stripped = text.strip()
     if not stripped:
         raise SmilesError("empty SMILES")
-    atoms, bonds = _parse_skeleton(stripped)
+    atoms, bonds, directions = _parse_skeleton_dirs(stripped)
     charge = sum(a.charge for a in atoms)
     # The isotope-refined key must see the PRISTINE aromatic bonds (_build_molecule mutates them during Kekulisation),
     # so compute it FIRST -- it takes a private copy of `bonds` and leaves the caller's list untouched.
@@ -1637,7 +1791,7 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
     configuration_digest, perception_complete = _perceive_configuration(atoms, bonds, charge)
     # CIP R/S NAMES (ID-STEREO-01) for the soundly-nameable centres -- computed on the SAME pristine atoms/bonds, BEFORE
     # _build_molecule mutates bond orders (``_cip_labels`` copies ``bonds`` internally, so the caller's list is untouched).
-    cip = _cip_labels(atoms, bonds, charge)
+    cip = _cip_labels(atoms, bonds, charge, directions)
     double_bond_stereo = ("/" in stripped or "\\" in stripped)
     molecule = _build_molecule(atoms, bonds, charge)
     features = SmilesFeatures(

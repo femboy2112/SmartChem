@@ -70,6 +70,7 @@ __all__ = [
     "isotope_refined_key",
     "configuration_key",
     "cip_labels",
+    "cip_labels_by_atom",
     "resonance_canonical",
     "resonance_identity",
 ]
@@ -1863,11 +1864,11 @@ def _cip_ranks_with_aux(
     return ranks, pseudo_pairs == 1
 
 
-def _cip_labels(
+def _cip_labels_by_atom(
     atoms: list[_Atom], bonds: list[list[int]], charge: int, directions=None,
     written_neighbours: "dict[int, list[int | None]] | None" = None,
-) -> tuple[str, ...]:
-    """CIP R/S NAMES for the soundly nameable tetrahedral stereocentres, sorted; ``()`` if none.
+) -> dict[int, str]:
+    """CIP R/S/r/s labels keyed by heavy-atom index for the soundly nameable stereocentres; ``{}`` if none.
 
     Priority is computed by the general CIP **Rule 1a** hierarchical digraph (:func:`_cip_ranks`, ROUND 20): a
     breadth-first, branch-by-branch ranking with duplicate/phantom atoms for multiple bonds and ring closures.
@@ -1902,7 +1903,7 @@ def _cip_labels(
     """
     marked = [a for a in range(len(atoms)) if atoms[a].chirality]
     if not marked:
-        return ()
+        return {}
     work = [list(b) for b in bonds]
     _kekulize_in_place(atoms, work, charge)
     filled_atoms, filled_bonds = _fill_hydrogens(atoms, work)     # heavy indices 0..n-1 preserved; H appended after
@@ -1972,7 +1973,16 @@ def _cip_labels(
             labels_by_atom[a] = ("s" if handedness == 0 else "r") if pseudo else (
                 "S" if handedness == 0 else "R"
             )
-    return tuple(sorted(labels_by_atom.values()))
+    return labels_by_atom
+
+
+def _cip_labels(
+    atoms: list[_Atom], bonds: list[list[int]], charge: int, directions=None,
+    written_neighbours: "dict[int, list[int | None]] | None" = None,
+) -> tuple[str, ...]:
+    """Sorted CIP R/S/r/s names (``()`` if none) -- :func:`_cip_labels_by_atom` with the atom keys dropped."""
+    return tuple(sorted(_cip_labels_by_atom(
+        atoms, bonds, charge, directions, written_neighbours).values()))
 
 
 def cip_labels(text: str) -> tuple[str, ...]:
@@ -2001,6 +2011,27 @@ def cip_labels(text: str) -> tuple[str, ...]:
     atoms, bonds, directions, written_neighbours = _parse_skeleton_stereo(stripped)
     charge = sum(a.charge for a in atoms)
     return _cip_labels(atoms, bonds, charge, directions, written_neighbours)
+
+
+def cip_labels_by_atom(text: str) -> dict[int, str]:
+    """The CIP R/S/r/s labels of ``text``'s soundly-nameable stereocentres, keyed by heavy-atom index.
+
+    Same method and sign convention as :func:`cip_labels`, but the atom->label map is kept instead of being
+    collapsed to a sorted multiset.  This is the PER-ATOM soundness surface: a per-centre R<->S swap on a
+    molecule with a symmetric label multiset (one R and one S, say) is invisible to :func:`cip_labels`' sorted
+    tuple but visible here -- so the oracle cross-check in ``experiments/cip_per_atom_oracle_probe.py`` compares
+    per atom, not per multiset.  Heavy-atom indices are the parse-order indices 0..n-1 (implicit H are appended
+    after and never marked), so they align with RDKit ``MolFromSmiles`` heavy-atom indices for the mapping.
+    Raises :class:`SmilesError` on a malformed/out-of-scope SMILES, like :func:`cip_labels`.
+    """
+    if not isinstance(text, str):
+        raise SmilesError("SMILES input must be a string")
+    stripped = text.strip()
+    if not stripped:
+        raise SmilesError("empty SMILES")
+    atoms, bonds, directions, written_neighbours = _parse_skeleton_stereo(stripped)
+    charge = sum(a.charge for a in atoms)
+    return _cip_labels_by_atom(atoms, bonds, charge, directions, written_neighbours)
 
 
 def parse_smiles(text: str) -> Molecule:

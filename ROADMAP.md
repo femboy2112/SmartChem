@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ cip-ring-rules-dow-source-2026-09-09` (**ROUND 35** — priorities 1–5: written ring order, revised Rule 1b, bounded Rules 4a/5, ring-isotope release, and a modern Smackover bromine undercut source). Maintained suite: **4684 passed / 22 skipped / 1 xfailed** in four serialized partitions (1849/8; 769/14/1; 1069; 997). Fresh RDKit 2026.3.6 representation rotation: **320 randomized equivalent SMILES, 0 disagreements**. Finite oracle agreement is bounded evidence, not universal CIP completeness. · updated **2026-09-09 UTC**
+> `verified @ cip-ring-rules-dow-source-2026-09-09` (**ROUND 35** — priorities 1–5: written ring order, revised Rule 1b, bounded Rules 4a/5, ring-isotope release, and a modern Smackover bromine undercut source). Maintained suite: **4687 passed / 23 skipped / 1 xfailed** in four serialized partitions (1852/9; 769/14/1; 1069; 997). Fresh RDKit 2026.3.6 representation rotation: **320 randomized equivalent SMILES, 0 disagreements**. Finite oracle agreement is bounded evidence, not universal CIP completeness. · updated **2026-09-09 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -78,6 +78,26 @@ Rule 2; and an SEC-filed modern Smackover model closes the previous DOW sourcing
 and provenance limits. Recursive Rule 4b/4c/6 stays fail-closed. Evidence:
 `experiments/cip_ring_aux_rules_probe.py`, `tests/test_cip_ring_aux_rules.py`,
 `docs/research/CIP_RING_AUX_RULES_SCOPE_v0.1.md`, and the DOW modern-undercut probe/receipt/doc/test.
+
+**ROUND 35 — verification hardening (2026-09-09): per-atom CIP oracle cross-check + independent re-verification.**
+After a usage gap the CIP core (R34 merged, R35 on PR #36) was independently re-verified before merge: three
+adversarial bearings (birdperson principled → SOUND-BUT-HEED; evil-morty directed, 116 molecules → clean;
+dalembert structure-theorem, ~233 evals/103 molecules → SURVIVED) found **0 mislabels** vs RDKit 2026.03.6, the
+full suite was re-run green by hand, and the DOW modern-undercut source was confirmed **byte-identical** to the
+Albemarle SEC filing (sha256 match + every figure grep-verified in-document). All three bearings converged on ONE
+gap — the shipped `cip_labels` returns `tuple(sorted(...))` and every committed RDKit probe mirrors that MULTISET,
+so a per-centre R↔S swap on a symmetric multiset (the failure mode the parser ring-parity witness would produce)
+was structurally invisible to the repo's own self-checks. **Closed:** additive `cip_labels_by_atom` accessor
+(`smartchem/smiles.py`, byte-identical `cip_labels` output) + `experiments/cip_per_atom_oracle_probe.py` (per-atom
+comparison, r/s included, element-verified index mapping, a non-vacuity swap proof) + `tests/test_cip_per_atom_oracle.py`
+→ 26 per-atom comparisons, 0 mismatches. Epistemic status: the namer is **Conjectured-sound with a triangulated
+adversarial line**, not Demonstrated — no counterexample exists on anything three methods could construct; none proves
+completeness (true of RDKit too). **Tracked debt (next round):** (1) `_cip_digraph` carries a fail-OPEN
+`if not isinstance(path, tuple)` shim (`smartchem/smiles.py`) — two committed callers pass a `frozenset`, whose
+`tuple()` order would make the Rule-1b ring distance nondeterministic *if* they reached Rule 1b (they only exercise
+Rule 1a today; latent, not live); a fail-closed assertion would be correct. (2) The older CIP probes' `in ("R","S")`
+RDKit filter drops pseudoasymmetric `r`/`s`; the per-atom probe supersedes it for the covered classes but the filter
+still stands in `cip_ring_vs_ring_probe.py`/`cip_external_oracle_probe.py`.
 
 **ROUND 34 — Lane B CIP items 1–5, completed in coherent dependency order** (branch
 `cip-rules-3-4-5-ring-2026-09-08`) — Rule 3 E/Z naming, exocyclic-unsaturation ring admission,
@@ -357,6 +377,7 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 | **3** | **Charged/conjugated ring representation** — extend mancude handling past the neutral bounded C/N/O/S slice. | B | L | medium | Requires a sound source-pinned representation; fixed-Kekulé shortcuts remain forbidden. |
 | **4** | **Modern bromine provenance rotation** — find realized, non-Albemarle operating evidence or a genuinely independent cost model. | C | S/M | long | Magnolia is forecast/model evidence; JBC shares the issuer/reporting family. |
 | **5** | **Phase-aware Br₂ identity and thermo resolution** — prevent gas data from standing in for liquid standard-state claims. | B·C | M | medium | Requires a phase-carrying key across thermo consumers, not a local special case. |
+| **6** | **Exact open-resistor semantics** *(EM scope)* — positive-rational resistor decoration + boundary linear-relation semantics on the open SMC, so electrons/circuits become functor images of the base category ([[electromagnetic-scope]]). | B | M/L | medium | Revisit from a FRESH branch off current `main`. Prior art on the closed-PR-#3 branch `agent/smartchem-open-semantics-round-20260727` (378 commits behind `main`; salvage ideas, do not rebase). |
 | **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | **DEFERRED — premature** | **Scope decision (R28 recon): `docs/research/MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`.** No second-domain pipeline consumer exists (electrochem/cell are `Molecule`-typed; circuits are on `open_diagram.py` with no route/step/DAG shape; the `*_domain.py` files are oracle-coverage domains, not pipeline consumers) → building it now = a zero-call-sites abstraction. UNLOCK: a genuine multi-step non-chemistry process, or a concrete `Molecule`-forced-fit pain report. |
 | ~~3b~~ | ✅ **DONE (ROUND 30)** — DOW-Br₂ collider/modified-Arrhenius kinetics. See the DONE ledger + manifest §30. | B·C | — | — | The Warshay modified-Arrhenius bimolecular fit is modelled in a new sibling (`collider_kinetics.py`); Br₂ SURVIVES at bench (a lower-bounded PREDICTED read, thermo-corroborated), dissociates sub-ms at shock-tube T. Live wire-in of the collider model into E1's gate is TRACKED DEBT (verdict-inert today; no Br₂-intermediate DAG consumer). |
 

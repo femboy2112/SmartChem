@@ -5271,3 +5271,48 @@ before Rule 2 because unbuilt Rule 1b may intervene; isotope-on-identical-ring e
 The external oracle, official implementation source, frozen batteries, and transformed holdouts are distinct evidence
 bearings only after shared provenance is factored. Their agreement supports the declared bounded neutral implementation;
 finite differential evidence does **not** prove complete CIP correctness on arbitrary graphs.
+
+---
+
+## §35 — ROUND 35: ring source order, revised Rule 1b, bounded Rules 4a/5, and modern DOW source
+
+Branch `cip-ring-rules-dow-source-2026-09-09`. The ask was another full round over the five highest-priority
+follow-ups, with publication and an evidence-backed next-step table.
+
+### 35.1 CIP priorities 1–4
+
+- `_parse_skeleton_stereo` records each atom's OpenSMILES written-neighbour order. An opening ring digit reserves
+  its source position and is filled when the closure is resolved. This feeds both configuration identity and CIP
+  parity. The official equivalent-spelling pair names S by both routes and has one configuration key.
+- The CIP node is enriched with ring-reference distance, source atom index, and duplicate status. Revised Rule 1b
+  runs as its own FIFO pass between Rules 1a and 2. The IUPAC Blue Book P-9 example is a real discriminator:
+  Rule 1a ties the two carbon ligands and Rule 1b decides; the molecule names S and its mirror R.
+- Rules 2 and 3 establish child order with the cumulative preceding-rule comparator. This also admits the prior
+  isotope-on-identical-ring cases, which now match RDKit.
+- A non-iterating second pass consumes already-established uppercase R/S descriptors. The admitted slice is one
+  descriptor for Rule 4a or exactly one opposed R/S pair for revised Rule 5; one enantiomorphic comparison emits
+  lowercase r/s. Same-handed, larger, or mutually recursive auxiliary systems remain fail-closed pending Rules
+  4b/4c/6.
+
+Evidence: `experiments/cip_ring_aux_rules_probe.py`, `tests/test_cip_ring_aux_rules.py`, and
+`docs/research/CIP_RING_AUX_RULES_SCOPE_v0.1.md`. RDKit 2026.3.6 reproduced the fixed battery and 320 deterministic
+random equivalent spellings with zero disagreements. This is bounded validation, not universal CIP completeness.
+
+### 35.2 Priority 5 — modern Smackover bromine cost evidence
+
+The 2026 SEC-filed Magnolia Technical Report Summary supplies the missing cost basis independent of the price
+arithmetic: its 2026 1P forecast reports 74 kt sales, $126.0M field/plant opex, $34.7M G&A, and $27.0M capital.
+The conservative cash-outflow quotient is $2.5365/kg, below spot $4.89/kg and spot-minus-30% $3.42/kg. The base
+minus-45% case at $2.69/kg remains positive, but applying the report's +10% opex uncertainty raises the quotient to
+$2.7068/kg and reverses that narrow edge. This is an issuer-model-derived forecast, not observed realized cost;
+capital is current annual spend rather than levelized lifetime capital; the cost and price scenarios share one
+report family; and no value is admitted into production route ranking.
+
+Evidence: `experiments/dow_bromine_modern_undercut_probe.py`, the dated source-hash reconstruction receipt,
+`tests/test_dow_bromine_modern_undercut.py`, and `docs/research/DOW_BROMINE_MODERN_UNDERCUT_SCOPE_v0.1.md`.
+
+### 35.3 Verification
+
+- Maintained `.venv` suite, serialized: **4684 passed / 22 skipped / 1 xfailed** (1849/8; 769/14/1; 1069; 997).
+- RDKit development oracle: **320 randomized equivalent spellings, 0 disagreements**, plus the source-fixed battery.
+- `git diff --check` and frozen experiment hashes pass. The single xfail remains expected.

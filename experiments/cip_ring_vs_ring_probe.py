@@ -10,9 +10,7 @@ has no remaining load-bearing counterexample: a 30-fragment all-kind holdout (2,
 three spectator contexts) produced zero mismatches with the guard absent.  Production therefore removes both the
 guard and its ``released`` bookkeeping rather than retaining a ceremonial defer.
 
-BOUNDARY: a ring-bearing pair that TIES under Rule 1a still defers before Rule 2 because Rule 1b can act on ring-
-closure duplicates.  The isotope-on-identical-ring cases below pin that safe boundary.  Ring-on-centre Rules 4/5
-remain a separate scope wall.
+ROUND 35 adds revised Rule 1b before Rule 2, so the isotope-on-identical-ring cases now name and match the oracle.
 
 ``validate()`` and ``content_hash()`` are RDKit-free. ``_rdkit_cross_check()`` is a gated development-oracle probe.
 Re-run ``python -m experiments.cip_ring_vs_ring_probe`` after an intentional change and update ``FROZEN_HASH``.
@@ -25,7 +23,7 @@ import json
 
 from smartchem.smiles import cip_labels
 
-FROZEN_HASH = "d22a18f49d7740b73347be1e1a5698ee69e5391b9d1ec97eb25fdfe90cf941f3"
+FROZEN_HASH = "a2caff2fc9c6a80498e93df924a32cc643a4fc005eb103f2352334d006908bf2"
 
 _SAT = ("C1CC1", "C1CCC1", "C1CCCC1", "C1CCCCC1", "C1CCCCCC1", "C1OCC1", "C1OCCC1",
         "C1OCCCC1", "C1CCCO1", "C1CCCCO1", "C1NCCC1", "C1NCCCC1", "C1CCNC1", "C1SCCC1",
@@ -36,7 +34,7 @@ _ARO = ("c1ccccc1", "c1ccncc1", "c1ccoc1")
 _FUSED = ("C1Cc2ccccc2C1", "C1CCc2ccccc2C1")
 _RINGS = tuple(dict.fromkeys(_SAT + _LOC + _EXO + _ARO + _FUSED))
 
-#: (SMILES, RDKit label, expected ours, category, note): ringring-name | isotope-ring-defer.
+#: (SMILES, RDKit label, expected ours, category, note): ringring-name | isotope-ring-name.
 BATTERY = (
     ("[C@](C1CCCCC1)(C1CCCC1)(C)F", ("R",), ("R",), "ringring-name", "two carbocyclic saturated rings"),
     ("C[C@](C1OCCC1)(C1OCC1)O", ("S",), ("S",), "ringring-name", "heterorings: THF vs oxetane"),
@@ -48,8 +46,8 @@ BATTERY = (
     ("[C@](C1Cc2ccccc2C1)(C1CCc2ccccc2C1)(C)F", ("R",), ("R",), "ringring-name", "indane vs tetralin"),
     ("[C@](C1=CCCCC1)(c1ccccc1)(F)Cl", ("S",), ("S",), "ringring-name", "localized vs mancude"),
     ("[C@](C1Cc2ccccc2C1)(C1=CCCCC1)(C)F", ("S",), ("S",), "ringring-name", "fused vs localized"),
-    ("[C@]([13CH]1CCCCC1)(C1CCCCC1)(F)Cl", ("R",), (), "isotope-ring-defer", "Rule-1a-tied isotope ring"),
-    ("[C@]([13CH]1CCCC1)(C1CCCC1)(F)Cl", ("R",), (), "isotope-ring-defer", "Rule-1a-tied isotope ring"),
+    ("[C@]([13CH]1CCCCC1)(C1CCCCC1)(F)Cl", ("R",), ("R",), "isotope-ring-name", "Rule 1b then isotope Rule 2"),
+    ("[C@]([13CH]1CCCC1)(C1CCCC1)(F)Cl", ("R",), ("R",), "isotope-ring-name", "Rule 1b then isotope Rule 2"),
 )
 
 
@@ -79,17 +77,14 @@ def content_hash() -> str:
 
 
 def validate() -> None:
-    counts = {"ringring-name": 0, "isotope-ring-defer": 0}
+    counts = {"ringring-name": 0, "isotope-ring-name": 0}
     for smi, rd_label, expected, category, note in BATTERY:
         got = tuple(cip_labels(smi))
         assert got == expected, f"namer drift on {smi}: got {got}, expected {expected} [{note}]"
         counts[category] += 1
-        if category == "ringring-name":
-            assert got == rd_label, f"MISLABEL vs baked oracle on {smi} [{note}]"
-        else:
-            assert defers(got) and rd_label, f"{smi} must remain a non-vacuous Rule-1b defer [{note}]"
+        assert got == rd_label, f"MISLABEL vs baked oracle on {smi} [{note}]"
     assert counts["ringring-name"] >= 10
-    assert counts["isotope-ring-defer"] >= 2
+    assert counts["isotope-ring-name"] >= 2
     sweep = _ringring_named_sweep()
     assert sweep["named"] >= 300, f"ring-vs-ring sweep names too few centres: {sweep}"
 

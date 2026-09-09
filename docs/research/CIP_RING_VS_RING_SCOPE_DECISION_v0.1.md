@@ -1,5 +1,8 @@
 # CIP ring-vs-ring + isotope-on-ring — corrected scope decision (ROUND 34 item 5)
 
+> **Superseded in part by ROUND 35:** revised Rule 1b now orders ring-closure duplicates before Rule 2, so the
+> former isotope-on-identical-ring deferrals name and match the oracle. See `CIP_RING_AUX_RULES_SCOPE_v0.1.md`.
+
 **Verdict: Rule-1a-distinct ring pairs NAME; Rule-1a-tied isotope pairs still DEFER.** The first item-5 analysis
 classified every released-ring pair as a verified defer. Adversarial review falsified that explanation and found a
 general comparator defect instead. The repaired implementation and evidence are pinned by

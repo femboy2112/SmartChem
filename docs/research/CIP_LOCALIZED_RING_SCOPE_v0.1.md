@@ -1,5 +1,8 @@
 # Localized unsaturated-ring substituents in the CIP namer (ROUND 33)
 
+> **ROUND-35 update:** the localized-ring build remains current, while its former unbuilt-Rule-1b and ring-centre
+> boundaries are superseded by `CIP_RING_AUX_RULES_SCOPE_v0.1.md`.
+
 > **ROUND 34 correction:** the comparator was not unchanged: adversarial review found and fixed a general
 > recursive-top-branch traversal bug. Exocyclic and aromatic-fused cases are now supported, and Rule-1a-distinct
 > ring pairs name. The `released` multiring guard described below was an interim control and has been removed;

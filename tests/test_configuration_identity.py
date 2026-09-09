@@ -12,7 +12,7 @@ sense-flip pair MUST differ (it is the mirror image).  Scope boundary (honest, n
 WL-degenerate centres, double-bond E/Z, and CIP R/S *naming* are named ID-STEREO-01 deferrals -- they contribute no
 descriptor rather than a guessed one.
 """
-from smartchem.smiles import configuration_key, parse_smiles, parse_smiles_features
+from smartchem.smiles import cip_labels, configuration_key, parse_smiles, parse_smiles_features
 from smartchem.contracts import canonical_digest
 
 
@@ -91,18 +91,14 @@ def test_a_false_stereocentre_carries_no_configuration_descriptor():
     assert features.configuration_digest is None
 
 
-def test_ring_stereocentres_are_scoped_out_to_none_never_a_guessed_parity():
-    """A stereocentre ON a ring is out of the acyclic scope: its written neighbour order depends on the ring-closure
-    DIGIT position, which the bond list does not preserve, so a reconstructed parity could be WRONG.  Such a centre
-    must contribute NO descriptor (configuration_digest None), and configuration_key must reduce to constitution --
-    so a ring centre can never be a false split OR a false conflation of enantiomers.  (evil-morty ROUND-12 caught a
-    ring-OPENING centre slipping the old ``incoming>1`` guard and getting a wrong descriptor; this pins the fix.)
-    """
-    for smi in ["N[C@]1(F)CCCCO1", "N[C@@](F)1CCCCO1", "OC[C@H]1CCCCO1", "[C@H]1(F)CCCCO1"]:
-        _, features = parse_smiles_features(smi)
-        assert features.configuration_digest is None, smi
-    # the two ring "enantiomer" spellings both reduce to the SAME constitution key -- no fabricated distinction.
-    assert _same("N[C@]1(F)CCCCO1", "N[C@@]1(F)CCCCO1")
+def test_ring_stereocentres_use_parser_preserved_written_order():
+    """ROUND 35 retains the opening ring digit at its written position, so ring parity is perceivable."""
+    same_a, same_b = "N[C@]1(F)CCCCO1", "N[C@@](F)1CCCCO1"
+    assert _same(same_a, same_b)
+    assert cip_labels(same_a) == cip_labels(same_b) == ("R",)
+    mirror = "N[C@@]1(F)CCCCO1"
+    assert not _same(same_a, mirror)
+    assert cip_labels(mirror) == ("S",)
     # a ring SUBSTITUENT on an ACYCLIC centre is still perceived (the centre itself is not on the ring).
     _, phenyl = parse_smiles_features("C[C@H](N)c1ccccc1")
     assert phenyl.configuration_digest is not None

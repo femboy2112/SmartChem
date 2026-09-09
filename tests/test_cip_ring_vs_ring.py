@@ -24,9 +24,9 @@ def test_rule_1a_distinct_ring_pairs_name_and_match_the_baked_oracle():
     assert named >= 10
 
 
-def test_isotope_on_rule_1a_tied_rings_still_defers_before_rule_2():
-    assert cip_labels("[C@]([13CH]1CCCCC1)(C1CCCCC1)(F)Cl") == ()
-    assert cip_labels("[C@]([13CH]1CCCC1)(C1CCCC1)(F)Cl") == ()
+def test_isotope_on_rule_1a_tied_rings_names_through_rule1b_then_rule2():
+    assert cip_labels("[C@]([13CH]1CCCCC1)(C1CCCCC1)(F)Cl") == ("R",)
+    assert cip_labels("[C@]([13CH]1CCCC1)(C1CCCC1)(F)Cl") == ("R",)
 
 
 def test_rdkit_cross_check_reproduces_the_all_kind_holdout_when_available():

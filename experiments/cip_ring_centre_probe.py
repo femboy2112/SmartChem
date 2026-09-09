@@ -1,27 +1,12 @@
-"""CIP-RING-CENTRE-01: ROUND 34 item 3 -- a stereocentre ON a ring (Rules 4/5 territory) is a VERIFIED DEFER.
+"""CIP-RING-CENTRE-01: ROUND 35 supersedes the ROUND-34 ring-centre deferral.
 
-The namer scopes a ring stereocentre OUT via ``_on_cycle`` (in both ``_cip_labels`` and ``_perceive_configuration``)
-and DEFERS it -- never a guessed label.  This item asked whether ring stereocentres (menthol, cis/trans
-disubstituted rings, pseudo-asymmetric centres) can be named.  Answer, oracle-verified: NO -- not soundly, not
-this round. A sound ring-centre namer still needs TWO genuine builds:
+The parser now preserves the exact written-neighbour sequence, including a ring digit at its opening position.
+Constitutionally ordered ring centres therefore name, including menthol.  Bounded Rules 4a/5 name non-recursive
+auxiliary cases elsewhere, while mutually dependent pseudo-asymmetric ring pairs still defer pending Rule 4b/4c.
 
-  1. WRITTEN NEIGHBOUR ORDER for the tetrahedral parity.  A ring-closure bond is appended to ``bonds`` at the
-     CLOSING digit, not at the OPENING digit's written position -- but SMILES chirality is defined by the order the
-     neighbours (branches AND ring-closure digits) appear AT the chiral atom.  The acyclic
-     ``incoming``/``outgoing`` reconstruction therefore mis-orders a ring centre's neighbours -> a WRONG parity ->
-     a wrong R/S.  ``_on_cycle`` fails closed exactly here.  (The parser would need per-atom written-order capture,
-     like the R34-item-1 direction capture.)
-  2. RULES 4/5 (auxiliary descriptors + pseudo-asymmetry).  cis/trans-disubstituted rings and meso systems need
-     Rule 4 (like/unlike auxiliary R/S descriptors, assigned recursively); pseudo-asymmetric centres need Rule 5
-     (lowercase 'r'/'s', R>S) -- RDKit returns these here (``O[C@H]1CC[C@@H](C)CC1`` -> ('s','s')).  Neither is built.
-
-ROUND 34 item 5 removed the apparent third wall: its ring-vs-ring failures came from a general recursive traversal
-bug, and the corrected FIFO Rule-1a comparator passes the fresh differential sweep. Building ring-centre naming
-now would still MISLABEL on written parity and auxiliary descriptors -> DEFER (the R32 discipline: a
-proven-cannot-build-soundly-yet feature is a verified defer, with committed evidence + the named unlock).
-
-This harness pins the finding ("experiments are committed") + confirms the current defer is SOUND (0 mislabels;
-``_on_cycle`` gates every marked ring centre) and the consumer is REAL (RDKit labels them, incl. pseudo-asymmetric).
+The original ROUND-34 failure analysis is retained in the superseded scope document.  This harness now pins both
+the newly named constitutional population and the still-dark recursive pseudo population.  ``_on_cycle`` is used
+only as a topology control here, not as the public-parser gate.
 ``validate()``/``content_hash()`` are RDKit-FREE; ``_rdkit_cross_check()`` re-verifies the oracle labels live.
 Re-run ``python -m experiments.cip_ring_centre_probe`` after an INTENTIONAL change and set ``FROZEN_HASH``.
 """
@@ -33,18 +18,18 @@ import json
 from smartchem import smiles
 from smartchem.smiles import cip_labels
 
-FROZEN_HASH = "bc4ac5ec65783218953c50103dffb99fe6b0c1f8d9cf41170ba2f78972a6732d"
+FROZEN_HASH = "7bd5eadcc97787ed703cfc7307431dcb8964772d4dc693ead6f2255b86a76caa"
 
 #: Oracle-verified battery: (smiles, rdkit_label, expected_ours, category, note).
-#:   ringcentre-defer (rdkit names, we defer) | agreed-defer (both defer: not a real stereocentre)
+#:   ringcentre-name | rule45-defer | agreed-defer
 BATTERY = (
-    ("C[C@H]1CCCCC1O",                   ("S",),           (), "ringcentre-defer", "3-methylcyclohexanol centre (Rule-1a-ish, but parity needs written order)"),
-    ("O[C@H]1CCCC[C@@H]1O",              ("S", "S"),       (), "ringcentre-defer", "trans-cyclohexane-1,2-diol"),
-    ("[C@H]1(F)CCCC[C@@H]1Cl",           ("S", "S"),       (), "ringcentre-defer", "1-F-2-Cl-cyclohexane"),
-    ("F[C@H]1CCCC[C@H]1Cl",              ("R", "S"),       (), "ringcentre-defer", "cis 1-F-2-Cl-cyclohexane (R,S)"),
-    ("O[C@H]1CC[C@@H](C)CC1",            ("s", "s"),       (), "ringcentre-defer", "cis-4-methylcyclohexanol: PSEUDO-ASYMMETRIC (Rule 5, r/s)"),
-    ("O[C@@H]1CC[C@H](Cl)CC1",           ("s", "s"),       (), "ringcentre-defer", "4-Cl-cyclohexanol: PSEUDO-ASYMMETRIC (Rule 5)"),
-    ("CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O",  ("R", "R", "S"),  (), "ringcentre-defer", "menthol: three ring stereocentres"),
+    ("C[C@H]1CCCCC1O",                   ("S",),           ("S",), "ringcentre-name", "3-methylcyclohexanol"),
+    ("O[C@H]1CCCC[C@@H]1O",              ("S", "S"),       ("S", "S"), "ringcentre-name", "trans-cyclohexane-1,2-diol"),
+    ("[C@H]1(F)CCCC[C@@H]1Cl",           ("S", "S"),       ("S", "S"), "ringcentre-name", "1-F-2-Cl-cyclohexane"),
+    ("F[C@H]1CCCC[C@H]1Cl",              ("R", "S"),       ("R", "S"), "ringcentre-name", "cis 1-F-2-Cl-cyclohexane"),
+    ("O[C@H]1CC[C@@H](C)CC1",            ("s", "s"),       (), "rule45-defer", "mutually pseudo-asymmetric; needs Rule 4b/4c"),
+    ("O[C@@H]1CC[C@H](Cl)CC1",           ("s", "s"),       (), "rule45-defer", "mutually pseudo-asymmetric; needs Rule 4b/4c"),
+    ("CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O",  ("R", "R", "S"),  ("R", "R", "S"), "ringcentre-name", "menthol"),
     # agreed-defer: a SYMMETRIC ring carbon is not a real stereocentre -- both we and RDKit defer (sound, not a consumer)
     ("O[C@H]1CCCCC1",                    (),               (), "agreed-defer", "cyclohexanol C1: two identical ring arms -> not a stereocentre"),
     ("C1CC[C@H](O)CC1",                  (),               (), "agreed-defer", "4-position of cyclohexanol: symmetric -> not a stereocentre"),
@@ -56,11 +41,10 @@ def defers(lab) -> bool:
 
 
 def _on_cycle_gates_all_marked_ring_centres() -> bool:
-    """RDKit-FREE: for every ``ringcentre-defer`` battery molecule, the marked centre lies ON a ring (``_on_cycle``
-    True) -- i.e. the deferral is the ring-centre scope gate, not an incidental miss."""
+    """RDKit-free topology control: every marked non-agreed battery centre lies on a ring."""
     from smartchem.smiles import _parse_skeleton, _kekulize_in_place, _fill_hydrogens, _on_cycle
     for smi, _rd, _exp, cat, _n in BATTERY:
-        if cat != "ringcentre-defer":
+        if cat == "agreed-defer":
             continue
         atoms, bonds = _parse_skeleton(smi)
         charge = sum(a.charge for a in atoms)
@@ -87,24 +71,24 @@ def content_hash() -> str:
 
 
 def validate() -> None:
-    """RDKit-free: every ring stereocentre DEFERS (never a guessed label); the consumer is real; the gate is _on_cycle."""
-    assert hasattr(smiles, "_on_cycle"), "the ring-centre scope gate must exist"
-    consumers = pseudo = agreed = 0
+    """RDKit-free: admitted centres match baked labels and recursive pseudo cases defer."""
+    named = deferred = agreed = 0
     for smi, rd_label, expected, category, note in BATTERY:
         got = tuple(cip_labels(smi))
         assert got == expected, f"namer drift on {smi}: got {got}, expected {expected} [{note}]"
-        assert defers(got), f"{smi} must DEFER (ring stereocentre out of scope) [{note}]"
-        if category == "ringcentre-defer":
-            assert rd_label, f"{smi} is only a consumer if rdkit LABELS it [{note}]"
-            consumers += 1
-            pseudo += any(x in ("r", "s") for x in rd_label)
+        if category == "ringcentre-name":
+            assert got == rd_label
+            named += 1
+        elif category == "rule45-defer":
+            assert defers(got) and rd_label
+            deferred += 1
         else:
             assert not rd_label, f"{smi} agreed-defer means rdkit also defers [{note}]"
             agreed += 1
-    assert consumers >= 6, "must show a real ring-centre consumer population"
-    assert pseudo >= 2, "must exhibit the pseudo-asymmetric (Rule 5, r/s) sub-class"
+    assert named >= 5
+    assert deferred >= 2
     assert agreed >= 1, "must include a symmetric non-stereocentre (agreed defer, sound)"
-    assert _on_cycle_gates_all_marked_ring_centres(), "every deferred ring centre must be gated by _on_cycle"
+    assert _on_cycle_gates_all_marked_ring_centres()
 
 
 def _rdkit_cross_check() -> dict:
@@ -124,7 +108,7 @@ def _rdkit_cross_check() -> dict:
         live = rd_label(smi)
         assert live is not None and set(live) == set(rd_baked), f"baked rdkit label stale on {smi}: {live} vs {rd_baked} [{note}]"
     return {"battery_verified": len(BATTERY),
-            "consumers": sum(1 for *_r, c, _n in BATTERY if c == "ringcentre-defer")}
+            "named": sum(1 for *_r, c, _n in BATTERY if c == "ringcentre-name")}
 
 
 def report() -> dict:

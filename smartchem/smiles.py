@@ -70,6 +70,7 @@ __all__ = [
     "isotope_refined_key",
     "configuration_key",
     "cip_labels",
+    "cip_labels_by_atom",
     "resonance_canonical",
     "resonance_identity",
 ]
@@ -247,14 +248,35 @@ def _parse_skeleton_dirs(
     ``/`` (True) / ``\\`` (False) directional single bonds, keyed by the endpoint order the SMILES wrote them in
     (so CIP Rule 3 can read double-bond cis/trans geometry).  Ring-closure directional bonds are recorded under the
     (opening-atom, closing-atom) order.  The atom indices are IDENTICAL to :func:`_parse_skeleton` (same walk)."""
+    atoms, bonds, directions, _written = _parse_skeleton_stereo(text)
+    return atoms, bonds, directions
+
+
+def _parse_skeleton_stereo(
+    text: str,
+) -> "tuple[list[_Atom], list[list[int]], dict[tuple[int, int], bool], dict[int, list[int | None]]]":
+    """The shared skeleton walk plus every stereo-sensitive piece of source order.
+
+    ``written_neighbours[a]`` is the neighbour sequence against which an ``@``/``@@`` tetrahedral marker on
+    atom ``a`` is defined.  Heavy atoms are their parsed indices and ``None`` is an explicit bracket hydrogen.
+    The incoming atom is recorded first, then bracket H, then following branches/chain atoms in source order.
+    Crucially, an opening ring digit reserves its position *when written*; the slot is filled only when the
+    matching closing digit reveals the other atom.  Reconstructing this list from the final bond list instead
+    moves every ring bond to the closing digit and can invert a ring stereocentre.
+
+    The first three return values are exactly :func:`_parse_skeleton_dirs`; keeping the richer walk behind this
+    helper leaves its established internal interface stable for Rule-3 probes.
+    """
     atoms: list[_Atom] = []
     bonds: list[list[int]] = []
     directions: dict[tuple[int, int], bool] = {}
+    written_neighbours: dict[int, list[int | None]] = {}
     prev: int | None = None
     pending: int | None = None           # explicit bond order awaiting the next atom/ring-closure
     pending_dir: "bool | None" = None    # the /,\\ direction awaiting the next atom/ring-closure (True='/')
     branch_stack: list[int] = []
-    ring_open: dict[str, tuple[int, int | None, "bool | None"]] = {}   # label -> (atom, pending order, pending dir)
+    # label -> (opening atom, pending order, pending dir, reserved written-neighbour slot)
+    ring_open: dict[str, tuple[int, int | None, "bool | None", int]] = {}
     i, n = 0, len(text)
 
     def connect(a: int, b: int, order: int | None, both_aromatic: bool, direction: "bool | None") -> None:
@@ -294,12 +316,16 @@ def _parse_skeleton_dirs(
                 label = ch
                 i += 1
             if label in ring_open:
-                other, oorder, odir = ring_open.pop(label)
+                other, oorder, odir, opening_slot = ring_open.pop(label)
                 order = pending if pending is not None else oorder
                 connect(other, prev, order, atoms[other].aromatic and atoms[prev].aromatic,
                         odir if odir is not None else pending_dir)
+                written_neighbours[other][opening_slot] = prev
+                written_neighbours[prev].append(other)
             else:
-                ring_open[label] = (prev, pending, pending_dir)
+                opening_slot = len(written_neighbours[prev])
+                written_neighbours[prev].append(None)  # reserved ring-neighbour slot; unclosed rings fail below
+                ring_open[label] = (prev, pending, pending_dir, opening_slot)
             pending = None
             pending_dir = None
         else:
@@ -322,8 +348,17 @@ def _parse_skeleton_dirs(
                 atom = _Atom(element, aromatic, 0, None)
             idx = len(atoms)
             atoms.append(atom)
+            written_neighbours[idx] = []
             if prev is not None:
                 connect(prev, idx, pending, atoms[prev].aromatic and atom.aromatic, pending_dir)
+                written_neighbours[prev].append(idx)
+                written_neighbours[idx].append(prev)
+            # OpenSMILES bracket hydrogen follows the incoming neighbour (when present) and precedes every
+            # neighbour token that follows this atom.  Keep one placeholder per H; only tetrahedral H1 reaches
+            # the current naming scope, while the general representation makes malformed/non-tetrahedral cases
+            # fail by arity instead of silently changing order.
+            if atom.h_explicit:
+                written_neighbours[idx].extend([None] * atom.h_explicit)
             pending = None
             pending_dir = None
             prev = idx
@@ -334,7 +369,7 @@ def _parse_skeleton_dirs(
         raise SmilesError(f"unclosed ring bond(s): {sorted(ring_open)}")
     if not atoms:
         raise SmilesError("empty SMILES")
-    return atoms, bonds, directions
+    return atoms, bonds, directions, written_neighbours
 
 
 # R2: bound the resonance enumeration. A benzenoid's Kekulé count is small (benzene 2, naphthalene 3,
@@ -830,10 +865,9 @@ def _kekulize_in_place(atoms: list[_Atom], work: list[list[int]], charge: int) -
 
 def _on_cycle(a: int, neighbours: "dict[int, list[int]]", n_atoms: int) -> bool:
     """True iff atom ``a`` lies ON a ring (a cycle passes through it): two of its neighbours stay connected in the
-    graph with ``a`` removed.  A ring stereocentre is scoped OUT of chirality perception (its written neighbour order
-    depends on the ring-closure DIGIT position, which the bond list does not preserve) -- this is the check that makes
-    the docstring's "a ring centre contributes nothing" TRUE, not just claimed.  A ring SUBSTITUENT (e.g. a phenyl arm
-    on an acyclic centre) does NOT put the centre on a cycle, so such centres stay perceivable."""
+    graph with ``a`` removed.  ROUND 35's rich parser preserves ring-digit written order, so public parsing no longer
+    uses this as a ring-centre exclusion.  It remains a compatibility topology helper and a fail-closed fallback for
+    legacy internal callers that do not supply a written-neighbour witness."""
     nbrs = neighbours[a]
     if len(nbrs) < 2:
         return False
@@ -861,7 +895,8 @@ def _on_cycle(a: int, neighbours: "dict[int, list[int]]", n_atoms: int) -> bool:
 
 
 def _perceive_configuration(
-    atoms: list[_Atom], bonds: list[list[int]], charge: int
+    atoms: list[_Atom], bonds: list[list[int]], charge: int,
+    written_neighbours: "dict[int, list[int | None]] | None" = None,
 ) -> "tuple[str | None, bool]":
     """The chirality-parity perception, returning ``(CONFIGURATION digest or None, perception_complete)``.
 
@@ -874,8 +909,9 @@ def _perceive_configuration(
     The digest REFINES constitution -- ``canonical_digest((constitution, sorted (WL-colour, handedness) per centre))``
     -- so equal configuration implies equal constitution; an achiral molecule is ``None`` (left to match at
     CONSTITUTION, never silently split).  Scope is the SOUNDLY perceivable subset: an ACYCLIC tetrahedral centre with
-    four neighbours (implicit H per OpenSMILES) whose four 1-WL colours are DISTINCT.  A centre WL cannot separate, or a
-    RING centre, contributes NOTHING -- an honest gap, never a guessed parity.
+    four neighbours (implicit H per OpenSMILES) whose four 1-WL colours are DISTINCT.  ROUND 35 extends the same parity
+    construction to a ring centre when the parser-supplied ``written_neighbours`` sequence is available; a centre WL
+    cannot separate still contributes NOTHING -- an honest gap, never a guessed parity.
 
     ``perception_complete`` is the FAIL-CLOSED signal a MATCH-LAYER consumer needs (ID-STEREO-02): ``True`` iff EVERY
     marked centre yielded a descriptor -- i.e. NONE was scoped out.  A scoped-out marked centre is a real stereocentre
@@ -900,16 +936,20 @@ def _perceive_configuration(
         neighbours[b.j].append(b.i)
     descriptors: list[tuple[int, int]] = []
     for a in marked:
-        if _on_cycle(a, neighbours, len(filled_atoms)):
-            continue                                             # RING stereocentre: out of the acyclic scope ->
-            # honest gap (its written neighbour order depends on the ring-closure DIGIT position, which the bond
-            # list does not preserve -- reconstructing it, and E/Z + CIP R/S, are the named ID-STEREO-01 deferrals).
-        incoming = [bd[0] for bd in bonds if bd[1] == a]          # the preceding atom (a is the bond's 2nd endpoint)
-        outgoing = [bd[1] for bd in bonds if bd[0] == a]          # branch/chain children, in written order
         h_neighbours = [j for j in neighbours[a] if j >= n and filled_atoms[j] == "H"]   # a's implicit/explicit H
-        if len(incoming) > 1:
-            continue                                             # defensive: any residual multi-incoming -> skip
-        written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
+        if written_neighbours is not None:
+            h_iter = iter(h_neighbours)
+            written = [next(h_iter) if token is None else token for token in written_neighbours[a]]
+            if next(h_iter, None) is not None:
+                continue                                         # parser/fill disagreement -> fail closed
+        else:
+            if _on_cycle(a, neighbours, len(filled_atoms)):
+                continue                                         # no source-order witness for a ring bond -> defer
+            incoming = [bd[0] for bd in bonds if bd[1] == a]
+            outgoing = [bd[1] for bd in bonds if bd[0] == a]
+            if len(incoming) > 1:
+                continue
+            written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
         if len(written) != 4:
             continue                                             # not a four-coordinate centre in scope
         colours = [wl[x] for x in written]
@@ -924,10 +964,13 @@ def _perceive_configuration(
     return canonical_digest((constitution, tuple(sorted(descriptors)))), complete
 
 
-def _configuration_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> "str | None":
+def _configuration_identity(
+    atoms: list[_Atom], bonds: list[list[int]], charge: int,
+    written_neighbours: "dict[int, list[int | None]] | None" = None,
+) -> "str | None":
     """The canonical CONFIGURATION key (the digest half of :func:`_perceive_configuration`), or ``None`` when the input
     declares no PERCEIVABLE stereocentre.  See :func:`_perceive_configuration` for the parity method and its scope."""
-    return _perceive_configuration(atoms, bonds, charge)[0]
+    return _perceive_configuration(atoms, bonds, charge, written_neighbours)[0]
 
 
 def configuration_key(text: str) -> str:
@@ -944,9 +987,9 @@ def configuration_key(text: str) -> str:
     stripped = text.strip()
     if not stripped:
         raise SmilesError("empty SMILES")
-    atoms, bonds = _parse_skeleton(stripped)
+    atoms, bonds, _directions, written_neighbours = _parse_skeleton_stereo(stripped)
     charge = sum(a.charge for a in atoms)
-    configuration = _configuration_identity(atoms, bonds, charge)
+    configuration = _configuration_identity(atoms, bonds, charge, written_neighbours)
     return configuration if configuration is not None else resonance_identity(_build_molecule(atoms, bonds, charge))
 
 
@@ -969,7 +1012,7 @@ def configuration_key(text: str) -> str:
 # textbook absolutes (incl. the L-serine=S / L-cysteine=R flip, and the ROUND-28 Rule-2 cases) in
 # ``experiments/cip_namer_probe.py``.
 
-_CIP_PHANTOM = (0, 0, (), 0)         #: the phantom (atomic-number-0, mass-0, no children, no E/Z) leaf a missing branch pads with
+_CIP_PHANTOM = (0, 0, (), 0, None, -1, True)  #: z, mass, children, E/Z, ring-reference distance, atom index, duplicate
 _CIP_AROMATIC = object()             #: sentinel children of an AROMATIC atom: z is known, onward connectivity is withheld
 _CIP_NODE_BUDGET = 60000             #: digraph-construction cap; a pathological giant fails CLOSED (defer, never guess)
 _CIP_COMPARE_BUDGET = 400000         #: pairwise-comparison cap; likewise fail-closed
@@ -1193,16 +1236,18 @@ class _CipAromatic(Exception):
 
 
 class _CipAmbiguous(Exception):
-    """A later-rule (Rule 2/3) comparison could not be made without an ARBITRARY choice -> fail-closed DEFERRAL.
+    """A later-rule comparison could not be made without an ARBITRARY choice -> fail-closed DEFERRAL.
 
     Raised by :func:`_cip_compare_rule2` on an unknown mass (a mancude-superposition duplicate, or a
-    radioactive/synthetic element with no true standard weight and no specified isotope) OR a Rule-1a-tied
-    sibling set whose Rule-2 pairing is arbitrary.  A guessed pairing could yield a WRONG R/S label, so the
-    centre DEFERS instead (the ROUND-28 soundness discipline; a wrong label is worse than no label)."""
+    radioactive/synthetic element with no true standard weight and no specified isotope), or by a later pass
+    when its preceding-rule pairing invariant cannot be established.  A guessed pairing could yield a WRONG
+    R/S label, so the centre DEFERS instead."""
 
 
 def _cip_digraph(atom_idx, parent_idx, path, adj, elems, mass, aromatic, budget, mancude=None, ez=None):
-    """One node of the CIP hierarchical digraph, ``(atomic_number, mass, children, ez)`` (ROUND 28 added the
+    """One node of the CIP hierarchical digraph, ``(z, mass, children, ez, ring_distance, atom_idx, duplicate)``.
+
+    ROUND 28 added the
     ``mass`` slot at index 1 for CIP Rule 2 with children at index 2; ROUND 34 item 1 APPENDS an ``ez`` slot at
     index 3 for CIP Rule 3 -- a double-bond configuration code 0/none, 2/'Z'(seqcis), 1/'E'(seqtrans), carried by
     each stereogenic double-bond END atom, so the existing index-0/1/2 code is untouched).  ``mass`` and ``ez``
@@ -1226,9 +1271,11 @@ def _cip_digraph(atom_idx, parent_idx, path, adj, elems, mass, aromatic, budget,
     comparison that tries to descend past it raises :class:`_CipAromatic` and the centre defers (its phantom
     DUPLICATES, being z-only leaves, are always safe)."""
     ez = ez or {}
+    if not isinstance(path, tuple):
+        path = tuple(path)                                      # compatibility for older internal probes; new calls preserve order
     z = ATOMIC_NUMBER.get(elems[atom_idx], 0)
     if atom_idx in aromatic:
-        return (z, mass[atom_idx], _CIP_AROMATIC, 0)            # boundary: known z+mass, Kekule-dependent onward -> lazy defer
+        return (z, mass[atom_idx], _CIP_AROMATIC, 0, None, atom_idx, False)
     budget[0] -= 1
     if budget[0] < 0:
         raise _CipTooBig
@@ -1236,24 +1283,28 @@ def _cip_digraph(atom_idx, parent_idx, path, adj, elems, mass, aromatic, budget,
     for nb, order in adj[atom_idx]:
         znb = ATOMIC_NUMBER.get(elems[nb], 0)
         if nb != parent_idx and nb in path:
-            children.append((znb, mass[nb], (), 0))            # ring closure is an integer-Z duplicate (real atom's mass)
+            # Rule 1b compares the distance of the corresponding real atom from the digraph root.  ``path`` starts
+            # with that root (the stereocentre) at distance 1, so its tuple position is the required distance.
+            children.append((znb, mass[nb], (), 0, path.index(nb) + 1, nb, True))
         elif nb != parent_idx:
             if nb in aromatic and order > 1:
                 raise _CipAromatic                              # exocyclic multiple bond INTO an aromatic atom: the
                 # duplicate COUNT (order-1) is Kekule-dependent, generated here at the non-aromatic side before the
                 # boundary is consulted -- so defer rather than emit a Kekule-dependent phantom multiset (evil-morty
                 # residual A; unproven-reachable but discharged, not left to chance).
-            children.append(_cip_digraph(nb, atom_idx, path | {nb}, adj, elems, mass, aromatic, budget, mancude, ez))
+            children.append(_cip_digraph(nb, atom_idx, path + (nb,), adj, elems, mass, aromatic, budget, mancude, ez))
         # A mancude multiple-bond duplicate carries the owner's averaged Z (a superposition) -> mass has no
         # single-atom referent -> None (DEFER under Rule 2, never fabricate).  An ordinary duplicate carries
         # the real partner atom's mass.  Duplicate leaves carry no E/Z (the descriptor lives on the real end atom).
         if mancude is not None and atom_idx in mancude:
             duplicate_z, dup_mass = mancude[atom_idx], None
+            duplicate_idx = -1
         else:
             duplicate_z, dup_mass = znb, mass[nb]
+            duplicate_idx = nb
         for _ in range(order - 1):
-            children.append((duplicate_z, dup_mass, (), 0))
-    return (z, mass[atom_idx], tuple(children), ez.get(atom_idx, 0))
+            children.append((duplicate_z, dup_mass, (), 0, None, duplicate_idx, True))
+    return (z, mass[atom_idx], tuple(children), ez.get(atom_idx, 0), None, atom_idx, False)
 
 
 def _cip_sorted_children(node, ctx) -> tuple:
@@ -1331,6 +1382,103 @@ def _cip_compare(a, b, ctx) -> int:
     return r
 
 
+def _cip_rule1b_value(node) -> "tuple[int, int]":
+    """The revised Rule-1b value of one node, ordered low-to-high.
+
+    A ring-duplicate node outranks a non-ring-duplicate node of the same Rule-1a rank; between two ring
+    duplicates, the one whose corresponding real atom is closer to the digraph root outranks.  ``node[4]`` is
+    that referent distance and ``None`` for every other node (including multiple-bond duplicates).
+    """
+    distance = node[4]
+    return (0, 0) if distance is None else (1, -distance)
+
+
+def _cip_compare_through_rule1b(a, b, ctx) -> int:
+    """Compare by the complete constitutional prefix Rule 1a -> revised Rule 1b."""
+    c = _cip_compare(a, b, ctx)
+    return c if c != 0 else _cip_compare_rule1b(a, b, ctx)
+
+
+def _cip_sorted_children_rule1b(node, ctx) -> tuple:
+    """Children sorted by the complete Rule-1a/1b prefix, highest first."""
+    if node[2] is _CIP_AROMATIC:
+        raise _CipAromatic
+    cache = ctx.setdefault("sc1b", {})
+    cached = cache.get(node)
+    if cached is None:
+        cached = tuple(sorted(
+            node[2], key=cmp_to_key(lambda x, y: _cip_compare_through_rule1b(x, y, ctx)), reverse=True
+        ))
+        cache[node] = cached
+    return cached
+
+
+def _cip_compare_rule1b(a, b, ctx) -> int:
+    """Rank Rule-1a-equal digraph nodes by revised CIP Rule 1b.
+
+    This is a separate FIFO full-digraph pass, exactly between Rule 1a and Rule 2.  Ring-closure duplicate
+    metadata comes from the ordered root-to-node path in :func:`_cip_digraph`; multiple-bond duplicates are
+    deliberately not ring duplicates.  Child pairing uses the complete 1a/1b prefix.  The immutable-node cache
+    is separate from Rule 1a so agreement under one rule cannot masquerade as agreement under the other.
+    """
+    cache = ctx.setdefault("cmp1b", {})
+    key = (a, b)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    ctx["budget"][0] -= 1
+    if ctx["budget"][0] < 0:
+        raise _CipTooBig
+    result = 0
+    queue = [(a, b)]
+    for na, nb in queue:
+        va, vb = _cip_rule1b_value(na), _cip_rule1b_value(nb)
+        if va != vb:
+            result = 1 if va > vb else -1
+            break
+        ca = _cip_sorted_children_rule1b(na, ctx)
+        cb = _cip_sorted_children_rule1b(nb, ctx)
+        paired = []
+        for k in range(max(len(ca), len(cb))):
+            child_a = ca[k] if k < len(ca) else _CIP_PHANTOM
+            child_b = cb[k] if k < len(cb) else _CIP_PHANTOM
+            if _cip_compare(child_a, child_b, ctx) != 0:
+                raise _CipAmbiguous                             # Rule-1a pairing precondition must remain true
+            child_va, child_vb = _cip_rule1b_value(child_a), _cip_rule1b_value(child_b)
+            if child_va != child_vb:
+                result = 1 if child_va > child_vb else -1
+                break
+            paired.append((child_a, child_b))
+        if result != 0:
+            break
+        queue.extend(paired)                                    # all siblings before any grandchildren
+    cache[key] = result
+    cache[(b, a)] = -result
+    return result
+
+
+def _cip_compare_through_rule2(a, b, ctx) -> int:
+    """Compare by Rules 1a -> 1b -> 2, used to establish Rule-2 child pairing."""
+    c = _cip_compare(a, b, ctx)
+    if c != 0:
+        return c
+    c = _cip_compare_rule1b(a, b, ctx)
+    return c if c != 0 else _cip_compare_rule2(a, b, ctx)
+
+
+def _cip_sorted_children_rule2(node, ctx) -> tuple:
+    if node[2] is _CIP_AROMATIC:
+        raise _CipAromatic
+    cache = ctx.setdefault("sc2", {})
+    cached = cache.get(node)
+    if cached is None:
+        cached = tuple(sorted(
+            node[2], key=cmp_to_key(lambda x, y: _cip_compare_through_rule2(x, y, ctx)), reverse=True
+        ))
+        cache[node] = cached
+    return cached
+
+
 def _cip_compare_rule2(a, b, ctx) -> int:
     """Rank two Rule-1a-EQUAL digraph nodes by CIP **Rule 2** (mass number); ``+1``/``-1``/``0`` (ROUND 28).
 
@@ -1340,37 +1488,23 @@ def _cip_compare_rule2(a, b, ctx) -> int:
     child before any deeper generation.  Recursively exhausting the top branch would reincarnate the comparator
     bug for mass.
 
-    SOUND, not complete -- it fail-closes to a DEFERRAL (raises :class:`_CipAmbiguous`) rather than ever guess a
-    label, in three cases: (1) an unknown mass (``None``: a mancude superposition duplicate, or a radioactive/
-    synthetic element with no true standard weight and no specified isotope); (2) a Rule-1a-tie among SIBLINGS
-    (checked ALL-PAIRS, not adjacent-only -- ``_cip_compare`` is not proven transitive, so an adjacent-only scan
-    of a sorted sequence could miss a hidden non-adjacent tie), which makes the child pairing arbitrary; (3) a
-    paired-child Rule-1a MISMATCH (the recursion's own precondition, enforced not assumed -- if a non-transitive
-    mis-sort ever mispairs, this fails closed instead of mislabelling).  Only where the pairing is FORCED and
-    every mass is known does it return a verdict.  Higher-rule ties (1b/3/4/5) it leaves as ``0`` (the caller
-    DEFERS)."""
+    SOUND, not complete -- it fail-closes to a DEFERRAL on an unknown mass (``None``: a mancude superposition
+    duplicate, or a radioactive/synthetic element with no true standard weight and no specified isotope) or if
+    a paired child is not tied under the preceding Rule-1a/1b prefix.  Child pairing is established with the
+    cumulative Rule-1a/1b/2 comparator, matching the reference sorter's rule-by-rule ordering."""
     queue = [(a, b)]
     for na, nb in queue:
         if na[1] is None or nb[1] is None:
             raise _CipAmbiguous                                # unknown mass -> DEFER, never a bogus None comparison
         if na[1] != nb[1]:
             return 1 if na[1] > nb[1] else -1                  # this node's own mass decides
-        ca = _cip_sorted_children(na, ctx)                      # Rule-1a order (may raise _CipAromatic)
-        cb = _cip_sorted_children(nb, ctx)
-        for seq in (ca, cb):                                   # (2) ALL-PAIRS sibling-tie guard: transitivity-free
-            for i in range(len(seq)):
-                for j in range(i + 1, len(seq)):
-                    if _cip_compare(seq[i], seq[j], ctx) == 0 and seq[i] != seq[j]:
-                        raise _CipAmbiguous                    # tied by Rule 1a AND structurally DISTINCT (differ by
-                        # mass/E-Z/deeper) -> the child pairing is genuinely arbitrary -> DEFER.  Two STRUCTURALLY
-                        # IDENTICAL tied siblings (immutable nested tuples, so ``==`` is deep equality: a methyl's
-                        # three H's, two identical arms) are interchangeable -- pairing them cannot change the
-                        # Rule-2/3 verdict -- so they do NOT defer.
+        ca = _cip_sorted_children_rule2(na, ctx)                 # cumulative 1a/1b/2 order, as the reference sorter
+        cb = _cip_sorted_children_rule2(nb, ctx)
         paired = []
         for k in range(max(len(ca), len(cb))):
             child_a = ca[k] if k < len(ca) else _CIP_PHANTOM
             child_b = cb[k] if k < len(cb) else _CIP_PHANTOM
-            if _cip_compare(child_a, child_b, ctx) != 0:       # (3) enforce Rule-1a-equal pairing precondition
+            if _cip_compare_through_rule1b(child_a, child_b, ctx) != 0:  # enforce preceding-rules tie
                 raise _CipAmbiguous                            # a mispair (only under non-transitivity) -> DEFER
             paired.append((child_a, child_b))
         for child_a, child_b in paired:                        # immediate mass sphere, in Rule-1a order
@@ -1380,6 +1514,19 @@ def _cip_compare_rule2(a, b, ctx) -> int:
                 return 1 if child_a[1] > child_b[1] else -1
         queue.extend(paired)                                   # FIFO: every sibling branch precedes grandchildren
     return 0
+
+
+def _cip_sorted_children_rule3(node, ctx) -> tuple:
+    if node[2] is _CIP_AROMATIC:
+        raise _CipAromatic
+    cache = ctx.setdefault("sc3", {})
+    cached = cache.get(node)
+    if cached is None:
+        cached = tuple(sorted(
+            node[2], key=cmp_to_key(lambda x, y: _cip_compare_through_rule3(x, y, ctx)), reverse=True
+        ))
+        cache[node] = cached
+    return cached
 
 
 def _cip_compare_rule3(a, b, ctx) -> int:
@@ -1392,11 +1539,10 @@ def _cip_compare_rule3(a, b, ctx) -> int:
     3): this node's own descriptor -> the immediate sphere of children's descriptors (Rule-1a order) -> enqueue
     every paired child before any deeper generation.
 
-    SOUND, not complete -- fail-closes to :class:`_CipAmbiguous` (DEFER) rather than guess: (1) a
-    descriptor-present-vs-absent MISMATCH at paired nodes (must not occur for the isomorphic trees Rule 3 sees;
-    if it does, the pairing/perception is off -> DEFER); (2) a Rule-1a sibling tie (ambiguous pairing, all-pairs
-    guard); (3) a paired-child Rule-1a mismatch (the recursion's precondition).  A higher CIP rule (4/5) it leaves
-    ``0`` (the caller DEFERS).  The ``ez`` codes are the CIP-RELATIVE Z/E of each stereogenic acyclic double-bond
+    SOUND, not complete -- fail-closes to :class:`_CipAmbiguous` (DEFER) rather than guess on a
+    descriptor-present-vs-absent mismatch or if paired children are not tied under Rules 1a/1b/2.  Child pairing
+    uses the cumulative comparator through Rule 3.  A higher CIP rule it leaves ``0``.  The ``ez`` codes are the
+    CIP-RELATIVE Z/E of each stereogenic acyclic double-bond
     END atom, computed once in :func:`_cip_ez_by_atom` (which ranks the double-bond substituents with the SAME
     Rule-1a comparator and DEFERS -- code 0 -- on any ambiguity, so a code is emitted only where sound)."""
     queue = [(a, b)]
@@ -1405,18 +1551,13 @@ def _cip_compare_rule3(a, b, ctx) -> int:
             raise _CipAmbiguous                                # descriptor present on one side only -> DEFER
         if na[3] != nb[3]:
             return 1 if na[3] > nb[3] else -1                  # Z (2) outranks E (1)
-        ca = _cip_sorted_children(na, ctx)                      # Rule-1a order (may raise _CipAromatic)
-        cb = _cip_sorted_children(nb, ctx)
-        for seq in (ca, cb):                                   # (2) ALL-PAIRS sibling-tie guard (see Rule 2)
-            for i in range(len(seq)):
-                for j in range(i + 1, len(seq)):
-                    if _cip_compare(seq[i], seq[j], ctx) == 0 and seq[i] != seq[j]:
-                        raise _CipAmbiguous
+        ca = _cip_sorted_children_rule3(na, ctx)                 # cumulative 1a/1b/2/3 order
+        cb = _cip_sorted_children_rule3(nb, ctx)
         paired = []
         for k in range(max(len(ca), len(cb))):
             child_a = ca[k] if k < len(ca) else _CIP_PHANTOM
             child_b = cb[k] if k < len(cb) else _CIP_PHANTOM
-            if _cip_compare(child_a, child_b, ctx) != 0:       # (3) enforce Rule-1a-equal pairing precondition
+            if _cip_compare_through_rule2(child_a, child_b, ctx) != 0:  # enforce preceding-rules tie
                 raise _CipAmbiguous
             paired.append((child_a, child_b))
         for child_a, child_b in paired:                        # immediate descriptor sphere, in Rule-1a order
@@ -1428,59 +1569,122 @@ def _cip_compare_rule3(a, b, ctx) -> int:
     return 0
 
 
+def _cip_compare_through_rule3(a, b, ctx) -> int:
+    """Compare by the complete built non-stereodescriptor prefix, Rules 1a -> 1b -> 2 -> 3."""
+    c = _cip_compare(a, b, ctx)
+    if c != 0:
+        return c
+    c = _cip_compare_rule1b(a, b, ctx)
+    if c != 0:
+        return c
+    c = _cip_compare_rule2(a, b, ctx)
+    if c != 0:
+        return c
+    return _cip_compare_rule3(a, b, ctx)
+
+
+def _cip_aux_value(node, auxiliary, reference: str) -> "tuple[int, int]":
+    """Bounded Rule-4a/Rule-5 value for a real node carrying an auxiliary R/S descriptor.
+
+    Rule 4a first prefers an uppercase auxiliary descriptor to none.  Where both nodes carry descriptors, the
+    replacement-reference comparison used by revised Rule 5 prefers a descriptor like ``reference`` to its
+    unlike partner.  Duplicate nodes never carry auxiliary descriptors.
+    """
+    label = None if node[6] or node[5] < 0 else auxiliary.get(node[5])
+    if label not in ("R", "S"):
+        return (0, 0)
+    return (2, 1 if label == reference else 0)
+
+
+def _cip_compare_aux_reference(a, b, ctx, auxiliary, reference: str) -> int:
+    """Compare a Rules-1a..3-tied pair with bounded Rule 4a plus revised-Rule-5 reference ordering."""
+    c = _cip_compare_through_rule3(a, b, ctx)
+    if c != 0:
+        return c
+    cache = ctx.setdefault("cmp_aux", {}).setdefault(reference, {})
+    key = (a, b)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    ctx["budget"][0] -= 1
+    if ctx["budget"][0] < 0:
+        raise _CipTooBig
+    result = 0
+    queue = [(a, b)]
+    for na, nb in queue:
+        va, vb = _cip_aux_value(na, auxiliary, reference), _cip_aux_value(nb, auxiliary, reference)
+        if va != vb:
+            result = 1 if va > vb else -1
+            break
+        if na[2] is _CIP_AROMATIC or nb[2] is _CIP_AROMATIC:
+            raise _CipAromatic
+        ca = tuple(sorted(
+            na[2], key=cmp_to_key(lambda x, y: _cip_compare_aux_reference(x, y, ctx, auxiliary, reference)),
+            reverse=True,
+        ))
+        cb = tuple(sorted(
+            nb[2], key=cmp_to_key(lambda x, y: _cip_compare_aux_reference(x, y, ctx, auxiliary, reference)),
+            reverse=True,
+        ))
+        paired = []
+        for k in range(max(len(ca), len(cb))):
+            child_a = ca[k] if k < len(ca) else _CIP_PHANTOM
+            child_b = cb[k] if k < len(cb) else _CIP_PHANTOM
+            if _cip_compare_through_rule3(child_a, child_b, ctx) != 0:
+                raise _CipAmbiguous
+            child_va = _cip_aux_value(child_a, auxiliary, reference)
+            child_vb = _cip_aux_value(child_b, auxiliary, reference)
+            if child_va != child_vb:
+                result = 1 if child_va > child_vb else -1
+                break
+            paired.append((child_a, child_b))
+        if result != 0:
+            break
+        queue.extend(paired)
+    cache[key] = result
+    cache[(b, a)] = -result
+    return result
+
+
+def _cip_compare_rules45(a, b, ctx, auxiliary) -> int:
+    """Bounded revised Rule-5 two-reference comparison; ``+/-2`` marks an enantiomorphic pair.
+
+    Agreement of the R-reference and S-reference order is an ordinary Rule-4a distinction (``+/-1``).  Opposite
+    order under the two lawful reference substitutions is the revised-Rule-5 pseudoasymmetry signal (``+/-2``),
+    matching RDKit's ``Priority`` convention.  A zero or inconsistent one-sided result remains tied.
+    """
+    cmp_r = _cip_compare_aux_reference(a, b, ctx, auxiliary, "R")
+    cmp_s = _cip_compare_aux_reference(a, b, ctx, auxiliary, "S")
+    if cmp_r == cmp_s:
+        return cmp_r
+    if cmp_r == -cmp_s and cmp_r != 0:
+        return 2 * cmp_r
+    return 0
+
+
 def _cip_rank_compare(a, b, ctx, both_acyclic=True) -> int:
-    """The CIP hierarchical rank of two ligand digraphs (ROUND 28): Rule 1a exhausted over the WHOLE digraph
-    FIRST, then -- ONLY on a genuine Rule-1a tie -- Rule 2 (mass number) as its own full pass.  ``+1``/``-1``/
-    ``0``; a ``0`` is a tie no BUILT rule breaks, so the caller DEFERS.  Rule 2 may raise :class:`_CipAmbiguous`
-    or :class:`_CipAromatic` (both -> DEFER).  ROUND 34 item 1 adds Rule 3 (double-bond E/Z) as the next pass at
-    the Rule-1a+2 tie hand-off; Rules 1b/4/5 stay NOT built, so a Rule-1a+2+3 tie stays ``0`` (a NAMED deferral).
+    """The CIP hierarchical rank of two ligand digraphs through Rules 1a, revised 1b, 2, and 3.
+
+    ``+1``/``-1``/``0``; a ``0`` is a tie no rule in this prefix breaks, so the caller either enters the bounded
+    auxiliary-descriptor pass or defers.  A pass may raise :class:`_CipAmbiguous` or :class:`_CipAromatic`, both
+    of which become a fail-closed deferral.
     Keeping each later rule a separate pass entered only at the prior rule's ``== 0`` hand-off is
     soundness-required: folding mass into ``_cip_compare``'s per-leaf tuple would let a shallow mass tie override
     a deeper Rule-1a atomic-number difference -- an inversion of CIP precedence.
 
-    ``both_acyclic`` GATES the Rule-1a -> Rule-2 leapfrog past the UNBUILT Rule 1b (ROUND 33, the localized-ring
-    release).  R32 proved Rule 1b is inert on TREES (an acyclic Rule-1a tie <=> identical constitution, so 1b --
-    a constitutional rule -- cannot act), which is what licenses skipping straight to Rule 2 for acyclic ligands.
-    But Rule 1b BITES with ring closures (Hanson 2018): two ligands CONTAINING RINGS can tie under Rule 1a while
-    being constitutionally distinct (ring reconvergence), where Rule 1b would decide -- and letting Rule 2 (an
-    isotope asymmetry) break that tie the other way would MISLABEL.  So when either tied ligand contains a ring
-    closure (``both_acyclic`` False), a Rule-1a tie DEFERS (returns ``0``) instead of consulting Rule 2 -- the
-    sound fail-closed into Rule-1b territory.  Costs only the exotic isotope-on-a-ring corner; a ring vs a
-    Rule-1a-DISTINCT ligand (the common localized-ring case) is decided by Rule 1a and never reaches here."""
+    ROUND 35 inserts revised Rule 1b as its own full FIFO pass before Rule 2.  ``both_acyclic`` remains as a
+    compatibility-only argument for older probes; Rule 1b is inert on trees and now handles ring closures directly,
+    so it no longer gates later rules."""
     c = _cip_compare(a, b, ctx)
     if c != 0:
         return c
-    if not both_acyclic:
-        return 0                    # Rule-1a tie on a ring-bearing ligand -> Rule 1b territory (unbuilt) -> DEFER
+    c = _cip_compare_rule1b(a, b, ctx)
+    if c != 0:
+        return c
     c = _cip_compare_rule2(a, b, ctx)
     if c != 0:
         return c
     return _cip_compare_rule3(a, b, ctx)   # ROUND 34 item 1: Rule 3 (Z>E) at the Rule-1a+2 tie hand-off
-
-
-def _ligand_has_ring(w: int, centre: int, adj: "dict[int, list[tuple[int, int]]]") -> bool:
-    """Whether the ligand rooted at written-neighbour ``w`` contains a ring.
-
-    The substituent is reached from ``centre`` through ``w``. An off-ring centre (the only scope here) splits
-    the molecule minus ``centre`` into
-    disjoint ligand components, so this explores ``w``'s component (never crossing back through ``centre``).
-    ``has_ring`` is True iff that component has a cycle (edge count >= node count; a tree has ``nodes - 1`` edges;
-    multiplicity is irrelevant -- a double bond is one edge -- so it is the sigma-ring, exactly): its CIP digraph
-    will hold ring-closure duplicate atoms, which gates the Rule-2 leapfrog past the unbuilt Rule 1b (inert on
-    trees, not on rings -- see :func:`_cip_rank_compare`)."""
-    seen = {w}
-    stack = [w]
-    directed_edges = 0
-    while stack:
-        node = stack.pop()
-        for nb, _order in adj[node]:
-            if nb == centre:
-                continue
-            directed_edges += 1                       # each undirected edge is seen once from each endpoint
-            if nb not in seen:
-                seen.add(nb)
-                stack.append(nb)
-    return directed_edges // 2 >= len(seen)           # tree: edges == nodes - 1; ring: edges >= nodes
 
 
 def _cip_child_zs(node) -> tuple:
@@ -1528,7 +1732,7 @@ def _cip_ez_by_atom(work, directions, adj, elems, mass, aromatic, mancude) -> "d
         if len(subs) == 1:
             return subs[0]
         try:
-            roots = {s: _cip_digraph(s, dbatom, frozenset((dbatom, s)), adj, elems, mass, aromatic,
+            roots = {s: _cip_digraph(s, dbatom, (dbatom, s), adj, elems, mass, aromatic,
                                      [_CIP_NODE_BUDGET], mancude) for s in subs}
             best = subs[0]
             for s in subs[1:]:
@@ -1577,22 +1781,21 @@ def _cip_ez_by_atom(work, directions, adj, elems, mass, aromatic, mancude) -> "d
 
 def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None, ez=None) -> "list[int] | None":
     """The CIP priority rank (``0`` = highest) of each of the four WRITTEN neighbours of ``centre`` via the
-    hierarchical digraph, or ``None`` when the BUILT rules do NOT fully order them (a genuine tie still needing
-    Rule 1b/3/4/5, a ranking whose decision depends on an unsupported ring's substituents, an ambiguous Rule-2
+    hierarchical digraph, or ``None`` when the descriptor-free Rules 1a/1b/2/3 do NOT fully order them (a
+    genuine tie needing an auxiliary/higher rule, a ranking whose decision depends on an unsupported ring,
     pairing, or an over-budget digraph) -- then the centre is a NAMED DEFERRAL, never a guessed label.
 
-    Ranking is by :func:`_cip_rank_compare`: Rule 1a exhausted over the whole digraph, then (only on a genuine
-    Rule-1a tie) Rule 2 (mass number, ROUND 28) as its own full pass.  ``mass`` is the per-atom-index mass array
+    Ranking is by :func:`_cip_rank_compare`: Rules 1a, revised 1b, 2, and 3 as separate full passes.  ``mass`` is
+    the per-atom-index mass array
     (:func:`_cip_mass`) threaded into the digraph.  Byte-identical to the old ``sorted(z, reverse=True)`` ranks on
     the distinct-atomic-number slice (there Rule 1a decides at sphere 0, so Rule 2 never runs), so it strictly
     EXTENDS the shipped naming without changing it -- a distinct-Z centre with an aromatic arm still names (the
     aromatic node's z decides before its withheld substituents are ever needed)."""
     try:
-        roots = [_cip_digraph(w, centre, frozenset((centre, w)), adj, elems, mass, aromatic, [_CIP_NODE_BUDGET], mancude, ez)
+        roots = [_cip_digraph(w, centre, (centre, w), adj, elems, mass, aromatic, [_CIP_NODE_BUDGET], mancude, ez)
                  for w in written]
     except (_CipTooBig, _CipAromatic):                          # build only raises _CipAromatic for the exocyclic guard
         return None
-    has_ring = [_ligand_has_ring(w, centre, adj) for w in written]  # gate the Rule-2 leapfrog past Rule 1b
     ctx = {"cmp": {}, "sc": {}, "budget": [_CIP_COMPARE_BUDGET]}  # caches shared across all six pairwise compares
     try:
         ranks: list[int] = []
@@ -1601,11 +1804,9 @@ def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None, ez=Non
             for j in range(4):
                 if j == k:
                     continue
-                # Rule 2 may break a Rule-1a tie ONLY when both ligands are trees (R32: Rule 1b inert on trees);
-                # if either contains a ring closure, a Rule-1a tie defers into unbuilt Rule-1b territory (dalembert).
-                c = _cip_rank_compare(roots[j], roots[k], ctx, both_acyclic=not (has_ring[j] or has_ring[k]))
+                c = _cip_rank_compare(roots[j], roots[k], ctx)
                 if c == 0:
-                    return None                                 # tie no BUILT rule breaks (Rule 1a+2, or 1b territory) -> DEFER
+                    return None                                 # auxiliary/higher-rule tie -> second pass or DEFER
                 if c > 0:
                     higher += 1
             ranks.append(higher)
@@ -1616,8 +1817,58 @@ def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None, ez=Non
     return ranks
 
 
-def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int, directions=None) -> tuple[str, ...]:
-    """CIP R/S NAMES for the SOUNDLY-nameable acyclic stereocentres, sorted; ``()`` if none.
+def _cip_ranks_with_aux(
+    written, centre, adj, elems, mass, aromatic, mancude, ez, auxiliary,
+) -> "tuple[list[int], bool] | None":
+    """Order four ligands with bounded auxiliary-descriptor Rules 4a/5.
+
+    This path is entered only after Rules 1a/1b/2/3 did not produce a strict order.  It consumes uppercase R/S
+    labels already established without auxiliary descriptors elsewhere in the same molecule.  Exactly one
+    enantiomorphic ligand-pair comparison may mark the target pseudoasymmetric; multiple such comparisons remain
+    outside the bounded admission and defer.
+    """
+    try:
+        roots = [
+            _cip_digraph(w, centre, (centre, w), adj, elems, mass, aromatic, [_CIP_NODE_BUDGET], mancude, ez)
+            for w in written
+        ]
+        ctx = {"cmp": {}, "sc": {}, "budget": [_CIP_COMPARE_BUDGET]}
+        comparisons: dict[tuple[int, int], int] = {}
+        pseudo_pairs = 0
+        for i in range(4):
+            for j in range(i + 1, 4):
+                c = _cip_compare_through_rule3(roots[i], roots[j], ctx)
+                if c == 0:
+                    c = _cip_compare_rules45(roots[i], roots[j], ctx, auxiliary)
+                if c == 0:
+                    return None
+                comparisons[(i, j)] = c
+                if abs(c) == 2:
+                    pseudo_pairs += 1
+        if pseudo_pairs > 1:
+            return None
+        ranks = []
+        for i in range(4):
+            higher = 0
+            for j in range(4):
+                if i == j:
+                    continue
+                c = comparisons[(i, j)] if i < j else -comparisons[(j, i)]
+                if c < 0:
+                    higher += 1
+            ranks.append(higher)
+    except (_CipTooBig, _CipAromatic, _CipAmbiguous):
+        return None
+    if sorted(ranks) != [0, 1, 2, 3]:
+        return None
+    return ranks, pseudo_pairs == 1
+
+
+def _cip_labels_by_atom(
+    atoms: list[_Atom], bonds: list[list[int]], charge: int, directions=None,
+    written_neighbours: "dict[int, list[int | None]] | None" = None,
+) -> dict[int, str]:
+    """CIP R/S/r/s labels keyed by heavy-atom index for the soundly nameable stereocentres; ``{}`` if none.
 
     Priority is computed by the general CIP **Rule 1a** hierarchical digraph (:func:`_cip_ranks`, ROUND 20): a
     breadth-first, branch-by-branch ranking with duplicate/phantom atoms for multiple bonds and ring closures.
@@ -1629,7 +1880,7 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int, directi
     -> R).  ROUND 34 item 1 adds CIP **Rule 3** (double-bond E/Z, seqcis 'Z' > seqtrans 'E') as the next pass at
     the Rule-1a+2 tie hand-off, so two acyclic ligands identical except in double-bond geometry now NAME
     (``C[C@](/C=C\\C)(/C=C/C)O`` -> R).  It stays SOUND: a centre whose four ligands are NOT separated by a BUILT
-    rule -- a tie needing Rule 1b/4/5, a Rule-2 pairing made ambiguous by Rule-1a-tied siblings or an unknown mass,
+    rule, a comparison involving an unknown mass,
     an unresolvable double-bond geometry, or a true constitutional duplicate (a false centre) -- is a NAMED
     DEFERRAL and gets NO label, because a guessed R/S is worse than
     none. Bounded neutral C/N/O/S mancude rings (>=2 Kekule structures: benzene, pyridine) use exact atomic-number
@@ -1637,10 +1888,10 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int, directi
     spellings; a LOCALIZED unsaturated ring (a UNIQUE Kekule structure -- cyclopropene, cyclohexene,
     cyclopentadiene, a cyclic enol ether, a localized fused bicyclic) is RELEASED to the ordinary digraph and
     NAMES (ROUND 33); exocyclic ring doubles/carbonyls and aromatic-fused-to-saturated systems join it in ROUND
-    34.  The corrected FIFO traversal soundly compares Rule-1a-distinct ring ligands.  Charged and unsupported
-    ring systems retain a lazy deferral boundary; an isotope-labelled ring TIED under Rule 1a DEFERS before Rule
-    2 (Rule-1b territory). A ranking decided by atomic number before reaching a boundary still names. A ring
-    stereocentre (``_on_cycle``) and a non-four-coordinate marked centre also defer, as before.
+    34.  ROUND 35 adds revised Rule 1b between 1a and 2, exact written-order ring parity, and a bounded two-pass
+    Rules-4a/5 admission (one established descriptor or exactly one opposed R/S pair).  Charged and unsupported
+    ring systems retain a lazy deferral boundary; recursive Rule 4b/4c/6 systems and non-four-coordinate marked
+    centres defer.  A ranking decided before reaching a boundary still names.
     On the distinct-atomic-number slice the digraph decides at sphere 0, so this is byte-identical to the prior
     ``sorted(z, reverse=True)`` ranks there -- a strict extension, never a change.
 
@@ -1652,7 +1903,7 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int, directi
     """
     marked = [a for a in range(len(atoms)) if atoms[a].chirality]
     if not marked:
-        return ()
+        return {}
     work = [list(b) for b in bonds]
     _kekulize_in_place(atoms, work, charge)
     filled_atoms, filled_bonds = _fill_hydrogens(atoms, work)     # heavy indices 0..n-1 preserved; H appended after
@@ -1672,43 +1923,84 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int, directi
     # ``/``/``\\`` directional markers.  Empty (no descriptors) when directions are absent -> Rule 3 is inert
     # and naming is byte-identical to the pre-R34-item-1 behaviour.
     ez = _cip_ez_by_atom(work, directions or {}, adj, filled_atoms, mass, aromatic, mancude)
-    labels: list[str] = []
-    for a in marked:                                             # SAME scope as _perceive_configuration (acyclic, 4-coord)
-        if _on_cycle(a, neighbours, len(filled_atoms)):
-            continue
-        incoming = [bd[0] for bd in bonds if bd[1] == a]
-        outgoing = [bd[1] for bd in bonds if bd[0] == a]
+    labels_by_atom: dict[int, str] = {}
+    unresolved: list[tuple[int, list[int]]] = []
+    for a in marked:                                             # first pass: descriptor-free Rules 1a/1b/2/3
         h_neighbours = [j for j in neighbours[a] if j >= n and filled_atoms[j] == "H"]
-        if len(incoming) > 1:
-            continue
-        written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
+        if written_neighbours is not None:
+            h_iter = iter(h_neighbours)
+            written = [next(h_iter) if token is None else token for token in written_neighbours[a]]
+            if next(h_iter, None) is not None:
+                continue                                         # parser/fill disagreement -> fail closed
+        else:
+            if _on_cycle(a, neighbours, len(filled_atoms)):
+                continue                                         # no source-order witness for ring parity -> defer
+            incoming = [bd[0] for bd in bonds if bd[1] == a]
+            outgoing = [bd[1] for bd in bonds if bd[0] == a]
+            if len(incoming) > 1:
+                continue
+            written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
         if len(written) != 4:
             continue
         if any(ATOMIC_NUMBER.get(filled_atoms[x]) is None for x in written):
             continue                                             # a non-periodic-table element -> out of scope
         ranks = _cip_ranks(written, a, adj, filled_atoms, mass, aromatic, mancude, ez)
         if ranks is None:
-            continue                                             # Rule 1a+2 leave a genuine tie -> NAMED DEFERRAL (never guess)
+            unresolved.append((a, written))
+            continue
         handedness = _perm_parity(ranks) ^ (0 if atoms[a].chirality == 1 else 1)
-        labels.append("S" if handedness == 0 else "R")          # anchored to L-alanine = S (see docstring)
-    return tuple(sorted(labels))
+        labels_by_atom[a] = "S" if handedness == 0 else "R"     # anchored to L-alanine = S (see docstring)
+
+    # Second pass (ROUND 35): descriptor-free labels are sound auxiliary R/S witnesses for a bounded Rule-4a/5
+    # comparison.  Do not iterate newly minted pseudo labels into more centres: recursive Rule 4b/4c/6 propagation
+    # is still outside this admission, so such cases continue to defer rather than bootstrap a guessed fixed point.
+    auxiliary = dict(labels_by_atom)
+    # Admission is deliberately narrow.  One established descriptor supports Rule 4a's descriptor-vs-none
+    # ordering.  Exactly one R/S pair supports revised Rule 5's two-reference enantiomorphic comparison.  Larger
+    # or same-handed descriptor systems can require target-relative Rule 4b/4c recursion, so they stay dark.
+    auxiliary_admitted = len(auxiliary) == 1 or (
+        len(auxiliary) == 2 and set(auxiliary.values()) == {"R", "S"}
+    )
+    if auxiliary_admitted:
+        for a, written in unresolved:
+            ranked = _cip_ranks_with_aux(
+                written, a, adj, filled_atoms, mass, aromatic, mancude, ez, auxiliary
+            )
+            if ranked is None:
+                continue
+            ranks, pseudo = ranked
+            handedness = _perm_parity(ranks) ^ (0 if atoms[a].chirality == 1 else 1)
+            labels_by_atom[a] = ("s" if handedness == 0 else "r") if pseudo else (
+                "S" if handedness == 0 else "R"
+            )
+    return labels_by_atom
+
+
+def _cip_labels(
+    atoms: list[_Atom], bonds: list[list[int]], charge: int, directions=None,
+    written_neighbours: "dict[int, list[int | None]] | None" = None,
+) -> tuple[str, ...]:
+    """Sorted CIP R/S/r/s names (``()`` if none) -- :func:`_cip_labels_by_atom` with the atom keys dropped."""
+    return tuple(sorted(_cip_labels_by_atom(
+        atoms, bonds, charge, directions, written_neighbours).values()))
 
 
 def cip_labels(text: str) -> tuple[str, ...]:
-    """The CIP R/S names of ``text``'s soundly-nameable acyclic stereocentres, sorted; ``()`` if none.
+    """The CIP R/S/r/s names of ``text``'s soundly-nameable tetrahedral stereocentres, sorted; ``()`` if none.
 
     Priority comes from the general CIP **Rule 1a** hierarchical digraph -- breadth-first, branch-by-branch, with
     duplicate/phantom atoms for multiple bonds and ring closures (ROUND 20) -- plus CIP **Rule 2** (mass number,
     ROUND 28) as its own pass at the Rule-1a tie hand-off, so the common same-element case (amino acids, sugars,
     secondary/tertiary carbons) AND a same-Z isotope tie are now NAMED, not deferred.  CIP **Rule 3** (double-bond
-    E/Z, ROUND 34) is a third full pass.  Localized unsaturated, exocyclic-unsaturated/carbonyl, and supported
+    E/Z, ROUND 34) is a third full pass; revised Rule 1b runs between 1a and 2.  Localized unsaturated,
+    exocyclic-unsaturated/carbonyl, and supported
     aromatic-fused-to-saturated ring substituents (including unique-Kekule cyclopropene, cyclohexene,
     cyclopentadiene, cyclic enol
     ether, a localized fused bicyclic) are also NAMED, including Rule-1a-distinct ring-vs-ring comparisons.  A centre
-    the BUILT rules (1a, 2, 3) cannot fully order (a tie needing Rule 1b/4/5, a Rule-2 pairing made ambiguous by
-    Rule-1a-tied siblings or an unknown mass), one whose ranking depends on an unsupported ring, an isotope-labelled
-    ring tied under Rule 1a (Rule-1b territory), a ring stereocentre, or a non-four-coordinate marked
-    centre contributes NO name -- a named deferral, never a guessed/unsound label.  Raises
+    Rules 1a/1b/2/3 and the bounded Rules-4a/5 pass cannot fully order, one whose ranking depends on an unsupported
+    ring or recursive auxiliary descriptors, or a non-four-coordinate marked centre contributes NO name -- a
+    named deferral, never a guessed/unsound label.  Parser-preserved written neighbour order makes constitutional
+    ring stereocentres nameable.  Raises
     :class:`SmilesError` on a malformed/out-of-scope SMILES, like the parser.  See :func:`_cip_labels` for the
     method and its L-alanine = S sign-convention anchor."""
     if not isinstance(text, str):
@@ -1716,9 +2008,30 @@ def cip_labels(text: str) -> tuple[str, ...]:
     stripped = text.strip()
     if not stripped:
         raise SmilesError("empty SMILES")
-    atoms, bonds, directions = _parse_skeleton_dirs(stripped)
+    atoms, bonds, directions, written_neighbours = _parse_skeleton_stereo(stripped)
     charge = sum(a.charge for a in atoms)
-    return _cip_labels(atoms, bonds, charge, directions)
+    return _cip_labels(atoms, bonds, charge, directions, written_neighbours)
+
+
+def cip_labels_by_atom(text: str) -> dict[int, str]:
+    """The CIP R/S/r/s labels of ``text``'s soundly-nameable stereocentres, keyed by heavy-atom index.
+
+    Same method and sign convention as :func:`cip_labels`, but the atom->label map is kept instead of being
+    collapsed to a sorted multiset.  This is the PER-ATOM soundness surface: a per-centre R<->S swap on a
+    molecule with a symmetric label multiset (one R and one S, say) is invisible to :func:`cip_labels`' sorted
+    tuple but visible here -- so the oracle cross-check in ``experiments/cip_per_atom_oracle_probe.py`` compares
+    per atom, not per multiset.  Heavy-atom indices are the parse-order indices 0..n-1 (implicit H are appended
+    after and never marked), so they align with RDKit ``MolFromSmiles`` heavy-atom indices for the mapping.
+    Raises :class:`SmilesError` on a malformed/out-of-scope SMILES, like :func:`cip_labels`.
+    """
+    if not isinstance(text, str):
+        raise SmilesError("SMILES input must be a string")
+    stripped = text.strip()
+    if not stripped:
+        raise SmilesError("empty SMILES")
+    atoms, bonds, directions, written_neighbours = _parse_skeleton_stereo(stripped)
+    charge = sum(a.charge for a in atoms)
+    return _cip_labels_by_atom(atoms, bonds, charge, directions, written_neighbours)
 
 
 def parse_smiles(text: str) -> Molecule:
@@ -1758,7 +2071,7 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
     stripped = text.strip()
     if not stripped:
         raise SmilesError("empty SMILES")
-    atoms, bonds, directions = _parse_skeleton_dirs(stripped)
+    atoms, bonds, directions, written_neighbours = _parse_skeleton_stereo(stripped)
     charge = sum(a.charge for a in atoms)
     # The isotope-refined key must see the PRISTINE aromatic bonds (_build_molecule mutates them during Kekulisation),
     # so compute it FIRST -- it takes a private copy of `bonds` and leaves the caller's list untouched.
@@ -1766,10 +2079,12 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
     # Chirality PERCEPTION (ID-STEREO-01), the isotope work's named deferral: a canonical parity descriptor for the
     # perceivable acyclic tetrahedral centres (None when none), computed BEFORE _build_molecule mutates bond orders.
     # perception_complete (ID-STEREO-02) is True iff NO marked centre was scoped out -- the fail-closed match-layer signal.
-    configuration_digest, perception_complete = _perceive_configuration(atoms, bonds, charge)
+    configuration_digest, perception_complete = _perceive_configuration(
+        atoms, bonds, charge, written_neighbours
+    )
     # CIP R/S NAMES (ID-STEREO-01) for the soundly-nameable centres -- computed on the SAME pristine atoms/bonds, BEFORE
     # _build_molecule mutates bond orders (``_cip_labels`` copies ``bonds`` internally, so the caller's list is untouched).
-    cip = _cip_labels(atoms, bonds, charge, directions)
+    cip = _cip_labels(atoms, bonds, charge, directions, written_neighbours)
     double_bond_stereo = ("/" in stripped or "\\" in stripped)
     molecule = _build_molecule(atoms, bonds, charge)
     features = SmilesFeatures(

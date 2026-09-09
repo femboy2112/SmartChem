@@ -65,8 +65,8 @@ def test_an_aromatic_substituent_is_named_with_kekule_invariant_averaging():
     assert cip_labels("O[C@H](c1ccccn1)c1ccccn1") == ()          # di-2-pyridyl: a FALSE centre a fixed Kekule would name
 
 
-def test_ring_and_false_and_achiral_centres_get_no_label():
-    assert cip_labels("N[C@]1(F)CCCCO1") == ()                   # ring stereocentre -> deferred (out of acyclic scope)
+def test_ring_false_and_achiral_centres_are_distinguished():
+    assert cip_labels("N[C@]1(F)CCCCO1") == ("R",)              # ROUND 35: written-order ring stereocentre
     assert cip_labels("C[C@](C)(N)O") == ()                      # false centre (two identical methyls)
     assert cip_labels("CCO") == ()                               # achiral
     assert cip_labels("CC(=O)Nc1ccc(O)cc1") == ()                # paracetamol: achiral, no label

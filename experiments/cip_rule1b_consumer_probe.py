@@ -1,4 +1,4 @@
-"""CIP-RULE1B-CONSUMER-01: the oracle-verified investigation behind ROUND 32's Rule-1b VERIFIED DEFER.
+"""CIP-RULE1B-CONSUMER-01: ROUND-32 historical census, superseded by ROUND 35's Rule-1b witness.
 
 Rule 1b (Rung 2) ranks the CIP digraph's DUPLICATE atoms by the hierarchical rank of the node each represents.
 R28 deferred it on a soundness asymmetry (a computed-rank pre-pass MISLABELS rather than defers, so it needs a
@@ -7,8 +7,9 @@ finding and, per "experiments are committed", pins it as reproducible evidence -
 DIFFERENTIAL VALIDATION of the shipped Rule-1a+2 namer against the accurate RDKit ``rdCIPLabeler`` (the opposite
 of a self-mirror: live shipped code checked against an independent oracle).
 
-THE FINDING (see docs/research/CIP_RULE1B_CONSUMER_SCOPE_DECISION_v0.1.md): Rule 1b has NO demonstrated consumer
-anywhere in the namer's scope.
+The acyclic and small ring-fragment census remains a useful regression control: it found no Rule-1b consumer.
+ROUND 35 located the decisive consumer outside that generator in IUPAC Blue Book P-9 and implements revised
+Rule 1b; see ``cip_ring_aux_rules_probe.py``.  Ring-centre written order is also now admitted.
 
   * ACYCLIC centres (tree digraphs): a double-bond duplicate represents a DIRECT neighbour already compared at
     Rule 1a, so acyclic Rule 1b is subsumed by Rule 1a (Rule 1b bites only with ring closures -- Hanson 2018).
@@ -18,10 +19,10 @@ anywhere in the namer's scope.
     Rule-1b tie). ROUND 33 closed 12 single-ring cases. ROUND 34's corrected FIFO Rule-1a traversal closed the 12
     ring-vs-ring cases: the old recursive-top-branch comparator, not Rule 1b, caused their misranking. The sweep
     now finds 0/60 in-scope deferrals and 0 disagreements.
-  * RING-ON-CENTRE: filtered out of scope by ``_on_cycle`` before CIP ranking; RDKit labels, we defer (scope).
+  * RING-ON-CENTRE: this historical boundary is now closed by parser-preserved source order.
 
-Therefore building the acyclic ``dup_rank`` machinery would be dead structure + mislabel-prone: DEFER.  ROUND 33
-addressed the ring gap this harness surfaced (localized-ring substituents), NOT by building Rule 1b.
+The old conclusion was valid only for these generators.  It did not establish a universal no-consumer theorem;
+the IUPAC witness is the counterexample that changed the implementation decision.
 
 Each battery entry's RDKit label is baked as a frozen constant, VERIFIED against ``rdCIPLabeler`` at authoring
 (2026-09-08, rdkit 2026.3.6).  ``validate()`` and ``content_hash()`` are RDKit-FREE (the committed test
@@ -48,7 +49,7 @@ from smartchem.smiles import _cip_compare, _cip_mass, cip_labels
 _DUPLICATE_CAPABLE = ("C", "N", "O", "S")
 
 #: The committed tamper pin.  Regenerate ONLY on an intentional change.
-FROZEN_HASH = "66bda24620b2cc8b32066c64da3ce86c5631db3cf0455b6fe8973c5d329b8231"
+FROZEN_HASH = "cd37c3db89b17d50bf5cdf48465a2064a26de0a0f5048354785eee6b85b8d9cf"
 
 # --- committed sweep generators (reproducible; the counts below are what THESE produce, not orphaned numbers) ---
 
@@ -69,7 +70,7 @@ RING_SUB_INSCOPE_DEFERRALS = 0
 RING_SUB_UNSATURATED = 0
 
 #: Oracle-verified battery: (smiles, rdkit_label, expected_ours, category, note).  Categories:
-#:   acyclic-name | ring-sub-sat-name | ring-sub-unsat-name | ring-sub-multiring-name | ring-centre-defer |
+#:   acyclic-name | ring-sub-sat-name | ring-sub-unsat-name | ring-sub-multiring-name | ring-centre-name |
 #:   rule3-name | false-centre
 BATTERY = (
     ("N[C@@H](C)C(=O)O",        ("S",), ("S",), "acyclic-name", "L-alanine (Rule 1a)"),
@@ -96,9 +97,9 @@ BATTERY = (
     # constitutional); only Rule 3 decides.  R34 item 1 BUILT Rule 3, so this now NAMES (R) -- confirming the
     # deferral was Rule-3 territory all along, NOT Rule 1b (dalembert's boundary case, closed).
     ("C[C@](/C=C\\C)(/C=C/C)O", ("R",), ("R",), "rule3-name", "acyclic E/Z: Rule 3 decides (NOT Rule 1b) -> NAMED (R34)"),
-    # RING-ON-CENTRE -> filtered out of scope by _on_cycle before CIP ranking; rdkit labels, we defer.
-    ("N[C@]1(F)CCCCO1",         ("R",), (),     "ring-centre-defer", "ring stereocentre (out of scope)"),
-    ("C[C@H]1CCCCO1",           ("S",), (),     "ring-centre-defer", "2-methyltetrahydropyran (out of scope)"),
+    # ROUND 35: parser-preserved written neighbour order admits ring-on-centre parity.
+    ("N[C@]1(F)CCCCO1",         ("R",), ("R",), "ring-centre-name", "ring stereocentre"),
+    ("C[C@H]1CCCCO1",           ("S",), ("S",), "ring-centre-name", "2-methyltetrahydropyran"),
     # genuine false centres -- rdkit finds no centre, we agree (no mislabel):
     ("C[C@](C)(N)O",            (),     (),     "false-centre", "twin methyls"),
     ("CC[C@](CC)(N)O",          (),     (),     "false-centre", "twin ethyls"),
@@ -128,8 +129,8 @@ def duplicate_never_collides_with_real() -> int:
     for element in _DUPLICATE_CAPABLE:
         z = {"C": 6, "N": 7, "O": 8, "S": 16}[element]
         m = _cip_mass(element, 0)
-        real = (z, m, ((1, mh, ()),))               # a real terminal E: at least one Z>=1 (H) child
-        dup = (z, m, ())                             # a duplicate-E leaf: only phantom-0 children
+        real = (z, m, ((1, mh, (), 0, None, -1, False),), 0, None, -1, False)
+        dup = (z, m, (), 0, None, -1, True)
         assert _cip_compare(real, dup, ctx) != 0, f"CRUX REGRESSION: real {element} collides with its duplicate"
         checked += 1
     return checked
@@ -142,7 +143,7 @@ def validate() -> None:
         got = tuple(cip_labels(smi))
         assert got == expected, f"namer drift on {smi}: got {got}, expected {expected} [{note}]"
 
-        if category in ("acyclic-name", "ring-sub-sat-name", "ring-sub-unsat-name", "ring-sub-multiring-name", "rule3-name"):
+        if category in ("acyclic-name", "ring-sub-sat-name", "ring-sub-unsat-name", "ring-sub-multiring-name", "rule3-name", "ring-centre-name"):
             # we emit a label; it must MATCH the RDKit oracle (never mislabel).  ring-sub-unsat-name is the class
             # ROUND 33 closed; rule3-name is the acyclic E/Z tie ROUND 34 item 1 closed (Rule 3, provably NOT 1b).
             assert got == rd_label, f"MISLABEL vs oracle on {smi}: {got} != rdkit {rd_label}"

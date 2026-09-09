@@ -2,8 +2,8 @@
 
 Pins the oracle-verified finding that a stereocentre ON a ring is scoped out by _on_cycle and DEFERS soundly
 (never a mislabel), while RDKit names a real consumer population -- including pseudo-asymmetric (r/s, Rule 5) and
-multi-centre (menthol).  A sound ring-centre namer needs written-neighbour-order parity + reliable ring-vs-ring
-ranking (item 5's wall) + Rules 4/5; none is this round's build.  Committed assertions are RDKit-FREE; the live
+multi-centre (menthol). A sound ring-centre namer still needs written-neighbour-order parity + Rules 4/5; ROUND
+34's FIFO correction removed the earlier ring-ranking wall. Committed assertions are RDKit-FREE; the live
 rdkit cross-check skips when rdkit is absent.
 """
 from __future__ import annotations

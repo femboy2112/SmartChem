@@ -47,6 +47,7 @@ def test_lower_rules_unchanged_by_rule_3():
 
 def test_unresolvable_geometry_and_ring_centre_defer():
     assert cip_labels(r"C[C@](C=CC)(C=CC)O") == ()           # no direction markers -> geometry unknown
+    assert cip_labels(r"O[C@](/C(\F)=C\C)(/C(\F)=C/C)N") == ()  # contradictory markers -> no E/Z
     assert cip_labels(r"[C@]1(/C=C/C)CCCC1") == ()           # ring stereocentre -> out of scope
 
 

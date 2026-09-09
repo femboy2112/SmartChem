@@ -2,8 +2,9 @@
 
 Pins the oracle-verified finding that a ring whose only unsaturation is EXOCYCLIC (a ring ketone/lactone/lactam
 C=O, an exocyclic C=C/C=N/C=S -- every RING edge single) now NAMES, closing the R33-characterised exocyclic gap,
-while a conjugated ring (an INTERNAL ring double, e.g. cyclohexenone) and an exocyclic ring ranked against ANOTHER
-ring DEFER soundly.  Committed assertions are RDKit-FREE; the live rdkit cross-check skips when rdkit is absent.
+while a conjugated ring (an INTERNAL ring double, e.g. cyclohexenone) still defers. Rule-1a-distinct two-ring
+comparisons name after the R34 FIFO correction. Committed assertions are RDKit-FREE; the live cross-check skips
+when rdkit is absent.
 """
 from __future__ import annotations
 
@@ -45,12 +46,11 @@ def test_exocyclic_alkene_imine_thioketone_name():
     assert cip_labels("[C@](C1CCCCC1=S)(C)(F)Cl") == ("R",)      # exocyclic thioketone
 
 
-def test_conjugated_and_ring_vs_ring_defer_soundly():
+def test_conjugated_defers_but_rule1a_distinct_ring_pair_names():
     # an INTERNAL ring double (conjugated enone) is NOT released by the exocyclic rule -> DEFER;
-    # an exocyclic ring ranked against ANOTHER ring is Rule-1b/mancude territory (item 5) -> DEFER; never mislabel.
     assert cip_labels("[C@](C1=CCCCC1=O)(C)(F)Cl") == ()          # cyclohexenone (internal ring double)
     assert cip_labels("[C@](C1C=CC(=O)C1)(C)(F)Cl") == ()         # cyclopentenone
-    assert cip_labels("[C@](C1CCCCC1=O)(C1CCCCC1)(F)Cl") == ()    # exocyclic ring vs saturated ring
+    assert cip_labels("[C@](C1CCCCC1=O)(C1CCCCC1)(F)Cl") == ("R",)
 
 
 def test_rdkit_cross_check_reproduces_the_sweep_when_available():

@@ -182,7 +182,9 @@ pretending every reagent is elemental. Both directions share one typed
   plausible, unearned answer.
 
 The CIP namer now handles bounded neutral aryl/heteroaryl ligands using exact mancude-ring
-averaging, including explicit Kekulé spellings. Unsupported priorities still defer. Declared
+averaging, localized and exocyclic ring unsaturation, supported aromatic-fused systems, Rule-1a-distinct ring pairs,
+and acyclic Rule-3 E/Z priorities. Its Rule-1a/2/3 traversals use a FIFO paired-node queue. Ring-on-centre Rules 4/5,
+isotope-on-Rule-1a-tied rings, and unsupported conjugated/charged ring systems still defer. Declared
 duration intervals require `min`, including on replay. The latest source reconnaissance recovered
 Br₂ dissociation data and a dated Cl₂ procurement offer; their model and procurement limits remain
 explicit in the [current roadmap](ROADMAP.md).
@@ -236,10 +238,12 @@ python -m smartchem.bench
 Current maintained fast-suite result (dev environment with the optional PySCF stack installed):
 
 ```text
-4653 passed, 16 skipped, 1 xfailed
+4677 passed, 21 skipped, 1 xfailed
 ```
 
-The skips are optional-backend coverage and the explicit slow-test gate; they are not represented as passed.
+This baseline was measured with the development-only RDKit oracle absent. The seven RDKit-gated CIP checks were
+separately exercised in an oracle-present run (4684 passed, 14 skipped, 1 xfailed); skips are not represented as passed.
+The remaining skips are optional-backend coverage and the explicit slow-test gate.
 An environment WITHOUT PySCF skips additional real-wavefunction tests (the process-accessibility audit
 receipt records such a run: 4014 passed / 51 skipped / 1 xfailed).
 The [validation receipt](experiments/validation/process-accessibility-2026-09-05/receipt.json) records the

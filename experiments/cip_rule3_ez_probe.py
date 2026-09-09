@@ -10,8 +10,8 @@ THE BUILD (R34 item 1):
     them to single bonds), keyed by the written endpoint order.  No downstream ``bonds`` consumer changes.
   * PERCEPTION: ``_cip_ez_by_atom`` gives each stereogenic ACYCLIC double-bond END atom a CIP-RELATIVE E/Z code
     (2='Z'/seqcis, 1='E'/seqtrans), computed by ranking the double-bond substituents with the SAME ``_cip_compare``
-    and DEFERRING (no code) on any ambiguity -- unknown geometry (no marker), a ring double bond, or a tied
-    substituent.  Calibrated to ``F/C=C/F`` (E) and ``F/C=C\\F`` (Z).
+    and DEFERRING (no code) on any ambiguity -- unknown geometry (no marker), contradictory markers at one alkene
+    end, a ring double bond, or a tied substituent.  Calibrated to ``F/C=C/F`` (E) and ``F/C=C\\F`` (Z).
   * DIGRAPH: the node gains an ``ez`` slot at index 3 (append-only; the index-0/1/2 z/mass/children code is
     byte-untouched).  ``_cip_compare_rule3`` mirrors Rule 2's breadth-first shape on that slot (Z=2 > E=1), entered
     ONLY at the Rule-1a-AND-Rule-2 tie hand-off in ``_cip_rank_compare`` (CIP hierarchy).
@@ -33,7 +33,7 @@ import json
 
 from smartchem.smiles import cip_labels
 
-FROZEN_HASH = "f065f6a3b50dcd6df1f96aa8c9f283cc7b96b31cd9972d27b9c304ed4bc77659"
+FROZEN_HASH = "f1a66fd23f87766f32b9d9722db48df3b8583af7dbc5ab53ef8afd5c00f4bcc4"
 
 #: E/Z-bearing alkene ligands (Z and E of the same constitution, plus a diene) for the sweep.
 _ALKENES = (r"/C=C\C", r"/C=C/C", r"/C=C\CC", r"/C=C/CC", r"/C=C\Cl", r"/C=C/Cl", r"/C=C\Br", r"/C=C/Br",
@@ -54,6 +54,8 @@ BATTERY = (
     (r"C[C@](/C=C\CO)(/C=C/CO)F",   ("R",), ("R",), "ez-name", "allylic-alcohol arms"),
     # --- boundary DEFERRALS (rdkit ALSO defers, or geometry unresolvable) ---
     (r"C[C@](C=CC)(C=CC)O",         (), (), "boundary-defer", "NO direction markers -> geometry unknown (rdkit defers too)"),
+    (r"O[C@](/C(\F)=C\C)(/C(\F)=C/C)N", (), (), "boundary-defer",
+     "contradictory same-side markers at an alkene end -> no geometry (rdkit STEREONONE)"),
     (r"[C@]1(/C=C/C)CCCC1",         (), (), "boundary-defer", "ring stereocentre -> out of scope (rdkit defers too)"),
 )
 
@@ -117,9 +119,11 @@ def _rdkit_cross_check() -> dict:
         return tuple(sorted(a.GetProp("_CIPCode") for a in m.GetAtoms() if a.HasProp("_CIPCode")))
 
     for smi, rd_baked, _exp, cat, note in BATTERY:
+        live = rd_label(smi)
         if cat.endswith("-name"):
-            live = rd_label(smi)
             assert live is not None and set(live) == set(rd_baked), f"baked rdkit label stale on {smi}: {live} [{note}]"
+        elif rd_baked == ():
+            assert live is not None and defers(live), f"rdkit must also defer boundary {smi}: {live} [{note}]"
 
     named = mismatches = deferred = 0
     for a, b in itertools.combinations(_ALKENES, 2):

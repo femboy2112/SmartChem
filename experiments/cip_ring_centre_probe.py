@@ -3,7 +3,7 @@
 The namer scopes a ring stereocentre OUT via ``_on_cycle`` (in both ``_cip_labels`` and ``_perceive_configuration``)
 and DEFERS it -- never a guessed label.  This item asked whether ring stereocentres (menthol, cis/trans
 disubstituted rings, pseudo-asymmetric centres) can be named.  Answer, oracle-verified: NO -- not soundly, not
-this round.  A sound ring-centre namer needs THREE things, each a genuine build:
+this round. A sound ring-centre namer still needs TWO genuine builds:
 
   1. WRITTEN NEIGHBOUR ORDER for the tetrahedral parity.  A ring-closure bond is appended to ``bonds`` at the
      CLOSING digit, not at the OPENING digit's written position -- but SMILES chirality is defined by the order the
@@ -11,16 +11,13 @@ this round.  A sound ring-centre namer needs THREE things, each a genuine build:
      ``incoming``/``outgoing`` reconstruction therefore mis-orders a ring centre's neighbours -> a WRONG parity ->
      a wrong R/S.  ``_on_cycle`` fails closed exactly here.  (The parser would need per-atom written-order capture,
      like the R34-item-1 direction capture.)
-  2. RELIABLE RING-vs-RING RANKING.  A ring stereocentre's two ring-path ligands ARE a ring-vs-ring comparison --
-     the very deep-ring-descent ROUND 34 item 5 proved our Rule-1a digraph resolves DIFFERENTLY from the oracle for
-     same-kind pairs (``_CIP_RING_VS_RING_GUARD``).  So even a diagnostic bypass of ``_on_cycle`` finds cases that
-     RANK but would MISLABEL.  Item 5's unlock (a Rule-1b constitutional comparator / a verified ring digraph) is a
-     prerequisite here too.
-  3. RULES 4/5 (auxiliary descriptors + pseudo-asymmetry).  cis/trans-disubstituted rings and meso systems need
+  2. RULES 4/5 (auxiliary descriptors + pseudo-asymmetry).  cis/trans-disubstituted rings and meso systems need
      Rule 4 (like/unlike auxiliary R/S descriptors, assigned recursively); pseudo-asymmetric centres need Rule 5
      (lowercase 'r'/'s', R>S) -- RDKit returns these here (``O[C@H]1CC[C@@H](C)CC1`` -> ('s','s')).  Neither is built.
 
-So building ring-centre naming now would MISLABEL on all three counts -> DEFER (the R32 discipline: a
+ROUND 34 item 5 removed the apparent third wall: its ring-vs-ring failures came from a general recursive traversal
+bug, and the corrected FIFO Rule-1a comparator passes the fresh differential sweep. Building ring-centre naming
+now would still MISLABEL on written parity and auxiliary descriptors -> DEFER (the R32 discipline: a
 proven-cannot-build-soundly-yet feature is a verified defer, with committed evidence + the named unlock).
 
 This harness pins the finding ("experiments are committed") + confirms the current defer is SOUND (0 mislabels;

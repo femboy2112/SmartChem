@@ -1,5 +1,11 @@
 # Localized unsaturated-ring substituents in the CIP namer (ROUND 33)
 
+> **ROUND 34 correction:** the comparator was not unchanged: adversarial review found and fixed a general
+> recursive-top-branch traversal bug. Exocyclic and aromatic-fused cases are now supported, and Rule-1a-distinct
+> ring pairs name. The `released` multiring guard described below was an interim control and has been removed;
+> isotope-on-Rule-1a-tied rings and ring-on-centre stereochemistry remain deferred. See
+> `CIP_RING_VS_RING_SCOPE_DECISION_v0.1.md`. The rest of this document preserves the Round-33 rationale.
+
 > **Status:** SHIPPED — the R32-surfaced "unsaturated-ring-substituent" gap is closed for **localized** rings (a
 > single forced Kekulé structure). This is a bounded Rule-1a/Rule-2 extension over the UNCHANGED breadth-first
 > comparator, oracle-verified against RDKit `rdCIPLabeler`; it names the localized-ring class and cleanly, soundly

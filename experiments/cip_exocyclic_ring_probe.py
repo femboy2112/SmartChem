@@ -12,8 +12,8 @@ Kekule ambiguity in the ring itself.  Its exocyclic double bonds and ring closur
 ordinary ``_cip_digraph`` EXACTLY as an acyclic double bond and a saturated ring already are, so the whole
 component is RELEASED (real z/mass), like R33's localized rings.  A ring with an INTERNAL ring double (an enone,
 an aromatic or explicit-Kekule ring) fails the test and stays on the mancude/matching path -> the conjugated
-cases remain deferred.  The R33 multiring guard still fires when a released exocyclic ring is ranked against
-ANOTHER ring (item-5 territory); a single such ring bears acyclic co-ligands and NAMES.
+cases remain deferred. ROUND 34's FIFO Rule-1a correction also permits a Rule-1a-distinct exocyclic ring to be
+ranked against another ring; both single- and two-ring cases NAME when the built rules fully order them.
 
 Consumer size (recon, 2026-09-08, rdkit 2026.3.6): every real ring carbonyl/exocyclic-alkene substituent -- the
 single largest real-molecule ring class.  This harness pins the finding ("experiments are committed") and doubles
@@ -34,7 +34,7 @@ import json
 from smartchem.smiles import cip_labels
 
 #: The committed tamper pin.  Regenerate ONLY on an intentional change.
-FROZEN_HASH = "bb5109a8ab5ccbe76a7722aec8448dafe0f4da1a703351e3a334c5b2a6515273"
+FROZEN_HASH = "f0d8b0a53968aabc48efd5864c2bea5c92a52e1fb0da721193f0c1104425747b"
 
 #: Exocyclic-unsaturation ring fragments (attach at the first ring atom): the RING skeleton is all single bonds;
 #: the double bond points OUT (C=O ketone, =C alkene, =N imine, =S thioketone), at various ring sizes/positions,
@@ -42,8 +42,7 @@ FROZEN_HASH = "bb5109a8ab5ccbe76a7722aec8448dafe0f4da1a703351e3a334c5b2a6515273"
 _EXO_RINGS = ("C1CCC1=O", "C1CCCC1=O", "C1CCCCC1=O", "C1CCCCCC1=O", "C1CCCCC1=C", "C1CCCCC1=CC",
               "C1CCCCC1=N", "C1CCCCC1=S", "C1CCC(=O)CC1", "C1CC(=O)CC1", "C1CCC(=O)C1", "C1CCC(=O)O1",
               "C1CCC(=O)N1", "C1CC(=O)OC1", "C1CC(=C)CC1", "C1C(=O)CCCC1=O", "C1CCC2(CCCC2=O)C1")
-#: ACYCLIC spectator co-ligands (the released ring is then the ONLY ring on the centre -> the multiring guard
-#: never fires and the ring NAMES).  A ring co-ligand would (soundly) DEFER via that guard (item-5 territory).
+#: ACYCLIC spectator co-ligands used by the bounded class sweep.
 _SPECTATORS = ("C", "CC", "CCC", "C(C)C", "CO", "O", "N", "S", "F", "Cl")
 
 #: Oracle-verified battery: (smiles, rdkit_label, expected_ours, category, note).  Categories:
@@ -65,8 +64,8 @@ BATTERY = (
     ("[C@](C1CCCCC1=O)(C)(Cl)Br",     ("R",), ("R",), "exocyclic-name", "halogen spectators"),
     ("[C@](C1C(=O)CCCC1=O)(C)(F)Cl",  ("R",), ("R",), "exocyclic-multi-name", "ring 1,3-dione: TWO exocyclic C=O, all ring edges single"),
     ("[C@](C1CCC2(CCCC2=O)C1)(C)(F)Cl", ("R",), ("R",), "exocyclic-multi-name", "spiro skeleton, exocyclic C=O on the far ring"),
+    ("[C@](C1CCCCC1=O)(C1CCCCC1)(F)Cl", ("R",), ("R",), "exocyclic-multi-name", "exocyclic-C=O ring vs saturated ring -> FIFO Rule 1a"),
     # --- boundary DEFERRALS (rdkit names, we defer soundly) ---
-    ("[C@](C1CCCCC1=O)(C1CCCCC1)(F)Cl", ("R",), (), "boundary-defer", "exocyclic-C=O ring vs another ring -> multiring guard (item 5)"),
     ("[C@](C1=CCCCC1=O)(C)(F)Cl",     ("R",), (), "boundary-defer", "cyclohexenone: INTERNAL ring double + exocyclic (conjugated) -> defer"),
     ("[C@](C1C=CC(=O)C1)(C)(F)Cl",    ("R",), (), "boundary-defer", "cyclopentenone: internal ring double + exocyclic C=O -> defer"),
 )
@@ -112,12 +111,12 @@ def validate() -> None:
             assert rd_label, f"{smi} is only interesting if rdkit LABELS it [{note}]"
     assert counts["exocyclic-name"] >= 12, "must non-vacuously name the exocyclic-ring class"
     assert counts["exocyclic-multi-name"] >= 2, "must exercise multi-exocyclic (dione) + spiro skeletons"
-    assert counts["boundary-defer"] >= 3, "must pin the conjugated-enone + ring-vs-ring boundaries"
+    assert counts["boundary-defer"] >= 2, "must pin the unresolved conjugated-enone boundary"
     # the conjugated case (internal ring double) is NOT captured by the exocyclic release -> still DEFERS
     assert cip_labels("[C@](C1=CCCCC1=O)(C)(F)Cl") == (), "conjugated enone (internal ring double) must DEFER"
-    # a single exocyclic ring on the centre NAMES; against another ring the multiring guard fires
+    # both the single-ring case and a Rule-1a-distinct ring pair NAME
     assert cip_labels("[C@](C1CCCCC1=O)(C)(F)Cl") == ("R",), "single exocyclic-ketone ring must NAME"
-    assert cip_labels("[C@](C1CCCCC1=O)(C1CCCCC1)(F)Cl") == (), "exocyclic ring vs another ring must DEFER (item 5)"
+    assert cip_labels("[C@](C1CCCCC1=O)(C1CCCCC1)(F)Cl") == ("R",), "exocyclic ring pair must NAME"
     sweep = _sweep_names_only()
     assert sweep["named"] >= 120, f"exocyclic sweep should name a large population, got {sweep['named']}"
 

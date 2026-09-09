@@ -2,8 +2,8 @@
 
 Pins the oracle-verified finding that a delocalized aromatic ring FUSED to a saturated ring (indane, tetralin,
 their hetero- and PAH-fused homologues) now NAMES -- the aromatic acceptors get the SAME R22 partner-Z averaging,
-the sp3 spectator carbons keep real z -- closing the R33-recorded fused boundary, while a ring-vs-ring comparison
-and an ambiguous partially-hydrogenated PAH DEFER soundly.  Committed assertions are RDKit-FREE; the live rdkit
+the sp3 spectator carbons keep real z -- closing the R33-recorded fused boundary, while identical fused ligands
+and an ambiguous partially-hydrogenated PAH DEFER soundly. Committed assertions are RDKit-FREE; the live rdkit
 cross-check skips when rdkit is absent.
 """
 from __future__ import annotations
@@ -44,8 +44,8 @@ def test_benzene_mancude_path_still_byte_identical():
     assert cip_labels("O[C@H](c1ccccc1)c1ccccn1") == ("R",)
 
 
-def test_ambiguous_and_ring_vs_ring_defer_soundly():
-    assert cip_labels("[C@](C1Cc2ccccc2C1)(C1Cc2ccccc2C1)(F)Cl") == ()   # indanyl vs indanyl -> ring-vs-ring defer
+def test_false_centre_and_ambiguous_pah_defer_soundly():
+    assert cip_labels("[C@](C1Cc2ccccc2C1)(C1Cc2ccccc2C1)(F)Cl") == ()   # identical ligands -> false centre
     assert cip_labels("[C@](C1CCc2ccc3ccccc3c2C1)(C)F") == ()            # partially-hydrogenated phenanthrene
 
 

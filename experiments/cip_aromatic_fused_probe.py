@@ -48,8 +48,8 @@ BATTERY = (
     ("[C@](C1CC2=CC=CC=C2C1)(C)(F)Cl",   ("R",), ("R",), "fused-name", "explicit-Kekule benzo-fused"),
     ("[C@](C1Cc2ccc(F)cc2C1)(C)(F)Cl",   ("R",), ("R",), "fused-name", "substituted aromatic ring"),
     ("[C@](C1CCc2ccccc2C1)(CC)(O)N",     ("S",), ("S",), "fused-name", "tetralin, different spectators -> S"),
-    # --- boundary DEFERRALS (rdkit ALSO defers, or the multiring guard fires) ---
-    ("[C@](C1Cc2ccccc2C1)(C1Cc2ccccc2C1)(F)Cl", (), (), "boundary-defer", "indanyl vs indanyl: ring-vs-ring (both defer)"),
+    # --- boundary DEFERRALS (RDKit also defers: a false centre or unsupported PAH) ---
+    ("[C@](C1Cc2ccccc2C1)(C1Cc2ccccc2C1)(F)Cl", (), (), "boundary-defer", "identical indanyl ligands: false centre"),
     ("[C@](C1CCc2ccc3ccccc3c2C1)(C)F", (), (), "boundary-defer", "partially-hydrogenated phenanthrene (both defer)"),
 )
 
@@ -89,7 +89,7 @@ def validate() -> None:
         else:
             assert defers(got), f"{smi} must DEFER [{note}]"
     assert counts["fused-name"] >= 9, "must non-vacuously name the aromatic-fused class"
-    assert counts["boundary-defer"] >= 2, "must pin the ring-vs-ring / ambiguous-PAH boundary"
+    assert counts["boundary-defer"] >= 2, "must pin the false-centre / ambiguous-PAH boundary"
     # indane/tetralin NAME; the benzene mancude path is unchanged; a partially-hydrogenated PAH still defers
     assert cip_labels("[C@](C1Cc2ccccc2C1)(C)(F)Cl") == ("R",), "indane must NAME"
     assert cip_labels("[C@](c1ccccc1)(C)(F)Cl") == ("R",), "standalone benzene mancude unchanged"

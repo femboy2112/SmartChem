@@ -953,6 +953,15 @@ _CIP_COMPARE_BUDGET = 400000         #: pairwise-comparison cap; likewise fail-c
 _CIP_MANCUDE_MAX_ATOMS = 30          #: per ring system, independent of the parser's identity budget
 _CIP_MANCUDE_MAX_MATCHINGS = 128
 _CIP_MANCUDE_WORK_BUDGET = 10000
+#: ROUND 34 item 5 -- the load-bearing RING-vs-RING guard.  A released localized/exocyclic ring, or an item-4
+#: mixed-fused ring, ranked against ANOTHER ring is a deep-ring-descent our Rule-1a digraph resolves DIFFERENTLY
+#: from the RDKit oracle (same-kind unsaturated pairs -- cyclohexenyl vs cyclopentenyl, indane vs tetralin --
+#: mislabel; it is Rule-1b territory, R32).  The guard fails such a centre CLOSED (a NAMED deferral; a wrong R/S is
+#: worse than none).  This constant is the SEAM the verified-defer probe (experiments/cip_ring_vs_ring_probe.py)
+#: flips OFF to DEMONSTRATE the guard is necessary (relaxing it reintroduces the mislabels) -- it stays True in all
+#: production use.  PURE mancude-vs-mancude (benzene/pyridyl, no spectator, not ``released``) is unaffected and
+#: ranks soundly (R22); two SATURATED rings (never released) also name.
+_CIP_RING_VS_RING_GUARD = True
 
 
 def _cip_mass(element: str, isotope: int) -> "float | None":
@@ -1077,6 +1086,7 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
             continue
         acceptors = set()
         valid = True
+        spectator_present = False
         for a in component:
             atom = atoms[a]
             orders = sorted(o for _b, o in adj[a])
@@ -1092,7 +1102,7 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
             elif atom.element in ("O", "S") and orders == [1, 1]:
                 pass
             elif atom.element == "C" and orders == [1, 1, 1, 1]:
-                pass                                     # a saturated sp3 ring carbon: ALL bonds order 1 (no ring
+                spectator_present = True                 # a saturated sp3 ring carbon: ALL bonds order 1 (no ring
                 # AND no exocyclic double -- the all-single pattern guarantees both), so it is a pass-through
                 # SPECTATOR, not a pi-participant.  Admitting it (rather than the old blanket ``else: valid=False``)
                 # lets a partially-unsaturated ring reach the matching enumeration below.  On matching_count==1 the
@@ -1168,6 +1178,14 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
             averages.update({a: Fraction(sum(ATOMIC_NUMBER[atoms[b].element] for b in choices), len(choices))
                              for a, choices in partners.items()})
             blocked.difference_update(component)
+            if spectator_present:
+                released.update(component)               # ROUND 34 item 5: a MIXED fused ring (aromatic averaged +
+                # saturated spectator carbons -- indane, tetralin) NAMES as the only ring on a centre, but a
+                # ring-vs-ring comparison INTO its mixed aromatic/saturated ring-closure structure is unreliable
+                # (the same deep-ring-descent that mislabels loc-vs-loc/exo-vs-exo -- oracle-verified).  Recording it
+                # in ``released`` makes the multiring guard fail-closed on fused-vs-ANOTHER-ring, WITHOUT touching
+                # the R22-validated PURE-mancude path (benzene/pyridyl have NO spectator -> not released -> still
+                # rank soundly, 0 oracle mismatches over the mancude-vs-mancude sweep).
     return frozenset(blocked), averages, frozenset(released)
 
 
@@ -1443,7 +1461,7 @@ def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None, releas
     profiles = [_ligand_atoms(w, centre, adj) for w in written]     # ROUND 33
     has_ring = [p[0] for p in profiles]                             # gate the Rule-2 leapfrog past Rule 1b
     touches_released = [bool(p[1] & released) for p in profiles]    # a ligand holding an R33-released localized ring
-    if any(touches_released) and sum(has_ring) >= 2:
+    if _CIP_RING_VS_RING_GUARD and any(touches_released) and sum(has_ring) >= 2:
         return None                                             # a released localized ring would be ranked against
         # ANOTHER ring ligand (saturated, unsaturated, or mancude-aromatic).  Ring-vs-ring CIP ranking descends into
         # competing ring-closure / double-bond duplicate structures -- Rule-1b territory (R32: Rule 1b bites with

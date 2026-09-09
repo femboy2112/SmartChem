@@ -1077,7 +1077,6 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
             continue
         acceptors = set()
         valid = True
-        spectator_present = False
         for a in component:
             atom = atoms[a]
             orders = sorted(o for _b, o in adj[a])
@@ -1093,12 +1092,14 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
             elif atom.element in ("O", "S") and orders == [1, 1]:
                 pass
             elif atom.element == "C" and orders == [1, 1, 1, 1]:
-                spectator_present = True                 # a saturated sp3 ring carbon: ALL bonds order 1 (no ring
-                # AND no exocyclic double -- the all-single pattern guarantees both), so it is a LOCALIZED-ring
-                # pass-through, not a pi-participant.  Admitting it (rather than the old blanket ``else: valid=False``)
-                # lets a partially-unsaturated ring -- cyclopropene, cyclohexene, cyclopentadiene, a cyclic enol
-                # ether -- reach the matching enumeration below; on a UNIQUE matching the ring is released to the
-                # ordinary digraph (localized double bonds, exactly as acyclic doubles are handled).
+                pass                                     # a saturated sp3 ring carbon: ALL bonds order 1 (no ring
+                # AND no exocyclic double -- the all-single pattern guarantees both), so it is a pass-through
+                # SPECTATOR, not a pi-participant.  Admitting it (rather than the old blanket ``else: valid=False``)
+                # lets a partially-unsaturated ring reach the matching enumeration below.  On matching_count==1 the
+                # ring is a single Kekule structure -> released (R33); on matching_count>=2 its pi-acceptors are
+                # partner-Z averaged and the spectator carbons keep real z -- so cyclopropene..cyclohexadiene, cyclic
+                # enol ethers, localized fused bicyclics NAME (R33), AND an aromatic ring FUSED to a saturated ring
+                # (indane, tetralin) NAMES too (R34 item 4; the spectator no longer forces a defer).
             else:
                 valid = False
         if not valid or not acceptors:
@@ -1154,11 +1155,19 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
             # partner-Z averaging (R22), which is not oracle-clean for complex conjugation (dalembert flagged it
             # orthogonal), so it must DEFER rather than risk a mislabel.  Saturated rings are never in this set
             # (they are skipped before the classifier), so the guard cannot regress them.
-        elif not spectator_present:
+        else:
+            # matching_count >= 2: the clean, fully-conjugated mancude system (benzene, pyridine, di-2-pyridyl) AND
+            # (ROUND 34 item 4) a delocalized ring FUSED to a saturated ring (indane, tetralin): the SAME exact
+            # partner-Z averaging.  Each pi-ACCEPTOR (a ring carbon/pyridine-N that takes a ring double) gets the
+            # average of its possible partner atomic numbers; the sp3 SPECTATOR carbons are NOT acceptors, so they
+            # never enter ``partners`` and keep their REAL integer Z in the ordinary digraph.  So the fused case is
+            # not new machinery -- it is benzene averaging over the aromatic ring with the saturated ring released,
+            # exactly as a standalone benzene and a standalone saturated ring already resolve.  (R33 deferred this
+            # ``spectator_present`` case pending validation; R34 item 4 validated it against the RDKit oracle over a
+            # broad indane/tetralin/partially-hydrogenated-PAH sweep, 0 mismatches, and admits it.)
             averages.update({a: Fraction(sum(ATOMIC_NUMBER[atoms[b].element] for b in choices), len(choices))
                              for a, choices in partners.items()})
             blocked.difference_update(component)
-        # else (matching_count >= 2 with a spectator): leave the component blocked -> the centre defers.
     return frozenset(blocked), averages, frozenset(released)
 
 

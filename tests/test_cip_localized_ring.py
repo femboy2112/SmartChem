@@ -60,10 +60,12 @@ def test_benzene_mancude_path_is_byte_identical():
     assert cip_labels("O[C@H](c1ccccc1)c1ccccn1") == ("R",)    # phenyl vs pyridyl (R22 mancude, unchanged)
 
 
-def test_aromatic_fused_to_saturated_still_defers_soundly():
-    # the EXOCYCLIC boundary R33 recorded (methylenecyclohexane, cyclopentanone) was CLOSED by ROUND 34 item 2
-    # (see tests/test_cip_exocyclic_ring.py); the aromatic-ring-FUSED-to-saturated case still defers here.
-    assert cip_labels("[C@](C1Cc2ccccc2C1)(C)(F)Cl") == ()     # indane (aromatic fused to saturated)
+def test_r33_recorded_boundaries_were_closed_by_r34():
+    # the two boundaries R33 recorded as next gaps were both CLOSED by ROUND 34: the EXOCYCLIC case by item 2
+    # (tests/test_cip_exocyclic_ring.py) and the AROMATIC-FUSED-to-saturated case by item 4
+    # (tests/test_cip_aromatic_fused.py).  Pinned here so the localized-ring round's boundary record stays honest.
+    assert cip_labels("[C@](C1CCCCC1=O)(C)(F)Cl") == ("R",)    # exocyclic C=O ring -> NAMES (item 2)
+    assert cip_labels("[C@](C1Cc2ccccc2C1)(C)(F)Cl") == ("R",) # indane, aromatic fused to saturated -> NAMES (item 4)
 
 
 def test_ring_vs_ring_and_isotope_on_ring_fail_closed():

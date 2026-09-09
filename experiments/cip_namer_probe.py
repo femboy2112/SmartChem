@@ -19,9 +19,10 @@ branch with need-to-know pruning (Hanson, Musacchio, Mayfield, Vainio, Yerin, Re
      ranking, exactly the decoupling the oracle was committed for.
   3. THE R14 DIFFERENTIAL -- a naive DEPTH-first comparator (built here) MISLABELS ``C[C@H](CCC)C(C)C`` as (S)
      while the shipped breadth-first namer names it (R); pins the fix so nobody re-ships the DFS digraph.
-  4. THE BRANCH-PAIRED PROOF -- a synthetic pair of digraphs where a SPHERE-POOLING comparator (a *different*,
-     also-wrong bug) and the correct need-to-know branch-paired comparator DISAGREE; ``_cip_compare`` gives the
-     branch-paired answer (the high branch, deciding deep, wins over a low branch differing shallow).
+  4. THE FIFO-QUEUE PROOF -- a synthetic pair of digraphs where the old recursive-top-branch comparator and the
+     Hanson/Mayfield FIFO pair queue DISAGREE; ``_cip_compare`` gives the queue answer (the lower-ranked branch's
+     shallow difference is examined before the higher-ranked branch's deeper generation).  This is the ROUND-34
+     adversarial fold that fixed real acyclic, polyene/ring, and saturated-heteroring R/S mislabels.
   5. COMBINATORIAL PROPERTIES -- over a generated alkyl-substituent pool (the class the R14 bug hid in, invisible
      to curated anchors), every named centre INVERTS under enantiomer reflection and is INVARIANT under re-spelling,
      and a centre with two identical substituents DEFERS.  (No external CIP oracle exists in the dependency-light
@@ -72,7 +73,7 @@ from experiments.cip_geometry_oracle_probe import geometric_handedness
 
 #: Tamper pin over the whole battery (labels + priorities + oracle agreement).  Regenerate ONLY on an intentional
 #: change: ``python -m experiments.cip_namer_probe`` and paste the printed value.
-FROZEN_HASH = "b074caae739ef475d7e40095da6a2b493eb7f41d1d8082b45c6338b4ed17c6b5"
+FROZEN_HASH = "b931ccccf6ee33262529f14cd83c3bf4d4579efe71310ee9b0491cc50de80be7"
 
 
 # --- textbook / PubChem absolutes (hand-derived R/S, the ground truth) -------------------------------
@@ -129,6 +130,20 @@ DEFERRALS = [
     ("O[C@H](c1ccccn1)c1ccccn1", "SOUNDNESS PIN: two identical 2-pyridyls = a FALSE centre; a fixed Kekule would wrongly name it"),
 ]
 
+#: ROUND-34 evil-morty fold: concrete Rule-1a counterexamples that the old "fully recurse the highest branch
+#: before the next" comparator MISLABELLED.  Expected labels are baked from RDKit ``rdCIPLabeler`` and are also
+#: rechecked live by the R34 oracle harness when the optional development dependency is present.  The acyclic
+#: example proves this was a general traversal defect, not a ring-specific one; the heterorings expose the blind
+#: spot in the old released-ring-only guard; the mixed polyene/ring case shows why fixing the comparator, rather
+#: than widening a ring guard, is the coherent repair.
+ADVERSARIAL_RULE1A = [
+    ("C[C@](C(OCCF)CBr)(C(OCCCl)CF)O", ("R",), "acyclic: shallow C-branch Br/F beats deeper O-branch F/Cl"),
+    ("C[C@](C1OCCC1)(C1OCC1)O", ("S",), "tetrahydrofuranyl vs oxetanyl"),
+    ("C[C@](C1CCCO1)(C1CCCCO1)O", ("R",), "tetrahydrofuranyl vs tetrahydropyranyl"),
+    ("C[C@](C1NCCC1)(C1NCCCC1)O", ("R",), "pyrrolidinyl vs piperidinyl"),
+    (r"C[C@](/C=C\C=C/C)(C1CCC=C1)O", ("S",), "polyene vs localized unsaturated ring"),
+]
+
 
 # --- extract the priorities the namer computed, for the oracle cross-check ---------------------------
 
@@ -153,7 +168,7 @@ def _named_centres(text: str) -> "list[tuple[list[int], int, str]]":
         neighbours[b.j].append(b.i)
         adj[b.i].append((b.j, b.order))
         adj[b.j].append((b.i, b.order))
-    aromatic, mancude, released = _cip_mancude(atoms, work, adj)
+    aromatic, mancude = _cip_mancude(atoms, work, adj)
     out: list[tuple[list[int], int, str]] = []
     for a in marked:
         if _on_cycle(a, neighbours, len(elems)):
@@ -166,7 +181,7 @@ def _named_centres(text: str) -> "list[tuple[list[int], int, str]]":
         written = ([incoming[0]] if incoming else []) + h_neighbours + outgoing
         if len(written) != 4 or any(ATOMIC_NUMBER.get(elems[x]) is None for x in written):
             continue
-        ranks = _cip_ranks(written, a, adj, elems, mass, aromatic, mancude, released)
+        ranks = _cip_ranks(written, a, adj, elems, mass, aromatic, mancude)
         if ranks is None:
             continue
         from smartchem.smiles import _perm_parity
@@ -226,12 +241,15 @@ def _dfs_labels(text: str) -> "tuple[str, ...]":
     return tuple(sorted(labels))
 
 
-# --- the branch-paired proof (a sphere-pooling comparator disagrees; the namer is right) -------------
+# --- FIFO pair-queue proof (the old recursive-top-branch comparator was wrong) -----------------------
 
-def _pooled_compare(a, b) -> int:
-    """A GLOBAL sphere-pooling comparator: compares each sphere's atoms across ALL sibling branches at once (a
-    different, also-wrong bug from DFS).  Lets a low branch decide at a shallow sphere ahead of a high branch that
-    decides deep -- the namer's ``_cip_compare`` must NOT agree with it on the divergence pair below."""
+def _queued_compare_reference(a, b) -> int:
+    """Small independent FIFO pair-queue reference for Rule 1a.
+
+    Each parent's children are deeply ranked only to establish their pairing; all paired siblings are appended
+    before their descendants.  Thus a lower-ranked branch's shallow difference is seen before a higher-ranked
+    branch's deeper generation, matching RDKit's Hanson/Mayfield ``SequenceRule::recursiveCompare`` traversal.
+    """
     fa, fb = [a], [b]
     while fa or fb:
         za = [n[0] for n in fa]
@@ -245,15 +263,16 @@ def _pooled_compare(a, b) -> int:
         na: list = []
         nb: list = []
         for n in fa:
-            na += sorted(n[2], key=cmp_to_key(_pooled_compare), reverse=True)  # children moved to [2] (ROUND 28)
+            na += sorted(n[2], key=cmp_to_key(_queued_compare_reference), reverse=True)
         for n in fb:
-            nb += sorted(n[2], key=cmp_to_key(_pooled_compare), reverse=True)
+            nb += sorted(n[2], key=cmp_to_key(_queued_compare_reference), reverse=True)
         fa, fb = na, nb
     return 0
 
 
 #: A divergence pair.  A's high branch ties B's shallow but wins DEEP; A's low branch loses B's shallow.
-#: Correct (branch-paired, need-to-know): the high branch decides -> A > B.  Sphere-pooling: B > A (wrong).
+#: Correct FIFO queue: the low branch's shallower difference is visited before the high branch's deeper one, so
+#: B > A.  The old recursive-top-branch implementation incorrectly exhausted the high branch first and said A > B.
 #: ROUND-28 node shape ``(z, mass, children)``: the ``mass`` slot carries the real standard weight of each z but
 #: is Rule-1a-INERT for this fixture (``_cip_compare``/``_pooled_compare`` read only ``[0]``/``[2]``); it exists
 #: only so the literals are valid enriched nodes.
@@ -314,9 +333,11 @@ def validate() -> None:
     assert _dfs_labels("C[C@H](CCC)C(C)C") == ("S",), "the DEPTH-first key must give the WRONG (S) -- the R14 bug"
     assert cip_labels("C[C@H](CCC)C(C)C") != _dfs_labels("C[C@H](CCC)C(C)C"), "namer must NOT be the DFS key"
 
-    # 4. the branch-paired proof: the namer disagrees with sphere-pooling, and takes the correct side.
-    assert _cip_compare(_DIV_A, _DIV_B, _ctx()) == 1, "branch-paired: the deep-deciding high branch must win (A>B)"
-    assert _pooled_compare(_DIV_A, _DIV_B) == -1, "sphere-pooling gives the WRONG B>A -- the divergence must be real"
+    # 4. FIFO pair-queue proof + the real adversarial cases that exposed the old recursive-top-branch bug.
+    assert _cip_compare(_DIV_A, _DIV_B, _ctx()) == -1, "FIFO queue: B's shallower low-branch difference must win"
+    assert _queued_compare_reference(_DIV_A, _DIV_B) == -1, "independent queue reference must agree (B>A)"
+    for smi, expected, note in ADVERSARIAL_RULE1A:
+        assert cip_labels(smi) == expected, f"Rule-1a queue regression on {smi}: {note}"
 
     # 5. combinatorial properties over the alkyl pool.
     pool = _alkyl_pool()
@@ -351,7 +372,8 @@ def _content() -> dict:
         },
         "r14_namer": list(cip_labels("C[C@H](CCC)C(C)C")),
         "r14_dfs_wrong": list(_dfs_labels("C[C@H](CCC)C(C)C")),
-        "divergence": [_cip_compare(_DIV_A, _DIV_B, _ctx()), _pooled_compare(_DIV_A, _DIV_B)],
+        "queue_divergence": [_cip_compare(_DIV_A, _DIV_B, _ctx()), _queued_compare_reference(_DIV_A, _DIV_B)],
+        "adversarial_rule1a": {smi: list(cip_labels(smi)) for smi, _expected, _note in ADVERSARIAL_RULE1A},
         "alkyl_named": sum(1 for b, _m, _r in _alkyl_pool() if cip_labels(b)),
     }
 
@@ -368,6 +390,7 @@ def report() -> dict:
         "alkyl_named": _content()["alkyl_named"],
         "serine_cysteine_flip": (cip_labels(SERINE[0]), cip_labels(CYSTEINE[0])),
         "r14_namer_vs_dfs": (cip_labels("C[C@H](CCC)C(C)C"), _dfs_labels("C[C@H](CCC)C(C)C")),
+        "rule1a_adversarial_size": len(ADVERSARIAL_RULE1A),
         "content_hash": content_hash(),
         "frozen_hash": FROZEN_HASH,
         "hash_matches": content_hash() == FROZEN_HASH,

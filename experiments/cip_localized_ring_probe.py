@@ -10,13 +10,15 @@ THE FIX (R33): a LOCALIZED unsaturated ring -- one whose double-bond positions a
 a UNIQUE perfect matching == a single valid Kekule structure) -- is released to the ordinary ``_cip_digraph``
 with REAL atomic number and REAL mass, exactly as an ACYCLIC double bond is handled.  Two additions to
 ``_cip_mancude``: (a) admit a saturated sp3 ring carbon (all bonds order 1) as a pass-through spectator so a
-partially-unsaturated ring reaches the matching enumeration; (b) a three-way release -- matching_count==1 ->
-release (real z/mass); matching_count>=2 with no spectator -> today's benzene/pyridine averaging (byte-identical);
-matching_count>=2 WITH a spectator (indene/tetralin) -> DEFER.  Two soundness gates guard the extension:
+partially-unsaturated ring reaches the matching enumeration; (b) release matching_count==1 with real z/mass.
+R33 originally deferred matching_count>=2 with a spectator; R34 item 4 validated and admitted that fused class,
+while clean benzene/pyridine averaging remains byte-identical. One soundness gate remains after ROUND 34:
   * the Rule-1b gate (dalembert): Rule 2 may break a Rule-1a tie only when both tied ligands are TREES; a ring
     closure means Rule 1b (unbuilt) territory -> DEFER (R32 proved 1b inert only on trees).
-  * the mancude-cross gate: a released localized ring ranked against a mancude-AVERAGED aromatic ligand rests on
-    the pre-existing partner-Z averaging (R22, not oracle-clean for complex conjugation) -> DEFER.
+
+The original released-ring/mancude-cross guard is superseded by ROUND 34's FIFO Rule-1a correction: its reported
+ring-vs-ring mislabels came from exhausting the highest branch recursively, not from the ring representation.
+Rule-1a-distinct localized-vs-localized and localized-vs-mancude pairs now NAME and match the oracle.
 
 This harness pins the finding, per "experiments are committed", and doubles as a DIFFERENTIAL VALIDATION of the
 shipped namer against RDKit ``rdCIPLabeler`` (installed dev-venv-only as a probe oracle; ABSENT from the runtime
@@ -39,7 +41,7 @@ import json
 from smartchem.smiles import cip_labels
 
 #: The committed tamper pin.  Regenerate ONLY on an intentional change.
-FROZEN_HASH = "eb2a26a7b6b8ef1235598d02aaac9492fa9f36eecc24de2aee46d66f8f441a56"
+FROZEN_HASH = "b508ae80028faed55942ad44a0141b48e534402b4271b5d95a0c890e953281dd"
 
 # --- committed sweep generator (reproducible; the counts below are what THIS produces) ---
 
@@ -51,8 +53,7 @@ _LOCALIZED_FRAGS = ("C1=CC1", "C1=CCC1", "C1=CCCC1", "C1=CCCCC1", "C1CC=C1", "C1
                     "C1=CCC2CCCCC12", "C1CC2CC1C=C2")
 #: Aromatic heterocycles that are UNIQUE-matching (rerouted from mass=None to real mass) + benzene (unchanged).
 _REROUTE_FRAGS = ("c1ccoc1", "c1ccsc1", "c1cc[nH]c1")
-#: ACYCLIC spectator co-ligands (the cited-gap shape: the localized ring is the ONLY ring on the centre, so the
-#: multiring guard never fires and the ring NAMES).  No ring here -- a ring co-ligand would (soundly) DEFER.
+#: ACYCLIC spectator co-ligands for the cited-gap shape.
 _SPECTATORS = ("C", "CC", "CCC", "C(C)C", "CO", "C=C", "O", "N")
 
 #: Frozen sweep facts (reproduced live by ``_rdkit_cross_check`` when rdkit is present).
@@ -62,7 +63,7 @@ SWEEP_MISMATCHES = 0              # the soundness bar: 0 disagreements over the 
 
 #: Oracle-verified battery: (smiles, rdkit_label, expected_ours, category, note).  Categories:
 #:   localized-name | reroute-name | mancude-name | isolation-sat-name |
-#:   exocyclic-defer | fused-arom-defer | ring-vs-arom-defer | isotope-ring-defer | ring-centre-defer
+#:   multiring-name | isotope-ring-defer | ring-centre-defer
 BATTERY = (
     # --- localized rings: NAME (match rdkit) -- the R32 gap, now closed ---
     ("[C@](C1=CC1)(C)(F)Cl",         ("R",), ("R",), "localized-name", "cyclopropenyl @sp2 (the R32 isolation)"),
@@ -90,14 +91,13 @@ BATTERY = (
     # --- THE ISOLATION: saturated ring names (since R20); the SAME ring + a double bond ALSO names now (R33) ---
     ("[C@](C1CC1)(C)(F)Cl",          ("R",), ("R",), "isolation-sat-name", "saturated cyclopropyl"),
     # --- boundary DEFERRALS (rdkit names, we defer soundly -- the characterised next gaps) ---
-    ("[C@](C1CCCCC1=C)(C)(F)Cl",     ("R",), (), "exocyclic-defer", "methylenecyclohexane: EXOCYCLIC C=C"),
-    ("[C@](C1CCCC1=O)(C)(F)Cl",      ("R",), (), "exocyclic-defer", "cyclopentanone: EXOCYCLIC C=O"),
-    ("[C@](C1Cc2ccccc2C1)(C)(F)Cl",  ("R",), (), "fused-arom-defer", "indane: aromatic FUSED to saturated (>=2 matchings + spectator)"),
-    # a released localized ring ranked against ANOTHER ring (ring-vs-ring is Rule-1b / clean-mancude territory) -> DEFER
-    ("[C@](C1=CCCCC1)(C1=CCCC1)(C)F",     ("S",), (), "multiring-defer", "two localized rings (cyclohexenyl vs cyclopentenyl)"),
-    ("[C@](C1=CCC1)(C1=CC1)(C)F",         ("S",), (), "multiring-defer", "two localized rings (cyclobutenyl vs cyclopropenyl)"),
-    ("[C@](C1=CC=CC=CC1)(c1ccccc1)(F)Cl", ("S",), (), "multiring-defer", "released ring vs mancude-averaged aromatic"),
-    ("[C@](C1=CCCCC1)(c1ccccc1)(F)Cl",    ("S",), (), "multiring-defer", "cyclohexenyl vs phenyl"),
+    # (the EXOCYCLIC boundary R33 recorded here was CLOSED by ROUND 34 item 2 -- see tests/test_cip_exocyclic_ring.py;
+    #  the AROMATIC-FUSED-to-saturated boundary was CLOSED by ROUND 34 item 4 -- see tests/test_cip_aromatic_fused.py.)
+    # ROUND 34 FIFO correction: Rule-1a-distinct ring pairs now NAME (the former guard was masking traversal bugs).
+    ("[C@](C1=CCCCC1)(C1=CCCC1)(C)F",     ("S",), ("S",), "multiring-name", "two localized rings"),
+    ("[C@](C1=CCC1)(C1=CC1)(C)F",         ("S",), ("S",), "multiring-name", "two localized rings"),
+    ("[C@](C1=CC=CC=CC1)(c1ccccc1)(F)Cl", ("S",), ("S",), "multiring-name", "localized vs mancude aromatic"),
+    ("[C@](C1=CCCCC1)(c1ccccc1)(F)Cl",    ("S",), ("S",), "multiring-name", "cyclohexenyl vs phenyl"),
     ("[C@]([13CH]1CCCCC1)(C1CCCCC1)(F)Cl", ("R",), (), "isotope-ring-defer", "13C ring tie -> Rule-1b territory (gated)"),
     ("N[C@]1(F)CCCCO1",              ("R",), (), "ring-centre-defer", "ring stereocentre (out of scope, _on_cycle)"),
 )
@@ -133,8 +133,7 @@ def defers(lab) -> bool:
 def validate() -> None:
     """Raise if the shipped namer does not reproduce the oracle-verified finding (RDKit-free)."""
     counts = {"localized-name": 0, "reroute-name": 0, "mancude-name": 0, "isolation-sat-name": 0,
-              "exocyclic-defer": 0, "fused-arom-defer": 0, "multiring-defer": 0, "isotope-ring-defer": 0,
-              "ring-centre-defer": 0}
+              "multiring-name": 0, "isotope-ring-defer": 0, "ring-centre-defer": 0}
     for smi, rd_label, expected, category, note in BATTERY:
         got = tuple(cip_labels(smi))
         assert got == expected, f"namer drift on {smi}: got {got}, expected {expected} [{note}]"
@@ -148,16 +147,15 @@ def validate() -> None:
     # non-vacuity: every regime is genuinely exercised
     assert counts["localized-name"] >= 10, "must non-vacuously name the localized-ring class"
     assert counts["reroute-name"] >= 3, "must exercise the aromatic-heterocycle reroute"
-    assert counts["exocyclic-defer"] >= 2 and counts["fused-arom-defer"] >= 1, "must pin the exocyclic + fused boundaries"
-    assert counts["multiring-defer"] >= 3, "must pin the ring-vs-ring / released-ring-vs-mancude fail-closed guard"
+    assert counts["multiring-name"] >= 3, "must pin the corrected Rule-1a-distinct ring-vs-ring path"
     assert counts["isotope-ring-defer"] >= 1, "must pin the Rule-1b (isotope-on-ring) gate"
 
     # THE ISOLATION (R32 -> R33): the saturated ring named; the SAME ring + a double bond now ALSO names (gap closed).
     assert cip_labels("[C@](C1CC1)(C)(F)Cl") == ("R",), "saturated cyclopropyl must NAME"
     assert cip_labels("[C@](C1=CC1)(C)(F)Cl") == ("R",), "localized cyclopropenyl must NAME (R33 closed the R32 gap)"
 
-    # THE GUARDS fire (fail-closed, not a mislabel):
-    assert cip_labels("[C@](C1=CCCCC1)(c1ccccc1)(F)Cl") == (), "released ring vs mancude aromatic must DEFER"
+    # The Rule-1a-distinct ring comparison names; the Rule-1b boundary still fails closed.
+    assert cip_labels("[C@](C1=CCCCC1)(c1ccccc1)(F)Cl") == ("S",)
     assert cip_labels("[C@]([13CH]1CCCCC1)(C1CCCCC1)(F)Cl") == (), "isotope-on-ring Rule-1a tie must DEFER (Rule-1b territory)"
 
     # the localized-ring sweep names a non-trivial population, all as real labels.

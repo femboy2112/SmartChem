@@ -1,8 +1,8 @@
 """CIP Rule 1b (Rung 2) consumer investigation -> VERIFIED DEFER (ROUND 32).
 
 Pins the oracle-verified finding that Rule 1b has no demonstrated consumer anywhere in the namer's scope: the
-shipped Rule-1a+2 namer agrees with RDKit's rdCIPLabeler on every acyclic + saturated-ring case, every
-in-scope deferral where RDKit labels is a ring-UNSATURATION gap (ligands Rule-1a-distinct) not a Rule-1b tie,
+shipped Rule-1a+2 namer agrees with RDKit's rdCIPLabeler on every acyclic case, and the historical ring-substituent
+deferrals were Rule-1a traversal/ring-admission gaps (ligands Rule-1a-distinct), not Rule-1b ties,
 and ring-on-centre cases are filtered out of scope.  Committed assertions are RDKit-FREE; the live rdkit
 cross-check (re-running both committed sweeps) skips when rdkit is absent (the committed environment).
 """
@@ -25,16 +25,16 @@ def test_shipped_namer_agrees_with_the_oracle_never_mislabels():
     for smi, rd_label, expected, category, note in probe.BATTERY:
         got = tuple(cip_labels(smi))
         assert got == expected, f"{smi}: {got} != {expected} [{note}]"
-        if category in ("acyclic-name", "ring-sub-sat-name", "ring-sub-unsat-name"):
+        if category in ("acyclic-name", "ring-sub-sat-name", "ring-sub-unsat-name", "ring-sub-multiring-name", "rule3-name"):
             assert got == rd_label, f"mislabel vs oracle on {smi}"
             agreements += 1
     assert agreements >= 10
 
 
-def test_no_rule_1b_consumer_in_scope_every_inscope_deferral_is_ring_handling():
+def test_no_rule_1b_consumer_in_scope_and_historical_ring_census_is_closed():
     # the whole justification for the defer: no molecule where 1a+2 tie and 1b decides.
     assert probe.ACYCLIC_RULE1B_CONSUMERS == 0
-    assert probe.RING_SUB_UNSATURATED == probe.RING_SUB_INSCOPE_DEFERRALS   # all ring-sub defers are unsaturation
+    assert probe.RING_SUB_UNSATURATED == probe.RING_SUB_INSCOPE_DEFERRALS == 0
 
 
 def test_the_isolation_ring_gap_was_never_rule_1b_and_is_closed_by_r33():
@@ -53,15 +53,16 @@ def test_the_acyclic_soundness_crux_duplicate_never_collides_with_real():
     assert probe.duplicate_never_collides_with_real() == len(probe._DUPLICATE_CAPABLE)
 
 
-def test_acyclic_deferrals_that_exist_are_rule_3_not_rule_1b():
-    # honest boundary: acyclic deferrals where rdkit labels DO exist -- but they are Rule 3 (E/Z geometry) on
-    # constitutionally-identical ligands, never Rule 1b (which the lemma proves ties on identical constitution).
-    assert cip_labels(r"C[C@](/C=C\C)(/C=C/C)O") == ()      # rdkit: R; we defer soundly (Rule 3, not 1b)
+def test_acyclic_ez_tie_is_rule_3_not_rule_1b_and_is_closed_by_r34():
+    # the boundary R32 found: an acyclic tie where rdkit labels but Rule 1a+1b tie -- provably Rule 3 (E/Z) on
+    # constitutionally-identical ligands, never Rule 1b.  ROUND 34 item 1 BUILT Rule 3, so it now NAMES (R),
+    # confirming the deferral was Rule-3 territory all along (see tests/test_cip_rule3_ez.py).
+    assert cip_labels(r"C[C@](/C=C\C)(/C=C/C)O") == ("R",)   # rdkit: R; Rule 3 decides (NOT Rule 1b) -> NAMED
 
 
 def test_rdkit_cross_check_reproduces_both_sweeps_when_available():
     pytest.importorskip("rdkit")
     summary = probe._rdkit_cross_check()
     assert summary["acyclic"]["rule1b_consumers"] == 0
-    assert summary["ring_substituent"]["unsaturated"] == summary["ring_substituent"]["inscope_deferrals"]
+    assert summary["ring_substituent"]["unsaturated"] == summary["ring_substituent"]["inscope_deferrals"] == 0
     assert summary["battery_verified"] == len(probe.BATTERY)

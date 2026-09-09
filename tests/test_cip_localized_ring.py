@@ -3,7 +3,8 @@
 Pins the oracle-verified finding that a LOCALIZED unsaturated ring (a single forced Kekule structure --
 cyclopropene, cyclohexene, cyclopentadiene, a cyclic enol ether, a localized fused bicyclic) now NAMES, closing
 the R32-surfaced gap, while the two mechanisms that remain (exocyclic double bonds; aromatic-fused-to-saturated)
-and the ring-vs-ring / isotope-on-ring corners DEFER soundly.  Committed assertions are RDKit-FREE; the live
+and the Rule-1a-distinct ring-vs-ring corner now names after the R34 FIFO correction; isotope-on-ring Rule-1a
+ties still DEFER soundly.  Committed assertions are RDKit-FREE; the live
 rdkit cross-check (re-running the localized sweep) skips when rdkit is absent (the committed environment).
 """
 from __future__ import annotations
@@ -60,22 +61,21 @@ def test_benzene_mancude_path_is_byte_identical():
     assert cip_labels("O[C@H](c1ccccc1)c1ccccn1") == ("R",)    # phenyl vs pyridyl (R22 mancude, unchanged)
 
 
-def test_exocyclic_and_aromatic_fused_still_defer_soundly():
-    # the two characterised NEXT gaps: an EXOCYCLIC double on a ring atom (strict all-single spectator rejects it),
-    # and an aromatic ring FUSED to a saturated ring (>=2 matchings with a spectator).  Both defer, never mislabel.
-    assert cip_labels("[C@](C1CCCCC1=C)(C)(F)Cl") == ()        # methylenecyclohexane (exocyclic C=C)
-    assert cip_labels("[C@](C1CCCC1=O)(C)(F)Cl") == ()         # cyclopentanone (exocyclic C=O)
-    assert cip_labels("[C@](C1Cc2ccccc2C1)(C)(F)Cl") == ()     # indane (aromatic fused to saturated)
+def test_r33_recorded_boundaries_were_closed_by_r34():
+    # the two boundaries R33 recorded as next gaps were both CLOSED by ROUND 34: the EXOCYCLIC case by item 2
+    # (tests/test_cip_exocyclic_ring.py) and the AROMATIC-FUSED-to-saturated case by item 4
+    # (tests/test_cip_aromatic_fused.py).  Pinned here so the localized-ring round's boundary record stays honest.
+    assert cip_labels("[C@](C1CCCCC1=O)(C)(F)Cl") == ("R",)    # exocyclic C=O ring -> NAMES (item 2)
+    assert cip_labels("[C@](C1Cc2ccccc2C1)(C)(F)Cl") == ("R",) # indane, aromatic fused to saturated -> NAMES (item 4)
 
 
-def test_ring_vs_ring_and_isotope_on_ring_fail_closed():
-    # a released localized ring ranked against ANOTHER ring is Rule-1b / clean-mancude territory -> DEFER;
-    # an isotope-labelled Rule-1a tie on RING ligands is Rule-1b territory (R32: 1b bites with closures) -> DEFER.
-    # These guard against the sweep-found mislabels; two SATURATED rings (never released) still NAME.
-    assert cip_labels("[C@](C1=CCCCC1)(C1=CCCC1)(C)F") == ()        # two localized rings -> DEFER
-    assert cip_labels("[C@](C1=CC1)(c1ccccc1)(F)Cl") == ()          # released ring vs mancude aromatic -> DEFER
+def test_rule1a_distinct_ring_pairs_name_but_isotope_ties_fail_closed():
+    # The FIFO correction makes Rule-1a-distinct ring pairs soundly nameable.  An isotope-labelled Rule-1a tie on
+    # RING ligands remains Rule-1b territory (R32: 1b bites with closures), so it still defers before Rule 2.
+    assert cip_labels("[C@](C1=CCCCC1)(C1=CCCC1)(C)F") == ("S",)
+    assert cip_labels("[C@](C1=CC1)(c1ccccc1)(F)Cl") == ("S",)
     assert cip_labels("[C@]([13CH]1CCCCC1)(C1CCCCC1)(F)Cl") == ()   # isotope-on-ring Rule-1a tie -> DEFER
-    assert cip_labels("[C@](C1CCCCC1)(C1CCCC1)(C)F") == ("R",)      # two SATURATED rings -> still NAME (no regression)
+    assert cip_labels("[C@](C1CCCCC1)(C1CCCC1)(C)F") == ("R",)
 
 
 def test_rdkit_cross_check_reproduces_the_sweep_when_available():

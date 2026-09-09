@@ -44,6 +44,7 @@ include = ["smartchem*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
     "slow: benchmarks and oracle calls that take real time",

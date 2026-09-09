@@ -12,7 +12,7 @@ from experiments import cip_namer_probe as probe
 
 
 def test_the_committed_harness_validates():
-    """The whole five-layer battery (textbook absolutes, oracle cross-check, R14 differential, branch-paired proof,
+    """The whole five-layer battery (textbook absolutes, oracle cross-check, R14 differential, FIFO-queue proof,
     combinatorial alkyl pool) passes -- the single anti-regression gate."""
     probe.validate()
 
@@ -54,11 +54,16 @@ def test_every_named_centre_agrees_with_the_geometric_oracle():
     assert seen >= len(probe.TEXTBOOK)                          # non-vacuous
 
 
-def test_the_comparator_is_branch_paired_not_sphere_pooling():
-    """On a constructed divergence pair, the correct need-to-know branch-paired order (the deep-deciding high branch
-    wins) and a sphere-pooling order DISAGREE; the shipped comparator takes the branch-paired side."""
-    assert _cip_compare(probe._DIV_A, probe._DIV_B, probe._ctx()) == 1     # high branch decides deep: A > B
-    assert probe._pooled_compare(probe._DIV_A, probe._DIV_B) == -1         # pooling wrongly says B > A
+def test_the_comparator_uses_the_hanson_mayfield_fifo_pair_queue():
+    """A lower branch's shallow difference precedes a higher branch's deeper generation (the old recursion reversed it)."""
+    assert _cip_compare(probe._DIV_A, probe._DIV_B, probe._ctx()) == -1
+    assert probe._queued_compare_reference(probe._DIV_A, probe._DIV_B) == -1
+
+
+def test_rule_1a_adversarial_mislabels_stay_fixed():
+    """The concrete acyclic/ring/polyene families that exposed the recursive-top-branch traversal defect."""
+    for smi, expected, note in probe.ADVERSARIAL_RULE1A:
+        assert cip_labels(smi) == expected, f"{smi}: {note}"
 
 
 @pytest.mark.parametrize("base,mirror,respell", probe._alkyl_pool()[:120])

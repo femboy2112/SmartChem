@@ -1,5 +1,11 @@
 # CIP Rule 1b (Rung 2) — consumer investigation & scope decision (ROUND 32)
 
+> **ROUND 34 update:** the 24 historical off-ring ring-substituent deferrals are now closed: Round 33 admitted
+> localized rings, and Round 34 corrected a general Rule-1a FIFO traversal bug. The committed 60-case census now
+> reports 0 RDKit-labels/we-defer cases. This strengthens, rather than weakens, the conclusion that those cases
+> were not Rule-1b consumers. Rule-1a-tied isotope-on-ring cases remain outside the Rule-2 gate. The counts below
+> are retained as the Round-32 observation that led to the subsequent repairs.
+
 > **Status:** SCOPE DECISION — Rule 1b (Rung 2) is an **evidence-based VERIFIED DEFER**, not built. This supersedes the
 > "no cited today-consumer yet; build when a real Rule-1a+2-tied / 1b-decisive molecule appears" placeholder in
 > `CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md §Rung 2` and `ROADMAP.md` with a stronger, oracle-checked finding:

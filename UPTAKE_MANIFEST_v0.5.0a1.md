@@ -5200,3 +5200,74 @@ mismatches, 0 crashes**. Two SATURATED rings (never released) are unaffected —
 deferrals 24→12, now ring-vs-ring; the acyclic 992/0 finding + `duplicate_never_collides_with_real` crux UNCHANGED). The
 mancude averaging path (benzene/pyridine) is byte-identical. **Boundary (characterised next gaps, all sound deferrals):**
 exocyclic double bonds on a ring atom; aromatic-fused-to-saturated systems; ring-vs-ring; isotope-on-a-ring.
+
+---
+
+## §34 — ROUND 34: CIP Rules 3/4/5 and ring scope, plus FIFO Rule-1a correction
+
+Branch `cip-rules-3-4-5-ring-2026-09-08`, five feature/scope commits stacked on merged Round 33. The ask was Lane B
+items 1–5 “in most coherent order,” followed by a compact-ready report and publication. Items 2, 4, 5, 1, 3 were
+implemented/decided in dependency order; the final adversarial review then found a cross-cutting flaw in item 5's first
+explanation and forced the general comparator correction described in §34.4.
+
+### 34.1 Items 1, 2, and 4 — implemented and verified
+
+1. **Rule 3 E/Z (`544225d`) — IMPLEMENTED_AND_VERIFIED.** `_cip_ez_by_atom` derives CIP-relative acyclic double-bond
+   descriptors from parsed `/` and `\` directions; `_cip_compare_rule3` applies `Z > E` as a separate full pass only
+   after Rules 1a and 2 tie. Missing, tied, ring-double, aromatic-boundary, and contradictory directional evidence
+   fails closed. The final adversarial fold added a concrete conflicting-marker regression where RDKit emits no label.
+2. **Exocyclic ring unsaturation (`7ffc30b`) — IMPLEMENTED_AND_VERIFIED.** A ring component whose ring edges are all
+   single may contain exocyclic C=O/C=C/C=N/C=S and use the ordinary duplicate-atom digraph. This admits ring ketones,
+   lactones, lactams, imines, thioketones, and related substituents. Internal conjugated ring doubles remain deferred.
+3. **Aromatic fused to saturated (`1953d60`) — IMPLEMENTED_AND_VERIFIED.** Mancude acceptors retain exact partner-Z
+   averaging while saturated spectator atoms keep real Z/mass. Indane, tetralin, and bounded hetero/PAH analogues name.
+
+Each class has an RDKit-free frozen harness/test and an optional live `rdCIPLabeler` differential sweep. The optional
+oracle is not a runtime dependency.
+
+### 34.2 Item 3 — ring-on-centre Rules 4/5 VERIFIED DEFER (`2ee7833`)
+
+The consumer is real: the oracle labels the committed ring-centre battery, including pseudoasymmetric lowercase `r/s`
+and multi-centre menthol. A sound implementation still needs two genuine subsystems: per-atom written-neighbour order for
+SMILES ring-closure parity, and recursive Rule-4/5 auxiliary descriptors. `_on_cycle` therefore remains the fail-closed
+boundary. The first analysis also listed ring-vs-ring ranking as a wall; §34.4 removed that apparent wall without
+supplying the two missing capabilities. See `docs/research/CIP_RING_CENTRE_SCOPE_DECISION_v0.1.md`.
+
+### 34.3 Item 5's first verdict — refuted, not papered over (`ddf85e0`)
+
+The first item-5 implementation classified released-ring-vs-ring comparisons as VERIFIED DEFER and installed
+`_CIP_RING_VS_RING_GUARD`. Turning the guard off reproduced oracle disagreements, but all routes to that conclusion shared
+the same production comparator. That evidence established that the guard prevented wrong labels; it did **not** identify
+Rule 1b or ring representation as the cause.
+
+### 34.4 Adversarial root cause and correction
+
+Fresh counterexamples rotated the representation and regime: purely acyclic ligands, saturated O/N heterorings, a
+polyene-vs-ring pair, and deep mixed substituents all disagreed with RDKit. The shared cause was `_cip_compare`'s traversal.
+It ranked sibling children, then recursively exhausted the highest child before visiting the next sibling. The
+source-pinned RDKit Hanson/Mayfield implementation enqueues paired children and visits them FIFO: every sibling pair at the
+current generation precedes grandchildren.
+
+`_cip_compare`, `_cip_compare_rule2`, and `_cip_compare_rule3` now use that FIFO pair queue. Seven concrete old
+disagreements now match the oracle. With the correction in place, a fresh all-kind ring sweep found 2,586 comparable
+labels, 24 conservative deferrals, and **0 disagreements**; a separate seeded holdout found 25,250 comparable labels,
+8,674 deferrals, 5,678 invalid/nonstereogenic inputs, and **0 disagreements**. The old ring guard then had no load-bearing
+counterexample, so it and the `released` bookkeeping were removed rather than retained ceremonially.
+
+**Corrected item-5 verdict:** Rule-1a-distinct ring pairs NAME. A ring-bearing pair that still ties under Rule 1a defers
+before Rule 2 because unbuilt Rule 1b may intervene; isotope-on-identical-ring examples pin this boundary. See
+`docs/research/CIP_RING_VS_RING_SCOPE_DECISION_v0.1.md`, `experiments/cip_ring_vs_ring_probe.py`, and
+`tests/test_cip_ring_vs_ring.py`.
+
+### 34.5 Verification and exact claim boundary
+
+- Targeted CIP slice with RDKit present: **214 passed**.
+- Full suite with RDKit 2026.3.6 present: **4684 passed / 14 skipped / 1 xfailed** in four serialized partitions
+  (1849; 769/14/1; 1069; 997).
+- Maintained RDKit-absent baseline after uninstall: **4677 passed / 21 skipped / 1 xfailed** in the same partitions
+  (1842/7; 769/14/1; 1069; 997).
+- Frozen probes and `git diff --check` pass; the legacy expected failure remains expected.
+
+The external oracle, official implementation source, frozen batteries, and transformed holdouts are distinct evidence
+bearings only after shared provenance is factored. Their agreement supports the declared bounded neutral implementation;
+finite differential evidence does **not** prove complete CIP correctness on arbitrary graphs.

@@ -39,7 +39,7 @@ import json
 from smartchem.smiles import cip_labels
 
 #: The committed tamper pin.  Regenerate ONLY on an intentional change.
-FROZEN_HASH = "eb2a26a7b6b8ef1235598d02aaac9492fa9f36eecc24de2aee46d66f8f441a56"
+FROZEN_HASH = "c3b43b7ca700dccc3f999006df5ab6cbe0a3a9f2799eaf20f4f7e85c7fe50adf"
 
 # --- committed sweep generator (reproducible; the counts below are what THIS produces) ---
 
@@ -90,8 +90,7 @@ BATTERY = (
     # --- THE ISOLATION: saturated ring names (since R20); the SAME ring + a double bond ALSO names now (R33) ---
     ("[C@](C1CC1)(C)(F)Cl",          ("R",), ("R",), "isolation-sat-name", "saturated cyclopropyl"),
     # --- boundary DEFERRALS (rdkit names, we defer soundly -- the characterised next gaps) ---
-    ("[C@](C1CCCCC1=C)(C)(F)Cl",     ("R",), (), "exocyclic-defer", "methylenecyclohexane: EXOCYCLIC C=C"),
-    ("[C@](C1CCCC1=O)(C)(F)Cl",      ("R",), (), "exocyclic-defer", "cyclopentanone: EXOCYCLIC C=O"),
+    # (the EXOCYCLIC boundary R33 recorded here was CLOSED by ROUND 34 item 2 -- see tests/test_cip_exocyclic_ring.py.)
     ("[C@](C1Cc2ccccc2C1)(C)(F)Cl",  ("R",), (), "fused-arom-defer", "indane: aromatic FUSED to saturated (>=2 matchings + spectator)"),
     # a released localized ring ranked against ANOTHER ring (ring-vs-ring is Rule-1b / clean-mancude territory) -> DEFER
     ("[C@](C1=CCCCC1)(C1=CCCC1)(C)F",     ("S",), (), "multiring-defer", "two localized rings (cyclohexenyl vs cyclopentenyl)"),
@@ -133,7 +132,7 @@ def defers(lab) -> bool:
 def validate() -> None:
     """Raise if the shipped namer does not reproduce the oracle-verified finding (RDKit-free)."""
     counts = {"localized-name": 0, "reroute-name": 0, "mancude-name": 0, "isolation-sat-name": 0,
-              "exocyclic-defer": 0, "fused-arom-defer": 0, "multiring-defer": 0, "isotope-ring-defer": 0,
+              "fused-arom-defer": 0, "multiring-defer": 0, "isotope-ring-defer": 0,
               "ring-centre-defer": 0}
     for smi, rd_label, expected, category, note in BATTERY:
         got = tuple(cip_labels(smi))
@@ -148,7 +147,7 @@ def validate() -> None:
     # non-vacuity: every regime is genuinely exercised
     assert counts["localized-name"] >= 10, "must non-vacuously name the localized-ring class"
     assert counts["reroute-name"] >= 3, "must exercise the aromatic-heterocycle reroute"
-    assert counts["exocyclic-defer"] >= 2 and counts["fused-arom-defer"] >= 1, "must pin the exocyclic + fused boundaries"
+    assert counts["fused-arom-defer"] >= 1, "must pin the aromatic-fused-to-saturated boundary"
     assert counts["multiring-defer"] >= 3, "must pin the ring-vs-ring / released-ring-vs-mancude fail-closed guard"
     assert counts["isotope-ring-defer"] >= 1, "must pin the Rule-1b (isotope-on-ring) gate"
 

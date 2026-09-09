@@ -1056,6 +1056,23 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
         if not any(atoms[a].aromatic or any(o > 1 for _b, o in adj[a]) for a in component):
             continue
         blocked.update(component)
+        # ROUND 34 (item 2): a ring whose only unsaturation is EXOCYCLIC -- every RING edge is a plain single bond
+        # and no ring atom is aromatic -- is a LOCALIZED saturated ring SKELETON (no Kekule ambiguity in the ring
+        # itself).  Its exocyclic double bonds (a ring ketone/lactone/lactam C=O, an exocyclic C=C/C=N) and its ring
+        # closures are handled soundly by the ordinary ``_cip_digraph`` EXACTLY as an acyclic double bond and a
+        # saturated ring already are (real z/mass, integer-Z closure leaves, order-1 multiple-bond duplicates on the
+        # exocyclic double) -- so RELEASE the whole component (like R33's localized rings), rather than block it.  A
+        # ring bearing an INTERNAL ring double (an enone, an explicit-Kekule or aromatic ring) is NOT released here:
+        # ``o != 1`` on any ring edge (order-2 Kekule double OR an unresolved _AROMATIC order) or an aromatic-flagged
+        # ring atom fails the test, so it falls through to the mancude/matching machinery, which keeps the Kekule-
+        # dependent (conjugated / delocalized) cases deferred.  The multiring guard in ``_cip_ranks`` still fires when
+        # a released exocyclic ring is ranked against ANOTHER ring (item-5 territory); a single such ring on the centre
+        # bears acyclic co-ligands and NAMES.
+        if not any(atoms[a].aromatic for a in component) and not any(
+                o != 1 and b in ring_adj[a] for a in component for b, o in adj[a]):
+            blocked.difference_update(component)
+            released.update(component)
+            continue
         if len(component) > _CIP_MANCUDE_MAX_ATOMS:
             continue
         acceptors = set()

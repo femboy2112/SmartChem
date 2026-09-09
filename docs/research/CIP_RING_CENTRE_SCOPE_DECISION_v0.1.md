@@ -1,5 +1,9 @@
 # CIP ring-on-centre + Rules 4/5 — scope decision (ROUND 34 item 3)
 
+> **Superseded by ROUND 35:** parser-preserved written neighbour order now admits constitutionally ordered ring
+> centres. Bounded Rules 4a/5 are built; recursive Rule 4b/4c cases still defer. See
+> `CIP_RING_AUX_RULES_SCOPE_v0.1.md`.
+
 **Verdict: VERIFIED DEFER.** A stereocentre that lies **on a ring** is scoped out by `_on_cycle` and deferred; the
 current behaviour is sound over the committed battery. This records why the remaining work cannot be folded into
 this round. Evidence is pinned by `experiments/cip_ring_centre_probe.py` and `tests/test_cip_ring_centre.py`.

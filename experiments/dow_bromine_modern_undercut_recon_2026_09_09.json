@@ -1,0 +1,30 @@
+{
+  "acquired_utc": "2026-09-09",
+  "primary_source": {
+    "title": "Magnolia Field Bromine Reserves as of December 31, 2025 Technical Report Summary",
+    "url": "https://www.sec.gov/Archives/edgar/data/915913/000091591326000018/ex966magnolia2025trs.htm",
+    "sha256": "58f04e7ec52592c825dfa8da4e0964f25ec8e8874dead8aa4097e8ff82f81849",
+    "effective_date": "2025-12-31",
+    "filed_date": "2026-02-11",
+    "provenance": "SEC exhibit 96.6; RPS qualified-person report relying materially on Albemarle operating data"
+  },
+  "corroborating_source": {
+    "title": "Jordan Bromine Company Bromine Reserves as of December 31, 2024 Technical Report Summary",
+    "url": "https://www.sec.gov/Archives/edgar/data/915913/000091591325000024/exhibit965jbc2024trs.htm",
+    "sha256": "656ebe24f44e46950d9fabf98829beec8c99482ad01189ed75eed3b81bd6cc10",
+    "reported_operating_cost_usd_per_tonne": 364,
+    "scope": "Dead Sea operation including freight to Aqaba; directional corroboration only, not Magnolia substitution",
+    "dependence": "different operation and report, but same Albemarle SEC reporting family"
+  },
+  "magnolia_2026_1p_inputs": {
+    "sales_production_kt": 74,
+    "field_and_plant_opex_musd": 126.0,
+    "g_and_a_musd": 34.7,
+    "capital_musd": 27.0,
+    "spot_usd_per_kg": 4.89,
+    "minus_30_percent_usd_per_kg": 3.42,
+    "minus_45_percent_usd_per_kg": 2.69,
+    "minus_45_percent_cash_flow_before_tax_musd": 11.8,
+    "opex_uncertainty": "-10% to +10%"
+  }
+}

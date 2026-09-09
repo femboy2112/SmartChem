@@ -1,5 +1,10 @@
 # DOW bromine cost ranking — contract (ROUND 31, queue item 2's last lane)
 
+> **ROUND-35 update:** the former modern-source wall is now bounded by the 2026 SEC-filed Magnolia model. Modern
+> Smackover production undercuts spot and spot-minus-30% on the disclosed 2026 1P cash-outflow quotient; the
+> minus-45% edge is not robust to the report's +10% opex uncertainty. See
+> `DOW_BROMINE_MODERN_UNDERCUT_SCOPE_v0.1.md`.
+
 > **Status:** design contract, build-ready — folded against two pre-build bearings (butter-robot YAGNI + birdperson soundness).
 > The DOW-bromine litmus's **decomposition + synthesis** questions are answered (pricing R16, mechanism R17, electrochem R18,
 > thermo R26, kinetics R30). This closes the **last open lane**: *can we rank the two Br₂ routes on cost, and reproduce why

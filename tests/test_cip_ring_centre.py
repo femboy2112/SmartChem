@@ -1,4 +1,4 @@
-"""Ring stereocentres (CIP Rules 4/5 territory): a VERIFIED DEFER (ROUND 34 item 3).
+"""Ring stereocentres: written-order naming with a recursive-auxiliary defer boundary (ROUND 35).
 
 Pins the oracle-verified finding that a stereocentre ON a ring is scoped out by _on_cycle and DEFERS soundly
 (never a mislabel), while RDKit names a real consumer population -- including pseudo-asymmetric (r/s, Rule 5) and
@@ -20,21 +20,21 @@ def test_the_finding_validates_and_is_frozen():
     assert r["hash_matches"], f"ring-centre finding drifted: {r['content_hash']} != {probe.FROZEN_HASH}"
 
 
-def test_all_ring_stereocentres_defer_never_mislabel():
+def test_admitted_ring_stereocentres_match_the_baked_oracle():
     for smi, rd_label, expected, category, note in probe.BATTERY:
         got = tuple(cip_labels(smi))
-        assert got == expected == (), f"{smi}: ring stereocentre must DEFER, got {got} [{note}]"
+        assert got == expected, f"{smi}: got {got} [{note}]"
+        if category == "ringcentre-name":
+            assert got == rd_label
 
 
-def test_the_consumer_is_real_including_pseudo_asymmetric():
-    # RDKit names ring stereocentres we defer -- the consumer exists (incl. Rule-5 pseudo-asymmetric r/s + menthol).
-    consumers = [b for b in probe.BATTERY if b[3] == "ringcentre-defer"]
-    assert len(consumers) >= 6
-    assert any(x in ("r", "s") for b in consumers for x in b[1]), "must exhibit pseudo-asymmetric r/s (Rule 5)"
+def test_recursive_pseudo_ring_pair_still_defers():
+    deferred = [b for b in probe.BATTERY if b[3] == "rule45-defer"]
+    assert len(deferred) >= 2
+    assert all(cip_labels(b[0]) == () for b in deferred)
 
 
-def test_on_cycle_gates_the_deferral():
-    # the deferral is the ring-centre scope gate (_on_cycle), not an incidental miss.
+def test_topology_control_really_contains_ring_centres():
     assert probe._on_cycle_gates_all_marked_ring_centres()
 
 
@@ -46,5 +46,5 @@ def test_symmetric_ring_carbon_is_agreed_defer():
 def test_rdkit_cross_check_confirms_the_consumer_when_available():
     pytest.importorskip("rdkit")
     summary = probe._rdkit_cross_check()
-    assert summary["consumers"] >= 6
+    assert summary["named"] >= 5
     assert summary["battery_verified"] == len(probe.BATTERY)

@@ -76,13 +76,10 @@ def test_named_alkyl_centres_invert_and_are_spelling_invariant(base, mirror, res
     assert cip_labels(respell) == lb                            # re-spelling is invariant
 
 
-def test_rule_1a_ties_defer_never_guess():
-    """Sound, not complete: a false centre (true duplicate), a ring centre, and a genuine higher-rule tie all
-    DEFER -- no label -- because a guessed R/S is worse than none.  (ROUND 28: the isotope-only tie is no longer
-    here -- Rule 2 now breaks it; see test_rule_2_isotope_mass_breaks_ties.)"""
+def test_true_duplicate_ties_defer_but_ring_centres_now_name():
     assert cip_labels("C[C@](C)(N)O") == ()                     # twin methyls: false centre
     assert cip_labels("CC[C@](CC)(N)O") == ()                   # twin ethyls
-    assert cip_labels("N[C@]1(F)CCCCO1") == ()                  # ring stereocentre (acyclic scope)
+    assert cip_labels("N[C@]1(F)CCCCO1") == ("R",)             # ROUND 35 written-order ring parity
 
 
 def test_rule_2_isotope_mass_breaks_ties():
@@ -101,9 +98,8 @@ def test_rule_2_isotope_mass_breaks_ties():
     assert cip_labels("FC(F)O[C@](Br)(Cl)O[13CH](F)F") == ("R",)
     assert cip_labels("F[13C](F)CO[C@@](Br)(Cl)OCC(F)F") == ("S",)  # sphere-3
     assert cip_labels("F[13C](F)CO[C@](Br)(Cl)OCC(F)F") == ("R",)
-    # Rule-2 pairing AMBIGUOUS -> DEFER (never guess): -CH2[2H] vs -CH2[3H] tie under Rule 1a and each carbon's
-    # three H's tie (all z=1), so the sibling pairing for the mass compare is arbitrary (the all-pairs guard).
-    assert cip_labels("[C@@](Br)(Cl)(C[2H])C[3H]") == ()
+    # Cumulative Rules-1a/1b/2 child ordering makes this pairing deterministic; RDKit 2026.3.6 agrees.
+    assert cip_labels("[C@@](Br)(Cl)(C[2H])C[3H]") == ("S",)
 
 
 def test_mancude_averaging_names_aryl_but_keeps_identical_pyridyls_tied():

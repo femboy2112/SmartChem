@@ -69,12 +69,10 @@ def test_r33_recorded_boundaries_were_closed_by_r34():
     assert cip_labels("[C@](C1Cc2ccccc2C1)(C)(F)Cl") == ("R",) # indane, aromatic fused to saturated -> NAMES (item 4)
 
 
-def test_rule1a_distinct_ring_pairs_name_but_isotope_ties_fail_closed():
-    # The FIFO correction makes Rule-1a-distinct ring pairs soundly nameable.  An isotope-labelled Rule-1a tie on
-    # RING ligands remains Rule-1b territory (R32: 1b bites with closures), so it still defers before Rule 2.
+def test_rule1a_distinct_and_rule1b_isotope_ring_pairs_name():
     assert cip_labels("[C@](C1=CCCCC1)(C1=CCCC1)(C)F") == ("S",)
     assert cip_labels("[C@](C1=CC1)(c1ccccc1)(F)Cl") == ("S",)
-    assert cip_labels("[C@]([13CH]1CCCCC1)(C1CCCCC1)(F)Cl") == ()   # isotope-on-ring Rule-1a tie -> DEFER
+    assert cip_labels("[C@]([13CH]1CCCCC1)(C1CCCCC1)(F)Cl") == ("R",)
     assert cip_labels("[C@](C1CCCCC1)(C1CCCC1)(C)F") == ("R",)
 
 

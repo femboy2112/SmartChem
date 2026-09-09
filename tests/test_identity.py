@@ -103,12 +103,11 @@ class TestConfigurationLayerWiring:
         assert same_identity_at(a, b, MatchLayer.CONFIGURATION) is True           # perceived (not None), and equal
         assert same_identity_at(_layered("CCO"), _layered("COC"), MatchLayer.CONFIGURATION) is False  # still separates isomers
 
-    def test_unperceived_ring_stereo_stays_unknown_never_a_false_merge(self):
-        # a RING stereocentre is not soundly perceivable, so CONFIGURATION is fail-closed to UNKNOWN -- NEVER reduced to
-        # constitution, which would falsely report two ring enantiomers as the same configuration (a false merge).
+    def test_parser_preserved_ring_stereo_separates_enantiomers(self):
+        # ROUND 35 preserves the ring digit's written neighbour position, so CONFIGURATION can distinguish this pair.
         r1, r2 = _layered("N[C@]1(F)CCCCO1"), _layered("N[C@@]1(F)CCCCO1")
-        assert r1.digest_at(MatchLayer.CONFIGURATION) is None
-        assert same_identity_at(r1, r2, MatchLayer.CONFIGURATION) is None
+        assert r1.digest_at(MatchLayer.CONFIGURATION) is not None
+        assert same_identity_at(r1, r2, MatchLayer.CONFIGURATION) is False
 
     def test_double_bond_stereo_makes_configuration_unknown(self):
         # E/Z is unperceived (a named deferral), so a molecule declaring '/' or '\\' has UNKNOWN configuration -- never

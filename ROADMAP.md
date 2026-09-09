@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ cip-rules-3-4-5-ring-2026-09-08` (**ROUND 34** — Lane-B CIP items 1–5 completed: Rule 3, exocyclic and aromatic-fused ring admission, ring-on-centre scope decision, and corrected ring-vs-ring ranking; final adversarial review replaced the recursive-top-branch Rule-1a traversal with the source-matching FIFO pair queue and rejected conflicting E/Z markers) · maintained suite **4677 passed / 21 skipped / 1 xfailed** (PySCF-present, RDKit-ABSENT env; 4 batches [a-e] 1842/7 · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997). Pre-uninstall oracle run: **4684 passed / 14 skipped / 1 xfailed**; targeted CIP slice **214 passed**; fresh differential probes report 0 wrong labels over a seeded 25,250-comparison holdout and a 2,586-comparison all-kind ring-pair sweep. Finite oracle agreement is bounded evidence, not universal CIP completeness. · updated **2026-09-09 UTC**
+> `verified @ cip-ring-rules-dow-source-2026-09-09` (**ROUND 35** — priorities 1–5: written ring order, revised Rule 1b, bounded Rules 4a/5, ring-isotope release, and a modern Smackover bromine undercut source). Maintained suite: **4684 passed / 22 skipped / 1 xfailed** in four serialized partitions (1849/8; 769/14/1; 1069; 997). Fresh RDKit 2026.3.6 representation rotation: **320 randomized equivalent SMILES, 0 disagreements**. Finite oracle agreement is bounded evidence, not universal CIP completeness. · updated **2026-09-09 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -46,7 +46,7 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
   buckets. A pass quantitatively shows the cheap-brine route beats the mineral route. **Sourcing is favorable:** bromine
   is a USGS-priced inorganic (same pattern as NaCl/Na₂CO₃), so unlike the organic-price wall this litmus's cost axis is
   genuinely achievable. Spawns the queue items marked *(DOW)* below.
-  **The litmus's DECOMPOSITION + synthesis question is now fully answered; only the COST RANKING remains.** **✅ Phase 1
+  **The litmus's decomposition, synthesis, and bounded modern cost questions are now answered.** **✅ Phase 1
   — pricing (ROUND 16, DOW-BROMINE-01):** elemental bromine is a first-class SOURCED, USGS-priced commodity ($2.70/kg 2024,
   MCS 2026), INDUSTRIAL-tier (the DOW insight encoded), costed end-to-end through the buckets. **✅ Phase 2 — mechanism
   (ROUND 17, REDOX-DISPLACE-01):** the coupled half-reaction combiner enumerates `Cl₂ + 2 Br⁻ → Br₂ + 2 Cl⁻`, the reaction
@@ -61,13 +61,23 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
   contained-Br proxy of the benchmark costs exactly the benchmark → brine ≥ mined; the user's "may not pass today" flag
   confirmed), while the *historical* undercut IS reproduced from sourced period prices as a one-sided economic bound (Theorem
   2: cartel 49 ¢/lb vs USGS-bounded US brine-route cost → ≈39 % pre-war, ≥ ≈80 % war-survival). **The DOW-bromine litmus is
-  now fully exercised across every lane.** The ONLY remaining open item is a sourcing wall (not a build): a modern undercut
-  demonstration needs a sourced INDEPENDENT brine-feedstock cost basis. See DEFERRED, the DONE ledger, manifest §31, and
-  `docs/research/DOW_BROMINE_COST_RANKING_CONTRACT_v0.1.md`.
+  now fully exercised across every lane.** **✅ ROUND-35 modern source:** the 2026 SEC-filed Magnolia 1P forecast supplies
+  an independent-from-price Smackover operating-cost basis. The all-in 2026 cash-outflow quotient is $2.5365/kg: below
+  spot ($4.89) and spot-minus-30% ($3.42), while the minus-45% edge ($2.69) reverses under +10% opex uncertainty. This is
+  model-derived, not realized cost, and is not admitted to route ranking. See
+  `docs/research/DOW_BROMINE_MODERN_UNDERCUT_SCOPE_v0.1.md`.
 
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 35 — priorities 1–5** (branch `cip-ring-rules-dow-source-2026-09-09`) — parser-level written-neighbour
+capture admits ring stereocentres; revised Rule 1b is isolated on the official IUPAC P-9 consumer; bounded Rule 4a
+and revised Rule 5 name one-descriptor and one-opposed-pair cases; isotope-on-ring ties now proceed soundly into
+Rule 2; and an SEC-filed modern Smackover model closes the previous DOW sourcing wall within explicit uncertainty
+and provenance limits. Recursive Rule 4b/4c/6 stays fail-closed. Evidence:
+`experiments/cip_ring_aux_rules_probe.py`, `tests/test_cip_ring_aux_rules.py`,
+`docs/research/CIP_RING_AUX_RULES_SCOPE_v0.1.md`, and the DOW modern-undercut probe/receipt/doc/test.
 
 **ROUND 34 — Lane B CIP items 1–5, completed in coherent dependency order** (branch
 `cip-rules-3-4-5-ring-2026-09-08`) — Rule 3 E/Z naming, exocyclic-unsaturation ring admission,
@@ -76,6 +86,9 @@ correction. Adversarial review falsified item 5's initial “ring representation
 was a general recursive-top-branch traversal that disagreed with the FIFO pair queue in RDKit's Hanson/Mayfield
 implementation. The fix covers Rule 1a and its Rule 2/3 passes, removes the now-ceremonial released-ring guard, and also
 rejects contradictory directional markers rather than fabricating an E/Z descriptor.
+
+**Current-status note:** ROUND 35 supersedes ROUND 34's ring-centre and isotope-ring deferrals; this section is the
+historical record of what ROUND 34 established.
 
 | Item | Lane | Result |
 |---|---|---|
@@ -330,18 +343,20 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > The Warshay shock-tube fit is modelled in a new sibling; Br₂ SURVIVES at bench (a lower-bounded PREDICTED read,
 > cross-referenced to the independent R26 thermo), dissociates sub-ms only at shock-tube T. A separate commit fixed a
 > latent gate fabrication (an out-of-window extrapolated DEGRADES → UNKNOWN). See the DONE ledger + manifest §30.
-> **⭐ As of ROUND 34 there is no standing build gate — the next full-blast is the user's to steer.** DOW cost ranking DONE
-> (R31); CIP Rule 1b VERIFIED DEFER (R32); localized rings CLOSED (R33); Rule 3, bounded exocyclic/aromatic-fused rings,
-> and Rule-1a-distinct ring-vs-ring comparisons CLOSED (R34). Remaining CIP debt is narrower: ring-on-centre written order
-> plus Rules 4/5; isotope-on-Rule-1a-tied rings beyond the Rule-1b gate; unsupported conjugated/charged ring systems. Move 5
-> (domain-neutral
-> pipeline lift) stays DEFERRED until a second-domain consumer exists; the DOW modern cost-undercut is a SOURCING wall (needs
-> an independent brine-feedstock basis). All six categorical-reorientation Moves are shipped or scoped: Moves 1–3 DONE
-> (R24–R27), Move-4 tension-A + CIP Rung 1 DONE (R27/R28), Move 5 DEFERRED-premature (R28), Move 6 DONE (R29).
+> **⭐ ROUND 35 closed the five standing follow-ups.** Ring written order, revised Rule 1b, bounded Rules 4a/5, and
+> isotope-on-ring naming are built; the modern Smackover undercut has a disclosed forecast basis with an explicit
+> uncertainty boundary. The highest-value next CIP work is target-relative recursive Rules 4b/4c, then Rule 6 and
+> unsupported charged/conjugated ring representations. On the cost lane, seek provenance-diverse realized operating
+> data before promoting the Magnolia model into route ranking. Move 5 remains deferred until a second-domain consumer.
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
-| **Move 4 CIP Rung 2** | **CIP Rule 1b** — ✅ **VERIFIED DEFER (ROUND 32): proven to have no in-scope consumer.** dalembert PROVED the lemma (acyclic Rule-1a-tie ⟺ identical rooted constitution → Rule 1b, being constitutional, is inert on trees; it bites only with ring closures), exhaustively corroborated (25,212 constitutions, 300k shipped-comparator pairs, 30k molecules — 0 Rule-1b consumers). The in-scope deferrals that exist are a distinct **unsaturated-ring-substituent** ring-digraph gap (NOT Rule 1b) + acyclic **Rule 3** (E/Z). Building `dup_rank` now = dead structure + mislabel-prone. See the DONE ledger + manifest §32 + `docs/research/CIP_RULE1B_CONSUMER_SCOPE_DECISION_v0.1.md`. **UNLOCK:** a real oracle-verified Rule-1a+2-tied/1b-decisive molecule (none exists among 1052 swept). | B | — | **DEFERRED (proven)** | superseded — was "build when a consumer appears"; the consumer is proven not to exist in scope |
+| **Move 4 CIP Rung 2** | **CIP Rule 1b** — ✅ **BUILT ROUND 35.** IUPAC P-9 supplied the consumer missing from the bounded R32 generators; the committed isolation ties under Rule 1a and splits under revised Rule 1b. | B | — | **DONE** | See manifest §35 and `CIP_RING_AUX_RULES_SCOPE_v0.1.md`. |
+| **1** | **Target-relative Rules 4b/4c** — recursively assign auxiliary descriptors without bootstrapping a guessed fixed point; close the mutually pseudo ring-pair dark fringe. | B | M | medium | Needs a target-relative graph construction and oracle counterexamples beyond absolute first-pass labels. |
+| **2** | **CIP Rule 6** — complete the reference-dependent sequence-rule tail after 4b/4c. | B | M | medium | Build only with a real Rule-6 consumer and source-exact discriminator. |
+| **3** | **Charged/conjugated ring representation** — extend mancude handling past the neutral bounded C/N/O/S slice. | B | L | medium | Requires a sound source-pinned representation; fixed-Kekulé shortcuts remain forbidden. |
+| **4** | **Modern bromine provenance rotation** — find realized, non-Albemarle operating evidence or a genuinely independent cost model. | C | S/M | long | Magnolia is forecast/model evidence; JBC shares the issuer/reporting family. |
+| **5** | **Phase-aware Br₂ identity and thermo resolution** — prevent gas data from standing in for liquid standard-state claims. | B·C | M | medium | Requires a phase-carrying key across thermo consumers, not a local special case. |
 | **Move 5** | **Domain-neutral parameterization** — step/route/cost types over a "conserved-inventory transition + survival predicate", not concretely `Molecule`, so chemistry/circuits/radiation are functor images of one base SMC ([[electromagnetic-scope]] as a theorem) | B | **L** | **DEFERRED — premature** | **Scope decision (R28 recon): `docs/research/MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`.** No second-domain pipeline consumer exists (electrochem/cell are `Molecule`-typed; circuits are on `open_diagram.py` with no route/step/DAG shape; the `*_domain.py` files are oracle-coverage domains, not pipeline consumers) → building it now = a zero-call-sites abstraction. UNLOCK: a genuine multi-step non-chemistry process, or a concrete `Molecule`-forced-fit pain report. |
 | ~~3b~~ | ✅ **DONE (ROUND 30)** — DOW-Br₂ collider/modified-Arrhenius kinetics. See the DONE ledger + manifest §30. | B·C | — | — | The Warshay modified-Arrhenius bimolecular fit is modelled in a new sibling (`collider_kinetics.py`); Br₂ SURVIVES at bench (a lower-bounded PREDICTED read, thermo-corroborated), dissociates sub-ms at shock-tube T. Live wire-in of the collider model into E1's gate is TRACKED DEBT (verdict-inert today; no Br₂-intermediate DAG consumer). |
 
@@ -436,6 +451,9 @@ not just a human note. See the DONE ledger.
   being undercut — the same-benchmark proxy provably cannot show it. The R22 Los Fresnos Cl₂ offer ($1.24/lb, 2,000-lb
   cylinder, +$50/mo rental, approved not invoiced) stays labelled reconnaissance, used only as a demonstration input, never
   committed to default commodity pricing.
+  **ROUND-35 supersession:** the Magnolia SEC report supplies that independent-from-price Smackover cost basis. It
+  supports undercut at spot and spot-minus-30%; the minus-45% edge is not +10%-opex robust. Remaining work is stronger
+  provenance/realized-cost corroboration before any production-ranker admission, not recovery of the missing basis.
 - **A second sourced organic price** (was ROUND-15 item 3; Lane C). Attempted acetic acid (highest value — it ripples
   the methyl-acetate golden) and ethanol. **Wall:** organic producers post price *increases* (Celanese: +$50/MT Feb,
   +$0.10/lb Mar 2026), not absolute reference sheets; absolutes are aggregator-walled (Intratec/ChemAnalyst). Ethanol's
@@ -541,38 +559,28 @@ not just a human note. See the DONE ledger.
   accurate RDKit `rdCIPLabeler` through an external parser/graph/labeler, including aromatic, explicit-Kekulé and reversed
   atom-order spellings. RDKit remains an optional probe dependency, absent from the runtime. Its implementation is
   separate but the CIP specification is shared; finite agreement does not prove correctness on arbitrary graphs.
-- **CIP full completeness — higher rules and unsupported ring systems** (Lane B; ROUND-20/22/28/34) — the namer implements
-  **Rules 1a + 2 + bounded Rule 3** (ROUND 28 added mass number; ROUND 34 added acyclic E/Z). Neutral mancude averaging is
-  built for the bounded C/N/O/S valence slice, including supported fused systems. **Rule 1b (Rung 2) and Rules 4/5
-  (`aux`) remain UNBUILT** —
-  a tie needing any of them is a NAMED deferral (never guessed). Stereochemistry-dependent ties, ring stereocentres, and
-  comparisons needing charged, exocyclic, incompletely conjugated, untyped or over-budget ring connectivity still DEFER.
+- **CIP full completeness — higher rules and unsupported ring systems** (Lane B; ROUND-20/22/28/34/35) — the namer implements
+  **Rules 1a, revised 1b, 2, 3, and bounded 4a/5**. Neutral mancude averaging is built for the bounded C/N/O/S valence
+  slice, including supported fused systems. **Target-relative recursive Rules 4b/4c and Rule 6 remain UNBUILT** —
+  a tie needing them is a NAMED deferral (never guessed). Recursive stereochemistry-dependent ties and
+  comparisons needing charged, internally conjugated, untyped or over-budget ring connectivity still DEFER.
   Limits: 30 atoms per ring system, 128 complete matchings, 10,000 matching-search visits; a partial partner set is never
   used. The aromatic parser's charged-donor limitations remain separate (some aromatic inputs refuse while explicit
   spellings reach CIP deferral). See `docs/research/CIP_MANCUDE_SCOPE_2026-09-07.md` and
   `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md`. External finite agreement does not prove full CIP soundness.
-- **CIP unsaturated/ring-substituent gap — ✅ bounded classes CLOSED (ROUNDS 33–34); residuals tracked** (Lane B). R33 released
+- **CIP unsaturated/ring-substituent gap — ✅ bounded classes CLOSED (ROUNDS 33–35); residuals tracked** (Lane B). R33 released
   LOCALIZED unsaturated rings (unique Kekulé — cyclopropene…cyclohexadiene, cyclic enol ethers,
   localized fused bicyclics) to the ordinary digraph, so the R32 isolation now NAMES both (`[C@](C1CC1)(C)(F)Cl` and
   `[C@](C1=CC1)(C)(F)Cl` → R), oracle-verified over ~5,600 molecules (0 mismatches). R34 added bounded EXOCYCLIC
   unsaturation/carbonyls, AROMATIC-fused-to-saturated systems, and Rule-1a-distinct RING-vs-RING comparisons. **Still
-  DEFERRED, soundly:** internal conjugated ring systems outside the admitted representation; ISOTOPE-on-a-ring tied under
-  Rule 1a (the Rule-1b gate); ring-on-centre stereochemistry. See the corrected scope docs + manifest §§33–34. Rule 1b
-  itself is a PROVEN no-in-scope-consumer
-  DEFER (dalembert's lemma); its crux invariant (a real C/N/O/S node outranks a same-Z duplicate leaf) is pinned by
-  `experiments/cip_rule1b_consumer_probe.py::duplicate_never_collides_with_real`.
-- **CIP Rule-2 sound scope + residuals** (Lane B; ROUND-28) — Rule 2 (mass number) is its own full pass at the Rule-1a
-  tie hand-off, mirroring the VALIDATED Rule-1a breadth-first shape on the mass slot; SOUND-not-complete via the all-pairs
-  sibling-tie guard + is-None guard (a Rule-1a-tied-sibling pairing, or an unknown mass — a mancude superposition duplicate
-  or a bracket-reachable radioactive/synthetic element with no true standard weight — DEFERS, never fabricates). Residuals,
-  carried not silent: (1) **no EXTERNAL oracle past sphere 1** — RDKit is absent; the geometric oracle validates only the
-  sign convention, not priority correctness. Multi-sphere Rule-2 names are pinned by `_DIV_A`/`_DIV_B` (branch-paired proof)
-  + Hanson-2018 + the committed sphere-2/3 battery cases, but not independently oracle-confirmed. Never a wrong label (the
-  guards DEFER on ambiguity), only possible incompleteness. (2) **ring-closure duplicate isotope mass** is conjectured-safe,
-  not verified-safe — a chain double/triple-bond duplicate's mass can never solo-decide (the real atom co-decides at the
-  same/earlier sphere), but a ring-closure leaf whose real atom is reached only via the other ring direction was not proven
-  safe; most rings defer (mancude None / `_on_cycle` / out-of-scope), so no live counterexample exists. (3) validate deeper
-  Rule-2 against an external CIP authority before leaning on it past the pinned cases.
+  DEFERRED, soundly:** internal conjugated/charged ring systems outside the admitted representation and ring centres
+  needing mutually recursive Rule 4b/4c descriptors. ROUND 35 closes the former isotope-on-ring and constitutional
+  ring-centre boundaries. See the corrected scope docs + manifest §§33–35.
+- **CIP Rule-2 sound scope + residuals** (Lane B; ROUNDS 28/35) — Rule 2 (mass number) remains its own full FIFO pass
+  after Rules 1a and revised 1b; child pairing uses the cumulative comparator through Rule 2. Unknown mass (a mancude
+  superposition duplicate or an untyped radioactive/synthetic element) still defers. ROUND 35 independently checks the
+  former ring-closure isotope cases against RDKit and admits them. Remaining evidence is finite: broader isotope/ring
+  graphs and unknown-mass interactions still need fresh oracle cases before any completeness claim.
 - **CIP comparator transitivity residual** (Lane B; ROUND-20/28, evil-morty) — `_cip_compare` is used as a `cmp_to_key` sort
   key, which assumes transitivity; a deep degenerate tie tree could in principle violate it. No counterexample found
   (fuzzer-clean) and the `sorted(ranks)==[0,1,2,3]` guard in `_cip_ranks` catches any top-level cycle (→ DEFER, sound),

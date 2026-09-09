@@ -29,10 +29,10 @@ branch with need-to-know pruning (Hanson, Musacchio, Mayfield, Vainio, Yerin, Re
      core -- RDKit is absent -- so absolute ground truth is the hand/PubChem battery; the pool proves internal
      soundness on the combinatorial family curated anchors miss.)
 
-SOUND, not complete: ROUND 28 added CIP Rule 2 (mass number), so an isotope-only tie now NAMES (at any sphere, as
-long as the pairing is unambiguous).  A centre the BUILT rules (1a, 2) still cannot fully order -- a tie needing
-Rule 1b/3/4/5, a Rule-2 pairing made ambiguous by Rule-1a-tied siblings (the all-pairs guard) or an unknown mass, or
-a true constitutional duplicate -- is a NAMED DEFERRAL (no label), because a guessed R/S is worse than none.
+SOUND, not complete: later rounds added Rule 2 (mass), Rule 3 (E/Z), revised Rule 1b, parser-preserved ring parity,
+and a bounded Rules-4a/5 auxiliary pass.  A centre this built prefix cannot fully order -- including an unknown
+mass, recursive auxiliary-descriptor system, unsupported ring, or true constitutional duplicate -- is a NAMED
+DEFERRAL (no label), because a guessed R/S is worse than none.
 Bounded neutral mancude rings now use exact duplicate atomic-number averaging;
 the source-derived anchors and hostile aromatic/Kekule controls are in ``cip_mancude_probe``. The di-2-pyridyl
 false centre still defers: averaging must never split its two identical pyridyls. Unsupported unsaturated ring
@@ -73,7 +73,7 @@ from experiments.cip_geometry_oracle_probe import geometric_handedness
 
 #: Tamper pin over the whole battery (labels + priorities + oracle agreement).  Regenerate ONLY on an intentional
 #: change: ``python -m experiments.cip_namer_probe`` and paste the printed value.
-FROZEN_HASH = "b931ccccf6ee33262529f14cd83c3bf4d4579efe71310ee9b0491cc50de80be7"
+FROZEN_HASH = "e44a450ae53edad08e88b30cbb4d931ba271372f06864ee62d5cdecf0e1f754f"
 
 
 # --- textbook / PubChem absolutes (hand-derived R/S, the ground truth) -------------------------------
@@ -125,8 +125,6 @@ CYSTEINE = ("C([C@@H](C(=O)O)N)S", ("R",))
 DEFERRALS = [
     ("C[C@](C)(N)O", "false centre: two identical methyls (true constitutional duplicate)"),
     ("CC[C@](CC)(N)O", "false centre: two identical ethyls"),
-    ("N[C@]1(F)CCCCO1", "ring stereocentre (out of the acyclic scope)"),
-    ("[C@@](Br)(Cl)(C[2H])C[3H]", "Rule-2 pairing AMBIGUOUS: -CH2[2H] vs -CH2[3H] tie under Rule 1a AND the three H's on each carbon tie (all z=1), so the sibling pairing for the mass compare is arbitrary -> DEFER, never guess (ROUND-28 all-pairs guard)"),
     ("O[C@H](c1ccccn1)c1ccccn1", "SOUNDNESS PIN: two identical 2-pyridyls = a FALSE centre; a fixed Kekule would wrongly name it"),
 ]
 

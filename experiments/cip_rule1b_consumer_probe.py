@@ -13,15 +13,16 @@ anywhere in the namer's scope.
   * ACYCLIC centres (tree digraphs): a double-bond duplicate represents a DIRECT neighbour already compared at
     Rule 1a, so acyclic Rule 1b is subsumed by Rule 1a (Rule 1b bites only with ring closures -- Hanson 2018).
     The committed acyclic sweep finds 0 cases where RDKit labels and we defer over 992 stereocentres.
-  * RING-SUBSTITUENT, off-ring centres (NON-tree digraphs -- the class a first pass missed, birdperson): these
-    stay in scope, and 24/60 do defer where RDKit labels -- but ALL 24 are triggered by ring UNSATURATION (a ring
-    double bond), NOT a Rule-1b tie: the contested ligands are Rule-1a-DISTINCT (RDKit ranks them by 1a), and a
-    saturated ring substituent NAMES while the same ring with a double bond DEFERS.  So this is a distinct
-    ring-digraph SCOPE gap (unsaturated ring substituents), separate from Rule 1b and from ``_on_cycle``.
+  * RING-SUBSTITUENT, off-ring centres (NON-tree digraphs -- the class a first pass missed, birdperson): a first
+    pass found 24/60 deferrals where RDKit labels, ALL triggered by ring UNSATURATION and Rule-1a-DISTINCT (NOT a
+    Rule-1b tie).  ROUND 33 CLOSED that gap: a LOCALIZED unsaturated ring (unique Kekule) now NAMES, so 12/60
+    remain -- and those are RING-vs-RING (a released localized ring ranked against ANOTHER ring), a Rule-1b /
+    clean-mancude territory soundly deferred by R33's multiring guard, still NOT the acyclic Rule-1b tie this
+    harness rules out.  See ``experiments/cip_localized_ring_probe.py`` for the R33 evidence.
   * RING-ON-CENTRE: filtered out of scope by ``_on_cycle`` before CIP ranking; RDKit labels, we defer (scope).
 
-Therefore building the ``dup_rank`` machinery now would be dead structure + mislabel-prone: DEFER.  The real next
-CIP consumer, if scope is extended, is unsaturated-ring-substituent handling -- NOT Rule 1b.
+Therefore building the acyclic ``dup_rank`` machinery would be dead structure + mislabel-prone: DEFER.  ROUND 33
+addressed the ring gap this harness surfaced (localized-ring substituents), NOT by building Rule 1b.
 
 Each battery entry's RDKit label is baked as a frozen constant, VERIFIED against ``rdCIPLabeler`` at authoring
 (2026-09-08, rdkit 2026.3.6).  ``validate()`` and ``content_hash()`` are RDKit-FREE (the committed test
@@ -48,7 +49,7 @@ from smartchem.smiles import _cip_compare, _cip_mass, cip_labels
 _DUPLICATE_CAPABLE = ("C", "N", "O", "S")
 
 #: The committed tamper pin.  Regenerate ONLY on an intentional change.
-FROZEN_HASH = "71855d6ea30d4fe86817ef4a20bd612da7de14432c696e16a87fa8c3d84ca104"
+FROZEN_HASH = "2d4e1fd0c07ca7679f1cb01dc0da76b52697df0e5f640108ec1088b63b5097ec"
 
 # --- committed sweep generators (reproducible; the counts below are what THESE produce, not orphaned numbers) ---
 
@@ -63,11 +64,17 @@ _RING_OTHERS = ("C", "CC", "C=C", "CO", "C1CC1", "C1=CC1")
 #: Frozen sweep results (reproduced live by ``_rdkit_cross_check`` when rdkit is present).
 ACYCLIC_SWEEP_PAIRS = 992
 ACYCLIC_RULE1B_CONSUMERS = 0                        # RDKit-labels/we-defer over acyclic (tree) centres
-RING_SUB_INSCOPE_DEFERRALS = 24                     # off-ring-centre defers where RDKit labels
-RING_SUB_UNSATURATED = 24                           # ...of which triggered by a ring double bond (ALL of them)
+# ROUND 33 closed the SINGLE localized-unsaturated-ring gap this sweep originally found (24 -> was every
+# unsaturated ring; those now NAME).  The deferrals that REMAIN in this frag set are RING-vs-RING -- a released
+# localized ring ranked against ANOTHER ring (Rule-1b / clean-mancude territory, soundly deferred by R33's
+# multiring guard), not the old single-ring boundary.  Both still carry a ring double bond, so unsaturated ==
+# inscope still holds.  See ``experiments/cip_localized_ring_probe.py`` for the R33 evidence.
+RING_SUB_INSCOPE_DEFERRALS = 12                     # off-ring-centre defers where RDKit labels (now ring-vs-ring)
+RING_SUB_UNSATURATED = 12                           # ...all still involve an unsaturated ring
 
 #: Oracle-verified battery: (smiles, rdkit_label, expected_ours, category, note).  Categories:
-#:   acyclic-name | ring-sub-sat-name | ring-sub-unsat-defer | ring-centre-defer | false-centre
+#:   acyclic-name | ring-sub-sat-name | ring-sub-unsat-name | ring-sub-multiring-defer | ring-centre-defer |
+#:   rule3-defer | false-centre
 BATTERY = (
     ("N[C@@H](C)C(=O)O",        ("S",), ("S",), "acyclic-name", "L-alanine (Rule 1a)"),
     ("N[C@H](C)C(=O)O",         ("R",), ("R",), "acyclic-name", "D-alanine"),
@@ -82,9 +89,12 @@ BATTERY = (
     ("[C@](C1CC1)(C)(F)Cl",     ("R",), ("R",), "ring-sub-sat-name", "cyclopropyl substituent, saturated"),
     ("[C@](C1CCC1)(C)(F)Cl",    ("R",), ("R",), "ring-sub-sat-name", "cyclobutyl substituent, saturated"),
     ("C[C@](C1CC1)(CC)C(C)C",   ("S",), ("S",), "ring-sub-sat-name", "cyclopropyl/isopropyl/ethyl (Rule 1a)"),
-    # UNSATURATED ring substituent, OFF-ring centre -> we DEFER (ring-digraph gap; ligands 1a-DISTINCT, NOT 1b):
-    ("[C@](C1=CC1)(C)(F)Cl",    ("R",), (),     "ring-sub-unsat-defer", "cyclopropenyl: ring double bond triggers defer"),
-    ("[C@](C1=CCC1)(C)(F)Cl",   ("R",), (),     "ring-sub-unsat-defer", "cyclobutenyl: ring double bond triggers defer"),
+    # LOCALIZED UNSATURATED ring substituent, OFF-ring centre -> NAMED SINCE ROUND 33 (the gap this harness found
+    # is closed; the ligands were always Rule-1a-DISTINCT, only the ring-digraph boundary was too eager):
+    ("[C@](C1=CC1)(C)(F)Cl",    ("R",), ("R",), "ring-sub-unsat-name", "cyclopropenyl: localized -> NAMED (R33)"),
+    ("[C@](C1=CCC1)(C)(F)Cl",   ("R",), ("R",), "ring-sub-unsat-name", "cyclobutenyl: localized -> NAMED (R33)"),
+    # a localized ring ranked against ANOTHER ring stays DEFERRED (ring-vs-ring is Rule-1b territory -- R33 guard):
+    ("[C@](C1=CCCCC1)(C1=CCCC1)(C)F", ("S",), (), "ring-sub-multiring-defer", "two localized rings -> Rule-1b territory (R33)"),
     # ACYCLIC deferral that is provably NOT Rule 1b -> Rule 3 (E/Z geometry).  The two propenyl arms are
     # CONSTITUTIONALLY IDENTICAL (-CH=CH-CH3, differing only E vs Z), so by the acyclic lemma they tie under
     # Rule 1a AND Rule 1b (both constitutional); only Rule 3 (double-bond geometry) can decide, and we defer
@@ -131,45 +141,45 @@ def duplicate_never_collides_with_real() -> int:
 
 def validate() -> None:
     """Raise if the shipped namer does not reproduce the oracle-verified finding (RDKit-free)."""
-    acyclic_agreements = sat_ring_names = unsat_ring_defers = rule3_defers = 0
+    acyclic_agreements = ring_names = multiring_defers = rule3_defers = 0
     for smi, rd_label, expected, category, note in BATTERY:
         got = tuple(cip_labels(smi))
         assert got == expected, f"namer drift on {smi}: got {got}, expected {expected} [{note}]"
 
-        if category in ("acyclic-name", "ring-sub-sat-name"):
-            # we emit a label; it must MATCH the RDKit oracle (never mislabel).
+        if category in ("acyclic-name", "ring-sub-sat-name", "ring-sub-unsat-name"):
+            # we emit a label; it must MATCH the RDKit oracle (never mislabel).  ring-sub-unsat-name is the class
+            # ROUND 33 closed (a localized ring substituent, the only ring on the centre).
             assert got == rd_label, f"MISLABEL vs oracle on {smi}: {got} != rdkit {rd_label}"
             acyclic_agreements += category == "acyclic-name"
-            sat_ring_names += category == "ring-sub-sat-name"
-        elif category == "ring-sub-unsat-defer":
-            # rdkit labels, we defer -- but this is ring UNSATURATION, not Rule 1b.
+            ring_names += category in ("ring-sub-sat-name", "ring-sub-unsat-name")
+        elif category == "ring-sub-multiring-defer":
+            # rdkit labels, we defer -- a localized ring ranked against ANOTHER ring is Rule-1b territory (R33 guard).
             assert rd_label and not got, f"{smi} must be rdkit-labels/we-defer"
-            assert "=" in smi, "a ring-sub-unsat-defer case must carry a ring double bond (the trigger)"
-            unsat_ring_defers += 1
+            multiring_defers += 1
         elif category == "rule3-defer":
             # an ACYCLIC rdkit-labels/we-defer case that is provably NOT Rule 1b: the contested ligands are
             # constitutionally identical (E/Z isomers), so Rule 1b (constitutional) ties too -- Rule 3 decides.
             assert rd_label and not got, f"{smi} must be an acyclic rdkit-labels/we-defer (Rule 3) case"
             rule3_defers += 1
 
-    # non-vacuity: the battery must genuinely exercise oracle agreement, the isolation, and the Rule-3 boundary.
+    # non-vacuity: the battery must genuinely exercise oracle agreement, ring naming, and the boundary defers.
     assert acyclic_agreements >= 8, "battery must non-vacuously exercise acyclic oracle agreement"
-    assert sat_ring_names >= 2 and unsat_ring_defers >= 2, "battery must isolate the unsaturated-ring cause"
+    assert ring_names >= 4, "battery must exercise ring-substituent naming (saturated + localized-unsaturated)"
+    assert multiring_defers >= 1, "battery must pin the ring-vs-ring (Rule-1b territory) deferral"
     assert rule3_defers >= 1, "battery must include the acyclic Rule-3 (not Rule-1b) deferral boundary"
 
     # the acyclic soundness crux (dalembert): a duplicate never collides with a real same-Z node.
     assert duplicate_never_collides_with_real() == len(_DUPLICATE_CAPABLE)
 
-    # THE ISOLATION (birdperson): a saturated ring substituent NAMES while the SAME ring with a double bond
-    # DEFERS -- proving the in-scope deferrals are a ring-unsaturation gap, not a Rule-1b tie (the spectators
-    # C/F/Cl can never tie a ring ligand at Rule 1a).
+    # THE ISOLATION, post-R33: a saturated ring substituent NAMES, and so does the SAME ring with a double bond
+    # (the R32 gap is closed).  Both were always Rule-1a-DISTINCT from the C/F/Cl spectators -- never a Rule-1b tie.
     assert cip_labels("[C@](C1CC1)(C)(F)Cl") == ("R",), "saturated cyclopropyl substituent must NAME"
-    assert cip_labels("[C@](C1=CC1)(C)(F)Cl") == (), "unsaturated cyclopropenyl substituent must DEFER (ring gap)"
+    assert cip_labels("[C@](C1=CC1)(C)(F)Cl") == ("R",), "localized cyclopropenyl substituent must NAME (R33 closed the gap)"
 
-    # THE FINDING (frozen sweep facts; reproduced live by the cross-check): no Rule-1b consumer in scope, and
-    # every in-scope ring-substituent deferral is caused by ring unsaturation.
+    # THE FINDING (unchanged): no acyclic Rule-1b consumer.  The ring-substituent deferrals that remain are
+    # ring-vs-ring (Rule-1b territory), all still carrying an unsaturated ring.
     assert ACYCLIC_RULE1B_CONSUMERS == 0, "no acyclic Rule-1b consumer"
-    assert RING_SUB_UNSATURATED == RING_SUB_INSCOPE_DEFERRALS, "every in-scope ring-sub deferral is unsaturated-ring, not Rule 1b"
+    assert RING_SUB_UNSATURATED == RING_SUB_INSCOPE_DEFERRALS, "every remaining in-scope ring-sub deferral involves an unsaturated ring"
 
 
 def _acyclic_sweep(rd_labels, defers) -> dict:

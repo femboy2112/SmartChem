@@ -1010,19 +1010,27 @@ def _cip_ring_edges(n, bonds) -> frozenset[int]:
     return frozenset(set(range(len(bonds))) - bridges)
 
 
-def _cip_mancude(atoms, bonds, adj) -> tuple[frozenset[int], dict[int, Fraction]]:
-    """Unsupported ring boundaries and exact duplicate-Z values for bounded neutral mancude systems.
+def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction], frozenset[int]]":
+    """``(blocked, averages, released)`` for the ring systems of the molecule (ROUND 22 mancude + ROUND 33
+    localized rings): the Kekule-dependent BOUNDARY atoms, the exact duplicate-Z averages for delocalized
+    (>=2-Kekule) mancude systems, and the atoms of LOCALIZED (unique-Kekule) rings released to the ordinary digraph.
 
     IUPAC P-92.1.4.4 averages over the POSSIBLE PARTNER POSITIONS, not over whole Kekule structures
     with their unequal partner frequencies.  Enumerate perfect matchings only to establish which partners
     are possible; average each distinct partner once.  The supported valences have one ring double per
-    neutral C / pyridine-N acceptor and none per fixed pyrrole-N / O / S donor.  Every real atom and every
-    ring-closure duplicate retains its integer Z; only multiple-bond duplicates receive this average.
+    neutral C / pyridine-N acceptor and none per fixed pyrrole-N / O / S donor.  A saturated sp3 ring carbon
+    (all bonds order 1) is admitted as a pass-through SPECTATOR (ROUND 33) so a partially-unsaturated ring
+    reaches the matching enumeration.  A component with a UNIQUE perfect matching (matching_count==1) is a
+    single Kekule structure -- NOT a superposition -- and is RELEASED to the ordinary digraph (real z, real
+    mass; recorded in ``released``), exactly as an acyclic double bond is handled; a delocalized component
+    (>=2 matchings, no spectator) is AVERAGED as before (every real atom and ring-closure duplicate keeps its
+    integer Z; only multiple-bond duplicates get the average).
 
     Detection uses ring topology and filled valence, never lowercase flags as an admission shortcut: an
-    explicit Kekule spelling receives the same treatment. Charged, exocyclic-multiple, incompletely conjugated,
-    untyped and over-budget unsaturated ring systems remain lazy boundaries. Saturated rings keep their
-    existing ordinary digraph. This is a bounded Rule-1a extension, not general aromaticity perception.
+    explicit Kekule spelling receives the same treatment. Charged, exocyclic-multiple, and mixed
+    partially-saturated-fused (>=2 matchings WITH a spectator, e.g. indene/tetralin) systems remain lazy
+    boundaries; over-budget matchings fail closed (stay blocked). Saturated rings keep their existing ordinary
+    digraph. This is a bounded Rule-1a extension, not general aromaticity perception.
     """
     ring_edges = _cip_ring_edges(len(atoms), bonds)
     ring_adj = {}
@@ -1032,6 +1040,7 @@ def _cip_mancude(atoms, bonds, adj) -> tuple[frozenset[int], dict[int, Fraction]
         ring_adj.setdefault(b, set()).add(a)
     blocked = {i for i, atom in enumerate(atoms) if atom.aromatic}
     averages = {}
+    released = set()                                     # ROUND 33: atoms in localized (unique-Kekule) rings released
     seen = set()
     for start in ring_adj:
         if start in seen:
@@ -1051,6 +1060,7 @@ def _cip_mancude(atoms, bonds, adj) -> tuple[frozenset[int], dict[int, Fraction]
             continue
         acceptors = set()
         valid = True
+        spectator_present = False
         for a in component:
             atom = atoms[a]
             orders = sorted(o for _b, o in adj[a])
@@ -1065,6 +1075,13 @@ def _cip_mancude(atoms, bonds, adj) -> tuple[frozenset[int], dict[int, Fraction]
                 pass
             elif atom.element in ("O", "S") and orders == [1, 1]:
                 pass
+            elif atom.element == "C" and orders == [1, 1, 1, 1]:
+                spectator_present = True                 # a saturated sp3 ring carbon: ALL bonds order 1 (no ring
+                # AND no exocyclic double -- the all-single pattern guarantees both), so it is a LOCALIZED-ring
+                # pass-through, not a pi-participant.  Admitting it (rather than the old blanket ``else: valid=False``)
+                # lets a partially-unsaturated ring -- cyclopropene, cyclohexene, cyclopentadiene, a cyclic enol
+                # ether -- reach the matching enumeration below; on a UNIQUE matching the ring is released to the
+                # ordinary digraph (localized double bonds, exactly as acyclic doubles are handled).
             else:
                 valid = False
         if not valid or not acceptors:
@@ -1095,10 +1112,37 @@ def _cip_mancude(atoms, bonds, adj) -> tuple[frozenset[int], dict[int, Fraction]
             continue                       # never publish a truncated matching/partner set
         if not matching_count:
             continue
-        averages.update({a: Fraction(sum(ATOMIC_NUMBER[atoms[b].element] for b in choices), len(choices))
-                         for a, choices in partners.items()})
-        blocked.difference_update(component)
-    return frozenset(blocked), averages
+        # THREE-WAY release (the soundness split birdperson's review pinned):
+        #   (1) matching_count == 1 -> the double-bond positions are FORCED (a SINGLE valid Kekule structure), NOT
+        #       a superposition.  Release to the ordinary ``_cip_digraph`` with REAL atomic number AND REAL mass --
+        #       by leaving these atoms OUT of both ``blocked`` and the ``averages`` (mancude) dict, so the digraph's
+        #       ``else`` branch (real z, real mass) and real integer-Z closure leaves fire.  This is exactly the
+        #       treatment an ACYCLIC double bond already receives soundly, so Rule 1a AND Rule 2 both decide.  It
+        #       names the localized ring class (cyclopropene ... cyclohexadiene, cyclic enol ethers, localized fused
+        #       bicyclics) and reroutes a UNIQUE-matching aromatic heterocycle (furan/pyrrole/thiophene) from a
+        #       spurious Rule-2 defer (mass=None) to its real mass -- Rule 1a stays BYTE-IDENTICAL because the
+        #       average of a single partner IS the real Z (Fraction(z,1) == z under every comparison here).
+        #   (2) matching_count >= 2 with NO admitted spectator -> the clean, fully-conjugated mancude system
+        #       (benzene, pyridine, di-2-pyridyl): today's exact partner-Z averaging, BYTE-IDENTICAL (no component
+        #       that reaches averaging today has an sp3 spectator, so this branch reproduces the prior code exactly).
+        #   (3) matching_count >= 2 WITH a spectator -> a mixed partially-saturated fused system (indene, tetralin):
+        #       extending the AVERAGING claim (validated only for clean rings) to this new topology is unproven, so
+        #       DEFER (leave the component blocked) rather than risk a mislabel.  A distinct, characterised next gap
+        #       (aromatic-fused-to-saturated ring substituents), not this round's localized-ring target.
+        if matching_count == 1:
+            blocked.difference_update(component)
+            released.update(component)                   # ROUND 33: this component is a LOCALIZED ring released to
+            # the ordinary digraph (real z/mass).  Recorded so a ranking that would pit a released localized ring
+            # against a mancude-AVERAGED ligand can fail closed: that cross-comparison rests on the pre-existing
+            # partner-Z averaging (R22), which is not oracle-clean for complex conjugation (dalembert flagged it
+            # orthogonal), so it must DEFER rather than risk a mislabel.  Saturated rings are never in this set
+            # (they are skipped before the classifier), so the guard cannot regress them.
+        elif not spectator_present:
+            averages.update({a: Fraction(sum(ATOMIC_NUMBER[atoms[b].element] for b in choices), len(choices))
+                             for a, choices in partners.items()})
+            blocked.difference_update(component)
+        # else (matching_count >= 2 with a spectator): leave the component blocked -> the centre defers.
+    return frozenset(blocked), averages, frozenset(released)
 
 
 class _CipTooBig(Exception):
@@ -1292,18 +1336,55 @@ def _cip_compare_rule2(a, b, ctx) -> int:
     return 0
 
 
-def _cip_rank_compare(a, b, ctx) -> int:
+def _cip_rank_compare(a, b, ctx, both_acyclic=True) -> int:
     """The CIP hierarchical rank of two ligand digraphs (ROUND 28): Rule 1a exhausted over the WHOLE digraph
     FIRST, then -- ONLY on a genuine Rule-1a tie -- Rule 2 (mass number) as its own full pass.  ``+1``/``-1``/
     ``0``; a ``0`` is a tie no BUILT rule breaks, so the caller DEFERS.  Rule 2 may raise :class:`_CipAmbiguous`
     or :class:`_CipAromatic` (both -> DEFER).  Rules 1b/3/4/5 are NOT built, so a Rule-1a+Rule-2 tie stays ``0``
     (a NAMED deferral).  Keeping Rule 2 a separate pass entered only at the ``_cip_compare == 0`` hand-off is
     soundness-required: folding mass into ``_cip_compare``'s per-leaf tuple would let a shallow mass tie override
-    a deeper Rule-1a atomic-number difference -- an inversion of CIP precedence."""
+    a deeper Rule-1a atomic-number difference -- an inversion of CIP precedence.
+
+    ``both_acyclic`` GATES the Rule-1a -> Rule-2 leapfrog past the UNBUILT Rule 1b (ROUND 33, the localized-ring
+    release).  R32 proved Rule 1b is inert on TREES (an acyclic Rule-1a tie <=> identical constitution, so 1b --
+    a constitutional rule -- cannot act), which is what licenses skipping straight to Rule 2 for acyclic ligands.
+    But Rule 1b BITES with ring closures (Hanson 2018): two ligands CONTAINING RINGS can tie under Rule 1a while
+    being constitutionally distinct (ring reconvergence), where Rule 1b would decide -- and letting Rule 2 (an
+    isotope asymmetry) break that tie the other way would MISLABEL.  So when either tied ligand contains a ring
+    closure (``both_acyclic`` False), a Rule-1a tie DEFERS (returns ``0``) instead of consulting Rule 2 -- the
+    sound fail-closed into Rule-1b territory.  Costs only the exotic isotope-on-a-ring corner; a ring vs a
+    Rule-1a-DISTINCT ligand (the common localized-ring case) is decided by Rule 1a and never reaches here."""
     c = _cip_compare(a, b, ctx)
     if c != 0:
         return c
+    if not both_acyclic:
+        return 0                    # Rule-1a tie on a ring-bearing ligand -> Rule 1b territory (unbuilt) -> DEFER
     return _cip_compare_rule2(a, b, ctx)
+
+
+def _ligand_atoms(w: int, centre: int, adj: "dict[int, list[tuple[int, int]]]") -> "tuple[bool, set[int]]":
+    """``(has_ring, atom_set)`` for the ligand rooted at written-neighbour ``w`` (the substituent reached from
+    ``centre`` through ``w``).  An off-ring centre (the only scope here) splits the molecule minus ``centre`` into
+    disjoint ligand components, so this explores ``w``'s component (never crossing back through ``centre``).
+    ``has_ring`` is True iff that component has a cycle (edge count >= node count; a tree has ``nodes - 1`` edges;
+    multiplicity is irrelevant -- a double bond is one edge -- so it is the sigma-ring, exactly): its CIP digraph
+    will hold ring-closure duplicate atoms, which gates the Rule-2 leapfrog past the unbuilt Rule 1b (inert on
+    trees, not on rings -- see :func:`_cip_rank_compare`).  ``atom_set`` is the ligand's atoms, used to detect
+    whether a ligand touches a mancude-averaged atom or an R33-released localized-ring atom (the fail-closed guard
+    in :func:`_cip_ranks`)."""
+    seen = {w}
+    stack = [w]
+    directed_edges = 0
+    while stack:
+        node = stack.pop()
+        for nb, _order in adj[node]:
+            if nb == centre:
+                continue
+            directed_edges += 1                       # each undirected edge is seen once from each endpoint
+            if nb not in seen:
+                seen.add(nb)
+                stack.append(nb)
+    return directed_edges // 2 >= len(seen), seen     # tree: edges == nodes - 1; ring: edges >= nodes
 
 
 def _cip_child_zs(node) -> tuple:
@@ -1316,7 +1397,7 @@ def _cip_child_zs(node) -> tuple:
     return tuple(sorted((c[0] for c in node[2]), reverse=True))
 
 
-def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None) -> "list[int] | None":
+def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None, released=frozenset()) -> "list[int] | None":
     """The CIP priority rank (``0`` = highest) of each of the four WRITTEN neighbours of ``centre`` via the
     hierarchical digraph, or ``None`` when the BUILT rules do NOT fully order them (a genuine tie still needing
     Rule 1b/3/4/5, a ranking whose decision depends on an unsupported ring's substituents, an ambiguous Rule-2
@@ -1333,6 +1414,17 @@ def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None) -> "li
                  for w in written]
     except (_CipTooBig, _CipAromatic):                          # build only raises _CipAromatic for the exocyclic guard
         return None
+    profiles = [_ligand_atoms(w, centre, adj) for w in written]     # ROUND 33
+    has_ring = [p[0] for p in profiles]                             # gate the Rule-2 leapfrog past Rule 1b
+    touches_released = [bool(p[1] & released) for p in profiles]    # a ligand holding an R33-released localized ring
+    if any(touches_released) and sum(has_ring) >= 2:
+        return None                                             # a released localized ring would be ranked against
+        # ANOTHER ring ligand (saturated, unsaturated, or mancude-aromatic).  Ring-vs-ring CIP ranking descends into
+        # competing ring-closure / double-bond duplicate structures -- Rule-1b territory (R32: Rule 1b bites with
+        # ring closures) and, for an aromatic co-ligand, the pre-existing partner-Z averaging (R22) -- neither of
+        # which the built Rule 1a resolves reliably.  Fail closed to a NAMED DEFERRAL (a wrong R/S is worse than
+        # none).  The cited localized-ring gap bears ACYCLIC co-ligands (spectators C/F/Cl/O), so the released ring
+        # is the ONLY ring on the centre and it NAMES; two SATURATED rings (never released) are unaffected.
     ctx = {"cmp": {}, "sc": {}, "budget": [_CIP_COMPARE_BUDGET]}  # caches shared across all six pairwise compares
     try:
         ranks: list[int] = []
@@ -1341,9 +1433,11 @@ def _cip_ranks(written, centre, adj, elems, mass, aromatic, mancude=None) -> "li
             for j in range(4):
                 if j == k:
                     continue
-                c = _cip_rank_compare(roots[j], roots[k], ctx)
+                # Rule 2 may break a Rule-1a tie ONLY when both ligands are trees (R32: Rule 1b inert on trees);
+                # if either contains a ring closure, a Rule-1a tie defers into unbuilt Rule-1b territory (dalembert).
+                c = _cip_rank_compare(roots[j], roots[k], ctx, both_acyclic=not (has_ring[j] or has_ring[k]))
                 if c == 0:
-                    return None                                 # two ligands tie under Rule 1a AND Rule 2 -> DEFER (sound)
+                    return None                                 # tie no BUILT rule breaks (Rule 1a+2, or 1b territory) -> DEFER
                 if c > 0:
                     higher += 1
             ranks.append(higher)
@@ -1367,10 +1461,14 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
     -> R).  It stays SOUND: a centre whose four ligands are NOT separated by a BUILT rule -- a tie needing Rule
     1b/3/4/5, a Rule-2 pairing made ambiguous by Rule-1a-tied siblings or an unknown mass, or a true constitutional
     duplicate (a false centre) -- is a NAMED DEFERRAL and gets NO label, because a guessed R/S is worse than
-    none. Bounded neutral C/N/O/S mancude rings use exact atomic-number averaging of multiple-bond duplicates
-    (:func:`_cip_mancude`), equally for aromatic and explicit Kekule spellings. Charged, exocyclic-multiple,
-    incompletely conjugated, untyped and over-budget unsaturated ring systems retain a lazy deferral boundary;
-    a ranking decided by atomic number before reaching that boundary still names. A ring
+    none. Bounded neutral C/N/O/S mancude rings (>=2 Kekule structures: benzene, pyridine) use exact atomic-number
+    averaging of multiple-bond duplicates (:func:`_cip_mancude`), equally for aromatic and explicit Kekule
+    spellings; a LOCALIZED unsaturated ring (a UNIQUE Kekule structure -- cyclopropene, cyclohexene,
+    cyclopentadiene, a cyclic enol ether, a localized fused bicyclic) is RELEASED to the ordinary digraph and
+    NAMES (ROUND 33), when it is the ONLY ring on the centre.  Charged, exocyclic-multiple, and mixed
+    partially-saturated-fused ring systems retain a lazy deferral boundary; a released ring ranked against
+    ANOTHER ring, or an isotope-labelled ring tied under Rule 1a, DEFERS (Rule-1b / clean-mancude territory);
+    a ranking decided by atomic number before reaching a boundary still names. A ring
     stereocentre (``_on_cycle``) and a non-four-coordinate marked centre also defer, as before.
     On the distinct-atomic-number slice the digraph decides at sphere 0, so this is byte-identical to the prior
     ``sorted(z, reverse=True)`` ranks there -- a strict extension, never a change.
@@ -1398,7 +1496,7 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
         neighbours[b.j].append(b.i)
         adj[b.i].append((b.j, b.order))                          # ordered adjacency for the CIP digraph (phantom counts)
         adj[b.j].append((b.i, b.order))
-    aromatic, mancude = _cip_mancude(atoms, work, adj)
+    aromatic, mancude, released = _cip_mancude(atoms, work, adj)
     labels: list[str] = []
     for a in marked:                                             # SAME scope as _perceive_configuration (acyclic, 4-coord)
         if _on_cycle(a, neighbours, len(filled_atoms)):
@@ -1413,7 +1511,7 @@ def _cip_labels(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> tupl
             continue
         if any(ATOMIC_NUMBER.get(filled_atoms[x]) is None for x in written):
             continue                                             # a non-periodic-table element -> out of scope
-        ranks = _cip_ranks(written, a, adj, filled_atoms, mass, aromatic, mancude)
+        ranks = _cip_ranks(written, a, adj, filled_atoms, mass, aromatic, mancude, released)
         if ranks is None:
             continue                                             # Rule 1a+2 leave a genuine tie -> NAMED DEFERRAL (never guess)
         handedness = _perm_parity(ranks) ^ (0 if atoms[a].chirality == 1 else 1)
@@ -1427,11 +1525,14 @@ def cip_labels(text: str) -> tuple[str, ...]:
     Priority comes from the general CIP **Rule 1a** hierarchical digraph -- breadth-first, branch-by-branch, with
     duplicate/phantom atoms for multiple bonds and ring closures (ROUND 20) -- plus CIP **Rule 2** (mass number,
     ROUND 28) as its own pass at the Rule-1a tie hand-off, so the common same-element case (amino acids, sugars,
-    secondary/tertiary carbons) AND a same-Z isotope tie are now NAMED, not deferred.  A centre the BUILT rules
-    (1a, 2) cannot fully order (a tie needing Rule 1b/3/4/5, a Rule-2 pairing made ambiguous by Rule-1a-tied
-    siblings or an unknown mass), one whose ranking depends on an unsupported unsaturated ring system, a ring
-    stereocentre, or a non-four-coordinate marked centre
-    contributes NO name -- a named deferral, never a guessed/unsound label.  Raises
+    secondary/tertiary carbons) AND a same-Z isotope tie are now NAMED, not deferred.  A LOCALIZED unsaturated
+    ring substituent (a unique Kekule structure -- cyclopropene, cyclohexene, cyclopentadiene, a cyclic enol
+    ether, a localized fused bicyclic) is also NAMED (ROUND 33) when it is the only ring on the centre.  A centre
+    the BUILT rules (1a, 2) cannot fully order (a tie needing Rule 1b/3/4/5, a Rule-2 pairing made ambiguous by
+    Rule-1a-tied siblings or an unknown mass), one whose ranking depends on an unsupported/delocalized ring, a
+    released ring ranked against ANOTHER ring or an isotope-labelled ring tied under Rule 1a (Rule-1b territory),
+    an exocyclic-double or aromatic-fused-to-saturated ring, a ring stereocentre, or a non-four-coordinate marked
+    centre contributes NO name -- a named deferral, never a guessed/unsound label.  Raises
     :class:`SmilesError` on a malformed/out-of-scope SMILES, like the parser.  See :func:`_cip_labels` for the
     method and its L-alanine = S sign-convention anchor."""
     if not isinstance(text, str):

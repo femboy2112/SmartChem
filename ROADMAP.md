@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ cip-rule1b-consumer-defer-2026-09-08` (**ROUND 32** — CIP Rule 1b (Rung 2) oracle-verified consumer investigation → VERIFIED DEFER; stacked on the open R31 branch → R31 PR #27 → R30 #26 → R29 #25 → R28 #24 → R27 #23; R26 MERGED via PR #22 → `main@b2a5518`) · suite **4645 passed / 15 skipped / 1 xfailed** (PySCF-present, RDKit-ABSENT committed env; 4 batches [a-e] 1810/1-skip · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997; = R31 4639 + 6 CIP-Rule-1b-consumer tests, +1 skip = the rdkit-gated cross-check that skips when rdkit is absent; legacy xfail preserved; NO golden moved — additive evidence harness + scope decision, the shipped namer UNTOUCHED) · updated **2026-09-08 UTC**
+> `verified @ cip-localized-ring-2026-09-08` (**ROUND 33** — localized unsaturated-ring substituents NAME, the R32-surfaced gap closed; over the UNCHANGED comparator + 2 fail-closed soundness gates; all four reviewers cleared it — butter-robot/birdperson/dalembert(proved `matching_count==1 ⟺ unique Kekulé`)/evil-morty; RDKit oracle sweep ~5,600 molecules → 0 mismatches, uninstalled before this baseline) · suite **4653 passed / 16 skipped / 1 xfailed** (PySCF-present, RDKit-ABSENT committed env; 4 batches [a-e] 1818/2-skip · [f-l] 769/14/1 · [m-r] 1069 · [s-z] 997; = R32 4645 + 8 localized-ring tests, +1 skip = the rdkit-gated cross-check that skips when rdkit is absent; legacy xfail preserved; benzene/pyridine averaging byte-identical, NO golden moved on the acyclic/saturated slice) · updated **2026-09-08 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -68,6 +68,19 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 33 — Localized unsaturated-ring substituents NAME (the R32-surfaced gap, closed)** (branch
+`cip-localized-ring-2026-09-08`) — the user's "unsaturated-ring-substituent CIP handling, full blast." A LOCALIZED
+unsaturated ring (a UNIQUE Kekulé structure — cyclopropene, cyclohexene, cyclopentadiene, a cyclic enol ether, a localized
+fused bicyclic) is released to the ordinary `_cip_digraph` (real z + real mass), so the R32 isolation now NAMES both
+(`[C@](C1CC1)(C)(F)Cl` and `[C@](C1=CC1)(C)(F)Cl` → R). Over the UNCHANGED comparator, gated by two soundness gates + an
+oracle sweep. Three bearings (butter-robot YAGNI, birdperson SOUND-BUT-HEED → the three-way release, dalembert SURVIVED +
+proved `matching_count==1 ⟺ unique Kekulé` and found the Rule-1b gate). RDKit `rdCIPLabeler` (dev-venv-only) drove a
+~5,600-molecule sweep → **0 mismatches** after two guards closed the fused/bridged ghost. Full detail: manifest §33.
+
+| Item | Lane | What shipped |
+|---|---|---|
+| **CIP localized unsaturated rings** | B | `smartchem/smiles.py` (`_cip_mancude` sp³-spectator + three-way release `matching_count==1`→release / `≥2` no-spectator→average byte-identical / `≥2`+spectator→defer, returns `(blocked, averages, released)`; `_cip_rank_compare` **Rule-1b gate** — Rule 2 breaks a Rule-1a tie only when both ligands are trees; `_ligand_atoms` + `_cip_ranks` **multiring guard** — a released ring may only rank against ACYCLIC co-ligands). Names the localized class incl. localized fused bicyclics + reroutes furan/pyrrole/thiophene to real mass (Rule 1a byte-identical); benzene/pyridine averaging UNCHANGED; two saturated rings unaffected (no regression). Evidence: `experiments/cip_localized_ring_probe.py` (FROZEN_HASH; RDKit-free `validate()` + gated live `_rdkit_cross_check`, 30-case battery + 192-case localized sweep, 0 mismatches) + `tests/test_cip_localized_ring.py` + `docs/research/CIP_LOCALIZED_RING_SCOPE_v0.1.md`. **dalembert's theorem:** `need[a]=Σ(order−1)` Kekulé-invariant → acceptor matching count == true Kekulé count → `matching_count==1 ⟺ unique Kekulé ⟹ spelling-invariant`. **Boundary (sound deferrals):** exocyclic doubles, aromatic-fused-to-saturated, ring-vs-ring, isotope-on-a-ring. R32 harness updated (localized frags now NAME → ring-sub deferrals 24→12 (ring-vs-ring); acyclic 992/0 + crux UNCHANGED). |
 
 **ROUND 32 — CIP Rule 1b (Rung 2): oracle-verified consumer investigation → VERIFIED DEFER** (branch
 `cip-rule1b-consumer-defer-2026-09-08`, stacked on the open R31 branch) — the user's "then do 3 (CIP rung 2)." The sound way
@@ -296,11 +309,13 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > The Warshay shock-tube fit is modelled in a new sibling; Br₂ SURVIVES at bench (a lower-bounded PREDICTED read,
 > cross-referenced to the independent R26 thermo), dissociates sub-ms only at shock-tube T. A separate commit fixed a
 > latent gate fabrication (an out-of-window extrapolated DEGRADES → UNKNOWN). See the DONE ledger + manifest §30.
-> **⭐ The active queue is CIP Rung 2 (Rule 1b) when a consumer appears, and the DOW brine-vs-mined COST RANKING (the
-> litmus's last open lane); Move 5 (domain-neutral pipeline lift) stays DEFERRED until a second-domain consumer exists.**
-> The DOW litmus's DECOMPOSITION question is now fully answered (thermo R26 + kinetics R30); only its cost ranking
-> remains. All six categorical-reorientation Moves are shipped or scoped: Moves 1–3 DONE (R24–R27), Move-4 tension-A +
-> CIP Rung 1 DONE (R27/R28), Move 5 DEFERRED-premature (R28), Move 6 DONE (R29).
+> **⭐ As of ROUND 33 there is no standing build gate — every remaining item is DEFERRED/walled, the next full-blast is the
+> user's to steer.** DOW cost ranking DONE (R31); CIP Rule 1b VERIFIED DEFER (R32); the localized unsaturated-ring gap CLOSED
+> (R33). The remaining CIP ring gaps are all sound deferrals (tracked debt): exocyclic doubles, aromatic-fused-to-saturated,
+> ring-vs-ring, isotope-on-a-ring, and ring-on-centre (the Rule-4/5 auxiliary-descriptor round). Move 5 (domain-neutral
+> pipeline lift) stays DEFERRED until a second-domain consumer exists; the DOW modern cost-undercut is a SOURCING wall (needs
+> an independent brine-feedstock basis). All six categorical-reorientation Moves are shipped or scoped: Moves 1–3 DONE
+> (R24–R27), Move-4 tension-A + CIP Rung 1 DONE (R27/R28), Move 5 DEFERRED-premature (R28), Move 6 DONE (R29).
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
@@ -513,12 +528,15 @@ not just a human note. See the DONE ledger.
   used. The aromatic parser's charged-donor limitations remain separate (some aromatic inputs refuse while explicit
   spellings reach CIP deferral). See `docs/research/CIP_MANCUDE_SCOPE_2026-09-07.md` and
   `docs/research/CIP_NODE_ENRICHMENT_SCOPE_DECISION_v0.1.md`. External finite agreement does not prove full CIP soundness.
-- **CIP unsaturated-ring-substituent gap — the real next CIP consumer** (Lane B; ROUND-32) — the R32 oracle investigation
-  found that a stereocentre with an OFF-ring centre but an UNSATURATED ring substituent (a ring double bond) DEFERS even
-  where Rule 1a trivially decides (isolation exact: `[C@](C1CC1)(C)(F)Cl` NAMES, `[C@](C1=CC1)(C)(F)Cl` DEFERS). This is a
-  ring-digraph handling limitation, distinct from Rule 1b (proven inert acyclically) and from `_on_cycle` (ring-on-centre).
-  It is the concrete next CIP improvement if scope is extended — 24/60 sweep cases; RDKit ranks them by Rule 1a. See
-  `docs/research/CIP_RULE1B_CONSUMER_SCOPE_DECISION_v0.1.md` + manifest §32. Rule 1b itself is a PROVEN no-in-scope-consumer
+- **CIP unsaturated-ring-substituent gap — ✅ LOCALIZED case CLOSED (ROUND 33); the remaining ring gaps are the new tracked
+  debt** (Lane B). R33 released LOCALIZED unsaturated rings (unique Kekulé — cyclopropene…cyclohexadiene, cyclic enol ethers,
+  localized fused bicyclics) to the ordinary digraph, so the R32 isolation now NAMES both (`[C@](C1CC1)(C)(F)Cl` and
+  `[C@](C1=CC1)(C)(F)Cl` → R), oracle-verified over ~5,600 molecules (0 mismatches). **Still DEFERRED, soundly (the
+  characterised next gaps):** (a) EXOCYCLIC double bonds on a ring atom (methylenecyclohexane, ring ketones — the double is
+  not a ring edge, so the ring-edge matching argument does not cover it); (b) AROMATIC-fused-to-saturated systems (indane,
+  tetralin — extending mancude averaging into a mixed topology is unvalidated); (c) RING-vs-RING (a released ring ranked
+  against another ring — Rule-1b / clean-mancude territory); (d) ISOTOPE-on-a-ring tied under Rule 1a (the Rule-1b gate).
+  See `docs/research/CIP_LOCALIZED_RING_SCOPE_v0.1.md` + manifest §33. Rule 1b itself is a PROVEN no-in-scope-consumer
   DEFER (dalembert's lemma); its crux invariant (a real C/N/O/S node outranks a same-Z duplicate leaf) is pinned by
   `experiments/cip_rule1b_consumer_probe.py::duplicate_never_collides_with_real`.
 - **CIP Rule-2 sound scope + residuals** (Lane B; ROUND-28) — Rule 2 (mass number) is its own full pass at the Rule-1a

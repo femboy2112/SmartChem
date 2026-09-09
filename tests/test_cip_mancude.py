@@ -15,7 +15,7 @@ def _context(text):
     for bond in filled:
         adj[bond.i].append((bond.j, bond.order))
         adj[bond.j].append((bond.i, bond.order))
-    blocked, averages = smiles._cip_mancude(atoms, bonds, adj)
+    blocked, averages, _released = smiles._cip_mancude(atoms, bonds, adj)
     return blocked, averages, adj, elems
 
 

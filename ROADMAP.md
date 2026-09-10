@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ cip-charge-aware-kekulizer-2026-09-10` (**ROUND 41** — q1 **charge-aware kekulizer**: a charged AROMATIC-spelling ring (`c1cccc[n+]1C`) now NAMES and unifies with its explicit-Kekulé spelling. `_aromatic_matchings` gets a FAIL-CLOSED charge whitelist admitting ONLY a formal +1 ring N of coordination 3 (pyridinium / N-oxide / imidazolium / thiazolium) as a π-acceptor; a cationic CHALCOGEN (pyrylium O+/thiopyrylium S+), an anion, and an OVER-CHARGED/over-coordinated N (`[n+2]`,`[nH2+]`) all RAISE — matching RDKit's own rejection. Also fixed a **latent resonance-canonicaliser false-split** the build exposed: a MIXED aromatic/explicit charged-ring spelling got two identities — constitution + isotope + configuration now route through ONE shared `_canonical_kekule_orders`, **byte-identical for every neutral** (naphthalene SPLIT-KEKULE red-team green). Shipped a seeded, structure-aware **DIFFERENTIAL FUZZER** (`chem_differential_fuzzer.py`: representation-invariance / same-molecule / CIP-vs-RDKit / enantiomer-flip / synthesis-path conservation, with shrinking): 8-seed campaign **2446 molecule-instances + 2794 same-mol pairs → 0 findings**. **4-bearing review:** dalembert SURVIVED · evil-morty SOUND · birdperson SOUND · mr-president SHIP — one MINOR over-reach finding FIXED (whitelist tightened `charge > 0` → `charge == 1` + coordination-3, closing the proof-vs-code domain gap). Prior **ROUND 40** — q1 cationic-ring-N naming in explicit-Kekulé spelling. Maintained suite: **4823 passed / 29 skipped / 1 xfailed** in serialized partitions ([a-e]1927/15; [f-l]772/14/1; [m-r]1118 = m-o 213 + p-r 905; [s-z]1006 = s 615 + t-z 391; ⚠️ the box OOM-kills m-r and s-z as single batches under memory pressure — split them). RDKit 2026.03.6 is a **dev-venv-only** oracle, uninstalled before this baseline; R41 moves the R40 charged-AROMATIC defer to named (R40 probe's two aromatic entries re-tagged defer→consumer, FROZEN_HASH re-anchored). · updated **2026-09-10 UTC**
+> `verified @ move5b-shared-ranker-defer-2026-09-10` (**ROUND 42** — **Move 5(b): the cross-domain shared ranker is a VERIFIED DEFER, proven; the one sound intra-chemistry consolidation it surfaced is SHIPPED.** A 4-bearing re-recon (cartography / YAGNI / consumer-existence / structure-theorem — all DEFER) with the landscape MOVED (R37/R38 built the circuit `CircuitRoute` + `select_within_spec` ranker v0.1 said was missing) confirms: chemistry route ranking (`rank_routes`) and circuit ranking (`within_spec`/`select_within_spec`) share NO domain-neutral law richer than `sorted(key=)`. Two code-run counterexamples pin it: **CE-1** — `rank_routes`' `front_index` tier is SET-RELATIVE (`_pareto_front_indices`; a route's Pareto layer depends on its SIBLINGS), unrepresentable as circuit's per-candidate key; **CE-2** — OPPOSITE fail-closed polarity (chemistry floats an unknown objective to the TOP layer; circuits EJECT an out-of-band/None cost). A forced unification is lossy-or-non-neutral (the `THE_DIFFERENCE.md` zero-content-wrapper pattern). The re-recon's ONE constructive find IS earned + shipped: `_route_score`/`_dag_score` + the `rank_routes`/`rank_dags` Pareto wiring were duplicated verbatim (a drift the code at `drafter.py:624` feared) → factored into ONE `_score_tuple` + ONE `_physics_ranked_order`; the two scorers are thin verdict-extractors, so a future tier grows ONCE (DAG-RANK-01 no-divergence now structural). **BYTE-IDENTICAL** (reviewers' 138 600-combo differential over the full reachable verdict space → 0 mismatches). **4-bearing review:** evil-morty SOUND · dalembert SURVIVED · birdperson SOUND-WITH-FOLDS · mr-president SHIP — two LOW folds applied (the NO_TRANSITIONS byte-identity invariant PINNED by a route-composability tripwire test; `_physics_ranked_order` alignment made structural). Evidence `move5b_shared_ranker_probe.py` (FROZEN_HASH `9547c422`) + `MOVE5_..._SCOPE_DECISION_v0.2.md` (supersedes v0.1). Prior **ROUND 41** — q1 charge-aware kekulizer (charged AROMATIC spelling names + unifies) + a committed differential fuzzer. Maintained suite: **4830 passed / 29 skipped / 1 xfailed** in serialized partitions ([a-e]1927/15; [f-l]772/14/1; [m-o]220; [p-r]905; [s]615; [t-z]391; ⚠️ the box OOM-kills a monolithic run and the m-r/s-z halves — split them). RDKit 2026.03.6 is a **dev-venv-only** oracle, uninstalled before this baseline. · updated **2026-09-10 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -70,6 +70,48 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 42 — Move 5(b): the cross-domain shared ranker VERIFIED DEFER + the intra-chemistry ranker-core
+consolidation** (one feature PR off `main`) — the user's "full blast, Move 5(b)." Move 5(b) asks to retrofit
+chemistry route ranking AND circuit ranking onto ONE shared ranker. A 4-bearing re-recon proved the CROSS-DOMAIN
+unification is lossy-or-non-neutral (a DEFER, forced by the evidence — the R32/R36/R38 verified-defer pattern), and
+shipped the one sound INTRA-chemistry consolidation the recon surfaced. **The full pipeline-type lift off `Molecule`
+stays deferred** for v0.1's unchanged reason (27+ nominal guards + chemistry conservation cert; L; circuits don't
+want `ExperimentRoute`); this round is only the ranker half.
+
+- **The DEFER (cross-domain shared ranker)** (`MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.2.md`,
+  supersedes v0.1 which predated R37/R38). Four independent bearings (cartography / YAGNI / consumer-existence /
+  structure-theorem) all returned DEFER: chemistry `rank_routes` and circuit `within_spec`/`select_within_spec`
+  share no domain-neutral law richer than `sorted(key=)`. **CE-1** — `rank_routes`' `front_index` tier is
+  SET-RELATIVE (`_pareto_front_indices`: a route's Pareto layer depends on its SIBLINGS — dropping the dominator
+  P1 moves P2 from layer 1 → 0), unrepresentable as circuit's per-candidate key; the lossless signature
+  `Callable[[Sequence[T]], Callable[[T],K]]` is entirely chemistry's, circuit ignores the outer argument forever.
+  **CE-2** — OPPOSITE fail-closed polarity: chemistry floats an incomplete objective to the TOP Pareto layer (0),
+  circuits EJECT an out-of-band/`None`-cost candidate to the reject channel. A single unknown-policy is unsound for
+  one domain either way. dalembert confirmed even a dominance-kernel escapes CE-1 but PROVABLY cannot escape CE-2
+  (a pairwise-dominance predicate always assigns a layer, never ejects). The unlock: a THIRD ranking consumer that
+  is itself multi-objective + neutral-on-unknown + rank-all (chemistry-shaped) — NOT the circuit selector (a
+  permanent degenerate special case).
+- **The consolidation (shipped, byte-identical)** (`smartchem/experiment/drafter.py`). `_route_score` and
+  `_dag_score` duplicated the 10-tier score tuple + M2b gating verbatim, and `rank_routes`/`rank_dags` duplicated
+  the Pareto-product + front + stable-sort wiring — kept in lockstep only by a comment `drafter.py:624` feared
+  would drift (M2b had to be hand-threaded into both). Now factored into ONE **`_score_tuple`** (the tiers) + ONE
+  **`_physics_ranked_order`** (the wiring); both scorers are thin verdict-extractors (nested `fit.selectivity.verdict`
+  for a route vs flat `fit.selectivity_verdict` for a DAG), so a future tier grows ONCE and the two rankings cannot
+  diverge by omission — the DAG-RANK-01 no-divergence promise is now structural, not a comment. **Byte-identical**
+  (the merged `comp_rank` keeps the DAG-only `NO_TRANSITIONS` key, provably inert on the route path). This is a
+  code-health consolidation, NOT cross-domain arc progress — the v0.2 doc says so in plain text (no overclaim).
+- **Evidence + review.** `experiments/move5b_shared_ranker_probe.py` (FROZEN_HASH `9547c422`, RDKit-free
+  `validate()`): CE-1/CE-2 run on the real functions + the consolidation-live battery (both scorers == the shared
+  core). `tests/test_move5b_shared_ranker.py` (7 tests, incl. a route-composability tripwire pinning the
+  NO_TRANSITIONS invariant). **4 bearings:** evil-morty **SOUND** (61 440-case exhaustive scorer differential, 0
+  mismatches) · dalembert **SURVIVED** (byte-exact; the dominance-kernel escape killed by CE-2) · birdperson
+  **SOUND-WITH-FOLDS** · mr-president **SHIP** ("honest verified-defer, not a bait-and-switch"; 138 600-combo
+  differential 0 mismatches). Two LOW folds applied: (1) the NO_TRANSITIONS byte-identity invariant, previously held
+  by `composability.py`'s incidental verdict domain, PINNED by a tripwire test that exercises the real route
+  Composability across all four branches; (2) `_physics_ranked_order` alignment made structural (one
+  `(fit, net, survival)` sequence, not three parallel lists). [[a-fail-closed-guarantee-must-hold-at-every-fallback-layer]]
+  [[categorical-reorientation]] [[an-oracle-driven-existence-check-can-prove-a-defer]]
 
 **ROUND 41 — q1: the charge-aware kekulizer + a differential fuzzer** (one feature PR off `main`) — the user's
 "keep going full blast on q1 the charge-aware kekulizer, also … systematically and cleverly try to fuzz our
@@ -578,12 +620,15 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > whole parse/identity/CIP stack (0 findings over 2446 molecule-instances). **The whole conjugated/charged-ring
 > item is now CLOSED** (conjugated R39, cationic-N explicit R40, charged aromatic R41); the remaining charged
 > sub-classes are VERIFIED fail-closed DEFERS (no RDKit-nameable consumer we mislabel): cationic-chalcogen rings
-> (RDKit-divergent averaging), anionic rings, exocyclic =CH2/=NH conjugated rings. **NEW QUEUE TOP (q1): modern
-> bromine provenance** (a sourcing wall — an independent, non-Albemarle operating-cost basis); then the item-5
-> drafter-ranking brick (still deferred, zero-call-sites) and Move 5(b) (the chemistry lift + a shared ranker).
-> Fail-closed VERIFIED DEFERS (no forcing consumer): the charged sub-classes above + CIP recursive Rules 4b/4c/6.
-> **Housekeeping (top priority):** relocate R24–R38 detail out of `MEMORY.md` into the topic file — it is near the
-> 24.4KB read limit; do this before the next round grows it further.
+> (RDKit-divergent averaging), anionic rings, exocyclic =CH2/=NH conjugated rings. **⭐ ROUND 42 closed the SHARED-RANKER
+> half of Move 5(b) as a PROVEN DEFER** — chemistry route ranking and circuit ranking share no law richer than
+> `sorted(key=)` (CE-1 set-relativity + CE-2 opposite fail-closed polarity); the sound INTRA-chemistry ranker-core
+> consolidation the re-recon surfaced is SHIPPED (byte-identical). The full pipeline lift off `Molecule` remains a
+> deferred L. **QUEUE TOP (q1): modern bromine provenance** (a sourcing wall — an independent, non-Albemarle
+> operating-cost basis; a separate R42 recon found an independent SEC-filed candidate — Gulf Resources, China —
+> pending primary verification); then the item-5 drafter-ranking brick (still deferred,
+> zero-call-sites). Fail-closed VERIFIED DEFERS (no forcing consumer): the charged sub-classes above + CIP recursive
+> Rules 4b/4c/6 + the cross-domain shared ranker (unlock = a chemistry-shaped multi-objective third consumer).
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
@@ -597,7 +642,7 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 | ~~item 1 (charged)~~ | **Charged ring representation** — ✅ **BUILT ROUND 40 (cationic-ring-N slice).** A ring bearing a CATIONIC ring N in EXPLICIT-KEKULE spelling (pyridinium / pyridine N-oxide / imidazolium / thiazolium) now NAMES — the blanket charge gate becomes a fail-closed `charge > 0` whitelist admitting the cationic-N `[1,1,2]` acceptor, averaged by charge-invariant atomic number. Real consumers previously deferred, now name; 0 mislabels vs RDKit across a 106-case ring-vs-heteroaromatic-ring sweep. dalembert KILL → repaired: the cationic CHALCOGEN (pyrylium O+/thiopyrylium S+) is a proven RDKit-divergent mislabel class (no neutral acceptor analogue) → fail-closed. Capability extension (R39/R34 charged pins + FROZEN_HASHes re-anchored). | B | — | **DONE** | `CIP_CHARGED_RING_SCOPE_v0.1.md`. |
 | ~~item 1 (charged aromatic)~~ | **Charge-aware kekulizer** — ✅ **BUILT ROUND 41.** The charged AROMATIC spelling (`c1cccc[n+]1C`) now NAMES and unifies with its explicit-Kekulé identity: `_aromatic_matchings` gets a FAIL-CLOSED whitelist admitting only a formal +1 ring N of coordination 3 as a π-acceptor; chalcogen-cation / anion / over-charged-N all RAISE (matching RDKit's rejection — the fail-closed the R40 note demanded). Fixed a latent mixed-spelling identity false-split (one shared `_canonical_kekule_orders` across constitution/isotope/config, neutral byte-identical). Shipped a committed differential fuzzer (0 findings / 2446 mol-instances). 0 mislabels vs RDKit; 4-bearing gate (dalembert SURVIVED / evil-morty SOUND / birdperson SOUND / mr-president SHIP; one minor over-reach fixed). | B | — | **DONE** | `CIP_CHARGE_AWARE_KEKULIZER_SCOPE_v0.1.md`. The N-admission remains the prerequisite that would let a future 4b/4c/6 admit a larger aux pool (cap raise, `smiles.py`). |
 | **1** | **Modern bromine provenance rotation** — realized, non-Albemarle operating evidence or a genuinely independent cost model. | C | S/M | long | Magnolia is forecast/model; JBC shares the issuer/reporting family (a sourcing wall). The DOW-Br₂ litmus's only open axis (a *modern* undercut demonstration needs an independent brine-feedstock cost basis). |
-| **Move 5** | **Domain-neutral parameterization** — step/route/cost over a "conserved-inventory transition + survival predicate", not concretely `Molecule`. | B | **L** | **DEFERRED — case ADVANCED ONE STEP** | The circuit pipeline (R37) supplies a real second-domain consumer GRAPH; **ROUND 38 gave it its FIRST NON-TEST CALLER** — the circuit-route selector (`smartchem/circuit_selection.py` + a `python -m` driver), so residual (a) is now DONE. Move 5 STILL awaits (b): the actual lift making the CHEMISTRY `ExperimentStep`/`ExperimentRoute` parametric over the conserved-inventory-transition abstraction AND retrofitting BOTH domains onto ONE shared ranker (its own large round; `rank_routes` is hard-typed to `ExperimentRoute`). `MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`. |
+| **Move 5** | **Domain-neutral parameterization** — step/route/cost over a "conserved-inventory transition + survival predicate", not concretely `Molecule`. | B | **L** | **DEFERRED — ranker half CLOSED as a proven defer (R42)** | (a) DONE R38 (the circuit-route selector, the pipeline's first non-test caller). (b) the **shared ranker** = **VERIFIED DEFER ROUND 42**, proven: a 4-bearing re-recon showed chemistry `rank_routes` and circuit `within_spec` share no law richer than `sorted(key=)` — CE-1 (chemistry's `front_index` is SET-RELATIVE, unrepresentable per-candidate) + CE-2 (OPPOSITE fail-closed polarity: chemistry floats an unknown to the top layer, circuits eject it). Forcing a unification is lossy-or-non-neutral. The re-recon shipped the one sound INTRA-chemistry consolidation instead (`_score_tuple` + `_physics_ranked_order`, byte-identical). The full pipeline-type lift off `Molecule` stays deferred (v0.1's unchanged L coupling). **Unlock:** a THIRD ranking consumer that is itself multi-objective + neutral-on-unknown + rank-all (chemistry-shaped), not the circuit selector. `MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.2.md` (supersedes v0.1). |
 | ~~3b~~ | ✅ **DONE (ROUND 30)** — DOW-Br₂ collider/modified-Arrhenius kinetics. See the DONE ledger + manifest §30. | B·C | — | — | The Warshay modified-Arrhenius bimolecular fit is modelled in a new sibling (`collider_kinetics.py`); Br₂ SURVIVES at bench (a lower-bounded PREDICTED read, thermo-corroborated), dissociates sub-ms at shock-tube T. Live wire-in of the collider model into E1's gate is TRACKED DEBT (verdict-inert today; no Br₂-intermediate DAG consumer). |
 
 ### K-B/C/D · Move-1 keystone — ✅ **DONE (Rung B ROUND 24 / Rungs C+D ROUND 25)**

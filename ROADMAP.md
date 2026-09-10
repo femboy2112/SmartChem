@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ circuit-selection-rule6-defer-2026-09-09` (**ROUND 38** — brick (a): the circuit-route SELECTOR (`smartchem/circuit_selection.py`), the open-circuit pipeline's FIRST NON-TEST CALLER, advancing Move 5 by one concrete step; **q1 CIP Rule 6 VERIFIED DEFER** — no reachable consumer, the aux-pool admission-cap structure theorem checked BEHAVIOURALLY + 0 mislabels vs RDKit). Prior **ROUND 37** — the item-5 brick + the circuit pipeline (`from_circuit` ingest + parallel-merge + route/step). Maintained suite: **4789 passed / 25 skipped / 1 xfailed** in four serialized partitions (1893/11; 772/14/1; 1118; 1006). RDKit 2026.03.6 was a **dev-venv-only** oracle, uninstalled before this baseline; both R38 items are purely additive (no tracked file modified → the 4753 baseline byte-stable, no golden moved). · updated **2026-09-09 UTC**
+> `verified @ cip-conjugated-carbonyl-ring-2026-09-10` (**ROUND 39** — q1 CIP conjugated-ring naming: a ring bearing an exocyclic terminal-chalcogen carbonyl (enone/dienone/quinone/butenolide) now NAMES — real consumers **L-ascorbic acid = vitamin C**, carvone, the quinones; `_exocyclic_carbonyl_spectator` + one `_cip_mancude` branch, admission-via-release, 0 mislabels vs RDKit; the CHARGED slice + exocyclic =CH2/=NH stay documented DEFERS). Prior **ROUND 38** — brick (a): the circuit-route SELECTOR, the open-circuit pipeline's FIRST NON-TEST CALLER; q1 CIP Rule 6 VERIFIED DEFER. Maintained suite: **4798 passed / 26 skipped / 1 xfailed** in four serialized partitions (1902/12; 772/14/1; 1118; 1006). RDKit 2026.03.6 is a **dev-venv-only** oracle, uninstalled before this baseline; R39 is a CIP capability EXTENSION (moves the R34 naming boundary: two former conjugated-enone defers now name → the R34 exocyclic probe's FROZEN_HASH + two pins re-anchored, NOT purely additive), source `smartchem/smiles.py` +65/−0. · updated **2026-09-10 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -70,6 +70,34 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 39 — q1: CIP conjugated-carbonyl ring naming** (one feature PR off `main`) — the user's "full blast q1."
+An oracle-driven recon (RDKit `rdCIPLabeler` + code-boundary + consumer-hunt bearings) carved queue item 1 into a
+BUILDABLE slice with real consumers and two documented DEFERS. **A CIP capability EXTENSION** (moves the R34
+naming boundary), not purely additive: `smartchem/smiles.py` +65/−0 source, and the R34 exocyclic probe's
+FROZEN_HASH + two pinned tests re-anchored because two former conjugated-enone defers now name.
+
+- **q1 — conjugated exocyclic-carbonyl ring naming** (`CIP_CONJUGATED_CARBONYL_RING_SCOPE_v0.1.md`). `smartchem/smiles.py`
+  `_exocyclic_carbonyl_spectator` (`:1077`) + one `_cip_mancude` branch (`:1213`): a ring carbon whose ring bonds
+  are both single but which bears an exocyclic double to a **terminal, neutral chalcogen** (=O / =S) is admitted as
+  a ring SPECTATOR, so the internally-conjugated **enone / dienone / quinone / butenolide** ring RELEASES on its
+  unique acceptor matching (real z/mass) and ordinary Rule 1a names the centre — **ADMISSION via release, no new
+  averaging**. Real forcing consumers that previously DEFERRED and now NAME (0 mislabels vs RDKit): **L-ascorbic
+  acid (VITAMIN C)** `{2:R,4:S}`, carvone, the quinones/naphthoquinones, the cyclohexenones/cyclopentenones, the
+  butenolides. **Soundness** (dalembert-proven for the load-bearing monocyclic class): a terminal-chalcogen
+  exocyclic double is Kekulé-FIXED (terminal partner) and NEUTRAL-Kekulé-count-preserving (a spectator = a vertex
+  removed from the ring cycle → a path → `matching_count ≤ 1` → unique-Kekulé release), so it never perturbs
+  `need[a]` and matches RDKit's delocalized average-over-one. **DEFERRED, fail-closed (documented):** charged
+  conjugated/aromatic rings (two paths — the aromatic spelling hits the parser kekulization wall; the explicit-Kekulé
+  spelling declines at the charge gate `smiles.py:1193`; the mancude AVERAGING sub-capability has synthetic-only
+  consumers) and exocyclic =CH2/=NH (fulvene/azafulvene aromatic-resonance ambiguity). Evidence: `cip_conjugated_carbonyl_probe.py`
+  (FROZEN_HASH `ff90e360`, RDKit-free `validate()` + enantiomer-consistency structure theorem + gated `_rdkit_cross_check`,
+  0 mislabels). **4 bearings:** dalembert SURVIVED (~2,400 oracle comparisons + a monocyclic-release PROOF; drove
+  the non-benzenoid-fused-carbonyl tombstone + the neutral-Kekulé-count wording) · evil-morty CLEAN (~20k oracle
+  checks + an 11,319-molecule before/after diff: 0 flipped, 0 lost, 1,410 newly named, strictly additive; drove the
+  `partner.charge == 0` tightening) · birdperson SOUND-BUT-HEED (comment + wording folds) · mr-president
+  SHIP-WITH-CONDITIONS (4 record-level conditions, all discharged). [[a-sound-extension-guards-its-new-cross-comparisons]]
+  [[an-oracle-driven-existence-check-can-prove-a-defer]]
 
 **ROUND 38 — brick (a): the circuit selector + q1: CIP Rule 6 VERIFIED DEFER** (two feature PRs off `main`:
 #44 the selector, #45 the Rule-6 defer, + a ROADMAP PR) — the user's "full blast, brick a, plus q1 work." Each
@@ -462,10 +490,13 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > FIRST NON-TEST CALLER (the circuit-route selector) — + q1 CIP Rule 6 (VERIFIED DEFER).** Move 5 has now ADVANCED
 > ONE STEP past strengthened: the pipeline has a production consumer with a user-facing caller (`python -m
 > smartchem.circuit_selection`), so residual (a) is DONE. It awaits only (b) the chemistry-side lift + a single
-> shared ranker (its own large round; `rank_routes` is hard-typed to `ExperimentRoute`). The next queue is
-> charged/conjugated rings (which also gates any future 4b/4c/6 by admitting a larger auxiliary pool), then the
-> bromine sourcing wall; plus the item-5 drafter-ranking brick (still deferred, zero-call-sites). All CIP recursive
-> Rules 4b/4c/6 stay fail-closed as VERIFIED DEFERS until a forcing consumer appears.
+> shared ranker (its own large round; `rank_routes` is hard-typed to `ExperimentRoute`). **⭐ ROUND 39 closed the
+> CONJUGATED half of old item 1** — the exocyclic-carbonyl enone/dienone/quinone/butenolide slice NAMES (vitamin C,
+> carvone, quinones; 0 mislabels vs RDKit; `_exocyclic_carbonyl_spectator` admission-via-release). What remains of
+> old item 1 is the CHARGED half (new q1): a parser kekulization wall + a charge gate + a mancude-averaging
+> sub-capability the R39 consumer bearing found has SYNTHETIC-ONLY consumers (a verified-defer-leaning item). Then
+> the bromine sourcing wall (q2); plus the item-5 drafter-ranking brick (still deferred, zero-call-sites). All CIP
+> recursive Rules 4b/4c/6 stay fail-closed as VERIFIED DEFERS until a forcing consumer appears.
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
@@ -475,7 +506,8 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 | ~~item 6~~ | **Open-resistor semantics** *(EM scope)* — ✅ **DONE ROUND 36.** `ResistorDecoration` = the FIRST non-additive `open_core.Decoration` (interchange law proven, non-vacuity control); `resistor_edge` functor image; composed relations cross-checked to the INDEPENDENT Kirchhoff verifier. | B | — | **DONE** | `OPEN_SMC_RESISTOR_FUNCTOR_SCOPE_v0.1.md`. Bounded to the `then`/`tensor` (series/juxtaposition) subcategory; `plug_all` is unenforced convention (+ `apex_matches_boundary` guard). |
 | ~~item 1~~ | **Circuit pipeline → the second-domain PIPELINE** — ✅ **DONE ROUND 37.** `from_circuit` ingests an arbitrary production resistor network (series/parallel/BRIDGE) into `open_core` with the exact whole-network apex; `parallel` (+ `BoundaryLinearRelation.parallel`, the correct-apex counterpart to `plug_all`) closes item 6's deferred parallel construction; `equivalent_resistance`/`within_spec` (Move-5 survival predicate); `CircuitStage`/`CircuitRoute` route/step shape. The old core's `structural_edges()` already exposed the topology — the assumed "junction-extraction API" was never needed. Two-provenance oracle (Laplacian + a physically-distinct spanning-tree matrix-tree). Engine SOUND across 3 adversarial bearings. | B | — | **DONE** | `OPEN_CIRCUIT_PIPELINE_SCOPE_v0.1.md`. [[electromagnetic-scope]] |
 | ~~item 1~~ | **CIP Rule 6** — ✅ **VERIFIED DEFER ROUND 38.** No reachable consumer: (spec-hierarchy) downstream of the R36 4b/4c defer, and (code-level) gated by the auxiliary-pool admission cap (`smiles.py:1961-1964`) — verified BEHAVIOURALLY (the aux pass is never entered with `\|pool\|>2`, by wrapping `_cip_ranks_with_aux`, not by grepping source). Revised Rule 5 resolves every admitted ≤2 pool → no like/unlike residual reachable. 0 mislabels vs RDKit (r/s incl.). dalembert SURVIVED (173 molecules) + mr-president SHIP. Building it would be dead, mislabel-prone code downstream of unbuilt 4b/4c. | B | — | **DONE (defer)** | `CIP_RULE6_CONSUMER_SCOPE_DECISION_v0.1.md`; unpark when 4b/4c is built + a larger aux pool is admitted + a forcing fixture appears. |
-| **1** | **Charged/conjugated ring representation** — extend mancude past the neutral bounded C/N/O/S slice. | B | L | medium | Sound source-pinned representation; fixed-Kekulé shortcuts forbidden. Also the gate that would let a future Rule 6/4b-4c admit a larger auxiliary pool. |
+| ~~item 1 (conjugated)~~ | **Conjugated-ring representation** — ✅ **BUILT ROUND 39.** The exocyclic-carbonyl (enone/dienone/quinone/butenolide) conjugated slice NAMES; real consumers incl. vitamin C; 0 mislabels vs RDKit. | B | — | **DONE** | `CIP_CONJUGATED_CARBONYL_RING_SCOPE_v0.1.md`. |
+| **1** | **CHARGED ring representation** — the remaining half of the old item 1. | B | L | long | Two walls: (a) the parser cannot kekulize a charged aromatic (`SmilesError`); (b) the charge gate `smiles.py:1193` + the mancude AVERAGING sub-capability, which the R39 consumer bearing found has SYNTHETIC-ONLY consumers (formal charge changes no atomic number; pyridinium C2 dup = 6.5 = pyridine's). A VERIFIED-DEFER-leaning item: needs a charge-aware kekulizer AND a real charged-averaging consumer before a sound build; also still the prerequisite that would let a future 4b/4c/6 admit a larger aux pool (with the cap raise, `smiles.py:2026-2027`). Also-deferred sibling: exocyclic =CH2/=NH conjugated rings (fulvene/azafulvene aromatic-resonance). |
 | **2** | **Modern bromine provenance rotation** — realized, non-Albemarle operating evidence or a genuinely independent cost model. | C | S/M | long | Magnolia is forecast/model; JBC shares the issuer/reporting family (a sourcing wall). |
 | **Move 5** | **Domain-neutral parameterization** — step/route/cost over a "conserved-inventory transition + survival predicate", not concretely `Molecule`. | B | **L** | **DEFERRED — case ADVANCED ONE STEP** | The circuit pipeline (R37) supplies a real second-domain consumer GRAPH; **ROUND 38 gave it its FIRST NON-TEST CALLER** — the circuit-route selector (`smartchem/circuit_selection.py` + a `python -m` driver), so residual (a) is now DONE. Move 5 STILL awaits (b): the actual lift making the CHEMISTRY `ExperimentStep`/`ExperimentRoute` parametric over the conserved-inventory-transition abstraction AND retrofitting BOTH domains onto ONE shared ranker (its own large round; `rank_routes` is hard-typed to `ExperimentRoute`). `MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`. |
 | ~~3b~~ | ✅ **DONE (ROUND 30)** — DOW-Br₂ collider/modified-Arrhenius kinetics. See the DONE ledger + manifest §30. | B·C | — | — | The Warshay modified-Arrhenius bimolecular fit is modelled in a new sibling (`collider_kinetics.py`); Br₂ SURVIVES at bench (a lower-bounded PREDICTED read, thermo-corroborated), dissociates sub-ms at shock-tube T. Live wire-in of the collider model into E1's gate is TRACKED DEBT (verdict-inert today; no Br₂-intermediate DAG consumer). |

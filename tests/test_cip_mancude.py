@@ -65,10 +65,17 @@ def test_only_multiple_bond_duplicates_are_averaged_ring_closures_remain_integer
     assert by_z[7] == smiles._cip_mass("N", 0)
 
 
-@pytest.mark.parametrize("smi", ["C[C@H](O)C1=CC=[NH+]C=C1",
-                                  "C[C@H](O)C1=CC=CC1=O"])
-def test_unsupported_charged_or_exocyclic_systems_defer_on_both_input_routes(smi):
+@pytest.mark.parametrize("smi", ["C[C@H](O)C1=CC=[NH+]C=C1",       # CHARGED ring (explicit Kekule) -> defer
+                                  "C[C@H](O)C1=CC=CC1=C"])          # conjugated exocyclic =CH2 -> defer (R39 boundary)
+def test_unsupported_charged_or_methylene_systems_defer_on_both_input_routes(smi):
     assert smiles.cip_labels(smi) == ()
+
+
+def test_conjugated_exocyclic_carbonyl_now_names_round39():
+    # ROUND 39: a conjugated ring bearing an exocyclic terminal-chalcogen carbonyl NAMES (was a defer);
+    # the cyclopentadienone ring carbonyl carbon is a spectator, the ring releases, ordinary Rule 1a decides.
+    assert smiles.cip_labels("C[C@H](O)C1=CC=CC1=O") == ("S",)
+    assert smiles.cip_labels("C[C@@H](O)C1=CC=CC1=O") == ("R",)     # enantiomer flips
 
 
 def test_an_unsupported_ring_in_an_atomic_number_decided_branch_stays_lazy():

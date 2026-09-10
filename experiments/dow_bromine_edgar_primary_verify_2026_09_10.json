@@ -184,5 +184,37 @@
     "correction": "The recon quoted USGS 'Because the bromine industry has few producers, published price lists ... were not available.' That phrasing is from the 2018 Minerals Yearbook, NOT the modern (2024-2026) MCS chapters. The modern chapters instead withhold US production entirely ('W Withheld to avoid disclosing company proprietary data') because 'Bromine was recovered from underground brines by two companies in Arkansas' (a duopoly).",
     "boundary": "USGS 'Price' bounds what US buyers PAID for imported bromine, silent on any producer's cost of production. US domestic production is fully 'W'-withheld by design. Confirms the structural reframe: no modern production-cost reference is obtainable from USGS."
   },
-  "overall_boundary": "The clean realized OPERATING/CASH cost per kg of brine bromine remains proprietary and un-sourced (USGS withholds it; ICL does not break out bromine; Gulf discloses only a fully-absorbed cost at pathological utilization). What is now PRIMARY-SOURCED: (1) an independent fully-absorbed cost UPPER bound $2.7726/kg (Gulf Q3-2022) that brackets the R35 Albemarle/Magnolia $2.5365/kg forecast; (2) the modern import CIF price band $2.70-$3.00/kg (USGS); (3) ICL's confirmation that a bromine-only cost is structurally unavailable from the largest producer. Nothing admitted to route ranking. The modern-undercut axis stays a documented sourcing wall - now with a primary-verified independent cost UPPER bound, not merely a lead."
+  "published_tea_landscape_encore3": {
+    "accessed_utc": "2026-09-10",
+    "purpose": "Recommendation item 4 (Ortiz-Albo 2018 TEA) pull + published-TEA landscape scan: determine whether a published MODELED brine-bromine cost basis can be byte-verified from this environment.",
+    "ortiz_albo_2018": {
+      "citation": "Ortiz-Albo, P.; Torres-Ortega, S.; Gonzalez Prieto, M.; Urtiaga, A.; Ibanez, R. (2019, cover-dated 2018). Techno-economic feasibility analysis for minor elements valorization from desalination concentrates. Separation & Purification Reviews 48(3):220-241.",
+      "doi": "10.1080/15422119.2018.1470537",
+      "openalex_unpaywall": {"api": "https://api.openalex.org/works/https://doi.org/10.1080/15422119.2018.1470537", "http": 200, "is_oa": false, "oa_status": "closed", "oa_locations": 0},
+      "unican_repository_handle": null,
+      "tandf_author_eprint": "https://www.tandfonline.com/eprint/xCFbzWHtW2PYV5KkwARh/full",
+      "eprint_access": "Cloudflare-shielded against WebFetch and curl (HTTP 403)",
+      "abstract_target_elements": ["Cs", "In", "Rb"],
+      "abstract_quote": "Cs, In and Rb are pointed as promising metals to upgrade their extraction technologies from SWRO concentrates. Significant research contributions are needed in order to develop viable strategies for the recovery of valuable materials from SWRO brines.",
+      "verdict": "RESOLVED - closed-access (no legal OA copy per Unpaywall) AND off-target (a minor-METALS Cs/In/Rb feasibility ranking, not a bromine production-cost TEA). Would not supply a brine-bromine $/kg even if opened. Closed, not deferred.",
+      "numbers_extracted": "NONE - full text never accessed; no figure claimed."
+    },
+    "new_on_target_lead_water_2025": {
+      "citation": "Cost-Benefit and Market Viability Analysis of Metals and Salts Recovery from SWRO Brine Compared with Terrestrial Mining and Traditional Chemical Production Methods. Water 17(19):2855 (2025).",
+      "doi": "10.3390/w17192855",
+      "openalex_unpaywall": {"http": 200, "is_oa": true, "oa_status": "gold", "oa_url": "https://www.mdpi.com/2073-4441/17/19/2855/pdf?version=1759233277"},
+      "on_target": "YES - directly compares brine recovery vs terrestrial mining vs traditional chemical production (the literal DOW brine-vs-mined-vs-conventional question).",
+      "access_from_here": "Cloudflare-walls this sandbox: WebFetch 403; curl returns a 1388-byte text/html challenge page, not the PDF.",
+      "status": "NEW on-target gold-OA candidate flagged for a future BROWSER pull, to be byte-verified the way Gulf was.",
+      "numbers_extracted": "NONE - search-snippet paraphrases explicitly rejected as sources."
+    },
+    "del_villar_2023_context": {
+      "citation": "del Villar et al., Desalination 560 (2023) 116678.",
+      "doi": "10.1016/j.desal.2023.116678",
+      "openalex_unpaywall": {"is_oa": true, "oa_status": "hybrid"},
+      "role": "Already in recon: market reference (bromine ~EUR 4/kg) + Br recovery from Spanish desal brine NOT viable. A market ref, not a production cost."
+    },
+    "discipline": "Only byte-exact fetches count. OpenAlex/Unpaywall API (HTTP 200 JSON) used for OA status + abstract; no paywall bypassed; no search-engine paraphrase admitted as a source (same rule that rejected the WebFetch filing summary in gulf_resources_primary.method)."
+  },
+  "overall_boundary": "The clean realized OPERATING/CASH cost per kg of brine bromine remains proprietary and un-sourced (USGS withholds it; ICL does not break out bromine; Gulf discloses only a fully-absorbed cost at pathological utilization). What is now PRIMARY-SOURCED: (1) an independent fully-absorbed cost UPPER bound $2.7726/kg (Gulf Q3-2022) that brackets the R35 Albemarle/Magnolia $2.5365/kg forecast; (2) the modern import CIF price band $2.70-$3.00/kg (USGS); (3) ICL's confirmation that a bromine-only cost is structurally unavailable from the largest producer. Nothing admitted to route ranking. The modern-undercut axis stays a documented sourcing wall - now with a primary-verified independent cost UPPER bound, not merely a lead. Encore-3 (published_tea_landscape_encore3): all four recommendation items are discharged - the Ortiz-Albo published-TEA lead is closed (walled + off-target), leaving one new gold-OA browser-pull candidate (Water 2025); the published-TEA lane is exhausted for this environment."
 }

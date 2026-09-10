@@ -81,7 +81,8 @@ from it.
 - **China spot (SunSirs):** 2024 RMB 17.3–22.4k/t ($2.4–3.2/kg); 2025 surge to RMB 39–40k/t. PRICE, independent.
 - **Published TEA:** del Villar et al., *Desalination* 560 (2023) 116678 references bromine ~€4/kg market and finds
   Br recovery from Spanish desalination brine NOT viable — a market-reference, not a production-cost TEA. The likely
-  real minor-element TEA (Ortiz-Albo et al., *Sep. Purif. Rev.* 48(3), 2018) is paywalled; its $/kg was not retrieved.
+  real minor-element TEA (Ortiz-Albo et al., *Sep. Purif. Rev.* 48(3), 2018) is paywalled — and the R42 encore-3 pull
+  (§4) confirms it is **closed-access with no OA copy and off-target** (Cs/In/Rb metals, not bromine cost).
 
 ## Can a modern undercut be demonstrated?
 
@@ -120,7 +121,7 @@ receipt: **`experiments/dow_bromine_edgar_primary_verify_2026_09_10.json`**.
 - ✅ **Item 1 — Gulf Resources (CIK 885462): DONE — headline PROMOTED to `DERIVED-FROM-PRIMARY`.**
 - ✅ **Item 2 — ICL 20-F (CIK 941221): DONE — confirms no bromine $/kg cost is extractable; IP figures byte-confirmed.**
 - ✅ **Item 3 — USGS MCS 2024/2025/2026 bromine: DONE — import CIF price series primary-verified (the "403" was a WebFetch artifact).**
-- ⏸️ **Item 4 — Ortiz-Albo et al. 2018 TEA: NOT ATTEMPTED (paywalled institutional pull; out of scope for a `curl`-based pass).**
+- ✅ **Item 4 — Ortiz-Albo et al. 2018 TEA: RESOLVED — attempted every accessible route; closed-access + off-target (see §4).** Unpaywall/OpenAlex confirms **no legal open-access copy exists** (`is_oa:false`, `oa_status:closed`, 0 OA locations); the free Taylor & Francis author eprint is Cloudflare-shielded against `WebFetch` and `curl` alike; and the **API-verified abstract shows the paper's targets are Cs/In/Rb metals, not a bromine production cost** — it would not have supplied a brine-bromine $/kg even if opened. The last recon lead is closed.
 
 ### 1. Gulf Resources — the crux, `DERIVED-FROM-PRIMARY`
 
@@ -185,6 +186,39 @@ production cost, not a US producer price, not a yearend spot** — US production
 avoid disclosing company proprietary data"*) because bromine is an Arkansas two-company duopoly. So USGS confirms the
 modern price band and **confirms, by design, that a modern production cost is unobtainable from it.**
 
+### 4. Ortiz-Albo 2018 TEA + the published-TEA landscape (2026-09-10, R42 encore-3)
+
+Recommendation item 4 was executed against every route reachable from this environment. **Result: the lead is closed —
+walled and, decisively, off-target.**
+
+- **Ortiz-Albo et al. (2019, cover-dated 2018), "Techno-economic feasibility analysis for minor elements valorization
+  from desalination concentrates," *Sep. Purif. Rev.* 48(3):220–241, DOI `10.1080/15422119.2018.1470537`.** OpenAlex /
+  Unpaywall (API, HTTP 200): **`is_oa: false`, `oa_status: closed`, zero OA locations** — no legal free full text
+  exists anywhere. The University of Cantabria research portal lists it with **no repository handle** (unlike this
+  group's lithium/desalination papers, which *are* self-archived). The free Taylor & Francis author eprint token
+  (`/eprint/xCFbzWHtW2PYV5KkwARh/full`) exists but is **Cloudflare-shielded against `WebFetch` and `curl` alike** (403).
+- **Decisive finding (API-verified abstract):** the paper's target elements are **Cs, In, Rb** — *"Cs, In and Rb are
+  pointed as promising metals to upgrade their extraction technologies from SWRO concentrates."* Bromine is **not** a
+  highlighted target; the work is a minor-**metals** feasibility ranking, not a bromine production-cost TEA. Even behind
+  the paywall it would not carry the brine-bromine $/kg the recon hoped for. **Item 4 is resolved, not deferred.**
+
+**Published-TEA landscape (the honest state of a *modeled* modern brine-bromine cost basis):**
+
+| Source | On-target for brine-bromine cost? | Access from here | Status |
+|---|---|---|---|
+| del Villar et al., *Desalination* 560 (2023) 116678 (DOI `10.1016/j.desal.2023.116678`) | Market reference (€≈4/kg) + a "not viable" verdict — not a production cost | OA (hybrid) — already in recon | Bearing recorded (market ref) |
+| Ortiz-Albo et al., *Sep. Purif. Rev.* 48(3) (2018) | **No** — Cs/In/Rb metals focus | Closed, no OA; Cloudflare eprint | **Closed — off-target** |
+| Cost–Benefit & Market Viability … SWRO Brine vs Terrestrial Mining vs Traditional Chemical Production, *Water* 17(19):2855 (2025), DOI `10.3390/w17192855` | **Yes — the literal DOW brine-vs-mined-vs-conventional question** | **Gold OA** (OpenAlex `is_oa:true, oa_status:gold`), but Cloudflare-walls this sandbox (`WebFetch` + `curl` both 403/challenge) | **NEW on-target lead — pull from a browser** |
+
+**No numbers were extracted from any source not fetched byte-exact.** The search-engine paraphrases (e.g. "positive
+profitability for bromine", "$30–50M value") are **snippet-level and explicitly rejected as sources** — the same
+discipline that rejected the WebFetch filing summary in the EDGAR section. The one genuinely on-target modeled-cost
+candidate (*Water* 2025) is **gold open-access** and should be pulled from a browser in a future pass; it directly
+compares brine recovery against terrestrial mining and traditional chemical production — the modern re-statement of the
+DOW question. This does **not** add a new byte-verified cost bearing: the Gulf Q3-2022 **$2.7726/kg** fully-absorbed
+upper bound (§1) remains the primary independent modern figure. The published-TEA lane is now **exhausted for this
+environment and honestly bounded**, not open-ended.
+
 ### What this changes for the DOW litmus
 
 The modern-undercut axis is still a **documented sourcing wall for a realized cash cost** — but the independent bearing
@@ -194,3 +228,9 @@ band $2.70–$3.00/kg** (USGS) and **primary confirmation** that the largest pro
 bromine unit cost. **Nothing is admitted to route ranking** — a fully-absorbed upper bound at pathological utilization
 is not the cash cost the ranker requires. An honest advance from *"chaseable candidate"* to *"primary-sourced upper
 bound"*, not a closure. [[dow-bromine-litmus]]
+
+**All four recommendation items are now discharged (§§1–4):** the three EDGAR/USGS pulls DONE, the published-TEA lead
+(Ortiz-Albo) closed as walled-and-off-target, with one new **gold-OA** candidate (*Water* 2025, the literal
+brine-vs-mined-vs-conventional comparison) flagged for a future browser pull. q1's modern-provenance sourcing is
+**exhausted for this environment**; the realized *cash* cost stays proprietary and un-sourced. The next increment is not
+a build — it is a single browser-side fetch of the *Water* 2025 gold-OA TEA, byte-verified the way §1 verified Gulf.

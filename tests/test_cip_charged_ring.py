@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 
 from experiments import cip_charged_ring_probe as probe
-from smartchem.smiles import SmilesError, cip_labels, cip_labels_by_atom
+from smartchem.smiles import cip_labels, cip_labels_by_atom
 
 
 def test_probe_validates_and_frozen_hash_stable():
@@ -56,9 +56,11 @@ def test_charged_ring_vs_ring_the_fractions_decide():
 
 
 def test_out_of_scope_charged_subcases_fail_closed():
-    # a wrong R/S is worse than an honest decline: each deferred class raises or returns {}, NEVER a silent label
-    with pytest.raises(SmilesError, match="could not assign a Kekulé structure"):
-        cip_labels_by_atom("C[C@H](O)c1cccc[n+]1C")                 # charged AROMATIC spelling -> parser wall
+    # a wrong R/S is worse than an honest decline: the still-out-of-scope charged classes return {} (an explicit
+    # anion / an exotic over-charge decline at the mancude gate), NEVER a silent label.  (The charged AROMATIC
+    # spelling this once pinned as a parser wall now NAMES -- ROUND 41's charge-aware kekulizer; the consumer is
+    # asserted in tests/test_cip_charge_aware_kekulizer.py.)
+    assert cip_labels_by_atom("C[C@H](O)c1cccc[n+]1C") == {1: "S"}  # charged AROMATIC spelling -> NAMED (R41)
     assert cip_labels_by_atom("C[C@H](O)C1=CC=C[CH-]1") == {}       # ANIONIC ring (carbanion) -> no donor branch
     assert cip_labels_by_atom("C[C@H](O)C1=CC=[NH2+]C=C1") == {}    # exotic over-protonated [NH2+] -> declines
 

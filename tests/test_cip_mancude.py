@@ -93,11 +93,11 @@ def test_an_unsupported_ring_in_an_atomic_number_decided_branch_stays_lazy():
     assert smiles.cip_labels("Cl[C@H](C)C=CC1=CC=[NH+]C=C1") == ("R",)
 
 
-def test_existing_aromatic_pyridinium_parser_refusal_remains_explicit():
-    # The parser's pre-existing aromatic matcher treats every [nH] as a donor. Charged aromatic
-    # pyridinium is not admitted there; an explicit spelling reaches the CIP deferral above.
-    with pytest.raises(smiles.SmilesError, match="could not assign a Kekulé structure"):
-        smiles.cip_labels("C[C@H](O)c1cc[nH+]cc1")
+def test_aromatic_pyridinium_now_names_round41():
+    # ROUND 41 charge-aware kekulizer: the aromatic pyridinium spelling the pre-R41 matcher WALLED (it treated the
+    # cationic [nH+] as a pyrrole-type donor -> no perfect matching) now NAMES via the cationic-N acceptor
+    # whitelist, matching the explicit-Kekule spelling.  Full build in tests/test_cip_charge_aware_kekulizer.py.
+    assert smiles.cip_labels("C[C@H](O)c1cc[nH+]cc1") == ("S",)
 
 
 def test_ring_bridge_is_not_a_resonance_partner():

@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ cip-charged-ring-2026-09-10` (**ROUND 40** — q1 CIP charged-ring naming (cationic-ring-N slice): a ring bearing a CATIONIC ring N in explicit-Kekulé spelling (pyridinium / pyridine N-oxide / imidazolium / thiazolium) now NAMES — the blanket charge gate becomes a fail-closed `charge > 0` whitelist admitting the cationic-N `[1,1,2]` acceptor, averaged by charge-invariant atomic number; 0 mislabels vs RDKit across a 106-case ring-vs-heteroaromatic sweep. **dalembert KILL → repaired:** the cationic CHALCOGEN (pyrylium O+ / thiopyrylium S+) is a proven RDKit-divergent mislabel class (no neutral acceptor analogue) → fail-closed; the charged AROMATIC spelling (parser wall), anionic rings + exotic charges also DEFER. Prior **ROUND 39** — q1 CIP conjugated-ring naming: exocyclic terminal-chalcogen carbonyl (enone/quinone/butenolide, vitamin C) NAMES. Maintained suite: **4811 passed / 27 skipped / 1 xfailed** in serialized partitions ([a-e]1915/13; [f-l]772/14/1; [m-r]1118 = m-o 213 + p-r 905; [s-z]1006 = s 615 + t-z 391; ⚠️ the box OOM-kills m-r and s-z as single batches under memory pressure — split them). RDKit 2026.03.6 is a **dev-venv-only** oracle, uninstalled before this baseline; R40 is a CIP capability EXTENSION (moves the R39/R34 charged boundary: the charged pyridinium/thiazolium those probes listed as defers now name → their FROZEN_HASH + charged pins re-anchored, NOT purely additive), source `smartchem/smiles.py` +1 branch. · updated **2026-09-10 UTC**
+> `verified @ cip-charge-aware-kekulizer-2026-09-10` (**ROUND 41** — q1 **charge-aware kekulizer**: a charged AROMATIC-spelling ring (`c1cccc[n+]1C`) now NAMES and unifies with its explicit-Kekulé spelling. `_aromatic_matchings` gets a FAIL-CLOSED charge whitelist admitting ONLY a formal +1 ring N of coordination 3 (pyridinium / N-oxide / imidazolium / thiazolium) as a π-acceptor; a cationic CHALCOGEN (pyrylium O+/thiopyrylium S+), an anion, and an OVER-CHARGED/over-coordinated N (`[n+2]`,`[nH2+]`) all RAISE — matching RDKit's own rejection. Also fixed a **latent resonance-canonicaliser false-split** the build exposed: a MIXED aromatic/explicit charged-ring spelling got two identities — constitution + isotope + configuration now route through ONE shared `_canonical_kekule_orders`, **byte-identical for every neutral** (naphthalene SPLIT-KEKULE red-team green). Shipped a seeded, structure-aware **DIFFERENTIAL FUZZER** (`chem_differential_fuzzer.py`: representation-invariance / same-molecule / CIP-vs-RDKit / enantiomer-flip / synthesis-path conservation, with shrinking): 8-seed campaign **2446 molecule-instances + 2794 same-mol pairs → 0 findings**. **4-bearing review:** dalembert SURVIVED · evil-morty SOUND · birdperson SOUND · mr-president SHIP — one MINOR over-reach finding FIXED (whitelist tightened `charge > 0` → `charge == 1` + coordination-3, closing the proof-vs-code domain gap). Prior **ROUND 40** — q1 cationic-ring-N naming in explicit-Kekulé spelling. Maintained suite: **4823 passed / 29 skipped / 1 xfailed** in serialized partitions ([a-e]1927/15; [f-l]772/14/1; [m-r]1118 = m-o 213 + p-r 905; [s-z]1006 = s 615 + t-z 391; ⚠️ the box OOM-kills m-r and s-z as single batches under memory pressure — split them). RDKit 2026.03.6 is a **dev-venv-only** oracle, uninstalled before this baseline; R41 moves the R40 charged-AROMATIC defer to named (R40 probe's two aromatic entries re-tagged defer→consumer, FROZEN_HASH re-anchored). · updated **2026-09-10 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -70,6 +70,49 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 41 — q1: the charge-aware kekulizer + a differential fuzzer** (one feature PR off `main`) — the user's
+"keep going full blast on q1 the charge-aware kekulizer, also … systematically and cleverly try to fuzz our
+system." R40 named a cationic-ring-N heterocycle in EXPLICIT-Kekulé spelling but WALLED the natural AROMATIC
+spelling; R41 builds the aromatic path AND fixes a latent identity false-split the build exposed, AND stands up a
+reusable differential fuzzer.
+
+- **q1 — charge-aware kekulizer** (`CIP_CHARGE_AWARE_KEKULIZER_SCOPE_v0.1.md`). `smartchem/smiles.py`
+  `_aromatic_matchings` gets a FAIL-CLOSED CHARGE WHITELIST admitting exactly a **formal +1 ring N of coordination
+  3** (`charge == 1 and element == "N" and degree + h_explicit == 3`: pyridinium / N-oxide / imidazolium /
+  thiazolium) as a π-acceptor — its lone pair is in the N-H/N-substituent bond, so it takes one ring double
+  isoelectronically with pyridine's N and kekulises to the SAME structure as the explicit form (the R40-validated
+  class). The natural aromatic spelling now NAMES; 0 mislabels vs RDKit. **EVERY other charged aromatic atom
+  RAISES** — matching RDKit's own rejection: a cationic CHALCOGEN (pyrylium O⁺ / thiopyrylium S⁺, the
+  dalembert-R40-proven RDKit-divergent class, which would otherwise fall to the O/S donor branch and silently
+  mis-kekulise on an even acceptor count), an anion, and an OVER-CHARGED/over-coordinated N (`[n+2]`, `[nH2+]`, which
+  RDKit rejects outright). The `_cip_mancude` gate was likewise tightened `charge > 0` → `charge == 1`.
+- **Also fixed — the mixed-spelling identity false-split.** Admitting the charged aromatic spelling reached a
+  LATENT bug: `_build_molecule` / `_isotopic_identity` / `_kekulize_in_place` used a two-branch placement that
+  resonance-canonicalised only aromatic-FLAGGED bonds, leaving an explicit CHARGED ring at its authored Kekulé
+  placement — so `O[C@H](c1ccncc1)C1=CC=CC=[N+]1C` (pyridyl aromatic + pyridinium explicit) got a DIFFERENT
+  canonical identity than its uniform spellings: one species, two identities. Neutrals dodged it (symmetric/forced
+  placements), so it was latent until R41. Fix: ONE shared `_canonical_kekule_orders` (kekulise flagged bonds to
+  any matching — per-atom π-demand is matching-invariant — then place the WHOLE pi system), routed through all
+  three functions so they commit to the IDENTICAL Kekulé structure. **Byte-identical for every neutral** (the
+  naphthalene SPLIT-KEKULE red-team stays green).
+- **CHEM-FUZZ-01 — a seeded, structure-aware DIFFERENTIAL FUZZER** (`experiments/chem_differential_fuzzer.py`):
+  parse-robustness, representation-invariance (N RDKit respellings → one digest + one CIP multiset),
+  same-molecule differential (no false merge/split), CIP-vs-RDKit, enantiomer-flip, and **synthesis-path
+  conservation** (the `Reaction`/`Config` cert accepts a balanced isomerisation, refuses an atom-unbalanced one),
+  with generational mutation + shrinking to a minimal reproducer and an honest coverage boundary. It FOUND the
+  false-split during construction; post-fix, an **8-seed campaign over 2446 molecule-instances + 2794 same-molecule
+  pairs → 0 findings**. A committed RDKit-free `selftest()` (+ `tests/test_chem_differential_fuzzer.py`) re-checks
+  the invariants with no rdkit.
+- **Evidence:** `cip_charge_aware_kekulizer_probe.py` (FROZEN_HASH `aac82881`): 12 aromatic-spelling consumers name
+  + match RDKit + unify with their explicit twin; 6 deferred classes (O⁺/S⁺/C⁻/N⁻ + over-charged `[n+2]`/`[nH2+]`)
+  fail closed; representation-invariance groups (incl. the mixed spelling + naphthalene) collapse to one identity.
+  R40 `cip_charged_ring_probe` re-anchored (its two aromatic defers → consumers). **4 bearings:** dalembert
+  **SURVIVED** (exhaustive 5-ring[96]/6-ring[356] charged-N enumeration 0 kekulise mismatches; 840 CIP comparisons
+  0 mislabels; the one MINOR over-reach finding → the `charge == 1`/coordination-3 tightening) · evil-morty
+  **SOUND** (~30k probes, 0 crashes/splits/mislabels) · birdperson **SOUND** (whitelist closed at every reachable
+  path; `matchings[0]` matching-invariant) · mr-president **SHIP** (mandate met, unification in-scope, neutral
+  byte-identical). [[a-sound-extension-guards-its-new-cross-comparisons]] [[a-fail-closed-guarantee-must-hold-at-every-fallback-layer]]
 
 **ROUND 40 — q1: CIP charged-ring naming (cationic-ring-N slice)** (one feature PR off `main`) — the user's
 "full blast q1" (the re-ranked queue top). An oracle-driven recon + a full 4-bearing adversarial gate REFUTED
@@ -526,14 +569,21 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > shared ranker (its own large round; `rank_routes` is hard-typed to `ExperimentRoute`). **⭐ ROUND 39 closed the
 > CONJUGATED half of old item 1** — the exocyclic-carbonyl enone/dienone/quinone/butenolide slice NAMES (vitamin C,
 > carvone, quinones). **⭐ ROUND 40 closed the CATIONIC-RING-N half of the CHARGED slice** — pyridinium / pyridine
-> N-oxide / imidazolium / thiazolium carbinols NAME in explicit-Kekulé spelling (fail-closed `charge > 0` whitelist,
-> 0 mislabels vs RDKit incl. the ring-vs-heteroaromatic regime). dalembert PROVED the cationic CHALCOGEN
-> (pyrylium/thiopyrylium) is an RDKit-divergent mislabel class → fail-closed. **NEW QUEUE TOP (q1): the charge-aware
-> kekulizer** — a parser-level (`_aromatic_matchings`) brick so a charged AROMATIC spelling (`c1cccc[n+]1C`) NAMES
-> instead of hitting the kekulization wall (⚠️ must fail closed: an even-acceptor-count charged aromatic could
-> silently mis-match). Then q2 the bromine sourcing wall; plus the item-5 drafter-ranking brick (still deferred,
-> zero-call-sites). Fail-closed VERIFIED DEFERS (no forcing consumer): cationic-chalcogen rings, anionic rings,
-> exocyclic =CH2/=NH conjugated rings, and CIP recursive Rules 4b/4c/6.
+> N-oxide / imidazolium / thiazolium carbinols NAME in explicit-Kekulé spelling. **⭐ ROUND 41 closed the
+> charge-aware kekulizer** — the natural AROMATIC spelling (`c1cccc[n+]1C`) now NAMES and unifies with its
+> explicit-Kekulé identity, via a fail-closed `_aromatic_matchings` whitelist (formal +1 ring N of coordination 3;
+> chalcogen-cation / anion / over-charged-N all RAISE, matching RDKit's rejection); a latent mixed-spelling identity
+> false-split was fixed by routing all three canonicalisation layers through one shared `_canonical_kekule_orders`
+> (byte-identical for neutrals). A committed differential FUZZER (`chem_differential_fuzzer.py`) now hardens the
+> whole parse/identity/CIP stack (0 findings over 2446 molecule-instances). **The whole conjugated/charged-ring
+> item is now CLOSED** (conjugated R39, cationic-N explicit R40, charged aromatic R41); the remaining charged
+> sub-classes are VERIFIED fail-closed DEFERS (no RDKit-nameable consumer we mislabel): cationic-chalcogen rings
+> (RDKit-divergent averaging), anionic rings, exocyclic =CH2/=NH conjugated rings. **NEW QUEUE TOP (q1): modern
+> bromine provenance** (a sourcing wall — an independent, non-Albemarle operating-cost basis); then the item-5
+> drafter-ranking brick (still deferred, zero-call-sites) and Move 5(b) (the chemistry lift + a shared ranker).
+> Fail-closed VERIFIED DEFERS (no forcing consumer): the charged sub-classes above + CIP recursive Rules 4b/4c/6.
+> **Housekeeping (top priority):** relocate R24–R38 detail out of `MEMORY.md` into the topic file — it is near the
+> 24.4KB read limit; do this before the next round grows it further.
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
@@ -545,8 +595,8 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 | ~~item 1~~ | **CIP Rule 6** — ✅ **VERIFIED DEFER ROUND 38.** No reachable consumer: (spec-hierarchy) downstream of the R36 4b/4c defer, and (code-level) gated by the auxiliary-pool admission cap (`smiles.py:1961-1964`) — verified BEHAVIOURALLY (the aux pass is never entered with `\|pool\|>2`, by wrapping `_cip_ranks_with_aux`, not by grepping source). Revised Rule 5 resolves every admitted ≤2 pool → no like/unlike residual reachable. 0 mislabels vs RDKit (r/s incl.). dalembert SURVIVED (173 molecules) + mr-president SHIP. Building it would be dead, mislabel-prone code downstream of unbuilt 4b/4c. | B | — | **DONE (defer)** | `CIP_RULE6_CONSUMER_SCOPE_DECISION_v0.1.md`; unpark when 4b/4c is built + a larger aux pool is admitted + a forcing fixture appears. |
 | ~~item 1 (conjugated)~~ | **Conjugated-ring representation** — ✅ **BUILT ROUND 39.** The exocyclic-carbonyl (enone/dienone/quinone/butenolide) conjugated slice NAMES; real consumers incl. vitamin C; 0 mislabels vs RDKit. | B | — | **DONE** | `CIP_CONJUGATED_CARBONYL_RING_SCOPE_v0.1.md`. |
 | ~~item 1 (charged)~~ | **Charged ring representation** — ✅ **BUILT ROUND 40 (cationic-ring-N slice).** A ring bearing a CATIONIC ring N in EXPLICIT-KEKULE spelling (pyridinium / pyridine N-oxide / imidazolium / thiazolium) now NAMES — the blanket charge gate becomes a fail-closed `charge > 0` whitelist admitting the cationic-N `[1,1,2]` acceptor, averaged by charge-invariant atomic number. Real consumers previously deferred, now name; 0 mislabels vs RDKit across a 106-case ring-vs-heteroaromatic-ring sweep. dalembert KILL → repaired: the cationic CHALCOGEN (pyrylium O+/thiopyrylium S+) is a proven RDKit-divergent mislabel class (no neutral acceptor analogue) → fail-closed. Capability extension (R39/R34 charged pins + FROZEN_HASHes re-anchored). | B | — | **DONE** | `CIP_CHARGED_RING_SCOPE_v0.1.md`. |
-| **1** | **Charge-aware kekulizer** — the DEFERRED remainder of charged-ring representation. | B | M | medium | The charged AROMATIC spelling (`c1cccc[n+]1C`) still hits the parser wall (`_aromatic_matchings` misclassifies a cationic ring N as a pyrrole-type donor → odd acceptor count → `SmilesError`, UPSTREAM of the namer). Fix: a charge-aware `_aromatic_matchings` (a cationic ring N stays an acceptor). ⚠️ latent risk flagged (dalembert/citadel R40): an even-acceptor-count charged aromatic could, after the fix, find a WRONG matching SILENTLY rather than refuse loudly — the fix must fail closed. Also-deferred fail-closed siblings (NOT this brick): cationic CHALCOGEN rings (RDKit-divergent averaging, `CIP_CHARGED_RING_SCOPE_v0.1.md`), anionic rings, exocyclic =CH2/=NH conjugated rings. The N-admission is the prerequisite that would let a future 4b/4c/6 admit a larger aux pool (cap raise, `smiles.py:2026-2027`). |
-| **2** | **Modern bromine provenance rotation** — realized, non-Albemarle operating evidence or a genuinely independent cost model. | C | S/M | long | Magnolia is forecast/model; JBC shares the issuer/reporting family (a sourcing wall). |
+| ~~item 1 (charged aromatic)~~ | **Charge-aware kekulizer** — ✅ **BUILT ROUND 41.** The charged AROMATIC spelling (`c1cccc[n+]1C`) now NAMES and unifies with its explicit-Kekulé identity: `_aromatic_matchings` gets a FAIL-CLOSED whitelist admitting only a formal +1 ring N of coordination 3 as a π-acceptor; chalcogen-cation / anion / over-charged-N all RAISE (matching RDKit's rejection — the fail-closed the R40 note demanded). Fixed a latent mixed-spelling identity false-split (one shared `_canonical_kekule_orders` across constitution/isotope/config, neutral byte-identical). Shipped a committed differential fuzzer (0 findings / 2446 mol-instances). 0 mislabels vs RDKit; 4-bearing gate (dalembert SURVIVED / evil-morty SOUND / birdperson SOUND / mr-president SHIP; one minor over-reach fixed). | B | — | **DONE** | `CIP_CHARGE_AWARE_KEKULIZER_SCOPE_v0.1.md`. The N-admission remains the prerequisite that would let a future 4b/4c/6 admit a larger aux pool (cap raise, `smiles.py`). |
+| **1** | **Modern bromine provenance rotation** — realized, non-Albemarle operating evidence or a genuinely independent cost model. | C | S/M | long | Magnolia is forecast/model; JBC shares the issuer/reporting family (a sourcing wall). The DOW-Br₂ litmus's only open axis (a *modern* undercut demonstration needs an independent brine-feedstock cost basis). |
 | **Move 5** | **Domain-neutral parameterization** — step/route/cost over a "conserved-inventory transition + survival predicate", not concretely `Molecule`. | B | **L** | **DEFERRED — case ADVANCED ONE STEP** | The circuit pipeline (R37) supplies a real second-domain consumer GRAPH; **ROUND 38 gave it its FIRST NON-TEST CALLER** — the circuit-route selector (`smartchem/circuit_selection.py` + a `python -m` driver), so residual (a) is now DONE. Move 5 STILL awaits (b): the actual lift making the CHEMISTRY `ExperimentStep`/`ExperimentRoute` parametric over the conserved-inventory-transition abstraction AND retrofitting BOTH domains onto ONE shared ranker (its own large round; `rank_routes` is hard-typed to `ExperimentRoute`). `MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`. |
 | ~~3b~~ | ✅ **DONE (ROUND 30)** — DOW-Br₂ collider/modified-Arrhenius kinetics. See the DONE ledger + manifest §30. | B·C | — | — | The Warshay modified-Arrhenius bimolecular fit is modelled in a new sibling (`collider_kinetics.py`); Br₂ SURVIVES at bench (a lower-bounded PREDICTED read, thermo-corroborated), dissociates sub-ms at shock-tube T. Live wire-in of the collider model into E1's gate is TRACKED DEBT (verdict-inert today; no Br₂-intermediate DAG consumer). |
 

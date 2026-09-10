@@ -1074,6 +1074,55 @@ def _cip_ring_edges(n, bonds) -> frozenset[int]:
     return frozenset(set(range(len(bonds))) - bridges)
 
 
+def _exocyclic_carbonyl_spectator(atoms, a, adj, ring_adj) -> bool:
+    """``True`` if ring atom ``a``'s ONLY multiple bond is an exocyclic double to a TERMINAL CHALCOGEN (=O / =S).
+
+    ROUND 39.  A ring carbon whose two ring bonds are single (``ring_doubles == 0``) but which bears an
+    exocyclic carbonyl / thiocarbonyl double -- a ring ketone, lactone, or quinone ``C=O`` (or the ``C=S``
+    thio analogue) -- is a pass-through SPECTATOR for the ring's pi-matching (its ring pi-demand is 0; it takes
+    no ring double in ANY Kekule).  Admitting it lets the internally-conjugated ENONE / DIENONE / QUINONE /
+    BUTENOLIDE class (L-ascorbic acid = vitamin C, carvone, the quinones) reach the matching enumeration
+    instead of dying at the ``else: valid = False`` defer -- a real forcing-consumer set (RDKit rdCIPLabeler
+    names every one; the shipped namer over-deferred them).
+
+    TWO conditions make this a SOUND release, not the R33-scar fixed-Kekule shortcut:
+
+    1.  TERMINAL partner  =>  the exocyclic double is Kekule-FIXED.  A degree-1 atom's double bond can only ever
+        point back at ``a``, so it contributes the SAME ``order - 1`` duplicate leaf in every Kekule structure
+        and never perturbs ``need[a] = Sigma(order - 1)`` for the ring (the dalembert R33 release invariant).
+        The exocyclic double is then handled by the ordinary :func:`_cip_digraph` EXACTLY as an acyclic ``C=O``
+        already is (real z/mass on ``a``, an order-1 duplicate of the real partner).
+    2.  CHALCOGEN (O / S) partner  =>  the exocyclic double is chemically LOCALIZED.  A carbonyl / thiocarbonyl
+        contributes no aromatic-resonance form that RDKit's delocalized model would treat differently, so the
+        release matches the oracle (validated: 0 mislabels across the enone/quinone/butenolide battery).  An
+        exocyclic ``=CH2`` (fulvene, a quinodimethane) or ``=NH`` (azafulvene, an amidine) is DELIBERATELY
+        EXCLUDED: those are the textbook non-benzenoid aromatic-resonance systems where a fixed release could
+        diverge from the oracle, so they stay DEFERRED (fail-closed) as a named sub-case -- a wrong R/S is
+        worse than an honest decline (``a-sound-extension-guards-its-new-cross-comparisons``).
+    """
+    exocyclic_double = None
+    for b, order in adj[a]:
+        if b in ring_adj[a]:
+            continue                                     # a ring bond: single here (caller gates ring_doubles==0)
+        if order == 2:
+            if exocyclic_double is not None:
+                return False                             # two exocyclic doubles (a ring allene end): not a spectator
+            exocyclic_double = b
+        elif order != 1:
+            return False                                 # an exocyclic triple/aromatic: out of scope, defer
+    if exocyclic_double is None:
+        return False
+    if len(adj[exocyclic_double]) != 1:
+        return False                                     # NON-terminal partner: Kekule-mobile -> defer (see cond. 1)
+    partner = atoms[exocyclic_double]
+    # NEUTRAL chalcogen carbonyl only -> localized (see cond. 2).  The charge test mirrors the ring-carbon charge
+    # gate in ``_cip_mancude``: a charged exocyclic partner (an enolate ``=[O-]``, an acylium ``=[O+]``) is a
+    # delocalized system this bounded release does not model, so it defers fail-closed (evil-morty LOW, R39): the
+    # element-only check was latent looseness even though every VALID charged-partner molecule still parsed to a
+    # neutral form or was refused by the valence check upstream.
+    return partner.element in ("O", "S") and partner.charge == 0
+
+
 def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction]]":
     """``(blocked, averages)`` for the ring systems of the molecule (ROUND 22 mancude + ROUND 33 localized rings):
     the Kekule-dependent BOUNDARY atoms and exact duplicate-Z averages for delocalized (>=2-Kekule) mancude systems.
@@ -1160,6 +1209,22 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
                 # partner-Z averaged and the spectator carbons keep real z -- so cyclopropene..cyclohexadiene, cyclic
                 # enol ethers, localized fused bicyclics NAME (R33), AND an aromatic ring FUSED to a saturated ring
                 # (indane, tetralin) NAMES too (R34 item 4; the spectator no longer forces a defer).
+            elif (atom.element == "C" and ring_doubles == 0
+                    and _exocyclic_carbonyl_spectator(atoms, a, adj, ring_adj)):
+                pass                                     # ROUND 39: an EXOCYCLIC-CARBONYL ring carbon -- a ring
+                # ketone / lactone / quinone C=O or the C=S thiocarbonyl analogue (ONLY a terminal chalcogen O/S
+                # partner; exocyclic =CH2 / =NH are EXCLUDED by _exocyclic_carbonyl_spectator and defer).  Both its
+                # RING bonds are single (ring_doubles == 0) so it takes no ring double in any Kekule and is a
+                # pass-through SPECTATOR exactly like the sp3 carbon above; the only difference is its exocyclic
+                # double, which is Kekule-FIXED (terminal partner, see _exocyclic_carbonyl_spectator) and handled
+                # soundly by the ordinary _cip_digraph as an acyclic C=O already is.  This admits the
+                # internally-conjugated enone / dienone / quinone / butenolide class (L-ascorbic acid, carvone) that
+                # the neutral acceptor enumeration previously rejected at the ``else`` below and DEFERRED -- a real
+                # forcing consumer set (RDKit rdCIPLabeler names every one; the shipped namer over-deferred them).
+                # Kekule-invariance of need[a] is preserved (the fixed exocyclic duplicate is constant), so
+                # matching_count over the true ring acceptors still equals the ring's neutral Kekule count -> release
+                # on unique, average on delocalized, both sound.  A NON-terminal exocyclic double (cross-conjugated,
+                # ring-fused) is Kekule-mobile and stays deferred (the helper returns False -> else: valid=False).
             else:
                 valid = False
         if not valid or not acceptors:

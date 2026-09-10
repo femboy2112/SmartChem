@@ -11,9 +11,17 @@ bond (``o != 1`` on no ring edge) and no ring atom is aromatic -- is a LOCALIZED
 Kekule ambiguity in the ring itself.  Its exocyclic double bonds and ring closures are handled soundly by the
 ordinary ``_cip_digraph`` EXACTLY as an acyclic double bond and a saturated ring already are, so the whole
 component is RELEASED (real z/mass), like R33's localized rings.  A ring with an INTERNAL ring double (an enone,
-an aromatic or explicit-Kekule ring) fails the test and stays on the mancude/matching path -> the conjugated
-cases remain deferred. ROUND 34's FIFO Rule-1a correction also permits a Rule-1a-distinct exocyclic ring to be
-ranked against another ring; both single- and two-ring cases NAME when the built rules fully order them.
+an aromatic or explicit-Kekule ring) fails the test and stays on the mancude/matching path.  ROUND 34's FIFO
+Rule-1a correction also permits a Rule-1a-distinct exocyclic ring to be ranked against another ring; both single-
+and two-ring cases NAME when the built rules fully order them.
+
+ROUND 39 UPDATE (``cip_conjugated_carbonyl_probe.py``): the conjugated boundary this probe pinned has MOVED.  A
+conjugated ring (internal ring double) bearing an exocyclic TERMINAL-CHALCOGEN carbonyl (a ring enone / dienone /
+quinone / butenolide C=O or C=S) now NAMES too -- the exocyclic-carbonyl carbon is admitted as a ring SPECTATOR
+(``_exocyclic_carbonyl_spectator``) and the ring releases on its unique acceptor matching.  The two former
+boundary-defer entries (cyclohexenone, cyclopentenone) are re-tagged ``exocyclic-name`` here; the remaining
+boundary-defer entries are the R39 boundary -- a conjugated ring bearing an exocyclic =CH2 / =NH (the
+aromatic-resonance-ambiguous non-benzenoid systems) or a CHARGED ring, which still defer fail-closed.
 
 Consumer size (recon, 2026-09-08, rdkit 2026.3.6): every real ring carbonyl/exocyclic-alkene substituent -- the
 single largest real-molecule ring class.  This harness pins the finding ("experiments are committed") and doubles
@@ -34,7 +42,7 @@ import json
 from smartchem.smiles import cip_labels
 
 #: The committed tamper pin.  Regenerate ONLY on an intentional change.
-FROZEN_HASH = "f0d8b0a53968aabc48efd5864c2bea5c92a52e1fb0da721193f0c1104425747b"
+FROZEN_HASH = "25f1bcbf840f95ad89ad20b6216e41c48b8e82ec4f058edca14ab0aab3b36723"
 
 #: Exocyclic-unsaturation ring fragments (attach at the first ring atom): the RING skeleton is all single bonds;
 #: the double bond points OUT (C=O ketone, =C alkene, =N imine, =S thioketone), at various ring sizes/positions,
@@ -65,9 +73,17 @@ BATTERY = (
     ("[C@](C1C(=O)CCCC1=O)(C)(F)Cl",  ("R",), ("R",), "exocyclic-multi-name", "ring 1,3-dione: TWO exocyclic C=O, all ring edges single"),
     ("[C@](C1CCC2(CCCC2=O)C1)(C)(F)Cl", ("R",), ("R",), "exocyclic-multi-name", "spiro skeleton, exocyclic C=O on the far ring"),
     ("[C@](C1CCCCC1=O)(C1CCCCC1)(F)Cl", ("R",), ("R",), "exocyclic-multi-name", "exocyclic-C=O ring vs saturated ring -> FIFO Rule 1a"),
-    # --- boundary DEFERRALS (rdkit names, we defer soundly) ---
-    ("[C@](C1=CCCCC1=O)(C)(F)Cl",     ("R",), (), "boundary-defer", "cyclohexenone: INTERNAL ring double + exocyclic (conjugated) -> defer"),
-    ("[C@](C1C=CC(=O)C1)(C)(F)Cl",    ("R",), (), "boundary-defer", "cyclopentenone: internal ring double + exocyclic C=O -> defer"),
+    # --- ROUND 39: a conjugated ring (INTERNAL ring double) bearing an exocyclic terminal-CHALCOGEN carbonyl
+    #     now NAMES -- the exocyclic-carbonyl carbon is a spectator, the ring releases on its unique acceptor
+    #     matching, ordinary Rule 1a decides.  These two were R34 boundary-defers; R39 moved them (see
+    #     cip_conjugated_carbonyl_probe.py). ---
+    ("[C@](C1=CCCCC1=O)(C)(F)Cl",     ("R",), ("R",), "exocyclic-name", "cyclohexenone: internal ring C=C + exocyclic C=O -> NAMED (R39 conjugated-carbonyl release)"),
+    ("[C@](C1C=CC(=O)C1)(C)(F)Cl",    ("R",), ("R",), "exocyclic-name", "cyclopentenone: internal ring C=C + exocyclic C=O -> NAMED (R39)"),
+    # --- boundary DEFERRALS (rdkit names, we defer soundly): the R39 boundary -- a conjugated ring bearing an
+    #     exocyclic =CH2/=NH (the aromatic-resonance-ambiguous non-benzenoid systems) or a CHARGED ring stay
+    #     deferred (a wrong R/S is worse than an honest decline) ---
+    ("[C@](C1=CCCCC1=C)(C)(F)Cl",     ("R",), (), "boundary-defer", "conjugated methylenecyclohexene: exocyclic =CH2 (aromatic-resonance) -> defer"),
+    ("[C@](C1=CC=[NH+]C=C1)(C)(F)Cl", ("R",), (), "boundary-defer", "charged pyridinium ring (explicit Kekule) -> defer"),
 )
 
 
@@ -112,8 +128,10 @@ def validate() -> None:
     assert counts["exocyclic-name"] >= 12, "must non-vacuously name the exocyclic-ring class"
     assert counts["exocyclic-multi-name"] >= 2, "must exercise multi-exocyclic (dione) + spiro skeletons"
     assert counts["boundary-defer"] >= 2, "must pin the unresolved conjugated-enone boundary"
-    # the conjugated case (internal ring double) is NOT captured by the exocyclic release -> still DEFERS
-    assert cip_labels("[C@](C1=CCCCC1=O)(C)(F)Cl") == (), "conjugated enone (internal ring double) must DEFER"
+    # ROUND 39 moved the conjugated exocyclic-CARBONYL boundary: a conjugated ring (internal ring double) bearing
+    # an exocyclic C=O now NAMES; the remaining defer boundary is a conjugated exocyclic =CH2 (or a charged ring).
+    assert cip_labels("[C@](C1=CCCCC1=O)(C)(F)Cl") == ("R",), "conjugated ring + exocyclic C=O now NAMES (R39)"
+    assert cip_labels("[C@](C1=CCCCC1=C)(C)(F)Cl") == (), "conjugated ring + exocyclic =CH2 must still DEFER (R39 boundary)"
     # both the single-ring case and a Rule-1a-distinct ring pair NAME
     assert cip_labels("[C@](C1CCCCC1=O)(C)(F)Cl") == ("R",), "single exocyclic-ketone ring must NAME"
     assert cip_labels("[C@](C1CCCCC1=O)(C1CCCCC1)(F)Cl") == ("R",), "exocyclic ring pair must NAME"

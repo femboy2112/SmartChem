@@ -102,7 +102,7 @@ def _resolve_phase_change(molecule: Molecule, table: PhaseChangeTable) -> PhaseC
 
 def resolve_thermo(
     molecule: Molecule, table: ThermoTable = DEFAULT_THERMO, *, derive: bool = True, condensed: bool = True,
-    phase_change: PhaseChangeTable = DEFAULT_PHASE_CHANGE,
+    phase_change: PhaseChangeTable = DEFAULT_PHASE_CHANGE, phase: str | None = None,
 ) -> ThermoRef | None:
     """The thermo record for ``molecule``: sourced if the table covers it (named, else formula-level when
     unambiguous), else -- when ``derive`` (default) -- a group-additivity estimate
@@ -117,15 +117,28 @@ def resolve_thermo(
     of a phase-mismatched gas one (this is what finally gives paracetamol a condensed-phase ΔG).  A
     gas-estimate-plus-phase-correction is a two-step estimate, so it grades ``PREDICTED``.  ``derive=False``
     restores pure-sourced behaviour; ``condensed=False`` keeps the raw gas estimate.
+
+    ``phase`` (item 5) narrows the SOURCED lookup to one standard-state phase.  Without it, a species the table
+    holds in more than one phase (Br₂ gas/liquid) is phase-ambiguous and resolves to ``None`` (UNKNOWN,
+    fail-closed) rather than silently returning the wrong-phase ΔfH° -- so a caller that reasons about a
+    condensed species must SAY which phase it means (the M2b carried debt, closed).
     """
     named = resolve_structure(molecule)
     if named is not None:
-        hit = table.for_named(named.expected_formula, named.name)
+        hit = table.for_named(named.expected_formula, named.name, phase=phase)
         if hit is not None:
             return hit
-    hit = table.for_formula(_formula_str(molecule))
+    hit = table.for_formula(_formula_str(molecule), phase=phase)
     if hit is not None:
         return hit
+    # PHASE-AMBIGUITY FAIL-CLOSED (item 5, adversarial fold): a phase-blind miss on a species the table holds in
+    # MORE than one phase is AMBIGUITY, not absence -- do NOT fall through to the gas Benson estimate below, which
+    # ignores the phase question and would silently reinstate the debt for a Benson-COVERABLE dual-phase species.
+    # (Br₂ escapes the estimate today only because it is Benson-uncoverable; the guarantee must be the design's,
+    # not one molecule's -- red-team Finding 1.)  A SPECIFIC phase that is simply not tabulated still derives, with
+    # the existing gas/condensed phase notes.
+    if phase is None and table.is_multiphase(_formula_str(molecule)):
+        return None
     if derive:
         est = estimate_thermo(molecule)
         if est is not None:
@@ -223,7 +236,7 @@ class StepFeasibility(Digestible):
 
 def feasibility_of_step(
     step: ExperimentStep, *, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None,
-    derive: bool = True,
+    derive: bool = True, phases: "dict[Molecule, str] | None" = None,
 ) -> StepFeasibility:
     """The graded ΔG feasibility verdict for one step, over sourced thermodynamic data plus (when ``derive``,
     the default) a Benson group-additivity gas-phase fallback for species the table does not cover.
@@ -234,12 +247,22 @@ def feasibility_of_step(
     reflects it: a PREDICTED group value caps the verdict at PREDICTED, and mixing a derived-gas record with a
     sourced-condensed one caps at PREDICTED with a loud phase-inconsistency note (the group method yields gas
     values; a cross-phase ΔG omits the Δsub/Δvap terms -- the phase trap, stated not hidden).
+
+    ``phases`` (item 5) declares the standard-state phase of any species the thermo table holds in MORE than one
+    phase (today, only Br₂ gas/liquid), keyed on canonical STRUCTURE (never formula -- ``a-reaction-key-by-
+    formula-borrows-a-rate``).  A single-phase species needs no entry.  A phase-ambiguous species with no entry
+    resolves to ``None`` -> the whole step verdict is a loud UNKNOWN, never the silently-wrong-phase ΔfH°: a
+    caller reasoning about condensed Br₂ must SAY so (the M2b carried debt, closed).
     """
     if type(step) is not ExperimentStep:
         raise TypeError("step must be an ExperimentStep")
     temperature = temperature_k if temperature_k is not None else _temperature_of(step)
     species, nu = _coefficient_vector(step)
-    resolved = [(m, n, resolve_thermo(m, thermo, derive=derive)) for m, n in zip(species, nu)]
+    canon_phases = {k.canonical(): v for k, v in phases.items()} if phases else {}
+    resolved = [
+        (m, n, resolve_thermo(m, thermo, derive=derive, phase=canon_phases.get(m.canonical())))
+        for m, n in zip(species, nu)
+    ]
     missing = tuple(_label(m) for m, _n, r in resolved if r is None)
     if missing:
         return StepFeasibility(

@@ -107,10 +107,19 @@ class ThermoRef(Digestible):
 
 @dataclass(frozen=True)
 class ThermoTable(Digestible):
-    """An immutable set of sourced thermodynamic records, resolvable by ``(formula, name)`` or by formula.
+    """An immutable set of sourced thermodynamic records, resolvable by ``(formula, name[, phase])`` or by formula.
 
     Mirrors :class:`~smartchem.data.stability.StabilityTable`: the compiler holds a table, a caller extends
-    it with :meth:`with_records`, records are deduplicated by ``(formula, name)`` (a later record wins).
+    it with :meth:`with_records`, records are deduplicated by ``(formula, name, phase)`` (a later record wins).
+
+    PHASE-CARRYING KEY (item 5): the standard-state ΔfH°/S° of a species DIFFER by phase (Br₂(g) ΔfH° = +30.91
+    kJ/mol; Br₂(l), the true reference state, ΔfH° = 0), so ``phase`` is part of a record's identity for lookup,
+    not decoration.  Deduplication keys on the ``(formula, name, phase)`` TRIPLE, so a gas and a liquid record of
+    one species COEXIST instead of one silently clobbering the other at write time (the old ``(formula, name)``
+    key was a last-value-wins overwrite with no error).  A phase-blind lookup (``phase=None``) returns a hit IFF
+    exactly ONE record survives, and otherwise fails closed to ``None`` -- the SAME isomer-ambiguity honesty
+    :meth:`for_formula` already applied, extended one dimension: a caller that has not said which phase it means
+    must NOT be silently handed the wrong-phase ΔfH° (the ROUND-26 M2b carried debt, closed here).
     """
 
     records: tuple[ThermoRef, ...]
@@ -120,24 +129,42 @@ class ThermoTable(Digestible):
             raise TypeError("records must be a tuple of ThermoRef values")
 
     def with_records(self, *records: ThermoRef) -> "ThermoTable":
-        by_key: dict[tuple[str, str], ThermoRef] = {(r.formula, r.name): r for r in self.records}
+        # Dedup on the (formula, name, PHASE) triple: keying on (formula, name) alone would SILENTLY overwrite a
+        # gas record when a same-named liquid record is added (last-value-wins, no error at all) -- a sharper
+        # hazard than a read-time miss.  The phase in the key is exactly what lets Br₂(g) and Br₂(l) both live.
+        by_key: dict[tuple[str, str, str], ThermoRef] = {(r.formula, r.name, r.phase): r for r in self.records}
         for r in records:
             if type(r) is not ThermoRef:
                 raise TypeError("with_records takes ThermoRef values")
-            by_key[(r.formula, r.name)] = r
-        return ThermoTable(tuple(sorted(by_key.values(), key=lambda r: (r.formula, r.name))))
+            by_key[(r.formula, r.name, r.phase)] = r
+        return ThermoTable(tuple(sorted(by_key.values(), key=lambda r: (r.formula, r.name, r.phase))))
 
-    def for_named(self, formula: str, name: str) -> ThermoRef | None:
-        for r in self.records:
-            if r.formula == formula and r.name == name:
-                return r
-        return None
-
-    def for_formula(self, formula: str) -> ThermoRef | None:
-        """The record for a formula IFF exactly one is tabulated (else ``None``) -- the same isomer-ambiguity
-        honesty as stability: attaching one isomer's thermo to a formula naming several would be wrong."""
-        hits = [r for r in self.records if r.formula == formula]
+    def for_named(self, formula: str, name: str, phase: str | None = None) -> ThermoRef | None:
+        """The record for a ``(formula, name)`` -- narrowed to ``phase`` when given, else phase-blind.  Returns a
+        hit IFF exactly ONE record matches (else ``None``): a phase-blind query against a species tabulated in
+        more than one phase is a fail-closed refusal, never a silent wrong-phase pick."""
+        hits = [r for r in self.records
+                if r.formula == formula and r.name == name and (phase is None or r.phase == phase)]
         return hits[0] if len(hits) == 1 else None
+
+    def for_formula(self, formula: str, phase: str | None = None) -> ThermoRef | None:
+        """The record for a formula IFF exactly one is tabulated (else ``None``) -- the same isomer-ambiguity
+        honesty as stability: attaching one isomer's thermo to a formula naming several would be wrong.  ``phase``
+        (item 5) narrows the match to one standard-state phase; a phase-blind query against a species tabulated in
+        several phases is ambiguous and fails closed to ``None`` (the Br₂(g)/Br₂(l) case)."""
+        hits = [r for r in self.records if r.formula == formula and (phase is None or r.phase == phase)]
+        return hits[0] if len(hits) == 1 else None
+
+    def is_multiphase(self, formula: str) -> bool:
+        """True if some species ``(formula, name)`` in this table is tabulated in MORE than one phase -- so a
+        phase-blind lookup of ``formula`` that misses is a genuine PHASE ambiguity (not mere isomer ambiguity or
+        an absent record).  A resolver must then fail closed rather than fall through to a phase-blind estimate,
+        which would silently ignore the phase question (the M2b debt).  Isomer ambiguity (distinct names, one
+        phase each) is deliberately NOT flagged: a group-additivity estimate keyed on the actual STRUCTURE is
+        still legitimate there.  A recurring name (dedup keys on ``(formula, name, phase)``) means one species in
+        several phases."""
+        names = [r.name for r in self.records if r.formula == formula]
+        return len(names) != len(set(names))
 
 
 #: The SEED -- sourced standard thermodynamic data, litmus-focused (small molecules whose ΔG we can DERIVE
@@ -185,16 +212,23 @@ SEED_THERMO_REFS: tuple[ThermoRef, ...] = (
               uncertainty_dhf_kj=0.10, uncertainty_s_j_per_mol_k=0.005),
     ThermoRef("Cl2", "chlorine", 0.0, 223.081, "gas", f"element reference state; S° {_CODATA}",
               uncertainty_dhf_kj=0.0, uncertainty_s_j_per_mol_k=0.010),
-    # DOW-thermo (ROUND 26): bromine, mirrored from the frozen CODATA seed (experiments.thermo_codata_seed;
-    # Cox, Wagman et al. 1984, fetched + cross-checked 2026-09-07 vs NIST WebBook + the official CODATA table --
-    # both bearings agree; JANAF/Chase 1998 within ±).  Only the GAS-phase records enter the live table: they
-    # close the DOW-Br₂ dissociation verdict (Br₂ → 2 Br•, endergonic at 298 K), and keeping one record per formula
-    # leaves ``for_formula`` unambiguous.  Br₂'s true standard state is LIQUID (Br₂(l), ΔfH°=0, lives in the frozen
-    # seed as the reference state); no liquid-Br₂ reaction is reasoned about here, and the phase is carried honestly.
+    # DOW-thermo (ROUND 26 gas; item 5 liquid): bromine, mirrored from the frozen CODATA seed
+    # (experiments.thermo_codata_seed; Cox, Wagman et al. 1984, fetched + cross-checked 2026-09-07 vs NIST WebBook
+    # + the official CODATA table -- both bearings agree; JANAF/Chase 1998 within ±).  BOTH the GAS and the
+    # true-standard-state LIQUID Br₂ record now enter the live table (item 5, the phase-carrying key): the gas
+    # record closes the DOW-Br₂ dissociation verdict (Br₂ → 2 Br•, endergonic at 298 K); the liquid record IS
+    # bromine's reference state (Br₂(l), ΔfH°=0 by convention, S°=152.21±0.30).  Both share formula "Br2" and name
+    # "bromine", so ``for_formula("Br2")`` / ``for_named("Br2","bromine")`` are now PHASE-AMBIGUOUS and fail closed
+    # to ``None`` unless ``phase`` is given -- a phase-blind caller can no longer be silently handed the gas ΔfH°
+    # for a liquid-Br₂ reaction (the exact +30.91 kJ/mol error the M2b carried debt named).  The (formula, name,
+    # PHASE) dedup key is what lets both coexist instead of the liquid silently overwriting the gas at write time.
     ThermoRef("Br", "bromine atom", 111.87, 175.018, "gas", f"ΔfH° and S° (gas atom, 298.15 K) {_CODATA}",
               uncertainty_dhf_kj=0.12, uncertainty_s_j_per_mol_k=0.004),
     ThermoRef("Br2", "bromine", 30.91, 245.468, "gas", f"ΔfH° and S° (gas, 298.15 K) {_CODATA}",
               uncertainty_dhf_kj=0.11, uncertainty_s_j_per_mol_k=0.005),
+    ThermoRef("Br2", "bromine", 0.0, 152.21, "liquid",
+              f"element reference state (ΔfH°=0 by convention); S° (liquid, 298.15 K) {_CODATA}",
+              uncertainty_dhf_kj=0.0, uncertainty_s_j_per_mol_k=0.30),
 )
 
 #: A convenience default seed; extended per call for any other chemical, NOT a whitelist.

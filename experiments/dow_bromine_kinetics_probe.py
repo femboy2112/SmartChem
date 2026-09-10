@@ -61,8 +61,12 @@ def _round(x: float, n: int = 6) -> float:
 def _delta_g_dissociation_298() -> float:
     """ΔG298 for Br2 -> 2 Br*, from the SOURCED CODATA thermo table (the INDEPENDENT bearing, computed by a
     different code path from a different source family than the Warshay kinetic fit)."""
-    br = DEFAULT_THERMO.for_formula("Br")
-    br2 = DEFAULT_THERMO.for_formula("Br2")
+    # item 5 (phase-carrying key): Br₂ is now tabulated in BOTH gas and liquid, so a bare ``for_formula("Br2")``
+    # is phase-ambiguous and fails closed to None.  This gas-phase dissociation Br₂(g) → 2 Br(g) asks for the GAS
+    # records explicitly; the returned values (30.91 / 245.468, 111.87 / 175.018) are unchanged, so ΔG₂₉₈ stays
+    # +161.65 and content_hash() is byte-identical to the pre-item-5 FROZEN_HASH.
+    br = DEFAULT_THERMO.for_formula("Br", phase="gas")
+    br2 = DEFAULT_THERMO.for_formula("Br2", phase="gas")
     dh = 2 * br.dhf_kj_per_mol - br2.dhf_kj_per_mol            # kJ/mol
     ds = 2 * br.s_j_per_mol_k - br2.s_j_per_mol_k              # J/(mol K)
     return dh - 298.15 * ds / 1000.0

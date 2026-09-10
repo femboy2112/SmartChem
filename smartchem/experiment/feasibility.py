@@ -426,14 +426,25 @@ class RouteFeasibility(Digestible):
 
 def verify_feasibility(
     route: ExperimentRoute, *, thermo: ThermoTable = None, temperature_k: float | None = None,
-    derive: bool = True,
+    derive: bool = True, phases: "dict[Molecule, str] | None" = None,
 ) -> RouteFeasibility:
     """The thermodynamic feasibility of every step of a route, over the sourced (injectable) thermo table
-    plus (when ``derive``, the default) the Benson group-additivity gas-phase fallback."""
+    plus (when ``derive``, the default) the Benson group-additivity gas-phase fallback.
+
+    ``phases`` (item 5, threaded up) declares the standard-state phase of any species the thermo table holds
+    in MORE than one phase (today, only Br₂ gas/liquid), keyed on canonical STRUCTURE (never formula --
+    ``a-reaction-key-by-formula-borrows-a-rate``).  It is forwarded verbatim to every step's
+    :func:`feasibility_of_step` (each step filters the dict to its own species), so a phase-ambiguous species
+    with no entry makes that step -- and hence the route :attr:`~RouteFeasibility.verdict` and its additive
+    :attr:`~RouteFeasibility.net_delta_g_kj` -- a loud UNKNOWN, never a silently-wrong-phase ΔG.  This is the
+    linear-route mirror of :func:`~smartchem.experiment.functorial_physics.route_net_delta_g`'s DAG threading,
+    closing the last phase-blind ``verify_*`` fold: a single ``phases`` declaration now flows through both the
+    worst-node verdict and the Hess-sum drive.  A single-phase route needs no ``phases`` (default byte-stable)."""
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     tbl = DEFAULT_THERMO if thermo is None else thermo
     per_step = tuple(
-        feasibility_of_step(s, thermo=tbl, temperature_k=temperature_k, derive=derive) for s in route.steps
+        feasibility_of_step(s, thermo=tbl, temperature_k=temperature_k, derive=derive, phases=phases)
+        for s in route.steps
     )
     return RouteFeasibility(route, per_step)

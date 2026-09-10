@@ -46,15 +46,18 @@ def test_exocyclic_alkene_imine_thioketone_name():
     assert cip_labels("[C@](C1CCCCC1=S)(C)(F)Cl") == ("R",)      # exocyclic thioketone
 
 
-def test_conjugated_carbonyl_now_names_but_methylene_and_charged_still_defer():
+def test_conjugated_carbonyl_and_charged_ring_now_name_but_methylene_imine_still_defer():
     # ROUND 39 moved the boundary: a conjugated ring (INTERNAL ring double) bearing an exocyclic terminal-
-    # chalcogen carbonyl now NAMES (the exocyclic-carbonyl carbon is a spectator; the ring releases).
-    assert cip_labels("[C@](C1=CCCCC1=O)(C)(F)Cl") == ("R",)      # cyclohexenone -> NAMED (was defer)
-    assert cip_labels("[C@](C1C=CC(=O)C1)(C)(F)Cl") == ("R",)     # cyclopentenone -> NAMED (was defer)
-    # the R39 boundary: a conjugated ring bearing an exocyclic =CH2 (aromatic-resonance) or a CHARGED ring
-    # still DEFERS fail-closed (a wrong R/S is worse than an honest decline).
+    # chalcogen carbonyl NAMES (the exocyclic-carbonyl carbon is a spectator; the ring releases).
+    assert cip_labels("[C@](C1=CCCCC1=O)(C)(F)Cl") == ("R",)      # cyclohexenone -> NAMED (R39)
+    assert cip_labels("[C@](C1C=CC(=O)C1)(C)(F)Cl") == ("R",)     # cyclopentenone -> NAMED (R39)
+    # ROUND 40 moved the charged-ring boundary: a charged conjugated/aromatic ring in explicit-Kekule spelling
+    # NAMES too (the cationic ring N is a valence-4 pi-acceptor, averaged by charge-invariant atomic number).
+    assert cip_labels("[C@](C1=CC=[NH+]C=C1)(C)(F)Cl") == ("R",)  # charged pyridinium ring -> NAMED (R40)
+    # the remaining boundary: a conjugated ring bearing an exocyclic =CH2/=NH (aromatic-resonance) still DEFERS
+    # fail-closed (a wrong R/S is worse than an honest decline).
     assert cip_labels("[C@](C1=CCCCC1=C)(C)(F)Cl") == ()          # conjugated exocyclic =CH2 -> defer
-    assert cip_labels("[C@](C1=CC=[NH+]C=C1)(C)(F)Cl") == ()      # charged pyridinium ring -> defer
+    assert cip_labels("[C@](C1=CCCCC1=N)(C)(F)Cl") == ()          # conjugated exocyclic =NH -> defer
     # a Rule-1a-distinct exocyclic ring pair still NAMES
     assert cip_labels("[C@](C1CCCCC1=O)(C1CCCCC1)(F)Cl") == ("R",)
 

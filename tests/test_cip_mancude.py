@@ -65,10 +65,21 @@ def test_only_multiple_bond_duplicates_are_averaged_ring_closures_remain_integer
     assert by_z[7] == smiles._cip_mass("N", 0)
 
 
-@pytest.mark.parametrize("smi", ["C[C@H](O)C1=CC=[NH+]C=C1",       # CHARGED ring (explicit Kekule) -> defer
-                                  "C[C@H](O)C1=CC=CC1=C"])          # conjugated exocyclic =CH2 -> defer (R39 boundary)
-def test_unsupported_charged_or_methylene_systems_defer_on_both_input_routes(smi):
+@pytest.mark.parametrize("smi", ["C[C@H](O)C1=CC=CC1=C",          # conjugated exocyclic =CH2 -> defer (R39 boundary)
+                                  "C[C@H](O)C1=CC=CC1=N"])         # conjugated exocyclic =NH -> defer
+def test_unsupported_methylene_imine_systems_defer_on_both_input_routes(smi):
     assert smiles.cip_labels(smi) == ()
+
+
+@pytest.mark.parametrize("smi,expected", [("C[C@H](O)C1=CC=[NH+]C=C1", ("S",)),      # pyridinium (N-H)
+                                          ("C[C@@H](O)C1=CC=[NH+]C=C1", ("R",)),     # enantiomer flips
+                                          ("C[C@H](O)C1=CC=CC=[N+]1C", ("S",)),      # N-methylpyridinium
+                                          ("C[C@@H](O)C1=[N+](C)C=CS1", ("R",))])    # thiazolium (N+ acceptor)
+def test_charged_explicit_kekule_ring_now_names_round40(smi, expected):
+    # ROUND 40: a ring bearing a CATIONIC ring N in explicit-Kekule spelling now NAMES -- the cationic N acceptor
+    # is admitted to the mancude averaging by charge-invariant atomic number (formal charge moves no Z).  The
+    # cationic CHALCOGEN (pyrylium O+/thiopyrylium S+) is fail-closed (dalembert R40); see test_cip_charged_ring.
+    assert smiles.cip_labels(smi) == expected
 
 
 def test_conjugated_exocyclic_carbonyl_now_names_round39():

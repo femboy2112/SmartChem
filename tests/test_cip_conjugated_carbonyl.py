@@ -45,8 +45,10 @@ def test_enantiomer_labels_flip():
 
 
 def test_out_of_scope_conjugated_subcases_defer_fail_closed():
-    # charged ring, exocyclic =CH2 (fulvene), exocyclic =NH: RDKit names them, we DECLINE (a wrong R/S is worse)
-    assert cip_labels_by_atom("C[C@@H](O)C1=[N+](C)C=CS1") == {}    # thiazolium: charged, explicit-Kekule -> namer charge gate
+    # exocyclic =CH2 (fulvene) and =NH (quinone-imine): RDKit names them, we DECLINE (a wrong R/S is worse).
+    # NB: the CHARGED explicit-Kekule thiazolium this test once pinned as a defer now NAMES -- ROUND 40 admitted
+    # charged conjugated/aromatic rings; that consumer is asserted in tests/test_cip_charged_ring.py.
+    assert cip_labels_by_atom("C[C@@H](O)C1=[N+](C)C=CS1") == {1: "R"}  # thiazolium: charged -> NAMED (R40)
     assert cip_labels_by_atom("O[C@@H](CC)C1=CC=CC1=C") == {}       # fulvenyl (=CH2)
     assert cip_labels_by_atom("O[C@@H](C)C1=CC(=N)C=CC1=O") == {}   # quinone-imine (=NH)
 
@@ -74,5 +76,5 @@ def test_rdkit_cross_check_zero_mislabels():
     result = probe._rdkit_cross_check()
     assert result["mismatches"] == 0
     assert result["consumers_named"] >= 8
-    assert result["defers_confirmed"] >= 3
+    assert result["defers_confirmed"] >= 2   # R40 moved the charged defer out; =CH2 + =NH remain
     assert result["invariance_ok"] == len(probe._INVARIANCE)

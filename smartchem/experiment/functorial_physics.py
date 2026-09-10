@@ -52,19 +52,25 @@ __all__ = [
 # ======================================================================================
 # The additive free-energy functor G: Process -> (ℝ, +, ≤)
 # ======================================================================================
-def route_net_delta_g(route: "object", *, thermo=None, temperature_k: float | None = None) -> float | None:
+def route_net_delta_g(
+    route: "object", *, thermo=None, temperature_k: float | None = None, phases=None
+) -> float | None:
     """Σ of the per-step ``Δ_rG`` over a route -- the additive free-energy functor (Hess's law).
 
     Returns ``None`` (fail-closed) if ANY step has no sourced/derivable thermodynamic data, so a partial
     sum can never masquerade as a route drive.  By Hess's law this equals the ΔG of the route's single net
     reaction (the shared intermediates cancel); :func:`~tests` pins that equality as the functoriality law.
+
+    ``phases`` (item 5) is forwarded to every step's :func:`feasibility_of_step` -- it declares the phase of
+    any species the thermo table holds in more than one phase (Br₂ gas/liquid), keyed on canonical structure;
+    a phase-ambiguous species with no entry makes that step (and so the route drive) a loud ``None``.
     """
     from .feasibility import DEFAULT_THERMO, feasibility_of_step
 
     table = DEFAULT_THERMO if thermo is None else thermo
     total = 0.0
     for step in route.steps:
-        result = feasibility_of_step(step, thermo=table, temperature_k=temperature_k)
+        result = feasibility_of_step(step, thermo=table, temperature_k=temperature_k, phases=phases)
         if result.delta_g_kj is None:
             return None
         total += result.delta_g_kj

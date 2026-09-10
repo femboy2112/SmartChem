@@ -178,7 +178,9 @@ class TestDowBromineThermodynamicVerdict:
         # the DOW-Br₂ THERMODYNAMIC verdict the R25 fail-close was waiting on a data add to unlock.
         br2, br = M("BrBr"), M("[Br]")
         step = _step([br2], [br, br], br)
-        result = feasibility_of_step(step)
+        # item 5 (phase-carrying key): Br₂ is now tabulated in BOTH gas and liquid, so a gas-phase dissociation
+        # must DECLARE its phase -- a phase-blind Br₂ resolves to a loud UNKNOWN (never the silent gas ΔfH°).
+        result = feasibility_of_step(step, phases={br2: "gas", br: "gas"})
         assert result.direction is FeasibilityDirection.UNFAVORABLE  # Br₂ is stable against dissociation at RT
         assert result.missing == ()                                   # nothing missing now -- both are sourced
         # calibration to KNOWN chemistry: ΔH = 2·ΔfH°(Br,g) − ΔfH°(Br₂,g) = 2(111.87) − 30.91 = +192.83 kJ/mol,
@@ -193,12 +195,16 @@ class TestDowBromineThermodynamicVerdict:
         # the bromine ATOM ("Br") and the molecule ("Br2") each resolve to their OWN CODATA record; neither is
         # fabricated to (0, 0), and a related formula (HBr = "BrH") does NOT borrow either value.
         from smartchem.experiment.feasibility import resolve_thermo
-        assert resolve_thermo(M("[Br]")).dhf_kj_per_mol == pytest.approx(111.87)
-        assert resolve_thermo(M("BrBr")).dhf_kj_per_mol == pytest.approx(30.91)
+        assert resolve_thermo(M("[Br]")).dhf_kj_per_mol == pytest.approx(111.87)   # Br atom: single-phase
+        # item 5: Br₂ is dual-phase (gas/liquid), so the GAS dfH is reached by NAMING the phase; a phase-blind
+        # resolve_thermo(Br₂) is now a loud None, never a silent gas borrow for a liquid claim (M2b debt closed).
+        assert resolve_thermo(M("BrBr"), phase="gas").dhf_kj_per_mol == pytest.approx(30.91)
+        assert resolve_thermo(M("BrBr")) is None
         assert resolve_thermo(M("Br")) is None   # HBr: unsourced, no Benson group -> a loud gap, no borrow
 
     def test_the_dissociation_route_net_drive_equals_the_single_step(self):
         # route_net_delta_g on the single-step dissociation route is the same endergonic drive (functoriality)
         br2, br = M("BrBr"), M("[Br]")
         route = ExperimentRoute.of(_step([br2], [br, br], br))
-        assert route_net_delta_g(route) == pytest.approx(161.65, abs=0.1)
+        # item 5: the gas-phase dissociation declares Br₂ is gas (phases forwarded to each step's feasibility)
+        assert route_net_delta_g(route, phases={br2: "gas", br: "gas"}) == pytest.approx(161.65, abs=0.1)

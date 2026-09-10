@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 from experiments import cip_conjugated_carbonyl_probe as probe
-from smartchem.smiles import SmilesError, cip_labels, cip_labels_by_atom
+from smartchem.smiles import cip_labels, cip_labels_by_atom
 
 
 def test_probe_validates_and_frozen_hash_stable():
@@ -53,11 +53,11 @@ def test_out_of_scope_conjugated_subcases_defer_fail_closed():
     assert cip_labels_by_atom("O[C@@H](C)C1=CC(=N)C=CC1=O") == {}   # quinone-imine (=NH)
 
 
-def test_charged_aromatic_spelling_hits_the_parser_wall():
-    # the OTHER charged defer path (mr-president cond 2): a charged AROMATIC spelling is refused UPSTREAM of the
-    # namer at kekulization, distinct from the explicit-Kekule thiazolium above which declines at the namer.
-    with pytest.raises(SmilesError, match="could not assign a Kekulé structure"):
-        cip_labels_by_atom("C[C@@H](O)c1cccc[n+]1C")
+def test_charged_aromatic_spelling_now_names_round41():
+    # ROUND 41 built the charge-aware kekulizer: the charged AROMATIC spelling this once pinned as a parser wall
+    # (mr-president cond 2) now NAMES and unifies with its explicit-Kekule spelling.  The dedicated build lives in
+    # tests/test_cip_charge_aware_kekulizer.py; this anchors that the old wall is gone.
+    assert cip_labels_by_atom("C[C@@H](O)c1cccc[n+]1C") == {1: "R"}
 
 
 def test_localized_and_saturated_rings_unchanged():

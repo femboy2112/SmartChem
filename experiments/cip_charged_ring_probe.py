@@ -28,9 +28,10 @@ consumer set and a cleanly-bounded DEFERRED slice:
   charge-blind average ((C+O)/2=7, (C+S)/2=11) CROSSES a real heteroatom and RDKit does NOT reproduce it: a
   PROVEN ring-vs-ring mislabel class (dalembert R40; e.g. ``O[C@H](C1=CC=CC=[S+]1)C1=NC=CS1`` -> repo would
   say S, RDKit R).  Left fail-closed at the residual ``elif atom.charge: valid = False``.  (2) a charged
-  AROMATIC spelling (``c1cccc[n+]1C``) hits the parser kekulization wall UPSTREAM of the namer
-  (``_aromatic_matchings`` misclassifies a cationic ring N as a pyrrole-type donor -> ``SmilesError``); building
-  it needs a charge-aware kekulizer, a separate function and its own round.  (3) ANIONIC ring atoms (a
+  AROMATIC spelling (``c1cccc[n+]1C``) hit the parser kekulization wall UPSTREAM of the namer
+  (``_aromatic_matchings`` misclassified a cationic ring N as a pyrrole-type donor -> ``SmilesError``) -- this was
+  DEFERRED at R40 and is now BUILT by the ROUND-41 charge-aware kekulizer (the two aromatic entries below moved
+  from defer to consumer; full evidence in ``cip_charge_aware_kekulizer_probe.py``).  (3) ANIONIC ring atoms (a
   carbanion) -- no validated donor branch.  (4) exotic / over-charged valences (``[NH2+]`` in a ring).  A wrong
   R/S is worse than an honest decline (``a-sound-extension-guards-its-new-cross-comparisons``); every deferred
   class is proven to fail CLOSED (raises or returns ``{}``, NEVER a silent label) in ``_assert_structure_theorem``.
@@ -47,7 +48,7 @@ import json
 
 from smartchem.smiles import SmilesError, _parse_skeleton_stereo, cip_labels, cip_labels_by_atom
 
-FROZEN_HASH = "182584272672498d0216afdf0a1ceaf6b9cb21127346dfcb291b5229cbd61f9b"
+FROZEN_HASH = "07f86279c922109a878655d60955d753216b2eee6781eedc14de3b1b1101f14b"
 
 #: (SMILES, blessed repo per-atom map, blessed RDKit per-atom map, category, note).
 #: category: "consumer"  -- PREVIOUSLY DEFERRED at the charge gate, now NAMES (the built slice); repo == RDKit
@@ -100,11 +101,13 @@ BATTERY = (
     ("OC[C@@H](O)[C@@H]1OC(=O)C(O)=C1O", {2: "R", 4: "S"}, {2: "R", 4: "S"}, "regress",
      "L-ascorbic acid (VITAMIN C, R39): untouched"),
     # ---- DEFERRED, fail-closed: OUT OF SCOPE, repo declines while RDKit names ----
-    ("C[C@H](O)c1cccc[n+]1C", {}, {1: "S"}, "defer",
-     "N-methylpyridinium AROMATIC spelling: parser kekulization wall (SmilesError), separate charge-aware "
-     "kekulizer slice -- deferred"),
-    ("C[C@@H](O)c1csc[n+]1C", {}, {1: "R"}, "defer",
-     "thiazolium AROMATIC spelling: parser wall -- deferred (same slice as above)"),
+    # ROUND 41 CAPABILITY EXTENSION: these AROMATIC spellings that R40 deferred to the "charge-aware kekulizer
+    # slice" are now BUILT -- the charge-aware kekulizer (R41) names them, matching the explicit-Kekule twin.  The
+    # full R41 build + representation-invariance evidence lives in experiments/cip_charge_aware_kekulizer_probe.py.
+    ("C[C@H](O)c1cccc[n+]1C", {1: "S"}, {1: "S"}, "consumer",
+     "N-methylpyridinium AROMATIC spelling: now NAMES via the R41 charge-aware kekulizer (was a parser wall)"),
+    ("C[C@@H](O)c1csc[n+]1C", {1: "R"}, {1: "R"}, "consumer",
+     "thiazolium AROMATIC spelling: now NAMES via the R41 charge-aware kekulizer (was a parser wall)"),
     ("C[C@H](O)C1=CC=C[CH-]1", {}, {1: "S"}, "defer",
      "cyclopentadienide carbanion carbinol: ANIONIC ring, no validated donor branch -- fail-closed"),
     # cationic CHALCOGEN rings (pyrylium O+ / thiopyrylium S+): DELIBERATELY fail-closed.  Unlike a cationic N

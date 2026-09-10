@@ -434,7 +434,28 @@ def _aromatic_matchings(
     acceptors: list[int] = []
     for a in arom_atoms:
         element = atoms[a].element
-        if element == "C":
+        charge = atoms[a].charge
+        if charge:
+            # ROUND 41 charge-aware whitelist (tightened per the R41 review): admit EXACTLY the cationic ring N the
+            # soundness proof covers -- a FORMAL +1 nitrogen whose total coordination (heavy sigma bonds + explicit
+            # H) is 3, so taking one ring double reaches the valence-4 pyridinium / pyridine N-oxide / azolium
+            # acceptor, isoelectronic with pyridine's acceptor N (the class R40 validated 0-mislabel vs RDKit).
+            # EVERY other charged aromatic atom fails CLOSED, loudly -- and this now MATCHES RDKit's own rejection
+            # of the out-of-scope cases: a cationic CHALCOGEN (pyrylium O+ / thiopyrylium S+, the dalembert-proven
+            # RDKit-divergent class that would otherwise fall to the O/S donor branch and silently mis-kekulise on
+            # an even acceptor count); an anion; and an OVER-CHARGED (+2) or OVER-COORDINATED N (e.g. [n+2], [nH2+])
+            # that is not a real aromatic valence (RDKit returns None for it -- naming it would be a silent label on
+            # a non-molecule; the pre-tightening ``charge > 0`` guard admitted these, the R41-review gap).  A
+            # silently-wrong Kekulé structure is worse than an honest refusal.
+            if charge == 1 and element == "N" and degree.get(a, 0) + (atoms[a].h_explicit or 0) == 3:
+                acceptors.append(a)
+            else:
+                raise SmilesError(
+                    f"charged aromatic atom {element!r} (formal charge {charge:+d}) is out of scope for "
+                    "resonance-canonical kekulisation; only a formal +1 ring N of coordination 3 is admitted -- "
+                    "give an explicit Kekulé SMILES"
+                )
+        elif element == "C":
             acceptors.append(a)
         elif element == "N":
             h = atoms[a].h_explicit
@@ -641,6 +662,32 @@ def _min_constitution_placement(
     return best[0]
 
 
+def _canonical_kekule_orders(
+    atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS
+) -> tuple[int, ...]:
+    """The resonance-canonical bond-order tuple for a (possibly MIXED aromatic-flagged + explicit) pi system.
+
+    Kekulise the aromatic-FLAGGED bonds to any ONE perfect matching -- every matching gives each pi-acceptor
+    exactly one ring double, so the per-atom pi-demand is matching-INVARIANT -- then delegate the WHOLE structure
+    to :func:`_min_constitution_placement`.  This makes the resonance canonicalisation UNIFORM in how the pi
+    system was spelled: an aromatic-flagged ring, an explicit-Kekulé ring, or a MIX of the two (an aromatic ring
+    beside an explicit-Kekulé CHARGED ring -- the ROUND-41 charged-aromatic exposure, where the old two-branch
+    logic resonance-canonicalised only the flagged bonds and left the explicit charged ring at its AUTHORED
+    placement, splitting one species into two identities) all collapse to ONE identity.  The single shared
+    placement is what keeps :func:`_build_molecule` (constitution), :func:`_isotopic_identity` (isotope key) and
+    :func:`_kekulize_in_place` (configuration) committed to the IDENTICAL Kekulé structure, so no layer can split
+    a species the layer below unified (the SPLIT-KEKULE soundness invariant).  For an all-explicit input the
+    kekulise step is a no-op and this is exactly the old ``_min_constitution_placement`` path (byte-identical).
+    """
+    work = [list(b) for b in bonds]
+    arom_bonds, matchings = _aromatic_matchings(atoms, work)   # raises on an out-of-scope charged aromatic atom
+    if matchings:
+        first = matchings[0]
+        for k in arom_bonds:
+            work[k][2] = 2 if k in first else 1
+    return _min_constitution_placement(atoms, work, charge, max_matchings=max_matchings)
+
+
 @lru_cache(maxsize=8192)
 def resonance_canonical(molecule: Molecule) -> Molecule:
     """The resonance-canonical representative of ``molecule`` (CANON-KEKULE-01, generalised off the SMILES parser).
@@ -719,32 +766,17 @@ def _build_molecule(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> 
     Shared by :func:`parse_smiles` and :func:`parse_smiles_features` so the ONE Kekulé/canonicalisation path
     cannot drift between the plain door and the feature-capturing one.
     """
-    arom_bonds, matchings = _aromatic_matchings(atoms, bonds)
-
-    if not matchings:                                  # no aromatic-FLAGGED system: resonance-canonicalise the
-        orders = _min_constitution_placement(atoms, bonds, charge)  # pi placement so an explicit-Kekulé fused
-        for k in range(len(bonds)):                    # aromatic collapses to its aromatic spelling (CANON-KEKULE-01)
-            bonds[k][2] = orders[k]
-        out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
-        return Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical()
-
-    # R2 -- resonance-canonical: build the canonical form of EVERY Kekulé structure and return the
-    # minimal one, so any two Kekulé drawings of the same molecule collapse to a single identity (and
-    # thus a single decomposition menu). For a symmetric ring (benzene, mono/para-substituted) all
-    # Kekulé forms are already isomorphic, so this returns the same identity as before; for a fused
-    # benzenoid (naphthalene, anthracene, phenanthrene) it removes the former Kekulé-choice ambiguity.
-    best: Molecule | None = None
-    best_key: str | None = None
-    for doubles in matchings:
-        for k in arom_bonds:
-            bonds[k][2] = 2 if k in doubles else 1
-        out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
-        cand = Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical()
-        key = canonical_digest(cand)
-        if best_key is None or key < best_key:
-            best, best_key = cand, key
-    assert best is not None                            # matchings is non-empty here
-    return best
+    # R2 -- resonance-canonical (CANON-KEKULE-01): kekulise any aromatic-flagged bonds, then take the
+    # constitution-minimal multiple-bond placement over the WHOLE pi system, so any two Kekulé drawings of
+    # one molecule collapse to a single identity (and thus a single decomposition menu). For a symmetric ring
+    # (benzene) all Kekulé forms are isomorphic already; for a fused benzenoid (naphthalene, anthracene) it
+    # removes the Kekulé-choice ambiguity; for a MIXED aromatic-flagged + explicit-Kekulé spelling (R41) it
+    # canonicalises the explicit ring too, so a charged ring cannot split its aromatic and explicit spellings.
+    orders = _canonical_kekule_orders(atoms, bonds, charge)
+    for k in range(len(bonds)):
+        bonds[k][2] = orders[k]
+    out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
+    return Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical()
 
 
 def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> str:
@@ -771,7 +803,6 @@ def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) 
     from .category import _canonical_by_individualisation
 
     work = [list(b) for b in bonds]                       # a private copy: never disturb the caller's pending bonds
-    arom_bonds, matchings = _aromatic_matchings(atoms, work)
 
     def colored_key() -> str:
         out_atoms, out_bonds = _fill_hydrogens(atoms, work)
@@ -784,32 +815,15 @@ def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) 
         symbols, edges = _canonical_by_individualisation(colored, frozenset(out_bonds))
         return canonical_digest((symbols, edges, charge))
 
-    if not matchings:
-        # no aromatic-FLAGGED system: commit to the SAME constitution-minimal pi placement _build_molecule commits
-        # to (CANON-KEKULE-01), so the isotope key can never split an explicit-Kekulé fused aromatic from its
-        # aromatic spelling -- the isotopic key MUST refine constitution.
-        orders = _min_constitution_placement(atoms, work, charge)
-        for k in range(len(work)):
-            work[k][2] = orders[k]
-        return colored_key()
-    # Resonance-canonical: commit to the EXACT Kekule structure :func:`_build_molecule` commits to -- the matching
-    # that minimises the CONSTITUTION digest ``canonical_digest(Molecule.canonical())``, NOT the coloured key.  This
-    # alignment is load-bearing for soundness: whenever the constitution unifies two spellings (an aromatic spelling
-    # and an explicit-Kekule spelling of one fused benzenoid), this key MUST unify them too.  Minimising the coloured
-    # key instead could pick a different Kekule than the constitution and split ONE species into two identities
-    # (red-team ID-STEREO-01-SPLIT-KEKULE: naphthalene aromatic vs explicit-Kekule).  Every matching that ties on the
-    # constitution digest is the SAME canonical molecule, so it yields the SAME coloured key -- the tie-break is moot.
-    best_matching = matchings[0]
-    best_constitution: str | None = None
-    for doubles in matchings:
-        for k in arom_bonds:
-            work[k][2] = 2 if k in doubles else 1
-        out_atoms, out_bonds = _fill_hydrogens(atoms, work)
-        constitution = canonical_digest(Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical())
-        if best_constitution is None or constitution < best_constitution:
-            best_constitution, best_matching = constitution, doubles
-    for k in arom_bonds:
-        work[k][2] = 2 if k in best_matching else 1
+    # Commit to the EXACT Kekulé structure :func:`_build_molecule` commits to, via the shared
+    # :func:`_canonical_kekule_orders`.  This alignment is load-bearing for soundness: whenever the constitution
+    # unifies two spellings (an aromatic spelling and an explicit-Kekulé spelling of one fused benzenoid, OR the
+    # aromatic and explicit spellings of one charged ring -- R41), this key MUST unify them too.  A different
+    # placement here could split ONE species into two isotope identities (red-team ID-STEREO-01-SPLIT-KEKULE:
+    # naphthalene aromatic vs explicit-Kekulé; R41 pyridyl-vs-pyridinium mixed spelling).
+    orders = _canonical_kekule_orders(atoms, work, charge)
+    for k in range(len(work)):
+        work[k][2] = orders[k]
     return colored_key()
 
 
@@ -844,23 +858,14 @@ def _perm_parity(seq: "list[int]") -> int:
 def _kekulize_in_place(atoms: list[_Atom], work: list[list[int]], charge: int) -> None:
     """Assign a CONSTITUTION-canonical Kekulé structure to ``work`` (order column) IN PLACE, preserving the caller's
     heavy-atom indices -- the same index-stable canonicalisation :func:`_isotopic_identity` uses, so a chirality key
-    keyed on the resulting WL colours is spelling-invariant and refines the constitution the parser commits to."""
-    arom_bonds, matchings = _aromatic_matchings(atoms, work)
-    if not matchings:
-        orders = _min_constitution_placement(atoms, [list(b) for b in work], charge)
-        for k in range(len(work)):
-            work[k][2] = orders[k]
-        return
-    best_constitution, best_matching = None, matchings[0]
-    for doubles in matchings:
-        for k in arom_bonds:
-            work[k][2] = 2 if k in doubles else 1
-        out_atoms, out_bonds = _fill_hydrogens(atoms, work)
-        constitution = canonical_digest(Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical())
-        if best_constitution is None or constitution < best_constitution:
-            best_constitution, best_matching = constitution, doubles
-    for k in arom_bonds:
-        work[k][2] = 2 if k in best_matching else 1
+    keyed on the resulting WL colours is spelling-invariant and refines the constitution the parser commits to.
+
+    Uses the shared :func:`_canonical_kekule_orders`, so the configuration digest commits to the IDENTICAL Kekulé
+    structure as the constitution (:func:`_build_molecule`) and the isotope key (:func:`_isotopic_identity`) -- a
+    charged ring's aromatic and explicit spellings can no longer split at the configuration layer (R41)."""
+    orders = _canonical_kekule_orders(atoms, work, charge)
+    for k in range(len(work)):
+        work[k][2] = orders[k]
 
 
 def _on_cycle(a: int, neighbours: "dict[int, list[int]]", n_atoms: int) -> bool:
@@ -1190,7 +1195,7 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
             atom = atoms[a]
             orders = sorted(o for _b, o in adj[a])
             ring_doubles = sum(o == 2 and b in ring_adj[a] for b, o in adj[a])
-            if atom.element == "N" and atom.charge > 0 and orders == [1, 1, 2] and ring_doubles == 1:
+            if atom.element == "N" and atom.charge == 1 and orders == [1, 1, 2] and ring_doubles == 1:
                 acceptors.add(a)                         # ROUND 40: a CATIONIC ring N -- pyridinium, pyridine
                 # N-oxide, imidazolium / thiazolium N+ -- taking exactly one ring double is a genuine pi-ACCEPTOR.
                 # CIP priority is by ATOMIC NUMBER and formal charge changes NO atomic number, so it is partner-Z
@@ -1198,8 +1203,10 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
                 # acceptor analogue (pyridine's N) that the oracle (RDKit rdCIPLabeler) averages identically: the
                 # averaged ipso duplicate is (C:6 + N:7)/2 = 6.5, which stays BELOW any real heteroatom Z >= 7, so
                 # it never crosses a competitor's genuine value in a ring-vs-ring comparison.  Verified 0 mislabels
-                # across a ring-vs-heteroaromatic-ring oracle sweep (dalembert R40).  The ``charge > 0`` guard is
-                # the fail-closed key: only a CATION is admitted (a neutral overvalent N fills to [1,1,1,2]).
+                # across a ring-vs-heteroaromatic-ring oracle sweep (dalembert R40).  The ``charge == 1`` guard is
+                # the fail-closed key: only a FORMAL +1 cation with the [1,1,2] valence-4 pattern is admitted (a
+                # neutral overvalent N fills to [1,1,1,2]; an OVER-CHARGED [N+2] -- which RDKit rejects outright --
+                # is declined below, tightened from ``charge > 0`` per the R41 review).
                 #
                 # A CATIONIC ring CHALCOGEN (pyrylium O+ [1,2] / thiopyrylium S+ [1,2]) is DELIBERATELY NOT admitted
                 # -- it falls to the ``elif atom.charge`` decline below.  It has NO neutral isoelectronic acceptor

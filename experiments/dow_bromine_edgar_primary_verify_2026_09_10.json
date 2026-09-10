@@ -1,0 +1,188 @@
+{
+  "id": "dow_bromine_edgar_primary_verify_2026_09_10",
+  "accessed_utc": "2026-09-10T16:53:14Z",
+  "purpose": "EDGAR primary-verification of the R42 independent modern brine-bromine cost lead (ROADMAP q1, DOW-litmus sourcing wall). Promote the Gulf Resources Q3-2022 cost basis from UNVERIFIED-PRIMARY (press-release) to DERIVED-FROM-PRIMARY (byte-verified 10-Q inputs), and primary-verify the ICL 20-F + USGS MCS secondary bearings. Nothing here is admitted to route ranking; this is a sourcing receipt matching the R35 Magnolia primary-source standard.",
+  "verdict": "PARTIAL->ADVANCED. Gulf Q3-2022 fully-absorbed cost $2.7726/kg is now DERIVED-FROM-PRIMARY (exact filing inputs, Gulf's own revenue/tonnes method, $0.00 delta vs press release). ICL 20-F confirms NO bromine-specific $/kg cost is extractable (bromine buried in the Industrial Products segment) and byte-confirms the recon IP figures. USGS MCS import CIF price series is now primary-verified ($2.70/kg 2024, $3.00/kg 2025e) but is an IMPORT PRICE, not a production cost (US production is 'W'-withheld duopoly-proprietary). No independent modern producer CASH cost exists; Gulf gives a primary-sourced fully-absorbed UPPER bound only.",
+  "gulf_resources_primary": {
+    "issuer": "Gulf Resources, Inc.",
+    "ticker": "GURE",
+    "exchange": "Nasdaq",
+    "sec_cik": "0000885462",
+    "independence": "FULL - Chinese Shandong underground-brine bromine producer, unrelated to Albemarle or the Smackover/Magnolia forecast family",
+    "submissions_api": "https://data.sec.gov/submissions/CIK0000885462.json",
+    "method": "raw curl (User-Agent set) to www.sec.gov/Archives, HTML tag-stripped, figures grepped byte-exact; WebFetch summarizer rejected after it mangled the filing list",
+    "filings": {
+      "q3_2022_10q": {
+        "form": "10-Q",
+        "period_of_report": "2022-09-30",
+        "filed": "2022-11-14",
+        "accession": "0001193805-22-001535",
+        "primary_document": "e617997_10q-gulf.htm",
+        "url": "https://www.sec.gov/Archives/edgar/data/885462/000119380522001535/e617997_10q-gulf.htm",
+        "sha256": "7ee174fca212f5ecf7512b48258954f41f654a3c809214d0996c177760a4e5aa",
+        "bytes": 1164040
+      },
+      "q3_2023_10q": {
+        "form": "10-Q",
+        "period_of_report": "2023-09-30",
+        "filed": "2023-11-20",
+        "accession": "0001193805-23-001515",
+        "primary_document": "e619051_10q-gulf.htm",
+        "url": "https://www.sec.gov/Archives/edgar/data/885462/000119380523001515/e619051_10q-gulf.htm",
+        "sha256": "b12c510bc59af34a0e79ef93cc1010116fee3996f85d381bdbc810d1e02c7d7a",
+        "bytes": 1133431
+      },
+      "q3_2024_10q": {
+        "form": "10-Q",
+        "period_of_report": "2024-09-30",
+        "filed": "2024-11-19",
+        "accession": "0001193805-24-001395",
+        "primary_document": "e663998_10q-gulf.htm",
+        "url": "https://www.sec.gov/Archives/edgar/data/885462/000119380524001395/e663998_10q-gulf.htm",
+        "sha256": "9209a88cc5ba4476638a885aeb3ae3b422358367e872f608c4a2de2405a54196",
+        "bytes": 1234070
+      },
+      "fy2024_10k": {
+        "form": "10-K",
+        "period_of_report": "2024-12-31",
+        "filed": "2025-04-11",
+        "accession": "0001193805-25-000461",
+        "primary_document": "e664360_10k-gulf.htm",
+        "url": "https://www.sec.gov/Archives/edgar/data/885462/000119380525000461/e664360_10k-gulf.htm",
+        "sha256": "2e37af4e0f9b56acb2af11492777cb09974a0a8e5afef80ceb8dcd5a8bda8c60",
+        "bytes": 1623640,
+        "note": "amended twice in 2026 (10-K/A acc 0001193805-26-001001 filed 2026-07-27, 0001193805-26-001126 filed 2026-08-24); distressed/late-filer signal"
+      }
+    },
+    "crux_q3_2022": {
+      "verdict": "DERIVED-FROM-PRIMARY (was UNVERIFIED-PRIMARY press-release lead)",
+      "bromine_net_revenue_usd": 19845773,
+      "bromine_cost_of_net_revenue_usd": 7362103,
+      "bromine_avg_selling_price_usd_per_t": 7474,
+      "utilization_pct": 34,
+      "gross_profit_margin_pct": 63,
+      "derived_tonnes_sold": 2655.31,
+      "derived_cost_per_tonne_usd": 2772.6,
+      "derived_cost_per_kg_usd": 2.7726,
+      "derivation": "cost/tonne = cost_of_net_revenue / (net_revenue / avg_selling_price) = 7,362,103 / (19,845,773 / 7,474) = 7,362,103 / 2,655.31 = $2,772.60/t",
+      "press_release_claim_per_t": 2772.6,
+      "delta_vs_press_release_per_t": 0.0,
+      "margin_crosscheck_pct": 62.9,
+      "method_endorsed_by_filing": "Q3-2023 10-Q states the Q3-2022 price '$7,474 (calculated by dividing revenue by tonnes)' - Gulf's own revenue/tonnes method, identical to the reconstruction",
+      "quotes": [
+        "the net revenue for the bromine segment was $19,845,773 and $14,913,004, respectively [three-month periods ended September 30, 2022 and 2021]",
+        "the bromine segment had a net cost of revenue of $7,362,103 [three-month period ended September 30, 2022]",
+        "The average selling price of bromine ... was $7,474 compared to $5,938 of the third quarter previous year",
+        "the gross profit margin for our bromine segment was 63% [three-month period ended September 30, 2022]",
+        "Our utilization ratio was 34% for the three-month period ended September 30, 2022 compared to 32% recorded for the three-month period ended September 30, 2021",
+        "Utilization ratio is calculated based on the annualized actual production volume in tonnes for the periods divided by the annual production capacity in tonnes of all the seven factories including those that have not commenced operations",
+        "Cost of net revenue reflects mainly the raw materials consumed, the direct salaries and benefits of staff engaged in the production process, electricity, depreciation and amortization of manufacturing plant and machinery and other manufacturing costs"
+      ]
+    },
+    "degraded_trajectory_derived_from_primary": {
+      "q3_2023": {
+        "bromine_net_revenue_usd": 4908152,
+        "bromine_cost_of_net_revenue_usd": 5995496,
+        "avg_selling_price_usd_per_t": 3237,
+        "derived_cost_per_tonne_usd": 3954.1,
+        "margin": "22% gross loss"
+      },
+      "q3_2024": {
+        "bromine_net_revenue_usd": 1571313,
+        "bromine_cost_of_net_revenue_usd": 3794088,
+        "avg_selling_price_usd_per_t": 2396,
+        "derived_cost_per_tonne_usd": 5785.4,
+        "margin": "141% gross loss"
+      },
+      "fy2024": {
+        "bromine_net_revenue_usd": 26521281,
+        "margin": "147% gross loss (directional-confirmed; annual MD&A does not restate price for a clean per-tonne)"
+      }
+    },
+    "boundary": "The $2,772.60/t is a FULLY-ABSORBED accounting cost of net revenue (explicitly includes depreciation & amortization per the filing), NOT a cash cost, at 34% utilization that is itself diluted by factories 'that have not commenced operations'. It is a LOOSE UPPER BOUND on steady-state cash cost. The fixed/variable split needed to extract marginal cash cost is NOT disclosed. Gulf is a distressed micro-cap (going-concern history, late/amended filings). SEC-filed and independent, but not a representative healthy producer.",
+    "what_it_buys": "Q3 2022 (least-distorted, 34% util) fully-absorbed cost $2.77/kg brackets the R35 Albemarle/Magnolia forecast $2.5365/kg from a completely unrelated producer - a genuine second, primary-sourced bearing on order of magnitude, implying a full-utilization cash cost plausibly below $2/kg. Corroborates the forecast magnitude WITHOUT deriving from it."
+  },
+  "icl_group_secondary": {
+    "issuer": "ICL Group Ltd. (world's largest elemental-bromine manufacturer)",
+    "sec_cik": "0000941221",
+    "independence": "FULL - Israel/Dead-Sea producer, unrelated to Albemarle or Gulf",
+    "filing": {
+      "form": "20-F",
+      "period_of_report": "2025-12-31",
+      "filed": "2026-03-11",
+      "accession": "0001178913-26-000817",
+      "primary_document": "zk2634483.htm",
+      "url": "https://www.sec.gov/Archives/edgar/data/941221/000117891326000817/zk2634483.htm",
+      "sha256": "f045720895e89470bd3753891cacc510acf1ae9765170de6e491e070d61e9b78",
+      "bytes": 7685973
+    },
+    "bromine_cost_per_kg_extractable": false,
+    "finding": "IP (Industrial Products) segment table discloses NO cost-of-sales or gross-profit line (Potash segment does: 'Gross Profit 622 650'). IP goes Sales -> Operating Income -> D&A -> EBITDA -> CapEx. The segment mixes bromine + bromine compounds + phosphorus flame retardants + magnesia + calcium carbonate + salt + MgCl2, so its only aggregate expense figure ($1,034M, FY2025) cannot be attributed to bromine. Bromine VOLUME is disclosed but no bromine-only cost/COGS/price line exists to pair with it. Dividing segment expense by bromine volume would be fabrication.",
+    "ip_segment_figures_usd_millions": {
+      "FY2025": {
+        "segment_sales": 1254,
+        "operating_income": 220,
+        "ebitda": 280,
+        "da": 60,
+        "capex": 81
+      },
+      "FY2024": {
+        "segment_sales": 1239,
+        "operating_income": 224,
+        "ebitda": 281,
+        "da": 57,
+        "capex": 94
+      },
+      "recon_fy2024_confirmed": "sales $1,239M, operating income $224M, EBITDA $281M all BYTE-CONFIRMED as audited FY2024 comparatives"
+    },
+    "bromine_volume": "In 2025 ICL produced ~155 thousand tonnes elemental bromine of ~280 thousand tonnes potential annual maximum capacity (~55% util); ~76% used internally for bromine compounds. Capacity ~280 kt/yr CONFIRMED.",
+    "spot_verified_by_orchestrator": "sha256 recomputed=match; segment figures (Segment Sales 1,254 1,239 / Operating Income 220 224 / EBITDA 280 281) and 155/280 kt + 76%-captive greps FOUND in raw HTML bytes",
+    "boundary": "Does NOT permit a bromine $/kg cost bound; neither corroborates nor contradicts Gulf's $2.77/kg (ICL carries no comparable bromine unit cost). Only bromine per-unit figure is a Natural-Resources-Tax intercompany transfer-PRICE rule (12% operating-profit floor), a revenue-side floor with no dollar figure, NOT a cost."
+  },
+  "usgs_mcs_secondary": {
+    "source": "USGS Mineral Commodity Summaries - Bromine chapter",
+    "independence": "FULL - US Geological Survey official statistics",
+    "pdfs": [
+      {
+        "year": 2024,
+        "footer": "January 2024",
+        "url": "https://pubs.usgs.gov/periodicals/mcs2024/mcs2024-bromine.pdf",
+        "http": 200,
+        "bytes": 741916,
+        "sha256": "6aee8a2cc23049f6627c073b754e4ffa7c6abe60d64515f6d0716292c12f1497"
+      },
+      {
+        "year": 2025,
+        "footer": "January 2025",
+        "url": "https://pubs.usgs.gov/periodicals/mcs2025/mcs2025-bromine.pdf",
+        "http": 200,
+        "bytes": 743942,
+        "sha256": "cb6c60221fb4e599b4222101dfc3eb7f04ef5f23ea2c518847c1cfe04ef40432"
+      },
+      {
+        "year": 2026,
+        "footer": "February 2026",
+        "url": "https://pubs.usgs.gov/periodicals/mcs2026/mcs2026-bromine.pdf",
+        "http": 200,
+        "bytes": 136830,
+        "sha256": "28c028d6561c4e61a0337a97fbb86a511c7e8c0510d1f373e2a679c472bf6d7d"
+      }
+    ],
+    "price_metric": "Price, average unit value of imports (cost, insurance, and freight), dollars per kilogram, bromine content = IMPORT CIF customs unit value for bromine + bromine compounds. NOT production cost, NOT a US producer selling price, NOT a yearend spot price.",
+    "import_cif_price_usd_per_kg": {
+      "2019": 2.31,
+      "2020": 2.67,
+      "2021": 2.85,
+      "2022": 3.29,
+      "2023": 2.92,
+      "2024": 2.7,
+      "2025e": 3.0,
+      "note": "2023 was 3.10 as 2024-MCS estimate, revised to 2.92 in 2025/2026 MCS"
+    },
+    "recon_headline_confirmed": "~$2.70/$3.00/kg headline now PRIMARY-VERIFIED verbatim: $2.70/kg=2024 import unit value, $3.00/kg=2025e. Prior '403 on the PDFs' was a WebFetch-only artifact; direct curl with a UA returned HTTP 200 first try.",
+    "spot_verified_by_orchestrator": "sha256 recomputed on all 3 PDFs=match; price line 2.70/3.00 and 'Withheld to avoid disclosing company proprietary data' greps FOUND in pdftotext extracts",
+    "correction": "The recon quoted USGS 'Because the bromine industry has few producers, published price lists ... were not available.' That phrasing is from the 2018 Minerals Yearbook, NOT the modern (2024-2026) MCS chapters. The modern chapters instead withhold US production entirely ('W Withheld to avoid disclosing company proprietary data') because 'Bromine was recovered from underground brines by two companies in Arkansas' (a duopoly).",
+    "boundary": "USGS 'Price' bounds what US buyers PAID for imported bromine, silent on any producer's cost of production. US domestic production is fully 'W'-withheld by design. Confirms the structural reframe: no modern production-cost reference is obtainable from USGS."
+  },
+  "overall_boundary": "The clean realized OPERATING/CASH cost per kg of brine bromine remains proprietary and un-sourced (USGS withholds it; ICL does not break out bromine; Gulf discloses only a fully-absorbed cost at pathological utilization). What is now PRIMARY-SOURCED: (1) an independent fully-absorbed cost UPPER bound $2.7726/kg (Gulf Q3-2022) that brackets the R35 Albemarle/Magnolia $2.5365/kg forecast; (2) the modern import CIF price band $2.70-$3.00/kg (USGS); (3) ICL's confirmation that a bromine-only cost is structurally unavailable from the largest producer. Nothing admitted to route ranking. The modern-undercut axis stays a documented sourcing wall - now with a primary-verified independent cost UPPER bound, not merely a lead."
+}

@@ -314,18 +314,26 @@ def _step_box_check(step, box: ConstraintBox, equip: tuple[EquipmentItem, ...],
 def fit_route(
     route: ExperimentRoute, box: ConstraintBox, *,
     stability=None, selectivity: SelectivityTable | None = None, thermo=None,
-    kinetics: KineticTable | None = None, losses: tuple = (),
+    kinetics: KineticTable | None = None, losses: tuple = (), phases: "dict[Molecule, str] | None" = None,
 ) -> RouteFit:
     """Judge whether one route runs on the target bench described by ``box``.
 
     ``losses`` (EVD-KEY-01): a section-5.3 BLOCKER downgrades the sourced selectivity/kinetics verdicts feeding the
     ranking, so a loss-bearing target never floats on a sourced verdict the dropped feature forbids.
+
+    ``phases`` (ITEM5-PHASE-RANK-01): the optional ``{Molecule: "gas"|"liquid"|...}`` phase declaration is forwarded
+    to :func:`verify_feasibility` (default ``None``, byte-stable for single-phase routes), so a route carrying a
+    dual-phase species (e.g. Br2, liquid ΔfH°=0 vs gas +30.91) is scored on the DECLARED phase rather than fail-closed
+    to UNKNOWN.  This threads BOTH the worst-node feasibility SIGN and the additive net-ΔG magnitude the ranker reads
+    (``feasibility.net_delta_g_kj`` is a property over these per-step results).  The equilibrium axis is deliberately
+    NOT phase-threaded (``verify_equilibrium`` has no ``phases``): a dual-phase species fail-closes its equilibrium
+    extent to UNKNOWN, the same sound R37 boundary that made only feasibility phase-aware.
     """
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be an ExperimentRoute")
     comp = verify_composability(route) if stability is None else verify_composability(route, stability=stability)
     sel = verify_selectivity(route, table=selectivity, losses=losses)
-    feas = verify_feasibility(route, thermo=thermo)
+    feas = verify_feasibility(route, thermo=thermo, phases=phases)
     equi = verify_equilibrium(route, thermo=thermo)
     kin = verify_kinetics(route, kinetics=kinetics, losses=losses)  # ORTHOGONAL rate; ranking tiebreaker only
 
@@ -361,12 +369,13 @@ def fit_route(
 def fit_routes(
     routes, box: ConstraintBox, *,
     stability=None, selectivity: SelectivityTable | None = None, thermo=None,
-    kinetics: KineticTable | None = None, losses: tuple = (),
+    kinetics: KineticTable | None = None, losses: tuple = (), phases: "dict[Molecule, str] | None" = None,
 ) -> tuple[RouteFit, ...]:
-    """Judge every route against the bench ``box`` (order preserved)."""
+    """Judge every route against the bench ``box`` (order preserved).  ``phases`` (ITEM5-PHASE-RANK-01) is forwarded
+    verbatim to each :func:`fit_route` (each route's feasibility filters the dict to its own species)."""
     return tuple(
         fit_route(r, box, stability=stability, selectivity=selectivity, thermo=thermo, kinetics=kinetics,
-                  losses=losses)
+                  losses=losses, phases=phases)
         for r in routes
     )
 
@@ -619,7 +628,7 @@ def _route_score(fit: RouteFit, front_index: int = 0, net_delta_g: float | None 
 def rank_routes(
     routes, box: ConstraintBox | None = None, *,
     stability=None, selectivity: SelectivityTable | None = None, thermo=None,
-    kinetics: KineticTable | None = None, losses: tuple = (),
+    kinetics: KineticTable | None = None, losses: tuple = (), phases: "dict[Molecule, str] | None" = None,
 ) -> tuple[RouteFit, ...]:
     """Rank routes best-first for a bench (or, with ``box=None``, an unconstrained bench).
 
@@ -628,10 +637,19 @@ def rank_routes(
     otherwise-comparable routes, the one whose steps make the SOURCED major isomer and are thermodynamically
     FAVORABLE above those that make the minor isomer or are endergonic -- surfacing better-evidenced formal
     candidates without asserting procedure readiness.
+
+    ``phases`` (ITEM5-PHASE-RANK-01): the optional ``{Molecule: phase}`` declaration threads through
+    :func:`fit_routes`/:func:`fit_route` into :func:`verify_feasibility`, so a route carrying a dual-phase species is
+    ranked on the DECLARED phase's feasibility sign AND additive net-ΔG magnitude rather than fail-closed to UNKNOWN.
+    This is the item-5 forcing consumer the R37 brick deferred ("no dual-phase ranked route exists -- the
+    zero-call-sites trap; unparks when one does"): a route pair whose *ranking order* now flips on the phase
+    declaration.  Default ``None`` is byte-identical to the pre-brick behaviour for every existing caller, and the
+    returned fits carry the phase-aware verdicts so :meth:`~smartchem.service.RankedRouteSummary.of_fit` projects
+    consistently (no rank-vs-dossier divergence -- unlike the DAG path, see :func:`rank_dags`).
     """
     effective_box = box if box is not None else ConstraintBox()
     fits = list(fit_routes(routes, effective_box, stability=stability, selectivity=selectivity, thermo=thermo,
-                           kinetics=kinetics, losses=losses))
+                           kinetics=kinetics, losses=losses, phases=phases))
     # M2b: the M2-FP Pareto product (net additive ΔG × route survival) made LIVE in the ranking.  The net ΔG is
     # the additive Hess functor already computed per route (RouteFeasibility.net_delta_g_kj); survival is the R23
     # monoid functor (Composability.route_surviving_fraction).  The set-relative front + stable score sort is the
@@ -691,7 +709,20 @@ def rank_dags(dags, box: ConstraintBox | None = None) -> tuple:
     ROUND-15 fold, re-affirmed for DAG-THERMO-01): ``of_dag`` takes none either, so accepting a table here would let a
     caller rank under one table while the dossiers project under the defaults -- a latent divergence with no consumer.
     ``dag_bench_fit`` still accepts the tables for a direct caller who owns BOTH sides; the ranking entry point does not
-    expose them until ``of_dag`` can thread them too, so BOTH move together or neither does."""
+    expose them until ``of_dag`` can thread them too, so BOTH move together or neither does.
+
+    ITEM5-PHASE-RANK-01 phase deferral (the SAME fold, verbatim): ``rank_dags`` deliberately takes NO ``phases`` param.
+    :func:`rank_routes` could accept one soundly because it RETURNS the scored fits and
+    :meth:`~smartchem.service.RankedRouteSummary.of_fit` projects THOSE (phase-aware) fits -- rank and dossier cannot
+    disagree.  ``rank_dags`` instead returns the DAGs, which :meth:`~smartchem.service.RankedDAGSummary.of_dag`
+    RE-PROJECTS under the default tables (no phases); exposing ``phases`` here alone would rank under a declared phase
+    while every dossier projected the phase-blind (fail-closed-UNKNOWN) verdict -- the exact latent divergence this
+    fold prevents.  So the DAG ranker unparks for phases only when the service ``of_dag`` projection carries them too;
+    until then the DAG ranking CALL PATH stays phase-blind: this function does not FORWARD ``phases`` into
+    ``route_net_delta_g`` (which already accepts one -- ``functorial_physics.py`` -- but the call here passes none) nor
+    into ``dag_bench_fit``/``dag_thermo_rollup`` (which carry no ``phases`` param at all), so no phase reaches the DAG
+    feasibility verdicts or the additive drive.  No phase param is grown where no consumer can use it soundly (the
+    zero-call-sites discipline).  See ``docs/research/ITEM5_PHASE_AWARE_RANKING_SCOPE_v0.1.md``."""
     effective_box = box if box is not None else ConstraintBox()
     scored = [(dag_bench_fit(dag, effective_box), dag) for dag in dags]
     # M2b: the SHARED _physics_ranked_order wires the same M2-FP Pareto product into the DAG ranker, so a DAG and its

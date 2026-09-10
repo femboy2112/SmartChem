@@ -90,6 +90,19 @@ class ResistorDecoration(Decoration):
             raise DiagramCompositionError("cannot juxtapose a resistor apex with a non-resistor decoration")
         return ResistorDecoration(self.relation.tensor(other.relation))
 
+    def parallel_combine(self, other: Decoration) -> Decoration:
+        """Parallel composition of two resistor apices over a SHARED boundary (``BoundaryLinearRelation.parallel``).
+
+        The exact ``R1||R2`` law: shared boundary potentials, summed port currents, branch currents eliminated.
+        This is NOT one of the ``open_core.Decoration`` structural operations (``then``/``tensor``) -- it is a
+        resistor-domain MERGE, the correct-apex counterpart to the ``plug_all`` node-merge (which leaves a stale
+        apex).  It closes the item-6 deferral: parallel is now CONSTRUCTIBLE with an exact apex, not only
+        reconstructible via the solver.
+        """
+        if type(other) is not ResistorDecoration:
+            raise DiagramCompositionError("cannot parallel-compose a resistor apex with a non-resistor decoration")
+        return ResistorDecoration(self.relation.parallel(other.relation))
+
 
 def _rational(ohms) -> Rational:
     if type(ohms) is Rational:
@@ -114,8 +127,18 @@ def resistor_relation(ohms) -> BoundaryLinearRelation:
 
 
 def for_resistor(ohms) -> ResistorDecoration:
-    """A resistor's apex decoration (a :class:`ResistorDecoration`)."""
-    return ResistorDecoration(resistor_relation(ohms))
+    """A resistor's apex decoration (a :class:`ResistorDecoration`).
+
+    Resistance must be NON-NEGATIVE: a wire (``R=0``) is valid, but a negative "resistor" is an active element
+    outside the ideal-DC-resistor scope and is refused.  This closes the asymmetry an adversarial review found --
+    the ingest path (``from_circuit``) enforced positivity via ``PositiveResistance`` while the compositional
+    path (``resistor_edge``/``for_resistor``/``CircuitStage.resistor``) accepted a negative R, constructing,
+    costing, and even certifying an active element as an ideal resistor.
+    """
+    r = _rational(ohms)
+    if r.fraction < 0:
+        raise ValueError("resistance must be non-negative (a negative resistor is an active element, out of scope)")
+    return ResistorDecoration(resistor_relation(r))
 
 
 def resistor_edge(ohms, *, name: str = "r") -> OpenDiagram:
@@ -139,13 +162,20 @@ def resistor_edge(ohms, *, name: str = "r") -> OpenDiagram:
 
 
 def apex_matches_boundary(diagram: OpenDiagram) -> bool:
-    """True iff ``diagram`` carries a :class:`ResistorDecoration` whose relation width matches its boundary.
+    """True iff ``diagram`` carries a :class:`ResistorDecoration` whose relation WIDTH matches its boundary.
 
     The opt-in fail-closed guard against the ``plug_all`` hazard: ``plug_all`` narrows a diagram's dom/cod but
     rides the apex through UNCHANGED, so a plugged resistor diagram keeps its pre-plug relation port counts -- a
     stale, wrong-width apex.  A diagram composed only via ``then``/``tensor`` (which DO combine the apex) always
     satisfies this; a ``plug_all``-ed one does not.  A caller who cannot guarantee it stayed on ``then``/``tensor``
     should fail closed on ``not apex_matches_boundary(diagram)`` rather than trust the apex.
+
+    **This is a WIDTH/shape consistency check, NOT an apex-CORRECTNESS check** (adversarial review, both bearings):
+    it confirms the relation's port widths match the boundary, never that the relation is the physically-correct
+    one for the diagram's topology.  A hand-built diagram whose apex contradicts its own topology (same widths,
+    wrong relation) passes.  Apex correctness rests on how the apex was CONSTRUCTED -- ``then``/``tensor``/
+    ``parallel_combine`` over verified operations, or ``from_circuit``'s solver relation -- and is cross-checked to
+    the independent oracle in the probe, never by this width guard.
     """
     apex = diagram.decoration
     if type(apex) is not ResistorDecoration:

@@ -507,22 +507,35 @@ def _pareto_front_indices(products: "tuple[PhysicsProduct, ...]") -> tuple[int, 
     return tuple(front)
 
 
-def _route_score(fit: RouteFit, front_index: int = 0, net_delta_g: float | None = None) -> tuple:
-    """Sort key, lower = better: excluded worst, then composability, then the sourced physics tiers.
+def _score_tuple(
+    status: RouteFitStatus, comp_verdict: str, sel_verdict: str, feas_verdict: str, eq_verdict: str,
+    kin_verdict: str, n_gaps: int, n_exclusions: int, front_index: int = 0,
+    net_delta_g: float | None = None,
+) -> tuple:
+    """The shared 10-tier ranking key (lower = better) for a linear route OR a convergent DAG.
 
-    Selectivity: a sourced-FAVORED route (it makes the major isomer) floats above an unresolved one, above a
-    sourced-DISFAVORED one.  Feasibility SIGN: a thermodynamically FAVORABLE route (worst step ΔG < 0) floats
-    above borderline/unknown, above UNFAVORABLE (a stuck step still gates -- the worst-node sign is the
-    categorical gate, ABOVE the additive refinement below).
+    A linear route (:func:`_route_score`) and its convergent-DAG analogue (:func:`_dag_score`) MUST order by the
+    SAME sourced discipline -- the DAG-RANK-01 no-divergence promise.  Historically each carried its OWN verbatim
+    copy of the tier dicts + the tuple assembly + the M2b gating, kept in lockstep only by a comment praying they
+    stayed in sync (a new tier had to be hand-added to BOTH scorers or the divergence silently reopens -- M2b
+    already had to be threaded into both by hand).  This ONE core holds the tiers; the two scorers are now thin
+    verdict-EXTRACTORS over it (nested ``fit.selectivity.verdict`` for a route vs flat ``fit.selectivity_verdict``
+    for a DAG), so a future tier grows here ONCE and the two rankings CANNOT diverge by omission.  Byte-identical
+    to the two prior copies.
 
-    M2b -- the M2-FP objective made LIVE (its first call site in the core ranker; the primitives shipped R25
-    with none).  Two NEW tiers ride between the feasibility sign and equilibrium:
+    Tiers, worst-last: excluded worst, then composability, then the sourced physics tiers.  Selectivity: a
+    sourced-FAVORED route (it makes the major isomer) floats above an unresolved one, above a sourced-DISFAVORED
+    one.  Feasibility SIGN: a thermodynamically FAVORABLE route (worst step ΔG < 0) floats above
+    borderline/unknown, above UNFAVORABLE (a stuck step still gates -- the worst-node sign is the categorical
+    gate, ABOVE the additive refinement below).
+
+    M2b -- the M2-FP objective made LIVE.  Two tiers ride between the feasibility sign and equilibrium:
 
     * ``front_index`` -- the Pareto non-dominated layer over ``PhysicsProduct(net ΔG, survival)`` (computed
-      set-relative by :func:`_pareto_front_indices` in :func:`rank_routes`; 0 when called standalone).  This
-      is the tier that exercises ``PhysicsProduct``/``pareto_optimal``; it is DATA-GATED (survival is usually
-      ``None`` -> incomplete -> layer 0), so on today's data it rarely reorders -- it fires where sourced
-      kinetics reach a multi-step route (the same discipline as the R25 two-axis ``frontier``).
+      set-relative by :func:`_pareto_front_indices` in :func:`_physics_ranked_order`; 0 when called standalone).
+      It is DATA-GATED (survival is usually ``None`` -> incomplete -> layer 0), so on today's data it rarely
+      reorders -- it fires where sourced kinetics reach a multi-step route (the R25 two-axis ``frontier``
+      discipline).
     * the ``net ΔG`` MAGNITUDE (the additive Hess functor ``G: Process->(ℝ,+,≤)``) -- the LIVE single-axis
       refinement: a route with a more negative net drive floats.  It is applied ONLY in the FAVORABLE
       feasibility class, where every step is favorable so the net is guaranteed KNOWN and negative -- in every
@@ -545,25 +558,61 @@ def _route_score(fit: RouteFit, front_index: int = 0, net_delta_g: float | None 
     # UNCONSTRAINED is all-or-nothing and never actually mixes with FITS/UNKNOWN/EXCLUDED in one ranking.
     status_rank = {RouteFitStatus.FITS: 0, RouteFitStatus.UNCONSTRAINED: 0,
                    RouteFitStatus.UNKNOWN: 1, RouteFitStatus.EXCLUDED: 2}
-    comp_rank = {"COMPOSABLE": 0, "SINGLE_STEP": 1, "UNKNOWN": 2, "DEGENERATE": 3}
+    # COMPOSABLE 0 < NO_TRANSITIONS/SINGLE_STEP 1 < UNKNOWN 2 < DEGENERATE 3.  NO_TRANSITIONS is DAG-only (a
+    # linear route's composability verdict is never NO_TRANSITIONS), so it is inert in a route ranking and exact
+    # in a DAG ranking -- the one merge that lets a single dict serve both scorers byte-identically.
+    comp_rank = {"COMPOSABLE": 0, "NO_TRANSITIONS": 1, "SINGLE_STEP": 1, "UNKNOWN": 2, "DEGENERATE": 3}
     sel_rank = {"FAVORED": 0, "NOT_APPLICABLE": 1, "UNKNOWN": 1, "DISFAVORED": 2}
     feas_rank = {"FAVORABLE": 0, "BORDERLINE": 1, "UNKNOWN": 1, "UNFAVORABLE": 2}
     eq_rank = {"ESSENTIALLY_COMPLETE": 0, "FAVORABLE": 1, "BALANCED": 2, "UNKNOWN": 2,
                "LIMITED": 3, "NEGLIGIBLE": 4}
     regime_rank = {"FAST": 0, "MODERATE": 1, "UNKNOWN": 2, "SLOW": 3, "FROZEN": 4}
     return (
-        status_rank[fit.status],
-        comp_rank.get(fit.composability.verdict, 4),
-        sel_rank.get(fit.selectivity.verdict, 1),
-        feas_rank.get(fit.feasibility.verdict, 1),
+        status_rank[status],
+        comp_rank.get(comp_verdict, 4),
+        sel_rank.get(sel_verdict, 1),
+        feas_rank.get(feas_verdict, 1),
         front_index,                                    # M2b: Pareto non-dominated layer (ΔG × survival)
         # M2b: additive-ΔG magnitude, ONLY in the FAVORABLE class (net then guaranteed known+negative -- no
         # known/unknown net can mix, so no reward-for-ignorance); inert (0.0 for all) elsewhere (evil-morty fold).
-        net_delta_g if (net_delta_g is not None and fit.feasibility.verdict == "FAVORABLE") else 0.0,
-        eq_rank.get(fit.equilibrium.verdict, 2),
-        len(fit.gaps),
-        len(fit.exclusions),
-        regime_rank.get(fit.kinetics.verdict, 2),
+        net_delta_g if (net_delta_g is not None and feas_verdict == "FAVORABLE") else 0.0,
+        eq_rank.get(eq_verdict, 2),
+        n_gaps,
+        n_exclusions,
+        regime_rank.get(kin_verdict, 2),
+    )
+
+
+def _physics_ranked_order(entries, score_fn) -> list:
+    """The shared M2b ranking ORDER for linear routes and convergent DAGs (the DAG-RANK-01 no-divergence promise).
+
+    ``entries`` is a sequence of ``(fit, net, survival)`` triples -- one per candidate: ``fit`` is the object
+    ``score_fn`` reads; ``net`` / ``survival`` are its M2-FP Pareto coordinates (the additive Hess net ΔG and the
+    R23 survival monoid).  Each caller builds the triple in a SINGLE aligned pass, so a candidate's fit and its two
+    coordinates cannot drift out of position (birdperson fold: alignment is structural, not a three-parallel-list
+    caller obligation).  The non-dominated FRONT is SET-RELATIVE, so it is computed here over the WHOLE candidate
+    set (:func:`_pareto_front_indices`); the ΔG magnitude is per-candidate.  A STABLE sort over indices keeps
+    discovery order for ties -- so Pareto-INCOMPARABLE candidates (same front, no ΔG separation) are presented in
+    discovery order, never forced into a fabricated order.  Returns the best-first index permutation.  (This wiring
+    was duplicated verbatim in :func:`rank_routes` and :func:`rank_dags`; sharing it makes the "both move together
+    or neither does" promise structural, not a comment.)
+    """
+    fits = [fit for fit, _net, _survival in entries]
+    products = tuple(PhysicsProduct(net, survival) for _fit, net, survival in entries)
+    fronts = _pareto_front_indices(products)
+    return sorted(range(len(fits)), key=lambda i: score_fn(fits[i], fronts[i], products[i].delta_g_kj))
+
+
+def _route_score(fit: RouteFit, front_index: int = 0, net_delta_g: float | None = None) -> tuple:
+    """The linear-route ranking key: a thin verdict-extractor over the shared :func:`_score_tuple`.
+
+    Pulls a :class:`RouteFit`'s NESTED verdicts (``fit.selectivity.verdict`` etc.) and hands them to the shared
+    core.  Byte-identical to the pre-consolidation body (which held its own copy of the tier dicts + tuple).
+    """
+    return _score_tuple(
+        fit.status, fit.composability.verdict, fit.selectivity.verdict, fit.feasibility.verdict,
+        fit.equilibrium.verdict, fit.kinetics.verdict, len(fit.gaps), len(fit.exclusions),
+        front_index, net_delta_g,
     )
 
 
@@ -585,15 +634,13 @@ def rank_routes(
                            kinetics=kinetics, losses=losses))
     # M2b: the M2-FP Pareto product (net additive ΔG × route survival) made LIVE in the ranking.  The net ΔG is
     # the additive Hess functor already computed per route (RouteFeasibility.net_delta_g_kj); survival is the R23
-    # monoid functor (Composability.route_surviving_fraction).  The non-dominated FRONT is set-relative, so it is
-    # computed here over the whole candidate set; the ΔG magnitude is per-route.  A stable sort over indices keeps
-    # discovery order for ties -- so Pareto-INCOMPARABLE routes (same front, and no ΔG separation) are presented in
-    # discovery order, never forced into a fabricated order.
-    products = tuple(
-        PhysicsProduct(f.feasibility.net_delta_g_kj, f.composability.route_surviving_fraction) for f in fits
+    # monoid functor (Composability.route_surviving_fraction).  The set-relative front + stable score sort is the
+    # SHARED _physics_ranked_order (byte-identical wiring to rank_dags -- the DAG-RANK-01 no-divergence promise now
+    # structural, not a comment): a route ranks by exactly the discipline a DAG does.
+    order = _physics_ranked_order(
+        [(f, f.feasibility.net_delta_g_kj, f.composability.route_surviving_fraction) for f in fits],
+        _route_score,
     )
-    fronts = _pareto_front_indices(products)
-    order = sorted(range(len(fits)), key=lambda i: _route_score(fits[i], fronts[i], products[i].delta_g_kj))
     return tuple(fits[i] for i in order)
 
 
@@ -611,38 +658,22 @@ def _dag_score(fit: DAGBenchFit, front_index: int = 0, net_delta_g: float | None
     one first -- the north-star litmus.
 
     DAG-THERMO-01: the three SOURCED thermochemical tiers :func:`_route_score` rides between composability and the
-    counts (selectivity / feasibility / equilibrium) and its last-resort kinetics tier are NOW aggregated per node
-    (:func:`~smartchem.experiment.dag.dag_thermo_rollup`, worst-node-dominated, carried on ``DAGBenchFit``), so this
-    ranks on EXACTLY the same tier order ``_route_score`` does -- a DAG ranking is as rich as a linear one.  Each is
-    NEUTRAL on ignorance (a sourced positive floats, a sourced negative sinks, UNKNOWN sits in the middle -- never a
-    penalty for missing data) and RANKING-ONLY (it orders otherwise-tied DAGs and NEVER enters ``fit.status``, exactly
-    as the linear kinetics tier never enters an L2 grade)."""
-    # This is _route_score's tuple, tier-for-tier: status -> composability -> selectivity -> feasibility SIGN ->
-    # M2b(Pareto front, net-ΔG magnitude) -> equilibrium -> gap count -> exclusion count -> kinetics (dead last,
-    # ranking-only).  The rank dicts + the M2b tiers are byte-identical to _route_score's, so a DAG and a linear
-    # route are ordered by the SAME sourced discipline (the DAG-RANK-01 promise: they must not diverge -- M2b
-    # grows BOTH scorers together, per the birdperson fold, or the divergence reopens).
-    status_rank = {RouteFitStatus.FITS: 0, RouteFitStatus.UNCONSTRAINED: 0,
-                   RouteFitStatus.UNKNOWN: 1, RouteFitStatus.EXCLUDED: 2}
-    comp_rank = {"COMPOSABLE": 0, "NO_TRANSITIONS": 1, "SINGLE_STEP": 1, "UNKNOWN": 2, "DEGENERATE": 3}
-    sel_rank = {"FAVORED": 0, "NOT_APPLICABLE": 1, "UNKNOWN": 1, "DISFAVORED": 2}
-    feas_rank = {"FAVORABLE": 0, "BORDERLINE": 1, "UNKNOWN": 1, "UNFAVORABLE": 2}
-    eq_rank = {"ESSENTIALLY_COMPLETE": 0, "FAVORABLE": 1, "BALANCED": 2, "UNKNOWN": 2,
-               "LIMITED": 3, "NEGLIGIBLE": 4}
-    regime_rank = {"FAST": 0, "MODERATE": 1, "UNKNOWN": 2, "SLOW": 3, "FROZEN": 4}
-    return (
-        status_rank[fit.status],
-        comp_rank.get(fit.composability.verdict, 4),
-        sel_rank.get(fit.selectivity_verdict, 1),
-        feas_rank.get(fit.feasibility_verdict, 1),
-        front_index,                                    # M2b: Pareto non-dominated layer (net ΔG × survival)
-        # M2b: additive-ΔG magnitude, ONLY in the FAVORABLE class (net then known+negative, no mixing); inert
-        # elsewhere -- the same reward-for-ignorance fix as _route_score (evil-morty fold), kept tier-identical.
-        net_delta_g if (net_delta_g is not None and fit.feasibility_verdict == "FAVORABLE") else 0.0,
-        eq_rank.get(fit.equilibrium_verdict, 2),
-        len(fit.gaps),
-        len(fit.exclusions),
-        regime_rank.get(fit.kinetics_verdict, 2),
+    counts (selectivity / feasibility / equilibrium) and its last-resort kinetics tier are aggregated per node
+    (:func:`~smartchem.experiment.dag.dag_thermo_rollup`, worst-node-dominated, carried FLAT on ``DAGBenchFit``), so
+    this ranks on EXACTLY the same tier order ``_route_score`` does -- a DAG ranking is as rich as a linear one.  Each
+    is NEUTRAL on ignorance (a sourced positive floats, a sourced negative sinks, UNKNOWN sits in the middle -- never
+    a penalty for missing data) and RANKING-ONLY (it orders otherwise-tied DAGs and NEVER enters ``fit.status``,
+    exactly as the linear kinetics tier never enters an L2 grade).
+
+    The tier dicts + the M2b tiers live ONCE in the shared :func:`_score_tuple`; this is a thin verdict-extractor
+    over it, pulling the DAG's FLAT rollup verdicts (``fit.selectivity_verdict`` etc.) where :func:`_route_score`
+    pulls a RouteFit's NESTED sub-fit verdicts.  Sharing the core makes the DAG-RANK-01 no-divergence promise
+    structural: a new tier grows in one place, so the two scorers cannot diverge by a forgotten hand-edit (M2b was
+    the last tier that had to be threaded into both copies by hand)."""
+    return _score_tuple(
+        fit.status, fit.composability.verdict, fit.selectivity_verdict, fit.feasibility_verdict,
+        fit.equilibrium_verdict, fit.kinetics_verdict, len(fit.gaps), len(fit.exclusions),
+        front_index, net_delta_g,
     )
 
 
@@ -663,15 +694,14 @@ def rank_dags(dags, box: ConstraintBox | None = None) -> tuple:
     expose them until ``of_dag`` can thread them too, so BOTH move together or neither does."""
     effective_box = box if box is not None else ConstraintBox()
     scored = [(dag_bench_fit(dag, effective_box), dag) for dag in dags]
-    # M2b: the same M2-FP Pareto product wired into the linear ranker, so a DAG and its linear twin rank by the
-    # identical discipline (the DAG-RANK-01 no-divergence promise).  The DAG's additive net ΔG is the Hess sum over
-    # its steps (route_net_delta_g accepts the DAG -- intermediates cancel); survival is the DAG survival monoid.
-    products = tuple(
-        PhysicsProduct(route_net_delta_g(dag), fit.composability.route_surviving_fraction) for fit, dag in scored
+    # M2b: the SHARED _physics_ranked_order wires the same M2-FP Pareto product into the DAG ranker, so a DAG and its
+    # linear twin rank by the identical discipline (the DAG-RANK-01 no-divergence promise, now structural).  The DAG's
+    # additive net ΔG is the Hess sum over its steps (route_net_delta_g accepts the DAG -- intermediates cancel);
+    # survival is the DAG survival monoid (Composability.route_surviving_fraction).
+    order = _physics_ranked_order(
+        [(fit, route_net_delta_g(dag), fit.composability.route_surviving_fraction) for fit, dag in scored],
+        _dag_score,
     )
-    fronts = _pareto_front_indices(products)
-    order = sorted(range(len(scored)),
-                   key=lambda i: _dag_score(scored[i][0], fronts[i], products[i].delta_g_kj))
     return tuple(scored[i][1] for i in order)
 
 

@@ -1175,7 +1175,7 @@ class RankedDAGSummary(Digestible):
                 raise ValueError("serial_holds hold_minutes must be a non-negative real number")
 
     @classmethod
-    def of_dag(cls, dag: "object", box: "object") -> "RankedDAGSummary":
+    def of_dag(cls, dag: "object", box: "object", *, phases: "object" = None) -> "RankedDAGSummary":
         """Project a SynthesisDAG's COMBINED section-11 bench fit (:func:`dag_bench_fit`) onto the thin response summary.
 
         ``box`` is the full :class:`~smartchem.experiment.drafter.ConstraintBox` (physical bounds + process), so the
@@ -1183,10 +1183,22 @@ class RankedDAGSummary(Digestible):
         the SAME combined disposition a linear :class:`RankedRouteSummary` carries.  The ``process_requirements`` and
         ``edges`` are taken in the DAG's OWN step order (``dag.steps`` / ``dag.edges``), the exact indexing
         :func:`~smartchem.process_constraints.evaluate_dag_process_requirements` uses, so the load-time re-derivation of
-        the PROCESS COMPONENT reproduces that component byte-for-byte."""
+        the PROCESS COMPONENT reproduces that component byte-for-byte.
+
+        ``phases`` (ITEM5-DAG-PHASE-01): the optional ``{Molecule: phase}`` declaration is forwarded to
+        :func:`dag_bench_fit`, so the projected FEASIBILITY ranking verdict reflects the DECLARED phase of any
+        dual-phase species -- the seam that makes :func:`rank_dags`'s ``phases`` sound.  The RANKER and THIS projection
+        must be driven by the SAME declaration or the dossier's feasibility verdict would disagree with the rank that
+        produced it (the exact ROUND-15 re-projection divergence); :func:`ranked_dag_dossiers` is the seam that passes
+        one dict into both.  ``phases`` never touches ``fit_status`` (it is a ranking-only verdict), so a phase-declared
+        dossier's PASS/EXCLUDED disposition is unchanged.  BOUNDARY (fail-closed): :func:`_check_verified_admission`
+        re-projects phase-blind, so a phase-DECLARED FITS dossier round-tripped through ``require_verified_admission`` is
+        REFUSED (a false-REJECT, never a false-ACCEPT -- the status is phase-invariant); production is unaffected
+        (``_run_recompile`` passes no phases).  See :func:`ranked_dag_dossiers` and the scope doc Boundary 4.  Default
+        ``None`` is byte-identical."""
         from .experiment.dag import _serial_hold_minutes
         from .experiment.drafter import dag_bench_fit
-        fit = dag_bench_fit(dag, box)
+        fit = dag_bench_fit(dag, box, phases=phases)
         edges = tuple((producer, consumer) for producer, consumer, _intermediate in dag.edges)
         equation = " ; ".join(s.equation() for s in dag.topological_order())
         # DAG-HOLD-01 made machine-readable (item 2b): the same per-edge serial-schedule hold ROUND 15 surfaced
@@ -1216,6 +1228,33 @@ class RankedDAGSummary(Digestible):
             # so a verified-admission consumer reconstructs the exact SynthesisDAG and re-derives all axes on load.
             replay_payload=_steps_to_replay_payload(dag.steps),
         )
+
+
+def ranked_dag_dossiers(dags, box: "object", *, phases: "object" = None) -> "tuple[RankedDAGSummary, ...]":
+    """Rank convergent DAGs best-first AND project each into a :class:`RankedDAGSummary`, under ONE phase declaration.
+
+    This is the co-call SEAM the ROUND-15 ``of_dag`` re-projection fold named as the unlock for DAG phase-awareness
+    (ITEM5-DAG-PHASE-01): :func:`~smartchem.experiment.drafter.rank_dags` ranks the DAGs and
+    :meth:`RankedDAGSummary.of_dag` re-projects each dossier, and passing the SAME ``phases`` into both is exactly what
+    makes a phase-declared DAG ranking SOUND -- the rank and the dossier read the identical declaration, so a dossier's
+    feasibility verdict can never disagree with the rank that produced it.  Threading ``phases`` into only one side
+    would reopen the precise divergence the fold prevented; keeping the two behind one seam that takes one dict makes
+    "both move together" structural AT THIS SEAM (the birdperson alignment discipline).  It is NOT a global invariant:
+    :func:`~smartchem.experiment.drafter.rank_dags` and :meth:`RankedDAGSummary.of_dag` stay independently public, so a
+    caller that BYPASSES this seam and calls them with mismatched (or one-sided) ``phases`` still owns the consistency
+    obligation -- prefer this seam.  ``phases=None`` (the default, and every current caller) is byte-identical to the
+    prior inline ``of_dag(d, box) for d in rank_dags(dags, box)``.
+
+    VERIFIED-ADMISSION BOUNDARY (evil-morty/dalembert R44, fail-closed): the on-load re-projection
+    (:func:`_check_verified_admission`) recomputes ``of_dag(dag, box)`` PHASE-BLIND, so a phase-DECLARED FITS dossier
+    this seam emits does NOT equal its phase-blind re-projection and is REFUSED on a ``require_verified_admission``
+    round-trip.  This is FAIL-CLOSED (a false-REJECT, never a false-ACCEPT -- a phase never moves a section-11 status,
+    so it can never admit a forged route) and at exact parity with the R43 linear side.  Production never hits it
+    (``_run_recompile`` passes no phases); it unparks with the request-level phase field that would carry ``phases``
+    into the replay payload + the re-projection (the named next brick).  See
+    ``docs/research/ITEM5_DAG_PHASE_AWARE_RANKING_SCOPE_v0.1.md`` Boundary 4."""
+    from .experiment.drafter import rank_dags
+    return tuple(RankedDAGSummary.of_dag(d, box, phases=phases) for d in rank_dags(dags, box, phases=phases))
 
 
 @dataclass(frozen=True)
@@ -2161,11 +2200,15 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     # so a physical-only DAG constraint is admitted too; the human-readable tally rides _dag_bench_note.
     dag_dossiers: tuple = ()
     if mode == "dags":
-        from .experiment.drafter import ConstraintBox, rank_dags
+        from .experiment.drafter import ConstraintBox
         _dags = getattr(search_result, "dags", ())
         _box = ConstraintBox.of_bounds(request.constraints.bounds, process=request.constraints.process)
         if _box.constrains_anything:
-            dag_dossiers = tuple(RankedDAGSummary.of_dag(d, _box) for d in rank_dags(_dags, _box))
+            # The rank+project seam moves together under one phase declaration (ITEM5-DAG-PHASE-01).  The recompile
+            # request carries no phase field yet, so this passes none -- exactly as the linear rank_routes production
+            # call likewise passes none; a request-level phase declaration (+ its replay/verified-admission carry) is
+            # the named follow-up.  Byte-identical to the prior inline of_dag/rank_dags co-call.
+            dag_dossiers = ranked_dag_dossiers(_dags, _box)
         _dag_note = _dag_bench_note(_dags, _box)
         if _dag_note is not None:
             diagnostics = (*diagnostics, _dag_note)

@@ -1029,7 +1029,7 @@ class DAGThermoRollup:
 
 
 def dag_thermo_rollup(
-    dag, *, selectivity=None, thermo=None, kinetics=None, losses: tuple = (),
+    dag, *, selectivity=None, thermo=None, kinetics=None, losses: tuple = (), phases=None,
 ) -> DAGThermoRollup:
     """Aggregate the four SOURCED per-reaction thermochemical verdicts over a convergent DAG's nodes,
     worst-node-dominated -- the DAG analogue of the four ``verify_*`` folds :func:`fit_route` runs, reusing the
@@ -1040,14 +1040,22 @@ def dag_thermo_rollup(
     A per-node verdict does not depend on the schedule, so this maps over ``dag.steps`` directly (order-agnostic,
     exactly as ``dag_bench_fit``'s per-step physical box is).  Each table defaults to its sourced seed when ``None``,
     mirroring ``verify_selectivity``/``verify_feasibility``/``verify_kinetics`` -- so the DAG ranks on the SAME
-    sourced facts a linear route does, never an invented one."""
+    sourced facts a linear route does, never an invented one.
+
+    ``phases`` (ITEM5-DAG-PHASE-01, the DAG twin of the linear ITEM5-PHASE-RANK-01): the optional
+    ``{Molecule: "gas"|"liquid"|...}`` declaration is forwarded ONLY to the per-node
+    :func:`~smartchem.experiment.feasibility.feasibility_of_step` -- so a DAG carrying a dual-phase species (Br2:
+    liquid ΔfH°=0 vs gas +30.91) rolls up its FEASIBILITY verdict on the DECLARED phase instead of fail-closing to
+    UNKNOWN.  The EQUILIBRIUM axis is deliberately NOT phase-threaded (``equilibrium_of_step`` takes no ``phases``):
+    a dual-phase species fail-closes its equilibrium extent to UNKNOWN, the SAME sound R37 boundary that made only
+    feasibility phase-aware on the linear side.  Default ``None`` is byte-identical to the pre-brick rollup."""
     if type(dag) is not SynthesisDAG:
         raise TypeError("dag must be a SynthesisDAG")
     sel_tbl = DEFAULT_SELECTIVITY if selectivity is None else selectivity
     thermo_tbl = DEFAULT_THERMO if thermo is None else thermo
     kin_tbl = DEFAULT_KINETICS if kinetics is None else kinetics
     sel = tuple(selectivity_of_step(s, table=sel_tbl, losses=losses) for s in dag.steps)
-    feas = tuple(feasibility_of_step(s, thermo=thermo_tbl) for s in dag.steps)
+    feas = tuple(feasibility_of_step(s, thermo=thermo_tbl, phases=phases) for s in dag.steps)
     equi = tuple(equilibrium_of_step(s, thermo=thermo_tbl) for s in dag.steps)
     kin = tuple(kinetics_of_step(s, kinetics=kin_tbl, losses=losses) for s in dag.steps)
     return DAGThermoRollup(

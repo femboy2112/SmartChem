@@ -44,9 +44,11 @@ Re-checkable demonstrations, all on the REAL ``rank_routes``/``fit_route``:
    ``ConditionEnvelope``; the ranker exposes no ``temperature_k`` of its own (a named follow-up).  So any DIRECTIONAL
    statement ("declaring gas floats a Br2-reactant route") is a 298 K statement, false above the crossover.
 
-7. THE rank_dags DEFER IS REAL -- ``rank_routes`` grew a ``phases`` parameter but ``rank_dags`` did NOT (the ROUND-15
-   ``of_dag`` re-projection fold: rank_routes returns the fits of_fit projects, rank_dags returns DAGs of_dag
-   RE-PROJECTS under defaults -- exposing phases on rank_dags alone diverges rank from dossier).  A signature fact.
+7. THE rank_dags DEFER, DISCHARGED (updated R44, ITEM5-DAG-PHASE-01) -- at R43 ``rank_routes`` grew a ``phases``
+   parameter but ``rank_dags`` did NOT (the ROUND-15 ``of_dag`` re-projection fold).  R44 built the fold's stated
+   unlock -- a seam carrying one phase declaration into BOTH ``rank_dags`` and ``of_dag`` -- so BOTH now expose
+   ``phases``.  This probe records the current signature reality (both True); the full DAG demonstration lives in
+   ``experiments/item5_dag_phase_aware_ranking_probe.py``.
 
 RDKit-free; no oracle needed (the thermochemistry is the repo's own sourced CODATA seed + a labelled test-injected
 HBr(g) record for the FAVORABLE fit-level magnitude demonstration).
@@ -63,7 +65,7 @@ from smartchem.experiment.feasibility import _formula_str, verify_feasibility
 from smartchem.experiment.step import ExperimentRoute, ExperimentStep
 from smartchem.smiles import parse_smiles as M
 
-FROZEN_HASH = "93d9f0cf61cbc9caeafd4b3ee2ef446ed3517cf84852c4953b6e740c906b506d"
+FROZEN_HASH = "fa24706d5037d75f92f472d54845b3c0af3a786af18dff49958e33c96acbbd95"
 
 # --- species -------------------------------------------------------------------------------------------------
 _BR2 = M("BrBr")   # dual-phase in DEFAULT_THERMO: gas ΔfH°=+30.91, liquid ΔfH°=0 -> is_multiphase -> phase-blind fail
@@ -196,14 +198,14 @@ def phase_lever_reverses_with_temperature() -> dict:
     }
 
 
-# 7 -- the rank_dags defer is a real signature fact (the ROUND-15 of_dag re-projection fold).
+# 7 -- the rank_dags defer is DISCHARGED (R44, ITEM5-DAG-PHASE-01): both rankers now expose phases.
 def rank_dags_defers_phases() -> dict:
     rr = set(inspect.signature(rank_routes).parameters)
     rd = set(inspect.signature(rank_dags).parameters)
     return {
         "rank_routes_has_phases": "phases" in rr,
         "rank_dags_has_phases": "phases" in rd,
-        "defer_is_real": ("phases" in rr) and ("phases" not in rd),
+        "defer_discharged": ("phases" in rr) and ("phases" in rd),
     }
 
 
@@ -264,8 +266,8 @@ def validate() -> bool:
 
     r = rank_dags_defers_phases()
     assert r["rank_routes_has_phases"] is True, r
-    assert r["rank_dags_has_phases"] is False, r
-    assert r["defer_is_real"] is True, r
+    assert r["rank_dags_has_phases"] is True, r     # R44: the defer is discharged (ITEM5-DAG-PHASE-01)
+    assert r["defer_discharged"] is True, r
     return True
 
 

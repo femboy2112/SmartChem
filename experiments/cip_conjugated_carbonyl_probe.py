@@ -14,14 +14,14 @@ item into a BUILDABLE slice with a real forcing-consumer set and two cleanly-bou
   NAME (0 mislabels vs RDKit): L-ascorbic acid (VITAMIN C), carvone, the quinones/naphthoquinones, the
   cyclohexenones/cyclopentenones, the butenolides.
 
-* DEFERRED, fail-closed (documented, NOT built): (1) CHARGED conjugated/aromatic rings -- pyridinium /
-  imidazolium / thiazolium.  Two DISTINCT defer paths: a charged AROMATIC spelling (``[nH+]``) hits the parser
-  kekulization wall (``SmilesError``, upstream of the namer); a charged explicit-KEKULE spelling parses and then
-  declines at the namer's charge gate (``smiles.py:1193``, ``if atom.charge: valid = False``).  Either way the
-  mancude AVERAGING sub-capability has only synthetic consumers (the recon's consumer bearing); (2)
-  EXOCYCLIC ``=CH2`` (fulvene, quinodimethane) / ``=NH`` (azafulvene) -- the textbook non-benzenoid
-  aromatic-resonance systems where a fixed release could diverge from the oracle.  A wrong R/S is worse than
-  an honest decline (``a-sound-extension-guards-its-new-cross-comparisons``).
+* DEFERRED at R39, PARTLY MOVED at R40: (1) CHARGED conjugated/aromatic rings -- pyridinium / imidazolium /
+  thiazolium -- were deferred here at R39, but ROUND 40 admitted the charged EXPLICIT-KEKULE slice: the charge
+  gate (``smiles.py:1193``) is now a fail-closed whitelist that admits cationic ring acceptors by
+  charge-invariant atomic number, so those rings NAME (see ``cip_charged_ring_probe.py``).  The charged
+  AROMATIC spelling (``[nH+]``) still hits the parser kekulization wall (``SmilesError``, upstream of the
+  namer) and stays deferred.  (2) STILL DEFERRED here: EXOCYCLIC ``=CH2`` (fulvene, quinodimethane) / ``=NH``
+  (azafulvene) -- the textbook non-benzenoid aromatic-resonance systems where a fixed release could diverge
+  from the oracle.  A wrong R/S is worse than an honest decline (``a-sound-extension-guards-its-new-cross-comparisons``).
 
 The load-bearing SOUNDNESS invariant (dalembert R33, generalized): a terminal-chalcogen exocyclic double
 contributes the SAME ``order-1`` duplicate leaf in every Kekule structure, so it never perturbs
@@ -43,7 +43,7 @@ import json
 
 from smartchem.smiles import _parse_skeleton_stereo, cip_labels, cip_labels_by_atom
 
-FROZEN_HASH = "ff90e36098762265e836de97f2c4fd4ed26b2affc77f78d137869010c9914763"
+FROZEN_HASH = "be31f7c8fcc8df17cb529f4e5b0170361900531da34ee01e9e01dfa333b06395"
 
 #: (SMILES, blessed repo per-atom map, blessed RDKit per-atom map, category, note).
 #: category: "consumer"  -- PREVIOUSLY DEFERRED, now NAMES (the built slice); repo == RDKit
@@ -82,8 +82,9 @@ BATTERY = (
     ("O[C@H](c1ccccc1)c1ccncc1", {1: "R"}, {1: "R"}, "regress",
      "phenyl-vs-pyridyl carbinol: neutral mancude AVERAGING path, untouched"),
     # ---- DEFERRED, fail-closed: OUT OF SCOPE, repo declines while RDKit names ----
-    ("C[C@@H](O)C1=[N+](C)C=CS1", {}, {1: "R"}, "defer",
-     "2-(1-hydroxyethyl)thiazolium: CHARGED aromatic ring -> parser/charge wall (out of scope)"),
+    # NB: the CHARGED explicit-Kekule ring that this probe once listed here as a defer (thiazolium) now NAMES --
+    # ROUND 40 admitted charged conjugated/aromatic rings (see cip_charged_ring_probe.py).  The remaining R39
+    # deferred siblings are the exocyclic =CH2 / =NH aromatic-resonance systems, kept below.
     ("O[C@@H](CC)C1=CC=CC1=C", {}, {1: "S"}, "defer",
      "fulvenyl carbinol: exocyclic =CH2 (aromatic-resonance ambiguity) -> deferred"),
     ("O[C@@H](C)C1=CC(=N)C=CC1=O", {}, {1: "S"}, "defer",

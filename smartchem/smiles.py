@@ -1190,8 +1190,31 @@ def _cip_mancude(atoms, bonds, adj) -> "tuple[frozenset[int], dict[int, Fraction
             atom = atoms[a]
             orders = sorted(o for _b, o in adj[a])
             ring_doubles = sum(o == 2 and b in ring_adj[a] for b, o in adj[a])
-            if atom.charge:
-                valid = False
+            if atom.element == "N" and atom.charge > 0 and orders == [1, 1, 2] and ring_doubles == 1:
+                acceptors.add(a)                         # ROUND 40: a CATIONIC ring N -- pyridinium, pyridine
+                # N-oxide, imidazolium / thiazolium N+ -- taking exactly one ring double is a genuine pi-ACCEPTOR.
+                # CIP priority is by ATOMIC NUMBER and formal charge changes NO atomic number, so it is partner-Z
+                # averaged EXACTLY as pyridine's N -- and CRUCIALLY a cationic ring N HAS a neutral isoelectronic
+                # acceptor analogue (pyridine's N) that the oracle (RDKit rdCIPLabeler) averages identically: the
+                # averaged ipso duplicate is (C:6 + N:7)/2 = 6.5, which stays BELOW any real heteroatom Z >= 7, so
+                # it never crosses a competitor's genuine value in a ring-vs-ring comparison.  Verified 0 mislabels
+                # across a ring-vs-heteroaromatic-ring oracle sweep (dalembert R40).  The ``charge > 0`` guard is
+                # the fail-closed key: only a CATION is admitted (a neutral overvalent N fills to [1,1,1,2]).
+                #
+                # A CATIONIC ring CHALCOGEN (pyrylium O+ [1,2] / thiopyrylium S+ [1,2]) is DELIBERATELY NOT admitted
+                # -- it falls to the ``elif atom.charge`` decline below.  It has NO neutral isoelectronic acceptor
+                # analogue (a neutral ring O/S is the [1,1] ether/thioether DONOR, never a pi-acceptor), so the
+                # charge-blind average -- (C:6 + O:8)/2 = 7 or (C:6 + S:16)/2 = 11 -- CROSSES a real heteroatom and
+                # RDKit does NOT reproduce it: a proven ring-vs-ring mislabel class (dalembert R40, e.g.
+                # ``O[C@H](C1=CC=CC=[S+]1)C1=NC=CS1`` -> repo S, RDKit R).  A wrong R/S is worse than an honest
+                # decline, so the chalcogen cation stays fail-closed (its pre-R40 state).
+            elif atom.charge:
+                valid = False                            # any OTHER charged ring atom stays FAIL-CLOSED: an
+                # unvalidated charged valence pattern (a ring carbanion / anion, a cationic chalcogen acceptor, an
+                # exotic or non-acceptor cation) is NOT admitted -- a wrong R/S is worse than an honest decline (the
+                # R39/R40 guard-your-new-cross-comparisons discipline).  A NEUTRAL atom skips both branches above
+                # (charge 0, and the [1,1,2]-N cation pattern is valence-impossible without a charge) and falls
+                # through to the UNCHANGED neutral classifier below, so every neutral ring stays byte-identical.
             elif atom.element == "C" and orders == [1, 1, 2] and ring_doubles == 1:
                 acceptors.add(a)
             elif atom.element == "N" and orders == [1, 2] and ring_doubles == 1:

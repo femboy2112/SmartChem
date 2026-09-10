@@ -98,6 +98,13 @@ mean *rank on a sourced phase or fail closed*, never *rank on whatever the fallb
 
 ### 1. The DAG ranker `rank_dags` does NOT expose `phases` — the ROUND-15 fold, verbatim
 
+> **DISCHARGED in R44 (ITEM5-DAG-PHASE-01).** This boundary named its own unlock ("a service API that carries a phase
+> declaration into both `rank_dags` and `of_dag`"); R44 built that seam (`ranked_dag_dossiers`), threading `phases`
+> into both sides so rank and dossier read one declaration and cannot diverge. See
+> `docs/research/ITEM5_DAG_PHASE_AWARE_RANKING_SCOPE_v0.1.md`. The paragraph below is the R43-era statement, kept as
+> the historical record.
+
+
 `rank_routes` could accept `phases` **soundly** because it RETURNS the scored `RouteFit`s and
 `RankedRouteSummary.of_fit` projects THOSE (phase-aware) fits — rank and dossier cannot disagree. `rank_dags` instead
 returns the DAGs, which `RankedDAGSummary.of_dag` **RE-PROJECTS under the default tables** (no phases). Exposing

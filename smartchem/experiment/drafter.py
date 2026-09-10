@@ -425,6 +425,7 @@ class DAGBenchFit:
 def dag_bench_fit(
     dag, box: ConstraintBox, *,
     stability=None, selectivity=None, thermo=None, kinetics=None, losses: tuple = (),
+    phases: "dict[Molecule, str] | None" = None,
 ) -> DAGBenchFit:
     """Judge whether one convergent DAG runs on the target bench ``box`` -- the COMBINED section-11 admission.
 
@@ -474,8 +475,12 @@ def dag_bench_fit(
         # an empty box constrains nothing, so there is nothing to fit: UNCONSTRAINED, never a silent FITS (section 11).
         status = RouteFitStatus.UNCONSTRAINED
     # DAG-THERMO-01: the four sourced per-reaction thermochemical ranking verdicts (computed AFTER status, and never
-    # feeding it -- ranking-only, exactly as fit_route's thermo verdicts never touch its status).
-    rollup = dag_thermo_rollup(dag, selectivity=selectivity, thermo=thermo, kinetics=kinetics, losses=losses)
+    # feeding it -- ranking-only, exactly as fit_route's thermo verdicts never touch its status).  ITEM5-DAG-PHASE-01:
+    # ``phases`` reaches ONLY the feasibility fold (equilibrium stays phase-blind, the R37 boundary), so a dual-phase
+    # DAG rolls up its feasibility verdict on the DECLARED phase.  It never changes ``status`` above -- a phase can
+    # move the feasibility RANKING verdict (and so a DAG ranking's order) but never a FITS/EXCLUDED/UNKNOWN grade.
+    rollup = dag_thermo_rollup(dag, selectivity=selectivity, thermo=thermo, kinetics=kinetics, losses=losses,
+                               phases=phases)
     return DAGBenchFit(status, tuple(exclusions), tuple(gaps), comp,
                        rollup.selectivity_verdict, rollup.feasibility_verdict,
                        rollup.equilibrium_verdict, rollup.kinetics_verdict)
@@ -695,7 +700,9 @@ def _dag_score(fit: DAGBenchFit, front_index: int = 0, net_delta_g: float | None
     )
 
 
-def rank_dags(dags, box: ConstraintBox | None = None) -> tuple:
+def rank_dags(
+    dags, box: ConstraintBox | None = None, *, phases: "dict[Molecule, str] | None" = None,
+) -> tuple:
     """Rank convergent DAGs best-first for a bench (or, with ``box=None``, an unconstrained bench) -- the DAG analogue
     of :func:`rank_routes` (DAG-RANK-01), closing the "DAG mode ranks nothing" gap DAG-BENCH-01 left open.
 
@@ -711,26 +718,31 @@ def rank_dags(dags, box: ConstraintBox | None = None) -> tuple:
     ``dag_bench_fit`` still accepts the tables for a direct caller who owns BOTH sides; the ranking entry point does not
     expose them until ``of_dag`` can thread them too, so BOTH move together or neither does.
 
-    ITEM5-PHASE-RANK-01 phase deferral (the SAME fold, verbatim): ``rank_dags`` deliberately takes NO ``phases`` param.
-    :func:`rank_routes` could accept one soundly because it RETURNS the scored fits and
-    :meth:`~smartchem.service.RankedRouteSummary.of_fit` projects THOSE (phase-aware) fits -- rank and dossier cannot
-    disagree.  ``rank_dags`` instead returns the DAGs, which :meth:`~smartchem.service.RankedDAGSummary.of_dag`
-    RE-PROJECTS under the default tables (no phases); exposing ``phases`` here alone would rank under a declared phase
-    while every dossier projected the phase-blind (fail-closed-UNKNOWN) verdict -- the exact latent divergence this
-    fold prevents.  So the DAG ranker unparks for phases only when the service ``of_dag`` projection carries them too;
-    until then the DAG ranking CALL PATH stays phase-blind: this function does not FORWARD ``phases`` into
-    ``route_net_delta_g`` (which already accepts one -- ``functorial_physics.py`` -- but the call here passes none) nor
-    into ``dag_bench_fit``/``dag_thermo_rollup`` (which carry no ``phases`` param at all), so no phase reaches the DAG
-    feasibility verdicts or the additive drive.  No phase param is grown where no consumer can use it soundly (the
-    zero-call-sites discipline).  See ``docs/research/ITEM5_PHASE_AWARE_RANKING_SCOPE_v0.1.md``."""
+    ITEM5-DAG-PHASE-01 -- the ROUND-15 ``of_dag`` re-projection fold, now DISCHARGED (the DAG twin of the linear
+    ITEM5-PHASE-RANK-01).  Historically ``rank_dags`` took NO ``phases`` param, because it returns the DAGs (not the
+    scored fits) and :meth:`~smartchem.service.RankedDAGSummary.of_dag` RE-PROJECTS each under the default tables:
+    exposing ``phases`` on ``rank_dags`` ALONE would rank under a declared phase while every dossier projected the
+    phase-blind (fail-closed-UNKNOWN) verdict -- a rank-vs-dossier divergence with no consumer.  The fold's own stated
+    unlock was "a service API that carries a phase declaration into BOTH ``rank_dags`` and ``of_dag``."  That is now
+    built: :meth:`~smartchem.service.RankedDAGSummary.of_dag` accepts ``phases`` too, and the seam that co-calls them
+    (:func:`~smartchem.service.ranked_dag_dossiers`) passes ONE declaration into both, so rank and dossier read the
+    identical phase and CANNOT diverge -- BOTH move together, structurally, exactly as the fold required.  ``phases``
+    now threads into ``dag_bench_fit`` -> ``dag_thermo_rollup`` (the per-node feasibility fold) AND into
+    ``route_net_delta_g`` (the additive M2b drive), so a dual-phase DAG is ranked on the declared phase's feasibility
+    SIGN and additive net-ΔG rather than fail-closed to UNKNOWN.  Default ``None`` is byte-identical to the pre-brick
+    behaviour for every existing caller.  Like the linear ranker, the EQUILIBRIUM axis stays phase-blind (the R37
+    precedent) and the production recompile path (``_run_recompile``) passes no phases (the request carries no phase
+    field yet -- the named follow-up), exactly as the linear ``rank_routes`` production call likewise passes none.  See
+    ``docs/research/ITEM5_DAG_PHASE_AWARE_RANKING_SCOPE_v0.1.md``."""
     effective_box = box if box is not None else ConstraintBox()
-    scored = [(dag_bench_fit(dag, effective_box), dag) for dag in dags]
+    scored = [(dag_bench_fit(dag, effective_box, phases=phases), dag) for dag in dags]
     # M2b: the SHARED _physics_ranked_order wires the same M2-FP Pareto product into the DAG ranker, so a DAG and its
     # linear twin rank by the identical discipline (the DAG-RANK-01 no-divergence promise, now structural).  The DAG's
-    # additive net ΔG is the Hess sum over its steps (route_net_delta_g accepts the DAG -- intermediates cancel);
-    # survival is the DAG survival monoid (Composability.route_surviving_fraction).
+    # additive net ΔG is the Hess sum over its steps (route_net_delta_g accepts the DAG -- intermediates cancel), now
+    # phase-fed (ITEM5-DAG-PHASE-01); survival is the DAG survival monoid (Composability.route_surviving_fraction).
     order = _physics_ranked_order(
-        [(fit, route_net_delta_g(dag), fit.composability.route_surviving_fraction) for fit, dag in scored],
+        [(fit, route_net_delta_g(dag, phases=phases), fit.composability.route_surviving_fraction)
+         for fit, dag in scored],
         _dag_score,
     )
     return tuple(scored[i][1] for i in order)

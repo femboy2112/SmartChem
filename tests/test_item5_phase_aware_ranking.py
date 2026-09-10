@@ -131,11 +131,14 @@ def test_phase_lever_reverses_sign_with_temperature():
     assert lever(350.0) > 0      # liquid the more favorable phase above it
 
 
-def test_rank_dags_does_not_expose_phases_the_of_dag_fold():
-    # the ROUND-15 fold: rank_routes returns the fits (of_fit projects THOSE, no divergence), rank_dags returns DAGs
-    # that of_dag re-projects under defaults -- so phases on rank_dags alone would diverge rank from dossier.
+def test_rank_dags_now_exposes_phases_the_of_dag_fold_discharged():
+    # R43 deferred rank_dags phases (the ROUND-15 of_dag re-projection fold: rank_routes returns the fits of_fit
+    # projects, but rank_dags returns DAGs of_dag RE-PROJECTS, so phases on rank_dags alone would diverge rank from
+    # dossier).  R44 (ITEM5-DAG-PHASE-01) built the fold's stated unlock -- a seam carrying one phase declaration into
+    # BOTH rank_dags and of_dag -- so rank_dags now exposes phases too, soundly.  The full DAG demonstration lives in
+    # tests/test_item5_dag_phase_aware_ranking.py; this just pins that the R43 defer is gone.
     assert "phases" in inspect.signature(rank_routes).parameters
-    assert "phases" not in inspect.signature(rank_dags).parameters
+    assert "phases" in inspect.signature(rank_dags).parameters
 
 
 def test_equilibrium_axis_stays_phase_blind_the_documented_boundary():

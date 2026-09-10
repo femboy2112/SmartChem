@@ -13,6 +13,7 @@ from smartchem.experiment.feasibility import (
     FeasibilityDirection,
     RouteFeasibility,
     feasibility_of_step,
+    verify_feasibility,
 )
 from smartchem.experiment.functorial_physics import (
     FreeEnergyDecoration,
@@ -208,3 +209,43 @@ class TestDowBromineThermodynamicVerdict:
         route = ExperimentRoute.of(_step([br2], [br, br], br))
         # item 5: the gas-phase dissociation declares Br₂ is gas (phases forwarded to each step's feasibility)
         assert route_net_delta_g(route, phases={br2: "gas", br: "gas"}) == pytest.approx(161.65, abs=0.1)
+
+
+# ======================================================================================
+# Item-5 brick: verify_feasibility THREADS `phases` (the last phase-blind verify_* fold, closed)
+# ======================================================================================
+class TestVerifyFeasibilityThreadsPhases:
+    """The linear-route ``verify_feasibility`` now forwards ``phases`` to every step, the mirror of
+    ``route_net_delta_g``'s DAG threading -- so a single phase declaration flows through BOTH the worst-node
+    ``verdict`` and the additive ``net_delta_g_kj`` drive.  A phase-blind route carrying a dual-phase species
+    (Br₂ gas/liquid) fail-closes to a loud UNKNOWN at the route level, never a silently-wrong-phase ΔG."""
+
+    def test_phase_blind_route_with_a_dual_phase_species_is_a_loud_unknown(self):
+        # Br₂ -> 2 Br•, no phase declared: Br₂ is dual-phase, so the step -- and the whole route verdict + net
+        # drive -- fail closed, exactly as feasibility_of_step does for the single step (the fold reaches the route).
+        br2, br = M("BrBr"), M("[Br]")
+        route = ExperimentRoute.of(_step([br2], [br, br], br))
+        rfeas = verify_feasibility(route)
+        assert rfeas.verdict == "UNKNOWN"
+        assert rfeas.net_delta_g_kj is None                       # a partial/wrong-phase sum never poses as a drive
+        assert "bromine" in " ".join(rfeas.per_step[0].missing).lower() or rfeas.per_step[0].missing != ()
+
+    def test_declaring_the_phase_flows_through_verdict_and_net_drive(self):
+        # the SAME route, with Br₂ declared gas, now fires: worst-node verdict UNFAVORABLE and the additive
+        # Hess drive equals the single endergonic step (functoriality), both off the one `phases` declaration.
+        br2, br = M("BrBr"), M("[Br]")
+        route = ExperimentRoute.of(_step([br2], [br, br], br))
+        rfeas = verify_feasibility(route, phases={br2: "gas", br: "gas"})
+        assert rfeas.verdict == "UNFAVORABLE"                     # Br₂ stable against dissociation at RT
+        assert rfeas.net_delta_g_kj == pytest.approx(161.65, abs=0.1)
+        assert rfeas.per_step[0].missing == ()
+
+    def test_a_single_phase_route_is_byte_identical_with_or_without_phases(self):
+        # the default is byte-stable: a route with NO dual-phase species gives the identical RouteFeasibility
+        # whether or not `phases` is passed (extra/irrelevant entries are harmless -- each step filters its own).
+        route = _steam_reforming_route()
+        without = verify_feasibility(route)
+        with_irrelevant = verify_feasibility(route, phases={M("BrBr"): "gas"})
+        assert without == with_irrelevant
+        assert without.verdict == with_irrelevant.verdict
+        assert without.net_delta_g_kj == with_irrelevant.net_delta_g_kj

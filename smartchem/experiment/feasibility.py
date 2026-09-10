@@ -131,13 +131,22 @@ def resolve_thermo(
     hit = table.for_formula(_formula_str(molecule), phase=phase)
     if hit is not None:
         return hit
-    # PHASE-AMBIGUITY FAIL-CLOSED (item 5, adversarial fold): a phase-blind miss on a species the table holds in
-    # MORE than one phase is AMBIGUITY, not absence -- do NOT fall through to the gas Benson estimate below, which
-    # ignores the phase question and would silently reinstate the debt for a Benson-COVERABLE dual-phase species.
-    # (Br₂ escapes the estimate today only because it is Benson-uncoverable; the guarantee must be the design's,
-    # not one molecule's -- red-team Finding 1.)  A SPECIFIC phase that is simply not tabulated still derives, with
-    # the existing gas/condensed phase notes.
-    if phase is None and table.is_multiphase(_formula_str(molecule)):
+    # PHASE-AMBIGUITY FAIL-CLOSED (item 5, adversarial fold): a sourced miss on a species the table holds in MORE
+    # than one phase is AMBIGUITY, not absence -- do NOT fall through to the gas Benson estimate below, which ignores
+    # the phase question and would silently reinstate the debt for a Benson-COVERABLE dual-phase species.  (Br₂
+    # escapes the estimate today only because it is Benson-uncoverable; the guarantee must be the design's, not one
+    # molecule's -- red-team Finding 1.)
+    #
+    # ITEM5-PHASE-RANK-01 (evil-morty R43): the guarantee must hold at the SPECIFIC-phase fallback layer too, not
+    # only for ``phase is None``.  Reaching here means the sourced lookup above already MISSED for the REQUESTED
+    # phase.  For a multiphase species that miss is a genuine phase gap whether the caller gave no phase (ambiguous)
+    # OR a specific phase the table does not hold (e.g. "solid", or a mis-cased "Gas") -- and deriving a phase-BLIND
+    # gas estimate would answer a DIFFERENT phase than the one asked, silently reinstating the wrong-phase-ΔG debt
+    # one layer down ([[a-fail-closed-guarantee-must-hold-at-every-fallback-layer]]).  So fail closed for ANY missed
+    # phase on a multiphase species.  (A SINGLE-phase species is not phase-ambiguous, so an untabulated specific
+    # phase still derives with the gas/condensed notes -- the legitimate paracetamol condensed-derive path is
+    # untouched; ``is_multiphase`` is False there.)
+    if table.is_multiphase(_formula_str(molecule)):
         return None
     if derive:
         est = estimate_thermo(molecule)

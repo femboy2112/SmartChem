@@ -1,7 +1,7 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ open-resistor-semantics-2026-09-09` (**ROUND 36** — item 5 phase-carrying thermo key; item 1 CIP target-relative Rules 4b/4c **VERIFIED DEFER**; item 6 open-resistor semantics, the first non-additive `open_core` decoration). Maintained suite: **4709 passed / 24 skipped / 1 xfailed** in four serialized partitions (1857/10; 769/14/1; 1077; 1006). RDKit 2026.03.6 was a **dev-venv-only** oracle, uninstalled before this baseline (item-1 cross-check `importorskip`-gated); finite oracle agreement is bounded evidence, not universal CIP completeness. · updated **2026-09-09 UTC**
+> `verified @ open-circuit-pipeline-2026-09-09` (**ROUND 37** — the item-5 brick: `phases` threaded through `verify_feasibility`; **item 1 the circuit pipeline** — `from_circuit` ingest + a parallel-merge primitive + a route/step shape, the second-domain PIPELINE that strengthens the Move-5 case). Prior **ROUND 36** — item 5 phase-carrying thermo key; CIP Rules 4b/4c **VERIFIED DEFER**; item 6 open-resistor semantics. Maintained suite: **4753 passed / 24 skipped / 1 xfailed** in four serialized partitions (1857/10; 772/14/1; 1118; 1006). RDKit 2026.03.6 was a **dev-venv-only** oracle, uninstalled before this baseline; the circuit pipeline uses only in-repo oracles (no rdkit) — including a PHYSICALLY DISTINCT spanning-tree matrix-tree oracle with no common-mode against the Laplacian solver. · updated **2026-09-09 UTC**
 >
 > This file is canonical. `MEMORY.md` and `UPTAKE_MANIFEST_v0.5.0a1.md §N` point *here* rather than duplicating the
 > queue — one list, not three that drift. Full per-round build history lives in the manifest (through `§22`); this file is
@@ -70,6 +70,36 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 37 — the item-5 brick + item 1 (the circuit pipeline)** (two separate PRs off `main`: #41 `a5da103`
+the brick, #42 `33a169b` the pipeline) — the user's "full blast, #1 and the item-5 brick." Each its own branch
+off fresh `main`, non-stacked, each adversarially reviewed before merge.
+
+- **Item-5 brick — `phases` threaded through `verify_feasibility`** (#41). `verify_feasibility` was the last
+  phase-blind `verify_*` fold; it now forwards an optional `phases` (default `None`, byte-stable on every
+  consumer) to each step, so one declaration flows through BOTH the worst-node `verdict` AND the additive
+  `net_delta_g_kj` drive — the linear-route mirror of `route_net_delta_g`'s DAG threading. Keyed on canonical
+  structure. [[a-reaction-key-by-formula-borrows-a-rate]] **Boundary:** the drafter's public ranking API is
+  deliberately NOT threaded (no dual-phase ranked route exists — the zero-call-sites trap); unparks when one does.
+- **Item 1 — the circuit pipeline** (`OPEN_CIRCUIT_PIPELINE_SCOPE_v0.1.md`, #42). `smartchem/open_circuit_pipeline.py`:
+  **`from_circuit`** lifts an ARBITRARY production resistor network (`open_diagram` + `ResistiveDCModel`) into
+  `open_core` with the exact whole-network apex — series, parallel, AND a Wheatstone BRIDGE that `then`/`tensor`
+  cannot construct (the old core's `structural_edges()` already exposed the topology — the ROADMAP's assumed
+  "junction-extraction API" prerequisite dissolved on contact with the source, so it was never built).
+  **`parallel`** constructs a parallel block (node-merge topology + exact `R1‖R2` apex via a new
+  `BoundaryLinearRelation.parallel` — the relation-level merge, the CORRECT-APEX counterpart to `plug_all`'s
+  hazard), **closing item 6's deferred parallel CONSTRUCTION**. **`equivalent_resistance`** (domain cost,
+  fail-closed) + **`within_spec`** (Move-5 survival predicate) + **`CircuitStage`/`CircuitRoute`** (the route/step
+  shape: `assemble`→`then`, `ingest`→`from_circuit`, `in_parallel`→`parallel`). **Soundness:** two oracles of
+  DIFFERENT provenance — the same-Laplacian verifier (bounds typos) AND a physically-distinct spanning-tree
+  matrix-tree oracle (no common-mode, the dalembert fold). FROZEN_HASH `33bc257c`, RDKit-free. **Three-bearing
+  review, engine SOUND** (0 mismatches on 2266+3000 fuzz + 6000 topologies; multiport merge proven vs an
+  independent image-space oracle): **all folds guard-rails/framing** — negative-R refusal, `within_spec` exact
+  bounds + `±inf`, honest gate docstrings, **topology made load-bearing** (from_circuit mirrors source edges;
+  parallel's merge canonicalizes byte-identically to direct reconstruction), the common-mode caveat + distinct
+  oracle, committed multiport (2→1) check, and the honest Move-5 relabel. **Move 5 STRENGTHENED not completed:** a
+  real second-domain consumer graph (what item 6 lacked), but it still awaits its first non-test caller and the
+  chemistry-side domain-neutral refactor is its own round. [[electromagnetic-scope]] [[categorical-reorientation]]
 
 **ROUND 36 — items 5, 1 (defer), 6** (three separate PRs off `main`: #37 `4528ecf`, #38 `09f5503`, #39 `fd169c8`)
 — the user's "full blast on items 1, 6, and 5, most coherent order." Each its own branch off fresh `main`
@@ -394,18 +424,24 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > uncertainty boundary. The highest-value next CIP work is target-relative recursive Rules 4b/4c, then Rule 6 and
 > unsupported charged/conjugated ring representations. On the cost lane, seek provenance-diverse realized operating
 > data before promoting the Magnolia model into route ranking. Move 5 remains deferred until a second-domain consumer.
+> **⭐ ROUND 36 closed items 5 / 1-defer / 6; ROUND 37 closed item 1 (the circuit pipeline) + the item-5 brick.** The
+> circuit pipeline is the second-domain consumer Move 5 was waiting on — Move 5 is now STRENGTHENED (a real
+> ingest→generic-core→cost/survival graph) but still deferred pending its first non-test caller + the chemistry-side
+> lift. The next queue is CIP Rule 6 (build only with a real consumer), then charged/conjugated rings, then the
+> bromine sourcing wall; plus the item-5 drafter-ranking brick (deferred, zero-call-sites) and giving the circuit
+> pipeline its first real caller. All CIP recursive Rules 4b/4c/6 stay fail-closed until a forcing consumer appears.
 
 | # | Item | Lane | Size | Horizon | Gate / blocker |
 |---|---|---|---|---|---|
 | **CIP Rule 1b** | ✅ **BUILT ROUND 35.** IUPAC P-9 supplied the consumer missing from the bounded R32 generators. | B | — | **DONE** | Manifest §35, `CIP_RING_AUX_RULES_SCOPE_v0.1.md`. |
 | ~~item 1~~ | **CIP target-relative Rules 4b/4c** — ✅ **VERIFIED DEFER ROUND 36.** The forcing target's aux pool is structurally EMPTY (both centres unresolved by Rules 1a–3, so nothing seeds the bounded 4a/5 pass); the repo has NO genuine Rule 4b (its 4a/5 pass is a Rule5New port — a hack would MISLABEL); RDKit runs it as an iteration-budgeted `labelAux` search; and an RDKit `rdCIPLabeler` existence sweep confirms NO north-star (paracetamol/aspirin are achiral) or real-chiral (10 drugs, 0 defers) consumer forces it. Shipped the proof, not a fabricated comparator (R32 precedent). | B | — | **DONE (defer)** | `CIP_TARGET_RELATIVE_RULES_SCOPE_v0.1.md` + a phased build plan; unpark when a real consumer appears. |
-| ~~item 5~~ | **Phase-aware Br₂ identity and thermo** — ✅ **DONE ROUND 36.** `(formula,name,phase)` dedup/lookup key + fail-closed on phase-ambiguity (incl. the group-additivity **derive** gate) + the true-standard-state liquid Br₂ record + `phase` threaded through `resolve_thermo`→`feasibility_of_step`→`route_net_delta_g`. Two adversarial folds. | B·C | — | **DONE** | `PHASE_CARRYING_THERMO_KEY_SCOPE_v0.1.md`. Next brick: thread `phases` up `verify_feasibility`/rank/DAG when a ranked route carries a dual-phase species (fail-closed today). |
+| ~~item 5~~ | **Phase-aware Br₂ identity and thermo** — ✅ **DONE ROUND 36 + brick ROUND 37.** `(formula,name,phase)` dedup/lookup key + fail-closed on phase-ambiguity (incl. the group-additivity **derive** gate) + the true-standard-state liquid Br₂ record + `phase` threaded through `resolve_thermo`→`feasibility_of_step`→`route_net_delta_g` (R36), then **`verify_feasibility` (R37 brick)** so the linear-route `verdict` + `net_delta_g_kj` are phase-aware too. | B·C | — | **DONE** | `PHASE_CARRYING_THERMO_KEY_SCOPE_v0.1.md`. **Remaining brick:** thread `phases` up the **drafter's public ranking** API — deferred (no dual-phase ranked route exists; the zero-call-sites trap), unparks when one does. |
 | ~~item 6~~ | **Open-resistor semantics** *(EM scope)* — ✅ **DONE ROUND 36.** `ResistorDecoration` = the FIRST non-additive `open_core.Decoration` (interchange law proven, non-vacuity control); `resistor_edge` functor image; composed relations cross-checked to the INDEPENDENT Kirchhoff verifier. | B | — | **DONE** | `OPEN_SMC_RESISTOR_FUNCTOR_SCOPE_v0.1.md`. Bounded to the `then`/`tensor` (series/juxtaposition) subcategory; `plug_all` is unenforced convention (+ `apex_matches_boundary` guard). |
-| **1** | **Circuit pipeline → the genuine Move-5 unlock** — extend item 6: `from_circuit` reconstructing an arbitrary network's `open_core` topology (a parallel-merge primitive + an old-core junction-extraction API), then a circuit route/step shape. THIS is the second-domain PIPELINE consumer that would actually drive Move 5. | B | M/L | medium | Old core exposes only `node_for`; needs a topology-extraction API + a merge primitive. [[electromagnetic-scope]] as a theorem. |
-| **2** | **CIP Rule 6** — the reference-dependent sequence-rule tail after 4b/4c. | B | M | medium | Build only with a real Rule-6 consumer + source-exact discriminator (4b/4c is a verified-defer with a phased plan). |
-| **3** | **Charged/conjugated ring representation** — extend mancude past the neutral bounded C/N/O/S slice. | B | L | medium | Sound source-pinned representation; fixed-Kekulé shortcuts forbidden. |
-| **4** | **Modern bromine provenance rotation** — realized, non-Albemarle operating evidence or a genuinely independent cost model. | C | S/M | long | Magnolia is forecast/model; JBC shares the issuer/reporting family (a sourcing wall). |
-| **Move 5** | **Domain-neutral parameterization** — step/route/cost over a "conserved-inventory transition + survival predicate", not concretely `Molecule`. | B | **L** | **DEFERRED — case STRENGTHENED** | Item 6 **demonstrated** the genericity (a real non-additive `open_core` decoration exists satisfying the obligation), so the claim is no longer merely conjectural — but a full lift still wants a second-domain PIPELINE consumer, which queue item **1** (the circuit pipeline) would supply. `MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`. |
+| ~~item 1~~ | **Circuit pipeline → the second-domain PIPELINE** — ✅ **DONE ROUND 37.** `from_circuit` ingests an arbitrary production resistor network (series/parallel/BRIDGE) into `open_core` with the exact whole-network apex; `parallel` (+ `BoundaryLinearRelation.parallel`, the correct-apex counterpart to `plug_all`) closes item 6's deferred parallel construction; `equivalent_resistance`/`within_spec` (Move-5 survival predicate); `CircuitStage`/`CircuitRoute` route/step shape. The old core's `structural_edges()` already exposed the topology — the assumed "junction-extraction API" was never needed. Two-provenance oracle (Laplacian + a physically-distinct spanning-tree matrix-tree). Engine SOUND across 3 adversarial bearings. | B | — | **DONE** | `OPEN_CIRCUIT_PIPELINE_SCOPE_v0.1.md`. [[electromagnetic-scope]] |
+| **1** | **CIP Rule 6** — the reference-dependent sequence-rule tail after 4b/4c. | B | M | medium | Build only with a real Rule-6 consumer + source-exact discriminator (4b/4c is a verified-defer with a phased plan). |
+| **2** | **Charged/conjugated ring representation** — extend mancude past the neutral bounded C/N/O/S slice. | B | L | medium | Sound source-pinned representation; fixed-Kekulé shortcuts forbidden. |
+| **3** | **Modern bromine provenance rotation** — realized, non-Albemarle operating evidence or a genuinely independent cost model. | C | S/M | long | Magnolia is forecast/model; JBC shares the issuer/reporting family (a sourcing wall). |
+| **Move 5** | **Domain-neutral parameterization** — step/route/cost over a "conserved-inventory transition + survival predicate", not concretely `Molecule`. | B | **L** | **DEFERRED — case STRENGTHENED FURTHER** | The circuit pipeline (R37 item 1) now supplies a real second-domain consumer GRAPH (`from_circuit` ingest → generic `open_core.then` → domain cost + survival predicate) — item 6's genericity is now *exercised end to end*, not just demonstrated. It STILL awaits (a) this pipeline's first non-test caller, and (b) the actual lift making the CHEMISTRY `ExperimentStep`/`ExperimentRoute` parametric over the conserved-inventory-transition abstraction (its own large round). `MOVE5_DOMAIN_NEUTRAL_PARAMETERIZATION_SCOPE_DECISION_v0.1.md`. |
 | ~~3b~~ | ✅ **DONE (ROUND 30)** — DOW-Br₂ collider/modified-Arrhenius kinetics. See the DONE ledger + manifest §30. | B·C | — | — | The Warshay modified-Arrhenius bimolecular fit is modelled in a new sibling (`collider_kinetics.py`); Br₂ SURVIVES at bench (a lower-bounded PREDICTED read, thermo-corroborated), dissociates sub-ms at shock-tube T. Live wire-in of the collider model into E1's gate is TRACKED DEBT (verdict-inert today; no Br₂-intermediate DAG consumer). |
 
 ### K-B/C/D · Move-1 keystone — ✅ **DONE (Rung B ROUND 24 / Rungs C+D ROUND 25)**

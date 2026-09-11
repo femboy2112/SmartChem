@@ -44,8 +44,9 @@ Re-checkable demonstrations, all on the REAL registry + ``compile_synthesis`` ro
    valence-valid non-methylation (a C-C homologation).  Pinned so "the ladder derives" is never read as "only sound
    chemistry derives" (the FORMAL_CANDIDATE boundary, made concrete).
 6. KEKULE-SPELLING INVARIANT -- caffeine drawn two different Kekulé ways resolves to ONE structural identity.
-7. AROMATIC-PURINE GAP (documented boundary) -- the lowercase-aromatic purine spelling does NOT yet kekulize; the
-   registry uses the explicit-Kekulé form.  Pinned so the boundary is a recorded, fail-closed fact.
+7. AROMATIC-PURINE KEKULIZES (R46 -- the gap this probe once documented is CLOSED) -- RDKit's default aromatic
+   caffeine spelling now parses to the SAME structural identity as the explicit-Kekulé form (the exocyclic-pi donor
+   rule; see ``experiments/aromatic_carbonyl_kekulizer_probe.py`` for the generic conjugated-carbonyl family).
 """
 from __future__ import annotations
 
@@ -208,13 +209,16 @@ def kekule_spelling_invariant() -> dict:
     return {"spelling_a": a[:16], "spelling_b": b[:16], "same_identity": a == b}
 
 
-def aromatic_purine_gap() -> dict:
-    raised = False
+def aromatic_purine_kekulizes() -> dict:
+    # R46: the aromatic-purine kekulizer gap this probe once documented is CLOSED (exocyclic-pi donor rule).  RDKit's
+    # DEFAULT aromatic caffeine output now parses to the SAME structural identity as the explicit-Kekulé registry form.
+    aromatic = "Cn1c(=O)c2c(ncn2C)n(C)c1=O"     # RDKit MolToSmiles(caffeine) -- the spelling that used to fail closed
     try:
-        M("Cn1cnc2c1c(=O)n(C)c(=O)n2C")   # aromatic caffeine
+        same = _digest(M(aromatic)) == _digest(M(_SMILES["caffeine"]))
+        kekulizes = True
     except SmilesError:
-        raised = True
-    return {"aromatic_caffeine_kekulizes": not raised, "gap_present": raised}
+        same, kekulizes = False, False
+    return {"aromatic_caffeine_kekulizes": kekulizes, "matches_kekule_identity": same}
 
 
 def _payload() -> dict:
@@ -225,11 +229,11 @@ def _payload() -> dict:
         "4_ladder_derives": ladder_derives(),
         "5_over_generation_is_present": over_generation_is_present(),
         "6_kekule_spelling_invariant": kekule_spelling_invariant(),
-        "7_aromatic_purine_gap": aromatic_purine_gap(),
+        "7_aromatic_purine_kekulizes": aromatic_purine_kekulizes(),
     }
 
 
-FROZEN_HASH = "4ca338d56707b212339012c9a0b26b3df42ee216565189973d1a3991f4803b02"
+FROZEN_HASH = "7290064f8a2b7b7b0c9763a084cde94555b53026ae493bcfa8e0ca105e78b5d3"
 
 
 def content_hash() -> str:
@@ -240,7 +244,7 @@ def validate() -> bool:
     """RDKit-free self-check: names resolve to the right composition; the caffeine route is DERIVED and UNTABULATED
     (the structural discriminator); the control is bench-sensitive (corroborating); the ladder derives via REAL
     intermediates; the engine over-generates (honest FORMAL_CANDIDATE boundary); identity is Kekulé-spelling-invariant;
-    and the aromatic-purine kekulization gap is present (a documented, fail-closed boundary)."""
+    and RDKit's default aromatic caffeine spelling now kekulizes to the SAME identity as the explicit-Kekulé form."""
     p = _payload()
     r = p["1_names_resolve"]
     assert all(r[n]["resolved"] for n in _SMILES), r
@@ -254,7 +258,8 @@ def validate() -> bool:
     assert all(p["4_ladder_derives"].values()), p["4_ladder_derives"]
     assert p["5_over_generation_is_present"]["engine_over_generates"] is True, p["5_over_generation_is_present"]
     assert p["6_kekule_spelling_invariant"]["same_identity"] is True, p["6_kekule_spelling_invariant"]
-    assert p["7_aromatic_purine_gap"]["gap_present"] is True, p["7_aromatic_purine_gap"]
+    k = p["7_aromatic_purine_kekulizes"]
+    assert k["aromatic_caffeine_kekulizes"] is True and k["matches_kekule_identity"] is True, k
     return True
 
 

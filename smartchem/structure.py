@@ -484,6 +484,44 @@ _REGISTERED: tuple[NamedStructure, ...] = (
         synonyms=("oil of wintergreen", "methyl 2-hydroxybenzoate", "wintergreen oil"),
         provenance="std organic ester; the item-4 Fischer-esterification process-record target; SMILES COC(=O)c1ccccc1O",
     ),
+    # --- CAFFEINE + the xanthine methylation ladder ------------------------------------------
+    #     name->structure DICTIONARY entries ONLY (a name is a human convention, underivable).
+    #     The engine DERIVES every reaction connecting them (each rung an N-methylation the
+    #     capped-scission grammar computes from conservation; the derived reaction is UNTABULATED
+    #     -- caffeine is in no SEED_CONDITIONS entry) -- NOTHING here hard-codes a reaction.
+    #     Structures are the explicit-Kekulé SMILES (the form Wikipedia displays and our parser
+    #     accepts); each verified against the RDKit InChIKey (dev-venv oracle).  The
+    #     lowercase-AROMATIC purine spelling does NOT yet kekulize (a generic fused-ring
+    #     aromaticity gap, documented in CAFFEINE_REGISTRATION_AND_DERIVATION_SCOPE_v0.1.md,
+    #     boundary 2; RDKit's default aromatic output does not yet parse).
+    NamedStructure(
+        "caffeine", parse_smiles("CN1C=NC2=C1C(=O)N(C)C(=O)N2C"), "C8H10N4O2",
+        iupac="1,3,7-trimethyl-3,7-dihydro-1H-purine-2,6-dione", cas="58-08-2",
+        synonyms=("1,3,7-trimethylxanthine", "theine", "guaranine", "methyltheobromine"),
+        provenance="std purine alkaloid (PubChem CID 2519); RDKit InChIKey RYYVLZVUVIJVGH-UHFFFAOYSA-N; "
+                   "SMILES CN1C=NC2=C1C(=O)N(C)C(=O)N2C",
+    ),
+    NamedStructure(
+        "theophylline", parse_smiles("N1C=NC2=C1C(=O)N(C)C(=O)N2C"), "C7H8N4O2",
+        iupac="1,3-dimethyl-3,7-dihydro-1H-purine-2,6-dione", cas="58-55-9",
+        synonyms=("1,3-dimethylxanthine",),
+        provenance="std purine (PubChem CID 2153); the caffeine N7-methylation precursor; "
+                   "RDKit InChIKey ZFXYFBGIUFBOJW-UHFFFAOYSA-N; SMILES N1C=NC2=C1C(=O)N(C)C(=O)N2C",
+    ),
+    NamedStructure(
+        "theobromine", parse_smiles("CN1C=NC2=C1C(=O)NC(=O)N2C"), "C7H8N4O2",
+        iupac="3,7-dimethyl-3,7-dihydro-1H-purine-2,6-dione", cas="83-67-0",
+        synonyms=("3,7-dimethylxanthine",),
+        provenance="std purine (PubChem CID 5429); the caffeine N1-methylation precursor; "
+                   "RDKit InChIKey YAPQBXQYLJRXSA-UHFFFAOYSA-N; SMILES CN1C=NC2=C1C(=O)NC(=O)N2C",
+    ),
+    NamedStructure(
+        "xanthine", parse_smiles("N1C=NC2=C1C(=O)NC(=O)N2"), "C5H4N4O2",
+        iupac="3,7-dihydro-1H-purine-2,6-dione", cas="69-89-6",
+        synonyms=("3,7-dihydropurine-2,6-dione", "dioxopurine"),
+        provenance="std purine parent (PubChem CID 1188); the methylation-ladder root; "
+                   "RDKit InChIKey LRFVTYWOQMYALW-UHFFFAOYSA-N; SMILES N1C=NC2=C1C(=O)NC(=O)N2",
+    ),
 )
 
 

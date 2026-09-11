@@ -1,7 +1,21 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ item5-dag-phase-aware-ranking-2026-09-10` (**ROUND 44 — item-5 DAG residual: phase-aware convergent-DAG
+> `verified @ caffeine-registration-derivation-2026-09-10` (**ROUND 45 — "it works when I try caffeine": caffeine
+> resolves by NAME and its synthesis is DERIVED, not hard-coded**. The user's litmus, under the constraint "we aren't
+> just hard coding chemical reactions." Registered the 4-purine **xanthine methylation ladder** (caffeine +
+> theophylline/theobromine/xanthine) as `name → structure` **dictionary entries ONLY** (a name is a human convention,
+> underivable); the generic capped-scission engine **DERIVES** every reaction connecting them — proven **UNTABULATED**
+> (caffeine is in *no* `SEED_CONDITIONS` entry, so it cannot be a table hit; the load-bearing discriminator, replacing
+> a bench-sensitivity control an adversarial pass correctly broke). All 4 structures **InChIKey-verified vs RDKit**
+> (the check caught a paraxanthine drawing mislabeled as theophylline mid-build). **4-bearing gate** (mr-president
+> SHIP-w/-cond · birdperson SOUND-w/-folds · evil-morty architecture-VERIFIED but control-overclaim BROKEN→reframed ·
+> dalembert SURVIVED, isomers rebuilt atom-by-atom). Honestly documented boundaries: the engine **over-generates**
+> valence-valid-but-dubious candidates (every route is `FORMAL_CANDIDATE` — conservation certified, mechanism NOT; a
+> ranking-quality frontier), and the **aromatic-purine kekulizer gap** (the lowercase-aromatic spelling RDKit emits
+> doesn't yet kekulize — a generic fused-ring gap, named next brick). Probe FROZEN_HASH `4ca338d5`;
+> `CAFFEINE_REGISTRATION_AND_DERIVATION_SCOPE_v0.1.md`; suite **4864/33/1** (+15 caffeine tests, 4 rdkit-skipped).
+> Prior **ROUND 44 — item-5 DAG residual: phase-aware convergent-DAG
 > ranking; the R43 DEFER DISCHARGED**. `phases` threaded `dag_thermo_rollup`→`dag_bench_fit`→**both** `rank_dags` and
 > `of_dag` behind the new `ranked_dag_dossiers` seam (one declaration into both → no rank-vs-dossier divergence, the
 > ROUND-15 fold's stated unlock). Forcing consumer = a DAG ranking-ORDER flip on the +161.65 kJ Br₂ dissociation
@@ -89,6 +103,39 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 45 — "it works when I try caffeine": name registration + DERIVED (not hard-coded) synthesis** (one feature PR
+off `main`) — the user's *"go full blast on whatever will fully flesh out smartchem, such that … it works when i try
+'caffeine'"*, under the constraint *"we aren't just hard coding chemical reactions — that's what the entire
+category-theoretical-math-framing is supposed to be for."* Ground-truthed: `recompile caffeine` failed at
+`INVALID_INPUT` (caffeine in zero registered names); the depth-limited empty search it *also* hit is honest
+narrow-grammar behaviour **shared with paracetamol**, not a caffeine break. So the gap was a **registry** gap.
+
+- **What's hard-coded — 4 `name → structure` entries, ZERO reactions** (`smartchem/structure.py`). Caffeine + the
+  xanthine methylation ladder (theophylline 1,3 / theobromine 3,7 / xanthine parent), built via `parse_smiles`
+  (explicit-Kekulé, the RDKit-fuzzed path), formula-guarded, each **InChIKey-verified vs RDKit** (dev-venv oracle;
+  the check caught a paraxanthine drawing mislabeled as theophylline — formula alone can't tell the isomers apart).
+- **Reactions are DERIVED, proven UNTABULATED.** The generic `from_capped_scission` engine derives
+  `theophylline + methanol → caffeine + water` (and the whole xanthine→…→caffeine ladder, via structurally-verified
+  monomethylxanthine intermediates), while caffeine appears in **no** `SEED_CONDITIONS` entry (the only table — 6
+  esterification/acylation edges, zero purine; it only *decorates* derived edges, loud-`unknown()` otherwise). An
+  untabulated reaction cannot be a lookup. That structural fact is the discriminator (an earlier bench-sensitivity
+  control was correctly broken by adversarial review — a reactant-gated table would also return 0 on a wrong stock).
+- **Boundaries (documented, honest).** The engine **over-generates** valence-valid-but-dubious candidates (e.g. a C–C
+  homologation ranked above the sound methylation) — every route is `FORMAL_CANDIDATE` (conservation certified,
+  mechanism NOT); teaching the ranker chemical selectivity is a named **ranking-quality frontier**. The
+  lowercase-**aromatic** purine spelling (RDKit's default output) does not yet kekulize — a generic fused-ring gap
+  affecting every purine (the R39 conjugated-carbonyl aromaticity class), fail-closed, a named **next brick**. Default
+  `recompile caffeine` still returns no-route at commodity depth — the Lane-B grammar frontier, shared with the north
+  star. Cohort: the user said "1"; 4 were registered (target + minimal ladder) and the over-delivery is confessed in
+  the scope doc with what to cut.
+- **Evidence + review.** `experiments/caffeine_derivation_probe.py` (FROZEN_HASH `4ca338d5`, RDKit-free `validate()`,
+  structural-identity freeze) + `tests/test_caffeine_registered.py` (15 tests) +
+  `CAFFEINE_REGISTRATION_AND_DERIVATION_SCOPE_v0.1.md`. **4 bearings:** mr-president **SHIP-WITH-CONDITIONS** (all
+  folded) · birdperson **SOUND-WITH-FOLDS** (confess-the-cohort + say-the-quiet-part) · evil-morty **architecture
+  VERIFIED, control-overclaim BROKEN** (MEDIUM → reframed to the untabulated discriminator; +2 LOW folded) · dalembert
+  **SURVIVED** (isomers rebuilt atom-by-atom from IUPAC numbering; anchors *discriminate* isomers → anti-circularity
+  closed; 41 random Kekulé drawings → one identity; surfaced over-generation → pinned honestly). Suite **4864/33/1**.
 
 **ROUND 44 — item-5 DAG residual: phase-aware convergent-DAG ranking (the R43 defer, DISCHARGED)** (one feature PR off
 `main`) — the user's "full blast, start with 1." R43 made the LINEAR ranker phase-aware but left `rank_dags` a

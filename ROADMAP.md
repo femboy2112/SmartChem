@@ -1,7 +1,19 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ caffeine-registration-derivation-2026-09-10` (**ROUND 45 — "it works when I try caffeine": caffeine
+> `verified @ aromatic-carbonyl-kekulizer-2026-09-11` (**ROUND 46 — aromatic conjugated-carbonyl kekulizer: RDKit's
+> DEFAULT purine SMILES now parses** — frontier 1 of the user's "full blast on both 1 (the aromatic-purine kekulizer)
+> and 2 (ranker chemical selectivity)". One valence-forced rule in `_aromatic_matchings`: a **neutral carbon** bearing
+> an exocyclic multiple bond (a ring carbonyl `c(=O)`) is a π-**donor** that sits out the ring matching — closing the
+> conjugated-carbonyl class (every purine, pyrimidinone nucleobase, guanine/hypoxanthine, quinones, tropone). Additive
+> (only reclassifies inputs that currently fail closed); all 10 family members verified vs the RDKit InChIKey oracle.
+> **4-bearing gate: mr-president SHIP · birdperson SOUND-w/-folds · evil-morty two HIGH breaks→FIXED** (element-blind
+> cut let hypervalent-N-oxide decoys silently mis-parse → restricted to neutral carbon + fail-closed otherwise,
+> checked before the R41 charge branch, which also closed the pre-existing `O=[n+]` valence-5 hole) **· dalembert
+> SURVIVED** (structure theorem: bad seed fails *closed* not silent-wrong; 24k+ exhaustive inputs 0 kills; named the
+> non-terminal-exocyclic-π seam, verified robust). Probe FROZEN_HASH `0d596e05`;
+> `AROMATIC_CARBONYL_KEKULIZER_SCOPE_v0.1.md`; suite **4892/46/1**. Frontier 2 (ranker selectivity) is the next PR.
+> Prior **ROUND 45 — "it works when I try caffeine": caffeine
 > resolves by NAME and its synthesis is DERIVED, not hard-coded**. The user's litmus, under the constraint "we aren't
 > just hard coding chemical reactions." Registered the 4-purine **xanthine methylation ladder** (caffeine +
 > theophylline/theobromine/xanthine) as `name → structure` **dictionary entries ONLY** (a name is a human convention,
@@ -103,6 +115,34 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 46 — aromatic conjugated-carbonyl kekulizer: RDKit's default purine SMILES now parses** (one feature PR off
+`main`; frontier 1 of the user's *"full blast on both 1 (the aromatic-purine kekulizer) and 2 (ranker chemical
+selectivity)"*). The gap R45 named: RDKit's *default* aromatic caffeine output `Cn1c(=O)c2c(ncn2C)n(C)c1=O` — and every
+purine, pyrimidinone nucleobase, quinone, tropone — failed the SMILES kekulizer (`could not assign a Kekulé
+structure`), a generic fused-ring aromaticity gap (R39 conjugated-carbonyl class). Root cause: `_aromatic_matchings`
+classed **every** aromatic carbon as a π-acceptor, but a ring carbonyl `c(=O)` has its π met by the exocyclic C=O
+(valence-4 full), so it was forced into the ring matching with no acceptor neighbour (no perfect matching) or
+over-saturated to valence-5.
+
+- **The fix — one valence-forced rule:** a **neutral carbon** bearing an exocyclic multiple bond is a π-**donor** (it
+  sits out the ring matching). For a neutral C, 2 ring σ + 1 exocyclic double = valence-4 hard wall, so it takes no
+  ring double and NO currently-parsing molecule has such an atom as an acceptor — the change is **additive** (only
+  reclassifies inputs that currently fail closed). `smartchem/smiles.py::_aromatic_matchings`.
+- **Verified vs RDKit (dev-venv oracle):** RDKit's default aromatic output for all 10 of caffeine/theophylline/
+  theobromine/xanthine/guanine/uracil/cytosine/thymine/hypoxanthine/tropone now parses to the **correct** compound
+  (true PubChem InChIKeys), spelling-invariant with independent explicit-Kekulé drawings; isomer discrimination intact
+  (theobromine 3,7 ≠ theophylline 1,3).
+- **4-bearing gate:** mr-president **SHIP** · birdperson **SOUND-w/-folds** (narrow the safety claim to *neutral
+  carbon*, name the border) · **evil-morty two HIGH breaks → FIXED** (the element-blind first cut let a
+  hypervalent-heteroatom N-oxide decoy — `O=c1[nH]c(=O)n(=O)cc1` — flip a fail-closed REFUSE into a silent wrong
+  parse; restricting the donor to neutral carbon + fail-closed otherwise, checked BEFORE the R41 charge branch, closed
+  it AND the pre-existing charged `O=[n+]` valence-5 hole; his 20k-fuzz found 0 carbon breaks) · dalembert
+  **SURVIVED** (structure theorem — the matching only *seeds* π-demand, so a bad seed fails *closed*, never
+  silent-wrong; 24k+ exhaustive aromatizable inputs, 0 kills; named the non-terminal-exocyclic-π SEAM, verified
+  robust). Probe `aromatic_carbonyl_kekulizer_probe.py` FROZEN_HASH `0d596e05`;
+  `AROMATIC_CARBONYL_KEKULIZER_SCOPE_v0.1.md`; caffeine probe #7 flipped gap→kekulizes (`7290064f`). Suite
+  **4892/46/1** (+kekulizer tests, rdkit InChIKey tests skipped on the committed baseline).
 
 **ROUND 45 — "it works when I try caffeine": name registration + DERIVED (not hard-coded) synthesis** (one feature PR
 off `main`) — the user's *"go full blast on whatever will fully flesh out smartchem, such that … it works when i try

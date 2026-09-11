@@ -407,7 +407,13 @@ def _aromatic_matchings(
       a bare/no-H aromatic ``N`` with fewer than three sigma bonds (the pyridine-type nitrogen).
     * **donor** (sits out the matching; every incident aromatic bond defaults to order 1): element
       ``O`` or ``S``; or an aromatic ``N`` carrying an explicit H, OR one already at three sigma bonds
-      -- a substituted or bridgehead pyrrole-type nitrogen ([nH], N-substituted pyrrole, indolizine).
+      -- a substituted or bridgehead pyrrole-type nitrogen ([nH], N-substituted pyrrole, indolizine);
+      OR a **neutral carbon** bearing an EXOCYCLIC multiple bond (a non-aromatic bond of order >= 2,
+      e.g. a ring carbonyl ``c(=O)``): its pi electron is spoken for outside the ring and 2 ring sigma +
+      1 exocyclic double = valence 4 is a hard wall, so it takes no ring double -- the conjugated-carbonyl
+      class (purine-diones, pyrimidinones, quinones, tropone).  This is valence-forced.  A **non-carbon or
+      charged** atom bearing an exocyclic multiple bond has no such wall (N/S/P reach higher valences) and
+      FAILS CLOSED, never a silently hypervalent parse (a v1 boundary).
 
     Returns ``([], [])`` when there is no aromatic bond. Refuses any OTHER aromatic heteroatom (a v1
     gap, e.g. aromatic P) and an aromatic system with no perfect matching -- loudly, never a silent
@@ -431,11 +437,41 @@ def _aromatic_matchings(
         degree[a] = degree.get(a, 0) + 1
         degree[b] = degree.get(b, 0) + 1
 
+    # An aromatic atom whose pi is committed to a NON-AROMATIC multiple bond (order >= 2) -- canonically an exocyclic
+    # ring carbonyl ``c(=O)`` -- has that pi electron spoken for outside the ring matching.  For a NEUTRAL CARBON this
+    # is a sound pi-DONOR (it sits out the matching) and the safety is airtight: 2 ring sigma + 1 exocyclic double =
+    # valence 4, a hard wall, so it can take no ring double, and NO currently-parsing molecule has such an atom as an
+    # acceptor (it would already be a valence-5 refusal).  For ANY OTHER atom the wall is GONE: a heteroatom's higher
+    # valences (N 3/5, S 2/4/6, P 3/5) mean :func:`_fill_hydrogens` does NOT block hypervalence, and a charged atom is
+    # classified by the R41 branch below -- so committing the pi outside the ring can reach a SILENT invalid
+    # hypervalence (neutral ``n(=O)``, ``O=[n+]``; RDKit rejects both).  We therefore FAIL CLOSED for every
+    # non-neutral-carbon committed-pi atom rather than risk a wrong Kekulé structure (evil-morty R46: the element-blind
+    # first cut let hypervalent N-oxide decoys through -- a fail-closed REFUSE turned into a silent wrong parse).  This
+    # closes the conjugated-carbonyl aromatic class (R39) -- purine-diones (caffeine/xanthine/theobromine/
+    # theophylline), pyrimidinones (uracil/cytosine/thymine), guanine/hypoxanthine, quinones, tropone: every exocyclic
+    # pi there is a neutral C=O -- while refusing the hypervalent-heteroatom decoys.  Checked BEFORE the charge branch
+    # so a charged exocyclic-pi atom refuses here, never slipping into the R41 acceptor whitelist.  Endpoints are
+    # unordered; only the aromatic ones are ever consulted.
+    committed_pi: set[int] = set()
+    for _a, _b, _o in bonds:
+        if _o != _AROMATIC and _o >= 2:
+            committed_pi.add(_a)
+            committed_pi.add(_b)
+
     acceptors: list[int] = []
     for a in arom_atoms:
         element = atoms[a].element
         charge = atoms[a].charge
-        if charge:
+        if a in committed_pi:
+            if element == "C" and not charge:
+                pass                            # neutral carbonyl/quinoid carbon: valence-4 hard wall -> a pi-donor
+            else:
+                raise SmilesError(
+                    f"aromatic {element!r} (formal charge {charge:+d}) bears an exocyclic multiple bond but is not a "
+                    "neutral carbon; only a neutral carbon is a sound exocyclic-pi donor (a heteroatom or charged "
+                    "atom can reach an invalid hypervalence) -- give an explicit Kekulé SMILES"
+                )
+        elif charge:
             # ROUND 41 charge-aware whitelist (tightened per the R41 review): admit EXACTLY the cationic ring N the
             # soundness proof covers -- a FORMAL +1 nitrogen whose total coordination (heavy sigma bonds + explicit
             # H) is 3, so taking one ring double reaches the valence-4 pyridinium / pyridine N-oxide / azolium

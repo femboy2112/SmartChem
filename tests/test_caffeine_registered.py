@@ -19,7 +19,6 @@ from smartchem.experiment.compile import compile_synthesis
 from smartchem.experiment.drafter import ConstraintBox
 from smartchem.identity_parse import InputKind, resolve_target
 from smartchem.service import RankedRouteSummary
-from smartchem.smiles import SmilesError
 from smartchem.smiles import parse_smiles as M
 from smartchem.structure import structure_by_name
 
@@ -106,12 +105,14 @@ def test_caffeine_identity_is_kekule_spelling_invariant():
     assert canonical_digest(a.canonical()) == canonical_digest(b.canonical())
 
 
-def test_aromatic_purine_spelling_is_a_documented_kekulizer_gap():
-    # the lowercase-aromatic purine spelling does NOT yet kekulize (a generic fused-ring aromaticity gap, the
-    # R39 conjugated-carbonyl class); the registry uses the explicit-Kekulé form.  Pinned as a KNOWN, fail-closed
-    # boundary so a future kekulizer fix is a deliberate, reviewed flip -- not a silent behaviour change.
-    with pytest.raises(SmilesError):
-        M("Cn1cnc2c1c(=O)n(C)c(=O)n2C")   # aromatic caffeine
+def test_aromatic_purine_spelling_now_kekulizes_to_the_same_identity():
+    # R46: the documented gap is CLOSED (exocyclic-pi donor rule).  RDKit's DEFAULT aromatic caffeine output now
+    # parses to the SAME structural identity as the explicit-Kekulé registry form -- the deliberate, reviewed flip
+    # of the former fail-closed boundary.  (Generic conjugated-carbonyl family: test_aromatic_carbonyl_kekulizer.py.)
+    from smartchem.contracts import canonical_digest
+    aromatic = M("Cn1c(=O)c2c(ncn2C)n(C)c1=O")     # RDKit MolToSmiles(caffeine) -- the spelling that used to raise
+    kekule = M(probe._SMILES["caffeine"])
+    assert canonical_digest(aromatic.canonical()) == canonical_digest(kekule.canonical())
 
 
 @pytest.mark.parametrize("name", list(_LADDER))

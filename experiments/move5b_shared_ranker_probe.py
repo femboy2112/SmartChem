@@ -30,7 +30,7 @@ it (dalembert):
   neutral-on-ignorance fix).
 
 The re-recon's ONE constructive finding IS earned and shipped this round (an INTRA-chemistry consolidation, NOT
-the cross-domain lift): ``_route_score`` and ``_dag_score`` duplicated the 10-tier score tuple + the M2b gating
+the cross-domain lift): ``_route_score`` and ``_dag_score`` duplicated the (now 11-)tier score tuple + the M2b gating
 verbatim, and ``rank_routes``/``rank_dags`` duplicated the Pareto-product + front + sort wiring, kept in sync only
 by a comment that ``drafter.py`` itself feared would drift ("M2b grows BOTH scorers together ... or the divergence
 reopens").  Both are multi-objective + neutral-on-unknown, so ONE shared core is sound there with two real call
@@ -57,7 +57,7 @@ from smartchem.experiment.drafter import (
 from smartchem.experiment.functorial_physics import PhysicsProduct
 from smartchem.open_circuit_pipeline import CircuitStage, within_spec
 
-FROZEN_HASH = "9547c422bcbfe899ac6a5da46d1f0d4cac15de923584351f91d9b390f6cdb165"
+FROZEN_HASH = "998ac97668c2bf85727421896a775cefd494f0ec95d0ef508ab795cc16efaf38"
 
 
 # --------------------------------------------------------------------------------------------------------------

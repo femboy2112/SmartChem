@@ -1,9 +1,26 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ aromatic-carbonyl-kekulizer-2026-09-11` (**ROUND 46 — aromatic conjugated-carbonyl kekulizer: RDKit's
-> DEFAULT purine SMILES now parses** — frontier 1 of the user's "full blast on both 1 (the aromatic-purine kekulizer)
-> and 2 (ranker chemical selectivity)". One valence-forced rule in `_aromatic_matchings`: a **neutral carbon** bearing
+> `verified @ ranker-disconnection-selectivity-2026-09-11` (**ROUND 47 — ranker chemical selectivity: the sound
+> disconnection now outranks the dubious one, DERIVED from bond energies (not hard-coded)** — frontier 2 of the user's
+> "full blast on both". The capped-scission engine over-generates; a C–C homologation outranked the sound
+> N-methylation to caffeine (both thermo-UNKNOWN → arbitrary discovery order). Added a DERIVED bond-additivity tier
+> (`smartchem/experiment/bond_enthalpy.py`: mean bond enthalpies = physical constants keyed by bond TYPE; reaction ΔH
+> by Hess's law over the net bond change), appended DEAD-LAST + strictly-subordinate + neutral-on-ignorance to the
+> shared `_score_tuple`, threaded through `_physics_ranked_order` into **both** the route and DAG rankers (R42
+> no-divergence preserved — pure extractors + caller coordinate). Sound methylation now rank 0 (ΔH −19), homologation
+> demoted (ΔH +19); the caffeine methylation is UNTABULATED, so the preference is derivation not lookup. **NOT
+> hard-coding reactions: bond energies are reality; Hess's law derives the chemistry.** **4-bearing gate: mr-president
+> SHIP-w/-cond (met) · birdperson SOUND-w/-folds · evil-morty MEDIUM+LOW→FIXED · dalembert SURVIVED-lookup-charge but
+> KILLED-sign-claim→FIXED.** The load-bearing fold (evil-morty + dalembert): bond additivity INVERTS the sign on
+> ring-strain/aromatization (cyclopropane→propene est +80 vs true −33; CHD→benzene +125 vs −22) → added an
+> **endocyclic-bond domain guard** that fails closed (BORDERLINE) when the ring-bond-type multiset changes, declining
+> exactly that regime while keeping the ring-preserving caffeine methylation. Honest dead-band 15 kJ (above the 14 kJ
+> in-domain residual, below the ±19 signal; NOT the combustion-excluded RMS overclaim). Signal named plainly:
+> thermodynamic DRIVE, a proxy for "sensible", every route still `FORMAL_CANDIDATE`. Probe FROZEN_HASH `1fb861ed`;
+> `RANKER_DISCONNECTION_SELECTIVITY_SCOPE_v0.1.md`; suite **4913/46/1** (+21 ranker tests).
+> Prior **ROUND 46 — aromatic conjugated-carbonyl kekulizer: RDKit's
+> DEFAULT purine SMILES now parses**. One valence-forced rule in `_aromatic_matchings`: a **neutral carbon** bearing
 > an exocyclic multiple bond (a ring carbonyl `c(=O)`) is a π-**donor** that sits out the ring matching — closing the
 > conjugated-carbonyl class (every purine, pyrimidinone nucleobase, guanine/hypoxanthine, quinones, tropone). Additive
 > (only reclassifies inputs that currently fail closed); all 10 family members verified vs the RDKit InChIKey oracle.
@@ -115,6 +132,36 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 ---
 
 ## ✅ DONE — current shipped capability
+
+**ROUND 47 — ranker chemical selectivity: the sound disconnection outranks the dubious one, DERIVED from bond
+energies (not hard-coded)** (one feature PR off `main`; frontier 2 of "full blast on both"). The R45 over-generation
+finding: the ranker put the C–C homologation `ethanol + theophylline → caffeine + methanol` ABOVE the sound
+N-methylation `theophylline + methanol → caffeine + water` — byte-identical `_score_tuple`s (both thermo-UNKNOWN), so
+arbitrary discovery order decided.
+
+- **The signal — DERIVED, not a reaction table** (`smartchem/experiment/bond_enthalpy.py`): a table of mean bond
+  enthalpies (physical constants keyed by bond TYPE, 44 entries, Atkins tabulation), and `reaction_delta_h_kj` =
+  Σ BDE(net broken) − Σ BDE(net formed) by Hess's law over the multiset bond change. `disconnection_favorability_rank`
+  → {0 FAVORABLE (ΔH < −band), 1 BORDERLINE/UNKNOWN, 2 UNFAVORABLE (ΔH > +band)}. Sound methylation −19 kJ → rank 0;
+  homologation +19 kJ → rank 2. The caffeine methylation is UNTABULATED (R45), so the preference is a **derivation,
+  not a lookup** (proven by generalization, NOT by reverse-antisymmetry — dalembert's non-sequitur catch).
+- **Placement**: appended DEAD-LAST to the shared `_score_tuple` (position 11, below the sourced kinetics regime),
+  threaded as a caller-computed coordinate through `_physics_ranked_order` into **both** `rank_routes` (route.steps)
+  and `rank_dags` (dag.steps) — so a route and its DAG twin rank by the identical discipline (R42 no-divergence held:
+  both scorers stay pure extractors). Strictly subordinate (only breaks ties among all-sourced-tied routes),
+  ranking-only (never `fit.status`), neutral-on-ignorance (untabulated → BORDERLINE middle).
+- **The domain guard (the load-bearing adversarial fold, evil-morty + dalembert)**: bond additivity is blind to
+  non-local stabilization and INVERTS the sign on ring-strain release (cyclopropane→propene: est +80, true −33) and
+  aromatization (1,3-CHD→benzene+H₂: est +125, true −22) — the caffeine target's own aromatic class. Fixed by an
+  **endocyclic-bond-type domain guard**: `reaction_delta_h_kj` fails closed (→ BORDERLINE) when the endocyclic
+  bond-type multiset is not preserved (ring formation/opening/aromatization), declining exactly the unsound regime
+  while keeping the ring-PRESERVING caffeine methylation. Honest dead-band **15 kJ** (above the 14 kJ largest in-domain
+  residual, below the ±19 signal; the earlier "combustion-excluded RMS = 10" was an overclaim, corrected).
+- **4-bearing gate**: mr-president **SHIP-w/-cond (met)** · birdperson **SOUND-w/-folds** (named the signal as
+  thermodynamic *drive*, a proxy for "sensible"; fixed the DAG-twin doc mismatch) · evil-morty **MEDIUM sign-inversion
+  + LOW dead-band → FIXED** · dalembert **SURVIVED the lookup-in-disguise charge, KILLED the sign-reliability claim →
+  FIXED** (his rival "just count C–C breaks" answered: that's a hard-coded heuristic; guarded bond additivity is
+  derived physics that generalizes). Probe FROZEN_HASH `1fb861ed`; `RANKER_DISCONNECTION_SELECTIVITY_SCOPE_v0.1.md`.
 
 **ROUND 46 — aromatic conjugated-carbonyl kekulizer: RDKit's default purine SMILES now parses** (one feature PR off
 `main`; frontier 1 of the user's *"full blast on both 1 (the aromatic-purine kekulizer) and 2 (ranker chemical

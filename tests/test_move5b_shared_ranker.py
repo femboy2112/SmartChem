@@ -61,9 +61,10 @@ def test_shared_ranker_helpers_exist_and_are_used():
     # functions delegate to (a smoke guard against a partial revert that re-duplicates one scorer).
     assert callable(drafter._score_tuple)
     assert callable(drafter._physics_ranked_order)
-    # _route_score / _dag_score keep their public signatures (front_index and net default) -- byte-compatible callers
-    assert drafter._route_score.__defaults__ == (0, None)
-    assert drafter._dag_score.__defaults__ == (0, None)
+    # _route_score / _dag_score keep their public signatures (front_index, net, and the DISCONN-SEL-01 derived_rank
+    # default) -- byte-compatible callers; both scorers gained the same neutral-default coordinate together.
+    assert drafter._route_score.__defaults__ == (0, None, 1)
+    assert drafter._dag_score.__defaults__ == (0, None, 1)
 
 
 def _env(tlo, thi, prov):

@@ -64,7 +64,7 @@
     "diagnostics": [],
     "identity_losses": [],
     "operation": "RECOMPILE",
-    "request_digest": "67ce74d2e70eadededb082f236e21ca3bf2851ac979be329a401c8bc94514487",
+    "request_digest": "5254f304079cedd04b72d3cee7acbcb8c8256f4840689c107246da805f5a2cc5",
     "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8",
     "search_receipt": {
       "candidate_enumeration_complete": true,
@@ -90,7 +90,7 @@
       "status": "COMPLETE_WITHIN_BOUNDS",
       "stop_reason": "",
       "target_identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
-      "terminal_policy_digest": "c810b4823de0a4cd07d1f92e88e944b4bcce2ec7fe0cac90ee290d5ae4a22de3",
+      "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
       "transform_registry_digest": "2e2bef05bd5fb83ef8794c339fcec655170aa214b13ca3225fcf044b49f5ffb0",
       "transforms_considered": 28
     },
@@ -103,7 +103,7 @@
       "layer": "STRUCTURE",
       "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
     },
-    "terminal_policy_digest": "c810b4823de0a4cd07d1f92e88e944b4bcce2ec7fe0cac90ee290d5ae4a22de3",
+    "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
     "tool_version": "0.5.0a1",
     "transform_registry_digest": "2e2bef05bd5fb83ef8794c339fcec655170aa214b13ca3225fcf044b49f5ffb0"
   },
@@ -119,9 +119,9 @@
     {
       "composability_verdict": "SINGLE_STEP",
       "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
-      "equilibrium_verdict": "ESSENTIALLY_COMPLETE",
+      "equilibrium_verdict": "UNKNOWN",
       "exclusions": [],
-      "feasibility_verdict": "FAVORABLE",
+      "feasibility_verdict": "UNKNOWN",
       "fit_status": "UNCONSTRAINED",
       "gaps": [],
       "kinetics_verdict": "UNKNOWN",
@@ -136,9 +136,9 @@
     {
       "composability_verdict": "UNKNOWN",
       "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
-      "equilibrium_verdict": "ESSENTIALLY_COMPLETE",
+      "equilibrium_verdict": "UNKNOWN",
       "exclusions": [],
-      "feasibility_verdict": "FAVORABLE",
+      "feasibility_verdict": "UNKNOWN",
       "fit_status": "UNKNOWN",
       "gaps": [
         "composability gap: UNKNOWN: no sourced stability data for C2H4O2; survival across the transition cannot be judged (inject its sourced thresholds to close this gap)"
@@ -269,7 +269,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "62f752151f1fe3fa4ae8c5d7f4842ddcb51a22e17e8e938676a03a5b4799dcb5",
+  "result_digest": "f89ffbce86fe73f4e618acf39af39db72d2346fbaba07f1d4cfdfac877c77c53",
   "schema_version": "smartchem.service/compilation-response-v1alpha12",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"

@@ -135,8 +135,12 @@ def test_a_lone_phase_corrected_derived_species_still_flags_lower_bound():
     )
     ref = resolve_thermo(ETHANOL, tbl, condensed=True)  # ethanol has a vaporization record -> corrected to liquid
     assert ref.grade == "PREDICTED" and ref.sigma_is_lower_bound is True
-    step = ExperimentStep.assembling(  # ethanol + acetic acid -> ethyl acetate + water (mass-conserving)
-        parse_smiles("CCOC(C)=O"), (ETHANOL, parse_smiles("CC(=O)O")), (parse_smiles("CCOC(C)=O"), H2O),
+    # ester HYDROLYSIS (ethyl acetate + water -> ethanol + acetic acid), NOT the forward esterification: the forward
+    # direction is a P1.3 domain-guarded class (aqueous free-acid dehydrative acylation -> UNKNOWN), so it would never
+    # reach the σ machinery.  Hydrolysis isolates the SAME lone phase-corrected derived species (ethanol) and the σ
+    # propagation is direction-symmetric, so this still exercises exactly the lower-bound flag under test.
+    step = ExperimentStep.assembling(
+        ETHANOL, (parse_smiles("CCOC(C)=O"), H2O), (ETHANOL, parse_smiles("CC(=O)O")),
     )
     f = feasibility_of_step(step, thermo=tbl)
     assert f.sigma_delta_g_kj is not None

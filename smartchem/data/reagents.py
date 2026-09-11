@@ -124,6 +124,24 @@ COMMODITY_REAGENTS: tuple[CommodityReagent, ...] = (
                      "fuel-line antifreeze / camp-stove fuel", "structure registry"),
     CommodityReagent("formic acid", _named("formic acid"), Availability.HARDWARE,
                      "descaler / some ant-sting products", "structure registry"),
+    # --- registry-grounded purchasable SCAFFOLDS (Lane-B reachability, R48) ---
+    # Real buyable aromatic/heterocyclic building blocks, so retrosynthesis of a common molecule can terminate at
+    # obtainable stock instead of at an un-buyable ring core.  Chosen by the SAME target-independent rule as the rest
+    # (commonly purchasable, honestly tagged by WHERE + tier) -- NOT a per-target curation: it includes salicylic acid,
+    # which is NOT a precursor of either north star (caffeine/paracetamol), proving the catalog is not a 2-target
+    # curation, and the higher tiers (PHARMACY/HARDWARE) are surfaced as such, never treated as a kitchen staple.
+    # Identity is registry-grounded; the availability tier/source is a curated obtainability note (see module
+    # docstring), asserting no price, purity, or legal status.  (Aspirin is deliberately NOT admitted: it is itself a
+    # registered synthesis target with existing producibility/bench-fit coverage, and making it buyable stock would
+    # short-circuit that coverage -- the poor man can just buy aspirin, but the test bench still needs to synthesise it.)
+    CommodityReagent("theophylline", _named("theophylline"), Availability.PHARMACY,
+                     "bronchodilator tablets; also veterinary -- OTC in some regions, prescription in others",
+                     "structure registry"),
+    CommodityReagent("4-aminophenol", _named("4-aminophenol"), Availability.HARDWARE,
+                     "photographic developer (para-aminophenol / 'Rodinal'); photo-supply / specialty retail",
+                     "structure registry"),
+    CommodityReagent("salicylic acid", _named("salicylic acid"), Availability.PHARMACY,
+                     "OTC wart / acne topical", "structure registry"),
     # --- constructed inorganic salts / acids (identity = explicit Lewis skeleton) ---
     CommodityReagent("sodium chloride", _mol(("Na", "Cl"), {Bond(0, 1)}), Availability.GROCERY,
                      "table salt", "constructed: Na-Cl"),

@@ -243,6 +243,98 @@ class StepFeasibility(Digestible):
         return self.direction is not FeasibilityDirection.UNKNOWN
 
 
+# ---- P1.3: the aqueous free-acid dehydrative-acylation DOMAIN GUARD -------------------------------------------
+# The ΔG estimator grades thermodynamic DRIVE and is BLIND to the acid-base salt sink and the activation barrier of
+# a DIRECT condensation of a FREE carboxylic acid into an amide/ester/thioester.  In water at ambient conditions,
+# acid + amine -> the ammonium CARBOXYLATE SALT (a proton transfer), NOT the amide; direct (Fischer) amidation/
+# esterification needs activation (heat with water removal, or an activated acyl donor -- anhydride / acid chloride).
+# So a FAVORABLE/ESSENTIALLY_COMPLETE ΔG verdict on this class is a fabrication (acetic acid + 4-aminophenol ->
+# paracetamol + water reads ΔG = -98 kJ, K ~ 1e17).  This is the R47 domain-guard pattern
+# ([[a-derived-estimate-must-guard-its-domain-of-validity]]) applied to the feasibility layer: recognize the class
+# by DERIVED bond-topology surgery (never a reaction lookup) and FAIL CLOSED to UNKNOWN.  The route is still FOUND;
+# feasibility just stops vouching for a class it cannot.  Because equilibrium_of_step reuses this ΔG and returns
+# UNKNOWN when it is None, one guard here makes BOTH the feasibility and equilibrium layers honest.
+#
+# The guard fires ONLY on the ELEMENTARY INTERMOLECULAR shape -- exactly 2 non-water reactants -> exactly 1 non-water
+# product, with water expelled.  That shape is load-bearing (evil-morty + dalembert, R48): it structurally excludes
+# (a) intramolecular ring closure (lactone/lactam, 1 reactant -- entropically favored, the ΔG IS competent, must NOT
+# guard), (b) activated-donor acylation (anhydride/acid-chloride -- a 2nd product, the leaving group), and (c)
+# multi-transformation BUNDLED steps whose independent sub-reactions would fool or cancel a whole-molecule count.
+# Within the elementary shape, conservation forces the net functional-group change to reflect the real acyl transfer,
+# so the counts are sound.  Bundled steps fail OPEN (keep the estimate); the general reaction-class recognizer over
+# arbitrary steps is PR-2, and the capped-scission engine emits elementary steps.  Scoped to ONE class (PR-1).
+
+
+def _is_carbonyl_carbon(idx: int, atoms, adjacency: "dict[int, list[tuple[int, int]]]") -> bool:
+    return any(order == 2 and atoms[n] == "O" for n, order in adjacency.get(idx, ()))
+
+
+def _acyl_group_counts(molecule: Molecule) -> "tuple[int, int, int, int]":
+    """(free-acid/carboxylate, amide, ester, thioester) carbonyl-group counts, by bond topology.
+
+    REPRESENTATION-ROBUST (dalembert R48): a carboxyl/carboxylate carbon is a carbonyl C whose singly-bonded O has
+    NO heavy neighbour other than that carbon -- so -C(=O)-O-H (explicit OR implicit H) and -C(=O)-O(-) (the salt)
+    both count, while an ester's -O- (heavy neighbour = the alkyl C) and an anhydride's bridging O (heavy neighbour
+    = a 2nd carbonyl C) do not.  No explicit-H dependence anywhere (the fail-closed guarantee cannot rest on a
+    precondition the graph may not carry -- KILL 1).  Each carbonyl carbon is scored for EVERY heteroatom
+    substituent it bears (no first-match ordering), so a carbamate counts amide+ester, a carbamic acid amide+acid."""
+    atoms = molecule.atoms
+    adjacency: "dict[int, list[tuple[int, int]]]" = {}
+    for bond in molecule.bonds:
+        adjacency.setdefault(bond.i, []).append((bond.j, bond.order))
+        adjacency.setdefault(bond.j, []).append((bond.i, bond.order))
+    acid = amide = ester = thioester = 0
+    for c, element in enumerate(atoms):
+        if element != "C" or not _is_carbonyl_carbon(c, atoms, adjacency):
+            continue
+        for n, order in adjacency.get(c, ()):
+            if order != 1:
+                continue
+            hetero = atoms[n]
+            if hetero == "N":
+                amide += 1
+            elif hetero in ("O", "S"):
+                heavy = [x for x, _o in adjacency.get(n, ()) if x != c and atoms[x] != "H"]
+                if hetero == "O" and not heavy:
+                    acid += 1  # -C(=O)-O-H / -C(=O)-O(-): carboxyl or carboxylate
+                elif len(heavy) == 1 and atoms[heavy[0]] == "C" and not _is_carbonyl_carbon(heavy[0], atoms, adjacency):
+                    if hetero == "O":
+                        ester += 1        # -O-C(non-carbonyl): ester (a 2nd carbonyl => anhydride, excluded)
+                    else:
+                        thioester += 1    # -S-C(non-carbonyl): thioester
+    return acid, amide, ester, thioester
+
+
+def _is_water(molecule: Molecule) -> bool:
+    return molecule.charge == 0 and dict(molecule.formula) == {"H": 2, "O": 1}
+
+
+def _is_intermolecular_acyl_condensation(step: ExperimentStep) -> bool:
+    """Does this step dehydratively acylate a free carboxylic acid onto a heteroatom nucleophile? (the guarded class)
+
+    Fires iff the ELEMENTARY INTERMOLECULAR shape holds -- exactly 2 non-water reactants -> exactly 1 non-water
+    product, with water net-produced -- AND, over that step, a free acid/carboxylate is net-consumed and an
+    amide/ester/thioester carbonyl is net-formed.  DERIVED graph surgery, target-independent; see the module note
+    above ``_acyl_group_counts`` for why the shape restriction makes the net counts sound."""
+    non_water_reactants = [m for m in step.reactants if not _is_water(m)]
+    non_water_products = [m for m in step.products if not _is_water(m)]
+    if len(non_water_reactants) != 2 or len(non_water_products) != 1:
+        return False
+    if sum(_is_water(m) for m in step.products) - sum(_is_water(m) for m in step.reactants) <= 0:
+        return False
+    r_acid = r_acyl = 0
+    for m in step.reactants:
+        acid, amide, ester, thioester = _acyl_group_counts(m)
+        r_acid += acid
+        r_acyl += amide + ester + thioester
+    p_acid = p_acyl = 0
+    for m in step.products:
+        acid, amide, ester, thioester = _acyl_group_counts(m)
+        p_acid += acid
+        p_acyl += amide + ester + thioester
+    return (p_acid - r_acid) < 0 and (p_acyl - r_acyl) > 0
+
+
 def feasibility_of_step(
     step: ExperimentStep, *, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None,
     derive: bool = True, phases: "dict[Molecule, str] | None" = None,
@@ -266,6 +358,24 @@ def feasibility_of_step(
     if type(step) is not ExperimentStep:
         raise TypeError("step must be an ExperimentStep")
     temperature = temperature_k if temperature_k is not None else _temperature_of(step)
+    # P1.3 DOMAIN GUARD: the aqueous free-acid dehydrative-acylation class is outside the ΔG estimator's domain of
+    # validity (blind to the acid-base salt sink / the activation requirement), so FAIL CLOSED to a loud UNKNOWN
+    # rather than assert a fabricated FAVORABLE/COMPLETE.  Fires even when thermo data is fully available -- that is
+    # exactly the point (the estimate exists and is a lie).  See the module note above ``_acyl_group_counts``.
+    if _is_intermolecular_acyl_condensation(step):
+        return StepFeasibility(
+            FeasibilityDirection.UNKNOWN, FeasibilityGrade.UNKNOWN, temperature, None, None, None,
+            "UNKNOWN (domain guard): an intermolecular DIRECT condensation of a free carboxylic acid into an "
+            "amide/ester/thioester with expulsion of water -- the ΔG estimator is blind to the acid-base salt sink "
+            "(aqueous acid + amine gives the ammonium carboxylate salt, not the amide) and to the activation this "
+            "class requires (heat + water removal, or an activated acyl donor -- an anhydride/acid chloride), so a "
+            "computed ΔG is outside its domain of validity; failed closed rather than assert a fabricated FAVORABLE/"
+            "COMPLETE verdict for a mechanism that does not proceed as written",
+            unknown("delta-G-rxn", "kJ/mol",
+                    "the intermolecular free-acid dehydrative-acylation class is outside the ΔG estimator's domain "
+                    "of validity (blind to the acid-base salt sink / the activation requirement)"),
+            (),
+        )
     species, nu = _coefficient_vector(step)
     canon_phases = {k.canonical(): v for k, v in phases.items()} if phases else {}
     resolved = [

@@ -40,6 +40,7 @@ from ..data.kinetics import KineticTable
 from ..decompiler import Formula
 from ..structure import resolve_structure
 from .accounting import PhysicalAccounting, account_route
+from .bond_enthalpy import disconnection_favorability_rank
 from .bucket import Bucket
 from .ceiling import RouteCeiling, route_ceiling
 from .composability import Composability, verify_composability
@@ -524,9 +525,9 @@ def _pareto_front_indices(products: "tuple[PhysicsProduct, ...]") -> tuple[int, 
 def _score_tuple(
     status: RouteFitStatus, comp_verdict: str, sel_verdict: str, feas_verdict: str, eq_verdict: str,
     kin_verdict: str, n_gaps: int, n_exclusions: int, front_index: int = 0,
-    net_delta_g: float | None = None,
+    net_delta_g: float | None = None, derived_rank: int = 1,
 ) -> tuple:
-    """The shared 10-tier ranking key (lower = better) for a linear route OR a convergent DAG.
+    """The shared 11-tier ranking key (lower = better) for a linear route OR a convergent DAG.
 
     A linear route (:func:`_route_score`) and its convergent-DAG analogue (:func:`_dag_score`) MUST order by the
     SAME sourced discipline -- the DAG-RANK-01 no-divergence promise.  Historically each carried its OWN verbatim
@@ -594,39 +595,56 @@ def _score_tuple(
         n_gaps,
         n_exclusions,
         regime_rank.get(kin_verdict, 2),
+        # DEAD-LAST: the DERIVED bond-additivity disconnection tier (DISCONN-SEL-01).  Strictly SUBORDINATE to every
+        # sourced tier above -- it only separates routes that tie on all of them (where the sourced thermo is UNKNOWN,
+        # e.g. the R45 caffeine over-generation: a sound N-methylation vs a C-C homologation, byte-identical on every
+        # sourced tier, previously split only by arbitrary discovery order).  {0 FAVORABLE, 1 BORDERLINE/UNKNOWN,
+        # 2 UNFAVORABLE} from the bond-additivity net ΔH sign past a calibrated dead-band -- neutral on ignorance (an
+        # untabulated route sits at the BORDERLINE middle, never rewarded or penalised).  RANKING-ONLY: it never enters
+        # ``fit.status`` or any L2 grade, exactly like the kinetics regime.  A CALLER-COMPUTED coordinate (like
+        # front_index/net_delta_g), threaded through _physics_ranked_order, so BOTH _route_score and _dag_score stay
+        # pure extractors and cannot diverge (the R42 no-divergence promise); default 1 (neutral) when unsupplied.
+        derived_rank,
     )
 
 
 def _physics_ranked_order(entries, score_fn) -> list:
     """The shared M2b ranking ORDER for linear routes and convergent DAGs (the DAG-RANK-01 no-divergence promise).
 
-    ``entries`` is a sequence of ``(fit, net, survival)`` triples -- one per candidate: ``fit`` is the object
-    ``score_fn`` reads; ``net`` / ``survival`` are its M2-FP Pareto coordinates (the additive Hess net ΔG and the
-    R23 survival monoid).  Each caller builds the triple in a SINGLE aligned pass, so a candidate's fit and its two
-    coordinates cannot drift out of position (birdperson fold: alignment is structural, not a three-parallel-list
-    caller obligation).  The non-dominated FRONT is SET-RELATIVE, so it is computed here over the WHOLE candidate
+    ``entries`` is a sequence of ``(fit, net, survival[, derived_rank])`` tuples -- one per candidate: ``fit`` is the
+    object ``score_fn`` reads; ``net`` / ``survival`` are its M2-FP Pareto coordinates (the additive Hess net ΔG and
+    the R23 survival monoid); the optional ``derived_rank`` is the DISCONN-SEL-01 bond-additivity coordinate (neutral 1
+    if absent).  Each caller builds the tuple in a SINGLE aligned pass, so a candidate's fit and its coordinates cannot
+    drift out of position (birdperson fold: alignment is structural, not a parallel-list caller obligation).  The non-dominated FRONT is SET-RELATIVE, so it is computed here over the WHOLE candidate
     set (:func:`_pareto_front_indices`); the ΔG magnitude is per-candidate.  A STABLE sort over indices keeps
     discovery order for ties -- so Pareto-INCOMPARABLE candidates (same front, no ΔG separation) are presented in
     discovery order, never forced into a fabricated order.  Returns the best-first index permutation.  (This wiring
     was duplicated verbatim in :func:`rank_routes` and :func:`rank_dags`; sharing it makes the "both move together
     or neither does" promise structural, not a comment.)
     """
-    fits = [fit for fit, _net, _survival in entries]
-    products = tuple(PhysicsProduct(net, survival) for _fit, net, survival in entries)
+    fits = [e[0] for e in entries]
+    products = tuple(PhysicsProduct(e[1], e[2]) for e in entries)
+    # DISCONN-SEL-01: an optional 4th per-candidate coordinate, the DERIVED bond-additivity disconnection rank
+    # ({0,1,2}, neutral default 1).  Carried here exactly like net/survival so the dead-last derived tier is fed
+    # IDENTICALLY into _route_score and _dag_score -- routes and their DAG twins rank by the same discipline.
+    dranks = [e[3] if len(e) > 3 else 1 for e in entries]
     fronts = _pareto_front_indices(products)
-    return sorted(range(len(fits)), key=lambda i: score_fn(fits[i], fronts[i], products[i].delta_g_kj))
+    return sorted(range(len(fits)),
+                  key=lambda i: score_fn(fits[i], fronts[i], products[i].delta_g_kj, dranks[i]))
 
 
-def _route_score(fit: RouteFit, front_index: int = 0, net_delta_g: float | None = None) -> tuple:
+def _route_score(fit: RouteFit, front_index: int = 0, net_delta_g: float | None = None,
+                 derived_rank: int = 1) -> tuple:
     """The linear-route ranking key: a thin verdict-extractor over the shared :func:`_score_tuple`.
 
     Pulls a :class:`RouteFit`'s NESTED verdicts (``fit.selectivity.verdict`` etc.) and hands them to the shared
-    core.  Byte-identical to the pre-consolidation body (which held its own copy of the tier dicts + tuple).
+    core.  ``derived_rank`` is a per-candidate coordinate computed by the caller (like ``front_index``/``net_delta_g``),
+    so the scorer stays a pure extractor and CANNOT diverge from :func:`_dag_score` by omission.  Default 1 (neutral).
     """
     return _score_tuple(
         fit.status, fit.composability.verdict, fit.selectivity.verdict, fit.feasibility.verdict,
         fit.equilibrium.verdict, fit.kinetics.verdict, len(fit.gaps), len(fit.exclusions),
-        front_index, net_delta_g,
+        front_index, net_delta_g, derived_rank,
     )
 
 
@@ -661,13 +679,15 @@ def rank_routes(
     # SHARED _physics_ranked_order (byte-identical wiring to rank_dags -- the DAG-RANK-01 no-divergence promise now
     # structural, not a comment): a route ranks by exactly the discipline a DAG does.
     order = _physics_ranked_order(
-        [(f, f.feasibility.net_delta_g_kj, f.composability.route_surviving_fraction) for f in fits],
+        [(f, f.feasibility.net_delta_g_kj, f.composability.route_surviving_fraction,
+          disconnection_favorability_rank(f.route)) for f in fits],
         _route_score,
     )
     return tuple(fits[i] for i in order)
 
 
-def _dag_score(fit: DAGBenchFit, front_index: int = 0, net_delta_g: float | None = None) -> tuple:
+def _dag_score(fit: DAGBenchFit, front_index: int = 0, net_delta_g: float | None = None,
+               derived_rank: int = 1) -> tuple:
     """Sort key for a convergent DAG, lower = better -- the DAG analogue of :func:`_route_score`'s STRUCTURAL tiers.
 
     Ranks on exactly what the combined :class:`DAGBenchFit` carries: the section-11 status (a FITS/UNCONSTRAINED DAG
@@ -696,7 +716,7 @@ def _dag_score(fit: DAGBenchFit, front_index: int = 0, net_delta_g: float | None
     return _score_tuple(
         fit.status, fit.composability.verdict, fit.selectivity_verdict, fit.feasibility_verdict,
         fit.equilibrium_verdict, fit.kinetics_verdict, len(fit.gaps), len(fit.exclusions),
-        front_index, net_delta_g,
+        front_index, net_delta_g, derived_rank,
     )
 
 
@@ -741,8 +761,8 @@ def rank_dags(
     # additive net ΔG is the Hess sum over its steps (route_net_delta_g accepts the DAG -- intermediates cancel), now
     # phase-fed (ITEM5-DAG-PHASE-01); survival is the DAG survival monoid (Composability.route_surviving_fraction).
     order = _physics_ranked_order(
-        [(fit, route_net_delta_g(dag, phases=phases), fit.composability.route_surviving_fraction)
-         for fit, dag in scored],
+        [(fit, route_net_delta_g(dag, phases=phases), fit.composability.route_surviving_fraction,
+          disconnection_favorability_rank(dag)) for fit, dag in scored],
         _dag_score,
     )
     return tuple(scored[i][1] for i in order)

@@ -344,13 +344,20 @@ def test_dag_mode_admission_re_derives_and_survives_round_trip():
 
 def _convergent_40min_dag():
     """A genuinely convergent DAG: two independent 40-min branches join at a third 40-min step.
-    Serial flattening = 120 min; critical path (either branch -> join) = 80 min."""
+    Serial flattening = 120 min; critical path (either branch -> join) = 80 min.
+
+    An ethyl-chloride synthesis (NOT esterification): two branches (ethanol dehydration -> ethene;
+    hydrogen chloride from the elements) join at the hydrochlorination.  None of the three steps is a
+    P1.3 domain-guarded free-acid dehydrative acylation, so every node carries a real (non-UNKNOWN)
+    group-derived ΔG -- the join and HCl branch are FAVORABLE, the dehydration BORDERLINE, so the
+    worst-node rollup is BORDERLINE/BALANCED (the earlier ethyl-acetate fixture's esterification join is
+    now correctly UNKNOWN under the guard, which would have made the rollup vacuously UNKNOWN)."""
     from smartchem.contracts import EvidenceStatus
     from smartchem.experiment.dag import SynthesisDAG
     from smartchem.experiment.step import ExperimentStep
     from smartchem.smiles import parse_smiles
-    acoh, etoh, ea, water, ald, ethene, o2 = (parse_smiles(s) for s in
-        ("CC(=O)O", "CCO", "CC(=O)OCC", "O", "CC=O", "C=C", "O=O"))
+    ethanol, ethene, water, h2, cl2, hcl, etcl = (parse_smiles(s) for s in
+        ("CCO", "C=C", "O", "[H][H]", "ClCl", "Cl", "CCCl"))
 
     def step(target, reactants, products):
         env = ConditionEnvelope(
@@ -361,9 +368,9 @@ def _convergent_40min_dag():
         return ExperimentStep.assembling(target, reactants, products, envelope=env)
 
     return SynthesisDAG.of(
-        step(acoh, (ald, ald, o2), (acoh, acoh)),   # branch 1: -> acetic acid
-        step(etoh, (ethene, water), (etoh,)),        # branch 2: -> ethanol
-        step(ea, (acoh, etoh), (ea, water)),         # join: genuinely convergent
+        step(ethene, (ethanol,), (ethene, water)),   # branch 1: ethanol -> ethene + water (BORDERLINE)
+        step(hcl, (h2, cl2), (hcl, hcl)),            # branch 2: H2 + Cl2 -> 2 HCl (FAVORABLE)
+        step(etcl, (ethene, hcl), (etcl,)),          # join: ethene + HCl -> ethyl chloride (genuinely convergent)
     )
 
 

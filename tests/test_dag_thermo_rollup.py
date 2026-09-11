@@ -38,9 +38,10 @@ def test_worst_selectivity_mirrors_route_selectivity_precedence_exactly():
 
 
 def test_the_rollup_aggregates_real_sourced_thermo_non_vacuously():
-    # NON-VACUOUS: the convergent ethyl-acetate-style DAG carries SEEDED thermo, so the worst-node fold yields
-    # NON-UNKNOWN verdicts -- a broken fold (e.g. always-UNKNOWN, or reading the wrong field) would fail here, which a
-    # vacuous all-UNKNOWN fixture would have hidden.
+    # NON-VACUOUS: the convergent ethyl-chloride DAG (ethanol->ethene dehydration + HCl-from-elements, joining at the
+    # hydrochlorination -- NO free-acid dehydrative acylation, so none of it is P1.3-domain-guarded) carries real
+    # group-derived thermo, so the worst-node fold yields NON-UNKNOWN verdicts -- a broken fold (e.g. always-UNKNOWN, or
+    # reading the wrong field) would fail here, which a vacuous all-UNKNOWN fixture would have hidden.
     r = dag_thermo_rollup(_convergent_40min_dag())
     assert isinstance(r, DAGThermoRollup)
     assert r.feasibility_verdict == "BORDERLINE"                              # a real sourced ΔG verdict, not UNKNOWN

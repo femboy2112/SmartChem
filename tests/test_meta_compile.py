@@ -76,8 +76,11 @@ class TestCompileOpen:
             assert net.dom.formula == net.cod.formula        # the closure's net conserves
 
     def test_the_free_energy_axis_is_populated_for_a_sourced_closure(self):
-        mc = compile_open(ETOAC, reagents=(WATER,), available=(ACOH, ETOH, WATER), max_depth=2, max_routes=20)
-        # acetic acid + ethanol are in the extended thermo table, so at least one closure has a known drive
+        # diethyl ether (2 EtOH -> Et2O + water) is an ETHERIFICATION, NOT the P1.3 free-acid dehydrative-acylation
+        # class, so its ΔG is not domain-guarded; ethanol/water are thermo-covered, so the closure has a known drive.
+        # (The ethyl-acetate closure this used to compile is the guarded esterification -> net ΔG UNKNOWN, which would
+        # vacuously empty this axis -- exactly the fabrication the guard exists to refuse.)
+        mc = compile_open(M("CCOCC"), reagents=(WATER,), available=(ETOH, WATER), max_depth=2, max_routes=20)
         assert any(c.net_delta_g_kj is not None for c in mc.closures)
 
     def test_frontier_is_a_subset_of_closures(self):

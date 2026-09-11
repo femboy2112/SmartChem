@@ -84,11 +84,14 @@ def test_the_service_returns_dag_dossiers_ranked_best_first_non_vacuously():
     The earlier assertion was vacuous twice: the paracetamol fixture returns a SINGLETON dossier (``ranks==sorted`` is
     trivially true -- a reversed sort would pass), and every reachable service DAG set carries a CONSTANT ``fit_status``,
     so a status-only check never touches the reorder ``rank_dags`` actually performs (which falls to the secondary
-    gap-count key).  This asserts the REAL reorder: ethyl acetate through the convergent grammar yields several UNKNOWN
+    gap-count key).  This asserts the REAL reorder: methyl propyl ether through the convergent grammar yields several
     dossiers whose GAP COUNTS genuinely vary, and the service must return them with the ``(status, gap-count)`` key
-    non-decreasing -- a dropped, reversed, or wrong-key sort now fails."""
+    non-decreasing -- a dropped, reversed, or wrong-key sort now fails.  (The earlier subject, ethyl acetate, is now
+    all-thermo-UNKNOWN under the P1.3 free-acid dehydrative-acylation guard -- every ester route reconstructs the
+    ester via a domain-guarded condensation, so its net-ΔG reorder is dead; an ETHER isolates the M2b tier instead,
+    since ether formation is not the guarded class and carries a real group-derived ΔG.)"""
     resp = run_compilation(build_recompile_request(
-        "smiles:CCOC(=O)C", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+        "smiles:COCCC", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
         process=ProcessBounds(max_total_minutes=600.0), max_depth=3))
     dossiers = resp.ranked_dag_dossiers
     assert len(dossiers) >= 2                                   # a real multi-route ranking subject

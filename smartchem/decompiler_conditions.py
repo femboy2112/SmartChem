@@ -206,10 +206,19 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
     _sig("C7H14O2", ("H2O",), ("C5H12O", "C2H4O2")): ConditionRecord(
         ConditionEnvelope(
             medium="neat; acid-catalyzed (conc. H2SO4); reflux then fractional distillation",
+            # STRUCTURED catalyst (CATALYST-OBTAIN-01): a quote-read of the sourced medium's "conc. H2SO4" -- the
+            # regenerated Fischer acid catalyst, promoted from free text to the structured field so the obtainability
+            # model (smartchem.experiment.catalyst_availability) can see it.  Sulfuric acid is a HARDWARE-tier
+            # commodity (drain opener / battery acid) -> kitchen-obtainable, so this route is correctly NOT blocked.
+            # Only this ONE record carries a structured catalyst: methyl salicylate/paracetamol name no specific
+            # catalyst species in their sourced quotes ("Fischer esterification" / "acid-catalyzed" alone), so naming
+            # one there would be an inference, not a quote -- they stay catalysts=().
+            catalysts=("sulfuric acid",),
             status=EvidenceStatus.EXPERIMENTAL,
             provenance=(
                 "assembly direction: acid-catalyzed Fischer esterification of isopentyl alcohol with "
-                "acetic acid; LibreTexts 'Synthesis of Isopentyl Acetate (Experiment)' (CC BY-NC-SA 4.0)"
+                "acetic acid; LibreTexts 'Synthesis of Isopentyl Acetate (Experiment)' (CC BY-NC-SA 4.0); "
+                "structured catalysts=(sulfuric acid) is a quote-read of the sourced 'conc. H2SO4' medium"
             ),
             source=SourceCitation(
                 "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/"

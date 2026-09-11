@@ -20,9 +20,20 @@ census) killed *that* too, and together the bearings proved a deeper result than
     targets), never the unconventional ones the directive wants.
 
 Therefore the ingenuity reward is deferred until a real substrate-aware feasibility model exists (one that
-sees the whole molecule -- catalysis, chemoselectivity, sterics). Every fact below is recomputed from live
-production code; nothing is an agent's story. See docs/research/POOR_MAN_INGENUITY_GATE_SCOPE_v0.1.md and
-the R49 sibling experiments/poor_man_ingenuity_gate_defer_probe.py.
+sees the whole molecule -- catalysis, chemoselectivity, sterics).
+
+R51 UPDATE -- the catalyst-availability half is now BUILT; the defer still stands on KILL-1.
+CATALYST-OBTAIN-01 (:mod:`smartchem.experiment.catalyst_availability`) shipped the FIRST increment of that
+"real substrate-aware model": a sound catalyst-obtainability gate (grounded classifier + a burden-of-proof
+flip -- a DECLARED catalyst passes only if positively kitchen-obtainable, else it BLOCKS).  That deliberately
+DISCHARGES two of this probe's SUPPORTING observations -- KILL-2b (a SEED record now carries a structured
+catalyst) and the blindness KILL-2 measured (the obtainability model now EXCLUDES a declared Ru/Ir catalyst).
+It does NOT reopen the ingenuity reward: the LOAD-BEARING kill is KILL-1 (the enumeration-frontier RECOGNIZER
+cannot carry an unbounded-radius envelope on a bounded-radius edit), which is untouched, and Blade 1 (the
+census) is untouched.  So the two blades still close and the reward stays deferred; what changed is that the
+capability stack is no longer *catalyst-obtainability*-blind.  See
+docs/research/CATALYST_OBTAINABILITY_SCOPE_v0.1.md and the R49 sibling
+experiments/poor_man_ingenuity_gate_defer_probe.py.  Every fact below is recomputed from live production code.
 """
 from __future__ import annotations
 
@@ -34,6 +45,8 @@ from smartchem.conditions import ConditionEnvelope, Interval
 from smartchem.contracts import EvidenceStatus
 from smartchem.data.reagents import commodity_for
 from smartchem.decompiler_conditions import SEED_CONDITIONS
+from smartchem.experiment.catalyst_availability import (
+    catalyst_availability, is_kitchen_obtainable, route_catalyst_blockers)
 from smartchem.experiment.compile import compile_synthesis
 from smartchem.experiment.equipment import equipment_for_envelope
 from smartchem.experiment.step import _ident
@@ -42,20 +55,23 @@ from smartchem.smiles import parse_smiles
 from smartchem.structure import structure_by_name
 from smartchem.structure_descent import _join, capped_scissions
 
-#: The frozen fingerprint of :func:`_payload`.  A live code change that alters any kill (a new catalyst
-#: model, a per-class envelope, a SEED record that flips a census target) breaks this loudly -- the tripwire
-#: that the defer's premises changed.  Volatile counts (registry size, SEED size) are deliberately NOT hashed.
-FROZEN_HASH = "e2189bdc015f9e045b8bb77d61ae4a77c2f51ed7afb6409af22a751dfef5a2f2"
+#: The frozen fingerprint of :func:`_payload`.  A live code change that alters the LOAD-BEARING kill (KILL-1) or
+#: the census, or that changes the now-built catalyst-obtainability state, breaks this loudly -- the tripwire that
+#: the defer's premises moved.  Volatile counts (registry size, SEED size) are deliberately NOT hashed.  Re-frozen
+#: at R51 when CATALYST-OBTAIN-01 discharged KILL-2b + the KILL-2 blindness (deliberately, in the open).
+FROZEN_HASH = "56fa061c2b206d95538227fc2d8e46b4adb5678a55cf555df19a490180b3029d"
 
 _WATER = parse_smiles("O")
 
-# -- KILL-1: the atom-mapped local edit collides across the kitchen boundary, unboundedly -------------
+# -- KILL-1 (LOAD-BEARING, UNTOUCHED): the atom-mapped local edit collides across the kitchen boundary --------
 # Each row is (label, ester SMILES, acid SMILES, alcohol SMILES, kitchen-reachable?).  Every row is the
 # SAME reaction class ("primary alcohol + carboxylic acid -> ester + water", Fischer esterification), read
 # backward from the ester as the real frontier transform does.  The amino members straddle to NOT-kitchen:
 # the amine is the stronger nucleophile, so heating the amino-alcohol with the acid gives the N-acyl amide,
 # not the O-ester -- selective O-esterification needs amine protection/deprotection (multi-step), not a
-# kitchen one-pot.  Pentyl/heptyl acetate are classic hobby "banana oil" Fischer esters.
+# kitchen one-pot.  Pentyl/heptyl acetate are classic hobby "banana oil" Fischer esters.  This is the kill
+# the whole DEFER rests on, and CATALYST-OBTAIN-01 does NOT touch it: it is a RECOGNIZER-radius kill, not a
+# catalyst-obtainability kill.
 _ESTER_FAMILY = (
     ("pentyl acetate", "CC(=O)OCCCCC", "CC(=O)O", "CCCCCO", True),
     ("heptyl acetate", "CC(=O)OCCCCCCC", "CC(=O)O", "CCCCCCCO", True),
@@ -112,21 +128,14 @@ def radius_collision():
     }
 
 
-# -- KILL-2: the "existing capability stack" is structurally blind to catalysis ----------------------
-def catalyst_blind_reward():
-    """KILL-2: build the caffeine N-methylation envelope the way L2 is *supposed* to be built -- honest and
-    complete, the metal catalyst and forcing temperature DECLARED, nothing omitted -- then run the three
-    legs the redux names as the kitchen capability model.  Not one returns EXCLUDED, so a reward gated on
-    this stack would VOUCH a Ru/Ir-catalyzed reaction as poor-man-reachable (R49's KILL-1, one storey down)."""
-    env = ConditionEnvelope(
-        temperature=Interval(423.0, 453.0, "K"),  # ~150-180 C
-        catalysts=("Ru or Ir borrowing-hydrogen catalyst",),
-        medium="neat / solventless",
-        status=EvidenceStatus.EXPERIMENTAL,
-        provenance="textbook: borrowing-hydrogen N-alkylation of amines/amides with alcohols requires Ru/Ir",
-    )
-    fits = {name: evaluate_process([env], ProcessBounds.preset(name)).status.value
-            for name in ("quick", "low-touch", "unconstrained")}
+# -- KILL-2 (BOUNDARY, R51): the OLD process/equipment/reagent-tier legs stay catalyst-agnostic BY DESIGN ------
+def process_equipment_legs_are_catalyst_agnostic():
+    """R50 measured that the process/equipment/consumed-reagent legs do NOT EXCLUDE a declared Ru/Ir catalyst.
+    That is STILL TRUE and CORRECT: those legs judge time/attention/equipment/consumed-stock, not catalyst
+    obtainability -- a different axis.  It is no longer a *kill*, because CATALYST-OBTAIN-01 added the missing
+    axis as a SEPARATE leg (see :func:`catalyst_obtainability_gate_blocks`).  This function documents the
+    boundary: the honest envelope with the metal catalyst DECLARED still passes these three legs unchanged."""
+    env = _metal_catalyst_envelope()
     any_excluded = any(evaluate_process([env], ProcessBounds.preset(name)).exclusions
                        for name in ("quick", "low-touch", "unconstrained"))
     items = equipment_for_envelope(env)
@@ -140,27 +149,70 @@ def catalyst_blind_reward():
         consumed_obtainable[nm] = (c.availability.value if c else None)
     return {
         "declared_catalyst": list(env.catalysts),
-        "fits_statuses": fits,
-        "any_leg_excluded": bool(any_excluded),
-        "equipment_names_catalyst": equipment_names_catalyst,
+        "process_legs_exclude": bool(any_excluded),          # False -- process is not the obtainability axis
+        "equipment_names_catalyst": equipment_names_catalyst,  # False -- equipment is not the obtainability axis
         "all_consumed_obtainable": all(v is not None for v in consumed_obtainable.values()),
-        "consumed_tiers": consumed_obtainable,
     }
 
 
-def seed_catalysts_empty():
-    """KILL-2b: every sourced SEED_CONDITIONS record has an empty structured ``catalysts`` field -- where a
-    catalyst is genuinely required it is buried in free-text ``medium``.  So even the sourced path carries
-    zero structured catalyst information, and it is the authoring template a per-class table would copy."""
-    envs = [rec.envelope for rec in SEED_CONDITIONS.values()]
+def _metal_catalyst_envelope() -> ConditionEnvelope:
+    """The honest, complete borrowing-hydrogen N-alkylation envelope -- metal catalyst and forcing temperature
+    DECLARED, nothing omitted -- the exact input the R50 redux would have VOUCHED."""
+    return ConditionEnvelope(
+        temperature=Interval(423.0, 453.0, "K"),  # ~150-180 C
+        catalysts=("Ru or Ir borrowing-hydrogen catalyst",),
+        medium="neat / solventless",
+        status=EvidenceStatus.EXPERIMENTAL,
+        provenance="textbook: borrowing-hydrogen N-alkylation of amines/amides with alcohols requires Ru/Ir",
+    )
+
+
+class _FakeStep:
+    def __init__(self, env): self.envelope = env
+
+
+class _FakeRoute:
+    def __init__(self, envs): self.steps = [_FakeStep(e) for e in envs]
+
+
+def catalyst_obtainability_gate_blocks():
+    """R51 DISCHARGE of the KILL-2 blindness: the NEW obtainability leg (CATALYST-OBTAIN-01) now EXCLUDES the
+    declared Ru/Ir catalyst the old stack silently VOUCHED.  A DECLARED catalyst the kitchen cannot positively
+    obtain (an industrial metal catalyst, or an unrecognized one -- the burden-of-proof flip) produces a hard
+    blocker; the sourced kitchen catalyst (isopentyl acetate's H2SO4 -> HARDWARE) does NOT.  So the poor-man
+    stack is no longer catalyst-obtainability-blind -- while KILL-1 (the recogniser) keeps the reward deferred."""
+    metal_env = _metal_catalyst_envelope()
+    metal_blockers = route_catalyst_blockers(_FakeRoute([metal_env]))
+    kitchen_env = ConditionEnvelope(
+        catalysts=("sulfuric acid",), medium="neat; acid-catalyzed",
+        status=EvidenceStatus.EXPERIMENTAL, provenance="Fischer acid catalyst; kitchen-obtainable",
+    )
+    kitchen_blockers = route_catalyst_blockers(_FakeRoute([kitchen_env]))
     return {
-        "all_catalysts_field_empty": all(e.catalysts == () for e in envs),
-        "any_catalyst_in_medium_text": any("cataly" in e.medium.lower() or "acid" in e.medium.lower()
-                                           for e in envs),
+        "metal_catalyst_blocked": bool(metal_blockers),
+        "metal_catalyst_tier_not_kitchen": not is_kitchen_obtainable(
+            catalyst_availability("Ru or Ir borrowing-hydrogen catalyst")),
+        "kitchen_catalyst_not_blocked": kitchen_blockers == (),
     }
 
 
-# -- The scissors census: the only sound signal is conventional, not ingenious ----------------------
+def seed_catalyst_now_populated():
+    """R51 DISCHARGE of KILL-2b: exactly ONE SEED_CONDITIONS record (isopentyl acetate, the only one whose
+    sourced quote names a specific catalyst -- "conc. H2SO4") now carries a STRUCTURED catalyst, and it is
+    kitchen-obtainable (sulfuric acid -> HARDWARE), so the sourced path is no longer structurally catalyst-blind.
+    The records whose quotes name no specific species stay catalysts=() (naming one would be an inference)."""
+    envs = [rec.envelope for rec in SEED_CONDITIONS.values()]
+    populated = [e for e in envs if e.catalysts]
+    all_populated_kitchen = all(
+        all(is_kitchen_obtainable(catalyst_availability(c)) for c in e.catalysts) for e in populated
+    )
+    return {
+        "n_records_with_structured_catalyst": len(populated),
+        "all_populated_catalysts_kitchen": bool(populated) and all_populated_kitchen,
+    }
+
+
+# -- The scissors census (Blade 1, UNTOUCHED): the only sound signal is conventional, not ingenious ----------
 _CENSUS_TARGETS = ("methyl salicylate", "caffeine", "paracetamol")
 _KITCHEN_TIERS = ("grocery", "pharmacy", "hardware", "pool_garden")
 
@@ -204,15 +256,16 @@ def sourced_signal_is_conventional():
 
 def _payload() -> dict:
     """The load-bearing conclusions of the defer, recomputed from live code -- the frozen subject.  Volatile
-    counts (registry size, SEED size) are excluded so the hash breaks only on a real premise change."""
+    counts (registry size, SEED size) are excluded so the hash breaks only on a real premise change.  R51: the
+    two catalyst sub-observations are now DISCHARGE records (KILL-2b populated, the KILL-2 blindness repaired at
+    the obtainability layer); KILL-1 + the census remain the load-bearing DEFER evidence."""
     return {
         "schema": "poor-man-ingenuity-scissors-01",
-        "round": 50,
+        "round": 51,
         "kill_1_radius_collision": radius_collision(),
-        "kill_2_catalyst_blind_reward": {
-            k: v for k, v in catalyst_blind_reward().items() if k != "consumed_tiers"
-        },
-        "kill_2b_seed_catalysts_empty": seed_catalysts_empty(),
+        "kill_2_process_equipment_legs_agnostic": process_equipment_legs_are_catalyst_agnostic(),
+        "r51_catalyst_gate_now_blocks": catalyst_obtainability_gate_blocks(),
+        "r51_seed_catalyst_now_populated": seed_catalyst_now_populated(),
         "scissors_census": {
             k: v for k, v in sourced_signal_is_conventional().items() if k != "per_target"
         },
@@ -224,30 +277,41 @@ def content_hash() -> str:
 
 
 def validate() -> bool:
-    """Assert every kill still holds against live code.  Raises on any drift; returns True when the defer's
-    premises are all intact."""
+    """Assert the DEFER still holds against live code (KILL-1 + census) AND the R51 discharges are real.
+    Raises on any drift; returns True when every premise is intact."""
+    # -- the LOAD-BEARING kill (the reward stays deferred on this) --
     k1 = radius_collision()
     assert k1["all_edits_identical"], "KILL-1 broke: the Fischer family no longer shares one local edit"
     assert k1["collision_straddles_boundary"], "KILL-1 broke: the identical-edit collision no longer straddles kitchen/not-kitchen"
 
-    k2 = catalyst_blind_reward()
-    assert not k2["any_leg_excluded"], "KILL-2 repaired: a leg now EXCLUDES the declared catalyst (a catalyst model may exist)"
-    assert not k2["equipment_names_catalyst"], "KILL-2 drift: equipment now names the catalyst"
-    assert k2["all_consumed_obtainable"], "KILL-2 drift: a consumed species is no longer obtainable"
-
-    k2b = seed_catalysts_empty()
-    assert k2b["all_catalysts_field_empty"], "KILL-2b repaired: a SEED record now populates structured catalysts"
-
+    # -- Blade 1: the census (the sound signal is conventional, not ingenious) --
     census = sourced_signal_is_conventional()
     assert census["methyl_salicylate_fully_sourced_kitchen"], "census drift: methyl salicylate is no longer the sourced-kitchen route"
     assert not census["caffeine_sourced"], "census drift: caffeine now has a fully-sourced route"
     assert not census["paracetamol_sourced"], "census drift: paracetamol now has a fully-sourced route"
+
+    # -- R51: the OLD process/equipment/reagent legs stay catalyst-agnostic BY DESIGN (a boundary, not a kill) --
+    legs = process_equipment_legs_are_catalyst_agnostic()
+    assert not legs["process_legs_exclude"], "boundary drift: the process leg now excludes a catalyst (it is not the obtainability axis)"
+    assert not legs["equipment_names_catalyst"], "boundary drift: equipment now names the catalyst"
+    assert legs["all_consumed_obtainable"], "drift: a consumed species is no longer obtainable"
+
+    # -- R51 DISCHARGE: the NEW obtainability leg blocks the metal catalyst; the sourced kitchen catalyst passes --
+    gate = catalyst_obtainability_gate_blocks()
+    assert gate["metal_catalyst_blocked"], "R51 regressed: the obtainability gate no longer blocks the Ru/Ir catalyst"
+    assert gate["metal_catalyst_tier_not_kitchen"], "R51 regressed: the metal catalyst is classified kitchen-obtainable"
+    assert gate["kitchen_catalyst_not_blocked"], "R51 regressed: the sourced kitchen catalyst (H2SO4) is being blocked (false-EXCLUDE)"
+
+    # -- R51 DISCHARGE: a SEED record now carries a structured, kitchen-obtainable catalyst --
+    seed = seed_catalyst_now_populated()
+    assert seed["n_records_with_structured_catalyst"] >= 1, "R51 regressed: no SEED record carries a structured catalyst"
+    assert seed["all_populated_catalysts_kitchen"], "R51: a populated SEED catalyst is not kitchen-obtainable (would false-EXCLUDE a sourced route)"
     return True
 
 
 if __name__ == "__main__":
     validate()
-    print("validate() -> True (all four kills intact)")
+    print("validate() -> True (KILL-1 + census hold; R51 catalyst discharges real)")
     print("content_hash():", content_hash())
     print("FROZEN_HASH  :", FROZEN_HASH)
     print("match:", content_hash() == FROZEN_HASH)

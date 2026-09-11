@@ -121,6 +121,7 @@ def test_the_signal_gate_returns_empty_when_dominance_strips_the_only_signal():
             self.route_digest, self.fit_status, self.exclusions = digest, fit_status, exclusions
 
     class _Route:
+        steps = ()  # a faithful route exposes .steps (CATALYST-OBTAIN-01 reads it); no steps -> no declared catalysts
         def __init__(self, digest, leaves):
             self._d, self._leaves = digest, leaves
         @property

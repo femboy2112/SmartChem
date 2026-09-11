@@ -172,13 +172,14 @@ def equipment_for_envelope(envelope: ConditionEnvelope) -> tuple[EquipmentItem, 
         ))
 
     # -- inert atmosphere --------------------------------------------------------------------------
-    if any(k in low_medium for k in ("anhydrous", "inert", "nitrogen", "argon", "air-sensitive", "schlenk")) \
-            or envelope.catalysts:
-        if any(k in low_medium for k in ("anhydrous", "inert", "nitrogen", "argon", "air-sensitive", "schlenk")):
-            items.append(EquipmentItem(
-                "inert-gas line (N2/Ar) or Schlenk apparatus", EquipmentKind.ATMOSPHERE,
-                "an anhydrous/inert/air-sensitive medium needs an inert atmosphere",
-            ))
+    # (Catalyst OBTAINABILITY is gated separately in smartchem.experiment.catalyst_availability; a bare
+    # `or envelope.catalysts` disjunct used to guard this branch but appended nothing under a catalyst-only
+    # declaration -- a dead reference, removed so nothing here falsely reads as a catalyst gate.)
+    if any(k in low_medium for k in ("anhydrous", "inert", "nitrogen", "argon", "air-sensitive", "schlenk")):
+        items.append(EquipmentItem(
+            "inert-gas line (N2/Ar) or Schlenk apparatus", EquipmentKind.ATMOSPHERE,
+            "an anhydrous/inert/air-sensitive medium needs an inert atmosphere",
+        ))
 
     if not envelope.is_sourced:
         return tuple(

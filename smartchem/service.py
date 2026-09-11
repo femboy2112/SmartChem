@@ -2003,6 +2003,7 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
     if not routes or not ranked:
         return ()
     from .experiment.affordability import AffordabilityFrontierEntry, basket_cost_vector, pareto_frontier
+    from .experiment.catalyst_availability import route_catalyst_blockers
     by_digest = {r.digest: r for r in routes}
     entries = []
     for summary in ranked:
@@ -2010,6 +2011,13 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
         if route is None:
             continue  # a ranked summary with no matching route object (should not happen) contributes nothing
         hard = tuple(summary.exclusions) if summary.fit_status == "EXCLUDED" else ()
+        # CATALYST-OBTAIN-01: a step declaring a catalyst the poor man cannot positively obtain -- an industrial metal
+        # catalyst, or a declared-but-unrecognized one (the burden-of-proof flip) -- is a section-10.4 hard blocker,
+        # so a route needing an unobtainable catalyst sinks on the affordability frontier (G6) even when it FITS the
+        # bench box.  A catalyst is regenerated, so it is never a `leaf_input` and the cost axes never see it: this is
+        # the only channel that carries catalyst obtainability into the poor-man frontier.  (No registered reaction
+        # declares a metal catalyst today, so this appends nothing for every current route -- a guard ahead of its data.)
+        hard = hard + route_catalyst_blockers(route)
         # compute the shopping requirement ONCE and feed both the material_quantity axis (total moles) AND the
         # TERM-MAT quantity-weighted cash floor (per-leaf moles x price_per_mol); basket_cost_vector prefers the
         # weighted floor over the per-unit package cash when it is computable, else the per-unit path stands.

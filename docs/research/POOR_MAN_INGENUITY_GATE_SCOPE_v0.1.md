@@ -1,10 +1,13 @@
-# Poor-man ingenuity gate — scope & VERIFIED DEFER (R49, PR-2)
+# Poor-man ingenuity gate — scope & VERIFIED DEFER (R49 + R50, PR-2)
 
-**Status: VERIFIED DEFER.** The scoped PR-2 (a feasibility-layer reaction-class recognizer that mints a positive
-"reality-respecting / poor-man-reachable" reward from functional-group topology) was **killed by a four-bearing
-adversarial DESIGN gate before it was wired**. The sound ingenuity hunter is redesigned below (PR-2-real) and
-deferred to the enumeration frontier + the kitchen capability model. Evidence:
-`experiments/poor_man_ingenuity_gate_defer_probe.py` (FROZEN_HASH `d7c613ab…`) + `tests/test_poor_man_ingenuity_gate_defer.py`.
+**Status: VERIFIED DEFER (twice).** R49 killed a *feasibility-layer* reaction-class recognizer that mints a
+positive "reality-respecting / poor-man-reachable" reward from functional-group topology (below). **R50 then
+killed the redux itself** — the frontier-recognizer + per-class-envelope + capability-gate design at the bottom
+of this doc — with its own four-bearing adversarial gate, and proved a deeper result: the **ingenuity scissors**
+(§R50). The sound ingenuity reward is deferred until a real *substrate-aware feasibility model* exists. Both
+kills were caught on paper before any wiring; zero production code changed either round. Evidence:
+R49 `experiments/poor_man_ingenuity_gate_defer_probe.py` (`d7c613ab…`); **R50
+`experiments/poor_man_ingenuity_scissors_probe.py` (`e2189bdc…`) + `tests/test_poor_man_ingenuity_scissors.py`.**
 
 ## The directive
 Poor-man ethos is a **HUNTING** objective: actively surface reality-respecting-but-unconventional routes
@@ -92,3 +95,101 @@ lives:
 feasibility-in-context) must be gated on a model that MEASURES that property; a topological or thermodynamic
 proxy that does not ENCODE it will confidently reward things that lack it (here: VOUCHing metal-catalyzed
 reactions as poor-man-reachable). The proxy's silence on the property is not neutrality — it is a fabricated pass.
+
+---
+
+# R50 — THE REDUX IS KILLED: the ingenuity scissors
+
+**Status: VERIFIED DEFER.** The redux above (frontier recognizer → per-class envelope → reward gated on the
+existing capability stack) was killed by a second four-bearing adversarial DESIGN gate — dalembert + evil-morty
+(soundness), birdperson (architecture), a daniel empirical census — **before any wiring**. The frontier premise
+was re-verified true first (the transform *is* live at `routes.py:529`/`:764` via `_conditions_for(cs)`;
+`ExperimentStep.from_transform` drops `cut`/`caps`, so the recognizer genuinely cannot live at the feasibility
+layer), and the capability substrate is richer than the redux knew (`reagents.py` INDUSTRIAL tier,
+`process_constraints.py` FITS engine, `equipment.py`, `observation/*`). It died anyway, at three layers.
+
+## The three converged kills (all recomputed from live code at `c409e7a` — probe `e2189bdc…`)
+
+**KILL-1 (dalembert, fatal — the recognizer itself).** The condition envelope of a reaction is an
+*unbounded-radius* property (chemoselectivity, sterics, remote electronics all live arbitrarily far from the
+reaction center), but any frontier recognizer reads a *bounded-radius* local edit (`cut`/`caps` + local
+context). So the class key **must** collide across the kitchen boundary. Verified minimal family, one Fischer
+esterification class, byte-identical atom-mapped edit `cut={(C,O,1):1,(H,O,1):1}`, `caps=` same, across **all**
+of {pentyl acetate, heptyl acetate, 5-aminopentyl acetate, 7-aminoheptyl acetate}: pentyl/heptyl are kitchen
+"banana-oil" esters; the amino members are NOT kitchen (the amine outcompetes the alcohol → N-acyl amide →
+selective O-ester needs protection/deprotection). Invariance across chain length *and* terminal group is the
+structure theorem made live: no fixed radius separates them. Atom-mapping fixed R49's *molecule-set*
+non-locality; it does nothing about *graph-distance* non-locality. Corollary (fabrication): a per-CLASS key is
+strictly coarser than `assembly_conditions`' per-reaction key, so it reintroduces exactly the guess
+`decompiler_conditions.py` was built to refuse (tert-butanol dehydrates instead of esterifying; mesitoic acid
+needs fuming H₂SO₄ — same class label, inverted envelope).
+
+**KILL-2 (evil-morty — the reward gate).** Even granting a perfect recognizer AND a perfectly honest, complete
+envelope with the metal catalyst and forcing temperature DECLARED, **not one leg** of the named capability stack
+returns EXCLUDED: `evaluate_process` → UNKNOWN/UNKNOWN/UNCONSTRAINED (no catalyst field, no temperature ceiling),
+`equipment.py` names no catalyst (its one `envelope.catalysts` read at `:176` is vacuous), reagent tiers gate
+only *consumed* species (a catalyst is not consumed). The stack is **structurally blind to catalysis**. And
+KILL-2b: every `SEED_CONDITIONS` record has an empty structured `catalysts=()` (catalyst in free-text `medium`)
+— so even the sourced path is blind, and it is the authoring template a per-class table would copy. A reward
+gated on this stack VOUCHes `theophylline + methanol → caffeine` — R49's KILL-1, relocated one storey down.
+
+**birdperson (architecture, SOUND-WITH-FOLDS → the folds that bind).** The recognizer must be one shared
+function (both `routes.py` call sites, or it drifts like the old duplicated ranker); it must not overload
+`_conditions_for`; a per-class table survives the `SEED_CONDITIONS` no-guess discipline only if it carries
+qualitative *requirements* (not fabricated setpoints), sourced + `EvidenceStatus`, fail-closed, silence-filling
+only; and the reward must stay off the `_score_tuple` scalar — its only new info (catalyst/water-removal
+reachability) belongs on the affordability Pareto frontier as a distinct axis or it double-counts
+`access_difficulty`/`new_equipment`.
+
+## The ingenuity scissors (why the bearings together prove more than a wiring bug)
+
+- To be **ingenious** ("wtf how — OK it works") a route must be **unconventional** → it carries **no**
+  per-reaction sourced record. That is what makes it unconventional.
+- Sound reachability for an **unsourced** route can only come from a **derived** model (topology → class →
+  envelope).
+- KILL-1 proves that derived model is **unsound across the kitchen boundary**.
+- daniel's census: of the 45 registered targets, the only route that is both per-reaction-sourced **and**
+  commodity-terminated is a **conventional** textbook ester — methyl salicylate (`methanol[hardware] +
+  salicylic acid[pharmacy] → methyl salicylate + water`, one EXPERIMENTAL step). Both flagships (caffeine,
+  paracetamol) have **no** fully-sourced route.
+
+So the only **sound, non-vacuous** poor-man signal available today fires exclusively on **already-documented
+conventional** routes — the opposite of ingenuity. **The ingenuity objective is unrealizable soundly until a
+substrate-aware feasibility model exists.** This is strictly stronger than R49: R49 said "topology can't be the
+reward"; R50 says "for the *unconventional* routes ingenuity is *about*, no sound reachability signal exists
+on today's models at all."
+
+## The exact unlock conditions (what a future PR-2-real needs, in order)
+
+1. **A real substrate-aware feasibility / catalyst-availability model** — declared `catalysts` → an
+   `Availability` tier (metal/INDUSTRIAL ⇒ EXCLUDE), a forcing-temperature ceiling in `ProcessBounds`, and the
+   whole-molecule chemoselectivity/steric check KILL-1 shows is required. Fail-**closed on incompleteness**, not
+   merely on unrecognized-class (silence about a requirement is UNKNOWN, never "no requirement"). This is a NEW
+   capability model, not "the existing stack." (It also needs the structured-`catalysts` data populated —
+   today's SEED records bury catalysts in `medium`, so a catalyst-aware gate would see `()` and read "none".)
+2. **A recognizer that fails closed to UNRECOGNIZED on any out-of-center functional group / steric feature** —
+   fire a class only on a globally FG-monofunctional, unhindered substrate matching the prototype (dalembert's
+   repair). This converts every false-VOUCH into the safe false-UNRECOGNIZED, at the cost of the reward speaking
+   only about single-FG textbook substrates — which no registered *drug* target is.
+3. **A proven reachable consumer** — a route set where the reward reorders a poor-man route above a
+   buy-the-reagent route, and that reordering is currently absent or wrong. daniel showed the current registry
+   does not supply one for the ingenuity case (only the conventional methyl-salicylate case).
+4. **Then** the reward, on the affordability Pareto frontier as a distinct axis (never a `_score_tuple` scalar),
+   ranking/annotation only, never entering `RouteFitStatus`/`feas_verdict`.
+
+## A sound-but-not-ingenuity option that DID survive (recorded, not built)
+
+daniel's signal — *every step per-reaction-sourced (`EXPERIMENTAL`) × every leaf non-INDUSTRIAL commodity tier*
+— is sound and non-vacuous (methyl salicylate; correctly refuses the flagships). It is a legitimate poor-man
+**confidence** annotation, but it is **not the ingenuity hunter** (it rewards conventional documented routes),
+it fires on 1 of 45 targets, and it risks overlapping the affordability frontier's existing `access_difficulty`
+axis (birdperson FOLD 5). Left unbuilt pending a decision that it earns its surface over the existing axes.
+
+## Lesson (R50)
+[[a-derived-estimate-must-guard-its-domain-of-validity]] applied to *classification*: a class label is a sound
+carrier of per-class facts only where the classifying feature (a bounded-radius local edit) determines those
+facts; when the fact depends on unbounded-radius structure, the label collides and the per-class value inverts,
+not degrades. And the ingenuity twist: a "surface the clever unconventional route" objective cannot be made
+sound by any signal that requires the route to already be documented — ingenuity and sourced-ness are the two
+blades of the scissors. [[a-capability-reward-must-be-gated-on-the-capability-model]]
+[[a-whole-set-count-classifier-is-fooled-by-non-locality]]

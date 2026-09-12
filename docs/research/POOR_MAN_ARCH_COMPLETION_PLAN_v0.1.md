@@ -1,7 +1,15 @@
 # Poor-Man Arch — Completion Plan (v0.1)
 
-> **Status:** TEED UP, not started. The build waits for the user's explicit "go" ("make sure the next round
-> is planned and tee'd up for us to start blasting on my go"). This document is the canonical R53 plan; the
+> **⚠️ PHASE 0 EXECUTED (R53, 2026-09-12) → outcome: DEFER #4.** The decisive kill-or-continue probe ran, and a
+> five-bearing design gate broke the continuous estimator's FEASIBLE set on determinant axes the bounded feature
+> set + fail-closed guard can neither read nor decline (acid-side β-keto decarboxylation; α-thioether thionium;
+> heteroaryl cation magnitude). The alcohol-side core proved SOUND; the escape is now named (a symmetric positive
+> safe-set whitelist on both reaction centers, gated on the R52 base-rate/vacuity question). Zero consumers
+> confirmed. **Canonical outcome → [`POOR_MAN_REACTIVITY_ESTIMATOR_PHASE0_DEFER_v0.1.md`](POOR_MAN_REACTIVITY_ESTIMATOR_PHASE0_DEFER_v0.1.md).**
+> The sections below are the plan as written BEFORE Phase 0; read them together with that decision doc.
+>
+> **Status (original):** TEED UP, not started. The build waits for the user's explicit "go" ("make sure the next
+> round is planned and tee'd up for us to start blasting on my go"). This document is the canonical R53 plan; the
 > memory index and `ROADMAP.md` point here rather than duplicating it.
 >
 > **Mandate (user, 2026-09-11, verbatim):** *"we must complete the poor-mans arch, that functionality is a

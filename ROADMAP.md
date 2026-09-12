@@ -794,6 +794,22 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
+> **⭐ ROUND 53 — LIVE FRONT: COMPLETE THE POOR-MAN ARCH** (user reopened it 2026-09-11 as a mainline
+> must-complete feature: *"we must complete the poor-mans arch, that functionality is a mainline feature"*). The
+> full phased + gated plan is CANONICAL in **`docs/research/POOR_MAN_ARCH_COMPLETION_PLAN_v0.1.md`** — do NOT
+> re-derive it here. One-line: a 4-bearing read-only research pass (2026-09-11, HEAD `ddf7190`) found the
+> ingenuity REWARD not shovel-ready by any of the three sound paths — a DERIVED boolean recognizer is a likely
+> 4th defer (collision recurs at benzylic/acid-side sterics one bond-radius out, + no registered consumer); a
+> SOURCED `SelectivityRecord` is a sourcing-wall AND the premise may be inverted (Kristensen, Beilstein 2015
+> DOI 10.3762/bjoc.11.51: acidity favors O-, not N-acylation); the one shovel-ready consumer (paracetamol /
+> 4-aminophenyl acetate) is gated on that record. **The ONE unexplored fork** = a CONTINUOUS DERIVED reactivity
+> estimator (Taft/Hammett, `bond_enthalpy.py`-style domain-guarded — the constants ARE sourceable even though
+> the 4-aminophenol ratio is not). **Phase 0** = a decisive kill-or-continue probe (bounded feature set vs
+> unbounded regress) + the consumer problem + a 4/5-bearing DESIGN gate, BEFORE any build; kill criteria stated
+> in the plan. Frontier confirmed at `routes.py:528-529`/`763-764`; a recognizer needs a CARRIER (bigger lift
+> than R51). **BUILD WAITS FOR THE USER'S EXPLICIT "GO".** (Reachability R48 + catalyst-obtainability R51 are
+> the arch's shipped halves; the reward is the missing keystone.)
+
 > **ROUND 23 CLOSED item 3's core-E1 half** — the duration-aware survival verdict is now wired into E1 (`DEGRADES →
 > DEGENERATE` over a sourced serial hold, the survival monoid functor `S: Process → ([0,1], ×)`). What remains of item 3 is
 > the **DOW-Br₂ collider/modified-Arrhenius kinetics** half (item 3b below), which is sourcing/modeling-gated, not

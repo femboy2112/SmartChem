@@ -8,6 +8,20 @@
 > confirmed. **Canonical outcome → [`POOR_MAN_REACTIVITY_ESTIMATOR_PHASE0_DEFER_v0.1.md`](POOR_MAN_REACTIVITY_ESTIMATOR_PHASE0_DEFER_v0.1.md).**
 > The sections below are the plan as written BEFORE Phase 0; read them together with that decision doc.
 >
+> **⚠️ PHASE 0.5 EXECUTED (R54, 2026-09-12) → outcome: DEFER #5 — the escape itself is killed.** Both DEFER-#4
+> next increments ran to decision. (1) The **reachability increment is REFUTED**: isopentyl acetate is already
+> "reachable" via chemically-BOGUS formula-balanced routes, its one real route needs sourced-INDUSTRIAL isopentyl
+> alcohol, and the "gap" is the reactivity wall, not orthogonal to it — no `reagents.py` change. (2) The
+> **symmetric positive whitelist was built and gated → DEFER #5**: a five-bearing gate broke its FEASIBLE set on
+> ≥3 axes an element-census-over-bounded-radius cannot read (α,β-unsaturation polymerization; remote acid-labile
+> past the scan radius, a regression vs R53; 5-ring heteroaromatic guard vacuity); the leak is un-patchable (the
+> α,β-unsat patch false-EXCLUDEs feasible crotonic/cinnamic/sorbic — the R52 scissors); base-rate recall
+> 0.875→0.574; zero consumers, and UNKNOWN-as-blocker would sink 4 correct targets. Inverting the R53 blacklist
+> to a positive whitelist MOVED the collision into the definition of "recognized-inert"; it did not close it.
+> **Canonical outcome → [`POOR_MAN_SYMMETRIC_WHITELIST_PHASE05_DEFER_v0.1.md`](POOR_MAN_SYMMETRIC_WHITELIST_PHASE05_DEFER_v0.1.md).**
+> The keystone now needs a model beyond ANY bounded-radius reaction-center recognizer (scaffold-by-name +
+> saturation clause + a magnitude/ranking axis, or an external oracle), gated on a proven live consumer (still 0).
+>
 > **Status (original):** TEED UP, not started. The build waits for the user's explicit "go" ("make sure the next
 > round is planned and tee'd up for us to start blasting on my go"). This document is the canonical R53 plan; the
 > memory index and `ROADMAP.md` point here rather than duplicating it.

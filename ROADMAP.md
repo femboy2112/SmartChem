@@ -794,6 +794,30 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
+> **ROUND 54 — POOR-MAN ARCH, both DEFER-#4 next increments → Phase 0.5 EXECUTED (2026-09-12): DEFER #5.**
+> User: *"full blast on both 1. Reachability increment, and 2. The symmetric safe-set whitelist (Phase-0.5)."*
+> Both ran to decision. **Outcome → CANONICAL in [`docs/research/POOR_MAN_SYMMETRIC_WHITELIST_PHASE05_DEFER_v0.1.md`](docs/research/POOR_MAN_SYMMETRIC_WHITELIST_PHASE05_DEFER_v0.1.md).**
+> (1) **Reachability increment REFUTED (3 ways):** isopentyl acetate is already fully-commodity-"reachable" — but
+> only via chemically-BOGUS formula-balanced graph-surgery routes; its one REAL Fischer route needs isopentyl
+> alcohol, which sources as **INDUSTRIAL** (no consumer product — "banana oil" is the acetate, a different CAS);
+> and the "gap" IS the reactivity wall, not orthogonal to it. Adding the commodity would be a fabricated
+> availability claim → no `reagents.py` change. (2) **Symmetric positive whitelist BUILT + gated → DEFER #5**
+> (the escape all four prior defers named, now killed): a five-bearing gate (dalembert/evil-morty/daniel/
+> birdperson/butter-robot) broke its FEASIBLE set on ≥3 axes an ELEMENT census over a bounded radius cannot read
+> — α,β-unsaturation (acrylic/methacrylic/propiolic polymerize), remote acid-labile past radius 2 (a REGRESSION
+> vs R53's molecule-wide guard), 5-ring heteroaromatic guard vacuity (pyrrole). Un-patchable (the α,β-unsat patch
+> also false-EXCLUDEs feasible crotonic/cinnamic/sorbic — the R52 scissors); base-rate recall 0.875 (friendly) →
+> 0.574 (daniel's 47-row deployment battery); ZERO consumers (fresh 45-target census: whitelist VOUCHes only the
+> bogus isopentyl acetate, declines the 4 real aromatic Fischer targets — UNKNOWN-as-blocker would sink them).
+> **Theorem:** inverting the R53 blacklist to a positive whitelist MOVED the collision into the definition of
+> "recognized-inert"; it did not close it [[a-fail-closed-guard-is-a-blacklist-of-an-unbounded-hazard-space]].
+> **Banked:** the carbinol-side core (degree+cation+out-of-center) is the sound part; the escape's *principle* is
+> right but needs scaffold-by-name + a saturation clause + a magnitude axis (or an external oracle), gated on a
+> proven live consumer. Artifacts: frozen probe `experiments/poor_man_symmetric_whitelist_phase05_probe.py`
+> (`FROZEN_HASH 931976…`) + 9-pin sibling test; docs/experiment/test only, NO production code. **The reward
+> keystone is now DEFERRED ×5.** **NEXT:** the keystone needs a *different KIND* of model — do NOT re-attempt a
+> bounded-radius local recognizer; a live consumer must exist first (unlock #3, still unmet).
+>
 > **ROUND 53 — COMPLETE THE POOR-MAN ARCH → Phase 0 EXECUTED (2026-09-12): DEFER #4.** (User reopened the arc
 > 2026-09-11 as a mainline must-complete feature.) The plan's one unexplored fork — a CONTINUOUS DERIVED
 > reactivity estimator (Taft/Hammett, `bond_enthalpy.py`-style, fail-closed guard) — ran its decisive

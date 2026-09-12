@@ -22,6 +22,21 @@
 > The keystone now needs a model beyond ANY bounded-radius reaction-center recognizer (scaffold-by-name +
 > saturation clause + a magnitude/ranking axis, or an external oracle), gated on a proven live consumer (still 0).
 >
+> **⚠️ R55 EXECUTED (2026-09-12) → outcome: DEFER #6, but the "ZERO CONSUMERS" BLOCKER IS LIFTED.** The two R54
+> forks were multiplexed (consumer-gates-model). **The consumer is PROVEN, not manufactured:** measurement of the
+> production `_affordability_frontier` shows **21/29 routes (72%) are chemical fictions shipping with empty
+> `hard_blockers` today** (isopentyl acetate: 10). Every prior defer was gated on a consumer that did not exist —
+> it exists and is dominant. **Reframe:** the pollution is PROBLEM A (reaction-TYPE fiction), distinct from and
+> dominating the 5×-deferred PROBLEM B (substrate feasibility) — the arch spent five rounds on B, which was never
+> what polluted the frontier. **The Problem-A demoter → DEFER #6:** the natural rule ("C-C join = fake, C-O/C-N/C-S
+> join = sound") broke at a 5-bearing gate BOTH ways (author-reproduced) — false-VOUCHes reachable non-C-C fakes
+> (H2O2 hydroxylation; aromatic amination) AND false-EXCLUDEs reachable real C-C condensations (Friedel-Crafts,
+> Kolbe-Schmitt, Claisen). **Theorem: reaction-TYPE validity resists bounded-radius local recognition exactly as
+> feasibility did (R49–R54) — the same collision one alphabet over.** Escape (R56, now gated on a PROVEN consumer):
+> an EXTERNAL reaction-TYPE oracle (SEED_CONDITIONS promoted from decoration to a fail-closed template gate),
+> tradeoff = untabulated-reaction genericity. **Canonical outcome →
+> [`POOR_MAN_STEP_VALIDITY_DEMOTER_DEFER_v0.1.md`](POOR_MAN_STEP_VALIDITY_DEMOTER_DEFER_v0.1.md).**
+>
 > **Status (original):** TEED UP, not started. The build waits for the user's explicit "go" ("make sure the next
 > round is planned and tee'd up for us to start blasting on my go"). This document is the canonical R53 plan; the
 > memory index and `ROADMAP.md` point here rather than duplicating it.

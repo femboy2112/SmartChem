@@ -794,6 +794,30 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
+> **ROUND 55 — POOR-MAN ARCH, both R54 forks multiplexed → DEFER #6, but the "ZERO CONSUMERS" BLOCKER IS
+> LIFTED (2026-09-12).** User: *"full blast on 1 and 2, multiplexed in coherent order"* (fork 1 = the
+> different-KIND model; fork 2 = a live consumer; consumer gates model). **Outcome → CANONICAL in
+> [`docs/research/POOR_MAN_STEP_VALIDITY_DEMOTER_DEFER_v0.1.md`](docs/research/POOR_MAN_STEP_VALIDITY_DEMOTER_DEFER_v0.1.md).**
+> **(2) Consumer PROVEN, not manufactured — the premise is REFUTED by measurement:** on the full production
+> `_affordability_frontier`, **21 of 29 routes (72%) are chemically FICTIONAL and ship with empty `hard_blockers`
+> TODAY** (isopentyl acetate alone: 10 fake "~4.5¢ fully-commodity" routes). Every prior defer (R49–R54) was
+> gated on a consumer that did not exist; it exists, and it is dominant. **Reframe:** the pollution is PROBLEM A
+> (reaction-TYPE fiction — a step that is no reaction at all), DISTINCT from and dominating the 5×-deferred
+> PROBLEM B (substrate feasibility). The arch spent five rounds on B; B was never what polluted the frontier.
+> **(1) The Problem-A demoter → DEFER #6:** the natural rule ("a step whose FORMED JOIN BOND is C-C is a fake
+> skeleton-fusion; C-O/C-N/C-S joins are sound") looked complete+sound on the registry but a 5-bearing gate
+> BROKE it both ways (author-reproduced): it FALSE-VOUCHes reachable non-C-C fakes (`isopentane + H2O2 →
+> isopentyl alcohol`; `ammonia + 4-aminophenol → p-phenylenediamine`) AND FALSE-EXCLUDEs reachable REAL C-C
+> condensations (Friedel-Crafts, Kolbe-Schmitt, Claisen). The join element is neither necessary nor sufficient
+> for fakeness. **Theorem: reaction-TYPE validity resists bounded-radius local recognition, exactly as
+> feasibility did (R49–R54) — the same collision one alphabet over (join-element instead of substrate census).**
+> Escape (R56, now gated on a PROVEN consumer): an EXTERNAL reaction-TYPE oracle (SEED_CONDITIONS promoted from
+> decoration to a fail-closed template gate), tradeoff = untabulated-reaction genericity. Do NOT re-attempt a
+> bounded-radius local recognizer at any polarity/alphabet. Banked: the join bond is EXACTLY recoverable from
+> `CappedScission.cut` (no schema change); the join-element instrument is a valid *measurement* (base rate) if not
+> a valid *gate*. Artifacts: frozen probe `experiments/poor_man_step_validity_demoter_defer_probe.py`
+> (FROZEN_HASH `a008811e`) + 9-pin sibling test; docs + experiment + test only, suite unaffected.
+>
 > **ROUND 54 — POOR-MAN ARCH, both DEFER-#4 next increments → Phase 0.5 EXECUTED (2026-09-12): DEFER #5.**
 > User: *"full blast on both 1. Reachability increment, and 2. The symmetric safe-set whitelist (Phase-0.5)."*
 > Both ran to decision. **Outcome → CANONICAL in [`docs/research/POOR_MAN_SYMMETRIC_WHITELIST_PHASE05_DEFER_v0.1.md`](docs/research/POOR_MAN_SYMMETRIC_WHITELIST_PHASE05_DEFER_v0.1.md).**

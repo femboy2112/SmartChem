@@ -2011,21 +2011,27 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
         route = by_digest.get(summary.route_digest)
         if route is None:
             continue  # a ranked summary with no matching route object (should not happen) contributes nothing
+        # The two DISPOSITION channels are kept DISJOINT (DISPOSITION-01): a REAL-BUT-HARD constraint (a genuine
+        # reaction that is merely costly / out of reach) and a NOT-A-REACTION fiction (Problem A) no longer flatten
+        # into one tuple, so the frontier can rank a real-but-hard route STRICTLY above a not-a-reaction one
+        # (:class:`~smartchem.experiment.affordability.Disposition`) instead of G6-sinking both equally.
+        # -- channel 1, REAL-BUT-HARD: section-11 bench exclusions ...
         hard = tuple(summary.exclusions) if summary.fit_status == "EXCLUDED" else ()
-        # CATALYST-OBTAIN-01: a step declaring a catalyst the poor man cannot positively obtain -- an industrial metal
-        # catalyst, or a declared-but-unrecognized one (the burden-of-proof flip) -- is a section-10.4 hard blocker,
-        # so a route needing an unobtainable catalyst sinks on the affordability frontier (G6) even when it FITS the
-        # bench box.  A catalyst is regenerated, so it is never a `leaf_input` and the cost axes never see it: this is
-        # the only channel that carries catalyst obtainability into the poor-man frontier.  (No registered reaction
-        # declares a metal catalyst today, so this appends nothing for every current route -- a guard ahead of its data.)
+        # ... plus CATALYST-OBTAIN-01: a step declaring a catalyst the poor man cannot positively obtain -- an
+        # industrial metal catalyst, or a declared-but-unrecognized one (the burden-of-proof flip) -- a route needing
+        # an unobtainable catalyst sinks on the frontier (G6) even when it FITS the bench box.  A catalyst is
+        # regenerated, so it is never a `leaf_input` and the cost axes never see it: this is the only channel that
+        # carries catalyst obtainability into the poor-man frontier.  (No registered reaction declares a metal
+        # catalyst today, so this appends nothing for every current route -- a guard ahead of its data.)  All of these
+        # are REAL reactions that are just hard, so they ride ``hard_blockers`` (disposition tier REAL_BUT_HARD).
         hard = hard + route_catalyst_blockers(route)
-        # REACTION-TYPE-ORACLE-01 (R56): a step that matches NO attested reaction class -- a reaction-TYPE FICTION,
-        # a formula-balanced graph move that is no real reaction at all (Problem A) -- is a section-10.4 hard blocker,
-        # so a route built on a fiction sinks on the affordability frontier (G6) instead of shipping as a confident
-        # commodity route (R55 measured 72% of the frontier was such fiction, un-blocked).  A positive whitelist of
-        # conservation-locked recognizers (acyl-only this round): unrecognized -> demote as "not a known reaction",
-        # honest coverage loss NOT false-VOUCH, and explicitly NOT a feasibility claim (that stays feasibility.py's job).
-        hard = hard + route_reaction_type_blockers(route)
+        # -- channel 2, NOT-A-REACTION: REACTION-TYPE-ORACLE-01 (R56) -- a step that matches NO attested reaction class
+        # is a reaction-TYPE FICTION, a formula-balanced graph move that is no real reaction at all (Problem A; R55
+        # measured 72% of the frontier was such fiction, un-blocked).  This rides the DISTINCT ``fiction_blockers``
+        # channel (disposition tier NOT_A_REACTION -- strictly worse than any real-but-hard route), demoting the
+        # fiction as "not a known reaction" (honest coverage loss NOT false-VOUCH, and explicitly NOT a feasibility
+        # claim -- that stays feasibility.py's job).
+        fiction = route_reaction_type_blockers(route)
         # compute the shopping requirement ONCE and feed both the material_quantity axis (total moles) AND the
         # TERM-MAT quantity-weighted cash floor (per-leaf moles x price_per_mol); basket_cost_vector prefers the
         # weighted floor over the per-unit package cash when it is computable, else the per-unit path stands.
@@ -2033,7 +2039,8 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
         mq = None if reqs is None else float(sum(amount for _m, amount in reqs))
         vector = basket_cost_vector(
             list(route.leaf_inputs), material_quantity=mq,
-            weighted_cash_leaves=(list(reqs) if reqs is not None else None), hard_blockers=hard,
+            weighted_cash_leaves=(list(reqs) if reqs is not None else None),
+            hard_blockers=hard, fiction_blockers=fiction,
         )
         entries.append(AffordabilityFrontierEntry.of(summary.route_digest, vector))
     # Run dominance FIRST, then gate on the SURVIVORS.  The signal must be checked on the POST-dominance frontier,
@@ -2870,6 +2877,7 @@ def affordability_entry_to_payload(entry) -> dict:
             "analytical": v.analytical,
             "waste_disposal": v.waste_disposal,
             "hard_blockers": list(v.hard_blockers),
+            "fiction_blockers": list(v.fiction_blockers),
             "currency": v.currency,
             "unit": v.unit,
             "region": v.region,
@@ -2879,7 +2887,8 @@ def affordability_entry_to_payload(entry) -> dict:
 
 def affordability_entry_from_payload(payload: dict):
     """Reconstruct an affordability-frontier entry; re-validates via its (and the CostVector's) __post_init__.
-    ``hard_blockers`` is coerced back to a tuple -- the CostVector guard rejects a list, so the round-trip is exact."""
+    ``hard_blockers`` and ``fiction_blockers`` are coerced back to tuples -- the CostVector guard rejects a list, so
+    the round-trip is exact; ``fiction_blockers`` reads via ``.get`` so a pre-DISPOSITION-01 payload still revives."""
     from .experiment.affordability import AffordabilityFrontierEntry, CostVector
     cv = payload["cost_vector"]
     return AffordabilityFrontierEntry(
@@ -2898,6 +2907,7 @@ def affordability_entry_from_payload(payload: dict):
             analytical=cv["analytical"],
             waste_disposal=cv["waste_disposal"],
             hard_blockers=tuple(cv["hard_blockers"]),
+            fiction_blockers=tuple(cv.get("fiction_blockers", ())),
             currency=cv["currency"],
             unit=cv["unit"],
             region=cv["region"],
@@ -3362,7 +3372,10 @@ def response_schema() -> dict:
                            "evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/"
                            "analytical/waste_disposal), each number|null (UNKNOWN); cash_floor number|null (an honest "
                            "partial-basket LOWER BOUND when the exact cash is UNKNOWN, mutually exclusive with cash -- "
-                           "COST-VEC-01-coupled); hard_blockers array[str]; currency/unit str (must match for cash comparison); region str",
+                           "COST-VEC-01-coupled); hard_blockers array[str] (REAL-BUT-HARD constraints -- disposition "
+                           "tier REAL_BUT_HARD); fiction_blockers array[str] (Problem-A not-a-reaction fictions -- "
+                           "disposition tier NOT_A_REACTION, strictly worse than real-but-hard; DISPOSITION-01); "
+                           "currency/unit str (must match for cash comparison); region str",
         },
         "provider_snapshot_fields": {
             "schema_version": "str",

@@ -112,7 +112,7 @@ def consumer_proof() -> dict:
             pass
     reaction_type_blocked = sum(
         1 for e in fr
-        if any("unrecognized reaction type" in b for b in (getattr(e.cost_vector, "hard_blockers", ()) or ()))
+        if any("unrecognized reaction type" in b for b in ((getattr(e.cost_vector, "hard_blockers", ()) or ()) + (getattr(e.cost_vector, "fiction_blockers", ()) or ())))
     )
     fake = sum(1 for r in routes if raw_rule_blocks(r))
     return {

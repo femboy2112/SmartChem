@@ -26,6 +26,14 @@ carry the reaction-type blocker, was 0); (2) ZERO false-VOUCH across the whole p
 (genuine acyl reals still vouched); (3) both R55 false-VOUCH fakes now DEMOTED; (4) the R55 false-EXCLUDE reals
 demoted-as-unrecognized (the designed, honest coverage loss); (5) the escape-#7 BOUNDARY (the general N-C recognizer
 collides -> why acyl-only); (6) FAIL-CLOSED totality (a raising recognizer never yields a spurious VOUCH).
+
+R57 UPDATE (hash re-frozen 98cceeeb -> fc8fea1e): this probe measures the LIVE oracle, and R57 added a second
+conservation-locked recognizer (dehydrative etherification, :func:`smartchem.experiment.feasibility._is_intermolecular_etherification`).
+The whole-frontier soundness measurement here therefore grew by ONE genuine real -- ``dimethyl ether`` (2 methanol ->
+dimethyl ether + water) is now VOUCHED as an etherification -- so ``reals_vouched`` went 4 -> 5 and ``vouched_targets``
+gained "dimethyl ether".  ``false_vouch_count`` stays 0 and every R56 SHIP assertion still holds; only the vouched-set
+count moved, so the frozen hash is re-frozen to the post-R57 truth (the R55->R56 supersession pattern).  R57's own
+etherification behaviour is pinned by :mod:`experiments.poor_man_etherification_recognizer_probe`.
 """
 from __future__ import annotations
 
@@ -43,7 +51,7 @@ from experiments.poor_man_step_validity_demoter_defer_probe import (
     _resolve, _routes_of, raw_rule_blocks, _FALSE_VOUCHES, _FALSE_EXCLUDES,
 )
 
-FROZEN_HASH = "98cceeeb57b82a1bc1b93718a702a38227742840be2b92e807c1de93d857b56e"
+FROZEN_HASH = "fc8fea1eaa7b6c110775580e5a20f9b02ef610fd067f84903c86a7f1fb4f88e3"
 
 
 def _routes(tsmi, avail, reags=None):

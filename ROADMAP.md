@@ -794,6 +794,31 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
+> **ROUND 57 — POOR-MAN ARCH, R57 → SHIP: the reaction-TYPE oracle grows a SECOND conservation-locked class
+> (dehydrative etherification) (2026-09-13).** User: *"full blast on R57 … are we hard-coding chemistry, or the
+> RULES of chemistry so the chemistry drops out? let the category theory do the heavy lifting."* **Outcome →
+> CANONICAL in [`docs/research/POOR_MAN_ETHERIFICATION_RECOGNIZER_v0.1.md`](docs/research/POOR_MAN_ETHERIFICATION_RECOGNIZER_v0.1.md).**
+> **The steer's honest answer (recon + 5-adversary gate `w9mbf48ua`, author-reproduced): SCOPED_BUILD.** The
+> categorical-from-scratch route is a cathedral this round — there is NO span/DPO rule-algebra to derive
+> recognizers from (`transform_registry` is a provenance digest over an imperative grammar; only port-gluing
+> pushouts exist) — so "the recognizer set drops out of category theory" would relocate the collision, not close
+> it. BUT the generator ALREADY computes each step's categorical rewrite as a `CappedScission` span (`cut`/`caps`)
+> and DISCARDS it at `ExperimentStep.from_transform`; reading it is the genuine structural fix, scoped as **R58**
+> (a step-schema + replay-serialization change — the step digest is derived from all fields; the replay payload
+> has fixed fields). **R57 ships the etherification recognizer at the step level** (`feasibility._is_intermolecular_etherification`,
+> registered in `reaction_type_oracle._RECOGNIZERS`), sound at the production config (k=1), same bar as acyl.
+> **Conservation-lock (3 clauses, each demotes a distinct fake):** net dialkyl sp3 C–O–C ether FORMED (demotes
+> the aryl-ether anisole fake) + net sp3 alcohol CONSUMED (demotes the peroxide-coupling fake) + NO reactant
+> ether (demotes d'Alembert's bundled glycol+DME non-local kill, even at k≥2). **Measured (author, filesystem):**
+> **0 false-VOUCH** across the 29-route frontier, serves ONE live consumer — `dimethyl ether` (2 methanol → DME +
+> water) now VOUCHED, was demoted — non-vacuous, acyl + C-C fictions UNREGRESSED, **caffeine still demoted (escape
+> #7 stays shut** — Bucherer refutes the sp3 restriction as formula-forced, so N-alkylation collides). Artifacts:
+> frozen probe `experiments/poor_man_etherification_recognizer_probe.py` (FROZEN_HASH `83d71b0d`) + 13-pin test;
+> R56 probe re-frozen `98cceeeb → fc8fea1e` (dimethyl ether joined the vouched reals; `false_vouch_count` stayed
+> 0). **Next (R58, gated): the span-reading root fix** — carry `CappedScission.cut`/`.caps` onto the step, census
+> the reaction center LOCALLY, hardening BOTH recognizers to config-robust (the true "let the structure do the
+> heavy lifting").
+>
 > **ROUND 56 — POOR-MAN ARCH, R56 EXECUTED → SHIP: the ingenuity reward's FIRST sound production code
 > (2026-09-12).** User: *"full blast on R56 … The oracle, or nothing."* After six defers, the reaction-TYPE
 > oracle ships. **Outcome → CANONICAL in
@@ -814,7 +839,8 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > bounded-radius patch). **Folds honored:** fail-closed totality (exception ⇒ demote, never a spurious vouch),
 > disposition honesty (type-validity ≠ feasibility — a VOUCH is NOT a feasibility claim; Problem B stays
 > deferred), per-recognizer conservation-lock admission gate. Artifacts: frozen probe
-> `experiments/poor_man_reaction_type_oracle_probe.py` (FROZEN_HASH `98cceeeb`) + 12-pin test; golden
+> `experiments/poor_man_reaction_type_oracle_probe.py` (FROZEN_HASH `fc8fea1e`, re-frozen from `98cceeeb` at R57)
+> + 12-pin test; golden
 > `recompile_routes_found.json` regenerated (the methyl-acetate fiction second-route correctly dominated off the
 > frontier); `test_affordability_wire` material-quantity test updated (its "second route" was itself a fiction).
 > Next (R57, each gated): grow the whitelist under the admission gate; recover caffeine via a class-specific

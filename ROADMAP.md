@@ -794,6 +794,32 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
+> **ROUND 58 — POOR-MAN ARCH, R58 → SHIP: the recognizers read the rewrite MORPHISM, not a whole-molecule count
+> (2026-09-13).** User: *"full blast, R58, wubba lubba dub dub! poor man alchemy!"* **Outcome → CANONICAL in
+> [`docs/research/POOR_MAN_SPAN_LOCAL_RECOGNIZER_v0.1.md`](docs/research/POOR_MAN_SPAN_LOCAL_RECOGNIZER_v0.1.md).**
+> R57 named this the genuine "structure does the heavy lifting" fix; it pays off with TWO measured consumers, not
+> the verdict-neutral hardening the record anticipated. The generator's `CappedScission` span (`cut`=bonds broken,
+> `caps`=bonds formed) is distilled into a coordinate-free `ReactionCenter` (`smartchem/reaction_center.py`:
+> formed/broken bond element-kinds + connected-component count), carried on `ExperimentStep` as a `compare=False`
+> **digest-INVISIBLE** field (so the anticipated `step-v1` bump + fixture cascade was AVOIDED — the digest hatch
+> already carries non-identity provenance), serialized through the replay payload (optional field, backward-compat),
+> and read by both oracle recognizers to CHECK the reaction center is a single connected elementary condensation
+> (`ReactionCenter.is_elementary_condensation`, nucleophile ∈ {O,N,S}). **Two consumers (author-measured against the
+> filesystem):** (1) COVERAGE, production k=1 — the R57 whole-molecule clause (iii) "no reactant ether" is a
+> hand-enumerated blacklist (the R53 anti-pattern) that FALSE-DEMOTES `methanol + 2-methoxyethanol →
+> 1,2-dimethoxyethane + water` (a genuine etherification with a spectator methoxy); the span-local check RETIRES
+> clause (iii) and RECOVERS 48 reachable k=1 steps, every one a real single condensation, **0 lost**; (2) SOUNDNESS,
+> config-robustness k≥2 — a bundled multi-cut step forges the elementary net signature (`THF + 2 water → ethane +
+> triol`; **48** measured acyl bundles) the whole-molecule census FALSE-VOUCHES; the span demotes them
+> (non-elementary center). **0 false-VOUCH across the frontier; live==replay (verdict + digest); centerless steps
+> fall back to the R57 predicate, sound at k=1; acyl verdict-neutral at k=1 (ester/amide/thioester all still
+> vouched, 0 lost); R56/R57 unregressed; caffeine still demoted (escape #7 shut).** Artifacts: frozen probe
+> `experiments/poor_man_span_local_recognizer_probe.py` (FROZEN_HASH `5f0be063`) + 12-pin test
+> `tests/test_poor_man_span_local_recognizer.py`; R56/R57 probe hashes UNCHANGED (frontier verdicts unmoved).
+> **SUITE: 5006 passed / 47 skipped / 1 xfailed, 0 failed / 0 errors (5053 collected); rdkit absent (committed
+> baseline).** **Next (gated): keep growing the whitelist under the conservation-lock + span gate; a distinct
+> disposition channel; Problem B (substrate feasibility) still deferred.**
+
 > **ROUND 57 — POOR-MAN ARCH, R57 → SHIP: the reaction-TYPE oracle grows a SECOND conservation-locked class
 > (dehydrative etherification) (2026-09-13).** User: *"full blast on R57 … are we hard-coding chemistry, or the
 > RULES of chemistry so the chemistry drops out? let the category theory do the heavy lifting."* **Outcome →

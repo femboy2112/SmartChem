@@ -2556,13 +2556,22 @@ def _condition_envelope_from_payload(payload) -> "object":
     )
 
 
-_STEP_PAYLOAD_FIELDS = frozenset({"schema_version", "target", "reactants", "products", "reagents", "envelope"})
+_STEP_REQUIRED_PAYLOAD_FIELDS = frozenset(
+    {"schema_version", "target", "reactants", "products", "reagents", "envelope"}
+)
+#: ``reaction_center`` (R58) is an OPTIONAL step-payload field: only serialised when the step carries one, and a
+#: payload without it (an older replay envelope, or a hand-built step) reconstructs a centre-less step. Keeping it
+#: optional means adding it did NOT change the bytes of any centre-less step's payload, and -- because the centre is
+#: a non-identity annotation -- it never enters the step's content digest either way.
+_STEP_OPTIONAL_PAYLOAD_FIELDS = frozenset({"reaction_center"})
+_STEP_PAYLOAD_FIELDS = _STEP_REQUIRED_PAYLOAD_FIELDS | _STEP_OPTIONAL_PAYLOAD_FIELDS
 
 
 def _step_to_payload(step) -> dict:
     """Encode one complete ExperimentStep: ordered reactant/product/reagent molecule multisets (multiplicity and
-    byproducts preserved -- never a set) + the full envelope."""
-    return {
+    byproducts preserved -- never a set) + the full envelope, plus the R58 reaction centre when the step carries one
+    (so a centre-carrying step reads identically live and on replay)."""
+    payload = {
         "schema_version": step.schema_version,
         "target": _molecule_to_payload(step.target),
         "reactants": [_molecule_to_payload(m) for m in step.reactants],
@@ -2570,19 +2579,28 @@ def _step_to_payload(step) -> dict:
         "reagents": [_molecule_to_payload(m) for m in step.reagents],
         "envelope": _condition_envelope_to_payload(step.envelope),
     }
+    center = getattr(step, "reaction_center", None)
+    if center is not None:
+        payload["reaction_center"] = center.to_payload()
+    return payload
 
 
 def _step_from_payload(payload) -> "object":
     """Rebuild one ExperimentStep; its ``__post_init__`` re-runs the mass+charge conservation certificate, the
-    target-in-products check, and the reagent-multiset-subset check -- a forged non-conserving step is refused here."""
+    target-in-products check, and the reagent-multiset-subset check -- a forged non-conserving step is refused here.
+    The R58 ``reaction_center`` is optional: absent -> a centre-less step (the whole-molecule recognizer fallback)."""
     from .experiment.step import ExperimentStep
-    if type(payload) is not dict or set(payload) != _STEP_PAYLOAD_FIELDS:
-        raise ValueError("step payload must contain exactly the versioned fields")
+    from .reaction_center import ReactionCenter
+    keys = set(payload) if type(payload) is dict else None
+    if keys is None or not (_STEP_REQUIRED_PAYLOAD_FIELDS <= keys) or (keys - _STEP_PAYLOAD_FIELDS):
+        raise ValueError("step payload must contain exactly the versioned fields (reaction_center optional)")
     for name in ("reactants", "products", "reagents"):
         if type(payload[name]) is not list:
             raise TypeError(f"step {name} must be a list of molecule payloads")
     if type(payload["schema_version"]) is not str:
         raise TypeError("step schema_version must be a string")
+    center_payload = payload.get("reaction_center")
+    center = ReactionCenter.from_payload(center_payload) if center_payload is not None else None
     return ExperimentStep(
         payload["schema_version"],
         _molecule_from_payload(payload["target"]),
@@ -2590,6 +2608,7 @@ def _step_from_payload(payload) -> "object":
         tuple(_molecule_from_payload(m) for m in payload["products"]),
         tuple(_molecule_from_payload(m) for m in payload["reagents"]),
         _condition_envelope_from_payload(payload["envelope"]),
+        center,
     )
 
 

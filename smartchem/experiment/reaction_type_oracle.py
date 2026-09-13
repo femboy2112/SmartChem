@@ -27,10 +27,13 @@ genuine instance of that class (a "conservation-lock" proof). The shipped acyl-c
 within the elementary intermolecular shape (2 non-water reactants -> 1 non-water product, water expelled) a new
 ester/amide/thioester carbonyl cannot be minted de novo without an extra oxidation product the shape excludes, so
 a fired step is FORCED onto a real acyl transfer (R48-hardened; verified 0 false-VOUCH over all 29 production
-frontier routes at the R56 gate). The R57 dehydrative-etherification recognizer passes too: within the same shape,
-a net-formed dialkyl (sp3 C-O-C) ether with a net-consumed sp3 alcohol, water expelled, and no reactant ether is
-the signature of a real etherification -- a formula-conserving fake cannot share it (peroxide coupling consumes no
-alcohol; the aryl-ether fake forms no dialkyl ether; the glycol+ether bundle reuses a reactant ether).
+frontier routes at the R56 gate). The dehydrative-etherification recognizer passes too: within the same shape,
+a net-formed dialkyl (sp3 C-O-C) ether with a net-consumed sp3 alcohol and water expelled is the signature of a
+real etherification -- a formula-conserving fake cannot share it (peroxide coupling consumes no alcohol; the
+aryl-ether fake forms no dialkyl ether). As of R58 the elementary single-condensation requirement is CHECKED on the
+reaction-centre span rather than assumed from the config (see the LOCALITY boundary below), which is what excludes
+the bundled fictions -- so the R57 whole-molecule "no reactant ether" blacklist clause is retired for
+centre-carrying steps.
 A GENERAL "new C-N bond" recognizer FAILS this admission gate -- it fires on
 both caffeine N-methylation (real, must-vouch) AND aromatic phenol->aniline amination (fake, must-not-vouch), the
 R55 theorem one alphabet over -- so it is deliberately NOT shipped (the R45 caffeine genericity win is DEMOTED as
@@ -55,12 +58,18 @@ Boundaries carried as documented debt (R56 acyl + R57 etherification scope, per 
 * TWO CLASSES this round -- acyl condensation (R56) and dehydrative etherification (R57), each with its own
   conservation-lock proof. Other real condensations (Friedel-Crafts, Kolbe-Schmitt, Claisen, N-alkylation) are
   demoted-as-unrecognized: honest coverage loss, NOT false-VOUCH. Each is a future round behind its own gate.
-* LOCALITY (R57 design gate, dalembert) -- both census predicates are WHOLE-MOLECULE, so their soundness silently
-  borrows the generator's k=1 single-cut invariant (``max_reactant_cuts = 1``, the production default). At k >= 2 a
-  bundled multi-cut step can present the same net-group signature as an elementary reaction; the etherification
-  reactant-ether clause demotes the specific glycol+ether bundled fake even then, but GENERAL config-robustness
-  needs the reaction-center span the generator already computes (``CappedScission.cut``/``.caps``) carried onto the
-  step and read locally -- the span-reading root fix (R58), which also hardens acyl. Sound at the production config.
+* LOCALITY (R57 debt, CLOSED by R58 span reading) -- a whole-molecule census is non-local, so R56/R57 borrowed
+  the generator's k=1 single-cut invariant (``max_reactant_cuts = 1``, the production default). R58 distils the
+  reaction-centre span the generator already computes (``CappedScission.cut``/``.caps``) into a coordinate-free
+  :class:`~smartchem.reaction_center.ReactionCenter` carried on the step, and both recognizers now CHECK the centre
+  is a single connected elementary condensation (:meth:`ReactionCenter.is_elementary_condensation`) rather than
+  trusting the config. This makes the k=1 assumption a structural FACT (config-robust: 48 reachable k=2 acyl bundles
+  and the k=2 ether bundles that forge the elementary net signature are demoted by their non-elementary spans), and
+  the span-local ether check retires the R57 clause (iii) blacklist -- RECOVERING 40 production-reachable genuine
+  etherifications whose reactant contains an unrelated ether (``methanol + 2-methoxyethanol ->
+  1,2-dimethoxyethane + water``). A step lacking a centre (hand-built / non-scission transform) falls back to the
+  whole-molecule census, sound at the production k=1 config; centre-carrying live and replayed steps read
+  identically (the centre round-trips through the replay payload).
 * DISPOSITION FLATTENING -- the fiction blocker shares the ``hard_blockers`` tuple with catalyst/section-11
   blockers, so a "real reaction, needs industrial catalyst" route and a "not a reaction at all" route are both
   G6-sunk equally (the partial order "real-but-hard strictly outranks not-a-reaction" is lost). A distinct
@@ -81,31 +90,55 @@ __all__ = [
 
 
 def _acyl_condensation(step) -> bool:
-    """The one shipped recognizer: an intermolecular acyl condensation (esterification / amidation /
-    thioesterification / formylation), reusing the R48-hardened predicate.
+    """Recognizer: an intermolecular acyl condensation (esterification / amidation / thioesterification), R58.
 
-    The predicate DETECTS the acyl-condensation reaction TYPE -- a polarity-neutral structural fact. Its
-    fail-OPEN use as a feasibility DOMAIN GUARD in :mod:`smartchem.experiment.feasibility` (where firing means
-    "refuse to vouch the derived DeltaG") is a DIFFERENT job than this module's fail-CLOSED type VOUCH; the shared
-    thing is only the detector. (Promoting the shared FG census to a neutral module is a named future refactor;
-    the frozen R56 probe + tests pin this module's behaviour so a drift in the borrowed predicate breaks a test.)
-    """
+    Class identity is the R48-hardened whole-molecule predicate (a free acid net-consumed, an acyl carbonyl
+    net-formed within the elementary intermolecular shape).  Its fail-OPEN use as a feasibility DOMAIN GUARD in
+    :mod:`smartchem.experiment.feasibility` (firing means "refuse to vouch the derived DeltaG") is a DIFFERENT job
+    than this module's fail-CLOSED type VOUCH; the shared thing is only the detector, which this module leaves
+    untouched.
+
+    R58 span-local elementarity.  When the step carries a reaction centre (:attr:`ExperimentStep.reaction_center`,
+    present for every generator-derived step), a VOUCH additionally requires that centre to be a SINGLE, connected,
+    elementary dehydrative condensation onto an ``{O, N, S}`` nucleophile (ester/amide/thioester) --
+    :meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation`.  This turns the borrowed k=1
+    single-cut assumption into a CHECKED structural fact: a bundled multi-cut step that forges the same net acyl
+    signature (48 reachable k=2 examples were measured) forms/breaks extra bonds or splits into >1 component, so it
+    is demoted.  A step without a centre (hand-built, or a non-scission transform) falls back to the whole-molecule
+    predicate alone (sound at the production k=1 config).  This is verdict-IDENTICAL to R57 at k=1 (measured 0
+    recovered / 0 lost) -- config-robustness hardening, not a k=1 behaviour change."""
     from .feasibility import _is_intermolecular_acyl_condensation
-    return _is_intermolecular_acyl_condensation(step)
+    if not _is_intermolecular_acyl_condensation(step):
+        return False
+    center = getattr(step, "reaction_center", None)
+    if center is None:
+        return True  # span absent: the whole-molecule predicate stands (sound at the production k=1 config)
+    return center.is_elementary_condensation(("O", "N", "S"))
 
 
 def _etherification(step) -> bool:
-    """The R57 recognizer: an intermolecular DEHYDRATIVE etherification (2 R-OH -> R-O-R + water), delegating to
-    the conservation-locked predicate in :mod:`smartchem.experiment.feasibility`.
+    """Recognizer: an intermolecular DEHYDRATIVE etherification (2 R-OH -> R-O-R + water), R58 span-local.
 
-    Conservation-lock (see the module docstring): within the elementary intermolecular shape, a fired step must
-    net-FORM a dialkyl (sp3 C-O-C) ether, net-CONSUME an sp3 alcohol, and carry NO ether among its reactants -- a
-    signature a formula-conserving fake cannot share for a REAL etherification class within the shape (the peroxide
-    coupling has no alcohol consumed; the aryl-ether fake forms no dialkyl ether; the glycol + ether bundled fiction
-    consumes a reactant ether).  Like acyl, its whole-molecule census borrows the generator's k=1 locality; the
-    span-reading root fix (R58) is the general hardening."""
-    from .feasibility import _is_intermolecular_etherification
-    return _is_intermolecular_etherification(step)
+    Class identity is the whole-molecule shape+net census (:func:`~smartchem.experiment.feasibility.
+    _ether_shape_and_net_change`): within the elementary intermolecular shape, a dialkyl (sp3 C-O-C) ether is
+    net-FORMED and an sp3 alcohol net-CONSUMED (this excludes the aryl-ether fake, which forms no dialkyl ether, and
+    the peroxide coupling, which consumes no alcohol; and it excludes esterification, whose formed C-O is an
+    ester-O with a carbonyl neighbour, not a dialkyl ether -- so ether and ester share a centre signature but the
+    census separates them).
+
+    R58 REPLACES the R57 whole-molecule clause (iii) ("no ether among the reactants") with a span-LOCAL check.
+    When the step carries a reaction centre, a VOUCH requires that centre to be a single, connected, elementary
+    dehydrative condensation onto oxygen (:meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation`
+    with ``("O",)``).  Clause (iii) was a non-local blacklist that FALSE-DEMOTED a genuine etherification whose
+    reactant merely CONTAINS an unrelated ether (``methanol + 2-methoxyethanol -> 1,2-dimethoxyethane + water``, a
+    production k=1 miss); the span reads the actual centre, so those 40 reachable steps are RECOVERED while the
+    bundled fakes (which have a non-elementary span) stay demoted.  A step without a centre falls back to the R57
+    predicate (clause iii intact), sound at k=1."""
+    from .feasibility import _ether_shape_and_net_change, _is_intermolecular_etherification
+    center = getattr(step, "reaction_center", None)
+    if center is None:
+        return _is_intermolecular_etherification(step)  # span absent: R57 predicate (clause iii) stands
+    return _ether_shape_and_net_change(step) and center.is_elementary_condensation(("O",))
 
 
 #: The positive whitelist of attested reaction-class recognizers: ``(class_name, predicate)``. A step is

@@ -51,6 +51,7 @@ from .category import Bond, Molecule
 from .contracts import Digestible, canonical_digest
 from .decompiler import DecompositionEdge, Formula
 from .decompiler_mediated import MediatedEdge
+from .reaction_center import ReactionCenter
 
 __all__ = [
     "STRUCTURE_DESCENT_SCHEMA",
@@ -670,6 +671,36 @@ class CappedScission(Digestible):
         result = (bonds - frozenset(self.cut)) | frozenset(self.caps)
         mols = self._product_molecules(atoms, _components(len(atoms), result), result)
         return tuple(sorted(mols, key=lambda m: (len(m.atoms), repr(m))))
+
+    def reaction_center(self) -> ReactionCenter:
+        """The coordinate-free reaction centre of the SYNTHESIS this scission reverses (R58).
+
+        A scission is a decomposition ``reactant + reagents -> products``; its reverse -- the synthesis
+        step :meth:`~smartchem.experiment.step.ExperimentStep.from_transform` builds -- FORMS exactly the
+        bonds the decomposition broke (:attr:`cut`) and BREAKS exactly the bonds it formed (:attr:`caps`).
+        This reads those off the joined atom space as element-pair kinds and counts the connected
+        components of the changed-bond graph, so a recognizer can confirm the centre is a single
+        elementary condensation without trusting a whole-molecule count -- see
+        :class:`~smartchem.reaction_center.ReactionCenter`.
+        """
+        atoms, _bonds, _offsets = _join(self.reactant, self.reagents)
+        formed = tuple((atoms[b.i], atoms[b.j], b.order) for b in self.cut)
+        broken = tuple((atoms[b.i], atoms[b.j], b.order) for b in self.caps)
+        # connected components of the graph whose edges are every changed (cut or capped) bond
+        edges = [(b.i, b.j) for b in self.cut] + [(b.i, b.j) for b in self.caps]
+        nodes = {atom for edge in edges for atom in edge}
+        parent = {n: n for n in nodes}
+
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for i, j in edges:
+            parent[find(i)] = find(j)
+        n_components = len({find(n) for n in nodes})
+        return ReactionCenter.of(formed, broken, n_components)
 
     def forget(self) -> MediatedEdge:
         """The forgetful image: the composition-level :class:`MediatedEdge` this rewrite realizes.

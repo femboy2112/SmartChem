@@ -29,12 +29,13 @@ yield.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from ..category import Config, ConservationError, Molecule, Reaction
 from ..conditions import ConditionEnvelope
 from ..contracts import Digestible
+from ..reaction_center import ReactionCenter
 
 if TYPE_CHECKING:
     from ..open_chem_diagram import OpenChemDiagram
@@ -84,6 +85,14 @@ class ExperimentStep(Digestible):
       agent), for the drafter's "in the presence of ..." rendering; it is not load-bearing for
       conservation, only for legibility;
     * ``envelope`` -- the sourced conditions, or :meth:`~smartchem.conditions.ConditionEnvelope.unknown`.
+    * ``reaction_center`` -- the coordinate-free rewrite span of this step (R58,
+      :class:`~smartchem.reaction_center.ReactionCenter`), or ``None`` when the step was not built from a
+      structural transform that computes one (a hand-built step, or a non-scission transform family).  It
+      is a NON-identity annotation: declared ``compare=False`` so it does NOT enter the content digest
+      (:func:`~smartchem.contracts.canonical_digest` skips non-comparing fields), so two steps that differ
+      only in how the generator discovered them share one digest and one replay identity.  Reaction-TYPE
+      recognizers read it to confirm the reaction centre is a single elementary condensation instead of
+      inferring elementarity from a whole-molecule count (the R56/R57 locality debt this closes).
     """
 
     schema_version: str
@@ -92,10 +101,13 @@ class ExperimentStep(Digestible):
     products: tuple[Molecule, ...]
     reagents: tuple[Molecule, ...]
     envelope: ConditionEnvelope
+    reaction_center: "ReactionCenter | None" = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if self.schema_version != STEP_SCHEMA:
             raise StepError(f"schema_version must be exactly {STEP_SCHEMA!r}")
+        if self.reaction_center is not None and type(self.reaction_center) is not ReactionCenter:
+            raise StepError("reaction_center must be a smartchem.reaction_center.ReactionCenter or None")
         if type(self.target) is not Molecule:
             raise StepError("target must be a smartchem.category.Molecule")
         for name in ("reactants", "products", "reagents"):
@@ -202,6 +214,7 @@ class ExperimentStep(Digestible):
         *,
         reagents: tuple[Molecule, ...] = (),
         envelope: ConditionEnvelope | None = None,
+        reaction_center: "ReactionCenter | None" = None,
     ) -> "ExperimentStep":
         """Build a step directly from its multisets (the general, structure-agnostic constructor)."""
         return cls(
@@ -211,6 +224,7 @@ class ExperimentStep(Digestible):
             tuple(products),
             tuple(reagents),
             envelope if envelope is not None else ConditionEnvelope.unknown(),
+            reaction_center,
         )
 
     @classmethod
@@ -233,15 +247,24 @@ class ExperimentStep(Digestible):
 
         ``reagents`` optionally flags which of the synthesis precursors are ancillary (e.g. the acetylating agent)
         for the drafter; it defaults to none and never affects conservation.
+
+        If ``transform`` exposes a ``reaction_center()`` (a :class:`~smartchem.structure_descent.CappedScission`
+        does; other transform families need not), its coordinate-free rewrite span is carried onto the step so a
+        reaction-TYPE recognizer can read the actual centre (R58).  It is a non-identity annotation and never
+        affects conservation; a transform without one yields a ``None`` centre (the recognizer falls back to its
+        whole-molecule census).
         """
         synth_reactants = tuple(transform.products)
         synth_products = (transform.reactant,) + tuple(transform.reagents)
+        center_of = getattr(transform, "reaction_center", None)
+        center = center_of() if callable(center_of) else None
         return cls.assembling(
             transform.reactant,
             synth_reactants,
             synth_products,
             reagents=reagents,
             envelope=envelope,
+            reaction_center=center,
         )
 
     @classmethod

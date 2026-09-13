@@ -385,23 +385,17 @@ def _alcohol_counts(molecule: Molecule) -> int:
     return alcohols
 
 
-def _is_intermolecular_etherification(step: ExperimentStep) -> bool:
-    """Does this step dehydratively couple two alcohols into a dialkyl ether? (the guarded class)
+def _ether_shape_and_net_change(step: ExperimentStep) -> bool:
+    """The ETHERIFICATION shape + net class-identity, WITHOUT the R57 whole-molecule clause (iii).
 
-    Fires iff the ELEMENTARY INTERMOLECULAR shape holds -- exactly 2 non-water reactants -> exactly 1 non-water
-    product, water net-produced -- AND, over the step: (i) a dialkyl ether-O is net-FORMED, (ii) an alcohol is
-    net-CONSUMED, and (iii) NO ether-O is present among the reactants.  The three clauses are the conservation-lock:
-    within the shape, forming an sp3 C-O-C ether while consuming an sp3 C-O-H alcohol and expelling water is the net
-    signature of a real Williamson-type / acid-dehydrative etherification, and clause (iii) demotes the
-    formula-conserving bundled fiction that REUSES an existing ether (glycol + dimethyl ether -> dimethoxyethane +
-    water).  DERIVED graph surgery, target-independent.
-
-    LOCALITY (documented debt, shared with :func:`_is_intermolecular_acyl_condensation`): the census is
-    whole-molecule, so soundness borrows the generator's k=1 single-cut invariant (``max_reactant_cuts = 1``, the
-    production default -- structure_descent.py).  Clause (iii) additionally demotes the specific glycol+ether bundled
-    fake even at k >= 2, but GENERAL config-robustness for arbitrary bundled steps requires the reaction-center span
-    the generator already computes (``CappedScission.cut``/``.caps``) to be carried onto the step and read locally --
-    the span-reading root fix (R58), out of scope for this shape-level census."""
+    True iff the ELEMENTARY INTERMOLECULAR shape holds -- exactly 2 non-water reactants -> exactly 1 non-water
+    product, water net-produced -- AND (i) a dialkyl ether-O is net-FORMED and (ii) an sp3 alcohol is net-CONSUMED.
+    Factored out of :func:`_is_intermolecular_etherification` so the R58 reaction-TYPE oracle can pair it with the
+    span-LOCAL reaction-centre check in place of clause (iii): clause (iii) ("no ether among the reactants") is a
+    whole-molecule blacklist that FALSE-DEMOTES a genuine etherification whose reactant merely CONTAINS an unrelated
+    ether elsewhere (``methanol + 2-methoxyethanol -> 1,2-dimethoxyethane + water``, a production k=1 miss --
+    [[a-whole-set-count-classifier-is-fooled-by-non-locality]]).  The span reads the actual centre and needs no such
+    blacklist."""
     non_water_reactants = [m for m in step.reactants if not _is_water(m)]
     non_water_products = [m for m in step.products if not _is_water(m)]
     if len(non_water_reactants) != 2 or len(non_water_products) != 1:
@@ -412,7 +406,29 @@ def _is_intermolecular_etherification(step: ExperimentStep) -> bool:
     r_ether = sum(_ether_oxygen_counts(m) for m in step.reactants)
     p_alcohol = sum(_alcohol_counts(m) for m in step.products)
     p_ether = sum(_ether_oxygen_counts(m) for m in step.products)
-    return (p_ether - r_ether) > 0 and (p_alcohol - r_alcohol) < 0 and r_ether == 0
+    return (p_ether - r_ether) > 0 and (p_alcohol - r_alcohol) < 0
+
+
+def _reactant_ether_count(step: ExperimentStep) -> int:
+    """The number of dialkyl ether-O among the step's reactants (the R57 clause-(iii) quantity)."""
+    return sum(_ether_oxygen_counts(m) for m in step.reactants)
+
+
+def _is_intermolecular_etherification(step: ExperimentStep) -> bool:
+    """Does this step dehydratively couple two alcohols into a dialkyl ether? (the R57 whole-molecule predicate)
+
+    Fires iff :func:`_ether_shape_and_net_change` holds AND clause (iii): NO ether-O is present among the reactants.
+    Within the shape, forming an sp3 C-O-C ether while consuming an sp3 C-O-H alcohol and expelling water is the net
+    signature of a real Williamson-type / acid-dehydrative etherification, and clause (iii) demotes the
+    formula-conserving bundled fiction that REUSES an existing ether (glycol + dimethyl ether -> dimethoxyethane +
+    water).  DERIVED graph surgery, target-independent.
+
+    This is the R57 predicate, retained UNCHANGED as the span-ABSENT fallback for the R58 oracle (a hand-built step
+    or a non-scission transform carries no reaction centre) and pinned by the R57 tests.  When a step DOES carry a
+    reaction centre, the oracle reads it instead (:mod:`smartchem.experiment.reaction_type_oracle`): the span-local
+    check both DROPS clause (iii) -- recovering genuine etherifications whose reactant contains an unrelated ether --
+    and hardens the k=1 locality into a CHECKED structural fact (config-robust), the R58 root fix."""
+    return _ether_shape_and_net_change(step) and _reactant_ether_count(step) == 0
 
 
 def feasibility_of_step(

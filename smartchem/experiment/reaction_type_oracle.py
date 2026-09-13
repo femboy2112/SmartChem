@@ -27,7 +27,11 @@ genuine instance of that class (a "conservation-lock" proof). The shipped acyl-c
 within the elementary intermolecular shape (2 non-water reactants -> 1 non-water product, water expelled) a new
 ester/amide/thioester carbonyl cannot be minted de novo without an extra oxidation product the shape excludes, so
 a fired step is FORCED onto a real acyl transfer (R48-hardened; verified 0 false-VOUCH over all 29 production
-frontier routes at the R56 gate). A GENERAL "new C-N bond" recognizer FAILS this admission gate -- it fires on
+frontier routes at the R56 gate). The R57 dehydrative-etherification recognizer passes too: within the same shape,
+a net-formed dialkyl (sp3 C-O-C) ether with a net-consumed sp3 alcohol, water expelled, and no reactant ether is
+the signature of a real etherification -- a formula-conserving fake cannot share it (peroxide coupling consumes no
+alcohol; the aryl-ether fake forms no dialkyl ether; the glycol+ether bundle reuses a reactant ether).
+A GENERAL "new C-N bond" recognizer FAILS this admission gate -- it fires on
 both caffeine N-methylation (real, must-vouch) AND aromatic phenol->aniline amination (fake, must-not-vouch), the
 R55 theorem one alphabet over -- so it is deliberately NOT shipped (the R45 caffeine genericity win is DEMOTED as
 honest coverage loss this round, to be recovered only behind a class-specific conservation-locked recognizer, not
@@ -47,10 +51,16 @@ per unrecognized step, fed into :func:`smartchem.service._affordability_frontier
 G6: a hard blocker dominates cost), so a route with any unrecognized step sinks on the affordability frontier. It
 runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
-Boundaries carried as documented debt (R56 scope, per the design gate).
-* ACYL-ONLY this round -- the one recognizer with a conservation-lock proof. Non-acyl real condensations
-  (Friedel-Crafts, Kolbe-Schmitt, Claisen, Williamson etherification, N-alkylation) are demoted-as-unrecognized:
-  honest coverage loss, NOT false-VOUCH. Each is a future round behind its own admission gate.
+Boundaries carried as documented debt (R56 acyl + R57 etherification scope, per the design gates).
+* TWO CLASSES this round -- acyl condensation (R56) and dehydrative etherification (R57), each with its own
+  conservation-lock proof. Other real condensations (Friedel-Crafts, Kolbe-Schmitt, Claisen, N-alkylation) are
+  demoted-as-unrecognized: honest coverage loss, NOT false-VOUCH. Each is a future round behind its own gate.
+* LOCALITY (R57 design gate, dalembert) -- both census predicates are WHOLE-MOLECULE, so their soundness silently
+  borrows the generator's k=1 single-cut invariant (``max_reactant_cuts = 1``, the production default). At k >= 2 a
+  bundled multi-cut step can present the same net-group signature as an elementary reaction; the etherification
+  reactant-ether clause demotes the specific glycol+ether bundled fake even then, but GENERAL config-robustness
+  needs the reaction-center span the generator already computes (``CappedScission.cut``/``.caps``) carried onto the
+  step and read locally -- the span-reading root fix (R58), which also hardens acyl. Sound at the production config.
 * DISPOSITION FLATTENING -- the fiction blocker shares the ``hard_blockers`` tuple with catalyst/section-11
   blockers, so a "real reaction, needs industrial catalyst" route and a "not a reaction at all" route are both
   G6-sunk equally (the partial order "real-but-hard strictly outranks not-a-reaction" is lost). A distinct
@@ -84,11 +94,27 @@ def _acyl_condensation(step) -> bool:
     return _is_intermolecular_acyl_condensation(step)
 
 
+def _etherification(step) -> bool:
+    """The R57 recognizer: an intermolecular DEHYDRATIVE etherification (2 R-OH -> R-O-R + water), delegating to
+    the conservation-locked predicate in :mod:`smartchem.experiment.feasibility`.
+
+    Conservation-lock (see the module docstring): within the elementary intermolecular shape, a fired step must
+    net-FORM a dialkyl (sp3 C-O-C) ether, net-CONSUME an sp3 alcohol, and carry NO ether among its reactants -- a
+    signature a formula-conserving fake cannot share for a REAL etherification class within the shape (the peroxide
+    coupling has no alcohol consumed; the aryl-ether fake forms no dialkyl ether; the glycol + ether bundled fiction
+    consumes a reactant ether).  Like acyl, its whole-molecule census borrows the generator's k=1 locality; the
+    span-reading root fix (R58) is the general hardening."""
+    from .feasibility import _is_intermolecular_etherification
+    return _is_intermolecular_etherification(step)
+
+
 #: The positive whitelist of attested reaction-class recognizers: ``(class_name, predicate)``. A step is
-#: recognized iff SOME predicate fires. ACYL-ONLY this round -- every entry must carry a conservation-lock proof
-#: (see the module docstring); a general bounded-radius recognizer is exactly escape #7 and is not admitted.
+#: recognized iff SOME predicate fires. Every entry MUST carry a conservation-lock proof (see the module
+#: docstring); a general bounded-radius recognizer is exactly escape #7 and is not admitted. R56 shipped acyl;
+#: R57 adds dehydrative etherification (a second conservation-locked class, NOT a bounded-radius patch).
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
+    ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
 )
 
 

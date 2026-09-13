@@ -335,6 +335,86 @@ def _is_intermolecular_acyl_condensation(step: ExperimentStep) -> bool:
     return (p_acid - r_acid) < 0 and (p_acyl - r_acyl) > 0
 
 
+def _is_sp3_nonaromatic_carbon(idx: int, atoms, adjacency: "dict[int, list[tuple[int, int]]]") -> bool:
+    """A carbon whose every bond is single -- an sp3, non-aromatic carbon.  A kekulized aromatic ring carbon
+    carries an order-2 bond and a carbonyl carbon its C=O, so BOTH are excluded (representation-robust: the
+    check reads bond orders, never explicit H)."""
+    return atoms[idx] == "C" and all(order == 1 for _n, order in adjacency.get(idx, ()))
+
+
+def _oxygen_heavy_neighbours(molecule: Molecule) -> "tuple[tuple, dict]":
+    adjacency: "dict[int, list[tuple[int, int]]]" = {}
+    for bond in molecule.bonds:
+        adjacency.setdefault(bond.i, []).append((bond.j, bond.order))
+        adjacency.setdefault(bond.j, []).append((bond.i, bond.order))
+    return molecule.atoms, adjacency
+
+
+def _ether_oxygen_counts(molecule: Molecule) -> int:
+    """The number of dialkyl ETHER oxygens: an O with exactly two heavy neighbours, BOTH single-bonded sp3
+    non-aromatic carbons.  This EXCLUDES an ester's -O- (one neighbour is the carbonyl C, which bears a C=O),
+    an anhydride's bridging O (its neighbour is a carbonyl C), and an aryl ether's aromatic-C neighbour -- so an
+    ester/acid is never miscounted as an ether.  Heavy-neighbour census only (no explicit-H dependence, mirroring
+    :func:`_acyl_group_counts`)."""
+    atoms, adjacency = _oxygen_heavy_neighbours(molecule)
+    ethers = 0
+    for o, element in enumerate(atoms):
+        if element != "O":
+            continue
+        heavy = [(n, order) for n, order in adjacency.get(o, ()) if atoms[n] != "H"]
+        if len(heavy) == 2 and all(order == 1 for _n, order in heavy) and all(
+            _is_sp3_nonaromatic_carbon(n, atoms, adjacency) for n, _o in heavy
+        ):
+            ethers += 1
+    return ethers
+
+
+def _alcohol_counts(molecule: Molecule) -> int:
+    """The number of ALCOHOL oxygens: an O with exactly one heavy neighbour, a single-bonded sp3 non-aromatic
+    carbon.  This EXCLUDES a phenol's aromatic-C hydroxyl, a carboxyl -O-H (its neighbour is the carbonyl C), a
+    peroxide O (its heavy neighbour is another O, not C), and an ether O (two heavy neighbours).  Counts a neutral
+    -O-H or a deprotonated alkoxide equally (no explicit-H dependence)."""
+    atoms, adjacency = _oxygen_heavy_neighbours(molecule)
+    alcohols = 0
+    for o, element in enumerate(atoms):
+        if element != "O":
+            continue
+        heavy = [(n, order) for n, order in adjacency.get(o, ()) if atoms[n] != "H"]
+        if len(heavy) == 1 and heavy[0][1] == 1 and _is_sp3_nonaromatic_carbon(heavy[0][0], atoms, adjacency):
+            alcohols += 1
+    return alcohols
+
+
+def _is_intermolecular_etherification(step: ExperimentStep) -> bool:
+    """Does this step dehydratively couple two alcohols into a dialkyl ether? (the guarded class)
+
+    Fires iff the ELEMENTARY INTERMOLECULAR shape holds -- exactly 2 non-water reactants -> exactly 1 non-water
+    product, water net-produced -- AND, over the step: (i) a dialkyl ether-O is net-FORMED, (ii) an alcohol is
+    net-CONSUMED, and (iii) NO ether-O is present among the reactants.  The three clauses are the conservation-lock:
+    within the shape, forming an sp3 C-O-C ether while consuming an sp3 C-O-H alcohol and expelling water is the net
+    signature of a real Williamson-type / acid-dehydrative etherification, and clause (iii) demotes the
+    formula-conserving bundled fiction that REUSES an existing ether (glycol + dimethyl ether -> dimethoxyethane +
+    water).  DERIVED graph surgery, target-independent.
+
+    LOCALITY (documented debt, shared with :func:`_is_intermolecular_acyl_condensation`): the census is
+    whole-molecule, so soundness borrows the generator's k=1 single-cut invariant (``max_reactant_cuts = 1``, the
+    production default -- structure_descent.py).  Clause (iii) additionally demotes the specific glycol+ether bundled
+    fake even at k >= 2, but GENERAL config-robustness for arbitrary bundled steps requires the reaction-center span
+    the generator already computes (``CappedScission.cut``/``.caps``) to be carried onto the step and read locally --
+    the span-reading root fix (R58), out of scope for this shape-level census."""
+    non_water_reactants = [m for m in step.reactants if not _is_water(m)]
+    non_water_products = [m for m in step.products if not _is_water(m)]
+    if len(non_water_reactants) != 2 or len(non_water_products) != 1:
+        return False
+    if sum(_is_water(m) for m in step.products) - sum(_is_water(m) for m in step.reactants) <= 0:
+        return False
+    r_alcohol = sum(_alcohol_counts(m) for m in step.reactants)
+    r_ether = sum(_ether_oxygen_counts(m) for m in step.reactants)
+    p_alcohol = sum(_alcohol_counts(m) for m in step.products)
+    p_ether = sum(_ether_oxygen_counts(m) for m in step.products)
+    return (p_ether - r_ether) > 0 and (p_alcohol - r_alcohol) < 0 and r_ether == 0
+
+
 def feasibility_of_step(
     step: ExperimentStep, *, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None,
     derive: bool = True, phases: "dict[Molecule, str] | None" = None,

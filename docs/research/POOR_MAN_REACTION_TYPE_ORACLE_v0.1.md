@@ -4,8 +4,11 @@
 > sound production code: a reaction-TYPE oracle that DEMOTES reaction-TYPE fictions off the affordability frontier.
 > Code: `smartchem/experiment/reaction_type_oracle.py` + one wire-in line in `smartchem/service._affordability_frontier`.
 > Evidence: `experiments/poor_man_reaction_type_oracle_probe.py` (FROZEN_HASH
-> `98cceeeb57b82a1bc1b93718a702a38227742840be2b92e807c1de93d857b56e`) + `tests/test_poor_man_reaction_type_oracle.py`
-> (12 pins). RDKit-free (committed baseline). Prior round: `POOR_MAN_STEP_VALIDITY_DEMOTER_DEFER_v0.1.md` (R55).
+> `fc8fea1eaa7b6c110775580e5a20f9b02ef610fd067f84903c86a7f1fb4f88e3`, re-frozen from `98cceeeb` at R57 when the
+> etherification recognizer added `dimethyl ether` to the vouched reals — the whole-oracle measurement grew by one
+> real, `false_vouch_count` stayed 0) + `tests/test_poor_man_reaction_type_oracle.py`
+> (12 pins). RDKit-free (committed baseline). Prior round: `POOR_MAN_STEP_VALIDITY_DEMOTER_DEFER_v0.1.md` (R55);
+> next round: `POOR_MAN_ETHERIFICATION_RECOGNIZER_v0.1.md` (R57).
 
 ## 1. What shipped, and why it is not a seventh defer
 

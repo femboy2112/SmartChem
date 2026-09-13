@@ -794,6 +794,31 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
+> **ROUND 59 — POOR-MAN ARCH, R59 → SHIP (correct-ahead-of-data): a DISTINCT disposition channel un-flattens the
+> two blocker KINDS (2026-09-13).** User: *"full blast, build the distinct disposition channel"* (chose SHIP-with-
+> honest-boundary at the consumer-existence gate). **Outcome → CANONICAL in
+> [`docs/research/POOR_MAN_DISPOSITION_CHANNEL_v0.1.md`](docs/research/POOR_MAN_DISPOSITION_CHANNEL_v0.1.md).**
+> The R56 debt "DISPOSITION FLATTENING": the frontier G6-sank a route on ANY hard blocker, but two KINDS shared one
+> `hard_blockers` tuple — REAL-BUT-HARD (a genuine reaction needing an unobtainable catalyst / section-11 bench bound)
+> and NOT-A-REACTION (a Problem-A reaction-TYPE fiction) — so "needs an industrial catalyst" and "not a reaction at
+> all" ranked EQUALLY; the order *real-but-hard ≻ not-a-reaction* was lost. R59 splits them into two DISJOINT
+> `CostVector` channels (`hard_blockers`, `fiction_blockers`) driving a 3-tier `Disposition`
+> (`CLEAN < REAL_BUT_HARD < NOT_A_REACTION`) that `dominates` reads (G6, 3-valued; proven a sound strict partial
+> order over all three tiers), serialized through the replay payload (schema bump `affordability-frontier-entry-
+> v1alpha2 → v1alpha3`; the disposition is ranking-load-bearing so it IS part of identity, unlike R58's centre).
+> **⚠️ HONEST HEADLINE — the RANKING effect is data-dark today.** An exhaustive 45-target sweep
+> (`probe.full_registry_scan()`): **0 reachable REAL_BUT_HARD routes** (0 EXCLUDED, 0 catalyst — both sources dark),
+> 24 NOT_A_REACTION, **0 mixed-tier targets, 0 frontier-membership changes** → the 3-tier frontier is
+> verdict-IDENTICAL to the old 2-tier one in production; the split is verdict-NEUTRAL as a ranker TODAY. Shipped
+> anyway (like the catalyst "guard ahead of its data"): it fixes a latent misranking, the CLASSIFICATION IS reachable
+> (24 fictions now carry a DISTINCT disposition, legible in the payload), and it is proven correct WHEN reachable
+> (a constructed real-but-hard + cheaper fiction pair: the fiction is dropped below it). Activated by a real-but-hard
+> source — feasibility wiring (Problem B, deferred) / a declared metal catalyst / a bench exclusion. NO regression:
+> fictions stay demoted; prior probes R55/R56/R57/R58 had their frontier read corrected to the UNION of both channels
+> and — because `content_hash` pins the measured PAYLOAD not the source — their frozen hashes are STABLE (no
+> re-freeze). Probe `experiments/poor_man_disposition_channel_probe.py` (FROZEN_HASH `df4eb707`); tests
+> `tests/test_poor_man_disposition_channel.py` + dominance in `tests/test_affordability.py`.
+>
 > **ROUND 58 — POOR-MAN ARCH, R58 → SHIP: the recognizers read the rewrite MORPHISM, not a whole-molecule count
 > (2026-09-13).** User: *"full blast, R58, wubba lubba dub dub! poor man alchemy!"* **Outcome → CANONICAL in
 > [`docs/research/POOR_MAN_SPAN_LOCAL_RECOGNIZER_v0.1.md`](docs/research/POOR_MAN_SPAN_LOCAL_RECOGNIZER_v0.1.md).**

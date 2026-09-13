@@ -1,6 +1,6 @@
 {
   "affordability_frontier_entry_fields": {
-    "cost_vector": "object(cost-vector): 10 minimized section-10.4 axes (cash/access_difficulty/evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/analytical/waste_disposal), each number|null (UNKNOWN); cash_floor number|null (an honest partial-basket LOWER BOUND when the exact cash is UNKNOWN, mutually exclusive with cash -- COST-VEC-01-coupled); hard_blockers array[str]; currency/unit str (must match for cash comparison); region str",
+    "cost_vector": "object(cost-vector): 10 minimized section-10.4 axes (cash/access_difficulty/evidence_tier_rank/new_equipment/material_quantity/energy/labor_time/preprocessing/analytical/waste_disposal), each number|null (UNKNOWN); cash_floor number|null (an honest partial-basket LOWER BOUND when the exact cash is UNKNOWN, mutually exclusive with cash -- COST-VEC-01-coupled); hard_blockers array[str] (REAL-BUT-HARD constraints -- disposition tier REAL_BUT_HARD); fiction_blockers array[str] (Problem-A not-a-reaction fictions -- disposition tier NOT_A_REACTION, strictly worse than real-but-hard; DISPOSITION-01); currency/unit str (must match for cash comparison); region str",
     "route_digest": "str (sha256; == the matching ranked_route_dossiers.route_digest)",
     "schema_version": "str"
   },

@@ -56,9 +56,12 @@ def test_the_consumer_is_served_dimethyl_ether_now_vouched():
     resp = run_compilation(build_recompile_request("dimethyl ether", max_depth=3))
     fr = resp.affordability_frontier
     assert len(fr) > 0
-    # at least one frontier route is now free of the reaction-type blocker (the etherification route)
+    # at least one frontier route is now free of the reaction-type blocker (the etherification route).  DISPOSITION-01:
+    # the fiction rides ``fiction_blockers`` now, so read both channels (else this goes vacuously true).
     assert any(
-        not any("unrecognized reaction type" in b for b in (getattr(e.cost_vector, "hard_blockers", ()) or ()))
+        not any("unrecognized reaction type" in b
+                for b in ((getattr(e.cost_vector, "hard_blockers", ()) or ())
+                          + (getattr(e.cost_vector, "fiction_blockers", ()) or ())))
         for e in fr
     )
 

@@ -99,7 +99,7 @@ def consumer_served() -> dict:
     fr = resp.affordability_frontier
     rt_blocked = sum(
         1 for e in fr
-        if any("unrecognized reaction type" in b for b in (getattr(e.cost_vector, "hard_blockers", ()) or ()))
+        if any("unrecognized reaction type" in b for b in ((getattr(e.cost_vector, "hard_blockers", ()) or ()) + (getattr(e.cost_vector, "fiction_blockers", ()) or ())))
     )
     return {
         "target": "isopentyl acetate",

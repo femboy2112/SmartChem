@@ -44,8 +44,11 @@ def test_the_consumer_is_served_isopentyl_acetate_fictions_now_blocked():
     fr = resp.affordability_frontier
     assert len(fr) > 0
     for e in fr:
-        hb = tuple(getattr(e.cost_vector, "hard_blockers", ()) or ())
-        assert any("unrecognized reaction type" in b for b in hb), f"a fiction still ships un-blocked: {hb}"
+        # DISPOSITION-01: a fiction now rides the DISTINCT ``fiction_blockers`` channel (disposition NOT_A_REACTION),
+        # not the shared ``hard_blockers`` -- read both so the "is the fiction demoted" intent holds channel-agnostically.
+        fb = (tuple(getattr(e.cost_vector, "hard_blockers", ()) or ())
+              + tuple(getattr(e.cost_vector, "fiction_blockers", ()) or ()))
+        assert any("unrecognized reaction type" in b for b in fb), f"a fiction still ships un-blocked: {fb}"
 
 
 def test_the_oracle_is_sound_zero_false_vouch_on_the_production_frontier():

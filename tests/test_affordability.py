@@ -13,6 +13,7 @@ import pytest
 from smartchem.data.reagents import COMMODITY_REAGENTS
 from smartchem.experiment.affordability import (
     CostVector,
+    Disposition,
     basket_cost_vector,
     dominates,
     pareto_frontier,
@@ -109,6 +110,42 @@ def test_both_blocked_falls_back_to_the_numeric_axes():
     assert dominates(a, b) and not dominates(b, a)  # equally blocked -> cheaper wins
 
 
+# ---- DISPOSITION-01: the distinct disposition channel un-flattens the two blocker KINDS ----
+
+def test_the_disposition_tier_is_the_worst_over_the_two_channels():
+    assert CostVector().disposition is Disposition.CLEAN
+    assert CostVector(hard_blockers=("Pd",)).disposition is Disposition.REAL_BUT_HARD
+    assert CostVector(fiction_blockers=("fake",)).disposition is Disposition.NOT_A_REACTION
+    # a route that is BOTH real-but-hard AND a fiction is a fiction (one non-reaction step voids the whole route).
+    assert CostVector(hard_blockers=("Pd",), fiction_blockers=("fake",)).disposition is Disposition.NOT_A_REACTION
+
+
+def test_real_but_hard_strictly_outranks_not_a_reaction_at_any_price():
+    # THE win: a genuine reaction merely needing an unobtainable catalyst (REAL_BUT_HARD) beats a formula-balanced
+    # non-reaction (NOT_A_REACTION) even when the fiction is CHEAPER -- the partial order the shared tuple flattened.
+    real_but_hard = CostVector(cash=1000.0, hard_blockers=("catalyst not kitchen-obtainable: Pd [industrial]",))
+    not_a_reaction = CostVector(cash=1.0, fiction_blockers=("unrecognized reaction type: no attested class",))
+    assert dominates(real_but_hard, not_a_reaction)          # real-but-hard wins DESPITE being 1000x dearer
+    assert not dominates(not_a_reaction, real_but_hard)      # the cheap fiction never dominates a real option
+    # and a clean route still beats BOTH tiers at any price (the original G6 rule, preserved)
+    clean_dear = CostVector(cash=1e6)
+    assert dominates(clean_dear, real_but_hard) and dominates(clean_dear, not_a_reaction)
+    assert not dominates(real_but_hard, clean_dear) and not dominates(not_a_reaction, clean_dear)
+
+
+def test_the_frontier_drops_a_fiction_when_a_real_but_hard_route_exists():
+    # a Pareto frontier with all three tiers keeps only the best-disposed among comparable routes: the cheap fiction
+    # is dominated OFF by the dearer real-but-hard route (and both by the clean one) -- observable frontier movement.
+    items = [
+        _Item("clean", CostVector(cash=50.0)),
+        _Item("real-but-hard", CostVector(cash=5.0, hard_blockers=("needs a fume hood",))),
+        _Item("fiction-cheap", CostVector(cash=0.01, fiction_blockers=("unrecognized reaction type",))),
+    ]
+    assert {it.name for it in pareto_frontier(items)} == {"clean"}
+    # remove the clean route: the real-but-hard survives, the cheaper fiction is still dropped (tier beats price).
+    assert {it.name for it in pareto_frontier(items[1:])} == {"real-but-hard"}
+
+
 # ---- the frontier ----
 
 def test_pareto_frontier_drops_the_dominated_and_keeps_the_tradeoffs():
@@ -145,8 +182,13 @@ def test_dominance_is_a_sound_strict_partial_order():
             kw["cash"] = float(rng.randint(0, 3))
         elif r < 0.7:
             kw["cash_floor"] = float(rng.randint(0, 3))
+        # exercise ALL THREE disposition tiers (DISPOSITION-01) -- clean, real-but-hard, not-a-reaction, and the
+        # both-blocked case -- so the 3-valued disposition rule is under the strict-partial-order proof too, not just
+        # the old 2-valued clean/blocked split.
         if rng.random() < 0.3:
             kw["hard_blockers"] = ("blk",)
+        if rng.random() < 0.3:
+            kw["fiction_blockers"] = ("fic",)
         return CostVector(**kw)
 
     vs = [rand_vec() for _ in range(200)]

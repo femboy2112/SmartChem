@@ -224,5 +224,7 @@ def test_the_frontier_populates_and_ranks_by_material_quantity():
     assert min(front_mqs) == mqs[0]     # the LEANEST-material route is admitted -- material_quantity is a live ranking axis
     # post-R56 the honest clean frontier carries only GENUINE reaction routes (the fiction second-route is demoted),
     # and the surviving entry is a genuine 2-axis point: material_quantity live AND a cash signal (methanol priced).
-    assert all(not (getattr(e.cost_vector, "hard_blockers", ()) or ()) for e in frontier)  # no fiction survives on it
+    # no fiction (nor any blocker) survives on it -- DISPOSITION-01: check ``is_blocked`` (both channels), not just
+    # ``hard_blockers``, else the fiction (now on ``fiction_blockers``) would slip past a vacuous check.
+    assert all(not e.cost_vector.is_blocked for e in frontier)
     assert any(getattr(e.cost_vector, "cash_floor", None) is not None for e in frontier)   # cash axis also live (2-axis)

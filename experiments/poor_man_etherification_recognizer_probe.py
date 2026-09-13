@@ -103,7 +103,7 @@ def consumer_served() -> dict:
     resp = run_compilation(build_recompile_request("dimethyl ether", max_depth=3))
     fr = resp.affordability_frontier
     frontier_has_vouched = any(
-        not any("unrecognized reaction type" in b for b in (getattr(e.cost_vector, "hard_blockers", ()) or ()))
+        not any("unrecognized reaction type" in b for b in ((getattr(e.cost_vector, "hard_blockers", ()) or ()) + (getattr(e.cost_vector, "fiction_blockers", ()) or ())))
         for e in fr
     )
     return {

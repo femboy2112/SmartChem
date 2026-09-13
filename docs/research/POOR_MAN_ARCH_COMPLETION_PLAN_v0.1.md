@@ -1,5 +1,18 @@
 # Poor-Man Arch — Completion Plan (v0.1)
 
+> **✅ R56 EXECUTED (2026-09-12) → outcome: SHIP — the ingenuity reward's FIRST sound production code.** After six
+> defers, the escape named at R55 is built: an EXTERNAL reaction-TYPE oracle
+> (`smartchem/experiment/reaction_type_oracle.py`), wired as a fail-closed G6 demoter into
+> `service._affordability_frontier` (sibling to `route_catalyst_blockers`). It is a POSITIVE WHITELIST of attested
+> reaction-class recognizers — VOUCH iff a step positively matches a known class; else demote as "unrecognized
+> reaction type" — so the unbounded-ness surfaces as COVERAGE LOSS, never a false-VOUCH (genuinely different-in-kind
+> from escape #7). Scope = ACYL-condensation ONLY, the one recognizer with a conservation-lock proof. Measured
+> (author, 29 frontier routes): 0 false-VOUCH, 21 fictions demoted, 4 genuine reals vouched, the flagship consumer
+> isopentyl acetate 10/10 fictions now blocked (was 0). The escape-#7 boundary is sharp: a general "new C-N bond"
+> recognizer COLLIDES (caffeine + aromatic-amination fake) → NOT shipped; the R45 caffeine win is demoted as honest
+> coverage loss this round. R55's "ships unblocked" consumer measurement is now SERVED (its probe re-frozen).
+> **Canonical outcome → [`POOR_MAN_REACTION_TYPE_ORACLE_v0.1.md`](POOR_MAN_REACTION_TYPE_ORACLE_v0.1.md).**
+>
 > **⚠️ PHASE 0 EXECUTED (R53, 2026-09-12) → outcome: DEFER #4.** The decisive kill-or-continue probe ran, and a
 > five-bearing design gate broke the continuous estimator's FEASIBLE set on determinant axes the bounded feature
 > set + fail-closed guard can neither read nor decline (acid-side β-keto decarboxylation; α-thioether thionium;

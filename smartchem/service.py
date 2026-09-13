@@ -2004,6 +2004,7 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
         return ()
     from .experiment.affordability import AffordabilityFrontierEntry, basket_cost_vector, pareto_frontier
     from .experiment.catalyst_availability import route_catalyst_blockers
+    from .experiment.reaction_type_oracle import route_reaction_type_blockers
     by_digest = {r.digest: r for r in routes}
     entries = []
     for summary in ranked:
@@ -2018,6 +2019,13 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
         # the only channel that carries catalyst obtainability into the poor-man frontier.  (No registered reaction
         # declares a metal catalyst today, so this appends nothing for every current route -- a guard ahead of its data.)
         hard = hard + route_catalyst_blockers(route)
+        # REACTION-TYPE-ORACLE-01 (R56): a step that matches NO attested reaction class -- a reaction-TYPE FICTION,
+        # a formula-balanced graph move that is no real reaction at all (Problem A) -- is a section-10.4 hard blocker,
+        # so a route built on a fiction sinks on the affordability frontier (G6) instead of shipping as a confident
+        # commodity route (R55 measured 72% of the frontier was such fiction, un-blocked).  A positive whitelist of
+        # conservation-locked recognizers (acyl-only this round): unrecognized -> demote as "not a known reaction",
+        # honest coverage loss NOT false-VOUCH, and explicitly NOT a feasibility claim (that stays feasibility.py's job).
+        hard = hard + route_reaction_type_blockers(route)
         # compute the shopping requirement ONCE and feed both the material_quantity axis (total moles) AND the
         # TERM-MAT quantity-weighted cash floor (per-leaf moles x price_per_mol); basket_cost_vector prefers the
         # weighted floor over the per-unit package cash when it is computable, else the per-unit path stands.

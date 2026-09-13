@@ -794,6 +794,32 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
+> **ROUND 56 — POOR-MAN ARCH, R56 EXECUTED → SHIP: the ingenuity reward's FIRST sound production code
+> (2026-09-12).** User: *"full blast on R56 … The oracle, or nothing."* After six defers, the reaction-TYPE
+> oracle ships. **Outcome → CANONICAL in
+> [`docs/research/POOR_MAN_REACTION_TYPE_ORACLE_v0.1.md`](docs/research/POOR_MAN_REACTION_TYPE_ORACLE_v0.1.md).**
+> **The escape (different-in-kind from escape #7):** a POSITIVE WHITELIST of attested reaction-class recognizers
+> (`smartchem/experiment/reaction_type_oracle.py`) — VOUCH iff a step POSITIVELY matches a known class; else
+> fail-closed demote as *"unrecognized reaction type"*. The unbounded-ness surfaces as COVERAGE LOSS, never a
+> false-VOUCH (the R53/R54 positive-whitelist prescription, now over reaction-TYPE transformations = Problem A).
+> Wired as a one-line G6 demoter sibling to `route_catalyst_blockers` in `service._affordability_frontier`
+> (never `_score_tuple`). **Scope = ACYL-condensation ONLY** — the one recognizer with a *conservation-lock*
+> proof (within the elementary 2→1+water shape, formula conservation FORCES a fired step onto a real acyl
+> transfer; R48-hardened). **5-bearing design gate unanimous GO_WITH_FOLDS, every load-bearing claim
+> author-reproduced.** Measured (author, 29 frontier routes): **0 false-VOUCH**, 21 fictions demoted, 4 genuine
+> acyl reals vouched (non-vacuous), the flagship consumer isopentyl acetate **10/10 fictions now blocked** (was
+> 0), both R55 fakes demoted. **The escape-#7 boundary is sharp:** a general "new C-N bond" recognizer COLLIDES
+> (fires on caffeine AND the aromatic-amination fake) → NOT shipped; the R45 caffeine win is demoted as HONEST
+> coverage loss this round (recoverable only behind a class-specific conservation-locked recognizer, never a
+> bounded-radius patch). **Folds honored:** fail-closed totality (exception ⇒ demote, never a spurious vouch),
+> disposition honesty (type-validity ≠ feasibility — a VOUCH is NOT a feasibility claim; Problem B stays
+> deferred), per-recognizer conservation-lock admission gate. Artifacts: frozen probe
+> `experiments/poor_man_reaction_type_oracle_probe.py` (FROZEN_HASH `98cceeeb`) + 12-pin test; golden
+> `recompile_routes_found.json` regenerated (the methyl-acetate fiction second-route correctly dominated off the
+> frontier); `test_affordability_wire` material-quantity test updated (its "second route" was itself a fiction).
+> Next (R57, each gated): grow the whitelist under the admission gate; recover caffeine via a class-specific
+> recognizer; a distinct disposition channel. **SUITE: <PENDING>.**
+>
 > **ROUND 55 — POOR-MAN ARCH, both R54 forks multiplexed → DEFER #6, but the "ZERO CONSUMERS" BLOCKER IS
 > LIFTED (2026-09-12).** User: *"full blast on 1 and 2, multiplexed in coherent order"* (fork 1 = the
 > different-KIND model; fork 2 = a live consumer; consumer gates model). **Outcome → CANONICAL in
@@ -816,7 +842,8 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > bounded-radius local recognizer at any polarity/alphabet. Banked: the join bond is EXACTLY recoverable from
 > `CappedScission.cut` (no schema change); the join-element instrument is a valid *measurement* (base rate) if not
 > a valid *gate*. Artifacts: frozen probe `experiments/poor_man_step_validity_demoter_defer_probe.py`
-> (FROZEN_HASH `a008811e`) + 9-pin sibling test; docs + experiment + test only, suite unaffected.
+> (FROZEN_HASH `b069b416`, re-frozen in R56 when the reaction-type oracle served this defer's consumer) + 9-pin
+> sibling test; docs + experiment + test only.
 >
 > **ROUND 54 — POOR-MAN ARCH, both DEFER-#4 next increments → Phase 0.5 EXECUTED (2026-09-12): DEFER #5.**
 > User: *"full blast on both 1. Reachability increment, and 2. The symmetric safe-set whitelist (Phase-0.5)."*

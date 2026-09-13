@@ -37,12 +37,14 @@ def test_probe_validates_and_frozen_hash_stable():
     assert probe.content_hash() == probe.FROZEN_HASH
 
 
-def test_the_consumer_is_proven_fictions_ship_unblocked_on_the_frontier():
-    # The transformative advance: refutes the standing "zero live consumers" premise (R49-R54).
+def test_the_consumer_is_proven_and_now_served_by_r56():
+    # The transformative advance: refutes the standing "zero live consumers" premise (R49-R54).  DURABLE: the
+    # frontier is populated with C-C-fusion fictions.  Post-R56 that consumer has been SERVED -- the fictions
+    # that R55 measured shipping UN-blocked now all carry a reaction-type hard blocker.
     c = probe.consumer_proof()
     assert c["frontier_entries"] >= 1
-    assert c["all_frontier_unblocked"] is True        # every frontier entry carries empty hard_blockers today
-    assert c["all_reconstructed_fictional"] is True   # and every one is a C-C-fusion fiction
+    assert c["all_reconstructed_fictional"] is True          # the consumer is real: every frontier route is a fiction
+    assert c["all_frontier_reaction_type_blocked"] is True   # and R56 now blocks them (see the R56 oracle probe)
 
 
 def test_the_pollution_base_rate_is_dominant():

@@ -202,10 +202,15 @@ def test_the_frontier_populates_and_ranks_by_material_quantity():
     # the material_quantity axis is LIVE and POPULATED: methyl acetate at depth 2 yields routes with different external
     # material burdens (mol/product), and the frontier carries that axis, with the leanest-material route always admitted
     # (nothing dominates it on material).  ORGANIC-PRICE-01 made METHANOL -- a leaf of this target's routes -- PRICED, so
-    # the per-unit CASH axis is now ALSO live here: the frontier is a genuine 2-axis Pareto, and a HEAVIER-material route
-    # SURVIVES precisely when it is non-dominated (it carries a cheaper/known cash the leaner route lacks).  So the axis
-    # ranks WITHIN the Pareto rather than collapsing it to one route (before methanol was priced, cash was UNKNOWN here
-    # and material_quantity alone dominated the heavier route off -- the single-axis behaviour the price wiring enriched).
+    # the per-unit CASH axis is ALSO live: the surviving entry carries BOTH axes (a genuine 2-axis frontier entry).
+    #
+    # REACTION-TYPE-ORACLE-01 (R56) update: the pre-R56 "heavier route" that this test used to demonstrate a second
+    # Pareto point was the two-step route whose first step -- `formic acid + methanol -> acetic acid + water` -- is a
+    # reaction-TYPE FICTION (a C-C fusion, no real mechanism).  R56 now correctly DEMOTES it (hard_blocker), so the
+    # honest clean frontier is the single GENUINE Fischer ester `methanol + acetic acid -> methyl acetate + water`.
+    # The multi-route material-quantity "diversity" was an artifact of frontier pollution; the axis itself is still
+    # live and populated on the surviving genuine route, which is what this test now asserts (leanest admitted, both
+    # axes present) -- alongside the raw-search still producing routes of differing burden BEFORE the fiction is sunk.
     from smartchem.service import _route_material_quantity
     result = search_routes(
         parse_smiles("CC(=O)OC"), reagents=(parse_smiles("O"),), commodities=_commodities(), max_depth=2,
@@ -217,4 +222,7 @@ def test_the_frontier_populates_and_ranks_by_material_quantity():
     front_mqs = [e.cost_vector.material_quantity for e in frontier]
     assert frontier and all(m is not None for m in front_mqs)  # the axis is POPULATED on the frontier (non-vacuous)
     assert min(front_mqs) == mqs[0]     # the LEANEST-material route is admitted -- material_quantity is a live ranking axis
-    assert len(set(front_mqs)) >= 2     # ... alongside a heavier route non-dominated on cash: a genuine 2-axis Pareto
+    # post-R56 the honest clean frontier carries only GENUINE reaction routes (the fiction second-route is demoted),
+    # and the surviving entry is a genuine 2-axis point: material_quantity live AND a cash signal (methanol priced).
+    assert all(not (getattr(e.cost_vector, "hard_blockers", ()) or ()) for e in frontier)  # no fiction survives on it
+    assert any(getattr(e.cost_vector, "cash_floor", None) is not None for e in frontier)   # cash axis also live (2-axis)

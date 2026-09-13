@@ -1,6 +1,13 @@
 """POOR-MAN-STEP-VALIDITY-DEMOTER-DEFER-01 (R55): the SIXTH verified defer of the ingenuity reward --
 and the first with a PROVEN, SURFACED, DOMINANT live consumer.
 
+R56 UPDATE (post-supersession): the consumer this probe PROVED -- the frontier fictions that R55 measured
+shipping UN-BLOCKED -- has since been SERVED by the R56 reaction-type oracle, which now BLOCKS them.  This probe
+is updated to the post-R56 truth: the DURABLE fact (every frontier route is a reconstructed C-C-fusion fiction)
+remains the consumer proof; "now blocked by R56" replaces the superseded "ships unblocked" measurement.  The
+R55 DEFER itself is unchanged (the join-element rule's dual false-VOUCH/false-EXCLUDE failure is independent of
+R56).  See experiments/poor_man_reaction_type_oracle_probe.py for the R56 SHIP.
+
 WHAT CHANGED THIS ROUND (the reframe that broke five rounds of "zero consumers").  The compiler DERIVES
 reactions by capped-scission graph surgery that conserves molecular FORMULA, not chemical feasibility, so the
 search OVER-GENERATES formula-balanced-but-fake steps.  Measured on the FULL PRODUCTION frontier
@@ -55,7 +62,7 @@ from smartchem.smiles import parse_smiles
 from smartchem.experiment.compile import compile_synthesis, _equation
 from smartchem.service import build_recompile_request, run_compilation, _reconstruct_route
 
-FROZEN_HASH = "a008811ec2642535cd81f2875f1a722ced32e11969c51db0d2bb765f4810024d"
+FROZEN_HASH = "b069b416c110e0d2445454274ce97353e853c12b8c56718e9be5072d9679d9bc"
 
 
 # --------------------------------------------------------------------------------------------------
@@ -84,11 +91,17 @@ def _routes_of(cs) -> list:
 
 
 # --------------------------------------------------------------------------------------------------
-# (1) THE PROVEN CONSUMER: fictional routes ship UN-BLOCKED on the production affordability frontier.
+# (1) THE PROVEN CONSUMER: the frontier is populated with reconstructed C-C-fusion FICTIONS (durable).
+#     R55 measured them shipping UN-BLOCKED (empty hard_blockers) -- the live-consumer proof.  R56's
+#     reaction-type oracle has since SERVED that consumer: those fictions now carry a reaction-type hard
+#     blocker instead of shipping clean (see experiments/poor_man_reaction_type_oracle_probe).  This probe
+#     is updated to the post-R56 truth: the DURABLE fact (the routes are fictions) is the consumer proof;
+#     "now blocked by R56" replaces the superseded "ships unblocked" measurement.
 # --------------------------------------------------------------------------------------------------
 def consumer_proof() -> dict:
-    """Isopentyl acetate's live frontier: every entry carries empty hard_blockers, and every route is a
-    C-C-fusion fiction -- the reward's home is populated with confident commodity lies TODAY."""
+    """Isopentyl acetate's live frontier: every reconstructed route is a C-C-fusion fiction (the proven,
+    dominant consumer) -- and, post-R56, every frontier entry now carries a reaction-type hard blocker
+    (the consumer R55 proved has since been SERVED)."""
     resp = run_compilation(build_recompile_request("isopentyl acetate", max_depth=3))
     fr = resp.affordability_frontier
     routes = []
@@ -97,16 +110,21 @@ def consumer_proof() -> dict:
             routes.append(_reconstruct_route(d.replay_payload))
         except Exception:
             pass
-    unblocked = sum(1 for e in fr if not getattr(e.cost_vector, "hard_blockers", ()))
+    reaction_type_blocked = sum(
+        1 for e in fr
+        if any("unrecognized reaction type" in b for b in (getattr(e.cost_vector, "hard_blockers", ()) or ()))
+    )
     fake = sum(1 for r in routes if raw_rule_blocks(r))
     return {
         "target": "isopentyl acetate",
         "frontier_entries": len(fr),
-        "frontier_entries_unblocked": unblocked,
+        "frontier_entries_reaction_type_blocked": reaction_type_blocked,
         "reconstructed_routes": len(routes),
         "fictional_routes": fake,
-        "all_frontier_unblocked": unblocked == len(fr) and len(fr) > 0,
+        # the DURABLE R55 consumer proof: every reconstructed frontier route is a C-C-fusion fiction
         "all_reconstructed_fictional": fake == len(routes) and len(routes) > 0,
+        # post-R56: those fictions are now all blocked by the reaction-type oracle (the consumer SERVED)
+        "all_frontier_reaction_type_blocked": reaction_type_blocked == len(fr) and len(fr) > 0,
     }
 
 
@@ -245,13 +263,16 @@ def _payload() -> dict:
         # false-VOUCHes reachable non-C-C fakes AND false-EXCLUDEs reachable real C-C reactions -- the join
         # element is neither necessary nor sufficient for fakeness.  Reaction-TYPE validity, like feasibility,
         # is not carriable by a bounded-radius local recognizer.
+        # the DEFER rests on DURABLE facts (independent of R56): the consumer is real (the frontier is populated
+        # with reconstructed fictions), the pollution is dominant, and the join-element rule FAILS both ways.
         "defer_verdict": (
-            consumer["all_frontier_unblocked"]
-            and consumer["all_reconstructed_fictional"]
+            consumer["all_reconstructed_fictional"]
             and rate["fictional_fraction"] >= 0.5
             and n_fv >= 1
             and n_fx >= 1
         ),
+        # post-R56: the consumer this defer proved has been SERVED (the fictions now carry a reaction-type blocker)
+        "consumer_served_by_r56": consumer["all_frontier_reaction_type_blocked"],
     }
 
 
@@ -265,9 +286,11 @@ def validate() -> bool:
     and false-EXCLUDEs a reachable real C-C condensation (so it is not a sound soundness gate)."""
     p = _payload()
     c = p["counts"]
-    # (1) the proven consumer -- the transformative advance
-    assert p["consumer_proof"]["all_frontier_unblocked"], f"consumer not surfaced: {p['consumer_proof']}"
+    # (1) the proven consumer -- the transformative advance.  DURABLE: the frontier is populated with fictions.
+    #     Post-R56 those fictions are now BLOCKED by the reaction-type oracle (the consumer SERVED), so the
+    #     R55 "ships unblocked" measurement is superseded -- this probe now asserts the served state instead.
     assert p["consumer_proof"]["all_reconstructed_fictional"], f"consumer routes not all fictional: {p['consumer_proof']}"
+    assert p["consumer_served_by_r56"], f"R56 did not serve the R55 consumer (fictions not all blocked): {p['consumer_proof']}"
     assert p["base_rate"]["fictional_fraction"] >= 0.5, f"pollution base rate too low: {p['base_rate']}"
     # (2) the FATAL refutation of the RAW rule -- both failure modes reproduce
     assert c["false_vouch_classes"] >= 1, f"the RAW rule stopped false-VOUCHing (unsoundness vanished): {p['false_vouches']}"

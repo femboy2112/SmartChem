@@ -3,7 +3,8 @@
 > **Canonical record for ROUND 55.** The sixth verified defer of the ingenuity reward — and the first that
 > lifts the blocker every prior defer was gated on. Evidence:
 > `experiments/poor_man_step_validity_demoter_defer_probe.py` (FROZEN_HASH
-> `a008811ec2642535cd81f2875f1a722ced32e11969c51db0d2bb765f4810024d`) +
+> `b069b416c110e0d2445454274ce97353e853c12b8c56718e9be5072d9679d9bc`, re-frozen in R56 after the reaction-type
+> oracle served this defer's consumer — see §note) +
 > `tests/test_poor_man_step_validity_demoter_defer.py` (9 pins). Plan:
 > `POOR_MAN_ARCH_COMPLETION_PLAN_v0.1.md`. RDKit-free; suite unaffected (docs + experiment + test only).
 
@@ -122,3 +123,14 @@ but it is proven unsound the moment the commodity set grows, which is a stated p
 (21/29) is over `CAPPED_SCISSION_LINEAR` routes mode with the default water reagent; other reagent pools and the
 k≥2 / ring-aware grammar expand the fiction space further. Kitchen-truth labels ("fake", "real") are
 textbook-asserted named-reaction chemistry (rdkit intentionally absent), not wet-lab.
+
+## note — R56 superseded this defer's "ships unblocked" measurement (the consumer was served)
+
+This defer's key unlock was the *proven consumer*: the frontier fictions shipping with **empty `hard_blockers`**.
+R56 (`POOR_MAN_REACTION_TYPE_ORACLE_v0.1.md`) built the escape this doc named — an external reaction-TYPE oracle
+— and now **blocks** those fictions. The frozen probe was therefore updated to the post-R56 truth and re-frozen
+(`a008811e` → `b069b416`): the **durable** consumer proof (every frontier route is a reconstructed C-C-fusion
+fiction) is unchanged; the superseded "ships unblocked" measurement is replaced by "now blocked by R56 (consumer
+served)". The DEFER itself stands unchanged — the join-element rule's dual false-VOUCH/false-EXCLUDE failure is
+independent of R56, and R56 deliberately did **not** ship that rule (it shipped a conservation-locked positive
+recognizer instead).

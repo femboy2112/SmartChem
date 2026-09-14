@@ -794,6 +794,32 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
+> **ROUND 60 — POOR-MAN ARCH, DISPOSITION-ACTIVATE-01 → SHIP: R59's REAL_BUT_HARD tier goes from structurally-
+> impossible to REACHABLE (2026-09-13).** User: *"do whatever makes it so … the answer drops out of the math."*
+> **Outcome → CANONICAL in [`docs/research/POOR_MAN_DISPOSITION_ACTIVATION_v0.1.md`](docs/research/POOR_MAN_DISPOSITION_ACTIVATION_v0.1.md).**
+> A 4-bearing read-only workflow verified two things against the code: (1) the disposition ALREADY drops out of the
+> math — `CostVector.disposition` is the join(max) homomorphism over per-step tiers (identical across 64 routes); a new
+> `open_core` decoration would be a **zero-call-sites mirror** (forbidden) → **no new categorical machinery**. (2) The
+> REAL_BUT_HARD tier was unpopulated for a **structural** reason: `service._affordability_frontier` wires a bench
+> EXCLUSION → `hard_blockers`, but `run_compilation` rebuilt the process-constrained frontier from **FITS-only** routes
+> (`service.py:1362`), filtering every EXCLUDED route out before it reached the frontier — the wiring was dead code.
+> **The lift (sound, additive, no schema bump):** admit `FITS ∪ RE-DERIVED-process-EXCLUDED` routes (ranked below
+> runnable CLEAN, above fictions). Sound because the process exclusion is re-derived from the carried
+> `process_requirements` (PROCESS-ADMIT-01 authority, re-checked on load) — trust-boundary-safe, unlike the
+> physical/composability axes (stay diagnostics-only, not admitted). **Live-verified flagship:** isopentyl alcohol +
+> acetic acid → isopentyl acetate on a kitchen bench with **no reflux condenser** → the recognized Fischer
+> esterification is process-EXCLUDED and now appears at REAL_BUT_HARD (frontier was **empty** before). **⚠️ HONEST
+> HEADLINE:** this activates the tier's VISIBILITY, **not** the RANKING INVERSION — REAL_BUT_HARD and NOT_A_REACTION
+> **cannot co-occur** on a frontier (under bounds, fictions are process-UNKNOWN → excluded; without bounds, no
+> REAL_BUT_HARD source), so the inversion stays reachable ONLY via the catalyst/**escape-#7** source. The probe
+> ASSERTS the inversion is dark (flips loudly if it becomes reachable). `admissible_route_digests` keeps its FITS-only
+> (bench-ready) meaning — a REAL_BUT_HARD route is shown, never claimed to fit. **Carried debt (NOT bundled):** R59's
+> disposition is forgeable on a tampered *serialized* response (`reaction_center` `compare=False`; frontier not in
+> `result_digest`) — this lift does not worsen it (a tamperer already reaches CLEAN, the best tier); closing it needs
+> digest-binding the centre (reverses a reviewed R58 decision + breaks hashes) = a separate round. Probe
+> `experiments/poor_man_disposition_activation_probe.py` (FROZEN_HASH `5e992095`); tests
+> `tests/test_poor_man_disposition_activation.py`; suite GREEN, no golden moved (else-branch untouched).
+>
 > **ROUND 59 — POOR-MAN ARCH, R59 → SHIP (correct-ahead-of-data): a DISTINCT disposition channel un-flattens the
 > two blocker KINDS (2026-09-13).** User: *"full blast, build the distinct disposition channel"* (chose SHIP-with-
 > honest-boundary at the consumer-existence gate). **Outcome → CANONICAL in

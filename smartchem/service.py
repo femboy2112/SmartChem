@@ -1357,9 +1357,12 @@ class CompilationResponse:
             if len(frontier_ids) != len(set(frontier_ids)) or not set(frontier_ids) <= candidate_ids:
                 raise ValueError("affordability frontier must identify unique returned IR candidates")
             if self.request.constraints.process.constrains_anything and not set(frontier_ids) <= set(
-                self.admissible_route_digests
+                self._frontier_admissible_route_digests
             ):
-                raise ValueError("process-constrained affordability frontier may contain only admitted FITS routes")
+                raise ValueError(
+                    "process-constrained affordability frontier may contain only FITS or process-EXCLUDED "
+                    "(REAL_BUT_HARD) routes"
+                )
         # SNAPSHOT-13.2: provider_snapshots carries the dated provenance of any LIVE fetch that serviced the request
         # (empty on an offline/default run).  Typed-guarded like the tuples above; the lazy import stays off the
         # common empty path (the layering discipline).  It is NOT in result_digest -- a fetch time is provenance.
@@ -1634,6 +1637,30 @@ class CompilationResponse:
         if not self.request.constraints.process.constrains_anything:
             return ()
         return tuple(r.route_digest for r in self.ranked_route_dossiers if r.fit_status == "FITS")
+
+    @property
+    def _frontier_admissible_route_digests(self) -> tuple[str, ...]:
+        """Route digests admissible to the process-constrained affordability frontier (DISPOSITION-ACTIVATE-01): the
+        FITS routes (:attr:`admissible_route_digests`) PLUS the routes whose RE-DERIVED process status is EXCLUDED
+        (genuine reactions the bench cannot run -> ranked REAL_BUT_HARD).  Both halves are re-derived on load from the
+        carried per-step ``process_requirements`` via :func:`evaluate_process_requirements` -- the SAME authority
+        PROCESS-ADMIT-01 uses (:meth:`_check_process_admission_coherence` already refuses a ``fit_status`` inconsistent
+        with that re-derivation) -- so this bound is authenticated on the process axis: a forger cannot admit a route to
+        the frontier without carried process evidence that itself re-derives to FITS or EXCLUDED.  This is the widened
+        successor to the old FITS-only frontier gate, which structurally hid every real-but-unrunnable route.  Unlike
+        :attr:`admissible_route_digests` (a bench-readiness list -- FITS only, an EXCLUDED route is NOT admitted for
+        the bench), this is purely the frontier-membership bound; a REAL_BUT_HARD route is shown, ranked below the
+        runnable ones, never claimed to fit."""
+        if not self.request.constraints.process.constrains_anything:
+            return ()
+        bounds = self.request.constraints.process
+        out: "list[str]" = []
+        for r in self.ranked_route_dossiers:
+            if r.fit_status == "FITS":
+                out.append(r.route_digest)
+            elif evaluate_process_requirements(r.process_requirements, bounds).status is ProcessFitStatus.EXCLUDED:
+                out.append(r.route_digest)
+        return tuple(out)
 
     @property
     def process_selection_status(self) -> str:
@@ -1981,15 +2008,23 @@ def _route_material_quantity(route: "object") -> "float | None":
     return float(sum(amount for _m, amount in reqs))
 
 
-def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
+def _affordability_frontier(routes: "tuple", ranked: "tuple", *, process_bounds: "ProcessBounds | None" = None) -> "tuple":
     """The section-10.4 Pareto affordability frontier over the ranked routes (COST-VEC-01 live wiring).
 
     For each ranked route, price its commodity leaf inputs into a CostVector (``basket_cost_vector``) -- plus its
     stoichiometric ``material_quantity`` (total external-leaf moles per mol product, a conserved lower bound via
     ``_route_material_quantity``; None when the route's shopping is underdetermined) -- and wrap it in an
     ``AffordabilityFrontierEntry`` keyed by the SAME ``route_digest`` the ranked summary carries, so a consumer links a
-    frontier entry back to its ranked route.  A route EXCLUDED by a hard section-11 bound carries its exclusions as
-    ``hard_blockers`` so it is G6-dominated (a hard blocker dominates cost) by any in-bound route.
+    frontier entry back to its ranked route.  A route whose RE-DERIVED process status is EXCLUDED (a genuine reaction
+    the bench cannot run) carries those exclusions as ``hard_blockers`` (disposition REAL_BUT_HARD), so it is
+    G6-dominated (a hard blocker dominates cost) by any in-bound (CLEAN) route yet ranked ABOVE a NOT_A_REACTION
+    fiction -- and, crucially, it now REACHES the frontier at all (DISPOSITION-ACTIVATE-01 lifted the old FITS-only
+    admission gate, which structurally hid every real-but-unrunnable route so R59's REAL_BUT_HARD tier could never be
+    populated).  ``process_bounds`` (passed by ``run_compilation`` only on a process-constrained routes-mode search)
+    is the authenticated source: the process exclusion is re-derived here via ``evaluate_process_requirements`` over
+    the route's carried per-step requirements -- the SAME verdict PROCESS-ADMIT-01 re-checks on load -- so the hardness
+    is trust-boundary-safe, unlike the physical/composability exclusion axes (which stay diagnostics-only, not
+    re-derivable from the thin projection, hence not admitted).
 
     The SIGNAL GATE (honest emptiness): run dominance FIRST, then return the Pareto set only if at least one
     SURVIVING entry carries affordability SIGNAL -- a known cost axis OR a hard blocker.  Gating the survivors (not
@@ -2016,7 +2051,16 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple") -> "tuple":
         # into one tuple, so the frontier can rank a real-but-hard route STRICTLY above a not-a-reaction one
         # (:class:`~smartchem.experiment.affordability.Disposition`) instead of G6-sinking both equally.
         # -- channel 1, REAL-BUT-HARD: section-11 bench exclusions ...
-        hard = tuple(summary.exclusions) if summary.fit_status == "EXCLUDED" else ()
+        # DISPOSITION-ACTIVATE-01: when a process box is active, source channel-1 hardness from the RE-DERIVED process
+        # exclusion (the SAME evaluate_process_requirements verdict PROCESS-ADMIT-01 authenticates on load), NOT the
+        # untrusted free-text summary.exclusions -- so an admitted process-EXCLUDED route rides REAL_BUT_HARD on an
+        # authenticated reason.  A physical/composability-only EXCLUDED route re-derives to a non-EXCLUDED process
+        # status here, so it contributes no hardness and is not admitted (see run_compilation's frontier admission).
+        if process_bounds is not None and process_bounds.constrains_anything:
+            _proc = evaluate_process_requirements(summary.process_requirements, process_bounds)
+            hard = tuple(_proc.exclusions) if _proc.status is ProcessFitStatus.EXCLUDED else ()
+        else:
+            hard = tuple(summary.exclusions) if summary.fit_status == "EXCLUDED" else ()
         # ... plus CATALYST-OBTAIN-01: a step declaring a catalyst the poor man cannot positively obtain -- an
         # industrial metal catalyst, or a declared-but-unrecognized one (the burden-of-proof flip) -- a route needing
         # an unobtainable catalyst sinks on the frontier (G6) even when it FITS the bench box.  A catalyst is
@@ -2200,10 +2244,22 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     # commodity leaves priced into a CostVector, EXCLUDED routes G6-dominated by their hard bounds.  Empty when no
     # route carries affordability signal (honest), so this never fabricates a cost ranking from absent price data.
     if request.constraints.process.constrains_anything:
-        admitted = tuple(r for r in ranked if r.fit_status == "FITS")
+        # DISPOSITION-ACTIVATE-01: admit a route to the process-constrained affordability frontier iff it is FITS OR its
+        # RE-DERIVED process status is EXCLUDED (a genuine reaction the bench cannot run -> REAL_BUT_HARD).  The old gate
+        # admitted FITS-only, which structurally hid every real-but-unrunnable route (R59's REAL_BUT_HARD tier could
+        # never be populated).  Admitting the process-EXCLUDED set is SOUND because that exclusion is re-derived from the
+        # carried per-step process_requirements (PROCESS-ADMIT-01) and re-checked on load, so it does not reopen the
+        # free-text forge the FITS-only gate closed; the physical/composability EXCLUDED axes stay OUT (not re-derivable
+        # from the thin projection, so their hardness would be untrusted).
+        _pbounds = request.constraints.process
+        def _frontier_admit(r: "object") -> bool:
+            if r.fit_status == "FITS":
+                return True
+            return evaluate_process_requirements(r.process_requirements, _pbounds).status is ProcessFitStatus.EXCLUDED
+        admitted = tuple(r for r in ranked if _frontier_admit(r))
         admitted_ids = {r.route_digest for r in admitted}
         frontier = _affordability_frontier(
-            tuple(r for r in routes_for_ranking if r.digest in admitted_ids), admitted
+            tuple(r for r in routes_for_ranking if r.digest in admitted_ids), admitted, process_bounds=_pbounds
         )
     else:
         frontier = _affordability_frontier(routes_for_ranking, ranked)

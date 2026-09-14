@@ -109,10 +109,14 @@ def test_nonexistent_or_duplicate_ranked_routes_cannot_be_admitted():
 
 
 def test_imported_frontier_cannot_bypass_process_admission():
+    # DISPOSITION-ACTIVATE-01 widened the frontier gate from FITS-only to {FITS UNION re-derived-process-EXCLUDED}
+    # (a REAL_BUT_HARD route is now shown, demoted).  The imported donor route is process-UNKNOWN under the restricted
+    # bounds (a derived route carries no process record), so it is NEITHER FITS nor EXCLUDED -> still non-admissible,
+    # still rejected -- the bypass defense holds; only the message changed.
     restricted = run_compilation(request())
     donor = run_compilation(build_recompile_request("smiles:CC(=O)OC", max_depth=2))
     assert donor.affordability_frontier
-    with pytest.raises(ValueError, match="only admitted FITS"):
+    with pytest.raises(ValueError, match="only FITS or process-EXCLUDED"):
         replace(restricted, affordability_frontier=donor.affordability_frontier)
 
 

@@ -60,10 +60,26 @@ The whole-molecule predicate
    - the acyl/amidation class (an amide N sits beside a `C=O`) — keeping the classes disjoint.
 
 Within the elementary shape these two net facts, together, are the signature of a genuine
-N-methylation and cannot be shared by a formula-conserving fake. For centre-carrying steps the
-recognizer *also* requires the R58 span to be a single elementary condensation onto N; a
-centre-absent step (hand-built / non-scission) falls back to the census alone, sound at the
-production k=1 config — semantics identical to `_etherification`.
+N-methylation and cannot be shared by a formula-conserving fake *whose centre is readable*. A VOUCH
+requires the R58 span to be a single elementary condensation onto N.
+
+### The gate finding — fail-closed on an absent centre
+
+The first cut let a centre-absent step fall back to the census alone (as `_etherification` does).
+The merge gate triangulated a false-VOUCH on that path: `N-methylformamide + methanol -> CNCC=O +
+water` inserts methanol's carbon as a **CH2** and **migrates the carbonyl off the N**, unmasking the
+amide's pre-existing methyl. `_n_methyl_amine_count` reads a spurious 0→1 rise with *no methyl
+transferred* — and with no reaction centre the census cannot see the rearrangement. This is exactly
+the whole-set-count non-locality the R58 span exists to close, reopened on the census-only path.
+
+The fix is a polarity flip, not a census patch (a bounded-radius guard over an unbounded
+rearrangement space would just leak the next member — a C=N-masked variant, an sp2 migration, a
+longer insertion): **`_n_methylation` returns `False` when the step carries no reaction centre.** A
+VOUCH now requires a readable, elementary N-centre; a centre-less step is honest coverage loss
+(false-UNRECOGNIZED, safe), never a census-only vouch (false-VOUCH, catastrophic) — the arch's
+declared-but-unrecognizable-input-must-BLOCK polarity. The acyl/ether recognizers keep their census
+fallback (pre-existing R57 debt, handled in a following round); only N-methylation fails closed
+here.
 
 Worked census on the caffeine rung: caffeine has exactly **one** free N-methyl amine (N7); N1 and
 N3 are carbonyl-flanked, so they are excluded and do not inflate the count. Theophylline has
@@ -78,6 +94,12 @@ forms zero. Methanol net-consumed = 1 for the real reaction, 0 for the fake.
   (was `None`); the caffeine production frontier carries a vouched route.
 - **Soundness, production frontier (D-ii, the R56 bar):** **29** frontier routes swept across the
   registry, **0 false-VOUCH**. Non-vacuous: `caffeine` and `methylamine` join the vouched reals.
+  The routes are centre-carrying (the span+census lock is exact); the sweep's `raw_rule_blocks`
+  ground-truth is a C-C-bond-only proxy blind to the homologation above, so it is the centre
+  requirement — not the proxy — that carries soundness on the census-only concern.
+- **Gate-finding regression pin:** `N-methylformamide + methanol -> CNCC=O + water` with
+  `reaction_center=None` now returns `None` from `recognize_reaction_type` and is demoted by
+  `route_reaction_type_blockers`.
 - **Adversarial k=2 bundled sweep (D-i):** over an N-methyl-bearing target library, **8**
   whole-molecule-census-vouched steps at k=2, **0 false-VOUCH** (no step recognized as
   N-methylation forms a C-C bond; every recognized step is a single elementary C-N condensation

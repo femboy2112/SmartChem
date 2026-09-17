@@ -159,14 +159,20 @@ def _n_methylation(step) -> bool:
     (:func:`~smartchem.experiment.feasibility._methylation_shape_and_net_change`) requires a METHANOL-specific
     alcohol net-consumed (literally CH3-OH -- excludes phenol-O and every longer alcohol, so general N-alkylation
     is not admitted) and an N-methyl amine net-formed on a non-carbonyl N (excludes the aryl-amination fake and
-    stays disjoint from the acyl/amidation class).  Formula conservation within the elementary shape then FORCES a
-    fired step onto a genuine N-methylation.  A step lacking a centre (hand-built / non-scission transform) falls
-    back to the whole-molecule predicate alone, sound at the production k=1 config -- span-absent semantics
-    identical to :func:`_etherification`."""
+    stays disjoint from the acyl/amidation class).
+
+    FAIL-CLOSED on an absent centre (the gate finding).  Unlike acyl/ether, this recognizer does NOT fall back to
+    the whole-molecule census when a step carries no reaction centre -- it BLOCKS.  The census is non-local, and a
+    centre-less homologation forges the net signature: ``N-methylformamide + methanol -> CNCC=O + water`` inserts
+    methanol's carbon as a CH2 and MIGRATES the carbonyl off the N, unmasking the amide's PRE-EXISTING methyl, so
+    ``_n_methyl_amine_count`` reads a spurious 0->1 rise with no methyl actually transferred.  The R58 span closes
+    exactly this ([[a-whole-set-count-classifier-is-fooled-by-non-locality]]), so a VOUCH REQUIRES a readable,
+    elementary N-centre.  A centre-less step is honest coverage loss (false-UNRECOGNIZED, safe), never a census-only
+    vouch (false-VOUCH, catastrophic) -- the arch's declared-but-unrecognizable-input-must-BLOCK polarity."""
     from .feasibility import _methylation_shape_and_net_change
     center = getattr(step, "reaction_center", None)
     if center is None:
-        return _methylation_shape_and_net_change(step)  # span absent: whole-molecule census stands (sound at k=1)
+        return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (gate finding)
     return _methylation_shape_and_net_change(step) and center.is_elementary_condensation(("N",))
 
 

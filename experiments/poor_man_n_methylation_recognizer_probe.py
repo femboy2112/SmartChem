@@ -28,14 +28,29 @@ legitimately VOUCHED, so those three probes' caffeine invariant is re-framed to 
 #7 is shut iff the phenol->aniline FAKE stays demoted (it does), NOT iff caffeine stays demoted.  The general N-C
 recognizer still collides and is still not shipped -- that boundary is unchanged.
 
+THE GATE FINDING (fail-closed on an absent centre).  The first freeze fell back to the whole-molecule census when
+a step carried no reaction centre.  That path is non-local and the gate triangulated a false-VOUCH:
+``N-methylformamide + methanol -> CNCC=O + water`` inserts methanol's carbon as a CH2 and MIGRATES the carbonyl off
+the N, unmasking the amide's PRE-EXISTING methyl, so ``_n_methyl_amine_count`` reads a spurious 0->1 rise with no
+methyl transferred -- and with no centre the census cannot see the rearrangement
+([[a-whole-set-count-classifier-is-fooled-by-non-locality]]).  The fix flips the polarity: a VOUCH now REQUIRES a
+readable, elementary N-centre; a centre-less step is honest coverage loss (false-UNRECOGNIZED, safe), never a
+census-only vouch.  So the SOUNDNESS claim is stated honestly here: 0 false-VOUCH is certified over the
+CENTRE-CARRYING frontier sweep (where the span+census lock is exact), and every centre-less step fail-closes.  The
+frontier sweep's ``raw_rule_blocks`` label is a C-C-bond-only proxy -- blind to this homologation -- which is
+exactly why the centre requirement, not the proxy, is what makes the claim sound; a full genuine-N-methylation
+oracle is out of scope.  NOTE: the acyl/ether recognizers keep the census fallback (pre-existing R57 debt, handled
+in the next round); only N-methylation fails closed this round.
+
 THIS PROBE FREEZES, against LIVE code: (1) the CONSUMER served (caffeine's real N-methylation now VOUCHED, was
 demoted as coverage loss); (2) ZERO false-VOUCH across the whole production frontier + non-vacuity (caffeine and
-methylamine join the vouched reals) -- the R56 mandatory soundness bar; (3) the ADVERSARIAL demotes (the
-byte-identical-centre aryl-amination fake, general N-ethylation by a longer alcohol, O-methylation to anisole);
-(4) the adversarial k=2 BUNDLED sweep specific to N-methylation -- 0 false-VOUCH; (5) a real elementary
-N-methylation POSITIVELY recognized; (6) the census unit-separates methanol/ethanol/phenol and the N-methyl amine
-from the aryl/amide N; (7) R56/R57/R58 still frozen + their canonical classes still recognized; (8) fail-closed
-totality + disposition honesty.
+methylamine join the vouched reals) -- the R56 mandatory soundness bar, over CENTRE-CARRYING routes; (3) the
+ADVERSARIAL demotes (the byte-identical-centre aryl-amination fake, general N-ethylation by a longer alcohol,
+O-methylation to anisole); (4) the adversarial k=2 BUNDLED sweep specific to N-methylation -- 0 false-VOUCH;
+(5) a real elementary CENTRE-CARRYING N-methylation POSITIVELY recognized; (5b) the GATE FINDING regression pin --
+the centre-absent homologation FAILS CLOSED (demoted); (6) the census unit-separates methanol/ethanol/phenol and
+the N-methyl amine from the aryl/amide N; (7) R56/R57/R58 still frozen + their canonical classes still recognized;
+(8) fail-closed totality + disposition honesty.
 """
 from __future__ import annotations
 
@@ -60,7 +75,7 @@ import experiments.poor_man_reaction_type_oracle_probe as p56
 import experiments.poor_man_etherification_recognizer_probe as p57
 import experiments.poor_man_span_local_recognizer_probe as p58
 
-FROZEN_HASH = "fb8de870932fad15fd7af08d8e48e66867a5f8aba1a2060451a60b06802143c9"
+FROZEN_HASH = "b5302d803c303df6bc2966a94c4613790d71c5224e1485d0982be90eed9c3156"
 
 _NM = "N-methylation"
 # theophylline (1,3-dimethylxanthine) + methanol -> caffeine (1,3,7-trimethylxanthine) + water: the R45 win.
@@ -72,14 +87,26 @@ def _water():
 
 
 def _hand_step(reactant_smis, product_smis, target_smi) -> "ExperimentStep":
-    """A hand-built conserving step -- carries NO reaction centre, so it exercises the span-ABSENT fallback (the
-    whole-molecule census alone, sound at the production k=1 config)."""
+    """A hand-built conserving step -- carries NO reaction centre.  POST-GATE-FIX this fail-closes to demoted for
+    N-methylation (a VOUCH now requires a readable centre), so it is used only for cases that must DEMOTE."""
     reactants = tuple(parse_smiles(s) for s in reactant_smis)
     products = tuple(parse_smiles(s) if s != "water" else _water() for s in product_smis)
     target = parse_smiles(target_smi)
     tgt = next((p for p in products if dict(p.formula) == dict(target.formula) and p.charge == target.charge), products[0])
     return ExperimentStep(STEP_SCHEMA, target=tgt, reactants=reactants, products=products,
                           reagents=(), envelope=ConditionEnvelope.unknown())
+
+
+def _derive_step(product_smiles, want_products):
+    """The centre-CARRYING synthesis step whose k=1 decomposition splits ``product_smiles`` (+ water) into exactly
+    ``want_products`` -- a real :class:`ReactionCenter` built ``from_transform`` on a CappedScission.  This is the
+    only construction that can VOUCH N-methylation after the gate fix (a readable centre is required)."""
+    r = parse_smiles(product_smiles)
+    want = sorted(parse_smiles(s).canonical().__repr__() for s in want_products)
+    for cs in capped_scissions(r, (parse_smiles("O"),), max_reactant_cuts=1)[0]:
+        if sorted(p.canonical().__repr__() for p in cs.products) == want:
+            return ExperimentStep.from_transform(cs)
+    return None
 
 
 def _demotes(route) -> bool:
@@ -221,16 +248,40 @@ def k2_adversarial() -> dict:
 
 # --------------------------------------------------------------------------------------------------
 # (5) POSITIVE CONTROL: real elementary N-methylations are recognized (non-vacuity at the unit level).
+#     POST-GATE-FIX these MUST be centre-carrying (derived) steps -- a centre-less step now fail-closes.
 # --------------------------------------------------------------------------------------------------
 def positive_control() -> dict:
-    n_methylaniline = _hand_step(["Nc1ccccc1", "CO"], ["CNc1ccccc1", "water"], "CNc1ccccc1")
-    methylamine = _hand_step(["N", "CO"], ["CN", "water"], "CN")
-    ka = recognize_reaction_type(n_methylaniline)
-    km = recognize_reaction_type(methylamine)
+    n_methylaniline = _derive_step("CNc1ccccc1", ["Nc1ccccc1", "CO"])   # aniline + methanol -> N-methylaniline
+    methylamine = _derive_step("CN", ["N", "CO"])                        # ammonia + methanol -> methylamine
+    ka = recognize_reaction_type(n_methylaniline) if n_methylaniline is not None else None
+    km = recognize_reaction_type(methylamine) if methylamine is not None else None
     return {
+        "n_methylaniline_carries_centre": n_methylaniline is not None and n_methylaniline.reaction_center is not None,
+        "methylamine_carries_centre": methylamine is not None and methylamine.reaction_center is not None,
         "n_methylaniline_recognized": ka is not None and _NM in ka,
         "methylamine_recognized": km is not None and _NM in km,
         "recognized_classes": [ka, km],
+    }
+
+
+# --------------------------------------------------------------------------------------------------
+# (5b) THE GATE FINDING -- REGRESSION PIN: a centre-ABSENT homologation must FAIL CLOSED (demoted).
+#      N-methylformamide + methanol -> CNCC=O + water reads a spurious N-methyl-amine 0->1 rise because the
+#      carbonyl MIGRATES off the N, unmasking the amide's pre-existing methyl (whole-set-count non-locality).  With
+#      no readable centre the census cannot see the rearrangement; the fix BLOCKS every centre-less step.
+# --------------------------------------------------------------------------------------------------
+def centre_absent_fails_closed() -> dict:
+    step = _hand_step(["CNC=O", "CO"], ["CNCC=O", "water"], "CNCC=O")
+
+    class _R:
+        steps = (step,)
+
+    return {
+        "step": "CNC=O + CO -> CNCC=O + water",
+        "reaction_center_is_none": step.reaction_center is None,
+        "recognized_class": recognize_reaction_type(step),
+        "demoted": recognize_reaction_type(step) is None,
+        "route_blocked": bool(route_reaction_type_blockers(_R())),
     }
 
 
@@ -308,6 +359,7 @@ def _payload() -> dict:
     adv = adversarial_must_demote()
     k2 = k2_adversarial()
     pc = positive_control()
+    caf = centre_absent_fails_closed()
     census = census_separates()
     ups = upstream_probes()
     fc = fail_closed_and_disposition()
@@ -319,6 +371,7 @@ def _payload() -> dict:
         "adversarial_must_demote": adv,
         "k2_adversarial": k2,
         "positive_control": pc,
+        "centre_absent_fails_closed": caf,
         "census_separates": census,
         "upstream_probes": ups,
         "fail_closed_and_disposition": fc,
@@ -334,6 +387,7 @@ def _payload() -> dict:
             and all(c["not_vouched_as_n_methylation"] for c in adv.values())
             and k2["k2_false_vouch_count"] == 0
             and pc["n_methylaniline_recognized"] and pc["methylamine_recognized"]
+            and caf["reaction_center_is_none"] and caf["demoted"] and caf["route_blocked"]
             and all(census.values())
             and all(ups.values())
             and fc["no_crash_on_raising_recognizer"] and fc["fake_still_demoted"] and fc["disposition_honest"]
@@ -362,8 +416,14 @@ def validate() -> bool:
     k2 = p["k2_adversarial"]
     assert k2["k2_false_vouch_count"] == 0, f"UNSOUND: a k=2 bundle was false-VOUCHed as N-methylation: {k2}"
     pc = p["positive_control"]
+    assert pc["n_methylaniline_carries_centre"] and pc["methylamine_carries_centre"], \
+        f"a positive control lost its reaction centre: {pc}"
     assert pc["n_methylaniline_recognized"] and pc["methylamine_recognized"], \
-        f"a real N-methylation is not recognized: {pc}"
+        f"a real (centre-carrying) N-methylation is not recognized: {pc}"
+    caf = p["centre_absent_fails_closed"]
+    assert caf["reaction_center_is_none"], f"the gate counterexample unexpectedly grew a centre: {caf}"
+    assert caf["demoted"] and caf["route_blocked"], \
+        f"GATE REGRESSION: the centre-absent homologation was false-VOUCHed as N-methylation: {caf}"
     assert all(p["census_separates"].values()), f"the census failed to unit-separate a case: {p['census_separates']}"
     assert all(p["upstream_probes"].values()), f"an upstream probe/class regressed: {p['upstream_probes']}"
     fc = p["fail_closed_and_disposition"]

@@ -68,8 +68,27 @@ def test_the_byte_identical_centre_collision_is_split_by_the_census():
 
 def test_a_real_n_methylation_is_positively_recognized():
     pc = probe.positive_control()
+    # POST-GATE-FIX: a VOUCH requires a readable reaction centre, so the positive controls must carry one.
+    assert pc["n_methylaniline_carries_centre"] is True
+    assert pc["methylamine_carries_centre"] is True
     assert pc["n_methylaniline_recognized"] is True
     assert pc["methylamine_recognized"] is True
+
+
+def test_the_centre_absent_homologation_fails_closed():
+    # THE GATE FINDING: N-methylformamide + methanol -> CNCC=O + water is NOT a methylation -- methanol's carbon
+    # inserts as a CH2 and the carbonyl migrates off the N, unmasking the pre-existing methyl (whole-set-count
+    # non-locality).  With no readable centre the census cannot see it, so the recognizer must FAIL CLOSED.
+    from smartchem.conditions import ConditionEnvelope
+    from smartchem.experiment.step import STEP_SCHEMA
+    water = structure_by_name("water").molecule
+    step = ExperimentStep(STEP_SCHEMA, target=parse_smiles("CNCC=O"),
+                          reactants=(parse_smiles("CNC=O"), parse_smiles("CO")),
+                          products=(parse_smiles("CNCC=O"), water),
+                          reagents=(), envelope=ConditionEnvelope.unknown())
+    assert step.reaction_center is None
+    assert recognize_reaction_type(step) is None                       # demoted, not vouched
+    assert route_reaction_type_blockers(SimpleNamespace(steps=(step,)))  # route carries the blocker
 
 
 def test_the_aryl_amination_fake_is_demoted():

@@ -33,6 +33,13 @@ DEMOTED; (4) a real elementary etherification is POSITIVELY recognized; (5) the 
 C-C fictions UNREGRESSED (R56 still validates); (6) the aromatic-amination FAKE stays demoted (escape #7 shut; R60
 re-framing -- caffeine is now vouched by the class-specific N-methylation recognizer, not by this one); (7) FAIL-CLOSED
 totality + disposition honesty.
+
+TAMPER-HARDENING-01 UPDATE (hash re-frozen ae5de300 -> 6d783d59).  The centre-less census fallback the etherification
+recognizer carried is RETIRED (a nulled ``reaction_center`` in a serialized replay must fail-closed, not census-vouch
+-- the fiction tamper channel).  So (4)'s positive control is rebuilt from a hand-built centre-LESS step to a
+centre-CARRYING derived one (a centre-less step now demotes), and gains a ``dme_step_carries_centre`` assertion.  The
+recognized class + soundness are IDENTICAL (0 false-VOUCH, dimethyl ether still a vouched real over the centre-carrying
+frontier sweep); only the positive-control's shape moved, so the frozen hash is re-frozen to the post-hardening truth.
 """
 from __future__ import annotations
 
@@ -42,6 +49,7 @@ import json
 from smartchem.conditions import ConditionEnvelope
 from smartchem.smiles import parse_smiles
 from smartchem.structure import structure_by_name, registered_structures
+from smartchem.structure_descent import capped_scissions
 from smartchem.experiment.compile import compile_synthesis
 from smartchem.experiment.step import STEP_SCHEMA, ExperimentStep
 from smartchem.experiment.feasibility import (
@@ -54,7 +62,7 @@ from smartchem.service import build_recompile_request, run_compilation, _reconst
 from experiments.poor_man_step_validity_demoter_defer_probe import _resolve, _routes_of, raw_rule_blocks
 import experiments.poor_man_reaction_type_oracle_probe as p56
 
-FROZEN_HASH = "ae5de30058350770fb8f0aed980dc2af78948f9d09a6ffb9b13376f8ebd316db"
+FROZEN_HASH = "6d783d59b1f50a36eb106a10b510e545f9e3895ef55fafcf1f95fad59fdcffda"
 
 _ETHER_CLASS = "etherification"
 
@@ -82,6 +90,20 @@ def _hand_step(reactant_smis, product_smis, target_smi):
     tgt = next((p for p in products if dict(p.formula) == dict(target.formula) and p.charge == target.charge), products[0])
     return ExperimentStep(STEP_SCHEMA, target=tgt, reactants=reactants, products=products,
                           reagents=(), envelope=ConditionEnvelope.unknown())
+
+
+def _derive_step(product_smiles, want_products):
+    """The centre-CARRYING synthesis step whose k=1 decomposition splits ``product_smiles`` (+ water) into exactly
+    ``want_products`` -- a real :class:`ReactionCenter` built ``from_transform`` on a CappedScission.  TAMPER-HARDENING-01
+    retired the centre-less census fallback, so a POSITIVE etherification control must now carry a readable centre (a
+    hand-built centre-less step fail-closes to demoted); an adversarial fake, which must demote regardless, may stay
+    centre-less."""
+    r = parse_smiles(product_smiles)
+    want = sorted(parse_smiles(s).canonical().__repr__() for s in want_products)
+    for cs in capped_scissions(r, (parse_smiles("O"),), max_reactant_cuts=1)[0]:
+        if sorted(p.canonical().__repr__() for p in cs.products) == want:
+            return ExperimentStep.from_transform(cs)
+    return None
 
 
 def _demotes(route) -> bool:
@@ -176,9 +198,10 @@ def adversarial_must_demote() -> dict:
 # (4) POSITIVE CONTROL: a real elementary etherification is recognized (non-vacuity at the unit level).
 # --------------------------------------------------------------------------------------------------
 def positive_control() -> dict:
-    step = _hand_step(["CO", "CO"], ["COC", "water"], "COC")
-    klass = recognize_reaction_type(step)
+    step = _derive_step("COC", ["CO", "CO"])   # 2 methanol -> DME + water, centre-CARRYING (TAMPER-HARDENING-01)
+    klass = recognize_reaction_type(step) if step is not None else None
     return {
+        "dme_step_carries_centre": step is not None and step.reaction_center is not None,
         "dme_step_recognized": klass is not None and _ETHER_CLASS in klass,
         "recognized_class": klass,
         "ether_o_formed": _ether_oxygen_counts(parse_smiles("COC")) - 2 * _ether_oxygen_counts(parse_smiles("CO")),
@@ -282,7 +305,7 @@ def _payload() -> dict:
             and sc["false_vouch_count"] == 0
             and sc["dimethyl_ether_vouched"]
             and all(c["demoted"] for c in adv.values())
-            and pc["dme_step_recognized"]
+            and pc["dme_step_carries_centre"] and pc["dme_step_recognized"]
             and unreg["r56_probe_validates"] and unreg["isopentyl_fictions_all_demoted"]
             and caff["amination_fake_demoted"]
             and fc["no_crash_on_raising_recognizer"] and fc["fake_still_demoted"] and fc["disposition_honest"]
@@ -308,6 +331,8 @@ def validate() -> bool:
     assert sc["dimethyl_ether_vouched"], f"VACUOUS/broken: dimethyl ether not vouched: {sc}"
     for key, c in p["adversarial_must_demote"].items():
         assert c["demoted"], f"adversarial fake {key} NOT demoted (false-VOUCH risk): {c}"
+    assert p["positive_control"]["dme_step_carries_centre"], \
+        f"the etherification positive control lost its reaction centre (TAMPER-HARDENING-01 needs one): {p['positive_control']}"
     assert p["positive_control"]["dme_step_recognized"], f"a real etherification is not recognized: {p['positive_control']}"
     assert p["acyl_unregressed"]["r56_probe_validates"], "R56 acyl probe no longer validates -- regression"
     assert p["acyl_unregressed"]["isopentyl_fictions_all_demoted"], "an isopentyl C-C fiction stopped being demoted"

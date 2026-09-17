@@ -145,7 +145,14 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # admission of each convergent-DAG candidate (was a throwaway diagnostic), so ``process_selection_status`` is no longer
 # UNASSESSED for a DAG-mode compile.  Folded into ``result_digest`` ONLY when non-empty, so a linear/DAG-less response
 # stays byte-identical to v1alpha11 (zero ripple); a DAG-mode process-constrained response's result_digest changes.
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha12"
+# v1alpha13 (TAMPER-HARDENING-01): NO new field -- a new ON-LOAD REFUSAL.  ``_check_frontier_coherence`` re-derives
+# each affordability_frontier entry's ``hard_blockers`` (process exclusions + catalyst) and ``fiction_blockers``
+# (reaction-type oracle) from digest-covered evidence + the replay payload, and REFUSES a frontier entry whose
+# claimed blockers are looser than the re-derivation -- closing the R59 disposition serialized-tamper forgery (a
+# stripped blocker silently flipping REAL_BUT_HARD/NOT_A_REACTION up to CLEAN, undetected because the frontier is
+# EXCLUDED from result_digest).  The bump carries no shape change; it marks the version at/after which a loaded
+# response is frontier-coherence-checked, so a pre-guarantee v1alpha12 payload is refused by the strict schema gate.
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha13"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
@@ -165,7 +172,10 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha12"
 # v1alpha16 (item 2b): the ranked_dag_summary element gains a machine-readable ``serial_holds`` field (the DAG-HOLD-01
 # serial-schedule hold as (producer, consumer, minutes) triples) -- a descriptor-only bump (the field is disclosure,
 # digest-excluded, so no result_digest ripple, and it is empty for every non-holding/linear-shaped DAG).
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha16"
+# v1alpha17 (TAMPER-HARDENING-01): the descriptor's ``response_schema_version`` value tracks the response bump to
+# v1alpha13.  No field is added/removed/renamed (the on-load frontier-coherence refusal changes behaviour, not shape),
+# so the descriptor SHAPE is unchanged -- this bump only keeps the version string coherent with the response's.
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha17"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -1506,6 +1516,95 @@ class CompilationResponse:
                 hidden = sorted(set(proc.exclusions) - set(d.exclusions))
                 if hidden:
                     raise ValueError(f"DAG {d.route_digest} (EXCLUDED) hides re-derived process exclusions: {hidden}")
+
+    def _check_frontier_coherence(self) -> None:
+        """Re-derive each affordability_frontier entry's DISPOSITION blockers and refuse an entry whose claimed
+        blockers are looser than the re-derivation (TAMPER-HARDENING-01 -- the R59 disposition serialized-tamper close).
+
+        Called from :func:`response_from_payload` (the DESERIALIZATION trust boundary), AFTER
+        :func:`_check_verified_admission` -- NOT from ``__post_init__``.  Like ``_check_verified_admission`` it
+        reconstructs routes from the thick replay payload, so it belongs at the load seam, not on every in-memory
+        construction: an honest producer's freshly-built response is trusted (and re-checking it would be redundant
+        work + would fire on the ``replace``-forged responses the red-team tests build).  Ordering it after
+        ``_check_verified_admission`` keeps that check's route-BINDING message authoritative for a FITS-route evidence
+        substitution; this method then covers the NON-FITS frontier tampers (REAL_BUT_HARD / NOT_A_REACTION strips)
+        that ``_check_verified_admission`` -- scoped to FITS dossiers -- does not reach.  It runs unconditionally on
+        load (not gated on ``require_verified_admission``), so a bare ``response_from_payload`` still refuses the strip.
+
+        THE HOLE.  ``affordability_frontier`` is DELIBERATELY EXCLUDED from :attr:`result_digest` (a price is dated
+        data, not search identity), and until now it was never re-derived on load.  So an out-of-band editor could
+        strip a frontier entry's ``hard_blockers`` (or ``fiction_blockers``) and the entry's disposition would flip up
+        to a BETTER tier -- REAL_BUT_HARD or NOT_A_REACTION silently becoming CLEAN -- with ``result_digest`` still
+        byte-identical and every other coherence gate silent.  The disposition is the ranking answer, so that is a
+        forged verdict.  This method shuts it, mirroring :func:`_affordability_frontier`'s OWN blocker computation so a
+        HONEST response is always self-consistent (re-derived == claimed) and only a tampered one raises.
+
+        WHAT IS RE-DERIVED, and from what authority:
+        * ``hard_blockers`` (REAL_BUT_HARD): under a process box, the process EXCLUSIONS re-derived from the matching
+          summary's per-step ``process_requirements`` (digest-covered, the SAME evidence PROCESS-ADMIT-01 authenticates
+          -- so this needs no replay), PLUS ``route_catalyst_blockers`` over the route reconstructed from the thick
+          ``replay_payload``.
+        * ``fiction_blockers`` (NOT_A_REACTION): ``route_reaction_type_blockers`` over that reconstructed route.  The
+          recognizers FAIL CLOSED on an absent reaction centre (TAMPER-HARDENING-01, oracle side), so a replay whose
+          ``reaction_center`` was nulled DEMOTES rather than census-vouching -- the fiction channel cannot be evaded by
+          centre-omission.
+
+        THE POLARITY (fail-closed, one-directional).  We raise iff a re-derived blocker is MISSING from the claimed
+        tuple (claimed is a strict subset / looser).  A claim with EXTRA blockers (a worse disposition than reality)
+        is a self-suppression, not an admission -- out of scope, exactly as the process/verified-admission checks treat
+        hide-good.  So an honest producer response passes (re-derived == claimed) and only a loosened one is refused.
+
+        BOUNDARY -- the residuals this does NOT close (stated, not hidden):
+        * OFF a process box, ``hard_blockers`` are the summary's FREE-TEXT physical/composability ``exclusions`` (not
+          re-derivable from the thin projection), so a non-process hard blocker stripped off-box is not caught here --
+          the same free-text boundary :meth:`_check_process_admission_coherence` carries.  The CATALYST and FICTION
+          channels ARE re-derived on or off the box (they read the reconstructed route).
+        * A frontier entry whose summary carries NO ``replay_payload`` has its catalyst/fiction channels unverifiable
+          (only the digest-covered process channel is checked); a verified-admission producer serialises with
+          ``include_replay=True``, so this bites only a replay-stripped payload with zero FITS routes.
+        * A fully-coherent forger who FABRICATES a self-consistent ``replay_payload`` (a valid route + a valid centre
+          that passes ``is_elementary_condensation``) re-derives to the tampered verdict and is NOT caught -- the
+          digest is an identity aid, not an authentication boundary (see :mod:`smartchem.contracts`).  Closing that
+          needs HMAC signing (COMBINED-VERDICT-AUTH), out of scope here.
+        Pinned by tests/test_poor_man_tamper_hardening.py.
+        """
+        if not self.affordability_frontier:
+            return
+        # lazy imports stay off the common (empty-frontier) path -- the service's layering discipline.
+        from .experiment.catalyst_availability import route_catalyst_blockers
+        from .experiment.reaction_type_oracle import route_reaction_type_blockers
+        process = self.request.constraints.process
+        process_active = process.constrains_anything
+        by_digest = {r.route_digest: r for r in self.ranked_route_dossiers}
+        for e in self.affordability_frontier:
+            summary = by_digest.get(e.route_digest)
+            if summary is None:
+                # every process-constrained frontier entry is a member of ``_frontier_admissible_route_digests`` (a
+                # ranked_route_dossiers digest), so this is unreachable there; with no matching summary there is no
+                # authority to re-derive against, so nothing to check.
+                continue
+            rederived_hard: set[str] = set()
+            rederived_fiction: set[str] = set()
+            # process-exclusion hardness: authenticated from the digest-covered per-step requirements (no replay
+            # needed), exactly as ``_affordability_frontier`` sources channel-1 hardness under a process box.
+            if process_active:
+                proc = evaluate_process_requirements(summary.process_requirements, process)
+                if proc.status is ProcessFitStatus.EXCLUDED:
+                    rederived_hard |= set(proc.exclusions)
+            # catalyst + fiction: re-derived from the route reconstructed out of the thick replay payload.  A missing
+            # payload leaves these two channels unverifiable (see the BOUNDARY) -- the process channel above still bites.
+            if summary.replay_payload is not None:
+                route = _reconstruct_route(summary.replay_payload)
+                rederived_hard |= set(route_catalyst_blockers(route))
+                rederived_fiction |= set(route_reaction_type_blockers(route))
+            missing_hard = rederived_hard - set(e.cost_vector.hard_blockers)
+            missing_fiction = rederived_fiction - set(e.cost_vector.fiction_blockers)
+            if missing_hard or missing_fiction:
+                raise ValueError(
+                    f"affordability frontier entry {e.route_digest} claims blockers looser than the re-derivation -- "
+                    f"a forged disposition (missing hard_blockers {sorted(missing_hard)}; missing fiction_blockers "
+                    f"{sorted(missing_fiction)}); refused (TAMPER-HARDENING-01)"
+                )
 
     def _check_outcome_coherence(self) -> None:
         """The no-laundering guard: an outcome can never contradict the search status it reports.
@@ -3191,7 +3290,11 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     that evidence via :func:`evaluate_process_requirements` and refuses a ``FITS``/``UNKNOWN`` whose
     PROCESS evidence cannot support it.  This closes the LOCKSTEP forgery ON THE PROCESS AXIS -- relabel a
     route that is process-``UNKNOWN``/``EXCLUDED`` to ``FITS`` and recompute the derived fields -- because
-    the carried requirements still re-derive to the stricter PROCESS verdict.
+    the carried requirements still re-derive to the stricter PROCESS verdict.  (3) TAMPER-HARDENING-01:
+    :meth:`CompilationResponse._check_frontier_coherence` runs at the END of every load (after any verified-admission
+    pass) and re-derives each affordability_frontier entry's DISPOSITION blockers, refusing a stripped ``hard_blockers``
+    / ``fiction_blockers`` that would forge a better tier -- the frontier is EXCLUDED from ``result_digest``, so this is
+    the only guard on it.
     RESIDUAL WITHOUT A SIGNATURE (two parts, both closed by COMBINED-VERDICT-AUTH's ``verification_key`` path below):
     (a) ``fit_status`` is the COMBINED verdict, and its OTHER two components -- composability and the
     physical/reagent/equipment box -- are NOT re-derived (they carry only free-text ``exclusions``/``gaps``,
@@ -3257,6 +3360,13 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # the context itself -- pass expected_request_digest (above) or a verification_key to bind the request too.
     if require_verified_admission:
         _check_verified_admission(response)
+    # TAMPER-HARDENING-01: the R59 disposition serialized-tamper close.  RUN ON EVERY LOAD (not gated on
+    # require_verified_admission) and AFTER _check_verified_admission, so a FITS-route evidence substitution keeps that
+    # check's route-binding message while this one covers the NON-FITS frontier tampers (a REAL_BUT_HARD / NOT_A_REACTION
+    # entry whose blockers were stripped to forge a better disposition).  It lives here, at the deserialization seam,
+    # rather than in __post_init__ because -- like _check_verified_admission -- it reconstructs routes from the replay
+    # payload, which is a load-time authority, not an in-memory-construction invariant.
+    response._check_frontier_coherence()
     return response
 
 

@@ -310,10 +310,12 @@ def upstream_probes() -> dict:
         "r56_probe_frozen": hasattr(p56, "validate") and isinstance(getattr(p56, "FROZEN_HASH", None), str),
         "r57_probe_frozen": hasattr(p57, "validate") and isinstance(getattr(p57, "FROZEN_HASH", None), str),
         "r58_probe_frozen": hasattr(p58, "validate") and isinstance(getattr(p58, "FROZEN_HASH", None), str),
+        # TAMPER-HARDENING-01 retired the centre-less census fallback for acyl+ether too, so these cross-checks now
+        # feed CENTRE-CARRYING derived steps (a centre-less hand step would fail-close to demoted).
         "acyl_class_recognized": (lambda k: k is not None and "acyl" in k)(
-            recognize_reaction_type(_hand_step(["CC(=O)O", "CO"], ["CC(=O)OC", "water"], "CC(=O)OC"))),
+            recognize_reaction_type(_derive_step("CC(=O)OC", ["CC(=O)O", "CO"]))),
         "ether_class_recognized": (lambda k: k is not None and "etherification" in k)(
-            recognize_reaction_type(_hand_step(["CO", "CO"], ["COC", "water"], "COC"))),
+            recognize_reaction_type(_derive_step("COC", ["CO", "CO"]))),
     }
 
 

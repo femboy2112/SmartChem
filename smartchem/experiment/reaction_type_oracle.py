@@ -73,9 +73,13 @@ Boundaries carried as documented debt (R56 acyl + R57 etherification + R60 N-met
   and the k=2 ether bundles that forge the elementary net signature are demoted by their non-elementary spans), and
   the span-local ether check retires the R57 clause (iii) blacklist -- RECOVERING 40 production-reachable genuine
   etherifications whose reactant contains an unrelated ether (``methanol + 2-methoxyethanol ->
-  1,2-dimethoxyethane + water``). A step lacking a centre (hand-built / non-scission transform) falls back to the
-  whole-molecule census, sound at the production k=1 config; centre-carrying live and replayed steps read
-  identically (the centre round-trips through the replay payload).
+  1,2-dimethoxyethane + water``). A step lacking a centre (hand-built / non-scission transform / a serialized replay
+  whose centre was NULLED) is FAIL-CLOSED demoted -- ALL THREE recognizers now BLOCK on an absent centre
+  (TAMPER-HARDENING-01, extending the R60 N-methylation gate finding to acyl + ether); the non-local census is never
+  trusted alone, so centre-omission can only cost a vouch (false-UNRECOGNIZED, safe), never mint one (false-VOUCH,
+  catastrophic). Centre-carrying live and replayed steps read identically (the centre round-trips through the replay
+  payload), so this is the load-time authority :meth:`CompilationResponse._check_frontier_coherence` re-derives the
+  fiction channel with.
 * DISPOSITION FLATTENING -- the fiction blocker shares the ``hard_blockers`` tuple with catalyst/section-11
   blockers, so a "real reaction, needs industrial catalyst" route and a "not a reaction at all" route are both
   G6-sunk equally (the partial order "real-but-hard strictly outranks not-a-reaction" is lost). A distinct
@@ -110,15 +114,21 @@ def _acyl_condensation(step) -> bool:
     :meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation`.  This turns the borrowed k=1
     single-cut assumption into a CHECKED structural fact: a bundled multi-cut step that forges the same net acyl
     signature (48 reachable k=2 examples were measured) forms/breaks extra bonds or splits into >1 component, so it
-    is demoted.  A step without a centre (hand-built, or a non-scission transform) falls back to the whole-molecule
-    predicate alone (sound at the production k=1 config).  This is verdict-IDENTICAL to R57 at k=1 (measured 0
-    recovered / 0 lost) -- config-robustness hardening, not a k=1 behaviour change."""
+    is demoted.
+
+    FAIL-CLOSED on an absent centre (TAMPER-HARDENING-01, extending the R60 gate finding to acyl).  A step that
+    carries NO reaction centre used to fall back to the whole-molecule predicate alone; it no longer does -- it
+    BLOCKS.  The census is non-local (the R48 lesson), and a serialized replay whose ``reaction_center`` was NULLED
+    is exactly a step with no readable centre.  Under the old fallback a tamperer could strip the centre off a fake
+    to buy a census-only vouch; now centre-omission can only DEMOTE (false-UNRECOGNIZED, safe), never false-VOUCH
+    (catastrophic).  A genuine hand-built acyl step loses its vouch too -- accepted coverage loss, the same trade
+    :func:`_n_methylation` already makes ([[a-whole-set-count-classifier-is-fooled-by-non-locality]])."""
     from .feasibility import _is_intermolecular_acyl_condensation
     if not _is_intermolecular_acyl_condensation(step):
         return False
     center = getattr(step, "reaction_center", None)
     if center is None:
-        return True  # span absent: the whole-molecule predicate stands (sound at the production k=1 config)
+        return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (TAMPER-HARDENING-01)
     return center.is_elementary_condensation(("O", "N", "S"))
 
 
@@ -138,12 +148,16 @@ def _etherification(step) -> bool:
     with ``("O",)``).  Clause (iii) was a non-local blacklist that FALSE-DEMOTED a genuine etherification whose
     reactant merely CONTAINS an unrelated ether (``methanol + 2-methoxyethanol -> 1,2-dimethoxyethane + water``, a
     production k=1 miss); the span reads the actual centre, so those 40 reachable steps are RECOVERED while the
-    bundled fakes (which have a non-elementary span) stay demoted.  A step without a centre falls back to the R57
-    predicate (clause iii intact), sound at k=1."""
-    from .feasibility import _ether_shape_and_net_change, _is_intermolecular_etherification
+    bundled fakes (which have a non-elementary span) stay demoted.
+
+    FAIL-CLOSED on an absent centre (TAMPER-HARDENING-01).  Like :func:`_acyl_condensation` and
+    :func:`_n_methylation`, a centre-less step now BLOCKS rather than falling back to the non-local R57 census: a
+    nulled ``reaction_center`` in a serialized replay can therefore only DEMOTE, never buy a census-only vouch --
+    centre-omission is false-UNRECOGNIZED (safe), not false-VOUCH."""
+    from .feasibility import _ether_shape_and_net_change
     center = getattr(step, "reaction_center", None)
     if center is None:
-        return _is_intermolecular_etherification(step)  # span absent: R57 predicate (clause iii) stands
+        return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (TAMPER-HARDENING-01)
     return _ether_shape_and_net_change(step) and center.is_elementary_condensation(("O",))
 
 
@@ -161,8 +175,9 @@ def _n_methylation(step) -> bool:
     is not admitted) and an N-methyl amine net-formed on a non-carbonyl N (excludes the aryl-amination fake and
     stays disjoint from the acyl/amidation class).
 
-    FAIL-CLOSED on an absent centre (the gate finding).  Unlike acyl/ether, this recognizer does NOT fall back to
-    the whole-molecule census when a step carries no reaction centre -- it BLOCKS.  The census is non-local, and a
+    FAIL-CLOSED on an absent centre (the gate finding, R60 -- now the shared discipline of all three recognizers per
+    TAMPER-HARDENING-01).  This recognizer does NOT fall back to the whole-molecule census when a step carries no
+    reaction centre -- it BLOCKS (as acyl and ether now do too).  The census is non-local, and a
     centre-less homologation forges the net signature: ``N-methylformamide + methanol -> CNCC=O + water`` inserts
     methanol's carbon as a CH2 and MIGRATES the carbonyl off the N, unmasking the amide's PRE-EXISTING methyl, so
     ``_n_methyl_amine_count`` reads a spurious 0->1 rise with no methyl actually transferred.  The R58 span closes

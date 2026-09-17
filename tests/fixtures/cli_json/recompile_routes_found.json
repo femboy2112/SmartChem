@@ -250,7 +250,7 @@
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
   "result_digest": "f89ffbce86fe73f4e618acf39af39db72d2346fbaba07f1d4cfdfac877c77c53",
-  "schema_version": "smartchem.service/compilation-response-v1alpha12",
+  "schema_version": "smartchem.service/compilation-response-v1alpha13",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

@@ -4,8 +4,9 @@ The committed probe (:mod:`experiments.poor_man_reaction_type_oracle_probe`) is 
 positive-whitelist reaction-TYPE oracle (:mod:`smartchem.experiment.reaction_type_oracle`) DEMOTES reaction-TYPE
 fictions off the affordability frontier -- SOUND (0 false-VOUCH across the production frontier), NON-VACUOUS
 (genuine acyl reals still vouched), and different-in-kind from the R49-R55 escape #7 (its unbounded-ness surfaces
-as coverage loss, never a false-VOUCH).  Scope: ACYL-condensation only (the one conservation-locked recognizer);
-the R45 caffeine N-methylation win is demoted as honest coverage loss this round.
+as coverage loss, never a false-VOUCH).  Scope at R56: ACYL-condensation only; R57 added etherification, and R60 a
+class-specific N-methylation that recovers the R45 caffeine win -- so the escape-#7 pin here is now the aromatic-
+amination FAKE staying demoted (the general N-C recognizer still collides and is still not shipped).
 
 These are the fast regression pins over the SAME live behaviour, kept independent of the probe so a refactor
 cannot silently drop coverage.  If the "consumer" pin stops firing, the pollution was fixed elsewhere (re-state
@@ -90,12 +91,12 @@ def test_real_cc_condensations_are_demoted_as_honest_coverage_loss():
     assert claisen and all(route_reaction_type_blockers(r) for r in claisen)
 
 
-def test_caffeine_is_demoted_as_coverage_loss_not_false_vouched():
-    # the R45 genericity win: acyl-only cannot vouch N-methylation, so caffeine is DEMOTED as honest coverage loss
-    # this round -- but it is NEVER false-vouched (the whole point of cutting the general N-alkylation recognizer).
+def test_caffeine_is_now_vouched_via_the_class_specific_recognizer():
+    # R60 re-framing: the R45 genericity win is RECOVERED -- caffeine's N-methylation is now vouched by the
+    # class-specific recognizer (NOT the general N-C one, which still collides).  The whole point of R60.
     routes = probe._routes_of(compile_synthesis(structure_by_name("caffeine").molecule, max_depth=2))
     assert routes
-    assert all(route_reaction_type_blockers(r) for r in routes)   # demoted, honestly, as unrecognized
+    assert any(not route_reaction_type_blockers(r) for r in routes)   # at least one route fully recognized
 
 
 def test_the_escape7_boundary_holds_general_nc_recognizer_collides():

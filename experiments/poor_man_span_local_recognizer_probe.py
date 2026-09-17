@@ -34,7 +34,9 @@ its target's frontier route un-blocked); (2) the coverage RECOVERY set (R58 vouc
 SOUNDNESS kills (k>=2 census-false-vouches the span demotes), both classes; (5) live==replay (a centre round-trips,
 same verdict + same digest) and digest-INVARIANCE (the centre never changes step identity); (6) acyl UNREGRESSED and
 verdict-neutral at k=1 (ester/amide/thioester all still vouched, 0 lost); (7) R56 + R57 probes still validate;
-(8) caffeine still demoted (escape #7 shut); (9) fail-closed + disposition honesty.
+(8) the aromatic-amination FAKE stays demoted (escape #7 shut; R60 re-framing -- caffeine is now vouched by the
+class-specific N-methylation recognizer, whose census locks the byte-identical centre the span alone cannot);
+(9) fail-closed + disposition honesty.
 """
 from __future__ import annotations
 
@@ -61,7 +63,7 @@ from experiments.poor_man_step_validity_demoter_defer_probe import _routes_of, r
 import experiments.poor_man_reaction_type_oracle_probe as p56
 import experiments.poor_man_etherification_recognizer_probe as p57
 
-FROZEN_HASH = "5f0be063224819d53547d8d9d0cecd4bd33eb80e34fe220fd47202b8d1e25c8f"
+FROZEN_HASH = "ae50fae24d0644a547c095fe0512e14797c8b92a69d2cf8fe645e941fea3350d"
 
 _ETHER = "etherification"
 _ACYL = "acyl condensation"
@@ -285,13 +287,22 @@ def upstream_probes() -> dict:
 
 
 # --------------------------------------------------------------------------------------------------
-# (8) ESCAPE #7 STAYS SHUT: caffeine (N-methylation) still demoted -- the span cannot vouch it.
+# (8) ESCAPE #7 STAYS SHUT (R60 re-framing): the byte-identical reaction CENTRE is shared by caffeine
+#     N-methylation (real) and the aryl-amination FAKE, so the span alone cannot separate them.  R60's
+#     class-specific recognizer (census-locked) now vouches caffeine while the FAKE stays demoted -- the real
+#     escape-#7 invariant.  The span refit R58 ships is unchanged by that.
 # --------------------------------------------------------------------------------------------------
-def caffeine_still_demoted() -> dict:
+def caffeine_now_vouched_fake_demoted() -> dict:
     routes = _routes_of(compile_synthesis(structure_by_name("caffeine").molecule, max_depth=2))
+    fake = _hand_step(["c1ccc(O)cc1", "N"], ["Nc1ccccc1", "water"], "Nc1ccccc1")  # phenol + ammonia -> aniline
+
+    class _R:
+        steps = (fake,)
+
     return {
-        "reachable": bool(routes),
-        "all_demoted": bool(routes) and all(bool(route_reaction_type_blockers(r)) for r in routes),
+        "caffeine_reachable": bool(routes),
+        "caffeine_has_vouched_route": bool(routes) and any(not bool(route_reaction_type_blockers(r)) for r in routes),
+        "amination_fake_demoted": bool(route_reaction_type_blockers(_R())),
     }
 
 
@@ -338,7 +349,7 @@ def _payload() -> dict:
     rep = replay_and_digest()
     acyl = acyl_unregressed()
     ups = upstream_probes()
-    caff = caffeine_still_demoted()
+    caff = caffeine_now_vouched_fake_demoted()
     fc = fail_closed_and_disposition()
     return {
         "schema": "poor-man-span-local-recognizer-01",
@@ -350,7 +361,7 @@ def _payload() -> dict:
         "replay_and_digest": rep,
         "acyl_unregressed": acyl,
         "upstream_probes": ups,
-        "caffeine_still_demoted": caff,
+        "caffeine_now_vouched_fake_demoted": caff,
         "fail_closed_and_disposition": fc,
         # THE VERDICT: both recognizers read the reaction-centre SPAN. It SERVES a coverage consumer (spectator-ether
         # etherification recovered, clause iii retired), RECOVERS a set of genuine etherifications (all real), stays
@@ -367,7 +378,7 @@ def _payload() -> dict:
             and acyl["verdict_neutral_at_k1"]
             and ups["r56_probe_frozen"] and ups["r57_probe_frozen"]
             and ups["r56_acyl_class_recognized"] and ups["r57_ether_class_recognized"]
-            and caff["all_demoted"]
+            and caff["amination_fake_demoted"]
             and fc["no_crash_on_raising_recognizer"] and fc["fake_still_demoted"] and fc["disposition_honest"]
         ),
     }
@@ -382,7 +393,8 @@ def validate() -> bool:
     (a spectator-ether etherification R57 sank is recovered), recover only REAL etherifications, stay SOUND on the
     frontier (0 false-VOUCH), demote reachable k>=2 bundled census-false-vouches (config-robust), round-trip
     identically through replay while never changing step identity, keep acyl unregressed + verdict-neutral at k=1,
-    leave R56/R57 validating, keep escape #7 shut (caffeine demoted), and stay fail-closed + disposition-honest."""
+    leave R56/R57 validating, keep escape #7 shut (the aromatic-amination fake demoted; caffeine now vouched by
+    R60's class-specific recognizer), and stay fail-closed + disposition-honest."""
     p = _payload()
     assert p["coverage_consumer_served"]["served"], f"coverage consumer not served: {p['coverage_consumer_served']}"
     rec = p["coverage_recovery"]
@@ -401,7 +413,8 @@ def validate() -> bool:
     assert ups["r56_probe_frozen"] and ups["r57_probe_frozen"], f"an upstream probe is not frozen: {ups}"
     assert ups["r56_acyl_class_recognized"] and ups["r57_ether_class_recognized"], \
         f"an upstream canonical class stopped being recognized: {ups}"
-    assert p["caffeine_still_demoted"]["all_demoted"], "caffeine stopped being demoted -- escape #7 reopened"
+    assert p["caffeine_now_vouched_fake_demoted"]["amination_fake_demoted"], \
+        "escape #7 REOPENED: the aromatic-amination fake was vouched"
     fc = p["fail_closed_and_disposition"]
     assert fc["no_crash_on_raising_recognizer"] and fc["fake_still_demoted"] and fc["disposition_honest"], \
         f"fail-closed / disposition broken: {fc}"

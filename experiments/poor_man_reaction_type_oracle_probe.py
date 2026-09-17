@@ -34,6 +34,15 @@ dimethyl ether + water) is now VOUCHED as an etherification -- so ``reals_vouche
 gained "dimethyl ether".  ``false_vouch_count`` stays 0 and every R56 SHIP assertion still holds; only the vouched-set
 count moved, so the frozen hash is re-frozen to the post-R57 truth (the R55->R56 supersession pattern).  R57's own
 etherification behaviour is pinned by :mod:`experiments.poor_man_etherification_recognizer_probe`.
+
+R60 UPDATE (hash re-frozen for the third class): R60 adds a CLASS-SPECIFIC conservation-locked N-methylation
+recognizer, so the R45 caffeine win this probe pinned as "honest coverage loss" is now legitimately VOUCHED.  Two
+things moved: (a) ``soundness_and_coverage``'s vouched set grew by the genuine N-methylation reals (caffeine,
+methylamine) -- ``false_vouch_count`` stays 0; (b) the escape-#7 boundary is RE-FRAMED to its correct post-R60
+form -- escape #7 is shut iff the aromatic-amination FAKE stays demoted (``shipped_oracle_vouches_amination_fake``
+is False), NOT iff caffeine stays demoted.  The general N-C recognizer still collides and is still not shipped;
+only the class-specific one is.  R60's own behaviour is pinned by
+:mod:`experiments.poor_man_n_methylation_recognizer_probe`.
 """
 from __future__ import annotations
 
@@ -51,7 +60,7 @@ from experiments.poor_man_step_validity_demoter_defer_probe import (
     _resolve, _routes_of, raw_rule_blocks, _FALSE_VOUCHES, _FALSE_EXCLUDES,
 )
 
-FROZEN_HASH = "fc8fea1eaa7b6c110775580e5a20f9b02ef610fd067f84903c86a7f1fb4f88e3"
+FROZEN_HASH = "40b50344d0be9a86752cc47b20dbcd2a10dcb1d65383d169d644d8cbefcca4cf"
 
 
 def _routes(tsmi, avail, reags=None):
@@ -185,9 +194,11 @@ def escape7_boundary() -> dict:
         "general_nc_fires_caffeine": caff_nc,             # must-vouch, the general recognizer fires
         "general_nc_fires_amination_fake": amin_nc,       # must-NOT-vouch, but the general recognizer fires too
         "collision": caff_nc and amin_nc,                 # => the general N-C recognizer IS escape #7 -> not shipped
-        # the SHIPPED acyl-only oracle: caffeine is demoted as HONEST coverage loss, never false-vouched
+        # R60 RE-FRAMING: the shipped oracle now carries a CLASS-SPECIFIC N-methylation recognizer, so caffeine is
+        # legitimately VOUCHED -- the R45 win recovered.  Escape #7 is shut iff the FAKE stays demoted (the general
+        # recognizer's collision is exactly that it would vouch the fake too), which the class-specific one does NOT.
         "shipped_oracle_vouches_caffeine": bool(caff) and any(_vouches(r) for r in caff),
-        "shipped_oracle_demotes_caffeine": bool(caff) and all(_demotes(r) for r in caff),
+        "shipped_oracle_vouches_amination_fake": bool(amin) and any(_vouches(r) for r in amin),
     }
 
 
@@ -247,7 +258,7 @@ def _payload() -> dict:
             and sc["reals_vouched"] >= 1
             and all(f["demoted"] for f in fakes if f["reachable"])
             and esc["collision"] is True
-            and esc["shipped_oracle_vouches_caffeine"] is False
+            and esc["shipped_oracle_vouches_amination_fake"] is False
             and fc["no_crash_on_raising_recognizer"] and fc["fake_still_demoted"]
         ),
     }
@@ -272,9 +283,9 @@ def validate() -> bool:
     assert all(f["demoted"] for f in p["r55_fakes_now_demoted"] if f["reachable"]), \
         f"an R55 false-VOUCH fake is not demoted by the oracle: {p['r55_fakes_now_demoted']}"
     assert p["escape7_boundary"]["collision"] is True, \
-        f"the general N-C recognizer stopped colliding -- re-audit the acyl-only scope: {p['escape7_boundary']}"
-    assert p["escape7_boundary"]["shipped_oracle_vouches_caffeine"] is False, \
-        f"the shipped oracle FALSE-VOUCHED caffeine (should be honest coverage loss): {p['escape7_boundary']}"
+        f"the general N-C recognizer stopped colliding -- re-audit why a general recognizer is not shipped: {p['escape7_boundary']}"
+    assert p["escape7_boundary"]["shipped_oracle_vouches_amination_fake"] is False, \
+        f"escape #7 REOPENED: the shipped oracle vouched the aromatic-amination FAKE: {p['escape7_boundary']}"
     assert p["fail_closed"]["no_crash_on_raising_recognizer"] and p["fail_closed"]["fake_still_demoted"], \
         f"fail-closed totality broken: {p['fail_closed']}"
     assert p["ship_verdict"], f"R56 SHIP verdict does not hold: {p}"

@@ -36,9 +36,14 @@ the bundled fictions -- so the R57 whole-molecule "no reactant ether" blacklist 
 centre-carrying steps.
 A GENERAL "new C-N bond" recognizer FAILS this admission gate -- it fires on
 both caffeine N-methylation (real, must-vouch) AND aromatic phenol->aniline amination (fake, must-not-vouch), the
-R55 theorem one alphabet over -- so it is deliberately NOT shipped (the R45 caffeine genericity win is DEMOTED as
-honest coverage loss this round, to be recovered only behind a class-specific conservation-locked recognizer, not
-a bounded-radius patch). Do NOT add a recognizer without its conservation-lock proof.
+R55 theorem one alphabet over -- so a general recognizer is deliberately NOT shipped. R60 recovers the R45 caffeine
+genericity win the honest way the R56 record prescribed: a CLASS-SPECIFIC conservation-locked N-methylation
+recognizer (:func:`_n_methylation`), NOT a bounded-radius patch. Its lock: the two collide on a BYTE-IDENTICAL
+reaction centre, so the span check cannot separate them; the whole-molecule census does -- the consumed alcohol
+must be methanol-specific (literally CH3-OH, which excludes aromatic phenol-O and every longer alcohol, so general
+N-alkylation is not admitted) and the formed N-methyl amine must sit on a non-carbonyl N (excludes the aryl-
+amination fake and stays disjoint from the acyl/amidation class). Do NOT add a recognizer without its
+conservation-lock proof.
 
 What a VOUCH means, and what it deliberately does NOT (the disposition law -- type-validity != feasibility).
 A VOUCH says ONLY "a mechanism of this reaction TYPE exists" (Problem A). It is NOT a feasibility claim (Problem B,
@@ -54,9 +59,10 @@ per unrecognized step, fed into :func:`smartchem.service._affordability_frontier
 G6: a hard blocker dominates cost), so a route with any unrecognized step sinks on the affordability frontier. It
 runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
-Boundaries carried as documented debt (R56 acyl + R57 etherification scope, per the design gates).
-* TWO CLASSES this round -- acyl condensation (R56) and dehydrative etherification (R57), each with its own
-  conservation-lock proof. Other real condensations (Friedel-Crafts, Kolbe-Schmitt, Claisen, N-alkylation) are
+Boundaries carried as documented debt (R56 acyl + R57 etherification + R60 N-methylation scope, per the gates).
+* THREE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), and dehydrative N-methylation (R60),
+  each with its own conservation-lock proof. Other real condensations (Friedel-Crafts, Kolbe-Schmitt, Claisen) and
+  N-alkylation BEYOND methylation (by any longer alcohol -- the methanol clause admits only CH3-OH) are
   demoted-as-unrecognized: honest coverage loss, NOT false-VOUCH. Each is a future round behind its own gate.
 * LOCALITY (R57 debt, CLOSED by R58 span reading) -- a whole-molecule census is non-local, so R56/R57 borrowed
   the generator's k=1 single-cut invariant (``max_reactant_cuts = 1``, the production default). R58 distils the
@@ -141,13 +147,38 @@ def _etherification(step) -> bool:
     return _ether_shape_and_net_change(step) and center.is_elementary_condensation(("O",))
 
 
+def _n_methylation(step) -> bool:
+    """Recognizer: an intermolecular dehydrative N-METHYLATION (R2N-H + CH3-OH -> R2N-CH3 + water), R60.
+
+    The THIRD conservation-locked class, and the one the R56 record explicitly deferred: a GENERAL "new C-N bond"
+    recognizer collides -- it fires on both real caffeine N-methylation and the fake phenol->aniline aryl
+    amination, the R55 theorem one alphabet over.  The two even share a BYTE-IDENTICAL reaction centre
+    (``formed={C-N, O-H}``, ``broken={C-O, N-H}``, one component), so the span check alone (mirroring
+    :func:`_etherification`, :meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation` with
+    ``("N",)``) does NOT lock.  The census supplies what the span cannot: the whole-molecule predicate
+    (:func:`~smartchem.experiment.feasibility._methylation_shape_and_net_change`) requires a METHANOL-specific
+    alcohol net-consumed (literally CH3-OH -- excludes phenol-O and every longer alcohol, so general N-alkylation
+    is not admitted) and an N-methyl amine net-formed on a non-carbonyl N (excludes the aryl-amination fake and
+    stays disjoint from the acyl/amidation class).  Formula conservation within the elementary shape then FORCES a
+    fired step onto a genuine N-methylation.  A step lacking a centre (hand-built / non-scission transform) falls
+    back to the whole-molecule predicate alone, sound at the production k=1 config -- span-absent semantics
+    identical to :func:`_etherification`."""
+    from .feasibility import _methylation_shape_and_net_change
+    center = getattr(step, "reaction_center", None)
+    if center is None:
+        return _methylation_shape_and_net_change(step)  # span absent: whole-molecule census stands (sound at k=1)
+    return _methylation_shape_and_net_change(step) and center.is_elementary_condensation(("N",))
+
+
 #: The positive whitelist of attested reaction-class recognizers: ``(class_name, predicate)``. A step is
 #: recognized iff SOME predicate fires. Every entry MUST carry a conservation-lock proof (see the module
 #: docstring); a general bounded-radius recognizer is exactly escape #7 and is not admitted. R56 shipped acyl;
-#: R57 adds dehydrative etherification (a second conservation-locked class, NOT a bounded-radius patch).
+#: R57 added dehydrative etherification; R60 adds dehydrative N-methylation (each a conservation-locked class,
+#: NOT a bounded-radius patch).
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
+    ("N-methylation (dehydrative, R2N-H + CH3-OH -> R2N-CH3 + water)", _n_methylation),
 )
 
 

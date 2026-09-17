@@ -67,9 +67,11 @@ consumer will have appeared).
 
 ## What activates the ranking effect
 
-A reachable `REAL_BUT_HARD` source: **feasibility wiring** (Problem B — a type-vouched but feasibility-blocked
-route becomes real-but-hard; still deferred, with its own soundness questions), a **declared metal catalyst** in a
-registered reaction, or a **section-11 bench exclusion** of a real route.
+A reachable `REAL_BUT_HARD` source: **feasibility wiring** (Problem B here names `feasibility.py`'s ΔG model —
+a DIFFERENT thing from the canonical "Problem B" substrate-misbehavior demoter defined in
+`POOR_MAN_STEP_VALIDITY_DEMOTER_DEFER_v0.1.md`; see `POOR_MAN_DEFER_LEDGER_2026-09-17.md` #5 — a type-vouched
+but feasibility-blocked route becomes real-but-hard; still deferred, with its own soundness questions), a
+**declared metal catalyst** in a registered reaction, or a **section-11 bench exclusion** of a real route.
 
 ## No regression
 

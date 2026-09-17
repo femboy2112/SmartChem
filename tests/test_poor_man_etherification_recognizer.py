@@ -79,10 +79,21 @@ def test_the_oracle_is_non_vacuous_dimethyl_ether_is_a_vouched_real():
 
 
 def test_a_real_elementary_etherification_is_recognized():
-    step = _hand_step(["CO", "CO"], ["COC", "water"], "COC")   # 2 methanol -> dimethyl ether + water
+    # TAMPER-HARDENING-01: the centre-less census fallback is retired, so a POSITIVE control must carry a real
+    # reaction centre (a hand-built centre-less step now fail-closes to demoted -- covered below).
+    step = probe._derive_step("COC", ["CO", "CO"])   # 2 methanol -> dimethyl ether + water, centre-CARRYING
+    assert step is not None and step.reaction_center is not None
     klass = recognize_reaction_type(step)
     assert klass is not None and "etherification" in klass
     assert _is_intermolecular_etherification(step) is True
+
+
+def test_a_centreless_etherification_now_fails_closed():
+    # TAMPER-HARDENING-01: a centre-less etherification step (e.g. a serialized replay whose centre was nulled) is
+    # DEMOTED, not census-vouched -- the fail-closed polarity that shuts the fiction tamper channel.
+    step = _hand_step(["CO", "CO"], ["COC", "water"], "COC")
+    assert step.reaction_center is None
+    assert recognize_reaction_type(step) is None
 
 
 def test_the_peroxide_coupling_fake_is_demoted_no_alcohol_consumed():

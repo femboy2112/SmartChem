@@ -102,7 +102,7 @@
     "search_space_status": "str|null (section 8.3 no-route matrix: NO_ROUTE_IN_DECLARED_SPACE/INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; null when no route search ran)",
     "standard_status": "str|null (section 8.2 status)"
   },
-  "response_schema_version": "smartchem.service/compilation-response-v1alpha12",
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha13",
   "search_receipt_view_fields": {
     "candidate_enumeration_complete": "bool",
     "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",

@@ -96,19 +96,22 @@ def test_the_center_is_digest_invisible_and_round_trips_through_replay():
     assert step.digest == replayed.digest
 
 
-def test_a_centerless_payload_reconstructs_and_uses_the_r57_fallback():
-    # an old (centre-less) payload must still reconstruct, and recognition falls back to the whole-molecule census.
+def test_a_centreless_payload_reconstructs_but_now_fails_closed():
+    # TAMPER-HARDENING-01: an old / nulled-centre payload must still RECONSTRUCT, but recognition no longer falls
+    # back to the whole-molecule census -- a centre-less step is DEMOTED (fail-closed).  This is the polarity that
+    # shuts the R59 fiction tamper channel: a serialized replay whose ``reaction_center`` was stripped can only cost
+    # a vouch (false-UNRECOGNIZED, safe), never mint one (false-VOUCH).
     step = _one("COC", ["CO", "CO"])
     payload = _step_to_payload(step)
-    del payload["reaction_center"]                     # simulate a pre-R58 replay envelope
+    del payload["reaction_center"]                     # simulate a pre-R58 / tampered replay envelope
     revived = _step_from_payload(payload)
     assert revived.reaction_center is None
-    klass = recognize_reaction_type(revived)
-    assert klass is not None and "etherification" in klass   # fallback still recognizes a plain etherification
+    assert recognize_reaction_type(revived) is None    # no census fallback -> demoted
 
 
-def test_the_hand_built_bundled_fake_is_still_demoted_via_fallback():
-    # glycol + DME -> dimethoxyethane + water, hand-built (no span) -> R57 clause-(iii) fallback demotes it.
+def test_the_hand_built_bundled_fake_is_still_demoted_when_centreless():
+    # glycol + DME -> dimethoxyethane + water, hand-built (no span).  It demoted before (R57 clause iii) and demotes
+    # now (TAMPER-HARDENING-01 centre-absent fail-closed) -- the outcome is unchanged, only the mechanism.
     water = structure_by_name("water").molecule
     from smartchem.conditions import ConditionEnvelope
     from smartchem.experiment.step import STEP_SCHEMA

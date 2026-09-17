@@ -1,7 +1,11 @@
 # SmartChem roadmap
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
-> `verified @ ranker-disconnection-selectivity-2026-09-11` (**ROUND 47 — ranker chemical selectivity: the sound
+> `verified @ poor-man-tamper-hardening-2026-09-17` (commit `afbf39f`; suite **5050/47/1**). **Re-stamp note:** this
+> header narrative below is the ROUND 47 essay — the tag/suite figures are current, the prose is historical and kept
+> for its reasoning; ROUND 48 onward live as their own dated blocks under `## 🎯 QUEUE` (ROUND 61/62 latest) and in
+> `POOR_MAN_DEFER_LEDGER_2026-09-17.md`. Prior tag `verified @ ranker-disconnection-selectivity-2026-09-11`
+> (**ROUND 47 — ranker chemical selectivity: the sound
 > disconnection now outranks the dubious one, DERIVED from bond energies (not hard-coded)** — frontier 2 of the user's
 > "full blast on both". The capped-scission engine over-generates; a C–C homologation outranked the sound
 > N-methylation to caffeine (both thermo-UNKNOWN → arbitrary discovery order). Added a DERIVED bond-additivity tier
@@ -794,6 +798,35 @@ ledger: `UPTAKE_MANIFEST_v0.5.0a1.md §5`–`§16`.
 Ranked by value ÷ cost. **Size** = build effort (S/M/L). **Horizon** = short (cheap, self-contained) / medium (needs a
 scope decision or a real build) / long (blocked on a sourcing or oracle wall). *(DOW)* = advances the DOW-bromine litmus.
 
+> **ROUND 62 — POOR-MAN ARCH, tamper-hardening → SHIP (PR #74, 2026-09-17).** Closed the R59 disposition
+> **serialized-tamper** forgery: a hand-edited `CompilationResponse` payload could strip a frontier entry's
+> `hard_blockers`/`fiction_blockers` and flip its `Disposition` up to `CLEAN` with `result_digest`
+> byte-identical. Two incisions: (1) `_check_frontier_coherence` (`service.py`, at the `response_from_payload`
+> load seam) re-derives blockers and refuses any claim that is *looser* than the re-derivation; **KILL-1**
+> (gate finding) binds the reconstructed replay route to the entry's own `route_digest` before trusting it —
+> without the bind, an attacker could substitute any recognized route's replay under a different entry's
+> digest and re-derive to zero. (2) the reaction-TYPE oracle's acyl/ether recognizers now fail closed on an
+> absent `reaction_center` (extending the ROUND 61 fix to all three recognizers). **Fully closed** on the
+> process-exclusion channel for every transport, and on the catalyst/fiction channels under the thick
+> (digest-bound replay) transport. **The default thin transport is an honest, tracked-open boundary, not a
+> claimed closure** — no replay means no evidence to re-derive from, so thin-transport dispositions stay
+> advisory; pinned as a strict `xfail` so a future round trips it green rather than rediscovering the gap.
+> Schema bumped `v1alpha13` (no field change — a new on-load refusal). `docs/research/
+> POOR_MAN_TAMPER_HARDENING_v0.1.md`; `tests/test_poor_man_tamper_hardening.py`.
+>
+> **ROUND 61 — POOR-MAN ARCH, N-methylation recognizer → SHIP (PR #73, 2026-09-17).** The reaction-TYPE oracle
+> (`smartchem/experiment/reaction_type_oracle.py`) grows a **3rd conservation-locked class**:
+> `_n_methylation`, a class-specific dehydrative N-methylation recognizer, recovering the ROUND 45 caffeine
+> genericity win (honest coverage loss for four rounds) the R56 way — not general, not bounded-radius, a
+> class whose net functional-group change is identity-unique within a tight elementary shape. **Gate finding,
+> fixed same-PR:** run on a step with `reaction_center=None`, the recognizer VOUCHED a false N-methylation
+> (N-methylformamide + methanol → the carbonyl migrates off the N, unmasking a pre-existing methyl; the
+> whole-molecule census read a spurious 0→1 rise it couldn't see was a rearrangement, not a transfer). Fixed
+> by a polarity flip, not a census patch: `_n_methylation` now returns `False` on an absent reaction centre —
+> a VOUCH requires a readable, elementary N-centre; centre-less is honest coverage loss (false-UNRECOGNIZED,
+> safe), never a census-only vouch (false-VOUCH, catastrophic). `docs/research/
+> POOR_MAN_N_METHYLATION_RECOGNIZER_v0.1.md`; `tests/test_poor_man_n_methylation_recognizer.py`.
+>
 > **ROUND 60 — POOR-MAN ARCH, DISPOSITION-ACTIVATE-01 → SHIP: R59's REAL_BUT_HARD tier goes from structurally-
 > impossible to REACHABLE (2026-09-13).** User: *"do whatever makes it so … the answer drops out of the math."*
 > **Outcome → CANONICAL in [`docs/research/POOR_MAN_DISPOSITION_ACTIVATION_v0.1.md`](docs/research/POOR_MAN_DISPOSITION_ACTIVATION_v0.1.md).**
@@ -839,7 +872,9 @@ scope decision or a real build) / long (blocked on a sourcing or oracle wall). *
 > anyway (like the catalyst "guard ahead of its data"): it fixes a latent misranking, the CLASSIFICATION IS reachable
 > (24 fictions now carry a DISTINCT disposition, legible in the payload), and it is proven correct WHEN reachable
 > (a constructed real-but-hard + cheaper fiction pair: the fiction is dropped below it). Activated by a real-but-hard
-> source — feasibility wiring (Problem B, deferred) / a declared metal catalyst / a bench exclusion. NO regression:
+> source — feasibility wiring (Problem B here = `feasibility.py`'s ΔG model, distinct from the canonical
+> substrate-misbehavior Problem B; see `POOR_MAN_DEFER_LEDGER_2026-09-17.md` #5; deferred) / a declared metal
+> catalyst / a bench exclusion. NO regression:
 > fictions stay demoted; prior probes R55/R56/R57/R58 had their frontier read corrected to the UNION of both channels
 > and — because `content_hash` pins the measured PAYLOAD not the source — their frozen hashes are STABLE (no
 > re-freeze). Probe `experiments/poor_man_disposition_channel_probe.py` (FROZEN_HASH `df4eb707`); tests
@@ -1161,6 +1196,19 @@ not just a human note. See the DONE ledger.
   the bar methanol set (a directly-readable, dated, observed absolute for the exact chemical), so per §10.4
   anti-fabrication this is a **DEFER, not a fabricated price** — the same call R13 made. Revisit if the bar is
   explicitly relaxed, or pivot to **bromine (USGS-priced)** via DOW litmus item 2.
+- **Four poor-man-arch VERIFIED-DEFERs (2026-09-17), full detail in
+  `docs/research/POOR_MAN_DEFER_LEDGER_2026-09-17.md`:**
+  **#5 Problem-B feasibility as a real-but-hard disposition source** — `feasibility.py`'s ΔG model genuinely
+  MEASURES (sourced, fails closed) but its own docstring disclaims the capability reading, and it is
+  architecturally ranking-only, zero-imported into `affordability.py`; wiring it in would reverse that without
+  a new capability-measuring model. **#6 aromatic-heteroatom kekulizer** — the originally-named gap (purine
+  aromaticity) is already closed (ROUND 46); what remains is several unrelated future bricks per non-{C,N,O,S}
+  element, none forced by a north-star molecule — YAGNI. **#7 monocyclic ring-strain correction tier** — the
+  ROUND 47 endocyclic guard is dead code for the live search (a single-bond ring cut never disconnects the
+  graph, so it's never emitted; multi-bond ring-aware search is off by default and unexposed on either public
+  entry point) — unreachable by construction, not merely low-priority. **#8 CIP 4b/4c/6 · Move 5(b) · item-5
+  phase residuals** — all four discharged, docs current; also flags (not actioned) three separate
+  intra-chemistry Pareto-frontier implementations as a future consolidation candidate.
 
 ---
 

@@ -86,11 +86,13 @@ class TestSchemaDescriptor:
         # DAG-HOLD-01 serial-schedule hold as (producer, consumer, minutes) triples).  Per-value response schema STILL
         # v1alpha12: serial_holds is DISCLOSURE, digest-excluded, and empty for a linear/non-holding DAG -- only the
         # nested ranked-dag-summary element bumped (ranked-dag-summary-v1alpha4).
-        # v1alpha17 (descriptor) / v1alpha13 (response): TAMPER-HARDENING-01 adds the on-load
-        # _check_frontier_coherence refusal (the R59 disposition serialized-tamper close).  NO field is added/removed/
-        # renamed -- the response SHAPE is unchanged; the bump marks the version at/after which a loaded response is
-        # frontier-coherence-checked, so a pre-guarantee v1alpha12 payload is refused by the strict schema gate.
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha17"
+        # (response) v1alpha13 (TAMPER-HARDENING-01): the on-load _check_frontier_coherence refusal (the R59 disposition
+        # serialized-tamper close).  NO field is added/removed/renamed -- the response SHAPE is unchanged; the response
+        # version bump marks the version at/after which a loaded response is frontier-coherence-checked, so a
+        # pre-guarantee v1alpha12 payload is refused by the strict schema gate.  The DESCRIPTOR stays v1alpha16: its
+        # embedded response_schema_version VALUE tracks v1alpha13, but a value-only change does NOT bump the descriptor
+        # version (it bumps only on a field shape change -- its own convention).
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha16"
         assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha13"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):

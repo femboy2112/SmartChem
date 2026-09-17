@@ -13,13 +13,19 @@ disposition CLEAN.
 
 TWO COHERENT INCISIONS, NO R58 REVERSAL, NO ROUTE/STEP HASH BREAK:
 
-  PIECE 1 -- ``CompilationResponse._check_frontier_coherence`` (service.py), invoked in ``__post_init__`` alongside the
-  other ``_check_*`` methods.  For each frontier entry it RE-DERIVES the blockers ``_affordability_frontier`` itself
-  computes -- ``hard_blockers`` from the digest-covered per-step ``process_requirements`` (process exclusions) plus
-  ``route_catalyst_blockers`` over the route reconstructed from the thick replay payload, and ``fiction_blockers`` from
-  ``route_reaction_type_blockers`` over that route -- and REFUSES (fail-closed, one-directional) any entry whose
-  claimed blockers are LOOSER than the re-derivation.  An honest response is self-consistent (re-derived == claimed)
-  and passes; a stripped one raises.
+  PIECE 1 -- ``CompilationResponse._check_frontier_coherence`` (service.py), invoked from ``response_from_payload``
+  (the deserialization seam, after ``_check_verified_admission``; NOT ``__post_init__``).  For each frontier entry it
+  RE-DERIVES the blockers ``_affordability_frontier`` itself computes -- ``hard_blockers`` from the digest-covered
+  per-step ``process_requirements`` (process exclusions) plus ``route_catalyst_blockers`` over the route reconstructed
+  from the thick replay payload, and ``fiction_blockers`` from ``route_reaction_type_blockers`` over that route -- and
+  REFUSES (fail-closed, one-directional) any entry whose claimed blockers are LOOSER than the re-derivation.  KILL 1:
+  the reconstructed route is DIGEST-BOUND to the entry (``route.digest == e.route_digest`` or raise), so a substituted
+  replay cannot re-derive zero blockers under a stripped entry.  An honest response is self-consistent and passes.
+
+  SCOPE (honest, bounded).  FULLY closed on EVERY transport: the process-exclusion ``hard_blockers`` channel (no replay
+  needed).  FULLY closed on the THICK transport (``include_replay=True``, digest-bound): catalyst + fiction.  The
+  DEFAULT THIN transport omits the replay, so a ``fiction_blockers`` strip there is ADVISORY (not detected) -- a
+  deliberate, tracked boundary, pinned below, NOT a claimed closure.
 
   PIECE 2 -- the reaction-TYPE oracle's ``_acyl_condensation`` and ``_etherification`` now FAIL CLOSED on an absent
   reaction centre (``center is None -> return False``), extending the R60 N-methylation gate finding to the other two
@@ -34,10 +40,14 @@ THIS PROBE FREEZES, against LIVE code:
       payload loads, the tampered one is REFUSED on load.
   (2) the FICTION tamper reproduced-then-REFUSED, and the two-step CENTRE-NULL evasion (strip fiction_blockers AND null
       the replay centres) also REFUSED end-to-end.
-  (3) the PIECE-2 unit facts: acyl/ether/N-methylation centre-LESS steps all DEMOTE while their centre-CARRYING forms
+  (3) KILL 1 -- a SUBSTITUTED replay (a DIFFERENT recognized route's payload swapped under a stripped entry's digest)
+      REFUSED, via the ``route.digest == e.route_digest`` bind.
+  (4) THE DEFAULT-TRANSPORT BOUNDARY, pinned NOT hidden: a thin (no-replay) fiction strip LOADS (advisory) -- the
+      honest edge a future thin-transport-closure round trips green.
+  (5) the PIECE-2 unit facts: acyl/ether/N-methylation centre-LESS steps all DEMOTE while their centre-CARRYING forms
       VOUCH, and the sharp evasion case -- a k=2 bundle the CENSUS vouches but the SPAN demotes -- whose centre-less
       twin now FAILS CLOSED (pre-hardening it census-vouched).
-  (4) the RESIDUAL boundary, stated not hidden: ``result_digest`` does not cover the frontier, so a fully-coherent
+  (6) the RESIDUAL boundary, stated not hidden: ``result_digest`` does not cover the frontier, so a fully-coherent
       forger who FABRICATES a self-consistent replay is indistinguishable from honest at this structural layer -- that
       needs HMAC signing (COMBINED-VERDICT-AUTH), out of scope.  The honest self-consistent response loads, as it must.
 """
@@ -60,7 +70,7 @@ from smartchem.service import (
     build_recompile_request, run_compilation, response_to_payload, response_from_payload,
 )
 
-FROZEN_HASH = "1bffd2321939a073dd291ba3c51e33c1e1ae5cdb88f999c1ff44529a76c3c766"
+FROZEN_HASH = "c3839f7a837a79676c8437d93180ef16c9bf175ac93d7a328b5a961477ab5ebe"
 
 #: a poor-man kitchen inventory that LACKS lab glassware -> the Fischer esterification is process-EXCLUDED (REAL_BUT_HARD).
 _KITCHEN = ("stovetop", "pot", "glass jar", "thermometer", "spoon", "funnel")
@@ -224,7 +234,50 @@ def centre_absent_is_fail_closed() -> dict:
 
 
 # --------------------------------------------------------------------------------------------------
-# (4) THE RESIDUAL BOUNDARY: the digest does not cover the frontier, so a self-consistent replay is trusted.
+# (4) KILL 1: a SUBSTITUTED replay (a different recognized route's payload under this entry's digest) is REFUSED.
+# --------------------------------------------------------------------------------------------------
+def kill1_substitution_refused() -> dict:
+    honest = _unbounded_payload()
+    fr = honest["affordability_frontier"]
+    fic = [i for i, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"]]
+    donors = [i for i, e in enumerate(fr) if fr[i]["route_digest"] != fr[fic[0]]["route_digest"]]
+    i, donor = fic[0], donors[0]
+    fic_rd = fr[i]["route_digest"]
+    donor_rd = fr[donor]["route_digest"]
+    donor_replay = next(d["replay_payload"] for d in honest["ranked_route_dossiers"]
+                        if d["route_digest"] == donor_rd)
+    sub = _unbounded_payload()
+    sub["affordability_frontier"][i]["cost_vector"]["fiction_blockers"] = []      # strip the fiction ...
+    for d in sub["ranked_route_dossiers"]:
+        if d["route_digest"] == fic_rd:
+            d["replay_payload"] = copy.deepcopy(donor_replay)                     # ... and substitute a DIFFERENT route
+    return {
+        "distinct_donor_present": donor_rd != fic_rd,
+        "substitution_refused": _refused(sub),
+    }
+
+
+# --------------------------------------------------------------------------------------------------
+# (5) THE DEFAULT-TRANSPORT BOUNDARY (honest, pinned NOT hidden): a thin (no-replay) fiction strip is ADVISORY.
+# --------------------------------------------------------------------------------------------------
+def thin_transport_fiction_is_advisory() -> dict:
+    resp = run_compilation(build_recompile_request(_TARGET, max_depth=3))
+    thin = response_to_payload(resp)                 # include_replay defaults False -> no replay on the wire
+    fr = thin["affordability_frontier"]
+    fic = [i for i, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"]]
+    strip = copy.deepcopy(thin)
+    strip["affordability_frontier"][fic[0]]["cost_vector"]["fiction_blockers"] = []
+    return {
+        "fiction_entry_present": bool(fic),
+        "thin_omits_replay": all(d.get("replay_payload") is None for d in thin["ranked_route_dossiers"]),
+        # THE DOCUMENTED BOUNDARY: on the default thin transport the fiction channel has no evidence to re-derive,
+        # so the strip LOADS.  Pinned True (not hidden) so a future thin-transport-closure round trips it.
+        "thin_fiction_strip_loads": _loads(strip),
+    }
+
+
+# --------------------------------------------------------------------------------------------------
+# (6) THE RESIDUAL BOUNDARY: the digest does not cover the frontier, so a self-consistent replay is trusted.
 # --------------------------------------------------------------------------------------------------
 def residual_boundary_stated() -> dict:
     honest = _bounded_payload()
@@ -243,12 +296,16 @@ def residual_boundary_stated() -> dict:
 def _payload() -> dict:
     hard = hard_tamper_reproduced_then_refused()
     fic = fiction_tamper_reproduced_then_refused()
+    kill1 = kill1_substitution_refused()
+    thin = thin_transport_fiction_is_advisory()
     unit = centre_absent_is_fail_closed()
     resid = residual_boundary_stated()
     return {
         "schema": "poor-man-tamper-hardening-01",
         "hard_tamper": hard,
         "fiction_tamper": fic,
+        "kill1_substitution": kill1,
+        "thin_transport_boundary": thin,
         "centre_absent_fail_closed": unit,
         "residual_boundary": resid,
         # THE VERDICT: both channels of the R59 forgery are closed on load -- the PROVEN REAL_BUT_HARD->CLEAN strip
@@ -262,6 +319,9 @@ def _payload() -> dict:
             and hard["honest_payload_loads"] and hard["hard_tamper_refused"]
             and fic["fiction_entry_present"] and fic["honest_payload_loads"]
             and fic["fiction_tamper_refused"] and fic["centre_null_evasion_refused"]
+            and kill1["distinct_donor_present"] and kill1["substitution_refused"]
+            and thin["fiction_entry_present"] and thin["thin_omits_replay"]
+            and thin["thin_fiction_strip_loads"]
             and unit["acyl_centreless_demoted"] and unit["ether_centreless_demoted"]
             and unit["nmethyl_centreless_demoted"]
             and unit["acyl_centre_carrying_vouched"] and unit["ether_centre_carrying_vouched"]
@@ -292,6 +352,14 @@ def validate() -> bool:
     assert f["honest_payload_loads"], f"the HONEST unbounded payload is refused (a false positive): {f}"
     assert f["fiction_tamper_refused"], f"HOLE OPEN: the NOT_A_REACTION->CLEAN strip loaded: {f}"
     assert f["centre_null_evasion_refused"], f"HOLE OPEN: the centre-null fiction evasion loaded: {f}"
+    k = p["kill1_substitution"]
+    assert k["distinct_donor_present"], f"the KILL 1 substitution setup is degenerate (no distinct donor): {k}"
+    assert k["substitution_refused"], f"KILL 1 OPEN: a substituted replay under a stripped entry loaded: {k}"
+    t = p["thin_transport_boundary"]
+    assert t["thin_omits_replay"], f"the default thin transport unexpectedly carried a replay: {t}"
+    # HONEST BOUNDARY (pinned True, not hidden): the thin-transport fiction strip is ADVISORY -- it LOADS.  A future
+    # thin-transport-closure round flips this to refused; until then this asserts the boundary is exactly where stated.
+    assert t["thin_fiction_strip_loads"], f"the thin-transport boundary moved -- re-state it (strip now refused?): {t}"
     u = p["centre_absent_fail_closed"]
     assert u["acyl_centreless_demoted"] and u["ether_centreless_demoted"] and u["nmethyl_centreless_demoted"], \
         f"a centre-less recognizer still vouches (PIECE 2 regressed): {u}"

@@ -147,10 +147,12 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # stays byte-identical to v1alpha11 (zero ripple); a DAG-mode process-constrained response's result_digest changes.
 # v1alpha13 (TAMPER-HARDENING-01): NO new field -- a new ON-LOAD REFUSAL.  ``_check_frontier_coherence`` re-derives
 # each affordability_frontier entry's ``hard_blockers`` (process exclusions + catalyst) and ``fiction_blockers``
-# (reaction-type oracle) from digest-covered evidence + the replay payload, and REFUSES a frontier entry whose
-# claimed blockers are looser than the re-derivation -- closing the R59 disposition serialized-tamper forgery (a
-# stripped blocker silently flipping REAL_BUT_HARD/NOT_A_REACTION up to CLEAN, undetected because the frontier is
-# EXCLUDED from result_digest).  The bump carries no shape change; it marks the version at/after which a loaded
+# (reaction-type oracle) and REFUSES an entry whose claimed blockers are looser than the re-derivation -- closing the
+# R59 disposition serialized-tamper (a stripped blocker flipping REAL_BUT_HARD/NOT_A_REACTION up to CLEAN, undetected
+# because the frontier is EXCLUDED from result_digest).  FULLY closed on every transport: the process-exclusion
+# channel (re-derived from digest-covered process_requirements, no replay needed).  The catalyst/fiction channels are
+# closed only on the THICK transport (include_replay=True, digest-bound); on the DEFAULT thin transport they are
+# ADVISORY (a tracked follow-up).  The bump carries no shape change; it marks the version at/after which a loaded
 # response is frontier-coherence-checked, so a pre-guarantee v1alpha12 payload is refused by the strict schema gate.
 COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha13"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
@@ -172,10 +174,11 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha13"
 # v1alpha16 (item 2b): the ranked_dag_summary element gains a machine-readable ``serial_holds`` field (the DAG-HOLD-01
 # serial-schedule hold as (producer, consumer, minutes) triples) -- a descriptor-only bump (the field is disclosure,
 # digest-excluded, so no result_digest ripple, and it is empty for every non-holding/linear-shaped DAG).
-# v1alpha17 (TAMPER-HARDENING-01): the descriptor's ``response_schema_version`` value tracks the response bump to
-# v1alpha13.  No field is added/removed/renamed (the on-load frontier-coherence refusal changes behaviour, not shape),
-# so the descriptor SHAPE is unchanged -- this bump only keeps the version string coherent with the response's.
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha17"
+# TAMPER-HARDENING-01: the descriptor is NOT bumped.  Its embedded ``response_schema_version`` VALUE reads v1alpha13
+# (a derived-value change), but no descriptor FIELD is added/removed/renamed -- the on-load frontier-coherence refusal
+# changes behaviour, not shape -- and this descriptor bumps ONLY on a shape change (its own stated convention).  So it
+# stays v1alpha16; bumping it for a value-only change would violate that convention (birdperson).
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha16"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -1554,18 +1557,24 @@ class CompilationResponse:
         is a self-suppression, not an admission -- out of scope, exactly as the process/verified-admission checks treat
         hide-good.  So an honest producer response passes (re-derived == claimed) and only a loosened one is refused.
 
-        BOUNDARY -- the residuals this does NOT close (stated, not hidden):
+        BOUNDARY -- what this does and does NOT close, stated plainly (NO edge-case framing):
+        * FULLY CLOSED, every transport -- the PROCESS-EXCLUSION ``hard_blockers`` channel.  It re-derives from the
+          digest-covered per-step ``process_requirements`` and needs NO replay, so a REAL_BUT_HARD process strip is
+          caught even on a DEFAULT (thin) serialization.  (The catalyst channel appends nothing today -- no registered
+          reaction declares a metal catalyst -- so process exclusions are the whole of the hard channel in practice.)
+        * FULLY CLOSED, thick transport -- the CATALYST and FICTION channels, WHEN a digest-bound ``replay_payload`` is
+          present.  KILL 1 binds ``route.digest == e.route_digest``, so the evidence cannot be substituted or nulled
+          (PIECE 2 demotes a centre-less step); the re-derivation reads the REAL route, so any strip is caught, down to
+          a SHA-256 collision on the route digest (cryptographic, out of scope).
+        * THE DEFAULT-TRANSPORT BOUNDARY -- NOT an edge case, it is the DEFAULT.  ``response_to_payload`` emits the
+          replay only on ``include_replay=True`` (DEFAULT ``False``, what a verified-admission consumer requests), so
+          on the DEFAULT THIN transport the catalyst/fiction channels have no evidence to re-derive from: a
+          ``fiction_blockers`` (or catalyst) strip is NOT detected.  The thin frontier carries ADVISORY dispositions.
+          This is DELIBERATELY not closed here (no fail-closed-on-thin, no default include_replay flip) -- full
+          thin-transport closure needs replay-MANDATORY-for-disposition-claims or HMAC signing, a tracked follow-up.
         * OFF a process box, ``hard_blockers`` are the summary's FREE-TEXT physical/composability ``exclusions`` (not
-          re-derivable from the thin projection), so a non-process hard blocker stripped off-box is not caught here --
-          the same free-text boundary :meth:`_check_process_admission_coherence` carries.  The CATALYST and FICTION
-          channels ARE re-derived on or off the box (they read the reconstructed route).
-        * A frontier entry whose summary carries NO ``replay_payload`` has its catalyst/fiction channels unverifiable
-          (only the digest-covered process channel is checked); a verified-admission producer serialises with
-          ``include_replay=True``, so this bites only a replay-stripped payload with zero FITS routes.
-        * A fully-coherent forger who FABRICATES a self-consistent ``replay_payload`` (a valid route + a valid centre
-          that passes ``is_elementary_condensation``) re-derives to the tampered verdict and is NOT caught -- the
-          digest is an identity aid, not an authentication boundary (see :mod:`smartchem.contracts`).  Closing that
-          needs HMAC signing (COMBINED-VERDICT-AUTH), out of scope here.
+          re-derivable from the thin projection), so a non-process hard blocker stripped off-box is not caught -- the
+          same free-text boundary :meth:`_check_process_admission_coherence` carries.
         Pinned by tests/test_poor_man_tamper_hardening.py.
         """
         if not self.affordability_frontier:
@@ -1595,6 +1604,17 @@ class CompilationResponse:
             # payload leaves these two channels unverifiable (see the BOUNDARY) -- the process channel above still bites.
             if summary.replay_payload is not None:
                 route = _reconstruct_route(summary.replay_payload)
+                # KILL 1 -- digest-BIND the reconstructed evidence to the entry identity (key-free), mirroring
+                # ``_check_verified_admission``'s FITS bind.  Without it, an attacker substitutes ANY recognized route's
+                # replay under this entry's route_digest: the fiction/catalyst re-derives to zero, so a stripped
+                # disposition passes.  ``route.digest`` is the ExperimentRoute identity; the entry and its matched
+                # summary share ``route_digest``, and every HONEST reconstructed replay binds (verified: 0 false-reject).
+                if route.digest != e.route_digest:
+                    raise ValueError(
+                        f"affordability frontier entry {e.route_digest} carries replay evidence that reconstructs to a "
+                        f"DIFFERENT route ({route.digest}) -- substituted disposition evidence; refused "
+                        f"(TAMPER-HARDENING-01, KILL 1)"
+                    )
                 rederived_hard |= set(route_catalyst_blockers(route))
                 rederived_fiction |= set(route_reaction_type_blockers(route))
             missing_hard = rederived_hard - set(e.cost_vector.hard_blockers)
@@ -3292,9 +3312,11 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     route that is process-``UNKNOWN``/``EXCLUDED`` to ``FITS`` and recompute the derived fields -- because
     the carried requirements still re-derive to the stricter PROCESS verdict.  (3) TAMPER-HARDENING-01:
     :meth:`CompilationResponse._check_frontier_coherence` runs at the END of every load (after any verified-admission
-    pass) and re-derives each affordability_frontier entry's DISPOSITION blockers, refusing a stripped ``hard_blockers``
-    / ``fiction_blockers`` that would forge a better tier -- the frontier is EXCLUDED from ``result_digest``, so this is
-    the only guard on it.
+    pass) and re-derives each affordability_frontier entry's DISPOSITION blockers (the frontier is EXCLUDED from
+    ``result_digest``, so this is the only guard on it).  It FULLY closes the process-exclusion ``hard_blockers`` strip
+    on EVERY transport (that channel needs no replay), and the CATALYST/FICTION strip on the THICK transport
+    (``include_replay=True``, digest-bound via KILL 1).  On the DEFAULT thin transport the catalyst/fiction channels are
+    ADVISORY -- a strip there is not detected (see the BOUNDARY on ``_check_frontier_coherence``).
     RESIDUAL WITHOUT A SIGNATURE (two parts, both closed by COMBINED-VERDICT-AUTH's ``verification_key`` path below):
     (a) ``fit_status`` is the COMBINED verdict, and its OTHER two components -- composability and the
     physical/reagent/equipment box -- are NOT re-derived (they carry only free-text ``exclusions``/``gaps``,

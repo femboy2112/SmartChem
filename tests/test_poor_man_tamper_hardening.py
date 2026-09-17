@@ -59,7 +59,8 @@ def test_the_reproduced_hard_tamper_is_refused_on_load():
 
 
 def test_the_hard_tamper_is_refused_even_without_verified_admission():
-    # the guard rides __post_init__, so the tamper is caught at construction -- verified admission is not required.
+    # the guard rides response_from_payload (the deserialization seam), unconditional on require_verified_admission --
+    # so a bare load still refuses the process-exclusion strip (that channel needs no replay).
     honest = _bounded_payload()
     fr = honest["affordability_frontier"]
     i = next(j for j, e in enumerate(fr) if e["cost_vector"]["hard_blockers"])
@@ -96,10 +97,57 @@ def test_the_centre_null_fiction_evasion_is_refused():
         response_from_payload(tampered, require_verified_admission=True)
 
 
+def test_a_substituted_replay_under_a_stripped_entry_is_refused():
+    # KILL 1 (gate finding): strip an entry's fiction_blockers AND overwrite its matched summary's replay with a
+    # DIFFERENT recognized route's replay.  The re-derivation reconstructs the wrong route (digest != entry) -> refused.
+    honest = _unbounded_payload()
+    fr = honest["affordability_frontier"]
+    i = next(j for j, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"])
+    fic_rd = fr[i]["route_digest"]
+    donor_rd = next(e["route_digest"] for e in fr if e["route_digest"] != fic_rd)
+    donor_replay = next(d["replay_payload"] for d in honest["ranked_route_dossiers"] if d["route_digest"] == donor_rd)
+    tampered = copy.deepcopy(honest)
+    tampered["affordability_frontier"][i]["cost_vector"]["fiction_blockers"] = []
+    for d in tampered["ranked_route_dossiers"]:
+        if d["route_digest"] == fic_rd:
+            d["replay_payload"] = copy.deepcopy(donor_replay)
+    with pytest.raises(ValueError):
+        response_from_payload(tampered, require_verified_admission=True)
+
+
 def test_the_honest_payload_still_loads():
     # no false positives: a genuine response round-trips cleanly on both frontiers.
     response_from_payload(_bounded_payload(), require_verified_admission=True)
     response_from_payload(_unbounded_payload(), require_verified_admission=True)
+
+
+@pytest.mark.parametrize("target", ["smiles:CC(=O)OC", "dimethyl ether", "caffeine"])
+def test_each_recognizer_class_round_trips_thick_without_false_reject(target):
+    # centre-round-trip fidelity (guards the coupling the fiction re-derivation leans on): a recognized route of each
+    # class -- acyl (methyl acetate), ether (dimethyl ether), N-methyl (caffeine) -- must survive
+    # response_to_payload(include_replay=True) -> response_from_payload with NO false-reject.  If the reaction centre
+    # did not round-trip, the recognized step would DEMOTE on reload and _check_frontier_coherence would wrongly raise.
+    resp = run_compilation(build_recompile_request(target, max_depth=3))
+    assert any(not e.cost_vector.fiction_blockers for e in resp.affordability_frontier), \
+        f"{target} has no vouched (fiction-free) frontier route -- the round-trip pin would be vacuous"
+    thick = response_to_payload(resp, include_replay=True)
+    response_from_payload(thick, require_verified_admission=True)     # must not false-reject
+
+
+@pytest.mark.xfail(strict=True,
+                   reason="thin-transport disposition strip is ADVISORY -- tracked follow-up (replay-mandatory-for-"
+                          "disposition-claims, or HMAC signing).  Flip to green closes the boundary.")
+def test_the_default_thin_transport_fiction_strip_is_detected():
+    # THE DOCUMENTED BOUNDARY, pinned NOT hidden: on the DEFAULT (thin) transport the replay is omitted, so the
+    # fiction channel has no evidence to re-derive -- a fiction_blockers strip is NOT detected today.  strict xfail:
+    # when a future round closes the thin transport this xpasses and FAILS loudly, forcing the xfail's removal.
+    resp = run_compilation(build_recompile_request("isopentyl acetate", max_depth=3))
+    thin = response_to_payload(resp)                                  # include_replay defaults False -> no replay
+    fr = thin["affordability_frontier"]
+    i = next(j for j, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"])
+    thin["affordability_frontier"][i]["cost_vector"]["fiction_blockers"] = []
+    with pytest.raises(ValueError):
+        response_from_payload(thin, require_verified_admission=True)
 
 
 def test_centre_absent_acyl_and_ether_now_fail_closed():

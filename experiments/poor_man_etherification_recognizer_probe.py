@@ -30,7 +30,8 @@ THIS PROBE FREEZES, against LIVE code: (1) the CONSUMER served (dimethyl ether -
 VOUCHED as etherification, was demoted); (2) ZERO false-VOUCH across the whole production frontier + non-vacuity
 (dimethyl ether joins the genuine reals); (3) the three ADVERSARIAL fakes (peroxide / anisole / glycol+DME) all
 DEMOTED; (4) a real elementary etherification is POSITIVELY recognized; (5) the acyl recognizer + isopentyl-acetate
-C-C fictions UNREGRESSED (R56 still validates); (6) caffeine still demoted (escape #7 stays shut); (7) FAIL-CLOSED
+C-C fictions UNREGRESSED (R56 still validates); (6) the aromatic-amination FAKE stays demoted (escape #7 shut; R60
+re-framing -- caffeine is now vouched by the class-specific N-methylation recognizer, not by this one); (7) FAIL-CLOSED
 totality + disposition honesty.
 """
 from __future__ import annotations
@@ -53,7 +54,7 @@ from smartchem.service import build_recompile_request, run_compilation, _reconst
 from experiments.poor_man_step_validity_demoter_defer_probe import _resolve, _routes_of, raw_rule_blocks
 import experiments.poor_man_reaction_type_oracle_probe as p56
 
-FROZEN_HASH = "83d71b0d4ca8aadca6c9658eabb8145265f6234669504dc6b1727ed59f0c98ab"
+FROZEN_HASH = "ae5de30058350770fb8f0aed980dc2af78948f9d09a6ffb9b13376f8ebd316db"
 
 _ETHER_CLASS = "etherification"
 
@@ -201,13 +202,18 @@ def acyl_unregressed() -> dict:
 
 
 # --------------------------------------------------------------------------------------------------
-# (6) ESCAPE #7 STAYS SHUT: caffeine (N-methylation) is still demoted (etherification cannot vouch it).
+# (6) ESCAPE #7 STAYS SHUT (R60 re-framing): the ETHERIFICATION recognizer cannot vouch N-methylation -- caffeine
+#     is now vouched by R60's CLASS-SPECIFIC recognizer, not by this class, and the aromatic-amination FAKE stays
+#     demoted (the real escape-#7 invariant, unchanged by R57).
 # --------------------------------------------------------------------------------------------------
-def caffeine_still_demoted() -> dict:
+def caffeine_now_vouched_fake_demoted() -> dict:
     routes = _routes_of(compile_synthesis(structure_by_name("caffeine").molecule, max_depth=2))
+    fake = _routes("Nc1ccc(N)cc1", ["ammonia", "4-aminophenol"])   # the R55 aromatic-amination fake
     return {
-        "reachable": bool(routes),
-        "all_demoted": bool(routes) and all(_demotes(r) for r in routes),
+        "caffeine_reachable": bool(routes),
+        "caffeine_has_vouched_route": bool(routes) and any(not _demotes(r) for r in routes),
+        "amination_fake_reachable": bool(fake),
+        "amination_fake_demoted": bool(fake) and all(_demotes(r) for r in fake),
     }
 
 
@@ -254,7 +260,7 @@ def _payload() -> dict:
     adv = adversarial_must_demote()
     pc = positive_control()
     unreg = acyl_unregressed()
-    caff = caffeine_still_demoted()
+    caff = caffeine_now_vouched_fake_demoted()
     fc = fail_closed_and_disposition()
     return {
         "schema": "poor-man-etherification-recognizer-01",
@@ -264,12 +270,13 @@ def _payload() -> dict:
         "adversarial_must_demote": adv,
         "positive_control": pc,
         "acyl_unregressed": unreg,
-        "caffeine_still_demoted": caff,
+        "caffeine_now_vouched_fake_demoted": caff,
         "fail_closed_and_disposition": fc,
         # THE VERDICT: R57 grows the whitelist by a SECOND conservation-locked class (dehydrative etherification).
         # It SERVES a live consumer (dimethyl ether), is SOUND (0 false-VOUCH across the frontier) and NON-VACUOUS,
         # DEMOTES all three adversarial fakes (each by a distinct clause), leaves acyl + the C-C fictions
-        # UNREGRESSED, keeps escape #7 shut (caffeine demoted), and is fail-closed + disposition-honest.
+        # UNREGRESSED, keeps escape #7 shut (the aromatic-amination FAKE stays demoted; caffeine is now vouched by
+        # R60's class-specific recognizer, not this one), and is fail-closed + disposition-honest.
         "ship_verdict": (
             consumer["served"]
             and sc["false_vouch_count"] == 0
@@ -277,7 +284,7 @@ def _payload() -> dict:
             and all(c["demoted"] for c in adv.values())
             and pc["dme_step_recognized"]
             and unreg["r56_probe_validates"] and unreg["isopentyl_fictions_all_demoted"]
-            and caff["all_demoted"]
+            and caff["amination_fake_demoted"]
             and fc["no_crash_on_raising_recognizer"] and fc["fake_still_demoted"] and fc["disposition_honest"]
         ),
     }
@@ -292,7 +299,8 @@ def validate() -> bool:
     vouched), the oracle stays SOUND (0 false-VOUCH across the production frontier) and NON-VACUOUS (dimethyl ether
     a real), all three adversarial fakes are demoted (each by a distinct conservation-lock clause), a real
     etherification is positively recognized, the acyl recognizer + C-C fictions are unregressed, escape #7 stays
-    shut (caffeine demoted), and the demoter is fail-closed + disposition-honest."""
+    shut (the aromatic-amination fake demoted; caffeine is now vouched by R60's class-specific recognizer, not this
+    one), and the demoter is fail-closed + disposition-honest."""
     p = _payload()
     assert p["consumer_served"]["served"], f"etherification consumer not served: {p['consumer_served']}"
     sc = p["soundness_and_coverage"]
@@ -303,7 +311,8 @@ def validate() -> bool:
     assert p["positive_control"]["dme_step_recognized"], f"a real etherification is not recognized: {p['positive_control']}"
     assert p["acyl_unregressed"]["r56_probe_validates"], "R56 acyl probe no longer validates -- regression"
     assert p["acyl_unregressed"]["isopentyl_fictions_all_demoted"], "an isopentyl C-C fiction stopped being demoted"
-    assert p["caffeine_still_demoted"]["all_demoted"], "caffeine stopped being demoted -- escape #7 reopened"
+    assert p["caffeine_now_vouched_fake_demoted"]["amination_fake_demoted"], \
+        "escape #7 REOPENED: the aromatic-amination fake was vouched"
     fc = p["fail_closed_and_disposition"]
     assert fc["no_crash_on_raising_recognizer"] and fc["fake_still_demoted"] and fc["disposition_honest"], \
         f"fail-closed / disposition broken: {fc}"

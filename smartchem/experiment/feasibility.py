@@ -431,6 +431,93 @@ def _is_intermolecular_etherification(step: ExperimentStep) -> bool:
     return _ether_shape_and_net_change(step) and _reactant_ether_count(step) == 0
 
 
+def _methanol_specific_alcohol_count(molecule: Molecule) -> int:
+    """The number of METHANOL oxygens: an alcohol-O (one heavy neighbour, a single-bonded sp3 non-aromatic
+    carbon) whose carbinol carbon bears NO OTHER heavy neighbour -- i.e. literally CH3-OH, nothing longer.
+
+    Strictly TIGHTER than :func:`_alcohol_counts`, and the tightening is the whole point.  A general alcohol
+    census lets ethanol, isopropanol, phenol -- any O-bearing donor -- stand in as the departing group, and that
+    is exactly how a formula-conserving fake sneaks a fake methyl transfer past the shape check.  Requiring the
+    carbinol carbon to be a terminal CH3 (its single heavy neighbour is this very O) admits ONLY methanol: it
+    EXCLUDES higher n-alkyl alcohols (their carbinol carbon carries a second heavy neighbour) and the aromatic
+    phenol-O of the phenol+ammonia->aniline fake (aromatic carbon, not sp3).  No explicit-H dependence -- reads
+    bond topology, mirroring :func:`_alcohol_counts`."""
+    atoms, adjacency = _oxygen_heavy_neighbours(molecule)
+    methanols = 0
+    for o, element in enumerate(atoms):
+        if element != "O":
+            continue
+        heavy = [(n, order) for n, order in adjacency.get(o, ()) if atoms[n] != "H"]
+        if len(heavy) != 1 or heavy[0][1] != 1:
+            continue
+        carbon = heavy[0][0]
+        if not _is_sp3_nonaromatic_carbon(carbon, atoms, adjacency):
+            continue
+        carbon_heavy = [n for n, _o in adjacency.get(carbon, ()) if atoms[n] != "H"]
+        if carbon_heavy == [o]:  # the carbinol carbon's ONLY heavy neighbour is this O -> a lone CH3, so CH3-OH
+            methanols += 1
+    return methanols
+
+
+def _n_methyl_amine_count(molecule: Molecule) -> int:
+    """The number of N-METHYL amine nitrogens: an N with all-single bonds, bonded to at least one METHYL carbon
+    (a single-bonded sp3 non-aromatic C whose only heavy neighbour is this N), and NOT adjacent to a carbonyl C.
+
+    Three clauses, each excising a specific impostor.  All-single bonds excludes an sp2 imine N and a Kekulized
+    aromatic N (both carry an order-2 bond) -- so an aryl amine like aniline's N never qualifies (its aromatic
+    ring forces the exclusion by structure, and it bears no methyl regardless).  The methyl-carbon clause is the
+    positive signature a real N-methylation net-FORMS; the phenol->aniline fake mints an aryl N-H, no methyl, so
+    it never fires.  The carbonyl-neighbour exclusion keeps this DISJOINT from the acyl/amidation class -- an
+    amide N sits beside a C=O, and I will not have this recognizer double-count an amidation as a methylation.
+    No explicit-H dependence."""
+    atoms, adjacency = _oxygen_heavy_neighbours(molecule)
+    count = 0
+    for n, element in enumerate(atoms):
+        if element != "N":
+            continue
+        bonds = adjacency.get(n, ())
+        if not all(order == 1 for _nb, order in bonds):
+            continue
+        has_methyl = adjacent_carbonyl = False
+        for nb, _order in bonds:
+            if atoms[nb] != "C":
+                continue
+            if _is_carbonyl_carbon(nb, atoms, adjacency):
+                adjacent_carbonyl = True
+            elif _is_sp3_nonaromatic_carbon(nb, atoms, adjacency):
+                carbon_heavy = [m for m, _o in adjacency.get(nb, ()) if atoms[m] != "H"]
+                if carbon_heavy == [n]:  # a terminal CH3 hung off this N
+                    has_methyl = True
+        if has_methyl and not adjacent_carbonyl:
+            count += 1
+    return count
+
+
+def _methylation_shape_and_net_change(step: ExperimentStep) -> bool:
+    """The N-METHYLATION shape + net class-identity, mirroring :func:`_ether_shape_and_net_change`.
+
+    True iff the ELEMENTARY INTERMOLECULAR shape holds -- exactly 2 non-water reactants -> exactly 1 non-water
+    product, water net-produced -- AND (i) a methanol-specific alcohol is net-CONSUMED and (ii) an N-methyl amine
+    is net-FORMED.  The two census clauses are the conservation-lock the reaction-centre span alone cannot supply:
+    real caffeine N-methylation (theophylline + methanol -> caffeine + water) and the FAKE aryl amination (phenol
+    + ammonia -> aniline + water) carry a BYTE-IDENTICAL reaction centre, so the span check passes both.  The
+    census separates them -- the fake consumes no methanol (phenol-O is aromatic, ammonia has no carbon) and forms
+    no N-methyl amine (aniline's N is aryl, unmethylated) -- and general N-alkylation by a longer alcohol fails the
+    methanol clause.  Factored out here (not inlined in the oracle) so the R58 span-local check can pair with it
+    exactly as the etherification recognizer does."""
+    non_water_reactants = [m for m in step.reactants if not _is_water(m)]
+    non_water_products = [m for m in step.products if not _is_water(m)]
+    if len(non_water_reactants) != 2 or len(non_water_products) != 1:
+        return False
+    if sum(_is_water(m) for m in step.products) - sum(_is_water(m) for m in step.reactants) <= 0:
+        return False
+    r_methanol = sum(_methanol_specific_alcohol_count(m) for m in step.reactants)
+    p_methanol = sum(_methanol_specific_alcohol_count(m) for m in step.products)
+    r_nmethyl = sum(_n_methyl_amine_count(m) for m in step.reactants)
+    p_nmethyl = sum(_n_methyl_amine_count(m) for m in step.products)
+    return (p_methanol - r_methanol) < 0 and (p_nmethyl - r_nmethyl) > 0
+
+
 def feasibility_of_step(
     step: ExperimentStep, *, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None,
     derive: bool = True, phases: "dict[Molecule, str] | None" = None,

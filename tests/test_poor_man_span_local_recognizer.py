@@ -20,7 +20,6 @@ from smartchem.smiles import parse_smiles
 from smartchem.structure import structure_by_name
 from smartchem.structure_descent import capped_scissions
 from smartchem.reaction_center import ReactionCenter, REACTION_CENTER_SCHEMA
-from smartchem.experiment.compile import compile_synthesis
 from smartchem.experiment.step import ExperimentStep
 from smartchem.experiment.feasibility import _is_intermolecular_etherification
 from smartchem.experiment.reaction_type_oracle import route_reaction_type_blockers, recognize_reaction_type
@@ -120,10 +119,13 @@ def test_the_hand_built_bundled_fake_is_still_demoted_via_fallback():
     assert recognize_reaction_type(step) is None
 
 
-def test_caffeine_stays_demoted_escape7_is_still_shut():
-    routes = probe._routes_of(compile_synthesis(structure_by_name("caffeine").molecule, max_depth=2))
-    assert routes
-    assert all(route_reaction_type_blockers(r) for r in routes)
+def test_escape7_is_still_shut_the_amination_fake_stays_demoted():
+    # R60 re-framing: the byte-identical reaction centre is shared by caffeine (real) and the aryl-amination
+    # FAKE, so the span alone cannot separate them; R60's census-locked recognizer now vouches caffeine while the
+    # FAKE stays demoted -- the real escape-#7 invariant, unchanged by R58's span refit.
+    caff = probe.caffeine_now_vouched_fake_demoted()
+    assert caff["caffeine_has_vouched_route"] is True
+    assert caff["amination_fake_demoted"] is True
 
 
 def test_the_dimethyl_ether_frontier_carries_a_vouched_route():

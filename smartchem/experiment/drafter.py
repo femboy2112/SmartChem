@@ -47,9 +47,10 @@ from .composability import Composability, verify_composability
 from .equilibrium import RouteEquilibrium, verify_equilibrium
 from .equipment import EquipmentItem, EquipmentKind, equipment_for_step
 from .feasibility import RouteFeasibility, verify_feasibility
-from .functorial_physics import PhysicsProduct, pareto_optimal, route_net_delta_g
+from .functorial_physics import PhysicsProduct, route_net_delta_g
 from .handling import RouteHandling, verify_handling
 from .kinetics import RouteKinetics, verify_kinetics
+from .order import non_dominated_layers
 from .selectivity import RouteSelectivity, SelectivityTable, verify_selectivity
 from .step import ExperimentRoute
 
@@ -491,10 +492,10 @@ def _pareto_front_indices(products: "tuple[PhysicsProduct, ...]") -> tuple[int, 
     """The Pareto NON-DOMINATED front (layer) index for each objective -- the M2-FP product order (M2b).
 
     Complete-objective points (both ``ΔG`` and survival known) are peeled into layers 0, 1, 2, ... by
-    non-domination (``pareto_optimal``): layer 0 = the non-dominated frontier, layer 1 = non-dominated once
-    layer 0 is removed, and so on.  Because a dominator sits in a strictly earlier layer than anything it
-    dominates, this tier is domination-MONOTONE -- it never claims a Pareto relation :meth:`PhysicsProduct.
-    dominates` would deny, and two INCOMPARABLE complete points share a layer (they do not order each other).
+    non-domination: layer 0 = the non-dominated frontier, layer 1 = non-dominated once layer 0 is removed, and so
+    on.  Because a dominator sits in a strictly earlier layer than anything it dominates, this tier is
+    domination-MONOTONE -- it never claims a Pareto relation :meth:`PhysicsProduct.dominates` would deny, and two
+    INCOMPARABLE complete points share a layer (they do not order each other).
 
     An INCOMPLETE-objective point (survival ``None`` -- the common case today, since survival needs a sourced
     first-order kinetic record to reach an intermediate) is NEUTRAL: it is assigned layer 0, never penalized
@@ -503,23 +504,15 @@ def _pareto_front_indices(products: "tuple[PhysicsProduct, ...]") -> tuple[int, 
     BELOW an incomplete-objective route (layer 0); this is a data-gated presentation policy, not a dominance
     claim, and it is near-inert today because complete objectives are rare.
 
-    The peel must EXCLUDE incomplete indices (``pareto_optimal`` returns only complete ones, so a naive
-    ``while remaining: remaining -= pareto_optimal(remaining)`` would never terminate) and REMAP the sub-tuple
-    indices ``pareto_optimal`` returns back to the original positions each pass.
+    The peel-and-remap itself is the shared :func:`order.non_dominated_layers` primitive (the frontier
+    :func:`order.non_dominated_indices`, stratified); this function supplies ONLY the M2-FP product order
+    (``a.dominates(b)``) and the completeness eligibility domain (``is_complete`` -- so an incomplete point stays
+    at the neutral layer 0, never peeled).  The termination guard and the sub-tuple index REMAP the birdperson
+    fold warned about now live, and are tested, in that one primitive instead of hand-rolled here.
     """
-    front = [0] * len(products)
-    remaining = [i for i, p in enumerate(products) if p.is_complete]
-    layer = 0
-    while remaining:
-        nd_local = pareto_optimal(tuple(products[i] for i in remaining))  # indices INTO the sub-tuple
-        nd = {remaining[k] for k in nd_local}
-        if not nd:  # defensive: a non-empty all-complete set always has a non-dominated member
-            break
-        for i in nd:
-            front[i] = layer
-        remaining = [i for i in remaining if i not in nd]
-        layer += 1
-    return tuple(front)
+    return non_dominated_layers(
+        products, lambda a, b: a.dominates(b), eligible=lambda p: p.is_complete
+    )
 
 
 def _score_tuple(

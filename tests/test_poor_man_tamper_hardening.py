@@ -134,20 +134,30 @@ def test_each_recognizer_class_round_trips_thick_without_false_reject(target):
     response_from_payload(thick, require_verified_admission=True)     # must not false-reject
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="thin-transport disposition strip is ADVISORY -- tracked follow-up (replay-mandatory-for-"
-                          "disposition-claims, or HMAC signing).  Flip to green closes the boundary.")
-def test_the_default_thin_transport_fiction_strip_is_detected():
-    # THE DOCUMENTED BOUNDARY, pinned NOT hidden: on the DEFAULT (thin) transport the replay is omitted, so the
-    # fiction channel has no evidence to re-derive -- a fiction_blockers strip is NOT detected today.  strict xfail:
-    # when a future round closes the thin transport this xpasses and FAILS loudly, forcing the xfail's removal.
+def test_the_default_thin_transport_fiction_strip_is_refused_under_verified_admission():
+    # THE BOUNDARY, NOW CLOSED (thin-transport closure).  On the DEFAULT (thin) transport the replay is omitted, so the
+    # fiction channel has no evidence to re-derive.  Rather than trust the unverifiable claim (the old fail-OPEN
+    # boundary), a verified-admission load now fails CLOSED: an entry whose summary carries no replay_payload is
+    # UNVERIFIED and REFUSED -- replay-MANDATORY-for-disposition-claims, mirroring _check_verified_admission's own
+    # FITS-route rule.  So the fiction_blockers strip below is refused even though the replay is absent.
     resp = run_compilation(build_recompile_request("isopentyl acetate", max_depth=3))
     thin = response_to_payload(resp)                                  # include_replay defaults False -> no replay
     fr = thin["affordability_frontier"]
     i = next(j for j, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"])
     thin["affordability_frontier"][i]["cost_vector"]["fiction_blockers"] = []
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="no replay_payload|UNVERIFIED|thin-transport"):
         response_from_payload(thin, require_verified_admission=True)
+
+
+def test_a_thin_transport_load_without_verified_admission_still_loads():
+    # THE PRESERVED ADVISORY PATH: a bare (non-verified) load of a thin payload is NOT promised re-derivation, so it
+    # still loads -- the thin frontier's catalyst/fiction dispositions stay producer-declared for that consumer.  This
+    # pins that the closure is scoped to verified admission and did not break the default lightweight transport.
+    resp = run_compilation(build_recompile_request("isopentyl acetate", max_depth=3))
+    thin = response_to_payload(resp)                                  # thin, no replay
+    assert any(e["cost_vector"]["fiction_blockers"] for e in thin["affordability_frontier"]), \
+        "the frontier must carry a fiction disposition for this pin to be non-vacuous"
+    response_from_payload(thin)                                       # bare load: no verified admission -> no refusal
 
 
 def test_centre_absent_acyl_and_ether_now_fail_closed():

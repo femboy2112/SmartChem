@@ -24,8 +24,10 @@ TWO COHERENT INCISIONS, NO R58 REVERSAL, NO ROUTE/STEP HASH BREAK:
 
   SCOPE (honest, bounded).  FULLY closed on EVERY transport: the process-exclusion ``hard_blockers`` channel (no replay
   needed).  FULLY closed on the THICK transport (``include_replay=True``, digest-bound): catalyst + fiction.  The
-  DEFAULT THIN transport omits the replay, so a ``fiction_blockers`` strip there is ADVISORY (not detected) -- a
-  deliberate, tracked boundary, pinned below, NOT a claimed closure.
+  DEFAULT THIN transport omits the replay -- so UNDER VERIFIED ADMISSION it now fails CLOSED: an entry with no replay
+  is UNVERIFIED and REFUSED (replay-MANDATORY-for-disposition-claims, mirroring the FITS-route rule).  A bare
+  (non-verified) load keeps the thin catalyst/fiction dispositions ADVISORY -- the lightweight path, unchanged.  The
+  remaining irreducible residual is a key-holding forger (the stated HMAC boundary), not the transport.
 
   PIECE 2 -- the reaction-TYPE oracle's ``_acyl_condensation`` and ``_etherification`` now FAIL CLOSED on an absent
   reaction centre (``center is None -> return False``), extending the R60 N-methylation gate finding to the other two
@@ -42,8 +44,9 @@ THIS PROBE FREEZES, against LIVE code:
       the replay centres) also REFUSED end-to-end.
   (3) KILL 1 -- a SUBSTITUTED replay (a DIFFERENT recognized route's payload swapped under a stripped entry's digest)
       REFUSED, via the ``route.digest == e.route_digest`` bind.
-  (4) THE DEFAULT-TRANSPORT BOUNDARY, pinned NOT hidden: a thin (no-replay) fiction strip LOADS (advisory) -- the
-      honest edge a future thin-transport-closure round trips green.
+  (4) THE THIN-TRANSPORT CLOSURE: under verified admission a thin (no-replay) fiction strip is REFUSED (UNVERIFIED),
+      while a bare non-verified load still loads -- the closure is scoped to verified admission and preserves the
+      lightweight path.
   (5) the PIECE-2 unit facts: acyl/ether/N-methylation centre-LESS steps all DEMOTE while their centre-CARRYING forms
       VOUCH, and the sharp evasion case -- a k=2 bundle the CENSUS vouches but the SPAN demotes -- whose centre-less
       twin now FAILS CLOSED (pre-hardening it census-vouched).
@@ -70,7 +73,7 @@ from smartchem.service import (
     build_recompile_request, run_compilation, response_to_payload, response_from_payload,
 )
 
-FROZEN_HASH = "c3839f7a837a79676c8437d93180ef16c9bf175ac93d7a328b5a961477ab5ebe"
+FROZEN_HASH = "10eef051604a03ad3949391c57ac5924001bc8c36ae51af7cde5a47f4dc609e3"
 
 #: a poor-man kitchen inventory that LACKS lab glassware -> the Fischer esterification is process-EXCLUDED (REAL_BUT_HARD).
 _KITCHEN = ("stovetop", "pot", "glass jar", "thermometer", "spoon", "funnel")
@@ -110,6 +113,15 @@ def _refused(payload: dict) -> bool:
 def _loads(payload: dict) -> bool:
     try:
         response_from_payload(payload, require_verified_admission=True)
+        return True
+    except ValueError:
+        return False
+
+
+def _loads_bare(payload: dict) -> bool:
+    """True iff loading ``payload`` WITHOUT verified admission succeeds (the advisory / lightweight-transport path)."""
+    try:
+        response_from_payload(payload)
         return True
     except ValueError:
         return False
@@ -258,9 +270,10 @@ def kill1_substitution_refused() -> dict:
 
 
 # --------------------------------------------------------------------------------------------------
-# (5) THE DEFAULT-TRANSPORT BOUNDARY (honest, pinned NOT hidden): a thin (no-replay) fiction strip is ADVISORY.
+# (5) THE THIN-TRANSPORT CLOSURE: a thin (no-replay) fiction strip is REFUSED under verified admission, fail-closed;
+#     a bare (non-verified) load still loads (the advisory / lightweight path is preserved).
 # --------------------------------------------------------------------------------------------------
-def thin_transport_fiction_is_advisory() -> dict:
+def thin_transport_fiction_closed_under_verified_admission() -> dict:
     resp = run_compilation(build_recompile_request(_TARGET, max_depth=3))
     thin = response_to_payload(resp)                 # include_replay defaults False -> no replay on the wire
     fr = thin["affordability_frontier"]
@@ -270,9 +283,13 @@ def thin_transport_fiction_is_advisory() -> dict:
     return {
         "fiction_entry_present": bool(fic),
         "thin_omits_replay": all(d.get("replay_payload") is None for d in thin["ranked_route_dossiers"]),
-        # THE DOCUMENTED BOUNDARY: on the default thin transport the fiction channel has no evidence to re-derive,
-        # so the strip LOADS.  Pinned True (not hidden) so a future thin-transport-closure round trips it.
-        "thin_fiction_strip_loads": _loads(strip),
+        # THE CLOSURE: on the thin transport the fiction channel has no evidence to re-derive, so under verified
+        # admission the entry is UNVERIFIED and the strip is REFUSED (replay-MANDATORY-for-disposition-claims,
+        # fail-closed -- mirroring the FITS-route "no replay -> UNVERIFIED -> refused" rule).
+        "thin_fiction_strip_refused_under_va": _refused(strip),
+        # THE PRESERVED ADVISORY PATH: a bare (non-verified) load of the thin payload still succeeds -- the closure is
+        # scoped to verified admission and did not break the default lightweight transport.
+        "thin_bare_load_still_loads": _loads_bare(thin),
     }
 
 
@@ -297,7 +314,7 @@ def _payload() -> dict:
     hard = hard_tamper_reproduced_then_refused()
     fic = fiction_tamper_reproduced_then_refused()
     kill1 = kill1_substitution_refused()
-    thin = thin_transport_fiction_is_advisory()
+    thin = thin_transport_fiction_closed_under_verified_admission()
     unit = centre_absent_is_fail_closed()
     resid = residual_boundary_stated()
     return {
@@ -310,8 +327,10 @@ def _payload() -> dict:
         "residual_boundary": resid,
         # THE VERDICT: both channels of the R59 forgery are closed on load -- the PROVEN REAL_BUT_HARD->CLEAN strip
         # (digest-invariant, now refused), the NOT_A_REACTION->CLEAN strip and its centre-null evasion (refused), the
-        # centre-absent recognizers fail closed while centre-carrying ones vouch, and the residual (a fabricated
-        # self-consistent replay) is honestly stated as the HMAC boundary.
+        # centre-absent recognizers fail closed while centre-carrying ones vouch, and -- the thin-transport closure --
+        # even the DEFAULT thin transport's fiction strip is refused under verified admission (replay-mandatory),
+        # while a bare non-verified load stays lightweight.  The residual (a fabricated self-consistent replay against
+        # a key-holding forger) remains the stated HMAC boundary.
         "ship_verdict": (
             hard["real_but_hard_entry_present"]
             and hard["result_digest_invariant_under_tamper"]
@@ -321,7 +340,7 @@ def _payload() -> dict:
             and fic["fiction_tamper_refused"] and fic["centre_null_evasion_refused"]
             and kill1["distinct_donor_present"] and kill1["substitution_refused"]
             and thin["fiction_entry_present"] and thin["thin_omits_replay"]
-            and thin["thin_fiction_strip_loads"]
+            and thin["thin_fiction_strip_refused_under_va"] and thin["thin_bare_load_still_loads"]
             and unit["acyl_centreless_demoted"] and unit["ether_centreless_demoted"]
             and unit["nmethyl_centreless_demoted"]
             and unit["acyl_centre_carrying_vouched"] and unit["ether_centre_carrying_vouched"]
@@ -357,9 +376,11 @@ def validate() -> bool:
     assert k["substitution_refused"], f"KILL 1 OPEN: a substituted replay under a stripped entry loaded: {k}"
     t = p["thin_transport_boundary"]
     assert t["thin_omits_replay"], f"the default thin transport unexpectedly carried a replay: {t}"
-    # HONEST BOUNDARY (pinned True, not hidden): the thin-transport fiction strip is ADVISORY -- it LOADS.  A future
-    # thin-transport-closure round flips this to refused; until then this asserts the boundary is exactly where stated.
-    assert t["thin_fiction_strip_loads"], f"the thin-transport boundary moved -- re-state it (strip now refused?): {t}"
+    # THE CLOSURE: under verified admission the thin (replay-absent) fiction strip is REFUSED, fail-closed.
+    assert t["thin_fiction_strip_refused_under_va"], \
+        f"THIN-TRANSPORT CLOSURE OPEN: the strip loaded under verified admission: {t}"
+    # ... while the bare (non-verified) load still succeeds -- the advisory lightweight path is preserved.
+    assert t["thin_bare_load_still_loads"], f"the advisory bare-load path broke (a false positive on thin): {t}"
     u = p["centre_absent_fail_closed"]
     assert u["acyl_centreless_demoted"] and u["ether_centreless_demoted"] and u["nmethyl_centreless_demoted"], \
         f"a centre-less recognizer still vouches (PIECE 2 regressed): {u}"

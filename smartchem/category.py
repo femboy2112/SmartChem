@@ -29,8 +29,12 @@ The object operation ``tensor_obj`` is commutative multiset union. The current m
 representation is a *linear history*, however, so it cannot represent independent parallel
 events modulo the interchange law. ``Reaction.scheduled_product`` therefore gives an
 explicit left-then-right schedule; the legacy name ``Reaction.tensor`` is retained only as
-a compatibility alias. A true symmetric-monoidal/open-system layer needs ports and process
-graphs rather than another tuple convention.
+a compatibility alias. The true symmetric-monoidal/open-system layer -- ports and process
+graphs, where interchange holds under ``canonicalize`` -- is
+``smartchem.open_chem_diagram.OpenChemDiagram``; ``scheduled_product`` is a deterministic
+left-then-right SCHEDULE of the same generators, NOT the image of any projection from that
+layer (the backbone's ``close`` is partial and refuses exactly the parallel diagrams this
+method linearises), and not a rival tuple convention.
 
 So a mass-violating reaction is not merely absent from this system, it is
 **unconstructible**. ``Fe + O + Cl -> FeO`` (finding F1) raises at construction time
@@ -958,6 +962,16 @@ class Reaction:
         does *not* pretend that a linear trace implements the interchange quotient of a
         free symmetric monoidal category.  That requires explicit ports/wires (an open
         process graph), not another tuple convention.
+
+        That open process graph is :class:`smartchem.open_chem_diagram.OpenChemDiagram`, where the interchange
+        law DOES hold under ``canonicalize`` (``test_open_chem_diagram`` GATE 1).  This method is NOT the image of a
+        projection from that layer -- there is no such map: a genuinely parallel history has no single linearisation,
+        so ``OpenChemDiagram.close`` is PARTIAL and refuses exactly the parallel diagrams a ``.tensor`` builds.
+        ``scheduled_product`` is instead an INDEPENDENT deterministic left-then-right schedule of the same
+        generators that the backbone declines to linearise; the debt is representational, not open: nothing here is
+        an SMC tensor, and no caller relies on it being one.
+        ``test_laws.test_true_parallel_interchange_lives_on_the_open_diagram_backbone`` pins both halves (this trace
+        loses interchange; the backbone recovers it).
         """
         label = " (x) ".join(name for name in (self.name, other.name) if name)
         path: list[tuple[Config, Config]] = []

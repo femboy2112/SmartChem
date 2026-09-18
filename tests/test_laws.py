@@ -35,6 +35,7 @@ from smartchem.category import (
     is_catalytic,
     tensor_obj,
 )
+from smartchem.open_chem_diagram import OpenChemDiagram, canonicalize
 # private, but the budget gate and the candidate enumeration are exactly what
 # TestCanonicalShortcutIsExact exists to hold down.
 from smartchem.category import (
@@ -327,20 +328,57 @@ class TestObjectProductAndScheduledProduct:
         assert (f.scheduled_product(g).scheduled_product(h)
                 == f.scheduled_product(g.scheduled_product(h)))
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="linear histories cannot quotient independent events by interchange",
-    )
-    def test_true_parallel_interchange_is_architecture_debt(self):
+    def test_true_parallel_interchange_lives_on_the_open_diagram_backbone(self):
+        """Interchange -- ``(f;g) (x) (k;l) == (f (x) k);(g (x) l)`` -- holds on the SMC BACKBONE, not the linear trace.
+
+        This was a strict-``xfail`` "architecture debt" marker asserting the linear ``Reaction.scheduled_product``
+        could quotient two independent parallel events -- which it CANNOT, by theorem: a genuinely parallel process
+        has no single ``Reaction.path`` (``OpenChemDiagram.close`` refuses one; the provenance has no linearization).
+        The debt is not open, it is DISCHARGED -- the categorical structure that DOES satisfy interchange is the
+        ``OpenChemDiagram`` under ``canonicalize`` (proven in ``test_open_chem_diagram`` GATE 1), and the linear
+        ``scheduled_product`` is the honest LOSSY projection of it, exactly as its own docstring says.  This test pins
+        BOTH halves of that story so the resolution is load-bearing here, where the category laws live: the linear
+        trace genuinely loses interchange, and the backbone genuinely recovers it (non-vacuously).
+        """
         h0, h1 = Config.atoms("H", "H"), Config.of(Molecule.diatomic("H", "H"))
         n0 = Config.atoms("N", "N")
         n1 = Config.of(Molecule.diatomic("N", "N", order=3))
         f, g = Reaction(h0, h1, generator_id="h+"), Reaction(h1, h0, generator_id="h-")
         k, ell = (Reaction(n0, n1, generator_id="n+"),
                   Reaction(n1, n0, generator_id="n-"))
-        lhs = f.then(g).scheduled_product(k.then(ell))
-        rhs = f.scheduled_product(k).then(g.scheduled_product(ell))
-        assert lhs == rhs
+
+        # (1) The linear scheduled_product is genuinely LOSSY: the two interchange-equivalent schedules serialize the
+        # same four independent events in DIFFERENT orders (f,g,k,l vs f,k,g,l), so their linear traces differ.  This
+        # is the honest shadow, not a bug -- asserting it pins WHY the backbone is needed (a linear total order cannot
+        # BE the interchange quotient of two parallel events).
+        linear_lhs = f.then(g).scheduled_product(k.then(ell))
+        linear_rhs = f.scheduled_product(k).then(g.scheduled_product(ell))
+        assert linear_lhs != linear_rhs
+
+        # (2) The SAME assembly on the open-diagram backbone satisfies interchange under the quotient.  The two raw
+        # cores differ (so the quotient is doing real work -- non-vacuous), yet they canonicalize to ONE diagram: the
+        # spurious linear order is erased, and the law holds where the symmetric-monoidal structure actually lives.
+        fd, gd, kd, elld = (OpenChemDiagram.from_reaction(x) for x in (f, g, k, ell))
+        backbone_lhs = fd.then(gd).tensor(kd.then(elld))
+        backbone_rhs = fd.tensor(kd).then(gd.tensor(elld))
+        assert backbone_lhs.core != backbone_rhs.core                     # the two inputs are different presentations
+        assert canonicalize(backbone_lhs) == canonicalize(backbone_rhs)   # interchange holds on the backbone
+
+        # (3) NEGATIVE CONTROL (dalembert fold, [[a-control-must-discriminate-the-hypotheses-it-separates]]): the
+        # ``.core != .core`` line above only shows the two INPUTS differ -- it would STILL hold under a hypothetical
+        # over-collapsing ``canonicalize`` that made (2) pass hollowly.  What actually rules that out is that the
+        # quotient SEPARATES same-boundary / same-generator diagrams of DIFFERENT connectivity, so pin THAT here,
+        # locally.  Four all-H generators (distinct ids) glued two ways: the true chains (a+;a-) (x) (b+;b-) vs a
+        # cross-glued (a+;b-) (x) (b+;a-) -- identical boundary and identical id multiset, DIFFERENT causal topology.
+        # A quotient doing real work holds them DISTINCT; a collapsing one would equate them and fail this line.
+        hh, h2 = Config.atoms("H", "H"), Config.of(Molecule.diatomic("H", "H"))
+        ap, am = (OpenChemDiagram.from_reaction(Reaction(hh, h2, generator_id="a+")),
+                  OpenChemDiagram.from_reaction(Reaction(h2, hh, generator_id="a-")))
+        bp, bm = (OpenChemDiagram.from_reaction(Reaction(hh, h2, generator_id="b+")),
+                  OpenChemDiagram.from_reaction(Reaction(h2, hh, generator_id="b-")))
+        true_chains = ap.then(am).tensor(bp.then(bm))
+        cross_glued = ap.then(bm).tensor(bp.then(am))
+        assert canonicalize(true_chains) != canonicalize(cross_glued)     # canonicalize is faithful, not collapsing
 
     def test_duplicate_edge_records_are_rejected(self):
         with pytest.raises(ValueError, match="multiple bond records"):

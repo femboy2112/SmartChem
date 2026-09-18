@@ -518,6 +518,120 @@ def _methylation_shape_and_net_change(step: ExperimentStep) -> bool:
     return (p_methanol - r_methanol) < 0 and (p_nmethyl - r_nmethyl) > 0
 
 
+def _n_alkyl_amine_bond_count(molecule: Molecule) -> int:
+    """The number of sp3-C--to--amine-N single BONDS: a single bond between a single-bonded sp3 non-aromatic carbon
+    and an AMINE nitrogen (all-single-bond, NOT adjacent to a carbonyl C).  The general-alkyl analogue of
+    :func:`_n_methyl_amine_count`, and the counting unit is the load-bearing choice.
+
+    Count BONDS, not N ATOMS.  A general N-alkylation ``R2N-H + R'-OH -> R2N-R' + H2O`` adds exactly ONE new
+    sp3 C-N bond, so a bond census rises by exactly one per alkylation -- whereas an N-atom census (the R60
+    :func:`_n_methyl_amine_count`) does NOT rise when an ALREADY-alkylated secondary amine is alkylated again (the N
+    was already "an N-alkyl amine" before and after).  Making the net signal LOCAL to the one bond formed is what
+    lets the general class have a sound net signature at all; the R60 methyl census dodged this only because a
+    terminal CH3 is a distinguishable NEW group, which no longer holds once the alkyl may be any chain.
+
+    The N clauses mirror :func:`_n_methyl_amine_count`; only the carbon clause widens from a terminal CH3 to any
+    sp3 non-aromatic C.  This admits ANY non-carbonyl nitrogen NUCLEOPHILE -- an aliphatic amine, a pyrrole-type
+    heterocyclic ring N (pyrrole, imidazole/pyrazole N1, indole, the xanthine N7 of the caffeine class: lone-pair-
+    donating aromatic N with NO ring C=N, so all-single-bond), and also a sulfonamide, hydrazide/hydrazine,
+    hydroxylamine, or amidine/guanidine N.  Dehydrative N-alkylation onto each is a REAL reaction TYPE this
+    recognizer INTENTIONALLY vouches (the operator-confirmed R63 scope; an adversary re-attack verified every
+    admitted N is a genuine N-alkylation, never a fiction -- Problem A holds; caffeine is the canonical instance).
+    The two clauses:
+    * all-single-bond N -- excludes an sp2 imine N and a nitrile/azo/nitro/PYRIDINE-type aromatic N (all of which
+      carry an order-2 bond).  It does NOT exclude a pyrrole-type aromatic N, which carries no order-2 bond -- a
+      bond-order census cannot express ring aromaticity, and under the R63 direction it need not, since azole
+      N-alkylation is admitted.  The phenol->aniline ARYL-amination fake stays demoted, but through the CARBON
+      clause, NOT this one: aniline's exocyclic -NH2 is itself all-single-bond; it is the aromatic-ring CARBON it
+      would bond to that :func:`_is_sp3_nonaromatic_carbon` rejects (an aryl C-N is not an sp3 C-N).  [The earlier
+      comment "a Kekulized aromatic N carries an order-2 bond" was FALSE for pyrrole-type N and hid that gap; an
+      adversary surfaced it -- see [[a-whole-set-count-classifier-is-fooled-by-non-locality]].]
+    * NOT adjacent to a carbonyl C -- keeps this DISJOINT from the acyl/amidation class (an amide N sits beside a
+      C=O and belongs to :func:`_is_intermolecular_acyl_condensation`).  This is the clause the R60 gate finding
+      turns on: a carbonyl that MIGRATES off an N unmasks a pre-existing alkyl and forges a spurious rise -- caught
+      by the reaction-centre span, NEVER trusted from this non-local count alone.
+    No explicit-H dependence -- reads bond topology, mirroring :func:`_n_methyl_amine_count`."""
+    atoms, adjacency = _oxygen_heavy_neighbours(molecule)
+    count = 0
+    for n, element in enumerate(atoms):
+        if element != "N":
+            continue
+        bonds = adjacency.get(n, ())
+        if not all(order == 1 for _nb, order in bonds):
+            continue  # all-single-bond N (amine or azole): excludes imine / nitrile / pyridine-type aromatic N
+        if any(atoms[nb] == "C" and _is_carbonyl_carbon(nb, atoms, adjacency) for nb, _o in bonds):
+            continue  # a carbonyl-adjacent N is an amide N -> the acyl class, kept disjoint
+        for nb, order in bonds:
+            if order == 1 and atoms[nb] == "C" and _is_sp3_nonaromatic_carbon(nb, atoms, adjacency):
+                count += 1
+    return count
+
+
+def _alkyl_carbinol_alcohol_count(molecule: Molecule) -> int:
+    """The number of ALKYL-carbinol alcohol oxygens: an alcohol-O (one heavy neighbour, a single-bonded sp3
+    non-aromatic carbon -- as :func:`_alcohol_counts`) whose carbinol carbon bears NO heavy neighbour other than
+    this hydroxyl O and CARBON.
+
+    Strictly TIGHTER than :func:`_alcohol_counts`, and the tightening is the conservation-lock's donor half.  An
+    ALPHA-heteroatom carbinol -- a carbinol carbon bearing a SECOND N or O (a hemiaminal, gem-diol / carbonyl
+    hydrate, or hemiacetal) -- is a MASKED CARBONYL: the carbon sits at carbonyl oxidation level, and "alkylating"
+    an amine with it is really an aminal / acetal condensation via an iminium/oxocarbenium, a DIFFERENT reaction
+    class.  :func:`_alcohol_counts` reads only that the leaving O's single neighbour is a bond-order-1 carbon and
+    is blind to that carbon's OTHER substituents, so it counts the masked carbonyl as a genuine alcohol and lets the
+    fiction VOUCH (an adversary proved exactly this: ``ammonia + aminomethanol -> methylenediamine + water`` and
+    ``dimethylamine + (dimethylamino)methanol -> bis(dimethylamino)methane + water``).  Requiring the carbinol
+    carbon's other heavy neighbours to be ALL carbon forbids the carbonyl oxidation level -- mirroring the
+    carbonyl-neighbour discipline :func:`_acyl_group_counts` already uses -- and closes the class with NO
+    genuine-case loss: a genuine beta-amino alcohol donor (ethanolamine, HO-CH2-CH2-NH2) keeps its carbinol
+    carbon's neighbours = {O, C, H} and stays admitted; only geminal alpha-hetero donors are excluded.  No
+    explicit-H dependence -- reads bond topology, mirroring :func:`_alcohol_counts`."""
+    atoms, adjacency = _oxygen_heavy_neighbours(molecule)
+    count = 0
+    for o, element in enumerate(atoms):
+        if element != "O":
+            continue
+        heavy = [(n, order) for n, order in adjacency.get(o, ()) if atoms[n] != "H"]
+        if len(heavy) != 1 or heavy[0][1] != 1:
+            continue
+        carbon = heavy[0][0]
+        if not _is_sp3_nonaromatic_carbon(carbon, atoms, adjacency):
+            continue
+        other = [m for m, _o in adjacency.get(carbon, ()) if atoms[m] != "H" and m != o]
+        if all(atoms[m] == "C" for m in other):  # carbinol carbon is genuine alkyl (no alpha N/O/S = no masked C=O)
+            count += 1
+    return count
+
+
+def _n_alkylation_shape_and_net_change(step: ExperimentStep) -> bool:
+    """The GENERAL N-ALKYLATION shape + net class-identity (``non-carbonyl N-H + alkyl-OH -> N-alkyl + water``), the
+    sp3-alcohol generalisation of :func:`_methylation_shape_and_net_change` -- the class the R60 record deferred to
+    "a future round behind its own gate", hardened against two adversary kills.
+
+    True iff the ELEMENTARY INTERMOLECULAR shape holds -- exactly 2 non-water reactants -> exactly 1 non-water
+    product, water net-produced -- AND (i) an ALKYL-carbinol alcohol is net-CONSUMED
+    (:func:`_alkyl_carbinol_alcohol_count`, NOT the looser :func:`_alcohol_counts` -- the donor half of the lock:
+    it excludes an alpha-heteroatom carbinol / masked carbonyl, so an aminal/acetal condensation cannot pose as an
+    alkylation) and (ii) an sp3-C--to--(amine-or-azole)-N bond is net-FORMED (:func:`_n_alkyl_amine_bond_count`).
+    Where the R60 census demanded a METHANOL-specific donor and an N-METHYL amine, this admits any alkyl alcohol
+    donor and any sp3-C-N non-carbonyl-N bond.  This whole-molecule census is NON-LOCAL and is NOT trusted alone:
+    the recognizer (:func:`~smartchem.experiment.reaction_type_oracle._n_alkylation`) pairs it with the elementary
+    reaction-centre span :meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation(("N",))` --
+    the SAME centre signature N-methylation uses (element pairs do not change with chain length), which supplies
+    the elementarity the census cannot see locally and forces the (now provably alkyl) carbinol carbon onto the
+    nitrogen (the conservation-lock)."""
+    non_water_reactants = [m for m in step.reactants if not _is_water(m)]
+    non_water_products = [m for m in step.products if not _is_water(m)]
+    if len(non_water_reactants) != 2 or len(non_water_products) != 1:
+        return False
+    if sum(_is_water(m) for m in step.products) - sum(_is_water(m) for m in step.reactants) <= 0:
+        return False
+    r_alcohol = sum(_alkyl_carbinol_alcohol_count(m) for m in step.reactants)
+    p_alcohol = sum(_alkyl_carbinol_alcohol_count(m) for m in step.products)
+    r_nalkyl = sum(_n_alkyl_amine_bond_count(m) for m in step.reactants)
+    p_nalkyl = sum(_n_alkyl_amine_bond_count(m) for m in step.products)
+    return (p_alcohol - r_alcohol) < 0 and (p_nalkyl - r_nalkyl) > 0
+
+
 def feasibility_of_step(
     step: ExperimentStep, *, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None,
     derive: bool = True, phases: "dict[Molecule, str] | None" = None,

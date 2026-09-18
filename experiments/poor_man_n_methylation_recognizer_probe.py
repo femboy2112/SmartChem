@@ -75,9 +75,14 @@ import experiments.poor_man_reaction_type_oracle_probe as p56
 import experiments.poor_man_etherification_recognizer_probe as p57
 import experiments.poor_man_span_local_recognizer_probe as p58
 
-FROZEN_HASH = "b5302d803c303df6bc2966a94c4613790d71c5224e1485d0982be90eed9c3156"
+FROZEN_HASH = "88657a404a164b684eebadc0bc1cc332d5f60a7355115fda54964f2e095a265a"
 
-_NM = "N-methylation"
+# R63 SUPERSESSION: the class-specific N-methylation recognizer this probe pinned was REPLACED by a general
+# N-alkylation recognizer that SUBSUMES it (methanol is an alkyl alcohol; a methyl bond is an sp3 C-N bond), so the
+# vouched class is now labelled "N-alkylation".  This probe is retained as the METHYL SUB-CASE anchor: caffeine and
+# the methanol-specific census still lock exactly as before, now vouched under the general recognizer.  The match
+# token therefore tracks the live label ("N-alkylation") -- every case this probe vouches is a methyl N-alkylation.
+_NM = "N-alkylation"
 # theophylline (1,3-dimethylxanthine) + methanol -> caffeine (1,3,7-trimethylxanthine) + water: the R45 win.
 _CAFFEINE = "CN1C=NC2=C1C(=O)N(C)C(=O)N2C"
 
@@ -193,7 +198,8 @@ def adversarial_must_demote() -> dict:
         "aryl_amination_aniline": (["c1ccc(O)cc1", "N"], ["Nc1ccccc1", "water"], "Nc1ccccc1",
                                    "byte-identical reaction centre to caffeine; no methanol, aryl N unmethylated"),
         "general_n_ethylation": (["CCO", "N"], ["CCN", "water"], "CCN",
-                                 "ethanol is not methanol-specific -- general N-alkylation is not admitted"),
+                                 "a CENTRE-LESS hand step fails closed (a VOUCH requires a readable centre); the "
+                                 "centre-carrying version is now vouched by R63 general N-alkylation -- see the R63 probe"),
         "o_methylation_anisole": (["c1ccc(O)cc1", "CO"], ["COc1ccccc1", "water"], "COc1ccccc1",
                                   "methanol consumed but no N-methyl amine formed (an aryl ether, not N-methylation)"),
     }

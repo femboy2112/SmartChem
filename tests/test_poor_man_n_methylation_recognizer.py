@@ -26,7 +26,11 @@ from smartchem.experiment.reaction_type_oracle import route_reaction_type_blocke
 from smartchem.service import build_recompile_request, run_compilation
 import experiments.poor_man_n_methylation_recognizer_probe as probe
 
-_NM = "N-methylation"
+# R63 SUPERSESSION: the N-methylation recognizer was replaced by a general N-alkylation recognizer that subsumes it
+# (methanol is an alkyl alcohol; a methyl bond is an sp3 C-N bond).  These pins remain valid as the METHYL SUB-CASE
+# anchor -- caffeine/methylamine still lock via the methanol-specific census, now vouched under the "N-alkylation"
+# label.  The match token tracks the live label.
+_NM = "N-alkylation"
 
 
 def _derive_step(product_smiles, want_products):
@@ -98,11 +102,13 @@ def test_the_aryl_amination_fake_is_demoted():
     assert adv["recognized_class"] is None
 
 
-def test_general_n_alkylation_by_a_longer_alcohol_is_not_admitted():
-    # the methanol clause admits ONLY CH3-OH: ethanol + ammonia -> ethylamine is demoted (coverage loss, honest).
+def test_centre_less_general_alkylation_fails_closed_and_o_alkylation_is_not_n():
+    # R63 SUPERSESSION: general N-alkylation by a longer alcohol IS now admitted (see the R63 probe) -- but only for
+    # a CENTRE-CARRYING step.  This hand-built (centre-LESS) ethanol case still demotes, because a VOUCH requires a
+    # readable reaction centre (TAMPER-HARDENING-01), not because ethanol is forbidden.
     adv = probe.adversarial_must_demote()["general_n_ethylation"]
     assert adv["not_vouched_as_n_methylation"] is True
-    # and O-methylation to anisole is not mistaken for N-methylation (no N-methyl amine formed)
+    # and O-alkylation to anisole is genuinely a different class (O, not N) -- must stay demoted regardless.
     assert probe.adversarial_must_demote()["o_methylation_anisole"]["not_vouched_as_n_methylation"] is True
 
 

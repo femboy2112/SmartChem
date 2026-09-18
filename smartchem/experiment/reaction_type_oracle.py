@@ -35,15 +35,22 @@ reaction-centre span rather than assumed from the config (see the LOCALITY bound
 the bundled fictions -- so the R57 whole-molecule "no reactant ether" blacklist clause is retired for
 centre-carrying steps.
 A GENERAL "new C-N bond" recognizer FAILS this admission gate -- it fires on
-both caffeine N-methylation (real, must-vouch) AND aromatic phenol->aniline amination (fake, must-not-vouch), the
-R55 theorem one alphabet over -- so a general recognizer is deliberately NOT shipped. R60 recovers the R45 caffeine
+both real N-alkylation (must-vouch) AND aromatic phenol->aniline aryl amination (fake, must-not-vouch), the
+R55 theorem one alphabet over -- so a general recognizer is deliberately NOT shipped. R60 recovered the R45 caffeine
 genericity win the honest way the R56 record prescribed: a CLASS-SPECIFIC conservation-locked N-methylation
-recognizer (:func:`_n_methylation`), NOT a bounded-radius patch. Its lock: the two collide on a BYTE-IDENTICAL
-reaction centre, so the span check cannot separate them; the whole-molecule census does -- the consumed alcohol
-must be methanol-specific (literally CH3-OH, which excludes aromatic phenol-O and every longer alcohol, so general
-N-alkylation is not admitted) and the formed N-methyl amine must sit on a non-carbonyl N (excludes the aryl-
-amination fake and stays disjoint from the acyl/amidation class). Do NOT add a recognizer without its
-conservation-lock proof.
+recognizer; R63 GENERALISES it to dehydrative N-ALKYLATION by any ALKYL alcohol onto ANY non-carbonyl N nucleophile
+(:func:`_n_alkylation`, subsuming the R60 methyl sub-case), still NOT a bounded-radius patch.
+Its lock (hardened against TWO adversary kills the review gate caught): the real class and the aryl-amination fake
+collide on a BYTE-IDENTICAL reaction centre, so the span check cannot separate them; the whole-molecule census does
+-- the consumed alcohol must be an ALKYL-carbinol alcohol (an alkyl carbinol, NOT a masked-carbonyl hemiaminal/gem-
+diol/hemiacetal -- KILL 1, dalembert; also excludes aromatic phenol-O) and an sp3-C--to--(non-carbonyl-N) BOND must
+net-form (counting BONDS not N atoms makes the net rise by exactly one per alkylation even for an already-alkylated
+secondary amine). The N may be any non-carbonyl nucleophile -- an aliphatic amine, a pyrrole-type azole N (all-
+single-bond, e.g. the caffeine xanthine N7 -- KILL 2, evil-morty: the old "aromatic N carries an order-2 bond"
+premise was FALSE; azole N-alkylation is a real class, ADMITTED), or a sulfonamide/hydrazide/hydroxylamine/amidine
+N (a dalembert re-attack confirmed all are genuine N-alkylation TYPES, no fiction -- operator-confirmed broad
+scope); the aryl-amination fake is excluded by the CARBON clause (an aryl C-N is not an sp3 C-N), not the N clause.
+Do NOT add a recognizer without its conservation-lock proof.
 
 What a VOUCH means, and what it deliberately does NOT (the disposition law -- type-validity != feasibility).
 A VOUCH says ONLY "a mechanism of this reaction TYPE exists" (Problem A). It is NOT a feasibility claim (Problem B,
@@ -59,11 +66,14 @@ per unrecognized step, fed into :func:`smartchem.service._affordability_frontier
 G6: a hard blocker dominates cost), so a route with any unrecognized step sinks on the affordability frontier. It
 runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
-Boundaries carried as documented debt (R56 acyl + R57 etherification + R60 N-methylation scope, per the gates).
-* THREE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), and dehydrative N-methylation (R60),
-  each with its own conservation-lock proof. Other real condensations (Friedel-Crafts, Kolbe-Schmitt, Claisen) and
-  N-alkylation BEYOND methylation (by any longer alcohol -- the methanol clause admits only CH3-OH) are
-  demoted-as-unrecognized: honest coverage loss, NOT false-VOUCH. Each is a future round behind its own gate.
+Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
+* FOUR CLASSES -- acyl condensation (R56), dehydrative etherification (R57), and dehydrative N-alkylation (R63,
+  generalising the R60 N-methylation sub-case), each with its own conservation-lock proof. N-alkylation covers any
+  non-carbonyl N nucleophile (amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine) by an ALKYL
+  alcohol; ARYL amination (a C-N onto an aromatic ring carbon, the phenol->aniline fake) and masked-carbonyl donors
+  (hemiaminal/acetal condensations) are excluded, and other real condensations (Friedel-Crafts, Kolbe-Schmitt,
+  Claisen) are demoted-as-unrecognized: honest coverage
+  loss, NOT false-VOUCH. Each is a future round behind its own gate.
 * LOCALITY (R57 debt, CLOSED by R58 span reading) -- a whole-molecule census is non-local, so R56/R57 borrowed
   the generator's k=1 single-cut invariant (``max_reactant_cuts = 1``, the production default). R58 distils the
   reaction-centre span the generator already computes (``CappedScission.cut``/``.caps``) into a coordinate-free
@@ -122,7 +132,7 @@ def _acyl_condensation(step) -> bool:
     is exactly a step with no readable centre.  Under the old fallback a tamperer could strip the centre off a fake
     to buy a census-only vouch; now centre-omission can only DEMOTE (false-UNRECOGNIZED, safe), never false-VOUCH
     (catastrophic).  A genuine hand-built acyl step loses its vouch too -- accepted coverage loss, the same trade
-    :func:`_n_methylation` already makes ([[a-whole-set-count-classifier-is-fooled-by-non-locality]])."""
+    :func:`_n_alkylation` already makes ([[a-whole-set-count-classifier-is-fooled-by-non-locality]])."""
     from .feasibility import _is_intermolecular_acyl_condensation
     if not _is_intermolecular_acyl_condensation(step):
         return False
@@ -151,7 +161,7 @@ def _etherification(step) -> bool:
     bundled fakes (which have a non-elementary span) stay demoted.
 
     FAIL-CLOSED on an absent centre (TAMPER-HARDENING-01).  Like :func:`_acyl_condensation` and
-    :func:`_n_methylation`, a centre-less step now BLOCKS rather than falling back to the non-local R57 census: a
+    :func:`_n_alkylation`, a centre-less step now BLOCKS rather than falling back to the non-local R57 census: a
     nulled ``reaction_center`` in a serialized replay can therefore only DEMOTE, never buy a census-only vouch --
     centre-omission is false-UNRECOGNIZED (safe), not false-VOUCH."""
     from .feasibility import _ether_shape_and_net_change
@@ -161,45 +171,69 @@ def _etherification(step) -> bool:
     return _ether_shape_and_net_change(step) and center.is_elementary_condensation(("O",))
 
 
-def _n_methylation(step) -> bool:
-    """Recognizer: an intermolecular dehydrative N-METHYLATION (R2N-H + CH3-OH -> R2N-CH3 + water), R60.
+def _n_alkylation(step) -> bool:
+    """Recognizer: an intermolecular dehydrative N-ALKYLATION (non-carbonyl N-H + alkyl-OH -> N-alkyl + water), R63.
 
-    The THIRD conservation-locked class, and the one the R56 record explicitly deferred: a GENERAL "new C-N bond"
-    recognizer collides -- it fires on both real caffeine N-methylation and the fake phenol->aniline aryl
-    amination, the R55 theorem one alphabet over.  The two even share a BYTE-IDENTICAL reaction centre
-    (``formed={C-N, O-H}``, ``broken={C-O, N-H}``, one component), so the span check alone (mirroring
-    :func:`_etherification`, :meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation` with
-    ``("N",)``) does NOT lock.  The census supplies what the span cannot: the whole-molecule predicate
-    (:func:`~smartchem.experiment.feasibility._methylation_shape_and_net_change`) requires a METHANOL-specific
-    alcohol net-consumed (literally CH3-OH -- excludes phenol-O and every longer alcohol, so general N-alkylation
-    is not admitted) and an N-methyl amine net-formed on a non-carbonyl N (excludes the aryl-amination fake and
-    stays disjoint from the acyl/amidation class).
+    The FOURTH conservation-locked class, GENERALISING the R60 N-methylation recognizer to any ALKYL alcohol donor
+    and any non-carbonyl nitrogen nucleophile -- the class the R56/R60 record deferred to "a future round
+    behind its own gate".  It subsumes N-methylation (methanol is an alkyl alcohol; a methyl bond is an sp3 C-N
+    bond), so it REPLACES rather than supplements it: caffeine (theophylline + methanol -> caffeine + water) is
+    still vouched here, and the tight methanol sub-case census is retained in :mod:`smartchem.experiment.feasibility`
+    as the R60 anchor proof.  SCOPE (R63 direction, operator-confirmed): the vouched class is dehydrative
+    N-alkylation onto ANY non-carbonyl nitrogen nucleophile -- an aliphatic amine, a pyrrole-type heterocyclic ring
+    N (imidazole/pyrrole/indole, the caffeine-class xanthine N7), a sulfonamide, hydrazide/hydrazine, hydroxylamine,
+    or amidine/guanidine N -- all real N-alkylation reaction TYPES (Problem A; an adversary re-attack confirmed every
+    admitted N is a genuine N-alkylation, no fiction).  Feasibility (Problem B: these want an activator) stays
+    deferred, exactly as the acyl recognizer vouches activator-requiring esterification.  The label reads
+    "non-carbonyl N-H" to name this scope honestly rather than understate it as "amine".
 
-    FAIL-CLOSED on an absent centre (the gate finding, R60 -- now the shared discipline of all three recognizers per
-    TAMPER-HARDENING-01).  This recognizer does NOT fall back to the whole-molecule census when a step carries no
-    reaction centre -- it BLOCKS (as acyl and ether now do too).  The census is non-local, and a
-    centre-less homologation forges the net signature: ``N-methylformamide + methanol -> CNCC=O + water`` inserts
-    methanol's carbon as a CH2 and MIGRATES the carbonyl off the N, unmasking the amide's PRE-EXISTING methyl, so
-    ``_n_methyl_amine_count`` reads a spurious 0->1 rise with no methyl actually transferred.  The R58 span closes
-    exactly this ([[a-whole-set-count-classifier-is-fooled-by-non-locality]]), so a VOUCH REQUIRES a readable,
-    elementary N-centre.  A centre-less step is honest coverage loss (false-UNRECOGNIZED, safe), never a census-only
-    vouch (false-VOUCH, catastrophic) -- the arch's declared-but-unrecognizable-input-must-BLOCK polarity."""
-    from .feasibility import _methylation_shape_and_net_change
+    The lock is R60's, widened -- and hardened against two adversary kills the review gate caught (the meta-lesson:
+    run adversaries SEPARATELY from acceptance).  The span check alone
+    (:meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation` with ``("N",)``, the SAME signature
+    methylation used -- element pairs do not change with chain length) does NOT lock: it certifies "one C-N single
+    bond forms displacing one C-O, H migrating N->O", but NOT that the carbon is alkyl nor that the N is a real
+    amine.  The census (:func:`~smartchem.experiment.feasibility._n_alkylation_shape_and_net_change`) supplies both,
+    with each clause carrying a kill it closes:
+    * an ALKYL-carbinol alcohol net-consumed (:func:`~smartchem.experiment.feasibility._alkyl_carbinol_alcohol_count`,
+      NOT the looser ``_alcohol_counts``).  KILL 1 (dalembert): ``_alcohol_counts`` is blind to a carbinol carbon's
+      alpha-heteroatom neighbours, so a hemiaminal / gem-diol / hemiacetal (a MASKED carbonyl) posed as an alcohol
+      and vouched an aminal/acetal condensation (``ammonia + aminomethanol -> methylenediamine + water``).  The
+      alkyl-carbinol predicate forbids the carbonyl oxidation level, closing it with no genuine-case loss.  It also
+      keeps the phenol->aniline aryl-amination fake demoted (phenol-O is aromatic, not an alkyl carbinol).
+    * an sp3-C--to--(non-carbonyl-N) BOND net-formed (:func:`~smartchem.experiment.feasibility._n_alkyl_amine_bond_count`).
+      Counting BONDS not N atoms makes the net rise by exactly one per alkylation even for an already-alkylated
+      secondary amine.  KILL 2 (evil-morty): the old comment claimed "aromatic N carries an order-2 bond" -- FALSE
+      for a pyrrole-type N, which is all-single, so azole N slipped through mislabelled as an aliphatic amine.  The
+      R63 direction RESOLVES this by admitting azole N as a real class (see SCOPE); the aryl-amination fake is still
+      excluded, but through the CARBON clause (an aryl C-N is not an sp3 C-N), never the N clause.
+    Within the elementary shape + this centre, formula conservation then FORCES the (now provably alkyl) carbinol
+    carbon onto the (amine-or-azole) nitrogen -- a genuine N-alkylation (the conservation-lock proof).
+
+    FAIL-CLOSED on an absent centre (TAMPER-HARDENING-01, inherited from R60).  This recognizer does NOT fall back to
+    the whole-molecule census when a step carries no reaction centre -- it BLOCKS (as acyl and ether do too).  The
+    census is non-local, and a centre-less homologation forges the net signature: ``N-methylformamide + methanol ->
+    CNCC=O + water`` MIGRATES the carbonyl off the N, unmasking a pre-existing alkyl, so the bond census reads a
+    spurious rise with no alkyl actually transferred.  The span closes exactly this
+    ([[a-whole-set-count-classifier-is-fooled-by-non-locality]]), so a VOUCH REQUIRES a readable, elementary
+    N-centre.  A centre-less step is honest coverage loss (false-UNRECOGNIZED, safe), never a census-only vouch
+    (false-VOUCH, catastrophic) -- the arch's declared-but-unrecognizable-input-must-BLOCK polarity."""
+    from .feasibility import _n_alkylation_shape_and_net_change
     center = getattr(step, "reaction_center", None)
     if center is None:
         return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (gate finding)
-    return _methylation_shape_and_net_change(step) and center.is_elementary_condensation(("N",))
+    return _n_alkylation_shape_and_net_change(step) and center.is_elementary_condensation(("N",))
 
 
 #: The positive whitelist of attested reaction-class recognizers: ``(class_name, predicate)``. A step is
 #: recognized iff SOME predicate fires. Every entry MUST carry a conservation-lock proof (see the module
 #: docstring); a general bounded-radius recognizer is exactly escape #7 and is not admitted. R56 shipped acyl;
-#: R57 added dehydrative etherification; R60 adds dehydrative N-methylation (each a conservation-locked class,
-#: NOT a bounded-radius patch).
+#: R57 added dehydrative etherification; R60 added dehydrative N-methylation and R63 GENERALISES it to dehydrative
+#: N-alkylation by any sp3 alcohol (subsuming the methyl sub-case; each a conservation-locked class, NOT a
+#: bounded-radius patch).
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
-    ("N-methylation (dehydrative, R2N-H + CH3-OH -> R2N-CH3 + water)", _n_methylation),
+    ("N-alkylation (dehydrative, non-carbonyl N-H + alkyl-OH -> N-alkyl + water)", _n_alkylation),
 )
 
 

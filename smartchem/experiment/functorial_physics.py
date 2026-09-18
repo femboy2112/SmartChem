@@ -41,6 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..open_core import Decoration, DiagramCompositionError
+from .order import non_dominated_indices
 
 __all__ = [
     "FreeEnergyDecoration",
@@ -166,10 +167,10 @@ def pareto_optimal(objectives: tuple[PhysicsProduct, ...]) -> tuple[int, ...]:
     everything -- we do not certify a point on physics we do not have).  Ties are kept: two distinct
     points with identical objectives never dominate each other (dominance requires a strict axis), so
     both survive.  The frontier's index order follows the input order.
+
+    The maximal-antichain sweep is the shared :func:`order.non_dominated_indices` primitive; this function
+    supplies the M2-FP product order (``a.dominates(b)``) and the completeness eligibility domain.
     """
-    complete = [i for i, obj in enumerate(objectives) if obj.is_complete]
-    return tuple(
-        i
-        for i in complete
-        if not any(objectives[j].dominates(objectives[i]) for j in complete if j != i)
+    return non_dominated_indices(
+        objectives, lambda a, b: a.dominates(b), eligible=lambda o: o.is_complete
     )

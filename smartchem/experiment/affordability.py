@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from ..contracts import Digestible
+from .order import non_dominated_indices
 
 #: The numeric affordability axes, ALL minimized (lower is better/cheaper/easier).  Kept as a tuple so `dominates`
 #: iterates exactly the section-10.4 axes and a new axis is added in one place.
@@ -292,18 +293,18 @@ def dominates(a: CostVector, b: CostVector) -> bool:
 
 def pareto_frontier(items: "list") -> "list":
     """The non-dominated subset of ``items`` (order preserved).  Each item must expose a ``.cost_vector`` of type
-    :class:`CostVector`.  An item is on the frontier iff no OTHER item strictly dominates it."""
+    :class:`CostVector`.  An item is on the frontier iff no OTHER item strictly dominates it.
+
+    The maximal-antichain sweep is the shared :func:`order.non_dominated_indices` primitive; this function supplies
+    the disposition/cost order (:func:`dominates` over the extracted :class:`CostVector`s)."""
     vecs = []
     for it in items:
         v = getattr(it, "cost_vector", None)
         if type(v) is not CostVector:
             raise TypeError("every item must expose a .cost_vector of type CostVector")
         vecs.append(v)
-    frontier = []
-    for i, it in enumerate(items):
-        if not any(j != i and dominates(vecs[j], vecs[i]) for j in range(len(items))):
-            frontier.append(it)
-    return frontier
+    keep = non_dominated_indices(vecs, dominates)
+    return [items[i] for i in keep]
 
 
 # access-difficulty ordinal for a commodity's curated availability (easiest-first == smallest, section reagents.py).

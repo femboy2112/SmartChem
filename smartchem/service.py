@@ -151,8 +151,10 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # R59 disposition serialized-tamper (a stripped blocker flipping REAL_BUT_HARD/NOT_A_REACTION up to CLEAN, undetected
 # because the frontier is EXCLUDED from result_digest).  FULLY closed on every transport: the process-exclusion
 # channel (re-derived from digest-covered process_requirements, no replay needed).  The catalyst/fiction channels are
-# closed only on the THICK transport (include_replay=True, digest-bound); on the DEFAULT thin transport they are
-# ADVISORY (a tracked follow-up).  The bump carries no shape change; it marks the version at/after which a loaded
+# closed on the THICK transport (include_replay=True, digest-bound) and, under verified admission, on the thin
+# transport too -- a thin (replay-absent) load then fails CLOSED rather than trusting the unverifiable disposition
+# (replay-MANDATORY-for-disposition-claims); a bare non-verified load keeps them ADVISORY.  The bump carries no shape
+# change; it marks the version at/after which a loaded
 # response is frontier-coherence-checked, so a pre-guarantee v1alpha12 payload is refused by the strict schema gate.
 COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha13"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
@@ -1369,6 +1371,22 @@ class CompilationResponse:
             }
             if len(frontier_ids) != len(set(frontier_ids)) or not set(frontier_ids) <= candidate_ids:
                 raise ValueError("affordability frontier must identify unique returned IR candidates")
+            # FRONTIER<=DOSSIERS (TAMPER-HARDENING-01, thin-transport-closure fold).  Every honest frontier entry is
+            # built from a ranked route summary and keyed by that summary's ``route_digest`` (``_affordability_frontier``),
+            # so a frontier entry ALWAYS has a matching ``ranked_route_dossiers`` entry -- the authority its disposition
+            # is re-derived against on load.  Enforce that here, UNCONDITIONALLY (not only under a process box): an entry
+            # whose ``route_digest`` matches no dossier is UNVERIFIABLE, and a tamperer who DELETES the matching dossier
+            # (the frontier is digest-excluded, so the deletion is otherwise only caught if it perturbs the digest-covered
+            # dossier list) would otherwise reach the ``summary is None`` skip in ``_check_frontier_coherence`` and slip a
+            # forged CLEAN disposition past even verified admission.  Making the state unrepresentable closes that on
+            # every transport and every load mode; the fail-closed skip below is the defence-in-depth backstop.
+            dossier_ids = {r.route_digest for r in self.ranked_route_dossiers}
+            if not set(frontier_ids) <= dossier_ids:
+                raise ValueError(
+                    "affordability frontier must reference ranked_route_dossiers routes -- an entry whose route_digest "
+                    "matches no dossier is UNVERIFIABLE (its disposition cannot be re-derived); refused "
+                    "(TAMPER-HARDENING-01, frontier<=dossiers)"
+                )
             if self.request.constraints.process.constrains_anything and not set(frontier_ids) <= set(
                 self._frontier_admissible_route_digests
             ):
@@ -1520,7 +1538,7 @@ class CompilationResponse:
                 if hidden:
                     raise ValueError(f"DAG {d.route_digest} (EXCLUDED) hides re-derived process exclusions: {hidden}")
 
-    def _check_frontier_coherence(self) -> None:
+    def _check_frontier_coherence(self, *, require_verified_admission: bool = False) -> None:
         """Re-derive each affordability_frontier entry's DISPOSITION blockers and refuse an entry whose claimed
         blockers are looser than the re-derivation (TAMPER-HARDENING-01 -- the R59 disposition serialized-tamper close).
 
@@ -1566,12 +1584,19 @@ class CompilationResponse:
           present.  KILL 1 binds ``route.digest == e.route_digest``, so the evidence cannot be substituted or nulled
           (PIECE 2 demotes a centre-less step); the re-derivation reads the REAL route, so any strip is caught, down to
           a SHA-256 collision on the route digest (cryptographic, out of scope).
-        * THE DEFAULT-TRANSPORT BOUNDARY -- NOT an edge case, it is the DEFAULT.  ``response_to_payload`` emits the
-          replay only on ``include_replay=True`` (DEFAULT ``False``, what a verified-admission consumer requests), so
-          on the DEFAULT THIN transport the catalyst/fiction channels have no evidence to re-derive from: a
-          ``fiction_blockers`` (or catalyst) strip is NOT detected.  The thin frontier carries ADVISORY dispositions.
-          This is DELIBERATELY not closed here (no fail-closed-on-thin, no default include_replay flip) -- full
-          thin-transport closure needs replay-MANDATORY-for-disposition-claims or HMAC signing, a tracked follow-up.
+        * THE THIN TRANSPORT, UNDER VERIFIED ADMISSION -- now CLOSED, fail-closed (``require_verified_admission=True``).
+          ``response_to_payload`` emits the replay only on ``include_replay=True`` (DEFAULT ``False``), so on the thin
+          transport the catalyst/fiction channels have no evidence to re-derive from.  Rather than trust the
+          unverifiable claim (fail-open, the old boundary), a verified-admission load now REFUSES any frontier entry
+          whose summary carries no ``replay_payload`` -- replay-MANDATORY-for-disposition-claims, mirroring
+          ``_check_verified_admission``'s own "FITS route with no replay -> UNVERIFIED -> refused".  This is
+          false-reject-free by construction: an in-memory summary ALWAYS carries its replay (``of_fit``), and a thick
+          serialization round-trips it, so only a genuinely thin (evidence-stripped) transport trips the refusal.
+        * THE THIN TRANSPORT, WITHOUT VERIFIED ADMISSION (a bare ``response_from_payload``) -- still ADVISORY, by design.
+          A consumer that does not ask for verified admission is not promised re-derivation; the thin frontier's
+          catalyst/fiction dispositions remain producer-declared (the process ``hard_blockers`` channel below still
+          bites on every transport).  A consumer who needs the guarantee passes ``require_verified_admission=True`` and
+          the producer serves ``include_replay=True`` -- the same contract the route/DAG admission axis already uses.
         * OFF a process box, ``hard_blockers`` are the summary's FREE-TEXT physical/composability ``exclusions`` (not
           re-derivable from the thin projection), so a non-process hard blocker stripped off-box is not caught -- the
           same free-text boundary :meth:`_check_process_admission_coherence` carries.
@@ -1588,10 +1613,30 @@ class CompilationResponse:
         for e in self.affordability_frontier:
             summary = by_digest.get(e.route_digest)
             if summary is None:
-                # every process-constrained frontier entry is a member of ``_frontier_admissible_route_digests`` (a
-                # ranked_route_dossiers digest), so this is unreachable there; with no matching summary there is no
-                # authority to re-derive against, so nothing to check.
-                continue
+                # UNREACHABLE after the __post_init__ FRONTIER<=DOSSIERS guard (every frontier entry has a matching
+                # dossier).  Kept as the fail-CLOSED backstop: with no matching summary there is NO authority to
+                # re-derive the disposition against, so the entry is UNVERIFIABLE -- refuse it rather than skip (a skip
+                # is fail-OPEN, the hole a dossier-deletion tamper drove through before the __post_init__ guard closed
+                # it).  Fail closed at every layer -- do not trust a single guard to stay in place.
+                raise ValueError(
+                    f"affordability frontier entry {e.route_digest} has no matching ranked_route_dossier -- its "
+                    f"disposition is UNVERIFIABLE (no authority to re-derive against); refused (TAMPER-HARDENING-01)"
+                )
+            # THIN-TRANSPORT CLOSURE.  Under verified admission the fiction/catalyst channel MUST be re-derivable, and
+            # that re-derivation needs the thick ``replay_payload`` (the route to reconstruct).  A missing payload leaves
+            # the entry's fiction/catalyst disposition UNVERIFIED -- so a stripped ``fiction_blockers`` (the DEFAULT-thin
+            # forgery the old boundary left open) could pass.  Fail CLOSED, mirroring ``_check_verified_admission``'s
+            # own "FITS route with no replay -> UNVERIFIED -> refused" rule: a verified-admission consumer that cannot
+            # verify a disposition refuses it, rather than trusting the unverifiable claim.  (The process ``hard_blockers``
+            # channel re-derives WITHOUT replay and is still checked on every transport below -- but the process channel
+            # alone cannot rule out a hidden fiction blocker, so verified admission requires the replay regardless.)
+            if require_verified_admission and summary.replay_payload is None:
+                raise ValueError(
+                    f"verified admission: affordability frontier entry {e.route_digest} carries no replay_payload -- its "
+                    f"fiction/catalyst disposition is UNVERIFIED (the DEFAULT thin transport omits the replay, so a "
+                    f"stripped fiction/catalyst blocker cannot be re-derived and refuted; the producer must serialize "
+                    f"with include_replay=True); refused (TAMPER-HARDENING-01, thin-transport closure)"
+                )
             rederived_hard: set[str] = set()
             rederived_fiction: set[str] = set()
             # process-exclusion hardness: authenticated from the digest-covered per-step requirements (no replay
@@ -3315,8 +3360,10 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     pass) and re-derives each affordability_frontier entry's DISPOSITION blockers (the frontier is EXCLUDED from
     ``result_digest``, so this is the only guard on it).  It FULLY closes the process-exclusion ``hard_blockers`` strip
     on EVERY transport (that channel needs no replay), and the CATALYST/FICTION strip on the THICK transport
-    (``include_replay=True``, digest-bound via KILL 1).  On the DEFAULT thin transport the catalyst/fiction channels are
-    ADVISORY -- a strip there is not detected (see the BOUNDARY on ``_check_frontier_coherence``).
+    (``include_replay=True``, digest-bound via KILL 1).  Under ``require_verified_admission`` the thin transport is
+    ALSO closed: a frontier entry with no ``replay_payload`` is UNVERIFIED and REFUSED (replay-MANDATORY-for-
+    disposition-claims), fail-closed exactly as a FITS route with no replay is.  A bare (non-verified) load keeps the
+    thin catalyst/fiction dispositions ADVISORY (see the BOUNDARY on ``_check_frontier_coherence``).
     RESIDUAL WITHOUT A SIGNATURE (two parts, both closed by COMBINED-VERDICT-AUTH's ``verification_key`` path below):
     (a) ``fit_status`` is the COMBINED verdict, and its OTHER two components -- composability and the
     physical/reagent/equipment box -- are NOT re-derived (they carry only free-text ``exclusions``/``gaps``,
@@ -3388,7 +3435,7 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # entry whose blockers were stripped to forge a better disposition).  It lives here, at the deserialization seam,
     # rather than in __post_init__ because -- like _check_verified_admission -- it reconstructs routes from the replay
     # payload, which is a load-time authority, not an in-memory-construction invariant.
-    response._check_frontier_coherence()
+    response._check_frontier_coherence(require_verified_admission=require_verified_admission)
     return response
 
 

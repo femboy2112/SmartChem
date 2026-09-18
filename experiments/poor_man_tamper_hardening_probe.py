@@ -50,6 +50,9 @@ THIS PROBE FREEZES, against LIVE code:
   (5) the PIECE-2 unit facts: acyl/ether/N-methylation centre-LESS steps all DEMOTE while their centre-CARRYING forms
       VOUCH, and the sharp evasion case -- a k=2 bundle the CENSUS vouches but the SPAN demotes -- whose centre-less
       twin now FAILS CLOSED (pre-hardening it census-vouched).
+  (6) FRONTIER<=DOSSIERS: a forged-CLEAN entry whose matching dossier is DELETED (so it would hit the summary-None
+      skip and dodge re-derivation) is REFUSED at construction, unconditionally -- under verified admission and on a
+      bare load -- flipping the honest NOT_A_REACTION tier to CLEAN was the red-team's CRITICAL fail-open; now closed.
   (6) the RESIDUAL boundary, stated not hidden: ``result_digest`` does not cover the frontier, so a fully-coherent
       forger who FABRICATES a self-consistent replay is indistinguishable from honest at this structural layer -- that
       needs HMAC signing (COMBINED-VERDICT-AUTH), out of scope.  The honest self-consistent response loads, as it must.
@@ -73,7 +76,7 @@ from smartchem.service import (
     build_recompile_request, run_compilation, response_to_payload, response_from_payload,
 )
 
-FROZEN_HASH = "10eef051604a03ad3949391c57ac5924001bc8c36ae51af7cde5a47f4dc609e3"
+FROZEN_HASH = "3e8d421743776da09619792a71ca84ccd1b2672ca18f4b88eab4dbb558fc8134"
 
 #: a poor-man kitchen inventory that LACKS lab glassware -> the Fischer esterification is process-EXCLUDED (REAL_BUT_HARD).
 _KITCHEN = ("stovetop", "pot", "glass jar", "thermometer", "spoon", "funnel")
@@ -310,6 +313,33 @@ def residual_boundary_stated() -> dict:
     }
 
 
+# --------------------------------------------------------------------------------------------------
+# (7) FRONTIER<=DOSSIERS: a forged-CLEAN entry whose matching dossier is DELETED (the summary-None skip) is refused.
+# --------------------------------------------------------------------------------------------------
+def frontier_entry_without_dossier_is_refused() -> dict:
+    """The CRITICAL fail-open the first thin-transport-closure attempt left open (red-team finding): strip
+    fiction_blockers AND delete the entry's matching ranked_route_dossier, so the entry would hit the ``summary is
+    None`` skip and dodge all disposition re-derivation.  The __post_init__ FRONTIER<=DOSSIERS guard refuses it at
+    construction -- unconditionally, so under verified admission AND on a bare load."""
+    honest = _unbounded_payload()                                    # thick, carries NOT_A_REACTION fictions
+    fr = honest["affordability_frontier"]
+    fic = [i for i, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"]]
+    rd = fr[fic[0]]["route_digest"]
+    # the honest entry's tier (NOT_A_REACTION) vs the tier the STRIPPED CostVector would forge (CLEAN)
+    honest_tier = CostVector(fiction_blockers=tuple(fr[fic[0]]["cost_vector"]["fiction_blockers"])).disposition
+    forged_tier = CostVector(fiction_blockers=()).disposition
+    tampered = copy.deepcopy(honest)
+    tampered["affordability_frontier"][fic[0]]["cost_vector"]["fiction_blockers"] = []
+    tampered["ranked_route_dossiers"] = [d for d in tampered["ranked_route_dossiers"] if d["route_digest"] != rd]
+    return {
+        "fiction_entry_present": bool(fic),
+        "honest_tier_is_not_a_reaction": honest_tier == Disposition.NOT_A_REACTION,
+        "forged_tier_is_clean": forged_tier == Disposition.CLEAN,
+        "dossier_deletion_refused_under_va": _refused(copy.deepcopy(tampered)),
+        "dossier_deletion_refused_bare": not _loads_bare(copy.deepcopy(tampered)),
+    }
+
+
 def _payload() -> dict:
     hard = hard_tamper_reproduced_then_refused()
     fic = fiction_tamper_reproduced_then_refused()
@@ -317,6 +347,7 @@ def _payload() -> dict:
     thin = thin_transport_fiction_closed_under_verified_admission()
     unit = centre_absent_is_fail_closed()
     resid = residual_boundary_stated()
+    nodossier = frontier_entry_without_dossier_is_refused()
     return {
         "schema": "poor-man-tamper-hardening-01",
         "hard_tamper": hard,
@@ -325,6 +356,7 @@ def _payload() -> dict:
         "thin_transport_boundary": thin,
         "centre_absent_fail_closed": unit,
         "residual_boundary": resid,
+        "frontier_without_dossier": nodossier,
         # THE VERDICT: both channels of the R59 forgery are closed on load -- the PROVEN REAL_BUT_HARD->CLEAN strip
         # (digest-invariant, now refused), the NOT_A_REACTION->CLEAN strip and its centre-null evasion (refused), the
         # centre-absent recognizers fail closed while centre-carrying ones vouch, and -- the thin-transport closure --
@@ -346,6 +378,9 @@ def _payload() -> dict:
             and unit["acyl_centre_carrying_vouched"] and unit["ether_centre_carrying_vouched"]
             and unit["census_vouch_span_demote_bundle_present"] and unit["centreless_twin_fails_closed"]
             and resid["result_digest_excludes_the_frontier"] and resid["honest_self_consistent_replay_loads"]
+            and nodossier["fiction_entry_present"] and nodossier["honest_tier_is_not_a_reaction"]
+            and nodossier["forged_tier_is_clean"]
+            and nodossier["dossier_deletion_refused_under_va"] and nodossier["dossier_deletion_refused_bare"]
         ),
     }
 
@@ -391,6 +426,13 @@ def validate() -> bool:
     r = p["residual_boundary"]
     assert r["result_digest_excludes_the_frontier"], f"the frontier unexpectedly entered result_digest: {r}"
     assert r["honest_self_consistent_replay_loads"], f"the honest replay is refused: {r}"
+    n = p["frontier_without_dossier"]
+    assert n["honest_tier_is_not_a_reaction"] and n["forged_tier_is_clean"], \
+        f"the dossier-deletion tamper does not flip NOT_A_REACTION->CLEAN -- re-state the hole: {n}"
+    assert n["dossier_deletion_refused_under_va"], \
+        f"FRONTIER<=DOSSIERS OPEN: a forged-CLEAN entry with its dossier deleted loaded under verified admission: {n}"
+    assert n["dossier_deletion_refused_bare"], \
+        f"FRONTIER<=DOSSIERS OPEN: the dossier-deletion forgery loaded on a bare load (the guard is not unconditional): {n}"
     assert p["ship_verdict"], f"TAMPER-HARDENING-01 SHIP verdict does not hold: {p}"
     return True
 

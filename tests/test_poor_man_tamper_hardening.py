@@ -115,6 +115,39 @@ def test_a_substituted_replay_under_a_stripped_entry_is_refused():
         response_from_payload(tampered, require_verified_admission=True)
 
 
+def test_a_frontier_entry_whose_dossier_is_deleted_is_refused():
+    # evil-morty CRITICAL (the fail-open the first thin-transport-closure attempt left open): strip fiction_blockers
+    # AND DELETE the entry's matching ranked_route_dossier, so the entry would hit the `summary is None` path and skip
+    # ALL disposition re-derivation -> a forged NOT_A_REACTION->CLEAN loaded.  The __post_init__ FRONTIER<=DOSSIERS
+    # guard now refuses it at construction, UNCONDITIONALLY -- so it is caught under verified admission, on a bare
+    # load, and on the thin transport alike (the guard is transport- and mode-agnostic; no dossier == unverifiable).
+    honest = _unbounded_payload()                                    # thick
+    fr = honest["affordability_frontier"]
+    i = next(j for j, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"])
+    rd = fr[i]["route_digest"]
+    tampered = copy.deepcopy(honest)
+    tampered["affordability_frontier"][i]["cost_vector"]["fiction_blockers"] = []
+    tampered["ranked_route_dossiers"] = [d for d in tampered["ranked_route_dossiers"] if d["route_digest"] != rd]
+    with pytest.raises(ValueError, match="frontier<=dossiers|no matching|UNVERIFIABLE|dossier"):
+        response_from_payload(tampered, require_verified_admission=True)          # verified admission
+    with pytest.raises(ValueError, match="frontier<=dossiers|no matching|UNVERIFIABLE|dossier"):
+        response_from_payload(copy.deepcopy(tampered))                            # bare load -- guard is unconditional
+
+
+def test_a_thin_frontier_entry_whose_dossier_is_deleted_is_refused():
+    # the same dossier-deletion tamper on the DEFAULT thin transport (no replay): still refused by FRONTIER<=DOSSIERS,
+    # so the forgery cannot hide behind the replay-absent skip either.
+    resp = run_compilation(build_recompile_request("isopentyl acetate", max_depth=3))
+    thin = response_to_payload(resp)                                 # include_replay defaults False -> no replay
+    fr = thin["affordability_frontier"]
+    i = next(j for j, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"])
+    rd = fr[i]["route_digest"]
+    thin["affordability_frontier"][i]["cost_vector"]["fiction_blockers"] = []
+    thin["ranked_route_dossiers"] = [d for d in thin["ranked_route_dossiers"] if d["route_digest"] != rd]
+    with pytest.raises(ValueError, match="frontier<=dossiers|no matching|UNVERIFIABLE|dossier"):
+        response_from_payload(thin, require_verified_admission=True)
+
+
 def test_the_honest_payload_still_loads():
     # no false positives: a genuine response round-trips cleanly on both frontiers.
     response_from_payload(_bounded_payload(), require_verified_admission=True)

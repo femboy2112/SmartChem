@@ -1371,6 +1371,22 @@ class CompilationResponse:
             }
             if len(frontier_ids) != len(set(frontier_ids)) or not set(frontier_ids) <= candidate_ids:
                 raise ValueError("affordability frontier must identify unique returned IR candidates")
+            # FRONTIER<=DOSSIERS (TAMPER-HARDENING-01, thin-transport-closure fold).  Every honest frontier entry is
+            # built from a ranked route summary and keyed by that summary's ``route_digest`` (``_affordability_frontier``),
+            # so a frontier entry ALWAYS has a matching ``ranked_route_dossiers`` entry -- the authority its disposition
+            # is re-derived against on load.  Enforce that here, UNCONDITIONALLY (not only under a process box): an entry
+            # whose ``route_digest`` matches no dossier is UNVERIFIABLE, and a tamperer who DELETES the matching dossier
+            # (the frontier is digest-excluded, so the deletion is otherwise only caught if it perturbs the digest-covered
+            # dossier list) would otherwise reach the ``summary is None`` skip in ``_check_frontier_coherence`` and slip a
+            # forged CLEAN disposition past even verified admission.  Making the state unrepresentable closes that on
+            # every transport and every load mode; the fail-closed skip below is the defence-in-depth backstop.
+            dossier_ids = {r.route_digest for r in self.ranked_route_dossiers}
+            if not set(frontier_ids) <= dossier_ids:
+                raise ValueError(
+                    "affordability frontier must reference ranked_route_dossiers routes -- an entry whose route_digest "
+                    "matches no dossier is UNVERIFIABLE (its disposition cannot be re-derived); refused "
+                    "(TAMPER-HARDENING-01, frontier<=dossiers)"
+                )
             if self.request.constraints.process.constrains_anything and not set(frontier_ids) <= set(
                 self._frontier_admissible_route_digests
             ):
@@ -1597,10 +1613,15 @@ class CompilationResponse:
         for e in self.affordability_frontier:
             summary = by_digest.get(e.route_digest)
             if summary is None:
-                # every process-constrained frontier entry is a member of ``_frontier_admissible_route_digests`` (a
-                # ranked_route_dossiers digest), so this is unreachable there; with no matching summary there is no
-                # authority to re-derive against, so nothing to check.
-                continue
+                # UNREACHABLE after the __post_init__ FRONTIER<=DOSSIERS guard (every frontier entry has a matching
+                # dossier).  Kept as the fail-CLOSED backstop: with no matching summary there is NO authority to
+                # re-derive the disposition against, so the entry is UNVERIFIABLE -- refuse it rather than skip (a skip
+                # is fail-OPEN, the hole a dossier-deletion tamper drove through before the __post_init__ guard closed
+                # it).  Fail closed at every layer -- do not trust a single guard to stay in place.
+                raise ValueError(
+                    f"affordability frontier entry {e.route_digest} has no matching ranked_route_dossier -- its "
+                    f"disposition is UNVERIFIABLE (no authority to re-derive against); refused (TAMPER-HARDENING-01)"
+                )
             # THIN-TRANSPORT CLOSURE.  Under verified admission the fiction/catalyst channel MUST be re-derivable, and
             # that re-derivation needs the thick ``replay_payload`` (the route to reconstruct).  A missing payload leaves
             # the entry's fiction/catalyst disposition UNVERIFIED -- so a stripped ``fiction_blockers`` (the DEFAULT-thin

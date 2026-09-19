@@ -1,0 +1,57 @@
+name: Rule calculus pinned baseline
+
+on:
+  push:
+    branches: [aletheia/chemical-rule-calculus-2026-09-19]
+    paths: [.github/workflows/rule-calculus-snapshot.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 8810a45cd508c250919e9d7f7127133a74ae0c2d
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Capture exact tracked source and offline test dependencies
+        run: |
+          mkdir -p /tmp/smartchem-rule-audit/wheels
+          git rev-parse HEAD > /tmp/smartchem-rule-audit/baseline-commit.txt
+          git status --porcelain=v1 > /tmp/smartchem-rule-audit/worktree.txt
+          git archive --format=tar.gz HEAD -o /tmp/smartchem-rule-audit/source.tar.gz
+          python -m pip download hypothesis sortedcontainers -d /tmp/smartchem-rule-audit/wheels
+          python -m pip install -e '.[dev]'
+          python -m pip freeze > /tmp/smartchem-rule-audit/environment.txt
+      - name: Baseline fast tests in serial file partitions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, subprocess, sys
+          files = sorted(str(p) for p in Path('tests').glob('test_*.py'))
+          rows = []
+          for number in range(0, len(files), 35):
+              part = files[number:number+35]
+              command = [sys.executable, '-m', 'pytest', '-q', '-rs', *part]
+              result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              log = f'partition-{number//35:02d}.txt'
+              Path('/tmp/smartchem-rule-audit', log).write_text(result.stdout)
+              print(log, result.returncode, result.stdout[-1800:], flush=True)
+              rows.append({'command':command, 'returncode':result.returncode, 'log':log})
+          Path('/tmp/smartchem-rule-audit/tests.json').write_text(json.dumps(rows, indent=2)+'\n')
+          raise SystemExit(any(row['returncode'] for row in rows))
+          PY
+      - name: Preserve private baseline source and raw test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartchem-rule-calculus-baseline
+          path: /tmp/smartchem-rule-audit
+          retention-days: 1
+          if-no-files-found: error

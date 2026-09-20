@@ -147,6 +147,15 @@ def retro_da_disconnections(target: BondGraph, *, budget: int = 100000) -> tuple
         # Guard 2: the six matched carbons induce EXACTLY the ring pattern (no extra bond among them).
         if _induced_edges(target, m) != frozenset(Edge(m[e.i], m[e.j], e.order) for e in RETRO_DA.left.edges):
             continue
+        # Guard 2b (evil-morty KILL -- the cyclohexenone/ketene false-VOUCH): every matched carbon becomes an sp2
+        # alkene terminus in the retro products, so NONE may carry an exocyclic MULTIPLE bond.  A ring carbonyl (C=O)
+        # would retro to a KETENE (C=C=O) and an exocyclic alkene to an allene -- cumulenes, not [4+2] partners (a
+        # ketene does [2+2]).  A matched carbon may bond to a non-matched atom ONLY by a single bond.  Fail-closed:
+        # this also drops the rare genuine allene-forming retro-DA (acceptable coverage loss), but it forbids the
+        # catastrophic ketene/enone false-VOUCH.  A norbornene-type single-atom bridge is SINGLE bonds, so it is KEPT.
+        matched = set(m)
+        if any(e.order != 1 for e in target.edges if (e.i in matched) != (e.j in matched)):
+            continue
         # Class witness derived from the match + kernel verify.
         cls = class_witness(w)
         if cls is None:

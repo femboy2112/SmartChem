@@ -192,3 +192,25 @@ def test_forget_is_a_valid_formula_level_decomposition():
     edge = _da_transforms("C1CC=CCC1")[0]
     fe = edge.forget()
     assert fe.equation() == "C6H10 -> C2H4 + C4H6"
+
+
+# --- adversary-gate regressions (run SEPARATELY from acceptance; each pins a fix a review kill forced) ---
+
+def test_enone_ketene_false_vouch_is_killed_by_guard_2b():
+    # evil-morty KILL (CRITICAL false-VOUCH): a ring carbonyl carbon (exocyclic C=O) among the six would retro to a
+    # KETENE (C=C=O) -- chemical fiction, ketenes do [2+2] not [4+2].  Guard 2b (no exocyclic MULTIPLE bond on a
+    # matched carbon) demotes every such enone/tetralone.  These are ordinary stockroom carbonyls; all must be empty.
+    for enone in ("O=C1CCCC=C1",             # cyclohex-2-en-1-one
+                  "O=C1CCC=CC1",             # (rotation/Kekule spelling -> free-ketene fragment)
+                  "O=C1CCCc2ccccc21",        # alpha-tetralone (also dearomatizing)
+                  "CC(=C)C1CC(=O)C=C(C)C1"):  # carvone-type enone
+        assert _da_transforms(enone) == (), f"{enone} must not vouch a (ketene) DA"
+
+
+def test_norbornene_single_atom_bridge_is_genuine_and_kept():
+    # dalembert: norbornene's CH2 bridge is an EXTERNAL 7th carbon joined by SINGLE bonds, so guard 2b keeps it and
+    # the emission is a genuine retro-DA -- coverage is correctly BROADER than a naive "decline all bicyclics"; only
+    # guard 5 declines a bridge that reconnects the diene and dienophile blocks through external atoms.
+    transforms = _da_transforms("C1CC2CC1C=C2")   # norbornene (bicyclo[2.2.1]hept-2-ene), C7H10
+    assert len(transforms) == 1
+    assert {repr(m) for m in transforms[0].products} == {"C2H4", "C5H6"}   # ethylene + cyclopentadiene

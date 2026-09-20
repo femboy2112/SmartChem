@@ -18,7 +18,7 @@ from .category import Config, ConservationError, Molecule, Reaction
 from .contracts import Digestible
 from .decompiler import DecompositionEdge, Formula
 from .rule_calculus import BondGraph, BondRule, Edge, RewriteWitness, RuleError, enumerate_matches, verify
-from .rule_calculus_bridge import _config, _joined
+from .rule_calculus_bridge import _config, _joined, valence_sane
 from .structure_descent import ScissionError
 from .transform_provider import TransformProvider
 
@@ -139,6 +139,8 @@ def retro_da_disconnections(target: BondGraph, *, budget: int = 100000) -> tuple
     """
     if type(target) is not BondGraph:
         raise RuleError("retro_da_disconnections expects a BondGraph target")
+    if not valence_sane(target):
+        return (), True  # a valence-impossible molecule has no valid chemistry: no disconnections, definitively
     receipt = enumerate_matches(RETRO_DA, target, budget=budget)
     audits: list[DisconnectionAudit] = []
     seen_products: set[str] = set()  # collapse symmetric matches that yield the SAME product presentation

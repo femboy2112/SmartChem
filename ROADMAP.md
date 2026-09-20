@@ -137,6 +137,33 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 
 ## ✅ DONE — current shipped capability
 
+**RULE-CALCULUS COURSE CORRECTION (2026-09-19, PR #81) — a checkable structural bond-rewrite layer, plus the audit
+that corrects the genericity audit's overreach.** Entirely ADDITIVE (13 files, 0 modifications to existing behaviour):
+a finite atom-preserving bond-rule kernel (`smartchem/rule_calculus.py`; independent table-replay verifier, per-atom
+degree lock, budgeted match/closure receipts with honest completeness flags), exact relational/interval/symbolic
+semantics (`smartchem/rule_semantics.py`; fibre collisions, image⊣must-preimage adjunction, unknown-absorbing
+intervals, symbolic potential cancellation), and an OPT-IN audited provider at the existing capped-scission seam
+(`smartchem/rule_calculus_bridge.py`; replays every transform both directions, DEFERS class authority to the existing
+oracle, refuses rather than silently drops). Full-checkout gates the author could only run in a sparse workspace:
+kernel/semantics/bridge **40 passed / 0 skipped** (bridge was skipped for them), probe `--integration` **OBSERVED**
+(bridge audits real capped-scissions, recognises acyl/ether/N-alkylation), **6/6 calibrated mutants killed**; full
+OOM-safe suite **5121 pass / 0 fail / 46 skip**.
+- **Math corrections carried** (each a scoped theorem with its boundary, §3 of the course-correction doc): a finite
+  fibre collision refutes ONE observation map, not every local recognizer; a verified graph rewrite is NOT a
+  feasibility/safety certificate; free syntax ≠ a justified quotient; formal reversal ≠ physical reversibility;
+  a distributive law ≠ an adjunction; bounded raw-state completeness ≠ all-route/all-chemistry completeness.
+- **Reconciled the stale oracle prose** (`reaction_type_oracle.py`, docstring-only, behaviour-neutral): `_RECOGNIZERS`
+  has **THREE** active classes — R63 SUBSUMED R60 N-methylation, it is not a fourth entry — and the reaction-type
+  blocker feeds the distinct `fiction_blockers`/NOT_A_REACTION channel R59 split from `hard_blockers`/REAL_BUT_HARD.
+- **CI note**: the repo's GitHub Actions has been failing at startup (≈3 s, zero steps) on EVERY run including main's
+  own merges — an account-level Actions condition (billing/quota/runner), orthogonal to this branch. The local
+  OOM-safe suite remains the source of truth.
+- Docs + receipts: `docs/research/RULE_CALCULUS_COURSE_CORRECTION_2026-09-19.md`,
+  `experiments/validation/rule-calculus-2026-09-19/`. **NEXT ROUND (own branch, adversary-gated):** compile ONE
+  benign new structural rule-family through the UNCHANGED provider/search seam, with the class witness derived from
+  the actual matched rule (not a self-declared name), tested vs the three classes + hostile near-misses + fresh
+  holdouts by an independently implemented verifier.
+
 **ROUND 47 — ranker chemical selectivity: the sound disconnection outranks the dubious one, DERIVED from bond
 energies (not hard-coded)** (one feature PR off `main`; frontier 2 of "full blast on both"). The R45 over-generation
 finding: the ranker put the C–C homologation `ethanol + theophylline → caffeine + methanol` ABOVE the sound

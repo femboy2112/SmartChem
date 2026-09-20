@@ -62,13 +62,16 @@ say "unrecognized reaction type ... NOT a claim of cost or feasibility" so the d
 
 How it wires in (the proven sibling pattern). :func:`route_reaction_type_blockers` mirrors
 :func:`smartchem.experiment.catalyst_availability.route_catalyst_blockers` exactly: one deduplicated reason string
-per unrecognized step, fed into :func:`smartchem.service._affordability_frontier`'s ``hard_blockers`` (section-10.4
-G6: a hard blocker dominates cost), so a route with any unrecognized step sinks on the affordability frontier. It
-runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
+per unrecognized step, fed into :func:`smartchem.service._affordability_frontier`'s ``fiction_blockers`` channel
+(the NOT_A_REACTION disposition, a distinct tuple from ``hard_blockers`` = REAL_BUT_HARD since R59; both are
+section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized step sinks on the affordability
+frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* FOUR CLASSES -- acyl condensation (R56), dehydrative etherification (R57), and dehydrative N-alkylation (R63,
-  generalising the R60 N-methylation sub-case), each with its own conservation-lock proof. N-alkylation covers any
+* THREE ACTIVE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), and dehydrative N-alkylation
+  (R63, generalising and SUBSUMING the R60 N-methylation sub-case -- R63 was the 4th conservation-locked class
+  DEVELOPED, but it REPLACES the R60 entry rather than adding a fourth, so ``_RECOGNIZERS`` holds THREE), each with
+  its own conservation-lock proof. N-alkylation covers any
   non-carbonyl N nucleophile (amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine) by an ALKYL
   alcohol; ARYL amination (a C-N onto an aromatic ring carbon, the phenol->aniline fake) and masked-carbonyl donors
   (hemiaminal/acetal condensations) are excluded, and other real condensations (Friedel-Crafts, Kolbe-Schmitt,
@@ -90,10 +93,14 @@ Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alk
   catastrophic). Centre-carrying live and replayed steps read identically (the centre round-trips through the replay
   payload), so this is the load-time authority :meth:`CompilationResponse._check_frontier_coherence` re-derives the
   fiction channel with.
-* DISPOSITION FLATTENING -- the fiction blocker shares the ``hard_blockers`` tuple with catalyst/section-11
-  blockers, so a "real reaction, needs industrial catalyst" route and a "not a reaction at all" route are both
-  G6-sunk equally (the partial order "real-but-hard strictly outranks not-a-reaction" is lost). A distinct
-  disposition channel is a named follow-up; the honest reason vocabulary is the minimal correct thing this round.
+* DISPOSITION FLATTENING (R56 debt, CLOSED by R59 disposition channel) -- historically the fiction blocker shared
+  the ``hard_blockers`` tuple with catalyst/section-11 blockers, so a "real reaction, needs industrial catalyst"
+  route and a "not a reaction at all" route were both G6-sunk equally (the partial order "real-but-hard strictly
+  outranks not-a-reaction" was lost). R59 SPLIT the channels: ``route_reaction_type_blockers`` now populates a
+  distinct ``fiction_blockers`` tuple (NOT_A_REACTION), separate from ``hard_blockers`` (REAL_BUT_HARD = process +
+  catalyst), giving the disposition its own re-derived, tamper-hardened channel. The ranking-INVERSION that
+  distinction would drive (a real-but-hard route outranking a fiction) still awaits a real metal-catalyst source
+  (escape #7); R59 delivered the VISIBILITY, not yet the inversion.
 * FAIL-CLOSED TOTALITY -- the affordability-frontier build is OUTSIDE the compile path's ScissionError guard, so a
   recognizer that raised would crash compilation OR (worse, if wrapped wrongly) skip a step (a silent vouch).
   Every recognizer call here is guarded so an exception is treated as "did NOT fire" -- an error can only make a
@@ -174,7 +181,8 @@ def _etherification(step) -> bool:
 def _n_alkylation(step) -> bool:
     """Recognizer: an intermolecular dehydrative N-ALKYLATION (non-carbonyl N-H + alkyl-OH -> N-alkyl + water), R63.
 
-    The FOURTH conservation-locked class, GENERALISING the R60 N-methylation recognizer to any ALKYL alcohol donor
+    The fourth conservation-locked class DEVELOPED (it SUBSUMES the R60 N-methylation entry, so ``_RECOGNIZERS``
+    keeps THREE active recognizers), GENERALISING the R60 N-methylation recognizer to any ALKYL alcohol donor
     and any non-carbonyl nitrogen nucleophile -- the class the R56/R60 record deferred to "a future round
     behind its own gate".  It subsumes N-methylation (methanol is an alkyl alcohol; a methyl bond is an sp3 C-N
     bond), so it REPLACES rather than supplements it: caffeine (theophylline + methanol -> caffeine + water) is

@@ -1,0 +1,42 @@
+{
+  "audited_base": "8810a45cd508c250919e9d7f7127133a74ae0c2d",
+  "checks": {
+    "budget_refusal_status": "INCOMPLETE_MATCH_BUDGET",
+    "commuting_square": true,
+    "complete_raw_state_count": 3,
+    "complete_status": "COMPLETE_TO_DEPTH",
+    "composition_context_empty": true,
+    "empty_capability_evidence": "UNKNOWN",
+    "formal_inverse": true,
+    "independence_test": true,
+    "independent_replay": true,
+    "individual_potential_steps_unknown": true,
+    "local_observation_collision_count": 1,
+    "net_after_symbolic_cancellation": [
+      "-8",
+      "-6"
+    ],
+    "scalar_duration_interchange_counterexample": [
+      10,
+      20
+    ],
+    "separately_nonempty_contexts": true
+  },
+  "integration": {
+    "reason": "request --integration in a complete checkout",
+    "status": "NOT_RUN"
+  },
+  "python": "3.13.5",
+  "schema": "smartchem.rule-calculus-probe/v1",
+  "scope": "formal fixed-vertex graphs and declared finite models; no physical validation or production-suite claim",
+  "source_sha256": {
+    "experiments/rule_calculus_mutations.py": "4480e608f9b5bbcfcd097532ad02911cb529e3a08dab1efa8d55dfb95c0c38d0",
+    "experiments/rule_calculus_probe.py": "e290ad532625f83b8f599644b049587acb008c2c2649cf0c17863a378dfa581f",
+    "smartchem/rule_calculus.py": "d7c50c1abf2f84b7621c2939a37b1d1e331aadfdd2a2b8a232dd21fc3fc2a4a8",
+    "smartchem/rule_calculus_bridge.py": "02bdfbeedb5c2d5cdf485fb44de0c6c97c5ce9fadc404e23a5cb7ef81dab92ea",
+    "smartchem/rule_semantics.py": "aecf510fd047720cbb4885b8ac0a4dabe0e1918bd796f7c8fbf37b60d554cd5f",
+    "tests/test_rule_calculus.py": "2e3c95aab751f85dba0c76529cd70824111e96dc158e25763f406d212c25cbe8",
+    "tests/test_rule_calculus_bridge.py": "aad27ccb487a5eff3acbd12fc2c85ae750d05eccca9c0a2af843e071e239c744",
+    "tests/test_rule_semantics.py": "714b913d9e2eb97544cd4e32d4006ec2990de6e0b3c6fb19b5d6d4801b58ca3f"
+  }
+}

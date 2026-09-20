@@ -1,0 +1,111 @@
+{
+  "base_commit": "8810a45cd508c250919e9d7f7127133a74ae0c2d",
+  "branch": "aletheia/rule-calculus-course-correction-2026-09-19",
+  "claims": {
+    "chemical_or_lab_validation": "NOT_CLAIMED",
+    "defaults_and_existing_files": "unchanged by this additive patch",
+    "production_bridge": "UNVERIFIED until full-checkout test/probe runs",
+    "scoped_mathematical_lemmas": "DERIVED in the course-correction document under stated hypotheses",
+    "structural_finite_tests": "OBSERVED",
+    "universal_synthesis": "NOT_CLAIMED"
+  },
+  "commands": [
+    {
+      "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -rs tests/test_rule_calculus.py tests/test_rule_semantics.py tests/test_rule_calculus_bridge.py --junitxml=/mnt/data/smartchem-validation/tests.xml",
+      "exit_code": 0,
+      "failed": 0,
+      "passed": 31,
+      "skipped_modules": 1
+    },
+    {
+      "command": "python -m experiments.rule_calculus_probe",
+      "exit_code": 0,
+      "integration": "NOT_RUN"
+    },
+    {
+      "baseline_passed": 31,
+      "command": "python -m experiments.rule_calculus_mutations",
+      "exit_code": 0,
+      "killed": 6,
+      "total": 6
+    }
+  ],
+  "date": "2026-09-19",
+  "environment": {
+    "original_repo_bridge": "NOT_RUN; one module-level skip",
+    "original_repo_full_suite": "NOT_RUN",
+    "pytest": "9.0.2",
+    "python": "3.13.5",
+    "stand_ins_for_original_modules": false,
+    "workspace": "sparse: new modules only; original package unavailable"
+  },
+  "finite_checks": {
+    "exact_potential_balance_pairs": 625,
+    "graph_match_matrix_comparisons": 17496,
+    "relation_associativity_triples": 4096,
+    "relation_interchange_quadruples": 65536
+  },
+  "independence": "set-rewrite generator, table-replay verifier, matrix-test interpreter; shared author and graph types, not blind agent or independent experimental evidence",
+  "mutations": [
+    {
+      "exit_code": 1,
+      "name": "lost_context",
+      "ordinary_test_failure": true,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "a72b2446fb515d6788ec380cfc2d00e5909d899d1d258ab54722d1f9d1e7db8a"
+    },
+    {
+      "exit_code": 1,
+      "name": "verifier_trusts_target",
+      "ordinary_test_failure": true,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "029bebba34519e7ecb6cbe0e1bb3d8539e859a3a890f3d11be12576e0c5804e4"
+    },
+    {
+      "exit_code": 1,
+      "name": "budget_laundering",
+      "ordinary_test_failure": true,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "67136149388116371bb6fedcdcfa72f2682e5dc9b6db9cf512ff38853f3665b5"
+    },
+    {
+      "exit_code": 1,
+      "name": "false_independence",
+      "ordinary_test_failure": true,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "42f82d29119c639caf59778c60624cb10c19df9e4ded26152e3ea5d1c3a5f91f"
+    },
+    {
+      "exit_code": 1,
+      "name": "unknown_is_free",
+      "ordinary_test_failure": true,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "3ddd1da80a898f05c3b63192f505168d8368a841dd5ac09288367c038d0e3cdf"
+    },
+    {
+      "exit_code": 1,
+      "name": "lost_symbolic_cancellation",
+      "ordinary_test_failure": true,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "4cc5af8be4be93037fef96bc992a3bc760ac7349586d641139170a936f816195"
+    }
+  ],
+  "raw_output_delivery": "tests.txt and probe.json are committed here; complete stdout/stderr and JUnit are included in the delivered sandbox validation archive. Rerun the mutation script to regenerate raw outputs.",
+  "raw_output_sha256": {
+    "mutations.json": "c72030191b4aa6354a341cfddf95ea28420688c5c637877a2963ba4c251325c3",
+    "probe.json": "9091e2c778396bcf9e59e93eb1dd1560cc167e984bc2badfef70a0439e28f744",
+    "tests.txt": "15302aef84ab65c8729f65107ae8028d0f859ac69de7fadef1867b65c6e7443a",
+    "tests.xml": "0fa68b7d560885f6b00b448a14601a6dc35179bcd6f42abd584fc0d70da0545b"
+  },
+  "schema": "smartchem.rule-calculus-validation/v1",
+  "source_sha256": {
+    "experiments/rule_calculus_mutations.py": "4480e608f9b5bbcfcd097532ad02911cb529e3a08dab1efa8d55dfb95c0c38d0",
+    "experiments/rule_calculus_probe.py": "e290ad532625f83b8f599644b049587acb008c2c2649cf0c17863a378dfa581f",
+    "smartchem/rule_calculus.py": "d7c50c1abf2f84b7621c2939a37b1d1e331aadfdd2a2b8a232dd21fc3fc2a4a8",
+    "smartchem/rule_calculus_bridge.py": "02bdfbeedb5c2d5cdf485fb44de0c6c97c5ce9fadc404e23a5cb7ef81dab92ea",
+    "smartchem/rule_semantics.py": "aecf510fd047720cbb4885b8ac0a4dabe0e1918bd796f7c8fbf37b60d554cd5f",
+    "tests/test_rule_calculus.py": "2e3c95aab751f85dba0c76529cd70824111e96dc158e25763f406d212c25cbe8",
+    "tests/test_rule_calculus_bridge.py": "aad27ccb487a5eff3acbd12fc2c85ae750d05eccca9c0a2af843e071e239c744",
+    "tests/test_rule_semantics.py": "714b913d9e2eb97544cd4e32d4006ec2990de6e0b3c6fb19b5d6d4801b58ca3f"
+  }
+}

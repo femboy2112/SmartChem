@@ -51,10 +51,27 @@ _DIENOPHILE = frozenset({4, 5})
 #: gap is exactly the room an oxa/aza retro used to emit a formally-charged oxocarbenium/iminium posed as a neutral
 #: carbonyl/imine -- a TYPE false-vouch the round-9 adversary gate (evil-morty + dalembert) proved end-to-end.
 #: Bounding the centre heteroatom by its NEUTRAL valence closes it with ZERO loss on real neutral cases (an ether O
-#: stays bond-order 2; an N-substituted tetrahydropyridine N stays bond-order 3).  Only C/N/O appear as [4+2] centre
+#: stays bond-order 2; an N-substituted tetrahydropyridine N stays bond-order 3).  SULFUR (thia-DA, :data:`THIA_DA`)
+#: is the round-9 kill ONE ELEMENT OVER: its charge-agnostic ceiling is 6 (hypervalent sulfate/sulfone), but a neutral
+#: thioether/thiocarbonyl S bears bond order 2, and the gap is exactly the room a thia retro used to emit a
+#: formally-charged thiocarbenium/sulfonium posed as a neutral thiocarbonyl -- a measured false-vouch (an S-methylated
+#: dihydrothiopyran, ring S at bond order 3, retro'd to the garbage fragments ``C2S + C4`` WITHOUT this bound, DROPPED
+#: WITH it).  So ``S: 2`` is not optional book-keeping, it is load-bearing the moment thia is in scope, and it is a
+#: NO-OP on the real neutral thiopyran (which disconnects to ``CH2S + C4H6`` either way).  C/N/O/S are the [4+2] centre
 #: atoms today; an unlisted label is unconstrained here (still gated by the charge-agnostic ceiling upstream),
 #: deferred to its own future family's gate.
-_NEUTRAL_VALENCE: dict[str, int] = {"C": 4, "N": 3, "O": 2}
+#:
+#: SCOPE (honest, per dalembert's boundary probe): this bounds only the six MATCHED CENTRE atoms, so it closes the
+#: fiction it targets -- a formally-charged oxocarbenium/iminium/thiocarbenium ON A MATCHED CENTRE drawn neutral (a
+#: :class:`BondRule` preserves degree, so a matched atom bounded here is bounded in the emitted fragment too).  It
+#: does NOT certify that an emitted fragment is neutral at EVERY atom: a NON-matched spectator substituent may still
+#: carry a formal charge (a net-neutral, valence-sane molecule can hold a charge-separated substituent -- an O at
+#: degree 3 -- since the graph carries only NET molecular charge, the same declared ``valence_sane`` boundary that
+#: admits CO/ozone).  That is NOT a reaction-TYPE false-vouch (the [4+2] relation is genuine and the substituent is a
+#: spectator on both sides), and it is not what guard 2c claims to close.  Certifying whole-fragment neutrality would
+#: be a MEASURED tradeoff (it would false-reject a genuine charge-separated-neutral substituent), so it stays a future
+#: labeled option, never a silent tightening.
+_NEUTRAL_VALENCE: dict[str, int] = {"C": 4, "N": 3, "O": 2, "S": 2}
 
 def _synthesis_center(rule: BondRule) -> ReactionCenter:
     """The coordinate-free reaction centre of ``rule`` in the SYNTHESIS (left->right) direction, DERIVED from the
@@ -287,6 +304,56 @@ def retro_da_disconnections(target: BondGraph, *, budget: int = 100000) -> tuple
 DA_RETRO_SCHEMA = "smartchem.diels-alder/retro-v1"
 
 
+# --------------------------------------------------------------------------------------------------------------------
+# Item F -- the ONE shared product-config law every DA family's edge + provider rides.  Historically the alkene,
+# alkyne and hetero families each carried a byte-identical copy of ``forget()`` and of the provider
+# ``enumerate_transforms`` body; the copies could silently drift out of step.  These two helpers hold the single
+# law: (1) a retro edge's composition-level image is the formula-multiset decomposition of the adduct into its
+# fragments; (2) a provider enumerates guarded retro disconnections and presents each audit's products through the
+# SAME ``_config`` canonicalisation before building its family's edge.  The edge CLASSES keep their own identities
+# (their qualnames are baked into the content digest, so a frozen probe would move if they merged) -- only the
+# shared BODY is factored out, so this is a pure dedup with byte-identical behaviour (every DA probe hash holds).
+# --------------------------------------------------------------------------------------------------------------------
+
+def _da_forget(reactant: Molecule, products: tuple[Molecule, ...]) -> DecompositionEdge:
+    """The composition-level image shared by every DA retro edge: the formula-level decomposition of the adduct
+    ``reactant`` into its ``products`` (elements bucketed, molecules counted, ordered canonically by rank/repr)."""
+    merged: dict[Formula, int] = {}
+    for m in products:
+        comp = Formula.of(m.formula, m.charge)
+        if comp.is_element:
+            (symbol, count), = comp.counts
+            bucket = Formula.bucket(symbol)
+            merged[bucket] = merged.get(bucket, 0) + count
+        else:
+            merged[comp] = merged.get(comp, 0) + 1
+    ordered = tuple(sorted(merged.items(), key=lambda pm: (pm[0].rank, repr(pm[0]))))
+    return DecompositionEdge(Formula.of(reactant.formula, reactant.charge), 1, ordered)
+
+
+def _enumerate_da_transforms(reactant, budget, disconnect, make_edge) -> tuple[tuple, bool]:
+    """The opt-in provider body shared by every DA family.  Boundary contract: never raise; a target this family
+    cannot address (wrong type / charged / stateful / non-transportable) enumerates nothing and is complete.
+    ``disconnect(graph, budget)`` returns ``(audits, complete)`` for the family's guarded retro; each audit's
+    products are read back through the ONE ``_config`` canonicalisation and handed to ``make_edge(reactant,
+    products)``.  Fail-closed: an edge its own double certificate refuses is DROPPED, never coerced."""
+    if type(reactant) is not Molecule or reactant.charge != 0 or reactant.state:
+        return (), True
+    try:
+        graph = _joined((reactant,))
+    except (RuleError, ScissionError, TypeError, ValueError):
+        return (), True   # non-transportable (charged/stateful/atomless) -> fall through, do not crash the mix
+    audits, complete = disconnect(graph, budget)
+    transforms = []
+    for a in audits:
+        products = _config(a.witness.target).species
+        try:
+            transforms.append(make_edge(reactant, tuple(products)))
+        except ScissionError:
+            continue   # the edge's own certificates refused it -> drop (fail-closed), never a coerced transform
+    return tuple(transforms), complete
+
+
 def _reactant_da_disconnects_to(reactant: Molecule, products: tuple[Molecule, ...]) -> bool:
     """Self-contained DA-ness certificate: does ``reactant`` admit a GUARDED [4+2] retro whose two fragments are
     exactly ``products`` (as a Config)?  Re-derived from the reactant alone, so a hand-built edge cannot carry
@@ -365,18 +432,9 @@ class DielsAlderRetroEdge(Digestible):
         return _DA_CENTER
 
     def forget(self) -> DecompositionEdge:
-        """The composition-level image: the formula-level decomposition of the adduct into its two fragments."""
-        merged: dict[Formula, int] = {}
-        for m in self.products:
-            comp = Formula.of(m.formula, m.charge)
-            if comp.is_element:
-                (symbol, count), = comp.counts
-                bucket = Formula.bucket(symbol)
-                merged[bucket] = merged.get(bucket, 0) + count
-            else:
-                merged[comp] = merged.get(comp, 0) + 1
-        products = tuple(sorted(merged.items(), key=lambda pm: (pm[0].rank, repr(pm[0]))))
-        return DecompositionEdge(Formula.of(self.reactant.formula, self.reactant.charge), 1, products)
+        """The composition-level image: the formula-level decomposition of the adduct into its two fragments
+        (the shared item-F law, :func:`_da_forget`)."""
+        return _da_forget(self.reactant, self.products)
 
     def __repr__(self) -> str:
         return f"DielsAlderRetroEdge({self.equation()})"
@@ -404,22 +462,11 @@ class DielsAlderProvider(TransformProvider):
         )
 
     def enumerate_transforms(self, reactant, reagents, *, budget):
-        # boundary contract: never raise; a target this family cannot address enumerates nothing and is complete.
-        if type(reactant) is not Molecule or reactant.charge != 0 or reactant.state:
-            return (), True
-        try:
-            graph = _joined((reactant,))
-        except (RuleError, ScissionError, TypeError, ValueError):
-            return (), True   # non-transportable (charged/stateful/atomless) -> fall through, do not crash the mix
-        audits, complete = retro_da_disconnections(graph, budget=budget)
-        transforms = []
-        for a in audits:
-            products = _config(a.witness.target).species
-            try:
-                transforms.append(DielsAlderRetroEdge(DA_RETRO_SCHEMA, reactant, tuple(products), (), DA_CLASS))
-            except ScissionError:
-                continue   # the edge's own certificates refused it -> drop (fail-closed), never a coerced transform
-        return tuple(transforms), complete
+        return _enumerate_da_transforms(
+            reactant, budget,
+            lambda g, b: retro_da_disconnections(g, budget=b),
+            lambda r, p: DielsAlderRetroEdge(DA_RETRO_SCHEMA, r, p, (), DA_CLASS),
+        )
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -530,18 +577,9 @@ class AlkyneDielsAlderEdge(Digestible):
         return _ALKYNE_DA_CENTER
 
     def forget(self) -> DecompositionEdge:
-        """The composition-level image: the formula-level decomposition of the adduct into its two fragments."""
-        merged: dict[Formula, int] = {}
-        for m in self.products:
-            comp = Formula.of(m.formula, m.charge)
-            if comp.is_element:
-                (symbol, count), = comp.counts
-                bucket = Formula.bucket(symbol)
-                merged[bucket] = merged.get(bucket, 0) + count
-            else:
-                merged[comp] = merged.get(comp, 0) + 1
-        products = tuple(sorted(merged.items(), key=lambda pm: (pm[0].rank, repr(pm[0]))))
-        return DecompositionEdge(Formula.of(self.reactant.formula, self.reactant.charge), 1, products)
+        """The composition-level image: the formula-level decomposition of the adduct into its two fragments
+        (the shared item-F law, :func:`_da_forget`)."""
+        return _da_forget(self.reactant, self.products)
 
     def __repr__(self) -> str:
         return f"AlkyneDielsAlderEdge({self.equation()})"
@@ -571,24 +609,11 @@ class AlkyneDielsAlderProvider(TransformProvider):
         )
 
     def enumerate_transforms(self, reactant, reagents, *, budget):
-        # boundary contract: never raise; a target this family cannot address enumerates nothing and is complete.
-        if type(reactant) is not Molecule or reactant.charge != 0 or reactant.state:
-            return (), True
-        try:
-            graph = _joined((reactant,))
-        except (RuleError, ScissionError, TypeError, ValueError):
-            return (), True   # non-transportable (charged/stateful/atomless) -> fall through, do not crash the mix
-        audits, complete = retro_alkyne_da_disconnections(graph, budget=budget)
-        transforms = []
-        for a in audits:
-            products = _config(a.witness.target).species
-            try:
-                transforms.append(
-                    AlkyneDielsAlderEdge(ALKYNE_DA_RETRO_SCHEMA, reactant, tuple(products), (), ALKYNE_DA_CLASS)
-                )
-            except ScissionError:
-                continue   # the edge's own certificates refused it -> drop (fail-closed), never a coerced transform
-        return tuple(transforms), complete
+        return _enumerate_da_transforms(
+            reactant, budget,
+            lambda g, b: retro_alkyne_da_disconnections(g, budget=b),
+            lambda r, p: AlkyneDielsAlderEdge(ALKYNE_DA_RETRO_SCHEMA, r, p, (), ALKYNE_DA_CLASS),
+        )
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -612,14 +637,30 @@ class AlkyneDielsAlderProvider(TransformProvider):
 
 @dataclass(frozen=True)
 class _HeteroDAFamily:
-    """An immutable descriptor for ONE heteroatom-dienophile [4+2] family (aza: X=N, oxa: X=O).
+    """An immutable descriptor for ONE heteroatom [4+2] family (aza: X=N, oxa: X=O, thia: X=S).
 
-    The family IS the all-carbon alkene rule with dienophile vertex 5 relabeled ``C -> hetero_label`` (only the
-    dienophile's second atom is the heteroatom; the diene stays all-carbon), so it shares the degree pattern
-    ``(2,3,3,2,2,2)`` and every guard in :func:`_guarded_retro` verbatim.  Its ``center`` -- DERIVED from ``forward``
-    via :func:`_synthesis_center` so it TRACKS the rule, never a hand-typed constant -- carries ``(C, hetero_label,
-    .)`` bond pairs no other family's centre carries, the exact-equality separator the oracle uses so aza, oxa and
-    the two all-carbon families can never cross-poach one another."""
+    The family IS the all-carbon alkene rule with exactly ONE vertex relabeled ``C -> hetero_label``:
+
+    * ``position == "dienophile"`` (``hetero_vertex == 5``) -- the heteroatom is the dienophile's second atom, an
+      imine/carbonyl/thiocarbonyl ``C=X`` (aza -> tetrahydropyridine, oxa -> dihydropyran, thia -> dihydrothiopyran);
+    * ``position == "diene"`` (``hetero_vertex == 0``) -- the heteroatom is a DIENE TERMINUS, a 1-hetero-1,3-diene
+      ``X=C-C=C`` (a 1-azadiene / 1-oxadiene / 1-thiadiene; the classic inverse-electron-demand hetero-DA, an
+      enone/enal acting as the 4-pi component).
+
+    Either position shares the degree pattern ``(2,3,3,2,2,2)`` and EVERY guard in :func:`_guarded_retro` VERBATIM --
+    guard 5 splits by the diene/dienophile VERTEX SETS (:data:`_DIENE` / :data:`_DIENOPHILE`, membership-agnostic to
+    where the heteroatom sits) and guard 2c bounds every matched atom by its own LABEL's neutral valence -- so the
+    generic guarded core needs no change to carry a diene-position family.
+
+    Its ``center`` -- DERIVED from ``forward`` via :func:`_synthesis_center` so it TRACKS the rule -- carries
+    ``(C, hetero_label, .)`` bond pairs no DIFFERENT-heteroatom family's centre carries.  CAUTION, the diene<->
+    dienophile centre COLLISION (verified on the kernel): a diene-position and a dienophile-position family of the
+    SAME heteroatom have the IDENTICAL synthesis centre -- the formed/broken ``(C,X,.)`` multiset is invariant to
+    WHERE in the six-vertex ring the single X sits.  So the oracle's exact-equality centre check (Layer B) is a
+    NECESSARY filter but NOT a separator for those two; Layer A (the family's own re-derivation) is, and it separates
+    them cleanly because the two adducts are distinct REGIO-isomers -- X adjacent to the ring C=C for the diene
+    family, X isolated from it for the dienophile family -- each matching ONLY its own relabeled rule (proven: an
+    aza-diene adduct yields nothing under the aza-dienophile rule and vice versa)."""
 
     hetero_label: str
     class_label: str
@@ -630,16 +671,22 @@ class _HeteroDAFamily:
     retro: BondRule
     signature: tuple
     center: ReactionCenter
+    hetero_vertex: int
+    position: str
 
 
 def _hetero_family(hetero_label: str, class_label: str, schema: str, provider_id: str,
-                   witness_kind: str) -> _HeteroDAFamily:
-    """Build a :class:`_HeteroDAFamily` for ``hetero_label``: the alkene [4+2] rule geometry with vertex 5's label
-    swapped to the heteroatom.  ``retro`` / ``signature`` / ``center`` are all DERIVED here so a family can never
-    drift from its own rule."""
-    labels = ("C", "C", "C", "C", "C", hetero_label)
+                   witness_kind: str, *, hetero_vertex: int = 5) -> _HeteroDAFamily:
+    """Build a :class:`_HeteroDAFamily` for ``hetero_label`` at ``hetero_vertex``: the alkene [4+2] rule geometry
+    with that one vertex's label swapped to the heteroatom.  ``hetero_vertex == 5`` (default) is the dienophile
+    position (aza/oxa/thia); ``hetero_vertex == 0`` is the diene-terminus position (1-hetero-diene).  ``retro`` /
+    ``signature`` / ``center`` are all DERIVED here so a family can never drift from its own rule."""
+    if hetero_vertex not in (0, 5):
+        raise RuleError("hetero_vertex must be 0 (diene terminus) or 5 (dienophile second atom)")
+    position = "diene" if hetero_vertex == 0 else "dienophile"
+    labels = tuple(hetero_label if i == hetero_vertex else "C" for i in range(6))
     forward = BondRule(
-        f"diels-alder-[4+2]-{hetero_label}-heterocyclic-v1",
+        f"diels-alder-[4+2]-{hetero_label}-{position}-heterocyclic-v1",
         BondGraph(labels, frozenset({Edge(0, 1, 2), Edge(1, 2, 1), Edge(2, 3, 2), Edge(4, 5, 2)})),
         BondGraph(labels, frozenset({Edge(0, 1, 1), Edge(1, 2, 2), Edge(2, 3, 1),
                                      Edge(3, 4, 1), Edge(4, 5, 1), Edge(0, 5, 1)})),
@@ -647,7 +694,7 @@ def _hetero_family(hetero_label: str, class_label: str, schema: str, provider_id
     retro = forward.reverse()
     signature = _match_signature(RewriteWitness(retro, retro.left, tuple(range(6)), retro.right))
     return _HeteroDAFamily(hetero_label, class_label, schema, provider_id, witness_kind,
-                           forward, retro, signature, _synthesis_center(forward))
+                           forward, retro, signature, _synthesis_center(forward), hetero_vertex, position)
 
 
 #: The aza-Diels-Alder family (imine dienophile -> tetrahydropyridine): the first NON-all-carbon [4+2] family.
@@ -656,11 +703,33 @@ AZA_DA = _hetero_family("N", "diels-alder-[4+2]-aza-tetrahydropyridine",
 #: The oxa-Diels-Alder family (carbonyl dienophile -> dihydropyran): the aza family's sibling, O in place of N.
 OXA_DA = _hetero_family("O", "diels-alder-[4+2]-oxa-dihydropyran",
                         "smartchem.diels-alder/oxa-retro-v1", "diels-alder-oxa-retro", "DIELS_ALDER_OXA")
+#: The thia-Diels-Alder family (thiocarbonyl dienophile -> 3,6-dihydro-2H-thiopyran): the third heteroatom
+#: dienophile family (S in place of O), and the family whose neutral-valence guard 2c bound (S: 2 in
+#: :data:`_NEUTRAL_VALENCE`) is LOAD-BEARING against a thiocarbenium/sulfonium false-vouch (S ceiling 6 >> neutral 2).
+THIA_DA = _hetero_family("S", "diels-alder-[4+2]-thia-dihydrothiopyran",
+                         "smartchem.diels-alder/thia-retro-v1", "diels-alder-thia-retro", "DIELS_ALDER_THIA")
+
+# ---- item B: the DIENE-position (inverse-electron-demand) hetero families -- the heteroatom is a diene terminus,
+# vertex 0, a 1-hetero-1,3-diene X=C-C=C.  These SHARE a synthesis centre with their same-heteroatom dienophile
+# sibling (the (C,X,.) multiset is position-invariant), so they are the first families the oracle separates by
+# Layer A ALONE (see :class:`_HeteroDAFamily`).  aza-diene (a 1-azadiene) and oxa-diene (a 1-oxadiene / enone) are
+# the canonical, historically important inverse-demand classes; thia-diene rides the same factory for free.
+#: The 1-azadiene family (aza-DA with the N at the diene terminus): diene + alkene -> a 2,3,4,5-tetrahydropyridine.
+AZA_DIENE_DA = _hetero_family("N", "diels-alder-[4+2]-aza-diene-tetrahydropyridine",
+                              "smartchem.diels-alder/aza-diene-retro-v1", "diels-alder-aza-diene-retro",
+                              "DIELS_ALDER_AZA_DIENE", hetero_vertex=0)
+#: The 1-oxadiene family (inverse-electron-demand oxa-DA, an enone/enal as the 4-pi diene): -> a dihydropyran isomer.
+OXA_DIENE_DA = _hetero_family("O", "diels-alder-[4+2]-oxa-diene-dihydropyran",
+                              "smartchem.diels-alder/oxa-diene-retro-v1", "diels-alder-oxa-diene-retro",
+                              "DIELS_ALDER_OXA_DIENE", hetero_vertex=0)
 
 #: Per-family synthesis centres (mirroring :data:`_DA_CENTER` / :data:`_ALKYNE_DA_CENTER`), so the oracle recognizer
-#: and the cross-poach tests can pin each family by exact equality without reaching into the descriptor.
+#: and the cross-poach tests can pin each family by exact equality without reaching into the descriptor.  NOTE the
+#: diene<->dienophile collision: ``_AZA_DA_CENTER == AZA_DIENE_DA.center`` (and likewise oxa) BY CONSTRUCTION -- these
+#: are NOT a separator between those two families (Layer A is; see :class:`_HeteroDAFamily`).
 _AZA_DA_CENTER = AZA_DA.center
 _OXA_DA_CENTER = OXA_DA.center
+_THIA_DA_CENTER = THIA_DA.center
 
 
 def hetero_da_disconnections(family: _HeteroDAFamily, target: BondGraph, *,
@@ -753,18 +822,9 @@ class HeteroDielsAlderEdge(Digestible):
         return self.family.center
 
     def forget(self) -> DecompositionEdge:
-        """The composition-level image: the formula-level decomposition of the adduct into its two fragments."""
-        merged: dict[Formula, int] = {}
-        for m in self.products:
-            comp = Formula.of(m.formula, m.charge)
-            if comp.is_element:
-                (symbol, count), = comp.counts
-                bucket = Formula.bucket(symbol)
-                merged[bucket] = merged.get(bucket, 0) + count
-            else:
-                merged[comp] = merged.get(comp, 0) + 1
-        products = tuple(sorted(merged.items(), key=lambda pm: (pm[0].rank, repr(pm[0]))))
-        return DecompositionEdge(Formula.of(self.reactant.formula, self.reactant.charge), 1, products)
+        """The composition-level image: the formula-level decomposition of the adduct into its two fragments
+        (the shared item-F law, :func:`_da_forget`)."""
+        return _da_forget(self.reactant, self.products)
 
     def __repr__(self) -> str:
         return f"HeteroDielsAlderEdge({self.equation()})"
@@ -805,23 +865,11 @@ class HeteroDielsAlderProvider(TransformProvider):
         )
 
     def enumerate_transforms(self, reactant, reagents, *, budget):
-        # boundary contract: never raise; a target this family cannot address enumerates nothing and is complete.
-        if type(reactant) is not Molecule or reactant.charge != 0 or reactant.state:
-            return (), True
-        try:
-            graph = _joined((reactant,))
-        except (RuleError, ScissionError, TypeError, ValueError):
-            return (), True   # non-transportable (charged/stateful/atomless) -> fall through, do not crash the mix
-        audits, complete = hetero_da_disconnections(self.family, graph, budget=budget)
-        transforms = []
-        for a in audits:
-            products = _config(a.witness.target).species
-            try:
-                transforms.append(HeteroDielsAlderEdge(
-                    self.family.schema, reactant, tuple(products), (), self.family.class_label, self.family))
-            except ScissionError:
-                continue   # the edge's own certificates refused it -> drop (fail-closed), never a coerced transform
-        return tuple(transforms), complete
+        return _enumerate_da_transforms(
+            reactant, budget,
+            lambda g, b: hetero_da_disconnections(self.family, g, budget=b),
+            lambda r, p: HeteroDielsAlderEdge(self.family.schema, r, p, (), self.family.class_label, self.family),
+        )
 
 
 @dataclass(frozen=True)
@@ -838,3 +886,29 @@ class OxaDielsAlderProvider(HeteroDielsAlderProvider):
     generic :class:`HeteroDielsAlderProvider`."""
 
     family: _HeteroDAFamily = OXA_DA
+
+
+@dataclass(frozen=True)
+class ThiaDielsAlderProvider(HeteroDielsAlderProvider):
+    """The thia-Diels-Alder (thiocarbonyl dienophile -> dihydrothiopyran) opt-in provider -- :data:`THIA_DA` bound
+    into the generic :class:`HeteroDielsAlderProvider`.  The third heteroatom-dienophile family (S)."""
+
+    family: _HeteroDAFamily = THIA_DA
+
+
+@dataclass(frozen=True)
+class AzaDieneDielsAlderProvider(HeteroDielsAlderProvider):
+    """The 1-azadiene Diels-Alder opt-in provider (the heteroatom in the DIENE, not the dienophile) --
+    :data:`AZA_DIENE_DA` bound into the generic :class:`HeteroDielsAlderProvider`.  Shares a synthesis centre with
+    :class:`AzaDielsAlderProvider`; the oracle keeps them apart by Layer A (see :class:`_HeteroDAFamily`)."""
+
+    family: _HeteroDAFamily = AZA_DIENE_DA
+
+
+@dataclass(frozen=True)
+class OxaDieneDielsAlderProvider(HeteroDielsAlderProvider):
+    """The 1-oxadiene (inverse-electron-demand) Diels-Alder opt-in provider -- :data:`OXA_DIENE_DA` bound into the
+    generic :class:`HeteroDielsAlderProvider`.  Shares a synthesis centre with :class:`OxaDielsAlderProvider`;
+    separated by Layer A."""
+
+    family: _HeteroDAFamily = OXA_DIENE_DA

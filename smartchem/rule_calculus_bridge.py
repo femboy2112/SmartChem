@@ -16,6 +16,45 @@ from .structure_descent import CappedScission, ScissionError
 from .transform_provider import CappedScissionProvider
 from .rule_calculus import BondGraph, BondRule, Edge, RewriteWitness, RuleError, apply, verify
 
+#: Maximum coordination (total bond order) an atom of each element can bear in ANY accessible neutral-or-ionic
+#: state -- a charge-AGNOSTIC ceiling.  It is DELIBERATELY not a neutral-only max: the graph carries only NET
+#: molecular charge, never per-atom formal charge (dalembert), so a net-neutral CHARGE-SEPARATED species must
+#: pass -- carbon monoxide ``[C-]#[O+]`` (O at degree 3), ozone, a dative amine-borane R3N->BH3 (B at degree 4).
+#: So each ceiling is the max over charge states (O reaches 3 as O+, B reaches 4 as borate, the halogens reach 7
+#: as perchlorate/periodate), and the gate refuses only a valence impossible in EVERY state (pentavalent carbon,
+#: hexavalent oxygen) -- the actual fail-open dalembert found -- with no false-reject of real chemistry.
+_MAX_COORDINATION: dict[str, int] = {
+    "H": 1, "B": 4, "C": 4, "N": 5, "O": 3, "F": 1,
+    "P": 6, "S": 6, "Cl": 7, "Br": 7, "I": 7,
+}
+
+
+def valence_sane(graph: BondGraph) -> bool:
+    """Fail-closed valence precondition: no atom's degree exceeds its element's maximal coordination.
+
+    dalembert's finding (the Diels-Alder round): the domain-neutral kernel and :class:`Molecule`
+    DELIBERATELY do not enforce chemical valence -- kernel labels are opaque -- so a valence-impossible
+    species (e.g. a pentavalent carbon) is silently processed.  This is the chemistry-aware seam, so the
+    precondition belongs HERE, not in the valence-agnostic kernel.  Because a :class:`BondRule` preserves
+    every atom's degree, a valence-insane PRODUCT can only arise from a valence-insane SOURCE, so a single
+    check on the joined source graph is sufficient (certified by dalembert).
+
+    SCOPE (honest, per dalembert's refutation of the naive neutral-max rule).  The check is charge-AGNOSTIC:
+    it uses :data:`_MAX_COORDINATION`, the ceiling over ALL charge states, so it refuses only valences
+    impossible in EVERY state and never false-rejects a real net-neutral charge-separated molecule (CO,
+    ozone, amine-boranes) or a real hypervalent (sulfate, perchlorate, hypervalent iodine).  It therefore
+    does NOT catch a species impossible only AS A NEUTRAL but possible as an ion (a hand-built neutral
+    ammonium, N at degree 4): distinguishing that from CO needs per-atom formal charge, which the graph does
+    not carry -- so it is an information-theoretic boundary, not a claim of complete valence validation.
+    Such species do not arise from the parser (it assigns them a charge, which is refused upstream).  An
+    element with no tabulated ceiling (a metal, an opaque non-element label) is likewise unconstrained.
+    """
+    for label, degree in zip(graph.labels, graph.degrees):
+        ceiling = _MAX_COORDINATION.get(label)
+        if ceiling is not None and degree > ceiling:
+            return False
+    return True
+
 
 def _joined(molecules: tuple[Molecule, ...]) -> BondGraph:
     graph = BondGraph(())
@@ -27,6 +66,8 @@ def _joined(molecules: tuple[Molecule, ...]) -> BondGraph:
         graph = graph.tensor(BondGraph(molecule.atoms, frozenset(
             Edge(b.i, b.j, b.order) for b in molecule.bonds
         )))
+    if not valence_sane(graph):
+        raise RuleError("valence-impossible species: an atom exceeds its maximal normal valence")
     return graph
 
 

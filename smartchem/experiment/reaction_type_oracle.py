@@ -68,14 +68,18 @@ section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized s
 frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* FIVE ACTIVE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), dehydrative N-alkylation
+* SEVEN ACTIVE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), dehydrative N-alkylation
   (R63, generalising and SUBSUMING the R60 N-methylation sub-case -- it REPLACES the R60 entry rather than adding
   one), the all-carbon Diels-Alder [4+2] cycloaddition with an ALKENE dienophile (-> cyclohexene; the first
-  PERICYCLIC, non-condensation class, promoting the opt-in rule-calculus DA family into the oracle), and its ALKYNE-
+  PERICYCLIC, non-condensation class, promoting the opt-in rule-calculus DA family into the oracle), its ALKYNE-
   dienophile sibling (-> 1,4-cyclohexadiene; the first pericyclic class that keeps a second unsaturation in the
   adduct, promoting the opt-in :class:`~smartchem.diels_alder.AlkyneDielsAlderProvider` family the same way; allene
-  dienophiles remain honest coverage loss), so ``_RECOGNIZERS`` holds FIVE, each with its own conservation-lock
-  proof. N-alkylation covers any
+  dienophiles remain honest coverage loss), and the FIRST two HETEROATOM pericyclic classes -- aza-DA (diene +
+  imine -> tetrahydropyridine) and oxa-DA (diene + carbonyl -> dihydropyran), promoting the opt-in hetero families
+  (:data:`~smartchem.diels_alder.AZA_DA` / :data:`~smartchem.diels_alder.OXA_DA`) whose reaction centres carry
+  ``(C, N, .)`` / ``(C, O, .)`` bond pairs distinct from every all-carbon centre -- so ``_RECOGNIZERS`` holds SEVEN,
+  each with its own conservation-lock proof (the four DA classes locked apart by their exact-equality centre check,
+  so none can poach another's steps). N-alkylation covers any
   non-carbonyl N nucleophile (amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine) by an ALKYL
   alcohol; ARYL amination (a C-N onto an aromatic ring carbon, the phenol->aniline fake) and masked-carbonyl donors
   (hemiaminal/acetal condensations) are excluded, and other real condensations (Friedel-Crafts, Kolbe-Schmitt,
@@ -306,6 +310,57 @@ def _diels_alder(step) -> bool:
     return center == _DA_CENTER  # Layer B: the centre is exactly the pericyclic [4+2] signature
 
 
+def _hetero_diels_alder(step, family) -> bool:
+    """The shared three-layer discipline for a HETEROATOM-dienophile Diels-Alder [4+2] family (aza: X=N, oxa: X=O),
+    parameterized by the family descriptor (:data:`smartchem.diels_alder.AZA_DA` / :data:`~smartchem.diels_alder.
+    OXA_DA`).  Identical soundness argument to :func:`_diels_alder`, just against the family's own relabeled
+    re-derivation + centre: Layer A re-derives THIS family's guarded [4+2] retro from the step's own molecules
+    (:func:`~smartchem.diels_alder._reactant_hetero_da_disconnects_to`), Layer B pins the exact family centre
+    (``(C, X, .)`` bond pairs, distinct from every other family's, so the classes cannot cross-poach), Layer C
+    fail-closed blocks a centre-less step."""
+    from ..diels_alder import _reactant_hetero_da_disconnects_to
+    reactants = tuple(step.reactants)
+    products = tuple(step.products)
+    if len(products) != 1 or len(reactants) != 2:
+        return False
+    if not _reactant_hetero_da_disconnects_to(family, products[0], reactants):
+        return False  # Layer A: the adduct does not re-derive a guarded hetero [4+2] retro into these two reactants
+    center = getattr(step, "reaction_center", None)
+    if center is None:
+        return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
+    return center == family.center  # Layer B: exactly this hetero family's pericyclic [4+2] signature
+
+
+def _aza_diels_alder(step) -> bool:
+    """Recognizer: an aza-Diels-Alder [4+2] cycloaddition (diene + imine C=N -> tetrahydropyridine).
+
+    The SIXTH active class, and the FIRST heteroatom (non-all-carbon) pericyclic recognizer -- the ground the
+    all-carbon DA families opened onto a heteroatom dienophile.  Delegates to :func:`_hetero_diels_alder` bound to
+    :data:`smartchem.diels_alder.AZA_DA`, so it inherits the DA double-certificate soundness argument (Layer A
+    re-derivation is the gate) against the aza family's own centre (which carries ``(C, N, .)`` pairs no other
+    family's centre carries -- no cross-poach).
+
+    SCOPE: only imine-dienophile -> tetrahydropyridine.  Other aza-[4+2] variants (an N-in-the-diene 1-aza-diene,
+    a nitroso/azo dienophile) are genuine chemistry this recognizer does NOT vouch -- honest coverage loss
+    (false-UNRECOGNIZED, safe), never a false-vouch."""
+    from ..diels_alder import AZA_DA
+    return _hetero_diels_alder(step, AZA_DA)
+
+
+def _oxa_diels_alder(step) -> bool:
+    """Recognizer: an oxa-Diels-Alder [4+2] cycloaddition (diene + carbonyl C=O -> dihydropyran).
+
+    The SEVENTH active class, the aza recognizer's sibling with oxygen in place of nitrogen.  Delegates to
+    :func:`_hetero_diels_alder` bound to :data:`smartchem.diels_alder.OXA_DA`; its centre carries ``(C, O, .)``
+    pairs, distinct from the aza ``(C, N, .)`` and every all-carbon centre, so the four DA classes are locked apart
+    by exact-equality.
+
+    SCOPE: only carbonyl-dienophile -> dihydropyran (the parent thermal oxa-DA; many want a Lewis acid -- Problem B,
+    deferred).  A hetero-diene oxa-DA or a thiocarbonyl (thia-DA) is honest coverage loss, never a false-vouch."""
+    from ..diels_alder import OXA_DA
+    return _hetero_diels_alder(step, OXA_DA)
+
+
 #: The positive whitelist of attested reaction-class recognizers: ``(class_name, predicate)``. A step is
 #: recognized iff SOME predicate fires. Every entry MUST carry a conservation-lock proof (see the module
 #: docstring); a general bounded-radius recognizer is exactly escape #7 and is not admitted. R56 shipped acyl;
@@ -314,8 +369,11 @@ def _diels_alder(step) -> bool:
 #: bounded-radius patch). The Diels-Alder [4+2] recognizer promotes the opt-in rule-calculus DA family into the
 #: oracle -- the first pericyclic, non-condensation class, locked by the family's own re-derivation certificate; the
 #: alkyne-dienophile sibling ADDS a fifth entry (its own distinct centre + re-derivation), the first pericyclic class
-#: that keeps a second unsaturation in the adduct (1,4-cyclohexadiene, not cyclohexene) -- the two DA classes are
-#: locked apart by their exact-equality centre check, so neither can poach the other's steps.
+#: that keeps a second unsaturation in the adduct (1,4-cyclohexadiene, not cyclohexene).  The aza- and oxa-DA
+#: recognizers ADD a SIXTH and SEVENTH entry -- the first HETEROATOM pericyclic classes (diene + imine ->
+#: tetrahydropyridine; diene + carbonyl -> dihydropyran), each with its own heteroatom-bearing centre and
+#: re-derivation.  All FOUR DA classes are locked apart by their exact-equality centre check, so none can poach
+#: another's steps.
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
@@ -323,6 +381,8 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkene dienophile -> cyclohexene adduct)", _diels_alder),
     ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkyne dienophile -> 1,4-cyclohexadiene)",
      _alkyne_diels_alder),
+    ("aza-Diels-Alder [4+2] cycloaddition (diene + imine dienophile -> tetrahydropyridine)", _aza_diels_alder),
+    ("oxa-Diels-Alder [4+2] cycloaddition (diene + carbonyl dienophile -> dihydropyran)", _oxa_diels_alder),
 )
 
 

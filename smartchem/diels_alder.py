@@ -14,7 +14,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .category import Config, ConservationError, Molecule, Reaction
+from .contracts import Digestible
+from .decompiler import DecompositionEdge, Formula
 from .rule_calculus import BondGraph, BondRule, Edge, RewriteWitness, RuleError, enumerate_matches, verify
+from .rule_calculus_bridge import _config, _joined
+from .structure_descent import ScissionError
+from .transform_provider import TransformProvider
 
 # Forward [4+2]: diene C0=C1-C2=C3  +  dienophile C4=C5  ->  cyclohexene ring C0-C1=C2-C3-C4-C5-C0.
 # Per-atom bond-order sums are preserved (2,3,3,2,2,2) both sides -- a pericyclic reaction conserves valence, so it
@@ -167,3 +173,128 @@ def retro_da_disconnections(target: BondGraph, *, budget: int = 100000) -> tuple
             dienophile_vertices=tuple(sorted(dienophile_seeds)),
         ))
     return tuple(audits), receipt.complete
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# The opt-in transform + provider: plug the guarded retro-DA through the UNCHANGED route/DAG provider seam.
+# It rides the duck-typed `ExperimentStep.from_transform` path exactly like `RedoxDisplacementEdge` (a multi-product,
+# opt-in family already absent from the default registry); it touches no shared file and no default registry.
+# --------------------------------------------------------------------------------------------------------------------
+
+DA_RETRO_SCHEMA = "smartchem.diels-alder/retro-v1"
+
+
+def _reactant_da_disconnects_to(reactant: Molecule, products: tuple[Molecule, ...]) -> bool:
+    """Self-contained DA-ness certificate: does ``reactant`` admit a GUARDED [4+2] retro whose two fragments are
+    exactly ``products`` (as a Config)?  Re-derived from the reactant alone, so a hand-built edge cannot carry
+    fabricated fragments that merely happen to balance mass (the DA analogue of the redox electron-ledger fold)."""
+    try:
+        graph = _joined((reactant,))
+    except (RuleError, ScissionError, TypeError, ValueError):
+        return False
+    want = Config.of(*products)
+    audits, _ = retro_da_disconnections(graph)
+    return any(_config(a.witness.target) == want for a in audits)
+
+
+@dataclass(frozen=True)
+class DielsAlderRetroEdge(Digestible):
+    """A retro-Diels-Alder [4+2] disconnection, stored as a DECOMPOSITION of ``reactant`` (the carbocyclic adduct)
+    into ``(diene, dienophile)`` so it satisfies the uniform transform interface and reverses (via
+    :meth:`ExperimentStep.from_transform`) into the forward synthesis that MAKES the adduct.  Reagentless.
+
+    Two independent certificates run at construction, so even a hand-built edge cannot ship a fiction: (1) mass AND
+    charge conservation, re-checked by building a real :class:`Reaction` (exactly as :class:`ExperimentStep` and
+    :class:`RedoxDisplacementEdge` do); (2) DA-ness -- the reactant must actually admit a guarded [4+2] retro whose
+    fragments are these products (:func:`_reactant_da_disconnects_to`).  Conservation ALONE does not prove a [4+2]
+    (many 2-fragment splits balance mass), so the second cert is load-bearing.  Structural type-validity only
+    (Problem A): NO feasibility, selectivity, endo/exo or regiochemistry is asserted.
+    """
+
+    schema_version: str
+    reactant: Molecule
+    products: tuple[Molecule, ...]
+    reagents: tuple[Molecule, ...]
+    reaction_class: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != DA_RETRO_SCHEMA:
+            raise ScissionError(f"schema_version must be exactly {DA_RETRO_SCHEMA!r}")
+        if type(self.reactant) is not Molecule:
+            raise ScissionError("reactant must be a Molecule")
+        if self.reagents != ():
+            raise ScissionError("a retro-Diels-Alder is reagentless")
+        if (type(self.products) is not tuple or len(self.products) != 2
+                or any(type(m) is not Molecule for m in self.products)):
+            raise ScissionError("a retro-DA yields exactly two product Molecules (diene, dienophile)")
+        if self.reaction_class != DA_CLASS:
+            raise ScissionError(f"reaction_class must be {DA_CLASS!r}")
+        # (1) independent conservation certificate (mass + charge), decomposition view.
+        try:
+            Reaction(Config.of(self.reactant), Config.of(*self.products), name="diels-alder-retro")
+        except ConservationError as clash:
+            raise ScissionError(f"retro-DA does not conserve mass/charge: {clash}") from clash
+        # (2) DA-ness certificate: conservation alone does not prove a [4+2] -- re-derive it from the reactant.
+        if not _reactant_da_disconnects_to(self.reactant, self.products):
+            raise ScissionError("not a [4+2] adduct of these fragments (a fabricated DA edge is refused)")
+
+    def equation(self) -> str:
+        rhs = " + ".join(repr(m) for m in self.products)
+        return f"{self.reactant!r} -> {rhs}"
+
+    def forget(self) -> DecompositionEdge:
+        """The composition-level image: the formula-level decomposition of the adduct into its two fragments."""
+        merged: dict[Formula, int] = {}
+        for m in self.products:
+            comp = Formula.of(m.formula, m.charge)
+            if comp.is_element:
+                (symbol, count), = comp.counts
+                bucket = Formula.bucket(symbol)
+                merged[bucket] = merged.get(bucket, 0) + count
+            else:
+                merged[comp] = merged.get(comp, 0) + 1
+        products = tuple(sorted(merged.items(), key=lambda pm: (pm[0].rank, repr(pm[0]))))
+        return DecompositionEdge(Formula.of(self.reactant.formula, self.reactant.charge), 1, products)
+
+    def __repr__(self) -> str:
+        return f"DielsAlderRetroEdge({self.equation()})"
+
+
+@dataclass(frozen=True)
+class DielsAlderProvider(TransformProvider):
+    """The all-carbon Diels-Alder [4+2] retro family as an OPT-IN provider (absent from the default registry, the
+    ``RedoxHalfReactionProvider`` precedent).  Reagentless; neutral, empty-state carbocyclic targets only.  It rides
+    the route/DAG seam with zero changes to shared machinery and asserts structural type-validity only (Problem A)."""
+
+    provider_id: str = "diels-alder-retro"
+    provider_version: str = "v1"
+    witness_kind: str = "DIELS_ALDER"
+
+    @property
+    def capability_manifest(self) -> tuple:
+        return (
+            ("family", DA_CLASS),
+            ("mechanism", "concerted [4+2] retro-cycloaddition, 2 sigma broken / pi restored, reagentless, neutral"),
+            ("witness_kind", self.witness_kind),
+            ("projection_kind", "DECOMPOSITION_EDGE"),
+            ("state_domain", "neutral-empty-state-carbocyclic-only"),
+            ("chemical_authority", "structural-type-validity-only-problem-A"),
+        )
+
+    def enumerate_transforms(self, reactant, reagents, *, budget):
+        # boundary contract: never raise; a target this family cannot address enumerates nothing and is complete.
+        if type(reactant) is not Molecule or reactant.charge != 0 or reactant.state:
+            return (), True
+        try:
+            graph = _joined((reactant,))
+        except (RuleError, ScissionError, TypeError, ValueError):
+            return (), True   # non-transportable (charged/stateful/atomless) -> fall through, do not crash the mix
+        audits, complete = retro_da_disconnections(graph, budget=budget)
+        transforms = []
+        for a in audits:
+            products = _config(a.witness.target).species
+            try:
+                transforms.append(DielsAlderRetroEdge(DA_RETRO_SCHEMA, reactant, tuple(products), (), DA_CLASS))
+            except ScissionError:
+                continue   # the edge's own certificates refused it -> drop (fail-closed), never a coerced transform
+        return tuple(transforms), complete

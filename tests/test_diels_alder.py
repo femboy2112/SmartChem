@@ -10,9 +10,17 @@ from __future__ import annotations
 from dataclasses import replace
 
 from smartchem.diels_alder import (
-    DA_CLASS, RETRO_DA, _FORWARD, class_witness, independently_reconstructs, retro_da_disconnections,
+    DA_CLASS, DA_RETRO_SCHEMA, RETRO_DA, DielsAlderProvider, DielsAlderRetroEdge, _FORWARD,
+    class_witness, independently_reconstructs, retro_da_disconnections,
 )
+from smartchem.experiment.routes import search_routes
+from smartchem.experiment.step import ExperimentStep
 from smartchem.rule_calculus import BondGraph, Edge, apply, verify
+from smartchem.smiles import parse_smiles
+from smartchem.structure_descent import ScissionError
+from smartchem.transform_provider import (
+    DEFAULT_TRANSFORM_REGISTRY, CappedScissionProvider, TransformProviderRegistry,
+)
 
 _CHX = [(0, 1, 1), (1, 2, 2), (2, 3, 1), (3, 4, 1), (4, 5, 1), (0, 5, 1)]  # cyclohexene ring
 
@@ -109,3 +117,78 @@ def test_independent_verifier_rejects_a_wrong_reconstruction():
     w = apply(RETRO_DA, RETRO_DA.left, tuple(range(6)))
     wrong_target = _g("C" * 6, [(0, 1, 1), (1, 2, 1), (2, 3, 1), (3, 4, 1), (4, 5, 1), (0, 5, 1)])  # cyclohexane
     assert independently_reconstructs(wrong_target, w.target, w.match) is False
+
+
+# --- the opt-in provider + the unchanged route/DAG seam ---
+
+
+def _da_transforms(smiles):
+    return DielsAlderProvider().enumerate_transforms(parse_smiles(smiles), (), budget=100000)[0]
+
+
+def test_the_provider_is_opt_in_absent_from_the_default_registry():
+    assert "diels-alder-retro" not in DEFAULT_TRANSFORM_REGISTRY.provider_ids
+
+
+def test_provider_disconnects_cyclohexene_to_butadiene_plus_ethylene():
+    transforms = _da_transforms("C1CC=CCC1")
+    assert len(transforms) == 1
+    edge = transforms[0]
+    assert edge.reaction_class == DA_CLASS
+    assert {repr(m) for m in edge.products} == {"C2H4", "C4H6"}   # ethylene + butadiene
+    assert edge.equation() == "C6H10 -> C2H4 + C4H6"
+
+
+def test_the_da_edge_reverses_into_the_forward_synthesis():
+    edge = _da_transforms("C1CC=CCC1")[0]
+    step = ExperimentStep.from_transform(edge, envelope=None)
+    assert {repr(m) for m in step.reactants} == {"C2H4", "C4H6"}   # diene + dienophile ...
+    assert [repr(m) for m in step.products] == ["C6H10"]           # ... -> cyclohexene
+
+
+def test_the_three_existing_classes_and_hostile_near_misses_yield_no_da_transform():
+    # The acyl / ether / N-alkylation substrates+products, and aromatic / polyene / acyclic near-misses, are NOT
+    # [4+2] adducts -> the provider emits nothing for them (soundness: DA does not poach the other classes).
+    for smiles in ("CC(=O)OC",        # methyl acetate (acyl class)
+                   "CCOCC",           # diethyl ether (ether class)
+                   "CCN",             # ethylamine (N-alkylation class)
+                   "c1ccccc1",        # benzene (aromatic near-miss)
+                   "C1C=CC=CC1",      # 1,3-cyclohexadiene (polyene near-miss)
+                   "C=CCCC=C",        # 1,5-hexadiene (acyclic mass-balancing near-miss)
+                   "C1CCCCC1"):       # cyclohexane (saturated near-miss)
+        assert _da_transforms(smiles) == (), f"{smiles} must not yield a DA transform"
+
+
+def test_the_edge_self_verifies_conservation_and_da_ness():
+    # A hand-built edge whose fragments balance MASS but are not a genuine [4+2] retro of the reactant is refused
+    # (conservation alone does not prove DA-ness -- the second certificate is load-bearing).
+    try:
+        DielsAlderRetroEdge(DA_RETRO_SCHEMA, parse_smiles("C=CCCC=C"),
+                            (parse_smiles("C=C"), parse_smiles("C=CC=C")), (), DA_CLASS)
+        raise AssertionError("a mass-balancing non-DA edge must be refused")
+    except ScissionError:
+        pass
+
+
+def test_mixed_registry_enumerate_tags_da_provenance():
+    reg = TransformProviderRegistry((CappedScissionProvider(), DielsAlderProvider()))
+    ets, complete = reg.enumerate(parse_smiles("C1CC=CCC1"), (), budget=100000)
+    da = [e for e in ets if e.witness_kind == "DIELS_ALDER"]
+    assert len(da) == 1 and da[0].provider_id == "diels-alder-retro" and complete
+
+
+def test_search_routes_finds_the_da_route_only_with_the_provider():
+    chx, buta, eth = parse_smiles("C1CC=CCC1"), parse_smiles("C=CC=C"), parse_smiles("C=C")
+    reg = TransformProviderRegistry((CappedScissionProvider(), DielsAlderProvider()))
+    with_da = search_routes(chx, reagents=(), available=(buta, eth), registry=reg, max_depth=2)
+    assert len(with_da.routes) == 1
+    assert [repr(m) for m in with_da.routes[0].steps[0].products] == ["C6H10"]
+    # control: the single-cut default grammar genuinely misses it.
+    without = search_routes(chx, reagents=(), available=(buta, eth), max_depth=2)
+    assert len(without.routes) == 0
+
+
+def test_forget_is_a_valid_formula_level_decomposition():
+    edge = _da_transforms("C1CC=CCC1")[0]
+    fe = edge.forget()
+    assert fe.equation() == "C6H10 -> C2H4 + C4H6"

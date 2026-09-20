@@ -68,23 +68,31 @@ section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized s
 frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* SEVEN ACTIVE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), dehydrative N-alkylation
-  (R63, generalising and SUBSUMING the R60 N-methylation sub-case -- it REPLACES the R60 entry rather than adding
-  one), the all-carbon Diels-Alder [4+2] cycloaddition with an ALKENE dienophile (-> cyclohexene; the first
-  PERICYCLIC, non-condensation class, promoting the opt-in rule-calculus DA family into the oracle), its ALKYNE-
-  dienophile sibling (-> 1,4-cyclohexadiene; the first pericyclic class that keeps a second unsaturation in the
-  adduct, promoting the opt-in :class:`~smartchem.diels_alder.AlkyneDielsAlderProvider` family the same way; allene
-  dienophiles remain honest coverage loss), and the FIRST two HETEROATOM pericyclic classes -- aza-DA (diene +
-  imine -> tetrahydropyridine) and oxa-DA (diene + carbonyl -> dihydropyran), promoting the opt-in hetero families
-  (:data:`~smartchem.diels_alder.AZA_DA` / :data:`~smartchem.diels_alder.OXA_DA`) whose reaction centres carry
-  ``(C, N, .)`` / ``(C, O, .)`` bond pairs distinct from every all-carbon centre -- so ``_RECOGNIZERS`` holds SEVEN,
-  each with its own conservation-lock proof (the four DA classes locked apart by their exact-equality centre check,
-  so none can poach another's steps). N-alkylation covers any
-  non-carbonyl N nucleophile (amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine) by an ALKYL
-  alcohol; ARYL amination (a C-N onto an aromatic ring carbon, the phenol->aniline fake) and masked-carbonyl donors
-  (hemiaminal/acetal condensations) are excluded, and other real condensations (Friedel-Crafts, Kolbe-Schmitt,
-  Claisen) are demoted-as-unrecognized: honest coverage
-  loss, NOT false-VOUCH. Each is a future round behind its own gate.
+* TWELVE ACTIVE CLASSES -- three dehydrative condensations + seven Diels-Alder [4+2] families + two [3,3]
+  sigmatropic isomerizations, each with its own conservation-lock (condensations) or double-certificate (pericyclic
+  / sigmatropic) proof:
+  (1) acyl condensation (R56), (2) dehydrative etherification (R57), (3) dehydrative N-alkylation (R63, generalising
+  and SUBSUMING the R60 N-methylation sub-case -- it REPLACES the R60 entry rather than adding one; it covers any
+  non-carbonyl N nucleophile -- amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine -- by an ALKYL
+  alcohol);
+  (4) all-carbon DA, ALKENE dienophile -> cyclohexene (the first PERICYCLIC, non-condensation class); (5) its ALKYNE
+  sibling -> 1,4-cyclohexadiene (the first pericyclic class that keeps a second unsaturation); (6) aza-DA + (7) oxa-DA
+  (imine / carbonyl dienophile, the first HETEROATOM pericyclic classes); (8) thia-DA (thiocarbonyl dienophile ->
+  dihydrothiopyran, the third heteroatom-dienophile family, whose neutral-valence guard-2c bound S:2 is load-bearing
+  against a thiocarbenium false-vouch); (9) 1-azadiene DA + (10) 1-oxadiene (inverse-electron-demand) DA -- the first
+  DIENE-position hetero families, which SHARE a reaction centre with their same-heteroatom DIENOPHILE sibling ((C,X,.)
+  is position-invariant), so they are the first classes the oracle separates by Layer A ALONE (the centre check,
+  Layer B, is necessary but not a separator; Layer A's re-derivation is);
+  (11) Cope [3,3] + (12) Claisen [3,3] sigmatropic isomerizations -- the first rank-FLAT (1->1) classes, promoting the
+  opt-in :mod:`smartchem.lateral_rewrite` seam (a lateral rewrite has no strict-descent decomposition image, so it
+  cannot ride ``search_routes`` auto-discovery -- W1; its consumer is a hand-assembled or literature route the oracle
+  now vouches instead of demoting).
+  All SEVEN DA classes are locked apart, and Cope/Claisen from each other and from every DA class, by the
+  exact-equality centre check PLUS Layer A (the load-bearing separator wherever centres collide) -- none poaches
+  another's steps (a 7x7 DA matrix + a Cope/Claisen/DA matrix pin this).  ARYL amination (the phenol->aniline fake)
+  and masked-carbonyl donors (hemiaminal/acetal condensations) are excluded; other real condensations
+  (Friedel-Crafts, Kolbe-Schmitt) and non-sigmatropic isomerizations (tautomerization) are demoted-as-unrecognized:
+  honest coverage loss, NOT false-VOUCH. Each remaining class is a future round behind its own gate.
 * LOCALITY (R57 debt, CLOSED by R58 span reading) -- a whole-molecule census is non-local, so R56/R57 borrowed
   the generator's k=1 single-cut invariant (``max_reactant_cuts = 1``, the production default). R58 distils the
   reaction-centre span the generator already computes (``CappedScission.cut``/``.caps``) into a coordinate-free
@@ -356,9 +364,102 @@ def _oxa_diels_alder(step) -> bool:
     by exact-equality.
 
     SCOPE: only carbonyl-dienophile -> dihydropyran (the parent thermal oxa-DA; many want a Lewis acid -- Problem B,
-    deferred).  A hetero-diene oxa-DA or a thiocarbonyl (thia-DA) is honest coverage loss, never a false-vouch."""
+    deferred).  A thiocarbonyl (thia-DA) is a sibling class of its own; a 1-oxadiene (inverse-demand) is a separate
+    class too (:func:`_oxa_diene_diels_alder`).  Both are honest coverage loss here, never a false-vouch."""
     from ..diels_alder import OXA_DA
     return _hetero_diels_alder(step, OXA_DA)
+
+
+def _thia_diels_alder(step) -> bool:
+    """Recognizer: a thia-Diels-Alder [4+2] cycloaddition (diene + thiocarbonyl C=S -> dihydrothiopyran).
+
+    The EIGHTH active class, the third heteroatom-dienophile family (S in place of O).  Delegates to
+    :func:`_hetero_diels_alder` bound to :data:`smartchem.diels_alder.THIA_DA`; its centre carries ``(C, S, .)``
+    pairs, distinct from aza ``(C, N, .)``, oxa ``(C, O, .)`` and every all-carbon centre, so it is locked apart
+    from the other classes.  Its neutral-valence guard (S: 2, whose charge-agnostic ceiling is 6) is the family
+    whose guard 2c bound is load-bearing against a thiocarbenium/sulfonium false-vouch.
+
+    SCOPE: only thiocarbonyl-dienophile -> dihydrothiopyran.  A 1-thiadiene is honest coverage loss, never a
+    false-vouch."""
+    from ..diels_alder import THIA_DA
+    return _hetero_diels_alder(step, THIA_DA)
+
+
+def _aza_diene_diels_alder(step) -> bool:
+    """Recognizer: a 1-azadiene Diels-Alder [4+2] (an N-terminus diene + alkene -> a tetrahydropyridine isomer).
+
+    The NINTH active class, and the FIRST recognizer whose separation from a sibling rests on Layer A ALONE.  The
+    heteroatom is now in the DIENE (vertex 0), not the dienophile, so this family and :func:`_aza_diels_alder` share
+    an IDENTICAL reaction centre (the ``(C,N,.)`` formed/broken multiset is invariant to where the single N sits in
+    the ring) -- Layer B (:data:`AZA_DIENE_DA`'s ``center``) does NOT distinguish them.  Layer A does: the two
+    adducts are distinct regio-isomers (N adjacent to the ring C=C for THIS diene family, N isolated for the
+    dienophile family), so :func:`~smartchem.diels_alder._reactant_hetero_da_disconnects_to` bound to
+    :data:`AZA_DIENE_DA` re-derives ONLY the 1-azadiene adduct into these reactants and abstains on the dienophile
+    adduct (verified no cross-poach).  Delegates to :func:`_hetero_diels_alder`, so the soundness argument (Layer A
+    is the gate) is inherited unchanged."""
+    from ..diels_alder import AZA_DIENE_DA
+    return _hetero_diels_alder(step, AZA_DIENE_DA)
+
+
+def _oxa_diene_diels_alder(step) -> bool:
+    """Recognizer: a 1-oxadiene (inverse-electron-demand) Diels-Alder [4+2] (an enone/enal 4-pi diene + alkene ->
+    a dihydropyran isomer).
+
+    The TENTH active class, the oxygen sibling of :func:`_aza_diene_diels_alder`.  Shares its reaction centre with
+    :func:`_oxa_diels_alder` (the ``(C,O,.)`` multiset is position-invariant), so it too is separated from its
+    dienophile sibling by Layer A alone -- the O-terminus diene adduct re-derives only under
+    :data:`OXA_DIENE_DA`.  Delegates to :func:`_hetero_diels_alder`.
+
+    SCOPE: only the parent thermal inverse-demand oxa-DA (a Lewis acid accelerates many -- Problem B, deferred)."""
+    from ..diels_alder import OXA_DIENE_DA
+    return _hetero_diels_alder(step, OXA_DIENE_DA)
+
+
+def _sigmatropic_rearrangement(step, family) -> bool:
+    """The shared three-layer discipline for a [3,3] sigmatropic ISOMERIZATION (Cope / Claisen), the first
+    rank-FLAT (1->1) recognizers.  Same soundness argument as the DA recognizers against the lateral family's own
+    re-derivation + centre: Layer A re-derives THIS family's guarded [3,3] rewrite from the step's own single
+    molecule (:func:`~smartchem.lateral_rewrite._reactant_rewrites_to` -- conservation alone proves nothing, since
+    every isomer balances mass, so the re-derivation IS the gate), Layer B pins the exact family centre, Layer C
+    fail-closed blocks a centre-less step.  A 1->1 shape early-out keeps this a cheap no-op for the common (2->1 /
+    2->2) production step."""
+    from ..lateral_rewrite import _reactant_rewrites_to
+    reactants = tuple(step.reactants)
+    products = tuple(step.products)
+    if len(reactants) != 1 or len(products) != 1:
+        return False
+    if not _reactant_rewrites_to(family, products[0], reactants):
+        return False  # Layer A: the product does not re-derive a guarded [3,3] rewrite into the reactant isomer
+    center = getattr(step, "reaction_center", None)
+    if center is None:
+        return False  # Layer C fail-closed: no readable centre -> the re-derivation cannot vouch alone
+    return center == family.center  # Layer B: exactly this sigmatropic family's [3,3] centre
+
+
+def _cope_rearrangement(step) -> bool:
+    """Recognizer: an all-carbon Cope [3,3] sigmatropic rearrangement (a 1,5-diene -> its [3,3] isomer).
+
+    The ELEVENTH active class, and (with Claisen) the FIRST rank-flat 1->1 recognizer -- the lateral-rewrite seam's
+    reachable consumer.  Delegates to :func:`_sigmatropic_rearrangement` bound to
+    :data:`smartchem.lateral_rewrite.COPE`; its centre carries only ``(C,C,.)`` pairs but is distinct from every DA
+    centre (a [3,3] forms one sigma + migrates two pi with NO net ring closure, so its formed/broken multiset is its
+    own).  SCOPE: only a genuine [3,3] shift (Layer A re-derives it); a non-sigmatropic isomerization
+    (tautomerization, other rearrangements) is honest coverage loss, never a false-vouch."""
+    from ..lateral_rewrite import COPE
+    return _sigmatropic_rearrangement(step, COPE)
+
+
+def _claisen_rearrangement(step) -> bool:
+    """Recognizer: a Claisen [3,3] sigmatropic rearrangement (an allyl vinyl ether -> a gamma,delta-unsaturated
+    carbonyl).
+
+    The TWELFTH active class, the oxa sibling of :func:`_cope_rearrangement` (array atom 2 is the O, which migrates
+    into a carbonyl).  Its centre carries a ``(C,O,.)`` pair distinct from Cope's all-carbon centre and from every
+    oxa-DA centre (a [3,3] is not a [4+2]), so the two sigmatropic classes and the DA classes are all locked apart
+    by exact-equality.  Delegates to :func:`_sigmatropic_rearrangement` bound to
+    :data:`smartchem.lateral_rewrite.CLAISEN`."""
+    from ..lateral_rewrite import CLAISEN
+    return _sigmatropic_rearrangement(step, CLAISEN)
 
 
 #: The positive whitelist of attested reaction-class recognizers: ``(class_name, predicate)``. A step is
@@ -383,6 +484,14 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
      _alkyne_diels_alder),
     ("aza-Diels-Alder [4+2] cycloaddition (diene + imine dienophile -> tetrahydropyridine)", _aza_diels_alder),
     ("oxa-Diels-Alder [4+2] cycloaddition (diene + carbonyl dienophile -> dihydropyran)", _oxa_diels_alder),
+    ("thia-Diels-Alder [4+2] cycloaddition (diene + thiocarbonyl dienophile -> dihydrothiopyran)", _thia_diels_alder),
+    ("aza-Diels-Alder [4+2] cycloaddition (1-azadiene + alkene dienophile -> tetrahydropyridine isomer)",
+     _aza_diene_diels_alder),
+    ("oxa-Diels-Alder [4+2] cycloaddition (1-oxadiene inverse-demand + alkene dienophile -> dihydropyran isomer)",
+     _oxa_diene_diels_alder),
+    ("Cope [3,3] sigmatropic rearrangement (1,5-diene -> [3,3] isomer)", _cope_rearrangement),
+    ("Claisen [3,3] sigmatropic rearrangement (allyl vinyl ether -> gamma,delta-unsaturated carbonyl)",
+     _claisen_rearrangement),
 )
 
 

@@ -126,27 +126,38 @@ def class_witness(witness: RewriteWitness) -> str | None:
 
     The label is not asserted from the rule id: it is emitted only when the match's OWN net bond-order change equals
     this family's signature.  A mismatch -- a mutated rule, a different net change -- yields ``None``.
+
+    Delegates to the family-generic :func:`_class_witness` bound to this family's own signature/label, so the
+    alkene family reads byte-identically while a sibling family (the alkyne dienophile) supplies its own pair.
     """
+    return _class_witness(witness, _RETRO_SIGNATURE, DA_CLASS)
+
+
+def _class_witness(witness: RewriteWitness, signature: tuple, label: str) -> str | None:
+    """Generic fail-closed class witness: ``label`` is emitted only when ``witness`` both kernel-verifies AND its
+    own net bond-order change equals ``signature`` -- the family-parameterized core of :func:`class_witness`, so
+    a mutated rule or a different net change still yields ``None`` no matter which [4+2] family calls it."""
     if not verify(witness):
         return None
-    if _match_signature(witness) != _RETRO_SIGNATURE:
+    if _match_signature(witness) != signature:
         return None
-    return DA_CLASS
+    return label
 
 
-def independently_reconstructs(target: BondGraph, retro_result: BondGraph, match: tuple[int, ...]) -> bool:
+def independently_reconstructs(target: BondGraph, retro_result: BondGraph, match: tuple[int, ...],
+                                forward: BondRule = _FORWARD) -> bool:
     """Independent verifier (separate representation from the enumerator's ``apply``): does re-forming the two cleaved
     sigma bonds and restoring the pi shift on ``retro_result`` reproduce ``target`` EXACTLY, by adjacency multiset?
 
     This never calls :func:`apply`.  It rebuilds the forward bond delta from the rule geometry and the match, applies
     it to ``retro_result`` as a pair->order table, and compares to ``target``.  A forgery that fools the enumerator
-    but not this recomputation is rejected.
+    but not this recomputation is rejected.  ``forward`` defaults to the alkene family's own rule so this stays
+    byte-identical for every existing caller; a sibling family (e.g. the alkyne dienophile) passes its own rule.
     """
     try:
         if target.labels != retro_result.labels:
             return False
         # Forward delta (synthesis L->R) mapped through the match, computed from the rule geometry directly.
-        forward = _FORWARD
         deleted = {tuple(sorted((match[e.i], match[e.j]))): e.order for e in forward.left.edges - forward.right.edges}
         added = {tuple(sorted((match[e.i], match[e.j]))): e.order for e in forward.right.edges - forward.left.edges}
         table = {e.pair: e.order for e in retro_result.edges}
@@ -163,26 +174,38 @@ def independently_reconstructs(target: BondGraph, retro_result: BondGraph, match
         return False
 
 
-def retro_da_disconnections(target: BondGraph, *, budget: int = 100000) -> tuple[tuple[DisconnectionAudit, ...], bool]:
-    """Every GUARDED retro-Diels-Alder disconnection of ``target``, plus an honest completeness flag.
+def _guarded_retro(retro_rule: BondRule, forward_rule: BondRule, retro_signature: tuple, class_label: str,
+                    target: BondGraph, *, budget: int = 100000) -> tuple[tuple[DisconnectionAudit, ...], bool]:
+    """The rule-parameterized GUARDED retro-[4+2] core (dalembert's ask: one enforcement point, not one per family).
+
+    Every guard below is family-AGNOSTIC -- it reads ``retro_rule``/``forward_rule``/``retro_signature``/
+    ``class_label`` rather than the alkene family's module-level constants -- so a sibling dienophile family (the
+    alkyne one) rides the SAME enforcement, not a hand-copied second one that could silently drift out of guard-step.
+    :func:`retro_da_disconnections` (alkene) and :func:`retro_alkyne_da_disconnections` are now both thin callers.
 
     Guards (each failure DROPS the match -- coverage loss, never a coerced witness), per the design doc s3:
       2. induced-subgraph exactness on the six matched carbons (locality lock: no extra bond forges a fake adduct);
-      3. aromatic / polyene exclusion is automatic (the pattern needs exactly one ring C=C among the six);
+      2b. no exocyclic MULTIPLE bond on a matched carbon (the ketene/allene false-VOUCH kill);
+      3. aromatic ADDUCTS are excluded automatically -- the induced pattern fixes the adduct's ring unsaturation
+         count exactly (one C=C for the alkene family, the 1,4-diene for the alkyne family), so a fully aromatic
+         ring never matches.  This constrains the ADDUCT ONLY, NOT the retro FRAGMENTS (dalembert): a guarded
+         retro CAN yield an aromatic diene fragment (benzene from barrelene, family-wide), vouched as a
+         structurally valid [4+2] TYPE -- its feasibility (benzene a reluctant diene, anthracene a willing one)
+         is Problem B, deferred, never a type-validity claim here;
       5. the retro must GLOBALLY disconnect the target into a diene component and a disjoint dienophile component;
       + the class witness (match signature) and the independent verifier must both agree.
     """
     if type(target) is not BondGraph:
-        raise RuleError("retro_da_disconnections expects a BondGraph target")
+        raise RuleError("_guarded_retro expects a BondGraph target")
     if not valence_sane(target):
         return (), True  # a valence-impossible molecule has no valid chemistry: no disconnections, definitively
-    receipt = enumerate_matches(RETRO_DA, target, budget=budget)
+    receipt = enumerate_matches(retro_rule, target, budget=budget)
     audits: list[DisconnectionAudit] = []
     seen_products: set[str] = set()  # collapse symmetric matches that yield the SAME product presentation
     for w in receipt.witnesses:
         m = w.match
         # Guard 2: the six matched carbons induce EXACTLY the ring pattern (no extra bond among them).
-        if _induced_edges(target, m) != frozenset(Edge(m[e.i], m[e.j], e.order) for e in RETRO_DA.left.edges):
+        if _induced_edges(target, m) != frozenset(Edge(m[e.i], m[e.j], e.order) for e in retro_rule.left.edges):
             continue
         # Guard 2b (evil-morty KILL -- the cyclohexenone/ketene false-VOUCH): every matched carbon becomes an sp2
         # alkene terminus in the retro products, so NONE may carry an exocyclic MULTIPLE bond.  A ring carbonyl (C=O)
@@ -194,11 +217,11 @@ def retro_da_disconnections(target: BondGraph, *, budget: int = 100000) -> tuple
         if any(e.order != 1 for e in target.edges if (e.i in matched) != (e.j in matched)):
             continue
         # Class witness derived from the match + kernel verify.
-        cls = class_witness(w)
+        cls = _class_witness(w, retro_signature, class_label)
         if cls is None:
             continue
         # Independent verifier: reconstruction reproduces the target exactly.
-        if not independently_reconstructs(target, w.target, m):
+        if not independently_reconstructs(target, w.target, m, forward_rule):
             continue
         # Guard 5: global two-fragment split -- diene carbons and dienophile carbons land in DISJOINT components.
         diene_seeds = {m[i] for i in _DIENE}
@@ -219,6 +242,13 @@ def retro_da_disconnections(target: BondGraph, *, budget: int = 100000) -> tuple
             dienophile_vertices=tuple(sorted(dienophile_seeds)),
         ))
     return tuple(audits), receipt.complete
+
+
+def retro_da_disconnections(target: BondGraph, *, budget: int = 100000) -> tuple[tuple[DisconnectionAudit, ...], bool]:
+    """Every GUARDED retro-Diels-Alder disconnection of ``target`` (alkene dienophile family), plus an honest
+    completeness flag.  A thin caller of the family-generic :func:`_guarded_retro`; see its docstring for the guards.
+    """
+    return _guarded_retro(RETRO_DA, _FORWARD, _RETRO_SIGNATURE, DA_CLASS, target, budget=budget)
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -360,6 +390,175 @@ class DielsAlderProvider(TransformProvider):
             products = _config(a.witness.target).species
             try:
                 transforms.append(DielsAlderRetroEdge(DA_RETRO_SCHEMA, reactant, tuple(products), (), DA_CLASS))
+            except ScissionError:
+                continue   # the edge's own certificates refused it -> drop (fail-closed), never a coerced transform
+        return tuple(transforms), complete
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# The ALKYNE-dienophile sibling family: diene + alkyne -> 1,4-cyclohexadiene (NOT 1,3 -- the verified chemistry).
+# Same degree-locked kernel, same guards (via _guarded_retro), same opt-in seam; only the dienophile bond order (a
+# triple, not a double) and the forward product's second ring pi bond (the retro-DA leaves the OTHER alkyne carbon
+# pair as C=C too) differ, so this is a genuinely separate rule, not a relabelling of the alkene one.
+# --------------------------------------------------------------------------------------------------------------------
+
+# Forward [4+2] (alkyne dienophile): diene C0=C1-C2=C3 + dienophile C4#C5 -> 1,4-cyclohexadiene ring, where the
+# triple bond's second pi shifts INTO the ring (C4=C5 survives as a ring alkene) alongside the diene's own new
+# central pi shift (C1=C2) -- both original diene pi bonds become ring sigma bonds. Degree-preserving both sides
+# (2,3,3,2,3,3): the alkyne carbons carry one MORE bond-order unit than an alkene dienophile, spent on the ring C=C
+# that alkene DA cannot form (an alkene dienophile has no second pi to donate).
+_FORWARD_ALKYNE = BondRule(
+    "diels-alder-[4+2]-alkyne-carbocyclic-v1",
+    BondGraph(_C6, frozenset({Edge(0, 1, 2), Edge(1, 2, 1), Edge(2, 3, 2), Edge(4, 5, 3)})),
+    BondGraph(_C6, frozenset({Edge(0, 1, 1), Edge(1, 2, 2), Edge(2, 3, 1),
+                              Edge(3, 4, 1), Edge(4, 5, 2), Edge(0, 5, 1)})),
+)
+#: The disconnection direction R -> L: a 1,4-cyclohexadiene adduct -> diene + alkyne dienophile.
+RETRO_ALKYNE_DA: BondRule = _FORWARD_ALKYNE.reverse()
+#: The class label this sibling family's witness carries -- distinct from :data:`DA_CLASS` so the two never collide.
+ALKYNE_DA_CLASS = "diels-alder-[4+2]-alkyne-cyclohexadiene"
+_ALKYNE_RETRO_SIGNATURE = _match_signature(
+    RewriteWitness(RETRO_ALKYNE_DA, RETRO_ALKYNE_DA.left, tuple(range(6)), RETRO_ALKYNE_DA.right)
+)
+#: The coordinate-free reaction CENTRE of the alkyne family in the SYNTHESIS direction, DERIVED from the forward
+#: rule (never hand-typed) -- same discipline as :data:`_DA_CENTER`, so the oracle recognizer can compare by exact
+#: equality without either family's centre drifting relative to its own rule.
+_ALKYNE_DA_CENTER = _synthesis_center(_FORWARD_ALKYNE)
+
+
+def retro_alkyne_da_disconnections(target: BondGraph, *,
+                                    budget: int = 100000) -> tuple[tuple[DisconnectionAudit, ...], bool]:
+    """Every GUARDED retro-Diels-Alder disconnection of ``target`` (alkyne dienophile family), plus an honest
+    completeness flag.  A thin caller of the family-generic :func:`_guarded_retro`; see its docstring for the guards.
+    """
+    return _guarded_retro(RETRO_ALKYNE_DA, _FORWARD_ALKYNE, _ALKYNE_RETRO_SIGNATURE, ALKYNE_DA_CLASS, target,
+                          budget=budget)
+
+
+ALKYNE_DA_RETRO_SCHEMA = "smartchem.diels-alder/alkyne-retro-v1"
+
+
+def _reactant_alkyne_da_disconnects_to(reactant: Molecule, products: tuple[Molecule, ...]) -> bool:
+    """The alkyne-family analogue of :func:`_reactant_da_disconnects_to` -- same cheap pre-filter (a 1,4-
+    cyclohexadiene adduct is cyclic, >=6 ring carbons, and carries a ring C=C, so it passes identically), but re-
+    derives DA-ness through :func:`retro_alkyne_da_disconnections` so it certifies THIS family, not the alkene one."""
+    if sum(1 for a in reactant.atoms if a == "C") < 6:
+        return False
+    if len(reactant.bonds) < len(reactant.atoms):  # a connected molecule is acyclic iff |bonds| < |atoms|
+        return False
+    if not any(b.order == 2 and reactant.atoms[b.i] == "C" and reactant.atoms[b.j] == "C" for b in reactant.bonds):
+        return False
+    try:
+        graph = _joined((reactant,))
+    except (RuleError, ScissionError, TypeError, ValueError):
+        return False
+    want = Config.of(*products)
+    audits, _ = retro_alkyne_da_disconnections(graph)
+    return any(_config(a.witness.target) == want for a in audits)
+
+
+@dataclass(frozen=True)
+class AlkyneDielsAlderEdge(Digestible):
+    """A retro-Diels-Alder [4+2] disconnection of the ALKYNE-dienophile family, stored as a DECOMPOSITION of
+    ``reactant`` (the 1,4-cyclohexadiene adduct) into ``(diene, alkyne dienophile)`` -- the alkyne-family sibling of
+    :class:`DielsAlderRetroEdge`, cloned structure, own schema/class/certificate/centre so it can never be confused
+    with (or silently substitute for) the alkene family's edge.
+    """
+
+    schema_version: str
+    reactant: Molecule
+    products: tuple[Molecule, ...]
+    reagents: tuple[Molecule, ...]
+    reaction_class: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != ALKYNE_DA_RETRO_SCHEMA:
+            raise ScissionError(f"schema_version must be exactly {ALKYNE_DA_RETRO_SCHEMA!r}")
+        if type(self.reactant) is not Molecule:
+            raise ScissionError("reactant must be a Molecule")
+        if self.reagents != ():
+            raise ScissionError("a retro-Diels-Alder is reagentless")
+        if (type(self.products) is not tuple or len(self.products) != 2
+                or any(type(m) is not Molecule for m in self.products)):
+            raise ScissionError("a retro-DA yields exactly two product Molecules (diene, dienophile)")
+        if self.reaction_class != ALKYNE_DA_CLASS:
+            raise ScissionError(f"reaction_class must be {ALKYNE_DA_CLASS!r}")
+        # (1) independent conservation certificate (mass + charge), decomposition view.
+        try:
+            Reaction(Config.of(self.reactant), Config.of(*self.products), name="diels-alder-alkyne-retro")
+        except ConservationError as clash:
+            raise ScissionError(f"retro-DA does not conserve mass/charge: {clash}") from clash
+        # (2) DA-ness certificate: conservation alone does not prove a [4+2] -- re-derive it from the reactant.
+        if not _reactant_alkyne_da_disconnects_to(self.reactant, self.products):
+            raise ScissionError("not an alkyne [4+2] adduct of these fragments (a fabricated DA edge is refused)")
+
+    def equation(self) -> str:
+        rhs = " + ".join(repr(m) for m in self.products)
+        return f"{self.reactant!r} -> {rhs}"
+
+    def reaction_center(self) -> ReactionCenter:
+        """The coordinate-free [4+2] reaction centre in the synthesis direction -- the alkyne family invariant
+        :data:`_ALKYNE_DA_CENTER`, distinct from the alkene family's :data:`_DA_CENTER` (the alkyne one forms an
+        extra ring C=C instead of a ring C-C), so the oracle can tell the two classes apart by exact equality."""
+        return _ALKYNE_DA_CENTER
+
+    def forget(self) -> DecompositionEdge:
+        """The composition-level image: the formula-level decomposition of the adduct into its two fragments."""
+        merged: dict[Formula, int] = {}
+        for m in self.products:
+            comp = Formula.of(m.formula, m.charge)
+            if comp.is_element:
+                (symbol, count), = comp.counts
+                bucket = Formula.bucket(symbol)
+                merged[bucket] = merged.get(bucket, 0) + count
+            else:
+                merged[comp] = merged.get(comp, 0) + 1
+        products = tuple(sorted(merged.items(), key=lambda pm: (pm[0].rank, repr(pm[0]))))
+        return DecompositionEdge(Formula.of(self.reactant.formula, self.reactant.charge), 1, products)
+
+    def __repr__(self) -> str:
+        return f"AlkyneDielsAlderEdge({self.equation()})"
+
+
+@dataclass(frozen=True)
+class AlkyneDielsAlderProvider(TransformProvider):
+    """The alkyne-dienophile Diels-Alder [4+2] retro family as an OPT-IN provider (absent from the default
+    registry, exactly like :class:`DielsAlderProvider`).  Reagentless; neutral, empty-state carbocyclic targets
+    only.  It rides the route/DAG seam with zero changes to shared machinery and asserts structural type-validity
+    only (Problem A)."""
+
+    provider_id: str = "diels-alder-alkyne-retro"
+    provider_version: str = "v1"
+    witness_kind: str = "DIELS_ALDER_ALKYNE"
+
+    @property
+    def capability_manifest(self) -> tuple:
+        return (
+            ("family", ALKYNE_DA_CLASS),
+            ("mechanism", "concerted [4+2] retro-cycloaddition, alkyne dienophile -> 1,4-cyclohexadiene, "
+                          "2 sigma broken / pi restored, reagentless, neutral"),
+            ("witness_kind", self.witness_kind),
+            ("projection_kind", "DECOMPOSITION_EDGE"),
+            ("state_domain", "neutral-empty-state-carbocyclic-only"),
+            ("chemical_authority", "structural-type-validity-only-problem-A"),
+        )
+
+    def enumerate_transforms(self, reactant, reagents, *, budget):
+        # boundary contract: never raise; a target this family cannot address enumerates nothing and is complete.
+        if type(reactant) is not Molecule or reactant.charge != 0 or reactant.state:
+            return (), True
+        try:
+            graph = _joined((reactant,))
+        except (RuleError, ScissionError, TypeError, ValueError):
+            return (), True   # non-transportable (charged/stateful/atomless) -> fall through, do not crash the mix
+        audits, complete = retro_alkyne_da_disconnections(graph, budget=budget)
+        transforms = []
+        for a in audits:
+            products = _config(a.witness.target).species
+            try:
+                transforms.append(
+                    AlkyneDielsAlderEdge(ALKYNE_DA_RETRO_SCHEMA, reactant, tuple(products), (), ALKYNE_DA_CLASS)
+                )
             except ScissionError:
                 continue   # the edge's own certificates refused it -> drop (fail-closed), never a coerced transform
         return tuple(transforms), complete

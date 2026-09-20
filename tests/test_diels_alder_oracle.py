@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from smartchem.diels_alder import _DA_CENTER, _FORWARD, DielsAlderProvider, _synthesis_center
+from smartchem.diels_alder import (
+    _ALKYNE_DA_CENTER, _DA_CENTER, _FORWARD, AlkyneDielsAlderProvider, DielsAlderProvider, _synthesis_center,
+)
 from smartchem.experiment.reaction_type_oracle import (
-    _diels_alder, recognize_reaction_type, route_reaction_type_blockers,
+    _alkyne_diels_alder, _diels_alder, recognize_reaction_type, route_reaction_type_blockers,
 )
 from smartchem.experiment.routes import search_routes
 from smartchem.experiment.step import ExperimentStep
@@ -20,6 +22,12 @@ from smartchem.smiles import parse_smiles
 from smartchem.transform_provider import CappedScissionProvider, TransformProviderRegistry
 
 _DA_LABEL = "Diels-Alder [4+2] cycloaddition (all-carbon diene + alkene dienophile -> cyclohexene adduct)"
+_ALKYNE_DA_LABEL = "Diels-Alder [4+2] cycloaddition (all-carbon diene + alkyne dienophile -> 1,4-cyclohexadiene)"
+
+
+def _alkyne_da_synthesis_step() -> ExperimentStep:
+    edge = AlkyneDielsAlderProvider().enumerate_transforms(parse_smiles("C1=CCC=CC1"), (), budget=100000)[0][0]
+    return ExperimentStep.from_transform(edge, envelope=None)
 
 
 def _da_synthesis_step() -> ExperimentStep:
@@ -105,3 +113,32 @@ def test_alkyne_dienophile_da_is_honest_coverage_loss():
         reaction_center=_DA_CENTER,
     )
     assert _diels_alder(alkyne_da) is False
+
+
+# --- the alkyne-dienophile sibling family: its own genuine synthesis step is now vouched too ---
+
+def test_alkyne_da_synthesis_step_is_vouched_as_alkyne_diels_alder():
+    step = _alkyne_da_synthesis_step()
+    assert _alkyne_diels_alder(step) is True
+    assert recognize_reaction_type(step) == _ALKYNE_DA_LABEL
+    assert step.reaction_center == _ALKYNE_DA_CENTER
+
+
+def test_a_alkyne_da_route_is_no_longer_fiction_blocked():
+    chd, buta, ac = parse_smiles("C1=CCC=CC1"), parse_smiles("C=CC=C"), parse_smiles("C#C")
+    reg = TransformProviderRegistry((CappedScissionProvider(), AlkyneDielsAlderProvider()))
+    res = search_routes(chd, reagents=(), available=(buta, ac), registry=reg, max_depth=2)
+    assert len(res.routes) == 1
+    assert route_reaction_type_blockers(res.routes[0]) == ()
+
+
+# --- the two DA classes are locked apart: neither recognizer poaches the other's genuine step ---
+
+def test_the_alkene_recognizer_does_not_poach_a_genuine_alkyne_da_step():
+    step = _alkyne_da_synthesis_step()
+    assert _diels_alder(step) is False
+
+
+def test_the_alkyne_recognizer_does_not_poach_a_genuine_alkene_da_step():
+    step = _da_synthesis_step()
+    assert _alkyne_diels_alder(step) is False

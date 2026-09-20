@@ -68,12 +68,14 @@ section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized s
 frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* FOUR ACTIVE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), dehydrative N-alkylation
+* FIVE ACTIVE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), dehydrative N-alkylation
   (R63, generalising and SUBSUMING the R60 N-methylation sub-case -- it REPLACES the R60 entry rather than adding
-  one), and the all-carbon Diels-Alder [4+2] cycloaddition (alkene dienophile -> cyclohexene; the first PERICYCLIC,
-  non-condensation class, promoting the opt-in rule-calculus DA family into the oracle; alkyne/allene dienophiles
-  are honest coverage loss), so ``_RECOGNIZERS`` holds FOUR, each with its own conservation-lock proof.
-  N-alkylation covers any
+  one), the all-carbon Diels-Alder [4+2] cycloaddition with an ALKENE dienophile (-> cyclohexene; the first
+  PERICYCLIC, non-condensation class, promoting the opt-in rule-calculus DA family into the oracle), and its ALKYNE-
+  dienophile sibling (-> 1,4-cyclohexadiene; the first pericyclic class that keeps a second unsaturation in the
+  adduct, promoting the opt-in :class:`~smartchem.diels_alder.AlkyneDielsAlderProvider` family the same way; allene
+  dienophiles remain honest coverage loss), so ``_RECOGNIZERS`` holds FIVE, each with its own conservation-lock
+  proof. N-alkylation covers any
   non-carbonyl N nucleophile (amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine) by an ALKYL
   alcohol; ARYL amination (a C-N onto an aromatic ring carbon, the phenol->aniline fake) and masked-carbonyl donors
   (hemiaminal/acetal condensations) are excluded, and other real condensations (Friedel-Crafts, Kolbe-Schmitt,
@@ -234,6 +236,35 @@ def _n_alkylation(step) -> bool:
     return _n_alkylation_shape_and_net_change(step) and center.is_elementary_condensation(("N",))
 
 
+def _alkyne_diels_alder(step) -> bool:
+    """Recognizer: an all-carbon Diels-Alder [4+2] cycloaddition (diene + ALKYNE dienophile -> 1,4-cyclohexadiene).
+
+    The fifth active class, and the FIRST pericyclic recognizer that keeps a second unsaturation in the adduct: an
+    alkyne dienophile donates its second pi bond into the ring, so the product is 1,4-cyclohexadiene (verified
+    chemistry), not the fully-saturated-except-one-alkene cyclohexene the alkene family makes.  It is a straight
+    clone of :func:`_diels_alder`'s three-layer discipline against the alkyne sibling family
+    (:mod:`smartchem.diels_alder`'s :data:`_ALKYNE_DA_CENTER` /
+    :func:`~smartchem.diels_alder._reactant_alkyne_da_disconnects_to`), so it inherits the SAME soundness argument
+    rather than a hand-rolled second one: Layer A re-derives [4+2]-ness from the step's own molecules (never the
+    transform type), Layer B pins the exact alkyne-family reaction centre (distinct from the alkene family's, so the
+    two classes cannot cross-poach each other), and Layer C fail-closed blocks a centre-less step.
+
+    SCOPE: only alkyne-dienophile -> 1,4-cyclohexadiene.  An allene dienophile or an alkyne embedded in a larger
+    conjugated system is genuine [4+2] chemistry this recognizer does NOT vouch -- honest coverage loss
+    (false-UNRECOGNIZED, safe), never a false-vouch."""
+    from ..diels_alder import _ALKYNE_DA_CENTER, _reactant_alkyne_da_disconnects_to
+    reactants = tuple(step.reactants)
+    products = tuple(step.products)
+    if len(products) != 1 or len(reactants) != 2:
+        return False
+    if not _reactant_alkyne_da_disconnects_to(products[0], reactants):
+        return False  # Layer A: the adduct does not re-derive a guarded alkyne [4+2] retro into these two reactants
+    center = getattr(step, "reaction_center", None)
+    if center is None:
+        return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
+    return center == _ALKYNE_DA_CENTER  # Layer B: the centre is exactly the alkyne-family pericyclic [4+2] signature
+
+
 def _diels_alder(step) -> bool:
     """Recognizer: an all-carbon Diels-Alder [4+2] cycloaddition (diene + ALKENE dienophile -> cyclohexene adduct).
 
@@ -281,12 +312,17 @@ def _diels_alder(step) -> bool:
 #: R57 added dehydrative etherification; R60 added dehydrative N-methylation and R63 GENERALISES it to dehydrative
 #: N-alkylation by any sp3 alcohol (subsuming the methyl sub-case; each a conservation-locked class, NOT a
 #: bounded-radius patch). The Diels-Alder [4+2] recognizer promotes the opt-in rule-calculus DA family into the
-#: oracle -- the first pericyclic, non-condensation class, locked by the family's own re-derivation certificate.
+#: oracle -- the first pericyclic, non-condensation class, locked by the family's own re-derivation certificate; the
+#: alkyne-dienophile sibling ADDS a fifth entry (its own distinct centre + re-derivation), the first pericyclic class
+#: that keeps a second unsaturation in the adduct (1,4-cyclohexadiene, not cyclohexene) -- the two DA classes are
+#: locked apart by their exact-equality centre check, so neither can poach the other's steps.
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
     ("N-alkylation (dehydrative, non-carbonyl N-H + alkyl-OH -> N-alkyl + water)", _n_alkylation),
     ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkene dienophile -> cyclohexene adduct)", _diels_alder),
+    ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkyne dienophile -> 1,4-cyclohexadiene)",
+     _alkyne_diels_alder),
 )
 
 

@@ -68,10 +68,12 @@ section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized s
 frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* THREE ACTIVE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), and dehydrative N-alkylation
-  (R63, generalising and SUBSUMING the R60 N-methylation sub-case -- R63 was the 4th conservation-locked class
-  DEVELOPED, but it REPLACES the R60 entry rather than adding a fourth, so ``_RECOGNIZERS`` holds THREE), each with
-  its own conservation-lock proof. N-alkylation covers any
+* FOUR ACTIVE CLASSES -- acyl condensation (R56), dehydrative etherification (R57), dehydrative N-alkylation
+  (R63, generalising and SUBSUMING the R60 N-methylation sub-case -- it REPLACES the R60 entry rather than adding
+  one), and the all-carbon Diels-Alder [4+2] cycloaddition (alkene dienophile -> cyclohexene; the first PERICYCLIC,
+  non-condensation class, promoting the opt-in rule-calculus DA family into the oracle; alkyne/allene dienophiles
+  are honest coverage loss), so ``_RECOGNIZERS`` holds FOUR, each with its own conservation-lock proof.
+  N-alkylation covers any
   non-carbonyl N nucleophile (amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine) by an ALKYL
   alcohol; ARYL amination (a C-N onto an aromatic ring carbon, the phenol->aniline fake) and masked-carbonyl donors
   (hemiaminal/acetal condensations) are excluded, and other real condensations (Friedel-Crafts, Kolbe-Schmitt,
@@ -181,8 +183,8 @@ def _etherification(step) -> bool:
 def _n_alkylation(step) -> bool:
     """Recognizer: an intermolecular dehydrative N-ALKYLATION (non-carbonyl N-H + alkyl-OH -> N-alkyl + water), R63.
 
-    The fourth conservation-locked class DEVELOPED (it SUBSUMES the R60 N-methylation entry, so ``_RECOGNIZERS``
-    keeps THREE active recognizers), GENERALISING the R60 N-methylation recognizer to any ALKYL alcohol donor
+    The fourth conservation-locked class DEVELOPED (it SUBSUMES the R60 N-methylation entry rather than adding a
+    recognizer), GENERALISING the R60 N-methylation recognizer to any ALKYL alcohol donor
     and any non-carbonyl nitrogen nucleophile -- the class the R56/R60 record deferred to "a future round
     behind its own gate".  It subsumes N-methylation (methanol is an alkyl alcohol; a methyl bond is an sp3 C-N
     bond), so it REPLACES rather than supplements it: caffeine (theophylline + methanol -> caffeine + water) is
@@ -232,16 +234,59 @@ def _n_alkylation(step) -> bool:
     return _n_alkylation_shape_and_net_change(step) and center.is_elementary_condensation(("N",))
 
 
+def _diels_alder(step) -> bool:
+    """Recognizer: an all-carbon Diels-Alder [4+2] cycloaddition (diene + ALKENE dienophile -> cyclohexene adduct).
+
+    SCOPE (honest, per the adversary gate): only the alkene-dienophile -> cyclohexene family is recognized.  An
+    alkyne dienophile (butadiene + acetylene -> 1,3-cyclohexadiene) or an allene/exocyclic-alkene dienophile is a
+    genuine [4+2] this recognizer does NOT vouch -- honest coverage loss (false-UNRECOGNIZED, safe), never a
+    false-vouch; the family rule fixes an alkene dienophile.
+
+    Conservation-locked like its siblings, but the lock is the DA family's own double certificate rather than a
+    functional-group census (a pericyclic reaction has no dehydrative signature).  Three layers:
+    * Layer A (the census analogue) -- re-derive [4+2]-ness FROM THE STEP'S OWN MOLECULES, never from the
+      transform type: the step must be a 2->1 combination whose single product admits a GUARDED retro-Diels-Alder
+      disconnecting into exactly the two reactants (:func:`smartchem.diels_alder._reactant_da_disconnects_to`).  A
+      mass-balancing 2->1 combination that is NOT a genuine [4+2] is refused -- conservation alone does not prove a
+      cycloaddition (the load-bearing certificate; a budget-exhausted retro DEMOTES, never vouches -- fail-closed).
+    * Layer B (span-local) -- the reaction centre must be the pericyclic [4+2] signature
+      (:data:`smartchem.diels_alder._DA_CENTER`: two sigma C-C formed + the central pi shift, three pi broken, one
+      connected six-carbon cluster), matched by exact equality.
+    * Layer C (fail-closed, TAMPER-HARDENING-01) -- a step with no readable centre BLOCKS.
+    Soundness rests on Layer A's independent re-derivation; the centre supplies elementarity + tamper-resistance,
+    never the vouch alone.  Structural type-validity only (Problem A): no feasibility/endo-exo/regiochemistry.
+
+    HOT PATH (load-bearing reachability, evil-morty): this runs via :func:`route_reaction_type_blockers` in
+    production route ranking for ALL users, so Layer A's retro runs on every 2->1 step's product (cheap ~1 ms; the
+    pre-filter in ``_reactant_da_disconnects_to`` skips the common acyclic fragment).  It is a no-op for non-opt-in
+    users ONLY because the default single-cut (``max_reactant_cuts = 1``) CappedScission cannot emit a ring-forming
+    2->1 step -- a reachability property, NOT structural.  Enable a carbocyclic 2->1 provider (or raise the cut
+    budget) and DA vouches begin firing in production: the intended, sound behaviour, not a regression."""
+    from ..diels_alder import _DA_CENTER, _reactant_da_disconnects_to
+    reactants = tuple(step.reactants)
+    products = tuple(step.products)
+    if len(products) != 1 or len(reactants) != 2:
+        return False
+    if not _reactant_da_disconnects_to(products[0], reactants):
+        return False  # Layer A: the adduct does not re-derive a guarded [4+2] retro into these two reactants
+    center = getattr(step, "reaction_center", None)
+    if center is None:
+        return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
+    return center == _DA_CENTER  # Layer B: the centre is exactly the pericyclic [4+2] signature
+
+
 #: The positive whitelist of attested reaction-class recognizers: ``(class_name, predicate)``. A step is
 #: recognized iff SOME predicate fires. Every entry MUST carry a conservation-lock proof (see the module
 #: docstring); a general bounded-radius recognizer is exactly escape #7 and is not admitted. R56 shipped acyl;
 #: R57 added dehydrative etherification; R60 added dehydrative N-methylation and R63 GENERALISES it to dehydrative
 #: N-alkylation by any sp3 alcohol (subsuming the methyl sub-case; each a conservation-locked class, NOT a
-#: bounded-radius patch).
+#: bounded-radius patch). The Diels-Alder [4+2] recognizer promotes the opt-in rule-calculus DA family into the
+#: oracle -- the first pericyclic, non-condensation class, locked by the family's own re-derivation certificate.
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
     ("N-alkylation (dehydrative, non-carbonyl N-H + alkyl-OH -> N-alkyl + water)", _n_alkylation),
+    ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkene dienophile -> cyclohexene adduct)", _diels_alder),
 )
 
 

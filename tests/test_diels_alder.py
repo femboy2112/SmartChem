@@ -146,7 +146,7 @@ def test_the_da_edge_reverses_into_the_forward_synthesis():
     assert [repr(m) for m in step.products] == ["C6H10"]           # ... -> cyclohexene
 
 
-def test_the_three_existing_classes_and_hostile_near_misses_yield_no_da_transform():
+def test_the_other_oracle_classes_and_hostile_near_misses_yield_no_da_transform():
     # The acyl / ether / N-alkylation substrates+products, and aromatic / polyene / acyclic near-misses, are NOT
     # [4+2] adducts -> the provider emits nothing for them (soundness: DA does not poach the other classes).
     for smiles in ("CC(=O)OC",        # methyl acetate (acyl class)

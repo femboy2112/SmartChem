@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from .category import Config, ConservationError, Molecule, Reaction
 from .contracts import Digestible
 from .decompiler import DecompositionEdge, Formula
+from .reaction_center import ReactionCenter
 from .rule_calculus import BondGraph, BondRule, Edge, RewriteWitness, RuleError, enumerate_matches, verify
 from .rule_calculus_bridge import _config, _joined, valence_sane
 from .structure_descent import ScissionError
@@ -41,6 +42,40 @@ DA_CLASS = "diels-alder-[4+2]-carbocyclic"
 # The diene carbons {0,1,2,3} and dienophile carbons {4,5} in the rule's own vertex numbering.
 _DIENE = frozenset({0, 1, 2, 3})
 _DIENOPHILE = frozenset({4, 5})
+
+def _synthesis_center(rule: BondRule) -> ReactionCenter:
+    """The coordinate-free reaction centre of ``rule`` in the SYNTHESIS (left->right) direction, DERIVED from the
+    rule's own edge delta so it TRACKS the rule rather than a hand-typed constant that could silently drift when
+    the family widens (dalembert's reinforcement): a bond whose order changes is BROKEN at its old order and FORMED
+    at its new order; ``n_components`` counts the connected clusters of the changed-bond graph over the vertices."""
+    left, right = rule.left, rule.right
+    formed = [(right.labels[e.i], right.labels[e.j], e.order) for e in right.edges - left.edges]
+    broken = [(left.labels[e.i], left.labels[e.j], e.order) for e in left.edges - right.edges]
+    adjacent: dict[int, set[int]] = {}
+    for e in (right.edges - left.edges) | (left.edges - right.edges):
+        adjacent.setdefault(e.i, set()).add(e.j)
+        adjacent.setdefault(e.j, set()).add(e.i)
+    seen: set[int] = set()
+    components = 0
+    for start in adjacent:
+        if start in seen:
+            continue
+        components += 1
+        stack = [start]
+        while stack:
+            v = stack.pop()
+            if v not in seen:
+                seen.add(v)
+                stack.extend(adjacent[v] - seen)
+    return ReactionCenter.of(formed, broken, components)
+
+
+# The coordinate-free reaction CENTRE of the family in the SYNTHESIS direction (diene + alkene dienophile ->
+# cyclohexene), derived from the FORWARD rule so the invariant is true BY CONSTRUCTION.  For this all-carbon [4+2]
+# it evaluates to formed = 5x(C,C,1)+(C,C,2), broken = 3x(C,C,2)+(C,C,1), one six-carbon cluster -- a family
+# invariant (every guarded match maps the same six all-carbon vertices, substituents ride OUTSIDE them), so no
+# guarded DA is ever false-demoted by the oracle's exact-equality check (verified by both adversaries).
+_DA_CENTER = _synthesis_center(_FORWARD)
 
 
 @dataclass(frozen=True)
@@ -198,7 +233,19 @@ DA_RETRO_SCHEMA = "smartchem.diels-alder/retro-v1"
 def _reactant_da_disconnects_to(reactant: Molecule, products: tuple[Molecule, ...]) -> bool:
     """Self-contained DA-ness certificate: does ``reactant`` admit a GUARDED [4+2] retro whose two fragments are
     exactly ``products`` (as a Config)?  Re-derived from the reactant alone, so a hand-built edge cannot carry
-    fabricated fragments that merely happen to balance mass (the DA analogue of the redox electron-ledger fold)."""
+    fabricated fragments that merely happen to balance mass (the DA analogue of the redox electron-ledger fold).
+
+    Cheap necessary conditions gate the enumeration first (IDENTITY-PRESERVING -- a guarded retro-DA matches a
+    six-carbon ring bearing one ring C=C, so an acyclic / sub-six-carbon / alkene-free molecule cannot admit one
+    and the enumeration would find nothing).  The oracle recognizer runs this in the production route-ranking hot
+    path for EVERY 2->1 step (all users, not just opt-in), so this early-out keeps the common acyclic
+    capped-scission fragment off the enumeration path."""
+    if sum(1 for a in reactant.atoms if a == "C") < 6:
+        return False
+    if len(reactant.bonds) < len(reactant.atoms):  # a connected molecule is acyclic iff |bonds| < |atoms|
+        return False
+    if not any(b.order == 2 and reactant.atoms[b.i] == "C" and reactant.atoms[b.j] == "C" for b in reactant.bonds):
+        return False
     try:
         graph = _joined((reactant,))
     except (RuleError, ScissionError, TypeError, ValueError):
@@ -252,6 +299,13 @@ class DielsAlderRetroEdge(Digestible):
     def equation(self) -> str:
         rhs = " + ".join(repr(m) for m in self.products)
         return f"{self.reactant!r} -> {rhs}"
+
+    def reaction_center(self) -> ReactionCenter:
+        """The coordinate-free [4+2] reaction centre in the synthesis direction -- the family invariant
+        :data:`_DA_CENTER`.  ``__post_init__`` has already re-derived this edge's DA-ness, so every valid edge
+        carries exactly this centre; surfacing it lets :meth:`ExperimentStep.from_transform` annotate the step and
+        lets the reaction-type oracle confirm the pericyclic elementarity (span-local) instead of trusting the type."""
+        return _DA_CENTER
 
     def forget(self) -> DecompositionEdge:
         """The composition-level image: the formula-level decomposition of the adduct into its two fragments."""

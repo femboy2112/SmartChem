@@ -55,7 +55,9 @@ __all__ = [
     "EquilibriumExtent",
     "StepEquilibrium",
     "RouteEquilibrium",
+    "ExtentSolution",
     "equilibrium_of_step",
+    "equilibrium_extent",
     "verify_equilibrium",
 ]
 
@@ -251,6 +253,104 @@ def equilibrium_of_step(
         reason, (),
         sigma_log10_k=sigma_log10_k, sigma_log10_k_is_lower_bound=feas.sigma_delta_g_is_lower_bound,
     )
+
+
+@dataclass(frozen=True)
+class ExtentSolution:
+    """The equilibrium extent ξ of ONE reaction under a DECLARED ideal reference, for the general (Δn != 0) case the
+    closed-form :func:`_ideal_conversion` correctly refuses to guess.
+
+    ``xi`` is the SIGNED extent of reaction (mol/L, per the declared constant volume; negative when the reaction runs
+    net-backward, e.g. an initial product present with Q > K).  ``conversion`` is the forward fractional conversion of
+    the limiting reactant (ξ / ξ_complete) -- in [0, 1] for a net-forward reaction, or ``None`` for a net-reverse one
+    (forward conversion is undefined then; the signed direction lives in ``xi``), so this field NEVER escapes [0, 1].
+    ``equilibrium_concentrations`` is c_i at equilibrium; ``reference_c`` the declared standard-state c°.
+    Ranking/evidence ONLY (see :func:`equilibrium_extent` for the full boundary): an ideal-model equilibrium ceiling,
+    NEVER an isolated/practical yield and NEVER a Problem-B capability verdict."""
+
+    xi: float
+    conversion: float | None
+    equilibrium_concentrations: dict["object", float]
+    reference_c: float
+    log10_k: float
+    note: str
+
+
+def equilibrium_extent(
+    step: ExperimentStep, *, initial_concentrations: dict, reference_c: float = 1.0,
+    log10_k: float | None = None, thermo: ThermoTable = DEFAULT_THERMO, temperature_k: float | None = None,
+    derive: bool = True, max_iter: int = 200,
+) -> ExtentSolution | None:
+    """Solve ``K = Π (c_i / c°)^{s_i}`` for the equilibrium extent ξ of ``step`` under a DECLARED ideal reference --
+    the general-Δn generalization of :func:`_ideal_conversion`, which the caller unlocks by DECLARING the two things
+    that closed form correctly refuses to invent: the initial composition (``initial_concentrations``, mol/L per
+    Molecule) and the standard-state reference concentration (``reference_c`` = c°, default 1 mol/L).
+
+    KNOWN PHYSICS, unique root, no new physics.  With signed stoichiometry ``s_i`` (products +, reactants -) and a
+    declared constant volume, ``c_i(ξ) = c_i^0 + s_i·ξ`` and equilibrium is ``f(ξ) = Σ s_i·ln(c_i(ξ)/c°) − ln K =
+    0``.  On the physically admissible open interval (every c_i(ξ) > 0), ``df/dξ = Σ s_i²/c_i(ξ) > 0`` -- f is
+    STRICTLY increasing from −∞ (a product → 0) to +∞ (a reactant → 0), so the root is UNIQUE and bisection finds it.
+
+    Returns ``None`` (fail-closed, no fabricated extent) when: ΔG/K is not sourced (``log10_k`` unavailable), or a
+    reactant is absent (``c_i^0 = 0`` for some reactant -- no forward reaction to solve).
+
+    BOUNDARY (labeled, never overclaimed).  This is an IDEAL-activity, CONSTANT-VOLUME, SINGLE-reaction equilibrium
+    ceiling.  It is NOT: a real-activity result (needs an activity model γ_i), a coupled/simultaneous-equilibria or
+    Le Chatelier co-solve (a shared-intermediate network stays deferred -- only the additive route net-ΔG exists), a
+    RATE or time-to-equilibrium (kinetics is L1, unbuilt), an isolated/practical yield (separation/mass-transfer are
+    downstream), and -- load-bearing -- NOT a Problem-B capability verdict: a genuine equilibrium extent still
+    measures thermodynamic DRIVE, so this is RANKING/EVIDENCE ONLY and never a "can a kitchen bench run this" gate
+    (POOR_MAN_DEFER_LEDGER #5 -- DRIVE != CAPABILITY stands even with M2 extent in hand)."""
+    if type(step) is not ExperimentStep:
+        raise TypeError("step must be an ExperimentStep")
+    if reference_c <= 0:
+        raise ValueError("reference_c (the standard-state concentration c°) must be > 0")
+    if log10_k is None:
+        se = equilibrium_of_step(step, thermo=thermo, temperature_k=temperature_k, derive=derive)
+        if se.log10_k is None:
+            return None  # no sourced ΔG -> no K -> no extent (fail-closed)
+        log10_k = se.log10_k
+    species, nu = _coefficient_vector(step)
+    if not species:
+        return None  # a net-empty step (a self-map / fully-cancelling A+B->B+A): no reaction to solve (fail-closed).
+    s = [-n for n in nu]                                       # signed stoich: products +, reactants -
+    c0 = [float(initial_concentrations.get(m, 0.0)) for m in species]
+    if any(si < 0 and ci <= 0.0 for si, ci in zip(s, c0)):
+        return None  # a reactant is absent -> no forward reaction to solve (fail-closed, no fabricated extent)
+    xi_hi = min(ci / (-si) for si, ci in zip(s, c0) if si < 0)  # forward limit: first reactant to deplete
+    product_floor = [(-ci / si) for si, ci in zip(s, c0) if si > 0]
+    xi_lo = max(product_floor) if product_floor else 0.0       # reverse limit: first product to deplete
+    ln_k = log10_k * math.log(10.0)
+
+    def f(xi: float) -> float:
+        # a net-stoichiometry-zero species (a spectator/catalyst written on both sides) does not participate in the
+        # equilibrium expression (sᵢ = 0) and must be skipped -- else a zero-concentration one hits math.log(0).
+        return sum(si * math.log((ci + si * xi) / reference_c) for si, ci in zip(s, c0) if si != 0) - ln_k
+
+    span = xi_hi - xi_lo
+    lo, hi = xi_lo + span * 1e-12, xi_hi - span * 1e-12
+    if f(lo) >= 0.0:            # Q > K even at the reverse limit -> reaction runs essentially fully backward
+        xi = xi_lo             # the exact reverse boundary (a product exhausted / no forward progress)
+    elif f(hi) <= 0.0:         # Q < K even at the forward limit -> essentially complete conversion
+        xi = xi_hi             # the exact forward boundary (the limiting reactant exhausted)
+    else:
+        for _ in range(max_iter):
+            mid = 0.5 * (lo + hi)
+            if f(mid) < 0.0:
+                lo = mid
+            else:
+                hi = mid
+            if hi - lo < 1e-15 * max(1.0, xi_hi):
+                break
+        xi = 0.5 * (lo + hi)
+    eq_c = {m: ci + si * xi for m, si, ci in zip(species, s, c0)}
+    # forward conversion of the limiting reactant is defined only for a net-FORWARD reaction (ξ >= 0); a net-reverse
+    # reaction (initial product present, Q > K, ξ < 0) has NO forward conversion -> None (the signed extent is in xi).
+    # This keeps `conversion` honestly in [0, 1] and never emits the out-of-[0,1] value a ranker would misread.
+    conversion = xi / xi_hi if (xi_hi > 0 and xi >= 0.0) else None
+    note = (f"ideal-activity, constant-volume, single-reaction equilibrium extent at c° = {reference_c:g} mol/L "
+            f"(log10 K = {log10_k:.2f}); ranking/evidence only, NOT a practical yield or a capability verdict")
+    return ExtentSolution(xi, conversion, eq_c, reference_c, log10_k, note)
 
 
 @dataclass(frozen=True)

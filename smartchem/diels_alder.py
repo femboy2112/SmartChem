@@ -69,9 +69,34 @@ _DIENOPHILE = frozenset({4, 5})
 #: degree 3 -- since the graph carries only NET molecular charge, the same declared ``valence_sane`` boundary that
 #: admits CO/ozone).  That is NOT a reaction-TYPE false-vouch (the [4+2] relation is genuine and the substituent is a
 #: spectator on both sides), and it is not what guard 2c claims to close.  Certifying whole-fragment neutrality would
-#: be a MEASURED tradeoff (it would false-reject a genuine charge-separated-neutral substituent), so it stays a future
-#: labeled option, never a silent tightening.
+#: be a MEASURED tradeoff (it would false-reject a genuine charge-separated-neutral substituent), so it is an OPT-IN,
+#: default-off, LABELED option -- :func:`whole_fragment_neutral` -- never a silent tightening of guard 2c.
 _NEUTRAL_VALENCE: dict[str, int] = {"C": 4, "N": 3, "O": 2, "S": 2}
+
+
+def whole_fragment_neutral(molecule: Molecule) -> bool:
+    """OPT-IN, LABELED (dalembert's Claim-2 measured tradeoff): ``True`` iff EVERY atom of ``molecule`` -- not just a
+    matched [4+2] centre -- is within its neutral valence (:data:`_NEUTRAL_VALENCE`).
+
+    Guard 2c (:func:`_guarded_retro`) bounds ONLY the matched centre atoms of a retro disconnection, so a net-neutral,
+    ``valence_sane`` fragment can still harbour a charge-separated substituent drawn neutral -- an oxonium O at
+    bond-order 3 balanced by an alkoxide O elsewhere -- on a NON-matched atom.  This predicate closes that
+    whole-fragment gap: it re-runs the neutral-valence bound over the fragment's ENTIRE atom set (the upper bound
+    only; an under-coordinated heavy atom is normal, its remaining valence filled by implicit H).
+
+    It is a MEASURED tradeoff, NOT a soundness fix, and MUST stay opt-in: it FALSE-REJECTS a genuine
+    charge-separated-neutral substituent (an N-oxide R3N(+)-O(-), an ylide, a betaine, an azide), which is a real
+    neutral species.  The guarded retro therefore never calls it -- guard 2c's matched-centre scope is the declared
+    ``valence_sane`` boundary -- and a caller who wants whole-fragment neutrality applies this explicitly, e.g.
+    ``all(whole_fragment_neutral(p) for p in edge.products)``, accepting the labeled loss."""
+    if type(molecule) is not Molecule:
+        raise TypeError("whole_fragment_neutral expects a Molecule")
+    degree = [0] * len(molecule.atoms)
+    for b in molecule.bonds:
+        degree[b.i] += b.order
+        degree[b.j] += b.order
+    return all((nv := _NEUTRAL_VALENCE.get(molecule.atoms[v])) is None or degree[v] <= nv
+               for v in range(len(molecule.atoms)))
 
 def _synthesis_center(rule: BondRule) -> ReactionCenter:
     """The coordinate-free reaction centre of ``rule`` in the SYNTHESIS (left->right) direction, DERIVED from the
@@ -722,6 +747,12 @@ AZA_DIENE_DA = _hetero_family("N", "diels-alder-[4+2]-aza-diene-tetrahydropyridi
 OXA_DIENE_DA = _hetero_family("O", "diels-alder-[4+2]-oxa-diene-dihydropyran",
                               "smartchem.diels-alder/oxa-diene-retro-v1", "diels-alder-oxa-diene-retro",
                               "DIELS_ALDER_OXA_DIENE", hetero_vertex=0)
+#: The 1-thiadiene family (S at the diene terminus, a 1-thia-1,3-diene / thioacrolein-type 4-pi component): the sixth
+#: and final cell of the 3x2 heteroatom x {dienophile, diene} matrix (N/O/S each on both positions).  Rides the same
+#: factory as its siblings; its guard-2c S:2 bound is load-bearing (S ceiling 6 >> neutral 2), exactly as for THIA_DA.
+THIA_DIENE_DA = _hetero_family("S", "diels-alder-[4+2]-thia-diene-dihydrothiopyran",
+                               "smartchem.diels-alder/thia-diene-retro-v1", "diels-alder-thia-diene-retro",
+                               "DIELS_ALDER_THIA_DIENE", hetero_vertex=0)
 
 #: Per-family synthesis centres (mirroring :data:`_DA_CENTER` / :data:`_ALKYNE_DA_CENTER`), so the oracle recognizer
 #: and the cross-poach tests can pin each family by exact equality without reaching into the descriptor.  NOTE the
@@ -912,3 +943,13 @@ class OxaDieneDielsAlderProvider(HeteroDielsAlderProvider):
     separated by Layer A."""
 
     family: _HeteroDAFamily = OXA_DIENE_DA
+
+
+@dataclass(frozen=True)
+class ThiaDieneDielsAlderProvider(HeteroDielsAlderProvider):
+    """The 1-thiadiene Diels-Alder opt-in provider (S at a diene terminus) -- :data:`THIA_DIENE_DA` bound into the
+    generic :class:`HeteroDielsAlderProvider`.  The sixth and final cell of the 3x2 heteroatom x {dienophile, diene}
+    matrix.  Shares a synthesis centre with :class:`ThiaDielsAlderProvider`; the oracle keeps them apart by Layer A
+    (see :class:`_HeteroDAFamily`)."""
+
+    family: _HeteroDAFamily = THIA_DIENE_DA

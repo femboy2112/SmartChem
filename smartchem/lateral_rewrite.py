@@ -86,10 +86,72 @@ COPE = _sigmatropic_family(("C", "C", "C", "C", "C", "C"), "cope-[3,3]-sigmatrop
 #: The Claisen [3,3] (allyl vinyl ether -> pent-4-enal): array atom 2 is the O, so the O migrates into a carbonyl.
 CLAISEN = _sigmatropic_family(("C", "C", "O", "C", "C", "C"), "claisen-[3,3]-sigmatropic",
                               "smartchem.lateral/claisen-v1", "claisen-rearrangement", "CLAISEN_REARRANGEMENT")
+#: The aza-Claisen (3-aza-Cope) [3,3]: array atom 2 is N, so the N migrates into a C=N imine (an allyl vinyl amine
+#: <-> gamma,delta-unsaturated imine).  Rides the SAME [3,3] array + guards as Claisen, one label swapped.
+AZA_CLAISEN = _sigmatropic_family(("C", "C", "N", "C", "C", "C"), "aza-claisen-[3,3]-sigmatropic",
+                                  "smartchem.lateral/aza-claisen-v1", "aza-claisen-rearrangement",
+                                  "AZA_CLAISEN_REARRANGEMENT")
+#: The thia-Claisen [3,3]: array atom 2 is S, so the S migrates into a C=S thiocarbonyl (an allyl vinyl sulfide
+#: <-> gamma,delta-unsaturated thiocarbonyl).  Completes the hetero-[3,3] set {O, N, S} on the same array.
+THIA_CLAISEN = _sigmatropic_family(("C", "C", "S", "C", "C", "C"), "thia-claisen-[3,3]-sigmatropic",
+                                   "smartchem.lateral/thia-claisen-v1", "thia-claisen-rearrangement",
+                                   "THIA_CLAISEN_REARRANGEMENT")
+
+# --------------------------------------------------------------------------------------------------------------------
+# ELECTROCYCLIZATION -- the third pericyclic archetype (after [4+2] cycloaddition and [3,3] sigmatropic).  A k-carbon
+# polyene <-> its cyclic isomer: a rank-FLAT ring-open/close isomerization, so it lives on the SAME lateral seam and
+# the SAME generic guards as the sigmatropic families (nothing in _SigmatropicFamily or _guarded_rewrites is
+# [3,3]-specific -- both read family.retro/forward/signature/center).  The kernel's "degree" is VALENCE (bond-order
+# sum), which an electrocyclization preserves at every atom (a terminus goes =CH2 valence 2 -> ring-CH2- valence 2),
+# so the fixed-vertex degree-locked kernel accepts it natively (kernel-verified in the family build below).  FORWARD
+# is the ring-CLOSING direction (open polyene -> ring, the productive Nazarov/electrocyclic-closure sense); the
+# enumerator applies retro (ring-opening) so it fires on a RING target and yields the open polyene.
+# --------------------------------------------------------------------------------------------------------------------
+
+def _polyene_edges(k: int) -> frozenset[Edge]:
+    """The linear k-carbon polyene 0=1-2=3-...  (alternating double/single, starting with a double)."""
+    return frozenset(Edge(i, i + 1, 2 if i % 2 == 0 else 1) for i in range(k - 1))
+
+
+def _ring_edges(k: int) -> frozenset[Edge]:
+    """The k-carbon carbocycle 0-1=2-3=...  (alternating single/double, starting single) closed by the new sigma
+    0-(k-1) -- the electrocyclization product of :func:`_polyene_edges` (one new sigma, the pi system shifted)."""
+    return frozenset({*(Edge(i, i + 1, 1 if i % 2 == 0 else 2) for i in range(k - 1)), Edge(0, k - 1, 1)})
+
+
+def _electrocyclic_family(n_pi: int, class_label: str, schema: str, provider_id: str,
+                          witness_kind: str) -> _SigmatropicFamily:
+    """Build a lateral family for an ``n_pi``-electron all-carbon electrocyclization (k = n_pi carbons).  ``forward``
+    is ring-CLOSING (polyene -> ring); ``retro`` / ``signature`` / ``center`` are DERIVED from it, exactly like
+    :func:`_sigmatropic_family`, so the family can never drift from its rule."""
+    labels = ("C",) * n_pi
+    forward = BondRule(f"{provider_id}-forward-v1", BondGraph(labels, _polyene_edges(n_pi)),
+                       BondGraph(labels, _ring_edges(n_pi)))
+    retro = forward.reverse()
+    signature = _match_signature(RewriteWitness(retro, retro.left, tuple(range(n_pi)), retro.right))
+    return _SigmatropicFamily(class_label, schema, provider_id, witness_kind,
+                              forward, retro, signature, _synthesis_center(forward))
+
+
+#: The 4-pi electrocyclization (1,3-butadiene <-> cyclobutene): 4 electrons, thermally CONROTATORY (Woodward-Hoffmann).
+ELECTRO_4PI = _electrocyclic_family(4, "electrocyclization-4pi", "smartchem.lateral/electro-4pi-v1",
+                                    "electrocyclization-4pi", "ELECTROCYCLIZATION_4PI")
+#: The 6-pi electrocyclization ((Z)-1,3,5-hexatriene <-> 1,3-cyclohexadiene): 6 electrons, thermally DISROTATORY.
+ELECTRO_6PI = _electrocyclic_family(6, "electrocyclization-6pi", "smartchem.lateral/electro-6pi-v1",
+                                    "electrocyclization-6pi", "ELECTROCYCLIZATION_6PI")
 
 #: Per-family centres (mirroring the DA families) for the oracle's exact-equality Layer-B check.
 _COPE_CENTER = COPE.center
 _CLAISEN_CENTER = CLAISEN.center
+_AZA_CLAISEN_CENTER = AZA_CLAISEN.center
+_THIA_CLAISEN_CENTER = THIA_CLAISEN.center
+_ELECTRO_4PI_CENTER = ELECTRO_4PI.center
+_ELECTRO_6PI_CENTER = ELECTRO_6PI.center
+
+#: All lateral (rank-flat) families the standalone enumeration + the bounded lateral search range over.
+LATERAL_FAMILIES: tuple[_SigmatropicFamily, ...] = (
+    COPE, CLAISEN, AZA_CLAISEN, THIA_CLAISEN, ELECTRO_4PI, ELECTRO_6PI,
+)
 
 
 @dataclass(frozen=True)
@@ -165,9 +227,12 @@ def _induced(graph: BondGraph, vertices) -> frozenset[Edge]:
 
 def sigmatropic_rewrites(family: _SigmatropicFamily, target: Molecule, *,
                          budget: int = 100000) -> tuple[Molecule, ...]:
-    """The distinct isomers ``target`` reaches by ONE guarded [3,3] rewrite of ``family`` (structural type-validity
-    only).  A standalone enumeration -- the lateral analogue of :func:`smartchem.diels_alder.retro_da_disconnections`
-    -- returning the product molecules directly (each a single species, a real isomer of ``target``)."""
+    """The distinct isomers ``target`` reaches by ONE guarded lateral rewrite of ``family`` (structural type-validity
+    only).  Family-agnostic: ``family`` may be any lateral (rank-flat) family -- a [3,3] sigmatropic (Cope, Claisen,
+    aza/thia-Claisen) OR an electrocyclization (:data:`ELECTRO_4PI`, :data:`ELECTRO_6PI`) -- since every guard reads
+    ``family.retro`` / ``family.forward`` / ``family.signature`` and nothing archetype-specific.  A standalone
+    enumeration -- the lateral analogue of :func:`smartchem.diels_alder.retro_da_disconnections` -- returning the
+    product molecules directly (each a single species, a real isomer of ``target``).  Alias: :func:`lateral_rewrites`."""
     if type(target) is not Molecule or target.charge != 0 or target.state:
         return ()
     try:
@@ -264,14 +329,39 @@ class LateralRewriteEdge(Digestible):
         return f"LateralRewriteEdge({self.equation()})"
 
 
-def rewrite_edges(family: _SigmatropicFamily, target: Molecule, *, budget: int = 100000) -> tuple[LateralRewriteEdge, ...]:
-    """Build one :class:`LateralRewriteEdge` per guarded [3,3] isomer of ``target`` (fail-closed: an edge its own
-    certificates refuse is dropped).  A standalone builder -- NOT a ``search_routes`` provider, because a lateral
-    edge's ``forget`` raises (the W1 boundary); use these edges to assemble a route by hand or feed the oracle."""
+def guarded_isomer_edges(family: _SigmatropicFamily, target: Molecule, *,
+                         budget: int = 100000) -> tuple[tuple[LateralRewriteEdge, ...], bool]:
+    """Every guarded :class:`LateralRewriteEdge` of ``target`` for ``family`` PLUS an honest completeness flag (the
+    flag :func:`_guarded_rewrites` already computes -- ``True`` iff the kernel match enumeration was not truncated by
+    ``budget``).  The bounded lateral search (:mod:`smartchem.lateral_search`) needs the flag to state fail-closed
+    whether a node's successor set was fully explored; :func:`rewrite_edges` is the flag-dropping convenience over it."""
+    if type(target) is not Molecule or target.charge != 0 or target.state:
+        return (), True
+    try:
+        graph = _joined((target,))
+    except (RuleError, ScissionError, TypeError, ValueError):
+        return (), True
+    audits, complete = _guarded_rewrites(family, graph, budget=budget)
     edges: list[LateralRewriteEdge] = []
-    for isomer in sigmatropic_rewrites(family, target, budget=budget):
+    for a in audits:
+        species = _config(a.witness.target).species
+        if len(species) != 1:
+            continue
         try:
-            edges.append(LateralRewriteEdge(family.schema, target, (isomer,), (), family.class_label, family))
+            edges.append(LateralRewriteEdge(family.schema, target, (species[0],), (), family.class_label, family))
         except ScissionError:
             continue
-    return tuple(edges)
+    return tuple(edges), complete
+
+
+def rewrite_edges(family: _SigmatropicFamily, target: Molecule, *, budget: int = 100000) -> tuple[LateralRewriteEdge, ...]:
+    """Build one :class:`LateralRewriteEdge` per guarded lateral isomer of ``target`` (fail-closed: an edge its own
+    certificates refuse is dropped).  A standalone builder -- NOT a ``search_routes`` provider, because a lateral
+    edge's ``forget`` raises (the W1 boundary); use these edges to assemble a route by hand or feed the oracle.  The
+    flag-dropping convenience over :func:`guarded_isomer_edges`."""
+    return guarded_isomer_edges(family, target, budget=budget)[0]
+
+
+#: Archetype-agnostic alias: the same enumerator serves [3,3] sigmatropics AND electrocyclizations (see the function
+#: docstring).  The bounded lateral search (:mod:`smartchem.lateral_search`) ranges over families via this name.
+lateral_rewrites = sigmatropic_rewrites

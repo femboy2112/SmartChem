@@ -68,9 +68,9 @@ section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized s
 frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* TWELVE ACTIVE CLASSES -- three dehydrative condensations + seven Diels-Alder [4+2] families + two [3,3]
-  sigmatropic isomerizations, each with its own conservation-lock (condensations) or double-certificate (pericyclic
-  / sigmatropic) proof:
+* SEVENTEEN ACTIVE CLASSES -- three dehydrative condensations + eight Diels-Alder [4+2] families + four [3,3]
+  sigmatropic isomerizations + two electrocyclizations, each with its own conservation-lock (condensations) or
+  double-certificate (pericyclic / sigmatropic / electrocyclic) proof:
   (1) acyl condensation (R56), (2) dehydrative etherification (R57), (3) dehydrative N-alkylation (R63, generalising
   and SUBSUMING the R60 N-methylation sub-case -- it REPLACES the R60 entry rather than adding one; it covers any
   non-carbonyl N nucleophile -- amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine -- by an ALKYL
@@ -79,17 +79,21 @@ Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alk
   sibling -> 1,4-cyclohexadiene (the first pericyclic class that keeps a second unsaturation); (6) aza-DA + (7) oxa-DA
   (imine / carbonyl dienophile, the first HETEROATOM pericyclic classes); (8) thia-DA (thiocarbonyl dienophile ->
   dihydrothiopyran, the third heteroatom-dienophile family, whose neutral-valence guard-2c bound S:2 is load-bearing
-  against a thiocarbenium false-vouch); (9) 1-azadiene DA + (10) 1-oxadiene (inverse-electron-demand) DA -- the first
-  DIENE-position hetero families, which SHARE a reaction centre with their same-heteroatom DIENOPHILE sibling ((C,X,.)
-  is position-invariant), so they are the first classes the oracle separates by Layer A ALONE (the centre check,
-  Layer B, is necessary but not a separator; Layer A's re-derivation is);
-  (11) Cope [3,3] + (12) Claisen [3,3] sigmatropic isomerizations -- the first rank-FLAT (1->1) classes, promoting the
-  opt-in :mod:`smartchem.lateral_rewrite` seam (a lateral rewrite has no strict-descent decomposition image, so it
-  cannot ride ``search_routes`` auto-discovery -- W1; its consumer is a hand-assembled or literature route the oracle
-  now vouches instead of demoting).
-  All SEVEN DA classes are locked apart, and Cope/Claisen from each other and from every DA class, by the
-  exact-equality centre check PLUS Layer A (the load-bearing separator wherever centres collide) -- none poaches
-  another's steps (a 7x7 DA matrix + a Cope/Claisen/DA matrix pin this).  ARYL amination (the phenol->aniline fake)
+  against a thiocarbenium false-vouch); (9) 1-azadiene DA + (10) 1-oxadiene (inverse-electron-demand) DA + (13)
+  1-thiadiene DA -- the DIENE-position hetero families completing the 3x2 heteroatom x {dienophile, diene} matrix,
+  each of which SHARES a reaction centre with its same-heteroatom DIENOPHILE sibling ((C,X,.) is position-invariant),
+  so they are separated by Layer A ALONE (the centre check, Layer B, is necessary but not a separator; Layer A's
+  re-derivation is);
+  (11) Cope [3,3] + (12) Claisen [3,3] + (14) aza-Claisen [3,3] + (15) thia-Claisen [3,3] sigmatropic isomerizations
+  -- the rank-FLAT (1->1) classes, promoting the opt-in :mod:`smartchem.lateral_rewrite` seam (a lateral rewrite has
+  no strict-descent decomposition image, so it cannot ride ``search_routes`` auto-discovery -- W1; its consumer is a
+  hand-assembled or bounded-lateral-search route (:mod:`smartchem.lateral_search`) the oracle now vouches instead of
+  demoting);
+  (16) 4-pi electrocyclization (butadiene -> cyclobutene) + (17) 6-pi electrocyclization (hexatriene -> cyclohexadiene)
+  -- the THIRD pericyclic archetype, rank-flat ring-open/close isomerizations on the same lateral seam.
+  All EIGHT DA classes are locked apart, and the four [3,3] and two electrocyclic classes from each other and from
+  every DA class, by the exact-equality centre check PLUS Layer A (the load-bearing separator wherever centres
+  collide) -- none poaches another's steps (a DA matrix + a lateral/DA matrix pin this).  ARYL amination (the phenol->aniline fake)
   and masked-carbonyl donors (hemiaminal/acetal condensations) are excluded; other real condensations
   (Friedel-Crafts, Kolbe-Schmitt) and non-sigmatropic isomerizations (tautomerization) are demoted-as-unrecognized:
   honest coverage loss, NOT false-VOUCH. Each remaining class is a future round behind its own gate.
@@ -415,6 +419,18 @@ def _oxa_diene_diels_alder(step) -> bool:
     return _hetero_diels_alder(step, OXA_DIENE_DA)
 
 
+def _thia_diene_diels_alder(step) -> bool:
+    """Recognizer: a 1-thiadiene Diels-Alder [4+2] (an S-terminus diene + alkene -> a dihydrothiopyran isomer).
+
+    The THIRTEENTH active class, the sulfur sibling of :func:`_aza_diene_diels_alder` / :func:`_oxa_diene_diels_alder`
+    and the SIXTH (final) cell of the 3x2 heteroatom x {dienophile, diene} matrix.  Shares its reaction centre with
+    :func:`_thia_diels_alder` (the ``(C,S,.)`` multiset is position-invariant), so it too is separated from its
+    dienophile sibling by Layer A alone -- the S-terminus diene adduct re-derives only under
+    :data:`smartchem.diels_alder.THIA_DIENE_DA`.  Delegates to :func:`_hetero_diels_alder`."""
+    from ..diels_alder import THIA_DIENE_DA
+    return _hetero_diels_alder(step, THIA_DIENE_DA)
+
+
 def _sigmatropic_rearrangement(step, family) -> bool:
     """The shared three-layer discipline for a [3,3] sigmatropic ISOMERIZATION (Cope / Claisen), the first
     rank-FLAT (1->1) recognizers.  Same soundness argument as the DA recognizers against the lateral family's own
@@ -462,6 +478,54 @@ def _claisen_rearrangement(step) -> bool:
     return _sigmatropic_rearrangement(step, CLAISEN)
 
 
+def _aza_claisen_rearrangement(step) -> bool:
+    """Recognizer: an aza-Claisen (3-aza-Cope) [3,3] sigmatropic rearrangement (an allyl vinyl amine ->
+    gamma,delta-unsaturated imine).
+
+    The FOURTEENTH active class, the nitrogen sibling of :func:`_claisen_rearrangement` (array atom 2 is the N, which
+    migrates into a C=N imine).  Its centre carries a ``(C,N,.)`` pair distinct from Claisen's ``(C,O,.)``, Cope's
+    all-carbon centre, and every DA centre, so all the [3,3] and [4+2] classes stay locked apart by exact equality.
+    Delegates to :func:`_sigmatropic_rearrangement` bound to :data:`smartchem.lateral_rewrite.AZA_CLAISEN`."""
+    from ..lateral_rewrite import AZA_CLAISEN
+    return _sigmatropic_rearrangement(step, AZA_CLAISEN)
+
+
+def _thia_claisen_rearrangement(step) -> bool:
+    """Recognizer: a thia-Claisen [3,3] sigmatropic rearrangement (an allyl vinyl sulfide ->
+    gamma,delta-unsaturated thiocarbonyl).
+
+    The FIFTEENTH active class, the sulfur sibling of :func:`_claisen_rearrangement`, completing the hetero-[3,3] set
+    {O, N, S} on the same array.  Its ``(C,S,.)`` centre is distinct from every other [3,3] and [4+2] centre.
+    Delegates to :func:`_sigmatropic_rearrangement` bound to :data:`smartchem.lateral_rewrite.THIA_CLAISEN`."""
+    from ..lateral_rewrite import THIA_CLAISEN
+    return _sigmatropic_rearrangement(step, THIA_CLAISEN)
+
+
+def _electrocyclization_4pi(step) -> bool:
+    """Recognizer: a 4-pi electrocyclization (1,3-butadiene -> cyclobutene, and substituted analogues).
+
+    The SIXTEENTH active class, and the FIRST of the THIRD pericyclic archetype -- an electrocyclic ring-open/close,
+    after [4+2] cycloaddition and [3,3] sigmatropic shift.  A rank-flat 1->1 isomerization that FORMS/BREAKS a ring
+    sigma bond (its centre carries the new ring-closure ``(C,C,1)`` bond, distinct from the sigmatropic centres), so
+    it rides the same lateral-rewrite machinery.  Delegates to :func:`_sigmatropic_rearrangement` bound to
+    :data:`smartchem.lateral_rewrite.ELECTRO_4PI`.  4 pi electrons -> thermally CONROTATORY (Woodward-Hoffmann); that
+    stereochemical selection rule is annotated by :mod:`smartchem.pericyclic_selection`, not asserted here (Problem A
+    type-validity only)."""
+    from ..lateral_rewrite import ELECTRO_4PI
+    return _sigmatropic_rearrangement(step, ELECTRO_4PI)
+
+
+def _electrocyclization_6pi(step) -> bool:
+    """Recognizer: a 6-pi electrocyclization ((Z)-1,3,5-hexatriene -> 1,3-cyclohexadiene, and substituted analogues).
+
+    The SEVENTEENTH active class, the 6-electron sibling of :func:`_electrocyclization_4pi`.  Its centre (a larger
+    ring-closure) is distinct from the 4-pi centre and from every sigmatropic and DA centre.  Delegates to
+    :func:`_sigmatropic_rearrangement` bound to :data:`smartchem.lateral_rewrite.ELECTRO_6PI`.  6 pi electrons ->
+    thermally DISROTATORY (Woodward-Hoffmann); annotated by :mod:`smartchem.pericyclic_selection`."""
+    from ..lateral_rewrite import ELECTRO_6PI
+    return _sigmatropic_rearrangement(step, ELECTRO_6PI)
+
+
 #: The positive whitelist of attested reaction-class recognizers: ``(class_name, predicate)``. A step is
 #: recognized iff SOME predicate fires. Every entry MUST carry a conservation-lock proof (see the module
 #: docstring); a general bounded-radius recognizer is exactly escape #7 and is not admitted. R56 shipped acyl;
@@ -489,9 +553,17 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
      _aza_diene_diels_alder),
     ("oxa-Diels-Alder [4+2] cycloaddition (1-oxadiene inverse-demand + alkene dienophile -> dihydropyran isomer)",
      _oxa_diene_diels_alder),
+    ("thia-Diels-Alder [4+2] cycloaddition (1-thiadiene + alkene dienophile -> dihydrothiopyran isomer)",
+     _thia_diene_diels_alder),
     ("Cope [3,3] sigmatropic rearrangement (1,5-diene -> [3,3] isomer)", _cope_rearrangement),
     ("Claisen [3,3] sigmatropic rearrangement (allyl vinyl ether -> gamma,delta-unsaturated carbonyl)",
      _claisen_rearrangement),
+    ("aza-Claisen [3,3] sigmatropic rearrangement (allyl vinyl amine -> gamma,delta-unsaturated imine)",
+     _aza_claisen_rearrangement),
+    ("thia-Claisen [3,3] sigmatropic rearrangement (allyl vinyl sulfide -> gamma,delta-unsaturated thiocarbonyl)",
+     _thia_claisen_rearrangement),
+    ("electrocyclization 4pi (1,3-butadiene -> cyclobutene)", _electrocyclization_4pi),
+    ("electrocyclization 6pi ((Z)-1,3,5-hexatriene -> 1,3-cyclohexadiene)", _electrocyclization_6pi),
 )
 
 

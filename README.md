@@ -235,17 +235,20 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current maintained fast-suite result (dev environment with the optional PySCF stack installed):
+Current committed-baseline suite result — the OOM-safe full run via `scripts/run_suite.sh`, measured with the
+optional RDKit and PySCF backends **absent** (the committed baseline; backend-gated tests `importorskip`-skip):
 
 ```text
-4677 passed, 21 skipped, 1 xfailed
+5446 passed, 46 skipped, 0 xfailed  (5492 collected, 0 failed, 0 errors)
 ```
 
-This baseline was measured with the development-only RDKit oracle absent. The seven RDKit-gated CIP checks were
-separately exercised in an oracle-present run (4684 passed, 14 skipped, 1 xfailed); skips are not represented as passed.
-The remaining skips are optional-backend coverage and the explicit slow-test gate.
-An environment WITHOUT PySCF skips additional real-wavefunction tests (the process-accessibility audit
-receipt records such a run: 4014 passed / 51 skipped / 1 xfailed).
+There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. The 46 skips are
+the optional-backend (RDKit/PySCF-gated) checks plus the explicit slow-test gate; skips are never represented as
+passed. When the development-only RDKit oracle is present the seven RDKit-gated CIP checks additionally run, and
+when the optional PySCF stack is present the real-wavefunction integration tests additionally run. On this box
+the monolithic `pytest` run is OOM-killed, so `scripts/run_suite.sh` (short-lived batched processes) is the
+maintained full-suite runner. An earlier process-accessibility audit receipt records a historical PySCF-absent
+run (4014 passed / 51 skipped / 1 xfailed, 2026-09-05).
 The [validation receipt](experiments/validation/process-accessibility-2026-09-05/receipt.json) records the
 audit environment, complete file partition, raw outputs, and baseline comparison.
 Run selected real-wavefunction integration coverage with:

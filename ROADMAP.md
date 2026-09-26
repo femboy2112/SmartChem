@@ -89,6 +89,14 @@ must name the 1.0 gate and funnel denominator it advances. The immediate impleme
 New reaction-family expansion is frozen as a default release priority until the 0.6 front-door gate is complete,
 unless needed to fix a regression or discharge a direct 0.6 blocker.
 
+**0.6 status (2026-09-26):** the front door is IMPLEMENTED — a lossless `FormulaExpr` syntax layer, AUTO
+formula detection integrated through the one identity service, first-class formula/constitution ambiguity, and
+the `smartchem plan` total-answer verb, with a committed 1.0 funnel harness, an 8/8 calibrated mutation gate,
+and a fresh holdout. Decision record:
+[`docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_IMPLEMENTATION_2026-09-26.md`](docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_IMPLEMENTATION_2026-09-26.md).
+Next release target: **0.7 Production Chemical Algebra** (make the provider/rule architecture, not
+capped-scission-only defaults, the generative spine).
+
 ## Governance — the 3-lane projection (authoritative)
 
 Every item is tagged with the lane it advances. **Progress in one lane never implies another.** (Audit:

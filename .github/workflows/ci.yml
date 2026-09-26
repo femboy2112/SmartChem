@@ -26,10 +26,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
 
-      # The legacy-finding xfail ratchet was discharged on 2026-07-20. One strict xfail
-      # remains intentionally: the current linear-history representation cannot satisfy
-      # true parallel interchange. Strictness makes an eventual open-process repair show
-      # up as XPASS instead of silently leaving the debt marker stale. -rs surfaces skips.
+      # The legacy-finding xfail ratchet was discharged on 2026-07-20, and the last strict xfail --
+      # true parallel interchange -- was retired by PR #79: the interchange law holds on the
+      # OpenChemDiagram backbone under canonicalize (linear Reaction is its lossy trace by theorem), so
+      # the debt is DISCHARGED, not open. The suite now carries ZERO xfail markers; -rs surfaces skips.
       #
       # Tests needing real quantum-chemistry calls are gated behind --runslow and are NOT
       # run here: PySCF is not installed on this runner, and a test that would be skipped

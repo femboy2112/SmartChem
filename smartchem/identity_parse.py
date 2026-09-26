@@ -171,10 +171,30 @@ class ResolvedIdentity:
     features: "object | None"
     losses: tuple
     receipt: ParseReceipt
+    # v0.6 FORMULA-EXPR-01 additions (defaulted, so every existing constructor is unchanged):
+    #   * formula_expr -- the lossless syntax object (components/hydrate boundary + provenance) when the
+    #     identity was resolved through the human-formula grammar; None for NAME/SMILES/InChI.
+    #   * registry_candidates -- the registry-known structures that SHARE this formula, attached only for
+    #     a composition-only (molecule is None) resolution.  It is the ambiguity set, and it is
+    #     DELIBERATELY not on the receipt (which is digested and pinned): a bare formula names a
+    #     composition, and this is what the OFFLINE REGISTRY happens to know with it -- NEVER an
+    #     exhaustive isomer enumeration, and never a proof the composition has one/zero real constitutions.
+    formula_expr: "object | None" = None
+    registry_candidates: tuple = ()
 
     @property
     def structure_perceived(self) -> bool:
         """Whether a real bond graph was perceived (so a structure search may run on it)."""
+        return self.molecule is not None
+
+    @property
+    def constitution_established(self) -> bool:
+        """Whether a single molecular constitution is actually selected (structure perceived).
+
+        The v0.6 identity law: composition known is NOT constitution established.  A FORMULA-layer
+        identity is ``structure_perceived is False`` even when :attr:`registry_candidates` is non-empty,
+        because a registry candidate set is what the catalog knows, not a selected structure.
+        """
         return self.molecule is not None
 
 
@@ -279,6 +299,54 @@ def _inchi_formula_layer(text: str) -> "tuple[object, tuple, tuple[str, ...]]":
     return formula, tuple(losses), tuple(notes)
 
 
+def _registry_candidates(formula: "object") -> tuple:
+    """The registry-known named structures that share ``formula`` (the ambiguity set; may be empty).
+
+    What the OFFLINE registry happens to carry with this composition -- explicitly NOT an exhaustive
+    isomer enumeration, and a miss (empty tuple) is NOT evidence that no such molecule exists.  Any lookup
+    failure is swallowed to an empty set: candidate discovery is best-effort enrichment and must never turn
+    a valid formula resolution into an error.
+    """
+    try:
+        from .structure import known_compounds
+
+        return known_compounds(formula)
+    except Exception:
+        return ()
+
+
+def _resolve_formula_layer(
+    requested: "InputKind", payload: str, prefix_note: "str | None", *, auto: bool
+) -> "ResolvedIdentity":
+    """Resolve a FORMULA-layer identity through the v0.6 lossless human-formula grammar (FORMULA-EXPR-01).
+
+    Parses ``payload`` to a :class:`~smartchem.formula_expr.FormulaExpr` (preserving hydrate/adduct
+    component boundaries and the normalization applied), projects it to the conservation
+    :class:`~smartchem.decompiler.Formula`, and returns a COMPOSITION-ONLY identity (``molecule is None``)
+    carrying the syntax object and the registry-known candidate set.  ``auto=True`` records that this was
+    an AUTO resolution reached only after name and SMILES both declined.  Raises
+    :class:`~smartchem.formula_expr.FormulaSyntaxError` on a malformed/parametric string; the CALLER maps
+    that to the right :class:`IdentityParseError`.
+    """
+    from .formula_expr import parse_formula_expr
+
+    expr = parse_formula_expr(payload)
+    formula = expr.to_formula()
+    notes: list[str] = []
+    if prefix_note:
+        notes.append(prefix_note)
+    if auto:
+        notes.append("auto-detected as a chemical formula (no offline name or SMILES matched)")
+    notes.extend(expr.notes)
+    receipt = ParseReceipt(
+        requested, InputKind.FORMULA, ParseSource.FORMULA_PARSER, _hill(formula), "FORMULA", tuple(notes)
+    )
+    return ResolvedIdentity(
+        None, formula, None, (), receipt,
+        formula_expr=expr, registry_candidates=_registry_candidates(formula),
+    )
+
+
 def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO) -> ResolvedIdentity:
     """Resolve ``target_input`` under ``input_kind`` to a typed :class:`ResolvedIdentity` (the one parser service).
 
@@ -318,20 +386,18 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
         receipt = ParseReceipt(
             requested, InputKind.INCHI, ParseSource.INCHI_FORMULA_LAYER, _hill(formula), "FORMULA", notes
         )
-        return ResolvedIdentity(None, formula, None, losses, receipt)
-
-    # -- FORMULA: composition only, no structure ----------------------------------------------------------------
-    if kind is InputKind.FORMULA:
-        from .decompiler import DecompilerError
-        try:
-            formula = Formula.parse(payload)
-        except DecompilerError as exc:
-            raise IdentityParseError(f"could not parse {payload!r} as a chemical formula: {exc}") from exc
-        notes = (prefix_note,) if prefix_note else ()
-        receipt = ParseReceipt(
-            requested, InputKind.FORMULA, ParseSource.FORMULA_PARSER, _hill(formula), "FORMULA", notes
+        return ResolvedIdentity(
+            None, formula, None, losses, receipt, registry_candidates=_registry_candidates(formula)
         )
-        return ResolvedIdentity(None, formula, None, (), receipt)
+
+    # -- FORMULA: composition only, no structure (v0.6 tolerant human grammar) -----------------------------------
+    if kind is InputKind.FORMULA:
+        from .formula_expr import FormulaSyntaxError
+
+        try:
+            return _resolve_formula_layer(requested, payload, prefix_note, auto=False)
+        except FormulaSyntaxError as exc:
+            raise IdentityParseError(f"could not parse {payload!r} as a chemical formula: {exc}") from exc
 
     # -- NAME / SMILES (and AUTO's name-first, else-SMILES resolution) -------------------------------------------
     if kind is not InputKind.SMILES:
@@ -353,6 +419,21 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
     try:
         molecule, features = parse_smiles_features(payload)
     except SmilesError as exc:
+        # AUTO fallthrough: name declined, SMILES declined -> LAST, try the tolerant formula grammar.  This
+        # is additive and strictly last, so it can never STEAL a string a registered name or SMILES already
+        # claimed (the anti-Mutant-5 ordering).  An explicit smiles: input never reaches here as a formula:
+        # the caller asked for SMILES, so a SMILES failure stays a SMILES failure.
+        if kind is InputKind.AUTO:
+            from .formula_expr import FormulaSyntaxError
+
+            try:
+                return _resolve_formula_layer(requested, payload, prefix_note, auto=True)
+            except FormulaSyntaxError as formula_exc:
+                raise IdentityParseError(
+                    f"could not resolve {target_input!r} as an offline name, SMILES, or chemical formula: "
+                    f"SMILES said {exc}; formula said {formula_exc}; "
+                    "use name:..., smiles:..., or formula:... to make the input form explicit"
+                ) from exc
         raise IdentityParseError(
             f"could not resolve {target_input!r} as an offline name or parse it as SMILES: {exc}; "
             "use name:... or smiles:... to make the input form explicit"

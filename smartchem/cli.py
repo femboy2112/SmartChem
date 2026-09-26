@@ -44,6 +44,7 @@ _EXIT_SIGPIPE = 141
 _USAGE = f"""python -m smartchem <command> [args]
 
 commands:
+  plan TARGET           human front door: resolve identity, report layer + ambiguity, route to the primitive
   decompile FORMULA     descend a compound to its element/commodity buckets (AND-OR hypergraph)
   recompile TARGET      CANONICAL synthesis verb: one typed request -> service (--json/--emit-request/--quiet)
   compile TARGET        [deprecated alias of recompile] ranked, graded, bucket-terminated route dossier
@@ -606,8 +607,62 @@ def _cmd_compile(argv: list[str]) -> int:
     return 0 if compiled.found_route else 3
 
 
+def _cmd_plan(argv: list[str]) -> int:
+    """The v0.6 human total-answer front door (PLAN-01): resolve identity, report it, route to the primitive.
+
+    A THIN orchestration verb -- it does not fork search or duplicate a parser.  It resolves the target through
+    the ONE identity authority, prints what was understood (normalized syntax, composition, identity layer, and
+    the registry-known ambiguity set -- never an invented structure), then delegates to ``recompile`` (a perceived
+    constitution) or ``decompile`` (a bare-formula composition), surfacing that primitive's typed outcome.
+    """
+    import argparse
+
+    from .identity_parse import EXPLICIT_CLI_FORMS, InputKind, resolve_cli_target
+    from .plan import plan, plan_result_to_payload, render_plan_human
+
+    p = argparse.ArgumentParser(
+        prog="python -m smartchem plan",
+        description="Resolve a human chemical identity, report the strongest identity layer perceived, expose "
+                    "ambiguity instead of guessing structure, and route to the eligible compiler primitive.",
+    )
+    p.add_argument("target", nargs="?", default=None,
+                   help="the identity: a chemical FORMULA (e.g. CuSO4.5H2O, C8H10N4O2, SO4^2-), a registered name, "
+                        "or SMILES. Wikipedia-style Unicode subscripts/middle-dot hydrates are accepted")
+    p.add_argument(
+        "--input-kind", choices=["auto", "name", "smiles", "inchi", "formula", "target-file"], default=None,
+        help="how to read TARGET (standard section 14.2; default AUTO: a registered name, else SMILES, else a "
+             "chemical formula -- formula is tried LAST so it never steals a valid name/SMILES)",
+    )
+    for _form, _kind in EXPLICIT_CLI_FORMS:
+        p.add_argument(
+            f"--{_form}", default=None, metavar="TARGET",
+            help=f"give the target as {_kind.replace('_', ' ').lower()} (standard section 14.2 explicit form; "
+                 f"mutually exclusive with the positional target and --input-kind)",
+        )
+    p.add_argument("--json", action="store_true",
+                   help="emit the machine-readable plan payload (identity + delegated response) instead of the render")
+    args = p.parse_args(argv)
+
+    try:
+        explicit_forms = {name: getattr(args, name.replace("-", "_")) for name, _ in EXPLICIT_CLI_FORMS}
+        target, kind = resolve_cli_target(args.target, args.input_kind, explicit_forms)
+    except Exception as exc:  # noqa: BLE001 -- routed to the ONE classifier; a non-domain error re-raises to 70
+        return _domain_exit(exc, "plan")
+
+    result = plan(target, kind if kind is not None else InputKind.AUTO)
+    if args.json:
+        import json
+
+        print(json.dumps(plan_result_to_payload(result), indent=2, sort_keys=True))
+    else:
+        print(render_plan_human(result))
+    return result.exit_code
+
+
 def _dispatch(command: str, rest: list[str]) -> int:
     """Route one command to its handler, returning its section-14.4 exit code (2 for an unknown command)."""
+    if command == "plan":
+        return _cmd_plan(rest)
     if command == "decompile":
         return _cmd_decompile(rest)
     if command == "recompile":

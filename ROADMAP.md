@@ -75,6 +75,20 @@
 > the load-bearing claims independently re-verified at their file:line anchors; earlier rounds used independent evil-morty passes;
 > ROUND 22 records its separate source, implementation and adversarial-review bearings explicitly.
 
+## Chemical Compiler 1.0 release program — authoritative forward release projection
+
+As of 2026-09-26, the chemistry compiler has a finite 1.0 program:
+[`docs/research/CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md`](docs/research/CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md).
+
+The version ladder is **0.6 Human Chemical Front Door -> 0.7 Production Chemical Algebra -> 0.8 Real Route Dossiers
+-> 0.9 Capability Compiler -> 0.9.5 Coverage/Adversarial RC -> 1.0 Stable Chemical Compiler**.
+
+This projection does **not** erase the historical round ledger below. It changes the stopping rule: future release work
+must name the 1.0 gate and funnel denominator it advances. The immediate implementation plan is
+[`docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_PLAN_v0.1.md`](docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_PLAN_v0.1.md).
+New reaction-family expansion is frozen as a default release priority until the 0.6 front-door gate is complete,
+unless needed to fix a regression or discharge a direct 0.6 blocker.
+
 ## Governance — the 3-lane projection (authoritative)
 
 Every item is tagged with the lane it advances. **Progress in one lane never implies another.** (Audit:

@@ -274,6 +274,20 @@ outcomes, scientific scope, evidence status, omissions, casualties, and negative
 
 ## Roadmap
 
+### Chemical Compiler 1.0 release program
+
+The chemistry compiler now has a finite release program instead of treating each newly discovered scientific frontier
+as the next release boundary. The normative plan is
+[`docs/research/CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md`](docs/research/CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md):
+**0.6 human front door -> 0.7 production chemical algebra -> 0.8 real route dossiers -> 0.9 capability compiler ->
+0.9.5 coverage/adversarial RC -> 1.0 stable semantics**.
+
+The immediate implementation round is
+[`docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_PLAN_v0.1.md`](docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_PLAN_v0.1.md).
+Until that gate is complete, new reaction-family expansion is non-release-critical by default: the priority is one
+measured input -> identity -> chemistry -> evidence -> capability funnel, not an unbounded sequence of local rounds.
+
+
 > **The live chemical-compiler (v0.5.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
 > next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
 > re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.

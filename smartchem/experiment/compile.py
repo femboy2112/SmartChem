@@ -322,6 +322,7 @@ def compile_synthesis(
     box: ConstraintBox | None = None,
     stability_loader=None,
     target_features: "object | None" = None,
+    default_reagents_when_empty: bool = True,
 ) -> CompiledSynthesis:
     """Compile ``target`` into a bounded, bucket-terminated candidate-route evidence dossier.
 
@@ -354,8 +355,10 @@ def compile_synthesis(
     # STEREO-DOSSIER-01: the target's perceived R/S + configuration disclosure, computed ONCE and threaded to every
     # return path (a chiral target discloses its stereo whether or not a route was found).  () when no perceivable stereo.
     stereo_lines = _target_stereo_lines(target_features)
-    if not reagents:
-        # the cleavage needs at least one cutting reagent; water is the universal default (as the CLI uses).
+    if not reagents and default_reagents_when_empty:
+        # the cleavage needs at least one cutting reagent; water is the universal default (as the CLI uses).  0.7
+        # Round III: a caller that declared an EXPLICIT empty pool (CLI --no-helper-reagents) passes
+        # default_reagents_when_empty=False so this default is NOT silently re-applied over their explicit intent.
         from ..structure import structure_by_name
         w = structure_by_name("water")
         if w is not None:

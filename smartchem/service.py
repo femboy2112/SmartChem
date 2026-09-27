@@ -70,6 +70,8 @@ from .process_constraints import (
 )
 from .algebra_profiles import (
     DEFAULT_ALGEBRA_PROFILE,
+    DEFAULT_ROUTE_ALGEBRA_PROFILE,
+    LEGACY_MISSING_ALGEBRA_PROFILE,
     PROFILE_USES,
     resolve_algebra_profile,
 )
@@ -866,7 +868,11 @@ def build_recompile_request(
     grammar = grammar if grammar is not None else TransformGrammar.CAPPED_SCISSION_LINEAR
     if grammar not in _RECOMPILE_GRAMMARS:
         raise ValueError("a recompile grammar must be CAPPED_SCISSION_LINEAR or CAPPED_SCISSION_CONVERGENT")
-    algebra_profile = algebra_profile if algebra_profile is not None else DEFAULT_ALGEBRA_PROFILE
+    # The SERVICE/CLI route builder stamps the PROMOTABLE route default (0.7 Round III): the one constant a
+    # default-promotion commit flips to certified-route-v07.  It is deliberately NOT the frozen missing-field law
+    # (request_from_payload) nor the low-level dataclass default -- so promoting the route default never changes what
+    # a direct CompilationRequest or a pre-0.7 payload means.  Ships == legacy this round.
+    algebra_profile = algebra_profile if algebra_profile is not None else DEFAULT_ROUTE_ALGEBRA_PROFILE
     effective_kind = input_kind if input_kind is not None else InputKind.AUTO
     return CompilationRequest(
         COMPILATION_REQUEST_SCHEMA,
@@ -3030,9 +3036,12 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         RankingPolicy(payload["ranking_policy"]["policy_id"]),
         OutputPolicy(payload["output_policy"]["render_mode"], payload["output_policy"]["quiet"]),
         tuple((name, FieldOrigin(origin)) for name, origin in payload["origins"]),
-        # a pre-0.7 payload has no algebra_profile -> the legacy default; an unknown/incompatible id is refused by
+        # FROZEN wire-migration law (0.7 Round III): a pre-0.7 payload has no algebra_profile field and historically
+        # meant the capped algebra, so a MISSING field reconstructs as LEGACY_MISSING_ALGEBRA_PROFILE -- NOT the
+        # (promotable) build default.  This is what keeps promoting the route default from silently reinterpreting an
+        # old serialized request as the wider algebra.  An unknown/incompatible id is refused by
         # CompilationRequest.__post_init__ (fail-closed, so a tampered profile string cannot select a hidden algebra).
-        algebra_profile=payload.get("algebra_profile", DEFAULT_ALGEBRA_PROFILE),
+        algebra_profile=payload.get("algebra_profile", LEGACY_MISSING_ALGEBRA_PROFILE),
     )
 
 
@@ -3481,6 +3490,32 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         expected = list(response.admissible_route_digests) if name == "admissible_route_digests" else getattr(response, name)
         if payload[name] != expected:
             raise ValueError(f"{name} does not match the reconstructed response")
+    # ALGEBRA-REBIND-ON-LOAD (0.7 Round III): the runtime binding invariant (see the BINDING INVARIANT in
+    # _run_recompile) proves a search ran under the SELECTED algebra at PRODUCE time, but a transported response
+    # independently deserializes its request, its IR registry digest, and its search-receipt digest.  Re-derive the
+    # coherence on LOAD: for a RECOMPILE response carrying an IR, the algebra the REQUEST names must equal the algebra
+    # the RECEIPT says ran.  ChemicalCompilationIR.__post_init__ already forces ir.transform_registry_digest ==
+    # search_receipt.transform_registry_digest (those two can't disagree with each other); the MISSING leg -- closed
+    # here -- is that both equal search_algebra_digest(topology, resolve(request.algebra_profile)).  This is internal
+    # semantic coherence (a search under profile A cannot be LOADED as profile B), NOT cryptographic authentication --
+    # a fully controlling forger who rebuilds a self-consistent response is a different threat model, handled by the
+    # producer_signature / expected_request_digest paths above.  (DECOMPILE responses are pinned to the legacy default
+    # and go through a formula descent with no topology, so this route/DAG check does not apply to them.)
+    if (response.request.operation is CompilationOperation.RECOMPILE
+            and response.compilation_ir is not None
+            and response.request.transform_grammar in _GRAMMAR_TO_MODE):
+        _topology = _GRAMMAR_TO_MODE_TOPOLOGY[_GRAMMAR_TO_MODE[response.request.transform_grammar]]
+        _expected_algebra_digest = search_algebra_digest(
+            _topology, resolve_algebra_profile(response.request.algebra_profile)
+        )
+        _ir = response.compilation_ir
+        if (_ir.transform_registry_digest != _expected_algebra_digest
+                or _ir.search_receipt.transform_registry_digest != _expected_algebra_digest):
+            raise ValueError(
+                "algebra-rebind mismatch on load: the response's IR / search-receipt transform-registry digest "
+                "does not match the algebra its request selects (a search under one algebra cannot be loaded as "
+                "another; the request, the IR digest, and the receipt digest disagree)"
+            )
     if verification_key is not None:
         signature = payload.get("producer_signature")
         if signature is None:

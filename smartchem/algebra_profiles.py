@@ -38,6 +38,8 @@ from .transform_provider import (
 __all__ = [
     "ALGEBRA_PROFILES",
     "DEFAULT_ALGEBRA_PROFILE",
+    "LEGACY_MISSING_ALGEBRA_PROFILE",
+    "DEFAULT_ROUTE_ALGEBRA_PROFILE",
     "PROFILE_USES",
     "UnknownAlgebraProfileError",
     "resolve_algebra_profile",
@@ -45,7 +47,24 @@ __all__ = [
     "profile_supports_use",
 ]
 
+#: The conservative low-level default profile: what a :class:`CompilationRequest` gets when constructed directly
+#: with no ``algebra_profile``, and the profile a DECOMPILE request is pinned to (formula descent selects no route
+#: algebra).  It STAYS ``legacy-capped-v1`` across a default promotion -- promotion happens at the SERVICE/CLI route
+#: builder (:data:`DEFAULT_ROUTE_ALGEBRA_PROFILE`), not in the raw dataclass default.
 DEFAULT_ALGEBRA_PROFILE = "legacy-capped-v1"
+
+#: The FROZEN wire-migration law (0.7 Round III).  A pre-0.7 serialized request carries no ``algebra_profile`` field
+#: and historically meant the capped-scission algebra; ``request_from_payload`` reconstructs a MISSING field as THIS,
+#: forever.  It is a LITERAL, deliberately decoupled from the promotable build default below, so that promoting the
+#: route default never silently reinterprets an old payload as the wider algebra.  This value must never change.
+LEGACY_MISSING_ALGEBRA_PROFILE = "legacy-capped-v1"
+
+#: The route/DAG build-time default the SERVICE/CLI front door stamps on a request that names no algebra
+#: (``build_recompile_request`` -> ``recompile`` / ``plan``).  This is the ONE constant a default-promotion commit
+#: flips (to ``certified-route-v07``); it is SEPARATE from the frozen missing-field law above and from the low-level
+#: :data:`DEFAULT_ALGEBRA_PROFILE`, so the three meanings can never be confused.  Round III ships it still ==
+#: legacy; the default promotion, if the gate closes, is a later separately-auditable commit that edits only this.
+DEFAULT_ROUTE_ALGEBRA_PROFILE = "legacy-capped-v1"
 
 # The 8 admitted Diels-Alder families in deterministic order (Lane D admission audit): all-carbon first (the most
 # heavily adversary-tested family and the plan's chosen forcing vertical), then alkyne, then the hetero-dienophile

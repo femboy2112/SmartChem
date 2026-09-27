@@ -1,9 +1,11 @@
-"""V0.7-MUTATION-01: the calibrated mutation gate for the production transform-algebra (Round II).
+"""V0.7-MUTATION-01: the calibrated mutation gate for the production transform-algebra (Round II + Round III).
 
 Adding tests is not enough -- a test that would pass on the BROKEN code proves nothing.  This harness INJECTS each
-of the ten 0.7 Round II failure modes and shows the corresponding guard/discriminator actually flips (the mutant is
-KILLED), so the tests in `tests/test_v0_7_*` are non-vacuous.  Every mutation is applied in a try/finally and undone,
-so this harness leaves the code byte-identical.
+of the 0.7 failure modes (M1-M10 Round II; M11-M17 Round III: reagent-policy identity binding, prose-independence,
+CLI empty-pool, decompile empty-pool, response algebra-rebind-on-load, the frozen missing-field migration law, and a
+fresh hetero-DA holdout's silent absence) and shows the corresponding guard/discriminator actually flips (the mutant
+is KILLED), so the tests in `tests/test_v0_7_*` are non-vacuous.  Every mutation is applied in a try/finally and
+undone, so this harness leaves the code byte-identical.
 
 Run:  .venv/bin/python experiments/v0_7_mutation_calibration.py
 """
@@ -13,15 +15,26 @@ import contextlib
 from dataclasses import replace
 
 import smartchem.algebra_profiles as ap
+import smartchem.compilation_ir as cir
 import smartchem.diels_alder as da
 import smartchem.experiment.reaction_type_oracle as oracle
 import smartchem.experiment.routes as rt
 import smartchem.service as svc
+from smartchem.contracts import canonical_digest
 from smartchem.identity_parse import InputKind
-from smartchem.service import build_recompile_request, request_from_payload, request_to_payload, run_compilation
+from smartchem.service import (
+    build_recompile_request,
+    request_from_payload,
+    request_to_payload,
+    response_from_payload,
+    response_to_payload,
+    run_compilation,
+)
 from smartchem.smiles import parse_smiles
 from smartchem.transform_provider import (
+    CappedScissionProvider,
     TransformProvider,
+    TransformProviderRegistry,
     UnsupportedProviderUseError,
 )
 
@@ -154,7 +167,10 @@ def m7() -> bool:
     return real == 0 and mutant_exit == 2
 
 
-# 8. the default profile silently widened -> MUST be observable (default must stay legacy).
+# 8. the default profile silently widened -> MUST be observable (default must stay legacy).  0.7 Round III: the
+#    route BUILD default is now DEFAULT_ROUTE_ALGEBRA_PROFILE (the one constant a promotion flips), decoupled from
+#    the low-level DEFAULT_ALGEBRA_PROFILE -- so the widen-injection targets THAT constant (its move surviving the
+#    old patch is itself the proof the decoupling took effect).
 @mutant("M8 default-silent-widen-must-be-observable")
 def m8() -> bool:
     def default_finds_da() -> bool:
@@ -162,8 +178,8 @@ def m8() -> bool:
                                     helper_reagents=("water",), stock_materials=("C=CC=C", "C=C"))
         return run_compilation(r).exit_code == 0
     real = not default_finds_da()  # the legacy default cannot make cyclohexene
-    with _patch(svc, "DEFAULT_ALGEBRA_PROFILE", "certified-route-v07"):
-        mutant_finds = default_finds_da()  # a widened default WOULD find the DA route
+    with _patch(svc, "DEFAULT_ROUTE_ALGEBRA_PROFILE", "certified-route-v07"):
+        mutant_finds = default_finds_da()  # a widened route default WOULD find the DA route
     return real and mutant_finds
 
 
@@ -191,6 +207,138 @@ def m10() -> bool:
     return complete_and is False and or_would_be is True
 
 
+# =========================== 0.7 Round III additions (mutants 11-17) ===========================
+
+# 11. the reagent policy changes but semantic identity does NOT move -> MUST be caught (SS1A: reagentless_capable is
+#     load-bearing -- it gates whether an empty-pool search runs, so a flip MUST move the descriptor digest).
+@mutant("M11 reagent-policy-change-must-move-identity")
+def m11() -> bool:
+    cap = CappedScissionProvider()  # reagentless_capable = False
+    flipped = type("CapReagentless", (CappedScissionProvider,), {"reagentless_capable": True})()
+    real_moves = flipped.semantic_descriptor.digest != cap.semantic_descriptor.digest
+    # MUTANT: the pre-Round-III descriptor digest (schema v1) that DROPS reagentless_capable -> the flip is invisible.
+    def blind_v1(p) -> str:
+        d = p.semantic_descriptor
+        return canonical_digest((
+            "provider-semantic-descriptor-v1", d.family, d.supported_uses, d.witness_kind, d.projection_kind,
+            d.behavior_params, d.structural_rule_digest, d.guard_spec_digest, d.authority,
+        ))
+    mutant_moves = blind_v1(flipped) != blind_v1(cap)
+    return real_moves and not mutant_moves
+
+
+# 12. a mechanism-PROSE edit MOVES the semantic identity -> MUST be caught (SS1B: identity is prose-independent; the
+#     Round-II shape that carried the raw manifest in identity WOULD move on a prose edit -- that is the mutant).
+@mutant("M12 mechanism-prose-edit-must-not-move-identity")
+def m12() -> bool:
+    real = CappedScissionProvider()
+
+    class ProseEdit(CappedScissionProvider):
+        @property
+        def capability_manifest(self):
+            return tuple(("mechanism", "REWORDED PROSE, SAME CHEMISTRY") if k == "mechanism" else (k, v)
+                         for k, v in super().capability_manifest)
+    prose = ProseEdit()
+    real_stable = prose.identity == real.identity  # prose-independent identity: no movement
+    # MUTANT: the Round-II identity that spliced the raw manifest into slot 2 -> a prose edit DID move identity.
+    def id_with_manifest(p):
+        return (p.provider_id, p.provider_version, p.capability_manifest, p.semantic_descriptor.digest)
+    mutant_moves = id_with_manifest(prose) != id_with_manifest(real)
+    return real_stable and mutant_moves
+
+
+# 13. the CLI explicit empty helper pool accidentally becomes the water default -> MUST be caught (SS2).
+@mutant("M13 cli-explicit-empty-pool-must-not-become-water")
+def m13() -> bool:
+    import argparse
+
+    from smartchem.cli import _add_recompile_flags, _recompile_request_from_args
+    p = argparse.ArgumentParser()
+    _add_recompile_flags(p)
+    args = p.parse_args(["--algebra", "certified-route-v07", "--no-helper-reagents", "--smiles", "C1CC=CCC1"])
+    real_empty = _recompile_request_from_args(args).helper_reagents == ()  # REAL path: explicit empty pool
+    # MUTANT: the pre-Round-III threading with no --no-helper-reagents branch -> an empty pool falls to water.
+    mut_hr = tuple(args.reagents) if args.reagents else None  # args.reagents is None here -> None -> water default
+    mut_watered = build_recompile_request(
+        "C1CC=CCC1", input_kind=InputKind.SMILES, helper_reagents=mut_hr, algebra_profile="certified-route-v07",
+    ).helper_reagents == ("water",)
+    return real_empty and mut_watered
+
+
+# 14. certified-decompile-v07 rejects an empty reagent pool -> MUST be caught (SS3: empty is a legit declared set).
+@mutant("M14 certified-decompile-empty-pool-must-not-be-rejected")
+def m14() -> bool:
+    decompile = ap.resolve_algebra_profile("certified-decompile-v07")
+    eth = parse_smiles("CCO")
+    real_ok = len(cir.decompile_structure_to_ir(eth, reagents=(), registry=decompile).structural_candidates) > 0
+    # MUTANT: re-impose the old non-empty guard -> an empty pool raises before enumeration.
+    orig = cir.decompile_structure_to_ir
+    def guarded(target, *, reagents, **kw):
+        if not reagents:
+            raise TypeError("reagents must be a non-empty tuple of reagent-TYPE Molecules")
+        return orig(target, reagents=reagents, **kw)
+    with _patch(cir, "decompile_structure_to_ir", guarded):
+        try:
+            cir.decompile_structure_to_ir(eth, reagents=(), registry=decompile)
+            mutant_rejects = False
+        except TypeError:
+            mutant_rejects = True
+    return real_ok and mutant_rejects
+
+
+# 15. a response's request profile and IR algebra are rebound inconsistently on LOAD -> MUST refuse (SS4).
+@mutant("M15 response-algebra-rebind-must-refuse-on-load")
+def m15() -> bool:
+    cert = run_compilation(_req("certified-route-v07", ()))
+    frank = replace(cert, request=_req("legacy-capped-v1"))  # legacy request + certified IR (coherent tamper)
+    try:
+        response_from_payload(response_to_payload(frank))
+        real_refuses = False
+    except ValueError:
+        real_refuses = True
+    # MUTANT: the load-time rebind check resolves the WRONG registry (ignores the request's profile), so expected
+    # always matches the IR -> the coherent cross-profile rebind loads.
+    with _patch(svc, "resolve_algebra_profile", lambda pid: ap.ALGEBRA_PROFILES["certified-route-v07"]):
+        try:
+            response_from_payload(response_to_payload(frank))
+            mutant_loads = True
+        except ValueError:
+            mutant_loads = False
+    return real_refuses and mutant_loads
+
+
+# 16. a pre-0.7 missing-profile payload follows the (promoted) build default instead of the frozen legacy law -> MUST
+#     be caught (SS5: the wire-migration law is decoupled from the promotable build default).
+@mutant("M16 pre-0_7-missing-profile-must-stay-legacy")
+def m16() -> bool:
+    payload = request_to_payload(_req("legacy-capped-v1"))
+    del payload["algebra_profile"]  # a pre-0.7 serialized request
+    with _patch(svc, "DEFAULT_ROUTE_ALGEBRA_PROFILE", "certified-route-v07"):  # simulate the default promotion
+        real_legacy = request_from_payload(payload).algebra_profile == "legacy-capped-v1"  # REAL: frozen law
+        # MUTANT: missing-field deserialization follows the promoted build default instead of the frozen law.
+        mutant_profile = payload.get("algebra_profile", svc.DEFAULT_ROUTE_ALGEBRA_PROFILE)
+    return real_legacy and mutant_profile == "certified-route-v07"
+
+
+# 17. a fresh hetero-DA holdout is silently absent (its family dropped) -> MUST be caught (SS6: the holdout must fire
+#     EXACTLY its own family; dropping the family makes it silently absent, which the corpus assertion catches).
+@mutant("M17 fresh-hetero-holdout-absence-must-be-caught")
+def m17() -> bool:
+    cert = ap.resolve_algebra_profile("certified-route-v07")
+    target = parse_smiles("N1C=CCC(C)C1")  # fresh aza-diene holdout (post-freeze, designed by a non-author adversary)
+
+    def da_kinds(reg) -> set:
+        ets, _ = reg.enumerate(target, (), budget=100_000)
+        return {e.witness_kind for e in ets if e.witness_kind.startswith("DIELS_ALDER")}
+    real_fires = da_kinds(cert) == {"DIELS_ALDER_AZA_DIENE"}
+    # MUTANT: the aza-diene family is dropped from the certified registry -> the holdout fires NOTHING (silent gap).
+    mutant_reg = TransformProviderRegistry(
+        tuple(p for p in cert.providers if not isinstance(p, da.AzaDieneDielsAlderProvider))
+    )
+    mutant_absent = "DIELS_ALDER_AZA_DIENE" not in da_kinds(mutant_reg)
+    return real_fires and mutant_absent
+
+
 def run() -> list:
     results = []
     for name, fn in _MUTANTS:
@@ -204,7 +352,7 @@ def run() -> list:
 
 
 def main() -> int:
-    print("v0.7 Round II calibrated mutation gate:")
+    print("v0.7 Round II+III calibrated mutation gate:")
     results = run()
     killed = sum(1 for _, k in results if k)
     print(f"\n{killed}/{len(results)} mutants killed.")

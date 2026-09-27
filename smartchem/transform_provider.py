@@ -93,7 +93,8 @@ class ProviderSemanticDescriptor:
 
     Epistemic boundary (deliberate, not a hedge): :attr:`digest` GUARANTEES that a change to a *declarative* rule
     (``structural_rule_digest``), a typed *guard policy* (``guard_spec_digest``), the ``supported_uses`` set, the
-    ``witness_kind`` / ``projection_kind``, or a typed ``behavior_params`` knob forces an identity change.  It does
+    ``witness_kind`` / ``projection_kind``, a typed ``behavior_params`` knob, or the ``reagentless_capable`` capability
+    (0.7 Round III -- it gates whether a search runs on an empty reagent pool) forces an identity change.  It does
     NOT and cannot detect an arbitrary edit to *imperative* enumerator Python (e.g. the capped-scission cut-selection
     body, or a verifier's own logic) -- for those, ``structural_rule_digest``/``guard_spec_digest`` are ``None`` and
     the honest tracker of an implementation change remains ``provider_version`` + tool/schema versioning.  No source
@@ -108,12 +109,21 @@ class ProviderSemanticDescriptor:
     structural_rule_digest: "str | None"
     guard_spec_digest: "str | None"
     authority: str
+    #: whether the family can GENERATE with an empty helper-reagent pool.  This is a SEMANTIC, identity-bearing
+    #: property (0.7 Round III): the service reads it to decide whether an empty helper pool is a runnable search or
+    #: an INVALID_INPUT refusal, so two registries differing only in this flag accept/reject the same request
+    #: differently -- flipping it MUST move the digest, or the one-way "equal digest => same executed search" law
+    #: leaks.  It is a family-structural fact (a concerted Diels-Alder needs no reagent; capped-scission does), not
+    #: the request-time fact of WHICH reagent is on hand (that stays ``helper_reagents``).  Defaulted for
+    #: back-compat with any direct descriptor construction; the base builder always supplies the provider's value.
+    reagentless_capable: bool = True
 
     @property
     def digest(self) -> str:
         return canonical_digest(
             (
-                "provider-semantic-descriptor-v1",
+                # v2 (0.7 Round III): schema gains ``reagentless_capable`` -- a bump to mark the payload-shape change.
+                "provider-semantic-descriptor-v2",
                 self.family,
                 self.supported_uses,
                 self.witness_kind,
@@ -122,6 +132,7 @@ class ProviderSemanticDescriptor:
                 self.structural_rule_digest,
                 self.guard_spec_digest,
                 self.authority,
+                self.reagentless_capable,
             )
         )
 
@@ -143,10 +154,12 @@ def search_algebra_digest(topology: str, registry: "TransformProviderRegistry") 
 class TransformProvider:
     """One transform FAMILY behind a typed identity.  Subclasses declare ``provider_id`` / ``provider_version``,
     a ``capability_manifest`` (a declared descriptor of what the family does -- bond operations, charge handling,
-    the witness/projection kinds it emits), and ``enumerate_transforms``.  The identity (id + version + manifest)
-    is what the registry digest is built from, so a family whose rules change MUST bump its version or manifest --
-    the same declared-version discipline every ``schema_version`` obeys (the grammar is imperative code, not a
-    hashable rule table)."""
+    the witness/projection kinds it emits), and ``enumerate_transforms``.  0.7 Round III: the identity the registry
+    digest is built from is ``(provider_id, provider_version, semantic_descriptor.digest)`` -- prose-independent.
+    The ``semantic_descriptor`` binds every load-bearing manifest value (typed knobs, family/projection/authority,
+    the reagentless capability) plus a family's declarative rule/guard digests, so a chemistry-bearing change moves
+    the digest while a mechanism-PROSE edit does not.  The imperative enumerator body still relies on the declared
+    ``provider_version`` discipline (a digest cannot bind arbitrary Python; see ProviderSemanticDescriptor)."""
 
     provider_id: str
     provider_version: str
@@ -160,7 +173,11 @@ class TransformProvider:
     #: whether this family can GENERATE with an empty helper-reagent pool.  Most families are reagentless (DA,
     #: heterolytic, redox, bond-order ignore the pool); capped-scission REQUIRES a cutting reagent and overrides this
     #: to False.  Read by the service's reagent guard so an empty pool is refused only when NO provider in the
-    #: selected algebra can run reagentless -- it is a behaviour flag, deliberately NOT part of provider identity.
+    #: selected algebra can run reagentless.  0.7 Round III: this IS part of provider identity (it rides
+    #: ``semantic_descriptor``) -- Round II's "deliberately NOT part of identity" was wrong.  It gates whether a
+    #: search executes at all, so two registries differing only in this flag run different searches under an empty
+    #: pool; leaving it out of the digest broke the one-way "equal digest => same executed search" law.  It is a
+    #: family-structural capability, not the request-time fact of which reagent is on hand (that stays a request field).
     reagentless_capable: bool = True
 
     @property
@@ -184,17 +201,27 @@ class TransformProvider:
             behavior_params=tuple(sorted((k, v) for k, v in self.capability_manifest if not isinstance(v, str))),
             structural_rule_digest=None,
             guard_spec_digest=None,
-            authority="|".join(str(manifest[k]) for k in ("state_domain", "chemical_authority") if k in manifest),
+            # authority/scope declarations pulled by name: the deployment domain, the chemical-authority claim, and
+            # the replay-verification discipline a provider claims (``structural_replay`` -- the one string manifest
+            # key that is neither prose nor auto-folded).  Named here so dropping the raw manifest from ``identity``
+            # (0.7 Round III) loses no scope/authority content: a relabel of any of these still moves the digest.
+            authority="|".join(
+                str(manifest[k]) for k in ("state_domain", "chemical_authority", "structural_replay") if k in manifest
+            ),
+            reagentless_capable=self.reagentless_capable,
         )
 
     @property
     def identity(self) -> tuple:
-        # 0.7 Round II: identity is now content-bound.  The 4th element is the semantic descriptor digest, so a
-        # change to a declarative rule / typed guard / supported-use set / witness-projection / typed knob forces the
-        # identity (and thus ``registry.digest`` and ``search_algebra_digest``) to move -- the honor-system version
-        # bump is no longer the only line of defence for the pieces a digest CAN bind (plan §4; boundary in
-        # ProviderSemanticDescriptor's docstring).
-        return (self.provider_id, self.provider_version, self.capability_manifest, self.semantic_descriptor.digest)
+        # 0.7 Round III: identity is PROSE-INDEPENDENT.  The raw ``capability_manifest`` (which carries human
+        # "mechanism" prose) is no longer in identity; the 3rd element is the semantic descriptor digest, which binds
+        # every LOAD-BEARING manifest value (typed knobs auto-fold into ``behavior_params``; family/projection/
+        # authority/structural_replay are name-extracted) plus the rule/guard digests and the reagentless capability.
+        # So a behavior/guard/rule/use/witness/reagent-policy edit moves identity (and thus ``registry.digest`` /
+        # ``search_algebra_digest``), while a mechanism-PROSE edit does NOT -- the noise Round II left in the digest is
+        # gone.  The manifest survives as documentation/provenance via ``capability_manifest``; the imperative-body
+        # blind spot (ProviderSemanticDescriptor's docstring) is still tracked by ``provider_version``.
+        return (self.provider_id, self.provider_version, self.semantic_descriptor.digest)
 
     def enumerate_transforms(self, reactant, reagents, *, budget):
         """Return ``(transforms, complete)`` for this family: a tuple of transform objects (each exposing the

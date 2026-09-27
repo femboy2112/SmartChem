@@ -8,7 +8,7 @@
     ],
     "identity_losses": [],
     "operation": "RECOMPILE",
-    "request_digest": "5922018ee158ae79bae296f55720a48f2dd7ff297008a33376db1e00c93aaa2f",
+    "request_digest": "0f8c69705eb426851ff8b2ab3f56b5c9d8f4d79384bef866577bd3f948569694",
     "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8",
     "search_receipt": {
       "candidate_enumeration_complete": true,
@@ -30,7 +30,7 @@
       "stop_reason": "",
       "target_identity_digest": "b0a70a2130f9c14a5ee39d75c91d63d3a8c89599b95bc60afb076341edbfdf59",
       "terminal_policy_digest": "59115ea2c066a980a42f86a2a0074b905d0407a74db95f09d4dcf2a4db054e14",
-      "transform_registry_digest": "e6df468237390b0692577964cb46dde30b8a805f5446e3535f739e71aba19365",
+      "transform_registry_digest": "39e6e9c5e0abf528db9df2f27a62945dce7d0f1eec969b047a60f5e91c90f658",
       "transforms_considered": 40
     },
     "search_status": "COMPLETE_WITHIN_BOUNDS",
@@ -44,7 +44,7 @@
     },
     "terminal_policy_digest": "59115ea2c066a980a42f86a2a0074b905d0407a74db95f09d4dcf2a4db054e14",
     "tool_version": "0.6.0a1",
-    "transform_registry_digest": "e6df468237390b0692577964cb46dde30b8a805f5446e3535f739e71aba19365"
+    "transform_registry_digest": "39e6e9c5e0abf528db9df2f27a62945dce7d0f1eec969b047a60f5e91c90f658"
   },
   "diagnostics": [
     "no route to the target from the declared terminals exists within the 'routes' search grammar at the declared bounds (max_depth=2); the search was exhaustive there (no limit fired), but that is exhaustion of THIS grammar/mode at THESE bounds -- not a proof that no route exists under a different mode or higher bounds (section 8.3, no-route: exhaustive-within-bounds)"
@@ -177,7 +177,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "363e8fd88acc76d00e33f3d139714ff0d8bc91ad33c768a50c8c979a6f830a3d",
+  "result_digest": "b289f48faecc45d722a7a930bf10909527a2956454a68e3c03787c7250f56d39",
   "schema_version": "smartchem.service/compilation-response-v1alpha13",
   "search_space_status": "NO_ROUTE_IN_DECLARED_SPACE",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"

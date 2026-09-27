@@ -58,7 +58,7 @@ Adduct SMILES per family (each copied verbatim from an already-committed test fi
 | thia-diene: no cross-poach | PASS | other DIELS_ALDER* witness kinds emitted for this adduct: [] (must be empty) |
 | thia-diene: default registry stays silent | PASS | default DA witness kinds: [] (must be empty) |
 | aggregate: 8/8 families each fired exactly their own kind | PASS | 8/8 families enumerated |
-| aggregate: candidate/runtime sanity | PASS | total DA-kind candidates considered across all 8 targets=8, wall time=882.1ms (budget-bounded search_routes calls included) |
+| aggregate: candidate/runtime sanity | PASS | total DA-kind candidates considered across all 8 targets=8, wall time=838.7ms (budget-bounded search_routes calls included) |
 | hostile near-miss (enone): certified registry emits zero DA witnesses | PASS | certified DA witness kinds for 'O=C1CCCC=C1': [] (must be empty) |
 | hostile near-miss (enone): default registry emits zero DA witnesses | PASS | default DA witness kinds for 'O=C1CCCC=C1': [] (must be empty) |
 | hostile near-miss (saturated ring): certified registry emits zero DA witnesses | PASS | certified DA witness kinds for 'C1CCCCC1': [] (must be empty) |

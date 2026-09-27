@@ -81,21 +81,80 @@ def test_generative_funnel_before_after_delta_is_stable():
     }
 
 
-def test_provider_identity_is_now_content_bound_not_declared_metadata_only():
-    # 0.7 Round II CALIBRATED MOVEMENT (plan §4): a provider's identity WAS (id, version, capability_manifest) --
-    # three hand-declared values.  It is now a 4-tuple whose 4th element is the ProviderSemanticDescriptor digest,
-    # which binds the DECLARATIVE rewrite rule + guard-spec content.  This test was deliberately pinned at the
-    # 3-tuple shape so this change would surface HERE as a visible movement, not silently.
+def test_provider_identity_is_now_content_bound_and_prose_independent():
+    # 0.7 Round III CALIBRATED MOVEMENT: a provider's identity WAS
+    # (id, version, capability_manifest, semantic_descriptor.digest) in Round II -- the raw manifest (carrying human
+    # "mechanism" prose) sat in slot 2, so a prose edit moved registry.digest.  It is now the PROSE-INDEPENDENT
+    # 3-tuple (id, version, semantic_descriptor.digest): the descriptor binds every LOAD-BEARING manifest value
+    # (typed knobs, family/projection/authority) plus the declarative rule/guard digests and the reagentless flag,
+    # so chemistry moves the digest and prose does not.  Pinned at the new shape so a future change surfaces HERE.
     ident = DielsAlderProvider().identity
-    assert len(ident) == 4
+    assert len(ident) == 3
     assert ident[0] == "diels-alder-retro" and ident[1] == "v1"
-    assert isinstance(ident[2], tuple)  # the capability_manifest (declared prose)
-    assert ident[3] == DielsAlderProvider().semantic_descriptor.digest  # the content-bound descriptor digest
+    assert ident[2] == DielsAlderProvider().semantic_descriptor.digest  # the content-bound descriptor digest
     desc = DielsAlderProvider().semantic_descriptor
-    # the DA descriptor now carries REAL declarative content digests (not None): the rewrite rule + the guard spec.
+    # the DA descriptor still carries REAL declarative content digests (not None): the rewrite rule + the guard spec.
     assert desc.structural_rule_digest is not None and desc.guard_spec_digest is not None
     # identity is still deterministic for identically-constructed providers.
     assert CappedScissionProvider().identity == CappedScissionProvider().identity
+
+
+def test_mechanism_prose_edit_does_not_move_identity_but_a_load_bearing_edit_does():
+    # SS1B PROSE-INDEPENDENCE (0.7 Round III): editing ONLY the non-semantic 'mechanism' wording must leave the
+    # provider's registry identity STABLE, while every load-bearing edit still moves it.  Round II FAILED the first
+    # half: the raw manifest was in identity, so a prose edit moved registry.digest.  This pins the discriminator.
+    from smartchem.transform_provider import TransformProviderRegistry
+
+    real = CappedScissionProvider()
+    real_reg = TransformProviderRegistry((real,)).digest
+
+    class ProseOnlyEdit(CappedScissionProvider):
+        @property
+        def capability_manifest(self):
+            return tuple(("mechanism", "COMPLETELY REWORDED PROSE") if k == "mechanism" else (k, v)
+                         for k, v in super().capability_manifest)
+
+    # (stable) a pure mechanism-prose edit moves NOTHING in the digested identity.
+    assert ProseOnlyEdit().semantic_descriptor.digest == real.semantic_descriptor.digest
+    assert TransformProviderRegistry((ProseOnlyEdit(),)).digest == real_reg
+
+    # (moves) a typed behavior knob -> identity moves.
+    class KnobEdit(CappedScissionProvider):
+        @property
+        def capability_manifest(self):
+            return tuple(("max_reactant_cuts", 2) if k == "max_reactant_cuts" else (k, v)
+                         for k, v in super().capability_manifest)
+    assert KnobEdit().semantic_descriptor.digest != real.semantic_descriptor.digest
+
+    # (moves) the supported-use set -> identity moves.
+    from smartchem.transform_provider import ProviderUse
+    class UseEdit(CappedScissionProvider):
+        supported_uses = frozenset({ProviderUse.LINEAR_ROUTE})
+    assert UseEdit().semantic_descriptor.digest != real.semantic_descriptor.digest
+
+    # (moves) a provider-version bump -> identity moves (it is slot 1 of the identity tuple). CappedScissionProvider
+    # is a frozen dataclass, so bump the field directly rather than annotating a subclass (which the dataclass
+    # machinery would ignore).
+    assert CappedScissionProvider(provider_version="v2").identity != real.identity
+
+
+def test_reagentless_capability_is_bound_into_semantic_identity():
+    # SS1A REAGENT-POLICY BINDING (0.7 Round III): reagentless_capable gates whether an empty-pool search RUNS, so it
+    # is semantic -- flipping it MUST move the descriptor digest (Round II left it out, breaking the one-way law).
+    real = CappedScissionProvider()  # reagentless_capable = False (needs a cutting reagent)
+    assert real.reagentless_capable is False
+    assert real.semantic_descriptor.reagentless_capable is False
+
+    class CapReagentless(CappedScissionProvider):
+        reagentless_capable = True
+
+    flipped = CapReagentless()
+    assert flipped.semantic_descriptor.reagentless_capable is True
+    # the flip moves the descriptor digest, hence identity, hence registry.digest.
+    assert flipped.semantic_descriptor.digest != real.semantic_descriptor.digest
+    assert flipped.identity != real.identity
+    from smartchem.transform_provider import TransformProviderRegistry
+    assert TransformProviderRegistry((flipped,)).digest != TransformProviderRegistry((real,)).digest
 
 
 def test_semantic_identity_moves_when_the_rule_or_a_load_bearing_guard_changes():

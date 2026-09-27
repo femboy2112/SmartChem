@@ -1679,8 +1679,12 @@ def decompile_structure_to_ir(
 
     if type(target) is not Molecule:
         raise TypeError("decompile_structure_to_ir target must be a smartchem.category.Molecule")
-    if type(reagents) is not tuple or not reagents or any(type(r) is not Molecule for r in reagents):
-        raise TypeError("reagents must be a non-empty tuple of reagent-TYPE Molecules")
+    # 0.7 Round III: an EMPTY reagent tuple is a legitimate declared reagent set -- a reagentless-only algebra
+    # (certified-decompile-v07: heterolytic + redox-half) is exactly the case that decompiles with no reagent, and
+    # the terminal digest is empty-tuple-safe.  We still refuse a genuinely-wrong type (None, a list, non-Molecule
+    # elements); reagentless providers ignore the pool, reagent-consuming ones simply emit nothing on an empty pool.
+    if type(reagents) is not tuple or any(type(r) is not Molecule for r in reagents):
+        raise TypeError("reagents must be a tuple of reagent-TYPE Molecules (possibly empty for a reagentless algebra)")
     # Course-Correction 1: refuse an algebra whose providers are not STRUCTURE_DECOMPILE-admissible BEFORE
     # enumeration -- e.g. a DA-bearing registry (its "DIELS_ALDER*" witness_kind has no _WITNESS_PROJECTION entry)
     # would otherwise crash candidate-building on the unknown witness and lose the whole call.

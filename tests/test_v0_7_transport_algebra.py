@@ -160,3 +160,94 @@ def test_a_pre_0_7_payload_without_a_profile_defaults_to_legacy():
     payload = request_to_payload(_req("legacy-capped-v1"))
     del payload["algebra_profile"]  # simulate a pre-0.7 serialized request
     assert request_from_payload(payload).algebra_profile == "legacy-capped-v1"
+
+
+# -- SS5: the FROZEN missing-field migration law survives a (simulated) default promotion --------------------------
+def test_missing_field_stays_legacy_even_if_the_route_build_default_is_promoted(monkeypatch):
+    # The wire-migration law is decoupled from the promotable build default: a pre-0.7 payload with no algebra_profile
+    # must reconstruct as legacy-capped-v1 FOREVER, even after the route build default is flipped to certified.
+    import smartchem.service as svc
+    monkeypatch.setattr(svc, "DEFAULT_ROUTE_ALGEBRA_PROFILE", "certified-route-v07")  # simulate the promotion
+    payload = request_to_payload(_req("legacy-capped-v1"))
+    del payload["algebra_profile"]  # a pre-0.7 serialized request
+    # the missing field follows LEGACY_MISSING_ALGEBRA_PROFILE, NOT the (now promoted) build default.
+    assert request_from_payload(payload).algebra_profile == "legacy-capped-v1"
+
+
+# -- SS3: certified-decompile-v07 is a LIVE algebra on an empty reagent pool (not "did not raise with water") -------
+def test_certified_decompile_runs_on_an_empty_pool_with_real_replayable_candidates():
+    from smartchem.compilation_ir import ir_from_payload, ir_to_payload
+
+    decompile = resolve_algebra_profile("certified-decompile-v07")
+    ethanol = parse_smiles("CCO")
+    # SS3: an EMPTY reagent pool is a legitimate declared set for a reagentless-only algebra -- accepted, not refused.
+    ir = decompile_structure_to_ir(ethanol, reagents=(), registry=decompile, budget=100_000)
+    candidates = ir.structural_candidates
+    assert len(candidates) > 0  # a real, non-decorative algebra
+    assert {c.witness.witness_kind for c in candidates} == {"HETEROLYTIC_SCISSION", "REDOX_HALF_REACTION"}
+    # each StructuralCandidate survives its graph replay/reconstitution invariant (replay uses the witness/projection
+    # pairing, so a correct reconstitution IS the pairing check).
+    for c in candidates:
+        assert c.reconstitute_parent() is not None
+    # the IR serialises + deserialises with digest equality (the algebra is bound into the IR + receipt digests).
+    back = ir_from_payload(ir_to_payload(ir))
+    assert back.transform_registry_digest == ir.transform_registry_digest
+    assert back.search_receipt.transform_registry_digest == ir.search_receipt.transform_registry_digest
+    # genuinely-wrong reagent input is still refused (empty is fine; None / a list / non-Molecule elements are not).
+    for bad in (None, [parse_smiles("O")]):
+        with pytest.raises(TypeError):
+            decompile_structure_to_ir(ethanol, reagents=bad, registry=decompile)
+
+
+# -- SS4: response-level algebra rebinding is refused on LOAD (coherent cross-profile tamper) ----------------------
+def _legacy_routing_response():
+    # methyl acetate routes under the LEGACY capped algebra (exit 0) and carries an IR stamped with the legacy digest.
+    req = build_recompile_request("CC(=O)OC", input_kind=InputKind.SMILES, helper_reagents=("water",),
+                                  stock_materials=("CO", "CC(=O)O"), algebra_profile="legacy-capped-v1")
+    return run_compilation(req)
+
+
+def test_honest_response_round_trip_loads():
+    from smartchem.service import response_from_payload, response_to_payload
+    resp = run_compilation(_req("certified-route-v07", reagents=()))
+    assert resp.exit_code == 0 and resp.compilation_ir is not None
+    back = response_from_payload(response_to_payload(resp))  # must not raise
+    assert back.compilation_ir is not None
+
+
+def test_coherent_cross_profile_rebind_is_refused_on_load():
+    from dataclasses import replace
+    from smartchem.service import response_from_payload, response_to_payload
+
+    cert = run_compilation(_req("certified-route-v07", reagents=()))
+    assert cert.exit_code == 0 and cert.compilation_ir is not None
+    legacy = _legacy_routing_response()
+    assert legacy.compilation_ir is not None
+
+    # (a) legacy REQUEST + certified IR: result_digest recomputed by response_to_payload (so the existing round-trip
+    #     re-derivation passes), yet the algebra the request names disagrees with the algebra the IR/receipt ran ->
+    #     refused by the LOAD-time algebra-rebind guard, not the round-trip check.
+    frank_a = replace(cert, request=_req("legacy-capped-v1", reagents=("water",)))
+    with pytest.raises(ValueError, match="algebra-rebind"):
+        response_from_payload(response_to_payload(frank_a))
+
+    # (b) the reverse: certified REQUEST + legacy IR -> also refused.
+    frank_b = replace(legacy, request=_req("certified-route-v07", reagents=()))
+    with pytest.raises(ValueError, match="algebra-rebind"):
+        response_from_payload(response_to_payload(frank_b))
+
+
+def test_receipt_digest_tamper_is_refused_on_load():
+    # Altering ONLY the search-receipt digest is caught (the IR's own __post_init__ forces ir digest == receipt
+    # digest); altering BOTH coherently to a wrong value is caught by the SS4 load-time guard. Either way: refused.
+
+    from smartchem.service import response_from_payload, response_to_payload
+    cert = run_compilation(_req("certified-route-v07", reagents=()))
+    payload = response_to_payload(cert)
+    ir_payload = payload["compilation_ir"]
+    ir_payload["transform_registry_digest"] = "TAMPERED-WRONG-DIGEST"
+    ir_payload["search_receipt"]["transform_registry_digest"] = "TAMPERED-WRONG-DIGEST"
+    with pytest.raises(ValueError):
+        response_from_payload(payload)
+    # sanity: the untampered copy still loads.
+    response_from_payload(response_to_payload(cert))

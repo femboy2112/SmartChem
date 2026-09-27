@@ -208,6 +208,39 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 
 ## ✅ DONE — current shipped capability
 
+**v0.8 REAL ROUTE DOSSIERS, ROUND I — MEASUREMENT (2026-09-27, branch `feat/v0.8-real-route-dossiers`, IN PROGRESS —
+package version stays `0.7.0a1`; the gate isn't met until integration confirms).** The readiness-obligation core
+(`smartchem/experiment/readiness.py`: `evaluate_step`/`evaluate_route`, the FORMAL_CANDIDATE →
+REACTION_VOUCHED → CONDITIONS_SUPPORTED → PROCESS_SPECIFIED ladder derived FROM per-step obligations, never the
+reverse) and its service transport are already committed; this round is the MEASUREMENT layer over the Sec 9
+forcing corpus, run through the real service (`build_recompile_request` → `run_compilation`, PROMOTED
+`certified-route-v07` default — never the raw capped-only registry, which would silently zero out every
+reaction-vouched row):
+- `experiments/v0_8_readiness_census.py` (→ `RESULTS_v0_8_readiness_census.md`): per-step/per-route obligation
+  readout over 7 corpus rows (retro-DA, paracetamol, aspirin, isopentyl acetate, methyl salicylate, an
+  unsourced-default-reagent contrast, the same-formula isomer negative control) — 44 routes / 102 steps. Confirms
+  the design's non-monotonicity finding LIVE: paracetamol's + aspirin's sourced-anhydride steps carry
+  `conditions=SATISFIED` while `reaction_type=UNSATISFIED` caps their coarse tier at `FORMAL_CANDIDATE`. Four
+  OBSERVATION axes (`handling`, `selectivity`, `thermo`/feasibility, `kinetics`) are reported but labeled
+  explicitly as non-obligations that never move `tier`.
+- `experiments/v0_8_readiness_funnel.py` (→ `RESULTS_v0_8_readiness_funnel.md`): the permanent weakest-link funnel,
+  per-step AND per-route denominators kept separate — routes: 44 → 7 reaction-vouched → 2 conditions-supported → 0
+  process-specified (steps: 102 → 24 → 2 → 0). `PROCESS_SPECIFIED` pinned DARK by construction (Sec 5:
+  `process_representation_is_complete` is unconditionally `False` this round). 12/12 funnel properties hold
+  (monotonicity both denominators, both middle stages genuinely forced non-vacuous, the dark stage pinned at
+  exactly zero).
+- `experiments/v0_8_mutation_calibration.py`: injects and kills all 11 named failure modes (M1 formal-implies-
+  vouched, M2 recognized-implies-conditions, M3 declared-counts-as-sourced, M4 any-step-promotes-the-route, M5
+  favorable-thermo-substitutes-for-vouch, M6 FITS-substitutes-for-readiness, M7 process-present-implies-complete,
+  M8 workup-false-ignored, M9 isomer-borrows-conditions — live-patches the real `assembly_conditions` name-guard
+  and shows the isomer's conditions axis flips from all-UNKNOWN to a false SATISFIED, M10 a tampered serialized
+  tier survives load once `_check_readiness_coherence` is disabled — pinning that guard is load-bearing, M11
+  obligations-derived-from-tier — the mutant that specifically breaks paracetamol's real, live, sourced-but-
+  unrecognized `conditions=SATISFIED` record, the plan's own named regression target). **11/11 mutants killed.**
+  Every mutation is a context-managed monkeypatch on the real modules, undone on exit — zero bytes of
+  `smartchem/` touched on disk.
+- `~/.local/bin/ruff check` clean on all three files.
+
 **RULE-CALCULUS COURSE CORRECTION (2026-09-19, PR #81) — a checkable structural bond-rewrite layer, plus the audit
 that corrects the genericity audit's overreach.** Entirely ADDITIVE (13 files, 0 modifications to existing behaviour):
 a finite atom-preserving bond-rule kernel (`smartchem/rule_calculus.py`; independent table-replay verifier, per-atom

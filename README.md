@@ -155,7 +155,7 @@ general multiphysics category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](docs/history/MANIFEST.md).
 
-## Chemical compiler (v0.6.0a1 — an alpha in progress)
+## Chemical compiler (v0.7.0a1 — an alpha in progress)
 
 A newer line of work turns the chemistry core into a bidirectional *chemical compiler*: a
 **decompiler** that descends a target compound to its elemental buckets as an AND–OR
@@ -206,6 +206,31 @@ python -m smartchem plan 'C2H6O'           # composition known; registry-known c
 python -m smartchem plan 'CO'              # INPUT-KIND AMBIGUOUS: methanol (SMILES) or carbon monoxide (formula)
 python -m smartchem plan 'smiles:CO'       # an explicit kind is a decision → structural planning (methanol)
 ```
+
+### v0.7 — the production chemical algebra
+
+The **v0.7 Production Chemical Algebra** makes chemistry generation a real, typed *compiler algebra* rather than a
+capped-scission-only default plus a parallel recognition catalogue. An ordinary `recompile`/`plan` request — with no
+special flag — now searches the **certified multi-family route algebra** (`certified-route-v07`: capped-scission +
+the eight admitted Diels–Alder families), and the exact algebra is preserved through request, search, completeness
+receipt, IR, serialization and response. Widening the chemistry is a typed, auditable operation:
+
+- a request selects a **content-bound** algebra profile whose identity binds the declarative rewrite rules, the
+  load-bearing guards, the supported uses, and the reagent capability — so a chemistry-bearing change moves the
+  digest while a prose edit does not; the exact profile is bound into the request digest, receipts and IR, and a
+  search under one algebra cannot be packaged or loaded as another;
+- `--algebra legacy-capped-v1` reproduces the pre-0.7 capped-scission-only behaviour exactly; a pre-0.7 serialized
+  request (no algebra field) still means the legacy algebra, forever;
+- `--no-helper-reagents` declares an explicit empty reagent pool (no invented water) for the reagentless families.
+
+```bash
+python -m smartchem recompile --smiles 'C1CC=CCC1' --have 'C=CC=C' 'C=C' --no-helper-reagents   # certified DA route
+python -m smartchem recompile --smiles 'C1CC=CCC1' --algebra legacy-capped-v1                    # old capped behaviour
+```
+
+The default promotion rode a measured gate — a full default-promotion blast radius (no legacy route lost, every new
+route reaction-type-vouched, bounded performance) and an independent hostile review — recorded in its
+[release decision record](docs/research/V0_7_PRODUCTION_CHEMICAL_ALGEBRA_RELEASE_2026-09-27.md).
 
 This is an **alpha under active construction, not a finished release.** The v0.5.0a1 base standard remains
 inherited: the normative contract is
@@ -312,7 +337,7 @@ Until that gate is complete, new reaction-family expansion is non-release-critic
 measured input -> identity -> chemistry -> evidence -> capability funnel, not an unbounded sequence of local rounds.
 
 
-> **The live chemical-compiler (v0.6.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
+> **The live chemical-compiler (v0.7.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
 > next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
 > re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.
 

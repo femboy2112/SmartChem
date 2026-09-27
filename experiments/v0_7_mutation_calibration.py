@@ -167,20 +167,21 @@ def m7() -> bool:
     return real == 0 and mutant_exit == 2
 
 
-# 8. the default profile silently widened -> MUST be observable (default must stay legacy).  0.7 Round III: the
-#    route BUILD default is now DEFAULT_ROUTE_ALGEBRA_PROFILE (the one constant a promotion flips), decoupled from
-#    the low-level DEFAULT_ALGEBRA_PROFILE -- so the widen-injection targets THAT constant (its move surviving the
-#    old patch is itself the proof the decoupling took effect).
-@mutant("M8 default-silent-widen-must-be-observable")
+# 8. the LOW-LEVEL default registry silently widened -> MUST be observable.  0.7 Round III PROMOTION: the SERVICE/CLI
+#    route default (DEFAULT_ROUTE_ALGEBRA_PROFILE) is now INTENTIONALLY certified, so "the default finds DA" is
+#    correct, not a bug.  This mutant now guards the USE-DEPENDENT invariant that SURVIVES promotion: the low-level
+#    DEFAULT_TRANSFORM_REGISTRY (used by a direct caller that passes no registry, and by the DECOMPILE lane) stays
+#    capped-only.  A silent widen of THAT registry -- the thing promotion deliberately did NOT touch -- is a bug.
+@mutant("M8 low-level-default-registry-silent-widen-must-be-observable")
 def m8() -> bool:
-    def default_finds_da() -> bool:
-        r = build_recompile_request("C1CC=CCC1", input_kind=InputKind.SMILES,
-                                    helper_reagents=("water",), stock_materials=("C=CC=C", "C=C"))
-        return run_compilation(r).exit_code == 0
-    real = not default_finds_da()  # the legacy default cannot make cyclohexene
-    with _patch(svc, "DEFAULT_ROUTE_ALGEBRA_PROFILE", "certified-route-v07"):
-        mutant_finds = default_finds_da()  # a widened route default WOULD find the DA route
-    return real and mutant_finds
+    from smartchem.transform_provider import DEFAULT_TRANSFORM_REGISTRY
+    chx = parse_smiles("C1CC=CCC1")
+    def emits_da(registry) -> bool:
+        transforms, _ = registry.enumerate(chx, (), budget=100_000)
+        return any(t.witness_kind.startswith("DIELS_ALDER") for t in transforms)
+    real = not emits_da(DEFAULT_TRANSFORM_REGISTRY)  # the low-level default is capped-only: emits no DA disconnection
+    mutant_emits = emits_da(ap.ALGEBRA_PROFILES["certified-route-v07"])  # a widened low-level default WOULD emit DA
+    return real and mutant_emits
 
 
 # 9. a DA class witness stripped/forged -> MUST be caught (the route step is class-vouched).

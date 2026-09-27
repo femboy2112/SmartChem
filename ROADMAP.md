@@ -131,6 +131,21 @@ families + hostile near-misses + fresh holdouts; **10/10 calibrated mutants kill
 code, not an independent witness). **Default NOT flipped; certified-route-v07 is OPT-IN; version stays `0.6.0a1`**
 (default promotion + non-DA class recognizers are the remaining blockers to the full "spine of normal use").
 
+**0.7 Round III — CLOSED + PROMOTED (2026-09-27, same branch):** closed the residual semantic holes and PROMOTED
+`certified-route-v07` to the default route algebra (`docs/research/V0_7_PRODUCTION_ALGEBRA_ROUND_III_2026-09-27.md`
++ `..._RELEASE_2026-09-27.md`). Closed: reagent policy is now identity-bearing (`reagentless_capable` rides the
+descriptor, tag v1→v2); identity is PROSE-INDEPENDENT (raw manifest dropped → `(id, version, descriptor.digest)`,
+no load-bearing field lost); a FROZEN wire-migration law (`LEGACY_MISSING_ALGEBRA_PROFILE`) decoupled from the
+promotable `DEFAULT_ROUTE_ALGEBRA_PROFILE`, landed BEFORE the flip; `certified-decompile-v07` decompiles on an empty
+pool (18 reconstructable candidates); a LOAD-time response algebra-rebind guard; a `--no-helper-reagents` CLI
+surface. The blocker was re-adjudicated: the non-DA route recognizers are NOT load-bearing for the ROUTE default
+(certified-route-v07 = capped + 8 oracle-vouched DA families). Gate: mutation **17/17**; a default-promotion blast
+radius over 22 + 3 co-ranking targets with **0 unacceptable deltas** (no legacy route lost, non-vacuous; every new
+step vouched; no eviction; worst slowdown 3.95×); independent Wave-C review clean (no P0). The default flip is a
+separate auditable commit; `--algebra legacy-capped-v1` reproduces the old behaviour; a pre-0.7 payload still means
+legacy. **Version bumped to `0.7.0a1`** — the 0.7 contract now holds for ordinary use. Next: **0.8 Real Route
+Dossiers**.
+
 ## Governance — the 3-lane projection (authoritative)
 
 Every item is tagged with the lane it advances. **Progress in one lane never implies another.** (Audit:

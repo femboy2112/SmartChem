@@ -340,7 +340,10 @@ class TestRedTeamRegressions:
 
     def test_A_service_refuses_a_programmatic_empty_reagent_pool(self):
         # defense-in-depth: a non-CLI caller building helper_reagents=() must get a typed exit-2 refusal, never a crash.
-        response = run_compilation(build_recompile_request("smiles:CC(=O)OC", helper_reagents=()))
+        # 0.7 Round III: the DEFAULT route algebra is now certified (which HAS reagentless providers, so an empty pool
+        # is a runnable search), so this "empty pool refused" behaviour is now the LEGACY algebra's -- named explicitly.
+        response = run_compilation(build_recompile_request("smiles:CC(=O)OC", helper_reagents=(),
+                                                           algebra_profile="legacy-capped-v1"))
         assert response.outcome is ResponseOutcome.INVALID_INPUT
         assert response.exit_code == 2
 
@@ -392,10 +395,12 @@ class TestNoHelperReagentsSurface:
         ])
         assert code == 0
 
-    def test_explicit_empty_pool_fails_closed_under_the_legacy_default_algebra(self, capsys):
+    def test_explicit_empty_pool_fails_closed_under_the_legacy_algebra(self, capsys):
         # legacy-capped-v1 has no reagentless-capable provider -- an explicit empty pool must refuse, not invent
-        # water behind your back. Fail closed, not fail silent.
-        code, _, _ = _run(capsys, ["recompile", "--no-helper-reagents", "--smiles", "C1CC=CCC1", "--quiet"])
+        # water behind your back. Fail closed, not fail silent. 0.7 Round III: legacy is now opt-in (the default route
+        # algebra is certified, which accepts an empty pool via its reagentless DA families), so name legacy explicitly.
+        code, _, _ = _run(capsys, ["recompile", "--algebra", "legacy-capped-v1", "--no-helper-reagents",
+                                   "--smiles", "C1CC=CCC1", "--quiet"])
         assert code == 2
 
     def test_reagents_and_no_helper_reagents_together_is_a_mutual_exclusion_error(self, capsys):

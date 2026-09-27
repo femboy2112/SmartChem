@@ -10,8 +10,14 @@ from __future__ import annotations
 import pytest
 
 from smartchem.compilation_ir import CompilationOperation
-from smartchem.identity_parse import IdentityParseError, InputKind, resolve_identity
-from smartchem.plan import PlanResult, plan, plan_result_to_payload
+from smartchem.identity_parse import (
+    IdentityParseError,
+    InputKind,
+    InputKindAmbiguity,
+    detect_auto_ambiguity,
+    resolve_identity,
+)
+from smartchem.plan import PlanResult, PlanStatus, plan, plan_result_to_payload
 from smartchem.service import (
     build_recompile_request,
     deserialize_response,
@@ -161,3 +167,146 @@ def test_plan_charged_formula_reports_identity_without_a_neutral_descent():
     assert pr.operation is None            # no neutral formula descent for an ion
     assert pr.exit_code == 0               # the identity WAS delivered successfully
     assert pr.resolved.formula.charge == -2
+
+
+# == v0.6 hostile merge-readiness fixes (P0-A / P0-E / P0-F) + typed PlanStatus (P1) =========================
+
+# -- P1: the explicit PlanStatus outcome, not an overloaded (operation, exit_code) triple --------------------
+def test_plan_status_reflects_the_route():
+    assert plan("C8H10N4O2").status is PlanStatus.FORMULA_DECOMPOSITION
+    assert plan("smiles:CC(=O)OC").status is PlanStatus.STRUCTURAL_PLANNING
+    assert plan("SO4^2-").status is PlanStatus.IDENTITY_ONLY          # charged: identity answered, no descent
+    assert plan("not-a-real-name-zzz").status is PlanStatus.INVALID_INPUT
+    assert plan("CO").status is PlanStatus.INPUT_KIND_AMBIGUOUS
+
+
+# -- P0-A: the human front door refuses to silently pick between materially-distinct input-kind readings -----
+def test_P0A_detect_auto_ambiguity_flags_cross_kind_strings():
+    amb = detect_auto_ambiguity("CO")
+    assert isinstance(amb, InputKindAmbiguity)
+    assert set(amb.kinds) == {InputKind.SMILES, InputKind.FORMULA}
+
+
+@pytest.mark.parametrize("text", ["CO", "CC", "CN", "NO", "Cl", "Br"])
+def test_P0A_plan_reports_input_kind_ambiguity_instead_of_launching_structure(text):
+    pr = plan(text)
+    assert pr.status is PlanStatus.INPUT_KIND_AMBIGUOUS
+    assert not pr.structural_planning_eligible          # NO silent structural launch
+    assert pr.operation is None
+    assert pr.exit_code == 2                             # a non-zero "supply an explicit kind" outcome
+    assert pr.ambiguity is not None and len(pr.ambiguity.interpretations) >= 2
+
+
+def test_P0A_explicit_kind_is_a_decision_and_resolves_unambiguously():
+    # both escape hatches: an inline prefix and the --input-kind flag pin one reading, no ambiguity.
+    assert plan("smiles:CO").status is PlanStatus.STRUCTURAL_PLANNING       # methanol
+    assert plan("formula:CO").status is PlanStatus.FORMULA_DECOMPOSITION    # carbon monoxide
+    assert plan("CO", InputKind.FORMULA).status is PlanStatus.FORMULA_DECOMPOSITION
+    # detect_auto_ambiguity itself returns None once a kind is declared inline.
+    assert detect_auto_ambiguity("smiles:CO") is None
+    assert detect_auto_ambiguity("formula:CO") is None
+
+
+def test_P0A_an_unambiguous_bare_formula_is_not_flagged():
+    # C8H10N4O2 is a valid formula but NOT a valid SMILES -> only one reading -> not ambiguous.
+    assert detect_auto_ambiguity("C8H10N4O2") is None
+    assert plan("C8H10N4O2").status is PlanStatus.FORMULA_DECOMPOSITION
+    # a registered name that is not also a formula is likewise single-reading.
+    assert detect_auto_ambiguity("paracetamol") is None
+
+
+def test_P0A_legacy_resolve_identity_precedence_is_unchanged():
+    # the ambiguity lives on the PLAN surface; the expert identity authority keeps its AUTO precedence
+    # (anti-Mutant-5 ordering), so CO still resolves to the SMILES reading there.
+    assert resolve_identity("CO").receipt.resolved_kind is InputKind.SMILES
+
+
+# -- P0-E: a TARGET_FILE perceives the SAME identity as resolving its contents directly ----------------------
+def test_P0E_target_file_transports_the_v0_6_syntax_and_candidate_set(tmp_path):
+    # a Unicode hydrate file must keep the syntax layer (formula_expr + component boundary).
+    hyd = tmp_path / "hydrate.txt"
+    hyd.write_text("CuSO₄·5H₂O", encoding="utf-8")
+    direct = resolve_identity("CuSO₄·5H₂O", InputKind.AUTO)
+    via_file = resolve_identity(str(hyd), InputKind.TARGET_FILE)
+    assert via_file.formula_expr is not None, "formula_expr was dropped in transport"
+    assert via_file.formula_expr.is_multi_component
+    assert dict(via_file.formula.counts) == dict(direct.formula.counts)
+
+    # a same-formula ambiguity file must transport the (non-exhaustive) registry candidate set.
+    iso = tmp_path / "iso.txt"
+    iso.write_text("C2H6O", encoding="utf-8")
+    via_iso = resolve_identity(str(iso), InputKind.TARGET_FILE)
+    direct_iso = resolve_identity("C2H6O", InputKind.AUTO)
+    assert via_iso.registry_candidates, "candidate set was dropped in transport"
+    assert {getattr(c, "name", None) for c in via_iso.registry_candidates} == {
+        getattr(c, "name", None) for c in direct_iso.registry_candidates
+    }
+    # the plan JSON for a formula target file must retain the formula syntax.
+    payload = plan_result_to_payload(plan(str(iso), InputKind.TARGET_FILE))
+    assert payload["identity"]["formula_syntax"] is not None
+
+
+# -- P0-F: a registry lookup FAILURE must not masquerade as "zero candidates" --------------------------------
+def test_P0F_registry_programming_error_propagates_not_laundered(monkeypatch):
+    import smartchem.structure as structure
+
+    def boom(formula):
+        raise RuntimeError("registry index corrupt")
+
+    monkeypatch.setattr(structure, "known_compounds", boom)
+    # the old `except Exception: return ()` turned this into a silent "no candidates"; it must now PROPAGATE.
+    with pytest.raises(RuntimeError):
+        resolve_identity("H2O", InputKind.FORMULA)
+
+
+def test_P0F_available_registry_reports_lookup_ok_even_for_zero_candidates():
+    # an empty candidate set with lookup_ok True is "queried, none known" -- distinct from "unavailable".
+    r = resolve_identity("Cr2O7^2-", InputKind.FORMULA)
+    assert r.registry_lookup_ok is True
+
+
+# == the extended adversarial gate: mutants 9-14 (v0.6 hostile-review defects) ================================
+# Each asserts the exact behaviour the corresponding mutation breaks; experiments/v0_6_mutation_calibration.py
+# injects each and shows this check goes red, so the extended gate is non-vacuous.
+
+# -- MUTANT 9: plan silently picks the SMILES reading for a cross-kind-ambiguous input (P0-A) -----------------
+def test_mutant_9_plan_does_not_silently_resolve_a_cross_kind_ambiguity():
+    pr = plan("CO")
+    assert pr.status is PlanStatus.INPUT_KIND_AMBIGUOUS   # a mutant that skips detection -> STRUCTURAL_PLANNING
+    assert pr.operation is not CompilationOperation.RECOMPILE
+
+
+# -- MUTANT 10: an ambiguous bare-sign ion's digit is misread (single-element OR >=2-digit run) (P0-B) -------
+@pytest.mark.parametrize("text", ["Fe3+", "Ca2+", "O2-", "SO42-", "PO43-"])
+def test_mutant_10_ambiguous_bare_charge_is_refused_at_the_front_door(text):
+    with pytest.raises(IdentityParseError):
+        resolve_identity(text, InputKind.FORMULA)
+
+
+# -- MUTANT 11: a compact ASCII decimal is coerced into an adduct composition (P0-C) -------------------------
+def test_mutant_11_decimal_is_refused_never_becomes_an_adduct():
+    with pytest.raises(IdentityParseError):
+        resolve_identity("C1.5H2", InputKind.FORMULA)   # a mutant makes this C1H10 (C + 5x H2)
+
+
+# -- MUTANT 12: a leading whole-expression coefficient is folded into composition (P0-D) ---------------------
+def test_mutant_12_leading_coefficient_is_refused():
+    with pytest.raises(IdentityParseError):
+        resolve_identity("5H2O", InputKind.FORMULA)     # a mutant makes this H10O5
+
+
+# -- MUTANT 13: a TARGET_FILE drops the v0.6 syntax/candidate fields in transport (P0-E) ---------------------
+def test_mutant_13_target_file_does_not_drop_the_syntax_layer(tmp_path):
+    f = tmp_path / "t.txt"
+    f.write_text("CuSO₄·5H₂O", encoding="utf-8")
+    r = resolve_identity(str(f), InputKind.TARGET_FILE)
+    assert r.formula_expr is not None                    # a drop-mutant reconstructs without it -> None
+
+
+# -- MUTANT 14: a registry failure is laundered into an empty candidate set (P0-F) ---------------------------
+def test_mutant_14_registry_failure_is_not_swallowed(monkeypatch):
+    import smartchem.structure as structure
+
+    monkeypatch.setattr(structure, "known_compounds", lambda formula: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(RuntimeError):                     # a laundering-mutant returns () and does NOT raise
+        resolve_identity("H2O", InputKind.FORMULA)

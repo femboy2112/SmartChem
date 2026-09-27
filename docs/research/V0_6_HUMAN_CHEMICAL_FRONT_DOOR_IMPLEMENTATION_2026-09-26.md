@@ -39,16 +39,26 @@ raw spelling  ->  FormulaExpr (components + charge + provenance)  ->  Formula (a
   `CuSO4·5H2O` and `CuSO₄·5H₂O` are the SAME expression.
 - `to_formula()` is the deterministic, conservation-correct forgetful projection (the hydrate boundary is
   dropped **only** here).
-- The finite grammar (each spelling has a committed test): ASCII formulas, Unicode subscript counts, the
-  middle-dot / ASCII-dot hydrate separator with a leading component multiplier, whitespace tolerance, nested
-  `()` and `[]` grouping, and the charge spellings `NH4+`, `[NH4]+`, `SO4^2-`, `SO₄²⁻`, `[Fe(CN)6]4-`.
-- **Charge rule (chosen for unambiguity):** a bare trailing sign is ±1 with preceding digits kept as counts
-  (`NH4+` → +1); a magnitude > 1 requires the caret (`SO4^2-`), a Unicode superscript, or a bracket-ion
-  (`[Fe(CN)6]4-`). A bare `Ca2+`/`SO42-` is read literally as ±1 **with a note** flagging that a magnitude
-  needs the caret form — read exactly what was typed, never silently mis-charge.
-- **Parametric forms are refused, never coerced:** `(C2H4)n`, `MxOy`, `C6H(12±2)O6` raise
-  `ParametricFormulaError` (a subclass of `FormulaSyntaxError`), so a caller can tell "outside the grammar
-  because parametric" from "malformed". Nothing is downgraded to a concrete count.
+- The finite grammar (each spelling has a committed test): ASCII formulas, Unicode subscript counts, a
+  **Unicode middle-dot (`·`) or SPACED ASCII-dot** hydrate separator with a leading component multiplier,
+  whitespace tolerance, nested `()` and `[]` grouping, and the charge spellings `NH4+`, `[NH4]+`, `SO4^2-`,
+  `SO₄²⁻`, `[Fe(CN)6]4-`. (A **compact ASCII `digit.digit`** is a decimal and is refused, never coerced into
+  an adduct — see the hostile-review addendum, P0-C.)
+- **Charge rule (revised in the hostile-review round, P0-B):** a caret (`SO4^2-`), a Unicode superscript
+  (`SO₄²⁻`/`Fe³⁺`), or a bracket-ion (`[Fe(CN)6]4-`, `[Fe]3+`) carries any magnitude, unambiguously. A **bare**
+  trailing sign is ±1; a preceding **single** digit on a **multi-element** body is that body's last-element
+  count (`NH4+` → NH4⁺, `NO3-` → NO3⁻). Two cases are refused with `AmbiguousChargeError` (naming the
+  unambiguous spelling): a **single-element** body with a trailing digit run (`Fe3+`, `Ca2+`, `O2-`, `C60-` —
+  count vs magnitude), and **any** body with a **≥2-digit** trailing run before a bare sign (`SO42-`, `PO43-`,
+  `Cr2O72-` — unclear how to split count from magnitude). Fail closed over a silent mis-charge; never
+  special-cased by element name.
+- **Parametric forms are refused, never coerced:** `(C2H4)n`, `C6H(12±2)O6` raise `ParametricFormulaError`
+  (a subclass of `FormulaSyntaxError`), so a caller can tell "outside the grammar because parametric" from
+  "malformed". Nothing is downgraded to a concrete count. `MxOy` is refused as a plain `FormulaSyntaxError`
+  (its `Mx`/`Oy` read as unknown two-letter element symbols — syntactically indistinguishable from a genuine
+  typo, so it fails as an unknown element, exactly as `tests/test_formula_expr.py::test_MxOy_is_refused_not_coerced`
+  pins). Distinguishing a variable subscript from a mistyped element is not possible at the syntax layer, so
+  the classifier does not attempt it.
 - **Guards:** a 512-char input bound and a 32-deep nesting bound — a pasted identity is a short string, not a
   program. No RDKit, no PySCF, no network.
 
@@ -132,3 +142,71 @@ transform/ranking behaviour changed.
   asymmetry in §5); collapse the FORMULA-layer decompile alias in `semantic_digest` (already a named follow-on).
 - **0.7:** a parametric-syntax first-class type (rather than a typed refusal) if a consumer needs `(C2H4)n`.
 - **0.8/0.9:** an isomer enumerator to widen `registry_candidates` beyond the offline registry.
+
+## 11. Hostile merge-readiness round (2026-09-26) — P0 fixes before merge
+
+A hostile pre-merge review found six silent mis-parses (each reproduced against source before repair; see
+`experiments/v0_6_mutation_calibration.py` mutants 9–14 and `tests/test_formula_expr.py` /
+`tests/test_plan_front_door.py`). All were structural fixes with a failing discriminator first, and none
+touched search/ranking/transform chemistry.
+
+- **P0-A cross-kind input ambiguity.** `AUTO "CO"` silently resolved to SMILES methanol though `CO` is also a
+  valid formula (carbon monoxide). The legacy `resolve_identity` AUTO precedence is *preserved* for the expert
+  commands (the anti-Mutant-5 ordering, and `test_mutant_5` still pins `CO → SMILES`). The **human `plan`
+  surface** now calls the new `identity_parse.detect_auto_ambiguity`: when >1 input-kind reading resolves to a
+  materially-distinct identity (differing layer or composition), `plan` returns `PlanStatus.INPUT_KIND_AMBIGUOUS`
+  and refuses to launch structural planning until an explicit kind (`smiles:`/`formula:`/`--input-kind`) is
+  given. Not a precedence flip (that would just move the bug).
+- **P0-B ambiguous ASCII ionic charge.** `Fe3+` read as `Fe3`(+1). A **single-element** body with a digit run
+  before a bare sign is now refused (`AmbiguousChargeError`); a **multi-element** body (`NH4+`, `NO3-`) keeps
+  the count reading. General syntax rule, no per-element table (§ charge rule above).
+- **P0-C decimal / degree separator.** A compact ASCII `digit.digit` (`C1.5H2`) silently became `C + 5(H2)`.
+  It is now refused as a decimal (checked on the *raw* spelling, before normalization folds the distinction
+  away). The Unicode middle-dot and the spaced ASCII dot remain valid hydrate separators; `render()` now emits
+  the middle-dot so it round-trips through the guard. The degree sign `°` was removed from the separator set.
+- **P0-D leading coefficient.** `5H2O` folded into composition `H10O5`. A leading whole-expression multiplier
+  (component index 0) is now refused as a stoichiometric quantity; a multiplier *after* a separator (the hydrate
+  `5`) stays valid.
+- **P0-E TARGET_FILE transport.** `_resolve_target_file` reconstructed the identity without `formula_expr` /
+  `registry_candidates`; both (and `registry_lookup_ok`) are now forwarded, so a file and its inline text
+  perceive the same identity, differing only in file provenance.
+- **P0-F registry error laundering.** `_registry_candidates` caught `except Exception: return ()`, turning any
+  internal failure into the epistemic claim "no candidate known". It now catches only `ImportError` (the
+  registry genuinely unavailable → `registry_lookup_ok=False`); a real bug propagates. Three states are
+  distinguished (queried-N / queried-zero / unavailable), and the funnel's `ambiguity_classified` is gated on
+  `registry_lookup_ok` so it cannot silently equal `composition_resolved` when the classifier failed.
+
+### The "lossless" claim, resolved honestly (P1)
+
+`FormulaExpr` identity does **not** preserve *intra-component* grouping: `(NH4)2SO4` ≡ `N2H8SO4` (same digest).
+Rather than build a group-aware AST (which would cascade into `render`, the round-trip property, and the
+digest), the claim is **narrowed to exactly what is preserved** — the component/hydrate-adduct boundary, the
+composition, the supported charge, and the raw/normalized spelling as provenance — and the intra-component
+grouping quotient is stated as deliberate: promoting a parenthesization to an identity distinction would smuggle
+in the bond-graph claim v0.6 explicitly refuses. Grouping stays visible in `original`/`source`, and a
+grouping-as-identity (MaterialBucket) is a 0.9 boundary. The quotient and the preserved boundary are both pinned
+in `tests/test_formula_expr.py` (`test_P1_intra_component_grouping_is_a_documented_composition_quotient`,
+`test_P1_the_component_boundary_is_NOT_quotiented_away`).
+
+### Typed plan outcome (P1)
+
+`PlanResult` now carries an explicit `PlanStatus` (`STRUCTURAL_PLANNING` / `FORMULA_DECOMPOSITION` /
+`IDENTITY_ONLY` / `INPUT_KIND_AMBIGUOUS` / `INVALID_INPUT`) instead of overloading the `(operation, response,
+exit_code)` triple to imply why planning did or did not continue. The `--json` payload gains `status` and (for
+an ambiguous input) `input_kind_ambiguity`.
+
+### Adversarial-review round (2026-09-26, same day) — two further breaks fixed
+
+An adversarial pass on the P0 fixes found two that shared one root pattern (digit-run reasoning on the wrong
+representation); both are now fixed and pinned:
+
+- **P0-C subscript bypass.** The decimal guard scanned the *raw* string for an ASCII `digit.digit`, but subscript
+  translation ran afterward, so `C₁.5H₂` (subscript-1) slipped past and became `CH10`. The guard now runs on the
+  **subscript-folded** spelling (`str.translate(_SUBSCRIPTS)`) but *before* separator folding / whitespace
+  stripping — so `C₁.5H₂` is caught while `CuSO4·5H2O` (middle dot) and `CuSO4 . 5 H2O` (spaced) are not. Pinned
+  in `test_P0C_compact_ascii_decimal_is_refused_not_an_adduct`.
+- **P0-B ≥2-digit oxoanions.** The ambiguity guard fired only for a single-element body, so a multi-element body
+  with a **≥2-digit** trailing run (`SO42-`, `PO43-`, `CO32-`, `Cr2O72-`) took the count reading and produced an
+  absurd 42-oxygen composition. The guard now also refuses **any** ≥2-digit trailing run before a bare sign (it
+  is unclear how to split count from magnitude); a single trailing digit on a multi-element body (`NH4+`,
+  `NO3-`) stays the unambiguous count reading. Pinned in `test_P0B_multi_element_two_digit_run_is_ambiguous`.

@@ -19,6 +19,7 @@ from hypothesis import strategies as st
 
 from smartchem.decompiler import Formula
 from smartchem.formula_expr import (
+    AmbiguousChargeError,
     FormulaExpr,
     FormulaSyntaxError,
     ParametricFormulaError,
@@ -203,3 +204,113 @@ def test_property_projection_conserves_total_atoms(text):
     # the atom total equals the sum over components of multiplier * that component's atoms.
     by_component = sum(m * k for c in expr.components for _, k in c.formula.counts for m in (c.multiplier,))
     assert total == by_component
+
+
+# == v0.6 hostile merge-readiness fixes (P0-B / P0-C / P0-D) ==================================================
+
+# -- P0-B: an ambiguous single-element ASCII ion is a typed refusal, never a silent mis-charge ---------------
+# The digit before a BARE sign could be an atom count (Fe3, charge +-1) or the charge magnitude (Fe, charge
+# +-3); the two readings materially differ, so a single-element body is refused with AmbiguousChargeError.
+@pytest.mark.parametrize("text", ["Fe3+", "Ca2+", "Mg2+", "Al3+", "O2-", "Fe2+", "Cu2+", "N3-", "C60-"])
+def test_P0B_single_element_bare_sign_ion_is_ambiguous(text):
+    with pytest.raises(AmbiguousChargeError):
+        parse_formula_expr(text)
+
+
+# a MULTI-element body with a >=2-digit trailing run before a bare sign is ALSO ambiguous (SO4+2- vs SO42+1-):
+# accepting it fails open to an absurd 42-oxygen composition, so it too is refused (the adversarial-review gap).
+@pytest.mark.parametrize("text", ["SO42-", "PO43-", "CO32-", "CrO42-", "Cr2O72-", "B12H122-"])
+def test_P0B_multi_element_two_digit_run_is_ambiguous(text):
+    with pytest.raises(AmbiguousChargeError):
+        parse_formula_expr(text)
+
+
+# a MULTI-element body is unambiguous (the trailing digit is the last element's count) -> accepted at +-1.
+@pytest.mark.parametrize("text,comp,charge", [
+    ("NH4+", {"N": 1, "H": 4}, 1),
+    ("NO3-", {"N": 1, "O": 3}, -1),
+    ("OH-", {"O": 1, "H": 1}, -1),
+    ("H3O+", {"H": 3, "O": 1}, 1),      # digit is not adjacent to the sign -> plainly a count
+    ("CH3COO-", {"C": 2, "H": 3, "O": 2}, -1),
+])
+def test_P0B_multi_element_bare_sign_ion_is_accepted(text, comp, charge):
+    expr = parse_formula_expr(text)
+    assert _comp(expr) == comp
+    assert expr.charge == charge
+
+
+# the unambiguous spellings the refusal points to all resolve, at the intended magnitude.
+@pytest.mark.parametrize("text,charge", [
+    ("Fe^3+", 3), ("Fe³⁺", 3), ("[Fe]3+", 3), ("Ca^2+", 2), ("Ca²⁺", 2), ("O^2-", -2), ("[O]2-", -2),
+])
+def test_P0B_explicit_magnitude_spellings_resolve(text, charge):
+    assert parse_formula_expr(text).charge == charge
+
+
+# -- P0-C: a compact ASCII decimal is refused (never coerced into an adduct); '°' is not a separator ---------
+@pytest.mark.parametrize("text", [
+    "C1.5H2", "CuSO4.5H2O", "2.5H2O", "C0.5O",
+    "C₁.5H₂", "Fe₂.₅O", "C₂.5H₆",          # subscript integer before the dot must NOT bypass the guard
+])
+def test_P0C_compact_ascii_decimal_is_refused_not_an_adduct(text):
+    with pytest.raises(FormulaSyntaxError) as exc:
+        parse_formula_expr(text)
+    assert "decimal" in str(exc.value).lower()
+
+
+@pytest.mark.parametrize("text", ["CuSO4°5H2O", "NaCl°2H2O"])
+def test_P0C_degree_sign_is_not_a_hydrate_separator(text):
+    # the degree sign was silently accepted as an adduct dot; it is now an unknown character.
+    with pytest.raises(FormulaSyntaxError):
+        parse_formula_expr(text)
+
+
+# the LEGITIMATE hydrate spellings (Unicode middle-dot, spaced ASCII dot) still parse to the exact composition.
+@pytest.mark.parametrize("text,comp", [
+    ("CuSO4·5H2O", {"Cu": 1, "S": 1, "O": 9, "H": 10}),
+    ("CuSO4 . 5 H2O", {"Cu": 1, "S": 1, "O": 9, "H": 10}),
+    ("CaCl2·2H2O", {"Ca": 1, "Cl": 2, "H": 4, "O": 2}),
+])
+def test_P0C_legitimate_hydrate_spellings_still_parse(text, comp):
+    assert _comp(parse_formula_expr(text)) == comp
+
+
+def test_P0C_render_uses_middle_dot_and_round_trips_through_the_decimal_guard():
+    # a hydrate renders with '·' (never a compact ASCII '4.5' that the decimal guard would then reject).
+    expr = parse_formula_expr("CuSO4·5H2O")
+    rendered = expr.render()
+    assert "·" in rendered and "." not in rendered
+    assert parse_formula_expr(rendered) == expr
+
+
+# -- P0-D: a leading whole-expression coefficient is a quantity, refused at the identity front door ----------
+@pytest.mark.parametrize("text", ["5H2O", "2NaCl", "3CO2", "10H2O"])
+def test_P0D_leading_coefficient_is_refused(text):
+    with pytest.raises(FormulaSyntaxError) as exc:
+        parse_formula_expr(text)
+    assert "coefficient" in str(exc.value).lower()
+
+
+def test_P0D_a_hydrate_multiplier_after_a_separator_is_still_valid():
+    # the '5' AFTER a component separator is a hydrate multiplier, not a leading coefficient -- still accepted.
+    expr = parse_formula_expr("CuSO4·5H2O")
+    assert sorted(c.multiplier for c in expr.components) == [1, 5]
+
+
+# -- P1: the "lossless" claim, pinned HONESTLY -- intra-component grouping is a COMPOSITION quotient ---------
+def test_P1_intra_component_grouping_is_a_documented_composition_quotient():
+    # (NH4)2SO4 and its flat spelling name ONE composition; v0.6 does NOT establish a constitution, so promoting
+    # the parenthesization to an identity distinction would smuggle in a bond-graph claim.  This is the DELIBERATE
+    # quotient the module docstring now states -- pinned so it is a decision, not a silent overclaim.
+    assert parse_formula_expr("(NH4)2SO4") == parse_formula_expr("N2H8SO4")
+    assert parse_formula_expr("(NH4)2SO4").digest == parse_formula_expr("N2H8SO4").digest
+    assert parse_formula_expr("K4[Fe(CN)6]") == parse_formula_expr("C6FeK4N6")
+
+
+def test_P1_the_component_boundary_is_NOT_quotiented_away():
+    # what IS preserved in identity: the hydrate/adduct boundary -- a flatten is a DIFFERENT expression.
+    hydrate = parse_formula_expr("CuSO4·5H2O")            # two components: Cu1 S1 O9 H10
+    flat = parse_formula_expr("CuH10O9S")                 # same atoms, ONE component -- must NOT be equal
+    assert hydrate.to_formula() == flat.to_formula()      # identical composition
+    assert hydrate != flat                                # but a DIFFERENT expression (boundary preserved)
+    assert hydrate.is_multi_component and not flat.is_multi_component

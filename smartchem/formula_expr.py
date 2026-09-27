@@ -29,10 +29,34 @@ to kill:
 
 The grammar is deliberately finite -- the smallest durable thing that eats the "copy a formula off
 Wikipedia" surface.  What is *supported* (and every one is pinned by a committed test):
-ASCII formulas, Unicode subscript counts, the middle-dot / ASCII-dot hydrate separator with a
-leading component multiplier, harmless whitespace, nested ``()`` and ``[]`` grouping, and the charge
-spellings ``NH4+``, ``[NH4]+``, ``SO4^2-``, ``SO4²⁻`` (Unicode superscript), ``[Fe(CN)6]4-``.
-Everything else is one of the two typed refusals above.  Nothing here needs RDKit or any network.
+ASCII formulas, Unicode subscript counts, a Unicode middle-dot (``·``) or a SPACED ASCII-dot
+(``CuSO4 . 5 H2O``) hydrate separator with a leading component multiplier, harmless whitespace, nested
+``()`` and ``[]`` grouping, and the charge spellings ``NH4+``, ``[NH4]+``, ``SO4^2-``, ``SO4²⁻``
+(Unicode superscript), ``[Fe(CN)6]4-``.  Everything else is one of the typed refusals above.  Nothing
+here needs RDKit or any network.
+
+What this layer's IDENTITY (digest / equality) preserves, precisely -- it is lossless for these and NOT
+more, so nothing here overclaims:
+
+* the **component / hydrate-adduct boundary** (``CuSO4·5H2O`` keeps its two components; a flatten is a
+  different :class:`FormulaExpr`);
+* the exact **composition** and supported **charge**;
+* the raw and normalized **spelling**, as ``compare=False`` provenance (so Unicode/ASCII twins are equal).
+
+What it deliberately **quotients away** is *intra-component* grouping: ``(NH4)2SO4`` and ``N2H8SO4`` are the
+SAME :class:`FormulaExpr` because they name one composition, and v0.6 does NOT establish a constitution --
+promoting a parenthesization to an identity distinction would smuggle in exactly the bond-graph claim this
+layer refuses to make.  Grouping stays *visible* in ``original``/``source`` provenance; a
+grouping-as-identity (a MaterialBucket) is a later-version (0.9) boundary, and ``tests/test_formula_expr.py``
+pins the quotient explicitly so it is a documented decision, not a silent loss.
+
+Ambiguous ASCII flattenings are refused rather than guessed, because guessing is exactly the v0.6 failure
+mode: a compact ``digit.digit`` (a decimal, which the Unicode/spaced hydrate separators are not -- P0-C, and
+checked after subscript folding so ``C₁.5H₂`` cannot slip past) and a bare-sign ion whose trailing digits
+could be an atom count or the charge magnitude -- a single-element body (``Fe3+``/``O2-``) or any ``>=2``-digit
+trailing run (``SO42-``/``PO43-``) (:class:`AmbiguousChargeError` -- P0-B); both name the unambiguous spelling
+to use instead.  A leading whole-expression coefficient (``5H2O``) is refused too: it is a stoichiometric
+quantity, not one molecular identity (P0-D).
 """
 from __future__ import annotations
 
@@ -44,6 +68,7 @@ from .decompiler import DecompilerError, Formula
 __all__ = [
     "FormulaSyntaxError",
     "ParametricFormulaError",
+    "AmbiguousChargeError",
     "FormulaComponent",
     "FormulaExpr",
     "normalize_formula_text",
@@ -65,9 +90,13 @@ _SUPERSCRIPTS = str.maketrans(
     "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻", "0123456789+-"
 )
 _SUPERSCRIPT_CHARS = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")
-# Every glyph a source might use for the hydrate/adduct dot; all normalize to one canonical ASCII '.'.
-_SEPARATOR_CHARS = "·⋅•∙°"  # middle dot, dot operator, bullet, bullet op, degree
-_CANONICAL_SEP = "."
+# Every glyph a source uses for the hydrate/adduct dot; all normalize to one canonical ASCII '.' for parsing.
+# The degree sign '°' is NOT here (P0-C): it is a temperature/angle glyph, never a hydrate dot, and admitting
+# it silently turned 'CuSO4°5H2O' into a valid adduct.  Only genuine dot glyphs are separators.
+_SEPARATOR_CHARS = "·⋅•∙"  # middle dot, dot operator, bullet, bullet operator
+_CANONICAL_SEP = "."  # the internal parse separator (normalize folds every dot glyph to this)
+_RENDER_SEP = "·"     # the canonical RENDER separator (a middle-dot, never an ambiguous compact ASCII '.')
+_ASCII_DIGITS = "0123456789"
 
 # Markers that make an expression PARAMETRIC (a family of molecules, not one) -- refused, not coerced.
 # 'n'/'m'/'x'/'y' as a *standalone count position* is a variable subscript; '±'/'~' is an interval.
@@ -85,10 +114,29 @@ class FormulaSyntaxError(ValueError):
 class ParametricFormulaError(FormulaSyntaxError):
     """The string is well-formed but PARAMETRIC -- it names a family, not one concrete molecule.
 
-    ``(C2H4)n``, ``MxOy``, ``C6H(12±2)O6``.  A *subclass* of :class:`FormulaSyntaxError` (so a plain
+    ``(C2H4)n``, ``C6H(12±2)O6``.  A *subclass* of :class:`FormulaSyntaxError` (so a plain
     ``except FormulaSyntaxError`` still catches it), raised as its own type so a consumer can tell
     "outside the grammar because parametric" apart from "malformed".  It is NEVER downgraded to a
-    concrete count: coercing ``(C2H4)n`` to ``C2H4`` would be a fabricated identity.
+    concrete count: coercing ``(C2H4)n`` to ``C2H4`` would be a fabricated identity.  (``MxOy`` is
+    refused as a plain :class:`FormulaSyntaxError` -- its ``Mx``/``Oy`` read as unknown 2-letter element
+    symbols, indistinguishable at the syntax layer from a genuine typo, so it fails as an unknown element.)
+    """
+
+
+class AmbiguousChargeError(FormulaSyntaxError):
+    """An ASCII ion spelling whose two readings materially differ -- refused, not guessed (P0-B).
+
+    Two cases are ambiguous because a flattened ASCII cannot say whether a trailing digit is an atom count or
+    (part of) the charge magnitude: (1) a **single-element** body with a trailing digit run before a *bare*
+    sign (``Fe3+`` → ``Fe3``±1 vs ``Fe``±3; also ``Ca2+``, ``O2-``, ``C60-``); and (2) **any** body whose
+    trailing run before a bare sign is **two or more digits** (``SO42-`` → ``SO4``+``2-`` vs ``SO42``+``1-``;
+    also ``PO43-``, ``CO32-``, ``Cr2O72-``) -- accepting it would fail open to an absurd 42-oxygen composition.
+    A **multi-element** body with a **single** trailing digit (``NH4+``, ``NO3-``) is unambiguous -- that digit
+    is the last element's count and the bare sign is ±1 -- and is accepted.  A *subclass* of
+    :class:`FormulaSyntaxError`, so the identity front door's
+    ``except FormulaSyntaxError`` maps it to a typed :class:`~smartchem.identity_parse.IdentityParseError`,
+    while a caller can catch this exact type.  The message names the unambiguous spellings (caret, Unicode
+    superscript, or bracket ion) that resolve it -- fail-closed over a silent mis-charge.
     """
 
 
@@ -170,7 +218,9 @@ class FormulaExpr(Digestible):
         for component in self.components:
             body = _render_formula_body(component.formula)
             parts.append(f"{component.multiplier}{body}" if component.multiplier != 1 else body)
-        text = _CANONICAL_SEP.join(parts)
+        # join with the middle-dot, never a compact ASCII '.' -- a rendered 'CuSO4·5H2O' reparses cleanly,
+        # whereas the compact 'CuSO4.5H2O' would be caught by the decimal guard (P0-C) and fail to round-trip.
+        text = _RENDER_SEP.join(parts)
         if self.charge:
             mag = abs(self.charge)
             text += f"^{mag if mag != 1 else ''}{'+' if self.charge > 0 else '-'}"
@@ -388,12 +438,32 @@ def _extract_charge(text: str) -> "tuple[str, int, str]":
             if mag == 0:
                 raise FormulaSyntaxError(f"zero charge magnitude in {text!r}")
             return preceding, mag if last == "+" else -mag, ""
-        # bare sign: magnitude 1, digits (if any) belong to the body (NH4+ -> NH4, +1).
+        # A bare sign with a trailing digit run is ambiguous in two cases (P0-B), and both are refused rather
+        # than guessed -- the digits could be an atom count or (part of) the charge magnitude:
+        #   * a SINGLE-element body (Fe3+, Ca2+, O2-, C60-): count (Fe3, +-1) vs magnitude (Fe, +-3);
+        #   * ANY body with a >=2-digit trailing run (SO42-, PO43-, CO32-, Cr2O72-): it is unclear how to split
+        #     the run into count and magnitude (SO4 + 2- vs SO42 + 1-), so this fails OPEN to an absurd 42-oxygen
+        #     composition if accepted -- exactly the "silent mis-charge" P0-B forbids.
+        # A MULTI-element body with a SINGLE trailing digit (NH4+, NO3-) is unambiguous -- the digit is the last
+        # element's count and the bare sign is +-1 -- and falls through to the reading below.  Element count =
+        # uppercase letters; brackets are handled above.  n_elements == 0 (e.g. '3+') is left to the body parser.
+        if digits:
+            body_with_digits = text[:-1]
+            n_elements = sum(1 for ch in body_with_digits if ch.isupper())
+            if n_elements == 1 or len(digits) >= 2:
+                raise AmbiguousChargeError(
+                    f"{text!r} is an ambiguous ASCII ion: it is unclear whether the trailing digits {digits!r} "
+                    f"are an atom count or the charge magnitude (or how to split them). Write the charge "
+                    f"unambiguously with a caret (e.g. Fe^3+, SO4^2-), a Unicode superscript (Fe³⁺, SO₄²⁻), or a "
+                    f"bracket ion (e.g. [Fe]3+, [SO4]2-)."
+                )
+        # bare sign: magnitude 1, digits (if any) belong to the body (NH4+ -> NH4, +1; multi-element only).
         note = ""
         if digits:
             note = (
-                f"bare charge sign read as {'+1' if last == '+' else '-1'}; "
-                "a magnitude > 1 must use the caret form (e.g. SO4^2-) or a bracket ion (e.g. [Fe(CN)6]4-)"
+                f"bare charge sign read as {'+1' if last == '+' else '-1'}; the trailing '{digits}' is the last "
+                "element's count. A charge magnitude > 1 must use the caret form (e.g. SO4^2-) or a bracket ion "
+                "(e.g. [Fe(CN)6]4-)"
             )
         return text[:-1], 1 if last == "+" else -1, note
     return text, 0, ""
@@ -409,6 +479,24 @@ def parse_formula_expr(text: str) -> FormulaExpr:
     normalization so nothing is silently altered.
     """
     original = text if isinstance(text, str) else repr(text)
+
+    # P0-C: a compact ASCII 'digit.digit' is a DECIMAL point, not a hydrate separator -- refuse it (v0.6 has
+    # no decimal stoichiometry).  This is checked on a PARTIALLY-normalized spelling: subscript digits are
+    # folded to ASCII FIRST (so 'C₁.5H₂' is seen as the decimal '1.5', not bypassed -- the subscript-adjacent
+    # leak an adversary found), but separators are NOT yet folded and whitespace is NOT yet stripped (so a
+    # Unicode 'CuSO4·5H2O' still shows '·' and a spaced 'CuSO4 . 5 H2O' still shows its spaces, and neither
+    # trips as a decimal).  Doing it here rather than inside normalize keeps normalize idempotent on a folded
+    # hydrate 'CuSO4.5H2O'.  Only the ambiguous COMPACT ASCII period between two ASCII digits is a decimal.
+    if isinstance(text, str):
+        raw = text.strip().translate(_SUBSCRIPTS)
+        for k in range(1, len(raw) - 1):
+            if raw[k] == "." and raw[k - 1] in _ASCII_DIGITS and raw[k + 1] in _ASCII_DIGITS:
+                raise FormulaSyntaxError(
+                    f"{original!r} contains a decimal point ('{raw[k - 1]}.{raw[k + 1]}'); v0.6 does not support "
+                    "decimal stoichiometry. Use integer counts, a middle-dot hydrate (e.g. CuSO4·5H2O), or a "
+                    "spaced component boundary (e.g. CuSO4 . 5 H2O)."
+                )
+
     normalized = normalize_formula_text(text)
 
     reason = _looks_parametric(normalized)
@@ -425,12 +513,22 @@ def parse_formula_expr(text: str) -> FormulaExpr:
         raise FormulaSyntaxError(f"{original!r} has a dangling '{_CANONICAL_SEP}' separator (no component)")
 
     components: list[FormulaComponent] = []
-    for part in raw_components:
-        # optional leading integer multiplier: '5H2O' -> mult 5, body 'H2O'.
+    for idx, part in enumerate(raw_components):
+        # optional leading integer multiplier: '5H2O' -> mult 5, body 'H2O'.  It is a HYDRATE/ADDUCT multiplier,
+        # valid ONLY after a component separator (idx > 0).  A leading multiplier on the FIRST component (P0-D)
+        # -- '5H2O', '2NaCl' -- is a whole-expression stoichiometric COEFFICIENT (a quantity of a species), not
+        # the identity of one molecular species, so it is refused at the identity front door rather than folded
+        # into composition.
         m = 0
         while m < len(part) and part[m].isdigit():
             m += 1
         mult_text, body_text = part[:m], part[m:]
+        if mult_text and idx == 0:
+            raise FormulaSyntaxError(
+                f"{original!r} has a leading coefficient {mult_text!r}: a whole-expression multiplier is a "
+                "stoichiometric quantity, not one molecular identity. Drop it -- a component multiplier is valid "
+                "only AFTER a separator (e.g. the '5' in CuSO4·5H2O)."
+            )
         multiplier = int(mult_text) if mult_text else 1
         if multiplier == 0:
             raise FormulaSyntaxError(f"zero component multiplier in {original!r}")

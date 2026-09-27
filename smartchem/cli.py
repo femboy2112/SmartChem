@@ -1,8 +1,14 @@
 """``python -m smartchem`` -- the one coherent front door to SmartChem's chemistry verticals.
 
 A chemist should be able to pick this up with ``--help`` alone and not have to learn the project's internal
-module layout.  Four subcommands, each a thin wrapper over a built engine:
+module layout.  Six subcommands, each a thin wrapper over a built engine:
 
+* ``plan TARGET``         -- the v0.6 human total-answer front door (PLAN-01): resolve one human chemical
+                             identity through the single authority, report the strongest identity layer and the
+                             (non-exhaustive) ambiguity set, refuse to guess a structure from a bare formula,
+                             and route to ``recompile`` (a perceived constitution) or ``decompile`` (a bare
+                             formula).  A materially-ambiguous paste (``CO`` = methanol or carbon monoxide) is
+                             reported as INPUT_KIND_AMBIGUOUS, not silently resolved.
 * ``decompile FORMULA``   -- descend a compound to its elemental (or commodity) buckets: the AND-OR
                              decomposition hypergraph (``smartchem.decompiler.build_decomposition``).
 * ``recompile TARGET``    -- the CANONICAL synthesis verb (standard section 14.1): builds the one typed
@@ -626,7 +632,7 @@ def _cmd_plan(argv: list[str]) -> int:
                     "ambiguity instead of guessing structure, and route to the eligible compiler primitive.",
     )
     p.add_argument("target", nargs="?", default=None,
-                   help="the identity: a chemical FORMULA (e.g. CuSO4.5H2O, C8H10N4O2, SO4^2-), a registered name, "
+                   help="the identity: a chemical FORMULA (e.g. CuSO4·5H2O, C8H10N4O2, SO4^2-), a registered name, "
                         "or SMILES. Wikipedia-style Unicode subscripts/middle-dot hydrates are accepted")
     p.add_argument(
         "--input-kind", choices=["auto", "name", "smiles", "inchi", "formula", "target-file"], default=None,

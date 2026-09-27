@@ -17,14 +17,16 @@ from smartchem.identity_parse import InputKind, resolve_identity
 
 def test_design_funnel_aggregate_is_stable():
     _, agg = run_funnel()
+    # v0.6 hostile-review round added four repaired refusals (P0-B/C/D) -> total 36, typed_refusal 11; the
+    # resolved/eligible denominators are unchanged (the new cases are all correct refusals, not new structures).
     assert agg == {
-        "total": 32,
+        "total": 36,
         "syntax_represented": 25,
         "composition_resolved": 25,
         "ambiguity_classified": 25,
         "structure_represented": 6,
         "structural_planning_eligible": 6,
-        "typed_refusal": 7,
+        "typed_refusal": 11,
     }
 
 

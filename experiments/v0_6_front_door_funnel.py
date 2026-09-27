@@ -90,6 +90,12 @@ CORPUS: tuple[Case, ...] = (
     Case("b-dangling-sep", "CuSO4·", InputKind.FORMULA, "malformed: dangling separator"),
     Case("b-unknown-elt", "Xx2", InputKind.FORMULA, "malformed: unknown element"),
     Case("b-prose", "not a formula", InputKind.AUTO, "malformed: prose"),
+    # v0.6 hostile merge-readiness additions -- each is a CORRECT typed refusal (a repaired silent mis-parse),
+    # so it lands in `typed_refusal`, never in composition.  These are what the P0 fixes now catch.
+    Case("b-ambig-charge", "Fe3+", InputKind.FORMULA, "ambiguous single-element ASCII ion: refused (P0-B)"),
+    Case("b-decimal", "C1.5H2", InputKind.FORMULA, "decimal composition: refused, never an adduct (P0-C)"),
+    Case("b-degree-sep", "CuSO4°5H2O", InputKind.FORMULA, "degree sign is not a hydrate dot: refused (P0-C)"),
+    Case("b-leading-coeff", "5H2O", InputKind.FORMULA, "leading stoichiometric coefficient: refused (P0-D)"),
 )
 
 
@@ -113,10 +119,13 @@ def run_case(case: Case) -> FunnelRow:
             row.composition += f"^{abs(resolved.formula.charge)}{'+' if resolved.formula.charge > 0 else '-'}"
     row.structure_represented = resolved.structure_perceived
     row.structural_planning_eligible = resolved.constitution_established
-    # ambiguity is CLASSIFIED whenever composition is known: either a constitution is established, or it is a
-    # composition-only identity whose (non-exhaustive) registry candidate set has been resolved.
+    # ambiguity is CLASSIFIED whenever composition is known AND the candidate lookup actually RAN (P0-F): either a
+    # constitution is established, or it is a composition-only identity whose (non-exhaustive) registry candidate
+    # set was genuinely resolved.  If the registry were unavailable, `registry_lookup_ok` is False and the row is
+    # NOT counted as classified -- so `ambiguity_classified` cannot silently equal `composition_resolved` when the
+    # classifier itself failed (it only coincides here because the offline registry is present).
     row.registry_candidates = tuple(getattr(c, "name", repr(c)) for c in resolved.registry_candidates)
-    row.ambiguity_classified = row.composition_resolved
+    row.ambiguity_classified = row.composition_resolved and getattr(resolved, "registry_lookup_ok", True)
     return row
 
 

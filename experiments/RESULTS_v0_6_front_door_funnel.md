@@ -6,8 +6,8 @@ outcome, and `structure/eligible = -` for a bare formula is the identity law, no
 
 ## Aggregate denominators
 
-- cases: **32**
-- syntax represented: **25** (rest are typed refusals: 7)
+- cases: **36**
+- syntax represented: **25** (rest are typed refusals: 11)
 - composition resolved: **25**
 - ambiguity classified: **25**
 - structure represented: **6**
@@ -49,3 +49,7 @@ outcome, and `structure/eligible = -` for a bare formula is the identity law, no
 | b-dangling-sep | `CuSO4·` | FORMULA | - | - | NONE | - | - | - | - | REFUSED: could not parse 'CuSO4·' as a chemical formula: 'CuSO4·' has |
 | b-unknown-elt | `Xx2` | FORMULA | - | - | NONE | - | - | - | - | REFUSED: could not parse 'Xx2' as a chemical formula: in 'Xx2': unkno |
 | b-prose | `not a formula` | AUTO | - | - | NONE | - | - | - | - | REFUSED: could not resolve 'not a formula' as an offline name, SMILES |
+| b-ambig-charge | `Fe3+` | FORMULA | - | - | NONE | - | - | - | - | REFUSED: could not parse 'Fe3+' as a chemical formula: 'Fe3+' is an a |
+| b-decimal | `C1.5H2` | FORMULA | - | - | NONE | - | - | - | - | REFUSED: could not parse 'C1.5H2' as a chemical formula: 'C1.5H2' con |
+| b-degree-sep | `CuSO4°5H2O` | FORMULA | - | - | NONE | - | - | - | - | REFUSED: could not parse 'CuSO4°5H2O' as a chemical formula: unexpect |
+| b-leading-coeff | `5H2O` | FORMULA | - | - | NONE | - | - | - | - | REFUSED: could not parse '5H2O' as a chemical formula: '5H2O' has a l |

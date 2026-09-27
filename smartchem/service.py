@@ -3639,7 +3639,9 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     PROCESS evidence cannot support it.  This closes the LOCKSTEP forgery ON THE PROCESS AXIS -- relabel a
     route that is process-``UNKNOWN``/``EXCLUDED`` to ``FITS`` and recompute the derived fields -- because
     the carried requirements still re-derive to the stricter PROCESS verdict.  (2b) v0.8 M10:
-    :meth:`CompilationResponse._check_readiness_coherence` runs right after the algebra-rebind check, UNCONDITIONALLY
+    :meth:`CompilationResponse._check_readiness_coherence` runs after ``_check_verified_admission`` (like
+    ``_check_frontier_coherence``, so a verified-admission FITS-route evidence substitution keeps that check's
+    route-binding message), UNCONDITIONALLY
     (not gated on ``fit_status`` or ``require_verified_admission`` -- readiness is orthogonal to bench-fit), and
     RE-DERIVES each ranked route's typed Sec 3/4/8 readiness ladder from its thick ``replay_payload`` (when carried)
     via :func:`~smartchem.experiment.readiness.evaluate_route`, refusing a carried ``readiness`` that disagrees with
@@ -3719,11 +3721,6 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
                 "does not match the algebra its request selects (a search under one algebra cannot be loaded as "
                 "another; the request, the IR digest, and the receipt digest disagree)"
             )
-    # v0.8 Real Route Dossiers, M10: the readiness-ladder deserialization trust-boundary close.  Same seam as
-    # PROCESS-ADMIT-01 and the algebra-rebind check just above -- UNCONDITIONAL (not gated on require_verified_admission
-    # or fit_status; see the method docstring for why) -- re-derives every ranked route's typed readiness from its
-    # thick replay evidence (when carried) and refuses a claim the re-derivation cannot support.
-    response._check_readiness_coherence()
     if verification_key is not None:
         signature = payload.get("producer_signature")
         if signature is None:
@@ -3749,6 +3746,14 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # the context itself -- pass expected_request_digest (above) or a verification_key to bind the request too.
     if require_verified_admission:
         _check_verified_admission(response)
+    # v0.8 Real Route Dossiers, M10: the readiness-ladder deserialization trust-boundary close -- UNCONDITIONAL (not
+    # gated on require_verified_admission or fit_status; see the method docstring for why).  Placed AFTER
+    # _check_verified_admission (exactly like _check_frontier_coherence below, and for the same reason): when a consumer
+    # asks for verified admission, a FITS-route evidence substitution keeps THAT check's route-binding "re-projects to a
+    # DIFFERENT summary" message; this unconditional check still covers every non-verified-admission load and every
+    # non-FITS / readiness-specific tamper, re-deriving each ranked route's typed readiness from its thick replay
+    # evidence (when carried) and refusing a claim the re-derivation cannot support.
+    response._check_readiness_coherence()
     # TAMPER-HARDENING-01: the R59 disposition serialized-tamper close.  RUN ON EVERY LOAD (not gated on
     # require_verified_admission) and AFTER _check_verified_admission, so a FITS-route evidence substitution keeps that
     # check's route-binding message while this one covers the NON-FITS frontier tampers (a REAL_BUT_HARD / NOT_A_REACTION

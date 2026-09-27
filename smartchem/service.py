@@ -68,7 +68,13 @@ from .process_constraints import (
     ProcessBounds, ProcessRequirements, ProcessFitStatus, Attention, Agitation,
     evaluate_process_requirements, evaluate_dag_process_requirements,
 )
-from .experiment.readiness import ObligationStatus, RouteReadiness, StepReadiness, evaluate_route
+from .experiment.readiness import (
+    FORMAL_CANDIDATE,
+    ObligationStatus,
+    RouteReadiness,
+    StepReadiness,
+    evaluate_route,
+)
 from .algebra_profiles import (
     DEFAULT_ALGEBRA_PROFILE,
     DEFAULT_ROUTE_ALGEBRA_PROFILE,
@@ -170,9 +176,10 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # UN-gated on ``fit_status`` or ``require_verified_admission`` -- readiness is orthogonal to bench-fit, Sec 2) re-derives
 # each ranked route's typed readiness ladder from its thick ``replay_payload`` via ``evaluate_route`` and REFUSES a
 # payload whose carried ``readiness`` disagrees with the re-derivation (a bumped tier, a stripped citation, a
-# substituted per-step obligation).  Advisory (unenforceable) on a thin (replay-absent) route, exactly as the
-# catalyst/fiction frontier channels are -- the bump marks the version at/after which a THICK-transport readiness claim
-# is re-derived, so a pre-guarantee v1alpha13 payload is refused by the strict schema gate.
+# substituted per-step obligation).  Advisory (unenforceable) on a thin (replay-absent) route on a PLAIN load, exactly
+# as the catalyst/fiction frontier channels are -- BUT under ``require_verified_admission`` a thin claim ABOVE the
+# FORMAL_CANDIDATE floor is fail-closed (Wave C thin-transport closure), mirroring fit/frontier.  The bump marks the
+# version at/after which a readiness claim is re-derived, so a pre-guarantee v1alpha13 payload is refused by the gate.
 COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha14"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
@@ -1637,7 +1644,7 @@ class CompilationResponse:
                 if hidden:
                     raise ValueError(f"DAG {d.route_digest} (EXCLUDED) hides re-derived process exclusions: {hidden}")
 
-    def _check_readiness_coherence(self) -> None:
+    def _check_readiness_coherence(self, *, require_verified_admission: bool = False) -> None:
         """Re-derive each ranked route's typed READINESS from its carried thick ``replay_payload`` and refuse a
         payload whose carried ``readiness`` disagrees with the re-derivation (v0.8 Real Route Dossiers, M10 -- the
         deserialization trust-boundary close for the Sec 3/4/8 obligation ladder).
@@ -1648,9 +1655,11 @@ class CompilationResponse:
         producer's freshly-built summary is trusted; ``RankedRouteSummary.of_fit`` already computed ``readiness`` via
         the SAME ``evaluate_route`` this re-derives with, so re-checking it on construction would be redundant work).
 
-        UNCONDITIONAL -- unlike :meth:`_check_process_admission_coherence`, this is NOT gated on ``fit_status`` or on
-        a process-constrained request, and unlike :meth:`_check_frontier_coherence`'s catalyst/fiction channels it is
-        NOT gated on ``require_verified_admission`` either. Readiness is explicitly orthogonal to bench-fit (Sec 2's
+        The thick-route RE-DERIVATION is UNCONDITIONAL -- unlike :meth:`_check_process_admission_coherence`, it is NOT
+        gated on ``fit_status`` or on a process-constrained request, and it runs on every load regardless of
+        ``require_verified_admission`` (a thick tampered readiness is refused even on a bare ``response_from_payload``).
+        Only the THIN-transport fail-close (a no-replay claim above FORMAL) is gated on ``require_verified_admission``,
+        like the frontier's own thin closure. Readiness is explicitly orthogonal to bench-fit (Sec 2's
         non-negotiable law -- a favorable route never implies a described procedure, and the reverse): an
         EXCLUDED/UNKNOWN route can carry a forged CONDITIONS_SUPPORTED/PROCESS_SPECIFIED claim exactly as easily as a
         FITS one, so gating this on ``fit_status`` would leave every non-FITS route's readiness claim unchecked.
@@ -1667,12 +1676,12 @@ class CompilationResponse:
 
         BOUNDARY -- what this needs, and what it leaves open (stated plainly, no edge-case framing):
         * A summary with NO carried ``replay_payload`` (the DEFAULT thin wire, ``include_replay=False``) has nothing
-          to reconstruct a route FROM -- its readiness claim stays UNVERIFIABLE and this check is silent on it, the
-          exact same advisory boundary the frontier's catalyst/fiction channels carry on the thin transport. A
-          consumer that needs the guarantee asks for a THICK transport (``include_replay=True``); nothing here
-          promotes that to a hard requirement the way ``_check_verified_admission`` does for FITS routes (readiness
-          coherence is not currently threaded through ``require_verified_admission`` -- a future round could add that
-          gate if the residual matters enough to close).
+          to reconstruct a route FROM -- its readiness claim is UNVERIFIABLE. On a plain load this check is silent on
+          it (advisory), the exact same boundary the frontier's catalyst/fiction channels carry on the thin transport.
+          But under ``require_verified_admission`` it is now FAIL-CLOSED (Wave C / evil-morty FINDING 1): a claim
+          ABOVE the FORMAL_CANDIDATE floor with no replay is refused, mirroring ``_check_verified_admission``'s FITS
+          rule and ``_check_frontier_coherence``'s own thin-transport closure -- so the strongest keyless mode is no
+          longer falsely complete for readiness while it is replay-mandatory for fit and the frontier.
         * Even with a replay present, the evidence is not cryptographically bound to the route structure beyond the
           digest bind above -- a fully controlling forger who fabricates an internally coherent lenient replay (one
           that genuinely re-derives to the stronger tier it claims) AND recomputes ``result_digest`` is the same
@@ -1682,6 +1691,22 @@ class CompilationResponse:
         """
         for r in self.ranked_route_dossiers:
             if r.replay_payload is None:
+                # THIN-TRANSPORT CLOSURE (Wave C / evil-morty FINDING 1).  Under verified admission a readiness claim
+                # ABOVE the FORMAL_CANDIDATE floor MUST be re-derivable, which needs the thick replay_payload.  A
+                # missing payload leaves the claim UNVERIFIABLE -- and a thin-wire forgery is STRICTLY CHEAPER than the
+                # thick-replay non-goal below (no coherent sourced envelopes to fabricate, just the copied ladder + a
+                # recomputed result_digest), so leaving it advisory would make require_verified_admission falsely
+                # complete for readiness while it is replay-mandatory for FITS routes and the frontier.  Fail CLOSED,
+                # mirroring _check_verified_admission and _check_frontier_coherence's own thin-transport closures.  A
+                # FORMAL_CANDIDATE claim is the floor and asserts no evidence, so a thin FORMAL route is fine.
+                if require_verified_admission and r.readiness.tier != FORMAL_CANDIDATE:
+                    raise ValueError(
+                        f"verified admission: ranked route {r.route_digest} claims readiness tier "
+                        f"{r.readiness.tier} but carries no replay_payload -- the claim is UNVERIFIED (the DEFAULT "
+                        f"thin transport omits the replay, so a forged above-FORMAL readiness cannot be re-derived "
+                        f"and refuted; the producer must serialize with include_replay=True); refused "
+                        f"(v0.8 M10, thin-transport closure)"
+                    )
                 continue
             route = _reconstruct_route(r.replay_payload)
             if route.digest != r.route_digest:
@@ -3753,7 +3778,7 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # DIFFERENT summary" message; this unconditional check still covers every non-verified-admission load and every
     # non-FITS / readiness-specific tamper, re-deriving each ranked route's typed readiness from its thick replay
     # evidence (when carried) and refusing a claim the re-derivation cannot support.
-    response._check_readiness_coherence()
+    response._check_readiness_coherence(require_verified_admission=require_verified_admission)
     # TAMPER-HARDENING-01: the R59 disposition serialized-tamper close.  RUN ON EVERY LOAD (not gated on
     # require_verified_admission) and AFTER _check_verified_admission, so a FITS-route evidence substitution keeps that
     # check's route-binding message while this one covers the NON-FITS frontier tampers (a REAL_BUT_HARD / NOT_A_REACTION

@@ -376,7 +376,7 @@ def m10() -> bool:
     except ValueError:
         real_refuses = True
 
-    with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self: None):
+    with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self, **kw: None):
         try:
             svc.response_from_payload(payload)
             mutant_loads = True

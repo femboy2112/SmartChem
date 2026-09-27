@@ -289,6 +289,17 @@ class StepReadiness(Digestible):
         ):
             if not isinstance(getattr(self, name), ObligationStatus):
                 raise TypeError(f"{name} must be an ObligationStatus")
+        # Base-rung coherence (Wave C / d'Alembert): a StepReadiness is built ONLY for a
+        # conservation-certified ExperimentStep, so the FORMAL_CANDIDATE rung the cumulative tier is
+        # measured over is always satisfied.  The tier @property does not branch on formal_candidate,
+        # so without this guard a direct constructor could mint formal_candidate=UNSATISFIED alongside
+        # a strong tier -- exactly the "tier claim unsupported by its own obligations" this __post_init__
+        # is the declared guard against.  Enforce it here so the guard matches its contract.
+        if self.formal_candidate is not ObligationStatus.SATISFIED:
+            raise ValueError(
+                "formal_candidate must be SATISFIED -- a non-SATISFIED base rung is an incoherent readiness "
+                "record (the cumulative tier ladder is measured over it)"
+            )
         if self.reaction_class_name is not None and not isinstance(self.reaction_class_name, str):
             raise TypeError("reaction_class_name must be a str or None")
         if (self.reaction_type is ObligationStatus.SATISFIED) != (
@@ -310,7 +321,16 @@ class StepReadiness(Digestible):
     @property
     def tier(self) -> str:
         """The cumulative coarse projection (Sec 4) -- derived FROM the obligations, never the
-        reverse. Each rung requires every rung below it PLUS its own obligation."""
+        reverse. Each rung requires every rung below it PLUS its own obligation.
+
+        Only reaction_type/conditions/process are branched on: formal_candidate is invariantly
+        SATISFIED (enforced in __post_init__), and workup_isolation is deliberately NON-gating this
+        round (barrier FLAG 2: PROCESS_SPECIFIED is DARK, so the rung workup would gate is unreachable
+        -- workup stays a visible obligation, it just does not move the coarse tier).
+        FORWARD HAZARD: the day a future round flips ``process_representation_is_complete`` to award
+        PROCESS_SPECIFIED, that completeness predicate MUST subsume workup/isolation, or this ladder
+        must grow a workup gate in the SAME commit -- otherwise a workup_isolation=UNSATISFIED step
+        would reach PROCESS_SPECIFIED."""
         if self.reaction_type is not ObligationStatus.SATISFIED:
             return FORMAL_CANDIDATE
         if self.conditions is not ObligationStatus.SATISFIED:

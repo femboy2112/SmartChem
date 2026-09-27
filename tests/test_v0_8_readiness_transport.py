@@ -301,11 +301,13 @@ def test_m10_fully_coherent_forgery_is_still_refused_by_replay_evidence(unsource
         response_from_payload(payload)
 
 
-def test_thin_transport_readiness_forgery_stays_advisory_by_documented_design(unsourced_payload):
-    """The documented BOUNDARY on ``_check_readiness_coherence``: without a carried ``replay_payload`` (the DEFAULT
-    thin wire) there is no evidence to re-derive against, so a forgery on the THIN transport is NOT caught by this
-    check -- mirroring the exact advisory boundary the frontier's catalyst/fiction channels already carry. This test
-    exists so that boundary is pinned, not accidentally tightened or loosened by a future change."""
+def test_thin_transport_readiness_is_advisory_on_plain_load_but_fail_closed_under_verified_admission(unsourced_payload):
+    """The BOUNDARY on ``_check_readiness_coherence`` for a thin (replay-absent) route, and its Wave-C tightening.
+    On a PLAIN load there is no evidence to re-derive against, so a thin forgery is NOT caught (advisory) -- the same
+    boundary the frontier's catalyst/fiction channels carry.  BUT under ``require_verified_admission`` a thin claim
+    ABOVE the FORMAL_CANDIDATE floor is now FAIL-CLOSED (evil-morty FINDING 1): the strongest keyless mode is no
+    longer falsely complete for readiness while it is replay-mandatory for fit and the frontier.  This pins BOTH
+    directions so neither is accidentally changed."""
     thin = response_to_payload(_rebuild_response(copy.deepcopy(unsourced_payload)))
     assert all("replay_payload" not in r for r in thin["ranked_route_dossiers"])
     route0, idx = _first_step_with(thin, reaction_type="SATISFIED")
@@ -318,6 +320,10 @@ def test_thin_transport_readiness_forgery_stays_advisory_by_documented_design(un
     })
     target["readiness_tier"] = "CONDITIONS_SUPPORTED"
     _recompute_derived_fields(thin)
-    resp = response_from_payload(thin)  # no raise -- advisory, by design, on the thin transport
+    # PLAIN load: advisory by design -- loads, forged tier trusted.
+    resp = response_from_payload(thin)
     forged = next(r for r in resp.ranked_route_dossiers if r.route_digest == target["route_digest"])
     assert forged.readiness_tier == "CONDITIONS_SUPPORTED"
+    # VERIFIED ADMISSION: the same thin above-FORMAL forgery is now refused (Wave C thin-transport closure).
+    with pytest.raises(ValueError, match="thin-transport closure"):
+        response_from_payload(thin, require_verified_admission=True)

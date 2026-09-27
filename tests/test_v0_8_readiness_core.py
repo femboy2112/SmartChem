@@ -260,3 +260,23 @@ def test_step_readiness_rejects_an_orphaned_reaction_class_name():
             provenance=(),
             open_obligations=("reaction_type: not recognized by the production oracle",),
         )
+
+
+def test_step_readiness_rejects_a_non_satisfied_base_rung():
+    # Wave C / d'Alembert: the tier @property does not branch on formal_candidate, so without a base-rung guard a
+    # direct constructor could mint formal_candidate=UNSATISFIED alongside a strong tier (tier would return
+    # PROCESS_SPECIFIED off an UNSATISFIED base). __post_init__ is the module's declared anti-laundering guard, so it
+    # must refuse this. A StepReadiness is only ever built for a conservation-certified step -> base rung is invariant.
+    import pytest
+
+    with pytest.raises(ValueError, match="formal_candidate must be SATISFIED"):
+        StepReadiness(
+            formal_candidate=ObligationStatus.UNSATISFIED,
+            reaction_type=ObligationStatus.SATISFIED,
+            reaction_class_name="acyl condensation (esterification/amidation)",
+            conditions=ObligationStatus.SATISFIED,
+            process=ObligationStatus.SATISFIED,
+            workup_isolation=ObligationStatus.UNSATISFIED,
+            provenance=(),
+            open_obligations=(),
+        )

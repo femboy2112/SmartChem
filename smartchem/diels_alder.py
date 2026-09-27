@@ -12,16 +12,16 @@ pass every guard is DROPPED (honest coverage loss), never coerced into a witness
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .category import Config, ConservationError, Molecule, Reaction
-from .contracts import Digestible
+from .contracts import Digestible, canonical_digest
 from .decompiler import DecompositionEdge, Formula
 from .reaction_center import ReactionCenter
 from .rule_calculus import BondGraph, BondRule, Edge, RewriteWitness, RuleError, enumerate_matches, verify
 from .rule_calculus_bridge import _config, _joined, valence_sane
 from .structure_descent import ScissionError
-from .transform_provider import TransformProvider
+from .transform_provider import ProviderSemanticDescriptor, ProviderUse, TransformProvider
 
 # Forward [4+2]: diene C0=C1-C2=C3  +  dienophile C4=C5  ->  cyclohexene ring C0-C1=C2-C3-C4-C5-C0.
 # Per-atom bond-order sums are preserved (2,3,3,2,2,2) both sides -- a pericyclic reaction conserves valence, so it
@@ -72,6 +72,75 @@ _DIENOPHILE = frozenset({4, 5})
 #: be a MEASURED tradeoff (it would false-reject a genuine charge-separated-neutral substituent), so it is an OPT-IN,
 #: default-off, LABELED option -- :func:`whole_fragment_neutral` -- never a silent tightening of guard 2c.
 _NEUTRAL_VALENCE: dict[str, int] = {"C": 4, "N": 3, "O": 2, "S": 2}
+
+#: The neutral-valence table as a canonical, hashable snapshot for the guard-spec digest (guard 2c).
+_NEUTRAL_VALENCE_ITEMS: tuple = tuple(sorted(_NEUTRAL_VALENCE.items()))
+
+
+@dataclass(frozen=True)
+class DAGuardSpec:
+    """The typed, declarative guard POLICY one [4+2] family hands :func:`_guarded_retro` -- the single source of every
+    load-bearing setting the guarded core reads, so the semantic identity (:attr:`digest`) binds the actual guard
+    behaviour and nothing can drift from a second hand-typed copy (0.7 Round II, Course-Correction "DA guard
+    semantics"; the guard-content half of the plan §4 grammar-identity target).
+
+    Pre-0.7, :func:`_guarded_retro` read its diene/dienophile partition (guard 5) and neutral-valence table (guard 2c)
+    from MODULE constants (:data:`_DIENE` / :data:`_DIENOPHILE` / :data:`_NEUTRAL_VALENCE`) and hard-coded guard 2b's
+    exocyclic-order ceiling as ``!= 1``.  A relaxation of any of those (loosen ``S: 2``, allow an exocyclic double,
+    change the partition for a new topology) changed the family's actual chemistry while leaving the hand-declared
+    provider identity byte-identical -- exactly the silent-algebra-change the round closes.  Folding them into this
+    spec, whose :attr:`digest` rides the provider's :class:`~smartchem.transform_provider.ProviderSemanticDescriptor`,
+    makes such a change FORCE an identity movement.
+
+    ``retro_signature`` is DELIBERATELY not a field: :func:`_guarded_retro` derives it from ``retro_rule`` so a
+    hand-edited rule can never carry a stale signature.  The rule bodies themselves contribute via ``retro_rule.digest``
+    / ``forward_rule.digest`` (real :class:`~smartchem.rule_calculus.BondRule` content digests), NOT source text.
+    """
+
+    retro_rule: BondRule
+    forward_rule: BondRule
+    class_label: str
+    diene_vertices: frozenset          # guard 5 partition (rule-vertex numbering)
+    dienophile_vertices: frozenset     # guard 5 partition
+    neutral_valence: tuple             # guard 2c: sorted ((symbol, max_neutral_bond_order), ...)
+    exocyclic_max_order: int           # guard 2b: max bond order of a crossing bond on a matched centre (1 today)
+
+    @property
+    def digest(self) -> str:
+        return canonical_digest(
+            (
+                "da-guard-spec-v1",
+                self.retro_rule.digest,
+                self.forward_rule.digest,
+                self.class_label,
+                tuple(sorted(self.diene_vertices)),
+                tuple(sorted(self.dienophile_vertices)),
+                self.neutral_valence,
+                self.exocyclic_max_order,
+            )
+        )
+
+
+def _da_guard_spec(retro_rule: BondRule, forward_rule: BondRule, class_label: str) -> DAGuardSpec:
+    """Build the guard spec for a [4+2] family from its own rule pair + class label, with the SHARED policy every
+    current DA family uses: the {0,1,2,3}/{4,5} diene/dienophile partition, the neutral-valence table, and an
+    exocyclic-order ceiling of 1 (no exocyclic multiple bond on a matched centre).  A future family with a different
+    topology or policy constructs its own :class:`DAGuardSpec` directly (and gets a distinct identity for it)."""
+    return DAGuardSpec(retro_rule, forward_rule, class_label, _DIENE, _DIENOPHILE, _NEUTRAL_VALENCE_ITEMS, 1)
+
+
+#: The consumer topologies every DA family supports (Course-Correction 1): route + DAG.  A DA retro is NOT admissible
+#: to STRUCTURE_DECOMPILE -- its "DIELS_ALDER*" witness_kind is absent from the IR ``_WITNESS_PROJECTION`` map, so a
+#: decompile consumer refuses a DA-bearing registry before enumeration rather than crashing on the unknown witness.
+_DA_SUPPORTED_USES = frozenset({ProviderUse.LINEAR_ROUTE, ProviderUse.CONVERGENT_DAG})
+
+
+def _da_semantic_descriptor(provider: TransformProvider, spec: DAGuardSpec) -> ProviderSemanticDescriptor:
+    """A DA provider's content-bound descriptor: the base descriptor (manifest + supported_uses) with the real
+    declarative rule + guard-spec digests folded in, so a change to the family's rewrite rule OR its load-bearing
+    guard policy moves the provider identity (which prose in the manifest does not)."""
+    base = TransformProvider.semantic_descriptor.fget(provider)
+    return replace(base, structural_rule_digest=spec.retro_rule.digest, guard_spec_digest=spec.digest)
 
 
 def whole_fragment_neutral(molecule: Molecule) -> bool:
@@ -229,14 +298,18 @@ def independently_reconstructs(target: BondGraph, retro_result: BondGraph, match
         return False
 
 
-def _guarded_retro(retro_rule: BondRule, forward_rule: BondRule, retro_signature: tuple, class_label: str,
-                    target: BondGraph, *, budget: int = 100000) -> tuple[tuple[DisconnectionAudit, ...], bool]:
-    """The rule-parameterized GUARDED retro-[4+2] core (dalembert's ask: one enforcement point, not one per family).
+def _guarded_retro(spec: "DAGuardSpec", target: BondGraph, *,
+                    budget: int = 100000) -> tuple[tuple[DisconnectionAudit, ...], bool]:
+    """The spec-parameterized GUARDED retro-[4+2] core (dalembert's ask: one enforcement point, not one per family).
 
-    Every guard below is family-AGNOSTIC -- it reads ``retro_rule``/``forward_rule``/``retro_signature``/
-    ``class_label`` rather than the alkene family's module-level constants -- so a sibling dienophile family (the
-    alkyne one) rides the SAME enforcement, not a hand-copied second one that could silently drift out of guard-step.
-    :func:`retro_da_disconnections` (alkene) and :func:`retro_alkyne_da_disconnections` are now both thin callers.
+    Every guard below is family-AGNOSTIC -- it reads the family's :class:`DAGuardSpec` (its rule pair, class label,
+    diene/dienophile partition, neutral-valence table, exocyclic-order ceiling) rather than the alkene family's
+    module-level constants -- so every sibling family (alkyne + the six hetero) rides the SAME enforcement, not a
+    hand-copied second one that could silently drift out of guard-step.  0.7 Round II moved the last three settings
+    (guard 5's partition, guard 2c's table, guard 2b's ceiling) OUT of module constants and INTO the spec, whose
+    digest binds the provider identity, so a guard relaxation now forces an identity movement.
+    :func:`retro_da_disconnections` (alkene), :func:`retro_alkyne_da_disconnections`, and
+    :func:`hetero_da_disconnections` are all thin callers passing their own spec.
 
     Guards (each failure DROPS the match -- coverage loss, never a coerced witness), per the design doc s3:
       2. induced-subgraph exactness on the six matched centre atoms (locality lock: no extra bond forges a fake adduct);
@@ -256,6 +329,18 @@ def _guarded_retro(retro_rule: BondRule, forward_rule: BondRule, retro_signature
     """
     if type(target) is not BondGraph:
         raise RuleError("_guarded_retro expects a BondGraph target")
+    # Unpack the spec into the family-local settings the guards read.  retro_signature is DERIVED from the rule (not
+    # carried on the spec) so a hand-edited rule can never present a stale signature -- identical to how each family's
+    # module-level ``*_RETRO_SIGNATURE`` was computed pre-0.7.
+    retro_rule = spec.retro_rule
+    forward_rule = spec.forward_rule
+    class_label = spec.class_label
+    neutral_valence = dict(spec.neutral_valence)
+    diene_vertices = spec.diene_vertices
+    dienophile_vertices = spec.dienophile_vertices
+    retro_signature = _match_signature(
+        RewriteWitness(retro_rule, retro_rule.left, tuple(range(len(retro_rule.left.labels))), retro_rule.right)
+    )
     if not valence_sane(target):
         return (), True  # a valence-impossible molecule has no valid chemistry: no disconnections, definitively
     receipt = enumerate_matches(retro_rule, target, budget=budget)
@@ -273,7 +358,8 @@ def _guarded_retro(retro_rule: BondRule, forward_rule: BondRule, retro_signature
         # this also drops the rare genuine allene-forming retro-DA (acceptable coverage loss), but it forbids the
         # catastrophic ketene/enone false-VOUCH.  A norbornene-type single-atom bridge is SINGLE bonds, so it is KEPT.
         matched = set(m)
-        if any(e.order != 1 for e in target.edges if (e.i in matched) != (e.j in matched)):
+        if any(e.order > spec.exocyclic_max_order
+               for e in target.edges if (e.i in matched) != (e.j in matched)):
             continue
         # Guard 2c (round-9 evil-morty + dalembert KILL -- the oxocarbenium/iminium false-VOUCH): guard 2b bounds the
         # BOND ORDER of a crossing bond (no exocyclic multiple) but NOT the NUMBER of exocyclic single bonds, and for
@@ -283,7 +369,7 @@ def _guarded_retro(retro_rule: BondRule, forward_rule: BondRule, retro_signature
         # carbon (4 == its ceiling, so this never fires and the all-carbon families stay byte-identical), and for a
         # heteroatom it drops exactly the over-neutral-valence fiction while KEEPING real neutral centres (an ether O
         # at bond-order 2, an N-substituted amine N at bond-order 3).  An unlisted centre label is unconstrained here.
-        if any((nv := _NEUTRAL_VALENCE.get(target.labels[v])) is not None and target.degrees[v] > nv for v in m):
+        if any((nv := neutral_valence.get(target.labels[v])) is not None and target.degrees[v] > nv for v in m):
             continue
         # Class witness derived from the match + kernel verify.
         cls = _class_witness(w, retro_signature, class_label)
@@ -293,8 +379,8 @@ def _guarded_retro(retro_rule: BondRule, forward_rule: BondRule, retro_signature
         if not independently_reconstructs(target, w.target, m, forward_rule):
             continue
         # Guard 5: global two-fragment split -- diene carbons and dienophile carbons land in DISJOINT components.
-        diene_seeds = {m[i] for i in _DIENE}
-        dienophile_seeds = {m[i] for i in _DIENOPHILE}
+        diene_seeds = {m[i] for i in diene_vertices}
+        dienophile_seeds = {m[i] for i in dienophile_vertices}
         diene_comp = _component_of(w.target, diene_seeds)
         dienophile_comp = _component_of(w.target, dienophile_seeds)
         if diene_comp & dienophile_comp:
@@ -313,11 +399,16 @@ def _guarded_retro(retro_rule: BondRule, forward_rule: BondRule, retro_signature
     return tuple(audits), receipt.complete
 
 
+#: The alkene family's guard spec: its rule pair + class + the shared DA guard policy (its digest binds the provider
+#: identity, so a rule/guard change moves it).
+_ALKENE_SPEC = _da_guard_spec(RETRO_DA, _FORWARD, DA_CLASS)
+
+
 def retro_da_disconnections(target: BondGraph, *, budget: int = 100000) -> tuple[tuple[DisconnectionAudit, ...], bool]:
     """Every GUARDED retro-Diels-Alder disconnection of ``target`` (alkene dienophile family), plus an honest
     completeness flag.  A thin caller of the family-generic :func:`_guarded_retro`; see its docstring for the guards.
     """
-    return _guarded_retro(RETRO_DA, _FORWARD, _RETRO_SIGNATURE, DA_CLASS, target, budget=budget)
+    return _guarded_retro(_ALKENE_SPEC, target, budget=budget)
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -474,6 +565,11 @@ class DielsAlderProvider(TransformProvider):
     provider_id: str = "diels-alder-retro"
     provider_version: str = "v1"
     witness_kind: str = "DIELS_ALDER"
+    supported_uses = _DA_SUPPORTED_USES
+
+    @property
+    def semantic_descriptor(self) -> ProviderSemanticDescriptor:
+        return _da_semantic_descriptor(self, _ALKENE_SPEC)
 
     @property
     def capability_manifest(self) -> tuple:
@@ -525,13 +621,16 @@ _ALKYNE_RETRO_SIGNATURE = _match_signature(
 _ALKYNE_DA_CENTER = _synthesis_center(_FORWARD_ALKYNE)
 
 
+#: The alkyne family's guard spec (its own rule pair, the shared DA guard policy).
+_ALKYNE_SPEC = _da_guard_spec(RETRO_ALKYNE_DA, _FORWARD_ALKYNE, ALKYNE_DA_CLASS)
+
+
 def retro_alkyne_da_disconnections(target: BondGraph, *,
                                     budget: int = 100000) -> tuple[tuple[DisconnectionAudit, ...], bool]:
     """Every GUARDED retro-Diels-Alder disconnection of ``target`` (alkyne dienophile family), plus an honest
     completeness flag.  A thin caller of the family-generic :func:`_guarded_retro`; see its docstring for the guards.
     """
-    return _guarded_retro(RETRO_ALKYNE_DA, _FORWARD_ALKYNE, _ALKYNE_RETRO_SIGNATURE, ALKYNE_DA_CLASS, target,
-                          budget=budget)
+    return _guarded_retro(_ALKYNE_SPEC, target, budget=budget)
 
 
 ALKYNE_DA_RETRO_SCHEMA = "smartchem.diels-alder/alkyne-retro-v1"
@@ -620,6 +719,11 @@ class AlkyneDielsAlderProvider(TransformProvider):
     provider_id: str = "diels-alder-alkyne-retro"
     provider_version: str = "v1"
     witness_kind: str = "DIELS_ALDER_ALKYNE"
+    supported_uses = _DA_SUPPORTED_USES
+
+    @property
+    def semantic_descriptor(self) -> ProviderSemanticDescriptor:
+        return _da_semantic_descriptor(self, _ALKYNE_SPEC)
 
     @property
     def capability_manifest(self) -> tuple:
@@ -698,6 +802,7 @@ class _HeteroDAFamily:
     center: ReactionCenter
     hetero_vertex: int
     position: str
+    spec: DAGuardSpec
 
 
 def _hetero_family(hetero_label: str, class_label: str, schema: str, provider_id: str,
@@ -719,7 +824,8 @@ def _hetero_family(hetero_label: str, class_label: str, schema: str, provider_id
     retro = forward.reverse()
     signature = _match_signature(RewriteWitness(retro, retro.left, tuple(range(6)), retro.right))
     return _HeteroDAFamily(hetero_label, class_label, schema, provider_id, witness_kind,
-                           forward, retro, signature, _synthesis_center(forward), hetero_vertex, position)
+                           forward, retro, signature, _synthesis_center(forward), hetero_vertex, position,
+                           _da_guard_spec(retro, forward, class_label))
 
 
 #: The aza-Diels-Alder family (imine dienophile -> tetrahydropyridine): the first NON-all-carbon [4+2] family.
@@ -768,7 +874,7 @@ def hetero_da_disconnections(family: _HeteroDAFamily, target: BondGraph, *,
     """Every GUARDED retro-[4+2] disconnection of ``target`` for the heteroatom ``family``, plus an honest
     completeness flag.  A thin caller of the family-generic :func:`_guarded_retro` (the SAME enforcement the
     all-carbon families use), specialized only by the family's own relabeled rule / signature / class."""
-    return _guarded_retro(family.retro, family.forward, family.signature, family.class_label, target, budget=budget)
+    return _guarded_retro(family.spec, target, budget=budget)
 
 
 def _reactant_hetero_da_disconnects_to(family: _HeteroDAFamily, reactant: Molecule,
@@ -870,6 +976,13 @@ class HeteroDielsAlderProvider(TransformProvider):
     structural type-validity only (Problem A)."""
 
     family: _HeteroDAFamily
+    supported_uses = _DA_SUPPORTED_USES
+
+    @property
+    def semantic_descriptor(self) -> ProviderSemanticDescriptor:
+        # each hetero subclass supplies its own family.spec, so aza/oxa/thia (and their diene siblings) get distinct
+        # rule + guard-spec digests -- a relabeled centre atom (C->N/O/S) or diene<->dienophile position moves it.
+        return _da_semantic_descriptor(self, self.family.spec)
 
     @property
     def provider_id(self) -> str:

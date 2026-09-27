@@ -44,7 +44,7 @@
     "diagnostics": [],
     "identity_losses": [],
     "operation": "RECOMPILE",
-    "request_digest": "5254f304079cedd04b72d3cee7acbcb8c8256f4840689c107246da805f5a2cc5",
+    "request_digest": "f719495eb5055f76052c459e91b72dc234058eaa1e4fe650bbf938be4f9a0c04",
     "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8",
     "search_receipt": {
       "candidate_enumeration_complete": true,
@@ -71,7 +71,7 @@
       "stop_reason": "",
       "target_identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
       "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
-      "transform_registry_digest": "2e2bef05bd5fb83ef8794c339fcec655170aa214b13ca3225fcf044b49f5ffb0",
+      "transform_registry_digest": "e6df468237390b0692577964cb46dde30b8a805f5446e3535f739e71aba19365",
       "transforms_considered": 28
     },
     "search_status": "COMPLETE_WITHIN_BOUNDS",
@@ -85,7 +85,7 @@
     },
     "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
     "tool_version": "0.6.0a1",
-    "transform_registry_digest": "2e2bef05bd5fb83ef8794c339fcec655170aa214b13ca3225fcf044b49f5ffb0"
+    "transform_registry_digest": "e6df468237390b0692577964cb46dde30b8a805f5446e3535f739e71aba19365"
   },
   "diagnostics": [],
   "exit_code": 0,
@@ -135,6 +135,7 @@
     }
   ],
   "request": {
+    "algebra_profile": "legacy-capped-v1",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,
@@ -165,6 +166,10 @@
     "normalized_identity": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
     "operation": "RECOMPILE",
     "origins": [
+      [
+        "algebra_profile",
+        "DEFAULT"
+      ],
       [
         "commodities_enabled",
         "DEFAULT"
@@ -249,7 +254,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "ea0c0c8ab304ff6971739403c8e922792edb67783119fa77e75674ff70a20249",
+  "result_digest": "276518bacbd51901da3b157150c85f28dd14b815c1a105b21c0055021263b669",
   "schema_version": "smartchem.service/compilation-response-v1alpha13",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"

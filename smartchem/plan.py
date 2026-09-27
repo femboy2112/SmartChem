@@ -100,7 +100,8 @@ class PlanResult:
         return EXIT_SUCCESS
 
 
-def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO) -> PlanResult:
+def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
+         algebra_profile: "str | None" = None) -> PlanResult:
     """Resolve ``target_input`` and deliver the total answer, routing to the eligible existing primitive.
 
     Never guesses a structure from a bare formula: a FORMULA-layer identity is routed to ``decompile``
@@ -135,8 +136,10 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO) -> P
     builder_kind = None if kind is InputKind.AUTO else kind
 
     if resolved.structure_perceived:
-        # a single constitution IS established -> structural planning is eligible.
-        request = build_recompile_request(target_input, input_kind=builder_kind)
+        # a single constitution IS established -> structural planning is eligible.  The selected transform-algebra
+        # profile (0.7 Round II) flows into the structural recompile so `plan --algebra certified-route-v07` widens
+        # the algebra end-to-end; formula decomposition (below) has no route algebra, so it ignores the profile.
+        request = build_recompile_request(target_input, input_kind=builder_kind, algebra_profile=algebra_profile)
         response = run_compilation(request)
         return PlanResult(
             target_input, kind, PlanStatus.STRUCTURAL_PLANNING, resolved, None, True,

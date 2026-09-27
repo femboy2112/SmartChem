@@ -8,7 +8,7 @@
     ],
     "identity_losses": [],
     "operation": "RECOMPILE",
-    "request_digest": "8c2dcb938d592247f7e2f0baa1ef827b3dda828b840db8fa12ce05a1bbc0f569",
+    "request_digest": "5922018ee158ae79bae296f55720a48f2dd7ff297008a33376db1e00c93aaa2f",
     "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8",
     "search_receipt": {
       "candidate_enumeration_complete": true,
@@ -30,7 +30,7 @@
       "stop_reason": "",
       "target_identity_digest": "b0a70a2130f9c14a5ee39d75c91d63d3a8c89599b95bc60afb076341edbfdf59",
       "terminal_policy_digest": "59115ea2c066a980a42f86a2a0074b905d0407a74db95f09d4dcf2a4db054e14",
-      "transform_registry_digest": "2e2bef05bd5fb83ef8794c339fcec655170aa214b13ca3225fcf044b49f5ffb0",
+      "transform_registry_digest": "e6df468237390b0692577964cb46dde30b8a805f5446e3535f739e71aba19365",
       "transforms_considered": 40
     },
     "search_status": "COMPLETE_WITHIN_BOUNDS",
@@ -44,7 +44,7 @@
     },
     "terminal_policy_digest": "59115ea2c066a980a42f86a2a0074b905d0407a74db95f09d4dcf2a4db054e14",
     "tool_version": "0.6.0a1",
-    "transform_registry_digest": "2e2bef05bd5fb83ef8794c339fcec655170aa214b13ca3225fcf044b49f5ffb0"
+    "transform_registry_digest": "e6df468237390b0692577964cb46dde30b8a805f5446e3535f739e71aba19365"
   },
   "diagnostics": [
     "no route to the target from the declared terminals exists within the 'routes' search grammar at the declared bounds (max_depth=2); the search was exhaustive there (no limit fired), but that is exhaustion of THIS grammar/mode at THESE bounds -- not a proof that no route exists under a different mode or higher bounds (section 8.3, no-route: exhaustive-within-bounds)"
@@ -58,6 +58,7 @@
   "ranked_dag_dossiers": [],
   "ranked_route_dossiers": [],
   "request": {
+    "algebra_profile": "legacy-capped-v1",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,
@@ -88,6 +89,10 @@
     "normalized_identity": "b0a70a2130f9c14a5ee39d75c91d63d3a8c89599b95bc60afb076341edbfdf59",
     "operation": "RECOMPILE",
     "origins": [
+      [
+        "algebra_profile",
+        "DEFAULT"
+      ],
       [
         "commodities_enabled",
         "EXPLICIT"
@@ -172,7 +177,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "4a8b1ab2d1ae506dca943072c747a5269681cc06d868ea956de25b041f3f88af",
+  "result_digest": "363e8fd88acc76d00e33f3d139714ff0d8bc91ad33c768a50c8c979a6f830a3d",
   "schema_version": "smartchem.service/compilation-response-v1alpha13",
   "search_space_status": "NO_ROUTE_IN_DECLARED_SPACE",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"

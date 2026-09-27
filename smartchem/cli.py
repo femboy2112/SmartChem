@@ -227,6 +227,15 @@ def _add_recompile_flags(p) -> None:
             "lands, and formula is refused for a structure search (section 5.4) -- never silently downgraded"
         ),
     )
+    from .algebra_profiles import DEFAULT_ALGEBRA_PROFILE, algebra_profile_ids
+    p.add_argument(
+        "--algebra", dest="algebra_profile", choices=algebra_profile_ids(), default=None, metavar="PROFILE",
+        help=(
+            f"the transform-algebra profile to search under (default: {DEFAULT_ALGEBRA_PROFILE}). "
+            "'certified-route-v07' widens the algebra to the admitted Diels-Alder families through the UNCHANGED "
+            "search; the exact algebra is bound into the request digest, receipts and IR"
+        ),
+    )
     p.add_argument("--json", action="store_true",
                    help="emit the stable versioned response schema instead of the human render (standard 14.3)")
     p.add_argument("--emit-request", action="store_true",
@@ -275,6 +284,7 @@ def _recompile_request_from_args(args):
         min_pressure_atm=args.min_pressure,
         max_pressure_atm=args.max_pressure,
         process=_process_bounds_from_args(args),
+        algebra_profile=getattr(args, "algebra_profile", None),
     )
 
 
@@ -645,6 +655,14 @@ def _cmd_plan(argv: list[str]) -> int:
             help=f"give the target as {_kind.replace('_', ' ').lower()} (standard section 14.2 explicit form; "
                  f"mutually exclusive with the positional target and --input-kind)",
         )
+    from .algebra_profiles import DEFAULT_ALGEBRA_PROFILE, algebra_profile_ids
+    p.add_argument(
+        "--algebra", dest="algebra_profile", choices=algebra_profile_ids(), default=None, metavar="PROFILE",
+        help=(
+            f"the transform-algebra profile the structural plan searches under (default: {DEFAULT_ALGEBRA_PROFILE}); "
+            "'certified-route-v07' widens it to the admitted Diels-Alder families. Ignored for a formula-only plan"
+        ),
+    )
     p.add_argument("--json", action="store_true",
                    help="emit the machine-readable plan payload (identity + delegated response) instead of the render")
     args = p.parse_args(argv)
@@ -655,7 +673,8 @@ def _cmd_plan(argv: list[str]) -> int:
     except Exception as exc:  # noqa: BLE001 -- routed to the ONE classifier; a non-domain error re-raises to 70
         return _domain_exit(exc, "plan")
 
-    result = plan(target, kind if kind is not None else InputKind.AUTO)
+    result = plan(target, kind if kind is not None else InputKind.AUTO,
+                  algebra_profile=getattr(args, "algebra_profile", None))
     if args.json:
         import json
 

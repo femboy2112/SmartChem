@@ -14,6 +14,7 @@
   "ranked_dag_dossiers": [],
   "ranked_route_dossiers": [],
   "request": {
+    "algebra_profile": "legacy-capped-v1",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,
@@ -44,6 +45,10 @@
     "normalized_identity": "",
     "operation": "RECOMPILE",
     "origins": [
+      [
+        "algebra_profile",
+        "DEFAULT"
+      ],
       [
         "commodities_enabled",
         "DEFAULT"
@@ -128,7 +133,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "035c7ce6d097ffa04859cd7dd6b0352fe9f271b9779d4c33446d0b658ecdcd16",
+  "result_digest": "947cf8627967fce87e1e5379cab9b16f03067335afff023acd4549861c79fe8f",
   "schema_version": "smartchem.service/compilation-response-v1alpha13",
   "search_space_status": null,
   "standard_status": "REFUSED_INVALID_REQUEST"

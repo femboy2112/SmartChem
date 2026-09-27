@@ -115,6 +115,22 @@ byte-stable; receipts bind the wider algebra; hostile near-miss demoted). Genera
 version token, disconnected from the structural `BondRule.digest` that already exists. Version stays `0.6.0a1`
 (a 0.7.x bump is earned only when the 0.7 gate is met).
 
+**0.7 Round II (2026-09-27, same branch, UNMERGED):** the wider algebra became a real, typed, SELECTABLE compiler
+capability (`docs/research/V0_7_PRODUCTION_ALGEBRA_ROUND_II_2026-09-27.md`). Delivered in `smartchem/`: a
+USE-INDEX (`ProviderUse` + a pre-enumeration guard refusing an incompatible registry, closing a measured
+whole-call-crash); a CONTENT-BOUND provider identity (`ProviderSemanticDescriptor` folded into a 4-tuple
+`identity`, with a shared `DAGuardSpec` consumed by `_guarded_retro` so a rule/guard change forces an identity
+move — the plan §4 gate blocker, CLOSED); a closed, versioned algebra-PROFILE registry
+(`smartchem/algebra_profiles.py`: `legacy-capped-v1`=default, `certified-route-v07`=capped+8 admitted DA,
+`certified-decompile-v07`); request-level `--algebra` selection threaded end-to-end
+(request→serialization→`run_compilation`→search→receipt→IR→response) with a BINDING INVARIANT making a
+profile-A-search-packaged-as-B unrepresentable, plus algebra-aware reagentless handling. Measurement:
+production-service funnel `4/1/1`→`4/2/2` through `run_compilation`; forcing corpus 52/52 across all 8 DA
+families + hostile near-misses + fresh holdouts; **10/10 calibrated mutants killed**; independent hostile review
+(Wave C) clean, no P0. Provenance terminology corrected (the DA oracle is a FRESH RE-DERIVATION through shared
+code, not an independent witness). **Default NOT flipped; certified-route-v07 is OPT-IN; version stays `0.6.0a1`**
+(default promotion + non-DA class recognizers are the remaining blockers to the full "spine of normal use").
+
 ## Governance — the 3-lane projection (authoritative)
 
 Every item is tagged with the lane it advances. **Progress in one lane never implies another.** (Audit:

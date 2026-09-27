@@ -67,7 +67,7 @@ def test_widening_the_algebra_moves_the_receipt_digest_and_leaves_the_default_un
     assert DEFAULT_TRANSFORM_REGISTRY.provider_ids == ("capped-scission-mediated",)
 
 
-# -- current grammar-identity shape (the honor-system gap the next sub-round closes; plan §4) -------------------
+# -- grammar identity: now CONTENT-BOUND (0.7 Round II closed the honor-system gap; plan §4) -------------------
 # -- generative funnel: the before/after denominator delta the wider algebra buys -----------------------------
 def test_generative_funnel_before_after_delta_is_stable():
     rows = run_funnel()
@@ -81,14 +81,45 @@ def test_generative_funnel_before_after_delta_is_stable():
     }
 
 
-def test_current_provider_identity_shape_is_declared_metadata_only():
-    # TODAY a provider's identity is (id, version, capability_manifest) -- hand-declared metadata, NOT a content
-    # digest of the rewrite rule. Pinned so that when 0.7 adds a rule_content_digest, the identity shape CHANGES
-    # visibly here (a calibrated movement), rather than a rule edit silently keeping the same digest.
+def test_provider_identity_is_now_content_bound_not_declared_metadata_only():
+    # 0.7 Round II CALIBRATED MOVEMENT (plan §4): a provider's identity WAS (id, version, capability_manifest) --
+    # three hand-declared values.  It is now a 4-tuple whose 4th element is the ProviderSemanticDescriptor digest,
+    # which binds the DECLARATIVE rewrite rule + guard-spec content.  This test was deliberately pinned at the
+    # 3-tuple shape so this change would surface HERE as a visible movement, not silently.
     ident = DielsAlderProvider().identity
-    assert len(ident) == 3
+    assert len(ident) == 4
     assert ident[0] == "diels-alder-retro" and ident[1] == "v1"
-    assert isinstance(ident[2], tuple)  # the capability_manifest (declared prose), not a structural digest
-    # two capped-scission providers with identical declared fields share an identity (the gap: identity does not
-    # yet reflect the actual enumerate_transforms body).
+    assert isinstance(ident[2], tuple)  # the capability_manifest (declared prose)
+    assert ident[3] == DielsAlderProvider().semantic_descriptor.digest  # the content-bound descriptor digest
+    desc = DielsAlderProvider().semantic_descriptor
+    # the DA descriptor now carries REAL declarative content digests (not None): the rewrite rule + the guard spec.
+    assert desc.structural_rule_digest is not None and desc.guard_spec_digest is not None
+    # identity is still deterministic for identically-constructed providers.
     assert CappedScissionProvider().identity == CappedScissionProvider().identity
+
+
+def test_semantic_identity_moves_when_the_rule_or_a_load_bearing_guard_changes():
+    # The semantic-identity DISCRIMINATOR (plan §4 / §8): a change to the declarative rewrite rule OR a load-bearing
+    # guard policy MUST move the provider identity.  Pre-0.7 this test would have FAILED (identity was hand-declared
+    # metadata that ignored the rule/guard entirely).  Prose-only edits must NOT move it.
+    from dataclasses import replace as _replace
+
+    from smartchem.diels_alder import _ALKENE_SPEC, _ALKYNE_SPEC, _da_semantic_descriptor
+
+    real = DielsAlderProvider()
+    real_digest = real.semantic_descriptor.digest
+
+    # (a) mutate a load-bearing GUARD (loosen the exocyclic-order ceiling) -> identity MUST move.
+    guard_mutant = _replace(_ALKENE_SPEC, exocyclic_max_order=2)
+    assert _da_semantic_descriptor(real, guard_mutant).digest != real_digest
+    # (b) mutate the guard-2c neutral-valence table (loosen sulfur) -> identity MUST move.
+    nv_mutant = _replace(_ALKENE_SPEC, neutral_valence=tuple(sorted({"C": 4, "N": 3, "O": 2, "S": 4}.items())))
+    assert _da_semantic_descriptor(real, nv_mutant).digest != real_digest
+    # (c) swap in a genuinely different (valid, degree-preserving) rewrite RULE -- the alkyne family's own retro --
+    #     so the structural_rule_digest changes -> identity MUST move.  (A degree-BREAKING mutant can't even be
+    #     constructed: BondRule.__post_init__ refuses it, which is the rule layer's own guard, not this test's job.)
+    rule_mutant = _replace(_ALKENE_SPEC, retro_rule=_ALKYNE_SPEC.retro_rule)
+    assert _da_semantic_descriptor(real, rule_mutant).digest != real_digest
+    # (d) an identical reconstruction of the real spec keeps a STABLE digest (no spurious movement).
+    same = _replace(_ALKENE_SPEC)
+    assert _da_semantic_descriptor(real, same).digest == real_digest

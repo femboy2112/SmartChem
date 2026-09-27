@@ -43,7 +43,12 @@ from .structure_descent import (
 from .bond_order_edit import BondOrderEdit, BOND_ORDER_EDIT_SCHEMA
 from .identity import IdentityLoss, identity_loss_from_payload, identity_loss_to_payload
 from .search import PRIMARY_RESOLVABLE_8_2_STATUSES, STANDARD_8_2_STATUSES, SearchStatus
-from .transform_provider import DEFAULT_TRANSFORM_REGISTRY, TransformProviderRegistry
+from .transform_provider import (
+    DEFAULT_TRANSFORM_REGISTRY,
+    ProviderUse,
+    TransformProviderRegistry,
+    assert_registry_supports_use,
+)
 # the transform-registry identity lives in a shared leaf (below both the search and IR layers) so the receipts
 # and the IR stamp the SAME digest (see smartchem.transform_registry).
 from .transform_registry import transform_registry_digest as _transform_registry_digest
@@ -1676,6 +1681,10 @@ def decompile_structure_to_ir(
         raise TypeError("decompile_structure_to_ir target must be a smartchem.category.Molecule")
     if type(reagents) is not tuple or not reagents or any(type(r) is not Molecule for r in reagents):
         raise TypeError("reagents must be a non-empty tuple of reagent-TYPE Molecules")
+    # Course-Correction 1: refuse an algebra whose providers are not STRUCTURE_DECOMPILE-admissible BEFORE
+    # enumeration -- e.g. a DA-bearing registry (its "DIELS_ALDER*" witness_kind has no _WITNESS_PROJECTION entry)
+    # would otherwise crash candidate-building on the unknown witness and lose the whole call.
+    assert_registry_supports_use(registry, ProviderUse.STRUCTURE_DECOMPILE)
 
     enumerated, complete = registry.enumerate(target, reagents, budget=budget)
     losses_sorted = tuple(sorted(identity_losses, key=lambda loss: loss.digest))

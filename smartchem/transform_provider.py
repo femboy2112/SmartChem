@@ -43,6 +43,7 @@ per generator.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 from .contracts import canonical_digest
 from .structure_descent import capped_scissions, heterolytic_scissions, redox_couples
@@ -56,7 +57,73 @@ __all__ = [
     "TransformProviderRegistry",
     "DEFAULT_TRANSFORM_REGISTRY",
     "search_algebra_digest",
+    "ProviderUse",
+    "ProviderSemanticDescriptor",
+    "UnsupportedProviderUseError",
+    "assert_registry_supports_use",
 ]
+
+
+class ProviderUse(Enum):
+    """The consumer TOPOLOGY a provider declares it is admissible for (Course-Correction 1, 0.7 Round II).
+
+    A provider does not owe the same evidence in every consumer: the same family can be sound as a one-step
+    STRUCTURE_DECOMPILE and unsound (or crashing) inside the recursive LINEAR_ROUTE / CONVERGENT_DAG search.  A
+    consumer validates its registry against ITS use BEFORE enumeration (:func:`assert_registry_supports_use`), so a
+    wrong-lane provider is refused with a typed error rather than silently filtered (which would let a receipt name a
+    caller-selected algebra while executing a hidden subset) or -- as measured on the pre-0.7 code -- crashing the
+    whole search mid-enumeration and taking valid candidates down with it.
+
+    The values coincide with the search-topology strings :func:`search_algebra_digest` stamps ("linear-route",
+    "convergent-dag") so a consumer's use and the digest's topology are one vocabulary.
+    """
+
+    STRUCTURE_DECOMPILE = "structure-decompile"
+    LINEAR_ROUTE = "linear-route"
+    CONVERGENT_DAG = "convergent-dag"
+
+
+@dataclass(frozen=True)
+class ProviderSemanticDescriptor:
+    """A CONTENT-bound descriptor of what a provider's grammar actually does -- the 0.7 hardening of provider
+    identity (plan §4).  The pre-0.7 identity was ``(provider_id, provider_version, capability_manifest)``: three
+    hand-declared values, so a developer could change the actual rewrite rule or a load-bearing guard without bumping
+    the hand-typed version, producing a BYTE-IDENTICAL identity for a semantically different grammar.  This descriptor
+    folds the pieces that MUST move when the chemistry moves into the identity via :attr:`digest`.
+
+    Epistemic boundary (deliberate, not a hedge): :attr:`digest` GUARANTEES that a change to a *declarative* rule
+    (``structural_rule_digest``), a typed *guard policy* (``guard_spec_digest``), the ``supported_uses`` set, the
+    ``witness_kind`` / ``projection_kind``, or a typed ``behavior_params`` knob forces an identity change.  It does
+    NOT and cannot detect an arbitrary edit to *imperative* enumerator Python (e.g. the capped-scission cut-selection
+    body, or a verifier's own logic) -- for those, ``structural_rule_digest``/``guard_spec_digest`` are ``None`` and
+    the honest tracker of an implementation change remains ``provider_version`` + tool/schema versioning.  No source
+    text is hashed for ceremony; a family gets a rule/guard digest only where a genuine declarative artifact exists.
+    """
+
+    family: str
+    supported_uses: tuple           # sorted tuple[str] of ProviderUse values
+    witness_kind: str
+    projection_kind: str
+    behavior_params: tuple          # sorted tuple[tuple[str, str|int|bool]] -- the typed knobs, not prose
+    structural_rule_digest: "str | None"
+    guard_spec_digest: "str | None"
+    authority: str
+
+    @property
+    def digest(self) -> str:
+        return canonical_digest(
+            (
+                "provider-semantic-descriptor-v1",
+                self.family,
+                self.supported_uses,
+                self.witness_kind,
+                self.projection_kind,
+                self.behavior_params,
+                self.structural_rule_digest,
+                self.guard_spec_digest,
+                self.authority,
+            )
+        )
 
 
 def search_algebra_digest(topology: str, registry: "TransformProviderRegistry") -> str:
@@ -86,14 +153,48 @@ class TransformProvider:
     #: the witness/projection kind pair the family's StructuralCandidate carries (IR-STRUCT-01); the IR's
     #: ``_WITNESS_PROJECTION`` map is the authority on which pairs are admissible.
     witness_kind: str
+    #: the consumer topologies this family is admissible for (Course-Correction 1).  Fail-closed default: a provider
+    #: that does not DECLARE its uses supports NONE, so an unclassified family is refused by every consumer rather
+    #: than allowed to crash one.  Every concrete provider overrides this with its measured, honest use set.
+    supported_uses: "frozenset[ProviderUse]" = frozenset()
+    #: whether this family can GENERATE with an empty helper-reagent pool.  Most families are reagentless (DA,
+    #: heterolytic, redox, bond-order ignore the pool); capped-scission REQUIRES a cutting reagent and overrides this
+    #: to False.  Read by the service's reagent guard so an empty pool is refused only when NO provider in the
+    #: selected algebra can run reagentless -- it is a behaviour flag, deliberately NOT part of provider identity.
+    reagentless_capable: bool = True
 
     @property
     def capability_manifest(self) -> tuple:
         raise NotImplementedError
 
     @property
+    def semantic_descriptor(self) -> ProviderSemanticDescriptor:
+        """The content-bound descriptor folded into :attr:`identity`.  The base builds it from the declared manifest
+        + ``supported_uses`` with NO rule/guard digest (an imperative family has no declarative artifact to bind);
+        a family whose rewrite IS a declarative rule (Diels-Alder) overrides this to supply ``structural_rule_digest``
+        / ``guard_spec_digest`` (see :mod:`smartchem.diels_alder`)."""
+        manifest = dict(self.capability_manifest)
+        return ProviderSemanticDescriptor(
+            family=str(manifest.get("family", self.provider_id)),
+            supported_uses=tuple(sorted(u.value for u in self.supported_uses)),
+            witness_kind=self.witness_kind,
+            projection_kind=str(manifest.get("projection_kind", "")),
+            # the typed knobs are the manifest entries whose value is not free prose (int/bool ceilings, flags);
+            # prose ("mechanism", "family", ...) is documentation, not behavior identity.
+            behavior_params=tuple(sorted((k, v) for k, v in self.capability_manifest if not isinstance(v, str))),
+            structural_rule_digest=None,
+            guard_spec_digest=None,
+            authority="|".join(str(manifest[k]) for k in ("state_domain", "chemical_authority") if k in manifest),
+        )
+
+    @property
     def identity(self) -> tuple:
-        return (self.provider_id, self.provider_version, self.capability_manifest)
+        # 0.7 Round II: identity is now content-bound.  The 4th element is the semantic descriptor digest, so a
+        # change to a declarative rule / typed guard / supported-use set / witness-projection / typed knob forces the
+        # identity (and thus ``registry.digest`` and ``search_algebra_digest``) to move -- the honor-system version
+        # bump is no longer the only line of defence for the pieces a digest CAN bind (plan §4; boundary in
+        # ProviderSemanticDescriptor's docstring).
+        return (self.provider_id, self.provider_version, self.capability_manifest, self.semantic_descriptor.digest)
 
     def enumerate_transforms(self, reactant, reagents, *, budget):
         """Return ``(transforms, complete)`` for this family: a tuple of transform objects (each exposing the
@@ -113,6 +214,13 @@ class CappedScissionProvider(TransformProvider):
     witness_kind: str = "CAPPED_SCISSION"
     max_reactant_cuts: int = 1
     ring_aware: bool = False
+    # neutral, size-reducing, and IR-wired (DecompositionEdge/MediatedEdge): admissible in all three consumers.
+    supported_uses = frozenset(
+        {ProviderUse.STRUCTURE_DECOMPILE, ProviderUse.LINEAR_ROUTE, ProviderUse.CONVERGENT_DAG}
+    )
+    # a mediated cleavage MUST consume a capping reagent -- with an empty pool it enumerates nothing (see
+    # enumerate_transforms below), so the service refuses an empty-reagent request under a capped-only algebra.
+    reagentless_capable = False
 
     @property
     def capability_manifest(self) -> tuple:
@@ -152,6 +260,9 @@ class HeterolyticScissionProvider(TransformProvider):
     provider_id: str = "heterolytic-scission"
     provider_version: str = "v1"
     witness_kind: str = "HETEROLYTIC_SCISSION"
+    # charged products do not terminate the neutral route search (they trip _refuse_charged_target in recursion);
+    # DECOMPILE-only, and it is fully wired into the IR StructuralCandidate witness/projection path.
+    supported_uses = frozenset({ProviderUse.STRUCTURE_DECOMPILE})
 
     @property
     def capability_manifest(self) -> tuple:
@@ -185,6 +296,8 @@ class RedoxHalfReactionProvider(TransformProvider):
     provider_version: str = "v1"
     witness_kind: str = "REDOX_HALF_REACTION"
     max_electrons: int = 2
+    # charge-only (no size reduction) and charged: not a route/DAG descent; DECOMPILE-only, IR-wired.
+    supported_uses = frozenset({ProviderUse.STRUCTURE_DECOMPILE})
 
     @property
     def capability_manifest(self) -> tuple:
@@ -272,3 +385,26 @@ class TransformProviderRegistry:
 #: direct ``capped_scissions`` call it replaces, so the whole existing suite is unaffected; a wider algebra is a
 #: different registry passed explicitly.
 DEFAULT_TRANSFORM_REGISTRY = TransformProviderRegistry((CappedScissionProvider(),))
+
+
+class UnsupportedProviderUseError(ValueError):
+    """Raised by :func:`assert_registry_supports_use` when a registry handed to a consumer contains a provider that
+    does not declare that consumer's :class:`ProviderUse`.  A ``ValueError`` (a programming/boundary error), not a
+    domain refusal: the caller selected an algebra incompatible with the topology it asked for."""
+
+
+def assert_registry_supports_use(registry: "TransformProviderRegistry", use: "ProviderUse") -> None:
+    """Fail closed BEFORE enumeration if any provider in ``registry`` does not support ``use`` (Course-Correction 1).
+
+    A search/decompile engine calls this at entry.  The alternative measured on the pre-0.7 code was worse than a
+    late error: a wrong-lane provider enumerated cleanly (``registry.enumerate`` even reported ``complete=True``),
+    then the mismatch surfaced DOWNSTREAM as an uncaught crash in step-building / conditions-lookup / witness
+    dispatch, destroying the otherwise-valid candidates of the OTHER providers in the same call.  Silently FILTERING
+    the unsupported provider instead would be a different lie -- the receipt would name a caller-selected algebra
+    while a hidden subset actually ran.  So the only honest option is a typed refusal naming the offenders."""
+    offenders = tuple(p.provider_id for p in registry.providers if use not in p.supported_uses)
+    if offenders:
+        raise UnsupportedProviderUseError(
+            f"a {use.value!r} consumer was handed a registry whose providers {offenders} do not support that use; "
+            "refusing before enumeration (an incompatible registry is a programming boundary, not a search result)"
+        )

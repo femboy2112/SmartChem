@@ -54,9 +54,11 @@ it does not:
    and refuses non-conserving steps; the DA edge self-verifies conservation **and** DA-ness (a mass-balancing
    non-DA edge is refused — `test_diels_alder.py:162`).
 3. **Rule/provider identity strong enough that changing the semantic rule cannot leave the grammar identity
-   unchanged unnoticed** — *GAP (§4).* Today identity = a hand-declared `(id, version, capability_manifest)`
-   hashed by `registry.digest`; the honor-system bump is undefended (`transform_registry.py:13-19` W3). This is
-   the round's central hardening target.
+   unchanged unnoticed** — *GAP (§4). CLOSED in Round II — see `V0_7_PRODUCTION_ALGEBRA_ROUND_II_2026-09-27.md` §3-4.*
+   Today identity = a hand-declared `(id, version, capability_manifest)` hashed by `registry.digest`; the honor-system
+   bump is undefended (the real site is `TransformProvider.identity`, `transform_provider.py:94-96` — this plan's
+   earlier `transform_registry.py:13-19` citation was to a vestigial second digest mechanism, corrected in Round II).
+   This is the round's central hardening target.
 4. **Reaction-class witness** derived from the applied rule or re-derived from endpoints — *Have (partial):*
    `reaction_type_oracle.recognize_reaction_type` re-derives the class from endpoints for the 8 DA + 6 lateral +
    3 condensation classes; **absent** for redox/heterolytic/bond-order (see §1). Admission requires the family's
@@ -162,10 +164,12 @@ gate; any version bump.
 
 - **Done:** the machine-readable inventory (§1), this plan (§2–§7), the forcing vertical (§5) + its tests, the
   0.7 funnel extension (§6), ROADMAP 0.7 status.
-- **Next sub-round (highest-value):** grammar-identity content digest (§4) — add the failing "semantic identity"
-  discriminator first (mutate a rewrite, assert the digest MUST move), then wire `rule_content_digest` into
-  `TransformProvider.identity`, starting with the audited-capped and DA families that already have structural
-  descriptors. This is the single change that turns "opt-in provider" into "certified production-eligible
-  grammar", because without it the admission contract's requirement #3 cannot be honestly met.
-- **Then:** class-recognizer coverage for redox/heterolytic/bond-order (admission requirement #4) before any of
-  them is considered for the default; and the strict/lateral orchestration seam (§3) with distinct receipts.
+- **Next sub-round (highest-value): DONE in Round II** (`V0_7_PRODUCTION_ALGEBRA_ROUND_II_2026-09-27.md`) — the
+  grammar-identity content digest was built (`ProviderSemanticDescriptor` folded into `TransformProvider.identity`,
+  with a `DAGuardSpec` bound for the DA families), the failing "semantic identity" discriminator was added first, and
+  the whole thing was widened into a real selectable compiler capability (use-index, closed algebra profiles,
+  end-to-end request→search→receipt→IR transport with a binding invariant). 10/10 calibrated mutants; Wave-C clean.
+- **Then (still open):** class-recognizer coverage for redox/heterolytic/bond-order (admission requirement #4)
+  before any of them is considered for the default; the strict/lateral orchestration seam (§3) with distinct
+  receipts; a structural-decompile service front door; and the default-promotion audited commit for
+  `certified-route-v07`. Version remains `0.6.0a1` (opt-in candidate ready; default not flipped).

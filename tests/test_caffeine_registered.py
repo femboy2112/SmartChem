@@ -85,17 +85,23 @@ def test_engine_over_generates_valence_valid_but_dubious_candidates():
     assert o["sound_methylation_present"] and o["dubious_homologation_also_present"], o
 
 
-def test_every_derived_caffeine_route_is_only_FORMAL_CANDIDATE():
-    # birdperson fold: pin the epistemic floor to the caffeine route itself.  The engine certifies conservation, NOT
-    # mechanism -- so no caffeine route may claim a readiness tier above FORMAL_CANDIDATE.  If a future refactor
-    # promotes a formal candidate to a sourced/verified tier without real evidence, THIS fires.
+def test_every_derived_caffeine_route_never_claims_sourced_conditions_or_above():
+    # birdperson fold, UPDATED for v0.8 Real Route Dossiers: the engine certifies conservation, NOT mechanism -- but
+    # readiness is now RE-DERIVED (smartchem.experiment.readiness), not a hard-coded FORMAL_CANDIDATE stamp. The
+    # caffeine route's N-methylation step IS a real, recognized reaction type (an honest REACTION_VOUCHED, not a
+    # fabrication), so the floor this test pins is now the ONE the engine still owes no evidence for: no derived
+    # caffeine route may claim a SOURCED condition, a described process, or a workup (CONDITIONS_SUPPORTED or above)
+    # -- this compile path injects no condition envelope source, so none of that evidence exists to claim.
     caf = M(probe._SMILES["caffeine"])
     theo = M(probe._SMILES["theophylline"])
     compiled = compile_synthesis(caf, reagents=(M("CO"), M("O")), available=(theo,), max_depth=2,
                                  max_routes=8, cut_budget=20000, commodities=(), box=ConstraintBox())
     assert compiled.ranked, "expected at least one derived caffeine route"
+    from smartchem.experiment.readiness import CONDITIONS_SUPPORTED, READINESS_TIERS, tier_rank
     for fit in compiled.ranked:
-        assert RankedRouteSummary.of_fit(fit).readiness_tier == "FORMAL_CANDIDATE"
+        tier = RankedRouteSummary.of_fit(fit).readiness_tier
+        assert tier in READINESS_TIERS
+        assert tier_rank(tier) < tier_rank(CONDITIONS_SUPPORTED)
 
 
 def test_caffeine_identity_is_kekule_spelling_invariant():

@@ -178,7 +178,7 @@
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
   "result_digest": "f27d014a91532aab697d6794f0319f785d1624e50c2f5522c4d50aa2f40703b1",
-  "schema_version": "smartchem.service/compilation-response-v1alpha13",
+  "schema_version": "smartchem.service/compilation-response-v1alpha14",
   "search_space_status": "NO_ROUTE_IN_DECLARED_SPACE",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

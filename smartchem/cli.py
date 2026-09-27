@@ -388,8 +388,19 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
     # same facts the --json ranked_route_dossiers do (CLI-JSON-01 agreement).  Shown when not --quiet, like candidates.
     if not quiet and response.ranked_route_dossiers:
         lines.append("  ranked routes (best first; section-11 bench fit):")
+        from .experiment.readiness import FORMAL_CANDIDATE, REACTION_VOUCHED
         for i, r in enumerate(response.ranked_route_dossiers[:20], 1):
             lines.append(f"    {i}. [{r.fit_status}/{r.readiness_tier}] {r.equation}  #{r.route_digest[:12]}")
+            # v0.8 Real Route Dossiers: a route that has NOT earned at least CONDITIONS_SUPPORTED is not a bench
+            # procedure -- symmetric to the TARGET_ALREADY_AVAILABLE disclaimer above, so a chemist skimming the
+            # human render never mistakes a bare structural candidate (or a recognized-but-unsourced one) for
+            # something they could actually run.
+            if r.readiness_tier == FORMAL_CANDIDATE:
+                lines.append("        READINESS: FORMAL_CANDIDATE -- the reaction type is not yet recognized by "
+                             "the production oracle; this is NOT an executable bench procedure.")
+            elif r.readiness_tier == REACTION_VOUCHED:
+                lines.append("        READINESS: REACTION_VOUCHED -- the reaction type is recognized, but its "
+                             "conditions are not sourced; this is NOT an executable bench procedure.")
             for e in r.exclusions:
                 lines.append(f"        EXCLUDED: {e}")
             for g in r.gaps:

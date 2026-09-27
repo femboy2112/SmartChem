@@ -92,8 +92,12 @@ class TestSchemaDescriptor:
         # pre-guarantee v1alpha12 payload is refused by the strict schema gate.  The DESCRIPTOR stays v1alpha16: its
         # embedded response_schema_version VALUE tracks v1alpha13, but a value-only change does NOT bump the descriptor
         # version (it bumps only on a field shape change -- its own convention).
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha16"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha13"
+        # v1alpha17 (descriptor, a genuine shape change) / v1alpha14 (response): v0.8 Real Route Dossiers adds a typed
+        # ``readiness`` field to ranked_route_summary_fields (the Sec 3/4/8 obligation ladder; readiness_tier stays,
+        # now a DERIVED alias of readiness.tier). The response version bump ALSO marks a new on-load refusal (M10):
+        # _check_readiness_coherence re-derives every ranked route's readiness from its thick replay evidence.
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha17"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha14"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the

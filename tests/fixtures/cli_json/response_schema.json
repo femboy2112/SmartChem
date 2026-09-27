@@ -8,7 +8,7 @@
     "candidate_digest": "str (sha256; the stable route/candidate ID)",
     "candidate_kind": "enum(FORMULA_EDGE/ROUTE/DAG)",
     "equation": "str",
-    "readiness_tier": "str (readiness/epistemic tier)",
+    "readiness_tier": "str (readiness/epistemic tier; IR CandidateSummary -- always FORMAL_CANDIDATE)",
     "schema_version": "str"
   },
   "chemical_identity_fields": {
@@ -33,7 +33,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha16",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha17",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -77,7 +77,8 @@
     "gaps": "array[str] (undeclared constrained dimensions / composability UNKNOWNs)",
     "kinetics_verdict": "str (ranking-only; NEVER a grade)",
     "process_requirements": "array[object(per-step declared process facts)|null] (PROCESS-ADMIT-01: the evidence process admission is RE-DERIVED from on load, one entry per route step in order, null for an undeclared step; part of route identity)",
-    "readiness_tier": "str (READY-TIER-01 floor: FORMAL_CANDIDATE)",
+    "readiness": "object(RouteReadiness: per_step + route_open_obligations -- the typed Sec 3/4/8 obligation ladder this route's readiness_tier is projected from; RE-DERIVED on load from the thick replay_payload when present)",
+    "readiness_tier": "str (enum(FORMAL_CANDIDATE/REACTION_VOUCHED/CONDITIONS_SUPPORTED/PROCESS_SPECIFIED); DERIVED -- see readiness, the source of truth)",
     "route_digest": "str (sha256; == the matching candidate_digest)",
     "schema_version": "str",
     "selectivity_verdict": "str"
@@ -102,7 +103,7 @@
     "search_space_status": "str|null (section 8.3 no-route matrix: NO_ROUTE_IN_DECLARED_SPACE/INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; null when no route search ran)",
     "standard_status": "str|null (section 8.2 status)"
   },
-  "response_schema_version": "smartchem.service/compilation-response-v1alpha13",
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha14",
   "search_receipt_view_fields": {
     "candidate_enumeration_complete": "bool",
     "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",

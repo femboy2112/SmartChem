@@ -17,6 +17,7 @@ from smartchem.cli import main
 from smartchem.compilation_ir import recompile_to_ir
 from smartchem.data.reagents import commodity_inventory
 from smartchem.experiment.drafter import ConstraintBox, fit_route
+from smartchem.experiment.readiness import ObligationStatus, RouteReadiness, StepReadiness
 from smartchem.experiment.routes import search_routes
 from smartchem.service import (
     COMPILATION_RESPONSE_SCHEMA,
@@ -57,11 +58,29 @@ def _routes(name="dimethyl ether"):
 # -- A. the RankedRouteSummary type: a coherent, digestible, serializable projection --------------------------------
 
 
+def _formal_candidate_readiness() -> RouteReadiness:
+    """A one-step ``RouteReadiness`` at the FORMAL_CANDIDATE floor -- an unrecognized reaction, no declared
+    conditions/process/workup -- matching exactly what ``evaluate_step`` produces for a bare, fact-free step (v0.8
+    Real Route Dossiers: this is the ladder's honest bottom rung, not a hard-coded stamp)."""
+    open_obligations = (
+        "conditions: no declared condition envelope (unknown)",
+        "process: no declared process requirements (unknown)",
+        "reaction_type: not recognized by the production oracle",
+        "workup_isolation: no declared process requirements (unknown)",
+    )
+    step = StepReadiness(
+        formal_candidate=ObligationStatus.SATISFIED, reaction_type=ObligationStatus.UNSATISFIED,
+        reaction_class_name=None, conditions=ObligationStatus.UNKNOWN, process=ObligationStatus.UNKNOWN,
+        workup_isolation=ObligationStatus.UNKNOWN, provenance=(), open_obligations=open_obligations,
+    )
+    return RouteReadiness(per_step=(step,), route_open_obligations=open_obligations)
+
+
 class TestRankedRouteSummaryType:
     def _valid(self, **over):
         base = dict(
             schema_version=RANKED_ROUTE_SUMMARY_SCHEMA, route_digest="d" * 64, equation="A -> B",
-            fit_status="UNCONSTRAINED", readiness_tier="FORMAL_CANDIDATE", exclusions=(), gaps=(),
+            fit_status="UNCONSTRAINED", readiness=_formal_candidate_readiness(), exclusions=(), gaps=(),
             composability_verdict="COMPOSABLE", selectivity_verdict="NOT_APPLICABLE",
             feasibility_verdict="FAVORABLE", equilibrium_verdict="BALANCED", kinetics_verdict="UNKNOWN",
             process_requirements=(),
@@ -72,6 +91,7 @@ class TestRankedRouteSummaryType:
     def test_a_valid_summary_constructs_and_digests(self):
         s = self._valid()
         assert s.digest and s.digest == self._valid().digest
+        assert s.readiness_tier == "FORMAL_CANDIDATE"   # derived, off the same readiness both instances share
 
     def test_bad_schema_version_is_refused(self):
         with pytest.raises(ValueError, match="schema_version"):
@@ -81,10 +101,23 @@ class TestRankedRouteSummaryType:
         with pytest.raises(ValueError, match="fit_status"):
             self._valid(fit_status="MAYBE")
 
-    def test_readiness_cannot_self_promote(self):
-        # READY-TIER-01: the only honest tier this aggregate may carry is FORMAL_CANDIDATE.
-        with pytest.raises(ValueError, match="FORMAL_CANDIDATE"):
-            self._valid(readiness_tier="BENCH_DRAFT")
+    def test_readiness_must_be_a_route_readiness(self):
+        # v0.8 Real Route Dossiers: readiness_tier is retired as a settable field (self-promotion is now structurally
+        # impossible -- there is no string to hand-pick) -- the constructor takes a typed RouteReadiness, and refuses
+        # anything else. Its OWN construction (RouteReadiness/StepReadiness.__post_init__) is what stops a self-promote.
+        with pytest.raises(TypeError, match="readiness"):
+            self._valid(readiness="BENCH_DRAFT")
+
+    def test_readiness_tier_is_no_longer_a_constructor_argument(self):
+        base = dict(
+            schema_version=RANKED_ROUTE_SUMMARY_SCHEMA, route_digest="d" * 64, equation="A -> B",
+            fit_status="UNCONSTRAINED", readiness=_formal_candidate_readiness(), readiness_tier="FORMAL_CANDIDATE",
+            exclusions=(), gaps=(), composability_verdict="COMPOSABLE", selectivity_verdict="NOT_APPLICABLE",
+            feasibility_verdict="FAVORABLE", equilibrium_verdict="BALANCED", kinetics_verdict="UNKNOWN",
+            process_requirements=(),
+        )
+        with pytest.raises(TypeError, match="readiness_tier"):
+            RankedRouteSummary(**base)
 
     def test_excluded_must_give_a_reason(self):
         # the no-laundering discipline: an EXCLUDED route cannot hide WHY it was excluded.
@@ -118,7 +151,12 @@ class TestOfFitProjection:
         assert s.fit_status == "EXCLUDED"
         assert tuple(s.exclusions) == tuple(fit.exclusions)   # reasons preserved, not summarised away
         assert s.route_digest == res.routes[0].digest         # links back to the IR candidate
-        assert s.readiness_tier == "FORMAL_CANDIDATE"
+        # v0.8 Real Route Dossiers: readiness is RE-DERIVED from the route's own steps, not a hard-coded stamp -- it
+        # is whatever evaluate_route honestly says for THIS route's un-sourced, undeclared step(s), and must agree
+        # with the typed readiness object riding alongside it.
+        from smartchem.experiment.readiness import evaluate_route
+        assert s.readiness == evaluate_route(fit.route)
+        assert s.readiness_tier == s.readiness.tier
 
     def test_projects_an_unconstrained_fit(self):
         _, _, _, res = _routes()
@@ -273,7 +311,7 @@ class TestRedTeamFolds:
     def _summary(self, **over):
         base = dict(
             schema_version=RANKED_ROUTE_SUMMARY_SCHEMA, route_digest="d" * 64, equation="A -> B",
-            fit_status="UNCONSTRAINED", readiness_tier="FORMAL_CANDIDATE", exclusions=(), gaps=(),
+            fit_status="UNCONSTRAINED", readiness=_formal_candidate_readiness(), exclusions=(), gaps=(),
             composability_verdict="COMPOSABLE", selectivity_verdict="NOT_APPLICABLE",
             feasibility_verdict="FAVORABLE", equilibrium_verdict="BALANCED", kinetics_verdict="UNKNOWN",
             process_requirements=(),

@@ -108,9 +108,32 @@
       "process_requirements": [
         null
       ],
-      "readiness_tier": "FORMAL_CANDIDATE",
+      "readiness": {
+        "per_step": [
+          {
+            "conditions": "UNKNOWN",
+            "formal_candidate": "SATISFIED",
+            "open_obligations": [
+              "conditions: no declared condition envelope (unknown)",
+              "process: no declared process requirements (unknown)",
+              "workup_isolation: no declared process requirements (unknown)"
+            ],
+            "process": "UNKNOWN",
+            "provenance": [],
+            "reaction_class_name": "acyl condensation (esterification/amidation)",
+            "reaction_type": "SATISFIED",
+            "workup_isolation": "UNKNOWN"
+          }
+        ],
+        "route_open_obligations": [
+          "conditions: no declared condition envelope (unknown)",
+          "process: no declared process requirements (unknown)",
+          "workup_isolation: no declared process requirements (unknown)"
+        ]
+      },
+      "readiness_tier": "REACTION_VOUCHED",
       "route_digest": "ceb2d476bde3f206110670346e55dc42b9e85d22b41d2e755cd4f9b478482de9",
-      "schema_version": "smartchem.service/ranked-route-summary-v1alpha2",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha3",
       "selectivity_verdict": "UNKNOWN"
     },
     {
@@ -128,9 +151,48 @@
         null,
         null
       ],
+      "readiness": {
+        "per_step": [
+          {
+            "conditions": "UNKNOWN",
+            "formal_candidate": "SATISFIED",
+            "open_obligations": [
+              "conditions: no declared condition envelope (unknown)",
+              "process: no declared process requirements (unknown)",
+              "workup_isolation: no declared process requirements (unknown)"
+            ],
+            "process": "UNKNOWN",
+            "provenance": [],
+            "reaction_class_name": "acyl condensation (esterification/amidation)",
+            "reaction_type": "SATISFIED",
+            "workup_isolation": "UNKNOWN"
+          },
+          {
+            "conditions": "UNKNOWN",
+            "formal_candidate": "SATISFIED",
+            "open_obligations": [
+              "conditions: no declared condition envelope (unknown)",
+              "process: no declared process requirements (unknown)",
+              "reaction_type: not recognized by the production oracle",
+              "workup_isolation: no declared process requirements (unknown)"
+            ],
+            "process": "UNKNOWN",
+            "provenance": [],
+            "reaction_class_name": null,
+            "reaction_type": "UNSATISFIED",
+            "workup_isolation": "UNKNOWN"
+          }
+        ],
+        "route_open_obligations": [
+          "conditions: no declared condition envelope (unknown)",
+          "process: no declared process requirements (unknown)",
+          "reaction_type: not recognized by the production oracle",
+          "workup_isolation: no declared process requirements (unknown)"
+        ]
+      },
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "c2286c642f22e6fafae4477dc3c940bf6afe2c86865413b0abbac8ed18e640fb",
-      "schema_version": "smartchem.service/ranked-route-summary-v1alpha2",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha3",
       "selectivity_verdict": "UNKNOWN"
     }
   ],
@@ -254,8 +316,8 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "d9d505e300455f51c1d9bf71993d13f923392aeccd73900a5b93dc6986360135",
-  "schema_version": "smartchem.service/compilation-response-v1alpha13",
+  "result_digest": "a5fcfa7d33632f3da1785d1763457a80566fe9f4ae2d146b301a5ca2c72140b9",
+  "schema_version": "smartchem.service/compilation-response-v1alpha14",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
 }

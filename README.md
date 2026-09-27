@@ -155,7 +155,7 @@ general multiphysics category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](docs/history/MANIFEST.md).
 
-## Chemical compiler (v0.5.0a1 — an alpha in progress)
+## Chemical compiler (v0.6.0a1 — an alpha in progress)
 
 A newer line of work turns the chemistry core into a bidirectional *chemical compiler*: a
 **decompiler** that descends a target compound to its elemental buckets as an AND–OR
@@ -189,13 +189,34 @@ duration intervals require `min`, including on replay. The latest source reconna
 Br₂ dissociation data and a dated Cl₂ procurement offer; their model and procurement limits remain
 explicit in the [current roadmap](ROADMAP.md).
 
-This is an **alpha under active construction, not a finished release.** The normative
-contract is
-[CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md](CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md);
-[UPTAKE_MANIFEST_v0.5.0a1.md](UPTAKE_MANIFEST_v0.5.0a1.md) is an honest, per-requirement
-ledger of exactly what is implemented-and-verified versus still open (the alpha is *done*
-only when every P0 row is verified); and
-[AUDIT_CHEMICAL_COMPILER_2026-09-01.md](docs/history/AUDIT_CHEMICAL_COMPILER_2026-09-01.md) records the
+### v0.6 — the human chemical front door
+
+The **v0.6 Human Chemical Front Door** adds one tolerant entrance for ordinary chemical notation copied from
+a source such as Wikipedia. A lossless syntax layer (`FormulaExpr`) sits *before* the atom-count `Formula`,
+preserving hydrate/adduct boundaries and the original spelling; the single identity authority
+(`identity_parse.resolve_identity`) resolves composition, and the `smartchem plan` verb reports the strongest
+identity layer perceived, exposes ambiguity instead of guessing a structure, and routes to the existing
+compiler primitives. A formula is a **composition, not a constitution** — `formula → structure` is a relation,
+not a function — so a bare formula never launches structural synthesis, and a materially-ambiguous paste is
+reported rather than silently resolved:
+
+```bash
+python -m smartchem plan 'CuSO₄·5H₂O'      # Unicode hydrate → composition + retained component boundary
+python -m smartchem plan 'C2H6O'           # composition known; registry-known candidates (NOT exhaustive)
+python -m smartchem plan 'CO'              # INPUT-KIND AMBIGUOUS: methanol (SMILES) or carbon monoxide (formula)
+python -m smartchem plan 'smiles:CO'       # an explicit kind is a decision → structural planning (methanol)
+```
+
+This is an **alpha under active construction, not a finished release.** The v0.5.0a1 base standard remains
+inherited: the normative contract is
+[CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md](CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md) and
+[UPTAKE_MANIFEST_v0.5.0a1.md](UPTAKE_MANIFEST_v0.5.0a1.md) is an honest, per-requirement ledger of exactly what
+is implemented-and-verified versus still open. The **finite 1.0 release program** (0.6 → 0.7 → 0.8 → 0.9 →
+0.9.5 → 1.0) now governs new work — see
+[CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md](docs/research/CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md) — and the v0.6
+front door specifically is governed by its decision record,
+[V0_6_HUMAN_CHEMICAL_FRONT_DOOR_IMPLEMENTATION_2026-09-26.md](docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_IMPLEMENTATION_2026-09-26.md).
+[AUDIT_CHEMICAL_COMPILER_2026-09-01.md](docs/history/AUDIT_CHEMICAL_COMPILER_2026-09-01.md) records the earlier
 evidence and rationale.
 
 ## Reproduce
@@ -235,17 +256,20 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current maintained fast-suite result (dev environment with the optional PySCF stack installed):
+Current committed-baseline suite result — the OOM-safe full run via `scripts/run_suite.sh`, measured with the
+optional RDKit and PySCF backends **absent** (the committed baseline; backend-gated tests `importorskip`-skip):
 
 ```text
-4677 passed, 21 skipped, 1 xfailed
+5517 passed, 46 skipped, 0 xfailed  (5563 collected, 0 failed, 0 errors)
 ```
 
-This baseline was measured with the development-only RDKit oracle absent. The seven RDKit-gated CIP checks were
-separately exercised in an oracle-present run (4684 passed, 14 skipped, 1 xfailed); skips are not represented as passed.
-The remaining skips are optional-backend coverage and the explicit slow-test gate.
-An environment WITHOUT PySCF skips additional real-wavefunction tests (the process-accessibility audit
-receipt records such a run: 4014 passed / 51 skipped / 1 xfailed).
+There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. The 46 skips are
+the optional-backend (RDKit/PySCF-gated) checks plus the explicit slow-test gate; skips are never represented as
+passed. When the development-only RDKit oracle is present the seven RDKit-gated CIP checks additionally run, and
+when the optional PySCF stack is present the real-wavefunction integration tests additionally run. On this box
+the monolithic `pytest` run is OOM-killed, so `scripts/run_suite.sh` (short-lived batched processes) is the
+maintained full-suite runner. An earlier process-accessibility audit receipt records a historical PySCF-absent
+run (4014 passed / 51 skipped / 1 xfailed, 2026-09-05).
 The [validation receipt](experiments/validation/process-accessibility-2026-09-05/receipt.json) records the
 audit environment, complete file partition, raw outputs, and baseline comparison.
 Run selected real-wavefunction integration coverage with:
@@ -288,7 +312,7 @@ Until that gate is complete, new reaction-family expansion is non-release-critic
 measured input -> identity -> chemistry -> evidence -> capability funnel, not an unbounded sequence of local rounds.
 
 
-> **The live chemical-compiler (v0.5.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
+> **The live chemical-compiler (v0.6.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
 > next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
 > re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.
 

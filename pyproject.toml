@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smartchem"
-version = "0.5.0a1"
+version = "0.6.0a1"
 description = "A compositional layer above quantum chemistry: conserving reaction algebra with pluggable energy oracles"
 readme = "README.md"
 license = "MIT"

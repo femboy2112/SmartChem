@@ -49,6 +49,8 @@ __all__ = [
     "ParseReceipt",
     "ResolvedIdentity",
     "IdentityParseError",
+    "InputKindAmbiguity",
+    "detect_auto_ambiguity",
     "resolve_identity",
     "resolve_target",
     "resolve_target_with_features",
@@ -171,10 +173,35 @@ class ResolvedIdentity:
     features: "object | None"
     losses: tuple
     receipt: ParseReceipt
+    # v0.6 FORMULA-EXPR-01 additions (defaulted, so every existing constructor is unchanged):
+    #   * formula_expr -- the lossless syntax object (components/hydrate boundary + provenance) when the
+    #     identity was resolved through the human-formula grammar; None for NAME/SMILES/InChI.
+    #   * registry_candidates -- the registry-known structures that SHARE this formula, attached only for
+    #     a composition-only (molecule is None) resolution.  It is the ambiguity set, and it is
+    #     DELIBERATELY not on the receipt (which is digested and pinned): a bare formula names a
+    #     composition, and this is what the OFFLINE REGISTRY happens to know with it -- NEVER an
+    #     exhaustive isomer enumeration, and never a proof the composition has one/zero real constitutions.
+    formula_expr: "object | None" = None
+    registry_candidates: tuple = ()
+    #   * registry_lookup_ok -- whether the candidate lookup actually RAN (P0-F).  True on a successful
+    #     query (whether it found N candidates or zero); False ONLY when the registry was genuinely
+    #     unavailable.  A programming error inside the lookup is NOT laundered to "zero candidates" -- it
+    #     propagates.  So an empty registry_candidates means "queried, none known" iff this is True.
+    registry_lookup_ok: bool = True
 
     @property
     def structure_perceived(self) -> bool:
         """Whether a real bond graph was perceived (so a structure search may run on it)."""
+        return self.molecule is not None
+
+    @property
+    def constitution_established(self) -> bool:
+        """Whether a single molecular constitution is actually selected (structure perceived).
+
+        The v0.6 identity law: composition known is NOT constitution established.  A FORMULA-layer
+        identity is ``structure_perceived is False`` even when :attr:`registry_candidates` is non-empty,
+        because a registry candidate set is what the catalog knows, not a selected structure.
+        """
         return self.molecule is not None
 
 
@@ -279,6 +306,64 @@ def _inchi_formula_layer(text: str) -> "tuple[object, tuple, tuple[str, ...]]":
     return formula, tuple(losses), tuple(notes)
 
 
+def _registry_candidates(formula: "object") -> "tuple[tuple, bool]":
+    """The registry-known named structures sharing ``formula``, and whether the lookup RAN (P0-F).
+
+    Returns ``(candidates, lookup_ok)``.  ``candidates`` is what the OFFLINE registry happens to carry with
+    this composition -- explicitly NOT an exhaustive isomer enumeration, and a miss (empty tuple with
+    ``lookup_ok`` True) is NOT evidence that no such molecule exists.  This distinguishes the three states the
+    old ``except Exception: return ()`` collapsed into one (which laundered any internal failure into the
+    epistemic statement "the registry knows no candidate"):
+
+    * lookup succeeded, N candidates  -> ``(candidates, True)``;
+    * lookup succeeded, zero candidates -> ``((), True)``;
+    * registry module genuinely unavailable -> ``((), False)``.
+
+    Only :class:`ImportError` (the registry stack is absent) is caught, and it yields ``lookup_ok=False`` --
+    NOT a fabricated empty candidate set.  ``known_compounds`` itself is a pure dict lookup on a
+    :class:`~smartchem.decompiler.Formula`; a programming error in it is a real bug and PROPAGATES (fail-loud
+    to the section-14.4 internal-error path), never silently becomes "zero candidates".
+    """
+    try:
+        from .structure import known_compounds
+    except ImportError:
+        return (), False
+    return known_compounds(formula), True
+
+
+def _resolve_formula_layer(
+    requested: "InputKind", payload: str, prefix_note: "str | None", *, auto: bool
+) -> "ResolvedIdentity":
+    """Resolve a FORMULA-layer identity through the v0.6 lossless human-formula grammar (FORMULA-EXPR-01).
+
+    Parses ``payload`` to a :class:`~smartchem.formula_expr.FormulaExpr` (preserving hydrate/adduct
+    component boundaries and the normalization applied), projects it to the conservation
+    :class:`~smartchem.decompiler.Formula`, and returns a COMPOSITION-ONLY identity (``molecule is None``)
+    carrying the syntax object and the registry-known candidate set.  ``auto=True`` records that this was
+    an AUTO resolution reached only after name and SMILES both declined.  Raises
+    :class:`~smartchem.formula_expr.FormulaSyntaxError` on a malformed/parametric string; the CALLER maps
+    that to the right :class:`IdentityParseError`.
+    """
+    from .formula_expr import parse_formula_expr
+
+    expr = parse_formula_expr(payload)
+    formula = expr.to_formula()
+    notes: list[str] = []
+    if prefix_note:
+        notes.append(prefix_note)
+    if auto:
+        notes.append("auto-detected as a chemical formula (no offline name or SMILES matched)")
+    notes.extend(expr.notes)
+    receipt = ParseReceipt(
+        requested, InputKind.FORMULA, ParseSource.FORMULA_PARSER, _hill(formula), "FORMULA", tuple(notes)
+    )
+    candidates, lookup_ok = _registry_candidates(formula)
+    return ResolvedIdentity(
+        None, formula, None, (), receipt,
+        formula_expr=expr, registry_candidates=candidates, registry_lookup_ok=lookup_ok,
+    )
+
+
 def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO) -> ResolvedIdentity:
     """Resolve ``target_input`` under ``input_kind`` to a typed :class:`ResolvedIdentity` (the one parser service).
 
@@ -318,20 +403,20 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
         receipt = ParseReceipt(
             requested, InputKind.INCHI, ParseSource.INCHI_FORMULA_LAYER, _hill(formula), "FORMULA", notes
         )
-        return ResolvedIdentity(None, formula, None, losses, receipt)
-
-    # -- FORMULA: composition only, no structure ----------------------------------------------------------------
-    if kind is InputKind.FORMULA:
-        from .decompiler import DecompilerError
-        try:
-            formula = Formula.parse(payload)
-        except DecompilerError as exc:
-            raise IdentityParseError(f"could not parse {payload!r} as a chemical formula: {exc}") from exc
-        notes = (prefix_note,) if prefix_note else ()
-        receipt = ParseReceipt(
-            requested, InputKind.FORMULA, ParseSource.FORMULA_PARSER, _hill(formula), "FORMULA", notes
+        candidates, lookup_ok = _registry_candidates(formula)
+        return ResolvedIdentity(
+            None, formula, None, losses, receipt,
+            registry_candidates=candidates, registry_lookup_ok=lookup_ok,
         )
-        return ResolvedIdentity(None, formula, None, (), receipt)
+
+    # -- FORMULA: composition only, no structure (v0.6 tolerant human grammar) -----------------------------------
+    if kind is InputKind.FORMULA:
+        from .formula_expr import FormulaSyntaxError
+
+        try:
+            return _resolve_formula_layer(requested, payload, prefix_note, auto=False)
+        except FormulaSyntaxError as exc:
+            raise IdentityParseError(f"could not parse {payload!r} as a chemical formula: {exc}") from exc
 
     # -- NAME / SMILES (and AUTO's name-first, else-SMILES resolution) -------------------------------------------
     if kind is not InputKind.SMILES:
@@ -353,6 +438,21 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
     try:
         molecule, features = parse_smiles_features(payload)
     except SmilesError as exc:
+        # AUTO fallthrough: name declined, SMILES declined -> LAST, try the tolerant formula grammar.  This
+        # is additive and strictly last, so it can never STEAL a string a registered name or SMILES already
+        # claimed (the anti-Mutant-5 ordering).  An explicit smiles: input never reaches here as a formula:
+        # the caller asked for SMILES, so a SMILES failure stays a SMILES failure.
+        if kind is InputKind.AUTO:
+            from .formula_expr import FormulaSyntaxError
+
+            try:
+                return _resolve_formula_layer(requested, payload, prefix_note, auto=True)
+            except FormulaSyntaxError as formula_exc:
+                raise IdentityParseError(
+                    f"could not resolve {target_input!r} as an offline name, SMILES, or chemical formula: "
+                    f"SMILES said {exc}; formula said {formula_exc}; "
+                    "use name:..., smiles:..., or formula:... to make the input form explicit"
+                ) from exc
         raise IdentityParseError(
             f"could not resolve {target_input!r} as an offline name or parse it as SMILES: {exc}; "
             "use name:... or smiles:... to make the input form explicit"
@@ -363,6 +463,86 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
         requested, InputKind.SMILES, ParseSource.SMILES_PARSER, _hill(formula), "CONSTITUTION", notes
     )
     return ResolvedIdentity(molecule, formula, features, (), receipt)
+
+
+@dataclass(frozen=True)
+class InputKindAmbiguity:
+    """Two or more input-kind readings of ONE bare AUTO string that resolve to materially-distinct identities.
+
+    ``CO`` parses as SMILES (methanol, a CONSTITUTION) AND as a chemical formula (carbon monoxide, C1O1, a
+    FORMULA layer): two plausible readings that disagree on composition and layer.  The legacy AUTO precedence
+    (name -> SMILES -> formula-last) silently picks the first, which is correct for the expert commands but
+    wrong for the human ``plan`` front door -- launching structural synthesis for one interpretation while
+    another materially disagrees is exactly the guess v0.6 exists to refuse (P0-A).
+
+    This is the explicit alternate-interpretation representation the front door exposes so ``plan`` can refuse
+    to choose until the caller supplies an explicit kind (``smiles:CO`` / ``formula:CO``).  ``interpretations``
+    is an ordered tuple of ``(InputKind, ResolvedIdentity)`` in legacy precedence (structure reading first).
+    """
+
+    target_input: str
+    interpretations: tuple
+
+    @property
+    def kinds(self) -> "tuple[InputKind, ...]":
+        return tuple(kind for kind, _ in self.interpretations)
+
+    def summary(self) -> str:
+        """One line naming each reading -- kind, normalized composition, and identity layer."""
+        parts = [
+            f"{kind.value}->{ident.receipt.normalized} ({ident.receipt.identity_layer})"
+            for kind, ident in self.interpretations
+        ]
+        return (
+            f"{self.target_input!r} is input-kind ambiguous ({' | '.join(parts)}); "
+            "supply an explicit kind (e.g. smiles:… or formula:…) to choose"
+        )
+
+
+def detect_auto_ambiguity(target_input: str) -> "InputKindAmbiguity | None":
+    """The cross-kind ambiguity of a bare AUTO human input, or ``None`` (P0-A).
+
+    Returns an :class:`InputKindAmbiguity` iff more than one input-kind parser succeeds AND the readings are
+    materially distinct (they differ in identity layer or composition).  It is meaningful ONLY for a bare AUTO
+    string: an explicit inline prefix (``smiles:``/``formula:``/…) or a bare ``InChI=`` header is a DECISION,
+    not an ambiguity, so those return ``None`` immediately.
+
+    It does not change :func:`resolve_identity`'s AUTO precedence (the expert commands keep it, and the
+    anti-Mutant-5 ordering is untouched); it is a separate, additive perception the ``plan`` front door reads to
+    refuse a silent structural launch on an ambiguous paste.  The structure reading is the legacy AUTO answer
+    when that perceives a structure (NAME/SMILES); the formula reading is the tolerant human-formula grammar.
+    """
+    if not isinstance(target_input, str):
+        return None
+    from .formula_expr import FormulaSyntaxError
+
+    # an explicit inline prefix / InChI header is an explicit kind decision -> never ambiguous.
+    forced, _ = _split_inline_prefix(target_input)
+    if forced is not None:
+        return None
+
+    interpretations: list = []
+    # (1) the structure reading: the legacy AUTO answer, kept only if it perceived a real structure (NAME/SMILES).
+    try:
+        structure = resolve_identity(target_input, InputKind.AUTO)
+        if structure.structure_perceived:
+            interpretations.append((structure.receipt.resolved_kind, structure))
+    except IdentityParseError:
+        pass
+    # (2) the formula reading: the tolerant human-formula grammar, tried directly (independent of precedence).
+    try:
+        formula = _resolve_formula_layer(InputKind.AUTO, target_input, None, auto=True)
+        interpretations.append((InputKind.FORMULA, formula))
+    except FormulaSyntaxError:
+        pass
+
+    if len(interpretations) < 2:
+        return None
+    # materially distinct iff the readings disagree on (identity layer, normalized composition).
+    signatures = {(ident.receipt.identity_layer, ident.receipt.normalized) for _, ident in interpretations}
+    if len(signatures) < 2:
+        return None
+    return InputKindAmbiguity(target_input, tuple(interpretations))
 
 
 def _resolve_target_file(target_input: str) -> ResolvedIdentity:
@@ -390,7 +570,15 @@ def _resolve_target_file(target_input: str) -> ResolvedIdentity:
         InputKind.TARGET_FILE, inner.receipt.resolved_kind, ParseSource.TARGET_FILE,
         inner.receipt.normalized, inner.receipt.identity_layer, (note, *inner.receipt.notes),
     )
-    return ResolvedIdentity(inner.molecule, inner.formula, inner.features, inner.losses, receipt)
+    # P0-E transport law: a TARGET_FILE must perceive the SAME identity as resolving its contents directly --
+    # differing only in file provenance.  So forward the v0.6 syntax layer and the ambiguity set/status; dropping
+    # them here silently lost the formula grammar (formula_syntax, registry candidates) for a formula file.
+    return ResolvedIdentity(
+        inner.molecule, inner.formula, inner.features, inner.losses, receipt,
+        formula_expr=inner.formula_expr,
+        registry_candidates=inner.registry_candidates,
+        registry_lookup_ok=inner.registry_lookup_ok,
+    )
 
 
 def _hill(formula: "object") -> str:

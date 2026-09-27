@@ -68,9 +68,17 @@ from .process_constraints import (
     ProcessBounds, ProcessRequirements, ProcessFitStatus, Attention, Agitation,
     evaluate_process_requirements, evaluate_dag_process_requirements,
 )
+from .algebra_profiles import (
+    DEFAULT_ALGEBRA_PROFILE,
+    DEFAULT_ROUTE_ALGEBRA_PROFILE,
+    LEGACY_MISSING_ALGEBRA_PROFILE,
+    PROFILE_USES,
+    resolve_algebra_profile,
+)
 from .contracts import Digestible, canonical_digest
 from .identity import IdentityLoss, MatchLayer, refines
 from .identity_parse import IdentityParseError, InputKind, resolve_target
+from .transform_provider import ProviderUse, search_algebra_digest
 from .search import REFUSED_8_2_STATUSES, STANDARD_8_2_STATUSES, section_8_3_label
 
 __all__ = [
@@ -245,6 +253,17 @@ _GRAMMAR_TO_MODE = {
     TransformGrammar.CAPPED_SCISSION_CONVERGENT: "dags",
 }
 _RECOMPILE_GRAMMARS = frozenset(_GRAMMAR_TO_MODE)
+
+# 0.7 Round II (Course-Correction 2): the SEARCH TOPOLOGY axis (route vs DAG) is orthogonal to the TRANSFORM
+# ALGEBRA axis (which providers generate).  transform_grammar carries the topology; the new request field
+# `algebra_profile` carries the algebra.  This maps a recompile grammar to the ProviderUse its topology needs, so a
+# selected algebra profile is validated against the topology it will actually run in (a decompile-only profile is
+# refused under a route grammar) and the search-engine's per-provider use-guard has the matching use.
+_GRAMMAR_TO_MODE_TOPOLOGY = {"routes": "linear-route", "dags": "convergent-dag"}
+_GRAMMAR_TO_USE = {
+    TransformGrammar.CAPPED_SCISSION_LINEAR: ProviderUse.LINEAR_ROUTE,
+    TransformGrammar.CAPPED_SCISSION_CONVERGENT: ProviderUse.CONVERGENT_DAG,
+}
 
 # The ONE identity layer each direction's engine can HONESTLY match at today (ID-LAYER-02).  A recompile's
 # structural search matches terminals at CONSTITUTION (the atom/bond graph -- today's STRUCTURE layer); a
@@ -531,6 +550,10 @@ class CompilationRequest(Digestible):
     ranking_policy: RankingPolicy
     output_policy: OutputPolicy
     origins: tuple[tuple[str, FieldOrigin], ...]
+    #: 0.7 Round II: the selected transform-algebra profile (a stable, closed, versioned ID resolved by
+    #: smartchem.algebra_profiles).  Defaulted so pre-0.7 constructions and payloads stay valid on the legacy
+    #: capped-scission algebra.  Orthogonal to transform_grammar (topology).
+    algebra_profile: str = DEFAULT_ALGEBRA_PROFILE
 
     def __post_init__(self) -> None:
         if self.schema_version != COMPILATION_REQUEST_SCHEMA:
@@ -588,6 +611,29 @@ class CompilationRequest(Digestible):
                 raise ValueError("a RECOMPILE request has no formula inventory (that is a decompile terminal set)")
             if bound_names != _RECOMPILE_BOUND_NAMES:
                 raise ValueError(f"a RECOMPILE request's search bounds must be exactly {sorted(_RECOMPILE_BOUND_NAMES)}")
+        # algebra_profile (0.7 Round II): a KNOWN, closed profile id, coherent with the request's operation/topology.
+        # An unknown/incompatible profile fails CLOSED at construction (a typed error), never a KeyError deep in the
+        # engine or a dynamic provider import.
+        if not isinstance(self.algebra_profile, str):
+            raise TypeError("algebra_profile must be a string profile id")
+        if self.algebra_profile not in PROFILE_USES:
+            raise ValueError(
+                f"unknown transform-algebra profile {self.algebra_profile!r}; known profiles: {tuple(PROFILE_USES)}"
+            )
+        if self.operation is CompilationOperation.DECOMPILE:
+            if self.algebra_profile != DEFAULT_ALGEBRA_PROFILE:
+                raise ValueError(
+                    "a DECOMPILE request performs a formula descent and does not select a route transform-algebra "
+                    f"profile (must be {DEFAULT_ALGEBRA_PROFILE!r})"
+                )
+        else:
+            needed_use = _GRAMMAR_TO_USE[self.transform_grammar]
+            if needed_use not in PROFILE_USES[self.algebra_profile]:
+                raise ValueError(
+                    f"transform-algebra profile {self.algebra_profile!r} does not support the {needed_use.value!r} "
+                    f"topology this request selects (it supports "
+                    f"{sorted(u.value for u in PROFILE_USES[self.algebra_profile])})"
+                )
         # origins: a canonical (field-name-sorted) map of provenance; structural check only, since which fields
         # are tracked differs by direction.
         if type(self.origins) is not tuple:
@@ -651,7 +697,7 @@ class CompilationRequest(Digestible):
         """
         return canonical_digest(
             (
-                "compilation-request-semantic-v1alpha2",
+                "compilation-request-semantic-v1alpha3",
                 self.schema_version,
                 self.operation,
                 self._target_identity_key,
@@ -660,6 +706,12 @@ class CompilationRequest(Digestible):
                 frozenset(self.stock_materials),
                 frozenset(self.helper_reagents),
                 self.transform_grammar,
+                # 0.7 Round II: the SELECTED ALGEBRA enters the search identity, as its RESOLVED registry digest (a
+                # recomputable closed-profile mapping) -- so widening the algebra necessarily changes semantic_digest
+                # (the pre-0.7 gap: identity was frozen to one algebra, so "equal digest => same search" was only
+                # accidentally true).  The registry digest is itself content-bound (provider semantic descriptors),
+                # so a change to a provider's rule/guard also moves it.
+                resolve_algebra_profile(self.algebra_profile).digest,
                 self.evidence_provider_selection,
                 self.search_bounds,
                 self.constraints,
@@ -782,6 +834,7 @@ def build_recompile_request(
     ranking_policy: "RankingPolicy | None" = None,
     evidence_provider_selection: "EvidenceProviderSelection | None" = None,
     output_policy: "OutputPolicy | None" = None,
+    algebra_profile: "str | None" = None,
 ) -> CompilationRequest:
     """Build a RECOMPILE request, recording each defaulted knob's origin as ``DEFAULT`` (section 13.1).
 
@@ -810,10 +863,16 @@ def build_recompile_request(
         "ranking_policy": ranking_policy is not None,
         "evidence_provider_selection": evidence_provider_selection is not None,
         "output_policy": output_policy is not None,
+        "algebra_profile": algebra_profile is not None,
     }
     grammar = grammar if grammar is not None else TransformGrammar.CAPPED_SCISSION_LINEAR
     if grammar not in _RECOMPILE_GRAMMARS:
         raise ValueError("a recompile grammar must be CAPPED_SCISSION_LINEAR or CAPPED_SCISSION_CONVERGENT")
+    # The SERVICE/CLI route builder stamps the PROMOTABLE route default (0.7 Round III): the one constant a
+    # default-promotion commit flips to certified-route-v07.  It is deliberately NOT the frozen missing-field law
+    # (request_from_payload) nor the low-level dataclass default -- so promoting the route default never changes what
+    # a direct CompilationRequest or a pre-0.7 payload means.  Ships == legacy this round.
+    algebra_profile = algebra_profile if algebra_profile is not None else DEFAULT_ROUTE_ALGEBRA_PROFILE
     effective_kind = input_kind if input_kind is not None else InputKind.AUTO
     return CompilationRequest(
         COMPILATION_REQUEST_SCHEMA,
@@ -844,6 +903,7 @@ def build_recompile_request(
         ranking_policy if ranking_policy is not None else RankingPolicy(),
         output_policy if output_policy is not None else OutputPolicy(),
         _origins(explicit),
+        algebra_profile=algebra_profile,
     )
 
 
@@ -2334,14 +2394,21 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         () if target_features is None else representation_losses_for(request.target_input, target_features)
     )
 
-    # The capped-scission grammar requires at least one cutting reagent; an empty pool is not a runnable search.
-    # Fail CLOSED here (exit 2) so a programmatic/deserialized request carrying no helper_reagents becomes a typed
-    # INVALID_INPUT rather than a raw TypeError escaping the engine to an undefined exit code (section 14.4).  The
-    # CLI coerces an empty `--reagents` to the water default upstream, so this guards only non-CLI callers.
-    if not reagents:
+    # Resolve the SELECTED transform algebra (0.7 Round II).  __post_init__ already validated the profile id + its
+    # topology-coherence, so this cannot raise for a well-formed request; the registry flows through the search, the
+    # IR, and the receipt so the exact algebra the caller chose is what actually runs (no silent DEFAULT fallback).
+    registry = resolve_algebra_profile(request.algebra_profile)
+
+    # An empty helper-reagent pool is a runnable search ONLY if the selected algebra has a reagentless-capable
+    # provider.  The legacy capped-scission algebra needs a cutting reagent, so it still fails CLOSED (exit 2) on an
+    # empty pool -- but a certified profile carrying reagentless families (Diels-Alder) may run, and we do NOT invent
+    # water to satisfy the capped provider.  The CLI coerces an empty `--reagents` to the water default upstream, so
+    # this guards only non-CLI callers.  (Registry/profile-aware, not a hardcoded profile-name check.)
+    if not reagents and not any(p.reagentless_capable for p in registry.providers):
         return _invalid(
             request,
-            "the capped-scission grammar requires at least one helper reagent, but the reagent pool is empty",
+            "the selected transform algebra has no reagentless-capable provider and the helper-reagent pool is "
+            "empty; capped-scission requires at least one cutting reagent",
         )
 
     if request.terminal_policy.commodities_enabled:
@@ -2369,18 +2436,29 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         if mode == "routes":
             search_result = search_routes(
                 target, reagents=reagents, available=available, commodities=commodities,
-                max_depth=max_depth, max_routes=max_results, cut_budget=cut_budget,
+                max_depth=max_depth, max_routes=max_results, cut_budget=cut_budget, registry=registry,
             )
             routes_for_ranking: tuple = search_result.routes
         else:
             search_result = search_dags(
                 target, reagents=reagents, available=available, commodities=commodities,
-                max_depth=max_depth, max_dags=max_results, cut_budget=cut_budget,
+                max_depth=max_depth, max_dags=max_results, cut_budget=cut_budget, registry=registry,
             )
             # rank_routes fits LINEAR ExperimentRoutes; convergent-DAG bench fitting is a separate roadmap item, so
             # a DAG-mode search ranks nothing here -- the constraint is DECLARED (constraint_note fit_counts=None),
             # never silently reported as applied.
             routes_for_ranking = ()
+        # BINDING INVARIANT (0.7 Round II): the packaged search MUST have run under the SELECTED algebra.  The
+        # receipt stamps search_algebra_digest(topology, the-registry-it-used); assert it equals the digest of the
+        # registry we resolved for THIS request, so a profile-A search can never be packaged/replayed as profile-B --
+        # the mismatch is made a refusal, not a silent relabel.
+        expected_algebra_digest = search_algebra_digest(_GRAMMAR_TO_MODE_TOPOLOGY[mode], registry)
+        if search_result.receipt.transform_registry_digest != expected_algebra_digest:
+            return _refused(
+                request,
+                "algebra-binding mismatch: the search receipt's transform-registry digest does not match the "
+                "selected algebra profile (a search under one algebra cannot be packaged as another)",
+            )
         ir = recompile_to_ir(
             target,
             reagents=reagents,
@@ -2390,6 +2468,7 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
             max_results=max_results,
             cut_budget=cut_budget,
             mode=mode,
+            registry=registry,
             identity_losses=identity_losses,
             search_result=search_result,
         )
@@ -2898,6 +2977,7 @@ def request_to_payload(request: CompilationRequest) -> dict:
             "quiet": request.output_policy.quiet,
         },
         "origins": [[name, origin.value] for name, origin in request.origins],
+        "algebra_profile": request.algebra_profile,
     }
 
 
@@ -2956,6 +3036,12 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         RankingPolicy(payload["ranking_policy"]["policy_id"]),
         OutputPolicy(payload["output_policy"]["render_mode"], payload["output_policy"]["quiet"]),
         tuple((name, FieldOrigin(origin)) for name, origin in payload["origins"]),
+        # FROZEN wire-migration law (0.7 Round III): a pre-0.7 payload has no algebra_profile field and historically
+        # meant the capped algebra, so a MISSING field reconstructs as LEGACY_MISSING_ALGEBRA_PROFILE -- NOT the
+        # (promotable) build default.  This is what keeps promoting the route default from silently reinterpreting an
+        # old serialized request as the wider algebra.  An unknown/incompatible id is refused by
+        # CompilationRequest.__post_init__ (fail-closed, so a tampered profile string cannot select a hidden algebra).
+        algebra_profile=payload.get("algebra_profile", LEGACY_MISSING_ALGEBRA_PROFILE),
     )
 
 
@@ -3404,6 +3490,32 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         expected = list(response.admissible_route_digests) if name == "admissible_route_digests" else getattr(response, name)
         if payload[name] != expected:
             raise ValueError(f"{name} does not match the reconstructed response")
+    # ALGEBRA-REBIND-ON-LOAD (0.7 Round III): the runtime binding invariant (see the BINDING INVARIANT in
+    # _run_recompile) proves a search ran under the SELECTED algebra at PRODUCE time, but a transported response
+    # independently deserializes its request, its IR registry digest, and its search-receipt digest.  Re-derive the
+    # coherence on LOAD: for a RECOMPILE response carrying an IR, the algebra the REQUEST names must equal the algebra
+    # the RECEIPT says ran.  ChemicalCompilationIR.__post_init__ already forces ir.transform_registry_digest ==
+    # search_receipt.transform_registry_digest (those two can't disagree with each other); the MISSING leg -- closed
+    # here -- is that both equal search_algebra_digest(topology, resolve(request.algebra_profile)).  This is internal
+    # semantic coherence (a search under profile A cannot be LOADED as profile B), NOT cryptographic authentication --
+    # a fully controlling forger who rebuilds a self-consistent response is a different threat model, handled by the
+    # producer_signature / expected_request_digest paths above.  (DECOMPILE responses are pinned to the legacy default
+    # and go through a formula descent with no topology, so this route/DAG check does not apply to them.)
+    if (response.request.operation is CompilationOperation.RECOMPILE
+            and response.compilation_ir is not None
+            and response.request.transform_grammar in _GRAMMAR_TO_MODE):
+        _topology = _GRAMMAR_TO_MODE_TOPOLOGY[_GRAMMAR_TO_MODE[response.request.transform_grammar]]
+        _expected_algebra_digest = search_algebra_digest(
+            _topology, resolve_algebra_profile(response.request.algebra_profile)
+        )
+        _ir = response.compilation_ir
+        if (_ir.transform_registry_digest != _expected_algebra_digest
+                or _ir.search_receipt.transform_registry_digest != _expected_algebra_digest):
+            raise ValueError(
+                "algebra-rebind mismatch on load: the response's IR / search-receipt transform-registry digest "
+                "does not match the algebra its request selects (a search under one algebra cannot be loaded as "
+                "another; the request, the IR digest, and the receipt digest disagree)"
+            )
     if verification_key is not None:
         signature = payload.get("producer_signature")
         if signature is None:

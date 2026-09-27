@@ -101,6 +101,51 @@ addendum):
 Next release target: **0.7 Production Chemical Algebra** (make the provider/rule architecture, not
 capped-scission-only defaults, the generative spine).
 
+**0.7 Round I (2026-09-27, branch `feat/v0.7-production-chemical-algebra`, UNMERGED):** inventory-before-
+abstraction done. Measured gap (live introspection, `experiments/v0_7_provider_inventory.py`): the oracle
+RECOGNISES **17** classes; `DEFAULT_TRANSFORM_REGISTRY` GENERATES with **1** provider (capped-scission);
+13 opt-in providers + 6 registry-excluded lateral families exist but never run by default. Plan +
+admission-contract + grammar-identity strategy: `docs/research/V0_7_PRODUCTION_CHEMICAL_ALGEBRA_PLAN_v0.1.md`.
+**Forcing vertical** (`experiments/v0_7_forcing_vertical.py`, 8/8 properties): the alkene Diels-Alder family
+widens the algebra through the UNCHANGED `search_routes` (cyclohexene reachable only with the provider; default
+byte-stable; receipts bind the wider algebra; hostile near-miss demoted). Generative funnel
+(`experiments/v0_7_algebra_funnel.py`): family-enumerated 1→4, type-vouched 1→2, terminal 1→2 (default vs
++DA). **Global default NOT flipped.** Next sub-round (the gate blocker): the grammar-identity content digest
+(plan §4) so a rule-body change forces a transform-algebra identity change — today identity is a hand-declared
+version token, disconnected from the structural `BondRule.digest` that already exists. Version stays `0.6.0a1`
+(a 0.7.x bump is earned only when the 0.7 gate is met).
+
+**0.7 Round II (2026-09-27, same branch, UNMERGED):** the wider algebra became a real, typed, SELECTABLE compiler
+capability (`docs/research/V0_7_PRODUCTION_ALGEBRA_ROUND_II_2026-09-27.md`). Delivered in `smartchem/`: a
+USE-INDEX (`ProviderUse` + a pre-enumeration guard refusing an incompatible registry, closing a measured
+whole-call-crash); a CONTENT-BOUND provider identity (`ProviderSemanticDescriptor` folded into a 4-tuple
+`identity`, with a shared `DAGuardSpec` consumed by `_guarded_retro` so a rule/guard change forces an identity
+move — the plan §4 gate blocker, CLOSED); a closed, versioned algebra-PROFILE registry
+(`smartchem/algebra_profiles.py`: `legacy-capped-v1`=default, `certified-route-v07`=capped+8 admitted DA,
+`certified-decompile-v07`); request-level `--algebra` selection threaded end-to-end
+(request→serialization→`run_compilation`→search→receipt→IR→response) with a BINDING INVARIANT making a
+profile-A-search-packaged-as-B unrepresentable, plus algebra-aware reagentless handling. Measurement:
+production-service funnel `4/1/1`→`4/2/2` through `run_compilation`; forcing corpus 52/52 across all 8 DA
+families + hostile near-misses + fresh holdouts; **10/10 calibrated mutants killed**; independent hostile review
+(Wave C) clean, no P0. Provenance terminology corrected (the DA oracle is a FRESH RE-DERIVATION through shared
+code, not an independent witness). **Default NOT flipped; certified-route-v07 is OPT-IN; version stays `0.6.0a1`**
+(default promotion + non-DA class recognizers are the remaining blockers to the full "spine of normal use").
+
+**0.7 Round III — CLOSED + PROMOTED (2026-09-27, same branch):** closed the residual semantic holes and PROMOTED
+`certified-route-v07` to the default route algebra (`docs/research/V0_7_PRODUCTION_ALGEBRA_ROUND_III_2026-09-27.md`
++ `..._RELEASE_2026-09-27.md`). Closed: reagent policy is now identity-bearing (`reagentless_capable` rides the
+descriptor, tag v1→v2); identity is PROSE-INDEPENDENT (raw manifest dropped → `(id, version, descriptor.digest)`,
+no load-bearing field lost); a FROZEN wire-migration law (`LEGACY_MISSING_ALGEBRA_PROFILE`) decoupled from the
+promotable `DEFAULT_ROUTE_ALGEBRA_PROFILE`, landed BEFORE the flip; `certified-decompile-v07` decompiles on an empty
+pool (18 reconstructable candidates); a LOAD-time response algebra-rebind guard; a `--no-helper-reagents` CLI
+surface. The blocker was re-adjudicated: the non-DA route recognizers are NOT load-bearing for the ROUTE default
+(certified-route-v07 = capped + 8 oracle-vouched DA families). Gate: mutation **17/17**; a default-promotion blast
+radius over 22 + 3 co-ranking targets with **0 unacceptable deltas** (no legacy route lost, non-vacuous; every new
+step vouched; no eviction; worst slowdown 3.95×); independent Wave-C review clean (no P0). The default flip is a
+separate auditable commit; `--algebra legacy-capped-v1` reproduces the old behaviour; a pre-0.7 payload still means
+legacy. **Version bumped to `0.7.0a1`** — the 0.7 contract now holds for ordinary use. Next: **0.8 Real Route
+Dossiers**.
+
 ## Governance — the 3-lane projection (authoritative)
 
 Every item is tagged with the lane it advances. **Progress in one lane never implies another.** (Audit:

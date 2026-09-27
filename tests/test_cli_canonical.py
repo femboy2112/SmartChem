@@ -340,7 +340,10 @@ class TestRedTeamRegressions:
 
     def test_A_service_refuses_a_programmatic_empty_reagent_pool(self):
         # defense-in-depth: a non-CLI caller building helper_reagents=() must get a typed exit-2 refusal, never a crash.
-        response = run_compilation(build_recompile_request("smiles:CC(=O)OC", helper_reagents=()))
+        # 0.7 Round III: the DEFAULT route algebra is now certified (which HAS reagentless providers, so an empty pool
+        # is a runnable search), so this "empty pool refused" behaviour is now the LEGACY algebra's -- named explicitly.
+        response = run_compilation(build_recompile_request("smiles:CC(=O)OC", helper_reagents=(),
+                                                           algebra_profile="legacy-capped-v1"))
         assert response.outcome is ResponseOutcome.INVALID_INPUT
         assert response.exit_code == 2
 
@@ -359,3 +362,75 @@ class TestRedTeamRegressions:
         # the fix must not turn a genuine decomposition into "already available".
         _, out, _ = _run(capsys, ["decompile", "C8H9NO2", "--json"])
         assert deserialize_response(out.strip()).outcome is ResponseOutcome.ROUTES_FOUND
+
+
+class TestNoHelperReagentsSurface:
+    """`--no-helper-reagents` is the EXPLICIT-empty-pool sibling of the visible water default (0.7 Round III):
+    yeah, it's just "don't hand me a reagent I didn't ask for", but the CLI surface has more seams than that one
+    sentence suggests -- request identity, the mutual-exclusion guard, cross-verb threading, and the deprecated
+    `compile` alias sharing the SAME builder. Pin all of them so nobody quietly re-opens one."""
+
+    def test_explicit_empty_pool_emits_empty_helper_reagents_and_explicit_origin(self, capsys):
+        code, out, _ = _run(capsys, [
+            "recompile", "--algebra", "certified-route-v07", "--no-helper-reagents",
+            "--smiles", "C1CC=CCC1", "--emit-request",
+        ])
+        req = deserialize_request(out.strip())
+        assert code == 0
+        assert list(req.helper_reagents) == []
+        assert dict(req.origins)["helper_reagents"] is FieldOrigin.EXPLICIT
+
+    def test_omitted_helper_reagents_still_defaults_to_water(self, capsys):
+        code, out, _ = _run(capsys, ["recompile", "--smiles", "C1CC=CCC1", "--emit-request"])
+        req = deserialize_request(out.strip())
+        assert code == 0
+        assert list(req.helper_reagents) == ["water"]
+        assert dict(req.origins)["helper_reagents"] is FieldOrigin.DEFAULT
+
+    def test_explicit_empty_pool_still_runs_a_reagentless_da_search_under_certified_route(self, capsys):
+        # no invented water, but --have supplies the diene/dienophile fragments directly -- the search runs fine.
+        code, _, _ = _run(capsys, [
+            "recompile", "--algebra", "certified-route-v07", "--no-helper-reagents",
+            "--smiles", "C1CC=CCC1", "--have", "C=CC=C", "C=C", "--quiet",
+        ])
+        assert code == 0
+
+    def test_explicit_empty_pool_fails_closed_under_the_legacy_algebra(self, capsys):
+        # legacy-capped-v1 has no reagentless-capable provider -- an explicit empty pool must refuse, not invent
+        # water behind your back. Fail closed, not fail silent. 0.7 Round III: legacy is now opt-in (the default route
+        # algebra is certified, which accepts an empty pool via its reagentless DA families), so name legacy explicitly.
+        code, _, _ = _run(capsys, ["recompile", "--algebra", "legacy-capped-v1", "--no-helper-reagents",
+                                   "--smiles", "C1CC=CCC1", "--quiet"])
+        assert code == 2
+
+    def test_reagents_and_no_helper_reagents_together_is_a_mutual_exclusion_error(self, capsys):
+        code, _, err = _run(capsys, [
+            "recompile", "--reagents", "water", "--no-helper-reagents", "--smiles", "C1CC=CCC1",
+        ])
+        assert code == 2
+        assert "ONE way" in err
+
+    def test_even_a_bare_empty_reagents_with_no_helper_reagents_is_refused(self, capsys):
+        # Wave-C F3: a bare (empty) --reagents alongside --no-helper-reagents must ALSO be refused, so the empty pool
+        # is never a silent override of the --reagents water-default surface -- one loud choice, not two readings.
+        code, _, err = _run(capsys, [
+            "recompile", "--reagents", "--no-helper-reagents", "--smiles", "C1CC=CCC1",
+        ])
+        assert code == 2
+        assert "ONE way" in err
+
+    def test_plan_accepts_and_threads_no_helper_reagents(self, capsys):
+        # `plan` has no --emit-request -- so the proof-of-threading is that the flag is ACCEPTED (no argparse
+        # exit 2) and the search actually runs, not that we can inspect the emitted request.
+        code, _, _ = _run(capsys, [
+            "plan", "--algebra", "certified-route-v07", "--no-helper-reagents",
+            "--smiles", "C1CC=CCC1", "--json",
+        ])
+        assert code in (0, 3)
+
+    def test_compile_alias_shares_the_same_empty_pool_request_builder(self, capsys):
+        # the deprecated alias must build the SAME request as recompile, no divergent default sneaking back in.
+        code, out, _ = _run(capsys, ["compile", "--no-helper-reagents", "--smiles", "C1CC=CCC1", "--emit-request"])
+        req = deserialize_request(out.strip())
+        assert code == 0
+        assert list(req.helper_reagents) == []

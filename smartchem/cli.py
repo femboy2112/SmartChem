@@ -195,6 +195,11 @@ def _add_recompile_flags(p) -> None:
         )
     p.add_argument("--reagents", nargs="*", default=None, metavar="TARGET",
                    help="small helper reagents by name or SMILES (default: water; an empty list means the default)")
+    p.add_argument("--no-helper-reagents", dest="no_helper_reagents", action="store_true",
+                   help="explicit EMPTY helper-reagent pool -- no invented water; the emitted request carries "
+                        "helper_reagents=[] with EXPLICIT origin. Mutually exclusive with a non-empty --reagents. The "
+                        "search runs only if the selected --algebra has a reagentless-capable provider (e.g. "
+                        "certified-route-v07's Diels-Alder families); the legacy capped algebra fails closed (exit 2).")
     p.add_argument("--have", nargs="*", default=None, metavar="TARGET",
                    help="precursors already on the bench, by name or SMILES -- routes may bottom out here")
     p.add_argument("--max-depth", type=_positive_int, default=None, metavar="N",
@@ -227,6 +232,15 @@ def _add_recompile_flags(p) -> None:
             "lands, and formula is refused for a structure search (section 5.4) -- never silently downgraded"
         ),
     )
+    from .algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, algebra_profile_ids
+    p.add_argument(
+        "--algebra", dest="algebra_profile", choices=algebra_profile_ids(), default=None, metavar="PROFILE",
+        help=(
+            f"the transform-algebra profile to search under (default: {DEFAULT_ROUTE_ALGEBRA_PROFILE}, the certified "
+            "multi-family route algebra). 'legacy-capped-v1' reproduces the pre-0.7 capped-scission-only behaviour; "
+            "the exact algebra is bound into the request digest, receipts and IR"
+        ),
+    )
     p.add_argument("--json", action="store_true",
                    help="emit the stable versioned response schema instead of the human render (standard 14.3)")
     p.add_argument("--emit-request", action="store_true",
@@ -255,16 +269,27 @@ def _recompile_request_from_args(args):
         args.target, args.input_kind,
         {form: getattr(args, form.replace("-", "_")) for form, _kind in EXPLICIT_CLI_FORMS},
     )
-    # An empty `--reagents` list (the flag given with no values) is coerced to the DEFAULT reagent pool, exactly as
-    # the legacy `compile` did (`compile_synthesis` injected water on an empty pool).  This keeps the two aliases on
-    # ONE default -- an empty pool is not a runnable capped-scission search, so treating it as "use the default"
-    # rather than as "()" is what stops `compile` (water-injected) and `recompile` (formerly a crash) from executing
-    # two different searches for a byte-identical emitted request.  `--have` empty is a legitimate empty stock and is
-    # left as-is.
+    # Reagent-pool resolution (0.7 Round III) -- three unambiguous surfaces, an empty argv never read two ways:
+    #   omitted --reagents / bare --reagents (no values)  -> None -> the builder's water DEFAULT (DEFAULT origin)
+    #   --reagents X Y                                     -> (X, Y)  explicit non-empty pool (EXPLICIT origin)
+    #   --no-helper-reagents                               -> ()      explicit EMPTY pool, no invented water (EXPLICIT)
+    # Bare/omitted stays the shared water default so `compile` and `recompile` emit a byte-identical request for it;
+    # the explicit empty pool now has its OWN surface instead of overloading an empty --reagents.  Declaring BOTH an
+    # explicit non-empty pool AND no pool is a contradiction, refused the same loud exit-2 way a target-surface
+    # conflict is (a ValueError -> _domain_exit -> 2).  `--have` empty is still a legitimate empty stock, left as-is.
+    no_helper = getattr(args, "no_helper_reagents", False)
+    if no_helper and args.reagents is not None:
+        # Wave-C F3: refuse ANY co-occurrence of --reagents (even a bare, empty --reagents) with --no-helper-reagents,
+        # so the empty pool is never a silent override of the --reagents water-default surface -- one loud choice.
+        raise ValueError(
+            "give the helper-reagent pool ONE way: --reagents X Y for an explicit pool OR --no-helper-reagents for "
+            "an explicit empty pool, not both"
+        )
+    helper_reagents = () if no_helper else (tuple(args.reagents) if args.reagents else None)
     return build_recompile_request(
         target,
         input_kind=input_kind,
-        helper_reagents=tuple(args.reagents) if args.reagents else None,
+        helper_reagents=helper_reagents,
         stock_materials=tuple(args.have) if args.have is not None else None,
         commodities_enabled=False if args.no_commodities else None,
         max_depth=args.max_depth,
@@ -275,6 +300,7 @@ def _recompile_request_from_args(args):
         min_pressure_atm=args.min_pressure,
         max_pressure_atm=args.max_pressure,
         process=_process_bounds_from_args(args),
+        algebra_profile=getattr(args, "algebra_profile", None),
     )
 
 
@@ -578,6 +604,12 @@ def _cmd_compile(argv: list[str]) -> int:
             target,
             reagents=reagents,
             available=available,
+            # 0.7 Round III: an EXPLICIT empty pool (--no-helper-reagents -> request.helper_reagents==()) must NOT be
+            # silently re-watered by the legacy dossier's empty->water default -- that would read one empty pool two
+            # ways.  Only the explicit-empty case reaches an empty `reagents` here (omitted/bare --reagents already
+            # resolved to water upstream), so gating on bool(reagents) disables the re-water for exactly that case
+            # and leaves every other caller's water default intact.
+            default_reagents_when_empty=bool(reagents),
             max_depth=request.search_bounds.value("max_depth"),
             max_routes=request.search_bounds.value("max_results"),
             cut_budget=request.search_bounds.value("cut_budget"),
@@ -645,6 +677,23 @@ def _cmd_plan(argv: list[str]) -> int:
             help=f"give the target as {_kind.replace('_', ' ').lower()} (standard section 14.2 explicit form; "
                  f"mutually exclusive with the positional target and --input-kind)",
         )
+    from .algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, algebra_profile_ids
+    p.add_argument(
+        "--algebra", dest="algebra_profile", choices=algebra_profile_ids(), default=None, metavar="PROFILE",
+        help=(
+            f"the transform-algebra profile the structural plan searches under (default: "
+            f"{DEFAULT_ROUTE_ALGEBRA_PROFILE}, the certified multi-family route algebra); 'legacy-capped-v1' "
+            "reproduces the pre-0.7 capped-only behaviour. Ignored for a formula-only plan"
+        ),
+    )
+    # 0.7 Round III: the canonical front door exposes the human reagent pool too (it delegates to the structural
+    # recompile).  Same three surfaces as recompile; ignored for a formula-only plan (formula descent has no pool).
+    p.add_argument("--reagents", nargs="*", default=None, metavar="TARGET",
+                   help="small helper reagents by name or SMILES (default: water; an empty list means the default)")
+    p.add_argument("--no-helper-reagents", dest="no_helper_reagents", action="store_true",
+                   help="explicit EMPTY helper-reagent pool -- no invented water; mutually exclusive with a "
+                        "non-empty --reagents. The structural plan then runs only under an algebra with a "
+                        "reagentless-capable provider (e.g. certified-route-v07)")
     p.add_argument("--json", action="store_true",
                    help="emit the machine-readable plan payload (identity + delegated response) instead of the render")
     args = p.parse_args(argv)
@@ -652,10 +701,18 @@ def _cmd_plan(argv: list[str]) -> int:
     try:
         explicit_forms = {name: getattr(args, name.replace("-", "_")) for name, _ in EXPLICIT_CLI_FORMS}
         target, kind = resolve_cli_target(args.target, args.input_kind, explicit_forms)
+        if args.no_helper_reagents and args.reagents is not None:  # Wave-C F3: any --reagents conflicts (see recompile)
+            raise ValueError(
+                "give the helper-reagent pool ONE way: --reagents X Y for an explicit pool OR --no-helper-reagents "
+                "for an explicit empty pool, not both"
+            )
+        helper_reagents = () if args.no_helper_reagents else (tuple(args.reagents) if args.reagents else None)
     except Exception as exc:  # noqa: BLE001 -- routed to the ONE classifier; a non-domain error re-raises to 70
         return _domain_exit(exc, "plan")
 
-    result = plan(target, kind if kind is not None else InputKind.AUTO)
+    result = plan(target, kind if kind is not None else InputKind.AUTO,
+                  algebra_profile=getattr(args, "algebra_profile", None),
+                  helper_reagents=helper_reagents)
     if args.json:
         import json
 

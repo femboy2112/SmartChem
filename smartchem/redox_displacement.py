@@ -379,6 +379,13 @@ class RedoxDisplacementProvider(TransformProvider):
     provider_id: str = "redox-displacement"
     provider_version: str = "v1"
     witness_kind: str = "REDOX_DISPLACEMENT"
+    # Fail-closed EMPTY (Course-Correction 1): as of 0.7 Round II this family crashes every consumer -- route/DAG via
+    # decompiler_conditions (its edge has .reactants/.products, not the singular .reactant/.products the signature
+    # reads) and STRUCTURE_DECOMPILE via the IR (its "REDOX_DISPLACEMENT" witness_kind is absent from
+    # compilation_ir._WITNESS_PROJECTION).  Its transforms are sound at the enumerate/ExperimentStep layer (its tests
+    # exercise it there), but it is admissible to NO search/decompile consumer until the IR witness/projection layer
+    # is wired for its multi-species edge shape.  Recorded as a 0.7 decompile-lane ledger item, not fixed this round.
+    supported_uses = frozenset()
 
     def __post_init__(self) -> None:
         if type(self.couples) is not tuple or any(type(c) is not HalfReactionCouple for c in self.couples):

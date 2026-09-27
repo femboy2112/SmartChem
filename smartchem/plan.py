@@ -100,12 +100,19 @@ class PlanResult:
         return EXIT_SUCCESS
 
 
-def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO) -> PlanResult:
+def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
+         algebra_profile: "str | None" = None,
+         helper_reagents: "tuple[str, ...] | None" = None) -> PlanResult:
     """Resolve ``target_input`` and deliver the total answer, routing to the eligible existing primitive.
 
     Never guesses a structure from a bare formula: a FORMULA-layer identity is routed to ``decompile``
     (composition-level), a perceived constitution to ``recompile`` (structural).  An unresolvable input
     returns a typed invalid :class:`PlanResult`, not a raised traceback.
+
+    ``helper_reagents`` (0.7 Round III) threads the human reagent pool into the STRUCTURAL recompile so the canonical
+    front door can express it: ``None`` -> the builder's water DEFAULT; a tuple -> an explicit pool; ``()`` -> an
+    explicit EMPTY pool (no invented water), runnable only under an algebra with a reagentless-capable provider.
+    Formula decomposition has no reagent pool, so it ignores this argument.
     """
     from .compilation_ir import CompilationOperation
     from .identity_parse import IdentityParseError, detect_auto_ambiguity, resolve_identity
@@ -135,8 +142,11 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO) -> P
     builder_kind = None if kind is InputKind.AUTO else kind
 
     if resolved.structure_perceived:
-        # a single constitution IS established -> structural planning is eligible.
-        request = build_recompile_request(target_input, input_kind=builder_kind)
+        # a single constitution IS established -> structural planning is eligible.  The selected transform-algebra
+        # profile (0.7 Round II) flows into the structural recompile so `plan --algebra certified-route-v07` widens
+        # the algebra end-to-end; formula decomposition (below) has no route algebra, so it ignores the profile.
+        request = build_recompile_request(target_input, input_kind=builder_kind, algebra_profile=algebra_profile,
+                                           helper_reagents=helper_reagents)
         response = run_compilation(request)
         return PlanResult(
             target_input, kind, PlanStatus.STRUCTURAL_PLANNING, resolved, None, True,

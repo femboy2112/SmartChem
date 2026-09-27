@@ -29,7 +29,7 @@ from .category import Bond, Molecule
 from .contracts import Digestible, canonical_digest
 from .decompiler import DecompositionEdge, Formula
 from .structure_descent import ScissionError, _fkey
-from .transform_provider import TransformProvider
+from .transform_provider import ProviderUse, TransformProvider
 
 __all__ = [
     "BOND_ORDER_EDIT_SCHEMA",
@@ -218,6 +218,12 @@ class BondOrderEditProvider(TransformProvider):
     provider_id: str = "bond-order-edit"
     provider_version: str = "v1"
     witness_kind: str = "BOND_ORDER_EDIT"
+    # neutral, mass-reducing (sheds H2), and IR-wired (DecompositionEdge): admissible in all three consumers.
+    # NB: still absent from any certified profile this round -- it has no reaction-type oracle recognizer, so the
+    # route demoter would flag its routes "unrecognized"; use-admissibility is necessary, not sufficient, for a profile.
+    supported_uses = frozenset(
+        {ProviderUse.STRUCTURE_DECOMPILE, ProviderUse.LINEAR_ROUTE, ProviderUse.CONVERGENT_DAG}
+    )
 
     @property
     def capability_manifest(self) -> tuple:

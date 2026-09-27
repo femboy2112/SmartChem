@@ -28,7 +28,13 @@ from ..contracts import Digestible, canonical_digest
 from ..decompiler_conditions import assembly_conditions
 from ..search import SearchStatus, primary_standard_status
 from ..structure_descent import ScissionError
-from ..transform_provider import DEFAULT_TRANSFORM_REGISTRY, TransformProviderRegistry, search_algebra_digest
+from ..transform_provider import (
+    DEFAULT_TRANSFORM_REGISTRY,
+    ProviderUse,
+    TransformProviderRegistry,
+    assert_registry_supports_use,
+    search_algebra_digest,
+)
 from .dag import DAGError, SynthesisDAG
 from .step import ExperimentRoute, ExperimentStep
 
@@ -473,6 +479,9 @@ def search_routes(
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
+    # Course-Correction 1: refuse an algebra whose providers are not LINEAR_ROUTE-admissible BEFORE any enumeration,
+    # so a decompile-only/charged family cannot crash the recursion mid-search and take valid candidates with it.
+    assert_registry_supports_use(registry, ProviderUse.LINEAR_ROUTE)
     for name, value in (("max_depth", max_depth), ("max_routes", max_routes), ("cut_budget", cut_budget)):
         if type(value) is not int or value <= 0:
             raise ValueError(f"{name} must be a positive integer")
@@ -693,6 +702,8 @@ def search_dags(
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
+    # Course-Correction 1: refuse an algebra whose providers are not CONVERGENT_DAG-admissible BEFORE enumeration.
+    assert_registry_supports_use(registry, ProviderUse.CONVERGENT_DAG)
     for name, value in (("max_depth", max_depth), ("max_dags", max_dags), ("cut_budget", cut_budget)):
         if type(value) is not int or value <= 0:
             raise ValueError(f"{name} must be a positive integer")

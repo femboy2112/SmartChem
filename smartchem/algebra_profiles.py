@@ -60,11 +60,14 @@ DEFAULT_ALGEBRA_PROFILE = "legacy-capped-v1"
 LEGACY_MISSING_ALGEBRA_PROFILE = "legacy-capped-v1"
 
 #: The route/DAG build-time default the SERVICE/CLI front door stamps on a request that names no algebra
-#: (``build_recompile_request`` -> ``recompile`` / ``plan``).  This is the ONE constant a default-promotion commit
-#: flips (to ``certified-route-v07``); it is SEPARATE from the frozen missing-field law above and from the low-level
-#: :data:`DEFAULT_ALGEBRA_PROFILE`, so the three meanings can never be confused.  Round III ships it still ==
-#: legacy; the default promotion, if the gate closes, is a later separately-auditable commit that edits only this.
-DEFAULT_ROUTE_ALGEBRA_PROFILE = "legacy-capped-v1"
+#: (``build_recompile_request`` -> ``recompile`` / ``plan``).  PROMOTED (0.7 Round III) to ``certified-route-v07``:
+#: an ordinary ``recompile``/``plan`` with no ``--algebra`` flag now searches the certified multi-family route
+#: algebra.  This is the ONE constant the promotion flips; it is SEPARATE from the frozen missing-field law above
+#: (a pre-0.7 payload still means legacy) and from the low-level :data:`DEFAULT_ALGEBRA_PROFILE` (direct dataclass
+#: construction + DECOMPILE still default to legacy -- defaults are use-dependent).  ``--algebra legacy-capped-v1``
+#: reproduces the old capped behaviour exactly.  Gate that justified the flip: the Round III blast radius
+#: (0 unacceptable deltas, no legacy route lost, no fiction, bounded perf) + Wave-C clean; see the release doc.
+DEFAULT_ROUTE_ALGEBRA_PROFILE = "certified-route-v07"
 
 # The 8 admitted Diels-Alder families in deterministic order (Lane D admission audit): all-carbon first (the most
 # heavily adversary-tested family and the plan's chosen forcing vertical), then alkyne, then the hetero-dienophile

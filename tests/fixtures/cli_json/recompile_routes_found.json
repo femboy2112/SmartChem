@@ -44,7 +44,7 @@
     "diagnostics": [],
     "identity_losses": [],
     "operation": "RECOMPILE",
-    "request_digest": "ab4c184ae575f7224b4afa8e4b93bc4980ebc3af312bb3ec1eee96c6120537fa",
+    "request_digest": "f49e3c83d2254d37b84f608edececd27253160b36ab701f2b70e81d3fa1a7dbb",
     "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8",
     "search_receipt": {
       "candidate_enumeration_complete": true,
@@ -71,7 +71,7 @@
       "stop_reason": "",
       "target_identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
       "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
-      "transform_registry_digest": "39e6e9c5e0abf528db9df2f27a62945dce7d0f1eec969b047a60f5e91c90f658",
+      "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c",
       "transforms_considered": 28
     },
     "search_status": "COMPLETE_WITHIN_BOUNDS",
@@ -85,7 +85,7 @@
     },
     "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
     "tool_version": "0.6.0a1",
-    "transform_registry_digest": "39e6e9c5e0abf528db9df2f27a62945dce7d0f1eec969b047a60f5e91c90f658"
+    "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c"
   },
   "diagnostics": [],
   "exit_code": 0,
@@ -135,7 +135,7 @@
     }
   ],
   "request": {
-    "algebra_profile": "legacy-capped-v1",
+    "algebra_profile": "certified-route-v07",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,
@@ -254,7 +254,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "abafc73afe9bd24067c22c907891ccdeb0b74ca377c17633b7b7008e63e702bc",
+  "result_digest": "128f7a0306f324cf50ba5c62e7b93fc9e589bb461ccdb929fa2d3658a376d810",
   "schema_version": "smartchem.service/compilation-response-v1alpha13",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"

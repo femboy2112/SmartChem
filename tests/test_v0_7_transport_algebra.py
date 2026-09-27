@@ -109,13 +109,19 @@ def test_semantic_digest_moves_with_the_selected_algebra():
     assert _req("legacy-capped-v1").semantic_digest != _req("certified-route-v07").semantic_digest
 
 
-def test_request_default_profile_is_legacy_and_origin_tracked():
+def test_route_build_default_is_the_promoted_certified_profile_and_origin_tracked():
+    # 0.7 Round III PROMOTION: the SERVICE/CLI route builder default is now certified-route-v07 (with a no-flag
+    # ordinary request); the origin is still DEFAULT when unspecified, EXPLICIT when a profile is named.
+    from smartchem.algebra_profiles import DEFAULT_ALGEBRA_PROFILE, DEFAULT_ROUTE_ALGEBRA_PROFILE
+    assert DEFAULT_ROUTE_ALGEBRA_PROFILE == "certified-route-v07"
     r = build_recompile_request("C1CC=CCC1", input_kind=InputKind.SMILES)
-    assert r.algebra_profile == "legacy-capped-v1"
+    assert r.algebra_profile == "certified-route-v07"
     origins = dict(r.origins)
     assert origins["algebra_profile"].value == "DEFAULT"
-    explicit = build_recompile_request("C1CC=CCC1", input_kind=InputKind.SMILES, algebra_profile="certified-route-v07")
+    explicit = build_recompile_request("C1CC=CCC1", input_kind=InputKind.SMILES, algebra_profile="legacy-capped-v1")
     assert dict(explicit.origins)["algebra_profile"].value == "EXPLICIT"
+    # defaults are USE-DEPENDENT: the low-level dataclass/DECOMPILE default stays the explicitly-named legacy registry.
+    assert DEFAULT_ALGEBRA_PROFILE == "legacy-capped-v1"
 
 
 def test_unknown_or_incompatible_profile_fails_closed_at_construction():

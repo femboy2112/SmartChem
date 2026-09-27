@@ -232,13 +232,13 @@ def _add_recompile_flags(p) -> None:
             "lands, and formula is refused for a structure search (section 5.4) -- never silently downgraded"
         ),
     )
-    from .algebra_profiles import DEFAULT_ALGEBRA_PROFILE, algebra_profile_ids
+    from .algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, algebra_profile_ids
     p.add_argument(
         "--algebra", dest="algebra_profile", choices=algebra_profile_ids(), default=None, metavar="PROFILE",
         help=(
-            f"the transform-algebra profile to search under (default: {DEFAULT_ALGEBRA_PROFILE}). "
-            "'certified-route-v07' widens the algebra to the admitted Diels-Alder families through the UNCHANGED "
-            "search; the exact algebra is bound into the request digest, receipts and IR"
+            f"the transform-algebra profile to search under (default: {DEFAULT_ROUTE_ALGEBRA_PROFILE}, the certified "
+            "multi-family route algebra). 'legacy-capped-v1' reproduces the pre-0.7 capped-scission-only behaviour; "
+            "the exact algebra is bound into the request digest, receipts and IR"
         ),
     )
     p.add_argument("--json", action="store_true",
@@ -677,12 +677,13 @@ def _cmd_plan(argv: list[str]) -> int:
             help=f"give the target as {_kind.replace('_', ' ').lower()} (standard section 14.2 explicit form; "
                  f"mutually exclusive with the positional target and --input-kind)",
         )
-    from .algebra_profiles import DEFAULT_ALGEBRA_PROFILE, algebra_profile_ids
+    from .algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, algebra_profile_ids
     p.add_argument(
         "--algebra", dest="algebra_profile", choices=algebra_profile_ids(), default=None, metavar="PROFILE",
         help=(
-            f"the transform-algebra profile the structural plan searches under (default: {DEFAULT_ALGEBRA_PROFILE}); "
-            "'certified-route-v07' widens it to the admitted Diels-Alder families. Ignored for a formula-only plan"
+            f"the transform-algebra profile the structural plan searches under (default: "
+            f"{DEFAULT_ROUTE_ALGEBRA_PROFILE}, the certified multi-family route algebra); 'legacy-capped-v1' "
+            "reproduces the pre-0.7 capped-only behaviour. Ignored for a formula-only plan"
         ),
     )
     # 0.7 Round III: the canonical front door exposes the human reagent pool too (it delegates to the structural

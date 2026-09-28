@@ -241,6 +241,17 @@ def _add_recompile_flags(p) -> None:
             "the exact algebra is bound into the request digest, receipts and IR"
         ),
     )
+    from .capability import CAPABILITY_PROFILE_PRESETS
+    p.add_argument(
+        "--capability-profile", dest="capability_profile", choices=sorted(CAPABILITY_PROFILE_PRESETS), default=None,
+        metavar="PROFILE",
+        help=(
+            "declare a bench (0.9 capability compiler) and project each ranked route through it: 'research-lab' or "
+            "'poor-man'. Resolved ONCE into the request (replay never re-resolves); the SAME chemistry search runs "
+            "regardless -- capability is a projection, absent from the search identity. Omitted => no capability "
+            "question is asked and NO bench is assumed. CAPABILITY_FIT is a profile-fit claim, NOT a safety certificate"
+        ),
+    )
     p.add_argument("--json", action="store_true",
                    help="emit the stable versioned response schema instead of the human render (standard 14.3)")
     p.add_argument("--emit-request", action="store_true",
@@ -301,6 +312,7 @@ def _recompile_request_from_args(args):
         max_pressure_atm=args.max_pressure,
         process=_process_bounds_from_args(args),
         algebra_profile=getattr(args, "algebra_profile", None),
+        capability_profile=getattr(args, "capability_profile", None),
     )
 
 
@@ -388,37 +400,25 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
     # same facts the --json ranked_route_dossiers do (CLI-JSON-01 agreement).  Shown when not --quiet, like candidates.
     if not quiet and response.ranked_route_dossiers:
         lines.append("  ranked routes (best first; section-11 bench fit):")
-        from .experiment.readiness import (
-            CONDITIONS_SUPPORTED,
-            FORMAL_CANDIDATE,
-            PROCESS_SPECIFIED,
-            REACTION_VOUCHED,
-        )
+        from .service import readiness_tier_line, render_capability_lines
         for i, r in enumerate(response.ranked_route_dossiers[:20], 1):
             lines.append(f"    {i}. [{r.fit_status}/{r.readiness_tier}] {r.equation}  #{r.route_digest[:12]}")
             # v0.8 Real Route Dossiers: the human render explains every readiness tier, so a chemist skimming it
             # never mistakes a bare structural candidate (or a recognized-but-unsourced one) for something they
             # could run -- and, at the top rung, never mistakes "the literature procedure is specified" (an 0.8
-            # claim about the SOURCE) for "your bench can run it" (a 0.9 capability question).  This mirrors the
-            # RouteDossier.render() text exactly (human/JSON parity): both read the SAME derived tier.
-            if r.readiness_tier == FORMAL_CANDIDATE:
-                lines.append("        READINESS: FORMAL_CANDIDATE -- the reaction type is not yet recognized by "
-                             "the production oracle; this is NOT an executable bench procedure.")
-            elif r.readiness_tier == REACTION_VOUCHED:
-                lines.append("        READINESS: REACTION_VOUCHED -- the reaction type is recognized, but its "
-                             "conditions are not sourced; this is NOT an executable bench procedure.")
-            elif r.readiness_tier == CONDITIONS_SUPPORTED:
-                lines.append("        READINESS: CONDITIONS_SUPPORTED -- the reaction type is recognized and the "
-                             "conditions are sourced, but the procedure is not fully specified; this is NOT an "
-                             "executable bench procedure.")
-            elif r.readiness_tier == PROCESS_SPECIFIED:
-                lines.append("        READINESS: PROCESS_SPECIFIED -- the literature procedure is fully specified "
-                             "from an accepted source; this is what the SOURCE specifies, NOT a guarantee your "
-                             "lab/kitchen can execute it (capability is 0.9).")
+            # claim about the SOURCE) for "your bench can run it" (a 0.9 capability question).  The text is the ONE
+            # shared ``readiness_tier_line`` the plan front door also renders (human/JSON parity; no drift).
+            lines.append(f"        READINESS: {readiness_tier_line(r.readiness_tier)}")
             for e in r.exclusions:
                 lines.append(f"        EXCLUDED: {e}")
             for g in r.gaps:
                 lines.append(f"        GAP: {g}")
+            # 0.9 Round III (D12a): the per-route CAPABILITY verdict, AFTER the readiness chain and with the scope
+            # note.  Rendered only when a profile was requested (capability_assessment is not None); the ONE shared
+            # renderer keeps this human view identical to the JSON capability_assessment (criterion 29).
+            lines.extend(render_capability_lines(
+                r.capability_assessment, response.request.capability_profile_origin, indent="        ",
+            ))
         if len(response.ranked_route_dossiers) > 20:
             lines.append(f"    ... and {len(response.ranked_route_dossiers) - 20} more ranked route(s)")
     return "\n".join(lines)
@@ -719,6 +719,16 @@ def _cmd_plan(argv: list[str]) -> int:
                    help="explicit EMPTY helper-reagent pool -- no invented water; mutually exclusive with a "
                         "non-empty --reagents. The structural plan then runs only under an algebra with a "
                         "reagentless-capable provider (e.g. certified-route-v07)")
+    from .capability import CAPABILITY_PROFILE_PRESETS
+    p.add_argument(
+        "--capability-profile", dest="capability_profile", choices=sorted(CAPABILITY_PROFILE_PRESETS), default=None,
+        metavar="PROFILE",
+        help=(
+            "declare a bench (0.9 capability compiler) and project each planned route through it: 'research-lab' or "
+            "'poor-man'. Flows into the STRUCTURAL plan's recompile (resolved once); ignored for a formula-only plan. "
+            "The chemistry search is unchanged -- capability is a projection. CAPABILITY_FIT is NOT a safety certificate"
+        ),
+    )
     p.add_argument("--json", action="store_true",
                    help="emit the machine-readable plan payload (identity + delegated response) instead of the render")
     args = p.parse_args(argv)
@@ -737,7 +747,8 @@ def _cmd_plan(argv: list[str]) -> int:
 
     result = plan(target, kind if kind is not None else InputKind.AUTO,
                   algebra_profile=getattr(args, "algebra_profile", None),
-                  helper_reagents=helper_reagents)
+                  helper_reagents=helper_reagents,
+                  capability_profile=getattr(args, "capability_profile", None))
     if args.json:
         import json
 

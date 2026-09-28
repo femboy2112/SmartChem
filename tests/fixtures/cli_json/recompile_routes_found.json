@@ -24,6 +24,7 @@
       "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha3"
     }
   ],
+  "capability_question_digest": null,
   "compilation_ir": {
     "candidates": [
       {
@@ -97,6 +98,7 @@
   "ranked_dag_dossiers": [],
   "ranked_route_dossiers": [
     {
+      "capability_assessment": null,
       "composability_verdict": "SINGLE_STEP",
       "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
       "equilibrium_verdict": "UNKNOWN",
@@ -437,6 +439,7 @@
       "selectivity_verdict": "UNKNOWN"
     },
     {
+      "capability_assessment": null,
       "composability_verdict": "UNKNOWN",
       "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
       "equilibrium_verdict": "UNKNOWN",
@@ -1042,6 +1045,8 @@
   ],
   "request": {
     "algebra_profile": "certified-route-v07",
+    "capability_profile": null,
+    "capability_profile_origin": "",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,
@@ -1160,7 +1165,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "54607ff2e5e834e7ce705678f1d04eebbc3edee24931edf0b86ec550b3ef602a",
+  "result_digest": "b5d71ab606b0168d0f21c1ed6ded1c71e1dfbaaf2f576b2327be627ed2179c2c",
   "schema_version": "smartchem.service/compilation-response-v1alpha15",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",

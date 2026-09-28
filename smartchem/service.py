@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import importlib
 import json
 import os
 import secrets
@@ -83,7 +84,15 @@ from .algebra_profiles import (
     PROFILE_USES,
     resolve_algebra_profile,
 )
-from .contracts import Digestible, canonical_digest
+from .contracts import Digestible, canonical_digest, canonical_payload
+from .capability import (
+    CapabilityAssessment,
+    CapabilityProfile,
+    CapabilityStatus,
+    assess as assess_capability,
+    compile_capability_requirements,
+    resolve_capability_profile,
+)
 from .identity import IdentityLoss, MatchLayer, refines
 from .identity_parse import IdentityParseError, InputKind, resolve_target
 from .procedure_evidence import (
@@ -593,6 +602,16 @@ class CompilationRequest(Digestible):
     #: smartchem.algebra_profiles).  Defaulted so pre-0.7 constructions and payloads stay valid on the legacy
     #: capped-scission algebra.  Orthogonal to transform_grammar (topology).
     algebra_profile: str = DEFAULT_ALGEBRA_PROFILE
+    #: 0.9 Round III (D10): the RESOLVED, immutable capability profile this request declares -- the exact bench
+    #: content, NOT a re-resolvable preset name (that would drift against tomorrow's mutable preset -- the M34 hole).
+    #: ``None`` is the ONE default and means NOT_REQUESTED: no capability question is asked, no bench is assumed.
+    #: A frozen ``Digestible``, so it rides the full ``.digest`` (provenance) automatically -- but it is DELIBERATELY
+    #: ABSENT from the hand-built ``semantic_digest`` tuple below, and that omission IS search noninterference: the
+    #: chemistry search cannot see a bench it never reads.
+    capability_profile: "CapabilityProfile | None" = None
+    #: The display/preset-origin name (e.g. ``"poor-man"``) the profile was resolved from -- provenance only,
+    #: non-load-bearing (the resolved snapshot above is the truth; this is just what to print).
+    capability_profile_origin: str = ""
 
     def __post_init__(self) -> None:
         if self.schema_version != COMPILATION_REQUEST_SCHEMA:
@@ -673,6 +692,15 @@ class CompilationRequest(Digestible):
                     f"topology this request selects (it supports "
                     f"{sorted(u.value for u in PROFILE_USES[self.algebra_profile])})"
                 )
+        # capability_profile (0.9 Round III, D10): the RESOLVED snapshot or None (NOT_REQUESTED).  A bare string
+        # name is REFUSED here -- storing a name is the M34 drift hole, so the type gate is the enforcement.
+        if self.capability_profile is not None and type(self.capability_profile) is not CapabilityProfile:
+            raise TypeError(
+                "capability_profile must be a resolved CapabilityProfile snapshot or None (NOT_REQUESTED) -- "
+                "a preset NAME is refused (it would re-resolve and drift; store the resolved content)"
+            )
+        if not isinstance(self.capability_profile_origin, str):
+            raise TypeError("capability_profile_origin must be a string (the display/preset-origin name)")
         # origins: a canonical (field-name-sorted) map of provenance; structural check only, since which fields
         # are tracked differs by direction.
         if type(self.origins) is not tuple:
@@ -757,6 +785,23 @@ class CompilationRequest(Digestible):
                 self.ranking_policy,
             )
         )
+
+    @property
+    def capability_question_digest(self) -> "str | None":
+        """The 0.9 capability-question pin (D12): ``None`` when no profile was requested, else a digest binding the
+        SEARCH question and the declared bench together -- ``canonical_digest((semantic_digest, profile_digest))``.
+
+        Invariant, by construction (a test pins it): it MOVES when the profile CONTENT changes (a different
+        ``profile_digest``), does NOT move when only the search question changes if the profile is held fixed... no,
+        precisely: it is a pure function of BOTH, so it moves under EITHER -- but the load-bearing guarantee the
+        mission demands is one-directional and holds: the ``semantic_digest`` NEVER moves under a profile change
+        (capability is absent from that tuple), so a profile swap moves ONLY this pin and the full ``.digest``, never
+        the chemistry search identity.  It is ADDITIVE to (not a replacement for) the ``semantic_digest`` consumer-pin
+        ``expected_request_digest`` checks: search identity and capability question are two separate, separately
+        pinnable questions."""
+        if self.capability_profile is None:
+            return None
+        return canonical_digest((self.semantic_digest, self.capability_profile.profile_digest))
 
 
 def _origins(explicit: "dict[str, bool]") -> tuple[tuple[str, FieldOrigin], ...]:
@@ -874,6 +919,7 @@ def build_recompile_request(
     evidence_provider_selection: "EvidenceProviderSelection | None" = None,
     output_policy: "OutputPolicy | None" = None,
     algebra_profile: "str | None" = None,
+    capability_profile: "str | CapabilityProfile | None" = None,
 ) -> CompilationRequest:
     """Build a RECOMPILE request, recording each defaulted knob's origin as ``DEFAULT`` (section 13.1).
 
@@ -912,6 +958,19 @@ def build_recompile_request(
     # (request_from_payload) nor the low-level dataclass default -- so promoting the route default never changes what
     # a direct CompilationRequest or a pre-0.7 payload means.  Ships == legacy this round.
     algebra_profile = algebra_profile if algebra_profile is not None else DEFAULT_ROUTE_ALGEBRA_PROFILE
+    # 0.9 Round III (D10): resolve the capability profile ONCE, HERE, at request-build time -- a preset NAME (or an
+    # already-resolved CapabilityProfile for an inline custom) goes through the closed ``resolve_capability_profile``
+    # lookup and the RESOLVED snapshot is what the request stores; replay uses that exact content and never
+    # re-resolves against tomorrow's (mutable) preset table.  ``None`` stays NOT_REQUESTED (no bench assumed).  The
+    # origin string is the preset NAME (provenance/display only), or the profile's own id for an inline custom.
+    resolved_capability_profile = (
+        resolve_capability_profile(capability_profile) if capability_profile is not None else None
+    )
+    capability_profile_origin = (
+        capability_profile if isinstance(capability_profile, str)
+        else resolved_capability_profile.profile_id if resolved_capability_profile is not None
+        else ""
+    )
     effective_kind = input_kind if input_kind is not None else InputKind.AUTO
     return CompilationRequest(
         COMPILATION_REQUEST_SCHEMA,
@@ -943,6 +1002,8 @@ def build_recompile_request(
         output_policy if output_policy is not None else OutputPolicy(),
         _origins(explicit),
         algebra_profile=algebra_profile,
+        capability_profile=resolved_capability_profile,
+        capability_profile_origin=capability_profile_origin,
     )
 
 
@@ -1063,6 +1124,13 @@ class RankedRouteSummary(Digestible):
     #: identity stays byte-stable, so it is re-derived-and-checked at load, never trusted by hash.  ``None`` when the
     #: producer did not attach it; a verified-admission consumer treats a FITS route without it as UNVERIFIED.
     replay_payload: "list | None" = field(default=None, compare=False, repr=False)
+    #: 0.9 Round III (D12): this route's capability projection under the request's declared profile -- the SAME
+    #: ExperimentRoute assessed against what a bench HAS.  ``None`` = NOT_REQUESTED (the request carried no profile).
+    #: ``compare=True`` (the default, MIRRORING ``readiness``): it enters route identity and thus ``result_digest``
+    #: transitively, so tampering with a capability verdict is a detectable identity change -- and CAPABILITY-REBIND-
+    #: ON-LOAD re-derives it from the thick ``replay_payload`` + the request-bound profile and REFUSES a mismatch.
+    #: Kept STRICTLY separate from ``readiness``/``fit_status``: capability is a projection, never a second readiness.
+    capability_assessment: "CapabilityAssessment | None" = None
 
     _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
 
@@ -1085,6 +1153,10 @@ class RankedRouteSummary(Digestible):
             r is not None and type(r) is not ProcessRequirements for r in self.process_requirements
         ):
             raise TypeError("process_requirements must be a tuple of ProcessRequirements or None values")
+        # 0.9 Round III (D12): capability is a projection, orthogonal to the section-11 fit table below -- so the ONLY
+        # structural guard here is the type; a NOT_REQUESTED route carries None, an assessed one a CapabilityAssessment.
+        if self.capability_assessment is not None and type(self.capability_assessment) is not CapabilityAssessment:
+            raise TypeError("capability_assessment must be a CapabilityAssessment or None (NOT_REQUESTED)")
         # The FULL structural coherence table the producer (drafter fit_route) guarantees, enforced so a hand-built or
         # deserialized summary can never contradict its own reasons (the no-laundering discipline, section 11; red-team
         # fold). fit_route sets: EXCLUDED iff exclusions; else UNKNOWN iff gaps; else FITS (box constrains) /
@@ -1110,22 +1182,36 @@ class RankedRouteSummary(Digestible):
         return self.readiness.tier
 
     @classmethod
-    def of_fit(cls, fit: "object", *, identity_losses: "tuple[IdentityLoss, ...]" = ()) -> "RankedRouteSummary":
+    def of_fit(cls, fit: "object", *, identity_losses: "tuple[IdentityLoss, ...]" = (),
+               capability_profile: "CapabilityProfile | None" = None) -> "RankedRouteSummary":
         """Project a drafter ``RouteFit`` (already box-checked and ranked) onto the thin response summary.
 
         ``identity_losses`` is the route's already-computed section-5.3 loss tuple (the SAME tuple the caller threads
         into ``rank_routes``); readiness's ``conditions`` obligation is capped by any loss that blocks it (Sec 5.3),
         so the readiness record must see the identical evidence the ranking did.  Defaults to ``()`` for callers that
-        genuinely have none in scope (the overwhelming majority of today's corpus)."""
+        genuinely have none in scope (the overwhelming majority of today's corpus).
+
+        ``capability_profile`` (0.9 Round III, D12): the RESOLVED bench snapshot the request declared, or ``None``
+        (NOT_REQUESTED).  When present, the SAME ``fit.route`` is projected through it -- ``compile_capability_
+        requirements(route)`` + ``assess(profile, reqs, readiness)`` compute HERE (the route, its readiness, and the
+        profile are all in scope) and ride as ``capability_assessment``.  When ``None``, no capability question is
+        asked and ``capability_assessment`` stays ``None`` -- never a fabricated pass.  Capability NEVER touches the
+        intrinsic ``readiness`` this method also derives: it is a projection off the same route, not a second engine."""
+        # v0.8 Real Route Dossiers: readiness is RE-DERIVED from the route's own steps (Sec 3/4), never a hard-coded
+        # stamp -- ``evaluate_route`` reads only conservation-certified facts on each built ``ExperimentStep``.
+        # Computed ONCE here and reused for the capability projection so the assessment sees the identical readiness.
+        readiness = evaluate_route(fit.route, identity_losses=identity_losses)
+        capability_assessment = None
+        if capability_profile is not None:
+            capability_assessment = assess_capability(
+                capability_profile, compile_capability_requirements(fit.route), readiness,
+            )
         return cls(
             RANKED_ROUTE_SUMMARY_SCHEMA,
             fit.route.digest,
             " ; ".join(fit.route.equation_lines()) or repr(fit.route),
             fit.status.value,
-            # v0.8 Real Route Dossiers: readiness is RE-DERIVED from the route's own steps (Sec 3/4), never a
-            # hard-coded stamp -- ``evaluate_route`` reads only conservation-certified facts already on each built
-            # ``ExperimentStep`` (reaction-type recognition, sourced conditions, process/workup declarations).
-            evaluate_route(fit.route, identity_losses=identity_losses),
+            readiness,
             tuple(fit.exclusions),
             tuple(fit.gaps),
             fit.composability.verdict,
@@ -1139,6 +1225,7 @@ class RankedRouteSummary(Digestible):
             # consumer can reconstruct the exact route and re-derive ALL axes on load.  Built here (cheap serialization,
             # no re-analysis); emitted to the wire only when the producer serializes with include_replay=True.
             replay_payload=_steps_to_replay_payload(fit.route.steps),
+            capability_assessment=capability_assessment,
         )
 
 
@@ -1759,6 +1846,82 @@ class CompilationResponse:
                     f"evidence-stripped readiness claim; refused (v0.8 M10)"
                 )
 
+    def _check_capability_coherence(self, *, require_verified_admission: bool = False) -> None:
+        """CAPABILITY-REBIND-ON-LOAD (0.9 Round III, D12): re-derive each ranked route's ``capability_assessment``
+        from its thick ``replay_payload`` + the REQUEST-BOUND profile and refuse a payload whose carried assessment
+        disagrees -- the capability analogue of :meth:`_check_readiness_coherence`, mirroring ALGEBRA-REBIND-ON-LOAD's
+        "a search under one context cannot be LOADED as another" law but PER-ROUTE.
+
+        Called from :func:`response_from_payload` (the DESERIALIZATION trust boundary), like the readiness check --
+        NOT from ``__post_init__`` (an honest producer's ``of_fit`` already computed the assessment via the SAME
+        ``assess`` this re-derives with, so re-checking on construction is redundant, and it would fire on the
+        ``replace``-forged responses the red-team tests build).
+
+        THE LAW.  ``request.capability_profile`` is the ONE profile the whole response was assessed under (D10: a
+        resolved snapshot, never a re-resolvable name).  So:
+        * ``request.capability_profile is None`` (NOT_REQUESTED) -> EVERY dossier MUST carry
+          ``capability_assessment is None``.  A dossier that smuggles an assessment onto a no-profile request is a
+          fabricated bench claim -> REFUSED (kills M37 on the load side).
+        * ``request.capability_profile`` set -> re-derive.  The route is reconstructed from the thick replay
+          (``reconstruct(payload).digest == route_digest`` bound FIRST, so substituted evidence cannot wear this
+          entry's identity), readiness re-evaluated, requirements recompiled, and ``assess(profile, reqs, readiness)``
+          recomputed.  STRUCTURAL equality with the carried assessment is REQUIRED; any mismatch -- a profile-A
+          assessment carried under profile B, an altered profile snapshot, altered stock, altered readiness, altered
+          route, or an altered result -- is a detectable divergence -> REFUSED (kills M35, M38).
+
+        THIN/ADVISORY BOUNDARY.  A dossier with NO replay cannot be re-derived.  Under ``require_verified_admission``
+        (the CANONICAL_VERIFIED wire sets it) an assessed route with no replay is UNVERIFIED -> REFUSED: a thin wire
+        must NOT claim CAPABILITY_FIT as verified.  On a bare load it stays advisory, the same residual every other
+        axis here lives with (closed only by the ``verification_key`` path).  This is semantic coherence, NOT
+        cryptographic authentication -- a fully controlling forger who rebuilds a self-consistent profile+assessment
+        pair is the irreducible key-holding residual, exactly as for readiness/algebra."""
+        profile = self.request.capability_profile
+        for r in self.ranked_route_dossiers:
+            if profile is None:
+                # NOT_REQUESTED: an assessment on a no-profile request is a fabricated bench claim.
+                if r.capability_assessment is not None:
+                    raise ValueError(
+                        f"ranked route {r.route_digest} carries a capability_assessment but the request declared NO "
+                        f"capability profile (NOT_REQUESTED) -- a fabricated bench claim; refused (0.9 D12, M37)"
+                    )
+                continue
+            # A profile WAS requested: every dossier should be assessed.  A missing assessment is refused when the
+            # producer had a profile in hand -- silence is not a NOT_REQUESTED here.
+            if r.capability_assessment is None:
+                raise ValueError(
+                    f"ranked route {r.route_digest} carries NO capability_assessment though the request declared a "
+                    f"capability profile -- an assessment was dropped; refused (0.9 D12)"
+                )
+            if r.replay_payload is None:
+                # No thick evidence -> the FIT claim is UNVERIFIABLE.  Fail closed under verified admission (a thin
+                # wire may not claim CAPABILITY_FIT as verified); advisory on a bare load.
+                if require_verified_admission:
+                    raise ValueError(
+                        f"verified admission: ranked route {r.route_digest} carries a capability_assessment "
+                        f"(overall {r.capability_assessment.overall.value}) but no replay_payload -- the capability "
+                        f"verdict is UNVERIFIED (a thin wire cannot claim CAPABILITY_FIT as verified; the producer "
+                        f"must serialize with include_replay=True); refused (0.9 D12)"
+                    )
+                continue
+            route = _reconstruct_route(r.replay_payload)
+            if route.digest != r.route_digest:
+                raise ValueError(
+                    f"ranked route {r.route_digest} carries replay evidence that reconstructs to a DIFFERENT route "
+                    f"({route.digest}) -- substituted capability evidence; refused (0.9 D12)"
+                )
+            rederived = assess_capability(
+                profile, compile_capability_requirements(route),
+                evaluate_route(route, identity_losses=self.identity_losses),
+            )
+            if r.capability_assessment != rederived:
+                raise ValueError(
+                    f"ranked route {r.route_digest} claims a capability_assessment (overall "
+                    f"{r.capability_assessment.overall.value}) its replayed evidence does not support under the "
+                    f"request's declared profile (re-derives to overall {rederived.overall.value}) -- a profile-A-"
+                    f"under-B, altered-snapshot/stock/readiness/route, or altered-result tamper; refused (0.9 D12, "
+                    f"M35/M38)"
+                )
+
     def _check_frontier_coherence(self, *, require_verified_admission: bool = False) -> None:
         """Re-derive each affordability_frontier entry's DISPOSITION blockers and refuse an entry whose claimed
         blockers are looser than the re-derivation (TAMPER-HARDENING-01 -- the R59 disposition serialized-tamper close).
@@ -2094,6 +2257,14 @@ class CompilationResponse:
         return None if self.compilation_ir is None else self.compilation_ir.search_receipt.digest
 
     @property
+    def capability_question_digest(self) -> "str | None":
+        """The 0.9 capability-question pin (D12), delegated straight to the request: ``None`` when no profile was
+        requested, else ``canonical_digest((semantic_digest, profile_digest))``.  Surfaced on the response so a
+        consumer can pin the capability question WITHOUT reaching into the request.  It moves under a profile change
+        but the chemistry ``semantic_digest`` never does -- capability is absent from that tuple."""
+        return self.request.capability_question_digest
+
+    @property
     def search_space_status(self) -> "str | None":
         """The section-8.3 no-route matrix label for this response, or ``None`` when no route search ran (SRCH-NO-01).
 
@@ -2336,6 +2507,7 @@ def _dag_bench_note(dags: "tuple", box: "object") -> "str | None":
 def _ranked_summaries(
     routes: "tuple", bounds: PhysicalBounds, losses: "tuple",
     process: "ProcessBounds | None" = None,
+    capability_profile: "CapabilityProfile | None" = None,
 ) -> "tuple[RankedRouteSummary, ...]":
     """Rank ``routes`` against the section-11 bench ``bounds`` and project to thin response summaries (CLI-CAN-02).
 
@@ -2349,7 +2521,9 @@ def _ranked_summaries(
         return ()
     from .experiment.drafter import ConstraintBox, rank_routes
     fits = rank_routes(routes, box=ConstraintBox.of_bounds(bounds, process=process), losses=losses)
-    return tuple(RankedRouteSummary.of_fit(f, identity_losses=losses) for f in fits)
+    return tuple(
+        RankedRouteSummary.of_fit(f, identity_losses=losses, capability_profile=capability_profile) for f in fits
+    )
 
 
 def _route_shopping_requirements(route: "object") -> "tuple[tuple[object, float], ...] | None":
@@ -2644,7 +2818,8 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     # when nothing was ranked (no routes, or DAG mode), else the (fit/excluded/unknown) tally.  A consumer can now
     # read which routes fall inside the bench and which are EXCLUDED -- and can never mistake an UNKNOWN-fit for a pass.
     ranked = _ranked_summaries(routes_for_ranking, request.constraints.bounds, identity_losses,
-                               process=request.constraints.process)
+                               process=request.constraints.process,
+                               capability_profile=request.capability_profile)
     # COST-VEC-01: the section-10.4 Pareto affordability frontier over the SAME ranked routes -- each route's
     # commodity leaves priced into a CostVector, EXCLUDED routes G6-dominated by their hard bounds.  Empty when no
     # route carries affordability signal (honest), so this never fabricates a cost ranking from absent price data.
@@ -2997,9 +3172,62 @@ def _evidence_field_from_payload(payload) -> "EvidenceField | None":
     )
 
 
+def _procedure_material_use_to_payload(u) -> dict:
+    """One AUTHORED procedure-only auxiliary (0.9 Wave-B ``ProcedureMaterialUse``): catalyst/wash/drier/etc.  The
+    optional ``identity`` rides the same structural Molecule codec the step replay uses; ``phase``/``quantity`` stay
+    ``null`` where the source is silent (never a fabricated value).  This closes the Wave-B transport gap -- the
+    field was added to ``ProcedureOperation`` but its codec was never wired, so any route carrying a typed auxiliary
+    (isopentyl's H2SO4) could not survive serialize->deserialize."""
+    return {
+        "name": u.name,
+        "role": u.role.value,
+        "identity": None if u.identity is None else _molecule_to_payload(u.identity),
+        "formulation": u.formulation,
+        "phase": None if u.phase is None else u.phase.value,
+        "quantity": (
+            None if u.quantity is None
+            else {"schema_version": u.quantity.schema_version, "value": u.quantity.value, "unit": u.quantity.unit}
+        ),
+        "evidence_source": u.evidence_source,
+    }
+
+
+_PROCEDURE_MATERIAL_USE_FIELDS = frozenset(
+    {"name", "role", "identity", "formulation", "phase", "quantity", "evidence_source"}
+)
+
+
+def _procedure_material_use_from_payload(payload) -> "object":
+    """Reconstruct one ``ProcedureMaterialUse``; its ``__post_init__`` re-validates every field on load (an ionic
+    ``identity=None``, a sourced phase/formulation, a per-material quantity).  Exact field-set guarded so a payload
+    cannot drop or smuggle a field."""
+    from .experiment.stock import STOCK_QUANTITY_SCHEMA, Phase, StockQuantity
+    from .procedure_evidence import ProcedureMaterialRole, ProcedureMaterialUse
+    if type(payload) is not dict or set(payload) != _PROCEDURE_MATERIAL_USE_FIELDS:
+        raise ValueError("procedure material use must contain exactly the versioned fields")
+    q = payload["quantity"]
+    quantity = None
+    if q is not None:
+        if type(q) is not dict or set(q) != {"schema_version", "value", "unit"}:
+            raise ValueError("procedure material-use quantity must contain exactly schema_version, value, unit")
+        if q["schema_version"] != STOCK_QUANTITY_SCHEMA:
+            raise ValueError(f"stock quantity schema_version must be {STOCK_QUANTITY_SCHEMA!r}")
+        quantity = StockQuantity(q["schema_version"], q["value"], q["unit"])
+    return ProcedureMaterialUse(
+        payload["name"],
+        ProcedureMaterialRole(payload["role"]),
+        identity=None if payload["identity"] is None else _molecule_from_payload(payload["identity"]),
+        formulation=payload["formulation"],
+        phase=None if payload["phase"] is None else Phase(payload["phase"]),
+        quantity=quantity,
+        evidence_source=payload["evidence_source"],
+    )
+
+
 def _procedure_operation_to_payload(op) -> dict:
     """One ordered :class:`~smartchem.procedure_evidence.ProcedureOperation`.  Enums by ``.value``; the seven
-    optional evidence slots stay ``null`` when the source is silent, never a fabricated empty field."""
+    optional evidence slots stay ``null`` when the source is silent, never a fabricated empty field.  ``material_uses``
+    carries the AUTHORED procedure-only auxiliaries (0.9 Wave-B) so a typed catalyst/wash survives the round trip."""
     return {
         "ordinal": op.ordinal,
         "kind": op.kind.value,
@@ -3013,6 +3241,7 @@ def _procedure_operation_to_payload(op) -> dict:
         "duration": _evidence_field_to_payload(op.duration),
         "endpoint": _evidence_field_to_payload(op.endpoint),
         "apparatus": list(op.apparatus),
+        "material_uses": [_procedure_material_use_to_payload(u) for u in op.material_uses],
         "locator": op.locator,
     }
 
@@ -3034,6 +3263,8 @@ def _procedure_operation_from_payload(payload) -> ProcedureOperation:
     for name in ("materials", "apparatus"):
         if type(payload[name]) is not list or any(type(m) is not str for m in payload[name]):
             raise TypeError(f"operation {name} must be a list of strings")
+    if type(payload["material_uses"]) is not list:
+        raise TypeError("operation material_uses must be a list")
     return ProcedureOperation(
         payload["ordinal"],
         OperationKind(payload["kind"]),
@@ -3047,6 +3278,7 @@ def _procedure_operation_from_payload(payload) -> ProcedureOperation:
         _evidence_field_from_payload(payload["duration"]),
         _evidence_field_from_payload(payload["endpoint"]),
         tuple(payload["apparatus"]),
+        tuple(_procedure_material_use_from_payload(u) for u in payload["material_uses"]),
         payload["locator"],
     )
 
@@ -3383,6 +3615,113 @@ def _reconstruct_dag(payload) -> "object":
     return SynthesisDAG(DAG_SCHEMA, _replay_payload_to_steps(payload))
 
 
+# -- 0.9 capability profile / assessment JSON codecs (D11 -- ONE compiler, preset AND inline-custom are the same wire
+# shape) ---------------------------------------------------------------------------------------------------------
+#
+# A resolved CapabilityProfile / CapabilityAssessment is a graph of Digestible dataclasses + closed enums and -- this
+# is what makes a generic codec sound and safe -- carries NO Molecule (a StockMaterial keys its components on a
+# structure-digest STRING, never a live graph).  So encoding is just the existing ``canonical_payload`` (the same
+# type-tagged form the digest is built over), and decoding is a walk of that form gated by a CLOSED whitelist of the
+# exact classes a capability graph may contain.  A payload naming any other class is REFUSED -- no dynamic import
+# reach beyond this frozen set (the fail-closed rail; there is no eval/importlib-of-arbitrary-names hole here).
+_CAPABILITY_CODEC_ALLOWED = frozenset({
+    "smartchem.capability.profile.CapabilityProfile",
+    "smartchem.capability.assess.CapabilityAssessment",
+    "smartchem.capability.assess.AxisResult",
+    "smartchem.capability.enums.CapabilityStatus",
+    "smartchem.capability.enums.EquipmentCapability",
+    "smartchem.capability.enums.ContainmentCapability",
+    "smartchem.capability.enums.VentilationCapability",
+    "smartchem.capability.enums.MeasurementMethod",
+    "smartchem.capability.enums.WasteCapability",
+    "smartchem.data.reagents.Availability",
+    "smartchem.experiment.stock.StockMaterial",
+    "smartchem.experiment.stock.MaterialComponent",
+    "smartchem.experiment.stock.StockQuantity",
+    "smartchem.experiment.stock.CostObservation",
+    "smartchem.experiment.stock.Phase",
+    "smartchem.experiment.affordability.CostVector",
+    "smartchem.constraints.PhysicalBounds",
+    "smartchem.process_constraints.ProcessBounds",
+    "smartchem.process_constraints.Agitation",
+    "smartchem.process_constraints.Attention",
+})
+_CAPABILITY_CODEC_CLASSES: "dict[str, type]" = {}
+
+
+def _capability_codec_class(qualified: str) -> type:
+    """Resolve a whitelisted qualified class name to its class (cached), or REFUSE -- the fail-closed decoder gate."""
+    if qualified not in _CAPABILITY_CODEC_ALLOWED:
+        raise ValueError(
+            f"capability codec refuses to reconstruct {qualified!r}: not in the closed capability class whitelist "
+            f"(a forged or out-of-scope payload class); refused"
+        )
+    cls = _CAPABILITY_CODEC_CLASSES.get(qualified)
+    if cls is None:
+        module, _, name = qualified.rpartition(".")
+        cls = getattr(importlib.import_module(module), name)
+        _CAPABILITY_CODEC_CLASSES[qualified] = cls
+    return cls
+
+
+def _decode_canonical(node: "dict") -> "object":
+    """The inverse of ``canonical_payload`` over the capability graph -- reconstructs typed values from the
+    type-tagged form, resolving dataclasses/enums through the closed whitelist and re-running every ``__post_init__``
+    (so a tampered stock/bound/component fails CLOSED at reconstruction, exactly like the hand-written codecs)."""
+    t = node["type"]
+    if t == "none":
+        return None
+    if t in ("str", "int", "bool"):
+        return node["value"]
+    if t == "float":
+        v = node["value"]
+        return float("inf") if v == "+inf" else float("-inf") if v == "-inf" else v
+    if t == "enum":
+        return _capability_codec_class(node["class"])(_decode_canonical(node["value"]))
+    if t == "tuple":
+        return tuple(_decode_canonical(i) for i in node["items"])
+    if t == "list":
+        return [_decode_canonical(i) for i in node["items"]]
+    if t == "frozenset":
+        return frozenset(_decode_canonical(i) for i in node["items"])
+    if t == "set":
+        return {_decode_canonical(i) for i in node["items"]}
+    if t == "mapping":
+        return {k: _decode_canonical(v) for k, v in node["items"]}
+    if t == "dataclass":
+        cls = _capability_codec_class(node["class"])
+        return cls(**{name: _decode_canonical(v) for name, v in node["fields"]})
+    raise ValueError(f"capability codec cannot decode canonical node of type {t!r}")
+
+
+def _capability_profile_to_payload(profile: "CapabilityProfile | None") -> "dict | None":
+    """Serialize a resolved profile (preset OR inline custom -- ONE wire shape) via the canonical form, or None."""
+    return None if profile is None else canonical_payload(profile)
+
+
+def _capability_profile_from_payload(payload: "dict | None") -> "CapabilityProfile | None":
+    """Reconstruct a resolved profile; a payload that decodes to any other type is REFUSED (fail-closed)."""
+    if payload is None:
+        return None
+    obj = _decode_canonical(payload)
+    if type(obj) is not CapabilityProfile:
+        raise ValueError("capability_profile payload did not reconstruct to a CapabilityProfile; refused")
+    return obj
+
+
+def _capability_assessment_to_payload(assessment: "CapabilityAssessment | None") -> "dict | None":
+    return None if assessment is None else canonical_payload(assessment)
+
+
+def _capability_assessment_from_payload(payload: "dict | None") -> "CapabilityAssessment | None":
+    if payload is None:
+        return None
+    obj = _decode_canonical(payload)
+    if type(obj) is not CapabilityAssessment:
+        raise ValueError("capability_assessment payload did not reconstruct to a CapabilityAssessment; refused")
+    return obj
+
+
 def request_to_payload(request: CompilationRequest) -> dict:
     """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable."""
     return {
@@ -3419,6 +3758,10 @@ def request_to_payload(request: CompilationRequest) -> dict:
         },
         "origins": [[name, origin.value] for name, origin in request.origins],
         "algebra_profile": request.algebra_profile,
+        # 0.9 Round III (D10/D11): the RESOLVED capability profile snapshot (or null = NOT_REQUESTED), serialized in
+        # the canonical type-tagged form so preset and inline-custom ride the IDENTICAL wire shape (one compiler).
+        "capability_profile": _capability_profile_to_payload(request.capability_profile),
+        "capability_profile_origin": request.capability_profile_origin,
     }
 
 
@@ -3483,6 +3826,12 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         # old serialized request as the wider algebra.  An unknown/incompatible id is refused by
         # CompilationRequest.__post_init__ (fail-closed, so a tampered profile string cannot select a hidden algebra).
         algebra_profile=payload.get("algebra_profile", LEGACY_MISSING_ALGEBRA_PROFILE),
+        # 0.9 Round III (D10): a MISSING capability_profile field is a pre-Round-III payload -> None -> NOT_REQUESTED
+        # (no assessment, no assumed bench).  Capability has NO legacy split (unlike algebra): the single default is
+        # "no question asked".  A present profile is reconstructed EXACTLY (the stored snapshot is authoritative -- it
+        # is NEVER re-resolved against today's presets, which is what would reopen the M34 drift hole).
+        capability_profile=_capability_profile_from_payload(payload.get("capability_profile")),
+        capability_profile_origin=payload.get("capability_profile_origin", ""),
     )
 
 
@@ -3520,6 +3869,9 @@ def ranked_summary_to_payload(summary: RankedRouteSummary, *, include_replay: bo
         "equilibrium_verdict": summary.equilibrium_verdict,
         "kinetics_verdict": summary.kinetics_verdict,
         "process_requirements": [_process_requirements_to_payload(r) for r in summary.process_requirements],
+        # 0.9 Round III (D12): the per-route capability projection (or null = NOT_REQUESTED), compare=True so it is
+        # part of route identity -- CAPABILITY-REBIND-ON-LOAD re-derives it and refuses a tamper.
+        "capability_assessment": _capability_assessment_to_payload(summary.capability_assessment),
     }
     if include_replay and summary.replay_payload is not None:
         payload["replay_payload"] = summary.replay_payload
@@ -3555,6 +3907,9 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
         payload["kinetics_verdict"],
         tuple(_process_requirements_from_payload(p) for p in payload["process_requirements"]),
         replay_payload=payload.get("replay_payload"),
+        # 0.9 Round III (D12): a MISSING field is a pre-Round-III summary -> None -> NOT_REQUESTED (no capability
+        # claim).  A present assessment is reconstructed exactly and re-derived on load by CAPABILITY-REBIND-ON-LOAD.
+        capability_assessment=_capability_assessment_from_payload(payload.get("capability_assessment")),
     )
 
 
@@ -3909,6 +4264,10 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
         "affordability_frontier": [affordability_entry_to_payload(e) for e in response.affordability_frontier],
         "provider_snapshots": [provider_snapshot_to_payload(s) for s in response.provider_snapshots],
         "transport_mode": transport_mode,
+        # 0.9 Round III (D12): the capability-question pin -- null when no profile was requested.  Additive to
+        # result_digest (which already covers the assessments transitively); surfaced so a consumer can pin the
+        # capability question without reaching into the request.  Re-derived + verified on load.
+        "capability_question_digest": response.capability_question_digest,
         "result_digest": digest,
         "producer_signature": None if signing_key is None else _sign_result_digest(digest, signing_key),
     }
@@ -3999,6 +4358,15 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     expected_result_digest = _transport_bound_result_digest(response.result_digest, transport_mode)
     if payload["result_digest"] != expected_result_digest:
         raise ValueError("result_digest does not match the reconstructed response")
+    # 0.9 Round III (D12): the capability-question pin is DERIVED from the reconstructed request, so a payload whose
+    # stored value disagrees was hand-edited -> refused.  A pre-Round-III payload has no such key and no profile, so
+    # both sides are None (consistent).  The INVARIANT this enforces: the pin is a pure function of the search
+    # semantic_digest AND the profile content -- it moves under a profile change, the search identity never does.
+    if payload.get("capability_question_digest") != response.capability_question_digest:
+        raise ValueError(
+            "capability_question_digest does not match the reconstructed response (a forged or stale capability "
+            "question pin); refused"
+        )
     # ALGEBRA-REBIND-ON-LOAD (0.7 Round III): the runtime binding invariant (see the BINDING INVARIANT in
     # _run_recompile) proves a search ran under the SELECTED algebra at PRODUCE time, but a transported response
     # independently deserializes its request, its IR registry digest, and its search-receipt digest.  Re-derive the
@@ -4069,6 +4437,14 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         require_verified_admission=require_verified_admission or _canonical,
         refuse_process_specified_on_thin=not _canonical,
     )
+    # 0.9 Round III (D12): CAPABILITY-REBIND-ON-LOAD.  Runs on every load and re-derives each ranked route's carried
+    # capability_assessment from its thick replay + the request-bound profile, refusing a mismatch (profile-A-under-B,
+    # altered snapshot/stock/readiness/route/result).  A CANONICAL_VERIFIED wire additionally FAILS CLOSED on an
+    # assessed route with no replay -- a thin wire must not claim CAPABILITY_FIT as verified -- keyed off the payload's
+    # OWN declared mode, exactly like the readiness fail-close above.
+    response._check_capability_coherence(
+        require_verified_admission=require_verified_admission or _canonical,
+    )
     # TAMPER-HARDENING-01: the R59 disposition serialized-tamper close.  RUN ON EVERY LOAD (not gated on
     # require_verified_admission) and AFTER _check_verified_admission, so a FITS-route evidence substitution keeps that
     # check's route-binding message while this one covers the NON-FITS frontier tampers (a REAL_BUT_HARD / NOT_A_REACTION
@@ -4077,6 +4453,67 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # payload, which is a load-time authority, not an in-memory-construction invariant.
     response._check_frontier_coherence(require_verified_admission=require_verified_admission)
     return response
+
+
+# -- 0.9 capability HUMAN render (D12a -- ONE renderer, so `recompile` and `plan` expose the SAME semantics the JSON
+# does; human == JSON by construction) --------------------------------------------------------------------------
+
+#: The scope note that rides EVERY rendered capability verdict -- CAPABILITY_FIT is a profile-fit claim on the
+#: modeled+declared axes, NEVER a safety certificate.  Frozen text so both surfaces (and any test) read it identically.
+CAPABILITY_SCOPE_NOTE = (
+    "CAPABILITY_FIT means this route fits this declared profile on the modeled and declared axes. "
+    "It is not a safety certification."
+)
+#: The per-axis display names in the fixed order of ``CapabilityAssessment.axes`` -- surfaced so an
+#: UNCONSTRAINED/NOT_APPLICABLE/reserved axis stays VISIBLE, never a green check by omission.
+_CAPABILITY_AXIS_NAMES = (
+    "material", "equipment", "physical", "process", "containment", "ventilation",
+    "measurement", "waste", "procurement", "attention_care", "monetary",
+)
+
+
+#: The readiness-tier explanation text (the part after ``READINESS: ``), keyed by tier -- the SAME words the
+#: ``recompile`` render has carried since v0.8, extracted so the ``plan`` front door renders them identically
+#: (human == JSON parity for readiness, exactly as for capability).
+_READINESS_TIER_TEXT = {
+    "FORMAL_CANDIDATE": "FORMAL_CANDIDATE -- the reaction type is not yet recognized by the production oracle; this "
+                        "is NOT an executable bench procedure.",
+    "REACTION_VOUCHED": "REACTION_VOUCHED -- the reaction type is recognized, but its conditions are not sourced; "
+                        "this is NOT an executable bench procedure.",
+    "CONDITIONS_SUPPORTED": "CONDITIONS_SUPPORTED -- the reaction type is recognized and the conditions are sourced, "
+                            "but the procedure is not fully specified; this is NOT an executable bench procedure.",
+    "PROCESS_SPECIFIED": "PROCESS_SPECIFIED -- the literature procedure is fully specified from an accepted source; "
+                         "this is what the SOURCE specifies, NOT a guarantee your lab/kitchen can execute it "
+                         "(capability is 0.9).",
+}
+
+
+def readiness_tier_line(tier: str) -> str:
+    """The readiness explanation for ``tier`` (the text after ``READINESS: ``) -- one source of truth for both the
+    ``recompile`` and ``plan`` human renders.  An unknown tier returns the bare tier name (fail-soft, never a crash)."""
+    return _READINESS_TIER_TEXT.get(tier, tier)
+
+
+def render_capability_lines(assessment: "CapabilityAssessment | None", origin: str, *, indent: str) -> "list[str]":
+    """The human capability block for ONE route (D12a).  ``None`` -> ``[]`` (no profile requested: render NOTHING,
+    never a fake pass).  Otherwise a ``CAPABILITY[<origin>]: <overall>`` line + the scope note + EVERY axis with its
+    status (a non-FIT axis carries its first reason), so an unassessed/UNCONSTRAINED/reserved axis is VISIBLE.  This is
+    the ONE renderer both ``recompile`` and the ``plan`` front door call, so the two surfaces cannot drift and each
+    matches the JSON ``capability_assessment`` overall + axis verdicts (criterion 29, human == JSON)."""
+    if assessment is None:
+        return []
+    label = origin or "profile"
+    lines = [
+        f"{indent}CAPABILITY[{label}]: {assessment.overall.value}",
+        f"{indent}  {CAPABILITY_SCOPE_NOTE}",
+    ]
+    for name, ax in zip(_CAPABILITY_AXIS_NAMES, assessment.axes):
+        if ax.status in (CapabilityStatus.BLOCKED, CapabilityStatus.UNKNOWN):
+            lines.append(f"{indent}  {name}: {ax.status.value} -- {ax.reasons[0]}")
+        else:
+            # FIT / NOT_APPLICABLE / UNCONSTRAINED: shown by status, VISIBLE (never omitted into an implied pass).
+            lines.append(f"{indent}  {name}: {ax.status.value}")
+    return lines
 
 
 def serialize_response(response: CompilationResponse, *, signing_key: bytes | None = None,
@@ -4141,6 +4578,9 @@ def response_schema() -> dict:
                               "replay_payload and is re-derived fail-closed on load; THIN_ADVISORY is the lean opt-out "
                               "on which PROCESS_SPECIFIED is inadmissible. FOLDED into result_digest so a downgrade-"
                               "strip is a detectable identity change)",
+            "capability_question_digest": "str|null (0.9 D12: canonical_digest((semantic_digest, profile_digest)); "
+                                          "null when no capability profile was requested. Moves under a profile change; "
+                                          "the search semantic_digest never does. Additive to expected_request_digest)",
             "result_digest": "str (sha256; transport_mode folded in -- CANONICAL_VERIFIED binds it, THIN_ADVISORY is "
                               "the bare semantic digest)",
             "producer_signature": "str|null (optional HMAC-SHA256 over result_digest; null unless signed; "
@@ -4238,6 +4678,11 @@ def response_schema() -> dict:
                               "-- molecules + full 11-field envelope incl. the sourced procedure -- the readiness "
                               "ladder is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire (the default), "
                               "compare=False so outside the bare result_digest)",
+            "capability_assessment": "object(CapabilityAssessment: per-axis + overall verdict of this route against the "
+                                     "request's declared profile)|null (0.9 D12: null = NOT_REQUESTED; compare=True so "
+                                     "it is part of route identity and CAPABILITY-REBIND-ON-LOAD re-derives + refuses a "
+                                     "tamper. CAPABILITY_FIT means this route fits this declared profile on the modeled "
+                                     "axes -- NOT a safety certification)",
         },
         "ranked_dag_summary_fields": {
             "schema_version": "str",

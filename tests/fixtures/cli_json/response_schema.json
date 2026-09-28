@@ -69,6 +69,7 @@
     "serial_holds": "array[[int, int, number]] (item 2b: the DAG-HOLD-01 serial-schedule hold as (producer, consumer, hold_minutes) triples over the edges that hold; DISCLOSURE only -- never changes fit_status -- and digest-EXCLUDED, so it is re-derivable from edges + process_requirements and does not move the route identity)"
   },
   "ranked_route_summary_fields": {
+    "capability_assessment": "object(CapabilityAssessment: per-axis + overall verdict of this route against the request's declared profile)|null (0.9 D12: null = NOT_REQUESTED; compare=True so it is part of route identity and CAPABILITY-REBIND-ON-LOAD re-derives + refuses a tamper. CAPABILITY_FIT means this route fits this declared profile on the modeled axes -- NOT a safety certification)",
     "composability_verdict": "str",
     "equation": "str",
     "equilibrium_verdict": "str",
@@ -89,6 +90,7 @@
   "response_fields": {
     "admissible_route_digests": "array[str] (FITS returned candidates under requested process constraints; not bench validation)",
     "affordability_frontier": "array[object(affordability-frontier-entry)] (section-10.4 Pareto frontier over the ranked routes; COST-VEC-01. Empty when no route carries affordability signal -- a known cost axis or a hard blocker)",
+    "capability_question_digest": "str|null (0.9 D12: canonical_digest((semantic_digest, profile_digest)); null when no capability profile was requested. Moves under a profile change; the search semantic_digest never does. Additive to expected_request_digest)",
     "compilation_ir": "object(chemical-compilation-ir)|null",
     "diagnostics": "array[str] (blockers)",
     "exit_code": "int (section 14.4: 0/2/3/4/5/70)",

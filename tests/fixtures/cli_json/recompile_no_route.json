@@ -1,6 +1,7 @@
 {
   "admissible_route_digests": [],
   "affordability_frontier": [],
+  "capability_question_digest": null,
   "compilation_ir": {
     "candidates": [],
     "diagnostics": [
@@ -59,6 +60,8 @@
   "ranked_route_dossiers": [],
   "request": {
     "algebra_profile": "certified-route-v07",
+    "capability_profile": null,
+    "capability_profile_origin": "",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,

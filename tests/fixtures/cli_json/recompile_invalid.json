@@ -1,6 +1,7 @@
 {
   "admissible_route_digests": [],
   "affordability_frontier": [],
+  "capability_question_digest": null,
   "compilation_ir": null,
   "diagnostics": [
     "could not resolve 'not-a-real-name-zzz' as an offline name, SMILES, or chemical formula: SMILES said unexpected character 't' at position 2; formula said unexpected lowercase 'n' in 'not-a-real-name-zzz' (an element symbol must start uppercase); use name:..., smiles:..., or formula:... to make the input form explicit"
@@ -15,6 +16,8 @@
   "ranked_route_dossiers": [],
   "request": {
     "algebra_profile": "certified-route-v07",
+    "capability_profile": null,
+    "capability_profile_origin": "",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,

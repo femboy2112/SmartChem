@@ -1,6 +1,7 @@
 {
   "admissible_route_digests": [],
   "affordability_frontier": [],
+  "capability_question_digest": null,
   "compilation_ir": {
     "candidates": [
       {
@@ -986,6 +987,8 @@
   "ranked_route_dossiers": [],
   "request": {
     "algebra_profile": "legacy-capped-v1",
+    "capability_profile": null,
+    "capability_profile_origin": "",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,

@@ -12,9 +12,14 @@ threshold:
 * ``material`` -- the route's purchasable leaf reactants (:attr:`ExperimentRoute.leaf_inputs`, the SAME
   COST-VEC-01 leaf definition ``affordability.py`` already uses), each an honest
   :class:`MaterialRequirement` with ``required_assay=None`` (this corpus never sources a numeric purity
-  spec -- FREEZE decision 3: "never assume 100%"). A caller who DOES have a sourced minimum assay for a
-  given input is free to build a :class:`MaterialRequirement` with a real ``required_assay`` directly;
-  this projection just never invents one from silence.
+  spec -- FREEZE decision 3: "never assume 100%"), with exactly ONE structured exception (gate #18): a
+  leaf that is a reactant of a step :func:`~smartchem.experiment.reaction_type_oracle.recognize_reaction_type`
+  positively matches to the acyl-condensation (esterification/amidation) class gets a DERIVED_WITH_ERROR
+  ``required_assay=0.98`` floor instead (see :data:`_ESTERIFICATION_EVIDENCE`) -- keyed on the oracle's own
+  typed class name, never a free-text scan of a procedure string, and never loosening anything: a route
+  whose reaction type the oracle does not recognize keeps the honest ``None``. A caller who DOES have a
+  further sourced minimum assay for a given input is free to build a :class:`MaterialRequirement` with a
+  real ``required_assay`` directly; this projection just never invents one from silence.
 * ``equipment`` -- the union, over every step, of ``ProcedureEvidence.apparatus`` (per-operation, quote
   sourced) PLUS ``ProcessRequirements.equipment`` (whole-step cross-check), CLASSIFIED through
   :func:`~smartchem.capability.equipment_resolver.classify_apparatus_strings` -- deliberately NOT
@@ -63,6 +68,7 @@ from ..experiment.affordability import CostVector, basket_cost_vector
 from ..experiment.catalyst_availability import catalyst_availability
 from ..experiment.equipment import EquipmentKind, equipment_for_step
 from ..experiment.handling import CareLevel, verify_handling
+from ..experiment.reaction_type_oracle import recognize_reaction_type
 from ..experiment.step import ExperimentRoute
 from ..experiment.stock import Phase, StockQuantity
 from ..constraints import PhysicalBounds
@@ -219,24 +225,73 @@ class RouteCapabilityRequirements(Digestible):
             raise TypeError("monetary must be a CostVector")
 
 
+#: The oracle's own class-name string for the acyl-condensation (esterification/amidation) recognizer
+#: (:mod:`smartchem.experiment.reaction_type_oracle`'s ``_RECOGNIZERS`` table) -- an EXACT-EQUALITY key,
+#: never a substring/regex scan of free text. This is the one coupling point to that module's private
+#: naming: if the oracle ever renames the class, this comparison simply stops matching (the derivation
+#: falls back to the honest ``required_assay=None``, never a false match onto some other class) -- a
+#: silent COVERAGE LOSS, the fail-safe direction, never a false floor on the wrong reaction type.
+_ESTERIFICATION_CLASS_NAME = "acyl condensation (esterification/amidation)"
+
+#: DERIVED_WITH_ERROR floor (gate #18): Fischer esterification's water-sensitive equilibrium demands a
+#: near-anhydrous feed; this is a physically-derived requirement, not a source-quoted number.
+_ESTERIFICATION_REQUIRED_ASSAY = 0.98
+
+_ESTERIFICATION_EVIDENCE = (
+    "DERIVED_WITH_ERROR: Fischer esterification is a water-sensitive equilibrium (Le Chatelier); the "
+    "sourced preparative procedure uses glacial/reagent-grade reagents, so a near-anhydrous high-assay "
+    "(>=~0.98, derived not source-quoted) feed is required. Keyed on the recognized reaction type, not "
+    "free text."
+)
+
+
+def _esterification_required_leaves(route: ExperimentRoute) -> "set[Molecule]":
+    """The leaf reactants of every step the oracle recognizes as the acyl-condensation class -- the exact
+    set :func:`_material_requirements` tightens to the DERIVED_WITH_ERROR 0.98 floor.
+
+    Reads ``step.reactants`` directly (the same objects :attr:`ExperimentRoute.leaf_inputs` draws from),
+    so a leaf both produced by no step (a purchase) AND consumed by a recognized esterification step
+    lands in this set; a leaf consumed only by an unrecognized step never does -- the derivation never
+    reaches past the exact step the oracle vouched."""
+    leaves: "set[Molecule]" = set()
+    for step in route.steps:
+        if recognize_reaction_type(step) == _ESTERIFICATION_CLASS_NAME:
+            leaves.update(step.reactants)
+    return leaves
+
+
 def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement, ...]":
-    """One honest, UNKNOWN-assay requirement per purchasable leaf reactant (COST-VEC-01's own leaf
-    definition -- an intermediate a route makes internally is never a material REQUIREMENT, only
-    something a profile would need to stock if it were bought instead)."""
-    return tuple(
-        MaterialRequirement(
-            identity=leaf,
-            required_assay=None,
-            phase=None,
-            quantity=None,
-            role="reactant",
-            evidence_source=(
-                "route leaf input (ExperimentRoute.leaf_inputs); no sourced minimum-assay requirement is "
-                "declared in this corpus -- required_assay stays UNKNOWN, never assumed 100%"
-            ),
-        )
-        for leaf in route.leaf_inputs
-    )
+    """One requirement per purchasable leaf reactant (COST-VEC-01's own leaf definition -- an intermediate
+    a route makes internally is never a material REQUIREMENT, only something a profile would need to stock
+    if it were bought instead). ``required_assay`` is the honest UNKNOWN (``None``) EXCEPT for a leaf that
+    feeds a step the oracle recognizes as the acyl-condensation (esterification/amidation) class, which
+    gets the DERIVED_WITH_ERROR 0.98 floor (:data:`_ESTERIFICATION_EVIDENCE`) -- a floor only ever makes
+    the requirement STRICTER than silence, never a free pass a non-esterification route wouldn't get."""
+    esterification_leaves = _esterification_required_leaves(route)
+    requirements: "list[MaterialRequirement]" = []
+    for leaf in route.leaf_inputs:
+        if leaf in esterification_leaves:
+            requirements.append(MaterialRequirement(
+                identity=leaf,
+                required_assay=_ESTERIFICATION_REQUIRED_ASSAY,
+                phase=None,
+                quantity=None,
+                role="reactant",
+                evidence_source=_ESTERIFICATION_EVIDENCE,
+            ))
+        else:
+            requirements.append(MaterialRequirement(
+                identity=leaf,
+                required_assay=None,
+                phase=None,
+                quantity=None,
+                role="reactant",
+                evidence_source=(
+                    "route leaf input (ExperimentRoute.leaf_inputs); no sourced minimum-assay requirement "
+                    "is declared in this corpus -- required_assay stays UNKNOWN, never assumed 100%"
+                ),
+            ))
+    return tuple(requirements)
 
 
 def _equipment_requirement(

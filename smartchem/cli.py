@@ -210,6 +210,9 @@ def _add_recompile_flags(p) -> None:
     p.add_argument("--max-temp", type=float, default=None, metavar="K",
                    help="section-11 bench temperature ceiling in K. Part of the request identity AND APPLIED: routes "
                         "are ranked against the bench, and a route needing a hotter step is EXCLUDED (CLI-CAN-02)")
+    p.add_argument("--min-temp", type=float, default=None, metavar="K",
+                   help="section-11 bench temperature FLOOR in K (the coldest the bench can reach). APPLIED to route "
+                        "ranking (see --max-temp): a route needing a colder step is EXCLUDED; must not exceed --max-temp")
     p.add_argument("--max-pressure", type=float, default=None, metavar="ATM",
                    help="section-11 bench pressure ceiling in atm. APPLIED to route ranking (see --max-temp): a route "
                         "needing higher pressure is EXCLUDED")
@@ -307,6 +310,7 @@ def _recompile_request_from_args(args):
         cut_budget=args.cut_budget,
         match_layer=MatchLayer[args.match_layer.upper()] if args.match_layer else None,
         max_temperature_k=args.max_temp,
+        min_temperature_k=getattr(args, "min_temp", None),
         min_pressure_atm=args.min_pressure,
         max_pressure_atm=args.max_pressure,
         process=_process_bounds_from_args(args),

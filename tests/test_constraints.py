@@ -194,3 +194,94 @@ class TestCliConstraintFlags:
         assert "constraint APPLIED" in out and "T<=500 K" in out
         # and it must NEVER read as constraint-fitted beyond what was checked: an undeclared-dimension route is UNKNOWN
         assert "never a silent pass" in out
+
+
+class TestD14TemperatureRange:
+    """Round V X-high D14 / F-1: temperature is a RANGE on the ONE shared leaf. v1alpha1 could say "cannot exceed
+    500 K" but never "cannot get below 250 K", so a 77 K cooling step had no honest capability coordinate. The floor
+    is appended LAST (positional construction unchanged); ``None`` keeps the legacy UNCONSTRAINED reading."""
+
+    def test_the_current_schema_is_v1alpha2_and_of_emits_it(self):
+        from smartchem.constraints import PHYSICAL_BOUNDS_SCHEMA, PHYSICAL_BOUNDS_SCHEMA_V1
+        assert PHYSICAL_BOUNDS_SCHEMA == "smartchem.constraints/physical-bounds-v1alpha2"
+        assert PHYSICAL_BOUNDS_SCHEMA_V1 == "smartchem.constraints/physical-bounds-v1alpha1"
+        assert PhysicalBounds.of(min_temperature_k=273.15).schema_version == PHYSICAL_BOUNDS_SCHEMA
+        assert PhysicalBounds().schema_version == PHYSICAL_BOUNDS_SCHEMA
+
+    def test_a_floor_alone_constrains_and_describes_itself_before_the_ceiling(self):
+        floor_only = PhysicalBounds.of(min_temperature_k=273.15)
+        assert floor_only.constrains_anything and floor_only.describe() == "T>=273.15 K"
+        both = PhysicalBounds.of(min_temperature_k=273.15, max_temperature_k=500.0)
+        assert both.describe().startswith("T>=273.15 K, T<=500 K")
+
+    def test_legacy_v1alpha1_is_accepted_only_without_a_floor(self):
+        from smartchem.constraints import PHYSICAL_BOUNDS_SCHEMA_V1
+        legacy = PhysicalBounds(PHYSICAL_BOUNDS_SCHEMA_V1, 400.0, 1.0, 2.0)  # a released v0.8 box, positionally
+        assert legacy.min_temperature_k is None and legacy.max_temperature_k == 400.0
+        with pytest.raises(ValueError, match="no temperature floor"):
+            PhysicalBounds(PHYSICAL_BOUNDS_SCHEMA_V1, 400.0, None, None, 273.15)
+
+    def test_positional_construction_is_unchanged_by_the_appended_floor(self):
+        from smartchem.constraints import PHYSICAL_BOUNDS_SCHEMA
+        b = PhysicalBounds(PHYSICAL_BOUNDS_SCHEMA, 400.0, 1.0, 5.0)
+        assert (b.max_temperature_k, b.min_pressure_atm, b.max_pressure_atm, b.min_temperature_k) == (400.0, 1.0, 5.0,
+                                                                                                        None)
+
+    def test_an_empty_temperature_window_is_refused_but_a_point_window_is_not(self):
+        with pytest.raises(ValueError, match="min_temperature_k cannot exceed max_temperature_k"):
+            PhysicalBounds.of(min_temperature_k=600.0, max_temperature_k=500.0)
+        point = PhysicalBounds.of(min_temperature_k=500.0, max_temperature_k=500.0)
+        assert point.min_temperature_k == point.max_temperature_k == 500.0
+
+    @pytest.mark.parametrize("value", [0, -1.0, float("inf"), float("nan")])
+    def test_a_nonpositive_or_nonfinite_floor_is_refused(self, value):
+        with pytest.raises(ValueError, match="min_temperature_k must be finite and positive"):
+            PhysicalBounds.of(min_temperature_k=value)
+
+    def test_a_bool_floor_is_not_a_number(self):
+        with pytest.raises(TypeError, match="min_temperature_k must be a real number"):
+            PhysicalBounds.of(min_temperature_k=True)
+
+    def test_the_floor_is_identity_bearing(self):
+        assert PhysicalBounds.of(min_temperature_k=273.15).digest != PhysicalBounds.of().digest
+        assert PhysicalBounds.of(min_temperature_k=273.15).digest != PhysicalBounds.of(min_temperature_k=195.15).digest
+
+    def test_constraintbox_delegates_the_floor_and_never_drops_it(self):
+        # MP6's bridge: a floor declared on the shared leaf must survive into the ranking box (of_bounds) and back.
+        with pytest.raises(ValueError, match="min_temperature_k cannot exceed"):
+            ConstraintBox(min_temperature_k=600.0, max_temperature_k=500.0)
+        bounds = PhysicalBounds.of(min_temperature_k=273.15, max_temperature_k=500.0)
+        box = ConstraintBox.of_bounds(bounds)
+        assert box.min_temperature_k == 273.15 and box.physical_bounds == bounds
+        assert ConstraintBox(min_temperature_k=273.15).constrains_anything
+        assert ConstraintBox.of_bounds(PhysicalBounds.of(max_temperature_k=500.0)).min_temperature_k is None
+
+
+class TestD14ExperimentCliMinTemp:
+    """``python -m smartchem.experiment --min-temp K`` -- the same validation style as the other T/P flags."""
+
+    def _syn(self, argv):
+        from smartchem.experiment.cli import main as syn_main
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            try:
+                code = syn_main(argv)
+            except SystemExit as exc:  # argparse's own type errors
+                code = exc.code
+        return code, out.getvalue(), err.getvalue()
+
+    @pytest.mark.parametrize("bad", ["0", "-5", "nan", "inf", "cold"])
+    def test_a_bad_floor_is_an_argparse_exit_2(self, bad):
+        code, _, _ = self._syn(["water", "--min-temp", bad, "--emit-request"])
+        assert code == 2
+
+    def test_the_floor_rides_the_emitted_request(self):
+        code, out, err = self._syn(["water", "--min-temp", "250", "--emit-request"])
+        assert code == 0, err
+        assert json.loads(out)["constraints"]["min_temperature_k"] == 250.0
+
+    def test_a_floor_above_the_ceiling_is_a_loud_exit_2(self):
+        code, out, err = self._syn(["water", "--min-temp", "300", "--max-temp", "250", "--emit-request"])
+        assert code == 2
+        assert "min_temperature_k cannot exceed max_temperature_k" in err
+        assert "Traceback" not in err and "Traceback" not in out

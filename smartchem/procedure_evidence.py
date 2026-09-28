@@ -39,8 +39,8 @@ from .provenance import SourceCitation
 if TYPE_CHECKING:
     from .category import Molecule
     from .conditions import Interval
-    from .experiment.stock import Phase, StockQuantity
-    from .material_spec import MaterialSpecification
+    from .experiment.stock import StockQuantity
+    from .material_spec import MaterialSpecification, PhaseClaim
 
 __all__ = [
     "EvidenceFieldStatus",
@@ -224,13 +224,19 @@ class ProcedureMaterialUse(Digestible):
       ``formulation`` is non-empty but whose ``specification`` is ``None`` is projected as UNRESOLVED (F69 ->
       UNKNOWN), never as "no constraint". A use with neither is a plain identity/phase/quantity demand.
     * ``phase`` -- stays HERE, on the use, and ONLY here; it is never duplicated into the specification (a NEAT
-      claim is a dilution state, not a phase: a LIQUID can be a dilute solution)."""
+      claim is a dilution state, not a phase: a LIQUID can be a dilute solution).
+
+    Round V X-high (barrier D18): ``phase`` is an evidence-graded :class:`~smartchem.material_spec.PhaseClaim`, not
+    a bare ``Phase`` scalar. Same ONE phase vocabulary, now carrying WHO says so: a phase the cited page states is
+    ``SOURCE_QUOTED``; a phase the evidence author reads off a volume, a drop count or a species' usual state is
+    ``AUTHOR_INFERRED`` -- and by F71 an author's inference can neither discharge nor refute a stock's phase. A bare
+    ``Phase`` is REFUSED (a stale caller fails loudly instead of silently shipping an ungraded claim)."""
 
     name: str
     role: ProcedureMaterialRole
     identity: "Molecule | None" = None
     formulation: "str | None" = None
-    phase: "Phase | None" = None
+    phase: "PhaseClaim | None" = None
     quantity: "StockQuantity | None" = None
     evidence_source: str = ""
     #: Round V (barrier D3): the SOURCE-AUTHORED typed material specification. ``formulation`` above is now raw
@@ -243,7 +249,8 @@ class ProcedureMaterialUse(Digestible):
         # Lazy imports mirror EvidenceField's Interval dance: keep the structural type checks honest without
         # welding a module-load-order dependency onto category/experiment.stock.
         from .category import Molecule
-        from .experiment.stock import Phase, StockQuantity
+        from .experiment.stock import StockQuantity
+        from .material_spec import MaterialSpecification, PhaseClaim
 
         if not isinstance(self.name, str) or not self.name.strip():
             raise ValueError("name must be a non-empty string (the exact sourced material name)")
@@ -256,14 +263,15 @@ class ProcedureMaterialUse(Digestible):
             raise ValueError("formulation must be a non-empty string or None")
         if self.formulation is not None:
             object.__setattr__(self, "formulation", self.formulation.strip())
-        if self.phase is not None and not isinstance(self.phase, Phase):
-            raise TypeError("phase must be a Phase or None")
+        if self.phase is not None and type(self.phase) is not PhaseClaim:
+            raise TypeError(
+                "phase must be a smartchem.material_spec.PhaseClaim or None (D18: a phase carries its evidence "
+                "strength -- a bare Phase is an ungraded claim and is refused)")
         if self.quantity is not None and type(self.quantity) is not StockQuantity:
             raise TypeError("quantity must be a StockQuantity or None")
         if not isinstance(self.evidence_source, str) or not self.evidence_source.strip():
             raise ValueError("evidence_source must be a non-empty source locator")
         object.__setattr__(self, "evidence_source", self.evidence_source.strip())
-        from .material_spec import MaterialSpecification
         if self.specification is not None and type(self.specification) is not MaterialSpecification:
             raise TypeError("specification must be a smartchem.material_spec.MaterialSpecification or None")
 

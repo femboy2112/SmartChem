@@ -103,9 +103,13 @@ class TestSchemaDescriptor:
         # fields Round III added without a bump (request capability_profile/_origin, response
         # capability_question_digest, summary capability_assessment, replay material_uses/specification) are now
         # versioned, and the descriptor gains ``accepted_legacy_schema_versions`` (the explicit v0.8 whitelist).
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha19"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha16"
-        assert schema["request_schema_version"] == "smartchem.service/compilation-request-v1alpha6"
+        # v1alpha20 (descriptor) / v1alpha17 (response) / v1alpha7 (request): 0.9 RC Round V X-high (D14/D18/D20/D22)
+        # -- the constraints box carries the temperature floor (physical-bounds-v1alpha2), the replayed procedure-
+        # material phase is an evidence-graded PhaseClaim, the display origin is content-bound, the consumer can pin
+        # the capability question, and the legacy whitelist names the released DAG-summary / physical-bounds ids.
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha20"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha17"
+        assert schema["request_schema_version"] == "smartchem.service/compilation-request-v1alpha7"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the

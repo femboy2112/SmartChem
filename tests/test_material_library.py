@@ -105,3 +105,29 @@ class TestSulfuricAcidHazard:
         assert rec is not None
         assert rec.name == "sulfuric acid"
         assert "H314" in rec.ghs_codes
+
+
+class TestBenchPhaseEvidence:
+    """Round V X-high (barrier D18): every curated bench bottle declares its PHASE as USER_DECLARED -- the same
+    declared-world convention its StateClaims use (this module IS the operator's bench declaration). No phase VALUE
+    moved; only the grade was added."""
+
+    _BUILDERS = (
+        ml.isoamyl_alcohol_reagent_grade, ml.isoamyl_alcohol_dilute_aqueous, ml.glacial_acetic_acid,
+        ml.concentrated_sulfuric_acid, ml.household_white_vinegar, ml.sodium_bicarbonate_wash_5pct,
+        ml.sodium_chloride_saturated_wash, ml.magnesium_sulfate_anhydrous, ml.wash_water,
+    )
+
+    def test_every_curated_bottle_declares_its_phase(self):
+        from smartchem.material_spec import EvidenceKind
+        for build in self._BUILDERS:
+            bottle = build()
+            assert bottle.phase_evidence is EvidenceKind.USER_DECLARED, bottle.material_id
+            assert bottle.phase_claim is not None and bottle.phase_claim.phase is bottle.phase
+
+    def test_every_inventory_bottle_is_graded(self):
+        from smartchem.material_spec import EvidenceKind
+        for inventory in (ml.isopentyl_fully_declared_inventory(), ml.isopentyl_lab_inventory(),
+                          ml.isopentyl_vinegar_inventory(), ml.isopentyl_insufficient_quantity_inventory(),
+                          ml.isopentyl_wrong_phase_inventory()):
+            assert all(b.phase_evidence is EvidenceKind.USER_DECLARED for b in inventory)

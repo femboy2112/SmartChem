@@ -56,7 +56,8 @@ from smartchem.material_spec import (
     MaterialSpecification,
     Tolerance,
 )
-from smartchem.process_constraints import ProcessBounds
+from smartchem.conditions import Interval
+from smartchem.process_constraints import Agitation, Attention, ProcessBounds, ProcessRequirements
 from smartchem.structure import structure_by_name
 
 _CERTIFIED = resolve_algebra_profile(DEFAULT_ROUTE_ALGEBRA_PROFILE)
@@ -131,13 +132,24 @@ def _reaction_vouched_route_readiness() -> RouteReadiness:
     return RouteReadiness(per_step=(step,), route_open_obligations=(reason,))
 
 
+#: X-high D15: the process axis is never UNCONSTRAINED for a real step, so the pure fold fixtures carry a fully
+#: declared whole-step record and a fully declared bench (the process axis is then a genuine FIT, not a free ride).
+_CLEAN_RECORD = ProcessRequirements(
+    workup_included=True, provenance="pure unit-test fixture: fully declared step",
+    elapsed_minutes=Interval(0, 60, "min"), active_minutes=Interval(0, 10, "min"),
+    attention=Attention.PASSIVE, agitation=Agitation.NONE)
+_DECLARED_BOUNDS = ProcessBounds.of(
+    max_step_minutes=600.0, max_total_minutes=600.0, max_active_minutes=60.0, allowed_attention=tuple(Attention),
+    min_check_interval_minutes=1.0, allowed_agitation=tuple(Agitation))
+
+
 def _empty_requirements(
     *,
     material=(),
     equipment=frozenset(),
     equipment_unrecognized=(),
     physical=None,
-    process=(None,),
+    process=(_CLEAN_RECORD,),
     containment=frozenset(),
     containment_reasons=(),
     hazard_unresolved=(),
@@ -187,7 +199,7 @@ def _empty_profile(
         material_inventory=material_inventory,
         equipment=equipment,
         physical_bounds=physical_bounds if physical_bounds is not None else PhysicalBounds.unconstrained(),
-        process_bounds=process_bounds if process_bounds is not None else ProcessBounds.unconstrained(),
+        process_bounds=process_bounds if process_bounds is not None else _DECLARED_BOUNDS,
         containment=containment,
         ventilation=ventilation,
         measurement=measurement,

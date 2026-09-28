@@ -67,11 +67,12 @@ from smartchem.material_spec import (
     DilutionState,
     EvidenceKind,
     MaterialSpecification,
+    PhaseClaim,
     StateClaim,
     Tolerance,
 )
 from smartchem.procedure_evidence import EvidenceField, OperationKind, ProcedureMaterialRole
-from smartchem.process_constraints import ProcessBounds, ProcessRequirements
+from smartchem.process_constraints import Agitation, Attention, ProcessBounds, ProcessRequirements
 
 _CERTIFIED = resolve_algebra_profile(DEFAULT_ROUTE_ALGEBRA_PROFILE)
 _Q = StockQuantity.of
@@ -97,10 +98,14 @@ def iso_route():
     raise AssertionError("expected the sourced isopentyl route")
 
 
-def _bottle(mid, comps, qty=None, phase=Phase.LIQUID, states=()):
+def _bottle(mid, comps, qty=None, phase=Phase.LIQUID, states=(), phase_ev=None):
     # Wave-C K1: state claims are COMPONENT-scoped; a fixture's claims are declared on every component it names.
+    # X-high D18: a known fixture phase is the bench operator's own declaration (USER_DECLARED) unless told otherwise.
     comps = tuple(dataclasses.replace(c, states=tuple(states)) if states else c for c in comps)
-    return StockMaterial(STOCK_MATERIAL_SCHEMA, mid, mid, comps, phase, "round-v core fixture", quantity=qty)
+    if phase_ev is None:
+        phase_ev = EvidenceKind.UNKNOWN if phase is Phase.UNKNOWN else EvidenceKind.USER_DECLARED
+    return StockMaterial(STOCK_MATERIAL_SCHEMA, mid, mid, comps, phase, "round-v core fixture", quantity=qty,
+                         phase_evidence=phase_ev)
 
 
 def _user_declared_pure():
@@ -119,6 +124,9 @@ def _pure(name, qty, mid=None):
 
 
 def _req(name, known=(), unstated=0, spec=None, phase=None, identity=None):
+    # X-high D18: a fixture requirement phase is a SOURCE_QUOTED claim (the certifying case); pass a PhaseClaim to vary.
+    if phase is not None and not isinstance(phase, PhaseClaim):
+        phase = PhaseClaim(phase, EvidenceKind.SOURCE_QUOTED)
     return MaterialRequirement(
         identity=identity, phase=phase, quantity=QuantityDemand(tuple(known), unstated), role="fixture",
         evidence_source="round-v core fixture", name=name,
@@ -335,19 +343,25 @@ def test_phase_is_read_only_from_the_use_and_mismatch_blocks():
 # D10 -- process declaration state; D13 monetary
 # =============================================================================================================
 
+#: X-high D15: a FULLY declared step (the attention/agitation/active dimensions stated) and a bench declaring every
+#: non-time dimension, so these rows isolate the D10 TIME-dimension declaration law alone.
 _TIMED = ProcessRequirements(elapsed_minutes=Interval(10.0, 20.0, "min"), workup_included=True,
-                             provenance="fixture: a sourced 10-20 min step")
+                             active_minutes=Interval(0.0, 5.0, "min"), attention=Attention.PASSIVE,
+                             agitation=Agitation.NONE, provenance="fixture: a sourced 10-20 min step")
+_NON_TIME = dict(max_active_minutes=60.0, allowed_attention=tuple(Attention), min_check_interval_minutes=1.0,
+                 allowed_agitation=tuple(Agitation))
 
 
-@pytest.mark.parametrize("no_limit, bounds, expected", [
-    (frozenset(), ProcessBounds.unconstrained(), CapabilityStatus.UNKNOWN),
-    (frozenset({"max_step_minutes", "max_total_minutes"}), ProcessBounds.unconstrained(), CapabilityStatus.FIT),
-    (frozenset({"max_step_minutes"}), ProcessBounds.unconstrained(), CapabilityStatus.UNKNOWN),
-    (frozenset({"max_total_minutes"}), ProcessBounds.of(max_step_minutes=60.0), CapabilityStatus.FIT),
-    (frozenset(), ProcessBounds.of(max_step_minutes=60.0), CapabilityStatus.UNKNOWN),
-    (frozenset({"max_total_minutes"}), ProcessBounds.of(max_step_minutes=5.0), CapabilityStatus.BLOCKED),
+@pytest.mark.parametrize("no_limit, time_bounds, expected", [
+    (frozenset(), {}, CapabilityStatus.UNKNOWN),
+    (frozenset({"max_step_minutes", "max_total_minutes"}), {}, CapabilityStatus.FIT),
+    (frozenset({"max_step_minutes"}), {}, CapabilityStatus.UNKNOWN),
+    (frozenset({"max_total_minutes"}), {"max_step_minutes": 60.0}, CapabilityStatus.FIT),
+    (frozenset(), {"max_step_minutes": 60.0}, CapabilityStatus.UNKNOWN),
+    (frozenset({"max_total_minutes"}), {"max_step_minutes": 5.0}, CapabilityStatus.BLOCKED),
 ])
-def test_d10_process_time_dimensions_read_the_declaration_state(no_limit, bounds, expected):
+def test_d10_process_time_dimensions_read_the_declaration_state(no_limit, time_bounds, expected):
+    bounds = ProcessBounds.of(**_NON_TIME, **time_bounds)
     a = assess(_profile(process_bounds=bounds, no_limit_dimensions=no_limit), _reqs(process=(_TIMED,)),
                _ps_readiness())
     assert a.process.status is expected, a.process.reasons
@@ -507,5 +521,7 @@ _BANNED = (
 @pytest.mark.parametrize("module", ["requirements.py", "assess.py", "quantity.py"])
 def test_the_capability_core_contains_no_formulation_vocabulary_or_reagent_identity(module):
     src = (pathlib.Path(__file__).resolve().parents[1] / "smartchem" / "capability" / module).read_text()
-    hits = sorted({w for w in _BANNED if re.search(rf"(?<![A-Za-z]){re.escape(w)}(?![A-Za-z])", src, re.I)})
+    # X-high: an identifier character (``_``) is part of the word -- ``EquipmentCapability.WATER_BATH`` is a closed
+    # EQUIPMENT vocabulary member (D16's kind-admissibility table), not the reagent word "water".
+    hits = sorted({w for w in _BANNED if re.search(rf"(?<![A-Za-z_]){re.escape(w)}(?![A-Za-z_])", src, re.I)})
     assert hits == [], f"{module} carries formulation/reagent words: {hits}"

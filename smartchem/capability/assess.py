@@ -28,12 +28,14 @@ from fractions import Fraction
 from ..contracts import Digestible
 from ..data.reagents import Availability
 from ..experiment.catalyst_availability import is_obtainable_under
-from ..experiment.readiness import PROCESS_SPECIFIED, RouteReadiness, tier_rank
-from ..experiment.stock import Phase, StockMaterial
+from ..experiment.readiness import PROCESS_SPECIFIED, READINESS_TIERS, RouteReadiness, tier_rank
+from ..experiment.stock import StockMaterial
 from ..material_spec import (
     CERTIFYING_STOCK_EVIDENCE,
     ConcentrationBasis,
+    EvidenceKind,
     SpecVerdict,
+    compare_phase,
     compare_specification,
     exact_fraction,
 )
@@ -46,16 +48,6 @@ from .requirements import MaterialRequirement, RouteCapabilityRequirements
 __all__ = ["CAPABILITY_ASSESSMENT_SCHEMA", "AxisResult", "CapabilityAssessment", "assess"]
 
 CAPABILITY_ASSESSMENT_SCHEMA = "smartchem.capability/capability-assessment-v1alpha2"
-
-#: ProcessFitStatus -> CapabilityStatus, a straight 1:1 relabelling (decision 2: DELEGATE to
-#: evaluate_process_requirements, never reimplement the comparison it already makes soundly).
-_PROCESS_FIT_TO_CAPABILITY: "dict[ProcessFitStatus, CapabilityStatus]" = {
-    ProcessFitStatus.UNCONSTRAINED: CapabilityStatus.UNCONSTRAINED,
-    ProcessFitStatus.FITS: CapabilityStatus.FIT,
-    ProcessFitStatus.EXCLUDED: CapabilityStatus.BLOCKED,
-    ProcessFitStatus.UNKNOWN: CapabilityStatus.UNKNOWN,
-}
-
 
 def _fold_overall(axes: "tuple[AxisResult, ...]", readiness_tier: str) -> CapabilityStatus:
     """FREEZE decision 5's fold, as a pure function (the one :func:`assess` applies and the one
@@ -126,6 +118,10 @@ class CapabilityAssessment(Digestible):
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{name} must be a non-empty string")
+        if self.readiness_tier not in READINESS_TIERS:
+            # X-high D20: an unknown tier is malformed data -> ValueError (a wire loader catches ValueError; the bare
+            # KeyError ``tier_rank`` would raise escaped every such handler).
+            raise ValueError(f"readiness_tier {self.readiness_tier!r} is not a readiness tier {READINESS_TIERS}")
         for name in (
             "material", "equipment", "physical", "process", "containment", "ventilation",
             "measurement", "waste", "procurement", "attention_care", "monetary",
@@ -308,14 +304,23 @@ class _Edge:
     note: str
 
 
+#: X-high D18 / F-5: the stock evidence a PURE-material G- witness may rest on. CLAMPED is excluded: a clamp to
+#: [1, 1] proves the quoted quantity exceeded 100% (an assay reading, not a mass fraction) -- it does not prove the
+#: absence of every impurity.
+_PURE_WITNESS_EVIDENCE = CERTIFYING_STOCK_EVIDENCE - {EvidenceKind.CLAMPED}
+
+
 def _edge(requirement: MaterialRequirement, stock: StockMaterial) -> "_Edge | None":
     """D2 Phase 1 for one (requirement, bottle): the specification verdict from THE comparison law
-    (:func:`smartchem.material_spec.compare_specification` over ``stock.spec_view``) folded with phase (unknown stock
-    phase -> UNKNOWN; mismatch -> BLOCKED). ``None`` if the species is absent from the bottle.
+    (:func:`smartchem.material_spec.compare_specification` over ``stock.spec_view``) folded with the PHASE law
+    (:func:`smartchem.material_spec.compare_phase` over the requirement's and the bottle's evidence-graded
+    :class:`~smartchem.material_spec.PhaseClaim` s -- X-high D18: an ungraded or author-inferred phase can neither
+    certify FIT nor prove BLOCKED). ``None`` if the species is absent from the bottle.
 
     D13 commensurability (the G- rule): the bottle's draw counts toward this requirement's demand only if the
     requirement's specification is NON-EMPTY (composition/states) and SATISFIED -- the bottle IS the specified
-    material -- or the matched species is PROVABLY pure (fraction basis, certifying evidence, exact lower bound 1 -- Wave-C K2).
+    material -- or the matched species is PROVABLY pure (fraction basis, certifying non-CLAMPED evidence, exact lower
+    bound 1 -- Wave-C K2 + X-high F-5). A required phase must itself be a CERTIFIED match (the edge is FIT only then).
     Otherwise a bottle is only a G+ (possible) source: 25 mL of a 5% solution is not 25 mL of the solute."""
     key = _species_key_in(requirement, stock)
     if key is None:
@@ -325,24 +330,19 @@ def _edge(requirement: MaterialRequirement, stock: StockMaterial) -> "_Edge | No
     statuses = [_SPEC_TO_STATUS[spec_verdict]]
     notes = [f"specification {spec_verdict.value}" + (f" ({'; '.join(spec_notes)})" if spec_notes else "")]
     if requirement.phase is not None:
-        if stock.phase is Phase.UNKNOWN:
-            statuses.append(CapabilityStatus.UNKNOWN)
-            notes.append(f"stock phase UNKNOWN vs required {requirement.phase.value}")
-        elif stock.phase is requirement.phase:
-            statuses.append(CapabilityStatus.FIT)
-            notes.append(f"phase {requirement.phase.value} matches")
-        else:
-            statuses.append(CapabilityStatus.BLOCKED)
-            notes.append(f"phase {stock.phase.value} != required {requirement.phase.value}")
+        phase_verdict, phase_note = compare_phase(requirement.phase, stock.phase_claim)
+        statuses.append(_SPEC_TO_STATUS[phase_verdict])
+        notes.append(phase_note)
     status = _fold_status(statuses)
     spec = requirement.specification
     spec_nonempty = spec.composition is not None or bool(spec.states)
     # Wave-C K2: "provably the pure species" needs a FRACTION basis (1 mol/L is a concentration, not purity), CERTIFYING
-    # stock evidence (a bare 1.0 or an ASSUMED [1, 1] certifies nothing -- D6/D8), and an exact lower bound of 1
-    # read from the evidence record itself (spec_view uses the record's exact decimals, never the float slot).
+    # stock evidence (a bare 1.0 or an ASSUMED [1, 1] certifies nothing -- D6/D8; a CLAMPED [1, 1] neither -- X-high
+    # F-5), and an exact lower bound of 1 read from the evidence record itself (spec_view uses the record's exact
+    # decimals, never the float slot).
     pure = (view is not None
             and view.basis in (ConcentrationBasis.MASS_FRACTION, ConcentrationBasis.VOLUME_FRACTION)
-            and view.interval_evidence in CERTIFYING_STOCK_EVIDENCE
+            and view.interval_evidence in _PURE_WITNESS_EVIDENCE
             and view.interval[0] == 1)
     commensurable = status is CapabilityStatus.FIT and (
         (spec_nonempty and spec_verdict is SpecVerdict.SATISFIES) or pure)
@@ -519,114 +519,59 @@ def _physical_axis(requirement, ceiling, *, unresolved: "tuple[str, ...]" = ()) 
         "physical: a stated temperature/pressure demand could not be read into the typed bounds -- UNKNOWN (D13)",))
 
 
-def _physical_axis_bounds(requirement, ceiling) -> AxisResult:
-    """``PhysicalBounds`` (route demand) vs ``PhysicalBounds`` (profile ceiling). Mirrors the gap/exclude
-    discipline ``process_constraints`` uses: a known excess -> BLOCKED; an undeclared route extremum against
-    a declared ceiling -> UNKNOWN.
+#: X-high D14: every PhysicalBounds dimension as (label, attribute, "the route demand must be >= the profile bound"?).
+#: A FLOOR dimension (min temperature, min pressure) is violated when the route goes BELOW it; a CEILING dimension
+#: when the route goes ABOVE it. ONE table drives the declared check AND the per-dimension undeclared check.
+_PHYSICAL_DIMENSIONS = (
+    ("peak temperature", "max_temperature_k", "K", False),
+    ("min temperature", "min_temperature_k", "K", True),
+    ("max pressure", "max_pressure_atm", "atm", False),
+    ("min pressure", "min_pressure_atm", "atm", True),
+)
 
-    D6 (kills M29): an all-``None`` profile ceiling no longer rides straight to FIT. If the ROUTE declares a
-    real T/P extremum against a bench that declared no bound -> UNKNOWN ("the bench declared no bound against
-    a real demand"), NEVER a fabricated UNCONSTRAINED pass. UNCONSTRAINED is retained ONLY for the genuinely-
-    outside-the-question case: no route requirement AND no profile bound."""
-    if not ceiling.constrains_anything:
-        if requirement.constrains_anything:
-            demand = ", ".join(
-                f"{label}={value:g}"
-                for label, value in (
-                    ("T_max_K", requirement.max_temperature_k),
-                    ("P_min_atm", requirement.min_pressure_atm),
-                    ("P_max_atm", requirement.max_pressure_atm),
-                )
-                if value is not None
-            )
-            return AxisResult(
-                CapabilityStatus.UNKNOWN,
-                (
-                    "physical: the declared profile states NO T/P ceiling, but this route carries a real "
-                    f"demand ({demand}) -- an unbounded bench cannot be certified against a real extremum (D6)",
-                ),
-            )
+
+def _physical_axis_bounds(requirement, ceiling) -> AxisResult:
+    """``PhysicalBounds`` (route demand RANGE) vs ``PhysicalBounds`` (profile capability RANGE). Mirrors the gap/exclude
+    discipline ``process_constraints`` uses: a known excess -> BLOCKED; an undeclared route extremum against a declared
+    bound -> UNKNOWN.
+
+    X-high D14: temperature is a RANGE. FIT requires ``profile.min_temperature_k <= route LOW`` AND ``route HIGH <=
+    profile.max_temperature_k`` (and the same for the pressure window) on every modeled bound.
+
+    D6 (kills M29) + Wave-C F1 (per-dimension): a real route demand on a dimension the profile leaves UNDECLARED is
+    UNKNOWN, never a free ride; UNCONSTRAINED is retained ONLY for the genuinely-outside-the-question case: no route
+    demand on any dimension AND no profile bound on any dimension."""
+    if not ceiling.constrains_anything and not requirement.constrains_anything:
         return AxisResult(
             CapabilityStatus.UNCONSTRAINED,
-            ("physical: no route T/P requirement and no profile ceiling -- outside the question",),
+            ("physical: no route T/P requirement and no profile bound -- outside the question",),
         )
     reasons: "list[str]" = []
     blocked = False
     unknown = False
-    if ceiling.max_temperature_k is not None:
-        if requirement.max_temperature_k is None:
+    for label, attr, unit, is_floor in _PHYSICAL_DIMENSIONS:
+        demand = getattr(requirement, attr)
+        bound = getattr(ceiling, attr)
+        if bound is None:
+            if demand is not None:
+                unknown = True
+                reasons.append(
+                    f"physical: route {label} {demand:g} {unit} is a real demand but the declared profile states NO "
+                    "bound on that dimension -- an unbounded dimension cannot be certified against a real extremum "
+                    "(D6, per-dimension)")
+            continue
+        if demand is None:
             unknown = True
-            reasons.append(
-                f"physical: route peak temperature is undeclared; cannot certify against the "
-                f"{ceiling.max_temperature_k:g} K ceiling"
-            )
-        elif requirement.max_temperature_k > ceiling.max_temperature_k:
+            reasons.append(f"physical: route {label} is undeclared; cannot certify it against the "
+                           f"{bound:g} {unit} {'floor' if is_floor else 'ceiling'}")
+        elif (demand < bound) if is_floor else (demand > bound):
             blocked = True
-            reasons.append(
-                f"physical: route peak temperature {requirement.max_temperature_k:g} K exceeds the "
-                f"{ceiling.max_temperature_k:g} K ceiling"
-            )
+            reasons.append(f"physical: route {label} {demand:g} {unit} is "
+                           f"{'below' if is_floor else 'above'} the {bound:g} {unit} "
+                           f"{'floor' if is_floor else 'ceiling'}")
         else:
-            reasons.append(
-                f"physical: route peak temperature {requirement.max_temperature_k:g} K is within the "
-                f"{ceiling.max_temperature_k:g} K ceiling"
-            )
-    if ceiling.max_pressure_atm is not None:
-        if requirement.max_pressure_atm is None:
-            unknown = True
-            reasons.append(
-                f"physical: route max pressure is undeclared; cannot certify against the "
-                f"{ceiling.max_pressure_atm:g} atm ceiling"
-            )
-        elif requirement.max_pressure_atm > ceiling.max_pressure_atm:
-            blocked = True
-            reasons.append(
-                f"physical: route max pressure {requirement.max_pressure_atm:g} atm exceeds the "
-                f"{ceiling.max_pressure_atm:g} atm ceiling"
-            )
-        else:
-            reasons.append(
-                f"physical: route max pressure {requirement.max_pressure_atm:g} atm is within the "
-                f"{ceiling.max_pressure_atm:g} atm ceiling"
-            )
-    if ceiling.min_pressure_atm is not None:
-        if requirement.min_pressure_atm is None:
-            unknown = True
-            reasons.append(
-                f"physical: route min pressure is undeclared; cannot certify it clears the "
-                f"{ceiling.min_pressure_atm:g} atm floor"
-            )
-        elif requirement.min_pressure_atm < ceiling.min_pressure_atm:
-            blocked = True
-            reasons.append(
-                f"physical: route min pressure {requirement.min_pressure_atm:g} atm is below the "
-                f"{ceiling.min_pressure_atm:g} atm floor"
-            )
-        else:
-            reasons.append(
-                f"physical: route min pressure {requirement.min_pressure_atm:g} atm clears the "
-                f"{ceiling.min_pressure_atm:g} atm floor"
-            )
-    # Wave-C F1 (kills the per-DIMENSION hole evil-morty + dalembert both proved): the per-field block
-    # above iterates the CEILING's declared dimensions, so a route demand on a dimension the ceiling leaves
-    # ``None`` was never read -- a temp-only bench rode to FIT against a real, unbounded PRESSURE demand it
-    # never claimed. D6's all-``None`` guard fired only when the ceiling constrained NOTHING; apply the SAME
-    # rule PER DIMENSION here: a real route demand on a dimension whose profile ceiling is ``None`` is an
-    # unbounded dimension that cannot be certified against a real extremum -> UNKNOWN (fail-closed), never a
-    # silent FIT. Restores the monotonicity dalembert's incision violated (adding an unrelated bound must
-    # never launder an unmet demand from UNKNOWN to FIT).
-    for _dim, _demand, _ceil in (
-        ("peak temperature (K)", requirement.max_temperature_k, ceiling.max_temperature_k),
-        ("max pressure (atm)", requirement.max_pressure_atm, ceiling.max_pressure_atm),
-        ("min pressure (atm)", requirement.min_pressure_atm, ceiling.min_pressure_atm),
-    ):
-        if _demand is not None and _ceil is None:
-            unknown = True
-            reasons.append(
-                f"physical: route {_dim} {_demand:g} is a real demand but the declared profile states NO "
-                "bound on that dimension -- an unbounded dimension cannot be certified against a real "
-                "extremum (D6, per-dimension)"
-            )
+            reasons.append(f"physical: route {label} {demand:g} {unit} is within the {bound:g} {unit} "
+                           f"{'floor' if is_floor else 'ceiling'}")
     if blocked:
         return AxisResult(CapabilityStatus.BLOCKED, tuple(reasons))
     if unknown:
@@ -634,119 +579,98 @@ def _physical_axis_bounds(requirement, ceiling) -> AxisResult:
     return AxisResult(CapabilityStatus.FIT, tuple(reasons))
 
 
-#: F56/F62 (Decision 11) + Round V D10: the COMPLETE set of process-unique dimensions the per-dimension fail-close
-#: covers, as a TABLE. Each entry: (label, does the ROUTE declare a real demand on it?, how the BENCH side is read).
-#: TIME dimensions are read through the D10 declaration state (``process_dimension_state(profile, field)`` ->
-#: UNDECLARED / DECLARED_BOUND / NO_LIMIT); attention/agitation/check-interval keep their bound test (they may never
-#: be NO_LIMIT). A demand on an UNDECLARED / unmodeled dimension caps the process axis at UNKNOWN. Equipment is
-#: deliberately EXCLUDED -- the capability EQUIPMENT axis owns it.
-def _ELAPSED_DEMAND(r) -> bool:  # noqa: N802 -- a table entry, named like the constants beside it
-    return r.min_elapsed_minutes is not None or r.elapsed_minutes is not None
-
-
-def _ACTIVE_DEMAND(r) -> bool:  # noqa: N802
-    return r.min_active_minutes is not None or r.active_minutes is not None
-
-
+#: F56/F62 (Decision 11) + Round V D10 + X-high D15: the process dimensions a bench must DECLARE before any whole-step
+#: process can be certified against it. TIME dimensions are read through the D10 declaration state
+#: (``process_dimension_state(profile, field)`` -> UNDECLARED / DECLARED_BOUND / NO_LIMIT) -- NO_LIMIT waives ONLY these
+#: three operator PREFERENCES, tagged. Attention and agitation are operator CAPABILITIES that can never be NO_LIMIT.
+#: Equipment is deliberately EXCLUDED -- the capability EQUIPMENT axis owns it.
 _PROCESS_TIME_DIMENSIONS = (
-    ("step elapsed time", _ELAPSED_DEMAND, "max_step_minutes"),
-    ("route-total elapsed time", _ELAPSED_DEMAND, "max_total_minutes"),
-    ("active time", _ACTIVE_DEMAND, "max_active_minutes"),
-)
-_PROCESS_FAILCLOSE_DIMENSIONS = (
-    ("operator check interval",
-     lambda r: r.check_interval_minutes is not None,
-     lambda b: b.min_check_interval_minutes is not None),
-    ("attention mode",
-     lambda r: r.attention is not None,
-     lambda b: b.allowed_attention is not None),
-    ("agitation mode",
-     lambda r: r.agitation is not None,
-     lambda b: b.allowed_agitation is not None),
+    ("step elapsed time", "max_step_minutes"),
+    ("route-total elapsed time", "max_total_minutes"),
+    ("active time", "max_active_minutes"),
 )
 
 
-def _process_dimension_gaps(requirements, profile: CapabilityProfile) -> "tuple[list[str], list[str]]":
-    """Per-dimension declaration check (D10): returns ``(unmodeled, no_limit)`` labels over the dimensions the ROUTE
-    actually demands. UNDECLARED time dimension / unbounded non-time dimension -> ``unmodeled``; an operator NO_LIMIT
-    preference -> ``no_limit`` (not a gap, but tagged: a preference, not a measured capability)."""
+def _process_coverage_gaps(requirements) -> "list[str]":
+    """X-high D15 (1): the WHOLE-STEP coverage gate, independent of any profile. Every real step spends elapsed time,
+    hands-on time, attention and an agitation mode, so a step whose process record is ``None``, carries nothing
+    (``not is_declared``), or does not explicitly include its workup cannot be certified as runnable on ANY bench."""
+    gaps: "list[str]" = []
+    if not requirements:
+        gaps.append("the route declares no process steps")
+    for index, record in enumerate(requirements, start=1):
+        if record is None:
+            gaps.append(f"step {index} carries no process record -- its whole-step time/attention/agitation demand is "
+                        "unread")
+        elif not record.is_declared:
+            gaps.append(f"step {index} carries an EMPTY process record (nothing declared) -- not a declaration")
+        elif not record.workup_included:
+            gaps.append(f"step {index} process record does not include its workup -- the whole step is not covered")
+    return gaps
+
+
+def _process_declaration_gaps(requirements, profile: CapabilityProfile) -> "tuple[list[str], list[str]]":
+    """X-high D15 (2): the PROFILE-side declaration gaps, applied ALWAYS (not gated on what the route happens to
+    state -- route silence is a gap, not an absence of demand). Returns ``(gaps, no_limit)``: each time dimension that
+    is UNDECLARED (not NO_LIMIT), ``allowed_attention is None``, ``allowed_agitation is None``, and
+    ``min_check_interval_minutes is None`` while any step's attention is PERIODIC or undeclared."""
+    from ..process_constraints import Attention
     from .declarations import DimensionDeclaration, process_dimension_state  # D10 (waste-process owner)
 
     bounds = profile.process_bounds
-    demanded = [r for r in requirements if r is not None]
-    unmodeled: "list[str]" = []
+    gaps: "list[str]" = []
     no_limit: "list[str]" = []
-    for label, route_demands, field_name in _PROCESS_TIME_DIMENSIONS:
-        if not any(route_demands(r) for r in demanded):
-            continue
+    for label, field_name in _PROCESS_TIME_DIMENSIONS:
         state = process_dimension_state(profile, field_name)
         if state is DimensionDeclaration.UNDECLARED:
-            unmodeled.append(label)
+            gaps.append(f"no bound declared on {label} ({field_name})")
         elif state is DimensionDeclaration.NO_LIMIT:
             no_limit.append(label)
-    for label, route_demands, bounds_models in _PROCESS_FAILCLOSE_DIMENSIONS:
-        if any(route_demands(r) for r in demanded) and not bounds_models(bounds):
-            unmodeled.append(label)
-    return unmodeled, no_limit
+    if bounds.allowed_attention is None:
+        gaps.append("no allowed attention modes declared (allowed_attention)")
+    if bounds.allowed_agitation is None:
+        gaps.append("no allowed agitation modes declared (allowed_agitation)")
+    periodic_or_unknown = any(r is None or r.attention is None or r.attention is Attention.PERIODIC
+                              for r in requirements)
+    if bounds.min_check_interval_minutes is None and periodic_or_unknown:
+        gaps.append("no minimum operator check interval declared (min_check_interval_minutes) while a step's "
+                    "attention is periodic or undeclared")
+    return gaps, no_limit
 
 
 def _process_axis(requirements, profile: CapabilityProfile, *, unresolved: "tuple[str, ...]" = ()) -> AxisResult:
     """DELEGATE, never reimplement (decision 2): the per-step/route-total comparison lives in
-    ``evaluate_process_requirements``; this relabels its verdict onto :class:`CapabilityStatus` and then applies the
-    D10 per-dimension declaration law, which needs the PROFILE (its ``no_limit_dimensions``), not just the bounds:
+    ``evaluate_process_requirements`` (fed the TIMELINE-effective records -- X-high D15); this relabels its verdict
+    and applies the capability law, which is independently correct (the 0.8 readiness layer is a separate defence):
 
-    * UNDECLARED dimension + a real route demand -> UNKNOWN (an unbounded bench cannot be certified against it);
-    * DECLARED_BOUND -> the delegate compares;
-    * NO_LIMIT (time dimensions only) + demand -> not a gap; the reason is tagged "operator NO_LIMIT preference, not
-      measured capability".
-
-    When the delegate returns UNCONSTRAINED (no ProcessBounds field set at all) and the route declares a process
-    demand, the axis is FIT only if every demanded dimension is NO_LIMIT and every step carries a process record;
-    otherwise UNKNOWN (D6). ``unresolved`` (D13: a duration stated outside the process record's elapsed ceiling)
-    caps the axis at UNKNOWN; a provable EXCLUDED still wins."""
+    1. the whole-step coverage gate (:func:`_process_coverage_gaps`) -> UNKNOWN;
+    2. the profile declaration gaps (:func:`_process_declaration_gaps`) -> UNKNOWN; NO_LIMIT waives ONLY the three
+       time preferences, tagged "operator NO_LIMIT preference, not measured capability";
+    3. the process axis is NEVER ``UNCONSTRAINED`` for a route with >= 1 step (the old UNCONSTRAINED->FIT branch is
+       deleted: a silent route against a silent bench is an open question, not "outside the question");
+    4. ``unresolved`` (a stated time/rate/agitation demand the projection could not read) -> UNKNOWN;
+    5. a provable EXCLUDED from the delegate still wins (BLOCKED)."""
     bounds = profile.process_bounds
     fit = evaluate_process_requirements(requirements, bounds)
-    status = _PROCESS_FIT_TO_CAPABILITY[fit.status]
-    route_demands = any(r is not None and r.is_declared for r in requirements)
-    unmodeled, no_limit = _process_dimension_gaps(requirements, profile)
+    coverage = _process_coverage_gaps(requirements)
+    declaration, no_limit = _process_declaration_gaps(requirements, profile)
     reasons = tuple(f"process: {reason}" for reason in (*fit.exclusions, *fit.gaps))
     if not reasons:
         reasons = (f"process: {fit.status.value}",)
     reasons += tuple(f"process: {label} -- operator NO_LIMIT preference, not measured capability"
                      for label in no_limit)
+    reasons += tuple(f"process: {gap}" for gap in (*coverage, *declaration))
     reasons += tuple(f"process: {u}" for u in unresolved)
-    if status is CapabilityStatus.UNCONSTRAINED and route_demands:
-        undeclared_steps = [i for i, r in enumerate(requirements, start=1) if r is None]
-        if unmodeled or undeclared_steps or not no_limit:
-            detail = []
-            if unmodeled:
-                detail.append(f"no bound declared on {', '.join(unmodeled)}")
-            if undeclared_steps:
-                detail.append(f"step(s) {', '.join(map(str, undeclared_steps))} carry no process record")
-            return AxisResult(
-                CapabilityStatus.UNKNOWN,
-                reasons + (
-                    "process: the declared profile states NO process bound, but this route carries a real "
-                    "time/attention/agitation demand -- an unbounded bench cannot be certified against it (D6"
-                    + (f"; {'; '.join(detail)}" if detail else "") + ")",),
-            )
-        status = CapabilityStatus.FIT
-    if status is CapabilityStatus.BLOCKED:
-        return AxisResult(status, reasons)
-    if status is CapabilityStatus.FIT and unmodeled:
+    if fit.status is ProcessFitStatus.EXCLUDED:
+        return AxisResult(CapabilityStatus.BLOCKED, reasons)
+    if coverage or declaration or unresolved or fit.status is not ProcessFitStatus.FITS:
         return AxisResult(
             CapabilityStatus.UNKNOWN,
-            reasons + (
-                f"process: this route declares a real demand on {', '.join(unmodeled)}, but the declared profile "
-                "leaves that dimension UNDECLARED -- an unbounded process dimension cannot be certified against a "
-                "real demand (F56/F62/D10, per-dimension)",),
+            reasons + ("process: the whole-step process demand cannot be certified against the declared bench -- "
+                       "an uncovered step, an undeclared bench dimension or an unread stated demand is UNKNOWN, "
+                       "never a pass (D15)",),
         )
-    if unresolved and status in (CapabilityStatus.FIT, CapabilityStatus.UNCONSTRAINED):
-        return AxisResult(
-            CapabilityStatus.UNKNOWN,
-            reasons + ("process: a stated duration is not covered by the process record -- UNKNOWN (D13)",),
-        )
-    return AxisResult(status, reasons)
+    return AxisResult(CapabilityStatus.FIT, reasons)
 
 
 def _measurement_axis(
@@ -887,6 +811,15 @@ def assess(
         raise TypeError("route_readiness must be a smartchem.experiment.readiness.RouteReadiness")
 
     material = _material_axis(requirements.material, profile.material_inventory)
+    if requirements.material_unresolved and material.status is not CapabilityStatus.BLOCKED:
+        # X-high D16/D17: a material demand with no typed home (a step with no ProcedureEvidence; an amount stated with
+        # no quantified typed use) caps the material axis at UNKNOWN -- a provable BLOCK still wins.
+        material = AxisResult(CapabilityStatus.UNKNOWN, material.reasons + tuple(
+            f"material: {note}" for note in requirements.material_unresolved) + (
+            "material: a stated material demand has no typed representation -- UNKNOWN, never a pass (D16/D17)",))
+    elif requirements.material_unresolved:
+        material = AxisResult(material.status, material.reasons + tuple(
+            f"material: {note}" for note in requirements.material_unresolved))
     equipment = _equipment_axis(requirements.equipment, profile.equipment, requirements.equipment_unrecognized)
     physical = _physical_axis(requirements.physical, profile.physical_bounds,
                               unresolved=requirements.physical_unresolved)

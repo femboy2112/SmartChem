@@ -1,9 +1,12 @@
 """Round V Wave B -- waste-stream projection (D9) + dimension declaration semantics (D10).
 
 F76: an empty-GHS byproduct is NEVER AQUEOUS_NEUTRAL (phase/pH/co-residents unestablished).
-F77: catalyst / reactant / medium residuals enter the waste question.
+F77: catalyst / reactant residuals enter the waste question.
 Lane E latent P0: auxiliaries living only in ``materials=`` strings still yield spent streams.
 F78/M82: the legacy ProcessBounds law is untouched; NO_LIMIT is an explicit, validated profile declaration.
+X-high D17: F-6 (an untyped material introduced by ANY op never vanishes), F-7 (a CATALYST label a step
+net-consumes is a role contradiction, never a resolved catalyst category), Part IV (``envelope.medium`` is prose,
+never a stream), the role-totality guard; D22: profile v1alpha3.
 """
 from __future__ import annotations
 
@@ -34,6 +37,7 @@ from smartchem.constraints import PhysicalBounds
 from smartchem.experiment.affordability import CostVector
 from smartchem.experiment.handling import ByproductEntry, Fate, HazardFlag, RouteHandling
 from smartchem.experiment.handling import verify_handling as real_verify_handling
+from smartchem.procedure_evidence import EvidenceField, OperationKind, OperationRole, ProcedureMaterialUse, ProcedureOperation
 from smartchem.procedure_evidence import ProcedureMaterialRole as R
 from smartchem.process_constraints import (
     Agitation,
@@ -198,11 +202,18 @@ def test_step_without_procedure_every_input_is_a_residual(iso_route):
     assert len(inputs) >= 2
 
 
-def test_medium_is_a_stream(iso_route):
-    hz = derive_waste(_with_step0(iso_route, medium="sulfuric acid"))
-    assert any("reaction medium 'sulfuric acid'" in r and "HAZARDOUS" in r for r in hz[1])
-    un = derive_waste(_with_step0(iso_route, medium="unobtainium broth"))
-    assert any("reaction medium 'unobtainium broth'" in u for u in un[2])
+_ISOPENTYL_MEDIUM_SENTENCE = "neat; acid-catalyzed (conc. H2SO4); reflux then fractional distillation"
+
+
+@pytest.mark.parametrize("medium", ["sulfuric acid", "unobtainium broth", _ISOPENTYL_MEDIUM_SENTENCE])
+def test_part_iv_medium_is_provenance_never_a_stream(iso_route, medium):
+    """Part IV: ``envelope.medium`` is a condition DESCRIPTION. Before D17 the whole sentence became a 'reaction
+    medium' spent stream (and a HAZARDOUS category when the words happened to name a hazard record). It is now
+    provenance only: the waste projection is invariant under the medium text."""
+    baseline = derive_waste(_with_step0(iso_route, medium=""))
+    with_medium = derive_waste(_with_step0(iso_route, medium=medium))
+    assert with_medium == baseline
+    assert not any("reaction medium" in line for part in with_medium[1:] for line in part)
 
 
 # -- Lane E latent P0: spent streams from OPERATIONS -------------------------------------------------------------
@@ -240,6 +251,127 @@ def test_derive_waste_is_pure_sorted_unique(iso_route):
         derive_waste("not a route")
 
 
+# -- X-high D17 F-6: nothing a procedure introduces may vanish ---------------------------------------------------
+
+def _append_op(route, kind, role, materials=(), uses=()):
+    """Append one op to step 0's real procedure (ordinals stay contiguous; a QUENCH op gets a PRESENT quench field so
+    the procedure stays coherent -- schema-legal source evidence, the attacker's own material)."""
+    proc = route.steps[0].envelope.procedure
+    op = ProcedureOperation(ordinal=len(proc.operations) + 1, kind=kind, role=role, materials=tuple(materials),
+                            material_uses=tuple(uses), locator="probe")
+    changes = {"operations": proc.operations + (op,)}
+    if role is OperationRole.QUENCH and not proc.quench.is_present:
+        changes["quench"] = EvidenceField.present("probe quench", "probe")
+    return _with_step0(route, procedure=dataclasses.replace(proc, **changes)), op.ordinal
+
+
+def _f6(unresolved, name):
+    return [u for u in unresolved if "introduces untyped material" in u and f"{name!r}" in u]
+
+
+@pytest.mark.parametrize("kind,role,material", [
+    (OperationKind.ADD, OperationRole.QUENCH, "ice water"),
+    (OperationKind.ADD, OperationRole.REACTION, "triethylamine"),
+    (OperationKind.ADD, OperationRole.OTHER, "acetone"),
+    (OperationKind.MIX, OperationRole.OTHER, "toluene"),
+    (OperationKind.HEAT, OperationRole.OTHER, "ethanol"),
+    (OperationKind.HOLD, OperationRole.OTHER, "dichloromethane"),
+    (OperationKind.COOL, OperationRole.OTHER, "ice"),
+])
+def test_f6_untyped_material_on_any_op_kind_is_an_unresolved_obligation(iso_route, kind, role, material):
+    """F-6: before D17 only spent-stream ops (WASH/RECRYSTALLIZATION, SEPARATE/FILTER/DRY/DISTILL) and typed uses made
+    an obligation, so an untyped material charged by an ADD/QUENCH/MIX/HEAT/HOLD/COOL op had NO waste obligation at
+    all (0 lines naming it). Now each such introduction is its own unresolved obligation, quoting its op."""
+    assert not _f6(derive_waste(iso_route)[2], material)
+    route, ordinal = _append_op(iso_route, kind, role, materials=(material,))
+    hits = _f6(derive_waste(route)[2], material)
+    assert len(hits) == 1, hits
+    assert f"op #{ordinal} {kind.value}/{role.value}" in hits[0] and "disposal routing is UNKNOWN" in hits[0]
+
+
+def test_f6_fires_on_a_spent_stream_op_beside_its_typed_uses(iso_route):
+    """A SEPARATE op's stream line names ONLY its typed uses when it has any -- an extra untyped string on the same op
+    would go unnamed. F-6 gives it its own line."""
+    brine = ProcedureMaterialUse(name="brine", role=R.WASH, evidence_source="probe")
+    route, ordinal = _append_op(iso_route, OperationKind.SEPARATE, OperationRole.OTHER,
+                                materials=("brine", "hexane"), uses=(brine,))
+    unresolved = derive_waste(route)[2]
+    stream = [u for u in unresolved if f"op #{ordinal} SEPARATE/OTHER leaves a spent stream" in u]
+    assert stream and "hexane" not in stream[0]
+    assert len(_f6(unresolved, "hexane")) == 1
+    assert not _f6(unresolved, "brine")  # the typed use covers its own exact name
+
+
+def test_f6_an_introduction_masked_by_a_same_named_stream_elsewhere_still_surfaces(iso_route):
+    """The paracetamol shape: op A charges untyped 'water'; a LATER op carries a typed RINSE use named 'water'. The
+    name-deduplicated spent-stream line used to be the only 'water' obligation, silently absorbing op A's
+    introduction. Coverage is per OP, so op A's untyped introduction keeps its own line; op B's typed use does not."""
+    route, a = _append_op(iso_route, OperationKind.ADD, OperationRole.OTHER, materials=("water",))
+    rinse = ProcedureMaterialUse(name="water", role=R.RINSE, evidence_source="probe")
+    route, b = _append_op(route, OperationKind.FILTER, OperationRole.OTHER, materials=("water",), uses=(rinse,))
+    hits = _f6(derive_waste(route)[2], "water")
+    assert len(hits) == 1 and f"op #{a} ADD/OTHER" in hits[0], hits
+
+
+def test_f6_coverage_is_exact_fold_equality_never_a_substring(iso_route):
+    use = ProcedureMaterialUse(name="brine", role=R.WASH, evidence_source="probe")
+    route, _ = _append_op(iso_route, OperationKind.ADD, OperationRole.OTHER,
+                          materials=("  Brine ", "brine and toluene"), uses=(use,))
+    unresolved = derive_waste(route)[2]
+    assert not _f6(unresolved, "Brine")                    # case/whitespace fold -> covered
+    assert len(_f6(unresolved, "brine and toluene")) == 1  # a second species hidden in a phrase stays uncovered
+
+
+def test_f6_real_isopentyl_record_introduces_nothing_untyped(iso_route):
+    # every isopentyl op.materials string is aligned to a typed use of its own op (Wave-C K4) -> no F-6 line
+    assert not [u for u in derive_waste(iso_route)[2] if "introduces untyped material" in u]
+
+
+def test_role_totality_guard_refuses_a_role_with_no_waste_obligation(monkeypatch):
+    waste_mod._check_role_totality()  # the shipped map is total
+    monkeypatch.setattr(waste_mod, "_SPENT_STREAM_ROLES", waste_mod._SPENT_STREAM_ROLES - {R.RINSE})
+    with pytest.raises(RuntimeError, match="RINSE"):
+        waste_mod._check_role_totality()
+
+
+# -- X-high D17 F-7: a CATALYST label must agree with the balanced reaction ------------------------------------------
+
+def _relabel(route, name, role):
+    proc = route.steps[0].envelope.procedure
+    ops = tuple(dataclasses.replace(op, material_uses=tuple(
+        dataclasses.replace(u, role=role) if u.name == name else u for u in op.material_uses)) for op in proc.operations)
+    return _with_step0(route, procedure=dataclasses.replace(proc, operations=ops))
+
+
+def test_f7_net_consumed_reactant_relabelled_catalyst_earns_no_resolved_category(iso_route):
+    """F-7: relabelling the net-consumed acetic acid REACTANT as a CATALYST used to REPLACE its unresolved residual
+    with a resolved 'catalyst residual ... HAZARDOUS' line. Now it is an unresolved role contradiction."""
+    step = iso_route.steps[0]
+    acetic = next(u for op in step.envelope.procedure.operations for u in op.material_uses if u.name == "acetic acid")
+    assert acetic.identity is not None and step.net_consumes(acetic.identity)
+    route = _relabel(iso_route, "acetic acid", R.CATALYST)
+    cats, reasons, unresolved = derive_waste(route)
+    assert not any("'acetic acid'" in r for r in reasons), reasons
+    contradiction = [u for u in unresolved if "'acetic acid'" in u and "NET-CONSUMED" in u and "(F-7)" in u]
+    assert contradiction, unresolved
+    # the genuine catalyst (sulfuric acid: not net-consumed) still earns its resolved HAZARDOUS residual
+    assert WasteCapability.HAZARDOUS in cats and any("catalyst residual 'sulfuric acid'" in r for r in reasons)
+
+
+def test_f7_a_same_named_envelope_catalyst_cannot_smuggle_the_category_back(iso_route):
+    """Envelope catalysts are read FIRST and deduplicated by name -- without the pre-pass, declaring
+    ``catalysts=('acetic acid',)`` beside the contradicted use would earn the resolved HAZARDOUS line by name."""
+    route = _relabel(iso_route, "acetic acid", R.CATALYST)
+    route = _with_step0(route, catalysts=("acetic acid",) + tuple(route.steps[0].envelope.catalysts))
+    _cats, reasons, unresolved = derive_waste(route)
+    assert not any("'acetic acid'" in r for r in reasons), reasons
+    assert any("'acetic acid' (step 1 envelope catalyst) is NET-CONSUMED" in u for u in unresolved)
+
+
+def test_f7_control_no_contradiction_on_the_real_record(iso_route):
+    assert not any("NET-CONSUMED" in u for u in derive_waste(iso_route)[2])
+
+
 # -- D10: declarations + NO_LIMIT validation ---------------------------------------------------------------------
 
 def test_no_limit_eligible_set():
@@ -248,7 +380,7 @@ def test_no_limit_eligible_set():
 
 @pytest.mark.parametrize("bad", [
     "allowed_attention", "allowed_agitation", "min_check_interval_minutes", "available_equipment",
-    "max_temperature_k", "max_pressure_atm", "min_pressure_atm", "bogus",
+    "max_temperature_k", "max_pressure_atm", "min_pressure_atm", "min_temperature_k", "bogus",
 ])
 def test_ineligible_no_limit_refused(bad):
     with pytest.raises(ValueError, match="not NO_LIMIT-eligible"):
@@ -282,6 +414,8 @@ def test_dimension_states():
     assert process_dimension_state(p, "allowed_attention") is DimensionDeclaration.UNDECLARED
     assert physical_dimension_state(p, "max_temperature_k") is DimensionDeclaration.DECLARED_BOUND
     assert physical_dimension_state(p, "max_pressure_atm") is DimensionDeclaration.UNDECLARED
+    assert physical_dimension_state(p, "min_temperature_k") is DimensionDeclaration.UNDECLARED  # D14 floor dimension
+    assert physical_dimension_state(research_lab(), "min_temperature_k") is DimensionDeclaration.DECLARED_BOUND
     assert budget_state(p) is DimensionDeclaration.NO_LIMIT
     assert budget_state(custom(profile_id="y")) is DimensionDeclaration.UNDECLARED
     assert budget_state(poor_man()) is DimensionDeclaration.DECLARED_BOUND
@@ -304,12 +438,14 @@ def test_presets_never_emit_no_limit():
 
 
 def test_profile_schema_bumped_and_digest_covers_no_limit():
-    assert CAPABILITY_PROFILE_SCHEMA == "smartchem.capability/capability-profile-v1alpha2"
+    # D22: v1alpha3 (embeds PhysicalBounds v1alpha2 + StockMaterial v1alpha3); the WIP-only v1alpha2 is refused
+    assert CAPABILITY_PROFILE_SCHEMA == "smartchem.capability/capability-profile-v1alpha3"
     a = custom(profile_id="x")
     b = custom(profile_id="x", no_limit_dimensions=frozenset({"max_total_minutes"}))
     assert a.profile_digest != b.profile_digest
-    with pytest.raises(ValueError):
-        dataclasses.replace(a, schema_version="smartchem.capability/capability-profile-v1alpha1")
+    for stale in ("smartchem.capability/capability-profile-v1alpha1", "smartchem.capability/capability-profile-v1alpha2"):
+        with pytest.raises(ValueError):
+            dataclasses.replace(a, schema_version=stale)
 
 
 def test_profile_codec_round_trips_no_limit():

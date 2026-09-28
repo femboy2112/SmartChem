@@ -101,23 +101,24 @@ def test_gate_18_two_reactant_bottles_no_longer_fit_now_auxiliaries_participate(
 
 
 def test_gate_18_vinegar_control_cannot_masquerade_as_glacial_acetic_acid():
-    """M1/M2/M4 shape: the fully-declared FIT bench with ONE bottle swapped -- glacial acetic acid ->
-    household vinegar, keyed on the identical acetic-acid structure. Vinegar (few-% aqueous) BLOCKS the
-    acetic-acid requirement on BOTH phase (AQUEOUS_SOLUTION != the neat LIQUID glacial formulation) AND assay
-    (best case 0.08 << the >=0.99 compendial floor). It must BLOCK, never FIT, or the material axis is not
-    discriminating -- and the discrimination is now phase-first per D1/D4, assay reinforcing."""
+    """M1/M2/M4 shape: the fully-declared bench with ONE bottle swapped -- glacial acetic acid -> household vinegar,
+    keyed on the identical acetic-acid structure. The vinegar must NEVER FIT the acetic-acid requirement.
+
+    X-high D18 (VERDICT LEGITIMATELY MOVED BLOCKED -> UNKNOWN): Round V's BLOCK rested ONLY on an ungraded phase
+    (the source never says the acid is a LIQUID; the author inferred it) and on the NEAT claim, itself AUTHOR_INFERRED
+    (the page never says "undiluted"). An inference can neither certify nor refute (F71), and the vinegar band is
+    ASSUMED, so no honest certifying path keeps it BLOCKED. What survives is the load-bearing half: it cannot FIT,
+    and the reason names the uncertifiable phase/state instead of pretending to a proof."""
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
     profile = isopentyl_capability_fit_bench(material_inventory=_vinegar_for_glacial_inventory())
     assessment = assess(profile, requirements, evaluate_route(route))
 
-    assert assessment.material.status is CapabilityStatus.BLOCKED
-    # Round V (FLIPPED from the retired "[0.990, 1.000]" compiler band): the discrimination now comes from the
-    # SOURCE-typed specification + phase through THE comparison law -- the vinegar edge is BLOCKED for the acid.
+    assert assessment.material.status is CapabilityStatus.UNKNOWN
     acid = next(r for r in assessment.material.reasons if "(REACTANT) acetic acid" in r)
-    assert "household-white-vinegar: BLOCKED" in acid
-    assert "phase" in acid.lower()
-    assert assessment.overall is CapabilityStatus.BLOCKED
+    assert "household-white-vinegar: FIT" not in acid  # never a proven draw
+    assert "phase" in acid.lower() and "AUTHOR_INFERRED" in acid
+    assert assessment.overall is not CapabilityStatus.FIT
     assert assessment.is_capability_fit is False
 
 

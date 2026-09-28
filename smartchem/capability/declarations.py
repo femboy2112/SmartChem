@@ -21,6 +21,7 @@ ProcessBounds.min_check_interval_min.  operator CAPABILITY  no  -- how often som
 ProcessBounds.allowed_agitation        operator CAPABILITY  no  -- stirring modes the bench CAN deliver
 ProcessBounds.available_equipment      PHYSICAL resource    no  -- hardware exists or it does not
 PhysicalBounds.max_temperature_k       PHYSICAL resource    no  -- a heat source's reach is measured, not wished
+PhysicalBounds.min_temperature_k       PHYSICAL resource    no  -- a cold bath's floor is equipment, not a wish (D14)
 PhysicalBounds.min_pressure_atm        PHYSICAL resource    no  -- vacuum needs a pump
 PhysicalBounds.max_pressure_atm        PHYSICAL resource    no  -- pressure needs a rated vessel
 CapabilityProfile.budget               operator PREFERENCE  yes -- "money is no object" (budget must be None)
@@ -80,7 +81,8 @@ PROCESS_DIMENSIONS: "frozenset[str]" = frozenset(
     f.name for f in fields(ProcessBounds) if f.name != "schema_version"
 )
 
-#: every PhysicalBounds bound dimension -- never NO_LIMIT-eligible.
+#: every PhysicalBounds bound dimension -- never NO_LIMIT-eligible. Derived from the dataclass fields, so the Round V
+#: X-high temperature FLOOR (``min_temperature_k``, D14) is a physical dimension the moment the shared leaf gains it.
 PHYSICAL_DIMENSIONS: "frozenset[str]" = frozenset(
     f.name for f in fields(PhysicalBounds) if f.name != "schema_version"
 )

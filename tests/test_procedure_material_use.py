@@ -23,6 +23,7 @@ from smartchem.decompiler_conditions import (
     _PARACETAMOL_PROCEDURE,
 )
 from smartchem.experiment.stock import Phase, StockQuantity
+from smartchem.material_spec import EvidenceKind, PhaseClaim
 from smartchem.procedure_evidence import (
     OperationKind,
     OperationRole,
@@ -50,12 +51,12 @@ def test_material_use_constructs_with_none_identity() -> None:
     """An ionic/mixture species is carried with identity=None -- the honest carrier, never skipped."""
     use = ProcedureMaterialUse(
         name="sodium bicarbonate", role=ProcedureMaterialRole.WASH, identity=None,
-        formulation="5% aqueous", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("25", "mL"),
-        evidence_source=_LOC)
+        formulation="5% aqueous", phase=PhaseClaim(Phase.AQUEOUS_SOLUTION, EvidenceKind.SOURCE_QUOTED),
+        quantity=StockQuantity.of("25", "mL"), evidence_source=_LOC)
     assert use.identity is None
     assert use.role is ProcedureMaterialRole.WASH
     assert use.formulation == "5% aqueous"
-    assert use.phase is Phase.AQUEOUS_SOLUTION
+    assert use.phase == PhaseClaim(Phase.AQUEOUS_SOLUTION, EvidenceKind.SOURCE_QUOTED)
     assert use.quantity == StockQuantity.of("25", "mL")
 
 
@@ -64,7 +65,8 @@ def test_material_use_constructs_with_a_resolved_molecule() -> None:
     h2so4 = parse_smiles("OS(=O)(=O)O")
     use = ProcedureMaterialUse(
         name="sulfuric acid", role=ProcedureMaterialRole.CATALYST, identity=h2so4,
-        formulation="conc.", phase=Phase.LIQUID, quantity=StockQuantity.of("4", "mL"), evidence_source=_LOC)
+        formulation="conc.", phase=PhaseClaim(Phase.LIQUID, EvidenceKind.AUTHOR_INFERRED),
+        quantity=StockQuantity.of("4", "mL"), evidence_source=_LOC)
     assert use.identity is not None
     assert use.identity.formula == {"H": 2, "O": 4, "S": 1}
 
@@ -73,7 +75,7 @@ def test_material_use_is_digestible_and_stable() -> None:
     """It is a frozen Digestible: equal content -> equal digest, and the Molecule identity digests cleanly."""
     make = lambda: ProcedureMaterialUse(  # noqa: E731 -- terse on purpose; two identical births, one identity
         name="sulfuric acid", role=ProcedureMaterialRole.CATALYST, identity=parse_smiles("OS(=O)(=O)O"),
-        formulation="conc.", phase=Phase.LIQUID, evidence_source=_LOC)
+        formulation="conc.", phase=PhaseClaim(Phase.LIQUID, EvidenceKind.AUTHOR_INFERRED), evidence_source=_LOC)
     assert make().digest == make().digest
 
 
@@ -114,6 +116,10 @@ def test_phase_and_quantity_reject_wrong_types() -> None:
     with pytest.raises(TypeError):
         ProcedureMaterialUse(
             name="x", role=ProcedureMaterialRole.WASH, phase="AQUEOUS_SOLUTION", evidence_source=_LOC)  # type: ignore[arg-type]
+    # D18 (Part III): a BARE Phase is an ungraded claim and is refused -- the phase must carry its evidence kind.
+    with pytest.raises(TypeError, match="PhaseClaim"):
+        ProcedureMaterialUse(
+            name="x", role=ProcedureMaterialRole.WASH, phase=Phase.AQUEOUS_SOLUTION, evidence_source=_LOC)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         ProcedureMaterialUse(
             name="x", role=ProcedureMaterialRole.WASH, quantity="25 mL", evidence_source=_LOC)  # type: ignore[arg-type]
@@ -170,19 +176,24 @@ def test_isopentyl_material_census() -> None:
     assert uses["sulfuric acid"].identity.formula == {"H": 2, "O": 4, "S": 1}
     assert uses["sulfuric acid"].formulation == "conc."
     assert uses["sulfuric acid"].specification.unresolved_terms == ("conc.",)
-    assert uses["sulfuric acid"].phase is Phase.LIQUID
+    assert uses["sulfuric acid"].phase == PhaseClaim(Phase.LIQUID, EvidenceKind.AUTHOR_INFERRED,
+                                                      note=uses["sulfuric acid"].phase.note)
     assert uses["sulfuric acid"].quantity == StockQuantity.of("4", "mL")
     # ionic washes/drier: identity=None (unresolvable), the sourced adjective survives as structured data
     assert uses["sodium bicarbonate"].identity is None
     assert uses["sodium bicarbonate"].role is ProcedureMaterialRole.WASH
-    assert uses["sodium bicarbonate"].phase is Phase.AQUEOUS_SOLUTION
+    # D18: the cited page itself says "5% aqueous sodium bicarbonate" -> SOURCE_QUOTED (the Round-V comment
+    # calling this an author inference was wrong).
+    assert (uses["sodium bicarbonate"].phase.phase, uses["sodium bicarbonate"].phase.evidence) == (
+        Phase.AQUEOUS_SOLUTION, EvidenceKind.SOURCE_QUOTED)
     assert uses["sodium chloride"].identity is None
     assert uses["magnesium sulfate"].identity is None
     assert uses["magnesium sulfate"].role is ProcedureMaterialRole.DRY
     assert uses["magnesium sulfate"].formulation == "anhydrous"
     assert uses["magnesium sulfate"].specification is not None
     assert uses["sodium chloride"].quantity == StockQuantity.of("5", "mL")  # Round V F64: sourced 5 mL carried
-    assert uses["magnesium sulfate"].phase is Phase.SOLID
+    assert (uses["magnesium sulfate"].phase.phase, uses["magnesium sulfate"].phase.evidence) == (
+        Phase.SOLID, EvidenceKind.AUTHOR_INFERRED)  # "2 g" is a mass; the page never says SOLID
     assert uses["magnesium sulfate"].quantity == StockQuantity.of("2", "g")
     # benign resolvable waters
     assert uses["cold water"].identity is not None and uses["cold water"].role is ProcedureMaterialRole.RINSE
@@ -218,7 +229,8 @@ def test_paracetamol_material_census() -> None:
     assert uses["hydrochloric acid"].role is ProcedureMaterialRole.NEUTRALIZE
     assert uses["hydrochloric acid"].identity is not None
     assert uses["hydrochloric acid"].identity.formula == {"Cl": 1, "H": 1}
-    assert uses["hydrochloric acid"].phase is Phase.AQUEOUS_SOLUTION
+    assert (uses["hydrochloric acid"].phase.phase, uses["hydrochloric acid"].phase.evidence) == (
+        Phase.AQUEOUS_SOLUTION, EvidenceKind.AUTHOR_INFERRED)  # a dictionary reading of "hydrochloric acid"
     assert uses["hydrochloric acid"].quantity == StockQuantity.of("1.5", "mL")
     # Round V: verbatim "concentrated hydrochloric acid", no % -> unresolved, never a number
     assert uses["hydrochloric acid"].formulation == "concentrated"

@@ -11,6 +11,14 @@ hazard the "one parser" discipline forbids).
 it directly, and ``ConstraintBox`` DELEGATES its T/P validation here -- so the finite/positive/ordered rules
 (CONSTR-VAL-01) live in exactly ONE place.  It models temperature and pressure only; the bench's reagent and
 equipment inventory stay with ``ConstraintBox`` (the request already carries reagents/stock in its own fields).
+
+Round V X-high (barrier D14, F-1): temperature is a RANGE, not a ceiling.  ``v1alpha1`` could say "this bench cannot
+exceed 500 K" but not "this bench cannot get below 250 K", so an ice-bath or cryogenic demand had no honest capability
+coordinate and a 77 K cooling step certified against a kitchen.  ``v1alpha2`` appends ``min_temperature_k`` (LAST --
+two positional call sites) to THIS leaf rather than growing a second, capability-only temperature model: route demand
+and bench capability stay one type.  The legacy reading is untouched -- ``None`` still means UNCONSTRAINED for every
+legacy caller -- and a ``v1alpha1`` box is still constructible (a released v0.8 payload decodes to one) ONLY with the
+floor left ``None``: a v1alpha1 record never said anything about a lower temperature, so it may not carry one.
 """
 from __future__ import annotations
 
@@ -20,11 +28,14 @@ from dataclasses import dataclass
 
 from .contracts import Digestible
 
-__all__ = ["PHYSICAL_BOUNDS_SCHEMA", "PhysicalBounds"]
+__all__ = ["PHYSICAL_BOUNDS_SCHEMA", "PHYSICAL_BOUNDS_SCHEMA_V1", "PhysicalBounds"]
 
-PHYSICAL_BOUNDS_SCHEMA = "smartchem.constraints/physical-bounds-v1alpha1"
+PHYSICAL_BOUNDS_SCHEMA = "smartchem.constraints/physical-bounds-v1alpha2"
+#: The released v0.8 shape (no temperature floor). Accepted ONLY with ``min_temperature_k is None`` (legacy decode).
+PHYSICAL_BOUNDS_SCHEMA_V1 = "smartchem.constraints/physical-bounds-v1alpha1"
+_ACCEPTED_SCHEMAS = (PHYSICAL_BOUNDS_SCHEMA, PHYSICAL_BOUNDS_SCHEMA_V1)
 
-_BOUND_NAMES = ("max_temperature_k", "min_pressure_atm", "max_pressure_atm")
+_BOUND_NAMES = ("max_temperature_k", "min_pressure_atm", "max_pressure_atm", "min_temperature_k")
 
 
 @dataclass(frozen=True)
@@ -33,18 +44,27 @@ class PhysicalBounds(Digestible):
 
     ``None`` on a bound means that dimension is UNCONSTRAINED.  An all-``None`` box constrains nothing -- a route
     judged against it is ``UNCONSTRAINED`` (nothing assessed), never a pass (section 11).  Validation is strict
-    (CONSTR-VAL-01): a bound must be a real, finite, positive number, and ``min_pressure_atm`` may not exceed
-    ``max_pressure_atm`` (an empty pressure window).
+    (CONSTR-VAL-01): a bound must be a real, finite, positive number, ``min_pressure_atm`` may not exceed
+    ``max_pressure_atm`` (an empty pressure window), and ``min_temperature_k`` may not exceed ``max_temperature_k``
+    (an empty temperature window).
+
+    ``min_temperature_k`` (D14) is the lowest temperature: on a route DEMAND, the coldest a step must be taken; on a
+    bench CAPABILITY, the coldest the bench can reach.  It is appended LAST so positional construction is unchanged.
     """
 
     schema_version: str = PHYSICAL_BOUNDS_SCHEMA
     max_temperature_k: "float | None" = None
     min_pressure_atm: "float | None" = None
     max_pressure_atm: "float | None" = None
+    min_temperature_k: "float | None" = None
 
     def __post_init__(self) -> None:
-        if self.schema_version != PHYSICAL_BOUNDS_SCHEMA:
-            raise ValueError(f"schema_version must be exactly {PHYSICAL_BOUNDS_SCHEMA!r}")
+        if self.schema_version not in _ACCEPTED_SCHEMAS:
+            raise ValueError(f"schema_version must be exactly {PHYSICAL_BOUNDS_SCHEMA!r} "
+                             f"(or the legacy {PHYSICAL_BOUNDS_SCHEMA_V1!r})")
+        if self.schema_version == PHYSICAL_BOUNDS_SCHEMA_V1 and self.min_temperature_k is not None:
+            raise ValueError(f"a legacy {PHYSICAL_BOUNDS_SCHEMA_V1!r} box has no temperature floor -- "
+                             f"min_temperature_k needs {PHYSICAL_BOUNDS_SCHEMA!r}")
         for name in _BOUND_NAMES:
             v = getattr(self, name)
             if v is None:
@@ -59,6 +79,12 @@ class PhysicalBounds(Digestible):
             and self.min_pressure_atm > self.max_pressure_atm
         ):
             raise ValueError("min_pressure_atm cannot exceed max_pressure_atm")
+        if (
+            self.min_temperature_k is not None
+            and self.max_temperature_k is not None
+            and self.min_temperature_k > self.max_temperature_k
+        ):
+            raise ValueError("min_temperature_k cannot exceed max_temperature_k")
 
     @classmethod
     def of(
@@ -67,9 +93,10 @@ class PhysicalBounds(Digestible):
         max_temperature_k: "float | None" = None,
         min_pressure_atm: "float | None" = None,
         max_pressure_atm: "float | None" = None,
+        min_temperature_k: "float | None" = None,
     ) -> "PhysicalBounds":
-        """Build a bounds box from keyword bounds (the ``schema_version`` is supplied)."""
-        return cls(PHYSICAL_BOUNDS_SCHEMA, max_temperature_k, min_pressure_atm, max_pressure_atm)
+        """Build a bounds box from keyword bounds (the current ``schema_version`` is supplied)."""
+        return cls(PHYSICAL_BOUNDS_SCHEMA, max_temperature_k, min_pressure_atm, max_pressure_atm, min_temperature_k)
 
     @classmethod
     def unconstrained(cls) -> "PhysicalBounds":
@@ -84,6 +111,8 @@ class PhysicalBounds(Digestible):
     def describe(self) -> str:
         """A short human description of the declared bounds, or ``'unconstrained'`` when nothing is declared."""
         parts = []
+        if self.min_temperature_k is not None:
+            parts.append(f"T>={self.min_temperature_k:g} K")
         if self.max_temperature_k is not None:
             parts.append(f"T<={self.max_temperature_k:g} K")
         if self.min_pressure_atm is not None:

@@ -151,11 +151,17 @@ def test_matrix_isopentyl_research_lab_no_stock_is_unknown_on_material_and_the_s
     assert a.overall is CapabilityStatus.UNKNOWN
     # Round V D13 (FLIPPED: +equipment, +monetary): the source's cool/dry ops name no apparatus (equipment
     # UNKNOWN), and research_lab() declares no budget (UNDECLARED, not unconstrained -> monetary UNKNOWN).
+    # X-high (FLIPPED: +physical, +measurement): D14 -- the reflux/cool temperatures are prose and the fractional
+    # distillation states no typed temperature with no whole-step peak left to cover it (the 416 K head range is a
+    # LOWER bound, P-X2); D16 -- the "basic to litmus" / fraction / reflux-time ENDPOINT criteria have no typed
+    # measurement carrier. Both are unread demands on their owning axis, never a pass.
     assert _nonclean_axes(a) == {
         "material": CapabilityStatus.UNKNOWN,
         "equipment": CapabilityStatus.UNKNOWN,
+        "physical": CapabilityStatus.UNKNOWN,
         "process": CapabilityStatus.UNKNOWN,
         "containment": CapabilityStatus.UNKNOWN,
+        "measurement": CapabilityStatus.UNKNOWN,
         "waste": CapabilityStatus.UNKNOWN,
         "monetary": CapabilityStatus.UNKNOWN,
     }
@@ -191,11 +197,15 @@ def test_matrix_isopentyl_fully_declared_custom_collapses_to_unknown_on_the_sema
     # Round V (FLIPPED: +material, +equipment, +monetary): material is UNKNOWN (D2/D13: several requirements have
     # only POSSIBLE sources -- unresolved/unknown-basis specifications, bottles not provably the pure species -- so
     # the proven allocation falls short); equipment UNKNOWN (D13 unread cool/dry ops); monetary UNKNOWN (no budget).
+    # X-high (FLIPPED: +physical, +measurement): the same D14 prose/uncovered-thermal-op and D16 endpoint demands as
+    # the research-lab row -- no stock or instrument can discharge a demand the source never typed.
     assert _nonclean_axes(a) == {
         "material": CapabilityStatus.UNKNOWN,
         "equipment": CapabilityStatus.UNKNOWN,
+        "physical": CapabilityStatus.UNKNOWN,
         "process": CapabilityStatus.UNKNOWN,
         "containment": CapabilityStatus.UNKNOWN,
+        "measurement": CapabilityStatus.UNKNOWN,
         "waste": CapabilityStatus.UNKNOWN,
         "monetary": CapabilityStatus.UNKNOWN,
     }
@@ -214,7 +224,6 @@ def _vinegar_inventory():
     ("minus_IR",
      dict(measurement=frozenset({MeasurementMethod.MASS, MeasurementMethod.MELTING_POINT})),
      "measurement", CapabilityStatus.BLOCKED),
-    ("vinegar", dict(material_inventory="__vinegar__"), "material", CapabilityStatus.BLOCKED),
     ("insufficient_quantity",
      dict(material_inventory="__insufficient__"), "material", CapabilityStatus.BLOCKED),
     ("minus_procurement", dict(procurement=frozenset()), "procurement", CapabilityStatus.BLOCKED),
@@ -229,27 +238,28 @@ def test_matrix_isopentyl_targeted_negatives_each_fail_on_their_one_axis(label, 
     route = _isopentyl_route()
     req = compile_capability_requirements(route)
     inv = overrides.pop("material_inventory", None)
-    if inv == "__vinegar__":
-        overrides["material_inventory"] = _vinegar_inventory()
-    elif inv == "__insufficient__":
+    if inv == "__insufficient__":
         overrides["material_inventory"] = material_library.isopentyl_insufficient_quantity_inventory()
     a = assess(isopentyl_capability_fit_bench(**overrides), req, evaluate_route(route))
     assert getattr(a, axis).status is expected, (label, _nonclean_axes(a))
     assert a.overall is CapabilityStatus.BLOCKED
 
 
-def test_matrix_isopentyl_wrong_phase_alcohol_blocks_on_material_phase():
-    """M26 (D4): the mis-phased-alcohol negative -- a dilute AQUEOUS isoamyl bottle vs the neat-LIQUID phase
-    requirement -- BLOCKS on the material axis, and phase is the named reason."""
+@pytest.mark.parametrize("label, inventory", [
+    ("wrong_phase", material_library.isopentyl_wrong_phase_inventory),
+    ("vinegar", _vinegar_inventory),
+])
+def test_matrix_isopentyl_uncertifiable_phase_negatives_never_fit(label, inventory):
+    """M26 (D4) + the gate-#18 vinegar control. X-high D18 (VERDICT LEGITIMATELY MOVED BLOCKED -> UNKNOWN): both
+    BLOCKs rested ONLY on the ungraded phase -- the requirement's LIQUID is an AUTHOR_INFERRED reading (the source
+    never states the phase), and an inference can neither certify a match nor refute a mismatch (F71). The
+    load-bearing guarantee stays: the substituted bottle is NEVER a FIT, and phase is the named reason."""
     route = _isopentyl_route()
     req = compile_capability_requirements(route)
-    a = assess(
-        isopentyl_capability_fit_bench(material_inventory=material_library.isopentyl_wrong_phase_inventory()),
-        req, evaluate_route(route),
-    )
-    assert a.material.status is CapabilityStatus.BLOCKED
+    a = assess(isopentyl_capability_fit_bench(material_inventory=inventory()), req, evaluate_route(route))
+    assert a.material.status is CapabilityStatus.UNKNOWN, label
     assert "phase" in " ".join(a.material.reasons).lower()
-    assert a.overall is CapabilityStatus.BLOCKED
+    assert a.overall is not CapabilityStatus.FIT and a.is_capability_fit is False
 
 
 # =============================================================================================================
@@ -335,10 +345,20 @@ def test_d6_physical_all_none_ceiling_with_a_real_route_demand_is_unknown():
 
 
 def test_d6_physical_no_demand_and_no_bound_is_unconstrained_and_rides():
-    req = _reqs(physical=PhysicalBounds.unconstrained())
+    from smartchem.conditions import Interval
+    from smartchem.process_constraints import ProcessRequirements
+    # X-high D15: the process axis is never UNCONSTRAINED for a real step, so this physical-isolation test carries a
+    # fully declared step record + bench (the process axis is then a genuine FIT, not a free ride).
+    record = ProcessRequirements(workup_included=True, provenance="fixture: fully declared step",
+                                 elapsed_minutes=Interval(0, 60, "min"), active_minutes=Interval(0, 10, "min"),
+                                 attention=Attention.PASSIVE, agitation=Agitation.NONE)
+    bounds = ProcessBounds.of(max_step_minutes=600.0, max_total_minutes=600.0, max_active_minutes=60.0,
+                              allowed_attention=tuple(Attention), min_check_interval_minutes=1.0,
+                              allowed_agitation=tuple(Agitation))
+    req = _reqs(physical=PhysicalBounds.unconstrained(), process=(record,))
     # Round V D13: an absent budget is UNDECLARED (UNKNOWN); the explicit operator NO_LIMIT preference is declared
     # here so this test isolates the physical axis's UNCONSTRAINED ride.
-    a = assess(_profile(no_limit_dimensions=frozenset({"budget"})), req, _ps_readiness())
+    a = assess(_profile(no_limit_dimensions=frozenset({"budget"}), process_bounds=bounds), req, _ps_readiness())
     assert a.physical.status is CapabilityStatus.UNCONSTRAINED
     assert a.overall is CapabilityStatus.FIT  # genuinely outside the question -> rides to FIT
 

@@ -28,6 +28,11 @@ Material STATES (barrier D5) are declared only where the bottle's own label/prov
 isoamyl alcohol NEAT, anhydrous MgSO4 ANHYDROUS, saturated brine SATURATED + SOLUTION, the bicarbonate wash,
 vinegar and the dilute isoamyl bottle SOLUTION.
 
+Bottle PHASES (Round V X-high, barrier D18) follow the same declared-world convention: every curated bench bottle
+declares ``phase_evidence=USER_DECLARED`` -- the phase on the bottle is the bench operator's own declaration about
+their own stock, which CAN certify against a SOURCED phase demand (and only a sourced one: an author-inferred
+requirement phase stays UNKNOWN whatever this bottle says). No phase VALUE changed.
+
 Builders:
 
 * :func:`isopentyl_fully_declared_inventory` -- the Round-III fully-declared bench (every reactant + auxiliary).
@@ -225,6 +230,12 @@ def _declared(state: "DilutionState | HydrationState | SaturationState", note: s
     return StateClaim(state, EvidenceKind.USER_DECLARED, note)
 
 
+#: Round V X-high (D18): the grade of every curated bottle's PHASE -- the same USER_DECLARED convention the
+#: StateClaims above use, because this module IS the operator's bench declaration (the operator vouches for the
+#: form of their own bottle; nobody else in this library does).
+_BENCH_PHASE_EVIDENCE = EvidenceKind.USER_DECLARED
+
+
 def isoamyl_alcohol_reagent_grade(*, quantity: "StockQuantity | None" = None) -> StockMaterial:
     """Isoamyl alcohol (3-methyl-1-butanol, CAS 123-51-3), reagent grade, ``[0.98, 0.99]`` -- ASSUMED, basis UNKNOWN.
 
@@ -238,6 +249,7 @@ def isoamyl_alcohol_reagent_grade(*, quantity: "StockQuantity | None" = None) ->
         "Isoamyl alcohol (3-methyl-1-butanol), reagent grade",
         (MaterialComponent.evidenced(_ISOAMYL_ALCOHOL, "active", _ISOAMYL_REAGENT_EVIDENCE, states=(_declared(DilutionState.NEAT, "reagent-grade bottle, undiluted"),)),),
         Phase.LIQUID,
+        phase_evidence=_BENCH_PHASE_EVIDENCE,
         provenance=(
             "assay interval [0.98, 0.99], basis UNKNOWN (GC area-%), evidence ASSUMED (ASSUMED_BAND_V1): floor read "
             f"off a {_NOT_REFETCHED}, ceiling self-chosen. Citation: {_SIGMA_ISOAMYL}"
@@ -265,6 +277,7 @@ def isoamyl_alcohol_dilute_aqueous(*, quantity: "StockQuantity | None" = None) -
             MaterialComponent.evidenced("water", "solvent", _ISOAMYL_DILUTE_WATER_EVIDENCE),
         ),
         Phase.AQUEOUS_SOLUTION,
+        phase_evidence=_BENCH_PHASE_EVIDENCE,
         provenance=(
             "composition UNKNOWN [0, 1] (UNKNOWN_V1): PubChem CID 31260 reports aqueous solubility only per volume "
             "(g/100 mL, mg/L, mg/mL) or with unstated basis, and no sourced solution density is on file, so no "
@@ -290,6 +303,7 @@ def glacial_acetic_acid(*, quantity: "StockQuantity | None" = None) -> StockMate
         "Glacial acetic acid, USP/ACS reagent grade",
         (MaterialComponent.evidenced(_ACETIC_ACID, "active", _GLACIAL_EVIDENCE, states=(_declared(DilutionState.NEAT, "supplier label 'glacial' -- undiluted acid"),)),),
         Phase.LIQUID,
+        phase_evidence=_BENCH_PHASE_EVIDENCE,
         provenance=(
             "assay [0.995, 1.0] MASS_FRACTION, CLAMPED (CLAMP_TO_UNIT_INTERVAL_V1) from the cited titrimetric "
             f"99.5-100.5 % w/w ({_NOT_REFETCHED}). Citations: {_FISHER_GLACIAL} ; {_SIGMA_GLACIAL}"
@@ -313,6 +327,7 @@ def concentrated_sulfuric_acid(*, quantity: "StockQuantity | None" = None) -> St
         "Sulfuric acid, concentrated, ACS reagent grade",
         (MaterialComponent.evidenced(_SULFURIC_ACID, "active", _H2SO4_EVIDENCE),),
         Phase.LIQUID,
+        phase_evidence=_BENCH_PHASE_EVIDENCE,
         provenance=(
             "assay [0.95, 0.98] MASS_FRACTION, SOURCE_QUOTED (IDENTITY_SOURCE_QUOTED_V1) from the cited ACS "
             f"alkalimetric-titration spec 95.0-98.0 % w/w ({_NOT_REFETCHED}). Citation: {_SIGMA_H2SO4}"
@@ -337,6 +352,7 @@ def household_white_vinegar() -> StockMaterial:
         "Household white vinegar (acetic acid, aqueous)",
         (MaterialComponent.evidenced(_ACETIC_ACID, "active", _VINEGAR_EVIDENCE, states=(_declared(DilutionState.SOLUTION, "vinegar is an aqueous solution"),)),),
         Phase.AQUEOUS_SOLUTION,
+        phase_evidence=_BENCH_PHASE_EVIDENCE,
         provenance=(
             "acetic acid [0.04, 0.08] g/mL (MASS_PER_VOLUME), ASSUMED (ASSUMED_BAND_V1): floor = FDA CPG 525.825 "
             "4 g/100 mL minimum, ceiling = assumed retail spread. Citations: https://www.fda.gov/media/71937/download ; "
@@ -367,6 +383,7 @@ def sodium_bicarbonate_wash_5pct(*, quantity: "StockQuantity | None" = None) -> 
             MaterialComponent.evidenced("water", "solvent", _NAHCO3_WATER_EVIDENCE),
         ),
         Phase.AQUEOUS_SOLUTION,
+        phase_evidence=_BENCH_PHASE_EVIDENCE,
         provenance=(
             "'5%' sodium bicarbonate in water, band [0.045, 0.055], basis UNKNOWN, ASSUMED (ASSUMED_BAND_V1): the "
             "nominal '5%' is quoted from the procedure, which states no basis (w/w vs w/v) and no tolerance; the "
@@ -397,6 +414,7 @@ def sodium_chloride_saturated_wash(*, quantity: "StockQuantity | None" = None) -
             MaterialComponent.evidenced("water", "solvent", _NACL_WATER_EVIDENCE),
         ),
         Phase.AQUEOUS_SOLUTION,
+        phase_evidence=_BENCH_PHASE_EVIDENCE,
         provenance=(
             "NaCl [0.264705, 0.264706] MASS_FRACTION, DERIVED (SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1) "
             "from 36.0 g/100 g water at 25 C; water = COMPLEMENT. Valid at 25 C only (no other temperature "
@@ -420,6 +438,7 @@ def magnesium_sulfate_anhydrous(*, quantity: "StockQuantity | None" = None) -> S
         "Magnesium sulfate, anhydrous (drying agent)",
         (MaterialComponent.evidenced("magnesium sulfate", "active", _MGSO4_EVIDENCE, states=(_declared(HydrationState.ANHYDROUS, "bottle labelled anhydrous"),)),),
         Phase.SOLID,
+        phase_evidence=_BENCH_PHASE_EVIDENCE,
         provenance=(
             "assay [0.97, 1.0] MASS_FRACTION (solid), CLAMPED (CLAMP_TO_UNIT_INTERVAL_V1) from the cited >=97 % "
             f"floor ({_NOT_REFETCHED}). Citations: {_SIGMA_MGSO4} ; {_ISOPENTYL_URL}"
@@ -442,6 +461,7 @@ def wash_water(*, quantity: "StockQuantity | None" = None) -> StockMaterial:
         "Water (grade unstated)",
         (MaterialComponent.evidenced(_WATER, "solvent", _WATER_EVIDENCE),),
         Phase.LIQUID,
+        phase_evidence=_BENCH_PHASE_EVIDENCE,
         provenance=(
             "bench water, grade unstated; [0.99, 1.0] purity ASSUMED (ASSUMED_BAND_V1), basis UNKNOWN -- the "
             f"procedure names only 'water'. Citation: {_ISOPENTYL_URL}"

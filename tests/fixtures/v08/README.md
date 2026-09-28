@@ -22,6 +22,7 @@ Produced by the v0.8 producer's own public path. No hand edits. Regeneration is 
 | request_sulfuric_acid_name.json | `$P -m smartchem recompile "sulfuric acid" --emit-request` | 0 (Wave-C2 P2: v0.8 did NOT register this name -> normalized_identity "", today's resolver does) |
 | response_sulfuric_acid_name.json | `$P -m smartchem recompile "sulfuric acid" --json` | 2 (INVALID_INPUT, zero dossiers; deterministic, sha reproduced on a second run) |
 | plan_isopentyl_acetate.json | `$P -m smartchem plan "isopentyl acetate" --json` | 4 (schema smartchem.plan/plan-result-v0.6; `.compilation` = a full response payload) |
+| response_isopentyl_acetate_dag.json | `$P gen_dag_v08.py` (build_recompile_request(CAPPED_SCISSION_CONVERGENT, process=quick) + run_compilation + serialize_response(include_replay=True)); added in the 0.9 X-high continuation (D22) -- the only fixture with ranked_dag_dossiers | 0 (INCOMPLETE, 16 DAG dossiers, 3 replay steps carry a sourced ProcedureEvidence, CANONICAL_VERIFIED; sha reproduced on three runs) |
 | response_schema_descriptor.json | `$P -c "import json;from smartchem.service import response_schema;print(json.dumps(response_schema(),sort_keys=True,indent=1))"` | 0 |
 
 ## sha256
@@ -36,7 +37,12 @@ Produced by the v0.8 producer's own public path. No hand edits. Regeneration is 
     0b2acad46d1969594c76dc9a867302fc22dcd004d1bae57849f047fdc7f1f4c0  request_sulfuric_acid_name.json
     1a8f5d8a916f3da6204d21e227a8f67aecf31d003acda8e335f7d5bda24a9814  response_sulfuric_acid_name.json
     25f54817e2d32ee0aec680b7aa47afe9229494540153674d131b127d2265af8a  response_schema_descriptor.json
-    d26520a5cdd4ed45d80d55bad1621a8ddf8ec8beec29777f19aad7efd86a5709  gen_thin_v08.py
+    7f3fa7e7daac943e428b09ecac1fa6f523e81805eab8670a3f3ae695ee2717c9  gen_thin_v08.py
+    0098ba9422ff8e2db70cf994ccbf87e800c9a4c723c7f0ecd65e2bca4db02f7d  response_isopentyl_acetate_dag.json
+    424e3478dffafeb4a9ce180d0deef7a3e329fef262c9a5b124703e0fad7cec2b  gen_dag_v08.py
+
+(X-high continuation: `gen_thin_v08.py` changed only its import order for lint; re-running it under the
+df1b38d tree reproduces `response_ethyl_acetate_smiles_thin.json` byte-identically, sha `abf28f6c…`.)
 
 ## Tamper fixtures (tamper/, built from these + a 0.9.0a1 (tip 4b8f8c2) payload)
 * T1 = request_isopentyl_acetate.json (v0.8 id kept) + the 0.9.0a1 poor-man `capability_profile` and

@@ -38,9 +38,11 @@ __all__ = [
     "SaturationState",
     "CompositionConstraint",
     "StateClaim",
+    "PhaseClaim",
     "MaterialSpecification",
     "SpecVerdict",
     "StockSpecView",
+    "compare_phase",
     "compare_specification",
     "exact_fraction",
 ]
@@ -166,6 +168,65 @@ class StateClaim(Digestible):
         _check_evidence(self.evidence, "evidence")
         if not isinstance(self.note, str):
             raise TypeError("note must be a string")
+
+
+@dataclass(frozen=True)
+class PhaseClaim(Digestible):
+    """Round V X-high (D18): a material PHASE with the evidence that establishes it -- the phase analogue of
+    :class:`StateClaim`. Round V graded composition and every material state, then left phase an ungraded scalar
+    that certified FIT on a match and BLOCKED on a mismatch whoever asserted it (an author's inference included):
+    the exact F71 sin -- agreement of an unsupported assertion is not evidence. There is still ONE phase vocabulary
+    (:class:`smartchem.experiment.stock.Phase`); this only attaches the evidence strength to it.
+
+    ``Phase.UNKNOWN`` is refused as a claim: an unknown phase is the ABSENCE of a claim (``None``), never a claim."""
+
+    phase: object
+    evidence: EvidenceKind
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        from .experiment.stock import Phase  # lazy: experiment.stock imports this module at import time
+
+        if type(self.phase) is not Phase:
+            raise TypeError("phase must be a smartchem.experiment.stock.Phase")
+        if self.phase is Phase.UNKNOWN:
+            raise ValueError("Phase.UNKNOWN is not a claim -- an unknown phase is the absence of a PhaseClaim (None)")
+        _check_evidence(self.evidence, "evidence")
+        if not isinstance(self.note, str):
+            raise TypeError("note must be a string")
+
+
+def compare_phase(required: "PhaseClaim | None", stock: "PhaseClaim | None") -> "tuple[SpecVerdict, str]":
+    """THE phase law (D18) -- ``_compare_state``'s law exactly, applied to phase:
+
+    * no required phase -> SATISFIES (the source demanded no phase; nothing to compare);
+    * no stock claim -> UNDETERMINED (an undeclared bottle phase is UNKNOWN, never assumed);
+    * a match certifies SATISFIES, and a mismatch certifies VIOLATES, ONLY when the requirement's evidence is in
+      :data:`CERTIFYING_REQUIREMENT_EVIDENCE` AND the stock's is in :data:`CERTIFYING_STOCK_EVIDENCE`; otherwise
+      UNDETERMINED either way (an author's inference can neither discharge nor refute a phase demand -- F71).
+    """
+    if required is None:
+        return SpecVerdict.SATISFIES, "no phase demanded"
+    if type(required) is not PhaseClaim:
+        raise TypeError("required must be a PhaseClaim or None")
+    label = f"phase {required.phase.value} ({required.evidence.value})"
+    if stock is None:
+        return SpecVerdict.UNDETERMINED, f"{label}: the stock declares no phase -- UNKNOWN, never assumed"
+    if type(stock) is not PhaseClaim:
+        raise TypeError("stock must be a PhaseClaim or None")
+    certified = (required.evidence in CERTIFYING_REQUIREMENT_EVIDENCE
+                 and stock.evidence in CERTIFYING_STOCK_EVIDENCE)
+    if stock.phase is required.phase:
+        if certified:
+            return SpecVerdict.SATISFIES, f"{label}: matched by the stock's {stock.evidence.value} phase"
+        return SpecVerdict.UNDETERMINED, (
+            f"{label}: matched only on {required.evidence.value}/{stock.evidence.value} evidence -- agreement of an "
+            "unsupported phase assertion is not evidence (F71)")
+    if certified:
+        return SpecVerdict.VIOLATES, f"{label}: the stock's {stock.evidence.value} phase is {stock.phase.value}"
+    return SpecVerdict.UNDETERMINED, (
+        f"{label}: stock phase {stock.phase.value} on {required.evidence.value}/{stock.evidence.value} evidence -- an "
+        "unsupported assertion cannot refute a phase demand either")
 
 
 def _check_claims(claims: object, what: str) -> None:

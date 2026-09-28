@@ -34,7 +34,10 @@ from .enums import ContainmentCapability, EquipmentCapability, MeasurementMethod
 __all__ = ["CAPABILITY_PROFILE_SCHEMA", "CapabilityProfile"]
 
 #: Round V D10/D11: v1alpha2 adds ``no_limit_dimensions`` (the explicit operator NO_LIMIT preference declaration).
-CAPABILITY_PROFILE_SCHEMA = "smartchem.capability/capability-profile-v1alpha2"
+#: Round V X-high D22: v1alpha3 -- the profile's payload shape changes because it EMBEDS two changed leaves:
+#: ``PhysicalBounds`` v1alpha2 (the temperature FLOOR ``min_temperature_k``, D14) and ``StockMaterial`` v1alpha3 (the
+#: evidence-graded ``phase_evidence``, D18). A v1alpha2 snapshot (WIP-only, never released) is refused, not migrated.
+CAPABILITY_PROFILE_SCHEMA = "smartchem.capability/capability-profile-v1alpha3"
 
 
 @dataclass(frozen=True)

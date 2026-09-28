@@ -73,16 +73,34 @@ _POOR_MAN_TIERS: "frozenset[Availability]" = frozenset({
 #: reaching reflux + fractional distillation genuinely holds a mixture near 250 C in a hood; a kitchen
 #: stovetop a lower ~200 C. Both express a real process ceiling (any declared attention/agitation mode,
 #: hourly-or-slacker checks) that the sourced corpus's PERIODIC/MANUAL procedures satisfy without a gap.
-# Wave-C F1: declare the honest atmospheric floor (min_pressure_atm=1.0) too -- a standard bench operates
-# at atmospheric and cannot pull a vacuum below 1 atm without a pump. Now that _physical_axis fails closed
-# per-dimension (a real route demand on an undeclared dimension -> UNKNOWN), a bench that omitted its
-# pressure FLOOR would go UNKNOWN against the isopentyl route's 1 atm demand; declaring it keeps the honest
-# atmospheric FIT while a real vacuum route (min_pressure < 1 atm) still correctly BLOCKS on these benches.
-_RESEARCH_LAB_PHYSICAL: PhysicalBounds = PhysicalBounds.of(
-    max_temperature_k=523.15, max_pressure_atm=2.0, min_pressure_atm=1.0
+# Round V X-high D14 (the physical range is a RANGE): a declared bench's FLOORS follow from -- and may never
+# contradict -- its OWN declared equipment, via :func:`_equipment_derived_physical`:
+#   * temperature floor: a bench that declares ICE_BATH reaches 273.15 K (DERIVED: ice-water equilibrium at 1 atm).
+#     No dry-ice / cryogenic claim is made for any preset -- nothing they declare implies one. A bench without a
+#     cold bath leaves the floor UNDECLARED (a real low-temperature demand against it reads UNKNOWN, never FIT).
+#   * pressure floor: Wave-C F1 declared the honest atmospheric floor (``min_pressure_atm=1.0`` -- "cannot pull a
+#     vacuum") on every bench. P-X3 (A-PHYS): that is only honest for a bench that owns NO vacuum equipment. A
+#     bench declaring VACUUM_FILTRATION CAN pull a vacuum, so a 1 atm floor contradicts its own shelf; its reachable
+#     vacuum is not declared, so the floor becomes UNDECLARED (``None``) -- a real sub-atmospheric (or ambient)
+#     pressure demand then reads UNKNOWN against it, never a pass on a self-contradictory declaration.
+def _equipment_derived_physical(
+    equipment: "frozenset[EquipmentCapability]", *, max_temperature_k: float, max_pressure_atm: float,
+) -> PhysicalBounds:
+    """The declared physical range of a bench whose CEILINGS are given and whose FLOORS follow from its equipment
+    (D14 / P-X3, see the comment block above). Pure; one rule for every preset and the fit bench."""
+    return PhysicalBounds.of(
+        max_temperature_k=max_temperature_k,
+        max_pressure_atm=max_pressure_atm,
+        min_pressure_atm=None if EquipmentCapability.VACUUM_FILTRATION in equipment else 1.0,
+        min_temperature_k=273.15 if EquipmentCapability.ICE_BATH in equipment else None,
+    )
+
+
+_RESEARCH_LAB_PHYSICAL: PhysicalBounds = _equipment_derived_physical(
+    _RESEARCH_LAB_EQUIPMENT, max_temperature_k=523.15, max_pressure_atm=2.0,
 )
-_POOR_MAN_PHYSICAL: PhysicalBounds = PhysicalBounds.of(
-    max_temperature_k=473.15, max_pressure_atm=1.5, min_pressure_atm=1.0
+_POOR_MAN_PHYSICAL: PhysicalBounds = _equipment_derived_physical(
+    _POOR_MAN_EQUIPMENT, max_temperature_k=473.15, max_pressure_atm=1.5,
 )
 
 
@@ -129,7 +147,8 @@ def research_lab(*, material_inventory: "tuple[StockMaterial, ...]" = ()) -> Cap
         provenance=(
             "smartchem.capability.presets.research_lab() -- a well-equipped teaching/research bench preset "
             "(D6): explicit apparatus + fume hood + non-industrial procurement + every instrument method + "
-            "real finite T<=523.15 K / P<=2 atm ceilings; no declared material stock unless supplied"
+            "real finite T<=523.15 K / P<=2 atm ceilings, a T>=273.15 K ice-bath floor (D14), reachable vacuum "
+            "undeclared (owns vacuum filtration, P-X3); no declared material stock unless supplied"
         ),
     )
 
@@ -166,7 +185,8 @@ def poor_man(
         provenance=(
             "smartchem.capability.presets.poor_man() -- a household/hardware-store bench preset (D6): "
             "low-resource equipment, no containment, outdoor ventilation, kitchen-adjacent procurement, "
-            "MASS + MELTING_POINT only (NO IR), real finite T<=473.15 K ceiling, a declared cash budget"
+            "MASS + MELTING_POINT only (NO IR), real finite T<=473.15 K ceiling, a T>=273.15 K ice-bath floor "
+            "(D14), an atmospheric P>=1 atm floor (no vacuum equipment), a declared cash budget"
         ),
     )
 
@@ -194,7 +214,9 @@ def custom(
 
     ``physical_bounds``/``process_bounds`` default to unconstrained; a Custom bench that claims a real
     physical/process capability against a real route demand must state a real finite bound (D6), or the
-    axis honestly reads UNKNOWN, never a fabricated UNCONSTRAINED pass.
+    axis honestly reads UNKNOWN, never a fabricated UNCONSTRAINED pass. (D14: the defaults declare NO equipment
+    and NO physical bound, so there is no floor for them to contradict -- a caller-supplied ``physical_bounds`` is the
+    caller's declaration, taken at its word.)
 
     ``no_limit_dimensions`` (Round V D10) is the ONLY way any profile carries a NO_LIMIT declaration: an explicit
     caller statement that a time PREFERENCE dimension (``max_step_minutes``/``max_total_minutes``/
@@ -248,13 +270,17 @@ def isopentyl_capability_fit_bench(
     built by MINIMAL diff from this exact positive -- each fails on its ONE axis, nothing else moved.
     """
     from ..data import material_library
+    resolved_equipment = frozenset(EquipmentCapability) if equipment is None else equipment
     return custom(
         profile_id=profile_id,
         material_inventory=(
             material_library.isopentyl_fully_declared_inventory() if material_inventory is None else material_inventory
         ),
-        equipment=frozenset(EquipmentCapability) if equipment is None else equipment,
-        physical_bounds=PhysicalBounds.of(max_temperature_k=500.0, max_pressure_atm=2.0, min_pressure_atm=1.0)
+        equipment=resolved_equipment,
+        # D14 / P-X3: the default physical range's FLOORS follow from the bench's own (possibly overridden) equipment:
+        # every capability by default -> a 273.15 K ice-bath floor and an UNDECLARED vacuum floor (it owns vacuum
+        # filtration); a minimal-diff negative that drops ICE_BATH / VACUUM_FILTRATION moves its floor with it.
+        physical_bounds=_equipment_derived_physical(resolved_equipment, max_temperature_k=500.0, max_pressure_atm=2.0)
         if physical_bounds is None else physical_bounds,
         process_bounds=_bench_process_bounds() if process_bounds is None else process_bounds,
         containment=frozenset({ContainmentCapability.FUME_HOOD}) if containment is None else containment,

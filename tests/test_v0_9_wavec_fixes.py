@@ -104,8 +104,8 @@ def _isopentyl_route():
 
 def test_f1_partial_bench_on_the_real_route_no_longer_false_fits():
     """evil-morty's exact exploit: the shipped FIT bench with physical_bounds overridden to pressure-only
-    (no temperature ceiling) against the real searched isopentyl route (a 416 K reflux demand) must NOT
-    reach overall FIT -- physical goes UNKNOWN, overall UNKNOWN."""
+    (no temperature ceiling) against the real searched isopentyl route (a real reflux/distillation heat demand)
+    must NOT reach overall FIT -- physical goes UNKNOWN, overall UNKNOWN."""
     route = _isopentyl_route()
     reqs = compile_capability_requirements(route)
     bench = isopentyl_capability_fit_bench(physical_bounds=PhysicalBounds.of(max_pressure_atm=2.0))
@@ -114,16 +114,18 @@ def test_f1_partial_bench_on_the_real_route_no_longer_false_fits():
     assert a.overall is not CapabilityStatus.FIT
 
 
-def test_physical_axis_still_fits_but_the_positive_no_longer_survives_to_overall_fit():
-    """Round IV: the F1 physical fix stands on its OWN, without a surviving overall FIT to ride. The
-    fully-declared bench (declaring the atmospheric min-pressure floor) still reaches physical FIT -- proof
-    the fix did not over-constrain -- but the overall verdict is now UNKNOWN, not FIT: the whole-path
-    semantic hardening (F56 process, F47 containment, F49 waste) retired the Round-III positive. The
-    physical axis being FIT while overall is UNKNOWN is exactly the point -- F1 is verified on the axis it
-    governs, not by a downstream overall FIT that no longer exists."""
+def test_real_isopentyl_physical_axis_reads_unknown_never_fit_under_the_fully_declared_bench():
+    """Round V X-high (D14, supersedes the Round-IV "physical still FITs" pin). The real isopentyl route's heat
+    demand is stated only in PROSE ("reflux", "cool to room temperature") plus a DISTILL op with no typed
+    temperature, and its whole-step peak was withdrawn (P-X2: the only number the source gives is the distillate HEAD
+    range -- a LOWER bound on the heat demand, never a whole-step peak). An unread demand can never be certified, so
+    even the fully-declared bench reads physical UNKNOWN -- never FIT -- and the verdict names the D14 law. The
+    "F1 did not over-constrain" liveness now lives where it belongs: a fully-declared ceiling over a TYPED demand
+    still FITs (``test_f1_fully_declared_ceiling_covering_every_demanded_dimension_still_fits``)."""
     route = _isopentyl_route()
     reqs = compile_capability_requirements(route)
     a = assess(isopentyl_capability_fit_bench(), reqs, evaluate_route(route))
-    assert a.physical.status is CapabilityStatus.FIT
-    assert a.process.status is CapabilityStatus.UNKNOWN  # the axis that now drives overall off FIT
+    assert a.physical.status is CapabilityStatus.UNKNOWN
+    assert reqs.physical.max_temperature_k is None  # P-X2: no whole-step peak is claimed
+    assert any("D13" in r or "D14" in r for r in a.physical.reasons)
     assert a.overall is CapabilityStatus.UNKNOWN

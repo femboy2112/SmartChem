@@ -65,7 +65,7 @@ from .compilation_ir import (
     ir_to_payload,
     recompile_to_ir,
 )
-from .constraints import PhysicalBounds
+from .constraints import PHYSICAL_BOUNDS_SCHEMA, PHYSICAL_BOUNDS_SCHEMA_V1, PhysicalBounds
 from .process_constraints import (
     ProcessBounds, ProcessRequirements, ProcessFitStatus, Attention, Agitation,
     evaluate_process_requirements, evaluate_dag_process_requirements,
@@ -77,6 +77,7 @@ from .experiment.readiness import (
     RouteReadiness,
     StepReadiness,
     evaluate_route,
+    tier_rank,
 )
 from .algebra_profiles import (
     DEFAULT_ALGEBRA_PROFILE,
@@ -158,7 +159,15 @@ __all__ = [
 # ``LEGACY_V08_REQUEST_SCHEMA``): it keeps its stored id (so its stored semantic_digest verifies), means capability
 # NOT_REQUESTED, and is REFUSED if it carries any ``capability_*`` key (a 0.9 field wearing a 0.8 id -- tamper T1, or a
 # 0.9.0a1-branch payload that reused the id).
-COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha6"
+# v1alpha7 (0.9 RC Round V X-high, D14/D22): the embedded ``constraints`` PhysicalBounds is now
+# ``physical-bounds-v1alpha2`` (+``min_temperature_k``, the temperature FLOOR -- the one shared T/P leaf finally models a
+# RANGE) and the embedded capability profile is ``capability-profile-v1alpha3`` (StockMaterial v1alpha3 +phase_evidence,
+# PhysicalBounds v1alpha2).  ``capability_profile_origin`` is now CONTENT-BOUND: it must be ``""`` or equal the
+# snapshot's own ``profile_id`` (Wave-A' A-WIRE (g): a free-text origin rode outside every digest, even the signed one,
+# yet was rendered as ``CAPABILITY[origin]``).  The WIP-only v1alpha6 id (pushed on the unreleased branch, never on
+# main) is NOT migrated -- only the released v0.8 id stays legacy.  The request id is hashed into ``semantic_digest``,
+# so this moves every current semantic_digest exactly once more; capability STILL never enters it.
+COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha7"
 # v1alpha2 (SVC-REQ-01 alias-collapse): CompilationResponse gains a ``parse_receipt_summary`` field -- the section
 # 14.2 identity-resolution echo, pulled OUT of ``diagnostics`` (where it rode as a free-text last line) into a
 # first-class field, so it is surfaced as the section 14.3 receipt yet EXCLUDED from ``result_digest`` (it is
@@ -226,7 +235,12 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha6"
 # asked (so the producer signature binds the declared bench even with zero dossiers), and every assessed dossier's
 # replay-free bindings (HARD-LAW fold, readiness tier/digest, profile_digest, route_digest; CAPABILITY_FIT refused on a
 # THIN_ADVISORY wire) are checked on every load.  NOT_REQUESTED/legacy result digests are unchanged.
-COMPILATION_RESPONSE_SCHEMA ="smartchem.service/compilation-response-v1alpha16"
+# v1alpha17 (0.9 RC Round V X-high, D18/D20/D22): embeds a v1alpha7 request, ranked-route-summary-v1alpha5 (replay
+# ProcedureMaterialUse ``phase`` is now an evidence-graded PhaseClaim object, D18) and ranked-dag-summary-v1alpha5
+# dossiers.  Load gains an optional consumer capability-question pin (``expected_capability_question_digest``), the
+# verified-admission re-projection now carries the request's capability profile, and the 0.8 thin law refuses any tier
+# AT OR ABOVE PROCESS_SPECIFIED.  The WIP-only v1alpha16 id is NOT migrated (never released).
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha17"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
@@ -261,7 +275,11 @@ COMPILATION_RESPONSE_SCHEMA ="smartchem.service/compilation-response-v1alpha16"
 # request is now v1alpha6 (+capability_profile, +capability_profile_origin); the replay disclosure now names the
 # procedure operations' ``material_uses`` (+``specification``); and the descriptor gains a top-level
 # ``accepted_legacy_schema_versions`` map (the explicit, whitelisted v0.8 ids the loader migrates).
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha19"
+# v1alpha20 (0.9 RC Round V X-high, D18/D20/D22): the embedded request is v1alpha7 (the constraints box discloses
+# ``min_temperature_k``; the origin is content-bound); the replay disclosure names the PhaseClaim ``phase`` object of a
+# procedure material use; ``accepted_legacy_schema_versions`` gains the released ``ranked_dag_summary`` and
+# ``physical_bounds`` ids; ``capability_question_digest`` discloses the consumer pin.
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha20"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -276,7 +294,10 @@ COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response
 # ProcedureMaterialUse, which gains the typed ``specification`` in Round V).  ``capability_assessment`` is REQUIRED on
 # a v1alpha4 payload.  A v1alpha3 summary is accepted ONLY inside a LEGACY v1alpha15 response, decoded with
 # capability_assessment=None / material_uses=(), and digested under the frozen v0.8 rule.
-RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha4"
+# v1alpha5 (0.9 RC Round V X-high, D18): the replay ProcedureMaterialUse ``phase`` is an evidence-graded PhaseClaim
+# object ({phase, evidence, note}) instead of an ungraded scalar -- an author's inference can no longer certify a phase
+# match (FIT) or mismatch (BLOCKED).  The WIP-only v1alpha4 id is NOT migrated (never released).
+RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha5"
 # -- the explicit v0.8 legacy whitelist (D11).  Every exact-equality version check accepts the CURRENT id or exactly
 # ONE of these (mapped to its migration); any other id is refused precisely ("unsupported schema version X
 # (supported: ...)").  These are the ids released at main@df1b38d (0.8.0a1); the migration tests read them from the
@@ -284,6 +305,9 @@ RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha4"
 LEGACY_V08_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 LEGACY_V08_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha15"
 LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha3"
+LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha4"
+#: the released v0.8 PhysicalBounds id a legacy (v1alpha5) request's ``constraints`` box carries -- no temperature floor.
+LEGACY_V08_PHYSICAL_BOUNDS_SCHEMA = PHYSICAL_BOUNDS_SCHEMA_V1
 # DAG-BENCH-01 (was DAG-ADMIT-01): the thin, digestible per-DAG COMBINED section-11 admission that populates the
 # response's ``ranked_dag_dossiers``.  Distinct from RANKED_ROUTE_SUMMARY_SCHEMA on purpose -- a DAG additionally
 # carries its ``edges`` (so the critical-path PROCESS component is re-derived on load, the convergent PROCESS-ADMIT-01)
@@ -296,7 +320,12 @@ LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary
 # (producer, consumer, minutes) triples.  DISCLOSURE only (never changes fit_status) and digest-EXCLUDED (it is
 # fully determined by edges + process_requirements), so no existing DAG digest moves; the version bumps because
 # the element's serialized SHAPE gained a field.
-RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha4"
+# v1alpha5 (0.9 RC Round V X-high, D22 -- Wave-A' A-WIRE P3): the thick ``replay_payload`` procedure operations now
+# REQUIRE ``material_uses`` (each a ProcedureMaterialUse with its typed specification and PhaseClaim phase) -- a shape
+# change Round III/V shipped under the released v1alpha4 id.  The released v1alpha4 shape is decoded ONLY as LEGACY
+# (``LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA``): refused if it carries any 0.9-only key at any depth, its replay operations
+# migrated to ``material_uses=[]`` (their only v0.8-expressible value), and paired only with a legacy v0.8 response.
+RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha5"
 
 
 def _unsupported_schema(kind: str, got: object, current: str, legacy: str) -> ValueError:
@@ -310,7 +339,7 @@ def _unsupported_schema(kind: str, got: object, current: str, legacy: str) -> Va
 # these fields to records a v0.8 (main@df1b38d) response digests over -- measured by diffing the dataclass field lists
 # of the two trees (``git archive df1b38d`` vs this tree), not guessed:
 #   CompilationRequest.capability_profile / .capability_profile_origin, RankedRouteSummary.capability_assessment,
-#   ProcedureOperation.material_uses.
+#   ProcedureOperation.material_uses, and (X-high D14) PhysicalBounds.min_temperature_k.
 # (MaterialComponent.basis/StockMaterial.states also grew, but no v0.8 payload can reach a StockMaterial -- a v0.8
 # request carries stock as strings and no capability profile -- so they are deliberately NOT in the table.)
 # A legacy payload is verified by re-encoding its reconstructed objects with those fields OMITTED -- but ONLY when
@@ -321,6 +350,9 @@ _V08_OMITTED_FIELDS: "dict[str, dict[str, object]]" = {
     "smartchem.service.CompilationRequest": {"capability_profile": None, "capability_profile_origin": ""},
     "smartchem.service.RankedRouteSummary": {"capability_assessment": None},
     "smartchem.procedure_evidence.ProcedureOperation": {"material_uses": ()},
+    # X-high D14: the temperature FLOOR a v0.8 (physical-bounds-v1alpha1) box could not express.  The legacy decode
+    # also keeps the stored v1alpha1 id on the object, so the re-encoded bytes are exactly main@df1b38d's.
+    "smartchem.constraints.PhysicalBounds": {"min_temperature_k": None},
 }
 
 
@@ -828,6 +860,31 @@ class CompilationRequest(Digestible):
             )
         if not isinstance(self.capability_profile_origin, str):
             raise TypeError("capability_profile_origin must be a string (the display/preset-origin name)")
+        # X-high D20(g): the origin is CONTENT-BOUND.  It is rendered as ``CAPABILITY[origin]`` yet sits outside every
+        # digest (semantic, question, result -- even the signed one), so a free-text origin could relabel a poor-man
+        # verdict "research-lab" without moving a byte of identity.  It may therefore only be ``""`` or the snapshot's
+        # OWN ``profile_id`` (which rides the profile digest); an origin with no profile is meaningless.
+        if self.capability_profile is None:
+            if self.capability_profile_origin != "":
+                raise ValueError(
+                    f"capability_profile_origin {self.capability_profile_origin!r} names a bench but no capability "
+                    f"profile is declared (NOT_REQUESTED carries origin ''); refused"
+                )
+        elif self.capability_profile_origin not in ("", self.capability_profile.profile_id):
+            raise ValueError(
+                f"capability_profile_origin {self.capability_profile_origin!r} does not match the declared snapshot's "
+                f"profile_id {self.capability_profile.profile_id!r} -- the display origin is content-bound (it must be "
+                f"'' or the snapshot's own id) so a relabel cannot ride outside every digest; refused"
+            )
+        # X-high D14/D22: the embedded physical-bounds GENERATION pairs with the request generation -- a legacy v0.8
+        # request carries the released v1alpha1 box (no temperature floor), a current request the v1alpha2 box.
+        expected_bounds_schema = (LEGACY_V08_PHYSICAL_BOUNDS_SCHEMA if self.schema_version == LEGACY_V08_REQUEST_SCHEMA
+                                  else PHYSICAL_BOUNDS_SCHEMA)
+        if self.constraints.bounds.schema_version != expected_bounds_schema:
+            raise ValueError(
+                f"a {self.schema_version!r} request must carry a {expected_bounds_schema!r} constraints box, got "
+                f"{self.constraints.bounds.schema_version!r} (legacy/current generation mixing); refused"
+            )
         # origins: a canonical (field-name-sorted) map of provenance; structural check only, since which fields
         # are tracked differs by direction.
         if type(self.origins) is not tuple:
@@ -888,8 +945,14 @@ class CompilationRequest(Digestible):
         single ``decompile`` command), so no alias-equality property rides on it, and its target is a FORMULA-layer
         identity, not a structure -- so it keeps the raw keying (which only ever SPLITS, preserving the one-way
         law).  Collapsing the formula-layer descent is a named follow-on.
+
+        X-high D14/D22: a LEGACY v0.8 request is hashed under the FROZEN v0.8 rule (``_v08_digest``), exactly like its
+        full ``.digest`` -- its ``constraints`` box now reconstructs as a PhysicalBounds that GAINED ``min_temperature_k``
+        (omitted at its only v0.8-expressible value, ``None``), so the global rule would move a released search identity
+        that no chemistry changed.  Every current request keeps the global rule.
         """
-        return canonical_digest(
+        rule = _v08_digest if self.is_legacy_v08 else canonical_digest
+        return rule(
             (
                 "compilation-request-semantic-v1alpha3",
                 self.schema_version,
@@ -979,12 +1042,14 @@ def _resolve_constraints(
     min_pressure_atm: "float | None",
     max_pressure_atm: "float | None",
     process: "ProcessBounds | None" = None,
+    min_temperature_k: "float | None" = None,
 ) -> "tuple[ConstraintPolicy, bool]":
     """Resolve the request's :class:`ConstraintPolicy` (CLI-CAN-02) from an explicit policy OR bare T/P bound
     kwargs (a caller may not pass both).  Returns ``(policy, was_explicit)`` -- ``was_explicit`` is the
     ``constraints`` field's origin (a declared bound OR a passed policy is EXPLICIT; the unconstrained default is
     DEFAULT)."""
-    any_bound = any(b is not None for b in (max_temperature_k, min_pressure_atm, max_pressure_atm, process))
+    any_bound = any(b is not None for b in (max_temperature_k, min_pressure_atm, max_pressure_atm, process,
+                                            min_temperature_k))
     if constraints is not None:
         if any_bound:
             raise ValueError("pass either constraints or the T/P bound and process kwargs, not both")
@@ -995,6 +1060,7 @@ def _resolve_constraints(
                 max_temperature_k=max_temperature_k,
                 min_pressure_atm=min_pressure_atm,
                 max_pressure_atm=max_pressure_atm,
+                min_temperature_k=min_temperature_k,
             ),
             process=process if process is not None else ProcessBounds.unconstrained(),
         ), True
@@ -1053,6 +1119,7 @@ def build_recompile_request(
     max_temperature_k: "float | None" = None,
     min_pressure_atm: "float | None" = None,
     max_pressure_atm: "float | None" = None,
+    min_temperature_k: "float | None" = None,
     ranking_policy: "RankingPolicy | None" = None,
     evidence_provider_selection: "EvidenceProviderSelection | None" = None,
     output_policy: "OutputPolicy | None" = None,
@@ -1065,11 +1132,13 @@ def build_recompile_request(
     HERE, from ONE default table, so equal explicit flags always resolve to equal values and thus an equal
     :attr:`~CompilationRequest.semantic_digest`.  A value passed explicitly and the same value reached by default
     share the search identity but differ in :attr:`~CompilationRequest.origins`.  The section-11 T/P constraint is
-    supplied either as a whole ``constraints`` policy or via the ``max_temperature_k``/``*_pressure_atm`` bound
-    kwargs (CLI-CAN-02); it rides the search identity but is not yet applied to route grading (a follow-on).
+    supplied either as a whole ``constraints`` policy or via the ``min_temperature_k``/``max_temperature_k``/
+    ``*_pressure_atm`` bound kwargs (CLI-CAN-02; the temperature floor is X-high D14); it rides the search identity
+    and is applied to route ranking through ``ConstraintBox.of_bounds``.
     """
     resolved_constraints, constraints_explicit = _resolve_constraints(
-        constraints, max_temperature_k, min_pressure_atm, max_pressure_atm, process
+        constraints, max_temperature_k, min_pressure_atm, max_pressure_atm, process,
+        min_temperature_k=min_temperature_k,
     )
     explicit = {
         "input_kind": input_kind is not None,
@@ -1511,8 +1580,11 @@ class RankedDAGSummary(Digestible):
     _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
 
     def __post_init__(self) -> None:
-        if self.schema_version != RANKED_DAG_SUMMARY_SCHEMA:
-            raise ValueError(f"schema_version must be exactly {RANKED_DAG_SUMMARY_SCHEMA!r}")
+        # X-high D22: the CURRENT id, or the released v0.8 id as LEGACY (its replay operations carry no material_uses on
+        # the wire; paired only with a legacy v0.8 response -- CompilationResponse enforces the generation pairing).
+        if self.schema_version not in (RANKED_DAG_SUMMARY_SCHEMA, LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA):
+            raise _unsupported_schema("ranked DAG summary", self.schema_version, RANKED_DAG_SUMMARY_SCHEMA,
+                                      LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA)
         if self.fit_status not in self._FIT_STATUSES:
             raise ValueError(f"fit_status must be one of {self._FIT_STATUSES}")
         for name in ("route_digest", "equation", "composability_verdict", "selectivity_verdict",
@@ -1554,6 +1626,11 @@ class RankedDAGSummary(Digestible):
                 raise ValueError(f"serial_holds entry {(i, j)} is not one of the DAG's carried edges")
             if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or minutes < 0:
                 raise ValueError("serial_holds hold_minutes must be a non-negative real number")
+
+    @property
+    def is_legacy_v08(self) -> bool:
+        """True for a migrated v0.8 (``ranked-dag-summary-v1alpha4``) DAG dossier (X-high D22)."""
+        return self.schema_version == LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA
 
     @classmethod
     def of_dag(cls, dag: "object", box: "object", *, phases: "object" = None) -> "RankedDAGSummary":
@@ -1709,6 +1786,11 @@ class CompilationResponse:
         if any(type(r) is RankedRouteSummary and r.is_legacy_v08 != legacy for r in self.ranked_route_dossiers):
             raise ValueError(
                 f"response schema {self.schema_version!r} carries a ranked route summary of the other schema "
+                f"generation (legacy/current mixing); refused"
+            )
+        if any(type(d) is RankedDAGSummary and d.is_legacy_v08 != legacy for d in self.ranked_dag_dossiers):
+            raise ValueError(
+                f"response schema {self.schema_version!r} carries a ranked DAG summary of the other schema "
                 f"generation (legacy/current mixing); refused"
             )
         if not isinstance(self.outcome, ResponseOutcome):
@@ -1994,7 +2076,9 @@ class CompilationResponse:
             # fully specified" is precisely the claim a lean advisory wire may not carry; a producer that means it
             # serializes CANONICAL_VERIFIED (include_replay=True).  Lower above-FORMAL tiers keep their documented thin
             # residual (advisory on a plain load, fail-closed under verified admission).
-            if refuse_process_specified_on_thin and r.readiness.tier == PROCESS_SPECIFIED:
+            # X-high D20(3): AT OR ABOVE PROCESS_SPECIFIED (tier_rank), never ``== PROCESS_SPECIFIED`` -- equality was
+            # sound only while PS is the top rung; a ladder extension must not silently open the thin wire to it.
+            if refuse_process_specified_on_thin and tier_rank(r.readiness.tier) >= tier_rank(PROCESS_SPECIFIED):
                 raise ValueError(
                     f"ranked route {r.route_digest} claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY "
                     f"transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must "
@@ -3450,7 +3534,8 @@ def _procedure_material_use_to_payload(u) -> dict:
         "role": u.role.value,
         "identity": None if u.identity is None else _molecule_to_payload(u.identity),
         "formulation": u.formulation,
-        "phase": None if u.phase is None else u.phase.value,
+        # X-high D18: the phase is an evidence-graded PhaseClaim ({phase, evidence, note}) or null (no phase stated).
+        "phase": _phase_claim_to_payload(u.phase),
         "quantity": (
             None if u.quantity is None
             else {"schema_version": u.quantity.schema_version, "value": u.quantity.value, "unit": u.quantity.unit}
@@ -3465,6 +3550,30 @@ def _procedure_material_use_to_payload(u) -> dict:
 _PROCEDURE_MATERIAL_USE_FIELDS = frozenset(
     {"name", "role", "identity", "formulation", "phase", "quantity", "evidence_source", "specification"}
 )
+_PHASE_CLAIM_FIELDS = frozenset({"phase", "evidence", "note"})
+
+
+def _phase_claim_to_payload(claim: "object | None") -> "dict | None":
+    """X-high D18: one procedure material use's PhaseClaim as ``{phase, evidence, note}`` (enums by ``.value``), or
+    null when the source states no phase.  The evidence kind rides the wire so a replayed AUTHOR_INFERRED phase can
+    never re-derive as a certifying one."""
+    if claim is None:
+        return None
+    return {"phase": claim.phase.value, "evidence": claim.evidence.value, "note": claim.note}
+
+
+def _phase_claim_from_payload(payload: object) -> "object | None":
+    """Reconstruct a PhaseClaim through its own ``__post_init__`` (``Phase.UNKNOWN`` refused -- an unknown phase is the
+    ABSENCE of a claim, i.e. null).  Exact key set; wire types checked before construction."""
+    if payload is None:
+        return None
+    from .experiment.stock import Phase
+    from .material_spec import EvidenceKind, PhaseClaim
+    if type(payload) is not dict or set(payload) != _PHASE_CLAIM_FIELDS:
+        raise ValueError("procedure material-use phase must be null or exactly {phase, evidence, note}; refused")
+    if not all(type(payload[k]) is str for k in _PHASE_CLAIM_FIELDS):
+        raise TypeError("procedure material-use phase fields must be strings")
+    return PhaseClaim(Phase(payload["phase"]), EvidenceKind(payload["evidence"]), payload["note"])
 
 
 def _material_spec_to_payload(spec: "object | None") -> "dict | None":
@@ -3491,7 +3600,7 @@ def _procedure_material_use_from_payload(payload) -> "object":
     """Reconstruct one ``ProcedureMaterialUse``; its ``__post_init__`` re-validates every field on load (an ionic
     ``identity=None``, a sourced phase/formulation, a per-material quantity).  Exact field-set guarded so a payload
     cannot drop or smuggle a field."""
-    from .experiment.stock import STOCK_QUANTITY_SCHEMA, Phase, StockQuantity
+    from .experiment.stock import STOCK_QUANTITY_SCHEMA, StockQuantity
     from .procedure_evidence import ProcedureMaterialRole, ProcedureMaterialUse
     if type(payload) is not dict or set(payload) != _PROCEDURE_MATERIAL_USE_FIELDS:
         raise ValueError("procedure material use must contain exactly the versioned fields")
@@ -3508,7 +3617,7 @@ def _procedure_material_use_from_payload(payload) -> "object":
         ProcedureMaterialRole(payload["role"]),
         identity=None if payload["identity"] is None else _molecule_from_payload(payload["identity"]),
         formulation=payload["formulation"],
-        phase=None if payload["phase"] is None else Phase(payload["phase"]),
+        phase=_phase_claim_from_payload(payload["phase"]),
         quantity=quantity,
         evidence_source=payload["evidence_source"],
         specification=_material_spec_from_payload(payload["specification"]),
@@ -4035,6 +4144,64 @@ def _capability_assessment_from_payload(payload: "dict | None") -> "CapabilityAs
     return obj
 
 
+#: X-high D14/D22: the exact ``constraints`` key set per embedded PhysicalBounds generation.  The released v0.8 box
+#: (``physical-bounds-v1alpha1``) has no temperature floor; the current box REQUIRES the ``min_temperature_k`` key
+#: (null = no floor declared) -- never silently defaulted, never smuggled into a legacy box.
+_CONSTRAINTS_FIELDS_BY_BOUNDS_SCHEMA: "dict[str, frozenset[str]]" = {
+    PHYSICAL_BOUNDS_SCHEMA_V1: frozenset(
+        {"schema_version", "max_temperature_k", "min_pressure_atm", "max_pressure_atm", "process"}),
+    PHYSICAL_BOUNDS_SCHEMA: frozenset(
+        {"schema_version", "max_temperature_k", "min_pressure_atm", "max_pressure_atm", "min_temperature_k",
+         "process"}),
+}
+
+
+def _constraints_to_payload(constraints: ConstraintPolicy) -> dict:
+    """The request ``constraints`` box: the flat PhysicalBounds keys of ITS generation (a legacy v1alpha1 box keeps its
+    released v0.8 shape byte-for-byte; a current box carries ``min_temperature_k``) plus the process bounds."""
+    bounds = constraints.bounds
+    payload = {
+        "schema_version": bounds.schema_version,
+        "max_temperature_k": bounds.max_temperature_k,
+        "min_pressure_atm": bounds.min_pressure_atm,
+        "max_pressure_atm": bounds.max_pressure_atm,
+        "process": _process_to_payload(constraints.process),
+    }
+    if bounds.schema_version != PHYSICAL_BOUNDS_SCHEMA_V1:
+        payload["min_temperature_k"] = bounds.min_temperature_k
+    return payload
+
+
+def _constraints_from_payload(payload: object) -> ConstraintPolicy:
+    """Reconstruct the request ``constraints`` box, dispatching on its PhysicalBounds generation with an EXACT key-set
+    guard (a v1alpha1 box carrying ``min_temperature_k`` is 0.9 content wearing a 0.8 id -> refused).  Keyword
+    construction only (the legacy decode used to be positional -- fragile against the appended floor)."""
+    if type(payload) is not dict:
+        raise ValueError("request constraints must be a JSON object; refused")
+    version = payload.get("schema_version")
+    expected = _CONSTRAINTS_FIELDS_BY_BOUNDS_SCHEMA.get(version)
+    if expected is None:
+        raise ValueError(
+            f"unsupported physical-bounds schema_version {version!r} (supported: {PHYSICAL_BOUNDS_SCHEMA!r}; legacy "
+            f"{PHYSICAL_BOUNDS_SCHEMA_V1!r})"
+        )
+    if set(payload) != expected:
+        raise ValueError(
+            f"a {version!r} constraints box must contain exactly {sorted(expected)}, got {sorted(payload)}; refused"
+        )
+    floor = {} if version == PHYSICAL_BOUNDS_SCHEMA_V1 else {"min_temperature_k": payload["min_temperature_k"]}
+    return ConstraintPolicy(
+        PhysicalBounds(
+            schema_version=version,
+            max_temperature_k=payload["max_temperature_k"],
+            min_pressure_atm=payload["min_pressure_atm"],
+            max_pressure_atm=payload["max_pressure_atm"],
+            **floor,
+        ),
+        process=_process_from_payload(payload["process"]),
+    )
+
+
 def request_to_payload(request: CompilationRequest) -> dict:
     """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable."""
     return {
@@ -4057,13 +4224,7 @@ def request_to_payload(request: CompilationRequest) -> dict:
         "transform_grammar": request.transform_grammar.value,
         "evidence_provider_selection": {"selection_id": request.evidence_provider_selection.selection_id},
         "search_bounds": [list(pair) for pair in request.search_bounds.bounds],
-        "constraints": {
-            "schema_version": request.constraints.bounds.schema_version,
-            "max_temperature_k": request.constraints.bounds.max_temperature_k,
-            "min_pressure_atm": request.constraints.bounds.min_pressure_atm,
-            "max_pressure_atm": request.constraints.bounds.max_pressure_atm,
-            "process": _process_to_payload(request.constraints.process),
-        },
+        "constraints": _constraints_to_payload(request.constraints),
         "ranking_policy": {"policy_id": request.ranking_policy.policy_id},
         "output_policy": {
             "render_mode": request.output_policy.render_mode,
@@ -4091,7 +4252,7 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         raise ValueError(f"a request payload must be a JSON object, got {type(payload).__name__}; refused")
     version = payload.get("schema_version")
     if version == COMPILATION_REQUEST_SCHEMA:
-        # v1alpha6: the capability keys are part of the versioned shape -- REQUIRED (null/"" = NOT_REQUESTED), never
+        # The capability keys are part of the current versioned shape -- REQUIRED (null/"" = NOT_REQUESTED), never
         # silently defaulted (a stripped key on a current payload is malformed, not "old").
         missing = [k for k in ("capability_profile", "capability_profile_origin") if k not in payload]
         if missing:
@@ -4149,15 +4310,7 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         TransformGrammar(payload["transform_grammar"]),
         EvidenceProviderSelection(payload["evidence_provider_selection"]["selection_id"]),
         SearchBounds(tuple((name, value) for name, value in payload["search_bounds"])),
-        ConstraintPolicy(
-            PhysicalBounds(
-                payload["constraints"]["schema_version"],
-                payload["constraints"]["max_temperature_k"],
-                payload["constraints"]["min_pressure_atm"],
-                payload["constraints"]["max_pressure_atm"],
-            ),
-            process=_process_from_payload(payload["constraints"]["process"]),
-        ),
+        _constraints_from_payload(payload["constraints"]),
         RankingPolicy(payload["ranking_policy"]["policy_id"]),
         OutputPolicy(payload["output_policy"]["render_mode"], payload["output_policy"]["quiet"]),
         tuple((name, FieldOrigin(origin)) for name, origin in payload["origins"]),
@@ -4235,11 +4388,14 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
                 f"NOT_REQUESTED); refused"
             )
     elif version == LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA:
-        if "capability_assessment" in payload:
+        smuggled = _v09_only_keys(payload)
+        if smuggled:
             raise ValueError(
-                f"legacy {LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA!r} ranked route summary carries the 0.9-only key "
-                f"'capability_assessment'; refused"
+                f"legacy {LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA!r} ranked route summary carries 0.9-only key(s) "
+                f"{smuggled}; refused"
             )
+        # D11: the replay operations gain material_uses at their ONLY v0.8-expressible value, [] (decode-side only).
+        payload = _migrate_legacy_v08_dossier(payload)
     else:
         raise _unsupported_schema("ranked route summary", version, RANKED_ROUTE_SUMMARY_SCHEMA,
                                   LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA)
@@ -4277,7 +4433,9 @@ def _decode_dossier_assessment(payload: dict) -> "CapabilityAssessment | None":
     so a forged verdict is reported against the route it rode on rather than as an anonymous record error."""
     try:
         return _capability_assessment_from_payload(payload.get("capability_assessment"))
-    except (TypeError, ValueError) as exc:
+    # KeyError: an unknown ``readiness_tier`` reaches ``tier_rank`` inside the assessment's own fold check -- a malformed
+    # wire value, refused as such (X-high D20(2) defence-in-depth; the record should raise ValueError itself).
+    except (TypeError, ValueError, KeyError) as exc:
         raise ValueError(
             f"ranked route {payload.get('route_digest')!r} carries a capability_assessment that cannot be "
             f"reconstructed: {exc}; refused"
@@ -4324,7 +4482,26 @@ def _exact_int_pair(pair) -> "tuple[int, int]":
 def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
     """Reconstruct a DAG combined bench admission; re-validates via its __post_init__ (edge-shape + coherence) guards.
     ``edges`` wire types are validated BEFORE coercion (:func:`_exact_int_pair`), so a bool/float/string index cannot
-    be silently truncated into a legal-looking edge.  ``replay_payload`` is optional (absent -> None)."""
+    be silently truncated into a legal-looking edge.  ``replay_payload`` is optional (absent -> None).
+
+    X-high D22: explicit version dispatch.  The CURRENT id decodes as-is; the released v0.8 id
+    (``ranked-dag-summary-v1alpha4``) decodes ONLY as LEGACY -- refused if it carries any 0.9-only key at any depth,
+    its replay operations migrated to ``material_uses=[]`` -- so a standalone v0.8 DAG dossier no longer fails on a
+    silently-required field; any other id is refused precisely."""
+    if type(payload) is not dict:
+        raise ValueError(f"a ranked DAG summary payload must be a JSON object, got {type(payload).__name__}; refused")
+    version = payload.get("schema_version")
+    if version == LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA:
+        smuggled = _v09_only_keys(payload)
+        if smuggled:
+            raise ValueError(
+                f"legacy {LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA!r} ranked DAG summary carries 0.9-only key(s) "
+                f"{smuggled}; refused"
+            )
+        payload = _migrate_legacy_v08_dossier(payload)
+    elif version != RANKED_DAG_SUMMARY_SCHEMA:
+        raise _unsupported_schema("ranked DAG summary", version, RANKED_DAG_SUMMARY_SCHEMA,
+                                  LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA)
     return RankedDAGSummary(
         payload["schema_version"],
         payload["route_digest"],
@@ -4546,7 +4723,11 @@ def _check_verified_admission(response: "CompilationResponse") -> None:
                 f"include_replay=True)"
             )
         route = _reconstruct_route(r.replay_payload)
-        resummary = RankedRouteSummary.of_fit(rank_routes((route,), box=box, losses=losses)[0], identity_losses=losses)
+        # X-high D20(1): re-project under the request's OWN capability profile -- the capability_assessment is a
+        # compare=True summary field, so a re-projection WITHOUT the profile could never equal an honest assessed
+        # dossier (a fail-closed false refusal of every FITS route on a profile request).
+        resummary = RankedRouteSummary.of_fit(rank_routes((route,), box=box, losses=losses)[0], identity_losses=losses,
+                                              capability_profile=response.request.capability_profile)
         if response.is_legacy_v08:
             # D11: re-project under the LEGACY identity (v0.8 schema id + frozen-rule route digest); the capability
             # projection is None because the legacy request is NOT_REQUESTED.  Still full structural equality.
@@ -4568,8 +4749,10 @@ def _check_verified_admission(response: "CompilationResponse") -> None:
         dag = _reconstruct_dag(d.replay_payload)
         resummary = RankedDAGSummary.of_dag(dag, box)
         if response.is_legacy_v08:
-            # D11: the DAG summary schema did not change, but its DAG identity is a route-graph digest -> frozen rule.
-            resummary = dataclasses_replace(resummary, route_digest=_v08_digest(dag))
+            # D11/X-high D22: re-project under the LEGACY identity -- the released DAG summary id + the frozen-rule DAG
+            # digest (a DAG identity is a route-graph digest).  Still full structural equality.
+            resummary = dataclasses_replace(resummary, schema_version=LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA,
+                                            route_digest=_v08_digest(dag))
         # resummary != d compares the compare=True fields (verdict + edges + verdicts); serial_holds is compare=False
         # (disclosure), so re-derive it explicitly -- a verified-admission consumer trusting a displayed hold gets an
         # authenticated one (evil-morty Finding 2).
@@ -4668,6 +4851,8 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
 _V09_ONLY_WIRE_KEYS = frozenset({
     "capability_question_digest", "capability_profile", "capability_profile_origin", "capability_assessment",
     "material_uses", "specification",
+    # X-high D14: the temperature floor exists only on the 0.9 wire (a v1alpha1 constraints box cannot carry it).
+    "min_temperature_k",
 })
 
 
@@ -4713,10 +4898,17 @@ def _migrate_legacy_v08_dossier(dossier: dict) -> dict:
     return migrated
 
 
+#: The "no capability-question pin" sentinel for :func:`response_from_payload` -- distinct from ``None``, which PINS the
+#: question as NOT_REQUESTED (a consumer who asked no capability question refuses an answer that carries one).
+_NO_CAPABILITY_PIN = object()
+
+
 def response_from_payload(payload: dict, *, verification_key: bytes | None = None,
                           require_signature: bool = False,
                           require_verified_admission: bool = False,
-                          expected_request_digest: str | None = None) -> CompilationResponse:
+                          expected_request_digest: str | None = None,
+                          expected_capability_question_digest: "str | None | object" = _NO_CAPABILITY_PIN,
+                          ) -> CompilationResponse:
     """Reconstruct a response from :func:`response_to_payload`; re-runs the coherence guard.
 
     Two layers now guard admission on load.  (1) The round-trip check below re-derives
@@ -4780,7 +4972,8 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         dossier_payloads = payload["ranked_route_dossiers"]
     elif version == LEGACY_V08_RESPONSE_SCHEMA:
         _refuse_legacy_v08_response_smuggling(payload)
-        dossier_payloads = [_migrate_legacy_v08_dossier(r) for r in payload["ranked_route_dossiers"]]
+        # (each legacy dossier is migrated by its OWN summary decoder, after that decoder's own smuggling check)
+        dossier_payloads = payload["ranked_route_dossiers"]
     else:
         raise _unsupported_schema("response", version, COMPILATION_RESPONSE_SCHEMA, LEGACY_V08_RESPONSE_SCHEMA)
     ir_payload = payload["compilation_ir"]
@@ -4796,8 +4989,7 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         tuple(provider_snapshot_from_payload(s) for s in payload.get("provider_snapshots", [])),
         parse_receipt_summary=payload["parse_receipt_summary"],
         ranked_dag_dossiers=tuple(
-            ranked_dag_summary_from_payload(_migrate_legacy_v08_dossier(d) if version == LEGACY_V08_RESPONSE_SCHEMA else d)
-            for d in payload.get("ranked_dag_dossiers", [])
+            ranked_dag_summary_from_payload(d) for d in payload.get("ranked_dag_dossiers", [])
         ),
     )
     for name in ("process_selection_status", "admissible_route_digests", "exit_code"):
@@ -4871,6 +5063,19 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         raise ValueError(
             "response.request does not match expected_request_digest: the response answers a DIFFERENT request than "
             "the consumer asked for (e.g. relaxed bench bounds); refused"
+        )
+    # X-high D20(4) (Wave-A' A-WIRE (d)): the CAPABILITY-question pin -- the capability analogue of the request pin
+    # above.  ``expected_request_digest`` binds only the SEARCH question (capability is excluded from semantic_digest
+    # by design), so a keyless attacker could otherwise answer a DIFFERENT bench's question -- every assessment honestly
+    # re-derived under the swapped profile, every public pin recomputed -- and still pass the request pin.  A consumer
+    # who knows the bench they asked about pins it here; ``None`` pins NOT_REQUESTED.  Fail-closed on EVERY mismatch,
+    # including None-vs-set in either direction.
+    if (expected_capability_question_digest is not _NO_CAPABILITY_PIN
+            and response.capability_question_digest != expected_capability_question_digest):
+        raise ValueError(
+            f"response capability_question_digest {response.capability_question_digest!r} does not match "
+            f"expected_capability_question_digest {expected_capability_question_digest!r}: the response answers a "
+            f"DIFFERENT capability question (another bench, or a question the consumer never asked); refused"
         )
     # The opt-in STRUCTURAL close of the composability/physical/ranking axes (no key).  A verified-admission consumer
     # requires every FITS route/DAG to carry a replay_payload that re-projects to the exact claimed summary; a missing
@@ -4989,11 +5194,14 @@ def serialize_response(response: CompilationResponse, *, signing_key: bytes | No
 def deserialize_response(text: str, *, verification_key: bytes | None = None,
                          require_signature: bool = False,
                          require_verified_admission: bool = False,
-                         expected_request_digest: str | None = None) -> CompilationResponse:
+                         expected_request_digest: str | None = None,
+                         expected_capability_question_digest: "str | None | object" = _NO_CAPABILITY_PIN,
+                         ) -> CompilationResponse:
     return response_from_payload(json.loads(text), verification_key=verification_key,
                                  require_signature=require_signature,
                                  require_verified_admission=require_verified_admission,
-                                 expected_request_digest=expected_request_digest)
+                                 expected_request_digest=expected_request_digest,
+                                 expected_capability_question_digest=expected_capability_question_digest)
 
 
 # -- the versioned JSON schema + the semantic-field projection (CLI-JSON-01) -------------------------------------
@@ -5018,12 +5226,18 @@ def response_schema() -> dict:
             "request": [LEGACY_V08_REQUEST_SCHEMA],
             "response": [LEGACY_V08_RESPONSE_SCHEMA],
             "ranked_route_summary": [LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA],
+            "ranked_dag_summary": [LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA],
+            "physical_bounds": [LEGACY_V08_PHYSICAL_BOUNDS_SCHEMA],
         },
         "response_fields": {
             "schema_version": "str",
-            "request": "object(compilation-request-v1alpha6; carries capability_profile: object(CapabilityProfile, "
-                       "canonical type-tagged)|null (null = NOT_REQUESTED; never in semantic_digest) and "
-                       "capability_profile_origin: str (display/preset-origin name; provenance only))",
+            "request": "object(compilation-request-v1alpha7; constraints: object(physical-bounds-v1alpha2 flattened: "
+                       "min_temperature_k/max_temperature_k/min_pressure_atm/max_pressure_atm number|null -- the "
+                       "temperature FLOOR is part of the declared range -- + process); carries capability_profile: "
+                       "object(CapabilityProfile, canonical type-tagged; its StockMaterials grade their phase with "
+                       "phase_evidence)|null (null = NOT_REQUESTED; never in semantic_digest) and "
+                       "capability_profile_origin: str ('' or the snapshot's own profile_id -- content-bound, never a "
+                       "free relabel))",
             "outcome": "enum(ResponseOutcome)",
             "standard_status": "str|null (section 8.2 status)",
             "exit_code": "int (section 14.4: 0/2/3/4/5/70)",
@@ -5050,7 +5264,9 @@ def response_schema() -> dict:
                               "strip is a detectable identity change)",
             "capability_question_digest": "str|null (0.9 D12: canonical_digest((semantic_digest, profile_digest)); "
                                           "null when no capability profile was requested. Moves under a profile change; "
-                                          "the search semantic_digest never does. Additive to expected_request_digest)",
+                                          "the search semantic_digest never does. A consumer PINS it on load with "
+                                          "expected_capability_question_digest (null pins NOT_REQUESTED) -- the "
+                                          "capability analogue of expected_request_digest)",
             "result_digest": "str (sha256; transport_mode folded in -- CANONICAL_VERIFIED binds it, THIN_ADVISORY is "
                               "the bare semantic digest)",
             "producer_signature": "str|null (optional HMAC-SHA256 over result_digest; null unless signed; "
@@ -5147,9 +5363,10 @@ def response_schema() -> dict:
             "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence "
                               "-- molecules + full 11-field envelope incl. the sourced procedure, whose operations "
                               "carry material_uses: array[object(procedure-material-use incl. specification: "
-                              "object(MaterialSpecification)|null)] -- the readiness ladder is RE-DERIVED from on load; "
-                              "emitted on the CANONICAL_VERIFIED wire (the default), compare=False so outside the bare "
-                              "result_digest)",
+                              "object(MaterialSpecification)|null and phase: object(PhaseClaim: phase, evidence, note)|"
+                              "null -- an evidence-graded phase; only certifying evidence can decide a phase match or "
+                              "mismatch)] -- the readiness ladder is RE-DERIVED from on load; emitted on the "
+                              "CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
             "capability_assessment": "object(CapabilityAssessment: per-axis + overall verdict of this route against the "
                                      "request's declared profile)|null (0.9 D12: null = NOT_REQUESTED; compare=True so "
                                      "it is part of route identity and CAPABILITY-REBIND-ON-LOAD re-derives + refuses a "
@@ -5180,8 +5397,9 @@ def response_schema() -> dict:
                             "-- never changes fit_status -- and digest-EXCLUDED, so it is re-derivable from "
                             "edges + process_requirements and does not move the route identity)",
             "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence "
-                              "the process component is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire "
-                              "(the default), compare=False so outside the bare result_digest)",
+                              "the process component is RE-DERIVED from on load -- the same step-replay shape as the "
+                              "ranked route summary's, procedure operations carrying material_uses; emitted on the "
+                              "CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
         },
         "affordability_frontier_entry_fields": {
             "schema_version": "str",

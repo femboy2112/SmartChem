@@ -23,6 +23,23 @@ kept its auxiliaries in ``materials=`` strings reached overall ``CAPABILITY_FIT`
   Typed uses refine the name; their absence never deletes the stream. Spent-stream-role uses
   (WASH/RINSE/DRY/SOLVENT/NEUTRALIZE) anywhere still add their own stream too.
 
+Round V X-high amendments (barrier D17):
+
+* **Nothing introduced may vanish (F-6).** Every ``op.materials`` string that no typed use OF THAT OP covers
+  (case/whitespace-folded EQUALITY -- the same exact rule the requirement projection uses) is an unresolved
+  obligation of its own, on EVERY op kind (ADD/QUENCH/MIX/HEAT/HOLD/COOL as much as the spent-stream ops): an
+  untyped material's fate -- consumed, recovered, routed -- is untyped, so its disposal routing is UNKNOWN. The
+  typed-use path is TOTAL over :class:`~smartchem.procedure_evidence.ProcedureMaterialRole` (an import-time guard
+  refuses a role that would silently map to no obligation).
+* **A CATALYST label must agree with the chemistry (F-7).** A known-identity CATALYST use that its own step's
+  balanced reaction NET-CONSUMES is a role contradiction: it earns NO resolved catalyst category (a relabelled
+  reactant must never launder its unresolved residual into a resolved ``HAZARDOUS``), only an unresolved residual
+  naming the contradiction -- and a same-named envelope catalyst cannot smuggle the category back in.
+* **``envelope.medium`` is provenance ONLY (Part IV).** Every corpus medium is a condition DESCRIPTION ("neat;
+  acid-catalyzed (conc. H2SO4); reflux then fractional distillation"), never one species; reading the sentence as
+  a spent stream minted a fake waste obligation for the wrong reason. Materials are typed uses; the medium reader
+  is deleted.
+
 Every reason quotes the real ``Fate``. Nothing here decides FIT/BLOCKED/UNKNOWN (that fold is assess's).
 """
 from __future__ import annotations
@@ -48,6 +65,38 @@ _SPENT_STREAM_OP_KINDS = frozenset({
 })
 #: roles that are consumed into the product -- their leftover is an unresolved residual.
 _CONSUMED_ROLES = frozenset({ProcedureMaterialRole.SUBSTRATE, ProcedureMaterialRole.REACTANT})
+#: the role whose use is a certain (unconsumed) residual -- resolved HAZARDOUS on real GHS, else unresolved.
+_CATALYST_ROLES = frozenset({ProcedureMaterialRole.CATALYST})
+
+
+def _check_role_totality() -> None:
+    """D17 (F-6) import-time guard: EVERY ProcedureMaterialRole maps to a waste obligation (catalyst residual,
+    consumed-role residual, or spent stream). A future role added to the closed vocabulary without a waste reading
+    would otherwise make its typed uses silently produce NOTHING -- the exact vanishing this module exists to
+    refuse. Raises ``RuntimeError`` naming the orphan (or phantom) roles."""
+    covered = _CATALYST_ROLES | _CONSUMED_ROLES | _SPENT_STREAM_ROLES
+    universe = frozenset(ProcedureMaterialRole)
+    if covered != universe:
+        orphan = sorted(r.value for r in universe - covered)
+        phantom = sorted(getattr(r, "value", repr(r)) for r in covered - universe)
+        raise RuntimeError(
+            f"waste role map is not total over ProcedureMaterialRole: roles with NO waste obligation {orphan}; "
+            f"unknown roles {phantom} -- every typed use must reach the waste question (D17/F-6)")
+
+
+_check_role_totality()
+
+
+def _norm_text(text: str) -> str:
+    return " ".join(text.strip().casefold().split())
+
+
+def _name_covers(use_name: str, raw: str) -> bool:
+    """The requirement projection's exact coverage rule (Wave-C K4), duplicated here on purpose (a private helper is
+    never imported across modules): a typed use covers a raw ``op.materials`` string only on case/whitespace-folded
+    EQUALITY -- never a substring, so a second species hidden in a longer phrase stays uncovered."""
+    name, text = _norm_text(use_name), _norm_text(raw)
+    return bool(name) and name == text
 
 
 def _struct_digest(molecule) -> str:
@@ -115,13 +164,33 @@ def derive_waste(
             unresolved.add(f"waste: {label} ({b.hazard_name}, empty GHS) -- benign species, untyped waste stream "
                            "(phase/pH/co-residents unestablished); never AQUEOUS_NEUTRAL (F76)")
 
-    # -- residuals (F77) and spent streams (D9) -----------------------------------------------------------------
+    # -- residuals (F77), role consistency (F-7), untyped introductions (F-6), spent streams (D9) ------------------
     catalyst_seen: "set[str]" = set()
     residual_seen: "set[str]" = set()
     stream_names_seen: "set[str]" = set()
 
+    # F-7 pre-pass: every name a known-identity CATALYST use carries while its own step NET-CONSUMES that structure.
+    # Computed before any catalyst is read, so neither the use nor a same-named envelope catalyst (read first, and
+    # deduplicated by name) can ever earn the resolved catalyst category for a consumed reactant.
+    contradicted: "set[str]" = set()
+    for step in route.steps:
+        procedure = step.envelope.procedure
+        if procedure is None:
+            continue
+        for op in procedure.operations:
+            for use in op.material_uses:
+                if (use.role in _CATALYST_ROLES and use.identity is not None
+                        and step.net_consumes(use.identity)):
+                    contradicted.add(use.name.strip().casefold())
+
     def _catalyst(identity, name: str, where: str) -> None:
         key = name.strip().casefold()
+        if key in contradicted:
+            unresolved.add(
+                f"waste: catalyst {name!r} ({where}) is NET-CONSUMED by its step's balanced reaction -- a role "
+                "contradiction, never a catalyst residual; its unreacted/excess residual's disposal routing is "
+                "UNKNOWN (F-7)")
+            return
         if key in catalyst_seen:
             return
         catalyst_seen.add(key)
@@ -138,26 +207,26 @@ def derive_waste(
     for s_index, step in enumerate(route.steps, start=1):
         for cat in step.envelope.catalysts:
             _catalyst(None, cat, f"step {s_index} envelope catalyst")
-        medium = step.envelope.medium.strip() if step.envelope.medium else ""
-        if medium:
-            # Lane G amendment: the declared reaction MEDIUM is a certain residual/spent stream too.
-            hazard = _resolve_hazard(None, medium)
-            if hazard is not None and hazard.ghs_codes:
-                categories.add(WasteCapability.HAZARDOUS)
-                reasons.add(f"waste: step {s_index} reaction medium {medium!r} is a spent stream carrying sourced "
-                            f"GHS {', '.join(hazard.ghs_codes)} ({hazard.name}) -- HAZARDOUS")
-            else:
-                unresolved.add(f"waste: step {s_index} reaction medium {medium!r} is a spent stream with no "
-                               "GHS-bearing hazard record -- its disposal routing is UNKNOWN")
+        # Part IV: ``envelope.medium`` is condition PROSE / provenance only -- it is never read as a stream.
         procedure = step.envelope.procedure
         covered: "set[str]" = set()
         if procedure is not None:
             for op in procedure.operations:
+                # F-6: an untyped material this op introduces has an untyped fate -- its own obligation, on every
+                # op kind (a spent-stream op's line below names only its typed uses when it has any).
+                for raw in op.materials:
+                    if not any(_name_covers(u.name, raw) for u in op.material_uses):
+                        unresolved.add(
+                            f"waste: step {s_index} op #{op.ordinal} {op.kind.value}/{op.role.value} introduces "
+                            f"untyped material {raw.strip()!r} -- its fate is untyped, so its disposal routing is "
+                            "UNKNOWN (F-6)")
                 for use in op.material_uses:
                     if use.identity is not None:
                         covered.add(_struct_digest(use.identity))
-                    if use.role is ProcedureMaterialRole.CATALYST:
+                    if use.role in _CATALYST_ROLES:
                         _catalyst(use.identity, use.name, f"step {s_index} op #{op.ordinal} CATALYST use")
+                        if use.identity is not None and step.net_consumes(use.identity):
+                            residual_seen.add(_struct_digest(use.identity))
                     elif use.role in _CONSUMED_ROLES:
                         key = (_struct_digest(use.identity) if use.identity is not None
                                else f"name:{use.name.strip().casefold()}")

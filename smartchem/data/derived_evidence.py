@@ -20,6 +20,25 @@ decimal places, so a non-terminating exact value (36/136 = 0.2647058823...) is r
 6-dp decimal interval. Outward rounding only ever WIDENS the interval -- it can cost a FIT, never mint one. The
 record's ``low``/``high`` must be the CANONICAL decimal spelling of that rounded value (``"1"``, not ``"1.0"``), so
 equal intervals digest equally.
+
+**Kernel semantic identity -- the 1.0 compatibility contract (Round V X-high, barrier D19).** A stored record names its
+kernel by ID only (``SOLUBILITY_..._V1``); the arithmetic lives here, in code, and is NOT digested into the record.
+So the ID must MEAN one function forever:
+
+    A DerivationKernel member names ONE immutable function. Its arithmetic on every admissible input, its rounding
+    precision, its admissible input names/units/evidence kinds/bases, its parent requirement and the EvidenceKind it
+    emits are frozen at release. Any change -- including a bug fix -- mints a new member (``X_V2``) with its own
+    known-answer vectors; ``X_V1`` keeps its implementation forever, so a stored record naming ``X_V1`` re-verifies to
+    exactly its minted value. Retiring a member (refusing NEW records) is allowed; changing one is not.
+
+Enforcement is structural, not a promise: :data:`KERNEL_KNOWN_ANSWERS` freezes known-answer vectors per member
+(boundary AND refusal cases, well outside the regions any shipped record exercises) and
+:func:`verify_kernel_known_answers` replays them at import -- a drifted kernel fails to import. The test
+``tests/test_v0_9_kernel_semantic_lock.py`` additionally pins, as hex literals, each member's semantic-descriptor digest
+(:func:`kernel_semantic_descriptor`) and the version-portable AST digest of every kernel function and arithmetic helper
+(:func:`kernel_ast_digest`); editing any of them is a compatibility break by definition. (Content-addressing the
+descriptor digest INSIDE each ``IntervalEvidence`` is a 0.9.5 item -- the lock above already makes a silent V1 edit
+fail loudly.)
 """
 from __future__ import annotations
 
@@ -40,7 +59,12 @@ __all__ = [
     "IntervalEvidence",
     "KernelSpec",
     "KERNELS",
+    "KernelVector",
+    "KERNEL_KNOWN_ANSWERS",
     "canonical_decimal",
+    "kernel_ast_digest",
+    "kernel_semantic_descriptor",
+    "verify_kernel_known_answers",
 ]
 
 #: Outward-rounding precision for every kernel result (decimal places).
@@ -368,3 +392,173 @@ class IntervalEvidence(Digestible):
         """``(float, float)`` for the ``MaterialComponent`` slots. Exact round-trip: every endpoint has at most
         :data:`PRECISION_DP` decimals, so ``Fraction(repr(float(x))) == Fraction(x)``."""
         return float(exact_fraction(self.low)), float(exact_fraction(self.high))
+
+
+# == D19: kernel semantic identity -- frozen known-answer vectors, replayed at import ==============================
+
+@dataclass(frozen=True)
+class KernelVector:
+    """One frozen known-answer vector for a registered kernel: a labelled input set (``(name, value, unit, kind)``
+    rows; a sourced kind gets the fixed vector locator), an optional PARENT (the label of an earlier vector, for
+    COMPLEMENT), and EITHER the exact expected ``(low, high, kind)`` OR ``refuses`` -- a substring of the
+    ``ValueError`` the kernel must raise. Plain strings and enums only, so the vector itself is part of the frozen
+    semantic descriptor."""
+
+    label: str
+    kernel: DerivationKernel
+    basis: ConcentrationBasis
+    inputs: "tuple[tuple[str, str, InputUnit, EvidenceKind], ...]" = ()
+    parent: "str | None" = None
+    low: "str | None" = None
+    high: "str | None" = None
+    kind: "EvidenceKind | None" = None
+    refuses: "str | None" = None
+
+
+_VECTOR_LOCATOR = "kernel-known-answer-vector (D19)"
+_MF, _UB = ConcentrationBasis.MASS_FRACTION, ConcentrationBasis.UNKNOWN
+_SQ, _AS, _UD = EvidenceKind.SOURCE_QUOTED, EvidenceKind.ASSUMED, EvidenceKind.USER_DECLARED
+_PCT, _FR, _S100 = InputUnit.PERCENT, InputUnit.FRACTION, InputUnit.G_PER_100G_SOLVENT
+
+#: THE frozen known-answer vectors (D19). Every DerivationKernel member has at least one; the values are the exact
+#: outward-rounded canonical spellings the V1 implementations produce. NEVER edit a row to follow a code change --
+#: a failing row means the change must mint a new ``_V2`` member instead.
+KERNEL_KNOWN_ANSWERS: "tuple[KernelVector, ...]" = (
+    KernelVector("identity-percent", DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, _MF,
+                 (("low", "95.0", _PCT, _SQ), ("high", "98.0", _PCT, _SQ)), low="0.95", high="0.98", kind=_SQ),
+    KernelVector("identity-fraction", DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, _MF,
+                 (("low", "0.25", _FR, _SQ), ("high", "0.5", _FR, _SQ)), low="0.25", high="0.5", kind=_SQ),
+    KernelVector("identity-refuses-assumed-input", DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, _MF,
+                 (("low", "95.0", _PCT, _AS), ("high", "98.0", _PCT, _AS)), refuses="refuses input"),
+    KernelVector("solubility-nacl-36", DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1, _MF,
+                 (("low", "36.0", _S100, _SQ), ("high", "36.0", _S100, _SQ)),
+                 low="0.264705", high="0.264706", kind=EvidenceKind.DERIVED),
+    KernelVector("solubility-60", DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1, _MF,
+                 (("low", "60", _S100, _SQ), ("high", "60", _S100, _SQ)),
+                 low="0.375", high="0.375", kind=EvidenceKind.DERIVED),
+    KernelVector("solubility-band-0-300", DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1, _MF,
+                 (("low", "0", _S100, _SQ), ("high", "300", _S100, _SQ)),
+                 low="0", high="0.75", kind=EvidenceKind.DERIVED),
+    KernelVector("solubility-refuses-per-volume", DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1,
+                 _MF, (("low", "36.0", InputUnit.G_PER_100ML_SOLVENT, _SQ),
+                       ("high", "36.0", InputUnit.G_PER_100ML_SOLVENT, _SQ)), refuses="refuses input"),
+    KernelVector("complement-of-nacl", DerivationKernel.COMPLEMENT_V1, _MF, parent="solubility-nacl-36",
+                 low="0.735294", high="0.735295", kind=_AS),
+    KernelVector("clamp-titration-99.5-100.5", DerivationKernel.CLAMP_TO_UNIT_INTERVAL_V1, _MF,
+                 (("low", "99.5", _PCT, _SQ), ("high", "100.5", _PCT, _SQ)), low="0.995", high="1",
+                 kind=EvidenceKind.CLAMPED),
+    KernelVector("clamp-floor-97", DerivationKernel.CLAMP_TO_UNIT_INTERVAL_V1, _MF,
+                 (("floor", "97", _PCT, _SQ),), low="0.97", high="1", kind=EvidenceKind.CLAMPED),
+    KernelVector("clamp-refuses-no-clip", DerivationKernel.CLAMP_TO_UNIT_INTERVAL_V1, _MF,
+                 (("low", "95.0", _PCT, _SQ), ("high", "98.0", _PCT, _SQ)), refuses="must actually clip"),
+    KernelVector("clamp-refuses-floor-above-1", DerivationKernel.CLAMP_TO_UNIT_INTERVAL_V1, _MF,
+                 (("floor", "101", _PCT, _SQ),), refuses="a floor above 1"),
+    KernelVector("clamp-refuses-wholly-outside", DerivationKernel.CLAMP_TO_UNIT_INTERVAL_V1, _MF,
+                 (("low", "101", _PCT, _SQ), ("high", "102", _PCT, _SQ)), refuses="entirely outside"),
+    KernelVector("band-nominal-5-half-0.5", DerivationKernel.ASSUMED_BAND_V1, _UB,
+                 (("nominal", "5", InputUnit.PERCENT_UNSTATED_BASIS, _SQ),
+                  ("half_width", "0.5", InputUnit.PERCENT_UNSTATED_BASIS, _AS)), low="0.045", high="0.055", kind=_AS),
+    KernelVector("band-low-high", DerivationKernel.ASSUMED_BAND_V1, _UB,
+                 (("low", "0.04", _FR, _AS), ("high", "0.08", _FR, _AS)), low="0.04", high="0.08", kind=_AS),
+    KernelVector("user-declared-pure", DerivationKernel.USER_DECLARED_V1, _MF,
+                 (("low", "1", _FR, _UD), ("high", "1", _FR, _UD)), low="1", high="1", kind=_UD),
+    KernelVector("user-declared-refuses-sourced-kind", DerivationKernel.USER_DECLARED_V1, _MF,
+                 (("low", "1", _FR, _SQ), ("high", "1", _FR, _SQ)), refuses="refuses input"),
+    KernelVector("unknown-full-interval", DerivationKernel.UNKNOWN_V1, _UB, low="0", high="1",
+                 kind=EvidenceKind.UNKNOWN),
+)
+
+
+def _vector_inputs(vector: KernelVector) -> "tuple[TypedInput, ...]":
+    return tuple(
+        TypedInput(name, value, unit, kind, _VECTOR_LOCATOR if kind in _SOURCED_INPUT_KINDS else "")
+        for name, value, unit, kind in vector.inputs)
+
+
+def verify_kernel_known_answers() -> None:
+    """Replay every :data:`KERNEL_KNOWN_ANSWERS` vector through :meth:`IntervalEvidence.build` (the kernel fn, the
+    outward rounding, the canonical spelling and the output-kind rule, together) and raise ``RuntimeError`` on ANY
+    deviation -- a value, a kind, a refusal that no longer refuses, or a DerivationKernel member with no vector.
+    Called at import: a silently-edited V1 kernel makes this module fail to import (D19)."""
+    by_label: "dict[str, IntervalEvidence]" = {}
+    covered: "set[DerivationKernel]" = set()
+    for v in KERNEL_KNOWN_ANSWERS:
+        covered.add(v.kernel)
+        parent = by_label.get(v.parent) if v.parent is not None else None
+        if v.parent is not None and parent is None:
+            raise RuntimeError(f"kernel vector {v.label!r}: parent vector {v.parent!r} is not an earlier accepted vector")
+        locators = (_VECTOR_LOCATOR,) if any(k in _SOURCED_INPUT_KINDS for *_n, k in v.inputs) else ()
+        try:
+            record = IntervalEvidence.build(kernel=v.kernel, basis=v.basis, inputs=_vector_inputs(v),
+                                            source_locators=locators, domain_of_validity="D19 known-answer vector",
+                                            parent=parent)
+        except ValueError as exc:
+            if v.refuses is not None and v.refuses in str(exc):
+                continue
+            raise RuntimeError(f"kernel vector {v.label!r} ({v.kernel.value}) raised unexpectedly: {exc}") from exc
+        if v.refuses is not None:
+            raise RuntimeError(f"kernel vector {v.label!r} ({v.kernel.value}) must refuse ({v.refuses!r}) but built "
+                               f"[{record.low}, {record.high}] -- the V1 semantics changed; mint a _V2")
+        if (record.low, record.high, record.kind) != (v.low, v.high, v.kind):
+            raise RuntimeError(
+                f"kernel vector {v.label!r} ({v.kernel.value}) now yields [{record.low}, {record.high}] "
+                f"{record.kind.value}, frozen answer [{v.low}, {v.high}] {v.kind.value if v.kind else None} -- a V1 "
+                "kernel's arithmetic or kind changed; mint a _V2 member instead (D19)")
+        by_label[v.label] = record
+    missing = set(DerivationKernel) - covered
+    if missing:
+        raise RuntimeError(f"DerivationKernel member(s) with no known-answer vector: {sorted(m.value for m in missing)}")
+
+
+def kernel_semantic_descriptor(kernel: DerivationKernel) -> "tuple":
+    """The canonical, hashable DECLARED semantics of one registered kernel: its name, admissible input-name patterns,
+    units, input kinds, output kind, bases, parent requirement, :data:`PRECISION_DP`, and its frozen vectors. The lock
+    test pins ``canonical_digest`` of this per member."""
+    spec = KERNELS[kernel]
+
+    def _sorted_values(xs: "frozenset | None") -> "tuple[str, ...] | None":
+        return None if xs is None else tuple(sorted(x.value for x in xs))
+
+    vectors = tuple(
+        (v.label, v.basis.value, tuple((n, val, u.value, k.value) for n, val, u, k in v.inputs), v.parent, v.low,
+         v.high, v.kind.value if v.kind else None, v.refuses)
+        for v in KERNEL_KNOWN_ANSWERS if v.kernel is kernel)
+    return (kernel.value, spec.name_patterns, _sorted_values(spec.units), _sorted_values(spec.input_kinds),
+            spec.output_kind.value if spec.output_kind else None, _sorted_values(spec.bases), spec.needs_parent,
+            PRECISION_DP, vectors)
+
+
+def _canonical_ast(node: object) -> object:
+    """A Python-version-portable canonical form of an AST: node type + its ``_fields`` (never line/column
+    attributes), with ``None`` and empty-list fields DROPPED -- so a field a newer Python adds empty (3.12's
+    ``type_params=[]``) does not move the digest, while every real code edit does."""
+    import ast
+    if isinstance(node, ast.AST):
+        return (type(node).__name__, tuple(
+            (name, _canonical_ast(value)) for name in node._fields
+            if (value := getattr(node, name, None)) is not None and value != []))
+    if isinstance(node, list):
+        return tuple(_canonical_ast(x) for x in node)
+    return node
+
+
+def kernel_ast_digest(fn: "Callable[..., object]") -> str:
+    """The digest of ``fn``'s canonical AST -- insensitive to comments, formatting and docstrings, sensitive to every
+    code edit. The lock test pins it for every kernel function and arithmetic helper, so any edit to a V1 kernel's
+    arithmetic is caught by name."""
+    import ast
+    import hashlib
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    for node in ast.walk(tree):  # a docstring is prose, not arithmetic: rewording one is never a semantic change
+        body = getattr(node, "body", None)
+        if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and body
+                and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            node.body = body[1:] or [ast.Pass()]
+    return hashlib.sha256(repr(_canonical_ast(tree)).encode("utf-8")).hexdigest()
+
+
+verify_kernel_known_answers()

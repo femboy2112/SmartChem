@@ -23,11 +23,11 @@ from typing import TYPE_CHECKING
 
 from ..category import Molecule
 from ..contracts import Digestible, canonical_digest
-from ..material_spec import ConcentrationBasis
+from ..material_spec import ConcentrationBasis, EvidenceKind
 
 if TYPE_CHECKING:
     from ..data.derived_evidence import IntervalEvidence
-    from ..material_spec import StateClaim, StockSpecView
+    from ..material_spec import PhaseClaim, StateClaim, StockSpecView
 
 __all__ = [
     "STOCK_MATERIAL_SCHEMA",
@@ -43,11 +43,13 @@ __all__ = [
     "stock_material_from_commodity",
 ]
 
-#: Round V (barrier D8/D11): v1alpha2 adds ``MaterialComponent.basis``/``.evidence`` and ``StockMaterial.states``.
-#: v1alpha1 is NOT constructible: these records are only ever built in-process (no wire codec decodes them), so
-#: there is no stored v1alpha1 payload to migrate, and a v1alpha1 record would silently mean "basis/evidence/states
+#: Round V (barrier D8/D11): component v1alpha2 adds ``MaterialComponent.basis``/``.evidence``/``.states`` (Wave-C
+#: K1 moved state claims from the bottle onto the component). Round V X-high (D18/D22): stock-material v1alpha3 adds
+#: ``StockMaterial.phase_evidence`` -- the bottle phase is no longer an ungraded scalar. Older ids are NOT
+#: constructible: no v0.8 payload ever carried a StockMaterial (the capability profile is new in 0.9), and a WIP-only
+#: 0.9 id was never released, so there is nothing to migrate -- a stale record would silently mean "phase evidence
 #: absent" under a new identity. Every in-repo constructor passes the schema CONSTANT, so the bump is transparent.
-STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha2"
+STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha3"
 MATERIAL_COMPONENT_SCHEMA = "smartchem.experiment/material-component-v1alpha2"
 STOCK_QUANTITY_SCHEMA = "smartchem.experiment/stock-quantity-v1alpha1"
 COST_OBSERVATION_SCHEMA = "smartchem.experiment/cost-observation-v1alpha2"
@@ -350,6 +352,13 @@ class StockMaterial(Digestible):
 
     Unlike a pure identity or a commodity source lead, a ``StockMaterial`` can be ASKED whether it satisfies a
     pure-reagent requirement, and it answers honestly with an interval verdict (:meth:`satisfies`).
+
+    Round V X-high (D18): ``phase`` is BOTTLE-level on purpose -- it describes the material you dispense (a brine is an
+    aqueous solution whichever species you ask about), unlike the per-species material STATES, which stay scoped to
+    their :class:`MaterialComponent` (Wave-C K1). ``phase_evidence`` grades it: the capability compiler reads ONLY
+    :attr:`phase_claim` (phase + evidence), never the bare ``phase`` scalar, and an ungraded phase
+    (``EvidenceKind.UNKNOWN``, the default) can neither certify nor refute a phase demand. ``phase`` itself stays for
+    every legacy reader (render, commodity bridge).
     """
 
     schema_version: str
@@ -368,6 +377,10 @@ class StockMaterial(Digestible):
     cost_observation: "CostObservation | None" = None
     formulation_notes: tuple[str, ...] = ()
     known_impurities: tuple[str, ...] = field(default_factory=tuple)
+    #: Round V X-high (D18): how strongly ``phase`` is established. UNKNOWN (the default) is the honest grade of every
+    #: bottle nobody vouched for; the bench operator's own declaration is ``USER_DECLARED``. An unknown PHASE carries
+    #: no evidence at all (there is nothing to grade), so ``Phase.UNKNOWN`` forces ``EvidenceKind.UNKNOWN``.
+    phase_evidence: EvidenceKind = EvidenceKind.UNKNOWN
 
     def __post_init__(self) -> None:
         if self.schema_version != STOCK_MATERIAL_SCHEMA:
@@ -377,6 +390,11 @@ class StockMaterial(Digestible):
                 raise ValueError(f"{name} must be a non-empty string")
         if not isinstance(self.phase, Phase):
             raise TypeError("phase must be a Phase")
+        if type(self.phase_evidence) is not EvidenceKind:
+            raise TypeError("phase_evidence must be a smartchem.material_spec.EvidenceKind")
+        if self.phase is Phase.UNKNOWN and self.phase_evidence is not EvidenceKind.UNKNOWN:
+            raise ValueError(
+                f"phase UNKNOWN cannot carry {self.phase_evidence.value} evidence -- an unknown phase is not a claim")
         if type(self.components) is not tuple or not self.components or any(
             type(c) is not MaterialComponent for c in self.components
         ):
@@ -397,6 +415,17 @@ class StockMaterial(Digestible):
             seq = getattr(self, name)
             if type(seq) is not tuple or any(not isinstance(x, str) or not x.strip() for x in seq):
                 raise TypeError(f"{name} must be a tuple of non-empty strings")
+
+    @property
+    def phase_claim(self) -> "PhaseClaim | None":
+        """Round V X-high (D18): the bottle's phase AS AN EVIDENCE-GRADED CLAIM -- the only phase surface the capability
+        compiler may read (through :func:`smartchem.material_spec.compare_phase`). ``None`` iff the phase is UNKNOWN
+        (an unknown phase is the absence of a claim); an ungraded known phase is a claim carrying
+        ``EvidenceKind.UNKNOWN``, which certifies nothing either way."""
+        from ..material_spec import PhaseClaim
+        if self.phase is Phase.UNKNOWN:
+            return None
+        return PhaseClaim(self.phase, self.phase_evidence)
 
     def active_fraction_interval(self, required_identity: "Molecule | str") -> tuple[float, float] | None:
         """The summed fraction interval ``(lo, hi)`` of components matching ``required_identity``, or ``None``.
@@ -431,7 +460,8 @@ class StockMaterial(Digestible):
         """Round V (barrier D3-D8): the stock-side facts :func:`smartchem.material_spec.compare_specification` needs
         for ONE species in THIS bottle -- the matched components' summed EXACT interval, their common basis (UNKNOWN
         if they disagree or any is UNKNOWN), the WEAKEST interval-evidence kind among them (a component with no
-        evidence record is UNKNOWN strength), and the bottle's declared states. ``None`` if the species is absent
+        evidence record is UNKNOWN strength), and the matched components' own declared states (Wave-C K1). ``None`` if the
+        species is absent
         under the F44 key rules of :meth:`active_fraction_interval`."""
         from ..material_spec import ConcentrationBasis, EvidenceKind, StockSpecView
         if isinstance(required_identity, Molecule):
@@ -557,7 +587,8 @@ class StockMaterial(Digestible):
         if self.formulation_notes:
             detail.append("formulation: " + "; ".join(self.formulation_notes))
         return (
-            f"STOCK MATERIAL {self.display_name!r} [{self.phase.value}] -- {comps}. "
+            f"STOCK MATERIAL {self.display_name!r} [{self.phase.value}; phase evidence {self.phase_evidence.value}] "
+            f"-- {comps}. "
             f"Source: {self.provenance}. " + " | ".join(detail) + ". "
             "A material, not a pure identity: assay is an interval, and a pure-reagent requirement is met only "
             "when the interval PROVES it (section 10). Unknown fields are UNKNOWN, never an assumed value."

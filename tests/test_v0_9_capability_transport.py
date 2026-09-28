@@ -17,6 +17,7 @@ search NEVER feels it.** These are the release-critical proofs the freeze demand
 from __future__ import annotations
 
 import dataclasses as dc
+import functools
 import json
 
 import pytest
@@ -25,6 +26,7 @@ from smartchem.capability import CapabilityStatus
 from smartchem.capability.enums import EquipmentCapability
 from smartchem.capability.presets import custom, isopentyl_capability_fit_bench, poor_man
 from smartchem.cli import _render_recompile_response
+from smartchem.experiment.readiness import PROCESS_SPECIFIED
 from smartchem.service import (
     _CAPABILITY_AXIS_NAMES,
     build_recompile_request,
@@ -129,8 +131,10 @@ def test_current_request_payload_with_stripped_capability_keys_is_refused():
 
 # -- CAPABILITY-REBIND-ON-LOAD: accept the honest load, refuse every tamper ------------------------------------
 
+@functools.lru_cache(maxsize=1)
 def _fit_response():
     """The real, procedure-backed isopentyl route surfaced through the SERVICE under the fully-declared bench.
+    (Cached: the response is an immutable value, and every consumer below derives its tamper by ``dc.replace``.)
 
     Round IV: no route reaches CAPABILITY_FIT any more (F56/F47/F49 retired the Round-III positive), so this
     is a PROCESS_SPECIFIED route carried at its honest ceiling -- overall UNKNOWN, never a fabricated FIT.
@@ -182,7 +186,10 @@ def test_rebind_refuses_an_altered_carried_assessment_verdict():
 
 def test_rebind_refuses_profile_a_assessment_under_profile_b():
     resp = _fit_response()
-    swapped = dc.replace(resp, request=dc.replace(resp.request, capability_profile=poor_man()))
+    # (X-high D20(g): the display origin is content-bound, so a coherent swap relabels it with the new snapshot's id.)
+    pm = poor_man()
+    swapped = dc.replace(resp, request=dc.replace(resp.request, capability_profile=pm,
+                                                  capability_profile_origin=pm.profile_id))
     with pytest.raises(ValueError):
         swapped._check_capability_coherence(require_verified_admission=True)
 
@@ -194,15 +201,100 @@ def test_rebind_refuses_an_assessment_on_a_not_requested_request():
         stripped._check_capability_coherence(require_verified_admission=True)
 
 
+def _stock_stripped_attack(resp):
+    """The KEYLESS public-hash attacker (X-high D20, Wave-A' A-SURV/A-WIRE): strip the declared stock from the request's
+    profile snapshot, re-bind EVERY carried assessment's public ``profile_digest`` to the tampered snapshot, and
+    re-serialize through the public codec -- which recomputes ``capability_question_digest`` and ``result_digest``.
+    Every unkeyed pin now agrees with the tampered content; only the stale ASSESSMENTS (their material reasons still
+    name the stripped bottles) are left for a semantic re-derivation to catch."""
+    tampered = dc.replace(resp.request.capability_profile, material_inventory=())
+    dossiers = tuple(
+        dc.replace(d, capability_assessment=dc.replace(d.capability_assessment, profile_digest=tampered.profile_digest))
+        if d.capability_assessment is not None else d
+        for d in resp.ranked_route_dossiers
+    )
+    return dc.replace(resp, request=dc.replace(resp.request, capability_profile=tampered),
+                      ranked_route_dossiers=dossiers)
+
+
 def test_rebind_refuses_an_altered_profile_snapshot_on_the_wire():
+    """Wave-A' A-WIRE P2: the old version of this test passed for the WRONG reason -- stripping the stock without
+    recomputing any pin was caught by the PUBLIC ``result_digest`` (a hash a keyless attacker recomputes for free), never
+    by the rebind.  Both layers are now pinned separately, each by its OWN refusal message."""
     resp = _fit_response()
-    payload = response_to_payload(resp)
-    # strip the declared stock from the request's profile snapshot -- the carried FIT no longer re-derives.
-    cp = payload["request"]["capability_profile"]
-    for f in cp["fields"]:
+    # (1) the naive attacker (content edited, pins stale) -> the public result_digest layer.
+    naive = response_to_payload(resp)
+    for f in naive["request"]["capability_profile"]["fields"]:
         if f[0] == "material_inventory":
             f[1]["items"] = []
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="capability_question_digest does not match|result_digest does not match"):
+        response_from_payload(naive)
+    # (2) the full keyless attacker (every public pin recomputed) -> ONLY the rebind re-derivation can refuse it.
+    forged = _stock_stripped_attack(resp)
+    payload = response_to_payload(forged)
+    assert payload["capability_question_digest"] == forged.request.capability_question_digest  # pins are coherent
+    with pytest.raises(ValueError, match="replayed evidence does not support"):
+        response_from_payload(payload)
+
+
+# -- the replay-free bindings, each ISOLATED on a THIN wire with every public pin recomputed (X-high D20) ----------
+
+def _thin_without_process_specified(resp, dossiers=None):
+    """A thin-wire vehicle for the replay-free bindings: the PROCESS_SPECIFIED dossiers (inadmissible on a thin wire
+    by the 0.8 law, which would otherwise refuse FIRST) and their frontier entries are dropped, so the binding under
+    test is the ONLY guard standing.  Serialized through the public codec (every unkeyed pin recomputed)."""
+    dossiers = resp.ranked_route_dossiers if dossiers is None else dossiers
+    kept = tuple(d for d in dossiers if d.readiness.tier != PROCESS_SPECIFIED)
+    ids = {d.route_digest for d in kept}
+    frontier = tuple(e for e in resp.affordability_frontier if e.route_digest in ids)
+    vehicle = dc.replace(resp, ranked_route_dossiers=kept, affordability_frontier=frontier)
+    return vehicle, response_to_payload(vehicle, include_replay=False)
+
+
+def test_thin_vehicle_control_loads_when_no_binding_is_violated():
+    """The discriminating control: the SAME thin vehicle with no tamper loads -- so each refusal below is its binding's,
+    not the vehicle's."""
+    vehicle, payload = _thin_without_process_specified(_fit_response())
+    assert vehicle.ranked_route_dossiers, "the vehicle must still carry assessed (sub-PROCESS_SPECIFIED) dossiers"
+    assert all(d.capability_assessment is not None for d in vehicle.ranked_route_dossiers)
+    back = response_from_payload(payload)
+    assert back.result_digest == vehicle.result_digest
+
+
+def test_profile_digest_binding_refuses_a_stale_assessment_on_a_thin_wire():
+    """M38b: the stock is stripped but the carried assessments keep the OLD profile_digest; with no replay there is no
+    rebind -- the profile binding alone refuses."""
+    resp = _fit_response()
+    tampered = dc.replace(resp.request.capability_profile, material_inventory=())
+    swapped = dc.replace(resp, request=dc.replace(resp.request, capability_profile=tampered))
+    _vehicle, payload = _thin_without_process_specified(swapped)
+    with pytest.raises(ValueError, match="assessment under a different bench"):
+        response_from_payload(payload)
+
+
+def test_route_digest_binding_refuses_a_transplanted_assessment_on_a_thin_wire():
+    resp = _fit_response()
+    doss = [d for d in resp.ranked_route_dossiers if d.readiness.tier != PROCESS_SPECIFIED]
+    assert len(doss) >= 2
+    a0 = doss[0].capability_assessment
+    doss[0] = dc.replace(doss[0], capability_assessment=dc.replace(a0, route_digest=doss[1].route_digest))
+    _vehicle, payload = _thin_without_process_specified(resp, tuple(doss))
+    with pytest.raises(ValueError, match="assessment of a different route"):
+        response_from_payload(payload)
+
+
+def test_readiness_binding_refuses_a_relabelled_tier_on_a_thin_wire():
+    """M104b: a sub-PROCESS_SPECIFIED dossier's (non-FIT) assessment relabelled as computed under PROCESS_SPECIFIED --
+    fold-consistent (an UNKNOWN axis keeps overall UNKNOWN under any tier), public pins recomputed.  Only the readiness
+    binding stands (this is the premise the M104 thin-FIT redundancy proof rests on)."""
+    resp = _fit_response()
+    ps = next(d for d in resp.ranked_route_dossiers if d.readiness.tier == PROCESS_SPECIFIED)
+    doss = [d for d in resp.ranked_route_dossiers if d.readiness.tier != PROCESS_SPECIFIED]
+    a0 = doss[0].capability_assessment
+    doss[0] = dc.replace(doss[0], capability_assessment=dc.replace(
+        a0, readiness_tier=PROCESS_SPECIFIED, readiness_digest=ps.readiness.digest))
+    _vehicle, payload = _thin_without_process_specified(resp, tuple(doss))
+    with pytest.raises(ValueError, match="tier/readiness_digest mismatch"):
         response_from_payload(payload)
 
 

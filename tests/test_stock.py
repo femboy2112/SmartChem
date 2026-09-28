@@ -361,16 +361,18 @@ class TestCanonicalStructureKeying:
 
 
 class TestRoundVMaterialFields:
-    def test_schemas_are_v1alpha2_and_v1alpha1_refused(self):
+    def test_schemas_are_current_and_older_ids_refused(self):
+        """component v1alpha2 (Round V D8); stock-material v1alpha3 (Round V X-high D18: +phase_evidence). Every older
+        id is refused -- none was ever released on a wire, so there is nothing to migrate."""
         from smartchem.experiment.stock import MATERIAL_COMPONENT_SCHEMA
 
-        assert STOCK_MATERIAL_SCHEMA.endswith("stock-material-v1alpha2")
+        assert STOCK_MATERIAL_SCHEMA.endswith("stock-material-v1alpha3")
         assert MATERIAL_COMPONENT_SCHEMA.endswith("material-component-v1alpha2")
         with pytest.raises(ValueError, match="schema_version"):
             MaterialComponent("smartchem.experiment/material-component-v1alpha1", "x", "active", 0.0, 1.0)
-        with pytest.raises(ValueError, match="schema_version"):
-            StockMaterial("smartchem.experiment/stock-material-v1alpha1", "m", "m",
-                          (MaterialComponent.unknown_fraction("x", "active"),), Phase.LIQUID, "p")
+        for stale in ("smartchem.experiment/stock-material-v1alpha1", "smartchem.experiment/stock-material-v1alpha2"):
+            with pytest.raises(ValueError, match="schema_version"):
+                StockMaterial(stale, "m", "m", (MaterialComponent.unknown_fraction("x", "active"),), Phase.LIQUID, "p")
 
     def test_basis_defaults_unknown_and_evidence_defaults_none(self):
         from smartchem.material_spec import ConcentrationBasis, EvidenceKind
@@ -409,3 +411,69 @@ class TestRoundVMaterialFields:
             StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", (
                 MaterialComponent.known("a", "x", 0.5, 0.5),
                 MaterialComponent.known("b", "x", 0.500000001, 0.6)), Phase.LIQUID, "p")
+
+
+class TestPhaseEvidence:
+    """Round V X-high (barrier D18, I3): the bottle phase is an EVIDENCE-GRADED claim. Round V graded composition and
+    every material state, then left phase an ungraded scalar that certified FIT on a match and BLOCKED on a mismatch
+    whoever asserted it -- the F71 sin. The capability compiler now reads only ``phase_claim``."""
+
+    @staticmethod
+    def _bottle(phase=Phase.LIQUID, **kw):
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", (MaterialComponent.known("a", "active", 0, 1),),
+                             phase, "src", **kw)
+
+    def test_schema_is_v1alpha3(self):
+        assert STOCK_MATERIAL_SCHEMA == "smartchem.experiment/stock-material-v1alpha3"
+        with pytest.raises(ValueError, match="schema_version"):
+            StockMaterial("smartchem.experiment/stock-material-v1alpha2", "m", "m",
+                          (MaterialComponent.known("a", "active", 0, 1),), Phase.LIQUID, "src")
+
+    def test_default_phase_evidence_is_unknown_and_certifies_nothing(self):
+        from smartchem.material_spec import (EvidenceKind, PhaseClaim, SpecVerdict, compare_phase)
+        bottle = self._bottle()
+        assert bottle.phase_evidence is EvidenceKind.UNKNOWN
+        assert bottle.phase_claim == PhaseClaim(Phase.LIQUID, EvidenceKind.UNKNOWN)
+        sourced = PhaseClaim(Phase.LIQUID, EvidenceKind.SOURCE_QUOTED)
+        # an ungraded bottle phase can neither discharge a sourced phase demand ...
+        assert compare_phase(sourced, bottle.phase_claim)[0] is SpecVerdict.UNDETERMINED
+        # ... nor refute one
+        assert compare_phase(PhaseClaim(Phase.SOLID, EvidenceKind.SOURCE_QUOTED), bottle.phase_claim)[0] \
+            is SpecVerdict.UNDETERMINED
+
+    def test_a_user_declared_phase_certifies_against_a_sourced_demand(self):
+        from smartchem.material_spec import EvidenceKind, PhaseClaim, SpecVerdict, compare_phase
+        bottle = self._bottle(phase_evidence=EvidenceKind.USER_DECLARED)
+        assert compare_phase(PhaseClaim(Phase.LIQUID, EvidenceKind.SOURCE_QUOTED), bottle.phase_claim)[0] \
+            is SpecVerdict.SATISFIES
+        assert compare_phase(PhaseClaim(Phase.SOLID, EvidenceKind.SOURCE_QUOTED), bottle.phase_claim)[0] \
+            is SpecVerdict.VIOLATES
+
+    def test_an_unknown_phase_is_no_claim_and_carries_no_evidence(self):
+        from smartchem.material_spec import EvidenceKind
+        assert self._bottle(Phase.UNKNOWN).phase_claim is None
+        with pytest.raises(ValueError, match="phase UNKNOWN cannot carry"):
+            self._bottle(Phase.UNKNOWN, phase_evidence=EvidenceKind.USER_DECLARED)
+
+    def test_phase_evidence_must_be_an_evidence_kind(self):
+        with pytest.raises(TypeError, match="phase_evidence"):
+            self._bottle(phase_evidence="USER_DECLARED")
+
+    def test_phase_evidence_moves_the_digest_and_shows_in_render(self):
+        from smartchem.material_spec import EvidenceKind
+        ungraded, declared = self._bottle(), self._bottle(phase_evidence=EvidenceKind.USER_DECLARED)
+        assert ungraded.digest != declared.digest
+        assert "phase evidence USER_DECLARED" in declared.render()
+        assert "phase evidence UNKNOWN" in ungraded.render()
+
+    def test_the_commodity_bridge_stays_phase_unknown_evidence_unknown(self):
+        from smartchem.data.reagents import COMMODITY_REAGENTS
+        from smartchem.material_spec import EvidenceKind
+        mat = stock_material_from_commodity(COMMODITY_REAGENTS[0])
+        assert mat.phase is Phase.UNKNOWN and mat.phase_evidence is EvidenceKind.UNKNOWN and mat.phase_claim is None
+
+    def test_the_legacy_assay_helpers_ignore_phase_evidence(self):
+        from smartchem.material_spec import EvidenceKind
+        a, b = self._bottle(), self._bottle(phase_evidence=EvidenceKind.USER_DECLARED)
+        assert a.satisfies("a", min_assay=0.5) is b.satisfies("a", min_assay=0.5)
+        assert a.satisfies_band("a", low=0.1, high=0.9) is b.satisfies_band("a", low=0.1, high=0.9)

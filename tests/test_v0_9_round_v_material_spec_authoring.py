@@ -55,7 +55,7 @@ def test_isopentyl_glacial_acetic_acid_is_a_quoted_neat_state_with_no_number() -
                  "author's reading of the quoted word)"),),
     )
     assert use.specification.composition is None
-    assert use.phase is Phase.LIQUID
+    assert (use.phase.phase, use.phase.evidence) == (Phase.LIQUID, EvidenceKind.AUTHOR_INFERRED)
 
 
 def test_isopentyl_conc_sulfuric_acid_is_unresolved_never_a_number() -> None:
@@ -79,7 +79,8 @@ def test_isopentyl_bicarbonate_is_a_nominal_5pct_of_unknown_basis_in_solution() 
         assert spec.unresolved_terms == ()
         assert use.quantity == StockQuantity.of("25", "mL")
         assert use.formulation == "5% solution"  # raw source words; "aqueous" is not in the source
-        assert use.phase is Phase.AQUEOUS_SOLUTION  # author inference, flagged in the source comment
+        # D18: the SAME cited page calls it "5% aqueous sodium bicarbonate" (questions section) -> SOURCE_QUOTED
+        assert (use.phase.phase, use.phase.evidence) == (Phase.AQUEOUS_SOLUTION, _SQ)
 
 
 def test_isopentyl_saturated_nacl_is_a_state_claim_and_carries_the_sourced_5ml() -> None:
@@ -105,7 +106,7 @@ def test_isopentyl_alcohol_is_no_longer_authored_neat() -> None:
     [(_, use)] = _by_name(_ISOPENTYL_PROCEDURE, "isopentyl alcohol")
     assert use.formulation is None
     assert use.specification is None  # no dilution claim: the source says only "15 mL"
-    assert use.phase is Phase.LIQUID
+    assert (use.phase.phase, use.phase.evidence) == (Phase.LIQUID, EvidenceKind.AUTHOR_INFERRED)
     assert use.quantity == StockQuantity.of("15", "mL")
 
 

@@ -23,14 +23,18 @@ import pytest
 
 from smartchem.capability.enums import EquipmentCapability
 from smartchem.capability.presets import custom
+from smartchem.constraints import PHYSICAL_BOUNDS_SCHEMA
 from smartchem.contracts import canonical_digest
 from smartchem.service import (
     COMPILATION_REQUEST_SCHEMA,
     COMPILATION_RESPONSE_SCHEMA,
     COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR,
+    LEGACY_V08_PHYSICAL_BOUNDS_SCHEMA,
+    LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA,
     LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA,
     LEGACY_V08_REQUEST_SCHEMA,
     LEGACY_V08_RESPONSE_SCHEMA,
+    RANKED_DAG_SUMMARY_SCHEMA,
     RANKED_ROUTE_SUMMARY_SCHEMA,
     _route_readiness_to_payload,
     _transport_bound_result_digest,
@@ -54,7 +58,8 @@ def _load(name: str) -> dict:
 _REQUESTS = ("request_isopentyl_acetate.json", "request_ethyl_acetate_smiles.json",
              "request_invalid_input_ethyl_acetate_name.json")
 _RESPONSES = ("response_isopentyl_acetate.json", "response_ethyl_acetate_smiles.json",
-              "response_ethyl_acetate_smiles_thin.json", "response_invalid_input_ethyl_acetate_name.json")
+              "response_ethyl_acetate_smiles_thin.json", "response_invalid_input_ethyl_acetate_name.json",
+              "response_isopentyl_acetate_dag.json")
 _CANONICAL_ROUTE_RESPONSES = ("response_isopentyl_acetate.json", "response_ethyl_acetate_smiles.json")
 
 # v0.8 ids, read from the real fixtures (M80: never from the constants under test).
@@ -62,6 +67,10 @@ V08_REQUEST_ID = _load("request_isopentyl_acetate.json")["schema_version"]
 V08_RESPONSE_ID = _load("response_isopentyl_acetate.json")["schema_version"]
 V08_SUMMARY_ID = _load("response_isopentyl_acetate.json")["ranked_route_dossiers"][0]["schema_version"]
 V08_DESCRIPTOR_ID = _load("response_schema_descriptor.json")["descriptor_version"]
+# X-high D22: the released DAG summary and PhysicalBounds ids, likewise read from REAL v0.8 producer output (the DAG
+# fixture is the v0.8 producer's own convergent-mode run -- tests/fixtures/v08/README.md, gen_dag_v08.py).
+V08_DAG_SUMMARY_ID = _load("response_isopentyl_acetate_dag.json")["ranked_dag_dossiers"][0]["schema_version"]
+V08_PHYSICAL_BOUNDS_ID = _load("request_isopentyl_acetate.json")["constraints"]["schema_version"]
 
 # Measured by the main@df1b38d code itself on these fixtures (Lane D, scratchpad r5/laneD/dig_v08.json) -- the
 # v0.8 truth a faithful legacy decode must reproduce byte-for-byte.
@@ -95,21 +104,29 @@ def test_each_bumped_id_differs_from_the_released_v08_id():
     assert COMPILATION_RESPONSE_SCHEMA != V08_RESPONSE_ID
     assert RANKED_ROUTE_SUMMARY_SCHEMA != V08_SUMMARY_ID
     assert COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR != V08_DESCRIPTOR_ID
+    assert RANKED_DAG_SUMMARY_SCHEMA != V08_DAG_SUMMARY_ID          # X-high D22 (A-WIRE P3: replay shape changed)
+    assert PHYSICAL_BOUNDS_SCHEMA != V08_PHYSICAL_BOUNDS_ID         # X-high D14 (+min_temperature_k)
     # ... and the legacy whitelist names EXACTLY the released ids (no guessed or drifted legacy id).
-    assert (LEGACY_V08_REQUEST_SCHEMA, LEGACY_V08_RESPONSE_SCHEMA, LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA) == (
-        V08_REQUEST_ID, V08_RESPONSE_ID, V08_SUMMARY_ID)
+    assert (LEGACY_V08_REQUEST_SCHEMA, LEGACY_V08_RESPONSE_SCHEMA, LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA,
+            LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA, LEGACY_V08_PHYSICAL_BOUNDS_SCHEMA) == (
+        V08_REQUEST_ID, V08_RESPONSE_ID, V08_SUMMARY_ID, V08_DAG_SUMMARY_ID, V08_PHYSICAL_BOUNDS_ID)
 
 
 def test_descriptor_declares_the_legacy_whitelist_and_the_new_fields():
     schema = response_schema()
     assert schema["accepted_legacy_schema_versions"] == {
-        "request": [V08_REQUEST_ID], "response": [V08_RESPONSE_ID], "ranked_route_summary": [V08_SUMMARY_ID]}
+        "request": [V08_REQUEST_ID], "response": [V08_RESPONSE_ID], "ranked_route_summary": [V08_SUMMARY_ID],
+        "ranked_dag_summary": [V08_DAG_SUMMARY_ID], "physical_bounds": [V08_PHYSICAL_BOUNDS_ID]}
     assert "capability_question_digest" in schema["response_fields"]
     assert "capability_assessment" in schema["ranked_route_summary_fields"]
     assert "capability_profile" in schema["response_fields"]["request"]
     assert "material_uses" in schema["ranked_route_summary_fields"]["replay_payload"]
     assert "specification" in schema["ranked_route_summary_fields"]["replay_payload"]
     assert COMPILATION_REQUEST_SCHEMA.rsplit("/", 1)[1] in schema["response_fields"]["request"]
+    # X-high D14/D18/D20: the floor, the evidence-graded phase and the consumer question pin are disclosed.
+    assert "min_temperature_k" in schema["response_fields"]["request"]
+    assert "PhaseClaim" in schema["ranked_route_summary_fields"]["replay_payload"]
+    assert "expected_capability_question_digest" in schema["response_fields"]["capability_question_digest"]
 
 
 # -- legacy REQUESTS -----------------------------------------------------------------------------------------------
@@ -125,13 +142,41 @@ def test_real_v08_request_loads_as_legacy_not_requested(name):
     assert req.digest == full  # the frozen v0.8 rule reproduces the v0.8 full identity byte-for-byte
 
 
+def _with_bounds_generation(request, request_id, bounds_id):
+    """Relabel a request AND its embedded constraints box to one schema generation (X-high D22 pairs them)."""
+    bounds = dc.replace(request.constraints.bounds, schema_version=bounds_id)
+    return dc.replace(request, schema_version=request_id, constraints=dc.replace(request.constraints, bounds=bounds))
+
+
 def test_the_request_bump_moves_semantic_digest_once_and_only_via_the_id():
     """DECLARED one-time move: the request id is hashed into semantic_digest, so the SAME request re-labelled with the
-    current id gets a new semantic_digest -- and nothing else about it moved."""
+    current id (and its box with the current PhysicalBounds generation) gets a new semantic_digest -- and nothing else
+    about it moved: relabelling back reproduces the MEASURED v0.8 search identity exactly."""
     legacy = request_from_payload(_load("request_isopentyl_acetate.json"))
-    relabelled = dc.replace(legacy, schema_version=COMPILATION_REQUEST_SCHEMA)
+    relabelled = _with_bounds_generation(legacy, COMPILATION_REQUEST_SCHEMA, PHYSICAL_BOUNDS_SCHEMA)
     assert relabelled.semantic_digest != legacy.semantic_digest
-    assert dc.replace(relabelled, schema_version=V08_REQUEST_ID).semantic_digest == legacy.semantic_digest
+    back = _with_bounds_generation(relabelled, V08_REQUEST_ID, V08_PHYSICAL_BOUNDS_ID)
+    assert back.semantic_digest == legacy.semantic_digest == _V08_MEASURED["request_isopentyl_acetate.json"][0]
+
+
+def test_request_and_constraints_box_generations_cannot_mix():
+    """X-high D14/D22: a current request carries the v1alpha2 box, a legacy one the released v1alpha1 box -- mixing
+    either way is refused at construction (a 0.9 floor cannot hide under a 0.8 id, nor a 0.8 box under a 0.9 id)."""
+    legacy = request_from_payload(_load("request_isopentyl_acetate.json"))
+    with pytest.raises(ValueError, match="generation mixing"):
+        dc.replace(legacy, schema_version=COMPILATION_REQUEST_SCHEMA)
+    current = _with_bounds_generation(legacy, COMPILATION_REQUEST_SCHEMA, PHYSICAL_BOUNDS_SCHEMA)
+    with pytest.raises(ValueError, match="generation mixing"):
+        _with_bounds_generation(current, COMPILATION_REQUEST_SCHEMA, V08_PHYSICAL_BOUNDS_ID)
+
+
+def test_a_legacy_constraints_box_cannot_smuggle_a_temperature_floor():
+    """X-high D14: ``min_temperature_k`` exists only on the 0.9 wire -- a v1alpha1 box carrying it (even null) is refused
+    by the exact key-set guard AND the any-depth 0.9-only-key scan."""
+    payload = _load("request_isopentyl_acetate.json")
+    payload["constraints"]["min_temperature_k"] = None
+    with pytest.raises(ValueError, match="0.9-only key"):
+        request_from_payload(payload)
 
 
 def test_tamper_T1_v08_request_with_injected_capability_is_refused():
@@ -321,8 +366,11 @@ def test_a_v08_response_relabelled_with_the_current_id_is_not_accepted_as_native
 
 # -- unknown ids are refused precisely -----------------------------------------------------------------------------
 
+# X-high D22: the WIP-only ids pushed on the unreleased branch (request v1alpha6, response v1alpha16) were never
+# released, so they are NOT migrated -- refused exactly like any other unknown id.
 @pytest.mark.parametrize("bad", ["smartchem.service/compilation-request-v1alpha4",
-                                 "smartchem.service/compilation-request-v1alpha7", "garbage", None])
+                                 "smartchem.service/compilation-request-v1alpha6",
+                                 "smartchem.service/compilation-request-v1alpha8", "garbage", None])
 def test_unknown_request_version_is_refused_precisely(bad):
     payload = _load("request_isopentyl_acetate.json")
     payload["schema_version"] = bad
@@ -333,7 +381,8 @@ def test_unknown_request_version_is_refused_precisely(bad):
 
 
 @pytest.mark.parametrize("bad", ["smartchem.service/compilation-response-v1alpha12",
-                                 "smartchem.service/compilation-response-v1alpha17", "garbage"])
+                                 "smartchem.service/compilation-response-v1alpha16",
+                                 "smartchem.service/compilation-response-v1alpha18", "garbage"])
 def test_unknown_response_version_is_refused_precisely(bad):
     payload = _load("response_isopentyl_acetate.json")
     payload["schema_version"] = bad

@@ -268,3 +268,245 @@ asserted counts; F79 honest denominator; retirement void unless every replacemen
   reactant is an unresolved residual with no "fully consumed/recovered" type, so overall CAPABILITY_FIT is
   unreachable for EVERY route, not just this corpus; pin with a test and state it in the funnel doc + 0.9.5 plan.
   MOLAR stock claims can never certify (no MOLAR input unit) — representation gap for 0.9.5.
+
+---
+
+## §7 X-HIGH CONTINUATION (resumed 2026-09-28 on `78554a2`)
+
+The first half of Round V ran at MEDIUM effort and was paused mid-Wave-C (§6). This continuation re-runs the
+unfinished proofs at X-HIGH. It does **not** restart the round: every §3 barrier decision (D1–D13) stands unless a
+counterexample below disproves it. Governing principle: *MEDIUM built most of the machine; X-HIGH must prove there
+is nowhere left for a demand, resource, evidence grade or transport context to disappear between its parts.*
+
+### §7.0 Recovered baseline (independently re-measured before any edit)
+
+| item | value |
+|---|---|
+| tip | `78554a258bce9ec3db9a9c1cdf01e070e6527e35` == origin; 19 ahead / 0 behind `main@df1b38d`; package `0.9.0a1` |
+| PR #93 | OPEN, unmerged, `[ROUND V EXTERNAL AUDIT HOLD — DO NOT MERGE]` |
+| hosted CI on `78554a2` | run 36490673856: `test (3.10)`, `test (3.12)`, `Optional PySCF backend (smoke)` all `runner_id=0`, `steps=0` → **INFRASTRUCTURE-DEAD** (no code executed; neither green nor code-red) |
+| mutation harness | `ACTIVE 98/102 killed, 4 survived (M38, M86, M94, M104) \| RETIRED 4 (0 void) \| DEFERRED 0`, exit 1, 5:07 wall — the WIP claim VERIFIED exactly |
+| targeted tests (the 22 test files changed on the branch vs main) | **594 passed / 0 failed / 0 errors / 0 skipped** (7:43) |
+| full OOM-safe suite on `78554a2` | **NOT RUN** — no full-suite claim is made for this tip |
+| held-out oracle | Lane F's blind saponification oracle survived in scratch; preserved byte-identical as `docs/research/V0_9_RC_ROUND_V_HELDOUT_ORACLE_2026-09-28.md` (sha256 `eb01d67c9b761af3ae257f4cdf3c1ce119a500ccd1e78250ba9d6876c8ac95df`, scratch mtime 2026-09-28 16:42 -0400, i.e. written BEFORE any implementation agent saw a projected requirement) |
+
+### §7.1 Wave A′ (read-only, seven lanes) — digest
+
+| lane | headline |
+|---|---|
+| A-SURV (M38/M86/M94/M104) | **All four survivors are FIXTURE faults, none a code hole; every rebuilt mutant was run and KILLS.** M86: the route record declared no attention/agitation, so the delegate's own gaps kept the axis UNKNOWN for another reason. M94: the T1 fixture injects a stale `capability-profile-v1alpha1` snapshot, refused by the profile's own schema check (not the legacy law) — rebuilt with a current v1alpha2 snapshot, both legacy layers severed → loads; M94b pins the any-depth scan. M38: the attacker recomputed only `capability_question_digest`, so the PUBLIC `result_digest` refused it — rebuilt with an attacker that rewrites every carried `profile_digest` and re-serializes through the public codec (all unkeyed digests recomputed): honest REFUSED by the rebind re-derivation alone; one anchor (`if r.capability_assessment != rederived:`) severs it → the stale assessment loads. M38b pins the profile-digest binding (no mutant before). M104: **proved unkillable as a single guard** — FIT ⇒ tier == PROCESS_SPECIFIED (top rung) ⇒ the 0.8 thin-PS law refuses first; rebuilt as a 2-factor mutant (thin-FIT guard × tier binding; each single-factor cell still refuses = mutual defence-in-depth); M104b pins the tier binding alone. Side defects: `_check_verified_admission` re-projects summaries WITHOUT the capability profile; an unknown readiness tier raises `KeyError` not `ValueError`; the 0.8 thin law tests `== PROCESS_SPECIFIED` (safe only while PS is the top rung). |
+| A-PHYS (F-1/F-10/F-11-phys) | F-1 VERIFIED (typed 77 K COOL op → FIT; the low side is structurally unread). F-10 VERIFIED (prose "650 C furnace"/"50 atm autoclave" "covered" by any process extremum → FIT). **NEW P4/P5**: MAX-over-stated is unsound — a HEAT/DISTILL op with NO temperature is masked by an unrelated lower statement (non-monotone UNKNOWN→FIT). **NEW P-X2**: isopentyl `peak_temperature_k=416.15` is DERIVED from the distillate HEAD range — a lower bound on the heat demand, so it can certify a 420 K bench FIT. **NEW P-X3**: aspirin's record claims `min_pressure_atm=1.0` although its own source vacuum-filters; `research_lab` owns VACUUM_FILTRATION yet declares a 1.0 atm floor (self-contradictory declared world). F-11 physical REFUTED (a declared finite 1e300 K ceiling is the user's declaration; physical dims can never be NO_LIMIT). |
+| A-TIME (F-2/F-3/F-8/F-11-proc) | F-2 VERIFIED ("3 weeks" prose → FIT). F-3 VERIFIED (3×60-min ops vs a 90-min record ceiling → FIT; F-3b: a provable 180-min floor never BLOCKs). F-8 VERIFIED in seven shapes (None/empty record → UNCONSTRAINED passes the fold; `workup_included=False` under NO_LIMIT → FIT; PERIODIC with no check interval → FIT). Corpus census: no prose `op.duration`; every process record SUMMARIZES its ops (summing would double count). F-11 process REFUTED (time dims are operator PREFERENCES; a declared 1e300 is the operator's word). |
+| A-LEDGER (F-4/F-9) | Full field ledger. D13 holes reproduced on real `compile`+`assess`: PRESENT `rate`, `agitation`, `endpoint`, prose `duration`, prose `temperature/pressure` reach no axis (FIT/NA); F-4 (consumable masks a missing still, non-monotone) + **F-4b** (a thermometer discharges a DISTILL op); **P5b** a second VERIFY op with no apparatus is masked by step-pooling (live in the corpus: aspirin's "ferric-chloride purity test" has no typed VERIFY op); the corpus files one axis's demand inside another axis's prose field (paracetamol op2 quantity "swirl on a steam bath for 4-8 minutes"; op6 temperature "sit ~1 hour"). |
+| A-WASTE (F-6/F-7/medium/zero-FIT) | F-6 VERIFIED (untyped materials of ADD/QUENCH/MIX/HEAT/HOLD/COOL ops produce no waste obligation). F-7 VERIFIED (a net-consumed reactant relabelled CATALYST converts an unresolved residual into a RESOLVED `HAZARDOUS` category). Part IV VERIFIED (every corpus `medium` is condition prose; the isopentyl sentence becomes a fake species, a hazard-unresolved entry and a fake spent stream). **Zero-FIT theorem PROVEN** for every route (HARD LAW; T0 spent-stream: PROCESS_SPECIFIED ⇒ workup PRESENT ⇒ a SEPARATE/FILTER/DRY/WASH op ⇒ an unresolved stream, exhaustive over the closed enums; T1 leaf complementarity; T2 empty-GHS byproducts). **Evaluator-reachability witness**: a real PROCESS_SPECIFIED route (2 MeOH → DME + H2O via the real capped-scission transform, sourced complete procedure) is FIT on every axis except waste, and overall FIT once only waste is discharged. **NEW S1/S2** (material axis): route-wide leaf suppression hides a later step's consumption; `leaf_inputs` ignores step order. |
+| A-PHASE (Part III/Part V/F-5) | Phase evidence finding VERIFIED (ungraded phase certifies FIT on a match and BLOCKED on a mismatch; the corpus comment admitting an author inference is itself wrong — the page says "5% aqueous sodium bicarbonate", line 124). Kernel identity VERIFIED (editing a V1 kernel's arithmetic leaves every stored record/digest verifying). K1–K6 held; **NEW partial break**: `CLAMP_TO_UNIT_INTERVAL_V1` over an assay range ≥ 100% mints CLAMPED [1, 1], which the pure-material witness accepts. |
+| A-WIRE (C2/noninterference/schemas/goldens) | C2 items ALL LANDED + tested (table §7.3); binding mutants missing for route/profile/readiness bindings, the question→`result_digest` fold and the frozen v0.8 omission set. Public-hash attack matrix: every stale-assessment tamper is refused by a SEMANTIC re-derivation (stock strip → rebind; tier transplant → readiness re-derivation; replay quantity edit → route-identity bind / rebind). **(d) P1 (latent P0 once FIT is reachable)**: a coherent profile swap (every assessment honestly re-derived under another bench) loads even under `expected_request_digest` — the consumer has no capability-question pin. **(g) P1**: `capability_profile_origin` is outside every digest (incl. the signed one) yet is rendered as `CAPABILITY[origin]`. (c3) boundary: a self-consistent replay of a TAMPERED procedure (readiness + assessment honestly re-derived) loads without FIT — coherence ≠ authenticity; only the producer HMAC binds the shipped source. P2: `test_rebind_refuses_an_altered_profile_snapshot_on_the_wire` passes for the wrong reason (public `result_digest`, not the rebind). P3: `RankedDAGSummary` replay ops now REQUIRE `material_uses` with no schema bump. **Search noninterference HOLDS on the current tree**: isopentyl acetate (27 candidates) and methyl acetate (2) — normalized target, semantic_digest, transform registry, search receipt (incl. telemetry: 307 nodes / 12560 transforms / 410 emitted / 27 returned), IR digest, candidate order, completeness and search_space_status byte-identical across no-profile / research-lab / poor-man / custom; request digest, capability_question_digest, result_digest and assessments differ as designed. Goldens: all 6 regenerated byte-identical (current); none exercises `--capability-profile`. `test_v0_9_round_v_schema_migration.py` 60 passed. |
+
+### §7.2 Parent barrier — decisions D14–D23 (Wave B′ builds ONLY against these)
+
+**D14 — The physical range is a RANGE (F-1, F-10, P4/P5, P-X2, P-X3).**
+* `PhysicalBounds` (the ONE shared leaf — no second T model) gains `min_temperature_k: float | None = None`,
+  appended LAST (two positional call sites). Validation: finite, positive, `<= max_temperature_k` when both set.
+  `constrains_anything`/`describe` include it (`T>=… K`). `PHYSICAL_BOUNDS_SCHEMA` → `physical-bounds-v1alpha2`;
+  `v1alpha1` stays constructible/decodable ONLY with `min_temperature_k is None` (legacy); `_V08_OMITTED_FIELDS`
+  gains the field so real v0.8 payloads re-encode byte-for-byte. Legacy `None == unconstrained` is unchanged for
+  every legacy caller. `ConstraintBox` applies the floor exactly like `min_pressure_atm` (env `temperature is None`
+  → gap; `temperature.lo < floor` → EXCLUDED; a process branch has no whole-step minimum → gap). `--min-temp` on
+  both CLIs.
+* Route projection (requirements): HIGH = max(process peak, envelope `.hi`, op Interval `.hi`); LOW = min(envelope
+  `.lo`, op Interval `.lo`). **Unread demands → `physical_unresolved`:** (i) any PRESENT op temperature/pressure
+  that is not a typed K/atm `Interval` — NO same-step coverage, NO typed "summarized-by" relation (F-10);
+  (ii) a HEAT/HOLD/DISTILL op with no typed temperature on a step whose process record has no
+  `peak_temperature_k` (the record's own docstring defines the peak as the whole-step extremum — the only
+  legitimate cover); (iii) a COOL/HOLD op with no typed temperature (no whole-step minimum exists to cover the low
+  side); (iv) a step with no `ProcedureEvidence` — its HIGH side is covered only by a process peak, its LOW side is
+  unread. `ProcessRequirements` (a 0.8 type inside every route digest) is NOT extended.
+* Assess: a min-temperature block + a per-dimension row (route LOW vs profile floor: undeclared floor against a
+  real low demand → UNKNOWN; LOW < floor → BLOCKED). FIT requires `floor <= LOW` and `HIGH <= ceiling`.
+* Data (P-X2/P-X3, truth over a prettier matrix): isopentyl `peak_temperature_k` → `None` (the source states only
+  the distillate head range, a LOWER bound on the heat demand; a whole-step peak is not derivable — one-sided
+  lower-bound demands are a 0.9.5 item); aspirin `min_pressure_atm` → `None` (its own source vacuum-filters).
+  Presets: a floor follows ONLY from the preset's own declared equipment — both presets own `ICE_BATH` →
+  `min_temperature_k = 273.15` (DERIVED: ice–water equilibrium at 1 atm); `research_lab` owns VACUUM_FILTRATION,
+  so its `min_pressure_atm` becomes `None` (reachable vacuum undeclared) instead of the self-contradictory 1.0.
+* F-11 (physical): REFUTED — a declared finite bound is the declared world; no magnitude threshold.
+
+**D15 — The per-step procedure TIMELINE and an independently-correct process axis (F-2, F-3, F-8, F-11, M86).**
+* Timeline (requirements, pure): ops are a TOTAL order (concurrency is inexpressible → never invented). Per step:
+  `op_floor = Σ lo` over typed-minutes op durations; a PRESENT op duration that is not a typed `min` Interval →
+  `process_unresolved` (F-2). Floors from different representations of the SAME wall-clock combine by **MAX**
+  (op_floor, `envelope.duration.lo`, record `min_elapsed_minutes`, record `elapsed.lo`) — never summed across
+  representations (no double count). Only the record's `elapsed_minutes.hi` is a ceiling (an op sum is never a
+  ceiling). `floor > ceiling` → contradictory time evidence → `process_unresolved` (UNKNOWN, never a guessed
+  BLOCK). The effective record handed to the UNCHANGED delegate carries `min_elapsed_minutes = floor`
+  (`dc.replace`), so the delegate's existing floor exclusions now see ordered ops (F-3b: 3×60 with a 30-min record
+  floor vs a 120-min bench → BLOCKED).
+* Process axis law (F-8), always applied, NO_LIMIT waives ONLY the three time preferences:
+  (1) whole-step coverage gate — a step whose record is `None`, not `is_declared`, or `workup_included=False` →
+  UNKNOWN; (2) profile declaration gaps — each of `max_step/max_total/max_active` UNDECLARED (not NO_LIMIT),
+  `allowed_attention is None`, `allowed_agitation is None`, or `min_check_interval_minutes is None` while any step's
+  attention is PERIODIC or undeclared → UNKNOWN; (3) the UNCONSTRAINED→FIT branch is DELETED: the process axis is
+  never UNCONSTRAINED for a route with ≥1 step (every real step spends time, attention and an agitation mode);
+  (4) a PRESENT `op.rate` → `process_unresolved` (no rate-control coordinate exists; no pump ontology); a PRESENT
+  `op.agitation` → `process_unresolved` (no typed relation to the record's `Agitation`); (5) timeline unresolved
+  caps at UNKNOWN; a provable EXCLUDED still wins. Presets are NOT given new time numbers (no convenient values):
+  preset process honestly stays UNKNOWN.
+* Retained 0.8 semantics (documented, not deferred): the delegate EXCLUDES when a step's elapsed CEILING exceeds
+  the operator's limit — under the time-preference reading the operator's limit is a guarantee the route cannot
+  give (a possible false BLOCK, never a false FIT).
+* F-11 (process): REFUTED — the three time dims are operator preferences.
+
+**D16 — The D13 field-coverage theorem is MACHINE-CHECKED (F-4, F-9, F-10).**
+* New `smartchem/capability/coverage.py`: `FieldOwner{MATERIAL, PHYSICAL, PROCESS, EQUIPMENT, MEASUREMENT, WASTE,
+  READINESS_ONLY, PRESENTATION_ONLY, OUTSIDE_0_9_SCOPE, CONTAINER, ROUTING_KEY}` and `FIELD_COVERAGE` keyed by
+  (type, field) over `ProcedureEvidence`, `ProcedureOperation`, `ProcedureMaterialUse`, `EvidenceField`,
+  `ConditionEnvelope`, `ProcessRequirements`, `ExperimentStep`, `ExperimentRoute`, each entry = primary owner + the
+  fail-closed law for a PRESENT untyped value; `missing_coverage()` returns every dataclass field absent from the
+  table and every stale entry. A test fails on any uncovered field, so a new field cannot be added silently.
+* Per-owner laws: EQUIPMENT — per-OP post-resolution guard: every hardware op (HEAT/HOLD/COOL/DISTILL/SEPARATE/
+  FILTER/DRY) must resolve ≥1 recognized NON-consumable capability ADMISSIBLE for its kind (closed table: HEAT
+  {CONTROLLED_HEATING, WATER_BATH}; HOLD {CONTROLLED_HEATING, WATER_BATH, REFLUX_CONDENSER, ICE_BATH}; COOL
+  {ICE_BATH}; DISTILL {SIMPLE_DISTILLATION, FRACTIONAL_DISTILLATION}; SEPARATE {SEPARATORY_FUNNEL}; FILTER
+  {GRAVITY_FILTRATION, VACUUM_FILTRATION}; DRY: any non-consumable), else unrecognized; the step record's
+  `equipment` never discharges an op (F-4, F-4b). MEASUREMENT — per-VERIFY-op guard (each VERIFY op must resolve ≥1
+  method or be unrecognized — kills P5b); a PRESENT prose `op.endpoint` → `measurement_unrecognized` (no typed
+  endpoint carrier; `PH_INDICATOR` is NOT added — a member no evidence path can emit would be decorative).
+  PROCESS/PHYSICAL — D14/D15. MATERIAL — F69-analog: raw text is display ONLY where a typed representation exists:
+  `op.quantity` PRESENT on an op that carries NO quantified typed use → material unresolved; otherwise it is the
+  display form of the typed uses (typed fields are authoritative — the same trust model as `formulation` vs
+  `specification`). `scale`, the whole-procedure summary values (`separation/wash/drying/purification`),
+  `unresolved_omissions`, `evidence_scope`, `reaction_scope` → READINESS/PRESENTATION (the HARD LAW is the
+  backstop; recorded in the ledger).
+* Theorem boundary (stated, not hidden): every PRESENT prose field forces UNKNOWN on its OWN axis, so the fold
+  guarantees overall ≤ UNKNOWN; a demand MISFILED into another axis's prose field is caught on the host axis, not
+  attributed to its owning axis. Authored corpus data is re-filed by hand (paracetamol op2 "4-8 minutes" →
+  `Interval(4, 8, "min")`) and a curated corpus lint pins filing, verification-method ↔ VERIFY-op pairing and
+  summary-technique ↔ op pairing. Aspirin gains the sourced FeCl3 VERIFY op (`materials=("ferric chloride",)`,
+  `apparatus=()`) → measurement + material honestly UNKNOWN.
+
+**D17 — Material conservation, role consistency, medium, step order (F-6, F-7, Part IV, S1, S2).**
+* F-6: every `op.materials` string not covered (exact-fold `_name_covers`) by a typed use OF THAT OP yields an
+  unresolved waste obligation ("step s op #n K/R introduces untyped material 'X'"), on every op kind incl. spent-
+  stream ops; import-time totality guard `{CATALYST} ∪ _CONSUMED_ROLES ∪ _SPENT_STREAM_ROLES == set(ProcedureMaterialRole)`.
+* F-7: a known-identity CATALYST use that its own step `net_consumes` → the material requirement carries an
+  unresolved term "role contradiction" and waste treats it as an unresolved residual (never a resolved catalyst
+  category); converse: a known-identity SUBSTRATE/REACTANT use its step does NOT net-consume → unresolved term.
+  Caught at requirement compilation (fail closed), NOT in `ExperimentStep` (would perturb search) and NOT as a
+  raise (one bad field must not become a service error).
+* Part IV: `envelope.medium` is provenance ONLY — both medium readers are DELETED. A step WITHOUT
+  `ProcedureEvidence` gets a text-free `material_unresolved` remainder on `RouteCapabilityRequirements` ("step s
+  has no ProcedureEvidence: its auxiliary/medium material demand is unread") → material UNKNOWN (BLOCKED wins). A
+  corpus review test lists each medium's material words against their typed uses.
+* S1/S2: the capability projection computes external inputs PER STEP IN ORDER (an input is internal only if an
+  EARLIER step produced it); a step that net-consumes an external input with no stoichiometric typed use OF ITS
+  OWN keeps its own `unstated(1)` requirement. `ExperimentRoute.leaf_inputs` itself is not changed (search/ranking
+  consumers); the monetary basket uses the same order-aware set.
+* **Zero-FIT theorem (Part VII): PROVEN; ceiling = a missing EVIDENCE TYPE, not a broken evaluator.** Pinned by
+  tests: T0 enumeration over the closed op enums, T1 property test, and the evaluator-reachability witness (the
+  real DME route's compiled requirements with only `waste` replaced by a discharged `WasteRequirement` → overall
+  FIT under the fully-declared profile — which also proves D14–D17 leave FIT reachable in a fully-typed world).
+  `StreamDisposition` (typed consumption/recovery/routing with a closed subject binding, certifying-evidence-only
+  discharge) is PARKED to 0.9.5 with an exact boundary: no cited corpus page states disposal (no fake data), and
+  byproduct→stream binding needs its own adversarial pass.
+
+**D18 — Phase is an evidence-graded claim (Part III, F-5 CLAMP).**
+* Parent-authored in `material_spec.py`: `PhaseClaim(phase: Phase, evidence: EvidenceKind, note="")` (no new phase
+  enum; `Phase.UNKNOWN` refused as a claim — unknown is absence) and `compare_phase(required, stock)` with
+  `_compare_state`'s exact law: match/mismatch decide ONLY with certifying evidence on both sides, else
+  UNDETERMINED; no stock claim → UNDETERMINED.
+* `ProcedureMaterialUse.phase: PhaseClaim | None` (replaces the scalar in place — stale callers fail loudly);
+  `MaterialRequirement.phase: PhaseClaim | None`; `StockMaterial` keeps legacy `phase: Phase` and gains
+  `phase_evidence: EvidenceKind = UNKNOWN` (invariant: phase UNKNOWN ⇒ evidence UNKNOWN) + a `phase_claim`
+  property; `_edge` consumes ONLY claims. Library bench bottles → USER_DECLARED. Corpus phases classified per use
+  (SOURCE_QUOTED only where the cited page says it; else AUTHOR_INFERRED).
+* The pure-material G⁻ witness excludes CLAMPED evidence (a clamp to [1, 1] proves the quoted quantity was not a
+  fraction, not that there is no impurity).
+* Honest consequence, accepted: the vinegar-for-glacial and wrong-phase isopentyl benches move BLOCKED → UNKNOWN
+  (their BLOCK rested only on an ungraded phase).
+
+**D19 — Derivation-kernel semantic identity (Part V).** `derived_evidence.KERNEL_KNOWN_ANSWERS` (frozen vectors per
+kernel incl. boundary and refusal cases) verified at import; a test pins per-kernel semantic-descriptor digests and
+AST digests of every kernel fn and its arithmetic helpers. Contract (1.0 compatibility docs): *a DerivationKernel
+member names ONE immutable function; any change — including a bug fix — mints `X_V2` with its own vectors; `X_V1`
+keeps its implementation forever; retiring a member (refusing NEW records) is allowed, changing one is not.*
+Content-addressing the descriptor digest inside `IntervalEvidence` is PARKED to 0.9.5.
+
+**D20 — Transport (Part VI): semantic coherence under a keyless attacker; authenticity only where a key exists.**
+* Threat model restated: every unkeyed digest is recomputable by an attacker; `producer_signature` (HMAC) is an
+  OPTIONAL authenticity layer, never a substitute for semantic coherence. A carried assessment must be refused
+  whenever it is stale relative to the carried evidence, after the attacker recomputes every public pin.
+* Fixes: (1) `_check_verified_admission` re-projects summaries WITH the request's capability profile;
+  (2) `CapabilityAssessment` refuses an unknown `readiness_tier` with `ValueError` (never `KeyError`); (3) the 0.8
+  thin law uses `tier_rank(tier) >= tier_rank(PROCESS_SPECIFIED)` (survives a ladder extension); (4) **(d)**
+  `response_from_payload(..., expected_capability_question_digest=...)` — the consumer's capability-question pin,
+  fail-closed on None-vs-set mismatch (the capability analogue of `expected_request_digest`); (5) **(g)**
+  `capability_profile_origin` must be `""` or equal the snapshot's `profile_id` (content-bound through the profile
+  digest) — enforced at `CompilationRequest` construction, so a relabel cannot load; (6) `RankedDAGSummary` bumps
+  (its replay ops now require `material_uses`) with an explicit legacy decode; (7) the snapshot-tamper transport test
+  is rebuilt as the full public-hash attacker with `match="replayed evidence does not support"`; (8) a CLI golden
+  exercising `--capability-profile` is added after the freeze.
+* VERIFIED BOUNDARY (not a defect of coherence): (c3) a keyless attacker can ship a self-consistent response for a
+  TAMPERED procedure (route digest re-bound, readiness + assessment honestly re-derived from the tampered replay).
+  It describes a DIFFERENT route (its `route_digest` is not the corpus route's) and is coherent; binding a replayed
+  `ProcedureEvidence` to the SHIPPED source table (source-subject binding) is a 0.9.5 item; until then only the
+  producer HMAC or a consumer route-digest pin authenticates the source.
+
+**D21 — Mutation gate.** Rebuild M38 (+M38b), M86 (law-level, refactor-robust anchor), M94 (+M94b), M104 (2-factor,
++M104b) exactly as A-SURV ran them; add M106+ for every D14–D19 law (list in §7.4); harness fixture defaults move
+to certifying phase claims and a clean fully-declared process pair so no mutant survives for a fixture reason.
+ACTIVE/RETIRED/DEFERRED reported separately; target ACTIVE X/X, DEFERRED 0.
+
+**D22 — Schema freeze (every changed shape bumps ONCE; WIP-only ids are never migrated — they were never released).**
+
+| artifact | main@df1b38d | WIP `78554a2` | final | change in this continuation |
+|---|---|---|---|---|
+| PhysicalBounds | v1alpha1 | v1alpha1 | **v1alpha2** | +`min_temperature_k` (v1alpha1 accepted only with it `None`; `_V08_OMITTED_FIELDS` entry) |
+| StockMaterial | v1alpha1 | v1alpha2 | **v1alpha3** | +`phase_evidence` |
+| MaterialComponent | v1alpha1 | v1alpha2 | v1alpha2 | — |
+| CapabilityProfile | — | v1alpha2 | **v1alpha3** | embeds PhysicalBounds v2 + StockMaterial v3 |
+| CapabilityAssessment | — | v1alpha2 | v1alpha2 | shape unchanged (tier validation is a law, not a shape) |
+| CompilationRequest | v1alpha5 | v1alpha6 | **v1alpha7** | embeds PhysicalBounds v2 + profile v3; origin law |
+| RankedRouteSummary | v1alpha3 | v1alpha4 | **v1alpha5** | replay use `phase` → PhaseClaim |
+| RankedDAGSummary | v1alpha4 | v1alpha4 (P3: silently changed) | **v1alpha5** | replay ops require `material_uses`; v1alpha4 decoded as legacy |
+| CompilationResponse | v1alpha15 | v1alpha16 | **v1alpha17** | embeds the above |
+| response descriptor | `…schema-v1alpha18` | v1alpha19 | **v1alpha20** | disclosure text + fields |
+| ProcessBounds / ProcessRequirements / ConditionEnvelope | unchanged | unchanged | unchanged | — |
+
+Legacy acceptance stays EXACTLY the released v0.8 set (request v1alpha5, response v1alpha15 + their embedded
+v1alpha1/v1alpha3/v1alpha4 shapes), re-verified byte-for-byte against the REAL `git archive df1b38d` fixtures.
+
+**D23 — Wave B′ file ownership (one writer per file; a writer needing a change in another's file asks the parent).**
+
+| writer | owns (code + its tests) | decisions |
+|---|---|---|
+| parent | `smartchem/material_spec.py` (`PhaseClaim`, `compare_phase` — frozen law), this audit doc, integration, `tests/test_v0_9_round_v_wave_c_fixes.py` | D18 law |
+| W-BOUNDS | `smartchem/constraints.py`, `smartchem/experiment/drafter.py`, `smartchem/experiment/cli.py`, their tests | D14 leaf + ConstraintBox + experiment CLI |
+| W-STOCK | `smartchem/experiment/stock.py`, `smartchem/data/material_library.py`, `smartchem/data/derived_evidence.py`, stock/library/kernel tests (NEW `tests/test_v0_9_kernel_semantic_lock.py`) | D18 stock side, D19 |
+| W-SOURCE | `smartchem/procedure_evidence.py`, `smartchem/decompiler_conditions.py`, procedure/authoring/corpus-lint tests | D18 use side, D14 data (P-X2/P-X3), D16 corpus re-filing + FeCl3 VERIFY op + lint, D17 medium review test |
+| W-CORE | `smartchem/capability/requirements.py`, `assess.py`, `quantity.py`, `equipment_resolver.py`, `measurement_resolver.py`, NEW `coverage.py`, core capability tests (NEW `tests/test_v0_9_round_v_xhigh_core.py`, NEW `tests/test_v0_9_round_v_field_coverage.py`) | D14 route/assess, D15, D16, D17 material side, D18 `_edge` + CLAMP |
+| W-WASTE | `smartchem/capability/waste.py`, `declarations.py`, `profile.py`, `presets.py`, `enums.py`, their tests | D17 waste side, D14 preset floors/P-X3 preset, profile v1alpha3 |
+| W-WIRE | `smartchem/service.py`, `smartchem/cli.py`, `tests/fixtures/**`, wire/CLI/migration/transport tests, goldens (regenerated ONLY after the parent announces the freeze) | D20, D22, `--min-temp` on `smartchem` CLI, PhaseClaim codec |
+| W-GATES | `experiments/v0_9_mutation_calibration.py`, `experiments/v0_9_capability_funnel.py` (+ results doc), NEW held-out probe harness + results, NEW `tests/test_v0_9_round_v_zero_fit_theorem.py`, ROADMAP, 0.9.5 plan, release record | D21, Part VII pins, Part VIII, Part XI |
+
+### §7.3 Part VI — C2 transport table (read from CURRENT code at `78554a2`, before Wave B′)
+
+| C2 item | landed | test | mutant | boundary / action |
+|---|---|---|---|---|
+| assessment self-fold validation | YES `assess.py` `CapabilityAssessment.__post_init__`, re-checked service-side | wave_c_fixes; migration `test_smith_P0_thin_wire_forged_capability_fit_is_refused`; transport verdict-alteration test | M101 | unknown tier raises `KeyError` → D20(2) |
+| readiness tier/digest binding | YES `_check_assessment_bindings` | migration parametrized binding test | none (M90 pins only that `assess` records the tier) | add M104b |
+| profile digest binding | YES | same | only M19 (whole-method) | add M38b |
+| route digest binding | YES | same | none | add a route-binding mutant |
+| capability_question_digest folded into result_digest | YES | `test_smith_P2_signature_binds_the_capability_question_with_zero_dossiers` | none | add a fold mutant |
+| no CAPABILITY_FIT on THIN | YES | unit-level stand-in | M104 survived (dominated by the 0.8 thin-PS law) | 2-factor M104 |
+| all-depth legacy-key refusal | YES (request + response) | T1/T4b + any-depth tests | M94 survived (stale fixture) | rebuilt M94 + M94b |
+| newly-resolvable legacy name hint | YES | `test_smith_P2_real_v08_name_the_resolver_now_registers_…` | none (message quality, not a law) | — |
+| legacy v1alpha15 response admission | YES | real-fixture tests (incl. verified admission, procedure routes) | M81, M59 | — |
+| frozen v0.8 digest rule | YES `_V08_OMITTED_FIELDS` / `_v08_digest` | frozen-rule tests | M81 (dispatch only) | add an omission-set-widening mutant |
+
+Public-hash attacker (unsigned; every unkeyed pin recomputed) — outcome at `78554a2`: stock strip → REFUSED by the
+capability rebind; PS-tier transplant → REFUSED by the readiness re-derivation; replay quantity edit → REFUSED by the
+route-identity bind (and, with the route digest re-bound, by the rebind); forged FIT on thin → REFUSED by the 0.8
+thin-PS law; forged FIT on thick → REFUSED by the rebind; forged FIT below PS → unconstructible (fold). LOADED:
+(c3) a self-consistent tampered-procedure replay (no FIT; coherence ≠ authenticity — D20 boundary); (d) a coherent
+profile swap under the consumer's request pin (D20(4) closes it for pinning consumers); (g) an origin relabel, even
+under a verified producer signature (D20(5) closes it).

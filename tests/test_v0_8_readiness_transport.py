@@ -401,6 +401,21 @@ def test_thin_advisory_carrying_process_specified_is_refused(isopentyl_payload):
         response_from_payload(payload)
 
 
+def test_thin_advisory_with_replay_present_still_refuses_process_specified(isopentyl_payload):
+    """Wave C / evil-morty FINDING 1 regression: the THIN_ADVISORY PROCESS_SPECIFIED refusal must fire even when
+    the replay is KEPT. Relabel CANONICAL_VERIFIED->THIN_ADVISORY, leave every replay_payload IN PLACE, and recompute
+    the bare transport-bound digest (an honest downgrade). Before the fix, keeping the replay skipped the refusal (it
+    sat inside the replay-absent branch) and delivered PROCESS_SPECIFIED on a thin wire; now the refusal is keyed off
+    the DECLARED mode, checked for every dossier regardless of replay-presence."""
+    payload = copy.deepcopy(isopentyl_payload)
+    assert any(r.get("replay_payload") is not None for r in payload["ranked_route_dossiers"]), \
+        "fixture must carry replay so this exercises the replay-PRESENT path evil-morty found"
+    payload["transport_mode"] = "THIN_ADVISORY"
+    _recompute_derived_fields(payload)
+    with pytest.raises(ValueError, match="not admissible on an unsigned thin wire"):
+        response_from_payload(payload)
+
+
 def test_transport_mode_downgrade_without_recompute_is_a_digest_mismatch(isopentyl_payload):
     """The fold's whole point: flipping CANONICAL_VERIFIED->THIN_ADVISORY to dodge the mandatory re-derivation, WITHOUT
     recomputing the transport-bound result_digest, is caught as a plain result_digest mismatch -- a downgrade-strip is

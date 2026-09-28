@@ -73,3 +73,17 @@ def test_decomposition_path_never_exposes_a_procedure_isomer_blind_leak_stays_cl
     assert env.procedure is None
     # and the anhydride ASSEMBLY signature is refused through the formula-only decomposition API
     assert reaction_conditions(edge, direction=ReactionDirection.ASSEMBLY).procedure is None
+
+
+def test_no_procedure_bearing_seed_record_is_reachable_through_the_isomer_blind_path():
+    # Wave C / evil-morty FINDING 3 standing guard: reaction_conditions is formula-keyed (isomer-blind) and serves
+    # only DECOMPOSITION-direction envelopes (it refuses ASSEMBLY). So as long as EVERY procedure-bearing record is
+    # ASSEMBLY-only, a procedure can never flow through the isomer-blind path onto a same-formula isomer -- procedure
+    # evidence reaches readiness ONLY via the structurally-guarded assembly_conditions path. If a future record ever
+    # attaches a procedure to a DECOMPOSITION record, this fails and forces a re-audit of that latent M19 hazard.
+    for rec in dc.SEED_CONDITIONS.values():
+        if rec.envelope.procedure is not None:
+            assert rec.directions == (ReactionDirection.ASSEMBLY,), (
+                f"procedure-bearing record for {rec.assembly_target_name!r} must be ASSEMBLY-only to stay off the "
+                f"isomer-blind reaction_conditions path; got directions={rec.directions}"
+            )

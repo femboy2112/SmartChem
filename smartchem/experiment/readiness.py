@@ -134,6 +134,22 @@ def procedure_representation_is_complete(evidence: "ProcedureEvidence | None") -
     for name in WHOLE_PROCEDURE_FIELDS:
         if getattr(evidence, name).status is EvidenceFieldStatus.UNKNOWN_MISSING:
             return False
+    # A preparative procedure DEFINITIONALLY isolates its product: workup/isolation must be actually DESCRIBED
+    # (PRESENT), never merely EXPLICIT_NOT_APPLICABLE (Wave C amber FINDING 1, the cardinal "weaken the word"
+    # surface). N/A is legitimate for quench/separation/wash/purification -- a given prep may genuinely skip
+    # them -- but a prep that isolates NOTHING is not a complete procedure, so relabelling a source's silence as
+    # N/A on every whole-procedure field must NOT be allowed to climb the ladder. This is a machine backstop for
+    # the discipline, not a substitute for it: N/A still requires zero realizing ops + a justification upstream.
+    if evidence.workup_isolation.status is not EvidenceFieldStatus.PRESENT:
+        return False
+    # The reaction must state WHEN it completes: at least one REACTION operation carries a duration or an
+    # endpoint (Wave C amber FINDING 2). Without this a room-temperature ADD/REACTION with no thermal op, or a
+    # heating step mis-tagged role=OTHER, would pass as "complete" with no stated reaction endpoint at all.
+    reaction_ops = [op for op in evidence.operations if op.role is OperationRole.REACTION]
+    if not any(
+        not (_field_unknown(op.duration) and _field_unknown(op.endpoint)) for op in reaction_ops
+    ):
+        return False
     for op in evidence.operations:
         if op.role is OperationRole.REACTION and op.kind in _THERMAL_REACTION_KINDS:
             if _field_unknown(op.temperature):

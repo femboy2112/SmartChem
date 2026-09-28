@@ -1711,30 +1711,31 @@ class CompilationResponse:
         Pinned by tests/test_v0_8_readiness_transport.py.
         """
         for r in self.ranked_route_dossiers:
+            # LANE F FORWARD RULING (D5, v0.8 Round II): PROCESS_SPECIFIED is not admissible on an unsigned
+            # THIN_ADVISORY wire AT ALL -- refused UNCONDITIONALLY, and checked FIRST for EVERY dossier, whether or
+            # not it happens to carry a replay.  (Wave C / evil-morty FINDING 1: gating this refusal on replay-ABSENCE
+            # was a real defect -- a THIN payload that KEEPS its genuine replay skipped the check, re-derived, and
+            # delivered PROCESS_SPECIFIED, silently violating the documented "not admissible on a thin wire" guarantee.
+            # The declared transport_mode, not replay-presence, is the trust-tier signal.)  "The source procedure was
+            # fully specified" is precisely the claim a lean advisory wire may not carry; a producer that means it
+            # serializes CANONICAL_VERIFIED (include_replay=True).  Lower above-FORMAL tiers keep their documented thin
+            # residual (advisory on a plain load, fail-closed under verified admission).
+            if refuse_process_specified_on_thin and r.readiness.tier == PROCESS_SPECIFIED:
+                raise ValueError(
+                    f"ranked route {r.route_digest} claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY "
+                    f"transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must "
+                    f"serialize with include_replay=True, transport_mode=CANONICAL_VERIFIED); refused "
+                    f"(v0.8 D5, Lane F forward ruling)"
+                )
             if r.replay_payload is None:
-                # THIN-TRANSPORT CLOSURE (Wave C / evil-morty FINDING 1).  Under verified admission a readiness claim
-                # ABOVE the FORMAL_CANDIDATE floor MUST be re-derivable, which needs the thick replay_payload.  A
-                # missing payload leaves the claim UNVERIFIABLE -- and a thin-wire forgery is STRICTLY CHEAPER than the
-                # thick-replay non-goal below (no coherent sourced envelopes to fabricate, just the copied ladder + a
-                # recomputed result_digest), so leaving it advisory would make require_verified_admission falsely
-                # complete for readiness while it is replay-mandatory for FITS routes and the frontier.  Fail CLOSED,
-                # mirroring _check_verified_admission and _check_frontier_coherence's own thin-transport closures.  A
-                # FORMAL_CANDIDATE claim is the floor and asserts no evidence, so a thin FORMAL route is fine.
-                #
-                # LANE F FORWARD RULING (D5, v0.8 Round II): PROCESS_SPECIFIED is not admissible on an unsigned thin
-                # wire AT ALL -- it fails closed UNCONDITIONALLY on a THIN_ADVISORY load (not gated on
-                # require_verified_admission), because "the source procedure was fully specified" is precisely the claim
-                # a lean, non-re-derivable wire cannot back.  Lower above-FORMAL tiers keep their documented thin
-                # residual (advisory on a plain load, fail-closed under verified admission) -- that boundary is
-                # unchanged.  Checked FIRST so a thin PROCESS_SPECIFIED is refused regardless of the verified-admission
-                # flag.
-                if refuse_process_specified_on_thin and r.readiness.tier == PROCESS_SPECIFIED:
-                    raise ValueError(
-                        f"ranked route {r.route_digest} claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY "
-                        f"transport, which carries no re-derivable evidence -- PROCESS_SPECIFIED is not admissible on "
-                        f"an unsigned thin wire (the producer must serialize with include_replay=True, "
-                        f"transport_mode=CANONICAL_VERIFIED); refused (v0.8 D5, Lane F forward ruling)"
-                    )
+                # THIN-TRANSPORT CLOSURE.  Under verified admission a readiness claim ABOVE the FORMAL_CANDIDATE floor
+                # MUST be re-derivable, which needs the thick replay_payload.  A missing payload leaves the claim
+                # UNVERIFIABLE -- and a thin-wire forgery is STRICTLY CHEAPER than the thick-replay non-goal below (no
+                # coherent sourced envelopes to fabricate, just the copied ladder + a recomputed result_digest), so
+                # leaving it advisory would make require_verified_admission falsely complete for readiness while it is
+                # replay-mandatory for FITS routes and the frontier.  Fail CLOSED, mirroring _check_verified_admission
+                # and _check_frontier_coherence's own thin closures.  A FORMAL_CANDIDATE claim is the floor and asserts
+                # no evidence, so a thin FORMAL route is fine.
                 if require_verified_admission and r.readiness.tier != FORMAL_CANDIDATE:
                     raise ValueError(
                         f"verified admission: ranked route {r.route_digest} claims readiness tier "

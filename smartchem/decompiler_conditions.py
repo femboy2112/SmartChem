@@ -197,9 +197,9 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
     ),
     quench=EvidenceField.not_applicable(
         _ISOPENTYL_URL,
-        "the complete sourced sequence proceeds reflux -> cool -> aqueous partition -> bicarbonate/water/brine "
-        "washes -> dry -> distill; the acid catalyst is removed by the bicarbonate wash and the source specifies "
-        "no separate reaction quench"),
+        "the source specifies a complete workup sequence -- reflux -> cool to room temperature -> aqueous "
+        "partition -> 2x bicarbonate wash -> water wash -> brine -> MgSO4 dry -> fractional distillation -- with "
+        "no quench among the operations it lists"),
     workup_isolation=EvidenceField.present(
         "separatory-funnel partition, bicarbonate/water/brine washes, magnesium-sulfate drying", _ISOPENTYL_URL),
     separation=EvidenceField.present("separatory funnel; separate the lower aqueous layer", _ISOPENTYL_URL),

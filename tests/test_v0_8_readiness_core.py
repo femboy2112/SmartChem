@@ -277,6 +277,46 @@ def test_completeness_predicate_reads_none_and_incomplete_evidence():
     assert procedure_representation_is_complete(gutted) is False
 
 
+def test_completeness_requires_described_isolation_and_a_reaction_endpoint():
+    # Wave C amber F1/F2: the machine backstop against relabelling a source's silence as N/A to climb the ladder.
+    import dataclasses
+
+    from smartchem.procedure_evidence import (
+        EvidenceField,
+        OperationKind,
+        OperationRole,
+        ProcedureEvidence,
+        ProcedureOperation,
+    )
+    from smartchem.provenance import SourceCitation, SourceReview
+
+    loc = "https://example.org/src"
+    src = SourceCitation(loc, SourceReview.ACCEPTED)
+
+    def _na():
+        return EvidenceField.not_applicable(loc, "n/a")
+
+    # F1: every whole-procedure field N/A, a timed reaction, but NO isolation operation -> isolation not DESCRIBED,
+    # so a prep that isolates nothing cannot be "complete" no matter how much silence is relabelled N/A.
+    all_na = ProcedureEvidence(
+        reaction_scope="a + b -> c", source=src, scale=EvidenceField.present("some scale", loc),
+        operations=(ProcedureOperation(ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION,
+                                       duration=EvidenceField.present("30 min", loc), locator=loc),),
+        quench=_na(), workup_isolation=_na(), separation=_na(), wash=_na(), drying=_na(),
+        purification=_na(), analytical_verification=_na(),
+    )
+    assert procedure_representation_is_complete(all_na) is False
+
+    # F2: isolation IS described, but the reaction states no endpoint/duration at all (room-temperature ADD only).
+    no_endpoint = dataclasses.replace(
+        all_na,
+        operations=(ProcedureOperation(ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION, locator=loc),
+                    ProcedureOperation(ordinal=2, kind=OperationKind.FILTER, role=OperationRole.OTHER, locator=loc)),
+        workup_isolation=EvidenceField.present("vacuum filtration", loc),
+    )
+    assert procedure_representation_is_complete(no_endpoint) is False
+
+
 def test_workup_gate_blocks_process_specified_when_workup_unsatisfied():
     # M18 (plan D4): even with reaction_type/conditions/process all SATISFIED, an UNSATISFIED workup caps the
     # tier at CONDITIONS_SUPPORTED. The tier @property enforces this by construction over the closed enum.

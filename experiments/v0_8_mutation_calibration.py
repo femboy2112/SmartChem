@@ -1,9 +1,10 @@
-"""V0.8-MUTATION-01: the calibrated mutation gate for the readiness-obligation ladder (plan Sec 10.1, M1-M11).
+"""V0.8-MUTATION-01: the calibrated mutation gate for the readiness-obligation ladder (plan Sec 10.1/10.4, M1-M20).
 
 Same discipline as `v0_7_mutation_calibration.py`: adding tests is not enough -- a test that would still pass
-on BROKEN code proves nothing. This harness INJECTS each of the 11 failure modes the plan names (M1-M11), on
-the REAL `smartchem.experiment.readiness` module (plus, where the failure mode actually lives one layer over
-in the upstream isomer guard / the service transport, the real `smartchem.experiment.routes` /
+on BROKEN code proves nothing. This harness INJECTS each of the 20 failure modes the plan names (M1-M11 from
+Round I, M12-M20 added in Round II for typed procedure evidence + canonical transport), on the REAL
+`smartchem.experiment.readiness` module (plus, where the failure mode actually lives one layer over in the
+upstream isomer guard / the service transport, the real `smartchem.experiment.routes` /
 `smartchem.decompiler_conditions` / `smartchem.service` call it's wired through), and shows the corresponding
 guard actually flips (the mutant is KILLED). Every mutation is applied via a context-managed monkeypatch and
 undone on exit -- this harness never edits a single byte of `smartchem/`, it only pokes at it in memory for
@@ -15,6 +16,15 @@ fit an anhydride transacylation) -- so it reports `conditions=SATISFIED` while i
 `FORMAL_CANDIDATE`. That is NOT a bug. A "fix" that makes `conditions` agree with the coarse tier is exactly
 M11 (deriving obligations FROM the tier instead of the tier FROM the obligations), and this harness pins that
 paracetamol's own real corpus record is what M11's mutant breaks.
+
+Round II's M12-M20 harden the typed `ProcedureEvidence`/canonical-transport closure (Wave A Lane F's runnable
+repros informed the exact shapes): a canonical above-FORMAL payload with its replay stripped (M12), an
+unsourced-but-declared workup (M13), the retired legacy `workup_included` boolean (M14), a silently-skipped
+whole-procedure field (M15), free-text prose parsed into structure (M16), the envelope's conditions source
+laundering the procedure's own sourcing requirement (M17), the workup gate being droppable from the tier
+property -- asserted DIRECTLY on the derivation, never a round-trip, per Wave A Lane E (M18), a same-formula
+isomer borrowing procedure evidence through the isomer-blind path (M19), and a bench-fit `FITS` verdict
+promoting procedure completeness -- also asserted directly (M20).
 
 Run:  .venv/bin/python experiments/v0_8_mutation_calibration.py
 """
@@ -43,7 +53,10 @@ from smartchem.experiment.readiness import (
 )
 from smartchem.experiment.step import ExperimentStep
 from smartchem.identity_parse import InputKind, resolve_target
-from smartchem.service import build_recompile_request, run_compilation
+from smartchem.process_constraints import ProcessRequirements
+from smartchem.procedure_evidence import EvidenceField, EvidenceFieldStatus
+from smartchem.provenance import SourceCitation, SourceReview
+from smartchem.service import build_recompile_request, response_from_payload, response_to_payload, run_compilation
 from smartchem.smiles import parse_smiles
 
 _CERTIFIED = resolve_algebra_profile(DEFAULT_ROUTE_ALGEBRA_PROFILE)
@@ -97,29 +110,47 @@ def _search(target_name: str, reagents: tuple, have: tuple, max_depth: int):
     return rt.search_routes(target, reagents=reag, available=hv, max_depth=max_depth, registry=_CERTIFIED)
 
 
-def _isopentyl_step_conditions_supported() -> ExperimentStep:
-    """isopentyl acetate's real CONDITIONS_SUPPORTED step: reaction_type SATISFIED, conditions SATISFIED,
-    process declared-but-incomplete (Sec 5 DARK) -- the exact fixture M7 needs (process is the ONLY open
-    obligation standing between this step and the DARK PROCESS_SPECIFIED rung)."""
+def _isopentyl_step_process_specified() -> ExperimentStep:
+    """The real isopentyl-acetate PROCESS_SPECIFIED step (Sec 9 row 4): reaction_type SATISFIED, conditions
+    SATISFIED, a COMPLETE + sourced typed `ProcedureEvidence` -- the base fixture every M13-M20 procedure-tamper
+    mutant below derives from via `_with_procedure` (`dataclasses.replace` on ONE field of this real, honestly
+    PROCESS_SPECIFIED record), never a hand-invented procedure built from scratch. As of Round II this is a
+    real, reachable corpus member (the old Round-I fixture-finder here looked for a CONDITIONS_SUPPORTED
+    isopentyl step -- Round II's completed procedure means no such step exists in this corpus any more; every
+    isopentyl route step is now either FORMAL_CANDIDATE or this honest PROCESS_SPECIFIED one)."""
     result = _search("isopentyl acetate", ("water", "acetic acid"), ("isopentyl alcohol",), 3)
     for route in result.routes:
         rr = evaluate_route(route)
         for step, sr in zip(route.steps, rr.per_step):
-            if sr.tier == CONDITIONS_SUPPORTED:
+            if sr.tier == PROCESS_SPECIFIED:
                 return step
-    raise AssertionError("expected a real isopentyl acetate CONDITIONS_SUPPORTED step in the forcing corpus")
+    raise AssertionError("expected a real isopentyl acetate PROCESS_SPECIFIED step in the forcing corpus")
+
+
+def _with_procedure(step: ExperimentStep, **overrides) -> ExperimentStep:
+    """A copy of `step` whose `envelope.procedure` is the REAL isopentyl `ProcedureEvidence`
+    (:func:`_isopentyl_step_process_specified`) with `overrides` applied via `dataclasses.replace` -- every
+    M13-M20 tamper mutates exactly ONE field of a real, honestly-complete procedure, so a fixture bug can never
+    make the honest and the mutant path agree for the wrong (both-broken) reason."""
+    procedure = replace(step.envelope.procedure, **overrides)
+    envelope = replace(step.envelope, procedure=procedure)
+    return replace(step, envelope=envelope)
+
+
+def _isopentyl_step_conditions_supported() -> ExperimentStep:
+    """A declared-but-INCOMPLETE isopentyl procedure (Round II's `procedure_representation_is_complete` fails
+    because `analytical_verification` is knocked back to genuinely `UNKNOWN_MISSING`, the source's honest
+    silence) -- M7's fixture: `process` present-but-not-None must not be conflated with complete."""
+    base = _isopentyl_step_process_specified()
+    return _with_procedure(base, analytical_verification=EvidenceField.unknown())
 
 
 def _methyl_salicylate_step_workup_false() -> ExperimentStep:
-    """methyl salicylate's real step with `workup_included=False` -- M8's fixture (the clean ceiling case,
-    Sec 9 row 5)."""
-    result = _search("methyl salicylate", ("water", "methanol"), ("salicylic acid",), 1)
-    for route in result.routes:
-        rr = evaluate_route(route)
-        for step, sr in zip(route.steps, rr.per_step):
-            if sr.conditions is ObligationStatus.SATISFIED and sr.workup_isolation is ObligationStatus.UNSATISFIED:
-                return step
-    raise AssertionError("expected a real methyl salicylate workup_included=False step in the forcing corpus")
+    """A declared-but-genuinely-SILENT workup axis on the (otherwise real, complete) isopentyl procedure --
+    M8's fixture (Round II retired the legacy `process.workup_included=False` boolean this fixture used to read;
+    the honest new failure mode is a whole-procedure field left `UNKNOWN_MISSING`, never silently promoted)."""
+    base = _isopentyl_step_process_specified()
+    return _with_procedure(base, workup_isolation=EvidenceField.unknown())
 
 
 def _paracetamol_step_recognized_conditions_unknown() -> ExperimentStep:
@@ -288,15 +319,19 @@ def m6() -> bool:
     return real_ok and mutant_bad
 
 
-@mutant("M7 process-present-must-not-imply-process-specified")
+@mutant("M7 procedure-present-must-not-imply-complete")
 def m7() -> bool:
+    # Round II renamed `process_representation_is_complete(process)` to
+    # `procedure_representation_is_complete(evidence)` (it now reads `step.envelope.procedure`, a typed
+    # `ProcedureEvidence`, never the legacy `ProcessRequirements`). This step's real procedure is DECLARED but
+    # genuinely INCOMPLETE (Sec 5/D3) -- the exact fixture the presence-alone bug needs.
     step = _isopentyl_step_conditions_supported()
-    real_ok = evaluate_step(step).tier == CONDITIONS_SUPPORTED  # Sec 5: PROCESS_SPECIFIED stays DARK
+    real_ok = evaluate_step(step).tier == CONDITIONS_SUPPORTED
 
-    def mutant_process_complete(process) -> bool:  # BUG: presence alone counts as a complete representation
-        return process is not None
+    def mutant_procedure_complete(evidence) -> bool:  # BUG: mere presence counts as a complete representation
+        return evidence is not None
 
-    with _patch(readiness, "process_representation_is_complete", mutant_process_complete):
+    with _patch(readiness, "procedure_representation_is_complete", mutant_procedure_complete):
         mutant_bad = evaluate_step(step).tier == PROCESS_SPECIFIED
     return real_ok and mutant_bad
 
@@ -407,6 +442,343 @@ def m11() -> bool:
     return real_ok and mutant_bad
 
 
+# -- M12-M20 (0.8 Round II) ---------------------------------------------------------------------------------
+
+
+@mutant("M12 a-canonical-above-formal-payload-with-replay-stripped-must-be-refused")
+def m12() -> bool:
+    """D5/Blocker A: `transport_mode=CANONICAL_VERIFIED` (the DEFAULT wire, `include_replay=True`) DECLARES its
+    above-FORMAL readiness claims re-derivable; a canonical payload whose `replay_payload` is stripped (while
+    the declared mode stays CANONICAL_VERIFIED) has nothing left to re-derive FROM and must be refused on
+    ordinary load -- this is the mechanism `_check_readiness_coherence`/`response_from_payload` already runs
+    unconditionally off the payload's OWN declared mode (not a caller flag), so this mutant proves it is really
+    load-bearing, not just present in the source.
+
+    Second, narrower check folded in here (the plan's 'M10-analogue' for procedure evidence specifically): when
+    the replay IS present but the replayed step's `envelope.procedure` inside it is stripped, the re-derivation
+    disagrees with the carried readiness (a lower tier) and is refused too -- the SAME unconditional mechanism,
+    exercised on the procedure axis rather than the whole replay.
+    """
+    req = build_recompile_request(
+        "isopentyl acetate", input_kind=InputKind.NAME, helper_reagents=("water", "acetic acid"),
+        stock_materials=("isopentyl alcohol",), max_depth=3,
+    )
+    resp = run_compilation(req)
+    idx = next(
+        (i for i, r in enumerate(resp.ranked_route_dossiers) if r.readiness.tier == PROCESS_SPECIFIED), None,
+    )
+    if idx is None:
+        raise AssertionError("expected a real PROCESS_SPECIFIED isopentyl acetate route to tamper")
+
+    # -- part (a): CANONICAL_VERIFIED payload, whole replay stripped ------------------------------------------
+    payload_a = response_to_payload(resp, include_replay=True)
+    assert payload_a["transport_mode"] == "CANONICAL_VERIFIED"
+    payload_a["ranked_route_dossiers"][idx]["replay_payload"] = None  # compare=False -> result_digest unaffected
+    real_refuses_a = False
+    try:
+        response_from_payload(payload_a)
+    except ValueError:
+        real_refuses_a = True
+    with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self, **kw: None):
+        try:
+            response_from_payload(payload_a)
+            mutant_loads_a = True
+        except ValueError:
+            mutant_loads_a = False
+
+    # -- part (b): the carried readiness is FORGED upward on a route whose replay is left UNTOUCHED (so
+    # route_digest still matches -- this is the readiness-specific MISMATCH branch of the re-derivation, not
+    # the "reconstructs to a different route" digest bind M10 already exercises for a stripped/substituted
+    # replay). Pick a real route that is NOT already PROCESS_SPECIFIED and forge every step's per_step
+    # obligations (including process/workup_isolation) to SATISFIED -- its actual (unmodified) replayed
+    # procedure evidence does not support that claim, so re-derivation disagrees.
+    idx_b = next(
+        (i for i, r in enumerate(resp.ranked_route_dossiers) if r.readiness.tier != PROCESS_SPECIFIED), None,
+    )
+    if idx_b is None:
+        raise AssertionError("expected a real NON-PROCESS_SPECIFIED isopentyl acetate route to forge upward")
+    orig_b = resp.ranked_route_dossiers[idx_b]
+    forged_readiness = replace(
+        orig_b.readiness,
+        per_step=tuple(
+            replace(
+                sr,
+                reaction_type=ObligationStatus.SATISFIED,
+                reaction_class_name=sr.reaction_class_name or "forged_class",
+                conditions=ObligationStatus.SATISFIED,
+                process=ObligationStatus.SATISFIED,
+                workup_isolation=ObligationStatus.SATISFIED,
+                provenance=("https://doi.org/10.1000/forged-m12",),
+                open_obligations=(),
+            )
+            for sr in orig_b.readiness.per_step
+        ),
+    )
+    forged_b = replace(orig_b, readiness=forged_readiness)
+    dossiers_b = list(resp.ranked_route_dossiers)
+    dossiers_b[idx_b] = forged_b
+    resp_b = replace(resp, ranked_route_dossiers=tuple(dossiers_b))
+    payload_b = response_to_payload(resp_b, include_replay=True)
+    real_refuses_b = False
+    try:
+        response_from_payload(payload_b)
+    except ValueError:
+        real_refuses_b = True
+    with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self, **kw: None):
+        try:
+            response_from_payload(payload_b)
+            mutant_loads_b = True
+        except ValueError:
+            mutant_loads_b = False
+
+    return real_refuses_a and mutant_loads_a and real_refuses_b and mutant_loads_b
+
+
+@mutant("M13 a-declared-unsourced-workup-must-not-count-as-satisfied")
+def m13() -> bool:
+    """A workup field genuinely PRESENT (the source describes it) but the procedure's own `source` is stripped
+    (unsourced) must not count as `workup_isolation=SATISFIED` -- sourcing is a mandatory conjunct on BOTH the
+    process and the workup axis (plan D4), never just process."""
+    base = _isopentyl_step_process_specified()
+    step = _with_procedure(base, source=None)
+    real_sr = evaluate_step(step)
+    real_ok = (
+        real_sr.workup_isolation is ObligationStatus.UNSATISFIED
+        and step.envelope.procedure.workup_isolation.status is EvidenceFieldStatus.PRESENT
+    )
+    real_obligations = readiness._process_and_workup_obligations
+
+    def mutant_obligations(step):  # BUG: workup ignores the sourcing conjunct -- PRESENT alone is SATISFIED
+        procedure = step.envelope.procedure
+        if procedure is not None and procedure.workup_isolation.status is EvidenceFieldStatus.PRESENT:
+            process_status, _workup, locator, obligations = real_obligations(step)
+            return process_status, ObligationStatus.SATISFIED, locator, obligations
+        return real_obligations(step)
+
+    with _patch(readiness, "_process_and_workup_obligations", mutant_obligations):
+        mutant_bad = evaluate_step(step).workup_isolation is ObligationStatus.SATISFIED
+    return real_ok and mutant_bad
+
+
+@mutant("M14 legacy-process-workup-included-bool-must-not-satisfy-workup")
+def m14() -> bool:
+    """The legacy `ProcessRequirements.workup_included` boolean must NEVER be read as workup evidence -- the
+    Round-II axis reads ONLY `envelope.procedure.workup_isolation`. A step with NO procedure at all but a
+    legacy `process.workup_included=True` must stay UNKNOWN, never SATISFIED (let alone PROCESS_SPECIFIED)."""
+    legacy_process = ProcessRequirements(workup_included=True, provenance="hand-built legacy workup=True probe")
+    env = ConditionEnvelope(
+        medium="hand-built test medium", status=EvidenceStatus.EXPERIMENTAL,
+        provenance="hand-built, declared, sourced envelope with a legacy process block but NO ProcedureEvidence",
+        source=SourceCitation("https://doi.org/10.1000/hand-built-m14", SourceReview.ACCEPTED),
+        process=legacy_process,
+    )
+    step = _identity_step(env)
+    real_sr = evaluate_step(step)
+    real_ok = real_sr.process is ObligationStatus.UNKNOWN and real_sr.workup_isolation is ObligationStatus.UNKNOWN
+    real_obligations = readiness._process_and_workup_obligations
+
+    def mutant_obligations(step):  # BUG: legacy process.workup_included=True alone satisfies workup (and process)
+        legacy = step.envelope.process
+        if step.envelope.procedure is None and legacy is not None and legacy.workup_included:
+            return ObligationStatus.SATISFIED, ObligationStatus.SATISFIED, "legacy-workup-included-surrogate", ()
+        return real_obligations(step)
+
+    with _patch(readiness, "_process_and_workup_obligations", mutant_obligations):
+        mutant_sr = evaluate_step(step)
+    mutant_bad = (
+        mutant_sr.process is ObligationStatus.SATISFIED and mutant_sr.workup_isolation is ObligationStatus.SATISFIED
+    )
+    return real_ok and mutant_bad
+
+
+@mutant("M15 a-missing-whole-procedure-field-must-not-be-silently-complete")
+def m15() -> bool:
+    """A whole-procedure field left genuinely `UNKNOWN_MISSING` (the source is silent on purification) must
+    block completeness -- a predicate that skips checking one field in `WHOLE_PROCEDURE_FIELDS` silently treats
+    a real representational gap as complete (plan M15's 'missing operation / gap' failure mode, realized here as
+    the field-loop being skipped rather than an ordinal gap, since `ProcedureEvidence.__post_init__` already
+    structurally forbids constructing a non-contiguous-ordinal procedure -- the loop-skip is the reachable
+    equivalent of that same bug)."""
+    base = _isopentyl_step_process_specified()
+    step = _with_procedure(base, purification=EvidenceField.unknown())
+    real_ok = evaluate_step(step).process is ObligationStatus.UNSATISFIED
+
+    def mutant_complete(evidence) -> bool:  # BUG: skips the "purification" field in the whole-procedure loop
+        from smartchem.procedure_evidence import EvidenceFieldStatus as _S
+        if evidence is None or evidence.unresolved_omissions or not evidence.operations:
+            return False
+        for name in readiness.WHOLE_PROCEDURE_FIELDS:
+            if name == "purification":
+                continue  # the skipped field -- the bug
+            if getattr(evidence, name).status is _S.UNKNOWN_MISSING:
+                return False
+        return True
+
+    with _patch(readiness, "procedure_representation_is_complete", mutant_complete):
+        mutant_bad = evaluate_step(step).process is ObligationStatus.SATISFIED
+    return real_ok and mutant_bad
+
+
+@mutant("M16 free-text-provenance-must-not-be-parsed-into-a-structured-operation")
+def m16() -> bool:
+    """`evidence_scope` (explicitly documented as "NEVER read by the predicate") must stay dead prose even when
+    it describes exactly the missing fact -- a mutant that scans it for a keyword and uses that to resolve an
+    `UNKNOWN_MISSING` field is inferring structure from free text, which the frozen contract (plan D3) forbids."""
+    base = _isopentyl_step_process_specified()
+    step = _with_procedure(
+        base, quench=EvidenceField.unknown(),
+        evidence_scope="quench: not needed -- the acid catalyst is fully consumed/removed downstream",
+    )
+    real_ok = evaluate_step(step).process is ObligationStatus.UNSATISFIED
+    real_complete = readiness.procedure_representation_is_complete
+
+    def mutant_complete(evidence) -> bool:  # BUG: infers "quench" resolved by scanning evidence_scope prose
+        if evidence is not None and evidence.quench.status.value == "UNKNOWN_MISSING" and (
+            "quench" in evidence.evidence_scope.lower()
+        ):
+            evidence = replace(
+                evidence,
+                quench=EvidenceField.not_applicable(evidence.reaction_scope, "inferred from evidence_scope prose"),
+            )
+        return real_complete(evidence)
+
+    with _patch(readiness, "procedure_representation_is_complete", mutant_complete):
+        mutant_bad = evaluate_step(step).process is ObligationStatus.SATISFIED
+    return real_ok and mutant_bad
+
+
+@mutant("M17 the-envelopes-conditions-source-must-not-source-the-procedure")
+def m17() -> bool:
+    """The isopentyl envelope carries an accepted CONDITIONS source AND the procedure carries its OWN accepted
+    source; stripping the procedure's source ALONE (the envelope's stays accepted) must demote `process` --
+    the procedure's sourcing is never allowed to piggyback on the enclosing envelope's (plan D4 / Lane F KILL 1)."""
+    base = _isopentyl_step_process_specified()
+    step = _with_procedure(base, source=None)
+    real_ok = (
+        step.envelope.is_sourced  # the envelope's OWN conditions source is untouched, still accepted
+        and not step.envelope.procedure.is_sourced
+        and evaluate_step(step).process is ObligationStatus.UNSATISFIED
+    )
+    real_obligations = readiness._process_and_workup_obligations
+
+    def mutant_obligations(step):  # BUG: an unsourced procedure borrows the enclosing envelope's source instead
+        procedure = step.envelope.procedure
+        if procedure is not None and not procedure.is_sourced and step.envelope.is_sourced:
+            complete = readiness.procedure_representation_is_complete(procedure)
+            if complete:
+                locator = step.envelope.source.locator
+                return ObligationStatus.SATISFIED, ObligationStatus.SATISFIED, locator, ()
+        return real_obligations(step)
+
+    with _patch(readiness, "_process_and_workup_obligations", mutant_obligations):
+        mutant_bad = evaluate_step(step).process is ObligationStatus.SATISFIED
+    return real_ok and mutant_bad
+
+
+@mutant("M18 process-specified-must-not-ignore-workup-completeness")
+def m18() -> bool:
+    """Assert DIRECTLY on `StepReadiness.tier` (Wave A Lane E): `_check_readiness_coherence` re-derives with the
+    SAME evaluator, so a systematic tier-property mutation would NOT be caught by any round-trip/byte-equality
+    check -- only a direct assertion on the derivation catches it. `process=SATISFIED` + `workup_isolation=
+    UNSATISFIED` must stay capped at `CONDITIONS_SUPPORTED`; a tier property that drops the workup gate reaches
+    `PROCESS_SPECIFIED` regardless."""
+    sr = StepReadiness(
+        formal_candidate=ObligationStatus.SATISFIED, reaction_type=ObligationStatus.SATISFIED,
+        reaction_class_name="hand-built class", conditions=ObligationStatus.SATISFIED,
+        process=ObligationStatus.SATISFIED, workup_isolation=ObligationStatus.UNSATISFIED,
+        provenance=("https://doi.org/10.1000/hand-built-m18",),
+        open_obligations=("workup_isolation: workup/isolation described but not backed by an accepted source citation",),
+    )
+    real_ok = sr.tier == CONDITIONS_SUPPORTED
+
+    def mutant_tier(self) -> str:  # BUG: the workup/isolation gate is dropped from the final rung
+        if self.reaction_type is not ObligationStatus.SATISFIED:
+            return FORMAL_CANDIDATE
+        if self.conditions is not ObligationStatus.SATISFIED:
+            return REACTION_VOUCHED
+        if self.process is not ObligationStatus.SATISFIED:
+            return CONDITIONS_SUPPORTED
+        return PROCESS_SPECIFIED
+
+    with _patch(StepReadiness, "tier", property(mutant_tier)):
+        mutant_bad = sr.tier == PROCESS_SPECIFIED
+    return real_ok and mutant_bad
+
+
+@mutant("M19 a-same-formula-isomer-must-not-borrow-procedure-evidence")
+def m19() -> bool:
+    """M9's isomer probe, extended to the `process`/`workup_isolation` axes specifically (not just
+    `conditions`): the live 4-aminophenyl-acetate negative-control route must show `process`/`workup_isolation`
+    UNKNOWN on every step (no procedure attached at all off the structurally-guarded `assembly_conditions`
+    path) -- the SAME dropped-name-guard mutant M9 uses (paracetamol's OWN record, envelope AND its attached
+    `ProcedureEvidence`, served to the isomer purely because the formula-only `_reaction_signature` collides)
+    must leak the procedure axes too, not just conditions."""
+    req = build_recompile_request(
+        "4-aminophenyl acetate", input_kind=InputKind.NAME, helper_reagents=("water", "acetic acid"),
+        stock_materials=("4-aminophenol",), max_depth=2,
+    )
+    resp = run_compilation(req)
+    honest = tuple(
+        (sr.process, sr.workup_isolation) for r in resp.ranked_route_dossiers for sr in r.readiness.per_step
+    )
+    real_ok = len(honest) > 0 and all(
+        proc is ObligationStatus.UNKNOWN and workup is ObligationStatus.UNKNOWN for proc, workup in honest
+    )
+
+    def mutant_assembly_conditions(capped, *, losses=()):  # BUG: the name-guard is dropped (same as M9)
+        from smartchem.identity import is_blocked
+        from smartchem.structure import resolve_structure
+        if is_blocked(tuple(losses), "conditions"):
+            return dc.ConditionEnvelope.unknown()
+        record = dc.SEED_CONDITIONS.get(dc._reaction_signature(capped.forget()))
+        if record is None or dc.ReactionDirection.ASSEMBLY not in record.directions:
+            return dc.ConditionEnvelope.unknown()
+        target = resolve_structure(capped.reactant)
+        precursors = tuple(resolve_structure(m) for m in capped.products)
+        if target is None or any(p is None for p in precursors):
+            return dc.ConditionEnvelope.unknown()
+        return record.envelope  # the name-guard check that belongs here is simply missing
+
+    with _patch(rt, "assembly_conditions", mutant_assembly_conditions):
+        req2 = build_recompile_request(
+            "4-aminophenyl acetate", input_kind=InputKind.NAME, helper_reagents=("water", "acetic acid"),
+            stock_materials=("4-aminophenol",), max_depth=2,
+        )
+        resp2 = run_compilation(req2)
+        mutated = tuple(
+            (sr.process, sr.workup_isolation) for r in resp2.ranked_route_dossiers for sr in r.readiness.per_step
+        )
+    mutant_bad = any(
+        proc is not ObligationStatus.UNKNOWN or workup is not ObligationStatus.UNKNOWN for proc, workup in mutated
+    )
+    return real_ok and mutant_bad
+
+
+@mutant("M20 a-fits-process-bench-verdict-must-not-promote-process-completeness")
+def m20() -> bool:
+    """Assert DIRECTLY on `process`/`tier` (Wave A Lane E, mirroring M18): a `ProcessFitStatus.FITS` bench
+    verdict must never substitute for -- or promote -- the SEPARATE literature-procedure completeness axis.
+    Fixture: the real declared-but-incomplete isopentyl step (M7's fixture) carries a `FITS` bench-verdict
+    probe; the honest evaluator ignores it entirely (`process` stays UNSATISFIED, tier stays capped at
+    `CONDITIONS_SUPPORTED`) because readiness never reads `ProcessFitStatus`/`available_equipment`/ΔG at all."""
+    step = _isopentyl_step_conditions_supported()  # M7's declared-but-incomplete fixture
+    object.__setattr__(step, "_fit_status_probe", "FITS")
+    real_sr = evaluate_step(step)
+    real_ok = real_sr.process is ObligationStatus.UNSATISFIED and real_sr.tier == CONDITIONS_SUPPORTED
+    real_obligations = readiness._process_and_workup_obligations
+
+    def mutant_obligations(step):  # BUG: a FITS bench-verdict probe short-circuits process to SATISFIED
+        if getattr(step, "_fit_status_probe", None) == "FITS":
+            locator = step.envelope.procedure.source_locator if step.envelope.procedure is not None else None
+            return ObligationStatus.SATISFIED, ObligationStatus.SATISFIED, locator, ()
+        return real_obligations(step)
+
+    with _patch(readiness, "_process_and_workup_obligations", mutant_obligations):
+        mutant_sr = evaluate_step(step)
+    mutant_bad = mutant_sr.process is ObligationStatus.SATISFIED and mutant_sr.tier == PROCESS_SPECIFIED
+    return real_ok and mutant_bad
+
+
 def run() -> list:
     results = []
     for name, fn in _MUTANTS:
@@ -420,7 +792,7 @@ def run() -> list:
 
 
 def main() -> int:
-    print("v0.8 readiness mutation gate (M1-M11):")
+    print("v0.8 readiness mutation gate (M1-M20):")
     results = run()
     killed = sum(1 for _, k in results if k)
     print(f"\n{killed}/{len(results)} mutants killed.")

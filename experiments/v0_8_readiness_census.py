@@ -6,8 +6,9 @@ through the real service (`build_recompile_request` -> `run_compilation`), which
 service/dossier consume (Sec 8's "one evaluator" law -- this harness never re-derives its own copy of the
 readiness logic, it just reads off the real answer), and reports, per step: is it a formal candidate (always
 yes -- a built step already passed its conservation cert), is the reaction type recognized (and by which
-class name), is a condition envelope declared/sourced/accepted, is a process requirement present/sourced, is
-workup included -- PLUS four pure OBSERVATIONS that are NOT readiness requirements and never gate a tier:
+class name), is a condition envelope declared/sourced/accepted, is a typed `ProcedureEvidence` attached and
+does it clear `process`/`workup_isolation` (complete + sourced, Round II) -- PLUS four pure OBSERVATIONS
+that are NOT readiness requirements and never gate a tier:
 `handling` (an attention/agitation/equipment note declared on the step's process -- read off the SAME
 `process_requirements` tuple the response already carries), and the route-level `selectivity` / `thermo`
 (feasibility) / `kinetics` verdict strings the response exposes for ranking ONLY (Sec 2: `fit_status`-adjacent
@@ -65,6 +66,18 @@ class Case:
     row: int
     description: str
     routes: tuple  # tuple[_RouteRow, ...]
+
+
+def _procedure_present(sr) -> str:
+    """Whether a typed `ProcedureEvidence` is attached to this step's envelope at all -- read off the SAME
+    `process`/`workup_isolation` obligation axes the ladder already computes, not a second lookup: per
+    `_process_and_workup_obligations`, `process` (and `workup_isolation`) can ONLY be `UNKNOWN` when
+    `step.envelope.procedure is None` (every other branch resolves to SATISFIED/UNSATISFIED/NOT_APPLICABLE),
+    so `process is UNKNOWN` <=> "no procedure evidence declared" -- a clean, already-derived presence marker,
+    not a new axis competing with the readiness gate."""
+    if sr.process is ObligationStatus.UNKNOWN and sr.workup_isolation is ObligationStatus.UNKNOWN:
+        return "absent"
+    return "present"
 
 
 def _handling_observed(process) -> str:
@@ -200,6 +213,7 @@ def render_markdown(cases: list[Case]) -> str:
         for axis in ("reaction_type", "conditions", "process", "workup_isolation")
     }
     handling_counts = {"attached": 0, "absent": 0}
+    procedure_counts = {"present": 0, "absent": 0}
     n_routes = n_steps = 0
 
     for case in cases:
@@ -208,9 +222,9 @@ def render_markdown(cases: list[Case]) -> str:
             lines += ["_no routes returned for this target under the promoted default algebra._", ""]
             continue
         lines += [
-            "| route | step | formal | reaction_type | class | conditions | process | workup | provenance | "
-            "step tier | *handling* |",
-            "|---|---|---|---|---|---|---|---|---|---|---|",
+            "| route | step | formal | reaction_type | class | conditions | process | workup | procedure | "
+            "provenance | step tier | *handling* |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         for r_idx, row in enumerate(case.routes):
             n_routes += 1
@@ -224,15 +238,18 @@ def render_markdown(cases: list[Case]) -> str:
                 )
                 handling = _handling_observed(process)
                 handling_counts[handling] += 1
+                procedure_present = _procedure_present(sr)
+                procedure_counts[procedure_present] += 1
                 prov = ", ".join(sr.provenance) if sr.provenance else "(none)"
                 lines.append(
                     f"| {r_idx} | {s_idx} | {_STATUS_ABBR[sr.formal_candidate]} | "
                     f"{_STATUS_ABBR[sr.reaction_type]} | {sr.reaction_class_name or '(unrecognized)'} | "
                     f"{_STATUS_ABBR[sr.conditions]} | {_STATUS_ABBR[sr.process]} | "
-                    f"{_STATUS_ABBR[sr.workup_isolation]} | {prov} | {sr.tier} | {handling} |"
+                    f"{_STATUS_ABBR[sr.workup_isolation]} | {procedure_present} | {prov} | {sr.tier} | "
+                    f"{handling} |"
                 )
             lines.append(
-                f"| {r_idx} | | | | | | | | | **route tier: {row.readiness.tier}** | "
+                f"| {r_idx} | | | | | | | | | | **route tier: {row.readiness.tier}** | "
                 f"*route verdicts -- selectivity={row.selectivity_verdict}, thermo={row.feasibility_verdict}, "
                 f"kinetics={row.kinetics_verdict}* |"
             )
@@ -254,6 +271,10 @@ def render_markdown(cases: list[Case]) -> str:
             f"| {axis} | {counts['SATISFIED']} | {counts['UNSATISFIED']} | {counts['UNKNOWN']} | {counts['N/A']} |"
         )
     lines += [
+        "",
+        f"- steps with a typed `ProcedureEvidence` attached at all (`procedure`, presence only -- NOT the same "
+        f"as `process`=SATISFIED, which additionally requires completeness + sourcing): "
+        f"present={procedure_counts['present']}, absent={procedure_counts['absent']}",
         "",
         "**Observations (never a readiness obligation, never gate a tier):**",
         "",

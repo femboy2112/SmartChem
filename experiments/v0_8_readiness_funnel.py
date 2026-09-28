@@ -8,11 +8,12 @@ BOTH reported, because they answer different questions ("how many individual obl
 vs "how many complete routes clear the bar").
 
 A shrinking denominator downstream is the EXPECTED, HONEST shape of this funnel -- it measures evidence
-coverage, not a target to hit 100% on. In particular `process-specified` is DARK this round (Sec 5:
-`process_representation_is_complete` is unconditionally `False` -- nothing built today can reach it), so
-that stage's count is 0 for both routes and steps, on every corpus member, always. If a future round lights
-up `PROCESS_SPECIFIED`, this harness's own zero-count assertion is what will visibly break, not silently
-drift.
+coverage, not a target to hit 100% on. As of Round II, `process-specified` is no longer universally dark:
+`procedure_representation_is_complete` (renamed from the old `process_representation_is_complete`, and now
+reading `step.envelope.procedure` -- a typed `ProcedureEvidence`, not the legacy `process`) is honestly
+satisfiable, and the isopentyl-acetate route (full sourced preparative procedure) is expected to light it
+up. So this harness no longer pins that stage at zero -- it asserts the honestly-measured floor (>= 1) and
+lets the real count speak, still monotone-checked against the stages above it.
 
 Run:  .venv/bin/python experiments/v0_8_readiness_funnel.py
 """
@@ -95,6 +96,9 @@ def _step_clears(step_readiness, stage: str) -> bool:
             step_readiness.reaction_type is ObligationStatus.SATISFIED
             and step_readiness.conditions is ObligationStatus.SATISFIED
             and step_readiness.process is ObligationStatus.SATISFIED
+            and step_readiness.workup_isolation in (
+                ObligationStatus.SATISFIED, ObligationStatus.NOT_APPLICABLE,
+            )
         )
     raise ValueError(f"unknown stage {stage!r}")
 
@@ -164,10 +168,12 @@ def run() -> tuple[list, dict]:
         funnel["per_route"][CONDITIONS_SUPPORTED] > 0,
         f"{funnel['per_route'][CONDITIONS_SUPPORTED]} routes conditions-supported",
     )
-    # PROCESS_SPECIFIED is DARK by design (Sec 5) -- pinned at exactly zero, both denominators.
+    # PROCESS_SPECIFIED is now REACHABLE (Round II): at least one route (isopentyl acetate's full sourced
+    # preparative procedure) is expected to honestly light it up -- this is the measured floor, not a
+    # ceiling; it must never be gamed back down to a hardcoded number.
     check(
-        r, "process-specified stage stays DARK (Sec 5: process_representation_is_complete is always False)",
-        funnel["per_route"][PROCESS_SPECIFIED] == 0 and funnel["per_step"][PROCESS_SPECIFIED] == 0,
+        r, "process-specified stage is reachable (Round II: >= 1, no longer pinned dark)",
+        funnel["per_route"][PROCESS_SPECIFIED] >= 1 and funnel["per_step"][PROCESS_SPECIFIED] >= 1,
         f"routes={funnel['per_route'][PROCESS_SPECIFIED]}, steps={funnel['per_step'][PROCESS_SPECIFIED]}",
     )
     return r, funnel
@@ -186,7 +192,7 @@ def render_markdown(results: list, funnel: dict) -> str:
         "|---|---|---|",
     ]
     for stage in _STAGES:
-        note = " *(DARK -- Sec 5)*" if stage == PROCESS_SPECIFIED else ""
+        note = " *(reachable, Round II)*" if stage == PROCESS_SPECIFIED else ""
         lines.append(f"| {stage}{note} | {funnel['per_route'][stage]} | {funnel['per_step'][stage]} |")
     lines += [
         "",
@@ -201,7 +207,8 @@ def render_markdown(results: list, funnel: dict) -> str:
         f"**{passed}/{len(results)} properties hold.** "
         + (
             "The funnel is monotone non-increasing on both denominators, the middle stages are genuinely "
-            "populated by the forcing corpus (not vacuous), and PROCESS_SPECIFIED stays pinned dark."
+            "populated by the forcing corpus (not vacuous), and PROCESS_SPECIFIED is honestly reachable "
+            "(>= 1, Round II)."
             if passed == len(results)
             else "A property FAILED -- the funnel is not sound as stated."
         ),

@@ -241,6 +241,48 @@ reaction-vouched row):
   `smartchem/` touched on disk.
 - `~/.local/bin/ruff check` clean on all three files.
 
+**v0.8 REAL ROUTE DOSSIERS, ROUND II — PROCEDURE-EVIDENCE CLOSURE + VERIFIABLE CANONICAL TRANSPORT
+(2026-09-27, same branch, IN PROGRESS — package version still stays `0.7.0a1`; the bump/merge is the
+integration authority's call, per plan `docs/research/V0_8_ROUND_II_PROCEDURE_EVIDENCE_PLAN_v0.1.md`).**
+Ugh, okay, the wall Round I left standing finally came down: `PROCESS_SPECIFIED` is now REACHABLE, honestly,
+for at least one real corpus route. `smartchem/procedure_evidence.py` (a NEW typed `ProcedureEvidence`
+model hung off `ConditionEnvelope.procedure`, digest-covered and replay-reconstructed) plus the renamed
+readiness predicate `procedure_representation_is_complete(evidence)` (superseding the old
+`process_representation_is_complete(process)`, which read the legacy `ProcessRequirements` and was a hard
+`return False`) close Blocker B; a new response `transport_mode` (`CANONICAL_VERIFIED`/`THIN_ADVISORY`,
+folded into `result_digest`, default now `include_replay=True`) closes Blocker A. The Round II
+release-evidence layer (this writer's lane) re-measured everything against the real corpus rather than
+trusting the old pinned-DARK numbers:
+- `experiments/v0_8_readiness_funnel.py`: `PROCESS_SPECIFIED` is no longer pinned at zero — the assertion now
+  reads the honestly-MEASURED floor (`>= 1`, never a hardcoded ceiling). MEASURED on the real forcing corpus
+  through the promoted default algebra: routes 44 → 7 reaction-vouched → 2 conditions-supported → **1
+  process-specified** (steps 102 → 24 → 2 → **1**) — the isopentyl-acetate route's full sourced preparative
+  procedure (reflux → extraction → MgSO₄ dry → fractional distillation) is the real positive. **12/12 funnel
+  properties hold** (monotonicity both denominators, both middle stages non-vacuous, PROCESS_SPECIFIED now
+  reachable rather than dark).
+- `experiments/v0_8_readiness_census.py`: gained a `procedure` presence column (per step: is a typed
+  `ProcedureEvidence` attached at all, read off the SAME `process`/`workup_isolation` axes the ladder already
+  computes — no second lookup) alongside the existing obligation axes; regenerated against live code.
+- `experiments/v0_8_mutation_calibration.py`: **M12-M20 added, 20/20 mutants killed** (M1-M11 preserved, two
+  Round-I fixtures repaired because Round II's own completed procedure retired the scenario they relied on —
+  M7/M8 now tamper ONE field of the real, honestly-complete isopentyl `ProcedureEvidence` via
+  `dataclasses.replace` rather than hand-building a stand-in). New: M12 a canonical above-FORMAL payload with
+  its replay stripped (or a forged upward readiness claim under an unmoved replay) is refused on load; M13 a
+  declared-but-unsourced workup does not count as SATISFIED; M14 the retired legacy
+  `process.workup_included` boolean cannot satisfy the new axis; M15 a silently-skipped whole-procedure field
+  is not silently complete; M16 free-text `evidence_scope` prose cannot be parsed into structure; M17 the
+  envelope's OWN conditions source cannot launder the procedure's separate sourcing requirement; M18
+  PROCESS_SPECIFIED cannot drop the workup gate (asserted DIRECTLY on `StepReadiness.tier`, never a
+  round-trip, per Wave A Lane E); M19 a same-formula isomer cannot borrow procedure evidence through the
+  isomer-blind path; M20 a `ProcessFitStatus.FITS` bench verdict cannot promote procedure completeness
+  (asserted directly, mirroring M18).
+- Two pre-existing committed harnesses' `FROZEN_HASH` pins reconciled against the Round II envelope shift
+  (`ExperimentStep.digest` now covers the new `procedure` field): `experiments/redox_displacement_probe.py`
+  regenerated (chemistry unchanged, `validate()` confirmed FIRST); `experiments/poor_man_tamper_hardening_probe.py`
+  needed no hash change at all — only a `response_to_payload(..., include_replay=False)` fix so its
+  "thin transport" probe actually stays thin now that canonical is the new default.
+- `~/.local/bin/ruff check` clean on every touched file.
+
 **RULE-CALCULUS COURSE CORRECTION (2026-09-19, PR #81) — a checkable structural bond-rewrite layer, plus the audit
 that corrects the genericity audit's overreach.** Entirely ADDITIVE (13 files, 0 modifications to existing behaviour):
 a finite atom-preserving bond-rule kernel (`smartchem/rule_calculus.py`; independent table-replay verifier, per-atom

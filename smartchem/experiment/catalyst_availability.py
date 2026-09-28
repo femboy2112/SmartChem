@@ -59,6 +59,7 @@ __all__ = [
     "KITCHEN_TIERS",
     "catalyst_availability",
     "is_kitchen_obtainable",
+    "is_obtainable_under",
     "route_catalyst_blockers",
 ]
 
@@ -189,23 +190,45 @@ def catalyst_availability(name: str) -> Availability | None:
     return None
 
 
+def is_obtainable_under(tier: Availability | None, allowed_tiers: frozenset[Availability]) -> bool:
+    """True ONLY for a tier positively recognized as obtainable under ``allowed_tiers`` -- the profile-relative form
+    (FREEZE decision 3) of the burden-of-proof flip's positive-classification test.  ``None`` (unrecognized) is
+    always False regardless of ``allowed_tiers``: this function answers "is a POSITIVELY CLASSIFIED tier inside the
+    allowed set", never "is the absence of a classification excusable" -- that call stays with the caller
+    (:func:`route_catalyst_blockers`), which is where the burden-of-proof flip itself lives."""
+    return tier is not None and tier in allowed_tiers
+
+
 def is_kitchen_obtainable(tier: Availability | None) -> bool:
     """True ONLY for a tier positively recognized as layperson-obtainable (grocery/pharmacy/hardware/pool-garden).
-    ``None`` (unrecognized) and ``INDUSTRIAL`` are both False -- an unrecognized catalyst is never assumed kitchen."""
-    return tier is not None and tier in KITCHEN_TIERS
+    ``None`` (unrecognized) and ``INDUSTRIAL`` are both False -- an unrecognized catalyst is never assumed kitchen.
+
+    The kitchen-specific instance of :func:`is_obtainable_under`; kept as its own name because it is the DEFAULT
+    profile every existing caller (and ``route_catalyst_blockers``'s default parameter) still means."""
+    return is_obtainable_under(tier, KITCHEN_TIERS)
 
 
-def route_catalyst_blockers(route) -> tuple[str, ...]:
-    """The poor-man obtainability blockers for ``route``: one reason string per DECLARED catalyst the kitchen cannot
-    positively obtain, deduplicated and ordered.
+def route_catalyst_blockers(
+    route, allowed_tiers: frozenset[Availability] = KITCHEN_TIERS
+) -> tuple[str, ...]:
+    """The obtainability blockers for ``route`` under ``allowed_tiers``: one reason string per DECLARED catalyst not
+    positively obtainable in that set, deduplicated and ordered.  ``allowed_tiers`` defaults to :data:`KITCHEN_TIERS`
+    -- the poor-man profile -- so every existing call site (unchanged) gets the EXACT prior behavior and message
+    text; a caller with a different capability profile (a lab that owns INDUSTRIAL reagents, or a stricter profile
+    that excludes e.g. POOL_GARDEN) passes its own ``allowed_tiers`` and the SAME algorithm below runs against it
+    (FREEZE decision 3 -- profile-relative obtainability, one implementation).
 
-    The burden-of-proof flip (R50 KILL-1 design-gate fold): a step that declares no catalyst (``catalysts == ()``) is
-    genuine silence and contributes nothing; a declared catalyst contributes a blocker UNLESS it is positively
-    classified kitchen-obtainable.  An INDUSTRIAL catalyst blocks with a precise reason; a declared-but-unrecognized
-    catalyst blocks with an uncertainty reason (never a silent pass -- ``false-VOUCH >> false-UNRECOGNIZED``).  These
-    strings feed :func:`smartchem.service._affordability_frontier`'s ``hard_blockers`` (section-10.4 G6: a hard
-    blocker dominates cost), so a route needing a catalyst the poor man cannot get sinks on the affordability frontier.
+    The burden-of-proof flip (R50 KILL-1 design-gate fold) itself does not change with the profile: a step that
+    declares no catalyst (``catalysts == ()``) is genuine silence and contributes nothing; a declared catalyst
+    contributes a blocker UNLESS it is positively classified obtainable under ``allowed_tiers``.  A catalyst
+    recognized at a tier outside the allowed set blocks with a precise reason; a declared-but-unrecognized catalyst
+    blocks with an uncertainty reason regardless of profile (never a silent pass -- unrecognized stays
+    ``false-VOUCH >> false-UNRECOGNIZED`` no matter who is asking).  These strings feed
+    :func:`smartchem.service._affordability_frontier`'s ``hard_blockers`` (section-10.4 G6: a hard blocker dominates
+    cost), so a route needing a catalyst the caller's profile cannot get sinks on that profile's affordability
+    frontier.
     """
+    is_default_profile = allowed_tiers == KITCHEN_TIERS
     reasons: set[str] = set()
     for step in route.steps:
         for cat in step.envelope.catalysts:
@@ -214,6 +237,13 @@ def route_catalyst_blockers(route) -> tuple[str, ...]:
                 reasons.add(
                     f"declared catalyst {cat!r} of uncertain obtainability -- cannot certify kitchen-reachable"
                 )
-            elif not is_kitchen_obtainable(tier):
-                reasons.add(f"catalyst not kitchen-obtainable: {cat} [{tier.value}]")
+            elif not is_obtainable_under(tier, allowed_tiers):
+                if is_default_profile:
+                    # Byte-stable on the default (kitchen) path: existing callers/tests pin this exact wording.
+                    reasons.add(f"catalyst not kitchen-obtainable: {cat} [{tier.value}]")
+                else:
+                    allowed_str = ", ".join(sorted(a.value for a in allowed_tiers))
+                    reasons.add(
+                        f"catalyst not obtainable under allowed tiers ({allowed_str}): {cat} [{tier.value}]"
+                    )
     return tuple(sorted(reasons))

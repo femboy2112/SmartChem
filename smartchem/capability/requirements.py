@@ -33,11 +33,16 @@ threshold:
   the real comparison against a profile's ``ProcessBounds``.
 * ``waste`` -- derived from ``RouteHandling.all_byproducts``/``all_offgases`` + ``Fate`` (never
   ``CostVector.waste_disposal``, which nothing populates).
-* ``procurement`` -- the route's purchasable leaves' curated ``Availability`` tiers via the UNMODIFIED
-  ``smartchem.data.reagents.commodity_for`` lookup. The FULL generalized ``route_catalyst_blockers``/
-  ``allowed_tiers`` wiring (FREEZE decision 3's "procurement generalization") is explicitly a SEPARATE
-  Wave-B file (decision 8, "v09-procurement") -- out of this package's scope; this is the honest, minimal,
-  non-fabricating slice available from already-existing, unmodified functions.
+* ``procurement`` -- carried as ``procurement_catalysts``: one ``(name, tier)`` pair per catalyst the route
+  actually DECLARES (``ConditionEnvelope.catalysts``, every step, deduplicated), ``tier`` resolved through
+  the grounded, UNMODIFIED :func:`~smartchem.experiment.catalyst_availability.catalyst_availability`
+  classifier (``None`` = UNRECOGNIZED -- a fact this projection reports, never launders into "no
+  requirement"). The former leaf-commodity slice (``commodity_for`` over ``route.leaf_inputs``) is
+  RETIRED here: a purchasable leaf's tier is a *material*-sourcing fact already implicit in the material
+  axis's own inventory check, whereas a declared catalyst is a REGENERATED substance the material axis
+  never prices at all -- conflating the two bought nothing and cost this axis its only real teeth (gate
+  #10, Wave-B item 3 "v09-procurement"). Whether that ``(name, tier)`` is actually obtainable is a
+  profile-relative verdict, so it is left un-folded here and decided in :mod:`smartchem.capability.assess`.
 * ``attention_care`` -- ``RouteHandling.care`` (the hazard-driven DEMAND), kept structurally apart from
   the ``process`` axis's operator-declared ``Attention``/``Agitation`` (the CAPABILITY) per decision 2.
 * ``monetary`` -- ``affordability.basket_cost_vector`` over the same leaf inputs (known lower bounds only).
@@ -53,8 +58,9 @@ from dataclasses import dataclass
 
 from ..category import Molecule
 from ..contracts import Digestible
-from ..data.reagents import Availability, commodity_for
+from ..data.reagents import Availability
 from ..experiment.affordability import CostVector, basket_cost_vector
+from ..experiment.catalyst_availability import catalyst_availability
 from ..experiment.equipment import EquipmentKind, equipment_for_step
 from ..experiment.handling import CareLevel, verify_handling
 from ..experiment.step import ExperimentRoute
@@ -161,7 +167,7 @@ class RouteCapabilityRequirements(Digestible):
     containment: "frozenset[ContainmentCapability]"
     measurement: "frozenset[MeasurementCapability]"
     waste: WasteRequirement
-    procurement: "frozenset[Availability]"
+    procurement_catalysts: "tuple[tuple[str, Availability | None], ...]"
     attention_care: CareLevel
     monetary: CostVector
 
@@ -196,10 +202,17 @@ class RouteCapabilityRequirements(Digestible):
             raise TypeError("measurement must be a frozenset of MeasurementCapability values")
         if type(self.waste) is not WasteRequirement:
             raise TypeError("waste must be a WasteRequirement")
-        if type(self.procurement) is not frozenset or any(
-            type(a) is not Availability for a in self.procurement
+        if type(self.procurement_catalysts) is not tuple or any(
+            type(item) is not tuple
+            or len(item) != 2
+            or not isinstance(item[0], str)
+            or not item[0].strip()
+            or (item[1] is not None and type(item[1]) is not Availability)
+            for item in self.procurement_catalysts
         ):
-            raise TypeError("procurement must be a frozenset of Availability values")
+            raise TypeError(
+                "procurement_catalysts must be a tuple of (name: non-empty str, tier: Availability | None) pairs"
+            )
         if type(self.attention_care) is not CareLevel:
             raise TypeError("attention_care must be a CareLevel")
         if type(self.monetary) is not CostVector:
@@ -321,17 +334,24 @@ def _waste_requirement(route: ExperimentRoute) -> WasteRequirement:
     return WasteRequirement(frozenset(categories), tuple(sorted(set(reasons))))
 
 
-def _procurement_requirement(route: ExperimentRoute) -> "frozenset[Availability]":
-    """The curated ``Availability`` tiers of the route's purchasable leaves -- the honest, minimal slice
-    reachable from the UNMODIFIED ``commodity_for`` lookup alone. The full generalized
-    ``route_catalyst_blockers``/``allowed_tiers`` procurement wiring (FREEZE decision 3) is a SEPARATE
-    Wave-B file ("v09-procurement", decision 8 item 3) and out of this package's scope."""
-    tiers: "set[Availability]" = set()
-    for leaf in route.leaf_inputs:
-        commodity = commodity_for(leaf)
-        if commodity is not None:
-            tiers.add(commodity.availability)
-    return frozenset(tiers)
+def _procurement_catalysts_requirement(
+    route: ExperimentRoute,
+) -> "tuple[tuple[str, Availability | None], ...]":
+    """One ``(name, tier)`` pair per catalyst ``route`` actually DECLARES -- every step's
+    ``ConditionEnvelope.catalysts`` (the SAME field :func:`~smartchem.experiment.catalyst_availability.
+    route_catalyst_blockers` iterates), deduplicated first-seen so a catalyst named on two steps costs one
+    entry, not two identical reasons downstream. ``tier`` is resolved through the UNMODIFIED, grounded
+    :func:`~smartchem.experiment.catalyst_availability.catalyst_availability` classifier; ``None`` is the
+    honest UNRECOGNIZED verdict -- reported here, never quietly promoted to "no requirement" (that
+    promotion is exactly the M17 hole this field exists to close). Whether a given tier is actually
+    obtainable is profile-relative and stays out of this PURE projection -- see
+    :mod:`smartchem.capability.assess`."""
+    seen: "dict[str, Availability | None]" = {}
+    for step in route.steps:
+        for cat in step.envelope.catalysts:
+            if cat not in seen:
+                seen[cat] = catalyst_availability(cat)
+    return tuple(seen.items())
 
 
 def compile_capability_requirements(route: ExperimentRoute) -> RouteCapabilityRequirements:
@@ -357,7 +377,7 @@ def compile_capability_requirements(route: ExperimentRoute) -> RouteCapabilityRe
         containment=_containment_requirement(route),
         measurement=frozenset(),
         waste=_waste_requirement(route),
-        procurement=_procurement_requirement(route),
+        procurement_catalysts=_procurement_catalysts_requirement(route),
         attention_care=handling_care,
         monetary=basket_cost_vector(list(route.leaf_inputs)),
     )

@@ -25,6 +25,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..contracts import Digestible
+from ..data.reagents import Availability
+from ..experiment.catalyst_availability import is_obtainable_under
 from ..experiment.readiness import PROCESS_SPECIFIED, RouteReadiness, tier_rank
 from ..experiment.stock import FitnessVerdict, StockMaterial
 from ..process_constraints import ProcessBounds, ProcessFitStatus, evaluate_process_requirements
@@ -132,9 +134,11 @@ class CapabilityAssessment(Digestible):
 def _membership_axis(
     required: "frozenset", available: "frozenset", *, axis: str, extra_reasons: "tuple[str, ...]" = (),
 ) -> AxisResult:
-    """The shared subset-check shape used by equipment/containment/waste/measurement/procurement:
+    """The shared subset-check shape used by equipment/containment/waste/measurement:
     empty requirement -> NOT_APPLICABLE; every required member present -> FIT; anything missing -> BLOCKED
-    (named). Never a fuzzy/partial credit -- a closed-vocabulary subset check, nothing softer."""
+    (named). Never a fuzzy/partial credit -- a closed-vocabulary subset check, nothing softer. Procurement
+    is NOT this shape (:func:`_procurement_axis`, below): it needs a per-catalyst uncertain/None reason
+    this generic set-difference has no room for, so it stayed off the shared path on purpose."""
     if not required:
         return AxisResult(
             CapabilityStatus.NOT_APPLICABLE,
@@ -175,6 +179,49 @@ def _equipment_axis(
             ),
         )
     return _membership_axis(required, available, axis="equipment")
+
+
+def _procurement_axis(
+    catalysts: "tuple[tuple[str, Availability | None], ...]",
+    allowed_tiers: "frozenset[Availability]",
+) -> AxisResult:
+    """Gate #10, profile-relative procurement: does the declared profile's ``allowed_tiers`` actually
+    reach every catalyst the route names? No declared catalyst at all -> ``NOT_APPLICABLE`` (silence is
+    not a claim). A declared catalyst this projection could not positively classify (``tier is None``)
+    BLOCKS unconditionally, no matter how generous the profile -- an open question about a substance never
+    gets waved through on a technicality (kills M17: an unrecognized catalyst is not "poor-man-obtainable"
+    by default, it is UNCERTIFIABLE). A recognized tier the profile never declared reach for BLOCKS, named
+    (kills M18: a research-lab profile that only ever asked for non-industrial tiers does not get an
+    industrial catalyst for free just because a lab exists). Weakest link over the declared set -- one
+    unobtainable catalyst sinks the whole axis, same discipline as every other membership check here."""
+    if not catalysts:
+        return AxisResult(
+            CapabilityStatus.NOT_APPLICABLE, ("procurement: no catalyst was declared for this route",),
+        )
+    reasons: "list[str]" = []
+    blocked = False
+    for name, tier in catalysts:
+        if tier is None:
+            blocked = True
+            reasons.append(
+                f"procurement: declared catalyst {name!r} is of uncertain obtainability -- cannot certify "
+                "against any declared profile (fail-closed on an unrecognized substance)"
+            )
+        elif not is_obtainable_under(tier, allowed_tiers):
+            blocked = True
+            allowed_str = ", ".join(sorted(a.value for a in allowed_tiers)) or "none"
+            reasons.append(
+                f"procurement: declared catalyst {name!r} is tier {tier.value!r}, not among the declared "
+                f"profile's allowed procurement tiers ({allowed_str})"
+            )
+        else:
+            reasons.append(
+                f"procurement: declared catalyst {name!r} is tier {tier.value!r}, within the declared "
+                "profile's allowed procurement tiers"
+            )
+    if blocked:
+        return AxisResult(CapabilityStatus.BLOCKED, tuple(reasons))
+    return AxisResult(CapabilityStatus.FIT, tuple(reasons))
 
 
 def _material_item_status(
@@ -412,7 +459,7 @@ def assess(
     waste = _membership_axis(
         requirements.waste.categories, profile.waste_handling, axis="waste", extra_reasons=requirements.waste.reasons,
     )
-    procurement = _membership_axis(requirements.procurement, profile.procurement, axis="procurement")
+    procurement = _procurement_axis(requirements.procurement_catalysts, profile.procurement)
     attention_care = _attention_care_axis(requirements.attention_care)
     monetary = _monetary_axis(requirements.monetary, profile.budget)
 

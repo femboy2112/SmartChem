@@ -30,7 +30,7 @@ from smartchem.capability.requirements import (
     compile_capability_requirements,
 )
 from smartchem.constraints import PhysicalBounds
-from smartchem.data.reagents import commodity_for
+from smartchem.data.reagents import Availability, commodity_for
 from smartchem.experiment import routes as rt
 from smartchem.experiment.affordability import CostVector
 from smartchem.experiment.handling import CareLevel
@@ -126,7 +126,7 @@ def _empty_requirements(
     containment=frozenset(),
     measurement=frozenset(),
     waste=None,
-    procurement=frozenset(),
+    procurement_catalysts=(),
     attention_care=CareLevel.UNKNOWN,
     monetary=None,
 ) -> RouteCapabilityRequirements:
@@ -140,7 +140,7 @@ def _empty_requirements(
         containment=containment,
         measurement=measurement,
         waste=waste if waste is not None else WasteRequirement(frozenset(), ()),
-        procurement=procurement,
+        procurement_catalysts=procurement_catalysts,
         attention_care=attention_care,
         monetary=monetary if monetary is not None else CostVector(),
     )
@@ -470,6 +470,64 @@ def test_the_real_isopentyl_route_derives_a_fume_hood_containment_requirement():
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
     assert requirements.containment == frozenset({ContainmentCapability.FUME_HOOD})
+
+
+# -- 6. procurement: profile-relative catalyst obtainability (gate #10) -----------------------------------------
+# Built DIRECTLY on RouteCapabilityRequirements.procurement_catalysts -- no real route needs to declare a
+# catalyst to exercise this axis; the fold under test is entirely inside assess()'s _procurement_axis.
+
+def test_procurement_industrial_catalyst_blocks_under_a_kitchen_profile_but_fits_under_a_lab_that_declares_it():
+    """M18's exact shape: a recognized INDUSTRIAL-tier catalyst is BLOCKED against a profile whose
+    procurement never reached that tier, and FIT the moment a profile's declared ``procurement`` set
+    actually includes INDUSTRIAL -- a lab profile never gets an industrial catalyst for free just because
+    it is otherwise well-equipped."""
+    requirements = _empty_requirements(procurement_catalysts=(("Pd/C", Availability.INDUSTRIAL),))
+    kitchen_profile = _empty_profile(procurement=frozenset({Availability.GROCERY, Availability.HARDWARE}))
+    lab_profile = _empty_profile(procurement=frozenset({Availability.HARDWARE, Availability.INDUSTRIAL}))
+
+    blocked = assess(kitchen_profile, requirements, _process_specified_route_readiness())
+    assert blocked.procurement.status is CapabilityStatus.BLOCKED
+    assert "Pd/C" in " ".join(blocked.procurement.reasons)
+    assert blocked.overall is CapabilityStatus.BLOCKED
+
+    fit = assess(lab_profile, requirements, _process_specified_route_readiness())
+    assert fit.procurement.status is CapabilityStatus.FIT
+    assert fit.overall is CapabilityStatus.FIT
+
+
+def test_procurement_unrecognized_catalyst_blocks_under_every_profile_even_a_maximal_one():
+    """M17's exact shape (the fail-closed law): a declared catalyst this projection could not positively
+    classify (``tier is None``) BLOCKS regardless of how permissive ``allowed_tiers`` is -- even a profile
+    declaring EVERY ``Availability`` tier never gets to vouch for a substance nobody could identify."""
+    requirements = _empty_requirements(procurement_catalysts=(("a mystery catalyst nobody has named before", None),))
+    maximal_profile = _empty_profile(procurement=frozenset(Availability))
+    assessment = assess(maximal_profile, requirements, _process_specified_route_readiness())
+    assert assessment.procurement.status is CapabilityStatus.BLOCKED
+    assert "mystery catalyst" in " ".join(assessment.procurement.reasons)
+    assert assessment.overall is CapabilityStatus.BLOCKED
+
+
+def test_procurement_no_declared_catalyst_is_not_applicable():
+    """Genuine silence (``catalysts == ()`` on every step) is not a claim either way -- NOT_APPLICABLE,
+    never a fabricated FIT and never a fabricated BLOCKED."""
+    requirements = _empty_requirements()  # procurement_catalysts=() by default
+    profile = _empty_profile(procurement=frozenset())  # even a profile declaring NO tiers at all
+    assessment = assess(profile, requirements, _process_specified_route_readiness())
+    assert assessment.procurement.status is CapabilityStatus.NOT_APPLICABLE
+    assert assessment.overall is CapabilityStatus.FIT
+
+
+def test_procurement_grocery_catalyst_fits_under_the_poor_man_kitchen_tiers():
+    """The positive case a poor-man kitchen bench actually needs: a catalyst recognized at GROCERY tier is
+    obtainable under the four kitchen-adjacent tiers (mirrors ``catalyst_availability.KITCHEN_TIERS``)."""
+    kitchen_tiers = frozenset({
+        Availability.GROCERY, Availability.PHARMACY, Availability.HARDWARE, Availability.POOL_GARDEN,
+    })
+    requirements = _empty_requirements(procurement_catalysts=(("citric acid", Availability.GROCERY),))
+    profile = _empty_profile(procurement=kitchen_tiers)
+    assessment = assess(profile, requirements, _process_specified_route_readiness())
+    assert assessment.procurement.status is CapabilityStatus.FIT
+    assert assessment.overall is CapabilityStatus.FIT
 
 
 # -- CapabilityAssessment shape sanity --------------------------------------------------------------------------

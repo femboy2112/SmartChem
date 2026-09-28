@@ -24,7 +24,7 @@ from smartchem.experiment.readiness import (
     StepReadiness,
     evaluate_route,
     evaluate_step,
-    process_representation_is_complete,
+    procedure_representation_is_complete,
 )
 from smartchem.experiment.routes import search_routes
 from smartchem.experiment.step import ExperimentStep
@@ -43,13 +43,28 @@ def _mol(name: str):
 # --- corpus helpers (real search, matching plan Sec 9's forcing corpus) --------------------------
 
 def _methyl_salicylate_step() -> ExperimentStep:
-    """Row 5: recognized + sourced, workup_included=False -> the clean CONDITIONS_SUPPORTED ceiling."""
+    """Row 5: recognized + sourced conditions, but the source is a qualitative smell-test with NO
+    preparative procedure -> no ProcedureEvidence -> the clean CONDITIONS_SUPPORTED ceiling."""
     result = search_routes(
         _mol("methyl salicylate"), reagents=(_mol("water"), _mol("methanol")),
         available=(_mol("salicylic acid"),), max_depth=1,
     )
     assert len(result.routes) == 1 and len(result.routes[0].steps) == 1
     return result.routes[0].steps[0]
+
+
+def _isopentyl_acetate_step() -> ExperimentStep:
+    """0.8 Round II positive: recognized + sourced conditions + a COMPLETE, sourced ProcedureEvidence
+    -> the real PROCESS_SPECIFIED route."""
+    result = search_routes(
+        _mol("isopentyl acetate"), reagents=(_mol("water"), _mol("acetic acid")),
+        available=(_mol("isopentyl alcohol"),), max_depth=1,
+    )
+    for route in result.routes:
+        for step in route.steps:
+            if step.envelope.procedure is not None:
+                return step
+    raise AssertionError("expected a sourced isopentyl-acetate step carrying procedure evidence")
 
 
 def _paracetamol_anhydride_step():
@@ -103,16 +118,18 @@ def test_obligation_status_is_its_own_enum_not_reused():
 
 # --- row 5: methyl salicylate -----------------------------------------------------------------
 
-def test_methyl_salicylate_is_conditions_supported_with_unsatisfied_workup():
+def test_methyl_salicylate_is_conditions_supported_with_unknown_process_and_workup():
     step = _methyl_salicylate_step()
     readiness = evaluate_step(step)
     assert readiness.formal_candidate is ObligationStatus.SATISFIED
     assert readiness.reaction_type is ObligationStatus.SATISFIED
     assert readiness.reaction_class_name == recognize_reaction_type(step)
     assert readiness.conditions is ObligationStatus.SATISFIED
-    assert readiness.workup_isolation is ObligationStatus.UNSATISFIED
-    assert readiness.process is ObligationStatus.UNSATISFIED  # DARK this round -- never SATISFIED
-    assert readiness.tier == CONDITIONS_SUPPORTED
+    # the source carries no preparative procedure (only a qualitative detection) -> no ProcedureEvidence.
+    assert step.envelope.procedure is None
+    assert readiness.process is ObligationStatus.UNKNOWN
+    assert readiness.workup_isolation is ObligationStatus.UNKNOWN
+    assert readiness.tier == CONDITIONS_SUPPORTED  # capped by process, exactly the sourced-but-incomplete control
     assert readiness.provenance  # the accepted source locator backing conditions=SATISFIED
     assert any("workup_isolation" in o for o in readiness.open_obligations)
 
@@ -129,9 +146,12 @@ def test_paracetamol_anhydride_step_is_non_monotonic_load_bearing_orthogonality(
     # the coarse tier is capped by the weaker axis -- conditions being SATISFIED does not leak upward.
     assert readiness.tier == FORMAL_CANDIDATE
     assert any("reaction_type" in o for o in readiness.open_obligations)
-    # the workup record IS described here (unlike methyl salicylate) -- also visible, also not promoting the tier.
+    # 0.8 Round II, one rung higher: this step now carries a COMPLETE, SOURCED procedure, so BOTH
+    # process AND workup_isolation are visibly SATISFIED -- yet the coarse tier is STILL FORMAL_CANDIDATE
+    # because reaction_type is unrecognized. Richer evidence, unmoved tier: the non-monotonicity, sharpened.
+    assert readiness.process is ObligationStatus.SATISFIED
     assert readiness.workup_isolation is ObligationStatus.SATISFIED
-    assert readiness.provenance  # conditions=SATISFIED still carries its citation
+    assert readiness.provenance  # conditions=SATISFIED and the procedure's own citation
 
 
 # --- row 1: Diels-Alder (reaction-vouched, conditions unknown) ---------------------------------
@@ -222,16 +242,72 @@ def test_evaluate_route_aggregates_a_real_two_step_route_by_min():
     )
 
 
-# --- PROCESS_SPECIFIED stays dark ---------------------------------------------------------------
+# --- PROCESS_SPECIFIED: the isopentyl positive + the guards that keep it honest -----------------
 
-def test_process_specified_is_unreachable_this_round():
-    assert process_representation_is_complete(None) is False
+def test_isopentyl_acetate_reaches_process_specified():
+    step = _isopentyl_acetate_step()
+    readiness = evaluate_step(step)
+    assert readiness.reaction_type is ObligationStatus.SATISFIED
+    assert readiness.conditions is ObligationStatus.SATISFIED
+    assert readiness.process is ObligationStatus.SATISFIED
+    assert readiness.workup_isolation is ObligationStatus.SATISFIED
+    assert readiness.tier == PROCESS_SPECIFIED  # the round's real, benign, sourced positive
+    # the procedure's OWN accepted locator backs the process claim (never the envelope's conditions DOI)
+    assert step.envelope.procedure is not None
+    assert step.envelope.procedure.source_locator in readiness.provenance
+
+
+def test_process_specified_stays_below_for_the_controls():
+    # methyl salicylate (no procedure) and Diels-Alder (no declared conditions) never reach the top rung.
     for builder in (_methyl_salicylate_step, _paracetamol_anhydride_step, _diels_alder_step):
-        step = builder()
-        assert step.envelope.process is None or process_representation_is_complete(step.envelope.process) is False
-        readiness = evaluate_step(step)
+        readiness = evaluate_step(builder())
         assert readiness.tier != PROCESS_SPECIFIED
-        assert readiness.process is not ObligationStatus.SATISFIED
+
+
+def test_completeness_predicate_reads_none_and_incomplete_evidence():
+    from smartchem.decompiler_conditions import _ISOPENTYL_PROCEDURE
+    from smartchem.procedure_evidence import EvidenceField
+
+    assert procedure_representation_is_complete(None) is False
+    assert procedure_representation_is_complete(_ISOPENTYL_PROCEDURE) is True
+    # blank out one required whole-procedure field -> incomplete, even though the object is well-formed.
+    import dataclasses
+
+    gutted = dataclasses.replace(_ISOPENTYL_PROCEDURE, purification=EvidenceField.unknown())
+    assert procedure_representation_is_complete(gutted) is False
+
+
+def test_workup_gate_blocks_process_specified_when_workup_unsatisfied():
+    # M18 (plan D4): even with reaction_type/conditions/process all SATISFIED, an UNSATISFIED workup caps the
+    # tier at CONDITIONS_SUPPORTED. The tier @property enforces this by construction over the closed enum.
+    r = StepReadiness(
+        formal_candidate=ObligationStatus.SATISFIED,
+        reaction_type=ObligationStatus.SATISFIED,
+        reaction_class_name="acyl condensation (esterification/amidation)",
+        conditions=ObligationStatus.SATISFIED,
+        process=ObligationStatus.SATISFIED,
+        workup_isolation=ObligationStatus.UNSATISFIED,
+        provenance=("https://example.org/x",),
+        open_obligations=(),
+    )
+    assert r.tier == CONDITIONS_SUPPORTED
+
+
+def test_a_complete_but_unsourced_procedure_is_not_process_satisfied():
+    # M13/M17: completeness alone never earns process/workup -- the accepted-source conjunct is mandatory.
+    import dataclasses
+
+    from smartchem.decompiler_conditions import _ISOPENTYL_PROCEDURE
+
+    step = _isopentyl_acetate_step()
+    unsourced = dataclasses.replace(_ISOPENTYL_PROCEDURE, source=None)
+    envelope = dataclasses.replace(step.envelope, procedure=unsourced)
+    stripped = dataclasses.replace(step, envelope=envelope)
+    readiness = evaluate_step(stripped)
+    assert procedure_representation_is_complete(unsourced) is True  # still structurally complete
+    assert readiness.process is ObligationStatus.UNSATISFIED         # ... but not sourced -> not SATISFIED
+    assert readiness.workup_isolation is ObligationStatus.UNSATISFIED
+    assert readiness.tier == CONDITIONS_SUPPORTED
 
 
 def test_step_readiness_and_route_readiness_are_digestible_and_stable():

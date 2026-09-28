@@ -29,10 +29,16 @@ from enum import Enum
 from typing import TYPE_CHECKING, Iterable
 
 from ..contracts import Digestible
+from ..procedure_evidence import (
+    WHOLE_PROCEDURE_FIELDS,
+    EvidenceFieldStatus,
+    OperationKind,
+    OperationRole,
+)
 
 if TYPE_CHECKING:
     from ..identity import IdentityLoss
-    from ..process_constraints import ProcessRequirements
+    from ..procedure_evidence import EvidenceField, ProcedureEvidence
     from .step import ExperimentRoute, ExperimentStep
 
 __all__ = [
@@ -46,7 +52,7 @@ __all__ = [
     "READINESS_TIERS",
     "tier_rank",
     "min_tier",
-    "process_representation_is_complete",
+    "procedure_representation_is_complete",
     "evaluate_step",
     "evaluate_route",
 ]
@@ -66,10 +72,11 @@ class ObligationStatus(str, Enum):
 
 
 #: The total order of coarse readiness tiers (weakest first). Cumulative: a step earns tier N only
-#: by first earning every tier below it (Sec 4). ``PROCESS_SPECIFIED`` is defined but DARK this
-#: round (Sec 5) -- no record meets :func:`process_representation_is_complete`, so nothing built
-#: today reaches it; it stays in the vocabulary so a future round can light it up without a
-#: renegotiated wire format.
+#: by first earning every tier below it (Sec 4). ``PROCESS_SPECIFIED`` is REACHABLE as of 0.8 Round II:
+#: a step whose reaction type is vouched, conditions are sourced, and typed :class:`ProcedureEvidence` is
+#: both COMPLETE (:func:`procedure_representation_is_complete`) and SOURCED, with its workup/isolation
+#: obligation discharged, earns it (e.g. the isopentyl-acetate esterification). Routes with only
+#: sourced conditions, or an unrecognized reaction type, stay below it.
 FORMAL_CANDIDATE = "FORMAL_CANDIDATE"
 REACTION_VOUCHED = "REACTION_VOUCHED"
 CONDITIONS_SUPPORTED = "CONDITIONS_SUPPORTED"
@@ -96,20 +103,44 @@ def min_tier(tiers: Iterable[str]) -> str:
     return min(names, key=tier_rank)
 
 
-def process_representation_is_complete(process: "ProcessRequirements | None") -> bool:
-    """Whether ``process`` is a COMPLETE bench-procedure representation -- the sufficient predicate
-    for the ``process`` obligation (Sec 5, FROZEN: DARK this round).
+_THERMAL_REACTION_KINDS = (OperationKind.HEAT, OperationKind.COOL, OperationKind.HOLD)
 
-    ``ProcessRequirements.is_sourced`` is necessary but not remotely sufficient: today's typed
-    record has no structured field for scale/amounts/assay, addition order or rate, a reaction
-    endpoint, a quench step, purification (distinct from ``workup_included``), analytical/
-    acceptance criteria, waste routing, equipment PRESSURE/TEMPERATURE ratings (only whole-step
-    extrema are declared), or emergency controls -- all of it lives, if anywhere, as unstructured
-    free-text ``provenance``. So: always ``False``. Not "false until we get around to it" -- false
-    because the fields this predicate would need to inspect do not exist yet. The day they do,
-    this is the one place that flips, and every caller downstream just starts telling the truth.
+
+def _field_unknown(fld: "EvidenceField | None") -> bool:
+    return fld is None or fld.status is EvidenceFieldStatus.UNKNOWN_MISSING
+
+
+def procedure_representation_is_complete(evidence: "ProcedureEvidence | None") -> bool:
+    """Whether ``evidence`` is a COMPLETE bench-procedure representation -- the sufficient (structural)
+    predicate for the ``process`` obligation (plan D3, FROZEN).
+
+    Reads ONLY structured status tags + operation kinds/roles. It NEVER parses free text
+    (``evidence_scope``, an ``EvidenceField.justification``), NEVER infers an omitted quench from
+    chemistry or a purification from phase, NEVER treats source-presence or a legacy
+    ``ProcessRequirements`` boolean as completeness, and NEVER consults
+    ``ProcessFitStatus``/``ProcessBounds``/ΔG/rate/selectivity. Sourcing is a strictly separate,
+    mandatory conjunct enforced by the caller (:func:`_process_and_workup_obligations`) -- completeness
+    alone is necessary, never sufficient, for a ``PROCESS_SPECIFIED`` claim (Lane F KILL 1).
+
+    A procedure is complete when it carries no unresolved omissions, at least one operation, every
+    whole-procedure field RESOLVED (``PRESENT`` or ``EXPLICIT_NOT_APPLICABLE``, never
+    ``UNKNOWN_MISSING``), and every heated/cooled REACTION operation states its thermal condition and
+    when it ends (a duration or an endpoint). ``EXPLICIT_NOT_APPLICABLE`` is only ever a status the
+    source-migration author stamped with a justification; this predicate reads that tag, it does not
+    mint it.
     """
-    return False
+    if evidence is None or evidence.unresolved_omissions or not evidence.operations:
+        return False
+    for name in WHOLE_PROCEDURE_FIELDS:
+        if getattr(evidence, name).status is EvidenceFieldStatus.UNKNOWN_MISSING:
+            return False
+    for op in evidence.operations:
+        if op.role is OperationRole.REACTION and op.kind in _THERMAL_REACTION_KINDS:
+            if _field_unknown(op.temperature):
+                return False
+            if _field_unknown(op.duration) and _field_unknown(op.endpoint):
+                return False
+    return True
 
 
 def _blocked_on_conditions(identity_losses: "Iterable[IdentityLoss]") -> "IdentityLoss | None":
@@ -170,42 +201,71 @@ def _conditions_obligation(
 def _process_and_workup_obligations(
     step: "ExperimentStep",
 ) -> tuple[ObligationStatus, ObligationStatus, str | None, tuple[str, ...]]:
-    """Returns ``(process_status, workup_status, provenance_locator_or_None, open_obligations)``."""
-    process = step.envelope.process
+    """Returns ``(process_status, workup_status, provenance_locator_or_None, open_obligations)``.
+
+    Both obligations read the typed :class:`ProcedureEvidence` on the envelope -- NEVER the
+    ``ProcessRequirements`` resource schema (that is the 0.9 capability gate's input). ``process`` is
+    SATISFIED only when the procedure is BOTH complete (:func:`procedure_representation_is_complete`)
+    AND sourced (an accepted citation); completeness alone never suffices (plan D4 / Lane F KILL 1).
+    ``workup_isolation`` is derived from the structured workup/isolation evidence plus sourcing, never a
+    legacy boolean (Lane D option (a) / M13, M14). Any provenance reported is the PROCEDURE's OWN
+    accepted locator -- never the enclosing envelope's conditions citation (Lane F KILL 1(c)).
+    """
+    procedure = step.envelope.procedure
     open_obligations: list[str] = []
-    if process is None:
+    if procedure is None:
         return (
             ObligationStatus.UNKNOWN, ObligationStatus.UNKNOWN, None,
             (
-                "process: no declared process requirements (unknown)",
-                "workup_isolation: no declared process requirements (unknown)",
+                "process: no declared procedure evidence (unknown)",
+                "workup_isolation: no declared procedure evidence (unknown)",
             ),
         )
 
-    if process_representation_is_complete(process):
+    complete = procedure_representation_is_complete(procedure)
+    sourced = procedure.is_sourced
+    provenance = procedure.source_locator  # the procedure's OWN accepted locator, or None when unsourced
+
+    if complete and sourced:
         process_status = ObligationStatus.SATISFIED
-        provenance = process.source.locator if process.source is not None else None
     else:
         process_status = ObligationStatus.UNSATISFIED
-        provenance = None
-        note = (
-            "process: declared but not a complete bench-procedure representation (scale/addition/"
-            "endpoint/quench/purification/analytical-acceptance/waste/equipment-ratings not "
-            "structurally represented)"
-        )
-        if process.is_sourced:
-            # is_sourced is necessary-not-sufficient (process_constraints.py); say so, but it does
-            # NOT earn provenance -- provenance is reserved for axes that actually reached SATISFIED.
-            note += "; the record IS source-backed, which is necessary but not sufficient"
-        open_obligations.append(note)
+        if not complete:
+            missing = [
+                name for name in WHOLE_PROCEDURE_FIELDS
+                if getattr(procedure, name).status is EvidenceFieldStatus.UNKNOWN_MISSING
+            ]
+            detail = (
+                f"missing/unknown structured field(s): {', '.join(missing)}" if missing
+                else "an operation, reaction thermal condition, or reaction endpoint is unspecified"
+            )
+            open_obligations.append(
+                f"process: declared procedure is not a complete bench representation ({detail})"
+            )
+        if not sourced:
+            open_obligations.append(
+                "process: procedure evidence is not backed by an accepted source citation"
+            )
 
-    workup_status = (
-        ObligationStatus.SATISFIED if process.workup_included else ObligationStatus.UNSATISFIED
-    )
-    if workup_status is ObligationStatus.UNSATISFIED:
-        open_obligations.append("workup_isolation: process record declares workup_included=False")
+    workup = procedure.workup_isolation
+    if sourced and workup.status is EvidenceFieldStatus.PRESENT:
+        workup_status = ObligationStatus.SATISFIED
+    elif sourced and workup.status is EvidenceFieldStatus.EXPLICIT_NOT_APPLICABLE:
+        workup_status = ObligationStatus.NOT_APPLICABLE
+    else:
+        workup_status = ObligationStatus.UNSATISFIED
+        if workup.status is EvidenceFieldStatus.UNKNOWN_MISSING:
+            open_obligations.append("workup_isolation: no structured workup/isolation evidence (unknown)")
+        else:
+            open_obligations.append(
+                "workup_isolation: workup/isolation described but not backed by an accepted source citation"
+            )
 
-    return process_status, workup_status, provenance, tuple(open_obligations)
+    # Provenance is reported only for an axis that actually reached SATISFIED (process or workup).
+    reported = provenance if (
+        process_status is ObligationStatus.SATISFIED or workup_status is ObligationStatus.SATISFIED
+    ) else None
+    return process_status, workup_status, reported, tuple(open_obligations)
 
 
 def evaluate_step(
@@ -323,19 +383,19 @@ class StepReadiness(Digestible):
         """The cumulative coarse projection (Sec 4) -- derived FROM the obligations, never the
         reverse. Each rung requires every rung below it PLUS its own obligation.
 
-        Only reaction_type/conditions/process are branched on: formal_candidate is invariantly
-        SATISFIED (enforced in __post_init__), and workup_isolation is deliberately NON-gating this
-        round (barrier FLAG 2: PROCESS_SPECIFIED is DARK, so the rung workup would gate is unreachable
-        -- workup stays a visible obligation, it just does not move the coarse tier).
-        FORWARD HAZARD: the day a future round flips ``process_representation_is_complete`` to award
-        PROCESS_SPECIFIED, that completeness predicate MUST subsume workup/isolation, or this ladder
-        must grow a workup gate in the SAME commit -- otherwise a workup_isolation=UNSATISFIED step
-        would reach PROCESS_SPECIFIED."""
+        formal_candidate is invariantly SATISFIED (enforced in __post_init__). As of 0.8 Round II the
+        workup/isolation gate is LIVE (the Round-I forward hazard, closed structurally in the same commit
+        that made ``process`` reachable): the final ``PROCESS_SPECIFIED`` return executes iff every guard
+        above is False, in particular iff ``workup_isolation`` is discharged (SATISFIED or NOT_APPLICABLE).
+        So ``process SATISFIED + workup_isolation UNSATISFIED -> PROCESS_SPECIFIED`` is unreachable by
+        construction over the closed ObligationStatus enum -- the M18 kill (plan D4)."""
         if self.reaction_type is not ObligationStatus.SATISFIED:
             return FORMAL_CANDIDATE
         if self.conditions is not ObligationStatus.SATISFIED:
             return REACTION_VOUCHED
         if self.process is not ObligationStatus.SATISFIED:
+            return CONDITIONS_SUPPORTED
+        if self.workup_isolation not in (ObligationStatus.SATISFIED, ObligationStatus.NOT_APPLICABLE):
             return CONDITIONS_SUPPORTED
         return PROCESS_SPECIFIED
 

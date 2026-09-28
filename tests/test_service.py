@@ -426,10 +426,14 @@ class TestSerialization:
             request_from_payload(payload)
 
     def test_response_payload_carries_exit_and_digest(self):
+        from smartchem.service import _transport_bound_result_digest
         resp = run_compilation(build_recompile_request(_ROUTES_FOUND_TARGET, max_depth=3))
         payload = response_to_payload(resp)
         assert payload["exit_code"] == resp.exit_code
-        assert payload["result_digest"] == resp.result_digest
+        # v0.8 Round II (D5): the wire result_digest binds the declared transport_mode (default CANONICAL_VERIFIED).
+        assert payload["result_digest"] == _transport_bound_result_digest(
+            resp.result_digest, payload["transport_mode"]
+        )
 
 
 # -- G. the single shared identity parser (extraction did not regress the CLI) -----------------------------------

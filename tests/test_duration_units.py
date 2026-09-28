@@ -124,14 +124,17 @@ def test_route_replay_refuses_malformed_duration_data(duration, error):
 
 def test_legacy_minute_payload_and_route_identity_are_unchanged():
     # Recorded on 043a3cd before the admission guard: route identity must not change with validation.
+    # v0.8 Round II: the recorded digests move because ConditionEnvelope gained a digest-covered ``procedure`` field
+    # (typed procedure evidence, default None) and the flat codec now emits ``procedure: null`` -- a schema evolution,
+    # NOT a duration-validation change (the point this test guards is still intact: validation left identity alone).
     route = _route()
     env = route.steps[0].envelope
-    assert env.digest == "fe8d6ce76a5f35bf5c50dfa8d058b830c79ffd4295778b292209a05b42bc8bad"
-    assert route.digest == "7c0a7a4e000196ee257278aeae7a54f24a9afa1acd72c12566aec590b73473f6"
+    assert env.digest == "c4e6111719afb03cb2b764ca16d014aef7ec9dabe898eab61759bc6e9ae9e44d"
+    assert route.digest == "7ad8b3a4f851fa0c8c61b67f8419958a5089308a8aebcd017ed676269a080688"
     assert _condition_envelope_to_payload(env) == {
         "temperature": None, "pressure": None, "duration": {"lo": 30.0, "hi": 90.0, "unit": "min"},
         "medium": "", "catalysts": [], "applied_field": "", "status": "EXPERIMENTAL",
-        "provenance": _PROVENANCE, "source": None, "process": None,
+        "provenance": _PROVENANCE, "source": None, "process": None, "procedure": None,
     }
     back = _reconstruct_route(json.loads(json.dumps(_steps_to_replay_payload(route.steps))))
     assert back.digest == route.digest

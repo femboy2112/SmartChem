@@ -161,11 +161,11 @@ def test_verified_admission_is_fail_closed_on_a_missing_payload(monkeypatch):
     """THE DELETION DOOR: the default serialization omits the replay payload (byte-stable).  A verified-admission
     consumer must then REFUSE a FITS route -- it is UNVERIFIED, never admitted, so a stripped payload cannot pass."""
     resp = _fits_response(monkeypatch)
-    default_wire = serialize_response(resp)                                   # include_replay defaults False
-    assert "replay_payload" not in default_wire                              # byte-stable: no payload on the wire
-    deserialize_response(default_wire)                                       # default consumer: fine (legacy)
+    thin_wire = serialize_response(resp, include_replay=False)                # v0.8 D5: the EXPLICIT lean opt-out
+    assert "replay_payload" not in thin_wire                                 # thin: no payload on the wire
+    deserialize_response(thin_wire)                                          # default consumer: fine (advisory)
     with pytest.raises(ValueError, match="no replay_payload|UNVERIFIED"):
-        deserialize_response(default_wire, require_verified_admission=True)
+        deserialize_response(thin_wire, require_verified_admission=True)
 
 
 def test_bare_relabel_of_a_physical_exclusion_to_fits_is_rejected(monkeypatch):
@@ -293,7 +293,8 @@ def test_honest_fits_dag_survives_verified_admission():
 def test_fits_dag_without_payload_is_fail_closed():
     resp = _fits_dag_response()
     with pytest.raises(ValueError, match="no replay_payload|UNVERIFIED"):
-        deserialize_response(serialize_response(resp), require_verified_admission=True)
+        # v0.8 D5: the replay-less wire is now the EXPLICIT thin opt-out; a verified-admission consumer still refuses it.
+        deserialize_response(serialize_response(resp, include_replay=False), require_verified_admission=True)
 
 
 # ======================================================================================================================

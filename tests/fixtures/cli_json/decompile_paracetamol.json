@@ -1074,8 +1074,9 @@
     },
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
-  "result_digest": "a84d3432769f8088d3064c857e83b842730089ca1982bdb6c8c4ba4c994516f8",
-  "schema_version": "smartchem.service/compilation-response-v1alpha14",
+  "result_digest": "1e4ada7591829367d29c7cbc30318352773d366d7c28e7acd3d35d5147f6d597",
+  "schema_version": "smartchem.service/compilation-response-v1alpha15",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
-  "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
+  "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+  "transport_mode": "CANONICAL_VERIFIED"
 }

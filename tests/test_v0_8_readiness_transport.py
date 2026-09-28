@@ -23,6 +23,8 @@ from smartchem.provenance import SourceCitation, SourceReview
 from smartchem.service import (
     CompilationResponse,
     ResponseOutcome,
+    _route_readiness_from_payload,
+    _transport_bound_result_digest,
     affordability_entry_from_payload,
     build_recompile_request,
     ir_from_payload,
@@ -88,7 +90,12 @@ def _recompute_derived_fields(payload: dict) -> dict:
     ``admissible_route_digests``, ``process_selection_status``) agree with what the tampered ``ranked_route_dossiers``
     NOW reconstruct to -- i.e. do exactly what a controlling, sophisticated forger would do. Returns ``payload``."""
     response = _rebuild_response(payload)
-    payload["result_digest"] = response.result_digest
+    # v0.8 Round II: the wire result_digest folds in the declared transport_mode, so a sophisticated forger recomputes
+    # THAT (not the bare property) -- otherwise the tamper is caught by the cheaper digest-mismatch guard, not the
+    # readiness re-derivation these tests mean to exercise.
+    payload["result_digest"] = _transport_bound_result_digest(
+        response.result_digest, payload.get("transport_mode", "THIN_ADVISORY")
+    )
     payload["exit_code"] = response.exit_code
     payload["admissible_route_digests"] = list(response.admissible_route_digests)
     payload["process_selection_status"] = response.process_selection_status
@@ -129,8 +136,11 @@ def sourced_payload(monkeypatch):
 def test_g_honest_round_trip_preserves_readiness_identity(unsourced_payload):
     resp2 = response_from_payload(copy.deepcopy(unsourced_payload))
     # readiness rides result_digest (a digest-covered field), so a byte-identical round trip is the strongest form
-    # of "preserves identity" available here.
-    assert resp2.result_digest == unsourced_payload["result_digest"]
+    # of "preserves identity" available here.  The WIRE digest binds the declared transport_mode (D5), so compare the
+    # reconstructed response's semantic digest through the same fold.
+    assert _transport_bound_result_digest(
+        resp2.result_digest, unsourced_payload["transport_mode"]
+    ) == unsourced_payload["result_digest"]
     for r in resp2.ranked_route_dossiers:
         assert isinstance(r.readiness_tier, str)
         assert r.readiness.tier == r.readiness_tier
@@ -142,7 +152,9 @@ def test_g_sourced_route_reaches_conditions_supported(sourced_payload):
     tiers = {r["readiness_tier"] for r in sourced_payload["ranked_route_dossiers"]}
     assert "CONDITIONS_SUPPORTED" in tiers, f"expected a CONDITIONS_SUPPORTED route, got tiers={tiers}"
     resp = response_from_payload(copy.deepcopy(sourced_payload))
-    assert resp.result_digest == sourced_payload["result_digest"]
+    assert _transport_bound_result_digest(
+        resp.result_digest, sourced_payload["transport_mode"]
+    ) == sourced_payload["result_digest"]
 
 
 # -- (a) tier bumped while a step is unrecognized ------------------------------------------------------------------
@@ -178,12 +190,16 @@ def test_b_conditions_satisfied_over_an_unsourced_envelope_is_refused(unsourced_
     step = target["readiness"]["per_step"][idx]
     assert step["conditions"] != "SATISFIED"  # this route's envelope is genuinely undeclared
     step["conditions"] = "SATISFIED"
-    step["process"] = "SATISFIED"  # also try to ride all the way to the (DARK) top while we're at it
-    step["open_obligations"] = [o for o in step["open_obligations"] if o.startswith("workup")]
+    step["open_obligations"] = [o for o in step["open_obligations"] if not o.startswith("conditions")]
     target["readiness"]["route_open_obligations"] = sorted({
         reason for s in target["readiness"]["per_step"] for reason in s["open_obligations"]
     })
-    target["readiness_tier"] = "PROCESS_SPECIFIED"
+    # Keep the CLAIMED tier coherent with the forged ladder (whatever the min-over-steps projection derives to) so the
+    # cheap readiness_tier-vs-ladder consistency guard passes and the forgery is caught where it MUST be -- by the
+    # replay re-derivation against the still-unsourced envelope. (PROCESS_SPECIFIED is no longer reachable from
+    # obligations alone as of Round II -- it needs a complete sourced ProcedureEvidence -- so this rides only as high
+    # as the forged conditions=SATISFIED lifts it.)
+    target["readiness_tier"] = _route_readiness_from_payload(target["readiness"]).tier
     _recompute_derived_fields(payload)
     with pytest.raises(ValueError, match="readiness"):
         response_from_payload(payload)
@@ -308,7 +324,8 @@ def test_thin_transport_readiness_is_advisory_on_plain_load_but_fail_closed_unde
     ABOVE the FORMAL_CANDIDATE floor is now FAIL-CLOSED (evil-morty FINDING 1): the strongest keyless mode is no
     longer falsely complete for readiness while it is replay-mandatory for fit and the frontier.  This pins BOTH
     directions so neither is accidentally changed."""
-    thin = response_to_payload(_rebuild_response(copy.deepcopy(unsourced_payload)))
+    thin = response_to_payload(_rebuild_response(copy.deepcopy(unsourced_payload)), include_replay=False)
+    assert thin["transport_mode"] == "THIN_ADVISORY"
     assert all("replay_payload" not in r for r in thin["ranked_route_dossiers"])
     route0, idx = _first_step_with(thin, reaction_type="SATISFIED")
     target = next(r for r in thin["ranked_route_dossiers"] if r["route_digest"] == route0["route_digest"])
@@ -327,3 +344,81 @@ def test_thin_transport_readiness_is_advisory_on_plain_load_but_fail_closed_unde
     # VERIFIED ADMISSION: the same thin above-FORMAL forgery is now refused (Wave C thin-transport closure).
     with pytest.raises(ValueError, match="thin-transport closure"):
         response_from_payload(thin, require_verified_admission=True)
+
+
+# -- v0.8 Round II (D5): canonical transport verifiable-by-default + the PROCESS_SPECIFIED thin-wire ruling ----------
+
+
+@pytest.fixture()
+def isopentyl_payload():
+    """The Round II positive on the wire: a real recompile of isopentyl acetate whose sole route reaches
+    PROCESS_SPECIFIED (sourced conditions + a complete, sourced ProcedureEvidence), serialized on the CANONICAL_VERIFIED
+    default wire.  This is the FIRST route to exercise the procedure-evidence transport end-to-end."""
+    req = build_recompile_request(
+        "isopentyl acetate", helper_reagents=("water", "acetic acid"),
+        stock_materials=("isopentyl alcohol",), max_depth=1,
+    )
+    payload = response_to_payload(run_compilation(req))
+    assert payload["transport_mode"] == "CANONICAL_VERIFIED"
+    assert any(r["readiness_tier"] == "PROCESS_SPECIFIED" for r in payload["ranked_route_dossiers"]), \
+        "the isopentyl-acetate route must reach PROCESS_SPECIFIED for these transport tests to bite"
+    return payload
+
+
+def test_isopentyl_process_specified_round_trips_byte_equal(isopentyl_payload):
+    """The canonical wire carries the procedure evidence INSIDE the digest-covered envelope replay, so an honest
+    PROCESS_SPECIFIED route reloads, RE-DERIVES PROCESS_SPECIFIED from that replayed evidence, and is digest-stable."""
+    back = response_from_payload(copy.deepcopy(isopentyl_payload))
+    assert "PROCESS_SPECIFIED" in {r.readiness_tier for r in back.ranked_route_dossiers}
+    # re-serialize and confirm byte-equal identity (the procedure round-tripped through the envelope codec intact).
+    assert response_to_payload(back)["result_digest"] == isopentyl_payload["result_digest"]
+
+
+def test_m12_canonical_above_formal_with_replay_stripped_is_refused(isopentyl_payload):
+    """M12: a CANONICAL_VERIFIED payload whose above-FORMAL claim has had its thick ``replay_payload`` stripped is
+    UNVERIFIABLE and must FAIL CLOSED on an ordinary load -- the canonical wire's re-derivation is MANDATORY, keyed off
+    the payload's OWN declared mode, not a caller flag.  Stripping the (compare=False) replay does not move the digest,
+    so the digest guard is silent and this is the check that must bite."""
+    payload = copy.deepcopy(isopentyl_payload)
+    for r in payload["ranked_route_dossiers"]:
+        r.pop("replay_payload", None)
+    _recompute_derived_fields(payload)  # a controlling forger recomputes; the digest is unchanged regardless
+    with pytest.raises(ValueError, match="no replay_payload|UNVERIFIED"):
+        response_from_payload(payload)
+
+
+def test_thin_advisory_carrying_process_specified_is_refused(isopentyl_payload):
+    """PROCESS_SPECIFIED is not admissible on an unsigned thin wire (Lane F forward ruling): a THIN_ADVISORY payload
+    whose tier is PROCESS_SPECIFIED fails closed on an ORDINARY load, unconditionally.  Built the honest way a producer
+    would emit thin (drop the replay, relabel the mode, recompute the bare digest) so the ONLY thing left to catch it
+    is the forward ruling itself, not a stale digest."""
+    payload = copy.deepcopy(isopentyl_payload)
+    for r in payload["ranked_route_dossiers"]:
+        r.pop("replay_payload", None)
+    payload["transport_mode"] = "THIN_ADVISORY"
+    _recompute_derived_fields(payload)
+    with pytest.raises(ValueError, match="not admissible on an unsigned thin wire"):
+        response_from_payload(payload)
+
+
+def test_transport_mode_downgrade_without_recompute_is_a_digest_mismatch(isopentyl_payload):
+    """The fold's whole point: flipping CANONICAL_VERIFIED->THIN_ADVISORY to dodge the mandatory re-derivation, WITHOUT
+    recomputing the transport-bound result_digest, is caught as a plain result_digest mismatch -- a downgrade-strip is
+    a detectable identity change, exactly like a readiness tamper."""
+    payload = copy.deepcopy(isopentyl_payload)
+    payload["transport_mode"] = "THIN_ADVISORY"  # but result_digest still binds CANONICAL_VERIFIED
+    with pytest.raises(ValueError, match="result_digest does not match"):
+        response_from_payload(payload)
+
+
+def test_explicit_thin_mode_loads_a_conditions_supported_response(sourced_payload):
+    """The explicit lean opt-out is still legal: a response whose strongest tier is CONDITIONS_SUPPORTED serialized
+    THIN_ADVISORY loads on an ordinary path (advisory) -- only PROCESS_SPECIFIED is categorically inadmissible on the
+    thin wire; lower above-FORMAL tiers keep their documented thin residual."""
+    result = _rebuild_response(copy.deepcopy(sourced_payload))
+    thin = response_to_payload(result, include_replay=False)
+    assert thin["transport_mode"] == "THIN_ADVISORY"
+    tiers = {r["readiness_tier"] for r in thin["ranked_route_dossiers"]}
+    assert "CONDITIONS_SUPPORTED" in tiers and "PROCESS_SPECIFIED" not in tiers
+    back = response_from_payload(copy.deepcopy(thin))
+    assert "CONDITIONS_SUPPORTED" in {r.readiness_tier for r in back.ranked_route_dossiers}

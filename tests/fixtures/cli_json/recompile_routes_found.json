@@ -20,23 +20,23 @@
         "unit": "mol product",
         "waste_disposal": null
       },
-      "route_digest": "ceb2d476bde3f206110670346e55dc42b9e85d22b41d2e755cd4f9b478482de9",
+      "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
       "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha3"
     }
   ],
   "compilation_ir": {
     "candidates": [
       {
-        "candidate_digest": "c2286c642f22e6fafae4477dc3c940bf6afe2c86865413b0abbac8ed18e640fb",
+        "candidate_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
         "candidate_kind": "ROUTE",
-        "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
+        "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
         "readiness_tier": "FORMAL_CANDIDATE",
         "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
       },
       {
-        "candidate_digest": "ceb2d476bde3f206110670346e55dc42b9e85d22b41d2e755cd4f9b478482de9",
+        "candidate_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217",
         "candidate_kind": "ROUTE",
-        "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
+        "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
         "readiness_tier": "FORMAL_CANDIDATE",
         "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
       }
@@ -115,8 +115,8 @@
             "formal_candidate": "SATISFIED",
             "open_obligations": [
               "conditions: no declared condition envelope (unknown)",
-              "process: no declared process requirements (unknown)",
-              "workup_isolation: no declared process requirements (unknown)"
+              "process: no declared procedure evidence (unknown)",
+              "workup_isolation: no declared procedure evidence (unknown)"
             ],
             "process": "UNKNOWN",
             "provenance": [],
@@ -127,12 +127,312 @@
         ],
         "route_open_obligations": [
           "conditions: no declared condition envelope (unknown)",
-          "process: no declared process requirements (unknown)",
-          "workup_isolation: no declared process requirements (unknown)"
+          "process: no declared procedure evidence (unknown)",
+          "workup_isolation: no declared procedure evidence (unknown)"
         ]
       },
       "readiness_tier": "REACTION_VOUCHED",
-      "route_digest": "ceb2d476bde3f206110670346e55dc42b9e85d22b41d2e755cd4f9b478482de9",
+      "replay_payload": [
+        {
+          "envelope": {
+            "applied_field": "",
+            "catalysts": [],
+            "duration": null,
+            "medium": "",
+            "pressure": null,
+            "procedure": null,
+            "process": null,
+            "provenance": "",
+            "source": null,
+            "status": "UNSUPPORTED",
+            "temperature": null
+          },
+          "products": [
+            {
+              "atoms": [
+                "C",
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  1,
+                  9,
+                  1
+                ],
+                [
+                  1,
+                  10,
+                  2
+                ],
+                [
+                  2,
+                  6,
+                  1
+                ],
+                [
+                  2,
+                  7,
+                  1
+                ],
+                [
+                  2,
+                  8,
+                  1
+                ],
+                [
+                  2,
+                  9,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  1,
+                  2,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reactants": [
+            {
+              "atoms": [
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  1,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  7,
+                  2
+                ],
+                [
+                  5,
+                  6,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reaction_center": {
+            "broken": [
+              [
+                "C",
+                "O",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "formed": [
+              [
+                "C",
+                "O",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "n_components": 1,
+            "schema_version": "smartchem/reaction-center-v1"
+          },
+          "reagents": [],
+          "schema_version": "smartchem.experiment/step-v1",
+          "target": {
+            "atoms": [
+              "C",
+              "C",
+              "C",
+              "H",
+              "H",
+              "H",
+              "H",
+              "H",
+              "H",
+              "O",
+              "O"
+            ],
+            "bonds": [
+              [
+                0,
+                1,
+                1
+              ],
+              [
+                0,
+                3,
+                1
+              ],
+              [
+                0,
+                4,
+                1
+              ],
+              [
+                0,
+                5,
+                1
+              ],
+              [
+                1,
+                9,
+                1
+              ],
+              [
+                1,
+                10,
+                2
+              ],
+              [
+                2,
+                6,
+                1
+              ],
+              [
+                2,
+                7,
+                1
+              ],
+              [
+                2,
+                8,
+                1
+              ],
+              [
+                2,
+                9,
+                1
+              ]
+            ],
+            "charge": 0,
+            "state": ""
+          }
+        }
+      ],
+      "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
       "schema_version": "smartchem.service/ranked-route-summary-v1alpha3",
       "selectivity_verdict": "UNKNOWN"
     },
@@ -158,8 +458,8 @@
             "formal_candidate": "SATISFIED",
             "open_obligations": [
               "conditions: no declared condition envelope (unknown)",
-              "process: no declared process requirements (unknown)",
-              "workup_isolation: no declared process requirements (unknown)"
+              "process: no declared procedure evidence (unknown)",
+              "workup_isolation: no declared procedure evidence (unknown)"
             ],
             "process": "UNKNOWN",
             "provenance": [],
@@ -172,9 +472,9 @@
             "formal_candidate": "SATISFIED",
             "open_obligations": [
               "conditions: no declared condition envelope (unknown)",
-              "process: no declared process requirements (unknown)",
+              "process: no declared procedure evidence (unknown)",
               "reaction_type: not recognized by the production oracle",
-              "workup_isolation: no declared process requirements (unknown)"
+              "workup_isolation: no declared procedure evidence (unknown)"
             ],
             "process": "UNKNOWN",
             "provenance": [],
@@ -185,13 +485,557 @@
         ],
         "route_open_obligations": [
           "conditions: no declared condition envelope (unknown)",
-          "process: no declared process requirements (unknown)",
+          "process: no declared procedure evidence (unknown)",
           "reaction_type: not recognized by the production oracle",
-          "workup_isolation: no declared process requirements (unknown)"
+          "workup_isolation: no declared procedure evidence (unknown)"
         ]
       },
       "readiness_tier": "FORMAL_CANDIDATE",
-      "route_digest": "c2286c642f22e6fafae4477dc3c940bf6afe2c86865413b0abbac8ed18e640fb",
+      "replay_payload": [
+        {
+          "envelope": {
+            "applied_field": "",
+            "catalysts": [],
+            "duration": null,
+            "medium": "",
+            "pressure": null,
+            "procedure": null,
+            "process": null,
+            "provenance": "",
+            "source": null,
+            "status": "UNSUPPORTED",
+            "temperature": null
+          },
+          "products": [
+            {
+              "atoms": [
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  0,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  5,
+                  1
+                ],
+                [
+                  1,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  7,
+                  2
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  1,
+                  2,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reactants": [
+            {
+              "atoms": [
+                "C",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  2
+                ],
+                [
+                  2,
+                  3,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reaction_center": {
+            "broken": [
+              [
+                "C",
+                "O",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "formed": [
+              [
+                "C",
+                "O",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "n_components": 1,
+            "schema_version": "smartchem/reaction-center-v1"
+          },
+          "reagents": [],
+          "schema_version": "smartchem.experiment/step-v1",
+          "target": {
+            "atoms": [
+              "C",
+              "C",
+              "H",
+              "H",
+              "H",
+              "H",
+              "O",
+              "O"
+            ],
+            "bonds": [
+              [
+                0,
+                2,
+                1
+              ],
+              [
+                0,
+                3,
+                1
+              ],
+              [
+                0,
+                4,
+                1
+              ],
+              [
+                0,
+                6,
+                1
+              ],
+              [
+                1,
+                5,
+                1
+              ],
+              [
+                1,
+                6,
+                1
+              ],
+              [
+                1,
+                7,
+                2
+              ]
+            ],
+            "charge": 0,
+            "state": ""
+          }
+        },
+        {
+          "envelope": {
+            "applied_field": "",
+            "catalysts": [],
+            "duration": null,
+            "medium": "",
+            "pressure": null,
+            "procedure": null,
+            "process": null,
+            "provenance": "",
+            "source": null,
+            "status": "UNSUPPORTED",
+            "temperature": null
+          },
+          "products": [
+            {
+              "atoms": [
+                "C",
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  1,
+                  9,
+                  1
+                ],
+                [
+                  1,
+                  10,
+                  2
+                ],
+                [
+                  2,
+                  6,
+                  1
+                ],
+                [
+                  2,
+                  7,
+                  1
+                ],
+                [
+                  2,
+                  8,
+                  1
+                ],
+                [
+                  2,
+                  9,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  1,
+                  2,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reactants": [
+            {
+              "atoms": [
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  0,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  5,
+                  1
+                ],
+                [
+                  1,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  7,
+                  2
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reaction_center": {
+            "broken": [
+              [
+                "C",
+                "H",
+                1
+              ],
+              [
+                "C",
+                "O",
+                1
+              ]
+            ],
+            "formed": [
+              [
+                "C",
+                "C",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "n_components": 1,
+            "schema_version": "smartchem/reaction-center-v1"
+          },
+          "reagents": [],
+          "schema_version": "smartchem.experiment/step-v1",
+          "target": {
+            "atoms": [
+              "C",
+              "C",
+              "C",
+              "H",
+              "H",
+              "H",
+              "H",
+              "H",
+              "H",
+              "O",
+              "O"
+            ],
+            "bonds": [
+              [
+                0,
+                1,
+                1
+              ],
+              [
+                0,
+                3,
+                1
+              ],
+              [
+                0,
+                4,
+                1
+              ],
+              [
+                0,
+                5,
+                1
+              ],
+              [
+                1,
+                9,
+                1
+              ],
+              [
+                1,
+                10,
+                2
+              ],
+              [
+                2,
+                6,
+                1
+              ],
+              [
+                2,
+                7,
+                1
+              ],
+              [
+                2,
+                8,
+                1
+              ],
+              [
+                2,
+                9,
+                1
+              ]
+            ],
+            "charge": 0,
+            "state": ""
+          }
+        }
+      ],
+      "route_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217",
       "schema_version": "smartchem.service/ranked-route-summary-v1alpha3",
       "selectivity_verdict": "UNKNOWN"
     }
@@ -316,8 +1160,9 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "a5fcfa7d33632f3da1785d1763457a80566fe9f4ae2d146b301a5ca2c72140b9",
-  "schema_version": "smartchem.service/compilation-response-v1alpha14",
+  "result_digest": "667044fe15b6e06e3916130015755abc1cc223456cea9c993aab3d643a19eef1",
+  "schema_version": "smartchem.service/compilation-response-v1alpha15",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
-  "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE"
+  "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+  "transport_mode": "CANONICAL_VERIFIED"
 }

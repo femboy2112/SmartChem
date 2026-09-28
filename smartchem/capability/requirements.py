@@ -16,10 +16,13 @@ threshold:
   given input is free to build a :class:`MaterialRequirement` with a real ``required_assay`` directly;
   this projection just never invents one from silence.
 * ``equipment`` -- the union, over every step, of ``ProcedureEvidence.apparatus`` (per-operation, quote
-  sourced) PLUS ``ProcessRequirements.equipment`` (whole-step cross-check), resolved through the CLOSED
-  :mod:`~smartchem.capability.equipment_resolver` table -- deliberately NOT ``equipment_for_step`` (Wave-A
-  finding F1: that function reads only free-text medium + T/P extrema and silently drops the reflux
-  condenser and the distillation rig the source actually demands).
+  sourced) PLUS ``ProcessRequirements.equipment`` (whole-step cross-check), CLASSIFIED through
+  :func:`~smartchem.capability.equipment_resolver.classify_apparatus_strings` -- deliberately NOT
+  ``equipment_for_step`` (Wave-A finding F1: that function reads only free-text medium + T/P extrema and
+  silently drops the reflux condenser and the distillation rig the source actually demands). Vetted
+  consumables (``"boiling stones"`` and friends) are dropped without a trace; anything else the resolver
+  has never met stays on the record as ``equipment_unrecognized`` -- never quietly absorbed into "no
+  requirement" (that silent absorption was the exact hole assess.py's equipment axis now refuses).
 * ``containment`` -- ONLY ``equipment_for_step``'s hazard-driven ``CONTAINMENT``-kind items (F-nag: "two
   evidence lanes, never crossed" -- apparatus tuples feed equipment, GHS hazards feed containment, never
   the reverse).
@@ -59,7 +62,7 @@ from ..experiment.stock import Phase, StockQuantity
 from ..constraints import PhysicalBounds
 from ..process_constraints import ProcessRequirements
 from .enums import ContainmentCapability, EquipmentCapability, MeasurementCapability, WasteCapability
-from .equipment_resolver import resolve_apparatus_strings
+from .equipment_resolver import classify_apparatus_strings
 
 __all__ = [
     "MaterialRequirement",
@@ -137,23 +140,22 @@ class RouteCapabilityRequirements(Digestible):
     (FREEZE decision 2). ``route_digest`` ties this record back to the exact ``ExperimentRoute`` it was
     compiled from (the transport-layer binding decision 7 relies on).
 
-    ``equipment_unresolved`` is this package's concrete carrier for decision 4's "an UNRECOGNIZED
+    ``equipment_unrecognized`` is this package's concrete carrier for decision 4's "an UNRECOGNIZED
     apparatus string -> that requirement item is UNKNOWN, never silently satisfied": it is the exact set of
-    sourced apparatus/equipment strings the closed resolver could not map to any
-    :class:`~smartchem.capability.enums.EquipmentCapability` member (consumables like "boiling stones",
-    generic tools like "glass rod" -- see :mod:`.equipment_resolver`'s docstring for the full list). It
-    is reported for full transparency but, being consumables/generic tools rather than distinctive
-    capability items, is NOT itself folded into :func:`~smartchem.capability.assess.assess`'s equipment
-    verdict -- the closed :class:`~smartchem.capability.enums.EquipmentCapability` vocabulary has no slot
-    for "unknown equipment", and the frozen forcing matrix requires a fully-declared Custom profile to
-    reach a genuine ``equipment`` FIT on this exact route even though it carries "boiling stones" in its
-    sourced apparatus list.
+    sourced apparatus/equipment strings that hit NEITHER the closed alias table NOR the vetted consumable
+    whitelist (see :mod:`.equipment_resolver`'s docstring). Vetted consumables like "boiling stones" or
+    "glass rod" are real evidence too, but they are dropped before this field is built -- being on the
+    whitelist IS the trace that they were seen and deliberately judged not a capability. What is left in
+    ``equipment_unrecognized`` is genuinely untabled apparatus (a "rotary evaporator", a "Soxhlet
+    extractor"), and :func:`~smartchem.capability.assess.assess` folds a non-empty set here straight to
+    an UNKNOWN equipment axis, ahead of the ordinary recognized-subset check -- an untabled capability
+    item must never silently pass just because nobody taught the resolver its name yet.
     """
 
     route_digest: str
     material: "tuple[MaterialRequirement, ...]"
     equipment: "frozenset[EquipmentCapability]"
-    equipment_unresolved: "tuple[str, ...]"
+    equipment_unrecognized: "tuple[str, ...]"
     physical: PhysicalBounds
     process: "tuple[ProcessRequirements | None, ...]"
     containment: "frozenset[ContainmentCapability]"
@@ -174,10 +176,10 @@ class RouteCapabilityRequirements(Digestible):
             type(e) is not EquipmentCapability for e in self.equipment
         ):
             raise TypeError("equipment must be a frozenset of EquipmentCapability values")
-        if type(self.equipment_unresolved) is not tuple or any(
-            not isinstance(s, str) or not s.strip() for s in self.equipment_unresolved
+        if type(self.equipment_unrecognized) is not tuple or any(
+            not isinstance(s, str) or not s.strip() for s in self.equipment_unrecognized
         ):
-            raise TypeError("equipment_unresolved must be a tuple of non-empty strings")
+            raise TypeError("equipment_unrecognized must be a tuple of non-empty strings")
         if type(self.physical) is not PhysicalBounds:
             raise TypeError("physical must be a smartchem.constraints.PhysicalBounds")
         if type(self.process) is not tuple or any(
@@ -227,8 +229,12 @@ def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement
 def _equipment_requirement(
     route: ExperimentRoute,
 ) -> "tuple[frozenset[EquipmentCapability], tuple[str, ...]]":
-    """The union, over every step, of sourced apparatus strings resolved through the closed table --
-    NEVER ``equipment_for_step`` (F1: it drops the reflux condenser / distillation rig the source names)."""
+    """The union, over every step, of sourced apparatus strings classified through the closed resolver --
+    NEVER ``equipment_for_step`` (F1: it drops the reflux condenser / distillation rig the source names).
+
+    Vetted consumables are dropped here, silently and on purpose (the whitelist itself is their trace);
+    anything the resolver has never met at all is carried forward as ``equipment_unrecognized`` so
+    :mod:`.assess` can refuse to guess past it."""
     raw: "set[str]" = set()
     for step in route.steps:
         procedure = step.envelope.procedure
@@ -238,8 +244,8 @@ def _equipment_requirement(
         process = step.envelope.process
         if process is not None and process.equipment is not None:
             raw.update(process.equipment)
-    recognized, unresolved = resolve_apparatus_strings(raw)
-    return recognized, tuple(sorted(unresolved))
+    recognized, _ignored_consumables, unrecognized = classify_apparatus_strings(raw)
+    return recognized, tuple(sorted(unrecognized))
 
 
 def _containment_requirement(route: ExperimentRoute) -> "frozenset[ContainmentCapability]":
@@ -338,14 +344,14 @@ def compile_capability_requirements(route: ExperimentRoute) -> RouteCapabilityRe
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be a smartchem.experiment.step.ExperimentRoute")
 
-    equipment, equipment_unresolved = _equipment_requirement(route)
+    equipment, equipment_unrecognized = _equipment_requirement(route)
     handling_care = verify_handling(route).care
 
     return RouteCapabilityRequirements(
         route_digest=route.digest,
         material=_material_requirements(route),
         equipment=equipment,
-        equipment_unresolved=equipment_unresolved,
+        equipment_unrecognized=equipment_unrecognized,
         physical=_physical_requirement(route),
         process=tuple(step.envelope.process for step in route.steps),
         containment=_containment_requirement(route),

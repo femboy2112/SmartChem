@@ -12,14 +12,20 @@ NOT in the table stays unrecognized, on purpose, forever, until someone adds it 
 The table is built from the ACTUAL apparatus strings in ``smartchem/decompiler_conditions.py`` across the
 whole 5-route corpus (``ProcedureEvidence.apparatus`` per-operation tuples AND the whole-step
 ``ProcessRequirements.equipment`` cross-check tuples -- decision 2's "+ ProcessRequirements.equipment
-cross-check"). A handful of corpus strings are deliberately left OUT of the table -- not oversights, but
-consumables/generic tools that are not distinctive CAPABILITY items in the closed
+cross-check"). A handful of corpus strings are deliberately left OUT of the alias table -- not oversights,
+but consumables/generic tools that are not distinctive CAPABILITY items in the closed
 :class:`~smartchem.capability.enums.EquipmentCapability` vocabulary: ``"boiling stones"`` (anti-bumping
 granules, a consumable, not apparatus), ``"glass rod"`` (a generic stirring tool every bench has),
 ``"test tube clamp"``/``"test tube rack"``/``"pipet"``/``"watch glass"``/``"dropper"`` (generic small
-labware, not one of the 12 corpus-forced members). Resolving them to ``None`` is the fail-closed answer:
-:mod:`~smartchem.capability.requirements` never lets an unresolved string silently become "no
-requirement" for a capability we DO track, and never fabricates a member for one we don't.
+labware, not one of the 12 corpus-forced members). Those are named on a SEPARATE, equally closed
+:data:`CONSUMABLE_WHITELIST` -- being on it is a deliberate, documented "this is real evidence and
+genuinely not a capability", never a resolver blind spot.
+
+That distinction matters past this module's door: a string on NEITHER the alias table nor the whitelist
+is not a vetted consumable -- it is an apparatus this table has simply never met, and a caller
+(:mod:`~smartchem.capability.requirements`, then :mod:`~smartchem.capability.assess`) MUST treat it as an
+open question, never as "no requirement". :func:`classify_apparatus_strings` is the three-way cut that
+keeps those two silences from ever being confused with each other again.
 """
 from __future__ import annotations
 
@@ -27,7 +33,12 @@ from typing import Iterable
 
 from .enums import EquipmentCapability
 
-__all__ = ["resolve_apparatus", "resolve_apparatus_strings"]
+__all__ = [
+    "CONSUMABLE_WHITELIST",
+    "classify_apparatus_strings",
+    "resolve_apparatus",
+    "resolve_apparatus_strings",
+]
 
 
 def _normalize(name: str) -> str:
@@ -79,6 +90,24 @@ _APPARATUS_ALIASES: "dict[str, EquipmentCapability]" = {
 }
 
 
+#: The closed consumable whitelist: normalized apparatus/tool strings that are real sourced evidence but
+#: deliberately NOT one of the 12 corpus-forced EquipmentCapability members (see the module docstring for
+#: the per-item rationale). Being on this list is a vetted "ignore, on purpose" -- the opposite of falling
+#: through the alias table by accident. Anything NOT on either this set or the alias table is unrecognized.
+CONSUMABLE_WHITELIST: "frozenset[str]" = frozenset(
+    _normalize(name)
+    for name in (
+        "boiling stones",
+        "glass rod",
+        "test tube clamp",
+        "test tube rack",
+        "pipet",
+        "watch glass",
+        "dropper",
+    )
+)
+
+
 def resolve_apparatus(name: str) -> "EquipmentCapability | None":
     """The ONE :class:`EquipmentCapability` a sourced apparatus string names, or ``None`` (UNRECOGNIZED).
 
@@ -107,3 +136,30 @@ def resolve_apparatus_strings(
         else:
             recognized.add(capability)
     return frozenset(recognized), frozenset(unresolved)
+
+
+def classify_apparatus_strings(
+    names: "Iterable[str]",
+) -> "tuple[frozenset[EquipmentCapability], frozenset[str], frozenset[str]]":
+    """The three-way, fail-closed cut ``resolve_apparatus_strings`` was never asked to make: every input
+    string lands in exactly ONE of ``(recognized_capabilities, ignored_consumables, unrecognized_strings)``.
+
+    ``ignored_consumables`` are real sourced strings that hit the vetted :data:`CONSUMABLE_WHITELIST` --
+    genuinely not equipment, safe to drop without a trace. ``unrecognized_strings`` are everything else
+    that missed BOTH the alias table and the whitelist: this table has simply never met them, and that is
+    an open question, not a quiet "no requirement" -- a caller MUST carry them forward as unresolved, on
+    pain of exactly the silent-false-FIT this cut exists to prevent (an untabled "rotary evaporator" is
+    not a consumable; it is a bench capability nobody has vetted this route against).
+    """
+    recognized: "set[EquipmentCapability]" = set()
+    ignored: "set[str]" = set()
+    unrecognized: "set[str]" = set()
+    for name in names:
+        capability = resolve_apparatus(name)
+        if capability is not None:
+            recognized.add(capability)
+        elif _normalize(name) in CONSUMABLE_WHITELIST:
+            ignored.add(name)
+        else:
+            unrecognized.add(name)
+    return frozenset(recognized), frozenset(ignored), frozenset(unrecognized)

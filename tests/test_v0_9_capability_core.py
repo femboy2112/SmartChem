@@ -17,7 +17,11 @@ from smartchem.capability.enums import (
     EquipmentCapability,
     VentilationCapability,
 )
-from smartchem.capability.equipment_resolver import resolve_apparatus, resolve_apparatus_strings
+from smartchem.capability.equipment_resolver import (
+    classify_apparatus_strings,
+    resolve_apparatus,
+    resolve_apparatus_strings,
+)
 from smartchem.capability.profile import CAPABILITY_PROFILE_SCHEMA, CapabilityProfile
 from smartchem.capability.requirements import (
     MaterialRequirement,
@@ -116,7 +120,7 @@ def _empty_requirements(
     *,
     material=(),
     equipment=frozenset(),
-    equipment_unresolved=(),
+    equipment_unrecognized=(),
     physical=None,
     process=(None,),
     containment=frozenset(),
@@ -130,7 +134,7 @@ def _empty_requirements(
         route_digest="test-fixture-route-digest",
         material=material,
         equipment=equipment,
-        equipment_unresolved=equipment_unresolved,
+        equipment_unrecognized=equipment_unrecognized,
         physical=physical if physical is not None else PhysicalBounds.unconstrained(),
         process=process,
         containment=containment,
@@ -198,6 +202,18 @@ def test_resolve_apparatus_strings_partitions_recognized_from_unresolved():
     )
     assert recognized == frozenset({EquipmentCapability.REFLUX_CONDENSER, EquipmentCapability.CONTROLLED_HEATING})
     assert unresolved == frozenset({"boiling stones", "glass rod"})
+
+
+def test_classify_apparatus_strings_separates_vetted_consumables_from_genuinely_unrecognized():
+    """The three-way cut ``resolve_apparatus_strings`` never made: a vetted whitelisted consumable
+    ("boiling stones") and a string the resolver has simply never met ("rotary evaporator") must land in
+    two DIFFERENT groups -- conflating them is exactly the false-FIT hole this excision closes."""
+    recognized, ignored, unrecognized = classify_apparatus_strings(
+        ["reflux condenser", "boiling stones", "heating mantle", "rotary evaporator"]
+    )
+    assert recognized == frozenset({EquipmentCapability.REFLUX_CONDENSER, EquipmentCapability.CONTROLLED_HEATING})
+    assert ignored == frozenset({"boiling stones"})
+    assert unrecognized == frozenset({"rotary evaporator"})
 
 
 # -- 2. MaterialRequirement assessed via StockMaterial.satisfies (through assess()'s material axis) -----------
@@ -300,9 +316,11 @@ def test_compile_capability_requirements_equipment_axis_reads_apparatus_not_equi
     assert EquipmentCapability.FRACTIONAL_DISTILLATION in requirements.equipment
     assert EquipmentCapability.REFLUX_CONDENSER in requirements.equipment
     assert EquipmentCapability.SEPARATORY_FUNNEL in requirements.equipment
-    # the corpus consumable "boiling stones" is real evidence but not a tracked capability -- it must be
-    # visible in equipment_unresolved (fail-closed, never silently satisfied), never invent a phantom member.
-    assert "boiling stones" in requirements.equipment_unresolved
+    # the corpus consumable "boiling stones" is real evidence but a vetted, whitelisted consumable -- it is
+    # dropped, not carried as unrecognized; it must never invent a phantom EquipmentCapability member, and
+    # it must never masquerade as a genuinely-untabled apparatus string either.
+    assert "boiling stones" not in requirements.equipment_unrecognized
+    assert requirements.equipment_unrecognized == ()
 
 
 def test_compile_capability_requirements_is_a_pure_function_of_the_route_alone():
@@ -311,6 +329,41 @@ def test_compile_capability_requirements_is_a_pure_function_of_the_route_alone()
     route_a = _isopentyl_route()
     route_b = _isopentyl_route()
     assert compile_capability_requirements(route_a).digest == compile_capability_requirements(route_b).digest
+
+
+# -- 3b. the equipment axis's fail-closed gate on a genuinely-unrecognized apparatus string --------------------
+# (FREEZE decision 4: "unrecognized apparatus -> UNKNOWN, never silently satisfied" -- this was the exact hole
+# left open when the equipment axis only ever checked the RECOGNIZED set and never looked at what fell through.)
+
+_ALL_EQUIPMENT_CAPABILITIES = frozenset(EquipmentCapability)
+
+
+def test_equipment_axis_is_unknown_when_a_genuinely_unrecognized_apparatus_string_is_carried():
+    """A synthetic requirement carrying an apparatus string the closed resolver has NEVER met (a "rotary
+    evaporator") must cap the equipment axis at UNKNOWN, even against a profile that owns EVERY single
+    EquipmentCapability member -- an untabled capability item is an open question, never a silent FIT by
+    omission (the exact false-FIT this gate exists to refuse)."""
+    requirements = _empty_requirements(
+        equipment=frozenset({EquipmentCapability.REFLUX_CONDENSER}),
+        equipment_unrecognized=("rotary evaporator",),
+    )
+    profile = _empty_profile(equipment=_ALL_EQUIPMENT_CAPABILITIES)
+    assessment = assess(profile, requirements, _process_specified_route_readiness())
+    assert assessment.equipment.status is CapabilityStatus.UNKNOWN
+    assert "rotary evaporator" in " ".join(assessment.equipment.reasons)
+
+
+def test_the_real_isopentyl_route_has_no_unrecognized_equipment_and_stays_equipment_fit_eligible():
+    """The critical invariant this excision must not break: the real route's only unresolved apparatus
+    string is "boiling stones", a WHITELISTED consumable -- ``equipment_unrecognized`` must be EMPTY, so
+    the equipment axis still reaches a genuine FIT against a profile declaring every required capability
+    (never stuck at UNKNOWN on a consumable the whitelist already vetted)."""
+    route = _isopentyl_route()
+    requirements = compile_capability_requirements(route)
+    assert requirements.equipment_unrecognized == ()
+    profile = _empty_profile(equipment=_ALL_EQUIPMENT_CAPABILITIES)
+    assessment = assess(profile, requirements, evaluate_route(route))
+    assert assessment.equipment.status is CapabilityStatus.FIT
 
 
 # -- 4. the verdict fold ----------------------------------------------------------------------------------------

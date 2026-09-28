@@ -28,7 +28,7 @@ from ..contracts import Digestible
 from ..experiment.readiness import PROCESS_SPECIFIED, RouteReadiness, tier_rank
 from ..experiment.stock import FitnessVerdict, StockMaterial
 from ..process_constraints import ProcessBounds, ProcessFitStatus, evaluate_process_requirements
-from .enums import CapabilityStatus
+from .enums import CapabilityStatus, EquipmentCapability
 from .profile import CapabilityProfile
 from .requirements import MaterialRequirement, RouteCapabilityRequirements
 
@@ -152,6 +152,29 @@ def _membership_axis(
         CapabilityStatus.FIT,
         (f"{axis}: the declared profile covers every required capability: {names}",) + tuple(extra_reasons),
     )
+
+
+def _equipment_axis(
+    required: "frozenset[EquipmentCapability]",
+    available: "frozenset[EquipmentCapability]",
+    unrecognized: "tuple[str, ...]",
+) -> AxisResult:
+    """The equipment axis's own gate, ahead of the ordinary membership check (FREEZE decision 4): a
+    genuinely-untabled sourced apparatus string is an open question about a bench's CAPABILITY, not a
+    consumable anyone vetted -- it caps this axis at UNKNOWN before ``_membership_axis`` ever gets to
+    compare the recognized set. Vetted consumables never reach here at all (``requirements.py`` drops them
+    before this field is built), so this is the honest remainder: apparatus the resolver has never met.
+    """
+    if unrecognized:
+        names = ", ".join(sorted(unrecognized))
+        return AxisResult(
+            CapabilityStatus.UNKNOWN,
+            (
+                f"equipment: {len(unrecognized)} sourced apparatus string(s) are untabled in the closed "
+                f"resolver and cannot be certified either way against any declared profile: {names}",
+            ),
+        )
+    return _membership_axis(required, available, axis="equipment")
 
 
 def _material_item_status(
@@ -381,7 +404,7 @@ def assess(
         raise TypeError("route_readiness must be a smartchem.experiment.readiness.RouteReadiness")
 
     material = _material_axis(requirements.material, profile.material_inventory)
-    equipment = _membership_axis(requirements.equipment, profile.equipment, axis="equipment")
+    equipment = _equipment_axis(requirements.equipment, profile.equipment, requirements.equipment_unrecognized)
     physical = _physical_axis(requirements.physical, profile.physical_bounds)
     process = _process_axis(requirements.process, profile.process_bounds)
     containment = _membership_axis(requirements.containment, profile.containment, axis="containment")

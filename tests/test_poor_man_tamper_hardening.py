@@ -138,7 +138,7 @@ def test_a_thin_frontier_entry_whose_dossier_is_deleted_is_refused():
     # the same dossier-deletion tamper on the DEFAULT thin transport (no replay): still refused by FRONTIER<=DOSSIERS,
     # so the forgery cannot hide behind the replay-absent skip either.
     resp = run_compilation(build_recompile_request("isopentyl acetate", max_depth=3))
-    thin = response_to_payload(resp)                                 # include_replay defaults False -> no replay
+    thin = response_to_payload(resp, include_replay=False)           # v0.8 D5: the EXPLICIT thin opt-out (no replay)
     fr = thin["affordability_frontier"]
     i = next(j for j, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"])
     rd = fr[i]["route_digest"]
@@ -174,7 +174,7 @@ def test_the_default_thin_transport_fiction_strip_is_refused_under_verified_admi
     # UNVERIFIED and REFUSED -- replay-MANDATORY-for-disposition-claims, mirroring _check_verified_admission's own
     # FITS-route rule.  So the fiction_blockers strip below is refused even though the replay is absent.
     resp = run_compilation(build_recompile_request("isopentyl acetate", max_depth=3))
-    thin = response_to_payload(resp)                                  # include_replay defaults False -> no replay
+    thin = response_to_payload(resp, include_replay=False)            # v0.8 D5: the EXPLICIT thin opt-out (no replay)
     fr = thin["affordability_frontier"]
     i = next(j for j, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"])
     thin["affordability_frontier"][i]["cost_vector"]["fiction_blockers"] = []
@@ -187,7 +187,7 @@ def test_a_thin_transport_load_without_verified_admission_still_loads():
     # still loads -- the thin frontier's catalyst/fiction dispositions stay producer-declared for that consumer.  This
     # pins that the closure is scoped to verified admission and did not break the default lightweight transport.
     resp = run_compilation(build_recompile_request("isopentyl acetate", max_depth=3))
-    thin = response_to_payload(resp)                                  # thin, no replay
+    thin = response_to_payload(resp, include_replay=False)            # v0.8 D5: the EXPLICIT thin opt-out (no replay)
     assert any(e["cost_vector"]["fiction_blockers"] for e in thin["affordability_frontier"]), \
         "the frontier must carry a fiction disposition for this pin to be non-vacuous"
     response_from_payload(thin)                                       # bare load: no verified admission -> no refusal

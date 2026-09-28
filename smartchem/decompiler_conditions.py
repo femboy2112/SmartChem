@@ -19,9 +19,16 @@ from enum import Enum
 from math import gcd
 from types import SimpleNamespace
 
-from .conditions import ConditionEnvelope
+from .conditions import ConditionEnvelope, Interval
 from .contracts import Digestible, EvidenceStatus
 from .decompiler import Formula
+from .procedure_evidence import (
+    EvidenceField,
+    OperationKind,
+    OperationRole,
+    ProcedureEvidence,
+    ProcedureOperation,
+)
 from .process_constraints import Agitation, Attention, ProcessRequirements
 from .provenance import SourceCitation, SourceReview
 
@@ -116,6 +123,251 @@ def _sig(reactant: str, reagents: tuple[str, ...], products: tuple[str, ...]) ->
     return _reaction_signature(edge)
 
 
+# -- v0.8 Round II: typed procedure evidence, migrated from the same accepted primary sources --------------------
+# The four sourced routes' whole-process records above are free-text ProcessRequirements; these author the
+# STRUCTURED procedure the same accepted primary source specifies, so PROCESS_SPECIFIED becomes decidable from
+# structured fields (plan docs/research/V0_8_ROUND_II_PROCEDURE_EVIDENCE_PLAN_v0.1.md, section 3). Every value
+# traces to a quote from the cited page; each EXPLICIT_NOT_APPLICABLE carries the justification that closes it out
+# (silence is UNKNOWN_MISSING, never N/A). These attach ONLY via assembly_conditions (structurally guarded), never
+# reaction_conditions (isomer-blind) -- Wave A Lane F KILL 2 / mutation M19.
+_ISOPENTYL_URL = (
+    "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/"
+    "Organic_Chemistry_Labs/Experiments/5:_Synthesis_of_Isopentyl_Acetate_(Experiment)"
+)
+_ASPIRIN_URL = (
+    "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/"
+    "Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)"
+)
+_ACETAMINOPHEN_URL = (
+    "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/"
+    "Organic_Chemistry_Labs/Experiments/2:__Synthesis_of_Acetaminophen_(Experiment)"
+)
+
+# Isopentyl acetate -- a COMPLETE, sourced preparative procedure. reaction_type is recognized (esterification
+# makes water), conditions are sourced, and this procedure is complete -> the round's real PROCESS_SPECIFIED
+# positive. Quantities, ordered operations, workup and analytical acceptance all quoted from the LibreTexts page.
+_ISOPENTYL_PROCEDURE = ProcedureEvidence(
+    reaction_scope="Fischer esterification: isopentyl alcohol + acetic acid -> isopentyl acetate + water",
+    source=SourceCitation(_ISOPENTYL_URL, SourceReview.ACCEPTED),
+    scale=EvidenceField.present(
+        "15 mL (12.2 g, 0.138 mol) isopentyl alcohol; 20 mL (21 g, 0.35 mol) glacial acetic acid; "
+        "4 mL conc. H2SO4 (alcohol:acid ~ 1:2.5, acid in excess)", _ISOPENTYL_URL),
+    operations=(
+        ProcedureOperation(
+            ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION,
+            materials=("isopentyl alcohol", "acetic acid", "sulfuric acid"),
+            quantity=EvidenceField.present("15 mL alcohol + 20 mL glacial acetic acid + 4 mL conc. H2SO4", _ISOPENTYL_URL),
+            rate=EvidenceField.present("combine alcohol and acid, then add conc. H2SO4 with caution", _ISOPENTYL_URL),
+            apparatus=("100-mL round-bottom flask",), locator=_ISOPENTYL_URL),
+        ProcedureOperation(
+            ordinal=2, kind=OperationKind.HOLD, role=OperationRole.REACTION,
+            temperature=EvidenceField.present("reflux (boiling mixture on a heating mantle)", _ISOPENTYL_URL),
+            agitation=EvidenceField.present("boiling stones for even reflux", _ISOPENTYL_URL),
+            duration=EvidenceField.present(Interval(60.0, 60.0, "min"), _ISOPENTYL_URL),
+            endpoint=EvidenceField.present("reflux the mixture for 1 hour", _ISOPENTYL_URL),
+            apparatus=("reflux condenser", "heating mantle", "boiling stones"), locator=_ISOPENTYL_URL),
+        ProcedureOperation(
+            ordinal=3, kind=OperationKind.COOL, role=OperationRole.OTHER,
+            temperature=EvidenceField.present("cool to room temperature", _ISOPENTYL_URL), locator=_ISOPENTYL_URL),
+        ProcedureOperation(
+            ordinal=4, kind=OperationKind.SEPARATE, role=OperationRole.OTHER, materials=("cold water",),
+            quantity=EvidenceField.present("55 mL cold water + 10 mL rinse; separate the lower aqueous layer", _ISOPENTYL_URL),
+            apparatus=("separatory funnel",), locator=_ISOPENTYL_URL),
+        ProcedureOperation(
+            ordinal=5, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("5% sodium bicarbonate solution",),
+            quantity=EvidenceField.present("25 mL of 5% sodium bicarbonate, twice", _ISOPENTYL_URL),
+            endpoint=EvidenceField.present("wash until the aqueous layer is basic to litmus", _ISOPENTYL_URL),
+            locator=_ISOPENTYL_URL),
+        ProcedureOperation(
+            ordinal=6, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("water",),
+            quantity=EvidenceField.present("25 mL water", _ISOPENTYL_URL), locator=_ISOPENTYL_URL),
+        ProcedureOperation(
+            ordinal=7, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("saturated aqueous sodium chloride",),
+            quantity=EvidenceField.present("5 mL saturated NaCl to aid layer separation (swirl, do not shake)", _ISOPENTYL_URL),
+            locator=_ISOPENTYL_URL),
+        ProcedureOperation(
+            ordinal=8, kind=OperationKind.DRY, role=OperationRole.OTHER, materials=("anhydrous magnesium sulfate",),
+            quantity=EvidenceField.present("2 g anhydrous magnesium sulfate", _ISOPENTYL_URL), locator=_ISOPENTYL_URL),
+        ProcedureOperation(
+            ordinal=9, kind=OperationKind.DISTILL, role=OperationRole.OTHER,
+            endpoint=EvidenceField.present("collect the fraction between 134 and 143 C", _ISOPENTYL_URL),
+            apparatus=("distillation apparatus", "thermometer"), locator=_ISOPENTYL_URL),
+        ProcedureOperation(
+            ordinal=10, kind=OperationKind.VERIFY, role=OperationRole.OTHER, locator=_ISOPENTYL_URL),
+    ),
+    quench=EvidenceField.not_applicable(
+        _ISOPENTYL_URL,
+        "the source specifies a complete workup sequence -- reflux -> cool to room temperature -> aqueous "
+        "partition -> 2x bicarbonate wash -> water wash -> brine -> MgSO4 dry -> fractional distillation -- with "
+        "no quench among the operations it lists"),
+    workup_isolation=EvidenceField.present(
+        "separatory-funnel partition, bicarbonate/water/brine washes, magnesium-sulfate drying", _ISOPENTYL_URL),
+    separation=EvidenceField.present("separatory funnel; separate the lower aqueous layer", _ISOPENTYL_URL),
+    wash=EvidenceField.present("2 x 25 mL 5% NaHCO3, 25 mL water, 5 mL saturated NaCl", _ISOPENTYL_URL),
+    drying=EvidenceField.present("2 g anhydrous magnesium sulfate", _ISOPENTYL_URL),
+    purification=EvidenceField.present("fractional distillation, 134-143 C fraction", _ISOPENTYL_URL),
+    analytical_verification=EvidenceField.present(
+        "weigh and calculate percent yield; obtain an infrared spectrum", _ISOPENTYL_URL),
+)
+
+# Aspirin -- a COMPLETE, sourced preparative procedure, but reaction_type is UNRECOGNIZED (anhydride
+# transacylation expels acetic acid, not water, so it fails the acyl-condensation shape guard,
+# feasibility.py:_is_intermolecular_acyl_condensation). Its coarse tier stays FORMAL_CANDIDATE while its
+# process/workup evidence is visibly SATISFIED -- the one-rung-higher non-monotonicity witness. NO reaction
+# class #18 is added to prettify the tier.
+_ASPIRIN_PROCEDURE = ProcedureEvidence(
+    reaction_scope="acetylation: salicylic acid + acetic anhydride -> acetylsalicylic acid + acetic acid",
+    source=SourceCitation(_ASPIRIN_URL, SourceReview.ACCEPTED),
+    scale=EvidenceField.present(
+        "2.0 g (0.015 mol) salicylic acid; 5 mL (0.05 mol) acetic anhydride; 5 drops conc. H2SO4 "
+        "(anhydride:acid ~ 3.3:1)", _ASPIRIN_URL),
+    operations=(
+        ProcedureOperation(
+            ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION,
+            materials=("salicylic acid", "acetic anhydride", "sulfuric acid"),
+            quantity=EvidenceField.present("2.0 g salicylic acid + 5 mL acetic anhydride + 5 drops conc. H2SO4", _ASPIRIN_URL),
+            agitation=EvidenceField.present("swirl gently until the salicylic acid dissolves", _ASPIRIN_URL),
+            apparatus=("125-mL Erlenmeyer flask",), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=2, kind=OperationKind.HOLD, role=OperationRole.REACTION,
+            temperature=EvidenceField.present("steam bath, gentle heating", _ASPIRIN_URL),
+            endpoint=EvidenceField.present("heat gently on the steam bath for at least 10 minutes", _ASPIRIN_URL),
+            apparatus=("steam bath",), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=3, kind=OperationKind.COOL, role=OperationRole.OTHER,
+            temperature=EvidenceField.present(
+                "cool to room temperature, scratch with a glass rod, then ice bath until crystallization completes", _ASPIRIN_URL),
+            apparatus=("glass rod", "ice bath"), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=4, kind=OperationKind.FILTER, role=OperationRole.OTHER, materials=("water",),
+            quantity=EvidenceField.present("add 50 mL water, cool in an ice bath, then vacuum filter", _ASPIRIN_URL),
+            apparatus=("Buchner funnel",), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=5, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("cold water",),
+            quantity=EvidenceField.present("rinse the crystals several times with 5 mL portions of cold water", _ASPIRIN_URL),
+            locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=6, kind=OperationKind.HEAT, role=OperationRole.RECRYSTALLIZATION, materials=("ethyl acetate",),
+            temperature=EvidenceField.present("dissolve in a minimum (2-3 mL) of hot ethyl acetate", _ASPIRIN_URL),
+            locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=7, kind=OperationKind.COOL, role=OperationRole.RECRYSTALLIZATION,
+            temperature=EvidenceField.present("cool to room temperature, then in an ice bath", _ASPIRIN_URL),
+            apparatus=("ice bath",), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=8, kind=OperationKind.FILTER, role=OperationRole.RECRYSTALLIZATION, materials=("petroleum ether",),
+            quantity=EvidenceField.present("collect by vacuum filtration, rinse with a few mL cold petroleum ether", _ASPIRIN_URL),
+            apparatus=("Buchner funnel",), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=9, kind=OperationKind.DRY, role=OperationRole.OTHER,
+            quantity=EvidenceField.present("air dry the crystals", _ASPIRIN_URL), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=10, kind=OperationKind.VERIFY, role=OperationRole.OTHER, locator=_ASPIRIN_URL),
+    ),
+    quench=EvidenceField.not_applicable(
+        _ASPIRIN_URL,
+        "worked up by dilution, ice-bath crystallization and filtration; the sourced procedure specifies no "
+        "separate reaction quench"),
+    workup_isolation=EvidenceField.present(
+        "dilute with water, vacuum (Buchner) filtration, cold-water rinse, air dry", _ASPIRIN_URL),
+    separation=EvidenceField.not_applicable(
+        _ASPIRIN_URL,
+        "the solid product is isolated by filtration; the sourced procedure uses no liquid-liquid partition"),
+    wash=EvidenceField.present(
+        "cold-water rinses of the crystals; cold petroleum-ether rinse after recrystallization", _ASPIRIN_URL),
+    drying=EvidenceField.present("air dry the collected crystals", _ASPIRIN_URL),
+    purification=EvidenceField.present(
+        "recrystallize from hot ethyl acetate (after a bicarbonate/HCl reprecipitation)", _ASPIRIN_URL),
+    analytical_verification=EvidenceField.present(
+        "weigh; melting point (lit mp 135 C); percent yield; ferric-chloride purity test", _ASPIRIN_URL),
+)
+
+# Paracetamol (acetic-anhydride route) -- the flagship non-monotonicity witness: a COMPLETE, sourced preparative
+# procedure whose reaction_type is UNRECOGNIZED for the same structural reason as aspirin. Coarse tier stays
+# FORMAL_CANDIDATE; process/workup evidence is visibly SATISFIED. Procedure source is the LibreTexts acetaminophen
+# page (the envelope's CONDITIONS citation is a different accepted source -- the ACS DOI -- so the procedure
+# carries its OWN accepted locator, never borrowing the conditions citation; plan D4 / Lane F KILL 1(c)).
+_PARACETAMOL_PROCEDURE = ProcedureEvidence(
+    reaction_scope="acetylation: 4-aminophenol + acetic anhydride -> paracetamol + acetic acid",
+    source=SourceCitation(_ACETAMINOPHEN_URL, SourceReview.ACCEPTED),
+    scale=EvidenceField.present(
+        "2.1 g p-aminophenol; 35 mL water; 1.5 mL conc. HCl; 0.3-0.4 g Norit charcoal; 2.5 g sodium acetate "
+        "trihydrate in 7.5 mL water (buffer); 2.0 mL acetic anhydride", _ACETAMINOPHEN_URL),
+    operations=(
+        ProcedureOperation(
+            ordinal=1, kind=OperationKind.ADD, role=OperationRole.OTHER,
+            materials=("p-aminophenol", "water", "hydrochloric acid"),
+            quantity=EvidenceField.present("2.1 g p-aminophenol + 35 mL water + 1.5 mL conc. HCl, swirl to dissolve", _ACETAMINOPHEN_URL),
+            apparatus=("125-mL Erlenmeyer flask",), locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=2, kind=OperationKind.ADD, role=OperationRole.OTHER, materials=("decolorizing charcoal (Norit)",),
+            quantity=EvidenceField.present("0.3-0.4 g Norit; swirl on a steam bath for 4-8 minutes", _ACETAMINOPHEN_URL),
+            apparatus=("steam bath",), locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=3, kind=OperationKind.FILTER, role=OperationRole.OTHER,
+            quantity=EvidenceField.present("gravity filter through fluted paper while warm to remove charcoal", _ACETAMINOPHEN_URL),
+            apparatus=("fluted filter paper",), locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=4, kind=OperationKind.ADD, role=OperationRole.REACTION,
+            materials=("sodium acetate buffer", "acetic anhydride"),
+            quantity=EvidenceField.present("add 8.8 mL sodium-acetate buffer in one portion, then 2.0 mL acetic anhydride", _ACETAMINOPHEN_URL),
+            rate=EvidenceField.present("add the buffer in one portion, then immediately add the anhydride while swirling", _ACETAMINOPHEN_URL),
+            locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=5, kind=OperationKind.HOLD, role=OperationRole.REACTION,
+            temperature=EvidenceField.present("steam bath", _ACETAMINOPHEN_URL),
+            agitation=EvidenceField.present("swirl vigorously", _ACETAMINOPHEN_URL),
+            duration=EvidenceField.present(Interval(10.0, 10.0, "min"), _ACETAMINOPHEN_URL),
+            endpoint=EvidenceField.present("continue heating on the steam bath, swirling vigorously, for 10 minutes", _ACETAMINOPHEN_URL),
+            apparatus=("steam bath",), locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=6, kind=OperationKind.COOL, role=OperationRole.OTHER,
+            temperature=EvidenceField.present("ice-water bath; stir until crystallization begins; sit ~1 hour", _ACETAMINOPHEN_URL),
+            apparatus=("ice bath", "glass rod"), locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=7, kind=OperationKind.FILTER, role=OperationRole.OTHER,
+            quantity=EvidenceField.present("Buchner vacuum filtration", _ACETAMINOPHEN_URL),
+            apparatus=("Buchner funnel", "water aspirator"), locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=8, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("cold water",),
+            quantity=EvidenceField.present("rinse the crystals once with a few mL of cold water", _ACETAMINOPHEN_URL),
+            locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=9, kind=OperationKind.DRY, role=OperationRole.OTHER,
+            quantity=EvidenceField.present("air dry under vacuum", _ACETAMINOPHEN_URL), locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=10, kind=OperationKind.HEAT, role=OperationRole.RECRYSTALLIZATION, materials=("water",),
+            temperature=EvidenceField.present("dissolve in the minimum amount of hot (boiling) water, add another 2 mL hot water", _ACETAMINOPHEN_URL),
+            locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=11, kind=OperationKind.COOL, role=OperationRole.RECRYSTALLIZATION,
+            temperature=EvidenceField.present("cool with an ice bath until crystallization ceases", _ACETAMINOPHEN_URL),
+            duration=EvidenceField.present(Interval(15.0, 15.0, "min"), _ACETAMINOPHEN_URL),
+            apparatus=("ice bath",), locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=12, kind=OperationKind.FILTER, role=OperationRole.RECRYSTALLIZATION, materials=("cold water",),
+            quantity=EvidenceField.present("collect the crystals, rinse once with a few mL cold water, air dry", _ACETAMINOPHEN_URL),
+            apparatus=("Buchner funnel",), locator=_ACETAMINOPHEN_URL),
+        ProcedureOperation(
+            ordinal=13, kind=OperationKind.VERIFY, role=OperationRole.OTHER, locator=_ACETAMINOPHEN_URL),
+    ),
+    quench=EvidenceField.not_applicable(
+        _ACETAMINOPHEN_URL,
+        "worked up by ice-bath crystallization and filtration; the sourced procedure specifies no separate "
+        "reaction quench"),
+    workup_isolation=EvidenceField.present(
+        "ice-bath crystallization, Buchner vacuum filtration, cold-water rinse, air dry", _ACETAMINOPHEN_URL),
+    separation=EvidenceField.not_applicable(
+        _ACETAMINOPHEN_URL,
+        "the solid product is isolated by filtration; the sourced procedure uses no liquid-liquid partition"),
+    wash=EvidenceField.present("rinse the crystals with cold water (crude and recrystallized)", _ACETAMINOPHEN_URL),
+    drying=EvidenceField.present("air dry under vacuum", _ACETAMINOPHEN_URL),
+    purification=EvidenceField.present("recrystallize from hot water", _ACETAMINOPHEN_URL),
+    analytical_verification=EvidenceField.present(
+        "weigh; melting point (lit mp 169-170.5 C); percent yield", _ACETAMINOPHEN_URL),
+)
+
+
 #: Sourced conditions, keyed by scale-independent reaction signature. Tiny by design; every entry
 #: is provenance-bearing and `EXPERIMENTAL` (a decorator never claims a certified-lane status).
 SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
@@ -196,6 +448,7 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
                     SourceReview.ACCEPTED,
                 ),
             ),
+            procedure=_PARACETAMOL_PROCEDURE,
         ),
         (ReactionDirection.ASSEMBLY,),
         "paracetamol",
@@ -248,6 +501,7 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
                     "134-143 C distillation fraction; pressure ambient (open apparatus)."
                 ),
             ),
+            procedure=_ISOPENTYL_PROCEDURE,
         ),
         (ReactionDirection.ASSEMBLY,),
         "isopentyl acetate",
@@ -350,6 +604,7 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
                     "unaffected, but a future quantity-weighted demo must read the real ratio, not 1:1."
                 ),
             ),
+            procedure=_ASPIRIN_PROCEDURE,
         ),
         (ReactionDirection.ASSEMBLY,),
         "aspirin",

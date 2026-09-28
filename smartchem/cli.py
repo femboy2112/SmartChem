@@ -388,8 +388,33 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
     # same facts the --json ranked_route_dossiers do (CLI-JSON-01 agreement).  Shown when not --quiet, like candidates.
     if not quiet and response.ranked_route_dossiers:
         lines.append("  ranked routes (best first; section-11 bench fit):")
+        from .experiment.readiness import (
+            CONDITIONS_SUPPORTED,
+            FORMAL_CANDIDATE,
+            PROCESS_SPECIFIED,
+            REACTION_VOUCHED,
+        )
         for i, r in enumerate(response.ranked_route_dossiers[:20], 1):
             lines.append(f"    {i}. [{r.fit_status}/{r.readiness_tier}] {r.equation}  #{r.route_digest[:12]}")
+            # v0.8 Real Route Dossiers: the human render explains every readiness tier, so a chemist skimming it
+            # never mistakes a bare structural candidate (or a recognized-but-unsourced one) for something they
+            # could run -- and, at the top rung, never mistakes "the literature procedure is specified" (an 0.8
+            # claim about the SOURCE) for "your bench can run it" (a 0.9 capability question).  This mirrors the
+            # RouteDossier.render() text exactly (human/JSON parity): both read the SAME derived tier.
+            if r.readiness_tier == FORMAL_CANDIDATE:
+                lines.append("        READINESS: FORMAL_CANDIDATE -- the reaction type is not yet recognized by "
+                             "the production oracle; this is NOT an executable bench procedure.")
+            elif r.readiness_tier == REACTION_VOUCHED:
+                lines.append("        READINESS: REACTION_VOUCHED -- the reaction type is recognized, but its "
+                             "conditions are not sourced; this is NOT an executable bench procedure.")
+            elif r.readiness_tier == CONDITIONS_SUPPORTED:
+                lines.append("        READINESS: CONDITIONS_SUPPORTED -- the reaction type is recognized and the "
+                             "conditions are sourced, but the procedure is not fully specified; this is NOT an "
+                             "executable bench procedure.")
+            elif r.readiness_tier == PROCESS_SPECIFIED:
+                lines.append("        READINESS: PROCESS_SPECIFIED -- the literature procedure is fully specified "
+                             "from an accepted source; this is what the SOURCE specifies, NOT a guarantee your "
+                             "lab/kitchen can execute it (capability is 0.9).")
             for e in r.exclusions:
                 lines.append(f"        EXCLUDED: {e}")
             for g in r.gaps:

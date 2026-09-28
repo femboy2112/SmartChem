@@ -76,6 +76,14 @@ from smartchem.service import (
     build_recompile_request, run_compilation, response_to_payload, response_from_payload,
 )
 
+#: v0.8 Round II note: this pin did NOT need to move. Unlike `redox_displacement_probe.py` (whose
+#: `content_hash` folds in a raw `ExperimentStep.digest`, which the new digest-covered `envelope.procedure`
+#: field shifts), this probe's `_payload()` only ever serializes booleans/`Disposition` labels, never a raw
+#: digest -- so the envelope-field shift never reaches it. The ONLY thing that broke this probe was
+#: `thin_transport_fiction_closed_under_verified_admission`'s bare `response_to_payload(resp)` silently
+#: picking up the NEW `include_replay=True` default (D5's canonical-by-default transport) instead of the thin
+#: wire the probe's own name promises -- fixed above by passing `include_replay=False` explicitly. Confirmed
+#: `validate()` passes against live code FIRST; the hash below is UNCHANGED from before Round II.
 FROZEN_HASH = "3e8d421743776da09619792a71ca84ccd1b2672ca18f4b88eab4dbb558fc8134"
 
 #: a poor-man kitchen inventory that LACKS lab glassware -> the Fischer esterification is process-EXCLUDED (REAL_BUT_HARD).
@@ -278,7 +286,10 @@ def kill1_substitution_refused() -> dict:
 # --------------------------------------------------------------------------------------------------
 def thin_transport_fiction_closed_under_verified_admission() -> dict:
     resp = run_compilation(build_recompile_request(_TARGET, max_depth=3))
-    thin = response_to_payload(resp)                 # include_replay defaults False -> no replay on the wire
+    # v0.8 Round II (D5): `include_replay` now DEFAULTS True (`transport_mode=CANONICAL_VERIFIED` is the new
+    # default wire) -- this probe's whole point is the THIN transport, so it must ask for it explicitly now,
+    # or `thin_omits_replay` below silently goes False and this "thin" payload is actually the canonical one.
+    thin = response_to_payload(resp, include_replay=False)  # explicit lean opt-out -> no replay on the wire
     fr = thin["affordability_frontier"]
     fic = [i for i, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"]]
     strip = copy.deepcopy(thin)

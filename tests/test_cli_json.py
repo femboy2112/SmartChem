@@ -92,8 +92,15 @@ class TestSchemaDescriptor:
         # pre-guarantee v1alpha12 payload is refused by the strict schema gate.  The DESCRIPTOR stays v1alpha16: its
         # embedded response_schema_version VALUE tracks v1alpha13, but a value-only change does NOT bump the descriptor
         # version (it bumps only on a field shape change -- its own convention).
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha16"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha13"
+        # v1alpha17 (descriptor, a genuine shape change) / v1alpha14 (response): v0.8 Real Route Dossiers adds a typed
+        # ``readiness`` field to ranked_route_summary_fields (the Sec 3/4/8 obligation ladder; readiness_tier stays,
+        # now a DERIVED alias of readiness.tier). The response version bump ALSO marks a new on-load refusal (M10):
+        # _check_readiness_coherence re-derives every ranked route's readiness from its thick replay evidence.
+        # v1alpha18 (descriptor, a genuine shape change) / v1alpha15 (response): v0.8 Round II D5 canonical transport
+        # adds a top-level ``transport_mode`` field (folded into result_digest) and discloses the ``replay_payload``
+        # now shipped by default; the digest-covered ConditionEnvelope also gained a ``procedure`` field this round.
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha18"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha15"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the
@@ -254,4 +261,9 @@ class TestHumanAndJsonAgree:
             payload["compilation_ir"]["search_receipt"]
         ).digest
         assert list(fields["candidate_ids"]) == [c["candidate_digest"] for c in payload["compilation_ir"]["candidates"]]
-        assert fields["result_digest"] == payload["result_digest"]
+        # v0.8 Round II (D5): the wire result_digest binds the declared transport_mode, so the bare semantic digest the
+        # projection reports is recoverable through the same fold (default canonical wire).
+        from smartchem.service import _transport_bound_result_digest
+        assert payload["result_digest"] == _transport_bound_result_digest(
+            fields["result_digest"], payload["transport_mode"]
+        )

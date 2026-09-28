@@ -68,6 +68,14 @@ from .process_constraints import (
     ProcessBounds, ProcessRequirements, ProcessFitStatus, Attention, Agitation,
     evaluate_process_requirements, evaluate_dag_process_requirements,
 )
+from .experiment.readiness import (
+    FORMAL_CANDIDATE,
+    PROCESS_SPECIFIED,
+    ObligationStatus,
+    RouteReadiness,
+    StepReadiness,
+    evaluate_route,
+)
 from .algebra_profiles import (
     DEFAULT_ALGEBRA_PROFILE,
     DEFAULT_ROUTE_ALGEBRA_PROFILE,
@@ -78,6 +86,12 @@ from .algebra_profiles import (
 from .contracts import Digestible, canonical_digest
 from .identity import IdentityLoss, MatchLayer, refines
 from .identity_parse import IdentityParseError, InputKind, resolve_target
+from .procedure_evidence import (
+    EvidenceField,
+    OperationKind,
+    ProcedureEvidence,
+    ProcedureOperation,
+)
 from .transform_provider import ProviderUse, search_algebra_digest
 from .search import REFUSED_8_2_STATUSES, STANDARD_8_2_STATUSES, section_8_3_label
 
@@ -164,7 +178,21 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # (replay-MANDATORY-for-disposition-claims); a bare non-verified load keeps them ADVISORY.  The bump carries no shape
 # change; it marks the version at/after which a loaded
 # response is frontier-coherence-checked, so a pre-guarantee v1alpha12 payload is refused by the strict schema gate.
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha13"
+# v1alpha14 (v0.8 Real Route Dossiers, M10): NO new top-level field -- a new ON-LOAD REFUSAL, mirroring v1alpha13's own
+# convention.  ``CompilationResponse._check_readiness_coherence`` (run unconditionally from ``response_from_payload``,
+# UN-gated on ``fit_status`` or ``require_verified_admission`` -- readiness is orthogonal to bench-fit, Sec 2) re-derives
+# each ranked route's typed readiness ladder from its thick ``replay_payload`` via ``evaluate_route`` and REFUSES a
+# payload whose carried ``readiness`` disagrees with the re-derivation (a bumped tier, a stripped citation, a
+# substituted per-step obligation).  Advisory (unenforceable) on a thin (replay-absent) route on a PLAIN load, exactly
+# as the catalyst/fiction frontier channels are -- BUT under ``require_verified_admission`` a thin claim ABOVE the
+# FORMAL_CANDIDATE floor is fail-closed (Wave C thin-transport closure), mirroring fit/frontier.  The bump marks the
+# version at/after which a readiness claim is re-derived, so a pre-guarantee v1alpha13 payload is refused by the gate.
+# v1alpha15 (v0.8 Round II, D5 canonical transport): the response payload gains a top-level ``transport_mode``
+# ({CANONICAL_VERIFIED, THIN_ADVISORY}) FOLDED into ``result_digest``, and ``include_replay`` now defaults True so the
+# canonical wire ships each dossier's ``replay_payload``.  The digest-covered ConditionEnvelope also gained a
+# ``procedure`` field this round (via the replay payload), so envelope->step->route->summary->result digests shift --
+# no chemistry changed, the search is byte-identical.
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha15"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
@@ -184,16 +212,27 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha13"
 # v1alpha16 (item 2b): the ranked_dag_summary element gains a machine-readable ``serial_holds`` field (the DAG-HOLD-01
 # serial-schedule hold as (producer, consumer, minutes) triples) -- a descriptor-only bump (the field is disclosure,
 # digest-excluded, so no result_digest ripple, and it is empty for every non-holding/linear-shaped DAG).
-# TAMPER-HARDENING-01: the descriptor is NOT bumped.  Its embedded ``response_schema_version`` VALUE reads v1alpha13
-# (a derived-value change), but no descriptor FIELD is added/removed/renamed -- the on-load frontier-coherence refusal
-# changes behaviour, not shape -- and this descriptor bumps ONLY on a shape change (its own stated convention).  So it
-# stays v1alpha16; bumping it for a value-only change would violate that convention (birdperson).
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha16"
+# TAMPER-HARDENING-01: the descriptor was NOT bumped for that round.  Its embedded ``response_schema_version`` VALUE
+# read v1alpha13 (a derived-value change), but no descriptor FIELD was added/removed/renamed -- the on-load
+# frontier-coherence refusal changed behaviour, not shape -- and this descriptor bumps ONLY on a shape change (its own
+# stated convention).
+# v1alpha17 (v0.8 Real Route Dossiers): a genuine SHAPE change -- ``ranked_route_summary_fields`` gains a typed
+# ``readiness`` field (Sec 3/4/8's per-step obligation ladder; ``readiness_tier`` stays, now a documented DERIVED
+# convenience alias of ``readiness.tier`` rather than a hard-coded floor).  Bumped per the descriptor's own convention.
+# v1alpha18 (v0.8 Round II, D5 canonical transport): a genuine SHAPE change -- ``response_fields`` gains a top-level
+# ``transport_mode`` field and ``ranked_route_summary_fields``/``ranked_dag_summary_fields`` disclose the optional
+# ``replay_payload`` (emitted by default now that the canonical wire ships it).  Bumped per the descriptor's convention.
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha18"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
 # disposition (FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED with exact reasons) and the ranking's sourced verdicts.
-RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha2"
+# v1alpha3 (v0.8 Real Route Dossiers): gains a typed ``readiness`` field (``smartchem.experiment.readiness.
+# RouteReadiness`` -- the Sec 3/4/8 per-step obligation ladder), digest-covered exactly like ``process_requirements``.
+# ``readiness_tier`` is retired as a stored field (it was a hard-coded ``FORMAL_CANDIDATE`` floor -- READY-TIER-01 --
+# no route could ever earn or lose) and is now a derived ``@property`` reading ``readiness.tier``; every existing
+# ``.readiness_tier`` read keeps working, it just answers honestly now.
+RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha3"
 # DAG-BENCH-01 (was DAG-ADMIT-01): the thin, digestible per-DAG COMBINED section-11 admission that populates the
 # response's ``ranked_dag_dossiers``.  Distinct from RANKED_ROUTE_SUMMARY_SCHEMA on purpose -- a DAG additionally
 # carries its ``edges`` (so the critical-path PROCESS component is re-derived on load, the convergent PROCESS-ADMIT-01)
@@ -986,16 +1025,22 @@ class RankedRouteSummary(Digestible):
     ranked entry links back to its candidate.  ``fit_status`` is the applied section-11 verdict: ``FITS`` (within
     every declared bound), ``EXCLUDED`` (a hard over/under-bound, in ``exclusions``), ``UNKNOWN`` (a constrained
     dimension the route leaves undeclared -- a ``gaps`` entry, NEVER a silent pass), or ``UNCONSTRAINED`` (the bench
-    box declares nothing to fit).  ``readiness_tier`` is the honest READY-TIER-01 floor: ``FORMAL_CANDIDATE`` always,
-    never self-promoted.  The four verdict strings are the ranking tiebreakers, exposed so the order is inspectable
-    (a ranking you cannot read is multiple choice); they are ranking-only and NEVER a bench-readiness grade.
+    box declares nothing to fit).  ``readiness_tier`` is DERIVED, never stored -- a ``@property`` reading straight off
+    ``readiness.tier`` (v0.8 Real Route Dossiers: the old READY-TIER-01 wall, a hard-coded ``FORMAL_CANDIDATE`` no
+    route could ever earn or lose, is retired). The four verdict strings are the ranking tiebreakers, exposed so the
+    order is inspectable (a ranking you cannot read is multiple choice); they are ranking-only and NEVER a
+    bench-readiness grade.
     """
 
     schema_version: str
     route_digest: str
     equation: str
     fit_status: str
-    readiness_tier: str
+    #: The typed Sec 3/4/8 obligation ladder for this route (``smartchem.experiment.readiness.RouteReadiness``) --
+    #: the SOURCE OF TRUTH; ``readiness_tier`` below is a derived projection of it, never the reverse. Digest-covered
+    #: (``compare=True``, the default) so a readiness claim is part of route identity -- tampering with it is a
+    #: detectable identity change, not a silent relabel, mirroring ``process_requirements`` exactly.
+    readiness: RouteReadiness
     exclusions: tuple[str, ...]
     gaps: tuple[str, ...]
     composability_verdict: str
@@ -1026,8 +1071,8 @@ class RankedRouteSummary(Digestible):
             raise ValueError(f"schema_version must be exactly {RANKED_ROUTE_SUMMARY_SCHEMA!r}")
         if self.fit_status not in self._FIT_STATUSES:
             raise ValueError(f"fit_status must be one of {self._FIT_STATUSES}")
-        if self.readiness_tier != "FORMAL_CANDIDATE":
-            raise ValueError("readiness_tier must be FORMAL_CANDIDATE (the READY-TIER-01 floor)")
+        if type(self.readiness) is not RouteReadiness:
+            raise TypeError("readiness must be a RouteReadiness")
         for name in ("route_digest", "equation", "composability_verdict", "selectivity_verdict",
                      "feasibility_verdict", "equilibrium_verdict", "kinetics_verdict"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
@@ -1056,15 +1101,31 @@ class RankedRouteSummary(Digestible):
         if self.fit_status in ("FITS", "UNCONSTRAINED") and self.gaps:
             raise ValueError(f"a {self.fit_status} route cannot carry gaps -- a gap is an UNKNOWN-fit, not a pass")
 
+    @property
+    def readiness_tier(self) -> str:
+        """Backward-compat alias: the coarse tier, read straight off the typed ``readiness`` record.  Kept as a
+        derived property (not a stored field) so ``readiness_tier`` can never disagree with ``readiness`` -- there
+        is only one place a caller can construct a lie, and it is ``readiness`` itself (which ``evaluate_route``'s
+        own dataclasses refuse to build incoherently)."""
+        return self.readiness.tier
+
     @classmethod
-    def of_fit(cls, fit: "object") -> "RankedRouteSummary":
-        """Project a drafter ``RouteFit`` (already box-checked and ranked) onto the thin response summary."""
+    def of_fit(cls, fit: "object", *, identity_losses: "tuple[IdentityLoss, ...]" = ()) -> "RankedRouteSummary":
+        """Project a drafter ``RouteFit`` (already box-checked and ranked) onto the thin response summary.
+
+        ``identity_losses`` is the route's already-computed section-5.3 loss tuple (the SAME tuple the caller threads
+        into ``rank_routes``); readiness's ``conditions`` obligation is capped by any loss that blocks it (Sec 5.3),
+        so the readiness record must see the identical evidence the ranking did.  Defaults to ``()`` for callers that
+        genuinely have none in scope (the overwhelming majority of today's corpus)."""
         return cls(
             RANKED_ROUTE_SUMMARY_SCHEMA,
             fit.route.digest,
             " ; ".join(fit.route.equation_lines()) or repr(fit.route),
             fit.status.value,
-            "FORMAL_CANDIDATE",
+            # v0.8 Real Route Dossiers: readiness is RE-DERIVED from the route's own steps (Sec 3/4), never a
+            # hard-coded stamp -- ``evaluate_route`` reads only conservation-certified facts already on each built
+            # ``ExperimentStep`` (reaction-type recognition, sourced conditions, process/workup declarations).
+            evaluate_route(fit.route, identity_losses=identity_losses),
             tuple(fit.exclusions),
             tuple(fit.gaps),
             fit.composability.verdict,
@@ -1598,6 +1659,106 @@ class CompilationResponse:
                 if hidden:
                     raise ValueError(f"DAG {d.route_digest} (EXCLUDED) hides re-derived process exclusions: {hidden}")
 
+    def _check_readiness_coherence(self, *, require_verified_admission: bool = False,
+                                   refuse_process_specified_on_thin: bool = False) -> None:
+        """Re-derive each ranked route's typed READINESS from its carried thick ``replay_payload`` and refuse a
+        payload whose carried ``readiness`` disagrees with the re-derivation (v0.8 Real Route Dossiers, M10 -- the
+        deserialization trust-boundary close for the Sec 3/4/8 obligation ladder).
+
+        Called from :func:`response_from_payload` (the DESERIALIZATION trust boundary), like
+        :meth:`_check_frontier_coherence` -- NOT from ``__post_init__`` -- because it too reconstructs a route from
+        the thick replay payload, a load-time authority rather than an in-memory-construction invariant (an honest
+        producer's freshly-built summary is trusted; ``RankedRouteSummary.of_fit`` already computed ``readiness`` via
+        the SAME ``evaluate_route`` this re-derives with, so re-checking it on construction would be redundant work).
+
+        The thick-route RE-DERIVATION is UNCONDITIONAL -- unlike :meth:`_check_process_admission_coherence`, it is NOT
+        gated on ``fit_status`` or on a process-constrained request, and it runs on every load regardless of
+        ``require_verified_admission`` (a thick tampered readiness is refused even on a bare ``response_from_payload``).
+        Only the THIN-transport fail-close (a no-replay claim above FORMAL) is gated on ``require_verified_admission``,
+        like the frontier's own thin closure. ``refuse_process_specified_on_thin`` (set by ``response_from_payload``
+        for a ``THIN_ADVISORY`` payload, D5) is the ONE unconditional thin fail-close: PROCESS_SPECIFIED is inadmissible
+        on an unsigned thin wire regardless of the verified-admission flag (Lane F forward ruling). Readiness is
+        explicitly orthogonal to bench-fit (Sec 2's
+        non-negotiable law -- a favorable route never implies a described procedure, and the reverse): an
+        EXCLUDED/UNKNOWN route can carry a forged CONDITIONS_SUPPORTED/PROCESS_SPECIFIED claim exactly as easily as a
+        FITS one, so gating this on ``fit_status`` would leave every non-FITS route's readiness claim unchecked.
+
+        THE RE-DERIVATION.  ``evaluate_route`` is a PURE function of the reconstructed steps plus the response's own
+        ``identity_losses`` (Sec 5.3's conditions-blocker), so an HONEST producer's carried ``readiness`` is always
+        BYTE-EQUAL to the re-derivation -- ``StepReadiness``/``RouteReadiness`` structural equality, not just a tier
+        comparison, catches a per-step obligation swap (e.g. a stripped source citation that would have demoted
+        ``conditions``) even where the coarse projected tier happens not to move on its own; and because ``tier`` is a
+        MONOTONIC projection of the per-step obligations (Sec 4), exact per-step equality also implies the coarse
+        tier can never be claimed stronger than the re-derivation. ``route.digest == route_digest`` is bound FIRST, so
+        the evidence used for the re-derivation cannot be a different (substituted) route's replay wearing this
+        entry's identity.
+
+        BOUNDARY -- what this needs, and what it leaves open (stated plainly, no edge-case framing):
+        * A summary with NO carried ``replay_payload`` (the THIN_ADVISORY opt-out, ``include_replay=False``; the
+          DEFAULT wire is CANONICAL_VERIFIED and DOES carry it) has nothing to reconstruct a route FROM -- its readiness
+          claim is UNVERIFIABLE. On a plain load this check is silent on it (advisory), the same boundary the frontier's
+          catalyst/fiction channels carry on the thin transport (EXCEPT a PROCESS_SPECIFIED claim, refused outright --
+          see ``refuse_process_specified_on_thin``).
+          But under ``require_verified_admission`` it is now FAIL-CLOSED (Wave C / evil-morty FINDING 1): a claim
+          ABOVE the FORMAL_CANDIDATE floor with no replay is refused, mirroring ``_check_verified_admission``'s FITS
+          rule and ``_check_frontier_coherence``'s own thin-transport closure -- so the strongest keyless mode is no
+          longer falsely complete for readiness while it is replay-mandatory for fit and the frontier.
+        * Even with a replay present, the evidence is not cryptographically bound to the route structure beyond the
+          digest bind above -- a fully controlling forger who fabricates an internally coherent lenient replay (one
+          that genuinely re-derives to the stronger tier it claims) AND recomputes ``result_digest`` is the same
+          irreducible keyless-consumer residual every other axis in this module already lives with (closed only by
+          ``verification_key`` / COMBINED-VERDICT-AUTH).
+        Pinned by tests/test_v0_8_readiness_transport.py.
+        """
+        for r in self.ranked_route_dossiers:
+            # LANE F FORWARD RULING (D5, v0.8 Round II): PROCESS_SPECIFIED is not admissible on an unsigned
+            # THIN_ADVISORY wire AT ALL -- refused UNCONDITIONALLY, and checked FIRST for EVERY dossier, whether or
+            # not it happens to carry a replay.  (Wave C / evil-morty FINDING 1: gating this refusal on replay-ABSENCE
+            # was a real defect -- a THIN payload that KEEPS its genuine replay skipped the check, re-derived, and
+            # delivered PROCESS_SPECIFIED, silently violating the documented "not admissible on a thin wire" guarantee.
+            # The declared transport_mode, not replay-presence, is the trust-tier signal.)  "The source procedure was
+            # fully specified" is precisely the claim a lean advisory wire may not carry; a producer that means it
+            # serializes CANONICAL_VERIFIED (include_replay=True).  Lower above-FORMAL tiers keep their documented thin
+            # residual (advisory on a plain load, fail-closed under verified admission).
+            if refuse_process_specified_on_thin and r.readiness.tier == PROCESS_SPECIFIED:
+                raise ValueError(
+                    f"ranked route {r.route_digest} claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY "
+                    f"transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must "
+                    f"serialize with include_replay=True, transport_mode=CANONICAL_VERIFIED); refused "
+                    f"(v0.8 D5, Lane F forward ruling)"
+                )
+            if r.replay_payload is None:
+                # THIN-TRANSPORT CLOSURE.  Under verified admission a readiness claim ABOVE the FORMAL_CANDIDATE floor
+                # MUST be re-derivable, which needs the thick replay_payload.  A missing payload leaves the claim
+                # UNVERIFIABLE -- and a thin-wire forgery is STRICTLY CHEAPER than the thick-replay non-goal below (no
+                # coherent sourced envelopes to fabricate, just the copied ladder + a recomputed result_digest), so
+                # leaving it advisory would make require_verified_admission falsely complete for readiness while it is
+                # replay-mandatory for FITS routes and the frontier.  Fail CLOSED, mirroring _check_verified_admission
+                # and _check_frontier_coherence's own thin closures.  A FORMAL_CANDIDATE claim is the floor and asserts
+                # no evidence, so a thin FORMAL route is fine.
+                if require_verified_admission and r.readiness.tier != FORMAL_CANDIDATE:
+                    raise ValueError(
+                        f"verified admission: ranked route {r.route_digest} claims readiness tier "
+                        f"{r.readiness.tier} but carries no replay_payload -- the claim is UNVERIFIED (the DEFAULT "
+                        f"thin transport omits the replay, so a forged above-FORMAL readiness cannot be re-derived "
+                        f"and refuted; the producer must serialize with include_replay=True); refused "
+                        f"(v0.8 M10, thin-transport closure)"
+                    )
+                continue
+            route = _reconstruct_route(r.replay_payload)
+            if route.digest != r.route_digest:
+                raise ValueError(
+                    f"ranked route {r.route_digest} carries replay evidence that reconstructs to a DIFFERENT route "
+                    f"({route.digest}) -- substituted readiness evidence; refused (v0.8 M10)"
+                )
+            rederived = evaluate_route(route, identity_losses=self.identity_losses)
+            if r.readiness != rederived:
+                raise ValueError(
+                    f"ranked route {r.route_digest} claims a readiness (tier {r.readiness.tier}) its replayed "
+                    f"evidence does not support (re-derives to tier {rederived.tier}) -- a forged, stale, or "
+                    f"evidence-stripped readiness claim; refused (v0.8 M10)"
+                )
+
     def _check_frontier_coherence(self, *, require_verified_admission: bool = False) -> None:
         """Re-derive each affordability_frontier entry's DISPOSITION blockers and refuse an entry whose claimed
         blockers are looser than the re-derivation (TAMPER-HARDENING-01 -- the R59 disposition serialized-tamper close).
@@ -1645,8 +1806,9 @@ class CompilationResponse:
           (PIECE 2 demotes a centre-less step); the re-derivation reads the REAL route, so any strip is caught, down to
           a SHA-256 collision on the route digest (cryptographic, out of scope).
         * THE THIN TRANSPORT, UNDER VERIFIED ADMISSION -- now CLOSED, fail-closed (``require_verified_admission=True``).
-          ``response_to_payload`` emits the replay only on ``include_replay=True`` (DEFAULT ``False``), so on the thin
-          transport the catalyst/fiction channels have no evidence to re-derive from.  Rather than trust the
+          ``response_to_payload`` emits the replay on ``include_replay=True`` (the DEFAULT since v0.8 Round II; the
+          THIN_ADVISORY opt-out omits it), so on the thin transport the catalyst/fiction channels have no evidence to
+          re-derive from.  Rather than trust the
           unverifiable claim (fail-open, the old boundary), a verified-admission load now REFUSES any frontier entry
           whose summary carries no ``replay_payload`` -- replay-MANDATORY-for-disposition-claims, mirroring
           ``_check_verified_admission``'s own "FITS route with no replay -> UNVERIFIED -> refused".  This is
@@ -2187,7 +2349,7 @@ def _ranked_summaries(
         return ()
     from .experiment.drafter import ConstraintBox, rank_routes
     fits = rank_routes(routes, box=ConstraintBox.of_bounds(bounds, process=process), losses=losses)
-    return tuple(RankedRouteSummary.of_fit(f) for f in fits)
+    return tuple(RankedRouteSummary.of_fit(f, identity_losses=losses) for f in fits)
 
 
 def _route_shopping_requirements(route: "object") -> "tuple[tuple[object, float], ...] | None":
@@ -2762,6 +2924,281 @@ def _process_requirements_from_payload(payload: "dict | None") -> "ProcessRequir
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# v0.8 Round II: the typed PROCEDURE-EVIDENCE codecs (Blocker B's transport).  Same discipline as the
+# process-requirements pair above -- an exact-field-set guard per object, reconstructed through the REAL
+# constructors so each ``__post_init__`` re-runs its well-formedness table on load (a stripped source, a gerrymandered
+# EXPLICIT_NOT_APPLICABLE with a realizing op, a gap in the operation ordinals -- all refused at the seam, not silently
+# admitted).  This is what makes the isopentyl-acetate route re-derive ``PROCESS_SPECIFIED`` on load rather than
+# collapsing to a lower tier: the procedure rides INSIDE the digest-covered envelope (``_step_to_payload`` ->
+# ``_condition_envelope_to_payload``), so a replayed step that dropped it would re-derive to a lower tier and the
+# readiness-coherence check would catch the disagreement.
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def _evidence_value_to_payload(value) -> dict:
+    """Tag an ``EvidenceField.value`` by TYPE so the round trip rebuilds a ``str`` vs an ``Interval`` vs ``None`` --
+    an untagged value would lose the str/Interval distinction the field's ``__post_init__`` enforces."""
+    from .conditions import Interval
+    if value is None:
+        return {"kind": "null"}
+    if isinstance(value, Interval):  # order matters -- an Interval is not a str, but be explicit
+        return {"kind": "interval", "interval": _interval_to_payload(value)}
+    if isinstance(value, str):
+        return {"kind": "str", "value": value}
+    raise TypeError("an evidence value must be a str, an Interval, or None")
+
+
+def _evidence_value_from_payload(payload) -> "str | object | None":
+    if type(payload) is not dict or "kind" not in payload:
+        raise TypeError("an evidence field value must be a tagged {kind, ...} object")
+    kind = payload["kind"]
+    if kind == "null":
+        if set(payload) != {"kind"}:
+            raise ValueError("a null evidence value carries only its kind tag")
+        return None
+    if kind == "str":
+        if set(payload) != {"kind", "value"} or type(payload["value"]) is not str:
+            raise ValueError("a str evidence value carries exactly a kind tag and a string value")
+        return payload["value"]
+    if kind == "interval":
+        if set(payload) != {"kind", "interval"}:
+            raise ValueError("an interval evidence value carries exactly a kind tag and an interval")
+        return _interval_from_payload(payload["interval"])
+    raise ValueError(f"unknown evidence value kind {kind!r}")
+
+
+def _evidence_field_to_payload(field) -> "dict | None":
+    """One tri-state :class:`~smartchem.procedure_evidence.EvidenceField`, or ``null`` for an absent per-operation
+    slot.  The enum rides by ``.value``; the value is TYPE-tagged so str/Interval/None all round-trip exactly."""
+    if field is None:
+        return None
+    return {
+        "status": field.status.value,
+        "value": _evidence_value_to_payload(field.value),
+        "locator": field.locator,
+        "justification": field.justification,
+    }
+
+
+_EVIDENCE_FIELD_FIELDS = frozenset(_evidence_field_to_payload(EvidenceField.unknown()))
+
+
+def _evidence_field_from_payload(payload) -> "EvidenceField | None":
+    if payload is None:
+        return None
+    if type(payload) is not dict or set(payload) != _EVIDENCE_FIELD_FIELDS:
+        raise ValueError("evidence field must contain exactly the versioned fields")
+    from .procedure_evidence import EvidenceFieldStatus
+    return EvidenceField(
+        EvidenceFieldStatus(payload["status"]),
+        _evidence_value_from_payload(payload["value"]),
+        payload["locator"],
+        payload["justification"],
+    )
+
+
+def _procedure_operation_to_payload(op) -> dict:
+    """One ordered :class:`~smartchem.procedure_evidence.ProcedureOperation`.  Enums by ``.value``; the seven
+    optional evidence slots stay ``null`` when the source is silent, never a fabricated empty field."""
+    return {
+        "ordinal": op.ordinal,
+        "kind": op.kind.value,
+        "role": op.role.value,
+        "materials": list(op.materials),
+        "quantity": _evidence_field_to_payload(op.quantity),
+        "rate": _evidence_field_to_payload(op.rate),
+        "agitation": _evidence_field_to_payload(op.agitation),
+        "temperature": _evidence_field_to_payload(op.temperature),
+        "pressure": _evidence_field_to_payload(op.pressure),
+        "duration": _evidence_field_to_payload(op.duration),
+        "endpoint": _evidence_field_to_payload(op.endpoint),
+        "apparatus": list(op.apparatus),
+        "locator": op.locator,
+    }
+
+
+_PROCEDURE_OPERATION_FIELDS = frozenset(
+    _procedure_operation_to_payload(ProcedureOperation(1, OperationKind.ADD, locator="_seed"))
+)
+
+
+def _procedure_operation_from_payload(payload) -> ProcedureOperation:
+    """Reconstruct one operation; ``ProcedureOperation.__post_init__`` re-validates the ordinal, kind/role types, and
+    the non-empty locator.  Wire types for the ints/lists are checked BEFORE construction (a bool cannot pose as an
+    ordinal, a non-string cannot pose as a material)."""
+    from .procedure_evidence import OperationRole
+    if type(payload) is not dict or set(payload) != _PROCEDURE_OPERATION_FIELDS:
+        raise ValueError("procedure operation must contain exactly the versioned fields")
+    if isinstance(payload["ordinal"], bool) or type(payload["ordinal"]) is not int:
+        raise TypeError("operation ordinal must be an exact int")
+    for name in ("materials", "apparatus"):
+        if type(payload[name]) is not list or any(type(m) is not str for m in payload[name]):
+            raise TypeError(f"operation {name} must be a list of strings")
+    return ProcedureOperation(
+        payload["ordinal"],
+        OperationKind(payload["kind"]),
+        OperationRole(payload["role"]),
+        tuple(payload["materials"]),
+        _evidence_field_from_payload(payload["quantity"]),
+        _evidence_field_from_payload(payload["rate"]),
+        _evidence_field_from_payload(payload["agitation"]),
+        _evidence_field_from_payload(payload["temperature"]),
+        _evidence_field_from_payload(payload["pressure"]),
+        _evidence_field_from_payload(payload["duration"]),
+        _evidence_field_from_payload(payload["endpoint"]),
+        tuple(payload["apparatus"]),
+        payload["locator"],
+    )
+
+
+def _procedure_evidence_to_payload(ev) -> "dict | None":
+    """A canonical JSON-ready dict for one step's sourced PROCEDURE evidence, or ``null`` for a step whose envelope
+    carries none.  The citation/whole-procedure fields/operations reuse the flat codecs above, so a lossy round trip
+    (a dropped source, a substituted status, a missing operation) cannot slip past reconstruction."""
+    if ev is None:
+        return None
+    return {
+        "reaction_scope": ev.reaction_scope,
+        "source": _source_to_payload(ev.source),
+        "scale": _evidence_field_to_payload(ev.scale),
+        "operations": [_procedure_operation_to_payload(op) for op in ev.operations],
+        "quench": _evidence_field_to_payload(ev.quench),
+        "workup_isolation": _evidence_field_to_payload(ev.workup_isolation),
+        "separation": _evidence_field_to_payload(ev.separation),
+        "wash": _evidence_field_to_payload(ev.wash),
+        "drying": _evidence_field_to_payload(ev.drying),
+        "purification": _evidence_field_to_payload(ev.purification),
+        "analytical_verification": _evidence_field_to_payload(ev.analytical_verification),
+        "evidence_scope": ev.evidence_scope,
+        "unresolved_omissions": list(ev.unresolved_omissions),
+    }
+
+
+_PROCEDURE_EVIDENCE_FIELDS = frozenset(_procedure_evidence_to_payload(ProcedureEvidence(
+    reaction_scope="_seed", source=None, scale=EvidenceField.unknown(),
+    operations=(ProcedureOperation(1, OperationKind.ADD, locator="_seed"),),
+    quench=EvidenceField.unknown(), workup_isolation=EvidenceField.unknown(),
+    separation=EvidenceField.unknown(), wash=EvidenceField.unknown(),
+    drying=EvidenceField.unknown(), purification=EvidenceField.unknown(),
+    analytical_verification=EvidenceField.unknown(),
+)))
+
+
+def _procedure_evidence_from_payload(payload) -> "ProcedureEvidence | None":
+    """Reconstruct one step's procedure evidence; ``ProcedureEvidence.__post_init__`` re-runs the FULL coherence
+    table on load -- contiguous 1..N ordinals, at least one reaction ADD, and the PRESENT-field-needs-a-realizing-op /
+    EXPLICIT_NOT_APPLICABLE-field-has-none guard (so a payload cannot mark a real operation N/A to gerrymander
+    completeness).  An exact field-set guard means a payload cannot silently drop or smuggle a field."""
+    if payload is None:
+        return None
+    if type(payload) is not dict or set(payload) != _PROCEDURE_EVIDENCE_FIELDS:
+        raise ValueError("procedure evidence must contain exactly the versioned fields")
+    if type(payload["operations"]) is not list:
+        raise TypeError("procedure operations must be a list")
+    if type(payload["unresolved_omissions"]) is not list or any(
+        type(o) is not str for o in payload["unresolved_omissions"]
+    ):
+        raise TypeError("unresolved_omissions must be a list of strings")
+    return ProcedureEvidence(
+        payload["reaction_scope"],
+        _source_from_payload(payload["source"]),
+        _evidence_field_from_payload(payload["scale"]),
+        tuple(_procedure_operation_from_payload(op) for op in payload["operations"]),
+        _evidence_field_from_payload(payload["quench"]),
+        _evidence_field_from_payload(payload["workup_isolation"]),
+        _evidence_field_from_payload(payload["separation"]),
+        _evidence_field_from_payload(payload["wash"]),
+        _evidence_field_from_payload(payload["drying"]),
+        _evidence_field_from_payload(payload["purification"]),
+        _evidence_field_from_payload(payload["analytical_verification"]),
+        payload["evidence_scope"],
+        tuple(payload["unresolved_omissions"]),
+    )
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# v0.8 Real Route Dossiers: the typed readiness-ladder codecs.  Modeled EXACTLY on the process-requirements pair above
+# (an exact-field-set guard so a payload cannot drop or smuggle an obligation past reconstruction) -- reconstructing
+# through the REAL ``StepReadiness``/``RouteReadiness`` constructors means their own ``__post_init__`` re-validates the
+# coherence table (e.g. a ``reaction_class_name`` orphaned from a non-SATISFIED ``reaction_type``) on every load, not
+# only at production time.
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def _step_readiness_to_payload(step: "StepReadiness") -> dict:
+    """A canonical JSON-ready dict for one step's readiness obligations."""
+    return {
+        "formal_candidate": step.formal_candidate.value,
+        "reaction_type": step.reaction_type.value,
+        "reaction_class_name": step.reaction_class_name,
+        "conditions": step.conditions.value,
+        "process": step.process.value,
+        "workup_isolation": step.workup_isolation.value,
+        "provenance": list(step.provenance),
+        "open_obligations": list(step.open_obligations),
+    }
+
+
+_STEP_READINESS_FIELDS = frozenset(_step_readiness_to_payload(
+    StepReadiness(
+        formal_candidate=ObligationStatus.SATISFIED, reaction_type=ObligationStatus.UNSATISFIED,
+        reaction_class_name=None, conditions=ObligationStatus.UNKNOWN, process=ObligationStatus.UNKNOWN,
+        workup_isolation=ObligationStatus.UNKNOWN, provenance=(), open_obligations=("x",),
+    )
+))
+
+
+def _step_readiness_from_payload(payload: dict) -> "StepReadiness":
+    """Reconstruct one step's readiness; ``StepReadiness.__post_init__`` re-validates every coherence rule (the
+    SATISFIED-reaction_type-iff-a-class-name rule, canonical sort/distinctness of the obligation tuples)."""
+    if type(payload) is not dict or set(payload) != _STEP_READINESS_FIELDS:
+        raise ValueError("step readiness must contain exactly the versioned fields")
+    for name in ("provenance", "open_obligations"):
+        if type(payload[name]) is not list or any(type(x) is not str for x in payload[name]):
+            raise TypeError(f"step readiness {name} must be an array of strings")
+    if payload["reaction_class_name"] is not None and type(payload["reaction_class_name"]) is not str:
+        raise TypeError("step readiness reaction_class_name must be a string or null")
+    return StepReadiness(
+        formal_candidate=ObligationStatus(payload["formal_candidate"]),
+        reaction_type=ObligationStatus(payload["reaction_type"]),
+        reaction_class_name=payload["reaction_class_name"],
+        conditions=ObligationStatus(payload["conditions"]),
+        process=ObligationStatus(payload["process"]),
+        workup_isolation=ObligationStatus(payload["workup_isolation"]),
+        provenance=tuple(payload["provenance"]),
+        open_obligations=tuple(payload["open_obligations"]),
+    )
+
+
+def _route_readiness_to_payload(readiness: "RouteReadiness") -> dict:
+    """A canonical JSON-ready dict for a route's whole readiness ladder (one entry per step, in route order)."""
+    return {
+        "per_step": [_step_readiness_to_payload(s) for s in readiness.per_step],
+        "route_open_obligations": list(readiness.route_open_obligations),
+    }
+
+
+_ROUTE_READINESS_FIELDS = frozenset({"per_step", "route_open_obligations"})
+
+
+def _route_readiness_from_payload(payload: dict) -> "RouteReadiness":
+    """Reconstruct a route's readiness; ``RouteReadiness.__post_init__`` re-validates the non-empty-tuple and
+    canonical-sort/distinctness rules on ``route_open_obligations``."""
+    if type(payload) is not dict or set(payload) != _ROUTE_READINESS_FIELDS:
+        raise ValueError("route readiness must contain exactly per_step, route_open_obligations")
+    if type(payload["per_step"]) is not list:
+        raise TypeError("route readiness per_step must be an array")
+    if type(payload["route_open_obligations"]) is not list or any(
+        type(x) is not str for x in payload["route_open_obligations"]
+    ):
+        raise TypeError("route readiness route_open_obligations must be an array of strings")
+    return RouteReadiness(
+        per_step=tuple(_step_readiness_from_payload(s) for s in payload["per_step"]),
+        route_open_obligations=tuple(payload["route_open_obligations"]),
+    )
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # ONLOAD-REDERIVE (queue item 2): the thick per-step REPLAY payload + conservation-certified reconstruction.
 #
 # These codecs are the load-bearing new machinery for the composability + physical re-derivation on load.  A summary's
@@ -2815,13 +3252,15 @@ def _molecule_from_payload(payload) -> "object":
 
 _CONDITION_ENVELOPE_PAYLOAD_FIELDS = frozenset(
     {"temperature", "pressure", "duration", "medium", "catalysts", "applied_field",
-     "status", "provenance", "source", "process"}
+     "status", "provenance", "source", "process", "procedure"}
 )
 
 
 def _condition_envelope_to_payload(env) -> dict:
-    """Flatten all 10 condition-envelope fields.  Intervals/enum/citation/process reuse the existing flat codecs, so a
-    lossy round trip (an averaged interval, a promoted status, a dropped source review) cannot slip past reconstruction."""
+    """Flatten all 11 condition-envelope fields.  Intervals/enum/citation/process/procedure reuse the flat codecs, so a
+    lossy round trip (an averaged interval, a promoted status, a dropped source review, a stripped procedure) cannot
+    slip past reconstruction.  v0.8 Round II adds ``procedure`` -- the typed sourced procedure evidence rides INSIDE the
+    digest-covered envelope so readiness re-derivation on load reconstructs it, never letting it float free."""
     return {
         "temperature": _interval_to_payload(env.temperature),
         "pressure": _interval_to_payload(env.pressure),
@@ -2833,6 +3272,7 @@ def _condition_envelope_to_payload(env) -> dict:
         "provenance": env.provenance,
         "source": _source_to_payload(env.source),
         "process": _process_requirements_to_payload(env.process),
+        "procedure": _procedure_evidence_to_payload(env.procedure),
     }
 
 
@@ -2859,6 +3299,7 @@ def _condition_envelope_from_payload(payload) -> "object":
         payload["provenance"],
         _source_from_payload(payload["source"]),
         _process_requirements_from_payload(payload["process"]),
+        _procedure_evidence_from_payload(payload["procedure"]),
     )
 
 
@@ -3065,6 +3506,11 @@ def ranked_summary_to_payload(summary: RankedRouteSummary, *, include_replay: bo
         "route_digest": summary.route_digest,
         "equation": summary.equation,
         "fit_status": summary.fit_status,
+        # v0.8 Real Route Dossiers: "readiness" is the typed Sec 3/4/8 obligation ladder (the source of truth);
+        # "readiness_tier" rides alongside it as a DERIVED convenience field (summary.readiness_tier is a @property
+        # reading straight off readiness.tier) so a thin consumer that only wants the coarse tier need not decode the
+        # full ladder -- it is re-derived on load and refused if it disagrees (never trusted on its own).
+        "readiness": _route_readiness_to_payload(summary.readiness),
         "readiness_tier": summary.readiness_tier,
         "exclusions": list(summary.exclusions),
         "gaps": list(summary.gaps),
@@ -3082,13 +3528,24 @@ def ranked_summary_to_payload(summary: RankedRouteSummary, *, include_replay: bo
 
 def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
     """Reconstruct a ranked-route summary; re-validates via its __post_init__ coherence checks.  ``replay_payload`` is
-    optional (absent -> None): a verified-admission consumer treats a FITS route lacking it as UNVERIFIED, never admitted."""
+    optional (absent -> None): a verified-admission consumer treats a FITS route lacking it as UNVERIFIED, never admitted.
+
+    The convenience ``readiness_tier`` field is NOT trusted -- it is a derived redundant field on the wire, and
+    ``RankedRouteSummary`` does not even accept it as a constructor argument (``readiness_tier`` is a ``@property``).
+    A payload whose carried ``readiness_tier`` disagrees with ``readiness``'s own ``.tier`` is refused here, at the
+    seam, rather than silently discarded -- a mismatch means SOMETHING in the payload was hand-edited."""
+    readiness = _route_readiness_from_payload(payload["readiness"])
+    if payload["readiness_tier"] != readiness.tier:
+        raise ValueError(
+            f"ranked route summary readiness_tier {payload['readiness_tier']!r} disagrees with its own carried "
+            f"readiness ladder (which derives to {readiness.tier!r}); refused"
+        )
     return RankedRouteSummary(
         payload["schema_version"],
         payload["route_digest"],
         payload["equation"],
         payload["fit_status"],
-        payload["readiness_tier"],
+        readiness,
         tuple(payload["exclusions"]),
         tuple(payload["gaps"]),
         payload["composability_verdict"],
@@ -3363,7 +3820,7 @@ def _check_verified_admission(response: "CompilationResponse") -> None:
                 f"include_replay=True)"
             )
         route = _reconstruct_route(r.replay_payload)
-        resummary = RankedRouteSummary.of_fit(rank_routes((route,), box=box, losses=losses)[0])
+        resummary = RankedRouteSummary.of_fit(rank_routes((route,), box=box, losses=losses)[0], identity_losses=losses)
         if resummary != r:
             raise ValueError(
                 f"verified admission: route {r.route_digest} re-projects to a DIFFERENT summary than declared -- the "
@@ -3389,19 +3846,50 @@ def _check_verified_admission(response: "CompilationResponse") -> None:
             )
 
 
+# v0.8 Round II (D5, canonical transport): the two declared transport modes.  CANONICAL_VERIFIED means the producer
+# emitted the thick ``replay_payload`` so every above-FORMAL readiness claim is RE-DERIVABLE -- and is re-derived,
+# fail-closed, on load; THIN_ADVISORY is the explicit lean opt-out whose above-FORMAL claims stay advisory, and on which
+# PROCESS_SPECIFIED is not admissible at all (Lane F forward ruling).  The mode is FOLDED into the wire result_digest
+# so a downgrade-strip (relabel CANONICAL->THIN to dodge the mandatory re-derivation) is caught like a readiness tamper.
+TRANSPORT_CANONICAL_VERIFIED = "CANONICAL_VERIFIED"
+TRANSPORT_THIN_ADVISORY = "THIN_ADVISORY"
+_TRANSPORT_MODES = frozenset({TRANSPORT_CANONICAL_VERIFIED, TRANSPORT_THIN_ADVISORY})
+
+
+def _transport_bound_result_digest(base_digest: str, transport_mode: str) -> str:
+    """Bind the declared ``transport_mode`` into the wire ``result_digest``.
+
+    THIN_ADVISORY is the IDENTITY (the bare semantic ``result_digest``), so a thin wire stays byte-identical to the
+    pre-transport form and a pre-0.8 payload -- no ``transport_mode`` field, so read as thin -- still verifies.
+    CANONICAL_VERIFIED folds the mode in, so a downgrade-strip -- relabel CANONICAL_VERIFIED->THIN_ADVISORY to dodge the
+    mandatory re-derivation -- changes the expected digest and is REFUSED on load unless the forger ALSO recomputes it
+    (at which point the thin-wire rules bite instead: PROCESS_SPECIFIED-refused, above-FORMAL fail-closed under verified
+    admission).  Asymmetric but sound -- the weakest mode carries no extra binding term, the stronger one does, and
+    neither direction of relabel-without-recompute survives."""
+    if transport_mode == TRANSPORT_THIN_ADVISORY:
+        return base_digest
+    if transport_mode == TRANSPORT_CANONICAL_VERIFIED:
+        return canonical_digest(("compilation-transport-v1alpha1", base_digest, transport_mode))
+    raise ValueError(f"unknown transport_mode {transport_mode!r}")
+
+
 def response_to_payload(response: CompilationResponse, *, signing_key: bytes | None = None,
-                        include_replay: bool = False) -> dict:
+                        include_replay: bool = True) -> dict:
     """A canonical JSON-ready dict for a response (CLI-JSON-01 leans on this).
 
-    When ``signing_key`` is given, ``producer_signature`` carries an HMAC-SHA256 over ``result_digest``
-    (COMBINED-VERDICT-AUTH); with no key it is ``null`` and the payload is byte-identical to the unsigned form.
+    When ``signing_key`` is given, ``producer_signature`` carries an HMAC-SHA256 over the transport-bound
+    ``result_digest`` (COMBINED-VERDICT-AUTH); with no key it is ``null``.
 
-    ``include_replay`` (ONLOAD-REDERIVE, item 2; default False) emits each dossier's thick ``replay_payload`` so a
-    verified-admission consumer can reconstruct and re-derive every axis on load.  OFF by default: the replay payload
-    is ``compare=False`` (outside ``result_digest``), so an ordinary response stays byte-identical to the pre-item-2
-    form and existing goldens are unchanged.  A producer serving a verified-admission consumer passes True.
+    ``include_replay`` is the CANONICAL producer contract (D5): DEFAULT ``True`` since v0.8 Round II, so an ordinary
+    response ships each dossier's thick ``replay_payload`` and every above-FORMAL readiness claim is re-derivable on
+    load (the payload is ``compare=False``, outside the bare ``result_digest``, so it moves no route identity).  The
+    declared ``transport_mode`` is set from the effective flag -- ``CANONICAL_VERIFIED`` when replay ships,
+    ``THIN_ADVISORY`` on the explicit lean opt-out (``include_replay=False``) -- and is FOLDED into the wire
+    ``result_digest`` so relabelling it is a detectable identity change.  A producer that wants the lean, advisory wire
+    (no re-derivable evidence, PROCESS_SPECIFIED inadmissible) passes ``include_replay=False`` explicitly.
     """
-    digest = response.result_digest
+    transport_mode = TRANSPORT_CANONICAL_VERIFIED if include_replay else TRANSPORT_THIN_ADVISORY
+    digest = _transport_bound_result_digest(response.result_digest, transport_mode)
     return {
         "schema_version": response.schema_version,
         "request": request_to_payload(response.request),
@@ -3420,6 +3908,7 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
                                 for d in response.ranked_dag_dossiers],
         "affordability_frontier": [affordability_entry_to_payload(e) for e in response.affordability_frontier],
         "provider_snapshots": [provider_snapshot_to_payload(s) for s in response.provider_snapshots],
+        "transport_mode": transport_mode,
         "result_digest": digest,
         "producer_signature": None if signing_key is None else _sign_result_digest(digest, signing_key),
     }
@@ -3441,7 +3930,15 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     that evidence via :func:`evaluate_process_requirements` and refuses a ``FITS``/``UNKNOWN`` whose
     PROCESS evidence cannot support it.  This closes the LOCKSTEP forgery ON THE PROCESS AXIS -- relabel a
     route that is process-``UNKNOWN``/``EXCLUDED`` to ``FITS`` and recompute the derived fields -- because
-    the carried requirements still re-derive to the stricter PROCESS verdict.  (3) TAMPER-HARDENING-01:
+    the carried requirements still re-derive to the stricter PROCESS verdict.  (2b) v0.8 M10:
+    :meth:`CompilationResponse._check_readiness_coherence` runs after ``_check_verified_admission`` (like
+    ``_check_frontier_coherence``, so a verified-admission FITS-route evidence substitution keeps that check's
+    route-binding message), UNCONDITIONALLY
+    (not gated on ``fit_status`` or ``require_verified_admission`` -- readiness is orthogonal to bench-fit), and
+    RE-DERIVES each ranked route's typed Sec 3/4/8 readiness ladder from its thick ``replay_payload`` (when carried)
+    via :func:`~smartchem.experiment.readiness.evaluate_route`, refusing a carried ``readiness`` that disagrees with
+    the re-derivation. Advisory (unenforceable) on a replay-absent (thin) route, the same boundary the frontier's
+    catalyst/fiction channels carry below.  (3) TAMPER-HARDENING-01:
     :meth:`CompilationResponse._check_frontier_coherence` runs at the END of every load (after any verified-admission
     pass) and re-derives each affordability_frontier entry's DISPOSITION blockers (the frontier is EXCLUDED from
     ``result_digest``, so this is the only guard on it).  It FULLY closes the process-exclusion ``hard_blockers`` strip
@@ -3486,10 +3983,22 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
             ranked_dag_summary_from_payload(d) for d in payload.get("ranked_dag_dossiers", [])
         ),
     )
-    for name in ("process_selection_status", "admissible_route_digests", "exit_code", "result_digest"):
+    for name in ("process_selection_status", "admissible_route_digests", "exit_code"):
         expected = list(response.admissible_route_digests) if name == "admissible_route_digests" else getattr(response, name)
         if payload[name] != expected:
             raise ValueError(f"{name} does not match the reconstructed response")
+    # v0.8 Round II (D5): the declared transport mode is FOLDED into result_digest, so verify the wire digest against
+    # the mode the payload DECLARES.  A pre-0.8 payload has no transport_mode field and is read as THIN_ADVISORY (its
+    # bare digest still matches, no fold).  A downgrade-strip -- relabel CANONICAL_VERIFIED->THIN_ADVISORY to dodge the
+    # mandatory re-derivation -- without recomputing the digest lands here as a mismatch; a forger who ALSO recomputes
+    # it survives this check only to meet the thin-wire rules below (PROCESS_SPECIFIED refused; above-FORMAL fail-closed
+    # under verified admission), so the relabel buys nothing.
+    transport_mode = payload.get("transport_mode", TRANSPORT_THIN_ADVISORY)
+    if transport_mode not in _TRANSPORT_MODES:
+        raise ValueError(f"transport_mode must be one of {sorted(_TRANSPORT_MODES)}, got {transport_mode!r}")
+    expected_result_digest = _transport_bound_result_digest(response.result_digest, transport_mode)
+    if payload["result_digest"] != expected_result_digest:
+        raise ValueError("result_digest does not match the reconstructed response")
     # ALGEBRA-REBIND-ON-LOAD (0.7 Round III): the runtime binding invariant (see the BINDING INVARIANT in
     # _run_recompile) proves a search ran under the SELECTED algebra at PRODUCE time, but a transported response
     # independently deserializes its request, its IR registry digest, and its search-receipt digest.  Re-derive the
@@ -3521,7 +4030,8 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         if signature is None:
             if require_signature:
                 raise ValueError("producer_signature is required but the payload is unsigned")
-        elif not hmac.compare_digest(str(signature), _sign_result_digest(response.result_digest, verification_key)):
+        elif not hmac.compare_digest(str(signature),
+                                     _sign_result_digest(expected_result_digest, verification_key)):
             raise ValueError("producer_signature does not verify: the payload was tampered or signed by another key")
     # ONLOAD-REDERIVE (item 2): bind the REQUEST the re-derivation trusts.  The verified-admission re-derivation uses
     # the response's OWN request as the bench box; a keyless attacker who relaxes that request (and recomputes the free
@@ -3541,6 +4051,24 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # the context itself -- pass expected_request_digest (above) or a verification_key to bind the request too.
     if require_verified_admission:
         _check_verified_admission(response)
+    # v0.8 Real Route Dossiers, M10: the readiness-ladder deserialization trust-boundary close -- UNCONDITIONAL (not
+    # gated on require_verified_admission or fit_status; see the method docstring for why).  Placed AFTER
+    # _check_verified_admission (exactly like _check_frontier_coherence below, and for the same reason): when a consumer
+    # asks for verified admission, a FITS-route evidence substitution keeps THAT check's route-binding "re-projects to a
+    # DIFFERENT summary" message; this unconditional check still covers every non-verified-admission load and every
+    # non-FITS / readiness-specific tamper, re-deriving each ranked route's typed readiness from its thick replay
+    # evidence (when carried) and refusing a claim the re-derivation cannot support.
+    # v0.8 Round II (D5, Blocker A + Lane F forward ruling): the transport mode drives the readiness fail-close, keyed
+    # off the payload's OWN declared mode (not a caller flag).  A CANONICAL_VERIFIED payload runs the readiness check in
+    # its fail-closed mode -- equivalent to require_verified_admission=True here -- so an above-FORMAL claim whose thick
+    # replay was stripped is REFUSED (canonical means the replay MUST be present to be re-derivable; M12).  A
+    # THIN_ADVISORY payload keeps the documented residual for lower above-FORMAL tiers, BUT PROCESS_SPECIFIED is not
+    # admissible on an unsigned thin wire AT ALL -- it fails closed unconditionally, even on a plain load.
+    _canonical = transport_mode == TRANSPORT_CANONICAL_VERIFIED
+    response._check_readiness_coherence(
+        require_verified_admission=require_verified_admission or _canonical,
+        refuse_process_specified_on_thin=not _canonical,
+    )
     # TAMPER-HARDENING-01: the R59 disposition serialized-tamper close.  RUN ON EVERY LOAD (not gated on
     # require_verified_admission) and AFTER _check_verified_admission, so a FITS-route evidence substitution keeps that
     # check's route-binding message while this one covers the NON-FITS frontier tampers (a REAL_BUT_HARD / NOT_A_REACTION
@@ -3552,7 +4080,10 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
 
 
 def serialize_response(response: CompilationResponse, *, signing_key: bytes | None = None,
-                       include_replay: bool = False) -> str:
+                       include_replay: bool = True) -> str:
+    """Serialize a response.  ``include_replay`` DEFAULTS ``True`` since v0.8 Round II (D5): the canonical wire ships
+    the thick, re-derivable ``replay_payload`` and declares ``transport_mode=CANONICAL_VERIFIED``.  Pass
+    ``include_replay=False`` for the explicit lean/advisory wire (``THIN_ADVISORY``)."""
     return json.dumps(response_to_payload(response, signing_key=signing_key, include_replay=include_replay),
                       ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
@@ -3606,7 +4137,12 @@ def response_schema() -> dict:
                                       "affordability signal -- a known cost axis or a hard blocker)",
             "provider_snapshots": "array[object(provider-snapshot)] (section-13.2 dated provenance of any LIVE "
                                   "provider fetch; SNAPSHOT-13.2. Empty on an offline/default run)",
-            "result_digest": "str (sha256)",
+            "transport_mode": "enum(CANONICAL_VERIFIED/THIN_ADVISORY) (D5: CANONICAL_VERIFIED ships the re-derivable "
+                              "replay_payload and is re-derived fail-closed on load; THIN_ADVISORY is the lean opt-out "
+                              "on which PROCESS_SPECIFIED is inadmissible. FOLDED into result_digest so a downgrade-"
+                              "strip is a detectable identity change)",
+            "result_digest": "str (sha256; transport_mode folded in -- CANONICAL_VERIFIED binds it, THIN_ADVISORY is "
+                              "the bare semantic digest)",
             "producer_signature": "str|null (optional HMAC-SHA256 over result_digest; null unless signed; "
                                   "COMBINED-VERDICT-AUTH out-of-band-tamper close)",
         },
@@ -3669,14 +4205,25 @@ def response_schema() -> dict:
             "candidate_kind": "enum(FORMULA_EDGE/ROUTE/DAG)",
             "candidate_digest": "str (sha256; the stable route/candidate ID)",
             "equation": "str",
-            "readiness_tier": "str (readiness/epistemic tier)",
+            # This is the IR-side candidate tier -- distinct from the ranked_route_summary_fields readiness below.
+            # It stays PINNED to FORMAL_CANDIDATE (an IR CandidateSummary carries no per-step evidence to derive a
+            # stronger tier from); the honest, DERIVED ladder lives on the ranked route dossier once a route is built
+            # and box-checked, not on the bare formula-edge/route/DAG candidate the IR enumerates.
+            "readiness_tier": "str (readiness/epistemic tier; IR CandidateSummary -- always FORMAL_CANDIDATE)",
         },
         "ranked_route_summary_fields": {
             "schema_version": "str",
             "route_digest": "str (sha256; == the matching candidate_digest)",
             "equation": "str",
             "fit_status": "enum(FITS/EXCLUDED/UNKNOWN/UNCONSTRAINED)",
-            "readiness_tier": "str (READY-TIER-01 floor: FORMAL_CANDIDATE)",
+            # v0.8 Real Route Dossiers: DERIVED from "readiness" (see below), never a hard floor -- the ladder is
+            # FORMAL_CANDIDATE/REACTION_VOUCHED/CONDITIONS_SUPPORTED/PROCESS_SPECIFIED (Sec 4's cumulative,
+            # weakest-link tiers). Kept for a thin consumer that wants the coarse tier without decoding the ladder.
+            "readiness_tier": "str (enum(FORMAL_CANDIDATE/REACTION_VOUCHED/CONDITIONS_SUPPORTED/PROCESS_SPECIFIED); "
+                              "DERIVED -- see readiness, the source of truth)",
+            "readiness": "object(RouteReadiness: per_step + route_open_obligations -- the typed Sec 3/4/8 obligation "
+                        "ladder this route's readiness_tier is projected from; RE-DERIVED on load from the thick "
+                        "replay_payload when present)",
             "exclusions": "array[str] (hard section-11 over/under-bounds)",
             "gaps": "array[str] (undeclared constrained dimensions / composability UNKNOWNs)",
             "composability_verdict": "str",
@@ -3687,6 +4234,10 @@ def response_schema() -> dict:
             "process_requirements": "array[object(per-step declared process facts)|null] (PROCESS-ADMIT-01: the "
                                     "evidence process admission is RE-DERIVED from on load, one entry per route step "
                                     "in order, null for an undeclared step; part of route identity)",
+            "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence "
+                              "-- molecules + full 11-field envelope incl. the sourced procedure -- the readiness "
+                              "ladder is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire (the default), "
+                              "compare=False so outside the bare result_digest)",
         },
         "ranked_dag_summary_fields": {
             "schema_version": "str",
@@ -3711,6 +4262,9 @@ def response_schema() -> dict:
                             "(producer, consumer, hold_minutes) triples over the edges that hold; DISCLOSURE only "
                             "-- never changes fit_status -- and digest-EXCLUDED, so it is re-derivable from "
                             "edges + process_requirements and does not move the route identity)",
+            "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence "
+                              "the process component is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire "
+                              "(the default), compare=False so outside the bare result_digest)",
         },
         "affordability_frontier_entry_fields": {
             "schema_version": "str",

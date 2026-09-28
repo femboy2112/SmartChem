@@ -80,7 +80,14 @@ def test_synthetic_declared_control_fits_real_search_and_workup_mutation_kills_i
     assert admissible == {r.route_digest for r in fit.ranked_route_dossiers if r.fit_status == "FITS"}
     assert all(r.composability_verdict == "UNKNOWN" and r.fit_status == "UNKNOWN"
                for r in fit.ranked_route_dossiers if r.route_digest not in admissible)
-    assert all(r.readiness_tier == "FORMAL_CANDIDATE" for r in fit.ranked_route_dossiers)
+    # v0.8 Real Route Dossiers: readiness is RE-DERIVED, no longer a hard-coded FORMAL_CANDIDATE floor -- methyl
+    # acetate's esterification step IS recognized by the production reaction-type oracle, so an honest route here
+    # reaches at least REACTION_VOUCHED. None of these routes declare a SOURCED condition envelope (the synthetic
+    # control here only injects ``process``, never a source citation), so none may honestly claim CONDITIONS_SUPPORTED
+    # or above -- that is the invariant this control actually pins.
+    from smartchem.experiment.readiness import CONDITIONS_SUPPORTED, READINESS_TIERS, tier_rank
+    assert all(r.readiness_tier in READINESS_TIERS for r in fit.ranked_route_dossiers)
+    assert all(tier_rank(r.readiness_tier) < tier_rank(CONDITIONS_SUPPORTED) for r in fit.ranked_route_dossiers)
     metadata = replace(metadata, workup_included=False)
     gap = run_compilation(request())
     assert gap.exit_code == 5 and not gap.admissible_route_digests

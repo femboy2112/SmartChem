@@ -1,0 +1,314 @@
+"""v0.8 Round II -- typed procedure evidence (Blocker B's foundation).
+
+Round I stopped the compiler cosplaying as a bench chemist by refusing to award ``PROCESS_SPECIFIED``:
+``readiness.process_representation_is_complete`` was a hard ``return False`` because the fields a complete
+bench procedure needs -- scale, ordered operations, addition rate, a reaction endpoint, quench, workup,
+separation, wash, drying, purification, analytical acceptance -- *did not exist as structured data*. The old
+``ProcessRequirements`` (``process_constraints.py``) is a whole-step resource/logistics schema (times,
+attention, equipment, T/P extrema), and it is deliberately NOT extended here: those are the exact fields the
+0.9 capability gate compares against an operator's ``ProcessBounds``, and co-mingling "what the source procedure
+SAID" with "what MY bench can DO" is one refactor away from a capability fact laundering into a procedure claim
+(Wave A Lane E, seam B).
+
+So this module is a SEPARATE type describing only *what the literature-supported procedure specified*. It hangs
+off :class:`~smartchem.conditions.ConditionEnvelope` as a new ``procedure`` field, INSIDE the digest-covered,
+replay-reconstructed envelope (Wave A Lane F design condition: a ``compare=False`` field, or one not
+reconstructed into the replayed step, would float free of both the digest bind and the load-time
+re-derivation). Nothing here decides whether a particular lab can execute the procedure -- there is no field for
+equipment *ownership*, vessel ratings, ventilation, waste routing, affordability, or measurement precision. Those
+are 0.9. ``apparatus`` names the equipment the *paper's* bench used; it is never compared against an inventory.
+
+The 0.8/0.9 line, stated once: **0.8 answers "what did the source procedure specify?"; 0.9 answers "can this
+capability profile execute it?".** This module lives entirely on the 0.8 side.
+
+Well-formedness (structural coherence) is enforced in ``__post_init__`` here. COMPLETENESS (is the represented
+procedure sufficient to earn ``PROCESS_SPECIFIED``) is a separate predicate,
+``readiness.procedure_representation_is_complete``, and SOURCING (is it backed by an accepted citation) is a
+third, separate gate in the readiness evaluator. Three axes, never collapsed (plan
+``docs/research/V0_8_ROUND_II_PROCEDURE_EVIDENCE_PLAN_v0.1.md`` D2/D3/D4).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import TYPE_CHECKING
+
+from .contracts import Digestible
+from .provenance import SourceCitation
+
+if TYPE_CHECKING:
+    from .conditions import Interval
+
+__all__ = [
+    "EvidenceFieldStatus",
+    "EvidenceField",
+    "OperationKind",
+    "OperationRole",
+    "ProcedureOperation",
+    "ProcedureEvidence",
+    "WHOLE_PROCEDURE_FIELDS",
+]
+
+#: The whole-procedure evidence fields the completeness predicate inspects (readiness.py reads the same tuple).
+WHOLE_PROCEDURE_FIELDS: tuple[str, ...] = (
+    "scale", "quench", "workup_isolation", "separation", "wash", "drying",
+    "purification", "analytical_verification",
+)
+
+
+class EvidenceFieldStatus(str, Enum):
+    """Whether ONE structured claim about the sourced procedure is represented -- a raw-evidence-presence
+    axis, distinct from :class:`~smartchem.experiment.readiness.ObligationStatus` (obligation discharge) and
+    :class:`~smartchem.contracts.EvidenceStatus` (strength). Its own enum on purpose."""
+
+    #: A structured value IS represented, tied to a source locator.
+    PRESENT = "PRESENT"
+    #: The source AFFIRMATIVELY closes this out (a complete procedure in which this operation genuinely does not
+    #: occur) -- carries a locator AND a non-empty justification. NEVER derived from chemistry/phase, NEVER a
+    #: synonym for silence.
+    EXPLICIT_NOT_APPLICABLE = "EXPLICIT_NOT_APPLICABLE"
+    #: The source is silent; no claim either way. Blocks completeness (mere silence is not N/A).
+    UNKNOWN_MISSING = "UNKNOWN_MISSING"
+
+
+@dataclass(frozen=True)
+class EvidenceField(Digestible):
+    """One tri-state structured claim: its status, an optional normalized value, the source locator it traces
+    to, and (for EXPLICIT_NOT_APPLICABLE only) the justification that closes it out.
+
+    ``value`` is a normalized ``str`` (an amount, a ratio, a quoted phrase) or an
+    :class:`~smartchem.conditions.Interval` (T in 'K', duration in 'min') or ``None``.
+    """
+
+    status: EvidenceFieldStatus
+    value: "str | Interval | None" = None
+    locator: "str | None" = None
+    justification: str = ""
+
+    def __post_init__(self) -> None:
+        from .conditions import Interval  # lazy: conditions imports THIS module at import time
+
+        if not isinstance(self.status, EvidenceFieldStatus):
+            raise TypeError("status must be an EvidenceFieldStatus")
+        if self.value is not None and not isinstance(self.value, (str, Interval)):
+            raise TypeError("value must be a str, an Interval, or None")
+        if isinstance(self.value, str) and not self.value.strip():
+            raise ValueError("a represented value must be a non-empty string")
+        if self.locator is not None and (not isinstance(self.locator, str) or not self.locator.strip()):
+            raise TypeError("locator must be a non-empty string or None")
+        if not isinstance(self.justification, str):
+            raise TypeError("justification must be a string")
+        object.__setattr__(self, "justification", self.justification.strip())
+        if self.locator is not None:
+            object.__setattr__(self, "locator", self.locator.strip())
+
+        if self.status is EvidenceFieldStatus.UNKNOWN_MISSING:
+            # Silence carries nothing: no value, no locator, no justification.
+            if self.value is not None or self.locator is not None or self.justification:
+                raise ValueError("UNKNOWN_MISSING carries no value, locator, or justification")
+        else:
+            # PRESENT / EXPLICIT_NOT_APPLICABLE are CLAIMS: each must trace to a source locator.
+            if self.locator is None:
+                raise ValueError(f"{self.status.value} must carry a source locator")
+        if self.status is EvidenceFieldStatus.EXPLICIT_NOT_APPLICABLE and not self.justification:
+            raise ValueError(
+                "EXPLICIT_NOT_APPLICABLE must carry a non-empty justification (the source text that closes it "
+                "out) -- silence is UNKNOWN_MISSING, never N/A"
+            )
+        if self.status is EvidenceFieldStatus.PRESENT and self.value is None:
+            raise ValueError("PRESENT must carry a value")
+
+    @property
+    def is_present(self) -> bool:
+        return self.status is EvidenceFieldStatus.PRESENT
+
+    @property
+    def is_unknown(self) -> bool:
+        return self.status is EvidenceFieldStatus.UNKNOWN_MISSING
+
+    @classmethod
+    def present(cls, value: "str | Interval", locator: str) -> "EvidenceField":
+        return cls(EvidenceFieldStatus.PRESENT, value, locator)
+
+    @classmethod
+    def not_applicable(cls, locator: str, justification: str) -> "EvidenceField":
+        return cls(EvidenceFieldStatus.EXPLICIT_NOT_APPLICABLE, None, locator, justification)
+
+    @classmethod
+    def unknown(cls) -> "EvidenceField":
+        return cls(EvidenceFieldStatus.UNKNOWN_MISSING)
+
+
+class OperationKind(str, Enum):
+    """The minimum set of physically-irreducible bench actions forced by the sourced corpus (Wave A Lane A).
+    Composite/named techniques are NOT primitives: a quench is ``ADD`` with ``role=QUENCH``, a wash is ``ADD``
+    with ``role=WASH``, a recrystallization is ``HEAT``/``COOL``/``FILTER`` tagged ``role=RECRYSTALLIZATION``."""
+
+    ADD = "ADD"          # charge a material (reagent/catalyst/quench/wash liquid -- see role)
+    MIX = "MIX"          # an agitation instruction not co-located with a stated ADD/HEAT/HOLD
+    HEAT = "HEAT"
+    COOL = "COOL"
+    HOLD = "HOLD"        # maintain conditions for a stated duration (reflux, "heat ... for at least 10 min")
+    SEPARATE = "SEPARATE"  # liquid-liquid partition
+    FILTER = "FILTER"      # solid-liquid separation
+    DRY = "DRY"            # desiccant or air-dry
+    DISTILL = "DISTILL"    # collect a fraction by volatility/boiling range
+    VERIFY = "VERIFY"      # analytical/product confirmation (weigh, m.p., yield, spectroscopy)
+
+
+class OperationRole(str, Enum):
+    """A CLOSED discriminator distinguishing same-kind operations by purpose, so the completeness/coherence
+    logic never parses prose to tell a reaction charge from a wash charge."""
+
+    REACTION = "REACTION"
+    QUENCH = "QUENCH"
+    WASH = "WASH"
+    RECRYSTALLIZATION = "RECRYSTALLIZATION"
+    OTHER = "OTHER"
+
+
+_AGITATION_KINDS = frozenset({OperationKind.ADD, OperationKind.MIX, OperationKind.HEAT,
+                              OperationKind.HOLD, OperationKind.COOL})
+_THERMAL_KINDS = frozenset({OperationKind.HEAT, OperationKind.COOL, OperationKind.HOLD})
+
+
+@dataclass(frozen=True)
+class ProcedureOperation(Digestible):
+    """One ordered operation the source procedure specifies."""
+
+    ordinal: int
+    kind: OperationKind
+    role: OperationRole = OperationRole.REACTION
+    materials: tuple[str, ...] = ()
+    quantity: "EvidenceField | None" = None
+    rate: "EvidenceField | None" = None
+    agitation: "EvidenceField | None" = None
+    temperature: "EvidenceField | None" = None
+    pressure: "EvidenceField | None" = None
+    duration: "EvidenceField | None" = None
+    endpoint: "EvidenceField | None" = None
+    apparatus: tuple[str, ...] = ()
+    locator: str = ""
+
+    def __post_init__(self) -> None:
+        if isinstance(self.ordinal, bool) or type(self.ordinal) is not int or self.ordinal < 1:
+            raise ValueError("ordinal must be a positive int (1-based)")
+        if not isinstance(self.kind, OperationKind):
+            raise TypeError("kind must be an OperationKind")
+        if not isinstance(self.role, OperationRole):
+            raise TypeError("role must be an OperationRole")
+        for name in ("materials", "apparatus"):
+            value = getattr(self, name)
+            if type(value) is not tuple or any(not isinstance(m, str) or not m.strip() for m in value):
+                raise TypeError(f"{name} must be a tuple of non-empty strings")
+            object.__setattr__(self, name, tuple(m.strip() for m in value))
+        for name in ("quantity", "rate", "agitation", "temperature", "pressure", "duration", "endpoint"):
+            value = getattr(self, name)
+            if value is not None and type(value) is not EvidenceField:
+                raise TypeError(f"{name} must be an EvidenceField or None")
+        if not isinstance(self.locator, str) or not self.locator.strip():
+            raise ValueError("a procedure operation must carry a non-empty source locator")
+        object.__setattr__(self, "locator", self.locator.strip())
+
+
+def _field_matches(evidence: "ProcedureEvidence", name: str, op: ProcedureOperation) -> bool:
+    """Whether ``op`` is an operation that would realize whole-procedure field ``name``. Used only for the
+    coherence guard (a PRESENT field needs a realizing op; an EXPLICIT_NOT_APPLICABLE field must have none),
+    never for capability -- this is pure structural bookkeeping over kinds/roles."""
+    if name == "quench":
+        return op.role is OperationRole.QUENCH
+    if name == "separation":
+        return op.kind is OperationKind.SEPARATE
+    if name == "wash":
+        return op.role is OperationRole.WASH
+    if name == "drying":
+        return op.kind is OperationKind.DRY
+    if name == "purification":
+        return op.role is OperationRole.RECRYSTALLIZATION or op.kind is OperationKind.DISTILL
+    if name == "analytical_verification":
+        return op.kind is OperationKind.VERIFY
+    if name == "workup_isolation":
+        return op.kind in (OperationKind.SEPARATE, OperationKind.FILTER, OperationKind.DRY) \
+            or op.role is OperationRole.WASH
+    return False  # "scale" is a batch-level fact with no per-operation correspondent
+
+
+@dataclass(frozen=True)
+class ProcedureEvidence(Digestible):
+    """The structured, source-scoped record of what a literature procedure specified for one reaction.
+
+    Well-formedness is enforced here. Completeness is ``readiness.procedure_representation_is_complete``;
+    sourcing is ``is_sourced`` (checked as a separate mandatory conjunct in the readiness evaluator).
+    """
+
+    reaction_scope: str
+    source: "SourceCitation | None"
+    scale: EvidenceField
+    operations: "tuple[ProcedureOperation, ...]"
+    quench: EvidenceField
+    workup_isolation: EvidenceField
+    separation: EvidenceField
+    wash: EvidenceField
+    drying: EvidenceField
+    purification: EvidenceField
+    analytical_verification: EvidenceField
+    evidence_scope: str = ""
+    unresolved_omissions: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.reaction_scope, str) or not self.reaction_scope.strip():
+            raise ValueError("reaction_scope must be a non-empty string")
+        object.__setattr__(self, "reaction_scope", self.reaction_scope.strip())
+        if self.source is not None and type(self.source) is not SourceCitation:
+            raise TypeError("source must be a SourceCitation or None")
+        for name in WHOLE_PROCEDURE_FIELDS:
+            if type(getattr(self, name)) is not EvidenceField:
+                raise TypeError(f"{name} must be an EvidenceField")
+        if not isinstance(self.evidence_scope, str):
+            raise TypeError("evidence_scope must be a string")
+        object.__setattr__(self, "evidence_scope", self.evidence_scope.strip())
+
+        if type(self.operations) is not tuple or not self.operations or any(
+            type(op) is not ProcedureOperation for op in self.operations
+        ):
+            raise TypeError("operations must be a non-empty tuple of ProcedureOperation")
+        ordinals = [op.ordinal for op in self.operations]
+        if ordinals != list(range(1, len(ordinals) + 1)):
+            raise ValueError("operation ordinals must be contiguous 1..N in order (no gaps, no repeats)")
+        if not any(op.kind is OperationKind.ADD and op.role is OperationRole.REACTION
+                   for op in self.operations):
+            raise ValueError("a procedure must have at least one ADD operation with role=REACTION")
+
+        # Coherence: a PRESENT whole-procedure field needs at least one realizing operation; an
+        # EXPLICIT_NOT_APPLICABLE field must have zero (you cannot claim "no wash" while a WASH op exists, nor
+        # claim "washed" as PRESENT with no WASH op). This is what makes marking a field N/A to skip a real,
+        # present operation impossible (plan M15). "scale" has no operation correspondent and is exempt.
+        for name in WHOLE_PROCEDURE_FIELDS:
+            if name == "scale":
+                continue
+            fld: EvidenceField = getattr(self, name)
+            matches = sum(1 for op in self.operations if _field_matches(self, name, op))
+            if fld.status is EvidenceFieldStatus.PRESENT and matches == 0:
+                raise ValueError(f"{name} is PRESENT but no operation realizes it")
+            if fld.status is EvidenceFieldStatus.EXPLICIT_NOT_APPLICABLE and matches != 0:
+                raise ValueError(f"{name} is EXPLICIT_NOT_APPLICABLE but {matches} operation(s) realize it")
+
+        if type(self.unresolved_omissions) is not tuple or any(
+            not isinstance(o, str) or not o.strip() for o in self.unresolved_omissions
+        ):
+            raise TypeError("unresolved_omissions must be a tuple of non-empty strings")
+        object.__setattr__(self, "unresolved_omissions",
+                           tuple(sorted({o.strip() for o in self.unresolved_omissions})))
+
+    @property
+    def is_sourced(self) -> bool:
+        """True only when an accepted :class:`SourceCitation` backs this evidence. Necessary (not sufficient)
+        for a ``PROCESS_SPECIFIED`` readiness claim -- mirrors ``ConditionEnvelope.is_sourced`` /
+        ``ProcessRequirements.is_sourced``. Completeness is a separate predicate."""
+        return self.source is not None and self.source.accepted
+
+    @property
+    def source_locator(self) -> "str | None":
+        """The accepted source's locator, or None when unsourced -- the provenance a SATISFIED process/workup
+        readiness axis reports (NEVER the enclosing envelope's conditions citation; plan D4 / Lane F KILL 1)."""
+        return self.source.locator if self.is_sourced else None

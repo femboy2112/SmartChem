@@ -202,6 +202,17 @@ class CandidateSummary(Digestible):
         for name in ("candidate_digest", "equation", "readiness_tier"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise ValueError(f"{name} must be a non-empty string")
+        # M10 (v0.8): pin the IR candidate layer to FORMAL_CANDIDATE.  readiness_tier is NOT folded
+        # into candidate_digest (it rides along, like the equation), so a non-FORMAL value here would
+        # round-trip through from_payload with no evidence binding -- exactly the laundering path the
+        # 0.8 readiness work exists to close.  The readiness ladder beyond the structural floor is a
+        # ROUTE-level property carried on RankedRouteSummary, re-derived from replayed evidence; the
+        # evidence-free IR candidate never claims more than FORMAL.
+        if self.readiness_tier != "FORMAL_CANDIDATE":
+            raise ValueError(
+                "an IR CandidateSummary is a FORMAL_CANDIDATE (0.8: readiness beyond the structural "
+                "floor lives on RankedRouteSummary with evidence re-derivation, not on the IR candidate)"
+            )
 
 
 class TransformDirection(str, Enum):

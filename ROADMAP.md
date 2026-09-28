@@ -208,6 +208,83 @@ proof (process-indicator / identity / purity stay separate axes — invariants 5
 
 ## ✅ DONE — current shipped capability
 
+**v0.8 REAL ROUTE DOSSIERS, ROUND I — MEASUREMENT (2026-09-27, branch `feat/v0.8-real-route-dossiers`, IN PROGRESS —
+package version stays `0.7.0a1`; the gate isn't met until integration confirms).** The readiness-obligation core
+(`smartchem/experiment/readiness.py`: `evaluate_step`/`evaluate_route`, the FORMAL_CANDIDATE →
+REACTION_VOUCHED → CONDITIONS_SUPPORTED → PROCESS_SPECIFIED ladder derived FROM per-step obligations, never the
+reverse) and its service transport are already committed; this round is the MEASUREMENT layer over the Sec 9
+forcing corpus, run through the real service (`build_recompile_request` → `run_compilation`, PROMOTED
+`certified-route-v07` default — never the raw capped-only registry, which would silently zero out every
+reaction-vouched row):
+- `experiments/v0_8_readiness_census.py` (→ `RESULTS_v0_8_readiness_census.md`): per-step/per-route obligation
+  readout over 7 corpus rows (retro-DA, paracetamol, aspirin, isopentyl acetate, methyl salicylate, an
+  unsourced-default-reagent contrast, the same-formula isomer negative control) — 44 routes / 102 steps. Confirms
+  the design's non-monotonicity finding LIVE: paracetamol's + aspirin's sourced-anhydride steps carry
+  `conditions=SATISFIED` while `reaction_type=UNSATISFIED` caps their coarse tier at `FORMAL_CANDIDATE`. Four
+  OBSERVATION axes (`handling`, `selectivity`, `thermo`/feasibility, `kinetics`) are reported but labeled
+  explicitly as non-obligations that never move `tier`.
+- `experiments/v0_8_readiness_funnel.py` (→ `RESULTS_v0_8_readiness_funnel.md`): the permanent weakest-link funnel,
+  per-step AND per-route denominators kept separate — routes: 44 → 7 reaction-vouched → 2 conditions-supported → 0
+  process-specified (steps: 102 → 24 → 2 → 0). `PROCESS_SPECIFIED` pinned DARK by construction (Sec 5:
+  `process_representation_is_complete` is unconditionally `False` this round). 12/12 funnel properties hold
+  (monotonicity both denominators, both middle stages genuinely forced non-vacuous, the dark stage pinned at
+  exactly zero).
+- `experiments/v0_8_mutation_calibration.py`: injects and kills all 11 named failure modes (M1 formal-implies-
+  vouched, M2 recognized-implies-conditions, M3 declared-counts-as-sourced, M4 any-step-promotes-the-route, M5
+  favorable-thermo-substitutes-for-vouch, M6 FITS-substitutes-for-readiness, M7 process-present-implies-complete,
+  M8 workup-false-ignored, M9 isomer-borrows-conditions — live-patches the real `assembly_conditions` name-guard
+  and shows the isomer's conditions axis flips from all-UNKNOWN to a false SATISFIED, M10 a tampered serialized
+  tier survives load once `_check_readiness_coherence` is disabled — pinning that guard is load-bearing, M11
+  obligations-derived-from-tier — the mutant that specifically breaks paracetamol's real, live, sourced-but-
+  unrecognized `conditions=SATISFIED` record, the plan's own named regression target). **11/11 mutants killed.**
+  Every mutation is a context-managed monkeypatch on the real modules, undone on exit — zero bytes of
+  `smartchem/` touched on disk.
+- `~/.local/bin/ruff check` clean on all three files.
+
+**v0.8 REAL ROUTE DOSSIERS, ROUND II — PROCEDURE-EVIDENCE CLOSURE + VERIFIABLE CANONICAL TRANSPORT
+(2026-09-28, RELEASED — package version bumped `0.7.0a1` -> `0.8.0a1`; the 13-condition release gate CLOSED
+and the branch merged to `main`, per plan `docs/research/V0_8_ROUND_II_PROCEDURE_EVIDENCE_PLAN_v0.1.md` and
+release record `docs/research/V0_8_REAL_ROUTE_DOSSIERS_RELEASE_2026-09-28.md`; funnel 44->7->2->1 routes /
+102->24->2->1 steps, mutation M1-M20 20/20, full OOM-safe suite 5628 passed / 0 failed / 46 skipped).**
+Ugh, okay, the wall Round I left standing finally came down: `PROCESS_SPECIFIED` is now REACHABLE, honestly,
+for at least one real corpus route. `smartchem/procedure_evidence.py` (a NEW typed `ProcedureEvidence`
+model hung off `ConditionEnvelope.procedure`, digest-covered and replay-reconstructed) plus the renamed
+readiness predicate `procedure_representation_is_complete(evidence)` (superseding the old
+`process_representation_is_complete(process)`, which read the legacy `ProcessRequirements` and was a hard
+`return False`) close Blocker B; a new response `transport_mode` (`CANONICAL_VERIFIED`/`THIN_ADVISORY`,
+folded into `result_digest`, default now `include_replay=True`) closes Blocker A. The Round II
+release-evidence layer (this writer's lane) re-measured everything against the real corpus rather than
+trusting the old pinned-DARK numbers:
+- `experiments/v0_8_readiness_funnel.py`: `PROCESS_SPECIFIED` is no longer pinned at zero — the assertion now
+  reads the honestly-MEASURED floor (`>= 1`, never a hardcoded ceiling). MEASURED on the real forcing corpus
+  through the promoted default algebra: routes 44 → 7 reaction-vouched → 2 conditions-supported → **1
+  process-specified** (steps 102 → 24 → 2 → **1**) — the isopentyl-acetate route's full sourced preparative
+  procedure (reflux → extraction → MgSO₄ dry → fractional distillation) is the real positive. **12/12 funnel
+  properties hold** (monotonicity both denominators, both middle stages non-vacuous, PROCESS_SPECIFIED now
+  reachable rather than dark).
+- `experiments/v0_8_readiness_census.py`: gained a `procedure` presence column (per step: is a typed
+  `ProcedureEvidence` attached at all, read off the SAME `process`/`workup_isolation` axes the ladder already
+  computes — no second lookup) alongside the existing obligation axes; regenerated against live code.
+- `experiments/v0_8_mutation_calibration.py`: **M12-M20 added, 20/20 mutants killed** (M1-M11 preserved, two
+  Round-I fixtures repaired because Round II's own completed procedure retired the scenario they relied on —
+  M7/M8 now tamper ONE field of the real, honestly-complete isopentyl `ProcedureEvidence` via
+  `dataclasses.replace` rather than hand-building a stand-in). New: M12 a canonical above-FORMAL payload with
+  its replay stripped (or a forged upward readiness claim under an unmoved replay) is refused on load; M13 a
+  declared-but-unsourced workup does not count as SATISFIED; M14 the retired legacy
+  `process.workup_included` boolean cannot satisfy the new axis; M15 a silently-skipped whole-procedure field
+  is not silently complete; M16 free-text `evidence_scope` prose cannot be parsed into structure; M17 the
+  envelope's OWN conditions source cannot launder the procedure's separate sourcing requirement; M18
+  PROCESS_SPECIFIED cannot drop the workup gate (asserted DIRECTLY on `StepReadiness.tier`, never a
+  round-trip, per Wave A Lane E); M19 a same-formula isomer cannot borrow procedure evidence through the
+  isomer-blind path; M20 a `ProcessFitStatus.FITS` bench verdict cannot promote procedure completeness
+  (asserted directly, mirroring M18).
+- Two pre-existing committed harnesses' `FROZEN_HASH` pins reconciled against the Round II envelope shift
+  (`ExperimentStep.digest` now covers the new `procedure` field): `experiments/redox_displacement_probe.py`
+  regenerated (chemistry unchanged, `validate()` confirmed FIRST); `experiments/poor_man_tamper_hardening_probe.py`
+  needed no hash change at all — only a `response_to_payload(..., include_replay=False)` fix so its
+  "thin transport" probe actually stays thin now that canonical is the new default.
+- `~/.local/bin/ruff check` clean on every touched file.
+
 **RULE-CALCULUS COURSE CORRECTION (2026-09-19, PR #81) — a checkable structural bond-rewrite layer, plus the audit
 that corrects the genericity audit's overreach.** Entirely ADDITIVE (13 files, 0 modifications to existing behaviour):
 a finite atom-preserving bond-rule kernel (`smartchem/rule_calculus.py`; independent table-replay verifier, per-atom

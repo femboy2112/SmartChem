@@ -182,6 +182,18 @@ class ProcessRequirements(Digestible):
             )
         )
 
+    @property
+    def is_sourced(self) -> bool:
+        """True only for a declared process record whose typed source was accepted by review.
+
+        Mirrors :attr:`ConditionEnvelope.is_sourced`.  Necessary but NOT sufficient for a
+        PROCESS_SPECIFIED readiness claim: a sourced process record still lacks the operational
+        representation (scale, addition order, endpoint, quench, purification, analytical
+        acceptance, waste, equipment ratings) a complete bench procedure requires, so process
+        completeness is a strictly stronger, separately-derived predicate.
+        """
+        return self.is_declared and self.source is not None and self.source.accepted
+
 
 _BOUND_NAMES = (
     "max_step_minutes", "max_total_minutes", "max_active_minutes", "allowed_attention",

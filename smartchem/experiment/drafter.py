@@ -51,6 +51,7 @@ from .functorial_physics import PhysicsProduct, route_net_delta_g
 from .handling import RouteHandling, verify_handling
 from .kinetics import RouteKinetics, verify_kinetics
 from .order import non_dominated_layers
+from .readiness import PROCESS_SPECIFIED, ObligationStatus, RouteReadiness, evaluate_route
 from .selectivity import RouteSelectivity, SelectivityTable, verify_selectivity
 from .step import ExperimentRoute
 
@@ -78,10 +79,18 @@ DRAFT_BANNER = (
 
 
 class ProcedureReadiness(str, Enum):
-    """Bench-readiness vocabulary for compiled chemistry artifacts.
+    """Legacy bench-readiness vocabulary -- kept for import back-compat only, NOT what
+    :class:`RouteDossier` reports anymore.
 
-    The present drafter emits only ``FORMAL_CANDIDATE``.  The additional values reserve the standard's
-    progression without pretending current route equations contain scale, operations, workup, or controls.
+    Pre-0.8, this was the whole story, and ``RouteDossier.readiness`` returned a hard-coded
+    ``FORMAL_CANDIDATE`` no route could ever earn or lose (the READY-TIER-01 wall). v0.8 Real Route
+    Dossiers replaces that wall with the shared, DERIVED obligation ladder in
+    :mod:`smartchem.experiment.readiness` (``evaluate_route`` / ``RouteReadiness``) -- one engine,
+    read here and by ``smartchem.service`` alike, never a second vocabulary invented locally. This
+    enum's four values don't even line up with that ladder's tiers (``REACTION_VOUCHED`` /
+    ``CONDITIONS_SUPPORTED`` / ``PROCESS_SPECIFIED`` have no member here), which is the tell that it
+    was always a placeholder, not a real progression. Left defined so nothing that still imports it
+    breaks; do not grow it further and do not wire it back onto ``RouteDossier``.
     """
 
     FORMAL_CANDIDATE = "FORMAL_CANDIDATE"
@@ -774,23 +783,91 @@ class RouteDossier(Digestible):
     feasibility: RouteFeasibility  # thermodynamic ΔG verdict per step (DERIVED, or a loud UNKNOWN)
     equilibrium: RouteEquilibrium  # equilibrium extent K=exp(-ΔG/RT) per step (DERIVED, or a loud UNKNOWN)
     handling: RouteHandling  # E6 bench handling: byproducts, off-gasses, and the care level per step
+    #: The typed Sec 3/4/8 obligation ladder for this exact route (``smartchem.experiment.readiness.
+    #: RouteReadiness``) -- SOURCE OF TRUTH, computed once by :func:`draft_route_dossier` via the SAME
+    #: ``evaluate_route`` the service transport re-derives from on load (v0.8, closing the old
+    #: READY-TIER-01 wall: this used to be a hard-coded ``FORMAL_CANDIDATE`` no route could ever earn
+    #: or lose). ``readiness_tier`` below is a derived convenience, never the reverse.
+    readiness: RouteReadiness
+
+    def __post_init__(self) -> None:
+        if type(self.readiness) is not RouteReadiness:
+            raise TypeError("readiness must be a RouteReadiness")
 
     @property
-    def readiness(self) -> ProcedureReadiness:
-        # ProcedureIR does not yet represent the operational fields named below.  A route may carry useful
-        # sourced facts, but this aggregate cannot honestly promote itself beyond a formal candidate.
-        return ProcedureReadiness.FORMAL_CANDIDATE
+    def readiness_tier(self) -> str:
+        """The coarse tier, read straight off the typed ``readiness`` record -- never a second,
+        independently-settable claim (there's only one place a caller could construct a lie, and
+        ``evaluate_route`` is what fills it)."""
+        return self.readiness.tier
 
     def render(self) -> str:
+        tier = self.readiness_tier
         lines = [
             DRAFT_BANNER,
-            f"READINESS: {self.readiness.value} -- NOT a bench-ready procedure",
-            "MISSING BEFORE BENCH USE:",
-            *(f"  - {field}" for field in _MISSING_BENCH_FIELDS),
-            "",
-            f"TARGET: {self.route.final_target!r}",
-            "",
+            f"READINESS: {tier} (derived from smartchem.experiment.readiness.evaluate_route)",
         ]
+        if tier != PROCESS_SPECIFIED:
+            # Keyed off the REAL tier: as of 0.8 Round II PROCESS_SPECIFIED is reachable (e.g. the
+            # isopentyl-acetate esterification), so this disclaimer prints only for routes that genuinely
+            # fall short of a complete, sourced procedure -- it stops printing the moment a route earns it.
+            lines.append(f"  -- NOT a bench-ready procedure (tier {tier} < {PROCESS_SPECIFIED})")
+        else:
+            # PROCESS_SPECIFIED = the literature procedure is fully specified from an accepted source. That is
+            # an 0.8 claim about the SOURCE, never a promise a particular bench can run it (capability is 0.9).
+            lines.append(
+                "  -- procedure fully specified from an accepted source; NOT a guarantee a particular "
+                "lab/kitchen can execute it (capability is 0.9)"
+            )
+        lines.append("SATISFIED OBLIGATIONS (route-level, weakest-link across steps):")
+        any_satisfied = False
+        for name, status in (
+            ("reaction_type recognized", all(
+                s.reaction_type is ObligationStatus.SATISFIED for s in self.readiness.per_step
+            )),
+            ("conditions sourced", all(
+                s.conditions is ObligationStatus.SATISFIED for s in self.readiness.per_step
+            )),
+            ("process fully specified", all(
+                s.process is ObligationStatus.SATISFIED for s in self.readiness.per_step
+            )),
+            ("workup/isolation described", all(
+                s.workup_isolation is ObligationStatus.SATISFIED for s in self.readiness.per_step
+            )),
+        ):
+            if status:
+                any_satisfied = True
+                lines.append(f"  - {name}")
+        if not any_satisfied:
+            lines.append("  (none)")
+        lines.append("OPEN OBLIGATIONS (route-level, union across steps):")
+        if self.readiness.route_open_obligations:
+            for reason in self.readiness.route_open_obligations:
+                lines.append(f"  - {reason}")
+        else:
+            lines.append("  (none)")
+        lines.append("PER-STEP READINESS (why the route tier is what it is above):")
+        for idx, step_readiness in enumerate(self.readiness.per_step):
+            klass = step_readiness.reaction_class_name or "unrecognized"
+            lines.append(
+                f"  step {idx + 1}: tier={step_readiness.tier} reaction_type={step_readiness.reaction_type.value}"
+                f" ({klass}) conditions={step_readiness.conditions.value}"
+                f" process={step_readiness.process.value} workup_isolation={step_readiness.workup_isolation.value}"
+            )
+        if tier != PROCESS_SPECIFIED:
+            lines.append("MISSING BEFORE BENCH USE (supporting detail; the tier above is the load-bearing claim):")
+            lines.extend(f"  - {field}" for field in _MISSING_BENCH_FIELDS)
+        else:
+            # The procedure now specifies those fields (that is what earned PROCESS_SPECIFIED); what remains is
+            # a capability question about a particular bench, deferred to 0.9 -- never claim otherwise here.
+            lines.append(
+                "REMAINING BEFORE YOUR BENCH USE (a 0.9 capability question, not a procedure gap): whether a "
+                "particular lab/kitchen owns the equipment, containment, waste handling, and materials this "
+                "sourced procedure requires."
+            )
+        lines.append("")
+        lines.append(f"TARGET: {self.route.final_target!r}")
+        lines.append("")
         for idx, step in enumerate(self.route.steps):
             lines.append(f"STEP {idx + 1}: {step.equation()}")
             lines.append(f"    reactant identities: {' + '.join(_chemist_label(m) for m in step.reactants)}")
@@ -847,8 +924,11 @@ def draft_route_dossier(
 
     The dossier includes E1 composability, E3 accounting, equipment, the optional E2 ceiling,
     the sourced regiochemical selectivity (which isomer each step makes), the DERIVED thermodynamic
-    feasibility (ΔG per step), and the DERIVED equilibrium diagnostic (M2: K = exp(-ΔG/RT) per step).
-    It is not a complete procedure and cannot earn bench readiness from this aggregate.
+    feasibility (ΔG per step), the DERIVED equilibrium diagnostic (M2: K = exp(-ΔG/RT) per step), and
+    the DERIVED Sec 3/4/8 readiness obligation ladder (``smartchem.experiment.readiness.evaluate_route``)
+    -- an honest, per-route measurement, not a promotion. A route earns whatever tier its own
+    recognized reaction types / sourced conditions / process record actually support; today's corpus
+    tops out below ``PROCESS_SPECIFIED`` (dark this round), so it is never a complete bench procedure.
 
     ``feed`` (external reactant amounts in mol) turns on the propagated 100%-efficiency ceiling; omit it to
     skip the outcome bound.  ``stability`` / ``selectivity`` / ``thermo`` optionally extend the sourced data
@@ -866,7 +946,13 @@ def draft_route_dossier(
     ceiling = None
     if feed is not None:
         ceiling = route_ceiling(route, feed)
-    return RouteDossier(route, comp, accounting, equipment, ceiling, sel, feas, equi, handling)
+    # v0.8 Real Route Dossiers: readiness comes from the ONE shared evaluator (smartchem.experiment.
+    # readiness.evaluate_route) -- the same one smartchem.service re-derives from on load -- fed the
+    # SAME `losses` tuple `verify_selectivity` above already saw (section 5.3's conditions-blocker
+    # needs the identical evidence the selectivity gag did; two different loss tuples for the same
+    # route would be its own kind of lie).
+    readiness = evaluate_route(route, identity_losses=losses)
+    return RouteDossier(route, comp, accounting, equipment, ceiling, sel, feas, equi, handling, readiness)
 
 
 # Compatibility spellings retained for one deprecation cycle.  Canonical code and rendered output use

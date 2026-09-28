@@ -30,7 +30,17 @@ from smartchem.transform_provider import DEFAULT_TRANSFORM_REGISTRY, TransformPr
 
 #: The committed tamper pin over the demonstration's canonical output digests.  Regenerate ONLY on an
 #: intentional change: ``python -m experiments.redox_displacement_probe`` and paste the printed value.
-FROZEN_HASH = "8ceea741909539b86e198879c7f8648ddf2b484af2535f0f0176a5ce3ea6ab82"
+#:
+#: v0.8 Round II shift (2026-09-27): this hash MOVED, but not because any chemistry changed -- ugh, I
+#: chased this one down so you don't have to. `content_hash` folds in `ExperimentStep.from_transform(dow).digest`,
+#: and `ExperimentStep.digest` now covers its envelope's new `procedure` field (Round II's typed
+#: `ProcedureEvidence`, `smartchem/procedure_evidence.py`) -- present on EVERY envelope as `None` by default here
+#: (this probe never attaches one), but a digest schema that adds a field changes the digest of every value it
+#: computes over, even when the new field is empty. Re-ran `validate()` FIRST (every assertion below still
+#: holds: 1:2 stoichiometry, electron balance, the non-trivial LCM, the unchanged DEFAULT registry) -- only
+#: THEN regenerated this pin. Old -> new: 8ceea741909539b86e198879c7f8648ddf2b484af2535f0f0176a5ce3ea6ab82 ->
+#: 305afec7437d0528cb329b9ee25af721b7d569ec371483c838436e10f9bccb62.
+FROZEN_HASH = "305afec7437d0528cb329b9ee25af721b7d569ec371483c838436e10f9bccb62"
 
 
 def dow_displacement():

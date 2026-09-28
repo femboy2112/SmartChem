@@ -50,6 +50,7 @@ from dataclasses import dataclass
 from typing import Callable, Generic, TypeVar
 
 from .contracts import Digestible, EvidenceStatus
+from .procedure_evidence import ProcedureEvidence
 from .provenance import SourceCitation
 from .process_constraints import ProcessRequirements
 
@@ -121,10 +122,19 @@ class ConditionEnvelope(Digestible):
     provenance: str = ""
     source: SourceCitation | None = None
     process: ProcessRequirements | None = None
+    #: v0.8 Round II: the typed, source-scoped record of what the literature PROCEDURE specified (ordered
+    #: operations, scale, workup, isolation, purification, analytical acceptance).  A SEPARATE type from
+    #: ``process`` (which is the whole-step resource/logistics schema the 0.9 capability gate reads).  It is
+    #: digest-covered (``compare=True``, the default) on purpose: readiness re-derivation on load reconstructs
+    #: the envelope and re-derives the ``process``/``workup_isolation`` obligations from THIS, so it must be
+    #: bound to the envelope identity, never floating free (plan D1 / Wave A Lane F design condition).
+    procedure: ProcedureEvidence | None = None
 
     def __post_init__(self) -> None:
         if self.process is not None and type(self.process) is not ProcessRequirements:
             raise TypeError("process must be a ProcessRequirements or None")
+        if self.procedure is not None and type(self.procedure) is not ProcedureEvidence:
+            raise TypeError("procedure must be a ProcedureEvidence or None")
         for name in ("temperature", "pressure", "duration"):
             v = getattr(self, name)
             if v is not None and type(v) is not Interval:

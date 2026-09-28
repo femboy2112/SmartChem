@@ -463,6 +463,26 @@ def _physical_axis(requirement, ceiling) -> AxisResult:
                 f"physical: route min pressure {requirement.min_pressure_atm:g} atm clears the "
                 f"{ceiling.min_pressure_atm:g} atm floor"
             )
+    # Wave-C F1 (kills the per-DIMENSION hole evil-morty + dalembert both proved): the per-field block
+    # above iterates the CEILING's declared dimensions, so a route demand on a dimension the ceiling leaves
+    # ``None`` was never read -- a temp-only bench rode to FIT against a real, unbounded PRESSURE demand it
+    # never claimed. D6's all-``None`` guard fired only when the ceiling constrained NOTHING; apply the SAME
+    # rule PER DIMENSION here: a real route demand on a dimension whose profile ceiling is ``None`` is an
+    # unbounded dimension that cannot be certified against a real extremum -> UNKNOWN (fail-closed), never a
+    # silent FIT. Restores the monotonicity dalembert's incision violated (adding an unrelated bound must
+    # never launder an unmet demand from UNKNOWN to FIT).
+    for _dim, _demand, _ceil in (
+        ("peak temperature (K)", requirement.max_temperature_k, ceiling.max_temperature_k),
+        ("max pressure (atm)", requirement.max_pressure_atm, ceiling.max_pressure_atm),
+        ("min pressure (atm)", requirement.min_pressure_atm, ceiling.min_pressure_atm),
+    ):
+        if _demand is not None and _ceil is None:
+            unknown = True
+            reasons.append(
+                f"physical: route {_dim} {_demand:g} is a real demand but the declared profile states NO "
+                "bound on that dimension -- an unbounded dimension cannot be certified against a real "
+                "extremum (D6, per-dimension)"
+            )
     if blocked:
         return AxisResult(CapabilityStatus.BLOCKED, tuple(reasons))
     if unknown:
@@ -546,23 +566,28 @@ def _monetary_axis(route_cost, budget) -> AxisResult:
             CapabilityStatus.UNKNOWN,
             ("monetary: route cash is UNKNOWN; cannot certify against the declared budget",),
         )
-    if route_cost.currency and budget.currency and route_cost.currency != budget.currency:
+    # D7 (kills M30/M31) + Wave-C F2 (an empty denominator is NOT a wildcard): to compare cash at ALL,
+    # BOTH sides must declare a currency AND a unit, and each pair must MATCH -- the same (currency, unit)
+    # law ``affordability.dominates`` holds. A missing/empty denominator on either side is an UNESTABLISHED
+    # basis, not a free match -> UNKNOWN (fail-closed), never a raw-number compare (the old ``if x and y and
+    # x!=y`` guard skipped on an empty string and fell through to the raw compare). A $/metric-ton or
+    # $/mol-product cost vs a total-$ budget is likewise a denomination mismatch -> UNKNOWN. 0.9 builds no
+    # production-quantity bridge (no currency/quantity engine).
+    if not (route_cost.currency and budget.currency) or route_cost.currency != budget.currency:
         return AxisResult(
             CapabilityStatus.UNKNOWN,
             (
-                f"monetary: route cash is denominated in {route_cost.currency!r}, budget in "
-                f"{budget.currency!r} -- incomparable, never summed across currencies",
+                f"monetary: route cash currency {route_cost.currency!r} vs budget {budget.currency!r} -- "
+                "an undeclared or mismatched currency is incomparable, never summed (fail-closed)",
             ),
         )
-    # D7 (kills M30/M31): the same (currency, unit) law ``affordability.dominates`` already holds. A
-    # $/metric-ton or $/mol-product route cost vs a total-$ budget is a DENOMINATION mismatch -> UNKNOWN,
-    # never compared by raw number. 0.9 builds no production-quantity bridge (no currency/quantity engine).
-    if route_cost.unit and budget.unit and route_cost.unit != budget.unit:
+    if not (route_cost.unit and budget.unit) or route_cost.unit != budget.unit:
         return AxisResult(
             CapabilityStatus.UNKNOWN,
             (
-                f"monetary: route cash is denominated per {route_cost.unit!r}, budget per {budget.unit!r} "
-                "-- incomparable denominations, never compared by raw number (no production-quantity bridge)",
+                f"monetary: route cash denominated per {route_cost.unit!r}, budget per {budget.unit!r} -- "
+                "an undeclared or mismatched denomination is incomparable, never compared by raw number "
+                "(no production-quantity bridge)",
             ),
         )
     if route_cost.cash is not None:

@@ -69,8 +69,17 @@ _POOR_MAN_TIERS: "frozenset[Availability]" = frozenset({
 #: reaching reflux + fractional distillation genuinely holds a mixture near 250 C in a hood; a kitchen
 #: stovetop a lower ~200 C. Both express a real process ceiling (any declared attention/agitation mode,
 #: hourly-or-slacker checks) that the sourced corpus's PERIODIC/MANUAL procedures satisfy without a gap.
-_RESEARCH_LAB_PHYSICAL: PhysicalBounds = PhysicalBounds.of(max_temperature_k=523.15, max_pressure_atm=2.0)
-_POOR_MAN_PHYSICAL: PhysicalBounds = PhysicalBounds.of(max_temperature_k=473.15, max_pressure_atm=1.5)
+# Wave-C F1: declare the honest atmospheric floor (min_pressure_atm=1.0) too -- a standard bench operates
+# at atmospheric and cannot pull a vacuum below 1 atm without a pump. Now that _physical_axis fails closed
+# per-dimension (a real route demand on an undeclared dimension -> UNKNOWN), a bench that omitted its
+# pressure FLOOR would go UNKNOWN against the isopentyl route's 1 atm demand; declaring it keeps the honest
+# atmospheric FIT while a real vacuum route (min_pressure < 1 atm) still correctly BLOCKS on these benches.
+_RESEARCH_LAB_PHYSICAL: PhysicalBounds = PhysicalBounds.of(
+    max_temperature_k=523.15, max_pressure_atm=2.0, min_pressure_atm=1.0
+)
+_POOR_MAN_PHYSICAL: PhysicalBounds = PhysicalBounds.of(
+    max_temperature_k=473.15, max_pressure_atm=1.5, min_pressure_atm=1.0
+)
 
 
 def _bench_process_bounds() -> ProcessBounds:
@@ -225,7 +234,7 @@ def isopentyl_capability_fit_bench(
             material_library.isopentyl_fully_declared_inventory() if material_inventory is None else material_inventory
         ),
         equipment=frozenset(EquipmentCapability) if equipment is None else equipment,
-        physical_bounds=PhysicalBounds.of(max_temperature_k=500.0, max_pressure_atm=2.0)
+        physical_bounds=PhysicalBounds.of(max_temperature_k=500.0, max_pressure_atm=2.0, min_pressure_atm=1.0)
         if physical_bounds is None else physical_bounds,
         process_bounds=_bench_process_bounds() if process_bounds is None else process_bounds,
         containment=frozenset({ContainmentCapability.FUME_HOOD}) if containment is None else containment,

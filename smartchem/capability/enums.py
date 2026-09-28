@@ -24,6 +24,8 @@ __all__ = [
     "ContainmentCapability",
     "VentilationCapability",
     "MeasurementCapability",
+    "MeasurementMethod",
+    "MEASUREMENT_TIER_OF",
     "WasteCapability",
 ]
 
@@ -133,6 +135,42 @@ class MeasurementCapability(str, Enum):
     FREE_OBSERVATION = "FREE_OBSERVATION"
     CHEAP_INSTRUMENT = "CHEAP_INSTRUMENT"
     ANALYTICAL_INSTRUMENT = "ANALYTICAL_INSTRUMENT"
+
+
+class MeasurementMethod(str, Enum):
+    """The closed, corpus-forced SPECIFIC instrument-method vocabulary (FREEZE decision 5).
+
+    This mirrors :class:`EquipmentCapability`, not the coarse :class:`MeasurementCapability` above:
+    capability comparison happens ALWAYS on this specific method, member against member, never on the tier
+    it groups under. That distinction is the whole point of decision 5 (kills M28): a bench that owns an NMR
+    but not an IR spectrometer sits in the same ``ANALYTICAL_INSTRUMENT`` tier as one that owns the IR, so a
+    verdict read off the tier would false-FIT an IR requirement against an NMR-only bench. Only a specific
+    ``INFRARED_SPECTROSCOPY == INFRARED_SPECTROSCOPY`` comparison refuses that -- the tier is anatomy for
+    display, the method is the thing you actually cut on.
+
+    Exactly three members -- the three genuine INSTRUMENT methods the sourced corpus forces (decision 5).
+    Two candidates are deliberately NOT here, and their absence is a documented ruling, not an oversight: the
+    ferric-chloride spot test is reagent + naked eye, not an instrument (decision 5 defers it to a later
+    round as a MATERIAL-possession requirement, never a measurement); percent yield is arithmetic over
+    :attr:`MASS`, not a distinct method. Forcing either into a balance/spectrometer-shaped enum would be the
+    same category error decision 5 exists to refuse.
+    """
+
+    MASS = "MASS"
+    MELTING_POINT = "MELTING_POINT"
+    INFRARED_SPECTROSCOPY = "INFRARED_SPECTROSCOPY"
+
+
+#: the coarse :class:`MeasurementCapability` tier each specific method groups under -- for DISPLAY/GROUPING
+#: only, mirroring :data:`EQUIPMENT_KIND_OF`. Comparison is ALWAYS on the specific :class:`MeasurementMethod`
+#: (a balance and a melting-point apparatus are both CHEAP_INSTRUMENT, but they are NOT interchangeable, and
+#: an IR spectrometer sharing the ANALYTICAL_INSTRUMENT tier with an NMR does NOT make them one); reading a
+#: verdict off this map instead of the method is exactly the M28 false-FIT this map is forbidden to serve.
+MEASUREMENT_TIER_OF: "dict[MeasurementMethod, MeasurementCapability]" = {
+    MeasurementMethod.MASS: MeasurementCapability.CHEAP_INSTRUMENT,
+    MeasurementMethod.MELTING_POINT: MeasurementCapability.CHEAP_INSTRUMENT,
+    MeasurementMethod.INFRARED_SPECTROSCOPY: MeasurementCapability.ANALYTICAL_INSTRUMENT,
+}
 
 
 class WasteCapability(str, Enum):

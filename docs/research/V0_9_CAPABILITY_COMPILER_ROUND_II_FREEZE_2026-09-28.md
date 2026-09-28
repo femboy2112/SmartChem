@@ -201,3 +201,35 @@ FIT-on-equipment, M12 missing-verification-ignored, M13 unknown-waste-passes, M1
 budget=FIT, M16 mixed-currency-summed, M17 unrecognized-catalyst=poor-man-obtainable, M18 industrial-catalyst-free-
 under-lab, M19 assessment-under-another-profile-no-refusal, M20 custom-content-changes-digest-doesn't, M21 one-
 fitting-step-promotes-blocked-route, M22 FIT-survives-readiness-demotion.
+
+---
+
+## Round II augmentation — DERIVED_WITH_ERROR data model + legality gate (operator directive, 2026-09-28)
+
+Operator directive: fill the F2 material gap (and other UNKNOWN axes) with DERIVED-WITH-ERROR data rather than
+leaving them UNKNOWN. "Wikipedia counts as a source." Formalized:
+
+- **New evidence tier `DERIVED_WITH_ERROR`** — a value carrying a quantified uncertainty interval + method +
+  source-class, distinct from EXACT-SOURCED and from UNKNOWN. Sound because the interval is honest and propagates.
+- **Acceptable sources (error-lenient):** primary literature is NOT required. Wikipedia, PubChem, CRC/standard
+  tables, USP/BP pharmacopeia, ACS/supplier reagent-grade specs, or a derivation from known physics all count —
+  the bar is a CITABLE source + a MEASURABLE error, not primary verification.
+- **Carriers (already interval-native):** `StockMaterial` `[min,max]` assay intervals; `CostVector.cash_floor`/
+  intervals. A capability verdict carries a confidence/error derived from the input intervals — `satisfies()`'s
+  worst-case logic makes a FIT robust to the stated error (a FIT means even the interval's worst bound clears the
+  requirement; a straddle stays UNKNOWN; a shortfall stays BLOCKED/INSUFFICIENT).
+- **Anti-fabrication (hard rail, new banned failure):** a fabricated or decorative error bar that launders a guess
+  as a measurement is BANNED — worse than UNKNOWN. If an interval can't be backed by a citable source or a real
+  derivation, widen it honestly or use UNKNOWN. Error must hold across the deployment regime; guard fail-closed
+  outside it (domain-of-validity).
+- **Legality gate:** gathered data covers only public, lawful, teaching-lab chemistry (the ester/analgesic corpus +
+  common reagents). No controlled substances, illicit synthesis, or weaponizable-precursor data.
+- **Unblocks F2 / gate #18:** a fully-declared Custom profile can now carry `DERIVED_WITH_ERROR` `StockMaterial`s
+  whose worst-case assay clears the route's inputs → isopentyl reaches CAPABILITY_FIT *with honest error bars*,
+  while interval-straddle cases stay UNKNOWN and shortfall cases stay BLOCKED.
+- **Wave B wiring:** capability-core `assess()` emits a per-verdict confidence/error from input intervals; writer 5
+  curates the swarm-gathered data (verified for DEFENSIBILITY, not primary-sourcing) into a `StockMaterial` fixture
+  library + the fully-declared Custom FIT profile.
+
+Gathering swarm (web-capable, Wikipedia/PubChem-class) fills: material assays, prices, hazard classifications,
+physical properties — each as an interval + citation + method.

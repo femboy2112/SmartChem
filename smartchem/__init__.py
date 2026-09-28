@@ -30,7 +30,7 @@ import importlib
 import importlib.util
 from typing import TYPE_CHECKING
 
-__version__ = "0.8.0a1"
+__version__ = "0.9.0a1"
 
 # The public API is served lazily (PEP 562). The eager imports live under TYPE_CHECKING
 # so type checkers and IDEs still see every re-export, but at runtime importing a single

@@ -155,7 +155,7 @@ general multiphysics category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](docs/history/MANIFEST.md).
 
-## Chemical compiler (v0.8.0a1 — an alpha in progress)
+## Chemical compiler (v0.9.0a1 — an alpha in progress)
 
 A newer line of work turns the chemistry core into a bidirectional *chemical compiler*: a
 **decompiler** that descends a target compound to its elemental buckets as an AND–OR
@@ -337,7 +337,7 @@ Until that gate is complete, new reaction-family expansion is non-release-critic
 measured input -> identity -> chemistry -> evidence -> capability funnel, not an unbounded sequence of local rounds.
 
 
-> **The live chemical-compiler (v0.8.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
+> **The live chemical-compiler (v0.9.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
 > next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
 > re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.
 

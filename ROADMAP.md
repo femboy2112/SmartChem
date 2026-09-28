@@ -241,6 +241,29 @@ reaction-vouched row):
   `smartchem/` touched on disk.
 - `~/.local/bin/ruff check` clean on all three files.
 
+**v0.9 CAPABILITY COMPILER, ROUND III — WHOLE-PATH SEMANTIC HARDENING (2026-09-28, RELEASE CANDIDATE —
+package version bumped `0.8.0a1` -> `0.9.0a1`; the 35-criterion release gate CLOSED; a merge-ready PR
+`feat/v0.9-capability-compiler -> main` is opened for EXTERNAL release review and is deliberately NOT merged —
+external review has the final say). Freeze `docs/research/V0_9_CAPABILITY_COMPILER_ROUND_III_FREEZE_2026-09-28.md`,
+release record `docs/research/V0_9_CAPABILITY_COMPILER_RELEASE_2026-09-28.md`.**
+The thesis Round III set out to prove and did: **the machine means what it says.** Capability is a PROJECTION over an
+UNCHANGED chemistry search — `semantic_digest` is byte-identical across {no profile, research-lab, poor-man, inline
+custom}; only the request/question/result digests and the per-route assessment move. A `CAPABILITY_FIT` verdict is
+never a false pass; every one of the 11 axes fails closed; and the forcing matrix is a faithful consequence of the
+code, not a coincidence of the corpus. Round II shipped a real core but a GAMED positive (`research_lab` + a
+universal `0.98` esterification assay floor lying by omission on six axes); Round III RETIRED the floor (source-scoped
+assay per input), migrated the positive to a fully-declared Custom bench, and closed the whole-path requirements:
+`ProcedureMaterialUse` (procedure-only materials no longer vanish), quantity/phase gating, specific `MeasurementMethod`
+(IR ≠ NMR ≠ balance), per-dimension UNCONSTRAINED→UNKNOWN, fail-closed budget denomination, a reserved ventilation
+axis, and procedure-hazard→containment folding. Wired into the real compiler request/response with a resolved
+`CapabilityProfile` snapshot (a bare preset name is REFUSED) + `CAPABILITY-REBIND-ON-LOAD`. **Gate:** M1-M40 mutation
+**40/40 killed**; funnel 75/75 properties (only the fully-declared Custom bench reaches FIT); fresh non-author hostile
+review (evil-morty directed + dalembert structure-theorem) CONVERGED on F1 (P0 physical per-dimension false-FIT) + F2
+(monetary empty-denominator fail-open), both FIXED and re-verified on the real path, everything else HELD; full
+OOM-safe suite **5757 passed / 0 failed / 0 errors / 46 skipped** (0.8 baseline 5628 passed; +129, no 0.7/0.8
+regression). No new reaction classes, no new chemistry family, no capability-fit by omission. Next: 0.9.5 Adversarial
+Release Candidate (plan `docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md`), then 1.0 Stable.
+
 **v0.8 REAL ROUTE DOSSIERS, ROUND II — PROCEDURE-EVIDENCE CLOSURE + VERIFIABLE CANONICAL TRANSPORT
 (2026-09-28, RELEASED — package version bumped `0.7.0a1` -> `0.8.0a1`; the 13-condition release gate CLOSED
 and the branch merged to `main`, per plan `docs/research/V0_8_ROUND_II_PROCEDURE_EVIDENCE_PLAN_v0.1.md` and

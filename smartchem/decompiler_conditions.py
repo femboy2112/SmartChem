@@ -27,10 +27,16 @@ from .procedure_evidence import (
     OperationKind,
     OperationRole,
     ProcedureEvidence,
+    ProcedureMaterialRole,
+    ProcedureMaterialUse,
     ProcedureOperation,
 )
 from .process_constraints import Agitation, Attention, ProcessRequirements
 from .provenance import SourceCitation, SourceReview
+# NOTE: ``experiment.stock`` (Phase/StockQuantity) and ``smiles`` (parse_smiles) are imported LOWER in this
+# module, deliberately not here. The ``experiment`` package imports THIS module (via decompiler_review), so a
+# top-level ``from .experiment.stock import ...`` would recurse before ``reaction_conditions`` is defined. The
+# two consumer functions are defined first, then the import fires against a fully-formed re-entry point.
 
 __all__ = [
     "ReactionDirection",
@@ -123,6 +129,81 @@ def _sig(reactant: str, reagents: tuple[str, ...], products: tuple[str, ...]) ->
     return _reaction_signature(edge)
 
 
+# -- Public conditions API (defined BEFORE the procedure/SEED block below on purpose) ----------------------------
+# Both functions read ``SEED_CONDITIONS`` at CALL time, so their definitions carry no import-time dependency on
+# the seed data. They are hoisted above the ``experiment.stock`` import that the procedure records need because
+# that import re-enters this module (``experiment`` -> decompiler_review -> here) looking for exactly
+# ``reaction_conditions`` -- and it must find it already bound. Defining these first is what keeps the cycle sound.
+def reaction_conditions(
+    edge, *, direction: ReactionDirection = ReactionDirection.DECOMPOSITION, losses: tuple = (),
+) -> ConditionEnvelope:
+    """The conditions sourced for ``edge`` in exactly ``direction``, else loud ``unknown()``.
+
+    The default preserves the decompiler-facing API: an edge is read in its written decomposition direction.
+    Retrosynthesis callers MUST request :attr:`ReactionDirection.ASSEMBLY`; algebraic reversibility is not
+    experimental provenance.
+
+    ``losses`` (EVD-KEY-01): if a section-5.3 BLOCKER forbids a ``"conditions"`` claim on this identity, no sourced
+    envelope survives (section 5.3) -- ``unknown()`` is returned before the lookup.
+    """
+    from .identity import is_blocked
+    if not isinstance(direction, ReactionDirection):
+        raise TypeError("direction must be a ReactionDirection")
+    if is_blocked(tuple(losses), "conditions"):
+        return ConditionEnvelope.unknown()
+    record = SEED_CONDITIONS.get(_reaction_signature(edge))
+    if record is None or direction not in record.directions:
+        return ConditionEnvelope.unknown()
+    if direction is ReactionDirection.ASSEMBLY:
+        # Formula-only callers cannot prove the structural selector.  Retrosynthesis must use
+        # assembly_conditions(capped), which has the bond graphs needed to do so.
+        return ConditionEnvelope.unknown()
+    return record.envelope
+
+
+def assembly_conditions(capped, *, losses: tuple = ()) -> ConditionEnvelope:
+    """Conditions for reversing one structural capped scission, only after exact identity matches.
+
+    Any unresolved structure or selector mismatch returns ``unknown()``.  This deliberately refuses a
+    formula-only fallback: paracetamol and 4-aminophenyl acetate are both C8H9NO2 but are not interchangeable.
+
+    ``losses`` (EVD-KEY-01): a section-5.3 BLOCKER for ``"conditions"`` refuses a sourced envelope (section 5.3),
+    even when the structure resolves and the selector matches -- the dropped feature (stereo/isotope/charge) is one
+    the sourced bench conditions may depend on.
+
+    Expected-absence contract (ERR-EVIDENCE-01): the ONLY reasons this returns ``unknown()`` are the explicit,
+    anticipated ones below -- a section-5.3 ``"conditions"`` blocker, no seed record for the reaction signature, a
+    record that carries no ASSEMBLY direction, an unresolved reactant/precursor structure, or a selector-name
+    mismatch.  It does NOT catch exceptions.  An unexpected fault in signature computation or structure resolution
+    is an INTERNAL DEFECT, not the scientific statement "conditions unknown"; it propagates to the
+    ``ERROR_INTERNAL`` / exit-70 boundary rather than being laundered into an epistemic UNKNOWN.
+    """
+    from .identity import is_blocked
+    from .structure import resolve_structure
+
+    if is_blocked(tuple(losses), "conditions"):
+        return ConditionEnvelope.unknown()
+    record = SEED_CONDITIONS.get(_reaction_signature(capped.forget()))
+    if record is None or ReactionDirection.ASSEMBLY not in record.directions:
+        return ConditionEnvelope.unknown()
+    target = resolve_structure(capped.reactant)
+    precursors = tuple(resolve_structure(m) for m in capped.products)
+    if target is None or any(p is None for p in precursors):
+        return ConditionEnvelope.unknown()
+    names = tuple(sorted(p.name for p in precursors if p is not None))
+    if target.name != record.assembly_target_name or names != record.assembly_precursor_names:
+        return ConditionEnvelope.unknown()
+    return record.envelope
+
+
+# Deferred imports (see the top-of-module note): the procedure records below carry typed ProcedureMaterialUse
+# data (Phase/StockQuantity) and resolved auxiliary identities (parse_smiles). Both live under packages that
+# import THIS module, so the imports wait until here -- after reaction_conditions is bound, before the records
+# that need them. The seed/procedure literals then build eagerly, exactly as before.
+from .experiment.stock import Phase, StockQuantity  # noqa: E402
+from .smiles import parse_smiles  # noqa: E402
+
+
 # -- v0.8 Round II: typed procedure evidence, migrated from the same accepted primary sources --------------------
 # The four sourced routes' whole-process records above are free-text ProcessRequirements; these author the
 # STRUCTURED procedure the same accepted primary source specifies, so PROCESS_SPECIFIED becomes decidable from
@@ -143,6 +224,15 @@ _ACETAMINOPHEN_URL = (
     "Organic_Chemistry_Labs/Experiments/2:__Synthesis_of_Acetaminophen_(Experiment)"
 )
 
+# Resolved identities for the procedure-only auxiliaries that ARE single connected species. The ionic
+# salts (NaHCO3/NaCl/MgSO4) and the mixtures (petroleum ether, charcoal, the acetate buffer) get
+# identity=None below -- parse_smiles refuses a disconnected lattice, and a fabricated covalent spelling of
+# an ionic salt is banned (D2 / scope fence). What resolves, resolves honestly; what doesn't, says so.
+_H2SO4 = parse_smiles("OS(=O)(=O)O")   # conc. sulfuric acid -- Fischer/acetylation catalyst
+_WATER = parse_smiles("O")
+_ETHYL_ACETATE = parse_smiles("CCOC(=O)C")
+_HCL = parse_smiles("Cl")
+
 # Isopentyl acetate -- a COMPLETE, sourced preparative procedure. reaction_type is recognized (esterification
 # makes water), conditions are sourced, and this procedure is complete -> the round's real PROCESS_SPECIFIED
 # positive. Quantities, ordered operations, workup and analytical acceptance all quoted from the LibreTexts page.
@@ -158,6 +248,14 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
             materials=("isopentyl alcohol", "acetic acid", "sulfuric acid"),
             quantity=EvidenceField.present("15 mL alcohol + 20 mL glacial acetic acid + 4 mL conc. H2SO4", _ISOPENTYL_URL),
             rate=EvidenceField.present("combine alcohol and acid, then add conc. H2SO4 with caution", _ISOPENTYL_URL),
+            # The H2SO4 rides in op1's REACTION charge beside the true reactants; typing it a CATALYST is what
+            # finally tells the acid catalyst from the substrate (the exact gluing D2 was written to un-glue).
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="sulfuric acid", role=ProcedureMaterialRole.CATALYST, identity=_H2SO4,
+                    formulation="conc.", phase=Phase.LIQUID, quantity=StockQuantity.of("4", "mL"),
+                    evidence_source=_ISOPENTYL_URL),
+            ),
             apparatus=("100-mL round-bottom flask",), locator=_ISOPENTYL_URL),
         ProcedureOperation(
             ordinal=2, kind=OperationKind.HOLD, role=OperationRole.REACTION,
@@ -172,22 +270,54 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
         ProcedureOperation(
             ordinal=4, kind=OperationKind.SEPARATE, role=OperationRole.OTHER, materials=("cold water",),
             quantity=EvidenceField.present("55 mL cold water + 10 mL rinse; separate the lower aqueous layer", _ISOPENTYL_URL),
+            # Cold water resolves (a single connected species); benign, but carried so the axis never silently skips it.
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="cold water", role=ProcedureMaterialRole.RINSE, identity=_WATER,
+                    evidence_source=_ISOPENTYL_URL),
+            ),
             apparatus=("separatory funnel",), locator=_ISOPENTYL_URL),
         ProcedureOperation(
             ordinal=5, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("5% sodium bicarbonate solution",),
             quantity=EvidenceField.present("25 mL of 5% sodium bicarbonate, twice", _ISOPENTYL_URL),
             endpoint=EvidenceField.present("wash until the aqueous layer is basic to litmus", _ISOPENTYL_URL),
+            # Ionic: no connected Molecule to resolve. identity=None is the honest carrier; the "5% aqueous"
+            # adjective survives as structured formulation/phase, not prose to be re-parsed downstream.
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="sodium bicarbonate", role=ProcedureMaterialRole.WASH, identity=None,
+                    formulation="5% aqueous", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("25", "mL"),
+                    evidence_source=_ISOPENTYL_URL),
+            ),
             locator=_ISOPENTYL_URL),
         ProcedureOperation(
             ordinal=6, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("water",),
-            quantity=EvidenceField.present("25 mL water", _ISOPENTYL_URL), locator=_ISOPENTYL_URL),
+            quantity=EvidenceField.present("25 mL water", _ISOPENTYL_URL),
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="water", role=ProcedureMaterialRole.WASH, identity=_WATER,
+                    quantity=StockQuantity.of("25", "mL"), evidence_source=_ISOPENTYL_URL),
+            ),
+            locator=_ISOPENTYL_URL),
         ProcedureOperation(
             ordinal=7, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("saturated aqueous sodium chloride",),
             quantity=EvidenceField.present("5 mL saturated NaCl to aid layer separation (swirl, do not shake)", _ISOPENTYL_URL),
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="sodium chloride", role=ProcedureMaterialRole.WASH, identity=None,
+                    formulation="saturated aqueous", phase=Phase.AQUEOUS_SOLUTION, evidence_source=_ISOPENTYL_URL),
+            ),
             locator=_ISOPENTYL_URL),
         ProcedureOperation(
             ordinal=8, kind=OperationKind.DRY, role=OperationRole.OTHER, materials=("anhydrous magnesium sulfate",),
-            quantity=EvidenceField.present("2 g anhydrous magnesium sulfate", _ISOPENTYL_URL), locator=_ISOPENTYL_URL),
+            quantity=EvidenceField.present("2 g anhydrous magnesium sulfate", _ISOPENTYL_URL),
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="magnesium sulfate", role=ProcedureMaterialRole.DRY, identity=None,
+                    formulation="anhydrous", phase=Phase.SOLID, quantity=StockQuantity.of("2", "g"),
+                    evidence_source=_ISOPENTYL_URL),
+            ),
+            locator=_ISOPENTYL_URL),
         ProcedureOperation(
             ordinal=9, kind=OperationKind.DISTILL, role=OperationRole.OTHER,
             endpoint=EvidenceField.present("collect the fraction between 134 and 143 C", _ISOPENTYL_URL),
@@ -227,6 +357,13 @@ _ASPIRIN_PROCEDURE = ProcedureEvidence(
             materials=("salicylic acid", "acetic anhydride", "sulfuric acid"),
             quantity=EvidenceField.present("2.0 g salicylic acid + 5 mL acetic anhydride + 5 drops conc. H2SO4", _ASPIRIN_URL),
             agitation=EvidenceField.present("swirl gently until the salicylic acid dissolves", _ASPIRIN_URL),
+            # Same catalyst-glued-into-REACTION shape as isopentyl op1. "5 drops" is not a cleanly-separable
+            # comparable amount, so quantity stays None -- an honest gap beats a fabricated volume.
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="sulfuric acid", role=ProcedureMaterialRole.CATALYST, identity=_H2SO4,
+                    formulation="conc.", phase=Phase.LIQUID, evidence_source=_ASPIRIN_URL),
+            ),
             apparatus=("125-mL Erlenmeyer flask",), locator=_ASPIRIN_URL),
         ProcedureOperation(
             ordinal=2, kind=OperationKind.HOLD, role=OperationRole.REACTION,
@@ -245,10 +382,21 @@ _ASPIRIN_PROCEDURE = ProcedureEvidence(
         ProcedureOperation(
             ordinal=5, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("cold water",),
             quantity=EvidenceField.present("rinse the crystals several times with 5 mL portions of cold water", _ASPIRIN_URL),
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="water", role=ProcedureMaterialRole.RINSE, identity=_WATER, evidence_source=_ASPIRIN_URL),
+            ),
             locator=_ASPIRIN_URL),
         ProcedureOperation(
             ordinal=6, kind=OperationKind.HEAT, role=OperationRole.RECRYSTALLIZATION, materials=("ethyl acetate",),
             temperature=EvidenceField.present("dissolve in a minimum (2-3 mL) of hot ethyl acetate", _ASPIRIN_URL),
+            # The recrystallization medium resolves (a single ester); the "2-3 mL" is glued into a range, so
+            # quantity stays None. "hot" is a condition on the op, not a material formulation, so it is NOT recorded here.
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="ethyl acetate", role=ProcedureMaterialRole.SOLVENT, identity=_ETHYL_ACETATE,
+                    phase=Phase.LIQUID, evidence_source=_ASPIRIN_URL),
+            ),
             locator=_ASPIRIN_URL),
         ProcedureOperation(
             ordinal=7, kind=OperationKind.COOL, role=OperationRole.RECRYSTALLIZATION,
@@ -257,6 +405,12 @@ _ASPIRIN_PROCEDURE = ProcedureEvidence(
         ProcedureOperation(
             ordinal=8, kind=OperationKind.FILTER, role=OperationRole.RECRYSTALLIZATION, materials=("petroleum ether",),
             quantity=EvidenceField.present("collect by vacuum filtration, rinse with a few mL cold petroleum ether", _ASPIRIN_URL),
+            # Petroleum ether is a hydrocarbon CUT, not one compound -> identity=None, no fabricated spelling.
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="petroleum ether", role=ProcedureMaterialRole.RINSE, identity=None,
+                    phase=Phase.LIQUID, evidence_source=_ASPIRIN_URL),
+            ),
             apparatus=("Buchner funnel",), locator=_ASPIRIN_URL),
         ProcedureOperation(
             ordinal=9, kind=OperationKind.DRY, role=OperationRole.OTHER,
@@ -298,10 +452,25 @@ _PARACETAMOL_PROCEDURE = ProcedureEvidence(
             ordinal=1, kind=OperationKind.ADD, role=OperationRole.OTHER,
             materials=("p-aminophenol", "water", "hydrochloric acid"),
             quantity=EvidenceField.present("2.1 g p-aminophenol + 35 mL water + 1.5 mL conc. HCl, swirl to dissolve", _ACETAMINOPHEN_URL),
+            # HCl here protonates the amine to dissolve the substrate -- a pH move, not a stoichiometric reactant:
+            # NEUTRALIZE. It resolves (a single connected species); conc. HCl is aqueous, so the phase is honest.
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="hydrochloric acid", role=ProcedureMaterialRole.NEUTRALIZE, identity=_HCL,
+                    formulation="conc.", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("1.5", "mL"),
+                    evidence_source=_ACETAMINOPHEN_URL),
+            ),
             apparatus=("125-mL Erlenmeyer flask",), locator=_ACETAMINOPHEN_URL),
         ProcedureOperation(
             ordinal=2, kind=OperationKind.ADD, role=OperationRole.OTHER, materials=("decolorizing charcoal (Norit)",),
             quantity=EvidenceField.present("0.3-0.4 g Norit; swirl on a steam bath for 4-8 minutes", _ACETAMINOPHEN_URL),
+            # Activated charcoal is amorphous carbon, not a molecular species -> identity=None. It removes colored
+            # impurities by adsorption; WASH is the closest home the frozen role vocab offers an adsorbent (flagged).
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="decolorizing charcoal (Norit)", role=ProcedureMaterialRole.WASH, identity=None,
+                    phase=Phase.SOLID, evidence_source=_ACETAMINOPHEN_URL),
+            ),
             apparatus=("steam bath",), locator=_ACETAMINOPHEN_URL),
         ProcedureOperation(
             ordinal=3, kind=OperationKind.FILTER, role=OperationRole.OTHER,
@@ -312,6 +481,13 @@ _PARACETAMOL_PROCEDURE = ProcedureEvidence(
             materials=("sodium acetate buffer", "acetic anhydride"),
             quantity=EvidenceField.present("add 8.8 mL sodium-acetate buffer in one portion, then 2.0 mL acetic anhydride", _ACETAMINOPHEN_URL),
             rate=EvidenceField.present("add the buffer in one portion, then immediately add the anhydride while swirling", _ACETAMINOPHEN_URL),
+            # A buffered aqueous mixture (acetate + trihydrate + water), not a single species -> identity=None. It
+            # moderates the acidity so the acetylation proceeds: NEUTRALIZE. The anhydride is a true reactant, not here.
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="sodium acetate buffer", role=ProcedureMaterialRole.NEUTRALIZE, identity=None,
+                    phase=Phase.AQUEOUS_SOLUTION, evidence_source=_ACETAMINOPHEN_URL),
+            ),
             locator=_ACETAMINOPHEN_URL),
         ProcedureOperation(
             ordinal=5, kind=OperationKind.HOLD, role=OperationRole.REACTION,
@@ -331,6 +507,12 @@ _PARACETAMOL_PROCEDURE = ProcedureEvidence(
         ProcedureOperation(
             ordinal=8, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("cold water",),
             quantity=EvidenceField.present("rinse the crystals once with a few mL of cold water", _ACETAMINOPHEN_URL),
+            # "a few mL" is glued/ambiguous, so quantity stays None; the species resolves and is carried, benign.
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="water", role=ProcedureMaterialRole.RINSE, identity=_WATER,
+                    evidence_source=_ACETAMINOPHEN_URL),
+            ),
             locator=_ACETAMINOPHEN_URL),
         ProcedureOperation(
             ordinal=9, kind=OperationKind.DRY, role=OperationRole.OTHER,
@@ -611,65 +793,3 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
         ("acetic anhydride", "salicylic acid"),   # MUST be sorted (assembly_conditions compares sorted precursor names)
     ),
 }
-
-
-def reaction_conditions(
-    edge, *, direction: ReactionDirection = ReactionDirection.DECOMPOSITION, losses: tuple = (),
-) -> ConditionEnvelope:
-    """The conditions sourced for ``edge`` in exactly ``direction``, else loud ``unknown()``.
-
-    The default preserves the decompiler-facing API: an edge is read in its written decomposition direction.
-    Retrosynthesis callers MUST request :attr:`ReactionDirection.ASSEMBLY`; algebraic reversibility is not
-    experimental provenance.
-
-    ``losses`` (EVD-KEY-01): if a section-5.3 BLOCKER forbids a ``"conditions"`` claim on this identity, no sourced
-    envelope survives (section 5.3) -- ``unknown()`` is returned before the lookup.
-    """
-    from .identity import is_blocked
-    if not isinstance(direction, ReactionDirection):
-        raise TypeError("direction must be a ReactionDirection")
-    if is_blocked(tuple(losses), "conditions"):
-        return ConditionEnvelope.unknown()
-    record = SEED_CONDITIONS.get(_reaction_signature(edge))
-    if record is None or direction not in record.directions:
-        return ConditionEnvelope.unknown()
-    if direction is ReactionDirection.ASSEMBLY:
-        # Formula-only callers cannot prove the structural selector.  Retrosynthesis must use
-        # assembly_conditions(capped), which has the bond graphs needed to do so.
-        return ConditionEnvelope.unknown()
-    return record.envelope
-
-
-def assembly_conditions(capped, *, losses: tuple = ()) -> ConditionEnvelope:
-    """Conditions for reversing one structural capped scission, only after exact identity matches.
-
-    Any unresolved structure or selector mismatch returns ``unknown()``.  This deliberately refuses a
-    formula-only fallback: paracetamol and 4-aminophenyl acetate are both C8H9NO2 but are not interchangeable.
-
-    ``losses`` (EVD-KEY-01): a section-5.3 BLOCKER for ``"conditions"`` refuses a sourced envelope (section 5.3),
-    even when the structure resolves and the selector matches -- the dropped feature (stereo/isotope/charge) is one
-    the sourced bench conditions may depend on.
-
-    Expected-absence contract (ERR-EVIDENCE-01): the ONLY reasons this returns ``unknown()`` are the explicit,
-    anticipated ones below -- a section-5.3 ``"conditions"`` blocker, no seed record for the reaction signature, a
-    record that carries no ASSEMBLY direction, an unresolved reactant/precursor structure, or a selector-name
-    mismatch.  It does NOT catch exceptions.  An unexpected fault in signature computation or structure resolution
-    is an INTERNAL DEFECT, not the scientific statement "conditions unknown"; it propagates to the
-    ``ERROR_INTERNAL`` / exit-70 boundary rather than being laundered into an epistemic UNKNOWN.
-    """
-    from .identity import is_blocked
-    from .structure import resolve_structure
-
-    if is_blocked(tuple(losses), "conditions"):
-        return ConditionEnvelope.unknown()
-    record = SEED_CONDITIONS.get(_reaction_signature(capped.forget()))
-    if record is None or ReactionDirection.ASSEMBLY not in record.directions:
-        return ConditionEnvelope.unknown()
-    target = resolve_structure(capped.reactant)
-    precursors = tuple(resolve_structure(m) for m in capped.products)
-    if target is None or any(p is None for p in precursors):
-        return ConditionEnvelope.unknown()
-    names = tuple(sorted(p.name for p in precursors if p is not None))
-    if target.name != record.assembly_target_name or names != record.assembly_precursor_names:
-        return ConditionEnvelope.unknown()
-    return record.envelope

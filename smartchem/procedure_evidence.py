@@ -37,13 +37,17 @@ from .contracts import Digestible
 from .provenance import SourceCitation
 
 if TYPE_CHECKING:
+    from .category import Molecule
     from .conditions import Interval
+    from .experiment.stock import Phase, StockQuantity
 
 __all__ = [
     "EvidenceFieldStatus",
     "EvidenceField",
     "OperationKind",
     "OperationRole",
+    "ProcedureMaterialRole",
+    "ProcedureMaterialUse",
     "ProcedureOperation",
     "ProcedureEvidence",
     "WHOLE_PROCEDURE_FIELDS",
@@ -167,6 +171,74 @@ class OperationRole(str, Enum):
     OTHER = "OTHER"
 
 
+class ProcedureMaterialRole(str, Enum):
+    """The purpose a procedure-only auxiliary serves -- a MATERIAL-level role, deliberately DISTINCT from
+    :class:`OperationRole` (which classifies an *operation*, not a species). The dissection that forced it: op1 of
+    both isopentyl and aspirin glues a catalyst (H2SO4) into a ``role=REACTION`` charge alongside the true reactants,
+    and nothing typed told the H2SO4 from the substrate. This enum is where that distinction finally has a home.
+
+    Closed vocabulary; extend only when the sourced corpus produces an auxiliary none of these fit -- never
+    speculatively. A material's role is what the source SAYS it does, not what a runtime parser guesses."""
+
+    CATALYST = "CATALYST"        # accelerates without being consumed stoichiometrically (H2SO4 in a Fischer esterification)
+    WASH = "WASH"                # a medium (usually a liquid) contacted with the product to carry impurities away
+                                 # (5% NaHCO3, brine, a decolorizing adsorbent) -- the closest home the corpus's
+                                 # charcoal has in this frozen vocab; a dedicated adsorbent role is a later extension
+    DRY = "DRY"                  # a desiccant that pulls residual water (anhydrous MgSO4)
+    SOLVENT = "SOLVENT"          # a recrystallization/reaction medium (hot ethyl acetate)
+    RINSE = "RINSE"              # a low-volume flush of a collected solid/vessel (cold water, petroleum ether)
+    NEUTRALIZE = "NEUTRALIZE"    # an acid/base charged to move pH, not to react into the product (HCl to dissolve p-aminophenol)
+
+
+@dataclass(frozen=True)
+class ProcedureMaterialUse(Digestible):
+    """One procedure-only auxiliary the source names -- a catalyst, wash, drier, solvent, rinse, or pH agent that
+    the balanced reaction equation never sees but the bench chemist must still possess. AUTHORED source evidence,
+    never runtime-parsed prose: each field is transcribed by hand from the cited procedure.
+
+    ``identity`` is HONESTLY OPTIONAL and it is load-bearing. NaHCO3 / NaCl / MgSO4 are ionic lattices; the SMILES
+    parser refuses a disconnected species, so ~half this corpus cannot resolve to a single connected
+    :class:`~smartchem.category.Molecule`. Inventing a covalent spelling for an ionic salt to force a resolution is
+    banned -- ``identity=None`` is the truthful carrier, mirroring the ``required_assay: float | None`` honesty
+    pattern the stock layer already uses. ``formulation``/``phase`` carry the load-bearing sourced adjective
+    ("glacial"/"conc."/"anhydrous"/"5% aqueous") as STRUCTURED data so no downstream axis has to re-read prose, and
+    ``quantity`` is populated only where the source gives a cleanly-separable per-material amount (``None`` where the
+    page glues quantities together -- a fabricated split would be worse than the honest gap)."""
+
+    name: str
+    role: ProcedureMaterialRole
+    identity: "Molecule | None" = None
+    formulation: "str | None" = None
+    phase: "Phase | None" = None
+    quantity: "StockQuantity | None" = None
+    evidence_source: str = ""
+
+    def __post_init__(self) -> None:
+        # Lazy imports mirror EvidenceField's Interval dance: keep the structural type checks honest without
+        # welding a module-load-order dependency onto category/experiment.stock.
+        from .category import Molecule
+        from .experiment.stock import Phase, StockQuantity
+
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("name must be a non-empty string (the exact sourced material name)")
+        object.__setattr__(self, "name", self.name.strip())
+        if not isinstance(self.role, ProcedureMaterialRole):
+            raise TypeError("role must be a ProcedureMaterialRole")
+        if self.identity is not None and type(self.identity) is not Molecule:
+            raise TypeError("identity must be a Molecule or None (None for ionic/mixture/unresolvable species)")
+        if self.formulation is not None and (not isinstance(self.formulation, str) or not self.formulation.strip()):
+            raise ValueError("formulation must be a non-empty string or None")
+        if self.formulation is not None:
+            object.__setattr__(self, "formulation", self.formulation.strip())
+        if self.phase is not None and not isinstance(self.phase, Phase):
+            raise TypeError("phase must be a Phase or None")
+        if self.quantity is not None and type(self.quantity) is not StockQuantity:
+            raise TypeError("quantity must be a StockQuantity or None")
+        if not isinstance(self.evidence_source, str) or not self.evidence_source.strip():
+            raise ValueError("evidence_source must be a non-empty source locator")
+        object.__setattr__(self, "evidence_source", self.evidence_source.strip())
+
+
 _AGITATION_KINDS = frozenset({OperationKind.ADD, OperationKind.MIX, OperationKind.HEAT,
                               OperationKind.HOLD, OperationKind.COOL})
 _THERMAL_KINDS = frozenset({OperationKind.HEAT, OperationKind.COOL, OperationKind.HOLD})
@@ -188,6 +260,7 @@ class ProcedureOperation(Digestible):
     duration: "EvidenceField | None" = None
     endpoint: "EvidenceField | None" = None
     apparatus: tuple[str, ...] = ()
+    material_uses: "tuple[ProcedureMaterialUse, ...]" = ()
     locator: str = ""
 
     def __post_init__(self) -> None:
@@ -206,6 +279,12 @@ class ProcedureOperation(Digestible):
             value = getattr(self, name)
             if value is not None and type(value) is not EvidenceField:
                 raise TypeError(f"{name} must be an EvidenceField or None")
+        # The procedure-only auxiliaries this op charges (catalyst/wash/drier/...); empty by default so every
+        # pre-Round-III construction still builds untouched. It is SOURCE evidence, never a capability claim.
+        if type(self.material_uses) is not tuple or any(
+            type(u) is not ProcedureMaterialUse for u in self.material_uses
+        ):
+            raise TypeError("material_uses must be a tuple of ProcedureMaterialUse")
         if not isinstance(self.locator, str) or not self.locator.strip():
             raise ValueError("a procedure operation must carry a non-empty source locator")
         object.__setattr__(self, "locator", self.locator.strip())

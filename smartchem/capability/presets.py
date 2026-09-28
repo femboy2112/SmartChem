@@ -14,6 +14,10 @@ procedure.
 
 Closed preset registry (:data:`CAPABILITY_PROFILE_PRESETS`) + :func:`resolve_capability_profile`: a NAME
 resolves through a closed dict lookup, on purpose -- NEVER a dynamic import from an arbitrary string.
+
+Round V D10: presets NEVER emit a NO_LIMIT declaration -- their finite time ceilings (10080/20160 min) are
+DECLARED_BOUNDs (see :mod:`smartchem.capability.declarations`). Only an explicit ``custom(no_limit_dimensions=...)``
+caller declaration may say "no time limit".
 """
 from __future__ import annotations
 
@@ -181,6 +185,7 @@ def custom(
     procurement: "frozenset[Availability]" = frozenset(),
     budget: "CostVector | None" = None,
     provenance: str = "smartchem.capability.presets.custom() -- a fully explicit declared capability profile",
+    no_limit_dimensions: "frozenset[str]" = frozenset(),
 ) -> CapabilityProfile:
     """The forcing tool (D6): a fully-explicit passthrough of every ``CapabilityProfile`` field, no hidden
     defaults doing anyone's thinking for them. This is how the gate #18 CAPABILITY_FIT positive
@@ -190,6 +195,10 @@ def custom(
     ``physical_bounds``/``process_bounds`` default to unconstrained; a Custom bench that claims a real
     physical/process capability against a real route demand must state a real finite bound (D6), or the
     axis honestly reads UNKNOWN, never a fabricated UNCONSTRAINED pass.
+
+    ``no_limit_dimensions`` (Round V D10) is the ONLY way any profile carries a NO_LIMIT declaration: an explicit
+    caller statement that a time PREFERENCE dimension (``max_step_minutes``/``max_total_minutes``/
+    ``max_active_minutes``) is unbounded for them. It defaults to empty; no preset ever passes it.
     """
     return CapabilityProfile(
         schema_version=CAPABILITY_PROFILE_SCHEMA,
@@ -205,6 +214,7 @@ def custom(
         procurement=frozenset(procurement),
         budget=budget,
         provenance=provenance,
+        no_limit_dimensions=frozenset(no_limit_dimensions),
     )
 
 
@@ -226,10 +236,13 @@ def isopentyl_capability_fit_bench(
     """The Round-III gate #18 CAPABILITY_FIT positive (D1/D5/D6): a fully-declared Custom bench that stocks
     the whole isopentyl-acetate procedure (:func:`~smartchem.data.material_library.isopentyl_fully_declared_inventory`),
     owns the full distillation glassware + a fume hood + every instrument method (IR included), declares
-    real finite physical/process ceilings >= the route's 416 K reflux demand, routes AQUEOUS_NEUTRAL waste,
+    real finite physical/process ceilings >= the route's 416 K reflux demand, routes AQUEOUS_NEUTRAL + HAZARDOUS
+    waste (Round V D9: the conc. H2SO4 catalyst residual is a certain HAZARDOUS stream -- a hood bench that runs
+    it declares hazardous-waste routing; the waste axis still reads UNKNOWN on the unresolved spent streams),
     reaches HARDWARE-tier procurement (the H2SO4 catalyst), and declares NO budget (the monetary axis rides
-    UNCONSTRAINED -- commensurable-or-absent). It reaches ``CapabilityStatus.FIT`` on the REAL searched
-    isopentyl route.
+    UNCONSTRAINED -- commensurable-or-absent; Round V: ``budget=None`` without a NO_LIMIT declaration is
+    UNDECLARED). Since Round IV it no longer reaches ``CapabilityStatus.FIT`` on the REAL searched isopentyl route
+    (the source under-specifies whole-process duration / spent-stream disposal) -- honest UNKNOWN, not gamed.
 
     Every keyword is an override hook so the targeted-negative benches (minus one capability apiece) are
     built by MINIMAL diff from this exact positive -- each fails on its ONE axis, nothing else moved.
@@ -247,7 +260,7 @@ def isopentyl_capability_fit_bench(
         containment=frozenset({ContainmentCapability.FUME_HOOD}) if containment is None else containment,
         ventilation=frozenset({VentilationCapability.INDOOR}),
         measurement=frozenset(MeasurementMethod) if measurement is None else measurement,
-        waste_handling=frozenset({WasteCapability.AQUEOUS_NEUTRAL}),
+        waste_handling=frozenset({WasteCapability.AQUEOUS_NEUTRAL, WasteCapability.HAZARDOUS}),
         procurement=_NON_INDUSTRIAL_TIERS if procurement is None else procurement,
         budget=None,
         provenance=provenance,

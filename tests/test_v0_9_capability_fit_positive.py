@@ -70,7 +70,12 @@ def test_gate_18_fully_declared_custom_collapses_to_unknown_not_capability_fit()
     requirements = compile_capability_requirements(route)
     assessment = assess(isopentyl_capability_fit_bench(), requirements, evaluate_route(route))
 
-    assert assessment.material.status is CapabilityStatus.FIT
+    # Round V (D2/D13) -- FLIPPED from material FIT: the material axis is no longer FIT either. The typed
+    # specifications the source actually supports leave several requirements with only POSSIBLE sources (an
+    # unresolved "conc." term; a 5% of UNKNOWN basis with unstated tolerance; empty specifications against bottles
+    # that are not provably the pure species), so the proven (G-) allocation falls short of the exact demand -> UNKNOWN.
+    assert assessment.material.status is CapabilityStatus.UNKNOWN
+    assert "proven (G-)" in " ".join(assessment.material.reasons)
     assert assessment.process.status is CapabilityStatus.UNKNOWN
     assert assessment.containment.status is CapabilityStatus.UNKNOWN
     assert assessment.waste.status is CapabilityStatus.UNKNOWN
@@ -107,11 +112,11 @@ def test_gate_18_vinegar_control_cannot_masquerade_as_glacial_acetic_acid():
     assessment = assess(profile, requirements, evaluate_route(route))
 
     assert assessment.material.status is CapabilityStatus.BLOCKED
-    joined_reasons = " ".join(assessment.material.reasons)
-    # Round IV: the acetic-acid reason now names the compendial BAND, not a bare "0.9900" scalar -- the
-    # vinegar bottle's composition is provably outside the [0.990, 1.000] floor it can never clear.
-    assert "[0.990, 1.000]" in joined_reasons
-    assert "phase" in joined_reasons.lower()  # phase is the D1/D4 discriminator too
+    # Round V (FLIPPED from the retired "[0.990, 1.000]" compiler band): the discrimination now comes from the
+    # SOURCE-typed specification + phase through THE comparison law -- the vinegar edge is BLOCKED for the acid.
+    acid = next(r for r in assessment.material.reasons if "(REACTANT) acetic acid" in r)
+    assert "household-white-vinegar: BLOCKED" in acid
+    assert "phase" in acid.lower()
     assert assessment.overall is CapabilityStatus.BLOCKED
     assert assessment.is_capability_fit is False
 

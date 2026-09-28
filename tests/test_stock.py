@@ -156,6 +156,23 @@ class TestFullSchemaFields:
         with pytest.raises(ValueError, match="unit"):
             StockQuantity.of("5", "  ")
 
+    def test_stock_quantity_uses_the_one_strict_exact_grammar(self):
+        # Round V D1: float()/epsilon are banned from quantity parsing -- these all parsed under float().
+        for bad in ("1/3", "1_000", " 5 ", "5 ", "+5", "0.0", "1e999"):
+            with pytest.raises(ValueError):
+                StockQuantity.of(bad, "mL")
+        with pytest.raises(TypeError, match="float"):
+            StockQuantity.of(0.1, "mL")  # a float's spelling is not the source's
+
+    def test_stock_quantity_exact_is_a_fraction(self):
+        from fractions import Fraction
+
+        assert StockQuantity.of("20.00004", "mL").exact() == Fraction(2000004, 100000)
+        assert StockQuantity.of("20", "mL").exact() < StockQuantity.of("20.00004", "mL").exact()
+        assert StockQuantity.of(500, "mL").exact() == 500
+        assert StockQuantity.of("1e-12", "mL").exact() == Fraction(1, 10 ** 12)
+
+
     def test_cost_observation_cannot_be_built_without_being_dated_and_sourced(self):
         # section 10.4: prices MUST be dated and sourced; an unpriced material uses cost_observation=None.
         for missing in ("amount", "currency", "unit", "observed_date", "source"):
@@ -341,3 +358,54 @@ class TestCanonicalStructureKeying:
             (MaterialComponent.of_molecule(parse_smiles("c1ccc2ccccc2c1"), "active", 0.99, 1.0),), Phase.SOLID, "GC",
         )
         assert naph.satisfies(parse_smiles("C1=CC=C2C=CC=CC2=C1"), min_assay=0.9) is FitnessVerdict.SATISFIES
+
+
+class TestRoundVMaterialFields:
+    def test_schemas_are_v1alpha2_and_v1alpha1_refused(self):
+        from smartchem.experiment.stock import MATERIAL_COMPONENT_SCHEMA
+
+        assert STOCK_MATERIAL_SCHEMA.endswith("stock-material-v1alpha2")
+        assert MATERIAL_COMPONENT_SCHEMA.endswith("material-component-v1alpha2")
+        with pytest.raises(ValueError, match="schema_version"):
+            MaterialComponent("smartchem.experiment/material-component-v1alpha1", "x", "active", 0.0, 1.0)
+        with pytest.raises(ValueError, match="schema_version"):
+            StockMaterial("smartchem.experiment/stock-material-v1alpha1", "m", "m",
+                          (MaterialComponent.unknown_fraction("x", "active"),), Phase.LIQUID, "p")
+
+    def test_basis_defaults_unknown_and_evidence_defaults_none(self):
+        from smartchem.material_spec import ConcentrationBasis, EvidenceKind
+
+        c = MaterialComponent.known("acetic acid", "active", 0.99, 1.0)
+        assert c.basis is ConcentrationBasis.UNKNOWN and c.evidence is None
+        view = _glacial().spec_view("acetic acid")
+        assert view.interval_evidence is EvidenceKind.UNKNOWN and view.basis is ConcentrationBasis.UNKNOWN
+
+    def test_evidence_must_match_the_fraction_slots_exactly(self):
+        from dataclasses import replace
+
+        from smartchem.data.derived_evidence import DerivationKernel, InputUnit, IntervalEvidence, TypedInput
+        from smartchem.material_spec import ConcentrationBasis, EvidenceKind
+
+        ev = IntervalEvidence.build(
+            kernel=DerivationKernel.USER_DECLARED_V1, basis=ConcentrationBasis.MASS_FRACTION,
+            inputs=(TypedInput("low", "0.3", InputUnit.FRACTION, EvidenceKind.USER_DECLARED),
+                    TypedInput("high", "0.7", InputUnit.FRACTION, EvidenceKind.USER_DECLARED)),
+            domain_of_validity="my own bottle")
+        good = MaterialComponent.evidenced("acetic acid", "active", ev)
+        assert (good.min_fraction, good.max_fraction) == (0.3, 0.7)
+        assert good.basis is ConcentrationBasis.MASS_FRACTION
+        # 0.1 + 0.2 is NOT 0.3 in binary float; the exact comparison refuses the drifted slot
+        with pytest.raises(ValueError, match="does not equal"):
+            replace(good, min_fraction=0.1 + 0.2)
+        with pytest.raises(TypeError, match="IntervalEvidence"):
+            replace(good, evidence="SOURCE_QUOTED")
+
+    def test_minimum_fraction_sum_is_exact(self):
+        # 0.1 + 0.2 + 0.7 sums to 1.0000000000000002 in float but exactly 1 through the shortest repr
+        StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", (
+            MaterialComponent.known("a", "x", 0.1, 0.1), MaterialComponent.known("b", "x", 0.2, 0.2),
+            MaterialComponent.known("c", "x", 0.7, 0.7)), Phase.LIQUID, "p")
+        with pytest.raises(ValueError, match="sum above"):
+            StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", (
+                MaterialComponent.known("a", "x", 0.5, 0.5),
+                MaterialComponent.known("b", "x", 0.500000001, 0.6)), Phase.LIQUID, "p")

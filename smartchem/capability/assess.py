@@ -23,20 +23,29 @@ three inputs, same discipline as ``experiment/readiness.py``'s ``evaluate_route`
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 
-from ..contracts import Digestible, canonical_digest
+from ..contracts import Digestible
 from ..data.reagents import Availability
 from ..experiment.catalyst_availability import is_obtainable_under
 from ..experiment.readiness import PROCESS_SPECIFIED, RouteReadiness, tier_rank
-from ..experiment.stock import FitnessVerdict, Phase, StockMaterial
-from ..process_constraints import ProcessBounds, ProcessFitStatus, evaluate_process_requirements
+from ..experiment.stock import Phase, StockMaterial
+from ..material_spec import (
+    CERTIFYING_STOCK_EVIDENCE,
+    ConcentrationBasis,
+    SpecVerdict,
+    compare_specification,
+    exact_fraction,
+)
+from ..process_constraints import ProcessFitStatus, evaluate_process_requirements
 from .enums import CapabilityStatus, EquipmentCapability, MeasurementMethod
 from .profile import CapabilityProfile
+from .quantity import QuantityKnowledge, fraction_to_decimal
 from .requirements import MaterialRequirement, RouteCapabilityRequirements
 
 __all__ = ["CAPABILITY_ASSESSMENT_SCHEMA", "AxisResult", "CapabilityAssessment", "assess"]
 
-CAPABILITY_ASSESSMENT_SCHEMA = "smartchem.capability/capability-assessment-v1alpha1"
+CAPABILITY_ASSESSMENT_SCHEMA = "smartchem.capability/capability-assessment-v1alpha2"
 
 #: ProcessFitStatus -> CapabilityStatus, a straight 1:1 relabelling (decision 2: DELEGATE to
 #: evaluate_process_requirements, never reimplement the comparison it already makes soundly).
@@ -46,6 +55,19 @@ _PROCESS_FIT_TO_CAPABILITY: "dict[ProcessFitStatus, CapabilityStatus]" = {
     ProcessFitStatus.EXCLUDED: CapabilityStatus.BLOCKED,
     ProcessFitStatus.UNKNOWN: CapabilityStatus.UNKNOWN,
 }
+
+
+def _fold_overall(axes: "tuple[AxisResult, ...]", readiness_tier: str) -> CapabilityStatus:
+    """FREEZE decision 5's fold, as a pure function (the one :func:`assess` applies and the one
+    :class:`CapabilityAssessment` re-checks on construction): any BLOCKED -> BLOCKED; else any UNKNOWN -> UNKNOWN;
+    else FIT iff the readiness tier is at least PROCESS_SPECIFIED (HARD LAW), otherwise UNKNOWN."""
+    if any(axis.status is CapabilityStatus.BLOCKED for axis in axes):
+        return CapabilityStatus.BLOCKED
+    if any(axis.status is CapabilityStatus.UNKNOWN for axis in axes):
+        return CapabilityStatus.UNKNOWN
+    if tier_rank(readiness_tier) < tier_rank(PROCESS_SPECIFIED):
+        return CapabilityStatus.UNKNOWN
+    return CapabilityStatus.FIT
 
 
 @dataclass(frozen=True)
@@ -91,11 +113,16 @@ class CapabilityAssessment(Digestible):
     monetary: AxisResult
     overall: CapabilityStatus
     overall_reasons: "tuple[str, ...]"
+    #: D13 P1-4: the readiness tier the HARD LAW was applied under, and the digest of the exact ``RouteReadiness``
+    #: record it came from -- so the tier the verdict depends on is part of the verdict's own identity. (NOTE:
+    #: ``RouteReadiness`` carries no route digest, so it cannot be cross-checked against ``route_digest`` here.)
+    readiness_tier: str
+    readiness_digest: str
 
     def __post_init__(self) -> None:
         if self.schema_version != CAPABILITY_ASSESSMENT_SCHEMA:
             raise ValueError(f"schema_version must be exactly {CAPABILITY_ASSESSMENT_SCHEMA!r}")
-        for name in ("profile_digest", "route_digest"):
+        for name in ("profile_digest", "route_digest", "readiness_tier", "readiness_digest"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{name} must be a non-empty string")
@@ -111,6 +138,14 @@ class CapabilityAssessment(Digestible):
             not isinstance(r, str) or not r.strip() for r in self.overall_reasons
         ):
             raise TypeError("overall_reasons must be a tuple of non-empty strings")
+        # Wave-C2 (thin-wire forgery): the overall verdict is not free data -- it MUST be the fold of the axes under
+        # the HARD LAW and the recorded readiness tier. A record whose ``overall`` says FIT over a BLOCKED axis (or
+        # over a sub-PROCESS_SPECIFIED tier) cannot exist, on any wire, however it was built.
+        expected = _fold_overall(self.axes, self.readiness_tier)
+        if self.overall is not expected:
+            raise ValueError(
+                f"overall {self.overall.value} is not the fold of its axes under the HARD LAW "
+                f"(expected {expected.value}) -- a self-contradictory capability assessment")
 
     @property
     def axes(self) -> "tuple[AxisResult, ...]":
@@ -165,22 +200,26 @@ def _equipment_axis(
     available: "frozenset[EquipmentCapability]",
     unrecognized: "tuple[str, ...]",
 ) -> AxisResult:
-    """The equipment axis's own gate, ahead of the ordinary membership check (FREEZE decision 4): a
-    genuinely-untabled sourced apparatus string is an open question about a bench's CAPABILITY, not a
-    consumable anyone vetted -- it caps this axis at UNKNOWN before ``_membership_axis`` ever gets to
-    compare the recognized set. Vetted consumables never reach here at all (``requirements.py`` drops them
-    before this field is built), so this is the honest remainder: apparatus the resolver has never met.
-    """
-    if unrecognized:
-        names = ", ".join(sorted(unrecognized))
-        return AxisResult(
-            CapabilityStatus.UNKNOWN,
-            (
-                f"equipment: {len(unrecognized)} sourced apparatus string(s) are untabled in the closed "
-                f"resolver and cannot be certified either way against any declared profile: {names}",
-            ),
-        )
-    return _membership_axis(required, available, axis="equipment")
+    """The equipment axis's own gate (FREEZE decision 4): a genuinely-untabled sourced apparatus string -- or a
+    D13 unread equipment demand (a hardware op naming no apparatus, an applied field) -- is an open question about a
+    bench's CAPABILITY and caps this axis at UNKNOWN. Round V: the membership check runs FIRST, so a PROVABLE block
+    (a recognized required capability the profile lacks) still wins over the open remainder -- an unread demand can
+    never launder a known BLOCKED into UNKNOWN."""
+    return _gated_membership_axis(required, available, unrecognized, axis="equipment", what=(
+        "sourced equipment demand(s) are untabled in the closed resolver or unread (a hardware op naming no "
+        "apparatus, an applied field)"))
+
+
+def _gated_membership_axis(required, available, unrecognized, *, axis: str, what: str) -> AxisResult:
+    base = _membership_axis(required, available, axis=axis)
+    if not unrecognized:
+        return base
+    names = ", ".join(sorted(unrecognized))
+    note = (f"{axis}: {len(unrecognized)} {what} and cannot be certified either way against any declared "
+            f"profile: {names}",)
+    if base.status is CapabilityStatus.BLOCKED:
+        return AxisResult(CapabilityStatus.BLOCKED, base.reasons + note)
+    return AxisResult(CapabilityStatus.UNKNOWN, note + base.reasons)
 
 
 def _procurement_axis(
@@ -226,22 +265,25 @@ def _procurement_axis(
     return AxisResult(CapabilityStatus.FIT, tuple(reasons))
 
 
-#: FIT > UNKNOWN > BLOCKED -- the rank used to pick the best composition/phase verdict across bottles and to
-#: fold the per-requirement material verdicts (a provable BLOCK beats an open UNKNOWN beats a proven FIT).
+#: FIT > UNKNOWN > BLOCKED -- the rank used to pick the best per-bottle compatibility verdict for a reason line.
 _MATERIAL_RANK: "dict[CapabilityStatus, int]" = {
     CapabilityStatus.FIT: 3,
     CapabilityStatus.UNKNOWN: 2,
     CapabilityStatus.BLOCKED: 1,
 }
 
+_SPEC_TO_STATUS: "dict[SpecVerdict, CapabilityStatus]" = {
+    SpecVerdict.SATISFIES: CapabilityStatus.FIT,
+    SpecVerdict.VIOLATES: CapabilityStatus.BLOCKED,
+    SpecVerdict.UNDETERMINED: CapabilityStatus.UNKNOWN,
+}
+
 
 def _species_key_in(requirement: MaterialRequirement, stock: StockMaterial):
     """F44: which key ``requirement`` is ALLOWED to match in THIS bottle. A requirement with a known STRUCTURE
-    identity may ONLY be satisfied by a structure-keyed component -- a bare name is weaker evidence and can
-    never stand in for a proven structure (the exact downgrade F44 kills; the stock layer already refuses to
-    cross the two keys, so this just stops the requirement side trying the name after the structure is absent).
-    A requirement with no identity (an ionic/mixture species that cannot resolve to a Molecule) matches by its
-    declared NAME. Returns the matched key, or ``None`` if the species is absent under the allowed key."""
+    identity may ONLY be satisfied by a structure-keyed component -- a bare name is weaker evidence and can never
+    stand in for a proven structure. A requirement with no identity matches by its declared NAME. Returns the matched
+    key, or ``None`` if the species is absent under the allowed key."""
     if requirement.identity is not None:
         return requirement.identity if stock.active_fraction_interval(requirement.identity) is not None else None
     if requirement.name is not None:
@@ -249,219 +291,235 @@ def _species_key_in(requirement: MaterialRequirement, stock: StockMaterial):
     return None
 
 
-def _comp_phase_status(
-    requirement: MaterialRequirement, stock: StockMaterial,
-) -> "tuple[CapabilityStatus, str] | None":
-    """The NON-quantity (composition + phase) compatibility of ONE requirement against ONE bottle:
-    ``(status, note)`` with status FIT/UNKNOWN/BLOCKED, or ``None`` if the species is absent from this bottle
-    under the F44 key. Composition uses the TWO-SIDED band (F43) when the requirement declares one (a wash's
-    100%-bicarbonate substitution BLOCKS on the ceiling a one-sided floor would have waved through), else the
-    one-sided assay floor, else possession is enough; phase must match a known stock phase (D4). QUANTITY is
-    NOT decided here -- it is a finite-pool ALLOCATION (F42), so a single bottle can no longer independently
-    witness a whole-route demand."""
+def _fold_status(statuses: "list[CapabilityStatus]") -> CapabilityStatus:
+    if CapabilityStatus.BLOCKED in statuses:
+        return CapabilityStatus.BLOCKED
+    if CapabilityStatus.UNKNOWN in statuses:
+        return CapabilityStatus.UNKNOWN
+    return CapabilityStatus.FIT
+
+
+@dataclass(frozen=True)
+class _Edge:
+    """Phase-1 compatibility of ONE requirement with ONE bottle (the species is present under the F44 key)."""
+
+    status: CapabilityStatus
+    commensurable: bool   # a G- source: drawing X of this bottle provably supplies X of THIS requirement
+    note: str
+
+
+def _edge(requirement: MaterialRequirement, stock: StockMaterial) -> "_Edge | None":
+    """D2 Phase 1 for one (requirement, bottle): the specification verdict from THE comparison law
+    (:func:`smartchem.material_spec.compare_specification` over ``stock.spec_view``) folded with phase (unknown stock
+    phase -> UNKNOWN; mismatch -> BLOCKED). ``None`` if the species is absent from the bottle.
+
+    D13 commensurability (the G- rule): the bottle's draw counts toward this requirement's demand only if the
+    requirement's specification is NON-EMPTY (composition/states) and SATISFIED -- the bottle IS the specified
+    material -- or the matched species is PROVABLY pure (fraction basis, certifying evidence, exact lower bound 1 -- Wave-C K2).
+    Otherwise a bottle is only a G+ (possible) source: 25 mL of a 5% solution is not 25 mL of the solute."""
     key = _species_key_in(requirement, stock)
     if key is None:
         return None
-    statuses: "list[CapabilityStatus]" = []
-    notes: "list[str]" = []
-
-    def _add(st: CapabilityStatus, note: str) -> None:
-        statuses.append(st)
-        notes.append(note)
-
-    if requirement.composition_band is not None:
-        lo, hi = requirement.composition_band
-        verdict = stock.satisfies_band(key, low=lo, high=hi)
-        if verdict is FitnessVerdict.SATISFIES:
-            _add(CapabilityStatus.FIT, f"composition within [{lo:.3f}, {hi:.3f}]")
-        elif verdict is FitnessVerdict.UNKNOWN_ASSAY:
-            _add(CapabilityStatus.UNKNOWN, f"composition straddles [{lo:.3f}, {hi:.3f}] (measure)")
-        else:
-            _add(CapabilityStatus.BLOCKED, f"composition provably outside [{lo:.3f}, {hi:.3f}]")
-    elif requirement.required_assay is not None:
-        verdict = stock.satisfies(key, min_assay=requirement.required_assay)
-        if verdict is FitnessVerdict.SATISFIES:
-            _add(CapabilityStatus.FIT, f"assay >= {requirement.required_assay:.4f}")
-        elif verdict is FitnessVerdict.UNKNOWN_ASSAY:
-            _add(CapabilityStatus.UNKNOWN, f"assay straddles {requirement.required_assay:.4f} (measure)")
-        else:
-            _add(CapabilityStatus.BLOCKED, f"assay provably below {requirement.required_assay:.4f}")
+    view = stock.spec_view(key)
+    spec_verdict, spec_notes = compare_specification(requirement.specification, view)
+    statuses = [_SPEC_TO_STATUS[spec_verdict]]
+    notes = [f"specification {spec_verdict.value}" + (f" ({'; '.join(spec_notes)})" if spec_notes else "")]
     if requirement.phase is not None:
         if stock.phase is Phase.UNKNOWN:
-            _add(CapabilityStatus.UNKNOWN, f"stock phase UNKNOWN vs required {requirement.phase.value}")
+            statuses.append(CapabilityStatus.UNKNOWN)
+            notes.append(f"stock phase UNKNOWN vs required {requirement.phase.value}")
         elif stock.phase is requirement.phase:
-            _add(CapabilityStatus.FIT, f"phase {requirement.phase.value} matches")
+            statuses.append(CapabilityStatus.FIT)
+            notes.append(f"phase {requirement.phase.value} matches")
         else:
-            _add(CapabilityStatus.BLOCKED, f"phase {stock.phase.value} != required {requirement.phase.value}")
-    if CapabilityStatus.BLOCKED in statuses:
-        status = CapabilityStatus.BLOCKED
-    elif CapabilityStatus.UNKNOWN in statuses:
-        status = CapabilityStatus.UNKNOWN
-    else:
-        status = CapabilityStatus.FIT
-    return status, f"{stock.material_id}: " + ("; ".join(notes) if notes else "present (possession)")
+            statuses.append(CapabilityStatus.BLOCKED)
+            notes.append(f"phase {stock.phase.value} != required {requirement.phase.value}")
+    status = _fold_status(statuses)
+    spec = requirement.specification
+    spec_nonempty = spec.composition is not None or bool(spec.states)
+    # Wave-C K2: "provably the pure species" needs a FRACTION basis (1 mol/L is a concentration, not purity), CERTIFYING
+    # stock evidence (a bare 1.0 or an ASSUMED [1, 1] certifies nothing -- D6/D8), and an exact lower bound of 1
+    # read from the evidence record itself (spec_view uses the record's exact decimals, never the float slot).
+    pure = (view is not None
+            and view.basis in (ConcentrationBasis.MASS_FRACTION, ConcentrationBasis.VOLUME_FRACTION)
+            and view.interval_evidence in CERTIFYING_STOCK_EVIDENCE
+            and view.interval[0] == 1)
+    commensurable = status is CapabilityStatus.FIT and (
+        (spec_nonempty and spec_verdict is SpecVerdict.SATISFIES) or pure)
+    if status is CapabilityStatus.FIT and not commensurable:
+        notes.append("not a proven draw of this material (empty specification and species not provably pure) -- "
+                     "a possible source only")
+    return _Edge(status, commensurable, f"{stock.material_id}: {status.value}: " + "; ".join(notes))
 
 
-def _req_species_key(requirement: MaterialRequirement) -> str:
-    """A stable species key for grouping requirements in the finite-pool allocation: the canonical structure
-    digest for a resolved identity, else the normalized declared name."""
-    if requirement.identity is not None:
-        try:
-            return "s:" + canonical_digest(requirement.identity.canonical())
-        except NotImplementedError:
-            return "s:" + canonical_digest(requirement.identity)
-    return "n:" + (requirement.name or "").strip().casefold()
+def _stock_amount(stock: StockMaterial) -> "tuple[str, Fraction] | None":
+    """A bottle's declared quantity as ``(unit, exact Fraction)``, or ``None`` if undeclared or not an exact decimal
+    under the strict grammar (an unparseable amount is UNKNOWN capacity, never a float guess)."""
+    if stock.quantity is None:
+        return None
+    try:
+        return stock.quantity.unit.strip(), exact_fraction(stock.quantity.value, "stock quantity")
+    except (ValueError, TypeError, AttributeError):
+        return None
 
 
-def _max_flow(n: int, edges: "list[tuple[int, int, float]]", source: int, sink: int) -> float:
-    """Minimal Edmonds-Karp max-flow over a tiny graph (a handful of nodes) -- the finite-pool material
-    allocation feasibility (F42). Float capacities with an epsilon; these graphs never exceed a dozen nodes."""
+def _max_flow(edges: "list[tuple[object, object, Fraction]]", source: object, sink: object) -> Fraction:
+    """Edmonds-Karp over EXACT :class:`~fractions.Fraction` capacities -- no epsilon, no float. Terminates in
+    O(V E^2) augmentations independent of the capacity values (shortest augmenting paths)."""
     import collections
-    cap = [[0.0] * n for _ in range(n)]
-    adj: "list[list[int]]" = [[] for _ in range(n)]
+
+    cap: "dict[tuple[object, object], Fraction]" = collections.defaultdict(Fraction)
+    adj: "dict[object, list[object]]" = collections.defaultdict(list)
     for u, v, c in edges:
-        if cap[u][v] == 0.0 and cap[v][u] == 0.0:
+        if (u, v) not in cap and (v, u) not in cap:
             adj[u].append(v)
             adj[v].append(u)
-        cap[u][v] += c
-    eps = 1e-9
-    flow = 0.0
+        cap[(u, v)] += c
+        cap[(v, u)] += 0
+    flow = Fraction(0)
     while True:
-        parent = [-1] * n
-        parent[source] = source
+        parent: "dict[object, object]" = {source: source}
         queue = collections.deque([source])
-        while queue:
+        while queue and sink not in parent:
             u = queue.popleft()
             for v in adj[u]:
-                if parent[v] == -1 and cap[u][v] > eps:
+                if v not in parent and cap[(u, v)] > 0:
                     parent[v] = u
                     queue.append(v)
-        if parent[sink] == -1:
-            break
-        push = float("inf")
+        if sink not in parent:
+            return flow
+        path = []
         v = sink
         while v != source:
-            u = parent[v]
-            push = min(push, cap[u][v])
-            v = u
-        v = sink
-        while v != source:
-            u = parent[v]
-            cap[u][v] -= push
-            cap[v][u] += push
-            v = u
+            path.append((parent[v], v))
+            v = parent[v]
+        push = min(cap[e] for e in path)
+        for u, v in path:
+            cap[(u, v)] -= push
+            cap[(v, u)] += push
         flow += push
-    return flow
+
+
+def _dec(value: Fraction) -> str:
+    try:
+        return fraction_to_decimal(value)
+    except ValueError:
+        return str(value)
 
 
 def _material_axis(
     requirements: "tuple[MaterialRequirement, ...]", inventory: "tuple[StockMaterial, ...]",
 ) -> AxisResult:
-    """Round IV F42/F43/F44: composition+phase compatibility PER BOTTLE, then a finite-pool quantity
-    ALLOCATION where a bottle is spent once (no double-spend). BLOCKED beats UNKNOWN beats FIT over the axis."""
+    """Round V D2 -- the GLOBAL package-allocation theorem.
+
+    Phase 1: per (requirement, bottle) compatibility (:func:`_edge`).
+    Phase 2: ONE exact flow network per unit domain ``u`` across ALL requirements; each bottle is ONE node with ONE
+    capacity edge. G- (pessimistic): edges only from FIT + commensurable bottles, capacity = the bottle's exact
+    quantity in ``u`` else 0. G+ (optimistic): edges from FIT or UNKNOWN bottles, capacity = exact quantity in ``u``
+    else the domain's total demand (a finite stand-in for "unknown").
+
+    BLOCKED iff some domain has F+ < T, or a positive-demand requirement has NO G+ edge (a typed species provably
+    absent from, or incompatible with, every declared bottle; an untyped raw-text requirement with no edge is UNKNOWN
+    -- absence under a raw string proves nothing). FIT iff every requirement's quantity is EXACT and F- == T in every
+    domain. Else UNKNOWN. A bottle's known capacity sits in exactly one domain, so no FIT spends a package twice."""
     if not requirements:
         return AxisResult(CapabilityStatus.NOT_APPLICABLE, ("material: no material requirement was derived for this route",))
     if not inventory:
         return AxisResult(
             CapabilityStatus.UNKNOWN,
-            tuple(f"material: no declared stock inventory to check {r.role} {r.label} ({r.evidence_source})"
-                  for r in requirements),
+            tuple(f"material: no declared stock inventory to check {r.role} {r.label} (quantity "
+                  f"{r.quantity.render()}; {r.evidence_source})" for r in requirements),
         )
-    # -- Phase 1: composition + phase compatibility per requirement (best across bottles) + candidate bottles.
-    comp_status: "list[CapabilityStatus]" = []
-    comp_note: "list[str]" = []
-    candidates: "list[list[int]]" = []   # bottle indices that composition/phase SATISFY (the allocation sources)
-    for r in requirements:
-        best: "CapabilityStatus | None" = None
-        note = ""
-        fit_bottles: "list[int]" = []
+    # -- Phase 1 ------------------------------------------------------------------------------------------------
+    edges: "dict[tuple[int, int], _Edge]" = {}
+    for ri, r in enumerate(requirements):
         for bi, stock in enumerate(inventory):
-            outcome = _comp_phase_status(r, stock)
-            if outcome is None:
-                continue
-            st, nt = outcome
-            if st is CapabilityStatus.FIT:
-                fit_bottles.append(bi)
-            if best is None or _MATERIAL_RANK[st] > _MATERIAL_RANK[best]:
-                best, note = st, nt
-        if best is None:
-            gated = (r.composition_band is not None or r.required_assay is not None
-                     or r.phase is not None or r.quantity is not None)
-            best = CapabilityStatus.BLOCKED if gated else CapabilityStatus.UNKNOWN
-            note = ("absent from every declared bottle against a real gate (a provable negative)" if gated
-                    else "possession-only (no gate) and absent from every bottle -- an open question")
-        comp_status.append(best)
-        comp_note.append(note)
-        candidates.append(fit_bottles)
-    # -- Phase 2: finite-pool quantity allocation (F42). Group composition/phase-FIT requirements that declare a
-    # quantity by (species, unit); a bottle is a source for a group iff it composition/phase-satisfies >=1 of the
-    # group's requirements. A KNOWN-capacity max-flow that saturates all demands -> FIT; a compatible bottle of
-    # unknown/incomparable amount where the known flow falls short -> UNKNOWN; all-known and the flow falls short
-    # -> BLOCKED (a provable shortfall: the bottle cannot be spent twice).
-    alloc: "dict[int, CapabilityStatus]" = {}
-    alloc_note: "dict[int, str]" = {}
-    groups: "dict[tuple[str, str], list[int]]" = {}
-    for i, r in enumerate(requirements):
-        if comp_status[i] is CapabilityStatus.FIT and r.quantity is not None:
-            groups.setdefault((_req_species_key(r), r.quantity.unit), []).append(i)
-    for (_species, unit), idxs in groups.items():
-        total_demand = sum(float(requirements[i].quantity.value) for i in idxs)
-        bottle_ids = sorted({bi for i in idxs for bi in candidates[i]})
-        known_cap: "dict[int, float]" = {}
-        unknown_present = False
-        for bi in bottle_ids:
-            q = inventory[bi].quantity
-            if q is not None and q.unit == unit:
-                known_cap[bi] = float(q.value)
-            else:
-                unknown_present = True   # unknown amount OR a compatible bottle in an incomparable unit
-        r_index = {i: pos + 1 for pos, i in enumerate(idxs)}
-        b_index = {bi: len(idxs) + 1 + pos for pos, bi in enumerate(known_cap)}
-        sink = len(idxs) + 1 + len(known_cap)
-        edges: "list[tuple[int, int, float]]" = []
-        for i in idxs:
-            edges.append((0, r_index[i], float(requirements[i].quantity.value)))
-            for bi in candidates[i]:
-                if bi in b_index:
-                    edges.append((r_index[i], b_index[bi], float("inf")))
-        for bi, capf in known_cap.items():
-            edges.append((b_index[bi], sink, capf))
-        flow = _max_flow(sink + 1, edges, 0, sink) if known_cap else 0.0
-        if flow >= total_demand - 1e-9:
-            verdict = CapabilityStatus.FIT
-            msg = f"finite-pool allocation: {total_demand:g} {unit} demand met from declared stock (no double-spend)"
-        elif unknown_present:
-            verdict = CapabilityStatus.UNKNOWN
-            msg = (f"finite-pool allocation: known stock covers {flow:g} of {total_demand:g} {unit}; a compatible "
-                   "bottle of unknown/incomparable amount MAY cover the rest -- UNKNOWN, never assumed")
-        else:
-            verdict = CapabilityStatus.BLOCKED
-            msg = (f"finite-pool allocation: declared stock covers only {flow:g} of {total_demand:g} {unit} "
-                   "(a bottle cannot be spent twice) -- a provable shortfall")
-        for i in idxs:
-            alloc[i] = verdict
-            alloc_note[i] = msg
-    # -- fold each requirement: composition/phase, refined by the allocation verdict where it entered one.
-    statuses: "list[CapabilityStatus]" = []
+            e = _edge(r, stock)
+            if e is not None:
+                edges[(ri, bi)] = e
+    amounts = [_stock_amount(stock) for stock in inventory]
+    blocked = False
+    unknown = False
     reasons: "list[str]" = []
-    for i, r in enumerate(requirements):
-        st = comp_status[i]
-        detail = comp_note[i]
-        if i in alloc:
-            st = alloc[i]
-            detail = f"{comp_note[i]}; {alloc_note[i]}"
-        statuses.append(st)
-        reasons.append(f"material: {r.role} {r.label} -- {detail}")
-    if CapabilityStatus.BLOCKED in statuses:
-        overall = CapabilityStatus.BLOCKED
-    elif CapabilityStatus.UNKNOWN in statuses:
-        overall = CapabilityStatus.UNKNOWN
-    else:
-        overall = CapabilityStatus.FIT
-    return AxisResult(overall, tuple(reasons))
+    for ri, r in enumerate(requirements):
+        mine = [edges[(ri, bi)] for bi in range(len(inventory)) if (ri, bi) in edges]
+        possible = [e for e in mine if e.status is not CapabilityStatus.BLOCKED]
+        knowledge = r.quantity.knowledge
+        if knowledge is not QuantityKnowledge.EXACT:
+            unknown = True
+        if not possible:
+            if r.untyped_source_text:
+                unknown = True
+                verdict = ("no bottle is keyed by this raw source text -- absence under an untyped name proves "
+                           "nothing: UNKNOWN")
+            else:
+                blocked = True
+                verdict = ("absent from, or provably incompatible with, every declared bottle against a positive "
+                           "demand: BLOCKED")
+        elif not any(e.commensurable for e in possible):
+            unknown = True
+            verdict = "only POSSIBLE sources (no proven, commensurable draw): at best UNKNOWN"
+        else:
+            verdict = "has a proven, commensurable source"
+        detail = " | ".join(e.note for e in mine) if mine else "no declared bottle carries this species"
+        reasons.append(f"material: {r.role} {r.label} -- quantity {r.quantity.render()}; {verdict}; bottles: {detail}")
+    # -- Phase 2: one allocation per unit domain ----------------------------------------------------------------
+    demands = [r.quantity.exact_by_unit() for r in requirements]
+    domains = sorted({u for d in demands for u in d})
+    for u in domains:
+        total = sum((d[u] for d in demands if u in d), Fraction(0))
+        pess: "list[tuple[object, object, Fraction]]" = []
+        opt: "list[tuple[object, object, Fraction]]" = []
+        for ri, d in enumerate(demands):
+            if u not in d:
+                continue
+            pess.append(("S", ("r", ri), d[u]))
+            opt.append(("S", ("r", ri), d[u]))
+            for bi in range(len(inventory)):
+                e = edges.get((ri, bi))
+                if e is None or e.status is CapabilityStatus.BLOCKED:
+                    continue
+                opt.append((("r", ri), ("b", bi), total))
+                if e.commensurable:
+                    pess.append((("r", ri), ("b", bi), total))
+        for bi, amount in enumerate(amounts):
+            if amount is not None and amount[0] == u:
+                pess.append((("b", bi), "T", amount[1]))
+                opt.append((("b", bi), "T", amount[1]))
+            else:
+                opt.append((("b", bi), "T", total))
+        f_pess = _max_flow(pess, "S", "T")
+        f_opt = _max_flow(opt, "S", "T")
+        if f_opt < total:
+            blocked = True
+            verdict = "BLOCKED (even the optimistic allocation falls short -- a bottle cannot be spent twice)"
+        elif f_pess < total:
+            unknown = True
+            verdict = "UNKNOWN (only an allocation through unproven/unknown-amount sources could cover it)"
+        else:
+            verdict = "FIT (proven allocation, each bottle spent once)"
+        reasons.append(f"material allocation [{u}]: total demand {_dec(total)} {u}; proven (G-) {_dec(f_pess)} {u}; "
+                       f"optimistic (G+) {_dec(f_opt)} {u} -> {verdict}")
+    status = (CapabilityStatus.BLOCKED if blocked else CapabilityStatus.UNKNOWN if unknown else CapabilityStatus.FIT)
+    reasons.append(f"material allocation verdict: {status.value} (FIT requires every quantity EXACT and a proven "
+                   "allocation in every unit domain)")
+    return AxisResult(status, tuple(reasons))
 
 
-def _physical_axis(requirement, ceiling) -> AxisResult:
+def _physical_axis(requirement, ceiling, *, unresolved: "tuple[str, ...]" = ()) -> AxisResult:
+    """D13 wrapper: a stated T/P demand the projection could not read into typed bounds (``unresolved``) caps the
+    physical axis at UNKNOWN (a provable BLOCK still wins) -- never an UNCONSTRAINED/FIT pass over an unread demand."""
+    result = _physical_axis_bounds(requirement, ceiling)
+    if not unresolved:
+        return result
+    notes = tuple(f"physical: {u}" for u in unresolved)
+    if result.status is CapabilityStatus.BLOCKED:
+        return AxisResult(CapabilityStatus.BLOCKED, result.reasons + notes)
+    return AxisResult(CapabilityStatus.UNKNOWN, result.reasons + notes + (
+        "physical: a stated temperature/pressure demand could not be read into the typed bounds -- UNKNOWN (D13)",))
+
+
+def _physical_axis_bounds(requirement, ceiling) -> AxisResult:
     """``PhysicalBounds`` (route demand) vs ``PhysicalBounds`` (profile ceiling). Mirrors the gap/exclude
     discipline ``process_constraints`` uses: a known excess -> BLOCKED; an undeclared route extremum against
     a declared ceiling -> UNKNOWN.
@@ -576,20 +634,26 @@ def _physical_axis(requirement, ceiling) -> AxisResult:
     return AxisResult(CapabilityStatus.FIT, tuple(reasons))
 
 
-#: F56/F62 (Decision 11): the COMPLETE set of process-unique dimensions the per-dimension fail-close covers,
-#: as a TABLE rather than a hand-scattered checklist -- Wave-C proved a checklist is one forgotten line from a
-#: false FIT (attention + agitation were the two originally dropped). Each entry: (label, does the ROUTE
-#: declare a real demand on this dimension?, does the BENCH model it with a bound?). A demand on a dimension
-#: the bench leaves unmodeled (bound None) caps the process axis at UNKNOWN. Equipment is deliberately EXCLUDED
-#: -- the capability EQUIPMENT axis already owns it, so listing it here would double-jeopardy a well-equipped
-#: bench whose ProcessBounds happens not to restate its apparatus.
+#: F56/F62 (Decision 11) + Round V D10: the COMPLETE set of process-unique dimensions the per-dimension fail-close
+#: covers, as a TABLE. Each entry: (label, does the ROUTE declare a real demand on it?, how the BENCH side is read).
+#: TIME dimensions are read through the D10 declaration state (``process_dimension_state(profile, field)`` ->
+#: UNDECLARED / DECLARED_BOUND / NO_LIMIT); attention/agitation/check-interval keep their bound test (they may never
+#: be NO_LIMIT). A demand on an UNDECLARED / unmodeled dimension caps the process axis at UNKNOWN. Equipment is
+#: deliberately EXCLUDED -- the capability EQUIPMENT axis owns it.
+def _ELAPSED_DEMAND(r) -> bool:  # noqa: N802 -- a table entry, named like the constants beside it
+    return r.min_elapsed_minutes is not None or r.elapsed_minutes is not None
+
+
+def _ACTIVE_DEMAND(r) -> bool:  # noqa: N802
+    return r.min_active_minutes is not None or r.active_minutes is not None
+
+
+_PROCESS_TIME_DIMENSIONS = (
+    ("step elapsed time", _ELAPSED_DEMAND, "max_step_minutes"),
+    ("route-total elapsed time", _ELAPSED_DEMAND, "max_total_minutes"),
+    ("active time", _ACTIVE_DEMAND, "max_active_minutes"),
+)
 _PROCESS_FAILCLOSE_DIMENSIONS = (
-    ("elapsed time",
-     lambda r: r.min_elapsed_minutes is not None or r.elapsed_minutes is not None,
-     lambda b: b.max_step_minutes is not None or b.max_total_minutes is not None),
-    ("active time",
-     lambda r: r.min_active_minutes is not None or r.active_minutes is not None,
-     lambda b: b.max_active_minutes is not None),
     ("operator check interval",
      lambda r: r.check_interval_minutes is not None,
      lambda b: b.min_check_interval_minutes is not None),
@@ -602,53 +666,86 @@ _PROCESS_FAILCLOSE_DIMENSIONS = (
 )
 
 
-def _process_axis(requirements, bounds: ProcessBounds) -> AxisResult:
-    """DELEGATE, never reimplement (decision 2): the real per-step/route-total comparison already lives
-    in ``evaluate_process_requirements`` (time/attention/agitation/equipment-string checks); this only
-    relabels its verdict onto :class:`CapabilityStatus`.
+def _process_dimension_gaps(requirements, profile: CapabilityProfile) -> "tuple[list[str], list[str]]":
+    """Per-dimension declaration check (D10): returns ``(unmodeled, no_limit)`` labels over the dimensions the ROUTE
+    actually demands. UNDECLARED time dimension / unbounded non-time dimension -> ``unmodeled``; an operator NO_LIMIT
+    preference -> ``no_limit`` (not a gap, but tagged: a preference, not a measured capability)."""
+    from .declarations import DimensionDeclaration, process_dimension_state  # D10 (waste-process owner)
 
-    D6 (kills M29): the delegate returns ``UNCONSTRAINED`` when the BOUNDS declare nothing. If the ROUTE
-    nonetheless carries a real declared process requirement, that UNCONSTRAINED is relabelled to UNKNOWN --
-    an unbounded bench cannot be certified against a real time/attention/agitation demand. The delegate is
-    NOT reimplemented; the relabel guards only the empty-bounds-against-a-real-requirement case."""
+    bounds = profile.process_bounds
+    demanded = [r for r in requirements if r is not None]
+    unmodeled: "list[str]" = []
+    no_limit: "list[str]" = []
+    for label, route_demands, field_name in _PROCESS_TIME_DIMENSIONS:
+        if not any(route_demands(r) for r in demanded):
+            continue
+        state = process_dimension_state(profile, field_name)
+        if state is DimensionDeclaration.UNDECLARED:
+            unmodeled.append(label)
+        elif state is DimensionDeclaration.NO_LIMIT:
+            no_limit.append(label)
+    for label, route_demands, bounds_models in _PROCESS_FAILCLOSE_DIMENSIONS:
+        if any(route_demands(r) for r in demanded) and not bounds_models(bounds):
+            unmodeled.append(label)
+    return unmodeled, no_limit
+
+
+def _process_axis(requirements, profile: CapabilityProfile, *, unresolved: "tuple[str, ...]" = ()) -> AxisResult:
+    """DELEGATE, never reimplement (decision 2): the per-step/route-total comparison lives in
+    ``evaluate_process_requirements``; this relabels its verdict onto :class:`CapabilityStatus` and then applies the
+    D10 per-dimension declaration law, which needs the PROFILE (its ``no_limit_dimensions``), not just the bounds:
+
+    * UNDECLARED dimension + a real route demand -> UNKNOWN (an unbounded bench cannot be certified against it);
+    * DECLARED_BOUND -> the delegate compares;
+    * NO_LIMIT (time dimensions only) + demand -> not a gap; the reason is tagged "operator NO_LIMIT preference, not
+      measured capability".
+
+    When the delegate returns UNCONSTRAINED (no ProcessBounds field set at all) and the route declares a process
+    demand, the axis is FIT only if every demanded dimension is NO_LIMIT and every step carries a process record;
+    otherwise UNKNOWN (D6). ``unresolved`` (D13: a duration stated outside the process record's elapsed ceiling)
+    caps the axis at UNKNOWN; a provable EXCLUDED still wins."""
+    bounds = profile.process_bounds
     fit = evaluate_process_requirements(requirements, bounds)
     status = _PROCESS_FIT_TO_CAPABILITY[fit.status]
     route_demands = any(r is not None and r.is_declared for r in requirements)
-    if status is CapabilityStatus.UNCONSTRAINED and route_demands:
-        return AxisResult(
-            CapabilityStatus.UNKNOWN,
-            (
-                "process: the declared profile states NO process bound, but this route carries a real "
-                "time/attention/agitation demand -- an unbounded bench cannot be certified against it (D6)",
-            ),
-        )
+    unmodeled, no_limit = _process_dimension_gaps(requirements, profile)
     reasons = tuple(f"process: {reason}" for reason in (*fit.exclusions, *fit.gaps))
     if not reasons:
         reasons = (f"process: {fit.status.value}",)
-    # F56 (Decision 11): the per-dimension fail-close the PHYSICAL axis got in Wave-C F1, ported here. A real
-    # route TIME/check-interval demand on a dimension the bench leaves UNMODELED (its bound is None) cannot be
-    # certified -> UNKNOWN, never a silent FIT. The delegate already gaps -> UNKNOWN when a bound IS declared
-    # but the route's ceiling is not; this closes the OTHER hole -- a bound left entirely None was silently
-    # skipped, so a bench that bounds only attention/agitation waved every unbounded time demand straight to FIT.
-    if status is CapabilityStatus.FIT:
-        # F56 + F62 (Decision 11): the per-dimension fail-close, driven off the COMPLETE table above so no
-        # dimension can silently fall off a hand-written checklist (the F62 root cause -- attention/agitation
-        # were dropped). A dimension the ROUTE demands but the BENCH leaves unmodeled (bound None) cannot be
-        # certified -> UNKNOWN, never a silent FIT. The delegate already gaps -> UNKNOWN when a bound IS
-        # declared but the route's value is not; this closes the other half -- an entirely omitted bound.
-        unmodeled = [
-            label
-            for label, route_demands, bounds_models in _PROCESS_FAILCLOSE_DIMENSIONS
-            if any(r is not None and route_demands(r) for r in requirements) and not bounds_models(bounds)
-        ]
-        if unmodeled:
+    reasons += tuple(f"process: {label} -- operator NO_LIMIT preference, not measured capability"
+                     for label in no_limit)
+    reasons += tuple(f"process: {u}" for u in unresolved)
+    if status is CapabilityStatus.UNCONSTRAINED and route_demands:
+        undeclared_steps = [i for i, r in enumerate(requirements, start=1) if r is None]
+        if unmodeled or undeclared_steps or not no_limit:
+            detail = []
+            if unmodeled:
+                detail.append(f"no bound declared on {', '.join(unmodeled)}")
+            if undeclared_steps:
+                detail.append(f"step(s) {', '.join(map(str, undeclared_steps))} carry no process record")
             return AxisResult(
                 CapabilityStatus.UNKNOWN,
                 reasons + (
-                    f"process: this route declares a real demand on {', '.join(unmodeled)}, but the declared "
-                    "profile states NO bound on that dimension -- an unbounded process dimension cannot be "
-                    "certified against a real demand (F56/F62/Decision 11, per-dimension)",),
+                    "process: the declared profile states NO process bound, but this route carries a real "
+                    "time/attention/agitation demand -- an unbounded bench cannot be certified against it (D6"
+                    + (f"; {'; '.join(detail)}" if detail else "") + ")",),
             )
+        status = CapabilityStatus.FIT
+    if status is CapabilityStatus.BLOCKED:
+        return AxisResult(status, reasons)
+    if status is CapabilityStatus.FIT and unmodeled:
+        return AxisResult(
+            CapabilityStatus.UNKNOWN,
+            reasons + (
+                f"process: this route declares a real demand on {', '.join(unmodeled)}, but the declared profile "
+                "leaves that dimension UNDECLARED -- an unbounded process dimension cannot be certified against a "
+                "real demand (F56/F62/D10, per-dimension)",),
+        )
+    if unresolved and status in (CapabilityStatus.FIT, CapabilityStatus.UNCONSTRAINED):
+        return AxisResult(
+            CapabilityStatus.UNKNOWN,
+            reasons + ("process: a stated duration is not covered by the process record -- UNKNOWN (D13)",),
+        )
     return AxisResult(status, reasons)
 
 
@@ -661,17 +758,11 @@ def _measurement_axis(
     apparatus string is an open question about a bench's analytical CAPABILITY -> caps the axis at UNKNOWN
     before the ordinary membership check. Otherwise the comparison is on the SPECIFIC
     :class:`MeasurementMethod` member (NEVER the coarse tier, kills M28): a bench with an NMR but not an IR
-    does not clear an ``INFRARED_SPECTROSCOPY`` requirement just because both share a tier."""
-    if unrecognized:
-        names = ", ".join(sorted(unrecognized))
-        return AxisResult(
-            CapabilityStatus.UNKNOWN,
-            (
-                f"measurement: {len(unrecognized)} sourced VERIFY-apparatus string(s) are untabled in the "
-                f"closed resolver and cannot be certified either way against any declared profile: {names}",
-            ),
-        )
-    return _membership_axis(required, available, axis="measurement")
+    does not clear an ``INFRARED_SPECTROSCOPY`` requirement just because both share a tier. Round V: a provable
+    BLOCK from the membership check wins over the unrecognized remainder."""
+    return _gated_membership_axis(required, available, unrecognized, axis="measurement", what=(
+        "sourced measurement demand(s) are untabled in the closed resolver or unread (a stated analytical "
+        "verification with no VERIFY apparatus)"))
 
 
 def _ventilation_axis() -> AxisResult:
@@ -689,14 +780,26 @@ def _ventilation_axis() -> AxisResult:
     )
 
 
-def _monetary_axis(route_cost, budget) -> AxisResult:
+def _monetary_axis(route_cost, budget, *, no_limit: bool = False) -> AxisResult:
     """A known route cash <= a declared budget ceiling -> FIT; a KNOWN excess (exact cash, or a floor that
     ALREADY exceeds the ceiling) -> BLOCKED; a floor within budget never confirms FIT (M15: the true total
     could still be higher) -> UNKNOWN; mismatched currencies are incomparable, never summed (M16) ->
-    UNKNOWN; an unknown route cash against a declared budget -> UNKNOWN, never a fabricated free $0 (M14);
-    no declared budget at all -> UNCONSTRAINED."""
+    UNKNOWN; an unknown route cash against a declared budget -> UNKNOWN, never a fabricated free $0 (M14).
+
+    D13 (Round V): NO declared budget is UNDECLARED, not "unconstrained" -- every route consumes purchased
+    materials, so an undeclared budget against that real demand is UNKNOWN. Only an explicit operator NO_LIMIT
+    preference on ``budget`` (``profile.no_limit_dimensions``) passes it, tagged as a preference."""
     if budget is None or budget.cash is None:
-        return AxisResult(CapabilityStatus.UNCONSTRAINED, ("monetary: the declared profile has no budget ceiling",))
+        if no_limit:
+            return AxisResult(
+                CapabilityStatus.FIT,
+                ("monetary: budget -- operator NO_LIMIT preference, not measured capability",),
+            )
+        return AxisResult(
+            CapabilityStatus.UNKNOWN,
+            ("monetary: the declared profile states NO budget (UNDECLARED), but every route consumes purchased "
+             "materials -- an undeclared budget cannot be certified against that demand (D13)",),
+        )
     if route_cost.cash is None and route_cost.cash_floor is None:
         return AxisResult(
             CapabilityStatus.UNKNOWN,
@@ -785,8 +888,9 @@ def assess(
 
     material = _material_axis(requirements.material, profile.material_inventory)
     equipment = _equipment_axis(requirements.equipment, profile.equipment, requirements.equipment_unrecognized)
-    physical = _physical_axis(requirements.physical, profile.physical_bounds)
-    process = _process_axis(requirements.process, profile.process_bounds)
+    physical = _physical_axis(requirements.physical, profile.physical_bounds,
+                              unresolved=requirements.physical_unresolved)
+    process = _process_axis(requirements.process, profile, unresolved=requirements.process_unresolved)
     # D9: surface the resolved procedure-hazard containment contributions AND the unresolved-hazard notes on
     # the containment axis -- the fold is observable, never silent. M6 stays hard: this reads
     # ``profile.containment`` only; ventilation never clears it.
@@ -828,7 +932,10 @@ def assess(
         )
     procurement = _procurement_axis(requirements.procurement_catalysts, profile.procurement)
     attention_care = _attention_care_axis(requirements.attention_care)
-    monetary = _monetary_axis(requirements.monetary, profile.budget)
+    monetary = _monetary_axis(
+        requirements.monetary, profile.budget,
+        no_limit="budget" in getattr(profile, "no_limit_dimensions", frozenset()),
+    )
 
     axes = (
         material, equipment, physical, process, containment, ventilation, measurement, waste,
@@ -873,4 +980,6 @@ def assess(
         monetary=monetary,
         overall=overall,
         overall_reasons=tuple(overall_reasons),
+        readiness_tier=route_readiness.tier,
+        readiness_digest=route_readiness.digest,
     )

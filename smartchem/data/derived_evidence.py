@@ -1,143 +1,370 @@
-"""smartchem/data/derived_evidence.py -- a minimal typed seam for DERIVED_WITH_ERROR intervals.
+"""smartchem/data/derived_evidence.py -- Round V (barrier D7): stable, digestible interval evidence.
 
-**Chart note.** The material library (:mod:`smartchem.data.material_library`) hands out assay/composition
-intervals labelled ``DERIVED_WITH_ERROR``. Round-III's audit found that the *label* was doing all the
-work: a string in the provenance said "derived", and nothing checked the arithmetic behind the number.
-Two intervals were arithmetically UNSUPPORTED -- the NaCl and isoamyl-alcohol washes converted "g per
-100 g water" as though it were already a mass-fraction-of-SOLUTION (263/1263 = 0.208, not the coded
-band), and one band (5% +-0.5% NaHCO3) had a width with no source behind it at all -- a decorative error
-bar, which project law ranks as WORSE than an honest UNKNOWN.
+**Chart note.** Round IV's ``DerivedIntervalEvidence`` carried a Python CALLABLE and a free ``DerivationMethod``
+label. Round V's Lane C broke it three ways: (F70) the callable made the record un-digestible, so swapping the source,
+method, domain or kernel moved no material/profile digest at all; (F63/F71) the method was a free LABEL -- a
+``BROADENED`` band with an arbitrary width, or a ``SOURCE_QUOTED`` label over a unit-conversion kernel, both built
+fine; (F72) solubility inputs reported per-VOLUME (g/100 mL, mg/L) were fed to a per-100-g-SOLVENT kernel.
 
-This module is the smallest thing that makes the calculation checkable instead of grep-able. It does NOT
-rewrite the evidence subsystem; it is one frozen record that carries the exact-rational interval, the
-raw inputs, and a callable that RECONSTRUCTS the interval from those inputs. The record refuses to exist
-unless ``derivation_fn(*derivation_inputs) == value_interval`` (checked in ``__post_init__``) -- so a
-mislabelled interval is a construction-time error, not a silent lie waiting for a reviewer to catch it.
+The replacement, :class:`IntervalEvidence`, is a plain frozen record of exact decimal STRINGS and closed enums -- no
+``Fraction``, no callable -- so ``canonical_digest`` accepts it and every field moves every digest above it. The
+derivation is named by a closed :class:`DerivationKernel`; the kernel's arity, input units, admissible input evidence
+and the ONE :class:`~smartchem.material_spec.EvidenceKind` it may emit live in a CLOSED registry (:data:`KERNELS`),
+and ``__post_init__`` RE-COMPUTES the interval exactly (``Fraction`` internally) and refuses any mismatch of value,
+units or kind. A label can no longer claim more than its arithmetic: an arbitrary symmetric width is only expressible
+as ``ASSUMED_BAND_V1`` -> ``ASSUMED``; a source-quoted interval is only ``IDENTITY_SOURCE_QUOTED_V1`` over
+source-quoted inputs; a g/100 mL figure has no kernel that accepts it as g/100 g.
 
-The structural fix that would have caught the g/100g bug is the :class:`IntervalUnit` TYPE: a
-``MASS_PER_100G_SOLVENT`` quantity is NOT a ``MASS_FRACTION_OF_SOLUTION`` and cannot be dropped into a
-mass-fraction slot without a ``UNIT_CONVERTED`` step. The type makes the two kinds non-interchangeable.
+Rounding law (one, sound): a kernel's exact result is rounded OUTWARD (low down, high up) to :data:`PRECISION_DP`
+decimal places, so a non-terminating exact value (36/136 = 0.2647058823...) is represented by the smallest enclosing
+6-dp decimal interval. Outward rounding only ever WIDENS the interval -- it can cost a FIT, never mint one. The
+record's ``low``/``high`` must be the CANONICAL decimal spelling of that rounded value (``"1"``, not ``"1.0"``), so
+equal intervals digest equally.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 from typing import Callable
 
+from ..contracts import Digestible
+from ..material_spec import ConcentrationBasis, EvidenceKind, exact_fraction
 
-class IntervalUnit(Enum):
-    """The physical TYPE of an interval's endpoints -- the distinction that catches the g/100g bug.
+__all__ = [
+    "PRECISION_DP",
+    "InputUnit",
+    "DerivationKernel",
+    "TypedInput",
+    "IntervalEvidence",
+    "KernelSpec",
+    "KERNELS",
+    "canonical_decimal",
+]
 
-    A ``MASS_PER_100G_SOLVENT`` figure (g solute per 100 g of SOLVENT) is a different quantity from a
-    ``MASS_FRACTION_OF_SOLUTION`` (g solute per g of SOLUTION); they coincide only in the dilute limit and
-    diverge fast near saturation (35.7 g/100 g water is 0.264 of solution, not 0.357). Converting between
-    them is a ``DerivationMethod.UNIT_CONVERTED`` step, never a reinterpretation of the same number.
-    """
+#: Outward-rounding precision for every kernel result (decimal places).
+PRECISION_DP = 6
 
-    MASS_FRACTION_OF_SOLUTION = "mass_fraction_of_solution"  # g solute / g solution, dimensionless in [0, 1]
-    MASS_PER_100G_SOLVENT = "mass_per_100g_solvent"          # g solute / 100 g solvent (solubility units)
-    PERCENT = "percent"                                       # a nominal percent, value in [0, 100]
-
-
-class DerivationMethod(Enum):
-    """How an interval was produced from its inputs -- the honest label on the arithmetic."""
-
-    SOURCE_QUOTED = "source_quoted"   # endpoints copied straight from a cited source, no arithmetic
-    UNIT_CONVERTED = "unit_converted" # endpoints produced by a units change (e.g. g/100g water -> fraction)
-    CLAMPED = "clamped"               # a source range clipped to a physical bound (e.g. mass fraction <= 1.0)
-    COMPLEMENT = "complement"         # the 1 - x complement of another interval (the solvent balance)
-    BROADENED = "broadened"           # a nominal value widened to an honest, stated spread
-    ASSUMED = "assumed"               # the width is an ASSUMED bench tolerance, NOT measured/propagated
+_FRACTION_BASES = frozenset({ConcentrationBasis.MASS_FRACTION, ConcentrationBasis.VOLUME_FRACTION})
+_SOURCED_KINDS = frozenset({EvidenceKind.SOURCE_QUOTED, EvidenceKind.DERIVED, EvidenceKind.CLAMPED})
 
 
-_RationalInterval = "tuple[Fraction, Fraction]"
+class InputUnit(str, Enum):
+    """The physical TYPE of one raw input number. Kernels accept only the units they declare -- the type system that
+    makes a per-volume solubility non-interchangeable with a per-mass one (F72)."""
+
+    FRACTION = "FRACTION"                          # already in the record's basis, scale 1 (e.g. 0.995 w/w)
+    PERCENT = "PERCENT"                            # the record's basis x 100 (e.g. 99.5 "% w/w" on MASS_FRACTION)
+    PERCENT_UNSTATED_BASIS = "PERCENT_UNSTATED_BASIS"  # "5%" with no w/w / w/v / v/v stated -- never certifying
+    G_PER_100G_SOLVENT = "G_PER_100G_SOLVENT"      # solubility: g solute per 100 g of SOLVENT
+    G_PER_100ML_SOLVENT = "G_PER_100ML_SOLVENT"    # solubility per volume of solvent -- NOT convertible here
+    G_PER_100ML_SOLUTION = "G_PER_100ML_SOLUTION"  # w/v of solution -- NOT convertible here
+    MG_PER_L = "MG_PER_L"                          # mg per litre -- NOT convertible here
+    MG_PER_ML = "MG_PER_ML"                        # mg per mL -- NOT convertible here
+
+
+class DerivationKernel(str, Enum):
+    """The CLOSED set of registered derivations (see :data:`KERNELS`)."""
+
+    IDENTITY_SOURCE_QUOTED_V1 = "IDENTITY_SOURCE_QUOTED_V1"
+    SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1 = "SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1"
+    COMPLEMENT_V1 = "COMPLEMENT_V1"
+    CLAMP_TO_UNIT_INTERVAL_V1 = "CLAMP_TO_UNIT_INTERVAL_V1"
+    ASSUMED_BAND_V1 = "ASSUMED_BAND_V1"
+    USER_DECLARED_V1 = "USER_DECLARED_V1"
+    UNKNOWN_V1 = "UNKNOWN_V1"
+
+
+def canonical_decimal(value: Fraction) -> str:
+    """The canonical exact decimal spelling of a TERMINATING non-negative fraction: ``Fraction(1)`` -> ``"1"``,
+    ``Fraction(199, 200)`` -> ``"0.995"``. Raises on a non-terminating or negative value."""
+    if value < 0:
+        raise ValueError("negative values have no canonical non-negative decimal spelling")
+    den = value.denominator
+    twos = fives = 0
+    while den % 2 == 0:
+        den //= 2
+        twos += 1
+    while den % 5 == 0:
+        den //= 5
+        fives += 1
+    if den != 1:
+        raise ValueError(f"{value} is not a terminating decimal")
+    places = max(twos, fives)
+    scaled = value * (10 ** places)
+    digits = str(scaled.numerator).rjust(places + 1, "0")
+    if places == 0:
+        return digits
+    whole, frac = digits[:-places], digits[-places:].rstrip("0")
+    return whole if not frac else f"{whole}.{frac}"
+
+
+def _round_outward(lo: Fraction, hi: Fraction) -> "tuple[Fraction, Fraction]":
+    scale = 10 ** PRECISION_DP
+    return Fraction(math.floor(lo * scale), scale), Fraction(math.ceil(hi * scale), scale)
+
+
+_SOURCED_INPUT_KINDS = frozenset({EvidenceKind.SOURCE_QUOTED, EvidenceKind.DERIVED, EvidenceKind.CLAMPED})
 
 
 @dataclass(frozen=True)
-class DerivedIntervalEvidence:
-    """One DERIVED_WITH_ERROR interval, carried as exact rationals with its derivation attached.
+class TypedInput(Digestible):
+    """One raw kernel input: an exact decimal string, its physical unit, its own evidence strength and locator."""
 
-    The invariant, enforced at construction: ``derivation_fn(*derivation_inputs) == value_interval``. A
-    record whose stated interval does not equal what its own derivation reconstructs cannot be built. That
-    is the whole point -- the old NaCl ``[0.23, 0.27]`` paired with the "26.3 g/100 g water" premise would
-    raise here, because the premise reconstructs ``263/1263`` and not the coded band.
-    """
-
-    derivation_id: str
-    value_interval: "tuple[Fraction, Fraction]"
-    unit: IntervalUnit
-    source_locator: str
-    derivation_method: DerivationMethod
-    derivation_inputs: "tuple[Fraction, ...]"
-    derivation_fn: Callable[..., "tuple[Fraction, Fraction]"]
-    domain_of_validity: str
+    name: str
+    value: str
+    unit: InputUnit
+    kind: EvidenceKind
+    source_locator: str = ""
+    temperature_k: "str | None" = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.derivation_id, str) or not self.derivation_id.strip():
-            raise ValueError("derivation_id must be a non-empty string")
-        if not isinstance(self.unit, IntervalUnit):
-            raise TypeError("unit must be an IntervalUnit")
-        if not isinstance(self.derivation_method, DerivationMethod):
-            raise TypeError("derivation_method must be a DerivationMethod")
-        if not isinstance(self.source_locator, str) or not self.source_locator.strip():
-            raise ValueError("source_locator must be a non-empty string")
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("name must be a non-empty string")
+        exact_fraction(self.value, f"input {self.name!r} value")
+        if type(self.unit) is not InputUnit:
+            raise TypeError("unit must be an InputUnit")
+        if type(self.kind) is not EvidenceKind:
+            raise TypeError("kind must be an EvidenceKind")
+        if not isinstance(self.source_locator, str):
+            raise TypeError("source_locator must be a string ('' when none)")
+        # Wave-C2 A1: EVERY sourced kind needs a locator -- a raw input self-labelled DERIVED/CLAMPED with nothing
+        # behind it was a label-only bypass of the D7 kind gate.
+        if self.kind in _SOURCED_INPUT_KINDS and not self.source_locator.strip():
+            raise ValueError(f"input {self.name!r}: a {self.kind.value} input must carry a non-empty source_locator")
+        if self.temperature_k is not None:
+            exact_fraction(self.temperature_k, "temperature_k")
+
+    @property
+    def exact(self) -> Fraction:
+        return exact_fraction(self.value)
+
+
+@dataclass(frozen=True)
+class KernelSpec:
+    """A registry entry: admissible input-name patterns, admissible units and input kinds, the pure exact function,
+    and the rule for the ONE output kind. Not a record (never digested) -- the registry is code, keyed by enum."""
+
+    name_patterns: "tuple[tuple[str, ...], ...]"
+    units: "frozenset[InputUnit]"
+    input_kinds: "frozenset[EvidenceKind] | None"   # None = any kind
+    output_kind: "EvidenceKind | None"               # None = the parent's kind (COMPLEMENT only)
+    bases: "frozenset[ConcentrationBasis] | None"    # None = any basis
+    needs_parent: bool
+    fn: "Callable[[dict[str, TypedInput], IntervalEvidence | None], tuple[Fraction, Fraction]]"
+
+
+def _scaled(inp: TypedInput) -> Fraction:
+    v = inp.exact
+    return v / 100 if inp.unit in (InputUnit.PERCENT, InputUnit.PERCENT_UNSTATED_BASIS) else v
+
+
+def _k_identity(inputs: "dict[str, TypedInput]", _parent: "IntervalEvidence | None") -> "tuple[Fraction, Fraction]":
+    return _scaled(inputs["low"]), _scaled(inputs["high"])
+
+
+def _k_solubility(inputs: "dict[str, TypedInput]", _parent: "IntervalEvidence | None") -> "tuple[Fraction, Fraction]":
+    # x = s / (s + 100): g solute per 100 g SOLVENT -> g solute per g SOLUTION. Monotone increasing in s.
+    s_lo, s_hi = inputs["low"].exact, inputs["high"].exact
+    return s_lo / (s_lo + 100), s_hi / (s_hi + 100)
+
+
+def _k_complement(_inputs: "dict[str, TypedInput]", parent: "IntervalEvidence | None") -> "tuple[Fraction, Fraction]":
+    p_lo, p_hi = parent.interval  # type: ignore[union-attr]
+    return 1 - p_hi, 1 - p_lo
+
+
+def _k_clamp(inputs: "dict[str, TypedInput]", _parent: "IntervalEvidence | None") -> "tuple[Fraction, Fraction]":
+    if "floor" in inputs:
+        lo = _scaled(inputs["floor"])
+        if lo > 1:
+            raise ValueError("CLAMP_TO_UNIT_INTERVAL_V1: a floor above 1 cannot be clamped into [0, 1]")
+        # the source states only a floor ("at least 97%"); the open upper end is clipped to the physical bound 1
+        return max(Fraction(0), lo), Fraction(1)
+    lo, hi = _scaled(inputs["low"]), _scaled(inputs["high"])
+    if not (lo < 0 or hi > 1):
+        raise ValueError("CLAMP_TO_UNIT_INTERVAL_V1 must actually clip: the quoted range already lies in [0, 1] "
+                         "(use IDENTITY_SOURCE_QUOTED_V1)")
+    if lo > 1 or hi < 0:
+        raise ValueError("CLAMP_TO_UNIT_INTERVAL_V1: the quoted range lies entirely outside [0, 1]")
+    return max(Fraction(0), lo), min(Fraction(1), hi)
+
+
+def _k_band(inputs: "dict[str, TypedInput]", _parent: "IntervalEvidence | None") -> "tuple[Fraction, Fraction]":
+    if "nominal" in inputs:
+        n, w = _scaled(inputs["nominal"]), _scaled(inputs["half_width"])
+        return n - w, n + w
+    return _scaled(inputs["low"]), _scaled(inputs["high"])
+
+
+def _k_unknown(_inputs: "dict[str, TypedInput]", _parent: "IntervalEvidence | None") -> "tuple[Fraction, Fraction]":
+    return Fraction(0), Fraction(1)
+
+
+_SCALE_UNITS = frozenset({InputUnit.FRACTION, InputUnit.PERCENT})
+
+#: THE closed kernel registry (barrier D7). Adding a kernel is a code change reviewed as such -- never data.
+KERNELS: "dict[DerivationKernel, KernelSpec]" = {
+    DerivationKernel.IDENTITY_SOURCE_QUOTED_V1: KernelSpec(
+        name_patterns=(("low", "high"),), units=_SCALE_UNITS,
+        input_kinds=frozenset({EvidenceKind.SOURCE_QUOTED}), output_kind=EvidenceKind.SOURCE_QUOTED,
+        bases=None, needs_parent=False, fn=_k_identity),
+    DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1: KernelSpec(
+        name_patterns=(("low", "high"),), units=frozenset({InputUnit.G_PER_100G_SOLVENT}),
+        input_kinds=frozenset({EvidenceKind.SOURCE_QUOTED, EvidenceKind.DERIVED}), output_kind=EvidenceKind.DERIVED,
+        bases=frozenset({ConcentrationBasis.MASS_FRACTION}), needs_parent=False, fn=_k_solubility),
+    # Wave-C1/C2: 1 - x is the solvent ONLY under an unsourced BINARY-mixture premise -> the complement is ASSUMED,
+    # never an inherited SOURCE_QUOTED/DERIVED strength (the H2SO4 complement is not a sourced water assay).
+    DerivationKernel.COMPLEMENT_V1: KernelSpec(
+        name_patterns=((),), units=frozenset(), input_kinds=None, output_kind=EvidenceKind.ASSUMED,
+        bases=_FRACTION_BASES, needs_parent=True, fn=_k_complement),
+    DerivationKernel.CLAMP_TO_UNIT_INTERVAL_V1: KernelSpec(
+        name_patterns=(("low", "high"), ("floor",)), units=_SCALE_UNITS,
+        input_kinds=frozenset({EvidenceKind.SOURCE_QUOTED, EvidenceKind.DERIVED}), output_kind=EvidenceKind.CLAMPED,
+        bases=_FRACTION_BASES, needs_parent=False, fn=_k_clamp),
+    DerivationKernel.ASSUMED_BAND_V1: KernelSpec(
+        name_patterns=(("low", "high"), ("nominal", "half_width")),
+        units=_SCALE_UNITS | {InputUnit.PERCENT_UNSTATED_BASIS},
+        input_kinds=None, output_kind=EvidenceKind.ASSUMED, bases=None, needs_parent=False, fn=_k_band),
+    DerivationKernel.USER_DECLARED_V1: KernelSpec(
+        name_patterns=(("low", "high"),), units=_SCALE_UNITS,
+        input_kinds=frozenset({EvidenceKind.USER_DECLARED}), output_kind=EvidenceKind.USER_DECLARED,
+        bases=None, needs_parent=False, fn=_k_identity),
+    DerivationKernel.UNKNOWN_V1: KernelSpec(
+        name_patterns=((),), units=frozenset(), input_kinds=None, output_kind=EvidenceKind.UNKNOWN,
+        bases=None, needs_parent=False, fn=_k_unknown),
+}
+
+
+@dataclass(frozen=True)
+class IntervalEvidence(Digestible):
+    """One component-fraction interval WITH the typed, re-computable derivation that produced it (barrier D7).
+
+    Invariant (enforced at construction): ``(low, high)`` is exactly the registered ``kernel`` applied to ``inputs``
+    (and ``parent`` for COMPLEMENT), outward-rounded to :data:`PRECISION_DP`, canonically spelled; ``kind`` is the
+    one kind that kernel may emit; every input carries a unit and kind the kernel admits; sourced kinds
+    (SOURCE_QUOTED / DERIVED / CLAMPED) cite at least one locator and cover every input's own locator.
+    """
+
+    kind: EvidenceKind
+    low: str
+    high: str
+    basis: ConcentrationBasis
+    source_locators: "tuple[str, ...]"
+    kernel: DerivationKernel
+    inputs: "tuple[TypedInput, ...]"
+    domain_of_validity: str
+    parent: "IntervalEvidence | None" = None
+
+    def __post_init__(self) -> None:
+        if type(self.kind) is not EvidenceKind:
+            raise TypeError("kind must be an EvidenceKind")
+        if type(self.basis) is not ConcentrationBasis:
+            raise TypeError("basis must be a ConcentrationBasis")
+        # Wave-C2 A2: a FRACTION/PERCENT number on a MOLAR basis is a unit/basis lie (6 % is not 6 mol/L). No MOLAR
+        # input unit exists yet, so a MOLAR interval can only be UNKNOWN_V1 -- honest until one is added.
+        if self.basis is ConcentrationBasis.MOLAR and any(
+                isinstance(i, TypedInput) and i.unit in _SCALE_UNITS for i in (self.inputs or ())):
+            raise ValueError("a FRACTION/PERCENT input cannot carry a MOLAR basis (no unit conversion)")
+        if type(self.kernel) is not DerivationKernel:
+            raise TypeError("kernel must be a DerivationKernel (the closed registry)")
+        if type(self.source_locators) is not tuple or any(
+            not isinstance(s, str) or not s.strip() for s in self.source_locators
+        ):
+            raise TypeError("source_locators must be a tuple of non-empty strings")
+        if type(self.inputs) is not tuple or any(type(i) is not TypedInput for i in self.inputs):
+            raise TypeError("inputs must be a tuple of TypedInput")
         if not isinstance(self.domain_of_validity, str) or not self.domain_of_validity.strip():
             raise ValueError("domain_of_validity must be a non-empty string")
-        lo, hi = self.value_interval
-        if not isinstance(lo, Fraction) or not isinstance(hi, Fraction):
-            raise TypeError("value_interval endpoints must be exact fractions.Fraction values")
+        lo, hi = exact_fraction(self.low, "low"), exact_fraction(self.high, "high")
         if lo > hi:
-            raise ValueError("value_interval lower bound cannot exceed the upper bound")
-        if any(not isinstance(x, Fraction) for x in self.derivation_inputs):
-            raise TypeError("derivation_inputs must be a tuple of exact fractions.Fraction values")
-        # The load-bearing check: the stated interval MUST equal what the derivation reconstructs.
-        recomputed = self.recompute()
-        if tuple(recomputed) != tuple(self.value_interval):
+            raise ValueError("low cannot exceed high")
+        if self.basis in _FRACTION_BASES and hi > 1:
+            raise ValueError("a fraction basis must lie in [0, 1]")
+
+        spec = KERNELS[self.kernel]
+        # -- parent ------------------------------------------------------------------------------------------
+        if spec.needs_parent:
+            if type(self.parent) is not IntervalEvidence:
+                raise TypeError(f"{self.kernel.value} requires an IntervalEvidence parent")
+            if self.parent.basis is not self.basis:
+                raise ValueError(f"{self.kernel.value}: basis must equal the parent's basis")
+            if self.source_locators != self.parent.source_locators:
+                raise ValueError(f"{self.kernel.value}: source_locators must be the parent's (no new citation)")
+        elif self.parent is not None:
+            raise ValueError(f"{self.kernel.value} takes no parent")
+        if spec.bases is not None and self.basis not in spec.bases:
+            raise ValueError(f"{self.kernel.value} is not valid on basis {self.basis.value}")
+        # -- inputs: names, units, kinds ---------------------------------------------------------------------
+        names = tuple(i.name for i in self.inputs)
+        if names not in spec.name_patterns:
+            raise ValueError(f"{self.kernel.value} takes inputs named one of {spec.name_patterns}, got {names}")
+        for inp in self.inputs:
+            if inp.unit not in spec.units:
+                raise ValueError(
+                    f"{self.kernel.value} refuses input {inp.name!r} in unit {inp.unit.value} "
+                    f"(admits {sorted(u.value for u in spec.units)}) -- never relabel one unit as another (F72)")
+            if spec.input_kinds is not None and inp.kind not in spec.input_kinds:
+                raise ValueError(
+                    f"{self.kernel.value} refuses input {inp.name!r} of evidence {inp.kind.value} "
+                    f"(admits {sorted(k.value for k in spec.input_kinds)})")
+        # -- output kind (F63/F71: the label is the kernel's, never free) ------------------------------------
+        expected_kind = self.parent.kind if spec.output_kind is None else spec.output_kind  # type: ignore[union-attr]
+        if self.kind is not expected_kind:
             raise ValueError(
-                f"derivation mismatch for {self.derivation_id!r}: "
-                f"derivation_fn(*inputs)={tuple(recomputed)} != value_interval={tuple(self.value_interval)}"
-            )
+                f"{self.kernel.value} may only emit {expected_kind.value}, not {self.kind.value} -- a label cannot "
+                "claim more than its arithmetic")
+        if self.kind in _SOURCED_KINDS:
+            if not self.source_locators:
+                raise ValueError(f"{self.kind.value} evidence must cite at least one source locator")
+            missing = {i.source_locator for i in self.inputs if i.source_locator} - set(self.source_locators)
+            if missing:
+                raise ValueError(f"input locators {sorted(missing)} are not among the record's source_locators")
+        # -- the load-bearing check: exact recomputation --------------------------------------------------------
+        r_lo, r_hi = self.recompute()
+        if (self.low, self.high) != (canonical_decimal(r_lo), canonical_decimal(r_hi)):
+            raise ValueError(
+                f"{self.kernel.value} recomputes [{canonical_decimal(r_lo)}, {canonical_decimal(r_hi)}] "
+                f"(outward-rounded to {PRECISION_DP} dp, canonical spelling), not the stated [{self.low}, {self.high}]")
+
+    # -- construction helper -------------------------------------------------------------------------------------
+
+    @classmethod
+    def build(
+        cls, *, kernel: DerivationKernel, basis: ConcentrationBasis, inputs: "tuple[TypedInput, ...]" = (),
+        source_locators: "tuple[str, ...]" = (), domain_of_validity: str, parent: "IntervalEvidence | None" = None,
+    ) -> "IntervalEvidence":
+        """Construct by running the kernel: endpoints and kind are COMPUTED, then re-verified by ``__post_init__``.
+        The stored record is still fully explicit (and a hand-written record must match it exactly)."""
+        spec = KERNELS[kernel]
+        by_name = {i.name: i for i in inputs}
+        probe_kind = parent.kind if (spec.output_kind is None and parent is not None) else spec.output_kind
+        if spec.needs_parent and parent is None:
+            raise TypeError(f"{kernel.value} requires an IntervalEvidence parent")
+        lo, hi = _round_outward(*spec.fn(by_name, parent if spec.needs_parent else None))  # type: ignore[arg-type]
+        if spec.needs_parent and not source_locators:
+            source_locators = parent.source_locators  # type: ignore[union-attr]
+        return cls(probe_kind, canonical_decimal(lo), canonical_decimal(hi), basis,  # type: ignore[arg-type]
+                   tuple(source_locators), kernel, tuple(inputs), domain_of_validity, parent)
+
+    # -- reading ---------------------------------------------------------------------------------------------------
+
+    @property
+    def interval(self) -> "tuple[Fraction, Fraction]":
+        return exact_fraction(self.low), exact_fraction(self.high)
 
     def recompute(self) -> "tuple[Fraction, Fraction]":
-        """Re-run the derivation from the raw inputs -- the exact-rational interval it produces."""
-        return self.derivation_fn(*self.derivation_inputs)
+        """Re-run the registered kernel on the typed inputs (exact), outward-rounded to :data:`PRECISION_DP`."""
+        spec = KERNELS[self.kernel]
+        return _round_outward(*spec.fn({i.name: i for i in self.inputs}, self.parent))
 
     def verify(self) -> bool:
-        """True iff the stated interval equals what the derivation reconstructs (always True post-construction)."""
-        return tuple(self.recompute()) == tuple(self.value_interval)
+        """True iff the stated interval equals the recomputation (always True for a constructed record)."""
+        r_lo, r_hi = self.recompute()
+        return (self.low, self.high) == (canonical_decimal(r_lo), canonical_decimal(r_hi))
 
     def as_floats(self) -> "tuple[float, float]":
-        """The interval as ``(float, float)`` for the ``MaterialComponent`` fraction slots (which take floats)."""
-        lo, hi = self.value_interval
-        return (float(lo), float(hi))
-
-
-# -- reusable derivation kernels (pure, exact-rational) ------------------------------------------------------
-# Each returns the interval from its raw inputs; each is what a record's derivation_fn points at. Keeping them
-# named and shared means the same arithmetic a record claims is the arithmetic a test can re-run.
-
-
-def solution_fraction_from_solubility(s_lo: Fraction, s_hi: Fraction) -> "tuple[Fraction, Fraction]":
-    """g-solute-per-100 g-SOLVENT band -> mass-fraction-of-SOLUTION band, via x = s / (s + 100).
-
-    This is the conversion the old NaCl/isoamyl intervals skipped: they used ``s`` directly as ``x``. Near
-    saturation the two differ sharply (35.7 -> 0.263, not 0.357), which is exactly why the unit TYPE has to
-    force this step rather than let a solubility number sit in a mass-fraction slot.
-    """
-    return (s_lo / (s_lo + 100), s_hi / (s_hi + 100))
-
-
-def symmetric_band(nominal: Fraction, half_width: Fraction) -> "tuple[Fraction, Fraction]":
-    """A nominal value +- a half-width -> ``[nominal - half_width, nominal + half_width]``.
-
-    Honest ONLY when the record labels the method ``ASSUMED`` unless the half-width is itself sourced or
-    propagated: the arithmetic is trivially correct, but a width with nothing behind it is a decorative
-    error bar, which project law bans as worse than UNKNOWN.
-    """
-    return (nominal - half_width, nominal + half_width)
-
-
-def complement_band(lo: Fraction, hi: Fraction) -> "tuple[Fraction, Fraction]":
-    """The solvent balance of a solute band: ``[1 - hi, 1 - lo]`` (the low solute -> high solvent, and vice versa)."""
-    return (1 - hi, 1 - lo)
+        """``(float, float)`` for the ``MaterialComponent`` slots. Exact round-trip: every endpoint has at most
+        :data:`PRECISION_DP` decimals, so ``Fraction(repr(float(x))) == Fraction(x)``."""
+        return float(exact_fraction(self.low)), float(exact_fraction(self.high))

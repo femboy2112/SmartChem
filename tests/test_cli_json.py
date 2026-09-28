@@ -99,8 +99,13 @@ class TestSchemaDescriptor:
         # v1alpha18 (descriptor, a genuine shape change) / v1alpha15 (response): v0.8 Round II D5 canonical transport
         # adds a top-level ``transport_mode`` field (folded into result_digest) and discloses the ``replay_payload``
         # now shipped by default; the digest-covered ConditionEnvelope also gained a ``procedure`` field this round.
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha18"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha15"
+        # v1alpha19 (descriptor) / v1alpha16 (response) / v1alpha6 (request): 0.9 RC Round V D11 -- the capability
+        # fields Round III added without a bump (request capability_profile/_origin, response
+        # capability_question_digest, summary capability_assessment, replay material_uses/specification) are now
+        # versioned, and the descriptor gains ``accepted_legacy_schema_versions`` (the explicit v0.8 whitelist).
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha19"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha16"
+        assert schema["request_schema_version"] == "smartchem.service/compilation-request-v1alpha6"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the

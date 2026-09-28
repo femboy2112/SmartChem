@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from .category import Molecule
     from .conditions import Interval
     from .experiment.stock import Phase, StockQuantity
+    from .material_spec import MaterialSpecification
 
 __all__ = [
     "EvidenceFieldStatus",
@@ -208,10 +209,22 @@ class ProcedureMaterialUse(Digestible):
     parser refuses a disconnected species, so ~half this corpus cannot resolve to a single connected
     :class:`~smartchem.category.Molecule`. Inventing a covalent spelling for an ionic salt to force a resolution is
     banned -- ``identity=None`` is the truthful carrier, mirroring the ``required_assay: float | None`` honesty
-    pattern the stock layer already uses. ``formulation``/``phase`` carry the load-bearing sourced adjective
-    ("glacial"/"conc."/"anhydrous"/"5% aqueous") as STRUCTURED data so no downstream axis has to re-read prose, and
-    ``quantity`` is populated only where the source gives a cleanly-separable per-material amount (``None`` where the
-    page glues quantities together -- a fabricated split would be worse than the honest gap)."""
+    pattern the stock layer already uses. ``quantity`` is populated only where the source gives a cleanly-separable
+    per-material amount (``None`` where the page glues quantities together -- a fabricated split would be worse than
+    the honest gap).
+
+    Round V (barrier D3) semantics of the three material-description fields -- one representation, one meaning each:
+
+    * ``formulation`` -- RAW provenance/display text: the adjective words the cited source puts around the species
+      name ("glacial", "conc.", "saturated aqueous", ...). NOTHING downstream interprets it; no compiler, stock layer
+      or axis may learn what an adjective means from this string.
+    * ``specification`` -- the LOAD-BEARING, source-authored :class:`~smartchem.material_spec.MaterialSpecification`:
+      what the source says the material must BE (composition on a stated basis, positively-required states,
+      and ``unresolved_terms`` for load-bearing words the author could not honestly type). A use whose
+      ``formulation`` is non-empty but whose ``specification`` is ``None`` is projected as UNRESOLVED (F69 ->
+      UNKNOWN), never as "no constraint". A use with neither is a plain identity/phase/quantity demand.
+    * ``phase`` -- stays HERE, on the use, and ONLY here; it is never duplicated into the specification (a NEAT
+      claim is a dilution state, not a phase: a LIQUID can be a dilute solution)."""
 
     name: str
     role: ProcedureMaterialRole
@@ -220,6 +233,11 @@ class ProcedureMaterialUse(Digestible):
     phase: "Phase | None" = None
     quantity: "StockQuantity | None" = None
     evidence_source: str = ""
+    #: Round V (barrier D3): the SOURCE-AUTHORED typed material specification. ``formulation`` above is now raw
+    #: provenance/display text ONLY -- nothing downstream interprets it. ``None`` with a non-empty ``formulation``
+    #: means the author could not type the load-bearing words, which the capability compiler projects as an
+    #: UNRESOLVED formulation term (UNKNOWN, F69) -- never as "no constraint".
+    specification: "MaterialSpecification | None" = None
 
     def __post_init__(self) -> None:
         # Lazy imports mirror EvidenceField's Interval dance: keep the structural type checks honest without
@@ -245,6 +263,9 @@ class ProcedureMaterialUse(Digestible):
         if not isinstance(self.evidence_source, str) or not self.evidence_source.strip():
             raise ValueError("evidence_source must be a non-empty source locator")
         object.__setattr__(self, "evidence_source", self.evidence_source.strip())
+        from .material_spec import MaterialSpecification
+        if self.specification is not None and type(self.specification) is not MaterialSpecification:
+            raise TypeError("specification must be a smartchem.material_spec.MaterialSpecification or None")
 
 
 _AGITATION_KINDS = frozenset({OperationKind.ADD, OperationKind.MIX, OperationKind.HEAT,

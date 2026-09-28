@@ -1,46 +1,64 @@
-"""V0.9-MUTATION-01: the calibrated mutation gate for the capability compiler (M1-M62, RC Round IV).
+"""V0.9-MUTATION-01: the calibrated mutation gate for the capability compiler (RC Round V: M1-M94).
 
 **Existence is pain, and so is a mutant that lies about being dead!** Same discipline as
-`v0_8_mutation_calibration.py`: adding a test is not enough -- a test that would still pass on a BROKEN
-capability compiler proves nothing. This harness injects each of the 38 failure modes the Round-II
-(`docs/research/V0_9_CAPABILITY_COMPILER_ROUND_II_FREEZE_2026-09-28.md`, M1-M22) and Round-III
-(`docs/research/V0_9_CAPABILITY_COMPILER_ROUND_III_FREEZE_2026-09-28.md`, M23-M38) mutation-gate mappings
-name, on the REAL `smartchem.capability.*` package (plus, where the failure mode lives one layer over, the
-real `smartchem.experiment.stock` / `smartchem.service`), and shows the corresponding guard actually flips
-(the mutant is KILLED). Every mutation is applied via a context-managed monkeypatch (or a
-`dataclasses.replace`d LOCAL copy of an input) and undone on exit -- this harness never edits a single byte
-of `smartchem/`, it only pokes at it in memory for the duration of one check.
+`v0_8_mutation_calibration.py`: adding a test is not enough -- a test that would still pass on a BROKEN capability
+compiler proves nothing. Each mutant below injects ONE named failure mode into the REAL production code (a
+context-managed monkeypatch, or a SOURCE-LEVEL patch: the real function's own source with ONE anchored edit,
+re-compiled in memory -- the anchor must occur exactly the expected number of times, so a mutant can never silently
+patch nothing) and demonstrates two facts on a real object path:
 
-Real talk up front: a handful of these mutants (M7/M8/M36) probe a NEGATIVE property -- "capability profile
-selection has NO wire into the search executor at all" -- so there is no real function to sever; the only
-honest way to demonstrate that absence is load-bearing is to mutate the ONE governing pin the codebase's own
-noninterference tests key on (`CompilationRequest.semantic_digest`, documented as THE alias-independent
-search identity) and show candidate/receipt/search-identity equality would break if that pin ever absorbed
-profile content. That is still a real, non-vacuous discriminator on real production objects -- it is just
-aimed at the definition of search identity rather than a severable helper.
+* ``honest`` -- the unmodified code produces the expected verdict on the fixture;
+* ``mutant`` -- the injected bad behaviour produces the BAD verdict on the SAME fixture.
+
+A mutant is KILLED only when BOTH hold. A harness error, an anchor that no longer matches, or a mutant whose bad
+behaviour does not show is a SURVIVOR (a real gap), never a ceremonial pass. The harness never edits a byte of
+`smartchem/`; every patch is undone on exit.
+
+Round V (F79, honest denominator) -- the output separates three populations and never mixes them:
+
+* ACTIVE -- every mutant whose mechanism exists in the Round-V code (historical mutants PORTED/RE-TARGETED onto the
+  successor mechanism when the Round-IV helper was deleted, plus the new Round-V family M63-M94);
+* RETIRED -- a historical mutant whose mechanism was DELETED **and** whose bad behaviour is killed by a named Round-V
+  replacement mutant (the replacement must itself be ACTIVE and KILLED in the same run, or the retirement is void and
+  counted as a survivor);
+* DEFERRED / UNCALIBRATED -- a mutant this harness cannot yet run non-vacuously (target: zero).
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
 """
 from __future__ import annotations
 
+import __future__ as _future
+import collections
 import contextlib
 import dataclasses as dc
+import inspect
+import json
+import os
 import sys
+import textwrap
+import traceback
 from fractions import Fraction
+from pathlib import Path
 
 import smartchem.capability.assess  # noqa: F401 -- imported for its side effect (populates sys.modules)
+import smartchem.capability.declarations as declarations_mod
 import smartchem.capability.equipment_resolver as equipment_resolver_mod
 import smartchem.capability.presets as presets_mod
+import smartchem.capability.profile as profile_mod
 import smartchem.capability.requirements as requirements_mod
+import smartchem.capability.waste as waste_mod
+import smartchem.contracts as contracts_mod
+import smartchem.data.derived_evidence as derived_mod
 import smartchem.experiment.stock as stock_mod
+import smartchem.material_spec as spec_mod
 import smartchem.service as svc
 from smartchem.algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, resolve_algebra_profile
 from smartchem.capability.assess import AxisResult, assess
 from smartchem.capability.enums import (
+    MEASUREMENT_TIER_OF,
     CapabilityStatus,
     ContainmentCapability,
     EquipmentCapability,
-    MEASUREMENT_TIER_OF,
     MeasurementMethod,
     VentilationCapability,
     WasteCapability,
@@ -53,27 +71,22 @@ from smartchem.capability.presets import (
     resolve_capability_profile,
 )
 from smartchem.capability.profile import CAPABILITY_PROFILE_SCHEMA, CapabilityProfile
+from smartchem.capability.quantity import QuantityDemand, QuantityKnowledge
 from smartchem.capability.requirements import (
     MaterialRequirement,
     RouteCapabilityRequirements,
     WasteRequirement,
     compile_capability_requirements,
 )
-from smartchem.conditions import Interval
+from smartchem.conditions import ConditionEnvelope, Interval
 from smartchem.constraints import PhysicalBounds
-from smartchem.contracts import canonical_digest
+from smartchem.contracts import EvidenceStatus, canonical_digest
 from smartchem.data import material_library
-from smartchem.data.derived_evidence import (
-    DerivationMethod,
-    DerivedIntervalEvidence,
-    IntervalUnit,
-    solution_fraction_from_solubility,
-    symmetric_band,
-)
+from smartchem.data.derived_evidence import DerivationKernel, InputUnit, IntervalEvidence, TypedInput
 from smartchem.data.reagents import Availability, commodity_for
 from smartchem.experiment import routes as rt
 from smartchem.experiment.affordability import CostVector
-from smartchem.experiment.handling import CareLevel
+from smartchem.experiment.handling import CareLevel, Fate, RouteHandling, verify_handling
 from smartchem.experiment.readiness import (
     CONDITIONS_SUPPORTED,
     FORMAL_CANDIDATE,
@@ -85,7 +98,7 @@ from smartchem.experiment.readiness import (
     evaluate_route,
     tier_rank,
 )
-from smartchem.experiment.step import ExperimentRoute
+from smartchem.experiment.step import ROUTE_SCHEMA, STEP_SCHEMA, ExperimentRoute, ExperimentStep
 from smartchem.experiment.stock import (
     STOCK_MATERIAL_SCHEMA,
     MaterialComponent,
@@ -95,7 +108,26 @@ from smartchem.experiment.stock import (
     stock_material_from_commodity,
 )
 from smartchem.identity_parse import InputKind, resolve_target
-from smartchem.procedure_evidence import ProcedureMaterialRole, ProcedureMaterialUse
+from smartchem.material_spec import (
+    CompositionConstraint,
+    ConcentrationBasis,
+    DilutionState,
+    EvidenceKind,
+    HydrationState,
+    MaterialSpecification,
+    SaturationState,
+    StateClaim,
+    Tolerance,
+)
+from smartchem.procedure_evidence import (
+    EvidenceField,
+    OperationKind,
+    OperationRole,
+    ProcedureEvidence,
+    ProcedureMaterialRole,
+    ProcedureMaterialUse,
+    ProcedureOperation,
+)
 from smartchem.process_constraints import Attention, ProcessBounds, ProcessRequirements
 from smartchem.service import (
     CompilationRequest,
@@ -103,37 +135,40 @@ from smartchem.service import (
     TransformGrammar,
     build_recompile_request,
     ranked_summary_from_payload,
+    request_from_payload,
     response_from_payload,
     response_to_payload,
     run_compilation,
 )
+from smartchem.smiles import parse_smiles
 from smartchem.structure import structure_by_name
 
-# `smartchem/capability/__init__.py` does `from .assess import ..., assess`, which REBINDS the package's own
-# `assess` attribute from the submodule to the FUNCTION -- so `import smartchem.capability.assess as X` would
-# silently hand back a function, not the module (a real Python import-shadowing gotcha, not a smartchem bug).
-# Reading it straight out of `sys.modules` sidesteps the shadowed package attribute entirely. Ooh, sneaky!
+# `smartchem/capability/__init__.py` does `from .assess import ..., assess`, which REBINDS the package's own `assess`
+# attribute from the submodule to the FUNCTION -- read the module straight out of `sys.modules` instead.
 assess_mod = sys.modules["smartchem.capability.assess"]
 
 _CERTIFIED = resolve_algebra_profile(DEFAULT_ROUTE_ALGEBRA_PROFILE)
+_V08 = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "v08"
 
-_MUTANTS: list = []
+_MUTANTS: list = []   # (id, title, target, fn)
+_RETIRED: list = []   # (id, title, deleted mechanism, reason, replacement ids)
+_DEFERRED: list = []  # (id, title, reason) -- target: empty
 
 
-def mutant(name: str):
+def mutant(mid: str, title: str, target: str):
     def deco(fn):
-        _MUTANTS.append((name, fn))
+        _MUTANTS.append((mid, title, target, fn))
         return fn
     return deco
 
 
-class Vacuous(Exception):
-    """Raised by a mutant body to report an honest VACUOUS/UNVERIFIED verdict, never a fabricated kill."""
+def retired(mid: str, title: str, mechanism: str, reason: str, replacement: "tuple[str, ...]") -> None:
+    _RETIRED.append((mid, title, mechanism, reason, replacement))
 
 
 @contextlib.contextmanager
 def _patch(obj, name, value):
-    """Temporarily set ``obj.name = value`` (works on modules and class objects), restoring exactly on exit."""
+    """Temporarily set ``obj.name = value`` (modules and classes), restoring EXACTLY on exit."""
     had = name in getattr(obj, "__dict__", {})
     old = obj.__dict__.get(name) if had else None
     setattr(obj, name, value)
@@ -143,45 +178,65 @@ def _patch(obj, name, value):
         if had:
             setattr(obj, name, old)
         else:
-            try:
+            with contextlib.suppress(AttributeError):
                 delattr(obj, name)
-            except AttributeError:
-                pass
+
+
+@contextlib.contextmanager
+def _patch_item(mapping: dict, key, value):
+    old = mapping[key]
+    mapping[key] = value
+    try:
+        yield
+    finally:
+        mapping[key] = old
+
+
+def _src_mutant(fn, *edits):
+    """Re-compile the REAL function ``fn`` from its own source with the given anchored edits applied.
+
+    Each edit is ``(old, new)`` (``old`` must occur EXACTLY once) or ``(old, new, n)`` (exactly ``n`` times) -- a stale
+    anchor raises, so a mutant can never silently patch nothing. The copy runs against a snapshot of the defining
+    module's globals (so the real module is untouched until the caller installs the result with :func:`_patch`).
+    Returns the new function (or the decorated object -- a ``classmethod``/``property`` -- if ``fn`` was decorated)."""
+    target = getattr(fn, "__func__", fn)
+    src = textwrap.dedent(inspect.getsource(target))
+    for edit in edits:
+        old, new = edit[0], edit[1]
+        expected = edit[2] if len(edit) == 3 else 1
+        found = src.count(old)
+        if found != expected:
+            raise AssertionError(
+                f"mutation anchor for {target.__qualname__} found {found}x (expected {expected}): {old!r}")
+        src = src.replace(old, new)
+    glb = dict(target.__globals__)
+    code = compile(src, f"<mutant of {target.__module__}.{target.__qualname__}>", "exec",
+                   flags=_future.annotations.compiler_flag, dont_inherit=True)
+    exec(code, glb)  # noqa: S102 -- the harness's own re-compilation of in-repo production source
+    return glb[target.__name__]
+
+
+def _status(assessment, axis: str) -> CapabilityStatus:
+    return getattr(assessment, axis).status
 
 
 # =================================================================================================================
-# shared plumbing
+# shared plumbing: synthetic requirements/profiles, evidenced bottles, readiness rungs
 # =================================================================================================================
 
-def _search(target_name, reagents, have, max_depth, tkind=InputKind.NAME):
-    target = resolve_target(target_name, tkind).canonical()
-    reag = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in reagents)
-    hv = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in have)
-    return rt.search_routes(target, reagents=reag, available=hv, max_depth=max_depth, registry=_CERTIFIED)
-
-
-_ISO_ROUTE_CACHE: list = []
-
-
-def _isopentyl_route():
-    """The real, LibreTexts-sourced, PROCESS_SPECIFIED isopentyl-acetate route -- the SAME fixture
-    `tests/test_v0_9_capability_fit_positive.py` / `tests/test_v0_9_capability_round_iii.py` use. Cached across
-    mutants: the search is deterministic and read-only, so re-running it per mutant only burns wall-clock (the
-    Round-IV gate calls it a dozen-plus times); the cached ExperimentRoute is immutable/frozen and every mutant
-    that needs a LOCAL edit takes a `dataclasses.replace`d copy, never touching this shared object."""
-    if _ISO_ROUTE_CACHE:
-        return _ISO_ROUTE_CACHE[0]
-    result = _search("isopentyl acetate", ("water", "acetic acid"), ("isopentyl alcohol",), 3)
-    for route in result.routes:
-        for step in route.steps:
-            if step.envelope.procedure is not None:
-                _ISO_ROUTE_CACHE.append(route)
-                return route
-    raise AssertionError("expected a searched isopentyl-acetate route carrying procedure evidence")
+def _mol(smiles: str):
+    return parse_smiles(smiles)
 
 
 def _molecule(name: str):
     return structure_by_name(name).molecule
+
+
+_ETHANOL = _mol("CCO")
+_ACETIC = _mol("CC(=O)O")
+_METHANOL = _mol("CO")
+_WATER = _mol("O")
+_ISOAMYL = _mol("CC(C)CCO")
 
 
 def _reqs(**over) -> RouteCapabilityRequirements:
@@ -208,102 +263,163 @@ def _profile(**over) -> CapabilityProfile:
     return CapabilityProfile(**base)
 
 
+def _clean_profile(**over) -> CapabilityProfile:
+    """An otherwise-empty profile whose operator declares budget NO_LIMIT (D13): with the synthetic all-clear
+    ``_reqs()`` every axis is NOT_APPLICABLE/UNCONSTRAINED/FIT, so the ONLY thing between the fixture and a verdict is
+    the mechanism under test."""
+    over.setdefault("no_limit_dimensions", frozenset({"budget"}))
+    return _profile(**over)
+
+
 def _readiness_at(tier: str) -> RouteReadiness:
-    """A single-step RouteReadiness pinned at exactly `tier` -- the honest hand-built ladder rung, never a
-    guess (a real `step.tier` assertion self-checks the fixture matches the tier it claims)."""
     S, U, UK = ObligationStatus.SATISFIED, ObligationStatus.UNSATISFIED, ObligationStatus.UNKNOWN
     if tier == FORMAL_CANDIDATE:
-        step = StepReadiness(
-            formal_candidate=S, reaction_type=U, reaction_class_name=None, conditions=UK, process=UK,
-            workup_isolation=UK, provenance=(), open_obligations=("reaction_type: not recognized",),
-        )
+        step = StepReadiness(formal_candidate=S, reaction_type=U, reaction_class_name=None, conditions=UK,
+                             process=UK, workup_isolation=UK, provenance=(),
+                             open_obligations=("reaction_type: not recognized",))
     elif tier == REACTION_VOUCHED:
-        step = StepReadiness(
-            formal_candidate=S, reaction_type=S, reaction_class_name="fixture", conditions=U, process=UK,
-            workup_isolation=UK, provenance=(), open_obligations=("conditions: not sourced",),
-        )
+        step = StepReadiness(formal_candidate=S, reaction_type=S, reaction_class_name="fixture", conditions=U,
+                             process=UK, workup_isolation=UK, provenance=(),
+                             open_obligations=("conditions: not sourced",))
     elif tier == CONDITIONS_SUPPORTED:
-        step = StepReadiness(
-            formal_candidate=S, reaction_type=S, reaction_class_name="fixture", conditions=S, process=U,
-            workup_isolation=UK, provenance=("https://example.test/x",), open_obligations=("process: not sourced",),
-        )
+        step = StepReadiness(formal_candidate=S, reaction_type=S, reaction_class_name="fixture", conditions=S,
+                             process=U, workup_isolation=UK, provenance=("https://example.test/x",),
+                             open_obligations=("process: not sourced",))
     elif tier == PROCESS_SPECIFIED:
-        step = StepReadiness(
-            formal_candidate=S, reaction_type=S, reaction_class_name="fixture", conditions=S, process=S,
-            workup_isolation=S, provenance=("https://example.test/x",), open_obligations=(),
-        )
+        step = StepReadiness(formal_candidate=S, reaction_type=S, reaction_class_name="fixture", conditions=S,
+                             process=S, workup_isolation=S, provenance=("https://example.test/x",),
+                             open_obligations=())
     else:
         raise ValueError(tier)
     assert step.tier == tier, (step.tier, tier)
     return RouteReadiness(per_step=(step,), route_open_obligations=step.open_obligations)
 
 
-def _ps_readiness() -> RouteReadiness:
+def _ps() -> RouteReadiness:
     return _readiness_at(PROCESS_SPECIFIED)
 
 
-def _fit_response():
-    """The real, procedure-backed isopentyl route surfaced through the SERVICE under the fully-declared fit
-    bench (mirrors `tests/test_v0_9_capability_transport.py`). Round IV: this is overall **UNKNOWN**, not FIT
-    (process/containment/waste under-specify), but it DOES carry a real per-route CapabilityAssessment whose
-    material axis rests on the declared stock -- the object the transport-guard mutants (M19/M38/M54) probe."""
-    req = build_recompile_request(
-        "isopentyl acetate", capability_profile=isopentyl_capability_fit_bench(),
-        helper_reagents=("water", "acetic acid"), stock_materials=("isopentyl alcohol",),
+def _ev(lo: str, hi: str, *, kind: str = "user", basis: ConcentrationBasis = ConcentrationBasis.MASS_FRACTION,
+        locator: str = "fixture-locator", domain: str = "fixture interval") -> IntervalEvidence:
+    """A real, registry-recomputed IntervalEvidence record (``kind``: user / assumed / quoted / unknown)."""
+    if kind == "user":
+        return IntervalEvidence.build(
+            kernel=DerivationKernel.USER_DECLARED_V1, basis=basis,
+            inputs=(TypedInput("low", lo, InputUnit.FRACTION, EvidenceKind.USER_DECLARED),
+                    TypedInput("high", hi, InputUnit.FRACTION, EvidenceKind.USER_DECLARED)),
+            domain_of_validity=domain)
+    if kind == "assumed":
+        return IntervalEvidence.build(
+            kernel=DerivationKernel.ASSUMED_BAND_V1, basis=basis,
+            inputs=(TypedInput("low", lo, InputUnit.FRACTION, EvidenceKind.ASSUMED),
+                    TypedInput("high", hi, InputUnit.FRACTION, EvidenceKind.ASSUMED)),
+            domain_of_validity=domain)
+    if kind == "quoted":
+        return IntervalEvidence.build(
+            kernel=DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, basis=basis,
+            inputs=(TypedInput("low", lo, InputUnit.FRACTION, EvidenceKind.SOURCE_QUOTED, locator),
+                    TypedInput("high", hi, InputUnit.FRACTION, EvidenceKind.SOURCE_QUOTED, locator)),
+            source_locators=(locator,), domain_of_validity=domain)
+    if kind == "unknown":
+        return IntervalEvidence.build(kernel=DerivationKernel.UNKNOWN_V1, basis=basis, domain_of_validity=domain)
+    raise ValueError(kind)
+
+
+def _bottle(mid: str, key, lo: str = "1", hi: str = "1", *, phase: Phase = Phase.LIQUID, qty: "str | None" = "500",
+            unit: str = "mL", kind: str = "user", basis: ConcentrationBasis = ConcentrationBasis.MASS_FRACTION,
+            states: "tuple[StateClaim, ...]" = (), extra: "tuple[MaterialComponent, ...]" = ()) -> StockMaterial:
+    """A single-species StockMaterial keyed by structure (``key`` a Molecule) or declared name (``key`` a str), whose
+    interval carries a REAL IntervalEvidence record (``kind='none'`` = no evidence record = UNKNOWN strength). State
+    claims are COMPONENT-scoped (Wave-C K1): they describe THIS species in this bottle, never the bottle."""
+    if kind == "none":
+        comp = (MaterialComponent.of_molecule(key, "active", float(lo), float(hi)) if not isinstance(key, str)
+                else MaterialComponent.known(key, "active", float(lo), float(hi)))
+        comp = dc.replace(comp, states=tuple(states))
+    else:
+        comp = MaterialComponent.evidenced(key, "active", _ev(lo, hi, kind=kind, basis=basis), states=tuple(states))
+    return StockMaterial(
+        STOCK_MATERIAL_SCHEMA, mid, mid, (comp,) + tuple(extra), phase, "fixture",
+        quantity=None if qty is None else StockQuantity.of(qty, unit),
     )
-    return run_compilation(req)
 
 
-_FAST_TARGET = "smiles:CC(=O)OC"  # methyl acetate -- a small, fast max_depth=2 search shared by M7/M8/M36
+def _mreq(*, identity=None, name=None, qty: "tuple[tuple[str, str], ...]" = (("mL", "20"),), unstated: int = 0,
+          spec: MaterialSpecification = MaterialSpecification(), phase: "Phase | None" = None,
+          role: str = "fixture") -> MaterialRequirement:
+    return MaterialRequirement(identity=identity, phase=phase, quantity=QuantityDemand(tuple(qty), unstated),
+                               role=role, evidence_source="fixture", name=name, specification=spec)
 
 
-def _dual_profile_runs(profile):
-    """A no-profile run and a `profile`-declared run of the SAME target, both through the real service --
-    the shared plumbing M7/M8/M36 each probe a different real observable of."""
-    req_none = build_recompile_request(_FAST_TARGET, max_depth=2)
-    resp_none = run_compilation(req_none)
-    req_prof = build_recompile_request(_FAST_TARGET, capability_profile=profile, max_depth=2)
-    resp_prof = run_compilation(req_prof)
-    return req_none, resp_none, req_prof, resp_prof
+def _comp(lo: str, hi: str, *, basis=ConcentrationBasis.MASS_FRACTION, tol=Tolerance.STATED_INTERVAL,
+          ev=EvidenceKind.SOURCE_QUOTED) -> CompositionConstraint:
+    return CompositionConstraint(lo, hi, basis, tol, ev)
 
 
-# =================================================================================================================
-# Round-IV shared plumbing (F41-F62): finite-pool flow mutants, wrong-formulation benches, route surgery
-# =================================================================================================================
-
-def _unlimited_pool_flow(n, edges, source, sink):
-    """A finite-pool `_max_flow` reverted to the pre-F42 "stock is unlimited" behaviour: every source-side
-    demand that has ANY path to the sink is counted as fully met, WITHOUT ever debiting a bottle's shared
-    capacity. Faithfully reproduces the double-spend / no-capacity-ledger fault (a bottle spent as many times
-    as demands reach it). Returns the SUM of source-out capacities whose demand can reach the sink."""
-    adj: "dict[int, list[tuple[int, float]]]" = {}
-    for u, v, c in edges:
-        adj.setdefault(u, []).append((v, c))
-
-    def _reaches(u, seen):
-        if u == sink:
-            return True
-        for v, _ in adj.get(u, ()):  # ignore capacity: this is the "infinite bottle" bug
-            if v not in seen:
-                seen.add(v)
-                if _reaches(v, seen):
-                    return True
-        return False
-
-    return sum(c for v, c in adj.get(source, ()) if _reaches(v, {source, v}))
+def _state(state, ev=EvidenceKind.SOURCE_QUOTED) -> StateClaim:
+    return StateClaim(state, ev)
 
 
-def _single_bottle_flow(n, edges, source, sink):
-    """A `_max_flow` that FAILS to combine compatible bottles: it counts only the single largest bottle-to-sink
-    capacity, never the sum -- so two commensurable bottles that jointly satisfy a demand are wrongly BLOCKED."""
-    sink_caps = [c for _u, v, c in edges if v == sink]
-    return max(sink_caps) if sink_caps else 0.0
+def _mat(profile, *reqs) -> CapabilityStatus:
+    return assess(profile, _reqs(material=tuple(reqs)), _ps()).material.status
 
 
-def _fit_inventory_with(**swaps):
-    """The full isopentyl fit-bench inventory with named bottles REPLACED by a caller-supplied StockMaterial
-    (keyword = one of glacial_acetic/isoamyl/sulfuric/nahco3/nacl/mgso4/water). Every other bottle is the real
-    library bottle, generously stocked -- so a swapped-in wrong bottle is the ONLY thing that can move a verdict."""
+# -- the real searched isopentyl route (cached: the search is deterministic and read-only) --------------------------
+
+_ISO_ROUTE_CACHE: list = []
+
+
+def _search(target_name, reagents, have, max_depth, tkind=InputKind.NAME):
+    target = resolve_target(target_name, tkind).canonical()
+    reag = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in reagents)
+    hv = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in have)
+    return rt.search_routes(target, reagents=reag, available=hv, max_depth=max_depth, registry=_CERTIFIED)
+
+
+def _isopentyl_route() -> ExperimentRoute:
+    """The real, LibreTexts-sourced, PROCESS_SPECIFIED isopentyl-acetate route (the searched object the fit bench and
+    tests/test_v0_9_capability_fit_positive.py use). Frozen + cached; every local edit is a `dataclasses.replace` copy."""
+    if _ISO_ROUTE_CACHE:
+        return _ISO_ROUTE_CACHE[0]
+    for route in _search("isopentyl acetate", ("water", "acetic acid"), ("isopentyl alcohol",), 3).routes:
+        if any(step.envelope.procedure is not None for step in route.steps):
+            _ISO_ROUTE_CACHE.append(route)
+            return route
+    raise AssertionError("expected a searched isopentyl-acetate route carrying procedure evidence")
+
+
+def _map_uses(route: ExperimentRoute, fn) -> ExperimentRoute:
+    """A LOCAL copy of ``route`` with every ProcedureMaterialUse passed through ``fn`` (``None`` drops it)."""
+    steps = []
+    for step in route.steps:
+        procedure = step.envelope.procedure
+        if procedure is None:
+            steps.append(step)
+            continue
+        ops = []
+        for op in procedure.operations:
+            uses = tuple(u2 for u2 in (fn(u) for u in op.material_uses) if u2 is not None)
+            ops.append(dc.replace(op, material_uses=uses))
+        steps.append(dc.replace(step, envelope=dc.replace(step.envelope,
+                                                          procedure=dc.replace(procedure, operations=tuple(ops)))))
+    return dc.replace(route, steps=tuple(steps))
+
+
+def _append_use(route: ExperimentRoute, use: ProcedureMaterialUse) -> ExperimentRoute:
+    """A LOCAL copy of ``route`` with ``use`` appended to the FIRST procedure operation."""
+    steps = list(route.steps)
+    for i, step in enumerate(steps):
+        procedure = step.envelope.procedure
+        if procedure is None:
+            continue
+        ops = list(procedure.operations)
+        ops[0] = dc.replace(ops[0], material_uses=ops[0].material_uses + (use,))
+        steps[i] = dc.replace(step, envelope=dc.replace(step.envelope,
+                                                        procedure=dc.replace(procedure, operations=tuple(ops))))
+        return dc.replace(route, steps=tuple(steps))
+    raise AssertionError("expected a procedure-bearing step")
+
+
+def _fit_inventory_with(**swaps) -> "tuple[StockMaterial, ...]":
     base = {
         "glacial_acetic": material_library.glacial_acetic_acid(quantity=StockQuantity.of("500", "mL")),
         "isoamyl": material_library.isoamyl_alcohol_reagent_grade(quantity=StockQuantity.of("500", "mL")),
@@ -317,1847 +433,2065 @@ def _fit_inventory_with(**swaps):
     return tuple(base.values())
 
 
-def _named_bottle(material_id, display, name, lo, hi, phase, unit_qty=None):
-    """A NAME-keyed single-component StockMaterial (the honest carrier for the ionic auxiliaries) at a chosen
-    active-fraction band -- the wrong-formulation bottles the F43 `satisfies_band` mutants (M44-M47) BLOCK on."""
-    return StockMaterial(
-        STOCK_MATERIAL_SCHEMA, material_id, display,
-        (MaterialComponent.known(name, "active", lo, hi),), phase, "fixture",
-        quantity=unit_qty,
+def _iso_material(profile, route=None) -> CapabilityStatus:
+    route = _isopentyl_route() if route is None else route
+    return assess(profile, compile_capability_requirements(route), evaluate_route(route)).material.status
+
+
+# -- the MICRO route: a real, hand-built, conserving ExperimentRoute whose material axis can genuinely reach FIT ------
+# (acetic acid + methanol -> methyl acetate + water, both inputs typed with identity + phase + quantity; no untyped
+# strings, no catalyst, no medium). Real ExperimentStep conservation certificate, real procedure evidence. It exists
+# so axis-level mutants can show a clean FIT flip on a real compile_capability_requirements path.
+
+_UNK = EvidenceField.unknown()
+
+
+def _procedure(ops) -> ProcedureEvidence:
+    return ProcedureEvidence(reaction_scope="fixture micro-route", source=None, scale=_UNK, operations=tuple(ops),
+                             quench=_UNK, workup_isolation=_UNK, separation=_UNK, wash=_UNK, drying=_UNK,
+                             purification=_UNK, analytical_verification=_UNK)
+
+
+def _use(name, role, *, identity=None, qty=None, unit="mL", phase=None, formulation=None, spec=None):
+    return ProcedureMaterialUse(name=name, role=role, identity=identity, formulation=formulation, phase=phase,
+                                quantity=None if qty is None else StockQuantity.of(qty, unit),
+                                evidence_source="fixture micro-route", specification=spec)
+
+
+_MICRO_BASE_USES = (
+    _use("methanol", ProcedureMaterialRole.SUBSTRATE, identity=_METHANOL, qty="10", phase=Phase.LIQUID),
+    _use("acetic acid", ProcedureMaterialRole.REACTANT, identity=_ACETIC, qty="10", phase=Phase.LIQUID),
+)
+
+
+def _micro_route(*, extra_uses=(), materials=(), extra_ops=(), base_uses=_MICRO_BASE_USES,
+                 **envelope_kw) -> ExperimentRoute:
+    op1 = ProcedureOperation(ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION,
+                             materials=tuple(materials), material_uses=tuple(base_uses) + tuple(extra_uses),
+                             locator="fixture")
+    ops = [op1] + [dc.replace(op, ordinal=i) for i, op in enumerate(extra_ops, start=2)]
+    if any(envelope_kw.get(k) for k in ("temperature", "pressure", "duration", "medium", "catalysts",
+                                         "applied_field")):
+        # a declared-condition envelope must carry a status above UNSUPPORTED and a provenance (conditions.py law)
+        envelope_kw.setdefault("status", EvidenceStatus.EXPERIMENTAL)
+        envelope_kw.setdefault("provenance", "fixture micro-route: declared conditions (not a sourced citation)")
+    envelope = ConditionEnvelope(procedure=_procedure(ops), **envelope_kw)
+    step = ExperimentStep(STEP_SCHEMA, _mol("CC(=O)OC"), (_ACETIC, _METHANOL), (_mol("CC(=O)OC"), _WATER), (),
+                          envelope)
+    return ExperimentRoute(ROUTE_SCHEMA, (step,))
+
+
+def _micro_inventory(*extra) -> "tuple[StockMaterial, ...]":
+    return (_bottle("methanol-pure", _METHANOL), _bottle("acetic-pure", _ACETIC)) + tuple(extra)
+
+
+def _micro_profile(*extra_bottles, **over) -> CapabilityProfile:
+    over.setdefault("material_inventory", _micro_inventory(*extra_bottles))
+    return _clean_profile(**over)
+
+
+def _micro_assess(route, profile):
+    return assess(profile, compile_capability_requirements(route), evaluate_route(route))
+
+
+def _op(kind, role=OperationRole.OTHER, **kw) -> ProcedureOperation:
+    return ProcedureOperation(ordinal=1, kind=kind, role=role, locator="fixture", **kw)
+
+
+# -- service plumbing -----------------------------------------------------------------------------------------------
+
+_FAST_TARGET = "smiles:CC(=O)OC"  # methyl acetate -- a small, fast max_depth=2 search
+
+
+def _fit_response():
+    req = build_recompile_request(
+        "isopentyl acetate", capability_profile=isopentyl_capability_fit_bench(),
+        helper_reagents=("water", "acetic acid"), stock_materials=("isopentyl alcohol",),
     )
+    return run_compilation(req)
 
 
-def _route_with_extra_use(route: ExperimentRoute, use: ProcedureMaterialUse) -> ExperimentRoute:
-    """A `dataclasses.replace`d LOCAL copy of `route` with one extra `ProcedureMaterialUse` appended to the
-    FIRST procedure-bearing operation (the exact "mutate the input" technique, no source edit) -- used to craft
-    a two-DISTINCT-SPEC same-species route the corpus does not itself carry (M52)."""
-    steps = list(route.steps)
-    for i, step in enumerate(steps):
-        procedure = step.envelope.procedure
-        if procedure is None:
-            continue
-        ops = list(procedure.operations)
-        ops[0] = dc.replace(ops[0], material_uses=ops[0].material_uses + (use,))
-        new_procedure = dc.replace(procedure, operations=tuple(ops))
-        steps[i] = dc.replace(step, envelope=dc.replace(step.envelope, procedure=new_procedure))
-        return dc.replace(route, steps=tuple(steps))
-    raise AssertionError("expected a procedure-bearing operation to append a material use to")
+def _dual_profile_runs(profile):
+    req_none = build_recompile_request(_FAST_TARGET, max_depth=2)
+    resp_none = run_compilation(req_none)
+    req_prof = build_recompile_request(_FAST_TARGET, capability_profile=profile, max_depth=2)
+    resp_prof = run_compilation(req_prof)
+    return req_none, resp_none, req_prof, resp_prof
 
 
-def _deformulated_acetic_route() -> ExperimentRoute:
-    """The real isopentyl route with the acetic-acid REACTANT use's typed `formulation` field cleared to None
-    (a `dataclasses.replace`d LOCAL copy) -- so the generic compiler derives NO composition band for it. F45
-    moved the band off a prose scan onto this typed field, so THIS is where a de-formulation now lives. The
-    prose still names 'glacial' (untouched), which is exactly what the M56 runtime-prose-scan mutant re-reads."""
-    route = _isopentyl_route()
-    steps = list(route.steps)
-    changed = False
-    for i, step in enumerate(steps):
-        procedure = step.envelope.procedure
-        if procedure is None:
-            continue
-        new_ops = []
-        for op in procedure.operations:
-            new_uses = tuple(
-                dc.replace(u, formulation=None) if (u.name.strip().casefold() == "acetic acid"
-                                                    and u.formulation is not None) else u
-                for u in op.material_uses
-            )
-            if new_uses != op.material_uses:
-                changed = True
-            new_ops.append(dc.replace(op, material_uses=new_uses))
-        steps[i] = dc.replace(step, envelope=dc.replace(step.envelope, procedure=dc.replace(procedure, operations=tuple(new_ops))))
-    if not changed:
-        raise AssertionError("expected a 'glacial'-formulated acetic-acid material use to de-formulate")
-    return dc.replace(route, steps=tuple(steps))
+def _v08(name: str) -> dict:
+    return json.loads((_V08 / name).read_text())
 
 
-_ACETIC_DIGEST = requirements_mod._struct_digest(resolve_target("acetic acid", InputKind.NAME).canonical())
+# -- flow-algorithm mutants (Round V signature: _max_flow(edges, source, sink) over exact Fractions) ------------------
+
+_REAL_MAX_FLOW = assess_mod._max_flow
+
+
+def _unlimited_pool_flow(edges, source, sink):
+    """The pre-F42 "stock is unlimited" ledger: every source-side demand with ANY path to the sink counts as fully met,
+    WITHOUT ever debiting a bottle's shared capacity (a bottle spent as many times as demands reach it)."""
+    adj = collections.defaultdict(list)
+    for u, v, _c in edges:
+        adj[u].append(v)
+
+    def reaches(u, seen):
+        if u == sink:
+            return True
+        for v in adj[u]:
+            if v not in seen:
+                seen.add(v)
+                if reaches(v, seen):
+                    return True
+        return False
+
+    return sum((c for u, v, c in edges if u == source and reaches(v, {source, v})), Fraction(0))
+
+
+def _single_bottle_flow(edges, source, sink):
+    """A flow that FAILS to combine compatible bottles: only the single largest bottle-to-sink capacity counts."""
+    caps = [c for _u, v, c in edges if v == sink]
+    return max(caps) if caps else Fraction(0)
+
+
+def _per_species_flow(edges, source, sink):
+    """The per-SPECIES-graph bug: each requirement node gets its OWN copy of every bottle's capacity (one multi-
+    component package spent once per species graph), and the per-species flows are summed."""
+    real = _REAL_MAX_FLOW
+    req_nodes = [v for u, v, _c in edges if u == source]
+    total = Fraction(0)
+    for r in req_nodes:
+        sub = [(u, v, c) for (u, v, c) in edges if (u == source and v == r) or u == r or v == sink]
+        total += real(sub, source, sink)
+    return total
 
 
 # =================================================================================================================
-# M1-M22 (Round II)
+# M1-M22 (Round II) -- ported onto the Round-V material law (spec_view + compare_specification + D2 allocation)
 # =================================================================================================================
 
-@mutant("M1 commodity-lead-satisfies-material")
-def m1() -> bool:
-    """A commodity SOURCE LEAD is an UNKNOWN-fraction material by construction (section 10.1) -- it must
-    never satisfy a pure-reagent assay requirement. Mutant: `StockMaterial.satisfies` optimistically reads
-    the UPPER bound of an honestly-unknown [0,1] interval instead of the worst-case LOWER bound."""
-    acetic_acid = _molecule("acetic acid")
-    commodity = commodity_for(acetic_acid)
+@mutant("M1", "commodity-lead-satisfies-material (G- purity read off the UPPER bound)", "assess._edge (pure)")
+def m1():
+    """A commodity SOURCE LEAD is an UNKNOWN-fraction [0,1] material (section 10.1): even with a declared amount it is
+    a POSSIBLE source only, never a proven draw. Honest: UNKNOWN. Mutant: `_edge` reads purity off the optimistic UPPER
+    bound of the honestly-unknown interval, so the lead becomes a proven G- source -> FIT."""
+    commodity = commodity_for(_molecule("acetic acid"))
     assert commodity is not None
-    stock = stock_material_from_commodity(commodity)
-    requirement = MaterialRequirement(
-        identity=acetic_acid, required_assay=0.99, phase=None, quantity=None,
-        role="reactant", evidence_source="fixture",
-    )
-    profile = _profile(material_inventory=(stock,))
-    real_a = assess(profile, _reqs(material=(requirement,)), _ps_readiness())
-    real_ok = real_a.material.status is CapabilityStatus.UNKNOWN
-
-    real_satisfies = stock_mod.StockMaterial.satisfies
-
-    def mutant_satisfies(self, key, *, min_assay):
-        interval = self.active_fraction_interval(key)
-        if interval == (0.0, 1.0):  # BUG: an honestly-unknown commodity-lead interval optimistically satisfies
-            return stock_mod.FitnessVerdict.SATISFIES
-        return real_satisfies(self, key, min_assay=min_assay)
-
-    with _patch(stock_mod.StockMaterial, "satisfies", mutant_satisfies):
-        mutant_a = assess(profile, _reqs(material=(requirement,)), _ps_readiness())
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    lead = dc.replace(stock_material_from_commodity(commodity), quantity=StockQuantity.of("500", "mL"))
+    req = _mreq(identity=_molecule("acetic acid"))
+    profile = _profile(material_inventory=(lead,))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_edge = _src_mutant(assess_mod._edge, ("pure = (view is not None",
+                                              "pure = (view is not None and view.interval[1] == 1) or (view is not None"))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M2 UNKNOWN-assay-sufficient")
-def m2() -> bool:
-    """A plain declared-present-but-unassayed stock item (not a commodity lead) never certifies FIT
-    either -- the SAME [0,1]-optimistic-read mutant, applied against a DIFFERENT real fixture (a hand-built
-    ethanol bottle of unknown purity, not a commodity bridge)."""
-    ethanol = _molecule("ethanol")
-    stock = StockMaterial(
-        STOCK_MATERIAL_SCHEMA, "stock-ethanol-unknown", "Ethanol, unspecified purity",
-        (MaterialComponent.unknown_molecule(ethanol, "active"),), Phase.LIQUID, "fixture",
-    )
-    requirement = MaterialRequirement(
-        identity=ethanol, required_assay=0.9, phase=None, quantity=None, role="reactant", evidence_source="fixture",
-    )
-    profile = _profile(material_inventory=(stock,))
-    real_a = assess(profile, _reqs(material=(requirement,)), _ps_readiness())
-    real_ok = real_a.material.status is CapabilityStatus.UNKNOWN
-
-    real_satisfies = stock_mod.StockMaterial.satisfies
-
-    def mutant_satisfies(self, key, *, min_assay):
-        interval = self.active_fraction_interval(key)
-        if interval == (0.0, 1.0):  # BUG: same optimistic upper-bound read
-            return stock_mod.FitnessVerdict.SATISFIES
-        return real_satisfies(self, key, min_assay=min_assay)
-
-    with _patch(stock_mod.StockMaterial, "satisfies", mutant_satisfies):
-        mutant_a = assess(profile, _reqs(material=(requirement,)), _ps_readiness())
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+@mutant("M2", "UNKNOWN (straddling) assay treated as sufficient", "material_spec._compare_composition (inside)")
+def m2():
+    """A certified-evidence bottle whose declared interval STRADDLES the required floor ([0.5, 1.0] vs >= 0.9) must be
+    measured, never assumed. Honest: UNDETERMINED -> UNKNOWN. Mutant: 'inside' is judged on the stock's UPPER bound."""
+    req = _mreq(identity=_ETHANOL, spec=MaterialSpecification(composition=_comp("0.9", "1", tol=Tolerance.FLOOR)))
+    profile = _profile(material_inventory=(_bottle("ethanol-straddle", _ETHANOL, "0.5", "1"),))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_cmp = _src_mutant(spec_mod._compare_composition, ("inside = slo >= rlo and shi <= rhi",
+                                                          "inside = shi >= rlo and shi <= rhi"))
+    with _patch(spec_mod, "_compare_composition", bad_cmp):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M3 same-formula-isomer-satisfies")
-def m3() -> bool:
-    """Ethanol never borrows dimethyl ether's (same formula C2H6O, different connectivity) assay -- the
-    structure key is isomer-proof. Mutant: `stock._structure_key` keys on bare molecular FORMULA instead of
-    the full canonical structure digest, so the two isomers collide (built INSIDE the patch, so both the
-    stock's component key and the query key are computed with the SAME mutated function)."""
-    ethanol = _molecule("ethanol")
+@mutant("M3", "same-formula isomer satisfies", "stock._structure_key")
+def m3():
+    """Ethanol never borrows dimethyl ether's (same C2H6O) bottle: the structure key is isomer-proof. Honest: the
+    species is absent under the allowed key -> BLOCKED. Mutant: `_structure_key` keys on bare formula -> FIT."""
     dme = _molecule("dimethyl ether")
-    assert ethanol.formula == dme.formula
+    assert _ETHANOL.formula == dme.formula
 
-    def _build_and_assess():
-        stock = StockMaterial(
-            STOCK_MATERIAL_SCHEMA, "stock-dme", "Dimethyl ether, pure",
-            (MaterialComponent.of_molecule(dme, "active", 1.0, 1.0),), Phase.GAS, "fixture",
-        )
-        requirement = MaterialRequirement(
-            identity=ethanol, required_assay=0.9, phase=None, quantity=None,
-            role="reactant", evidence_source="fixture",
-        )
-        profile = _profile(material_inventory=(stock,))
-        return assess(profile, _reqs(material=(requirement,)), _ps_readiness())
+    def run():
+        profile = _profile(material_inventory=(_bottle("dme-pure", dme, phase=Phase.GAS),))
+        return _mat(profile, _mreq(identity=_ETHANOL))
 
-    real_a = _build_and_assess()
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
-
-    def mutant_structure_key(molecule):  # BUG: keys on bare formula, not full canonical structure
-        return "struct:formula:" + repr(sorted(molecule.formula.items()))
-
-    with _patch(stock_mod, "_structure_key", mutant_structure_key):
-        mutant_a = _build_and_assess()
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    honest = run() is CapabilityStatus.BLOCKED
+    with _patch(stock_mod, "_structure_key", lambda m: "struct:formula:" + repr(sorted(m.formula.items()))):
+        bad = run() is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M4 unspecified-purity=100-percent")
-def m4() -> bool:
-    """Re-targeted for the Round-IV core (`_material_item_status_one`/`_match_interval` DELETED; the material
-    verdict is now `assess._comp_phase_status` per bottle). The LAW M4 still guards: an UNGATED requirement
-    (no assay/band/phase) that is ABSENT from every declared bottle is an honest possession-UNKNOWN -- never a
-    silent FIT. (Present-possession IS legitimately FIT now -- water rides the real FIT-bench material axis on
-    exactly that -- so the live hazard is treating IGNORANCE/ABSENCE as satisfaction, the exact "unspecified =
-    100%" fabrication, one axis over.) Real: an ungated ethanol requirement, absent from a pure-acetic bottle,
-    is UNKNOWN. Mutant: `_comp_phase_status` fabricates a possession FIT for an absent, ungated species."""
-    ethanol = _molecule("ethanol")
-    stock = StockMaterial(
-        STOCK_MATERIAL_SCHEMA, "stock-acetic-pure", "Acetic acid, ACS reagent grade",
-        (MaterialComponent.of_molecule(_molecule("acetic acid"), "active", 1.0, 1.0),), Phase.LIQUID, "fixture",
-    )
-    requirement = MaterialRequirement(
-        identity=ethanol, required_assay=None, phase=None, quantity=None,
-        role="reactant", evidence_source="fixture: no sourced purity spec", name="ethanol",
-    )
-    profile = _profile(material_inventory=(stock,))
-    real_a = assess(profile, _reqs(material=(requirement,)), _ps_readiness())
-    real_ok = real_a.material.status is CapabilityStatus.UNKNOWN
-
-    real_cps = assess_mod._comp_phase_status
-
-    def mutant_comp_phase_status(req, stk):
-        result = real_cps(req, stk)
-        if (result is None and req.composition_band is None and req.required_assay is None
-                and req.phase is None):
-            # BUG: an absent, ungated species is assumed present/100%-satisfied (unspecified purity = 100%)
-            return CapabilityStatus.FIT, f"{stk.material_id}: BUG unspecified/absent material assumed satisfied"
-        return result
-
-    with _patch(assess_mod, "_comp_phase_status", mutant_comp_phase_status):
-        mutant_a = assess(profile, _reqs(material=(requirement,)), _ps_readiness())
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+@mutant("M4", "unspecified purity = 100% (absent species assumed present)", "assess._edge (absent)")
+def m4():
+    """An ungated requirement ABSENT from every declared bottle is a provable negative against a positive demand
+    (D2: no G+ edge -> BLOCKED). Mutant: `_edge` fabricates a proven FIT edge for an absent species -> FIT."""
+    profile = _profile(material_inventory=(_bottle("acetic-pure", _ACETIC),))
+    req = _mreq(identity=_ETHANOL, name="ethanol")
+    honest = _mat(profile, req) is CapabilityStatus.BLOCKED
+    bad_edge = _src_mutant(assess_mod._edge, (
+        "if key is None:\n        return None",
+        "if key is None:\n        return _Edge(CapabilityStatus.FIT, True, f\"{stock.material_id}: BUG absent=100%\")"))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M5 equipment-fuzzy-substring")
-def m5() -> bool:
-    """No fuzzy substring matching: a never-taught string that merely CONTAINS 'distill' must not borrow
-    FRACTIONAL_DISTILLATION. Mutant: `resolve_apparatus` does substring matching on top of the exact table."""
+@mutant("M5", "equipment fuzzy substring", "equipment_resolver.resolve_apparatus")
+def m5():
     probe = "a distillation-adjacent gadget nobody taught this table"
-    real_ok = equipment_resolver_mod.resolve_apparatus(probe) is None
+    honest = equipment_resolver_mod.resolve_apparatus(probe) is None
 
-    def mutant_resolve(name):
+    def bad_resolve(name):
         norm = equipment_resolver_mod._normalize(name)
         hit = equipment_resolver_mod._APPARATUS_ALIASES.get(norm)
         if hit is not None:
             return hit
-        if "distill" in norm:  # BUG: fuzzy substring guess
-            return EquipmentCapability.FRACTIONAL_DISTILLATION
-        return None
+        return EquipmentCapability.FRACTIONAL_DISTILLATION if "distill" in norm else None
 
-    with _patch(equipment_resolver_mod, "resolve_apparatus", mutant_resolve):
-        mutant_bad = equipment_resolver_mod.resolve_apparatus(probe) is EquipmentCapability.FRACTIONAL_DISTILLATION
-    return real_ok and mutant_bad
+    with _patch(equipment_resolver_mod, "resolve_apparatus", bad_resolve):
+        bad = equipment_resolver_mod.resolve_apparatus(probe) is EquipmentCapability.FRACTIONAL_DISTILLATION
+    return honest, bad
 
 
-@mutant("M6 outdoors-clears-containment")
-def m6() -> bool:
-    """OUTDOOR ventilation never substitutes for a declared FUME_HOOD containment requirement -- a real,
-    different axis. Mutant: the shared `_membership_axis` treats OUTDOOR ventilation as if it supplied the
-    missing containment member, scoped to `axis=="containment"` only (so no other axis is touched)."""
+@mutant("M6", "OUTDOOR clears containment", "assess._membership_axis")
+def m6():
     req = _reqs(containment=frozenset({ContainmentCapability.FUME_HOOD}))
-    profile = _profile(containment=frozenset(), ventilation=frozenset({VentilationCapability.OUTDOOR}))
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.containment.status is CapabilityStatus.BLOCKED and real_a.overall is CapabilityStatus.BLOCKED
+    profile = _profile(ventilation=frozenset({VentilationCapability.OUTDOOR}))
+    a = assess(profile, req, _ps())
+    honest = a.containment.status is CapabilityStatus.BLOCKED and a.overall is CapabilityStatus.BLOCKED
+    real = assess_mod._membership_axis
 
-    real_membership = assess_mod._membership_axis
-
-    def mutant_membership(required, available, *, axis="", extra_reasons=()):
+    def bad_membership(required, available, *, axis="", extra_reasons=()):
         if axis == "containment" and VentilationCapability.OUTDOOR in profile.ventilation:
-            available = available | {ContainmentCapability.FUME_HOOD}  # BUG: outdoor clears containment
-        return real_membership(required, available, axis=axis, extra_reasons=extra_reasons)
+            available = available | {ContainmentCapability.FUME_HOOD}
+        return real(required, available, axis=axis, extra_reasons=extra_reasons)
 
-    with _patch(assess_mod, "_membership_axis", mutant_membership):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.containment.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(assess_mod, "_membership_axis", bad_membership):
+        bad = assess(profile, req, _ps()).containment.status is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M7 profile-changes-search-candidates")
-def m7() -> bool:
-    """Profile selection must never move which candidate routes search returns. The real production code
-    has NO wire from `capability_profile` into the search executor at all (D10: it is simply never added to
-    the `semantic_digest` tuple), so the only honest way to show that absence is load-bearing is to mutate
-    the ONE pin the codebase's own noninterference tests key candidate identity on."""
-    _, resp_none, req_prof, resp_prof = _dual_profile_runs("poor-man")
-    req_none = resp_none.request
+def _semantic_leak():
+    real = CompilationRequest.semantic_digest
+
+    def leaky(self):
+        base = real.fget(self)
+        return canonical_digest((base, self.capability_profile.profile_digest)) if self.capability_profile else base
+
+    return property(leaky)
+
+
+@mutant("M7", "profile changes search candidates", "service.CompilationRequest.semantic_digest")
+def m7():
+    """Search noninterference: the only honest wire to sever is the search-identity pin itself (profile content is
+    never in `semantic_digest`). Mutant: the pin absorbs profile content."""
+    req_none, resp_none, req_prof, resp_prof = _dual_profile_runs("poor-man")
 
     def cand(resp):
         return tuple(c.candidate_digest for c in resp.compilation_ir.candidates)
 
-    real_ok = cand(resp_none) == cand(resp_prof) and req_none.semantic_digest == req_prof.semantic_digest
-
-    real_semantic_digest = CompilationRequest.semantic_digest
-
-    def mutant_semantic_digest(self):
-        base = real_semantic_digest.fget(self)
-        if self.capability_profile is not None:  # BUG: profile content leaks into the search-identity pin
-            return canonical_digest((base, self.capability_profile.profile_digest))
-        return base
-
-    with _patch(CompilationRequest, "semantic_digest", property(mutant_semantic_digest)):
-        mutant_bad = req_none.semantic_digest != req_prof.semantic_digest
-    return real_ok and mutant_bad
+    honest = cand(resp_none) == cand(resp_prof) and req_none.semantic_digest == req_prof.semantic_digest
+    with _patch(CompilationRequest, "semantic_digest", _semantic_leak()):
+        bad = req_none.semantic_digest != req_prof.semantic_digest
+    return honest, bad
 
 
-@mutant("M8 profile-changes-receipt")
-def m8() -> bool:
-    """The same D10 noninterference law, on the search RECEIPT specifically (not the candidate set)."""
-    _, resp_none, req_prof, resp_prof = _dual_profile_runs("poor-man")
-    req_none = resp_none.request
-    real_ok = (
-        resp_none.compilation_ir.search_receipt.digest == resp_prof.compilation_ir.search_receipt.digest
-        and req_none.semantic_digest == req_prof.semantic_digest
-    )
-
-    real_semantic_digest = CompilationRequest.semantic_digest
-
-    def mutant_semantic_digest(self):
-        base = real_semantic_digest.fget(self)
-        if self.capability_profile is not None:  # BUG: profile content leaks into the search-identity pin
-            return canonical_digest((base, self.capability_profile.profile_digest))
-        return base
-
-    with _patch(CompilationRequest, "semantic_digest", property(mutant_semantic_digest)):
-        mutant_bad = req_none.semantic_digest != req_prof.semantic_digest
-    return real_ok and mutant_bad
+@mutant("M8", "profile changes search receipt", "service.CompilationRequest.semantic_digest")
+def m8():
+    req_none, resp_none, req_prof, resp_prof = _dual_profile_runs("poor-man")
+    honest = (resp_none.compilation_ir.search_receipt.digest == resp_prof.compilation_ir.search_receipt.digest
+              and req_none.semantic_digest == req_prof.semantic_digest)
+    with _patch(CompilationRequest, "semantic_digest", _semantic_leak()):
+        bad = req_none.semantic_digest != req_prof.semantic_digest
+    return honest, bad
 
 
-@mutant("M9 PROCESS_SPECIFIED-auto-FIT-skips-axis-check")
-def m9() -> bool:
-    """Even a PROCESS_SPECIFIED route must still have every axis checked -- tier alone must never
-    short-circuit past a BLOCKED axis. Real axis evidence (from the unmodified `assess()`), fed into a
-    hand-written ALTERNATIVE fold that checks tier BEFORE axes -- the fold-ORDER bug M9 names."""
+@mutant("M9", "PROCESS_SPECIFIED auto-FIT skips axis check", "assess fold order")
+def m9():
+    """Real axis evidence (the unmodified `assess()` on the real route under poor_man: BLOCKED), fed to an alternative
+    fold that checks the tier BEFORE the axes -- the fold-ORDER bug."""
     route = _isopentyl_route()
-    req = compile_capability_requirements(route)
     readiness = evaluate_route(route)
     assert readiness.tier == PROCESS_SPECIFIED
-    real_a = assess(poor_man(), req, readiness)  # poor_man lacks distillation/IR/hood -> real BLOCKED
-    real_ok = real_a.overall is CapabilityStatus.BLOCKED
+    a = assess(poor_man(), compile_capability_requirements(route), readiness)
+    honest = a.overall is CapabilityStatus.BLOCKED
 
-    def mutant_fold(axes, tier):  # BUG: tier gate checked FIRST, short-circuiting the axis BLOCKED/UNKNOWN scan
+    def bad_fold(axes, tier):
         if tier_rank(tier) >= tier_rank(PROCESS_SPECIFIED):
             return CapabilityStatus.FIT
-        if any(a.status is CapabilityStatus.BLOCKED for a in axes):
-            return CapabilityStatus.BLOCKED
-        if any(a.status is CapabilityStatus.UNKNOWN for a in axes):
-            return CapabilityStatus.UNKNOWN
-        return CapabilityStatus.FIT
+        return CapabilityStatus.BLOCKED if any(x.status is CapabilityStatus.BLOCKED for x in axes) \
+            else CapabilityStatus.UNKNOWN
 
-    mutant_overall = mutant_fold(real_a.axes, readiness.tier)
-    mutant_bad = mutant_overall is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    return honest, bad_fold(a.axes, readiness.tier) is CapabilityStatus.FIT
 
 
-@mutant("M10 CONDITIONS_SUPPORTED-to-FIT")
-def m10() -> bool:
-    """A CONDITIONS_SUPPORTED route (strictly below PROCESS_SPECIFIED) must stay capped at UNKNOWN overall
-    even when every axis is clean. Mutant: `tier_rank` is forced constant, so the HARD LAW's
-    `tier_rank(tier) < tier_rank(PROCESS_SPECIFIED)` demotion check can never fire for ANY tier."""
+@mutant("M10", "CONDITIONS_SUPPORTED -> FIT", "assess.tier_rank (HARD LAW)")
+def m10():
     readiness = _readiness_at(CONDITIONS_SUPPORTED)
-    real_a = assess(_profile(), _reqs(), readiness)
-    real_ok = real_a.overall is CapabilityStatus.UNKNOWN
-
-    with _patch(assess_mod, "tier_rank", lambda t: 7):  # BUG: every tier compares equal -> the floor never bites
-        mutant_a = assess(_profile(), _reqs(), readiness)
-    mutant_bad = mutant_a.overall is CapabilityStatus.FIT
-    return real_ok and mutant_bad
-
-
-@mutant("M11 unrecognized-reaction-to-FIT-on-equipment")
-def m11() -> bool:
-    """A route whose reaction type the oracle never recognized (FORMAL_CANDIDATE only) must stay UNKNOWN
-    overall no matter how well-equipped the bench -- "the equipment is fine" is never a substitute for a
-    real reaction-type vouch. SAME `tier_rank`-constant mutant as M10, applied at the bottom rung."""
-    readiness = _readiness_at(FORMAL_CANDIDATE)
-    real_a = assess(_profile(), _reqs(), readiness)
-    real_ok = real_a.overall is CapabilityStatus.UNKNOWN
-
+    honest = assess(_clean_profile(), _reqs(), readiness).overall is CapabilityStatus.UNKNOWN
     with _patch(assess_mod, "tier_rank", lambda t: 7):
-        mutant_a = assess(_profile(), _reqs(), readiness)
-    mutant_bad = mutant_a.overall is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+        bad = assess(_clean_profile(), _reqs(), readiness).overall is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M12 missing-verification-ignored")
-def m12() -> bool:
-    """A route that genuinely needs a specific analytical method (IR, per D5) and a bench that lacks it
-    must BLOCK on measurement. Mutant, at the ASSESS layer (distinct from M27's requirements-layer mutant
-    below): `_measurement_axis` stops comparing membership at all once no string is untabled, silently
-    treating 'nothing unrecognized' as 'verification is fine'."""
+@mutant("M11", "unrecognized reaction -> FIT on equipment", "assess.tier_rank (HARD LAW)")
+def m11():
+    readiness = _readiness_at(FORMAL_CANDIDATE)
+    honest = assess(_clean_profile(), _reqs(), readiness).overall is CapabilityStatus.UNKNOWN
+    with _patch(assess_mod, "tier_rank", lambda t: 7):
+        bad = assess(_clean_profile(), _reqs(), readiness).overall is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M12", "missing verification ignored (assess layer)", "assess._measurement_axis")
+def m12():
     route = _isopentyl_route()
-    req = compile_capability_requirements(route)
-    readiness = evaluate_route(route)
-    real_a = assess(poor_man(), req, readiness)
-    real_ok = real_a.measurement.status is CapabilityStatus.BLOCKED
+    req, readiness = compile_capability_requirements(route), evaluate_route(route)
+    honest = assess(poor_man(), req, readiness).measurement.status is CapabilityStatus.BLOCKED
 
-    def mutant_measurement_axis(required, available, unrecognized):
-        if unrecognized:
-            return assess_mod._membership_axis(required, available, axis="measurement")
+    def bad_axis(required, available, unrecognized):
         return AxisResult(CapabilityStatus.FIT, ("measurement: BUG missing verification ignored",))
 
-    with _patch(assess_mod, "_measurement_axis", mutant_measurement_axis):
-        mutant_a = assess(poor_man(), req, readiness)
-    mutant_bad = mutant_a.measurement.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(assess_mod, "_measurement_axis", bad_axis):
+        bad = assess(poor_man(), req, readiness).measurement.status is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M13 unknown-waste-passes")
-def m13() -> bool:
-    """A waste-routing category a profile never declared handling for must BLOCK, never silently pass.
-    Mutant: the shared `_membership_axis`, scoped to `axis=="waste"`, unconditionally returns FIT."""
-    req = _reqs(waste=WasteRequirement(frozenset({WasteCapability.AQUEOUS_NEUTRAL}), ("waste: fixture",)))
-    profile = _profile(waste_handling=frozenset())
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.waste.status is CapabilityStatus.BLOCKED
+@mutant("M13", "unknown waste category passes", "assess._membership_axis (waste)")
+def m13():
+    req = _reqs(waste=WasteRequirement(frozenset({WasteCapability.HAZARDOUS}), ("waste: fixture",)))
+    profile = _profile()
+    honest = assess(profile, req, _ps()).waste.status is CapabilityStatus.BLOCKED
+    real = assess_mod._membership_axis
 
-    real_membership = assess_mod._membership_axis
-
-    def mutant_membership(required, available, *, axis="", extra_reasons=()):
+    def bad_membership(required, available, *, axis="", extra_reasons=()):
         if axis == "waste":
-            return AxisResult(CapabilityStatus.FIT, ("waste: BUG unconditionally passed",) + tuple(extra_reasons))
-        return real_membership(required, available, axis=axis, extra_reasons=extra_reasons)
+            return AxisResult(CapabilityStatus.FIT, ("waste: BUG passed",))
+        return real(required, available, axis=axis, extra_reasons=extra_reasons)
 
-    with _patch(assess_mod, "_membership_axis", mutant_membership):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.waste.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
-
-
-@mutant("M14 unknown-price=0")
-def m14() -> bool:
-    """An unknown route cash against a declared budget must stay UNKNOWN, never a fabricated free $0.
-    Mutant: `_monetary_axis` substitutes `cash=0.0` whenever both `cash`/`cash_floor` are None."""
-    req = _reqs(monetary=CostVector())
-    profile = _profile(budget=CostVector(cash=200.0, currency="USD", unit="USD"))
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.monetary.status is CapabilityStatus.UNKNOWN
-
-    real_monetary = assess_mod._monetary_axis
-
-    def mutant_monetary(route_cost, budget):
-        if route_cost.cash is None and route_cost.cash_floor is None:
-            # BUG: unknown price assumed a free $0. Denomination-matched to the budget (USD/USD) on purpose,
-            # so the fabricated zero reaches the cash compare and exposes the unknown->0 fault in ISOLATION
-            # -- not incidentally tripping the D7/Wave-C-F2 fail-closed empty-denominator guard (which would
-            # mask this mutant behind a denomination UNKNOWN, the reason it survived the first M1-M40 run).
-            route_cost = dc.replace(route_cost, cash=0.0, currency="USD", unit="USD")
-        return real_monetary(route_cost, budget)
-
-    with _patch(assess_mod, "_monetary_axis", mutant_monetary):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.monetary.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(assess_mod, "_membership_axis", bad_membership):
+        bad = assess(profile, req, _ps()).waste.status is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M15 cash-floor-within-budget=FIT")
-def m15() -> bool:
-    """A proven LOWER BOUND on cash that is within budget never CONFIRMS a fit (the true total could still
-    be higher) -- UNKNOWN, not FIT. Mutant: `_monetary_axis` treats a floor-within-budget UNKNOWN as FIT."""
-    route_cost = CostVector(cash_floor=50.0, currency="USD", unit="USD")
-    budget = CostVector(cash=200.0, currency="USD", unit="USD")
-    req = _reqs(monetary=route_cost)
-    profile = _profile(budget=budget)
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.monetary.status is CapabilityStatus.UNKNOWN
+def _monetary_case(route_cost, budget, mutate):
+    req, profile = _reqs(monetary=route_cost), _profile(budget=budget)
+    honest = assess(profile, req, _ps()).monetary.status is CapabilityStatus.UNKNOWN
+    real = assess_mod._monetary_axis
 
-    real_monetary = assess_mod._monetary_axis
+    def bad(rc, b, **kw):
+        out = mutate(rc, b)
+        return out if out is not None else real(rc, b, **kw)
 
-    def mutant_monetary(rc, b):
-        a = real_monetary(rc, b)
-        if a.status is CapabilityStatus.UNKNOWN and rc.cash is None and rc.cash_floor is not None:
-            return AxisResult(CapabilityStatus.FIT, ("monetary: BUG floor-within-budget treated as FIT",))
-        return a
-
-    with _patch(assess_mod, "_monetary_axis", mutant_monetary):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.monetary.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(assess_mod, "_monetary_axis", bad):
+        mutated = assess(profile, req, _ps()).monetary.status is CapabilityStatus.FIT
+    return honest, mutated
 
 
-@mutant("M16 mixed-currency-summed")
-def m16() -> bool:
-    """Mismatched currencies are incomparable and must never be summed/compared by raw number. Mutant:
-    `_monetary_axis` compares the raw cash numbers anyway when currencies disagree."""
-    route_cost = CostVector(cash=50.0, currency="USD", unit="USD")
-    budget = CostVector(cash=200.0, currency="EUR", unit="USD")
-    req = _reqs(monetary=route_cost)
-    profile = _profile(budget=budget)
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.monetary.status is CapabilityStatus.UNKNOWN
+@mutant("M14", "unknown price = 0", "assess._monetary_axis")
+def m14():
+    real = assess_mod._monetary_axis
 
-    real_monetary = assess_mod._monetary_axis
+    def mutate(rc, b):
+        if rc.cash is None and rc.cash_floor is None:
+            return real(dc.replace(rc, cash=0.0, currency="USD", unit="USD"), b)
+        return None
 
-    def mutant_monetary(rc, b):
-        if (
-            b is not None and b.cash is not None and rc.currency and b.currency and rc.currency != b.currency
-            and rc.cash is not None and rc.cash <= b.cash
-        ):
+    return _monetary_case(CostVector(), CostVector(cash=200.0, currency="USD", unit="USD"), mutate)
+
+
+@mutant("M15", "cash floor within budget = FIT", "assess._monetary_axis")
+def m15():
+    def mutate(rc, b):
+        if rc.cash is None and rc.cash_floor is not None and b is not None and b.cash is not None \
+                and rc.cash_floor <= b.cash:
+            return AxisResult(CapabilityStatus.FIT, ("monetary: BUG floor treated as total",))
+        return None
+
+    return _monetary_case(CostVector(cash_floor=50.0, currency="USD", unit="USD"),
+                          CostVector(cash=200.0, currency="USD", unit="USD"), mutate)
+
+
+@mutant("M16", "mixed currency summed", "assess._monetary_axis")
+def m16():
+    def mutate(rc, b):
+        if b is not None and b.cash is not None and rc.cash is not None and rc.currency != b.currency \
+                and rc.cash <= b.cash:
             return AxisResult(CapabilityStatus.FIT, ("monetary: BUG mixed currency compared raw",))
-        return real_monetary(rc, b)
+        return None
 
-    with _patch(assess_mod, "_monetary_axis", mutant_monetary):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.monetary.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    return _monetary_case(CostVector(cash=50.0, currency="USD", unit="USD"),
+                          CostVector(cash=200.0, currency="EUR", unit="USD"), mutate)
 
 
-@mutant("M17 unrecognized-catalyst=poor-man-obtainable")
-def m17() -> bool:
-    """A declared catalyst this projection could not classify (`tier is None`) BLOCKS unconditionally, no
-    matter how permissive the profile. Mutant: `_procurement_axis` treats an unrecognized catalyst as
-    obtainable."""
+@mutant("M17", "unrecognized catalyst = poor-man obtainable", "assess._procurement_axis")
+def m17():
     req = _reqs(procurement_catalysts=(("a mystery catalyst nobody has named before", None),))
     profile = _profile(procurement=frozenset(Availability))
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.procurement.status is CapabilityStatus.BLOCKED
+    honest = assess(profile, req, _ps()).procurement.status is CapabilityStatus.BLOCKED
 
-    def mutant_procurement(catalysts, allowed_tiers):
-        if not catalysts:
-            return AxisResult(CapabilityStatus.NOT_APPLICABLE, ("procurement: no catalyst was declared",))
-        reasons = tuple(
-            f"procurement: BUG unrecognized catalyst {name!r} assumed obtainable" if tier is None
-            else f"procurement: {name!r} tier {tier.value!r}"
-            for name, tier in catalysts
-        )
-        return AxisResult(CapabilityStatus.FIT, reasons)
+    def bad(catalysts, allowed):
+        return AxisResult(CapabilityStatus.FIT, ("procurement: BUG unrecognized assumed obtainable",))
 
-    with _patch(assess_mod, "_procurement_axis", mutant_procurement):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.procurement.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(assess_mod, "_procurement_axis", bad):
+        mutated = assess(profile, req, _ps()).procurement.status is CapabilityStatus.FIT
+    return honest, mutated
 
 
-@mutant("M18 industrial-catalyst-free-under-lab")
-def m18() -> bool:
-    """A profile whose declared procurement tiers never reached INDUSTRIAL does not get an industrial
-    catalyst for free. Mutant: `is_obtainable_under` treats ANY non-empty declared tier set as reaching
-    every tier, including INDUSTRIAL."""
+@mutant("M18", "industrial catalyst free under a kitchen", "assess.is_obtainable_under")
+def m18():
     req = _reqs(procurement_catalysts=(("Pd/C", Availability.INDUSTRIAL),))
-    kitchen_profile = _profile(procurement=frozenset({Availability.GROCERY, Availability.HARDWARE}))
-    real_a = assess(kitchen_profile, req, _ps_readiness())
-    real_ok = real_a.procurement.status is CapabilityStatus.BLOCKED
-
-    def mutant_is_obtainable_under(tier, allowed_tiers):
-        return bool(allowed_tiers)  # BUG: any non-empty declared tier set obtains EVERYTHING
-
-    with _patch(assess_mod, "is_obtainable_under", mutant_is_obtainable_under):
-        mutant_a = assess(kitchen_profile, req, _ps_readiness())
-    mutant_bad = mutant_a.procurement.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    profile = _profile(procurement=frozenset({Availability.GROCERY, Availability.HARDWARE}))
+    honest = assess(profile, req, _ps()).procurement.status is CapabilityStatus.BLOCKED
+    with _patch(assess_mod, "is_obtainable_under", lambda tier, allowed: bool(allowed)):
+        bad = assess(profile, req, _ps()).procurement.status is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M19 assessment-under-another-profile-no-refusal")
-def m19() -> bool:
-    """A `CapabilityAssessment` computed under profile A, carried under a request declaring profile B, must
-    be REFUSED on load. Mutant: `_check_capability_coherence` (the guard that catches this) is disabled."""
+@mutant("M19", "assessment under another profile loads", "service.CompilationResponse._check_capability_coherence")
+def m19():
     resp = _fit_response()
     swapped = dc.replace(resp, request=dc.replace(resp.request, capability_profile=poor_man()))
-    real_refuses = False
     try:
         swapped._check_capability_coherence(require_verified_admission=True)
+        honest = False
     except ValueError:
-        real_refuses = True
-
+        honest = True
     with _patch(CompilationResponse, "_check_capability_coherence", lambda self, **kw: None):
         try:
             swapped._check_capability_coherence(require_verified_admission=True)
-            mutant_loads = True
+            bad = True
         except ValueError:
-            mutant_loads = False
-    return real_refuses and mutant_loads
+            bad = False
+    return honest, bad
 
 
-@mutant("M20 custom-content-changes-digest-doesnt")
-def m20() -> bool:
-    """Two Custom profiles with DIFFERENT declared content must carry DIFFERENT `profile_digest`s. Mutant:
-    `CapabilityProfile.profile_digest` is forced constant, so content changes stop moving the pin."""
+@mutant("M20", "custom content changes, digest does not", "profile.CapabilityProfile.profile_digest")
+def m20():
     p1 = custom(profile_id="x1", equipment=frozenset({EquipmentCapability.BALANCE}))
     p2 = custom(profile_id="x1", equipment=frozenset({EquipmentCapability.REFLUX_CONDENSER}))
-    real_ok = p1.profile_digest != p2.profile_digest
+    honest = p1.profile_digest != p2.profile_digest
+    with _patch(CapabilityProfile, "profile_digest", property(lambda self: "constant")):
+        bad = p1.profile_digest == p2.profile_digest
+    return honest, bad
 
-    with _patch(CapabilityProfile, "profile_digest", property(lambda self: "constant-digest-bug")):
-        mutant_bad = p1.profile_digest == p2.profile_digest
-    return real_ok and mutant_bad
 
-
-@mutant("M21 one-operations-equipment-view-promotes-under-equipped-route")
-def m21() -> bool:
-    """A route's equipment requirement is the UNION over EVERY recorded operation's sourced apparatus --
-    the real isopentyl procedure names a plain flask in op1 (REACTION_VESSEL) but a reflux condenser,
-    separatory funnel and fractional-distillation rig only in LATER operations. A bench that covers only
-    op1's flask must still BLOCK on the rest.
-
-    The real route ALSO carries a whole-step `ProcessRequirements.equipment` cross-check tuple that happens
-    to duplicate the full apparatus list on its own (decision 2's "+ ProcessRequirements.equipment cross-
-    check") -- stripped here via a `dataclasses.replace`d LOCAL copy of the envelope, so the fixture isolates
-    the per-OPERATION union specifically (leaving that redundant cross-check in place would mask the mutant
-    below and make this an accidental pass, not a real kill).
-
-    Mutant: `_equipment_requirement` only scans each step's FIRST recorded operation, silently dropping every
-    later operation's apparatus demand -- "one [operation]'s view promotes a route that's missing what the
-    REST of the sourced procedure needs"."""
-    base_route = _isopentyl_route()
-    steps = list(base_route.steps)
-    for i, step in enumerate(steps):
-        if step.envelope.process is not None and step.envelope.process.equipment:
-            stripped_process = dc.replace(step.envelope.process, equipment=())
-            steps[i] = dc.replace(step, envelope=dc.replace(step.envelope, process=stripped_process))
-    route = dc.replace(base_route, steps=tuple(steps))
-
-    req = compile_capability_requirements(route)
-    assert EquipmentCapability.REACTION_VESSEL in req.equipment  # op1's "100-mL round-bottom flask"
-    assert EquipmentCapability.REFLUX_CONDENSER in req.equipment  # a LATER operation
-    assert EquipmentCapability.FRACTIONAL_DISTILLATION in req.equipment  # a LATER operation
+@mutant("M21", "one operation's equipment view promotes an under-equipped route",
+        "requirements._equipment_requirement (op union)")
+def m21():
+    """The equipment demand is the UNION over EVERY operation (plus D13 unread hardware ops). The real route's
+    whole-step ProcessRequirements.equipment cross-check is stripped in a LOCAL copy to isolate the per-op union.
+    Honest: a bench owning only op1's flask BLOCKS. Mutant: only the FIRST operation is scanned -> FIT."""
+    base = _isopentyl_route()
+    steps = tuple(dc.replace(s, envelope=dc.replace(s.envelope, process=dc.replace(s.envelope.process, equipment=())))
+                  if s.envelope.process is not None and s.envelope.process.equipment else s for s in base.steps)
+    route = dc.replace(base, steps=steps)
+    profile = _profile(equipment=frozenset({EquipmentCapability.REACTION_VESSEL}))
     readiness = evaluate_route(route)
-    profile = _profile(equipment=frozenset({EquipmentCapability.REACTION_VESSEL}))  # covers op1 ONLY
-    real_a = assess(profile, req, readiness)
-    real_ok = real_a.equipment.status is CapabilityStatus.BLOCKED
-
-    def mutant_equipment_requirement(rt_):
-        raw: "set[str]" = set()
-        for step in rt_.steps:
-            procedure = step.envelope.procedure
-            if procedure is not None:
-                for op in procedure.operations[:1]:  # BUG: only the FIRST recorded operation is scanned
-                    if op.kind is not requirements_mod.OperationKind.VERIFY:
-                        raw.update(op.apparatus)
-            process = step.envelope.process
-            if process is not None and process.equipment is not None:
-                raw.update(process.equipment)
-        recognized, _ignored, unrecognized = requirements_mod.classify_apparatus_strings(raw)
-        return recognized, tuple(sorted(unrecognized))
-
-    with _patch(requirements_mod, "_equipment_requirement", mutant_equipment_requirement):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(profile, req2, readiness)
-    mutant_bad = mutant_a.equipment.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    honest = assess(profile, compile_capability_requirements(route), readiness).equipment.status \
+        is CapabilityStatus.BLOCKED
+    bad_eq = _src_mutant(requirements_mod._equipment_requirement, (
+        "for op in procedure.operations:\n                if op.kind is OperationKind.VERIFY:",
+        "for op in procedure.operations[:1]:\n                if op.kind is OperationKind.VERIFY:"))
+    with _patch(requirements_mod, "_equipment_requirement", bad_eq):
+        bad = assess(profile, compile_capability_requirements(route), readiness).equipment.status \
+            is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M22 FIT-survives-readiness-demotion")
-def m22() -> bool:
-    """Re-expressed SYNTHETICALLY for Round IV: the old "isopentyl bench = overall CAPABILITY_FIT" contract is
-    DEAD (no corpus route reaches FIT now). The underlying LAW is untouched -- the tier HARD-LAW: even with
-    EVERY axis clean, overall CAPABILITY_FIT requires readiness >= PROCESS_SPECIFIED; a demotion below it caps
-    the ceiling to UNKNOWN. Built on a synthetic all-axes-clear `RouteCapabilityRequirements` + empty profile
-    (no BLOCKED/UNKNOWN axis anywhere), so the ONLY thing between clean axes and FIT is the tier gate. Real:
-    PROCESS_SPECIFIED -> FIT, REACTION_VOUCHED -> UNKNOWN. Mutant: `tier_rank` forced constant (the M10/M11
-    tier-gate defeat) lets the demoted, axes-clean case ride to FIT -- FIT survives the readiness demotion."""
-    profile = _profile()
-    reqs = _reqs()  # every axis NOT_APPLICABLE / UNCONSTRAINED -> nothing BLOCKED, nothing UNKNOWN
-    real_full = assess(profile, reqs, _readiness_at(PROCESS_SPECIFIED))
-    demoted_readiness = _readiness_at(REACTION_VOUCHED)
-    real_demoted = assess(profile, reqs, demoted_readiness)
-    real_ok = real_full.overall is CapabilityStatus.FIT and real_demoted.overall is CapabilityStatus.UNKNOWN
-
-    with _patch(assess_mod, "tier_rank", lambda t: 7):  # BUG: every tier compares equal -> the HARD-LAW floor never bites
-        mutant_a = assess(profile, reqs, demoted_readiness)
-    mutant_bad = mutant_a.overall is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+@mutant("M22", "FIT survives readiness demotion", "assess.tier_rank (HARD LAW)")
+def m22():
+    profile, reqs = _clean_profile(), _reqs()
+    honest = (assess(profile, reqs, _ps()).overall is CapabilityStatus.FIT
+              and assess(profile, reqs, _readiness_at(REACTION_VOUCHED)).overall is CapabilityStatus.UNKNOWN)
+    with _patch(assess_mod, "tier_rank", lambda t: 7):
+        bad = assess(profile, reqs, _readiness_at(REACTION_VOUCHED)).overall is CapabilityStatus.FIT
+    return honest, bad
 
 
 # =================================================================================================================
-# M23-M38 (Round III)
+# M23-M40 (Round III + Wave-C)
 # =================================================================================================================
 
-@mutant("M23 reaction-class-label-manufactures-universal-assay-floor [RETIRED]")
-def m23() -> bool:
-    """RETIRED (Round IV, F45). The mechanism M23 tested -- the leaf-whitelist assay floor keyed on
-    `requirements._known_leaf_ids()` -- no longer EXISTS: F45 deleted `_KNOWN_LEAF_IDS`, the leaf-whitelist and
-    the runtime prose scan, folding reactant material semantics into the SOURCE `ProcedureMaterialUse`s read by
-    the generic `_material_requirements`. There is no function left to mutate here. M23's spirit -- the generic
-    compiler must not know special target/reagent identities and must not manufacture a requirement from prose
-    -- is now carried, on the real object path, by M55 (identity-scoped floor) and M56 (runtime prose scan).
-    Reported as a VACUOUS/RETIRED defer, never a fabricated kill."""
-    raise Vacuous("RETIRED: leaf-whitelist floor deleted by F45; spirit re-homed on M55 (identity) + M56 (prose)")
+retired("M23", "reaction-class label manufactures a universal assay floor",
+        "requirements._KNOWN_LEAF_IDS leaf-whitelist floor (deleted by Round IV F45)",
+        "no function left to mutate; the bad behaviour (generic compiler knows a special identity / manufactures a "
+        "requirement from prose or an adjective table) is killed on the real object path by the replacements",
+        ("M55", "M56", "M66"))
 
 
-@mutant("M24 procedure-only-consumables-vanish-from-material")
-def m24() -> bool:
-    """Procedure-only auxiliaries (H2SO4 catalyst, NaHCO3/NaCl/MgSO4 washes+drier, water) must PARTICIPATE
-    in the material axis -- a two-bottle bench (reagents only) BLOCKS on the missing magnesium sulfate.
-    Mutant: `_procedure_only_material_requirements` returns nothing, silently dropping every auxiliary."""
-    route = _isopentyl_route()
-    req = compile_capability_requirements(route)
-    readiness = evaluate_route(route)
+@mutant("M24", "procedure-only consumables vanish from material", "requirements._material_requirements")
+def m24():
+    """Honest: research_lab + the two-reagent lab inventory BLOCKS on the absent, typed MgSO4 drier (positive demand,
+    no G+ edge). Mutant: the typed-use projection is skipped -> only bare leaves remain -> the BLOCK vanishes."""
     profile = research_lab(material_inventory=material_library.isopentyl_lab_inventory())
-    real_a = assess(profile, req, readiness)
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
-    assert "magnesium sulfate" in " ".join(real_a.material.reasons)
-
-    def mutant_material_requirements(rt_):
-        # BUG (re-targeted for Round IV -- `_procedure_only_material_requirements` was unified INTO
-        # `_material_requirements` by F45): the procedure-material projection vanishes, so only bare leaf
-        # inputs are demanded and every procedure-only auxiliary (the MgSO4 drier, the washes, the catalyst)
-        # is silently dropped from the material axis -- the exact "procedure materials disappear" fault.
-        return tuple(
-            MaterialRequirement(
-                identity=leaf, required_assay=None, phase=None, quantity=None,
-                role="reactant (leaf input)", evidence_source="mutant: procedure auxiliaries dropped",
-            )
-            for leaf in rt_.leaf_inputs
-        )
-
-    with _patch(requirements_mod, "_material_requirements", mutant_material_requirements):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(profile, req2, readiness)
-    # the auxiliary-driven BLOCK must vanish entirely (silently dropped -> never still a provable negative)
-    mutant_bad = mutant_a.material.status is not CapabilityStatus.BLOCKED
-    return real_ok and mutant_bad
-
-
-@mutant("M25 required-quantity-ignored")
-def m25() -> bool:
-    """A bench stocking too LITTLE of a quantity-gated reactant (10 mL glacial vs the sourced 20 mL draw)
-    BLOCKS on quantity. Mutant: `_material_item_status_one` strips the quantity gate, scoped to the
-    glacial-acetic-acid requirement ONLY (every other requirement -- including the water/wash items that are
-    themselves only FIT because their OWN quantity gate passes -- must stay untouched, or stripping quantity
-    everywhere would just trade one BLOCKED item for a different UNKNOWN one and the mutant would survive
-    for the wrong reason)."""
     route = _isopentyl_route()
-    req = compile_capability_requirements(route)
-    readiness = evaluate_route(route)
-    profile = isopentyl_capability_fit_bench(
-        material_inventory=material_library.isopentyl_insufficient_quantity_inventory(),
-    )
-    real_a = assess(profile, req, readiness)
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
+    a = assess(profile, compile_capability_requirements(route), evaluate_route(route))
+    honest = a.material.status is CapabilityStatus.BLOCKED and "magnesium sulfate" in " ".join(a.material.reasons)
+    bad_proj = _src_mutant(requirements_mod._material_requirements, (
+        "if procedure is None:\n            continue\n        for op in procedure.operations:",
+        "if True:\n            continue\n        for op in procedure.operations:"))
+    with _patch(requirements_mod, "_material_requirements", bad_proj):
+        bad = _iso_material(profile) is not CapabilityStatus.BLOCKED
+    return honest, bad
 
-    # Re-targeted for Round IV: the quantity gate is no longer a per-bottle `_material_item_status_one` check;
-    # it is the finite-pool ALLOCATION (`assess._max_flow`, F42). The mutant reverts that finite pool to the
-    # pre-F42 "stock is unlimited" behaviour -- a bottle can be spent without ever debiting its capacity -- so
-    # the 10 mL-vs-20 mL glacial-acetic shortfall (a provable BLOCK) launders to FIT.
+
+@mutant("M25", "required quantity ignored (unlimited pool)", "assess._max_flow")
+def m25():
+    """10 mL glacial vs the sourced 20 mL draw: even the optimistic allocation falls short -> BLOCKED. Mutant: the
+    pre-F42 unlimited-pool flow -> the provable shortfall launders out of BLOCKED."""
+    bench = isopentyl_capability_fit_bench(material_inventory=material_library.isopentyl_insufficient_quantity_inventory())
+    honest = _iso_material(bench) is CapabilityStatus.BLOCKED
     with _patch(assess_mod, "_max_flow", _unlimited_pool_flow):
-        mutant_a = assess(profile, req, readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+        bad = _iso_material(bench) is not CapabilityStatus.BLOCKED
+    return honest, bad
 
 
-@mutant("M26 known-phase-mismatch-still-FITs")
-def m26() -> bool:
-    """A mis-phased alcohol bottle (dilute AQUEOUS vs the required neat LIQUID) BLOCKS on phase. Mutant:
-    `_material_item_status_one` strips the phase gate, scoped to the isoamyl-alcohol requirement ONLY (the
-    same "don't trade one BLOCKED for a different UNKNOWN elsewhere" discipline as M25)."""
+@mutant("M26", "known phase mismatch still passes", "assess._edge (phase gate)")
+def m26():
+    bench = isopentyl_capability_fit_bench(material_inventory=material_library.isopentyl_wrong_phase_inventory())
+    honest = _iso_material(bench) is CapabilityStatus.BLOCKED
+    bad_edge = _src_mutant(assess_mod._edge, ("if requirement.phase is not None:", "if False:"))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _iso_material(bench) is not CapabilityStatus.BLOCKED
+    return honest, bad
+
+
+@mutant("M27", "required analytical method ignored (requirements layer)", "requirements._measurement_requirement")
+def m27():
     route = _isopentyl_route()
-    req = compile_capability_requirements(route)
     readiness = evaluate_route(route)
-    profile = isopentyl_capability_fit_bench(material_inventory=material_library.isopentyl_wrong_phase_inventory())
-    real_a = assess(profile, req, readiness)
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
-
-    # Re-targeted for Round IV: the phase gate now lives in `assess._comp_phase_status`. Scoped to the isoamyl-
-    # alcohol requirement ONLY (the neat-LIQUID SUBSTRATE, uniquely: phase declared + no composition band), so
-    # stripping it does not trade the alcohol's provable phase BLOCK for some other axis's verdict -- the same
-    # M25/M26 "don't move a different requirement" discipline as before.
-    isoamyl_digest = requirements_mod._struct_digest(
-        resolve_target("isoamyl alcohol", InputKind.NAME).canonical()
-    )
-    real_cps = assess_mod._comp_phase_status
-
-    def mutant_comp_phase_status(requirement, stock):
-        if (
-            requirement.phase is not None and requirement.identity is not None
-            and requirements_mod._struct_digest(requirement.identity) == isoamyl_digest
-        ):
-            requirement = dc.replace(requirement, phase=None)  # BUG: phase gate silently dropped
-        return real_cps(requirement, stock)
-
-    with _patch(assess_mod, "_comp_phase_status", mutant_comp_phase_status):
-        mutant_a = assess(profile, req, readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    honest = assess(poor_man(), compile_capability_requirements(route), readiness).measurement.status \
+        is CapabilityStatus.BLOCKED
+    with _patch(requirements_mod, "_measurement_requirement", lambda r: (frozenset(), ())):
+        bad = assess(poor_man(), compile_capability_requirements(route), readiness).measurement.status \
+            is not CapabilityStatus.BLOCKED
+    return honest, bad
 
 
-@mutant("M27 required-analytical-method-ignored")
-def m27() -> bool:
-    """The real isopentyl route's IR requirement BLOCKS a poor_man bench that lacks IR. Mutant (at the
-    REQUIREMENTS layer, distinct from M12's assess-layer mutant): `_measurement_requirement` derives NO
-    measurement requirement at all -- the demand vanishes upstream."""
-    route = _isopentyl_route()
-    req = compile_capability_requirements(route)
-    readiness = evaluate_route(route)
-    real_a = assess(poor_man(), req, readiness)
-    real_ok = real_a.measurement.status is CapabilityStatus.BLOCKED
-
-    with _patch(requirements_mod, "_measurement_requirement", lambda rt_: (frozenset(), ())):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(poor_man(), req2, readiness)
-    mutant_bad = mutant_a.measurement.status is not CapabilityStatus.BLOCKED
-    return real_ok and mutant_bad
-
-
-@mutant("M28 generic-ANALYTICAL_INSTRUMENT-substitutes-for-specific-method")
-def m28() -> bool:
-    """A profile owning MELTING_POINT does not clear a MASS requirement just because both share the
-    CHEAP_INSTRUMENT tier -- comparison must be on the SPECIFIC method. Mutant: `_measurement_axis` compares
-    on the coarse `MEASUREMENT_TIER_OF` tier instead."""
+@mutant("M28", "generic tier substitutes for the specific method", "assess._measurement_axis")
+def m28():
     req = _reqs(measurement=frozenset({MeasurementMethod.MASS}))
     profile = _profile(measurement=frozenset({MeasurementMethod.MELTING_POINT}))
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.measurement.status is CapabilityStatus.BLOCKED
+    honest = assess(profile, req, _ps()).measurement.status is CapabilityStatus.BLOCKED
 
-    def mutant_measurement_axis(required, available, unrecognized):
-        if unrecognized:
-            return assess_mod._membership_axis(required, available, axis="measurement")
-        req_tiers = {MEASUREMENT_TIER_OF[m_] for m_ in required}
-        avail_tiers = {MEASUREMENT_TIER_OF[m_] for m_ in available}
-        if req_tiers <= avail_tiers:  # BUG: tier-only comparison, never the specific method
-            return AxisResult(CapabilityStatus.FIT, ("measurement: BUG tier-only comparison",))
-        return AxisResult(CapabilityStatus.BLOCKED, ("measurement: tier missing",))
+    def bad_axis(required, available, unrecognized):
+        ok = {MEASUREMENT_TIER_OF[m] for m in required} <= {MEASUREMENT_TIER_OF[m] for m in available}
+        return AxisResult(CapabilityStatus.FIT if ok else CapabilityStatus.BLOCKED, ("measurement: BUG tier-only",))
 
-    with _patch(assess_mod, "_measurement_axis", mutant_measurement_axis):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.measurement.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(assess_mod, "_measurement_axis", bad_axis):
+        bad = assess(profile, req, _ps()).measurement.status is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M29 UNCONSTRAINED-with-real-demand-silently-FITs")
-def m29() -> bool:
-    """A route with a real 416.15 K demand against a profile declaring NO ceiling must be UNKNOWN, never a
-    free UNCONSTRAINED pass. Mutant: `_physical_axis` reverts to the retired Round-II rule (no ceiling
-    always means UNCONSTRAINED, regardless of the route's own demand)."""
+@mutant("M29", "UNCONSTRAINED with a real demand silently FITs", "assess._physical_axis")
+def m29():
     req = _reqs(physical=PhysicalBounds.of(max_temperature_k=416.15))
-    profile = _profile()
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.physical.status is CapabilityStatus.UNKNOWN and real_a.overall is CapabilityStatus.UNKNOWN
+    a = assess(_clean_profile(), req, _ps())
+    honest = a.physical.status is CapabilityStatus.UNKNOWN and a.overall is CapabilityStatus.UNKNOWN
+    real = assess_mod._physical_axis
 
-    real_physical_axis = assess_mod._physical_axis
+    def bad_axis(requirement, ceiling, **kw):
+        if not ceiling.constrains_anything:
+            return AxisResult(CapabilityStatus.UNCONSTRAINED, ("physical: BUG unconstrained regardless",))
+        return real(requirement, ceiling, **kw)
 
-    def mutant_physical_axis(requirement, ceiling):
-        if not ceiling.constrains_anything:  # BUG: ignores whether the ROUTE itself has a real demand
-            return AxisResult(CapabilityStatus.UNCONSTRAINED, ("physical: BUG unconstrained regardless of demand",))
-        return real_physical_axis(requirement, ceiling)
-
-    with _patch(assess_mod, "_physical_axis", mutant_physical_axis):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.overall is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(assess_mod, "_physical_axis", bad_axis):
+        bad = assess(_clean_profile(), req, _ps()).overall is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M30 budget-compares-different-CostVector-units")
-def m30() -> bool:
-    """A per-metric-ton route cost vs a total-USD budget is a denomination mismatch -> UNKNOWN, never
-    compared by raw number. Mutant: `_monetary_axis` ignores the unit mismatch."""
-    route_cost = CostVector(cash=5.0, currency="USD", unit="metric ton")
-    budget = CostVector(cash=200.0, currency="USD", unit="USD")
-    req = _reqs(monetary=route_cost)
-    profile = _profile(budget=budget)
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.monetary.status is CapabilityStatus.UNKNOWN
-
-    real_monetary = assess_mod._monetary_axis
-
-    def mutant_monetary(rc, b):
-        if (
-            b is not None and b.cash is not None and rc.unit and b.unit and rc.unit != b.unit
-            and rc.cash is not None and rc.cash <= b.cash
-        ):
-            return AxisResult(CapabilityStatus.FIT, ("monetary: BUG unit mismatch compared raw",))
-        return real_monetary(rc, b)
-
-    with _patch(assess_mod, "_monetary_axis", mutant_monetary):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.monetary.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+def _unit_mismatch_mutate(rc, b):
+    if b is not None and b.cash is not None and rc.cash is not None and rc.unit != b.unit and rc.cash <= b.cash:
+        return AxisResult(CapabilityStatus.FIT, ("monetary: BUG unit mismatch compared raw",))
+    return None
 
 
-@mutant("M31 per-mol-cost-compared-to-total-budget")
-def m31() -> bool:
-    """The twin M30 scenario with a DIFFERENT denomination (per-mol-product cost vs a total-USD budget, no
-    production-quantity bridge) -- same guard, a second real denomination pairing."""
-    route_cost = CostVector(cash=3.0, currency="USD", unit="mol-product")
-    budget = CostVector(cash=200.0, currency="USD", unit="USD")
-    req = _reqs(monetary=route_cost)
-    profile = _profile(budget=budget)
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.monetary.status is CapabilityStatus.UNKNOWN
-
-    real_monetary = assess_mod._monetary_axis
-
-    def mutant_monetary(rc, b):
-        if (
-            b is not None and b.cash is not None and rc.unit and b.unit and rc.unit != b.unit
-            and rc.cash is not None and rc.cash <= b.cash
-        ):
-            return AxisResult(CapabilityStatus.FIT, ("monetary: BUG unit mismatch compared raw",))
-        return real_monetary(rc, b)
-
-    with _patch(assess_mod, "_monetary_axis", mutant_monetary):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.monetary.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+@mutant("M30", "budget compares different CostVector units", "assess._monetary_axis")
+def m30():
+    return _monetary_case(CostVector(cash=5.0, currency="USD", unit="metric ton"),
+                          CostVector(cash=200.0, currency="USD", unit="USD"), _unit_mismatch_mutate)
 
 
-@mutant("M32 ventilation-silently-claims-an-assessed-axis")
-def m32() -> bool:
-    """Ventilation is an explicit RESERVED axis (D8) -- surfaced, never a silent green check. Mutant:
-    `_ventilation_axis` returns a bare FIT with no RESERVED note, hiding that the axis is unassessed."""
-    real_a = assess(_profile(), _reqs(), _ps_readiness())
-    real_ok = (
-        real_a.ventilation.status is CapabilityStatus.NOT_APPLICABLE
-        and "RESERVED" in " ".join(real_a.ventilation.reasons)
-    )
-
-    def mutant_ventilation_axis():
-        return AxisResult(CapabilityStatus.FIT, ("ventilation: BUG assessed, no reserved note",))
-
-    with _patch(assess_mod, "_ventilation_axis", mutant_ventilation_axis):
-        mutant_a = assess(_profile(), _reqs(), _ps_readiness())
-    mutant_bad = (
-        mutant_a.ventilation.status is CapabilityStatus.FIT
-        and "RESERVED" not in " ".join(mutant_a.ventilation.reasons)
-    )
-    return real_ok and mutant_bad
+@mutant("M31", "per-mol cost compared to a total budget", "assess._monetary_axis")
+def m31():
+    return _monetary_case(CostVector(cash=3.0, currency="USD", unit="mol-product"),
+                          CostVector(cash=200.0, currency="USD", unit="USD"), _unit_mismatch_mutate)
 
 
-@mutant("M33 procedure-only-hazardous-material-omitted-from-containment")
-def m33() -> bool:
-    """The isopentyl route's H2SO4 catalyst (procedure-only, resolvable, H314) NAMES itself in the
-    containment requirement's reasons, and the unresolvable washes/drier are surfaced in `hazard_unresolved`
-    -- 'inform, never neuter' (D9). On THIS corpus route the balanced lane (acetic acid's own hazard)
-    independently already forces the FUME_HOOD member, so the containment SET is not the observable that
-    moves; the NAMED evidence is. Mutant: `_procedure_hazard_scan` always reports no forced containment and
-    no unresolved hazards -- the H2SO4/H314 justification and every unresolved-hazard note silently vanish,
-    even though (on this route) the hood requirement itself survives via the redundant balanced-lane path."""
+@mutant("M32", "ventilation silently claims an assessed axis", "assess._ventilation_axis")
+def m32():
+    a = assess(_profile(), _reqs(), _ps())
+    honest = a.ventilation.status is CapabilityStatus.NOT_APPLICABLE and "RESERVED" in " ".join(a.ventilation.reasons)
+    with _patch(assess_mod, "_ventilation_axis", lambda: AxisResult(CapabilityStatus.FIT, ("ventilation: BUG",))):
+        m = assess(_profile(), _reqs(), _ps())
+        bad = m.ventilation.status is CapabilityStatus.FIT and "RESERVED" not in " ".join(m.ventilation.reasons)
+    return honest, bad
+
+
+@mutant("M33", "procedure-only hazardous material omitted from containment", "requirements._hazard_scan")
+def m33():
+    """The real H2SO4 catalyst (H314) names itself in the containment reasons and the unresolvable ionic washes are
+    surfaced as hazard_unresolved (inform, never neuter). Mutant: the scan reports nothing -> the named evidence
+    vanishes from the requirement AND from the assessed containment reasons."""
     route = _isopentyl_route()
     req = compile_capability_requirements(route)
-    real_ok = (
-        req.containment == frozenset({ContainmentCapability.FUME_HOOD})
-        and "sulfuric acid" in " ".join(req.containment_reasons)
-        and "H314" in " ".join(req.containment_reasons)
-        and any("sodium bicarbonate" in r for r in req.hazard_unresolved)
-    )
-
-    with _patch(requirements_mod, "_procedure_hazard_scan", lambda rt_: (False, (), ())):
+    honest = (req.containment == frozenset({ContainmentCapability.FUME_HOOD})
+              and "sulfuric acid" in " ".join(req.containment_reasons) and "H314" in " ".join(req.containment_reasons)
+              and any("sodium bicarbonate" in r for r in req.hazard_unresolved))
+    with _patch(requirements_mod, "_hazard_scan", lambda r, untyped: (False, (), ())):
         req2 = compile_capability_requirements(route)
-    mutant_bad = req2.containment_reasons == () and req2.hazard_unresolved == ()
-
-    # non-vacuous downstream consequence: assess()'s containment axis reasons carry the SAME omission --
-    # a caller reading the assessed reasons (not just the requirement) also loses the H2SO4/H314 evidence.
     readiness = evaluate_route(route)
-    real_fit = assess(isopentyl_capability_fit_bench(), req, readiness)
-    mutant_fit = assess(isopentyl_capability_fit_bench(), req2, readiness)
-    consequence_ok = (
-        "sulfuric acid" in " ".join(real_fit.containment.reasons)
-        and "sulfuric acid" not in " ".join(mutant_fit.containment.reasons)
-    )
-    return real_ok and mutant_bad and consequence_ok
+    bench = isopentyl_capability_fit_bench()
+    bad = (req2.containment_reasons == () and req2.hazard_unresolved == ()
+           and "sulfuric acid" in " ".join(assess(bench, req, readiness).containment.reasons)
+           and "sulfuric acid" not in " ".join(assess(bench, req2, readiness).containment.reasons))
+    return honest, bad
 
 
-@mutant("M34 named-preset-request-stores-only-the-name")
-def m34() -> bool:
-    """A request built from a preset NAME stores the RESOLVED snapshot (D10), immune to a later mutation of
-    the preset table. Mutant (counterfactual, no source edit): a hypothetical 'stores only the name, re-
-    resolves at replay time' implementation is simulated by calling `resolve_capability_profile` on the
-    request's own carried `capability_profile_origin` AFTER the preset table is mutated -- showing that path
-    would drift, while the real stored snapshot does not."""
+@mutant("M34", "named-preset request stores only the name", "presets.CAPABILITY_PROFILE_PRESETS (re-resolve)")
+def m34():
     req = build_recompile_request(_FAST_TARGET, capability_profile="poor-man", max_depth=2)
-    original_snapshot = req.capability_profile
-    assert original_snapshot is not None and req.capability_profile_origin == "poor-man"
-
-    different_poor_man = custom(profile_id="poor-man", equipment=frozenset({EquipmentCapability.BALANCE}))
-    assert different_poor_man != original_snapshot
-    mutated_presets = dict(presets_mod.CAPABILITY_PROFILE_PRESETS)
-    mutated_presets["poor-man"] = lambda: different_poor_man
-
-    with _patch(presets_mod, "CAPABILITY_PROFILE_PRESETS", mutated_presets):
-        # real: the ALREADY-BUILT request's stored snapshot is unaffected by tomorrow's mutated preset table
-        real_ok = req.capability_profile == original_snapshot
-        # mutant model: a "stores only the name, re-resolve on replay" implementation drifts
-        reresolved = resolve_capability_profile(req.capability_profile_origin)
-        mutant_bad = reresolved != original_snapshot
-    return real_ok and mutant_bad
+    snapshot = req.capability_profile
+    assert snapshot is not None and req.capability_profile_origin == "poor-man"
+    drifted = custom(profile_id="poor-man", equipment=frozenset({EquipmentCapability.BALANCE}))
+    presets = dict(presets_mod.CAPABILITY_PROFILE_PRESETS)
+    presets["poor-man"] = lambda: drifted
+    with _patch(presets_mod, "CAPABILITY_PROFILE_PRESETS", presets):
+        honest = req.capability_profile == snapshot
+        bad = resolve_capability_profile(req.capability_profile_origin) != snapshot
+    return honest, bad
 
 
-@mutant("M35 custom-content-changes-without-capability_question_digest-moving")
-def m35() -> bool:
-    """Two requests with DIFFERENT declared custom-profile content (same search question) must carry
-    DIFFERENT `capability_question_digest`s. Mutant: the property drops the profile leg of the pin."""
+@mutant("M35", "custom content changes without capability_question_digest moving",
+        "service.CompilationRequest.capability_question_digest")
+def m35():
     p1 = custom(profile_id="a", equipment=frozenset({EquipmentCapability.BALANCE}))
     p2 = custom(profile_id="a", equipment=frozenset({EquipmentCapability.REFLUX_CONDENSER}))
     r1 = build_recompile_request(_FAST_TARGET, capability_profile=p1, max_depth=2)
     r2 = build_recompile_request(_FAST_TARGET, capability_profile=p2, max_depth=2)
-    real_ok = (
-        r1.capability_question_digest != r2.capability_question_digest and r1.semantic_digest == r2.semantic_digest
-    )
-
-    def mutant_cqd(self):
-        if self.capability_profile is None:  # BUG: profile content dropped from the pin entirely
-            return None
-        return self.semantic_digest
-
-    with _patch(CompilationRequest, "capability_question_digest", property(mutant_cqd)):
-        mutant_bad = r1.capability_question_digest == r2.capability_question_digest
-    return real_ok and mutant_bad
+    honest = r1.capability_question_digest != r2.capability_question_digest and r1.semantic_digest == r2.semantic_digest
+    with _patch(CompilationRequest, "capability_question_digest",
+                property(lambda self: None if self.capability_profile is None else self.semantic_digest)):
+        bad = r1.capability_question_digest == r2.capability_question_digest
+    return honest, bad
 
 
-@mutant("M36 profile-selection-changes-search-question-identity")
-def m36() -> bool:
-    """The full-request law: `semantic_digest` (the alias-independent SEARCH identity) must not move under a
-    profile change. Real: two full service runs {no profile, poor-man} on the same target share one
-    `semantic_digest`. Mutant: the governing pin absorbs profile content."""
+@mutant("M36", "profile selection changes the search question identity", "service.CompilationRequest.semantic_digest")
+def m36():
     req_none, resp_none, req_prof, resp_prof = _dual_profile_runs("poor-man")
-    real_ok = (
-        req_none.semantic_digest == req_prof.semantic_digest
-        and resp_none.search_space_status == resp_prof.search_space_status
-    )
-
-    real_semantic_digest = CompilationRequest.semantic_digest
-
-    def mutant_semantic_digest(self):
-        base = real_semantic_digest.fget(self)
-        if self.capability_profile is not None:  # BUG: profile selection changes the search-question pin
-            return canonical_digest((base, self.capability_profile.profile_digest))
-        return base
-
-    with _patch(CompilationRequest, "semantic_digest", property(mutant_semantic_digest)):
-        mutant_bad = req_none.semantic_digest != req_prof.semantic_digest
-    return real_ok and mutant_bad
+    honest = (req_none.semantic_digest == req_prof.semantic_digest
+              and resp_none.search_space_status == resp_prof.search_space_status)
+    with _patch(CompilationRequest, "semantic_digest", _semantic_leak()):
+        bad = req_none.semantic_digest != req_prof.semantic_digest
+    return honest, bad
 
 
-@mutant("M37 no-profile-request-silently-receives-a-bench-assumption")
-def m37() -> bool:
-    """A NOT_REQUESTED (no-profile) request must carry `capability_assessment is None` on every dossier.
-    Real: an honest no-profile run does. Then: a FORGED assessment smuggled onto a NOT_REQUESTED response is
-    refused by `_check_capability_coherence`. Mutant: that guard is disabled."""
-    req_none, resp_none, _, resp_prof = _dual_profile_runs("poor-man")
-    real_ok = all(d.capability_assessment is None for d in resp_none.ranked_route_dossiers)
-
-    forged_assessment = next(
-        d.capability_assessment for d in resp_prof.ranked_route_dossiers if d.capability_assessment is not None
-    )
+@mutant("M37", "no-profile request silently receives a bench assumption",
+        "service.CompilationResponse._check_capability_coherence")
+def m37():
+    _, resp_none, _, resp_prof = _dual_profile_runs("poor-man")
+    ok_none = all(d.capability_assessment is None for d in resp_none.ranked_route_dossiers)
+    forged = next(d.capability_assessment for d in resp_prof.ranked_route_dossiers if d.capability_assessment)
     dossiers = list(resp_none.ranked_route_dossiers)
-    dossiers[0] = dc.replace(dossiers[0], capability_assessment=forged_assessment)
+    dossiers[0] = dc.replace(dossiers[0], capability_assessment=forged)
     forged_resp = dc.replace(resp_none, ranked_route_dossiers=tuple(dossiers))
-
-    real_refuses = False
     try:
         forged_resp._check_capability_coherence(require_verified_admission=True)
+        refuses = False
     except ValueError:
-        real_refuses = True
-
+        refuses = True
     with _patch(CompilationResponse, "_check_capability_coherence", lambda self, **kw: None):
         try:
             forged_resp._check_capability_coherence(require_verified_admission=True)
-            mutant_loads = True
+            bad = True
         except ValueError:
-            mutant_loads = False
-    return real_ok and real_refuses and mutant_loads
+            bad = False
+    return ok_none and refuses, bad
 
 
-@mutant("M38 canonical-assessment-loads-after-evidence-altered")
-def m38() -> bool:
-    """Re-expressed for Round IV: the old "real bench = CAPABILITY_FIT" premise is DEAD, so this no longer
-    asserts a FIT dossier (none exists). The LAW it guards is untouched and does NOT need FIT: a canonical
-    wire whose carried profile snapshot is TAMPERED (declared stock stripped) must be REFUSED on load, because
-    the carried per-route assessment no longer RE-DERIVES under the altered profile. On the real searched
-    isopentyl bench (overall UNKNOWN, but material axis FIT off the declared stock), stripping the inventory
-    flips the re-derived material axis FIT->UNKNOWN -- a detectable divergence. The pin
-    (`capability_question_digest`) is forged CONSISTENTLY with the tampered profile first (a stale pin would
-    catch the tamper on its own -- a shallower guard than CAPABILITY-REBIND-ON-LOAD), isolating the
-    re-derivation guard. Mutant: that guard is disabled, and the forged wire loads with the stale assessment."""
+@mutant("M38", "canonical assessment loads after its evidence (declared stock) is altered",
+        "service.CompilationResponse._check_capability_coherence")
+def m38():
+    """Round V: the real searched isopentyl bench is overall UNKNOWN and its material axis UNKNOWN too, but the carried
+    per-route assessment's material reasons REST ON the declared stock (named bottles). Stripping the stock from the
+    carried profile snapshot (pin forged consistently, so only CAPABILITY-REBIND-ON-LOAD can catch it) must be REFUSED;
+    the mutant disables the re-derivation and the stale assessment loads."""
     resp = _fit_response()
-    # a real per-route assessment whose material axis rests on the declared stock (the thing we will strip).
-    assert any(
-        d.capability_assessment and d.capability_assessment.material.status is CapabilityStatus.FIT
-        for d in resp.ranked_route_dossiers
-    )
-    payload = response_to_payload(resp)  # include_replay=True default -> CANONICAL_VERIFIED
+    assert any(d.capability_assessment and "glacial-acetic-acid" in " ".join(d.capability_assessment.material.reasons)
+               for d in resp.ranked_route_dossiers)
+    payload = response_to_payload(resp)
     cp = payload["request"]["capability_profile"]
     for f in cp["fields"]:
         if f[0] == "material_inventory":
-            f[1]["items"] = []  # strip the declared stock the material-axis FIT depended on
-    tampered_profile = svc._capability_profile_from_payload(cp)
-    payload["capability_question_digest"] = canonical_digest(
-        (resp.request.semantic_digest, tampered_profile.profile_digest),
-    )  # forge the pin consistently -- isolate the REBIND guard specifically
-
-    real_refuses = False
+            f[1]["items"] = []
+    tampered = svc._capability_profile_from_payload(cp)
+    payload["capability_question_digest"] = canonical_digest((resp.request.semantic_digest, tampered.profile_digest))
     try:
         response_from_payload(payload)
+        honest = False
     except ValueError:
-        real_refuses = True
-
+        honest = True
     with _patch(CompilationResponse, "_check_capability_coherence", lambda self, **kw: None):
         try:
             response_from_payload(payload)
-            mutant_loads = True  # the stale, no-longer-re-deriving assessment loaded unchallenged
+            bad = True
         except ValueError:
-            mutant_loads = False
-    return real_refuses and mutant_loads
+            bad = False
+    return honest, bad
 
 
-@mutant("M39 partial-physical-ceiling-drops-an-undeclared-but-demanded-dimension")
-def m39() -> bool:
-    """Wave-C F1 (evil-morty directed + dalembert structure-theorem, both proved it): D6's all-None guard
-    fired ONLY when the ceiling constrained NOTHING. A profile that constrains ONE physical dimension and
-    leaves another ``None``, against a route demanding the unconstrained dimension, silently dropped that
-    demand and rode to FIT (a temp-only bench certified for a real 100 atm demand it never bounded). The
-    fix applies D6 PER DIMENSION. Mutant: `_physical_axis` checks only the CEILING's declared dimensions
-    (the pre-fix behavior), dropping the route-demanded-but-unbounded dimension.
+@mutant("M39", "partial physical ceiling drops an undeclared-but-demanded dimension", "assess._physical_axis")
+def m39():
+    req = _reqs(physical=PhysicalBounds.of(max_pressure_atm=100.0))
+    profile = _profile(physical_bounds=PhysicalBounds.of(max_temperature_k=500.0))
+    honest = assess(profile, req, _ps()).physical.status is CapabilityStatus.UNKNOWN
 
-    This is the discriminator M29 was too weak to be -- M29 only exercised the all-None ceiling, which the
-    code always handled; the hole lived in the partial-ceiling case, uncaught until the fresh hostile review.
-    """
-    req = _reqs(physical=PhysicalBounds.of(max_pressure_atm=100.0))                 # a real 100 atm demand
-    profile = _profile(physical_bounds=PhysicalBounds.of(max_temperature_k=500.0))  # temp-only, NO pressure
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.physical.status is CapabilityStatus.UNKNOWN
-
-    def mutant_physical_axis(requirement, ceiling):
-        # BUG (pre-Wave-C): iterate only the dimensions the CEILING declares; a route demand on a dimension
-        # whose ceiling is None is never entered -> silently dropped -> the axis returns FIT.
-        if not ceiling.constrains_anything:
-            return AxisResult(CapabilityStatus.UNKNOWN, ("physical: all-None handled by D6 (unchanged)",))
-        blocked = False
-        for demand, ceil, is_floor in (
+    def bad_axis(requirement, ceiling, **kw):
+        blocked = any(c is not None and d is not None and (d < c if floor else d > c) for d, c, floor in (
             (requirement.max_temperature_k, ceiling.max_temperature_k, False),
             (requirement.max_pressure_atm, ceiling.max_pressure_atm, False),
-            (requirement.min_pressure_atm, ceiling.min_pressure_atm, True),
-        ):
-            if ceil is not None and demand is not None and (demand < ceil if is_floor else demand > ceil):
-                blocked = True
-        return AxisResult(
-            CapabilityStatus.BLOCKED if blocked else CapabilityStatus.FIT,
-            ("physical: BUG only ceiling-declared dimensions checked",),
-        )
+            (requirement.min_pressure_atm, ceiling.min_pressure_atm, True)))
+        return AxisResult(CapabilityStatus.BLOCKED if blocked else CapabilityStatus.FIT, ("physical: BUG",))
 
-    with _patch(assess_mod, "_physical_axis", mutant_physical_axis):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.physical.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(assess_mod, "_physical_axis", bad_axis):
+        bad = assess(profile, req, _ps()).physical.status is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M40 empty-denominator-cost-wildcards-to-FIT")
-def m40() -> bool:
-    """Wave-C F2 (evil-morty): the pre-fix `_monetary_axis` denomination guards (`if x and y and x != y`)
-    SKIPPED on an empty string, so a cost that failed to record its currency AND unit fell through to the
-    raw cash compare and FIT -- an undeclared basis treated as commensurable with any budget. The fix is
-    fail-closed: to compare cash at all, BOTH sides must declare a currency AND unit, matching. Mutant: the
-    old skip-on-empty guard."""
-    route_cost = CostVector(cash=5.0, currency="", unit="")   # undeclared denomination, known cash
-    budget = CostVector(cash=200.0, currency="USD", unit="USD")
-    req = _reqs(monetary=route_cost)
-    profile = _profile(budget=budget)
-    real_a = assess(profile, req, _ps_readiness())
-    real_ok = real_a.monetary.status is CapabilityStatus.UNKNOWN
+@mutant("M40", "empty-denominator cost wildcards to FIT", "assess._monetary_axis")
+def m40():
+    def mutate(rc, b):
+        if b is None or b.cash is None or rc.cash is None:
+            return None
+        if (rc.currency and b.currency and rc.currency != b.currency) or (rc.unit and b.unit and rc.unit != b.unit):
+            return None
+        return AxisResult(CapabilityStatus.FIT, ("monetary: BUG empty denominator wildcarded",)) \
+            if rc.cash <= b.cash else None
 
-    real_monetary = assess_mod._monetary_axis
-
-    def mutant_monetary(rc, b):
-        if b is None or b.cash is None or (rc.cash is None and rc.cash_floor is None):
-            return real_monetary(rc, b)
-        # BUG: skip-on-empty guards (pre-fix) -> an empty denominator never blocks -> raw compare -> FIT
-        if rc.currency and b.currency and rc.currency != b.currency:
-            return real_monetary(rc, b)
-        if rc.unit and b.unit and rc.unit != b.unit:
-            return real_monetary(rc, b)
-        if rc.cash is not None and rc.cash <= b.cash:
-            return AxisResult(CapabilityStatus.FIT, ("monetary: BUG empty-denominator wildcarded to FIT",))
-        return real_monetary(rc, b)
-
-    with _patch(assess_mod, "_monetary_axis", mutant_monetary):
-        mutant_a = assess(profile, req, _ps_readiness())
-    mutant_bad = mutant_a.monetary.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    return _monetary_case(CostVector(cash=5.0, currency="", unit=""),
+                          CostVector(cash=200.0, currency="USD", unit="USD"), mutate)
 
 
 # =================================================================================================================
-# M41-M62 (Round IV -- the F41-F62 composition/conservation/genericity/derived-data findings)
+# M41-M62 (Round IV) -- ported / re-targeted / retired against Round V
 # =================================================================================================================
 
-@mutant("M41 repeated-use-keeps-first-not-whole-route-sum")
-def m41() -> bool:
-    """F41: a species used across several operations demands the SUM of its commensurable draws (water:
-    55 + 10 + 25 = 90 mL), never a first-value-wins truncation. Real: a fit bench stocking only 80 mL water
-    BLOCKS on the 90 mL whole-route demand. Mutant: `_sum_commensurable` keeps the FIRST draw (55 mL), which
-    the 80 mL bottle covers -> a fabricated FIT that undercounts the real demand."""
-    route = _isopentyl_route()
-    readiness = evaluate_route(route)
+@mutant("M41", "repeated use keeps the first draw, not the whole-route sum",
+        "quantity.QuantityDemand.combine (successor of the deleted _sum_commensurable)")
+def m41():
+    """water: 55 + 10 + 25 = 90 mL whole-route demand. Honest: an 80 mL water bottle -> BLOCKED. Mutant: the monoid
+    fold keeps only the FIRST draw (55 mL) -> the provable shortfall disappears."""
     bench = isopentyl_capability_fit_bench(
-        material_inventory=_fit_inventory_with(water=material_library.wash_water(quantity=StockQuantity.of("80", "mL"))),
-    )
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
+        material_inventory=_fit_inventory_with(water=material_library.wash_water(quantity=StockQuantity.of("80", "mL"))))
+    honest = _iso_material(bench) is CapabilityStatus.BLOCKED
+    real = QuantityDemand.__dict__["combine"].__func__
 
-    def mutant_sum(quantities):
-        present = [q for q in quantities if q is not None]
-        return present[0] if present else None  # BUG: first draw wins, the rest of the route's demand vanishes
+    def first_wins(cls, uses):
+        uses = list(uses)
+        first = next((u for u in uses if u is not None), None)
+        return real(cls, [first] if first is not None else uses)
 
-    with _patch(requirements_mod, "_sum_commensurable", mutant_sum):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(bench, req2, readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(QuantityDemand, "combine", classmethod(first_wins)):
+        bad = _iso_material(bench) is not CapabilityStatus.BLOCKED
+    return honest, bad
 
 
-@mutant("M42 one-finite-bottle-satisfies-two-independent-demands")
-def m42() -> bool:
-    """F42: material inventory is a FINITE resource -- one 30 mL bottle cannot satisfy two independent 20 mL
-    demands (40 mL total > 30 mL capacity). Real: the finite-pool max-flow allocation BLOCKS. Mutant: `_max_flow`
-    reverts to the pre-F42 "stock is unlimited" ledger, so the single bottle is spent twice -> FIT."""
-    ethanol = _molecule("ethanol")
-    bottle = StockMaterial(
-        STOCK_MATERIAL_SCHEMA, "one-30ml-ethanol", "Ethanol, one 30 mL bottle",
-        (MaterialComponent.of_molecule(ethanol, "active", 1.0, 1.0),), Phase.LIQUID, "fixture",
-        quantity=StockQuantity.of("30", "mL"),
-    )
-    demand = MaterialRequirement(
-        identity=ethanol, required_assay=None, phase=None, quantity=StockQuantity.of("20", "mL"),
-        role="reactant", evidence_source="fixture", name="ethanol",
-    )
-    reqs = _reqs(material=(demand, dc.replace(demand, role="reactant (second independent draw)")))
+@mutant("M42", "one finite bottle satisfies two independent demands", "assess._max_flow")
+def m42():
+    bottle = _bottle("ethanol-30ml", _ETHANOL, qty="30")
+    reqs = (_mreq(identity=_ETHANOL, role="draw A"), _mreq(identity=_ETHANOL, role="draw B"))
     profile = _profile(material_inventory=(bottle,))
-    real_a = assess(profile, reqs, _ps_readiness())
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
-
+    honest = _mat(profile, *reqs) is CapabilityStatus.BLOCKED
     with _patch(assess_mod, "_max_flow", _unlimited_pool_flow):
-        mutant_a = assess(profile, reqs, _ps_readiness())
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+        bad = _mat(profile, *reqs) is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M43 compatible-bottles-fail-to-combine-toward-one-demand")
-def m43() -> bool:
-    """F42 (allocation, the other direction): several COMMENSURABLE bottles MAY jointly satisfy one demand --
-    two 25 mL bottles cover a 40 mL draw. Real: the max-flow allocation combines them -> FIT. Mutant: `_max_flow`
-    counts only the single largest bottle (25 mL) and never combines them -> a false BLOCK on a demand the bench
-    can actually meet."""
-    ethanol = _molecule("ethanol")
-    two_bottles = tuple(
-        StockMaterial(
-            STOCK_MATERIAL_SCHEMA, f"ethanol-25ml-{i}", f"Ethanol, 25 mL bottle #{i}",
-            (MaterialComponent.of_molecule(ethanol, "active", 1.0, 1.0),), Phase.LIQUID, "fixture",
-            quantity=StockQuantity.of("25", "mL"),
-        )
-        for i in (1, 2)
-    )
-    demand = MaterialRequirement(
-        identity=ethanol, required_assay=None, phase=None, quantity=StockQuantity.of("40", "mL"),
-        role="reactant", evidence_source="fixture", name="ethanol",
-    )
-    reqs = _reqs(material=(demand,))
-    profile = _profile(material_inventory=two_bottles)
-    real_a = assess(profile, reqs, _ps_readiness())
-    real_ok = real_a.material.status is CapabilityStatus.FIT
-
+@mutant("M43", "compatible bottles fail to combine toward one demand", "assess._max_flow")
+def m43():
+    bottles = tuple(_bottle(f"ethanol-25ml-{i}", _ETHANOL, qty="25") for i in (1, 2))
+    req = _mreq(identity=_ETHANOL, qty=(("mL", "40"),))
+    profile = _profile(material_inventory=bottles)
+    honest = _mat(profile, req) is CapabilityStatus.FIT
     with _patch(assess_mod, "_max_flow", _single_bottle_flow):
-        mutant_a = assess(profile, reqs, _ps_readiness())
-    mutant_bad = mutant_a.material.status is CapabilityStatus.BLOCKED
-    return real_ok and mutant_bad
+        bad = _mat(profile, req) is CapabilityStatus.BLOCKED
+    return honest, bad
 
 
-@mutant("M44 formulation-erased-before-assessment")
-def m44() -> bool:
-    """F43: a sourced FORMULATION ('5% aqueous') becomes a typed composition BAND the wash requirement carries
-    -- so an over-concentrated bottle BLOCKS on the band's ceiling. Real: a 50-60% "NaHCO3 wash" bottle BLOCKS
-    the 5%-band requirement. Mutant: `_formulation_spec` erases the formulation (band -> None), leaving a bare
-    possession requirement that the over-concentrated bottle silently clears -> FIT."""
-    route = _isopentyl_route()
-    readiness = evaluate_route(route)
-    overconc = _named_bottle("nahco3-overconc", "Sodium bicarbonate, over-concentrated",
-                             "sodium bicarbonate", 0.5, 0.6, Phase.AQUEOUS_SOLUTION,
-                             unit_qty=StockQuantity.of("500", "mL"))
-    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(nahco3=overconc))
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
-
-    with _patch(requirements_mod, "_formulation_spec", lambda formulation: (None, None, None)):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(bench, req2, readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+def _unsaturated_brine() -> StockMaterial:
+    return _bottle("nacl-dilute-unsaturated", "sodium chloride", "0.02", "0.03", phase=Phase.AQUEOUS_SOLUTION,
+                   qty="250", states=(_state(SaturationState.UNSATURATED, EvidenceKind.USER_DECLARED),
+                                      _state(DilutionState.SOLUTION, EvidenceKind.USER_DECLARED)))
 
 
-@mutant("M45 hydrated-drier-satisfies-anhydrous")
-def m45() -> bool:
-    """F43: a HYDRATED magnesium-sulfate bottle (bound water -> low anhydrous fraction, [0.5, 0.6]) cannot
-    satisfy the drier's ANHYDROUS band [0.97, 1.0]. Real: `satisfies_band` returns INSUFFICIENT -> BLOCKED.
-    Mutant: `satisfies_band` stops consulting the band at all (identity present => SATISFIES) -> the hydrate
-    clears the anhydrous requirement -> FIT."""
-    route = _isopentyl_route()
-    readiness = evaluate_route(route)
-    hydrate = _named_bottle("mgso4-heptahydrate", "Magnesium sulfate heptahydrate (hydrated)",
-                            "magnesium sulfate", 0.5, 0.6, Phase.SOLID, unit_qty=StockQuantity.of("250", "g"))
-    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(mgso4=hydrate))
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
-
-    real_band = stock_mod.StockMaterial.satisfies_band
-
-    def mutant_satisfies_band(self, key, *, low, high):
-        if self.active_fraction_interval(key) is not None:  # BUG: band never consulted -- presence is enough
-            return stock_mod.FitnessVerdict.SATISFIES
-        return real_band(self, key, low=low, high=high)
-
-    with _patch(stock_mod.StockMaterial, "satisfies_band", mutant_satisfies_band):
-        mutant_a = assess(bench, compile_capability_requirements(route), readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+@mutant("M44", "typed source specification erased before assessment",
+        "requirements._project_specification (successor of the deleted _formulation_spec)")
+def m44():
+    """Honest: the real route's source-typed SATURATED brine demand vs a bottle the bench POSITIVELY declares
+    UNSATURATED -> VIOLATES -> no G+ edge -> BLOCKED. Mutant: the projection erases the typed specification -> the
+    dilute bottle passes as a possible source -> the BLOCK vanishes."""
+    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(nacl=_unsaturated_brine()))
+    honest = _iso_material(bench) is CapabilityStatus.BLOCKED
+    bad_proj = _src_mutant(requirements_mod._project_specification, (
+        "if use.specification is not None:\n        return use.specification",
+        "if use.specification is not None:\n        return _EMPTY_SPEC"))
+    with _patch(requirements_mod, "_project_specification", bad_proj):
+        bad = _iso_material(bench) is not CapabilityStatus.BLOCKED
+    return honest, bad
 
 
-@mutant("M46 over-concentrated-satisfies-5pct-wash")
-def m46() -> bool:
-    """F43 (`satisfies_band` CEILING): a ~100% bicarbonate bottle is NOT a '5% NaHCO3 wash' -- the band
-    [0.045, 0.055] carries a real ceiling. Real: INSUFFICIENT -> BLOCKED. Mutant: the floor-only bug (check
-    only `s_lo >= low`, drop the ceiling) waves the over-concentrated stock through -> FIT."""
-    route = _isopentyl_route()
-    readiness = evaluate_route(route)
-    overconc = _named_bottle("nahco3-neat", "Sodium bicarbonate, ~100% (mislabelled 5% wash)",
-                             "sodium bicarbonate", 0.99, 1.0, Phase.AQUEOUS_SOLUTION,
-                             unit_qty=StockQuantity.of("500", "mL"))
-    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(nahco3=overconc))
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
-
-    def mutant_satisfies_band(self, key, *, low, high):
-        interval = self.active_fraction_interval(key)
-        if interval is None:
-            return stock_mod.FitnessVerdict.IDENTITY_ABSENT
-        s_lo, _s_hi = interval
-        if s_lo >= float(low):  # BUG: floor-only -- the band's CEILING is never checked
-            return stock_mod.FitnessVerdict.SATISFIES
-        return stock_mod.FitnessVerdict.INSUFFICIENT_ASSAY
-
-    with _patch(stock_mod.StockMaterial, "satisfies_band", mutant_satisfies_band):
-        mutant_a = assess(bench, compile_capability_requirements(route), readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+retired("M45", "hydrated drier satisfies anhydrous",
+        "StockMaterial.satisfies_band inside the capability fold (deleted from the capability path by Round V D3/D5)",
+        "anhydrous is now a positive hydration-STATE claim, never an assay band; the same bad behaviour (a hydrate "
+        "passing as ANHYDROUS on its assay number) is killed by M68, and a contrary declaration by M47's successor M67 "
+        "family / the VIOLATES->BLOCKED map (M46b)", ("M68", "M46b"))
 
 
-@mutant("M47 unsaturated-satisfies-saturated-brine")
-def m47() -> bool:
-    """F43 (`satisfies_band` FLOOR): a dilute (2-3%) NaCl solution is NOT a SATURATED brine -- the band
-    [0.20, 1.0] carries a real floor. Real: INSUFFICIENT -> BLOCKED. Mutant: the ceiling-only bug (check only
-    `s_hi <= high`, drop the floor) lets the unsaturated stock clear the saturated-brine requirement -> FIT."""
-    route = _isopentyl_route()
-    readiness = evaluate_route(route)
-    dilute = _named_bottle("nacl-dilute", "Sodium chloride, dilute (unsaturated)",
-                           "sodium chloride", 0.02, 0.03, Phase.AQUEOUS_SOLUTION,
-                           unit_qty=StockQuantity.of("250", "mL"))
-    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(nacl=dilute))
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
-
-    def mutant_satisfies_band(self, key, *, low, high):
-        interval = self.active_fraction_interval(key)
-        if interval is None:
-            return stock_mod.FitnessVerdict.IDENTITY_ABSENT
-        _s_lo, s_hi = interval
-        if s_hi <= float(high):  # BUG: ceiling-only -- the band's FLOOR is never checked
-            return stock_mod.FitnessVerdict.SATISFIES
-        return stock_mod.FitnessVerdict.INSUFFICIENT_ASSAY
-
-    with _patch(stock_mod.StockMaterial, "satisfies_band", mutant_satisfies_band):
-        mutant_a = assess(bench, compile_capability_requirements(route), readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+@mutant("M46", "over-concentrated stock satisfies a 5% band (ceiling dropped)",
+        "material_spec._compare_composition (successor of satisfies_band's ceiling)")
+def m46():
+    req = _mreq(name="sodium bicarbonate", qty=(("mL", "50"),),
+                spec=MaterialSpecification(composition=_comp("0.045", "0.055")))
+    profile = _profile(material_inventory=(
+        _bottle("nahco3-overconc", "sodium bicarbonate", "0.99", "1", phase=Phase.AQUEOUS_SOLUTION),))
+    honest = _mat(profile, req) is CapabilityStatus.BLOCKED
+    bad_cmp = _src_mutant(spec_mod._compare_composition, ("inside = slo >= rlo and shi <= rhi", "inside = slo >= rlo"))
+    with _patch(spec_mod, "_compare_composition", bad_cmp):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M48 structure-known-requirement-FITs-name-only-stock")
-def m48() -> bool:
-    """F44: a requirement with a KNOWN structure identity may only be satisfied by structure-keyed evidence --
-    a bare NAME bottle is weaker and can never stand in for a proven structure. Real: a structure-known ethanol
-    requirement, against a stock that carries ethanol only under a NAME key, is absent under the allowed key ->
-    BLOCKED. Mutant: `_species_key_in` falls back to the name after the structure is absent -> the name-only
-    bottle wrongly satisfies -> FIT."""
-    ethanol = _molecule("ethanol")
-    name_only = StockMaterial(
-        STOCK_MATERIAL_SCHEMA, "ethanol-name-only", "Ethanol (declared by name only)",
-        (MaterialComponent.known("ethanol", "active", 0.95, 0.99),), Phase.LIQUID, "fixture",
-    )
-    requirement = MaterialRequirement(
-        identity=ethanol, required_assay=0.9, phase=None, quantity=None,
-        role="reactant", evidence_source="fixture: structure-known", name="ethanol",
-    )
-    profile = _profile(material_inventory=(name_only,))
-    real_a = assess(profile, _reqs(material=(requirement,)), _ps_readiness())
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
+@mutant("M46b", "a certified VIOLATES folds to UNKNOWN (contrary declaration ignored)", "assess._SPEC_TO_STATUS")
+def m46b():
+    """Honest: the real route's SATURATED brine demand vs a bench-declared UNSATURATED brine -> VIOLATES -> BLOCKED.
+    Mutant: the spec->status map folds VIOLATES to UNKNOWN (a proven contrary claim treated as an open question)."""
+    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(nacl=_unsaturated_brine()))
+    honest = _iso_material(bench) is CapabilityStatus.BLOCKED
+    bad_map = dict(assess_mod._SPEC_TO_STATUS)
+    bad_map[spec_mod.SpecVerdict.VIOLATES] = CapabilityStatus.UNKNOWN
+    with _patch(assess_mod, "_SPEC_TO_STATUS", bad_map):
+        bad = _iso_material(bench) is not CapabilityStatus.BLOCKED
+    return honest, bad
 
-    def mutant_species_key_in(req, stock):
-        if req.identity is not None and stock.active_fraction_interval(req.identity) is not None:
-            return req.identity
-        # BUG (F44 downgrade): after the structure is absent, fall back to the weaker NAME key
-        if req.name is not None and stock.active_fraction_interval(req.name) is not None:
-            return req.name
+
+retired("M47", "unsaturated stock satisfies a saturated brine",
+        "StockMaterial.satisfies_band floor inside the capability fold (deleted from the capability path by Round V D5)",
+        "saturation is a positive STATE claim, never a numeric floor; the bad behaviour (a sub-saturated stock passing "
+        "as SATURATED) is killed by M67 (numeric threshold discharges SATURATED) and M46b (a certified contrary "
+        "UNSATURATED declaration folded away)", ("M67", "M46b"))
+
+
+@mutant("M48", "structure-known requirement FITs name-only stock", "assess._species_key_in")
+def m48():
+    profile = _profile(material_inventory=(_bottle("ethanol-name-only", "ethanol"),))
+    req = _mreq(identity=_ETHANOL, name="ethanol")
+    honest = _mat(profile, req) is CapabilityStatus.BLOCKED
+
+    def bad_key(r, stock):
+        if r.identity is not None and stock.active_fraction_interval(r.identity) is not None:
+            return r.identity
+        if r.name is not None and stock.active_fraction_interval(r.name) is not None:
+            return r.name
         return None
 
-    with _patch(assess_mod, "_species_key_in", mutant_species_key_in):
-        mutant_a = assess(profile, _reqs(material=(requirement,)), _ps_readiness())
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(assess_mod, "_species_key_in", bad_key):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
 
 
-@mutant("M49 hazard-unresolved-displayed-but-containment-FIT")
-def m49() -> bool:
-    """F47: a required procedure material whose hazard status is UNRESOLVED means the containment capability it
-    needs cannot be determined -> the containment axis caps at UNKNOWN, never a pass. Real: the isopentyl route
-    carries unresolved ionic-auxiliary hazards, so containment reads UNKNOWN under the fully-equipped fit bench
-    (which owns the FUME_HOOD). Mutant: `_procedure_hazard_scan` still forces the hood but DROPS the unresolved
-    leg, so the F47 cap never fires and the axis stays FIT -- the hazard merely displayed, not gating."""
+@mutant("M49", "hazard-unresolved displayed but containment FIT", "requirements._hazard_scan (unresolved leg)")
+def m49():
     route = _isopentyl_route()
+    readiness, bench = evaluate_route(route), isopentyl_capability_fit_bench()
+    honest = assess(bench, compile_capability_requirements(route), readiness).containment.status \
+        is CapabilityStatus.UNKNOWN
+    real = requirements_mod._hazard_scan
+
+    def drop_unresolved(r, untyped):
+        forces, reasons, _unresolved = real(r, untyped)
+        return forces, reasons, ()
+
+    with _patch(requirements_mod, "_hazard_scan", drop_unresolved):
+        bad = assess(bench, compile_capability_requirements(route), readiness).containment.status \
+            is CapabilityStatus.FIT
+    return honest, bad
+
+
+def _handling_with_byproducts(route, **byproduct_over):
+    """The REAL RouteHandling of ``route`` with every byproduct entry rewritten via ``dataclasses.replace`` (a valid
+    ByproductEntry/StepHandling/RouteHandling domain object, re-validated by their own __post_init__)."""
+    real = verify_handling(route)
+    steps = tuple(dc.replace(sh, byproducts=tuple(dc.replace(b, **byproduct_over) for b in sh.byproducts))
+                  for sh in real.steps)
+    forged = RouteHandling(steps)
+    assert forged.all_byproducts, "fixture needs at least one byproduct"
+    return forged
+
+
+def _waste_flip(route, handling, mutated_derive, honest_marker: str):
+    """Shared M50/M78 discriminator on the REAL derive_waste path (verify_handling is the real call it makes):
+    derive_waste output + the assessed waste axis under a bench that routes HAZARDOUS but NOT AQUEOUS_NEUTRAL."""
+    bench = dc.replace(isopentyl_capability_fit_bench(), waste_handling=frozenset({WasteCapability.HAZARDOUS}))
     readiness = evaluate_route(route)
-    bench = isopentyl_capability_fit_bench()
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.containment.status is CapabilityStatus.UNKNOWN
-
-    real_scan = requirements_mod._procedure_hazard_scan
-
-    def mutant_scan(rt_):
-        forces, reasons, _unresolved = real_scan(rt_)
-        return forces, reasons, ()  # BUG: unresolved hazards dropped -> F47 cap never triggers
-
-    with _patch(requirements_mod, "_procedure_hazard_scan", mutant_scan):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(bench, req2, readiness)
-    mutant_bad = mutant_a.containment.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    with _patch(waste_mod, "verify_handling", lambda r, **kw: handling):
+        cats, _reasons, unresolved = waste_mod.derive_waste(route)
+        honest_axis = assess(bench, compile_capability_requirements(route), readiness).waste.status
+        bad_derive = mutated_derive()
+        m_cats, _m_reasons, m_unresolved = bad_derive(route)
+        with _patch(waste_mod, "derive_waste", bad_derive):
+            mutant_axis = assess(bench, compile_capability_requirements(route), readiness).waste.status
+    honest = (WasteCapability.AQUEOUS_NEUTRAL not in cats and any(honest_marker in u for u in unresolved)
+              and honest_axis is CapabilityStatus.UNKNOWN)
+    bad = (WasteCapability.AQUEOUS_NEUTRAL in m_cats and not any(honest_marker in u for u in m_unresolved)
+           and mutant_axis is CapabilityStatus.BLOCKED)
+    return honest, bad
 
 
-@mutant("M50 unassessed-byproduct-becomes-AQUEOUS_NEUTRAL [VERIFIED-DEFER]")
-def m50() -> bool:
-    """VERIFIED-DEFER (F48). The F48 branch is present + guarded (`requirements._waste_requirement`: a byproduct
-    with `hazard_name is None` is pushed to `WasteRequirement.unresolved`, never AQUEOUS_NEUTRAL-by-negation --
-    confirmed by reading). But the forcing corpus emits only an ASSESSED-benign water byproduct, so the branch
-    is corpus-unreachable, AND it cannot be exercised on a real object path within harness scope: a byproduct
-    with `hazard_name=None` must come from a route whose `verify_handling` produces one, which needs a fabricated
-    ExperimentRoute + RouteHandling (a synthetic route, not a real searched object) -- and even injecting one via
-    the real route leaves that route's own 5 spent-stream UNRESOLVED entries pinning the waste axis at UNKNOWN
-    under BOTH honest and mutant, so the discriminator cannot flip. The F48 UNKNOWN-cap it feeds IS killed on the
-    real path by M51 (spent streams, same waste-axis cap). A true M50 kill needs a synthetic-route corpus (0.9.5).
-    A defer is a finding, never a fabricated kill."""
-    raise Vacuous("F48 branch present+guarded; corpus emits no unassessed byproduct; not constructible on a real "
-                  "object path in scope (would need a synthetic route+handling); its UNKNOWN-cap killed by M51")
-
-
-@mutant("M51 spent-workup-streams-omitted-waste-FIT")
-def m51() -> bool:
-    """F48/F49: every spent workup stream (wash/rinse/drier/brine) the source leaves without a disposal routing
-    is an UNRESOLVED waste stream that caps the waste axis at UNKNOWN. Real: the isopentyl route's 5 spent
-    streams make waste UNKNOWN under the fit bench (which routes AQUEOUS_NEUTRAL). Mutant: `_waste_requirement`
-    drops the unresolved streams, so the waste axis clears to FIT -- the spent-stream obligation silently
-    vanishes."""
+@mutant("M50", "unassessed condensed byproduct becomes AQUEOUS_NEUTRAL (benign by negation)",
+        "waste.derive_waste (hazard_name is None branch)")
+def m50():
+    """CLOSED in Round V (was VERIFIED-DEFER). Fixture: the real isopentyl route + its REAL RouteHandling with the
+    water byproduct rewritten to an UNASSESSED (hazard_name=None) CONDENSED co-product -- a valid domain object served
+    through the real `verify_handling` call derive_waste makes. Honest: the byproduct lands in `unresolved` ("NO hazard
+    assessment"), never a category; the waste axis is UNKNOWN. Mutant: the unassessed stream is classified
+    AQUEOUS_NEUTRAL by negation -> the category appears, the unresolved line vanishes, and a bench without an
+    AQUEOUS_NEUTRAL route now reads BLOCKED on a stream nobody assessed."""
     route = _isopentyl_route()
-    readiness = evaluate_route(route)
+    handling = _handling_with_byproducts(route, hazard_name=None, fate=Fate.CONDENSED,
+                                         reason="fixture: condensed co-product, hazard UNASSESSED")
+
+    def mutated():
+        return _src_mutant(waste_mod.derive_waste, (
+            'unresolved.add(f"waste: {label} has NO hazard assessment',
+            'categories.add(WasteCapability.AQUEOUS_NEUTRAL) or (f"waste: {label} has NO hazard assessment'))
+
+    return _waste_flip(route, handling, mutated, "NO hazard assessment")
+
+
+@mutant("M51", "spent workup streams omitted -> waste FIT", "requirements._waste_requirement")
+def m51():
+    route = _isopentyl_route()
+    readiness, bench = evaluate_route(route), isopentyl_capability_fit_bench()
+    honest = assess(bench, compile_capability_requirements(route), readiness).waste.status is CapabilityStatus.UNKNOWN
+    real = requirements_mod._waste_requirement
+    with _patch(requirements_mod, "_waste_requirement",
+                lambda r: WasteRequirement(real(r).categories, real(r).reasons, ())):
+        bad = assess(bench, compile_capability_requirements(route), readiness).waste.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M52", "two distinct specs of one species deduped by identity", "requirements._material_requirements (key)")
+def m52():
+    extra = _use("acetic acid", ProcedureMaterialRole.WASH, identity=_ACETIC, qty="25", phase=Phase.AQUEOUS_SOLUTION,
+                 formulation="5% aqueous", spec=MaterialSpecification(
+                     composition=_comp("0.045", "0.055"), states=(_state(DilutionState.SOLUTION),)))
+    route = _append_use(_isopentyl_route(), extra)
     bench = isopentyl_capability_fit_bench()
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.waste.status is CapabilityStatus.UNKNOWN
-
-    real_waste = requirements_mod._waste_requirement
-
-    def mutant_waste(rt_):
-        w = real_waste(rt_)
-        return WasteRequirement(w.categories, w.reasons, ())  # BUG: spent streams omitted
-
-    with _patch(requirements_mod, "_waste_requirement", mutant_waste):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(bench, req2, readiness)
-    mutant_bad = mutant_a.waste.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+    honest = _iso_material(bench, route) is CapabilityStatus.BLOCKED
+    bad_proj = _src_mutant(requirements_mod._material_requirements, (
+        "key = (species_key, canonical_digest(spec), use.phase)", "key = species_key"))
+    with _patch(requirements_mod, "_material_requirements", bad_proj):
+        bad = _iso_material(bench, route) is not CapabilityStatus.BLOCKED
+    return honest, bad
 
 
-@mutant("M52 two-distinct-specs-of-one-species-deduped-by-identity")
-def m52() -> bool:
-    """F50: two uses of one species at DIFFERENT semantic specs (formulation/band/phase) are DISTINCT demands
-    that must never collapse to one. A crafted route charges acetic acid twice -- once glacial (band [0.99, 1.0])
-    and once as a hypothetical '5% aqueous' wash (band [0.045, 0.055]). Real: `_material_requirements` keeps them
-    SEPARATE (spec-in-key), so the 5%-aqueous demand BLOCKS against the glacial-acetic bottle -> BLOCKED. Mutant:
-    grouping by species identity ALONE dedupes them to the first (glacial) spec, which the bottle satisfies -> FIT."""
-    acetic = _molecule("acetic acid")
-    extra = ProcedureMaterialUse(
-        name="acetic acid", role=ProcedureMaterialRole.WASH, identity=acetic,
-        formulation="5% aqueous", phase=Phase.AQUEOUS_SOLUTION,
-        evidence_source="fixture: a SECOND, distinct-spec acetic-acid use (F50 probe)",
-    )
-    route = _route_with_extra_use(_isopentyl_route(), extra)
-    readiness = evaluate_route(route)
-    bench = isopentyl_capability_fit_bench()
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.material.status is CapabilityStatus.BLOCKED
-
-    real_material_requirements = requirements_mod._material_requirements
-
-    def mutant_material_requirements(rt_):
-        # BUG (F50): dedupe by species IDENTITY alone -- the spec drops out of the key, so the two distinct-spec
-        # acetic-acid uses collapse to ONE requirement carrying the first (glacial) spec.
-        by_species: "dict[str, MaterialRequirement]" = {}
-        order: "list[str]" = []
-        for r in real_material_requirements(rt_):
-            key = requirements_mod._struct_digest(r.identity) if r.identity is not None \
-                else f"name:{(r.name or '').strip().casefold()}"
-            if key not in by_species:
-                by_species[key] = r
-                order.append(key)
-        return tuple(by_species[k] for k in order)
-
-    with _patch(requirements_mod, "_material_requirements", mutant_material_requirements):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(bench, req2, readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
+@mutant("M53", "DAG capability request accepted but unassessed", "service._run_recompile (convergent+profile refusal)")
+def m53():
+    """A NEGATIVE property with no severable helper (an inline guard): proved by the counterfactual it prevents --
+    the SAME convergent search without the guard's trigger proceeds and answers the capability question with nothing."""
+    kw = dict(grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT, helper_reagents=("water", "acetic acid"),
+              stock_materials=("isopentyl alcohol",))
+    resp_p = run_compilation(build_recompile_request("isopentyl acetate",
+                                                     capability_profile=isopentyl_capability_fit_bench(), **kw))
+    honest = resp_p.outcome.value == "REFUSED" and any(
+        "capab" in d.lower() and "convergent" in d.lower() for d in resp_p.diagnostics)
+    resp_u = run_compilation(build_recompile_request("isopentyl acetate", **kw))
+    bad = resp_u.outcome.value != "REFUSED" and all(
+        getattr(d, "capability_assessment", None) is None for d in resp_u.ranked_route_dossiers)
+    return honest, bad
 
 
-@mutant("M53 DAG-capability-request-accepted-but-unassessed")
-def m53() -> bool:
-    """F51: a capability profile requested together with the CAPPED_SCISSION_CONVERGENT (convergent-DAG) grammar
-    must be a typed REFUSED -- the DAG admission model carries NO capability-topology, so a verdict cannot be
-    honestly computed. This is a NEGATIVE property with no severable helper to sever (the guard is an inline
-    conditional at the top of `_run_recompile`), so -- exactly as M7/M8/M34/M36 do for the profile-noninterference
-    laws -- it is proved by the COUNTERFACTUAL the guard prevents: the SAME convergent search run WITHOUT a
-    profile really does proceed to a non-refused response whose dossiers carry NO capability_assessment (the
-    profile is dropped on the floor in DAG mode, F51). Real: (profile + convergent) is REFUSED, diagnostic names
-    the capability drop. Counterfactual (the silent-unassessed pass the guard blocks): (no profile + convergent)
-    is NOT refused and answers the capability question with nothing."""
-    profiled = build_recompile_request(
-        "isopentyl acetate", capability_profile=isopentyl_capability_fit_bench(),
-        grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
-        helper_reagents=("water", "acetic acid"), stock_materials=("isopentyl alcohol",),
-    )
-    resp_profiled = run_compilation(profiled)
-    real_ok = (
-        resp_profiled.outcome.value == "REFUSED"
-        and any("capab" in d.lower() and "convergent" in d.lower() for d in resp_profiled.diagnostics)
-    )
-
-    unprofiled = build_recompile_request(
-        "isopentyl acetate", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
-        helper_reagents=("water", "acetic acid"), stock_materials=("isopentyl alcohol",),
-    )
-    resp_unprofiled = run_compilation(unprofiled)
-    # the guard-removed world: a convergent search silently proceeds with no capability answer anywhere.
-    no_capability_anywhere = all(
-        getattr(d, "capability_assessment", None) is None for d in resp_unprofiled.ranked_route_dossiers
-    )
-    mutant_bad = resp_unprofiled.outcome.value != "REFUSED" and no_capability_anywhere
-    return real_ok and mutant_bad
-
-
-@mutant("M54 compile-human-drops-capability-while-JSON-honors-it")
-def m54() -> bool:
-    """F52: the `compile`/`recompile` HUMAN render and the `--json` payload must answer the capability question
-    identically (human == JSON). Real: the human render carries a `CAPABILITY[...]` block and the JSON payload
-    carries a `capability_assessment` for the same route. Mutant: the shared `render_capability_lines` returns
-    nothing (the human path drops the capability block) while the JSON codec -- a SEPARATE path -- still emits
-    the assessment, so the two surfaces disagree and a human reader loses the capability answer entirely."""
+@mutant("M54", "compile human render drops capability while JSON honors it", "service.render_capability_lines")
+def m54():
     from smartchem.cli import _render_recompile_response
     resp = _fit_response()
-    human = _render_recompile_response(resp, quiet=False)
-    payload = response_to_payload(resp)
-    json_has = any(d.get("capability_assessment") for d in payload["ranked_route_dossiers"])
-    real_ok = "CAPABILITY[" in human and json_has
-
-    def mutant_render_capability_lines(assessment, origin, *, indent):
-        return []  # BUG: the human capability block is dropped; the JSON codec path is untouched
-
-    with _patch(svc, "render_capability_lines", mutant_render_capability_lines):
-        human2 = _render_recompile_response(resp, quiet=False)
-    mutant_bad = "CAPABILITY[" not in human2 and json_has
-    return real_ok and mutant_bad
+    json_has = any(d.get("capability_assessment") for d in response_to_payload(resp)["ranked_route_dossiers"])
+    honest = "CAPABILITY[" in _render_recompile_response(resp, quiet=False) and json_has
+    with _patch(svc, "render_capability_lines", lambda assessment, origin, *, indent: []):
+        bad = "CAPABILITY[" not in _render_recompile_response(resp, quiet=False) and json_has
+    return honest, bad
 
 
-@mutant("M55 generic-compiler-knows-a-special-reagent-identity")
-def m55() -> bool:
-    """F45: the generic requirements compiler must carry NO target/reagent-specific identities. A de-formulated
-    acetic-acid use (its typed 'glacial' formulation cleared) earns NO composition floor -- so a modest 90%
-    acetic bottle satisfies it. Real: FIT. Mutant: `_material_requirements` re-introduces an IDENTITY-scoped
-    esterification floor (assay >= 0.98 for anything whose structure IS acetic acid), which the 90% bottle now
-    BLOCKS -- special-identity knowledge smuggled back into the generic layer."""
+def _deformulated_acetic_route() -> ExperimentRoute:
+    """The real route with the acetic-acid REACTANT use's raw formulation AND typed specification cleared (a LOCAL
+    copy): the compiler then has no sourced constraint on it. The procedure PROSE still says 'glacial'."""
+    return _map_uses(_isopentyl_route(), lambda u: dc.replace(u, formulation=None, specification=None)
+                     if u.name == "acetic acid" else u)
+
+
+def _acetic_90() -> StockMaterial:
+    return _bottle("acetic-90pct", _ACETIC, "0.9", "0.92")
+
+
+def _floor_spec(lo: str) -> MaterialSpecification:
+    return MaterialSpecification(composition=_comp(lo, "1", tol=Tolerance.FLOOR))
+
+
+@mutant("M55", "generic compiler knows a special reagent identity", "requirements._material_requirements")
+def m55():
     route = _deformulated_acetic_route()
-    readiness = evaluate_route(route)
-    modest_acetic = StockMaterial(
-        STOCK_MATERIAL_SCHEMA, "acetic-90pct", "Acetic acid, 90% technical grade",
-        (MaterialComponent.of_molecule(_molecule("acetic acid"), "active", 0.90, 0.92),), Phase.LIQUID, "fixture",
-        quantity=StockQuantity.of("500", "mL"),
-    )
-    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(glacial_acetic=modest_acetic))
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.material.status is CapabilityStatus.FIT
+    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(glacial_acetic=_acetic_90()))
+    honest = _iso_material(bench, route) is not CapabilityStatus.BLOCKED
+    acetic_key = requirements_mod._struct_digest(_ACETIC)
+    real = requirements_mod._material_requirements
 
-    real_material_requirements = requirements_mod._material_requirements
+    def identity_floor(r_):
+        return tuple(dc.replace(r, specification=_floor_spec("0.98"))
+                     if r.identity is not None and requirements_mod._struct_digest(r.identity) == acetic_key else r
+                     for r in real(r_))
 
-    def mutant_material_requirements(rt_):
-        out = []
-        for r in real_material_requirements(rt_):
-            if r.identity is not None and requirements_mod._struct_digest(r.identity) == _ACETIC_DIGEST:
-                # BUG (F45): a floor manufactured from the reagent's IDENTITY, not from sourced evidence
-                r = dc.replace(r, required_assay=0.98, composition_band=None,
-                               evidence_source="mutant: identity-scoped esterification floor (F45 violation)")
-            out.append(r)
-        return tuple(out)
-
-    with _patch(requirements_mod, "_material_requirements", mutant_material_requirements):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(bench, req2, readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.BLOCKED
-    return real_ok and mutant_bad
+    with _patch(requirements_mod, "_material_requirements", identity_floor):
+        bad = _iso_material(bench, route) is CapabilityStatus.BLOCKED
+    return honest, bad
 
 
-@mutant("M56 runtime-glacial-prose-scan-manufactures-a-requirement")
-def m56() -> bool:
-    """F45: the generic compiler must not RUNTIME-SCAN procedure prose to manufacture a requirement. The
-    de-formulated acetic use no longer carries a typed 'glacial' formulation, but the procedure PROSE still says
-    'glacial'. Real: the compiler reads the typed field only -> no floor -> a modest 90% acetic bottle FITs.
-    Mutant: `_material_requirements` re-scans the prose for 'glacial' and manufactures a >= 0.99 floor on the
-    acetic requirement -- the exact retired runtime prose scan -- which the 90% bottle now BLOCKS."""
+@mutant("M56", "runtime 'glacial' prose scan manufactures a requirement", "requirements._material_requirements")
+def m56():
     route = _deformulated_acetic_route()
-    readiness = evaluate_route(route)
-    modest_acetic = StockMaterial(
-        STOCK_MATERIAL_SCHEMA, "acetic-90pct-b", "Acetic acid, 90% technical grade",
-        (MaterialComponent.of_molecule(_molecule("acetic acid"), "active", 0.90, 0.92),), Phase.LIQUID, "fixture",
-        quantity=StockQuantity.of("500", "mL"),
-    )
-    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(glacial_acetic=modest_acetic))
-    real_a = assess(bench, compile_capability_requirements(route), readiness)
-    real_ok = real_a.material.status is CapabilityStatus.FIT
+    bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(glacial_acetic=_acetic_90()))
+    honest = _iso_material(bench, route) is not CapabilityStatus.BLOCKED
+    real = requirements_mod._material_requirements
 
-    def _procedure_prose(rt_):
+    def prose(r_):
         chunks = []
-        for step in rt_.steps:
-            procedure = step.envelope.procedure
-            if procedure is None:
+        for step in r_.steps:
+            p = step.envelope.procedure
+            if p is None:
                 continue
-            if procedure.scale is not None and isinstance(procedure.scale.value, str):
-                chunks.append(procedure.scale.value)
-            for op in procedure.operations:
+            if isinstance(p.scale.value, str):
+                chunks.append(p.scale.value)
+            for op in p.operations:
                 if op.quantity is not None and isinstance(op.quantity.value, str):
                     chunks.append(op.quantity.value)
-                chunks.extend(op.materials)
         return " ".join(chunks).casefold()
 
-    real_material_requirements = requirements_mod._material_requirements
+    def prose_scan(r_):
+        glacial = "glacial" in prose(r_)
+        return tuple(dc.replace(r, specification=_floor_spec("0.99"))
+                     if glacial and r.name is not None and "acetic acid" in r.name.casefold() else r for r in real(r_))
 
-    def mutant_material_requirements(rt_):
-        has_glacial = "glacial" in _procedure_prose(rt_)
-        out = []
-        for r in real_material_requirements(rt_):
-            if has_glacial and r.name is not None and "acetic acid" in r.name.casefold():
-                # BUG (F45): a floor manufactured from a RUNTIME free-text scan of the procedure prose
-                r = dc.replace(r, required_assay=0.99, composition_band=None,
-                               evidence_source="mutant: runtime 'glacial' prose scan (F45 violation)")
-            out.append(r)
-        return tuple(out)
-
-    with _patch(requirements_mod, "_material_requirements", mutant_material_requirements):
-        req2 = compile_capability_requirements(route)
-        mutant_a = assess(bench, req2, readiness)
-    mutant_bad = mutant_a.material.status is CapabilityStatus.BLOCKED
-    return real_ok and mutant_bad
+    with _patch(requirements_mod, "_material_requirements", prose_scan):
+        bad = _iso_material(bench, route) is CapabilityStatus.BLOCKED
+    return honest, bad
 
 
-@mutant("M57 solubility-treated-as-solution-mass-fraction")
-def m57() -> bool:
-    """F46: a DerivedIntervalEvidence record refuses to exist unless `derivation_fn(*inputs) == value_interval`.
-    Real: the CORRECT NaCl brine record (value interval = solution_fraction_from_solubility(35.7, 36) via
-    x = s/(s+100)) constructs and verifies. Mutant: the g/100 g-water solubility figure dropped STRAIGHT into a
-    mass-fraction slot (0.357, 0.36) while the derivation reconstructs 0.263.. -> the construction check raises,
-    refusing the mislabelled interval at build time."""
-    s_lo, s_hi = Fraction(357, 10), Fraction(36)
-    honest = DerivedIntervalEvidence(
-        derivation_id="m57-nacl-correct",
-        value_interval=solution_fraction_from_solubility(s_lo, s_hi),
-        unit=IntervalUnit.MASS_FRACTION_OF_SOLUTION,
-        source_locator="fixture: NaCl solubility 35.7-36 g/100 g water",
-        derivation_method=DerivationMethod.UNIT_CONVERTED,
-        derivation_inputs=(s_lo, s_hi),
-        derivation_fn=solution_fraction_from_solubility,
-        domain_of_validity="aqueous NaCl at saturation, 20-25 C",
-    )
-    real_ok = honest.verify()
+_PC_NACL = "https://pubchem.ncbi.nlm.nih.gov/compound/5234 (fixture copy)"
 
-    raised = False
+
+def _solubility_inputs(value: str, unit: InputUnit):
+    return (TypedInput("low", value, unit, EvidenceKind.SOURCE_QUOTED, _PC_NACL, "298.15"),
+            TypedInput("high", value, unit, EvidenceKind.SOURCE_QUOTED, _PC_NACL, "298.15"))
+
+
+@mutant("M57", "solubility (g/100 g water) used AS a mass fraction", "derived_evidence.IntervalEvidence.recompute")
+def m57():
+    """Re-targeted from the deleted DerivedIntervalEvidence onto its successor's load-bearing check: construction
+    RE-COMPUTES the interval through the registered kernel. Honest: the correct 36/136 record builds and verifies; the
+    36.0 g/100 g figure dropped straight into the slots as 0.36 is REFUSED. Mutant: recompute trusts the stated value
+    -> the mislabelled record constructs."""
+    honest_rec = IntervalEvidence.build(
+        kernel=DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1, basis=ConcentrationBasis.MASS_FRACTION,
+        inputs=_solubility_inputs("36.0", InputUnit.G_PER_100G_SOLVENT), source_locators=(_PC_NACL,),
+        domain_of_validity="aqueous NaCl at saturation, 25 C")
+
+    def bad_record():
+        return IntervalEvidence(EvidenceKind.DERIVED, "0.36", "0.36", ConcentrationBasis.MASS_FRACTION, (_PC_NACL,),
+                                DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1,
+                                _solubility_inputs("36.0", InputUnit.G_PER_100G_SOLVENT),
+                                "aqueous NaCl at saturation, 25 C")
+
     try:
-        DerivedIntervalEvidence(
-            derivation_id="m57-nacl-unit-bug",
-            value_interval=(s_lo / 100, s_hi / 100),  # BUG: g/100 g-water used AS a mass fraction of solution
-            unit=IntervalUnit.MASS_FRACTION_OF_SOLUTION,
-            source_locator="fixture: NaCl solubility 35.7-36 g/100 g water",
-            derivation_method=DerivationMethod.UNIT_CONVERTED,
-            derivation_inputs=(s_lo, s_hi),
-            derivation_fn=solution_fraction_from_solubility,
-            domain_of_validity="aqueous NaCl at saturation, 20-25 C",
-        )
+        bad_record()
+        refused = False
     except ValueError:
-        raised = True
-    return real_ok and raised
-
-
-@mutant("M58 decorative-uncertainty-as-DERIVED [+residual-flagged]")
-def m58() -> bool:
-    """F46: the DerivedIntervalEvidence construction check KILLS an arithmetic/width error -- a claimed band that
-    its own inputs do not reconstruct is refused. Real: an ASSUMED symmetric band [0.045, 0.055] whose inputs
-    (0.05 +- 0.005) reconstruct it constructs. Mutant: a claimed +-1% band [0.04, 0.06] whose inputs still say
-    +-0.5% -> reconstruction mismatch -> refused.
-
-    RESIDUAL (verified + flagged for 0.9.5, per the adversary's unease): the guard enforces ARITHMETIC
-    reconstruction, NOT method-label provenance. A DECORATIVE width that IS arithmetically consistent but is
-    mislabelled a measured/derived method (BROADENED) instead of ASSUMED constructs FINE -- the guard cannot
-    catch it. This mutant therefore honestly kills a unit/arithmetic error, NOT a mislabelled-but-consistent
-    width. The residual is printed below and does NOT count toward the kill."""
-    nominal, half = Fraction(5, 100), Fraction(5, 1000)
-    honest = DerivedIntervalEvidence(
-        derivation_id="m58-assumed-consistent",
-        value_interval=symmetric_band(nominal, half),
-        unit=IntervalUnit.MASS_FRACTION_OF_SOLUTION,
-        source_locator="fixture: nominal 5% wash, +-0.5% ASSUMED bench tolerance",
-        derivation_method=DerivationMethod.ASSUMED,
-        derivation_inputs=(nominal, half),
-        derivation_fn=symmetric_band,
-        domain_of_validity="bench-prepared 5% w/w aqueous NaHCO3 wash (band assumed)",
-    )
-    real_ok = honest.verify()
-
-    raised = False
-    try:
-        DerivedIntervalEvidence(
-            derivation_id="m58-width-bug",
-            value_interval=(Fraction(4, 100), Fraction(6, 100)),  # BUG: claims +-1% but inputs say +-0.5%
-            unit=IntervalUnit.MASS_FRACTION_OF_SOLUTION,
-            source_locator="fixture: nominal 5% wash",
-            derivation_method=DerivationMethod.ASSUMED,
-            derivation_inputs=(nominal, half),
-            derivation_fn=symmetric_band,
-            domain_of_validity="bench-prepared 5% w/w aqueous NaHCO3 wash",
-        )
-    except ValueError:
-        raised = True
-
-    residual_constructs = False
-    try:
-        DerivedIntervalEvidence(
-            derivation_id="m58-mislabelled-but-consistent",
-            value_interval=symmetric_band(nominal, half),
-            unit=IntervalUnit.MASS_FRACTION_OF_SOLUTION,
-            source_locator="fixture: decorative width mislabelled a measured spread",
-            derivation_method=DerivationMethod.BROADENED,  # mislabelled: implies a measured spread, width is decorative
-            derivation_inputs=(nominal, half),
-            derivation_fn=symmetric_band,
-            domain_of_validity="bench-prepared 5% w/w aqueous NaHCO3 wash",
-        )
-        residual_constructs = True
-    except ValueError:
-        residual_constructs = False
-    print(f"    [M58 RESIDUAL] mislabelled-but-arithmetically-consistent decorative width constructed="
-          f"{residual_constructs} -- the guard is ARITHMETIC-only (no method-label provenance check); "
-          f"flag for 0.9.5. This does NOT count toward the M58 kill.", flush=True)
-    return real_ok and raised
-
-
-@mutant("M59 legacy-v0.8-response-decoder-fabricates-capability")
-def m59() -> bool:
-    """F54 (distinct from M37): the LEGACY-PAYLOAD MIGRATION path. A v0.8 ranked-route dossier predates the
-    capability field, so its payload has NO `capability_assessment` key; the additive-optional decoder must map
-    that absence to `None` (NOT_REQUESTED), never a fabricated assessment. M37 tests the response-level coherence
-    GUARD on a FORGED-live object; M59 tests the CODEC seam -- `_capability_assessment_from_payload` invoked by
-    `ranked_summary_from_payload` on a key-stripped (v0.8-shaped) dossier. Real: absent key -> None. Mutant: the
-    decoder fabricates an assessment for a missing/legacy field."""
-    resp = run_compilation(build_recompile_request(_FAST_TARGET, max_depth=2))  # no profile -> NOT_REQUESTED
-    dossier_payload = dict(response_to_payload(resp)["ranked_route_dossiers"][0])
-    dossier_payload.pop("capability_assessment", None)  # simulate a v0.8 wire predating the field
-    real_summary = ranked_summary_from_payload(dossier_payload)
-    real_ok = real_summary.capability_assessment is None
-
-    fabricated = assess(_profile(), _reqs(), _ps_readiness())
-    real_from_payload = svc._capability_assessment_from_payload
-
-    def mutant_from_payload(payload):
-        if payload is None:  # BUG: a missing/legacy capability field fabricates an assessment
-            return fabricated
-        return real_from_payload(payload)
-
-    with _patch(svc, "_capability_assessment_from_payload", mutant_from_payload):
-        mutant_summary = ranked_summary_from_payload(dossier_payload)
-    mutant_bad = mutant_summary.capability_assessment is not None
-    return real_ok and mutant_bad
-
-
-@mutant("M60 source-substituted-use-stays-digest-identical")
-def m60() -> bool:
-    """F43/F50: a material requirement's `evidence_source` is load-bearing provenance and must FLOW INTO its
-    canonical digest -- two otherwise-identical requirements that differ only in their sourced evidence carry
-    DIFFERENT digests (a source substitution is a real change). Real: the two digests differ. Mutant (the same
-    "mutate the ONE governing pin" technique as M7/M8/M20): a digest BLIND to `evidence_source` -- simulated by
-    normalising that one field to a constant -- collapses the two source-substituted uses to a single identity,
-    proving the field is the only distinguisher and that dropping it from the digest would launder a substitution."""
-    r1 = MaterialRequirement(
-        identity=None, name="acetic acid", required_assay=None, phase=None, quantity=None,
-        role="reactant", evidence_source="LibreTexts isopentyl-acetate experiment, operation 1",
-    )
-    r2 = dc.replace(r1, evidence_source="a DIFFERENT, substituted source citation")
-    real_ok = canonical_digest(r1) != canonical_digest(r2)
-
-    blind1 = dc.replace(r1, evidence_source="CONSTANT")
-    blind2 = dc.replace(r2, evidence_source="CONSTANT")
-    mutant_bad = canonical_digest(blind1) == canonical_digest(blind2)
-    return real_ok and mutant_bad
-
-
-@mutant("M61 partial-ProcessBounds-launders-an-unmet-time-demand")
-def m61() -> bool:
-    """F56: a real route TIME demand on a process dimension the bench leaves UNMODELED (its bound is None) cannot
-    be certified -> the process axis caps at UNKNOWN, never a silent FIT. Fixture: a route declaring an ACTIVE-time
-    demand + `workup_included=True` (so the delegate returns FITS on the modelled elapsed dimension), against a
-    bench that bounds STEP time but NOT active time. Real: the per-dimension fail-close (`_PROCESS_FAILCLOSE_DIMENSIONS`)
-    catches the unmodelled active-time demand -> UNKNOWN. Mutant: the per-dimension table is emptied (pre-F56), so
-    the delegate's FITS rides straight through -> a fabricated process FIT."""
-    req = ProcessRequirements(
-        workup_included=True, provenance="fixture",
-        elapsed_minutes=Interval(0, 60, "min"), active_minutes=Interval(0, 30, "min"),
-    )
-    bounds = ProcessBounds.of(max_step_minutes=1000.0)  # bounds elapsed, NOT active time
-    real_axis = assess_mod._process_axis((req,), bounds)
-    real_ok = real_axis.status is CapabilityStatus.UNKNOWN
-
-    with _patch(assess_mod, "_PROCESS_FAILCLOSE_DIMENSIONS", ()):  # BUG: pre-F56, no per-dimension fail-close
-        mutant_axis = assess_mod._process_axis((req,), bounds)
-    mutant_bad = mutant_axis.status is CapabilityStatus.FIT
-    return real_ok and mutant_bad
-
-
-@mutant("M62 attention-agitation-dropped-from-process-failclose-table")
-def m62() -> bool:
-    """F62 (Wave-C P0): the F56 per-dimension process fail-close is driven off the module-level table
-    `_PROCESS_FAILCLOSE_DIMENSIONS`, whose LAST TWO entries (attention mode, agitation mode) were the two a
-    hand-written checklist originally dropped -- letting a bench that bounds time but NOT attention wave a
-    CONTINUOUS-attention route to process FIT -> overall CAPABILITY_FIT. Fixture: a CONTINUOUS-attention route
-    (delegate FITS on the modelled elapsed dimension) against a bench that bounds step time but declares no
-    attention. Real: the table catches the unmodelled attention demand -> UNKNOWN. Mutant: the table is reverted
-    to the pre-F62 checklist (last two entries dropped), so attention falls through -> FIT."""
-    req = ProcessRequirements(
-        attention=Attention.CONTINUOUS, workup_included=True, provenance="fixture",
-        elapsed_minutes=Interval(0, 60, "min"),
-    )
-    bounds = ProcessBounds.of(max_step_minutes=1000.0)  # bounds time, NOT attention/agitation
-    real_axis = assess_mod._process_axis((req,), bounds)
-    real_ok = real_axis.status is CapabilityStatus.UNKNOWN
-
-    pre_f62_table = assess_mod._PROCESS_FAILCLOSE_DIMENSIONS[:-2]  # drop attention + agitation (the F62 regression)
-    assert len(pre_f62_table) == 3, "expected the current table to carry 5 dimensions (3 time + 2 mode)"
-    with _patch(assess_mod, "_PROCESS_FAILCLOSE_DIMENSIONS", pre_f62_table):
-        mutant_axis = assess_mod._process_axis((req,), bounds)
-    mutant_bad = mutant_axis.status is CapabilityStatus.FIT
-
-    # Also drive it end-to-end to overall CAPABILITY_FIT (mirrors M61's synthetic-axes shape): a real isopentyl
-    # readiness (PROCESS_SPECIFIED) + an all-other-axes-neutral requirements record carrying ONLY this process
-    # demand, under an empty profile whose ProcessBounds bounds step time but not attention.
-    reqs = _reqs(process=(req,))
-    neutral_profile = _profile(process_bounds=bounds)
-    real_overall = assess(neutral_profile, reqs, _ps_readiness()).overall is CapabilityStatus.UNKNOWN
-    with _patch(assess_mod, "_PROCESS_FAILCLOSE_DIMENSIONS", pre_f62_table):
-        mutant_overall = assess(neutral_profile, reqs, _ps_readiness()).overall is CapabilityStatus.FIT
-    return real_ok and mutant_bad and real_overall and mutant_overall
-
-
-def run() -> list:
-    results = []
-    for name, fn in _MUTANTS:
+        refused = True
+    honest = honest_rec.verify() and honest_rec.low.startswith("0.2647") and refused
+    with _patch(IntervalEvidence, "recompute", lambda self: self.interval):
         try:
-            killed = bool(fn())
-            status = "KILLED" if killed else "SURVIVED"
-        except Vacuous as exc:
-            killed, status = None, f"VACUOUS({exc})"
-        except Exception as exc:  # a harness error is a FAILED kill, reported honestly -- never a ceremonial pass
-            killed, status = False, "SURVIVED"
-            name = f"{name} [harness-error: {type(exc).__name__}: {exc}]"
-        results.append((name, killed, status))
-        print(f"  [{status}] {name}", flush=True)
-    return results
+            bad = bad_record().low == "0.36"
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+retired("M58", "decorative uncertainty labelled as a measured/derived method",
+        "DerivedIntervalEvidence free DerivationMethod label (deleted by Round V D7)",
+        "labels are now bound to a CLOSED kernel registry (a label can no longer claim more than its arithmetic); the "
+        "Round-IV M58 RESIDUAL (mislabelled-but-arithmetically-consistent width) is now REFUSED at construction and "
+        "killed by M74; the arithmetic-width leg is the same recompute guard M57 kills", ("M74", "M57"))
+
+
+@mutant("M59", "legacy v0.8 dossier decoder fabricates capability",
+        "service._capability_assessment_from_payload (legacy seam)")
+def m59():
+    """Now on a REAL v0.8 artifact (main@df1b38d fixture), not a key-stripped 0.9 payload: a genuine
+    ranked-route-summary-v1alpha3 dossier decodes with capability NOT_REQUESTED. Mutant: the decoder fabricates an
+    assessment for the absent field -- surfaced, or (defence in depth) refused by RankedRouteSummary's own legacy
+    guard; either way the genuine v0.8 artifact no longer decodes as NOT_REQUESTED."""
+    dossier = _v08("response_isopentyl_acetate.json")["ranked_route_dossiers"][0]
+    honest = ranked_summary_from_payload(dossier).capability_assessment is None
+    fabricated = assess(_clean_profile(), _reqs(), _ps())
+    real = svc._capability_assessment_from_payload
+    with _patch(svc, "_capability_assessment_from_payload", lambda p: fabricated if p is None else real(p)):
+        try:  # detected either way: a fabricated assessment surfaces, or the record's own legacy guard refuses it
+            bad = ranked_summary_from_payload(dossier).capability_assessment is not None
+        except ValueError as exc:
+            bad = "cannot carry a capability_assessment" in str(exc)
+    return honest, bad
+
+
+def _omit_field_encoder(cls, field_name):
+    """A mutant `contracts.canonical_payload` whose dataclass branch SKIPS ``cls.field_name`` (the encoder is recursive
+    through its module global, so nested records are covered too)."""
+    real = contracts_mod.canonical_payload
+
+    def encoder(value):
+        if type(value) is cls:
+            return {"type": "dataclass", "class": f"{cls.__module__}.{cls.__qualname__}",
+                    "fields": [[f.name, encoder(getattr(value, f.name))] for f in dc.fields(value)
+                               if f.compare and not f.name.startswith("_") and f.name != field_name]}
+        return real(value)
+
+    return encoder
+
+
+@mutant("M60", "source-substituted use stays digest-identical", "contracts.canonical_payload (evidence_source)")
+def m60():
+    r1 = MaterialRequirement(identity=None, name="acetic acid", phase=None, quantity=QuantityDemand.unstated(1),
+                             role="reactant", evidence_source="LibreTexts isopentyl-acetate experiment, op 1")
+    r2 = dc.replace(r1, evidence_source="a DIFFERENT, substituted source citation")
+    honest = canonical_digest(r1) != canonical_digest(r2)
+    with _patch(contracts_mod, "canonical_payload", _omit_field_encoder(MaterialRequirement, "evidence_source")):
+        bad = canonical_digest(r1) == canonical_digest(r2)
+    return honest, bad
+
+
+_TIME_BOUNDS = ProcessBounds.of(max_step_minutes=1000.0, max_total_minutes=1000.0)
+
+
+@mutant("M61", "partial ProcessBounds launders an unmet ACTIVE-time demand", "assess._PROCESS_TIME_DIMENSIONS")
+def m61():
+    req = ProcessRequirements(workup_included=True, provenance="fixture",
+                              elapsed_minutes=Interval(0, 60, "min"), active_minutes=Interval(0, 30, "min"))
+    profile = _profile(process_bounds=_TIME_BOUNDS)  # step + total time DECLARED, active UNDECLARED
+    honest = assess_mod._process_axis((req,), profile).status is CapabilityStatus.UNKNOWN
+    table = assess_mod._PROCESS_TIME_DIMENSIONS
+    assert table[-1][2] == "max_active_minutes"
+    with _patch(assess_mod, "_PROCESS_TIME_DIMENSIONS", table[:-1]):
+        bad = assess_mod._process_axis((req,), profile).status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M62", "attention/agitation dropped from the process fail-close table", "assess._PROCESS_FAILCLOSE_DIMENSIONS")
+def m62():
+    req = ProcessRequirements(attention=Attention.CONTINUOUS, workup_included=True, provenance="fixture",
+                              elapsed_minutes=Interval(0, 60, "min"))
+    profile = _clean_profile(process_bounds=_TIME_BOUNDS)
+    honest = (assess_mod._process_axis((req,), profile).status is CapabilityStatus.UNKNOWN
+              and assess(profile, _reqs(process=(req,)), _ps()).overall is CapabilityStatus.UNKNOWN)
+    table = assess_mod._PROCESS_FAILCLOSE_DIMENSIONS
+    assert [label for label, _r, _b in table][-2:] == ["attention mode", "agitation mode"]
+    with _patch(assess_mod, "_PROCESS_FAILCLOSE_DIMENSIONS", table[:-2]):
+        bad = (assess_mod._process_axis((req,), profile).status is CapabilityStatus.FIT
+               and assess(profile, _reqs(process=(req,)), _ps()).overall is CapabilityStatus.FIT)
+    return honest, bad
+
+
+# =================================================================================================================
+# M63-M82 (Round V family: quantity / allocation / specification / evidence / waste / schema / declaration)
+# =================================================================================================================
+
+@mutant("M63", "known + unknown quantity collapses to EXACT (F64)", "quantity.QuantityDemand.combine")
+def m63():
+    """Real micro-route projection: methanol drawn twice, once unquantified -> LOWER_BOUND_PLUS_UNKNOWN -> material
+    UNKNOWN. Mutant: the fold drops the unquantified use (the Round-IV `sum(non-None)` bug) -> EXACT 10 mL -> FIT."""
+    route = _micro_route(extra_uses=(_use("methanol", ProcedureMaterialRole.SUBSTRATE, identity=_METHANOL,
+                                          phase=Phase.LIQUID),))
+    reqs = compile_capability_requirements(route)
+    meoh = next(r for r in reqs.material if r.name == "methanol")
+    honest = (meoh.quantity.knowledge is QuantityKnowledge.LOWER_BOUND_PLUS_UNKNOWN
+              and _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.UNKNOWN)
+    real = QuantityDemand.__dict__["combine"].__func__
+
+    def drop_none(cls, uses):
+        kept = [u for u in uses if u is not None]
+        return real(cls, kept if kept else list(uses))
+
+    with _patch(QuantityDemand, "combine", classmethod(drop_none)):
+        bad = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M64", "mixed-unit demand loses its gate (F65)", "quantity.QuantityDemand.exact_by_unit")
+def m64():
+    """methanol 10 mL + 5 g (two unit domains, never converted) vs a 0.001 mL methanol bottle: the mL domain is
+    provably short -> BLOCKED. Mutant: a multi-unit demand exposes NO domain to the allocator -> FIT."""
+    route = _micro_route(extra_uses=(_use("methanol", ProcedureMaterialRole.SUBSTRATE, identity=_METHANOL, qty="5",
+                                          unit="g", phase=Phase.LIQUID),))
+    profile = _clean_profile(material_inventory=(_bottle("methanol-thimble", _METHANOL, qty="0.001"),
+                                                 _bottle("acetic-pure", _ACETIC)))
+    honest = _micro_assess(route, profile).material.status is CapabilityStatus.BLOCKED
+    bad_units = _src_mutant(QuantityDemand.exact_by_unit, (
+        "return {unit: exact_fraction(value, f\"quantity in {unit!r}\") for unit, value in self.known}",
+        "return {} if len(self.known) > 1 else "
+        "{unit: exact_fraction(value, f\"quantity in {unit!r}\") for unit, value in self.known}"))
+    with _patch(QuantityDemand, "exact_by_unit", bad_units):
+        bad = _micro_assess(route, profile).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M65", "one multi-component package spent in two species graphs", "assess._max_flow (per-species split)")
+def m65():
+    """One 5 mL saturated brine (NaCl + water components) cannot supply 5 mL of NaCl brine AND 5 mL of water: the
+    package is ONE node -> F+ = 5 < 10 -> BLOCKED. Mutant: each species' graph spends the package independently."""
+    brine = material_library.sodium_chloride_saturated_wash(quantity=StockQuantity.of("5", "mL"))
+    reqs = (_mreq(name="sodium chloride", qty=(("mL", "5"),),
+                  spec=MaterialSpecification(states=(_state(SaturationState.SATURATED),))),
+            _mreq(name="water", qty=(("mL", "5"),)))
+    profile = _profile(material_inventory=(brine,))
+    honest = _mat(profile, *reqs) is CapabilityStatus.BLOCKED
+    with _patch(assess_mod, "_max_flow", _per_species_flow):
+        bad = _mat(profile, *reqs) is not CapabilityStatus.BLOCKED
+    return honest, bad
+
+
+def _conc_table(real):
+    def projected(use):
+        spec = real(use)
+        if any(t in ("conc.", "concentrated") for t in spec.unresolved_terms):
+            return _floor_spec("0.95")  # BUG: the retired global adjective table ("conc." == >= 95%)
+        return spec
+    return projected
+
+
+@mutant("M66", "generic 'conc.' manufactures >= 95%", "requirements._project_specification")
+def m66():
+    """F67: 'conc.' has no species-free meaning (conc. HCl ~37%, conc. H2SO4 ~96%). Honest: the typed unresolved term
+    keeps HCl UNKNOWN against BOTH a real 37% bottle and an impossible 96% one. Mutant (the retired adjective table):
+    the real 37% HCl BLOCKS and the impossible 96% aqueous HCl FITs."""
+    hcl = _mol("Cl")
+    use = _use("hydrochloric acid", ProcedureMaterialRole.NEUTRALIZE, identity=hcl, qty="5", formulation="conc.",
+               spec=MaterialSpecification(unresolved_terms=("conc.",)))
+    route = _micro_route(extra_uses=(use,))
+    p37 = _micro_profile(_bottle("hcl-37", hcl, "0.36", "0.38", phase=Phase.AQUEOUS_SOLUTION))
+    p96 = _micro_profile(_bottle("hcl-96-impossible", hcl, "0.96", "0.97", phase=Phase.AQUEOUS_SOLUTION))
+    honest = (_micro_assess(route, p37).material.status is CapabilityStatus.UNKNOWN
+              and _micro_assess(route, p96).material.status is CapabilityStatus.UNKNOWN)
+    with _patch(requirements_mod, "_project_specification", _conc_table(requirements_mod._project_specification)):
+        bad = (_micro_assess(route, p37).material.status is CapabilityStatus.BLOCKED
+               and _micro_assess(route, p96).material.status is CapabilityStatus.FIT)
+    return honest, bad
+
+
+def _state_from(trigger, claim):
+    """A mutant `StockMaterial.spec_view` that INFERS a state claim the bench never declared (the Round-IV adjective
+    table's move, one layer over): if ``trigger(stock, view)`` holds and the family is undeclared, add ``claim``."""
+    real = StockMaterial.spec_view
+
+    def spec_view(self, key):
+        view = real(self, key)
+        if view is not None and trigger(self, view) and not any(type(c.state) is type(claim.state) for c in view.states):
+            return dc.replace(view, states=view.states + (claim,))
+        return view
+
+    return spec_view
+
+
+def _spec_case(req, bottle, trigger, claim):
+    profile = _profile(material_inventory=(bottle,))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    with _patch(StockMaterial, "spec_view", _state_from(trigger, claim)):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M67", "a ~20% number satisfies 'saturated'", "stock.StockMaterial.spec_view (state inferred from number)")
+def m67():
+    req = _mreq(name="sodium chloride", qty=(("mL", "5"),),
+                spec=MaterialSpecification(states=(_state(SaturationState.SATURATED),)))
+    bottle = _bottle("nacl-20pct", "sodium chloride", "0.2", "0.21", phase=Phase.AQUEOUS_SOLUTION, qty="250")
+    return _spec_case(req, bottle, lambda s, v: v.interval[0] >= Fraction(1, 5),
+                      StateClaim(SaturationState.SATURATED, EvidenceKind.USER_DECLARED))
+
+
+@mutant("M68", "a hydrate satisfies ANHYDROUS via its assay", "stock.StockMaterial.spec_view (state inferred from assay)")
+def m68():
+    req = _mreq(name="magnesium sulfate", qty=(("g", "2"),),
+                spec=MaterialSpecification(states=(_state(HydrationState.ANHYDROUS),)))
+    heptahydrate = _bottle("mgso4-7h2o", "magnesium sulfate", "0.98", "1", phase=Phase.SOLID, qty="250", unit="g")
+    return _spec_case(req, heptahydrate, lambda s, v: v.interval[0] >= Fraction(97, 100),
+                      StateClaim(HydrationState.ANHYDROUS, EvidenceKind.USER_DECLARED))
+
+
+@mutant("M69", "a dilute LIQUID satisfies NEAT via its phase", "stock.StockMaterial.spec_view (state inferred from phase)")
+def m69():
+    req = _mreq(identity=_ISOAMYL, qty=(("mL", "15"),), phase=Phase.LIQUID,
+                spec=MaterialSpecification(states=(_state(DilutionState.NEAT),)))
+    ten_pct_in_hexane = _bottle("isoamyl-10pct-hexane", _ISOAMYL, "0.09", "0.11", phase=Phase.LIQUID)
+    return _spec_case(req, ten_pct_in_hexane, lambda s, v: s.phase is Phase.LIQUID,
+                      StateClaim(DilutionState.NEAT, EvidenceKind.USER_DECLARED))
+
+
+@mutant("M70", "an unknown-basis 5% is treated as w/w", "material_spec._compare_composition (basis)")
+def m70():
+    req = _mreq(name="sodium bicarbonate", qty=(("mL", "50"),),
+                spec=MaterialSpecification(composition=_comp("0.045", "0.055", basis=ConcentrationBasis.UNKNOWN)))
+    bottle = _bottle("nahco3-5pct-ww", "sodium bicarbonate", "0.048", "0.052", phase=Phase.AQUEOUS_SOLUTION)
+    profile = _profile(material_inventory=(bottle,))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    real = spec_mod._compare_composition
+
+    def as_mass_fraction(r, stock):
+        if r.basis is ConcentrationBasis.UNKNOWN:
+            r = dc.replace(r, basis=ConcentrationBasis.MASS_FRACTION)
+        return real(r, stock)
+
+    with _patch(spec_mod, "_compare_composition", as_mass_fraction):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M71", "ASSUMED requirement + ASSUMED stock certify FIT (F71)", "material_spec.CERTIFYING_*_EVIDENCE")
+def m71():
+    req = _mreq(name="sodium bicarbonate", qty=(("mL", "50"),),
+                spec=MaterialSpecification(composition=_comp("0.04", "0.06", ev=EvidenceKind.ASSUMED)))
+    bottle = _bottle("nahco3-assumed", "sodium bicarbonate", "0.045", "0.055", phase=Phase.AQUEOUS_SOLUTION,
+                     kind="assumed")
+    profile = _profile(material_inventory=(bottle,))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    with _patch(spec_mod, "CERTIFYING_REQUIREMENT_EVIDENCE",
+                spec_mod.CERTIFYING_REQUIREMENT_EVIDENCE | {EvidenceKind.ASSUMED}), \
+            _patch(spec_mod, "CERTIFYING_STOCK_EVIDENCE", spec_mod.CERTIFYING_STOCK_EVIDENCE | {EvidenceKind.ASSUMED}):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M72", "an unrecognized formulation word disappears (F69)", "requirements._project_specification (raw text)")
+def m72():
+    """A use whose raw formulation ('fuming') the author could NOT type projects as an UNRESOLVED term -> UNKNOWN.
+    Mutant: the untyped raw word is dropped -> 'no constraint' -> a plain pure bottle FITs."""
+    route = _micro_route(extra_uses=(_use("nitric acid", ProcedureMaterialRole.REACTANT, qty="5",
+                                          formulation="fuming"),))
+    profile = _micro_profile(_bottle("nitric-acid-bottle", "nitric acid"))
+    honest = _micro_assess(route, profile).material.status is CapabilityStatus.UNKNOWN
+    bad_proj = _src_mutant(requirements_mod._project_specification, (
+        "if raw:\n        return MaterialSpecification(unresolved_terms=(raw,))",
+        "if raw:\n        return _EMPTY_SPEC"))
+    with _patch(requirements_mod, "_project_specification", bad_proj):
+        bad = _micro_assess(route, profile).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M73", "IntervalEvidence source/method/domain change doesn't move the material/profile digest (F70)",
+        "contracts.canonical_payload (MaterialComponent.evidence)")
+def m73():
+    def profile_with(locator, domain):
+        comp = MaterialComponent.evidenced("sodium chloride", "active",
+                                           _ev("0.26", "0.27", kind="quoted", locator=locator, domain=domain))
+        bottle = StockMaterial(STOCK_MATERIAL_SCHEMA, "brine", "brine", (comp,), Phase.AQUEOUS_SOLUTION, "fixture")
+        return custom(profile_id="f70", material_inventory=(bottle,))
+
+    a, b = profile_with("source A", "25 C"), profile_with("source B", "a different domain")
+    honest = a.profile_digest != b.profile_digest and a.material_inventory[0].digest != b.material_inventory[0].digest
+    with _patch(contracts_mod, "canonical_payload", _omit_field_encoder(MaterialComponent, "evidence")):
+        bad = a.profile_digest == b.profile_digest
+    return honest, bad
+
+
+def _mislabelled_band(kind=EvidenceKind.DERIVED):
+    return IntervalEvidence(kind, "0.045", "0.055", ConcentrationBasis.MASS_FRACTION, ("fixture: nominal 5%",),
+                            DerivationKernel.ASSUMED_BAND_V1,
+                            (TypedInput("nominal", "5", InputUnit.PERCENT, EvidenceKind.ASSUMED),
+                             TypedInput("half_width", "0.5", InputUnit.PERCENT, EvidenceKind.ASSUMED)),
+                            "decorative +-0.5% width")
+
+
+@mutant("M74", "a kernel relabelled with an incompatible evidence kind still constructs (F63/F71)",
+        "derived_evidence.IntervalEvidence.__post_init__ (kind check)")
+def m74():
+    """Honest: an ASSUMED_BAND_V1 record labelled DERIVED is REFUSED; the honestly-labelled ASSUMED bottle stays
+    UNKNOWN against a sourced 4-6% requirement. Mutant: the kind check is gone -> the decorative band constructs as
+    DERIVED and CERTIFIES a FIT."""
+    req = _mreq(name="sodium bicarbonate", qty=(("mL", "50"),),
+                spec=MaterialSpecification(composition=_comp("0.04", "0.06")))
+
+    def bottle_with(ev):
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "nahco3", "nahco3",
+                             (MaterialComponent.evidenced("sodium bicarbonate", "active", ev),),
+                             Phase.AQUEOUS_SOLUTION, "fixture", quantity=StockQuantity.of("500", "mL"))
+
+    try:
+        _mislabelled_band()
+        refused = False
+    except ValueError:
+        refused = True
+    honest = refused and _mat(_profile(material_inventory=(bottle_with(_mislabelled_band(EvidenceKind.ASSUMED)),)),
+                              req) is CapabilityStatus.UNKNOWN
+    bad_init = _src_mutant(IntervalEvidence.__post_init__, ("if self.kind is not expected_kind:", "if False:"))
+    with _patch(IntervalEvidence, "__post_init__", bad_init):
+        bad = _mat(_profile(material_inventory=(bottle_with(_mislabelled_band()),)), req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M75", "a g/100 mL figure is fed to the g/100 g kernel (F72)", "derived_evidence.KERNELS (unit whitelist)")
+def m75():
+    def per_volume_record():
+        return IntervalEvidence.build(
+            kernel=DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1,
+            basis=ConcentrationBasis.MASS_FRACTION, inputs=_solubility_inputs("35.7", InputUnit.G_PER_100ML_SOLUTION),
+            source_locators=(_PC_NACL,), domain_of_validity="per-VOLUME figure relabelled")
+
+    try:
+        per_volume_record()
+        honest = False
+    except ValueError:
+        honest = True
+    key = DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1
+    spec = derived_mod.KERNELS[key]
+    widened = dc.replace(spec, units=spec.units | {InputUnit.G_PER_100ML_SOLUTION})
+    with _patch_item(derived_mod.KERNELS, key, widened):
+        try:
+            bad = per_volume_record().kind is EvidenceKind.DERIVED
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+@mutant("M76", "an ASSUMED stock interval is treated as sourced", "stock.StockMaterial.spec_view (evidence strength)")
+def m76():
+    req = _mreq(name="sodium bicarbonate", qty=(("mL", "50"),),
+                spec=MaterialSpecification(composition=_comp("0.04", "0.06")))
+    bottle = _bottle("nahco3-assumed", "sodium bicarbonate", "0.045", "0.055", phase=Phase.AQUEOUS_SOLUTION,
+                     kind="assumed")
+    profile = _profile(material_inventory=(bottle,))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_view = _src_mutant(StockMaterial.spec_view, (
+        "kinds.append(EvidenceKind.UNKNOWN if c.evidence is None else c.evidence.kind)",
+        "kinds.append(EvidenceKind.UNKNOWN if c.evidence is None else (EvidenceKind.SOURCE_QUOTED "
+        "if c.evidence.kind is EvidenceKind.ASSUMED else c.evidence.kind))"))
+    with _patch(StockMaterial, "spec_view", bad_view):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M77", "one package double-spent across structure-key and name-key requirements (F75)",
+        "assess._material_axis (bottle node identity)")
+def m77():
+    """One 25 mL bottle whose components list acetic acid under BOTH its structure key and its label name; one
+    structure-keyed and one name-keyed requirement each commensurable with it, 20 mL apiece. Honest: ONE package node
+    -> F+ 25 < 40 -> BLOCKED. Mutant: the package node is split per requirement -> each spends the whole 25 mL -> FIT."""
+    bottle = StockMaterial(
+        STOCK_MATERIAL_SCHEMA, "acetic-two-keys", "acetic acid (two keys)",
+        (MaterialComponent.evidenced(_ACETIC, "active", _ev("1", "1")),
+         MaterialComponent.evidenced("acetic acid", "label", _ev("0", "1", kind="unknown"),
+                                     states=(StateClaim(DilutionState.NEAT, EvidenceKind.USER_DECLARED),))),
+        Phase.LIQUID, "fixture", quantity=StockQuantity.of("25", "mL"))
+    reqs = (_mreq(identity=_ACETIC, role="structure-keyed draw"),
+            _mreq(name="acetic acid", role="name-keyed draw",
+                  spec=MaterialSpecification(states=(_state(DilutionState.NEAT),))))
+    profile = _profile(material_inventory=(bottle,))
+    honest = _mat(profile, *reqs) is CapabilityStatus.BLOCKED
+    bad_axis = _src_mutant(assess_mod._material_axis, (
+        '("r", ri), ("b", bi), total)', '("r", ri), ("b", bi, ri), total)', 2),
+        ('pess.append((("b", bi), "T", amount[1]))',
+         'pess.extend((("b", bi, rj), "T", amount[1]) for rj in range(len(demands)))'),
+        ('opt.append((("b", bi), "T", amount[1]))',
+         'opt.extend((("b", bi, rj), "T", amount[1]) for rj in range(len(demands)))'),
+        ('opt.append((("b", bi), "T", total))',
+         'opt.extend((("b", bi, rj), "T", total) for rj in range(len(demands)))'))
+    with _patch(assess_mod, "_material_axis", bad_axis):
+        bad = _mat(profile, *reqs) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M78", "assessed-benign unknown-phase condensed waste -> AQUEOUS_NEUTRAL (F76)",
+        "waste.derive_waste (empty-GHS branch)")
+def m78():
+    """The real isopentyl water byproduct: empty GHS, fate UNKNOWN. Honest: benign SPECIES, untyped STREAM -> unresolved,
+    never AQUEOUS_NEUTRAL. Mutant (the Round-IV F76 rule): empty GHS earns AQUEOUS_NEUTRAL."""
+    route = _isopentyl_route()
+
+    def mutated():
+        return _src_mutant(waste_mod.derive_waste, (
+            'unresolved.add(f"waste: {label} ({b.hazard_name}, empty GHS)',
+            'categories.add(WasteCapability.AQUEOUS_NEUTRAL) or (f"waste: {label} ({b.hazard_name}, empty GHS)'))
+
+    return _waste_flip(route, verify_handling(route), mutated, "empty GHS) -- benign species, untyped waste stream")
+
+
+def _da_route() -> ExperimentRoute:
+    """A real single-product micro-route (butadiene + ethylene -> cyclohexene: no co-product), both inputs typed."""
+    butadiene, ethylene, cyclohexene = _mol("C=CC=C"), _mol("C=C"), _mol("C1=CCCCC1")
+    op1 = ProcedureOperation(ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION, locator="fixture",
+                             material_uses=(_use("butadiene", ProcedureMaterialRole.SUBSTRATE, identity=butadiene,
+                                                 qty="5", unit="g"),
+                                            _use("ethylene", ProcedureMaterialRole.REACTANT, identity=ethylene,
+                                                 qty="3", unit="g")))
+    step = ExperimentStep(STEP_SCHEMA, cyclohexene, (butadiene, ethylene), (cyclohexene,), (),
+                          ConditionEnvelope(procedure=_procedure((op1,))))
+    return ExperimentRoute(ROUTE_SCHEMA, (step,))
+
+
+@mutant("M79", "excess/residual source material vanishes from waste (F77)", "waste.derive_waste (residual legs)")
+def m79():
+    """A single-product route has no co-product stream, so its ONLY waste obligations are the unreacted/excess
+    residuals of its inputs. Honest: both residuals unresolved -> waste UNKNOWN. Mutant: residuals are dropped -> the
+    waste question has nothing left -> NOT_APPLICABLE (a clean pass on leftovers nobody routed)."""
+    route = _da_route()
+    profile = _clean_profile(waste_handling=frozenset(WasteCapability))
+    _c, _r, unresolved = waste_mod.derive_waste(route)
+    honest = (sum("unreacted/excess" in u for u in unresolved) == 2
+              and _micro_assess(route, profile).waste.status is CapabilityStatus.UNKNOWN)
+    bad_derive = _src_mutant(waste_mod.derive_waste, (
+        "elif use.role in _CONSUMED_ROLES:", "elif False:"),
+        ("for molecule in tuple(step.reactants) + tuple(step.reagents):", "for molecule in ():"))
+    with _patch(waste_mod, "derive_waste", bad_derive):
+        bad = _micro_assess(route, profile).waste.status is CapabilityStatus.NOT_APPLICABLE
+    return honest, bad
+
+
+@mutant("M80", "the 0.9 wire shape changes while the 0.8 schema id stays (F74)", "service.COMPILATION_RESPONSE_SCHEMA")
+def m80():
+    """Honest: the bumped response id lets a REAL v0.8 (main@df1b38d) response load as LEGACY, readiness preserved.
+    Mutant: the 0.9 shape keeps the 0.8 id (no bump) -> the loader can no longer tell the generations apart and the
+    genuine v0.8 artifact is refused as a malformed 'current' payload."""
+    payload = _v08("response_isopentyl_acetate.json")
+    honest_resp = response_from_payload(payload)
+    honest = honest_resp.is_legacy_v08 and svc.COMPILATION_RESPONSE_SCHEMA != payload["schema_version"]
+    with _patch(svc, "COMPILATION_RESPONSE_SCHEMA", payload["schema_version"]):
+        try:
+            response_from_payload(_v08("response_isopentyl_acetate.json"))
+            bad = False
+        except ValueError:
+            bad = True
+    return honest, bad
+
+
+@mutant("M81", "a real v0.8 response is interpreted as native (F81)", "service.CompilationResponse.is_legacy_v08")
+def m81():
+    """Honest: a real v0.8 routes-mode response loads as LEGACY (frozen v0.8 digest rule; its stored result_digest
+    verifies). Mutant: the legacy dispatch is gone -> it is read under the current digest rule -> refused with a digest
+    mismatch (the exact Round-IV F81 behaviour) or loaded as native."""
+    honest = response_from_payload(_v08("response_isopentyl_acetate.json")).is_legacy_v08
+    with _patch(CompilationResponse, "is_legacy_v08", property(lambda self: False)):
+        try:
+            resp = response_from_payload(_v08("response_isopentyl_acetate.json"))
+            bad = not resp.is_legacy_v08
+        except ValueError:
+            bad = True
+    return honest, bad
+
+
+@mutant("M82", "ProcessBounds None changes meaning inside a CapabilityProfile (F78)",
+        "declarations.process_dimension_state")
+def m82():
+    """The SAME all-None ProcessBounds: legacy law UNCONSTRAINED (unchanged, still true for legacy callers); capability
+    law UNDECLARED -> UNKNOWN against a real 60-minute demand. Mutant: the capability layer reads None with the legacy
+    meaning (as an operator NO_LIMIT) -> process FIT."""
+    from smartchem.process_constraints import ProcessFitStatus, evaluate_process_requirements
+    req = ProcessRequirements(workup_included=True, provenance="fixture", elapsed_minutes=Interval(0, 60, "min"))
+    profile = _profile()
+    legacy = evaluate_process_requirements((req,), profile.process_bounds).status is ProcessFitStatus.UNCONSTRAINED
+    honest = legacy and assess_mod._process_axis((req,), profile).status is CapabilityStatus.UNKNOWN
+    bad_state = _src_mutant(declarations_mod.process_dimension_state, (
+        "return DimensionDeclaration.UNDECLARED", "return DimensionDeclaration.NO_LIMIT"))
+    with _patch(declarations_mod, "process_dimension_state", bad_state):
+        bad = assess_mod._process_axis((req,), profile).status is CapabilityStatus.FIT
+    return honest, bad
+
+
+# =================================================================================================================
+# M83-M94 (Round V D13 / Lane G: every stated demand reaches its owning axis, or that axis fails closed)
+# =================================================================================================================
+
+@mutant("M83", "untyped op.materials / envelope catalyst / medium dropped (Lane G P0-1)",
+        "requirements._untyped_source_materials")
+def m83():
+    route = _micro_route(materials=("sulfuric acid",), catalysts=("sulfuric acid",), medium="toluene")
+    honest = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.UNKNOWN
+    with _patch(requirements_mod, "_untyped_source_materials", lambda r: []):
+        bad = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M84", "balanced species with no hazard record skipped (Lane G P0-2b)", "requirements._hazard_scan (balanced)")
+def m84():
+    """methyl acetate (a balanced product) has NO hazard record. Honest: hazard-unresolved -> containment UNKNOWN even
+    under a hood. Mutant: the balanced-species leg is skipped -> containment FIT."""
+    route = _micro_route()
+    profile = _micro_profile(containment=frozenset({ContainmentCapability.FUME_HOOD}))
+    honest = _micro_assess(route, profile).containment.status is CapabilityStatus.UNKNOWN
+    bad_scan = _src_mutant(requirements_mod._hazard_scan, ("for molecule in (*step.reactants, *step.products):",
+                                                          "for molecule in ():"))
+    with _patch(requirements_mod, "_hazard_scan", bad_scan):
+        bad = _micro_assess(route, profile).containment.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M85", "possession-only / unknown-fraction bottle as a G- source (Lane G P0-3)", "assess._edge (commensurable)")
+def m85():
+    lead = _bottle("lead-possession-only", "lead", "0", "1", phase=Phase.UNKNOWN, qty="500", unit="g", kind="none")
+    req = _mreq(name="lead", qty=(("g", "10"),))
+    profile = _profile(material_inventory=(lead,))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_edge = _src_mutant(assess_mod._edge, ("commensurable = status is CapabilityStatus.FIT and (",
+                                              "commensurable = status is CapabilityStatus.FIT or ("))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+def _bench_process():
+    return presets_mod._bench_process_bounds()
+
+
+@mutant("M86", "an envelope duration outside the process record is unread (Lane G P0-4)",
+        "requirements._process_unresolved")
+def m86():
+    process = ProcessRequirements(workup_included=True, provenance="fixture", elapsed_minutes=Interval(0, 60, "min"))
+    route = _micro_route(duration=Interval(30240, 30240, "min"), process=process)  # a 3-week stated duration
+    profile = _micro_profile(process_bounds=_bench_process())
+    honest = _micro_assess(route, profile).process.status is CapabilityStatus.UNKNOWN
+    with _patch(requirements_mod, "_process_unresolved", lambda r: ()):
+        bad = _micro_assess(route, profile).process.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M87", "an apparatus-less hardware op reads NOT_APPLICABLE (Lane G P0-4)", "requirements._HARDWARE_OP_KINDS")
+def m87():
+    route = _micro_route(extra_ops=(_op(OperationKind.HEAT, OperationRole.REACTION),))
+    honest = _micro_assess(route, _micro_profile()).equipment.status is CapabilityStatus.UNKNOWN
+    with _patch(requirements_mod, "_HARDWARE_OP_KINDS", frozenset()):
+        bad = _micro_assess(route, _micro_profile()).equipment.status is CapabilityStatus.NOT_APPLICABLE
+    return honest, bad
+
+
+@mutant("M88", "envelope T/P maximum collapsed to the process record (Lane G P0-4)",
+        "requirements._physical_requirement (MAX over every source)")
+def m88():
+    process = ProcessRequirements(provenance="fixture", peak_temperature_k=416.15, min_pressure_atm=1.0,
+                                  max_pressure_atm=1.0)
+    route = _micro_route(temperature=Interval(600, 600, "K"), pressure=Interval(50, 50, "atm"), process=process)
+    profile = _micro_profile(physical_bounds=PhysicalBounds.of(max_temperature_k=500.0, max_pressure_atm=2.0,
+                                                               min_pressure_atm=1.0))
+    honest = _micro_assess(route, profile).physical.status is CapabilityStatus.BLOCKED
+    bad_phys = _src_mutant(requirements_mod._physical_requirement, (
+        '_temperature(envelope.temperature, f"step {s_index} envelope")',
+        'process is None and _temperature(envelope.temperature, f"step {s_index} envelope")'),
+        ('_pressure(envelope.pressure, f"step {s_index} envelope")',
+         'process is None and _pressure(envelope.pressure, f"step {s_index} envelope")'))
+    with _patch(requirements_mod, "_physical_requirement", bad_phys):
+        bad = _micro_assess(route, profile).physical.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M89", "budget None -> pass (Lane G P2)", "assess._monetary_axis (UNDECLARED branch)")
+def m89():
+    req = _reqs(monetary=CostVector(cash=5.0, currency="USD", unit="USD"))
+    a = assess(_profile(), req, _ps())
+    honest = a.monetary.status is CapabilityStatus.UNKNOWN and a.overall is CapabilityStatus.UNKNOWN
+    bad_axis = _src_mutant(assess_mod._monetary_axis, (
+        'CapabilityStatus.UNKNOWN,\n            ("monetary: the declared profile states NO budget',
+        'CapabilityStatus.UNCONSTRAINED,\n            ("monetary: the declared profile states NO budget'))
+    with _patch(assess_mod, "_monetary_axis", bad_axis):
+        m = assess(_profile(), req, _ps())
+        bad = m.monetary.status is CapabilityStatus.UNCONSTRAINED and m.overall is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M90", "the readiness tier the verdict was folded under is not recorded (Lane G P1-4)",
+        "assess.assess (readiness binding)")
+def m90():
+    req = _reqs(containment=frozenset({ContainmentCapability.FUME_HOOD}))  # BLOCKED under both tiers
+    profile = _profile()
+
+    def pair():
+        return assess(profile, req, _ps()), assess(profile, req, _readiness_at(CONDITIONS_SUPPORTED))
+
+    a, b = pair()
+    honest = a.overall is b.overall is CapabilityStatus.BLOCKED and a.digest != b.digest \
+        and a.readiness_tier == PROCESS_SPECIFIED
+    bad_assess = _src_mutant(assess_mod.assess, (
+        "readiness_tier=route_readiness.tier,", 'readiness_tier="UNRECORDED",'),
+        ("readiness_digest=route_readiness.digest,", 'readiness_digest="UNRECORDED",'))
+    with _patch(assess_mod, "assess", bad_assess):
+        ma, mb = bad_assess(profile, req, _ps()), bad_assess(profile, req, _readiness_at(CONDITIONS_SUPPORTED))
+        bad = ma.digest == mb.digest
+    return honest, bad
+
+
+@mutant("M91", "a prose-only op temperature with no process peak is unread (D13)",
+        "requirements._physical_requirement (prose-only leg)")
+def m91():
+    hold = _op(OperationKind.HOLD, OperationRole.REACTION, apparatus=("reflux condenser",),
+               temperature=EvidenceField.present("reflux", "fixture"))
+    route = _micro_route(extra_ops=(hold,))
+    honest = _micro_assess(route, _micro_profile()).physical.status is CapabilityStatus.UNKNOWN
+    bad_phys = _src_mutant(requirements_mod._physical_requirement, (
+        "if (field is not None and field.is_present and _interval_of(field) is None",
+        "if (False and field is not None and field.is_present and _interval_of(field) is None"))
+    with _patch(requirements_mod, "_physical_requirement", bad_phys):
+        bad = _micro_assess(route, _micro_profile()).physical.status is CapabilityStatus.UNCONSTRAINED
+    return honest, bad
+
+
+@mutant("M92", "a spent stream from an untyped materials= op is deleted (Lane E latent P0)",
+        "waste.derive_waste (operation-derived spent streams)")
+def m92():
+    """An ADD/WASH op whose auxiliary lives ONLY in `materials=` ('brine', no typed use). Honest: the OPERATION yields
+    an unresolved spent stream. Mutant: spent streams come only from typed uses -> the stream silently vanishes."""
+    wash = _op(OperationKind.ADD, OperationRole.WASH, materials=("brine",))
+    route = _micro_route(extra_ops=(wash,))
+    marker = "op #2 ADD/WASH leaves a spent stream (brine)"
+    honest = any(marker in u for u in waste_mod.derive_waste(route)[2])
+    bad_derive = _src_mutant(waste_mod.derive_waste, (
+        "if op.role in _SPENT_STREAM_OP_ROLES or op.kind in _SPENT_STREAM_OP_KINDS:", "if False:"))
+    bad = not any(marker in u for u in bad_derive(route)[2]) and not any("brine" in u for u in bad_derive(route)[2])
+    return honest, bad
+
+
+@mutant("M93", "NO_LIMIT allowed on a capability/physical dimension (D10)", "profile.NO_LIMIT_ELIGIBLE")
+def m93():
+    def build(dim):
+        return custom(profile_id="no-limit-probe", no_limit_dimensions=frozenset({dim}))
+
+    refusals = []
+    for dim in ("allowed_attention", "max_temperature_k"):
+        try:
+            build(dim)
+            refusals.append(False)
+        except ValueError as exc:
+            refusals.append("not NO_LIMIT-eligible" in str(exc))
+    honest = all(refusals)
+    widened = profile_mod.NO_LIMIT_ELIGIBLE | declarations_mod.PROCESS_DIMENSIONS | declarations_mod.PHYSICAL_DIMENSIONS
+    with _patch(profile_mod, "NO_LIMIT_ELIGIBLE", widened):
+        try:
+            bad = "allowed_attention" in build("allowed_attention").no_limit_dimensions
+        except (ValueError, AttributeError):
+            bad = False
+    return honest, bad
+
+
+@mutant("M94", "a legacy v0.8 request with an injected capability profile is accepted (F81/T1)",
+        "service.request_from_payload + CompilationRequest.__post_init__ (legacy dispatch)")
+def m94():
+    """The real T1 tamper (a genuine v0.8 request + an injected 0.9.0a1 poor-man profile). Honest: REFUSED. Mutant:
+    both legacy-dispatch layers (the loader's smuggle check AND the record's own legacy guard -- each alone is backed
+    by the other, so the mutant must sever the whole dispatch) are disabled -> it loads as a legacy request carrying a
+    bench."""
+    t1 = _v08("tamper/T1_request_v08id_injected_capability.json")
+    try:
+        request_from_payload(t1)
+        honest = False
+    except ValueError:
+        honest = True
+    bad_loader = _src_mutant(svc.request_from_payload, ("if smuggled:", "if False:"))
+    bad_init = _src_mutant(CompilationRequest.__post_init__, (
+        'if self.capability_profile is not None or self.capability_profile_origin != "":', "if False:"))
+    with _patch(CompilationRequest, "__post_init__", bad_init):
+        try:
+            req = bad_loader(_v08("tamper/T1_request_v08id_injected_capability.json"))
+            bad = req.is_legacy_v08 and req.capability_profile is not None
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+# =================================================================================================================
+# M95-M105 (Round V Wave-C: the fresh non-author hostile review's proven breaks, parent-integrated fixes)
+# =================================================================================================================
+
+@mutant("M95", "a bottle-scoped state certifies a trace species (Wave-C K1)", "stock.StockMaterial.spec_view (state scope)")
+def m95():
+    """A NEAT acetone bottle carrying a trace of acetic acid: the NEAT claim describes the ACETONE component only.
+    Honest: the acetic-acid NEAT demand is UNDETERMINED -> UNKNOWN. Mutant: states are read bottle-wide -> the solvent's
+    NEAT certifies the trace -> FIT."""
+    acetone = _mol("CC(C)=O")
+    neat = (StateClaim(DilutionState.NEAT, EvidenceKind.USER_DECLARED),)
+    bottle = StockMaterial(
+        STOCK_MATERIAL_SCHEMA, "acetone-neat-trace-acid", "acetone (trace acetic acid)",
+        (MaterialComponent.evidenced(acetone, "solvent", _ev("0.99", "1"), states=neat),
+         MaterialComponent.evidenced(_ACETIC, "impurity", _ev("0", "0.01"))),
+        Phase.LIQUID, "fixture", quantity=StockQuantity.of("500", "mL"))
+    req = _mreq(identity=_ACETIC, spec=MaterialSpecification(states=(_state(DilutionState.NEAT),)))
+    profile = _profile(material_inventory=(bottle,))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_view = _src_mutant(StockMaterial.spec_view, (
+        "for claim in c.states:", "for claim in (cc for comp in self.components for cc in comp.states):"))
+    with _patch(StockMaterial, "spec_view", bad_view):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M96", "the G- purity rule ignores basis and evidence strength (Wave-C K2)", "assess._edge (pure conjuncts)")
+def m96():
+    """A bare `MaterialComponent.of_molecule(x, 1.0, 1.0)` (no evidence record = UNKNOWN strength, basis UNKNOWN) is not
+    a PROVEN pure draw. Honest: possible source only -> UNKNOWN. Mutant: the pre-Wave-C rule (lower bound == 1 alone)."""
+    bottle = _bottle("ethanol-bare-one", _ETHANOL, kind="none")
+    profile = _profile(material_inventory=(bottle,))
+    req = _mreq(identity=_ETHANOL)
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_edge = _src_mutant(assess_mod._edge, (
+        "and view.basis in (ConcentrationBasis.MASS_FRACTION, ConcentrationBasis.VOLUME_FRACTION)", "and True"),
+        ("and view.interval_evidence in CERTIFYING_STOCK_EVIDENCE", "and True"))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M97", "a MOLAR magnitude is capped to 1 (Wave-C K3)", "stock.StockMaterial.spec_view (fraction-only cap)")
+def m97():
+    """6 M NaOH must be expressible as 6 mol/L, never squeezed to '1'. Honest: the MOLAR component's view reads exactly
+    [6, 6] on basis MOLAR. Mutant: the [0, 1] cap is applied to every basis -> the view reads [.., 1]."""
+    naoh = StockMaterial(STOCK_MATERIAL_SCHEMA, "naoh-6m", "6 M NaOH",
+                         (MaterialComponent(stock_mod.MATERIAL_COMPONENT_SCHEMA, "sodium hydroxide", "active", 6.0, 6.0,
+                                            ConcentrationBasis.MOLAR),), Phase.AQUEOUS_SOLUTION, "fixture")
+    view = naoh.spec_view("sodium hydroxide")
+    honest = view.basis is ConcentrationBasis.MOLAR and view.interval == (Fraction(6), Fraction(6))
+    bad_view = _src_mutant(StockMaterial.spec_view, ("if basis in _FRACTION_BASES:", "if True:"))
+    with _patch(StockMaterial, "spec_view", bad_view):
+        bad = naoh.spec_view("sodium hydroxide").interval[1] == 1
+    return honest, bad
+
+
+@mutant("M98", "a raw string naming a SECOND species hides behind a typed name (Wave-C K4)",
+        "requirements._name_covers (exact-name coverage)")
+def m98():
+    route = _micro_route(materials=("methanol", "acetic acid", "benzene in methanol"))
+    honest = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.UNKNOWN
+    import re as _re
+
+    def whole_word(use_name, raw):
+        name, text = requirements_mod._norm_text(use_name), requirements_mod._norm_text(raw)
+        return bool(name) and (name == text or _re.search(r"(?<!\w)" + _re.escape(name) + r"(?!\w)", text) is not None)
+
+    with _patch(requirements_mod, "_name_covers", whole_word):
+        bad = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M99", "one physical package declared twice (Wave-C K5)", "profile.CapabilityProfile.__post_init__ (dup check)")
+def m99():
+    bottle = _bottle("ethanol-10ml", _ETHANOL, qty="10")
+    req = _mreq(identity=_ETHANOL)  # 20 mL from one 10 mL package
+    try:
+        _profile(material_inventory=(bottle, bottle))
+        refused = False
+    except ValueError:
+        refused = True
+    honest = refused and _mat(_profile(material_inventory=(bottle,)), req) is CapabilityStatus.BLOCKED
+    bad_init = _src_mutant(CapabilityProfile.__post_init__, (
+        "if len(set(ids)) != len(ids) or len(set(digests)) != len(digests):", "if False:"))
+    with _patch(CapabilityProfile, "__post_init__", bad_init):
+        try:
+            bad = _mat(_profile(material_inventory=(bottle, bottle)), req) is CapabilityStatus.FIT
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+@mutant("M100", "non-ASCII digits parse as an exact quantity (Wave-C K6)", "material_spec.exact_fraction (grammar)")
+def m100():
+    arabic_indic_30 = "٣٠"
+    try:
+        StockQuantity.of(arabic_indic_30, "mL")
+        honest = False
+    except ValueError:
+        honest = True
+    bad_parse = _src_mutant(spec_mod.exact_fraction, ("[0-9]", "\\d", 4))
+    with _patch(spec_mod, "exact_fraction", bad_parse):
+        try:
+            bad = StockQuantity.of(arabic_indic_30, "mL").exact() == 30
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+@mutant("M101", "an assessment whose overall is not the fold of its axes constructs (Wave-C2)",
+        "assess.CapabilityAssessment.__post_init__ (fold check)")
+def m101():
+    real = assess(_profile(), _reqs(containment=frozenset({ContainmentCapability.FUME_HOOD})), _ps())
+    assert real.overall is CapabilityStatus.BLOCKED
+    try:
+        dc.replace(real, overall=CapabilityStatus.FIT)
+        honest = False
+    except ValueError:
+        honest = True
+    bad_init = _src_mutant(assess_mod.CapabilityAssessment.__post_init__, ("if self.overall is not expected:",
+                                                                          "if False:"))
+    with _patch(assess_mod.CapabilityAssessment, "__post_init__", bad_init):
+        try:
+            bad = dc.replace(real, overall=CapabilityStatus.FIT).is_capability_fit
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+@mutant("M102", "a raw DERIVED input with no locator certifies (Wave-C2 A1)", "derived_evidence._SOURCED_INPUT_KINDS")
+def m102():
+    """Honest: a kernel input self-labelled DERIVED with no locator is refused. Mutant (the pre-fix rule: only
+    SOURCE_QUOTED needs a locator): it constructs, feeds a CLAMPED record, and CERTIFIES a >= 99% floor."""
+    def uncited_clamped():
+        return IntervalEvidence.build(
+            kernel=DerivationKernel.CLAMP_TO_UNIT_INTERVAL_V1, basis=ConcentrationBasis.MASS_FRACTION,
+            inputs=(TypedInput("floor", "99.9", InputUnit.PERCENT, EvidenceKind.DERIVED),),
+            source_locators=("fixture: a record-level locator only",), domain_of_validity="uncited floor")
+
+    req = _mreq(identity=_ETHANOL, spec=_floor_spec("0.99"))
+    try:
+        uncited_clamped()
+        honest = False
+    except ValueError:
+        honest = True
+    with _patch(derived_mod, "_SOURCED_INPUT_KINDS", frozenset({EvidenceKind.SOURCE_QUOTED})):
+        try:
+            ev = uncited_clamped()
+            bottle = StockMaterial(STOCK_MATERIAL_SCHEMA, "ethanol-uncited", "ethanol",
+                                   (MaterialComponent.evidenced(_ETHANOL, "active", ev),), Phase.LIQUID, "fixture",
+                                   quantity=StockQuantity.of("500", "mL"))
+            bad = _mat(_profile(material_inventory=(bottle,)), req) is CapabilityStatus.FIT
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+@mutant("M103", "COMPLEMENT inherits the parent's sourced kind (Wave-C2 C2-5)", "derived_evidence.KERNELS[COMPLEMENT_V1]")
+def m103():
+    """The water balance of a sourced 95-98% H2SO4 assay rests on a BINARY-mixture premise: ASSUMED. Honest: a sourced
+    2-5% water requirement vs that complement stays UNKNOWN. Mutant: COMPLEMENT inherits SOURCE_QUOTED -> FIT."""
+    parent = next(ev for key, ev in material_library.INTERVAL_EVIDENCE.items() if key.startswith("sulfuric-acid"))
+    req = _mreq(name="water", qty=(("mL", "5"),), spec=MaterialSpecification(composition=_comp("0.02", "0.05")))
+
+    def acid_with_water_balance():
+        water = IntervalEvidence.build(kernel=DerivationKernel.COMPLEMENT_V1, basis=ConcentrationBasis.MASS_FRACTION,
+                                       parent=parent, domain_of_validity="binary premise")
+        return water.kind, StockMaterial(
+            STOCK_MATERIAL_SCHEMA, "h2so4-with-water", "conc. H2SO4",
+            (MaterialComponent.evidenced(_mol("OS(=O)(=O)O"), "active", parent),
+             MaterialComponent.evidenced("water", "balance", water)),
+            Phase.LIQUID, "fixture", quantity=StockQuantity.of("500", "mL"))
+
+    kind, bottle = acid_with_water_balance()
+    honest = kind is EvidenceKind.ASSUMED and _mat(_profile(material_inventory=(bottle,)), req) is CapabilityStatus.UNKNOWN
+    key = DerivationKernel.COMPLEMENT_V1
+    with _patch_item(derived_mod.KERNELS, key, dc.replace(derived_mod.KERNELS[key], output_kind=None)):
+        kind2, bottle2 = acid_with_water_balance()
+        bad = kind2 is EvidenceKind.SOURCE_QUOTED and \
+            _mat(_profile(material_inventory=(bottle2,)), req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M104", "a CAPABILITY_FIT is admitted on an unsigned THIN wire (Wave-C2)",
+        "service.CompilationResponse._check_assessment_bindings (thin FIT refusal)")
+def m104():
+    """No corpus route reaches FIT, so the attacker FORGES one: the real fit-bench response, one PROCESS_SPECIFIED
+    dossier's assessment rewritten to an all-clear FIT that is fold-consistent and bound to the right profile, route and
+    readiness (so every replay-free binding passes), serialized THIN (no replay to re-derive from). Honest: refused.
+    Mutant: the thin-FIT refusal is removed -> the forged CAPABILITY_FIT loads."""
+    resp = _fit_response()
+    idx = next(i for i, d in enumerate(resp.ranked_route_dossiers)
+               if d.capability_assessment is not None and d.readiness.tier == PROCESS_SPECIFIED)
+    a = resp.ranked_route_dossiers[idx].capability_assessment
+    clear = AxisResult(CapabilityStatus.FIT, ("forged: all clear",))
+    forged = dc.replace(a, **{ax: clear for ax in ("material", "equipment", "physical", "process", "containment",
+                                                   "ventilation", "measurement", "waste", "procurement",
+                                                   "attention_care", "monetary")},
+                        overall=CapabilityStatus.FIT, overall_reasons=("forged: FIT",))
+    dossiers = list(resp.ranked_route_dossiers)
+    dossiers[idx] = dc.replace(dossiers[idx], capability_assessment=forged)
+    payload = response_to_payload(dc.replace(resp, ranked_route_dossiers=tuple(dossiers)), include_replay=False)
+    try:
+        response_from_payload(payload)
+        honest = False
+    except ValueError as exc:
+        honest = "THIN_ADVISORY" in str(exc)
+    bad_check = _src_mutant(CompilationResponse._check_assessment_bindings, (
+        "if refuse_fit_on_thin and a.is_capability_fit:", "if False:"))
+    with _patch(CompilationResponse, "_check_assessment_bindings", bad_check):
+        try:
+            loaded = response_from_payload(payload)
+            bad = loaded.ranked_route_dossiers[idx].capability_assessment.is_capability_fit
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+@mutant("M105", "a non-stoichiometric use of a leaf's structure erases its consumption (Wave-C nag)",
+        "requirements._STOICHIOMETRIC_ROLES")
+def m105():
+    """acetic acid appears only as a 5 mL WASH use while the balanced step CONSUMES it as a reactant. Honest: the leaf
+    reactant keeps its own UNKNOWN-quantity demand -> material UNKNOWN. Mutant: any typed use of the structure
+    suppresses the leaf -> the consumed charge disappears behind the wash -> FIT."""
+    uses = (_use("methanol", ProcedureMaterialRole.SUBSTRATE, identity=_METHANOL, qty="10", phase=Phase.LIQUID),
+            _use("acetic acid", ProcedureMaterialRole.WASH, identity=_ACETIC, qty="5", phase=Phase.LIQUID))
+    route = _micro_route(base_uses=uses)
+    honest = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.UNKNOWN
+    with _patch(requirements_mod, "_STOICHIOMETRIC_ROLES", frozenset(ProcedureMaterialRole)):
+        bad = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+# =================================================================================================================
+# runner
+# =================================================================================================================
+
+def run() -> dict:
+    results = []
+    for mid, title, target, fn in _MUTANTS:
+        try:
+            honest, bad = fn()
+            if honest and bad:
+                status = "KILLED"
+            elif not honest:
+                status = "SURVIVED (honest code did not produce the expected verdict -- fixture/law drift)"
+            else:
+                status = "SURVIVED (the injected bad behaviour did not show -- a real gap)"
+        except Exception as exc:  # noqa: BLE001 -- a harness error is a FAILED kill, reported, never a pass
+            status = f"SURVIVED (harness error: {type(exc).__name__}: {exc})"
+            if os.environ.get("SMARTCHEM_MUT_DEBUG"):
+                traceback.print_exc()
+        results.append((mid, title, target, status))
+        print(f"  [{status.split(' ')[0]}] {mid} {title}  <{target}>"
+              + ("" if status == "KILLED" else f"\n        -> {status}"), flush=True)
+    killed = {mid for mid, _t, _g, s in results if s == "KILLED"}
+    retired_rows = []
+    for mid, title, mechanism, reason, replacement in _RETIRED:
+        valid = all(r in killed for r in replacement)
+        retired_rows.append((mid, title, mechanism, reason, replacement, valid))
+    return {"active": results, "retired": retired_rows, "deferred": list(_DEFERRED)}
 
 
 def main() -> int:
-    print(f"v0.9 capability compiler mutation gate (M1-M62 RC Round IV, {len(_MUTANTS)} mutants registered):",
-          flush=True)
-    results = run()
-    killed = sum(1 for _, k, _ in results if k is True)
-    vacuous = sum(1 for _, k, _ in results if k is None)
-    survived = sum(1 for _, k, _ in results if k is False)
-    print(f"\n{killed}/{len(results)} mutants killed. {vacuous} VACUOUS (RETIRED/VERIFIED-DEFER). "
-          f"{survived} SURVIVED (real gap).")
-    return 0 if survived == 0 else 1
+    ids = [m[0] for m in _MUTANTS]
+    print(f"v0.9 capability compiler mutation gate (RC Round V, {len(ids)} ACTIVE registered, {len(_RETIRED)} RETIRED, "
+          f"{len(_DEFERRED)} DEFERRED):", flush=True)
+    assert len(ids) == len(set(ids)), "duplicate mutant id"
+    out = run()
+    active = out["active"]
+    killed = sum(1 for *_x, s in active if s == "KILLED")
+    survived = len(active) - killed
+    print("\nRETIRED (mechanism deleted by Round V; bad behaviour killed by the named ACTIVE replacement):")
+    void = 0
+    for mid, title, mechanism, reason, replacement, valid in out["retired"]:
+        void += 0 if valid else 1
+        print(f"  [{'RETIRED' if valid else 'VOID-RETIREMENT'}] {mid} {title}\n        deleted: {mechanism}\n"
+              f"        replaced by: {', '.join(replacement)} ({'all KILLED' if valid else 'NOT all killed'})\n"
+              f"        reason: {reason}")
+    print("\nDEFERRED / UNCALIBRATED:" + (" none" if not out["deferred"] else ""))
+    for mid, title, reason in out["deferred"]:
+        print(f"  [DEFERRED] {mid} {title}: {reason}")
+    print(f"\nACTIVE {killed}/{len(active)} killed, {survived} survived | RETIRED {len(out['retired'])} "
+          f"({void} void) | DEFERRED {len(out['deferred'])}")
+    return 0 if survived == 0 and void == 0 else 1
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ search NEVER feels it.** These are the release-critical proofs the freeze demand
 from __future__ import annotations
 
 import dataclasses as dc
+import json
 
 import pytest
 
@@ -113,15 +114,17 @@ def test_request_and_response_round_trip_with_a_resolved_profile(profile):
     assert back.capability_question_digest == resp.capability_question_digest
 
 
-def test_old_payload_without_capability_loads_as_not_requested():
+def test_current_request_payload_with_stripped_capability_keys_is_refused():
+    """Round V (D11) supersedes the Round-IV F54 "additive-optional" read: on the CURRENT request id the capability
+    keys are part of the versioned shape, so a stripped key is a malformed current payload -- REFUSED, never silently
+    defaulted.  A genuine v0.8 request (legacy id, keys absent) is migrated instead -- pinned against real main@df1b38d
+    fixtures in tests/test_v0_9_round_v_schema_migration.py."""
     req = build_recompile_request("aspirin")
-    payload = request_to_payload(req)
-    del payload["capability_profile"]
-    del payload["capability_profile_origin"]
-    back = request_from_payload(payload)
-    assert back.capability_profile is None
-    assert back.capability_profile_origin == ""
-    assert back.semantic_digest == req.semantic_digest  # search identity untouched
+    for key in ("capability_profile", "capability_profile_origin"):
+        payload = request_to_payload(req)
+        del payload[key]
+        with pytest.raises(ValueError, match="must carry"):
+            request_from_payload(payload)
 
 
 # -- CAPABILITY-REBIND-ON-LOAD: accept the honest load, refuse every tamper ------------------------------------
@@ -164,7 +167,14 @@ def test_rebind_refuses_an_altered_carried_assessment_verdict():
     resp = _fit_response()
     doss = list(resp.ranked_route_dossiers)
     i = next(k for k, d in enumerate(doss) if d.capability_assessment)
-    forged = dc.replace(doss[i].capability_assessment, overall=CapabilityStatus.FIT, overall_reasons=("forged",))
+    real = doss[i].capability_assessment
+    # Round V Wave C2: a SELF-CONTRADICTORY verdict (overall FIT over non-FIT axes) can no longer even be built --
+    # CapabilityAssessment.__post_init__ refuses any overall that is not the fold of its axes.
+    with pytest.raises(ValueError, match="fold of its axes"):
+        dc.replace(real, overall=CapabilityStatus.FIT, overall_reasons=("forged",))
+    # ...so the rebind is exercised with a SELF-CONSISTENT forgery: the axes/overall fold correctly, but a carried
+    # reason no longer matches what the producer's own re-derivation yields.
+    forged = dc.replace(real, overall_reasons=("forged",))
     doss[i] = dc.replace(doss[i], capability_assessment=forged)
     with pytest.raises(ValueError):
         dc.replace(resp, ranked_route_dossiers=tuple(doss))._check_capability_coherence(require_verified_admission=True)
@@ -320,35 +330,24 @@ def test_compile_and_recompile_agree_human_and_json_under_a_capability_profile(c
         assert f"{ax_name}: {status}" in compile_human_out
 
 
-def test_old_v0_8_response_payload_migrates_to_capability_not_requested():
-    """F54: a pre-0.9 (v0.8) response payload carries NO capability_question_digest at the top level, NO
-    capability_assessment on any ranked route dossier, and its request carries NO capability_profile /
-    capability_profile_origin -- those KEYS did not exist yet, not merely "were null".  The codec's
-    ``.get(key, None)`` reads make this ADDITIVE-OPTIONAL by construction: a NOT_REQUESTED (no-profile) response's
-    capability fields are already None/absent-shaped, so DELETING those keys outright (never just nulling an
-    existing value -- that would desync result_digest, which genuinely folds a REQUESTED assessment in; that is
-    the tamper guard working, not a v0.8 payload) must decode with no crash, no refusal, and no fabricated
-    FIT/BLOCKED verdict for a bench question the old payload never asked.  (Mirrors the request-level
-    ``test_old_payload_without_capability_loads_as_not_requested`` above, one level up the object graph.)"""
-    _, resp = _run(None)  # NOT_REQUESTED: exactly the shape a v0.8 producer (pre-capability) actually emitted
-    payload = response_to_payload(resp)
-    assert payload.get("capability_question_digest") is None  # sanity: no profile -> no pin, even pre-strip
-    assert payload["request"].get("capability_profile") is None
-    assert all(d["capability_assessment"] is None for d in payload["ranked_route_dossiers"])
-
-    # A v0.8 payload never had these KEYS at all (not "had them set to null") -- strip them outright.
-    del payload["capability_question_digest"]
-    for dossier_payload in payload["ranked_route_dossiers"]:
-        del dossier_payload["capability_assessment"]
-    del payload["request"]["capability_profile"]
-    del payload["request"]["capability_profile_origin"]
-
-    back = response_from_payload(payload)  # must not crash, must not refuse, must not fabricate a verdict
-    assert back.capability_question_digest is None
-    assert back.request.capability_profile is None
-    assert back.request.capability_profile_origin == ""
-    assert all(d.capability_assessment is None for d in back.ranked_route_dossiers)
-    # the outcome/exit_code the old payload actually earned (the search side) survive untouched.
-    assert back.outcome == resp.outcome
-    assert back.exit_code == resp.exit_code
-    assert back.result_digest == resp.result_digest  # capability was never in the identity for this response
+def test_current_response_payload_with_stripped_capability_keys_is_refused():
+    """Round V (D11 / F81) CORRECTS Round IV's F54: that test SIMULATED a v0.8 payload by stripping keys off a 0.9
+    payload and called it "additive-optional, never a crash" -- while every REAL v0.8 routes-mode response was refused
+    with a misleading result_digest mismatch.  The truth now: stripping a 0.9 key off a CURRENT-id payload is a
+    malformed current payload and is REFUSED; the real v0.8 migration is proven on real main@df1b38d fixtures in
+    tests/test_v0_9_round_v_schema_migration.py."""
+    _, resp = _run(None)
+    base = response_to_payload(resp)
+    assert base.get("capability_question_digest") is None  # NOT_REQUESTED -> null pin, but the KEY is present
+    stripped = dict(base)
+    del stripped["capability_question_digest"]
+    with pytest.raises(ValueError, match="must carry capability_question_digest"):
+        response_from_payload(stripped)
+    stripped = json.loads(json.dumps(base))
+    del stripped["ranked_route_dossiers"][0]["capability_assessment"]
+    with pytest.raises(ValueError, match="must carry capability_assessment"):
+        response_from_payload(stripped)
+    stripped = json.loads(json.dumps(base))
+    del stripped["request"]["capability_profile"]
+    with pytest.raises(ValueError, match="must carry"):
+        response_from_payload(stripped)

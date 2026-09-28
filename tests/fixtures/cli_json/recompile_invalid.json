@@ -112,7 +112,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha5",
+    "schema_version": "smartchem.service/compilation-request-v1alpha6",
     "search_bounds": [
       [
         "cut_budget",
@@ -136,8 +136,8 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "572c1ca4f76d6c79fe2d2a7c4c3978847f2db1f284de19c76b7f6ceb0475f014",
-  "schema_version": "smartchem.service/compilation-response-v1alpha15",
+  "result_digest": "c5cba95ab60ca02ec7ad9092f4207b2dfec2e93f046d9a218a9259c9cf6f3628",
+  "schema_version": "smartchem.service/compilation-response-v1alpha16",
   "search_space_status": null,
   "standard_status": "REFUSED_INVALID_REQUEST",
   "transport_mode": "CANONICAL_VERIFIED"

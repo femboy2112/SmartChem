@@ -36,6 +36,7 @@ from smartchem.capability.presets import (
     research_lab,
 )
 from smartchem.capability.profile import CAPABILITY_PROFILE_SCHEMA, CapabilityProfile
+from smartchem.capability.quantity import QuantityDemand
 from smartchem.capability.requirements import (
     MaterialRequirement,
     RouteCapabilityRequirements,
@@ -56,6 +57,7 @@ from smartchem.experiment.readiness import (
     evaluate_route,
 )
 from smartchem.identity_parse import InputKind, resolve_target
+from smartchem.material_spec import MaterialSpecification
 from smartchem.process_constraints import Agitation, Attention, ProcessBounds
 
 _CERTIFIED = resolve_algebra_profile(DEFAULT_ROUTE_ALGEBRA_PROFILE)
@@ -147,11 +149,15 @@ def test_matrix_isopentyl_research_lab_no_stock_is_unknown_on_material_and_the_s
     assert readiness.tier == "PROCESS_SPECIFIED"
     a = assess(research_lab(), req, readiness)
     assert a.overall is CapabilityStatus.UNKNOWN
+    # Round V D13 (FLIPPED: +equipment, +monetary): the source's cool/dry ops name no apparatus (equipment
+    # UNKNOWN), and research_lab() declares no budget (UNDECLARED, not unconstrained -> monetary UNKNOWN).
     assert _nonclean_axes(a) == {
         "material": CapabilityStatus.UNKNOWN,
+        "equipment": CapabilityStatus.UNKNOWN,
         "process": CapabilityStatus.UNKNOWN,
         "containment": CapabilityStatus.UNKNOWN,
         "waste": CapabilityStatus.UNKNOWN,
+        "monetary": CapabilityStatus.UNKNOWN,
     }
 
 
@@ -182,10 +188,16 @@ def test_matrix_isopentyl_fully_declared_custom_collapses_to_unknown_on_the_sema
     a = assess(isopentyl_capability_fit_bench(), req, evaluate_route(route))
     assert a.overall is CapabilityStatus.UNKNOWN
     assert a.is_capability_fit is False
+    # Round V (FLIPPED: +material, +equipment, +monetary): material is UNKNOWN (D2/D13: several requirements have
+    # only POSSIBLE sources -- unresolved/unknown-basis specifications, bottles not provably the pure species -- so
+    # the proven allocation falls short); equipment UNKNOWN (D13 unread cool/dry ops); monetary UNKNOWN (no budget).
     assert _nonclean_axes(a) == {
+        "material": CapabilityStatus.UNKNOWN,
+        "equipment": CapabilityStatus.UNKNOWN,
         "process": CapabilityStatus.UNKNOWN,
         "containment": CapabilityStatus.UNKNOWN,
         "waste": CapabilityStatus.UNKNOWN,
+        "monetary": CapabilityStatus.UNKNOWN,
     }
 
 
@@ -301,9 +313,14 @@ def test_retro_diels_alder_null_route_never_fits_and_does_not_launder():
     for profile in (research_lab(), poor_man(), isopentyl_capability_fit_bench()):
         a = assess(profile, req, readiness)
         assert a.is_capability_fit is False  # the null route NEVER launders into FIT
-    # the two hood-equipped benches agree at UNKNOWN; the projection is identical across all three.
+    # research_lab() declares NO inventory -> material UNKNOWN (an empty pantry is an open question).
     assert assess(research_lab(), req, readiness).overall is CapabilityStatus.UNKNOWN
-    assert assess(isopentyl_capability_fit_bench(), req, readiness).overall is CapabilityStatus.UNKNOWN
+    # Round V D2 (FLIPPED from UNKNOWN): the fully-declared bench DECLARES an inventory, and the retro-DA leaves
+    # are structure-keyed, CONSUMED (positive-demand) species absent from every declared bottle -> no G+ edge ->
+    # a provable material BLOCK. Still never FIT.
+    fitbench = assess(isopentyl_capability_fit_bench(), req, readiness)
+    assert fitbench.material.status is CapabilityStatus.BLOCKED
+    assert fitbench.overall is CapabilityStatus.BLOCKED
 
 
 # =============================================================================================================
@@ -319,7 +336,9 @@ def test_d6_physical_all_none_ceiling_with_a_real_route_demand_is_unknown():
 
 def test_d6_physical_no_demand_and_no_bound_is_unconstrained_and_rides():
     req = _reqs(physical=PhysicalBounds.unconstrained())
-    a = assess(_profile(), req, _ps_readiness())
+    # Round V D13: an absent budget is UNDECLARED (UNKNOWN); the explicit operator NO_LIMIT preference is declared
+    # here so this test isolates the physical axis's UNCONSTRAINED ride.
+    a = assess(_profile(no_limit_dimensions=frozenset({"budget"})), req, _ps_readiness())
     assert a.physical.status is CapabilityStatus.UNCONSTRAINED
     assert a.overall is CapabilityStatus.FIT  # genuinely outside the question -> rides to FIT
 
@@ -445,16 +464,29 @@ def test_d5_verify_apparatus_is_not_counted_as_equipment():
 
 def test_material_requirement_needs_identity_or_name():
     with pytest.raises(ValueError):
-        MaterialRequirement(identity=None, required_assay=None, phase=None, quantity=None,
+        MaterialRequirement(identity=None, phase=None, quantity=QuantityDemand.unstated(),
                             role="reactant", evidence_source="x", name=None)
 
 
-def test_gateless_auxiliary_absent_is_unknown_not_a_provable_block():
-    """A possession-only (no assay/phase/quantity gate) requirement absent from every bottle is an OPEN
-    question (UNKNOWN), never a provable negative -- D1's 'undeclared -> UNKNOWN, never silently skipped'."""
+def test_consumed_species_absent_from_a_declared_inventory_is_a_provable_block():
+    """Round V D2 -- FLIPPED from Round IV's "gateless absent is UNKNOWN". Every requirement is a CONSUMED demand
+    (quantity is never ``None``: here an UNKNOWN, i.e. real and positive but unsized). A structure-keyed species with
+    a positive demand and NO G+ edge in a DECLARED inventory is a provable material negative -> BLOCKED. (An EMPTY
+    inventory stays UNKNOWN -- nobody declared a pantry -- and an UNTYPED raw-text requirement with no edge stays
+    UNKNOWN, since absence under a raw string proves nothing: both pinned below.)"""
     water = resolve_target("water", InputKind.NAME).canonical()
-    req = _reqs(material=(MaterialRequirement(
-        identity=water, required_assay=None, phase=None, quantity=None,
-        role="procedure-only auxiliary", evidence_source="x", name="water"),))
+    requirement = MaterialRequirement(
+        identity=water, phase=None, quantity=QuantityDemand.unstated(),
+        role="procedure-only auxiliary", evidence_source="x", name="water")
+    req = _reqs(material=(requirement,))
     a = assess(_profile(material_inventory=material_library.isopentyl_lab_inventory()), req, _ps_readiness())
-    assert a.material.status is CapabilityStatus.UNKNOWN
+    assert a.material.status is CapabilityStatus.BLOCKED
+    assert assess(_profile(), req, _ps_readiness()).material.status is CapabilityStatus.UNKNOWN
+    untyped = MaterialRequirement(
+        identity=None, phase=None, quantity=QuantityDemand.unstated(), role="untyped source material",
+        evidence_source="x", name="some raw source phrase",
+        specification=MaterialSpecification(unresolved_terms=("untyped source material: some raw source phrase",)),
+        untyped_source_text=True)
+    b = assess(_profile(material_inventory=material_library.isopentyl_lab_inventory()),
+               _reqs(material=(untyped,)), _ps_readiness())
+    assert b.material.status is CapabilityStatus.UNKNOWN

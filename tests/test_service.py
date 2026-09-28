@@ -304,7 +304,8 @@ class TestCoherenceGuard:
 class TestValidation:
     def test_request_bad_schema_version(self):
         good = build_recompile_request("name:water")
-        with pytest.raises(ValueError, match="schema_version"):
+        # Round V (D11): an id that is neither current nor the whitelisted v0.8 legacy id is refused precisely.
+        with pytest.raises(ValueError, match="unsupported request schema_version 'bogus'"):
             replace(good, schema_version="bogus")
 
     def test_empty_target_input(self):

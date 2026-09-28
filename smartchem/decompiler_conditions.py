@@ -31,6 +31,17 @@ from .procedure_evidence import (
     ProcedureMaterialUse,
     ProcedureOperation,
 )
+from .material_spec import (
+    CompositionConstraint,
+    ConcentrationBasis,
+    DilutionState,
+    EvidenceKind,
+    HydrationState,
+    MaterialSpecification,
+    SaturationState,
+    StateClaim,
+    Tolerance,
+)
 from .process_constraints import Agitation, Attention, ProcessRequirements
 from .provenance import SourceCitation, SourceReview
 # NOTE: ``experiment.stock`` (Phase/StockQuantity) and ``smiles`` (parse_smiles) are imported LOWER in this
@@ -235,6 +246,59 @@ _HCL = parse_smiles("Cl")
 _ACETIC_ACID = parse_smiles("CC(=O)O")       # Round IV F45: the acetic-acid REACTANT, typed on the source op
 _ISOAMYL_ALCOHOL = parse_smiles("CC(C)CCO")  # 3-methyl-1-butanol -- the isopentyl SUBSTRATE
 
+# -- Round V (barrier D3): SOURCE-AUTHORED typed material specifications -----------------------------------------
+# Each spec below types ONLY what the cited page actually says about the material. ``formulation`` on the use stays
+# as raw display text; THIS is the load-bearing record. Discipline: a number appears only where the source prints
+# one, and then on basis UNKNOWN unless the source states the basis; a state claim appears only where the source
+# uses the state word; a load-bearing word with no species-scoped sourced meaning goes to ``unresolved_terms``
+# (-> UNKNOWN, F69) and is NEVER converted into a guessed percentage. No global adjective table exists anywhere.
+_SQ = EvidenceKind.SOURCE_QUOTED
+
+# Isopentyl: "add 2O mL (21 g, 0.35 mole) of glacial acetic acid". "Glacial" is a species-specific term that means
+# undiluted acetic acid -- typed as the NEAT dilution state, NOT as an assay floor (the page cites no monograph %).
+# Round V Wave C: the page never SAYS "undiluted" -- reading "glacial" as NEAT is the evidence author's (correct,
+# dictionary) inference, so it is labelled AUTHOR_INFERRED, which by D6 can never certify a FIT on its own.
+# (Wave-C K4: op.materials strings are aligned EXACTLY with the typed use names -- coverage is exact-name only; the
+# raw source phrase survives in each use's formulation text and the op's quoted quantity field.)
+_SPEC_GLACIAL_ACETIC_ACID = MaterialSpecification(
+    states=(StateClaim(DilutionState.NEAT, EvidenceKind.AUTHOR_INFERRED,
+                       note="'glacial' acetic acid is by definition undiluted acetic acid (species-specific term, "
+                            "the author's reading of the quoted word)"),),
+)
+# Isopentyl "carefully add 4 mL of conc. H 2 SO 4" / aspirin "5 drops of conc. H2SO4": the page gives no
+# species-scoped percentage for "conc." -> an OPEN formulation question, never a number (conc. HCl ~37% vs conc.
+# H2SO4 ~96% is exactly why no generic meaning exists).
+_SPEC_CONC_ABBREV = MaterialSpecification(unresolved_terms=("conc.",))
+# Acetaminophen: "add 1.5 mL of concentrated hydrochloric acid" -- the page spells the word out; same open question.
+_SPEC_CONCENTRATED = MaterialSpecification(unresolved_terms=("concentrated",))
+# Isopentyl: "with 25 mL of 5% sodium bicarbonate solution twice". 5% is a nominal point on an UNSTATED basis (w/w?
+# w/v?) with UNSTATED tolerance -> can neither certify nor refute (F68). "solution" is quoted -> SOLUTION state.
+_SPEC_5PCT_BICARBONATE = MaterialSpecification(
+    composition=CompositionConstraint(
+        "0.05", "0.05", ConcentrationBasis.UNKNOWN, Tolerance.NOMINAL_UNSTATED_TOLERANCE, _SQ,
+        note="source: '25 mL of 5% sodium bicarbonate solution' -- basis (w/w vs w/v) and tolerance not stated"),
+    states=(StateClaim(DilutionState.SOLUTION, _SQ, note="source: '5% sodium bicarbonate solution'"),),
+)
+# Isopentyl: "add 5 mL of saturated aqueous sodium chloride". Saturation is species- AND temperature-dependent and
+# the page prints no number -> a SATURATED state claim, no composition. "aqueous" -> a (water) SOLUTION.
+_SPEC_SATURATED_AQUEOUS_NACL = MaterialSpecification(
+    states=(
+        StateClaim(SaturationState.SATURATED, _SQ, note="source: 'saturated aqueous sodium chloride'"),
+        StateClaim(DilutionState.SOLUTION, _SQ, note="source: 'saturated aqueous sodium chloride'"),
+    ),
+)
+# Aspirin: "Stir the crude solid with 25 mL of a saturated aqueous sodium bicarbonate solution" -- states only.
+_SPEC_ASPIRIN_SATURATED_AQUEOUS_BICARBONATE = MaterialSpecification(
+    states=(
+        StateClaim(SaturationState.SATURATED, _SQ, note="source: 'a saturated aqueous sodium bicarbonate solution'"),
+        StateClaim(DilutionState.SOLUTION, _SQ, note="source: 'a saturated aqueous sodium bicarbonate solution'"),
+    ),
+)
+# Isopentyl: "dry with 2 g of anhydrous magnesium sulfate" -- a hydration-state assertion, NOT an assay number.
+_SPEC_ANHYDROUS_MGSO4 = MaterialSpecification(
+    states=(StateClaim(HydrationState.ANHYDROUS, _SQ, note="source: 'anhydrous magnesium sulfate'"),),
+)
+
 # Isopentyl acetate -- a COMPLETE, sourced preparative procedure. reaction_type is recognized (esterification
 # makes water), conditions are sourced, and this procedure is complete -> the round's real PROCESS_SPECIFIED
 # positive. Quantities, ordered operations, workup and analytical acceptance all quoted from the LibreTexts page.
@@ -251,21 +315,23 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
             quantity=EvidenceField.present("15 mL alcohol + 20 mL glacial acetic acid + 4 mL conc. H2SO4", _ISOPENTYL_URL),
             rate=EvidenceField.present("combine alcohol and acid, then add conc. H2SO4 with caution", _ISOPENTYL_URL),
             # Round IV F45: the two true reactants are now TYPED source uses (SUBSTRATE/REACTANT) beside the
-            # CATALYST, so the generic capability compiler reads reactant identity + sourced volume + glacial/
-            # neat formulation off material_uses -- no leaf-identity whitelist, no runtime 'glacial' prose scan.
+            # CATALYST, so the generic capability compiler reads reactant identity + sourced volume + the typed
+            # source specification off material_uses -- no leaf-identity whitelist, no runtime 'glacial' prose scan.
+            # Round V: the source says only "15 mL" of isopentyl alcohol -- it NEVER says "neat", so the Round-IV
+            # formulation="neat" was an authored inference and is REMOVED; no dilution claim is made for it.
             material_uses=(
                 ProcedureMaterialUse(
                     name="isopentyl alcohol", role=ProcedureMaterialRole.SUBSTRATE, identity=_ISOAMYL_ALCOHOL,
-                    formulation="neat", phase=Phase.LIQUID, quantity=StockQuantity.of("15", "mL"),
+                    phase=Phase.LIQUID, quantity=StockQuantity.of("15", "mL"),
                     evidence_source=_ISOPENTYL_URL),
                 ProcedureMaterialUse(
                     name="acetic acid", role=ProcedureMaterialRole.REACTANT, identity=_ACETIC_ACID,
                     formulation="glacial", phase=Phase.LIQUID, quantity=StockQuantity.of("20", "mL"),
-                    evidence_source=_ISOPENTYL_URL),
+                    evidence_source=_ISOPENTYL_URL, specification=_SPEC_GLACIAL_ACETIC_ACID),
                 ProcedureMaterialUse(
                     name="sulfuric acid", role=ProcedureMaterialRole.CATALYST, identity=_H2SO4,
                     formulation="conc.", phase=Phase.LIQUID, quantity=StockQuantity.of("4", "mL"),
-                    evidence_source=_ISOPENTYL_URL),
+                    evidence_source=_ISOPENTYL_URL, specification=_SPEC_CONC_ABBREV),
             ),
             apparatus=("100-mL round-bottom flask",), locator=_ISOPENTYL_URL),
         ProcedureOperation(
@@ -294,22 +360,26 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
             ),
             apparatus=("separatory funnel",), locator=_ISOPENTYL_URL),
         ProcedureOperation(
-            ordinal=5, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("5% sodium bicarbonate solution",),
+            ordinal=5, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("sodium bicarbonate",),
             quantity=EvidenceField.present("25 mL of 5% sodium bicarbonate, twice", _ISOPENTYL_URL),
             endpoint=EvidenceField.present("wash until the aqueous layer is basic to litmus", _ISOPENTYL_URL),
-            # Ionic: no connected Molecule to resolve. identity=None is the honest carrier; the "5% aqueous"
-            # adjective survives as structured formulation/phase, not prose to be re-parsed downstream. Round IV
-            # F41: "25 mL of 5% sodium bicarbonate, twice" is TWO draws, authored as two same-spec uses so the
-            # generic compiler SUMS them to a whole-route 50 mL demand (never the first-value-wins 25 mL).
+            # Ionic: no connected Molecule to resolve. identity=None is the honest carrier. Round IV F41: "25 mL of
+            # 5% sodium bicarbonate solution twice" is TWO draws, authored as two same-spec uses so the generic
+            # compiler SUMS them to a whole-route 50 mL demand (never the first-value-wins 25 mL).
+            # Round V: raw formulation is now the source's own words ("5% ... solution"; the Round-IV "5% aqueous"
+            # put a word in the source's mouth). PHASE NOTE: the page says "solution", not "aqueous" -- reading it
+            # as an AQUEOUS solution is the EVIDENCE AUTHOR'S INFERENCE (a bicarbonate wash of an organic layer in a
+            # separatory funnel is the aqueous layer), and ``phase`` carries no evidence field to say so. It is
+            # kept as-is and flagged here; nothing in the typed specification rests on it.
             material_uses=(
                 ProcedureMaterialUse(
                     name="sodium bicarbonate", role=ProcedureMaterialRole.WASH, identity=None,
-                    formulation="5% aqueous", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("25", "mL"),
-                    evidence_source=_ISOPENTYL_URL),
+                    formulation="5% solution", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("25", "mL"),
+                    evidence_source=_ISOPENTYL_URL, specification=_SPEC_5PCT_BICARBONATE),
                 ProcedureMaterialUse(
                     name="sodium bicarbonate", role=ProcedureMaterialRole.WASH, identity=None,
-                    formulation="5% aqueous", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("25", "mL"),
-                    evidence_source=_ISOPENTYL_URL),
+                    formulation="5% solution", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("25", "mL"),
+                    evidence_source=_ISOPENTYL_URL, specification=_SPEC_5PCT_BICARBONATE),
             ),
             locator=_ISOPENTYL_URL),
         ProcedureOperation(
@@ -322,22 +392,26 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
             ),
             locator=_ISOPENTYL_URL),
         ProcedureOperation(
-            ordinal=7, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("saturated aqueous sodium chloride",),
+            ordinal=7, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("sodium chloride",),
             quantity=EvidenceField.present("5 mL saturated NaCl to aid layer separation (swirl, do not shake)", _ISOPENTYL_URL),
             material_uses=(
+                # Round V F64: the source says "add 5 mL of saturated aqueous sodium chloride" -- the 5 mL was
+                # sourced all along and had been dropped from the typed use; it is now carried.
                 ProcedureMaterialUse(
                     name="sodium chloride", role=ProcedureMaterialRole.WASH, identity=None,
-                    formulation="saturated aqueous", phase=Phase.AQUEOUS_SOLUTION, evidence_source=_ISOPENTYL_URL),
+                    formulation="saturated aqueous", phase=Phase.AQUEOUS_SOLUTION,
+                    quantity=StockQuantity.of("5", "mL"), evidence_source=_ISOPENTYL_URL,
+                    specification=_SPEC_SATURATED_AQUEOUS_NACL),
             ),
             locator=_ISOPENTYL_URL),
         ProcedureOperation(
-            ordinal=8, kind=OperationKind.DRY, role=OperationRole.OTHER, materials=("anhydrous magnesium sulfate",),
+            ordinal=8, kind=OperationKind.DRY, role=OperationRole.OTHER, materials=("magnesium sulfate",),
             quantity=EvidenceField.present("2 g anhydrous magnesium sulfate", _ISOPENTYL_URL),
             material_uses=(
                 ProcedureMaterialUse(
                     name="magnesium sulfate", role=ProcedureMaterialRole.DRY, identity=None,
                     formulation="anhydrous", phase=Phase.SOLID, quantity=StockQuantity.of("2", "g"),
-                    evidence_source=_ISOPENTYL_URL),
+                    evidence_source=_ISOPENTYL_URL, specification=_SPEC_ANHYDROUS_MGSO4),
             ),
             locator=_ISOPENTYL_URL),
         ProcedureOperation(
@@ -385,7 +459,8 @@ _ASPIRIN_PROCEDURE = ProcedureEvidence(
             material_uses=(
                 ProcedureMaterialUse(
                     name="sulfuric acid", role=ProcedureMaterialRole.CATALYST, identity=_H2SO4,
-                    formulation="conc.", phase=Phase.LIQUID, evidence_source=_ASPIRIN_URL),
+                    formulation="conc.", phase=Phase.LIQUID, evidence_source=_ASPIRIN_URL,
+                    specification=_SPEC_CONC_ABBREV),  # source: "5 drops of conc. H2SO4" -- no % given
             ),
             apparatus=("125-mL Erlenmeyer flask",), locator=_ASPIRIN_URL),
         ProcedureOperation(
@@ -407,11 +482,67 @@ _ASPIRIN_PROCEDURE = ProcedureEvidence(
             quantity=EvidenceField.present("rinse the crystals several times with 5 mL portions of cold water", _ASPIRIN_URL),
             material_uses=(
                 ProcedureMaterialUse(
-                    name="water", role=ProcedureMaterialRole.RINSE, identity=_WATER, evidence_source=_ASPIRIN_URL),
+                    name="cold water", role=ProcedureMaterialRole.RINSE, identity=_WATER, evidence_source=_ASPIRIN_URL),
+            ),
+            locator=_ASPIRIN_URL),
+        # Round V: the bicarbonate/HCl REPRECIPITATION the page specifies between the crude isolation and the
+        # recrystallization had no operation (it lived only in the ``purification`` prose), so its auxiliaries --
+        # a saturated bicarbonate charge and an HCl bath -- were invisible to every material/waste axis. Authored
+        # here from the page's own sentences. None is role=REACTION and none is a SEPARATE/QUENCH op, so the
+        # completeness predicate and the N/A coherence guards (quench, separation) are untouched by construction.
+        ProcedureOperation(
+            ordinal=6, kind=OperationKind.ADD, role=OperationRole.OTHER,
+            materials=("sodium bicarbonate",),
+            quantity=EvidenceField.present(
+                "Stir the crude solid with 25 mL of a saturated aqueous sodium bicarbonate solution in a 150 mL beaker",
+                _ASPIRIN_URL),
+            endpoint=EvidenceField.present("stir until gas evolution stops", _ASPIRIN_URL),
+            # Bicarbonate carries the acid product into solution as its salt: a pH move, not a reactant ->
+            # NEUTRALIZE. Ionic -> identity=None. Saturation/"aqueous" are quoted states; no number is printed.
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="sodium bicarbonate", role=ProcedureMaterialRole.NEUTRALIZE, identity=None,
+                    formulation="saturated aqueous", phase=Phase.AQUEOUS_SOLUTION,
+                    quantity=StockQuantity.of("25", "mL"), evidence_source=_ASPIRIN_URL,
+                    specification=_SPEC_ASPIRIN_SATURATED_AQUEOUS_BICARBONATE),
+            ),
+            apparatus=("150-mL beaker",), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=7, kind=OperationKind.FILTER, role=OperationRole.OTHER,
+            quantity=EvidenceField.present(
+                "Filter the solution through a Buchner funnel to remove any insoluble impurities", _ASPIRIN_URL),
+            apparatus=("Buchner funnel",), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=8, kind=OperationKind.ADD, role=OperationRole.OTHER, materials=("hydrochloric acid", "water"),
+            quantity=EvidenceField.present(
+                "pour the filtrate with stirring, a small amount at a time, into an ice cold HCl solution "
+                "(ca 3.5 mL of conc. HCl in 10 mL of water)", _ASPIRIN_URL),
+            rate=EvidenceField.present("a small amount at a time, with stirring", _ASPIRIN_URL),
+            # "ca 3.5 mL" is APPROXIMATE -> quantity=None (an approximate figure is not an exact demand); "conc."
+            # has no sourced % -> unresolved. The 10 mL of water is exact and is the HCl bath's diluent (SOLVENT).
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="hydrochloric acid", role=ProcedureMaterialRole.NEUTRALIZE, identity=_HCL,
+                    formulation="conc.", phase=Phase.AQUEOUS_SOLUTION, quantity=None,
+                    evidence_source=_ASPIRIN_URL, specification=_SPEC_CONC_ABBREV),
+                ProcedureMaterialUse(
+                    name="water", role=ProcedureMaterialRole.SOLVENT, identity=_WATER,
+                    quantity=StockQuantity.of("10", "mL"), evidence_source=_ASPIRIN_URL),
             ),
             locator=_ASPIRIN_URL),
         ProcedureOperation(
-            ordinal=6, kind=OperationKind.HEAT, role=OperationRole.RECRYSTALLIZATION, materials=("ethyl acetate",),
+            ordinal=9, kind=OperationKind.FILTER, role=OperationRole.OTHER, materials=("cold water",),
+            quantity=EvidenceField.present(
+                "Filter the solid by suction and wash the crystals 3X with 5 mL of cold water each", _ASPIRIN_URL),
+            # "3X with 5 mL ... each" is three cleanly-separable draws -> three 5 mL uses (summed downstream).
+            material_uses=tuple(
+                ProcedureMaterialUse(
+                    name="cold water", role=ProcedureMaterialRole.RINSE, identity=_WATER,
+                    quantity=StockQuantity.of("5", "mL"), evidence_source=_ASPIRIN_URL)
+                for _ in range(3)),
+            apparatus=("Buchner funnel",), locator=_ASPIRIN_URL),
+        ProcedureOperation(
+            ordinal=10, kind=OperationKind.HEAT, role=OperationRole.RECRYSTALLIZATION, materials=("ethyl acetate",),
             temperature=EvidenceField.present("dissolve in a minimum (2-3 mL) of hot ethyl acetate", _ASPIRIN_URL),
             # The recrystallization medium resolves (a single ester); the "2-3 mL" is glued into a range, so
             # quantity stays None. "hot" is a condition on the op, not a material formulation, so it is NOT recorded here.
@@ -422,11 +553,11 @@ _ASPIRIN_PROCEDURE = ProcedureEvidence(
             ),
             locator=_ASPIRIN_URL),
         ProcedureOperation(
-            ordinal=7, kind=OperationKind.COOL, role=OperationRole.RECRYSTALLIZATION,
+            ordinal=11, kind=OperationKind.COOL, role=OperationRole.RECRYSTALLIZATION,
             temperature=EvidenceField.present("cool to room temperature, then in an ice bath", _ASPIRIN_URL),
             apparatus=("ice bath",), locator=_ASPIRIN_URL),
         ProcedureOperation(
-            ordinal=8, kind=OperationKind.FILTER, role=OperationRole.RECRYSTALLIZATION, materials=("petroleum ether",),
+            ordinal=12, kind=OperationKind.FILTER, role=OperationRole.RECRYSTALLIZATION, materials=("petroleum ether",),
             quantity=EvidenceField.present("collect by vacuum filtration, rinse with a few mL cold petroleum ether", _ASPIRIN_URL),
             # Petroleum ether is a hydrocarbon CUT, not one compound -> identity=None, no fabricated spelling.
             material_uses=(
@@ -436,10 +567,10 @@ _ASPIRIN_PROCEDURE = ProcedureEvidence(
             ),
             apparatus=("Buchner funnel",), locator=_ASPIRIN_URL),
         ProcedureOperation(
-            ordinal=9, kind=OperationKind.DRY, role=OperationRole.OTHER,
+            ordinal=13, kind=OperationKind.DRY, role=OperationRole.OTHER,
             quantity=EvidenceField.present("air dry the crystals", _ASPIRIN_URL), locator=_ASPIRIN_URL),
         ProcedureOperation(
-            ordinal=10, kind=OperationKind.VERIFY, role=OperationRole.OTHER,
+            ordinal=14, kind=OperationKind.VERIFY, role=OperationRole.OTHER,
             apparatus=("analytical balance", "melting point apparatus"), locator=_ASPIRIN_URL),
     ),
     quench=EvidenceField.not_applicable(
@@ -477,12 +608,23 @@ _PARACETAMOL_PROCEDURE = ProcedureEvidence(
             materials=("p-aminophenol", "water", "hydrochloric acid"),
             quantity=EvidenceField.present("2.1 g p-aminophenol + 35 mL water + 1.5 mL conc. HCl, swirl to dissolve", _ACETAMINOPHEN_URL),
             # HCl here protonates the amine to dissolve the substrate -- a pH move, not a stoichiometric reactant:
-            # NEUTRALIZE. It resolves (a single connected species); conc. HCl is aqueous, so the phase is honest.
+            # NEUTRALIZE. It resolves (a single connected species); hydrochloric acid is by name the aqueous
+            # solution of HCl, so the phase is honest. Round V: the page's verbatim words are "add 1.5 mL of
+            # concentrated hydrochloric acid" (raw formulation corrected from the abbreviation "conc."); it states no
+            # percentage, so "concentrated" is an UNRESOLVED term -> UNKNOWN, never ~37%.
+            # Round V: the page continues "Add a few more drops of concentrated acid if necessary to dissolve the
+            # amine completely" -- a SECOND, unquantified draw of the same material. It is authored as its own use
+            # with quantity=None so the whole-route HCl demand projects LOWER_BOUND_PLUS_UNKNOWN (1.5 mL + an
+            # unstated amount), never an EXACT 1.5 mL. "a few more drops" is not a comparable volume: no number.
             material_uses=(
                 ProcedureMaterialUse(
                     name="hydrochloric acid", role=ProcedureMaterialRole.NEUTRALIZE, identity=_HCL,
-                    formulation="conc.", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("1.5", "mL"),
-                    evidence_source=_ACETAMINOPHEN_URL),
+                    formulation="concentrated", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("1.5", "mL"),
+                    evidence_source=_ACETAMINOPHEN_URL, specification=_SPEC_CONCENTRATED),
+                ProcedureMaterialUse(
+                    name="hydrochloric acid", role=ProcedureMaterialRole.NEUTRALIZE, identity=_HCL,
+                    formulation="concentrated", phase=Phase.AQUEOUS_SOLUTION, quantity=None,
+                    evidence_source=_ACETAMINOPHEN_URL, specification=_SPEC_CONCENTRATED),
             ),
             apparatus=("125-mL Erlenmeyer flask",), locator=_ACETAMINOPHEN_URL),
         ProcedureOperation(
@@ -499,6 +641,14 @@ _PARACETAMOL_PROCEDURE = ProcedureEvidence(
         ProcedureOperation(
             ordinal=3, kind=OperationKind.FILTER, role=OperationRole.OTHER,
             quantity=EvidenceField.present("gravity filter through fluted paper while warm to remove charcoal", _ACETAMINOPHEN_URL),
+            # Round V: "Rinse the filter paper with 1 mL of water." -- a sourced, cleanly-separable draw that had
+            # been omitted. (The later "If the solution is a dark brown, add 0.1 g of Norit" is CONDITIONAL and is
+            # deliberately NOT authored as a demand: the Norit use at op2 already has no quantity -> UNKNOWN.)
+            material_uses=(
+                ProcedureMaterialUse(
+                    name="water", role=ProcedureMaterialRole.RINSE, identity=_WATER,
+                    quantity=StockQuantity.of("1", "mL"), evidence_source=_ACETAMINOPHEN_URL),
+            ),
             apparatus=("fluted filter paper",), locator=_ACETAMINOPHEN_URL),
         ProcedureOperation(
             ordinal=4, kind=OperationKind.ADD, role=OperationRole.REACTION,
@@ -534,7 +684,7 @@ _PARACETAMOL_PROCEDURE = ProcedureEvidence(
             # "a few mL" is glued/ambiguous, so quantity stays None; the species resolves and is carried, benign.
             material_uses=(
                 ProcedureMaterialUse(
-                    name="water", role=ProcedureMaterialRole.RINSE, identity=_WATER,
+                    name="cold water", role=ProcedureMaterialRole.RINSE, identity=_WATER,
                     evidence_source=_ACETAMINOPHEN_URL),
             ),
             locator=_ACETAMINOPHEN_URL),

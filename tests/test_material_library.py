@@ -51,7 +51,7 @@ class TestFullyDeclaredInventory:
             "sodium-bicarbonate-5pct-aqueous",
             "sodium-chloride-saturated-aqueous",
             "magnesium-sulfate-anhydrous",
-            "wash-water-distilled",
+            "wash-water",
         }
         assert expected <= ids
 
@@ -69,7 +69,7 @@ class TestFullyDeclaredInventory:
         assert by_id["sodium-bicarbonate-5pct-aqueous"].phase is Phase.AQUEOUS_SOLUTION
         assert by_id["sodium-chloride-saturated-aqueous"].phase is Phase.AQUEOUS_SOLUTION
         assert by_id["magnesium-sulfate-anhydrous"].phase is Phase.SOLID
-        assert by_id["wash-water-distilled"].phase is Phase.LIQUID
+        assert by_id["wash-water"].phase is Phase.LIQUID
 
 
 class TestTargetedNegatives:

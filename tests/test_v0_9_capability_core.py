@@ -23,6 +23,7 @@ from smartchem.capability.equipment_resolver import (
     resolve_apparatus_strings,
 )
 from smartchem.capability.profile import CAPABILITY_PROFILE_SCHEMA, CapabilityProfile
+from smartchem.capability.quantity import QuantityDemand
 from smartchem.capability.requirements import (
     MaterialRequirement,
     RouteCapabilityRequirements,
@@ -48,10 +49,24 @@ from smartchem.experiment.stock import (
     stock_material_from_commodity,
 )
 from smartchem.identity_parse import InputKind, resolve_target
+from smartchem.material_spec import (
+    CompositionConstraint,
+    ConcentrationBasis,
+    EvidenceKind,
+    MaterialSpecification,
+    Tolerance,
+)
 from smartchem.process_constraints import ProcessBounds
 from smartchem.structure import structure_by_name
 
 _CERTIFIED = resolve_algebra_profile(DEFAULT_ROUTE_ALGEBRA_PROFILE)
+
+#: A sourced mass-fraction FLOOR (>= 0.9) on the use's own species -- the Round V replacement for the retired
+#: ``required_assay`` float (a typed composition constraint at the evidence origin, never compiler vocabulary).
+_FLOOR_90 = MaterialSpecification(composition=CompositionConstraint(
+    "0.9", "1", ConcentrationBasis.MASS_FRACTION, Tolerance.FLOOR, EvidenceKind.SOURCE_QUOTED))
+_FLOOR_99 = MaterialSpecification(composition=CompositionConstraint(
+    "0.99", "1", ConcentrationBasis.MASS_FRACTION, Tolerance.FLOOR, EvidenceKind.SOURCE_QUOTED))
 
 
 # -- shared plumbing: a real, searched, source-backed route (mirrors tests/test_v0_8_procedure_migration.py) ---
@@ -164,6 +179,7 @@ def _empty_profile(
     waste_handling=frozenset(),
     procurement=frozenset(),
     budget=None,
+    no_limit_dimensions=frozenset(),
 ) -> CapabilityProfile:
     return CapabilityProfile(
         schema_version=CAPABILITY_PROFILE_SCHEMA,
@@ -179,7 +195,13 @@ def _empty_profile(
         procurement=procurement,
         budget=budget,
         provenance="pure unit-test fixture, not a real declared bench",
+        no_limit_dimensions=no_limit_dimensions,
     )
+
+
+#: Round V D13: an undeclared budget is UNKNOWN against any route. The pure fold tests below that exercise the
+#: FIT branch declare the explicit operator NO_LIMIT budget preference -- the only way an absent budget passes.
+_NO_LIMIT_BUDGET = frozenset({"budget"})
 
 
 # -- 1. the closed apparatus resolver -------------------------------------------------------------------------
@@ -236,7 +258,7 @@ def test_material_same_formula_isomer_never_satisfies():
         Phase.GAS, "test fixture",
     )
     requirement = MaterialRequirement(
-        identity=ethanol, required_assay=0.9, phase=None, quantity=None,
+        identity=ethanol, phase=None, quantity=QuantityDemand.unstated(),
         role="reactant", evidence_source="test fixture",
     )
     profile = _empty_profile(material_inventory=(stock,))
@@ -254,8 +276,8 @@ def test_material_unknown_assay_is_unknown_never_fit():
         Phase.LIQUID, "test fixture",
     )
     requirement = MaterialRequirement(
-        identity=ethanol, required_assay=0.9, phase=None, quantity=None,
-        role="reactant", evidence_source="test fixture",
+        identity=ethanol, phase=None, quantity=QuantityDemand((("mL", "10"),), 0),
+        role="reactant", evidence_source="test fixture", specification=_FLOOR_90,
     )
     profile = _empty_profile(material_inventory=(stock,))
     assessment = assess(profile, _empty_requirements(material=(requirement,)), _process_specified_route_readiness())
@@ -271,8 +293,8 @@ def test_material_commodity_unknown_fraction_is_unknown():
     assert commodity is not None
     stock = stock_material_from_commodity(commodity)
     requirement = MaterialRequirement(
-        identity=acetic_acid, required_assay=0.99, phase=None, quantity=None,
-        role="reactant", evidence_source="test fixture",
+        identity=acetic_acid, phase=None, quantity=QuantityDemand((("mL", "10"),), 0),
+        role="reactant", evidence_source="test fixture", specification=_FLOOR_99,
     )
     profile = _empty_profile(material_inventory=(stock,))
     assessment = assess(profile, _empty_requirements(material=(requirement,)), _process_specified_route_readiness())
@@ -284,7 +306,7 @@ def test_material_empty_inventory_is_unknown_not_fit():
     UNKNOWN by construction -- never a vacuous FIT over an empty pantry."""
     ethanol = _molecule("ethanol")
     requirement = MaterialRequirement(
-        identity=ethanol, required_assay=0.9, phase=None, quantity=None,
+        identity=ethanol, phase=None, quantity=QuantityDemand.unstated(),
         role="reactant", evidence_source="test fixture",
     )
     profile = _empty_profile()  # material_inventory=() default
@@ -292,30 +314,52 @@ def test_material_empty_inventory_is_unknown_not_fit():
     assert assessment.material.status is CapabilityStatus.UNKNOWN
 
 
-def test_material_with_no_declared_assay_requirement_is_fit_by_possession_never_assumed_100_percent():
-    """Round IV: ``required_assay=None`` (the honest default a PURE route projection produces, since no
-    source in this corpus quotes a numeric purity floor) is now a POSSESSION-ONLY requirement -- no
-    composition/phase/quantity gate. Against a declared stock item of matching identity it is satisfied by
-    POSSESSION (FIT), reasoned "present (possession)". That is NOT the FREEZE-decision-3 hazard it was
-    written to catch: nothing is compared against a fabricated implicit 100% floor -- the requirement is
-    simply "present", the honest reading of an ungated demand. (The ABSENT case -- a possession-only
-    requirement missing from every bottle -- stays UNKNOWN, an open question; its sibling lives in
-    ``tests/test_v0_9_capability_round_iii.py::test_gateless_auxiliary_absent_is_unknown_not_a_provable_block``.)
+def test_material_possession_alone_is_never_fit_but_an_exact_draw_of_a_provably_pure_bottle_is():
+    """Round V (D1/D2/D13 P0-3) -- FLIPPED from Round IV's "FIT by possession". Possession is not a capability:
+
+    * an ``UNKNOWN`` quantity (a real, positive, unsized demand) is never FIT, whatever the bottle;
+    * an EXACT 50 mL demand with an EMPTY specification against a bottle of UNKNOWN amount is UNKNOWN (G- capacity 0);
+    * the same EXACT demand against a declared 100 mL bottle whose species' LOWER fraction is exactly 1 (provably the
+      pure species, so drawing 50 mL of it IS 50 mL of the species) is FIT -- a proven, commensurable allocation.
     """
     ethanol = _molecule("ethanol")
-    stock = StockMaterial(
-        STOCK_MATERIAL_SCHEMA, "stock-ethanol-pure", "Ethanol, ACS reagent grade",
-        (MaterialComponent.of_molecule(ethanol, "active", 1.0, 1.0),),
-        Phase.LIQUID, "test fixture",
-    )
-    requirement = MaterialRequirement(
-        identity=ethanol, required_assay=None, phase=None, quantity=None,
+
+    def _user_declared_fraction(lo, hi):
+        from smartchem.data.derived_evidence import DerivationKernel, InputUnit, IntervalEvidence, TypedInput
+        from smartchem.material_spec import ConcentrationBasis, EvidenceKind
+        return IntervalEvidence.build(
+            kernel=DerivationKernel.USER_DECLARED_V1, basis=ConcentrationBasis.MASS_FRACTION,
+            inputs=(TypedInput("low", lo, InputUnit.FRACTION, EvidenceKind.USER_DECLARED),
+                    TypedInput("high", hi, InputUnit.FRACTION, EvidenceKind.USER_DECLARED)),
+            domain_of_validity="test fixture: the operator's own bottle")
+
+    def _bottle(quantity):
+        return StockMaterial(
+            STOCK_MATERIAL_SCHEMA, "stock-ethanol-pure", "Ethanol, ACS reagent grade",
+            # Wave-C K2: "provably pure" needs a fraction basis + CERTIFYING evidence, not a bare 1.0
+            (MaterialComponent.evidenced(ethanol, "active", _user_declared_fraction("1", "1")),),
+            Phase.LIQUID, "test fixture", quantity=quantity,
+        )
+
+    exact = MaterialRequirement(
+        identity=ethanol, phase=None, quantity=QuantityDemand((("mL", "50"),), 0),
         role="reactant", evidence_source="test fixture: no sourced purity spec",
     )
-    profile = _empty_profile(material_inventory=(stock,))
-    assessment = assess(profile, _empty_requirements(material=(requirement,)), _process_specified_route_readiness())
-    assert assessment.material.status is CapabilityStatus.FIT
-    assert "possession" in " ".join(assessment.material.reasons)
+    unsized = MaterialRequirement(
+        identity=ethanol, phase=None, quantity=QuantityDemand.unstated(),
+        role="reactant", evidence_source="test fixture: no sourced quantity",
+    )
+    from smartchem.experiment.stock import StockQuantity
+
+    def _material(req, bottle):
+        return assess(_empty_profile(material_inventory=(bottle,)), _empty_requirements(material=(req,)),
+                      _process_specified_route_readiness()).material
+
+    assert _material(unsized, _bottle(StockQuantity.of("1000", "mL"))).status is CapabilityStatus.UNKNOWN
+    assert _material(exact, _bottle(None)).status is CapabilityStatus.UNKNOWN
+    fit = _material(exact, _bottle(StockQuantity.of("100", "mL")))
+    assert fit.status is CapabilityStatus.FIT
+    assert "EXACT 50 mL" in " ".join(fit.reasons)
 
 
 # -- 3. compile_capability_requirements on the real isopentyl-acetate route ------------------------------------
@@ -330,10 +374,12 @@ def test_compile_capability_requirements_equipment_axis_reads_apparatus_not_equi
     assert EquipmentCapability.REFLUX_CONDENSER in requirements.equipment
     assert EquipmentCapability.SEPARATORY_FUNNEL in requirements.equipment
     # the corpus consumable "boiling stones" is real evidence but a vetted, whitelisted consumable -- it is
-    # dropped, not carried as unrecognized; it must never invent a phantom EquipmentCapability member, and
-    # it must never masquerade as a genuinely-untabled apparatus string either.
+    # dropped, not carried as unrecognized; it must never invent a phantom EquipmentCapability member.
     assert "boiling stones" not in requirements.equipment_unrecognized
-    assert requirements.equipment_unrecognized == ()
+    # Round V D13 (FLIPPED from ``== ()``): the only remainder is the UNREAD hardware demand of the two ops the
+    # source leaves without apparatus (cool; dry) -- never an untabled apparatus string.
+    assert requirements.equipment_unrecognized == (
+        "step 1 op 3 COOL states no apparatus", "step 1 op 8 DRY states no apparatus")
 
 
 def test_compile_capability_requirements_is_a_pure_function_of_the_route_alone():
@@ -366,17 +412,18 @@ def test_equipment_axis_is_unknown_when_a_genuinely_unrecognized_apparatus_strin
     assert "rotary evaporator" in " ".join(assessment.equipment.reasons)
 
 
-def test_the_real_isopentyl_route_has_no_unrecognized_equipment_and_stays_equipment_fit_eligible():
-    """The critical invariant this excision must not break: the real route's only unresolved apparatus
-    string is "boiling stones", a WHITELISTED consumable -- ``equipment_unrecognized`` must be EMPTY, so
-    the equipment axis still reaches a genuine FIT against a profile declaring every required capability
-    (never stuck at UNKNOWN on a consumable the whitelist already vetted)."""
+def test_the_real_isopentyl_route_equipment_axis_is_unknown_on_its_unread_hardware_ops():
+    """Round V D13 -- FLIPPED from "equipment FIT against a maximal bench". The source's cool and dry operations name
+    no apparatus; a demand stated anywhere must reach its axis or that axis fails closed, so even a profile owning
+    EVERY EquipmentCapability is UNKNOWN on equipment (never FIT by omission) -- while the recognized set itself is
+    still fully covered (no provable block)."""
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
-    assert requirements.equipment_unrecognized == ()
     profile = _empty_profile(equipment=_ALL_EQUIPMENT_CAPABILITIES)
     assessment = assess(profile, requirements, evaluate_route(route))
-    assert assessment.equipment.status is CapabilityStatus.FIT
+    assert assessment.equipment.status is CapabilityStatus.UNKNOWN
+    joined = " ".join(assessment.equipment.reasons)
+    assert "COOL states no apparatus" in joined and "covers every required capability" in joined
 
 
 # -- 4. the verdict fold ----------------------------------------------------------------------------------------
@@ -388,7 +435,7 @@ def test_verdict_fold_blocked_beats_unknown_beats_fit():
     requirements = _empty_requirements(
         equipment=frozenset({EquipmentCapability.FRACTIONAL_DISTILLATION}),
         material=(MaterialRequirement(
-            identity=ethanol, required_assay=0.9, phase=None, quantity=None,
+            identity=ethanol, phase=None, quantity=QuantityDemand.unstated(),
             role="reactant", evidence_source="test fixture",
         ),),
     )
@@ -405,7 +452,7 @@ def test_verdict_fold_unknown_beats_fit():
     ethanol = _molecule("ethanol")
     requirements = _empty_requirements(
         material=(MaterialRequirement(
-            identity=ethanol, required_assay=0.9, phase=None, quantity=None,
+            identity=ethanol, phase=None, quantity=QuantityDemand.unstated(),
             role="reactant", evidence_source="test fixture",
         ),),
     )
@@ -422,14 +469,15 @@ def test_verdict_fold_unknown_beats_fit():
 def test_verdict_fold_tier_below_process_specified_can_never_be_overall_fit():
     """HARD LAW (decision 5): even when every axis is FIT/NOT_APPLICABLE/UNCONSTRAINED, a route readiness
     tier below PROCESS_SPECIFIED caps the overall verdict at UNKNOWN -- it can never reach FIT."""
-    requirements = _empty_requirements()  # every axis NOT_APPLICABLE/UNCONSTRAINED
-    profile = _empty_profile()
+    requirements = _empty_requirements()  # every axis NOT_APPLICABLE/UNCONSTRAINED (monetary: NO_LIMIT FIT)
+    profile = _empty_profile(no_limit_dimensions=_NO_LIMIT_BUDGET)
     assessment = assess(profile, requirements, _reaction_vouched_route_readiness())
     assert all(
-        axis.status in (CapabilityStatus.NOT_APPLICABLE, CapabilityStatus.UNCONSTRAINED)
+        axis.status in (CapabilityStatus.NOT_APPLICABLE, CapabilityStatus.UNCONSTRAINED, CapabilityStatus.FIT)
         for axis in assessment.axes
     )
     assert assessment.overall is CapabilityStatus.UNKNOWN
+    assert assessment.readiness_tier == "REACTION_VOUCHED"
 
 
 def test_verdict_fold_reaches_fit_when_tier_is_process_specified_and_nothing_is_blocked_or_unknown():
@@ -438,9 +486,13 @@ def test_verdict_fold_reaches_fit_when_tier_is_process_specified_and_nothing_is_
     -- a genuine end-to-end material-FIT demonstration on a real route is the forcing-corpus fixture a
     LATER Wave-B item owns, per FREEZE decision 8 item 5; this only proves the fold's positive branch.)"""
     requirements = _empty_requirements()
-    profile = _empty_profile()
+    profile = _empty_profile(no_limit_dimensions=_NO_LIMIT_BUDGET)
     assessment = assess(profile, requirements, _process_specified_route_readiness())
     assert assessment.overall is CapabilityStatus.FIT
+    assert "NO_LIMIT" in " ".join(assessment.monetary.reasons)
+    # D13: without the explicit NO_LIMIT preference an undeclared budget is UNKNOWN, never a silent pass.
+    assert assess(_empty_profile(), requirements, _process_specified_route_readiness()).overall is (
+        CapabilityStatus.UNKNOWN)
 
 
 def test_profile_missing_fractional_distillation_blocks_the_real_isopentyl_equipment_axis():
@@ -496,7 +548,8 @@ def test_procurement_industrial_catalyst_blocks_under_a_kitchen_profile_but_fits
     it is otherwise well-equipped."""
     requirements = _empty_requirements(procurement_catalysts=(("Pd/C", Availability.INDUSTRIAL),))
     kitchen_profile = _empty_profile(procurement=frozenset({Availability.GROCERY, Availability.HARDWARE}))
-    lab_profile = _empty_profile(procurement=frozenset({Availability.HARDWARE, Availability.INDUSTRIAL}))
+    lab_profile = _empty_profile(procurement=frozenset({Availability.HARDWARE, Availability.INDUSTRIAL}),
+                                 no_limit_dimensions=_NO_LIMIT_BUDGET)
 
     blocked = assess(kitchen_profile, requirements, _process_specified_route_readiness())
     assert blocked.procurement.status is CapabilityStatus.BLOCKED
@@ -524,7 +577,7 @@ def test_procurement_no_declared_catalyst_is_not_applicable():
     """Genuine silence (``catalysts == ()`` on every step) is not a claim either way -- NOT_APPLICABLE,
     never a fabricated FIT and never a fabricated BLOCKED."""
     requirements = _empty_requirements()  # procurement_catalysts=() by default
-    profile = _empty_profile(procurement=frozenset())  # even a profile declaring NO tiers at all
+    profile = _empty_profile(procurement=frozenset(), no_limit_dimensions=_NO_LIMIT_BUDGET)  # NO tiers at all
     assessment = assess(profile, requirements, _process_specified_route_readiness())
     assert assessment.procurement.status is CapabilityStatus.NOT_APPLICABLE
     assert assessment.overall is CapabilityStatus.FIT
@@ -537,7 +590,7 @@ def test_procurement_grocery_catalyst_fits_under_the_poor_man_kitchen_tiers():
         Availability.GROCERY, Availability.PHARMACY, Availability.HARDWARE, Availability.POOL_GARDEN,
     })
     requirements = _empty_requirements(procurement_catalysts=(("citric acid", Availability.GROCERY),))
-    profile = _empty_profile(procurement=kitchen_tiers)
+    profile = _empty_profile(procurement=kitchen_tiers, no_limit_dimensions=_NO_LIMIT_BUDGET)
     assessment = assess(profile, requirements, _process_specified_route_readiness())
     assert assessment.procurement.status is CapabilityStatus.FIT
     assert assessment.overall is CapabilityStatus.FIT
@@ -555,3 +608,7 @@ def test_capability_assessment_carries_its_profile_and_route_digests():
     assert assessment.route_digest == requirements.route_digest == route.digest
     assert assessment.is_capability_assessed is True
     assert assessment.is_capability_fit is (assessment.overall is CapabilityStatus.FIT)
+    # D13 P1-4: the readiness the HARD LAW used is part of the verdict's identity.
+    readiness = evaluate_route(route)
+    assert assessment.readiness_tier == readiness.tier
+    assert assessment.readiness_digest == readiness.digest

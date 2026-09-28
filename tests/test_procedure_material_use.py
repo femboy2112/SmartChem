@@ -77,6 +77,21 @@ def test_material_use_is_digestible_and_stable() -> None:
     assert make().digest == make().digest
 
 
+def test_specification_defaults_none_and_is_type_checked() -> None:
+    """Round V D3: ``specification`` is the load-bearing typed record; it defaults to None, only a real
+    MaterialSpecification is accepted, and it enters the use's digest (formulation text alone is display)."""
+    from smartchem.material_spec import MaterialSpecification
+
+    bare = ProcedureMaterialUse(name="x", role=ProcedureMaterialRole.WASH, evidence_source=_LOC)
+    assert bare.specification is None
+    with pytest.raises(TypeError):
+        ProcedureMaterialUse(name="x", role=ProcedureMaterialRole.WASH, evidence_source=_LOC,
+                             specification={"unresolved_terms": ("conc.",)})  # type: ignore[arg-type]
+    typed = ProcedureMaterialUse(name="x", role=ProcedureMaterialRole.WASH, evidence_source=_LOC,
+                                 specification=MaterialSpecification(unresolved_terms=("conc.",)))
+    assert typed.digest != bare.digest
+
+
 def test_enum_has_exactly_the_frozen_eight_roles() -> None:
     # Round IV F45: SUBSTRATE + REACTANT added so the SOURCE carries reaction inputs as typed uses -- the
     # generic capability compiler reads reactant semantics off material_uses, with no leaf-identity whitelist.
@@ -146,11 +161,15 @@ def test_isopentyl_material_census() -> None:
     assert uses["acetic acid"].role is ProcedureMaterialRole.REACTANT
     assert uses["acetic acid"].identity is not None
     assert uses["acetic acid"].formulation == "glacial"
+    assert uses["acetic acid"].specification is not None
+    assert uses["isopentyl alcohol"].formulation is None  # Round V: the source never says "neat"
+    assert uses["isopentyl alcohol"].specification is None
     assert uses["acetic acid"].quantity == StockQuantity.of("20", "mL")
     assert uses["sulfuric acid"].role is ProcedureMaterialRole.CATALYST
     assert uses["sulfuric acid"].identity is not None
     assert uses["sulfuric acid"].identity.formula == {"H": 2, "O": 4, "S": 1}
     assert uses["sulfuric acid"].formulation == "conc."
+    assert uses["sulfuric acid"].specification.unresolved_terms == ("conc.",)
     assert uses["sulfuric acid"].phase is Phase.LIQUID
     assert uses["sulfuric acid"].quantity == StockQuantity.of("4", "mL")
     # ionic washes/drier: identity=None (unresolvable), the sourced adjective survives as structured data
@@ -161,6 +180,8 @@ def test_isopentyl_material_census() -> None:
     assert uses["magnesium sulfate"].identity is None
     assert uses["magnesium sulfate"].role is ProcedureMaterialRole.DRY
     assert uses["magnesium sulfate"].formulation == "anhydrous"
+    assert uses["magnesium sulfate"].specification is not None
+    assert uses["sodium chloride"].quantity == StockQuantity.of("5", "mL")  # Round V F64: sourced 5 mL carried
     assert uses["magnesium sulfate"].phase is Phase.SOLID
     assert uses["magnesium sulfate"].quantity == StockQuantity.of("2", "g")
     # benign resolvable waters
@@ -170,9 +191,14 @@ def test_isopentyl_material_census() -> None:
 
 def test_aspirin_material_census() -> None:
     uses = _uses_by_name(_ASPIRIN_PROCEDURE)
-    assert set(uses) == {"sulfuric acid", "water", "ethyl acetate", "petroleum ether"}
+    # Round V: the bicarbonate/HCl reprecipitation ops now carry their sourced auxiliaries
+    # Wave-C K4: the rinse uses are named "cold water" exactly as their op.materials string says
+    assert set(uses) == {"sulfuric acid", "water", "cold water", "ethyl acetate", "petroleum ether",
+                         "sodium bicarbonate", "hydrochloric acid"}
     assert uses["sulfuric acid"].role is ProcedureMaterialRole.CATALYST
     assert uses["sulfuric acid"].identity is not None
+    assert uses["sulfuric acid"].specification.unresolved_terms == ("conc.",)
+    assert uses["ethyl acetate"].specification is None and uses["petroleum ether"].specification is None
     assert uses["ethyl acetate"].role is ProcedureMaterialRole.SOLVENT
     assert uses["ethyl acetate"].identity is not None
     assert uses["ethyl acetate"].identity.formula == {"C": 4, "H": 8, "O": 2}
@@ -182,14 +208,22 @@ def test_aspirin_material_census() -> None:
 
 
 def test_paracetamol_material_census() -> None:
-    uses = _uses_by_name(_PARACETAMOL_PROCEDURE)
+    hcl = [u for op in _PARACETAMOL_PROCEDURE.operations for u in op.material_uses if u.name == "hydrochloric acid"]
+    # Round V: "1.5 mL" then "a few more drops ... if necessary" -> an exact draw + an unquantified draw
+    assert [u.quantity for u in hcl] == [StockQuantity.of("1.5", "mL"), None]
+    uses = {u.name: u for op in _PARACETAMOL_PROCEDURE.operations for u in op.material_uses
+            if not (u.name == "hydrochloric acid" and u.quantity is None)}
     assert set(uses) == {
-        "hydrochloric acid", "decolorizing charcoal (Norit)", "sodium acetate buffer", "water"}
+        "hydrochloric acid", "decolorizing charcoal (Norit)", "sodium acetate buffer", "water", "cold water"}
     assert uses["hydrochloric acid"].role is ProcedureMaterialRole.NEUTRALIZE
     assert uses["hydrochloric acid"].identity is not None
     assert uses["hydrochloric acid"].identity.formula == {"Cl": 1, "H": 1}
     assert uses["hydrochloric acid"].phase is Phase.AQUEOUS_SOLUTION
     assert uses["hydrochloric acid"].quantity == StockQuantity.of("1.5", "mL")
+    # Round V: verbatim "concentrated hydrochloric acid", no % -> unresolved, never a number
+    assert uses["hydrochloric acid"].formulation == "concentrated"
+    assert uses["hydrochloric acid"].specification.unresolved_terms == ("concentrated",)
+    assert uses["hydrochloric acid"].specification.composition is None
     # amorphous carbon and a buffered mixture: both identity=None
     assert uses["decolorizing charcoal (Norit)"].identity is None
     assert uses["sodium acetate buffer"].identity is None

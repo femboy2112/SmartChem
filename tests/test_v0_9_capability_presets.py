@@ -146,10 +146,14 @@ def test_forcing_matrix_research_lab_is_unknown_on_material_and_the_semantic_axe
     assert assessment.process.status is CapabilityStatus.UNKNOWN
     assert assessment.containment.status is CapabilityStatus.UNKNOWN
     assert assessment.waste.status is CapabilityStatus.UNKNOWN
+    # Round V D13 (capability-core; FLIPPED from clean): equipment is UNKNOWN (the source's cool/dry ops name no
+    # apparatus) and monetary is UNKNOWN (research_lab() declares no budget: UNDECLARED, not unconstrained).
+    assert assessment.equipment.status is CapabilityStatus.UNKNOWN
+    assert assessment.monetary.status is CapabilityStatus.UNKNOWN
     clean = (CapabilityStatus.FIT, CapabilityStatus.NOT_APPLICABLE, CapabilityStatus.UNCONSTRAINED)
     other_axes = (
-        assessment.equipment, assessment.physical, assessment.ventilation,
-        assessment.measurement, assessment.procurement, assessment.attention_care, assessment.monetary,
+        assessment.physical, assessment.ventilation,
+        assessment.measurement, assessment.procurement, assessment.attention_care,
     )
     assert all(axis.status in clean for axis in other_axes), \
         [(axis.status, axis.reasons) for axis in other_axes]

@@ -40,6 +40,7 @@ from .presets import (
     resolve_capability_profile,
 )
 from .profile import CAPABILITY_PROFILE_SCHEMA, CapabilityProfile
+from .quantity import QuantityDemand, QuantityKnowledge
 from .requirements import (
     MaterialRequirement,
     RouteCapabilityRequirements,
@@ -48,6 +49,8 @@ from .requirements import (
 )
 
 __all__ = [
+    "QuantityDemand",
+    "QuantityKnowledge",
     "CAPABILITY_ASSESSMENT_SCHEMA",
     "AxisResult",
     "CapabilityAssessment",

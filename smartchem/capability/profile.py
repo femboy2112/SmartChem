@@ -28,11 +28,13 @@ from ..data.reagents import Availability
 from ..experiment.affordability import CostVector
 from ..experiment.stock import StockMaterial
 from ..process_constraints import ProcessBounds
+from .declarations import BUDGET_DIMENSION, NO_LIMIT_ELIGIBLE
 from .enums import ContainmentCapability, EquipmentCapability, MeasurementMethod, VentilationCapability, WasteCapability
 
 __all__ = ["CAPABILITY_PROFILE_SCHEMA", "CapabilityProfile"]
 
-CAPABILITY_PROFILE_SCHEMA = "smartchem.capability/capability-profile-v1alpha1"
+#: Round V D10/D11: v1alpha2 adds ``no_limit_dimensions`` (the explicit operator NO_LIMIT preference declaration).
+CAPABILITY_PROFILE_SCHEMA = "smartchem.capability/capability-profile-v1alpha2"
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,12 @@ class CapabilityProfile(Digestible):
     procurement: "frozenset[Availability]"
     budget: "CostVector | None"
     provenance: str
+    #: Round V D10 (+Lane G amendment): the PREFERENCE dimensions the operator EXPLICITLY declares unbounded ("no
+    #: time limit", "budget": money no object). Only
+    #: :data:`~smartchem.capability.declarations.NO_LIMIT_ELIGIBLE` members; each must carry a ``None`` bound / ``budget=None`` (a bound AND no-limit is contradictory). Read through
+    #: :mod:`smartchem.capability.declarations` (``process_dimension_state``/``budget_state``), never by
+    #: inspecting ``None`` directly.
+    no_limit_dimensions: "frozenset[str]" = frozenset()
 
     def __post_init__(self) -> None:
         if self.schema_version != CAPABILITY_PROFILE_SCHEMA:
@@ -71,6 +79,13 @@ class CapabilityProfile(Digestible):
             type(m) is not StockMaterial for m in self.material_inventory
         ):
             raise TypeError("material_inventory must be a tuple of StockMaterial values")
+        # Wave-C K5: ONE physical package, ONE entry. A duplicated bottle (same material_id, or the same digest)
+        # would be two capacity nodes in the allocator -- the same 10 mL spent twice.
+        ids = [m.material_id for m in self.material_inventory]
+        digests = [m.digest for m in self.material_inventory]
+        if len(set(ids)) != len(ids) or len(set(digests)) != len(digests):
+            raise ValueError("material_inventory declares the same physical package twice (duplicate material_id "
+                             "or identical material) -- one package, one entry")
         for name, enum in (
             ("equipment", EquipmentCapability),
             ("containment", ContainmentCapability),
@@ -88,6 +103,26 @@ class CapabilityProfile(Digestible):
             raise TypeError("process_bounds must be a smartchem.process_constraints.ProcessBounds")
         if self.budget is not None and type(self.budget) is not CostVector:
             raise TypeError("budget must be a CostVector or None (no declared ceiling)")
+        if type(self.no_limit_dimensions) is not frozenset or any(
+            type(d) is not str for d in self.no_limit_dimensions
+        ):
+            raise TypeError("no_limit_dimensions must be a frozenset of preference dimension names (str)")
+        ineligible = sorted(self.no_limit_dimensions - NO_LIMIT_ELIGIBLE)
+        if ineligible:
+            raise ValueError(
+                f"no_limit_dimensions {ineligible} are not NO_LIMIT-eligible: only the operator-PREFERENCE "
+                f"dimensions {sorted(NO_LIMIT_ELIGIBLE)} may be declared NO_LIMIT (attention, agitation, check "
+                "interval, equipment and physical T/P are capabilities/resources, never 'no limit')"
+            )
+        contradictory = sorted(
+            d for d in self.no_limit_dimensions
+            if (self.budget is not None if d == BUDGET_DIMENSION else getattr(self.process_bounds, d) is not None)
+        )
+        if contradictory:
+            raise ValueError(
+                f"no_limit_dimensions {contradictory} also carry a declared bound (ProcessBounds field or "
+                "budget) -- a dimension cannot be both bounded and NO_LIMIT (contradictory declaration)"
+            )
         if not isinstance(self.provenance, str) or not self.provenance.strip():
             raise ValueError("provenance must be a non-empty string (the declaration's origin)")
         object.__setattr__(self, "provenance", self.provenance.strip())
@@ -96,5 +131,6 @@ class CapabilityProfile(Digestible):
     def profile_digest(self) -> str:
         """The canonical content digest of this whole declared bench -- the pin
         ``CapabilityAssessment.profile_digest`` carries, and the load-time ``CAPABILITY-REBIND-ON-LOAD``
-        re-derivation (FREEZE decision 7, a later Wave-B item) will refuse a mismatch against."""
+        re-derivation (FREEZE decision 7, a later Wave-B item) will refuse a mismatch against. Covers every
+        field, ``no_limit_dimensions`` included (a NO_LIMIT declaration is part of the declared bench)."""
         return self.digest

@@ -1061,7 +1061,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha5",
+    "schema_version": "smartchem.service/compilation-request-v1alpha6",
     "search_bounds": [
       [
         "budget",
@@ -1097,8 +1097,8 @@
     },
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
-  "result_digest": "eca32cb719096f3d850faecdc21b51c08f788be130874debf572f63793985e08",
-  "schema_version": "smartchem.service/compilation-response-v1alpha15",
+  "result_digest": "a588f4876dc1d776e6e3c595f45ede9036d56a35742ad9b9aed083e22cae9c59",
+  "schema_version": "smartchem.service/compilation-response-v1alpha16",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
   "transport_mode": "CANONICAL_VERIFIED"

@@ -323,7 +323,8 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
             endpoint=EvidenceField.present("collect the fraction between 134 and 143 C", _ISOPENTYL_URL),
             apparatus=("distillation apparatus", "thermometer"), locator=_ISOPENTYL_URL),
         ProcedureOperation(
-            ordinal=10, kind=OperationKind.VERIFY, role=OperationRole.OTHER, locator=_ISOPENTYL_URL),
+            ordinal=10, kind=OperationKind.VERIFY, role=OperationRole.OTHER,
+            apparatus=("analytical balance", "infrared spectrometer"), locator=_ISOPENTYL_URL),
     ),
     quench=EvidenceField.not_applicable(
         _ISOPENTYL_URL,
@@ -416,7 +417,8 @@ _ASPIRIN_PROCEDURE = ProcedureEvidence(
             ordinal=9, kind=OperationKind.DRY, role=OperationRole.OTHER,
             quantity=EvidenceField.present("air dry the crystals", _ASPIRIN_URL), locator=_ASPIRIN_URL),
         ProcedureOperation(
-            ordinal=10, kind=OperationKind.VERIFY, role=OperationRole.OTHER, locator=_ASPIRIN_URL),
+            ordinal=10, kind=OperationKind.VERIFY, role=OperationRole.OTHER,
+            apparatus=("analytical balance", "melting point apparatus"), locator=_ASPIRIN_URL),
     ),
     quench=EvidenceField.not_applicable(
         _ASPIRIN_URL,
@@ -531,7 +533,8 @@ _PARACETAMOL_PROCEDURE = ProcedureEvidence(
             quantity=EvidenceField.present("collect the crystals, rinse once with a few mL cold water, air dry", _ACETAMINOPHEN_URL),
             apparatus=("Buchner funnel",), locator=_ACETAMINOPHEN_URL),
         ProcedureOperation(
-            ordinal=13, kind=OperationKind.VERIFY, role=OperationRole.OTHER, locator=_ACETAMINOPHEN_URL),
+            ordinal=13, kind=OperationKind.VERIFY, role=OperationRole.OTHER,
+            apparatus=("analytical balance", "melting point apparatus"), locator=_ACETAMINOPHEN_URL),
     ),
     quench=EvidenceField.not_applicable(
         _ACETAMINOPHEN_URL,

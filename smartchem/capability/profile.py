@@ -28,7 +28,7 @@ from ..data.reagents import Availability
 from ..experiment.affordability import CostVector
 from ..experiment.stock import StockMaterial
 from ..process_constraints import ProcessBounds
-from .enums import ContainmentCapability, EquipmentCapability, MeasurementCapability, VentilationCapability, WasteCapability
+from .enums import ContainmentCapability, EquipmentCapability, MeasurementMethod, VentilationCapability, WasteCapability
 
 __all__ = ["CAPABILITY_PROFILE_SCHEMA", "CapabilityProfile"]
 
@@ -55,7 +55,7 @@ class CapabilityProfile(Digestible):
     process_bounds: ProcessBounds
     containment: "frozenset[ContainmentCapability]"
     ventilation: "frozenset[VentilationCapability]"
-    measurement: "frozenset[MeasurementCapability]"
+    measurement: "frozenset[MeasurementMethod]"
     waste_handling: "frozenset[WasteCapability]"
     procurement: "frozenset[Availability]"
     budget: "CostVector | None"
@@ -75,7 +75,7 @@ class CapabilityProfile(Digestible):
             ("equipment", EquipmentCapability),
             ("containment", ContainmentCapability),
             ("ventilation", VentilationCapability),
-            ("measurement", MeasurementCapability),
+            ("measurement", MeasurementMethod),
             ("waste_handling", WasteCapability),
             ("procurement", Availability),
         ):

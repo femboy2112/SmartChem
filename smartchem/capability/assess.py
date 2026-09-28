@@ -28,9 +28,9 @@ from ..contracts import Digestible
 from ..data.reagents import Availability
 from ..experiment.catalyst_availability import is_obtainable_under
 from ..experiment.readiness import PROCESS_SPECIFIED, RouteReadiness, tier_rank
-from ..experiment.stock import FitnessVerdict, StockMaterial
+from ..experiment.stock import FitnessVerdict, Phase, StockMaterial
 from ..process_constraints import ProcessBounds, ProcessFitStatus, evaluate_process_requirements
-from .enums import CapabilityStatus, EquipmentCapability
+from .enums import CapabilityStatus, EquipmentCapability, MeasurementMethod
 from .profile import CapabilityProfile
 from .requirements import MaterialRequirement, RouteCapabilityRequirements
 
@@ -83,6 +83,7 @@ class CapabilityAssessment(Digestible):
     physical: AxisResult
     process: AxisResult
     containment: AxisResult
+    ventilation: AxisResult
     measurement: AxisResult
     waste: AxisResult
     procurement: AxisResult
@@ -99,8 +100,8 @@ class CapabilityAssessment(Digestible):
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{name} must be a non-empty string")
         for name in (
-            "material", "equipment", "physical", "process", "containment", "measurement",
-            "waste", "procurement", "attention_care", "monetary",
+            "material", "equipment", "physical", "process", "containment", "ventilation",
+            "measurement", "waste", "procurement", "attention_care", "monetary",
         ):
             if type(getattr(self, name)) is not AxisResult:
                 raise TypeError(f"{name} must be an AxisResult")
@@ -116,7 +117,8 @@ class CapabilityAssessment(Digestible):
         """Every per-axis result, in a fixed order -- the exact tuple :func:`assess` folds over."""
         return (
             self.material, self.equipment, self.physical, self.process, self.containment,
-            self.measurement, self.waste, self.procurement, self.attention_care, self.monetary,
+            self.ventilation, self.measurement, self.waste, self.procurement, self.attention_care,
+            self.monetary,
         )
 
     @property
@@ -224,49 +226,133 @@ def _procurement_axis(
     return AxisResult(CapabilityStatus.FIT, tuple(reasons))
 
 
+#: FIT > UNKNOWN > BLOCKED > absent -- the best-verdict-across-inventory rank a real pantry earns.
+_MATERIAL_RANK: "dict[CapabilityStatus, int]" = {
+    CapabilityStatus.FIT: 3,
+    CapabilityStatus.UNKNOWN: 2,
+    CapabilityStatus.BLOCKED: 1,
+}
+
+
+def _match_interval(requirement: MaterialRequirement, stock: StockMaterial):
+    """Whether ``stock`` CONTAINS the requirement's species, by structure (``identity``) OR by declared
+    NAME (D2/D3): returns the matched identity key (Molecule or str) or ``None`` if absent from this bottle.
+    A structure-resolvable auxiliary tries structure first (H2SO4 -> its structure-keyed bottle) then its
+    name (water -> a NAME-keyed 'water' bottle) -- both honest keys, never a fuzzy synonym."""
+    if requirement.identity is not None and stock.active_fraction_interval(requirement.identity) is not None:
+        return requirement.identity
+    if requirement.name is not None and stock.active_fraction_interval(requirement.name) is not None:
+        return requirement.name
+    return None
+
+
+def _material_item_status_one(
+    requirement: MaterialRequirement, stock: StockMaterial,
+) -> "tuple[CapabilityStatus, str] | None":
+    """One requirement against ONE bottle: ``None`` if the bottle does not contain the species; else the
+    combined verdict over the three INDEPENDENT gates -- ASSAY (D1), PHASE (D4), QUANTITY (D3). Any gate
+    BLOCKED -> BLOCKED; else any gate UNKNOWN -> UNKNOWN; else (>=1 gate declared and all FIT) -> FIT; a
+    bottle that contains the species but the requirement declares NO gate at all is possession-only ->
+    UNKNOWN (honest: present, but nothing proven -- never a silent FIT)."""
+    key = _match_interval(requirement, stock)
+    if key is None:
+        return None
+    gate_statuses: "list[CapabilityStatus]" = []
+    notes: "list[str]" = []
+    # -- ASSAY gate (D1) -------------------------------------------------------------------------------
+    if requirement.required_assay is not None:
+        verdict = stock.satisfies(key, min_assay=requirement.required_assay)
+        if verdict is FitnessVerdict.SATISFIES:
+            gate_statuses.append(CapabilityStatus.FIT)
+            notes.append(f"assay >= {requirement.required_assay:.4f} SATISFIED")
+        elif verdict is FitnessVerdict.UNKNOWN_ASSAY:
+            gate_statuses.append(CapabilityStatus.UNKNOWN)
+            notes.append(f"assay interval straddles {requirement.required_assay:.4f} (measure)")
+        else:  # INSUFFICIENT_ASSAY / IDENTITY_ABSENT (key present, so effectively insufficient)
+            gate_statuses.append(CapabilityStatus.BLOCKED)
+            notes.append(f"assay provably below {requirement.required_assay:.4f}")
+    # -- PHASE gate (D4) -------------------------------------------------------------------------------
+    if requirement.phase is not None:
+        if stock.phase is Phase.UNKNOWN:
+            gate_statuses.append(CapabilityStatus.UNKNOWN)
+            notes.append(f"stock phase UNKNOWN vs required {requirement.phase.value}")
+        elif stock.phase is requirement.phase:
+            gate_statuses.append(CapabilityStatus.FIT)
+            notes.append(f"phase {requirement.phase.value} matches")
+        else:
+            gate_statuses.append(CapabilityStatus.BLOCKED)
+            notes.append(f"phase {stock.phase.value} != required {requirement.phase.value}")
+    # -- QUANTITY gate (D3): same-unit numeric compare only, NO conversion engine ----------------------
+    if requirement.quantity is not None:
+        if stock.quantity is not None and stock.quantity.unit == requirement.quantity.unit:
+            if float(stock.quantity.value) >= float(requirement.quantity.value):
+                gate_statuses.append(CapabilityStatus.FIT)
+                notes.append(f"quantity {stock.quantity.render()} >= {requirement.quantity.render()}")
+            else:
+                gate_statuses.append(CapabilityStatus.BLOCKED)
+                notes.append(f"quantity {stock.quantity.render()} < required {requirement.quantity.render()}")
+        else:
+            gate_statuses.append(CapabilityStatus.UNKNOWN)
+            notes.append(
+                f"quantity incomparable ({'unknown stock amount' if stock.quantity is None else 'unit mismatch'}) "
+                f"vs required {requirement.quantity.render()} -- no conversion engine"
+            )
+    if not gate_statuses:
+        status = CapabilityStatus.UNKNOWN
+        notes.append("present but possession-only (no assay/phase/quantity gate) -- UNKNOWN, never a silent FIT")
+    elif CapabilityStatus.BLOCKED in gate_statuses:
+        status = CapabilityStatus.BLOCKED
+    elif CapabilityStatus.UNKNOWN in gate_statuses:
+        status = CapabilityStatus.UNKNOWN
+    else:
+        status = CapabilityStatus.FIT
+    return status, f"{stock.material_id}: " + "; ".join(notes)
+
+
 def _material_item_status(
     requirement: MaterialRequirement, inventory: "tuple[StockMaterial, ...]",
 ) -> "tuple[CapabilityStatus, str]":
-    """One :class:`MaterialRequirement` against a declared stock inventory: search every declared stock
-    item for the BEST verdict (a real pantry has more than one bottle) -- SATISFIES anywhere -> FIT;
-    else UNKNOWN_ASSAY anywhere -> UNKNOWN (a real candidate exists, but needs measuring); else every
-    stock item is IDENTITY_ABSENT/INSUFFICIENT_ASSAY -> BLOCKED (nothing in the inventory could EVER meet
-    this, a provable negative). An empty inventory, or an UNKNOWN required_assay, never reaches
-    ``.satisfies()`` at all -- both are unconditionally UNKNOWN (FREEZE decision 3/5: "UNKNOWN assay never
-    FITs"; ``StockMaterial.satisfies`` itself refuses a ``None`` ``min_assay``)."""
+    """One :class:`MaterialRequirement` against a declared stock inventory: the BEST verdict any bottle
+    earns (FIT > UNKNOWN > BLOCKED). An empty inventory is unconditionally UNKNOWN (nothing to check); a
+    species absent from every bottle is BLOCKED (a provable negative)."""
     if not inventory:
         return (
             CapabilityStatus.UNKNOWN,
-            f"material: no declared stock inventory to check {requirement.role} {requirement.identity!r} "
+            f"material: no declared stock inventory to check {requirement.role} {requirement.label} "
             f"against ({requirement.evidence_source})",
         )
-    if requirement.required_assay is None:
+    best_status: "CapabilityStatus | None" = None
+    best_note = ""
+    for stock in inventory:
+        outcome = _material_item_status_one(requirement, stock)
+        if outcome is None:
+            continue
+        status, note = outcome
+        if best_status is None or _MATERIAL_RANK[status] > _MATERIAL_RANK[best_status]:
+            best_status, best_note = status, note
+    if best_status is None:
+        # Species absent from every bottle. A requirement that declares a real GATE (assay/phase/quantity)
+        # is a provable negative -> BLOCKED (the isomer/gated-reactant case: nothing in the pantry could
+        # EVER meet it). A possession-only requirement (no gate: an unsourced leaf, an undeclared auxiliary)
+        # is an OPEN question -> UNKNOWN (D1: "undeclared -> UNKNOWN, never silently skipped"; a bench
+        # stocked for a different synthesis has not PROVABLY failed a species it was never asked to gate).
+        gated = (
+            requirement.required_assay is not None
+            or requirement.phase is not None
+            or requirement.quantity is not None
+        )
+        if gated:
+            return (
+                CapabilityStatus.BLOCKED,
+                f"material: {requirement.role} {requirement.label} is absent from every declared bottle "
+                "against a real assay/phase/quantity gate (a provable negative)",
+            )
         return (
             CapabilityStatus.UNKNOWN,
-            f"material: no declared minimum assay for {requirement.role} {requirement.identity!r} -- "
-            "UNKNOWN never rounds up to FIT",
+            f"material: {requirement.role} {requirement.label} is possession-only (no assay/phase/quantity "
+            "gate) and absent from every declared bottle -- an open question, never a provable negative",
         )
-    verdicts = tuple(
-        stock.satisfies(requirement.identity, min_assay=requirement.required_assay) for stock in inventory
-    )
-    if FitnessVerdict.SATISFIES in verdicts:
-        return (
-            CapabilityStatus.FIT,
-            f"material: >=1 declared stock item satisfies {requirement.role} {requirement.identity!r} "
-            f"at >= {requirement.required_assay:.4f} assay",
-        )
-    if FitnessVerdict.UNKNOWN_ASSAY in verdicts:
-        return (
-            CapabilityStatus.UNKNOWN,
-            f"material: a declared stock item's assay interval for {requirement.role} "
-            f"{requirement.identity!r} straddles the required {requirement.required_assay:.4f} -- "
-            "a measurement is required",
-        )
-    return (
-        CapabilityStatus.BLOCKED,
-        f"material: no declared stock item can satisfy {requirement.role} {requirement.identity!r} at "
-        f">= {requirement.required_assay:.4f} assay (absent from every bottle, or provably insufficient)",
-    )
+    return (best_status, f"material: {requirement.role} {requirement.label} -- {best_note}")
 
 
 def _material_axis(
@@ -290,13 +376,36 @@ def _material_axis(
 
 
 def _physical_axis(requirement, ceiling) -> AxisResult:
-    """``PhysicalBounds`` (route demand) vs ``PhysicalBounds`` (profile ceiling). No existing evaluator
-    reuses this exact comparison (unlike ``process``, which delegates to a real function) -- this mirrors
-    the same gap/exclude discipline ``process_constraints._evaluate_requirements`` already uses: a known
-    excess -> BLOCKED; an undeclared route extremum against a declared ceiling -> UNKNOWN (a floor/ceiling
-    can only ever exclude or confirm, never guess); an all-``None`` profile ceiling -> UNCONSTRAINED."""
+    """``PhysicalBounds`` (route demand) vs ``PhysicalBounds`` (profile ceiling). Mirrors the gap/exclude
+    discipline ``process_constraints`` uses: a known excess -> BLOCKED; an undeclared route extremum against
+    a declared ceiling -> UNKNOWN.
+
+    D6 (kills M29): an all-``None`` profile ceiling no longer rides straight to FIT. If the ROUTE declares a
+    real T/P extremum against a bench that declared no bound -> UNKNOWN ("the bench declared no bound against
+    a real demand"), NEVER a fabricated UNCONSTRAINED pass. UNCONSTRAINED is retained ONLY for the genuinely-
+    outside-the-question case: no route requirement AND no profile bound."""
     if not ceiling.constrains_anything:
-        return AxisResult(CapabilityStatus.UNCONSTRAINED, ("physical: the declared profile has no T/P ceiling",))
+        if requirement.constrains_anything:
+            demand = ", ".join(
+                f"{label}={value:g}"
+                for label, value in (
+                    ("T_max_K", requirement.max_temperature_k),
+                    ("P_min_atm", requirement.min_pressure_atm),
+                    ("P_max_atm", requirement.max_pressure_atm),
+                )
+                if value is not None
+            )
+            return AxisResult(
+                CapabilityStatus.UNKNOWN,
+                (
+                    "physical: the declared profile states NO T/P ceiling, but this route carries a real "
+                    f"demand ({demand}) -- an unbounded bench cannot be certified against a real extremum (D6)",
+                ),
+            )
+        return AxisResult(
+            CapabilityStatus.UNCONSTRAINED,
+            ("physical: no route T/P requirement and no profile ceiling -- outside the question",),
+        )
     reasons: "list[str]" = []
     blocked = False
     unknown = False
@@ -364,12 +473,64 @@ def _physical_axis(requirement, ceiling) -> AxisResult:
 def _process_axis(requirements, bounds: ProcessBounds) -> AxisResult:
     """DELEGATE, never reimplement (decision 2): the real per-step/route-total comparison already lives
     in ``evaluate_process_requirements`` (time/attention/agitation/equipment-string checks); this only
-    relabels its verdict onto :class:`CapabilityStatus`."""
+    relabels its verdict onto :class:`CapabilityStatus`.
+
+    D6 (kills M29): the delegate returns ``UNCONSTRAINED`` when the BOUNDS declare nothing. If the ROUTE
+    nonetheless carries a real declared process requirement, that UNCONSTRAINED is relabelled to UNKNOWN --
+    an unbounded bench cannot be certified against a real time/attention/agitation demand. The delegate is
+    NOT reimplemented; the relabel guards only the empty-bounds-against-a-real-requirement case."""
     fit = evaluate_process_requirements(requirements, bounds)
+    status = _PROCESS_FIT_TO_CAPABILITY[fit.status]
+    route_demands = any(r is not None and r.is_declared for r in requirements)
+    if status is CapabilityStatus.UNCONSTRAINED and route_demands:
+        return AxisResult(
+            CapabilityStatus.UNKNOWN,
+            (
+                "process: the declared profile states NO process bound, but this route carries a real "
+                "time/attention/agitation demand -- an unbounded bench cannot be certified against it (D6)",
+            ),
+        )
     reasons = tuple(f"process: {reason}" for reason in (*fit.exclusions, *fit.gaps))
     if not reasons:
         reasons = (f"process: {fit.status.value}",)
-    return AxisResult(_PROCESS_FIT_TO_CAPABILITY[fit.status], reasons)
+    return AxisResult(status, reasons)
+
+
+def _measurement_axis(
+    required: "frozenset[MeasurementMethod]",
+    available: "frozenset[MeasurementMethod]",
+    unrecognized: "tuple[str, ...]",
+) -> AxisResult:
+    """The measurement axis's own gate (D5, mirrors ``_equipment_axis``): a genuinely-untabled VERIFY
+    apparatus string is an open question about a bench's analytical CAPABILITY -> caps the axis at UNKNOWN
+    before the ordinary membership check. Otherwise the comparison is on the SPECIFIC
+    :class:`MeasurementMethod` member (NEVER the coarse tier, kills M28): a bench with an NMR but not an IR
+    does not clear an ``INFRARED_SPECTROSCOPY`` requirement just because both share a tier."""
+    if unrecognized:
+        names = ", ".join(sorted(unrecognized))
+        return AxisResult(
+            CapabilityStatus.UNKNOWN,
+            (
+                f"measurement: {len(unrecognized)} sourced VERIFY-apparatus string(s) are untabled in the "
+                f"closed resolver and cannot be certified either way against any declared profile: {names}",
+            ),
+        )
+    return _membership_axis(required, available, axis="measurement")
+
+
+def _ventilation_axis() -> AxisResult:
+    """D8: an EXPLICIT reserved axis, surfaced -- never a silent green check (kills M32), never dropped. No
+    sourced evidence in this corpus forces a ventilation requirement distinct from containment/off-gas, so
+    0.9 derives none; the reserved label makes the scope explicit. M6 stays hard elsewhere: OUTDOOR /
+    ventilation NEVER substitutes for a declared containment requirement (the containment axis reads
+    ``profile.containment`` only)."""
+    return AxisResult(
+        CapabilityStatus.NOT_APPLICABLE,
+        (
+            "ventilation: RESERVED -- declared but not assessed in 0.9; no sourced ventilation requirement; "
+            "OUTDOOR never substitutes for containment",
+        ),
+    )
 
 
 def _monetary_axis(route_cost, budget) -> AxisResult:
@@ -391,6 +552,17 @@ def _monetary_axis(route_cost, budget) -> AxisResult:
             (
                 f"monetary: route cash is denominated in {route_cost.currency!r}, budget in "
                 f"{budget.currency!r} -- incomparable, never summed across currencies",
+            ),
+        )
+    # D7 (kills M30/M31): the same (currency, unit) law ``affordability.dominates`` already holds. A
+    # $/metric-ton or $/mol-product route cost vs a total-$ budget is a DENOMINATION mismatch -> UNKNOWN,
+    # never compared by raw number. 0.9 builds no production-quantity bridge (no currency/quantity engine).
+    if route_cost.unit and budget.unit and route_cost.unit != budget.unit:
+        return AxisResult(
+            CapabilityStatus.UNKNOWN,
+            (
+                f"monetary: route cash is denominated per {route_cost.unit!r}, budget per {budget.unit!r} "
+                "-- incomparable denominations, never compared by raw number (no production-quantity bridge)",
             ),
         )
     if route_cost.cash is not None:
@@ -454,8 +626,17 @@ def assess(
     equipment = _equipment_axis(requirements.equipment, profile.equipment, requirements.equipment_unrecognized)
     physical = _physical_axis(requirements.physical, profile.physical_bounds)
     process = _process_axis(requirements.process, profile.process_bounds)
-    containment = _membership_axis(requirements.containment, profile.containment, axis="containment")
-    measurement = _membership_axis(requirements.measurement, profile.measurement, axis="measurement")
+    # D9: surface the resolved procedure-hazard containment contributions AND the unresolved-hazard notes on
+    # the containment axis -- the fold is observable, never silent. M6 stays hard: this reads
+    # ``profile.containment`` only; ventilation never clears it.
+    containment = _membership_axis(
+        requirements.containment, profile.containment, axis="containment",
+        extra_reasons=requirements.containment_reasons + requirements.hazard_unresolved,
+    )
+    ventilation = _ventilation_axis()
+    measurement = _measurement_axis(
+        requirements.measurement, profile.measurement, requirements.measurement_unrecognized,
+    )
     waste = _membership_axis(
         requirements.waste.categories, profile.waste_handling, axis="waste", extra_reasons=requirements.waste.reasons,
     )
@@ -464,8 +645,8 @@ def assess(
     monetary = _monetary_axis(requirements.monetary, profile.budget)
 
     axes = (
-        material, equipment, physical, process, containment, measurement, waste, procurement,
-        attention_care, monetary,
+        material, equipment, physical, process, containment, ventilation, measurement, waste,
+        procurement, attention_care, monetary,
     )
 
     overall_reasons: "list[str]" = []
@@ -498,6 +679,7 @@ def assess(
         physical=physical,
         process=process,
         containment=containment,
+        ventilation=ventilation,
         measurement=measurement,
         waste=waste,
         procurement=procurement,

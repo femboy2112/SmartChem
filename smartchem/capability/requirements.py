@@ -1,4 +1,4 @@
-"""smartchem/capability/requirements.py -- the PURE requirement projection (FREEZE decision 2 + 3).
+"""smartchem/capability/requirements.py -- the PURE requirement projection (Round III, D1-D9).
 
 **Look at me, I'm a Meeseeks who only ever ASKS questions!** ``compile_capability_requirements`` reads
 ONE ``ExperimentRoute`` and answers, axis by axis, "what does the sourced evidence say THIS route needs?"
@@ -6,75 +6,48 @@ ONE ``ExperimentRoute`` and answers, axis by axis, "what does the sourced eviden
 ``CapabilityProfile`` to answer that question. A requirement compiled here has no idea whether anyone's
 bench can meet it; that verdict is a whole separate Meeseeks's job (:mod:`smartchem.capability.assess`).
 
-Every axis here reads a fact that ALREADY EXISTS on the route -- never a new physics, never a fabricated
-threshold:
+Round III burned down two Round-II lies of convenience and lit the replacements:
 
-* ``material`` -- the route's purchasable leaf reactants (:attr:`ExperimentRoute.leaf_inputs`, the SAME
-  COST-VEC-01 leaf definition ``affordability.py`` already uses), each an honest
-  :class:`MaterialRequirement` with ``required_assay=None`` (this corpus never sources a numeric purity
-  spec -- FREEZE decision 3: "never assume 100%"), with exactly ONE structured exception (gate #18): a
-  leaf that is a reactant of a step :func:`~smartchem.experiment.reaction_type_oracle.recognize_reaction_type`
-  positively matches to the acyl-condensation (esterification/amidation) class gets a DERIVED_WITH_ERROR
-  ``required_assay=0.98`` floor instead (see :data:`_ESTERIFICATION_EVIDENCE`) -- keyed on the oracle's own
-  typed class name, never a free-text scan of a procedure string, and never loosening anything: a route
-  whose reaction type the oracle does not recognize keeps the honest ``None``. A caller who DOES have a
-  further sourced minimum assay for a given input is free to build a :class:`MaterialRequirement` with a
-  real ``required_assay`` directly; this projection just never invents one from silence.
-* ``equipment`` -- the union, over every step, of ``ProcedureEvidence.apparatus`` (per-operation, quote
-  sourced) PLUS ``ProcessRequirements.equipment`` (whole-step cross-check), CLASSIFIED through
-  :func:`~smartchem.capability.equipment_resolver.classify_apparatus_strings` -- deliberately NOT
-  ``equipment_for_step`` (Wave-A finding F1: that function reads only free-text medium + T/P extrema and
-  silently drops the reflux condenser and the distillation rig the source actually demands). Vetted
-  consumables (``"boiling stones"`` and friends) are dropped without a trace; anything else the resolver
-  has never met stays on the record as ``equipment_unrecognized`` -- never quietly absorbed into "no
-  requirement" (that silent absorption was the exact hole assess.py's equipment axis now refuses).
-* ``containment`` -- ONLY ``equipment_for_step``'s hazard-driven ``CONTAINMENT``-kind items (F-nag: "two
-  evidence lanes, never crossed" -- apparatus tuples feed equipment, GHS hazards feed containment, never
-  the reverse).
-* ``physical`` -- T/P extrema off ``ProcessRequirements``/the envelope, fed into the REUSED
-  :class:`~smartchem.constraints.PhysicalBounds` container.
-* ``process`` -- literally each step's ``ProcessRequirements`` untouched, so
-  :func:`~smartchem.process_constraints.evaluate_process_requirements` -- NOT reimplemented here -- does
-  the real comparison against a profile's ``ProcessBounds``.
-* ``waste`` -- derived from ``RouteHandling.all_byproducts``/``all_offgases`` + ``Fate`` (never
-  ``CostVector.waste_disposal``, which nothing populates).
-* ``procurement`` -- carried as ``procurement_catalysts``: one ``(name, tier)`` pair per catalyst the route
-  actually DECLARES (``ConditionEnvelope.catalysts``, every step, deduplicated), ``tier`` resolved through
-  the grounded, UNMODIFIED :func:`~smartchem.experiment.catalyst_availability.catalyst_availability`
-  classifier (``None`` = UNRECOGNIZED -- a fact this projection reports, never launders into "no
-  requirement"). The former leaf-commodity slice (``commodity_for`` over ``route.leaf_inputs``) is
-  RETIRED here: a purchasable leaf's tier is a *material*-sourcing fact already implicit in the material
-  axis's own inventory check, whereas a declared catalyst is a REGENERATED substance the material axis
-  never prices at all -- conflating the two bought nothing and cost this axis its only real teeth (gate
-  #10, Wave-B item 3 "v09-procurement"). Whether that ``(name, tier)`` is actually obtainable is a
-  profile-relative verdict, so it is left un-folded here and decided in :mod:`smartchem.capability.assess`.
-* ``attention_care`` -- ``RouteHandling.care`` (the hazard-driven DEMAND), kept structurally apart from
-  the ``process`` axis's operator-declared ``Attention``/``Agitation`` (the CAPABILITY) per decision 2.
-* ``monetary`` -- ``affordability.basket_cost_vector`` over the same leaf inputs (known lower bounds only).
-* ``measurement`` -- always empty in THIS corpus (decision 4: no ``VERIFY`` op carries a structured
-  apparatus tuple today, and fabricating one from free text like "weigh + IR" would be exactly the
-  invented-requirement failure the freeze forbids).
+* **The universal esterification assay floor is DEAD (D1, kills M23).** No reaction-CLASS label may ever
+  manufacture a material assay. Assay/formulation/quantity requirements are now SOURCE-scoped per input:
+  the acetic-acid leaf earns a ``glacial`` compendial formulation (``Phase.LIQUID`` + a DERIVED_WITH_ERROR
+  >=0.99 floor + the sourced 20 mL draw) ONLY when this route's own sourced procedure names "glacial", and
+  the isoamyl-alcohol leaf earns a neat ``Phase.LIQUID`` requirement (assay ``None`` -- phase is the honest
+  compatibility mechanism, never a fabricated number). Any other leaf, or an unsourced route, keeps the
+  honest ``required_assay=None`` / ``phase=None``.
+* **Procedure-only species no longer vanish (D2, kills M24/M6-adjacent).** ``ProcedureOperation.material_uses``
+  -- the H2SO4 catalyst, the NaHCO3/NaCl/MgSO4 washes+drier, the water -- are projected into the SAME
+  material axis (matched by structure identity where it resolves, by declared NAME where it is an ionic
+  lattice) AND their resolved GHS hazards feed the containment axis (D9). A procedure material is NEVER
+  silently dropped: an unresolvable/no-GHS one is carried in ``hazard_unresolved`` and surfaced, never
+  faked into a containment requirement out of ignorance.
+* **Measurement is live (D5, kills M27/M28).** Every ``VERIFY`` op's ``apparatus`` is classified through the
+  closed :mod:`.measurement_resolver` into SPECIFIC :class:`MeasurementMethod` members (never the coarse
+  tier); an untabled string is carried in ``measurement_unrecognized`` for the assess-side UNKNOWN gate.
+  VERIFY ops are skipped by the EQUIPMENT axis -- their apparatus is a measurement fact, not glassware.
 
-Nothing here decides FIT/BLOCKED/UNKNOWN -- that fold lives in :mod:`smartchem.capability.assess`.
+Every other axis reads a fact that ALREADY EXISTS on the route -- never new physics, never a fabricated
+threshold. Nothing here decides FIT/BLOCKED/UNKNOWN -- that fold lives in :mod:`smartchem.capability.assess`.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from ..category import Molecule
-from ..contracts import Digestible
+from ..contracts import Digestible, canonical_digest
 from ..data.reagents import Availability
 from ..experiment.affordability import CostVector, basket_cost_vector
 from ..experiment.catalyst_availability import catalyst_availability
 from ..experiment.equipment import EquipmentKind, equipment_for_step
 from ..experiment.handling import CareLevel, verify_handling
-from ..experiment.reaction_type_oracle import recognize_reaction_type
 from ..experiment.step import ExperimentRoute
 from ..experiment.stock import Phase, StockQuantity
+from ..procedure_evidence import OperationKind
 from ..constraints import PhysicalBounds
 from ..process_constraints import ProcessRequirements
-from .enums import ContainmentCapability, EquipmentCapability, MeasurementCapability, WasteCapability
+from .enums import ContainmentCapability, EquipmentCapability, MeasurementMethod, WasteCapability
 from .equipment_resolver import classify_apparatus_strings
+from .measurement_resolver import classify_measurement_strings
 
 __all__ = [
     "MaterialRequirement",
@@ -86,28 +59,36 @@ __all__ = [
 
 @dataclass(frozen=True)
 class MaterialRequirement(Digestible):
-    """A REQUIREMENT-side object (never a second inventory -- FREEZE decision 3): one route input, its
-    canonical structure identity, and what assay it needs -- if that is even known.
+    """A REQUIREMENT-side object (never a second inventory -- D1): one material a route needs, keyed by
+    canonical STRUCTURE (``identity``) OR by declared NAME (``name``, for an ionic/mixture species that
+    honestly cannot resolve to a covalent :class:`~smartchem.category.Molecule`), plus the source-scoped
+    assay / phase / quantity gates -- each ``None`` when the source states nothing (never assumed).
 
-    ``required_assay`` is ``float | None`` where ``None`` is the honest UNKNOWN (never a fabricated 100%):
-    this corpus's sourced procedures name reagents ("isopentyl alcohol", "glacial acetic acid") without a
-    quoted numeric purity floor, so the PURE route projection never invents one. A caller who genuinely has
-    a sourced minimum assay for a given input may construct one with a real value; :meth:`satisfies-style
-    <smartchem.experiment.stock.StockMaterial.satisfies>` assessment against a declared
-    :class:`~smartchem.experiment.stock.StockMaterial` inventory happens in
-    :mod:`smartchem.capability.assess`, never here.
+    ``identity`` is ``Molecule | None`` and ``name`` is ``str | None``, mirroring the honesty pattern the
+    stock layer already carries (``required_assay: float | None``): at least ONE must be set, and a
+    requirement may carry BOTH (a structure-resolvable procedure material still keeps its sourced name so it
+    can be matched against a NAME-keyed declared stock bottle -- water is exactly this). ``required_assay``,
+    ``phase`` and ``quantity`` are the three independent gates :mod:`smartchem.capability.assess` combines;
+    all three ``None`` means possession-only, which is an honest UNKNOWN, never a silent FIT.
     """
 
-    identity: Molecule
+    identity: "Molecule | None"
     required_assay: "float | None"
     phase: "Phase | None"
     quantity: "StockQuantity | None"
     role: str
     evidence_source: str
+    name: "str | None" = None
 
     def __post_init__(self) -> None:
-        if type(self.identity) is not Molecule:
-            raise TypeError("identity must be a smartchem.category.Molecule")
+        if self.identity is not None and type(self.identity) is not Molecule:
+            raise TypeError("identity must be a smartchem.category.Molecule or None")
+        if self.name is not None:
+            if not isinstance(self.name, str) or not self.name.strip():
+                raise ValueError("name must be a non-empty string or None")
+            object.__setattr__(self, "name", self.name.strip())
+        if self.identity is None and self.name is None:
+            raise ValueError("a material requirement needs at least one of identity (structure) or name")
         if self.required_assay is not None:
             if isinstance(self.required_assay, bool) or not isinstance(self.required_assay, (int, float)):
                 raise TypeError("required_assay must be a real number or None (UNKNOWN)")
@@ -118,19 +99,23 @@ class MaterialRequirement(Digestible):
             raise TypeError("phase must be a smartchem.experiment.stock.Phase or None")
         if self.quantity is not None and type(self.quantity) is not StockQuantity:
             raise TypeError("quantity must be a smartchem.experiment.stock.StockQuantity or None")
-        for name in ("role", "evidence_source"):
-            value = getattr(self, name)
+        for attr in ("role", "evidence_source"):
+            value = getattr(self, attr)
             if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{name} must be a non-empty string")
-            object.__setattr__(self, name, value.strip())
+                raise ValueError(f"{attr} must be a non-empty string")
+            object.__setattr__(self, attr, value.strip())
+
+    @property
+    def label(self) -> str:
+        """A human label for reasons: the sourced name if any, else the structure repr."""
+        return self.name if self.name is not None else repr(self.identity)
 
 
 @dataclass(frozen=True)
 class WasteRequirement(Digestible):
     """The waste-routing categories a route's byproduct/off-gas ledger demands, plus the named facts that
-    put them there (FREEZE decision 2: derived from ``RouteHandling.all_byproducts``/``all_offgases`` +
-    ``Fate``, never ``CostVector.waste_disposal``). An empty ``categories`` means no waste-routing
-    obligation was derived (e.g. a single-product step with no byproduct at all)."""
+    put them there (derived from ``RouteHandling.all_byproducts``/``all_offgases`` + ``Fate``, never
+    ``CostVector.waste_disposal``). An empty ``categories`` means no waste-routing obligation was derived."""
 
     categories: "frozenset[WasteCapability]"
     reasons: "tuple[str, ...]"
@@ -148,20 +133,16 @@ class WasteRequirement(Digestible):
 
 @dataclass(frozen=True)
 class RouteCapabilityRequirements(Digestible):
-    """The independent capability axes a route needs, PURELY projected from its own sourced evidence
-    (FREEZE decision 2). ``route_digest`` ties this record back to the exact ``ExperimentRoute`` it was
-    compiled from (the transport-layer binding decision 7 relies on).
+    """The independent capability axes a route needs, PURELY projected from its own sourced evidence.
+    ``route_digest`` ties this record back to the exact ``ExperimentRoute`` it was compiled from.
 
-    ``equipment_unrecognized`` is this package's concrete carrier for decision 4's "an UNRECOGNIZED
-    apparatus string -> that requirement item is UNKNOWN, never silently satisfied": it is the exact set of
-    sourced apparatus/equipment strings that hit NEITHER the closed alias table NOR the vetted consumable
-    whitelist (see :mod:`.equipment_resolver`'s docstring). Vetted consumables like "boiling stones" or
-    "glass rod" are real evidence too, but they are dropped before this field is built -- being on the
-    whitelist IS the trace that they were seen and deliberately judged not a capability. What is left in
-    ``equipment_unrecognized`` is genuinely untabled apparatus (a "rotary evaporator", a "Soxhlet
-    extractor"), and :func:`~smartchem.capability.assess.assess` folds a non-empty set here straight to
-    an UNKNOWN equipment axis, ahead of the ordinary recognized-subset check -- an untabled capability
-    item must never silently pass just because nobody taught the resolver its name yet.
+    ``equipment_unrecognized`` / ``measurement_unrecognized`` carry the closed resolvers' fail-closed
+    remainder (an untabled apparatus/measurement string -> an assess-side UNKNOWN gate, never a silent
+    pass). ``hazard_unresolved`` (D9) carries every procedure-only auxiliary whose hazard status could not
+    be resolved (ionic/no-GHS): surfaced in the containment/waste axis reasons, never faked into a
+    containment requirement out of ignorance, never forcing overall UNKNOWN (CAPABILITY_FIT is explicitly
+    NOT a safety certificate). ``containment_reasons`` names the RESOLVED procedure-material hazards that DO
+    force containment (H2SO4 -> H314 -> FUME_HOOD), so the fold is observable, not silent.
     """
 
     route_digest: str
@@ -171,7 +152,10 @@ class RouteCapabilityRequirements(Digestible):
     physical: PhysicalBounds
     process: "tuple[ProcessRequirements | None, ...]"
     containment: "frozenset[ContainmentCapability]"
-    measurement: "frozenset[MeasurementCapability]"
+    containment_reasons: "tuple[str, ...]"
+    hazard_unresolved: "tuple[str, ...]"
+    measurement: "frozenset[MeasurementMethod]"
+    measurement_unrecognized: "tuple[str, ...]"
     waste: WasteRequirement
     procurement_catalysts: "tuple[tuple[str, Availability | None], ...]"
     attention_care: CareLevel
@@ -188,10 +172,11 @@ class RouteCapabilityRequirements(Digestible):
             type(e) is not EquipmentCapability for e in self.equipment
         ):
             raise TypeError("equipment must be a frozenset of EquipmentCapability values")
-        if type(self.equipment_unrecognized) is not tuple or any(
-            not isinstance(s, str) or not s.strip() for s in self.equipment_unrecognized
-        ):
-            raise TypeError("equipment_unrecognized must be a tuple of non-empty strings")
+        for attr in ("equipment_unrecognized", "containment_reasons", "hazard_unresolved",
+                     "measurement_unrecognized"):
+            value = getattr(self, attr)
+            if type(value) is not tuple or any(not isinstance(s, str) or not s.strip() for s in value):
+                raise TypeError(f"{attr} must be a tuple of non-empty strings")
         if type(self.physical) is not PhysicalBounds:
             raise TypeError("physical must be a smartchem.constraints.PhysicalBounds")
         if type(self.process) is not tuple or any(
@@ -203,9 +188,9 @@ class RouteCapabilityRequirements(Digestible):
         ):
             raise TypeError("containment must be a frozenset of ContainmentCapability values")
         if type(self.measurement) is not frozenset or any(
-            type(m) is not MeasurementCapability for m in self.measurement
+            type(m) is not MeasurementMethod for m in self.measurement
         ):
-            raise TypeError("measurement must be a frozenset of MeasurementCapability values")
+            raise TypeError("measurement must be a frozenset of MeasurementMethod values")
         if type(self.waste) is not WasteRequirement:
             raise TypeError("waste must be a WasteRequirement")
         if type(self.procurement_catalysts) is not tuple or any(
@@ -225,72 +210,168 @@ class RouteCapabilityRequirements(Digestible):
             raise TypeError("monetary must be a CostVector")
 
 
-#: The oracle's own class-name string for the acyl-condensation (esterification/amidation) recognizer
-#: (:mod:`smartchem.experiment.reaction_type_oracle`'s ``_RECOGNIZERS`` table) -- an EXACT-EQUALITY key,
-#: never a substring/regex scan of free text. This is the one coupling point to that module's private
-#: naming: if the oracle ever renames the class, this comparison simply stops matching (the derivation
-#: falls back to the honest ``required_assay=None``, never a false match onto some other class) -- a
-#: silent COVERAGE LOSS, the fail-safe direction, never a false floor on the wrong reaction type.
-_ESTERIFICATION_CLASS_NAME = "acyl condensation (esterification/amidation)"
+# -- structure-identity helpers (pure, route-only) ------------------------------------------------------------
 
-#: DERIVED_WITH_ERROR floor (gate #18): Fischer esterification's water-sensitive equilibrium demands a
-#: near-anhydrous feed; this is a physically-derived requirement, not a source-quoted number.
-_ESTERIFICATION_REQUIRED_ASSAY = 0.98
+def _struct_digest(molecule: Molecule) -> str:
+    """The canonical STRUCTURE digest of ``molecule`` -- the same isomer-proof key the stock layer uses to
+    match a requirement against a declared bottle. A molecule that cannot canonicalise falls back to its
+    as-given digest (never a crash, never a false match onto a different structure)."""
+    try:
+        return canonical_digest(molecule.canonical())
+    except NotImplementedError:
+        return canonical_digest(molecule)
 
-_ESTERIFICATION_EVIDENCE = (
-    "DERIVED_WITH_ERROR: Fischer esterification is a water-sensitive equilibrium (Le Chatelier); the "
-    "sourced preparative procedure uses glacial/reagent-grade reagents, so a near-anhydrous high-assay "
-    "(>=~0.98, derived not source-quoted) feed is required. Keyed on the recognized reaction type, not "
-    "free text."
+
+_KNOWN_LEAF_IDS: "dict[str, str] | None" = None
+
+
+def _known_leaf_ids() -> "dict[str, str]":
+    """The canonical structure digests of the two source-scoped reagent leaves (acetic acid, isoamyl
+    alcohol), resolved through the SAME name-resolution path the search and the stock library use so the
+    keys are byte-identical. Lazily computed + cached to keep this module free of an import-time cycle."""
+    global _KNOWN_LEAF_IDS
+    if _KNOWN_LEAF_IDS is None:
+        from ..identity_parse import InputKind, resolve_target
+        _KNOWN_LEAF_IDS = {
+            "acetic_acid": _struct_digest(resolve_target("acetic acid", InputKind.NAME).canonical()),
+            "isoamyl": _struct_digest(resolve_target("isoamyl alcohol", InputKind.NAME).canonical()),
+        }
+    return _KNOWN_LEAF_IDS
+
+
+#: DERIVED_WITH_ERROR glacial-acetic floor (D1): USP/ACS "glacial acetic acid" is a compendial FORMULATION
+#: (>=99% mass fraction). This floor is source-scoped -- it attaches to the acetic-acid leaf ONLY when THIS
+#: route's own sourced procedure names "glacial", never to the reaction class (that was M23, now dead).
+_GLACIAL_ACETIC_ASSAY = 0.99
+_GLACIAL_ACETIC_EVIDENCE = (
+    "DERIVED_WITH_ERROR: this route's sourced procedure names 'glacial acetic acid', a USP/ACS compendial "
+    "FORMULATION (a neat Phase.LIQUID reagent, >=99% mass fraction). The requirement is source-scoped to the "
+    "sourced word, NOT to the reaction class -- phase discriminates glacial from vinegar, assay reinforces it."
+)
+_ISOAMYL_NEAT_EVIDENCE = (
+    "source-scoped: the sourced procedure names a NEAT isoamyl (isopentyl) alcohol reagent with no numeric "
+    "purity, so compatibility is PHASE (Phase.LIQUID), required_assay stays None (never a fabricated number)."
+)
+_UNSOURCED_LEAF_EVIDENCE = (
+    "route leaf input (ExperimentRoute.leaf_inputs); no source-scoped assay/phase requirement applies -- "
+    "required_assay/phase stay UNKNOWN, never assumed 100% and never a fabricated phase"
 )
 
 
-def _esterification_required_leaves(route: ExperimentRoute) -> "set[Molecule]":
-    """The leaf reactants of every step the oracle recognizes as the acyl-condensation class -- the exact
-    set :func:`_material_requirements` tightens to the DERIVED_WITH_ERROR 0.98 floor.
-
-    Reads ``step.reactants`` directly (the same objects :attr:`ExperimentRoute.leaf_inputs` draws from),
-    so a leaf both produced by no step (a purchase) AND consumed by a recognized esterification step
-    lands in this set; a leaf consumed only by an unrecognized step never does -- the derivation never
-    reaches past the exact step the oracle vouched."""
-    leaves: "set[Molecule]" = set()
+def _sourced_procedure_text(route: ExperimentRoute) -> str:
+    """The lowercased concatenation of THIS route's sourced procedure evidence strings (scale + per-op
+    quantity/rate/endpoint). Used ONLY as the source-scope gate for the glacial formulation -- a light
+    presence check for the compendial word, never a runtime parse of a quantity value into a requirement."""
+    parts: "list[str]" = []
     for step in route.steps:
-        if recognize_reaction_type(step) == _ESTERIFICATION_CLASS_NAME:
-            leaves.update(step.reactants)
-    return leaves
+        procedure = step.envelope.procedure
+        if procedure is None:
+            continue
+        scale = procedure.scale
+        if scale is not None and isinstance(scale.value, str):
+            parts.append(scale.value)
+        for op in procedure.operations:
+            for field in (op.quantity, op.rate, op.endpoint):
+                if field is not None and isinstance(field.value, str):
+                    parts.append(field.value)
+    return " ".join(parts).casefold()
+
+
+def _route_is_sourced(route: ExperimentRoute) -> bool:
+    """True iff this route carries at least one accepted-source procedure -- the source-scope gate for the
+    per-leaf reactant volumes (D3): an unsourced route earns no authored quantity requirement."""
+    for step in route.steps:
+        procedure = step.envelope.procedure
+        if procedure is not None and procedure.is_sourced:
+            return True
+    return False
 
 
 def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement, ...]":
-    """One requirement per purchasable leaf reactant (COST-VEC-01's own leaf definition -- an intermediate
-    a route makes internally is never a material REQUIREMENT, only something a profile would need to stock
-    if it were bought instead). ``required_assay`` is the honest UNKNOWN (``None``) EXCEPT for a leaf that
-    feeds a step the oracle recognizes as the acyl-condensation (esterification/amidation) class, which
-    gets the DERIVED_WITH_ERROR 0.98 floor (:data:`_ESTERIFICATION_EVIDENCE`) -- a floor only ever makes
-    the requirement STRICTER than silence, never a free pass a non-esterification route wouldn't get."""
-    esterification_leaves = _esterification_required_leaves(route)
+    """Leaf-reactant requirements (source-scoped per D1/D3) PLUS procedure-only requirements (D2). The
+    retired esterification class floor is GONE -- no reaction-class label sets an assay here anymore."""
+    text = _sourced_procedure_text(route)
+    ids = _known_leaf_ids()
+    sourced = _route_is_sourced(route)
     requirements: "list[MaterialRequirement]" = []
     for leaf in route.leaf_inputs:
-        if leaf in esterification_leaves:
+        digest = _struct_digest(leaf)
+        if sourced and digest == ids["acetic_acid"] and "glacial" in text:
+            # D1 option B: the sourced 'glacial' compendial formulation -> Phase.LIQUID + >=0.99 assay + the
+            # sourced 20 mL draw (D3). Vinegar BLOCKS on phase AND assay; glacial FITs. Gate #18, preserved.
             requirements.append(MaterialRequirement(
-                identity=leaf,
-                required_assay=_ESTERIFICATION_REQUIRED_ASSAY,
-                phase=None,
-                quantity=None,
-                role="reactant",
-                evidence_source=_ESTERIFICATION_EVIDENCE,
+                identity=leaf, required_assay=_GLACIAL_ACETIC_ASSAY, phase=Phase.LIQUID,
+                quantity=StockQuantity.of("20", "mL"), role="reactant (glacial acetic acid)",
+                evidence_source=_GLACIAL_ACETIC_EVIDENCE,
+            ))
+        elif sourced and digest == ids["isoamyl"]:
+            # D1 option C: neat reagent, compatibility by PHASE, assay honestly None. The 15 mL draw is the
+            # sourced cleanly-separable reactant volume (D3).
+            requirements.append(MaterialRequirement(
+                identity=leaf, required_assay=None, phase=Phase.LIQUID,
+                quantity=StockQuantity.of("15", "mL"), role="reactant (neat isoamyl alcohol)",
+                evidence_source=_ISOAMYL_NEAT_EVIDENCE,
             ))
         else:
             requirements.append(MaterialRequirement(
-                identity=leaf,
-                required_assay=None,
-                phase=None,
-                quantity=None,
-                role="reactant",
-                evidence_source=(
-                    "route leaf input (ExperimentRoute.leaf_inputs); no sourced minimum-assay requirement "
-                    "is declared in this corpus -- required_assay stays UNKNOWN, never assumed 100%"
-                ),
+                identity=leaf, required_assay=None, phase=None, quantity=None,
+                role="reactant", evidence_source=_UNSOURCED_LEAF_EVIDENCE,
             ))
+    requirements.extend(_procedure_only_material_requirements(route))
+    return tuple(requirements)
+
+
+def _procedure_only_material_requirements(
+    route: ExperimentRoute,
+) -> "tuple[MaterialRequirement, ...]":
+    """Project every ``ProcedureOperation.material_uses`` auxiliary (catalyst/wash/drier/rinse/...) into the
+    ONE material axis (D2, kills M24). Deduplicated by structure key (where identity resolves) or normalized
+    name (ionic lattice): a species charged by two ops costs ONE requirement. A structure-resolvable
+    auxiliary keeps BOTH its identity (for a structure-keyed bottle, e.g. H2SO4) AND its sourced name (for a
+    NAME-keyed bottle, e.g. water) -- the assess side tries both. NEVER silently dropped."""
+    groups: "dict[tuple[str, str], dict]" = {}
+    for step in route.steps:
+        procedure = step.envelope.procedure
+        if procedure is None:
+            continue
+        for op in procedure.operations:
+            for use in op.material_uses:
+                if use.identity is not None:
+                    key = ("struct", _struct_digest(use.identity))
+                else:
+                    key = ("name", use.name.strip().casefold())
+                group = groups.get(key)
+                if group is None:
+                    group = {
+                        "identity": None, "names": set(), "roles": set(),
+                        "formulation": None, "phase": None, "quantity": None, "evidence": use.evidence_source,
+                    }
+                    groups[key] = group
+                group["names"].add(use.name)
+                group["roles"].add(use.role)
+                if group["identity"] is None and use.identity is not None:
+                    group["identity"] = use.identity
+                if group["formulation"] is None and use.formulation is not None:
+                    group["formulation"] = use.formulation
+                if group["phase"] is None and use.phase is not None:
+                    group["phase"] = use.phase
+                if group["quantity"] is None and use.quantity is not None:
+                    group["quantity"] = use.quantity
+    requirements: "list[MaterialRequirement]" = []
+    for group in groups.values():
+        # the bare head label (fewest tokens, then lexical) is the name a NAME-keyed bottle is stocked under
+        # ("water", not "cold water") -- deterministic, never a fuzzy synonym match.
+        name = min(group["names"], key=lambda n: (len(n.split()), len(n), n))
+        roles = ", ".join(sorted(r.value for r in group["roles"]))
+        requirements.append(MaterialRequirement(
+            identity=group["identity"],
+            required_assay=None,  # no procedure auxiliary in this corpus sources a numeric purity floor
+            phase=group["phase"],
+            quantity=group["quantity"],
+            role=f"procedure-only auxiliary ({roles})",
+            evidence_source=group["evidence"],
+            name=name,
+        ))
     return tuple(requirements)
 
 
@@ -298,16 +379,16 @@ def _equipment_requirement(
     route: ExperimentRoute,
 ) -> "tuple[frozenset[EquipmentCapability], tuple[str, ...]]":
     """The union, over every step, of sourced apparatus strings classified through the closed resolver --
-    NEVER ``equipment_for_step`` (F1: it drops the reflux condenser / distillation rig the source names).
-
-    Vetted consumables are dropped here, silently and on purpose (the whitelist itself is their trace);
-    anything the resolver has never met at all is carried forward as ``equipment_unrecognized`` so
-    :mod:`.assess` can refuse to guess past it."""
+    NEVER ``equipment_for_step`` (F1). VERIFY ops are SKIPPED (D5): their apparatus is a MEASUREMENT method
+    ("analytical balance", "infrared spectrometer"), not glassware, and belongs to the measurement axis.
+    Vetted consumables are dropped (the whitelist is their trace); untabled apparatus is carried forward."""
     raw: "set[str]" = set()
     for step in route.steps:
         procedure = step.envelope.procedure
         if procedure is not None:
             for op in procedure.operations:
+                if op.kind is OperationKind.VERIFY:
+                    continue  # D5: VERIFY apparatus is a measurement method, not equipment
                 raw.update(op.apparatus)
         process = step.envelope.process
         if process is not None and process.equipment is not None:
@@ -316,21 +397,92 @@ def _equipment_requirement(
     return recognized, tuple(sorted(unrecognized))
 
 
-def _containment_requirement(route: ExperimentRoute) -> "frozenset[ContainmentCapability]":
-    """ONLY ``equipment_for_step``'s hazard-driven ``CONTAINMENT``-kind items (F-nag's two-lanes rule);
-    today that function only ever emits the "fume hood" item for this kind, so the sole reachable member
-    is ``FUME_HOOD`` -- but the check is on ``kind``, not on a name string, so it stays sound if that
-    function ever grows a second CONTAINMENT-kind item."""
+def _measurement_requirement(
+    route: ExperimentRoute,
+) -> "tuple[frozenset[MeasurementMethod], tuple[str, ...]]":
+    """The SPECIFIC :class:`MeasurementMethod` set the route's VERIFY ops demand (D5, kills M27/M28), plus
+    the untabled remainder for the assess-side UNKNOWN gate. Reads ``op.apparatus`` on VERIFY ops ONLY --
+    the exact strings the equipment axis now skips -- through the closed :mod:`.measurement_resolver`."""
+    raw: "set[str]" = set()
+    for step in route.steps:
+        procedure = step.envelope.procedure
+        if procedure is None:
+            continue
+        for op in procedure.operations:
+            if op.kind is OperationKind.VERIFY:
+                raw.update(op.apparatus)
+    recognized, _ignored, unrecognized = classify_measurement_strings(raw)
+    return recognized, tuple(unrecognized)
+
+
+def _procedure_hazard_scan(
+    route: ExperimentRoute,
+) -> "tuple[bool, tuple[str, ...], tuple[str, ...]]":
+    """D9: fold procedure-only material hazards. Returns ``(forces_containment, containment_reasons,
+    hazard_unresolved)``. A RESOLVED-identity auxiliary with a real GHS record forces containment (H2SO4 ->
+    H314 -> FUME_HOOD) and is named in ``containment_reasons`` so the fold is observable even when the
+    balanced lane already forced a hood. An UNRESOLVABLE (identity=None) or no-GHS auxiliary is carried in
+    ``hazard_unresolved`` -- surfaced, never a fabricated containment requirement, never an overall UNKNOWN
+    (CAPABILITY_FIT is not a safety cert). A resolved BENIGN species (water, empty GHS profile) is neither."""
+    from ..decompiler_review import molecule_hazards  # lazy: mirrors equipment.py, breaks the import cycle
+    from ..data.hazards import hazards_for_named
+
+    forces = False
+    reasons: "list[str]" = []
+    unresolved: "list[str]" = []
+    seen: "set[str]" = set()
+    for step in route.steps:
+        procedure = step.envelope.procedure
+        if procedure is None:
+            continue
+        for op in procedure.operations:
+            for use in op.material_uses:
+                dedupe_key = _struct_digest(use.identity) if use.identity is not None \
+                    else f"name:{use.name.strip().casefold()}"
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                # Structure lookup first (the balanced lane's path); fall back to the SOURCED NAME (authored
+                # evidence, not runtime prose) -- the H2SO4 catalyst has a valid Molecule identity but
+                # ``molecule_name`` cannot name that SMILES, so its H314 GHS record is only reachable by the
+                # sourced "sulfuric acid" name. Both are hazards.py lookups; neither invents a hazard.
+                hazard = molecule_hazards(use.identity) if use.identity is not None else None
+                if hazard is None:
+                    hazard = hazards_for_named(use.name)
+                if hazard is not None and hazard.ghs_codes:
+                    forces = True
+                    codes = ", ".join(hazard.ghs_codes)
+                    reasons.append(
+                        f"containment: procedure-only {use.name!r} ({use.role.value}) carries sourced GHS "
+                        f"{codes} ({hazard.name}) -- forces FUME_HOOD (inform, never neuter)"
+                    )
+                elif hazard is None:
+                    kind = "an unresolvable ionic/mixture species" if use.identity is None else "no GHS record"
+                    unresolved.append(
+                        f"containment: procedure-only {use.name!r} ({use.role.value}) -- {kind}; its hazard "
+                        "status is UNKNOWN (not a safety clearance; CAPABILITY_FIT is not a safety cert)"
+                    )
+                # a resolved, positively-benign species (empty GHS profile, e.g. water) forces nothing.
+    return forces, tuple(reasons), tuple(unresolved)
+
+
+def _containment_requirement(
+    route: ExperimentRoute, procedure_forces: bool,
+) -> "frozenset[ContainmentCapability]":
+    """ONLY hazard-driven ``CONTAINMENT``-kind items (F-nag's two-lanes rule): the balanced lane via
+    ``equipment_for_step``, PLUS (D9) a resolved procedure-only material hazard (``procedure_forces``). The
+    reachable member is ``FUME_HOOD``. Containment reads HAZARDS, never apparatus tuples."""
     for step in route.steps:
         for item in equipment_for_step(step):
             if item.kind is EquipmentKind.CONTAINMENT:
                 return frozenset({ContainmentCapability.FUME_HOOD})
+    if procedure_forces:
+        return frozenset({ContainmentCapability.FUME_HOOD})
     return frozenset()
 
 
 def _physical_requirement(route: ExperimentRoute) -> PhysicalBounds:
-    """The route's own T/P extrema (a DEMAND, reusing the ceiling-shaped ``PhysicalBounds`` container as
-    decision 2 directs: "feed PhysicalBounds"), read off ``ProcessRequirements`` first and the envelope's
+    """The route's own T/P extrema (a DEMAND), read off ``ProcessRequirements`` first and the envelope's
     declared temperature interval as a fallback."""
     peaks: "list[float]" = []
     min_pressures: "list[float]" = []
@@ -354,16 +506,11 @@ def _physical_requirement(route: ExperimentRoute) -> PhysicalBounds:
 
 
 def _waste_requirement(route: ExperimentRoute) -> WasteRequirement:
-    """Waste-routing categories derived from the sourced byproduct ledger + ``Fate`` -- an off-gas needs
-    ``OFFGAS_CAPTURE``; a byproduct whose resolved hazard record carries a REAL (non-empty) GHS profile
-    needs ``HAZARDOUS``; a condensed byproduct that is either UNASSESSED or POSITIVELY assessed benign
-    (e.g. water's empty GHS profile -- ``ByproductEntry.hazard_name`` is set for a benign assessment too,
-    ``handling.py``'s own "inform, never neuter" doctrine) is treated as an ``AQUEOUS_NEUTRAL`` disposal
-    stream: a coarse, honestly-labelled default for "nothing hazardous was found on it", never a hazard
-    clearance."""
+    """Waste-routing categories derived from the sourced byproduct ledger + ``Fate`` (unchanged from Round
+    II): an off-gas needs ``OFFGAS_CAPTURE``; a real-GHS byproduct needs ``HAZARDOUS``; a benign/unassessed
+    condensed byproduct routes ``AQUEOUS_NEUTRAL``. Procedure-only hazards feed CONTAINMENT (D9), not this
+    axis -- so the FIT positive's waste stays the sourced ``{AQUEOUS_NEUTRAL}`` shape."""
     handling = verify_handling(route)
-    # a byproduct's hazard_name only names WHICH record resolved (benign or not); the real GHS codes live
-    # on the matching HazardFlag, so build that lookup once rather than re-deriving hazard.py facts here.
     ghs_codes_by_name: "dict[str, tuple[str, ...]]" = {
         hazard.name: hazard.ghs_codes for step_handling in handling.steps for hazard in step_handling.hazards
     }
@@ -392,15 +539,9 @@ def _waste_requirement(route: ExperimentRoute) -> WasteRequirement:
 def _procurement_catalysts_requirement(
     route: ExperimentRoute,
 ) -> "tuple[tuple[str, Availability | None], ...]":
-    """One ``(name, tier)`` pair per catalyst ``route`` actually DECLARES -- every step's
-    ``ConditionEnvelope.catalysts`` (the SAME field :func:`~smartchem.experiment.catalyst_availability.
-    route_catalyst_blockers` iterates), deduplicated first-seen so a catalyst named on two steps costs one
-    entry, not two identical reasons downstream. ``tier`` is resolved through the UNMODIFIED, grounded
-    :func:`~smartchem.experiment.catalyst_availability.catalyst_availability` classifier; ``None`` is the
-    honest UNRECOGNIZED verdict -- reported here, never quietly promoted to "no requirement" (that
-    promotion is exactly the M17 hole this field exists to close). Whether a given tier is actually
-    obtainable is profile-relative and stays out of this PURE projection -- see
-    :mod:`smartchem.capability.assess`."""
+    """One ``(name, tier)`` pair per catalyst ``route`` DECLARES (every step's ``ConditionEnvelope.catalysts``,
+    deduplicated), ``tier`` resolved through the UNMODIFIED ``catalyst_availability`` classifier (``None`` =
+    honest UNRECOGNIZED). Obtainability is profile-relative -- decided in :mod:`smartchem.capability.assess`."""
     seen: "dict[str, Availability | None]" = {}
     for step in route.steps:
         for cat in step.envelope.catalysts:
@@ -413,13 +554,14 @@ def compile_capability_requirements(route: ExperimentRoute) -> RouteCapabilityRe
     """The PURE projection: what does ``route``'s own sourced evidence require, on every capability axis?
 
     Reads ONLY ``route`` -- never a :class:`~smartchem.capability.profile.CapabilityProfile`, never a
-    named preset, never the network. Every axis is documented at the top of this module; this function
-    just assembles them.
+    named preset, never the network. Nothing here decides FIT/BLOCKED/UNKNOWN.
     """
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be a smartchem.experiment.step.ExperimentRoute")
 
     equipment, equipment_unrecognized = _equipment_requirement(route)
+    measurement, measurement_unrecognized = _measurement_requirement(route)
+    procedure_forces, containment_reasons, hazard_unresolved = _procedure_hazard_scan(route)
     handling_care = verify_handling(route).care
 
     return RouteCapabilityRequirements(
@@ -429,8 +571,11 @@ def compile_capability_requirements(route: ExperimentRoute) -> RouteCapabilityRe
         equipment_unrecognized=equipment_unrecognized,
         physical=_physical_requirement(route),
         process=tuple(step.envelope.process for step in route.steps),
-        containment=_containment_requirement(route),
-        measurement=frozenset(),
+        containment=_containment_requirement(route, procedure_forces),
+        containment_reasons=containment_reasons,
+        hazard_unresolved=hazard_unresolved,
+        measurement=measurement,
+        measurement_unrecognized=measurement_unrecognized,
         waste=_waste_requirement(route),
         procurement_catalysts=_procurement_catalysts_requirement(route),
         attention_care=handling_care,

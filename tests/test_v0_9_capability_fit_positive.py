@@ -15,9 +15,10 @@ from __future__ import annotations
 from smartchem.algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, resolve_algebra_profile
 from smartchem.capability.assess import assess
 from smartchem.capability.enums import CapabilityStatus
-from smartchem.capability.presets import poor_man, research_lab
+from smartchem.capability.presets import isopentyl_capability_fit_bench, poor_man, research_lab
 from smartchem.capability.requirements import compile_capability_requirements
 from smartchem.data import material_library
+from smartchem.data.material_library import household_white_vinegar
 from smartchem.experiment import routes as rt
 from smartchem.experiment.readiness import evaluate_route
 from smartchem.identity_parse import InputKind, resolve_target
@@ -47,37 +48,62 @@ def _isopentyl_route():
 
 # -- gate #18: CAPABILITY_FIT positive, real error-bounded data ------------------------------------------------
 
-def test_gate_18_capability_fit_positive_with_the_stocked_research_lab():
-    """The whole point: a research-lab bench actually stocked with reagent-grade isoamyl alcohol and
-    glacial acetic acid (:func:`material_library.isopentyl_lab_inventory`) reaches genuine ``FIT`` on the
-    real searched isopentyl-acetate route -- material axis included, not just the equipment/containment
-    axes earlier rounds already proved."""
+def _vinegar_for_glacial_inventory():
+    """The fully-declared FIT inventory with ONE bottle swapped: glacial acetic acid -> household vinegar.
+    Every OTHER reactant and auxiliary is still fully stocked, so the material axis blocks on the acetic-acid
+    axis ALONE -- a clean single-axis vinegar discriminator, not a strawman missing half the pantry."""
+    full = material_library.isopentyl_fully_declared_inventory()
+    kept = tuple(s for s in full if "glacial-acetic" not in s.material_id)
+    return kept + (household_white_vinegar(),)
+
+
+def test_gate_18_capability_fit_positive_is_the_fully_declared_custom_bench():
+    """Round III (D1): the CAPABILITY_FIT positive MIGRATED off the reaction-class floor onto a
+    fully-declared Custom bench (:func:`isopentyl_capability_fit_bench`) that stocks the WHOLE isopentyl
+    procedure -- every reactant AND every procedure-only auxiliary at a matching phase/formulation/quantity,
+    full glassware, a fume hood, an IR spectrometer, real T/process ceilings. It reaches genuine overall
+    ``FIT`` on the real searched isopentyl-acetate route, material axis included."""
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
-    profile = research_lab(material_inventory=material_library.isopentyl_lab_inventory())
-    assessment = assess(profile, requirements, evaluate_route(route))
+    assessment = assess(isopentyl_capability_fit_bench(), requirements, evaluate_route(route))
 
-    # material axis: glacial acetic acid worst-case 0.995 >= the derived 0.98 floor; isoamyl alcohol
-    # worst-case 0.98 >= 0.98 -- both leaves SATISFY, so the axis is FIT, not merely NOT_APPLICABLE.
     assert assessment.material.status is CapabilityStatus.FIT
     assert assessment.overall is CapabilityStatus.FIT
     assert assessment.is_capability_fit is True
 
 
-def test_gate_18_vinegar_control_cannot_masquerade_as_glacial_acetic_acid():
-    """M1/M2/M4 shape: the SAME profile, the SAME route, the SAME isoamyl alcohol bottle -- only the
-    acetic-acid bottle is swapped for household vinegar
-    (:func:`material_library.isopentyl_vinegar_inventory`), keyed on the identical acetic-acid structure.
-    Vinegar's worst-case 0.08 mass fraction is nowhere near the derived 0.98 floor: this must BLOCK, never
-    FIT, or the material axis is not actually discriminating on assay."""
+def test_gate_18_two_reactant_bottles_no_longer_fit_now_auxiliaries_participate():
+    """The retired floor is DEAD (D1, kills M23) and procedure-only auxiliaries now PARTICIPATE (D2, kills
+    M24): a research-lab stocked with ONLY the two reagent bottles (isoamyl alcohol + glacial acetic acid)
+    -- the pre-Round-III 'positive' -- is now BLOCKED, because the H2SO4 catalyst, the NaHCO3/NaCl/MgSO4
+    washes+drier and the water it does NOT stock are absent from every bottle. FIT is earned only by
+    actually possessing the whole procedure, never by a reaction-class label manufacturing a floor."""
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
-    profile = research_lab(material_inventory=material_library.isopentyl_vinegar_inventory())
+    profile = research_lab(material_inventory=material_library.isopentyl_lab_inventory())
+    assessment = assess(profile, requirements, evaluate_route(route))
+
+    assert assessment.material.status is CapabilityStatus.BLOCKED
+    joined = " ".join(assessment.material.reasons)
+    assert "magnesium sulfate" in joined  # an auxiliary that is absent -> a provable material negative
+    assert assessment.overall is CapabilityStatus.BLOCKED
+
+
+def test_gate_18_vinegar_control_cannot_masquerade_as_glacial_acetic_acid():
+    """M1/M2/M4 shape: the fully-declared FIT bench with ONE bottle swapped -- glacial acetic acid ->
+    household vinegar, keyed on the identical acetic-acid structure. Vinegar (few-% aqueous) BLOCKS the
+    acetic-acid requirement on BOTH phase (AQUEOUS_SOLUTION != the neat LIQUID glacial formulation) AND assay
+    (best case 0.08 << the >=0.99 compendial floor). It must BLOCK, never FIT, or the material axis is not
+    discriminating -- and the discrimination is now phase-first per D1/D4, assay reinforcing."""
+    route = _isopentyl_route()
+    requirements = compile_capability_requirements(route)
+    profile = isopentyl_capability_fit_bench(material_inventory=_vinegar_for_glacial_inventory())
     assessment = assess(profile, requirements, evaluate_route(route))
 
     assert assessment.material.status is CapabilityStatus.BLOCKED
     joined_reasons = " ".join(assessment.material.reasons)
-    assert "0.9800" in joined_reasons  # the derived floor the vinegar bottle provably cannot clear
+    assert "0.9900" in joined_reasons  # the >=0.99 compendial floor the vinegar bottle provably cannot clear
+    assert "phase" in joined_reasons.lower()  # phase is the D1/D4 discriminator too
     assert assessment.overall is CapabilityStatus.BLOCKED
     assert assessment.is_capability_fit is False
 

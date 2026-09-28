@@ -11,9 +11,11 @@ Public surface (see each module's own docstring for the reasoning):
 * :mod:`.enums` -- the closed vocabularies (``CapabilityStatus``, ``EquipmentCapability``, ...).
 * :mod:`.equipment_resolver` -- the closed apparatus-string -> ``EquipmentCapability`` table.
 * :mod:`.requirements` -- ``compile_capability_requirements(route)``, the PURE route-only projection.
-* :mod:`.profile` -- ``CapabilityProfile``, the ONE declared-bench type (no presets here; see Round II's
-  "v09-profile-presets" file for ``research_lab()``/``poor_man()``/``custom()``).
+* :mod:`.profile` -- ``CapabilityProfile``, the ONE declared-bench type (no presets here; see
+  :mod:`.presets` for ``research_lab()``/``poor_man()``/``custom()``).
 * :mod:`.assess` -- ``assess(profile, requirements, route_readiness)``, the pure verdict fold.
+* :mod:`.presets` -- the named ``CapabilityProfile`` builders + the closed
+  ``resolve_capability_profile(spec)`` lookup (FREEZE decision 6).
 
 Frozen contract: ``docs/research/V0_9_CAPABILITY_COMPILER_ROUND_II_FREEZE_2026-09-28.md``.
 """
@@ -30,6 +32,13 @@ from .enums import (
     WasteCapability,
 )
 from .equipment_resolver import resolve_apparatus, resolve_apparatus_strings
+from .presets import (
+    CAPABILITY_PROFILE_PRESETS,
+    custom,
+    poor_man,
+    research_lab,
+    resolve_capability_profile,
+)
 from .profile import CAPABILITY_PROFILE_SCHEMA, CapabilityProfile
 from .requirements import (
     MaterialRequirement,
@@ -52,6 +61,11 @@ __all__ = [
     "WasteCapability",
     "resolve_apparatus",
     "resolve_apparatus_strings",
+    "CAPABILITY_PROFILE_PRESETS",
+    "custom",
+    "poor_man",
+    "research_lab",
+    "resolve_capability_profile",
     "CAPABILITY_PROFILE_SCHEMA",
     "CapabilityProfile",
     "MaterialRequirement",

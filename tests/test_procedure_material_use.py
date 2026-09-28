@@ -77,9 +77,11 @@ def test_material_use_is_digestible_and_stable() -> None:
     assert make().digest == make().digest
 
 
-def test_enum_has_exactly_the_frozen_six_roles() -> None:
+def test_enum_has_exactly_the_frozen_eight_roles() -> None:
+    # Round IV F45: SUBSTRATE + REACTANT added so the SOURCE carries reaction inputs as typed uses -- the
+    # generic capability compiler reads reactant semantics off material_uses, with no leaf-identity whitelist.
     assert {r.value for r in ProcedureMaterialRole} == {
-        "CATALYST", "WASH", "DRY", "SOLVENT", "RINSE", "NEUTRALIZE"}
+        "SUBSTRATE", "REACTANT", "CATALYST", "WASH", "DRY", "SOLVENT", "RINSE", "NEUTRALIZE"}
 
 
 def test_role_rejects_a_bare_string() -> None:
@@ -135,7 +137,16 @@ def test_verify_op_apparatus_mechanism_is_ready() -> None:
 def test_isopentyl_material_census() -> None:
     uses = _uses_by_name(_ISOPENTYL_PROCEDURE)
     assert set(uses) == {
-        "sulfuric acid", "cold water", "sodium bicarbonate", "water", "sodium chloride", "magnesium sulfate"}
+        "isopentyl alcohol", "acetic acid", "sulfuric acid", "cold water", "sodium bicarbonate", "water",
+        "sodium chloride", "magnesium sulfate"}
+    # Round IV F45: the two reactants are now typed SUBSTRATE/REACTANT source uses (not a leaf whitelist).
+    assert uses["isopentyl alcohol"].role is ProcedureMaterialRole.SUBSTRATE
+    assert uses["isopentyl alcohol"].identity is not None
+    assert uses["isopentyl alcohol"].quantity == StockQuantity.of("15", "mL")
+    assert uses["acetic acid"].role is ProcedureMaterialRole.REACTANT
+    assert uses["acetic acid"].identity is not None
+    assert uses["acetic acid"].formulation == "glacial"
+    assert uses["acetic acid"].quantity == StockQuantity.of("20", "mL")
     assert uses["sulfuric acid"].role is ProcedureMaterialRole.CATALYST
     assert uses["sulfuric acid"].identity is not None
     assert uses["sulfuric acid"].identity.formula == {"H": 2, "O": 4, "S": 1}

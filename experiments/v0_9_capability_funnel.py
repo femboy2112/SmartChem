@@ -98,9 +98,12 @@ def _axis_ok(status: CapabilityStatus) -> bool:
 
 def compute(routes: list, profile_builder) -> dict:
     """One profile's funnel + census over `routes`. Returns
-    ``{"funnel": {stage: count}, "census": {axis: {status_name: count}}, "total_routes": int}``."""
+    ``{"funnel": {stage: count}, "census": {axis: {status_name: count}}, "overall": {status_name: count},
+    "total_routes": int}``. ``overall`` is the per-route distribution of the OVERALL capability verdict --
+    a full-denominator census in its own right (Round IV: the honest ZERO-FIT ceiling reads off it)."""
     funnel = {stage: 0 for stage in _STAGES}
     census = {axis: {name: 0 for name in _STATUS_NAMES} for axis in _ALL_AXES}
+    overall = {name: 0 for name in _STATUS_NAMES}
     total = len(routes)
     for i, route in enumerate(routes):
         if i and i % 10 == 0:
@@ -110,6 +113,7 @@ def compute(routes: list, profile_builder) -> dict:
         profile = profile_builder()
         a = assess(profile, req, readiness)
 
+        overall[a.overall.value] += 1
         for axis in _ALL_AXES:
             census[axis][getattr(a, axis).status.value] += 1
 
@@ -131,7 +135,7 @@ def compute(routes: list, profile_builder) -> dict:
             alive = alive and stage_pass
             if alive:
                 funnel[stage] += 1
-    return {"funnel": funnel, "census": census, "total_routes": total}
+    return {"funnel": funnel, "census": census, "overall": overall, "total_routes": total}
 
 
 def check(results: list, name: str, ok: bool, detail: str) -> None:
@@ -164,18 +168,52 @@ def run() -> tuple:
                 r, f"{name}: funnel monotone {weaker!r} >= {stronger!r}",
                 funnel[weaker] >= funnel[stronger], f"{weaker}={funnel[weaker]}, {stronger}={funnel[stronger]}",
             )
-    # the isopentyl fully-declared bench is the release positive: it must reach a genuine CAPABILITY_FIT (>=1).
-    fit_bench_fit = per_profile["isopentyl_capability_fit_bench"]["funnel"]["CAPABILITY_FIT"]
+    # Round IV -- the HONEST ZERO-FIT CEILING (replaces the retired `fit_bench_fit >= 1` positive). Every
+    # fail-closed gate is now live and the sourced procedures under-specify whole-process duration, auxiliary
+    # hazards and spent-stream disposal, so NO corpus route reaches CAPABILITY_FIT under ANY profile. A
+    # vanishing positive is scientific information, not a regression -- truth over version aesthetics.
     check(
-        r, "isopentyl_capability_fit_bench reaches a genuine CAPABILITY_FIT on the real corpus",
-        fit_bench_fit >= 1, f"CAPABILITY_FIT count = {fit_bench_fit}",
+        r, "corpus is exactly the 7 forcing-matrix routes",
+        len(routes) == 7, f"{len(routes)} routes",
     )
-    # research_lab (no declared stock) and poor_man (no distillation/IR/hood) must NEVER reach CAPABILITY_FIT
-    # on this corpus (forcing-matrix law) -- the funnel's own last stage must honestly read 0 for both.
-    for name in ("research_lab", "poor_man"):
+    for name, _ in _PROFILES:
         n = per_profile[name]["funnel"]["CAPABILITY_FIT"]
-        check(r, f"{name} never reaches CAPABILITY_FIT on this corpus", n == 0, f"CAPABILITY_FIT count = {n}")
-    # per-axis census denominators must NEVER be narrowed -- every axis's status counts sum to total_routes.
+        check(r, f"{name} reaches ZERO CAPABILITY_FIT on this corpus (honest ceiling)", n == 0,
+              f"CAPABILITY_FIT count = {n}")
+        fit_overall = per_profile[name]["overall"]["FIT"]
+        check(r, f"{name} overall-FIT census is ZERO (no route/profile fabricates a FIT)", fit_overall == 0,
+              f"overall FIT count = {fit_overall}")
+    # the VERIFIED overall-verdict census per profile (Round IV re-adjudication, doc section 9). NOTE the
+    # asymmetry the mission calls out: the fully-declared fit bench is UNKNOWN on the 3 ISOPENTYL routes (it
+    # stocks that procedure) but BLOCKED on the other 4 corpus targets (its inventory does not stock aspirin/
+    # paracetamol/methyl-salicylate/retro-DA) -- NOT "UNKNOWN on all 7".
+    expected_overall = {
+        "research_lab": {"UNKNOWN": 7},
+        "poor_man": {"BLOCKED": 7},
+        "isopentyl_capability_fit_bench": {"BLOCKED": 4, "UNKNOWN": 3},
+    }
+    for name, expected in expected_overall.items():
+        got = {k: v for k, v in per_profile[name]["overall"].items() if v}
+        check(r, f"{name} overall-verdict census == {expected}", got == expected, f"got {got}")
+    # the isopentyl-procedure route under the fit bench is UNKNOWN on EXACTLY {process, containment, waste}
+    # (every other axis clears) -- the three axes where the SOURCE under-specifies. This is the pivotal
+    # Round-IV outcome, checked on the real searched route, not read off the aggregate census.
+    iso_route = _isopentyl_procedure_route()
+    iso_assessment = assess(
+        isopentyl_capability_fit_bench(), compile_capability_requirements(iso_route), evaluate_route(iso_route),
+    )
+    nonclean = {
+        axis for axis in _ALL_AXES
+        if getattr(iso_assessment, axis).status in (CapabilityStatus.BLOCKED, CapabilityStatus.UNKNOWN)
+    }
+    check(
+        r, "isopentyl-procedure route is non-clean on EXACTLY {process, containment, waste}",
+        nonclean == {"process", "containment", "waste"}
+        and iso_assessment.overall is CapabilityStatus.UNKNOWN,
+        f"non-clean axes = {sorted(nonclean)}, overall = {iso_assessment.overall.value}",
+    )
+    # per-axis census denominators must NEVER be narrowed -- every axis's status counts sum to total_routes,
+    # AND the overall-verdict census sums to the same full denominator (the discipline holds on overall too).
     for name, _ in _PROFILES:
         total = per_profile[name]["total_routes"]
         for axis in _ALL_AXES:
@@ -184,7 +222,20 @@ def run() -> tuple:
                 r, f"{name}: {axis} census denominator == total routes (never narrowed)",
                 counted == total, f"{counted} == {total}",
             )
+        overall_counted = sum(per_profile[name]["overall"].values())
+        check(r, f"{name}: overall-verdict census denominator == total routes (never narrowed)",
+              overall_counted == total, f"{overall_counted} == {total}")
     return r, per_profile, routes
+
+
+def _isopentyl_procedure_route():
+    """The one searched isopentyl-acetate route carrying procedure evidence -- the fit bench's target route,
+    re-searched here (read-only, deterministic) so the pivotal {process, containment, waste} UNKNOWN outcome is
+    checked on the REAL object, not inferred from the aggregate census."""
+    for route in _search("isopentyl acetate", ("water", "acetic acid"), ("isopentyl alcohol",), 3).routes:
+        if any(step.envelope.procedure is not None for step in route.steps):
+            return route
+    raise AssertionError("expected a searched isopentyl-acetate route carrying procedure evidence")
 
 
 def render_markdown(results: list, per_profile: dict, total_routes: int) -> str:
@@ -210,8 +261,8 @@ def render_markdown(results: list, per_profile: dict, total_routes: int) -> str:
         lines += ["", "### Per-axis census (every route, denominator never narrowed)", ""]
         lines.append("| axis | " + " | ".join(_STATUS_NAMES) + " | total |")
         lines.append("|---|" + "---|" * (len(_STATUS_NAMES) + 1))
-        for axis in _ALL_AXES:
-            counts = data["census"][axis]
+        for axis in ("overall", *_ALL_AXES):
+            counts = data["overall"] if axis == "overall" else data["census"][axis]
             total_axis = sum(counts.values())
             lines.append(
                 f"| {axis} | " + " | ".join(str(counts[s]) for s in _STATUS_NAMES) + f" | {total_axis} |"
@@ -227,9 +278,12 @@ def render_markdown(results: list, per_profile: dict, total_routes: int) -> str:
         f"**{passed}/{len(results)} properties hold.** "
         + (
             "The funnel is monotone non-increasing for every profile, routes-returned/PROCESS_SPECIFIED are "
-            "honestly profile-blind, the fully-declared bench reaches a genuine CAPABILITY_FIT, "
-            "research_lab/poor_man never fabricate one, and every per-axis census denominator is the full, "
-            "un-narrowed route count."
+            "honestly profile-blind, and -- Round IV -- NO route reaches CAPABILITY_FIT under ANY profile (the "
+            "honest zero-FIT ceiling: every fail-closed gate is live and the sourced procedures under-specify "
+            "whole-process duration, auxiliary hazards, and spent-stream disposal). The isopentyl-procedure "
+            "route is UNKNOWN on exactly {process, containment, waste}; the fit bench is BLOCKED on the 4 "
+            "non-isopentyl targets it does not stock. Every per-axis AND overall census denominator is the "
+            "full, un-narrowed route count."
             if passed == len(results)
             else "A property FAILED -- the funnel/census is not sound as stated."
         ),

@@ -127,8 +127,12 @@ def test_old_payload_without_capability_loads_as_not_requested():
 # -- CAPABILITY-REBIND-ON-LOAD: accept the honest load, refuse every tamper ------------------------------------
 
 def _fit_response():
-    """The real, procedure-backed isopentyl route surfaced through the SERVICE under the fully-declared fit bench --
-    a genuine CAPABILITY_FIT on the shipping path."""
+    """The real, procedure-backed isopentyl route surfaced through the SERVICE under the fully-declared bench.
+
+    Round IV: no route reaches CAPABILITY_FIT any more (F56/F47/F49 retired the Round-III positive), so this
+    is a PROCESS_SPECIFIED route carried at its honest ceiling -- overall UNKNOWN, never a fabricated FIT.
+    The helper name is kept (its five tamper/thin-wire consumers only need a PROCESS_SPECIFIED assessment as
+    a vehicle, never an overall FIT), but the shipping path no longer delivers a verified FIT."""
     req = build_recompile_request(
         "isopentyl acetate", capability_profile=isopentyl_capability_fit_bench(),
         helper_reagents=("water", "acetic acid"), stock_materials=("isopentyl alcohol",),
@@ -136,15 +140,24 @@ def _fit_response():
     return run_compilation(req)
 
 
-def test_rebind_accepts_untampered_and_a_real_fit_survives_the_wire():
+def test_rebind_accepts_untampered_and_the_real_verdict_survives_the_wire():
+    """Round IV: no route reaches CAPABILITY_FIT (the whole-path semantic hardening -- F56 process, F47
+    containment, F49 waste -- retired the Round-III positive), so the rebind's job is proven on the honest
+    verdicts it DOES carry: PROCESS_SPECIFIED isopentyl routes assessed to overall UNKNOWN/BLOCKED, never a
+    fabricated FIT. The untampered assessments must survive the canonical wire round-trip byte-for-byte
+    (result_digest stable, every per-route overall verdict preserved in order), and CAPABILITY-REBIND-ON-LOAD
+    must ACCEPT the load -- an honest, self-consistent verdict is not a tamper."""
     resp = _fit_response()
-    fit = [d for d in resp.ranked_route_dossiers
-           if d.capability_assessment and d.capability_assessment.overall is CapabilityStatus.FIT]
-    assert fit, "expected a genuine CAPABILITY_FIT route on the real service path"
+    assessed = [d for d in resp.ranked_route_dossiers if d.capability_assessment is not None]
+    assert assessed, "expected the real service path to carry capability assessments"
+    # the honest ceiling: assessed PROCESS_SPECIFIED routes, but NO overall FIT survives to the wire.
+    assert all(d.capability_assessment.overall is not CapabilityStatus.FIT for d in assessed)
+    assert any(d.capability_assessment.overall is CapabilityStatus.UNKNOWN for d in assessed)
     back = response_from_payload(response_to_payload(resp))  # canonical wire runs the rebind fail-closed
     assert back.result_digest == resp.result_digest
-    assert [d for d in back.ranked_route_dossiers
-            if d.capability_assessment and d.capability_assessment.overall is CapabilityStatus.FIT]
+    back_assessed = [d for d in back.ranked_route_dossiers if d.capability_assessment is not None]
+    assert [d.capability_assessment.overall for d in back_assessed] == \
+           [d.capability_assessment.overall for d in assessed]
 
 
 def test_rebind_refuses_an_altered_carried_assessment_verdict():
@@ -216,3 +229,126 @@ def test_rendered_capability_block_matches_the_json_assessment():
 def test_no_profile_renders_no_capability_block():
     _, resp = _run(None)
     assert "CAPABILITY[" not in _render_recompile_response(resp, quiet=False)
+
+
+# -- RC Round IV Wave B: F51/F52/F54 -----------------------------------------------------------------------------
+
+def test_capability_profile_with_convergent_dag_grammar_is_a_typed_refusal():
+    """F51: RankedDAGSummary carries no capability field, so a capability question run under the convergent-DAG
+    grammar had NO way to be honestly answered -- and, before this fix, got no answer AND no diagnostic (a silent
+    drop). It must now come back as a typed REFUSED response naming the unsupported (capability, topology)
+    combination, never a quiet nothing."""
+    from smartchem.service import ProcessBounds, ResponseOutcome, TransformGrammar
+
+    resp = run_compilation(build_recompile_request(
+        "smiles:COCCC", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+        capability_profile="poor-man", process=ProcessBounds(max_total_minutes=600.0), max_depth=3,
+    ))
+    assert resp.outcome is ResponseOutcome.REFUSED
+    assert resp.exit_code == 5
+    assert resp.compilation_ir is None
+    assert resp.ranked_dag_dossiers == ()
+    assert any("CAPPED_SCISSION_CONVERGENT" in d and "capability" in d for d in resp.diagnostics)
+
+
+def test_convergent_dag_search_is_unaffected_without_a_capability_profile():
+    """F51 guard rail: the fix must gate on the (profile, convergent) COMBINATION only -- a profile-less convergent
+    DAG search must keep running exactly as before (not a regression)."""
+    from smartchem.service import ProcessBounds, ResponseOutcome, TransformGrammar
+
+    resp = run_compilation(build_recompile_request(
+        "smiles:COCCC", grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+        process=ProcessBounds(max_total_minutes=600.0), max_depth=3,
+    ))
+    assert resp.outcome is not ResponseOutcome.REFUSED
+    assert len(resp.ranked_dag_dossiers) >= 2
+
+
+def test_compile_and_recompile_agree_human_and_json_under_a_capability_profile(capsys):
+    """F52 PIN: `compile` (deprecated alias) and `recompile`, human AND --json, under the SAME capability profile,
+    must emit the same request, the same exit code, and the same overall + per-axis capability verdict -- the human
+    render is no longer a second, capability-blind renderer (compile_synthesis is retired)."""
+    import json as _json
+
+    from smartchem.cli import main
+
+    tail = [
+        "isopentyl acetate", "--capability-profile", "poor-man",
+        "--reagents", "water", "acetic acid", "--have", "isopentyl alcohol", "--max-depth", "2",
+    ]
+
+    compile_emit_code = main(["compile", *tail, "--emit-request"])
+    compile_emit = capsys.readouterr().out
+    recompile_emit_code = main(["recompile", *tail, "--emit-request"])
+    recompile_emit = capsys.readouterr().out
+    assert compile_emit_code == recompile_emit_code == 0
+    assert _json.loads(compile_emit) == _json.loads(recompile_emit)  # same typed request, capability profile included
+
+    compile_json_code = main(["compile", *tail, "--json"])
+    compile_json_out = capsys.readouterr().out
+    recompile_json_code = main(["recompile", *tail, "--json"])
+    recompile_json_out = capsys.readouterr().out
+    assert compile_json_code == recompile_json_code
+    compile_payload = _json.loads(compile_json_out)
+    recompile_payload = _json.loads(recompile_json_out)
+    assert compile_payload == recompile_payload  # byte-identical typed response
+
+    compile_human_code = main(["compile", *tail])
+    compile_human_out = capsys.readouterr().out
+    recompile_human_code = main(["recompile", *tail])
+    recompile_human_out = capsys.readouterr().out
+    assert compile_human_code == recompile_human_code == compile_payload["exit_code"]
+    # compile's human stdout carries NO deprecation text (it rides stderr) and is otherwise the SAME render.
+    assert compile_human_out == recompile_human_out
+    assert "deprecated" not in compile_human_out.lower()
+
+    # the human render's capability block agrees with the JSON overall + per-axis verdict (criterion 29, F52 scope).
+    dossier = compile_payload["ranked_route_dossiers"][0]
+    assessment = dossier["capability_assessment"]
+    assert assessment is not None
+
+    def field(dcp, name):
+        for n, v in dcp["fields"]:
+            if n == name:
+                return v
+        raise KeyError(name)
+
+    overall = field(assessment, "overall")["value"]["value"]
+    assert f"CAPABILITY[poor-man]: {overall}" in compile_human_out
+    for ax_name in _CAPABILITY_AXIS_NAMES:
+        status = field(field(assessment, ax_name), "status")["value"]["value"]
+        assert f"{ax_name}: {status}" in compile_human_out
+
+
+def test_old_v0_8_response_payload_migrates_to_capability_not_requested():
+    """F54: a pre-0.9 (v0.8) response payload carries NO capability_question_digest at the top level, NO
+    capability_assessment on any ranked route dossier, and its request carries NO capability_profile /
+    capability_profile_origin -- those KEYS did not exist yet, not merely "were null".  The codec's
+    ``.get(key, None)`` reads make this ADDITIVE-OPTIONAL by construction: a NOT_REQUESTED (no-profile) response's
+    capability fields are already None/absent-shaped, so DELETING those keys outright (never just nulling an
+    existing value -- that would desync result_digest, which genuinely folds a REQUESTED assessment in; that is
+    the tamper guard working, not a v0.8 payload) must decode with no crash, no refusal, and no fabricated
+    FIT/BLOCKED verdict for a bench question the old payload never asked.  (Mirrors the request-level
+    ``test_old_payload_without_capability_loads_as_not_requested`` above, one level up the object graph.)"""
+    _, resp = _run(None)  # NOT_REQUESTED: exactly the shape a v0.8 producer (pre-capability) actually emitted
+    payload = response_to_payload(resp)
+    assert payload.get("capability_question_digest") is None  # sanity: no profile -> no pin, even pre-strip
+    assert payload["request"].get("capability_profile") is None
+    assert all(d["capability_assessment"] is None for d in payload["ranked_route_dossiers"])
+
+    # A v0.8 payload never had these KEYS at all (not "had them set to null") -- strip them outright.
+    del payload["capability_question_digest"]
+    for dossier_payload in payload["ranked_route_dossiers"]:
+        del dossier_payload["capability_assessment"]
+    del payload["request"]["capability_profile"]
+    del payload["request"]["capability_profile_origin"]
+
+    back = response_from_payload(payload)  # must not crash, must not refuse, must not fabricate a verdict
+    assert back.capability_question_digest is None
+    assert back.request.capability_profile is None
+    assert back.request.capability_profile_origin == ""
+    assert all(d.capability_assessment is None for d in back.ranked_route_dossiers)
+    # the outcome/exit_code the old payload actually earned (the search side) survive untouched.
+    assert back.outcome == resp.outcome
+    assert back.exit_code == resp.exit_code
+    assert back.result_digest == resp.result_digest  # capability was never in the identity for this response

@@ -241,6 +241,33 @@ reaction-vouched row):
   `smartchem/` touched on disk.
 - `~/.local/bin/ruff check` clean on all three files.
 
+**v0.9 CAPABILITY COMPILER, ROUND IV — EXTERNAL AUDIT (2026-09-28, EXTERNAL REVIEW HOLD — package stays
+`0.9.0a1`, NOT released to `main`; PR `feat/v0.9-capability-compiler -> main` OPEN + UNMERGED for another
+external-review pass). Audit + barrier: `docs/research/V0_9_RC_ROUND_IV_EXTERNAL_AUDIT_2026-09-28.md`.**
+An external hostile review found a NEW class of composition / whole-path overclaim (F41-F55) beyond Round III's
+F1/F2, and a fresh non-author Wave-C pass found one more P0 (F62). ALL resolved — reproduced-and-fixed,
+rigorously refuted, or a named defer. **THE MATERIAL OUTCOME: the Round-III `CAPABILITY_FIT` positive COLLAPSES
+to UNKNOWN under fail-closed whole-path semantics — NO corpus route reaches `CAPABILITY_FIT`.** The one
+PROCESS_SPECIFIED route (isopentyl) reads UNKNOWN because the source under-specifies whole-process DURATION
+(F56: only the 1-hr reflux floor is timed), auxiliary HAZARDS (F47: ionic washes/drier), and spent-stream
+DISPOSAL (F49). Fabricating any of those is banned; a vanishing positive is scientific information (the gate was
+NOT weakened to preserve it) — 0.9 defines `CAPABILITY_FIT` rigorously + every axis fails closed, and names
+exactly what 1.0 must source. Whether 0.9 ships with a defined-but-unreached FIT is the external reviewer's call.
+Fixes: F41 quantity summation · F42 finite-pool max-flow allocation (no double-spend) · F43 two-sided
+composition band (`satisfies_band`; 100% bicarbonate ⊬ "5% wash") · F44 structure>name (a bare name can't
+witness a proven structure) · F45 generic projection (`_KNOWN_LEAF_IDS` + runtime "glacial" scan DELETED;
+reactants are typed SUBSTRATE/REACTANT source uses) · F46 NaCl mass-fraction fixed `[0.23,0.27]`->`[0.263,0.265]`
++ typed `DerivedIntervalEvidence` (construction refuses an interval its own `derivation_fn` can't reproduce) ·
+F47/F48/F49 hazard/waste unknownness fails closed · F50 distinct-spec uses stay distinct · F51 convergent-DAG
+capability request typed-REFUSED · F52 `compile` delegates to `recompile` render (human≡JSON) · F54 legacy v0.8
+response loads additive-optional · F56/F62 per-dimension process fail-close, now a COMPLETE table over all five
+dimensions. Gate: **mutation M1-M62 60/62 killed, 0 survived** (M23 retired + M50 verified-defer; the committed
+M1-M40 harness was found BROKEN on the new core and repaired); **funnel 86/86 properties, zero `CAPABILITY_FIT`
+under every profile**, denominators never narrowed; fresh Wave-C review (F62 FIXED, F63 LOW deferred to 0.9.5,
+else HELD, search noninterference re-confirmed clean); full OOM-safe suite GREEN. Deferred to 0.9.5: M50
+synthetic-route corpus, F63/M58 derived-width provenance guard. No new reaction classes, no new chemistry
+family, no capability-fit by omission.
+
 **v0.9 CAPABILITY COMPILER, ROUND III — WHOLE-PATH SEMANTIC HARDENING (2026-09-28, RELEASE CANDIDATE —
 package version bumped `0.8.0a1` -> `0.9.0a1`; the 35-criterion release gate CLOSED; a merge-ready PR
 `feat/v0.9-capability-compiler -> main` is opened for EXTERNAL release review and is deliberately NOT merged —

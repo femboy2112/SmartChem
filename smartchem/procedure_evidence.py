@@ -178,8 +178,16 @@ class ProcedureMaterialRole(str, Enum):
     and nothing typed told the H2SO4 from the substrate. This enum is where that distinction finally has a home.
 
     Closed vocabulary; extend only when the sourced corpus produces an auxiliary none of these fit -- never
-    speculatively. A material's role is what the source SAYS it does, not what a runtime parser guesses."""
+    speculatively. A material's role is what the source SAYS it does, not what a runtime parser guesses.
 
+    Round IV F45: REACTANT/SUBSTRATE were added so the SOURCE can carry the reaction inputs themselves as
+    typed uses (not just the workup auxiliaries), letting the generic capability compiler read a route's
+    reactant material specification off ``material_uses`` instead of hard-coding leaf identities + a runtime
+    'glacial' prose scan. SUBSTRATE is the principal species being transformed; REACTANT is a co-reactant
+    charged stoichiometrically into the product (the two are distinguished only where the source does)."""
+
+    SUBSTRATE = "SUBSTRATE"      # the principal input being transformed (the alcohol in a Fischer esterification)
+    REACTANT = "REACTANT"        # a co-reactant charged stoichiometrically into the product (the acid)
     CATALYST = "CATALYST"        # accelerates without being consumed stoichiometrically (H2SO4 in a Fischer esterification)
     WASH = "WASH"                # a medium (usually a liquid) contacted with the product to carry impurities away
                                  # (5% NaHCO3, brine, a decolorizing adsorbent) -- the closest home the corpus's

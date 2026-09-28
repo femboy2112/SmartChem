@@ -57,19 +57,25 @@ def _vinegar_for_glacial_inventory():
     return kept + (household_white_vinegar(),)
 
 
-def test_gate_18_capability_fit_positive_is_the_fully_declared_custom_bench():
-    """Round III (D1): the CAPABILITY_FIT positive MIGRATED off the reaction-class floor onto a
-    fully-declared Custom bench (:func:`isopentyl_capability_fit_bench`) that stocks the WHOLE isopentyl
-    procedure -- every reactant AND every procedure-only auxiliary at a matching phase/formulation/quantity,
-    full glassware, a fume hood, an IR spectrometer, real T/process ceilings. It reaches genuine overall
-    ``FIT`` on the real searched isopentyl-acetate route, material axis included."""
+def test_gate_18_fully_declared_custom_collapses_to_unknown_not_capability_fit():
+    """Round IV: the fully-declared Custom bench NO LONGER reaches CAPABILITY_FIT -- the honest ceiling, not
+    a regression to paper over. The bench still stocks the WHOLE isopentyl procedure, so the MATERIAL axis is
+    genuinely FIT (this file's original point -- a well-stocked bench earns its material positive -- still
+    holds). But three whole-path semantic axes now collapse to UNKNOWN from the source itself: process (F56,
+    the undeclared elapsed CEILING beyond the timed 1-hr reflux floor), containment (F47, the unresolved
+    ionic-auxiliary hazards), waste (F49, no sourced disposal routing). Overall UNKNOWN, is_capability_fit
+    False. The Round-III FIT rode the process-time-omission=unlimited-patience assumption F56 retires; the
+    gate was NOT weakened to preserve the positive -- a vanishing positive is scientific information."""
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
     assessment = assess(isopentyl_capability_fit_bench(), requirements, evaluate_route(route))
 
     assert assessment.material.status is CapabilityStatus.FIT
-    assert assessment.overall is CapabilityStatus.FIT
-    assert assessment.is_capability_fit is True
+    assert assessment.process.status is CapabilityStatus.UNKNOWN
+    assert assessment.containment.status is CapabilityStatus.UNKNOWN
+    assert assessment.waste.status is CapabilityStatus.UNKNOWN
+    assert assessment.overall is CapabilityStatus.UNKNOWN
+    assert assessment.is_capability_fit is False
 
 
 def test_gate_18_two_reactant_bottles_no_longer_fit_now_auxiliaries_participate():
@@ -102,7 +108,9 @@ def test_gate_18_vinegar_control_cannot_masquerade_as_glacial_acetic_acid():
 
     assert assessment.material.status is CapabilityStatus.BLOCKED
     joined_reasons = " ".join(assessment.material.reasons)
-    assert "0.9900" in joined_reasons  # the >=0.99 compendial floor the vinegar bottle provably cannot clear
+    # Round IV: the acetic-acid reason now names the compendial BAND, not a bare "0.9900" scalar -- the
+    # vinegar bottle's composition is provably outside the [0.990, 1.000] floor it can never clear.
+    assert "[0.990, 1.000]" in joined_reasons
     assert "phase" in joined_reasons.lower()  # phase is the D1/D4 discriminator too
     assert assessment.overall is CapabilityStatus.BLOCKED
     assert assessment.is_capability_fit is False

@@ -213,8 +213,13 @@ def test_unknown_process_candidates_do_not_pass_human_json_or_quiet_views(capsys
         assert human_code == expected_exit, captured.err
         assert "UNKNOWN" in captured.out
         assert "SHOPPING LIST" not in captured.out
-        if command != "recompile":
+        if command == "synthesize":
             assert "NO_ADMISSIBLE_RETURNED_ROUTE" in captured.out
+        else:
+            # F52: `compile` is now a deprecated alias delegating to `recompile`'s canonical render, so both
+            # show the recompile wording (NO_FIT_FOUND / "admissible returned routes"), NOT the legacy
+            # synthesize marker. The no-false-pass property (UNKNOWN present, no SHOPPING LIST) still holds.
+            assert "NO_FIT_FOUND" in captured.out
     assert json_outputs[0] == json_outputs[1] == json_outputs[2]
     assert main(["recompile", *args, "--quiet"]) == expected_exit
     quiet = capsys.readouterr().out

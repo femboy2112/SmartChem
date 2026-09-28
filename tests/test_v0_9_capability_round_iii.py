@@ -133,14 +133,26 @@ def _ps_readiness() -> RouteReadiness:
 # 1. THE ISOPENTYL FORCING-MATRIX ROW (the release headline, on the real searched route)
 # =============================================================================================================
 
-def test_matrix_isopentyl_research_lab_no_stock_is_unknown_material_only():
+def test_matrix_isopentyl_research_lab_no_stock_is_unknown_on_material_and_the_semantic_axes():
+    """Round IV: the 'material only' UNKNOWN died with the Round-III FIT. A well-equipped ResearchLab with
+    NO declared stock now lands overall UNKNOWN on FOUR axes. material is UNKNOWN (empty pantry, an open
+    question); the whole-path semantic hardening adds three that NO bench can clear from this source: process
+    UNKNOWN (F56 -- the source times only the 1-hr reflux FLOOR; the untimed workup+distillation elapsed
+    CEILING is undeclared, so an unbounded-duration process cannot be certified), containment UNKNOWN (F47 --
+    the ionic NaHCO3/NaCl/MgSO4 auxiliaries carry unresolved hazards), waste UNKNOWN (F49 -- the spent
+    workup streams have no sourced disposal routing)."""
     route = _isopentyl_route()
     req = compile_capability_requirements(route)
     readiness = evaluate_route(route)
     assert readiness.tier == "PROCESS_SPECIFIED"
     a = assess(research_lab(), req, readiness)
     assert a.overall is CapabilityStatus.UNKNOWN
-    assert _nonclean_axes(a) == {"material": CapabilityStatus.UNKNOWN}
+    assert _nonclean_axes(a) == {
+        "material": CapabilityStatus.UNKNOWN,
+        "process": CapabilityStatus.UNKNOWN,
+        "containment": CapabilityStatus.UNKNOWN,
+        "waste": CapabilityStatus.UNKNOWN,
+    }
 
 
 def test_matrix_isopentyl_poor_man_is_blocked_on_equipment_measurement_and_containment():
@@ -155,13 +167,26 @@ def test_matrix_isopentyl_poor_man_is_blocked_on_equipment_measurement_and_conta
     assert a.containment.status is CapabilityStatus.BLOCKED  # no fume hood
 
 
-def test_matrix_isopentyl_fully_declared_custom_is_capability_fit():
+def test_matrix_isopentyl_fully_declared_custom_collapses_to_unknown_on_the_semantic_axes():
+    """Round IV: the fully-declared Custom bench NO LONGER reaches CAPABILITY_FIT -- this is the honest
+    ceiling, not a regression. It is FIT on every RESOURCEABLE axis (material/equipment/physical/measurement/
+    procurement), but three whole-path semantic axes collapse to UNKNOWN from the source itself, no matter
+    how completely the bench is stocked: process (F56 -- the source times only the 1-hr reflux FLOOR, the
+    untimed workup+distillation elapsed CEILING is undeclared), containment (F47 -- the ionic
+    NaHCO3/NaCl/MgSO4 auxiliaries carry unresolved hazards), waste (F49 -- the spent workup streams have no
+    sourced disposal routing). Overall UNKNOWN, is_capability_fit False. The Round-III FIT rode the
+    process-time-omission=unlimited-patience assumption F56 retires; a vanishing positive is scientific
+    information -- do NOT restore a FIT by weakening the gate."""
     route = _isopentyl_route()
     req = compile_capability_requirements(route)
     a = assess(isopentyl_capability_fit_bench(), req, evaluate_route(route))
-    assert a.overall is CapabilityStatus.FIT
-    assert a.is_capability_fit is True
-    assert _nonclean_axes(a) == {}  # every axis FIT/NOT_APPLICABLE/UNCONSTRAINED
+    assert a.overall is CapabilityStatus.UNKNOWN
+    assert a.is_capability_fit is False
+    assert _nonclean_axes(a) == {
+        "process": CapabilityStatus.UNKNOWN,
+        "containment": CapabilityStatus.UNKNOWN,
+        "waste": CapabilityStatus.UNKNOWN,
+    }
 
 
 def _vinegar_inventory():
@@ -183,8 +208,12 @@ def _vinegar_inventory():
     ("minus_procurement", dict(procurement=frozenset()), "procurement", CapabilityStatus.BLOCKED),
 ])
 def test_matrix_isopentyl_targeted_negatives_each_fail_on_their_one_axis(label, overrides, axis, expected):
-    """Every targeted-negative Custom is the FIT bench MINUS exactly one capability -- it must fail on THAT
-    axis and no other axis may have moved off FIT/NOT_APPLICABLE/UNCONSTRAINED (a clean single-axis cut)."""
+    """Round IV: each targeted-negative Custom is the fully-declared bench MINUS exactly one capability. The
+    cut must BITE -- the TARGET axis goes BLOCKED and the overall verdict is BLOCKED (BLOCKED outranks the
+    baseline UNKNOWN axes in the fold). We NO LONGER assert 'every other axis is FIT': that premise died with
+    the Round-III positive. The baseline process/containment/waste axes are UNKNOWN on the negatives too
+    (F56/F47/F49), so the honest proof is that the removal drives its TARGET axis to BLOCKED and folds the
+    whole route to BLOCKED -- not a spurious 'clean single-axis' claim that the vanished FIT once licensed."""
     route = _isopentyl_route()
     req = compile_capability_requirements(route)
     inv = overrides.pop("material_inventory", None)
@@ -194,7 +223,6 @@ def test_matrix_isopentyl_targeted_negatives_each_fail_on_their_one_axis(label, 
         overrides["material_inventory"] = material_library.isopentyl_insufficient_quantity_inventory()
     a = assess(isopentyl_capability_fit_bench(**overrides), req, evaluate_route(route))
     assert getattr(a, axis).status is expected, (label, _nonclean_axes(a))
-    assert set(_nonclean_axes(a)) == {axis}, (label, _nonclean_axes(a))
     assert a.overall is CapabilityStatus.BLOCKED
 
 
@@ -360,16 +388,23 @@ def test_d9_isopentyl_h2so4_forces_containment_and_is_named():
     assert any("sodium bicarbonate" in r for r in req.hazard_unresolved)
 
 
-def test_d9_unresolved_hazards_are_surfaced_on_the_containment_axis_and_do_not_force_unknown():
+def test_d9_unresolved_hazards_cap_containment_at_unknown_and_drive_overall_unknown():
+    """Round IV F47 INVERSION: the OLD contract said the visible unresolved-hazard note did NOT force
+    overall UNKNOWN (containment rode to FIT and the FIT positive survived). It now DOES. The ionic
+    NaHCO3/NaCl/MgSO4 auxiliaries carry an unresolved hazard status, so the containment capability they
+    require CANNOT be determined -- containment caps at UNKNOWN (the '(F47)' note surfaced in its reasons),
+    and that drives overall UNKNOWN. Both contributions are still SURFACED, never silenced: the resolved
+    H2SO4 (H314) that forces FUME_HOOD and the unresolved ionic-auxiliary note. (The sibling
+    ``test_d9_isopentyl_h2so4_forces_containment_and_is_named`` still pins the REQUIREMENT-level surfacing.)"""
     route = _isopentyl_route()
     req = compile_capability_requirements(route)
     a = assess(isopentyl_capability_fit_bench(), req, evaluate_route(route))
     reasons = " ".join(a.containment.reasons)
-    assert "sulfuric acid" in reasons  # resolved-hazard contribution surfaced
-    assert "sodium bicarbonate" in reasons  # unresolved-hazard note surfaced
-    # CAPABILITY_FIT is not a safety cert: the visible UNKNOWN note does NOT force overall UNKNOWN.
-    assert a.containment.status is CapabilityStatus.FIT
-    assert a.overall is CapabilityStatus.FIT
+    assert "sulfuric acid" in reasons  # resolved-hazard contribution still surfaced
+    assert "sodium bicarbonate" in reasons  # unresolved-hazard note still surfaced
+    assert "(F47)" in reasons  # the inversion is named on the axis it now governs
+    assert a.containment.status is CapabilityStatus.UNKNOWN
+    assert a.overall is CapabilityStatus.UNKNOWN
 
 
 # =============================================================================================================

@@ -58,14 +58,17 @@ class TestDecompile:
 
 
 class TestCompile:
+    # F52 (RC Round IV): `compile`'s human path now runs the SAME canonical service/render seam `recompile` does
+    # (no more bespoke compile_synthesis dossier), so its wording matches recompile's typed-response render --
+    # "COMMODITY" was the old dossier's phrasing; the canonical outcome banner is TARGET_ALREADY_AVAILABLE.
     def test_commodity_target_short_circuits(self, capsys):
         # ethanol is a commodity -> the front door says "just obtain it", no synthesis (fast, no route search)
         assert main(["compile", "CCO"]) == 0
-        assert "COMMODITY" in capsys.readouterr().out.upper()
+        assert "TARGET_ALREADY_AVAILABLE" in capsys.readouterr().out
 
     def test_registered_chemical_name_is_accepted(self, capsys):
         assert main(["compile", "acetic acid"]) == 0
-        assert "COMMODITY" in capsys.readouterr().out.upper()
+        assert "TARGET_ALREADY_AVAILABLE" in capsys.readouterr().out
 
     def test_bounded_no_route_is_a_nonzero_domain_outcome(self, capsys):
         # depth 2 genuinely exhausts the elemental search for acetic anhydride (no branch cut by the bound), so
@@ -90,9 +93,11 @@ class TestCompile:
         assert "PARTIAL" in out and "COMPLETE_WITHIN_BOUNDS" not in out
 
     def test_charged_structural_request_is_a_clean_unsupported_error(self, capsys):
+        # F52: the charged-species model-boundary refusal is now a typed REFUSED response rendered on stdout (the
+        # SAME path recompile takes), not a raised exception caught on stderr by the old compile_synthesis path.
         assert main(["compile", "[CH2+]CCC", "--elements", "--max-depth", "1"]) == 5
-        err = capsys.readouterr().err
-        assert "charged chemistry" in err and "Traceback" not in err
+        out, err = capsys.readouterr()
+        assert "charged chemistry" in out and "Traceback" not in out and "Traceback" not in err
 
 
 class TestDelegation:

@@ -232,6 +232,8 @@ _H2SO4 = parse_smiles("OS(=O)(=O)O")   # conc. sulfuric acid -- Fischer/acetylat
 _WATER = parse_smiles("O")
 _ETHYL_ACETATE = parse_smiles("CCOC(=O)C")
 _HCL = parse_smiles("Cl")
+_ACETIC_ACID = parse_smiles("CC(=O)O")       # Round IV F45: the acetic-acid REACTANT, typed on the source op
+_ISOAMYL_ALCOHOL = parse_smiles("CC(C)CCO")  # 3-methyl-1-butanol -- the isopentyl SUBSTRATE
 
 # Isopentyl acetate -- a COMPLETE, sourced preparative procedure. reaction_type is recognized (esterification
 # makes water), conditions are sourced, and this procedure is complete -> the round's real PROCESS_SPECIFIED
@@ -248,9 +250,18 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
             materials=("isopentyl alcohol", "acetic acid", "sulfuric acid"),
             quantity=EvidenceField.present("15 mL alcohol + 20 mL glacial acetic acid + 4 mL conc. H2SO4", _ISOPENTYL_URL),
             rate=EvidenceField.present("combine alcohol and acid, then add conc. H2SO4 with caution", _ISOPENTYL_URL),
-            # The H2SO4 rides in op1's REACTION charge beside the true reactants; typing it a CATALYST is what
-            # finally tells the acid catalyst from the substrate (the exact gluing D2 was written to un-glue).
+            # Round IV F45: the two true reactants are now TYPED source uses (SUBSTRATE/REACTANT) beside the
+            # CATALYST, so the generic capability compiler reads reactant identity + sourced volume + glacial/
+            # neat formulation off material_uses -- no leaf-identity whitelist, no runtime 'glacial' prose scan.
             material_uses=(
+                ProcedureMaterialUse(
+                    name="isopentyl alcohol", role=ProcedureMaterialRole.SUBSTRATE, identity=_ISOAMYL_ALCOHOL,
+                    formulation="neat", phase=Phase.LIQUID, quantity=StockQuantity.of("15", "mL"),
+                    evidence_source=_ISOPENTYL_URL),
+                ProcedureMaterialUse(
+                    name="acetic acid", role=ProcedureMaterialRole.REACTANT, identity=_ACETIC_ACID,
+                    formulation="glacial", phase=Phase.LIQUID, quantity=StockQuantity.of("20", "mL"),
+                    evidence_source=_ISOPENTYL_URL),
                 ProcedureMaterialUse(
                     name="sulfuric acid", role=ProcedureMaterialRole.CATALYST, identity=_H2SO4,
                     formulation="conc.", phase=Phase.LIQUID, quantity=StockQuantity.of("4", "mL"),
@@ -270,11 +281,16 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
         ProcedureOperation(
             ordinal=4, kind=OperationKind.SEPARATE, role=OperationRole.OTHER, materials=("cold water",),
             quantity=EvidenceField.present("55 mL cold water + 10 mL rinse; separate the lower aqueous layer", _ISOPENTYL_URL),
-            # Cold water resolves (a single connected species); benign, but carried so the axis never silently skips it.
+            # Cold water resolves (a single connected species); benign, but carried so the axis never silently
+            # skips it. Round IV F41: the sourced "55 mL cold water + 10 mL rinse" is TWO draws, authored as two
+            # uses so the generic compiler SUMS them (65 mL here; +25 mL at op6 -> 90 mL whole-route water demand).
             material_uses=(
                 ProcedureMaterialUse(
                     name="cold water", role=ProcedureMaterialRole.RINSE, identity=_WATER,
-                    evidence_source=_ISOPENTYL_URL),
+                    quantity=StockQuantity.of("55", "mL"), evidence_source=_ISOPENTYL_URL),
+                ProcedureMaterialUse(
+                    name="cold water", role=ProcedureMaterialRole.RINSE, identity=_WATER,
+                    quantity=StockQuantity.of("10", "mL"), evidence_source=_ISOPENTYL_URL),
             ),
             apparatus=("separatory funnel",), locator=_ISOPENTYL_URL),
         ProcedureOperation(
@@ -282,8 +298,14 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
             quantity=EvidenceField.present("25 mL of 5% sodium bicarbonate, twice", _ISOPENTYL_URL),
             endpoint=EvidenceField.present("wash until the aqueous layer is basic to litmus", _ISOPENTYL_URL),
             # Ionic: no connected Molecule to resolve. identity=None is the honest carrier; the "5% aqueous"
-            # adjective survives as structured formulation/phase, not prose to be re-parsed downstream.
+            # adjective survives as structured formulation/phase, not prose to be re-parsed downstream. Round IV
+            # F41: "25 mL of 5% sodium bicarbonate, twice" is TWO draws, authored as two same-spec uses so the
+            # generic compiler SUMS them to a whole-route 50 mL demand (never the first-value-wins 25 mL).
             material_uses=(
+                ProcedureMaterialUse(
+                    name="sodium bicarbonate", role=ProcedureMaterialRole.WASH, identity=None,
+                    formulation="5% aqueous", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("25", "mL"),
+                    evidence_source=_ISOPENTYL_URL),
                 ProcedureMaterialUse(
                     name="sodium bicarbonate", role=ProcedureMaterialRole.WASH, identity=None,
                     formulation="5% aqueous", phase=Phase.AQUEOUS_SOLUTION, quantity=StockQuantity.of("25", "mL"),

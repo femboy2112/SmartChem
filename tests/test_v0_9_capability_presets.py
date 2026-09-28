@@ -127,10 +127,13 @@ def test_resolve_capability_profile_passes_through_an_already_built_profile():
 
 # -- 4. THE FORCING-MATRIX PROOF: the real isopentyl-acetate route through both named presets --------------------
 
-def test_forcing_matrix_research_lab_is_unknown_on_material_only():
-    """The frozen forcing matrix's headline row: a well-equipped ResearchLab with NO declared stock
-    reaches overall UNKNOWN, and the material axis is the ONLY axis carrying that UNKNOWN -- every other
-    axis is FIT/NOT_APPLICABLE/UNCONSTRAINED, never itself BLOCKED or UNKNOWN."""
+def test_forcing_matrix_research_lab_is_unknown_on_material_and_the_semantic_axes():
+    """Round IV: the 'material only' UNKNOWN died with the Round-III FIT. A well-equipped ResearchLab with
+    NO declared stock still reaches overall UNKNOWN, but now on FOUR axes, not one. material is UNKNOWN
+    (empty pantry); PLUS three whole-path semantic axes the source cannot clear regardless of stock: process
+    UNKNOWN (F56 -- the undeclared elapsed CEILING of the untimed workup+distillation), containment UNKNOWN
+    (F47 -- unresolved ionic-auxiliary hazards), waste UNKNOWN (F49 -- no sourced disposal routing). Every
+    OTHER axis stays FIT/NOT_APPLICABLE/UNCONSTRAINED."""
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
     readiness = evaluate_route(route)
@@ -138,13 +141,18 @@ def test_forcing_matrix_research_lab_is_unknown_on_material_only():
 
     assessment = assess(research_lab(), requirements, readiness)
 
-    assert assessment.material.status is CapabilityStatus.UNKNOWN
     assert assessment.overall is CapabilityStatus.UNKNOWN
-    other_axes = [axis for axis in assessment.axes if axis is not assessment.material]
-    assert all(
-        axis.status in (CapabilityStatus.FIT, CapabilityStatus.NOT_APPLICABLE, CapabilityStatus.UNCONSTRAINED)
-        for axis in other_axes
-    ), [(axis.status, axis.reasons) for axis in other_axes]
+    assert assessment.material.status is CapabilityStatus.UNKNOWN
+    assert assessment.process.status is CapabilityStatus.UNKNOWN
+    assert assessment.containment.status is CapabilityStatus.UNKNOWN
+    assert assessment.waste.status is CapabilityStatus.UNKNOWN
+    clean = (CapabilityStatus.FIT, CapabilityStatus.NOT_APPLICABLE, CapabilityStatus.UNCONSTRAINED)
+    other_axes = (
+        assessment.equipment, assessment.physical, assessment.ventilation,
+        assessment.measurement, assessment.procurement, assessment.attention_care, assessment.monetary,
+    )
+    assert all(axis.status in clean for axis in other_axes), \
+        [(axis.status, axis.reasons) for axis in other_axes]
 
 
 def test_forcing_matrix_poor_man_is_blocked_on_missing_distillation_equipment():

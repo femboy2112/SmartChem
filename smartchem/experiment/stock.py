@@ -362,6 +362,38 @@ class StockMaterial(Digestible):
             return FitnessVerdict.INSUFFICIENT_ASSAY
         return FitnessVerdict.UNKNOWN_ASSAY
 
+    def satisfies_band(
+        self, required_identity: "Molecule | str", *, low: float, high: float
+    ) -> FitnessVerdict:
+        """Round-IV F43: whether this material's active fraction of ``required_identity`` is PROVABLY within
+        a TWO-SIDED composition band ``[low, high]`` -- the generalisation of :meth:`satisfies` a formulated
+        wash needs. ``satisfies`` checks a one-sided assay FLOOR (``fraction >= min_assay``), which is right
+        for a pure reagent ("glacial acetic acid, >=99%" == band ``[0.99, 1.0]``) but WRONG for a formulated
+        wash: 100% sodium bicarbonate is not a "5% NaHCO3 wash", and a floor-only check would wave it through.
+        A required band carries a real CEILING, so an over-concentrated (or under-concentrated) stock BLOCKS.
+
+        Same rigorous interval logic as :meth:`satisfies`, never a silent yes: SATISFIES only if the WHOLE
+        stock interval sits inside the band (``low <= s.lo`` and ``s.hi <= high``); ``INSUFFICIENT_ASSAY``
+        (provably outside -> preprocessing/a different bottle) only if the stock interval is DISJOINT from the
+        band (``s.hi < low`` or ``s.lo > high``); anywhere the interval straddles a band edge -- or the
+        fraction is unknown -- it is ``UNKNOWN_ASSAY`` (measure it), because assuming the favourable end of a
+        straddling interval is exactly the identity-is-purity error section 10 forbids.
+        """
+        for name, value in (("low", low), ("high", high)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not (0.0 <= float(value) <= 1.0):
+                raise ValueError(f"{name} must be a fraction in [0, 1]")
+        if float(low) > float(high):
+            raise ValueError("low cannot exceed high")
+        interval = self.active_fraction_interval(required_identity)
+        if interval is None:
+            return FitnessVerdict.IDENTITY_ABSENT
+        s_lo, s_hi = interval
+        if s_lo >= float(low) and s_hi <= float(high):
+            return FitnessVerdict.SATISFIES
+        if s_hi < float(low) or s_lo > float(high):
+            return FitnessVerdict.INSUFFICIENT_ASSAY
+        return FitnessVerdict.UNKNOWN_ASSAY
+
     def render(self) -> str:
         comps = "; ".join(
             f"{c.identity_key} ({c.role}) {c.min_fraction * 100:.0f}-{c.max_fraction * 100:.0f}%"

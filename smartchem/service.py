@@ -2696,6 +2696,25 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     from .identity_parse import resolve_identity
     from .structure_descent import ScissionError
 
+    # F51 (RC Round IV): convergent-DAG mode has no capability-topology-aware requirements model yet --
+    # ``ranked_dag_dossiers``/``RankedDAGSummary`` carry no capability field at all, so a capability-profile-bearing
+    # request run in CAPPED_SCISSION_CONVERGENT mode would silently get NO capability answer (not even a diagnostic --
+    # the profile is simply dropped on the floor).  That is a fabricated-by-omission pass dressed as success, exactly
+    # the shape the capability-reward-must-be-gated-on-the-capability-model lesson forbids.  Refuse LOUDLY instead,
+    # before any search runs (cheapest possible refusal, and the search engine itself stays untouched -- a convergent
+    # DAG search WITHOUT a profile still runs exactly as before; only the (profile, convergent) COMBINATION refuses).
+    # Full DAG-topology-aware capability requirements are out of scope for this RC; this is the honest placeholder.
+    if request.capability_profile is not None and request.transform_grammar is TransformGrammar.CAPPED_SCISSION_CONVERGENT:
+        return _refused(
+            request,
+            "a capability profile was requested together with the CAPPED_SCISSION_CONVERGENT (convergent-DAG) "
+            "grammar; the convergent-DAG bench admission (RankedDAGSummary/ranked_dag_dossiers) carries no "
+            "capability-topology-aware requirements model yet, so a capability verdict cannot be honestly computed "
+            "for a convergent route -- refused rather than silently answering the capability question with nothing "
+            "(request a capability profile with CAPPED_SCISSION_LINEAR instead, or drop the capability profile to "
+            "run the convergent-DAG search unconstrained by capability)",
+        )
+
     try:
         # the STRUCTURE layer keeps the target's constitution but drops finer features it may declare (stereo,
         # isotope, net-neutral local charge).  Resolve the target through the ONE parser service (ID-PARSE-01) so
@@ -4242,6 +4261,16 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
     ``THIN_ADVISORY`` on the explicit lean opt-out (``include_replay=False``) -- and is FOLDED into the wire
     ``result_digest`` so relabelling it is a detectable identity change.  A producer that wants the lean, advisory wire
     (no re-derivable evidence, PROCESS_SPECIFIED inadmissible) passes ``include_replay=False`` explicitly.
+
+    F54 (RC Round IV): the 0.9 capability fields (``capability_question_digest`` top-level, ``capability_profile``/
+    ``capability_profile_origin`` on the carried request, ``capability_assessment`` on each ranked route dossier) are
+    ADDITIVE-OPTIONAL, NOT a hard schema requirement -- this is a decision, not an accident: bumping them to a
+    strict-refuse would turn a VALID pre-0.9 payload into an error, which is exactly the "an old response must not
+    crash / be reinterpreted" property this codec otherwise guarantees.  Every read of these fields on the load side
+    (:func:`response_from_payload`, :func:`request_from_payload`, :func:`ranked_summary_from_payload`) uses
+    ``payload.get(key, <honest missing-field default>)``, so a payload that never carried them decodes as capability
+    NOT_REQUESTED (None everywhere it matters) -- never a crash, never a fabricated verdict for a bench question the
+    old payload never asked.
     """
     transport_mode = TRANSPORT_CANONICAL_VERIFIED if include_replay else TRANSPORT_THIN_ADVISORY
     digest = _transport_bound_result_digest(response.result_digest, transport_mode)
@@ -4358,10 +4387,13 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     expected_result_digest = _transport_bound_result_digest(response.result_digest, transport_mode)
     if payload["result_digest"] != expected_result_digest:
         raise ValueError("result_digest does not match the reconstructed response")
-    # 0.9 Round III (D12): the capability-question pin is DERIVED from the reconstructed request, so a payload whose
-    # stored value disagrees was hand-edited -> refused.  A pre-Round-III payload has no such key and no profile, so
-    # both sides are None (consistent).  The INVARIANT this enforces: the pin is a pure function of the search
-    # semantic_digest AND the profile content -- it moves under a profile change, the search identity never does.
+    # 0.9 Round III (D12) / F54 (RC Round IV): the capability-question pin is DERIVED from the reconstructed
+    # request, so a payload whose STORED value disagrees was hand-edited -> refused.  A pre-Round-III (additive-
+    # optional, F54) payload has no such key: ``.get`` reads it as None, the reconstructed request carries no
+    # profile either (same additive-optional read, request_from_payload), so both sides are None -- consistent,
+    # decodes clean, never refused for being old.  The INVARIANT this enforces on a REQUESTED payload: the pin is a
+    # pure function of the search semantic_digest AND the profile content -- it moves under a profile change, the
+    # search identity never does.
     if payload.get("capability_question_digest") != response.capability_question_digest:
         raise ValueError(
             "capability_question_digest does not match the reconstructed response (a forged or stale capability "

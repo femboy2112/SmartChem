@@ -292,10 +292,16 @@ def test_material_empty_inventory_is_unknown_not_fit():
     assert assessment.material.status is CapabilityStatus.UNKNOWN
 
 
-def test_material_with_no_declared_assay_requirement_is_unknown_never_assumed_100_percent():
-    """FREEZE decision 3: ``required_assay=None`` (the honest default a PURE route projection produces,
-    since no source in this corpus quotes a numeric purity floor) must never be silently treated as an
-    implicit 100% requirement -- it stays UNKNOWN even against a perfectly pure declared stock item."""
+def test_material_with_no_declared_assay_requirement_is_fit_by_possession_never_assumed_100_percent():
+    """Round IV: ``required_assay=None`` (the honest default a PURE route projection produces, since no
+    source in this corpus quotes a numeric purity floor) is now a POSSESSION-ONLY requirement -- no
+    composition/phase/quantity gate. Against a declared stock item of matching identity it is satisfied by
+    POSSESSION (FIT), reasoned "present (possession)". That is NOT the FREEZE-decision-3 hazard it was
+    written to catch: nothing is compared against a fabricated implicit 100% floor -- the requirement is
+    simply "present", the honest reading of an ungated demand. (The ABSENT case -- a possession-only
+    requirement missing from every bottle -- stays UNKNOWN, an open question; its sibling lives in
+    ``tests/test_v0_9_capability_round_iii.py::test_gateless_auxiliary_absent_is_unknown_not_a_provable_block``.)
+    """
     ethanol = _molecule("ethanol")
     stock = StockMaterial(
         STOCK_MATERIAL_SCHEMA, "stock-ethanol-pure", "Ethanol, ACS reagent grade",
@@ -308,7 +314,8 @@ def test_material_with_no_declared_assay_requirement_is_unknown_never_assumed_10
     )
     profile = _empty_profile(material_inventory=(stock,))
     assessment = assess(profile, _empty_requirements(material=(requirement,)), _process_specified_route_readiness())
-    assert assessment.material.status is CapabilityStatus.UNKNOWN
+    assert assessment.material.status is CapabilityStatus.FIT
+    assert "possession" in " ".join(assessment.material.reasons)
 
 
 # -- 3. compile_capability_requirements on the real isopentyl-acetate route ------------------------------------

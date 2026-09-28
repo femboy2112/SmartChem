@@ -4,6 +4,8 @@
 Capability Compiler as it earns `0.9.0a1`. It supersedes nothing; it *closes* the Round-III barrier
 (`V0_9_CAPABILITY_COMPILER_ROUND_III_FREEZE_2026-09-28.md`) and reports the built, verified result.
 
+> **⚠ SUPERSEDED IN PART BY ROUND IV (2026-09-28).** An external audit + a fresh non-author Wave-C pass (F41–F56, F62) found composition / whole-path false-FIT classes this record's "never a false pass" thesis did NOT survive. They are all fixed (or named defers), and the machine is now honest — but the **material outcome is that the `CAPABILITY_FIT` positive described below COLLAPSES to UNKNOWN.** No corpus route reaches `CAPABILITY_FIT`, because the sourced isopentyl procedure under-specifies whole-process DURATION, auxiliary HAZARDS, and spent-stream DISPOSAL (fabricating them is banned; a vanishing positive is scientific information, and the gate was not weakened to preserve it). **The Round-III forcing-matrix FIT claims below are RETIRED.** Honest ceiling + the full account (barrier, F41–F63, re-adjudication, Wave C, mutation M1–M62 60/62): `V0_9_RC_ROUND_IV_EXTERNAL_AUDIT_2026-09-28.md`. Package stays `0.9.0a1`; PR #93 open + unmerged for another external-review pass.
+
 The one-line thesis Round III set out to prove: **the machine means what it says.** Capability is a projection
 over an UNCHANGED chemistry search; a `CAPABILITY_FIT` verdict is never a false pass; every axis fails closed;
 and the frozen forcing matrix is a *faithful consequence of the code*, not a coincidence of the corpus. Below is

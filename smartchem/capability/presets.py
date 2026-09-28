@@ -83,11 +83,18 @@ _POOR_MAN_PHYSICAL: PhysicalBounds = PhysicalBounds.of(
 
 
 def _bench_process_bounds() -> ProcessBounds:
-    """A permissive-but-REAL process ceiling (D6): it constrains SOMETHING (so it is never the
-    UNCONSTRAINED-masquerade D6 kills) yet admits every attention/agitation mode the hand-run sourced
-    corpus declares -- so a genuinely-capable bench FITS rather than gapping. Built fresh per call so no
-    caller shares one mutable default."""
+    """A permissive-but-REAL process ceiling (D6/F56): it constrains real TIME dimensions (a bench has finite,
+    if generous, patience) AND admits every attention/agitation mode the hand-run sourced corpus declares.
+    Round IV F56 retires the "process-time omission = unlimited patience" reading -- an omitted bound is
+    UNMODELED (assess fails it closed to UNKNOWN against a real demand), so a bench that claims it can run a
+    process declares a real finite time ceiling. A genuinely multi-week route now BLOCKS on the elapsed
+    ceiling. Built fresh per call so no caller shares one mutable default. NOTE: the sourced isopentyl route
+    leaves its whole-STEP elapsed CEILING undeclared (only the 1-hour reflux FLOOR is timed; the workup +
+    fractional distillation are untimed), so its process axis honestly reads UNKNOWN here -- not a pass, and
+    not a fabricated duration."""
     return ProcessBounds.of(
+        max_step_minutes=10080.0,     # <= 1 week per step: a real, finite bench patience (D6), never omnipotence
+        max_total_minutes=20160.0,    # <= 2 weeks whole-route
         allowed_attention=tuple(Attention),
         allowed_agitation=tuple(Agitation),
     )

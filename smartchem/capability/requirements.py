@@ -42,7 +42,7 @@ from ..experiment.equipment import EquipmentKind, equipment_for_step
 from ..experiment.handling import CareLevel, verify_handling
 from ..experiment.step import ExperimentRoute
 from ..experiment.stock import Phase, StockQuantity
-from ..procedure_evidence import OperationKind
+from ..procedure_evidence import OperationKind, ProcedureMaterialRole
 from ..constraints import PhysicalBounds
 from ..process_constraints import ProcessRequirements
 from .enums import ContainmentCapability, EquipmentCapability, MeasurementMethod, WasteCapability
@@ -79,6 +79,12 @@ class MaterialRequirement(Digestible):
     role: str
     evidence_source: str
     name: "str | None" = None
+    #: Round IV F43: a TWO-SIDED composition band ``(low, high)`` on the stock's active fraction of this
+    #: species -- the constraint a formulated wash needs (``required_assay`` is a one-sided FLOOR, right for a
+    #: pure reagent but wrong for "5% NaHCO3 wash", which 100% bicarbonate would clear on a floor). Derived
+    #: from the sourced FORMULATION vocabulary, never a fabricated number; ``None`` when the source states no
+    #: formulation. A pure-reagent floor is expressed as the band ``(floor, 1.0)``.
+    composition_band: "tuple[float, float] | None" = None
 
     def __post_init__(self) -> None:
         if self.identity is not None and type(self.identity) is not Molecule:
@@ -99,6 +105,15 @@ class MaterialRequirement(Digestible):
             raise TypeError("phase must be a smartchem.experiment.stock.Phase or None")
         if self.quantity is not None and type(self.quantity) is not StockQuantity:
             raise TypeError("quantity must be a smartchem.experiment.stock.StockQuantity or None")
+        if self.composition_band is not None:
+            band = self.composition_band
+            if (type(band) is not tuple or len(band) != 2
+                    or any(isinstance(x, bool) or not isinstance(x, (int, float)) for x in band)
+                    or not (0.0 <= float(band[0]) <= float(band[1]) <= 1.0)):
+                raise ValueError(
+                    "composition_band must be a (low, high) pair of fractions in [0, 1] with low<=high, or None"
+                )
+            object.__setattr__(self, "composition_band", (float(band[0]), float(band[1])))
         for attr in ("role", "evidence_source"):
             value = getattr(self, attr)
             if not isinstance(value, str) or not value.strip():
@@ -119,16 +134,20 @@ class WasteRequirement(Digestible):
 
     categories: "frozenset[WasteCapability]"
     reasons: "tuple[str, ...]"
+    #: Round IV F48/F49: waste streams whose disposal ROUTING could not be positively determined -- an
+    #: unassessed byproduct (never benign-by-negation) and every spent workup stream the source leaves without
+    #: a disposal declaration. Surfaced, and in assess it caps the waste axis at UNKNOWN, never a silent pass.
+    unresolved: "tuple[str, ...]" = ()
 
     def __post_init__(self) -> None:
         if type(self.categories) is not frozenset or any(
             type(c) is not WasteCapability for c in self.categories
         ):
             raise TypeError("categories must be a frozenset of WasteCapability values")
-        if type(self.reasons) is not tuple or any(
-            not isinstance(r, str) or not r.strip() for r in self.reasons
-        ):
-            raise TypeError("reasons must be a tuple of non-empty strings")
+        for attr in ("reasons", "unresolved"):
+            value = getattr(self, attr)
+            if type(value) is not tuple or any(not isinstance(r, str) or not r.strip() for r in value):
+                raise TypeError(f"{attr} must be a tuple of non-empty strings")
 
 
 @dataclass(frozen=True)
@@ -222,156 +241,122 @@ def _struct_digest(molecule: Molecule) -> str:
         return canonical_digest(molecule)
 
 
-_KNOWN_LEAF_IDS: "dict[str, str] | None" = None
+#: Round IV F43/F45: the sourced compendial FORMULATION vocabulary -> a typed composition constraint on the
+#: NAMED species plus its implied phase. Keyed on the formulation ADJECTIVE (generic across targets: any
+#: "glacial" acid, any "5% aqueous" wash, any "anhydrous" drier), NEVER on a target identity -- the leaf
+#: whitelist (_KNOWN_LEAF_IDS) and the runtime "glacial" prose scan are GONE (F45). A purity FLOOR is the
+#: band ``(floor, 1.0)``; an unknown/absent formulation carries no composition gate (honest UNKNOWN). Each
+#: band is source-scoped and defensible; the STOCK's own composition intervals live in data/material_library.py.
+_FORMULATION_SPECS: "dict[str, tuple[tuple[float, float] | None, Phase | None, str]]" = {
+    "glacial": ((0.99, 1.0), Phase.LIQUID,
+                "USP/ACS 'glacial acetic acid' compendial formulation (>=99% mass fraction)"),
+    "conc.": ((0.95, 1.0), Phase.LIQUID,
+              "'concentrated' mineral acid formulation (>=95% mass fraction)"),
+    "neat": (None, Phase.LIQUID,
+             "a neat (undiluted) liquid reagent -- phase is the compatibility mechanism, no numeric floor"),
+    "5% aqueous": ((0.045, 0.055), Phase.AQUEOUS_SOLUTION,
+                   "a 5% w/w aqueous solution of the named solute (nominal 5% +-0.5% band)"),
+    "saturated aqueous": ((0.20, 1.0), Phase.AQUEOUS_SOLUTION,
+                          "a saturated aqueous solution -- the solute fraction must sit at/above the "
+                          "saturation floor; an unsaturated dilute solution BLOCKS (F43)"),
+    "anhydrous": ((0.97, 1.0), Phase.SOLID,
+                  "the anhydrous form (>=97%); a hydrate carries bound water so its anhydrous fraction is "
+                  "far lower and BLOCKS (F43)"),
+}
 
 
-def _known_leaf_ids() -> "dict[str, str]":
-    """The canonical structure digests of the two source-scoped reagent leaves (acetic acid, isoamyl
-    alcohol), resolved through the SAME name-resolution path the search and the stock library use so the
-    keys are byte-identical. Lazily computed + cached to keep this module free of an import-time cycle."""
-    global _KNOWN_LEAF_IDS
-    if _KNOWN_LEAF_IDS is None:
-        from ..identity_parse import InputKind, resolve_target
-        _KNOWN_LEAF_IDS = {
-            "acetic_acid": _struct_digest(resolve_target("acetic acid", InputKind.NAME).canonical()),
-            "isoamyl": _struct_digest(resolve_target("isoamyl alcohol", InputKind.NAME).canonical()),
-        }
-    return _KNOWN_LEAF_IDS
+def _formulation_spec(
+    formulation: "str | None",
+) -> "tuple[tuple[float, float] | None, Phase | None, str | None]":
+    """Map a sourced formulation adjective to its typed ``(composition_band, phase, note)``. Normalizes case
+    and interior whitespace ONLY -- never a fuzzy/substring prose scan (F45). An unrecognized or absent
+    formulation carries no composition constraint and no implied phase -> honest UNKNOWN."""
+    if formulation is None:
+        return (None, None, None)
+    key = " ".join(formulation.strip().casefold().split())
+    spec = _FORMULATION_SPECS.get(key)
+    if spec is None:
+        return (None, None, None)
+    return spec
 
 
-#: DERIVED_WITH_ERROR glacial-acetic floor (D1): USP/ACS "glacial acetic acid" is a compendial FORMULATION
-#: (>=99% mass fraction). This floor is source-scoped -- it attaches to the acetic-acid leaf ONLY when THIS
-#: route's own sourced procedure names "glacial", never to the reaction class (that was M23, now dead).
-_GLACIAL_ACETIC_ASSAY = 0.99
-_GLACIAL_ACETIC_EVIDENCE = (
-    "DERIVED_WITH_ERROR: this route's sourced procedure names 'glacial acetic acid', a USP/ACS compendial "
-    "FORMULATION (a neat Phase.LIQUID reagent, >=99% mass fraction). The requirement is source-scoped to the "
-    "sourced word, NOT to the reaction class -- phase discriminates glacial from vinegar, assay reinforces it."
-)
-_ISOAMYL_NEAT_EVIDENCE = (
-    "source-scoped: the sourced procedure names a NEAT isoamyl (isopentyl) alcohol reagent with no numeric "
-    "purity, so compatibility is PHASE (Phase.LIQUID), required_assay stays None (never a fabricated number)."
-)
-_UNSOURCED_LEAF_EVIDENCE = (
-    "route leaf input (ExperimentRoute.leaf_inputs); no source-scoped assay/phase requirement applies -- "
-    "required_assay/phase stay UNKNOWN, never assumed 100% and never a fabricated phase"
-)
-
-
-def _sourced_procedure_text(route: ExperimentRoute) -> str:
-    """The lowercased concatenation of THIS route's sourced procedure evidence strings (scale + per-op
-    quantity/rate/endpoint). Used ONLY as the source-scope gate for the glacial formulation -- a light
-    presence check for the compendial word, never a runtime parse of a quantity value into a requirement."""
-    parts: "list[str]" = []
-    for step in route.steps:
-        procedure = step.envelope.procedure
-        if procedure is None:
-            continue
-        scale = procedure.scale
-        if scale is not None and isinstance(scale.value, str):
-            parts.append(scale.value)
-        for op in procedure.operations:
-            for field in (op.quantity, op.rate, op.endpoint):
-                if field is not None and isinstance(field.value, str):
-                    parts.append(field.value)
-    return " ".join(parts).casefold()
-
-
-def _route_is_sourced(route: ExperimentRoute) -> bool:
-    """True iff this route carries at least one accepted-source procedure -- the source-scope gate for the
-    per-leaf reactant volumes (D3): an unsourced route earns no authored quantity requirement."""
-    for step in route.steps:
-        procedure = step.envelope.procedure
-        if procedure is not None and procedure.is_sourced:
-            return True
-    return False
+def _sum_commensurable(quantities: "list[StockQuantity]") -> "StockQuantity | None":
+    """F41: the whole-route demand for one (species, spec) group is the SUM of its per-op draws when they
+    share a unit (25 mL twice -> 50 mL; 55 + 10 + 25 mL water -> 90 mL) -- never a first-value-wins
+    truncation. Mixed or absent units cannot be summed without a conversion engine -> ``None`` (the assess
+    side then treats the demand as an UNKNOWN quantity, never a silent pass)."""
+    present = [q for q in quantities if q is not None]
+    if not present:
+        return None
+    if len({q.unit for q in present}) != 1:
+        return None
+    total = sum(float(q.value) for q in present)
+    return StockQuantity.of("%g" % total, present[0].unit)
 
 
 def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement, ...]":
-    """Leaf-reactant requirements (source-scoped per D1/D3) PLUS procedure-only requirements (D2). The
-    retired esterification class floor is GONE -- no reaction-class label sets an assay here anymore."""
-    text = _sourced_procedure_text(route)
-    ids = _known_leaf_ids()
-    sourced = _route_is_sourced(route)
-    requirements: "list[MaterialRequirement]" = []
-    for leaf in route.leaf_inputs:
-        digest = _struct_digest(leaf)
-        if sourced and digest == ids["acetic_acid"] and "glacial" in text:
-            # D1 option B: the sourced 'glacial' compendial formulation -> Phase.LIQUID + >=0.99 assay + the
-            # sourced 20 mL draw (D3). Vinegar BLOCKS on phase AND assay; glacial FITs. Gate #18, preserved.
-            requirements.append(MaterialRequirement(
-                identity=leaf, required_assay=_GLACIAL_ACETIC_ASSAY, phase=Phase.LIQUID,
-                quantity=StockQuantity.of("20", "mL"), role="reactant (glacial acetic acid)",
-                evidence_source=_GLACIAL_ACETIC_EVIDENCE,
-            ))
-        elif sourced and digest == ids["isoamyl"]:
-            # D1 option C: neat reagent, compatibility by PHASE, assay honestly None. The 15 mL draw is the
-            # sourced cleanly-separable reactant volume (D3).
-            requirements.append(MaterialRequirement(
-                identity=leaf, required_assay=None, phase=Phase.LIQUID,
-                quantity=StockQuantity.of("15", "mL"), role="reactant (neat isoamyl alcohol)",
-                evidence_source=_ISOAMYL_NEAT_EVIDENCE,
-            ))
-        else:
-            requirements.append(MaterialRequirement(
-                identity=leaf, required_assay=None, phase=None, quantity=None,
-                role="reactant", evidence_source=_UNSOURCED_LEAF_EVIDENCE,
-            ))
-    requirements.extend(_procedure_only_material_requirements(route))
-    return tuple(requirements)
-
-
-def _procedure_only_material_requirements(
-    route: ExperimentRoute,
-) -> "tuple[MaterialRequirement, ...]":
-    """Project every ``ProcedureOperation.material_uses`` auxiliary (catalyst/wash/drier/rinse/...) into the
-    ONE material axis (D2, kills M24). Deduplicated by structure key (where identity resolves) or normalized
-    name (ionic lattice): a species charged by two ops costs ONE requirement. A structure-resolvable
-    auxiliary keeps BOTH its identity (for a structure-keyed bottle, e.g. H2SO4) AND its sourced name (for a
-    NAME-keyed bottle, e.g. water) -- the assess side tries both. NEVER silently dropped."""
-    groups: "dict[tuple[str, str], dict]" = {}
+    """Round IV F41/F43/F45/F50: ONE generic projection over every sourced ``ProcedureMaterialUse``. Reactants
+    are now typed SUBSTRATE/REACTANT uses on the reaction op, so the leaf-identity whitelist and the runtime
+    "glacial" prose scan are GONE (F45): the compiler reads reactant AND auxiliary semantics off the SAME
+    ``material_uses`` without knowing the target. Uses of one species that share a semantic SPEC (identity or
+    name + composition band + phase) are ONE requirement whose quantity is the SUM of their commensurable
+    draws (F41); uses that DIFFER in spec stay SEPARATE (F50). The composition band + phase come from the
+    sourced FORMULATION (F43). A leaf reactant the source never typed as a use still earns a bare identity
+    requirement -- never silently dropped, never double-counted against a leaf a typed use already covers."""
+    groups: "dict[tuple, dict]" = {}
+    order: "list[tuple]" = []
     for step in route.steps:
         procedure = step.envelope.procedure
         if procedure is None:
             continue
         for op in procedure.operations:
             for use in op.material_uses:
-                if use.identity is not None:
-                    key = ("struct", _struct_digest(use.identity))
-                else:
-                    key = ("name", use.name.strip().casefold())
-                group = groups.get(key)
+                band, formulation_phase, note = _formulation_spec(use.formulation)
+                phase = use.phase if use.phase is not None else formulation_phase
+                species_key = (("struct", _struct_digest(use.identity)) if use.identity is not None
+                               else ("name", use.name.strip().casefold()))
+                # F50: the SPEC is part of the key, so two uses of one species at different band/phase/
+                # formulation are DISTINCT demands that never collapse; same spec -> one group, quantities
+                # summed (F41), never a first-value-wins truncation.
+                spec_key = (species_key, band, phase, (use.formulation or "").strip().casefold())
+                group = groups.get(spec_key)
                 if group is None:
-                    group = {
-                        "identity": None, "names": set(), "roles": set(),
-                        "formulation": None, "phase": None, "quantity": None, "evidence": use.evidence_source,
-                    }
-                    groups[key] = group
+                    group = {"identity": None, "names": set(), "roles": set(), "band": band, "phase": phase,
+                             "quantities": [], "evidence": use.evidence_source, "note": note}
+                    groups[spec_key] = group
+                    order.append(spec_key)
                 group["names"].add(use.name)
                 group["roles"].add(use.role)
                 if group["identity"] is None and use.identity is not None:
                     group["identity"] = use.identity
-                if group["formulation"] is None and use.formulation is not None:
-                    group["formulation"] = use.formulation
-                if group["phase"] is None and use.phase is not None:
-                    group["phase"] = use.phase
-                if group["quantity"] is None and use.quantity is not None:
-                    group["quantity"] = use.quantity
+                if use.quantity is not None:
+                    group["quantities"].append(use.quantity)
+    projected_ids: "set[str]" = set()
     requirements: "list[MaterialRequirement]" = []
-    for group in groups.values():
-        # the bare head label (fewest tokens, then lexical) is the name a NAME-keyed bottle is stocked under
-        # ("water", not "cold water") -- deterministic, never a fuzzy synonym match.
+    for spec_key in order:
+        group = groups[spec_key]
         name = min(group["names"], key=lambda n: (len(n.split()), len(n), n))
         roles = ", ".join(sorted(r.value for r in group["roles"]))
+        if group["identity"] is not None:
+            projected_ids.add(_struct_digest(group["identity"]))
+        note = f" | formulation: {group['note']}" if group["note"] else ""
+        # The composition band expresses the assay/formulation constraint (required_assay stays None -- a band
+        # subsumes a floor). Phase + the SUMMED quantity participate exactly as the source declared them.
         requirements.append(MaterialRequirement(
-            identity=group["identity"],
-            required_assay=None,  # no procedure auxiliary in this corpus sources a numeric purity floor
-            phase=group["phase"],
-            quantity=group["quantity"],
-            role=f"procedure-only auxiliary ({roles})",
-            evidence_source=group["evidence"],
-            name=name,
+            identity=group["identity"], required_assay=None, phase=group["phase"],
+            quantity=_sum_commensurable(group["quantities"]),
+            role=f"procedure material ({roles})",
+            evidence_source=group["evidence"] + note, name=name, composition_band=group["band"],
         ))
+    for leaf in route.leaf_inputs:
+        if _struct_digest(leaf) not in projected_ids:
+            requirements.append(MaterialRequirement(
+                identity=leaf, required_assay=None, phase=None, quantity=None, role="reactant (leaf input)",
+                evidence_source=(
+                    "route leaf input (ExperimentRoute.leaf_inputs) with no typed source ProcedureMaterialUse "
+                    "-- identity is required but no assay/phase/quantity/formulation is sourced, so those stay "
+                    "UNKNOWN (never assumed)"),
+            ))
     return tuple(requirements)
 
 
@@ -505,19 +490,36 @@ def _physical_requirement(route: ExperimentRoute) -> PhysicalBounds:
     )
 
 
+#: Round IV F49: the workup material roles that become SPENT PROCESS STREAMS the bench must route as waste.
+_SPENT_STREAM_ROLES = frozenset({
+    ProcedureMaterialRole.WASH, ProcedureMaterialRole.RINSE, ProcedureMaterialRole.DRY,
+    ProcedureMaterialRole.SOLVENT, ProcedureMaterialRole.NEUTRALIZE,
+})
+
+
 def _waste_requirement(route: ExperimentRoute) -> WasteRequirement:
-    """Waste-routing categories derived from the sourced byproduct ledger + ``Fate`` (unchanged from Round
-    II): an off-gas needs ``OFFGAS_CAPTURE``; a real-GHS byproduct needs ``HAZARDOUS``; a benign/unassessed
-    condensed byproduct routes ``AQUEOUS_NEUTRAL``. Procedure-only hazards feed CONTAINMENT (D9), not this
-    axis -- so the FIT positive's waste stays the sourced ``{AQUEOUS_NEUTRAL}`` shape."""
+    """Round IV F48/F49: waste-routing categories from the sourced byproduct ledger PLUS the workup spent
+    streams. ``AQUEOUS_NEUTRAL`` is earned ONLY from POSITIVE evidence (an ASSESSED, empty-GHS byproduct) --
+    an UNASSESSED byproduct is never benign-by-negation (F48) but an UNRESOLVED waste stream. Every spent
+    workup stream (wash/rinse/drier/solvent/neutralize) the source leaves without a disposal declaration is
+    also UNRESOLVED (F49): unknown composition does not need guessing to prove the obligation EXISTS. An
+    off-gas needs ``OFFGAS_CAPTURE``; a real-GHS byproduct needs ``HAZARDOUS``. Unresolved streams cap the
+    waste axis at UNKNOWN in assess -- never a silent pass."""
     handling = verify_handling(route)
     ghs_codes_by_name: "dict[str, tuple[str, ...]]" = {
         hazard.name: hazard.ghs_codes for step_handling in handling.steps for hazard in step_handling.hazards
     }
     categories: "set[WasteCapability]" = set()
     reasons: "list[str]" = []
+    unresolved: "list[str]" = []
     for b in handling.all_byproducts:
-        is_real_hazard = b.hazard_name is not None and bool(ghs_codes_by_name.get(b.hazard_name))
+        if b.hazard_name is None:
+            # F48: an UNASSESSED byproduct is NOT aqueous/neutral by negation -- an unknown waste stream.
+            unresolved.append(
+                f"waste: balanced byproduct {b.molecule!r} has NO hazard assessment -- its disposal routing is "
+                "UNKNOWN, never AQUEOUS_NEUTRAL by negation (F48)")
+            continue
+        is_real_hazard = bool(ghs_codes_by_name.get(b.hazard_name))
         if b.is_offgas:
             categories.add(WasteCapability.OFFGAS_CAPTURE)
             reasons.append(f"waste: {b.molecule!r} evolves as an off-gas ({b.reason}) -- needs OFFGAS_CAPTURE")
@@ -530,10 +532,24 @@ def _waste_requirement(route: ExperimentRoute) -> WasteRequirement:
         else:
             categories.add(WasteCapability.AQUEOUS_NEUTRAL)
             reasons.append(
-                f"waste: condensed byproduct {b.molecule!r} carries no real (non-empty GHS) sourced hazard -- "
-                "routed AQUEOUS_NEUTRAL"
-            )
-    return WasteRequirement(frozenset(categories), tuple(sorted(set(reasons))))
+                f"waste: ASSESSED-benign condensed byproduct {b.molecule!r} ({b.hazard_name}, empty GHS) -- "
+                "AQUEOUS_NEUTRAL from positive evidence, never by negation")
+    seen: "set[str]" = set()
+    for step in route.steps:
+        procedure = step.envelope.procedure
+        if procedure is None:
+            continue
+        for op in procedure.operations:
+            for use in op.material_uses:
+                if use.role in _SPENT_STREAM_ROLES:
+                    key = use.name.strip().casefold()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    unresolved.append(
+                        f"waste: spent workup stream {use.name!r} ({use.role.value}) -- the sourced procedure "
+                        "declares no disposal routing, so its waste handling is UNKNOWN (F49, fail-closed)")
+    return WasteRequirement(frozenset(categories), tuple(sorted(set(reasons))), tuple(sorted(set(unresolved))))
 
 
 def _procurement_catalysts_requirement(

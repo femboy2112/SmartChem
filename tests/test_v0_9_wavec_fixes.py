@@ -114,11 +114,16 @@ def test_f1_partial_bench_on_the_real_route_no_longer_false_fits():
     assert a.overall is not CapabilityStatus.FIT
 
 
-def test_fit_positive_survives_the_fix():
-    """Regression guard: the fully-declared FIT bench (now declaring the atmospheric min-pressure floor)
-    still reaches genuine overall CAPABILITY_FIT on the real searched isopentyl route."""
+def test_physical_axis_still_fits_but_the_positive_no_longer_survives_to_overall_fit():
+    """Round IV: the F1 physical fix stands on its OWN, without a surviving overall FIT to ride. The
+    fully-declared bench (declaring the atmospheric min-pressure floor) still reaches physical FIT -- proof
+    the fix did not over-constrain -- but the overall verdict is now UNKNOWN, not FIT: the whole-path
+    semantic hardening (F56 process, F47 containment, F49 waste) retired the Round-III positive. The
+    physical axis being FIT while overall is UNKNOWN is exactly the point -- F1 is verified on the axis it
+    governs, not by a downstream overall FIT that no longer exists."""
     route = _isopentyl_route()
     reqs = compile_capability_requirements(route)
     a = assess(isopentyl_capability_fit_bench(), reqs, evaluate_route(route))
     assert a.physical.status is CapabilityStatus.FIT
-    assert a.overall is CapabilityStatus.FIT
+    assert a.process.status is CapabilityStatus.UNKNOWN  # the axis that now drives overall off FIT
+    assert a.overall is CapabilityStatus.UNKNOWN

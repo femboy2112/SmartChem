@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..contracts import Digestible
+from ..contracts import Digestible, canonical_digest
 from ..data.reagents import Availability
 from ..experiment.catalyst_availability import is_obtainable_under
 from ..experiment.readiness import PROCESS_SPECIFIED, RouteReadiness, tier_rank
@@ -226,7 +226,8 @@ def _procurement_axis(
     return AxisResult(CapabilityStatus.FIT, tuple(reasons))
 
 
-#: FIT > UNKNOWN > BLOCKED > absent -- the best-verdict-across-inventory rank a real pantry earns.
+#: FIT > UNKNOWN > BLOCKED -- the rank used to pick the best composition/phase verdict across bottles and to
+#: fold the per-requirement material verdicts (a provable BLOCK beats an open UNKNOWN beats a proven FIT).
 _MATERIAL_RANK: "dict[CapabilityStatus, int]" = {
     CapabilityStatus.FIT: 3,
     CapabilityStatus.UNKNOWN: 2,
@@ -234,138 +235,223 @@ _MATERIAL_RANK: "dict[CapabilityStatus, int]" = {
 }
 
 
-def _match_interval(requirement: MaterialRequirement, stock: StockMaterial):
-    """Whether ``stock`` CONTAINS the requirement's species, by structure (``identity``) OR by declared
-    NAME (D2/D3): returns the matched identity key (Molecule or str) or ``None`` if absent from this bottle.
-    A structure-resolvable auxiliary tries structure first (H2SO4 -> its structure-keyed bottle) then its
-    name (water -> a NAME-keyed 'water' bottle) -- both honest keys, never a fuzzy synonym."""
-    if requirement.identity is not None and stock.active_fraction_interval(requirement.identity) is not None:
-        return requirement.identity
-    if requirement.name is not None and stock.active_fraction_interval(requirement.name) is not None:
-        return requirement.name
+def _species_key_in(requirement: MaterialRequirement, stock: StockMaterial):
+    """F44: which key ``requirement`` is ALLOWED to match in THIS bottle. A requirement with a known STRUCTURE
+    identity may ONLY be satisfied by a structure-keyed component -- a bare name is weaker evidence and can
+    never stand in for a proven structure (the exact downgrade F44 kills; the stock layer already refuses to
+    cross the two keys, so this just stops the requirement side trying the name after the structure is absent).
+    A requirement with no identity (an ionic/mixture species that cannot resolve to a Molecule) matches by its
+    declared NAME. Returns the matched key, or ``None`` if the species is absent under the allowed key."""
+    if requirement.identity is not None:
+        return requirement.identity if stock.active_fraction_interval(requirement.identity) is not None else None
+    if requirement.name is not None:
+        return requirement.name if stock.active_fraction_interval(requirement.name) is not None else None
     return None
 
 
-def _material_item_status_one(
+def _comp_phase_status(
     requirement: MaterialRequirement, stock: StockMaterial,
 ) -> "tuple[CapabilityStatus, str] | None":
-    """One requirement against ONE bottle: ``None`` if the bottle does not contain the species; else the
-    combined verdict over the three INDEPENDENT gates -- ASSAY (D1), PHASE (D4), QUANTITY (D3). Any gate
-    BLOCKED -> BLOCKED; else any gate UNKNOWN -> UNKNOWN; else (>=1 gate declared and all FIT) -> FIT; a
-    bottle that contains the species but the requirement declares NO gate at all is possession-only ->
-    UNKNOWN (honest: present, but nothing proven -- never a silent FIT)."""
-    key = _match_interval(requirement, stock)
+    """The NON-quantity (composition + phase) compatibility of ONE requirement against ONE bottle:
+    ``(status, note)`` with status FIT/UNKNOWN/BLOCKED, or ``None`` if the species is absent from this bottle
+    under the F44 key. Composition uses the TWO-SIDED band (F43) when the requirement declares one (a wash's
+    100%-bicarbonate substitution BLOCKS on the ceiling a one-sided floor would have waved through), else the
+    one-sided assay floor, else possession is enough; phase must match a known stock phase (D4). QUANTITY is
+    NOT decided here -- it is a finite-pool ALLOCATION (F42), so a single bottle can no longer independently
+    witness a whole-route demand."""
+    key = _species_key_in(requirement, stock)
     if key is None:
         return None
-    gate_statuses: "list[CapabilityStatus]" = []
+    statuses: "list[CapabilityStatus]" = []
     notes: "list[str]" = []
-    # -- ASSAY gate (D1) -------------------------------------------------------------------------------
-    if requirement.required_assay is not None:
+
+    def _add(st: CapabilityStatus, note: str) -> None:
+        statuses.append(st)
+        notes.append(note)
+
+    if requirement.composition_band is not None:
+        lo, hi = requirement.composition_band
+        verdict = stock.satisfies_band(key, low=lo, high=hi)
+        if verdict is FitnessVerdict.SATISFIES:
+            _add(CapabilityStatus.FIT, f"composition within [{lo:.3f}, {hi:.3f}]")
+        elif verdict is FitnessVerdict.UNKNOWN_ASSAY:
+            _add(CapabilityStatus.UNKNOWN, f"composition straddles [{lo:.3f}, {hi:.3f}] (measure)")
+        else:
+            _add(CapabilityStatus.BLOCKED, f"composition provably outside [{lo:.3f}, {hi:.3f}]")
+    elif requirement.required_assay is not None:
         verdict = stock.satisfies(key, min_assay=requirement.required_assay)
         if verdict is FitnessVerdict.SATISFIES:
-            gate_statuses.append(CapabilityStatus.FIT)
-            notes.append(f"assay >= {requirement.required_assay:.4f} SATISFIED")
+            _add(CapabilityStatus.FIT, f"assay >= {requirement.required_assay:.4f}")
         elif verdict is FitnessVerdict.UNKNOWN_ASSAY:
-            gate_statuses.append(CapabilityStatus.UNKNOWN)
-            notes.append(f"assay interval straddles {requirement.required_assay:.4f} (measure)")
-        else:  # INSUFFICIENT_ASSAY / IDENTITY_ABSENT (key present, so effectively insufficient)
-            gate_statuses.append(CapabilityStatus.BLOCKED)
-            notes.append(f"assay provably below {requirement.required_assay:.4f}")
-    # -- PHASE gate (D4) -------------------------------------------------------------------------------
+            _add(CapabilityStatus.UNKNOWN, f"assay straddles {requirement.required_assay:.4f} (measure)")
+        else:
+            _add(CapabilityStatus.BLOCKED, f"assay provably below {requirement.required_assay:.4f}")
     if requirement.phase is not None:
         if stock.phase is Phase.UNKNOWN:
-            gate_statuses.append(CapabilityStatus.UNKNOWN)
-            notes.append(f"stock phase UNKNOWN vs required {requirement.phase.value}")
+            _add(CapabilityStatus.UNKNOWN, f"stock phase UNKNOWN vs required {requirement.phase.value}")
         elif stock.phase is requirement.phase:
-            gate_statuses.append(CapabilityStatus.FIT)
-            notes.append(f"phase {requirement.phase.value} matches")
+            _add(CapabilityStatus.FIT, f"phase {requirement.phase.value} matches")
         else:
-            gate_statuses.append(CapabilityStatus.BLOCKED)
-            notes.append(f"phase {stock.phase.value} != required {requirement.phase.value}")
-    # -- QUANTITY gate (D3): same-unit numeric compare only, NO conversion engine ----------------------
-    if requirement.quantity is not None:
-        if stock.quantity is not None and stock.quantity.unit == requirement.quantity.unit:
-            if float(stock.quantity.value) >= float(requirement.quantity.value):
-                gate_statuses.append(CapabilityStatus.FIT)
-                notes.append(f"quantity {stock.quantity.render()} >= {requirement.quantity.render()}")
-            else:
-                gate_statuses.append(CapabilityStatus.BLOCKED)
-                notes.append(f"quantity {stock.quantity.render()} < required {requirement.quantity.render()}")
-        else:
-            gate_statuses.append(CapabilityStatus.UNKNOWN)
-            notes.append(
-                f"quantity incomparable ({'unknown stock amount' if stock.quantity is None else 'unit mismatch'}) "
-                f"vs required {requirement.quantity.render()} -- no conversion engine"
-            )
-    if not gate_statuses:
-        status = CapabilityStatus.UNKNOWN
-        notes.append("present but possession-only (no assay/phase/quantity gate) -- UNKNOWN, never a silent FIT")
-    elif CapabilityStatus.BLOCKED in gate_statuses:
+            _add(CapabilityStatus.BLOCKED, f"phase {stock.phase.value} != required {requirement.phase.value}")
+    if CapabilityStatus.BLOCKED in statuses:
         status = CapabilityStatus.BLOCKED
-    elif CapabilityStatus.UNKNOWN in gate_statuses:
+    elif CapabilityStatus.UNKNOWN in statuses:
         status = CapabilityStatus.UNKNOWN
     else:
         status = CapabilityStatus.FIT
-    return status, f"{stock.material_id}: " + "; ".join(notes)
+    return status, f"{stock.material_id}: " + ("; ".join(notes) if notes else "present (possession)")
 
 
-def _material_item_status(
-    requirement: MaterialRequirement, inventory: "tuple[StockMaterial, ...]",
-) -> "tuple[CapabilityStatus, str]":
-    """One :class:`MaterialRequirement` against a declared stock inventory: the BEST verdict any bottle
-    earns (FIT > UNKNOWN > BLOCKED). An empty inventory is unconditionally UNKNOWN (nothing to check); a
-    species absent from every bottle is BLOCKED (a provable negative)."""
-    if not inventory:
-        return (
-            CapabilityStatus.UNKNOWN,
-            f"material: no declared stock inventory to check {requirement.role} {requirement.label} "
-            f"against ({requirement.evidence_source})",
-        )
-    best_status: "CapabilityStatus | None" = None
-    best_note = ""
-    for stock in inventory:
-        outcome = _material_item_status_one(requirement, stock)
-        if outcome is None:
-            continue
-        status, note = outcome
-        if best_status is None or _MATERIAL_RANK[status] > _MATERIAL_RANK[best_status]:
-            best_status, best_note = status, note
-    if best_status is None:
-        # Species absent from every bottle. A requirement that declares a real GATE (assay/phase/quantity)
-        # is a provable negative -> BLOCKED (the isomer/gated-reactant case: nothing in the pantry could
-        # EVER meet it). A possession-only requirement (no gate: an unsourced leaf, an undeclared auxiliary)
-        # is an OPEN question -> UNKNOWN (D1: "undeclared -> UNKNOWN, never silently skipped"; a bench
-        # stocked for a different synthesis has not PROVABLY failed a species it was never asked to gate).
-        gated = (
-            requirement.required_assay is not None
-            or requirement.phase is not None
-            or requirement.quantity is not None
-        )
-        if gated:
-            return (
-                CapabilityStatus.BLOCKED,
-                f"material: {requirement.role} {requirement.label} is absent from every declared bottle "
-                "against a real assay/phase/quantity gate (a provable negative)",
-            )
-        return (
-            CapabilityStatus.UNKNOWN,
-            f"material: {requirement.role} {requirement.label} is possession-only (no assay/phase/quantity "
-            "gate) and absent from every declared bottle -- an open question, never a provable negative",
-        )
-    return (best_status, f"material: {requirement.role} {requirement.label} -- {best_note}")
+def _req_species_key(requirement: MaterialRequirement) -> str:
+    """A stable species key for grouping requirements in the finite-pool allocation: the canonical structure
+    digest for a resolved identity, else the normalized declared name."""
+    if requirement.identity is not None:
+        try:
+            return "s:" + canonical_digest(requirement.identity.canonical())
+        except NotImplementedError:
+            return "s:" + canonical_digest(requirement.identity)
+    return "n:" + (requirement.name or "").strip().casefold()
+
+
+def _max_flow(n: int, edges: "list[tuple[int, int, float]]", source: int, sink: int) -> float:
+    """Minimal Edmonds-Karp max-flow over a tiny graph (a handful of nodes) -- the finite-pool material
+    allocation feasibility (F42). Float capacities with an epsilon; these graphs never exceed a dozen nodes."""
+    import collections
+    cap = [[0.0] * n for _ in range(n)]
+    adj: "list[list[int]]" = [[] for _ in range(n)]
+    for u, v, c in edges:
+        if cap[u][v] == 0.0 and cap[v][u] == 0.0:
+            adj[u].append(v)
+            adj[v].append(u)
+        cap[u][v] += c
+    eps = 1e-9
+    flow = 0.0
+    while True:
+        parent = [-1] * n
+        parent[source] = source
+        queue = collections.deque([source])
+        while queue:
+            u = queue.popleft()
+            for v in adj[u]:
+                if parent[v] == -1 and cap[u][v] > eps:
+                    parent[v] = u
+                    queue.append(v)
+        if parent[sink] == -1:
+            break
+        push = float("inf")
+        v = sink
+        while v != source:
+            u = parent[v]
+            push = min(push, cap[u][v])
+            v = u
+        v = sink
+        while v != source:
+            u = parent[v]
+            cap[u][v] -= push
+            cap[v][u] += push
+            v = u
+        flow += push
+    return flow
 
 
 def _material_axis(
     requirements: "tuple[MaterialRequirement, ...]", inventory: "tuple[StockMaterial, ...]",
 ) -> AxisResult:
+    """Round IV F42/F43/F44: composition+phase compatibility PER BOTTLE, then a finite-pool quantity
+    ALLOCATION where a bottle is spent once (no double-spend). BLOCKED beats UNKNOWN beats FIT over the axis."""
     if not requirements:
         return AxisResult(CapabilityStatus.NOT_APPLICABLE, ("material: no material requirement was derived for this route",))
+    if not inventory:
+        return AxisResult(
+            CapabilityStatus.UNKNOWN,
+            tuple(f"material: no declared stock inventory to check {r.role} {r.label} ({r.evidence_source})"
+                  for r in requirements),
+        )
+    # -- Phase 1: composition + phase compatibility per requirement (best across bottles) + candidate bottles.
+    comp_status: "list[CapabilityStatus]" = []
+    comp_note: "list[str]" = []
+    candidates: "list[list[int]]" = []   # bottle indices that composition/phase SATISFY (the allocation sources)
+    for r in requirements:
+        best: "CapabilityStatus | None" = None
+        note = ""
+        fit_bottles: "list[int]" = []
+        for bi, stock in enumerate(inventory):
+            outcome = _comp_phase_status(r, stock)
+            if outcome is None:
+                continue
+            st, nt = outcome
+            if st is CapabilityStatus.FIT:
+                fit_bottles.append(bi)
+            if best is None or _MATERIAL_RANK[st] > _MATERIAL_RANK[best]:
+                best, note = st, nt
+        if best is None:
+            gated = (r.composition_band is not None or r.required_assay is not None
+                     or r.phase is not None or r.quantity is not None)
+            best = CapabilityStatus.BLOCKED if gated else CapabilityStatus.UNKNOWN
+            note = ("absent from every declared bottle against a real gate (a provable negative)" if gated
+                    else "possession-only (no gate) and absent from every bottle -- an open question")
+        comp_status.append(best)
+        comp_note.append(note)
+        candidates.append(fit_bottles)
+    # -- Phase 2: finite-pool quantity allocation (F42). Group composition/phase-FIT requirements that declare a
+    # quantity by (species, unit); a bottle is a source for a group iff it composition/phase-satisfies >=1 of the
+    # group's requirements. A KNOWN-capacity max-flow that saturates all demands -> FIT; a compatible bottle of
+    # unknown/incomparable amount where the known flow falls short -> UNKNOWN; all-known and the flow falls short
+    # -> BLOCKED (a provable shortfall: the bottle cannot be spent twice).
+    alloc: "dict[int, CapabilityStatus]" = {}
+    alloc_note: "dict[int, str]" = {}
+    groups: "dict[tuple[str, str], list[int]]" = {}
+    for i, r in enumerate(requirements):
+        if comp_status[i] is CapabilityStatus.FIT and r.quantity is not None:
+            groups.setdefault((_req_species_key(r), r.quantity.unit), []).append(i)
+    for (_species, unit), idxs in groups.items():
+        total_demand = sum(float(requirements[i].quantity.value) for i in idxs)
+        bottle_ids = sorted({bi for i in idxs for bi in candidates[i]})
+        known_cap: "dict[int, float]" = {}
+        unknown_present = False
+        for bi in bottle_ids:
+            q = inventory[bi].quantity
+            if q is not None and q.unit == unit:
+                known_cap[bi] = float(q.value)
+            else:
+                unknown_present = True   # unknown amount OR a compatible bottle in an incomparable unit
+        r_index = {i: pos + 1 for pos, i in enumerate(idxs)}
+        b_index = {bi: len(idxs) + 1 + pos for pos, bi in enumerate(known_cap)}
+        sink = len(idxs) + 1 + len(known_cap)
+        edges: "list[tuple[int, int, float]]" = []
+        for i in idxs:
+            edges.append((0, r_index[i], float(requirements[i].quantity.value)))
+            for bi in candidates[i]:
+                if bi in b_index:
+                    edges.append((r_index[i], b_index[bi], float("inf")))
+        for bi, capf in known_cap.items():
+            edges.append((b_index[bi], sink, capf))
+        flow = _max_flow(sink + 1, edges, 0, sink) if known_cap else 0.0
+        if flow >= total_demand - 1e-9:
+            verdict = CapabilityStatus.FIT
+            msg = f"finite-pool allocation: {total_demand:g} {unit} demand met from declared stock (no double-spend)"
+        elif unknown_present:
+            verdict = CapabilityStatus.UNKNOWN
+            msg = (f"finite-pool allocation: known stock covers {flow:g} of {total_demand:g} {unit}; a compatible "
+                   "bottle of unknown/incomparable amount MAY cover the rest -- UNKNOWN, never assumed")
+        else:
+            verdict = CapabilityStatus.BLOCKED
+            msg = (f"finite-pool allocation: declared stock covers only {flow:g} of {total_demand:g} {unit} "
+                   "(a bottle cannot be spent twice) -- a provable shortfall")
+        for i in idxs:
+            alloc[i] = verdict
+            alloc_note[i] = msg
+    # -- fold each requirement: composition/phase, refined by the allocation verdict where it entered one.
     statuses: "list[CapabilityStatus]" = []
     reasons: "list[str]" = []
-    for requirement in requirements:
-        status, reason = _material_item_status(requirement, inventory)
-        statuses.append(status)
-        reasons.append(reason)
+    for i, r in enumerate(requirements):
+        st = comp_status[i]
+        detail = comp_note[i]
+        if i in alloc:
+            st = alloc[i]
+            detail = f"{comp_note[i]}; {alloc_note[i]}"
+        statuses.append(st)
+        reasons.append(f"material: {r.role} {r.label} -- {detail}")
     if CapabilityStatus.BLOCKED in statuses:
         overall = CapabilityStatus.BLOCKED
     elif CapabilityStatus.UNKNOWN in statuses:
@@ -490,6 +576,32 @@ def _physical_axis(requirement, ceiling) -> AxisResult:
     return AxisResult(CapabilityStatus.FIT, tuple(reasons))
 
 
+#: F56/F62 (Decision 11): the COMPLETE set of process-unique dimensions the per-dimension fail-close covers,
+#: as a TABLE rather than a hand-scattered checklist -- Wave-C proved a checklist is one forgotten line from a
+#: false FIT (attention + agitation were the two originally dropped). Each entry: (label, does the ROUTE
+#: declare a real demand on this dimension?, does the BENCH model it with a bound?). A demand on a dimension
+#: the bench leaves unmodeled (bound None) caps the process axis at UNKNOWN. Equipment is deliberately EXCLUDED
+#: -- the capability EQUIPMENT axis already owns it, so listing it here would double-jeopardy a well-equipped
+#: bench whose ProcessBounds happens not to restate its apparatus.
+_PROCESS_FAILCLOSE_DIMENSIONS = (
+    ("elapsed time",
+     lambda r: r.min_elapsed_minutes is not None or r.elapsed_minutes is not None,
+     lambda b: b.max_step_minutes is not None or b.max_total_minutes is not None),
+    ("active time",
+     lambda r: r.min_active_minutes is not None or r.active_minutes is not None,
+     lambda b: b.max_active_minutes is not None),
+    ("operator check interval",
+     lambda r: r.check_interval_minutes is not None,
+     lambda b: b.min_check_interval_minutes is not None),
+    ("attention mode",
+     lambda r: r.attention is not None,
+     lambda b: b.allowed_attention is not None),
+    ("agitation mode",
+     lambda r: r.agitation is not None,
+     lambda b: b.allowed_agitation is not None),
+)
+
+
 def _process_axis(requirements, bounds: ProcessBounds) -> AxisResult:
     """DELEGATE, never reimplement (decision 2): the real per-step/route-total comparison already lives
     in ``evaluate_process_requirements`` (time/attention/agitation/equipment-string checks); this only
@@ -513,6 +625,30 @@ def _process_axis(requirements, bounds: ProcessBounds) -> AxisResult:
     reasons = tuple(f"process: {reason}" for reason in (*fit.exclusions, *fit.gaps))
     if not reasons:
         reasons = (f"process: {fit.status.value}",)
+    # F56 (Decision 11): the per-dimension fail-close the PHYSICAL axis got in Wave-C F1, ported here. A real
+    # route TIME/check-interval demand on a dimension the bench leaves UNMODELED (its bound is None) cannot be
+    # certified -> UNKNOWN, never a silent FIT. The delegate already gaps -> UNKNOWN when a bound IS declared
+    # but the route's ceiling is not; this closes the OTHER hole -- a bound left entirely None was silently
+    # skipped, so a bench that bounds only attention/agitation waved every unbounded time demand straight to FIT.
+    if status is CapabilityStatus.FIT:
+        # F56 + F62 (Decision 11): the per-dimension fail-close, driven off the COMPLETE table above so no
+        # dimension can silently fall off a hand-written checklist (the F62 root cause -- attention/agitation
+        # were dropped). A dimension the ROUTE demands but the BENCH leaves unmodeled (bound None) cannot be
+        # certified -> UNKNOWN, never a silent FIT. The delegate already gaps -> UNKNOWN when a bound IS
+        # declared but the route's value is not; this closes the other half -- an entirely omitted bound.
+        unmodeled = [
+            label
+            for label, route_demands, bounds_models in _PROCESS_FAILCLOSE_DIMENSIONS
+            if any(r is not None and route_demands(r) for r in requirements) and not bounds_models(bounds)
+        ]
+        if unmodeled:
+            return AxisResult(
+                CapabilityStatus.UNKNOWN,
+                reasons + (
+                    f"process: this route declares a real demand on {', '.join(unmodeled)}, but the declared "
+                    "profile states NO bound on that dimension -- an unbounded process dimension cannot be "
+                    "certified against a real demand (F56/F62/Decision 11, per-dimension)",),
+            )
     return AxisResult(status, reasons)
 
 
@@ -658,13 +794,38 @@ def assess(
         requirements.containment, profile.containment, axis="containment",
         extra_reasons=requirements.containment_reasons + requirements.hazard_unresolved,
     )
+    if requirements.hazard_unresolved and containment.status in (
+        CapabilityStatus.FIT, CapabilityStatus.NOT_APPLICABLE,
+    ):
+        # F47: a required procedure material whose hazard status is UNRESOLVED means the containment capability
+        # it needs cannot be determined -> UNKNOWN, never a pass. A safety disclaimer cannot turn an unassessed
+        # capability NEED into FIT: the capability question is "what containment does this route REQUIRE?", not
+        # "is it safe?". A provable BLOCK (a known containment requirement unmet) still wins over this.
+        containment = AxisResult(
+            CapabilityStatus.UNKNOWN,
+            containment.reasons + (
+                "containment: one or more required procedure materials carry an UNRESOLVED hazard status, so the "
+                "containment capability they require cannot be determined -- UNKNOWN, not a pass (F47)",),
+        )
     ventilation = _ventilation_axis()
     measurement = _measurement_axis(
         requirements.measurement, profile.measurement, requirements.measurement_unrecognized,
     )
     waste = _membership_axis(
-        requirements.waste.categories, profile.waste_handling, axis="waste", extra_reasons=requirements.waste.reasons,
+        requirements.waste.categories, profile.waste_handling, axis="waste",
+        extra_reasons=requirements.waste.reasons + requirements.waste.unresolved,
     )
+    if requirements.waste.unresolved and waste.status in (
+        CapabilityStatus.FIT, CapabilityStatus.NOT_APPLICABLE,
+    ):
+        # F48/F49: a required waste stream whose disposal routing is UNRESOLVED means the waste capability the
+        # route needs cannot be determined -> UNKNOWN, never a pass. Unknown waste is not benign waste.
+        waste = AxisResult(
+            CapabilityStatus.UNKNOWN,
+            waste.reasons + (
+                "waste: one or more required waste streams have UNRESOLVED disposal routing, so the waste "
+                "capability this route requires cannot be determined -- UNKNOWN, not a pass (F48/F49)",),
+        )
     procurement = _procurement_axis(requirements.procurement_catalysts, profile.procurement)
     attention_care = _attention_care_axis(requirements.attention_care)
     monetary = _monetary_axis(requirements.monetary, profile.budget)

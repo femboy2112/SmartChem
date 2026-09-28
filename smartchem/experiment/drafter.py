@@ -808,11 +808,17 @@ class RouteDossier(Digestible):
             f"READINESS: {tier} (derived from smartchem.experiment.readiness.evaluate_route)",
         ]
         if tier != PROCESS_SPECIFIED:
-            # PROCESS_SPECIFIED is DARK this round (readiness.process_representation_is_complete is
-            # always False today) -- so this fires for every dossier this code can currently produce.
-            # It stays keyed off the REAL tier, not a static string, so the day PROCESS_SPECIFIED
-            # lights up, this disclaimer honestly stops printing instead of lying forever.
+            # Keyed off the REAL tier: as of 0.8 Round II PROCESS_SPECIFIED is reachable (e.g. the
+            # isopentyl-acetate esterification), so this disclaimer prints only for routes that genuinely
+            # fall short of a complete, sourced procedure -- it stops printing the moment a route earns it.
             lines.append(f"  -- NOT a bench-ready procedure (tier {tier} < {PROCESS_SPECIFIED})")
+        else:
+            # PROCESS_SPECIFIED = the literature procedure is fully specified from an accepted source. That is
+            # an 0.8 claim about the SOURCE, never a promise a particular bench can run it (capability is 0.9).
+            lines.append(
+                "  -- procedure fully specified from an accepted source; NOT a guarantee a particular "
+                "lab/kitchen can execute it (capability is 0.9)"
+            )
         lines.append("SATISFIED OBLIGATIONS (route-level, weakest-link across steps):")
         any_satisfied = False
         for name, status in (
@@ -848,8 +854,17 @@ class RouteDossier(Digestible):
                 f" ({klass}) conditions={step_readiness.conditions.value}"
                 f" process={step_readiness.process.value} workup_isolation={step_readiness.workup_isolation.value}"
             )
-        lines.append("MISSING BEFORE BENCH USE (supporting detail; the tier above is the load-bearing claim):")
-        lines.extend(f"  - {field}" for field in _MISSING_BENCH_FIELDS)
+        if tier != PROCESS_SPECIFIED:
+            lines.append("MISSING BEFORE BENCH USE (supporting detail; the tier above is the load-bearing claim):")
+            lines.extend(f"  - {field}" for field in _MISSING_BENCH_FIELDS)
+        else:
+            # The procedure now specifies those fields (that is what earned PROCESS_SPECIFIED); what remains is
+            # a capability question about a particular bench, deferred to 0.9 -- never claim otherwise here.
+            lines.append(
+                "REMAINING BEFORE YOUR BENCH USE (a 0.9 capability question, not a procedure gap): whether a "
+                "particular lab/kitchen owns the equipment, containment, waste handling, and materials this "
+                "sourced procedure requires."
+            )
         lines.append("")
         lines.append(f"TARGET: {self.route.final_target!r}")
         lines.append("")

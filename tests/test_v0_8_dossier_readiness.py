@@ -27,6 +27,7 @@ from smartchem.experiment.reaction_type_oracle import recognize_reaction_type
 from smartchem.experiment.routes import search_routes
 from smartchem.experiment.step import ExperimentRoute, ExperimentStep
 from smartchem.smiles import parse_smiles
+from smartchem.structure import structure_by_name
 
 _CERTIFIED = resolve_algebra_profile(DEFAULT_ROUTE_ALGEBRA_PROFILE)
 
@@ -77,6 +78,24 @@ def _da_holdout_route() -> ExperimentRoute:
     return route
 
 
+def _isopentyl_route() -> ExperimentRoute:
+    """The 0.8 Round II PROCESS_SPECIFIED positive: recognized esterification + sourced conditions + a
+    COMPLETE, sourced procedure migrated from the accepted LibreTexts source."""
+    def _m(name):
+        s = structure_by_name(name)
+        assert s is not None, f"expected {name!r} in the structure registry"
+        return s.molecule
+
+    result = search_routes(
+        _m("isopentyl acetate"), reagents=(_m("water"), _m("acetic acid")),
+        available=(_m("isopentyl alcohol"),), max_depth=1,
+    )
+    for route in result.routes:
+        if any(step.envelope.procedure is not None for step in route.steps):
+            return route
+    raise AssertionError("expected an isopentyl-acetate route carrying procedure evidence")
+
+
 class TestRouteDossierReadinessAgreesWithSharedEvaluator:
     """No second readiness engine: whatever tier/obligations ``evaluate_route`` derives for a route is
     EXACTLY what ``RouteDossier.readiness``/``render()`` for that same route reports."""
@@ -104,6 +123,15 @@ class TestRouteDossierReadinessAgreesWithSharedEvaluator:
         step0 = dossier.readiness.per_step[0]
         assert step0.reaction_type is ObligationStatus.SATISFIED
         assert step0.conditions is ObligationStatus.UNKNOWN
+
+    def test_isopentyl_route_is_process_specified_via_the_shared_evaluator(self):
+        route = _isopentyl_route()
+        dossier = draft_route_dossier(route)
+        assert dossier.readiness == evaluate_route(route, identity_losses=())
+        assert dossier.readiness_tier == PROCESS_SPECIFIED
+        step0 = dossier.readiness.per_step[0]
+        assert step0.process is ObligationStatus.SATISFIED
+        assert step0.workup_isolation is ObligationStatus.SATISFIED
 
     def test_readiness_field_is_a_route_readiness_not_the_legacy_enum(self):
         from smartchem.experiment.readiness import RouteReadiness
@@ -147,3 +175,15 @@ class TestRouteDossierRender:
         assert "PER-STEP READINESS" in text
         assert f"tier={REACTION_VOUCHED}" in text
         assert "conditions=UNKNOWN" in text
+
+    def test_process_specified_render_shows_capability_note_not_missing_fields(self):
+        # gate #9 (human/JSON parity) + the 0.8/0.9 boundary: a PROCESS_SPECIFIED dossier must NOT print the
+        # static "MISSING BEFORE BENCH USE" list (those fields are now specified) and must NOT print the
+        # below-tier disclaimer; it prints the capability caveat deferred to 0.9 instead.
+        text = draft_route_dossier(_isopentyl_route()).render()
+        assert f"READINESS: {PROCESS_SPECIFIED}" in text
+        assert "procedure fully specified from an accepted source" in text
+        assert "REMAINING BEFORE YOUR BENCH USE" in text
+        assert "MISSING BEFORE BENCH USE" not in text
+        assert "NOT a bench-ready procedure" not in text
+        assert "process fully specified" in text and "workup/isolation described" in text

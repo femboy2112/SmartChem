@@ -155,7 +155,7 @@ general multiphysics category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](docs/history/MANIFEST.md).
 
-## Chemical compiler (v0.7.0a1 — an alpha in progress)
+## Chemical compiler (v0.8.0a1 — an alpha in progress)
 
 A newer line of work turns the chemistry core into a bidirectional *chemical compiler*: a
 **decompiler** that descends a target compound to its elemental buckets as an AND–OR
@@ -285,7 +285,7 @@ Current committed-baseline suite result — the OOM-safe full run via `scripts/r
 optional RDKit and PySCF backends **absent** (the committed baseline; backend-gated tests `importorskip`-skip):
 
 ```text
-5517 passed, 46 skipped, 0 xfailed  (5563 collected, 0 failed, 0 errors)
+5628 passed, 46 skipped, 0 xfailed  (5674 collected, 0 failed, 0 errors)
 ```
 
 There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. The 46 skips are
@@ -337,7 +337,7 @@ Until that gate is complete, new reaction-family expansion is non-release-critic
 measured input -> identity -> chemistry -> evidence -> capability funnel, not an unbounded sequence of local rounds.
 
 
-> **The live chemical-compiler (v0.7.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
+> **The live chemical-compiler (v0.8.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
 > next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
 > re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.
 

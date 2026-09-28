@@ -84,7 +84,7 @@
       "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
     },
     "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
-    "tool_version": "0.7.0a1",
+    "tool_version": "0.8.0a1",
     "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c"
   },
   "diagnostics": [],
@@ -1160,7 +1160,7 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "667044fe15b6e06e3916130015755abc1cc223456cea9c993aab3d643a19eef1",
+  "result_digest": "54607ff2e5e834e7ce705678f1d04eebbc3edee24931edf0b86ec550b3ef602a",
   "schema_version": "smartchem.service/compilation-response-v1alpha15",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",

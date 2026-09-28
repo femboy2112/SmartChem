@@ -242,8 +242,10 @@ reaction-vouched row):
 - `~/.local/bin/ruff check` clean on all three files.
 
 **v0.8 REAL ROUTE DOSSIERS, ROUND II — PROCEDURE-EVIDENCE CLOSURE + VERIFIABLE CANONICAL TRANSPORT
-(2026-09-27, same branch, IN PROGRESS — package version still stays `0.7.0a1`; the bump/merge is the
-integration authority's call, per plan `docs/research/V0_8_ROUND_II_PROCEDURE_EVIDENCE_PLAN_v0.1.md`).**
+(2026-09-28, RELEASED — package version bumped `0.7.0a1` -> `0.8.0a1`; the 13-condition release gate CLOSED
+and the branch merged to `main`, per plan `docs/research/V0_8_ROUND_II_PROCEDURE_EVIDENCE_PLAN_v0.1.md` and
+release record `docs/research/V0_8_REAL_ROUTE_DOSSIERS_RELEASE_2026-09-28.md`; funnel 44->7->2->1 routes /
+102->24->2->1 steps, mutation M1-M20 20/20, full OOM-safe suite 5628 passed / 0 failed / 46 skipped).**
 Ugh, okay, the wall Round I left standing finally came down: `PROCESS_SPECIFIED` is now REACHABLE, honestly,
 for at least one real corpus route. `smartchem/procedure_evidence.py` (a NEW typed `ProcedureEvidence`
 model hung off `ConditionEnvelope.procedure`, digest-covered and replay-reconstructed) plus the renamed

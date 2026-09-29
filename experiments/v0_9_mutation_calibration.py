@@ -193,13 +193,20 @@ def retired(mid: str, title: str, mechanism: str, reason: str, replacement: "tup
 
 @contextlib.contextmanager
 def _patch(obj, name, value):
-    """Temporarily set ``obj.name = value`` (modules and classes), restoring EXACTLY on exit."""
+    """Temporarily set ``obj.name = value`` (modules and classes), restoring EXACTLY on exit.
+
+    0.9.5: the process enumeration cache is cleared on entry AND exit -- a patch changes behaviour without changing any
+    cache key, so a stale honest entry could otherwise mask a mutant (or a mutant's entry leak into the next arm)."""
+    from smartchem.verification import ENUMERATION_CACHE
+
     had = name in getattr(obj, "__dict__", {})
     old = obj.__dict__.get(name) if had else None
+    ENUMERATION_CACHE.clear()
     setattr(obj, name, value)
     try:
         yield
     finally:
+        ENUMERATION_CACHE.clear()
         if had:
             setattr(obj, name, old)
         else:

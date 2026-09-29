@@ -801,6 +801,11 @@ class VerificationContext:
         self._memo[key] = (payload_obj, value)
         return value
 
+    def reconstructed(self, kind: str) -> int:
+        """How many distinct payload objects of ``kind`` this load actually built (the receipt's re-derivation counts:
+        a canonical payload whose dossiers were never reconstructed is canonical in name only)."""
+        return sum(1 for memo_kind, _id in self._memo if memo_kind == kind)
+
     @contextmanager
     def activate(self) -> "Iterator[VerificationContext]":
         """Install this context for the enclosed block; the previously active one (or none) is restored on exit."""

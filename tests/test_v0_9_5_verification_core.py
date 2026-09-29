@@ -352,7 +352,8 @@ def test_from_legacy_kwargs_matches_todays_signatures_and_defaults():
     import smartchem.service as svc
 
     for fn in (svc.response_from_payload, svc.deserialize_response):
-        params = {n: p for n, p in inspect.signature(fn).parameters.items() if p.kind is p.KEYWORD_ONLY}
+        params = {n: p for n, p in inspect.signature(fn).parameters.items()
+                  if p.kind is p.KEYWORD_ONLY and n != "policy"}   # policy= is the new, non-legacy slot
         # broken: a trust kwarg added/renamed on one side only -> the shim silently drops or refuses it.
         assert set(params) == set(V._LEGACY_KWARGS), fn.__name__
         # today's defaults -> exactly the default policy (the service's _NO_CAPABILITY_PIN maps to UNPINNED).

@@ -94,6 +94,7 @@ import hmac
 import importlib
 import json
 import os
+import functools
 import secrets
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
@@ -157,6 +158,21 @@ from .procedure_evidence import (
 )
 from .transform_provider import ProviderUse, search_algebra_digest
 from .search import REFUSED_8_2_STATUSES, STANDARD_8_2_STATUSES, section_8_3_label
+from .verification import (
+    UNPINNED,
+    DigestRule,
+    PinState,
+    SchemaGeneration,
+    SignatureState,
+    VerificationContext,
+    VerificationPolicy,
+    VerifiedLoad,
+    _issue_receipt,
+    _issue_verified_load,
+    cached_enumerate,
+    current_context,
+    predicted_enumeration_work,
+)
 
 __all__ = [
     "COMPILATION_REQUEST_SCHEMA",
@@ -187,6 +203,8 @@ __all__ = [
     "deserialize_request",
     "response_to_payload",
     "response_from_payload",
+    "load_response",
+    "load_response_text",
     "serialize_response",
     "deserialize_response",
     "resolve_producer_key",
@@ -2431,8 +2449,14 @@ class CompilationResponse:
                     table = emitted.get(key)
                     if table is None:
                         table = {}
+                        # 0.9.5 S2: the predicted enumeration work is charged here -- per distinct target of THIS load,
+                        # before the try (a budget refusal must not be read as "the algebra cannot read the replay"),
+                        # and whatever the process cache holds (accept/refuse never depends on an earlier load).
+                        context = current_context()
+                        if context is not None:
+                            context.meter.charge_enumeration(predicted_enumeration_work(step.target, reagents)[1])
                         try:
-                            cleavages, _complete = registry.enumerate(step.target, reagents, budget=budget)
+                            cleavages, _complete = cached_enumerate(registry, step.target, reagents, budget=budget)
                         except Exception as exc:  # noqa: BLE001 -- a replay the algebra cannot read is refused, not a crash
                             raise ValueError(
                                 f"{where}: the carried algebra cannot be put to the replayed step's target "
@@ -4739,15 +4763,36 @@ def _replay_payload_to_steps(payload) -> tuple:
 
 
 def _reconstruct_route(payload) -> "object":
-    """Reconstruct the ExperimentRoute from a replay payload; ``__post_init__`` re-checks linearity (net-consumption)."""
+    """Reconstruct the ExperimentRoute from a replay payload; ``__post_init__`` re-checks linearity (net-consumption).
+
+    0.9.5 (barrier section 4): inside a load, ONCE per replay object -- every guard that needs the route reads the same
+    immutable reconstruction, and the dossier / replay-step budget is charged on that first reconstruction."""
     from .experiment.step import ROUTE_SCHEMA, ExperimentRoute
-    return ExperimentRoute(ROUTE_SCHEMA, _replay_payload_to_steps(payload))
+
+    def build(replay):
+        return ExperimentRoute(ROUTE_SCHEMA, _replay_payload_to_steps(replay))
+    return _memoised_reconstruction("route", payload, build)
 
 
 def _reconstruct_dag(payload) -> "object":
-    """Reconstruct the SynthesisDAG from a replay payload; ``__post_init__`` re-checks the DAG shape (acyclic/single-sink)."""
+    """Reconstruct the SynthesisDAG from a replay payload; ``__post_init__`` re-checks the DAG shape (acyclic/single-sink).
+    Memoised and budgeted per load exactly like :func:`_reconstruct_route`."""
     from .experiment.dag import DAG_SCHEMA, SynthesisDAG
-    return SynthesisDAG(DAG_SCHEMA, _replay_payload_to_steps(payload))
+
+    def build(replay):
+        return SynthesisDAG(DAG_SCHEMA, _replay_payload_to_steps(replay))
+    return _memoised_reconstruction("dag", payload, build)
+
+
+def _memoised_reconstruction(kind: str, payload, build) -> "object":
+    context = current_context()
+    if context is None:
+        return build(payload)
+
+    def charged(replay):
+        context.meter.charge_dossier(len(replay) if type(replay) is list else 0)
+        return build(replay)
+    return context.memo(kind, payload, charged)
 
 
 class _ReplayedTransform:
@@ -5923,13 +5968,53 @@ def _migrate_legacy_v08_dossier(dossier: dict) -> dict:
 #: question as NOT_REQUESTED (a consumer who asked no capability question refuses an answer that carries one).
 _NO_CAPABILITY_PIN = object()
 
+#: The legacy trust kwargs of ``response_from_payload`` / ``deserialize_response`` and their defaults (the compat shim).
+_LEGACY_TRUST_DEFAULTS = {
+    "verification_key": None, "require_signature": False, "require_verified_admission": False,
+    "expected_request_digest": None, "expected_capability_question_digest": _NO_CAPABILITY_PIN,
+    "require_reexecution": False,
+}
 
+
+def _resolve_load_policy(policy: "VerificationPolicy | None", legacy: dict) -> VerificationPolicy:
+    """0.9.5 (barrier section 2): the ONE compat shim.  A ``policy`` is used as given (mixing it with a legacy trust
+    kwarg is a TypeError -- two sources of truth); otherwise the legacy kwargs map onto the equivalent policy
+    (``_NO_CAPABILITY_PIN`` -> ``UNPINNED``), whose construction refuses what could never succeed."""
+    supplied = sorted(name for name, value in legacy.items() if value is not _LEGACY_TRUST_DEFAULTS[name])
+    if policy is not None:
+        if not isinstance(policy, VerificationPolicy):
+            raise TypeError(f"policy must be a VerificationPolicy, got {type(policy).__name__}")
+        if supplied:
+            raise TypeError(f"pass either policy= or the legacy trust kwargs, not both (got policy and {supplied})")
+        return policy
+    return VerificationPolicy.from_legacy_kwargs(
+        **{name: (UNPINNED if value is _NO_CAPABILITY_PIN else value) for name, value in legacy.items()
+           if value is not _LEGACY_TRUST_DEFAULTS[name]})
+
+
+def _verification_scope(load):
+    """Run ``load`` inside ONE per-load :class:`~smartchem.verification.VerificationContext` (barrier section 4): the
+    work meter every budget charge books against and the reconstruction memo.  A load already inside a context (the
+    one :func:`load_response` installs) reuses it; a bare call gets a fresh one, discarded on return."""
+    @functools.wraps(load)
+    def scoped(payload, **kwargs):
+        if current_context() is not None:
+            return load(payload, **kwargs)
+        legacy = {name: kwargs.get(name, default) for name, default in _LEGACY_TRUST_DEFAULTS.items()}
+        context = VerificationContext(_resolve_load_policy(kwargs.get("policy"), legacy))
+        with context.activate():
+            return load(payload, **kwargs)
+    return scoped
+
+
+@_verification_scope
 def response_from_payload(payload: dict, *, verification_key: bytes | None = None,
                           require_signature: bool = False,
                           require_verified_admission: bool = False,
                           expected_request_digest: str | None = None,
                           expected_capability_question_digest: "str | None | object" = _NO_CAPABILITY_PIN,
                           require_reexecution: bool = False,
+                          policy: "VerificationPolicy | None" = None,
                           ) -> CompilationResponse:
     """Reconstruct a response from :func:`response_to_payload`; re-runs the coherence guard.
 
@@ -5988,8 +6073,24 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     """
     if type(payload) is not dict:
         raise ValueError(f"a response payload must be a JSON object, got {type(payload).__name__}; refused")
-    if require_signature and verification_key is None:
-        raise ValueError("require_signature needs a verification_key")
+    # 0.9.5 (barrier section 2): ONE VerificationPolicy decides the load.  Its construction refuses contradictions
+    # (require_signature without a key -- the historical message -- a short key, a malformed pin); its fields are read
+    # back into the historical local names so every check below is unchanged.
+    policy = _resolve_load_policy(policy, {
+        "verification_key": verification_key, "require_signature": require_signature,
+        "require_verified_admission": require_verified_admission, "expected_request_digest": expected_request_digest,
+        "expected_capability_question_digest": expected_capability_question_digest,
+        "require_reexecution": require_reexecution})
+    context = current_context()
+    if context is None or context.policy != policy:
+        raise RuntimeError("response_from_payload ran outside its own verification context; refused")
+    verification_key = policy.verification_key
+    require_signature = policy.require_signature
+    require_verified_admission = policy.require_verified_admission
+    expected_request_digest = policy.expected_request_digest
+    expected_capability_question_digest = (_NO_CAPABILITY_PIN if policy.expected_capability_question_digest is UNPINNED
+                                           else policy.expected_capability_question_digest)
+    require_reexecution = policy.require_reexecution
     # D11 explicit version dispatch: the CURRENT id, or the ONE whitelisted v0.8 id mapped to its migration; any other
     # id is refused precisely.  Dispatch happens BEFORE any decode, so an unknown id never reaches a field-level error.
     version = payload.get("schema_version")
@@ -6006,11 +6107,33 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         dossier_payloads = payload["ranked_route_dossiers"]
     else:
         raise _unsupported_schema("response", version, COMPILATION_RESPONSE_SCHEMA, LEGACY_V08_RESPONSE_SCHEMA)
+    # 0.9.5 S1: a consumer that requires the canonical wire refuses a THIN_ADVISORY payload -- and a legacy v0.8 one,
+    # whose "canonical" skips D27.1 / D27.4 / D29.1 -- HERE, from two top-level scalars, before any decode or re-derivation.
+    if policy.require_canonical_transport:
+        if version != COMPILATION_RESPONSE_SCHEMA:
+            raise ValueError(
+                f"require_canonical_transport: a legacy {version!r} payload is not canonical under 0.9 semantics (its "
+                f"load skips the corpus, ranking and algebra re-derivations); recompile under 0.9; refused (0.9.5 S1)")
+        if payload.get("transport_mode") != TRANSPORT_CANONICAL_VERIFIED:
+            raise ValueError(
+                f"require_canonical_transport: the payload declares transport_mode={payload.get('transport_mode')!r}, "
+                f"not {TRANSPORT_CANONICAL_VERIFIED!r} -- an advisory wire cannot satisfy a canonical requirement; "
+                f"refused (0.9.5 S1)")
+    # 0.9.5 S2: the payload's size is the first unit of verification work -- walked (and refused past the budget)
+    # before anything decodes it.
+    context.meter.charge_payload_nodes(payload)
     # X-high D28.5 (Wave C5 C5-F6): exactly the dispatched generation's top-level keys -- no unknown key rides the body
     # digest as an unenforced "claim", and no required key (transport_mode, provider_snapshots, ranked_dag_dossiers, ...)
     # is silently defaulted.
     _require_payload_keys(payload, _RESPONSE_PAYLOAD_KEYS if version == COMPILATION_RESPONSE_SCHEMA
                           else _V08_RESPONSE_PAYLOAD_KEYS, "response")
+    # 0.9.5 S6: a TARGET_FILE answer names a PATH to mutable external state; re-deriving or re-executing it would make
+    # the verifier open a file the payload chose.  The loader never touches the filesystem on payload content.
+    request_payload = payload["request"]
+    if type(request_payload) is dict and request_payload.get("input_kind") == InputKind.TARGET_FILE.value:
+        raise ValueError(
+            "a TARGET_FILE response cannot be verified on load: its target is a path to mutable external state and the "
+            "loader never reads a payload-supplied path; recompile locally from the file; refused (0.9.5 S6)")
     ir_payload = payload["compilation_ir"]
     response = CompilationResponse(
         payload["schema_version"],
@@ -6192,6 +6315,49 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     return response
 
 
+def load_response(payload: dict, policy: "VerificationPolicy | None" = None) -> VerifiedLoad:
+    """0.9.5 (barrier section 3): load ``payload`` under ONE :class:`~smartchem.verification.VerificationPolicy` and
+    return the response TOGETHER WITH the receipt of what this load established -- out of band: the response gains no
+    field (its identity and every golden are untouched), the wire cannot carry a receipt (exact keys), and only this
+    loader can issue one.  ``response_from_payload`` is this call with the receipt discarded."""
+    policy = VerificationPolicy() if policy is None else policy
+    if not isinstance(policy, VerificationPolicy):
+        raise TypeError(f"policy must be a VerificationPolicy, got {type(policy).__name__}")
+    context = VerificationContext(policy)
+    with context.activate():
+        response = response_from_payload(payload, policy=policy)
+    legacy = response.is_legacy_v08
+    if policy.verification_key is None:
+        signature = SignatureState.NOT_CHECKED
+    elif payload.get("producer_signature") is not None:
+        signature = SignatureState.VERIFIED          # a present signature that failed would have refused the load
+    else:
+        signature = SignatureState.NOT_REQUIRED_ABSENT
+    receipt = _issue_receipt(
+        schema_generation=SchemaGeneration.LEGACY_V08 if legacy else SchemaGeneration.CURRENT,
+        transport_mode=payload["transport_mode"],
+        digest_rule=DigestRule.FROZEN_V08 if legacy else DigestRule.WHOLE_BODY,
+        request_pin=PinState.CHECKED if policy.expected_request_digest is not None else PinState.NOT_PINNED,
+        capability_pin=(PinState.CHECKED if policy.expected_capability_question_digest is not UNPINNED
+                        else PinState.NOT_PINNED),
+        signature=signature,
+        verified_admission=policy.require_verified_admission,
+        replay_rederived_routes=context.reconstructed("route"),
+        replay_rederived_dags=context.reconstructed("dag"),
+        reexecuted=policy.require_reexecution,
+        legacy_migrated=legacy,
+        work=context.meter.snapshot(),
+        policy=policy,
+        response_result_digest=response.result_digest,
+    )
+    return _issue_verified_load(response, receipt)
+
+
+def load_response_text(text: str, policy: "VerificationPolicy | None" = None) -> VerifiedLoad:
+    """:func:`load_response` on a serialized payload."""
+    return load_response(json.loads(text), policy)
+
+
 def _check_reexecution(response: CompilationResponse, payload: dict, transport_mode: str, *,
                        request_pinned: bool) -> None:
     """X-high D26.2 + D27.2 + D27.7 -- keyless authenticity by DETERMINISM (opt-in ``require_reexecution=True``). The
@@ -6226,6 +6392,11 @@ def _check_reexecution(response: CompilationResponse, payload: dict, transport_m
                 f"require_reexecution: the carried request's search bounds {over} exceed the default compile's and the "
                 f"consumer did not pin the request (expected_request_digest) -- an unpinned payload may not choose a "
                 f"larger search for its verifier to run; pin the request to re-execute it; refused (D27.7)")
+    context = current_context()
+    if context is not None:
+        context.meter.charge("reexecutions")
+        if response.request.operation is CompilationOperation.RECOMPILE:
+            context.meter.charge_enumeration(_reexecution_root_work(response.request))
     rerun = run_compilation(response.request)
     if rerun.result_digest != response.result_digest:
         raise ValueError(
@@ -6241,6 +6412,20 @@ def _check_reexecution(response: CompilationResponse, payload: dict, transport_m
             f"require_reexecution: the carried payload differs from the re-executed one in {differing} -- a forged or "
             f"rewritten field outside the result identity (frontier, ranking, outcome, diagnostics, receipts, replay "
             f"evidence); refused (D27.2)")
+
+
+def _reexecution_root_work(request: CompilationRequest) -> int:
+    """0.9.5 S2: the predicted work of the rerun's FIRST enumeration (the target against the helper reagents) -- the
+    same W the D29.1 charge uses, so a payload cannot make re-execution enumerate an oversized target unbudgeted."""
+    from .identity_parse import resolve_identity
+    try:
+        target = resolve_identity(request.target_input, request.input_kind).molecule
+        reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.helper_reagents)
+    except IdentityParseError as exc:
+        raise ValueError(f"require_reexecution: the carried request no longer parses ({exc}); refused (D26.2)") from exc
+    if target is None:
+        raise ValueError("require_reexecution: the carried RECOMPILE target resolves to no structure; refused (D26.2)")
+    return predicted_enumeration_work(target.canonical(), reagents)[1]
 
 
 # -- 0.9 capability HUMAN render (D12a -- ONE renderer, so `recompile` and `plan` expose the SAME semantics the JSON
@@ -6327,13 +6512,14 @@ def deserialize_response(text: str, *, verification_key: bytes | None = None,
                          expected_request_digest: str | None = None,
                          expected_capability_question_digest: "str | None | object" = _NO_CAPABILITY_PIN,
                          require_reexecution: bool = False,
+                         policy: "VerificationPolicy | None" = None,
                          ) -> CompilationResponse:
     return response_from_payload(json.loads(text), verification_key=verification_key,
                                  require_signature=require_signature,
                                  require_verified_admission=require_verified_admission,
                                  expected_request_digest=expected_request_digest,
                                  expected_capability_question_digest=expected_capability_question_digest,
-                                 require_reexecution=require_reexecution)
+                                 require_reexecution=require_reexecution, policy=policy)
 
 
 # -- the versioned JSON schema + the semantic-field projection (CLI-JSON-01) -------------------------------------

@@ -73,13 +73,19 @@ def mutant(name: str):
 
 @contextlib.contextmanager
 def _patch(obj, name, value):
-    """Temporarily set ``obj.name = value`` (works on modules and class objects), restoring exactly on exit."""
+    """Temporarily set ``obj.name = value`` (works on modules and class objects), restoring exactly on exit.
+
+    0.9.5: the process enumeration cache is cleared on entry AND exit (a patch changes behaviour, never a cache key)."""
+    from smartchem.verification import ENUMERATION_CACHE
+
     had = name in getattr(obj, "__dict__", {})
     old = obj.__dict__.get(name) if had else None
+    ENUMERATION_CACHE.clear()
     setattr(obj, name, value)
     try:
         yield
     finally:
+        ENUMERATION_CACHE.clear()
         if had:
             setattr(obj, name, old)
         else:

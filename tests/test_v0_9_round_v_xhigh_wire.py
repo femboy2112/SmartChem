@@ -415,7 +415,9 @@ def test_a_target_file_response_is_unverifiable_on_load_and_the_loader_never_rea
         return real_open(path, *a, **k)
 
     monkeypatch.setattr("builtins.open", spy)
-    with pytest.raises(ValueError, match="TARGET_FILE response's identity losses cannot be re-derived"):
+    # 0.9.5 S6: refused at dispatch now (before the identity-loss re-derivation that used to refuse it second) -- the
+    # law this test pins, "the loader never reads the path", is unchanged and now holds by structure, not by order.
+    with pytest.raises(ValueError, match=r"TARGET_FILE response cannot be verified on load.*0\.9\.5 S6"):
         response_from_payload(payload)
     assert str(target) not in opened
 

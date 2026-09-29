@@ -860,7 +860,7 @@ nevertheless over-claimed:
 | C5-F5 | P3 | unconstrained DAG-mode IR candidates carry no dossier → their `equation`/`candidate_digest` are advisory but undisclosed | D28.4 |
 | C5-F6 | P3 | unknown extra keys tolerated at seven container levels; some missing keys default silently | D28.5 |
 | C5-F7 | P3 | `serial_holds` decoded with `int()`/`float()` coercion | D28.5 |
-| C5-F8 | P2 | the corpus lookup matches a step's BYPRODUCT by composition only (target + precursors are name-checked structurally): a forged replay whose byproduct is an isomer (methyl formate / glycolaldehyde for acetic acid) receives the aspirin record; tier and every capability axis are unchanged (Verified) | **VERIFIED DEFER → 0.9.5** (exact boundary: producer and loader share `assembly_conditions`, which selects by composition signature + structurally-resolved target/precursor NAMES; honest search derives byproducts from the transform, so only a forged replay can carry an isomeric byproduct; it moves no verdict today; closed by recording byproduct identities in `ConditionRecord` and checking them structurally) |
+| C5-F8 | ~~P2~~ **P1 (corrected by Wave C6)** | the corpus lookup matches a step's BYPRODUCT by composition only (target + precursors are name-checked structurally): a forged replay whose byproduct is an isomer (methyl formate / glycolaldehyde for acetic acid) receives the aspirin record; tier and every capability axis are unchanged (Verified) | **VERIFIED DEFER → 0.9.5** (exact boundary: producer and loader share `assembly_conditions`, which selects by composition signature + structurally-resolved target/precursor NAMES; honest search derives byproducts from the transform, so only a forged replay can carry an isomeric byproduct; it moves no verdict today; closed by recording byproduct identities in `ConditionRecord` and checking them structurally) |
 | C5-test | — | `tests/test_transport_ledger.py` exercised behaviour only for the 9 top-level wire keys | D28.6 |
 
 ### §7.13 Barrier amendment D28 (ledger made truthful)
@@ -875,3 +875,30 @@ receipt, candidate, dossier, frontier) — unknown keys refused, required keys r
 decoded exactly as released; exact numeric decode for `serial_holds`. **D28.6** the ledger test forges EVERY nested
 RE/REQ entry (one keyless single-field forgery each, digests recomputed) and requires refusal; a new RE/REQ label
 without a refusing forgery fails the test.
+
+### §7.14 Wave C6 — closure audit of Wave C5 at `6c12482` (fresh house-md:masters instance)
+
+Probes `scratchpad/r5x/waveC6/masters/`. **C5-F1, F2, F3, F4, F5 (disclosure), F6 (the seven named levels), F7 and
+C5-test: CLOSED** (Confirmed by execution in every load mode + matched-pair tests failing on the pre-fix `fc710a8` code;
+5 randomly sampled ledger entries forged independently → 5/5 refused; honest control loads in all four modes; every
+loadable real v0.8 fixture loads plain). **Ruling: BLOCK**, on:
+
+| id | sev | finding | disposition |
+|---|---|---|---|
+| C6-F8 | **P1** | the C5-F8 DEFER boundary was FALSE: a same-formula byproduct ISOMER swap on ANY replayed step (not only corpus-attached ones — non-corpus step Verified too) keeps the rendered equation byte-identical and MOVES verdicts: a sourced-GHS waste BLOCK (acetic acid, H226/H314) becomes UNKNOWN ("NO hazard assessment" for methyl formate); on a research-lab bench without HAZARDOUS routing the OVERALL verdict goes BLOCKED → UNKNOWN under plain / pins / pins+VA; only re-execution refuses | D29.1 |
+| C6-NEW-1 | P3 | unknown keys still tolerated in capability-codec nodes (`_decode_canonical` checks only the names inside `fields`) and in IR `identity_losses[*]` — contradicting D28.5's "every container" | D29.2 |
+| C6-test | — | the D28.6 sweep proves refusal is not a stale-digest artifact but not that it comes from the entry's OWN law (the envelope forgery is caught by readiness coherence even pre-fix) | D29.3 |
+
+### §7.15 Barrier amendment D29
+
+**D29.1 — byproducts are bound to the transform, not to their formula.** Every replayed step's products (as
+STRUCTURES, byproducts included) must equal the products the route algebra's own transform emits for that step's
+precursors and target (the loader re-applies the carried algebra at depth 1 to that step — the same provider code
+the producer used); a same-formula isomer byproduct is refused on every load of a current payload. If a sound
+structural binding is impossible for some supported algebra, the writer STOPS and reports it: C6-F8 then becomes a
+truthful, prominently disclosed boundary (ledger + service docstring + this doc: "a keyless attacker can swap a
+same-formula byproduct isomer, erasing a sourced hazard verdict; only `require_reexecution` or the producer HMAC
+detects it") — never a silent one.
+**D29.2** exact-key discipline in the capability canonical decoder (node keys, not just field names) and in
+`identity_losses` entries. **D29.3** the ledger sweep names, per forgery, the law expected to refuse it and asserts the
+refusal message carries that law's tag.

@@ -78,6 +78,8 @@ __all__ = [
     "decompile_terminal_context",
     "formula_decomposition_registry_digest",
     "recompile_request_digest",
+    "recompile_ir_diagnostics",
+    "decompile_ir_diagnostics",
     "decompile_structure_to_ir",
     "ir_to_payload",
     "ir_from_payload",
@@ -1427,6 +1429,44 @@ def recompile_request_digest(target_identity_digest: str, terminal_digest: str, 
     )
 
 
+def recompile_ir_diagnostics(*, target_in_terminal_stock: bool, complete_within_bounds: bool, status_value: str,
+                             has_candidates: bool, mode: str, max_depth: "int | None") -> "tuple[str, ...]":
+    """The recompile IR's ``diagnostics`` -- ONE rule shared by the producer (:func:`recompile_to_ir`) and the load-time
+    re-derivation (X-high D28.2, Wave C5 C5-F2), so the search-emitted text a response carries is a pure function of the
+    IR's own classification facts and the carried request, never free text a keyless forger can extend (a
+    "1 FIT ... CAPABILITY_FIT" line smuggled into ``ir.diagnostics`` used to flow into the response's diagnostics).
+
+    * the target already sits in the active terminal stock -> the section-7 "no synthesis is required" line;
+    * the search stopped inside its bounds -> the incompleteness line naming the native status;
+    * complete-within-bounds, zero candidates, target not in stock: NO limit fired, so this mode's search EXHAUSTED its
+      grammar at these bounds and found no conservation-valid assembly terminating in stock.  This MUST be said
+      precisely -- a silent "complete + empty" is indistinguishable from a truncated search that gave up (the
+      laundering SRCH-DEPTH-01 outlawed one layer down).  But the claim is scoped EXACTLY to what the receipt proves:
+      exhaustion of THIS mode's grammar at THESE bounds -- NOT a registry-wide "no route exists anywhere" (a different
+      mode or higher bounds is not excluded; the same request under mode='dags' can still be truncated).  Overclaiming
+      that scope was a red-team finding;
+    * otherwise nothing."""
+    if target_in_terminal_stock:
+        return ("target is already present in the active terminal stock; no synthesis is required (section 7)",)
+    if not complete_within_bounds:
+        return (f"search incomplete within bounds: {status_value}",)
+    if not has_candidates:
+        return (
+            f"no route to the target from the declared terminals exists within the '{mode}' search grammar at "
+            f"the declared bounds (max_depth={max_depth}); the search was exhaustive there (no limit fired), but "
+            f"that is exhaustion of THIS grammar/mode at THESE bounds -- not a proof that no route exists under a "
+            f"different mode or higher bounds (section 8.3, no-route: exhaustive-within-bounds)",
+        )
+    return ()
+
+
+def decompile_ir_diagnostics(*, complete_within_bounds: bool, stop_reason: str) -> "tuple[str, ...]":
+    """The formula-decompile IR's ``diagnostics`` -- ONE rule shared by :func:`decompile_to_ir` and the load-time
+    re-derivation (X-high D28.2): nothing when the descent completed within its bounds, else exactly the receipt's own
+    ``stop_reason`` (so the carried diagnostics can say nothing the carried receipt does not)."""
+    return () if complete_within_bounds else (stop_reason,)
+
+
 def decompile_to_ir(
     target: "str | dict[str, int] | Formula",
     inventory: "tuple[Formula, ...] | tuple[str, ...]" = (),
@@ -1468,7 +1508,8 @@ def decompile_to_ir(
     # registry version) changes the IR digest even when the returned candidate set happens to be identical.
     request_digest = decompile_request_digest(
         target_id.identity_digest, terminal_digest, registry_digest, max_multiplicity, budget, max_edges)
-    diagnostics = () if receipt.complete_within_bounds else (receipt.stop_reason,)
+    diagnostics = decompile_ir_diagnostics(
+        complete_within_bounds=receipt.complete_within_bounds, stop_reason=receipt.stop_reason)
     return ChemicalCompilationIR(
         CHEMICAL_COMPILATION_IR_SCHEMA,
         tool_version or _tool_version(),
@@ -1602,28 +1643,10 @@ def recompile_to_ir(
     # reagent-vs-available move, or an algebra/provider-version change) changes the IR digest.
     request_digest = recompile_request_digest(
         target_id.identity_digest, terminal_digest, reagents, registry_digest, mode, max_depth, max_results, cut_budget)
-    if result.target_in_terminal_stock:
-        diagnostics: tuple[str, ...] = (
-            "target is already present in the active terminal stock; no synthesis is required (section 7)",
-        )
-    elif not receipt.complete_within_bounds:
-        diagnostics = (f"search incomplete within bounds: {receipt.status.value}",)
-    elif not candidates:
-        # complete-within-bounds AND zero candidates AND not in stock: NO limit fired, so this mode's search
-        # EXHAUSTED its grammar at these bounds and found no conservation-valid assembly terminating in stock.
-        # This MUST be said precisely -- a silent "complete + empty" is indistinguishable from a truncated
-        # search that gave up (the laundering SRCH-DEPTH-01 outlawed one layer down).  But the claim is scoped
-        # EXACTLY to what the receipt proves: exhaustion of THIS mode's grammar at THESE bounds -- NOT a
-        # registry-wide "no route exists anywhere" (a different mode or higher bounds is not excluded; the same
-        # request under mode='dags' can still be truncated).  Overclaiming that scope was a red-team finding.
-        diagnostics = (
-            f"no route to the target from the declared terminals exists within the '{mode}' search grammar at "
-            f"the declared bounds (max_depth={max_depth}); the search was exhaustive there (no limit fired), but "
-            f"that is exhaustion of THIS grammar/mode at THESE bounds -- not a proof that no route exists under a "
-            f"different mode or higher bounds (section 8.3, no-route: exhaustive-within-bounds)",
-        )
-    else:
-        diagnostics = ()
+    diagnostics = recompile_ir_diagnostics(
+        target_in_terminal_stock=result.target_in_terminal_stock,
+        complete_within_bounds=receipt.complete_within_bounds, status_value=receipt.status.value,
+        has_candidates=bool(candidates), mode=mode, max_depth=max_depth)
     return ChemicalCompilationIR(
         CHEMICAL_COMPILATION_IR_SCHEMA,
         tool_version or _tool_version(),
@@ -1854,9 +1877,42 @@ def _receipt_view_to_payload(view: Section81ReceiptView) -> dict:
     }
 
 
+def _require_exact_keys(payload: object, expected: "frozenset[str]", what: str) -> None:
+    """X-high D28.5 (Wave C5 C5-F6): a versioned wire record carries EXACTLY its fields -- an unknown key is refused
+    (it would ride the whole-body digest as unenforced text a JSON consumer might read as a claim), and a missing one
+    is refused rather than defaulted (the exact-key discipline D26.6 set for the canonical capability codec, applied to
+    every container)."""
+    if type(payload) is not dict:
+        raise ValueError(f"{what} payload must be a JSON object, got {type(payload).__name__}")
+    keys = set(payload)
+    if keys != expected:
+        raise ValueError(f"{what} payload must carry EXACTLY its versioned fields: unknown {sorted(keys - expected)}, "
+                         f"missing {sorted(expected - keys)}; refused (D28.5)")
+
+
+#: The versioned wire keys of the records :func:`ir_to_payload` writes (identical in the released v0.8 shape).
+_IR_PAYLOAD_KEYS = frozenset({
+    "schema_version", "tool_version", "operation", "target", "request_digest", "identity_losses",
+    "terminal_policy_digest", "transform_registry_digest", "search_status", "standard_status", "search_receipt",
+    "candidates", "diagnostics", "structural_candidates",
+})
+_IDENTITY_PAYLOAD_KEYS = frozenset({"schema_version", "layer", "canonical_repr", "identity_digest"})
+_CANDIDATE_PAYLOAD_KEYS = frozenset({"schema_version", "candidate_kind", "candidate_digest", "equation",
+                                     "readiness_tier"})
+_RECEIPT_VIEW_PAYLOAD_KEYS = frozenset({
+    "schema_version", "search_kind", "status", "standard_status", "cut_budget_scope", "target_identity_digest",
+    "terminal_policy_digest", "transform_registry_digest", "max_depth", "cut_budget", "candidate_limit",
+    "result_limit", "nodes_visited", "transforms_considered", "candidates_emitted", "results_returned",
+    "candidates_rejected_by_reason", "cut_enumeration_complete", "candidate_enumeration_complete",
+    "result_limit_saturated", "stop_reason",
+})
+
+
 def _receipt_view_from_payload(p: dict) -> Section81ReceiptView:
     """Rebuild a :class:`Section81ReceiptView` from its payload, re-running its __post_init__ (a tampered view --
-    a status that contradicts its standard_status, a negative counter, an unsorted histogram -- is refused here)."""
+    a status that contradicts its standard_status, a negative counter, an unsorted histogram -- is refused here).
+    X-high D28.5: exactly its versioned keys."""
+    _require_exact_keys(p, _RECEIPT_VIEW_PAYLOAD_KEYS, "search receipt view")
     return Section81ReceiptView(
         p["schema_version"], p["search_kind"], p["status"], p["standard_status"], p["cut_budget_scope"],
         p["target_identity_digest"], p["terminal_policy_digest"], p["transform_registry_digest"],
@@ -2053,6 +2109,13 @@ def ir_from_payload(payload: dict) -> ChemicalCompilationIR:
             f"schema_version must be exactly {CHEMICAL_COMPILATION_IR_SCHEMA!r}, got "
             f"{payload.get('schema_version')!r}; this reader does not consume an older IR payload shape"
         )
+    # X-high D28.5: every IR-level container carries EXACTLY its versioned keys (the released v0.8 shape is the same).
+    _require_exact_keys(payload, _IR_PAYLOAD_KEYS, "compilation IR")
+    _require_exact_keys(payload["target"], _IDENTITY_PAYLOAD_KEYS, "compilation IR target")
+    if type(payload["candidates"]) is not list:
+        raise ValueError("compilation IR candidates must be a JSON array")
+    for c in payload["candidates"]:
+        _require_exact_keys(c, _CANDIDATE_PAYLOAD_KEYS, "candidate summary")
     t = payload["target"]
     target = ChemicalIdentity(
         t["schema_version"], IdentityLayer(t["layer"]), t["canonical_repr"], t["identity_digest"]

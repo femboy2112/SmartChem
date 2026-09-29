@@ -58,7 +58,7 @@ and ``require_reexecution`` re-derives them (the caller-attached provider snapsh
   CompilationResponse.wire.producer_signature (the authenticator itself);
 * what the search FOUND (a consistent rewrite of it is the D25.3 boundary): ChemicalCompilationIR.search_status,
   ChemicalCompilationIR.standard_status, ChemicalCompilationIR.candidates (membership -- a candidate deleted together
-  with its dossier AND the receipt count), ChemicalCompilationIR.diagnostics, ChemicalCompilationIR.structural_candidates,
+  with its dossier AND the receipt count), ChemicalCompilationIR.structural_candidates,
   Section81ReceiptView.status, Section81ReceiptView.standard_status, Section81ReceiptView.cut_enumeration_complete,
   Section81ReceiptView.candidate_enumeration_complete, Section81ReceiptView.result_limit_saturated,
   Section81ReceiptView.stop_reason, and the search telemetry Section81ReceiptView.nodes_visited,
@@ -70,13 +70,21 @@ and ``require_reexecution`` re-derives them (the caller-attached provider snapsh
 
 Everything else is re-derived on load or bound to the request -- the ranking and every dossier verdict (D27.4), the
 corpus envelopes (D27.1), the outcome (D27.3), the frontier and diagnostics (D27.4), the receipt count / kind /
-bounds (D27.5/D27.6) -- which makes the carried REQUEST the anchor: pin it (``expected_request_digest``,
+bounds (D27.5/D27.6), the IR's own diagnostics (D28.2), a carried unknown() envelope (D28.1), the receipt's
+identity digests and result count (D28.3), and every container's exact key set (D28.5) -- which makes the carried
+REQUEST the anchor: pin it (``expected_request_digest``,
 ``expected_capability_question_digest``) or the answer is only proven to answer ITS OWN request.  On the THIN_ADVISORY
 wire (no replay) every ledger entry whose ``thin`` status is DIGEST_ONLY_ADVISORY joins the list (the dossiers'
 non-process verdicts and order, the frontier's catalyst / fiction channels, the DAG-bench note).  A LEGACY v0.8
 payload's ranking, frontier and diagnostics are v0.8's code's (advisory) and its corpus evidence is re-derived only
-under verified admission -- recompile under 0.9.  A decompile's FORMULA_EDGE candidates carry no dossier, so their
-digest and equation are advisory too.
+under verified admission -- recompile under 0.9.
+
+Partially advisory (the ledger's ``advisory_when``, X-high D28.4): CandidateSummary.candidate_digest and
+CandidateSummary.equation are re-derived only for a candidate that carries a dossier; a candidate with NO dossier -- a
+decompile's FORMULA_EDGE candidates and an UNCONSTRAINED convergent-DAG search's DAG candidates (no bench box, so no DAG
+is judged) -- has nothing to re-derive them from, so its digest and equation text are advisory.  Likewise
+ChemicalCompilationIR.diagnostics and CompilationResponse.diagnostics are re-derived by the producer's own rule, but a
+DECOMPILE's incompleteness line IS its receipt's own stop_reason, which is advisory search output.
 """
 from __future__ import annotations
 
@@ -97,12 +105,14 @@ from .compilation_ir import (
     CompilationOperation,
     _recompile_terminal_policy_digest,
     _structure_ident,
+    decompile_ir_diagnostics,
     decompile_request_digest,
     decompile_terminal_context,
     decompile_to_ir,
     formula_decomposition_registry_digest,
     ir_from_payload,
     ir_to_payload,
+    recompile_ir_diagnostics,
     recompile_request_digest,
     recompile_to_ir,
 )
@@ -1981,7 +1991,16 @@ class CompilationResponse:
         # the receipt; that consistent keyless rewrite is closed by ``require_reexecution=True`` (D26.2 -- the rerun's
         # body differs, D27.2) or by the producer HMAC, whose signed wire digest now covers the whole body (D27.2).
         receipt = None if ir is None else ir.search_receipt
-        if (receipt is not None and receipt.results_returned is not None
+        # X-high D28.3 (Wave C5 C5-F4): every receipt a service response wraps COUNTS its results (the route, DAG and
+        # formula receipts all set it), so a null count is not "unmeasured" -- it was the one-token way to delete a
+        # candidate without rewriting the count; refused.
+        if receipt is not None and (isinstance(receipt.results_returned, bool)
+                                    or type(receipt.results_returned) is not int):
+            raise ValueError(
+                f"the IR's {receipt.search_kind} search receipt carries no results_returned count "
+                f"({receipt.results_returned!r}) -- every service search counts its results; refused (D28.3)"
+                f"{self._legacy_hint()}")
+        if (receipt is not None
                 and len(ir.candidates) != receipt.results_returned):
             raise ValueError(
                 f"the IR carries {len(ir.candidates)} candidate(s) but its own {receipt.search_kind} search receipt says "
@@ -2045,6 +2064,20 @@ class CompilationResponse:
                 f"the IR's search receipt reports bounds (max_depth, cut_budget, result_limit) = {carried} but the "
                 f"carried request declares {expected} -- an answer to a DIFFERENT search; refused (D27.6)"
                 f"{self._legacy_hint()}")
+        # X-high D28.3 (Wave C5 C5-F3): the receipt's identity digests are NON-null and the IR's own (which D26.1 binds
+        # to the request).  ``ChemicalCompilationIR.__post_init__`` compares them only when present (a generic IR may
+        # carry an unmeasured one), so a null used to slip every bind; every search a service response wraps stamps
+        # all three.
+        ir = self.compilation_ir
+        for label, carried_digest, bound in (
+            ("target_identity_digest", receipt.target_identity_digest, ir.target.identity_digest),
+            ("terminal_policy_digest", receipt.terminal_policy_digest, ir.terminal_policy_digest),
+            ("transform_registry_digest", receipt.transform_registry_digest, ir.transform_registry_digest),
+        ):
+            if carried_digest is None or carried_digest != bound:
+                raise ValueError(
+                    f"the IR's search receipt {label} is {carried_digest!r}, not the IR's own (request-bound) "
+                    f"{bound!r} -- a nulled or relabelled receipt identity; refused (D28.3){self._legacy_hint()}")
 
     def _check_capability_topology(self) -> None:
         """D24.13 (Wave-C' D-G1): the loader mirrors the producer.  ``_run_recompile`` REFUSES a capability profile
@@ -2146,6 +2179,24 @@ class CompilationResponse:
                 f"outcome {self.outcome.value} is not the classification of this IR under the carried request "
                 f"({expected_outcome.value}: the target is {'' if available else 'NOT '}in the declared terminal "
                 f"set) -- a relabelled answer; refused (D27.3){self._legacy_hint()}")
+        # X-high D28.2 (Wave C5 C5-F2): the IR's OWN diagnostics are the producer's rule over the IR's classification
+        # facts and the carried request (ONE shared helper) -- never free text.  Before this ``ir.diagnostics`` rode
+        # into the "re-derived" response diagnostics verbatim, so a keyless forger appended a "1 FIT ...
+        # CAPABILITY_FIT" line under both pins and verified admission.
+        if request.operation is CompilationOperation.RECOMPILE:
+            expected_ir_diagnostics = recompile_ir_diagnostics(
+                target_in_terminal_stock=available, complete_within_bounds=ir.complete_within_bounds,
+                status_value=ir.search_status.value, has_candidates=bool(ir.candidates),
+                mode=_GRAMMAR_TO_MODE[request.transform_grammar],
+                max_depth=request.search_bounds.value("max_depth"))
+        else:
+            expected_ir_diagnostics = decompile_ir_diagnostics(
+                complete_within_bounds=ir.complete_within_bounds, stop_reason=ir.search_receipt.stop_reason)
+        if tuple(ir.diagnostics) != expected_ir_diagnostics:
+            raise ValueError(
+                "compilation_ir.diagnostics are not the producer's own diagnostics for this IR under the carried "
+                "request (search-emitted text is re-derived, never free) -- injected or rewritten diagnostics; refused "
+                f"(D28.2){self._legacy_hint()}")
         # X-high D27.7 (Wave C4 C4T-8): the IR candidate's own ``equation`` text is the SAME label as its dossier's (which
         # the loop below binds to the replayed route's rendering) -- a free-text IR equation shown by the human render
         # could otherwise contradict the route it names.
@@ -2278,9 +2329,15 @@ class CompilationResponse:
         grafted the isopentyl-acetate corpus envelope onto methyl acetate's route, honestly re-derived the dossier from
         the tampered route, and loaded PROCESS_SPECIFIED under both pins and verified admission.
 
-        Every replayed step whose envelope is not ``ConditionEnvelope.unknown()`` must now EQUAL the envelope the SAME
-        lookup attaches to that step (the transform is recovered by inverting ``ExperimentStep.from_transform``:
-        :class:`_ReplayedTransform`).  An unknown envelope claims nothing and is not checked (it can only demote).
+        Every replayed step's envelope must now EQUAL the envelope the SAME lookup attaches to that step (the transform
+        is recovered by inverting ``ExperimentStep.from_transform``: :class:`_ReplayedTransform`).  X-high D28.1 (Wave
+        C5 C5-F1): on a CURRENT payload that includes a carried ``unknown()`` -- "an unknown envelope claims nothing"
+        held for READINESS only: stripping a corpus envelope to ``unknown()`` erased its sourced process record, so a
+        section-11 EXCLUDED became UNKNOWN (and a REAL_BUT_HARD frontier entry vanished) and an equipment BLOCK became
+        UNKNOWN, under both pins and verified admission.  Every honest producer path attaches exactly the lookup's
+        result (``experiment.routes`` -- the linear and the convergent search both build ``ExperimentStep.from_transform(
+        cs, envelope=_conditions_for(cs))``), so the carried envelope must be the lookup's, whatever it is.  A lookup that
+        cannot even be put to the replayed step is refused (a malformed replay), never an internal error.
         CURRENT payloads: always.  LEGACY v0.8 payloads: v0.8 evidence is v0.8's corpus (nothing in 0.8 bound it, and
         the corpus has been corrected since), so on a PLAIN load it stays advisory (documented boundary); under
         ``require_verified_admission`` it must equal today's lookup modulo the v0.8-absent ``material_uses``, else it
@@ -2298,12 +2355,25 @@ class CompilationResponse:
                 if dossier.replay_payload is None:
                     continue
                 for index, step in enumerate(rebuild(dossier.replay_payload), start=1):
-                    if step.envelope == unknown:
+                    # D27.1 kept a legacy v0.8 payload's carried unknown() out of scope (v0.8's own lookup may have
+                    # found nothing where today's corpus has a record); a CURRENT payload has no such excuse (D28.1).
+                    if self.is_legacy_v08 and step.envelope == unknown:
                         continue
-                    expected = _routes._conditions_for(_ReplayedTransform(step))
+                    try:
+                        expected = _routes._conditions_for(_ReplayedTransform(step))
+                    except Exception as exc:  # noqa: BLE001 -- a replay the lookup cannot read is refused, not a crash
+                        raise ValueError(
+                            f"{kind} dossier {dossier.route_digest[:12]} step {index}: the shipped corpus lookup cannot "
+                            f"be put to the replayed step ({type(exc).__name__}: {exc}); refused (D28.1)"
+                            f"{self._legacy_hint()}") from exc
                     carried = step.envelope
                     if self.is_legacy_v08:
                         expected, carried = _without_material_uses(expected), _without_material_uses(carried)
+                    if carried != expected and carried == unknown:
+                        raise ValueError(
+                            f"{kind} dossier {dossier.route_digest[:12]} step {index} carries unknown() where the "
+                            f"shipped corpus attaches a record to that reaction -- stripped corpus evidence; refused "
+                            f"(D28.1){self._legacy_hint()}")
                     if carried != expected:
                         raise ValueError(
                             f"{kind} dossier {dossier.route_digest[:12]} step {index} carries a condition envelope that "
@@ -4617,8 +4687,27 @@ class _ReplayedTransform:
         self.products = tuple(step.reactants)
 
     def forget(self) -> "object":
-        from .structure_descent import CappedScission
-        return CappedScission.forget(self)
+        """The composition-level edge the producer's own transform forgets to.  Every route algebra a service search
+        runs (``algebra_profiles``: ``legacy-capped-v1`` / ``certified-route-v07``) emits exactly two transform shapes:
+        a reagent-bearing capped scission (``CappedScission.forget`` -> ``MediatedEdge``) and a REAGENTLESS Diels-Alder
+        retro (``_da_forget`` -> the v1 ``DecompositionEdge``).  X-high D28.1 looks up EVERY replayed step (a carried
+        unknown() included), so the reagentless shape is answered with the same element-bucket image rather than
+        refused as malformed (an honest Diels-Alder answer must load)."""
+        from .structure_descent import CappedScission, _fkey
+        if self.reagents:
+            return CappedScission.forget(self)
+        from .decompiler import DecompositionEdge, Formula
+        merged: "dict[Formula, int]" = {}
+        for molecule in self.products:
+            comp = Formula.of(molecule.formula, molecule.charge)
+            if comp.is_element:
+                (symbol, count), = comp.counts
+                bucket = Formula.bucket(symbol)
+                merged[bucket] = merged.get(bucket, 0) + count
+            else:
+                merged[comp] = merged.get(comp, 0) + 1
+        products = tuple(sorted(merged.items(), key=lambda pm: (_fkey(pm[0]), pm[1])))
+        return DecompositionEdge(Formula.of(self.reactant.formula, self.reactant.charge), 1, products)
 
 
 def _without_material_uses(envelope: "object") -> "object":
@@ -4883,6 +4972,68 @@ def request_to_payload(request: CompilationRequest) -> dict:
     }
 
 
+#: X-high D28.5 (Wave C5 C5-F6): the EXACT keys of each released wire generation's containers.  The current shape adds
+#: only the 0.9 capability keys to the released v0.8 one; every other container is key-identical across the two (pinned
+#: against the REAL v0.8 fixtures).  Three keys are OPTIONAL, each by a released rule: a dossier's ``replay_payload`` (the
+#: thin wire omits it) and a request's ``algebra_profile`` (the FROZEN 0.7 missing-field migration law) -- plus a cost
+#: vector's ``fiction_blockers`` (the pre-DISPOSITION-01 revival rule).
+_V08_REQUEST_PAYLOAD_KEYS = frozenset({
+    "schema_version", "operation", "target_input", "input_kind", "normalized_identity", "identity_policy",
+    "terminal_policy", "stock_materials", "helper_reagents", "transform_grammar", "evidence_provider_selection",
+    "search_bounds", "constraints", "ranking_policy", "output_policy", "origins", "algebra_profile",
+})
+_REQUEST_PAYLOAD_KEYS = _V08_REQUEST_PAYLOAD_KEYS | {"capability_profile", "capability_profile_origin"}
+_REQUEST_NESTED_PAYLOAD_KEYS = {
+    "identity_policy": frozenset({"policy_id", "match_layer"}),
+    "terminal_policy": frozenset({"match_mode", "commodities_enabled", "formula_inventory"}),
+    "evidence_provider_selection": frozenset({"selection_id"}),
+    "ranking_policy": frozenset({"policy_id"}),
+    "output_policy": frozenset({"render_mode", "quiet"}),
+}
+_V08_RESPONSE_PAYLOAD_KEYS = frozenset({
+    "schema_version", "request", "outcome", "standard_status", "compilation_ir", "diagnostics",
+    "ranked_route_dossiers", "affordability_frontier", "provider_snapshots", "parse_receipt_summary",
+    "ranked_dag_dossiers", "process_selection_status", "admissible_route_digests", "exit_code", "search_space_status",
+    "transport_mode", "result_digest", "producer_signature",
+})
+_RESPONSE_PAYLOAD_KEYS = _V08_RESPONSE_PAYLOAD_KEYS | {"capability_question_digest"}
+_V08_ROUTE_SUMMARY_PAYLOAD_KEYS = frozenset({
+    "schema_version", "route_digest", "equation", "fit_status", "readiness", "readiness_tier", "exclusions", "gaps",
+    "composability_verdict", "selectivity_verdict", "feasibility_verdict", "equilibrium_verdict", "kinetics_verdict",
+    "process_requirements",
+})
+_ROUTE_SUMMARY_PAYLOAD_KEYS = _V08_ROUTE_SUMMARY_PAYLOAD_KEYS | {"capability_assessment"}
+_DAG_SUMMARY_PAYLOAD_KEYS = frozenset({
+    "schema_version", "route_digest", "equation", "fit_status", "exclusions", "gaps", "process_requirements", "edges",
+    "composability_verdict", "selectivity_verdict", "feasibility_verdict", "equilibrium_verdict", "kinetics_verdict",
+    "serial_holds",
+})
+_FRONTIER_ENTRY_PAYLOAD_KEYS = frozenset({"schema_version", "route_digest", "cost_vector"})
+_COST_VECTOR_PAYLOAD_KEYS = frozenset({
+    "cash", "cash_floor", "access_difficulty", "evidence_tier_rank", "new_equipment", "material_quantity", "energy",
+    "labor_time", "preprocessing", "analytical", "waste_disposal", "hard_blockers", "fiction_blockers", "currency",
+    "unit", "region",
+})
+_PROVIDER_SNAPSHOT_PAYLOAD_KEYS = frozenset({
+    "schema_version", "provider_ids", "record_count", "content_digest", "fetched_at", "allow_network",
+})
+
+
+def _require_payload_keys(payload: object, required: "frozenset[str]", what: str, *,
+                          optional: "frozenset[str]" = frozenset()) -> None:
+    """X-high D28.5: a wire container carries EXACTLY its versioned keys (``optional`` ones may be absent) -- an unknown
+    key is REFUSED (it rode the whole-body digest as unenforced text a JSON consumer might read as a claim: a dossier's
+    ``"capability_overall": "CAPABILITY_FIT"``), and a missing required key is REFUSED rather than silently defaulted
+    (the exact-key discipline D26.6 set for the canonical capability codec, applied to every container)."""
+    if type(payload) is not dict:
+        raise ValueError(f"{what} payload must be a JSON object, got {type(payload).__name__}; refused")
+    keys = set(payload)
+    unknown, missing = keys - required - optional, required - optional - keys
+    if unknown or missing:
+        raise ValueError(f"{what} payload must carry EXACTLY its versioned fields: unknown {sorted(unknown)}, missing "
+                         f"{sorted(missing)}; refused (D28.5)")
+
+
 def request_from_payload(payload: dict) -> CompilationRequest:
     """Reconstruct a request from :func:`request_to_payload`; re-validates via the frozen records' guards.
 
@@ -4914,6 +5065,14 @@ def request_from_payload(payload: dict) -> CompilationRequest:
             )
     else:
         raise _unsupported_schema("request", version, COMPILATION_REQUEST_SCHEMA, LEGACY_V08_REQUEST_SCHEMA)
+    # X-high D28.5: exactly the versioned keys of the dispatched generation, nested policy objects included.
+    # ``algebra_profile`` alone stays optional: its absence is the FROZEN 0.7 wire-migration law (a pre-0.7 request
+    # reconstructs as LEGACY_MISSING_ALGEBRA_PROFILE, never the promotable build default), a released decode rule, not
+    # a silent default -- and the algebra is inside the semantic digest a consumer pins.
+    _require_payload_keys(payload, _REQUEST_PAYLOAD_KEYS if version == COMPILATION_REQUEST_SCHEMA
+                          else _V08_REQUEST_PAYLOAD_KEYS, "request", optional=frozenset({"algebra_profile"}))
+    for name, keys in _REQUEST_NESTED_PAYLOAD_KEYS.items():
+        _require_payload_keys(payload[name], keys, f"request {name}")
     tp = payload["terminal_policy"]
     operation = CompilationOperation(payload["operation"])
     target_input = payload["target_input"]
@@ -5043,6 +5202,10 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
     else:
         raise _unsupported_schema("ranked route summary", version, RANKED_ROUTE_SUMMARY_SCHEMA,
                                   LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA)
+    # X-high D28.5: exactly the dispatched generation's keys (the replay is the one optional key).
+    _require_payload_keys(payload, _ROUTE_SUMMARY_PAYLOAD_KEYS if version == RANKED_ROUTE_SUMMARY_SCHEMA
+                          else _V08_ROUTE_SUMMARY_PAYLOAD_KEYS, "ranked route summary",
+                          optional=frozenset({"replay_payload"}))
     readiness = _route_readiness_from_payload(payload["readiness"])
     if payload["readiness_tier"] != readiness.tier:
         raise ValueError(
@@ -5123,6 +5286,20 @@ def _exact_int_pair(pair) -> "tuple[int, int]":
     return (a, b)
 
 
+def _exact_hold_triple(triple) -> "tuple[int, int, float]":
+    """A serial hold ``[i, j, minutes]`` with its wire types validated BEFORE conversion (X-high D28.5, C5-F7): the step
+    indices are exact ints (not bool/float/str) and the minutes a real JSON number (int or float, not bool/str/null) --
+    an int minute count is widened to float losslessly, nothing else is coerced."""
+    if type(triple) not in (list, tuple) or len(triple) != 3:
+        raise TypeError("each serial hold must be an [i, j, minutes] triple")
+    i, j, minutes = triple
+    if isinstance(i, bool) or isinstance(j, bool) or type(i) is not int or type(j) is not int:
+        raise TypeError("serial hold step indices must be exact ints (not bool/float/str)")
+    if isinstance(minutes, bool) or type(minutes) not in (int, float):
+        raise TypeError("serial hold minutes must be a JSON number (not bool/str/null)")
+    return (i, j, float(minutes))
+
+
 def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
     """Reconstruct a DAG combined bench admission; re-validates via its __post_init__ (edge-shape + coherence) guards.
     ``edges`` wire types are validated BEFORE coercion (:func:`_exact_int_pair`), so a bool/float/string index cannot
@@ -5146,6 +5323,11 @@ def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
     elif version != RANKED_DAG_SUMMARY_SCHEMA:
         raise _unsupported_schema("ranked DAG summary", version, RANKED_DAG_SUMMARY_SCHEMA,
                                   LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA)
+    # X-high D28.5: exactly the versioned keys (identical in both generations; the replay is the one optional key).
+    _require_payload_keys(payload, _DAG_SUMMARY_PAYLOAD_KEYS, "ranked DAG summary",
+                          optional=frozenset({"replay_payload"}))
+    if type(payload["serial_holds"]) is not list:
+        raise ValueError("ranked DAG summary serial_holds must be a JSON array; refused (D28.5)")
     return RankedDAGSummary(
         payload["schema_version"],
         payload["route_digest"],
@@ -5160,9 +5342,10 @@ def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
         payload["feasibility_verdict"],
         payload["equilibrium_verdict"],
         payload["kinetics_verdict"],
-        # serial_holds is optional for backward tolerance; coerce back to (int,int,float) triples (the shape
-        # guard rejects a list, so the round-trip is exact).  Absent -> () (a pre-2b payload had no holds field).
-        tuple((int(i), int(j), float(m)) for i, j, m in payload.get("serial_holds", [])),
+        # X-high D28.5 (Wave C5 C5-F7): serial_holds is a REQUIRED key (both released generations carry it) whose wire
+        # types are validated BEFORE any conversion (:func:`_exact_hold_triple`) -- the int()/float() coercion that
+        # silently turned ``["1", true, "99999"]`` into a legal-looking hold is gone, as ``_exact_int_pair`` did for edges.
+        tuple(_exact_hold_triple(t) for t in payload["serial_holds"]),
         replay_payload=payload.get("replay_payload"),
     )
 
@@ -5200,6 +5383,13 @@ def affordability_entry_from_payload(payload: dict):
     ``hard_blockers`` and ``fiction_blockers`` are coerced back to tuples -- the CostVector guard rejects a list, so
     the round-trip is exact; ``fiction_blockers`` reads via ``.get`` so a pre-DISPOSITION-01 payload still revives."""
     from .experiment.affordability import AffordabilityFrontierEntry, CostVector
+    # X-high D28.5: exactly the versioned keys (identical in both released generations).  ``fiction_blockers`` alone
+    # stays optional -- the released pre-DISPOSITION-01 revival rule above (an absent channel is empty); a STRIPPED
+    # channel on a current response is refused on the canonical wire (the D27.4 frontier re-derivation) and under
+    # verified admission (TAMPER-HARDENING-01), and stays advisory on a plain thin load, exactly as the ledger states.
+    _require_payload_keys(payload, _FRONTIER_ENTRY_PAYLOAD_KEYS, "affordability frontier entry")
+    _require_payload_keys(payload["cost_vector"], _COST_VECTOR_PAYLOAD_KEYS, "affordability frontier cost vector",
+                          optional=frozenset({"fiction_blockers"}))
     cv = payload["cost_vector"]
     return AffordabilityFrontierEntry(
         payload["schema_version"],
@@ -5241,6 +5431,7 @@ def provider_snapshot_from_payload(payload: dict):
     """Reconstruct a provider snapshot; re-validates via its __post_init__.  ``provider_ids`` is coerced back to a
     tuple (the guard rejects a list), so the round-trip is exact."""
     from .data.provider_snapshot import ProviderSnapshot
+    _require_payload_keys(payload, _PROVIDER_SNAPSHOT_PAYLOAD_KEYS, "provider snapshot")  # X-high D28.5
     return ProviderSnapshot(
         payload["schema_version"],
         tuple(payload["provider_ids"]),
@@ -5674,6 +5865,11 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         dossier_payloads = payload["ranked_route_dossiers"]
     else:
         raise _unsupported_schema("response", version, COMPILATION_RESPONSE_SCHEMA, LEGACY_V08_RESPONSE_SCHEMA)
+    # X-high D28.5 (Wave C5 C5-F6): exactly the dispatched generation's top-level keys -- no unknown key rides the body
+    # digest as an unenforced "claim", and no required key (transport_mode, provider_snapshots, ranked_dag_dossiers, ...)
+    # is silently defaulted.
+    _require_payload_keys(payload, _RESPONSE_PAYLOAD_KEYS if version == COMPILATION_RESPONSE_SCHEMA
+                          else _V08_RESPONSE_PAYLOAD_KEYS, "response")
     ir_payload = payload["compilation_ir"]
     response = CompilationResponse(
         payload["schema_version"],

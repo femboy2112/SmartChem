@@ -19,6 +19,7 @@ from smartchem.transport_ledger import (
     LedgerEntry,
     TransportStatus,
     advisory_fields,
+    partially_advisory_fields,
     status_counts,
 )
 
@@ -100,6 +101,8 @@ def test_the_entry_shape_laws():
         LedgerEntry(TransportStatus.DIGEST_ONLY_ADVISORY, ("smartchem.service:response_from_payload",))
     with pytest.raises(ValueError):
         LedgerEntry(TransportStatus.RE_DERIVED_ON_LOAD)
+    with pytest.raises(ValueError):  # D28.4: advisory_when qualifies a re-derived / bound entry only
+        LedgerEntry(TransportStatus.DIGEST_ONLY_ADVISORY, advisory_when="always")
     for table, entries in TRANSPORT_LEDGER.items():
         for name, entry in entries.items():
             assert entry.thin in (None, TransportStatus.DIGEST_ONLY_ADVISORY), f"{table}.{name}"
@@ -115,10 +118,17 @@ _TOKEN = re.compile(r"\b(CompilationResponse\.wire|CompilationResponse|RankedRou
 def test_the_service_docstring_names_exactly_the_advisory_fields():
     doc = svc.__doc__
     section = doc[doc.index("What a KEYLESS consumer must treat as advisory"):]
-    named = {f"{table}.{field}" for table, field in _TOKEN.findall(section)}
+    always, _, partial = section.partition("Partially advisory")
+    named = {f"{table}.{field}" for table, field in _TOKEN.findall(always)}
     advisory = set(advisory_fields())
     assert not advisory - named, f"advisory fields the service docstring does not name: {sorted(advisory - named)}"
     assert not named - advisory, f"the service docstring names NON-advisory fields: {sorted(named - advisory)}"
+    # X-high D28.4: the partially advisory entries (``advisory_when``) are named in their own sentence -- no more, no less.
+    named_partial = {f"{table}.{field}" for table, field in _TOKEN.findall(partial)}
+    assert named_partial == set(partially_advisory_fields()), (
+        f"'Partially advisory' names {sorted(named_partial)} but the ledger's advisory_when entries are "
+        f"{sorted(partially_advisory_fields())}")
+    assert "UNCONSTRAINED convergent-DAG" in partial, "D28.4: the unconstrained-DAG candidate case must be disclosed"
 
 
 def _refresh(wire, resp):
@@ -168,3 +178,250 @@ def test_the_result_digest_is_the_whole_body_digest(honest):
             assert wire["result_digest"] == svc._transport_bound_result_digest(
                 resp.result_digest, wire["transport_mode"], svc._payload_body_digest(wire))
             svc.response_from_payload(wire)
+
+
+# -- X-high D28.6: every RE_DERIVED / BOUND / FROZEN label has a keyless single-field forgery the loader REFUSES ----------
+#
+# The Wave C5 audit found four ledger entries labelled re-derived / bound that a keyless forger could change and still
+# load (C5-F1..F4): the old behaviour test covered only the 9 top-level wire keys and merely checked that nested checks
+# EXIST.  Here EVERY non-advisory entry names one forgery on an honest world: one field edited, then EVERY public digest a
+# keyless forger controls recomputed from the forged content (the response's own result identity via the loader's own
+# constructor call, the derived wire keys, the whole-body wire digest) -- so the refusal must come from the entry's own law,
+# never from a stale public digest.  A new RE / REQ / FROZEN label without a refusing forgery here fails the suite.
+
+_DERIVED_WIRE = ("process_selection_status", "admissible_route_digests", "exit_code", "search_space_status",
+                 "capability_question_digest")
+
+
+def _raw_response(p):
+    """The loader's own constructor call (``response_from_payload``), without its load-time checks: what a keyless forger
+    runs to recompute the response's public result identity from a forged payload."""
+    ir = p["compilation_ir"]
+    return svc.CompilationResponse(
+        p["schema_version"], svc.request_from_payload(p["request"]), svc.ResponseOutcome(p["outcome"]),
+        p["standard_status"], None if ir is None else cir.ir_from_payload(ir), tuple(p["diagnostics"]),
+        tuple(svc.ranked_summary_from_payload(r) for r in p["ranked_route_dossiers"]),
+        tuple(svc.affordability_entry_from_payload(e) for e in p["affordability_frontier"]),
+        tuple(svc.provider_snapshot_from_payload(s) for s in p["provider_snapshots"]),
+        parse_receipt_summary=p["parse_receipt_summary"],
+        ranked_dag_dossiers=tuple(svc.ranked_dag_summary_from_payload(d) for d in p["ranked_dag_dossiers"]))
+
+
+def _reforge(p, *, keep=frozenset()):
+    """The keyless forger: recompute every public pin from the FORGED content (``keep`` names the forged key itself)."""
+    raw = _raw_response(p)
+    for key in _DERIVED_WIRE:
+        if key not in keep:
+            value = getattr(raw, key)
+            p[key] = list(value) if key == "admissible_route_digests" else value
+    if "result_digest" not in keep:
+        p["result_digest"] = svc._transport_bound_result_digest(raw.result_digest, p["transport_mode"],
+                                                               svc._payload_body_digest(p))
+    return p
+
+
+@pytest.fixture(scope="module")
+def worlds(honest):
+    routes, dag, decompile = honest
+    mesal = svc.run_compilation(svc.build_recompile_request(
+        "smiles:COC(=O)c1ccccc1O", max_depth=1, helper_reagents=("water",),
+        stock_materials=("salicylic acid", "methanol"), max_temperature_k=320.0, capability_profile="poor-man"))
+    stereo = svc.run_compilation(svc.build_recompile_request(
+        "smiles:C[C@H](O)C(=O)OC", max_depth=1, helper_reagents=("water",), stock_materials=("methanol",)))
+    built = {"routes": routes, "dag": dag, "decompile": decompile, "mesal": mesal, "stereo": stereo}
+    wires = {name: svc.response_to_payload(resp, include_replay=True) for name, resp in built.items()}
+    assert wires["mesal"]["affordability_frontier"], "setup: the mesal world must carry a frontier entry"
+    assert wires["stereo"]["compilation_ir"]["identity_losses"], "setup: the stereo world must carry an identity loss"
+    assert len(wires["dag"]["ranked_dag_dossiers"]) >= 2 and len(wires["routes"]["ranked_route_dossiers"]) >= 2
+    return wires
+
+
+_IR = lambda p: p["compilation_ir"]  # noqa: E731
+_RC = lambda p: p["compilation_ir"]["search_receipt"]  # noqa: E731
+_CAND = lambda p: p["compilation_ir"]["candidates"][0]  # noqa: E731
+_DS = lambda p: p["ranked_route_dossiers"][0]  # noqa: E731
+_DG = lambda p: p["ranked_dag_dossiers"][0]  # noqa: E731
+_DGE = lambda p: max(p["ranked_dag_dossiers"], key=lambda d: len(d["edges"]))  # noqa: E731  (the most-connected DAG)
+_ST = lambda p: p["ranked_route_dossiers"][0]["replay_payload"][0]  # noqa: E731
+_BUMP = "99"
+
+
+def _set(getter, key, value):
+    return lambda p, wires: getter(p).__setitem__(key, value(getter(p)[key]) if callable(value) else value)
+
+
+def _bump_bound(name):
+    def edit(p, wires):
+        for pair in p["request"]["search_bounds"]:
+            if pair[0] == name:
+                pair[1] += 1
+    return edit
+
+
+def _promote_readiness(p, wires):
+    """A PROCESS_SPECIFIED forgery: every unknown obligation of step 1 flipped to SATISFIED, its open obligations and the
+    route's cleared, and the derived wire tier kept coherent -- a structurally valid ladder the replay cannot support."""
+    readiness = _DS(p)["readiness"]
+    for step in readiness["per_step"]:
+        for key in ("process", "workup_isolation"):
+            step[key] = "SATISFIED"
+        step["open_obligations"] = []
+    readiness["route_open_obligations"] = []
+    _DS(p)["readiness_tier"] = "PROCESS_SPECIFIED"
+
+
+def _fit(value, exclusions):
+    def edit(p, wires):
+        _DS(p).update(fit_status=value, exclusions=exclusions, gaps=[])
+    return edit
+
+
+def _dag_fit(value, exclusions):
+    def edit(p, wires):
+        _DG(p).update(fit_status=value, exclusions=exclusions, gaps=[])
+    return edit
+
+
+def _flip_verdict(getter, key):
+    return _set(getter, key, lambda v: "FAVORABLE" if v != "FAVORABLE" else "UNFAVORABLE")
+
+
+def _strip_envelope(p, wires):
+    from smartchem.conditions import ConditionEnvelope
+    _ST(p)["envelope"] = svc._condition_envelope_to_payload(ConditionEnvelope.unknown())
+
+
+_FORGERIES = {
+    # -- the response ------------------------------------------------------------------------------------------------
+    "CompilationResponse.schema_version": ("routes", _set(lambda p: p, "schema_version",
+                                                          f"smartchem.service/compilation-response-v1alpha{_BUMP}")),
+    "CompilationResponse.request": ("routes", _bump_bound("max_results")),
+    "CompilationResponse.outcome": ("routes", _set(lambda p: p, "outcome", "NO_ROUTE_COMPLETE")),
+    "CompilationResponse.standard_status": ("routes", _set(lambda p: p, "standard_status", lambda v: (
+        "INCOMPLETE_DEPTH_LIMIT" if v != "INCOMPLETE_DEPTH_LIMIT" else "COMPLETE"))),
+    "CompilationResponse.compilation_ir": ("routes", _set(_IR, "request_digest", "0" * 64)),
+    "CompilationResponse.diagnostics": ("routes", lambda p, w: p["diagnostics"].append("forged: 3 route(s) FIT")),
+    "CompilationResponse.ranked_route_dossiers": ("routes", lambda p, w: p["ranked_route_dossiers"].reverse()),
+    "CompilationResponse.affordability_frontier": ("mesal", lambda p, w: p["affordability_frontier"].pop()),
+    "CompilationResponse.ranked_dag_dossiers": ("dag", lambda p, w: p["ranked_dag_dossiers"].reverse()),
+    # -- the derived wire keys (edited AND left edited: the forger's point is the label) -----------------------------
+    **{f"CompilationResponse.wire.{key}": ("routes", _set(lambda p: p, key, _FORGED_WIRE_VALUES[key]))
+       for key in ("exit_code", "process_selection_status", "admissible_route_digests", "search_space_status",
+                   "capability_question_digest")},
+    "CompilationResponse.wire.result_digest": ("routes", _set(lambda p: p, "result_digest",
+                                                              lambda v: ("1" if v[0] != "1" else "2") + v[1:])),
+    # -- a route dossier (the corpus-evidenced methyl-salicylate route) ---------------------------------------------
+    "RankedRouteSummary.schema_version": ("mesal", _set(_DS, "schema_version",
+                                                        f"smartchem.service/ranked-route-summary-v1alpha{_BUMP}")),
+    "RankedRouteSummary.route_digest": ("mesal", _set(_DS, "route_digest", "0" * 64)),
+    "RankedRouteSummary.equation": ("mesal", _set(_DS, "equation", lambda v: v + " ")),
+    "RankedRouteSummary.fit_status": ("mesal", _fit("FITS", [])),
+    "RankedRouteSummary.readiness": ("mesal", _promote_readiness),
+    "RankedRouteSummary.exclusions": ("mesal", _fit("EXCLUDED", ["forged: outside a hard bound"])),
+    "RankedRouteSummary.gaps": ("mesal", lambda p, w: _DS(p)["gaps"].append("forged gap")),
+    **{f"RankedRouteSummary.{key}": ("mesal", _flip_verdict(_DS, key))
+       for key in ("composability_verdict", "selectivity_verdict", "feasibility_verdict", "equilibrium_verdict",
+                   "kinetics_verdict")},
+    "RankedRouteSummary.process_requirements": ("mesal", _set(_DS, "process_requirements",
+                                                              lambda v: [None] * len(v))),
+    "RankedRouteSummary.replay_payload": ("mesal", lambda p, w: _DS(p).pop("replay_payload")),
+    "RankedRouteSummary.capability_assessment": ("mesal", _set(_DS, "capability_assessment", None)),
+    "RankedRouteSummary.wire.readiness_tier": ("mesal", _set(_DS, "readiness_tier", lambda v: (
+        "FORMAL_CANDIDATE" if v != "FORMAL_CANDIDATE" else "REACTION_VOUCHED"))),
+    # -- a DAG dossier ------------------------------------------------------------------------------------------------
+    "RankedDAGSummary.schema_version": ("dag", _set(_DG, "schema_version",
+                                                    f"smartchem.service/ranked-dag-summary-v1alpha{_BUMP}")),
+    "RankedDAGSummary.route_digest": ("dag", _set(_DG, "route_digest", "0" * 64)),
+    "RankedDAGSummary.equation": ("dag", _set(_DG, "equation", lambda v: v + " ")),
+    "RankedDAGSummary.fit_status": ("dag", _dag_fit("FITS", [])),
+    "RankedDAGSummary.exclusions": ("dag", _dag_fit("EXCLUDED", ["forged: outside a hard bound"])),
+    "RankedDAGSummary.gaps": ("dag", lambda p, w: _DG(p)["gaps"].append("forged gap")),
+    "RankedDAGSummary.process_requirements": ("dag", lambda p, w: _DG(p)["process_requirements"].pop()),
+    "RankedDAGSummary.edges": ("dag", _set(_DGE, "edges", lambda v: [[b, a] for a, b in v])),
+    **{f"RankedDAGSummary.{key}": ("dag", _flip_verdict(_DG, key))
+       for key in ("composability_verdict", "selectivity_verdict", "feasibility_verdict", "equilibrium_verdict",
+                   "kinetics_verdict")},
+    "RankedDAGSummary.serial_holds": ("dag", lambda p, w: _DGE(p)["serial_holds"].append([0, 2, 99999.0])),
+    "RankedDAGSummary.replay_payload": ("dag", lambda p, w: _DG(p).pop("replay_payload")),
+    # -- the IR -------------------------------------------------------------------------------------------------------
+    "ChemicalCompilationIR.schema_version": ("routes", _set(_IR, "schema_version", lambda v: v + _BUMP)),
+    "ChemicalCompilationIR.operation": ("routes", _set(_IR, "operation", "DECOMPILE")),
+    "ChemicalCompilationIR.target": ("routes", lambda p, w: (  # a CONSISTENT swap: the receipt's target digest moves too
+        _IR(p).__setitem__("target", copy.deepcopy(w["mesal"]["compilation_ir"]["target"])),
+        _RC(p).__setitem__("target_identity_digest", w["mesal"]["compilation_ir"]["target"]["identity_digest"]))),
+    "ChemicalCompilationIR.request_digest": ("routes", _set(_IR, "request_digest", "0" * 64)),
+    "ChemicalCompilationIR.identity_losses": ("stereo", _set(_IR, "identity_losses", [])),
+    "ChemicalCompilationIR.terminal_policy_digest": ("routes", lambda p, w: (
+        _IR(p).__setitem__("terminal_policy_digest", "0" * 64), _RC(p).__setitem__("terminal_policy_digest", "0" * 64))),
+    "ChemicalCompilationIR.transform_registry_digest": ("routes", lambda p, w: (
+        _IR(p).__setitem__("transform_registry_digest", "0" * 64),
+        _RC(p).__setitem__("transform_registry_digest", "0" * 64))),
+    "ChemicalCompilationIR.search_receipt": ("routes", lambda p, w: _IR(p).__setitem__(
+        "search_receipt", copy.deepcopy(w["dag"]["compilation_ir"]["search_receipt"]))),
+    "ChemicalCompilationIR.diagnostics": ("routes", lambda p, w: (
+        _IR(p)["diagnostics"].insert(0, "forged: 1 FIT; CAPABILITY_FIT under poor-man"),
+        p["diagnostics"].insert(0, "forged: 1 FIT; CAPABILITY_FIT under poor-man"))),
+    # -- the search receipt -------------------------------------------------------------------------------------------
+    "Section81ReceiptView.schema_version": ("routes", _set(_RC, "schema_version", lambda v: v + _BUMP)),
+    "Section81ReceiptView.search_kind": ("routes", _set(_RC, "search_kind", "CONVERGENT_DAG")),
+    "Section81ReceiptView.cut_budget_scope": ("routes", _set(_RC, "cut_budget_scope", "GLOBAL")),
+    "Section81ReceiptView.target_identity_digest": ("routes", _set(_RC, "target_identity_digest", None)),
+    "Section81ReceiptView.terminal_policy_digest": ("routes", _set(_RC, "terminal_policy_digest", None)),
+    "Section81ReceiptView.transform_registry_digest": ("decompile", _set(_RC, "transform_registry_digest", None)),
+    "Section81ReceiptView.max_depth": ("routes", _set(_RC, "max_depth", lambda v: v + 1)),
+    "Section81ReceiptView.cut_budget": ("routes", _set(_RC, "cut_budget", lambda v: v + 1)),
+    "Section81ReceiptView.candidate_limit": ("routes", _set(_RC, "candidate_limit", 5)),
+    "Section81ReceiptView.result_limit": ("routes", _set(_RC, "result_limit", lambda v: v + 1)),
+    "Section81ReceiptView.results_returned": ("routes", _set(_RC, "results_returned", None)),
+    # -- a candidate --------------------------------------------------------------------------------------------------
+    "CandidateSummary.schema_version": ("routes", _set(_CAND, "schema_version", lambda v: v + _BUMP)),
+    "CandidateSummary.candidate_kind": ("routes", _set(_CAND, "candidate_kind", "DAG")),
+    "CandidateSummary.candidate_digest": ("routes", _set(_CAND, "candidate_digest", "0" * 64)),
+    "CandidateSummary.equation": ("routes", _set(_CAND, "equation", "forged: CAPABILITY_FIT")),
+    "CandidateSummary.readiness_tier": ("routes", _set(_CAND, "readiness_tier", "PROCESS_SPECIFIED")),
+    # -- a replayed step ----------------------------------------------------------------------------------------------
+    "replay_step.schema_version": ("mesal", _set(_ST, "schema_version", lambda v: v + _BUMP)),
+    "replay_step.envelope": ("mesal", _strip_envelope),
+}
+
+
+def test_every_non_advisory_ledger_entry_names_a_keyless_forgery():
+    """A RE_DERIVED / BOUND / FROZEN label is a CLAIM the loader refuses a forgery of -- so every one needs its forgery
+    below (D28.6); a new label added without one fails here, before it can over-claim silently."""
+    labelled = {f"{table}.{field}" for table, entries in TRANSPORT_LEDGER.items() for field, entry in entries.items()
+                if entry.status is not TransportStatus.DIGEST_ONLY_ADVISORY}
+    assert set(_FORGERIES) == labelled, (
+        f"non-advisory entries with NO forgery: {sorted(labelled - set(_FORGERIES))}; forgeries for entries that are not "
+        f"(or no longer) re-derived/bound/frozen: {sorted(set(_FORGERIES) - labelled)}")
+
+
+@pytest.mark.parametrize("entry", sorted(_FORGERIES))
+def test_every_non_advisory_ledger_entry_refuses_its_keyless_forgery(worlds, entry):
+    world, edit = _FORGERIES[entry]
+    honest_wire = worlds[world]
+    forged = copy.deepcopy(honest_wire)
+    edit(forged, worlds)
+    assert forged != honest_wire, f"{entry}: the forgery changed nothing (a vacuous test)"
+    table, _, field = entry.rpartition(".")
+    keep = frozenset({field}) if table == "CompilationResponse.wire" else frozenset()
+    try:
+        _reforge(forged, keep=keep)
+    except (ValueError, TypeError, KeyError):
+        return  # refused already by the loader's own constructor call (a record guard or a coherence law)
+    with pytest.raises((ValueError, TypeError, KeyError)) as refusal:
+        svc.response_from_payload(forged)
+    if field != "result_digest":
+        assert "result_digest does not match" not in str(refusal.value), (
+            f"{entry}: refused only by a stale PUBLIC digest, not by the entry's own law -- the forger recomputes that")
+
+
+def test_the_disclosed_partial_advisory_case_really_loads(worlds, honest):
+    """The other direction (the ledger does not UNDER-claim either): an unconstrained convergent-DAG search's candidate has
+    no dossier, so its equation text is advisory -- a keyless edit of it LOADS (D28.4 discloses exactly this)."""
+    unconstrained = svc.run_compilation(svc.build_recompile_request(
+        "smiles:CC(=O)OC", max_depth=2, grammar=svc.TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+        helper_reagents=("water", "acetic acid")))
+    wire = svc.response_to_payload(unconstrained)
+    assert wire["compilation_ir"]["candidates"] and not wire["ranked_dag_dossiers"], "setup: dossier-less DAG candidates"
+    wire["compilation_ir"]["candidates"][0]["equation"] = "forged text (advisory: no dossier to re-derive it from)"
+    svc.response_from_payload(_reforge(wire))

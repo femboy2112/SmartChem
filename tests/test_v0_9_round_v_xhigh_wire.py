@@ -14,7 +14,11 @@ message so a test can never pass because some other layer happened to fire first
   response_isopentyl_acetate_dag.json), and the WIP-only ids are never migrated;
 * D27 (Wave C4 C4T-1..8 + Foreman N2-N4, bottom of the file) the structural transport closure: corpus envelopes
   re-derived (D27.1), the whole-body wire digest (D27.2), the outcome / ranking / frontier / diagnostics / receipt
-  count / receipt bounds re-derived or bound (D27.3-D27.6), and the D27.7 residual closes.
+  count / receipt bounds re-derived or bound (D27.3-D27.6), and the D27.7 residual closes;
+* D28 (Wave C5 C5-F1..F7, bottom of the file) the ledger made truthful: a carried unknown() envelope is corpus-checked
+  too (D28.1), the IR's own diagnostics are re-derived (D28.2), the receipt's identity digests and result count are
+  non-null (D28.3), the unconstrained-DAG candidate label is DISCLOSED advisory (D28.4), and every container carries
+  exactly its versioned keys, serial holds exact JSON numbers (D28.5).
 """
 from __future__ import annotations
 
@@ -666,14 +670,16 @@ def test_d26_1_t1_a_transplanted_answer_to_a_different_target_is_refused():
 
 def test_d26_1_t1c_a_cosmetic_transplant_is_caught_at_the_replayed_route():
     """T1c: as T1 but every request-derived IR field is copied from the honest answer to X (target, request/terminal
-    digests, receipt digests, diagnostics) -- only the REPLAYED routes still make Y's product."""
+    digests, receipt digests) -- only the REPLAYED routes still make Y's product. The IR's diagnostics stay Y's: since
+    X-high D28.2 they are re-derived from the IR's OWN search status, so copying X's would only be a sloppier forgery
+    that D28.2 refuses first."""
     x, y = _run("poor-man"), run_compilation(build_recompile_request(_Y, capability_profile="poor-man", max_depth=2))
     irx, iry = x.compilation_ir, y.compilation_ir
     receipt = dc.replace(iry.search_receipt, target_identity_digest=irx.search_receipt.target_identity_digest,
                          terminal_policy_digest=irx.search_receipt.terminal_policy_digest)
     ir = dc.replace(iry, target=irx.target, request_digest=irx.request_digest,
-                    terminal_policy_digest=irx.terminal_policy_digest, search_receipt=receipt, diagnostics=irx.diagnostics)
-    payload = response_to_payload(_bypass(y, request=x.request, compilation_ir=ir, diagnostics=x.diagnostics))
+                    terminal_policy_digest=irx.terminal_policy_digest, search_receipt=receipt)
+    payload = response_to_payload(_bypass(y, request=x.request, compilation_ir=ir))
     with pytest.raises(ValueError, match=r"does not make the requested target; refused \(D26\.1\)"):
         response_from_payload(payload, require_verified_admission=True, **_pins(x.request))
 
@@ -748,20 +754,27 @@ def test_d26_1_a_decompile_answer_for_a_different_formula_is_refused():
 
 
 def _no_route_relabel(resp):
-    """T2b: delete EVERY candidate and relabel the search COMPLETE -- a forged 'no route in the declared space'."""
+    """T2b: delete EVERY candidate and relabel the search COMPLETE -- a forged 'no route in the declared space'. The
+    CONSISTENT forger also writes the producer's own no-route diagnostic (X-high D28.2 re-derives it; the rule is the
+    public helper, so omitting the line would only be a sloppier forgery)."""
+    from smartchem.compilation_ir import recompile_ir_diagnostics
     from smartchem.search import SearchStatus
 
-    ir = resp.compilation_ir
+    ir, req = resp.compilation_ir, resp.request
     receipt = dc.replace(ir.search_receipt, status=SearchStatus.COMPLETE_WITHIN_BOUNDS.value,
                          standard_status=SearchStatus.COMPLETE_WITHIN_BOUNDS.standard_name, results_returned=0,
                          candidate_enumeration_complete=True, cut_enumeration_complete=True,
                          result_limit_saturated=False, stop_reason="")
+    diagnostics = recompile_ir_diagnostics(
+        target_in_terminal_stock=False, complete_within_bounds=True, status_value=receipt.status,
+        has_candidates=False, mode=svc._GRAMMAR_TO_MODE[req.transform_grammar],
+        max_depth=req.search_bounds.value("max_depth"))
     ir3 = dc.replace(ir, candidates=(), search_status=SearchStatus.COMPLETE_WITHIN_BOUNDS,
                      standard_status=SearchStatus.COMPLETE_WITHIN_BOUNDS.standard_name, search_receipt=receipt,
-                     diagnostics=())
+                     diagnostics=diagnostics)
     return response_to_payload(_bypass(resp, compilation_ir=ir3, ranked_route_dossiers=(), affordability_frontier=(),
                                        outcome=svc.ResponseOutcome.NO_ROUTE_COMPLETE,
-                                       standard_status=ir3.standard_status, diagnostics=()))
+                                       standard_status=ir3.standard_status, diagnostics=diagnostics))
 
 
 def test_d26_2_t2_a_consistent_deletion_loads_without_reexecution_and_is_refused_with_it():
@@ -1239,3 +1252,296 @@ def test_d27_2_n4_a_neutral_re_centre_is_refused_on_the_wire_and_under_reexecuti
     response_from_payload(payload, require_verified_admission=True, **_pins(resp.request))
     with pytest.raises(ValueError, match=r"differs from the re-executed one in \['ranked_route_dossiers'\].*D27\.2"):
         response_from_payload(payload, require_reexecution=True, **_pins(resp.request))
+
+
+
+# =====================================================================================================================
+# D28 (Wave C5 transport-ledger audit C5-F1..F7) -- the ledger made truthful.  Every forgery is KEYLESS: an in-memory
+# swap built with the producer's own helpers (``_bypass``), or a JSON edit whose public whole-body digest is recomputed
+# with the loader's OWN constructor (``_keyless_redigest``, the Wave C5 architect's ``forge.redigest``).  Each test's
+# forgery LOADED on fc710a8 (measured against a pristine ``git archive fc710a8`` tree); D28-only names are imported
+# inside the tests, so on fc710a8 each fails for the attack's reason.
+# =====================================================================================================================
+
+_MESAL = "smiles:COC(=O)c1ccccc1O"            # methyl salicylate: its esterification carries a sourced corpus record
+_ASPIRIN = "smiles:CC(=O)Oc1ccccc1C(=O)O"
+
+
+def _keyless_redigest(p):
+    """Recompute the PUBLIC wire digest of an edited JSON payload exactly as the loader will (its own constructor, the
+    D27.2 whole-body digest).  Under D28 a decoder / constructor may refuse the edit right here -- which is the point."""
+    ir = p["compilation_ir"]
+    base = svc.CompilationResponse(
+        p["schema_version"], request_from_payload(p["request"]), svc.ResponseOutcome(p["outcome"]),
+        p["standard_status"], None if ir is None else svc.ir_from_payload(ir), tuple(p["diagnostics"]),
+        tuple(svc.ranked_summary_from_payload(r) for r in p["ranked_route_dossiers"]),
+        tuple(svc.affordability_entry_from_payload(e) for e in p["affordability_frontier"]),
+        tuple(svc.provider_snapshot_from_payload(s) for s in p.get("provider_snapshots", [])),
+        parse_receipt_summary=p["parse_receipt_summary"],
+        ranked_dag_dossiers=tuple(ranked_dag_summary_from_payload(d) for d in p.get("ranked_dag_dossiers", [])),
+    ).result_digest
+    p["result_digest"] = svc._transport_bound_result_digest(base, p["transport_mode"], svc._payload_body_digest(p))
+    return p
+
+
+def _keyless_load(payload, edit, **kw):
+    """Edit a COPY of an honest wire, recompute every public digest, load it."""
+    forged = copy.deepcopy(payload)
+    edit(forged)
+    return response_from_payload(_keyless_redigest(forged), **kw)
+
+
+def _strip_forgery(resp, strip):
+    """C5-F1's object-level keyless forger (Wave C5 architect ``p4_strip.py``): strip the corpus envelopes of the routes
+    ``strip`` selects to ``unknown()``, then re-derive EVERYTHING from the tampered routes with the producer's own
+    helpers -- ranking (under the request's bench, process bounds and capability profile), frontier, IR candidates and
+    the constraint note.  The route SHAPE is untouched, so D26.1 cannot see it; D27.1 skipped a carried unknown()."""
+    from smartchem.conditions import ConditionEnvelope
+
+    req, ir = resp.request, resp.compilation_ir
+    remap, replayed = {}, []
+    for d in resp.ranked_route_dossiers:
+        route = _reconstruct_route(d.replay_payload)
+        if strip(d):
+            bare = dc.replace(route, steps=tuple(dc.replace(s, envelope=ConditionEnvelope.unknown())
+                                                 for s in route.steps))
+            remap[d.route_digest] = bare.digest
+            route = bare
+        replayed.append(route)
+    replayed = tuple(replayed)
+    ranked = svc._ranked_summaries(replayed, req.constraints.bounds, resp.identity_losses,
+                                   process=req.constraints.process, capability_profile=req.capability_profile)
+    candidates = tuple(sorted((dc.replace(c, candidate_digest=remap.get(c.candidate_digest, c.candidate_digest))
+                               for c in ir.candidates), key=lambda c: c.candidate_digest))
+    note = svc.constraint_note(req.constraints.bounds, fit_counts=svc._fit_counts(ranked),
+                               process=req.constraints.process)
+    forged = _bypass(resp, compilation_ir=dc.replace(ir, candidates=candidates), ranked_route_dossiers=ranked,
+                     affordability_frontier=svc._route_frontier(req, replayed, ranked),
+                     diagnostics=tuple(ir.diagnostics) + (() if note is None else (note,)))
+    return forged, remap
+
+
+def test_d28_1_c5f1_a_stripped_corpus_envelope_cannot_turn_a_section_11_exclusion_into_unknown():
+    """C5-F1 reproducer 1 (P1): methyl salicylate under a PASSIVE-attention-only process box (poor-man). The sourced
+    corpus record says the esterification needs PERIODIC attention, so the honest route is section-11 EXCLUDED and sits
+    on the frontier as REAL_BUT_HARD. Stripped to ``unknown()`` it read fit UNKNOWN and left the frontier -- loaded
+    under both pins + verified admission on fc710a8 ("an unknown envelope claims nothing" held for readiness only)."""
+    from smartchem.process_constraints import Attention
+
+    req = build_recompile_request(_MESAL, max_depth=1, helper_reagents=("water",),
+                                  stock_materials=("salicylic acid", "methanol"),
+                                  process=ProcessBounds.of(allowed_attention=(Attention.PASSIVE,)),
+                                  capability_profile="poor-man")
+    honest = run_compilation(req)
+    assert [d.fit_status for d in honest.ranked_route_dossiers] == ["EXCLUDED"]
+    assert honest.affordability_frontier and honest.affordability_frontier[0].cost_vector.hard_blockers
+    forged, remap = _strip_forgery(honest, lambda d: True)
+    assert [d.fit_status for d in forged.ranked_route_dossiers] == ["UNKNOWN"]      # the forged demotion
+    assert forged.affordability_frontier == ()                                        # ... and the vanished entry
+    payload = response_to_payload(forged)
+    for kw in ({}, dict(require_verified_admission=True, **_pins(req))):
+        with pytest.raises(ValueError, match=r"carries unknown\(\) where the shipped corpus attaches a record.*"
+                                             r"refused \(D28\.1\)"):
+            response_from_payload(copy.deepcopy(payload), **kw)
+    response_from_payload(response_to_payload(honest), require_verified_admission=True, **_pins(req))  # control
+
+
+def test_d28_1_c5f1_a_stripped_corpus_envelope_cannot_turn_an_equipment_block_into_unknown():
+    """C5-F1 reproducer 2 (P1, the architect's ``p4b_strip_cap.py``): aspirin from salicylic acid + acetic anhydride
+    (poor-man, T <= 350 K). The corpus record behind the anhydride route names equipment the kitchen lacks: the
+    equipment axis is BLOCKED. Stripped to ``unknown()`` the axis read UNKNOWN -- loaded under pins + VA on fc710a8."""
+    req = build_recompile_request(_ASPIRIN, max_depth=1, helper_reagents=("acetic acid", "water"),
+                                  stock_materials=("salicylic acid", "acetic anhydride"), max_temperature_k=350.0,
+                                  capability_profile="poor-man")
+    honest = run_compilation(req)
+    victim = next(d for d in honest.ranked_route_dossiers
+                  if d.capability_assessment.equipment.status.value == "BLOCKED")
+    forged, remap = _strip_forgery(honest, lambda d: d is victim)
+    stripped = next(d for d in forged.ranked_route_dossiers if d.route_digest == remap[victim.route_digest])
+    assert stripped.capability_assessment.equipment.status.value == "UNKNOWN"         # BLOCK -> UNKNOWN
+    payload = response_to_payload(forged)
+    for kw in ({}, dict(require_verified_admission=True, **_pins(req))):
+        with pytest.raises(ValueError, match=r"stripped corpus evidence; refused \(D28\.1\)"):
+            response_from_payload(copy.deepcopy(payload), **kw)
+
+
+def test_d28_1_every_honest_producer_path_attaches_exactly_the_corpus_lookup():
+    """D28.1's premise, pinned (never assumed): every step of every honest linear AND convergent-DAG answer carries
+    exactly ``_conditions_for`` of its own transform -- a carried ``unknown()`` included (the lookup found nothing) --
+    for BOTH transform shapes a route algebra emits: the reagent-bearing capped scission and the REAGENTLESS Diels-Alder
+    retro (cyclohexene from butadiene + ethylene; the replay adapter's reagentless image, which the first D28 draft
+    refused as malformed)."""
+    from smartchem.conditions import ConditionEnvelope
+    from smartchem.identity_parse import InputKind
+    from smartchem.service import _ReplayedTransform
+
+    unknown = ConditionEnvelope.unknown()
+    diels_alder = run_compilation(build_recompile_request(
+        "C1CC=CCC1", input_kind=InputKind.SMILES, helper_reagents=(), stock_materials=("C=CC=C", "C=C"),
+        algebra_profile="certified-route-v07"))
+    assert any(not _ReplayedTransform(s).reagents for d in diels_alder.ranked_route_dossiers
+               for s in _reconstruct_route(d.replay_payload).steps)
+    response_from_payload(response_to_payload(diels_alder), require_verified_admission=True, **_pins(diels_alder.request))
+    runs = (_run(None), _dag_run(), diels_alder, run_compilation(build_recompile_request(
+        _MESAL, max_depth=1, helper_reagents=("water",), stock_materials=("salicylic acid", "methanol"))))
+    seen_unknown = seen_record = False
+    for resp in runs:
+        steps = [s for d in resp.ranked_route_dossiers for s in _reconstruct_route(d.replay_payload).steps]
+        steps += [s for d in resp.ranked_dag_dossiers for s in svc._reconstruct_dag(d.replay_payload).steps]
+        for step in steps:
+            assert step.envelope == routes._conditions_for(_ReplayedTransform(step))
+            seen_unknown |= step.envelope == unknown
+            seen_record |= step.envelope != unknown
+    assert seen_unknown and seen_record                   # both halves of the law exercised
+
+
+def test_d28_2_c5f2_an_injected_ir_diagnostic_is_refused():
+    """C5-F2 (P2, C4T-7 reopened): D27.4 required the response's diagnostics == the IR's + the producer's notes, but the
+    IR's own diagnostics were free text -- a forged "1 FIT ... CAPABILITY_FIT" line injected into BOTH loaded on
+    fc710a8, recompile and decompile alike. D28.2: the IR's diagnostics are re-derived by the producer's own rule."""
+    lie = ("section-11 constraint APPLIED (T<=320 K): the routes are ranked against the bench -- 1 FIT, 0 EXCLUDED; "
+           "CAPABILITY_FIT under poor-man")
+    dq = svc.build_decompile_request("C2H6O")
+    for resp in (_run(None), run_compilation(dq)):
+        ir = resp.compilation_ir
+        payload = response_to_payload(_bypass(resp, compilation_ir=dc.replace(ir, diagnostics=(lie,) + ir.diagnostics),
+                                              diagnostics=(lie,) + resp.diagnostics))
+        with pytest.raises(ValueError, match=r"compilation_ir\.diagnostics are not the producer's own.*"
+                                                 r"refused \(D28\.2\)"):
+            response_from_payload(payload, **_pins(resp.request))
+
+
+@pytest.mark.parametrize("operation,field", [
+    ("recompile", "target_identity_digest"), ("recompile", "terminal_policy_digest"),
+    ("decompile", "target_identity_digest"), ("decompile", "terminal_policy_digest"),
+    ("decompile", "transform_registry_digest"),
+])
+def test_d28_3_c5f3_a_null_receipt_identity_digest_is_refused(operation, field):
+    """C5-F3 (P3): the IR compared its receipt's digests only when PRESENT, so ``null`` slipped past (and the decompile
+    leg of the algebra rebind skips the registry digest) -- each loaded on fc710a8 with the public digest recomputed.
+    (A recompile's null registry digest was already refused by the rebind; D28.3 covers it too.)"""
+    resp = _run(None) if operation == "recompile" else run_compilation(svc.build_decompile_request("C2H6O"))
+    wire = response_to_payload(resp)
+    assert wire["compilation_ir"]["search_receipt"][field] is not None
+    with pytest.raises(ValueError, match=rf"{field}.*refused \(D28\.3\)"):
+        _keyless_load(wire, lambda p: p["compilation_ir"]["search_receipt"].__setitem__(field, None),
+                      **_pins(resp.request))
+
+
+def test_d28_3_c5f4_a_null_result_count_cannot_hide_a_deleted_candidate():
+    """C5-F4 (P3): D27.5 compared the candidate count with ``results_returned`` only when it was not null, so deleting
+    a verdict needed just one token -- the worst-ranked route (dossier + IR candidate, frontier and tally rebuilt) and
+    a decompile's only formula edge each loaded on fc710a8 with the count nulled."""
+    resp = _bench_run()
+    req, ir = resp.request, resp.compilation_ir
+    keep = resp.ranked_route_dossiers[:-1]
+    routes_kept = tuple(_reconstruct_route(d.replay_payload) for d in keep)
+    note = svc.constraint_note(req.constraints.bounds, fit_counts=svc._fit_counts(keep), process=req.constraints.process)
+    gone = resp.ranked_route_dossiers[-1].route_digest
+    forged_ir = dc.replace(ir, candidates=tuple(c for c in ir.candidates if c.candidate_digest != gone),
+                           search_receipt=dc.replace(ir.search_receipt, results_returned=None))
+    payload = response_to_payload(_bypass(resp, compilation_ir=forged_ir, ranked_route_dossiers=keep,
+                                          affordability_frontier=svc._route_frontier(req, routes_kept, keep),
+                                          diagnostics=tuple(ir.diagnostics) + (() if note is None else (note,))))
+    with pytest.raises(ValueError, match=r"carries no results_returned count .*refused \(D28\.3\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(req))
+    dq = svc.build_decompile_request("C2H6O")
+    hdc = run_compilation(dq)
+    dir_ = hdc.compilation_ir
+    payload = response_to_payload(_bypass(hdc, compilation_ir=dc.replace(
+        dir_, candidates=(), search_receipt=dc.replace(dir_.search_receipt, results_returned=None)),
+        outcome=svc.ResponseOutcome.NO_ROUTE_COMPLETE))
+    with pytest.raises(ValueError, match=r"carries no results_returned count .*refused \(D28\.3\)"):
+        response_from_payload(payload, **_pins(dq))
+
+
+def test_d28_4_c5f5_the_unconstrained_dag_candidate_label_is_disclosed_advisory():
+    """C5-F5 (P3): an UNCONSTRAINED convergent-DAG search judges no DAG (no bench box), so its IR candidates carry no
+    dossier and their ``equation`` / ``candidate_digest`` have nothing to re-derive from -- advisory, but the ledger said
+    RE_DERIVED_ON_LOAD. D28.4 discloses it (ledger ``advisory_when`` + the service docstring) and pins the boundary
+    both ways: the unconstrained label forgery LOADS (the disclosed residual), the constrained one is REFUSED."""
+    from smartchem import transport_ledger
+
+    for field in ("candidate_digest", "equation"):
+        entry = transport_ledger.TRANSPORT_LEDGER["CandidateSummary"][field]
+        assert "UNCONSTRAINED convergent-DAG" in getattr(entry, "advisory_when", "")      # fc710a8: undisclosed
+        assert f"CandidateSummary.{field}" in transport_ledger.partially_advisory_fields()
+    assert "UNCONSTRAINED convergent-DAG" in svc.__doc__
+    free = run_compilation(build_recompile_request(_TARGET, max_depth=2,
+                                                   grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT))
+    assert free.compilation_ir.candidates and not free.ranked_dag_dossiers
+    lie = "C3H6O2 fits your bench: CAPABILITY_FIT"
+    loaded = _keyless_load(response_to_payload(free),
+                           lambda p: p["compilation_ir"]["candidates"][0].__setitem__("equation", lie))
+    assert loaded.compilation_ir.candidates[0].equation == lie                        # the DISCLOSED residual
+    boxed = _dag_run()
+    assert boxed.ranked_dag_dossiers
+    with pytest.raises(ValueError, match=r"D27\.7"):
+        _keyless_load(response_to_payload(boxed),
+                      lambda p: p["compilation_ir"]["candidates"][0].__setitem__("equation", lie))
+
+
+def _add_snapshot(p, **extra):
+    p["provider_snapshots"] = [dict(_FORGED_SNAPSHOT, **extra)]
+
+
+# (label, wire, edit): one UNKNOWN key at every container level, and the two REQUIRED keys fc710a8 defaulted.
+_D28_5_EDITS = [
+    ("response", "bench", lambda p: p.__setitem__("capability_verdict", "CAPABILITY_FIT")),
+    ("request", "bench", lambda p: p["request"].__setitem__("capability_verdict", "CAPABILITY_FIT")),
+    ("request.identity_policy", "bench", lambda p: p["request"]["identity_policy"].__setitem__("verified", True)),
+    ("compilation_ir", "bench", lambda p: p["compilation_ir"].__setitem__("readiness", "PROCESS_SPECIFIED")),
+    ("ir.target", "bench", lambda p: p["compilation_ir"]["target"].__setitem__("verified", True)),
+    ("search_receipt", "bench", lambda p: p["compilation_ir"]["search_receipt"].__setitem__("verified", True)),
+    ("candidate", "bench", lambda p: p["compilation_ir"]["candidates"][0].__setitem__("readiness", "PROCESS_SPECIFIED")),
+    ("route dossier", "bench", lambda p: p["ranked_route_dossiers"][0].__setitem__("capability_overall", "CAPABILITY_FIT")),
+    ("frontier entry", "bench", lambda p: p["affordability_frontier"][0].__setitem__("disposition", "CLEAN")),
+    ("cost_vector", "bench", lambda p: p["affordability_frontier"][0]["cost_vector"].__setitem__("verified_cash", 0)),
+    ("DAG dossier", "dag", lambda p: p["ranked_dag_dossiers"][0].__setitem__("capability_overall", "CAPABILITY_FIT")),
+    ("provider snapshot", "bench", lambda p: _add_snapshot(p, verified=True)),
+    ("missing provider_snapshots", "bench", lambda p: p.pop("provider_snapshots")),
+    ("missing ranked_dag_dossiers", "bench", lambda p: p.pop("ranked_dag_dossiers")),
+]
+
+
+@pytest.fixture(scope="module")
+def _d28_wires():
+    return {"bench": response_to_payload(_bench_run()), "dag": response_to_payload(_dag_run())}
+
+
+@pytest.mark.parametrize("label,wire,edit", _D28_5_EDITS, ids=[e[0] for e in _D28_5_EDITS])
+def test_d28_5_c5f6_every_container_carries_exactly_its_versioned_keys(_d28_wires, label, wire, edit):
+    """C5-F6 (P3): unknown keys rode the whole-body digest as unenforced text at every container level (a dossier's
+    ``"capability_overall": "CAPABILITY_FIT"``), and two missing required keys were silently defaulted -- each loaded on
+    fc710a8 with the public digest recomputed. D28.5: exact keys at every decoder, refused before any digest."""
+    with pytest.raises(ValueError, match=r"EXACTLY its versioned fields.*refused \(D28\.5\)"):
+        _keyless_load(_d28_wires[wire], edit)
+
+
+def test_d28_5_the_advisory_snapshot_control_still_loads(_d28_wires):
+    """Control for the snapshot row: the same forged snapshot WITHOUT the unknown key is advisory data (the ledger says
+    so) and loads -- the refusal above is the key, not the snapshot."""
+    _keyless_load(_d28_wires["bench"], _add_snapshot)
+
+
+@pytest.mark.parametrize("coerce", ["str_index", "bool_index", "str_minutes"])
+def test_d28_5_c5f7_serial_holds_are_decoded_exactly(monkeypatch, coerce):
+    """C5-F7 (P3): ``serial_holds`` were decoded with ``int()`` / ``float()``, so a string or bool that COERCED to the
+    honest value loaded on fc710a8 (the D27.4 re-derivation compared the coerced value). D28.5: exact JSON numbers.
+    The corpus gains a synthetic declared process (as in D20(1)) so the convergent DAG discloses REAL holds."""
+    original = routes._conditions_for
+    monkeypatch.setattr(routes, "_conditions_for", lambda t: dc.replace(original(t), process=_declared_process()))
+    wire = response_to_payload(_dag_run())
+    k, hold = next((k, h) for k, d in enumerate(wire["ranked_dag_dossiers"]) for h in d["serial_holds"]
+                   if h[0] in (0, 1))
+    i, j, minutes = hold
+    forged_hold = {"str_index": [str(i), j, minutes], "bool_index": [bool(i), j, minutes],
+                   "str_minutes": [i, j, str(minutes)]}[coerce]
+
+    def edit(p):
+        holds = p["ranked_dag_dossiers"][k]["serial_holds"]
+        holds[holds.index(hold)] = forged_hold
+
+    with pytest.raises(TypeError, match=r"serial hold"):
+        _keyless_load(wire, edit)
+    _keyless_load(wire, lambda p: None)                # control: the honest holds load (same declared corpus)

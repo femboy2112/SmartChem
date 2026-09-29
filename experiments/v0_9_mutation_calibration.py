@@ -31,6 +31,12 @@ axis-level flip, the mutant is read at the layer its own law governs (never by w
 defaults are CERTIFYING (SOURCE_QUOTED requirement phase, USER_DECLARED bottle phase) and the process pair is fully
 declared, so no mutant survives for a fixture reason.
 
+X-high D28 (Wave C5 transport-ledger audit): M203-M211 pin one law leg each -- the stripped corpus envelope (D28.1),
+the re-derived IR diagnostics (D28.2), the non-null receipt digests and result count (D28.3), the disclosed
+unconstrained-DAG label (D28.4, read through the ledger test's docstring cross-check), exact keys on the service and IR
+containers and exact serial-hold numbers (D28.5), and the ledger forgery sweep itself (D28.6: a relabel with no
+refusing forgery is flagged).
+
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
 """
@@ -2367,9 +2373,10 @@ def _legacy_request_with_current_profile() -> "tuple[dict, dict]":
 @mutant("M94", "a legacy v0.8 request with an injected capability profile is accepted (F81/T1)",
         "service.request_from_payload + CompilationRequest.__post_init__ (legacy dispatch family)")
 def m94():
-    """Rebuilt (A-SURV). Honest: REFUSED; each legacy guard ALONE still refuses (the loader's smuggle check and the
-    record's own legacy invariant back each other -- the law, not one if-statement); the historical stale-snapshot T1
-    stays refused. Mutant: BOTH layers severed -> the v0.8 identity loads carrying a bench."""
+    """Rebuilt (A-SURV). Honest: REFUSED; each legacy guard ALONE still refuses (the loader's smuggle check, the
+    record's own legacy invariant and -- since X-high D28.5 -- the released v0.8 exact key set back each other -- the law,
+    not one if-statement); the historical stale-snapshot T1 stays refused. Mutant: ALL THREE layers severed -> the v0.8
+    identity loads carrying a bench."""
     genuine, tamper = _legacy_request_with_current_profile()
 
     def refused(loader, payload):
@@ -2385,12 +2392,18 @@ def m94():
     loader_only = refused(bad_loader, tamper)
     with _patch(CompilationRequest, "__post_init__", bad_init):
         init_only = refused(request_from_payload, tamper)
+        # X-high D28.5 added a THIRD layer: the released v0.8 request key set has no capability keys, so the exact-key
+        # law alone refuses too (the smuggle check and the record invariant both severed)
+        keys_only = refused(bad_loader, tamper)
     honest = (request_from_payload(copy.deepcopy(genuine)).is_legacy_v08 and refused(request_from_payload, tamper)
-              and loader_only and init_only
+              and loader_only and init_only and keys_only
               and refused(request_from_payload, _v08("tamper/T1_request_v08id_injected_capability.json")))
-    with _patch(CompilationRequest, "__post_init__", bad_init):
+    # the mutant severs ALL THREE layers (the key law installed BEFORE the loader copy snapshots the module globals)
+    with _patch(svc, "_require_payload_keys", lambda *_a, **_k: None), \
+            _patch(CompilationRequest, "__post_init__", bad_init):
+        bare_loader = _src_mutant(svc.request_from_payload, ("if smuggled:", "if False:"))
         try:
-            req = bad_loader(copy.deepcopy(tamper))
+            req = bare_loader(copy.deepcopy(tamper))
             bad = req.is_legacy_v08 and req.capability_profile is not None
         except ValueError:
             bad = False
@@ -4195,9 +4208,11 @@ def m181():
     irx, iry = x.compilation_ir, y.compilation_ir
     receipt = dc.replace(iry.search_receipt, target_identity_digest=irx.search_receipt.target_identity_digest,
                          terminal_policy_digest=irx.search_receipt.terminal_policy_digest)
+    # the IR's diagnostics stay Y's: since X-high D28.2 they are re-derived from the IR's OWN search status (Y's
+    # PARTIAL_DEPTH_LIMIT), so copying X's (COMPLETE) would only be a sloppier forgery that D28.2 refuses first
     ir = dc.replace(iry, target=irx.target, request_digest=irx.request_digest,
-                    terminal_policy_digest=irx.terminal_policy_digest, search_receipt=receipt, diagnostics=irx.diagnostics)
-    payload = response_to_payload(_forge(y, request=x.request, compilation_ir=ir, diagnostics=x.diagnostics))
+                    terminal_policy_digest=irx.terminal_policy_digest, search_receipt=receipt)
+    payload = response_to_payload(_forge(y, request=x.request, compilation_ir=ir))
     _l, err = _try_load(payload)
     honest = err is not None and "does not make the requested target" in err
     bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, (
@@ -4254,20 +4269,26 @@ def m183():
     """T2b: delete EVERY candidate and relabel the search COMPLETE (a forged 'no route in the declared space') -- no
     load-time re-derivation can see it. Honest: ``require_reexecution=True`` re-runs the deterministic search and
     REFUSES. Mutant: the result comparison is severed -> the forged NO_ROUTE answer loads under re-execution."""
+    from smartchem.compilation_ir import recompile_ir_diagnostics
     from smartchem.search import SearchStatus
 
     resp = _fast_profile_response()
-    ir = resp.compilation_ir
+    ir, req = resp.compilation_ir, resp.request
     receipt = dc.replace(ir.search_receipt, status=SearchStatus.COMPLETE_WITHIN_BOUNDS.value,
                          standard_status=SearchStatus.COMPLETE_WITHIN_BOUNDS.standard_name, results_returned=0,
                          candidate_enumeration_complete=True, cut_enumeration_complete=True,
                          result_limit_saturated=False, stop_reason="")
+    # the CONSISTENT forger writes the producer's own no-route diagnostic too (X-high D28.2 re-derives it)
+    diagnostics = recompile_ir_diagnostics(
+        target_in_terminal_stock=False, complete_within_bounds=True, status_value=receipt.status,
+        has_candidates=False, mode=svc._GRAMMAR_TO_MODE[req.transform_grammar],
+        max_depth=req.search_bounds.value("max_depth"))
     ir3 = dc.replace(ir, candidates=(), search_status=SearchStatus.COMPLETE_WITHIN_BOUNDS,
                      standard_status=SearchStatus.COMPLETE_WITHIN_BOUNDS.standard_name, search_receipt=receipt,
-                     diagnostics=())
+                     diagnostics=diagnostics)
     payload = response_to_payload(_forge(resp, compilation_ir=ir3, ranked_route_dossiers=(), affordability_frontier=(),
                                          outcome=svc.ResponseOutcome.NO_ROUTE_COMPLETE,
-                                         standard_status=ir3.standard_status, diagnostics=()))
+                                         standard_status=ir3.standard_status, diagnostics=diagnostics))
     plain, _perr = _try_load(payload)
     _l, err = _try_load(payload, require_reexecution=True)
     honest = plain is not None and err is not None and "D26.2" in err   # the boundary loads; re-execution refuses
@@ -4714,6 +4735,268 @@ def m202():
         bad = True
     except ValueError:
         bad = False
+    return honest, bad
+
+
+# -- X-high D28 (Wave C5 transport-ledger audit C5-F1..F7 + the D28.6 forgery sweep): one mutant per law leg ------------
+
+_D28_CACHE: dict = {}
+_LEDGER_TESTS: list = []
+
+
+def _d28(name: str):
+    """The honest compilations the D28 forgeries start from (cached; built OUTSIDE any patch context)."""
+    if name not in _D28_CACHE:
+        builders = {
+            # methyl salicylate under a PASSIVE-only process box: its sourced corpus record EXCLUDES it (C5-F1)
+            "mesal_passive": lambda: build_recompile_request(
+                "smiles:COC(=O)c1ccccc1O", max_depth=1, helper_reagents=("water",),
+                stock_materials=("salicylic acid", "methanol"),
+                process=ProcessBounds.of(allowed_attention=(Attention.PASSIVE,)), capability_profile="poor-man"),
+            # an UNCONSTRAINED convergent-DAG search: DAG candidates with no dossier (C5-F5)
+            "free_dag": lambda: build_recompile_request(_FAST_TARGET, max_depth=2,
+                                                        grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+                                                        helper_reagents=("water", "acetic acid")),
+        }
+        _D28_CACHE[name] = run_compilation(builders[name]())
+    return _D28_CACHE[name]
+
+
+def _ledger_tests():
+    """``tests/test_transport_ledger.py`` as a module: the D28.4 docstring cross-check and the D28.6 forgery table ARE
+    the defences under test there (a mutant of the ledger is caught by the test, so the harness asks the test)."""
+    if not _LEDGER_TESTS:
+        import importlib.util
+
+        path = Path(__file__).resolve().parents[1] / "tests" / "test_transport_ledger.py"
+        spec = importlib.util.spec_from_file_location("_d28_ledger_tests", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _LEDGER_TESTS.append(module)
+    return _LEDGER_TESTS[0]
+
+
+@mutant("M203", "a corpus envelope STRIPPED to unknown() is skipped: a section-11 EXCLUSION reads UNKNOWN (D28.1 C5-F1)",
+        "service.CompilationResponse._check_corpus_evidence_coherence (current-payload unknown())")
+def m203():
+    """Honest: methyl salicylate's sourced envelope stripped to unknown() and the whole answer re-derived from the
+    tampered route (ranking, frontier, IR candidates, constraint note) is REFUSED. Mutant: D27.1's carve-out ("an unknown
+    envelope claims nothing") widened back to CURRENT payloads -> the forged fit UNKNOWN loads and the REAL_BUT_HARD
+    frontier entry is gone."""
+    resp = _d28("mesal_passive")
+    req, ir = resp.request, resp.compilation_ir
+    assert [d.fit_status for d in resp.ranked_route_dossiers] == ["EXCLUDED"]
+    remap, replayed = {}, []
+    for d in resp.ranked_route_dossiers:
+        route = svc._reconstruct_route(d.replay_payload)
+        bare = dc.replace(route, steps=tuple(dc.replace(s, envelope=ConditionEnvelope.unknown()) for s in route.steps))
+        remap[d.route_digest] = bare.digest
+        replayed.append(bare)
+    replayed = tuple(replayed)
+    ranked = svc._ranked_summaries(replayed, req.constraints.bounds, resp.identity_losses,
+                                   process=req.constraints.process, capability_profile=req.capability_profile)
+    cands = tuple(sorted((dc.replace(c, candidate_digest=remap.get(c.candidate_digest, c.candidate_digest))
+                          for c in ir.candidates), key=lambda c: c.candidate_digest))
+    note = svc.constraint_note(req.constraints.bounds, fit_counts=svc._fit_counts(ranked), process=req.constraints.process)
+    payload = response_to_payload(_forge(resp, compilation_ir=dc.replace(ir, candidates=cands), ranked_route_dossiers=ranked,
+                                         affordability_frontier=svc._route_frontier(req, replayed, ranked),
+                                         diagnostics=tuple(ir.diagnostics) + (() if note is None else (note,))))
+    _l, err = _try_load(payload)
+    honest = err is not None and "D28.1" in err
+    bad_chk = _src_mutant(CompilationResponse._check_corpus_evidence_coherence, (
+        "if self.is_legacy_v08 and step.envelope == unknown:", "if step.envelope == unknown:"))
+    with _patch(CompilationResponse, "_check_corpus_evidence_coherence", bad_chk):
+        loaded, _err = _try_load(payload)
+    bad = (loaded is not None and [d.fit_status for d in loaded.ranked_route_dossiers] == ["UNKNOWN"]
+           and not loaded.affordability_frontier)
+    return honest, bad
+
+
+@mutant("M204", "an INJECTED line in the IR's own diagnostics loads (D28.2 C5-F2, C4T-7 reopened)",
+        "service.CompilationResponse._check_request_answer_coherence (IR diagnostics re-derived by the shared helper)")
+def m204():
+    resp = _d27("plain")
+    ir = resp.compilation_ir
+    lie = "section-11 constraint APPLIED: 1 FIT, 0 EXCLUDED; CAPABILITY_FIT under poor-man (FORGED)"
+    payload = response_to_payload(_forge(resp, compilation_ir=dc.replace(ir, diagnostics=(lie, *ir.diagnostics)),
+                                         diagnostics=(lie, *resp.diagnostics)))
+    _l, err = _try_load(payload)
+    honest = err is not None and "D28.2" in err
+    bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, (
+        "if tuple(ir.diagnostics) != expected_ir_diagnostics:", "if False:"))
+    with _patch(CompilationResponse, "_check_request_answer_coherence", bad_chk):
+        loaded, _err = _try_load(payload)
+    bad = loaded is not None and lie in loaded.compilation_ir.diagnostics
+    return honest, bad
+
+
+@mutant("M205", "a NULL receipt identity digest slips the present-only compare (D28.3 C5-F3)",
+        "service.CompilationResponse._check_receipt_bounds (non-null identity digests)")
+def m205():
+    resp = _d27("plain")
+    ir = resp.compilation_ir
+    payload = response_to_payload(_forge(resp, compilation_ir=dc.replace(ir, search_receipt=dc.replace(
+        ir.search_receipt, target_identity_digest=None, terminal_policy_digest=None))))
+    _l, err = _try_load(payload)
+    honest = err is not None and "D28.3" in err
+    bad_chk = _src_mutant(CompilationResponse._check_receipt_bounds, (
+        "if carried_digest is None or carried_digest != bound:",
+        "if carried_digest is not None and carried_digest != bound:"))
+    with _patch(CompilationResponse, "_check_receipt_bounds", bad_chk):
+        loaded, _err = _try_load(payload)
+    bad = loaded is not None and loaded.compilation_ir.search_receipt.target_identity_digest is None
+    return honest, bad
+
+
+@mutant("M206", "a NULL result count hides a deleted candidate (D28.3 C5-F4)",
+        "service.CompilationResponse._check_dossier_completeness (results_returned is an int)")
+def m206():
+    """Honest: the worst-ranked route deleted (dossier + IR candidate, frontier and tally rebuilt) with the receipt's
+    count nulled is REFUSED. Mutant: fc710a8's shape -- no int law, the count compare skipped when null -> it loads."""
+    resp = _d27("bench")
+    req, ir = resp.request, resp.compilation_ir
+    keep = resp.ranked_route_dossiers[:-1]
+    kept_routes = tuple(svc._reconstruct_route(d.replay_payload) for d in keep)
+    note = svc.constraint_note(req.constraints.bounds, fit_counts=svc._fit_counts(keep), process=req.constraints.process)
+    gone = resp.ranked_route_dossiers[-1].route_digest
+    forged_ir = dc.replace(ir, candidates=tuple(c for c in ir.candidates if c.candidate_digest != gone),
+                           search_receipt=dc.replace(ir.search_receipt, results_returned=None))
+    payload = response_to_payload(_forge(resp, compilation_ir=forged_ir, ranked_route_dossiers=keep,
+                                         affordability_frontier=svc._route_frontier(req, kept_routes, keep),
+                                         diagnostics=tuple(ir.diagnostics) + (() if note is None else (note,))))
+    _l, err = _try_load(payload)
+    honest = err is not None and "D28.3" in err
+    bad_chk = _src_mutant(CompilationResponse._check_dossier_completeness, (
+        "if receipt is not None and (isinstance(receipt.results_returned, bool)",
+        "if False and (isinstance(receipt.results_returned, bool)"), (
+        "and len(ir.candidates) != receipt.results_returned):",
+        "and receipt.results_returned is not None and len(ir.candidates) != receipt.results_returned):"))
+    with _patch(CompilationResponse, "_check_dossier_completeness", bad_chk):
+        loaded, _err = _try_load(payload)
+    bad = loaded is not None and len(loaded.ranked_route_dossiers) == len(resp.ranked_route_dossiers) - 1
+    return honest, bad
+
+
+@mutant("M207", "an UNCONSTRAINED DAG candidate's label is advisory but the ledger calls it re-derived (D28.4 C5-F5)",
+        "transport_ledger CandidateSummary advisory_when (+ the service docstring cross-check)")
+def m207():
+    """Honest: the ledger's partially-advisory set is exactly what the service docstring discloses, and the disclosed
+    residual (a keyless edit of a dossier-less DAG candidate's equation) really loads. Mutant: the entry's
+    ``advisory_when`` dropped -- the ledger claims RE_DERIVED_ON_LOAD unconditionally while the forgery still loads (the
+    C5-F5 over-claim), and the docstring cross-check of tests/test_transport_ledger.py flags the mismatch."""
+    import smartchem.transport_ledger as ledger
+
+    lt = _ledger_tests()
+    wire = response_to_payload(_d28("free_dag"))
+    wire["compilation_ir"]["candidates"][0]["equation"] = "C3H6O2 fits your bench: CAPABILITY_FIT (FORGED)"
+    loaded, _err = _try_load(lt._reforge(wire))
+
+    def disclosure_mismatch() -> bool:
+        doc = svc.__doc__
+        partial = doc[doc.index("What a KEYLESS consumer must treat as advisory"):].partition("Partially advisory")[2]
+        return {f"{t}.{f}" for t, f in lt._TOKEN.findall(partial)} != set(ledger.partially_advisory_fields())
+
+    honest = loaded is not None and not disclosure_mismatch()
+    table = ledger.TRANSPORT_LEDGER["CandidateSummary"]
+    with _patch_item(table, "equation", dc.replace(table["equation"], advisory_when="")):
+        over_claim = "CandidateSummary.equation" not in ledger.partially_advisory_fields()
+        flagged = disclosure_mismatch()
+    bad = loaded is not None and over_claim and flagged
+    return honest, bad
+
+
+@mutant("M208", "an UNKNOWN key on a service container rides the digest as unenforced text (D28.5 C5-F6)",
+        "service._require_payload_keys (exact keys: response/request/dossier/DAG/frontier/cost vector/snapshot)")
+def m208():
+    resp = _d27("bench")
+    wire = response_to_payload(resp)
+    wire["ranked_route_dossiers"][0]["capability_overall"] = "CAPABILITY_FIT"
+    wire["request"]["capability_verdict"] = "CAPABILITY_FIT"
+    _public_digest(wire, resp)
+    _l, err = _try_load(wire)
+    honest = err is not None and "D28.5" in err
+    with _patch(svc, "_require_payload_keys", lambda *_a, **_k: None):
+        loaded, _err = _try_load(wire)
+    bad = loaded is not None
+    return honest, bad
+
+
+@mutant("M209", "an UNKNOWN key on an IR container rides the digest as unenforced text (D28.5 C5-F6)",
+        "compilation_ir._require_exact_keys (exact keys: IR/target/receipt/candidate)")
+def m209():
+    import smartchem.compilation_ir as cir_mod
+
+    resp = _d27("bench")
+    wire = response_to_payload(resp)
+    wire["compilation_ir"]["candidates"][0]["readiness"] = "PROCESS_SPECIFIED"
+    wire["compilation_ir"]["search_receipt"]["verified"] = True
+    _public_digest(wire, resp)
+    _l, err = _try_load(wire)
+    honest = err is not None and "D28.5" in err
+    with _patch(cir_mod, "_require_exact_keys", lambda *_a, **_k: None):
+        loaded, _err = _try_load(wire)
+    bad = loaded is not None
+    return honest, bad
+
+
+@mutant("M210", "serial_holds decoded by int()/float() COERCION: a string index loads (D28.5 C5-F7)",
+        "service._exact_hold_triple (exact JSON numbers)")
+def m210():
+    """Honest: a real serial hold (the corpus gains a synthetic declared process, so the convergent DAG discloses
+    holds) rewritten with a STRING index that coerces to the honest value is refused. Mutant: fc710a8's coercion."""
+    declared = ProcessRequirements(elapsed_minutes=Interval(10, 20, "min"), active_minutes=Interval(1, 2, "min"),
+                                   agitation=Agitation.NONE, workup_included=True,
+                                   provenance="synthetic software control; no experimental claim")
+    original = rt._conditions_for
+    with _patch(rt, "_conditions_for", lambda t: dc.replace(original(t), process=declared)):
+        resp = run_compilation(build_recompile_request(_FAST_TARGET, max_depth=2,
+                                                       grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+                                                       **_PROCESS_HELPERS))
+        wire = response_to_payload(resp)
+        k, hold = next((k, h) for k, d in enumerate(wire["ranked_dag_dossiers"]) for h in d["serial_holds"])
+        holds = wire["ranked_dag_dossiers"][k]["serial_holds"]
+        holds[holds.index(hold)] = [str(hold[0]), hold[1], hold[2]]
+        _public_digest(wire, resp)
+
+        def attempt():
+            try:
+                return response_from_payload(copy.deepcopy(wire)), None
+            except (TypeError, ValueError) as exc:
+                return None, str(exc)
+
+        _l, err = attempt()
+        honest = err is not None and "serial hold" in err
+        with _patch(svc, "_exact_hold_triple", lambda t: (int(t[0]), int(t[1]), float(t[2]))):
+            loaded, _err = attempt()
+    bad = loaded is not None
+    return honest, bad
+
+
+@mutant("M211", "a NON-ADVISORY ledger label without a refusing forgery over-claims silently (D28.6 C5-test)",
+        "tests/test_transport_ledger.py forgery sweep (every RE/REQ/FROZEN entry names its keyless forgery)")
+def m211():
+    """Honest: every non-advisory ledger entry names a keyless forgery (tests/test_transport_ledger.py ``_FORGERIES``).
+    Mutant: the receipt's advisory ``stop_reason`` RELABELLED re-derived -- an over-claim (its keyless forgery LOADS) that
+    the sweep flags as a label with no refusing forgery."""
+    import smartchem.transport_ledger as ledger
+
+    lt = _ledger_tests()
+
+    def unforged() -> set:
+        labelled = {f"{t}.{f}" for t, entries in ledger.TRANSPORT_LEDGER.items() for f, e in entries.items()
+                    if e.status is not ledger.TransportStatus.DIGEST_ONLY_ADVISORY}
+        return labelled - set(lt._FORGERIES)
+
+    wire = response_to_payload(_d27("bench"))            # an INCOMPLETE search: its receipt carries a stop reason
+    assert wire["compilation_ir"]["search_receipt"]["stop_reason"]
+    wire["compilation_ir"]["search_receipt"]["stop_reason"] = "exhaustive: every route bench-verified (FORGED)"
+    loaded, _err = _try_load(lt._reforge(wire))
+    honest = not unforged()
+    relabel = ledger.LedgerEntry(ledger.TransportStatus.RE_DERIVED_ON_LOAD,
+                                 ("smartchem.service:CompilationResponse._check_receipt_bounds",))
+    with _patch_item(ledger.TRANSPORT_LEDGER["Section81ReceiptView"], "stop_reason", relabel):
+        flagged = unforged() == {"Section81ReceiptView.stop_reason"}
+    bad = loaded is not None and flagged
     return honest, bad
 
 

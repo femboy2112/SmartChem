@@ -27,9 +27,16 @@ status on the THIN_ADVISORY wire where it is weaker (no replay -> nothing replay
 payloads: every D27 replay-based re-derivation is skipped (the ranking, frontier and diagnostics are v0.8's code's) and
 corpus evidence is re-derived only under verified admission -- recompile under 0.9 for the table below.
 
+``advisory_when`` (X-high D28.4) names the CASES in which an otherwise re-derived / bound entry is advisory after all
+(a candidate with no dossier has nothing to re-derive its label from) -- stated in the entry, not buried in a note, so
+the service docstring's "Partially advisory" sentence is machine-checked against it too.
+
 ``tests/test_transport_ledger.py`` machine-checks the ledger: every field / wire key has exactly one entry (no missing,
-no stale), every named check resolves to real code, and every advisory entry is named in the service module's
-docstring paragraph for keyless consumers.
+no stale), every named check resolves to real code, every advisory (and partially advisory) entry is named in the
+service module's docstring paragraph for keyless consumers, and -- X-high D28.6 -- every RE_DERIVED_ON_LOAD,
+BOUND_TO_REQUEST and LEGACY_FROZEN entry has a keyless single-field forgery (every public digest recomputed) that the
+loader REFUSES: a label with no refusing forgery fails the test, so the ledger can no longer over-claim silently (the
+Wave C5 audit found four such mislabels).
 """
 from __future__ import annotations
 
@@ -53,10 +60,13 @@ class LedgerEntry:
     checks: tuple[str, ...] = ()
     note: str = ""
     thin: TransportStatus | None = None
+    advisory_when: str = ""
 
     def __post_init__(self) -> None:
         if (self.status is TransportStatus.DIGEST_ONLY_ADVISORY) != (not self.checks):
             raise ValueError("an advisory entry names no check, and every other entry names the check enforcing it")
+        if self.advisory_when and self.status is TransportStatus.DIGEST_ONLY_ADVISORY:
+            raise ValueError("advisory_when qualifies a re-derived / bound entry; an advisory entry is advisory always")
 
 
 RE, REQ, ADV, FROZEN = (TransportStatus.RE_DERIVED_ON_LOAD, TransportStatus.BOUND_TO_REQUEST,
@@ -86,6 +96,9 @@ _THIN_VERDICT = ("thin: no replay, so only the process axis (PROCESS-ADMIT-01) i
                  "CAPABILITY_FIT are refused on a thin wire, and verified admission fail-closes above-FORMAL claims")
 _SEARCH_OUTPUT = ("search output: a CONSISTENT rewrite (the D25.3 boundary; ATK5d's INCOMPLETE->COMPLETE flip) is "
                   "re-execution / HMAC only")
+_NO_DOSSIER = ("a candidate with NO dossier -- a decompile's FORMULA_EDGE candidates and an UNCONSTRAINED convergent-DAG "
+               "search's DAG candidates (no bench box, so no DAG is judged) -- has nothing to re-derive it from (D28.4, "
+               "Wave C5 C5-F5)")
 
 
 def _route_verdict(note: str = "") -> LedgerEntry:
@@ -110,8 +123,10 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
         "standard_status": LedgerEntry(RE, (_OUTCOME,), "== the IR's standard_status (itself advisory search output)"),
         "compilation_ir": LedgerEntry(REQ, (_ANSWER, _LOSSES), "container law: the IR answers the carried request "
                                       "(D26.1); members in the ChemicalCompilationIR table"),
-        "diagnostics": LedgerEntry(RE, (_RANKING,), "== the IR's diagnostics + the producer's constraint / DAG-bench "
-                                   "notes (D27.4)", thin=ADV),
+        "diagnostics": LedgerEntry(RE, (_RANKING, _ANSWER), "== the IR's diagnostics (themselves re-derived, D28.2) + "
+                                   "the producer's constraint / DAG-bench notes (D27.4)", thin=ADV,
+                                   advisory_when="a decompile's incompleteness line is its receipt's own stop_reason "
+                                                 "(advisory search output)"),
         "ranked_route_dossiers": LedgerEntry(RE, (_COMPLETE, _RANKING), "set == the IR's route candidates (D24.14); "
                                              "order and every member re-derived (D27.4)", thin=ADV),
         "affordability_frontier": LedgerEntry(RE, (_RANKING, _POST, _FRONTIER), "== _route_frontier over the replayed "
@@ -193,7 +208,11 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
                                       "Section81ReceiptView table"),
         "candidates": LedgerEntry(ADV, note="membership: == the dossier set (D24.14), count == the receipt's (D27.5), "
                                   "kinds per the grammar (D26.1) -- but " + _SEARCH_OUTPUT),
-        "diagnostics": LedgerEntry(ADV, note="search-emitted text (the response's diagnostics are re-derived FROM it)"),
+        "diagnostics": LedgerEntry(RE, (_ANSWER,), "the producer's own rule over the IR's classification facts and the "
+                                   "carried request -- ONE shared helper (D28.2, Wave C5 C5-F2); a recompile's is fully "
+                                   "templated",
+                                   advisory_when="a decompile's incompleteness line is its receipt's own stop_reason "
+                                                 "(advisory search output)"),
         "structural_candidates": LedgerEntry(ADV, note="STRUCTURE-layer DECOMPILE only, parent == target, losses "
                                              "re-derived (IR construction, D24.11) -- the scissions are search output"),
     },
@@ -203,9 +222,11 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
         "status": LedgerEntry(ADV, note="== the IR's search_status; " + _SEARCH_OUTPUT),
         "standard_status": LedgerEntry(ADV, note="== the IR's standard_status"),
         "cut_budget_scope": LedgerEntry(REQ, (_BOUNDS,), "PER_NODE for every engine a response wraps (D27.6, D27.8)"),
-        "target_identity_digest": LedgerEntry(REQ, (_IR_POST, _ANSWER), "== the IR target's (D26.1-bound)"),
-        "terminal_policy_digest": LedgerEntry(REQ, (_IR_POST, _ANSWER), "== the IR's (D26.1-bound)"),
-        "transform_registry_digest": LedgerEntry(REQ, (_IR_POST, _LOAD), "== the IR's (ALGEBRA-REBIND)"),
+        "target_identity_digest": LedgerEntry(REQ, (_BOUNDS, _ANSWER), "non-null and == the IR target's (D26.1-bound; "
+                                              "D28.3 -- a null used to slip the IR's present-only compare)"),
+        "terminal_policy_digest": LedgerEntry(REQ, (_BOUNDS, _ANSWER), "non-null and == the IR's (D26.1-bound; D28.3)"),
+        "transform_registry_digest": LedgerEntry(REQ, (_BOUNDS, _LOAD), "non-null and == the IR's (ALGEBRA-REBIND; "
+                                                 "D28.3 covers the decompile leg the rebind skips)"),
         "max_depth": LedgerEntry(REQ, (_BOUNDS, _ANSWER), "== the request's (D27.6); every replayed route <= it"),
         "cut_budget": LedgerEntry(REQ, (_BOUNDS,), "== the request's (D27.6)"),
         "candidate_limit": LedgerEntry(FROZEN, (_RECEIPT_POST,), "always None (no engine caps emitted candidates)"),
@@ -213,7 +234,8 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
         "nodes_visited": LedgerEntry(ADV, note="search telemetry"),
         "transforms_considered": LedgerEntry(ADV, note="search telemetry"),
         "candidates_emitted": LedgerEntry(ADV, note="search telemetry (>= results_returned by construction)"),
-        "results_returned": LedgerEntry(RE, (_COMPLETE,), "== the carried candidate count, every kind (D27.5)"),
+        "results_returned": LedgerEntry(RE, (_COMPLETE,), "an int (never null, D28.3) == the carried candidate count, "
+                                        "every kind (D27.5)"),
         "candidates_rejected_by_reason": LedgerEntry(ADV, note="search telemetry"),
         "cut_enumeration_complete": LedgerEntry(ADV, note=_SEARCH_OUTPUT),
         "candidate_enumeration_complete": LedgerEntry(ADV, note=_SEARCH_OUTPUT),
@@ -224,10 +246,10 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
         "schema_version": LedgerEntry(FROZEN, (_CANDIDATE_POST,)),
         "candidate_kind": LedgerEntry(REQ, (_ANSWER,), "per the request's grammar (D26.1)"),
         "candidate_digest": LedgerEntry(RE, (_COMPLETE, _RANKING), "== a dossier's route digest (D24.14), the replayed "
-                                        "route's (D27.4); a decompile's FORMULA_EDGE has no dossier: advisory",
-                                        thin=ADV),
-        "equation": LedgerEntry(RE, (_ANSWER,), "== its dossier's label (D27.7), the replayed rendering (D26.1); a "
-                                "decompile's FORMULA_EDGE has no dossier: advisory", thin=ADV),
+                                        "route's (D27.4)", thin=ADV,
+                                        advisory_when=_NO_DOSSIER),
+        "equation": LedgerEntry(RE, (_ANSWER,), "== its dossier's label (D27.7), the replayed rendering (D26.1)",
+                                thin=ADV, advisory_when=_NO_DOSSIER),
         "readiness_tier": LedgerEntry(FROZEN, (_CANDIDATE_POST,), "pinned FORMAL_CANDIDATE (M10)"),
     },
     "replay_step": {
@@ -239,8 +261,8 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
         "reactants": LedgerEntry(ADV, note="route STRUCTURE (see target)"),
         "products": LedgerEntry(ADV, note="route STRUCTURE (see target)"),
         "reagents": LedgerEntry(ADV, note="route STRUCTURE (see target)"),
-        "envelope": LedgerEntry(RE, (_CORPUS,), "== the shipped corpus's lookup for the step (D27.1); unknown() "
-                                "claims nothing"),
+        "envelope": LedgerEntry(RE, (_CORPUS,), "== the shipped corpus's lookup for the step, a carried unknown() "
+                                "included (D27.1; D28.1 -- 'unknown claims nothing' held for readiness only)"),
         "reaction_center": LedgerEntry(ADV, note="outside route.digest (D26.4): a NEUTRAL re-centre with the public "
                                        "digest recomputed loads (Foreman N4); re-execution / HMAC refuse it"),
     },
@@ -260,3 +282,10 @@ def advisory_fields(*, thin: bool = False) -> tuple[str, ...]:
     """``"Table.field"`` for every entry a keyless consumer must treat as ADVISORY (on the thin wire: incl. ``thin``)."""
     return tuple(f"{name}.{field}" for name, table in TRANSPORT_LEDGER.items() for field, entry in table.items()
                  if entry.status is ADV or (thin and entry.thin is ADV))
+
+
+def partially_advisory_fields() -> tuple[str, ...]:
+    """``"Table.field"`` for every re-derived / bound entry that is advisory in the cases its ``advisory_when`` names
+    (X-high D28.4)."""
+    return tuple(f"{name}.{field}" for name, table in TRANSPORT_LEDGER.items() for field, entry in table.items()
+                 if entry.advisory_when)

@@ -473,7 +473,10 @@ Content-addressing the descriptor digest inside `IntervalEvidence` is PARKED to 
   TAMPERED procedure (route digest re-bound, readiness + assessment honestly re-derived from the tampered replay).
   It describes a DIFFERENT route (its `route_digest` is not the corpus route's) and is coherent; binding a replayed
   `ProcedureEvidence` to the SHIPPED source table (source-subject binding) is a 0.9.5 item; until then only the
-  producer HMAC or a consumer route-digest pin authenticates the source.
+  producer HMAC or a consumer route-digest pin authenticates the source. **[Corrected after Wave C″/C4:** a route-digest
+  pin does NOT authenticate `reaction_center` (outside route identity — T5/D26.4), and a genuine CORPUS envelope can be
+  grafted onto a route whose shape still answers the request (C4T-1) — closed for every load by D27.1 (envelopes
+  re-derived from the shipped corpus lookup) and for re-executing consumers by D26.2; see §7.10–§7.12.**]**
 
 **D21 — Mutation gate.** Rebuild M38 (+M38b), M86 (law-level, refactor-robust anchor), M94 (+M94b), M104 (2-factor,
 +M104b) exactly as A-SURV ran them; add M106+ for every D14–D19 law (list in §7.4); harness fixture defaults move
@@ -708,7 +711,10 @@ routes), **T** a directed transport attacker on D24.11–D24.15.
 must resolve through the offline NAME resolver to the SAME canonical structure; otherwise the use carries a
 `material_unresolved` note ("use name 'X' is not a resolvable name of its identity — its extra words are unread",
 D25.1), so the renderers can never launder words through it. (Identity-free uses are name-KEYED: their name is the
-matching key itself, so extra words already fail the match — BLOCKED/UNKNOWN on the host material axis.) Honest
+matching key itself, so extra words fail the match UNLESS the bench declares a bottle under the very same string —
+**[corrected after Wave C4 N5:]** in that case the material axis can read FIT and the fold is held by the F47
+containment rule (an identity-free species' hazard status is UNRESOLVED → containment UNKNOWN), which is pinned by a
+test so it can never read FIT overall; it is a backstop, not D25.1 itself.) Honest
 consequence: corpus uses named "cold water" (identity water) now read as unread — "cold" IS a temperature demand
 hiding in a name.
 
@@ -755,7 +761,9 @@ the producer HMAC make a thin verdict trustworthy. FIT and PROCESS_SPECIFIED-or-
 request by the SAME formula the producer uses; every candidate's kind matches the grammar's mode; and for every dossier
 carrying a replay: the route's final target identity == the request target's identity, `leaf_inputs` ⊆ the request's
 declared terminal set, and each summary's `equation` == the replayed route's own rendering. Recompile, decompile and
-the legacy (frozen-v0.8) paths. Honest producers and every real v0.8 fixture must still load.
+the legacy (frozen-v0.8) paths. Honest producers and every LOADABLE real v0.8 fixture must still load
+(`response_sulfuric_acid_name.json` / its request fail closed by the pinned Wave-C2 P2 rule — the name resolver
+changed since v0.8 — exactly as before this batch).
 
 **D26.2 — Keyless authenticity by determinism (opt-in).** `response_from_payload(..., require_reexecution=True)`
 re-runs `run_compilation(request)` and requires an equal `result_digest` (a legacy v0.8 payload fails closed with the
@@ -812,3 +820,25 @@ the whole tuple, incl. fit statuses). **D27.5** `len(candidates) == search_recei
 kind. **D27.6** the receipt's search bounds equal the request's. **D27.7** without a request pin, `require_reexecution`
 refuses to re-run a request whose search bounds exceed the service's declared maxima (no payload-chosen unbounded
 work); the IR candidate `equation` must equal its route's rendering; a canonical-wire dossier must carry its replay.
+
+**Foreman acceptance review of D25/D26 (Wave C4, fresh non-author; probes `scratchpad/r5x/waveC4/foreman/`):
+SHIP-WITH-CONDITIONS for D25/D26 as an increment; gate close NO-SHIP until D27.** All 15 filed findings CLOSED or at a
+truthful boundary that `require_reexecution` closes (NEW-1, NEW-2, NEW-3-literal, C6, T1, T1c, T3, T4a, T4b, T6a, T6b,
+B5, RC-v CLOSED with quoted refusals; NEW-2 [0.995,1] edge, NEW-3 receipt rewrite, T2, T5 BOUNDARY → D26.2); honest path
+Observed (isopentyl thick plain 2.7 s / re-executed 77.7 s; methyl acetate; decompile; 6/7 v0.8 response fixtures —
+the 7th is the pinned sulfuric-acid P2 refusal). New residuals, all folded into D27: N1 = C4T-1 (reproduced
+independently); N2 bound escape (D27.6); **N3 section-11 box transplant** — dossiers' `fit_status` carried under a
+different constraint box (D27.4 re-derives fit status under the CARRIED request's box); **N4** `replay_payload` is
+`compare=False`, outside `result_digest` — a verdict-neutral re-centre survived re-execution (D27.2 whole-payload
+digest); N5 D25.1 identity-free wording (corrected above + test). Conditions 1–5 (docstring overclaim near
+`service.py:5477`, doc drift near `:1932`/`:2103`, the c3 text, the N5 test, the fixture-mandate wording) are assigned
+to the D27 batch / corrected here.
+
+**D27.8 — the TRANSPORT LEDGER (ends the field-by-field treadmill).** Mirror of the D16 field ledger: every dataclass
+field of `CompilationResponse`, `RankedRouteSummary`, `RankedDAGSummary`, `CompilationIR` (+ receipt / candidate
+summaries) and the replay payload carries exactly one load-time status — RE_DERIVED_ON_LOAD (names its check),
+BOUND_TO_REQUEST (names its check), DIGEST_ONLY_ADVISORY (authenticated only by the producer HMAC or
+`require_reexecution`), or LEGACY_FROZEN — with a completeness test that fails on any unlisted or stale field, and a
+module-docstring paragraph stating plainly which fields a keyless consumer must treat as advisory under plain /
+verified-admission loads. The next hostile wave is pointed at "what does the loader accept that it did not re-derive",
+answered by the ledger, not at another list of fields.

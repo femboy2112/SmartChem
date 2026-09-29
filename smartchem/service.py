@@ -67,7 +67,8 @@ and ``require_reexecution`` re-derives them (the caller-attached provider snapsh
   (locally generable, D29.1) replayed route.
 
 Everything else is re-derived on load or bound to the request -- the ranking and every dossier verdict (D27.4), the
-corpus envelopes (D27.1), the outcome (D27.3), the frontier and diagnostics (D27.4), the receipt count / kind /
+corpus envelopes (D27.1), the outcome (D27.3 -- see "Partially advisory"), the frontier and diagnostics (D27.4), the
+receipt count / kind /
 bounds (D27.5/D27.6), the IR's own diagnostics (D28.2), a carried unknown() envelope (D28.1), the receipt's
 identity digests and result count (D28.3), every container's exact key set (D28.5, D29.2), and every replayed step
 (D29.1: it must be a transform the carried algebra emits for its target -- reactants, products incl. byproducts as
@@ -85,7 +86,12 @@ CandidateSummary.equation are re-derived only for a candidate that carries a dos
 decompile's FORMULA_EDGE candidates and an UNCONSTRAINED convergent-DAG search's DAG candidates (no bench box, so no DAG
 is judged) -- has nothing to re-derive them from, so its digest and equation text are advisory.  Likewise
 ChemicalCompilationIR.diagnostics and CompilationResponse.diagnostics are re-derived by the producer's own rule, but a
-DECOMPILE's incompleteness line IS its receipt's own stop_reason, which is advisory search output.
+DECOMPILE's incompleteness line IS its receipt's own stop_reason, which is advisory search output.  And (0.9.5 S11)
+CompilationResponse.outcome, CompilationResponse.standard_status, CompilationResponse.wire.exit_code and
+CompilationResponse.wire.search_space_status are re-derived (a single-field relabel is refused, D27.3 / D27.8) but are
+functions of the advisory IR search status and candidate set: a CONSISTENT rewrite of what the search found -- every
+candidate deleted, the receipt re-counted, the status set to COMPLETE -- moves them with it and loads a "no route"
+answer; only ``require_reexecution`` or the producer HMAC closes that.
 """
 from __future__ import annotations
 
@@ -2083,6 +2089,17 @@ class CompilationResponse:
                 f"the IR's search receipt reports bounds (max_depth, cut_budget, result_limit) = {carried} but the "
                 f"carried request declares {expected} -- an answer to a DIFFERENT search; refused (D27.6)"
                 f"{self._legacy_hint()}")
+        # 0.9.5 S3 (Wave-A G F1): the result COUNT is bound to the limit too -- D27.6 bound the label, never the count,
+        # so a max_routes=1 answer loaded 3 routes under both pins and verified admission.  With D25.3 (candidates ==
+        # results_returned) and D24.14 (dossiers == candidates) this one comparison bounds all three, before any replay
+        # is reconstructed.
+        # (each law guards only its own leg: whether the count IS an int is D28.3's, checked by the caller.)
+        if (type(receipt.results_returned) is int and type(receipt.result_limit) is int
+                and receipt.results_returned > receipt.result_limit):
+            raise ValueError(
+                f"the IR's search receipt returned {receipt.results_returned} result(s) but its (request-bound) "
+                f"result_limit is {receipt.result_limit} -- more answers than the search could emit; refused (0.9.5 S3)"
+                f"{self._legacy_hint()}")
         # X-high D28.3 (Wave C5 C5-F3): the receipt's identity digests are NON-null and the IR's own (which D26.1 binds
         # to the request).  ``ChemicalCompilationIR.__post_init__`` compares them only when present (a generic IR may
         # carry an unmeasured one), so a null used to slip every bind; every search a service response wraps stamps
@@ -2226,6 +2243,7 @@ class CompilationResponse:
                 raise ValueError(
                     f"IR candidate {dossier.route_digest[:12]} carries equation text that is not its dossier's -- a "
                     f"rewritten candidate label; refused (D27.7){self._legacy_hint()}")
+        seen_chemistry: "dict[tuple, str]" = {}
         for kind, dossiers, rebuild, render in (
             ("route", self.ranked_route_dossiers, _reconstruct_route,
              lambda r: " ; ".join(r.equation_lines()) or repr(r)),
@@ -2257,6 +2275,24 @@ class CompilationResponse:
                         f"{where}: the replayed route has {len(replayed.steps)} steps but the carried request bounds the "
                         f"search at max_depth={request.search_bounds.value('max_depth')} -- an answer to a DEEPER search; "
                         f"refused (D27.6){self._legacy_hint()}")
+                # 0.9.5 S5 (Wave-A G F4), the DAG leg: the convergent search recurses from depth 1 while
+                # depth < max_depth, so an honest DAG's HEIGHT (the longest producer->consumer chain ending at its
+                # sink) is at most max_depth -- its STEP COUNT may exceed it (branches), so the step count is not the law.
+                if kind == "DAG" and _dag_height(replayed) > request.search_bounds.value("max_depth"):
+                    raise ValueError(
+                        f"{where}: the replayed DAG is {_dag_height(replayed)} steps high but the carried request bounds "
+                        f"the search at max_depth={request.search_bounds.value('max_depth')} -- an answer to a DEEPER "
+                        f"search; refused (0.9.5 S5){self._legacy_hint()}")
+                # 0.9.5 S4 (Wave-A G F3): ONE chemistry, ONE dossier.  The route digest hashes literal atom order, so a
+                # replay with its atoms renumbered is a "distinct" route that every identity check (D26.1, D29.1, D27.1,
+                # conservation) passes and every tally counts again; keyed on STRUCTURES it is the same chemistry.
+                shape = _replay_chemistry(kind, replayed)
+                if shape in seen_chemistry:
+                    raise ValueError(
+                        f"{where} replays the same chemistry as {kind} dossier {seen_chemistry[shape][:12]} (identical "
+                        f"reactant/product STRUCTURES step for step) -- a respelled duplicate, not a second answer; "
+                        f"refused (0.9.5 S4){self._legacy_hint()}")
+                seen_chemistry[shape] = dossier.route_digest
 
     def _check_ranking_coherence(self) -> None:
         """X-high D27.4 (Wave C4 C4T-4/C4T-2/C4T-7, Foreman N3): the ranking, every dossier's bench verdict, the
@@ -4782,6 +4818,29 @@ def _reconstruct_dag(payload) -> "object":
     def build(replay):
         return SynthesisDAG(DAG_SCHEMA, _replay_payload_to_steps(replay))
     return _memoised_reconstruction("dag", payload, build)
+
+
+def _dag_height(dag) -> int:
+    """The longest producer->consumer chain of steps ending at the DAG's sink (0.9.5 S5) -- the convergent search's
+    depth.  A DAG is acyclic by construction (``SynthesisDAG.__post_init__``) and budgeted to a few dozen steps."""
+    producers: "dict[int, list[int]]" = {}
+    for producer, consumer, _molecule in dag.edges:
+        producers.setdefault(consumer, []).append(producer)
+
+    @functools.lru_cache(maxsize=None)
+    def height(index: int) -> int:
+        return 1 + max((height(p) for p in producers.get(index, ())), default=0)
+    return height(dag.sink_index)
+
+
+def _replay_chemistry(kind: str, replayed) -> tuple:
+    """A replayed route's / DAG's chemistry as STRUCTURES (0.9.5 S4): per step, the resonance-identity multisets of its
+    reactants and products -- in step order for a linear route, as a multiset for a DAG (whose step order is only a
+    topological choice).  Atom numbering and Kekule spelling cannot move it; a different reaction always does."""
+    from .experiment.step import _ident
+    shapes = tuple((tuple(sorted(_ident(m) for m in s.reactants)), tuple(sorted(_ident(m) for m in s.products)))
+                   for s in replayed.steps)
+    return (kind, shapes if kind == "route" else tuple(sorted(shapes)))
 
 
 def _memoised_reconstruction(kind: str, payload, build) -> "object":

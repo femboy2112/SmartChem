@@ -323,3 +323,16 @@ All ACTIVE mutants killed. Fresh Wave C finds no release blocker. Deterministic 
 on every locally available supported Python (3.10–3.13). Source and installed behaviour agree. Full OOM-safe suite passes.
 CI green OR the exact external blocker documented. `COMPATIBILITY.md` exists. `docs/ARCHITECTURE.md` reflects reality.
 Only then: `0.9.0a1 → 0.9.5a1`, PR `feat/v0.9.5-adversarial-rc → main`, NOT merged.
+
+---
+
+## 14. Amendments (adjudicated after the barrier; each names its evidence)
+
+| id | amendment | evidence |
+|---|---|---|
+| **A1 = S15** | **Front-door misparse fixes** (0.6 layer; exact regression fixes, allowed in 0.9.5): **F-2** interior whitespace may be removed only where removal cannot change tokenization (around separators; digit / `)` / `]` → capital or `(`/`[` boundaries such as `H2 O`, `CuSO4 . 5 H2O`); whitespace whose removal would attach a count across it (`CuSO4 5H2O` → `CuH2O46S`, `O4 2` → `O42`) or fuse letters into a different element symbol is a typed `FormulaSyntaxError` naming the explicit separator. **F-3** the bare trailing-sign charge rule is applied uniformly (today `Fe3+` / `SO42-` are refused as ambiguous but `HZn3+` reads as Zn₃ with charge +1). **F-1** a malformed bracket atom (`[³]`, `C[²H]`, `[¹²C]`) is a typed invalid input, never a bare `ValueError` (the CLI exited 70 INTERNAL). Accepted set: narrows for the misparsed spellings only; every change is listed in the fix's test file. | `experiments/RESULTS_v0_9_5_boundary_fuzz.md`, repros `experiments/fuzz_repros/frontdoor_0{1,2,3}_*.json` (seed 950; F-2 = a silent identity hallucination class → release-blocking) |
+| A2 | S7 also retargets mutants **M55** (`requirements_mod._struct_digest(` → `stock_mod.structure_key(`) and **M179** (anchor → `if is_structure_key(key) or not name_resolves_to(key, requirement.identity):`) — §7 named only M3 | rc-identity-material report: both SURVIVED only as harness errors on the post-S7 tree; KILLED with the retarget |
+| A3 | S3 is a CONSTRUCTION law (`CompilationResponse.__post_init__` → `_check_receipt_bounds`): even the keyless forger's digest-recompute path refuses | `tests/test_v0_9_5_loader_laws.py::test_s3_*` |
+| A4 | Erratum: the baseline freeze carries **22** service cases (not 23) | `--check` output `NO DRIFT (22 service cases, ...)` |
+| A5 | Erratum (§11 paths): `smartchem/procedure_evidence.py` and `smartchem/material_spec.py` live at the package root, not under `experiment/` | writer reports |
+| A6 | The stale 0.4.0 editable install of the dev venv leaked main-checkout modules into worktree runs (a module absent from a worktree resolved from `/home/leah/SmartChem/smartchem/`); every integration gate runs in the main checkout on the integrated branch, so no committed result depends on it; the venv is reinstalled (`pip install -e . --no-deps`) once no writer is live | rc-gates part 2 report |

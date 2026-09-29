@@ -730,3 +730,45 @@ closed).
 NOT protect a THIN-wire assessment — a thin forgery can flip per-axis verdicts to FIT and hide a BLOCKED (overall
 BLOCKED→UNKNOWN) and still load; only the canonical wire (replay re-derivation), `require_verified_admission`, or
 the producer HMAC make a thin verdict trustworthy. FIT and PROCESS_SPECIFIED-or-higher remain refused on thin.
+
+* **T: transport attacker** (probes `scratchpad/r5x/waveC3/T-transport/`; every forged payload built keylessly with
+  `dataclasses.replace` + the public `response_to_payload`, all public pins recomputed). D24.11 holds for what it
+  checks; D24.12/D24.15/generation pairing/phase codec held; no CAPABILITY_FIT reachable. Breaks:
+
+| id | sev | finding | disposition |
+|---|---|---|---|
+| T1 / T1c | **P0** (PROCESS_SPECIFIED loaded that the answered request's evidence does not support) | a response to request X (methyl acetate) carrying search Y's IR + dossiers (isopentyl PS route) loads under request pin + question pin + verified admission; T1c also copies X's IR target/request_digest/terminal policy/diagnostics — only the REPLAYED route still makes C7H14O2 | D26.1 |
+| T4b | P1 | a DECOMPILE request carrying a RECOMPILE IR + PS dossier loads | D26.1 |
+| T3 | P2 | a linear-grammar profile request answered with a DAG search's IR/dossiers (0 assessments) bypasses D24.13 | D26.1 |
+| T6a | P2 (v0.8 tiers FORMAL) | the T1 transplant under the frozen v0.8 rule | D26.1 (legacy leg) |
+| T2 | P2 | candidate-set deletion incl. all candidates + COMPLETE relabel (NO_ROUTE, 0 assessments) | D25.3 + D26.2 |
+| T4a | P2 | the honest producer silently drops a capability profile on DECOMPILE (F51 shape) | D26.3 |
+| T5 | P2 (only demotion observed) | `ExperimentStep.reaction_center` is `compare=False` → outside `route.digest`, yet feeds readiness: PS→FORMAL demotion loads under every pin (contradicts the D20 c3 text and the frontier docstring) | D26.4 |
+| T6b | P3 | `serialize_request` of a legacy v0.8 request emits 0.9-only keys (unloadable) | D26.5 |
+| B5 | P3 | `_decode_canonical` fills dataclass defaults for missing fields (a profile's PhysicalBounds without `min_temperature_k` decodes to `None`) | D26.6 |
+| RC-v | P3 | `ReactionCenter.from_payload` ignores `schema_version` | D26.7 |
+
+### §7.9 Barrier amendment D26 (post-Wave-C″ transport)
+
+**D26.1 — A response must answer ITS request.** After the identity-loss check, the loader re-derives and compares:
+`ir.operation` == the request's operation; `ir.target`, `ir.terminal_policy_digest` and `ir.request_digest` from the
+request by the SAME formula the producer uses; every candidate's kind matches the grammar's mode; and for every dossier
+carrying a replay: the route's final target identity == the request target's identity, `leaf_inputs` ⊆ the request's
+declared terminal set, and each summary's `equation` == the replayed route's own rendering. Recompile, decompile and
+the legacy (frozen-v0.8) paths. Honest producers and every real v0.8 fixture must still load.
+
+**D26.2 — Keyless authenticity by determinism (opt-in).** `response_from_payload(..., require_reexecution=True)`
+re-runs `run_compilation(request)` and requires an equal `result_digest` (a legacy v0.8 payload fails closed with the
+recompile hint). The compiler is deterministic (goldens, noninterference), so this closes candidate deletion, the
+`reaction_center` demotion and the (c3) tampered-procedure replay for any consumer that can afford one compile — the
+honest keyless alternative to the producer HMAC. It supersedes the "0.9.5 re-search" boundary of D25.3.
+
+**D26.3** A capability profile on a DECOMPILE request is refused at `CompilationRequest` construction (never silently
+dropped).
+
+**D26.4** `reaction_center` stays outside route identity in 0.9 (binding it is a route-schema change → 0.9.5); the
+D20 (c3) text and the frontier docstring are corrected to say so; D26.2 closes it for re-executing consumers; observed
+forgeries only DEMOTE readiness (no promotion found across 59 steps × 26 centres — Conjectured unreachable).
+
+**D26.5** `request_to_payload` refuses a legacy v0.8 request (mirrors the response rule). **D26.6**
+`_decode_canonical` requires the exact field set. **D26.7** `ReactionCenter.from_payload` checks `schema_version`.

@@ -242,8 +242,8 @@ reaction-vouched row):
 - `~/.local/bin/ruff check` clean on all three files.
 
 **v0.9 CAPABILITY COMPILER, ROUND V — EVIDENCE-BOUND MATERIAL SEMANTICS · QUANTITY CONSERVATION · WIRE-SCHEMA
-FREEZE, + the X-HIGH CONTINUATION (2026-09-28, IN PROGRESS — `ROUND V EXTERNAL AUDIT HOLD — DO NOT MERGE`; package
-stays `0.9.0a1`; the gate is NOT declared closed here — the audit doc records the gate state). Audit + barriers
+FREEZE, + the X-HIGH CONTINUATION (2026-09-28 → 2026-09-29, **CLOSED — PR #93 `ROUND V CLOSED — ready for external
+review`, NOT merged**; package stays `0.9.0a1`; final code tip `d6c7edc`; the 15-gate ledger is audit §7.16). Audit + barriers
 D1–D23: `docs/research/V0_9_RC_ROUND_V_EXTERNAL_AUDIT_2026-09-28.md` (§3 = Round V, §7 = the X-high
 continuation).** Round V's first half (F64–F82 + Wave-A lane G) replaced every "one representation silently meaning
 two things": a typed `QuantityDemand` (EXACT / LOWER_BOUND_PLUS_UNKNOWN / UNKNOWN, exact `Fraction` arithmetic, never
@@ -270,6 +270,18 @@ capability; no axis reads NOT_APPLICABLE on a missing procedure -- D24.17); held
 edit (`docs/research/V0_9_RC_ROUND_V_HELDOUT_PROBE_RESULTS_2026-09-28.md`). Mutation gate, fresh Wave C and the
 full OOM-safe suite: see the audit doc — not claimed here. No new reaction family, no new chemistry, no
 capability-fit by omission.
+
+  **Round V close evidence (all measured on the final code tip `d6c7edc`):** mutation gate `ACTIVE 217/217 killed, 0
+  survived | RETIRED 4 (0 void) | DEFERRED 0` (parent re-run, sources md5-stable); full OOM-safe suite **6529 collected /
+  6483 passed / 0 failed / 0 errors / 46 skipped**, 35 batches, exit 0; funnel 34/34 properties, zero CAPABILITY_FIT
+  (a PROVEN structural ceiling: no typed disposal vocabulary — `StreamDisposition` is the 0.9.5 FIT question), 7/7
+  routes diverge ResearchLab / PoorMan / Custom; blind held-out saponification oracle 12 PASS / 1 lawful DIVERGE /
+  0 FAIL with no compiler edit; search noninterference HOLDS; real v0.8 producer fixtures (incl. DAG + stereo) verify
+  byte-for-byte; wire ids request v1alpha7 / response v1alpha17 / route summary v1alpha5 / DAG summary v1alpha5 /
+  descriptor v1alpha20; the transport layer re-derives or binds every response field it does not disclose as advisory
+  (machine-checked `smartchem/transport_ledger.py`, D27–D29); 14 fresh non-author hostile agents across Waves
+  C′–C7 — no reachable false FIT in any wave. Hosted CI: INFRASTRUCTURE-DEAD on every tip (`runner_id=0`,
+  `steps=[]`) — neither green nor a code failure.
 
 **v0.9 CAPABILITY COMPILER, ROUND IV — EXTERNAL AUDIT (2026-09-28, EXTERNAL REVIEW HOLD — package stays
 `0.9.0a1`, NOT released to `main`; PR `feat/v0.9-capability-compiler -> main` OPEN + UNMERGED for another

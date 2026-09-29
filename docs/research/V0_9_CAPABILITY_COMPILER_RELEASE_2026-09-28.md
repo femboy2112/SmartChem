@@ -6,7 +6,7 @@ Capability Compiler as it earns `0.9.0a1`. It supersedes nothing; it *closes* th
 
 > **⚠ SUPERSEDED IN PART BY ROUND IV (2026-09-28).** An external audit + a fresh non-author Wave-C pass (F41–F56, F62) found composition / whole-path false-FIT classes this record's "never a false pass" thesis did NOT survive. They are all fixed (or named defers), and the machine is now honest — but the **material outcome is that the `CAPABILITY_FIT` positive described below COLLAPSES to UNKNOWN.** No corpus route reaches `CAPABILITY_FIT`, because the sourced isopentyl procedure under-specifies whole-process DURATION, auxiliary HAZARDS, and spent-stream DISPOSAL (fabricating them is banned; a vanishing positive is scientific information, and the gate was not weakened to preserve it). **The Round-III forcing-matrix FIT claims below are RETIRED.** Honest ceiling + the full account (barrier, F41–F63, re-adjudication, Wave C, mutation M1–M62 60/62): `V0_9_RC_ROUND_IV_EXTERNAL_AUDIT_2026-09-28.md`. Package stays `0.9.0a1`; PR #93 open + unmerged for another external-review pass.
 
-> **⚠ FURTHER SUPERSEDED BY ROUND V + ITS X-HIGH CONTINUATION (2026-09-28).** A third external audit (Round V:
+> **⚠ FURTHER SUPERSEDED BY ROUND V + ITS X-HIGH CONTINUATION (2026-09-28 → 2026-09-29; ROUND V CLOSED — PR #93 ready for external review, NOT merged; final code tip `d6c7edc`; gate ledger = audit §7.16).** A third external audit (Round V:
 > F64–F82, Wave-A lane G, Wave C) and an X-high continuation re-proved the capability compiler axis by axis. Round V
 > replaced the quantity / formulation / evidence representations this record describes (typed `QuantityDemand` + one
 > exact allocation per unit domain; source-authored `MaterialSpecification` instead of the Round-III assay floors and

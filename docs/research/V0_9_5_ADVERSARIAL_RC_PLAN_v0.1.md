@@ -180,6 +180,21 @@ tree broke three D24 claims and the transport layer's request binding):**
 - **`reaction_center` outside route identity (D26.4)** -- binding it into the route digest is a route-schema change;
   observed forgeries only DEMOTE readiness (no promotion found across 59 steps × 26 centres — Conjectured unreachable).
 
+**Waves C4–C7 (transport) — laws to re-attack and P3 items carried forward (audit doc §7.10–§7.15.1):**
+- **The response must answer its request with the algebra's own steps (D26.1, D27, D28, D29).** Envelopes are re-derived
+  from the shipped corpus (D27.1/D28.1), every replayed step must be a transform the carried algebra emits (D29.1),
+  the result digest covers the whole payload (D27.2), and a machine-checked TRANSPORT LEDGER
+  (`smartchem/transport_ledger.py`) names, for every field, the check that re-derives or binds it — or discloses it as
+  advisory (HMAC / `require_reexecution` only). 0.9.5 re-attacks the ledger itself: every RE/REQ label must keep a
+  refusing forgery by its OWN law (D29.3), and the advisory list must stay truthful.
+- **Load-time cost** — D27.4 re-ranking + D29.1 re-enumeration raised the thick isopentyl load from ~2.8 s to ~13–18 s
+  warm (~30–46 s cold): add a lossless per-(algebra, target, reagents, budget) enumeration cache and a load-time
+  enumeration budget (C7-1).
+- **Kekulé keys (C7-2)** — key stock/requirement structure on `resonance_identity`; correct the `stock.py` docstring.
+- **`require_canonical_transport` (D-T1)** — a load option so a consumer cannot accidentally accept a thin advisory
+  assessment.
+- **DAG forgery in the ledger sweep (C7-3).**
+
 **Named representation gaps (exact boundaries):**
 - **`StreamDisposition` (the FIT vocabulary)** -- typed CONSUMED_COMPLETELY / RECOVERED / ROUTED(WasteCapability) with
   a CLOSED subject binding (a use, an op stream, a byproduct, an untyped op material) that discharges an obligation

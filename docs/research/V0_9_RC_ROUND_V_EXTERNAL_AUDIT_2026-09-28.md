@@ -2,7 +2,7 @@
 
 **Evidence-Bound Material Semantics · Quantity Conservation · Wire-Schema Freeze**
 
-Status: **IN PROGRESS — PR #93 on ROUND V EXTERNAL AUDIT HOLD (DO NOT MERGE).**
+Status: **CLOSED (2026-09-29) — PR #93 `ROUND V CLOSED — ready for external review`; NOT merged (the external reviewer decides). Final gate ledger: §7.16.**
 
 > *The enemy is no longer missing features. The enemy is one representation silently meaning two things.*
 > No magic adjectives. No disappearing quantities. No reusable bottles. No invisible migrations. No evidence
@@ -902,3 +902,56 @@ detects it") — never a silent one.
 **D29.2** exact-key discipline in the capability canonical decoder (node keys, not just field names) and in
 `identity_losses` entries. **D29.3** the ledger sweep names, per forgery, the law expected to refuse it and asserts the
 refusal message carries that law's tag.
+
+### §7.15.1 D29 outcome + Wave C7 closure (grok-bitch:birdperson, fresh non-author, on `d6c7edc`)
+
+**D29.1 landed as a REAL binding, not the disclosure fallback** (`smartchem/service.py` `_check_replay_step_transforms`,
+called after D26.1 and before D27.1): each replayed step of a CURRENT payload must be a transform the carried algebra's
+own provider emits for that step's target (depth 1, the request's reagents and cut budget) — precursors == the step's
+reactants, products (STRUCTURES, byproducts included) == the step's products, a reaction centre that transform assigns,
+no ancillary-reagent flag. Legacy v0.8 payloads: checked under verified admission only (mirroring D27.1). It also closes
+the N4/D26.4 re-centre on every current load (the centre is still outside `route.digest`, but no longer free). D29.2
+exact-key discipline in the capability codec nodes, `identity_losses` and the structural-candidate family. D29.3 the
+ledger sweep asserts each forgery is refused by its OWN law (tag or exact wording + the deepest ledger-named frame).
+Added load cost (thick isopentyl): ≈ +2.5 s warm, +15–25 s on a cold first load.
+
+**Wave C7 verdict: SOUND — Wave C6 fully adjudicated; no P0, no P1.** C6-F8 CLOSED on every axis and every mode
+(per-axis, OVERALL, non-corpus step, a newly tested DAG path — with D29.1 disabled in-process the same DAG forgery
+LOADS, so D29.1 is its only refuser —, and a state-label variant); C6-NEW-1 CLOSED for both decoders; C6-test CLOSED
+(mutation runs show the own-law lock catches exactly the C6-test defect). Honest paths all load (methyl acetate, both
+DAG fixtures, decompile, aspirin/methyl salicylate/stereo/paracetamol worlds, Diels–Alder under re-execution, thick
+isopentyl — still zero CAPABILITY_FIT, 24 BLOCKED + 3 UNKNOWN on the fit bench — and every loadable v0.8 fixture).
+Attacks on D29.1 that held: Kekulé respelling moves no verdict (presentation freedom inside the D25.3 search-output
+boundary); algebra-emitted isomeric-byproduct alternatives exist only for precursor sets with NO corpus record and are
+hazard-looked-up per structure (verdicts describe the step shown); truncated-budget determinism held; the DECOMPILE
+skip is not an escape (D24.14). Residual P3s — all **VERIFIED DEFER → 0.9.5**, none moves a verdict:
+
+| id | sev | finding | exact boundary |
+|---|---|---|---|
+| C7-1 | P3 (availability) | D29.1 runs the carried algebra's enumeration at the payload's OWN request bounds on every current load, before any refusal; an unpinned untrusted payload can choose a costly enumeration (measured: a 45-heavy-atom target, 6 reagents: 133 s cold / 29 s warm) | a consumer loading UNTRUSTED payloads should pin the request (`expected_request_digest`); 0.9.5 adds an enumeration cache (lossless) and a load-time enumeration budget mirroring D27.7 |
+| C7-2 | P3 (doc drift; latent false-UNKNOWN only) | `experiment/stock.py` (~117-119, ~241) says `canonical()` unifies Kekulé spellings — false for ortho-disubstituted benzenes (salicylic acid, aspirin, methyl salicylate, o-xylene: `resonance_identity` equal, canonical digest not) | the only effect is that a bottle declared under the other Kekulé spelling fails to match (UNKNOWN), never a false FIT; 0.9.5 keys stock/requirement structure on `resonance_identity` and corrects the docstring |
+| C7-3 | P3 (test gap) | the ledger sweep forges D29.1 only on route steps | the DAG leg is proven by the C7 probe (`waveC7/birdperson/a1_dag.py`); 0.9.5 adds a DAG forgery to the sweep |
+| D-T1 | (standing) | a canonical payload downgraded to THIN with a BLOCKED assessment rewritten to UNKNOWN loads under plain + pins (the disclosed thin door, D25.5) | unchanged; 0.9.5 adds a `require_canonical_transport` load option so consumers need not check `transport_mode` themselves |
+
+### §7.16 Final gate ledger (X-high continuation) — the 15 gates, measured
+
+| # | gate | status | evidence |
+|---|---|---|---|
+| 1 | every C3 finding adjudicated | MET | §7.6: F-1…F-10 FIXED (reproducer → law → regression → killed mutants); F-11 REFUTED with evidence (declared-world semantics) |
+| 2 | phase evidence no longer an ungraded capability claim | MET | D18 `PhaseClaim` on both sides + `compare_phase` (certifying sets; subset relation D24.7); M137–M141, M168 |
+| 3 | temperature floor represented | MET | D14 `PhysicalBounds.min_temperature_k` (physical-bounds-v1alpha2, v1alpha1 legacy-only); HIGH/LOW projection; M109–M118 |
+| 4 | every load-bearing procedure field has an owner or fails closed | MET | D16 machine-checked ledger `capability/coverage.py` (`missing_coverage()==()`), D24.1 canonical-rendering display law, D25.1 names; stated boundary: PRESENTATION-only hosts carry no demand by contract |
+| 5 | all ACTIVE mutants killed | MET | ACTIVE 217/217 killed, 0 survived (parent re-run on `d6c7edc`, sources md5-stable) |
+| 6 | retired mutants have ACTIVE replacement coverage | MET | RETIRED 4 (0 void): M23→M55/M56/M66, M45→M68/M46b, M47→M67/M46b, M58→M74/M57 — every replacement KILLED in the same run |
+| 7 | no deferred semantic law synthetically exercisable | MET | DEFERRED 0 in the mutation gate; every VERIFIED DEFER in this doc is a trust/label/representation boundary that moves no verdict, re-checked by a fresh auditor where contested (C5-F8 was NOT deferrable and was FIXED by D29.1) |
+| 8 | current-tree search noninterference | MET | `experiments/v0_9_search_noninterference.py` HOLDS on the final tree (isopentyl acetate 27 candidates; methyl acetate 2); M7/M8/M20/M35/M36 KILLED |
+| 9 | held-out genericity | MET | frozen blind oracle (sha `eb01d67c…`, written before implementation) vs `experiments/v0_9_heldout_saponification_probe.py`: 12 PASS / 1 lawful DIVERGE / 0 FAIL, no compiler edit (P11 AST literal scan clean); Wave C′ F: two more held-out procedures fail closed, no literals |
+| 10 | profile divergence measured | MET | funnel 34/34 properties; 7/7 routes diverge ResearchLab (UNKNOWN ×7) / PoorMan (BLOCKED ×7) / Custom (BLOCKED ×4, UNKNOWN ×3); zero CAPABILITY_FIT (structural theorem) |
+| 11 | real v0.8 migrations pass | MET | every loadable real v0.8 fixture (incl. the new DAG + stereo responses reproduced from `git archive df1b38d`) loads byte-for-byte under the frozen rule; `sulfuric_acid_name` fails closed by the pinned P2 rule |
+| 12 | wire schemas frozen honestly | MET | D22 table (request v1alpha7, response v1alpha17, route summary v1alpha5, DAG summary v1alpha5, descriptor v1alpha20, profile v1alpha3, stock v1alpha3, physical bounds v1alpha2); D27.2 result digest covers the whole payload; goldens regenerated once post-freeze, every moved field classified |
+| 13 | fresh non-author Wave C has no unresolved release-blocking finding | MET | Waves C′ (6 agents), C″ (3), C4 (2), C5 (1), C6 (1), C7 (1) — 14 fresh non-author agents; every finding FIXED (D24–D29), REFUTED, or VERIFIED-DEFERRED with an exact boundary; no reachable false CAPABILITY_FIT in any wave; the final wave (C7) ruled D29 SOUND with no P0/P1 (only P3s, deferred with exact boundaries, §7.15.1) |
+| 14 | full OOM-safe suite green | MET | `scripts/run_suite.sh` on the final code tip `d6c7edc` (clean tree, RDKit absent): **6529 collected / 6483 passed / 0 failed / 0 errors / 46 skipped** (RDKit `importorskip`), 35 fresh-process batches, exit 0, 3372 s. Earlier green runs on the way: 6292 (`14cf5a9`), 6316 (`9ceb557`), 6356 (`f7025b6`), 6460 (`6c12482`); 0.8 baseline 5628, Round III 5757 |
+| 15 | hosted-CI truth classified | MET | INFRASTRUCTURE-DEAD on every pushed tip (`runner_id=0`, `steps=0` on all three jobs): runs 36490673856 (`78554a2`), 36497417379, 36501907075, 36502810193, 36507381664, 36508448383, 36516835745 and every later tip — neither green nor a code failure |
+
+**Gate decision: ROUND V CLOSED — PR #93 ready for external review.** Package stays `0.9.0a1`; NOT merged (the external
+reviewer has the merge decision). Final code tip `d6c7edc`; everything after it is documentation.

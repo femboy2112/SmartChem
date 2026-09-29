@@ -1,0 +1,22 @@
+{
+ "family": "frontdoor",
+ "property": "P-silent-misparse",
+ "signature": "P-silent-misparse[R1 whitespace silently deleted: adjacent number tokens merge ('Zn2 5F' -> Zn25F)]",
+ "seed": 950,
+ "count_in_run": 14,
+ "detail": "'CuSO4 5H2O' accepted as {'Cu': 1, 'H': 2, 'O': 46, 'S': 1} charge 0; intended {'Cu': 1, 'S': 1, 'O': 9, 'H': 10} charge 0",
+ "repro": {
+  "text": "O4 2",
+  "text_codepoints": [
+   "U+004F",
+   "U+0034",
+   "U+0020",
+   "U+0032"
+  ],
+  "kind": "confusable",
+  "surface": "FORMULA",
+  "intended": "(belongs to shrunk_from, not to this minimal text)",
+  "intended_charge": null,
+  "shrunk_from": "CuSO4 5H2O"
+ }
+}

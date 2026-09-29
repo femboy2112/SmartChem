@@ -1,0 +1,210 @@
+{
+ "dag_every": 6,
+ "generated_utc": "2026-09-29T21:50:47Z",
+ "invariants": {
+  "cache_on_off_identity": {
+   "doc": "enumeration cache on/off byte-identical accepted results",
+   "fail": 0,
+   "failures": [],
+   "note": "set_enumeration_cache_enabled absent on this tree (pre-0.9.5 layer)",
+   "pass": 0,
+   "pending": 41,
+   "status": "PENDING",
+   "vacuous": 0
+  },
+  "compile_replay_acceptance": {
+   "doc": "honest compile -> load accepted, result_digest preserved",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 41,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "cross_process_result_digest": {
+   "doc": "same request -> identical result_digest across 3 fresh processes",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 6,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "kekule_identity_law": {
+   "doc": "Kekule alternates -> one structure_key; constitutional isomers distinct",
+   "fail": 0,
+   "failures": [],
+   "note": "smartchem.experiment.stock.structure_key absent (S7 not landed): the law cannot be checked",
+   "pass": 0,
+   "pending": 1,
+   "status": "PENDING",
+   "vacuous": 0
+  },
+  "policy_only_promised_changes": {
+   "doc": "policy changes only the promised trust/refusal behaviour",
+   "fail": 0,
+   "failures": [],
+   "note": "smartchem.verification.VerificationPolicy/load_response absent: the 'thin under a canonical requirement is refused' and policy-object half is PENDING (legacy-kwarg half ran)",
+   "pass": 123,
+   "pending": 41,
+   "status": "PASS (+pending)",
+   "vacuous": 0
+  },
+  "profile_search_noninterference": {
+   "doc": "none/research-lab/poor-man/custom leave the search untouched",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 112,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "receipt_consistency": {
+   "doc": "len(candidates) <= result_limit; results_returned == len(candidates)",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 158,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "roundtrip_byte_identity": {
+   "doc": "serialize->deserialize->serialize byte identity",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 41,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  }
+ },
+ "isopentyl_iters": 1,
+ "iterations": 40,
+ "label": "BASELINE",
+ "processes": 3,
+ "profile_every": 6,
+ "python": "3.12.3",
+ "resources": {
+  "canonical_lru_currsize_first_last_max": [
+   172,
+   199,
+   199
+  ],
+  "enumeration_cache_series_first_last": [
+   null,
+   null
+  ],
+  "latency_seconds": {
+   "compile": {
+    "max": 73.0573,
+    "n": 41,
+    "p50": 0.1143,
+    "p90": 0.6713,
+    "p99": 73.0573
+   },
+   "load": {
+    "max": 7.6807,
+    "n": 41,
+    "p50": 0.1043,
+    "p90": 0.4805,
+    "p99": 7.6807
+   },
+   "roundtrip": {
+    "max": 8.0896,
+    "n": 41,
+    "p50": 0.1071,
+    "p90": 0.4828,
+    "p99": 8.0896
+   },
+   "serialize": {
+    "max": 0.0105,
+    "n": 41,
+    "p50": 0.002,
+    "p90": 0.0025,
+    "p99": 0.0105
+   }
+  },
+  "rss_after_isopentyl_kb": [
+   43560
+  ],
+  "rss_kb_first": 33664,
+  "rss_kb_last": 34524,
+  "rss_kb_max": 34524,
+  "rss_slope_kb_per_iteration_all": 13.74,
+  "rss_slope_kb_per_iteration_post_warmup": 5.05
+ },
+ "seed": 20260929,
+ "specs_sample": [
+  {
+   "dag": true,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 2,
+   "max_routes": 100,
+   "stock": [
+    "CCO",
+    "CCC(=O)O"
+   ],
+   "target": "smiles:CCC(=O)OCC"
+  },
+  {
+   "dag": false,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 2,
+   "max_routes": 100,
+   "stock": [
+    "CCO",
+    "CC(=O)O"
+   ],
+   "target": "smiles:CC(=O)OCC"
+  },
+  {
+   "dag": false,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 1,
+   "max_routes": 5,
+   "stock": [
+    "CO",
+    "CC(=O)O"
+   ],
+   "target": "smiles:CC(=O)OC"
+  },
+  {
+   "dag": false,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 2,
+   "max_routes": 100,
+   "stock": [
+    "CCCO",
+    "CC(=O)O"
+   ],
+   "target": "smiles:CC(=O)OCCC"
+  },
+  {
+   "dag": false,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 2,
+   "max_routes": 2,
+   "stock": [
+    "CCO",
+    "CCC(=O)O"
+   ],
+   "target": "smiles:CCC(=O)OCC"
+  }
+ ],
+ "wall_seconds": 182.7
+}

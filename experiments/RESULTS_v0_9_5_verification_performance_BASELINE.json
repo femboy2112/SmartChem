@@ -1,0 +1,461 @@
+{
+ "cold_n": 3,
+ "generated_utc": "2026-09-29T23:12:56Z",
+ "git_head": "d26f0eb",
+ "label": "BASELINE",
+ "layer": {
+  "present": false
+ },
+ "loadavg_end": [
+  4.94,
+  4.03,
+  3.29
+ ],
+ "loadavg_start": [
+  2.89,
+  3.35,
+  3.03
+ ],
+ "payloads": [
+  {
+   "bytes": 12415,
+   "cache_stats_after_warm_child": "absent",
+   "cold": {
+    "best": 0.4037113420199603,
+    "median": 0.41992852196563035,
+    "n": 3,
+    "p90": 0.42979832901619375,
+    "samples": [
+     0.404,
+     0.42,
+     0.43
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.42979832901619375
+   },
+   "description": "smiles:CC(=O)OC linear, max_depth=2, water, stock CO/CC(=O)O",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.8513207579962909,
+   "layer": {
+    "present": false
+   },
+   "path_kind": "built-cache",
+   "payload": "a_tiny_linear",
+   "peak_rss_mb": 31.33984375,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 0.14290467102546245,
+    "median": 0.1449220009963028,
+    "n": 5,
+    "p90": 0.14744814101140946,
+    "samples": [
+     0.143,
+     0.146,
+     0.147,
+     0.143,
+     0.145
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.14744814101140946
+   }
+  },
+  {
+   "bytes": 234431,
+   "cache_stats_after_warm_child": "absent",
+   "cold": {
+    "best": 25.156763133010827,
+    "median": 26.137740189034957,
+    "n": 3,
+    "p90": 27.103830326988827,
+    "samples": [
+     25.157,
+     26.138,
+     27.104
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 27.103830326988827
+   },
+   "description": "isopentyl acetate thick 27-route, no capability profile",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.8456261749961413,
+   "layer": {
+    "present": false
+   },
+   "path_kind": "built-cache",
+   "payload": "b1_isopentyl_noprofile",
+   "peak_rss_mb": 37.80859375,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 6.917370285955258,
+    "median": 7.660440843028482,
+    "n": 5,
+    "p90": 8.16900540800998,
+    "samples": [
+     7.811,
+     7.629,
+     8.169,
+     7.66,
+     6.917
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 8.16900540800998
+   }
+  },
+  {
+   "bytes": 662408,
+   "cache_stats_after_warm_child": "absent",
+   "cold": {
+    "best": 28.944930072990246,
+    "median": 30.08011592400726,
+    "n": 3,
+    "p90": 30.64251112099737,
+    "samples": [
+     30.643,
+     28.945,
+     30.08
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 30.64251112099737
+   },
+   "description": "isopentyl acetate thick 27-route + isopentyl_capability_fit_bench()",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.8786028489703313,
+   "layer": {
+    "present": false
+   },
+   "path_kind": "built-cache",
+   "payload": "b2_isopentyl_fitbench",
+   "peak_rss_mb": 42.359375,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 10.7015847809962,
+    "median": 10.905835854006,
+    "n": 5,
+    "p90": 12.625970658962615,
+    "samples": [
+     10.702,
+     10.906,
+     10.797,
+     11.023,
+     12.626
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 12.625970658962615
+   }
+  },
+  {
+   "bytes": 21327,
+   "cache_stats_after_warm_child": "absent",
+   "cold": {
+    "best": 0.85463408799842,
+    "median": 0.8875312809832394,
+    "n": 3,
+    "p90": 0.9132678259629756,
+    "samples": [
+     0.888,
+     0.855,
+     0.913
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.9132678259629756
+   },
+   "description": "methyl acetate CAPPED_SCISSION_CONVERGENT DAG, max_total_minutes=30",
+   "entry": "service.response_from_payload",
+   "import_seconds": 1.2755573679460213,
+   "layer": {
+    "present": false
+   },
+   "path_kind": "built-cache",
+   "payload": "c1_methyl_acetate_dag",
+   "peak_rss_mb": 31.78125,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 0.4655984680284746,
+    "median": 0.5034887010115199,
+    "n": 5,
+    "p90": 0.5796891039935872,
+    "samples": [
+     0.522,
+     0.468,
+     0.466,
+     0.58,
+     0.503
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.5796891039935872
+   }
+  },
+  {
+   "bytes": 1140575,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=0, misses=0, entries=0, retained_transforms=0)",
+   "cold": {
+    "best": 47.03438532096334,
+    "median": 49.92680652602576,
+    "n": 3,
+    "p90": 52.27015647495864,
+    "samples": [
+     52.27,
+     49.927,
+     47.034
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 52.27015647495864
+   },
+   "description": "isopentyl acetate CAPPED_SCISSION_CONVERGENT DAG, ProcessBounds.quick()",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.8687104120035656,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "c2_isopentyl_dag",
+   "peak_rss_mb": 58.55078125,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 31.21582825202495,
+    "median": 31.919898907013703,
+    "n": 5,
+    "p90": 33.08653391798725,
+    "samples": [
+     31.216,
+     31.92,
+     31.962,
+     33.087,
+     31.882
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 33.08653391798725
+   }
+  },
+  {
+   "bytes": 7834,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=0, misses=0, entries=0, retained_transforms=0)",
+   "cold": {
+    "best": 0.5773078529746272,
+    "median": 0.6189742140122689,
+    "n": 3,
+    "p90": 0.6339962960337289,
+    "samples": [
+     0.577,
+     0.634,
+     0.619
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.6339962960337289
+   },
+   "description": "Diels-Alder control C1CC=CCC1, certified-route-v07",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.8059604709851556,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "d_diels_alder",
+   "peak_rss_mb": 31.29296875,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 0.057695415045600384,
+    "median": 0.05866826500277966,
+    "n": 5,
+    "p90": 0.0588745370041579,
+    "samples": [
+     0.059,
+     0.058,
+     0.059,
+     0.059,
+     0.058
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.0588745370041579
+   }
+  },
+  {
+   "bytes": 121195,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=0, misses=0, entries=0, retained_transforms=0)",
+   "cold": {
+    "best": 1.717668785015121,
+    "median": 1.8684704749612138,
+    "n": 3,
+    "p90": 1.893569414038211,
+    "samples": [
+     1.894,
+     1.868,
+     1.718
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 1.893569414038211
+   },
+   "description": "real v0.8 fixture response_isopentyl_acetate.json (legacy read leg)",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.892400473007001,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "fixture",
+   "payload": "e_legacy_v08_isopentyl",
+   "peak_rss_mb": 33.10546875,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 0.2586546739912592,
+    "median": 0.27178658201592043,
+    "n": 5,
+    "p90": 0.30048008396988735,
+    "samples": [
+     0.3,
+     0.272,
+     0.29,
+     0.259,
+     0.264
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.30048008396988735
+   }
+  },
+  {
+   "bytes": 14278,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=0, misses=0, entries=0, retained_transforms=0)",
+   "cold": {
+    "best": 122.05173986195587,
+    "median": 129.85210813197773,
+    "n": 3,
+    "p90": 141.06951329001458,
+    "samples": [
+     122.052,
+     129.852,
+     141.07
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 141.06951329001458
+   },
+   "description": "hostile large target: 45-heavy-atom wax ester, 6 helper reagents, default bounds (C7-1)",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.8186041029985063,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "f_hostile2_45",
+   "peak_rss_mb": 88.16796875,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 30.02817851200234,
+    "median": 31.701847245974932,
+    "n": 5,
+    "p90": 32.367913815018255,
+    "samples": [
+     31.702,
+     30.062,
+     30.028,
+     32.368,
+     32.06
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 32.367913815018255
+   }
+  }
+ ],
+ "python": "3.12.3",
+ "smartchem_version": "0.9.0a1",
+ "wall_seconds": 5379.036534309387,
+ "warm_n": 5
+}

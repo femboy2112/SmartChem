@@ -29,7 +29,7 @@ from ..contracts import Digestible
 from ..data.reagents import Availability
 from ..experiment.catalyst_availability import is_obtainable_under
 from ..experiment.readiness import PROCESS_SPECIFIED, READINESS_TIERS, RouteReadiness, tier_rank
-from ..experiment.stock import StockMaterial
+from ..experiment.stock import StockMaterial, is_structure_key
 from ..material_spec import (
     CERTIFYING_STOCK_EVIDENCE,
     ConcentrationBasis,
@@ -294,10 +294,6 @@ def _species_key_in(requirement: MaterialRequirement, stock: StockMaterial):
     return key
 
 
-#: the stock layer's structure-key prefixes (``struct:`` / ``struct-asgiven:``) -- every other key is a declared NAME.
-_STRUCTURE_KEY_PREFIXES = ("struct:", "struct-asgiven:")
-
-
 def _listed_by_name_only(requirement: MaterialRequirement, stock: StockMaterial) -> "str | None":
     """D24.8 (Wave-C' C6) + D25.4 (Wave-C'' C6 on the real leaf path): is an identity-keyed requirement's species absent
     from ``stock`` under the STRUCTURE key but listed under a WEAKER name key that names it? Returns that name, or
@@ -315,7 +311,8 @@ def _listed_by_name_only(requirement: MaterialRequirement, stock: StockMaterial)
             return requirement.name
     for component in stock.components:
         key = component.identity_key
-        if key.startswith(_STRUCTURE_KEY_PREFIXES) or not name_resolves_to(key, requirement.identity):
+        # barrier S7: the stock layer's own namespace predicate -- this module no longer keeps a private prefix copy
+        if is_structure_key(key) or not name_resolves_to(key, requirement.identity):
             continue
         interval = stock.active_fraction_interval(key)
         if interval is not None and interval[1] != 0:

@@ -1596,12 +1596,12 @@ def m55():
     route = _deformulated_acetic_route()
     bench = isopentyl_capability_fit_bench(material_inventory=_fit_inventory_with(glacial_acetic=_acetic_90()))
     honest = _iso_material(bench, route) is not CapabilityStatus.BLOCKED
-    acetic_key = requirements_mod._struct_digest(_ACETIC)
+    acetic_key = stock_mod.structure_key(_ACETIC)
     real = requirements_mod._material_requirements
 
     def identity_floor(r_):
         return tuple(dc.replace(r, specification=_floor_spec("0.98"))
-                     if r.identity is not None and requirements_mod._struct_digest(r.identity) == acetic_key else r
+                     if r.identity is not None and stock_mod.structure_key(r.identity) == acetic_key else r
                      for r in real(r_))
 
     with _patch(requirements_mod, "_material_requirements", identity_floor):
@@ -4180,7 +4180,7 @@ def m179():
     profile = _micro_profile(material_inventory=(_bottle("methanol-pure", _METHANOL), _bottle("acid-by-name", "acetic acid")))
     honest = _micro_assess(route, profile).material.status is CapabilityStatus.UNKNOWN
     bad_named = _src_mutant(assess_mod._listed_by_name_only, (
-        "if key.startswith(_STRUCTURE_KEY_PREFIXES) or not name_resolves_to(key, requirement.identity):",
+        "if is_structure_key(key) or not name_resolves_to(key, requirement.identity):",  # 0.9.5 S7 (A2)
         "if True:"))
     with _patch(assess_mod, "_listed_by_name_only", bad_named):
         bad = _micro_assess(route, profile).material.status is CapabilityStatus.BLOCKED

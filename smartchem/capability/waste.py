@@ -44,9 +44,10 @@ Every reason quotes the real ``Fate``. Nothing here decides FIT/BLOCKED/UNKNOWN 
 """
 from __future__ import annotations
 
-from ..contracts import canonical_digest
 from ..experiment.handling import Fate, verify_handling
 from ..experiment.step import ExperimentRoute
+from ..experiment.stock import normalize_material_name as _norm_text
+from ..experiment.stock import structure_key
 from ..procedure_evidence import OperationKind, OperationRole, ProcedureMaterialRole
 from .enums import WasteCapability
 
@@ -87,8 +88,9 @@ def _check_role_totality() -> None:
 _check_role_totality()
 
 
-def _norm_text(text: str) -> str:
-    return " ".join(text.strip().casefold().split())
+# Barrier S7/S8: the name fold (bound to the historical local name ``_norm_text``) and the structure key are imported
+# from :mod:`smartchem.experiment.stock`, their one owner. This module used to keep private copies of both; a copy
+# is a second opinion, and identity is not a matter of opinion.
 
 
 def _name_covers(use_name: str, raw: str) -> bool:
@@ -97,13 +99,6 @@ def _name_covers(use_name: str, raw: str) -> bool:
     EQUALITY -- never a substring, so a second species hidden in a longer phrase stays uncovered."""
     name, text = _norm_text(use_name), _norm_text(raw)
     return bool(name) and name == text
-
-
-def _struct_digest(molecule) -> str:
-    try:
-        return canonical_digest(molecule.canonical())
-    except NotImplementedError:
-        return canonical_digest(molecule)
 
 
 def _resolve_hazard(identity, name: "str | None"):
@@ -222,13 +217,13 @@ def derive_waste(
                             "UNKNOWN (F-6)")
                 for use in op.material_uses:
                     if use.identity is not None:
-                        covered.add(_struct_digest(use.identity))
+                        covered.add(structure_key(use.identity))
                     if use.role in _CATALYST_ROLES:
                         _catalyst(use.identity, use.name, f"step {s_index} op #{op.ordinal} CATALYST use")
                         if use.identity is not None and step.net_consumes(use.identity):
-                            residual_seen.add(_struct_digest(use.identity))
+                            residual_seen.add(structure_key(use.identity))
                     elif use.role in _CONSUMED_ROLES:
-                        key = (_struct_digest(use.identity) if use.identity is not None
+                        key = (structure_key(use.identity) if use.identity is not None
                                else f"name:{use.name.strip().casefold()}")
                         if key not in residual_seen:
                             residual_seen.add(key)
@@ -254,7 +249,7 @@ def derive_waste(
                         f"stream ({what}) -- no disposal routing is sourced, so it is UNKNOWN (D9)")
         # every reactant/reagent no typed use covers is an unresolved residual (no procedure => all of them).
         for molecule in tuple(step.reactants) + tuple(step.reagents):
-            key = _struct_digest(molecule)
+            key = structure_key(molecule)
             if key in covered or key in residual_seen:
                 continue
             residual_seen.add(key)

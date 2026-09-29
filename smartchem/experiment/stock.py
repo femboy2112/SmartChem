@@ -10,8 +10,8 @@ pure-reagent requirement it cannot prove it meets.
 This first brick implements the core falsifier (section 10.2): a dilute mixture cannot satisfy a pure input
 without a proven assay -- the honest verdicts are ``INSUFFICIENT_ASSAY`` (even the best case falls short, so
 preprocessing is required) and ``UNKNOWN_ASSAY`` (the interval straddles the requirement, so a measurement is
-required), never a silent pass.  The full section 10.2 schema (quantity, container, cost, jurisdiction, impurity
-profile) and canonical-structure component keying (ID-LAYER-01) are later bricks, named as such.
+required), never a silent pass.  Components are keyed on the RESONANCE-canonical structure (:func:`structure_key`,
+ID-LAYER-01) or on a declared NAME (:func:`normalize_material_name`); this module is the ONE owner of both keys.
 """
 from __future__ import annotations
 
@@ -19,10 +19,11 @@ import math
 from dataclasses import dataclass, field
 from enum import Enum
 from fractions import Fraction
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from ..category import Molecule
-from ..contracts import Digestible, canonical_digest
+from ..contracts import Digestible
 from ..material_spec import ConcentrationBasis, EvidenceKind
 
 if TYPE_CHECKING:
@@ -41,6 +42,9 @@ __all__ = [
     "CostObservation",
     "StockMaterial",
     "stock_material_from_commodity",
+    "structure_key",
+    "is_structure_key",
+    "normalize_material_name",
 ]
 
 #: Round V (barrier D8/D11): component v1alpha2 adds ``MaterialComponent.basis``/``.evidence``/``.states`` (Wave-C
@@ -49,8 +53,13 @@ __all__ = [
 #: constructible: no v0.8 payload ever carried a StockMaterial (the capability profile is new in 0.9), and a WIP-only
 #: 0.9 id was never released, so there is nothing to migrate -- a stale record would silently mean "phase evidence
 #: absent" under a new identity. Every in-repo constructor passes the schema CONSTANT, so the bump is transparent.
-STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha3"
-MATERIAL_COMPONENT_SCHEMA = "smartchem.experiment/material-component-v1alpha2"
+#: 0.9.5 (barrier S7): component v1alpha3 -- ``identity_key`` now means the RESONANCE-canonical structure key
+#: (:func:`structure_key`), a strict coarsening of the literal-bond-order key; 0 parse-origin keys move, but the
+#: meaning did, so the id says so. 0.9.5 (barrier S9): stock-material v1alpha4 -- a stock-side state/phase claim
+#: may no longer carry a SOURCED evidence kind (the accepted set only narrows; 0 existing uses). Pre-release ids
+#: are not migrated (S14): a 0.9.0a1 alpha is refused, never reinterpreted.
+STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha4"
+MATERIAL_COMPONENT_SCHEMA = "smartchem.experiment/material-component-v1alpha3"
 STOCK_QUANTITY_SCHEMA = "smartchem.experiment/stock-quantity-v1alpha1"
 COST_OBSERVATION_SCHEMA = "smartchem.experiment/cost-observation-v1alpha2"
 
@@ -92,48 +101,84 @@ class FitnessVerdict(str, Enum):
     IDENTITY_ABSENT = "IDENTITY_ABSENT"         # the material does not contain the required identity at all
 
 
-def _norm(identity: str) -> str:
-    return identity.strip().casefold()
+def normalize_material_name(name: str) -> str:
+    """THE material-name normaliser (barrier S8): strip, casefold, and collapse every internal whitespace run to one
+    space. Stock NAME keys, the requirement projection and waste derivation all fold names through THIS function --
+    whitespace folding is spelling, not synonymy ("sodium  bicarbonate" is "sodium bicarbonate"; "baking soda" is
+    still not). There is no synonym knowledge here and there must not be: the declared world's keys stay closed."""
+    # Three modules used to carry three private folds, and stock's (strip + casefold only) disagreed with the other
+    # two on a double space -- enough to BLOCK a bottle that was sitting right there. One fold now; the copies are out.
+    return " ".join(name.strip().casefold().split())
 
 
 _STRUCT_PREFIX = "struct:"
 _STRUCT_ASGIVEN = "struct-asgiven:"
+_ASGIVEN = "asgiven:"  # resonance_identity's own sentinel for a graph the canonicaliser refuses
 
 
+@lru_cache(maxsize=8192)
 def _structure_key(molecule: Molecule) -> str:
-    """The canonical STRUCTURE digest of ``molecule`` -- keyed on structure, not a fragile name (ID-LAYER-01).
+    """The implementation behind :func:`structure_key` (memoised on the hashable Molecule). Kept as a module global
+    on purpose: :func:`structure_key` resolves it by NAME at call time, so a test/mutation patch of
+    ``stock._structure_key`` reaches every consumer, requirement and waste side included."""
+    from ..smiles import resonance_identity  # lazy: smiles pulls the data package, which imports this module
 
-    This is the same canonical identity routes and shopping key on (``canonical_digest(m.canonical())``, with the
-    as-given fallback for a molecule that cannot canonicalise), namespaced with a ``struct:`` prefix so a
-    structure key and a human-declared NAME key can never collide inside ``identity_key``.  Keying on structure is
-    what makes fitness SOUND against the "keyed by formula fails open" hazard: a same-formula CONSTITUTIONAL isomer
-    (ethanol vs dimethyl ether, both C2H6O) has a DIFFERENT digest, so one can never borrow the other's assay.
+    ident = resonance_identity(molecule)
+    if ident.startswith(_ASGIVEN):
+        # byte-identical to the pre-0.9.5 literal fallback: resonance_identity's "asgiven:" + canonical_digest(m)
+        return _STRUCT_ASGIVEN + ident[len(_ASGIVEN):]
+    return _STRUCT_PREFIX + ident
 
-    Scope, stated honestly -- this key inherits the canonicalizer's guarantees AND its current limitations:
-      * CONSTITUTIONAL only: the digest is the molecular graph, so it is STEREO-BLIND (R/S, cis/trans share a key)
-        and ISOTOPE-BLIND (H2O and D2O share a key).  Distinguishing configuration needs real CIP R/S-parity (the
-        BLOCKED ID-STEREO layer) and isotopes an isotope-aware digest; this key never claims to do either.  So the
-        soundness guarantee is: a same-formula CONSTITUTIONAL isomer never borrows -- NOT every isomer.
-    RESONANCE invariance (CANON-KEKULE-01, fixed): ``canonical()`` normalises the pi-bond placement, so the
-    AROMATIC and explicit-KEKULE spellings of the same molecule -- fused aromatics (naphthalene, indole) included --
-    share one digest; a material satisfies its own identity however its rings were drawn.
+
+def structure_key(molecule: Molecule) -> str:
+    """The ONE material STRUCTURE key (barrier S7): ``"struct:" + resonance_identity(molecule)`` -- keyed on
+    structure, not a fragile name (ID-LAYER-01). Every consumer (stock components and lookups, the requirement
+    projection, waste derivation, ``name_resolves_to``, the assess name-only test) imports THIS function; no other
+    module may compute a structure digest of its own.
+
+    The ``struct:`` namespace keeps a structure key and a human-declared NAME key from ever colliding inside
+    ``identity_key``. Keying on structure is what makes fitness SOUND against the "keyed by formula fails open"
+    hazard: a same-formula CONSTITUTIONAL isomer (ethanol vs dimethyl ether; o-/m-/p-xylene) has a DIFFERENT key, so
+    one can never borrow the other's assay.
+
+    RESONANCE invariance: the key is ``resonance_identity(molecule)`` (:mod:`smartchem.smiles`), which re-distributes
+    bond orders over the fixed sigma skeleton + per-atom pi-demand and takes the minimum, so ANY Kekule placement of
+    one molecule -- SMILES-parsed OR built by graph surgery (an ortho-disubstituted salicylate fragment cut from
+    aspirin) -- shares one key. The class is CONSTITUTION-level. It does NOT perceive stereo (R/S, cis/trans share a
+    key), isotopes (H2O and D2O share a key), tautomers (distinct keys, by design), per-atom charge location (a
+    Molecule carries one global charge), or multi-fragment salts (a Molecule is one connected species; salts are
+    NAME-keyed). Molecules above the resonance caps (>64 heavy atoms or >128 placements) fall back to the literal
+    canonical digest and may not unify across Kekule spellings; a graph the canonicaliser refuses keys as
+    ``struct-asgiven:`` + its as-given digest. The soundness guarantee is therefore: a same-formula CONSTITUTIONAL
+    isomer never borrows -- NOT every isomer.
     """
-    try:
-        return _STRUCT_PREFIX + canonical_digest(molecule.canonical())
-    except NotImplementedError:
-        return _STRUCT_ASGIVEN + canonical_digest(molecule)
+    # Deliberately a thin module-global lookup rather than the cached function itself: M3 patches
+    # ``stock._structure_key`` by name, and a patient that ignores the anaesthetic is not a controlled experiment.
+    return _structure_key(molecule)
 
 
-def _is_structure_key(identity_key: str) -> bool:
+def is_structure_key(identity_key: str) -> bool:
+    """Does ``identity_key`` live in the STRUCTURE namespace (``struct:`` / ``struct-asgiven:``)? Every other
+    ``identity_key`` is a declared NAME. The one predicate -- assess no longer keeps its own prefix tuple."""
     return identity_key.startswith(_STRUCT_PREFIX) or identity_key.startswith(_STRUCT_ASGIVEN)
+
+
+#: Barrier S9 (B-narrow): the evidence kinds a stock-side STATE or PHASE claim may NOT carry. Each names a source
+#: record (a quote, a kernel derivation, a clamp) and a stock state/phase slot has nowhere to attach one -- the
+#: claim is the operator's own declaration. Stock ``IntervalEvidence`` is unaffected: it carries structural locators.
+_STOCK_CLAIM_REFUSED_EVIDENCE = frozenset({EvidenceKind.SOURCE_QUOTED, EvidenceKind.DERIVED, EvidenceKind.CLAMPED})
+_STOCK_CLAIM_REFUSAL = (
+    "a stock-side state/phase claim is the operator's declaration: use USER_DECLARED (or ASSUMED/UNKNOWN); a sourced "
+    "kind needs a structurally attached source record, which stock claims do not carry")
 
 
 @dataclass(frozen=True)
 class MaterialComponent(Digestible):
     """One declared component of a material: its identity key, role, and a fraction INTERVAL ``[lo, hi]``.
 
-    An unknown fraction is the honest full interval ``[0.0, 1.0]``, never a point guess.  ``identity_key`` is a
-    normalized name/formula string in this first brick; canonical-structure keying is ID-LAYER-01.
+    An unknown fraction is the honest full interval ``[0.0, 1.0]``, never a point guess.  ``identity_key`` is either
+    the resonance-canonical STRUCTURE key (:func:`structure_key`, ``struct:`` namespace) or a declared NAME (matched
+    through :func:`normalize_material_name`).
     """
 
     schema_version: str
@@ -179,6 +224,10 @@ class MaterialComponent(Digestible):
             raise TypeError("states must be a tuple of smartchem.material_spec.StateClaim")
         if len({type(c.state) for c in self.states}) != len(self.states):
             raise ValueError("states may carry at most ONE claim per state family")
+        for claim in self.states:  # barrier S9 (B-narrow): no sourced label without a source to attach it to
+            if claim.evidence in _STOCK_CLAIM_REFUSED_EVIDENCE:
+                raise ValueError(f"component state {claim.state.value} carries {claim.evidence.value}: "
+                                 f"{_STOCK_CLAIM_REFUSAL}")
         if self.min_fraction > self.max_fraction:
             raise ValueError("min_fraction cannot exceed max_fraction")
         if self.evidence is not None:
@@ -200,9 +249,9 @@ class MaterialComponent(Digestible):
         """A component whose interval AND basis are taken from a typed :class:`IntervalEvidence` record (the Round V
         way to build a curated component). ``identity`` is a Molecule (structure key) or a declared NAME."""
         if isinstance(identity, Molecule):
-            key = _structure_key(identity)
+            key = structure_key(identity)
         elif isinstance(identity, str):
-            if _is_structure_key(identity):
+            if is_structure_key(identity):
                 raise ValueError("a declared NAME key must not use the reserved structure-key prefix")
             key = identity
         else:
@@ -218,14 +267,14 @@ class MaterialComponent(Digestible):
         match, and it cannot be checked against a route's Molecule).  For a component whose structure is known,
         :meth:`of_molecule` keys on the canonical structure instead -- the sound, isomer-proof key.
         """
-        if isinstance(identity_key, str) and _is_structure_key(identity_key):
+        if isinstance(identity_key, str) and is_structure_key(identity_key):
             raise ValueError("a declared NAME key must not use the reserved structure-key prefix")
         return cls(MATERIAL_COMPONENT_SCHEMA, identity_key, role, float(min_fraction), float(max_fraction))
 
     @classmethod
     def unknown_fraction(cls, identity_key: str, role: str) -> "MaterialComponent":
         """A NAME-identified component known PRESENT but of unknown fraction -- the honest full interval [0, 1]."""
-        if isinstance(identity_key, str) and _is_structure_key(identity_key):
+        if isinstance(identity_key, str) and is_structure_key(identity_key):
             raise ValueError("a declared NAME key must not use the reserved structure-key prefix")
         return cls(MATERIAL_COMPONENT_SCHEMA, identity_key, role, 0.0, 1.0)
 
@@ -237,17 +286,18 @@ class MaterialComponent(Digestible):
 
         Robust across the molecule's NAME and, crucially, CONSTITUTIONAL-isomer-proof: a same-formula species of
         different connectivity has a different canonical digest, so it can never borrow this component's assay.  It
-        is NOT proof against stereo/isotope isomers -- see :func:`_structure_key` for the honest scope
-        (stereo/isotope-blind; resonance/Kekule spellings ARE normalised now, CANON-KEKULE-01).
+        is NOT proof against stereo/isotope isomers -- see :func:`structure_key` for the honest scope (a
+        resonance-canonical structure key: every Kekule placement shares it; its stereo/isotope/tautomer/salt limits
+        are stated there).
         This is the key a route/shopping Molecule is matched against; prefer it over :meth:`known` wherever the
         structure is in hand.
         """
-        return cls(MATERIAL_COMPONENT_SCHEMA, _structure_key(molecule), role, float(min_fraction), float(max_fraction))
+        return cls(MATERIAL_COMPONENT_SCHEMA, structure_key(molecule), role, float(min_fraction), float(max_fraction))
 
     @classmethod
     def unknown_molecule(cls, molecule: Molecule, role: str) -> "MaterialComponent":
         """A STRUCTURE-identified component known PRESENT but of unknown fraction -- the honest full interval [0, 1]."""
-        return cls(MATERIAL_COMPONENT_SCHEMA, _structure_key(molecule), role, 0.0, 1.0)
+        return cls(MATERIAL_COMPONENT_SCHEMA, structure_key(molecule), role, 0.0, 1.0)
 
 
 @dataclass(frozen=True)
@@ -392,6 +442,8 @@ class StockMaterial(Digestible):
             raise TypeError("phase must be a Phase")
         if type(self.phase_evidence) is not EvidenceKind:
             raise TypeError("phase_evidence must be a smartchem.material_spec.EvidenceKind")
+        if self.phase_evidence in _STOCK_CLAIM_REFUSED_EVIDENCE:  # barrier S9 (B-narrow)
+            raise ValueError(f"phase_evidence {self.phase_evidence.value}: {_STOCK_CLAIM_REFUSAL}")
         if self.phase is Phase.UNKNOWN and self.phase_evidence is not EvidenceKind.UNKNOWN:
             raise ValueError(
                 f"phase UNKNOWN cannot carry {self.phase_evidence.value} evidence -- an unknown phase is not a claim")
@@ -453,12 +505,13 @@ class StockMaterial(Digestible):
         species); their intervals sum, capped at 1.0 on the high side.  ``None`` means the identity is not present.
         """
         if isinstance(required_identity, Molecule):
-            want = _structure_key(required_identity)
+            want = structure_key(required_identity)
             matches = [c for c in self.components if c.identity_key == want]
         elif isinstance(required_identity, str):
-            want = _norm(required_identity)
+            want = normalize_material_name(required_identity)
             matches = [
-                c for c in self.components if not _is_structure_key(c.identity_key) and _norm(c.identity_key) == want
+                c for c in self.components
+                if not is_structure_key(c.identity_key) and normalize_material_name(c.identity_key) == want
             ]
         else:
             raise TypeError("required_identity must be a Molecule (canonical structure) or a str (declared name)")
@@ -485,12 +538,13 @@ class StockMaterial(Digestible):
             StockSpecView,
         )
         if isinstance(required_identity, Molecule):
-            want = _structure_key(required_identity)
+            want = structure_key(required_identity)
             matches = [c for c in self.components if c.identity_key == want]
         elif isinstance(required_identity, str):
-            want_n = _norm(required_identity)
+            want_n = normalize_material_name(required_identity)
             matches = [
-                c for c in self.components if not _is_structure_key(c.identity_key) and _norm(c.identity_key) == want_n
+                c for c in self.components
+                if not is_structure_key(c.identity_key) and normalize_material_name(c.identity_key) == want_n
             ]
         else:
             raise TypeError("required_identity must be a Molecule (canonical structure) or a str (declared name)")

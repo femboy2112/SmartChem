@@ -46,6 +46,8 @@ from ..experiment.catalyst_availability import catalyst_availability
 from ..experiment.equipment import EquipmentKind, equipment_for_step
 from ..experiment.handling import CareLevel, verify_handling
 from ..experiment.step import ExperimentRoute
+from ..experiment.stock import normalize_material_name as _norm_text
+from ..experiment.stock import structure_key
 from ..material_spec import MaterialSpecification, PhaseClaim
 from ..procedure_evidence import OperationKind, ProcedureMaterialRole
 from ..process_constraints import Agitation, ProcessRequirements
@@ -229,37 +231,32 @@ class RouteCapabilityRequirements(Digestible):
 
 # -- structure-identity + name-coverage helpers (pure, route-only) ---------------------------------------------
 
-def _struct_digest(molecule: Molecule) -> str:
-    """The canonical STRUCTURE digest of ``molecule`` -- the same isomer-proof key the stock layer uses. A molecule
-    that cannot canonicalise falls back to its as-given digest (never a crash, never a false match)."""
-    try:
-        return canonical_digest(molecule.canonical())
-    except NotImplementedError:
-        return canonical_digest(molecule)
+# Barrier S7/S8: the structure key and the name fold are OWNED by :mod:`smartchem.experiment.stock` and imported
+# here (``structure_key``; ``normalize_material_name`` bound to the historical local name ``_norm_text``). The local
+# literal-digest twin is gone -- a requirement and a bottle can no longer disagree about what one molecule is.
 
 
 @lru_cache(maxsize=1024)
-def _resolved_name_digest(name: str) -> "str | None":
-    """The canonical structure digest the OFFLINE NAME resolver assigns to ``name``, or ``None`` when the name does not
-    resolve (unknown to the offline table, or not a name at all). Pure and deterministic -- no network."""
+def _resolved_name_key(name: str) -> "str | None":
+    """The :func:`~smartchem.experiment.stock.structure_key` of the structure the OFFLINE NAME resolver assigns to
+    ``name``, or ``None`` when the name does not resolve (unknown to the offline table, or not a name at all). Pure
+    and deterministic -- no network."""
     from ..identity_parse import InputKind, resolve_target  # lazy: identity_parse is a heavier front-door module
 
     try:
-        return _struct_digest(resolve_target(name, InputKind.NAME))
+        return structure_key(resolve_target(name, InputKind.NAME))
     except (ValueError, NotImplementedError):
         return None
 
 
 def name_resolves_to(name: str, identity: Molecule) -> bool:
-    """D25.1/D25.4 (Wave-C'' NEW-1, C6): does ``name`` resolve, through the offline NAME resolver, to the SAME canonical
-    structure as ``identity``? A name the resolver does not know -- or one carrying extra words ("<species> + 2 g <a
-    second species> in a sealed tube at 650 K", "cold <species>") -- is NOT a name of that identity."""
-    digest = _resolved_name_digest(name.strip())
-    return digest is not None and digest == _struct_digest(identity)
-
-
-def _norm_text(text: str) -> str:
-    return " ".join(text.strip().casefold().split())
+    """D25.1/D25.4 (Wave-C'' NEW-1, C6): does ``name`` resolve, through the offline NAME resolver, to the SAME
+    structure key as ``identity`` (barrier S7: the ONE resonance-canonical key on BOTH sides, so a Kekule-flipped
+    identity still answers to its own name)? A name the resolver does not know -- or one carrying extra words
+    ("<species> + 2 g <a second species> in a sealed tube at 650 K", "cold <species>") -- is NOT a name of that
+    identity."""
+    key = _resolved_name_key(name.strip())
+    return key is not None and key == structure_key(identity)
 
 
 #: The use roles that represent a leaf reactant's stoichiometric charge (Wave-C nag: a wash never stands in).
@@ -388,7 +385,7 @@ def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement
                 if contradiction is not None:
                     spec = MaterialSpecification(composition=spec.composition, states=spec.states,
                                                  unresolved_terms=spec.unresolved_terms + (contradiction,))
-                species_key = (("struct", _struct_digest(use.identity)) if use.identity is not None
+                species_key = (("struct", structure_key(use.identity)) if use.identity is not None
                                else ("name", _norm_text(use.name)))
                 phase_key = None if use.phase is None else canonical_digest(use.phase)
                 key = (species_key, canonical_digest(spec), phase_key)
@@ -672,7 +669,7 @@ def _hazard_scan(
             continue
         for op in procedure.operations:
             for use in op.material_uses:
-                key = _struct_digest(use.identity) if use.identity is not None else f"name:{_norm_text(use.name)}"
+                key = structure_key(use.identity) if use.identity is not None else f"name:{_norm_text(use.name)}"
                 if key in seen:
                     continue
                 seen.add(key)
@@ -690,7 +687,7 @@ def _hazard_scan(
               "raw source text with no typed identity and no hazard record")
     for s_index, step in enumerate(route.steps, start=1):
         for molecule in (*step.reactants, *step.products):
-            key = _struct_digest(molecule)
+            key = structure_key(molecule)
             if key in seen:
                 continue
             seen.add(key)

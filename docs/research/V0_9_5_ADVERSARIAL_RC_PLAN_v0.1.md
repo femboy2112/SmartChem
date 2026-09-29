@@ -149,14 +149,36 @@ found no reachable OVERALL false FIT, and every per-axis false FIT it found is f
 **D24 VERIFIED DEFERs (exact boundaries):**
 - **D-T1 thin trust marker** -- a THIN plain load keeps no trust marker: an advisory assessment is indistinguishable
   after load (FIT/PROCESS_SPECIFIED on thin are still refused; verified admission refuses). Boundary: thin plain loads
-  are ADVISORY by contract; trust requires the canonical wire or `require_verified_admission`; recording which on the
-  loaded object is a trust-tier field (a 0.9.5 shape change).
+  are ADVISORY by contract; trust requires the canonical wire, `require_verified_admission`, `require_reexecution`
+  or the producer HMAC; recording which on the loaded object is a trust-tier field (a 0.9.5 shape change). D25.5:
+  consumer pins do NOT protect a thin verdict — a thin forgery can flip per-axis verdicts to FIT and hide a BLOCKED
+  (overall BLOCKED→UNKNOWN) and still load under both pins.
 - **C8 stock-side sourced-kind locator** -- stock-side SOURCE_QUOTED / DERIVED / CLAMPED phase and state claims carry
   no locator (no power gain: USER_DECLARED already certifies on the stock side). Boundary: stock-side sourced kinds
   certify EXACTLY as USER_DECLARED (no verdict changes); binding a stock claim to a checkable locator + subject belongs
   to the source-subject-binding work below.
 - **StreamDisposition: unchanged** -- D24 does not touch the zero-FIT ceiling; the disposal vocabulary (and its
   subject binding) remains the 0.9.5 FIT question stated above.
+
+**Wave-C″ / D25–D26 laws to re-attack (audit doc §7.7–§7.9; the fresh non-author confirmation pass on the D24
+tree broke three D24 claims and the transport layer's request binding):**
+- **Names are names (D25.1)** -- an identity-bearing use's name must resolve (offline NAME resolver) to its own
+  structure, or it is an unread demand: a free-text name had smuggled "2 g sodium metal in a sealed tube at 650 K"
+  through the canonical renderers. Consequence to keep honest: names the offline table does not know ("hydrochloric
+  acid", "ethyl acetate") and modifier-bearing names ("cold water") read as unread; 0.9.5 decides whether a curated,
+  sourced name→structure table is in scope (it is chemistry data, not a compiler literal).
+- **A certified whole bottle cannot contradict itself (D25.2)** -- a fraction-basis species at lower bound 1 beside any
+  other positive component (any basis) is refused at construction; the general mixed-basis feasibility question
+  (w/v or molar components without a density) stays open.
+- **Answers answer their request (D26.1)** -- the loader re-derives the IR context from the request and binds every
+  replayed route (final target, terminal leaves, equation rendering); attack every request-derived field that is
+  carried but not re-derived.
+- **Determinism is a keyless verifier (D26.2)** -- `require_reexecution=True` re-runs the compile and requires an
+  equal `result_digest`; it closes candidate deletion (D25.3's receipt-rewrite boundary), the `reaction_center`
+  demotion (D26.4) and the (c3) tampered replay for any consumer that can afford one compile. Attack its own seams
+  (non-determinism, legacy payloads, a request the loader re-executes differently).
+- **`reaction_center` outside route identity (D26.4)** -- binding it into the route digest is a route-schema change;
+  observed forgeries only DEMOTE readiness (no promotion found across 59 steps × 26 centres — Conjectured unreachable).
 
 **Named representation gaps (exact boundaries):**
 - **`StreamDisposition` (the FIT vocabulary)** -- typed CONSUMED_COMPLETELY / RECOVERED / ROUTED(WasteCapability) with

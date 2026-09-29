@@ -772,3 +772,43 @@ forgeries only DEMOTE readiness (no promotion found across 59 steps × 26 centre
 
 **D26.5** `request_to_payload` refuses a legacy v0.8 request (mirrors the response rule). **D26.6**
 `_decode_canonical` requires the exact field set. **D26.7** `ReactionCenter.from_payload` checks `schema_version`.
+
+### §7.10 Final re-check (Wave C4) — a second fresh transport attacker on `3863a75`
+
+Probes `scratchpad/r5x/waveC4/transport2/` (every forgery keyless; each run up the ladder plain → request pin →
+question pin → verified admission → `require_reexecution`; plus the HMAC column). Held: re-execution determinism
+(`PYTHONHASHSEED` 0/1/2/3/12345, fresh processes), D26.3/D26.5/D26.6/D26.7, legacy fixtures, no CAPABILITY_FIT.
+
+| id | sev | finding | disposition |
+|---|---|---|---|
+| C4T-1 | **P0** (brief definition) | ENVELOPE GRAFT: keep a route's target/leaves/equation, replace its step envelope with the isopentyl corpus envelope, honestly re-derive the dossier → PROCESS_SPECIFIED loads under both pins + verified admission (current AND real-v0.8 legacy wire); only re-execution refuses. D26.1 binds route shape, not the corpus evidence attached to it | D27.1 |
+| C4T-2 | P1 | the affordability frontier is outside `result_digest`: cost edits, deletion and fabricated entries load even under HMAC + re-execution (D26.2's "closes every coherent rewrite" was false) | D27.2 |
+| C4T-3 | P1 | ROUTES_FOUND relabelled TARGET_ALREADY_AVAILABLE (target not in the terminal set) loads | D27.3 |
+| C4T-4 | P1 | ranking order never re-derived: a BLOCKED route first / the PS route moved to #27 (hidden by the human render) loads under both pins + VA | D27.4 |
+| C4T-5 | P2 | D25.3's count bind skipped DAG/decompile on a false premise (DAG receipts DO count DAGs); DAG deletion and decompile "no route" load | D27.5 |
+| C4T-6 | P2 | receipt search bounds (max_depth / cut_budget / result_limit) never compared with the request; a depth-2 answer loads under a depth-3 request | D27.6 |
+| C4T-7 | P2 | forged human-visible fit tally in diagnostics | D27.2 (+ re-derived where cheap) |
+| C4T-8 | P3 | IR `CandidateSummary.equation` free text; a FORMAL no-profile canonical dossier may drop its replay; parse receipt / provider snapshots / DAG serial holds survive HMAC + re-execution; re-execution with payload-chosen bounds when no request pin is given | D27.2 (digest covers all) + D27.7 |
+
+### §7.11 Barrier amendment D27 (structural transport closure)
+
+**D27.2 — the result digest covers the WHOLE response.** For current payloads, `result_digest` is the canonical
+digest of the ENTIRE response payload except `result_digest` and `producer_signature` themselves (thick and thin each
+digest what they carry). Consequences: the producer HMAC now authenticates everything a response says (frontier,
+diagnostics, receipts, provider snapshots, serial holds, IR candidate text), and `require_reexecution` (which compares
+`result_digest`) now closes every rewrite of anything, not just the search-derived fields. Legacy v0.8 payloads keep
+the FROZEN v0.8 rule (unchanged). Goldens move once (classified: intended consequence).
+
+**D27.1 — corpus evidence is re-derived, never trusted.** On every load of a current payload, each replayed step whose
+envelope is not `ConditionEnvelope.unknown()` must EQUAL the envelope the producer's own corpus lookup
+(`assembly_conditions`, same inputs) attaches to that step; mismatch → refused. Legacy v0.8 payloads: under
+`require_verified_admission` / `require_reexecution` a procedure-bearing envelope must equal today's lookup modulo the
+v0.8-absent fields, else fail closed with the recompile hint; on a PLAIN legacy load it is advisory (documented: v0.8
+evidence is v0.8's table; nothing in 0.8 bound it).
+
+**D27.3** `outcome is TARGET_ALREADY_AVAILABLE` ⇔ the request target ∈ the request's declared terminal set (decompile
+mirrors its own availability rule). **D27.4** ranked order == `rank_routes` over the replayed routes (canonical wire;
+the whole tuple, incl. fit statuses). **D27.5** `len(candidates) == search_receipt.results_returned` for EVERY search
+kind. **D27.6** the receipt's search bounds equal the request's. **D27.7** without a request pin, `require_reexecution`
+refuses to re-run a request whose search bounds exceed the service's declared maxima (no payload-chosen unbounded
+work); the IR candidate `equation` must equal its route's rendering; a canonical-wire dossier must carry its replay.

@@ -1,7 +1,7 @@
 # SmartChem 0.9.5 -- RC funnel corpus + BLIND expected-outcome oracle
 
 **Status:** FROZEN 2026-09-29 on `feat/v0.9.5-adversarial-rc` @ `115dd71`, **before** the S7-S10 feature-closure writers land.
-Machine artifact: [`V0_9_5_RC_FUNNEL_ORACLE.json`](V0_9_5_RC_FUNNEL_ORACLE.json) -- sha256 `c27ad0d35d65b4aa959e8488ccd5e7cc8c2832faef5c4063a261f14c8f326c3f` (the driver `experiments/v0_9_5_rc_funnel.py` pins it; a changed oracle is refused unless the revision is logged in §6).
+Machine artifact: [`V0_9_5_RC_FUNNEL_ORACLE.json`](V0_9_5_RC_FUNNEL_ORACLE.json) -- sha256 `30fbfdf7d0b3ba7997450688a87654737b269b6ea6f9a95384ad086caa9f076e` (the driver `experiments/v0_9_5_rc_funnel.py` pins it; a changed oracle is refused unless the revision is logged in §6).
 **63 members**, 13 stages each. Driver: [`experiments/v0_9_5_rc_funnel.py`](../../experiments/v0_9_5_rc_funnel.py).
 
 ## 1. What 'blind' means here
@@ -75,7 +75,7 @@ Machine artifact: [`V0_9_5_RC_FUNNEL_ORACLE.json`](V0_9_5_RC_FUNNEL_ORACLE.json)
 | R-14 | `C8H9NO2` | structure: DROP COMPOSITION_ONLY_NO_STRUCTURE_PERCEIVED; ROUTES_FOUND (exit 0) | - |
 | R-15 | `isopentyl acetate` | INCOMPLETE (exit 4), 27 routes | - |
 | R-16 | `isopentyl acetate` | INCOMPLETE (exit 4), 27 routes; poor-man: overall BLOCKED | - |
-| R-17 | `isopentyl acetate` | INCOMPLETE (exit 4), 27 routes; custom-fit-bench: overall BLOCKED/UNKNOWN | - |
+| R-17 | `isopentyl acetate` | INCOMPLETE (exit 4), 27 routes; custom: overall BLOCKED/UNKNOWN | - |
 | R-18 | `smiles:CC(=O)OC` | INCOMPLETE (exit 4), 4 DAGs | - |
 | R-19 | `isopentyl acetate` | search: DROP REFUSED_CONVERGENT_DAG_UNDER_CAPABILITY_PROFILE | - |
 | R-20 | `smiles:O` | TARGET_ALREADY_AVAILABLE (exit 0) | - |
@@ -150,5 +150,5 @@ Zero production CAPABILITY_FIT is expected after S10 too (barrier §6: no cited 
 
 ## 6. Oracle revision log
 
-(empty at freeze)
+1. **R-17 `profile_projection.profile`**: `custom-fit-bench` -> `custom`. The freeze-time value was a label I invented for the object-valued `isopentyl_capability_fit_bench()` profile; the public projection reports any non-preset profile as `custom` (an ORACLE LABELLING ERROR, found by the first full funnel run; frozen sha c27ad0d35d65b4aa959e8488ccd5e7cc8c2832faef5c4063a261f14c8f326c3f -> revised sha in the header; no behaviour moved, and every other R-17 stage matched as frozen).
 

@@ -415,8 +415,8 @@ def test_compiler_manifest_binds_transitive_chemistry_sources():
         for path in program_module._compiler_source_paths()
     }
 
+    assert "pyproject.toml" not in relative  # 0.9.5 S12: nothing ambient enters the digest
     assert {
-        "pyproject.toml",
         "smartchem/category.py",
         "smartchem/contracts.py",
         "smartchem/diagnosis.py",

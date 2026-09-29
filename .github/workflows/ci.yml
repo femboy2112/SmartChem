@@ -6,9 +6,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+# 0.9.5 NOTE -- UNVERIFIED ON HOSTED RUNNERS.  No hosted runner has allocated since run
+# 36490673856 (GitHub annotation: "The job was not started because recent account payments have
+# failed or your spending limit needs to be increased"; see docs/CI_INFRASTRUCTURE_BLOCKER.md).
+# The 0.9.5 corrections below (scripts/run_suite.sh, timeout-minutes, ubuntu-24.04 pin, the
+# wheel-install-matrix job) were written and checked LOCALLY only; treat them as untested
+# YAML until a runner exists.
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -34,17 +41,55 @@ jobs:
       # Tests needing real quantum-chemistry calls are gated behind --runslow and are NOT
       # run here: PySCF is not installed on this runner, and a test that would be skipped
       # anyway should say so rather than appear to pass.
+      # 0.9.5 (UNVERIFIED on hosted runners): the monolithic `pytest` is OOM-killed on a ~7 GB
+      # box (it accumulates memory across 290 files), so run the OOM-safe batched runner: heavy
+      # files solo, a fresh pytest process per batch, exit 0 iff every batch passed.
       - name: Test
-        run: pytest -q -rs
+        run: PY="$(command -v python)" scripts/run_suite.sh
 
       # The benchmark is informational on the core install (no optional QC backends
       # available here), but it must not crash, and its coverage line must stay honest.
       - name: Benchmark (baseline oracles only)
         run: python -m smartchem.bench --split test --quiet
 
+  # 0.9.5 (UNVERIFIED on hosted runners): build the wheel + sdist from a clean source export
+  # of HEAD and prove the INSTALLED artifact behaves byte-for-byte like the source tree
+  # (console scripts, package data, implementation digest) for this job's Python.
+  wheel-install-matrix:
+    name: Wheel install matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv and the source-tree reference environment
+        run: |
+          python -m pip install --upgrade pip uv
+          pip install -e .
+
+      - name: Build reproducible release artifacts
+        run: python scripts/build_release.py --out "$RUNNER_TEMP/release"
+
+      - name: Install matrix
+        run: >-
+          python experiments/v0_9_5_install_matrix.py
+          --wheel "$RUNNER_TEMP"/release/*.whl --sdist "$RUNNER_TEMP"/release/*.tar.gz
+          --source-tree "$PWD" --source-python "$(command -v python)"
+          --out "$RUNNER_TEMP/matrix" --work "$RUNNER_TEMP/matrix-venvs"
+
   pyscf-smoke:
     name: Optional PySCF backend (smoke)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4

@@ -768,3 +768,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return _EXIT_INTERNAL
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

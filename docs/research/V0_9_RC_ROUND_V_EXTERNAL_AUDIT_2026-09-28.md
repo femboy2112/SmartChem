@@ -842,3 +842,36 @@ BOUND_TO_REQUEST (names its check), DIGEST_ONLY_ADVISORY (authenticated only by 
 module-docstring paragraph stating plainly which fields a keyless consumer must treat as advisory under plain /
 verified-admission loads. The next hostile wave is pointed at "what does the loader accept that it did not re-derive",
 answered by the ledger, not at another list of fields.
+
+### §7.12 Wave C5 — the transport-ledger audit (project-zion:architect, fresh non-author, on `c100343`)
+
+Probes `scratchpad/r5x/waveC5/architect/` (`forge.py` keyless toolkit; honest control loads in every mode). **No
+P0**: nothing reaches a false CAPABILITY_FIT or a PROCESS_SPECIFIED-or-higher tier; the last P0-latent door (a
+`reaction_center` transplant promoting a corpus step) is RULED OUT by derivation (the acyl census needs net water; any
+substitute keeps the C₂H₄O₂ composition). ~30 single-field forgeries of RE/REQ entries were REFUSED. The ledger
+nevertheless over-claimed:
+
+| id | sev | finding | disposition |
+|---|---|---|---|
+| C5-F1 | P1 | a replayed envelope stripped to `unknown()` is skipped by D27.1 ("unknown claims nothing" holds for readiness only): a sourced section-11 EXCLUSION becomes UNKNOWN and an equipment BLOCK becomes UNKNOWN under pins + VA | D28.1 |
+| C5-F2 | P2 | `ir.diagnostics` stays free text inside the "re-derived" diagnostics check (C4T-7 reopened) | D28.2 |
+| C5-F3 | P3 | receipt `target_identity_digest` / `terminal_policy_digest` (and decompile `transform_registry_digest`) accept `null` | D28.3 |
+| C5-F4 | P3 | receipt `results_returned` accepts `null` (deletion needs only a null) | D28.3 |
+| C5-F5 | P3 | unconstrained DAG-mode IR candidates carry no dossier → their `equation`/`candidate_digest` are advisory but undisclosed | D28.4 |
+| C5-F6 | P3 | unknown extra keys tolerated at seven container levels; some missing keys default silently | D28.5 |
+| C5-F7 | P3 | `serial_holds` decoded with `int()`/`float()` coercion | D28.5 |
+| C5-F8 | P2 | the corpus lookup matches a step's BYPRODUCT by composition only (target + precursors are name-checked structurally): a forged replay whose byproduct is an isomer (methyl formate / glycolaldehyde for acetic acid) receives the aspirin record; tier and every capability axis are unchanged (Verified) | **VERIFIED DEFER → 0.9.5** (exact boundary: producer and loader share `assembly_conditions`, which selects by composition signature + structurally-resolved target/precursor NAMES; honest search derives byproducts from the transform, so only a forged replay can carry an isomeric byproduct; it moves no verdict today; closed by recording byproduct identities in `ConditionRecord` and checking them structurally) |
+| C5-test | — | `tests/test_transport_ledger.py` exercised behaviour only for the 9 top-level wire keys | D28.6 |
+
+### §7.13 Barrier amendment D28 (ledger made truthful)
+
+**D28.1** For CURRENT payloads the carried envelope must equal the corpus lookup UNCONDITIONALLY — a carried
+`unknown()` where the lookup attaches a record is refused (the producer always attaches the lookup's result).
+**D28.2** `ir.diagnostics` is re-derived by the producer's own rule (one shared helper for producer and loader).
+**D28.3** receipt digests and `results_returned` must be non-null and equal on every service receipt.
+**D28.4** the ledger and service docstring disclose unconstrained-DAG candidate `equation`/`candidate_digest` as
+DIGEST_ONLY_ADVISORY. **D28.5** exact-key discipline (D26.6) at every container decoder (response, request, IR,
+receipt, candidate, dossier, frontier) — unknown keys refused, required keys required — with the legacy v0.8 shapes
+decoded exactly as released; exact numeric decode for `serial_holds`. **D28.6** the ledger test forges EVERY nested
+RE/REQ entry (one keyless single-field forgery each, digests recomputed) and requires refusal; a new RE/REQ label
+without a refusing forgery fails the test.

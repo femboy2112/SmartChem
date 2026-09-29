@@ -142,6 +142,12 @@ FIELD_COVERAGE: "dict[tuple[str, str], FieldCoverage]" = {
     ("ProcedureEvidence", "evidence_scope"): _c(_PS, "free-text scope note"),
     ("ProcedureEvidence", "unresolved_omissions"): _c(_RD, "blocks completeness (PROCESS_SPECIFIED); the HARD LAW is "
                                                            "the capability backstop"),
+    # 0.9.5 S10: a disposition can only ever REMOVE the one obligation its exact subject names, or ADD a category.
+    ("ProcedureEvidence", "stream_dispositions"): _c(_W, "S10: a step-bound SOURCE_QUOTED disposition on a sourced "
+                                                         "procedure may discharge exactly ONE waste obligation (its "
+                                                         "exact StreamSubject) and ROUTED adds its WasteCapability; it "
+                                                         "never deletes a derived category; unmatched or absent -> the "
+                                                         "obligation stays unresolved (UNKNOWN)"),
     # -- ProcedureOperation (one ordered op) ------------------------------------------------------------------------
     ("ProcedureOperation", "ordinal"): _c(_PS, "the total ORDER the D15 timeline composes over"),
     ("ProcedureOperation", "kind"): _c(_KEY, "routes the op to equipment (hardware kinds), measurement (VERIFY), "

@@ -137,6 +137,15 @@ class ExperimentStep(Digestible):
             raise StepError(
                 f"a species in this step could not be canonicalised for the conservation check: {clash}"
             ) from clash
+        # -- 0.9.5 S10: every stream disposition must bind to THIS reaction's real subjects (loudness + wire-forgery
+        # refusal; soundness is derive_waste's exact-subject lookup). Lazy, and skipped when there are none. -------
+        procedure = self.envelope.procedure
+        if procedure is not None and procedure.stream_dispositions:
+            from ..stream_disposition import binding_refusal
+
+            refusal = binding_refusal(self, procedure.stream_dispositions)
+            if refusal is not None:
+                raise StepError(refusal)
 
     # -- reads -------------------------------------------------------------------------------------
     @property

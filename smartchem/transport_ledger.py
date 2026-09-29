@@ -80,6 +80,8 @@ _OUTCOME = _S + "CompilationResponse._check_outcome_coherence"
 _ANSWER = _S + "CompilationResponse._check_request_answer_coherence"            # D26.1 / D27.3 / D27.6 / D27.7
 _RANKING = _S + "CompilationResponse._check_ranking_coherence"                  # D27.4
 _CORPUS = _S + "CompilationResponse._check_corpus_evidence_coherence"           # D27.1
+_TRANSFORMS = _S + "CompilationResponse._check_replay_step_transforms"          # D29.1
+_DAG_EDGES = _S + "_validate_dag_edges"                                         # a DAG's own structure guard
 _COMPLETE = _S + "CompilationResponse._check_dossier_completeness"              # D24.14 / D25.3 / D27.5
 _BOUNDS = _S + "CompilationResponse._check_receipt_bounds"                      # D27.6
 _READINESS = _S + "CompilationResponse._check_readiness_coherence"
@@ -99,6 +101,7 @@ _SEARCH_OUTPUT = ("search output: a CONSISTENT rewrite (the D25.3 boundary; ATK5
 _NO_DOSSIER = ("a candidate with NO dossier -- a decompile's FORMULA_EDGE candidates and an UNCONSTRAINED convergent-DAG "
                "search's DAG candidates (no bench box, so no DAG is judged) -- has nothing to re-derive it from (D28.4, "
                "Wave C5 C5-F5)")
+_LEGACY_VA = "; a LEGACY v0.8 step is checked under verified admission only (plain = advisory, exactly as D27.1)"
 
 
 def _route_verdict(note: str = "") -> LedgerEntry:
@@ -115,7 +118,8 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
     "CompilationResponse": {
         "schema_version": LedgerEntry(FROZEN, (_LOAD, _POST),
                                       "dispatch: the current id, or the whitelisted v0.8 id (frozen v0.8 rule, D11)"),
-        "request": LedgerEntry(REQ, (_LOAD,), "the anchor every BOUND_TO_REQUEST row derives from; bound to the "
+        "request": LedgerEntry(REQ, (_LOAD, _ANSWER, _BOUNDS), "the anchor every BOUND_TO_REQUEST row derives from; an "
+                               "edited request no longer matches the IR / receipt it carries (D26.1, D27.6); bound to the "
                                "consumer's question only by expected_request_digest / expected_capability_question_"
                                "digest (unpinned, the D26.1 binds say only 'the answer answers THIS request')"),
         "outcome": LedgerEntry(RE, (_OUTCOME, _ANSWER), "the producer's _classify of the IR under the request's "
@@ -153,7 +157,8 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
     },
     "RankedRouteSummary": {
         "schema_version": LedgerEntry(FROZEN, (_S + "ranked_summary_from_payload", _POST)),
-        "route_digest": _route_verdict("the replayed route's digest (D27.4); an IR candidate (__post_init__)"),
+        "route_digest": LedgerEntry(RE, (_RANKING, _POST), "the replayed route's digest (D27.4); an IR candidate "
+                                    "(__post_init__)", thin=ADV),
         "equation": LedgerEntry(RE, (_ANSWER, _RANKING), "the replayed route's own rendering (D26.1)", thin=ADV),
         "fit_status": LedgerEntry(RE, (_RANKING, _PROCESS), "under the CARRIED request's box (D27.4, Foreman N3)",
                                   thin=ADV),
@@ -176,13 +181,16 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
     },
     "RankedDAGSummary": {
         "schema_version": LedgerEntry(FROZEN, (_S + "ranked_dag_summary_from_payload", _POST)),
-        "route_digest": _dag_verdict(),
+        "route_digest": LedgerEntry(RE, (_RANKING, _DAG_PROCESS, _POST), "re-derived whole by ranked_dag_dossiers over "
+                                    "the replayed DAGs (D27.4); an IR candidate (__post_init__)", thin=ADV),
         "equation": LedgerEntry(RE, (_ANSWER, _RANKING), "the replayed DAG's own rendering (D26.1)", thin=ADV),
         "fit_status": _dag_verdict(),
         "exclusions": _dag_verdict(),
         "gaps": _dag_verdict(),
         "process_requirements": _dag_verdict(),
-        "edges": _dag_verdict(),
+        "edges": LedgerEntry(RE, (_RANKING, _DAG_PROCESS, _DAG_EDGES), "re-derived whole by ranked_dag_dossiers over "
+                             "the replayed DAGs (D27.4); a malformed edge set fails the DAG's own structure guard",
+                             thin=ADV),
         "composability_verdict": _dag_verdict(),
         "selectivity_verdict": _dag_verdict(),
         "feasibility_verdict": _dag_verdict(),
@@ -193,7 +201,7 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
                                       "declared terminals (D26.1); mandatory on the canonical wire (D27.7)"),
     },
     "ChemicalCompilationIR": {
-        "schema_version": LedgerEntry(FROZEN, (_IR_POST,)),
+        "schema_version": LedgerEntry(FROZEN, (_IR + "ir_from_payload", _IR_POST)),
         "tool_version": LedgerEntry(ADV, note="a producer-version label (any non-empty string)"),
         "operation": LedgerEntry(REQ, (_ANSWER,)),
         "target": LedgerEntry(REQ, (_ANSWER,)),
@@ -244,8 +252,9 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
     },
     "CandidateSummary": {
         "schema_version": LedgerEntry(FROZEN, (_CANDIDATE_POST,)),
-        "candidate_kind": LedgerEntry(REQ, (_ANSWER,), "per the request's grammar (D26.1)"),
-        "candidate_digest": LedgerEntry(RE, (_COMPLETE, _RANKING), "== a dossier's route digest (D24.14), the replayed "
+        "candidate_kind": LedgerEntry(REQ, (_ANSWER, _COMPLETE), "per the request's grammar (D26.1); a relabelled kind "
+                                      "leaves a dossier with no candidate of its kind (D24.14)"),
+        "candidate_digest": LedgerEntry(RE, (_COMPLETE, _RANKING, _POST), "== a dossier's route digest (D24.14), the replayed "
                                         "route's (D27.4)", thin=ADV,
                                         advisory_when=_NO_DOSSIER),
         "equation": LedgerEntry(RE, (_ANSWER,), "== its dossier's label (D27.7), the replayed rendering (D26.1)",
@@ -255,16 +264,21 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
     "replay_step": {
         "schema_version": LedgerEntry(FROZEN, (_S + "_step_from_payload",
                                                "smartchem.experiment.step:ExperimentStep.__post_init__")),
-        "target": LedgerEntry(ADV, note="route STRUCTURE: conserving (step certificate), the final target + every "
-                              "leaf bound to the request (D26.1), <= max_depth steps (D27.6) -- but that the SEARCH "
-                              "produced this route is re-execution / HMAC only"),
-        "reactants": LedgerEntry(ADV, note="route STRUCTURE (see target)"),
-        "products": LedgerEntry(ADV, note="route STRUCTURE (see target)"),
-        "reagents": LedgerEntry(ADV, note="route STRUCTURE (see target)"),
+        "target": LedgerEntry(RE, (_TRANSFORMS, _ANSWER), "every step is a transform the carried algebra emits for its "
+                              "target (D29.1), the final target + every leaf are the request's (D26.1), <= max_depth "
+                              "steps (D27.6); that the bounded SEARCH reached this locally generable route is the "
+                              "search-output boundary (re-execution / HMAC only)" + _LEGACY_VA),
+        "reactants": LedgerEntry(RE, (_TRANSFORMS, _ANSWER), "== an emitted transform's precursors, as STRUCTURES "
+                                 "(D29.1); leaves within the declared terminal set (D26.1)" + _LEGACY_VA),
+        "products": LedgerEntry(RE, (_TRANSFORMS,), "== an emitted transform's target + byproducts, as STRUCTURES "
+                                "(D29.1 -- Wave C6 C6-F8: a same-formula byproduct isomer kept the rendered equation "
+                                "byte-identical and erased a sourced hazard verdict)" + _LEGACY_VA),
+        "reagents": LedgerEntry(RE, (_TRANSFORMS,), "the search never flags an ancillary reagent (D29.1)" + _LEGACY_VA),
         "envelope": LedgerEntry(RE, (_CORPUS,), "== the shipped corpus's lookup for the step, a carried unknown() "
                                 "included (D27.1; D28.1 -- 'unknown claims nothing' held for readiness only)"),
-        "reaction_center": LedgerEntry(ADV, note="outside route.digest (D26.4): a NEUTRAL re-centre with the public "
-                                       "digest recomputed loads (Foreman N4); re-execution / HMAC refuse it"),
+        "reaction_center": LedgerEntry(RE, (_TRANSFORMS,), "one the emitted transform assigns (D29.1) -- still outside "
+                                       "route.digest (D26.4), but a re-centre (Foreman N4) is now refused on every "
+                                       "current load, not only under re-execution / HMAC" + _LEGACY_VA),
     },
 }
 

@@ -1877,17 +1877,18 @@ def _receipt_view_to_payload(view: Section81ReceiptView) -> dict:
     }
 
 
-def _require_exact_keys(payload: object, expected: "frozenset[str]", what: str) -> None:
+def _require_exact_keys(payload: object, expected: "frozenset[str]", what: str, law: str = "D28.5") -> None:
     """X-high D28.5 (Wave C5 C5-F6): a versioned wire record carries EXACTLY its fields -- an unknown key is refused
     (it would ride the whole-body digest as unenforced text a JSON consumer might read as a claim), and a missing one
     is refused rather than defaulted (the exact-key discipline D26.6 set for the canonical capability codec, applied to
-    every container)."""
+    every container).  ``law`` names the amendment that put THIS decoder under the discipline (X-high D29.2 extended it
+    to the structural-candidate family Wave C6 found still lenient)."""
     if type(payload) is not dict:
-        raise ValueError(f"{what} payload must be a JSON object, got {type(payload).__name__}")
+        raise ValueError(f"{what} payload must be a JSON object, got {type(payload).__name__}; refused ({law})")
     keys = set(payload)
     if keys != expected:
         raise ValueError(f"{what} payload must carry EXACTLY its versioned fields: unknown {sorted(keys - expected)}, "
-                         f"missing {sorted(expected - keys)}; refused (D28.5)")
+                         f"missing {sorted(expected - keys)}; refused ({law})")
 
 
 #: The versioned wire keys of the records :func:`ir_to_payload` writes (identical in the released v0.8 shape).
@@ -1934,6 +1935,7 @@ def _identity_to_payload(identity: ChemicalIdentity) -> dict:
 
 
 def _identity_from_payload(p: dict) -> ChemicalIdentity:
+    _require_exact_keys(p, _IDENTITY_PAYLOAD_KEYS, "structural species identity", "D29.2")
     return ChemicalIdentity(p["schema_version"], IdentityLayer(p["layer"]), p["canonical_repr"], p["identity_digest"])
 
 
@@ -1941,7 +1943,23 @@ def _formula_to_payload(formula: Formula) -> dict:
     return {"counts": [[symbol, count] for symbol, count in formula.counts], "charge": formula.charge}
 
 
+#: X-high D29.2 (Wave C6 C6-NEW-1 / its "Suspected" structural-candidate decoder): the versioned keys of every record
+#: the structural-candidate codec writes -- each decoder below refuses an unknown or a missing key, exactly like D28.5.
+_FORMULA_PAYLOAD_KEYS = frozenset({"counts", "charge"})
+_SPECIES_PAYLOAD_KEYS = frozenset({"schema_version", "structure", "formula", "atoms", "bonds", "charge", "state"})
+_STOICH_ENTRY_KEYS = frozenset({"species", "multiplicity"})
+_GRAPH_PAYLOAD_KEYS = frozenset({"atoms", "bonds", "charge", "state"})
+_WITNESS_PAYLOAD_KEYS = frozenset({"schema_version", "witness_kind", "reactant", "reagents", "cut", "caps", "bond_edit",
+                                   "fragments", "electrons"})
+_STRUCTURAL_CANDIDATE_PAYLOAD_KEYS = frozenset({
+    "schema_version", "direction", "provider_id", "provider_version", "parent", "reagents", "products",
+    "witness_kind", "witness_digest", "edit_equation", "witness", "projection_kind", "projection_digest",
+    "projection_equation", "readiness_tier", "identity_losses",
+})
+
+
 def _formula_from_payload(p: dict) -> Formula:
+    _require_exact_keys(p, _FORMULA_PAYLOAD_KEYS, "structural species formula", "D29.2")
     return Formula(tuple((symbol, count) for symbol, count in p["counts"]), p["charge"])
 
 
@@ -1958,6 +1976,7 @@ def _structural_species_to_payload(species: StructuralSpecies) -> dict:
 
 
 def _structural_species_from_payload(p: dict) -> StructuralSpecies:
+    _require_exact_keys(p, _SPECIES_PAYLOAD_KEYS, "structural species", "D29.2")
     return StructuralSpecies(
         p["schema_version"],
         _identity_from_payload(p["structure"]),
@@ -1974,6 +1993,10 @@ def _stoich_to_payload(pairs: "tuple[tuple[StructuralSpecies, int], ...]") -> li
 
 
 def _stoich_from_payload(items: list) -> tuple:
+    if type(items) is not list:
+        raise ValueError("a structural stoichiometry payload must be a JSON array; refused (D29.2)")
+    for i in items:
+        _require_exact_keys(i, _STOICH_ENTRY_KEYS, "structural stoichiometry entry", "D29.2")
     return tuple((_structural_species_from_payload(i["species"]), i["multiplicity"]) for i in items)
 
 
@@ -1983,6 +2006,7 @@ def _graph_to_json(payload: tuple) -> dict:
 
 
 def _graph_from_json(d: dict) -> tuple:
+    _require_exact_keys(d, _GRAPH_PAYLOAD_KEYS, "structural witness graph", "D29.2")
     return (tuple(d["atoms"]), tuple((i, j, o) for i, j, o in d["bonds"]), d["charge"], d["state"])
 
 
@@ -2001,6 +2025,7 @@ def _structural_witness_to_payload(w: "StructuralWitness") -> dict:
 
 
 def _structural_witness_from_payload(p: dict) -> "StructuralWitness":
+    _require_exact_keys(p, _WITNESS_PAYLOAD_KEYS, "structural witness", "D29.2")
     return StructuralWitness(
         p["schema_version"],
         p["witness_kind"],
@@ -2036,6 +2061,9 @@ def _structural_candidate_to_payload(candidate: StructuralCandidate) -> dict:
 
 
 def _structural_candidate_from_payload(p: dict) -> StructuralCandidate:
+    _require_exact_keys(p, _STRUCTURAL_CANDIDATE_PAYLOAD_KEYS, "structural candidate", "D29.2")
+    if type(p["identity_losses"]) is not list:
+        raise ValueError("a structural candidate's identity_losses must be a JSON array; refused (D29.2)")
     return StructuralCandidate(
         p["schema_version"],
         TransformDirection(p["direction"]),
@@ -2116,6 +2144,9 @@ def ir_from_payload(payload: dict) -> ChemicalCompilationIR:
         raise ValueError("compilation IR candidates must be a JSON array")
     for c in payload["candidates"]:
         _require_exact_keys(c, _CANDIDATE_PAYLOAD_KEYS, "candidate summary")
+    for name in ("identity_losses", "structural_candidates"):
+        if type(payload[name]) is not list:
+            raise ValueError(f"compilation IR {name} must be a JSON array; refused (D29.2)")
     t = payload["target"]
     target = ChemicalIdentity(
         t["schema_version"], IdentityLayer(t["layer"]), t["canonical_repr"], t["identity_digest"]

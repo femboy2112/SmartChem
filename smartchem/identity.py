@@ -169,6 +169,13 @@ def identity_loss_to_payload(loss: IdentityLoss) -> dict:
     }
 
 
+#: X-high D29.2: the versioned keys :func:`identity_loss_to_payload` writes (the same set in the released v0.8 shape).
+_IDENTITY_LOSS_PAYLOAD_KEYS = frozenset({
+    "schema_version", "feature", "input_representation", "retained_representation", "reason", "affected_claims",
+    "severity",
+})
+
+
 def identity_loss_from_payload(payload: dict) -> IdentityLoss:
     """Rebuild an :class:`IdentityLoss` from :func:`identity_loss_to_payload`, re-validating every invariant.
 
@@ -178,6 +185,16 @@ def identity_loss_from_payload(payload: dict) -> IdentityLoss:
     """
     if not isinstance(payload, dict):
         raise TypeError("identity_loss_from_payload needs a dict")
+    # X-high D29.2 (Wave C6 C6-NEW-1): EXACTLY the keys identity_loss_to_payload writes -- an unknown key rode the
+    # whole-body digest as unenforced text (plain / pins / verified admission all loaded it), and a missing one must
+    # never be default-filled.
+    keys = set(payload)
+    if keys != _IDENTITY_LOSS_PAYLOAD_KEYS:
+        raise ValueError(f"identity loss payload must carry EXACTLY its versioned fields: unknown "
+                         f"{sorted(keys - _IDENTITY_LOSS_PAYLOAD_KEYS)}, missing "
+                         f"{sorted(_IDENTITY_LOSS_PAYLOAD_KEYS - keys)}; refused (D29.2)")
+    if type(payload["affected_claims"]) is not list:
+        raise ValueError("identity loss affected_claims must be a JSON array; refused (D29.2)")
     return IdentityLoss(
         payload["schema_version"],
         payload["feature"],

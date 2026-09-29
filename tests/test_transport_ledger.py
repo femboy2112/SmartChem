@@ -228,7 +228,11 @@ def worlds(honest):
         stock_materials=("salicylic acid", "methanol"), max_temperature_k=320.0, capability_profile="poor-man"))
     stereo = svc.run_compilation(svc.build_recompile_request(
         "smiles:C[C@H](O)C(=O)OC", max_depth=1, helper_reagents=("water",), stock_materials=("methanol",)))
-    built = {"routes": routes, "dag": dag, "decompile": decompile, "mesal": mesal, "stereo": stereo}
+    # glycolaldehyde DECLARED (no transform of methyl acetate consumes it): a leaf swapped for this isomer stays inside
+    # the terminal set, so D26.1 passes and only D29.1 can refuse it
+    isomer = svc.run_compilation(svc.build_recompile_request(
+        "smiles:CC(=O)OC", max_depth=1, helper_reagents=("water", "acetic acid"), stock_materials=("smiles:OCC=O",)))
+    built = {"routes": routes, "dag": dag, "decompile": decompile, "mesal": mesal, "stereo": stereo, "isomer": isomer}
     wires = {name: svc.response_to_payload(resp, include_replay=True) for name, resp in built.items()}
     assert wires["mesal"]["affordability_frontier"], "setup: the mesal world must carry a frontier entry"
     assert wires["stereo"]["compilation_ir"]["identity_losses"], "setup: the stereo world must carry an identity loss"
@@ -291,14 +295,81 @@ def _strip_envelope(p, wires):
     _ST(p)["envelope"] = svc._condition_envelope_to_payload(ConditionEnvelope.unknown())
 
 
+def _reforge_routes(resp, routes):
+    """The COHERENT keyless forger (Wave C6 masters' ``reforge_routes``): re-rank forged routes with the producer's OWN
+    helpers and rebuild every dependent field -- dossiers, frontier, IR candidates, receipt count, diagnostics -- so the
+    only law left to refuse a forged replayed step is the step's own (X-high D29.3)."""
+    req = resp.request
+    ranked = svc._ranked_summaries(tuple(routes), req.constraints.bounds, resp.identity_losses,
+                                   process=req.constraints.process, capability_profile=req.capability_profile)
+    frontier = svc._route_frontier(req, tuple(routes), ranked)
+    ir = resp.compilation_ir
+    cands = tuple(sorted((cir.CandidateSummary(cir.CANDIDATE_SUMMARY_SCHEMA, "ROUTE", r.route_digest, r.equation,
+                                               "FORMAL_CANDIDATE") for r in ranked), key=lambda c: c.candidate_digest))
+    ir2 = dc.replace(ir, candidates=cands, search_receipt=dc.replace(ir.search_receipt, results_returned=len(cands)))
+    note = svc.constraint_note(req.constraints.bounds, fit_counts=svc._fit_counts(ranked) if ranked else None,
+                               process=req.constraints.process)
+    diags = tuple(ir2.diagnostics) + ((note,) if note is not None else ())
+    return dc.replace(resp, compilation_ir=ir2, ranked_route_dossiers=ranked, affordability_frontier=frontier,
+                      diagnostics=diags)
+
+
+def _replay_rebind(world, route_index, mutate):
+    """A keyless forgery of replayed steps, made coherent everywhere else (``_reforge_routes``): decode the honest
+    ``world``, replace the steps of its ``route_index``-th ranked route with ``mutate(steps)`` (every corpus envelope
+    re-looked-up, so D27.1 is honest too), and re-serialize through the public codec."""
+    from smartchem.experiment import routes as _routes
+    from smartchem.experiment.step import ROUTE_SCHEMA, ExperimentRoute
+
+    def edit(p, wires):
+        resp = svc.response_from_payload(copy.deepcopy(wires[world]))
+        routes = [svc._reconstruct_route(d.replay_payload) for d in resp.ranked_route_dossiers]
+        steps = tuple(dc.replace(st, envelope=_routes._conditions_for(svc._ReplayedTransform(st)))
+                      for st in mutate(routes[route_index].steps))
+        routes[route_index] = ExperimentRoute(ROUTE_SCHEMA, steps)
+        p.clear()
+        p.update(svc.response_to_payload(_reforge_routes(resp, routes), include_replay=True))
+    return edit
+
+
+def _at(index, mutate):
+    return lambda steps: tuple(mutate(st) if i == index else st for i, st in enumerate(steps))
+
+
+def _swap(molecules, formula_of, smiles):
+    """``molecules`` with its (first) member of element counts ``formula_of`` replaced by the isomer ``smiles``."""
+    from smartchem.smiles import parse_smiles
+    out, done = [], False
+    for m in molecules:
+        if not done and m.formula == formula_of:
+            out.append(parse_smiles(smiles).canonical())
+            done = True
+        else:
+            out.append(m)
+    assert done, f"setup: no {formula_of} to swap"
+    return tuple(out)
+
+
+_C2H4O2 = {"C": 2, "H": 4, "O": 2}
+
+
+def _swap_intermediate(steps):
+    """Route 1's intermediate C2H4O2 (made by step 1, consumed by step 2) swapped for its isomer glycolaldehyde in BOTH
+    places: the chain, the final target and every leaf stay honest (so D26.1 passes) -- only D29.1 can see it."""
+    make, use = steps
+    return (dc.replace(make, target=_swap((make.target,), _C2H4O2, "OCC=O")[0],
+                       products=_swap(make.products, _C2H4O2, "OCC=O")),
+            dc.replace(use, reactants=_swap(use.reactants, _C2H4O2, "OCC=O")))
+
+
 _FORGERIES = {
     # -- the response ------------------------------------------------------------------------------------------------
     "CompilationResponse.schema_version": ("routes", _set(lambda p: p, "schema_version",
                                                           f"smartchem.service/compilation-response-v1alpha{_BUMP}")),
     "CompilationResponse.request": ("routes", _bump_bound("max_results")),
     "CompilationResponse.outcome": ("routes", _set(lambda p: p, "outcome", "NO_ROUTE_COMPLETE")),
-    "CompilationResponse.standard_status": ("routes", _set(lambda p: p, "standard_status", lambda v: (
-        "INCOMPLETE_DEPTH_LIMIT" if v != "INCOMPLETE_DEPTH_LIMIT" else "COMPLETE"))),
+    "CompilationResponse.standard_status": ("routes", _set(lambda p: p, "standard_status", lambda v: (  # a VALID 8.2 name
+        "INCOMPLETE_RESULT_LIMIT" if v != "INCOMPLETE_RESULT_LIMIT" else "INCOMPLETE_DEPTH_LIMIT"))),
     "CompilationResponse.compilation_ir": ("routes", _set(_IR, "request_digest", "0" * 64)),
     "CompilationResponse.diagnostics": ("routes", lambda p, w: p["diagnostics"].append("forged: 3 route(s) FIT")),
     "CompilationResponse.ranked_route_dossiers": ("routes", lambda p, w: p["ranked_route_dossiers"].reverse()),
@@ -336,7 +407,9 @@ _FORGERIES = {
     "RankedDAGSummary.fit_status": ("dag", _dag_fit("FITS", [])),
     "RankedDAGSummary.exclusions": ("dag", _dag_fit("EXCLUDED", ["forged: outside a hard bound"])),
     "RankedDAGSummary.gaps": ("dag", lambda p, w: _DG(p)["gaps"].append("forged gap")),
-    "RankedDAGSummary.process_requirements": ("dag", lambda p, w: _DG(p)["process_requirements"].pop()),
+    "RankedDAGSummary.process_requirements": ("dag", lambda p, w: _DG(p).__setitem__(  # a transplanted SOURCED record
+        "process_requirements", [copy.deepcopy(_DS(w["mesal"])["process_requirements"][0])]
+        * len(_DG(p)["process_requirements"]))),
     "RankedDAGSummary.edges": ("dag", _set(_DGE, "edges", lambda v: [[b, a] for a, b in v])),
     **{f"RankedDAGSummary.{key}": ("dag", _flip_verdict(_DG, key))
        for key in ("composability_verdict", "selectivity_verdict", "feasibility_verdict", "equilibrium_verdict",
@@ -382,7 +455,102 @@ _FORGERIES = {
     # -- a replayed step ----------------------------------------------------------------------------------------------
     "replay_step.schema_version": ("mesal", _set(_ST, "schema_version", lambda v: v + _BUMP)),
     "replay_step.envelope": ("mesal", _strip_envelope),
+    # X-high D29.1 / D29.3: COHERENT forgeries -- every dependent field (dossiers, frontier, candidates, receipt count,
+    # diagnostics, envelopes) re-derived by the producer's own helpers, the final target and every leaf the request's,
+    # so D29.1 is the ONLY law left.  routes: route 1 = "CH2O2 + CH4O -> C2H4O2 + H2O ; CH4O + C2H4O2 -> C3H6O2 + H2O",
+    # route 2 step 2 = "C2H4O3 + C3H6O -> C3H6O2 + C2H4O2"; isomer: route 0 = "CH4O + C2H4O2 -> C3H6O2 + H2O".
+    "replay_step.products": ("routes", _replay_rebind("routes", 2, _at(1, lambda st: dc.replace(  # Wave C6 C6-F8:
+        st, products=_swap(st.products, _C2H4O2, "COC=O"))))),                   # the byproduct's isomer
+    "replay_step.reactants": ("isomer", _replay_rebind("isomer", 0, _at(0, lambda st: dc.replace(
+        st, reactants=_swap(st.reactants, _C2H4O2, "OCC=O"))))),                 # a DECLARED leaf isomer
+    "replay_step.target": ("routes", _replay_rebind("routes", 1, _swap_intermediate)),  # an intermediate's isomer
+    "replay_step.reagents": ("routes", _replay_rebind("routes", 0, _at(0, lambda st: dc.replace(
+        st, reagents=(st.reactants[0],))))),                                     # an ancillary-reagent flag
+    "replay_step.reaction_center": ("routes", _replay_rebind("routes", 0, _at(0, lambda st: dc.replace(
+        st, reaction_center=None)))),                                            # a re-centre (Foreman N4)
 }
+
+#: X-high D29.3 (Wave C6 C6-test): the law each forgery must be refused BY.  A refusal by some OTHER law proves only that
+#: the forgery is refused, not that the entry's own claim holds -- pre-D28.1 the envelope forgery was caught by readiness
+#: coherence, so the sweep could not see a D28.1 regression.  Two locks: the refusal message carries the law's tag (its
+#: ``(D2x.y)`` tag; the few pre-D24 guards that carry none are pinned by their exact wording), and the DEEPEST ledger-named
+#: frame of the raising traceback is one of the checks the entry itself names (``_refused_in``).
+_D274, _D261, _D277, _D276, _D283 = r"\(D27\.4\)", r"\(D26\.1\)", r"\(D27\.7\)", r"\(D27\.6\)", r"\(D28\.3\)"
+_OWN_LAW = {
+    "CompilationResponse.schema_version": r"unsupported response schema_version",
+    "CompilationResponse.request": _D276,
+    "CompilationResponse.outcome": r"NO_ROUTE_COMPLETE requires a complete-within-bounds IR",
+    "CompilationResponse.standard_status": r"must equal the wrapped IR's standard_status",
+    "CompilationResponse.compilation_ir": _D261,
+    "CompilationResponse.diagnostics": _D274,
+    "CompilationResponse.ranked_route_dossiers": _D274,
+    "CompilationResponse.affordability_frontier": _D274,
+    "CompilationResponse.ranked_dag_dossiers": _D274,
+    **{f"CompilationResponse.wire.{key}": rf"^{key} does not match the reconstructed response"
+       for key in ("exit_code", "process_selection_status", "admissible_route_digests", "search_space_status",
+                   "capability_question_digest", "result_digest")},
+    "RankedRouteSummary.schema_version": r"unsupported ranked route summary schema_version",
+    "RankedRouteSummary.route_digest": r"ranked route digest must identify a returned IR candidate",
+    "RankedRouteSummary.equation": _D277,
+    "RankedRouteSummary.readiness": r"claims a readiness .* its replayed evidence does not support",
+    "RankedRouteSummary.replay_payload": _D277,
+    "RankedRouteSummary.capability_assessment": r"\(0\.9 D12\)",
+    "RankedRouteSummary.wire.readiness_tier": r"disagrees with its own carried readiness ladder",
+    **{f"RankedRouteSummary.{key}": _D274
+       for key in ("fit_status", "exclusions", "gaps", "composability_verdict", "selectivity_verdict",
+                   "feasibility_verdict", "equilibrium_verdict", "kinetics_verdict", "process_requirements")},
+    "RankedDAGSummary.schema_version": r"unsupported ranked DAG summary schema_version",
+    "RankedDAGSummary.route_digest": r"ranked DAG digest must identify a returned IR candidate",
+    "RankedDAGSummary.equation": _D277,
+    "RankedDAGSummary.fit_status": r"a forged or inconsistent DAG process admission",
+    "RankedDAGSummary.edges": r"a DAG must have exactly one sink",
+    "RankedDAGSummary.replay_payload": _D277,
+    **{f"RankedDAGSummary.{key}": _D274
+       for key in ("exclusions", "gaps", "composability_verdict", "selectivity_verdict", "feasibility_verdict",
+                   "equilibrium_verdict", "kinetics_verdict", "serial_holds", "process_requirements")},
+    "ChemicalCompilationIR.schema_version": r"schema_version must be exactly '[^']*chemical-compilation-ir-",
+    "ChemicalCompilationIR.operation": _D261,
+    "ChemicalCompilationIR.target": _D261,
+    "ChemicalCompilationIR.request_digest": _D261,
+    "ChemicalCompilationIR.identity_losses": r"\(D24\.11\)",
+    "ChemicalCompilationIR.terminal_policy_digest": _D261,
+    "ChemicalCompilationIR.transform_registry_digest": r"algebra-rebind mismatch on load",
+    "ChemicalCompilationIR.search_receipt": r"^search_receipt\.\w+ .* must equal the IR's",
+    "ChemicalCompilationIR.diagnostics": r"\(D28\.2\)",
+    "Section81ReceiptView.schema_version": r"schema_version must be exactly '[^']*search-receipt-view-",
+    **{f"Section81ReceiptView.{key}": _D276 for key in ("search_kind", "cut_budget_scope", "max_depth", "cut_budget",
+                                                        "result_limit")},
+    **{f"Section81ReceiptView.{key}": _D283
+       for key in ("target_identity_digest", "terminal_policy_digest", "transform_registry_digest", "results_returned")},
+    "Section81ReceiptView.candidate_limit": r"candidate_limit must be None",
+    "CandidateSummary.schema_version": r"schema_version must be exactly '[^']*candidate-summary-",
+    "CandidateSummary.candidate_kind": r"\(D24\.14\)",
+    "CandidateSummary.candidate_digest": r"ranked route digest must identify a returned IR candidate",
+    "CandidateSummary.equation": _D277,
+    "CandidateSummary.readiness_tier": r"an IR CandidateSummary is a FORMAL_CANDIDATE",
+    "replay_step.schema_version": r"schema_version must be exactly '[^']*/step-v1'",
+    "replay_step.envelope": r"\(D28\.1\)",
+    **{f"replay_step.{key}": r"\(D29\.1\)" for key in ("target", "reactants", "products", "reagents", "reaction_center")},
+}
+
+_ALL_CHECKS = frozenset(c for entries in TRANSPORT_LEDGER.values() for e in entries.values() for c in e.checks)
+
+
+def _refused_in(exc):
+    """The DEEPEST frame of ``exc``'s traceback that is a ledger-named check (``"module:qualname"``), or None."""
+    hit, tb = None, exc.__traceback__
+    while tb is not None:
+        frame = tb.tb_frame
+        name = f"{frame.f_globals.get('__name__')}:{frame.f_code.co_qualname}"
+        hit = name if name in _ALL_CHECKS else hit
+        tb = tb.tb_next
+    return hit
+
+
+def test_every_forgery_names_its_own_law():
+    assert set(_OWN_LAW) == set(_FORGERIES), (
+        f"forgeries with no own law: {sorted(set(_FORGERIES) - set(_OWN_LAW))}; "
+        f"stale own-law rows: {sorted(set(_OWN_LAW) - set(_FORGERIES))}")
 
 
 def test_every_non_advisory_ledger_entry_names_a_keyless_forgery():
@@ -404,15 +572,18 @@ def test_every_non_advisory_ledger_entry_refuses_its_keyless_forgery(worlds, ent
     assert forged != honest_wire, f"{entry}: the forgery changed nothing (a vacuous test)"
     table, _, field = entry.rpartition(".")
     keep = frozenset({field}) if table == "CompilationResponse.wire" else frozenset()
-    try:
-        _reforge(forged, keep=keep)
-    except (ValueError, TypeError, KeyError):
-        return  # refused already by the loader's own constructor call (a record guard or a coherence law)
     with pytest.raises((ValueError, TypeError, KeyError)) as refusal:
-        svc.response_from_payload(forged)
+        _reforge(forged, keep=keep)  # the loader's own constructor call (a record guard or a coherence law) ...
+        svc.response_from_payload(forged)  # ... else the load
+    message = str(refusal.value)
     if field != "result_digest":
-        assert "result_digest does not match" not in str(refusal.value), (
+        assert "result_digest does not match" not in message, (
             f"{entry}: refused only by a stale PUBLIC digest, not by the entry's own law -- the forger recomputes that")
+    # X-high D29.3: refused BY its own law, never merely by some law.
+    assert re.search(_OWN_LAW[entry], message), f"{entry}: refused by another law, not its own: {message[:300]}"
+    assert _refused_in(refusal.value) in TRANSPORT_LEDGER[table][field].checks, (
+        f"{entry}: raised in {_refused_in(refusal.value)}, which is not one of the entry's own checks "
+        f"{TRANSPORT_LEDGER[table][field].checks}")
 
 
 def test_the_disclosed_partial_advisory_case_really_loads(worlds, honest):

@@ -63,21 +63,22 @@ and ``require_reexecution`` re-derives them (the caller-attached provider snapsh
   Section81ReceiptView.candidate_enumeration_complete, Section81ReceiptView.result_limit_saturated,
   Section81ReceiptView.stop_reason, and the search telemetry Section81ReceiptView.nodes_visited,
   Section81ReceiptView.transforms_considered, Section81ReceiptView.candidates_emitted,
-  Section81ReceiptView.candidates_rejected_by_reason;
-* the replayed route STRUCTURE (conserving, making the requested target from declared terminals within max_depth --
-  but that the search produced it is re-execution only): replay_step.target, replay_step.reactants,
-  replay_step.products, replay_step.reagents, and replay_step.reaction_center (outside route.digest, D26.4).
+  Section81ReceiptView.candidates_rejected_by_reason -- and with them, that the bounded SEARCH reached a given
+  (locally generable, D29.1) replayed route.
 
 Everything else is re-derived on load or bound to the request -- the ranking and every dossier verdict (D27.4), the
 corpus envelopes (D27.1), the outcome (D27.3), the frontier and diagnostics (D27.4), the receipt count / kind /
 bounds (D27.5/D27.6), the IR's own diagnostics (D28.2), a carried unknown() envelope (D28.1), the receipt's
-identity digests and result count (D28.3), and every container's exact key set (D28.5) -- which makes the carried
+identity digests and result count (D28.3), every container's exact key set (D28.5, D29.2), and every replayed step
+(D29.1: it must be a transform the carried algebra emits for its target -- reactants, products incl. byproducts as
+STRUCTURES, the reaction centre, no ancillary flag; the Wave C6 same-formula byproduct isomer that erased a sourced
+hazard verdict is refused on every current load) -- which makes the carried
 REQUEST the anchor: pin it (``expected_request_digest``,
 ``expected_capability_question_digest``) or the answer is only proven to answer ITS OWN request.  On the THIN_ADVISORY
 wire (no replay) every ledger entry whose ``thin`` status is DIGEST_ONLY_ADVISORY joins the list (the dossiers'
 non-process verdicts and order, the frontier's catalyst / fiction channels, the DAG-bench note).  A LEGACY v0.8
-payload's ranking, frontier and diagnostics are v0.8's code's (advisory) and its corpus evidence is re-derived only
-under verified admission -- recompile under 0.9.
+payload's ranking, frontier and diagnostics are v0.8's code's (advisory), and its corpus evidence (D27.1) and replayed
+steps (D29.1) are re-derived only under verified admission -- recompile under 0.9.
 
 Partially advisory (the ledger's ``advisory_when``, X-high D28.4): CandidateSummary.candidate_digest and
 CandidateSummary.equation are re-derived only for a candidate that carries a dossier; a candidate with NO dossier -- a
@@ -2380,6 +2381,87 @@ class CompilationResponse:
                             f"is not the one the shipped corpus attaches to that reaction -- grafted or stale corpus "
                             f"evidence; refused (D27.1){self._legacy_hint()}")
 
+    def _check_replay_step_transforms(self, *, verified: bool) -> None:
+        """X-high D29.1 (Wave C6 C6-F8): a replayed step is a transform the carried ALGEBRA emits -- its byproducts are
+        bound to that transform, never to their formula.  D26.1 bound a route's shape to the request through its final
+        target, its leaves and its equation, but the equation renders COMPOSITION: a keyless attacker swapped a step's
+        byproduct for a same-formula isomer (acetic acid -> methyl formate), the equation stayed byte-identical, the
+        route digest was honestly re-bound, and the swap erased a sourced hazard verdict (waste BLOCKED -> UNKNOWN; on a
+        bench without HAZARDOUS routing the OVERALL verdict BLOCKED -> UNKNOWN) under plain / pins / verified admission.
+
+        Every search step is ``ExperimentStep.from_transform(et.transform)`` over ``registry.enumerate(t, reagents,
+        budget=cut_budget)`` (both ``experiment.routes`` search loops), so the loader puts the producer's OWN question
+        to the producer's OWN provider code: for each replayed step it enumerates the carried algebra profile's registry
+        at the step's target with the request's helper reagents and cut budget, and requires ONE emitted transform whose
+        precursors equal the step's reactants and whose ``(reactant,) + reagents`` equal the step's products -- as
+        STRUCTURE multisets, byproducts included -- with the step's ``reaction_center`` one that transform assigns and no
+        ancillary-reagent flag (the search never sets one).  That closes the isomer swap, a fabricated step, and a
+        neutral re-centre (Foreman N4) on every load.  What stays re-execution / HMAC only: that the bounded SEARCH
+        reached this particular (locally generable) route -- the D25.3 search-output boundary.
+
+        CURRENT payloads: always (a DECOMPILE carries no replay).  LEGACY v0.8 payloads, mirroring D27.1: a v0.8 step
+        is v0.8's algebra's output and nothing in 0.8 bound a replayed step to an algebra, so on a PLAIN load it stays
+        advisory (documented boundary); under ``require_verified_admission`` it must be a transform today's algebra
+        emits, else it fails closed with the recompile hint (every real v0.8 fixture's steps are).  Re-execution refuses
+        a legacy payload outright (D26.2)."""
+        if self.request.operation is not CompilationOperation.RECOMPILE or (self.is_legacy_v08 and not verified):
+            return
+        tables = (
+            ("route", self.ranked_route_dossiers, lambda p: _reconstruct_route(p).steps),
+            ("DAG", self.ranked_dag_dossiers, lambda p: _reconstruct_dag(p).steps),
+        )
+        if not any(d.replay_payload is not None for _kind, dossiers, _rebuild in tables for d in dossiers):
+            return
+        from .experiment.step import _ident
+        try:
+            registry = resolve_algebra_profile(self.request.algebra_profile)
+            reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in self.request.helper_reagents)
+        except (IdentityParseError, ValueError) as exc:
+            raise ValueError(f"the carried request's algebra / helper reagents cannot be re-read ({exc}); refused "
+                             f"(D29.1){self._legacy_hint()}") from exc
+        budget = self.request.search_bounds.value("cut_budget")
+        emitted: "dict[str, dict[tuple, list]]" = {}   # target (as carried) -> {step shape: [reaction centres]}
+        for kind, dossiers, rebuild in tables:
+            for dossier in dossiers:
+                if dossier.replay_payload is None:
+                    continue
+                for index, step in enumerate(rebuild(dossier.replay_payload), start=1):
+                    where = f"{kind} dossier {dossier.route_digest[:12]} step {index}"
+                    key = canonical_digest(step.target)
+                    table = emitted.get(key)
+                    if table is None:
+                        table = {}
+                        try:
+                            cleavages, _complete = registry.enumerate(step.target, reagents, budget=budget)
+                        except Exception as exc:  # noqa: BLE001 -- a replay the algebra cannot read is refused, not a crash
+                            raise ValueError(
+                                f"{where}: the carried algebra cannot be put to the replayed step's target "
+                                f"({type(exc).__name__}: {exc}); refused (D29.1){self._legacy_hint()}") from exc
+                        for et in cleavages:
+                            cs = et.transform
+                            shape = (tuple(sorted(_ident(m) for m in cs.products)),
+                                     tuple(sorted(_ident(m) for m in (cs.reactant, *cs.reagents))))
+                            center_of = getattr(cs, "reaction_center", None)
+                            table.setdefault(shape, []).append(center_of() if callable(center_of) else None)
+                        emitted[key] = table
+                    shape = (tuple(sorted(_ident(m) for m in step.reactants)),
+                             tuple(sorted(_ident(m) for m in step.products)))
+                    centres = table.get(shape)
+                    if centres is None:
+                        raise ValueError(
+                            f"{where}: {step.equation()} is not a transform the carried algebra "
+                            f"({self.request.algebra_profile}) emits for that step's target -- its reactants / products "
+                            f"(byproducts included, as STRUCTURES) match no emitted transform: a same-formula byproduct "
+                            f"isomer or a fabricated step; refused (D29.1){self._legacy_hint()}")
+                    if step.reaction_center not in centres:
+                        raise ValueError(
+                            f"{where}: its reaction_center is not one the carried algebra assigns to that transform -- a "
+                            f"re-centred replay; refused (D29.1){self._legacy_hint()}")
+                    if step.reagents:
+                        raise ValueError(
+                            f"{where}: it flags {len(step.reagents)} ancillary reagent(s), which the search never "
+                            f"sets; refused (D29.1){self._legacy_hint()}")
+
     @property
     def is_legacy_v08(self) -> bool:
         """True for a migrated v0.8 (``compilation-response-v1alpha15``) response: verified under the frozen v0.8 digest
@@ -2707,8 +2789,10 @@ class CompilationResponse:
         ``route.digest`` yet it feeds the reaction-type readiness. A keyless forger can therefore re-centre a replayed
         step under the corpus route's OWN ``route_digest``; every observed forgery only DEMOTES readiness (no promotion
         was found across 59 steps x 26 centres -- Conjectured unreachable, not proven). ``require_reexecution=True``
-        closes it keylessly (D26.2); binding the centre into route identity is a route-schema change deferred to
-        0.9.5."""
+        closes it keylessly (D26.2), and since X-high D29.1 so does EVERY current load (a legacy v0.8 payload: under
+        verified admission): the replayed centre must be one the carried algebra's emitted transform assigns
+        (:meth:`_check_replay_step_transforms`).  Binding the centre into
+        route identity is still a route-schema change deferred to 0.9.5."""
         profile = self.request.capability_profile
         for r in self.ranked_route_dossiers:
             if profile is None:
@@ -2812,9 +2896,12 @@ class CompilationResponse:
           X-high D27.2 the thick replay rides the whole-body wire digest, so a centre edited on the wire without
           recomputing that public digest is refused on EVERY load, the producer HMAC authenticates it, and
           ``require_reexecution=True`` refuses a keyless recompute outright (D26.2 + D27.2 -- before D27.2 a NEUTRAL
-          re-centre, Foreman N4 / T5n, passed re-execution because the replay was outside ``result_digest``).  A keyless
-          forger who recomputes the public digest still loads on a plain / verified-admission load (the stated
-          boundary).  Binding the centre INTO ``route.digest`` is a 0.9.5 route-schema change.
+          re-centre, Foreman N4 / T5n, passed re-execution because the replay was outside ``result_digest``).  Since
+          X-high D29.1 a keyless forger who recomputes the public digest is ALSO refused on a plain / verified-admission
+          load of a current payload (a legacy v0.8 one: under verified admission, as D27.1): every replayed step's
+          centre must be one the carried algebra's emitted transform assigns
+          (:meth:`CompilationResponse._check_replay_step_transforms`).  The centre is still outside ``route.digest``
+          (binding it into route identity remains a 0.9.5 route-schema change), but it is no longer free.
         * THE THIN TRANSPORT, UNDER VERIFIED ADMISSION -- now CLOSED, fail-closed (``require_verified_admission=True``).
           ``response_to_payload`` emits the replay on ``include_replay=True`` (the DEFAULT since v0.8 Round II; the
           THIN_ADVISORY opt-out omits it), so on the thin transport the catalyst/fiction channels have no evidence to
@@ -4799,11 +4886,65 @@ def _canonical_field_names(cls: type) -> "list[str]":
     return sorted(f.name for f in _dc_fields(cls) if f.compare and not f.name.startswith("_"))
 
 
+#: X-high D29.2 (Wave C6 C6-NEW-1): the EXACT key set :func:`~smartchem.contracts.canonical_payload` writes for each node
+#: type the capability codec decodes.  D26.6 checked only the NAMES inside a dataclass node's ``fields``; the node's own
+#: keys were never checked, so ``"forged_claim": "CAPABILITY_FIT"`` beside an assessment's ``overall`` enum node (or on
+#: ``request.capability_profile``) loaded under plain / pins / verified admission as unenforced text.
+_CANONICAL_NODE_KEYS: "dict[str, frozenset[str]]" = {
+    "none": frozenset({"type"}),
+    "str": frozenset({"type", "value"}),
+    "int": frozenset({"type", "value"}),
+    "bool": frozenset({"type", "value"}),
+    "float": frozenset({"type", "value"}),
+    "enum": frozenset({"type", "class", "value"}),
+    "tuple": frozenset({"type", "items"}),
+    "list": frozenset({"type", "items"}),
+    "frozenset": frozenset({"type", "items"}),
+    "set": frozenset({"type", "items"}),
+    "mapping": frozenset({"type", "items"}),
+    "dataclass": frozenset({"type", "class", "fields"}),
+}
+
+
+def _check_canonical_node(node: object) -> str:
+    """X-high D29.2: ``node`` is a JSON object carrying EXACTLY its type's keys, with a JSON-exact scalar (a ``str``
+    node a string, an ``int`` node an integer that is not a bool, a ``bool`` node a bool, a ``float`` node a number or a
+    signed-infinity tag) and array-valued ``items``/``fields`` -- never coerced, never a tolerated extra.  Returns the
+    node's type tag."""
+    if type(node) is not dict:
+        raise ValueError(f"capability codec: a canonical node must be a JSON object, got {type(node).__name__}; "
+                         "refused (D29.2)")
+    t = node.get("type")
+    expected = _CANONICAL_NODE_KEYS.get(t) if isinstance(t, str) else None
+    if expected is None:
+        raise ValueError(f"capability codec cannot decode canonical node of type {t!r}")
+    if set(node) != expected:
+        raise ValueError(f"capability codec: a {t!r} node must carry EXACTLY {sorted(expected)}, got {sorted(node)} -- "
+                         "an unknown or missing node key is refused (D29.2)")
+    value = node.get("value")
+    scalar_ok = (t not in ("str", "int", "bool", "float")
+                 or (t == "str" and type(value) is str)
+                 or (t == "int" and type(value) is int)
+                 or (t == "bool" and type(value) is bool)
+                 or (t == "float" and (type(value) in (int, float) or value in ("+inf", "-inf"))))
+    if not scalar_ok:
+        raise ValueError(f"capability codec: a {t!r} node carries a {type(value).__name__} value; refused (D29.2)")
+    for key in ("items", "fields"):
+        if key in node and type(node[key]) is not list:
+            raise ValueError(f"capability codec: a {t!r} node's {key!r} must be a JSON array; refused (D29.2)")
+    if t in ("mapping", "dataclass"):
+        pairs = node["items"] if t == "mapping" else node["fields"]
+        if any(type(pair) is not list or len(pair) != 2 or type(pair[0]) is not str for pair in pairs):
+            raise ValueError(f"capability codec: a {t!r} node's entries must be [name, node] pairs; refused (D29.2)")
+    return t
+
+
 def _decode_canonical(node: "dict", allowed: "frozenset[str]" = _CAPABILITY_CODEC_ALLOWED) -> "object":
     """The inverse of ``canonical_payload`` over the capability graph -- reconstructs typed values from the
     type-tagged form, resolving dataclasses/enums through the closed whitelist and re-running every ``__post_init__``
-    (so a tampered stock/bound/component fails CLOSED at reconstruction, exactly like the hand-written codecs)."""
-    t = node["type"]
+    (so a tampered stock/bound/component fails CLOSED at reconstruction, exactly like the hand-written codecs).
+    X-high D29.2: every node carries EXACTLY its type's keys and a JSON-exact scalar (:func:`_check_canonical_node`)."""
+    t = _check_canonical_node(node)
     if t == "none":
         return None
     if t in ("str", "int", "bool"):
@@ -6000,6 +6141,10 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
             raise ValueError(
                 f"a CANONICAL_VERIFIED response carries {len(bare)} dossier(s) with no replay_payload ({', '.join(bare)}) "
                 f"-- canonical evidence must be re-derivable; refused (D27.7){response._legacy_hint()}")
+    # X-high D29.1 (Wave C6 C6-F8): every replayed step is a transform the carried algebra emits -- its byproducts (as
+    # structures) and reaction centre bound to that transform, before any lookup or verdict re-derivation reads them
+    # (current: always; legacy: under verified admission, exactly like D27.1 below).
+    response._check_replay_step_transforms(verified=require_verified_admission)
     # X-high D27.1: the corpus condition envelopes riding the replays are re-derived (current: always; legacy: under
     # verified admission -- plain legacy evidence is v0.8's corpus, advisory).
     response._check_corpus_evidence_coherence(verified=require_verified_admission)

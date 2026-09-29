@@ -18,7 +18,11 @@ message so a test can never pass because some other layer happened to fire first
 * D28 (Wave C5 C5-F1..F7, bottom of the file) the ledger made truthful: a carried unknown() envelope is corpus-checked
   too (D28.1), the IR's own diagnostics are re-derived (D28.2), the receipt's identity digests and result count are
   non-null (D28.3), the unconstrained-DAG candidate label is DISCLOSED advisory (D28.4), and every container carries
-  exactly its versioned keys, serial holds exact JSON numbers (D28.5).
+  exactly its versioned keys, serial holds exact JSON numbers (D28.5);
+* D29 (Wave C6 C6-F8 / C6-NEW-1, bottom of the file) every replayed step is a transform the carried algebra emits --
+  byproducts as STRUCTURES, the reaction centre, no ancillary flag (D29.1; it also closes the D26.4 re-centre boundary
+  on every current load; a legacy v0.8 step: under verified admission, as D27.1) -- and exact keys reach the capability codec's nodes, identity-loss entries and structural candidates
+  (D29.2).
 """
 from __future__ import annotations
 
@@ -787,10 +791,11 @@ def test_d26_2_t2_a_consistent_deletion_loads_without_reexecution_and_is_refused
             response_from_payload(payload, require_reexecution=True, **_pins(resp.request))
 
 
-def test_d26_2_t5_a_re_centred_step_demotes_under_the_same_route_digest_until_reexecution():
+def test_d26_2_t5_a_re_centred_step_demoting_under_the_same_route_digest_is_refused_on_every_load():
     """T5 / D26.4: ``reaction_center`` is compare=False (outside route.digest) yet feeds readiness. Re-centring the
     REACTION_VOUCHED methyl-acetate route and honestly re-deriving its readiness + capability DEMOTES it under the SAME
-    route digest and loads under every pin (the stated D26.4 boundary); ``require_reexecution`` refuses it."""
+    route digest; on adf06ae it loaded under every pin (the then-stated D26.4 boundary) and only ``require_reexecution``
+    refused it. X-high D29.1 closes the boundary: the centre must be one the carried algebra assigns."""
     from smartchem.capability.assess import assess as assess_capability
     from smartchem.capability.requirements import compile_capability_requirements
 
@@ -814,9 +819,11 @@ def test_d26_2_t5_a_re_centred_step_demotes_under_the_same_route_digest_until_re
     routes_ = tuple(_reconstruct_route(d.replay_payload) for d in new)
     frontier = svc._affordability_frontier(routes_, tuple(new))
     payload = response_to_payload(_bypass(resp, ranked_route_dossiers=tuple(new), affordability_frontier=frontier))
-    response_from_payload(payload, require_verified_admission=True, **_pins(resp.request))   # stated boundary
-    with pytest.raises(ValueError, match=r"D26\.2"):
-        response_from_payload(payload, require_reexecution=True, **_pins(resp.request))
+    # the D26.4 boundary CLOSED by X-high D29.1: the centre stays outside route.digest, but it is now one the carried
+    # algebra assigns to the step's transform -- refused on every load, not only under re-execution
+    for kw in (dict(require_verified_admission=True), dict(require_reexecution=True)):
+        with pytest.raises(ValueError, match=r"re-centred replay; refused \(D29\.1\)"):
+            response_from_payload(copy.deepcopy(payload), **kw, **_pins(resp.request))
 
 
 def test_d26_2_reexecution_accepts_an_honest_answer_and_refuses_a_legacy_one():
@@ -1240,8 +1247,9 @@ def test_d27_2_n4_a_neutral_re_centre_is_refused_on_the_wire_and_under_reexecuti
     with pytest.raises(ValueError, match=r"result_digest does not match"):
         response_from_payload(raw, **_pins(resp.request))
     # the keyless forger who recomputes the public digest: the centre is outside route.digest and the re-centre is
-    # NEUTRAL (same readiness), so it loads on a plain / verified-admission load -- the stated boundary -- and
-    # re-execution refuses it (the rerun's body carries the real centre).
+    # NEUTRAL (same readiness).  On adf06ae it loaded on a plain / verified-admission load (the then-stated boundary)
+    # and only re-execution refused it; X-high D29.1 binds the centre to the one the carried algebra assigns, so it is
+    # refused on EVERY load now.
     replay = copy.deepcopy(formal.replay_payload)
     recentre(replay)
     assert _reconstruct_route(replay).digest == formal.route_digest
@@ -1249,9 +1257,9 @@ def test_d27_2_n4_a_neutral_re_centre_is_refused_on_the_wire_and_under_reexecuti
     forged = dc.replace(resp, ranked_route_dossiers=tuple(
         dc.replace(d, replay_payload=replay) if d is formal else d for d in resp.ranked_route_dossiers))
     payload = response_to_payload(forged)
-    response_from_payload(payload, require_verified_admission=True, **_pins(resp.request))
-    with pytest.raises(ValueError, match=r"differs from the re-executed one in \['ranked_route_dossiers'\].*D27\.2"):
-        response_from_payload(payload, require_reexecution=True, **_pins(resp.request))
+    for kw in ({}, dict(require_verified_admission=True), dict(require_reexecution=True)):
+        with pytest.raises(ValueError, match=r"re-centred replay; refused \(D29\.1\)"):
+            response_from_payload(copy.deepcopy(payload), **kw, **_pins(resp.request))
 
 
 
@@ -1545,3 +1553,214 @@ def test_d28_5_c5f7_serial_holds_are_decoded_exactly(monkeypatch, coerce):
     with pytest.raises(TypeError, match=r"serial hold"):
         _keyless_load(wire, edit)
     _keyless_load(wire, lambda p: None)                # control: the honest holds load (same declared corpus)
+
+
+# =====================================================================================================================
+# D29 (Wave C6 closure audit C6-F8, C6-NEW-1) -- a replayed step is a transform the carried ALGEBRA emits (D29.1), and
+# exact keys reach the last decoders (D29.2).  Every forgery is KEYLESS (the producer's own helpers, every public digest
+# recomputed) and LOADED on adf06ae -- measured against a pristine ``git archive adf06ae`` tree.
+# =====================================================================================================================
+
+_PARACETAMOL = "smiles:CC(=O)Nc1ccc(O)cc1"
+_C2H4O2 = {"C": 2, "H": 4, "O": 2}
+
+
+def _paracetamol(profile):
+    """4-aminophenol + acetic anhydride -> paracetamol + acetic acid: the SECOND corpus record whose byproduct is not
+    water (it carries a sourced procedure), so its waste axis reads a sourced hazard."""
+    return build_recompile_request(_PARACETAMOL, max_depth=1, helper_reagents=("acetic acid", "water"),
+                                   stock_materials=("4-aminophenol", "acetic anhydride"), capability_profile=profile)
+
+
+def _isomer_byproduct_forgery(resp, smiles, *, corpus):
+    """The Wave C6 masters' C6-F8 forger (``p11_f8.py`` / ``p12_waste.py`` / ``p15_overall.py``): in the first route
+    with a step whose byproduct is acetic acid (a step WITH a corpus record, or WITHOUT one, per ``corpus``), swap that
+    byproduct for a same-formula isomer -- so the rendered equation stays byte-identical -- re-look-up the step's corpus
+    envelope (D27.1/D28.1 honest), and re-derive everything else with the producer's own helpers.  Returns the payload
+    and the honest / forged dossiers."""
+    from smartchem.compilation_ir import CANDIDATE_SUMMARY_SCHEMA, CandidateSummary
+    from smartchem.conditions import ConditionEnvelope
+    from smartchem.experiment.step import ROUTE_SCHEMA, ExperimentRoute
+    from smartchem.smiles import parse_smiles
+
+    def victim(step):
+        if (step.envelope != ConditionEnvelope.unknown()) is not corpus:
+            return None
+        target = svc._structure_ident(step.target)
+        return next((j for j, m in enumerate(step.products)
+                     if m.formula == _C2H4O2 and svc._structure_ident(m) != target), None)
+
+    req, ir = resp.request, resp.compilation_ir
+    replayed = [_reconstruct_route(d.replay_payload) for d in resp.ranked_route_dossiers]
+    k, s = next((k, s) for k, r in enumerate(replayed) for s, step in enumerate(r.steps) if victim(step) is not None)
+    step = replayed[k].steps[s]
+    j = victim(step)
+    step = dc.replace(step, products=step.products[:j] + (parse_smiles(smiles).canonical(),) + step.products[j + 1:])
+    step = dc.replace(step, envelope=routes._conditions_for(svc._ReplayedTransform(step)))
+    replayed[k] = ExperimentRoute(ROUTE_SCHEMA, replayed[k].steps[:s] + (step,) + replayed[k].steps[s + 1:])
+    ranked = svc._ranked_summaries(tuple(replayed), req.constraints.bounds, resp.identity_losses,
+                                   process=req.constraints.process, capability_profile=req.capability_profile)
+    candidates = tuple(sorted((CandidateSummary(CANDIDATE_SUMMARY_SCHEMA, "ROUTE", r.route_digest, r.equation,
+                                                "FORMAL_CANDIDATE") for r in ranked), key=lambda c: c.candidate_digest))
+    note = svc.constraint_note(req.constraints.bounds, fit_counts=svc._fit_counts(ranked), process=req.constraints.process)
+    forged = _bypass(resp, ranked_route_dossiers=ranked, affordability_frontier=svc._route_frontier(req, tuple(replayed),
+                                                                                                   ranked),
+                     compilation_ir=dc.replace(ir, candidates=candidates, search_receipt=dc.replace(
+                         ir.search_receipt, results_returned=len(candidates))),
+                     diagnostics=tuple(ir.diagnostics) + (() if note is None else (note,)))
+    new = next(r for r in ranked if r.route_digest == replayed[k].digest)
+    return response_to_payload(forged), resp.ranked_route_dossiers[k], new
+
+
+def _refused_on_every_load(payload, request, match):
+    for kw in ({}, _pins(request), dict(_pins(request), require_verified_admission=True),
+               dict(_pins(request), require_reexecution=True)):
+        with pytest.raises(ValueError, match=match):
+            response_from_payload(copy.deepcopy(payload), **kw)
+
+
+_NOT_EMITTED = r"is not a transform the carried algebra .* emits for that step's target.*refused \(D29\.1\)"
+
+
+@pytest.mark.parametrize("isomer", ["COC=O", "OCC=O"])      # methyl formate, glycolaldehyde
+def test_d29_1_c6f8_a_byproduct_isomer_cannot_erase_a_sourced_waste_block(isomer):
+    """C6-F8 per axis (P1): paracetamol from the anhydride under poor-man. The sourced corpus record still attaches (its
+    lookup keys on the reaction's reactants), the equation renders byte-identically, yet the waste axis read the
+    carried byproduct STRUCTURE: the acetic-acid block turned UNKNOWN. Loaded on adf06ae under plain, both pins and
+    verified admission (only re-execution saw it). D29.1: the step is not an emitted transform -- refused on every load."""
+    req = _paracetamol("poor-man")
+    honest = run_compilation(req)
+    payload, old, new = _isomer_byproduct_forgery(honest, isomer, corpus=True)
+    assert new.equation == old.equation                                               # byte-identical rendering
+    assert old.capability_assessment.waste.status.value == "BLOCKED"
+    assert new.capability_assessment.waste.status.value != "BLOCKED"                 # the erased sourced hazard
+    _refused_on_every_load(payload, req, _NOT_EMITTED)
+    response_from_payload(response_to_payload(honest), require_verified_admission=True, **_pins(req))   # control
+
+
+def test_d29_1_c6f8_a_byproduct_isomer_cannot_flip_the_overall_verdict_blocked_to_unknown():
+    """C6-F8 OVERALL (P1, ``p15_overall.py``): on a declared hood lab without hazmat routing (the research-lab preset
+    minus HAZARDOUS waste -- a plausible Custom bench, test-only, no new chemistry) the waste axis is the route's only
+    block, so the isomer swap moved the whole capability verdict BLOCKED -> UNKNOWN. Loaded on adf06ae likewise."""
+    from smartchem.capability.enums import WasteCapability
+
+    bench = dc.replace(research_lab(), profile_id="hood-lab-no-hazmat",
+                       waste_handling=frozenset({WasteCapability.AQUEOUS_NEUTRAL}),
+                       provenance="test-only Custom: research-lab minus HAZARDOUS waste routing (Wave C6 p15)")
+    req = _paracetamol(bench)
+    honest = run_compilation(req)
+    payload, old, new = _isomer_byproduct_forgery(honest, "COC=O", corpus=True)
+    assert new.equation == old.equation
+    assert (old.capability_assessment.overall.value, new.capability_assessment.overall.value) == ("BLOCKED", "UNKNOWN")
+    _refused_on_every_load(payload, req, _NOT_EMITTED)
+    response_from_payload(response_to_payload(honest), require_verified_admission=True, **_pins(req))   # control
+
+
+@pytest.mark.parametrize("isomer", ["COC=O", "OCC=O"])
+def test_d29_1_c6f8_a_non_corpus_step_byproduct_isomer_is_refused(isomer):
+    """C6-F8 without a corpus record (``p12_waste.py``): step 2 of the methyl-acetate peracid route (C2H4O3 + C3H6O ->
+    C3H6O2 + C2H4O2) carries unknown() -- no record, so no D27.1/D28.1 lookup can object -- and its acetic-acid
+    byproduct swapped for an isomer loaded on adf06ae. D29.1 binds the step to the algebra, not to the corpus."""
+    honest = _run("poor-man", helper_reagents=("acetic acid", "water"))
+    payload, old, new = _isomer_byproduct_forgery(honest, isomer, corpus=False)
+    assert "C2H4O3 + C3H6O -> C3H6O2 + C2H4O2" in old.equation                       # the peracid step
+    assert new.equation == old.equation and new.route_digest != old.route_digest
+    _refused_on_every_load(payload, honest.request, _NOT_EMITTED)
+
+
+def test_d29_1_every_honest_step_is_an_emitted_transform_on_every_producer_path():
+    """D29.1's premise, pinned: every step of every honest answer -- linear (plain and bench), convergent DAG, the
+    REAGENTLESS Diels-Alder retro, the anhydride and esterification corpus routes -- loads under verified admission.
+    Every loadable real v0.8 fixture loads plain, and under verified admission (where D29.1's legacy leg runs) none is
+    refused by D29.1: the ethyl-acetate fixture loads outright, the others reach D27.1's corrected-corpus refusal,
+    which runs AFTER D29.1 -- so their steps, DAG included, are transforms today's algebra emits."""
+    from smartchem.identity_parse import InputKind
+
+    runs = (_run(None), _run("poor-man"), _dag_run(), run_compilation(_paracetamol("poor-man")),
+            run_compilation(build_recompile_request("C1CC=CCC1", input_kind=InputKind.SMILES, helper_reagents=(),
+                                                    stock_materials=("C=CC=C", "C=C"),
+                                                    algebra_profile="certified-route-v07")))
+    for resp in runs:
+        assert resp.ranked_route_dossiers or resp.ranked_dag_dossiers
+        response_from_payload(response_to_payload(resp), require_verified_admission=True, **_pins(resp.request))
+    response_from_payload(_load("response_ethyl_acetate_smiles.json"), require_verified_admission=True)
+    for name in ("response_isopentyl_acetate.json", "response_ethyl_acetate_smiles.json",
+                 "response_stereo_isopentyl_acetate_smiles.json", "response_isopentyl_acetate_dag.json"):
+        response_from_payload(_load(name))
+        try:
+            response_from_payload(_load(name), require_verified_admission=True)
+        except ValueError as exc:
+            assert "D29.1" not in str(exc) and "refused (D27.1)" in str(exc), (name, str(exc)[:200])
+
+
+def test_d29_1_a_legacy_re_centred_step_fails_closed_under_verified_admission():
+    """The legacy leg (Foreman N4 on v0.8), mirroring D27.1: the REAL v0.8 ethyl-acetate fixture with step 2 of a
+    two-step route NEUTRALLY re-centred (readiness and frontier unchanged, the frozen v0.8 digests recomputed) loaded on
+    adf06ae under both pins + verified admission. D29.1 refuses it there WITH the recompile hint; on a PLAIN load a v0.8
+    step is v0.8's algebra's output, advisory -- the documented legacy boundary, pinned both ways."""
+    wire = _load("response_ethyl_acetate_smiles.json")
+    honest = response_from_payload(copy.deepcopy(wire))
+    victim = next(d for d in wire["ranked_route_dossiers"] if len(d["replay_payload"]) == 2)
+    victim["replay_payload"][1]["reaction_center"]["n_components"] += 1
+    route = _reconstruct_route(svc._migrate_legacy_v08_dossier(copy.deepcopy(victim))["replay_payload"])
+    assert svc._v08_digest(route) == victim["route_digest"]                       # the centre is outside the digest
+    assert svc._route_readiness_to_payload(evaluate_route(route, identity_losses=honest.identity_losses)) == \
+        victim["readiness"]                                                       # ... and the re-centre is NEUTRAL
+    _legacy_refresh(wire)
+    with pytest.raises(ValueError, match=r"re-centred replay; refused \(D29\.1\).*legacy v0\.8 payload.*"
+                                         r"recompile under 0\.9"):
+        response_from_payload(copy.deepcopy(wire), require_verified_admission=True, **_pins(honest.request))
+    assert response_from_payload(wire).is_legacy_v08              # the documented legacy boundary: advisory, plain
+
+
+# -- D29.2: exact keys at the last three decoders (C6-NEW-1) ------------------------------------------------------------
+
+def _profile_node_edit(pick):
+    def edit(p):
+        pick(p["request"]["capability_profile"])["smuggled"] = "CAPABILITY_FIT"
+    return edit
+
+
+@pytest.mark.parametrize("label,pick", [
+    ("profile", lambda n: n),
+    ("physical bounds", lambda n: _find_node(n, "smartchem.constraints.PhysicalBounds")),
+    ("a str scalar", lambda n: n["fields"][1][1]),
+    ("an enum inside a frozenset", lambda n: next(f[1] for f in n["fields"] if f[0] == "equipment")["items"][0]),
+], ids=lambda x: x if isinstance(x, str) else "")
+def test_d29_2_c6new1_a_capability_codec_node_with_an_extra_key_is_refused(_d28_wires, label, pick):
+    """C6-NEW-1 (P3): D28.5 closed the containers, but the canonical capability-profile codec ignored unknown keys on
+    its nodes -- a ``"smuggled": "CAPABILITY_FIT"`` rode the whole-body digest as unenforced text and loaded on adf06ae
+    with the public digest recomputed. D29.2: every node carries exactly its type's keys."""
+    with pytest.raises(ValueError, match=r"refused \(D29\.2\)"):
+        _keyless_load(_d28_wires["bench"], _profile_node_edit(pick))
+
+
+@pytest.mark.parametrize("edit", ["extra", "missing"])
+def test_d29_2_c6new1_an_identity_loss_entry_carries_exactly_its_keys(edit):
+    """C6-NEW-1: an ``identity_losses`` entry was decoded by field lookup -- an extra key loaded on adf06ae (a missing
+    one crashed with a bare KeyError). D29.2: exactly its keys, refused as a law."""
+    resp = run_compilation(build_recompile_request("smiles:C[C@H](O)C(=O)OC", max_depth=1, helper_reagents=("water",),
+                                                   stock_materials=("methanol",)))
+    wire = response_to_payload(resp)
+    assert wire["compilation_ir"]["identity_losses"]
+    change = {"extra": lambda e: e.__setitem__("verified", True), "missing": lambda e: e.pop("severity")}[edit]
+    with pytest.raises(ValueError, match=r"refused \(D29\.2\)"):
+        _keyless_load(wire, lambda p: change(p["compilation_ir"]["identity_losses"][0]))
+    _keyless_load(wire, lambda p: None)                                              # control
+
+
+@pytest.mark.parametrize("where", ["candidate", "witness", "parent", "species"])
+def test_d29_2_c6new1_a_structural_candidate_carries_exactly_its_keys(where):
+    """C6-NEW-1: a STRUCTURE-layer decompile's ``structural_candidates`` (and the witness / species / identity payloads
+    inside them) were decoded by field lookup -- an extra key round-tripped on adf06ae."""
+    from smartchem.compilation_ir import decompile_structure_to_ir, ir_from_payload, ir_to_payload
+    from smartchem.smiles import parse_smiles
+
+    payload = ir_to_payload(decompile_structure_to_ir(parse_smiles("CC"), reagents=(parse_smiles("O"),)))
+    ir_from_payload(copy.deepcopy(payload))                                          # control
+    candidate = payload["structural_candidates"][0]
+    node = {"candidate": candidate, "witness": candidate["witness"], "parent": candidate["parent"],
+            "species": candidate["products"][0]}[where]
+    node["verified"] = True
+    with pytest.raises(ValueError, match=r"refused \(D29\.2\)"):
+        ir_from_payload(payload)

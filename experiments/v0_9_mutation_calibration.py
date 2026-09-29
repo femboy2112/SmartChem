@@ -37,6 +37,12 @@ unconstrained-DAG label (D28.4, read through the ledger test's docstring cross-c
 containers and exact serial-hold numbers (D28.5), and the ledger forgery sweep itself (D28.6: a relabel with no
 refusing forgery is flagged).
 
+X-high D29 (Wave C6 closure audit): M212-M217 pin one law leg each -- a replayed step bound to the algebra as STRUCTURES
+(D29.1 C6-F8: a formula-bound check lets a byproduct isomer erase a sourced waste block) and to the reaction centre the
+algebra assigns (D29.1 / Foreman N4), exact keys on the capability codec's nodes, identity-loss entries and structural
+candidates (D29.2 C6-NEW-1), and the ledger sweep's own-law lock (D29.3 C6-test: a mislabelled check is flagged, not
+merely "refused").  M190 now reads re-execution with D29.1 held out in both arms (D29.1 masks its forgery on every load).
+
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
 """
@@ -4481,7 +4487,9 @@ def m189():
         "service._check_reexecution (whole-body comparison)")
 def m190():
     """Honest: the FORMAL route's step-2 reaction centre re-centred (readiness unchanged, public digest recomputed) is
-    refused by re-execution, which compares the whole re-executed body. Mutant: only the result identity is compared."""
+    refused by re-execution, which compares the whole re-executed body. Mutant: only the result identity is compared.
+    X-high D29.1 (a newer, independent law) now refuses this re-centre on EVERY load (M213 pins that), so -- per the
+    harness rule -- M190 reads its own layer, re-execution, with D29.1 held out in BOTH arms (never by weakening it)."""
     resp = _d27("plain")
     formal = next(d for d in resp.ranked_route_dossiers if len(d.replay_payload) == 2)
     replay = copy.deepcopy(formal.replay_payload)
@@ -4489,13 +4497,14 @@ def m190():
     forged = dc.replace(resp, ranked_route_dossiers=tuple(
         dc.replace(d, replay_payload=replay) if d is formal else d for d in resp.ranked_route_dossiers))
     payload = response_to_payload(forged)
-    plain, _perr = _try_load(payload)
-    _l, err = _try_load(payload, require_reexecution=True)
-    honest = plain is not None and err is not None and "D27.2" in err
-    bad_re = _src_mutant(svc._check_reexecution, (
-        "if _payload_body_digest(rerun_payload) != _payload_body_digest(payload):", "if False:"))
-    with _patch(svc, "_check_reexecution", bad_re):
-        loaded, _err = _try_load(payload, require_reexecution=True)
+    with _patch(CompilationResponse, "_check_replay_step_transforms", lambda self, **_kw: None):
+        plain, _perr = _try_load(payload)
+        _l, err = _try_load(payload, require_reexecution=True)
+        honest = plain is not None and err is not None and "D27.2" in err
+        bad_re = _src_mutant(svc._check_reexecution, (
+            "if _payload_body_digest(rerun_payload) != _payload_body_digest(payload):", "if False:"))
+        with _patch(svc, "_check_reexecution", bad_re):
+            loaded, _err = _try_load(payload, require_reexecution=True)
     bad = loaded is not None
     return honest, bad
 
@@ -4997,6 +5006,199 @@ def m211():
     with _patch_item(ledger.TRANSPORT_LEDGER["Section81ReceiptView"], "stop_reason", relabel):
         flagged = unforged() == {"Section81ReceiptView.stop_reason"}
     bad = loaded is not None and flagged
+    return honest, bad
+
+
+# -- X-high D29 (Wave C6 closure audit C6-F8, C6-NEW-1, C6-test): one mutant per law leg -----------------------------------
+
+_D29_CACHE: dict = {}
+
+
+def _d29(name: str):
+    """The honest compilations the D29 forgeries start from (cached; built OUTSIDE any patch context)."""
+    if name not in _D29_CACHE:
+        builders = {
+            # paracetamol from the anhydride: the corpus record whose acetic-acid byproduct reads a sourced waste block
+            "para": lambda: build_recompile_request("smiles:CC(=O)Nc1ccc(O)cc1", max_depth=1,
+                                                    helper_reagents=("acetic acid", "water"),
+                                                    stock_materials=("4-aminophenol", "acetic anhydride"),
+                                                    capability_profile="poor-man"),
+            # a stereo target: its IR carries a section-5.3 identity loss
+            "stereo": lambda: build_recompile_request("smiles:C[C@H](O)C(=O)OC", max_depth=1, helper_reagents=("water",),
+                                                      stock_materials=("methanol",)),
+        }
+        _D29_CACHE[name] = run_compilation(builders[name]())
+    return _D29_CACHE[name]
+
+
+def _byproduct_isomer_payload(resp, smiles: str = "COC=O"):
+    """The Wave C6 C6-F8 forger: the corpus step's acetic-acid byproduct swapped for a same-formula isomer (the equation
+    renders byte-identically), its envelope re-looked-up, everything else re-derived with the producer's own helpers.
+    Returns the payload and the honest / forged dossiers."""
+    from smartchem.compilation_ir import CANDIDATE_SUMMARY_SCHEMA, CandidateSummary
+
+    req, ir = resp.request, resp.compilation_ir
+    replayed = [svc._reconstruct_route(d.replay_payload) for d in resp.ranked_route_dossiers]
+    k = next(i for i, r in enumerate(replayed) if r.steps[0].envelope != ConditionEnvelope.unknown()
+             and any(m.formula == {"C": 2, "H": 4, "O": 2} for m in r.steps[0].products))
+    step = replayed[k].steps[0]
+    target = svc._structure_ident(step.target)
+    products = tuple(parse_smiles(smiles).canonical() if svc._structure_ident(m) != target else m for m in step.products)
+    step = dc.replace(step, products=products)
+    step = dc.replace(step, envelope=rt._conditions_for(svc._ReplayedTransform(step)))
+    replayed[k] = ExperimentRoute(ROUTE_SCHEMA, (step,) + replayed[k].steps[1:])
+    ranked = svc._ranked_summaries(tuple(replayed), req.constraints.bounds, resp.identity_losses,
+                                   process=req.constraints.process, capability_profile=req.capability_profile)
+    cands = tuple(sorted((CandidateSummary(CANDIDATE_SUMMARY_SCHEMA, "ROUTE", r.route_digest, r.equation,
+                                           "FORMAL_CANDIDATE") for r in ranked), key=lambda c: c.candidate_digest))
+    note = svc.constraint_note(req.constraints.bounds, fit_counts=svc._fit_counts(ranked), process=req.constraints.process)
+    payload = response_to_payload(_forge(
+        resp, ranked_route_dossiers=ranked, affordability_frontier=svc._route_frontier(req, tuple(replayed), ranked),
+        compilation_ir=dc.replace(ir, candidates=cands,
+                                  search_receipt=dc.replace(ir.search_receipt, results_returned=len(cands))),
+        diagnostics=tuple(ir.diagnostics) + (() if note is None else (note,))))
+    new = next(r for r in ranked if r.route_digest == replayed[k].digest)
+    return payload, resp.ranked_route_dossiers[k], new
+
+
+@mutant("M212", "a replayed step bound by FORMULA, not structure: a byproduct isomer erases a sourced waste block "
+        "(D29.1 C6-F8)", "service.CompilationResponse._check_replay_step_transforms (step shape as STRUCTURES)")
+def m212():
+    """Honest: paracetamol's anhydride step with its acetic-acid byproduct swapped for methyl formate (equation
+    byte-identical, the whole answer re-derived) is REFUSED under verified admission. Mutant: the step shape compared by
+    COMPOSITION -- exactly what the rendered equation (D26.1) could see -> it loads and the sourced waste block reads
+    UNKNOWN (adf06ae's C6-F8)."""
+    resp = _d29("para")
+    payload, old, new = _byproduct_isomer_payload(resp)
+    assert new.equation == old.equation
+    _l, err = _try_load(payload, require_verified_admission=True)
+    honest = err is not None and "D29.1" in err
+    bad_chk = _src_mutant(CompilationResponse._check_replay_step_transforms, (
+        "from .experiment.step import _ident", "_ident = lambda m: tuple(sorted(m.formula.items()))  # noqa: E731"))
+    with _patch(CompilationResponse, "_check_replay_step_transforms", bad_chk):
+        loaded, _err = _try_load(payload, require_verified_admission=True)
+    bad = (loaded is not None and old.capability_assessment.waste.status is CapabilityStatus.BLOCKED
+           and next(d for d in loaded.ranked_route_dossiers if d.route_digest == new.route_digest)
+           .capability_assessment.waste.status is not CapabilityStatus.BLOCKED)
+    return honest, bad
+
+
+@mutant("M213", "a NEUTRAL re-centre loads on a verified-admission load (D29.1 closes the D26.4 boundary, Foreman N4)",
+        "service.CompilationResponse._check_replay_step_transforms (reaction_center one the algebra assigns)")
+def m213():
+    resp = _d27("plain")
+    formal = next(d for d in resp.ranked_route_dossiers if len(d.replay_payload) == 2)
+    replay = copy.deepcopy(formal.replay_payload)
+    replay[1]["reaction_center"]["n_components"] += 1
+    payload = response_to_payload(dc.replace(resp, ranked_route_dossiers=tuple(
+        dc.replace(d, replay_payload=replay) if d is formal else d for d in resp.ranked_route_dossiers)))
+    _l, err = _try_load(payload, require_verified_admission=True)
+    honest = err is not None and "re-centred replay" in err and "D29.1" in err
+    bad_chk = _src_mutant(CompilationResponse._check_replay_step_transforms, (
+        "if step.reaction_center not in centres:", "if False:"))
+    with _patch(CompilationResponse, "_check_replay_step_transforms", bad_chk):
+        loaded, _err = _try_load(payload, require_verified_admission=True)
+    bad = loaded is not None
+    return honest, bad
+
+
+@mutant("M214", "an UNKNOWN key on a canonical capability-codec node rides the digest (D29.2 C6-NEW-1)",
+        "service._check_canonical_node (exact keys per node type)")
+def m214():
+    resp = _d27("bench")
+    wire = response_to_payload(resp)
+    wire["request"]["capability_profile"]["smuggled"] = "CAPABILITY_FIT"
+    _public_digest(wire, resp)
+    _l, err = _try_load(wire)
+    honest = err is not None and "D29.2" in err
+    with _patch(svc, "_check_canonical_node", lambda node: node["type"]):     # adf06ae: ``t = node["type"]``
+        loaded, _err = _try_load(wire)
+    bad = loaded is not None
+    return honest, bad
+
+
+@mutant("M215", "an UNKNOWN key on an identity-loss entry rides the digest (D29.2 C6-NEW-1)",
+        "identity.identity_loss_from_payload (exact keys)")
+def m215():
+    import smartchem.compilation_ir as cir_mod
+    import smartchem.identity as identity_mod
+
+    resp = _d29("stereo")
+    wire = response_to_payload(resp)
+    wire["compilation_ir"]["identity_losses"][0]["verified"] = True
+    _public_digest(wire, resp)
+    _l, err = _try_load(wire)
+    honest = err is not None and "D29.2" in err
+    lenient = _src_mutant(identity_mod.identity_loss_from_payload, (
+        "if keys != _IDENTITY_LOSS_PAYLOAD_KEYS:", "if not keys >= _IDENTITY_LOSS_PAYLOAD_KEYS:"))
+    with _patch(cir_mod, "identity_loss_from_payload", lenient):
+        loaded, _err = _try_load(wire)
+    bad = loaded is not None
+    return honest, bad
+
+
+@mutant("M216", "an UNKNOWN key on a structural candidate round-trips the IR codec (D29.2 C6-NEW-1)",
+        "compilation_ir._require_exact_keys (law D29.2: the structural-candidate decoders)")
+def m216():
+    import smartchem.compilation_ir as cir_mod
+
+    payload = cir_mod.ir_to_payload(cir_mod.decompile_structure_to_ir(_mol("CC"), reagents=(_mol("O"),)))
+    payload["structural_candidates"][0]["verified"] = True
+
+    def attempt():
+        try:
+            return cir_mod.ir_from_payload(copy.deepcopy(payload)), None
+        except ValueError as exc:
+            return None, str(exc)
+
+    _ir, err = attempt()
+    honest = err is not None and "D29.2" in err
+    original = cir_mod._require_exact_keys
+    with _patch(cir_mod, "_require_exact_keys",
+                lambda p, expected, what, law="D28.5": None if law == "D29.2" else original(p, expected, what, law)):
+        loaded, _err = attempt()
+    bad = loaded is not None
+    return honest, bad
+
+
+@mutant("M217", "a ledger entry naming a check that is NOT the one refusing its forgery passes the sweep (D29.3 C6-test)",
+        "tests/test_transport_ledger.py own-law lock (_OWN_LAW tag + the deepest ledger-named raising frame)")
+def m217():
+    """Honest: the ``standard_status`` forgery (a VALID section-8.2 name contradicting the IR) is refused BY the check
+    its entry names (``_check_outcome_coherence``), in that law's own wording. Mutant: the entry relabelled to name the
+    corpus check instead -- the forgery is still refused, so the pre-D29.3 sweep (which asked only "refused?") passed the
+    mislabel silently; the own-law lock flags that the refusal came from a check the entry does not name."""
+    import re
+
+    import smartchem.transport_ledger as ledger
+
+    lt = _ledger_tests()
+    entry = "CompilationResponse.standard_status"
+    table, _, field = entry.rpartition(".")
+    _world, edit = lt._FORGERIES[entry]
+    wire = response_to_payload(_d27("process"), include_replay=True)
+
+    def refusal():
+        forged = copy.deepcopy(wire)
+        edit(forged, {})
+        try:
+            lt._reforge(forged)
+            response_from_payload(forged)
+        except (ValueError, TypeError, KeyError) as exc:
+            return exc
+        return None
+
+    def own(exc) -> bool:
+        return (re.search(lt._OWN_LAW[entry], str(exc)) is not None
+                and lt._refused_in(exc) in ledger.TRANSPORT_LEDGER[table][field].checks)
+
+    exc = refusal()
+    honest = exc is not None and own(exc)
+    relabel = dc.replace(ledger.TRANSPORT_LEDGER[table][field],
+                         checks=("smartchem.service:CompilationResponse._check_corpus_evidence_coherence",))
+    with _patch_item(ledger.TRANSPORT_LEDGER[table], field, relabel):
+        exc = refusal()
+        bad = exc is not None and not own(exc)
     return honest, bad
 
 

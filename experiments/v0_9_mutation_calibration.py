@@ -1,4 +1,4 @@
-"""V0.9-MUTATION-01: the calibrated mutation gate for the capability compiler (RC Round V + X-high: M1-M147).
+"""V0.9-MUTATION-01: the calibrated mutation gate for the capability compiler (RC Round V + X-high: M1-M175).
 
 **Existence is pain, and so is a mutant that lies about being dead!** Same discipline as
 `v0_8_mutation_calibration.py`: adding a test is not enough -- a test that would still pass on a BROKEN capability
@@ -3439,6 +3439,602 @@ def m147():
         try:
             bad_rc(resp, refuse_process_specified_on_thin=True)
             bad = True
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+# =================================================================================================================
+# M148-M175 (post-Wave-C' barrier amendment D24.1-D24.17: every D24 law, each read where its own law governs)
+# =================================================================================================================
+
+def _render(name: str):
+    import smartchem.capability.coverage as coverage_mod
+    return getattr(coverage_mod, name)
+
+
+@mutant("M148", "prose op.quantity beside a QUANTIFIED typed use is trusted as display (D24.1 A1)",
+        "requirements._material_unresolved (op.quantity canonical rendering)")
+def m148():
+    """The D16 'display trust' model trusted ``op.quantity`` whenever the op carried ANY quantified typed use -- so
+    "5 L methanol" beside a typed 10 mL draw vanished. Honest (D24.1): the slot is display only when byte-equal to
+    ``render_op_quantity(op)`` -> UNKNOWN; the canonical rendering itself stays display (control FIT). Mutant: the D16
+    rule is restored -> FIT."""
+    draw = _use("methanol", ProcedureMaterialRole.SUBSTRATE, identity=_METHANOL, qty="10", phase=Phase.LIQUID)
+    liar = _op(OperationKind.ADD, material_uses=(draw,), quantity=_tfield("5 L methanol"))
+    canonical = dc.replace(liar, quantity=_tfield(_render("render_op_quantity")(liar)))
+    route, control = _micro_route(extra_ops=(liar,)), _micro_route(extra_ops=(canonical,))
+    honest = (_micro_assess(route, _micro_profile()).material.status is CapabilityStatus.UNKNOWN
+              and _micro_assess(control, _micro_profile()).material.status is CapabilityStatus.FIT)
+    bad_mu = _src_mutant(requirements_mod._material_unresolved, (
+        "if not _is_canonical(field, render_op_quantity(op)):",
+        "if not any(u.quantity is not None for u in op.material_uses):"))
+    with _patch(requirements_mod, "_material_unresolved", bad_mu):
+        bad = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+_VERIFY_BALANCE = _op(OperationKind.VERIFY, apparatus=("analytical balance",))
+
+
+@mutant("M149", "the analytical-verification text outruns the typed VERIFY methods (D24.1 A2)",
+        "requirements._measurement_requirement (render_verification)")
+def m149():
+    def route(text):
+        return _micro_route(extra_ops=(_VERIFY_BALANCE,),
+                            procedure_over=dict(analytical_verification=_tfield(text)))
+
+    lying, canonical = route("1H NMR and HPLC >= 99.5 %"), route("MASS")
+    honest = (_meas(lying, MeasurementMethod.MASS) is CapabilityStatus.UNKNOWN
+              and _meas(canonical, MeasurementMethod.MASS) is CapabilityStatus.FIT)
+    bad_m = _src_mutant(requirements_mod._measurement_requirement, (
+        "if verification.is_present and not _is_canonical(verification, render_verification(procedure)):",
+        "if False:"))
+    with _patch(requirements_mod, "_measurement_requirement", bad_m):
+        bad = _meas(lying, MeasurementMethod.MASS) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M150", "a PRESENT whole-procedure summary reaches no axis (D24.1 A3)",
+        "requirements._effective_process (render_summary)")
+def m150():
+    wash_op = _op(OperationKind.ADD, OperationRole.WASH)
+
+    def route(text):
+        return _micro_route(extra_ops=(wash_op,), process=_CLEAN_PROCESS_RECORD,
+                            procedure_over=dict(wash=_tfield(text)))
+
+    lying, canonical = route("vacuum distill at 1 mmHg, then dry in a vacuum oven at 390 K for 48 h"), \
+        route("op 2 ADD/WASH")
+    honest = _proc(lying) is CapabilityStatus.UNKNOWN and _proc(canonical) is CapabilityStatus.FIT
+    bad_p = _src_mutant(requirements_mod._effective_process, (
+        "if field.is_present and not _is_canonical(field, render_summary(procedure, name)):", "if False:"))
+    with _patch(requirements_mod, "_effective_process", bad_p):
+        bad = _proc(lying) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M151", "a PRESENT batch scale that is not the typed charge is trusted (D24.1)",
+        "requirements._material_unresolved (render_scale)")
+def m151():
+    lying = _micro_route(procedure_over=dict(scale=_tfield("5 L methanol")))
+    canonical = _micro_route(procedure_over=dict(scale=_tfield("10 mL methanol + 10 mL acetic acid")))
+    honest = (_micro_assess(lying, _micro_profile()).material.status is CapabilityStatus.UNKNOWN
+              and _micro_assess(canonical, _micro_profile()).material.status is CapabilityStatus.FIT)
+    bad_mu = _src_mutant(requirements_mod._material_unresolved, (
+        "if procedure.scale.is_present and not _is_canonical(procedure.scale, render_scale(procedure)):",
+        "if False:"))
+    with _patch(requirements_mod, "_material_unresolved", bad_mu):
+        bad = _micro_assess(lying, _micro_profile()).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M152", "a formulation word beside an EMPTY specification is dropped (D24.1 A9, F69 extended)",
+        "requirements._project_specification (empty spec)")
+def m152():
+    route = _micro_route(extra_uses=(_use("nitric acid", ProcedureMaterialRole.REACTANT, qty="5",
+                                          formulation="fuming", spec=MaterialSpecification()),))
+    profile = _micro_profile(_bottle("nitric-acid-bottle", "nitric acid"))
+    honest = _micro_assess(route, profile).material.status is CapabilityStatus.UNKNOWN
+    bad_proj = _src_mutant(requirements_mod._project_specification, (
+        "if spec is not None and not (raw and spec == _EMPTY_SPEC):", "if spec is not None:"))
+    with _patch(requirements_mod, "_project_specification", bad_proj):
+        bad = _micro_assess(route, profile).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M153", "a vacuum op's sub-atmospheric demand is unread / contradicted by a 1 atm record (D24.1)",
+        "requirements._physical_requirement (vacuum-op leg)")
+def m153():
+    """Leg A: a Buchner (VACUUM_FILTRATION) op with no typed pressure and no whole-step minimum -> UNKNOWN (mutant:
+    UNCONSTRAINED, a pass). Leg B: the step record claims a whole-step minimum of 1 atm beside the vacuum op ->
+    contradictory -> UNKNOWN (mutant: FIT against a 0.5-2 atm bench)."""
+    vac = _op(OperationKind.FILTER, apparatus=("buchner funnel",))
+    leg_a = _micro_route(extra_ops=(vac,))
+    atm = ProcessRequirements(provenance="fixture", min_pressure_atm=1.0, max_pressure_atm=1.0)
+    leg_b = _micro_route(extra_ops=(vac,), process=atm)
+
+    def legs():
+        return (_micro_assess(leg_a, _micro_profile()).physical.status,
+                _phys(leg_b, min_pressure_atm=0.5, max_pressure_atm=2.0))
+
+    ha, hb = legs()
+    honest = ha is CapabilityStatus.UNKNOWN and hb is CapabilityStatus.UNKNOWN
+    with _patch(requirements_mod, "_physical_requirement", _src_mutant(
+            requirements_mod._physical_requirement, ("if record_min is None:", "if False:"),
+            ("elif record_min >= 1:", "elif False:"))):
+        ba, bb = legs()
+    return honest, ba is CapabilityStatus.UNCONSTRAINED and bb is CapabilityStatus.FIT
+
+
+@mutant("M154", "an EXPLICIT_NOT_APPLICABLE field carrying a value is accepted (D24.2 A4)",
+        "procedure_evidence.EvidenceField.__post_init__ (N/A carries no value)")
+def m154():
+    """Honest: ``EvidenceField(N/A, value=650 K)`` is refused at construction. Mutant: accepted -- and since every
+    capability reader gates on ``is_present``, the 650 K HEAT demand reaches NO axis: physical FIT against a 500 K
+    bench (the step record's 300 K peak covers the 'untyped' heat op)."""
+    def na_650():
+        return EvidenceField(EvidenceFieldStatus.EXPLICIT_NOT_APPLICABLE, Interval(650, 650, "K"), "fixture",
+                             "fixture: closed out")
+
+    try:
+        na_650()
+        honest = False
+    except ValueError:
+        honest = True
+    bad_init = _src_mutant(EvidenceField.__post_init__, (
+        "if self.status is EvidenceFieldStatus.EXPLICIT_NOT_APPLICABLE and self.value is not None:", "if False:"))
+    with _patch(EvidenceField, "__post_init__", bad_init):
+        try:
+            heat = _op(OperationKind.HEAT, apparatus=("hot plate",), temperature=na_650())
+            route = _micro_route(extra_ops=(heat,), process=ProcessRequirements(provenance="fixture",
+                                                                                 peak_temperature_k=300.0))
+            bad = _phys(route, max_temperature_k=500.0) is CapabilityStatus.FIT
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+@mutant("M155", "an uncovered envelope.medium on a PROCEDURE step reaches no axis (D24.3 A5)",
+        "requirements._material_unresolved (medium note)")
+def m155():
+    route = _micro_route(medium="benzene")
+    honest = (_micro_assess(route, _micro_profile()).material.status is CapabilityStatus.UNKNOWN
+              and not any(r.name == "benzene" for r in compile_capability_requirements(route).material))
+    bad_mu = _src_mutant(requirements_mod._material_unresolved, (
+        "if medium and not any(_name_covers(u.name, medium) for u in step_uses):", "if False:"))
+    with _patch(requirements_mod, "_material_unresolved", bad_mu):
+        bad = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M156", "a MIX op on a step whose record declares agitation NONE certifies (D24.4 A6)",
+        "requirements._effective_process (MIX leg)")
+def m156():
+    mix = _op(OperationKind.MIX)
+    route = _micro_route(extra_ops=(mix,), process=_CLEAN_PROCESS_RECORD)
+    stirred = _micro_route(extra_ops=(mix,), process=dc.replace(_CLEAN_PROCESS_RECORD, agitation=Agitation.MANUAL))
+    honest = _proc(route) is CapabilityStatus.UNKNOWN and _proc(stirred) is CapabilityStatus.FIT
+    bad_p = _src_mutant(requirements_mod._effective_process, ("if op.kind is OperationKind.MIX:", "if False:"))
+    with _patch(requirements_mod, "_effective_process", bad_p):
+        bad = _proc(route) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M157", "a component listed at [0, 0] supplies a demand (D24.5 B1-E)", "assess._species_key_in (upper 0)")
+def m157():
+    """A bottle LISTING ethanol at a certified [0, 0] vs an ethanol demand of 0-5 %: the phantom listing is ABSENT ->
+    no G+ edge -> BLOCKED. Mutant: present-at-[0, 0] counts -> the 0-5 % composition is 'satisfied' -> FIT."""
+    req = _mreq(identity=_ETHANOL, spec=MaterialSpecification(composition=_comp("0", "0.05")))
+    profile = _profile(material_inventory=(_bottle("ethanol-phantom", _ETHANOL, "0", "0"),))
+    honest = _mat(profile, req) is CapabilityStatus.BLOCKED
+    bad_key = _src_mutant(assess_mod._species_key_in, ("if interval is None or interval[1] == 0:",
+                                                        "if interval is None:"))
+    with _patch(assess_mod, "_species_key_in", bad_key):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M158", "the pure witness reads only the matched species, not the whole bottle (D24.5 C1)",
+        "assess._others_absent")
+def m158():
+    """'water [1, 1]' beside a certified 0.3 g/mL NaCl is a CONTRADICTORY bottle, never a pure-water witness. Honest:
+    UNKNOWN. Mutant: the other-components conjunct is dropped -> a proven pure draw -> FIT."""
+    brine_as_water = StockMaterial(
+        STOCK_MATERIAL_SCHEMA, "water-with-salt", "water (with salt)",
+        (MaterialComponent.evidenced("water", "solvent", _ev("1", "1")),
+         MaterialComponent.evidenced("sodium chloride", "solute",
+                                     _ev("0.3", "0.3", basis=ConcentrationBasis.MASS_PER_VOLUME))),
+        Phase.AQUEOUS_SOLUTION, "fixture", quantity=StockQuantity.of("500", "mL"),
+        phase_evidence=EvidenceKind.USER_DECLARED)
+    profile = _profile(material_inventory=(brine_as_water,))
+    req = _mreq(name="water")
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_edge = _src_mutant(assess_mod._edge, ("and _others_absent(stock, view))", "and True)"))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M159", "a species-describing state (NEAT) carries the draw quantity (D24.5 B1)",
+        "assess._edge (via_state = formulation-defining states only)")
+def m159():
+    """A 1 % acetic-acid bottle positively declared NEAT (the bench's word about the species) vs a NEAT 20 mL demand:
+    the state is satisfied, but NEAT does not make 20 mL of the bottle 20 mL of acetic acid. Honest: UNKNOWN. Mutant:
+    any satisfied state makes the draw commensurable -> FIT."""
+    neat = (StateClaim(DilutionState.NEAT, EvidenceKind.USER_DECLARED),)
+    profile = _profile(material_inventory=(_bottle("acetic-1pct-neat", _ACETIC, "0.01", "0.01", states=neat),))
+    req = _mreq(identity=_ACETIC, spec=MaterialSpecification(states=(_state(DilutionState.NEAT),)))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_edge = _src_mutant(assess_mod._edge, (
+        "via_state = (satisfied and any(c.state in _FORMULATION_STATES for c in spec.states)",
+        "via_state = (satisfied and bool(spec.states)"))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+def _brine_demand():
+    from smartchem.decompiler_conditions import _SPEC_SATURATED_AQUEOUS_NACL
+    return _mreq(name="sodium chloride", qty=(("mL", "5"),), spec=_SPEC_SATURATED_AQUEOUS_NACL,
+                 phase=PhaseClaim(Phase.AQUEOUS_SOLUTION, EvidenceKind.SOURCE_QUOTED))
+
+
+@mutant("M160", "a formulation state over a certified lower bound of 0 carries the draw (D24.5 B1)",
+        "assess._edge (via_state needs a certified positive fraction)")
+def m160():
+    """The LIVE corpus brine spec (SATURATED + SOLUTION, SOURCE_QUOTED) vs a bottle declared saturated brine whose NaCl
+    component is certified only at [0, 0.27]: 'saturated' over a possibly-empty component proves no draw. Honest:
+    UNKNOWN. Mutant: the positive-fraction conjunct is dropped -> FIT."""
+    states = (StateClaim(SaturationState.SATURATED, EvidenceKind.USER_DECLARED),
+              StateClaim(DilutionState.SOLUTION, EvidenceKind.USER_DECLARED))
+    bottle = _bottle("brine-maybe-empty", "sodium chloride", "0", "0.27", phase=Phase.AQUEOUS_SOLUTION, states=states)
+    profile = _profile(material_inventory=(bottle,))
+    honest = _mat(profile, _brine_demand()) is CapabilityStatus.UNKNOWN
+    bad_edge = _src_mutant(assess_mod._edge, ("and view is not None and view.interval[0] > 0",
+                                              "and view is not None"))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(profile, _brine_demand()) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M161", "a satisfied formulation-defining state never carries the draw (D24.5 liveness, corpus brine)",
+        "assess._edge (via_state)")
+def m161():
+    """LIVENESS: the live corpus brine spec vs the library's saturated brine (certified NaCl fraction > 0, SATURATED +
+    SOLUTION declared) is a PROVEN draw. Honest: FIT. Mutant: state commensurability disabled -> UNKNOWN."""
+    brine = material_library.sodium_chloride_saturated_wash(quantity=StockQuantity.of("250", "mL"))
+    profile = _profile(material_inventory=(brine,))
+    honest = _mat(profile, _brine_demand()) is CapabilityStatus.FIT
+    bad_edge = _src_mutant(assess_mod._edge, ("via_state = (satisfied and", "via_state = (False and"))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(profile, _brine_demand()) is CapabilityStatus.UNKNOWN
+    return honest, bad
+
+
+@mutant("M162", "a NEAT claim survives a certified positive diluent in the same bottle (D24.5 C2)",
+        "stock.StockMaterial.spec_view (NEAT-vs-diluent drop)")
+def m162():
+    neat = (StateClaim(DilutionState.NEAT, EvidenceKind.USER_DECLARED),)
+    bottle = StockMaterial(
+        STOCK_MATERIAL_SCHEMA, "acetic-half-water", "acetic acid (50 % water, 'neat')",
+        (MaterialComponent.evidenced(_ACETIC, "active", _ev("0.5", "0.5"), states=neat),
+         MaterialComponent.evidenced("water", "diluent", _ev("0.5", "0.5"))),
+        Phase.LIQUID, "fixture", quantity=StockQuantity.of("500", "mL"), phase_evidence=EvidenceKind.USER_DECLARED)
+    spec = MaterialSpecification(states=(_state(DilutionState.NEAT),))
+
+    def verdict():
+        return spec_mod.compare_specification(spec, bottle.spec_view(_ACETIC))[0]
+
+    honest = verdict() is spec_mod.SpecVerdict.UNDETERMINED
+    with _patch(StockMaterial, "spec_view", _src_mutant(StockMaterial.spec_view, ("if diluted:", "if False:"))):
+        bad = verdict() is spec_mod.SpecVerdict.SATISFIES
+    return honest, bad
+
+
+@mutant("M163", "an earlier step's BYPRODUCT feeds a later step for free (D24.6 B2)",
+        "requirements._external_inputs (only the carried target is internal)")
+def m163():
+    """AcOH + MeOH -> MeOAc + H2O, then MeOAc + H2O -> AcOH + MeOH: step 2's water is step 1's BYPRODUCT (removed in
+    its workup), not the carried target -- a real external demand. Honest: water is a leaf requirement and material is
+    not FIT. Mutant (the pre-D24.6 rule: any earlier product is internal) -> the water demand vanishes -> FIT."""
+    def step(target, reactants, products, uses):
+        op = ProcedureOperation(ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION,
+                                material_uses=tuple(uses), locator="fixture")
+        return ExperimentStep(STEP_SCHEMA, target, reactants, products, (),
+                              ConditionEnvelope(procedure=_procedure((op,))))
+
+    route = ExperimentRoute(ROUTE_SCHEMA, (
+        step(_MEOAC, (_ACETIC, _METHANOL), (_MEOAC, _WATER), _MICRO_BASE_USES),
+        step(_ACETIC, (_MEOAC, _WATER), (_ACETIC, _METHANOL), ())))
+    water_key = requirements_mod._species_ident(_WATER)
+    water_leaf = any(r.identity is not None and requirements_mod._species_ident(r.identity) == water_key
+                     for r in compile_capability_requirements(route).material)
+    honest = water_leaf and _micro_assess(route, _micro_profile()).material.status is not CapabilityStatus.FIT
+
+    def any_earlier_product(r):
+        produced, out = set(), []
+        for s_index, st in enumerate(r.steps, start=1):
+            seen = set()
+            for m in st.reactants:
+                key = requirements_mod._species_ident(m)
+                if key in produced or key in seen:
+                    continue
+                seen.add(key)
+                out.append((s_index, m))
+            produced.update(requirements_mod._species_ident(p) for p in st.products)
+        return out
+
+    with _patch(requirements_mod, "_external_inputs", any_earlier_product):
+        bad = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M164", "a species listed under its NAME is treated as provably ABSENT (D24.8 C6)",
+        "assess._edge (name-key UNKNOWN branch)")
+def m164():
+    profile = _profile(material_inventory=(_bottle("ethanol-name-only", "ethanol"),))
+    req = _mreq(identity=_ETHANOL, name="ethanol")
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_edge = _src_mutant(assess_mod._edge, ("if _listed_by_name_only(requirement, stock):", "if False:"))
+    with _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(profile, req) is CapabilityStatus.BLOCKED
+    return honest, bad
+
+
+@mutant("M165", "'distillation apparatus' is read as a FRACTIONAL still (D24.16 F1)",
+        "equipment_resolver._APPARATUS_ALIASES")
+def m165():
+    """The page says "the distillation apparatus as described by your instructor" -- configuration unknown. Honest: the
+    string is UNRECOGNIZED -> equipment UNKNOWN on a simple-still bench. Mutant (the Round-III alias restored): a
+    FRACTIONAL demand -> the simple-still bench is falsely BLOCKED."""
+    route = _micro_route(extra_ops=(_op(OperationKind.DISTILL, apparatus=("distillation apparatus",)),))
+    honest = (equipment_resolver_mod.resolve_apparatus("distillation apparatus") is None
+              and _equip(route, EquipmentCapability.SIMPLE_DISTILLATION) is CapabilityStatus.UNKNOWN)
+    aliases = dict(equipment_resolver_mod._APPARATUS_ALIASES)
+    aliases["distillation apparatus"] = EquipmentCapability.FRACTIONAL_DISTILLATION
+    with _patch(equipment_resolver_mod, "_APPARATUS_ALIASES", aliases):
+        bad = _equip(route, EquipmentCapability.SIMPLE_DISTILLATION) is CapabilityStatus.BLOCKED
+    return honest, bad
+
+
+@mutant("M166", "a step with NO ProcedureEvidence reads equipment/measurement NOT_APPLICABLE (D24.17)",
+        "requirements._equipment_requirement + _measurement_requirement (no-procedure notes)")
+def m166():
+    step = ExperimentStep(STEP_SCHEMA, _MEOAC, (_ACETIC, _METHANOL), (_MEOAC, _WATER), (), ConditionEnvelope())
+    route = ExperimentRoute(ROUTE_SCHEMA, (step,))
+
+    def axes():
+        a = _micro_assess(route, _micro_profile())
+        return a.equipment.status, a.measurement.status
+
+    honest = axes() == (CapabilityStatus.UNKNOWN, CapabilityStatus.UNKNOWN)
+    bad_eq = _src_mutant(requirements_mod._equipment_requirement, (
+        'unread.append(f"step {s_index} has no ProcedureEvidence: its equipment demand is unread (D24.17)")', "pass"))
+    bad_me = _src_mutant(requirements_mod._measurement_requirement, (
+        'unread.append(f"step {s_index} has no ProcedureEvidence: its verification demand is unread (D24.17)")',
+        "pass"))
+    with _patch(requirements_mod, "_equipment_requirement", bad_eq), \
+            _patch(requirements_mod, "_measurement_requirement", bad_me):
+        bad = axes() == (CapabilityStatus.NOT_APPLICABLE, CapabilityStatus.NOT_APPLICABLE)
+    return honest, bad
+
+
+def _clamped_one() -> IntervalEvidence:
+    loc = "fixture: titration assay quoted as 100-101%"
+    return IntervalEvidence.build(
+        kernel=DerivationKernel.CLAMP_TO_UNIT_INTERVAL_V1, basis=ConcentrationBasis.MASS_FRACTION,
+        inputs=(TypedInput("low", "100", InputUnit.PERCENT, EvidenceKind.SOURCE_QUOTED, loc),
+                TypedInput("high", "101", InputUnit.PERCENT, EvidenceKind.SOURCE_QUOTED, loc)),
+        source_locators=(loc,), domain_of_validity="an assay reading above 100%")
+
+
+@mutant("M167", "a CLAMPED range collapsed onto a bound certifies a composition (D24.7 C4)",
+        "material_spec._compare_composition (degenerate CLAMPED)")
+def m167():
+    bottle = StockMaterial(STOCK_MATERIAL_SCHEMA, "ethanol-clamped", "ethanol",
+                           (MaterialComponent.evidenced(_ETHANOL, "active", _clamped_one()),), Phase.LIQUID, "fixture",
+                           quantity=StockQuantity.of("500", "mL"), phase_evidence=EvidenceKind.USER_DECLARED)
+    req = _mreq(identity=_ETHANOL, spec=_floor_spec("0.9"))
+    profile = _profile(material_inventory=(bottle,))
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_cmp = _src_mutant(spec_mod._compare_composition, (
+        "if stock.interval_evidence is EvidenceKind.CLAMPED and slo == shi and slo in (0, 1):", "if False:"))
+    with _patch(spec_mod, "_compare_composition", bad_cmp):
+        bad = _mat(profile, req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M168", "every phase mismatch VIOLATES, ignoring the subset relation (D24.7 C5)",
+        "material_spec._phase_relation (AQUEOUS_SOLUTION within LIQUID)")
+def m168():
+    """Leg 1: a SOURCE_QUOTED AQUEOUS_SOLUTION demand vs a USER_DECLARED LIQUID pure bottle -- overlapping, unsettled ->
+    UNKNOWN (mutant: BLOCKED, a false refutation). Leg 2: a LIQUID demand vs an AQUEOUS_SOLUTION pure bottle -- an
+    aqueous solution IS a liquid -> FIT (mutant: BLOCKED)."""
+    def leg(demand, held):
+        profile = _profile(material_inventory=(_bottle("ethanol-pure", _ETHANOL, phase=held),))
+        return _mat(profile, _mreq(identity=_ETHANOL, phase=PhaseClaim(demand, EvidenceKind.SOURCE_QUOTED)))
+
+    def legs():
+        return leg(Phase.AQUEOUS_SOLUTION, Phase.LIQUID), leg(Phase.LIQUID, Phase.AQUEOUS_SOLUTION)
+
+    h1, h2 = legs()
+    honest = h1 is CapabilityStatus.UNKNOWN and h2 is CapabilityStatus.FIT
+    with _patch(spec_mod, "_phase_relation", lambda required, held: "within" if held is required else "disjoint"):
+        b1, b2 = legs()
+    return honest, b1 is CapabilityStatus.BLOCKED and b2 is CapabilityStatus.BLOCKED
+
+
+@mutant("M169", "a pre-rounding recompute-path helper drifts undetected (D24.9 C3)",
+        "derived_evidence.KERNEL_KNOWN_ANSWERS (beyond-precision vectors)")
+def m169():
+    """Adversary C's drift: ``TypedInput.exact`` rounds half-even to PRECISION_DP before the kernel runs, so a quoted
+    0.9999995 mints SOURCE_QUOTED [1, 1] -- a 'pure' witness from a certificate that proves nothing of the sort.
+    Honest: the beyond-precision vectors refuse the drift at import time (and the shipped V1 keeps [0.999999, 1] ->
+    the bottle is UNKNOWN). Mutant: those vectors are removed -> the drift replays clean AND the forged-pure bottle
+    FITs."""
+    from decimal import ROUND_HALF_EVEN, Decimal
+
+    def drifted_exact(self):
+        return Fraction(Decimal(self.value).quantize(Decimal(1).scaleb(-derived_mod.PRECISION_DP), ROUND_HALF_EVEN))
+
+    def verifies() -> bool:
+        try:
+            derived_mod.verify_kernel_known_answers()
+            return True
+        except RuntimeError:
+            return False
+
+    def near_pure_bottle() -> StockMaterial:
+        loc = "fixture: a CoA quoting 0.9999995"
+        ev = IntervalEvidence.build(
+            kernel=DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, basis=ConcentrationBasis.MASS_FRACTION,
+            inputs=tuple(TypedInput(n, "0.9999995", InputUnit.FRACTION, EvidenceKind.SOURCE_QUOTED, loc)
+                         for n in ("low", "high")),
+            source_locators=(loc,), domain_of_validity="a certificate quoting 7 decimals")
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "ethanol-coa", "ethanol",
+                             (MaterialComponent.evidenced(_ETHANOL, "active", ev),), Phase.LIQUID, "fixture",
+                             quantity=StockQuantity.of("500", "mL"), phase_evidence=EvidenceKind.USER_DECLARED)
+
+    req = _mreq(identity=_ETHANOL)
+    honest_bottle = _mat(_profile(material_inventory=(near_pure_bottle(),)), req) is CapabilityStatus.UNKNOWN
+    with _patch(TypedInput, "exact", property(drifted_exact)):
+        caught = not verifies()
+        beyond = tuple(v for v in derived_mod.KERNEL_KNOWN_ANSWERS if "beyond-precision" not in v.label)
+        assert len(beyond) < len(derived_mod.KERNEL_KNOWN_ANSWERS)
+        with _patch(derived_mod, "KERNEL_KNOWN_ANSWERS", beyond):
+            bad = verifies() and _mat(_profile(material_inventory=(near_pure_bottle(),)), req) is CapabilityStatus.FIT
+    return honest_bottle and caught, bad
+
+
+def _kernel_lock_module():
+    import importlib.util
+    path = Path(__file__).resolve().parent.parent / "tests" / "test_v0_9_kernel_semantic_lock.py"
+    spec = importlib.util.spec_from_file_location("_kernel_semantic_lock_pins", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@mutant("M170", "two kernels swap functions undetected (D24.9 qualified kernel->fn map)",
+        "tests/test_v0_9_kernel_semantic_lock.PINNED_KERNEL_FUNCTIONS")
+def m170():
+    """Honest (D24.9): the kernel->function map is pinned by module-QUALIFIED name, so pointing IDENTITY_SOURCE_QUOTED_V1
+    at the band kernel's arithmetic is caught while the shipped map matches. Mutant (the pre-D24.9 check: the SET of
+    function ``__name__`` s) -> the swap leaves the name set unchanged and passes."""
+    lock = _kernel_lock_module()
+    key = DerivationKernel.IDENTITY_SOURCE_QUOTED_V1
+
+    def qualified_map():
+        return {k.name: lock._qualified(derived_mod.KERNELS[k].fn) for k in DerivationKernel}
+
+    def name_set():
+        return {spec.fn.__name__ for spec in derived_mod.KERNELS.values()}
+
+    shipped_ok, shipped_names = qualified_map() == lock.PINNED_KERNEL_FUNCTIONS, name_set()
+    with _patch_item(derived_mod.KERNELS, key, dc.replace(derived_mod.KERNELS[key], fn=derived_mod._k_band)):
+        swap_caught = qualified_map() != lock.PINNED_KERNEL_FUNCTIONS
+        bad = name_set() == shipped_names
+    return shipped_ok and swap_caught, bad
+
+
+@mutant("M171", "the IR's identity losses are trusted, not re-derived from the request (D24.11 D-L1)",
+        "service.CompilationResponse._check_identity_loss_coherence")
+def m171():
+    """A keyless producer strips the stereochemistry loss of ``C[C@H](O)CC`` (the request is built honestly first) and
+    serializes CANONICAL: every public pin recomputed, the consumer pins its own request digest. Honest: REFUSED (the
+    losses the carried request implies are re-derived). Mutant: the equality is severed -> the stripped IR loads."""
+    import smartchem.identity as identity_mod
+    req = build_recompile_request("smiles:C[C@H](O)CC", max_depth=2)
+    with _patch(identity_mod, "representation_losses_for", lambda target_input, features: ()):
+        forged = run_compilation(req)
+    assert forged.compilation_ir is not None and forged.compilation_ir.identity_losses == ()
+    payload = response_to_payload(forged)
+    _l, err = _try_load(payload, expected_request_digest=req.semantic_digest)
+    honest = err is not None and "D24.11" in err
+    bad_chk = _src_mutant(CompilationResponse._check_identity_loss_coherence, (
+        "if any(losses != expected for losses in carried):", "if False:"))
+    with _patch(CompilationResponse, "_check_identity_loss_coherence", bad_chk):
+        loaded, _err = _try_load(payload, expected_request_digest=req.semantic_digest)
+    bad = loaded is not None and loaded.identity_losses == ()
+    return honest, bad
+
+
+@mutant("M172", "the capability render shows only the free-text label, not the content identity (D24.12)",
+        "service.render_capability_lines (label@profile_digest)")
+def m172():
+    a = _fast_profile_response().ranked_route_dossiers[0].capability_assessment
+    honest = a.profile_digest[:12] in svc.render_capability_lines(a, "poor-man", indent="")[0]
+    bad_render = _src_mutant(svc.render_capability_lines, (
+        "label = f\"{origin or 'profile'}@{assessment.profile_digest[:12]}\"", "label = f\"{origin or 'profile'}\""))
+    bad = a.profile_digest[:12] not in bad_render(a, "poor-man", indent="")[0]
+    return honest, bad
+
+
+@mutant("M173", "a capability profile rides a convergent-DAG response that is not REFUSED (D24.13)",
+        "service.CompilationResponse._check_capability_topology")
+def m173():
+    """The producer refuses a capability profile with the convergent-DAG grammar BEFORE searching. A keyless attacker
+    grafts a poor-man snapshot onto a genuine convergent response (every public pin recomputed). Honest: REFUSED.
+    Mutant: the loader stops mirroring the producer -> a capability question 'answered' with nothing loads."""
+    resp = run_compilation(build_recompile_request(_FAST_TARGET, grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+                                                   max_depth=2))
+    bad_topo = _src_mutant(CompilationResponse._check_capability_topology, (
+        "if request.capability_profile is None or request.transform_grammar is not "
+        "TransformGrammar.CAPPED_SCISSION_CONVERGENT:\n        return",
+        "if True:\n        return"))
+    with _patch(CompilationResponse, "_check_capability_topology", bad_topo):
+        payload = response_to_payload(dc.replace(resp, request=dc.replace(
+            resp.request, capability_profile=poor_man(), capability_profile_origin="poor-man")))
+    _l, err = _try_load(payload)
+    honest = err is not None and "D24.13" in err
+    with _patch(CompilationResponse, "_check_capability_topology", bad_topo):
+        loaded, _err = _try_load(payload)
+    bad = (loaded is not None and loaded.request.capability_profile is not None
+           and loaded.outcome.value != "REFUSED")
+    return honest, bad
+
+
+@mutant("M174", "a ranked dossier is DELETED and the answer still loads (D24.14 D-D1)",
+        "service.CompilationResponse._check_dossier_completeness (ranked == IR)")
+def m174():
+    resp = _fast_profile_response()
+    dropped = resp.ranked_route_dossiers[-1]
+    bad_chk = _src_mutant(CompilationResponse._check_dossier_completeness, (
+        "if ranked_routes != route_candidates:", "if False:"))
+    with _patch(CompilationResponse, "_check_dossier_completeness", bad_chk):
+        payload = response_to_payload(dc.replace(
+            resp, ranked_route_dossiers=resp.ranked_route_dossiers[:-1],
+            affordability_frontier=tuple(e for e in resp.affordability_frontier
+                                         if e.route_digest != dropped.route_digest)))
+    _l, err = _try_load(payload)
+    honest = err is not None and "D24.14" in err
+    with _patch(CompilationResponse, "_check_dossier_completeness", bad_chk):
+        loaded, _err = _try_load(payload)
+    bad = loaded is not None and all(d.route_digest != dropped.route_digest for d in loaded.ranked_route_dossiers)
+    return honest, bad
+
+
+@mutant("M175", "a capability profile embeds the LEGACY physical-bounds-v1alpha1 box (D24.15 D-B2)",
+        "profile.CapabilityProfile.__post_init__ (current PhysicalBounds generation only)")
+def m175():
+    import smartchem.constraints as constraints_mod
+    legacy_box = PhysicalBounds(constraints_mod.PHYSICAL_BOUNDS_SCHEMA_V1, 400.0)
+    current_box = PhysicalBounds.of(max_temperature_k=400.0)
+
+    def build(box):
+        return custom(profile_id="pb-generation-probe", physical_bounds=box)
+
+    try:
+        build(legacy_box)
+        honest = False
+    except ValueError:
+        honest = build(current_box).physical_bounds.schema_version == constraints_mod.PHYSICAL_BOUNDS_SCHEMA
+    bad_init = _src_mutant(CapabilityProfile.__post_init__, (
+        "if self.physical_bounds.schema_version != PHYSICAL_BOUNDS_SCHEMA:", "if False:"))
+    with _patch(CapabilityProfile, "__post_init__", bad_init):
+        try:  # two content-identical benches, two profile digests (split identity)
+            bad = build(legacy_box).profile_digest != build(current_box).profile_digest
         except ValueError:
             bad = False
     return honest, bad

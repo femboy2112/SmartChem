@@ -657,3 +657,76 @@ distillation" is corrected to what the page says (a 134–143 °C fraction colle
 **D24.17** (W-GATES-EVID observation) A step with NO `ProcedureEvidence` yields a text-free unread note on the
 EQUIPMENT and MEASUREMENT axes too ("step s has no ProcedureEvidence: its equipment / verification demand is
 unread"), matching the D14 physical and D17 material treatment of the same absence — never NOT_APPLICABLE.
+
+### §7.6 Part II — Wave C3 F-1…F-11: closure table
+
+Every item was reproduced INDEPENDENTLY at X-high (Wave A′ lanes A-PHYS / A-TIME / A-LEDGER / A-WASTE / A-PHASE),
+on a micro world whose OTHER axes are clean — never "overall stayed UNKNOWN anyway".
+
+| id | reproducer (before, exact) | adjudication | fix | regression tests | mutants |
+|---|---|---|---|---|---|
+| F-1 low-temperature demand has no coordinate | typed COOL op `Interval(77,77,K)` + record peak 300 K vs a `T<=500 K, P 1–2 atm` profile → physical **FIT** (only `T<=300 K` read) | VERIFIED — a real model hole | D14: `PhysicalBounds.min_temperature_k` on the ONE shared leaf (`physical-bounds-v1alpha2`), HIGH/LOW projection, floor comparison, legacy v1alpha1 migration, ConstraintBox floor, `--min-temp` | `tests/test_v0_9_round_v_xhigh_core.py` (F-1), `tests/test_constraints.py::TestD14*`, `tests/test_drafter.py::TestD14TemperatureFloorRanking` | M109, M110, M115, M116, M117, M118 |
+| F-2 prose duration unread | HOLD op `duration="3 weeks"` + fully-declared bench → process **FIT** | VERIFIED | D15: a PRESENT op duration that is not typed minutes → `process_unresolved` | xhigh_core (F-2) | M119 |
+| F-3 op durations MAXed | 3 sequential 60-min HOLD ops, record ceiling 90, bench 120 → **FIT**; F-3b floor-only record → UNKNOWN (a missed BLOCK) | VERIFIED | D15 ordered timeline: op floors ADD; representations combine by MAX (no double count); only the record's elapsed ceiling bounds; floor > ceiling → contradiction → UNKNOWN; effective record raises `min_elapsed_minutes` so F-3b → **BLOCKED** | xhigh_core (F-3, F-3b), zero-FIT witness | M120, M86 (law-level) |
+| F-4 consumable masks missing hardware | DISTILL `apparatus=("boiling stones",)` → equipment UNKNOWN → **NOT_APPLICABLE** (non-monotone); **F-4b** a thermometer discharges a DISTILL op | VERIFIED (+ F-4b new) | D16: per-op POST-resolution guard with a closed kind-admissibility table; the step record's equipment never discharges an op | xhigh_core (F-4, F-4b), field_coverage | M123, M124 |
+| F-5 pure-material evidence | independent re-attack of K1–K6 | K1–K6 HELD; NEW partial break (CLAMP of a ≥100 % range → `[1, 1]` certified pure) and Wave C′ C1 (pure witness ignored a non-fraction impurity) | D18: CLAMPED excluded from the pure witness; D24.5: the witness requires every OTHER component at 0 on any basis; D24.7: CLAMPED-degenerate never certifies a composition | xhigh_core (CLAMP, C1 MPV + MOLAR), wave_c_fixes K1–K6 | M141, M158, M167 |
+| F-6 material-bearing ops produce no waste | untyped materials on ADD/QUENCH/MIX/HEAT/HOLD/COOL ops → 0 waste obligations | VERIFIED | D17: every uncovered `op.materials` string of EVERY op yields an unresolved obligation; import-time role-totality guard | waste_process (F-6 ×8 kinds + masked-by-dedupe) | M131, M134, M92 |
+| F-7 CATALYST contradicting net consumption | net-consumed acetic acid relabelled CATALYST → unresolved residual becomes a RESOLVED `HAZARDOUS` category | VERIFIED | D17: role contradiction (both directions, known identity, `ExperimentStep.net_consumes`) → unresolved term + unresolved residual; caught at requirement compilation (fail closed), not in `ExperimentStep` (search noninterference) | waste_process (F-7), xhigh_core (F-7 both ways) | M132 |
+| F-8 NO_LIMIT silences non-time gaps | 7 shapes: `workup_included=False` under NO_LIMIT → **FIT**; empty/None record → **UNCONSTRAINED**; PERIODIC with no check interval → **FIT** | VERIFIED | D15 process axis law: whole-step coverage gate; profile declaration gaps (attention, agitation, check interval, time dims); the UNCONSTRAINED→FIT branch DELETED; NO_LIMIT waives only the three time preferences | xhigh_core (F-8 ×7), round_v_core D10 rows | M121, M122, M62 (ported) |
+| F-9 load-bearing fields with no owner | PRESENT `rate` / `agitation` / `endpoint` / prose duration / `op.quantity` / verification text reach no axis | VERIFIED (+ P5b VERIFY pooling; + corpus prose filed in the wrong field) | D16 machine-checked coverage ledger (`capability/coverage.py`, `missing_coverage()==()`), per-owner fail-closed laws, corpus re-filed verbatim; Wave C′ refuted the D16 "display trust" model → D24.1 canonical-rendering law | field_coverage (completeness + axis + noninterference witnesses), corpus lint | M125–M130, M148–M153 |
+| F-10 prose T/P "covered" by an unrelated extremum | prose "650 C tube furnace" + record peak 416 K → **FIT**; "50 atm autoclave" + record 1 atm → **FIT**; NEW P4/P5 untyped thermal op masked by an unrelated lower statement | VERIFIED | D14: every PRESENT non-Interval op T/P is unread (no same-step coverage, no typed "summarized-by" relation); an untyped HEAT/HOLD/DISTILL op is covered only by the record's whole-step peak; COOL/HOLD low side always unread; data: P-X2 isopentyl head-temperature peak withdrawn, P-X3 aspirin vacuum min-pressure withdrawn | xhigh_core (F-10 T/P, P4, P5) | M111, M112, M113, M114 |
+| F-11 absurd finite bound (1e300) | 1e300 K ceiling / 1e300-min time bounds → FIT | **REFUTED WITH EVIDENCE** — not a false FIT relative to the DECLARED world: physical dims can never be NO_LIMIT (D10) and a finite declared bound is the declarer's word (printed in the reason); time dims are operator preferences (the operator is the authority on their own patience). No magnitude threshold is invented. | none (documented) | — | — (no law violated) |
+
+### §7.7 Wave C″ — confirmation pass on the D24 tree (`9d25303`), fresh non-authors
+
+Three new agents (none authored any Wave B′/D24 code): **V** masters (stakeless audit — re-ran every Wave C′
+reproducer against controls that discriminate), **R** randotron (seeded chaos on D24.1/D24.5/D24.6 incl. 2–4-step
+routes), **T** a directed transport attacker on D24.11–D24.15.
+
+* **R: SURVIVED** — ~3 000 seeded trials, 25 seeds, 0 violations (1 200 canonical-rendering near-miss mutations incl.
+  NBSP / Cyrillic look-alikes / reorders; hand-built multi-step witnesses where a byproduct is re-consumed two steps
+  later → its own demand → BLOCKED; 640 commensurability samples against an independent law-text oracle with 21/76
+  oracle-permitted FITs observed, i.e. non-vacuous; 600 permutation + 300 monotonicity trials). Conjecture recorded,
+  not a finding: `_name_covers` folds with `casefold()` without NFKC — casefold equivalences (ß→ss) are orthographic
+  variants of one word, no chemical-name collision was constructible.
+* **V: BLOCK** — every literal Wave C′ reproducer except C6 now yields the lawful verdict (grade table in the V
+  report: A1–A9, B1–B3, C1–C5, C7, D-L1, D-O1/O2, D-G1, D-D1, D-B2, F1 CLOSED; A-P3 OPEN by contract, stated truthfully;
+  C8 and D-T1 DEFERs audited as label/trust boundaries), but three one-step extensions break the §7.5 claims and C6 is
+  only partly closed:
+
+| id | sev | finding (reproduced by V) | disposition |
+|---|---|---|---|
+| NEW-1 | P0-latent | an identity-bearing use's free-text `name` is read by nothing, yet the canonical renderers build from it: name `"methanol + 2 g sodium metal in a sealed tube at 650 K"` + canonical `op.quantity` → material/physical/containment FIT ("a word cannot fool it" was false) | D25.1 |
+| NEW-2 | P0-latent | C1 survives on the COMPOSITION path: acetic acid `[1, 1]` USER_DECLARED + NaCl 0.3 g/mL satisfies a ≥ 0.99 w/w demand (`_others_absent` guarded only the pure witness) | D25.2 |
+| NEW-3 | P2 | delete a BLOCKED dossier AND its IR candidate AND its frontier entry → loads under both pins + verified admission; nothing binds the candidate set to `search_receipt.results_returned` | D25.3 |
+| C6 | P3 (false BLOCK) | leaf-input requirements carry no `name`, so D24.8 never fires on the real path | D25.4 |
+| D-T1 wording | — | the DEFER text must say plainly that consumer pins do NOT protect thin-wire verdicts (per-axis FITs, a hidden BLOCKED) | D25.5 |
+
+### §7.8 Barrier amendment D25 (post-Wave-C″)
+
+**D25.1 — A use's name is a NAME or it is an unread demand.** For an identity-bearing `ProcedureMaterialUse`, the name
+must resolve through the offline NAME resolver to the SAME canonical structure; otherwise the use carries a
+`material_unresolved` note ("use name 'X' is not a resolvable name of its identity — its extra words are unread",
+D25.1), so the renderers can never launder words through it. (Identity-free uses are name-KEYED: their name is the
+matching key itself, so extra words already fail the match — BLOCKED/UNKNOWN on the host material axis.) Honest
+consequence: corpus uses named "cold water" (identity water) now read as unread — "cold" IS a temperature demand
+hiding in a name.
+
+**D25.2 — A certified whole bottle cannot contradict itself.** `StockMaterial` refuses a bottle in which a fraction-
+basis component has `min_fraction == 1` while any other component has `min_fraction > 0` on ANY basis (the only
+basis-free provable contradiction; no density engine, no threshold). The G⁻ edge rule is unchanged otherwise.
+
+**D25.3 — The candidate set is bound to the carried receipt.** Routes mode: the IR's ROUTE candidate count must equal
+`search_receipt.results_returned`. Stated boundary (replacing D24.14's "never silently omitted"): a keyless attacker
+who deletes a route AND consistently rewrites the carried receipt is detectable only by the producer HMAC or by
+re-running the (deterministic) search — load-time re-search under verified admission is a 0.9.5 item.
+
+**D25.4 — Name-keyed presence for nameless requirements.** For an identity requirement with no name, a name-keyed
+bottle component whose name resolves (offline NAME resolver) to the requirement's identity is a POSSIBLE source
+(UNKNOWN), never proof of absence; an unresolvable name stays not-this-species (the declared world's keys are
+closed).
+
+**D25.5** D-T1 DEFER text amended: consumer pins (`expected_request_digest`, `expected_capability_question_digest`) do
+NOT protect a THIN-wire assessment — a thin forgery can flip per-axis verdicts to FIT and hide a BLOCKED (overall
+BLOCKED→UNKNOWN) and still load; only the canonical wire (replay re-derivation), `require_verified_admission`, or
+the producer HMAC make a thin verdict trustworthy. FIT and PROCESS_SPECIFIED-or-higher remain refused on thin.

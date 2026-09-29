@@ -23,6 +23,7 @@ Produced by the v0.8 producer's own public path. No hand edits. Regeneration is 
 | response_sulfuric_acid_name.json | `$P -m smartchem recompile "sulfuric acid" --json` | 2 (INVALID_INPUT, zero dossiers; deterministic, sha reproduced on a second run) |
 | plan_isopentyl_acetate.json | `$P -m smartchem plan "isopentyl acetate" --json` | 4 (schema smartchem.plan/plan-result-v0.6; `.compilation` = a full response payload) |
 | response_isopentyl_acetate_dag.json | `$P gen_dag_v08.py` (build_recompile_request(CAPPED_SCISSION_CONVERGENT, process=quick) + run_compilation + serialize_response(include_replay=True)); added in the 0.9 X-high continuation (D22) -- the only fixture with ranked_dag_dossiers | 0 (INCOMPLETE, 16 DAG dossiers, 3 replay steps carry a sourced ProcedureEvidence, CANONICAL_VERIFIED; sha reproduced on three runs) |
+| response_stereo_isopentyl_acetate_smiles.json | `$P -m smartchem recompile --smiles "CC(=O)OCC[C@H](C)C" --json`; added in the 0.9 X-high continuation (D24.11) -- the only fixture whose IR carries a section-5.3 identity loss (a stereochemistry BLOCKER) | 4 (INCOMPLETE, 10 ranked routes, all FORMAL_CANDIDATE, CANONICAL_VERIFIED; sha reproduced on a second run) |
 | response_schema_descriptor.json | `$P -c "import json;from smartchem.service import response_schema;print(json.dumps(response_schema(),sort_keys=True,indent=1))"` | 0 |
 
 ## sha256
@@ -40,6 +41,7 @@ Produced by the v0.8 producer's own public path. No hand edits. Regeneration is 
     7f3fa7e7daac943e428b09ecac1fa6f523e81805eab8670a3f3ae695ee2717c9  gen_thin_v08.py
     0098ba9422ff8e2db70cf994ccbf87e800c9a4c723c7f0ecd65e2bca4db02f7d  response_isopentyl_acetate_dag.json
     424e3478dffafeb4a9ce180d0deef7a3e329fef262c9a5b124703e0fad7cec2b  gen_dag_v08.py
+    145d2454104b66a3c7626371b7b87f6defa2c9a2ec3f525aeaa83ce1dfee8925  response_stereo_isopentyl_acetate_smiles.json
 
 (X-high continuation: `gen_thin_v08.py` changed only its import order for lint; re-running it under the
 df1b38d tree reproduces `response_ethyl_acetate_smiles_thin.json` byte-identically, sha `abf28f6c…`.)

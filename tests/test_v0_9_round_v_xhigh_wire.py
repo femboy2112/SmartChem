@@ -22,10 +22,19 @@ from pathlib import Path
 
 import pytest
 
-from smartchem.capability.presets import CAPABILITY_PROFILE_PRESETS, custom, resolve_capability_profile
+import smartchem.service as svc  # the D24 attacker patches its OWN copy of the producer (restored before any load)
+from smartchem.capability.presets import (
+    CAPABILITY_PROFILE_PRESETS,
+    custom,
+    isopentyl_capability_fit_bench,
+    poor_man,
+    research_lab,
+    resolve_capability_profile,
+)
 from smartchem.conditions import Interval
-from smartchem.constraints import PHYSICAL_BOUNDS_SCHEMA, PHYSICAL_BOUNDS_SCHEMA_V1
+from smartchem.constraints import PHYSICAL_BOUNDS_SCHEMA, PHYSICAL_BOUNDS_SCHEMA_V1, PhysicalBounds
 from smartchem.experiment import routes
+from smartchem.experiment.readiness import PROCESS_SPECIFIED, evaluate_route, tier_rank
 from smartchem.experiment.stock import Phase
 from smartchem.material_spec import EvidenceKind, PhaseClaim
 from smartchem.procedure_evidence import ProcedureMaterialRole, ProcedureMaterialUse
@@ -35,11 +44,14 @@ from smartchem.service import (
     LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA,
     RANKED_DAG_SUMMARY_SCHEMA,
     RankedRouteSummary,
+    TransformGrammar,
     _procedure_material_use_from_payload,
     _procedure_material_use_to_payload,
+    _reconstruct_route,
     build_recompile_request,
     deserialize_response,
     ranked_dag_summary_from_payload,
+    render_capability_lines,
     request_from_payload,
     request_to_payload,
     response_from_payload,
@@ -298,3 +310,257 @@ def test_a_min_temp_above_max_temp_is_a_loud_domain_exit():
                            "--max-temp", "400", "--emit-request"])
     assert code == 2 and not out.strip()
     assert "min_temperature_k cannot exceed max_temperature_k" in err
+
+
+# =====================================================================================================================
+# D24.11-D24.15 (Wave-C' Adversary D, transport).  Each test REPLAYS the adversary's attack: the keyless attacker runs
+# a modified producer (a public codec with one law switched off), so EVERY unkeyed pin -- result_digest, the
+# capability-question pin, route digests -- is recomputed; then the UNPATCHED consumer loads it with every pin it has.
+# =====================================================================================================================
+
+
+def _attacker(monkeypatch, name, replacement, produce):
+    """Run ``produce()`` with ``svc.<name>`` replaced (the attacker's producer), then RESTORE it before the consumer
+    loads -- exactly Adversary D's shape (atk_losses.py)."""
+    with monkeypatch.context() as m:
+        m.setattr(svc, name, replacement)
+        return produce()
+
+
+# -- D24.11: identity losses are re-derived from the carried request ------------------------------------------------
+
+_STEREO_ISOPENTYL = "smiles:CC(=O)OCC[C@H](C)C"   # isopentyl acetate + a stereo marker -> a BLOCKER on "conditions"
+
+
+def test_D_L1_stripped_identity_loss_forging_process_specified_is_refused(monkeypatch):
+    """Adversary D's EXACT attack (atk_losses.py): the corpus isopentyl route under the fit bench, with the target's
+    stereochemistry BLOCKER stripped by the attacker's producer -- readiness re-derives to PROCESS_SPECIFIED under the
+    forged (empty) losses, the route keeps its OWN route_digest, every public pin is recomputed.  Pre-D24.11 it LOADED
+    under the request pin + the capability-question pin + verified admission."""
+    request = build_recompile_request(_STEREO_ISOPENTYL, capability_profile=isopentyl_capability_fit_bench(),
+                                      helper_reagents=("water", "acetic acid"), stock_materials=("isopentyl alcohol",))
+    forged = _attacker(monkeypatch, "_recompile_identity_losses", lambda target_input, features: (),
+                       lambda: run_compilation(request))
+    assert forged.identity_losses == ()
+    # the forgery is potent: some dossier claims a tier the request's OWN loss forbids
+    honest_losses = svc._rederive_identity_losses(request)
+    assert [loss.feature for loss in honest_losses] == ["stereochemistry"]
+    lifted = [d for d in forged.ranked_route_dossiers
+              if tier_rank(d.readiness.tier)
+              > tier_rank(evaluate_route(_reconstruct_route(d.replay_payload), identity_losses=honest_losses).tier)]
+    assert lifted and any(d.readiness.tier == PROCESS_SPECIFIED for d in lifted)
+    payload = response_to_payload(forged)                      # CANONICAL_VERIFIED, every public pin recomputed
+    with pytest.raises(ValueError, match=r"do not equal the losses the carried request's own target implies"):
+        response_from_payload(payload, expected_request_digest=request.semantic_digest,
+                              expected_capability_question_digest=request.capability_question_digest,
+                              require_verified_admission=True)
+    with pytest.raises(ValueError, match="D24.11"):          # and on a plain load too (the check is replay-free)
+        response_from_payload(payload)
+
+
+def test_an_honest_loss_bearing_response_loads_and_an_injected_loss_is_refused(monkeypatch):
+    """The discriminating control, both directions: the honest stereo response (its IR carries the BLOCKER) loads; an
+    attacker who INJECTS a loss the target does not imply (hiding a verdict behind a fake blocker) is refused too."""
+    request = build_recompile_request("smiles:CC(=O)O[C@@H](C)CC", capability_profile="poor-man", max_depth=2)
+    honest = run_compilation(request)
+    assert [loss.feature for loss in honest.identity_losses] == ["stereochemistry"]
+    back = response_from_payload(response_to_payload(honest), require_verified_admission=True)
+    assert back.identity_losses == honest.identity_losses
+    flat = build_recompile_request("smiles:CC(=O)OC", capability_profile="poor-man", max_depth=2)
+    injected = _attacker(monkeypatch, "_recompile_identity_losses",
+                         lambda target_input, features: honest.identity_losses, lambda: run_compilation(flat))
+    with pytest.raises(ValueError, match="D24.11"):
+        response_from_payload(response_to_payload(injected))
+
+
+def test_a_stripped_decompile_formula_reduction_loss_is_refused(monkeypatch):
+    """The DECOMPILE path re-derives too: a ``decompile --smiles`` IR carries the structure->formula BLOCKER."""
+    request = svc.build_decompile_request("CC(=O)Nc1ccc(O)cc1", input_kind=svc.InputKind.SMILES)
+    honest = run_compilation(request)
+    assert honest.identity_losses and response_from_payload(response_to_payload(honest)).identity_losses
+    real = svc._decompile_resolution
+    forged = _attacker(monkeypatch, "_decompile_resolution",
+                       lambda req: (lambda t, _l, r: (t, (), r))(*real(req)), lambda: run_compilation(request))
+    assert forged.identity_losses == ()
+    with pytest.raises(ValueError, match="D24.11"):
+        response_from_payload(response_to_payload(forged))
+
+
+def test_a_target_file_response_is_unverifiable_on_load_and_the_loader_never_reads_the_path(tmp_path, monkeypatch):
+    target = tmp_path / "target.txt"
+    target.write_text("CC(=O)OC\n")
+    resp = run_compilation(build_recompile_request(str(target), input_kind=svc.InputKind.TARGET_FILE, max_depth=2))
+    assert resp.compilation_ir is not None
+    payload = response_to_payload(resp)
+    target.unlink()                                             # the consumer's filesystem does not have the file
+    opened = []
+    real_open = open
+
+    def spy(path, *a, **k):
+        opened.append(str(path))
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr("builtins.open", spy)
+    with pytest.raises(ValueError, match="TARGET_FILE response's identity losses cannot be re-derived"):
+        response_from_payload(payload)
+    assert str(target) not in opened
+
+
+def test_real_v08_loss_bearing_fixture_loads_as_legacy_and_its_stripped_loss_is_refused():
+    """The REAL v0.8 producer's stereo response (tests/fixtures/v08/response_stereo_isopentyl_acetate_smiles.json):
+    today's derivation reproduces its loss exactly, so it loads (plain AND verified).  The attacker strips the loss and
+    re-serializes through the public codec -- the frozen v0.8 digest rule is recomputed too -- and it is refused as
+    legacy, never loaded as current."""
+    raw = _load("response_stereo_isopentyl_acetate_smiles.json")
+    legacy = response_from_payload(copy.deepcopy(raw), require_verified_admission=True)
+    assert legacy.is_legacy_v08 and [loss.feature for loss in legacy.identity_losses] == ["stereochemistry"]
+    # the attacker edits the REAL v0.8 wire in place (keeping its v0.8 shape) and recomputes the legacy result digest
+    # with the public frozen-v0.8 rule, exactly as the stripped record digests it.
+    forged = dc.replace(legacy, compilation_ir=dc.replace(legacy.compilation_ir, identity_losses=()))
+    payload = copy.deepcopy(raw)
+    payload["compilation_ir"]["identity_losses"] = []
+    payload["result_digest"] = svc._transport_bound_result_digest(forged.result_digest, raw["transport_mode"])
+    assert payload["result_digest"] != raw["result_digest"]
+    with pytest.raises(ValueError, match=r"D24\.11\) \[legacy v0\.8 payload"):
+        response_from_payload(payload)
+
+
+def test_a_real_v08_loss_set_that_todays_resolver_derives_differently_fails_closed_as_legacy(monkeypatch):
+    """D24.11's legacy clause, exercised on the REAL fixture: if today's derivation disagreed with the genuine v0.8
+    loss set (simulated -- today's resolver reproduces it), the payload fails closed with the legacy hint under verified
+    admission, never loads as current."""
+    monkeypatch.setattr(svc, "_recompile_identity_losses", lambda target_input, features: ())
+    with pytest.raises(ValueError, match=r"legacy v0\.8 payload.*recompile under 0\.9"):
+        response_from_payload(_load("response_stereo_isopentyl_acetate_smiles.json"), require_verified_admission=True)
+
+
+# -- D24.12: the render shows the content identity; the question pin authenticates ----------------------------------
+
+def test_D_O2_a_relabelled_bench_renders_its_real_content_digest_and_the_question_pin_refuses_it():
+    """Adversary D O2: research-lab CONTENT relabelled ``profile_id="poor-man"`` passes the D20 origin law (the origin
+    equals the free-text id) and loads.  The render now carries the digest of what actually answered, which is NOT the
+    poor-man bench's; the consumer's poor-man question pin refuses it."""
+    asked = build_recompile_request(_TARGET, capability_profile="poor-man", max_depth=2)
+    fake = dc.replace(research_lab(), profile_id="poor-man")
+    forged = _run(fake)
+    back = response_from_payload(response_to_payload(forged))
+    line = render_capability_lines(back.ranked_route_dossiers[0].capability_assessment,
+                                   back.request.capability_profile_origin, indent="")[0]
+    assert line.startswith(f"CAPABILITY[poor-man@{fake.profile_digest[:12]}]: ")
+    assert fake.profile_digest[:12] != poor_man().profile_digest[:12]
+    assert f"@{poor_man().profile_digest[:12]}]" not in line
+    with pytest.raises(ValueError, match="DIFFERENT capability question"):
+        response_from_payload(response_to_payload(forged),
+                              expected_capability_question_digest=asked.capability_question_digest)
+
+
+# -- D24.13: capability profile + convergent-DAG grammar ------------------------------------------------------------
+
+def _dag_request(profile=None):
+    return build_recompile_request(_TARGET, grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT, max_depth=2,
+                                   process=ProcessBounds.quick(), capability_profile=profile)
+
+
+def test_the_producer_refuses_the_profile_convergent_pair():
+    resp = run_compilation(_dag_request("poor-man"))
+    assert resp.outcome.value == "REFUSED" and resp.compilation_ir is None and not resp.ranked_dag_dossiers
+
+
+def test_D_G1_a_dag_response_carrying_a_capability_profile_is_refused(monkeypatch):
+    """Adversary D G1: an honest DAG-mode response re-labelled as answering a poor-man capability question (a pair the
+    producer REFUSES), every public pin recomputed; pre-D24.13 it loaded with request + question pins + verified
+    admission, answering the capability question with NOTHING while looking like success."""
+    dag = run_compilation(_dag_request())
+    assert dag.ranked_dag_dossiers
+    asked = _dag_request("poor-man")
+    payload = _attacker(monkeypatch, "CompilationResponse",
+                        _unchecked_response_class("_check_capability_topology"),
+                        lambda: response_to_payload(svc.CompilationResponse(
+                            **{f.name: getattr(dag, f.name) for f in dc.fields(dag)} | {"request": asked})))
+    with pytest.raises(ValueError, match="D24.13"):
+        response_from_payload(payload, expected_request_digest=asked.semantic_digest,
+                              expected_capability_question_digest=asked.capability_question_digest,
+                              require_verified_admission=True)
+    with pytest.raises(ValueError, match="D24.13"):           # and the in-memory record cannot even be built
+        dc.replace(dag, request=asked)
+
+
+def _unchecked_response_class(check_name):
+    """The attacker's producer: CompilationResponse with ONE construction law switched off."""
+    return type("AttackerResponse", (svc.CompilationResponse,), {check_name: lambda self: None})
+
+
+# -- D24.14: a verdict cannot be deleted ----------------------------------------------------------------------------
+
+def test_D_D1_deleting_a_ranked_dossier_is_refused(monkeypatch):
+    """Adversary D D1: delete dossier 0 (and its frontier entry) and recompute every pin; pre-D24.14 it loaded under the
+    request pin + question pin + verified admission, silently omitting a verdict for a candidate the IR still lists."""
+    resp = _run("poor-man")
+    assert len(resp.ranked_route_dossiers) >= 2
+    keep = resp.ranked_route_dossiers[1:]
+    kept = {d.route_digest for d in keep}
+    fields = {f.name: getattr(resp, f.name) for f in dc.fields(resp)}
+    fields |= {"ranked_route_dossiers": keep,
+               "affordability_frontier": tuple(e for e in resp.affordability_frontier if e.route_digest in kept)}
+    payload = _attacker(monkeypatch, "CompilationResponse", _unchecked_response_class("_check_dossier_completeness"),
+                        lambda: response_to_payload(svc.CompilationResponse(**fields)))
+    with pytest.raises(ValueError, match=r"a deleted verdict; refused \(D24\.14\)"):
+        response_from_payload(payload, expected_request_digest=resp.request.semantic_digest,
+                              expected_capability_question_digest=resp.request.capability_question_digest,
+                              require_verified_admission=True)
+    with pytest.raises(ValueError, match="D24.14"):          # and the in-memory record cannot even be built
+        dc.replace(resp, ranked_route_dossiers=keep, affordability_frontier=fields["affordability_frontier"])
+
+
+def test_dossier_completeness_holds_on_every_honest_mode():
+    """The producer invariant D24.14 enforces, on the honest paths it describes (and on every real v0.8 fixture, which
+    load above): routes mode ranks every candidate; DAG mode dossiers every DAG iff the box constrains anything."""
+    routes_resp = _run(None)
+    assert {d.route_digest for d in routes_resp.ranked_route_dossiers} == {
+        c.candidate_digest for c in routes_resp.compilation_ir.candidates}
+    constrained = run_compilation(_dag_request())
+    assert {d.route_digest for d in constrained.ranked_dag_dossiers} == {
+        c.candidate_digest for c in constrained.compilation_ir.candidates}
+    unconstrained = run_compilation(build_recompile_request(
+        _TARGET, grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT, max_depth=2))
+    assert unconstrained.compilation_ir.candidates and not unconstrained.ranked_dag_dossiers
+
+
+# -- D24.15: a capability profile embeds the current PhysicalBounds generation only ----------------------------------
+
+def test_D_B2_a_profile_embedding_a_legacy_physical_bounds_box_is_refused():
+    v1box = PhysicalBounds(PHYSICAL_BOUNDS_SCHEMA_V1, 373.15, None, None)
+    with pytest.raises(ValueError, match="D24.15"):
+        dc.replace(poor_man(), physical_bounds=v1box)
+    # on the wire: relabel the embedded box of a current request's snapshot to the legacy generation
+    payload = request_to_payload(build_recompile_request(_TARGET, capability_profile="poor-man", max_depth=2))
+    box = next(v for n, v in payload["capability_profile"]["fields"] if n == "physical_bounds")
+    for field_pair in box["fields"]:
+        if field_pair[0] == "schema_version":
+            field_pair[1]["value"] = PHYSICAL_BOUNDS_SCHEMA_V1
+        if field_pair[0] == "min_temperature_k":
+            field_pair[1] = {"type": "none"}
+    with pytest.raises(ValueError, match="D24.15"):
+        request_from_payload(payload)
+
+
+# -- W-WIRE P3: a legacy-loaded v0.8 response is read-only evidence ---------------------------------------------------
+
+@pytest.mark.parametrize("name", ["response_isopentyl_acetate.json", "response_stereo_isopentyl_acetate_smiles.json",
+                                  "response_isopentyl_acetate_dag.json", "response_invalid_input_ethyl_acetate_name.json"])
+def test_re_serializing_a_legacy_loaded_response_is_refused_not_emitted_with_0_9_keys(name):
+    """Pre-fix, ``response_to_payload`` on a migrated v0.8 response emitted the CURRENT shape -- 0.9-only keys
+    (capability_question_digest, capability_assessment, capability_profile*, replay material_uses) under the v1alpha15
+    id, a payload the loader itself refuses as smuggling.  Now it refuses with a precise 'recompile' error; no v0.8-id
+    payload carrying a 0.9-only key can be minted by this codec."""
+    legacy = response_from_payload(_load(name))
+    assert legacy.is_legacy_v08
+    for include_replay in (True, False):
+        with pytest.raises(ValueError, match=r"legacy v0\.8 response; recompile under 0\.9"):
+            response_to_payload(legacy, include_replay=include_replay)
+    with pytest.raises(ValueError, match=r"legacy v0\.8 response; recompile under 0\.9"):
+        serialize_response(legacy)
+    # the recompile the refusal points at works and is a CURRENT response
+    fresh = run_compilation(build_recompile_request(legacy.request.target_input,
+                                                    input_kind=legacy.request.input_kind, max_depth=1))
+    assert not fresh.is_legacy_v08 and response_to_payload(fresh)["schema_version"] == COMPILATION_RESPONSE_SCHEMA

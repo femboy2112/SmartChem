@@ -428,6 +428,18 @@ KERNEL_KNOWN_ANSWERS: "tuple[KernelVector, ...]" = (
                  (("low", "95.0", _PCT, _SQ), ("high", "98.0", _PCT, _SQ)), low="0.95", high="0.98", kind=_SQ),
     KernelVector("identity-fraction", DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, _MF,
                  (("low", "0.25", _FR, _SQ), ("high", "0.5", _FR, _SQ)), low="0.25", high="0.5", kind=_SQ),
+    # D24.9 (Wave-C' C3): inputs finer than PRECISION_DP. The raw input must reach the kernel EXACTLY and be rounded
+    # OUTWARD only at the end -- a helper that pre-rounds the input (a half-even TypedInput.exact) collapses these
+    # to [1, 1] / [0, 0] and forges a pure (or absent) species; the stored-record region never exercised it.
+    KernelVector("identity-fraction-beyond-precision-high", DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, _MF,
+                 (("low", "0.9999995", _FR, _SQ), ("high", "0.9999995", _FR, _SQ)), low="0.999999", high="1",
+                 kind=_SQ),
+    KernelVector("identity-percent-beyond-precision-high", DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, _MF,
+                 (("low", "99.99995", _PCT, _SQ), ("high", "99.99995", _PCT, _SQ)), low="0.999999", high="1",
+                 kind=_SQ),
+    KernelVector("identity-fraction-beyond-precision-low", DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, _MF,
+                 (("low", "0.0000005", _FR, _SQ), ("high", "0.0000005", _FR, _SQ)), low="0", high="0.000001",
+                 kind=_SQ),
     KernelVector("identity-refuses-assumed-input", DerivationKernel.IDENTITY_SOURCE_QUOTED_V1, _MF,
                  (("low", "95.0", _PCT, _AS), ("high", "98.0", _PCT, _AS)), refuses="refuses input"),
     KernelVector("solubility-nacl-36", DerivationKernel.SOLUBILITY_PER_100G_SOLVENT_TO_MASS_FRACTION_V1, _MF,

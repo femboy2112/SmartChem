@@ -33,6 +33,14 @@ declares ``phase_evidence=USER_DECLARED`` -- the phase on the bottle is the benc
 their own stock, which CAN certify against a SOURCED phase demand (and only a sourced one: an author-inferred
 requirement phase stays UNKNOWN whatever this bottle says). No phase VALUE changed.
 
+**Whose word is USER_DECLARED here? (Round V X-high, D24.10 -- Wave-C' C7, stated as a boundary, not hidden.)** Every
+bench bottle in this module is an EXAMPLE declared world AUTHORED BY THE REPOSITORY: its ``USER_DECLARED`` states,
+phases and bench intervals are the word of an illustrative example operator, not of any real user and not of a
+supplier. They exist to exercise the capability fold on a fully-declared bench (the fixtures behind the forcing
+matrix and the tests); the gate's material positives rest on them and on nothing a real user said. The PRODUCT never
+assumes them: every CLI/service capability preset ships an EMPTY ``material_inventory``, so a real request's material
+axis starts UNKNOWN until the caller declares their own bottles.
+
 Builders:
 
 * :func:`isopentyl_fully_declared_inventory` -- the Round-III fully-declared bench (every reactant + auxiliary).

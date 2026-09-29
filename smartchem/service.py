@@ -1884,6 +1884,94 @@ class CompilationResponse:
         self._check_process_admission_coherence()
         self._check_dag_process_admission_coherence()
         self._check_outcome_coherence()
+        # D24.13/D24.14: AFTER the per-dossier/outcome coherence (whose refusals are more specific), the whole-set laws.
+        self._check_capability_topology()
+        self._check_dossier_completeness()
+
+    def _check_dossier_completeness(self) -> None:
+        """D24.14 (Wave-C' D-D1): the ranked dossier set EQUALS the set the producer builds -- a verdict can be read,
+        never silently omitted.  ``ranked <= IR candidates`` alone let a keyless attacker DELETE a BLOCKED dossier (and
+        its frontier entry) and recompute every public pin: the loaded answer then simply lacked a verdict.
+
+        What the producer builds (``_run_recompile``), verified against the code, never assumed:
+        * ROUTES mode: ``routes_for_ranking = search_result.routes`` is ranked by ``_ranked_summaries`` ->
+          ``rank_routes`` -> ``fit_routes``, which judges EVERY route (``tuple(fit_route(r, ...) for r in routes)``,
+          drafter.fit_routes) and ``rank_routes`` only REORDERS them (``tuple(fits[i] for i in order)``); the IR's ROUTE
+          candidates are built from the SAME ``result.routes`` (``recompile_to_ir(search_result=...)``).  No truncation
+          anywhere -- so the ranked set equals the IR ROUTE-candidate set exactly (the ``max_routes`` bound acts inside
+          the search, identically on both).
+        * DAG mode: routes rank nothing; ``ranked_dag_dossiers(search_result.dags, box)`` projects EVERY DAG
+          (``rank_dags`` reorders only) when the bench box constrains anything, else none -- so the DAG dossier set
+          equals the IR DAG-candidate set iff the request's bounds or process constrain anything, else it is empty.
+        * No IR (INVALID / REFUSED / identity-layer refusal): no dossiers at all.
+        The same producer logic ran at main@df1b38d, so a genuine v0.8 response satisfies this too (pinned against the
+        real v0.8 fixtures)."""
+        ir = self.compilation_ir
+        kinds = {} if ir is None else {c.candidate_digest: c.candidate_kind for c in ir.candidates}
+        route_candidates = {d for d, k in kinds.items() if k == "ROUTE"}
+        ranked_routes = {r.route_digest for r in self.ranked_route_dossiers}
+        if ranked_routes != route_candidates:
+            missing = sorted(route_candidates - ranked_routes)
+            raise ValueError(
+                f"ranked_route_dossiers must cover EXACTLY the IR's route candidates (the producer ranks every route "
+                f"and truncates none): {len(missing)} candidate(s) carry no dossier "
+                f"({', '.join(m[:12] for m in missing[:4])}) -- a deleted verdict; refused (D24.14)"
+            )
+        constrained = (self.request.constraints.bounds.constrains_anything
+                       or self.request.constraints.process.constrains_anything)
+        dag_candidates = {d for d, k in kinds.items() if k == "DAG"} if constrained else set()
+        ranked_dags = {d.route_digest for d in self.ranked_dag_dossiers}
+        if ranked_dags != dag_candidates:
+            raise ValueError(
+                f"ranked_dag_dossiers must cover EXACTLY the IR's DAG candidates when the bench box constrains anything "
+                f"(and none otherwise): {len(dag_candidates - ranked_dags)} candidate(s) carry no dossier, "
+                f"{len(ranked_dags - dag_candidates)} dossier(s) have no admitting box; refused (D24.14)"
+            )
+
+    def _check_capability_topology(self) -> None:
+        """D24.13 (Wave-C' D-G1): the loader mirrors the producer.  ``_run_recompile`` REFUSES a capability profile
+        together with the convergent-DAG grammar BEFORE any search (the DAG admission carries no capability model), so
+        the only honest response to that pair is a REFUSED outcome with no IR and no dossiers.  A payload pairing a
+        profile with DAG dossiers answers a capability question with NOTHING while looking like success; refused."""
+        request = self.request
+        if request.capability_profile is None or request.transform_grammar is not TransformGrammar.CAPPED_SCISSION_CONVERGENT:
+            return
+        if (self.outcome is not ResponseOutcome.REFUSED or self.compilation_ir is not None
+                or self.ranked_route_dossiers or self.ranked_dag_dossiers or self.affordability_frontier):
+            raise ValueError(
+                "a capability-profile request with the CAPPED_SCISSION_CONVERGENT grammar can only be answered by a "
+                "REFUSED outcome with no IR and no dossiers (the producer refuses the pair before searching -- the "
+                "convergent-DAG admission carries no capability model); this response claims otherwise; refused "
+                "(D24.13)"
+            )
+
+    def _check_identity_loss_coherence(self) -> None:
+        """D24.11 (Wave-C' D-L1): ``compilation_ir.identity_losses`` is RE-DERIVED from the carried request's own
+        target on every load and must be EXACTLY equal (canonical digest order) -- never trusted.  The losses feed the
+        readiness re-derivation (a BLOCKER on ``conditions`` caps the ladder) and the ranking verdicts, so a keyless
+        attacker who strips the stereo loss of ``[C@H]`` could otherwise forge PROCESS_SPECIFIED on the canonical wire
+        under the corpus route's OWN route digest, with every public pin recomputed: the readiness/capability
+        re-derivations would faithfully re-derive the forgery from the forged losses.  Structural candidates carry the
+        same tuple.  A legacy v0.8 payload is checked the same way: if today's resolver derives a DIFFERENT loss set
+        than the real v0.8 producer carried, it fails closed ("legacy; recompile"), never loads as current."""
+        ir = self.compilation_ir
+        if ir is None:
+            return
+        try:
+            expected = _rederive_identity_losses(self.request)
+        except ValueError as exc:
+            raise ValueError(
+                f"the response carries an IR whose identity losses cannot be re-derived from its request: {exc}; "
+                f"refused (D24.11){self._legacy_hint()}"
+            ) from exc
+        carried = [ir.identity_losses] + [sc.identity_losses for sc in ir.structural_candidates]
+        if any(losses != expected for losses in carried):
+            raise ValueError(
+                f"compilation_ir.identity_losses {[loss.feature for loss in ir.identity_losses]} do not equal the "
+                f"losses the carried request's own target implies {[loss.feature for loss in expected]} -- stripped, "
+                f"injected or stale section-5.3 losses (they gate readiness and ranking); refused (D24.11)"
+                f"{self._legacy_hint()}"
+            )
 
     @property
     def is_legacy_v08(self) -> bool:
@@ -3023,8 +3111,102 @@ def run_compilation(
     return response
 
 
-def _run_recompile(request: CompilationRequest) -> CompilationResponse:
+def _recompile_identity_losses(target_input: str, features: object) -> "tuple[IdentityLoss, ...]":
+    """The section-5.3 losses a RECOMPILE (structure search) carries for its target: the finer features the resolved
+    input declared that the structure layer drops (``()`` for a registered name -- it declares none).  D24.11: the ONE
+    implementation both :func:`_run_recompile` and the load-time :func:`_rederive_identity_losses` call."""
     from .identity import representation_losses_for
+    return () if features is None else tuple(representation_losses_for(target_input, features))
+
+
+def _decompile_resolution(request: CompilationRequest) -> "tuple[str, tuple[IdentityLoss, ...], str | None]":
+    """``(decompile_target, identity_losses, receipt_summary)`` for a DECOMPILE (formula descent) -- D24.11: the ONE
+    implementation both :func:`_run_decompile` and the load-time :func:`_rederive_identity_losses` call.
+
+    A SMILES target is resolved to its formula and that structure->formula reduction is RECORDED as a typed section-5.3
+    BLOCKER (plus the ID-STEREO-01 finer losses the input declared); an InChI / TARGET_FILE resolves through the ONE
+    parser (a molecule reduces to formula exactly like SMILES; a formula-layer identity carries the parser's own typed
+    losses); AUTO / FORMULA read the target as formula text (no loss; a best-effort receipt).  Raises
+    :class:`IdentityParseError` for an input the parser refuses.  NAME is the CALLER's refusal (a bare name is resolved
+    by recompile, not by a formula descent) and never reaches here."""
+    from .identity import formula_reduction_loss, representation_losses_for
+    from .identity_parse import resolve_identity
+    if request.input_kind is InputKind.NAME:
+        raise ValueError("a DECOMPILE of a bare NAME has no formula-descent resolution (the caller refuses it)")
+    if request.input_kind is InputKind.SMILES:
+        resolved = resolve_identity(request.target_input, InputKind.SMILES)
+        molecule, features = resolved.molecule, resolved.features
+        decompile_target = "".join(f"{el}{n if n > 1 else ''}" for el, n in sorted(molecule.formula.items()))
+        # the TYPED section-5.3 records (IR-LOSS-01), not summary strings -- the IR carries the first-class losses.
+        # The formula reduction is the coarse blocker (structure -> formula); the ID-STEREO-01 finer losses NAME the
+        # specific dropped features (which stereocentre/isotope/charge) the input actually declared -- additive and
+        # fail-closed (features is a SmilesFeatures for a SMILES input, never None).
+        losses = (
+            formula_reduction_loss(request.target_input, decompile_target),
+            *representation_losses_for(request.target_input, features),
+        )
+        return decompile_target, losses, resolved.receipt.summary()
+    if request.input_kind in (InputKind.INCHI, InputKind.TARGET_FILE):
+        # ID-PARSE-01: an InChI resolves via its FORMULA SUBLAYER (its /c connectivity + any /t,/b,/i stereo/isotope
+        # recorded as section-5.3 BLOCKERS the parser already built); a TARGET_FILE resolves its contents (a molecule
+        # -> reduced to formula exactly like the SMILES path, or a formula used directly).  Both descend by formula
+        # here, carrying the parser's typed losses into the IR so the machine and human views agree on the drop.
+        resolved = resolve_identity(request.target_input, request.input_kind)
+        if resolved.molecule is not None:                # a file that named a NAME/SMILES: reduce structure->formula
+            decompile_target = "".join(
+                f"{el}{n if n > 1 else ''}" for el, n in sorted(resolved.molecule.formula.items())
+            )
+            losses = (
+                formula_reduction_loss(request.target_input, decompile_target),
+                *(representation_losses_for(request.target_input, resolved.features) if resolved.features else ()),
+            )
+        else:                                            # a formula-layer identity (formula-only file, or an InChI)
+            decompile_target = "".join(f"{el}{n if n > 1 else ''}" for el, n in resolved.formula.counts)
+            losses = resolved.losses
+        return decompile_target, tuple(losses), resolved.receipt.summary()
+    # AUTO / FORMULA: the target is read as formula text.  Echo the resolution (best-effort: a genuinely bad formula
+    # still reaches decompile_to_ir's canonical parse error, so its exact message is preserved).
+    try:
+        receipt_summary = resolve_identity(request.target_input, InputKind.FORMULA).receipt.summary()
+    except IdentityParseError:
+        receipt_summary = None
+    return request.target_input, (), receipt_summary
+
+
+def _rederive_identity_losses(request: CompilationRequest) -> "tuple[IdentityLoss, ...]":
+    """D24.11 (Wave-C' D-L1): the section-5.3 losses the carried request's OWN target implies, re-derived on load in
+    canonical (digest-sorted) order -- the exact tuple an honest producer's IR carries.  A loss is a pure function of
+    ``(target_input, input_kind)`` for every kind the loader can re-read; the producer and this verifier share ONE
+    implementation (:func:`_recompile_identity_losses` / :func:`_decompile_resolution`).
+
+    Raises ``ValueError`` when the losses cannot be re-derived: a request the parser now refuses, a RECOMPILE target
+    with no perceived structure (the producer returns INVALID with no IR -- an IR-bearing response for it is forged),
+    a DECOMPILE of a bare NAME (likewise), and a TARGET_FILE -- whose ``target_input`` is a PATH to mutable external
+    content: the loader NEVER opens a path a payload names (a payload must not make its verifier read files), so a
+    TARGET_FILE response's losses are UNVERIFIABLE on load and it is refused (recompile locally from the file, or
+    re-express the target as NAME/SMILES)."""
+    from .identity_parse import resolve_identity
+    if request.input_kind is InputKind.TARGET_FILE:
+        raise ValueError(
+            "a TARGET_FILE response's identity losses cannot be re-derived on load (its target_input is a path to "
+            "mutable external content and the loader never reads a path a payload names) -- UNVERIFIABLE"
+        )
+    try:
+        if request.operation is CompilationOperation.RECOMPILE:
+            resolved = resolve_identity(request.target_input, request.input_kind)
+            if resolved.molecule is None:
+                raise ValueError(
+                    "the carried RECOMPILE target resolves to no structure, so no structure-search IR can exist for it"
+                )
+            losses = _recompile_identity_losses(request.target_input, resolved.features)
+        else:
+            _target, losses, _receipt = _decompile_resolution(request)
+    except IdentityParseError as exc:
+        raise ValueError(f"the carried target no longer parses ({exc}), so its identity losses cannot be re-derived")
+    return tuple(sorted(losses, key=lambda loss: loss.digest))
+
+
+def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     from .identity_parse import resolve_identity
     from .structure_descent import ScissionError
 
@@ -3077,9 +3259,9 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         available = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.stock_materials)
     except IdentityParseError as exc:
         return _invalid(request, str(exc))
-    identity_losses = (
-        () if target_features is None else representation_losses_for(request.target_input, target_features)
-    )
+    # D24.11: ONE implementation shared with the load-time re-derivation (_rederive_identity_losses) -- the producer
+    # and the verifier can never compute a target's section-5.3 losses two different ways.
+    identity_losses = _recompile_identity_losses(request.target_input, target_features)
 
     # Resolve the SELECTED transform algebra (0.7 Round II).  __post_init__ already validated the profile id + its
     # topology-coherence, so this cannot raise for a well-formed request; the registry flows through the search, the
@@ -3244,68 +3426,17 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
     # IR, so the machine response surfaces exactly the loss the human render shows -- structure is never silently
     # discarded on the machine path (section 5.3), and the two views agree (CLI-JSON-01).  NAME/InChI remain a named
     # follow-on (ID-PARSE-01) and are refused rather than mis-parsed.
-    decompile_target = request.target_input
-    identity_losses: tuple[IdentityLoss, ...] = ()
-    receipt_summary: "str | None" = None
-    if request.input_kind is InputKind.SMILES:
-        from .identity import formula_reduction_loss, representation_losses_for
-        from .identity_parse import resolve_identity
-        try:
-            resolved = resolve_identity(request.target_input, InputKind.SMILES)
-        except IdentityParseError as exc:
-            return _invalid(request, str(exc))
-        molecule, features = resolved.molecule, resolved.features
-        decompile_target = "".join(
-            f"{el}{n if n > 1 else ''}" for el, n in sorted(molecule.formula.items())
-        )
-        # the TYPED section-5.3 records (IR-LOSS-01), not summary strings -- the IR carries the first-class losses.
-        # The formula reduction is the coarse blocker (structure -> formula); the ID-STEREO-01 finer losses NAME the
-        # specific dropped features (which stereocentre/isotope/charge) the input actually declared -- additive and
-        # fail-closed (features is a SmilesFeatures for a SMILES input, never None).
-        identity_losses = (
-            formula_reduction_loss(request.target_input, decompile_target),
-            *representation_losses_for(request.target_input, features),
-        )
-        receipt_summary = resolved.receipt.summary()
-    elif request.input_kind in (InputKind.INCHI, InputKind.TARGET_FILE):
-        # ID-PARSE-01: an InChI resolves via its FORMULA SUBLAYER (its /c connectivity + any /t,/b,/i stereo/isotope
-        # recorded as section-5.3 BLOCKERS the parser already built); a TARGET_FILE resolves its contents (a molecule
-        # -> reduced to formula exactly like the SMILES path, or a formula used directly).  Both descend by formula
-        # here, carrying the parser's typed losses into the IR so the machine and human views agree on the drop.
-        from .identity import formula_reduction_loss, representation_losses_for
-        from .identity_parse import resolve_identity
-        try:
-            resolved = resolve_identity(request.target_input, request.input_kind)
-        except IdentityParseError as exc:
-            return _invalid(request, str(exc))
-        if resolved.molecule is not None:                # a file that named a NAME/SMILES: reduce structure->formula
-            decompile_target = "".join(
-                f"{el}{n if n > 1 else ''}" for el, n in sorted(resolved.molecule.formula.items())
-            )
-            identity_losses = (
-                formula_reduction_loss(request.target_input, decompile_target),
-                *(representation_losses_for(request.target_input, resolved.features) if resolved.features else ()),
-            )
-        else:                                            # a formula-layer identity (formula-only file, or an InChI)
-            decompile_target = "".join(
-                f"{el}{n if n > 1 else ''}" for el, n in resolved.formula.counts
-            )
-            identity_losses = resolved.losses
-        receipt_summary = resolved.receipt.summary()
-    elif request.input_kind is InputKind.NAME:
+    if request.input_kind is InputKind.NAME:
         return _invalid(
             request,
             "decompile reads the target as formula text or a resolved structure; a bare NAME is resolved by "
             "recompile (a structure search), not by a formula descent -- give the formula or use recompile",
         )
-    else:
-        # AUTO / FORMULA: the target is read as formula text.  Echo the resolution (best-effort: a genuinely bad
-        # formula still reaches decompile_to_ir's canonical parse error below, so its exact message is preserved).
-        from .identity_parse import resolve_identity
-        try:
-            receipt_summary = resolve_identity(request.target_input, InputKind.FORMULA).receipt.summary()
-        except IdentityParseError:
-            receipt_summary = None
+    # D24.11: ONE implementation shared with the load-time re-derivation (_rederive_identity_losses).
+    try:
+        decompile_target, identity_losses, receipt_summary = _decompile_resolution(request)
+    except IdentityParseError as exc:
+        return _invalid(request, str(exc))
 
     try:
         ir = decompile_to_ir(
@@ -4814,7 +4945,20 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
     frozen v0.8 digest rule (``_v08_canonical_payload``); a v0.8-id payload carrying ANY 0.9-only key is REFUSED; any
     other id is refused as ``unsupported schema version``.  Pinned by tests/test_v0_9_round_v_schema_migration.py
     against real main@df1b38d fixtures (tests/fixtures/v08/).
+
+    A LEGACY-loaded v0.8 response is REFUSED here (X-high, W-WIRE P3): this encoder writes the CURRENT shape, so it
+    would put 0.9-only keys (``capability_question_digest``, ``capability_assessment``, ``capability_profile*``, replay
+    ``material_uses``) under the v1alpha15 id -- a payload its own loader refuses as smuggling.  Re-emitting an exact
+    v0.8-shaped payload is NOT trivially sound: it would need a second, frozen v0.8 encoder for every nested record
+    (request, summaries, replay steps, IR) whose byte-for-byte fidelity no test could prove in general.  A migrated v0.8
+    answer is read-only evidence; the way forward is to RECOMPILE under 0.9 (its ``semantic_digest`` is in the hint).
     """
+    if response.is_legacy_v08:
+        raise ValueError(
+            f"legacy v0.8 response; recompile under 0.9 -- a migrated {LEGACY_V08_RESPONSE_SCHEMA!r} response is "
+            f"read-only: the current encoder would emit 0.9-only keys under the v0.8 id (a payload the loader refuses), "
+            f"and no frozen v0.8 encoder exists to re-emit it byte-for-byte{response._legacy_hint()}"
+        )
     transport_mode = TRANSPORT_CANONICAL_VERIFIED if include_replay else TRANSPORT_THIN_ADVISORY
     digest = _transport_bound_result_digest(response.result_digest, transport_mode)
     return {
@@ -5082,6 +5226,10 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # payload is fail-closed (UNVERIFIED).  Off by default -> pre-item-2 behaviour.  NOTE the honest scope in
     # _check_verified_admission: this authenticates verdict<->route COHERENCE under the response's declared context, not
     # the context itself -- pass expected_request_digest (above) or a verification_key to bind the request too.
+    # D24.11: re-derive the section-5.3 identity losses from the carried request BEFORE anything consumes them (the
+    # verified-admission, readiness and capability re-derivations below all read response.identity_losses).
+    # Replay-free, so it runs on every load and every transport.
+    response._check_identity_loss_coherence()
     if require_verified_admission:
         _check_verified_admission(response)
     # v0.8 Real Route Dossiers, M10: the readiness-ladder deserialization trust-boundary close -- UNCONDITIONAL (not
@@ -5162,13 +5310,21 @@ def readiness_tier_line(tier: str) -> str:
 
 def render_capability_lines(assessment: "CapabilityAssessment | None", origin: str, *, indent: str) -> "list[str]":
     """The human capability block for ONE route (D12a).  ``None`` -> ``[]`` (no profile requested: render NOTHING,
-    never a fake pass).  Otherwise a ``CAPABILITY[<origin>]: <overall>`` line + the scope note + EVERY axis with its
-    status (a non-FIT axis carries its first reason), so an unassessed/UNCONSTRAINED/reserved axis is VISIBLE.  This is
-    the ONE renderer both ``recompile`` and the ``plan`` front door call, so the two surfaces cannot drift and each
-    matches the JSON ``capability_assessment`` overall + axis verdicts (criterion 29, human == JSON)."""
+    never a fake pass).  Otherwise a ``CAPABILITY[<origin>@<profile_digest[:12]>]: <overall>`` line + the scope note +
+    EVERY axis with its status (a non-FIT axis carries its first reason), so an unassessed/UNCONSTRAINED/reserved axis
+    is VISIBLE.  This is the ONE renderer both ``recompile`` and the ``plan`` front door call, so the two surfaces
+    cannot drift and each matches the JSON ``capability_assessment`` overall + axis verdicts (criterion 29).
+
+    D24.12 (Wave-C' D-O1/O2): ``origin`` and the snapshot's ``profile_id`` are LABELS -- free text a keyless author
+    can set to anything (a research-lab bench relabelled ``profile_id="poor-man"`` passes the D20 origin law, which
+    only binds the origin to that same free-text id).  The CONTENT identity is the profile digest, so the render shows
+    it beside the label (the assessment's ``profile_digest`` is bound to the request's profile on every load).  A
+    human who needs to know WHICH bench answered compares that digest; a machine consumer pins the question with
+    ``response_from_payload(..., expected_capability_question_digest=...)`` -- the AUTHENTICATING check.  Neither the
+    label nor this render authenticates anything on its own."""
     if assessment is None:
         return []
-    label = origin or "profile"
+    label = f"{origin or 'profile'}@{assessment.profile_digest[:12]}"
     lines = [
         f"{indent}CAPABILITY[{label}]: {assessment.overall.value}",
         f"{indent}  {CAPABILITY_SCOPE_NOTE}",

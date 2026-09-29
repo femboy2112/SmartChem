@@ -238,64 +238,66 @@ def test_rebind_refuses_an_altered_profile_snapshot_on_the_wire():
 
 
 # -- the replay-free bindings, each ISOLATED on a THIN wire with every public pin recomputed (X-high D20) ----------
+#
+# D24.14 made dossier DELETION unrepresentable (the ranked set must equal the IR route-candidate set), so the vehicle is
+# no longer "the isopentyl response with its PROCESS_SPECIFIED dossiers dropped": it is a response whose dossiers are
+# ALL below PROCESS_SPECIFIED to begin with (methyl acetate under poor-man: REACTION_VOUCHED + FORMAL_CANDIDATE), so
+# the 0.8 thin-PS law never fires and the binding under test is the ONLY guard standing.
 
-def _thin_without_process_specified(resp, dossiers=None):
-    """A thin-wire vehicle for the replay-free bindings: the PROCESS_SPECIFIED dossiers (inadmissible on a thin wire
-    by the 0.8 law, which would otherwise refuse FIRST) and their frontier entries are dropped, so the binding under
-    test is the ONLY guard standing.  Serialized through the public codec (every unkeyed pin recomputed)."""
-    dossiers = resp.ranked_route_dossiers if dossiers is None else dossiers
-    kept = tuple(d for d in dossiers if d.readiness.tier != PROCESS_SPECIFIED)
-    ids = {d.route_digest for d in kept}
-    frontier = tuple(e for e in resp.affordability_frontier if e.route_digest in ids)
-    vehicle = dc.replace(resp, ranked_route_dossiers=kept, affordability_frontier=frontier)
-    return vehicle, response_to_payload(vehicle, include_replay=False)
+
+@functools.lru_cache(maxsize=1)
+def _thin_vehicle():
+    resp = _run("poor-man")[1]
+    assert resp.ranked_route_dossiers and all(
+        d.readiness.tier != PROCESS_SPECIFIED and d.capability_assessment is not None
+        for d in resp.ranked_route_dossiers)
+    return resp
+
+
+def _thin(resp):
+    """Serialize THIN through the public codec (every unkeyed pin recomputed)."""
+    return response_to_payload(resp, include_replay=False)
 
 
 def test_thin_vehicle_control_loads_when_no_binding_is_violated():
     """The discriminating control: the SAME thin vehicle with no tamper loads -- so each refusal below is its binding's,
     not the vehicle's."""
-    vehicle, payload = _thin_without_process_specified(_fit_response())
-    assert vehicle.ranked_route_dossiers, "the vehicle must still carry assessed (sub-PROCESS_SPECIFIED) dossiers"
-    assert all(d.capability_assessment is not None for d in vehicle.ranked_route_dossiers)
-    back = response_from_payload(payload)
+    vehicle = _thin_vehicle()
+    back = response_from_payload(_thin(vehicle))
     assert back.result_digest == vehicle.result_digest
 
 
 def test_profile_digest_binding_refuses_a_stale_assessment_on_a_thin_wire():
-    """M38b: the stock is stripped but the carried assessments keep the OLD profile_digest; with no replay there is no
-    rebind -- the profile binding alone refuses."""
-    resp = _fit_response()
-    tampered = dc.replace(resp.request.capability_profile, material_inventory=())
+    """M38b: the request's profile snapshot is altered but the carried assessments keep the OLD profile_digest; with no
+    replay there is no rebind -- the profile binding alone refuses."""
+    resp = _thin_vehicle()
+    tampered = dc.replace(resp.request.capability_profile, provenance="tampered bench declaration")
     swapped = dc.replace(resp, request=dc.replace(resp.request, capability_profile=tampered))
-    _vehicle, payload = _thin_without_process_specified(swapped)
     with pytest.raises(ValueError, match="assessment under a different bench"):
-        response_from_payload(payload)
+        response_from_payload(_thin(swapped))
 
 
 def test_route_digest_binding_refuses_a_transplanted_assessment_on_a_thin_wire():
-    resp = _fit_response()
-    doss = [d for d in resp.ranked_route_dossiers if d.readiness.tier != PROCESS_SPECIFIED]
+    resp = _thin_vehicle()
+    doss = list(resp.ranked_route_dossiers)
     assert len(doss) >= 2
     a0 = doss[0].capability_assessment
     doss[0] = dc.replace(doss[0], capability_assessment=dc.replace(a0, route_digest=doss[1].route_digest))
-    _vehicle, payload = _thin_without_process_specified(resp, tuple(doss))
     with pytest.raises(ValueError, match="assessment of a different route"):
-        response_from_payload(payload)
+        response_from_payload(_thin(dc.replace(resp, ranked_route_dossiers=tuple(doss))))
 
 
 def test_readiness_binding_refuses_a_relabelled_tier_on_a_thin_wire():
     """M104b: a sub-PROCESS_SPECIFIED dossier's (non-FIT) assessment relabelled as computed under PROCESS_SPECIFIED --
-    fold-consistent (an UNKNOWN axis keeps overall UNKNOWN under any tier), public pins recomputed.  Only the readiness
-    binding stands (this is the premise the M104 thin-FIT redundancy proof rests on)."""
-    resp = _fit_response()
-    ps = next(d for d in resp.ranked_route_dossiers if d.readiness.tier == PROCESS_SPECIFIED)
-    doss = [d for d in resp.ranked_route_dossiers if d.readiness.tier != PROCESS_SPECIFIED]
+    fold-consistent (a non-FIT axis keeps the overall non-FIT under any tier), public pins recomputed.  Only the
+    readiness binding stands (the premise the M104 thin-FIT redundancy proof rests on)."""
+    resp = _thin_vehicle()
+    doss = list(resp.ranked_route_dossiers)
     a0 = doss[0].capability_assessment
     doss[0] = dc.replace(doss[0], capability_assessment=dc.replace(
-        a0, readiness_tier=PROCESS_SPECIFIED, readiness_digest=ps.readiness.digest))
-    _vehicle, payload = _thin_without_process_specified(resp, tuple(doss))
+        a0, readiness_tier=PROCESS_SPECIFIED, readiness_digest=doss[1].readiness.digest))
     with pytest.raises(ValueError, match="tier/readiness_digest mismatch"):
-        response_from_payload(payload)
+        response_from_payload(_thin(dc.replace(resp, ranked_route_dossiers=tuple(doss))))
 
 
 def test_thin_wire_does_not_deliver_a_verified_fit():
@@ -321,7 +323,9 @@ def test_rendered_capability_block_matches_the_json_assessment():
         raise KeyError(name)
 
     overall = field(jd, "overall")["value"]["value"]
-    assert f"CAPABILITY[poor-man]: {overall}" in human
+    # D24.12: the label carries the CONTENT identity (the profile digest) beside the free-text origin.
+    pdig = field(jd, "profile_digest")["value"]
+    assert f"CAPABILITY[poor-man@{pdig[:12]}]: {overall}" in human
     for ax_name in _CAPABILITY_AXIS_NAMES:
         status = field(field(jd, ax_name), "status")["value"]["value"]
         assert f"{ax_name}: {status}" in human, f"human/JSON axis mismatch on {ax_name}"
@@ -416,7 +420,8 @@ def test_compile_and_recompile_agree_human_and_json_under_a_capability_profile(c
         raise KeyError(name)
 
     overall = field(assessment, "overall")["value"]["value"]
-    assert f"CAPABILITY[poor-man]: {overall}" in compile_human_out
+    pdig = field(assessment, "profile_digest")["value"]
+    assert f"CAPABILITY[poor-man@{pdig[:12]}]: {overall}" in compile_human_out
     for ax_name in _CAPABILITY_AXIS_NAMES:
         status = field(field(assessment, ax_name), "status")["value"]["value"]
         assert f"{ax_name}: {status}" in compile_human_out

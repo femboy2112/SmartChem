@@ -448,13 +448,14 @@ def test_combined_fits_dag_flips_exit_to_success_but_a_non_fit_dag_stays_refused
     # GUARD: the real dossiers are UNKNOWN-fit (undeclared elapsed), so nothing is combined-admissible -> exit REFUSED.
     assert resp.ranked_dag_dossiers and not any(d.fit_status == "FITS" for d in resp.ranked_dag_dossiers)
     assert not resp.admissible_dag_digests and resp.exit_code == EXIT_REFUSED
-    # CAPABILITY: a coherent combined-FITS DAG dossier now DOES admit and flip exit to success.
-    real_candidate = resp.compilation_ir.candidates[0].candidate_digest
+    # CAPABILITY: a coherent combined-FITS DAG dossier now DOES admit and flip exit to success.  (D24.14: it REPLACES
+    # one real candidate's dossier -- the dossier set must still cover every DAG candidate, a verdict is never deleted.)
+    real_candidate = resp.ranked_dag_dossiers[0].route_digest
     fitting = RankedDAGSummary(
         RANKED_DAG_SUMMARY_SCHEMA, real_candidate, "control step",
         "FITS", (), (), (requirements(),), (),                          # one declared step, no edges -> re-derives FITS
     )
-    admitted = _replace(resp, ranked_dag_dossiers=(fitting,))
+    admitted = _replace(resp, ranked_dag_dossiers=(fitting, *resp.ranked_dag_dossiers[1:]))
     assert admitted.process_selection_status == "FITS_FOUND"            # the DAG is combined-admitted ...
     assert not admitted.admissible_route_digests                        # ... not in the LINEAR list ...
     assert admitted.admissible_dag_digests == (real_candidate,)         # ... but in the parallel DAG combined list ...

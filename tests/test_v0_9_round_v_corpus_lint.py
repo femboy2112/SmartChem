@@ -21,6 +21,9 @@ What is pinned:
   elsewhere (or honestly absent); the compiler never reads the sentence as a species.
 * D14 data -- the isopentyl whole-step peak and the aspirin whole-step minimum pressure are UNKNOWN (P-X2/P-X3), and
   the re-filing leaves every procedure's completeness (hence every readiness tier) untouched.
+* D24.1 -- exactly the curated ops' ``quantity`` is AUTHORED as the canonical rendering of their typed uses (the
+  compiler reads everything else as an unread material demand); no corpus ``scale`` is forced into equality.
+* D24.16 -- no authored text claims FRACTIONAL distillation (the page describes a 134-143 C cut).
 """
 from __future__ import annotations
 
@@ -222,7 +225,7 @@ _SUMMARY_PAIRING = {
          and any(u.name == "sodium chloride" for u in op.material_uses)),
         ("drying", "magnesium sulfate", lambda op: op.kind is OperationKind.DRY
          and any(u.name == "magnesium sulfate" for u in op.material_uses)),
-        ("purification", "fractional distillation", lambda op: op.kind is OperationKind.DISTILL),
+        ("purification", "distillation", lambda op: op.kind is OperationKind.DISTILL),
     ],
     "aspirin": [
         ("wash", "cold-water rinses", lambda op: any(u.name == "cold water" for u in op.material_uses)),
@@ -261,7 +264,7 @@ _MEDIUM_REVIEW = {
     "aqueous, acidic": {},  # no procedure evidence: D17 carries a text-free material_unresolved remainder
     "ketene generated and consumed in situ (not storable)": {"ketene": "balanced reactant (precursor name)"},
     "aqueous or neat; addition/temperature controlled": {},
-    "neat; acid-catalyzed (conc. H2SO4); reflux then fractional distillation": {
+    "neat; acid-catalyzed (conc. H2SO4); reflux then distillation (134-143 C fraction collected)": {
         "conc. H2SO4": "typed CATALYST use 'sulfuric acid'"},
     "warm water bath (60-65 C); Fischer esterification of salicylic acid with methanol": {
         "salicylic acid": "balanced reactant (precursor name)", "methanol": "balanced reactant (precursor name)"},
@@ -286,6 +289,64 @@ def test_every_corpus_medium_is_reviewed_and_its_materials_are_typed_elsewhere()
                 assert home.split("'")[1] in catalyst_uses, (medium, word, catalyst_uses)
             else:
                 assert word in rec.assembly_precursor_names, (medium, word, rec.assembly_precursor_names)
+
+
+# -- D24.1: op.quantity / scale are DISPLAY only when byte-equal to the canonical rendering of the typed fields -----
+
+def _render_op_quantity(op) -> str:
+    """The §7.5 D24.1 canonical rendering, restated here from the barrier text (the compiler's renderer lives in
+    ``smartchem/capability/coverage.py``; this lint pins the AUTHORED data against the frozen FORMAT, independently)."""
+    return " + ".join(f"{u.quantity.value} {u.quantity.unit} {u.name}" for u in op.material_uses if u.quantity is not None)
+
+
+def _render_scale(procedure) -> str:
+    return " + ".join(f"{u.quantity.value} {u.quantity.unit} {u.name}" for op in procedure.operations
+                      for u in op.material_uses
+                      if u.quantity is not None and u.role in (ProcedureMaterialRole.SUBSTRATE,
+                                                              ProcedureMaterialRole.REACTANT))
+
+
+#: record -> the op ordinals whose ``quantity`` is AUTHORED as the canonical rendering (every word of the original
+#: source phrase is typed on that op's uses: quantities, names, formulation words + specifications). Every OTHER
+#: PRESENT op.quantity is prose carrying more than the typed uses (an instruction, an apparatus, an untyped material,
+#: a purpose) and therefore reads as an unread MATERIAL demand -- honest, never re-authored into a false equality.
+_CANONICAL_QUANTITY_OPS = {"isopentyl": {1, 5, 6, 8}, "aspirin": set(), "paracetamol": set()}
+
+
+@pytest.mark.parametrize("record", sorted(_PROCEDURES))
+def test_d24_1_the_canonical_op_quantities_are_exactly_the_curated_ones(record: str) -> None:
+    proc = _PROCEDURES[record]
+    canonical = {op.ordinal for op in proc.operations
+                 if (text := _prose(op.quantity)) is not None and text == _render_op_quantity(op)}
+    assert canonical == _CANONICAL_QUANTITY_OPS[record], (record, canonical)
+    for op in proc.operations:
+        if op.ordinal in _CANONICAL_QUANTITY_OPS[record]:
+            assert _render_op_quantity(op), (record, op.ordinal)  # never an empty-equals-empty coincidence
+
+
+@pytest.mark.parametrize("record", sorted(_PROCEDURES))
+def test_d24_1_every_corpus_scale_stays_source_prose(record: str) -> None:
+    """No corpus ``scale`` is re-authored: each source scale states masses/moles/ratios/catalyst amounts beyond the
+    quantified SUBSTRATE/REACTANT uses, so it honestly reads as an unread demand rather than a forced equality."""
+    proc = _PROCEDURES[record]
+    assert proc.scale.is_present
+    assert proc.scale.value != _render_scale(proc)
+
+
+def test_d24_16_no_authored_fractional_distillation_overclaim_remains() -> None:
+    """D24.16: the isopentyl page says "Set up the distillation apparatus as described by your instructor ... collect
+    the fraction between 134 and 143 C" -- a boiling-range cut, never a fractionating column. No authored corpus text
+    (summary values, N/A justifications, the envelope medium) may claim FRACTIONAL distillation."""
+    rec = _record_for("isopentyl acetate", _ISOPENTYL_PROCEDURE)
+    texts = [rec.envelope.medium or ""]
+    for name in ("scale", "quench", "workup_isolation", "separation", "wash", "drying", "purification",
+                 "analytical_verification"):
+        fld = getattr(_ISOPENTYL_PROCEDURE, name)
+        texts += [fld.value if isinstance(fld.value, str) else "", fld.justification]
+    for op in _ISOPENTYL_PROCEDURE.operations:
+        texts += [f.value for f in (op.quantity, op.endpoint, op.temperature) if f is not None and isinstance(f.value, str)]
+    assert not [t for t in texts if "fractional" in t.lower()]
+    assert "134 and 143" in _ISOPENTYL_PROCEDURE.purification.value
 
 
 # -- D14 data + completeness preserved -------------------------------------------------------------------------

@@ -69,8 +69,8 @@ class EvidenceFieldStatus(str, Enum):
     #: A structured value IS represented, tied to a source locator.
     PRESENT = "PRESENT"
     #: The source AFFIRMATIVELY closes this out (a complete procedure in which this operation genuinely does not
-    #: occur) -- carries a locator AND a non-empty justification. NEVER derived from chemistry/phase, NEVER a
-    #: synonym for silence.
+    #: occur) -- carries a locator AND a non-empty justification, and NO value (D24.2: a field that states a value
+    #: is PRESENT). NEVER derived from chemistry/phase, NEVER a synonym for silence.
     EXPLICIT_NOT_APPLICABLE = "EXPLICIT_NOT_APPLICABLE"
     #: The source is silent; no claim either way. Blocks completeness (mere silence is not N/A).
     UNKNOWN_MISSING = "UNKNOWN_MISSING"
@@ -82,7 +82,8 @@ class EvidenceField(Digestible):
     to, and (for EXPLICIT_NOT_APPLICABLE only) the justification that closes it out.
 
     ``value`` is a normalized ``str`` (an amount, a ratio, a quoted phrase) or an
-    :class:`~smartchem.conditions.Interval` (T in 'K', duration in 'min') or ``None``.
+    :class:`~smartchem.conditions.Interval` (T in 'K', duration in 'min') or ``None``. Only PRESENT carries a
+    value; UNKNOWN_MISSING and EXPLICIT_NOT_APPLICABLE never do (D24.2).
     """
 
     status: EvidenceFieldStatus
@@ -119,6 +120,13 @@ class EvidenceField(Digestible):
             raise ValueError(
                 "EXPLICIT_NOT_APPLICABLE must carry a non-empty justification (the source text that closes it "
                 "out) -- silence is UNKNOWN_MISSING, never N/A"
+            )
+        if self.status is EvidenceFieldStatus.EXPLICIT_NOT_APPLICABLE and self.value is not None:
+            # Round V X-high D24.2 (Wave-C' A4): a closing-out claim cannot also STATE a value. Every capability
+            # reader gates on ``is_present``, so an N/A field carrying ``Interval(650, 650, "K")`` was a demand that
+            # reached no axis while readiness counted it resolved. The value belongs in a PRESENT field.
+            raise ValueError(
+                "EXPLICIT_NOT_APPLICABLE carries no value -- a field that states a value is PRESENT, not N/A (D24.2)"
             )
         if self.status is EvidenceFieldStatus.PRESENT and self.value is None:
             raise ValueError("PRESENT must carry a value")

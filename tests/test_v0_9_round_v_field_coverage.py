@@ -23,6 +23,9 @@ from smartchem.capability.coverage import (
     FieldCoverage,
     FieldOwner,
     missing_coverage,
+    render_scale,
+    render_summary,
+    render_verification,
 )
 from smartchem.conditions import Interval
 
@@ -96,6 +99,8 @@ def test_axis_witness_present_prose_on_an_op_slot_never_leaves_its_owner_a_pass(
     ("duration", Interval(30240, 30240, "min"), FieldOwner.PROCESS),
     ("applied_field", "microwave irradiation", FieldOwner.EQUIPMENT),
     ("catalysts", ("zinc chloride",), FieldOwner.MATERIAL),
+    # D24.3 (Wave-C' A5): an uncovered medium on a procedure step is an unread material question (never a species).
+    ("medium", "benzene", FieldOwner.MATERIAL),
 ])
 def test_axis_witness_envelope_slots_fail_closed_on_their_owner(field, value, owner):
     assert FIELD_COVERAGE[("ConditionEnvelope", field)].primary is owner
@@ -134,7 +139,6 @@ def _with_use0(route, **changes):
     ("ProcedureEvidence.evidence_scope", lambda r: _with_procedure(r, evidence_scope="another scope note")),
     ("ProcedureEvidence.reaction_scope", lambda r: _with_procedure(r, reaction_scope="another reaction scope")),
     ("ProcedureMaterialUse.evidence_source", lambda r: _with_use0(r, evidence_source="another locator")),
-    ("ConditionEnvelope.medium", lambda r: _route(medium="neat; acid-catalyzed (conc. H2SO4); reflux")),
     ("ConditionEnvelope.provenance", lambda r: _route(provenance="another conditions provenance note")),
 ])
 def test_noninterference_witness_presentation_fields_move_no_axis(label, perturb):
@@ -144,8 +148,40 @@ def test_noninterference_witness_presentation_fields_move_no_axis(label, perturb
     assert _axes(_assess(perturb(base))) == _axes(_assess(base)), label
 
 
-def test_the_capability_core_reads_its_ledger_owners_not_the_medium():
+def test_the_capability_core_never_reads_the_medium_as_a_species():
+    """Part IV + D24.3: the medium text never becomes a species, a hazard entry or a re-quoted material string -- only a
+    text-free unread note."""
     reqs = compile_capability_requirements(_route(medium="aqueous, acidic"))
     assert not any("aqueous, acidic" in text
                    for text in (*reqs.hazard_unresolved, *reqs.material_unresolved,
                                 *(r.label for r in reqs.material)))
+    assert any("envelope.medium" in u for u in reqs.material_unresolved)
+
+
+# -- D24.1: the whole-procedure rows are witnessed through their CANONICAL renderings --------------------------------
+
+_PROCEDURE_HOSTS = {
+    "quench": _op(OperationKind.ADD, role=OperationRole.QUENCH),
+    "workup_isolation": _op(OperationKind.ADD, role=OperationRole.WASH),
+    "separation": _op(OperationKind.SEPARATE, apparatus=("separatory funnel",)),
+    "wash": _op(OperationKind.ADD, role=OperationRole.WASH),
+    "drying": _op(OperationKind.DRY, apparatus=("erlenmeyer flask",)),
+    "purification": _op(OperationKind.DISTILL, apparatus=("simple distillation apparatus",), temperature=_T),
+    "analytical_verification": _VERIFY,
+    "scale": None,
+}
+
+
+@pytest.mark.parametrize("field", sorted(_PROCEDURE_HOSTS))
+def test_axis_witness_a_procedure_row_is_display_only_when_canonical(field):
+    """Every ProcedureEvidence row the ledger gives an AXIS owner (D24.1): its canonical rendering leaves the owner a
+    pass; any other PRESENT prose leaves it UNKNOWN."""
+    owner = FIELD_COVERAGE[("ProcedureEvidence", field)].primary
+    assert owner in AXIS_OWNERS
+    host = _PROCEDURE_HOSTS[field]
+    base = _route(*(() if host is None else (host,)))
+    proc = base.steps[0].envelope.procedure
+    canonical = (render_scale(proc) if field == "scale" else
+                 render_verification(proc) if field == "analytical_verification" else render_summary(proc, field))
+    assert _axis(_assess(_with_procedure(base, **{field: _pf(canonical)})), owner) in PASSES, (field, canonical)
+    assert _axis(_assess(_with_procedure(base, **{field: _pf("a stated demand in prose")})), owner) is S.UNKNOWN

@@ -26,6 +26,10 @@ _CASES = {
     "recompile_invalid.json": ["recompile", "not-a-real-name-zzz", "--json"],
     "decompile_paracetamol.json": ["decompile", "C8H9NO2", "--json"],
     "decompile_smiles_paracetamol.json": ["decompile", "CC(=O)Nc1ccc(O)cc1", "--smiles", "--json"],
+    # 0.9 X-high (A-WIRE): the capability surface is golden-guarded too -- the resolved poor-man snapshot, the question
+    # pin and every per-route capability_assessment ride this payload.
+    "recompile_capability_poor_man.json": ["recompile", "smiles:CC(=O)OC", "--max-depth", "2",
+                                           "--capability-profile", "poor-man", "--json"],
 }
 
 

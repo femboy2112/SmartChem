@@ -51,6 +51,8 @@ _GOLDEN_CASES = {
     "recompile_invalid.json": ["recompile", "not-a-real-name-zzz", "--json"],
     "decompile_paracetamol.json": ["decompile", "C8H9NO2", "--json"],
     "decompile_smiles_paracetamol.json": ["decompile", "CC(=O)Nc1ccc(O)cc1", "--smiles", "--json"],
+    "recompile_capability_poor_man.json": ["recompile", "smiles:CC(=O)OC", "--max-depth", "2",
+                                           "--capability-profile", "poor-man", "--json"],
 }
 
 

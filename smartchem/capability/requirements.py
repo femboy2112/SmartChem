@@ -23,7 +23,11 @@ formulation word meant. The compiler now contains NO formulation vocabulary and 
   pressure window and the ordered procedure TIMELINE are read from every typed statement, and every stated-but-untyped
   demand (prose T/P/duration, a rate, an agitation, an endpoint, a thermal op nothing covers, a hardware op no
   admissible apparatus discharges, a VERIFY op naming no method, an amount with no typed home) is carried as an
-  unread remainder on its OWNING axis (UNKNOWN). ``envelope.medium`` is condition prose -- provenance only (Part IV).
+  unread remainder on its OWNING axis (UNKNOWN). ``envelope.medium`` is condition prose -- never a species (Part IV),
+  only a text-free unread note when no typed use covers it (D24.3).
+* **Prose is display only when it IS the canonical rendering of the typed fields it summarizes (D24.1).** A PRESENT
+  ``op.quantity`` / ``scale`` / whole-procedure summary / ``analytical_verification`` that is not byte-equal to its
+  :mod:`smartchem.capability.coverage` renderer is unread on its named host axis -- no prose parser, no word list.
 * **Waste is derived by** :func:`smartchem.capability.waste.derive_waste` **(D9)** -- this module only packages it.
 
 Nothing here decides FIT/BLOCKED/UNKNOWN -- that fold lives in :mod:`smartchem.capability.assess`.
@@ -43,7 +47,8 @@ from ..experiment.handling import CareLevel, verify_handling
 from ..experiment.step import ExperimentRoute
 from ..material_spec import MaterialSpecification, PhaseClaim
 from ..procedure_evidence import OperationKind, ProcedureMaterialRole
-from ..process_constraints import ProcessRequirements
+from ..process_constraints import Agitation, ProcessRequirements
+from .coverage import SUMMARY_FIELDS, render_op_quantity, render_scale, render_summary, render_verification
 from .enums import ContainmentCapability, EquipmentCapability, MeasurementMethod, WasteCapability
 from .equipment_resolver import classify_apparatus_strings
 from .measurement_resolver import classify_measurement_strings
@@ -146,9 +151,10 @@ class RouteCapabilityRequirements(Digestible):
     hazard record). ``physical_unresolved`` / ``process_unresolved`` (D13) carry stated T/P/duration demands this
     projection could not read into the typed bounds (a non-canonical unit; prose; a thermal op no typed temperature
     or whole-step extremum covers; a timeline floor above the record's own ceiling; a stated rate/agitation) -> those
-    axes fail closed to UNKNOWN. ``material_unresolved`` (X-high D16/D17) carries material demands that have no typed
-    home (a step with no ``ProcedureEvidence`` at all; an op quantity stated with no quantified typed use) -> the
-    material axis fails closed to UNKNOWN (a provable BLOCK still wins).
+    axes fail closed to UNKNOWN. ``material_unresolved`` (X-high D16/D17 + D24) carries material demands that have no
+    typed home (a step with no ``ProcedureEvidence`` at all; an op quantity or batch scale that is not the canonical
+    rendering of its typed uses; an uncovered ``envelope.medium`` on a procedure step) -> the material axis fails
+    closed to UNKNOWN (a provable BLOCK still wins).
     """
 
     route_digest: str
@@ -250,10 +256,13 @@ def _name_covers(use_name: str, raw: str) -> bool:
 
 def _project_specification(use) -> MaterialSpecification:
     """D3/F69: the use's source-authored specification; a non-empty raw formulation with NO typed specification is an
-    UNRESOLVED term (UNKNOWN, never "no constraint"); otherwise the empty specification."""
-    if use.specification is not None:
-        return use.specification
+    UNRESOLVED term (UNKNOWN, never "no constraint"); otherwise the empty specification. D24.1 (Wave-C' A9): an EMPTY
+    specification beside a non-empty formulation types NOTHING, so the words are just as untyped as with no
+    specification at all -> the same unresolved term (a non-empty spec keeps D3's author-transcription contract)."""
     raw = (use.formulation or "").strip()
+    spec = use.specification
+    if spec is not None and not (raw and spec == _EMPTY_SPEC):
+        return spec
     if raw:
         return MaterialSpecification(unresolved_terms=(raw,))
     return _EMPTY_SPEC
@@ -315,20 +324,24 @@ def _role_contradiction(use, step) -> "str | None":
 
 
 def _external_inputs(route: ExperimentRoute) -> "list[tuple[int, object]]":
-    """X-high S2: the route's EXTERNAL inputs IN STEP ORDER, as ``(step index, molecule)``: a reactant is internal only
-    if an EARLIER step produced it (a species step 2 makes cannot feed step 1). One entry per (step, identity).
-    ``ExperimentRoute.leaf_inputs`` (order-blind, search/ranking contract) is deliberately left untouched."""
-    produced: "set[str]" = set()
+    """X-high S2 + D24.6: the route's EXTERNAL inputs IN STEP ORDER, as ``(step index, molecule)``. A reactant of step
+    k is internal ONLY if it is step k-1's carried TARGET -- the one thing the linear route's own invariant says is
+    handed forward. A byproduct of an earlier step (a condensation's small-molecule coproduct, removed in its workup) or a target
+    consumed by any step other than its immediate successor is EXTERNAL: its later consumption is a real demand of its
+    own (Wave-C' B2: one condensation byproduct fed two later hydrolyses for free). Recovery of a stream is a typed-disposition
+    question (0.9.5 StreamDisposition), never assumed. One entry per (step, identity). ``ExperimentRoute.leaf_inputs``
+    (order-blind, search/ranking contract) is deliberately left untouched."""
     out: "list[tuple[int, object]]" = []
+    carried: "str | None" = None
     for s_index, step in enumerate(route.steps, start=1):
         seen: "set[str]" = set()
         for molecule in step.reactants:
             key = _species_ident(molecule)
-            if key in produced or key in seen:
+            if key == carried or key in seen:
                 continue
             seen.add(key)
             out.append((s_index, molecule))
-        produced.update(_species_ident(p) for p in step.products)
+        carried = _species_ident(step.target)
     return out
 
 
@@ -429,14 +442,23 @@ def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement
     return tuple(requirements)
 
 
-def _material_unresolved(route: ExperimentRoute) -> "tuple[str, ...]":
-    """X-high D16/D17 material remainders with no typed home (-> material UNKNOWN; a provable BLOCK still wins):
+def _is_canonical(field, rendering: str) -> bool:
+    """D24.1: a PRESENT prose slot is DISPLAY only when its value is byte-equal to the canonical rendering of the typed
+    fields it summarizes (an empty rendering never matches -- a slot with nothing typed behind it is unread)."""
+    return bool(rendering) and isinstance(field.value, str) and field.value == rendering
 
-    * a step with NO ``ProcedureEvidence``: its auxiliary/medium/solvent material demand is unread (the medium prose
-      is provenance only -- Part IV -- so the step's non-reactant materials have no typed carrier at all);
-    * the F69-analog for amounts: a PRESENT ``op.quantity`` on an op that carries NO quantified typed use is a stated
-      amount with no typed representation. Where the op DOES carry quantified typed uses, ``op.quantity`` is their
-      display form (typed fields are authoritative -- the same trust model as ``formulation`` vs ``specification``).
+
+def _material_unresolved(route: ExperimentRoute) -> "tuple[str, ...]":
+    """X-high D16/D17 + D24 material remainders with no typed home (-> material UNKNOWN; a provable BLOCK still wins):
+
+    * a step with NO ``ProcedureEvidence``: its auxiliary/medium/solvent material demand is unread;
+    * D24.1 (Wave-C' A1/B3b): a PRESENT ``op.quantity`` that is not byte-equal to
+      :func:`~smartchem.capability.coverage.render_op_quantity` (the op's quantified typed uses) -- the prose may state
+      an amount or a material the typed uses do not ("5 L" beside a typed 20 mL use; "+ 2 g" of a second species);
+    * D24.1: a PRESENT ``scale`` that is not byte-equal to :func:`~smartchem.capability.coverage.render_scale`;
+    * D24.3 (Wave-C' A5/B3a): a non-empty ``envelope.medium`` on a step WITH ProcedureEvidence that no typed use of
+      that step exact-fold-covers. The note is TEXT-FREE: the sentence is still never a species, a hazard entry or a
+      waste stream (Part IV) -- it is only an open question about what material it might name.
     """
     out: "list[str]" = []
     for s_index, step in enumerate(route.steps, start=1):
@@ -449,9 +471,18 @@ def _material_unresolved(route: ExperimentRoute) -> "tuple[str, ...]":
             field = op.quantity
             if field is None or not field.is_present:
                 continue
-            if not any(u.quantity is not None for u in op.material_uses):
-                out.append(f"step {s_index} op {op.ordinal} {op.kind.value} states a quantity ({field.value!r}) but no "
-                           "typed use of that op carries a quantity -- a stated amount with no typed home (F69-analog)")
+            if not _is_canonical(field, render_op_quantity(op)):
+                out.append(f"step {s_index} op {op.ordinal} {op.kind.value} states a quantity ({field.value!r}) that is "
+                           "not the canonical rendering of its quantified typed uses -- a stated amount/material with "
+                           "no typed home (D24.1)")
+        if procedure.scale.is_present and not _is_canonical(procedure.scale, render_scale(procedure)):
+            out.append(f"step {s_index} procedure scale ({procedure.scale.value!r}) is not the canonical rendering of its "
+                       "quantified SUBSTRATE/REACTANT uses -- a stated batch amount with no typed home (D24.1)")
+        medium = (step.envelope.medium or "").strip()
+        step_uses = [u for op in procedure.operations for u in op.material_uses]
+        if medium and not any(_name_covers(u.name, medium) for u in step_uses):
+            out.append(f"step {s_index}: envelope.medium is untyped condition prose -- any material it names is unread "
+                       "(D24.3; the sentence is never itself a species, hazard entry or waste stream)")
     return tuple(out)
 
 
@@ -489,11 +520,15 @@ def _equipment_requirement(
     resolve at least one recognized NON-consumable capability admissible for its kind (``_KIND_ADMISSIBLE``). An
     ignored consumable ("boiling stones") never discharges a still, and a thermometer never discharges a DISTILL op.
     The step's ``ProcessRequirements.equipment`` adds demands but NEVER discharges an op (an unrelated record is not a
-    typed op->record mapping). A declared applied field stays an unread demand."""
+    typed op->record mapping). A declared applied field stays an unread demand, and (D24.17) so does the whole
+    equipment demand of a step with no ``ProcedureEvidence``."""
     raw: "set[str]" = set()
     unread: "list[str]" = []
     for s_index, step in enumerate(route.steps, start=1):
         procedure = step.envelope.procedure
+        if procedure is None:
+            # D24.17: no typed ops at all -- the step's equipment demand is unread, never NOT_APPLICABLE.
+            unread.append(f"step {s_index} has no ProcedureEvidence: its equipment demand is unread (D24.17)")
         if procedure is not None:
             for op in procedure.operations:
                 if op.kind is OperationKind.VERIFY:
@@ -534,14 +569,17 @@ def _measurement_requirement(
     with no instrument) is not discharged by the first op's balance. A procedure whose ``analytical_verification`` is
     PRESENT but whose VERIFY ops name nothing stays unread (D13). X-high D16: a PRESENT ``op.endpoint`` is an endpoint
     CRITERION ("until basic to litmus") with no typed carrier tying it to a method -> unread (no ``PH_INDICATOR`` is
-    minted: a member no evidence path can emit would be decorative)."""
+    minted: a member no evidence path can emit would be decorative). D24.1: a PRESENT ``analytical_verification``
+    that is not byte-equal to :func:`~smartchem.capability.coverage.render_verification` is unread (it may name a
+    method no VERIFY op types). D24.17: a step with no ``ProcedureEvidence`` has an unread verification demand."""
     raw: "set[str]" = set()
     unread: "list[str]" = []
     for s_index, step in enumerate(route.steps, start=1):
         procedure = step.envelope.procedure
         if procedure is None:
+            # D24.17: no typed ops at all -- the step's verification demand is unread, never NOT_APPLICABLE.
+            unread.append(f"step {s_index} has no ProcedureEvidence: its verification demand is unread (D24.17)")
             continue
-        any_verify_apparatus = False
         for op in procedure.operations:
             if op.endpoint is not None and op.endpoint.is_present:
                 unread.append(f"step {s_index} op {op.ordinal} {op.kind.value} endpoint criterion "
@@ -550,13 +588,15 @@ def _measurement_requirement(
                 continue
             raw.update(op.apparatus)
             recognized, _ignored, unrecognized = classify_measurement_strings(op.apparatus)
-            if op.apparatus:
-                any_verify_apparatus = True
             if not recognized and not unrecognized:
                 unread.append(f"step {s_index} VERIFY op {op.ordinal} names no measurement apparatus -- its "
                               "verification demand is unread (P5b)")
-        if procedure.analytical_verification.is_present and not any_verify_apparatus:
-            unread.append(f"step {s_index} states an analytical verification but no VERIFY op names its apparatus")
+        verification = procedure.analytical_verification
+        if verification.is_present and not _is_canonical(verification, render_verification(procedure)):
+            # D24.1 (Wave-C' A2): the stated verification text may demand a method no VERIFY op types ("1H NMR and
+            # HPLC" beside a balance) -- it is display only when it IS the canonical rendering of the typed methods.
+            unread.append(f"step {s_index} analytical verification ({verification.value!r}) is not the canonical "
+                          "rendering of its VERIFY ops' typed methods -- an unread verification demand (D24.1)")
     recognized, _ignored, unrecognized = classify_measurement_strings(raw)
     return recognized, tuple(unrecognized) + tuple(sorted(set(unread)))
 
@@ -670,7 +710,9 @@ def _physical_requirement(route: ExperimentRoute) -> "tuple[PhysicalBounds, tupl
          ``peak_temperature_k`` -- the record's own contract makes the peak the WHOLE-STEP extremum, the only
          legitimate cover (P4/P5: otherwise an unrelated lower statement masks it);
     (iii) a COOL/HOLD op with no typed temperature -- no whole-step MINIMUM exists to cover the low side (F-1);
-    (iv) a step with no ``ProcedureEvidence``: its HIGH side is covered only by a process peak, its LOW side is unread.
+    (iv) a step with no ``ProcedureEvidence``: its HIGH side is covered only by a process peak, its LOW side is unread;
+    (v)  D24.1: a VACUUM_FILTRATION op with no typed pressure -- covered only by a sub-atmospheric whole-step record
+         minimum (a record minimum >= 1 atm beside a vacuum op is contradictory).
 
     A non-canonical unit (not K / atm) is unread too (no unit engine)."""
     highs: "list[float]" = []
@@ -727,6 +769,20 @@ def _physical_requirement(route: ExperimentRoute) -> "tuple[PhysicalBounds, tupl
                                       "a process extremum on the same step is not a typed relation to it (F-10)")
             typed = _temperature(_interval_of(op.temperature), where)
             _pressure(_interval_of(op.pressure), where)
+            if (op.pressure is None or not op.pressure.is_present) and (
+                    EquipmentCapability.VACUUM_FILTRATION in classify_apparatus_strings(op.apparatus)[0]):
+                # D24.1 (Wave-C' A3): a vacuum op states a sub-atmospheric demand of unstated magnitude; only the step
+                # record's whole-step MINIMUM can cover it, and a record minimum >= 1 atm contradicts the op itself
+                # (vacuum means sub-atmospheric by definition -- not a tuned threshold).
+                record_min = None if process is None else process.min_pressure_atm
+                if record_min is None:
+                    unresolved.append(f"{where} is a vacuum operation with no typed pressure, and step {s_index}'s "
+                                      "process record carries no whole-step minimum pressure -- its LOW pressure "
+                                      "demand is unread (D24.1)")
+                elif record_min >= 1:
+                    unresolved.append(f"{where} is a vacuum operation but step {s_index}'s process record claims a "
+                                      f"whole-step minimum of {record_min:g} atm -- contradictory pressure evidence "
+                                      "(D24.1)")
             if typed or _is_prose(op.temperature):
                 continue  # a typed value is read; prose is already carried as unread (i)
             if op.kind in _HIGH_THERMAL_KINDS and not has_peak:
@@ -807,7 +863,9 @@ def _effective_process(route: ExperimentRoute) -> "tuple[tuple[ProcessRequiremen
     against a 120-min bench is a provable BLOCK). ``None`` / undeclared records are passed through untouched -- the
     process axis's coverage gate reads them as the gap they are. A contradictory timeline is not handed on (UNKNOWN).
     X-high D16: a PRESENT ``op.rate`` (no rate-control coordinate exists) and a PRESENT ``op.agitation`` (no typed
-    relation to the record's ``Agitation``) are unread process demands too."""
+    relation to the record's ``Agitation``) are unread process demands too; D24.4: a MIX op on a step whose record
+    declares no agitation mode (or NONE); D24.1: a PRESENT whole-procedure summary that is not the canonical rendering
+    of its realizing ops."""
     import dataclasses as dc
 
     records: "list[ProcessRequirements | None]" = []
@@ -827,8 +885,23 @@ def _effective_process(route: ExperimentRoute) -> "tuple[tuple[ProcessRequiremen
         records.append(record)
         procedure = step.envelope.procedure
         if procedure is not None:
+            for name in SUMMARY_FIELDS:
+                # D24.1 (Wave-C' A3): a PRESENT summary is what EARNS PROCESS_SPECIFIED, so it cannot hide behind the
+                # HARD LAW -- its value is display only when it IS the canonical rendering of its realizing ops.
+                field = getattr(procedure, name)
+                if field.is_present and not _is_canonical(field, render_summary(procedure, name)):
+                    unresolved.append(f"step {s_index} procedure {name} ({field.value!r}) is not the canonical "
+                                      "rendering of its realizing ops -- an unread process demand (D24.1)")
             for op in procedure.operations:
                 where = f"step {s_index} op {op.ordinal} {op.kind.value}"
+                if op.kind is OperationKind.MIX:
+                    # D24.4 (Wave-C' A6): a MIX op IS an agitation demand; a record that declares no agitation mode
+                    # (or NONE) cannot carry it.
+                    mode = None if record is None else record.agitation
+                    if mode is None or mode is Agitation.NONE:
+                        unresolved.append(f"{where} demands agitation but step {s_index}'s process record declares "
+                                          f"{'no agitation mode' if mode is None else 'agitation NONE'} -- an unread "
+                                          "(or contradictory) agitation demand (D24.4)")
                 for label, field in (("rate", op.rate), ("agitation", op.agitation)):
                     if field is not None and field.is_present:
                         unresolved.append(f"{where} states an addition {label} ({field.value!r}) that no typed process "

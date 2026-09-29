@@ -326,7 +326,11 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
         ProcedureOperation(
             ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION,
             materials=("isopentyl alcohol", "acetic acid", "sulfuric acid"),
-            quantity=EvidenceField.present("15 mL alcohol + 20 mL glacial acetic acid + 4 mL conc. H2SO4", _ISOPENTYL_URL),
+            # D24.1: the D24 canonical rendering of this op's typed quantities (was "15 mL alcohol + 20 mL glacial
+            # acetic acid + 4 mL conc. H2SO4" -- every word of which is typed on the uses below: quantities, names,
+            # and the "glacial"/"conc." formulation words with their specifications). Display == typed, provably.
+            quantity=EvidenceField.present(
+                "15 mL isopentyl alcohol + 20 mL acetic acid + 4 mL sulfuric acid", _ISOPENTYL_URL),
             rate=EvidenceField.present("combine alcohol and acid, then add conc. H2SO4 with caution", _ISOPENTYL_URL),
             # Round IV F45: the two true reactants are now TYPED source uses (SUBSTRATE/REACTANT) beside the
             # CATALYST, so the generic capability compiler reads reactant identity + sourced volume + the typed
@@ -383,7 +387,9 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
             apparatus=("separatory funnel",), locator=_ISOPENTYL_URL),
         ProcedureOperation(
             ordinal=5, kind=OperationKind.ADD, role=OperationRole.WASH, materials=("sodium bicarbonate",),
-            quantity=EvidenceField.present("25 mL of 5% sodium bicarbonate, twice", _ISOPENTYL_URL),
+            # D24.1 canonical rendering (was "25 mL of 5% sodium bicarbonate, twice": the two draws and the "5%"
+            # formulation are the two typed uses below).
+            quantity=EvidenceField.present("25 mL sodium bicarbonate + 25 mL sodium bicarbonate", _ISOPENTYL_URL),
             endpoint=EvidenceField.present("wash until the aqueous layer is basic to litmus", _ISOPENTYL_URL),
             # Ionic: no connected Molecule to resolve. identity=None is the honest carrier. Round IV F41: "25 mL of
             # 5% sodium bicarbonate solution twice" is TWO draws, authored as two same-spec uses so the generic
@@ -433,7 +439,9 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
             locator=_ISOPENTYL_URL),
         ProcedureOperation(
             ordinal=8, kind=OperationKind.DRY, role=OperationRole.OTHER, materials=("magnesium sulfate",),
-            quantity=EvidenceField.present("2 g anhydrous magnesium sulfate", _ISOPENTYL_URL),
+            # D24.1 canonical rendering (was "2 g anhydrous magnesium sulfate": "anhydrous" is the typed use's
+            # formulation + ANHYDROUS state claim below).
+            quantity=EvidenceField.present("2 g magnesium sulfate", _ISOPENTYL_URL),
             material_uses=(
                 ProcedureMaterialUse(
                     name="magnesium sulfate", role=ProcedureMaterialRole.DRY, identity=None,
@@ -455,14 +463,17 @@ _ISOPENTYL_PROCEDURE = ProcedureEvidence(
     quench=EvidenceField.not_applicable(
         _ISOPENTYL_URL,
         "the source specifies a complete workup sequence -- reflux -> cool to room temperature -> aqueous "
-        "partition -> 2x bicarbonate wash -> water wash -> brine -> MgSO4 dry -> fractional distillation -- with "
-        "no quench among the operations it lists"),
+        "partition -> 2x bicarbonate wash -> water wash -> brine -> MgSO4 dry -> distillation (the 134-143 C fraction "
+        "collected) -- with no quench among the operations it lists"),
     workup_isolation=EvidenceField.present(
         "separatory-funnel partition, bicarbonate/water/brine washes, magnesium-sulfate drying", _ISOPENTYL_URL),
     separation=EvidenceField.present("separatory funnel; separate the lower aqueous layer", _ISOPENTYL_URL),
     wash=EvidenceField.present("2 x 25 mL 5% NaHCO3, 25 mL water, 5 mL saturated NaCl", _ISOPENTYL_URL),
     drying=EvidenceField.present("2 g anhydrous magnesium sulfate", _ISOPENTYL_URL),
-    purification=EvidenceField.present("fractional distillation, 134-143 C fraction", _ISOPENTYL_URL),
+    # D24.16: the page says "Set up the distillation apparatus as described by your instructor ... collect the
+    # fraction between 134 and 143 C" -- a boiling-range CUT, not a fractionating column. "fractional distillation"
+    # was the author's overclaim (and the root of the Round-III FRACTIONAL_DISTILLATION alias); withdrawn.
+    purification=EvidenceField.present("distillation; collect the fraction between 134 and 143 C", _ISOPENTYL_URL),
     analytical_verification=EvidenceField.present(
         "weigh and calculate percent yield; obtain an infrared spectrum", _ISOPENTYL_URL),
 )
@@ -901,7 +912,7 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
     # Fischer esterification: isopentyl alcohol + acetic acid -> isopentyl acetate + water.
     _sig("C7H14O2", ("H2O",), ("C5H12O", "C2H4O2")): ConditionRecord(
         ConditionEnvelope(
-            medium="neat; acid-catalyzed (conc. H2SO4); reflux then fractional distillation",
+            medium="neat; acid-catalyzed (conc. H2SO4); reflux then distillation (134-143 C fraction collected)",
             # STRUCTURED catalyst (CATALYST-OBTAIN-01): a quote-read of the sourced medium's "conc. H2SO4" -- the
             # regenerated Fischer acid catalyst, promoted from free text to the structured field so the obtainability
             # model (smartchem.experiment.catalyst_availability) can see it.  Sulfuric acid is a HARDWARE-tier
@@ -930,7 +941,7 @@ SEED_CONDITIONS: dict[tuple, ConditionRecord] = {
                     "round-bottom flask", "reflux condenser", "heating mantle", "boiling stones",
                     "separatory funnel", "distillation apparatus", "thermometer",
                 ),
-                workup_included=True,             # sequential extractions + MgSO4 dry + fractional distillation
+                workup_included=True,             # sequential extractions + MgSO4 dry + distillation (134-143 C cut)
                 # Round V X-high (D14, P-X2): peak_temperature_k WITHDRAWN (was 416.15, "DERIVED from the SOURCED
                 # distillation fraction"). The page states only the distillate HEAD range 134-143 C -- the vapour
                 # temperature of the collected fraction, a LOWER bound on the pot/heat-source demand, never the

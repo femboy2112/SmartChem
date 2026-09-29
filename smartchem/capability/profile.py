@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..constraints import PhysicalBounds
+from ..constraints import PHYSICAL_BOUNDS_SCHEMA, PhysicalBounds
 from ..contracts import Digestible
 from ..data.reagents import Availability
 from ..experiment.affordability import CostVector
@@ -102,6 +102,16 @@ class CapabilityProfile(Digestible):
                 raise TypeError(f"{name} must be a frozenset of {enum.__name__} values")
         if type(self.physical_bounds) is not PhysicalBounds:
             raise TypeError("physical_bounds must be a smartchem.constraints.PhysicalBounds")
+        # D24.15 (Wave-C' D-B2): a v1alpha3 profile embeds the CURRENT PhysicalBounds generation only.  The released
+        # v1alpha1 box (no temperature floor) exists solely for LEGACY v0.8 requests; accepting it here would let two
+        # content-identical benches carry two profile digests (split identity, split capability questions) and would
+        # let a bench silently re-enter the pre-floor world.  A profile is a 0.9-only record: current box, always.
+        if self.physical_bounds.schema_version != PHYSICAL_BOUNDS_SCHEMA:
+            raise ValueError(
+                f"physical_bounds must be a {PHYSICAL_BOUNDS_SCHEMA!r} box (got "
+                f"{self.physical_bounds.schema_version!r}) -- the legacy v0.8 PhysicalBounds generation belongs only "
+                "to legacy requests, never to a capability profile (D24.15)"
+            )
         if type(self.process_bounds) is not ProcessBounds:
             raise TypeError("process_bounds must be a smartchem.process_constraints.ProcessBounds")
         if self.budget is not None and type(self.budget) is not CostVector:

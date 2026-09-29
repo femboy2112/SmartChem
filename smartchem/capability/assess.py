@@ -33,7 +33,9 @@ from ..experiment.stock import StockMaterial
 from ..material_spec import (
     CERTIFYING_STOCK_EVIDENCE,
     ConcentrationBasis,
+    DilutionState,
     EvidenceKind,
+    SaturationState,
     SpecVerdict,
     compare_phase,
     compare_specification,
@@ -279,12 +281,28 @@ def _species_key_in(requirement: MaterialRequirement, stock: StockMaterial):
     """F44: which key ``requirement`` is ALLOWED to match in THIS bottle. A requirement with a known STRUCTURE
     identity may ONLY be satisfied by a structure-keyed component -- a bare name is weaker evidence and can never
     stand in for a proven structure. A requirement with no identity matches by its declared NAME. Returns the matched
-    key, or ``None`` if the species is absent under the allowed key."""
-    if requirement.identity is not None:
-        return requirement.identity if stock.active_fraction_interval(requirement.identity) is not None else None
-    if requirement.name is not None:
-        return requirement.name if stock.active_fraction_interval(requirement.name) is not None else None
-    return None
+    key, or ``None`` if the species is absent under the allowed key.
+
+    D24.5 (Wave-C' B1-E): a matched component whose declared UPPER bound is 0 is ABSENT -- "present at [0, 0]" is a
+    listing, not a supply (a phantom component can never discharge a demand)."""
+    key = requirement.identity if requirement.identity is not None else requirement.name
+    if key is None:
+        return None
+    interval = stock.active_fraction_interval(key)
+    if interval is None or interval[1] == 0:
+        return None
+    return key
+
+
+def _listed_by_name_only(requirement: MaterialRequirement, stock: StockMaterial) -> bool:
+    """D24.8 (Wave-C' C6): is an identity-keyed requirement's species absent from ``stock`` under the STRUCTURE key but
+    listed under the WEAKER name key equal to the requirement's own name? A name is weaker evidence than a structure
+    (F44: it can never CERTIFY the structure), but it is not proof of ABSENCE either -- the bottle is a POSSIBLE (G+)
+    source, never a proven one and never a proof of absence (UNKNOWN, not BLOCKED)."""
+    if requirement.identity is None or requirement.name is None:
+        return False
+    interval = stock.active_fraction_interval(requirement.name)
+    return interval is not None and interval[1] != 0
 
 
 def _fold_status(statuses: "list[CapabilityStatus]") -> CapabilityStatus:
@@ -309,6 +327,26 @@ class _Edge:
 #: absence of every impurity.
 _PURE_WITNESS_EVIDENCE = CERTIFYING_STOCK_EVIDENCE - {EvidenceKind.CLAMPED}
 
+#: D24.5: the states that DEFINE A FORMULATION -- the requirement's quantity is an amount OF that formulated material
+#: (5 mL of a solution at a stated saturation state): the dilution state SOLUTION and every saturation state. The
+#: undiluted dilution state and every hydration state describe the SPECIES instead -- they never make a draw
+#: commensurable on their own (Wave-C' B1: a state word turned a 1 % bottle into a proven 1:1 source).
+_FORMULATION_STATES = frozenset(SaturationState) | {DilutionState.SOLUTION}
+
+
+def _others_absent(stock: StockMaterial, view) -> bool:
+    """D24.5 (Wave-C' C1): the pure witness reads the WHOLE bottle, not just the matched species -- every OTHER
+    component must declare a lower bound of exactly 0 on ANY basis (a 0.3 g/mL or 6 M second species beside a
+    "solvent [1, 1]" component is a contradictory bottle, never a pure-solvent witness). Summing every component's exact lower bound equals the matched
+    species' own lower bound iff every other lower bound is 0 (lower bounds are non-negative)."""
+    total = Fraction(0)
+    for c in stock.components:
+        if c.evidence is not None:
+            total += c.evidence.interval[0]
+        elif c.min_fraction != 0:
+            total += Fraction(c.min_fraction)
+    return total == view.interval[0]
+
 
 def _edge(requirement: MaterialRequirement, stock: StockMaterial) -> "_Edge | None":
     """D2 Phase 1 for one (requirement, bottle): the specification verdict from THE comparison law
@@ -317,13 +355,21 @@ def _edge(requirement: MaterialRequirement, stock: StockMaterial) -> "_Edge | No
     :class:`~smartchem.material_spec.PhaseClaim` s -- X-high D18: an ungraded or author-inferred phase can neither
     certify FIT nor prove BLOCKED). ``None`` if the species is absent from the bottle.
 
-    D13 commensurability (the G- rule): the bottle's draw counts toward this requirement's demand only if the
-    requirement's specification is NON-EMPTY (composition/states) and SATISFIED -- the bottle IS the specified
-    material -- or the matched species is PROVABLY pure (fraction basis, certifying non-CLAMPED evidence, exact lower
-    bound 1 -- Wave-C K2 + X-high F-5). A required phase must itself be a CERTIFIED match (the edge is FIT only then).
-    Otherwise a bottle is only a G+ (possible) source: 25 mL of a 5% solution is not 25 mL of the solute."""
+    D24.5 commensurability (the G- rule) -- EARNED, never implied by a state word: the bottle's draw counts toward
+    this requirement's demand only if (a) the requirement's COMPOSITION constraint is SATISFIED (the bottle IS the
+    specified formulated material), or (b) a formulation-defining STATE (``_FORMULATION_STATES``) is
+    SATISFIED and the matched species' certified lower bound is > 0 (the bottle really is that solution of it), or (c)
+    the matched species is PROVABLY pure (fraction basis, certifying non-CLAMPED evidence, exact lower bound 1, and
+    every OTHER component at lower bound 0 on any basis -- Wave-C K2 + X-high F-5 + D24.5/C1). An undiluted-state or
+    hydration-state claim never makes a draw commensurable on its own. A required phase must itself be a CERTIFIED match (the edge
+    is FIT only then). Otherwise a bottle is only a G+ (possible) source: 25 mL of a 5% solution is not 25 mL of the
+    solute."""
     key = _species_key_in(requirement, stock)
     if key is None:
+        if _listed_by_name_only(requirement, stock):
+            return _Edge(CapabilityStatus.UNKNOWN, False, (
+                f"{stock.material_id}: UNKNOWN: listed only under the weaker NAME key {requirement.name!r} -- a name "
+                "can neither certify the structure nor prove its absence (D24.8) -- a possible source only"))
         return None
     view = stock.spec_view(key)
     spec_verdict, spec_notes = compare_specification(requirement.specification, view)
@@ -335,20 +381,25 @@ def _edge(requirement: MaterialRequirement, stock: StockMaterial) -> "_Edge | No
         notes.append(phase_note)
     status = _fold_status(statuses)
     spec = requirement.specification
-    spec_nonempty = spec.composition is not None or bool(spec.states)
     # Wave-C K2: "provably the pure species" needs a FRACTION basis (1 mol/L is a concentration, not purity), CERTIFYING
     # stock evidence (a bare 1.0 or an ASSUMED [1, 1] certifies nothing -- D6/D8; a CLAMPED [1, 1] neither -- X-high
     # F-5), and an exact lower bound of 1 read from the evidence record itself (spec_view uses the record's exact
-    # decimals, never the float slot).
+    # decimals, never the float slot) -- and (D24.5/C1) every OTHER component of the bottle at lower bound 0.
     pure = (view is not None
             and view.basis in (ConcentrationBasis.MASS_FRACTION, ConcentrationBasis.VOLUME_FRACTION)
             and view.interval_evidence in _PURE_WITNESS_EVIDENCE
-            and view.interval[0] == 1)
-    commensurable = status is CapabilityStatus.FIT and (
-        (spec_nonempty and spec_verdict is SpecVerdict.SATISFIES) or pure)
+            and view.interval[0] == 1
+            and _others_absent(stock, view))
+    satisfied = spec_verdict is SpecVerdict.SATISFIES
+    via_composition = satisfied and spec.composition is not None
+    via_state = (satisfied and any(c.state in _FORMULATION_STATES for c in spec.states)
+                 and view is not None and view.interval[0] > 0
+                 and view.interval_evidence in CERTIFYING_STOCK_EVIDENCE)
+    commensurable = status is CapabilityStatus.FIT and (via_composition or via_state or pure)
     if status is CapabilityStatus.FIT and not commensurable:
-        notes.append("not a proven draw of this material (empty specification and species not provably pure) -- "
-                     "a possible source only")
+        notes.append("not a proven draw of this material (no satisfied composition, no satisfied formulation-defining "
+                     "state over a certified positive fraction, species not provably pure -- an undiluted/hydration "
+                     "state word never carries the quantity on its own, D24.5) -- a possible source only")
     return _Edge(status, commensurable, f"{stock.material_id}: {status.value}: " + "; ".join(notes))
 
 

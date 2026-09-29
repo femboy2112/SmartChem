@@ -151,7 +151,7 @@ def test_matrix_isopentyl_research_lab_no_stock_is_unknown_on_material_and_the_s
     assert a.overall is CapabilityStatus.UNKNOWN
     # Round V D13 (FLIPPED: +equipment, +monetary): the source's cool/dry ops name no apparatus (equipment
     # UNKNOWN), and research_lab() declares no budget (UNDECLARED, not unconstrained -> monetary UNKNOWN).
-    # X-high (FLIPPED: +physical, +measurement): D14 -- the reflux/cool temperatures are prose and the fractional
+    # X-high (FLIPPED: +physical, +measurement): D14 -- the reflux/cool temperatures are prose and the
     # distillation states no typed temperature with no whole-step peak left to cover it (the 416 K head range is a
     # LOWER bound, P-X2); D16 -- the "basic to litmus" / fraction / reflux-time ENDPOINT criteria have no typed
     # measurement carrier. Both are unread demands on their owning axis, never a pass.
@@ -173,7 +173,11 @@ def test_matrix_isopentyl_poor_man_is_blocked_on_equipment_measurement_and_conta
     a = assess(poor_man(), req, evaluate_route(route))
     assert a.overall is CapabilityStatus.BLOCKED
     assert a.equipment.status is CapabilityStatus.BLOCKED
-    assert "FRACTIONAL_DISTILLATION" in " ".join(a.equipment.reasons)
+    # D24.16 (Wave-C' F1): the page never names its still's configuration, so the provable BLOCK rests on the named
+    # reflux condenser + separatory funnel (the untabled still stays an open remainder beside it).
+    assert "REFLUX_CONDENSER" in " ".join(a.equipment.reasons)
+    assert "SEPARATORY_FUNNEL" in " ".join(a.equipment.reasons)
+    assert "FRACTIONAL_DISTILLATION" not in " ".join(a.equipment.reasons)
     assert a.measurement.status is CapabilityStatus.BLOCKED  # no IR
     assert "INFRARED_SPECTROSCOPY" in " ".join(a.measurement.reasons)
     assert a.containment.status is CapabilityStatus.BLOCKED  # no fume hood
@@ -218,8 +222,10 @@ def _vinegar_inventory():
 
 @pytest.mark.parametrize("label, overrides, axis, expected", [
     ("minus_containment", dict(containment=frozenset()), "containment", CapabilityStatus.BLOCKED),
-    ("minus_fractional_distillation",
-     dict(equipment=frozenset(EquipmentCapability) - {EquipmentCapability.FRACTIONAL_DISTILLATION}),
+    # D24.16 (Wave-C' F1): the Round-III "minus fractional distillation" negative is RETIRED with its alias (the page
+    # never names a fractionating column); the equipment negative is now the separatory funnel the page DOES name.
+    ("minus_separatory_funnel",
+     dict(equipment=frozenset(EquipmentCapability) - {EquipmentCapability.SEPARATORY_FUNNEL}),
      "equipment", CapabilityStatus.BLOCKED),
     ("minus_IR",
      dict(measurement=frozenset({MeasurementMethod.MASS, MeasurementMethod.MELTING_POINT})),

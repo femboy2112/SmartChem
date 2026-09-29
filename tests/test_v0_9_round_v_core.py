@@ -123,6 +123,18 @@ def _pure(name, qty, mid=None):
     return _bottle(mid or f"{name}-pure", (MaterialComponent.evidenced(name, "active", _user_declared_pure()),), qty)
 
 
+def _ud(name, lo, hi, role="active"):
+    """An operator-declared (USER_DECLARED) MASS_FRACTION component -- D24.5: a formulation-defining state makes a draw
+    commensurable only over a CERTIFIED positive fraction, so allocation fixtures declare their fractions."""
+    from smartchem.data.derived_evidence import DerivationKernel, InputUnit, IntervalEvidence, TypedInput
+    record = IntervalEvidence.build(
+        kernel=DerivationKernel.USER_DECLARED_V1, basis=ConcentrationBasis.MASS_FRACTION,
+        inputs=(TypedInput("low", lo, InputUnit.FRACTION, EvidenceKind.USER_DECLARED),
+                TypedInput("high", hi, InputUnit.FRACTION, EvidenceKind.USER_DECLARED)),
+        domain_of_validity="round-v core fixture: the operator's own declaration about their bottle")
+    return MaterialComponent.evidenced(name, role, record)
+
+
 def _req(name, known=(), unstated=0, spec=None, phase=None, identity=None):
     # X-high D18: a fixture requirement phase is a SOURCE_QUOTED claim (the certifying case); pass a PhaseClaim to vary.
     if phase is not None and not isinstance(phase, PhaseClaim):
@@ -252,7 +264,7 @@ def test_f65_mixed_units_never_collapse_to_no_gate():
 
 
 def test_f66_one_package_is_spent_once_across_species():
-    ab = [MaterialComponent.known("A", "active", 0.5, 0.5), MaterialComponent.known("B", "active", 0.5, 0.5)]
+    ab = [_ud("A", "0.5", "0.5"), _ud("B", "0.5", "0.5")]
     reqs = [_req("A", [("mL", "80")], spec=_SOLUTION_REQ), _req("B", [("mL", "80")], spec=_SOLUTION_REQ)]
     one = [_bottle("ab", ab, _Q("100", "mL"), states=_SOLUTION_STOCK)]
     two = one + [_bottle("ab2", ab, _Q("100", "mL"), states=_SOLUTION_STOCK)]
@@ -289,9 +301,8 @@ def test_a_species_at_unknown_fraction_is_not_a_proven_draw():
 
 
 def test_greedy_trap_is_solved_by_max_flow():
-    x = _bottle("x", (MaterialComponent.known("A", "a", 0.5, 0.5), MaterialComponent.known("B", "b", 0.5, 0.5)),
-                _Q("80", "mL"), states=_SOLUTION_STOCK)
-    y = _bottle("y", (MaterialComponent.known("B", "b", 0.5, 0.5),), _Q("80", "mL"), states=_SOLUTION_STOCK)
+    x = _bottle("x", (_ud("A", "0.5", "0.5", "a"), _ud("B", "0.5", "0.5", "b")), _Q("80", "mL"), states=_SOLUTION_STOCK)
+    y = _bottle("y", (_ud("B", "0.5", "0.5", "b"),), _Q("80", "mL"), states=_SOLUTION_STOCK)
     reqs = [_req("A", [("mL", "80")], spec=_SOLUTION_REQ), _req("B", [("mL", "80")], spec=_SOLUTION_REQ)]
     assert _status(reqs, [x, y]) is CapabilityStatus.FIT
 
@@ -323,9 +334,9 @@ def test_m70_unknown_basis_percent_is_unknown():
 
 def test_m71_assumed_only_agreement_is_unknown_never_fit():
     assumed_req = MaterialSpecification(states=(StateClaim(DilutionState.SOLUTION, EvidenceKind.ASSUMED),))
-    certified = _bottle("s", (MaterialComponent.known("S", "a", 1.0, 1.0),), _Q("100", "mL"), states=_SOLUTION_STOCK)
+    certified = _bottle("s", (_ud("S", "0.2", "0.2", "a"),), _Q("100", "mL"), states=_SOLUTION_STOCK)
     assert _status([_req("S", [("mL", "50")], spec=assumed_req)], [certified]) is CapabilityStatus.UNKNOWN
-    assumed_stock = _bottle("s", (MaterialComponent.known("S", "a", 1.0, 1.0),), _Q("100", "mL"),
+    assumed_stock = _bottle("s", (_ud("S", "0.2", "0.2", "a"),), _Q("100", "mL"),
                             states=(StateClaim(DilutionState.SOLUTION, EvidenceKind.ASSUMED),))
     assert _status([_req("S", [("mL", "50")], spec=_SOLUTION_REQ)], [assumed_stock]) is CapabilityStatus.UNKNOWN
     # control: certified on both sides -> FIT

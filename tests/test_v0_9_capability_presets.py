@@ -164,9 +164,10 @@ def test_forcing_matrix_research_lab_is_unknown_on_material_and_the_semantic_axe
 
 
 def test_forcing_matrix_poor_man_is_blocked_on_missing_distillation_equipment():
-    """The frozen forcing matrix's second headline verdict: a PoorMan bench, missing the reflux condenser
-    and the fractional-distillation rig the real source demands, is BLOCKED on the equipment axis --
-    and BLOCKED strictly outranks every other axis in the overall fold."""
+    """The frozen forcing matrix's second headline verdict: a PoorMan bench, missing the reflux condenser and the
+    separatory funnel the real source demands, is BLOCKED on the equipment axis -- and BLOCKED strictly outranks every
+    other axis in the overall fold. (D24.16: the page's "distillation apparatus ... as described by your instructor"
+    names no configuration, so it is an UNRECOGNIZED demand, never a claimed FRACTIONAL_DISTILLATION rig.)"""
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
     readiness = evaluate_route(route)
@@ -176,7 +177,9 @@ def test_forcing_matrix_poor_man_is_blocked_on_missing_distillation_equipment():
     assert assessment.equipment.status is CapabilityStatus.BLOCKED
     joined_reasons = " ".join(assessment.equipment.reasons)
     assert "REFLUX_CONDENSER" in joined_reasons
-    assert "FRACTIONAL_DISTILLATION" in joined_reasons
+    assert "SEPARATORY_FUNNEL" in joined_reasons
+    assert "FRACTIONAL_DISTILLATION" not in joined_reasons  # D24.16: no invented rig
+    assert "distillation apparatus" in joined_reasons       # carried as an unrecognized remainder, fail closed
     assert assessment.overall is CapabilityStatus.BLOCKED
 
 

@@ -76,10 +76,16 @@ _APPARATUS_ALIASES: "dict[str, EquipmentCapability]" = {
     "ice bath": EquipmentCapability.ICE_BATH,
     # -- liquid-liquid separation (isopentyl acetate) -------------------------------------------------
     "separatory funnel": EquipmentCapability.SEPARATORY_FUNNEL,
-    # a boiling-RANGE fraction is collected here (134-143 C, isopentyl acetate) -- the FROZEN forcing
-    # matrix names FRACTIONAL_DISTILLATION explicitly for this exact source string; this alias is a
-    # contract match, not a chemistry judgment call (the frozen spec, not this module, made that ruling).
-    "distillation apparatus": EquipmentCapability.FRACTIONAL_DISTILLATION,
+    # D24.16 (Wave-C' F1): "distillation apparatus" is deliberately NOT here. The Round-III forcing matrix aliased it
+    # to FRACTIONAL_DISTILLATION -- a convenience that gave the matrix an equipment discriminator, not a reading of the
+    # source: the page says only "Set up the distillation apparatus as described by your instructor ... collect the
+    # fraction between 134 and 143 C" (a boiling-range CUT, which a simple still also makes; no column is named). The
+    # configuration is "as described by your instructor" -- unknown -- so the string is UNRECOGNIZED and fails closed
+    # (UNKNOWN) instead of claiming SIMPLE or FRACTIONAL (the old alias false-BLOCKED every simple-still bench).
+    # The two configurations stay reachable ONLY from a string that NAMES the configuration outright (no inference:
+    # the words are the capability's own name), so neither enum member is decorative vocabulary.
+    "simple distillation apparatus": EquipmentCapability.SIMPLE_DISTILLATION,
+    "fractional distillation apparatus": EquipmentCapability.FRACTIONAL_DISTILLATION,
     # -- filtration (paracetamol: gravity-filter hot through fluted paper to remove decolorizing charcoal;
     # aspirin/paracetamol: Buchner funnel + water aspirator = vacuum filtration) ----------------------
     "fluted filter paper": EquipmentCapability.GRAVITY_FILTRATION,

@@ -106,9 +106,17 @@ def test_k1_states_on_the_principal_do_not_transfer_to_a_trace_component(state):
 
 
 def test_k1_control_the_species_own_certified_claim_still_certifies():
+    """K1's positive control: the principal's OWN certified NEAT claim still certifies the NEAT state. Since D24.5
+    (Wave-C' B1) a state word alone never makes the draw commensurable, so the quantity is carried by a certified
+    composition floor on the SAME requirement -- the state question and the quantity question stay separate."""
     acetic = _mol("acetic acid")
     bottle = _bottle("glacial", (MaterialComponent.evidenced(acetic, "active", _ud("0.995", "1"), states=_NEAT_UD),))
-    assert _material_axis((_req(identity=acetic, spec=_NEAT_SQ),), (bottle,)).status is CapabilityStatus.FIT
+    state_only = _material_axis((_req(identity=acetic, spec=_NEAT_SQ),), (bottle,))
+    assert state_only.status is CapabilityStatus.UNKNOWN  # NEAT certifies the state, never the 20 mL draw (D24.5)
+    assert "specification SATISFIES" in " ".join(state_only.reasons)
+    floor = CompositionConstraint("0.995", "1", MF, Tolerance.FLOOR, EvidenceKind.SOURCE_QUOTED)
+    spec = MaterialSpecification(composition=floor, states=_NEAT_SQ.states)
+    assert _material_axis((_req(identity=acetic, spec=spec),), (bottle,)).status is CapabilityStatus.FIT
 
 
 # -- C1-K2: the pure-bottle rule ---------------------------------------------------------------------------------------

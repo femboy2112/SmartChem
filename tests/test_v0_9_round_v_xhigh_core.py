@@ -205,7 +205,7 @@ def test_f10_prose_is_never_covered_by_an_unrelated_process_extremum(field, text
 
 def test_p4_a_thermal_op_with_no_temperature_is_not_masked_by_an_unrelated_lower_statement():
     record = dc.replace(_CLEAN_RECORD, peak_temperature_k=None)
-    still = _op(OperationKind.DISTILL, apparatus=("distillation apparatus",))
+    still = _op(OperationKind.DISTILL, apparatus=("simple distillation apparatus",))
     route = _route(still, process=record)
     assert any("D14 ii" in u for u in compile_capability_requirements(route).physical_unresolved)
     assert _assess(route).physical.status is S.UNKNOWN
@@ -338,7 +338,8 @@ _T = _pf(Interval(298.15, 298.15, "K"))
 
 
 @pytest.mark.parametrize("apparatus, expected", [
-    (("distillation apparatus",), S.FIT),                 # the control: a real still
+    (("simple distillation apparatus",), S.FIT),          # the control: a real (named) still
+    (("distillation apparatus",), S.UNKNOWN),             # D24.16 / Wave-C' F1: configuration unnamed -> unread
     (("boiling stones",), S.UNKNOWN),                     # F-4: an ignored consumable is not a still
     (("glass rod", "dropper"), S.UNKNOWN),
     (("thermometer",), S.UNKNOWN),                        # F-4b: real hardware, wrong kind
@@ -350,7 +351,7 @@ def test_f4_a_hardware_op_needs_an_admissible_non_consumable_capability(apparatu
 
 
 def test_f4_the_step_record_equipment_never_discharges_an_op():
-    record = dc.replace(_CLEAN_RECORD, equipment=("distillation apparatus",))
+    record = dc.replace(_CLEAN_RECORD, equipment=("simple distillation apparatus",))
     still = _op(OperationKind.DISTILL, apparatus=("boiling stones",), temperature=_T)
     assert _assess(_route(still, process=record)).equipment.status is S.UNKNOWN
 
@@ -368,19 +369,38 @@ def test_d16_a_present_endpoint_criterion_is_an_unread_measurement_demand():
     assert _assess(_route(weigh, wash)).measurement.status is S.UNKNOWN
 
 
+def _with_op1_quantity(text):
+    shown = _route(uses=_BASE_USES)
+    op1 = dc.replace(shown.steps[0].envelope.procedure.operations[0], quantity=_pf(text))
+    proc = dc.replace(shown.steps[0].envelope.procedure, operations=(op1,))
+    return dc.replace(shown, steps=(dc.replace(shown.steps[0], envelope=dc.replace(
+        shown.steps[0].envelope, procedure=proc)),))
+
+
 def test_d16_an_amount_with_no_typed_home_is_material_unresolved_but_a_display_form_is_not():
     orphan = _op(OperationKind.FILTER, apparatus=("buchner funnel",), quantity=_pf("500 mL + 500 mL"))
     reqs = compile_capability_requirements(_route(orphan))
-    assert any("F69-analog" in u for u in reqs.material_unresolved)
+    assert any("not the canonical rendering" in u for u in reqs.material_unresolved)
     assert _assess(_route(orphan)).material.status is S.UNKNOWN
-    # the control: op1's typed quantified uses make its own quantity text a display form
-    shown = _route(uses=_BASE_USES)
-    op1 = dc.replace(shown.steps[0].envelope.procedure.operations[0], quantity=_pf("10 mL methanol + 10 mL acid"))
-    proc = dc.replace(shown.steps[0].envelope.procedure, operations=(op1,))
-    route = dc.replace(shown, steps=(dc.replace(shown.steps[0], envelope=dc.replace(
-        shown.steps[0].envelope, procedure=proc)),))
+    # the control (D24.1): op1's quantity text IS the canonical rendering of its quantified typed uses -> display only
+    route = _with_op1_quantity("10 mL methanol + 10 mL acetic acid")
     assert compile_capability_requirements(route).material_unresolved == ()
     assert _assess(route).material.status is S.FIT
+
+
+@pytest.mark.parametrize("text", [
+    "5 L methanol",                                    # A1a: a larger amount of a typed species
+    "10 mL methanol + 10 mL acetic acid + 2 g sodium metal",  # A1b: a SECOND species the typed uses omit
+    "10 mL methanol; sealed tube at 650 K and 50 atm for 3 days",  # A1c: conditions smuggled into the amount slot
+    "10 mL methanol + 10 mL acid",                     # near-miss spelling: not byte-equal -> never display
+])
+def test_d24_1_a_quantity_prose_beside_typed_uses_is_display_only_when_canonical(text):
+    """Wave-C' A1: the old "any quantified typed use makes op.quantity a display form" trust model let the prose state
+    an amount, a second material or conditions no typed field carries. D24.1: display only when byte-equal to
+    ``render_op_quantity(op)``; otherwise material_unresolved (host = MATERIAL) -> UNKNOWN."""
+    route = _with_op1_quantity(text)
+    assert any("not the canonical rendering" in u for u in compile_capability_requirements(route).material_unresolved)
+    assert _assess(route).material.status is S.UNKNOWN
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -406,11 +426,27 @@ def test_f7_converse_a_stoichiometric_role_the_step_does_not_consume_is_unresolv
 
 
 def test_part_iv_a_condition_sentence_in_the_medium_is_not_a_species():
+    """Part IV stands: the sentence is never a species, a hazard entry or a waste stream. D24.3 (Wave-C' A5): it is
+    still an open question about what material it might name, so it leaves a TEXT-FREE material_unresolved note
+    (UNKNOWN) -- unless a typed use of that step exactly covers it."""
     sentence = "neat; acid-catalyzed (conc. H2SO4); reflux then fractional distillation"
     reqs = compile_capability_requirements(_route(medium=sentence))
     assert not any(r.name == sentence for r in reqs.material)
     assert not any(sentence in h for h in reqs.hazard_unresolved)
-    assert _assess(_route(medium=sentence)).material.status is S.FIT
+    assert not any(sentence in w for w in reqs.waste.unresolved + reqs.waste.reasons)
+    notes = [u for u in reqs.material_unresolved if "envelope.medium" in u]
+    assert notes and not any(sentence in u for u in notes)  # text-free: the sentence is not re-quoted as a thing
+    assert _assess(_route(medium=sentence)).material.status is S.UNKNOWN
+    assert _assess(_route()).material.status is S.FIT  # the control: no medium, no note
+
+
+def test_d24_3_a_species_named_only_in_the_medium_of_a_procedure_step_is_never_fit():
+    """Wave-C' A5: medium="benzene" on a step WITH ProcedureEvidence read no axis (material FIT on a bench with no
+    benzene). D24.3: an uncovered medium is unread (UNKNOWN); a typed use of that step with the exact name covers it."""
+    assert _assess(_route(medium="benzene")).material.status is S.UNKNOWN
+    covered = _BASE_USES + (_use("benzene", ProcedureMaterialRole.SOLVENT, None),)
+    reqs = compile_capability_requirements(_route(uses=covered, medium="benzene"))
+    assert not any("envelope.medium" in u for u in reqs.material_unresolved)
 
 
 def test_d17_a_step_with_no_procedure_evidence_is_material_unresolved():
@@ -490,3 +526,248 @@ def test_d20_an_unknown_readiness_tier_is_refused_with_value_error():
                                         "measurement", "waste", "procurement", "attention_care", "monetary")},
             overall=S.FIT, overall_reasons=("forged",), readiness_tier="BOGUS_TIER",
             readiness_digest=a.readiness_digest)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# D24 -- the post-Wave-C' amendment (audit §7.5): each regression below reproduces a Wave C' adversary's break on a
+# micro world whose OTHER axes are clean, and pins the law that closes it. Every one was a per-axis false FIT (or a
+# false BLOCK) on the D14-D22 tree (941946a).
+# ---------------------------------------------------------------------------------------------------------------
+
+from smartchem.capability.coverage import render_scale, render_summary, render_verification  # noqa: E402
+from smartchem.capability.requirements import WasteRequirement  # noqa: E402
+from smartchem.data import material_library as lib  # noqa: E402
+from smartchem.decompiler_conditions import _SPEC_SATURATED_AQUEOUS_NACL  # noqa: E402
+from smartchem.experiment.stock import MATERIAL_COMPONENT_SCHEMA  # noqa: E402
+from smartchem.material_spec import (  # noqa: E402
+    DilutionState,
+    HydrationState,
+    MaterialSpecification,
+    SaturationState,
+    StateClaim,
+)
+from smartchem.provenance import SourceCitation, SourceReview  # noqa: E402
+
+_STILL = _op(OperationKind.DISTILL, apparatus=("simple distillation apparatus",), temperature=_T)
+_DRY = _op(OperationKind.DRY, apparatus=("erlenmeyer flask",))
+_QUENCH = _op(OperationKind.ADD, role=OperationRole.QUENCH)
+_VERIFY_MASS = _op(OperationKind.VERIFY, apparatus=("analytical balance",))
+
+
+def _replace_procedure(route, **changes):
+    step = route.steps[0]
+    proc = dc.replace(step.envelope.procedure, **changes)
+    return dc.replace(route, steps=(dc.replace(step, envelope=dc.replace(step.envelope, procedure=proc)),))
+
+
+def _canonical(proc, field):
+    if field == "scale":
+        return render_scale(proc)
+    if field == "analytical_verification":
+        return render_verification(proc)
+    return render_summary(proc, field)
+
+
+@pytest.mark.parametrize("field, host, prose, axis", [
+    # Wave-C' A3: a PRESENT summary is what EARNS PROCESS_SPECIFIED -- the HARD LAW is not its backstop.
+    ("purification", _STILL, "vacuum distillation at 1 mmHg, bp 80 C", "process"),
+    ("drying", _DRY, "vacuum oven 0.01 atm 390 K 48 h", "process"),
+    ("quench", _QUENCH, "dry-ice/acetone 195 K", "process"),
+    ("scale", None, "5 L methanol in a 20 L reactor", "material"),
+    # Wave-C' A2: the verification text named methods no VERIFY op types.
+    ("analytical_verification", _VERIFY_MASS, "1H NMR and HPLC purity >= 99.5 %", "measurement"),
+])
+def test_d24_1_a_procedure_summary_is_display_only_when_it_is_the_canonical_rendering(field, host, prose, axis):
+    base = _route(*(() if host is None else (host,)))
+    canonical = _canonical(base.steps[0].envelope.procedure, field)
+    assert canonical, "the typed fields must render to something for the control to be meaningful"
+    control = _replace_procedure(base, **{field: _pf(canonical)})
+    witness = _replace_procedure(base, **{field: _pf(prose)})
+    assert getattr(_assess(control), axis).status in PASSES, getattr(_assess(control), axis).reasons
+    assert getattr(_assess(witness), axis).status is S.UNKNOWN
+
+
+def test_d24_1_a_vacuum_op_needs_a_sub_atmospheric_whole_step_minimum():
+    """Wave-C' A3 (pressure side): a Buchner (vacuum) filtration states a sub-atmospheric demand of unstated size."""
+    vac = _op(OperationKind.FILTER, apparatus=("buchner funnel",))
+    bench = _bench(physical_bounds=PhysicalBounds.of(max_temperature_k=500.0, min_temperature_k=250.0,
+                                                     min_pressure_atm=0.1, max_pressure_atm=2.0))
+    assert _assess(_route(vac), bench).physical.status is S.UNKNOWN  # the clean record claims 1 atm: contradiction
+    unread = dc.replace(_CLEAN_RECORD, min_pressure_atm=None)
+    assert _assess(_route(vac, process=unread), bench).physical.status is S.UNKNOWN
+    covered = dc.replace(_CLEAN_RECORD, min_pressure_atm=0.2)
+    assert _assess(_route(vac, process=covered), bench).physical.status is S.FIT
+
+
+def test_d24_4_a_mix_op_is_an_agitation_demand_the_record_must_carry():
+    """Wave-C' A6: a MIX op reached no axis (record agitation NONE, bench allowing NONE -> process FIT)."""
+    mix = _op(OperationKind.MIX)
+    assert _assess(_route(mix)).process.status is S.UNKNOWN
+    assert _assess(_route(mix, process=dc.replace(_CLEAN_RECORD, agitation=None))).process.status is S.UNKNOWN
+    assert _assess(_route(mix, process=dc.replace(_CLEAN_RECORD, agitation=Agitation.MANUAL))).process.status is S.FIT
+
+
+def test_d24_1_formulation_words_beside_an_empty_specification_are_unresolved():
+    """Wave-C' A9: an EMPTY spec typed nothing, so "anhydrous (<= 50 ppm H2O)" was silently dropped (material FIT)."""
+    worded = dc.replace(_BASE_USES[1], formulation="anhydrous (<= 50 ppm H2O)", specification=MaterialSpecification())
+    assert _assess(_route(uses=(_BASE_USES[0], worded))).material.status is S.UNKNOWN
+    plain = dc.replace(worded, formulation=None)
+    assert _assess(_route(uses=(_BASE_USES[0], plain))).material.status is S.FIT
+
+
+def test_d24_3_b3_a_solvent_named_only_in_condition_prose_is_never_fit():
+    """Wave-C' B3a: medium="reflux in 50 mL toluene" on a procedure step read no axis."""
+    assert _assess(_route(medium="reflux in 50 mL toluene")).material.status is S.UNKNOWN
+
+
+# -- D24.5: commensurability is EARNED (Wave-C' B1 A-G, C1) ---------------------------------------------------------
+
+def _state(state, ev=_UD):
+    return StateClaim(state, ev)
+
+
+def _solid_bottle(mid, *components, qty="10", unit="g", phase=Phase.SOLID):
+    return StockMaterial(STOCK_MATERIAL_SCHEMA, mid, mid, tuple(components), phase, "fixture: operator-declared bottle",
+                         quantity=StockQuantity.of(qty, unit), phase_evidence=_UD)
+
+
+def _drier_world(bottle, *, spec, qty="10", name="drier s", phase=Phase.SOLID):
+    drier = ProcedureMaterialUse(name=name, role=ProcedureMaterialRole.DRY, phase=PhaseClaim(phase, _SQ),
+                                 quantity=StockQuantity.of(qty, "g" if phase is Phase.SOLID else "mL"),
+                                 evidence_source="fixture micro-route", specification=spec)
+    bench = _bench(material_inventory=(_bottle("methanol-pure", _ME), _bottle("acetic-pure", _AC), bottle))
+    return _assess(_route(uses=_BASE_USES + (drier,)), bench).material.status
+
+
+_ANHYDROUS_SQ = MaterialSpecification(states=(_state(HydrationState.ANHYDROUS, _SQ),))
+
+
+def test_d24_5_b1_a_state_word_never_turns_a_one_percent_bottle_into_a_proven_draw():
+    dilute = _solid_bottle("drier-1pct",
+                           MaterialComponent.evidenced("drier s", "active", _evidence("0.01", "0.01"),
+                                                       states=(_state(HydrationState.ANHYDROUS),)),
+                           MaterialComponent.evidenced("sand", "filler", _evidence("0.99", "0.99")))
+    assert _drier_world(dilute, spec=_ANHYDROUS_SQ) is S.UNKNOWN                    # B1-A (was FIT)
+    assert _drier_world(dilute, spec=MaterialSpecification()) is S.UNKNOWN          # B1-B monotone control
+    pure = _solid_bottle("drier-pure", MaterialComponent.evidenced("drier s", "active", _evidence(),
+                                                                   states=(_state(HydrationState.ANHYDROUS),)))
+    assert _drier_world(pure, spec=_ANHYDROUS_SQ) is S.FIT                          # B1-C clean control
+
+
+def test_d24_5_b1_d_an_undiluted_claim_on_a_one_percent_component_is_not_a_proven_draw():
+    neat_req = MaterialSpecification(states=(_state(DilutionState.NEAT, _SQ),))
+    acid = dc.replace(_BASE_USES[1], specification=neat_req)
+    one_pct = StockMaterial(STOCK_MATERIAL_SCHEMA, "acid-1pct", "acid-1pct", (
+        MaterialComponent.evidenced(_AC, "active", _evidence("0.01", "0.01"), states=(_state(DilutionState.NEAT),)),
+        MaterialComponent.evidenced(_WATER, "solvent", _evidence("0.99", "0.99"))),
+        Phase.LIQUID, "fixture", quantity=StockQuantity.of("500", "mL"), phase_evidence=_UD)
+    bench = _bench(material_inventory=(_bottle("methanol-pure", _ME), one_pct))
+    assert _assess(_route(uses=(_BASE_USES[0], acid)), bench).material.status is not S.FIT
+
+
+def test_d24_5_b1_e_a_component_listed_at_zero_is_absent():
+    phantom = _solid_bottle("sand", MaterialComponent.evidenced("sand", "filler", _evidence()),
+                            MaterialComponent.evidenced("drier s", "active", _evidence("0", "0"),
+                                                        states=(_state(HydrationState.ANHYDROUS),)))
+    assert _drier_world(phantom, spec=_ANHYDROUS_SQ) is S.BLOCKED  # provably absent, never a proven draw
+
+
+def test_d24_5_b1_f_the_clamped_library_drier_is_no_longer_a_proven_draw_through_a_state_word():
+    """The real library bottle (assay CLAMPED [0.97, 1], ANHYDROUS declared): D18 already refuses CLAMPED as a purity
+    witness; the state-only spec was a back door around it (B1-F)."""
+    drier = lib.magnesium_sulfate_anhydrous(quantity=StockQuantity.of("2", "g"))
+    assert _drier_world(drier, spec=_ANHYDROUS_SQ, qty="2", name="magnesium sulfate") is S.UNKNOWN
+
+
+def test_d24_5_b1_g_the_live_corpus_brine_spec_needs_a_certified_positive_fraction():
+    """The LIVE corpus spec (SATURATED + SOLUTION, source-quoted aqueous phase): plain water that LISTS the solute at
+    [0, 0] with a saturation claim is not brine (B1-G); the real library brine (DERIVED fraction > 0) is."""
+    phantom = StockMaterial(STOCK_MATERIAL_SCHEMA, "plain-water", "plain water", (
+        MaterialComponent.evidenced(_WATER, "solvent", _evidence()),
+        MaterialComponent.evidenced("sodium chloride", "active", _evidence("0", "0"), states=(
+            _state(SaturationState.SATURATED), _state(DilutionState.SOLUTION)))),
+        Phase.AQUEOUS_SOLUTION, "fixture", quantity=StockQuantity.of("5", "mL"), phase_evidence=_UD)
+    kw = dict(spec=_SPEC_SATURATED_AQUEOUS_NACL, qty="5", name="sodium chloride", phase=Phase.AQUEOUS_SOLUTION)
+    assert _drier_world(phantom, **kw) is not S.FIT
+    brine = lib.sodium_chloride_saturated_wash(quantity=StockQuantity.of("5", "mL"))
+    assert _drier_world(brine, **kw) is S.FIT  # liveness: a real formulated draw is still commensurable
+
+
+@pytest.mark.parametrize("basis, value", [(ConcentrationBasis.MASS_PER_VOLUME, 0.3), (ConcentrationBasis.MOLAR, 6.0)])
+def test_d24_5_c1_the_pure_witness_reads_the_whole_bottle(basis, value):
+    """Wave-C' C1: "methanol [1, 1]" beside 0.3 g/mL (or 6 M) of a second species is a contradictory bottle; the K3
+    feasibility sum skips non-fraction bases, so only the whole-bottle witness catches it."""
+    impure = StockMaterial(STOCK_MATERIAL_SCHEMA, "methanol-plus", "methanol-plus", (
+        MaterialComponent.evidenced(_ME, "active", _evidence()),
+        MaterialComponent(MATERIAL_COMPONENT_SCHEMA, "sodium chloride", "solute", value, value, basis)),
+        Phase.LIQUID, "fixture", quantity=StockQuantity.of("500", "mL"), phase_evidence=_UD)
+    assert _assess(_route(), _bench(material_inventory=(impure, _bottle("acetic-pure", _AC)))).material.status is S.UNKNOWN
+    assert _assess(_route()).material.status is S.FIT  # the clean control: a truly pure bottle
+
+
+def test_d24_6_b2_one_condensation_byproduct_is_never_consumed_for_free_by_a_later_step():
+    """Wave-C' B2: step 1's water byproduct (removed in its workup) fed a later hydrolysis with no demand at all."""
+    first = _route().steps[0]
+    hydrolysis = ExperimentStep(STEP_SCHEMA, _AC, (_MEOAC, _WATER), (_AC, _ME), (), _envelope(uses=()))
+    route = ExperimentRoute(ROUTE_SCHEMA, (first, hydrolysis))
+    water = [r for r in compile_capability_requirements(route).material
+             if r.identity is not None and r.role == "reactant (leaf input)" and "step 2" in r.evidence_source]
+    assert water, "the later consumption of a byproduct is an external demand of its own (D24.6)"
+    assert _assess(route).material.status is not S.FIT
+
+
+def test_d24_8_c6_a_name_keyed_listing_is_not_proof_of_absence():
+    by_name = _bench(material_inventory=(_bottle("methanol-pure", _ME), _bottle("acid-by-name", "acetic acid")))
+    assert _assess(_route(), by_name).material.status is S.UNKNOWN          # was BLOCKED (C6 false BLOCK)
+    other = _bench(material_inventory=(_bottle("methanol-pure", _ME), _bottle("benzene-by-name", "benzene")))
+    assert _assess(_route(), other).material.status is S.BLOCKED            # a different name is still absence
+
+
+def test_d24_17_a_step_with_no_procedure_evidence_has_unread_equipment_and_verification_demands():
+    a = _assess(_route(procedure=False))
+    assert a.equipment.status is S.UNKNOWN and a.measurement.status is S.UNKNOWN
+    control = _assess(_route())
+    assert control.equipment.status is S.NOT_APPLICABLE and control.measurement.status is S.NOT_APPLICABLE
+
+
+# -- reachability: the D24 laws leave CAPABILITY_FIT reachable in a FULLY TYPED world -----------------------------
+
+def test_d24_a_fully_typed_world_still_reaches_every_axis_fit_except_waste():
+    """The model-consistency proof (Part VII): a real PROCESS_SPECIFIED route (2 MeOH -> DME + H2O, the real
+    capped-scission step) whose sourced procedure types EVERYTHING -- canonical scale / summaries / verification,
+    typed conditions, a gravity (not vacuum) filtration -- passes every axis but waste, and reaches overall FIT once
+    only the waste requirement is discharged. None of D14-D24 is overconstrained; the ceiling is the missing
+    disposition vocabulary (0.9.5 StreamDisposition)."""
+    from tests.test_poor_man_reaction_type_oracle import _routes
+
+    dme = next(r.steps[0] for r in _routes("COC", ["methanol"]) if len(r.steps) == 1)
+    meoh = dme.reactants[0]
+    src = SourceCitation("https://example.test/procedure", SourceReview.ACCEPTED)
+    add = ProcedureOperation(ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION, locator="src p.1",
+                             material_uses=(_use("methanol", ProcedureMaterialRole.SUBSTRATE, meoh, qty="20"),),
+                             duration=_pf(Interval(30, 30, "min"), "src p.1"))
+    filt = ProcedureOperation(ordinal=2, kind=OperationKind.FILTER, locator="src p.1", apparatus=("fluted filter paper",))
+    weigh = ProcedureOperation(ordinal=3, kind=OperationKind.VERIFY, locator="src p.1", apparatus=("analytical balance",))
+    na = EvidenceField.not_applicable("src p.1", "the source closes this out")
+    draft = ProcedureEvidence(reaction_scope="2 MeOH -> DME", source=src, scale=_pf("x", "src p.1"),
+                              operations=(add, filt, weigh), quench=na, workup_isolation=_pf("x", "src p.1"),
+                              separation=na, wash=na, drying=na, purification=na,
+                              analytical_verification=_pf("x", "src p.1"))
+    proc = dc.replace(draft, scale=_pf(render_scale(draft), "src p.1"),
+                      workup_isolation=_pf(render_summary(draft, "workup_isolation"), "src p.1"),
+                      analytical_verification=_pf(render_verification(draft), "src p.1"))
+    envelope = ConditionEnvelope(procedure=proc, process=_CLEAN_RECORD, temperature=Interval(298.15, 298.15, "K"),
+                                 pressure=Interval(1.0, 1.0, "atm"), status=EvidenceStatus.EXPERIMENTAL,
+                                 provenance="declared conditions", source=src)
+    route = ExperimentRoute(ROUTE_SCHEMA, (dc.replace(dme, envelope=envelope),))
+    readiness = evaluate_route(route)
+    assert readiness.tier == "PROCESS_SPECIFIED", readiness.tier
+    bench = _bench(material_inventory=(_bottle("methanol-pure", meoh),))
+    reqs = compile_capability_requirements(route)
+    honest = assess(bench, reqs, readiness)
+    blockers = {name for name in ("material", "equipment", "physical", "process", "containment", "ventilation",
+                                  "measurement", "waste", "procurement", "attention_care", "monetary")
+                if getattr(honest, name).status not in PASSES}
+    assert blockers == {"waste"}, {n: getattr(honest, n).reasons for n in blockers}
+    discharged = assess(bench, dc.replace(reqs, waste=WasteRequirement(frozenset(), ())), readiness)
+    assert discharged.overall is S.FIT

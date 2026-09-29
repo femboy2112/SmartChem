@@ -463,7 +463,13 @@ class StockMaterial(Digestible):
         evidence record is UNKNOWN strength), and the matched components' own declared states (Wave-C K1). ``None`` if the
         species is absent
         under the F44 key rules of :meth:`active_fraction_interval`."""
-        from ..material_spec import ConcentrationBasis, EvidenceKind, StockSpecView
+        from ..material_spec import (
+            CERTIFYING_STOCK_EVIDENCE,
+            ConcentrationBasis,
+            DilutionState,
+            EvidenceKind,
+            StockSpecView,
+        )
         if isinstance(required_identity, Molecule):
             want = _structure_key(required_identity)
             matches = [c for c in self.components if c.identity_key == want]
@@ -507,6 +513,18 @@ class StockMaterial(Digestible):
             claims[0] for claims in by_family.values()
             if len({(cl.state, cl.evidence) for cl in claims}) == 1 and len(claims) == len(matches)
         )
+        # D24.5 (Wave-C' C2): a NEAT ("undiluted") claim is contradicted by the bottle's OWN declaration of a positive
+        # diluent -- ANY other component whose certified lower bound is > 0 (on any basis: 0.3 g/mL NaCl beside
+        # "neat" water is as much a diluent as 50 % w/w water beside "neat" acid). The contradicted claim is DROPPED,
+        # so the comparison reads UNDETERMINED (never resolved by preference). No numeric purity threshold is
+        # introduced: an impurity declared with lower bound 0 (commercial glacial acid, water 0-0.3 %) keeps NEAT.
+        matched_ids = {id(c) for c in matches}
+        diluted = any(
+            c.evidence is not None and c.evidence.kind in CERTIFYING_STOCK_EVIDENCE and c.evidence.interval[0] > 0
+            for c in self.components if id(c) not in matched_ids
+        )
+        if diluted:
+            states = tuple(claim for claim in states if claim.state is not DilutionState.NEAT)
         return StockSpecView((lo, hi), basis, weakest, states)
 
     def satisfies(self, required_identity: "Molecule | str", *, min_assay: float) -> FitnessVerdict:

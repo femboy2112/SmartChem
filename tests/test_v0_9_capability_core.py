@@ -221,7 +221,11 @@ _NO_LIMIT_BUDGET = frozenset({"budget"})
 def test_resolver_recognizes_the_forced_corpus_apparatus_strings():
     assert resolve_apparatus("Buchner funnel") is EquipmentCapability.VACUUM_FILTRATION
     assert resolve_apparatus("reflux condenser") is EquipmentCapability.REFLUX_CONDENSER
-    assert resolve_apparatus("distillation apparatus") is EquipmentCapability.FRACTIONAL_DISTILLATION
+    # D24.16 (Wave-C' F1): the unqualified corpus string no longer claims a configuration the page never names ("as
+    # described by your instructor") -- it is UNRECOGNIZED; only a string NAMING the configuration resolves to it.
+    assert resolve_apparatus("distillation apparatus") is None
+    assert resolve_apparatus("fractional distillation apparatus") is EquipmentCapability.FRACTIONAL_DISTILLATION
+    assert resolve_apparatus("simple distillation apparatus") is EquipmentCapability.SIMPLE_DISTILLATION
     assert resolve_apparatus("thermometer") is EquipmentCapability.THERMOMETER
     # normalization (whitespace/case) is not fuzziness: the SAME apparatus, differently quoted, still resolves.
     assert resolve_apparatus("  Reflux   Condenser ") is EquipmentCapability.REFLUX_CONDENSER
@@ -382,16 +386,20 @@ def test_compile_capability_requirements_equipment_axis_reads_apparatus_not_equi
     ``ProcedureEvidence.apparatus``/``ProcessRequirements.equipment`` tuples instead."""
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
-    assert EquipmentCapability.FRACTIONAL_DISTILLATION in requirements.equipment
     assert EquipmentCapability.REFLUX_CONDENSER in requirements.equipment
     assert EquipmentCapability.SEPARATORY_FUNNEL in requirements.equipment
+    # D24.16 (Wave-C' F1, FLIPPED): the page's "distillation apparatus ... as described by your instructor" names no
+    # configuration, so it is carried as an UNTABLED string (fail closed) -- never claimed as FRACTIONAL (the old
+    # forcing-matrix alias) nor as SIMPLE.
+    assert EquipmentCapability.FRACTIONAL_DISTILLATION not in requirements.equipment
+    assert EquipmentCapability.SIMPLE_DISTILLATION not in requirements.equipment
     # the corpus consumable "boiling stones" is real evidence but a vetted, whitelisted consumable -- it is
     # dropped, not carried as unrecognized; it must never invent a phantom EquipmentCapability member.
     assert "boiling stones" not in requirements.equipment_unrecognized
-    # Round V D13 (FLIPPED from ``== ()``): the only remainder is the UNREAD hardware demand of the two ops the
-    # source leaves without apparatus (cool; dry) -- never an untabled apparatus string.
+    # Round V D13 + D24.16: the remainder is the untabled still string plus the UNREAD hardware demand of the two ops
+    # the source leaves without apparatus (cool; dry).
     assert requirements.equipment_unrecognized == (
-        "step 1 op 3 COOL states no apparatus", "step 1 op 8 DRY states no apparatus")
+        "distillation apparatus", "step 1 op 3 COOL states no apparatus", "step 1 op 8 DRY states no apparatus")
 
 
 def test_compile_capability_requirements_is_a_pure_function_of_the_route_alone():
@@ -507,11 +515,13 @@ def test_verdict_fold_reaches_fit_when_tier_is_process_specified_and_nothing_is_
         CapabilityStatus.UNKNOWN)
 
 
-def test_profile_missing_fractional_distillation_blocks_the_real_isopentyl_equipment_axis():
+def test_profile_missing_reflux_and_separation_blocks_the_real_isopentyl_equipment_axis():
     """The explicit gate: a PoorMan-shaped profile (FREEZE decision 6 -- no REFLUX_CONDENSER, no
     FRACTIONAL_DISTILLATION/SIMPLE_DISTILLATION, no VACUUM_FILTRATION, no BALANCE) assessed against the
     REAL compiled isopentyl-acetate requirement is BLOCKED on equipment, and that BLOCKED wins overall
-    even though the route's own readiness tier is PROCESS_SPECIFIED."""
+    even though the route's own readiness tier is PROCESS_SPECIFIED. D24.16: the still is no longer a named
+    requirement (the page never names its configuration), so the provable BLOCK now rests on the reflux condenser and
+    the separatory funnel -- a provable BLOCK still wins over the untabled still remainder."""
     route = _isopentyl_route()
     requirements = compile_capability_requirements(route)
     poor_man_equipment = frozenset({
@@ -522,8 +532,8 @@ def test_profile_missing_fractional_distillation_blocks_the_real_isopentyl_equip
     assessment = assess(profile, requirements, evaluate_route(route))
     assert assessment.equipment.status is CapabilityStatus.BLOCKED
     joined_reasons = " ".join(assessment.equipment.reasons)
-    assert "FRACTIONAL_DISTILLATION" in joined_reasons
     assert "REFLUX_CONDENSER" in joined_reasons
+    assert "SEPARATORY_FUNNEL" in joined_reasons
     assert assessment.overall is CapabilityStatus.BLOCKED
 
 

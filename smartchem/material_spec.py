@@ -216,17 +216,39 @@ def compare_phase(required: "PhaseClaim | None", stock: "PhaseClaim | None") -> 
         raise TypeError("stock must be a PhaseClaim or None")
     certified = (required.evidence in CERTIFYING_REQUIREMENT_EVIDENCE
                  and stock.evidence in CERTIFYING_STOCK_EVIDENCE)
-    if stock.phase is required.phase:
+    relation = _phase_relation(required.phase, stock.phase)
+    if relation == "within":
         if certified:
-            return SpecVerdict.SATISFIES, f"{label}: matched by the stock's {stock.evidence.value} phase"
+            return SpecVerdict.SATISFIES, (
+                f"{label}: satisfied by the stock's {stock.evidence.value} phase {stock.phase.value}")
         return SpecVerdict.UNDETERMINED, (
             f"{label}: matched only on {required.evidence.value}/{stock.evidence.value} evidence -- agreement of an "
             "unsupported phase assertion is not evidence (F71)")
+    if relation == "overlap":
+        return SpecVerdict.UNDETERMINED, (
+            f"{label}: the stock's phase {stock.phase.value} overlaps the demand without settling it (D24.7: an "
+            "AQUEOUS_SOLUTION is a LIQUID, a LIQUID need not be aqueous) -- UNKNOWN, neither a match nor a refutation")
     if certified:
         return SpecVerdict.VIOLATES, f"{label}: the stock's {stock.evidence.value} phase is {stock.phase.value}"
     return SpecVerdict.UNDETERMINED, (
         f"{label}: stock phase {stock.phase.value} on {required.evidence.value}/{stock.evidence.value} evidence -- an "
         "unsupported assertion cannot refute a phase demand either")
+
+
+def _phase_relation(required: object, held: object) -> str:
+    """How the stock's phase ``held`` relates to the demanded phase ``required`` (D24.7, Wave-C' C5): ``"within"``
+    when every material in ``held`` has the demanded phase (equal, or AQUEOUS_SOLUTION held against a LIQUID demand --
+    an aqueous solution IS a liquid); ``"overlap"`` when ``held`` only MAY be the demanded phase (a LIQUID bottle
+    against an AQUEOUS_SOLUTION demand); ``"disjoint"`` otherwise. Only a disjoint pair can prove VIOLATES."""
+    from .experiment.stock import Phase  # lazy: experiment.stock imports this module at import time
+
+    if held is required:
+        return "within"
+    if required is Phase.LIQUID and held is Phase.AQUEOUS_SOLUTION:
+        return "within"
+    if required is Phase.AQUEOUS_SOLUTION and held is Phase.LIQUID:
+        return "overlap"
+    return "disjoint"
 
 
 def _check_claims(claims: object, what: str) -> None:
@@ -293,6 +315,13 @@ def _compare_composition(req: CompositionConstraint, stock: StockSpecView) -> "t
             "declared conversion (no conversion engine)")
     req_ok = req.evidence in CERTIFYING_REQUIREMENT_EVIDENCE
     stock_ok = stock.interval_evidence in CERTIFYING_STOCK_EVIDENCE
+    if stock.interval_evidence is EvidenceKind.CLAMPED and slo == shi and slo in (0, 1):
+        # D24.7 (Wave-C' C4): a clamp that collapsed the WHOLE quoted range onto a bound proves the quoted quantity
+        # was not this fraction (an assay reading >= 100 %, say) -- it certifies no composition, exactly as it
+        # certifies no purity (D18).
+        return SpecVerdict.UNDETERMINED, (
+            f"{label}: stock [{slo}, {shi}] is a CLAMPED range collapsed onto a bound -- the quoted quantity was not "
+            "this fraction, so it certifies nothing (D24.7)")
     if req.tolerance is Tolerance.NOMINAL_UNSTATED_TOLERANCE:
         return SpecVerdict.UNDETERMINED, (
             f"{label}: a nominal value with UNSTATED tolerance can neither be certified nor refuted by an interval")

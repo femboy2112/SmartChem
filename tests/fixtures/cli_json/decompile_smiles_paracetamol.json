@@ -993,6 +993,7 @@
       "max_pressure_atm": null,
       "max_temperature_k": null,
       "min_pressure_atm": null,
+      "min_temperature_k": null,
       "process": {
         "allowed_agitation": null,
         "allowed_attention": null,
@@ -1003,7 +1004,7 @@
         "min_check_interval_minutes": null,
         "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
       },
-      "schema_version": "smartchem.constraints/physical-bounds-v1alpha1"
+      "schema_version": "smartchem.constraints/physical-bounds-v1alpha2"
     },
     "evidence_provider_selection": {
       "selection_id": "DEFAULT_OFFLINE"
@@ -1061,7 +1062,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha6",
+    "schema_version": "smartchem.service/compilation-request-v1alpha7",
     "search_bounds": [
       [
         "budget",
@@ -1097,8 +1098,8 @@
     },
     "transform_grammar": "FORMULA_DECOMPOSITION"
   },
-  "result_digest": "a588f4876dc1d776e6e3c595f45ede9036d56a35742ad9b9aed083e22cae9c59",
-  "schema_version": "smartchem.service/compilation-response-v1alpha16",
+  "result_digest": "90d9b04fbd94eca53745a4ff164ea846dc011385ec856d405b3a816c515b59a6",
+  "schema_version": "smartchem.service/compilation-response-v1alpha17",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
   "transport_mode": "CANONICAL_VERIFIED"

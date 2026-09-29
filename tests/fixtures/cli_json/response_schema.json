@@ -1,5 +1,11 @@
 {
   "accepted_legacy_schema_versions": {
+    "physical_bounds": [
+      "smartchem.constraints/physical-bounds-v1alpha1"
+    ],
+    "ranked_dag_summary": [
+      "smartchem.service/ranked-dag-summary-v1alpha4"
+    ],
     "ranked_route_summary": [
       "smartchem.service/ranked-route-summary-v1alpha3"
     ],
@@ -44,7 +50,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha19",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha20",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -73,7 +79,7 @@
     "gaps": "array[str] (undeclared constrained composability/physical/process dimensions)",
     "kinetics_verdict": "str (DAG-THERMO-01: worst-node rate regime; ranking-only, NEVER a grade)",
     "process_requirements": "array[object(per-step declared process facts)|null] (DAG-BENCH-01: the PROCESS component is re-derived on load via evaluate_dag_process_requirements, one entry per DAG step in the DAG's own order, null for an undeclared step; part of identity)",
-    "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence the process component is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
+    "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence the process component is RE-DERIVED from on load -- the same step-replay shape as the ranked route summary's, procedure operations carrying material_uses; emitted on the CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
     "route_digest": "str (sha256; == the matching DAG candidate_digest)",
     "schema_version": "str",
     "selectivity_verdict": "str (DAG-THERMO-01: worst-node sourced selectivity)",
@@ -92,16 +98,16 @@
     "process_requirements": "array[object(per-step declared process facts)|null] (PROCESS-ADMIT-01: the evidence process admission is RE-DERIVED from on load, one entry per route step in order, null for an undeclared step; part of route identity)",
     "readiness": "object(RouteReadiness: per_step + route_open_obligations -- the typed Sec 3/4/8 obligation ladder this route's readiness_tier is projected from; RE-DERIVED on load from the thick replay_payload when present)",
     "readiness_tier": "str (enum(FORMAL_CANDIDATE/REACTION_VOUCHED/CONDITIONS_SUPPORTED/PROCESS_SPECIFIED); DERIVED -- see readiness, the source of truth)",
-    "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence -- molecules + full 11-field envelope incl. the sourced procedure, whose operations carry material_uses: array[object(procedure-material-use incl. specification: object(MaterialSpecification)|null)] -- the readiness ladder is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
+    "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence -- molecules + full 11-field envelope incl. the sourced procedure, whose operations carry material_uses: array[object(procedure-material-use incl. specification: object(MaterialSpecification)|null and phase: object(PhaseClaim: phase, evidence, note)|null -- an evidence-graded phase; only certifying evidence can decide a phase match or mismatch)] -- the readiness ladder is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
     "route_digest": "str (sha256; == the matching candidate_digest)",
     "schema_version": "str",
     "selectivity_verdict": "str"
   },
-  "request_schema_version": "smartchem.service/compilation-request-v1alpha6",
+  "request_schema_version": "smartchem.service/compilation-request-v1alpha7",
   "response_fields": {
     "admissible_route_digests": "array[str] (FITS returned candidates under requested process constraints; not bench validation)",
     "affordability_frontier": "array[object(affordability-frontier-entry)] (section-10.4 Pareto frontier over the ranked routes; COST-VEC-01. Empty when no route carries affordability signal -- a known cost axis or a hard blocker)",
-    "capability_question_digest": "str|null (0.9 D12: canonical_digest((semantic_digest, profile_digest)); null when no capability profile was requested. Moves under a profile change; the search semantic_digest never does. Additive to expected_request_digest)",
+    "capability_question_digest": "str|null (0.9 D12: canonical_digest((semantic_digest, profile_digest)); null when no capability profile was requested. Moves under a profile change; the search semantic_digest never does. A consumer PINS it on load with expected_capability_question_digest (null pins NOT_REQUESTED) -- the capability analogue of expected_request_digest)",
     "compilation_ir": "object(chemical-compilation-ir)|null",
     "diagnostics": "array[str] (blockers)",
     "exit_code": "int (section 14.4: 0/2/3/4/5/70)",
@@ -112,14 +118,14 @@
     "provider_snapshots": "array[object(provider-snapshot)] (section-13.2 dated provenance of any LIVE provider fetch; SNAPSHOT-13.2. Empty on an offline/default run)",
     "ranked_dag_dossiers": "array[object(ranked-dag-summary)] (DAG-BENCH-01: per-DAG COMBINED section-11 bench admission for a convergent (DAG-mode) compile, the process component re-derived on load; empty in routes/decompile mode and on an unconstrained-bench request)",
     "ranked_route_dossiers": "array[object(ranked-route-summary)] (section-11 fit, best-first; CLI-CAN-02)",
-    "request": "object(compilation-request-v1alpha6; carries capability_profile: object(CapabilityProfile, canonical type-tagged)|null (null = NOT_REQUESTED; never in semantic_digest) and capability_profile_origin: str (display/preset-origin name; provenance only))",
+    "request": "object(compilation-request-v1alpha7; constraints: object(physical-bounds-v1alpha2 flattened: min_temperature_k/max_temperature_k/min_pressure_atm/max_pressure_atm number|null -- the temperature FLOOR is part of the declared range -- + process); carries capability_profile: object(CapabilityProfile, canonical type-tagged; its StockMaterials grade their phase with phase_evidence)|null (null = NOT_REQUESTED; never in semantic_digest) and capability_profile_origin: str ('' or the snapshot's own profile_id -- content-bound, never a free relabel))",
     "result_digest": "str (sha256; transport_mode folded in -- CANONICAL_VERIFIED binds it, THIN_ADVISORY is the bare semantic digest)",
     "schema_version": "str",
     "search_space_status": "str|null (section 8.3 no-route matrix: NO_ROUTE_IN_DECLARED_SPACE/INCOMPLETE_NO_ROUTE_OBSERVED/COMPLETE_CANDIDATE_SET/PARTIAL_CANDIDATE_SET; null when no route search ran)",
     "standard_status": "str|null (section 8.2 status)",
     "transport_mode": "enum(CANONICAL_VERIFIED/THIN_ADVISORY) (D5: CANONICAL_VERIFIED ships the re-derivable replay_payload and is re-derived fail-closed on load; THIN_ADVISORY is the lean opt-out on which PROCESS_SPECIFIED is inadmissible. FOLDED into result_digest so a downgrade-strip is a detectable identity change)"
   },
-  "response_schema_version": "smartchem.service/compilation-response-v1alpha16",
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha17",
   "search_receipt_view_fields": {
     "candidate_enumeration_complete": "bool",
     "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",

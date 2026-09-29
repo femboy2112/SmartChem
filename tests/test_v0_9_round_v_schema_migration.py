@@ -59,7 +59,7 @@ _REQUESTS = ("request_isopentyl_acetate.json", "request_ethyl_acetate_smiles.jso
              "request_invalid_input_ethyl_acetate_name.json")
 _RESPONSES = ("response_isopentyl_acetate.json", "response_ethyl_acetate_smiles.json",
               "response_ethyl_acetate_smiles_thin.json", "response_invalid_input_ethyl_acetate_name.json",
-              "response_isopentyl_acetate_dag.json")
+              "response_isopentyl_acetate_dag.json", "response_stereo_isopentyl_acetate_smiles.json")
 _CANONICAL_ROUTE_RESPONSES = ("response_isopentyl_acetate.json", "response_ethyl_acetate_smiles.json")
 
 # v0.8 ids, read from the real fixtures (M80: never from the constants under test).

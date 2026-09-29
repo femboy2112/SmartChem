@@ -59,9 +59,11 @@ def _vinegar_for_glacial_inventory():
 
 def test_gate_18_fully_declared_custom_collapses_to_unknown_not_capability_fit():
     """Round IV: the fully-declared Custom bench NO LONGER reaches CAPABILITY_FIT -- the honest ceiling, not
-    a regression to paper over. The bench still stocks the WHOLE isopentyl procedure, so the MATERIAL axis is
-    genuinely FIT (this file's original point -- a well-stocked bench earns its material positive -- still
-    holds). But three whole-path semantic axes now collapse to UNKNOWN from the source itself: process (F56,
+    a regression to paper over. The bench still stocks the WHOLE isopentyl procedure -- but (Round V, below; X-high
+    Wave-C' C7) its MATERIAL axis is UNKNOWN, not FIT: the typed specifications the source supports leave several
+    requirements with only POSSIBLE sources, and the bench bottles are an EXAMPLE declared world authored by the
+    repository (their USER_DECLARED claims are the example operator's word, not a real user's). Three whole-path
+    semantic axes also collapse to UNKNOWN from the source itself: process (F56,
     the undeclared elapsed CEILING beyond the timed 1-hr reflux floor), containment (F47, the unresolved
     ionic-auxiliary hazards), waste (F49, no sourced disposal routing). Overall UNKNOWN, is_capability_fit
     False. The Round-III FIT rode the process-time-omission=unlimited-patience assumption F56 retires; the

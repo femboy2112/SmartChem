@@ -37,7 +37,31 @@ F74 versions: compilation-request-v1alpha5 compilation-response-v1alpha15
               compilation-response-schema-v1alpha18 ranked-route-summary-v1alpha3   (identical to main@df1b38d)
 ```
 
-_(Per-finding adjudication table filled in §7 after the Wave-A lanes return.)_
+### §1.1 Per-finding adjudication (the external audit's F64–F79 + F81; filled at the X-high close)
+
+Note on numbering: the audit text defines F64–F79 and F81; no finding carries the numbers F80 or F82 (the "F64–F82"
+range in the PR hold banner was the parent's shorthand). Every verdict below was reproduced on the real object path
+before any fix; every fix has a discriminating regression test and a calibrated mutant that is ACTIVE and KILLED.
+
+| finding | verdict | reproducer (before) | root cause | fix (barrier) | guard |
+|---|---|---|---|---|---|
+| F64 known + unknown use launders the unknown | **VERIFIED** | `scratchpad/r5/repro_quantity.py`: sum([25 mL] + unknown) = 25 mL | `requirements.py` appended only non-None quantities | typed `QuantityDemand` EXACT / LOWER_BOUND_PLUS_UNKNOWN / UNKNOWN (D1) | M63; core tests |
+| F65 mixed units → no gate | **VERIFIED — P0** | 10 g + 20 mL demand vs a 0.001 mL bottle → overall `CAPABILITY_FIT` | mixed units summed to `None` = no gate | per-unit-domain demand + allocation, exact `Fraction` (D1/D2) | M64 |
+| F66 per-species, not per-package, conservation | **VERIFIED — P0** | A 80 mL + B 80 mL from one 100 mL two-component bottle → FIT | independent per-requirement witnesses | ONE flow network per unit domain, one capacity edge per package, G⁻/G⁺ (D2); X-high: commensurability earned (D24.5), internal supply metered (D24.6) | M65, M77; B-battery (Wave C′) |
+| F67 adjective semantics chemically false | **VERIFIED** (live in corpus) | conc. HCl → [0.95, 1]; 20.5 % NaCl FITs "saturated"; MgSO4·7H2O FITs "anhydrous" | the global `_FORMULATION_SPECS` oracle | oracle DELETED; source-authored `MaterialSpecification` (D3); states are positive claims (D5) | M66–M69 |
+| F68 invented percent basis | **VERIFIED** | "5 % NaHCO3" compared as w/w | no basis on any compare-path object | `ConcentrationBasis` incl. UNKNOWN; nominal/unstated tolerance → UNDETERMINED (D4) | M70 |
+| F69 unknown formulation dropped | **VERIFIED** | "fuming", "6 M", "absolute", "98 %" → no constraint → FIT | unmatched words returned `(None, None, None)` | `unresolved_terms` → UNKNOWN (D3); X-high: non-empty formulation beside an EMPTY spec also unresolved (D24.1) | M72 + D24 mutants |
+| F70 derivation evidence unbound to its material | **VERIFIED** | source/method/domain/kernel swaps leave material + profile digests unmoved | callable `DerivedIntervalEvidence`, not digestible | digestible `IntervalEvidence` with a CLOSED kernel registry bound to `MaterialComponent` (D7/D8); X-high kernel semantic identity lock (D19, D24.9) | M73, M142–M143 + D24 mutants |
+| F71 self-certifying assumptions / method labels | **VERIFIED** | ASSUMED req vs ASSUMED stock → zero-margin FIT; BROADENED label over arbitrary width | no evidence-strength law | certifying sets + `compare_specification` (D6); kernels emit only their declared kind (D7); X-high extends the law to PHASE (D18) | M71, M74, M137–M140 |
+| F72 unit-premise mismatch (isoamyl negative) | **VERIFIED as premise** (verdict-neutral: true value inside the band) | g/100 mL fed to a g/100 g kernel | kernel accepted any unit | per-kernel input-unit whitelist; per-mL/per-L refused (D7) | M75 |
+| F73 derived-data coverage incomplete | **VERIFIED** (19 intervals, 6/12 evidenced, 0 digest-bound) | Lane C `source_map.json` (scratch) | intervals without records | every curated interval re-evidenced or relabelled ASSUMED/UNKNOWN (Wave B); X-high: committed, machine-checked map `docs/research/V0_9_RC_ROUND_V_MATERIAL_SOURCE_MAP.md` (12/12 components carry a record; every sourced record + input names its locator) | `tests/test_v0_9_round_v_material_source_map.py` |
+| F74 false schema versions | **VERIFIED** | all four wire ids identical to `main@df1b38d` while shapes changed | shapes changed without bumps | honest bumps + explicit legacy dispatch (D11); X-high final freeze (D22) incl. the silently-changed DAG summary | M80, M81 |
+| F75 allocation must be GLOBAL across packages | **PARTIAL → FIXED** (same-species split refuted; structure-key + name-key double spend VERIFIED) | two-key bottle 40 from 25 mL | per-key allocation | D2 global graph; X-high D24.8 name-key presence → UNKNOWN (never a false BLOCK) | M77; B-battery |
+| F76 AQUEOUS_NEUTRAL by absence | **VERIFIED** | isopentyl water byproduct `Fate.UNKNOWN` emitted as AQUEOUS_NEUTRAL | empty GHS read as a benign STREAM | categories earned only from positive stream evidence; AQUEOUS_NEUTRAL unreachable today (D9) | M78, M50 |
+| F77 residual materials missing from waste | **VERIFIED** | excess AcOH, H2SO4 catalyst, unreacted alcohol, bicarbonate CO2 never entered waste | spent streams keyed only off optional typed uses | residual + operation-derived spent streams (D9); X-high F-6 untyped-material conservation + F-7 role consistency (D17) | M79, M92, M131–M134 |
+| F78 ProcessBounds `None` overloaded | **VERIFIED** | same bounds: legacy FITS, capability UNKNOWN; "no limit" inexpressible | one `None` for two meanings | `DimensionDeclaration` UNDECLARED / DECLARED_BOUND / NO_LIMIT via `capability/declarations.py`, ProcessBounds unchanged (D10); X-high process axis independently correct (D15) | M82, M93, M121–M122 |
+| F79 dishonest mutation denominator | **VERIFIED** | retired mechanisms counted as kills; M50 vacuous | no ACTIVE / RETIRED / DEFERRED split | honest denominator, retirement void unless replacements KILLED, M50 made non-vacuous (Round V); X-high: all 4 survivors diagnosed as fixture faults and rebuilt | the harness itself (§7.6 tally) |
+| F81 a real v0.8 response read as native 0.9 | **PARTIAL → FIXED** (routes-mode v0.8 responses were REFUSED with a misleading digest error; a v0.8-id request with an injected profile was ACCEPTED) | real `git archive df1b38d` fixtures | no version dispatch | explicit legacy dispatch + frozen v0.8 digest rule (D11); X-high: legacy `semantic_digest` under the frozen rule, v0.8 DAG + stereo fixtures, identity-loss re-derivation (D22/D24.11) | M81, M94, M94b |
 
 ## §2 Wave A (read-only) — lane verdict digest
 
@@ -510,3 +534,126 @@ thin-PS law; forged FIT on thick → REFUSED by the rebind; forged FIT below PS 
 (c3) a self-consistent tampered-procedure replay (no FIT; coherence ≠ authenticity — D20 boundary); (d) a coherent
 profile swap under the consumer's request pin (D20(4) closes it for pinning consumers); (g) an origin relabel, even
 under a verified producer signature (D20(5) closes it).
+
+### §7.4 Wave C′ — fresh non-author hostile review of the integrated D14–D22 tree (`941946a`)
+
+Six NEW adversaries, none of whom authored any Wave B′ code: A dalembert (demand coverage), B amber (conservation),
+C smith (evidence laundering), D evil-morty (transport), E kutner (seeded per-axis chaos), F citadel-rick
+(genericity). Brief: `scratchpad/r5x/WAVE_C2_BRIEF.md`; probes in `scratchpad/r5x/waveC2/<lane>/`. No reachable
+OVERALL false FIT was found (the zero-FIT theorem holds). Per-axis false FITs were found and are P0-LATENT by the
+brief's rule — every one is FIXED by D24 below; nothing is waved through because "overall stayed UNKNOWN anyway".
+
+| id | sev | finding (Verified by the adversary with a reproducer) | disposition |
+|---|---|---|---|
+| A1 | P0-latent | `op.quantity` "display trust": "5 L methanol" / "+ 2 g sodium metal" / "sealed tube 650 K 50 atm 3 days" beside a typed quantified use → material/containment/physical/process FIT on a REAL PROCESS_SPECIFIED route; the D16 corpus lint is a foolable word blacklist | D24.1 |
+| A2 | P0-latent | `analytical_verification` value ("1H NMR and HPLC ≥ 99.5 %") ignored once any VERIFY op names any apparatus → measurement FIT | D24.1 |
+| A3 | P0-latent | PRESENT whole-procedure summary values (vacuum distillation at 1 mmHg, vacuum oven 0.01 atm 390 K 48 h, dry-ice quench 195 K, 5 L scale) reach no axis; D16's "HARD LAW backstop" rationale is inverted (a PRESENT summary is what EARNS PROCESS_SPECIFIED) | D24.1 |
+| A4 | P0-latent | `EvidenceField(EXPLICIT_NOT_APPLICABLE, value=Interval(650 K))` is schema-valid, `is_present=False`, and every reader skips it → FIT | D24.2 |
+| A5 | P0-latent | `envelope.medium="benzene"` on a step WITH ProcedureEvidence → material FIT (Part IV over-corrected) | D24.3 |
+| A6 | P0-latent | a MIX op reaches no axis (record agitation NONE, bench NONE → process FIT) | D24.4 |
+| A9 | P2 | non-empty `formulation` + EMPTY `MaterialSpecification()` → material FIT | D24.1 |
+| A-P3 | P3 | a demand misfiled into a PRESENTATION host (evidence_scope, justification, locator, provenance) escapes | D24.1 boundary text |
+| B1 | P0-latent | a STATE-only spec (NEAT/ANHYDROUS/SATURATED) makes ANY bottle listing the species a proven 1:1 G⁻ draw — incl. a 1 % bottle, a `[0, 0]` phantom component and the CLAMPED library MgSO4 (D18 bypass); non-monotone; the LIVE corpus brine spec is armed | D24.5 |
+| B2 | P0-latent | internal supply unmetered: ANY earlier product (byproducts included) feeds every later consumer with no demand; one water byproduct spent twice (D17 S1/S2 text defective) | D24.6 |
+| B3 | P2 | a material named only in `op.quantity` / `medium` prose on a procedure step reaches no axis | D24.1 / D24.3 |
+| C1 | P0-latent | the pure witness reads only the matched species: water `[1, 1]` USER_DECLARED beside NaCl 0.3 g/mL (or 6 M) is a "pure" water bottle → FIT; the K3 feasibility sum skips non-fraction bases | D24.5 |
+| C2 | P2 | a certified NEAT claim is never checked against the same bottle's certified composition (50 % acid + 50 % water "NEAT") | D24.5 |
+| C3 | P2 | the D19 kernel lock misses helpers on the recompute path (`TypedInput.exact`, `IntervalEvidence.interval`, `exact_fraction`) and binds kernel→fn only by `__name__`: a rounding drift passes all 12 lock tests and flips UNKNOWN→FIT | D24.9 |
+| C4 | P3 | CLAMPED `[1, 1]` still certifies a composition FLOOR (the D18 exclusion applied only to the purity witness) | D24.7 |
+| C5 | P3 (false BLOCK) | AQUEOUS_SOLUTION demand vs a truthfully LIQUID brine → VIOLATES (AQUEOUS_SOLUTION ⊂ LIQUID) | D24.7 |
+| C6 | P3 (false BLOCK) | identity requirement vs a bottle keyed only by the same NAME → "absent" BLOCKED (weaker evidence ≠ proof of absence) | D24.8 |
+| C7 | P3 | the library's bench bottles are repo-authored "USER_DECLARED" worlds; a stale fit-positive docstring claims material FIT | D24.10 (documented boundary + docstring) |
+| C8 | P3 | stock-side SOURCE_QUOTED/DERIVED/CLAMPED phase/state kinds carry no locator (no power gain: USER_DECLARED already certifies) | VERIFIED DEFER → 0.9.5 source-subject binding (no verdict changes; exact boundary: stock-side sourced kinds certify exactly as USER_DECLARED) |
+| D-L1 | **P1 / P0-latent** | `compilation_ir.identity_losses` is trusted, never re-derived from the carried request: a keyless attacker strips the stereo loss, forges readiness PROCESS_SPECIFIED on the canonical wire, keeps the corpus route's own `route_digest`; loads under request pin + question pin + verified admission | D24.11 |
+| D-O1/O2 | P2 | `profile_id` is free text, so the D20 origin law binds to nothing: `research_lab()` relabelled `profile_id="poor-man"` loads and renders `CAPABILITY[poor-man]: UNKNOWN` (refused only under the question pin) | D24.12 |
+| D-G1 | P2 | capability profile + CAPPED_SCISSION_CONVERGENT (a pair the producer REFUSES) loads with DAG dossiers and no assessment | D24.13 |
+| D-D1 | P2 | a BLOCKED dossier can be deleted (ranked ⊆ IR candidates only) — the loaded answer silently omits a verdict | D24.14 |
+| D-B2 | P3 | `CapabilityProfile` v1alpha3 accepts an embedded PhysicalBounds v1alpha1 (split digests for identical benches) | D24.15 |
+| D-T1 | P3 | a THIN plain load keeps no trust marker (an advisory assessment is indistinguishable after load; FIT/PS on thin still refused, verified admission refuses) | VERIFIED DEFER → 0.9.5 (exact boundary: thin plain loads are ADVISORY by contract; trust requires the canonical wire or `require_verified_admission`; the loaded object does not record which — a trust-tier field is a 0.9.5 shape change) |
+| F1 | P2 (false BLOCK) | `"distillation apparatus" → FRACTIONAL_DISTILLATION` alias (a Round-III forcing-matrix convenience; the page says "Set up the distillation apparatus as described by your instructor … collect the fraction between 134 and 143 °C" — a boiling-range cut, not a fractionating column) BLOCKs a SIMPLE-only bench | D24.16 |
+| F-gen | held | two held-out non-corpus procedures (benzoic-acid recrystallization; cyclohexene bromination) fail closed on every axis for structural reasons; zero compiler literals in decision logic | — |
+
+### §7.5 Barrier amendment D24 (post-Wave-C′; supersedes the D16 "display trust" model and D17 S1/S2 text)
+
+**D24.1 — Prose is DISPLAY only when it is byte-equal to the CANONICAL RENDERING of the typed fields it summarizes;
+otherwise it is an unread demand on a NAMED host axis.** (No prose parser; a mechanism a word cannot fool.) Canonical
+renderings (pure functions in `capability/coverage.py`, used by the projection and by authors):
+* `op.quantity` ↔ `render_op_quantity(op)` = the op's QUANTIFIED typed uses, in use order, `"<value> <unit> <name>"`
+  joined by `" + "` (empty when none) → else `material_unresolved`;
+* `analytical_verification.value` ↔ `render_verification(procedure)` = the sorted resolved `MeasurementMethod`
+  values of the VERIFY ops joined by `"; "` → else `measurement_unrecognized`;
+* `quench/workup_isolation/separation/wash/drying/purification` value ↔ `render_summary(procedure, field)` = the
+  realizing ops `"op <n> <KIND>/<ROLE>"` joined by `"; "` → else `process_unresolved` (host = PROCESS: the procedure
+  as summarized cannot be certified executable);
+* `scale` value ↔ `render_scale(procedure)` = the quantified SUBSTRATE/REACTANT uses (op order) → else
+  `material_unresolved`;
+* a non-empty `formulation` beside an EMPTY specification → an unresolved term (F69 extended); a non-empty spec keeps
+  D3's author-transcription contract (the mission's endorsed "raw formulation prose is provenance only");
+* a vacuum-capable op (resolved `VACUUM_FILTRATION`) with no typed pressure is an unread LOW-pressure demand unless
+  the step record's `min_pressure_atm < 1` covers it; a record `min_pressure_atm >= 1` beside a vacuum op is
+  contradictory → `physical_unresolved` (vacuum means sub-atmospheric by definition, not a tuned threshold).
+Theorem boundary restated: every PRESENT slot is either read into its axis, canonically rendered from typed fields,
+or unread on its named host axis; PRESENTATION-only hosts (`evidence_scope`, `justification`, locators, notes,
+provenance) are OUTSIDE the theorem and carry no demand by contract.
+
+**D24.2** `EvidenceField(EXPLICIT_NOT_APPLICABLE, …)` must carry `value is None` (a closing-out claim cannot state a
+value). Real v0.8 fixtures and the corpus were checked for N/A-with-value before the tightening.
+
+**D24.3** A non-empty `envelope.medium` on a step WITH ProcedureEvidence that is not exact-fold-covered by a typed use
+of that step → a text-free `material_unresolved` note ("step s: envelope.medium is untyped condition prose; any
+material it names is unread"). It is still NEVER a species, a hazard entry or a waste stream (Part IV stands).
+
+**D24.4** A MIX op on a step whose record agitation is `None` or `Agitation.NONE` → `process_unresolved`.
+
+**D24.5 — Commensurability (G⁻) is earned, never implied by a state word.** A matched component whose certified upper
+bound is 0 is ABSENT. The pure witness additionally requires every OTHER component of the bottle to have lower bound
+exactly 0 on ANY basis (C1). Spec-commensurability: a SATISFIED composition constraint, OR a SATISFIED formulation-
+defining state (SOLUTION / SATURATED / UNSATURATED) with the matched component's certified lower bound > 0; NEAT /
+ANHYDROUS / HYDRATE never make an edge commensurable on their own (they describe the species; the pure witness or a
+satisfied composition must carry the quantity). A NEAT claim is dropped (UNDETERMINED) when another component of the
+same bottle has a certified lower bound > 0 (a positive diluent contradicts it, C2).
+
+**D24.6 — Internal supply is metered.** For step k of a linear route, a species is internal ONLY if it is step k−1's
+carried TARGET; byproducts and non-immediate targets that a later step consumes are external (their own
+`unstated(1)` demand; the monetary basket uses the same set). Byproduct recovery is a typed-disposition question
+(0.9.5 StreamDisposition), never assumed.
+
+**D24.7** (parent, `material_spec.py`) CLAMPED stock evidence degenerate at a bound (`[1, 1]` or `[0, 0]`) never
+certifies a composition (C4); phase comparison VIOLATES only for DISJOINT phases — AQUEOUS_SOLUTION ⊂ LIQUID, so
+that pair is UNDETERMINED (C5).
+
+**D24.8** An identity-keyed requirement whose species is absent under the structure key but present under a name key
+equal to the requirement's own name → UNKNOWN, not BLOCKED (C6).
+
+**D24.9** The kernel lock pins AST digests of EVERY helper on the recompute path (`TypedInput.exact`,
+`IntervalEvidence.interval`, `material_spec.exact_fraction`, …), pins the kernel→fn `__qualname__` map, and adds a
+>6-decimal vector (`0.9999995 → [0.999999, 1]`) (C3).
+
+**D24.10** C7: documented boundary — `material_library` bench bottles are an EXAMPLE declared world authored by the
+repository (their USER_DECLARED is the example operator's word); every CLI/service preset ships an EMPTY inventory;
+stale fit-positive docstring corrected.
+
+**D24.11 — Transport re-derives identity losses.** On load, `compilation_ir.identity_losses` must equal the losses
+re-derived from the carried request's `target_input` (recompile and decompile paths); mismatch → refused. Legacy v0.8
+payloads are checked the same way against the REAL fixtures (a legitimate v0.8 loss set that today's resolver derives
+differently fails closed as "legacy; recompile", never loads as current).
+
+**D24.12** The human/JSON capability render shows the content identity next to the label
+(`CAPABILITY[<origin>@<profile_digest[:12]>]`); origin/profile_id are labels, the profile digest is the identity,
+and the consumer's question pin is the authenticating check (documented).
+
+**D24.13** The loader mirrors the producer: a capability-profile request with the convergent-DAG grammar must be
+REFUSED-outcome with no DAG dossiers.
+
+**D24.14** Routes mode: the ranked dossier set must EQUAL the IR candidate set whenever the producer never truncates
+(verify against the producer; if it truncates, require ranked == the producer's deterministic prefix).
+
+**D24.15** `CapabilityProfile` requires `physical_bounds.schema_version == PHYSICAL_BOUNDS_SCHEMA` (v1alpha2).
+
+**D24.16** `"distillation apparatus"` is UNRECOGNIZED (the page's configuration is "as described by your instructor"
+— unknown; fail closed instead of claiming either SIMPLE or FRACTIONAL); corpus prose that says "fractional
+distillation" is corrected to what the page says (a 134–143 °C fraction collected by distillation).
+
+**D24.17** (W-GATES-EVID observation) A step with NO `ProcedureEvidence` yields a text-free unread note on the
+EQUIPMENT and MEASUREMENT axes too ("step s has no ProcedureEvidence: its equipment / verification demand is
+unread"), matching the D14 physical and D17 material treatment of the same absence — never NOT_APPLICABLE.

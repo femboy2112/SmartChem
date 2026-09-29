@@ -477,3 +477,102 @@ class TestPhaseEvidence:
         a, b = self._bottle(), self._bottle(phase_evidence=EvidenceKind.USER_DECLARED)
         assert a.satisfies("a", min_assay=0.5) is b.satisfies("a", min_assay=0.5)
         assert a.satisfies_band("a", low=0.1, high=0.9) is b.satisfies_band("a", low=0.1, high=0.9)
+
+
+class TestD24NeatContradictedByAPositiveDiluent:
+    """Round V X-high D24.5 (Wave-C' C2): a certified NEAT ("undiluted") claim on the matched component was never
+    checked against the SAME bottle's certified composition -- 50 % w/w acid beside 50 % w/w water, both
+    USER_DECLARED, still read "NEAT: positively declared by the stock". The bottle's own declaration of a positive
+    diluent (another component with certified lower bound > 0, ANY basis) now DROPS the contradicted NEAT claim, so the
+    comparison reads UNDETERMINED. No numeric purity threshold is introduced."""
+
+    @staticmethod
+    def _ev(lo, hi, basis=None):
+        from smartchem.data.derived_evidence import DerivationKernel, InputUnit, IntervalEvidence, TypedInput
+        from smartchem.material_spec import ConcentrationBasis, EvidenceKind
+
+        return IntervalEvidence.build(
+            kernel=DerivationKernel.USER_DECLARED_V1, basis=basis or ConcentrationBasis.MASS_FRACTION,
+            inputs=(TypedInput("low", lo, InputUnit.FRACTION, EvidenceKind.USER_DECLARED),
+                    TypedInput("high", hi, InputUnit.FRACTION, EvidenceKind.USER_DECLARED)),
+            domain_of_validity="my own bottle")
+
+    @staticmethod
+    def _neat():
+        from smartchem.material_spec import DilutionState, EvidenceKind, StateClaim
+        return (StateClaim(DilutionState.NEAT, EvidenceKind.USER_DECLARED, "label says neat"),)
+
+    def _bottle(self, *components):
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", components, Phase.LIQUID, "src")
+
+    @staticmethod
+    def _neat_verdict(view):
+        from smartchem.material_spec import (
+            DilutionState, EvidenceKind, MaterialSpecification, StateClaim, compare_specification)
+        spec = MaterialSpecification(states=(StateClaim(DilutionState.NEAT, EvidenceKind.SOURCE_QUOTED),))
+        return compare_specification(spec, view)[0]
+
+    def test_a_certified_positive_diluent_drops_the_neat_claim_c2(self):
+        from smartchem.material_spec import SpecVerdict
+
+        bottle = self._bottle(
+            MaterialComponent.evidenced("acetic acid", "active", self._ev("0.5", "0.5"), states=self._neat()),
+            MaterialComponent.evidenced("water", "diluent", self._ev("0.5", "0.5")))
+        view = bottle.spec_view("acetic acid")
+        assert view.states == ()
+        assert self._neat_verdict(view) is SpecVerdict.UNDETERMINED
+
+    def test_a_non_fraction_basis_diluent_also_contradicts_neat(self):
+        """0.3 g/mL NaCl beside a 'neat' water component (Wave-C' C1's bottle, with the NaCl CERTIFIED): a positive
+        solute on a mass-per-volume basis is as much a diluent as a w/w one."""
+        from smartchem.material_spec import ConcentrationBasis, SpecVerdict
+
+        bottle = self._bottle(
+            MaterialComponent.evidenced("water", "solvent", self._ev("1", "1"), states=self._neat()),
+            MaterialComponent.evidenced("sodium chloride", "solute",
+                                        self._ev("0.3", "0.3", ConcentrationBasis.MASS_PER_VOLUME)))
+        assert self._neat_verdict(bottle.spec_view("water")) is SpecVerdict.UNDETERMINED
+
+    def test_a_declared_impurity_with_lower_bound_zero_keeps_neat(self):
+        """Commercial glacial acid (99.7 %, water 0-0.3 %) stays NEAT: an impurity that MAY be absent is no
+        positive diluent -- the rule adds no purity threshold."""
+        from smartchem.material_spec import SpecVerdict
+
+        bottle = self._bottle(
+            MaterialComponent.evidenced("acetic acid", "active", self._ev("0.997", "1"), states=self._neat()),
+            MaterialComponent.evidenced("water", "impurity", self._ev("0", "0.003")))
+        view = bottle.spec_view("acetic acid")
+        assert [c.state.value for c in view.states] == ["NEAT"]
+        assert self._neat_verdict(view) is SpecVerdict.SATISFIES
+
+    def test_an_uncertified_diluent_cannot_refute_either(self):
+        """A bare (evidence-less, UNKNOWN-strength) diluent declaration can neither certify nor refute (F71): only a
+        CERTIFIED positive lower bound drops the claim. (It cannot mint a FIT either -- a NEAT claim never makes a
+        draw commensurable on its own, D24.5 in the capability fold.)"""
+        bottle = self._bottle(
+            MaterialComponent.evidenced("acetic acid", "active", self._ev("0.5", "0.5"), states=self._neat()),
+            MaterialComponent.known("water", "diluent", 0.5, 0.5))
+        assert [c.state.value for c in bottle.spec_view("acetic acid").states] == ["NEAT"]
+
+    def test_only_neat_is_dropped_other_state_families_are_untouched(self):
+        from smartchem.material_spec import EvidenceKind, SaturationState, StateClaim
+
+        sat = StateClaim(SaturationState.SATURATED, EvidenceKind.USER_DECLARED, "sat")
+        bottle = self._bottle(
+            MaterialComponent.evidenced("sodium chloride", "solute", self._ev("0.26", "0.27"), states=(sat,)),
+            MaterialComponent.evidenced("water", "solvent", self._ev("0.73", "0.74")))
+        assert bottle.spec_view("sodium chloride").states == (sat,)
+
+    def test_no_curated_library_bottle_moves(self):
+        """Every library NEAT bottle is single-component (no other component can be a positive diluent), so no
+        fixture verdict moves under D24.5; the glacial bottle still presents its NEAT claim."""
+        from smartchem.data import material_library as ml
+        from smartchem.identity_parse import InputKind, resolve_target
+        from smartchem.material_spec import DilutionState
+
+        neat_bottles = [b for b in ml.isopentyl_fully_declared_inventory()
+                        if any(s.state is DilutionState.NEAT for c in b.components for s in c.states)]
+        assert neat_bottles and all(len(b.components) == 1 for b in neat_bottles)
+        acetic = resolve_target("acetic acid", InputKind.NAME).canonical()
+        glacial = next(b for b in neat_bottles if b.material_id == "glacial-acetic-acid-reagent-grade")
+        assert [c.state for c in glacial.spec_view(acetic).states] == [DilutionState.NEAT]

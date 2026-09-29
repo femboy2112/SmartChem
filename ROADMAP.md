@@ -241,6 +241,36 @@ reaction-vouched row):
   `smartchem/` touched on disk.
 - `~/.local/bin/ruff check` clean on all three files.
 
+**v0.9 CAPABILITY COMPILER, ROUND V — EVIDENCE-BOUND MATERIAL SEMANTICS · QUANTITY CONSERVATION · WIRE-SCHEMA
+FREEZE, + the X-HIGH CONTINUATION (2026-09-28, IN PROGRESS — `ROUND V EXTERNAL AUDIT HOLD — DO NOT MERGE`; package
+stays `0.9.0a1`; the gate is NOT declared closed here — the audit doc records the gate state). Audit + barriers
+D1–D23: `docs/research/V0_9_RC_ROUND_V_EXTERNAL_AUDIT_2026-09-28.md` (§3 = Round V, §7 = the X-high
+continuation).** Round V's first half (F64–F82 + Wave-A lane G) replaced every "one representation silently meaning
+two things": a typed `QuantityDemand` (EXACT / LOWER_BOUND_PLUS_UNKNOWN / UNKNOWN, exact `Fraction` arithmetic, never
+`None` for both), ONE exact max-flow allocation per unit domain (a bottle is spent once), the `_FORMULATION_SPECS`
+adjective table DELETED in favour of source-authored `MaterialSpecification` (basis, tolerance, NEAT/hydration/
+saturation states, `unresolved_terms`), evidence-graded composition (an assumption can neither certify nor refute),
+a digestible `IntervalEvidence` over a CLOSED derivation-kernel registry, waste categories earned only from positive
+stream evidence, a declaration-state wrapper (UNDECLARED / DECLARED_BOUND / NO_LIMIT) over the legacy bounds, honest
+schema bumps with REAL v0.8 producer fixtures, and D13: *every stated demand reaches its owning axis or that axis
+fails closed*. The X-high continuation re-proved what MEDIUM effort left unproven and tested every axis IN ISOLATION
+(the universal zero-FIT state masks per-axis bugs): a temperature FLOOR on the one shared `PhysicalBounds` (D14);
+an ordered per-step procedure timeline + an independently-correct process axis (D15); a MACHINE-CHECKED
+field-coverage ledger `smartchem/capability/coverage.py` (D16 — per-op post-resolution equipment/VERIFY guards,
+prose rate/agitation/endpoint/T/P fail closed); material conservation for untyped materials, CATALYST-role
+contradiction vs `net_consumes`, `envelope.medium` as provenance only, order-aware per-step external inputs (D17);
+an evidence-graded `PhaseClaim` (D18); a derivation-kernel known-answer lock (D19); and transport fixes incl. a
+consumer capability-question pin and a content-bound origin label (D20). **Zero-FIT theorem PROVEN** (every
+PROCESS_SPECIFIED route carries an unresolved spent stream; no evidence type can discharge one yet — the ceiling is a
+missing disposal VOCABULARY, parked to 0.9.5; an evaluator-level witness reaches FIT once waste is discharged).
+Measured (X-high, post-Wave-C′ D24 tree): funnel **34/34 properties** (`experiments/V0_9_CAPABILITY_FUNNEL_RESULTS.md`: 7 routes,
+zero CAPABILITY_FIT in every context, research_lab 7 UNKNOWN / poor_man 7 BLOCKED / Custom 4 BLOCKED + 3 UNKNOWN /
+an all-undeclared Custom 7 BLOCKED; ResearchLab / PoorMan / Custom diverge on 7/7 routes, every BLOCK names the missing
+capability; no axis reads NOT_APPLICABLE on a missing procedure -- D24.17); held-out saponification vs the BLIND oracle **12 PASS / 1 lawful divergence / 0 FAIL** with no compiler
+edit (`docs/research/V0_9_RC_ROUND_V_HELDOUT_PROBE_RESULTS_2026-09-28.md`). Mutation gate, fresh Wave C and the
+full OOM-safe suite: see the audit doc — not claimed here. No new reaction family, no new chemistry, no
+capability-fit by omission.
+
 **v0.9 CAPABILITY COMPILER, ROUND IV — EXTERNAL AUDIT (2026-09-28, EXTERNAL REVIEW HOLD — package stays
 `0.9.0a1`, NOT released to `main`; PR `feat/v0.9-capability-compiler -> main` OPEN + UNMERGED for another
 external-review pass). Audit + barrier: `docs/research/V0_9_RC_ROUND_IV_EXTERNAL_AUDIT_2026-09-28.md`.**

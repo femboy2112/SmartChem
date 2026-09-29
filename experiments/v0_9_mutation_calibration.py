@@ -1812,14 +1812,16 @@ def _conc_table(real):
 @mutant("M66", "generic 'conc.' manufactures >= 95%", "requirements._project_specification")
 def m66():
     """F67: 'conc.' has no species-free meaning (conc. HCl ~37%, conc. H2SO4 ~96%). Honest: the typed unresolved term
-    keeps HCl UNKNOWN against BOTH a real 37% bottle and an impossible 96% one. Mutant (the retired adjective table):
-    the real 37% HCl BLOCKS and the impossible 96% aqueous HCl FITs."""
-    hcl = _mol("Cl")
-    use = _use("hydrochloric acid", ProcedureMaterialRole.NEUTRALIZE, identity=hcl, qty="5", formulation="conc.",
+    keeps the demand UNKNOWN against BOTH a 37% bottle and a 96% one -- the compiler never learns what the adjective
+    means. Mutant (the retired adjective table, '>= 95%'): the 37% bottle BLOCKS and the 96% one FITs. (X-high D25.1:
+    the fixture uses sulfuric acid, whose name the offline resolver maps to its own structure, so the orthogonal
+    unresolvable-name law cannot mask the adjective law; the law is species-agnostic.)"""
+    acid = _mol("OS(=O)(=O)O")
+    use = _use("sulfuric acid", ProcedureMaterialRole.CATALYST, identity=acid, qty="5", formulation="conc.",
                spec=MaterialSpecification(unresolved_terms=("conc.",)))
     route = _micro_route(extra_uses=(use,))
-    p37 = _micro_profile(_bottle("hcl-37", hcl, "0.36", "0.38", phase=Phase.AQUEOUS_SOLUTION))
-    p96 = _micro_profile(_bottle("hcl-96-impossible", hcl, "0.96", "0.97", phase=Phase.AQUEOUS_SOLUTION))
+    p37 = _micro_profile(_bottle("acid-37", acid, "0.36", "0.38", phase=Phase.AQUEOUS_SOLUTION))
+    p96 = _micro_profile(_bottle("acid-96", acid, "0.96", "0.97", phase=Phase.AQUEOUS_SOLUTION))
     honest = (_micro_assess(route, p37).material.status is CapabilityStatus.UNKNOWN
               and _micro_assess(route, p96).material.status is CapabilityStatus.UNKNOWN)
     with _patch(requirements_mod, "_project_specification", _conc_table(requirements_mod._project_specification)):
@@ -3635,24 +3637,36 @@ def m157():
     return honest, bad
 
 
-@mutant("M158", "the pure witness reads only the matched species, not the whole bottle (D24.5 C1)",
-        "assess._others_absent")
+@mutant("M158", "the whole-bottle contradiction (water [1, 1] + 0.3 g/mL NaCl) certifies a pure draw "
+                "(D24.5 C1 x D25.2 -- 2-factor)",
+        "stock.StockMaterial.__post_init__ (D25.2) x assess._others_absent (D24.5)")
 def m158():
-    """'water [1, 1]' beside a certified 0.3 g/mL NaCl is a CONTRADICTORY bottle, never a pure-water witness. Honest:
-    UNKNOWN. Mutant: the other-components conjunct is dropped -> a proven pure draw -> FIT."""
-    brine_as_water = StockMaterial(
-        STOCK_MATERIAL_SCHEMA, "water-with-salt", "water (with salt)",
-        (MaterialComponent.evidenced("water", "solvent", _ev("1", "1")),
-         MaterialComponent.evidenced("sodium chloride", "solute",
-                                     _ev("0.3", "0.3", basis=ConcentrationBasis.MASS_PER_VOLUME))),
-        Phase.AQUEOUS_SOLUTION, "fixture", quantity=StockQuantity.of("500", "mL"),
-        phase_evidence=EvidenceKind.USER_DECLARED)
-    profile = _profile(material_inventory=(brine_as_water,))
+    """'water [1, 1]' beside a certified 0.3 g/mL NaCl is a CONTRADICTORY bottle, never a pure-water witness. Since
+    D25.2 (Wave-C'' NEW-2) TWO layers pin the law, each the other's defence in depth -- so this is a 2-factor mutant
+    (mutation tests the LAW, not each redundant guard): the bottle is REFUSED at construction, and a bottle smuggled past
+    construction still fails the whole-bottle witness (UNKNOWN). Mutant: BOTH severed -> a proven pure draw -> FIT."""
+    parts = (MaterialComponent.evidenced("water", "solvent", _ev("1", "1")),
+             MaterialComponent.evidenced("sodium chloride", "solute",
+                                         _ev("0.3", "0.3", basis=ConcentrationBasis.MASS_PER_VOLUME)))
+
+    def build(components):
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "water-with-salt", "water (with salt)", components,
+                             Phase.AQUEOUS_SOLUTION, "fixture", quantity=StockQuantity.of("500", "mL"),
+                             phase_evidence=EvidenceKind.USER_DECLARED)
+
     req = _mreq(name="water")
-    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    try:
+        build(parts)
+        refused_at_construction = False
+    except ValueError as exc:
+        refused_at_construction = "D25.2" in str(exc)
+    smuggled = build(parts[:1])
+    object.__setattr__(smuggled, "components", parts)  # a bottle smuggled past __post_init__
+    honest = refused_at_construction and _mat(_profile(material_inventory=(smuggled,)), req) is CapabilityStatus.UNKNOWN
+    bad_init = _src_mutant(StockMaterial.__post_init__, ("if whole == 1 and any(", "if False and any("))
     bad_edge = _src_mutant(assess_mod._edge, ("and _others_absent(stock, view))", "and True)"))
-    with _patch(assess_mod, "_edge", bad_edge):
-        bad = _mat(profile, req) is CapabilityStatus.FIT
+    with _patch(StockMaterial, "__post_init__", bad_init), _patch(assess_mod, "_edge", bad_edge):
+        bad = _mat(_profile(material_inventory=(build(parts),)), req) is CapabilityStatus.FIT
     return honest, bad
 
 
@@ -3776,7 +3790,7 @@ def m164():
     profile = _profile(material_inventory=(_bottle("ethanol-name-only", "ethanol"),))
     req = _mreq(identity=_ETHANOL, name="ethanol")
     honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
-    bad_edge = _src_mutant(assess_mod._edge, ("if _listed_by_name_only(requirement, stock):", "if False:"))
+    bad_edge = _src_mutant(assess_mod._edge, ("if name_key is not None:", "if False:"))
     with _patch(assess_mod, "_edge", bad_edge):
         bad = _mat(profile, req) is CapabilityStatus.BLOCKED
     return honest, bad
@@ -4035,6 +4049,287 @@ def m175():
     with _patch(CapabilityProfile, "__post_init__", bad_init):
         try:  # two content-identical benches, two profile digests (split identity)
             bad = build(legacy_box).profile_digest != build(current_box).profile_digest
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+# =================================================================================================================
+# M176-M187 (Round V X-high, Wave-C'' fresh non-author confirmation pass -> barrier amendments D25 + D26)
+# =================================================================================================================
+
+_NAME_CARRIER = "methanol + 2 g sodium metal in a sealed tube at 650 K"
+
+
+@mutant("M176", "a demand smuggled into an identity-bearing use NAME is read by nothing (D25.1 NEW-1)",
+        "requirements._material_unresolved (name resolves to its own identity)")
+def m176():
+    """The canonical renderers build from use NAMES and an identity-bearing name was read by nothing. Honest: a name
+    that is not a resolvable NAME of its own identity is an unread material demand -> material UNKNOWN. Mutant: the
+    name check is severed -> the carrier's extra words vanish -> FIT."""
+    uses = (_use(_NAME_CARRIER, ProcedureMaterialRole.SUBSTRATE, identity=_METHANOL, qty="10", phase=Phase.LIQUID),
+            _MICRO_BASE_USES[1])
+    route = _micro_route(base_uses=uses)
+    honest = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.UNKNOWN
+    bad_mu = _src_mutant(requirements_mod._material_unresolved, (
+        "and not name_resolves_to(use.name, use.identity)):", "and False):"))
+    with _patch(requirements_mod, "_material_unresolved", bad_mu):
+        bad = _micro_assess(route, _micro_profile()).material.status is CapabilityStatus.FIT
+    return honest, bad
+
+
+@mutant("M177", "a self-contradictory whole bottle certifies a composition (D25.2 NEW-2)",
+        "stock.StockMaterial.__post_init__ (whole-material lower bound vs any positive second species)")
+def m177():
+    """acetic acid [1, 1] w/w beside 0.3 g/mL NaCl: the composition path (not the pure witness) read only the matched
+    species. Honest: the bottle is REFUSED at construction. Mutant: the D25.2 check is severed -> the bottle builds and
+    certifies a >= 0.99 w/w demand -> FIT."""
+    parts = (MaterialComponent.evidenced(_ACETIC, "active", _ev("1", "1")),
+             MaterialComponent.evidenced("sodium chloride", "solute",
+                                         _ev("0.3", "0.3", basis=ConcentrationBasis.MASS_PER_VOLUME)))
+
+    def build():
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "acid-plus-salt", "acid (with salt)", parts, Phase.LIQUID,
+                             "fixture", quantity=StockQuantity.of("500", "mL"),
+                             phase_evidence=EvidenceKind.USER_DECLARED)
+
+    req = _mreq(identity=_ACETIC, spec=MaterialSpecification(composition=_comp("0.99", "1", tol=Tolerance.FLOOR)))
+    try:
+        build()
+        honest = False
+    except ValueError as exc:
+        honest = "D25.2" in str(exc)
+    bad_init = _src_mutant(StockMaterial.__post_init__, ("if whole == 1 and any(", "if False and any("))
+    with _patch(StockMaterial, "__post_init__", bad_init):
+        bad = _mat(_profile(material_inventory=(build(),)), req) is CapabilityStatus.FIT
+    return honest, bad
+
+
+def _forge(resp, **fields):
+    """The keyless attacker's in-memory forgery: a copy with fields swapped, never re-running __post_init__."""
+    forged = copy.copy(resp)
+    for name, value in fields.items():
+        object.__setattr__(forged, name, value)
+    return forged
+
+
+@mutant("M178", "a route deleted with its IR candidate + frontier entry still loads (D25.3 NEW-3)",
+        "service.CompilationResponse._check_dossier_completeness (route candidates == receipt results_returned)")
+def m178():
+    resp = _fast_profile_response()
+    gone = resp.ranked_route_dossiers[0].route_digest
+    keep = resp.ranked_route_dossiers[1:]
+    ir = dc.replace(resp.compilation_ir, candidates=tuple(
+        c for c in resp.compilation_ir.candidates if c.candidate_digest != gone))
+    payload = response_to_payload(_forge(resp, compilation_ir=ir, ranked_route_dossiers=keep, affordability_frontier=tuple(
+        e for e in resp.affordability_frontier if e.route_digest in {d.route_digest for d in keep})))
+    _l, err = _try_load(payload)
+    honest = err is not None and "D25.3" in err
+    bad_chk = _src_mutant(CompilationResponse._check_dossier_completeness, (
+        "and len(route_candidates) != receipt.results_returned):", "and False):"))
+    with _patch(CompilationResponse, "_check_dossier_completeness", bad_chk):
+        loaded, _err = _try_load(payload)
+    bad = loaded is not None and all(d.route_digest != gone for d in loaded.ranked_route_dossiers)
+    return honest, bad
+
+
+@mutant("M179", "a NAMELESS leaf requirement treats a name-keyed listing of its species as ABSENT (D25.4 C6)",
+        "assess._listed_by_name_only (resolved name keys)")
+def m179():
+    """The projection's leaf requirements carry NO name, so D24.8 never fired on the real path. Honest: a name-keyed
+    'acetic acid' bottle RESOLVES to the untyped leaf's structure -> a possible source -> UNKNOWN. Mutant: resolved name
+    keys are ignored -> provable absence -> BLOCKED."""
+    route = _micro_route(base_uses=_MICRO_BASE_USES[:1])  # acetic acid is an UNTYPED (nameless) leaf
+    profile = _micro_profile(material_inventory=(_bottle("methanol-pure", _METHANOL), _bottle("acid-by-name", "acetic acid")))
+    honest = _micro_assess(route, profile).material.status is CapabilityStatus.UNKNOWN
+    bad_named = _src_mutant(assess_mod._listed_by_name_only, (
+        "if key.startswith(_STRUCTURE_KEY_PREFIXES) or not name_resolves_to(key, requirement.identity):",
+        "if True:"))
+    with _patch(assess_mod, "_listed_by_name_only", bad_named):
+        bad = _micro_assess(route, profile).material.status is CapabilityStatus.BLOCKED
+    return honest, bad
+
+
+_Y_TARGET = "smiles:CCOC(C)=O"  # ethyl acetate: the SECOND small search the transplant mutants carry under request X
+_Y_CACHE: list = []
+
+
+def _y_response():
+    if not _Y_CACHE:
+        _Y_CACHE.append(run_compilation(build_recompile_request(
+            _Y_TARGET, capability_profile=isopentyl_capability_fit_bench(), max_depth=2)))
+    return _Y_CACHE[0]
+
+
+@mutant("M180", "a response answers a DIFFERENT request than it carries (D26.1 T1 -- the whole law)",
+        "service.CompilationResponse._check_request_answer_coherence")
+def m180():
+    """T1: request X (methyl acetate) carrying search Y's (ethyl acetate) IR + dossiers, every public pin recomputed.
+    Honest: REFUSED (the IR context and the replayed routes are re-derived from the carried request). Mutant: the whole
+    D26.1 law is severed -> the transplant loads under the consumer's request pin."""
+    x, y = _fast_profile_response(), _y_response()
+    payload = response_to_payload(_forge(y, request=x.request))
+    _l, err = _try_load(payload, expected_request_digest=x.request.semantic_digest)
+    honest = err is not None and "D26.1" in err
+    with _patch(CompilationResponse, "_check_request_answer_coherence", lambda self: None):
+        loaded, _err = _try_load(payload, expected_request_digest=x.request.semantic_digest)
+    bad = loaded is not None and loaded.compilation_ir.target != x.compilation_ir.target
+    return honest, bad
+
+
+@mutant("M181", "a cosmetic transplant (IR context copied) is caught only at the replay -- replay leg severed (D26.1 T1c)",
+        "service.CompilationResponse._check_request_answer_coherence (replayed target + terminal-set legs)")
+def m181():
+    x, y = _fast_profile_response(), _y_response()
+    irx, iry = x.compilation_ir, y.compilation_ir
+    receipt = dc.replace(iry.search_receipt, target_identity_digest=irx.search_receipt.target_identity_digest,
+                         terminal_policy_digest=irx.search_receipt.terminal_policy_digest)
+    ir = dc.replace(iry, target=irx.target, request_digest=irx.request_digest,
+                    terminal_policy_digest=irx.terminal_policy_digest, search_receipt=receipt, diagnostics=irx.diagnostics)
+    payload = response_to_payload(_forge(y, request=x.request, compilation_ir=ir, diagnostics=x.diagnostics))
+    _l, err = _try_load(payload)
+    honest = err is not None and "does not make the requested target" in err
+    bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, (
+        "if _structure_ident(replayed.final_target) != ctx.target_ident:", "if False:"), ("if extra:", "if False:"))
+    with _patch(CompilationResponse, "_check_request_answer_coherence", bad_chk):
+        loaded, _err = _try_load(payload)
+    bad = loaded is not None
+    return honest, bad
+
+
+@mutant("M182", "a dossier's equation label is not its replayed route's own rendering (D26.1 label leg)",
+        "service.CompilationResponse._check_request_answer_coherence (equation label)")
+def m182():
+    resp = _fast_profile_response()
+    relabelled = (dc.replace(resp.ranked_route_dossiers[0], equation="step 1: C7H14O2 -> a route this dossier is not"),
+                  ) + resp.ranked_route_dossiers[1:]
+    payload = response_to_payload(_forge(resp, ranked_route_dossiers=relabelled))
+    _l, err = _try_load(payload)
+    honest = err is not None and "equation label" in err
+    bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, (
+        "if dossier.equation != render(replayed):", "if False:"))
+    with _patch(CompilationResponse, "_check_request_answer_coherence", bad_chk):
+        loaded, _err = _try_load(payload)
+    bad = loaded is not None and loaded.ranked_route_dossiers[0].equation.endswith("a route this dossier is not")
+    return honest, bad
+
+
+@mutant("M183", "a consistent deletion (receipt rewritten too) passes opt-in re-execution (D26.2 T2)",
+        "service._check_reexecution")
+def m183():
+    """T2b: delete EVERY candidate and relabel the search COMPLETE (a forged 'no route in the declared space') -- no
+    load-time re-derivation can see it. Honest: ``require_reexecution=True`` re-runs the deterministic search and
+    REFUSES. Mutant: the result comparison is severed -> the forged NO_ROUTE answer loads under re-execution."""
+    from smartchem.search import SearchStatus
+
+    resp = _fast_profile_response()
+    ir = resp.compilation_ir
+    receipt = dc.replace(ir.search_receipt, status=SearchStatus.COMPLETE_WITHIN_BOUNDS.value,
+                         standard_status=SearchStatus.COMPLETE_WITHIN_BOUNDS.standard_name, results_returned=0,
+                         candidate_enumeration_complete=True, cut_enumeration_complete=True,
+                         result_limit_saturated=False, stop_reason="")
+    ir3 = dc.replace(ir, candidates=(), search_status=SearchStatus.COMPLETE_WITHIN_BOUNDS,
+                     standard_status=SearchStatus.COMPLETE_WITHIN_BOUNDS.standard_name, search_receipt=receipt,
+                     diagnostics=())
+    payload = response_to_payload(_forge(resp, compilation_ir=ir3, ranked_route_dossiers=(), affordability_frontier=(),
+                                         outcome=svc.ResponseOutcome.NO_ROUTE_COMPLETE,
+                                         standard_status=ir3.standard_status, diagnostics=()))
+    plain, _perr = _try_load(payload)
+    _l, err = _try_load(payload, require_reexecution=True)
+    honest = plain is not None and err is not None and "D26.2" in err   # the boundary loads; re-execution refuses
+    bad_re = _src_mutant(svc._check_reexecution, ("if rerun.result_digest != response.result_digest:", "if False:"))
+    with _patch(svc, "_check_reexecution", bad_re):
+        loaded, _err = _try_load(payload, require_reexecution=True)
+    bad = loaded is not None and not loaded.ranked_route_dossiers
+    return honest, bad
+
+
+@mutant("M184", "a capability profile rides a DECOMPILE request (answered with nothing) (D26.3 T4a)",
+        "service.CompilationRequest.__post_init__ (no profile on DECOMPILE)")
+def m184():
+    dreq = svc.build_decompile_request("C7H14O2")
+
+    def attach():
+        return dc.replace(dreq, capability_profile=poor_man(), capability_profile_origin=poor_man().profile_id)
+
+    try:
+        attach()
+        honest = False
+    except ValueError as exc:
+        honest = "D26.3" in str(exc)
+    bad_init = _src_mutant(CompilationRequest.__post_init__, (
+        "if self.capability_profile is not None and self.operation is CompilationOperation.DECOMPILE:", "if False:"))
+    with _patch(CompilationRequest, "__post_init__", bad_init):
+        try:
+            bad = attach().capability_profile is not None
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+@mutant("M185", "a legacy v0.8 request is re-serialized with 0.9-only keys under the v0.8 id (D26.5 T6b)",
+        "service.request_to_payload (legacy refusal)")
+def m185():
+    legacy = request_from_payload(_v08("request_isopentyl_acetate.json"))
+    try:
+        request_to_payload(legacy)
+        honest = False
+    except ValueError as exc:
+        honest = legacy.is_legacy_v08 and "D26.5" in str(exc)
+    bad_enc = _src_mutant(svc.request_to_payload, ("    if request.is_legacy_v08:\n", "    if False:\n"))
+    with _patch(svc, "request_to_payload", bad_enc):
+        emitted = svc.request_to_payload(legacy)
+    bad = emitted["schema_version"] == legacy.schema_version and "capability_profile" in emitted
+    return honest, bad
+
+
+@mutant("M186", "a canonical node MISSING a field decodes default-filled (D26.6 B5)",
+        "service._decode_canonical (exact field set)")
+def m186():
+    payload = request_to_payload(build_recompile_request(_FAST_TARGET, max_depth=2, capability_profile="poor-man"))
+    profile = copy.deepcopy(payload["capability_profile"])
+    stack, box = [profile], None
+    while stack and box is None:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if node.get("class") == "smartchem.constraints.PhysicalBounds":
+                box = node
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    box["fields"] = [f for f in box["fields"] if f[0] != "min_temperature_k"]
+    try:
+        svc._capability_profile_from_payload(copy.deepcopy(profile))
+        honest = False
+    except ValueError as exc:
+        honest = "D26.6" in str(exc) and poor_man().physical_bounds.min_temperature_k is not None
+    bad_dec = _src_mutant(svc._decode_canonical, (
+        "if sorted(carried) != expected or len(carried) != len(set(carried)):", "if False:"))
+    with _patch(svc, "_decode_canonical", bad_dec):
+        try:
+            bad = svc._capability_profile_from_payload(copy.deepcopy(profile)).physical_bounds.min_temperature_k is None
+        except ValueError:
+            bad = False
+    return honest, bad
+
+
+@mutant("M187", "a reaction-centre payload of ANOTHER version is silently relabelled current (D26.7 RC-v)",
+        "reaction_center.ReactionCenter.from_payload (schema_version)")
+def m187():
+    from smartchem.reaction_center import REACTION_CENTER_SCHEMA, ReactionCenter
+
+    bogus = dict(ReactionCenter.of((("C", "O", 1),), (("C", "O", 1),), 1).to_payload(),
+                 schema_version="smartchem/reaction-center-v0-bogus")
+    try:
+        ReactionCenter.from_payload(bogus)
+        honest = False
+    except ValueError as exc:
+        honest = "D26.7" in str(exc)
+    bad_dec = _src_mutant(ReactionCenter.from_payload, (
+        'if payload["schema_version"] != REACTION_CENTER_SCHEMA:', "if False:"))
+    with _patch(ReactionCenter, "from_payload", bad_dec):
+        try:
+            bad = ReactionCenter.from_payload(bogus).schema_version == REACTION_CENTER_SCHEMA
         except ValueError:
             bad = False
     return honest, bad

@@ -523,15 +523,19 @@ class TestD24NeatContradictedByAPositiveDiluent:
         assert self._neat_verdict(view) is SpecVerdict.UNDETERMINED
 
     def test_a_non_fraction_basis_diluent_also_contradicts_neat(self):
-        """0.3 g/mL NaCl beside a 'neat' water component (Wave-C' C1's bottle, with the NaCl CERTIFIED): a positive
-        solute on a mass-per-volume basis is as much a diluent as a w/w one."""
+        """0.3 g/mL NaCl (CERTIFIED) beside a 'neat' water component: a positive solute on a mass-per-volume basis is as
+        much a diluent as a w/w one. With water at [0.9, 1] the bottle is constructible and the NEAT claim is dropped
+        (C2); at water [1, 1] the same bottle is refused outright (D25.2: a whole-material lower bound leaves no room for
+        any positive second species on any basis)."""
         from smartchem.material_spec import ConcentrationBasis, SpecVerdict
 
+        salt = MaterialComponent.evidenced("sodium chloride", "solute",
+                                           self._ev("0.3", "0.3", ConcentrationBasis.MASS_PER_VOLUME))
         bottle = self._bottle(
-            MaterialComponent.evidenced("water", "solvent", self._ev("1", "1"), states=self._neat()),
-            MaterialComponent.evidenced("sodium chloride", "solute",
-                                        self._ev("0.3", "0.3", ConcentrationBasis.MASS_PER_VOLUME)))
+            MaterialComponent.evidenced("water", "solvent", self._ev("0.9", "1"), states=self._neat()), salt)
         assert self._neat_verdict(bottle.spec_view("water")) is SpecVerdict.UNDETERMINED
+        with pytest.raises(ValueError, match="D25.2"):
+            self._bottle(MaterialComponent.evidenced("water", "solvent", self._ev("1", "1"), states=self._neat()), salt)
 
     def test_a_declared_impurity_with_lower_bound_zero_keeps_neat(self):
         """Commercial glacial acid (99.7 %, water 0-0.3 %) stays NEAT: an impurity that MAY be absent is no
@@ -576,3 +580,61 @@ class TestD24NeatContradictedByAPositiveDiluent:
         acetic = resolve_target("acetic acid", InputKind.NAME).canonical()
         glacial = next(b for b in neat_bottles if b.material_id == "glacial-acetic-acid-reagent-grade")
         assert [c.state for c in glacial.spec_view(acetic).states] == [DilutionState.NEAT]
+
+
+class TestD25WholeBottleContradiction:
+    """Round V X-high D25.2 (Wave-C'' NEW-2): C1's contradiction survived on the COMPOSITION path -- acetic acid [1, 1]
+    w/w (USER_DECLARED) beside 0.3 g/mL NaCl satisfied a >= 0.99 w/w demand, because the K3 feasibility sum skips
+    non-fraction bases and only the pure witness read the other components. The one basis-free PROVABLE contradiction
+    -- a species whose mass (or volume) fraction lower bounds already account for the WHOLE material beside any other
+    species at a positive amount on ANY basis -- is now refused at construction. No density engine, no threshold."""
+
+    _ev = staticmethod(TestD24NeatContradictedByAPositiveDiluent._ev)
+
+    def _bottle(self, *components):
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", components, Phase.LIQUID, "src")
+
+    def test_the_new2_bottle_is_refused_on_every_non_fraction_basis(self):
+        from smartchem.experiment.stock import MATERIAL_COMPONENT_SCHEMA
+        from smartchem.material_spec import ConcentrationBasis
+
+        for basis, value in ((ConcentrationBasis.MASS_PER_VOLUME, 0.3), (ConcentrationBasis.MOLAR, 6.0)):
+            with pytest.raises(ValueError, match="D25.2"):
+                self._bottle(MaterialComponent.evidenced("acetic acid", "active", self._ev("1", "1")),
+                             MaterialComponent(MATERIAL_COMPONENT_SCHEMA, "sodium chloride", "solute", value, value,
+                                               basis))
+
+    def test_a_split_whole_is_refused_too(self):
+        """Two components of the SAME species summing to lower bound 1 still account for the whole material."""
+        from smartchem.material_spec import ConcentrationBasis
+
+        with pytest.raises(ValueError, match="D25.2"):
+            self._bottle(MaterialComponent.evidenced("acetic acid", "a", self._ev("0.5", "0.5")),
+                         MaterialComponent.evidenced("acetic acid", "b", self._ev("0.5", "0.5")),
+                         MaterialComponent.evidenced("sodium chloride", "solute",
+                                                     self._ev("0.3", "0.3", ConcentrationBasis.MASS_PER_VOLUME)))
+
+    def test_what_is_not_provably_contradictory_still_constructs(self):
+        """[0.99, 1] beside a positive g/mL solute is NOT provably contradictory without a density (the rule adds no
+        engine), and an impurity at lower bound 0 never contradicts."""
+        from smartchem.material_spec import ConcentrationBasis
+
+        salt = MaterialComponent.evidenced("sodium chloride", "solute",
+                                           self._ev("0.3", "0.3", ConcentrationBasis.MASS_PER_VOLUME))
+        self._bottle(MaterialComponent.evidenced("acetic acid", "active", self._ev("0.99", "1")), salt)
+        self._bottle(MaterialComponent.evidenced("acetic acid", "active", self._ev("1", "1")),
+                     MaterialComponent.evidenced("water", "impurity", self._ev("0", "0.003")))
+
+    def test_no_curated_library_bottle_trips_the_rule(self):
+        import inspect
+
+        from smartchem.data import material_library as ml
+
+        built = 0
+        for name in ml.__all__:
+            fn = getattr(ml, name)
+            if callable(fn) and not any(p.default is inspect.Parameter.empty
+                                        for p in inspect.signature(fn).parameters.values()):
+                fn()
+                built += 1
+        assert built >= 9

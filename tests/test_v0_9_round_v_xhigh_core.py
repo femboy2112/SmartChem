@@ -534,7 +534,7 @@ def test_d20_an_unknown_readiness_tier_is_refused_with_value_error():
 # false BLOCK) on the D14-D22 tree (941946a).
 # ---------------------------------------------------------------------------------------------------------------
 
-from smartchem.capability.coverage import render_scale, render_summary, render_verification  # noqa: E402
+from smartchem.capability.coverage import render_op_quantity, render_scale, render_summary, render_verification  # noqa: E402
 from smartchem.capability.requirements import WasteRequirement  # noqa: E402
 from smartchem.data import material_library as lib  # noqa: E402
 from smartchem.decompiler_conditions import _SPEC_SATURATED_AQUEOUS_NACL  # noqa: E402
@@ -695,13 +695,20 @@ def test_d24_5_b1_g_the_live_corpus_brine_spec_needs_a_certified_positive_fracti
 
 @pytest.mark.parametrize("basis, value", [(ConcentrationBasis.MASS_PER_VOLUME, 0.3), (ConcentrationBasis.MOLAR, 6.0)])
 def test_d24_5_c1_the_pure_witness_reads_the_whole_bottle(basis, value):
-    """Wave-C' C1: "methanol [1, 1]" beside 0.3 g/mL (or 6 M) of a second species is a contradictory bottle; the K3
-    feasibility sum skips non-fraction bases, so only the whole-bottle witness catches it."""
-    impure = StockMaterial(STOCK_MATERIAL_SCHEMA, "methanol-plus", "methanol-plus", (
-        MaterialComponent.evidenced(_ME, "active", _evidence()),
-        MaterialComponent(MATERIAL_COMPONENT_SCHEMA, "sodium chloride", "solute", value, value, basis)),
-        Phase.LIQUID, "fixture", quantity=StockQuantity.of("500", "mL"), phase_evidence=_UD)
-    assert _assess(_route(), _bench(material_inventory=(impure, _bottle("acetic-pure", _AC)))).material.status is S.UNKNOWN
+    """Wave-C' C1: "methanol [1, 1]" beside 0.3 g/mL (or 6 M) of a second species is a contradictory bottle. Two layers
+    now pin it: D25.2 (Wave-C'' NEW-2) REFUSES the bottle at construction -- a species at mass-fraction lower bound 1
+    leaves no room for any other positive amount on ANY basis -- and, as defence in depth for a bottle smuggled past
+    construction, the D24.5 whole-bottle witness still reads every other component."""
+    parts = (MaterialComponent.evidenced(_ME, "active", _evidence()),
+             MaterialComponent(MATERIAL_COMPONENT_SCHEMA, "sodium chloride", "solute", value, value, basis))
+    with pytest.raises(ValueError, match="D25.2"):
+        StockMaterial(STOCK_MATERIAL_SCHEMA, "methanol-plus", "methanol-plus", parts, Phase.LIQUID, "fixture",
+                      quantity=StockQuantity.of("500", "mL"), phase_evidence=_UD)
+    smuggled = StockMaterial(STOCK_MATERIAL_SCHEMA, "methanol-plus", "methanol-plus", parts[:1], Phase.LIQUID,
+                             "fixture", quantity=StockQuantity.of("500", "mL"), phase_evidence=_UD)
+    object.__setattr__(smuggled, "components", parts)  # a keyless in-memory bypass of __post_init__
+    bench = _bench(material_inventory=(smuggled, _bottle("acetic-pure", _AC)))
+    assert _assess(_route(), bench).material.status is S.UNKNOWN
     assert _assess(_route()).material.status is S.FIT  # the clean control: a truly pure bottle
 
 
@@ -771,3 +778,53 @@ def test_d24_a_fully_typed_world_still_reaches_every_axis_fit_except_waste():
     assert blockers == {"waste"}, {n: getattr(honest, n).reasons for n in blockers}
     discharged = assess(bench, dc.replace(reqs, waste=WasteRequirement(frozenset(), ())), readiness)
     assert discharged.overall is S.FIT
+
+
+# -- D25 (Wave-C'' fresh non-author confirmation pass) ------------------------------------------------------------
+
+def test_d25_1_new1_a_demand_smuggled_into_an_identity_bearing_use_name_is_unread():
+    """Wave-C'' NEW-1: the canonical renderers build from use NAMES, and an identity-bearing use's name was read by
+    nothing -- so "methanol + 2 g sodium metal in a sealed tube at 650 K" beside a canonical op.quantity certified FIT.
+    D25.1: a name that is not a resolvable NAME of its own identity is an unread material demand."""
+    carrier = "methanol + 2 g sodium metal in a sealed tube at 650 K"
+    uses = (_use(carrier, ProcedureMaterialRole.SUBSTRATE, _ME), _BASE_USES[1])
+    route = _route(uses=uses)
+    op1 = route.steps[0].envelope.procedure.operations[0]
+    shown = _replace_op1_quantity(route, render_op_quantity(op1))  # the byte-equal canonical rendering
+    reqs = compile_capability_requirements(shown)
+    assert any("D25.1" in u and carrier in u for u in reqs.material_unresolved)
+    assert _assess(shown).material.status is S.UNKNOWN
+    # control: the resolvable name, same canonical-rendering construction -> no D25.1 note, material FIT
+    clean = _replace_op1_quantity(_route(), render_op_quantity(_route().steps[0].envelope.procedure.operations[0]))
+    assert not any("D25.1" in u for u in compile_capability_requirements(clean).material_unresolved)
+    assert _assess(clean).material.status is S.FIT
+
+
+def test_d25_1_a_name_the_offline_resolver_does_not_know_is_an_unread_demand_not_a_crash():
+    """A plain but unregistered name ("cold water" style modifiers, or a name absent from the offline table) is not
+    verifiable, so it fails closed as an unread demand -- never a crash, never FIT."""
+    uses = (_use("chilled methanol", ProcedureMaterialRole.SUBSTRATE, _ME), _BASE_USES[1])
+    reqs = compile_capability_requirements(_route(uses=uses))
+    assert any("D25.1" in u and "chilled methanol" in u for u in reqs.material_unresolved)
+
+
+def test_d25_4_c6_on_the_real_leaf_path_a_resolvable_name_key_is_a_possible_source():
+    """Wave-C'' C6: the projection's leaf-input requirements carry NO name, so D24.8 never fired on the real path.
+    D25.4: a name-keyed bottle whose name RESOLVES to the leaf's own structure is a possible source (UNKNOWN), and a
+    name the resolver maps elsewhere (or not at all) stays not-this-species (BLOCKED)."""
+    only_methanol = (_use("methanol", ProcedureMaterialRole.SUBSTRATE, _ME),)  # acetic acid is an UNTYPED leaf
+    route = _route(uses=only_methanol)
+    leaf = [r for r in compile_capability_requirements(route).material if r.role == "reactant (leaf input)"]
+    assert leaf and all(r.name is None for r in leaf)
+    by_name = _bench(material_inventory=(_bottle("methanol-pure", _ME), _bottle("acid-by-name", "acetic acid")))
+    assert _assess(route, by_name).material.status is S.UNKNOWN            # was BLOCKED before D25.4
+    other = _bench(material_inventory=(_bottle("methanol-pure", _ME), _bottle("benzene-by-name", "benzene")))
+    assert _assess(route, other).material.status is S.BLOCKED
+
+
+def _replace_op1_quantity(route, text):
+    step = route.steps[0]
+    op1 = dc.replace(step.envelope.procedure.operations[0], quantity=_pf(text))
+    ops = (op1,) + step.envelope.procedure.operations[1:]
+    proc = dc.replace(step.envelope.procedure, operations=ops)
+    return dc.replace(route, steps=(dc.replace(step, envelope=dc.replace(step.envelope, procedure=proc)),))

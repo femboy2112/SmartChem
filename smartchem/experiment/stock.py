@@ -402,6 +402,20 @@ class StockMaterial(Digestible):
         if sum((_exact_float(c.min_fraction) for c in self.components if c.basis in _FRACTION_BASES),
                Fraction(0)) > 1:
             raise ValueError("component minimum fractions sum above 1.0 -- an infeasible material")
+        # D25.2 (Wave-C'' NEW-2): the one basis-free PROVABLE contradiction. When the mass (or volume) fraction lower
+        # bounds of the components keyed like a species already account for the WHOLE material, no OTHER species can
+        # be present at a positive amount on ANY basis -- a 0.3 g/mL or 6 M second species beside an "acetic acid
+        # [1, 1] w/w" component is a self-contradictory bottle, refused here so neither the pure witness nor the
+        # composition path can ever read it. (No density engine, no threshold: only the exact "== 1" case is provable.)
+        for basis in (ConcentrationBasis.MASS_FRACTION, ConcentrationBasis.VOLUME_FRACTION):
+            for key in {c.identity_key for c in self.components if c.basis is basis}:
+                whole = sum((_exact_float(c.min_fraction) for c in self.components
+                             if c.basis is basis and c.identity_key == key), Fraction(0))
+                if whole == 1 and any(c.identity_key != key and _exact_float(c.min_fraction) > 0
+                                      for c in self.components):
+                    raise ValueError(
+                        f"component {key!r} accounts for the whole material ({basis.value} lower bound 1) while "
+                        "another species declares a positive amount -- a self-contradictory bottle (D25.2)")
         # -- section 10.2 optional fields: each is a typed value or an honest UNKNOWN -----------------------
         if self.quantity is not None and type(self.quantity) is not StockQuantity:
             raise TypeError("quantity must be a StockQuantity or None (UNKNOWN)")

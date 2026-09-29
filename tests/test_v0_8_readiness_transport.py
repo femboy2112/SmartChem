@@ -287,7 +287,7 @@ def test_f_evidence_substitution_across_routes_is_refused(unsourced_payload):
     a["readiness"], b["readiness"] = b["readiness"], a["readiness"]
     a["readiness_tier"], b["readiness_tier"] = b["readiness_tier"], a["readiness_tier"]
     _recompute_derived_fields(payload)
-    with pytest.raises(ValueError, match="DIFFERENT route"):
+    with pytest.raises(ValueError, match=r"DIFFERENT route|refused \(D26\.1\)"):  # X-high D26.1 refuses it first
         response_from_payload(payload)
 
 

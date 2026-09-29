@@ -58,11 +58,17 @@ from pathlib import Path
 
 from .compilation_ir import (
     ChemicalCompilationIR,
+    ChemicalIdentity,
     CompilationOperation,
+    _recompile_terminal_policy_digest,
     _structure_ident,
+    decompile_request_digest,
+    decompile_terminal_context,
     decompile_to_ir,
+    formula_decomposition_registry_digest,
     ir_from_payload,
     ir_to_payload,
+    recompile_request_digest,
     recompile_to_ir,
 )
 from .constraints import PHYSICAL_BOUNDS_SCHEMA, PHYSICAL_BOUNDS_SCHEMA_V1, PhysicalBounds
@@ -864,6 +870,15 @@ class CompilationRequest(Digestible):
         # digest (semantic, question, result -- even the signed one), so a free-text origin could relabel a poor-man
         # verdict "research-lab" without moving a byte of identity.  It may therefore only be ``""`` or the snapshot's
         # OWN ``profile_id`` (which rides the profile digest); an origin with no profile is meaningless.
+        # X-high D26.3 (Wave-C'' T4a): a formula DECOMPILE has no route to project -- the producer would answer the
+        # capability question with NOTHING (no dossier, no assessment) while looking like success, the F51/D24.13 shape
+        # for the decompile operation. A profile on a DECOMPILE is refused here, never silently dropped.
+        if self.capability_profile is not None and self.operation is CompilationOperation.DECOMPILE:
+            raise ValueError(
+                "a capability profile cannot ride a DECOMPILE request: a formula descent produces no route for the "
+                "capability compiler to project, so the capability question would be answered with nothing -- use a "
+                "RECOMPILE (structure search) to ask a capability question; refused (D26.3)"
+            )
         if self.capability_profile is None:
             if self.capability_profile_origin != "":
                 raise ValueError(
@@ -1909,6 +1924,18 @@ class CompilationResponse:
         ir = self.compilation_ir
         kinds = {} if ir is None else {c.candidate_digest: c.candidate_kind for c in ir.candidates}
         route_candidates = {d for d, k in kinds.items() if k == "ROUTE"}
+        # D25.3 (Wave-C'' NEW-3): the IR's route-candidate SET is itself bound to the carried search receipt -- a linear
+        # route search's ``results_returned`` counts exactly the routes it returned, and the producer turns every one
+        # into a ROUTE candidate (``recompile_to_ir(search_result=...)``). Deleting a route together with its IR
+        # candidate, dossier and frontier entry is therefore refused unless the attacker ALSO rewrites the receipt;
+        # that consistent rewrite is the stated boundary (only the producer HMAC, or re-running the deterministic
+        # search, can detect it -- a 0.9.5 item). DAG receipts count edges, not DAGs, so the bind is LINEAR_ROUTE-only.
+        receipt = None if ir is None else ir.search_receipt
+        if (receipt is not None and receipt.search_kind == "LINEAR_ROUTE" and receipt.results_returned is not None
+                and len(route_candidates) != receipt.results_returned):
+            raise ValueError(
+                f"the IR carries {len(route_candidates)} route candidate(s) but its own search receipt says the search "
+                f"returned {receipt.results_returned} -- a route (and its verdict) is missing; refused (D25.3)")
         ranked_routes = {r.route_digest for r in self.ranked_route_dossiers}
         if ranked_routes != route_candidates:
             missing = sorted(route_candidates - ranked_routes)
@@ -1972,6 +1999,69 @@ class CompilationResponse:
                 f"injected or stale section-5.3 losses (they gate readiness and ranking); refused (D24.11)"
                 f"{self._legacy_hint()}"
             )
+
+    def _check_request_answer_coherence(self) -> None:
+        """X-high D26.1 (Wave-C'' T1/T1c/T3/T4b/T6a): a response must answer ITS request. Every earlier bind checks the
+        response against ITSELF (fold, bindings, rebind, readiness), so a keyless attacker could carry search Y's IR and
+        dossiers under request X -- recomputing every public pin -- and load a PROCESS_SPECIFIED route X never asked
+        about under the request pin, the question pin and verified admission. Re-derived from the carried request by
+        the producers' OWN helpers (never trusted): the IR operation, target identity, terminal-policy digest, IR
+        request digest and transform-registry digest; every candidate's kind (ROUTE/DAG per the grammar's mode,
+        FORMULA_EDGE for a decompile); and, for every dossier carrying a replay, the replayed route/DAG must make the
+        requested target, consume only the declared terminal set, and carry its OWN equation rendering as its label.
+        Recompile, decompile and the legacy (frozen-v0.8) paths alike -- a legacy payload whose context today's
+        derivation cannot reproduce fails closed with the recompile hint."""
+        ir = self.compilation_ir
+        if ir is None:
+            return
+        request = self.request
+        if ir.operation is not request.operation:
+            raise ValueError(
+                f"the IR answers a {ir.operation.value} but the carried request is a {request.operation.value} -- a "
+                f"response that does not answer its own request; refused (D26.1){self._legacy_hint()}")
+        try:
+            ctx = _rederive_request_context(request)
+        except ValueError as exc:
+            raise ValueError(
+                f"the IR's search context cannot be re-derived from the carried request ({exc}); refused "
+                f"(D26.1){self._legacy_hint()}") from exc
+        for label, carried, derived in (
+            ("target identity", ir.target, ctx.target),
+            ("terminal_policy_digest", ir.terminal_policy_digest, ctx.terminal_policy_digest),
+            ("request_digest", ir.request_digest, ctx.request_digest),
+            ("transform_registry_digest", ir.transform_registry_digest, ctx.registry_digest),
+        ):
+            if carried != derived:
+                raise ValueError(
+                    f"compilation_ir {label} is not the one the carried request implies -- the IR answers a DIFFERENT "
+                    f"search than the request asked (a transplanted or relabelled answer); refused (D26.1)"
+                    f"{self._legacy_hint()}")
+        wrong = sorted({c.candidate_kind for c in ir.candidates} - {ctx.candidate_kind})
+        if wrong:
+            raise ValueError(
+                f"compilation_ir carries {wrong} candidate(s) but the carried request's grammar only produces "
+                f"{ctx.candidate_kind} -- refused (D26.1){self._legacy_hint()}")
+        for kind, dossiers, rebuild, render in (
+            ("route", self.ranked_route_dossiers, _reconstruct_route,
+             lambda r: " ; ".join(r.equation_lines()) or repr(r)),
+            ("DAG", self.ranked_dag_dossiers, _reconstruct_dag,
+             lambda d: " ; ".join(s.equation() for s in d.topological_order()) or repr(d)),
+        ):
+            for dossier in dossiers:
+                if dossier.replay_payload is None:
+                    continue
+                replayed = rebuild(dossier.replay_payload)
+                where = f"{kind} dossier {dossier.route_digest[:12]}"
+                if _structure_ident(replayed.final_target) != ctx.target_ident:
+                    raise ValueError(f"{where}: the replayed {kind} does not make the requested target; refused "
+                                     f"(D26.1){self._legacy_hint()}")
+                extra = [m for m in replayed.leaf_inputs if _structure_ident(m) not in ctx.terminal_idents]
+                if extra:
+                    raise ValueError(f"{where}: the replayed {kind} consumes {len(extra)} input(s) outside the carried "
+                                     f"request's declared terminal set; refused (D26.1){self._legacy_hint()}")
+                if dossier.equation != render(replayed):
+                    raise ValueError(f"{where}: its equation label is not the replayed {kind}'s own rendering; "
+                                     f"refused (D26.1){self._legacy_hint()}")
 
     @property
     def is_legacy_v08(self) -> bool:
@@ -2271,17 +2361,28 @@ class CompilationResponse:
           fabricated bench claim -> REFUSED (kills M37 on the load side).
         * ``request.capability_profile`` set -> re-derive.  The route is reconstructed from the thick replay
           (``reconstruct(payload).digest == route_digest`` bound FIRST, so substituted evidence cannot wear this
-          entry's identity), readiness re-evaluated, requirements recompiled, and ``assess(profile, reqs, readiness)``
-          recomputed.  STRUCTURAL equality with the carried assessment is REQUIRED; any mismatch -- a profile-A
+          entry's identity -- EXCEPT the ``compare=False`` ``reaction_center`` annotation, which sits outside
+          ``route.digest``: X-high D26.4, below), readiness re-evaluated, requirements recompiled, and
+          ``assess(profile, reqs, readiness)`` recomputed.  STRUCTURAL equality with the carried assessment is REQUIRED; any mismatch -- a profile-A
           assessment carried under profile B, an altered profile snapshot, altered stock, altered readiness, altered
           route, or an altered result -- is a detectable divergence -> REFUSED (kills M35, M38).
 
         THIN/ADVISORY BOUNDARY.  A dossier with NO replay cannot be re-derived.  Under ``require_verified_admission``
         (the CANONICAL_VERIFIED wire sets it) an assessed route with no replay is UNVERIFIED -> REFUSED: a thin wire
         must NOT claim CAPABILITY_FIT as verified.  On a bare load it stays advisory, the same residual every other
-        axis here lives with (closed only by the ``verification_key`` path).  This is semantic coherence, NOT
-        cryptographic authentication -- a fully controlling forger who rebuilds a self-consistent profile+assessment
-        pair is the irreducible key-holding residual, exactly as for readiness/algebra."""
+        axis here lives with (closed by the ``verification_key`` path, or keylessly by ``require_reexecution=True``,
+        X-high D26.2).  This is semantic coherence, NOT authentication: a keyless forger who rebuilds a self-consistent
+        answer for a TAMPERED procedure (every assessment and readiness honestly re-derived from the tampered replay --
+        the D20 (c3) boundary) still loads on a plain or verified-admission load; X-high D26.1 now pins such an answer
+        to ITS request (target, terminal set, IR request digest), and D26.2 re-execution refuses it outright.
+
+        X-high D26.4 (Wave-C'' T5) -- ``reaction_center`` is NOT inside route identity in 0.9.  It is a ``compare=False``
+        annotation on ``ExperimentStep`` (derived data: how the generator discovered the step), so it is outside
+        ``route.digest`` yet it feeds the reaction-type readiness. A keyless forger can therefore re-centre a replayed
+        step under the corpus route's OWN ``route_digest``; every observed forgery only DEMOTES readiness (no promotion
+        was found across 59 steps x 26 centres -- Conjectured unreachable, not proven). ``require_reexecution=True``
+        closes it keylessly (D26.2); binding the centre into route identity is a route-schema change deferred to
+        0.9.5."""
         profile = self.request.capability_profile
         for r in self.ranked_route_dossiers:
             if profile is None:
@@ -2376,10 +2477,13 @@ class CompilationResponse:
           digest-covered per-step ``process_requirements`` and needs NO replay, so a REAL_BUT_HARD process strip is
           caught even on a DEFAULT (thin) serialization.  (The catalyst channel appends nothing today -- no registered
           reaction declares a metal catalyst -- so process exclusions are the whole of the hard channel in practice.)
-        * FULLY CLOSED, thick transport -- the CATALYST and FICTION channels, WHEN a digest-bound ``replay_payload`` is
-          present.  KILL 1 binds ``route.digest == e.route_digest``, so the evidence cannot be substituted or nulled
-          (PIECE 2 demotes a centre-less step); the re-derivation reads the REAL route, so any strip is caught, down to
-          a SHA-256 collision on the route digest (cryptographic, out of scope).
+        * CLOSED, thick transport -- the CATALYST and FICTION channels, WHEN a digest-bound ``replay_payload`` is
+          present.  KILL 1 binds ``route.digest == e.route_digest``, so the route STRUCTURE and every compared step
+          field cannot be substituted (PIECE 2 demotes a centre-less step); the re-derivation reads the REAL route, so a
+          blocker strip is caught.  STATED BOUNDARY (X-high D26.4): the ``reaction_center`` annotation is
+          ``compare=False`` -- OUTSIDE ``route.digest`` -- so a keyless forger can substitute a DIFFERENT centre under
+          the same route digest; every observed forgery only DEMOTES (Conjectured: no promotion is reachable), and
+          ``require_reexecution=True`` (D26.2) refuses it outright. Binding the centre is a 0.9.5 route-schema change.
         * THE THIN TRANSPORT, UNDER VERIFIED ADMISSION -- now CLOSED, fail-closed (``require_verified_admission=True``).
           ``response_to_payload`` emits the replay on ``include_replay=True`` (the DEFAULT since v0.8 Round II; the
           THIN_ADVISORY opt-out omits it), so on the thin transport the catalyst/fiction channels have no evidence to
@@ -3204,6 +3308,71 @@ def _rederive_identity_losses(request: CompilationRequest) -> "tuple[IdentityLos
     except IdentityParseError as exc:
         raise ValueError(f"the carried target no longer parses ({exc}), so its identity losses cannot be re-derived")
     return tuple(sorted(losses, key=lambda loss: loss.digest))
+
+
+@dataclass(frozen=True)
+class _RequestContext:
+    """X-high D26.1: the search context a carried request IMPLIES, re-derived by the producer's OWN formulas."""
+
+    target: "object"                     # ChemicalIdentity
+    terminal_policy_digest: str
+    request_digest: str
+    registry_digest: str
+    candidate_kind: str                  # ROUTE / DAG (recompile) or FORMULA_EDGE (decompile)
+    target_ident: "str | None"           # structure identity of the target (recompile only)
+    terminal_idents: "frozenset[str]"    # structure identities of the declared terminal set (recompile only)
+
+
+def _rederive_request_context(request: CompilationRequest) -> _RequestContext:
+    """X-high D26.1 (Wave-C'' T1/T1c/T3/T4b/T6a): re-derive, from the carried REQUEST alone, the IR context an honest
+    producer would stamp -- target identity, terminal-policy digest, IR request digest, transform-registry digest and
+    candidate kind -- through the SAME helpers the producers call (:func:`recompile_request_digest`,
+    :func:`decompile_request_digest`, :func:`decompile_terminal_context`, :func:`_recompile_terminal_policy_digest`,
+    :func:`search_algebra_digest`). Raises ``ValueError`` when the request cannot be re-read (a helper name the
+    resolver no longer knows, a structure-less RECOMPILE target, an unknown grammar)."""
+    from .identity_parse import resolve_identity
+    bounds = request.search_bounds
+    try:
+        if request.operation is CompilationOperation.RECOMPILE:
+            if request.transform_grammar not in _GRAMMAR_TO_MODE:
+                raise ValueError(f"grammar {request.transform_grammar!r} has no search mode")
+            resolved = resolve_identity(request.target_input, request.input_kind)
+            if resolved.molecule is None:
+                raise ValueError("the carried RECOMPILE target resolves to no structure")
+            target = resolved.molecule.canonical()
+            reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.helper_reagents)
+            available = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.stock_materials)
+            if request.terminal_policy.commodities_enabled:
+                from .data.reagents import commodity_inventory
+                commodities = tuple(m.canonical() for m in commodity_inventory())
+            else:
+                commodities = ()
+            mode = _GRAMMAR_TO_MODE[request.transform_grammar]
+            registry_digest = search_algebra_digest(
+                _GRAMMAR_TO_MODE_TOPOLOGY[mode], resolve_algebra_profile(request.algebra_profile))
+            target_id = ChemicalIdentity.of_molecule(target)
+            terminal_digest = _recompile_terminal_policy_digest(reagents, available, commodities)
+            return _RequestContext(
+                target_id, terminal_digest,
+                recompile_request_digest(target_id.identity_digest, terminal_digest, reagents, registry_digest, mode,
+                                         bounds.value("max_depth"), bounds.value("max_results"),
+                                         bounds.value("cut_budget")),
+                registry_digest, "ROUTE" if mode == "routes" else "DAG", _structure_ident(target),
+                frozenset(_structure_ident(m) for m in (*reagents, *available, *commodities)),
+            )
+        decompile_target, _losses, _receipt = _decompile_resolution(request)
+        target_id, terminal_digest = decompile_terminal_context(
+            decompile_target, request.terminal_policy.formula_inventory)
+        registry_digest = formula_decomposition_registry_digest()
+        return _RequestContext(
+            target_id, terminal_digest,
+            decompile_request_digest(target_id.identity_digest, terminal_digest, registry_digest,
+                                     bounds.value("max_multiplicity"), bounds.value("budget"),
+                                     bounds.value("max_edges")),
+            registry_digest, "FORMULA_EDGE", None, frozenset(),
+        )
+    except IdentityParseError as exc:
+        raise ValueError(f"the carried request no longer parses ({exc})") from exc
 
 
 def _run_recompile(request: CompilationRequest) -> CompilationResponse:
@@ -4217,6 +4386,13 @@ def _capability_codec_class(qualified: str, allowed: "frozenset[str]" = _CAPABIL
     return cls
 
 
+def _canonical_field_names(cls: type) -> "list[str]":
+    """The field names :func:`~smartchem.contracts.canonical_payload` encodes for a dataclass -- the compared,
+    non-underscore fields, sorted. X-high D26.6: the decoder's exact-field-set law reads the SAME rule the encoder does."""
+    from dataclasses import fields as _dc_fields
+    return sorted(f.name for f in _dc_fields(cls) if f.compare and not f.name.startswith("_"))
+
+
 def _decode_canonical(node: "dict", allowed: "frozenset[str]" = _CAPABILITY_CODEC_ALLOWED) -> "object":
     """The inverse of ``canonical_payload`` over the capability graph -- reconstructs typed values from the
     type-tagged form, resolving dataclasses/enums through the closed whitelist and re-running every ``__post_init__``
@@ -4243,6 +4419,16 @@ def _decode_canonical(node: "dict", allowed: "frozenset[str]" = _CAPABILITY_CODE
         return {k: _decode_canonical(v, allowed) for k, v in node["items"]}
     if t == "dataclass":
         cls = _capability_codec_class(node["class"], allowed)
+        # X-high D26.6 (Wave-C'' B5): the EXACT field set, never a default-filled subset -- ``cls(**subset)`` let a
+        # payload OMIT a field (a profile's PhysicalBounds without ``min_temperature_k`` decoded to its ``None``
+        # default), so an encoder-invisible hole changed what the wire means. Every encoded field must be present and
+        # no unknown field may appear (the set ``canonical_payload`` itself encodes for this class).
+        carried = [name for name, _v in node["fields"]]
+        expected = _canonical_field_names(cls)
+        if sorted(carried) != expected or len(carried) != len(set(carried)):
+            raise ValueError(
+                f"capability codec: a {node['class']!r} payload must carry EXACTLY its fields {expected}, got "
+                f"{sorted(carried)} -- a missing or unknown field is refused, never default-filled (D26.6)")
         return cls(**{name: _decode_canonical(v, allowed) for name, v in node["fields"]})
     raise ValueError(f"capability codec cannot decode canonical node of type {t!r}")
 
@@ -4334,7 +4520,17 @@ def _constraints_from_payload(payload: object) -> ConstraintPolicy:
 
 
 def request_to_payload(request: CompilationRequest) -> dict:
-    """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable."""
+    """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable.
+
+    X-high D26.5 (Wave-C'' T6b): a LEGACY-loaded v0.8 request is REFUSED, mirroring the response rule -- this encoder
+    writes the CURRENT shape, so it would emit 0.9-only keys (``capability_profile*``, the physical-bounds floor) under
+    the v1alpha5 id, a payload its own loader refuses as smuggling. A migrated v0.8 request is read-only evidence;
+    rebuild it under 0.9 to re-emit it."""
+    if request.is_legacy_v08:
+        raise ValueError(
+            f"legacy v0.8 request; rebuild it under 0.9 -- a migrated {LEGACY_V08_REQUEST_SCHEMA!r} request is "
+            f"read-only: the current encoder would emit 0.9-only keys under the v0.8 id (a payload the loader refuses); "
+            f"refused (D26.5)")
     return {
         "schema_version": request.schema_version,
         "operation": request.operation.value,
@@ -5052,6 +5248,7 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
                           require_verified_admission: bool = False,
                           expected_request_digest: str | None = None,
                           expected_capability_question_digest: "str | None | object" = _NO_CAPABILITY_PIN,
+                          require_reexecution: bool = False,
                           ) -> CompilationResponse:
     """Reconstruct a response from :func:`response_to_payload`; re-runs the coherence guard.
 
@@ -5230,6 +5427,9 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # verified-admission, readiness and capability re-derivations below all read response.identity_losses).
     # Replay-free, so it runs on every load and every transport.
     response._check_identity_loss_coherence()
+    # X-high D26.1: a response must answer ITS request -- the IR context and every replayed route/DAG are re-derived
+    # from the carried request (after the losses, which the context does not consume; before anything trusts the IR).
+    response._check_request_answer_coherence()
     if require_verified_admission:
         _check_verified_admission(response)
     # v0.8 Real Route Dossiers, M10: the readiness-ladder deserialization trust-boundary close -- UNCONDITIONAL (not
@@ -5266,7 +5466,30 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # rather than in __post_init__ because -- like _check_verified_admission -- it reconstructs routes from the replay
     # payload, which is a load-time authority, not an in-memory-construction invariant.
     response._check_frontier_coherence(require_verified_admission=require_verified_admission)
+    if require_reexecution:
+        _check_reexecution(response)
     return response
+
+
+def _check_reexecution(response: CompilationResponse) -> None:
+    """X-high D26.2 -- keyless authenticity by DETERMINISM (opt-in ``require_reexecution=True``). The compiler is a pure
+    function of its request (``run_compilation``: equal semantic digest => equal response -- pinned by the goldens and
+    the search-noninterference evidence), so a consumer that can afford ONE compile re-runs the carried request and
+    requires the SAME ``result_digest``. That closes, without any key, every omission and every coherent rewrite no
+    load-time re-derivation can see: a route deleted together with its IR candidate AND a consistently rewritten search
+    receipt (D25.3's stated boundary), an all-candidates-deleted COMPLETE relabel, a forged ``reaction_center`` that
+    demotes readiness (``compare=False``, outside ``route.digest`` -- D26.4), and the (c3) self-consistent replay of a
+    TAMPERED procedure. It supersedes D25.3's "0.9.5 re-search" boundary. A legacy v0.8 payload cannot be re-executed
+    under 0.9 semantics and fails closed with the recompile hint."""
+    if response.is_legacy_v08:
+        raise ValueError(f"require_reexecution cannot re-execute a legacy v0.8 payload under 0.9 semantics; refused "
+                         f"(D26.2){response._legacy_hint()}")
+    rerun = run_compilation(response.request)
+    if rerun.result_digest != response.result_digest:
+        raise ValueError(
+            "require_reexecution: re-running the carried request produces a DIFFERENT result (result_digest "
+            f"{rerun.result_digest[:12]} vs the payload's {response.result_digest[:12]}) -- a deleted, relabelled or "
+            "tampered answer (the compiler is deterministic); refused (D26.2)")
 
 
 # -- 0.9 capability HUMAN render (D12a -- ONE renderer, so `recompile` and `plan` expose the SAME semantics the JSON
@@ -5352,12 +5575,14 @@ def deserialize_response(text: str, *, verification_key: bytes | None = None,
                          require_verified_admission: bool = False,
                          expected_request_digest: str | None = None,
                          expected_capability_question_digest: "str | None | object" = _NO_CAPABILITY_PIN,
+                         require_reexecution: bool = False,
                          ) -> CompilationResponse:
     return response_from_payload(json.loads(text), verification_key=verification_key,
                                  require_signature=require_signature,
                                  require_verified_admission=require_verified_admission,
                                  expected_request_digest=expected_request_digest,
-                                 expected_capability_question_digest=expected_capability_question_digest)
+                                 expected_capability_question_digest=expected_capability_question_digest,
+                                 require_reexecution=require_reexecution)
 
 
 # -- the versioned JSON schema + the semantic-field projection (CLI-JSON-01) -------------------------------------

@@ -201,7 +201,7 @@ def test_evidence_substitution_across_routes_is_rejected(monkeypatch):
     swapped = replace(a, replay_payload=b.replay_payload)                    # A's identity, B's evidence
     forged = replace(resp, ranked_route_dossiers=(swapped,) + dossiers[1:])
     wire = serialize_response(forged, include_replay=True)
-    with pytest.raises(ValueError, match="re-projects to a DIFFERENT summary"):
+    with pytest.raises(ValueError, match=r"re-projects to a DIFFERENT summary|refused \(D26\.1\)"):  # D26.1 first
         deserialize_response(wire, require_verified_admission=True)
 
 

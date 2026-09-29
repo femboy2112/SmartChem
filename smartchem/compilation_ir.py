@@ -74,6 +74,10 @@ __all__ = [
     "InverseResult",
     "decompile_to_ir",
     "recompile_to_ir",
+    "decompile_request_digest",
+    "decompile_terminal_context",
+    "formula_decomposition_registry_digest",
+    "recompile_request_digest",
     "decompile_structure_to_ir",
     "ir_to_payload",
     "ir_from_payload",
@@ -1370,6 +1374,59 @@ def _terminal_policy_digest(inventory: tuple[Formula, ...]) -> str:
     return canonical_digest(("terminal-policy", "FORMULA_ONLY") + tuple(inventory))
 
 
+def formula_decomposition_registry_digest() -> str:
+    """The transform-registry digest every formula-decomposition IR carries (one fixed registry, no algebra choice)."""
+    return _transform_registry_digest("formula-decomposition")
+
+
+def decompile_request_digest(target_identity_digest: str, terminal_digest: str, registry_digest: str,
+                             max_multiplicity: int, budget: int, max_edges: int) -> str:
+    """The IR ``request_digest`` of a formula DECOMPILE -- the ONE formula :func:`decompile_to_ir` stamps and the
+    service loader re-derives from a carried request (X-high D26.1: a response must answer ITS request)."""
+    return canonical_digest(
+        (
+            "decompile-request",
+            target_identity_digest,
+            terminal_digest,
+            ("transform-registry", registry_digest),
+            ("bounds", max_multiplicity, budget, max_edges),
+        )
+    )
+
+
+def decompile_terminal_context(
+    target: "str | dict[str, int] | Formula", inventory: "tuple[Formula, ...] | tuple[str, ...]" = (),
+) -> "tuple[ChemicalIdentity, str]":
+    """``(target identity, terminal-policy digest)`` of a formula DECOMPILE, normalized EXACTLY as
+    :func:`~smartchem.decompiler.search_decomposition` normalizes its inputs (the target parsed; the inventory parsed,
+    deduplicated and sorted) -- without running the search. X-high D26.1: the loader re-derives the IR's target and
+    terminal policy from a carried request with this, so a transplanted IR cannot answer a different formula."""
+    from .decompiler import _coerce, _sort_key
+
+    target_f = _coerce(target)
+    inv = tuple(sorted(set(_coerce(s) for s in inventory), key=_sort_key))
+    return ChemicalIdentity.of_formula(target_f), _terminal_policy_digest(inv)
+
+
+def recompile_request_digest(target_identity_digest: str, terminal_digest: str, reagents: tuple, registry_digest: str,
+                             mode: str, max_depth: int, max_results: int, cut_budget: int) -> str:
+    """The IR ``request_digest`` of a structural RECOMPILE -- the ONE formula :func:`recompile_to_ir` stamps and the
+    service loader re-derives from a carried request (X-high D26.1). It identifies the REQUEST: target + terminal set +
+    the reagent HELPER pool (distinct from plain stock) + the transform registry (the algebra) + mode + bounds."""
+    reagent_pool = frozenset(_structure_ident(m) for m in reagents)
+    return canonical_digest(
+        (
+            "recompile-request",
+            target_identity_digest,
+            terminal_digest,
+            ("reagent-pool", reagent_pool),
+            ("transform-registry", registry_digest),
+            ("mode", mode),
+            ("bounds", max_depth, max_results, cut_budget),
+        )
+    )
+
+
 def decompile_to_ir(
     target: "str | dict[str, int] | Formula",
     inventory: "tuple[Formula, ...] | tuple[str, ...]" = (),
@@ -1406,18 +1463,11 @@ def decompile_to_ir(
             key=lambda c: c.candidate_digest,
         )
     )
-    registry_digest = _transform_registry_digest("formula-decomposition")
+    registry_digest = formula_decomposition_registry_digest()
     # the request digest covers exactly the semantic REQUEST inputs, so changing a bound (or the transform
     # registry version) changes the IR digest even when the returned candidate set happens to be identical.
-    request_digest = canonical_digest(
-        (
-            "decompile-request",
-            target_id.identity_digest,
-            terminal_digest,
-            ("transform-registry", registry_digest),
-            ("bounds", max_multiplicity, budget, max_edges),
-        )
-    )
+    request_digest = decompile_request_digest(
+        target_id.identity_digest, terminal_digest, registry_digest, max_multiplicity, budget, max_edges)
     diagnostics = () if receipt.complete_within_bounds else (receipt.stop_reason,)
     return ChemicalCompilationIR(
         CHEMICAL_COMPILATION_IR_SCHEMA,
@@ -1550,18 +1600,8 @@ def recompile_to_ir(
     # request_digest identifies the REQUEST: target + terminal set + the reagent HELPER pool (distinct from
     # plain stock) + the transform registry (the algebra) + mode + bounds -- so a bound change (or a
     # reagent-vs-available move, or an algebra/provider-version change) changes the IR digest.
-    reagent_pool = frozenset(_structure_ident(m) for m in reagents)
-    request_digest = canonical_digest(
-        (
-            "recompile-request",
-            target_id.identity_digest,
-            terminal_digest,
-            ("reagent-pool", reagent_pool),
-            ("transform-registry", registry_digest),
-            ("mode", mode),
-            ("bounds", max_depth, max_results, cut_budget),
-        )
-    )
+    request_digest = recompile_request_digest(
+        target_id.identity_digest, terminal_digest, reagents, registry_digest, mode, max_depth, max_results, cut_budget)
     if result.target_in_terminal_stock:
         diagnostics: tuple[str, ...] = (
             "target is already present in the active terminal stock; no synthesis is required (section 7)",

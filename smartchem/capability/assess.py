@@ -45,7 +45,7 @@ from ..process_constraints import ProcessFitStatus, evaluate_process_requirement
 from .enums import CapabilityStatus, EquipmentCapability, MeasurementMethod
 from .profile import CapabilityProfile
 from .quantity import QuantityKnowledge, fraction_to_decimal
-from .requirements import MaterialRequirement, RouteCapabilityRequirements
+from .requirements import MaterialRequirement, RouteCapabilityRequirements, name_resolves_to
 
 __all__ = ["CAPABILITY_ASSESSMENT_SCHEMA", "AxisResult", "CapabilityAssessment", "assess"]
 
@@ -294,15 +294,33 @@ def _species_key_in(requirement: MaterialRequirement, stock: StockMaterial):
     return key
 
 
-def _listed_by_name_only(requirement: MaterialRequirement, stock: StockMaterial) -> bool:
-    """D24.8 (Wave-C' C6): is an identity-keyed requirement's species absent from ``stock`` under the STRUCTURE key but
-    listed under the WEAKER name key equal to the requirement's own name? A name is weaker evidence than a structure
-    (F44: it can never CERTIFY the structure), but it is not proof of ABSENCE either -- the bottle is a POSSIBLE (G+)
-    source, never a proven one and never a proof of absence (UNKNOWN, not BLOCKED)."""
-    if requirement.identity is None or requirement.name is None:
-        return False
-    interval = stock.active_fraction_interval(requirement.name)
-    return interval is not None and interval[1] != 0
+#: the stock layer's structure-key prefixes (``struct:`` / ``struct-asgiven:``) -- every other key is a declared NAME.
+_STRUCTURE_KEY_PREFIXES = ("struct:", "struct-asgiven:")
+
+
+def _listed_by_name_only(requirement: MaterialRequirement, stock: StockMaterial) -> "str | None":
+    """D24.8 (Wave-C' C6) + D25.4 (Wave-C'' C6 on the real leaf path): is an identity-keyed requirement's species absent
+    from ``stock`` under the STRUCTURE key but listed under a WEAKER name key that names it? Returns that name, or
+    ``None``. Two ways a name names it: (a) it equals the requirement's own sourced name; (b) -- for the NAMELESS leaf
+    requirements the projection emits -- the offline NAME resolver maps the component's name to the requirement's own
+    canonical structure. A name is weaker evidence than a structure (F44: it can never CERTIFY the structure), but it is
+    not proof of ABSENCE either -- the bottle is a POSSIBLE (G+) source, never a proven one and never a proof of
+    absence (UNKNOWN, not BLOCKED). A name the resolver does not map to this structure stays not-this-species: the
+    declared world's keys are closed."""
+    if requirement.identity is None:
+        return None
+    if requirement.name is not None:
+        interval = stock.active_fraction_interval(requirement.name)
+        if interval is not None and interval[1] != 0:
+            return requirement.name
+    for component in stock.components:
+        key = component.identity_key
+        if key.startswith(_STRUCTURE_KEY_PREFIXES) or not name_resolves_to(key, requirement.identity):
+            continue
+        interval = stock.active_fraction_interval(key)
+        if interval is not None and interval[1] != 0:
+            return key
+    return None
 
 
 def _fold_status(statuses: "list[CapabilityStatus]") -> CapabilityStatus:
@@ -366,10 +384,11 @@ def _edge(requirement: MaterialRequirement, stock: StockMaterial) -> "_Edge | No
     solute."""
     key = _species_key_in(requirement, stock)
     if key is None:
-        if _listed_by_name_only(requirement, stock):
+        name_key = _listed_by_name_only(requirement, stock)
+        if name_key is not None:
             return _Edge(CapabilityStatus.UNKNOWN, False, (
-                f"{stock.material_id}: UNKNOWN: listed only under the weaker NAME key {requirement.name!r} -- a name "
-                "can neither certify the structure nor prove its absence (D24.8) -- a possible source only"))
+                f"{stock.material_id}: UNKNOWN: listed only under the weaker NAME key {name_key!r} -- a name "
+                "can neither certify the structure nor prove its absence (D24.8/D25.4) -- a possible source only"))
         return None
     view = stock.spec_view(key)
     spec_verdict, spec_notes = compare_specification(requirement.specification, view)

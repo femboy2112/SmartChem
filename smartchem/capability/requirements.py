@@ -35,6 +35,7 @@ Nothing here decides FIT/BLOCKED/UNKNOWN -- that fold lives in :mod:`smartchem.c
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 from ..category import Molecule
 from ..constraints import PhysicalBounds
@@ -235,6 +236,26 @@ def _struct_digest(molecule: Molecule) -> str:
         return canonical_digest(molecule.canonical())
     except NotImplementedError:
         return canonical_digest(molecule)
+
+
+@lru_cache(maxsize=1024)
+def _resolved_name_digest(name: str) -> "str | None":
+    """The canonical structure digest the OFFLINE NAME resolver assigns to ``name``, or ``None`` when the name does not
+    resolve (unknown to the offline table, or not a name at all). Pure and deterministic -- no network."""
+    from ..identity_parse import InputKind, resolve_target  # lazy: identity_parse is a heavier front-door module
+
+    try:
+        return _struct_digest(resolve_target(name, InputKind.NAME))
+    except (ValueError, NotImplementedError):
+        return None
+
+
+def name_resolves_to(name: str, identity: Molecule) -> bool:
+    """D25.1/D25.4 (Wave-C'' NEW-1, C6): does ``name`` resolve, through the offline NAME resolver, to the SAME canonical
+    structure as ``identity``? A name the resolver does not know -- or one carrying extra words ("<species> + 2 g <a
+    second species> in a sealed tube at 650 K", "cold <species>") -- is NOT a name of that identity."""
+    digest = _resolved_name_digest(name.strip())
+    return digest is not None and digest == _struct_digest(identity)
 
 
 def _norm_text(text: str) -> str:
@@ -458,7 +479,12 @@ def _material_unresolved(route: ExperimentRoute) -> "tuple[str, ...]":
     * D24.1: a PRESENT ``scale`` that is not byte-equal to :func:`~smartchem.capability.coverage.render_scale`;
     * D24.3 (Wave-C' A5/B3a): a non-empty ``envelope.medium`` on a step WITH ProcedureEvidence that no typed use of
       that step exact-fold-covers. The note is TEXT-FREE: the sentence is still never a species, a hazard entry or a
-      waste stream (Part IV) -- it is only an open question about what material it might name.
+      waste stream (Part IV) -- it is only an open question about what material it might name;
+    * D25.1 (Wave-C'' NEW-1): an identity-bearing typed use whose ``name`` is not a resolvable NAME of its own identity
+      (offline NAME resolver, compared by canonical structure). The structure key carries the matching, so an
+      unverified name is read by nothing -- and the canonical renderers build their text FROM it, so extra words in a
+      name ("<species> + 2 g <a second species> in a sealed tube at 650 K") would otherwise ride through as "display".
+      Such a name is an unread demand; "cold <species>" is one honestly ("cold" is a temperature demand in a name).
     """
     out: "list[str]" = []
     for s_index, step in enumerate(route.steps, start=1):
@@ -467,6 +493,15 @@ def _material_unresolved(route: ExperimentRoute) -> "tuple[str, ...]":
             out.append(f"step {s_index} has no ProcedureEvidence: its auxiliary/medium material demand is unread "
                        "(no typed material uses to project)")
             continue
+        unverified_names: "list[str]" = []
+        for op in procedure.operations:
+            for use in op.material_uses:
+                if (use.identity is not None and use.name not in unverified_names
+                        and not name_resolves_to(use.name, use.identity)):
+                    unverified_names.append(use.name)
+        for name in unverified_names:
+            out.append(f"step {s_index} typed use name {name!r} is not a resolvable NAME of its own identity -- any "
+                       "extra words it carries are an unread demand (D25.1)")
         for op in procedure.operations:
             field = op.quantity
             if field is None or not field.is_present:

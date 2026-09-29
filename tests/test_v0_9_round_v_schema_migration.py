@@ -316,7 +316,7 @@ def test_legacy_substituted_replay_is_refused_under_the_frozen_route_identity():
     payload = _load("response_ethyl_acetate_smiles.json")
     d = payload["ranked_route_dossiers"]
     d[0]["replay_payload"], d[1]["replay_payload"] = d[1]["replay_payload"], d[0]["replay_payload"]
-    with pytest.raises(ValueError, match=r"DIFFERENT route.*legacy v0\.8 payload"):
+    with pytest.raises(ValueError, match=r"(DIFFERENT route|refused \(D26\.1\)).*legacy v0\.8 payload"):
         response_from_payload(payload)
 
 

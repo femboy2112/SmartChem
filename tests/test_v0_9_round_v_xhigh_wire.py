@@ -200,7 +200,10 @@ def test_the_legacy_request_box_decodes_as_the_released_generation():
     req = request_from_payload(_load("request_isopentyl_acetate.json"))
     assert req.constraints.bounds.schema_version == PHYSICAL_BOUNDS_SCHEMA_V1
     assert req.constraints.bounds.min_temperature_k is None
-    assert request_to_payload(req)["constraints"] == _load("request_isopentyl_acetate.json")["constraints"]
+    # X-high D26.5 (Wave-C'' T6b): a migrated v0.8 request is read-only evidence -- the current encoder would emit
+    # 0.9-only keys under the v0.8 id, so re-encoding it is REFUSED (the released box itself decoded above).
+    with pytest.raises(ValueError, match=r"legacy v0\.8 request.*\(D26\.5\)"):
+        request_to_payload(req)
 
 
 # -- D18: the replayed phase is an evidence-graded PhaseClaim --------------------------------------------------------
@@ -564,3 +567,279 @@ def test_re_serializing_a_legacy_loaded_response_is_refused_not_emitted_with_0_9
     fresh = run_compilation(build_recompile_request(legacy.request.target_input,
                                                     input_kind=legacy.request.input_kind, max_depth=1))
     assert not fresh.is_legacy_v08 and response_to_payload(fresh)["schema_version"] == COMPILATION_RESPONSE_SCHEMA
+
+
+# -- D25.3 (Wave-C'' NEW-3): the IR's candidate set is bound to the carried search receipt ---------------------------
+
+def _delete_route_everywhere(resp, *, rewrite_receipt=False):
+    """Masters' NEW-3 attacker: drop dossier 0 AND its IR route candidate AND its frontier entry (all public pins are
+    recomputed by the public codec). ``rewrite_receipt`` additionally rewrites the IR receipt's ``results_returned`` --
+    the consistent rewrite D25.3 names as its stated boundary."""
+    gone = resp.ranked_route_dossiers[0].route_digest
+    ir = dc.replace(resp.compilation_ir, candidates=tuple(
+        c for c in resp.compilation_ir.candidates if c.candidate_digest != gone))
+    if rewrite_receipt:
+        ir = dc.replace(ir, search_receipt=dc.replace(ir.search_receipt,
+                                                      results_returned=ir.search_receipt.results_returned - 1))
+    keep = resp.ranked_route_dossiers[1:]
+    forged = copy.copy(resp)
+    object.__setattr__(forged, "compilation_ir", ir)
+    object.__setattr__(forged, "ranked_route_dossiers", keep)
+    object.__setattr__(forged, "affordability_frontier", tuple(
+        e for e in resp.affordability_frontier if e.route_digest in {d.route_digest for d in keep}))
+    return response_to_payload(forged)
+
+
+def test_new3_deleting_a_route_with_its_ir_candidate_and_frontier_entry_is_refused():
+    """Pre-D25.3 the deletion loaded under the request pin + question pin + verified admission with the BLOCKED verdict
+    gone, while the carried receipt still said the search returned one more route."""
+    resp = _run("poor-man")
+    assert resp.compilation_ir.search_receipt.results_returned == len(resp.ranked_route_dossiers) >= 2
+    with pytest.raises(ValueError, match=r"D25\.3"):
+        response_from_payload(_delete_route_everywhere(resp), expected_request_digest=resp.request.semantic_digest,
+                              expected_capability_question_digest=resp.request.capability_question_digest,
+                              require_verified_admission=True)
+
+
+def test_new3_the_consistent_receipt_rewrite_boundary_documented():
+    """The STATED boundary of D25.3 (audit §7.8): a keyless attacker who ALSO rewrites the carried receipt's
+    ``results_returned`` produces a self-consistent smaller answer that loads -- detectable only by the producer HMAC
+    or by re-running the deterministic search. Pinned so the boundary is explicit, not accidental."""
+    resp = _run("poor-man")
+    loaded = response_from_payload(_delete_route_everywhere(resp, rewrite_receipt=True),
+                                   expected_request_digest=resp.request.semantic_digest,
+                                   expected_capability_question_digest=resp.request.capability_question_digest)
+    assert len(loaded.ranked_route_dossiers) == len(resp.ranked_route_dossiers) - 1
+
+
+def test_d25_3_every_honest_routes_mode_response_satisfies_the_receipt_bind():
+    for profile in (None, "poor-man", "research-lab"):
+        resp = _run(profile)
+        routes = [c for c in resp.compilation_ir.candidates if c.candidate_kind == "ROUTE"]
+        assert len(routes) == resp.compilation_ir.search_receipt.results_returned
+    for name in ("response_isopentyl_acetate.json", "response_ethyl_acetate_smiles.json",
+                 "response_stereo_isopentyl_acetate_smiles.json", "response_isopentyl_acetate_dag.json"):
+        response_from_payload(_load(name))  # real v0.8 producer output still loads under D25.3
+
+
+# =====================================================================================================================
+# D26 (Wave-C'' transport attacker T) -- a response must answer ITS request; opt-in keyless authenticity by determinism
+# =====================================================================================================================
+
+_Y = "smiles:CCOC(C)=O"  # ethyl acetate: the SECOND small search the transplant attacks carry under request X
+
+
+def _bypass(resp, **fields):
+    """The keyless attacker's in-memory forgery: a copy with fields swapped, never re-running __post_init__ (the loader,
+    not the constructor, is the trust boundary under test)."""
+    forged = copy.copy(resp)
+    for name, value in fields.items():
+        object.__setattr__(forged, name, value)
+    return forged
+
+
+def _pins(request):
+    return dict(expected_request_digest=request.semantic_digest,
+                expected_capability_question_digest=request.capability_question_digest)
+
+
+def test_d26_1_t1_a_transplanted_answer_to_a_different_target_is_refused():
+    """T1 (P0 shape): request X carrying search Y's IR + dossiers, every public pin recomputed, loaded under the request
+    pin + the question pin + verified admission. Pre-D26.1 it LOADED (the attack carried a PROCESS_SPECIFIED isopentyl
+    route under a methyl-acetate request)."""
+    x, y = _run("poor-man"), run_compilation(build_recompile_request(_Y, capability_profile="poor-man", max_depth=2))
+    payload = response_to_payload(_bypass(y, request=x.request))
+    with pytest.raises(ValueError, match=r"target identity.*refused \(D26\.1\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(x.request))
+
+
+def test_d26_1_t1c_a_cosmetic_transplant_is_caught_at_the_replayed_route():
+    """T1c: as T1 but every request-derived IR field is copied from the honest answer to X (target, request/terminal
+    digests, receipt digests, diagnostics) -- only the REPLAYED routes still make Y's product."""
+    x, y = _run("poor-man"), run_compilation(build_recompile_request(_Y, capability_profile="poor-man", max_depth=2))
+    irx, iry = x.compilation_ir, y.compilation_ir
+    receipt = dc.replace(iry.search_receipt, target_identity_digest=irx.search_receipt.target_identity_digest,
+                         terminal_policy_digest=irx.search_receipt.terminal_policy_digest)
+    ir = dc.replace(iry, target=irx.target, request_digest=irx.request_digest,
+                    terminal_policy_digest=irx.terminal_policy_digest, search_receipt=receipt, diagnostics=irx.diagnostics)
+    payload = response_to_payload(_bypass(y, request=x.request, compilation_ir=ir, diagnostics=x.diagnostics))
+    with pytest.raises(ValueError, match=r"does not make the requested target; refused \(D26\.1\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(x.request))
+
+
+def test_d26_1_t4b_a_decompile_request_cannot_carry_a_recompile_answer():
+    x = _run(None)
+    dreq = svc.build_decompile_request("C3H6O2")
+    with pytest.raises(ValueError, match=r"the IR answers a RECOMPILE but the carried request is a DECOMPILE.*D26\.1"):
+        response_from_payload(response_to_payload(_bypass(x, request=dreq)), **_pins(dreq))
+
+
+def test_d26_1_t3_a_linear_capability_question_answered_by_a_dag_search_is_refused():
+    """T3: a linear-grammar poor-man request answered with a convergent-DAG search's IR (registry digest relabelled to
+    the linear algebra's -- both public) and DAG dossiers: zero capability assessments. Pre-D26.1 it bypassed D24.13."""
+    dag = run_compilation(build_recompile_request(_TARGET, grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+                                                  max_depth=2, process=ProcessBounds.quick()))
+    lreq = build_recompile_request(_TARGET, max_depth=2, process=ProcessBounds.quick(), capability_profile="poor-man")
+    lin = svc.search_algebra_digest(svc._GRAMMAR_TO_MODE_TOPOLOGY["routes"],
+                                    svc.resolve_algebra_profile(lreq.algebra_profile))
+    ir = dc.replace(dag.compilation_ir, transform_registry_digest=lin,
+                    search_receipt=dc.replace(dag.compilation_ir.search_receipt, transform_registry_digest=lin))
+    with pytest.raises(ValueError, match=r"refused \(D26\.1\)"):
+        response_from_payload(response_to_payload(_bypass(dag, request=lreq, compilation_ir=ir)),
+                              require_verified_admission=True, **_pins(lreq))
+
+
+def test_d26_1_t6a_the_legacy_transplant_is_refused_with_the_recompile_hint():
+    """T6a: the REAL v0.8 ethyl-acetate request wrapped around the REAL v0.8 isopentyl IR + dossiers, only the derived
+    fields recomputed under the frozen v0.8 rule."""
+    iso, eth = _load("response_isopentyl_acetate.json"), _load("response_ethyl_acetate_smiles.json")
+    forged = copy.deepcopy(iso)
+    forged["request"] = copy.deepcopy(eth["request"])
+    r = svc.CompilationResponse(
+        forged["schema_version"], request_from_payload(forged["request"]), svc.ResponseOutcome(forged["outcome"]),
+        forged["standard_status"], svc.ir_from_payload(forged["compilation_ir"]), tuple(forged["diagnostics"]),
+        tuple(svc.ranked_summary_from_payload(x) for x in forged["ranked_route_dossiers"]),
+        tuple(svc.affordability_entry_from_payload(e) for e in forged["affordability_frontier"]),
+        parse_receipt_summary=forged["parse_receipt_summary"])
+    forged["exit_code"] = r.exit_code
+    forged["process_selection_status"] = r.process_selection_status
+    forged["admissible_route_digests"] = list(r.admissible_route_digests)
+    forged["result_digest"] = svc._transport_bound_result_digest(r.result_digest,
+                                                                 forged.get("transport_mode", "THIN_ADVISORY"))
+    with pytest.raises(ValueError, match=r"refused \(D26\.1\).*legacy v0\.8 payload"):
+        response_from_payload(forged, require_verified_admission=True,
+                              expected_request_digest=request_from_payload(eth["request"]).semantic_digest,
+                              expected_capability_question_digest=None)
+
+
+def test_d26_1_honest_recompile_decompile_and_every_real_v08_fixture_still_load():
+    for resp in (_run(None), _run("poor-man"), run_compilation(svc.build_decompile_request("C3H6O2"))):
+        response_from_payload(response_to_payload(resp), require_verified_admission=True, **_pins(resp.request))
+    for name in ("response_isopentyl_acetate.json", "response_ethyl_acetate_smiles.json",
+                 "response_ethyl_acetate_smiles_thin.json", "response_stereo_isopentyl_acetate_smiles.json",
+                 "response_isopentyl_acetate_dag.json", "response_invalid_input_ethyl_acetate_name.json"):
+        response_from_payload(_load(name))
+    response_from_payload(_load("plan_isopentyl_acetate.json")["compilation"])
+
+
+def test_d26_1_a_decompile_answer_for_a_different_formula_is_refused():
+    other = run_compilation(svc.build_decompile_request("C3H6O2"))
+    asked = svc.build_decompile_request("C2H4O2")
+    with pytest.raises(ValueError, match=r"target identity.*refused \(D26\.1\)"):
+        response_from_payload(response_to_payload(_bypass(other, request=asked)), **_pins(asked))
+
+
+def _no_route_relabel(resp):
+    """T2b: delete EVERY candidate and relabel the search COMPLETE -- a forged 'no route in the declared space'."""
+    from smartchem.search import SearchStatus
+
+    ir = resp.compilation_ir
+    receipt = dc.replace(ir.search_receipt, status=SearchStatus.COMPLETE_WITHIN_BOUNDS.value,
+                         standard_status=SearchStatus.COMPLETE_WITHIN_BOUNDS.standard_name, results_returned=0,
+                         candidate_enumeration_complete=True, cut_enumeration_complete=True,
+                         result_limit_saturated=False, stop_reason="")
+    ir3 = dc.replace(ir, candidates=(), search_status=SearchStatus.COMPLETE_WITHIN_BOUNDS,
+                     standard_status=SearchStatus.COMPLETE_WITHIN_BOUNDS.standard_name, search_receipt=receipt,
+                     diagnostics=())
+    return response_to_payload(_bypass(resp, compilation_ir=ir3, ranked_route_dossiers=(), affordability_frontier=(),
+                                       outcome=svc.ResponseOutcome.NO_ROUTE_COMPLETE,
+                                       standard_status=ir3.standard_status, diagnostics=()))
+
+
+def test_d26_2_t2_a_consistent_deletion_loads_without_reexecution_and_is_refused_with_it():
+    """T2 + D25.3's stated boundary: a keyless attacker who deletes routes AND consistently rewrites the carried receipt
+    produces a self-consistent smaller answer; only re-running the deterministic search (D26.2) sees it."""
+    resp = _run("poor-man")
+    for payload in (_no_route_relabel(resp), _delete_route_everywhere(resp, rewrite_receipt=True)):
+        response_from_payload(payload, **_pins(resp.request))                      # the documented boundary: loads
+        with pytest.raises(ValueError, match=r"re-running the carried request produces a DIFFERENT result.*D26\.2"):
+            response_from_payload(payload, require_reexecution=True, **_pins(resp.request))
+
+
+def test_d26_2_t5_a_re_centred_step_demotes_under_the_same_route_digest_until_reexecution():
+    """T5 / D26.4: ``reaction_center`` is compare=False (outside route.digest) yet feeds readiness. Re-centring the
+    REACTION_VOUCHED methyl-acetate route and honestly re-deriving its readiness + capability DEMOTES it under the SAME
+    route digest and loads under every pin (the stated D26.4 boundary); ``require_reexecution`` refuses it."""
+    from smartchem.capability.assess import assess as assess_capability
+    from smartchem.capability.requirements import compile_capability_requirements
+
+    resp = _run("poor-man")
+    new = []
+    demoted = 0
+    for d in resp.ranked_route_dossiers:
+        replay = copy.deepcopy(d.replay_payload)
+        centred = [i for i, step in enumerate(replay) if step.get("reaction_center")]
+        if d.readiness.tier != "FORMAL_CANDIDATE" and centred:
+            replay[centred[0]]["reaction_center"]["n_components"] = 2
+            route = _reconstruct_route(replay)
+            assert route.digest == d.route_digest
+            ready = evaluate_route(route, identity_losses=resp.identity_losses)
+            assert tier_rank(ready.tier) < tier_rank(d.readiness.tier)            # a DEMOTION, same route digest
+            demoted += 1
+            d = dc.replace(d, readiness=ready, replay_payload=replay, capability_assessment=assess_capability(
+                resp.request.capability_profile, compile_capability_requirements(route), ready))
+        new.append(d)
+    assert demoted
+    routes_ = tuple(_reconstruct_route(d.replay_payload) for d in new)
+    frontier = svc._affordability_frontier(routes_, tuple(new))
+    payload = response_to_payload(_bypass(resp, ranked_route_dossiers=tuple(new), affordability_frontier=frontier))
+    response_from_payload(payload, require_verified_admission=True, **_pins(resp.request))   # stated boundary
+    with pytest.raises(ValueError, match=r"D26\.2"):
+        response_from_payload(payload, require_reexecution=True, **_pins(resp.request))
+
+
+def test_d26_2_reexecution_accepts_an_honest_answer_and_refuses_a_legacy_one():
+    resp = _run("poor-man")
+    response_from_payload(response_to_payload(resp), require_reexecution=True, **_pins(resp.request))
+    deserialize_response(serialize_response(resp), require_reexecution=True)
+    with pytest.raises(ValueError, match=r"cannot re-execute a legacy v0\.8 payload.*D26\.2.*recompile under 0\.9"):
+        response_from_payload(_load("response_ethyl_acetate_smiles.json"), require_reexecution=True)
+
+
+def test_d26_3_t4a_a_capability_profile_on_a_decompile_request_is_refused():
+    """T4a: the honest producer answered a DECOMPILE + profile with NOTHING (no route, no assessment)."""
+    with pytest.raises(ValueError, match=r"DECOMPILE.*D26\.3"):
+        dc.replace(svc.build_decompile_request("C7H14O2"), capability_profile=poor_man(),
+                   capability_profile_origin=poor_man().profile_id)
+
+
+def test_d26_5_t6b_a_legacy_request_is_not_re_serialized_with_0_9_keys():
+    legacy = svc.deserialize_request(json.dumps(_load("request_isopentyl_acetate.json")))
+    assert legacy.is_legacy_v08
+    with pytest.raises(ValueError, match=r"legacy v0\.8 request.*\(D26\.5\)"):
+        svc.serialize_request(legacy)
+
+
+def _find_node(tree, cls):
+    stack = [tree]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if node.get("class") == cls:
+                return node
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    raise AssertionError(cls)
+
+
+def test_d26_6_b5_a_canonical_node_missing_a_field_is_refused_not_default_filled():
+    payload = request_to_payload(build_recompile_request(_TARGET, max_depth=2, capability_profile="poor-man"))
+    profile = copy.deepcopy(payload["capability_profile"])
+    box = _find_node(profile, "smartchem.constraints.PhysicalBounds")
+    box["fields"] = [f for f in box["fields"] if f[0] != "min_temperature_k"]
+    with pytest.raises(ValueError, match=r"EXACTLY its fields.*\(D26\.6\)"):
+        svc._capability_profile_from_payload(profile)
+    extra = copy.deepcopy(payload["capability_profile"])
+    extra["fields"].append(["smuggled", {"type": "none"}])
+    with pytest.raises(ValueError, match=r"D26\.6"):
+        svc._capability_profile_from_payload(extra)
+
+
+def test_d26_7_rc_v_a_reaction_centre_payload_of_another_version_is_refused():
+    from smartchem.reaction_center import REACTION_CENTER_SCHEMA, ReactionCenter, ReactionCenterError
+
+    good = ReactionCenter.of((("C", "O", 1),), (("C", "O", 1),), 1).to_payload()
+    assert ReactionCenter.from_payload(good).schema_version == REACTION_CENTER_SCHEMA
+    with pytest.raises(ReactionCenterError, match=r"D26\.7"):
+        ReactionCenter.from_payload(dict(good, schema_version="smartchem/reaction-center-v0-bogus"))

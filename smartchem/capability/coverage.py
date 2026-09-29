@@ -172,7 +172,10 @@ FIELD_COVERAGE: "dict[tuple[str, str], FieldCoverage]" = {
                                                     "the step's net consumption (F-7)", _W, _C, _PC),
     ("ProcedureOperation", "locator"): _c(_PS, "source locator"),
     # -- ProcedureMaterialUse (one typed material use) --------------------------------------------------------------
-    ("ProcedureMaterialUse", "name"): _c(_M, "name key when identity is None; hazard lookup; waste naming", _C, _W),
+    ("ProcedureMaterialUse", "name"): _c(_M, "name key when identity is None; hazard lookup; waste naming; D25.1: an "
+                                             "identity-bearing use's name must resolve (offline NAME resolver) to its "
+                                             "own identity, else material_unresolved (the renderers build from it)",
+                                         _C, _W),
     ("ProcedureMaterialUse", "role"): _c(_M, "stoichiometric roles discharge a leaf; CATALYST -> procurement; role "
                                              "contradicting net consumption -> unresolved (F-7)", _W, _PC),
     ("ProcedureMaterialUse", "identity"): _c(_M, "structure key; hazard; residual/cover keys", _C, _W),
@@ -249,7 +252,9 @@ def _render_use(use: ProcedureMaterialUse) -> str:
 def render_op_quantity(op: ProcedureOperation) -> str:
     """D24.1: the CANONICAL rendering of an op's typed amounts -- its QUANTIFIED typed uses, in use order,
     ``"<value> <unit> <name>"`` joined by ``" + "`` (``""`` when none). A PRESENT ``op.quantity`` is display only if it
-    is byte-equal to this string."""
+    is byte-equal to this string. The rendering is only as honest as the use NAMES it quotes: D25.1 makes an
+    identity-bearing use whose name is not a resolvable name of its identity an unread material demand, so no word can
+    ride through a name into a "canonical" string (Wave-C'' NEW-1)."""
     return " + ".join(_render_use(u) for u in op.material_uses if u.quantity is not None)
 
 
@@ -275,7 +280,7 @@ def render_summary(procedure: ProcedureEvidence, field: str) -> str:
 
 def render_scale(procedure: ProcedureEvidence) -> str:
     """D24.1: the CANONICAL rendering of a procedure's batch scale -- its quantified SUBSTRATE/REACTANT uses, in op
-    order, ``"<value> <unit> <name>"`` joined by ``" + "``."""
+    order, ``"<value> <unit> <name>"`` joined by ``" + "`` (names guarded by D25.1, as in :func:`render_op_quantity`)."""
     stoich = (ProcedureMaterialRole.SUBSTRATE, ProcedureMaterialRole.REACTANT)
     return " + ".join(_render_use(u) for op in procedure.operations for u in op.material_uses
                       if u.role in stoich and u.quantity is not None)

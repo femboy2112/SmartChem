@@ -37,13 +37,18 @@ from .contracts import Digestible
 from .provenance import SourceCitation
 
 if TYPE_CHECKING:
+    from .category import Molecule
     from .conditions import Interval
+    from .experiment.stock import StockQuantity
+    from .material_spec import MaterialSpecification, PhaseClaim
 
 __all__ = [
     "EvidenceFieldStatus",
     "EvidenceField",
     "OperationKind",
     "OperationRole",
+    "ProcedureMaterialRole",
+    "ProcedureMaterialUse",
     "ProcedureOperation",
     "ProcedureEvidence",
     "WHOLE_PROCEDURE_FIELDS",
@@ -64,8 +69,8 @@ class EvidenceFieldStatus(str, Enum):
     #: A structured value IS represented, tied to a source locator.
     PRESENT = "PRESENT"
     #: The source AFFIRMATIVELY closes this out (a complete procedure in which this operation genuinely does not
-    #: occur) -- carries a locator AND a non-empty justification. NEVER derived from chemistry/phase, NEVER a
-    #: synonym for silence.
+    #: occur) -- carries a locator AND a non-empty justification, and NO value (D24.2: a field that states a value
+    #: is PRESENT). NEVER derived from chemistry/phase, NEVER a synonym for silence.
     EXPLICIT_NOT_APPLICABLE = "EXPLICIT_NOT_APPLICABLE"
     #: The source is silent; no claim either way. Blocks completeness (mere silence is not N/A).
     UNKNOWN_MISSING = "UNKNOWN_MISSING"
@@ -77,7 +82,8 @@ class EvidenceField(Digestible):
     to, and (for EXPLICIT_NOT_APPLICABLE only) the justification that closes it out.
 
     ``value`` is a normalized ``str`` (an amount, a ratio, a quoted phrase) or an
-    :class:`~smartchem.conditions.Interval` (T in 'K', duration in 'min') or ``None``.
+    :class:`~smartchem.conditions.Interval` (T in 'K', duration in 'min') or ``None``. Only PRESENT carries a
+    value; UNKNOWN_MISSING and EXPLICIT_NOT_APPLICABLE never do (D24.2).
     """
 
     status: EvidenceFieldStatus
@@ -114,6 +120,13 @@ class EvidenceField(Digestible):
             raise ValueError(
                 "EXPLICIT_NOT_APPLICABLE must carry a non-empty justification (the source text that closes it "
                 "out) -- silence is UNKNOWN_MISSING, never N/A"
+            )
+        if self.status is EvidenceFieldStatus.EXPLICIT_NOT_APPLICABLE and self.value is not None:
+            # Round V X-high D24.2 (Wave-C' A4): a closing-out claim cannot also STATE a value. Every capability
+            # reader gates on ``is_present``, so an N/A field carrying ``Interval(650, 650, "K")`` was a demand that
+            # reached no axis while readiness counted it resolved. The value belongs in a PRESENT field.
+            raise ValueError(
+                "EXPLICIT_NOT_APPLICABLE carries no value -- a field that states a value is PRESENT, not N/A (D24.2)"
             )
         if self.status is EvidenceFieldStatus.PRESENT and self.value is None:
             raise ValueError("PRESENT must carry a value")
@@ -167,6 +180,110 @@ class OperationRole(str, Enum):
     OTHER = "OTHER"
 
 
+class ProcedureMaterialRole(str, Enum):
+    """The purpose a procedure-only auxiliary serves -- a MATERIAL-level role, deliberately DISTINCT from
+    :class:`OperationRole` (which classifies an *operation*, not a species). The dissection that forced it: op1 of
+    both isopentyl and aspirin glues a catalyst (H2SO4) into a ``role=REACTION`` charge alongside the true reactants,
+    and nothing typed told the H2SO4 from the substrate. This enum is where that distinction finally has a home.
+
+    Closed vocabulary; extend only when the sourced corpus produces an auxiliary none of these fit -- never
+    speculatively. A material's role is what the source SAYS it does, not what a runtime parser guesses.
+
+    Round IV F45: REACTANT/SUBSTRATE were added so the SOURCE can carry the reaction inputs themselves as
+    typed uses (not just the workup auxiliaries), letting the generic capability compiler read a route's
+    reactant material specification off ``material_uses`` instead of hard-coding leaf identities + a runtime
+    'glacial' prose scan. SUBSTRATE is the principal species being transformed; REACTANT is a co-reactant
+    charged stoichiometrically into the product (the two are distinguished only where the source does)."""
+
+    SUBSTRATE = "SUBSTRATE"      # the principal input being transformed (the alcohol in a Fischer esterification)
+    REACTANT = "REACTANT"        # a co-reactant charged stoichiometrically into the product (the acid)
+    CATALYST = "CATALYST"        # accelerates without being consumed stoichiometrically (H2SO4 in a Fischer esterification)
+    WASH = "WASH"                # a medium (usually a liquid) contacted with the product to carry impurities away
+                                 # (5% NaHCO3, brine, a decolorizing adsorbent) -- the closest home the corpus's
+                                 # charcoal has in this frozen vocab; a dedicated adsorbent role is a later extension
+    DRY = "DRY"                  # a desiccant that pulls residual water (anhydrous MgSO4)
+    SOLVENT = "SOLVENT"          # a recrystallization/reaction medium (hot ethyl acetate)
+    RINSE = "RINSE"              # a low-volume flush of a collected solid/vessel (cold water, petroleum ether)
+    NEUTRALIZE = "NEUTRALIZE"    # an acid/base charged to move pH, not to react into the product (HCl to dissolve p-aminophenol)
+
+
+@dataclass(frozen=True)
+class ProcedureMaterialUse(Digestible):
+    """One procedure-only auxiliary the source names -- a catalyst, wash, drier, solvent, rinse, or pH agent that
+    the balanced reaction equation never sees but the bench chemist must still possess. AUTHORED source evidence,
+    never runtime-parsed prose: each field is transcribed by hand from the cited procedure.
+
+    ``identity`` is HONESTLY OPTIONAL and it is load-bearing. NaHCO3 / NaCl / MgSO4 are ionic lattices; the SMILES
+    parser refuses a disconnected species, so ~half this corpus cannot resolve to a single connected
+    :class:`~smartchem.category.Molecule`. Inventing a covalent spelling for an ionic salt to force a resolution is
+    banned -- ``identity=None`` is the truthful carrier, mirroring the ``required_assay: float | None`` honesty
+    pattern the stock layer already uses. ``quantity`` is populated only where the source gives a cleanly-separable
+    per-material amount (``None`` where the page glues quantities together -- a fabricated split would be worse than
+    the honest gap).
+
+    Round V (barrier D3) semantics of the three material-description fields -- one representation, one meaning each:
+
+    * ``formulation`` -- RAW provenance/display text: the adjective words the cited source puts around the species
+      name ("glacial", "conc.", "saturated aqueous", ...). NOTHING downstream interprets it; no compiler, stock layer
+      or axis may learn what an adjective means from this string.
+    * ``specification`` -- the LOAD-BEARING, source-authored :class:`~smartchem.material_spec.MaterialSpecification`:
+      what the source says the material must BE (composition on a stated basis, positively-required states,
+      and ``unresolved_terms`` for load-bearing words the author could not honestly type). A use whose
+      ``formulation`` is non-empty but whose ``specification`` is ``None`` is projected as UNRESOLVED (F69 ->
+      UNKNOWN), never as "no constraint". A use with neither is a plain identity/phase/quantity demand.
+    * ``phase`` -- stays HERE, on the use, and ONLY here; it is never duplicated into the specification (a NEAT
+      claim is a dilution state, not a phase: a LIQUID can be a dilute solution).
+
+    Round V X-high (barrier D18): ``phase`` is an evidence-graded :class:`~smartchem.material_spec.PhaseClaim`, not
+    a bare ``Phase`` scalar. Same ONE phase vocabulary, now carrying WHO says so: a phase the cited page states is
+    ``SOURCE_QUOTED``; a phase the evidence author reads off a volume, a drop count or a species' usual state is
+    ``AUTHOR_INFERRED`` -- and by F71 an author's inference can neither discharge nor refute a stock's phase. A bare
+    ``Phase`` is REFUSED (a stale caller fails loudly instead of silently shipping an ungraded claim)."""
+
+    name: str
+    role: ProcedureMaterialRole
+    identity: "Molecule | None" = None
+    formulation: "str | None" = None
+    phase: "PhaseClaim | None" = None
+    quantity: "StockQuantity | None" = None
+    evidence_source: str = ""
+    #: Round V (barrier D3): the SOURCE-AUTHORED typed material specification. ``formulation`` above is now raw
+    #: provenance/display text ONLY -- nothing downstream interprets it. ``None`` with a non-empty ``formulation``
+    #: means the author could not type the load-bearing words, which the capability compiler projects as an
+    #: UNRESOLVED formulation term (UNKNOWN, F69) -- never as "no constraint".
+    specification: "MaterialSpecification | None" = None
+
+    def __post_init__(self) -> None:
+        # Lazy imports mirror EvidenceField's Interval dance: keep the structural type checks honest without
+        # welding a module-load-order dependency onto category/experiment.stock.
+        from .category import Molecule
+        from .experiment.stock import StockQuantity
+        from .material_spec import MaterialSpecification, PhaseClaim
+
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("name must be a non-empty string (the exact sourced material name)")
+        object.__setattr__(self, "name", self.name.strip())
+        if not isinstance(self.role, ProcedureMaterialRole):
+            raise TypeError("role must be a ProcedureMaterialRole")
+        if self.identity is not None and type(self.identity) is not Molecule:
+            raise TypeError("identity must be a Molecule or None (None for ionic/mixture/unresolvable species)")
+        if self.formulation is not None and (not isinstance(self.formulation, str) or not self.formulation.strip()):
+            raise ValueError("formulation must be a non-empty string or None")
+        if self.formulation is not None:
+            object.__setattr__(self, "formulation", self.formulation.strip())
+        if self.phase is not None and type(self.phase) is not PhaseClaim:
+            raise TypeError(
+                "phase must be a smartchem.material_spec.PhaseClaim or None (D18: a phase carries its evidence "
+                "strength -- a bare Phase is an ungraded claim and is refused)")
+        if self.quantity is not None and type(self.quantity) is not StockQuantity:
+            raise TypeError("quantity must be a StockQuantity or None")
+        if not isinstance(self.evidence_source, str) or not self.evidence_source.strip():
+            raise ValueError("evidence_source must be a non-empty source locator")
+        object.__setattr__(self, "evidence_source", self.evidence_source.strip())
+        if self.specification is not None and type(self.specification) is not MaterialSpecification:
+            raise TypeError("specification must be a smartchem.material_spec.MaterialSpecification or None")
+
+
 _AGITATION_KINDS = frozenset({OperationKind.ADD, OperationKind.MIX, OperationKind.HEAT,
                               OperationKind.HOLD, OperationKind.COOL})
 _THERMAL_KINDS = frozenset({OperationKind.HEAT, OperationKind.COOL, OperationKind.HOLD})
@@ -188,6 +305,7 @@ class ProcedureOperation(Digestible):
     duration: "EvidenceField | None" = None
     endpoint: "EvidenceField | None" = None
     apparatus: tuple[str, ...] = ()
+    material_uses: "tuple[ProcedureMaterialUse, ...]" = ()
     locator: str = ""
 
     def __post_init__(self) -> None:
@@ -206,6 +324,12 @@ class ProcedureOperation(Digestible):
             value = getattr(self, name)
             if value is not None and type(value) is not EvidenceField:
                 raise TypeError(f"{name} must be an EvidenceField or None")
+        # The procedure-only auxiliaries this op charges (catalyst/wash/drier/...); empty by default so every
+        # pre-Round-III construction still builds untouched. It is SOURCE evidence, never a capability claim.
+        if type(self.material_uses) is not tuple or any(
+            type(u) is not ProcedureMaterialUse for u in self.material_uses
+        ):
+            raise TypeError("material_uses must be a tuple of ProcedureMaterialUse")
         if not isinstance(self.locator, str) or not self.locator.strip():
             raise ValueError("a procedure operation must carry a non-empty source locator")
         object.__setattr__(self, "locator", self.locator.strip())

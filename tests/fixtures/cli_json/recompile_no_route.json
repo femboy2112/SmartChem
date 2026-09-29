@@ -1,6 +1,7 @@
 {
   "admissible_route_digests": [],
   "affordability_frontier": [],
+  "capability_question_digest": null,
   "compilation_ir": {
     "candidates": [],
     "diagnostics": [
@@ -43,7 +44,7 @@
       "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
     },
     "terminal_policy_digest": "59115ea2c066a980a42f86a2a0074b905d0407a74db95f09d4dcf2a4db054e14",
-    "tool_version": "0.8.0a1",
+    "tool_version": "0.9.0a1",
     "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c"
   },
   "diagnostics": [
@@ -59,10 +60,13 @@
   "ranked_route_dossiers": [],
   "request": {
     "algebra_profile": "certified-route-v07",
+    "capability_profile": null,
+    "capability_profile_origin": "",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,
       "min_pressure_atm": null,
+      "min_temperature_k": null,
       "process": {
         "allowed_agitation": null,
         "allowed_attention": null,
@@ -73,7 +77,7 @@
         "min_check_interval_minutes": null,
         "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
       },
-      "schema_version": "smartchem.constraints/physical-bounds-v1alpha1"
+      "schema_version": "smartchem.constraints/physical-bounds-v1alpha2"
     },
     "evidence_provider_selection": {
       "selection_id": "DEFAULT_OFFLINE"
@@ -153,7 +157,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha5",
+    "schema_version": "smartchem.service/compilation-request-v1alpha7",
     "search_bounds": [
       [
         "cut_budget",
@@ -177,8 +181,8 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "656012b44b165182dd68ee9c26f0d93dbf7a6707cf864bed09ea7fca3434ab71",
-  "schema_version": "smartchem.service/compilation-response-v1alpha15",
+  "result_digest": "11285ff63281baf57453236e4657fecd953bc3ea7115135130267798a42bab23",
+  "schema_version": "smartchem.service/compilation-response-v1alpha17",
   "search_space_status": "NO_ROUTE_IN_DECLARED_SPACE",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
   "transport_mode": "CANONICAL_VERIFIED"

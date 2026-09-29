@@ -1,0 +1,2718 @@
+{
+  "admissible_route_digests": [],
+  "affordability_frontier": [
+    {
+      "cost_vector": {
+        "access_difficulty": 2,
+        "analytical": null,
+        "cash": null,
+        "cash_floor": 0.045307388,
+        "currency": "USD",
+        "energy": null,
+        "evidence_tier_rank": null,
+        "fiction_blockers": [],
+        "hard_blockers": [],
+        "labor_time": null,
+        "material_quantity": 2.0,
+        "new_equipment": null,
+        "preprocessing": null,
+        "region": "",
+        "unit": "mol product",
+        "waste_disposal": null
+      },
+      "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
+      "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha3"
+    }
+  ],
+  "capability_question_digest": "aa97328c44e9d6d3b3cd4c450034575de1fcc108fb3d40881431825cfa19c307",
+  "compilation_ir": {
+    "candidates": [
+      {
+        "candidate_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
+        "candidate_kind": "ROUTE",
+        "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      },
+      {
+        "candidate_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217",
+        "candidate_kind": "ROUTE",
+        "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
+        "readiness_tier": "FORMAL_CANDIDATE",
+        "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+      }
+    ],
+    "diagnostics": [],
+    "identity_losses": [],
+    "operation": "RECOMPILE",
+    "request_digest": "f49e3c83d2254d37b84f608edececd27253160b36ab701f2b70e81d3fa1a7dbb",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8",
+    "search_receipt": {
+      "candidate_enumeration_complete": true,
+      "candidate_limit": null,
+      "candidates_emitted": 12,
+      "candidates_rejected_by_reason": [
+        [
+          "duplicate",
+          10
+        ]
+      ],
+      "cut_budget": 20000,
+      "cut_budget_scope": "PER_NODE",
+      "cut_enumeration_complete": true,
+      "max_depth": 2,
+      "nodes_visited": 3,
+      "result_limit": 100,
+      "result_limit_saturated": false,
+      "results_returned": 2,
+      "schema_version": "smartchem.compilation-ir/search-receipt-view-v1alpha1",
+      "search_kind": "LINEAR_ROUTE",
+      "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+      "status": "COMPLETE_WITHIN_BOUNDS",
+      "stop_reason": "",
+      "target_identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
+      "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
+      "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c",
+      "transforms_considered": 28
+    },
+    "search_status": "COMPLETE_WITHIN_BOUNDS",
+    "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+    "structural_candidates": [],
+    "target": {
+      "canonical_repr": "C3H6O2",
+      "identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
+      "layer": "STRUCTURE",
+      "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
+    },
+    "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
+    "tool_version": "0.9.0a1",
+    "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c"
+  },
+  "diagnostics": [],
+  "exit_code": 0,
+  "outcome": "ROUTES_FOUND",
+  "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C3H6O2 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested",
+  "process_selection_status": "NOT_REQUESTED",
+  "producer_signature": null,
+  "provider_snapshots": [],
+  "ranked_dag_dossiers": [],
+  "ranked_route_dossiers": [
+    {
+      "capability_assessment": {
+        "class": "smartchem.capability.assess.CapabilityAssessment",
+        "fields": [
+          [
+            "schema_version",
+            {
+              "type": "str",
+              "value": "smartchem.capability/capability-assessment-v1alpha2"
+            }
+          ],
+          [
+            "profile_digest",
+            {
+              "type": "str",
+              "value": "8c527e0d526fc29d662c0de28ca11fdf28e86956dd8b20419b1e0f3a3a42feaf"
+            }
+          ],
+          [
+            "route_digest",
+            {
+              "type": "str",
+              "value": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d"
+            }
+          ],
+          [
+            "material",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "material: no declared stock inventory to check reactant (leaf input) CH4O (quantity UNKNOWN (1 unquantified use(s); demand is real and positive, size unknown); external route input at step 1 (consumed) (a reactant no EARLIER step produced) with no stoichiometric typed ProcedureMaterialUse of that step -- the identity is required (a real, positive demand), but no specification/phase/quantity is sourced, so those stay UNKNOWN (never assumed))"
+                      },
+                      {
+                        "type": "str",
+                        "value": "material: no declared stock inventory to check reactant (leaf input) C2H4O2 (quantity UNKNOWN (1 unquantified use(s); demand is real and positive, size unknown); external route input at step 1 (consumed) (a reactant no EARLIER step produced) with no stoichiometric typed ProcedureMaterialUse of that step -- the identity is required (a real, positive demand), but no specification/phase/quantity is sourced, so those stay UNKNOWN (never assumed))"
+                      },
+                      {
+                        "type": "str",
+                        "value": "material: step 1 has no ProcedureEvidence: its auxiliary/medium material demand is unread (no typed material uses to project)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "material: a stated material demand has no typed representation -- UNKNOWN, never a pass (D16/D17)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "equipment",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "equipment: 1 sourced equipment demand(s) are untabled in the closed resolver or unread (a hardware op naming no apparatus, an applied field) and cannot be certified either way against any declared profile: step 1 has no ProcedureEvidence: its equipment demand is unread (D24.17)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "equipment: no requirement was derived for this route"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "physical",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "physical: route peak temperature is undeclared; cannot certify it against the 473.15 K ceiling"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: route min temperature is undeclared; cannot certify it against the 273.15 K floor"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: route max pressure is undeclared; cannot certify it against the 1.5 atm ceiling"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: route min pressure is undeclared; cannot certify it against the 1 atm floor"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: step 1 has no ProcedureEvidence and no process peak temperature -- its HIGH temperature demand is unread (D14 iv)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: step 1 has no ProcedureEvidence -- its LOW temperature demand is unread (no whole-step minimum exists; D14 iv)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: a stated temperature/pressure demand could not be read into the typed bounds -- UNKNOWN (D13)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "process",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "process: step 1: whole-step requirements do not explicitly include workup"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 1: elapsed_minutes is undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 1: attention is undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 1: agitation is undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 1 carries no process record -- its whole-step time/attention/agitation demand is unread"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: no bound declared on active time (max_active_minutes)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: no minimum operator check interval declared (min_check_interval_minutes) while a step's attention is periodic or undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: the whole-step process demand cannot be certified against the declared bench -- an uncovered step, an undeclared bench dimension or an unread stated demand is UNKNOWN, never a pass (D15)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "containment",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "BLOCKED"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "containment: the declared profile is missing required capability/ies: FUME_HOOD"
+                      },
+                      {
+                        "type": "str",
+                        "value": "containment: balanced species CH4O (step 1) carries sourced GHS H225, H301, H311, H331, H370 (methanol) -- forces FUME_HOOD (inform, never neuter)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "containment: balanced species C2H4O2 (step 1) carries sourced GHS H226, H314 (acetic acid) -- forces FUME_HOOD (inform, never neuter)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "containment: balanced species C3H6O2 (step 1) -- no hazard record for this structure; its hazard status is UNKNOWN (not a safety clearance; CAPABILITY_FIT is not a safety cert)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "ventilation",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "NOT_APPLICABLE"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "ventilation: RESERVED -- declared but not assessed in 0.9; no sourced ventilation requirement; OUTDOOR never substitutes for containment"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "measurement",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "measurement: 1 sourced measurement demand(s) are untabled in the closed resolver or unread (a stated analytical verification with no VERIFY apparatus) and cannot be certified either way against any declared profile: step 1 has no ProcedureEvidence: its verification demand is unread (D24.17)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "measurement: no requirement was derived for this route"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "waste",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "waste: no requirement was derived for this route"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: byproduct H2O (fate=UNKNOWN) (water, empty GHS) -- benign species, untyped waste stream (phase/pH/co-residents unestablished); never AQUEOUS_NEUTRAL (F76)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: step 1 input C2H4O2 has no typed procedure use -- any unreacted/excess residual's disposal routing is UNKNOWN (F77; no stoichiometry guessed)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: step 1 input CH4O has no typed procedure use -- any unreacted/excess residual's disposal routing is UNKNOWN (F77; no stoichiometry guessed)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: one or more required waste streams have UNRESOLVED disposal routing, so the waste capability this route requires cannot be determined -- UNKNOWN, not a pass (F48/F49)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "procurement",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "NOT_APPLICABLE"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "procurement: no catalyst was declared for this route"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "attention_care",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "NOT_APPLICABLE"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "attention_care: the route's hazard-driven care demand is ATTENTION_ADVISED (informational; structurally separate from the process/attention capability axis)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "monetary",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "monetary: route cash denominated per 'metric ton', budget per 'USD' -- an undeclared or mismatched denomination is incomparable, never compared by raw number (no production-quantity bridge)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "overall",
+            {
+              "class": "smartchem.capability.enums.CapabilityStatus",
+              "type": "enum",
+              "value": {
+                "type": "str",
+                "value": "BLOCKED"
+              }
+            }
+          ],
+          [
+            "overall_reasons",
+            {
+              "items": [
+                {
+                  "type": "str",
+                  "value": "overall: at least one required capability axis is BLOCKED"
+                }
+              ],
+              "type": "tuple"
+            }
+          ],
+          [
+            "readiness_tier",
+            {
+              "type": "str",
+              "value": "REACTION_VOUCHED"
+            }
+          ],
+          [
+            "readiness_digest",
+            {
+              "type": "str",
+              "value": "ff10304a93e8cb96d27ec058fa22827faec8c5485d600165acf1ec0fedfa97d1"
+            }
+          ]
+        ],
+        "type": "dataclass"
+      },
+      "composability_verdict": "SINGLE_STEP",
+      "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
+      "equilibrium_verdict": "UNKNOWN",
+      "exclusions": [],
+      "feasibility_verdict": "UNKNOWN",
+      "fit_status": "UNCONSTRAINED",
+      "gaps": [],
+      "kinetics_verdict": "UNKNOWN",
+      "process_requirements": [
+        null
+      ],
+      "readiness": {
+        "per_step": [
+          {
+            "conditions": "UNKNOWN",
+            "formal_candidate": "SATISFIED",
+            "open_obligations": [
+              "conditions: no declared condition envelope (unknown)",
+              "process: no declared procedure evidence (unknown)",
+              "workup_isolation: no declared procedure evidence (unknown)"
+            ],
+            "process": "UNKNOWN",
+            "provenance": [],
+            "reaction_class_name": "acyl condensation (esterification/amidation)",
+            "reaction_type": "SATISFIED",
+            "workup_isolation": "UNKNOWN"
+          }
+        ],
+        "route_open_obligations": [
+          "conditions: no declared condition envelope (unknown)",
+          "process: no declared procedure evidence (unknown)",
+          "workup_isolation: no declared procedure evidence (unknown)"
+        ]
+      },
+      "readiness_tier": "REACTION_VOUCHED",
+      "replay_payload": [
+        {
+          "envelope": {
+            "applied_field": "",
+            "catalysts": [],
+            "duration": null,
+            "medium": "",
+            "pressure": null,
+            "procedure": null,
+            "process": null,
+            "provenance": "",
+            "source": null,
+            "status": "UNSUPPORTED",
+            "temperature": null
+          },
+          "products": [
+            {
+              "atoms": [
+                "C",
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  1,
+                  9,
+                  1
+                ],
+                [
+                  1,
+                  10,
+                  2
+                ],
+                [
+                  2,
+                  6,
+                  1
+                ],
+                [
+                  2,
+                  7,
+                  1
+                ],
+                [
+                  2,
+                  8,
+                  1
+                ],
+                [
+                  2,
+                  9,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  1,
+                  2,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reactants": [
+            {
+              "atoms": [
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  1,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  7,
+                  2
+                ],
+                [
+                  5,
+                  6,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reaction_center": {
+            "broken": [
+              [
+                "C",
+                "O",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "formed": [
+              [
+                "C",
+                "O",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "n_components": 1,
+            "schema_version": "smartchem/reaction-center-v1"
+          },
+          "reagents": [],
+          "schema_version": "smartchem.experiment/step-v1",
+          "target": {
+            "atoms": [
+              "C",
+              "C",
+              "C",
+              "H",
+              "H",
+              "H",
+              "H",
+              "H",
+              "H",
+              "O",
+              "O"
+            ],
+            "bonds": [
+              [
+                0,
+                1,
+                1
+              ],
+              [
+                0,
+                3,
+                1
+              ],
+              [
+                0,
+                4,
+                1
+              ],
+              [
+                0,
+                5,
+                1
+              ],
+              [
+                1,
+                9,
+                1
+              ],
+              [
+                1,
+                10,
+                2
+              ],
+              [
+                2,
+                6,
+                1
+              ],
+              [
+                2,
+                7,
+                1
+              ],
+              [
+                2,
+                8,
+                1
+              ],
+              [
+                2,
+                9,
+                1
+              ]
+            ],
+            "charge": 0,
+            "state": ""
+          }
+        }
+      ],
+      "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha5",
+      "selectivity_verdict": "UNKNOWN"
+    },
+    {
+      "capability_assessment": {
+        "class": "smartchem.capability.assess.CapabilityAssessment",
+        "fields": [
+          [
+            "schema_version",
+            {
+              "type": "str",
+              "value": "smartchem.capability/capability-assessment-v1alpha2"
+            }
+          ],
+          [
+            "profile_digest",
+            {
+              "type": "str",
+              "value": "8c527e0d526fc29d662c0de28ca11fdf28e86956dd8b20419b1e0f3a3a42feaf"
+            }
+          ],
+          [
+            "route_digest",
+            {
+              "type": "str",
+              "value": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217"
+            }
+          ],
+          [
+            "material",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "material: no declared stock inventory to check reactant (leaf input) CH2O2 (quantity UNKNOWN (1 unquantified use(s); demand is real and positive, size unknown); external route input at step 1 (consumed) (a reactant no EARLIER step produced) with no stoichiometric typed ProcedureMaterialUse of that step -- the identity is required (a real, positive demand), but no specification/phase/quantity is sourced, so those stay UNKNOWN (never assumed))"
+                      },
+                      {
+                        "type": "str",
+                        "value": "material: no declared stock inventory to check reactant (leaf input) CH4O (quantity UNKNOWN (2 unquantified use(s); demand is real and positive, size unknown); external route input at step 1 (consumed), step 2 (consumed) (a reactant no EARLIER step produced) with no stoichiometric typed ProcedureMaterialUse of that step -- the identity is required (a real, positive demand), but no specification/phase/quantity is sourced, so those stay UNKNOWN (never assumed))"
+                      },
+                      {
+                        "type": "str",
+                        "value": "material: step 1 has no ProcedureEvidence: its auxiliary/medium material demand is unread (no typed material uses to project)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "material: step 2 has no ProcedureEvidence: its auxiliary/medium material demand is unread (no typed material uses to project)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "material: a stated material demand has no typed representation -- UNKNOWN, never a pass (D16/D17)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "equipment",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "equipment: 2 sourced equipment demand(s) are untabled in the closed resolver or unread (a hardware op naming no apparatus, an applied field) and cannot be certified either way against any declared profile: step 1 has no ProcedureEvidence: its equipment demand is unread (D24.17), step 2 has no ProcedureEvidence: its equipment demand is unread (D24.17)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "equipment: no requirement was derived for this route"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "physical",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "physical: route peak temperature is undeclared; cannot certify it against the 473.15 K ceiling"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: route min temperature is undeclared; cannot certify it against the 273.15 K floor"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: route max pressure is undeclared; cannot certify it against the 1.5 atm ceiling"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: route min pressure is undeclared; cannot certify it against the 1 atm floor"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: step 1 has no ProcedureEvidence and no process peak temperature -- its HIGH temperature demand is unread (D14 iv)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: step 1 has no ProcedureEvidence -- its LOW temperature demand is unread (no whole-step minimum exists; D14 iv)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: step 2 has no ProcedureEvidence and no process peak temperature -- its HIGH temperature demand is unread (D14 iv)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: step 2 has no ProcedureEvidence -- its LOW temperature demand is unread (no whole-step minimum exists; D14 iv)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "physical: a stated temperature/pressure demand could not be read into the typed bounds -- UNKNOWN (D13)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "process",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "process: step 1: whole-step requirements do not explicitly include workup"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 1: elapsed_minutes is undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 1: attention is undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 1: agitation is undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 2: whole-step requirements do not explicitly include workup"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 2: elapsed_minutes is undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 2: attention is undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 2: agitation is undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 1 carries no process record -- its whole-step time/attention/agitation demand is unread"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: step 2 carries no process record -- its whole-step time/attention/agitation demand is unread"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: no bound declared on active time (max_active_minutes)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: no minimum operator check interval declared (min_check_interval_minutes) while a step's attention is periodic or undeclared"
+                      },
+                      {
+                        "type": "str",
+                        "value": "process: the whole-step process demand cannot be certified against the declared bench -- an uncovered step, an undeclared bench dimension or an unread stated demand is UNKNOWN, never a pass (D15)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "containment",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "BLOCKED"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "containment: the declared profile is missing required capability/ies: FUME_HOOD"
+                      },
+                      {
+                        "type": "str",
+                        "value": "containment: balanced species CH2O2 (step 1) carries sourced GHS H314, H302, H331 (formic acid) -- forces FUME_HOOD (inform, never neuter)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "containment: balanced species CH4O (step 1) carries sourced GHS H225, H301, H311, H331, H370 (methanol) -- forces FUME_HOOD (inform, never neuter)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "containment: balanced species C2H4O2 (step 1) -- no hazard record for this structure; its hazard status is UNKNOWN (not a safety clearance; CAPABILITY_FIT is not a safety cert)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "containment: balanced species C3H6O2 (step 2) -- no hazard record for this structure; its hazard status is UNKNOWN (not a safety clearance; CAPABILITY_FIT is not a safety cert)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "ventilation",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "NOT_APPLICABLE"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "ventilation: RESERVED -- declared but not assessed in 0.9; no sourced ventilation requirement; OUTDOOR never substitutes for containment"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "measurement",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "measurement: 2 sourced measurement demand(s) are untabled in the closed resolver or unread (a stated analytical verification with no VERIFY apparatus) and cannot be certified either way against any declared profile: step 1 has no ProcedureEvidence: its verification demand is unread (D24.17), step 2 has no ProcedureEvidence: its verification demand is unread (D24.17)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "measurement: no requirement was derived for this route"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "waste",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "waste: no requirement was derived for this route"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: byproduct H2O (fate=UNKNOWN) (water, empty GHS) -- benign species, untyped waste stream (phase/pH/co-residents unestablished); never AQUEOUS_NEUTRAL (F76)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: step 1 input CH2O2 has no typed procedure use -- any unreacted/excess residual's disposal routing is UNKNOWN (F77; no stoichiometry guessed)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: step 1 input CH4O has no typed procedure use -- any unreacted/excess residual's disposal routing is UNKNOWN (F77; no stoichiometry guessed)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: step 2 input C2H4O2 has no typed procedure use -- any unreacted/excess residual's disposal routing is UNKNOWN (F77; no stoichiometry guessed)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: one or more required waste streams have UNRESOLVED disposal routing, so the waste capability this route requires cannot be determined -- UNKNOWN, not a pass (F48/F49)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "procurement",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "NOT_APPLICABLE"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "procurement: no catalyst was declared for this route"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "attention_care",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "NOT_APPLICABLE"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "attention_care: the route's hazard-driven care demand is ATTENTION_ADVISED (informational; structurally separate from the process/attention capability axis)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "monetary",
+            {
+              "class": "smartchem.capability.assess.AxisResult",
+              "fields": [
+                [
+                  "status",
+                  {
+                    "class": "smartchem.capability.enums.CapabilityStatus",
+                    "type": "enum",
+                    "value": {
+                      "type": "str",
+                      "value": "UNKNOWN"
+                    }
+                  }
+                ],
+                [
+                  "reasons",
+                  {
+                    "items": [
+                      {
+                        "type": "str",
+                        "value": "monetary: route cash denominated per 'metric ton', budget per 'USD' -- an undeclared or mismatched denomination is incomparable, never compared by raw number (no production-quantity bridge)"
+                      }
+                    ],
+                    "type": "tuple"
+                  }
+                ]
+              ],
+              "type": "dataclass"
+            }
+          ],
+          [
+            "overall",
+            {
+              "class": "smartchem.capability.enums.CapabilityStatus",
+              "type": "enum",
+              "value": {
+                "type": "str",
+                "value": "BLOCKED"
+              }
+            }
+          ],
+          [
+            "overall_reasons",
+            {
+              "items": [
+                {
+                  "type": "str",
+                  "value": "overall: at least one required capability axis is BLOCKED"
+                }
+              ],
+              "type": "tuple"
+            }
+          ],
+          [
+            "readiness_tier",
+            {
+              "type": "str",
+              "value": "FORMAL_CANDIDATE"
+            }
+          ],
+          [
+            "readiness_digest",
+            {
+              "type": "str",
+              "value": "39e01de5815cdde48fc4fb81d801071972cca2fc6c4fbf8e32df812f6880446f"
+            }
+          ]
+        ],
+        "type": "dataclass"
+      },
+      "composability_verdict": "UNKNOWN",
+      "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
+      "equilibrium_verdict": "UNKNOWN",
+      "exclusions": [],
+      "feasibility_verdict": "UNKNOWN",
+      "fit_status": "UNKNOWN",
+      "gaps": [
+        "composability gap: UNKNOWN: no sourced stability data for C2H4O2; survival across the transition cannot be judged (inject its sourced thresholds to close this gap)"
+      ],
+      "kinetics_verdict": "UNKNOWN",
+      "process_requirements": [
+        null,
+        null
+      ],
+      "readiness": {
+        "per_step": [
+          {
+            "conditions": "UNKNOWN",
+            "formal_candidate": "SATISFIED",
+            "open_obligations": [
+              "conditions: no declared condition envelope (unknown)",
+              "process: no declared procedure evidence (unknown)",
+              "workup_isolation: no declared procedure evidence (unknown)"
+            ],
+            "process": "UNKNOWN",
+            "provenance": [],
+            "reaction_class_name": "acyl condensation (esterification/amidation)",
+            "reaction_type": "SATISFIED",
+            "workup_isolation": "UNKNOWN"
+          },
+          {
+            "conditions": "UNKNOWN",
+            "formal_candidate": "SATISFIED",
+            "open_obligations": [
+              "conditions: no declared condition envelope (unknown)",
+              "process: no declared procedure evidence (unknown)",
+              "reaction_type: not recognized by the production oracle",
+              "workup_isolation: no declared procedure evidence (unknown)"
+            ],
+            "process": "UNKNOWN",
+            "provenance": [],
+            "reaction_class_name": null,
+            "reaction_type": "UNSATISFIED",
+            "workup_isolation": "UNKNOWN"
+          }
+        ],
+        "route_open_obligations": [
+          "conditions: no declared condition envelope (unknown)",
+          "process: no declared procedure evidence (unknown)",
+          "reaction_type: not recognized by the production oracle",
+          "workup_isolation: no declared procedure evidence (unknown)"
+        ]
+      },
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "replay_payload": [
+        {
+          "envelope": {
+            "applied_field": "",
+            "catalysts": [],
+            "duration": null,
+            "medium": "",
+            "pressure": null,
+            "procedure": null,
+            "process": null,
+            "provenance": "",
+            "source": null,
+            "status": "UNSUPPORTED",
+            "temperature": null
+          },
+          "products": [
+            {
+              "atoms": [
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  0,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  5,
+                  1
+                ],
+                [
+                  1,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  7,
+                  2
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  1,
+                  2,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reactants": [
+            {
+              "atoms": [
+                "C",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  2
+                ],
+                [
+                  2,
+                  3,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reaction_center": {
+            "broken": [
+              [
+                "C",
+                "O",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "formed": [
+              [
+                "C",
+                "O",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "n_components": 1,
+            "schema_version": "smartchem/reaction-center-v1"
+          },
+          "reagents": [],
+          "schema_version": "smartchem.experiment/step-v1",
+          "target": {
+            "atoms": [
+              "C",
+              "C",
+              "H",
+              "H",
+              "H",
+              "H",
+              "O",
+              "O"
+            ],
+            "bonds": [
+              [
+                0,
+                2,
+                1
+              ],
+              [
+                0,
+                3,
+                1
+              ],
+              [
+                0,
+                4,
+                1
+              ],
+              [
+                0,
+                6,
+                1
+              ],
+              [
+                1,
+                5,
+                1
+              ],
+              [
+                1,
+                6,
+                1
+              ],
+              [
+                1,
+                7,
+                2
+              ]
+            ],
+            "charge": 0,
+            "state": ""
+          }
+        },
+        {
+          "envelope": {
+            "applied_field": "",
+            "catalysts": [],
+            "duration": null,
+            "medium": "",
+            "pressure": null,
+            "procedure": null,
+            "process": null,
+            "provenance": "",
+            "source": null,
+            "status": "UNSUPPORTED",
+            "temperature": null
+          },
+          "products": [
+            {
+              "atoms": [
+                "C",
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  1,
+                  9,
+                  1
+                ],
+                [
+                  1,
+                  10,
+                  2
+                ],
+                [
+                  2,
+                  6,
+                  1
+                ],
+                [
+                  2,
+                  7,
+                  1
+                ],
+                [
+                  2,
+                  8,
+                  1
+                ],
+                [
+                  2,
+                  9,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  1,
+                  2,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reactants": [
+            {
+              "atoms": [
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5,
+                  1
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            },
+            {
+              "atoms": [
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "O",
+                "O"
+              ],
+              "bonds": [
+                [
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  0,
+                  3,
+                  1
+                ],
+                [
+                  0,
+                  4,
+                  1
+                ],
+                [
+                  0,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  5,
+                  1
+                ],
+                [
+                  1,
+                  6,
+                  1
+                ],
+                [
+                  1,
+                  7,
+                  2
+                ]
+              ],
+              "charge": 0,
+              "state": ""
+            }
+          ],
+          "reaction_center": {
+            "broken": [
+              [
+                "C",
+                "H",
+                1
+              ],
+              [
+                "C",
+                "O",
+                1
+              ]
+            ],
+            "formed": [
+              [
+                "C",
+                "C",
+                1
+              ],
+              [
+                "H",
+                "O",
+                1
+              ]
+            ],
+            "n_components": 1,
+            "schema_version": "smartchem/reaction-center-v1"
+          },
+          "reagents": [],
+          "schema_version": "smartchem.experiment/step-v1",
+          "target": {
+            "atoms": [
+              "C",
+              "C",
+              "C",
+              "H",
+              "H",
+              "H",
+              "H",
+              "H",
+              "H",
+              "O",
+              "O"
+            ],
+            "bonds": [
+              [
+                0,
+                1,
+                1
+              ],
+              [
+                0,
+                3,
+                1
+              ],
+              [
+                0,
+                4,
+                1
+              ],
+              [
+                0,
+                5,
+                1
+              ],
+              [
+                1,
+                9,
+                1
+              ],
+              [
+                1,
+                10,
+                2
+              ],
+              [
+                2,
+                6,
+                1
+              ],
+              [
+                2,
+                7,
+                1
+              ],
+              [
+                2,
+                8,
+                1
+              ],
+              [
+                2,
+                9,
+                1
+              ]
+            ],
+            "charge": 0,
+            "state": ""
+          }
+        }
+      ],
+      "route_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha5",
+      "selectivity_verdict": "UNKNOWN"
+    }
+  ],
+  "request": {
+    "algebra_profile": "certified-route-v07",
+    "capability_profile": {
+      "class": "smartchem.capability.profile.CapabilityProfile",
+      "fields": [
+        [
+          "schema_version",
+          {
+            "type": "str",
+            "value": "smartchem.capability/capability-profile-v1alpha3"
+          }
+        ],
+        [
+          "profile_id",
+          {
+            "type": "str",
+            "value": "poor-man"
+          }
+        ],
+        [
+          "material_inventory",
+          {
+            "items": [],
+            "type": "tuple"
+          }
+        ],
+        [
+          "equipment",
+          {
+            "items": [
+              {
+                "class": "smartchem.capability.enums.EquipmentCapability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "CONTROLLED_HEATING"
+                }
+              },
+              {
+                "class": "smartchem.capability.enums.EquipmentCapability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "GRAVITY_FILTRATION"
+                }
+              },
+              {
+                "class": "smartchem.capability.enums.EquipmentCapability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "ICE_BATH"
+                }
+              },
+              {
+                "class": "smartchem.capability.enums.EquipmentCapability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "REACTION_VESSEL"
+                }
+              },
+              {
+                "class": "smartchem.capability.enums.EquipmentCapability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "THERMOMETER"
+                }
+              },
+              {
+                "class": "smartchem.capability.enums.EquipmentCapability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "WATER_BATH"
+                }
+              }
+            ],
+            "type": "frozenset"
+          }
+        ],
+        [
+          "physical_bounds",
+          {
+            "class": "smartchem.constraints.PhysicalBounds",
+            "fields": [
+              [
+                "schema_version",
+                {
+                  "type": "str",
+                  "value": "smartchem.constraints/physical-bounds-v1alpha2"
+                }
+              ],
+              [
+                "max_temperature_k",
+                {
+                  "type": "float",
+                  "value": 473.15
+                }
+              ],
+              [
+                "min_pressure_atm",
+                {
+                  "type": "float",
+                  "value": 1.0
+                }
+              ],
+              [
+                "max_pressure_atm",
+                {
+                  "type": "float",
+                  "value": 1.5
+                }
+              ],
+              [
+                "min_temperature_k",
+                {
+                  "type": "float",
+                  "value": 273.15
+                }
+              ]
+            ],
+            "type": "dataclass"
+          }
+        ],
+        [
+          "process_bounds",
+          {
+            "class": "smartchem.process_constraints.ProcessBounds",
+            "fields": [
+              [
+                "schema_version",
+                {
+                  "type": "str",
+                  "value": "smartchem.constraints/process-bounds-v1alpha1"
+                }
+              ],
+              [
+                "max_step_minutes",
+                {
+                  "type": "float",
+                  "value": 10080.0
+                }
+              ],
+              [
+                "max_total_minutes",
+                {
+                  "type": "float",
+                  "value": 20160.0
+                }
+              ],
+              [
+                "max_active_minutes",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "allowed_attention",
+                {
+                  "items": [
+                    {
+                      "class": "smartchem.process_constraints.Attention",
+                      "type": "enum",
+                      "value": {
+                        "type": "str",
+                        "value": "CONTINUOUS"
+                      }
+                    },
+                    {
+                      "class": "smartchem.process_constraints.Attention",
+                      "type": "enum",
+                      "value": {
+                        "type": "str",
+                        "value": "PASSIVE"
+                      }
+                    },
+                    {
+                      "class": "smartchem.process_constraints.Attention",
+                      "type": "enum",
+                      "value": {
+                        "type": "str",
+                        "value": "PERIODIC"
+                      }
+                    }
+                  ],
+                  "type": "tuple"
+                }
+              ],
+              [
+                "min_check_interval_minutes",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "allowed_agitation",
+                {
+                  "items": [
+                    {
+                      "class": "smartchem.process_constraints.Agitation",
+                      "type": "enum",
+                      "value": {
+                        "type": "str",
+                        "value": "CONTINUOUS"
+                      }
+                    },
+                    {
+                      "class": "smartchem.process_constraints.Agitation",
+                      "type": "enum",
+                      "value": {
+                        "type": "str",
+                        "value": "MANUAL"
+                      }
+                    },
+                    {
+                      "class": "smartchem.process_constraints.Agitation",
+                      "type": "enum",
+                      "value": {
+                        "type": "str",
+                        "value": "NONE"
+                      }
+                    },
+                    {
+                      "class": "smartchem.process_constraints.Agitation",
+                      "type": "enum",
+                      "value": {
+                        "type": "str",
+                        "value": "PERIODIC"
+                      }
+                    }
+                  ],
+                  "type": "tuple"
+                }
+              ],
+              [
+                "available_equipment",
+                {
+                  "type": "none"
+                }
+              ]
+            ],
+            "type": "dataclass"
+          }
+        ],
+        [
+          "containment",
+          {
+            "items": [],
+            "type": "frozenset"
+          }
+        ],
+        [
+          "ventilation",
+          {
+            "items": [
+              {
+                "class": "smartchem.capability.enums.VentilationCapability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "OUTDOOR"
+                }
+              }
+            ],
+            "type": "frozenset"
+          }
+        ],
+        [
+          "measurement",
+          {
+            "items": [
+              {
+                "class": "smartchem.capability.enums.MeasurementMethod",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "MASS"
+                }
+              },
+              {
+                "class": "smartchem.capability.enums.MeasurementMethod",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "MELTING_POINT"
+                }
+              }
+            ],
+            "type": "frozenset"
+          }
+        ],
+        [
+          "waste_handling",
+          {
+            "items": [
+              {
+                "class": "smartchem.capability.enums.WasteCapability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "AQUEOUS_NEUTRAL"
+                }
+              }
+            ],
+            "type": "frozenset"
+          }
+        ],
+        [
+          "procurement",
+          {
+            "items": [
+              {
+                "class": "smartchem.data.reagents.Availability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "grocery"
+                }
+              },
+              {
+                "class": "smartchem.data.reagents.Availability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "hardware"
+                }
+              },
+              {
+                "class": "smartchem.data.reagents.Availability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "pharmacy"
+                }
+              },
+              {
+                "class": "smartchem.data.reagents.Availability",
+                "type": "enum",
+                "value": {
+                  "type": "str",
+                  "value": "pool_garden"
+                }
+              }
+            ],
+            "type": "frozenset"
+          }
+        ],
+        [
+          "budget",
+          {
+            "class": "smartchem.experiment.affordability.CostVector",
+            "fields": [
+              [
+                "cash",
+                {
+                  "type": "float",
+                  "value": 200.0
+                }
+              ],
+              [
+                "cash_floor",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "access_difficulty",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "evidence_tier_rank",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "new_equipment",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "material_quantity",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "energy",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "labor_time",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "preprocessing",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "analytical",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "waste_disposal",
+                {
+                  "type": "none"
+                }
+              ],
+              [
+                "hard_blockers",
+                {
+                  "items": [],
+                  "type": "tuple"
+                }
+              ],
+              [
+                "fiction_blockers",
+                {
+                  "items": [],
+                  "type": "tuple"
+                }
+              ],
+              [
+                "currency",
+                {
+                  "type": "str",
+                  "value": "USD"
+                }
+              ],
+              [
+                "unit",
+                {
+                  "type": "str",
+                  "value": "USD"
+                }
+              ],
+              [
+                "region",
+                {
+                  "type": "str",
+                  "value": ""
+                }
+              ]
+            ],
+            "type": "dataclass"
+          }
+        ],
+        [
+          "provenance",
+          {
+            "type": "str",
+            "value": "smartchem.capability.presets.poor_man() -- a household/hardware-store bench preset (D6): low-resource equipment, no containment, outdoor ventilation, kitchen-adjacent procurement, MASS + MELTING_POINT only (NO IR), real finite T<=473.15 K ceiling, a T>=273.15 K ice-bath floor (D14), an atmospheric P>=1 atm floor (no vacuum equipment), a declared cash budget"
+          }
+        ],
+        [
+          "no_limit_dimensions",
+          {
+            "items": [],
+            "type": "frozenset"
+          }
+        ]
+      ],
+      "type": "dataclass"
+    },
+    "capability_profile_origin": "poor-man",
+    "constraints": {
+      "max_pressure_atm": null,
+      "max_temperature_k": null,
+      "min_pressure_atm": null,
+      "min_temperature_k": null,
+      "process": {
+        "allowed_agitation": null,
+        "allowed_attention": null,
+        "available_equipment": null,
+        "max_active_minutes": null,
+        "max_step_minutes": null,
+        "max_total_minutes": null,
+        "min_check_interval_minutes": null,
+        "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
+      },
+      "schema_version": "smartchem.constraints/physical-bounds-v1alpha2"
+    },
+    "evidence_provider_selection": {
+      "selection_id": "DEFAULT_OFFLINE"
+    },
+    "helper_reagents": [
+      "water"
+    ],
+    "identity_policy": {
+      "match_layer": "CONSTITUTION",
+      "policy_id": "DEFAULT"
+    },
+    "input_kind": "AUTO",
+    "normalized_identity": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
+    "operation": "RECOMPILE",
+    "origins": [
+      [
+        "algebra_profile",
+        "DEFAULT"
+      ],
+      [
+        "commodities_enabled",
+        "DEFAULT"
+      ],
+      [
+        "constraints",
+        "DEFAULT"
+      ],
+      [
+        "cut_budget",
+        "DEFAULT"
+      ],
+      [
+        "evidence_provider_selection",
+        "DEFAULT"
+      ],
+      [
+        "helper_reagents",
+        "DEFAULT"
+      ],
+      [
+        "identity_policy",
+        "DEFAULT"
+      ],
+      [
+        "input_kind",
+        "DEFAULT"
+      ],
+      [
+        "max_depth",
+        "EXPLICIT"
+      ],
+      [
+        "max_routes",
+        "DEFAULT"
+      ],
+      [
+        "output_policy",
+        "DEFAULT"
+      ],
+      [
+        "ranking_policy",
+        "DEFAULT"
+      ],
+      [
+        "stock_materials",
+        "DEFAULT"
+      ],
+      [
+        "transform_grammar",
+        "DEFAULT"
+      ]
+    ],
+    "output_policy": {
+      "quiet": false,
+      "render_mode": "HUMAN"
+    },
+    "ranking_policy": {
+      "policy_id": "DEFAULT_PRECEDENCE_V1"
+    },
+    "schema_version": "smartchem.service/compilation-request-v1alpha7",
+    "search_bounds": [
+      [
+        "cut_budget",
+        20000
+      ],
+      [
+        "max_depth",
+        2
+      ],
+      [
+        "max_results",
+        100
+      ]
+    ],
+    "stock_materials": [],
+    "target_input": "smiles:CC(=O)OC",
+    "terminal_policy": {
+      "commodities_enabled": true,
+      "formula_inventory": [],
+      "match_mode": "STRUCTURE"
+    },
+    "transform_grammar": "CAPPED_SCISSION_LINEAR"
+  },
+  "result_digest": "82f03daf8314239a40ccc76e1519a900b20d369586586d0579a98b6e5fa06682",
+  "schema_version": "smartchem.service/compilation-response-v1alpha17",
+  "search_space_status": "COMPLETE_CANDIDATE_SET",
+  "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+  "transport_mode": "CANONICAL_VERIFIED"
+}

@@ -447,6 +447,16 @@ _REGISTERED: tuple[NamedStructure, ...] = (
         synonyms=("aqua fortis",),
         provenance="std mineral acid; the nitrating agent; SMILES O[N+](=O)[O-]",
     ),
+    # Sulfuric acid: the H314 hazard record above had no registered isomer to pin to, so the coherence
+    # test's "one name -> one structure" suture tore. Tetrahedral S -- two S=O, two S-O-H -- the exact
+    # SMILES the isopentyl/aspirin procedure literals already resolve _H2SO4 from; formula canonicalizes
+    # alphabetically to H2O4S, matching the hazard record's key. The acid catalyst finally has a face.
+    NamedStructure(
+        "sulfuric acid", parse_smiles("OS(=O)(=O)O"), "H2O4S", iupac="sulfuric acid",
+        cas="7664-93-9", synonyms=("oil of vitriol", "dihydrogen sulfate"),
+        provenance="std mineral acid; the Fischer/acetylation catalyst and its H314 hazard's registered "
+                   "isomer; SMILES OS(=O)(=O)O",
+    ),
     # --- ROUND 9 (PROCESS-FIT): benign-reaction targets/precursors for sourced whole-process
     #     records. Structures parsed from SMILES (G1); each verified canonical-identity-invariant
     #     AND Kekulé-stable (the two aromatics resolve to one stable canonical form -- the

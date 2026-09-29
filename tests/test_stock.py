@@ -156,6 +156,23 @@ class TestFullSchemaFields:
         with pytest.raises(ValueError, match="unit"):
             StockQuantity.of("5", "  ")
 
+    def test_stock_quantity_uses_the_one_strict_exact_grammar(self):
+        # Round V D1: float()/epsilon are banned from quantity parsing -- these all parsed under float().
+        for bad in ("1/3", "1_000", " 5 ", "5 ", "+5", "0.0", "1e999"):
+            with pytest.raises(ValueError):
+                StockQuantity.of(bad, "mL")
+        with pytest.raises(TypeError, match="float"):
+            StockQuantity.of(0.1, "mL")  # a float's spelling is not the source's
+
+    def test_stock_quantity_exact_is_a_fraction(self):
+        from fractions import Fraction
+
+        assert StockQuantity.of("20.00004", "mL").exact() == Fraction(2000004, 100000)
+        assert StockQuantity.of("20", "mL").exact() < StockQuantity.of("20.00004", "mL").exact()
+        assert StockQuantity.of(500, "mL").exact() == 500
+        assert StockQuantity.of("1e-12", "mL").exact() == Fraction(1, 10 ** 12)
+
+
     def test_cost_observation_cannot_be_built_without_being_dated_and_sourced(self):
         # section 10.4: prices MUST be dated and sourced; an unpriced material uses cost_observation=None.
         for missing in ("amount", "currency", "unit", "observed_date", "source"):
@@ -341,3 +358,283 @@ class TestCanonicalStructureKeying:
             (MaterialComponent.of_molecule(parse_smiles("c1ccc2ccccc2c1"), "active", 0.99, 1.0),), Phase.SOLID, "GC",
         )
         assert naph.satisfies(parse_smiles("C1=CC=C2C=CC=CC2=C1"), min_assay=0.9) is FitnessVerdict.SATISFIES
+
+
+class TestRoundVMaterialFields:
+    def test_schemas_are_current_and_older_ids_refused(self):
+        """component v1alpha2 (Round V D8); stock-material v1alpha3 (Round V X-high D18: +phase_evidence). Every older
+        id is refused -- none was ever released on a wire, so there is nothing to migrate."""
+        from smartchem.experiment.stock import MATERIAL_COMPONENT_SCHEMA
+
+        assert STOCK_MATERIAL_SCHEMA.endswith("stock-material-v1alpha3")
+        assert MATERIAL_COMPONENT_SCHEMA.endswith("material-component-v1alpha2")
+        with pytest.raises(ValueError, match="schema_version"):
+            MaterialComponent("smartchem.experiment/material-component-v1alpha1", "x", "active", 0.0, 1.0)
+        for stale in ("smartchem.experiment/stock-material-v1alpha1", "smartchem.experiment/stock-material-v1alpha2"):
+            with pytest.raises(ValueError, match="schema_version"):
+                StockMaterial(stale, "m", "m", (MaterialComponent.unknown_fraction("x", "active"),), Phase.LIQUID, "p")
+
+    def test_basis_defaults_unknown_and_evidence_defaults_none(self):
+        from smartchem.material_spec import ConcentrationBasis, EvidenceKind
+
+        c = MaterialComponent.known("acetic acid", "active", 0.99, 1.0)
+        assert c.basis is ConcentrationBasis.UNKNOWN and c.evidence is None
+        view = _glacial().spec_view("acetic acid")
+        assert view.interval_evidence is EvidenceKind.UNKNOWN and view.basis is ConcentrationBasis.UNKNOWN
+
+    def test_evidence_must_match_the_fraction_slots_exactly(self):
+        from dataclasses import replace
+
+        from smartchem.data.derived_evidence import DerivationKernel, InputUnit, IntervalEvidence, TypedInput
+        from smartchem.material_spec import ConcentrationBasis, EvidenceKind
+
+        ev = IntervalEvidence.build(
+            kernel=DerivationKernel.USER_DECLARED_V1, basis=ConcentrationBasis.MASS_FRACTION,
+            inputs=(TypedInput("low", "0.3", InputUnit.FRACTION, EvidenceKind.USER_DECLARED),
+                    TypedInput("high", "0.7", InputUnit.FRACTION, EvidenceKind.USER_DECLARED)),
+            domain_of_validity="my own bottle")
+        good = MaterialComponent.evidenced("acetic acid", "active", ev)
+        assert (good.min_fraction, good.max_fraction) == (0.3, 0.7)
+        assert good.basis is ConcentrationBasis.MASS_FRACTION
+        # 0.1 + 0.2 is NOT 0.3 in binary float; the exact comparison refuses the drifted slot
+        with pytest.raises(ValueError, match="does not equal"):
+            replace(good, min_fraction=0.1 + 0.2)
+        with pytest.raises(TypeError, match="IntervalEvidence"):
+            replace(good, evidence="SOURCE_QUOTED")
+
+    def test_minimum_fraction_sum_is_exact(self):
+        # 0.1 + 0.2 + 0.7 sums to 1.0000000000000002 in float but exactly 1 through the shortest repr
+        StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", (
+            MaterialComponent.known("a", "x", 0.1, 0.1), MaterialComponent.known("b", "x", 0.2, 0.2),
+            MaterialComponent.known("c", "x", 0.7, 0.7)), Phase.LIQUID, "p")
+        with pytest.raises(ValueError, match="sum above"):
+            StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", (
+                MaterialComponent.known("a", "x", 0.5, 0.5),
+                MaterialComponent.known("b", "x", 0.500000001, 0.6)), Phase.LIQUID, "p")
+
+
+class TestPhaseEvidence:
+    """Round V X-high (barrier D18, I3): the bottle phase is an EVIDENCE-GRADED claim. Round V graded composition and
+    every material state, then left phase an ungraded scalar that certified FIT on a match and BLOCKED on a mismatch
+    whoever asserted it -- the F71 sin. The capability compiler now reads only ``phase_claim``."""
+
+    @staticmethod
+    def _bottle(phase=Phase.LIQUID, **kw):
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", (MaterialComponent.known("a", "active", 0, 1),),
+                             phase, "src", **kw)
+
+    def test_schema_is_v1alpha3(self):
+        assert STOCK_MATERIAL_SCHEMA == "smartchem.experiment/stock-material-v1alpha3"
+        with pytest.raises(ValueError, match="schema_version"):
+            StockMaterial("smartchem.experiment/stock-material-v1alpha2", "m", "m",
+                          (MaterialComponent.known("a", "active", 0, 1),), Phase.LIQUID, "src")
+
+    def test_default_phase_evidence_is_unknown_and_certifies_nothing(self):
+        from smartchem.material_spec import (EvidenceKind, PhaseClaim, SpecVerdict, compare_phase)
+        bottle = self._bottle()
+        assert bottle.phase_evidence is EvidenceKind.UNKNOWN
+        assert bottle.phase_claim == PhaseClaim(Phase.LIQUID, EvidenceKind.UNKNOWN)
+        sourced = PhaseClaim(Phase.LIQUID, EvidenceKind.SOURCE_QUOTED)
+        # an ungraded bottle phase can neither discharge a sourced phase demand ...
+        assert compare_phase(sourced, bottle.phase_claim)[0] is SpecVerdict.UNDETERMINED
+        # ... nor refute one
+        assert compare_phase(PhaseClaim(Phase.SOLID, EvidenceKind.SOURCE_QUOTED), bottle.phase_claim)[0] \
+            is SpecVerdict.UNDETERMINED
+
+    def test_a_user_declared_phase_certifies_against_a_sourced_demand(self):
+        from smartchem.material_spec import EvidenceKind, PhaseClaim, SpecVerdict, compare_phase
+        bottle = self._bottle(phase_evidence=EvidenceKind.USER_DECLARED)
+        assert compare_phase(PhaseClaim(Phase.LIQUID, EvidenceKind.SOURCE_QUOTED), bottle.phase_claim)[0] \
+            is SpecVerdict.SATISFIES
+        assert compare_phase(PhaseClaim(Phase.SOLID, EvidenceKind.SOURCE_QUOTED), bottle.phase_claim)[0] \
+            is SpecVerdict.VIOLATES
+
+    def test_an_unknown_phase_is_no_claim_and_carries_no_evidence(self):
+        from smartchem.material_spec import EvidenceKind
+        assert self._bottle(Phase.UNKNOWN).phase_claim is None
+        with pytest.raises(ValueError, match="phase UNKNOWN cannot carry"):
+            self._bottle(Phase.UNKNOWN, phase_evidence=EvidenceKind.USER_DECLARED)
+
+    def test_phase_evidence_must_be_an_evidence_kind(self):
+        with pytest.raises(TypeError, match="phase_evidence"):
+            self._bottle(phase_evidence="USER_DECLARED")
+
+    def test_phase_evidence_moves_the_digest_and_shows_in_render(self):
+        from smartchem.material_spec import EvidenceKind
+        ungraded, declared = self._bottle(), self._bottle(phase_evidence=EvidenceKind.USER_DECLARED)
+        assert ungraded.digest != declared.digest
+        assert "phase evidence USER_DECLARED" in declared.render()
+        assert "phase evidence UNKNOWN" in ungraded.render()
+
+    def test_the_commodity_bridge_stays_phase_unknown_evidence_unknown(self):
+        from smartchem.data.reagents import COMMODITY_REAGENTS
+        from smartchem.material_spec import EvidenceKind
+        mat = stock_material_from_commodity(COMMODITY_REAGENTS[0])
+        assert mat.phase is Phase.UNKNOWN and mat.phase_evidence is EvidenceKind.UNKNOWN and mat.phase_claim is None
+
+    def test_the_legacy_assay_helpers_ignore_phase_evidence(self):
+        from smartchem.material_spec import EvidenceKind
+        a, b = self._bottle(), self._bottle(phase_evidence=EvidenceKind.USER_DECLARED)
+        assert a.satisfies("a", min_assay=0.5) is b.satisfies("a", min_assay=0.5)
+        assert a.satisfies_band("a", low=0.1, high=0.9) is b.satisfies_band("a", low=0.1, high=0.9)
+
+
+class TestD24NeatContradictedByAPositiveDiluent:
+    """Round V X-high D24.5 (Wave-C' C2): a certified NEAT ("undiluted") claim on the matched component was never
+    checked against the SAME bottle's certified composition -- 50 % w/w acid beside 50 % w/w water, both
+    USER_DECLARED, still read "NEAT: positively declared by the stock". The bottle's own declaration of a positive
+    diluent (another component with certified lower bound > 0, ANY basis) now DROPS the contradicted NEAT claim, so the
+    comparison reads UNDETERMINED. No numeric purity threshold is introduced."""
+
+    @staticmethod
+    def _ev(lo, hi, basis=None):
+        from smartchem.data.derived_evidence import DerivationKernel, InputUnit, IntervalEvidence, TypedInput
+        from smartchem.material_spec import ConcentrationBasis, EvidenceKind
+
+        return IntervalEvidence.build(
+            kernel=DerivationKernel.USER_DECLARED_V1, basis=basis or ConcentrationBasis.MASS_FRACTION,
+            inputs=(TypedInput("low", lo, InputUnit.FRACTION, EvidenceKind.USER_DECLARED),
+                    TypedInput("high", hi, InputUnit.FRACTION, EvidenceKind.USER_DECLARED)),
+            domain_of_validity="my own bottle")
+
+    @staticmethod
+    def _neat():
+        from smartchem.material_spec import DilutionState, EvidenceKind, StateClaim
+        return (StateClaim(DilutionState.NEAT, EvidenceKind.USER_DECLARED, "label says neat"),)
+
+    def _bottle(self, *components):
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", components, Phase.LIQUID, "src")
+
+    @staticmethod
+    def _neat_verdict(view):
+        from smartchem.material_spec import (
+            DilutionState, EvidenceKind, MaterialSpecification, StateClaim, compare_specification)
+        spec = MaterialSpecification(states=(StateClaim(DilutionState.NEAT, EvidenceKind.SOURCE_QUOTED),))
+        return compare_specification(spec, view)[0]
+
+    def test_a_certified_positive_diluent_drops_the_neat_claim_c2(self):
+        from smartchem.material_spec import SpecVerdict
+
+        bottle = self._bottle(
+            MaterialComponent.evidenced("acetic acid", "active", self._ev("0.5", "0.5"), states=self._neat()),
+            MaterialComponent.evidenced("water", "diluent", self._ev("0.5", "0.5")))
+        view = bottle.spec_view("acetic acid")
+        assert view.states == ()
+        assert self._neat_verdict(view) is SpecVerdict.UNDETERMINED
+
+    def test_a_non_fraction_basis_diluent_also_contradicts_neat(self):
+        """0.3 g/mL NaCl (CERTIFIED) beside a 'neat' water component: a positive solute on a mass-per-volume basis is as
+        much a diluent as a w/w one. With water at [0.9, 1] the bottle is constructible and the NEAT claim is dropped
+        (C2); at water [1, 1] the same bottle is refused outright (D25.2: a whole-material lower bound leaves no room for
+        any positive second species on any basis)."""
+        from smartchem.material_spec import ConcentrationBasis, SpecVerdict
+
+        salt = MaterialComponent.evidenced("sodium chloride", "solute",
+                                           self._ev("0.3", "0.3", ConcentrationBasis.MASS_PER_VOLUME))
+        bottle = self._bottle(
+            MaterialComponent.evidenced("water", "solvent", self._ev("0.9", "1"), states=self._neat()), salt)
+        assert self._neat_verdict(bottle.spec_view("water")) is SpecVerdict.UNDETERMINED
+        with pytest.raises(ValueError, match="D25.2"):
+            self._bottle(MaterialComponent.evidenced("water", "solvent", self._ev("1", "1"), states=self._neat()), salt)
+
+    def test_a_declared_impurity_with_lower_bound_zero_keeps_neat(self):
+        """Commercial glacial acid (99.7 %, water 0-0.3 %) stays NEAT: an impurity that MAY be absent is no
+        positive diluent -- the rule adds no purity threshold."""
+        from smartchem.material_spec import SpecVerdict
+
+        bottle = self._bottle(
+            MaterialComponent.evidenced("acetic acid", "active", self._ev("0.997", "1"), states=self._neat()),
+            MaterialComponent.evidenced("water", "impurity", self._ev("0", "0.003")))
+        view = bottle.spec_view("acetic acid")
+        assert [c.state.value for c in view.states] == ["NEAT"]
+        assert self._neat_verdict(view) is SpecVerdict.SATISFIES
+
+    def test_an_uncertified_diluent_cannot_refute_either(self):
+        """A bare (evidence-less, UNKNOWN-strength) diluent declaration can neither certify nor refute (F71): only a
+        CERTIFIED positive lower bound drops the claim. (It cannot mint a FIT either -- a NEAT claim never makes a
+        draw commensurable on its own, D24.5 in the capability fold.)"""
+        bottle = self._bottle(
+            MaterialComponent.evidenced("acetic acid", "active", self._ev("0.5", "0.5"), states=self._neat()),
+            MaterialComponent.known("water", "diluent", 0.5, 0.5))
+        assert [c.state.value for c in bottle.spec_view("acetic acid").states] == ["NEAT"]
+
+    def test_only_neat_is_dropped_other_state_families_are_untouched(self):
+        from smartchem.material_spec import EvidenceKind, SaturationState, StateClaim
+
+        sat = StateClaim(SaturationState.SATURATED, EvidenceKind.USER_DECLARED, "sat")
+        bottle = self._bottle(
+            MaterialComponent.evidenced("sodium chloride", "solute", self._ev("0.26", "0.27"), states=(sat,)),
+            MaterialComponent.evidenced("water", "solvent", self._ev("0.73", "0.74")))
+        assert bottle.spec_view("sodium chloride").states == (sat,)
+
+    def test_no_curated_library_bottle_moves(self):
+        """Every library NEAT bottle is single-component (no other component can be a positive diluent), so no
+        fixture verdict moves under D24.5; the glacial bottle still presents its NEAT claim."""
+        from smartchem.data import material_library as ml
+        from smartchem.identity_parse import InputKind, resolve_target
+        from smartchem.material_spec import DilutionState
+
+        neat_bottles = [b for b in ml.isopentyl_fully_declared_inventory()
+                        if any(s.state is DilutionState.NEAT for c in b.components for s in c.states)]
+        assert neat_bottles and all(len(b.components) == 1 for b in neat_bottles)
+        acetic = resolve_target("acetic acid", InputKind.NAME).canonical()
+        glacial = next(b for b in neat_bottles if b.material_id == "glacial-acetic-acid-reagent-grade")
+        assert [c.state for c in glacial.spec_view(acetic).states] == [DilutionState.NEAT]
+
+
+class TestD25WholeBottleContradiction:
+    """Round V X-high D25.2 (Wave-C'' NEW-2): C1's contradiction survived on the COMPOSITION path -- acetic acid [1, 1]
+    w/w (USER_DECLARED) beside 0.3 g/mL NaCl satisfied a >= 0.99 w/w demand, because the K3 feasibility sum skips
+    non-fraction bases and only the pure witness read the other components. The one basis-free PROVABLE contradiction
+    -- a species whose mass (or volume) fraction lower bounds already account for the WHOLE material beside any other
+    species at a positive amount on ANY basis -- is now refused at construction. No density engine, no threshold."""
+
+    _ev = staticmethod(TestD24NeatContradictedByAPositiveDiluent._ev)
+
+    def _bottle(self, *components):
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", components, Phase.LIQUID, "src")
+
+    def test_the_new2_bottle_is_refused_on_every_non_fraction_basis(self):
+        from smartchem.experiment.stock import MATERIAL_COMPONENT_SCHEMA
+        from smartchem.material_spec import ConcentrationBasis
+
+        for basis, value in ((ConcentrationBasis.MASS_PER_VOLUME, 0.3), (ConcentrationBasis.MOLAR, 6.0)):
+            with pytest.raises(ValueError, match="D25.2"):
+                self._bottle(MaterialComponent.evidenced("acetic acid", "active", self._ev("1", "1")),
+                             MaterialComponent(MATERIAL_COMPONENT_SCHEMA, "sodium chloride", "solute", value, value,
+                                               basis))
+
+    def test_a_split_whole_is_refused_too(self):
+        """Two components of the SAME species summing to lower bound 1 still account for the whole material."""
+        from smartchem.material_spec import ConcentrationBasis
+
+        with pytest.raises(ValueError, match="D25.2"):
+            self._bottle(MaterialComponent.evidenced("acetic acid", "a", self._ev("0.5", "0.5")),
+                         MaterialComponent.evidenced("acetic acid", "b", self._ev("0.5", "0.5")),
+                         MaterialComponent.evidenced("sodium chloride", "solute",
+                                                     self._ev("0.3", "0.3", ConcentrationBasis.MASS_PER_VOLUME)))
+
+    def test_what_is_not_provably_contradictory_still_constructs(self):
+        """[0.99, 1] beside a positive g/mL solute is NOT provably contradictory without a density (the rule adds no
+        engine), and an impurity at lower bound 0 never contradicts."""
+        from smartchem.material_spec import ConcentrationBasis
+
+        salt = MaterialComponent.evidenced("sodium chloride", "solute",
+                                           self._ev("0.3", "0.3", ConcentrationBasis.MASS_PER_VOLUME))
+        self._bottle(MaterialComponent.evidenced("acetic acid", "active", self._ev("0.99", "1")), salt)
+        self._bottle(MaterialComponent.evidenced("acetic acid", "active", self._ev("1", "1")),
+                     MaterialComponent.evidenced("water", "impurity", self._ev("0", "0.003")))
+
+    def test_no_curated_library_bottle_trips_the_rule(self):
+        import inspect
+
+        from smartchem.data import material_library as ml
+
+        built = 0
+        for name in ml.__all__:
+            fn = getattr(ml, name)
+            if callable(fn) and not any(p.default is inspect.Parameter.empty
+                                        for p in inspect.signature(fn).parameters.values()):
+                fn()
+                built += 1
+        assert built >= 9

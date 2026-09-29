@@ -51,6 +51,8 @@ _GOLDEN_CASES = {
     "recompile_invalid.json": ["recompile", "not-a-real-name-zzz", "--json"],
     "decompile_paracetamol.json": ["decompile", "C8H9NO2", "--json"],
     "decompile_smiles_paracetamol.json": ["decompile", "CC(=O)Nc1ccc(O)cc1", "--smiles", "--json"],
+    "recompile_capability_poor_man.json": ["recompile", "smiles:CC(=O)OC", "--max-depth", "2",
+                                           "--capability-profile", "poor-man", "--json"],
 }
 
 
@@ -99,8 +101,17 @@ class TestSchemaDescriptor:
         # v1alpha18 (descriptor, a genuine shape change) / v1alpha15 (response): v0.8 Round II D5 canonical transport
         # adds a top-level ``transport_mode`` field (folded into result_digest) and discloses the ``replay_payload``
         # now shipped by default; the digest-covered ConditionEnvelope also gained a ``procedure`` field this round.
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha18"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha15"
+        # v1alpha19 (descriptor) / v1alpha16 (response) / v1alpha6 (request): 0.9 RC Round V D11 -- the capability
+        # fields Round III added without a bump (request capability_profile/_origin, response
+        # capability_question_digest, summary capability_assessment, replay material_uses/specification) are now
+        # versioned, and the descriptor gains ``accepted_legacy_schema_versions`` (the explicit v0.8 whitelist).
+        # v1alpha20 (descriptor) / v1alpha17 (response) / v1alpha7 (request): 0.9 RC Round V X-high (D14/D18/D20/D22)
+        # -- the constraints box carries the temperature floor (physical-bounds-v1alpha2), the replayed procedure-
+        # material phase is an evidence-graded PhaseClaim, the display origin is content-bound, the consumer can pin
+        # the capability question, and the legacy whitelist names the released DAG-summary / physical-bounds ids.
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha20"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha17"
+        assert schema["request_schema_version"] == "smartchem.service/compilation-request-v1alpha7"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):
         # the descriptor's field names MUST match what response_to_payload actually emits, at every level, so the
@@ -261,9 +272,9 @@ class TestHumanAndJsonAgree:
             payload["compilation_ir"]["search_receipt"]
         ).digest
         assert list(fields["candidate_ids"]) == [c["candidate_digest"] for c in payload["compilation_ir"]["candidates"]]
-        # v0.8 Round II (D5): the wire result_digest binds the declared transport_mode, so the bare semantic digest the
-        # projection reports is recoverable through the same fold (default canonical wire).
-        from smartchem.service import _transport_bound_result_digest
+        # v0.8 Round II (D5) + X-high D27.2: the wire result_digest binds the declared transport_mode and the whole
+        # payload body, so the bare semantic digest the projection reports is recoverable through the same fold.
+        from smartchem.service import _payload_body_digest, _transport_bound_result_digest
         assert payload["result_digest"] == _transport_bound_result_digest(
-            fields["result_digest"], payload["transport_mode"]
+            fields["result_digest"], payload["transport_mode"], _payload_body_digest(payload)
         )

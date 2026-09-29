@@ -15,11 +15,10 @@ module layout.  Six subcommands, each a thin wrapper over a built engine:
                              ``CompilationRequest`` and runs it through :func:`smartchem.service.run_compilation`,
                              yielding the typed response, ``--json``/``--emit-request`` views, and the section
                              14.4 exit codes from a single service authority.
-* ``compile TARGET``      -- [DEPRECATED alias of ``recompile``, one cycle] the synthesis FRONT DOOR: a bounded,
-                             bucket-terminated, ranked & graded route dossier
-                             (``smartchem.experiment.compile_synthesis``).  It now builds the SAME typed request
-                             as ``recompile`` (no divergent defaults), so ``compile ... --emit-request`` and
-                             ``recompile ... --emit-request`` are byte-identical.
+* ``compile TARGET``      -- [DEPRECATED alias of ``recompile``, one cycle] builds the SAME typed request as
+                             ``recompile`` (no divergent defaults) and now RUNS through the same canonical
+                             service/render seam too (F52), so ``compile``'s human, ``--json`` and
+                             ``--emit-request`` views are byte-identical to ``recompile``'s.
 * ``synthesize TARGET``   -- [DEPRECATED alias, one cycle] the retrosynthesis route engine with the download-and-go
                              data levers (delegates to ``python -m smartchem.experiment``).  Its full uptake into
                              the typed request (its --max-temp/--max-pressure constraints and --offline provider
@@ -211,6 +210,9 @@ def _add_recompile_flags(p) -> None:
     p.add_argument("--max-temp", type=float, default=None, metavar="K",
                    help="section-11 bench temperature ceiling in K. Part of the request identity AND APPLIED: routes "
                         "are ranked against the bench, and a route needing a hotter step is EXCLUDED (CLI-CAN-02)")
+    p.add_argument("--min-temp", type=float, default=None, metavar="K",
+                   help="section-11 bench temperature FLOOR in K (the coldest the bench can reach). APPLIED to route "
+                        "ranking (see --max-temp): a route needing a colder step is EXCLUDED; must not exceed --max-temp")
     p.add_argument("--max-pressure", type=float, default=None, metavar="ATM",
                    help="section-11 bench pressure ceiling in atm. APPLIED to route ranking (see --max-temp): a route "
                         "needing higher pressure is EXCLUDED")
@@ -239,6 +241,17 @@ def _add_recompile_flags(p) -> None:
             f"the transform-algebra profile to search under (default: {DEFAULT_ROUTE_ALGEBRA_PROFILE}, the certified "
             "multi-family route algebra). 'legacy-capped-v1' reproduces the pre-0.7 capped-scission-only behaviour; "
             "the exact algebra is bound into the request digest, receipts and IR"
+        ),
+    )
+    from .capability import CAPABILITY_PROFILE_PRESETS
+    p.add_argument(
+        "--capability-profile", dest="capability_profile", choices=sorted(CAPABILITY_PROFILE_PRESETS), default=None,
+        metavar="PROFILE",
+        help=(
+            "declare a bench (0.9 capability compiler) and project each ranked route through it: 'research-lab' or "
+            "'poor-man'. Resolved ONCE into the request (replay never re-resolves); the SAME chemistry search runs "
+            "regardless -- capability is a projection, absent from the search identity. Omitted => no capability "
+            "question is asked and NO bench is assumed. CAPABILITY_FIT is a profile-fit claim, NOT a safety certificate"
         ),
     )
     p.add_argument("--json", action="store_true",
@@ -297,10 +310,12 @@ def _recompile_request_from_args(args):
         cut_budget=args.cut_budget,
         match_layer=MatchLayer[args.match_layer.upper()] if args.match_layer else None,
         max_temperature_k=args.max_temp,
+        min_temperature_k=getattr(args, "min_temp", None),
         min_pressure_atm=args.min_pressure,
         max_pressure_atm=args.max_pressure,
         process=_process_bounds_from_args(args),
         algebra_profile=getattr(args, "algebra_profile", None),
+        capability_profile=getattr(args, "capability_profile", None),
     )
 
 
@@ -388,37 +403,25 @@ def _render_recompile_response(response, *, quiet: bool) -> str:
     # same facts the --json ranked_route_dossiers do (CLI-JSON-01 agreement).  Shown when not --quiet, like candidates.
     if not quiet and response.ranked_route_dossiers:
         lines.append("  ranked routes (best first; section-11 bench fit):")
-        from .experiment.readiness import (
-            CONDITIONS_SUPPORTED,
-            FORMAL_CANDIDATE,
-            PROCESS_SPECIFIED,
-            REACTION_VOUCHED,
-        )
+        from .service import readiness_tier_line, render_capability_lines
         for i, r in enumerate(response.ranked_route_dossiers[:20], 1):
             lines.append(f"    {i}. [{r.fit_status}/{r.readiness_tier}] {r.equation}  #{r.route_digest[:12]}")
             # v0.8 Real Route Dossiers: the human render explains every readiness tier, so a chemist skimming it
             # never mistakes a bare structural candidate (or a recognized-but-unsourced one) for something they
             # could run -- and, at the top rung, never mistakes "the literature procedure is specified" (an 0.8
-            # claim about the SOURCE) for "your bench can run it" (a 0.9 capability question).  This mirrors the
-            # RouteDossier.render() text exactly (human/JSON parity): both read the SAME derived tier.
-            if r.readiness_tier == FORMAL_CANDIDATE:
-                lines.append("        READINESS: FORMAL_CANDIDATE -- the reaction type is not yet recognized by "
-                             "the production oracle; this is NOT an executable bench procedure.")
-            elif r.readiness_tier == REACTION_VOUCHED:
-                lines.append("        READINESS: REACTION_VOUCHED -- the reaction type is recognized, but its "
-                             "conditions are not sourced; this is NOT an executable bench procedure.")
-            elif r.readiness_tier == CONDITIONS_SUPPORTED:
-                lines.append("        READINESS: CONDITIONS_SUPPORTED -- the reaction type is recognized and the "
-                             "conditions are sourced, but the procedure is not fully specified; this is NOT an "
-                             "executable bench procedure.")
-            elif r.readiness_tier == PROCESS_SPECIFIED:
-                lines.append("        READINESS: PROCESS_SPECIFIED -- the literature procedure is fully specified "
-                             "from an accepted source; this is what the SOURCE specifies, NOT a guarantee your "
-                             "lab/kitchen can execute it (capability is 0.9).")
+            # claim about the SOURCE) for "your bench can run it" (a 0.9 capability question).  The text is the ONE
+            # shared ``readiness_tier_line`` the plan front door also renders (human/JSON parity; no drift).
+            lines.append(f"        READINESS: {readiness_tier_line(r.readiness_tier)}")
             for e in r.exclusions:
                 lines.append(f"        EXCLUDED: {e}")
             for g in r.gaps:
                 lines.append(f"        GAP: {g}")
+            # 0.9 Round III (D12a): the per-route CAPABILITY verdict, AFTER the readiness chain and with the scope
+            # note.  Rendered only when a profile was requested (capability_assessment is not None); the ONE shared
+            # renderer keeps this human view identical to the JSON capability_assessment (criterion 29).
+            lines.extend(render_capability_lines(
+                r.capability_assessment, response.request.capability_profile_origin, indent="        ",
+            ))
         if len(response.ranked_route_dossiers) > 20:
             lines.append(f"    ... and {len(response.ranked_route_dossiers) - 20} more ranked route(s)")
     return "\n".join(lines)
@@ -586,9 +589,6 @@ def _cmd_decompile(argv: list[str]) -> int:
 def _cmd_compile(argv: list[str]) -> int:
     import argparse
 
-    from .data.thermo_extended import extended_thermo
-    from .experiment.compile import compile_synthesis
-
     p = argparse.ArgumentParser(
         prog="python -m smartchem compile",
         description="[DEPRECATED alias of `recompile`, one cycle] Compile a bounded, ranked, graded, "
@@ -598,8 +598,7 @@ def _cmd_compile(argv: list[str]) -> int:
     args = p.parse_args(argv)
 
     # Build the SAME typed request as `recompile` from the SAME default table (standard section 14.1: a legacy
-    # alias MUST construct the same request and MUST NOT keep divergent defaults).  The rich graded dossier below
-    # then runs off the request's RESOLVED parameters, so there is exactly one default table, not two.
+    # alias MUST construct the same request and MUST NOT keep divergent defaults).
     try:
         request = _recompile_request_from_args(args)
     except Exception as exc:  # noqa: BLE001 -- classified by the ONE authority; a non-domain error re-raises to 70
@@ -612,62 +611,17 @@ def _cmd_compile(argv: list[str]) -> int:
     if handled is not None:
         return handled
 
-    try:
-        from .identity import representation_losses_for
-        from .identity_parse import resolve_target_with_features
-        # Resolve the target HONOURING request.input_kind (CLIERR-COMPILE-INPUTKIND-BYPASS red-team fix): a declared
-        # but unresolved kind (inchi/formula/target-file) raises IdentityParseError -> _domain_exit -> exit 2, so the
-        # human path matches the --json/recompile paths instead of silently AUTO-mis-parsing to a confident dossier.
-        # WITH features, so a stereo/isotope/zwitterion target threads its section-5.3 losses into the sourced-evidence
-        # rungs (EVD-KEY-01 end-to-end bite): a sourced selectivity/kinetics verdict cannot survive a matching blocker.
-        target, target_features = resolve_target_with_features(request.target_input, request.input_kind)
-        losses = () if target_features is None else representation_losses_for(request.target_input, target_features)
-        reagents = tuple(_parse_molecule(s) for s in request.helper_reagents)
-        available = tuple(_parse_molecule(s) for s in request.stock_materials)
-        from .experiment.drafter import ConstraintBox
-        compiled = compile_synthesis(
-            target,
-            reagents=reagents,
-            available=available,
-            # 0.7 Round III: an EXPLICIT empty pool (--no-helper-reagents -> request.helper_reagents==()) must NOT be
-            # silently re-watered by the legacy dossier's empty->water default -- that would read one empty pool two
-            # ways.  Only the explicit-empty case reaches an empty `reagents` here (omitted/bare --reagents already
-            # resolved to water upstream), so gating on bool(reagents) disables the re-water for exactly that case
-            # and leaves every other caller's water default intact.
-            default_reagents_when_empty=bool(reagents),
-            max_depth=request.search_bounds.value("max_depth"),
-            max_routes=request.search_bounds.value("max_results"),
-            cut_budget=request.search_bounds.value("cut_budget"),
-            commodities=() if not request.terminal_policy.commodities_enabled else None,
-            thermo=extended_thermo(),
-            losses=losses,
-            # CLI-CAN-02 brick 2: APPLY the section-11 bench box to route ranking here too, so `compile --max-temp`
-            # genuinely fits the routes -- the SAME rank_routes(box) the recompile service uses (alias coherence).
-            box=ConstraintBox.of_bounds(request.constraints.bounds, process=request.constraints.process),
-            # STEREO-DOSSIER-01: the SAME resolved target features already feeding the section-5.3 losses now ALSO
-            # surface the perceived CIP R/S + configuration completeness in the human dossier header (perception only).
-            target_features=target_features,
-        )
-    except Exception as exc:  # noqa: BLE001 -- ScissionError -> 5, ValueError -> 2 via the ONE classifier; else 70
-        return _domain_exit(exc, "compile")
-    # CLI-CAN-02 brick 2 (was HON-CLI-01, brick 1): `compile`'s human path renders a compile_synthesis dossier, so it
-    # discloses the section-11 constraint from its OWN applied ranking (compiled.ranked, now box-fitted) via the ONE
-    # note authority -- APPLIED with the real fit/excluded/unknown tally when routes were ranked, DECLARED otherwise.
-    # This can never drift from the recompile/--json disclosure (same constraint_note function).
-    from .service import _fit_counts, constraint_note
-    _note = constraint_note(
-        request.constraints.bounds,
-        fit_counts=_fit_counts(compiled.ranked) if compiled.ranked else None,
-        process=request.constraints.process,
-    )
-    if _note is not None:
-        print(f"  {_note}")
-    print(compiled.render())
-    if compiled.search_receipt is not None and not compiled.search_receipt.complete_within_bounds:
-        return 4
-    if compiled.ranked and not compiled.found_route:
-        return 5
-    return 0 if compiled.found_route else 3
+    # F52 (RC Round IV): `compile`'s human path now runs through the EXACT SAME canonical seam `recompile` uses --
+    # one request builder (already shared), one execution (run_compilation), one human renderer
+    # (_render_recompile_response) -- instead of falling through to the old bespoke compile_synthesis() dossier,
+    # which carried zero capability references and so silently dropped `--capability-profile` on this path while
+    # `--json` (which already ran run_compilation) carried it. Ugh, classic "the human got the diet version" bug.
+    # Two renderers for one response was exactly the drift this closes: human now == JSON, structurally, not by
+    # convention.
+    from .service import run_compilation
+    response = run_compilation(request)
+    print(_render_recompile_response(response, quiet=args.quiet))
+    return response.exit_code
 
 
 def _cmd_plan(argv: list[str]) -> int:
@@ -719,6 +673,16 @@ def _cmd_plan(argv: list[str]) -> int:
                    help="explicit EMPTY helper-reagent pool -- no invented water; mutually exclusive with a "
                         "non-empty --reagents. The structural plan then runs only under an algebra with a "
                         "reagentless-capable provider (e.g. certified-route-v07)")
+    from .capability import CAPABILITY_PROFILE_PRESETS
+    p.add_argument(
+        "--capability-profile", dest="capability_profile", choices=sorted(CAPABILITY_PROFILE_PRESETS), default=None,
+        metavar="PROFILE",
+        help=(
+            "declare a bench (0.9 capability compiler) and project each planned route through it: 'research-lab' or "
+            "'poor-man'. Flows into the STRUCTURAL plan's recompile (resolved once); ignored for a formula-only plan. "
+            "The chemistry search is unchanged -- capability is a projection. CAPABILITY_FIT is NOT a safety certificate"
+        ),
+    )
     p.add_argument("--json", action="store_true",
                    help="emit the machine-readable plan payload (identity + delegated response) instead of the render")
     args = p.parse_args(argv)
@@ -737,7 +701,8 @@ def _cmd_plan(argv: list[str]) -> int:
 
     result = plan(target, kind if kind is not None else InputKind.AUTO,
                   algebra_profile=getattr(args, "algebra_profile", None),
-                  helper_reagents=helper_reagents)
+                  helper_reagents=helper_reagents,
+                  capability_profile=getattr(args, "capability_profile", None))
     if args.json:
         import json
 

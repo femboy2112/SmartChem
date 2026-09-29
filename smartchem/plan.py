@@ -102,7 +102,8 @@ class PlanResult:
 
 def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
          algebra_profile: "str | None" = None,
-         helper_reagents: "tuple[str, ...] | None" = None) -> PlanResult:
+         helper_reagents: "tuple[str, ...] | None" = None,
+         capability_profile: "str | None" = None) -> PlanResult:
     """Resolve ``target_input`` and deliver the total answer, routing to the eligible existing primitive.
 
     Never guesses a structure from a bare formula: a FORMULA-layer identity is routed to ``decompile``
@@ -113,6 +114,10 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
     front door can express it: ``None`` -> the builder's water DEFAULT; a tuple -> an explicit pool; ``()`` -> an
     explicit EMPTY pool (no invented water), runnable only under an algebra with a reagentless-capable provider.
     Formula decomposition has no reagent pool, so it ignores this argument.
+
+    ``capability_profile`` (0.9 Round III, D12a) declares a bench preset name (``"research-lab"``/``"poor-man"``) the
+    STRUCTURAL plan projects every ranked route through -- ``None`` asks NO capability question and assumes NO bench.
+    Formula decomposition has no route to project, so it ignores this argument.
     """
     from .compilation_ir import CompilationOperation
     from .identity_parse import IdentityParseError, detect_auto_ambiguity, resolve_identity
@@ -145,8 +150,11 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
         # a single constitution IS established -> structural planning is eligible.  The selected transform-algebra
         # profile (0.7 Round II) flows into the structural recompile so `plan --algebra certified-route-v07` widens
         # the algebra end-to-end; formula decomposition (below) has no route algebra, so it ignores the profile.
+        # 0.9 Round III (D12a): the capability profile flows into the STRUCTURAL recompile exactly as the algebra
+        # profile does -- `plan TARGET --capability-profile poor-man` projects every planned route through that bench.
+        # Formula decomposition (below) has no route to project, so it ignores the profile.
         request = build_recompile_request(target_input, input_kind=builder_kind, algebra_profile=algebra_profile,
-                                           helper_reagents=helper_reagents)
+                                           helper_reagents=helper_reagents, capability_profile=capability_profile)
         response = run_compilation(request)
         return PlanResult(
             target_input, kind, PlanStatus.STRUCTURAL_PLANNING, resolved, None, True,
@@ -312,6 +320,22 @@ def render_plan_human(result: PlanResult) -> str:
             f"  ran           : {result.operation.value.lower()} -> outcome {resp.outcome.value}"
             + (f"; status {resp.standard_status}" if getattr(resp, "standard_status", None) else "")
         )
+        # 0.9 Round III (D12a): the front door gains a per-route READINESS + CAPABILITY block for the first time --
+        # the 0.6 front door showed only the outcome banner.  The mission's own example is `plan TARGET
+        # --capability-profile ...`, and human == JSON parity demands the same capability semantics the --json plan
+        # payload nests.  Uses the ONE shared capability renderer, so plan and recompile cannot drift.
+        dossiers = getattr(resp, "ranked_route_dossiers", ())
+        if dossiers:
+            from .service import readiness_tier_line, render_capability_lines
+            lines.append("  ranked routes (best first; readiness + capability):")
+            for i, r in enumerate(dossiers[:20], 1):
+                lines.append(f"    {i}. [{r.fit_status}/{r.readiness_tier}] {r.equation}  #{r.route_digest[:12]}")
+                lines.append(f"        READINESS: {readiness_tier_line(r.readiness_tier)}")
+                lines.extend(render_capability_lines(
+                    r.capability_assessment, resp.request.capability_profile_origin, indent="        ",
+                ))
+            if len(dossiers) > 20:
+                lines.append(f"    ... and {len(dossiers) - 20} more ranked route(s)")
     elif getattr(resolved.formula, "charge", 0) != 0:
         lines.append(
             "  ran           : nothing further -- a charged species has no neutral formula descent; "

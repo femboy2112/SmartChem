@@ -237,9 +237,10 @@ class TestQuietNeverHidesABlocker:
 
 
 class TestCrossEngineExitCoherence:
-    """The legacy graded ``compile`` dossier and the service both wrap the same ``search_routes``; their section
-    14.4 exit codes MUST agree for equal flags.  This tripwire guards the two-view seam until run_compilation is
-    unified to return the dossier."""
+    """F52 (RC Round IV): ``compile``'s human path now runs through the exact same ``run_compilation`` seam
+    ``recompile --json`` does (the old bespoke ``compile_synthesis`` dossier is retired), so their section 14.4
+    exit codes agreeing is no longer two engines converging -- it is one engine, checked here as a tripwire
+    against a future re-fork of the two paths."""
 
     @pytest.mark.parametrize("tail", [
         ["CCO"],
@@ -296,9 +297,12 @@ class TestDeprecationAndUsage:
             assert cmd in out
 
     def test_compile_prints_a_deprecation_notice_to_stderr_only(self, capsys):
+        # F52 (RC Round IV): `compile`'s human render now IS `recompile`'s canonical render (the old bespoke
+        # compile_synthesis dossier -- and its "COMMODITY" phrasing -- is retired; two renderers for one response
+        # was exactly the split that let --capability-profile go missing on this path).
         code, out, err = _run(capsys, ["compile", "CCO"])
         assert code == 0
-        assert "COMMODITY" in out.upper()  # the rich dossier is preserved on stdout ...
+        assert "TARGET_ALREADY_AVAILABLE" in out  # the canonical outcome banner still reaches stdout ...
         assert "deprecated" in err.lower()  # ... and the deprecation notice rides stderr
         assert "deprecated" not in out.lower()
 

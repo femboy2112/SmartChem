@@ -52,7 +52,6 @@ from ..contracts import Digestible, canonical_digest
 from ..data.hazards import HazardRef
 from ..data.stability import DEFAULT_STABILITY, StabilityRef, StabilityTable
 from ..decompiler import Formula
-from ..decompiler_review import molecule_hazards
 from .bucket import Bucket, Quantity
 from .composability import resolve_stability
 from .dag import SynthesisDAG
@@ -70,6 +69,12 @@ __all__ = [
     "handling_of_dag",
     "verify_handling",
 ]
+
+#: The sourced-hazard resolver, bound LAZILY (see _resolve_hazard) rather than imported at module
+#: init: ``decompiler_review`` reaches back into this package during import, so an eager top-level
+#: edge re-closes the Wave-B cycle. It stays a real module attribute so callers -- and the tests that
+#: monkeypatch it -- keep a single, patchable name to bind against.
+molecule_hazards = None
 
 #: GHS physical-hazard codes that classify a substance AS A GAS at ambient conditions (a sourced statement of
 #: physical state, independent of any Clausius-Clapeyron estimate): H220/H221 flammable gas, H230/H231
@@ -139,6 +144,13 @@ def _resolve_hazard(molecule: Molecule) -> HazardRef | None:
     hazards to an unresolved same-formula molecule would be the "borrows a value by formula" false attach this
     repo has caught before.  An unresolved structure is UNASSESSED (a loud gap), never a stranger's record.
     """
+    # Bind the resolver on first real use (init-time import would re-close the Wave-B cycle), then read
+    # it from the module namespace so a monkeypatched substitute is honoured instead of shadowed.
+    global molecule_hazards
+    if molecule_hazards is None:
+        from ..decompiler_review import molecule_hazards as _resolver
+
+        molecule_hazards = _resolver
     return molecule_hazards(molecule)
 
 

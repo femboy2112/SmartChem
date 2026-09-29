@@ -94,6 +94,38 @@ def test_evidence_field_unknown_is_the_only_status_carrying_nothing():
     assert u.is_unknown and u.value is None and u.locator is None and u.justification == ""
 
 
+@pytest.mark.parametrize("value", ["650 C tube furnace", Interval(650.0, 650.0, "K"), Interval(4320.0, 4320.0, "min")])
+def test_d24_2_an_explicit_not_applicable_field_carries_no_value(value):
+    """Round V X-high D24.2 (Wave-C' A4): a closing-out claim cannot also STATE a value -- every capability reader
+    gates on ``is_present``, so an N/A field carrying ``Interval(650, 650, "K")`` was a demand that reached no axis
+    while readiness counted it resolved. A value belongs in a PRESENT field."""
+    with pytest.raises(ValueError, match="D24.2"):
+        EvidenceField(EvidenceFieldStatus.EXPLICIT_NOT_APPLICABLE, value, _LOC, "no heating in this step")
+    na = EvidenceField.not_applicable(_LOC, "no heating in this step")  # the lawful N/A still builds
+    assert na.value is None and not na.is_present
+
+
+def test_d24_2_no_released_v08_payload_carries_an_na_field_with_a_value():
+    """The D24.2 tightening refuses nothing the released v0.8 producer emitted: every EXPLICIT_NOT_APPLICABLE field in
+    the REAL ``git archive df1b38d`` fixtures carries the canonical null encoding (``{"kind": "null"}``)."""
+    import json
+    from pathlib import Path
+
+    fixtures = Path(__file__).parent / "fixtures" / "v08"
+    stack = [json.loads(p.read_text()) for p in sorted(fixtures.glob("*.json")) + sorted(fixtures.glob("tamper/*.json"))]
+    seen = 0
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if node.get("status") == "EXPLICIT_NOT_APPLICABLE":
+                seen += 1
+                assert node.get("value") in (None, {"kind": "null"}), node
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    assert seen > 0  # the fixtures DO exercise N/A (the isopentyl quench) -- the check is not vacuous
+
+
 def test_procedure_operation_rejects_a_nonpositive_ordinal_or_missing_locator():
     with pytest.raises(ValueError):
         ProcedureOperation(ordinal=0, kind=OperationKind.ADD, locator=_LOC)

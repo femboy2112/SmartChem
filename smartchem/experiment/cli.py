@@ -10,9 +10,9 @@ request's RESOLVED parameters -- so it no longer runs a second search or a secon
 ``--emit-request`` and ``--json`` expose the machine views through :func:`~smartchem.service.run_compilation`,
 exactly as ``recompile``/``compile`` do.  The human dossier still enumerates candidate routes from the decompiler
 (E5), autoloads sourced stability for every discovered species (PubChem/Wikidata/Bradley, cached) via the
-request's section-9 provider lever, ranks them against the bench (``--max-temp`` K, ``--max-pressure`` atm), and
-prints the top route as a chemist-facing DOSSIER -- under the honesty banner (no success guarantee, no kinetic
-rate; every other claim graded), every number in its epistemic bucket.
+request's section-9 provider lever, ranks them against the bench (``--min-temp``/``--max-temp`` K,
+``--max-pressure`` atm), and prints the top route as a chemist-facing DOSSIER -- under the honesty banner (no
+success guarantee, no kinetic rate; every other claim graded), every number in its epistemic bucket.
 
 As a DEPRECATED alias of ``recompile`` (standard section 14.1, one deprecation cycle), it builds the byte-identical
 typed request under equal flags and keeps NO divergent defaults: the reality-respecting default is the OFFLINE,
@@ -135,6 +135,7 @@ def _synthesize_request(args):
         max_routes=args.max_routes,
         cut_budget=args.cut_budget,
         max_temperature_k=args.max_temp,
+        min_temperature_k=args.min_temp,
         min_pressure_atm=args.min_pressure,
         max_pressure_atm=args.max_pressure,
         process=_process_bounds_from_args(args),
@@ -170,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="small helper reagents the cleavage may use (default: water)")
     p.add_argument("--max-temp", type=_positive_float, default=None, metavar="K",
                    help="the bench's maximum temperature in kelvin")
+    p.add_argument("--min-temp", type=_positive_float, default=None, metavar="K",
+                   help="the bench's minimum reachable temperature in kelvin (the coldest it can cool to); may not "
+                        "exceed --max-temp (an empty window is refused, exit 2)")
     p.add_argument("--max-pressure", type=_positive_float, default=None, metavar="ATM",
                    help="the bench's maximum pressure in atm")
     p.add_argument("--min-pressure", type=_positive_float, default=None, metavar="ATM",

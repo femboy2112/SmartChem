@@ -24,6 +24,7 @@
       "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha3"
     }
   ],
+  "capability_question_digest": null,
   "compilation_ir": {
     "candidates": [
       {
@@ -84,7 +85,7 @@
       "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
     },
     "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
-    "tool_version": "0.8.0a1",
+    "tool_version": "0.9.0a1",
     "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c"
   },
   "diagnostics": [],
@@ -97,6 +98,7 @@
   "ranked_dag_dossiers": [],
   "ranked_route_dossiers": [
     {
+      "capability_assessment": null,
       "composability_verdict": "SINGLE_STEP",
       "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
       "equilibrium_verdict": "UNKNOWN",
@@ -433,10 +435,11 @@
         }
       ],
       "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
-      "schema_version": "smartchem.service/ranked-route-summary-v1alpha3",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha5",
       "selectivity_verdict": "UNKNOWN"
     },
     {
+      "capability_assessment": null,
       "composability_verdict": "UNKNOWN",
       "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
       "equilibrium_verdict": "UNKNOWN",
@@ -1036,16 +1039,19 @@
         }
       ],
       "route_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217",
-      "schema_version": "smartchem.service/ranked-route-summary-v1alpha3",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha5",
       "selectivity_verdict": "UNKNOWN"
     }
   ],
   "request": {
     "algebra_profile": "certified-route-v07",
+    "capability_profile": null,
+    "capability_profile_origin": "",
     "constraints": {
       "max_pressure_atm": null,
       "max_temperature_k": null,
       "min_pressure_atm": null,
+      "min_temperature_k": null,
       "process": {
         "allowed_agitation": null,
         "allowed_attention": null,
@@ -1056,7 +1062,7 @@
         "min_check_interval_minutes": null,
         "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
       },
-      "schema_version": "smartchem.constraints/physical-bounds-v1alpha1"
+      "schema_version": "smartchem.constraints/physical-bounds-v1alpha2"
     },
     "evidence_provider_selection": {
       "selection_id": "DEFAULT_OFFLINE"
@@ -1136,7 +1142,7 @@
     "ranking_policy": {
       "policy_id": "DEFAULT_PRECEDENCE_V1"
     },
-    "schema_version": "smartchem.service/compilation-request-v1alpha5",
+    "schema_version": "smartchem.service/compilation-request-v1alpha7",
     "search_bounds": [
       [
         "cut_budget",
@@ -1160,8 +1166,8 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "54607ff2e5e834e7ce705678f1d04eebbc3edee24931edf0b86ec550b3ef602a",
-  "schema_version": "smartchem.service/compilation-response-v1alpha15",
+  "result_digest": "a07ae1725bc017abdb01aeb45ff9afa0e962de9c70a92f304f2a2ffa9a54d82e",
+  "schema_version": "smartchem.service/compilation-response-v1alpha17",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
   "transport_mode": "CANONICAL_VERIFIED"

@@ -34,7 +34,6 @@ from ..category import Molecule
 from ..conditions import ConditionEnvelope, Interval
 from ..contracts import Digestible
 from ..data.reference import KJ_PER_EV
-from ..decompiler_review import molecule_dfh_0k_range_kj
 from .bucket import Bucket, Quantity, unknown
 from .step import ExperimentRoute, ExperimentStep
 
@@ -78,6 +77,11 @@ def _heat_quantity(step: ExperimentStep) -> Quantity:
     interval too, never a fake exact number.  ONE species without any sourced 0 K dfH makes the whole
     enthalpy ``UNKNOWN`` -- a partial sum would be a fabricated number wearing a real label.
     """
+    # Imported at call time, not module init: ``decompiler_review`` reaches back here through the
+    # ``experiment`` package, so a top-level edge closes the import cycle Wave-B batch 1 opened. The
+    # lookup only ever runs inside a live accounting call, well after every module is fully formed.
+    from ..decompiler_review import molecule_dfh_0k_range_kj
+
     def side_range(mols: tuple[Molecule, ...]) -> tuple[float, float] | None:
         lo = hi = 0.0
         for m in mols:

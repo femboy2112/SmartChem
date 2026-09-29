@@ -42,28 +42,82 @@ ranked route dossiers are populated with the section-11 fit disposition (CLI-CAN
 becomes an ``ERROR_INTERNAL`` receipt (CLI-EXIT-01).  It does NOT yet populate the affordability frontier
 (COST-VEC-01), bind quantitative :class:`~smartchem.experiment.stock.StockMaterial` (STOCK-01), or fully resolve
 INCHI/FORMULA targets into the digest (ID-PARSE-01).  Each open item is a named follow-on, not a silent gap.
+
+What a KEYLESS consumer must treat as advisory (X-high D27.8 -- the transport ledger)
+-------------------------------------------------------------------------------------
+:data:`smartchem.transport_ledger.TRANSPORT_LEDGER` gives every field of the response, its dossiers, its IR, receipt
+and candidates, every derived wire key and every replayed-step key exactly ONE status (RE_DERIVED_ON_LOAD /
+BOUND_TO_REQUEST / DIGEST_ONLY_ADVISORY / LEGACY_FROZEN); ``tests/test_transport_ledger.py`` machine-checks it and
+this paragraph.  Under a PLAIN or VERIFIED-ADMISSION load (no ``verification_key``, no ``require_reexecution``) of a
+current CANONICAL_VERIFIED payload a keyless consumer must treat EXACTLY these as advisory -- the whole-body wire
+digest covers them (D27.2), but a keyless forger recomputes that public digest; the producer HMAC authenticates them
+and ``require_reexecution`` re-derives them (the caller-attached provider snapshots excepted):
+
+* provenance: CompilationResponse.provider_snapshots, CompilationResponse.parse_receipt_summary,
+  ChemicalCompilationIR.tool_version, CompilationResponse.wire.transport_mode (a downgrade only weakens the load),
+  CompilationResponse.wire.producer_signature (the authenticator itself);
+* what the search FOUND (a consistent rewrite of it is the D25.3 boundary): ChemicalCompilationIR.search_status,
+  ChemicalCompilationIR.standard_status, ChemicalCompilationIR.candidates (membership -- a candidate deleted together
+  with its dossier AND the receipt count), ChemicalCompilationIR.structural_candidates,
+  Section81ReceiptView.status, Section81ReceiptView.standard_status, Section81ReceiptView.cut_enumeration_complete,
+  Section81ReceiptView.candidate_enumeration_complete, Section81ReceiptView.result_limit_saturated,
+  Section81ReceiptView.stop_reason, and the search telemetry Section81ReceiptView.nodes_visited,
+  Section81ReceiptView.transforms_considered, Section81ReceiptView.candidates_emitted,
+  Section81ReceiptView.candidates_rejected_by_reason -- and with them, that the bounded SEARCH reached a given
+  (locally generable, D29.1) replayed route.
+
+Everything else is re-derived on load or bound to the request -- the ranking and every dossier verdict (D27.4), the
+corpus envelopes (D27.1), the outcome (D27.3), the frontier and diagnostics (D27.4), the receipt count / kind /
+bounds (D27.5/D27.6), the IR's own diagnostics (D28.2), a carried unknown() envelope (D28.1), the receipt's
+identity digests and result count (D28.3), every container's exact key set (D28.5, D29.2), and every replayed step
+(D29.1: it must be a transform the carried algebra emits for its target -- reactants, products incl. byproducts as
+STRUCTURES, the reaction centre, no ancillary flag; the Wave C6 same-formula byproduct isomer that erased a sourced
+hazard verdict is refused on every current load) -- which makes the carried
+REQUEST the anchor: pin it (``expected_request_digest``,
+``expected_capability_question_digest``) or the answer is only proven to answer ITS OWN request.  On the THIN_ADVISORY
+wire (no replay) every ledger entry whose ``thin`` status is DIGEST_ONLY_ADVISORY joins the list (the dossiers'
+non-process verdicts and order, the frontier's catalyst / fiction channels, the DAG-bench note).  A LEGACY v0.8
+payload's ranking, frontier and diagnostics are v0.8's code's (advisory), and its corpus evidence (D27.1) and replayed
+steps (D29.1) are re-derived only under verified admission -- recompile under 0.9.
+
+Partially advisory (the ledger's ``advisory_when``, X-high D28.4): CandidateSummary.candidate_digest and
+CandidateSummary.equation are re-derived only for a candidate that carries a dossier; a candidate with NO dossier -- a
+decompile's FORMULA_EDGE candidates and an UNCONSTRAINED convergent-DAG search's DAG candidates (no bench box, so no DAG
+is judged) -- has nothing to re-derive them from, so its digest and equation text are advisory.  Likewise
+ChemicalCompilationIR.diagnostics and CompilationResponse.diagnostics are re-derived by the producer's own rule, but a
+DECOMPILE's incompleteness line IS its receipt's own stop_reason, which is advisory search output.
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
+import importlib
 import json
 import os
 import secrets
 from dataclasses import dataclass, field
+from dataclasses import replace as dataclasses_replace
 from enum import Enum
 from pathlib import Path
 
 from .compilation_ir import (
     ChemicalCompilationIR,
+    ChemicalIdentity,
     CompilationOperation,
+    _recompile_terminal_policy_digest,
     _structure_ident,
+    decompile_ir_diagnostics,
+    decompile_request_digest,
+    decompile_terminal_context,
     decompile_to_ir,
+    formula_decomposition_registry_digest,
     ir_from_payload,
     ir_to_payload,
+    recompile_ir_diagnostics,
+    recompile_request_digest,
     recompile_to_ir,
 )
-from .constraints import PhysicalBounds
+from .constraints import PHYSICAL_BOUNDS_SCHEMA, PHYSICAL_BOUNDS_SCHEMA_V1, PhysicalBounds
 from .process_constraints import (
     ProcessBounds, ProcessRequirements, ProcessFitStatus, Attention, Agitation,
     evaluate_process_requirements, evaluate_dag_process_requirements,
@@ -75,6 +129,7 @@ from .experiment.readiness import (
     RouteReadiness,
     StepReadiness,
     evaluate_route,
+    tier_rank,
 )
 from .algebra_profiles import (
     DEFAULT_ALGEBRA_PROFILE,
@@ -83,7 +138,15 @@ from .algebra_profiles import (
     PROFILE_USES,
     resolve_algebra_profile,
 )
-from .contracts import Digestible, canonical_digest
+from .contracts import Digestible, canonical_digest, canonical_payload
+from .capability import (
+    CapabilityAssessment,
+    CapabilityProfile,
+    CapabilityStatus,
+    assess as assess_capability,
+    compile_capability_requirements,
+    resolve_capability_profile,
+)
 from .identity import IdentityLoss, MatchLayer, refines
 from .identity_parse import IdentityParseError, InputKind, resolve_target
 from .procedure_evidence import (
@@ -137,8 +200,26 @@ __all__ = [
 
 # v1alpha4 (CLI-CAN-02): ConstraintPolicy carries a real PhysicalBounds (T/P) box instead of a placeholder
 # constraint_id string -- a genuine request-payload shape change.  (v1alpha3 added SVC-REQ-01's normalized_identity;
-# v1alpha2 added ID-LAYER-02's match_layer.)
-COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
+# v1alpha2 added ID-LAYER-02's match_layer.)  (v1alpha5 was the released main@df1b38d / 0.8.0a1 request id.)
+# v1alpha6 (0.9 RC Round V, D11 -- F74): a genuine request-payload shape change that Round III shipped WITHOUT a bump:
+# the request gains ``capability_profile`` (the RESOLVED CapabilityProfile snapshot in canonical type-tagged form, or
+# null = NOT_REQUESTED) and ``capability_profile_origin`` (display/preset-origin name).  Both keys are REQUIRED on a
+# v1alpha6 payload.  DECLARED ONE-TIME MOVE: the request schema id is hashed into ``semantic_digest`` (see
+# ``CompilationRequest.semantic_digest``), so this bump moves EVERY v1alpha6 semantic_digest exactly once relative to
+# v1alpha5 -- no chemistry changed, the search is byte-identical.  Capability context STILL never enters
+# semantic_digest (search noninterference).  A v1alpha5 payload is accepted ONLY as LEGACY (see
+# ``LEGACY_V08_REQUEST_SCHEMA``): it keeps its stored id (so its stored semantic_digest verifies), means capability
+# NOT_REQUESTED, and is REFUSED if it carries any ``capability_*`` key (a 0.9 field wearing a 0.8 id -- tamper T1, or a
+# 0.9.0a1-branch payload that reused the id).
+# v1alpha7 (0.9 RC Round V X-high, D14/D22): the embedded ``constraints`` PhysicalBounds is now
+# ``physical-bounds-v1alpha2`` (+``min_temperature_k``, the temperature FLOOR -- the one shared T/P leaf finally models a
+# RANGE) and the embedded capability profile is ``capability-profile-v1alpha3`` (StockMaterial v1alpha3 +phase_evidence,
+# PhysicalBounds v1alpha2).  ``capability_profile_origin`` is now CONTENT-BOUND: it must be ``""`` or equal the
+# snapshot's own ``profile_id`` (Wave-A' A-WIRE (g): a free-text origin rode outside every digest, even the signed one,
+# yet was rendered as ``CAPABILITY[origin]``).  The WIP-only v1alpha6 id (pushed on the unreleased branch, never on
+# main) is NOT migrated -- only the released v0.8 id stays legacy.  The request id is hashed into ``semantic_digest``,
+# so this moves every current semantic_digest exactly once more; capability STILL never enters it.
+COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha7"
 # v1alpha2 (SVC-REQ-01 alias-collapse): CompilationResponse gains a ``parse_receipt_summary`` field -- the section
 # 14.2 identity-resolution echo, pulled OUT of ``diagnostics`` (where it rode as a free-text last line) into a
 # first-class field, so it is surfaced as the section 14.3 receipt yet EXCLUDED from ``result_digest`` (it is
@@ -191,8 +272,27 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
 # ({CANONICAL_VERIFIED, THIN_ADVISORY}) FOLDED into ``result_digest``, and ``include_replay`` now defaults True so the
 # canonical wire ships each dossier's ``replay_payload``.  The digest-covered ConditionEnvelope also gained a
 # ``procedure`` field this round (via the replay payload), so envelope->step->route->summary->result digests shift --
-# no chemistry changed, the search is byte-identical.
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha15"
+# no chemistry changed, the search is byte-identical.  (v1alpha15 was the released main@df1b38d / 0.8.0a1 response id.)
+# v1alpha16 (0.9 RC Round V, D11 -- F74/F81): a genuine response shape change that Round III shipped WITHOUT a bump:
+# the response gains a top-level ``capability_question_digest`` (null = NOT_REQUESTED) and now EMBEDS a v1alpha6
+# request and ranked-route-summary-v1alpha4 dossiers (+capability_assessment; replay ProcedureOperation gains
+# ``material_uses`` whose ProcedureMaterialUse carries a typed ``specification``).  ``capability_question_digest`` is
+# REQUIRED on a v1alpha16 payload.  The digest-covered ProcedureOperation/RankedRouteSummary shapes grew, so route ->
+# dossier -> result digests shift.  A v1alpha15 payload is accepted ONLY as LEGACY (``LEGACY_V08_RESPONSE_SCHEMA``):
+# verified under the FROZEN v0.8 digest rule (``_v08_canonical_payload`` -- the 0.9-added fields omitted at their
+# default), readiness preserved exactly and re-derived, NO capability question and NO assessment fabricated; REFUSED
+# if it carries any 0.9-only key (capability_question_digest / capability_assessment / capability_profile* /
+# material_uses / specification -- tamper T4b, and 0.9.0a1-branch payloads that reused the id).
+# Still v1alpha16 (unreleased), Wave-C2: ``result_digest`` now folds ``capability_question_digest`` when a question was
+# asked (so the producer signature binds the declared bench even with zero dossiers), and every assessed dossier's
+# replay-free bindings (HARD-LAW fold, readiness tier/digest, profile_digest, route_digest; CAPABILITY_FIT refused on a
+# THIN_ADVISORY wire) are checked on every load.  NOT_REQUESTED/legacy result digests are unchanged.
+# v1alpha17 (0.9 RC Round V X-high, D18/D20/D22): embeds a v1alpha7 request, ranked-route-summary-v1alpha5 (replay
+# ProcedureMaterialUse ``phase`` is now an evidence-graded PhaseClaim object, D18) and ranked-dag-summary-v1alpha5
+# dossiers.  Load gains an optional consumer capability-question pin (``expected_capability_question_digest``), the
+# verified-admission re-projection now carries the request's capability profile, and the 0.8 thin law refuses any tier
+# AT OR ABOVE PROCESS_SPECIFIED.  The WIP-only v1alpha16 id is NOT migrated (never released).
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha17"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.  v1alpha9: the
@@ -222,7 +322,16 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha15"
 # v1alpha18 (v0.8 Round II, D5 canonical transport): a genuine SHAPE change -- ``response_fields`` gains a top-level
 # ``transport_mode`` field and ``ranked_route_summary_fields``/``ranked_dag_summary_fields`` disclose the optional
 # ``replay_payload`` (emitted by default now that the canonical wire ships it).  Bumped per the descriptor's convention.
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha18"
+# v1alpha19 (0.9 RC Round V, D11 -- F74): a genuine SHAPE change Round III shipped without a bump: ``response_fields``
+# gains ``capability_question_digest``; ``ranked_route_summary_fields`` gains ``capability_assessment``; the embedded
+# request is now v1alpha6 (+capability_profile, +capability_profile_origin); the replay disclosure now names the
+# procedure operations' ``material_uses`` (+``specification``); and the descriptor gains a top-level
+# ``accepted_legacy_schema_versions`` map (the explicit, whitelisted v0.8 ids the loader migrates).
+# v1alpha20 (0.9 RC Round V X-high, D18/D20/D22): the embedded request is v1alpha7 (the constraints box discloses
+# ``min_temperature_k``; the origin is content-bound); the replay disclosure names the PhaseClaim ``phase`` object of a
+# procedure material use; ``accepted_legacy_schema_versions`` gains the released ``ranked_dag_summary`` and
+# ``physical_bounds`` ids; ``capability_question_digest`` discloses the consumer pin.
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha20"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -231,8 +340,26 @@ COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response
 # RouteReadiness`` -- the Sec 3/4/8 per-step obligation ladder), digest-covered exactly like ``process_requirements``.
 # ``readiness_tier`` is retired as a stored field (it was a hard-coded ``FORMAL_CANDIDATE`` floor -- READY-TIER-01 --
 # no route could ever earn or lose) and is now a derived ``@property`` reading ``readiness.tier``; every existing
-# ``.readiness_tier`` read keeps working, it just answers honestly now.
-RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha3"
+# ``.readiness_tier`` read keeps working, it just answers honestly now.  (v1alpha3 was the released main@df1b38d id.)
+# v1alpha4 (0.9 RC Round V, D11 -- F74): gains the digest-covered ``capability_assessment`` field (0.9 Round III, shipped
+# without a bump), and its thick ``replay_payload`` procedure operations gain ``material_uses`` (each a
+# ProcedureMaterialUse, which gains the typed ``specification`` in Round V).  ``capability_assessment`` is REQUIRED on
+# a v1alpha4 payload.  A v1alpha3 summary is accepted ONLY inside a LEGACY v1alpha15 response, decoded with
+# capability_assessment=None / material_uses=(), and digested under the frozen v0.8 rule.
+# v1alpha5 (0.9 RC Round V X-high, D18): the replay ProcedureMaterialUse ``phase`` is an evidence-graded PhaseClaim
+# object ({phase, evidence, note}) instead of an ungraded scalar -- an author's inference can no longer certify a phase
+# match (FIT) or mismatch (BLOCKED).  The WIP-only v1alpha4 id is NOT migrated (never released).
+RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha5"
+# -- the explicit v0.8 legacy whitelist (D11).  Every exact-equality version check accepts the CURRENT id or exactly
+# ONE of these (mapped to its migration); any other id is refused precisely ("unsupported schema version X
+# (supported: ...)").  These are the ids released at main@df1b38d (0.8.0a1); the migration tests read them from the
+# real v0.8 fixtures (tests/fixtures/v08/), not from these constants.
+LEGACY_V08_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha5"
+LEGACY_V08_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha15"
+LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha3"
+LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha4"
+#: the released v0.8 PhysicalBounds id a legacy (v1alpha5) request's ``constraints`` box carries -- no temperature floor.
+LEGACY_V08_PHYSICAL_BOUNDS_SCHEMA = PHYSICAL_BOUNDS_SCHEMA_V1
 # DAG-BENCH-01 (was DAG-ADMIT-01): the thin, digestible per-DAG COMBINED section-11 admission that populates the
 # response's ``ranked_dag_dossiers``.  Distinct from RANKED_ROUTE_SUMMARY_SCHEMA on purpose -- a DAG additionally
 # carries its ``edges`` (so the critical-path PROCESS component is re-derived on load, the convergent PROCESS-ADMIT-01)
@@ -245,7 +372,92 @@ RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha3"
 # (producer, consumer, minutes) triples.  DISCLOSURE only (never changes fit_status) and digest-EXCLUDED (it is
 # fully determined by edges + process_requirements), so no existing DAG digest moves; the version bumps because
 # the element's serialized SHAPE gained a field.
-RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha4"
+# v1alpha5 (0.9 RC Round V X-high, D22 -- Wave-A' A-WIRE P3): the thick ``replay_payload`` procedure operations now
+# REQUIRE ``material_uses`` (each a ProcedureMaterialUse with its typed specification and PhaseClaim phase) -- a shape
+# change Round III/V shipped under the released v1alpha4 id.  The released v1alpha4 shape is decoded ONLY as LEGACY
+# (``LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA``): refused if it carries any 0.9-only key at any depth, its replay operations
+# migrated to ``material_uses=[]`` (their only v0.8-expressible value), and paired only with a legacy v0.8 response.
+RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha5"
+
+
+def _unsupported_schema(kind: str, got: object, current: str, legacy: str) -> ValueError:
+    """The ONE precise refusal every schema-version gate raises for an id that is neither current nor whitelisted."""
+    return ValueError(f"unsupported {kind} schema_version {got!r} (supported: {current!r}; legacy {legacy!r})")
+
+
+# -- the FROZEN v0.8 digest rule (D11, verify-only) ----------------------------------------------------------------
+# Every digest in this package is ``canonical_digest`` over ALL compare=True dataclass fields, so ADDING a field to a
+# digest-covered record moves every digest above it even when the new field sits at its default.  0.9 added exactly
+# these fields to records a v0.8 (main@df1b38d) response digests over -- measured by diffing the dataclass field lists
+# of the two trees (``git archive df1b38d`` vs this tree), not guessed:
+#   CompilationRequest.capability_profile / .capability_profile_origin, RankedRouteSummary.capability_assessment,
+#   ProcedureOperation.material_uses, and (X-high D14) PhysicalBounds.min_temperature_k.
+# (MaterialComponent.basis/StockMaterial.states also grew, but no v0.8 payload can reach a StockMaterial -- a v0.8
+# request carries stock as strings and no capability profile -- so they are deliberately NOT in the table.)
+# A legacy payload is verified by re-encoding its reconstructed objects with those fields OMITTED -- but ONLY when
+# they hold their default (the value a v0.8 producer could not have set).  A non-default value is refused outright:
+# it is 0.9 content wearing a 0.8 identity.  This is a NARROW verify-only encoder; the global canonical hashing rule
+# (``contracts.canonical_payload``) is untouched, and nothing current is ever digested with it.
+_V08_OMITTED_FIELDS: "dict[str, dict[str, object]]" = {
+    "smartchem.service.CompilationRequest": {"capability_profile": None, "capability_profile_origin": ""},
+    "smartchem.service.RankedRouteSummary": {"capability_assessment": None},
+    "smartchem.procedure_evidence.ProcedureOperation": {"material_uses": ()},
+    # X-high D14: the temperature FLOOR a v0.8 (physical-bounds-v1alpha1) box could not express.  The legacy decode
+    # also keeps the stored v1alpha1 id on the object, so the re-encoded bytes are exactly main@df1b38d's.
+    "smartchem.constraints.PhysicalBounds": {"min_temperature_k": None},
+}
+
+
+def _v08_canonical_payload(value: object) -> object:
+    """``contracts.canonical_payload`` with the frozen v0.8 field omissions applied at every dataclass level.
+
+    Containers and dataclasses are walked here (so the omission reaches nested records); every scalar/enum/type leaf
+    is delegated to ``canonical_payload`` itself, so the leaf encoding cannot drift from the real rule."""
+    from dataclasses import fields as _fields, is_dataclass
+    if is_dataclass(value) and not isinstance(value, type):
+        qualified = f"{type(value).__module__}.{type(value).__qualname__}"
+        omitted = _V08_OMITTED_FIELDS.get(qualified, {})
+        encoded = []
+        for f in _fields(value):
+            if f.name.startswith("_") or not f.compare:
+                continue
+            v = getattr(value, f.name)
+            if f.name in omitted:
+                if v != omitted[f.name]:
+                    raise ValueError(
+                        f"legacy v0.8 payload carries 0.9-only content ({qualified}.{f.name} is not its default); "
+                        f"refused -- a 0.9 field cannot wear a 0.8 schema id"
+                    )
+                continue
+            encoded.append([f.name, _v08_canonical_payload(v)])
+        return {"type": "dataclass", "class": qualified, "fields": encoded}
+    if isinstance(value, tuple):
+        return {"type": "tuple", "items": [_v08_canonical_payload(i) for i in value]}
+    if isinstance(value, list):
+        return {"type": "list", "items": [_v08_canonical_payload(i) for i in value]}
+    if isinstance(value, dict):
+        if any(not isinstance(k, str) for k in value):
+            raise TypeError("semantic mapping keys must be strings")
+        return {"type": "mapping", "items": [[k, _v08_canonical_payload(value[k])] for k in sorted(value)]}
+    if isinstance(value, (set, frozenset)):
+        items = [_v08_canonical_payload(i) for i in value]
+        items.sort(key=lambda i: json.dumps(i, separators=(",", ":"), sort_keys=True))
+        return {"type": "frozenset" if isinstance(value, frozenset) else "set", "items": items}
+    return canonical_payload(value)
+
+
+def _v08_digest(value: object) -> str:
+    """SHA-256 over :func:`_v08_canonical_payload` -- byte-for-byte the v0.8 ``canonical_digest`` of a legacy record
+    (pinned against the real main@df1b38d fixtures in tests/test_v0_9_round_v_schema_migration.py)."""
+    encoded = json.dumps(_v08_canonical_payload(value), ensure_ascii=False, separators=(",", ":"),
+                         sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _route_identity(route: object, *, legacy: bool) -> str:
+    """The identity a reconstructed route/DAG must bind to: the current ``.digest``, or -- for a LEGACY v0.8 response --
+    the frozen v0.8 digest of the same object (never a looser check: exact equality either way)."""
+    return _v08_digest(route) if legacy else route.digest
 
 # The standard's section 14.4 exit codes.  One table so every front door (CLI-EXIT-01, later) reads them here.
 EXIT_SUCCESS = 0
@@ -299,6 +511,10 @@ _RECOMPILE_GRAMMARS = frozenset(_GRAMMAR_TO_MODE)
 # selected algebra profile is validated against the topology it will actually run in (a decompile-only profile is
 # refused under a route grammar) and the search-engine's per-provider use-guard has the matching use.
 _GRAMMAR_TO_MODE_TOPOLOGY = {"routes": "linear-route", "dags": "convergent-dag"}
+#: X-high D27.6/D27.8: the section-8.1 receipt kind each recompile search mode produces, and the cut-budget scope of
+#: every engine a service response wraps (the route / DAG / formula receipts all default to PER_NODE).
+_RECEIPT_KIND_BY_MODE = {"routes": "LINEAR_ROUTE", "dags": "CONVERGENT_DAG"}
+_SERVICE_RECEIPT_CUT_BUDGET_SCOPE = "PER_NODE"
 _GRAMMAR_TO_USE = {
     TransformGrammar.CAPPED_SCISSION_LINEAR: ProviderUse.LINEAR_ROUTE,
     TransformGrammar.CAPPED_SCISSION_CONVERGENT: ProviderUse.CONVERGENT_DAG,
@@ -357,6 +573,14 @@ _EXIT_BY_OUTCOME = {
 # remaining placeholder members (ConstraintPolicy/RankingPolicy/EvidenceProviderSelection) default to today's
 # behaviour and are typed/versionable now so the request shape is stable while the arcs they front (constraints,
 # section 15 ranking, provider selection) are built out behind them.
+
+
+#: The builders' declared DEFAULT search bounds (one source for :func:`build_recompile_request` /
+#: :func:`build_decompile_request`).  X-high D27.7 also reads them as the re-execution ceiling for a payload whose
+#: request the consumer did NOT pin: an unpinned payload may not make its verifier run a bigger search than a default
+#: compile would.
+_RECOMPILE_DEFAULT_BOUNDS: "dict[str, int]" = {"max_depth": 3, "max_results": 100, "cut_budget": 20_000}
+_DECOMPILE_DEFAULT_BOUNDS: "dict[str, int]" = {"max_multiplicity": 1, "budget": 100_000, "max_edges": 5_000}
 
 
 @dataclass(frozen=True)
@@ -593,10 +817,28 @@ class CompilationRequest(Digestible):
     #: smartchem.algebra_profiles).  Defaulted so pre-0.7 constructions and payloads stay valid on the legacy
     #: capped-scission algebra.  Orthogonal to transform_grammar (topology).
     algebra_profile: str = DEFAULT_ALGEBRA_PROFILE
+    #: 0.9 Round III (D10): the RESOLVED, immutable capability profile this request declares -- the exact bench
+    #: content, NOT a re-resolvable preset name (that would drift against tomorrow's mutable preset -- the M34 hole).
+    #: ``None`` is the ONE default and means NOT_REQUESTED: no capability question is asked, no bench is assumed.
+    #: A frozen ``Digestible``, so it rides the full ``.digest`` (provenance) automatically -- but it is DELIBERATELY
+    #: ABSENT from the hand-built ``semantic_digest`` tuple below, and that omission IS search noninterference: the
+    #: chemistry search cannot see a bench it never reads.
+    capability_profile: "CapabilityProfile | None" = None
+    #: The display/preset-origin name (e.g. ``"poor-man"``) the profile was resolved from -- provenance only,
+    #: non-load-bearing (the resolved snapshot above is the truth; this is just what to print).
+    capability_profile_origin: str = ""
 
     def __post_init__(self) -> None:
-        if self.schema_version != COMPILATION_REQUEST_SCHEMA:
-            raise ValueError(f"schema_version must be exactly {COMPILATION_REQUEST_SCHEMA!r}")
+        if self.schema_version == LEGACY_V08_REQUEST_SCHEMA:
+            # D11 legacy dispatch: a v0.8 request means capability NOT_REQUESTED -- it cannot carry a bench.
+            if self.capability_profile is not None or self.capability_profile_origin != "":
+                raise ValueError(
+                    f"a legacy {LEGACY_V08_REQUEST_SCHEMA!r} request cannot carry a capability profile (0.9-only "
+                    f"content under a 0.8 id); refused"
+                )
+        elif self.schema_version != COMPILATION_REQUEST_SCHEMA:
+            raise _unsupported_schema("request", self.schema_version, COMPILATION_REQUEST_SCHEMA,
+                                      LEGACY_V08_REQUEST_SCHEMA)
         if not isinstance(self.operation, CompilationOperation):
             raise TypeError("operation must be a CompilationOperation")
         if not isinstance(self.target_input, str) or not self.target_input.strip():
@@ -673,6 +915,49 @@ class CompilationRequest(Digestible):
                     f"topology this request selects (it supports "
                     f"{sorted(u.value for u in PROFILE_USES[self.algebra_profile])})"
                 )
+        # capability_profile (0.9 Round III, D10): the RESOLVED snapshot or None (NOT_REQUESTED).  A bare string
+        # name is REFUSED here -- storing a name is the M34 drift hole, so the type gate is the enforcement.
+        if self.capability_profile is not None and type(self.capability_profile) is not CapabilityProfile:
+            raise TypeError(
+                "capability_profile must be a resolved CapabilityProfile snapshot or None (NOT_REQUESTED) -- "
+                "a preset NAME is refused (it would re-resolve and drift; store the resolved content)"
+            )
+        if not isinstance(self.capability_profile_origin, str):
+            raise TypeError("capability_profile_origin must be a string (the display/preset-origin name)")
+        # X-high D20(g): the origin is CONTENT-BOUND.  It is rendered as ``CAPABILITY[origin]`` yet sits outside every
+        # digest (semantic, question, result -- even the signed one), so a free-text origin could relabel a poor-man
+        # verdict "research-lab" without moving a byte of identity.  It may therefore only be ``""`` or the snapshot's
+        # OWN ``profile_id`` (which rides the profile digest); an origin with no profile is meaningless.
+        # X-high D26.3 (Wave-C'' T4a): a formula DECOMPILE has no route to project -- the producer would answer the
+        # capability question with NOTHING (no dossier, no assessment) while looking like success, the F51/D24.13 shape
+        # for the decompile operation. A profile on a DECOMPILE is refused here, never silently dropped.
+        if self.capability_profile is not None and self.operation is CompilationOperation.DECOMPILE:
+            raise ValueError(
+                "a capability profile cannot ride a DECOMPILE request: a formula descent produces no route for the "
+                "capability compiler to project, so the capability question would be answered with nothing -- use a "
+                "RECOMPILE (structure search) to ask a capability question; refused (D26.3)"
+            )
+        if self.capability_profile is None:
+            if self.capability_profile_origin != "":
+                raise ValueError(
+                    f"capability_profile_origin {self.capability_profile_origin!r} names a bench but no capability "
+                    f"profile is declared (NOT_REQUESTED carries origin ''); refused"
+                )
+        elif self.capability_profile_origin not in ("", self.capability_profile.profile_id):
+            raise ValueError(
+                f"capability_profile_origin {self.capability_profile_origin!r} does not match the declared snapshot's "
+                f"profile_id {self.capability_profile.profile_id!r} -- the display origin is content-bound (it must be "
+                f"'' or the snapshot's own id) so a relabel cannot ride outside every digest; refused"
+            )
+        # X-high D14/D22: the embedded physical-bounds GENERATION pairs with the request generation -- a legacy v0.8
+        # request carries the released v1alpha1 box (no temperature floor), a current request the v1alpha2 box.
+        expected_bounds_schema = (LEGACY_V08_PHYSICAL_BOUNDS_SCHEMA if self.schema_version == LEGACY_V08_REQUEST_SCHEMA
+                                  else PHYSICAL_BOUNDS_SCHEMA)
+        if self.constraints.bounds.schema_version != expected_bounds_schema:
+            raise ValueError(
+                f"a {self.schema_version!r} request must carry a {expected_bounds_schema!r} constraints box, got "
+                f"{self.constraints.bounds.schema_version!r} (legacy/current generation mixing); refused"
+            )
         # origins: a canonical (field-name-sorted) map of provenance; structural check only, since which fields
         # are tracked differs by direction.
         if type(self.origins) is not tuple:
@@ -733,8 +1018,14 @@ class CompilationRequest(Digestible):
         single ``decompile`` command), so no alias-equality property rides on it, and its target is a FORMULA-layer
         identity, not a structure -- so it keeps the raw keying (which only ever SPLITS, preserving the one-way
         law).  Collapsing the formula-layer descent is a named follow-on.
+
+        X-high D14/D22: a LEGACY v0.8 request is hashed under the FROZEN v0.8 rule (``_v08_digest``), exactly like its
+        full ``.digest`` -- its ``constraints`` box now reconstructs as a PhysicalBounds that GAINED ``min_temperature_k``
+        (omitted at its only v0.8-expressible value, ``None``), so the global rule would move a released search identity
+        that no chemistry changed.  Every current request keeps the global rule.
         """
-        return canonical_digest(
+        rule = _v08_digest if self.is_legacy_v08 else canonical_digest
+        return rule(
             (
                 "compilation-request-semantic-v1alpha3",
                 self.schema_version,
@@ -757,6 +1048,34 @@ class CompilationRequest(Digestible):
                 self.ranking_policy,
             )
         )
+
+    @property
+    def capability_question_digest(self) -> "str | None":
+        """The 0.9 capability-question pin (D12): ``None`` when no profile was requested, else a digest binding the
+        SEARCH question and the declared bench together -- ``canonical_digest((semantic_digest, profile_digest))``.
+
+        Invariant, by construction (a test pins it): it MOVES when the profile CONTENT changes (a different
+        ``profile_digest``), does NOT move when only the search question changes if the profile is held fixed... no,
+        precisely: it is a pure function of BOTH, so it moves under EITHER -- but the load-bearing guarantee the
+        mission demands is one-directional and holds: the ``semantic_digest`` NEVER moves under a profile change
+        (capability is absent from that tuple), so a profile swap moves ONLY this pin and the full ``.digest``, never
+        the chemistry search identity.  It is ADDITIVE to (not a replacement for) the ``semantic_digest`` consumer-pin
+        ``expected_request_digest`` checks: search identity and capability question are two separate, separately
+        pinnable questions."""
+        if self.capability_profile is None:
+            return None
+        return canonical_digest((self.semantic_digest, self.capability_profile.profile_digest))
+
+    @property
+    def is_legacy_v08(self) -> bool:
+        """True for a migrated v0.8 (``compilation-request-v1alpha5``) request -- capability NOT_REQUESTED by law."""
+        return self.schema_version == LEGACY_V08_REQUEST_SCHEMA
+
+    @property
+    def digest(self) -> str:
+        """The full (provenance-including) identity.  A LEGACY v0.8 request is digested under the frozen v0.8 rule so
+        its identity is byte-identical to what main@df1b38d computed; every current request uses the global rule."""
+        return _v08_digest(self) if self.is_legacy_v08 else canonical_digest(self)
 
 
 def _origins(explicit: "dict[str, bool]") -> tuple[tuple[str, FieldOrigin], ...]:
@@ -796,12 +1115,14 @@ def _resolve_constraints(
     min_pressure_atm: "float | None",
     max_pressure_atm: "float | None",
     process: "ProcessBounds | None" = None,
+    min_temperature_k: "float | None" = None,
 ) -> "tuple[ConstraintPolicy, bool]":
     """Resolve the request's :class:`ConstraintPolicy` (CLI-CAN-02) from an explicit policy OR bare T/P bound
     kwargs (a caller may not pass both).  Returns ``(policy, was_explicit)`` -- ``was_explicit`` is the
     ``constraints`` field's origin (a declared bound OR a passed policy is EXPLICIT; the unconstrained default is
     DEFAULT)."""
-    any_bound = any(b is not None for b in (max_temperature_k, min_pressure_atm, max_pressure_atm, process))
+    any_bound = any(b is not None for b in (max_temperature_k, min_pressure_atm, max_pressure_atm, process,
+                                            min_temperature_k))
     if constraints is not None:
         if any_bound:
             raise ValueError("pass either constraints or the T/P bound and process kwargs, not both")
@@ -812,6 +1133,7 @@ def _resolve_constraints(
                 max_temperature_k=max_temperature_k,
                 min_pressure_atm=min_pressure_atm,
                 max_pressure_atm=max_pressure_atm,
+                min_temperature_k=min_temperature_k,
             ),
             process=process if process is not None else ProcessBounds.unconstrained(),
         ), True
@@ -870,10 +1192,12 @@ def build_recompile_request(
     max_temperature_k: "float | None" = None,
     min_pressure_atm: "float | None" = None,
     max_pressure_atm: "float | None" = None,
+    min_temperature_k: "float | None" = None,
     ranking_policy: "RankingPolicy | None" = None,
     evidence_provider_selection: "EvidenceProviderSelection | None" = None,
     output_policy: "OutputPolicy | None" = None,
     algebra_profile: "str | None" = None,
+    capability_profile: "str | CapabilityProfile | None" = None,
 ) -> CompilationRequest:
     """Build a RECOMPILE request, recording each defaulted knob's origin as ``DEFAULT`` (section 13.1).
 
@@ -881,11 +1205,13 @@ def build_recompile_request(
     HERE, from ONE default table, so equal explicit flags always resolve to equal values and thus an equal
     :attr:`~CompilationRequest.semantic_digest`.  A value passed explicitly and the same value reached by default
     share the search identity but differ in :attr:`~CompilationRequest.origins`.  The section-11 T/P constraint is
-    supplied either as a whole ``constraints`` policy or via the ``max_temperature_k``/``*_pressure_atm`` bound
-    kwargs (CLI-CAN-02); it rides the search identity but is not yet applied to route grading (a follow-on).
+    supplied either as a whole ``constraints`` policy or via the ``min_temperature_k``/``max_temperature_k``/
+    ``*_pressure_atm`` bound kwargs (CLI-CAN-02; the temperature floor is X-high D14); it rides the search identity
+    and is applied to route ranking through ``ConstraintBox.of_bounds``.
     """
     resolved_constraints, constraints_explicit = _resolve_constraints(
-        constraints, max_temperature_k, min_pressure_atm, max_pressure_atm, process
+        constraints, max_temperature_k, min_pressure_atm, max_pressure_atm, process,
+        min_temperature_k=min_temperature_k,
     )
     explicit = {
         "input_kind": input_kind is not None,
@@ -912,6 +1238,19 @@ def build_recompile_request(
     # (request_from_payload) nor the low-level dataclass default -- so promoting the route default never changes what
     # a direct CompilationRequest or a pre-0.7 payload means.  Ships == legacy this round.
     algebra_profile = algebra_profile if algebra_profile is not None else DEFAULT_ROUTE_ALGEBRA_PROFILE
+    # 0.9 Round III (D10): resolve the capability profile ONCE, HERE, at request-build time -- a preset NAME (or an
+    # already-resolved CapabilityProfile for an inline custom) goes through the closed ``resolve_capability_profile``
+    # lookup and the RESOLVED snapshot is what the request stores; replay uses that exact content and never
+    # re-resolves against tomorrow's (mutable) preset table.  ``None`` stays NOT_REQUESTED (no bench assumed).  The
+    # origin string is the preset NAME (provenance/display only), or the profile's own id for an inline custom.
+    resolved_capability_profile = (
+        resolve_capability_profile(capability_profile) if capability_profile is not None else None
+    )
+    capability_profile_origin = (
+        capability_profile if isinstance(capability_profile, str)
+        else resolved_capability_profile.profile_id if resolved_capability_profile is not None
+        else ""
+    )
     effective_kind = input_kind if input_kind is not None else InputKind.AUTO
     return CompilationRequest(
         COMPILATION_REQUEST_SCHEMA,
@@ -934,15 +1273,17 @@ def build_recompile_request(
         grammar,
         evidence_provider_selection if evidence_provider_selection is not None else EvidenceProviderSelection(),
         SearchBounds.of(
-            max_depth=max_depth if max_depth is not None else 3,
-            max_results=max_routes if max_routes is not None else 100,
-            cut_budget=cut_budget if cut_budget is not None else 20_000,
+            max_depth=max_depth if max_depth is not None else _RECOMPILE_DEFAULT_BOUNDS["max_depth"],
+            max_results=max_routes if max_routes is not None else _RECOMPILE_DEFAULT_BOUNDS["max_results"],
+            cut_budget=cut_budget if cut_budget is not None else _RECOMPILE_DEFAULT_BOUNDS["cut_budget"],
         ),
         resolved_constraints,
         ranking_policy if ranking_policy is not None else RankingPolicy(),
         output_policy if output_policy is not None else OutputPolicy(),
         _origins(explicit),
         algebra_profile=algebra_profile,
+        capability_profile=resolved_capability_profile,
+        capability_profile_origin=capability_profile_origin,
     )
 
 
@@ -1000,9 +1341,10 @@ def build_decompile_request(
         TransformGrammar.FORMULA_DECOMPOSITION,
         evidence_provider_selection if evidence_provider_selection is not None else EvidenceProviderSelection(),
         SearchBounds.of(
-            max_multiplicity=max_multiplicity if max_multiplicity is not None else 1,
-            budget=budget if budget is not None else 100_000,
-            max_edges=max_edges if max_edges is not None else 5_000,
+            max_multiplicity=(max_multiplicity if max_multiplicity is not None
+                              else _DECOMPILE_DEFAULT_BOUNDS["max_multiplicity"]),
+            budget=budget if budget is not None else _DECOMPILE_DEFAULT_BOUNDS["budget"],
+            max_edges=max_edges if max_edges is not None else _DECOMPILE_DEFAULT_BOUNDS["max_edges"],
         ),
         ConstraintPolicy(),
         ranking_policy if ranking_policy is not None else RankingPolicy(),
@@ -1063,12 +1405,27 @@ class RankedRouteSummary(Digestible):
     #: identity stays byte-stable, so it is re-derived-and-checked at load, never trusted by hash.  ``None`` when the
     #: producer did not attach it; a verified-admission consumer treats a FITS route without it as UNVERIFIED.
     replay_payload: "list | None" = field(default=None, compare=False, repr=False)
+    #: 0.9 Round III (D12): this route's capability projection under the request's declared profile -- the SAME
+    #: ExperimentRoute assessed against what a bench HAS.  ``None`` = NOT_REQUESTED (the request carried no profile).
+    #: ``compare=True`` (the default, MIRRORING ``readiness``): it enters route identity and thus ``result_digest``
+    #: transitively, so tampering with a capability verdict is a detectable identity change -- and CAPABILITY-REBIND-
+    #: ON-LOAD re-derives it from the thick ``replay_payload`` + the request-bound profile and REFUSES a mismatch.
+    #: Kept STRICTLY separate from ``readiness``/``fit_status``: capability is a projection, never a second readiness.
+    capability_assessment: "CapabilityAssessment | None" = None
 
     _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
 
     def __post_init__(self) -> None:
-        if self.schema_version != RANKED_ROUTE_SUMMARY_SCHEMA:
-            raise ValueError(f"schema_version must be exactly {RANKED_ROUTE_SUMMARY_SCHEMA!r}")
+        if self.schema_version == LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA:
+            # D11 legacy dispatch: a v0.8 dossier never carried a capability verdict.
+            if self.capability_assessment is not None:
+                raise ValueError(
+                    f"a legacy {LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA!r} ranked route summary cannot carry a "
+                    f"capability_assessment (0.9-only content under a 0.8 id); refused"
+                )
+        elif self.schema_version != RANKED_ROUTE_SUMMARY_SCHEMA:
+            raise _unsupported_schema("ranked route summary", self.schema_version, RANKED_ROUTE_SUMMARY_SCHEMA,
+                                      LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA)
         if self.fit_status not in self._FIT_STATUSES:
             raise ValueError(f"fit_status must be one of {self._FIT_STATUSES}")
         if type(self.readiness) is not RouteReadiness:
@@ -1085,6 +1442,10 @@ class RankedRouteSummary(Digestible):
             r is not None and type(r) is not ProcessRequirements for r in self.process_requirements
         ):
             raise TypeError("process_requirements must be a tuple of ProcessRequirements or None values")
+        # 0.9 Round III (D12): capability is a projection, orthogonal to the section-11 fit table below -- so the ONLY
+        # structural guard here is the type; a NOT_REQUESTED route carries None, an assessed one a CapabilityAssessment.
+        if self.capability_assessment is not None and type(self.capability_assessment) is not CapabilityAssessment:
+            raise TypeError("capability_assessment must be a CapabilityAssessment or None (NOT_REQUESTED)")
         # The FULL structural coherence table the producer (drafter fit_route) guarantees, enforced so a hand-built or
         # deserialized summary can never contradict its own reasons (the no-laundering discipline, section 11; red-team
         # fold). fit_route sets: EXCLUDED iff exclusions; else UNKNOWN iff gaps; else FITS (box constrains) /
@@ -1109,23 +1470,49 @@ class RankedRouteSummary(Digestible):
         own dataclasses refuse to build incoherently)."""
         return self.readiness.tier
 
+    @property
+    def is_legacy_v08(self) -> bool:
+        """True for a migrated v0.8 (``ranked-route-summary-v1alpha3``) dossier."""
+        return self.schema_version == LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA
+
+    @property
+    def digest(self) -> str:
+        """Route-dossier identity (folded into ``result_digest``).  A LEGACY v0.8 dossier is digested under the frozen
+        v0.8 rule, so a genuine main@df1b38d response's stored ``result_digest`` verifies; current dossiers use the
+        global rule unchanged."""
+        return _v08_digest(self) if self.is_legacy_v08 else canonical_digest(self)
+
     @classmethod
-    def of_fit(cls, fit: "object", *, identity_losses: "tuple[IdentityLoss, ...]" = ()) -> "RankedRouteSummary":
+    def of_fit(cls, fit: "object", *, identity_losses: "tuple[IdentityLoss, ...]" = (),
+               capability_profile: "CapabilityProfile | None" = None) -> "RankedRouteSummary":
         """Project a drafter ``RouteFit`` (already box-checked and ranked) onto the thin response summary.
 
         ``identity_losses`` is the route's already-computed section-5.3 loss tuple (the SAME tuple the caller threads
         into ``rank_routes``); readiness's ``conditions`` obligation is capped by any loss that blocks it (Sec 5.3),
         so the readiness record must see the identical evidence the ranking did.  Defaults to ``()`` for callers that
-        genuinely have none in scope (the overwhelming majority of today's corpus)."""
+        genuinely have none in scope (the overwhelming majority of today's corpus).
+
+        ``capability_profile`` (0.9 Round III, D12): the RESOLVED bench snapshot the request declared, or ``None``
+        (NOT_REQUESTED).  When present, the SAME ``fit.route`` is projected through it -- ``compile_capability_
+        requirements(route)`` + ``assess(profile, reqs, readiness)`` compute HERE (the route, its readiness, and the
+        profile are all in scope) and ride as ``capability_assessment``.  When ``None``, no capability question is
+        asked and ``capability_assessment`` stays ``None`` -- never a fabricated pass.  Capability NEVER touches the
+        intrinsic ``readiness`` this method also derives: it is a projection off the same route, not a second engine."""
+        # v0.8 Real Route Dossiers: readiness is RE-DERIVED from the route's own steps (Sec 3/4), never a hard-coded
+        # stamp -- ``evaluate_route`` reads only conservation-certified facts on each built ``ExperimentStep``.
+        # Computed ONCE here and reused for the capability projection so the assessment sees the identical readiness.
+        readiness = evaluate_route(fit.route, identity_losses=identity_losses)
+        capability_assessment = None
+        if capability_profile is not None:
+            capability_assessment = assess_capability(
+                capability_profile, compile_capability_requirements(fit.route), readiness,
+            )
         return cls(
             RANKED_ROUTE_SUMMARY_SCHEMA,
             fit.route.digest,
             " ; ".join(fit.route.equation_lines()) or repr(fit.route),
             fit.status.value,
-            # v0.8 Real Route Dossiers: readiness is RE-DERIVED from the route's own steps (Sec 3/4), never a
-            # hard-coded stamp -- ``evaluate_route`` reads only conservation-certified facts already on each built
-            # ``ExperimentStep`` (reaction-type recognition, sourced conditions, process/workup declarations).
-            evaluate_route(fit.route, identity_losses=identity_losses),
+            readiness,
             tuple(fit.exclusions),
             tuple(fit.gaps),
             fit.composability.verdict,
@@ -1139,6 +1526,7 @@ class RankedRouteSummary(Digestible):
             # consumer can reconstruct the exact route and re-derive ALL axes on load.  Built here (cheap serialization,
             # no re-analysis); emitted to the wire only when the producer serializes with include_replay=True.
             replay_payload=_steps_to_replay_payload(fit.route.steps),
+            capability_assessment=capability_assessment,
         )
 
 
@@ -1266,8 +1654,11 @@ class RankedDAGSummary(Digestible):
     _FIT_STATUSES = ("FITS", "EXCLUDED", "UNKNOWN", "UNCONSTRAINED")
 
     def __post_init__(self) -> None:
-        if self.schema_version != RANKED_DAG_SUMMARY_SCHEMA:
-            raise ValueError(f"schema_version must be exactly {RANKED_DAG_SUMMARY_SCHEMA!r}")
+        # X-high D22: the CURRENT id, or the released v0.8 id as LEGACY (its replay operations carry no material_uses on
+        # the wire; paired only with a legacy v0.8 response -- CompilationResponse enforces the generation pairing).
+        if self.schema_version not in (RANKED_DAG_SUMMARY_SCHEMA, LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA):
+            raise _unsupported_schema("ranked DAG summary", self.schema_version, RANKED_DAG_SUMMARY_SCHEMA,
+                                      LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA)
         if self.fit_status not in self._FIT_STATUSES:
             raise ValueError(f"fit_status must be one of {self._FIT_STATUSES}")
         for name in ("route_digest", "equation", "composability_verdict", "selectivity_verdict",
@@ -1309,6 +1700,11 @@ class RankedDAGSummary(Digestible):
                 raise ValueError(f"serial_holds entry {(i, j)} is not one of the DAG's carried edges")
             if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or minutes < 0:
                 raise ValueError("serial_holds hold_minutes must be a non-negative real number")
+
+    @property
+    def is_legacy_v08(self) -> bool:
+        """True for a migrated v0.8 (``ranked-dag-summary-v1alpha4``) DAG dossier (X-high D22)."""
+        return self.schema_version == LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA
 
     @classmethod
     def of_dag(cls, dag: "object", box: "object", *, phases: "object" = None) -> "RankedDAGSummary":
@@ -1446,10 +1842,31 @@ class CompilationResponse:
     ranked_dag_dossiers: tuple = ()
 
     def __post_init__(self) -> None:
-        if self.schema_version != COMPILATION_RESPONSE_SCHEMA:
-            raise ValueError(f"schema_version must be exactly {COMPILATION_RESPONSE_SCHEMA!r}")
+        if self.schema_version not in (COMPILATION_RESPONSE_SCHEMA, LEGACY_V08_RESPONSE_SCHEMA):
+            raise _unsupported_schema("response", self.schema_version, COMPILATION_RESPONSE_SCHEMA,
+                                      LEGACY_V08_RESPONSE_SCHEMA)
         if type(self.request) is not CompilationRequest:
             raise TypeError("request must be a CompilationRequest")
+        # D11 version PAIRING: a legacy v0.8 response embeds ONLY a legacy request and legacy dossiers, and a current
+        # response ONLY current ones -- so no mixed payload can borrow the frozen v0.8 digest rule for 0.9 content (or
+        # smuggle a 0.8 sub-record past a current response's required fields).
+        legacy = self.schema_version == LEGACY_V08_RESPONSE_SCHEMA
+        if self.request.is_legacy_v08 != legacy:
+            raise ValueError(
+                f"response schema {self.schema_version!r} cannot embed a request of schema "
+                f"{self.request.schema_version!r} (a legacy v0.8 response pairs only with a legacy request, and a "
+                f"current response only with a current one); refused"
+            )
+        if any(type(r) is RankedRouteSummary and r.is_legacy_v08 != legacy for r in self.ranked_route_dossiers):
+            raise ValueError(
+                f"response schema {self.schema_version!r} carries a ranked route summary of the other schema "
+                f"generation (legacy/current mixing); refused"
+            )
+        if any(type(d) is RankedDAGSummary and d.is_legacy_v08 != legacy for d in self.ranked_dag_dossiers):
+            raise ValueError(
+                f"response schema {self.schema_version!r} carries a ranked DAG summary of the other schema "
+                f"generation (legacy/current mixing); refused"
+            )
         if not isinstance(self.outcome, ResponseOutcome):
             raise TypeError("outcome must be a ResponseOutcome")
         if self.compilation_ir is not None and type(self.compilation_ir) is not ChemicalCompilationIR:
@@ -1541,6 +1958,522 @@ class CompilationResponse:
         self._check_process_admission_coherence()
         self._check_dag_process_admission_coherence()
         self._check_outcome_coherence()
+        # D24.13/D24.14: AFTER the per-dossier/outcome coherence (whose refusals are more specific), the whole-set laws.
+        self._check_capability_topology()
+        self._check_dossier_completeness()
+
+    def _check_dossier_completeness(self) -> None:
+        """D24.14 (Wave-C' D-D1): the ranked dossier set EQUALS the set the producer builds -- a verdict can be read,
+        never silently omitted.  ``ranked <= IR candidates`` alone let a keyless attacker DELETE a BLOCKED dossier (and
+        its frontier entry) and recompute every public pin: the loaded answer then simply lacked a verdict.
+
+        What the producer builds (``_run_recompile``), verified against the code, never assumed:
+        * ROUTES mode: ``routes_for_ranking = search_result.routes`` is ranked by ``_ranked_summaries`` ->
+          ``rank_routes`` -> ``fit_routes``, which judges EVERY route (``tuple(fit_route(r, ...) for r in routes)``,
+          drafter.fit_routes) and ``rank_routes`` only REORDERS them (``tuple(fits[i] for i in order)``); the IR's ROUTE
+          candidates are built from the SAME ``result.routes`` (``recompile_to_ir(search_result=...)``).  No truncation
+          anywhere -- so the ranked set equals the IR ROUTE-candidate set exactly (the ``max_routes`` bound acts inside
+          the search, identically on both).
+        * DAG mode: routes rank nothing; ``ranked_dag_dossiers(search_result.dags, box)`` projects EVERY DAG
+          (``rank_dags`` reorders only) when the bench box constrains anything, else none -- so the DAG dossier set
+          equals the IR DAG-candidate set iff the request's bounds or process constrain anything, else it is empty.
+        * No IR (INVALID / REFUSED / identity-layer refusal): no dossiers at all.
+        The same producer logic ran at main@df1b38d, so a genuine v0.8 response satisfies this too (pinned against the
+        real v0.8 fixtures)."""
+        ir = self.compilation_ir
+        kinds = {} if ir is None else {c.candidate_digest: c.candidate_kind for c in ir.candidates}
+        route_candidates = {d for d, k in kinds.items() if k == "ROUTE"}
+        # D25.3 (Wave-C'' NEW-3) + X-high D27.5 (Wave C4 C4T-5): the IR's candidate SET is itself bound to the carried
+        # search receipt, for EVERY search kind -- a linear route search's ``results_returned`` counts the routes it
+        # returned, a convergent search's counts its DAGs (``RouteSearchResult``/``DAGSearchResult`` enforce
+        # ``results_returned == len(dags)``; D25.3's "DAG receipts count edges" premise was false), and a formula
+        # descent's counts its emitted edges; the producer turns every one into exactly one candidate. Deleting a
+        # candidate together with its dossier and frontier entry is therefore refused unless the attacker ALSO rewrites
+        # the receipt; that consistent keyless rewrite is closed by ``require_reexecution=True`` (D26.2 -- the rerun's
+        # body differs, D27.2) or by the producer HMAC, whose signed wire digest now covers the whole body (D27.2).
+        receipt = None if ir is None else ir.search_receipt
+        # X-high D28.3 (Wave C5 C5-F4): every receipt a service response wraps COUNTS its results (the route, DAG and
+        # formula receipts all set it), so a null count is not "unmeasured" -- it was the one-token way to delete a
+        # candidate without rewriting the count; refused.
+        if receipt is not None and (isinstance(receipt.results_returned, bool)
+                                    or type(receipt.results_returned) is not int):
+            raise ValueError(
+                f"the IR's {receipt.search_kind} search receipt carries no results_returned count "
+                f"({receipt.results_returned!r}) -- every service search counts its results; refused (D28.3)"
+                f"{self._legacy_hint()}")
+        if (receipt is not None
+                and len(ir.candidates) != receipt.results_returned):
+            raise ValueError(
+                f"the IR carries {len(ir.candidates)} candidate(s) but its own {receipt.search_kind} search receipt says "
+                f"the search returned {receipt.results_returned} -- a candidate (and its verdict) is missing or "
+                f"invented; refused (D25.3/D27.5)")
+        if receipt is not None:
+            self._check_receipt_bounds(receipt)
+        ranked_routes = {r.route_digest for r in self.ranked_route_dossiers}
+        if ranked_routes != route_candidates:
+            missing = sorted(route_candidates - ranked_routes)
+            raise ValueError(
+                f"ranked_route_dossiers must cover EXACTLY the IR's route candidates (the producer ranks every route "
+                f"and truncates none): {len(missing)} candidate(s) carry no dossier "
+                f"({', '.join(m[:12] for m in missing[:4])}) -- a deleted verdict; refused (D24.14)"
+            )
+        constrained = (self.request.constraints.bounds.constrains_anything
+                       or self.request.constraints.process.constrains_anything)
+        dag_candidates = {d for d, k in kinds.items() if k == "DAG"} if constrained else set()
+        ranked_dags = {d.route_digest for d in self.ranked_dag_dossiers}
+        if ranked_dags != dag_candidates:
+            raise ValueError(
+                f"ranked_dag_dossiers must cover EXACTLY the IR's DAG candidates when the bench box constrains anything "
+                f"(and none otherwise): {len(dag_candidates - ranked_dags)} candidate(s) carry no dossier, "
+                f"{len(ranked_dags - dag_candidates)} dossier(s) have no admitting box; refused (D24.14)"
+            )
+
+    def _check_receipt_bounds(self, receipt: "object") -> None:
+        """X-high D27.6 (Wave C4 C4T-6, Foreman N2): the search receipt's BOUNDS must be the carried request's own --
+        the IR ``request_digest`` (re-derived by D26.1) is only a label over the bounds, so without this a depth-2
+        answer (or a receipt claiming a depth-12 / 10^7-cut search) loaded under a depth-3 request.  The mapping is the
+        producer's own (``Section81ReceiptView.from_receipt``): a structure search's ``max_depth`` / ``cut_budget`` /
+        ``result_limit`` are the request's ``max_depth`` / ``cut_budget`` / ``max_results``; a formula descent has no depth
+        (``None``) and its ``cut_budget`` / ``result_limit`` are the request's ``budget`` / ``max_edges``.
+
+        D27.8 (the transport ledger's audit): the receipt's ``search_kind`` and ``cut_budget_scope`` describe the SAME
+        search too -- the kind is the one the request's operation / grammar runs (``LINEAR_ROUTE`` / ``CONVERGENT_DAG`` /
+        ``FORMULA_DECOMPOSITION``) and every engine a service response wraps spends its cut budget PER_NODE (the
+        ``RouteSearchReceipt`` / ``DAGSearchReceipt`` / decompiler receipt defaults; only the capper's own
+        STRUCTURE_DECOMPOSITION view is GLOBAL, and it never rides a response).  Before this both were free labels."""
+        bounds = self.request.search_bounds
+        if self.request.operation is CompilationOperation.RECOMPILE:
+            kind = _RECEIPT_KIND_BY_MODE.get(_GRAMMAR_TO_MODE.get(self.request.transform_grammar))
+        else:
+            kind = "FORMULA_DECOMPOSITION"
+        if (receipt.search_kind, receipt.cut_budget_scope) != (kind, _SERVICE_RECEIPT_CUT_BUDGET_SCOPE):
+            raise ValueError(
+                f"the IR's search receipt describes a {receipt.search_kind} search with a {receipt.cut_budget_scope} cut "
+                f"budget but the carried request runs a {kind} search ({_SERVICE_RECEIPT_CUT_BUDGET_SCOPE}) -- a "
+                f"relabelled receipt; refused (D27.6){self._legacy_hint()}")
+        try:
+            if self.request.operation is CompilationOperation.RECOMPILE:
+                expected = (bounds.value("max_depth"), bounds.value("cut_budget"), bounds.value("max_results"))
+            else:
+                expected = (None, bounds.value("budget"), bounds.value("max_edges"))
+        except KeyError as exc:
+            raise ValueError(f"the carried request's search bounds lack a bound the receipt reports ({exc}); refused "
+                             f"(D27.6)") from exc
+        carried = (receipt.max_depth, receipt.cut_budget, receipt.result_limit)
+        if carried != expected:
+            raise ValueError(
+                f"the IR's search receipt reports bounds (max_depth, cut_budget, result_limit) = {carried} but the "
+                f"carried request declares {expected} -- an answer to a DIFFERENT search; refused (D27.6)"
+                f"{self._legacy_hint()}")
+        # X-high D28.3 (Wave C5 C5-F3): the receipt's identity digests are NON-null and the IR's own (which D26.1 binds
+        # to the request).  ``ChemicalCompilationIR.__post_init__`` compares them only when present (a generic IR may
+        # carry an unmeasured one), so a null used to slip every bind; every search a service response wraps stamps
+        # all three.
+        ir = self.compilation_ir
+        for label, carried_digest, bound in (
+            ("target_identity_digest", receipt.target_identity_digest, ir.target.identity_digest),
+            ("terminal_policy_digest", receipt.terminal_policy_digest, ir.terminal_policy_digest),
+            ("transform_registry_digest", receipt.transform_registry_digest, ir.transform_registry_digest),
+        ):
+            if carried_digest is None or carried_digest != bound:
+                raise ValueError(
+                    f"the IR's search receipt {label} is {carried_digest!r}, not the IR's own (request-bound) "
+                    f"{bound!r} -- a nulled or relabelled receipt identity; refused (D28.3){self._legacy_hint()}")
+
+    def _check_capability_topology(self) -> None:
+        """D24.13 (Wave-C' D-G1): the loader mirrors the producer.  ``_run_recompile`` REFUSES a capability profile
+        together with the convergent-DAG grammar BEFORE any search (the DAG admission carries no capability model), so
+        the only honest response to that pair is a REFUSED outcome with no IR and no dossiers.  A payload pairing a
+        profile with DAG dossiers answers a capability question with NOTHING while looking like success; refused."""
+        request = self.request
+        if request.capability_profile is None or request.transform_grammar is not TransformGrammar.CAPPED_SCISSION_CONVERGENT:
+            return
+        if (self.outcome is not ResponseOutcome.REFUSED or self.compilation_ir is not None
+                or self.ranked_route_dossiers or self.ranked_dag_dossiers or self.affordability_frontier):
+            raise ValueError(
+                "a capability-profile request with the CAPPED_SCISSION_CONVERGENT grammar can only be answered by a "
+                "REFUSED outcome with no IR and no dossiers (the producer refuses the pair before searching -- the "
+                "convergent-DAG admission carries no capability model); this response claims otherwise; refused "
+                "(D24.13)"
+            )
+
+    def _check_identity_loss_coherence(self) -> None:
+        """D24.11 (Wave-C' D-L1): ``compilation_ir.identity_losses`` is RE-DERIVED from the carried request's own
+        target on every load and must be EXACTLY equal (canonical digest order) -- never trusted.  The losses feed the
+        readiness re-derivation (a BLOCKER on ``conditions`` caps the ladder) and the ranking verdicts, so a keyless
+        attacker who strips the stereo loss of ``[C@H]`` could otherwise forge PROCESS_SPECIFIED on the canonical wire
+        under the corpus route's OWN route digest, with every public pin recomputed: the readiness/capability
+        re-derivations would faithfully re-derive the forgery from the forged losses.  Structural candidates carry the
+        same tuple.  A legacy v0.8 payload is checked the same way: if today's resolver derives a DIFFERENT loss set
+        than the real v0.8 producer carried, it fails closed ("legacy; recompile"), never loads as current."""
+        ir = self.compilation_ir
+        if ir is None:
+            return
+        try:
+            expected = _rederive_identity_losses(self.request)
+        except ValueError as exc:
+            raise ValueError(
+                f"the response carries an IR whose identity losses cannot be re-derived from its request: {exc}; "
+                f"refused (D24.11){self._legacy_hint()}"
+            ) from exc
+        carried = [ir.identity_losses] + [sc.identity_losses for sc in ir.structural_candidates]
+        if any(losses != expected for losses in carried):
+            raise ValueError(
+                f"compilation_ir.identity_losses {[loss.feature for loss in ir.identity_losses]} do not equal the "
+                f"losses the carried request's own target implies {[loss.feature for loss in expected]} -- stripped, "
+                f"injected or stale section-5.3 losses (they gate readiness and ranking); refused (D24.11)"
+                f"{self._legacy_hint()}"
+            )
+
+    def _check_request_answer_coherence(self) -> None:
+        """X-high D26.1 (Wave-C'' T1/T1c/T3/T4b/T6a): a response must answer ITS request. Every earlier bind checks the
+        response against ITSELF (fold, bindings, rebind, readiness), so a keyless attacker could carry search Y's IR and
+        dossiers under request X -- recomputing every public pin -- and load a PROCESS_SPECIFIED route X never asked
+        about under the request pin, the question pin and verified admission. Re-derived from the carried request by
+        the producers' OWN helpers (never trusted): the IR operation, target identity, terminal-policy digest, IR
+        request digest and transform-registry digest; every candidate's kind (ROUTE/DAG per the grammar's mode,
+        FORMULA_EDGE for a decompile); and, for every dossier carrying a replay, the replayed route/DAG must make the
+        requested target, consume only the declared terminal set, and carry its OWN equation rendering as its label.
+        Recompile, decompile and the legacy (frozen-v0.8) paths alike -- a legacy payload whose context today's
+        derivation cannot reproduce fails closed with the recompile hint."""
+        ir = self.compilation_ir
+        if ir is None:
+            return
+        request = self.request
+        if ir.operation is not request.operation:
+            raise ValueError(
+                f"the IR answers a {ir.operation.value} but the carried request is a {request.operation.value} -- a "
+                f"response that does not answer its own request; refused (D26.1){self._legacy_hint()}")
+        try:
+            ctx = _rederive_request_context(request)
+        except ValueError as exc:
+            raise ValueError(
+                f"the IR's search context cannot be re-derived from the carried request ({exc}); refused "
+                f"(D26.1){self._legacy_hint()}") from exc
+        for label, carried, derived in (
+            ("target identity", ir.target, ctx.target),
+            ("terminal_policy_digest", ir.terminal_policy_digest, ctx.terminal_policy_digest),
+            ("request_digest", ir.request_digest, ctx.request_digest),
+            ("transform_registry_digest", ir.transform_registry_digest, ctx.registry_digest),
+        ):
+            if carried != derived:
+                raise ValueError(
+                    f"compilation_ir {label} is not the one the carried request implies -- the IR answers a DIFFERENT "
+                    f"search than the request asked (a transplanted or relabelled answer); refused (D26.1)"
+                    f"{self._legacy_hint()}")
+        wrong = sorted({c.candidate_kind for c in ir.candidates} - {ctx.candidate_kind})
+        if wrong:
+            raise ValueError(
+                f"compilation_ir carries {wrong} candidate(s) but the carried request's grammar only produces "
+                f"{ctx.candidate_kind} -- refused (D26.1){self._legacy_hint()}")
+        # X-high D27.3 (Wave C4 C4T-3): the OUTCOME is the producer's own classification of this IR under the carried
+        # request's availability -- never a free label.  ``_check_outcome_coherence`` already ties the outcome to the
+        # IR's completeness and candidate count, but TARGET_ALREADY_AVAILABLE was unbound: a ROUTES_FOUND answer
+        # relabelled "already on the shelf" (exit 0) loaded although the target is not in the declared terminal set.
+        if request.operation is CompilationOperation.RECOMPILE:
+            available = ctx.target_ident in ctx.terminal_idents
+        else:
+            available = _decompile_target_available(request, ir)
+        expected_outcome = _classify(ir, available)
+        if self.outcome is not expected_outcome:
+            raise ValueError(
+                f"outcome {self.outcome.value} is not the classification of this IR under the carried request "
+                f"({expected_outcome.value}: the target is {'' if available else 'NOT '}in the declared terminal "
+                f"set) -- a relabelled answer; refused (D27.3){self._legacy_hint()}")
+        # X-high D28.2 (Wave C5 C5-F2): the IR's OWN diagnostics are the producer's rule over the IR's classification
+        # facts and the carried request (ONE shared helper) -- never free text.  Before this ``ir.diagnostics`` rode
+        # into the "re-derived" response diagnostics verbatim, so a keyless forger appended a "1 FIT ...
+        # CAPABILITY_FIT" line under both pins and verified admission.
+        if request.operation is CompilationOperation.RECOMPILE:
+            expected_ir_diagnostics = recompile_ir_diagnostics(
+                target_in_terminal_stock=available, complete_within_bounds=ir.complete_within_bounds,
+                status_value=ir.search_status.value, has_candidates=bool(ir.candidates),
+                mode=_GRAMMAR_TO_MODE[request.transform_grammar],
+                max_depth=request.search_bounds.value("max_depth"))
+        else:
+            expected_ir_diagnostics = decompile_ir_diagnostics(
+                complete_within_bounds=ir.complete_within_bounds, stop_reason=ir.search_receipt.stop_reason)
+        if tuple(ir.diagnostics) != expected_ir_diagnostics:
+            raise ValueError(
+                "compilation_ir.diagnostics are not the producer's own diagnostics for this IR under the carried "
+                "request (search-emitted text is re-derived, never free) -- injected or rewritten diagnostics; refused "
+                f"(D28.2){self._legacy_hint()}")
+        # X-high D27.7 (Wave C4 C4T-8): the IR candidate's own ``equation`` text is the SAME label as its dossier's (which
+        # the loop below binds to the replayed route's rendering) -- a free-text IR equation shown by the human render
+        # could otherwise contradict the route it names.
+        candidate_equations = {c.candidate_digest: c.equation for c in ir.candidates}
+        for dossier in (*self.ranked_route_dossiers, *self.ranked_dag_dossiers):
+            if (dossier.route_digest in candidate_equations
+                    and candidate_equations[dossier.route_digest] != dossier.equation):
+                raise ValueError(
+                    f"IR candidate {dossier.route_digest[:12]} carries equation text that is not its dossier's -- a "
+                    f"rewritten candidate label; refused (D27.7){self._legacy_hint()}")
+        for kind, dossiers, rebuild, render in (
+            ("route", self.ranked_route_dossiers, _reconstruct_route,
+             lambda r: " ; ".join(r.equation_lines()) or repr(r)),
+            ("DAG", self.ranked_dag_dossiers, _reconstruct_dag,
+             lambda d: " ; ".join(s.equation() for s in d.topological_order()) or repr(d)),
+        ):
+            for dossier in dossiers:
+                if dossier.replay_payload is None:
+                    continue
+                replayed = rebuild(dossier.replay_payload)
+                where = f"{kind} dossier {dossier.route_digest[:12]}"
+                if _structure_ident(replayed.final_target) != ctx.target_ident:
+                    raise ValueError(f"{where}: the replayed {kind} does not make the requested target; refused "
+                                     f"(D26.1){self._legacy_hint()}")
+                extra = [m for m in replayed.leaf_inputs if _structure_ident(m) not in ctx.terminal_idents]
+                if extra:
+                    raise ValueError(f"{where}: the replayed {kind} consumes {len(extra)} input(s) outside the carried "
+                                     f"request's declared terminal set; refused (D26.1){self._legacy_hint()}")
+                if dossier.equation != render(replayed):
+                    raise ValueError(f"{where}: its equation label is not the replayed {kind}'s own rendering; "
+                                     f"refused (D26.1){self._legacy_hint()}")
+                # X-high D27.6 (Foreman N2), the per-route leg: the linear search starts at depth 1 and recurses only
+                # while depth < max_depth (``search_routes``), so an honest route has AT MOST max_depth steps -- a
+                # depth-3 route under a max_depth=1 request is an answer to a different search even when the receipt's
+                # bounds were rewritten to match.  (A DAG's depth is its height, not its step count: the receipt bind
+                # above is its leg.)
+                if kind == "route" and len(replayed.steps) > request.search_bounds.value("max_depth"):
+                    raise ValueError(
+                        f"{where}: the replayed route has {len(replayed.steps)} steps but the carried request bounds the "
+                        f"search at max_depth={request.search_bounds.value('max_depth')} -- an answer to a DEEPER search; "
+                        f"refused (D27.6){self._legacy_hint()}")
+
+    def _check_ranking_coherence(self) -> None:
+        """X-high D27.4 (Wave C4 C4T-4/C4T-2/C4T-7, Foreman N3): the ranking, every dossier's bench verdict, the
+        affordability frontier and the diagnostics are RE-DERIVED from the replayed evidence under the CARRIED request
+        -- never trusted.  Before this a keyless attacker loaded (under both pins and verified admission) a BLOCKED
+        route ranked first with the PROCESS_SPECIFIED route pushed to #27 (hidden by the human render), a forged or
+        deleted frontier, a forged "3 route(s) FIT" tally, and dossiers judged under NO box carried under a request
+        with a 280 K ceiling.
+
+        On a CURRENT payload whose dossiers carry their replay (the canonical wire; D27.7 makes that mandatory there):
+        the routes are reconstructed in the CARRIED order and re-ranked by the producer's OWN :func:`_ranked_summaries`
+        under the carried request's section-11 box, process bounds, identity losses and capability profile; the whole
+        ranked tuple (order + every compared field: fit status, verdicts, readiness, assessment) must equal the carried
+        one.  ``rank_routes`` is a STABLE sort over a set-relative (order-independent) key, so the carried order is a
+        fixpoint of it iff it is a valid best-first order under the producer's key -- TIES stay in the carried order
+        (the producer breaks them by search discovery order, which the payload does not carry and the ranking law
+        cannot distinguish); every non-tie reordering is refused;
+        the frontier must equal :func:`_route_frontier` over it; a DAG search's dossiers must equal
+        ``ranked_dag_dossiers`` over the reconstructed DAGs (serial holds included); and the diagnostics must equal the
+        IR's plus the producer's own ``constraint_note`` / ``_dag_bench_note``.  A thin (replay-free) payload keeps the
+        re-derivable part -- the constraint tally must match the carried dossiers' own fit statuses -- and the rest is
+        ADVISORY (the transport ledger says so).  A legacy v0.8 payload is out of scope (its ranking is v0.8's code)."""
+        ir = self.compilation_ir
+        if self.is_legacy_v08 or ir is None:
+            return
+        request = self.request
+        if request.operation is not CompilationOperation.RECOMPILE:
+            if self.diagnostics != tuple(ir.diagnostics):
+                raise ValueError("a decompile response's diagnostics must be exactly its IR's -- rewritten diagnostics; "
+                                 "refused (D27.4)")
+            return
+        from .experiment.drafter import ConstraintBox
+        bounds, process = request.constraints.bounds, request.constraints.process
+        routes_mode = all(c.candidate_kind == "ROUTE" for c in ir.candidates)
+        expected_diagnostics = list(ir.diagnostics)
+        if routes_mode:
+            dossiers = self.ranked_route_dossiers
+            if dossiers and all(d.replay_payload is not None for d in dossiers):
+                routes = tuple(_reconstruct_route(d.replay_payload) for d in dossiers)
+                ranked = _ranked_summaries(routes, bounds, self.identity_losses, process=process,
+                                           capability_profile=request.capability_profile)
+                if ranked != dossiers:
+                    raise ValueError(
+                        "ranked_route_dossiers are not the producer's ranking of the replayed routes under the carried "
+                        "request's bench (order, fit status or verdicts differ) -- a reordered, relabelled or foreign "
+                        "ranking; refused (D27.4)")
+                if _route_frontier(request, routes, ranked) != self.affordability_frontier:
+                    raise ValueError(
+                        "affordability_frontier is not the producer's frontier over the replayed routes (a forged, "
+                        "deleted or fabricated entry); refused (D27.4)")
+            else:
+                ranked = dossiers
+            note = constraint_note(bounds, fit_counts=_fit_counts(ranked) if ranked else None, process=process)
+            if note is not None:
+                expected_diagnostics.append(note)
+        else:
+            note = constraint_note(bounds, fit_counts=None, process=process)
+            if note is not None:
+                expected_diagnostics.append(note)
+            box = ConstraintBox.of_bounds(bounds, process=process)
+            dossiers = self.ranked_dag_dossiers
+            if box.constrains_anything and dossiers:
+                if not all(d.replay_payload is not None for d in dossiers):
+                    # thin DAG wire: the DAG verdicts and their bench note are ADVISORY (no evidence to re-derive from)
+                    if self.diagnostics[:len(expected_diagnostics)] != tuple(expected_diagnostics):
+                        raise ValueError("diagnostics are not the IR's plus the producer's constraint note -- rewritten "
+                                         "diagnostics; refused (D27.4)")
+                    return
+                dags = tuple(_reconstruct_dag(d.replay_payload) for d in dossiers)
+                rederived = ranked_dag_dossiers(dags, box)
+                if rederived != dossiers or any(a.serial_holds != b.serial_holds for a, b in zip(rederived, dossiers)):
+                    raise ValueError(
+                        "ranked_dag_dossiers are not the producer's DAG ranking of the replayed DAGs under the carried "
+                        "request's bench (order, fit status, verdicts or serial holds differ); refused (D27.4)")
+                dag_note = _dag_bench_note(dags, box)
+                if dag_note is not None:
+                    expected_diagnostics.append(dag_note)
+        if self.diagnostics != tuple(expected_diagnostics):
+            raise ValueError(
+                "diagnostics are not the IR's plus the producer's own constraint / DAG-bench notes for the carried "
+                "request and dossiers (e.g. a forged fit tally); refused (D27.4)")
+
+    def _check_corpus_evidence_coherence(self, *, verified: bool) -> None:
+        """X-high D27.1 (Wave C4 C4T-1, Foreman f_envgraft): corpus evidence is RE-DERIVED, never trusted.  A step's
+        condition envelope is not free data: the producer attaches it by a DETERMINISTIC lookup over the shipped corpus
+        (``experiment.routes._conditions_for`` -> ``decompiler_conditions.assembly_conditions``, keyed by the step's own
+        reaction signature and the resolved names of its target and precursors).  D26.1 bound a replayed route's
+        SHAPE (target, leaves, equation) to the request but trusted the envelope riding on it, so a keyless attacker
+        grafted the isopentyl-acetate corpus envelope onto methyl acetate's route, honestly re-derived the dossier from
+        the tampered route, and loaded PROCESS_SPECIFIED under both pins and verified admission.
+
+        Every replayed step's envelope must now EQUAL the envelope the SAME lookup attaches to that step (the transform
+        is recovered by inverting ``ExperimentStep.from_transform``: :class:`_ReplayedTransform`).  X-high D28.1 (Wave
+        C5 C5-F1): on a CURRENT payload that includes a carried ``unknown()`` -- "an unknown envelope claims nothing"
+        held for READINESS only: stripping a corpus envelope to ``unknown()`` erased its sourced process record, so a
+        section-11 EXCLUDED became UNKNOWN (and a REAL_BUT_HARD frontier entry vanished) and an equipment BLOCK became
+        UNKNOWN, under both pins and verified admission.  Every honest producer path attaches exactly the lookup's
+        result (``experiment.routes`` -- the linear and the convergent search both build ``ExperimentStep.from_transform(
+        cs, envelope=_conditions_for(cs))``), so the carried envelope must be the lookup's, whatever it is.  A lookup that
+        cannot even be put to the replayed step is refused (a malformed replay), never an internal error.
+        CURRENT payloads: always.  LEGACY v0.8 payloads: v0.8 evidence is v0.8's corpus (nothing in 0.8 bound it, and
+        the corpus has been corrected since), so on a PLAIN load it stays advisory (documented boundary); under
+        ``require_verified_admission`` it must equal today's lookup modulo the v0.8-absent ``material_uses``, else it
+        fails closed with the recompile hint."""
+        if self.is_legacy_v08 and not verified:
+            return
+        from .conditions import ConditionEnvelope
+        from .experiment import routes as _routes
+        unknown = ConditionEnvelope.unknown()
+        for kind, dossiers, rebuild in (
+            ("route", self.ranked_route_dossiers, lambda p: _reconstruct_route(p).steps),
+            ("DAG", self.ranked_dag_dossiers, lambda p: _reconstruct_dag(p).steps),
+        ):
+            for dossier in dossiers:
+                if dossier.replay_payload is None:
+                    continue
+                for index, step in enumerate(rebuild(dossier.replay_payload), start=1):
+                    # D27.1 kept a legacy v0.8 payload's carried unknown() out of scope (v0.8's own lookup may have
+                    # found nothing where today's corpus has a record); a CURRENT payload has no such excuse (D28.1).
+                    if self.is_legacy_v08 and step.envelope == unknown:
+                        continue
+                    try:
+                        expected = _routes._conditions_for(_ReplayedTransform(step))
+                    except Exception as exc:  # noqa: BLE001 -- a replay the lookup cannot read is refused, not a crash
+                        raise ValueError(
+                            f"{kind} dossier {dossier.route_digest[:12]} step {index}: the shipped corpus lookup cannot "
+                            f"be put to the replayed step ({type(exc).__name__}: {exc}); refused (D28.1)"
+                            f"{self._legacy_hint()}") from exc
+                    carried = step.envelope
+                    if self.is_legacy_v08:
+                        expected, carried = _without_material_uses(expected), _without_material_uses(carried)
+                    if carried != expected and carried == unknown:
+                        raise ValueError(
+                            f"{kind} dossier {dossier.route_digest[:12]} step {index} carries unknown() where the "
+                            f"shipped corpus attaches a record to that reaction -- stripped corpus evidence; refused "
+                            f"(D28.1){self._legacy_hint()}")
+                    if carried != expected:
+                        raise ValueError(
+                            f"{kind} dossier {dossier.route_digest[:12]} step {index} carries a condition envelope that "
+                            f"is not the one the shipped corpus attaches to that reaction -- grafted or stale corpus "
+                            f"evidence; refused (D27.1){self._legacy_hint()}")
+
+    def _check_replay_step_transforms(self, *, verified: bool) -> None:
+        """X-high D29.1 (Wave C6 C6-F8): a replayed step is a transform the carried ALGEBRA emits -- its byproducts are
+        bound to that transform, never to their formula.  D26.1 bound a route's shape to the request through its final
+        target, its leaves and its equation, but the equation renders COMPOSITION: a keyless attacker swapped a step's
+        byproduct for a same-formula isomer (acetic acid -> methyl formate), the equation stayed byte-identical, the
+        route digest was honestly re-bound, and the swap erased a sourced hazard verdict (waste BLOCKED -> UNKNOWN; on a
+        bench without HAZARDOUS routing the OVERALL verdict BLOCKED -> UNKNOWN) under plain / pins / verified admission.
+
+        Every search step is ``ExperimentStep.from_transform(et.transform)`` over ``registry.enumerate(t, reagents,
+        budget=cut_budget)`` (both ``experiment.routes`` search loops), so the loader puts the producer's OWN question
+        to the producer's OWN provider code: for each replayed step it enumerates the carried algebra profile's registry
+        at the step's target with the request's helper reagents and cut budget, and requires ONE emitted transform whose
+        precursors equal the step's reactants and whose ``(reactant,) + reagents`` equal the step's products -- as
+        STRUCTURE multisets, byproducts included -- with the step's ``reaction_center`` one that transform assigns and no
+        ancillary-reagent flag (the search never sets one).  That closes the isomer swap, a fabricated step, and a
+        neutral re-centre (Foreman N4) on every load.  What stays re-execution / HMAC only: that the bounded SEARCH
+        reached this particular (locally generable) route -- the D25.3 search-output boundary.
+
+        CURRENT payloads: always (a DECOMPILE carries no replay).  LEGACY v0.8 payloads, mirroring D27.1: a v0.8 step
+        is v0.8's algebra's output and nothing in 0.8 bound a replayed step to an algebra, so on a PLAIN load it stays
+        advisory (documented boundary); under ``require_verified_admission`` it must be a transform today's algebra
+        emits, else it fails closed with the recompile hint (every real v0.8 fixture's steps are).  Re-execution refuses
+        a legacy payload outright (D26.2)."""
+        if self.request.operation is not CompilationOperation.RECOMPILE or (self.is_legacy_v08 and not verified):
+            return
+        tables = (
+            ("route", self.ranked_route_dossiers, lambda p: _reconstruct_route(p).steps),
+            ("DAG", self.ranked_dag_dossiers, lambda p: _reconstruct_dag(p).steps),
+        )
+        if not any(d.replay_payload is not None for _kind, dossiers, _rebuild in tables for d in dossiers):
+            return
+        from .experiment.step import _ident
+        try:
+            registry = resolve_algebra_profile(self.request.algebra_profile)
+            reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in self.request.helper_reagents)
+        except (IdentityParseError, ValueError) as exc:
+            raise ValueError(f"the carried request's algebra / helper reagents cannot be re-read ({exc}); refused "
+                             f"(D29.1){self._legacy_hint()}") from exc
+        budget = self.request.search_bounds.value("cut_budget")
+        emitted: "dict[str, dict[tuple, list]]" = {}   # target (as carried) -> {step shape: [reaction centres]}
+        for kind, dossiers, rebuild in tables:
+            for dossier in dossiers:
+                if dossier.replay_payload is None:
+                    continue
+                for index, step in enumerate(rebuild(dossier.replay_payload), start=1):
+                    where = f"{kind} dossier {dossier.route_digest[:12]} step {index}"
+                    key = canonical_digest(step.target)
+                    table = emitted.get(key)
+                    if table is None:
+                        table = {}
+                        try:
+                            cleavages, _complete = registry.enumerate(step.target, reagents, budget=budget)
+                        except Exception as exc:  # noqa: BLE001 -- a replay the algebra cannot read is refused, not a crash
+                            raise ValueError(
+                                f"{where}: the carried algebra cannot be put to the replayed step's target "
+                                f"({type(exc).__name__}: {exc}); refused (D29.1){self._legacy_hint()}") from exc
+                        for et in cleavages:
+                            cs = et.transform
+                            shape = (tuple(sorted(_ident(m) for m in cs.products)),
+                                     tuple(sorted(_ident(m) for m in (cs.reactant, *cs.reagents))))
+                            center_of = getattr(cs, "reaction_center", None)
+                            table.setdefault(shape, []).append(center_of() if callable(center_of) else None)
+                        emitted[key] = table
+                    shape = (tuple(sorted(_ident(m) for m in step.reactants)),
+                             tuple(sorted(_ident(m) for m in step.products)))
+                    centres = table.get(shape)
+                    if centres is None:
+                        raise ValueError(
+                            f"{where}: {step.equation()} is not a transform the carried algebra "
+                            f"({self.request.algebra_profile}) emits for that step's target -- its reactants / products "
+                            f"(byproducts included, as STRUCTURES) match no emitted transform: a same-formula byproduct "
+                            f"isomer or a fabricated step; refused (D29.1){self._legacy_hint()}")
+                    if step.reaction_center not in centres:
+                        raise ValueError(
+                            f"{where}: its reaction_center is not one the carried algebra assigns to that transform -- a "
+                            f"re-centred replay; refused (D29.1){self._legacy_hint()}")
+                    if step.reagents:
+                        raise ValueError(
+                            f"{where}: it flags {len(step.reagents)} ancillary reagent(s), which the search never "
+                            f"sets; refused (D29.1){self._legacy_hint()}")
+
+    @property
+    def is_legacy_v08(self) -> bool:
+        """True for a migrated v0.8 (``compilation-response-v1alpha15``) response: verified under the frozen v0.8 digest
+        rule, readiness preserved, capability NOT_REQUESTED (no question, no assessment -- none fabricated)."""
+        return self.schema_version == LEGACY_V08_RESPONSE_SCHEMA
+
+    def _legacy_hint(self) -> str:
+        """Suffix for a refusal of a LEGACY payload: say what it is and what to do, never just a digest mismatch."""
+        if not self.is_legacy_v08:
+            return ""
+        return (f" [legacy v0.8 payload ({LEGACY_V08_RESPONSE_SCHEMA}); recompile under 0.9 "
+                f"(semantic_digest {self.request.semantic_digest})]")
 
     def _check_process_admission_coherence(self) -> None:
         """Re-derive each route's PROCESS fit from its carried per-step ``process_requirements`` and refuse a
@@ -1566,7 +2499,12 @@ class CompilationResponse:
         * Even on the process axis, the carried evidence is not cryptographically bound to the route structure, so a
           fully controlling forger who fabricates internally coherent lenient ``process_requirements`` AND recomputes
           ``result_digest`` can still mint a FITS.
-        Both gaps close only with a producer signature over the payload (an authentication layer, out of scope here).
+        Both gaps are closed ELSEWHERE, not here: on the CANONICAL wire by X-high D27.4 (``_check_ranking_coherence``
+        re-derives every whole dossier -- ``fit_status``, gaps, exclusions, ``process_requirements`` -- from its replayed
+        route under the carried request's box, and D27.1 re-derives the replayed step envelopes from the corpus); on ANY
+        wire by the opt-in producer HMAC (whose signed digest covers the whole body since D27.2) or by
+        ``require_reexecution`` (D26.2 + D27.2).  What remains is the THIN wire under a plain / verified-admission load,
+        where both gaps are the documented advisory residual (see the module's transport ledger).
         Pinned by tests/test_process_service.py.
         """
         if not self.request.constraints.process.constrains_anything:
@@ -1624,8 +2562,12 @@ class CompilationResponse:
         the full ExperimentStep graph the thin projection omits), so a composability/physical EXCLUDE bare-relabeled to
         FITS still passes this gate.  And the carried evidence is not cryptographically bound to the DAG structure, so a
         fully controlling forger who fabricates internally coherent lenient ``process_requirements`` AND ``edges`` (any
-        legal DAG shape) AND recomputes ``result_digest`` can still mint a FITS.  Both close only with the opt-in
-        producer signature (COMBINED-VERDICT-AUTH).  Pinned by tests/test_process_service.py.
+        legal DAG shape) AND recomputes ``result_digest`` can still mint a FITS.  Both are closed on the CANONICAL wire
+        by X-high D27.4 (a box-constrained DAG answer's dossiers are re-derived whole from the replayed DAGs,
+        ``ranked_dag_dossiers``) + D27.1 (the replayed step envelopes are re-derived from the corpus), and on ANY wire
+        by the opt-in producer HMAC (COMBINED-VERDICT-AUTH; its signed digest covers the whole body since D27.2) or by
+        ``require_reexecution`` (D26.2 + D27.2).  The THIN wire under a plain / verified-admission load keeps them as
+        the documented advisory residual.  Pinned by tests/test_process_service.py.
         """
         if not self.request.constraints.process.constrains_anything:
             return
@@ -1720,7 +2662,9 @@ class CompilationResponse:
             # fully specified" is precisely the claim a lean advisory wire may not carry; a producer that means it
             # serializes CANONICAL_VERIFIED (include_replay=True).  Lower above-FORMAL tiers keep their documented thin
             # residual (advisory on a plain load, fail-closed under verified admission).
-            if refuse_process_specified_on_thin and r.readiness.tier == PROCESS_SPECIFIED:
+            # X-high D20(3): AT OR ABOVE PROCESS_SPECIFIED (tier_rank), never ``== PROCESS_SPECIFIED`` -- equality was
+            # sound only while PS is the top rung; a ladder extension must not silently open the thin wire to it.
+            if refuse_process_specified_on_thin and tier_rank(r.readiness.tier) >= tier_rank(PROCESS_SPECIFIED):
                 raise ValueError(
                     f"ranked route {r.route_digest} claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY "
                     f"transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must "
@@ -1742,21 +2686,163 @@ class CompilationResponse:
                         f"{r.readiness.tier} but carries no replay_payload -- the claim is UNVERIFIED (the DEFAULT "
                         f"thin transport omits the replay, so a forged above-FORMAL readiness cannot be re-derived "
                         f"and refuted; the producer must serialize with include_replay=True); refused "
-                        f"(v0.8 M10, thin-transport closure)"
+                        f"(v0.8 M10, thin-transport closure){self._legacy_hint()}"
                     )
                 continue
             route = _reconstruct_route(r.replay_payload)
-            if route.digest != r.route_digest:
+            # D11: a LEGACY v0.8 dossier binds under the frozen v0.8 digest rule -- still exact equality.
+            bound = _route_identity(route, legacy=self.is_legacy_v08)
+            if bound != r.route_digest:
                 raise ValueError(
                     f"ranked route {r.route_digest} carries replay evidence that reconstructs to a DIFFERENT route "
-                    f"({route.digest}) -- substituted readiness evidence; refused (v0.8 M10)"
+                    f"({bound}) -- substituted readiness evidence; refused (v0.8 M10){self._legacy_hint()}"
                 )
             rederived = evaluate_route(route, identity_losses=self.identity_losses)
             if r.readiness != rederived:
                 raise ValueError(
                     f"ranked route {r.route_digest} claims a readiness (tier {r.readiness.tier}) its replayed "
                     f"evidence does not support (re-derives to tier {rederived.tier}) -- a forged, stale, or "
-                    f"evidence-stripped readiness claim; refused (v0.8 M10)"
+                    f"evidence-stripped readiness claim; refused (v0.8 M10){self._legacy_hint()}"
+                )
+
+    def _check_assessment_bindings(self, r: "RankedRouteSummary", profile: "CapabilityProfile", *,
+                                   refuse_fit_on_thin: bool) -> None:
+        """Wave-C2: the replay-free coherence of ONE carried capability assessment (every load, every transport).
+
+        An assessment is not free data: (1) its ``overall`` must be the HARD-LAW fold of its own axes under its own
+        ``readiness_tier`` (``CapabilityAssessment.__post_init__`` also enforces this at decode -- re-checked here so
+        the refusal names the dossier); (2) ``readiness_tier``/``readiness_digest`` must be the DOSSIER's readiness
+        (the ladder that is itself re-derived from replay when present, and digest-covered always); (3)
+        ``profile_digest`` must be the REQUEST-BOUND profile's digest; (4) ``route_digest`` must be the dossier's own
+        route identity; and (5) a CAPABILITY_FIT is not admissible on an unsigned THIN_ADVISORY wire at all (the
+        capability analogue of the PROCESS_SPECIFIED thin refusal) -- a FIT must travel CANONICAL_VERIFIED so it is
+        re-derived from replay.  None of these needs the replay, so none of them is advisory."""
+        from .capability.assess import _fold_overall
+        a = r.capability_assessment
+        where = f"ranked route {r.route_digest}"
+        expected = _fold_overall(a.axes, a.readiness_tier)
+        if a.overall is not expected:
+            raise ValueError(
+                f"{where} carries a capability_assessment whose overall {a.overall.value} is not the HARD-LAW fold of "
+                f"its axes (expected {expected.value}) -- a forged verdict; refused (Wave-C2)"
+            )
+        if a.readiness_tier != r.readiness.tier or a.readiness_digest != r.readiness.digest:
+            raise ValueError(
+                f"{where} carries a capability_assessment computed under readiness tier {a.readiness_tier!r} but the "
+                f"dossier's readiness is {r.readiness.tier!r} (tier/readiness_digest mismatch) -- a forged or "
+                f"transplanted assessment; refused (Wave-C2)"
+            )
+        if a.profile_digest != profile.profile_digest:
+            raise ValueError(
+                f"{where} carries a capability_assessment for profile_digest {a.profile_digest} but the request "
+                f"declares profile_digest {profile.profile_digest} -- an assessment under a different bench; refused "
+                f"(Wave-C2)"
+            )
+        if a.route_digest != r.route_digest:
+            raise ValueError(
+                f"{where} carries a capability_assessment for route_digest {a.route_digest} -- an assessment of a "
+                f"different route; refused (Wave-C2)"
+            )
+        if refuse_fit_on_thin and a.is_capability_fit:
+            raise ValueError(
+                f"{where} claims CAPABILITY_FIT on a THIN_ADVISORY transport -- CAPABILITY_FIT is not admissible on an "
+                f"unsigned thin wire (the producer must serialize with include_replay=True, transport_mode="
+                f"CANONICAL_VERIFIED, so the verdict is re-derived from replay); refused (Wave-C2)"
+            )
+
+    def _check_capability_coherence(self, *, require_verified_admission: bool = False,
+                                    refuse_fit_on_thin: bool = False) -> None:
+        """CAPABILITY-REBIND-ON-LOAD (0.9 Round III, D12): re-derive each ranked route's ``capability_assessment``
+        from its thick ``replay_payload`` + the REQUEST-BOUND profile and refuse a payload whose carried assessment
+        disagrees -- the capability analogue of :meth:`_check_readiness_coherence`, mirroring ALGEBRA-REBIND-ON-LOAD's
+        "a search under one context cannot be LOADED as another" law but PER-ROUTE.
+
+        Called from :func:`response_from_payload` (the DESERIALIZATION trust boundary), like the readiness check --
+        NOT from ``__post_init__`` (an honest producer's ``of_fit`` already computed the assessment via the SAME
+        ``assess`` this re-derives with, so re-checking on construction is redundant, and it would fire on the
+        ``replace``-forged responses the red-team tests build).
+
+        THE LAW.  ``request.capability_profile`` is the ONE profile the whole response was assessed under (D10: a
+        resolved snapshot, never a re-resolvable name).  So:
+        * ``request.capability_profile is None`` (NOT_REQUESTED) -> EVERY dossier MUST carry
+          ``capability_assessment is None``.  A dossier that smuggles an assessment onto a no-profile request is a
+          fabricated bench claim -> REFUSED (kills M37 on the load side).
+        * ``request.capability_profile`` set -> re-derive.  The route is reconstructed from the thick replay
+          (``reconstruct(payload).digest == route_digest`` bound FIRST, so substituted evidence cannot wear this
+          entry's identity -- EXCEPT the ``compare=False`` ``reaction_center`` annotation, which sits outside
+          ``route.digest``: X-high D26.4, below), readiness re-evaluated, requirements recompiled, and
+          ``assess(profile, reqs, readiness)`` recomputed.  STRUCTURAL equality with the carried assessment is REQUIRED; any mismatch -- a profile-A
+          assessment carried under profile B, an altered profile snapshot, altered stock, altered readiness, altered
+          route, or an altered result -- is a detectable divergence -> REFUSED (kills M35, M38).
+
+        THIN/ADVISORY BOUNDARY.  A dossier with NO replay cannot be re-derived.  Under ``require_verified_admission``
+        (the CANONICAL_VERIFIED wire sets it) an assessed route with no replay is UNVERIFIED -> REFUSED: a thin wire
+        must NOT claim CAPABILITY_FIT as verified.  On a bare load it stays advisory, the same residual every other
+        axis here lives with (closed by the ``verification_key`` path, or keylessly by ``require_reexecution=True``,
+        X-high D26.2).  This is semantic coherence, NOT authentication: a keyless forger who rebuilds a self-consistent
+        answer for a TAMPERED procedure (every assessment and readiness honestly re-derived from the tampered replay --
+        the D20 (c3) boundary) still loads on a plain or verified-admission load; X-high D26.1 now pins such an answer
+        to ITS request (target, terminal set, IR request digest), and D26.2 re-execution refuses it outright.
+
+        X-high D26.4 (Wave-C'' T5) -- ``reaction_center`` is NOT inside route identity in 0.9.  It is a ``compare=False``
+        annotation on ``ExperimentStep`` (derived data: how the generator discovered the step), so it is outside
+        ``route.digest`` yet it feeds the reaction-type readiness. A keyless forger can therefore re-centre a replayed
+        step under the corpus route's OWN ``route_digest``; every observed forgery only DEMOTES readiness (no promotion
+        was found across 59 steps x 26 centres -- Conjectured unreachable, not proven). ``require_reexecution=True``
+        closes it keylessly (D26.2), and since X-high D29.1 so does EVERY current load (a legacy v0.8 payload: under
+        verified admission): the replayed centre must be one the carried algebra's emitted transform assigns
+        (:meth:`_check_replay_step_transforms`).  Binding the centre into
+        route identity is still a route-schema change deferred to 0.9.5."""
+        profile = self.request.capability_profile
+        for r in self.ranked_route_dossiers:
+            if profile is None:
+                # NOT_REQUESTED: an assessment on a no-profile request is a fabricated bench claim.
+                if r.capability_assessment is not None:
+                    raise ValueError(
+                        f"ranked route {r.route_digest} carries a capability_assessment but the request declared NO "
+                        f"capability profile (NOT_REQUESTED) -- a fabricated bench claim; refused (0.9 D12, M37)"
+                    )
+                continue
+            # A profile WAS requested: every dossier should be assessed.  A missing assessment is refused when the
+            # producer had a profile in hand -- silence is not a NOT_REQUESTED here.
+            if r.capability_assessment is None:
+                raise ValueError(
+                    f"ranked route {r.route_digest} carries NO capability_assessment though the request declared a "
+                    f"capability profile -- an assessment was dropped; refused (0.9 D12)"
+                )
+            # Wave-C2 (thin-wire forgery close): the REPLAY-FREE bindings, checked on EVERY load for EVERY assessed
+            # dossier BEFORE the replay-presence branch -- so a thin (replay-stripped) dossier can no longer carry an
+            # assessment that contradicts itself, its own dossier, or the request it answers.
+            self._check_assessment_bindings(r, profile, refuse_fit_on_thin=refuse_fit_on_thin)
+            if r.replay_payload is None:
+                # No thick evidence -> the FIT claim is UNVERIFIABLE.  Fail closed under verified admission (a thin
+                # wire may not claim CAPABILITY_FIT as verified); advisory on a bare load.
+                if require_verified_admission:
+                    raise ValueError(
+                        f"verified admission: ranked route {r.route_digest} carries a capability_assessment "
+                        f"(overall {r.capability_assessment.overall.value}) but no replay_payload -- the capability "
+                        f"verdict is UNVERIFIED (a thin wire cannot claim CAPABILITY_FIT as verified; the producer "
+                        f"must serialize with include_replay=True); refused (0.9 D12)"
+                    )
+                continue
+            route = _reconstruct_route(r.replay_payload)
+            # (a legacy v0.8 response never reaches here: its request is NOT_REQUESTED by construction, D11)
+            if route.digest != r.route_digest:
+                raise ValueError(
+                    f"ranked route {r.route_digest} carries replay evidence that reconstructs to a DIFFERENT route "
+                    f"({route.digest}) -- substituted capability evidence; refused (0.9 D12)"
+                )
+            rederived = assess_capability(
+                profile, compile_capability_requirements(route),
+                evaluate_route(route, identity_losses=self.identity_losses),
+            )
+            if r.capability_assessment != rederived:
+                raise ValueError(
+                    f"ranked route {r.route_digest} claims a capability_assessment (overall "
+                    f"{r.capability_assessment.overall.value}) its replayed evidence does not support under the "
+                    f"request's declared profile (re-derives to overall {rederived.overall.value}) -- a profile-A-"
+                    f"under-B, altered-snapshot/stock/readiness/route, or altered-result tamper; refused (0.9 D12, "
+                    f"M35/M38)"
                 )
 
     def _check_frontier_coherence(self, *, require_verified_admission: bool = False) -> None:
@@ -1801,10 +2887,21 @@ class CompilationResponse:
           digest-covered per-step ``process_requirements`` and needs NO replay, so a REAL_BUT_HARD process strip is
           caught even on a DEFAULT (thin) serialization.  (The catalyst channel appends nothing today -- no registered
           reaction declares a metal catalyst -- so process exclusions are the whole of the hard channel in practice.)
-        * FULLY CLOSED, thick transport -- the CATALYST and FICTION channels, WHEN a digest-bound ``replay_payload`` is
-          present.  KILL 1 binds ``route.digest == e.route_digest``, so the evidence cannot be substituted or nulled
-          (PIECE 2 demotes a centre-less step); the re-derivation reads the REAL route, so any strip is caught, down to
-          a SHA-256 collision on the route digest (cryptographic, out of scope).
+        * CLOSED, thick transport -- the CATALYST and FICTION channels, WHEN a digest-bound ``replay_payload`` is
+          present.  KILL 1 binds ``route.digest == e.route_digest``, so the route STRUCTURE and every compared step
+          field cannot be substituted (PIECE 2 demotes a centre-less step); the re-derivation reads the REAL route, so a
+          blocker strip is caught.  STATED BOUNDARY (X-high D26.4): the ``reaction_center`` annotation is
+          ``compare=False`` -- OUTSIDE ``route.digest`` -- so a keyless forger can substitute a DIFFERENT centre under
+          the same route digest; every observed forgery only DEMOTES (Conjectured: no promotion is reachable).  Since
+          X-high D27.2 the thick replay rides the whole-body wire digest, so a centre edited on the wire without
+          recomputing that public digest is refused on EVERY load, the producer HMAC authenticates it, and
+          ``require_reexecution=True`` refuses a keyless recompute outright (D26.2 + D27.2 -- before D27.2 a NEUTRAL
+          re-centre, Foreman N4 / T5n, passed re-execution because the replay was outside ``result_digest``).  Since
+          X-high D29.1 a keyless forger who recomputes the public digest is ALSO refused on a plain / verified-admission
+          load of a current payload (a legacy v0.8 one: under verified admission, as D27.1): every replayed step's
+          centre must be one the carried algebra's emitted transform assigns
+          (:meth:`CompilationResponse._check_replay_step_transforms`).  The centre is still outside ``route.digest``
+          (binding it into route identity remains a 0.9.5 route-schema change), but it is no longer free.
         * THE THIN TRANSPORT, UNDER VERIFIED ADMISSION -- now CLOSED, fail-closed (``require_verified_admission=True``).
           ``response_to_payload`` emits the replay on ``include_replay=True`` (the DEFAULT since v0.8 Round II; the
           THIN_ADVISORY opt-out omits it), so on the thin transport the catalyst/fiction channels have no evidence to
@@ -1876,11 +2973,12 @@ class CompilationResponse:
                 # replay under this entry's route_digest: the fiction/catalyst re-derives to zero, so a stripped
                 # disposition passes.  ``route.digest`` is the ExperimentRoute identity; the entry and its matched
                 # summary share ``route_digest``, and every HONEST reconstructed replay binds (verified: 0 false-reject).
-                if route.digest != e.route_digest:
+                bound = _route_identity(route, legacy=self.is_legacy_v08)
+                if bound != e.route_digest:
                     raise ValueError(
                         f"affordability frontier entry {e.route_digest} carries replay evidence that reconstructs to a "
-                        f"DIFFERENT route ({route.digest}) -- substituted disposition evidence; refused "
-                        f"(TAMPER-HARDENING-01, KILL 1)"
+                        f"DIFFERENT route ({bound}) -- substituted disposition evidence; refused "
+                        f"(TAMPER-HARDENING-01, KILL 1){self._legacy_hint()}"
                     )
                 rederived_hard |= set(route_catalyst_blockers(route))
                 rederived_fiction |= set(route_reaction_type_blockers(route))
@@ -2094,6 +3192,14 @@ class CompilationResponse:
         return None if self.compilation_ir is None else self.compilation_ir.search_receipt.digest
 
     @property
+    def capability_question_digest(self) -> "str | None":
+        """The 0.9 capability-question pin (D12), delegated straight to the request: ``None`` when no profile was
+        requested, else ``canonical_digest((semantic_digest, profile_digest))``.  Surfaced on the response so a
+        consumer can pin the capability question WITHOUT reaching into the request.  It moves under a profile change
+        but the chemistry ``semantic_digest`` never does -- capability is absent from that tuple."""
+        return self.request.capability_question_digest
+
+    @property
     def search_space_status(self) -> "str | None":
         """The section-8.3 no-route matrix label for this response, or ``None`` when no route search ran (SRCH-NO-01).
 
@@ -2141,6 +3247,13 @@ class CompilationResponse:
                 # detectable), but ONLY when present, so a linear/decompile/DAG-less response stays byte-identical to
                 # the v1alpha2 formula (zero ripple); a process-constrained DAG-mode response's digest changes here.
                 *((tuple(d.digest for d in self.ranked_dag_dossiers),) if self.ranked_dag_dossiers else ()),
+                # Wave-C2 (Round V, within the unreleased v1alpha16): the capability QUESTION is folded in ONLY when one
+                # was asked, so the producer signature (an HMAC over this digest) binds the declared bench even on a
+                # zero-dossier response (INVALID_INPUT / REFUSED), where no assessment carries the profile_digest.  A
+                # NOT_REQUESTED response -- and therefore every legacy v0.8 response, NOT_REQUESTED by law -- stays
+                # byte-identical to the prior formula, so the frozen v0.8 rule is unaffected.
+                *((("capability-question", self.capability_question_digest),)
+                  if self.capability_question_digest is not None else ()),
             )
         )
 
@@ -2336,6 +3449,7 @@ def _dag_bench_note(dags: "tuple", box: "object") -> "str | None":
 def _ranked_summaries(
     routes: "tuple", bounds: PhysicalBounds, losses: "tuple",
     process: "ProcessBounds | None" = None,
+    capability_profile: "CapabilityProfile | None" = None,
 ) -> "tuple[RankedRouteSummary, ...]":
     """Rank ``routes`` against the section-11 bench ``bounds`` and project to thin response summaries (CLI-CAN-02).
 
@@ -2349,7 +3463,9 @@ def _ranked_summaries(
         return ()
     from .experiment.drafter import ConstraintBox, rank_routes
     fits = rank_routes(routes, box=ConstraintBox.of_bounds(bounds, process=process), losses=losses)
-    return tuple(RankedRouteSummary.of_fit(f, identity_losses=losses) for f in fits)
+    return tuple(
+        RankedRouteSummary.of_fit(f, identity_losses=losses, capability_profile=capability_profile) for f in fits
+    )
 
 
 def _route_shopping_requirements(route: "object") -> "tuple[tuple[object, float], ...] | None":
@@ -2517,10 +3633,215 @@ def run_compilation(
     return response
 
 
-def _run_recompile(request: CompilationRequest) -> CompilationResponse:
+def _recompile_identity_losses(target_input: str, features: object) -> "tuple[IdentityLoss, ...]":
+    """The section-5.3 losses a RECOMPILE (structure search) carries for its target: the finer features the resolved
+    input declared that the structure layer drops (``()`` for a registered name -- it declares none).  D24.11: the ONE
+    implementation both :func:`_run_recompile` and the load-time :func:`_rederive_identity_losses` call."""
     from .identity import representation_losses_for
+    return () if features is None else tuple(representation_losses_for(target_input, features))
+
+
+def _decompile_resolution(request: CompilationRequest) -> "tuple[str, tuple[IdentityLoss, ...], str | None]":
+    """``(decompile_target, identity_losses, receipt_summary)`` for a DECOMPILE (formula descent) -- D24.11: the ONE
+    implementation both :func:`_run_decompile` and the load-time :func:`_rederive_identity_losses` call.
+
+    A SMILES target is resolved to its formula and that structure->formula reduction is RECORDED as a typed section-5.3
+    BLOCKER (plus the ID-STEREO-01 finer losses the input declared); an InChI / TARGET_FILE resolves through the ONE
+    parser (a molecule reduces to formula exactly like SMILES; a formula-layer identity carries the parser's own typed
+    losses); AUTO / FORMULA read the target as formula text (no loss; a best-effort receipt).  Raises
+    :class:`IdentityParseError` for an input the parser refuses.  NAME is the CALLER's refusal (a bare name is resolved
+    by recompile, not by a formula descent) and never reaches here."""
+    from .identity import formula_reduction_loss, representation_losses_for
+    from .identity_parse import resolve_identity
+    if request.input_kind is InputKind.NAME:
+        raise ValueError("a DECOMPILE of a bare NAME has no formula-descent resolution (the caller refuses it)")
+    if request.input_kind is InputKind.SMILES:
+        resolved = resolve_identity(request.target_input, InputKind.SMILES)
+        molecule, features = resolved.molecule, resolved.features
+        decompile_target = "".join(f"{el}{n if n > 1 else ''}" for el, n in sorted(molecule.formula.items()))
+        # the TYPED section-5.3 records (IR-LOSS-01), not summary strings -- the IR carries the first-class losses.
+        # The formula reduction is the coarse blocker (structure -> formula); the ID-STEREO-01 finer losses NAME the
+        # specific dropped features (which stereocentre/isotope/charge) the input actually declared -- additive and
+        # fail-closed (features is a SmilesFeatures for a SMILES input, never None).
+        losses = (
+            formula_reduction_loss(request.target_input, decompile_target),
+            *representation_losses_for(request.target_input, features),
+        )
+        return decompile_target, losses, resolved.receipt.summary()
+    if request.input_kind in (InputKind.INCHI, InputKind.TARGET_FILE):
+        # ID-PARSE-01: an InChI resolves via its FORMULA SUBLAYER (its /c connectivity + any /t,/b,/i stereo/isotope
+        # recorded as section-5.3 BLOCKERS the parser already built); a TARGET_FILE resolves its contents (a molecule
+        # -> reduced to formula exactly like the SMILES path, or a formula used directly).  Both descend by formula
+        # here, carrying the parser's typed losses into the IR so the machine and human views agree on the drop.
+        resolved = resolve_identity(request.target_input, request.input_kind)
+        if resolved.molecule is not None:                # a file that named a NAME/SMILES: reduce structure->formula
+            decompile_target = "".join(
+                f"{el}{n if n > 1 else ''}" for el, n in sorted(resolved.molecule.formula.items())
+            )
+            losses = (
+                formula_reduction_loss(request.target_input, decompile_target),
+                *(representation_losses_for(request.target_input, resolved.features) if resolved.features else ()),
+            )
+        else:                                            # a formula-layer identity (formula-only file, or an InChI)
+            decompile_target = "".join(f"{el}{n if n > 1 else ''}" for el, n in resolved.formula.counts)
+            losses = resolved.losses
+        return decompile_target, tuple(losses), resolved.receipt.summary()
+    # AUTO / FORMULA: the target is read as formula text.  Echo the resolution (best-effort: a genuinely bad formula
+    # still reaches decompile_to_ir's canonical parse error, so its exact message is preserved).
+    try:
+        receipt_summary = resolve_identity(request.target_input, InputKind.FORMULA).receipt.summary()
+    except IdentityParseError:
+        receipt_summary = None
+    return request.target_input, (), receipt_summary
+
+
+def _rederive_identity_losses(request: CompilationRequest) -> "tuple[IdentityLoss, ...]":
+    """D24.11 (Wave-C' D-L1): the section-5.3 losses the carried request's OWN target implies, re-derived on load in
+    canonical (digest-sorted) order -- the exact tuple an honest producer's IR carries.  A loss is a pure function of
+    ``(target_input, input_kind)`` for every kind the loader can re-read; the producer and this verifier share ONE
+    implementation (:func:`_recompile_identity_losses` / :func:`_decompile_resolution`).
+
+    Raises ``ValueError`` when the losses cannot be re-derived: a request the parser now refuses, a RECOMPILE target
+    with no perceived structure (the producer returns INVALID with no IR -- an IR-bearing response for it is forged),
+    a DECOMPILE of a bare NAME (likewise), and a TARGET_FILE -- whose ``target_input`` is a PATH to mutable external
+    content: the loader NEVER opens a path a payload names (a payload must not make its verifier read files), so a
+    TARGET_FILE response's losses are UNVERIFIABLE on load and it is refused (recompile locally from the file, or
+    re-express the target as NAME/SMILES)."""
+    from .identity_parse import resolve_identity
+    if request.input_kind is InputKind.TARGET_FILE:
+        raise ValueError(
+            "a TARGET_FILE response's identity losses cannot be re-derived on load (its target_input is a path to "
+            "mutable external content and the loader never reads a path a payload names) -- UNVERIFIABLE"
+        )
+    try:
+        if request.operation is CompilationOperation.RECOMPILE:
+            resolved = resolve_identity(request.target_input, request.input_kind)
+            if resolved.molecule is None:
+                raise ValueError(
+                    "the carried RECOMPILE target resolves to no structure, so no structure-search IR can exist for it"
+                )
+            losses = _recompile_identity_losses(request.target_input, resolved.features)
+        else:
+            _target, losses, _receipt = _decompile_resolution(request)
+    except IdentityParseError as exc:
+        raise ValueError(f"the carried target no longer parses ({exc}), so its identity losses cannot be re-derived")
+    return tuple(sorted(losses, key=lambda loss: loss.digest))
+
+
+@dataclass(frozen=True)
+class _RequestContext:
+    """X-high D26.1: the search context a carried request IMPLIES, re-derived by the producer's OWN formulas."""
+
+    target: "object"                     # ChemicalIdentity
+    terminal_policy_digest: str
+    request_digest: str
+    registry_digest: str
+    candidate_kind: str                  # ROUTE / DAG (recompile) or FORMULA_EDGE (decompile)
+    target_ident: "str | None"           # structure identity of the target (recompile only)
+    terminal_idents: "frozenset[str]"    # structure identities of the declared terminal set (recompile only)
+
+
+def _rederive_request_context(request: CompilationRequest) -> _RequestContext:
+    """X-high D26.1 (Wave-C'' T1/T1c/T3/T4b/T6a): re-derive, from the carried REQUEST alone, the IR context an honest
+    producer would stamp -- target identity, terminal-policy digest, IR request digest, transform-registry digest and
+    candidate kind -- through the SAME helpers the producers call (:func:`recompile_request_digest`,
+    :func:`decompile_request_digest`, :func:`decompile_terminal_context`, :func:`_recompile_terminal_policy_digest`,
+    :func:`search_algebra_digest`). Raises ``ValueError`` when the request cannot be re-read (a helper name the
+    resolver no longer knows, a structure-less RECOMPILE target, an unknown grammar)."""
+    from .identity_parse import resolve_identity
+    bounds = request.search_bounds
+    try:
+        if request.operation is CompilationOperation.RECOMPILE:
+            if request.transform_grammar not in _GRAMMAR_TO_MODE:
+                raise ValueError(f"grammar {request.transform_grammar!r} has no search mode")
+            resolved = resolve_identity(request.target_input, request.input_kind)
+            if resolved.molecule is None:
+                raise ValueError("the carried RECOMPILE target resolves to no structure")
+            target = resolved.molecule.canonical()
+            reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.helper_reagents)
+            available = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.stock_materials)
+            if request.terminal_policy.commodities_enabled:
+                from .data.reagents import commodity_inventory
+                commodities = tuple(m.canonical() for m in commodity_inventory())
+            else:
+                commodities = ()
+            mode = _GRAMMAR_TO_MODE[request.transform_grammar]
+            registry_digest = search_algebra_digest(
+                _GRAMMAR_TO_MODE_TOPOLOGY[mode], resolve_algebra_profile(request.algebra_profile))
+            target_id = ChemicalIdentity.of_molecule(target)
+            terminal_digest = _recompile_terminal_policy_digest(reagents, available, commodities)
+            return _RequestContext(
+                target_id, terminal_digest,
+                recompile_request_digest(target_id.identity_digest, terminal_digest, reagents, registry_digest, mode,
+                                         bounds.value("max_depth"), bounds.value("max_results"),
+                                         bounds.value("cut_budget")),
+                registry_digest, "ROUTE" if mode == "routes" else "DAG", _structure_ident(target),
+                frozenset(_structure_ident(m) for m in (*reagents, *available, *commodities)),
+            )
+        decompile_target, _losses, _receipt = _decompile_resolution(request)
+        target_id, terminal_digest = decompile_terminal_context(
+            decompile_target, request.terminal_policy.formula_inventory)
+        registry_digest = formula_decomposition_registry_digest()
+        return _RequestContext(
+            target_id, terminal_digest,
+            decompile_request_digest(target_id.identity_digest, terminal_digest, registry_digest,
+                                     bounds.value("max_multiplicity"), bounds.value("budget"),
+                                     bounds.value("max_edges")),
+            registry_digest, "FORMULA_EDGE", None, frozenset(),
+        )
+    except IdentityParseError as exc:
+        raise ValueError(f"the carried request no longer parses ({exc})") from exc
+
+
+def _route_frontier(request: CompilationRequest, routes: "tuple", ranked: "tuple") -> "tuple":
+    """The affordability frontier the producer builds over ``routes`` / their ``ranked`` summaries -- ONE
+    implementation shared by :func:`_run_recompile` and the load-time re-derivation (X-high D27.4), so the two can
+    never admit a route to the frontier two different ways.
+
+    DISPOSITION-ACTIVATE-01: under a process box, admit a route iff it is FITS OR its RE-DERIVED process status is
+    EXCLUDED (a genuine reaction the bench cannot run -> REAL_BUT_HARD).  The old gate admitted FITS-only, which
+    structurally hid every real-but-unrunnable route (R59's REAL_BUT_HARD tier could never be populated).  Admitting the
+    process-EXCLUDED set is SOUND because that exclusion is re-derived from the carried per-step process_requirements
+    (PROCESS-ADMIT-01) and re-checked on load, so it does not reopen the free-text forge the FITS-only gate closed; the
+    physical/composability EXCLUDED axes stay OUT (not re-derivable from the thin projection, so their hardness would be
+    untrusted).  With no process box every ranked route is a frontier candidate."""
+    if not request.constraints.process.constrains_anything:
+        return _affordability_frontier(routes, ranked)
+    pbounds = request.constraints.process
+
+    def _admit(r: "object") -> bool:
+        if r.fit_status == "FITS":
+            return True
+        return evaluate_process_requirements(r.process_requirements, pbounds).status is ProcessFitStatus.EXCLUDED
+
+    admitted = tuple(r for r in ranked if _admit(r))
+    admitted_ids = {r.route_digest for r in admitted}
+    return _affordability_frontier(tuple(r for r in routes if r.digest in admitted_ids), admitted,
+                                   process_bounds=pbounds)
+
+
+def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     from .identity_parse import resolve_identity
     from .structure_descent import ScissionError
+
+    # F51 (RC Round IV): convergent-DAG mode has no capability-topology-aware requirements model yet --
+    # ``ranked_dag_dossiers``/``RankedDAGSummary`` carry no capability field at all, so a capability-profile-bearing
+    # request run in CAPPED_SCISSION_CONVERGENT mode would silently get NO capability answer (not even a diagnostic --
+    # the profile is simply dropped on the floor).  That is a fabricated-by-omission pass dressed as success, exactly
+    # the shape the capability-reward-must-be-gated-on-the-capability-model lesson forbids.  Refuse LOUDLY instead,
+    # before any search runs (cheapest possible refusal, and the search engine itself stays untouched -- a convergent
+    # DAG search WITHOUT a profile still runs exactly as before; only the (profile, convergent) COMBINATION refuses).
+    # Full DAG-topology-aware capability requirements are out of scope for this RC; this is the honest placeholder.
+    if request.capability_profile is not None and request.transform_grammar is TransformGrammar.CAPPED_SCISSION_CONVERGENT:
+        return _refused(
+            request,
+            "a capability profile was requested together with the CAPPED_SCISSION_CONVERGENT (convergent-DAG) "
+            "grammar; the convergent-DAG bench admission (RankedDAGSummary/ranked_dag_dossiers) carries no "
+            "capability-topology-aware requirements model yet, so a capability verdict cannot be honestly computed "
+            "for a convergent route -- refused rather than silently answering the capability question with nothing "
+            "(request a capability profile with CAPPED_SCISSION_LINEAR instead, or drop the capability profile to "
+            "run the convergent-DAG search unconstrained by capability)",
+        )
 
     try:
         # the STRUCTURE layer keeps the target's constitution but drops finer features it may declare (stereo,
@@ -2552,9 +3873,9 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         available = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.stock_materials)
     except IdentityParseError as exc:
         return _invalid(request, str(exc))
-    identity_losses = (
-        () if target_features is None else representation_losses_for(request.target_input, target_features)
-    )
+    # D24.11: ONE implementation shared with the load-time re-derivation (_rederive_identity_losses) -- the producer
+    # and the verifier can never compute a target's section-5.3 losses two different ways.
+    identity_losses = _recompile_identity_losses(request.target_input, target_features)
 
     # Resolve the SELECTED transform algebra (0.7 Round II).  __post_init__ already validated the profile id + its
     # topology-coherence, so this cannot raise for a well-formed request; the registry flows through the search, the
@@ -2644,30 +3965,12 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     # when nothing was ranked (no routes, or DAG mode), else the (fit/excluded/unknown) tally.  A consumer can now
     # read which routes fall inside the bench and which are EXCLUDED -- and can never mistake an UNKNOWN-fit for a pass.
     ranked = _ranked_summaries(routes_for_ranking, request.constraints.bounds, identity_losses,
-                               process=request.constraints.process)
+                               process=request.constraints.process,
+                               capability_profile=request.capability_profile)
     # COST-VEC-01: the section-10.4 Pareto affordability frontier over the SAME ranked routes -- each route's
     # commodity leaves priced into a CostVector, EXCLUDED routes G6-dominated by their hard bounds.  Empty when no
     # route carries affordability signal (honest), so this never fabricates a cost ranking from absent price data.
-    if request.constraints.process.constrains_anything:
-        # DISPOSITION-ACTIVATE-01: admit a route to the process-constrained affordability frontier iff it is FITS OR its
-        # RE-DERIVED process status is EXCLUDED (a genuine reaction the bench cannot run -> REAL_BUT_HARD).  The old gate
-        # admitted FITS-only, which structurally hid every real-but-unrunnable route (R59's REAL_BUT_HARD tier could
-        # never be populated).  Admitting the process-EXCLUDED set is SOUND because that exclusion is re-derived from the
-        # carried per-step process_requirements (PROCESS-ADMIT-01) and re-checked on load, so it does not reopen the
-        # free-text forge the FITS-only gate closed; the physical/composability EXCLUDED axes stay OUT (not re-derivable
-        # from the thin projection, so their hardness would be untrusted).
-        _pbounds = request.constraints.process
-        def _frontier_admit(r: "object") -> bool:
-            if r.fit_status == "FITS":
-                return True
-            return evaluate_process_requirements(r.process_requirements, _pbounds).status is ProcessFitStatus.EXCLUDED
-        admitted = tuple(r for r in ranked if _frontier_admit(r))
-        admitted_ids = {r.route_digest for r in admitted}
-        frontier = _affordability_frontier(
-            tuple(r for r in routes_for_ranking if r.digest in admitted_ids), admitted, process_bounds=_pbounds
-        )
-    else:
-        frontier = _affordability_frontier(routes_for_ranking, ranked)
+    frontier = _route_frontier(request, routes_for_ranking, ranked)
     diagnostics = tuple(ir.diagnostics)
     _note = constraint_note(
         request.constraints.bounds, fit_counts=_fit_counts(ranked) if ranked else None,
@@ -2709,77 +4012,50 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
     )
 
 
-def _run_decompile(request: CompilationRequest) -> CompilationResponse:
+def _decompile_target_available(request: CompilationRequest, ir: ChemicalCompilationIR) -> bool:
+    """Is a decompile target already on hand?  ONE implementation, shared by the producer (:func:`_run_decompile`) and
+    the load-time outcome re-derivation (X-high D27.3) so the two can never classify a target two different ways.
+
+    A decompile target is "already available" when it is a declared bucket OR an INTRINSIC terminal -- a bare element
+    (a universal atom bucket the decompiler bottoms out at) or a formula that needs no decomposition.  The tell for the
+    intrinsic case is a COMPLETE search that produced ZERO edges: the target did not (need to) decompose, so it is
+    terminal, exactly what the human edge-list path reports as "already a bucket" (exit 0).  Without this, a bare
+    element absent from the DECLARED inventory (e.g. `decompile He`/`Fe`) was miscoded NO_ROUTE_COMPLETE -- a confident
+    section-8.3 claim of absence over something already elemental, and a drift from the human path the CLI-CAN-01
+    routing promises cannot happen (exit 0 vs 3 for one command).  Buckets are compared by canonical FORMULA identity
+    (H2O == OH2) -- the same identity the IR keys on."""
     from .compilation_ir import ChemicalIdentity
     from .decompiler import DecompilerError, Formula
+
+    inventory_ids = set()
+    for inv in request.terminal_policy.formula_inventory:
+        try:
+            inventory_ids.add(ChemicalIdentity.of_formula(Formula.parse(inv)).identity_digest)
+        except (DecompilerError, ValueError):
+            continue
+    already_terminal = ir.complete_within_bounds and ir.candidate_count == 0
+    return (ir.target.identity_digest in inventory_ids) or already_terminal
+
+
+def _run_decompile(request: CompilationRequest) -> CompilationResponse:
+    from .decompiler import DecompilerError
 
     # A decompile normally reads the target as FORMULA TEXT.  A SMILES target is resolved to its formula HERE, and
     # that structure->formula reduction is RECORDED as a typed section-5.3 IdentityLoss (a BLOCKER) carried into the
     # IR, so the machine response surfaces exactly the loss the human render shows -- structure is never silently
     # discarded on the machine path (section 5.3), and the two views agree (CLI-JSON-01).  NAME/InChI remain a named
     # follow-on (ID-PARSE-01) and are refused rather than mis-parsed.
-    decompile_target = request.target_input
-    identity_losses: tuple[IdentityLoss, ...] = ()
-    receipt_summary: "str | None" = None
-    if request.input_kind is InputKind.SMILES:
-        from .identity import formula_reduction_loss, representation_losses_for
-        from .identity_parse import resolve_identity
-        try:
-            resolved = resolve_identity(request.target_input, InputKind.SMILES)
-        except IdentityParseError as exc:
-            return _invalid(request, str(exc))
-        molecule, features = resolved.molecule, resolved.features
-        decompile_target = "".join(
-            f"{el}{n if n > 1 else ''}" for el, n in sorted(molecule.formula.items())
-        )
-        # the TYPED section-5.3 records (IR-LOSS-01), not summary strings -- the IR carries the first-class losses.
-        # The formula reduction is the coarse blocker (structure -> formula); the ID-STEREO-01 finer losses NAME the
-        # specific dropped features (which stereocentre/isotope/charge) the input actually declared -- additive and
-        # fail-closed (features is a SmilesFeatures for a SMILES input, never None).
-        identity_losses = (
-            formula_reduction_loss(request.target_input, decompile_target),
-            *representation_losses_for(request.target_input, features),
-        )
-        receipt_summary = resolved.receipt.summary()
-    elif request.input_kind in (InputKind.INCHI, InputKind.TARGET_FILE):
-        # ID-PARSE-01: an InChI resolves via its FORMULA SUBLAYER (its /c connectivity + any /t,/b,/i stereo/isotope
-        # recorded as section-5.3 BLOCKERS the parser already built); a TARGET_FILE resolves its contents (a molecule
-        # -> reduced to formula exactly like the SMILES path, or a formula used directly).  Both descend by formula
-        # here, carrying the parser's typed losses into the IR so the machine and human views agree on the drop.
-        from .identity import formula_reduction_loss, representation_losses_for
-        from .identity_parse import resolve_identity
-        try:
-            resolved = resolve_identity(request.target_input, request.input_kind)
-        except IdentityParseError as exc:
-            return _invalid(request, str(exc))
-        if resolved.molecule is not None:                # a file that named a NAME/SMILES: reduce structure->formula
-            decompile_target = "".join(
-                f"{el}{n if n > 1 else ''}" for el, n in sorted(resolved.molecule.formula.items())
-            )
-            identity_losses = (
-                formula_reduction_loss(request.target_input, decompile_target),
-                *(representation_losses_for(request.target_input, resolved.features) if resolved.features else ()),
-            )
-        else:                                            # a formula-layer identity (formula-only file, or an InChI)
-            decompile_target = "".join(
-                f"{el}{n if n > 1 else ''}" for el, n in resolved.formula.counts
-            )
-            identity_losses = resolved.losses
-        receipt_summary = resolved.receipt.summary()
-    elif request.input_kind is InputKind.NAME:
+    if request.input_kind is InputKind.NAME:
         return _invalid(
             request,
             "decompile reads the target as formula text or a resolved structure; a bare NAME is resolved by "
             "recompile (a structure search), not by a formula descent -- give the formula or use recompile",
         )
-    else:
-        # AUTO / FORMULA: the target is read as formula text.  Echo the resolution (best-effort: a genuinely bad
-        # formula still reaches decompile_to_ir's canonical parse error below, so its exact message is preserved).
-        from .identity_parse import resolve_identity
-        try:
-            receipt_summary = resolve_identity(request.target_input, InputKind.FORMULA).receipt.summary()
-        except IdentityParseError:
-            receipt_summary = None
+    # D24.11: ONE implementation shared with the load-time re-derivation (_rederive_identity_losses).
+    try:
+        decompile_target, identity_losses, receipt_summary = _decompile_resolution(request)
+    except IdentityParseError as exc:
+        return _invalid(request, str(exc))
 
     try:
         ir = decompile_to_ir(
@@ -2797,22 +4073,7 @@ def _run_decompile(request: CompilationRequest) -> CompilationResponse:
     # no-route dead end.  Distinguish them by canonical FORMULA identity (H2O == OH2) -- the same identity the IR
     # keys on -- so an already-a-bucket target reports TARGET_ALREADY_AVAILABLE (exit 0), not the section 8.3
     # NO_ROUTE_COMPLETE (exit 3) claim of absence over something already in the inventory.
-    inventory_ids = set()
-    for inv in request.terminal_policy.formula_inventory:
-        try:
-            inventory_ids.add(ChemicalIdentity.of_formula(Formula.parse(inv)).identity_digest)
-        except (DecompilerError, ValueError):
-            continue
-    # A decompile target is "already available" when it is a declared bucket OR an INTRINSIC terminal -- a bare
-    # element (a universal atom bucket the decompiler bottoms out at) or a formula that needs no decomposition.  The
-    # tell for the intrinsic case is a COMPLETE search that produced ZERO edges: the target did not (need to)
-    # decompose, so it is terminal, exactly what the human edge-list path reports as "already a bucket" (exit 0).
-    # Without this, a bare element absent from the DECLARED inventory (e.g. `decompile He`/`Fe`) was miscoded
-    # NO_ROUTE_COMPLETE -- a confident section-8.3 claim of absence over something already elemental, and a drift
-    # from the human path the CLI-CAN-01 routing promises cannot happen (exit 0 vs 3 for one command).
-    already_terminal = ir.complete_within_bounds and ir.candidate_count == 0
-    target_available = (ir.target.identity_digest in inventory_ids) or already_terminal
-    outcome = _classify(ir, target_available=target_available)
+    outcome = _classify(ir, target_available=_decompile_target_available(request, ir))
     # the identity-resolution echo rides the first-class parse_receipt_summary field (SVC-REQ-01 alias-collapse),
     # not diagnostics, so diagnostics stays receipt-free and the receipt is provenance excluded from result_digest.
     return CompilationResponse(
@@ -2997,9 +4258,111 @@ def _evidence_field_from_payload(payload) -> "EvidenceField | None":
     )
 
 
+def _procedure_material_use_to_payload(u) -> dict:
+    """One AUTHORED procedure-only auxiliary (0.9 Wave-B ``ProcedureMaterialUse``): catalyst/wash/drier/etc.  The
+    optional ``identity`` rides the same structural Molecule codec the step replay uses; ``phase``/``quantity`` stay
+    ``null`` where the source is silent (never a fabricated value).  This closes the Wave-B transport gap -- the
+    field was added to ``ProcedureOperation`` but its codec was never wired, so any route carrying a typed auxiliary
+    (isopentyl's H2SO4) could not survive serialize->deserialize."""
+    return {
+        "name": u.name,
+        "role": u.role.value,
+        "identity": None if u.identity is None else _molecule_to_payload(u.identity),
+        "formulation": u.formulation,
+        # X-high D18: the phase is an evidence-graded PhaseClaim ({phase, evidence, note}) or null (no phase stated).
+        "phase": _phase_claim_to_payload(u.phase),
+        "quantity": (
+            None if u.quantity is None
+            else {"schema_version": u.quantity.schema_version, "value": u.quantity.value, "unit": u.quantity.unit}
+        ),
+        "evidence_source": u.evidence_source,
+        # Round V (D3): the SOURCE-AUTHORED typed specification (or null), in the canonical type-tagged form -- the
+        # ``formulation`` string above is provenance/display only.  Digest-covered (it rides the step/route identity).
+        "specification": _material_spec_to_payload(u.specification),
+    }
+
+
+_PROCEDURE_MATERIAL_USE_FIELDS = frozenset(
+    {"name", "role", "identity", "formulation", "phase", "quantity", "evidence_source", "specification"}
+)
+_PHASE_CLAIM_FIELDS = frozenset({"phase", "evidence", "note"})
+
+
+def _phase_claim_to_payload(claim: "object | None") -> "dict | None":
+    """X-high D18: one procedure material use's PhaseClaim as ``{phase, evidence, note}`` (enums by ``.value``), or
+    null when the source states no phase.  The evidence kind rides the wire so a replayed AUTHOR_INFERRED phase can
+    never re-derive as a certifying one."""
+    if claim is None:
+        return None
+    return {"phase": claim.phase.value, "evidence": claim.evidence.value, "note": claim.note}
+
+
+def _phase_claim_from_payload(payload: object) -> "object | None":
+    """Reconstruct a PhaseClaim through its own ``__post_init__`` (``Phase.UNKNOWN`` refused -- an unknown phase is the
+    ABSENCE of a claim, i.e. null).  Exact key set; wire types checked before construction."""
+    if payload is None:
+        return None
+    from .experiment.stock import Phase
+    from .material_spec import EvidenceKind, PhaseClaim
+    if type(payload) is not dict or set(payload) != _PHASE_CLAIM_FIELDS:
+        raise ValueError("procedure material-use phase must be null or exactly {phase, evidence, note}; refused")
+    if not all(type(payload[k]) is str for k in _PHASE_CLAIM_FIELDS):
+        raise TypeError("procedure material-use phase fields must be strings")
+    return PhaseClaim(Phase(payload["phase"]), EvidenceKind(payload["evidence"]), payload["note"])
+
+
+def _material_spec_to_payload(spec: "object | None") -> "dict | None":
+    """A ProcedureMaterialUse ``specification`` in canonical type-tagged form, or null (source typed nothing)."""
+    return None if spec is None else canonical_payload(spec)
+
+
+def _material_spec_from_payload(payload: "dict | None") -> "object | None":
+    """Reconstruct a ``MaterialSpecification`` through the CLOSED material_spec whitelist (every ``__post_init__``
+    re-runs: exact-decimal grammar, basis/tolerance/evidence types, one claim per family); any other decoded type is
+    REFUSED."""
+    if payload is None:
+        return None
+    from .material_spec import MaterialSpecification
+    if type(payload) is not dict:
+        raise ValueError("procedure material-use specification must be a canonical object or null")
+    obj = _decode_canonical(payload, _MATERIAL_SPEC_CODEC_ALLOWED)
+    if type(obj) is not MaterialSpecification:
+        raise ValueError("procedure material-use specification did not reconstruct to a MaterialSpecification; refused")
+    return obj
+
+
+def _procedure_material_use_from_payload(payload) -> "object":
+    """Reconstruct one ``ProcedureMaterialUse``; its ``__post_init__`` re-validates every field on load (an ionic
+    ``identity=None``, a sourced phase/formulation, a per-material quantity).  Exact field-set guarded so a payload
+    cannot drop or smuggle a field."""
+    from .experiment.stock import STOCK_QUANTITY_SCHEMA, StockQuantity
+    from .procedure_evidence import ProcedureMaterialRole, ProcedureMaterialUse
+    if type(payload) is not dict or set(payload) != _PROCEDURE_MATERIAL_USE_FIELDS:
+        raise ValueError("procedure material use must contain exactly the versioned fields")
+    q = payload["quantity"]
+    quantity = None
+    if q is not None:
+        if type(q) is not dict or set(q) != {"schema_version", "value", "unit"}:
+            raise ValueError("procedure material-use quantity must contain exactly schema_version, value, unit")
+        if q["schema_version"] != STOCK_QUANTITY_SCHEMA:
+            raise ValueError(f"stock quantity schema_version must be {STOCK_QUANTITY_SCHEMA!r}")
+        quantity = StockQuantity(q["schema_version"], q["value"], q["unit"])
+    return ProcedureMaterialUse(
+        payload["name"],
+        ProcedureMaterialRole(payload["role"]),
+        identity=None if payload["identity"] is None else _molecule_from_payload(payload["identity"]),
+        formulation=payload["formulation"],
+        phase=_phase_claim_from_payload(payload["phase"]),
+        quantity=quantity,
+        evidence_source=payload["evidence_source"],
+        specification=_material_spec_from_payload(payload["specification"]),
+    )
+
+
 def _procedure_operation_to_payload(op) -> dict:
     """One ordered :class:`~smartchem.procedure_evidence.ProcedureOperation`.  Enums by ``.value``; the seven
-    optional evidence slots stay ``null`` when the source is silent, never a fabricated empty field."""
+    optional evidence slots stay ``null`` when the source is silent, never a fabricated empty field.  ``material_uses``
+    carries the AUTHORED procedure-only auxiliaries (0.9 Wave-B) so a typed catalyst/wash survives the round trip."""
     return {
         "ordinal": op.ordinal,
         "kind": op.kind.value,
@@ -3013,6 +4376,7 @@ def _procedure_operation_to_payload(op) -> dict:
         "duration": _evidence_field_to_payload(op.duration),
         "endpoint": _evidence_field_to_payload(op.endpoint),
         "apparatus": list(op.apparatus),
+        "material_uses": [_procedure_material_use_to_payload(u) for u in op.material_uses],
         "locator": op.locator,
     }
 
@@ -3034,6 +4398,8 @@ def _procedure_operation_from_payload(payload) -> ProcedureOperation:
     for name in ("materials", "apparatus"):
         if type(payload[name]) is not list or any(type(m) is not str for m in payload[name]):
             raise TypeError(f"operation {name} must be a list of strings")
+    if type(payload["material_uses"]) is not list:
+        raise TypeError("operation material_uses must be a list")
     return ProcedureOperation(
         payload["ordinal"],
         OperationKind(payload["kind"]),
@@ -3047,6 +4413,7 @@ def _procedure_operation_from_payload(payload) -> ProcedureOperation:
         _evidence_field_from_payload(payload["duration"]),
         _evidence_field_from_payload(payload["endpoint"]),
         tuple(payload["apparatus"]),
+        tuple(_procedure_material_use_from_payload(u) for u in payload["material_uses"]),
         payload["locator"],
     )
 
@@ -3383,8 +4750,334 @@ def _reconstruct_dag(payload) -> "object":
     return SynthesisDAG(DAG_SCHEMA, _replay_payload_to_steps(payload))
 
 
+class _ReplayedTransform:
+    """X-high D27.1: the decomposition a replayed ASSEMBLY step was read backwards from.
+
+    :meth:`ExperimentStep.from_transform` builds a step from a transform ``reactant + reagents -> products`` as
+    ``products -> (reactant,) + reagents``; this inverts it (``reactant`` = the step's target, ``reagents`` = the step's
+    other products, ``products`` = the step's reactants) so the loader can put the SAME question to the producer's own
+    corpus lookup (``experiment.routes._conditions_for`` -> ``assembly_conditions``: reaction signature by composition,
+    then the resolved names of target and precursors).  ``forget`` is ``CappedScission.forget`` applied to this view --
+    the composition-level edge; every corpus envelope is keyed on a capped-scission signature."""
+
+    __slots__ = ("reactant", "reagents", "products")
+
+    def __init__(self, step: "object") -> None:
+        target_ident = _structure_ident(step.target)
+        rest = list(step.products)
+        for index, molecule in enumerate(rest):
+            if _structure_ident(molecule) == target_ident:
+                del rest[index]
+                break
+        self.reactant = step.target
+        self.reagents = tuple(rest)
+        self.products = tuple(step.reactants)
+
+    def forget(self) -> "object":
+        """The composition-level edge the producer's own transform forgets to.  Every route algebra a service search
+        runs (``algebra_profiles``: ``legacy-capped-v1`` / ``certified-route-v07``) emits exactly two transform shapes:
+        a reagent-bearing capped scission (``CappedScission.forget`` -> ``MediatedEdge``) and a REAGENTLESS Diels-Alder
+        retro (``_da_forget`` -> the v1 ``DecompositionEdge``).  X-high D28.1 looks up EVERY replayed step (a carried
+        unknown() included), so the reagentless shape is answered with the same element-bucket image rather than
+        refused as malformed (an honest Diels-Alder answer must load)."""
+        from .structure_descent import CappedScission, _fkey
+        if self.reagents:
+            return CappedScission.forget(self)
+        from .decompiler import DecompositionEdge, Formula
+        merged: "dict[Formula, int]" = {}
+        for molecule in self.products:
+            comp = Formula.of(molecule.formula, molecule.charge)
+            if comp.is_element:
+                (symbol, count), = comp.counts
+                bucket = Formula.bucket(symbol)
+                merged[bucket] = merged.get(bucket, 0) + count
+            else:
+                merged[comp] = merged.get(comp, 0) + 1
+        products = tuple(sorted(merged.items(), key=lambda pm: (_fkey(pm[0]), pm[1])))
+        return DecompositionEdge(Formula.of(self.reactant.formula, self.reactant.charge), 1, products)
+
+
+def _without_material_uses(envelope: "object") -> "object":
+    """X-high D27.1 (legacy leg): ``envelope`` with every procedure operation's ``material_uses`` emptied -- the ONE
+    0.9-only slot a v0.8 envelope could not carry (the frozen v0.8 rule omits exactly that default), so a v0.8 envelope
+    is compared with today's corpus lookup modulo it."""
+    procedure = getattr(envelope, "procedure", None)
+    if procedure is None:
+        return envelope
+    operations = tuple(dataclasses_replace(op, material_uses=()) for op in procedure.operations)
+    return dataclasses_replace(envelope, procedure=dataclasses_replace(procedure, operations=operations))
+
+
+# -- 0.9 capability profile / assessment JSON codecs (D11 -- ONE compiler, preset AND inline-custom are the same wire
+# shape) ---------------------------------------------------------------------------------------------------------
+#
+# A resolved CapabilityProfile / CapabilityAssessment is a graph of Digestible dataclasses + closed enums and -- this
+# is what makes a generic codec sound and safe -- carries NO Molecule (a StockMaterial keys its components on a
+# structure-digest STRING, never a live graph).  So encoding is just the existing ``canonical_payload`` (the same
+# type-tagged form the digest is built over), and decoding is a walk of that form gated by a CLOSED whitelist of the
+# exact classes a capability graph may contain.  A payload naming any other class is REFUSED -- no dynamic import
+# reach beyond this frozen set (the fail-closed rail; there is no eval/importlib-of-arbitrary-names hole here).
+_CAPABILITY_CODEC_ALLOWED = frozenset({
+    "smartchem.capability.profile.CapabilityProfile",
+    "smartchem.capability.assess.CapabilityAssessment",
+    "smartchem.capability.assess.AxisResult",
+    "smartchem.capability.enums.CapabilityStatus",
+    "smartchem.capability.enums.EquipmentCapability",
+    "smartchem.capability.enums.ContainmentCapability",
+    "smartchem.capability.enums.VentilationCapability",
+    "smartchem.capability.enums.MeasurementMethod",
+    "smartchem.capability.enums.WasteCapability",
+    "smartchem.data.reagents.Availability",
+    "smartchem.experiment.stock.StockMaterial",
+    "smartchem.experiment.stock.MaterialComponent",
+    "smartchem.experiment.stock.StockQuantity",
+    "smartchem.experiment.stock.CostObservation",
+    "smartchem.experiment.stock.Phase",
+    "smartchem.experiment.affordability.CostVector",
+    "smartchem.constraints.PhysicalBounds",
+    "smartchem.process_constraints.ProcessBounds",
+    "smartchem.process_constraints.Agitation",
+    "smartchem.process_constraints.Attention",
+    # Round V (D4/D5/D8): a StockMaterial now carries a ConcentrationBasis per component and positively-declared
+    # StateClaims, so a resolved profile's canonical form names these frozen material_spec records.
+    *(
+        f"smartchem.material_spec.{name}" for name in (
+            "ConcentrationBasis", "EvidenceKind", "StateClaim", "DilutionState", "HydrationState", "SaturationState",
+        )
+    ),
+    # Round V (D7/D8): a MaterialComponent may carry its typed IntervalEvidence record (closed kernel registry; every
+    # construction RECOMPUTES the interval through the registry, so a decoded record cannot lie about its arithmetic).
+    "smartchem.data.derived_evidence.IntervalEvidence",
+    "smartchem.data.derived_evidence.TypedInput",
+    "smartchem.data.derived_evidence.DerivationKernel",
+    "smartchem.data.derived_evidence.InputUnit",
+})
+#: Round V (D3): the CLOSED class set a ProcedureMaterialUse ``specification`` may decode to -- the frozen
+#: ``smartchem.material_spec`` records ONLY (never a capability/stock class), so a spec payload cannot smuggle any
+#: other object through the generic canonical decoder.
+_MATERIAL_SPEC_CODEC_ALLOWED = frozenset(
+    f"smartchem.material_spec.{name}" for name in (
+        "MaterialSpecification", "CompositionConstraint", "StateClaim", "ConcentrationBasis", "Tolerance",
+        "EvidenceKind", "DilutionState", "HydrationState", "SaturationState",
+    )
+)
+_CAPABILITY_CODEC_CLASSES: "dict[str, type]" = {}
+
+
+def _capability_codec_class(qualified: str, allowed: "frozenset[str]" = _CAPABILITY_CODEC_ALLOWED) -> type:
+    """Resolve a whitelisted qualified class name to its class (cached), or REFUSE -- the fail-closed decoder gate."""
+    if qualified not in allowed:
+        raise ValueError(
+            f"capability codec refuses to reconstruct {qualified!r}: not in the closed capability class whitelist "
+            f"(a forged or out-of-scope payload class); refused"
+        )
+    cls = _CAPABILITY_CODEC_CLASSES.get(qualified)
+    if cls is None:
+        module, _, name = qualified.rpartition(".")
+        cls = getattr(importlib.import_module(module), name)
+        _CAPABILITY_CODEC_CLASSES[qualified] = cls
+    return cls
+
+
+def _canonical_field_names(cls: type) -> "list[str]":
+    """The field names :func:`~smartchem.contracts.canonical_payload` encodes for a dataclass -- the compared,
+    non-underscore fields, sorted. X-high D26.6: the decoder's exact-field-set law reads the SAME rule the encoder does."""
+    from dataclasses import fields as _dc_fields
+    return sorted(f.name for f in _dc_fields(cls) if f.compare and not f.name.startswith("_"))
+
+
+#: X-high D29.2 (Wave C6 C6-NEW-1): the EXACT key set :func:`~smartchem.contracts.canonical_payload` writes for each node
+#: type the capability codec decodes.  D26.6 checked only the NAMES inside a dataclass node's ``fields``; the node's own
+#: keys were never checked, so ``"forged_claim": "CAPABILITY_FIT"`` beside an assessment's ``overall`` enum node (or on
+#: ``request.capability_profile``) loaded under plain / pins / verified admission as unenforced text.
+_CANONICAL_NODE_KEYS: "dict[str, frozenset[str]]" = {
+    "none": frozenset({"type"}),
+    "str": frozenset({"type", "value"}),
+    "int": frozenset({"type", "value"}),
+    "bool": frozenset({"type", "value"}),
+    "float": frozenset({"type", "value"}),
+    "enum": frozenset({"type", "class", "value"}),
+    "tuple": frozenset({"type", "items"}),
+    "list": frozenset({"type", "items"}),
+    "frozenset": frozenset({"type", "items"}),
+    "set": frozenset({"type", "items"}),
+    "mapping": frozenset({"type", "items"}),
+    "dataclass": frozenset({"type", "class", "fields"}),
+}
+
+
+def _check_canonical_node(node: object) -> str:
+    """X-high D29.2: ``node`` is a JSON object carrying EXACTLY its type's keys, with a JSON-exact scalar (a ``str``
+    node a string, an ``int`` node an integer that is not a bool, a ``bool`` node a bool, a ``float`` node a number or a
+    signed-infinity tag) and array-valued ``items``/``fields`` -- never coerced, never a tolerated extra.  Returns the
+    node's type tag."""
+    if type(node) is not dict:
+        raise ValueError(f"capability codec: a canonical node must be a JSON object, got {type(node).__name__}; "
+                         "refused (D29.2)")
+    t = node.get("type")
+    expected = _CANONICAL_NODE_KEYS.get(t) if isinstance(t, str) else None
+    if expected is None:
+        raise ValueError(f"capability codec cannot decode canonical node of type {t!r}")
+    if set(node) != expected:
+        raise ValueError(f"capability codec: a {t!r} node must carry EXACTLY {sorted(expected)}, got {sorted(node)} -- "
+                         "an unknown or missing node key is refused (D29.2)")
+    value = node.get("value")
+    scalar_ok = (t not in ("str", "int", "bool", "float")
+                 or (t == "str" and type(value) is str)
+                 or (t == "int" and type(value) is int)
+                 or (t == "bool" and type(value) is bool)
+                 or (t == "float" and (type(value) in (int, float) or value in ("+inf", "-inf"))))
+    if not scalar_ok:
+        raise ValueError(f"capability codec: a {t!r} node carries a {type(value).__name__} value; refused (D29.2)")
+    for key in ("items", "fields"):
+        if key in node and type(node[key]) is not list:
+            raise ValueError(f"capability codec: a {t!r} node's {key!r} must be a JSON array; refused (D29.2)")
+    if t in ("mapping", "dataclass"):
+        pairs = node["items"] if t == "mapping" else node["fields"]
+        if any(type(pair) is not list or len(pair) != 2 or type(pair[0]) is not str for pair in pairs):
+            raise ValueError(f"capability codec: a {t!r} node's entries must be [name, node] pairs; refused (D29.2)")
+    return t
+
+
+def _decode_canonical(node: "dict", allowed: "frozenset[str]" = _CAPABILITY_CODEC_ALLOWED) -> "object":
+    """The inverse of ``canonical_payload`` over the capability graph -- reconstructs typed values from the
+    type-tagged form, resolving dataclasses/enums through the closed whitelist and re-running every ``__post_init__``
+    (so a tampered stock/bound/component fails CLOSED at reconstruction, exactly like the hand-written codecs).
+    X-high D29.2: every node carries EXACTLY its type's keys and a JSON-exact scalar (:func:`_check_canonical_node`)."""
+    t = _check_canonical_node(node)
+    if t == "none":
+        return None
+    if t in ("str", "int", "bool"):
+        return node["value"]
+    if t == "float":
+        v = node["value"]
+        return float("inf") if v == "+inf" else float("-inf") if v == "-inf" else v
+    if t == "enum":
+        return _capability_codec_class(node["class"], allowed)(_decode_canonical(node["value"], allowed))
+    if t == "tuple":
+        return tuple(_decode_canonical(i, allowed) for i in node["items"])
+    if t == "list":
+        return [_decode_canonical(i, allowed) for i in node["items"]]
+    if t == "frozenset":
+        return frozenset(_decode_canonical(i, allowed) for i in node["items"])
+    if t == "set":
+        return {_decode_canonical(i, allowed) for i in node["items"]}
+    if t == "mapping":
+        return {k: _decode_canonical(v, allowed) for k, v in node["items"]}
+    if t == "dataclass":
+        cls = _capability_codec_class(node["class"], allowed)
+        # X-high D26.6 (Wave-C'' B5): the EXACT field set, never a default-filled subset -- ``cls(**subset)`` let a
+        # payload OMIT a field (a profile's PhysicalBounds without ``min_temperature_k`` decoded to its ``None``
+        # default), so an encoder-invisible hole changed what the wire means. Every encoded field must be present and
+        # no unknown field may appear (the set ``canonical_payload`` itself encodes for this class).
+        carried = [name for name, _v in node["fields"]]
+        expected = _canonical_field_names(cls)
+        if sorted(carried) != expected or len(carried) != len(set(carried)):
+            raise ValueError(
+                f"capability codec: a {node['class']!r} payload must carry EXACTLY its fields {expected}, got "
+                f"{sorted(carried)} -- a missing or unknown field is refused, never default-filled (D26.6)")
+        return cls(**{name: _decode_canonical(v, allowed) for name, v in node["fields"]})
+    raise ValueError(f"capability codec cannot decode canonical node of type {t!r}")
+
+
+def _capability_profile_to_payload(profile: "CapabilityProfile | None") -> "dict | None":
+    """Serialize a resolved profile (preset OR inline custom -- ONE wire shape) via the canonical form, or None."""
+    return None if profile is None else canonical_payload(profile)
+
+
+def _capability_profile_from_payload(payload: "dict | None") -> "CapabilityProfile | None":
+    """Reconstruct a resolved profile; a payload that decodes to any other type is REFUSED (fail-closed)."""
+    if payload is None:
+        return None
+    obj = _decode_canonical(payload)
+    if type(obj) is not CapabilityProfile:
+        raise ValueError("capability_profile payload did not reconstruct to a CapabilityProfile; refused")
+    return obj
+
+
+def _capability_assessment_to_payload(assessment: "CapabilityAssessment | None") -> "dict | None":
+    return None if assessment is None else canonical_payload(assessment)
+
+
+def _capability_assessment_from_payload(payload: "dict | None") -> "CapabilityAssessment | None":
+    if payload is None:
+        return None
+    obj = _decode_canonical(payload)
+    if type(obj) is not CapabilityAssessment:
+        raise ValueError("capability_assessment payload did not reconstruct to a CapabilityAssessment; refused")
+    return obj
+
+
+#: X-high D14/D22: the exact ``constraints`` key set per embedded PhysicalBounds generation.  The released v0.8 box
+#: (``physical-bounds-v1alpha1``) has no temperature floor; the current box REQUIRES the ``min_temperature_k`` key
+#: (null = no floor declared) -- never silently defaulted, never smuggled into a legacy box.
+_CONSTRAINTS_FIELDS_BY_BOUNDS_SCHEMA: "dict[str, frozenset[str]]" = {
+    PHYSICAL_BOUNDS_SCHEMA_V1: frozenset(
+        {"schema_version", "max_temperature_k", "min_pressure_atm", "max_pressure_atm", "process"}),
+    PHYSICAL_BOUNDS_SCHEMA: frozenset(
+        {"schema_version", "max_temperature_k", "min_pressure_atm", "max_pressure_atm", "min_temperature_k",
+         "process"}),
+}
+
+
+def _constraints_to_payload(constraints: ConstraintPolicy) -> dict:
+    """The request ``constraints`` box: the flat PhysicalBounds keys of ITS generation (a legacy v1alpha1 box keeps its
+    released v0.8 shape byte-for-byte; a current box carries ``min_temperature_k``) plus the process bounds."""
+    bounds = constraints.bounds
+    payload = {
+        "schema_version": bounds.schema_version,
+        "max_temperature_k": bounds.max_temperature_k,
+        "min_pressure_atm": bounds.min_pressure_atm,
+        "max_pressure_atm": bounds.max_pressure_atm,
+        "process": _process_to_payload(constraints.process),
+    }
+    if bounds.schema_version != PHYSICAL_BOUNDS_SCHEMA_V1:
+        payload["min_temperature_k"] = bounds.min_temperature_k
+    return payload
+
+
+def _constraints_from_payload(payload: object) -> ConstraintPolicy:
+    """Reconstruct the request ``constraints`` box, dispatching on its PhysicalBounds generation with an EXACT key-set
+    guard (a v1alpha1 box carrying ``min_temperature_k`` is 0.9 content wearing a 0.8 id -> refused).  Keyword
+    construction only (the legacy decode used to be positional -- fragile against the appended floor)."""
+    if type(payload) is not dict:
+        raise ValueError("request constraints must be a JSON object; refused")
+    version = payload.get("schema_version")
+    expected = _CONSTRAINTS_FIELDS_BY_BOUNDS_SCHEMA.get(version)
+    if expected is None:
+        raise ValueError(
+            f"unsupported physical-bounds schema_version {version!r} (supported: {PHYSICAL_BOUNDS_SCHEMA!r}; legacy "
+            f"{PHYSICAL_BOUNDS_SCHEMA_V1!r})"
+        )
+    if set(payload) != expected:
+        raise ValueError(
+            f"a {version!r} constraints box must contain exactly {sorted(expected)}, got {sorted(payload)}; refused"
+        )
+    floor = {} if version == PHYSICAL_BOUNDS_SCHEMA_V1 else {"min_temperature_k": payload["min_temperature_k"]}
+    return ConstraintPolicy(
+        PhysicalBounds(
+            schema_version=version,
+            max_temperature_k=payload["max_temperature_k"],
+            min_pressure_atm=payload["min_pressure_atm"],
+            max_pressure_atm=payload["max_pressure_atm"],
+            **floor,
+        ),
+        process=_process_from_payload(payload["process"]),
+    )
+
+
 def request_to_payload(request: CompilationRequest) -> dict:
-    """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable."""
+    """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable.
+
+    X-high D26.5 (Wave-C'' T6b): a LEGACY-loaded v0.8 request is REFUSED, mirroring the response rule -- this encoder
+    writes the CURRENT shape, so it would emit 0.9-only keys (``capability_profile*``, the physical-bounds floor) under
+    the v1alpha5 id, a payload its own loader refuses as smuggling. A migrated v0.8 request is read-only evidence;
+    rebuild it under 0.9 to re-emit it."""
+    if request.is_legacy_v08:
+        raise ValueError(
+            f"legacy v0.8 request; rebuild it under 0.9 -- a migrated {LEGACY_V08_REQUEST_SCHEMA!r} request is "
+            f"read-only: the current encoder would emit 0.9-only keys under the v0.8 id (a payload the loader refuses); "
+            f"refused (D26.5)")
     return {
         "schema_version": request.schema_version,
         "operation": request.operation.value,
@@ -3405,13 +5098,7 @@ def request_to_payload(request: CompilationRequest) -> dict:
         "transform_grammar": request.transform_grammar.value,
         "evidence_provider_selection": {"selection_id": request.evidence_provider_selection.selection_id},
         "search_bounds": [list(pair) for pair in request.search_bounds.bounds],
-        "constraints": {
-            "schema_version": request.constraints.bounds.schema_version,
-            "max_temperature_k": request.constraints.bounds.max_temperature_k,
-            "min_pressure_atm": request.constraints.bounds.min_pressure_atm,
-            "max_pressure_atm": request.constraints.bounds.max_pressure_atm,
-            "process": _process_to_payload(request.constraints.process),
-        },
+        "constraints": _constraints_to_payload(request.constraints),
         "ranking_policy": {"policy_id": request.ranking_policy.policy_id},
         "output_policy": {
             "render_mode": request.output_policy.render_mode,
@@ -3419,7 +5106,73 @@ def request_to_payload(request: CompilationRequest) -> dict:
         },
         "origins": [[name, origin.value] for name, origin in request.origins],
         "algebra_profile": request.algebra_profile,
+        # 0.9 Round III (D10/D11): the RESOLVED capability profile snapshot (or null = NOT_REQUESTED), serialized in
+        # the canonical type-tagged form so preset and inline-custom ride the IDENTICAL wire shape (one compiler).
+        "capability_profile": _capability_profile_to_payload(request.capability_profile),
+        "capability_profile_origin": request.capability_profile_origin,
     }
+
+
+#: X-high D28.5 (Wave C5 C5-F6): the EXACT keys of each released wire generation's containers.  The current shape adds
+#: only the 0.9 capability keys to the released v0.8 one; every other container is key-identical across the two (pinned
+#: against the REAL v0.8 fixtures).  Three keys are OPTIONAL, each by a released rule: a dossier's ``replay_payload`` (the
+#: thin wire omits it) and a request's ``algebra_profile`` (the FROZEN 0.7 missing-field migration law) -- plus a cost
+#: vector's ``fiction_blockers`` (the pre-DISPOSITION-01 revival rule).
+_V08_REQUEST_PAYLOAD_KEYS = frozenset({
+    "schema_version", "operation", "target_input", "input_kind", "normalized_identity", "identity_policy",
+    "terminal_policy", "stock_materials", "helper_reagents", "transform_grammar", "evidence_provider_selection",
+    "search_bounds", "constraints", "ranking_policy", "output_policy", "origins", "algebra_profile",
+})
+_REQUEST_PAYLOAD_KEYS = _V08_REQUEST_PAYLOAD_KEYS | {"capability_profile", "capability_profile_origin"}
+_REQUEST_NESTED_PAYLOAD_KEYS = {
+    "identity_policy": frozenset({"policy_id", "match_layer"}),
+    "terminal_policy": frozenset({"match_mode", "commodities_enabled", "formula_inventory"}),
+    "evidence_provider_selection": frozenset({"selection_id"}),
+    "ranking_policy": frozenset({"policy_id"}),
+    "output_policy": frozenset({"render_mode", "quiet"}),
+}
+_V08_RESPONSE_PAYLOAD_KEYS = frozenset({
+    "schema_version", "request", "outcome", "standard_status", "compilation_ir", "diagnostics",
+    "ranked_route_dossiers", "affordability_frontier", "provider_snapshots", "parse_receipt_summary",
+    "ranked_dag_dossiers", "process_selection_status", "admissible_route_digests", "exit_code", "search_space_status",
+    "transport_mode", "result_digest", "producer_signature",
+})
+_RESPONSE_PAYLOAD_KEYS = _V08_RESPONSE_PAYLOAD_KEYS | {"capability_question_digest"}
+_V08_ROUTE_SUMMARY_PAYLOAD_KEYS = frozenset({
+    "schema_version", "route_digest", "equation", "fit_status", "readiness", "readiness_tier", "exclusions", "gaps",
+    "composability_verdict", "selectivity_verdict", "feasibility_verdict", "equilibrium_verdict", "kinetics_verdict",
+    "process_requirements",
+})
+_ROUTE_SUMMARY_PAYLOAD_KEYS = _V08_ROUTE_SUMMARY_PAYLOAD_KEYS | {"capability_assessment"}
+_DAG_SUMMARY_PAYLOAD_KEYS = frozenset({
+    "schema_version", "route_digest", "equation", "fit_status", "exclusions", "gaps", "process_requirements", "edges",
+    "composability_verdict", "selectivity_verdict", "feasibility_verdict", "equilibrium_verdict", "kinetics_verdict",
+    "serial_holds",
+})
+_FRONTIER_ENTRY_PAYLOAD_KEYS = frozenset({"schema_version", "route_digest", "cost_vector"})
+_COST_VECTOR_PAYLOAD_KEYS = frozenset({
+    "cash", "cash_floor", "access_difficulty", "evidence_tier_rank", "new_equipment", "material_quantity", "energy",
+    "labor_time", "preprocessing", "analytical", "waste_disposal", "hard_blockers", "fiction_blockers", "currency",
+    "unit", "region",
+})
+_PROVIDER_SNAPSHOT_PAYLOAD_KEYS = frozenset({
+    "schema_version", "provider_ids", "record_count", "content_digest", "fetched_at", "allow_network",
+})
+
+
+def _require_payload_keys(payload: object, required: "frozenset[str]", what: str, *,
+                          optional: "frozenset[str]" = frozenset()) -> None:
+    """X-high D28.5: a wire container carries EXACTLY its versioned keys (``optional`` ones may be absent) -- an unknown
+    key is REFUSED (it rode the whole-body digest as unenforced text a JSON consumer might read as a claim: a dossier's
+    ``"capability_overall": "CAPABILITY_FIT"``), and a missing required key is REFUSED rather than silently defaulted
+    (the exact-key discipline D26.6 set for the canonical capability codec, applied to every container)."""
+    if type(payload) is not dict:
+        raise ValueError(f"{what} payload must be a JSON object, got {type(payload).__name__}; refused")
+    keys = set(payload)
+    unknown, missing = keys - required - optional, required - optional - keys
+    if unknown or missing:
+        raise ValueError(f"{what} payload must carry EXACTLY its versioned fields: unknown {sorted(unknown)}, missing "
+                         f"{sorted(missing)}; refused (D28.5)")
 
 
 def request_from_payload(payload: dict) -> CompilationRequest:
@@ -3431,8 +5184,36 @@ def request_from_payload(payload: dict) -> CompilationRequest:
     ``normalized_identity`` -> an equal ``semantic_digest`` over two DIFFERENT searches (a section-13.1 break: "same
     semantic digest MUST execute the same search").  Recomputing here makes deserialization authoritative.
     """
-    if payload.get("schema_version") != COMPILATION_REQUEST_SCHEMA:
-        raise ValueError(f"request schema_version must be exactly {COMPILATION_REQUEST_SCHEMA!r}")
+    if type(payload) is not dict:
+        raise ValueError(f"a request payload must be a JSON object, got {type(payload).__name__}; refused")
+    version = payload.get("schema_version")
+    if version == COMPILATION_REQUEST_SCHEMA:
+        # The capability keys are part of the current versioned shape -- REQUIRED (null/"" = NOT_REQUESTED), never
+        # silently defaulted (a stripped key on a current payload is malformed, not "old").
+        missing = [k for k in ("capability_profile", "capability_profile_origin") if k not in payload]
+        if missing:
+            raise ValueError(f"a {COMPILATION_REQUEST_SCHEMA!r} request payload must carry {missing}; refused")
+    elif version == LEGACY_V08_REQUEST_SCHEMA:
+        # D11 legacy migration: a v0.8 request never carried capability -> NOT_REQUESTED.  ANY capability_* key under
+        # the 0.8 id is 0.9 content wearing a 0.8 identity (tamper T1, or a 0.9.0a1-branch payload that reused the id)
+        # -> REFUSED, never silently honoured and never silently dropped.
+        # ANY depth (Wave-C2 P3): the same 0.9-only-key walk the response path runs, plus any top-level capability_*.
+        smuggled = sorted(set(_v09_only_keys(payload)) | {k for k in payload if k.startswith("capability_")})
+        if smuggled:
+            raise ValueError(
+                f"legacy {LEGACY_V08_REQUEST_SCHEMA!r} request carries 0.9-only key(s) {smuggled}; refused (a v0.8 "
+                f"request cannot declare a capability profile -- re-emit it under {COMPILATION_REQUEST_SCHEMA!r})"
+            )
+    else:
+        raise _unsupported_schema("request", version, COMPILATION_REQUEST_SCHEMA, LEGACY_V08_REQUEST_SCHEMA)
+    # X-high D28.5: exactly the versioned keys of the dispatched generation, nested policy objects included.
+    # ``algebra_profile`` alone stays optional: its absence is the FROZEN 0.7 wire-migration law (a pre-0.7 request
+    # reconstructs as LEGACY_MISSING_ALGEBRA_PROFILE, never the promotable build default), a released decode rule, not
+    # a silent default -- and the algebra is inside the semantic digest a consumer pins.
+    _require_payload_keys(payload, _REQUEST_PAYLOAD_KEYS if version == COMPILATION_REQUEST_SCHEMA
+                          else _V08_REQUEST_PAYLOAD_KEYS, "request", optional=frozenset({"algebra_profile"}))
+    for name, keys in _REQUEST_NESTED_PAYLOAD_KEYS.items():
+        _require_payload_keys(payload[name], keys, f"request {name}")
     tp = payload["terminal_policy"]
     operation = CompilationOperation(payload["operation"])
     target_input = payload["target_input"]
@@ -3443,6 +5224,14 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         else ""
     )
     if payload["normalized_identity"] != expected_normalized:
+        if version == LEGACY_V08_REQUEST_SCHEMA:
+            # Wave-C2 P2: a GENUINE v0.8 payload can disagree here because today's name resolver registers names v0.8
+            # did not (e.g. "sulfuric acid").  Still FAIL CLOSED -- the stored search identity no longer names the
+            # search 0.9 would run -- but say what actually happened instead of calling it a forgery.
+            raise ValueError(
+                f"legacy v0.8 payload; the name resolver changed since v0.8 (stored normalized_identity "
+                f"{payload['normalized_identity']!r} vs today's {expected_normalized!r}); recompile under 0.9"
+            )
         raise ValueError(
             f"normalized_identity {payload['normalized_identity']!r} does not match the target's resolution "
             f"{expected_normalized!r} (a forged or stale search identity)"
@@ -3465,15 +5254,7 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         TransformGrammar(payload["transform_grammar"]),
         EvidenceProviderSelection(payload["evidence_provider_selection"]["selection_id"]),
         SearchBounds(tuple((name, value) for name, value in payload["search_bounds"])),
-        ConstraintPolicy(
-            PhysicalBounds(
-                payload["constraints"]["schema_version"],
-                payload["constraints"]["max_temperature_k"],
-                payload["constraints"]["min_pressure_atm"],
-                payload["constraints"]["max_pressure_atm"],
-            ),
-            process=_process_from_payload(payload["constraints"]["process"]),
-        ),
+        _constraints_from_payload(payload["constraints"]),
         RankingPolicy(payload["ranking_policy"]["policy_id"]),
         OutputPolicy(payload["output_policy"]["render_mode"], payload["output_policy"]["quiet"]),
         tuple((name, FieldOrigin(origin)) for name, origin in payload["origins"]),
@@ -3483,6 +5264,12 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         # old serialized request as the wider algebra.  An unknown/incompatible id is refused by
         # CompilationRequest.__post_init__ (fail-closed, so a tampered profile string cannot select a hidden algebra).
         algebra_profile=payload.get("algebra_profile", LEGACY_MISSING_ALGEBRA_PROFILE),
+        # 0.9 Round III (D10) / Round V (D11): the keys are present on a current payload (checked above) and ABSENT on a
+        # legacy one (also checked above), so ``.get`` here only ever maps the legacy absence to NOT_REQUESTED.  A
+        # present profile is reconstructed EXACTLY (the stored snapshot is authoritative -- it is NEVER re-resolved
+        # against today's presets, which is what would reopen the M34 drift hole).
+        capability_profile=_capability_profile_from_payload(payload.get("capability_profile")),
+        capability_profile_origin=payload.get("capability_profile_origin", ""),
     )
 
 
@@ -3520,6 +5307,9 @@ def ranked_summary_to_payload(summary: RankedRouteSummary, *, include_replay: bo
         "equilibrium_verdict": summary.equilibrium_verdict,
         "kinetics_verdict": summary.kinetics_verdict,
         "process_requirements": [_process_requirements_to_payload(r) for r in summary.process_requirements],
+        # 0.9 Round III (D12): the per-route capability projection (or null = NOT_REQUESTED), compare=True so it is
+        # part of route identity -- CAPABILITY-REBIND-ON-LOAD re-derives it and refuses a tamper.
+        "capability_assessment": _capability_assessment_to_payload(summary.capability_assessment),
     }
     if include_replay and summary.replay_payload is not None:
         payload["replay_payload"] = summary.replay_payload
@@ -3534,6 +5324,29 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
     ``RankedRouteSummary`` does not even accept it as a constructor argument (``readiness_tier`` is a ``@property``).
     A payload whose carried ``readiness_tier`` disagrees with ``readiness``'s own ``.tier`` is refused here, at the
     seam, rather than silently discarded -- a mismatch means SOMETHING in the payload was hand-edited."""
+    version = payload.get("schema_version")
+    if version == RANKED_ROUTE_SUMMARY_SCHEMA:
+        if "capability_assessment" not in payload:
+            raise ValueError(
+                f"a {RANKED_ROUTE_SUMMARY_SCHEMA!r} ranked route summary must carry capability_assessment (null = "
+                f"NOT_REQUESTED); refused"
+            )
+    elif version == LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA:
+        smuggled = _v09_only_keys(payload)
+        if smuggled:
+            raise ValueError(
+                f"legacy {LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA!r} ranked route summary carries 0.9-only key(s) "
+                f"{smuggled}; refused"
+            )
+        # D11: the replay operations gain material_uses at their ONLY v0.8-expressible value, [] (decode-side only).
+        payload = _migrate_legacy_v08_dossier(payload)
+    else:
+        raise _unsupported_schema("ranked route summary", version, RANKED_ROUTE_SUMMARY_SCHEMA,
+                                  LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA)
+    # X-high D28.5: exactly the dispatched generation's keys (the replay is the one optional key).
+    _require_payload_keys(payload, _ROUTE_SUMMARY_PAYLOAD_KEYS if version == RANKED_ROUTE_SUMMARY_SCHEMA
+                          else _V08_ROUTE_SUMMARY_PAYLOAD_KEYS, "ranked route summary",
+                          optional=frozenset({"replay_payload"}))
     readiness = _route_readiness_from_payload(payload["readiness"])
     if payload["readiness_tier"] != readiness.tier:
         raise ValueError(
@@ -3555,7 +5368,26 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
         payload["kinetics_verdict"],
         tuple(_process_requirements_from_payload(p) for p in payload["process_requirements"]),
         replay_payload=payload.get("replay_payload"),
+        # 0.9 Round III (D12) / Round V (D11): present on a current summary, absent on a legacy one (both checked above)
+        # -> legacy decodes as None = NOT_REQUESTED.  A present assessment is reconstructed exactly and re-derived on
+        # load by CAPABILITY-REBIND-ON-LOAD.
+        capability_assessment=_decode_dossier_assessment(payload),
     )
+
+
+def _decode_dossier_assessment(payload: dict) -> "CapabilityAssessment | None":
+    """Decode one dossier's carried assessment, naming the dossier in the refusal: ``CapabilityAssessment``'s own
+    construction guards (e.g. the HARD-LAW overall fold, Wave-C2) fire DURING decode, before any response-level check,
+    so a forged verdict is reported against the route it rode on rather than as an anonymous record error."""
+    try:
+        return _capability_assessment_from_payload(payload.get("capability_assessment"))
+    # KeyError: an unknown ``readiness_tier`` reaches ``tier_rank`` inside the assessment's own fold check -- a malformed
+    # wire value, refused as such (X-high D20(2) defence-in-depth; the record should raise ValueError itself).
+    except (TypeError, ValueError, KeyError) as exc:
+        raise ValueError(
+            f"ranked route {payload.get('route_digest')!r} carries a capability_assessment that cannot be "
+            f"reconstructed: {exc}; refused"
+        ) from exc
 
 
 def ranked_dag_summary_to_payload(summary: RankedDAGSummary, *, include_replay: bool = False) -> dict:
@@ -3595,10 +5427,48 @@ def _exact_int_pair(pair) -> "tuple[int, int]":
     return (a, b)
 
 
+def _exact_hold_triple(triple) -> "tuple[int, int, float]":
+    """A serial hold ``[i, j, minutes]`` with its wire types validated BEFORE conversion (X-high D28.5, C5-F7): the step
+    indices are exact ints (not bool/float/str) and the minutes a real JSON number (int or float, not bool/str/null) --
+    an int minute count is widened to float losslessly, nothing else is coerced."""
+    if type(triple) not in (list, tuple) or len(triple) != 3:
+        raise TypeError("each serial hold must be an [i, j, minutes] triple")
+    i, j, minutes = triple
+    if isinstance(i, bool) or isinstance(j, bool) or type(i) is not int or type(j) is not int:
+        raise TypeError("serial hold step indices must be exact ints (not bool/float/str)")
+    if isinstance(minutes, bool) or type(minutes) not in (int, float):
+        raise TypeError("serial hold minutes must be a JSON number (not bool/str/null)")
+    return (i, j, float(minutes))
+
+
 def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
     """Reconstruct a DAG combined bench admission; re-validates via its __post_init__ (edge-shape + coherence) guards.
     ``edges`` wire types are validated BEFORE coercion (:func:`_exact_int_pair`), so a bool/float/string index cannot
-    be silently truncated into a legal-looking edge.  ``replay_payload`` is optional (absent -> None)."""
+    be silently truncated into a legal-looking edge.  ``replay_payload`` is optional (absent -> None).
+
+    X-high D22: explicit version dispatch.  The CURRENT id decodes as-is; the released v0.8 id
+    (``ranked-dag-summary-v1alpha4``) decodes ONLY as LEGACY -- refused if it carries any 0.9-only key at any depth,
+    its replay operations migrated to ``material_uses=[]`` -- so a standalone v0.8 DAG dossier no longer fails on a
+    silently-required field; any other id is refused precisely."""
+    if type(payload) is not dict:
+        raise ValueError(f"a ranked DAG summary payload must be a JSON object, got {type(payload).__name__}; refused")
+    version = payload.get("schema_version")
+    if version == LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA:
+        smuggled = _v09_only_keys(payload)
+        if smuggled:
+            raise ValueError(
+                f"legacy {LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA!r} ranked DAG summary carries 0.9-only key(s) "
+                f"{smuggled}; refused"
+            )
+        payload = _migrate_legacy_v08_dossier(payload)
+    elif version != RANKED_DAG_SUMMARY_SCHEMA:
+        raise _unsupported_schema("ranked DAG summary", version, RANKED_DAG_SUMMARY_SCHEMA,
+                                  LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA)
+    # X-high D28.5: exactly the versioned keys (identical in both generations; the replay is the one optional key).
+    _require_payload_keys(payload, _DAG_SUMMARY_PAYLOAD_KEYS, "ranked DAG summary",
+                          optional=frozenset({"replay_payload"}))
+    if type(payload["serial_holds"]) is not list:
+        raise ValueError("ranked DAG summary serial_holds must be a JSON array; refused (D28.5)")
     return RankedDAGSummary(
         payload["schema_version"],
         payload["route_digest"],
@@ -3613,9 +5483,10 @@ def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
         payload["feasibility_verdict"],
         payload["equilibrium_verdict"],
         payload["kinetics_verdict"],
-        # serial_holds is optional for backward tolerance; coerce back to (int,int,float) triples (the shape
-        # guard rejects a list, so the round-trip is exact).  Absent -> () (a pre-2b payload had no holds field).
-        tuple((int(i), int(j), float(m)) for i, j, m in payload.get("serial_holds", [])),
+        # X-high D28.5 (Wave C5 C5-F7): serial_holds is a REQUIRED key (both released generations carry it) whose wire
+        # types are validated BEFORE any conversion (:func:`_exact_hold_triple`) -- the int()/float() coercion that
+        # silently turned ``["1", true, "99999"]`` into a legal-looking hold is gone, as ``_exact_int_pair`` did for edges.
+        tuple(_exact_hold_triple(t) for t in payload["serial_holds"]),
         replay_payload=payload.get("replay_payload"),
     )
 
@@ -3653,6 +5524,13 @@ def affordability_entry_from_payload(payload: dict):
     ``hard_blockers`` and ``fiction_blockers`` are coerced back to tuples -- the CostVector guard rejects a list, so
     the round-trip is exact; ``fiction_blockers`` reads via ``.get`` so a pre-DISPOSITION-01 payload still revives."""
     from .experiment.affordability import AffordabilityFrontierEntry, CostVector
+    # X-high D28.5: exactly the versioned keys (identical in both released generations).  ``fiction_blockers`` alone
+    # stays optional -- the released pre-DISPOSITION-01 revival rule above (an absent channel is empty); a STRIPPED
+    # channel on a current response is refused on the canonical wire (the D27.4 frontier re-derivation) and under
+    # verified admission (TAMPER-HARDENING-01), and stays advisory on a plain thin load, exactly as the ledger states.
+    _require_payload_keys(payload, _FRONTIER_ENTRY_PAYLOAD_KEYS, "affordability frontier entry")
+    _require_payload_keys(payload["cost_vector"], _COST_VECTOR_PAYLOAD_KEYS, "affordability frontier cost vector",
+                          optional=frozenset({"fiction_blockers"}))
     cv = payload["cost_vector"]
     return AffordabilityFrontierEntry(
         payload["schema_version"],
@@ -3694,6 +5572,7 @@ def provider_snapshot_from_payload(payload: dict):
     """Reconstruct a provider snapshot; re-validates via its __post_init__.  ``provider_ids`` is coerced back to a
     tuple (the guard rejects a list), so the round-trip is exact."""
     from .data.provider_snapshot import ProviderSnapshot
+    _require_payload_keys(payload, _PROVIDER_SNAPSHOT_PAYLOAD_KEYS, "provider snapshot")  # X-high D28.5
     return ProviderSnapshot(
         payload["schema_version"],
         tuple(payload["provider_ids"]),
@@ -3708,9 +5587,13 @@ def provider_snapshot_from_payload(payload: dict):
 #
 # ``response_from_payload`` already RE-DERIVES process admission on load (PROCESS-ADMIT-01), but that binds only the
 # PROCESS axis, and every other self-declared field is trusted from a payload anyone can mint.  A producer signature
-# closes the OUT-OF-BAND tamper: the producer signs ``result_digest`` -- a content hash that transitively covers every
-# ranked route's ``fit_status``/``process_requirements``/``exclusions``/``gaps`` (see ``result_digest``) -- with a secret
-# key; a consumer holding the same key verifies it and REFUSES a payload whose bytes were altered without the key.
+# closes the OUT-OF-BAND tamper: the producer signs the WIRE ``result_digest`` with a secret key; a consumer holding the
+# same key verifies it and REFUSES a payload whose bytes were altered without the key.  Since X-high D27.2 the wire
+# digest of a current payload is the canonical digest of the WHOLE payload body (every key except ``result_digest`` and
+# ``producer_signature`` -- ``_payload_body_digest``), so the HMAC authenticates EVERYTHING the response carries: the
+# ranked dossiers, the affordability frontier, diagnostics, receipts, the thick replay, the parse receipt, provider
+# snapshots and DAG serial holds (before D27.2 it signed only the alias-invariant result identity, and the frontier /
+# replay / provenance rode outside it -- Wave C4 C4T-2/C4T-8).
 #
 # HONEST SCOPE -- what a signature can and cannot do:
 #   * CLOSES: an attacker WITHOUT the key who edits a serialized response (relabel a route's ``fit_status`` to FITS, swap
@@ -3760,10 +5643,10 @@ def resolve_producer_key(*, create: bool = False) -> bytes | None:
 
 
 def _sign_result_digest(result_digest: str, key: bytes) -> str:
-    """The producer signature: an HMAC-SHA256 over the response's ``result_digest`` (hex).
+    """The producer signature: an HMAC-SHA256 over the response's WIRE ``result_digest`` (hex).
 
-    ``result_digest`` transitively covers every admission-bearing field, so signing it authenticates the whole
-    admissible verdict without carrying the heavy ExperimentRoute graph the thin projection omits.
+    For a current payload that digest folds the whole-body digest (X-high D27.2), so signing it authenticates every
+    field the payload carries -- on the thin wire every field it carries, without the heavy ExperimentRoute graph.
     """
     return hmac.new(key, result_digest.encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -3820,12 +5703,21 @@ def _check_verified_admission(response: "CompilationResponse") -> None:
                 f"include_replay=True)"
             )
         route = _reconstruct_route(r.replay_payload)
-        resummary = RankedRouteSummary.of_fit(rank_routes((route,), box=box, losses=losses)[0], identity_losses=losses)
+        # X-high D20(1): re-project under the request's OWN capability profile -- the capability_assessment is a
+        # compare=True summary field, so a re-projection WITHOUT the profile could never equal an honest assessed
+        # dossier (a fail-closed false refusal of every FITS route on a profile request).
+        resummary = RankedRouteSummary.of_fit(rank_routes((route,), box=box, losses=losses)[0], identity_losses=losses,
+                                              capability_profile=response.request.capability_profile)
+        if response.is_legacy_v08:
+            # D11: re-project under the LEGACY identity (v0.8 schema id + frozen-rule route digest); the capability
+            # projection is None because the legacy request is NOT_REQUESTED.  Still full structural equality.
+            resummary = dataclasses_replace(resummary, schema_version=LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA,
+                                            route_digest=_v08_digest(route))
         if resummary != r:
             raise ValueError(
                 f"verified admission: route {r.route_digest} re-projects to a DIFFERENT summary than declared -- the "
                 f"replay evidence does not support the claimed verdict (a forged verdict, substituted evidence, or "
-                f"tampered ranking); refused"
+                f"tampered ranking); refused{response._legacy_hint()}"
             )
     for d in response.ranked_dag_dossiers:
         if d.fit_status != "FITS":
@@ -3836,6 +5728,11 @@ def _check_verified_admission(response: "CompilationResponse") -> None:
             )
         dag = _reconstruct_dag(d.replay_payload)
         resummary = RankedDAGSummary.of_dag(dag, box)
+        if response.is_legacy_v08:
+            # D11/X-high D22: re-project under the LEGACY identity -- the released DAG summary id + the frozen-rule DAG
+            # digest (a DAG identity is a route-graph digest).  Still full structural equality.
+            resummary = dataclasses_replace(resummary, schema_version=LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA,
+                                            route_digest=_v08_digest(dag))
         # resummary != d compares the compare=True fields (verdict + edges + verdicts); serial_holds is compare=False
         # (disclosure), so re-derive it explicitly -- a verified-admission consumer trusting a displayed hold gets an
         # authenticated one (evil-morty Finding 2).
@@ -3856,21 +5753,46 @@ TRANSPORT_THIN_ADVISORY = "THIN_ADVISORY"
 _TRANSPORT_MODES = frozenset({TRANSPORT_CANONICAL_VERIFIED, TRANSPORT_THIN_ADVISORY})
 
 
-def _transport_bound_result_digest(base_digest: str, transport_mode: str) -> str:
-    """Bind the declared ``transport_mode`` into the wire ``result_digest``.
+#: X-high D27.2: the ONLY payload keys the wire body digest excludes -- the digest itself and the signature over it.
+_BODY_DIGEST_EXCLUDED_KEYS = frozenset({"result_digest", "producer_signature"})
 
-    THIN_ADVISORY is the IDENTITY (the bare semantic ``result_digest``), so a thin wire stays byte-identical to the
-    pre-transport form and a pre-0.8 payload -- no ``transport_mode`` field, so read as thin -- still verifies.
-    CANONICAL_VERIFIED folds the mode in, so a downgrade-strip -- relabel CANONICAL_VERIFIED->THIN_ADVISORY to dodge the
-    mandatory re-derivation -- changes the expected digest and is REFUSED on load unless the forger ALSO recomputes it
-    (at which point the thin-wire rules bite instead: PROCESS_SPECIFIED-refused, above-FORMAL fail-closed under verified
-    admission).  Asymmetric but sound -- the weakest mode carries no extra binding term, the stronger one does, and
-    neither direction of relabel-without-recompute survives."""
+
+def _payload_body_digest(payload: dict) -> str:
+    """X-high D27.2 (Wave C4 C4T-2/C4T-8): SHA-256 over the ENTIRE response payload except ``result_digest`` and
+    ``producer_signature``, in the canonical wire encoding (sorted keys, compact separators, UTF-8) -- the exact bytes
+    :func:`serialize_response` writes, so a payload that went through ``json.loads`` re-encodes identically.  Every field
+    a response carries -- the affordability frontier, diagnostics, the parse receipt, provider snapshots, DAG serial
+    holds, IR candidate text, replay payloads on the thick wire -- is inside it; nothing a payload SAYS can move without
+    moving the wire digest the producer HMAC signs and ``require_reexecution`` compares."""
+    body = {key: value for key, value in payload.items() if key not in _BODY_DIGEST_EXCLUDED_KEYS}
+    encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _transport_bound_result_digest(base_digest: str, transport_mode: str, body_digest: "str | None" = None) -> str:
+    """Bind the declared ``transport_mode`` -- and, on a CURRENT payload, the WHOLE payload body -- into the wire
+    ``result_digest``.
+
+    ``base_digest`` is the in-memory :attr:`CompilationResponse.result_digest`: the RESULT identity, deliberately
+    alias-invariant (SVC-REQ-01 -- ``paracetamol`` and ``smiles:CC(=O)Nc1ccc(O)cc1`` share it, so it excludes the
+    parse receipt and other provenance).  The WIRE digest is a different object: the integrity pin of THIS payload.
+
+    * ``body_digest`` given (every CURRENT payload, X-high D27.2): ``canonical_digest(("compilation-transport-v1alpha2",
+      base, mode, body))`` -- the body digest (:func:`_payload_body_digest`) folds in every field the payload carries,
+      so the producer HMAC now authenticates the frontier, diagnostics, receipts, provider snapshots and serial holds
+      too (Round IV-V signed only the base digest, and Wave C4 C4T-2 showed a forged frontier surviving the HMAC), and a
+      downgrade relabel moves it as before.  A keyless attacker can still recompute a public digest -- that is the
+      unsigned-wire boundary every load-time re-derivation exists for; the key closes it.
+    * ``body_digest`` ``None`` (the FROZEN pre-D27 rule, used ONLY for legacy v0.8 payloads): THIN_ADVISORY is the
+      identity (the bare base digest); CANONICAL_VERIFIED folds the mode in ("compilation-transport-v1alpha1").  Real
+      v0.8 fixtures verify under exactly this rule, byte for byte."""
+    if transport_mode not in _TRANSPORT_MODES:
+        raise ValueError(f"unknown transport_mode {transport_mode!r}")
+    if body_digest is not None:
+        return canonical_digest(("compilation-transport-v1alpha2", base_digest, transport_mode, body_digest))
     if transport_mode == TRANSPORT_THIN_ADVISORY:
         return base_digest
-    if transport_mode == TRANSPORT_CANONICAL_VERIFIED:
-        return canonical_digest(("compilation-transport-v1alpha1", base_digest, transport_mode))
-    raise ValueError(f"unknown transport_mode {transport_mode!r}")
+    return canonical_digest(("compilation-transport-v1alpha1", base_digest, transport_mode))
 
 
 def response_to_payload(response: CompilationResponse, *, signing_key: bytes | None = None,
@@ -3887,10 +5809,32 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
     ``THIN_ADVISORY`` on the explicit lean opt-out (``include_replay=False``) -- and is FOLDED into the wire
     ``result_digest`` so relabelling it is a detectable identity change.  A producer that wants the lean, advisory wire
     (no re-derivable evidence, PROCESS_SPECIFIED inadmissible) passes ``include_replay=False`` explicitly.
+
+    F54 CORRECTED (RC Round V, D11 -- F81): Round IV claimed the 0.9 capability fields were "additive-optional, never
+    a crash" for pre-0.9 payloads.  That was FALSE: the fields were added to digest-covered records (RankedRouteSummary,
+    ProcedureOperation) without a schema bump, so every genuine v0.8 routes-mode response was refused with a misleading
+    ``result_digest`` mismatch, while a v0.8-id request with an injected capability profile was ACCEPTED as native.  The
+    truth now: the 0.9 fields are REQUIRED on the current ids (request v1alpha6 / response v1alpha16 / summary
+    v1alpha4); the v0.8 ids are an explicit LEGACY whitelist decoded as capability NOT_REQUESTED and verified under the
+    frozen v0.8 digest rule (``_v08_canonical_payload``); a v0.8-id payload carrying ANY 0.9-only key is REFUSED; any
+    other id is refused as ``unsupported schema version``.  Pinned by tests/test_v0_9_round_v_schema_migration.py
+    against real main@df1b38d fixtures (tests/fixtures/v08/).
+
+    A LEGACY-loaded v0.8 response is REFUSED here (X-high, W-WIRE P3): this encoder writes the CURRENT shape, so it
+    would put 0.9-only keys (``capability_question_digest``, ``capability_assessment``, ``capability_profile*``, replay
+    ``material_uses``) under the v1alpha15 id -- a payload its own loader refuses as smuggling.  Re-emitting an exact
+    v0.8-shaped payload is NOT trivially sound: it would need a second, frozen v0.8 encoder for every nested record
+    (request, summaries, replay steps, IR) whose byte-for-byte fidelity no test could prove in general.  A migrated v0.8
+    answer is read-only evidence; the way forward is to RECOMPILE under 0.9 (its ``semantic_digest`` is in the hint).
     """
+    if response.is_legacy_v08:
+        raise ValueError(
+            f"legacy v0.8 response; recompile under 0.9 -- a migrated {LEGACY_V08_RESPONSE_SCHEMA!r} response is "
+            f"read-only: the current encoder would emit 0.9-only keys under the v0.8 id (a payload the loader refuses), "
+            f"and no frozen v0.8 encoder exists to re-emit it byte-for-byte{response._legacy_hint()}"
+        )
     transport_mode = TRANSPORT_CANONICAL_VERIFIED if include_replay else TRANSPORT_THIN_ADVISORY
-    digest = _transport_bound_result_digest(response.result_digest, transport_mode)
-    return {
+    payload = {
         "schema_version": response.schema_version,
         "request": request_to_payload(response.request),
         "outcome": response.outcome.value,
@@ -3909,15 +5853,84 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
         "affordability_frontier": [affordability_entry_to_payload(e) for e in response.affordability_frontier],
         "provider_snapshots": [provider_snapshot_to_payload(s) for s in response.provider_snapshots],
         "transport_mode": transport_mode,
-        "result_digest": digest,
-        "producer_signature": None if signing_key is None else _sign_result_digest(digest, signing_key),
+        # 0.9 Round III (D12): the capability-question pin -- null when no profile was requested.  Additive to
+        # result_digest (which already covers the assessments transitively); surfaced so a consumer can pin the
+        # capability question without reaching into the request.  Re-derived + verified on load.
+        "capability_question_digest": response.capability_question_digest,
     }
+    # X-high D27.2: the wire digest binds the WHOLE body (every key but the digest and its signature), so the producer
+    # HMAC below authenticates everything this payload says, not only the alias-invariant result identity.
+    digest = _transport_bound_result_digest(response.result_digest, transport_mode, _payload_body_digest(payload))
+    payload["result_digest"] = digest
+    payload["producer_signature"] = None if signing_key is None else _sign_result_digest(digest, signing_key)
+    return payload
+
+
+#: D11: the keys that exist ONLY in the 0.9 wire.  None of them occurs anywhere in a genuine main@df1b38d payload
+#: (verified against the real v0.8 fixtures), so their presence ANYWHERE in a v1alpha15 payload is 0.9 content wearing
+#: a 0.8 id -- tamper T4b, or a 0.9.0a1-branch payload that reused the id -- and is refused, never reinterpreted.
+_V09_ONLY_WIRE_KEYS = frozenset({
+    "capability_question_digest", "capability_profile", "capability_profile_origin", "capability_assessment",
+    "material_uses", "specification",
+    # X-high D14: the temperature floor exists only on the 0.9 wire (a v1alpha1 constraints box cannot carry it).
+    "min_temperature_k",
+})
+
+
+def _v09_only_keys(payload: object) -> "list[str]":
+    """Every 0.9-only wire key present at ANY depth of ``payload`` (sorted, distinct)."""
+    found: "set[str]" = set()
+    stack: list = [payload]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            found |= _V09_ONLY_WIRE_KEYS & set(node)
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return sorted(found)
+
+
+def _refuse_legacy_v08_response_smuggling(payload: dict) -> None:
+    """Refuse a ``compilation-response-v1alpha15`` payload that carries ANY 0.9-only key at ANY depth (D11)."""
+    found = _v09_only_keys(payload)
+    if found:
+        raise ValueError(
+            f"legacy {LEGACY_V08_RESPONSE_SCHEMA!r} response carries 0.9-only key(s) {found}; refused (a v0.8 "
+            f"payload cannot carry a capability question/assessment or typed material uses -- recompile under 0.9 "
+            f"to obtain them)"
+        )
+
+
+def _migrate_legacy_v08_dossier(dossier: dict) -> dict:
+    """Decode-side migration of ONE legacy route/DAG dossier (D11): every replayed procedure operation gains the
+    0.9 ``material_uses`` slot at its ONLY v0.8-expressible value, ``[]`` (a v0.8 procedure could not type an
+    auxiliary).  Returns a copy; the caller's payload is not mutated.  Digests are still verified under the frozen
+    v0.8 rule, which omits exactly that default -- so this adds no identity, it only lets the current codec decode."""
+    import copy
+    migrated = copy.deepcopy(dossier)
+    for step in migrated.get("replay_payload") or ():
+        envelope = step.get("envelope") if isinstance(step, dict) else None
+        procedure = envelope.get("procedure") if isinstance(envelope, dict) else None
+        if isinstance(procedure, dict):
+            for op in procedure.get("operations") or ():
+                if isinstance(op, dict):
+                    op["material_uses"] = []
+    return migrated
+
+
+#: The "no capability-question pin" sentinel for :func:`response_from_payload` -- distinct from ``None``, which PINS the
+#: question as NOT_REQUESTED (a consumer who asked no capability question refuses an answer that carries one).
+_NO_CAPABILITY_PIN = object()
 
 
 def response_from_payload(payload: dict, *, verification_key: bytes | None = None,
                           require_signature: bool = False,
                           require_verified_admission: bool = False,
-                          expected_request_digest: str | None = None) -> CompilationResponse:
+                          expected_request_digest: str | None = None,
+                          expected_capability_question_digest: "str | None | object" = _NO_CAPABILITY_PIN,
+                          require_reexecution: bool = False,
+                          ) -> CompilationResponse:
     """Reconstruct a response from :func:`response_to_payload`; re-runs the coherence guard.
 
     Two layers now guard admission on load.  (1) The round-trip check below re-derives
@@ -3940,8 +5953,9 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     the re-derivation. Advisory (unenforceable) on a replay-absent (thin) route, the same boundary the frontier's
     catalyst/fiction channels carry below.  (3) TAMPER-HARDENING-01:
     :meth:`CompilationResponse._check_frontier_coherence` runs at the END of every load (after any verified-admission
-    pass) and re-derives each affordability_frontier entry's DISPOSITION blockers (the frontier is EXCLUDED from
-    ``result_digest``, so this is the only guard on it).  It FULLY closes the process-exclusion ``hard_blockers`` strip
+    pass) and re-derives each affordability_frontier entry's DISPOSITION blockers (the frontier is outside the RESULT
+    IDENTITY; since X-high D27.2 it is inside the whole-body WIRE digest, and on the canonical wire D27.4 re-derives the
+    whole frontier).  It FULLY closes the process-exclusion ``hard_blockers`` strip
     on EVERY transport (that channel needs no replay), and the CATALYST/FICTION strip on the THICK transport
     (``include_replay=True``, digest-bound via KILL 1).  Under ``require_verified_admission`` the thin transport is
     ALSO closed: a frontier entry with no ``replay_payload`` is UNVERIFIED and REFUSED (replay-MANDATORY-for-
@@ -3955,9 +5969,16 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     (b) even on the process axis, the evidence is not cryptographically bound to the route STRUCTURE, so a
     fully controlling forger who ALSO fabricates coherent lenient ``process_requirements`` and recomputes
     ``result_digest`` can still mint a FITS.
+    X-high D27 (Wave C4): on the CANONICAL wire both parts are now closed WITHOUT a key -- D27.4 re-derives every whole
+    dossier (fit status, gaps, exclusions, process requirements, verdicts, order) from its replayed route under the
+    carried request's box, D27.1 re-derives the replayed corpus envelopes, D27.3 the outcome, D27.5/D27.6 bind the
+    receipt count / kind / bounds, D27.7 requires the replay and the IR label -- so (a)/(b) remain only on the THIN wire.
+    What a keyless consumer must still treat as advisory is the module's transport ledger (D27.8,
+    ``smartchem.transport_ledger``).  ``require_reexecution`` (D26.2) compares the WHOLE re-executed body (D27.2).
     COMBINED-VERDICT-AUTH: pass a ``verification_key`` to check the payload's ``producer_signature`` (an HMAC over the
-    RECONSTRUCTED ``result_digest``); an OUT-OF-BAND tamper by an attacker WITHOUT the key -- including a coherent one
-    that recomputes ``result_digest`` -- is then refused, closing (a) and the keyless part of (b).  With
+    WIRE ``result_digest``, which since D27.2 folds the whole-body digest); an OUT-OF-BAND tamper by an attacker WITHOUT
+    the key -- including a coherent one that recomputes ``result_digest`` -- is then refused, closing (a) and the keyless
+    part of (b) on every wire.  With
     ``require_signature`` an unsigned payload is itself refused.  What NO signature can close (see the honest-scope
     note above the signing helpers) is a controlling forger who runs code inside the producing process or holds the
     key -- test_key_holding_forger_residual_is_not_closable_by_a_signature pins that irreducible residual.  With no key
@@ -3965,8 +5986,31 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     tests/test_process_service.py (test_deserialized_admission_is_re_derived_not_blindly_trusted +
     test_non_process_axis_relabel_is_not_yet_authenticated + test_signed_response_rejects_out_of_band_tamper).
     """
+    if type(payload) is not dict:
+        raise ValueError(f"a response payload must be a JSON object, got {type(payload).__name__}; refused")
     if require_signature and verification_key is None:
         raise ValueError("require_signature needs a verification_key")
+    # D11 explicit version dispatch: the CURRENT id, or the ONE whitelisted v0.8 id mapped to its migration; any other
+    # id is refused precisely.  Dispatch happens BEFORE any decode, so an unknown id never reaches a field-level error.
+    version = payload.get("schema_version")
+    if version == COMPILATION_RESPONSE_SCHEMA:
+        if "capability_question_digest" not in payload:
+            raise ValueError(
+                f"a {COMPILATION_RESPONSE_SCHEMA!r} response payload must carry capability_question_digest (null = "
+                f"NOT_REQUESTED); refused"
+            )
+        dossier_payloads = payload["ranked_route_dossiers"]
+    elif version == LEGACY_V08_RESPONSE_SCHEMA:
+        _refuse_legacy_v08_response_smuggling(payload)
+        # (each legacy dossier is migrated by its OWN summary decoder, after that decoder's own smuggling check)
+        dossier_payloads = payload["ranked_route_dossiers"]
+    else:
+        raise _unsupported_schema("response", version, COMPILATION_RESPONSE_SCHEMA, LEGACY_V08_RESPONSE_SCHEMA)
+    # X-high D28.5 (Wave C5 C5-F6): exactly the dispatched generation's top-level keys -- no unknown key rides the body
+    # digest as an unenforced "claim", and no required key (transport_mode, provider_snapshots, ranked_dag_dossiers, ...)
+    # is silently defaulted.
+    _require_payload_keys(payload, _RESPONSE_PAYLOAD_KEYS if version == COMPILATION_RESPONSE_SCHEMA
+                          else _V08_RESPONSE_PAYLOAD_KEYS, "response")
     ir_payload = payload["compilation_ir"]
     response = CompilationResponse(
         payload["schema_version"],
@@ -3975,7 +6019,7 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         payload["standard_status"],
         None if ir_payload is None else ir_from_payload(ir_payload),
         tuple(payload["diagnostics"]),
-        tuple(ranked_summary_from_payload(r) for r in payload["ranked_route_dossiers"]),
+        tuple(ranked_summary_from_payload(r) for r in dossier_payloads),
         tuple(affordability_entry_from_payload(e) for e in payload["affordability_frontier"]),
         tuple(provider_snapshot_from_payload(s) for s in payload.get("provider_snapshots", [])),
         parse_receipt_summary=payload["parse_receipt_summary"],
@@ -3983,7 +6027,9 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
             ranked_dag_summary_from_payload(d) for d in payload.get("ranked_dag_dossiers", [])
         ),
     )
-    for name in ("process_selection_status", "admissible_route_digests", "exit_code"):
+    # X-high D27.8 (the transport ledger's audit): ``search_space_status`` is a derived wire key too -- a JSON consumer
+    # reading it must see the value the loaded response re-derives, never a free label.
+    for name in ("process_selection_status", "admissible_route_digests", "exit_code", "search_space_status"):
         expected = list(response.admissible_route_digests) if name == "admissible_route_digests" else getattr(response, name)
         if payload[name] != expected:
             raise ValueError(f"{name} does not match the reconstructed response")
@@ -3996,9 +6042,24 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     transport_mode = payload.get("transport_mode", TRANSPORT_THIN_ADVISORY)
     if transport_mode not in _TRANSPORT_MODES:
         raise ValueError(f"transport_mode must be one of {sorted(_TRANSPORT_MODES)}, got {transport_mode!r}")
-    expected_result_digest = _transport_bound_result_digest(response.result_digest, transport_mode)
+    # X-high D27.2: a CURRENT payload's wire digest binds its whole body; a legacy v0.8 payload keeps the FROZEN
+    # pre-D27 rule (mode fold only), under which the real v0.8 fixtures verify byte for byte.
+    expected_result_digest = _transport_bound_result_digest(
+        response.result_digest, transport_mode,
+        None if response.is_legacy_v08 else _payload_body_digest(payload))
     if payload["result_digest"] != expected_result_digest:
-        raise ValueError("result_digest does not match the reconstructed response")
+        raise ValueError(f"result_digest does not match the reconstructed response{response._legacy_hint()}")
+    # 0.9 Round III (D12) / Round V (D11): the capability-question pin is DERIVED from the reconstructed request, so a
+    # payload whose STORED value disagrees was hand-edited -> refused.  The key is REQUIRED on a current payload
+    # (checked at dispatch) and FORBIDDEN on a legacy v0.8 one (``_refuse_legacy_v08_response_smuggling``), whose
+    # request is NOT_REQUESTED by law -- so for a legacy payload both sides are None and no question is fabricated.
+    # The INVARIANT this enforces on a REQUESTED payload: the pin is a pure function of the search semantic_digest AND
+    # the profile content -- it moves under a profile change, the search identity never does.
+    if payload.get("capability_question_digest") != response.capability_question_digest:
+        raise ValueError(
+            "capability_question_digest does not match the reconstructed response (a forged or stale capability "
+            "question pin); refused"
+        )
     # ALGEBRA-REBIND-ON-LOAD (0.7 Round III): the runtime binding invariant (see the BINDING INVARIANT in
     # _run_recompile) proves a search ran under the SELECTED algebra at PRODUCE time, but a transported response
     # independently deserializes its request, its IR registry digest, and its search-receipt digest.  Re-derive the
@@ -4044,11 +6105,49 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
             "response.request does not match expected_request_digest: the response answers a DIFFERENT request than "
             "the consumer asked for (e.g. relaxed bench bounds); refused"
         )
+    # X-high D20(4) (Wave-A' A-WIRE (d)): the CAPABILITY-question pin -- the capability analogue of the request pin
+    # above.  ``expected_request_digest`` binds only the SEARCH question (capability is excluded from semantic_digest
+    # by design), so a keyless attacker could otherwise answer a DIFFERENT bench's question -- every assessment honestly
+    # re-derived under the swapped profile, every public pin recomputed -- and still pass the request pin.  A consumer
+    # who knows the bench they asked about pins it here; ``None`` pins NOT_REQUESTED.  Fail-closed on EVERY mismatch,
+    # including None-vs-set in either direction.
+    if (expected_capability_question_digest is not _NO_CAPABILITY_PIN
+            and response.capability_question_digest != expected_capability_question_digest):
+        raise ValueError(
+            f"response capability_question_digest {response.capability_question_digest!r} does not match "
+            f"expected_capability_question_digest {expected_capability_question_digest!r}: the response answers a "
+            f"DIFFERENT capability question (another bench, or a question the consumer never asked); refused"
+        )
     # The opt-in STRUCTURAL close of the composability/physical/ranking axes (no key).  A verified-admission consumer
     # requires every FITS route/DAG to carry a replay_payload that re-projects to the exact claimed summary; a missing
     # payload is fail-closed (UNVERIFIED).  Off by default -> pre-item-2 behaviour.  NOTE the honest scope in
     # _check_verified_admission: this authenticates verdict<->route COHERENCE under the response's declared context, not
     # the context itself -- pass expected_request_digest (above) or a verification_key to bind the request too.
+    # D24.11: re-derive the section-5.3 identity losses from the carried request BEFORE anything consumes them (the
+    # verified-admission, readiness and capability re-derivations below all read response.identity_losses).
+    # Replay-free, so it runs on every load and every transport.
+    response._check_identity_loss_coherence()
+    # X-high D26.1: a response must answer ITS request -- the IR context and every replayed route/DAG are re-derived
+    # from the carried request (after the losses, which the context does not consume; before anything trusts the IR).
+    response._check_request_answer_coherence()
+    # X-high D27.7 (Wave C4 C4T-8): the CANONICAL wire promises re-derivable evidence, so every dossier on it carries
+    # its replay -- a dossier that dropped its replay would otherwise escape every replay-based re-derivation (D26.1's
+    # route bind, D27.1, D27.4) while still wearing the canonical label.  (The producer's canonical serialization always
+    # ships it; only the explicit THIN_ADVISORY opt-out omits it.)
+    if transport_mode == TRANSPORT_CANONICAL_VERIFIED:
+        bare = [d.route_digest[:12] for d in (*response.ranked_route_dossiers, *response.ranked_dag_dossiers)
+                if d.replay_payload is None]
+        if bare:
+            raise ValueError(
+                f"a CANONICAL_VERIFIED response carries {len(bare)} dossier(s) with no replay_payload ({', '.join(bare)}) "
+                f"-- canonical evidence must be re-derivable; refused (D27.7){response._legacy_hint()}")
+    # X-high D29.1 (Wave C6 C6-F8): every replayed step is a transform the carried algebra emits -- its byproducts (as
+    # structures) and reaction centre bound to that transform, before any lookup or verdict re-derivation reads them
+    # (current: always; legacy: under verified admission, exactly like D27.1 below).
+    response._check_replay_step_transforms(verified=require_verified_admission)
+    # X-high D27.1: the corpus condition envelopes riding the replays are re-derived (current: always; legacy: under
+    # verified admission -- plain legacy evidence is v0.8's corpus, advisory).
+    response._check_corpus_evidence_coherence(verified=require_verified_admission)
     if require_verified_admission:
         _check_verified_admission(response)
     # v0.8 Real Route Dossiers, M10: the readiness-ladder deserialization trust-boundary close -- UNCONDITIONAL (not
@@ -4069,6 +6168,15 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         require_verified_admission=require_verified_admission or _canonical,
         refuse_process_specified_on_thin=not _canonical,
     )
+    # 0.9 Round III (D12): CAPABILITY-REBIND-ON-LOAD.  Runs on every load and re-derives each ranked route's carried
+    # capability_assessment from its thick replay + the request-bound profile, refusing a mismatch (profile-A-under-B,
+    # altered snapshot/stock/readiness/route/result).  A CANONICAL_VERIFIED wire additionally FAILS CLOSED on an
+    # assessed route with no replay -- a thin wire must not claim CAPABILITY_FIT as verified -- keyed off the payload's
+    # OWN declared mode, exactly like the readiness fail-close above.
+    response._check_capability_coherence(
+        require_verified_admission=require_verified_admission or _canonical,
+        refuse_fit_on_thin=not _canonical,
+    )
     # TAMPER-HARDENING-01: the R59 disposition serialized-tamper close.  RUN ON EVERY LOAD (not gated on
     # require_verified_admission) and AFTER _check_verified_admission, so a FITS-route evidence substitution keeps that
     # check's route-binding message while this one covers the NON-FITS frontier tampers (a REAL_BUT_HARD / NOT_A_REACTION
@@ -4076,7 +6184,132 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # rather than in __post_init__ because -- like _check_verified_admission -- it reconstructs routes from the replay
     # payload, which is a load-time authority, not an in-memory-construction invariant.
     response._check_frontier_coherence(require_verified_admission=require_verified_admission)
+    # X-high D27.4: LAST of the replay-based re-derivations (the more specific readiness / capability / frontier-blocker
+    # messages above keep precedence): the whole ranking, the frontier and the diagnostics under the CARRIED request.
+    response._check_ranking_coherence()
+    if require_reexecution:
+        _check_reexecution(response, payload, transport_mode, request_pinned=expected_request_digest is not None)
     return response
+
+
+def _check_reexecution(response: CompilationResponse, payload: dict, transport_mode: str, *,
+                       request_pinned: bool) -> None:
+    """X-high D26.2 + D27.2 + D27.7 -- keyless authenticity by DETERMINISM (opt-in ``require_reexecution=True``). The
+    compiler is a pure function of its request (``run_compilation``: equal semantic digest => equal response -- pinned
+    by the goldens and the search-noninterference evidence), so a consumer that can afford ONE compile re-runs the
+    carried request, re-serializes the rerun on the SAME transport, and requires the IDENTICAL payload body.
+
+    WHAT IT COVERS (D27.2 made the D26.2 claim literally true): every key of the payload body except the two it cannot
+    re-derive -- ``result_digest`` / ``producer_signature`` (a function of the body) and ``provider_snapshots`` (dated
+    provenance a CALLER attaches to a response after the compile, never produced by ``run_compilation`` -- authenticated
+    only by the producer HMAC, which D27.2 extends over it).  So it closes, without any key: a route deleted together
+    with its IR candidate AND a consistently rewritten receipt (D25.3's boundary), an all-candidates-deleted COMPLETE
+    relabel, a forged ``reaction_center`` (D26.4 -- the thick replay rides the body, D27.2 / Foreman N4), the (c3)
+    self-consistent replay of a TAMPERED procedure, a corpus-envelope graft (Wave C4 C4T-1), a forged affordability
+    frontier / ranking order / outcome / diagnostics / parse receipt / IR candidate text / DAG serial hold (C4T-2..8).
+
+    D27.7 (Wave C4 C4T-8): a consumer that did NOT pin the request (``expected_request_digest``) lets the PAYLOAD choose
+    the search the verifier runs; such a request must stay within the builders' DEFAULT bounds
+    (``_RECOMPILE_DEFAULT_BOUNDS`` / ``_DECOMPILE_DEFAULT_BOUNDS``), so an unpinned payload cannot make its verifier do
+    unbounded work -- pin the request to re-execute a larger search.  A legacy v0.8 payload cannot be re-executed under
+    0.9 semantics and fails closed with the recompile hint."""
+    if response.is_legacy_v08:
+        raise ValueError(f"require_reexecution cannot re-execute a legacy v0.8 payload under 0.9 semantics; refused "
+                         f"(D26.2){response._legacy_hint()}")
+    if not request_pinned:
+        ceilings = (_RECOMPILE_DEFAULT_BOUNDS if response.request.operation is CompilationOperation.RECOMPILE
+                    else _DECOMPILE_DEFAULT_BOUNDS)
+        over = sorted(name for name, value in response.request.search_bounds.bounds
+                      if name in ceilings and value > ceilings[name])
+        if over:
+            raise ValueError(
+                f"require_reexecution: the carried request's search bounds {over} exceed the default compile's and the "
+                f"consumer did not pin the request (expected_request_digest) -- an unpinned payload may not choose a "
+                f"larger search for its verifier to run; pin the request to re-execute it; refused (D27.7)")
+    rerun = run_compilation(response.request)
+    if rerun.result_digest != response.result_digest:
+        raise ValueError(
+            "require_reexecution: re-running the carried request produces a DIFFERENT result (result_digest "
+            f"{rerun.result_digest[:12]} vs the payload's {response.result_digest[:12]}) -- a deleted, relabelled or "
+            "tampered answer (the compiler is deterministic); refused (D26.2)")
+    rerun_payload = response_to_payload(rerun, include_replay=transport_mode == TRANSPORT_CANONICAL_VERIFIED)
+    rerun_payload["provider_snapshots"] = payload.get("provider_snapshots", [])
+    if _payload_body_digest(rerun_payload) != _payload_body_digest(payload):
+        differing = sorted(key for key in set(rerun_payload) | set(payload)
+                           if key not in _BODY_DIGEST_EXCLUDED_KEYS and rerun_payload.get(key) != payload.get(key))
+        raise ValueError(
+            f"require_reexecution: the carried payload differs from the re-executed one in {differing} -- a forged or "
+            f"rewritten field outside the result identity (frontier, ranking, outcome, diagnostics, receipts, replay "
+            f"evidence); refused (D27.2)")
+
+
+# -- 0.9 capability HUMAN render (D12a -- ONE renderer, so `recompile` and `plan` expose the SAME semantics the JSON
+# does; human == JSON by construction) --------------------------------------------------------------------------
+
+#: The scope note that rides EVERY rendered capability verdict -- CAPABILITY_FIT is a profile-fit claim on the
+#: modeled+declared axes, NEVER a safety certificate.  Frozen text so both surfaces (and any test) read it identically.
+CAPABILITY_SCOPE_NOTE = (
+    "CAPABILITY_FIT means this route fits this declared profile on the modeled and declared axes. "
+    "It is not a safety certification."
+)
+#: The per-axis display names in the fixed order of ``CapabilityAssessment.axes`` -- surfaced so an
+#: UNCONSTRAINED/NOT_APPLICABLE/reserved axis stays VISIBLE, never a green check by omission.
+_CAPABILITY_AXIS_NAMES = (
+    "material", "equipment", "physical", "process", "containment", "ventilation",
+    "measurement", "waste", "procurement", "attention_care", "monetary",
+)
+
+
+#: The readiness-tier explanation text (the part after ``READINESS: ``), keyed by tier -- the SAME words the
+#: ``recompile`` render has carried since v0.8, extracted so the ``plan`` front door renders them identically
+#: (human == JSON parity for readiness, exactly as for capability).
+_READINESS_TIER_TEXT = {
+    "FORMAL_CANDIDATE": "FORMAL_CANDIDATE -- the reaction type is not yet recognized by the production oracle; this "
+                        "is NOT an executable bench procedure.",
+    "REACTION_VOUCHED": "REACTION_VOUCHED -- the reaction type is recognized, but its conditions are not sourced; "
+                        "this is NOT an executable bench procedure.",
+    "CONDITIONS_SUPPORTED": "CONDITIONS_SUPPORTED -- the reaction type is recognized and the conditions are sourced, "
+                            "but the procedure is not fully specified; this is NOT an executable bench procedure.",
+    "PROCESS_SPECIFIED": "PROCESS_SPECIFIED -- the literature procedure is fully specified from an accepted source; "
+                         "this is what the SOURCE specifies, NOT a guarantee your lab/kitchen can execute it "
+                         "(capability is 0.9).",
+}
+
+
+def readiness_tier_line(tier: str) -> str:
+    """The readiness explanation for ``tier`` (the text after ``READINESS: ``) -- one source of truth for both the
+    ``recompile`` and ``plan`` human renders.  An unknown tier returns the bare tier name (fail-soft, never a crash)."""
+    return _READINESS_TIER_TEXT.get(tier, tier)
+
+
+def render_capability_lines(assessment: "CapabilityAssessment | None", origin: str, *, indent: str) -> "list[str]":
+    """The human capability block for ONE route (D12a).  ``None`` -> ``[]`` (no profile requested: render NOTHING,
+    never a fake pass).  Otherwise a ``CAPABILITY[<origin>@<profile_digest[:12]>]: <overall>`` line + the scope note +
+    EVERY axis with its status (a non-FIT axis carries its first reason), so an unassessed/UNCONSTRAINED/reserved axis
+    is VISIBLE.  This is the ONE renderer both ``recompile`` and the ``plan`` front door call, so the two surfaces
+    cannot drift and each matches the JSON ``capability_assessment`` overall + axis verdicts (criterion 29).
+
+    D24.12 (Wave-C' D-O1/O2): ``origin`` and the snapshot's ``profile_id`` are LABELS -- free text a keyless author
+    can set to anything (a research-lab bench relabelled ``profile_id="poor-man"`` passes the D20 origin law, which
+    only binds the origin to that same free-text id).  The CONTENT identity is the profile digest, so the render shows
+    it beside the label (the assessment's ``profile_digest`` is bound to the request's profile on every load).  A
+    human who needs to know WHICH bench answered compares that digest; a machine consumer pins the question with
+    ``response_from_payload(..., expected_capability_question_digest=...)`` -- the AUTHENTICATING check.  Neither the
+    label nor this render authenticates anything on its own."""
+    if assessment is None:
+        return []
+    label = f"{origin or 'profile'}@{assessment.profile_digest[:12]}"
+    lines = [
+        f"{indent}CAPABILITY[{label}]: {assessment.overall.value}",
+        f"{indent}  {CAPABILITY_SCOPE_NOTE}",
+    ]
+    for name, ax in zip(_CAPABILITY_AXIS_NAMES, assessment.axes):
+        if ax.status in (CapabilityStatus.BLOCKED, CapabilityStatus.UNKNOWN):
+            lines.append(f"{indent}  {name}: {ax.status.value} -- {ax.reasons[0]}")
+        else:
+            # FIT / NOT_APPLICABLE / UNCONSTRAINED: shown by status, VISIBLE (never omitted into an implied pass).
+            lines.append(f"{indent}  {name}: {ax.status.value}")
+    return lines
 
 
 def serialize_response(response: CompilationResponse, *, signing_key: bytes | None = None,
@@ -4091,11 +6324,16 @@ def serialize_response(response: CompilationResponse, *, signing_key: bytes | No
 def deserialize_response(text: str, *, verification_key: bytes | None = None,
                          require_signature: bool = False,
                          require_verified_admission: bool = False,
-                         expected_request_digest: str | None = None) -> CompilationResponse:
+                         expected_request_digest: str | None = None,
+                         expected_capability_question_digest: "str | None | object" = _NO_CAPABILITY_PIN,
+                         require_reexecution: bool = False,
+                         ) -> CompilationResponse:
     return response_from_payload(json.loads(text), verification_key=verification_key,
                                  require_signature=require_signature,
                                  require_verified_admission=require_verified_admission,
-                                 expected_request_digest=expected_request_digest)
+                                 expected_request_digest=expected_request_digest,
+                                 expected_capability_question_digest=expected_capability_question_digest,
+                                 require_reexecution=require_reexecution)
 
 
 # -- the versioned JSON schema + the semantic-field projection (CLI-JSON-01) -------------------------------------
@@ -4114,9 +6352,24 @@ def response_schema() -> dict:
         "descriptor_version": COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR,
         "response_schema_version": COMPILATION_RESPONSE_SCHEMA,
         "request_schema_version": COMPILATION_REQUEST_SCHEMA,
+        # D11 (Round V): the explicit legacy whitelist the loader migrates -- v0.8 (main@df1b38d) ids decoded as
+        # capability NOT_REQUESTED and verified under the frozen v0.8 digest rule; any other id is refused.
+        "accepted_legacy_schema_versions": {
+            "request": [LEGACY_V08_REQUEST_SCHEMA],
+            "response": [LEGACY_V08_RESPONSE_SCHEMA],
+            "ranked_route_summary": [LEGACY_V08_RANKED_ROUTE_SUMMARY_SCHEMA],
+            "ranked_dag_summary": [LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA],
+            "physical_bounds": [LEGACY_V08_PHYSICAL_BOUNDS_SCHEMA],
+        },
         "response_fields": {
             "schema_version": "str",
-            "request": "object(compilation-request-v1alpha5)",
+            "request": "object(compilation-request-v1alpha7; constraints: object(physical-bounds-v1alpha2 flattened: "
+                       "min_temperature_k/max_temperature_k/min_pressure_atm/max_pressure_atm number|null -- the "
+                       "temperature FLOOR is part of the declared range -- + process); carries capability_profile: "
+                       "object(CapabilityProfile, canonical type-tagged; its StockMaterials grade their phase with "
+                       "phase_evidence)|null (null = NOT_REQUESTED; never in semantic_digest) and "
+                       "capability_profile_origin: str ('' or the snapshot's own profile_id -- content-bound, never a "
+                       "free relabel))",
             "outcome": "enum(ResponseOutcome)",
             "standard_status": "str|null (section 8.2 status)",
             "exit_code": "int (section 14.4: 0/2/3/4/5/70)",
@@ -4141,6 +6394,11 @@ def response_schema() -> dict:
                               "replay_payload and is re-derived fail-closed on load; THIN_ADVISORY is the lean opt-out "
                               "on which PROCESS_SPECIFIED is inadmissible. FOLDED into result_digest so a downgrade-"
                               "strip is a detectable identity change)",
+            "capability_question_digest": "str|null (0.9 D12: canonical_digest((semantic_digest, profile_digest)); "
+                                          "null when no capability profile was requested. Moves under a profile change; "
+                                          "the search semantic_digest never does. A consumer PINS it on load with "
+                                          "expected_capability_question_digest (null pins NOT_REQUESTED) -- the "
+                                          "capability analogue of expected_request_digest)",
             "result_digest": "str (sha256; transport_mode folded in -- CANONICAL_VERIFIED binds it, THIN_ADVISORY is "
                               "the bare semantic digest)",
             "producer_signature": "str|null (optional HMAC-SHA256 over result_digest; null unless signed; "
@@ -4235,9 +6493,17 @@ def response_schema() -> dict:
                                     "evidence process admission is RE-DERIVED from on load, one entry per route step "
                                     "in order, null for an undeclared step; part of route identity)",
             "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence "
-                              "-- molecules + full 11-field envelope incl. the sourced procedure -- the readiness "
-                              "ladder is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire (the default), "
-                              "compare=False so outside the bare result_digest)",
+                              "-- molecules + full 11-field envelope incl. the sourced procedure, whose operations "
+                              "carry material_uses: array[object(procedure-material-use incl. specification: "
+                              "object(MaterialSpecification)|null and phase: object(PhaseClaim: phase, evidence, note)|"
+                              "null -- an evidence-graded phase; only certifying evidence can decide a phase match or "
+                              "mismatch)] -- the readiness ladder is RE-DERIVED from on load; emitted on the "
+                              "CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
+            "capability_assessment": "object(CapabilityAssessment: per-axis + overall verdict of this route against the "
+                                     "request's declared profile)|null (0.9 D12: null = NOT_REQUESTED; compare=True so "
+                                     "it is part of route identity and CAPABILITY-REBIND-ON-LOAD re-derives + refuses a "
+                                     "tamper. CAPABILITY_FIT means this route fits this declared profile on the modeled "
+                                     "axes -- NOT a safety certification)",
         },
         "ranked_dag_summary_fields": {
             "schema_version": "str",
@@ -4263,8 +6529,9 @@ def response_schema() -> dict:
                             "-- never changes fit_status -- and digest-EXCLUDED, so it is re-derivable from "
                             "edges + process_requirements and does not move the route identity)",
             "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence "
-                              "the process component is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire "
-                              "(the default), compare=False so outside the bare result_digest)",
+                              "the process component is RE-DERIVED from on load -- the same step-replay shape as the "
+                              "ranked route summary's, procedure operations carrying material_uses; emitted on the "
+                              "CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
         },
         "affordability_frontier_entry_fields": {
             "schema_version": "str",

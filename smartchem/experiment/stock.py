@@ -18,9 +18,16 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
+from fractions import Fraction
+from typing import TYPE_CHECKING
 
 from ..category import Molecule
 from ..contracts import Digestible, canonical_digest
+from ..material_spec import ConcentrationBasis, EvidenceKind
+
+if TYPE_CHECKING:
+    from ..data.derived_evidence import IntervalEvidence
+    from ..material_spec import PhaseClaim, StateClaim, StockSpecView
 
 __all__ = [
     "STOCK_MATERIAL_SCHEMA",
@@ -36,23 +43,36 @@ __all__ = [
     "stock_material_from_commodity",
 ]
 
-STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha1"
-MATERIAL_COMPONENT_SCHEMA = "smartchem.experiment/material-component-v1alpha1"
+#: Round V (barrier D8/D11): component v1alpha2 adds ``MaterialComponent.basis``/``.evidence``/``.states`` (Wave-C
+#: K1 moved state claims from the bottle onto the component). Round V X-high (D18/D22): stock-material v1alpha3 adds
+#: ``StockMaterial.phase_evidence`` -- the bottle phase is no longer an ungraded scalar. Older ids are NOT
+#: constructible: no v0.8 payload ever carried a StockMaterial (the capability profile is new in 0.9), and a WIP-only
+#: 0.9 id was never released, so there is nothing to migrate -- a stale record would silently mean "phase evidence
+#: absent" under a new identity. Every in-repo constructor passes the schema CONSTANT, so the bump is transparent.
+STOCK_MATERIAL_SCHEMA = "smartchem.experiment/stock-material-v1alpha3"
+MATERIAL_COMPONENT_SCHEMA = "smartchem.experiment/material-component-v1alpha2"
 STOCK_QUANTITY_SCHEMA = "smartchem.experiment/stock-quantity-v1alpha1"
 COST_OBSERVATION_SCHEMA = "smartchem.experiment/cost-observation-v1alpha2"
 
-_FRACTION_EPS = 1e-9
 
-
-def _positive_numeric(value: str, what: str) -> float:
-    """Parse ``value`` as a finite, strictly-positive number, or raise -- no NaN/inf/zero quantity."""
-    try:
-        v = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{what} must be a numeric string") from exc
-    if not math.isfinite(v) or v <= 0:
-        raise ValueError(f"{what} must be a positive, finite quantity")
+def _exact_positive(value: str, what: str) -> Fraction:
+    """Parse ``value`` through the ONE strict exact grammar (:func:`smartchem.material_spec.exact_fraction`) and
+    require it strictly positive -- no float, no epsilon, no ``'1/3'``/``'1_000'``/``' 5 '``/NaN/inf (barrier D1)."""
+    from ..material_spec import exact_fraction
+    v = exact_fraction(value, what)
+    if v <= 0:
+        raise ValueError(f"{what} must be a strictly positive quantity")
     return v
+
+
+#: Bases whose values are fractions bounded by 1 (UNKNOWN included: an unknown basis claims nothing larger).
+_FRACTION_BASES = frozenset({ConcentrationBasis.MASS_FRACTION, ConcentrationBasis.VOLUME_FRACTION,
+                             ConcentrationBasis.UNKNOWN})
+
+
+def _exact_float(x: float) -> Fraction:
+    """A component fraction float read EXACTLY through its shortest repr (never binary-float arithmetic)."""
+    return Fraction(repr(float(x)))
 
 
 class Phase(str, Enum):
@@ -121,19 +141,74 @@ class MaterialComponent(Digestible):
     role: str
     min_fraction: float
     max_fraction: float
+    #: Round V (barrier D4/D8): what the fraction interval MEANS. ``UNKNOWN`` (the default) is honest for every
+    #: legacy component that never said whether it was mass, volume or mole based -- and an unknown basis can never
+    #: certify a composition requirement (F68).
+    basis: "ConcentrationBasis" = None  # type: ignore[assignment]  # defaulted to UNKNOWN in __post_init__
+    #: Round V (barrier D7/D8): the typed, re-computable evidence behind ``[min_fraction, max_fraction]``. ``None``
+    #: means UNKNOWN strength (the interval is carried but nothing certifies it). When present, its endpoints must
+    #: EQUAL the fraction slots exactly and its basis must equal ``basis`` -- the number IS the evidence's number.
+    evidence: "IntervalEvidence | None" = None
+    #: Round V Wave-C K1: positively-declared states OF THIS SPECIES in this material (NEAT / ANHYDROUS / SATURATED
+    #: ...), each with its evidence strength. Scoped to the COMPONENT on purpose: a bottle-level "NEAT" claim on an
+    #: acetone bottle must never certify the trace acetic acid inside it. Empty = nothing declared -> UNKNOWN.
+    states: "tuple[StateClaim, ...]" = ()
 
     def __post_init__(self) -> None:
+        from ..data.derived_evidence import IntervalEvidence
+        from ..material_spec import ConcentrationBasis, StateClaim
+        if self.basis is None:
+            object.__setattr__(self, "basis", ConcentrationBasis.UNKNOWN)
+        if type(self.basis) is not ConcentrationBasis:
+            raise TypeError("basis must be a smartchem.material_spec.ConcentrationBasis")
         if self.schema_version != MATERIAL_COMPONENT_SCHEMA:
             raise ValueError(f"schema_version must be exactly {MATERIAL_COMPONENT_SCHEMA!r}")
         for name in ("identity_key", "role"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
                 raise ValueError(f"{name} must be a non-empty string")
+        # Wave-C K3: only a FRACTION (or UNKNOWN) basis is bounded by 1 -- a MOLAR or w/v concentration is a
+        # non-negative magnitude (6 M NaOH must be expressible, and must never be squeezed to 1).
+        bounded = self.basis in _FRACTION_BASES
         for name in ("min_fraction", "max_fraction"):
             v = getattr(self, name)
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or not (0.0 <= float(v) <= 1.0):
-                raise ValueError(f"{name} must be a fraction in [0, 1]")
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)) or float(v) < 0.0:
+                raise ValueError(f"{name} must be a finite, non-negative number")
+            if bounded and float(v) > 1.0:
+                raise ValueError(f"{name} must be a fraction in [0, 1] on a {self.basis.value} basis")
+        if type(self.states) is not tuple or any(type(c) is not StateClaim for c in self.states):
+            raise TypeError("states must be a tuple of smartchem.material_spec.StateClaim")
+        if len({type(c.state) for c in self.states}) != len(self.states):
+            raise ValueError("states may carry at most ONE claim per state family")
         if self.min_fraction > self.max_fraction:
             raise ValueError("min_fraction cannot exceed max_fraction")
+        if self.evidence is not None:
+            if type(self.evidence) is not IntervalEvidence:
+                raise TypeError("evidence must be a smartchem.data.derived_evidence.IntervalEvidence or None")
+            if (_exact_float(self.min_fraction), _exact_float(self.max_fraction)) != self.evidence.interval:
+                raise ValueError(
+                    f"evidence interval [{self.evidence.low}, {self.evidence.high}] does not equal the component's "
+                    f"[{self.min_fraction!r}, {self.max_fraction!r}] -- the carried number must BE the evidence's")
+            if self.evidence.basis is not self.basis:
+                raise ValueError(
+                    f"evidence basis {self.evidence.basis.value} does not equal component basis {self.basis.value}")
+
+    @classmethod
+    def evidenced(
+        cls, identity: "Molecule | str", role: str, evidence: "IntervalEvidence",
+        states: "tuple[StateClaim, ...]" = (),
+    ) -> "MaterialComponent":
+        """A component whose interval AND basis are taken from a typed :class:`IntervalEvidence` record (the Round V
+        way to build a curated component). ``identity`` is a Molecule (structure key) or a declared NAME."""
+        if isinstance(identity, Molecule):
+            key = _structure_key(identity)
+        elif isinstance(identity, str):
+            if _is_structure_key(identity):
+                raise ValueError("a declared NAME key must not use the reserved structure-key prefix")
+            key = identity
+        else:
+            raise TypeError("identity must be a Molecule or a declared-name str")
+        lo, hi = evidence.as_floats()
+        return cls(MATERIAL_COMPONENT_SCHEMA, key, role, lo, hi, evidence.basis, evidence, tuple(states))
 
     @classmethod
     def known(cls, identity_key: str, role: str, min_fraction: float, max_fraction: float) -> "MaterialComponent":
@@ -181,7 +256,9 @@ class StockQuantity(Digestible):
 
     Section 10.3 forbids inventing a quantity: the honest "no declared amount" is the ABSENCE of this value
     (``StockMaterial.quantity is None`` -> UNKNOWN), never an assumed one mole / one bottle.  ``value`` is kept
-    as the exact source string (no float drift enters the identity); it must parse as a positive finite number.
+    as the exact source string (no float drift enters the identity); Round V (D1): it must match the ONE strict
+    exact grammar (:func:`smartchem.material_spec.exact_fraction`) and be strictly positive -- ``'1/3'``,
+    ``'1_000'``, ``' 5 '``, ``'nan'``, ``'inf'`` and ``'0'`` are refused. Read it with :meth:`exact`, never float().
     """
 
     schema_version: str
@@ -195,11 +272,19 @@ class StockQuantity(Digestible):
             raise ValueError("unit must be a non-empty string")
         if not isinstance(self.value, str):
             raise ValueError("value must be a numeric string")
-        _positive_numeric(self.value, "value")
+        _exact_positive(self.value, "value")
 
     @classmethod
-    def of(cls, value: "str | int | float", unit: str) -> "StockQuantity":
+    def of(cls, value: "str | int", unit: str) -> "StockQuantity":
+        """``value`` as an exact decimal string (or an int). A float is refused: its decimal spelling is not the
+        source's (``StockQuantity.of(0.1, ...)`` would silently mean whatever ``str(0.1)`` prints)."""
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise TypeError("StockQuantity.of takes an exact decimal string or an int, never a float")
         return cls(STOCK_QUANTITY_SCHEMA, str(value), unit)
+
+    def exact(self) -> Fraction:
+        """The declared amount as an exact :class:`~fractions.Fraction` (the only sanctioned numeric read)."""
+        return _exact_positive(self.value, "value")
 
     def render(self) -> str:
         return f"{self.value} {self.unit}"
@@ -267,6 +352,13 @@ class StockMaterial(Digestible):
 
     Unlike a pure identity or a commodity source lead, a ``StockMaterial`` can be ASKED whether it satisfies a
     pure-reagent requirement, and it answers honestly with an interval verdict (:meth:`satisfies`).
+
+    Round V X-high (D18): ``phase`` is BOTTLE-level on purpose -- it describes the material you dispense (a brine is an
+    aqueous solution whichever species you ask about), unlike the per-species material STATES, which stay scoped to
+    their :class:`MaterialComponent` (Wave-C K1). ``phase_evidence`` grades it: the capability compiler reads ONLY
+    :attr:`phase_claim` (phase + evidence), never the bare ``phase`` scalar, and an ungraded phase
+    (``EvidenceKind.UNKNOWN``, the default) can neither certify nor refute a phase demand. ``phase`` itself stays for
+    every legacy reader (render, commodity bridge).
     """
 
     schema_version: str
@@ -285,6 +377,10 @@ class StockMaterial(Digestible):
     cost_observation: "CostObservation | None" = None
     formulation_notes: tuple[str, ...] = ()
     known_impurities: tuple[str, ...] = field(default_factory=tuple)
+    #: Round V X-high (D18): how strongly ``phase`` is established. UNKNOWN (the default) is the honest grade of every
+    #: bottle nobody vouched for; the bench operator's own declaration is ``USER_DECLARED``. An unknown PHASE carries
+    #: no evidence at all (there is nothing to grade), so ``Phase.UNKNOWN`` forces ``EvidenceKind.UNKNOWN``.
+    phase_evidence: EvidenceKind = EvidenceKind.UNKNOWN
 
     def __post_init__(self) -> None:
         if self.schema_version != STOCK_MATERIAL_SCHEMA:
@@ -294,12 +390,32 @@ class StockMaterial(Digestible):
                 raise ValueError(f"{name} must be a non-empty string")
         if not isinstance(self.phase, Phase):
             raise TypeError("phase must be a Phase")
+        if type(self.phase_evidence) is not EvidenceKind:
+            raise TypeError("phase_evidence must be a smartchem.material_spec.EvidenceKind")
+        if self.phase is Phase.UNKNOWN and self.phase_evidence is not EvidenceKind.UNKNOWN:
+            raise ValueError(
+                f"phase UNKNOWN cannot carry {self.phase_evidence.value} evidence -- an unknown phase is not a claim")
         if type(self.components) is not tuple or not self.components or any(
             type(c) is not MaterialComponent for c in self.components
         ):
             raise TypeError("components must be a non-empty tuple of MaterialComponent values")
-        if sum(c.min_fraction for c in self.components) > 1.0 + _FRACTION_EPS:
+        if sum((_exact_float(c.min_fraction) for c in self.components if c.basis in _FRACTION_BASES),
+               Fraction(0)) > 1:
             raise ValueError("component minimum fractions sum above 1.0 -- an infeasible material")
+        # D25.2 (Wave-C'' NEW-2): the one basis-free PROVABLE contradiction. When the mass (or volume) fraction lower
+        # bounds of the components keyed like a species already account for the WHOLE material, no OTHER species can
+        # be present at a positive amount on ANY basis -- a 0.3 g/mL or 6 M second species beside an "acetic acid
+        # [1, 1] w/w" component is a self-contradictory bottle, refused here so neither the pure witness nor the
+        # composition path can ever read it. (No density engine, no threshold: only the exact "== 1" case is provable.)
+        for basis in (ConcentrationBasis.MASS_FRACTION, ConcentrationBasis.VOLUME_FRACTION):
+            for key in {c.identity_key for c in self.components if c.basis is basis}:
+                whole = sum((_exact_float(c.min_fraction) for c in self.components
+                             if c.basis is basis and c.identity_key == key), Fraction(0))
+                if whole == 1 and any(c.identity_key != key and _exact_float(c.min_fraction) > 0
+                                      for c in self.components):
+                    raise ValueError(
+                        f"component {key!r} accounts for the whole material ({basis.value} lower bound 1) while "
+                        "another species declares a positive amount -- a self-contradictory bottle (D25.2)")
         # -- section 10.2 optional fields: each is a typed value or an honest UNKNOWN -----------------------
         if self.quantity is not None and type(self.quantity) is not StockQuantity:
             raise TypeError("quantity must be a StockQuantity or None (UNKNOWN)")
@@ -313,6 +429,17 @@ class StockMaterial(Digestible):
             seq = getattr(self, name)
             if type(seq) is not tuple or any(not isinstance(x, str) or not x.strip() for x in seq):
                 raise TypeError(f"{name} must be a tuple of non-empty strings")
+
+    @property
+    def phase_claim(self) -> "PhaseClaim | None":
+        """Round V X-high (D18): the bottle's phase AS AN EVIDENCE-GRADED CLAIM -- the only phase surface the capability
+        compiler may read (through :func:`smartchem.material_spec.compare_phase`). ``None`` iff the phase is UNKNOWN
+        (an unknown phase is the absence of a claim); an ungraded known phase is a claim carrying
+        ``EvidenceKind.UNKNOWN``, which certifies nothing either way."""
+        from ..material_spec import PhaseClaim
+        if self.phase is Phase.UNKNOWN:
+            return None
+        return PhaseClaim(self.phase, self.phase_evidence)
 
     def active_fraction_interval(self, required_identity: "Molecule | str") -> tuple[float, float] | None:
         """The summed fraction interval ``(lo, hi)`` of components matching ``required_identity``, or ``None``.
@@ -338,8 +465,81 @@ class StockMaterial(Digestible):
         if not matches:
             return None
         lo = sum(c.min_fraction for c in matches)
-        hi = min(1.0, sum(c.max_fraction for c in matches))
+        hi = sum(c.max_fraction for c in matches)
+        if all(c.basis in _FRACTION_BASES for c in matches):  # Wave-C2: never clamp a MOLAR/w-v magnitude to 1
+            hi = min(1.0, hi)
         return (lo, hi)
+
+    def spec_view(self, required_identity: "Molecule | str") -> "StockSpecView | None":
+        """Round V (barrier D3-D8): the stock-side facts :func:`smartchem.material_spec.compare_specification` needs
+        for ONE species in THIS bottle -- the matched components' summed EXACT interval, their common basis (UNKNOWN
+        if they disagree or any is UNKNOWN), the WEAKEST interval-evidence kind among them (a component with no
+        evidence record is UNKNOWN strength), and the matched components' own declared states (Wave-C K1). ``None`` if the
+        species is absent
+        under the F44 key rules of :meth:`active_fraction_interval`."""
+        from ..material_spec import (
+            CERTIFYING_STOCK_EVIDENCE,
+            ConcentrationBasis,
+            DilutionState,
+            EvidenceKind,
+            StockSpecView,
+        )
+        if isinstance(required_identity, Molecule):
+            want = _structure_key(required_identity)
+            matches = [c for c in self.components if c.identity_key == want]
+        elif isinstance(required_identity, str):
+            want_n = _norm(required_identity)
+            matches = [
+                c for c in self.components if not _is_structure_key(c.identity_key) and _norm(c.identity_key) == want_n
+            ]
+        else:
+            raise TypeError("required_identity must be a Molecule (canonical structure) or a str (declared name)")
+        if not matches:
+            return None
+        # exact: the float fractions are re-read through their shortest repr, never binary-float arithmetic
+        # exact: a component WITH an evidence record contributes the record's exact decimal endpoints (never the
+        # float slot -- Wave-C K2d: "0.99999999999999999" must not read as 1); otherwise the float's shortest repr.
+        def _lo(c: "MaterialComponent") -> Fraction:
+            return c.evidence.interval[0] if c.evidence is not None else _exact_float(c.min_fraction)
+
+        def _hi(c: "MaterialComponent") -> Fraction:
+            return c.evidence.interval[1] if c.evidence is not None else _exact_float(c.max_fraction)
+
+        bases = {c.basis for c in matches}
+        basis = bases.pop() if len(bases) == 1 else ConcentrationBasis.UNKNOWN
+        lo = sum((_lo(c) for c in matches), Fraction(0))
+        hi = sum((_hi(c) for c in matches), Fraction(0))
+        if basis in _FRACTION_BASES:  # Wave-C K3: cap ONLY a fraction basis at 1; a MOLAR/w-v sum is a magnitude
+            hi = min(Fraction(1), hi)
+        order = [EvidenceKind.UNKNOWN, EvidenceKind.ASSUMED, EvidenceKind.AUTHOR_INFERRED, EvidenceKind.USER_DECLARED,
+                 EvidenceKind.CLAMPED, EvidenceKind.DERIVED, EvidenceKind.SOURCE_QUOTED]
+        kinds = []
+        for c in matches:
+            kinds.append(EvidenceKind.UNKNOWN if c.evidence is None else c.evidence.kind)
+        weakest = min(kinds, key=order.index)
+        # Wave-C K1: states are the MATCHED COMPONENTS' own claims -- never the bottle's. A family claimed differently
+        # by two matched components is contradictory and is dropped (-> UNDETERMINED), never resolved by preference.
+        by_family: "dict[type, list]" = {}
+        for c in matches:
+            for claim in c.states:
+                by_family.setdefault(type(claim.state), []).append(claim)
+        states = tuple(
+            claims[0] for claims in by_family.values()
+            if len({(cl.state, cl.evidence) for cl in claims}) == 1 and len(claims) == len(matches)
+        )
+        # D24.5 (Wave-C' C2): a NEAT ("undiluted") claim is contradicted by the bottle's OWN declaration of a positive
+        # diluent -- ANY other component whose certified lower bound is > 0 (on any basis: 0.3 g/mL NaCl beside
+        # "neat" water is as much a diluent as 50 % w/w water beside "neat" acid). The contradicted claim is DROPPED,
+        # so the comparison reads UNDETERMINED (never resolved by preference). No numeric purity threshold is
+        # introduced: an impurity declared with lower bound 0 (commercial glacial acid, water 0-0.3 %) keeps NEAT.
+        matched_ids = {id(c) for c in matches}
+        diluted = any(
+            c.evidence is not None and c.evidence.kind in CERTIFYING_STOCK_EVIDENCE and c.evidence.interval[0] > 0
+            for c in self.components if id(c) not in matched_ids
+        )
+        if diluted:
+            states = tuple(claim for claim in states if claim.state is not DilutionState.NEAT)
+        return StockSpecView((lo, hi), basis, weakest, states)
 
     def satisfies(self, required_identity: "Molecule | str", *, min_assay: float) -> FitnessVerdict:
         """Whether this material meets a ``min_assay`` (mass/mole fraction) requirement for ``required_identity``.
@@ -349,6 +549,10 @@ class StockMaterial(Digestible):
         if even its best case (upper bound) falls short; and anywhere the interval straddles the requirement -- or
         the fraction is unknown -- it is ``UNKNOWN_ASSAY`` (a measurement is required), because assuming the
         favourable end of an interval is exactly the identity-is-purity error section 10 forbids.
+
+        LEGACY helper (Round V): it compares numbers only -- no basis, no evidence strength. The capability compiler
+        no longer uses it; material specifications go through :meth:`spec_view` +
+        :func:`smartchem.material_spec.compare_specification`.
         """
         if isinstance(min_assay, bool) or not isinstance(min_assay, (int, float)) or not (0.0 < float(min_assay) <= 1.0):
             raise ValueError("min_assay must be a fraction in (0, 1]")
@@ -359,6 +563,41 @@ class StockMaterial(Digestible):
         if lo >= min_assay:
             return FitnessVerdict.SATISFIES
         if hi < min_assay:
+            return FitnessVerdict.INSUFFICIENT_ASSAY
+        return FitnessVerdict.UNKNOWN_ASSAY
+
+    def satisfies_band(
+        self, required_identity: "Molecule | str", *, low: float, high: float
+    ) -> FitnessVerdict:
+        """Round-IV F43: whether this material's active fraction of ``required_identity`` is PROVABLY within
+        a TWO-SIDED composition band ``[low, high]`` -- the generalisation of :meth:`satisfies` a formulated
+        wash needs. ``satisfies`` checks a one-sided assay FLOOR (``fraction >= min_assay``), which is right
+        for a pure reagent ("glacial acetic acid, >=99%" == band ``[0.99, 1.0]``) but WRONG for a formulated
+        wash: 100% sodium bicarbonate is not a "5% NaHCO3 wash", and a floor-only check would wave it through.
+        A required band carries a real CEILING, so an over-concentrated (or under-concentrated) stock BLOCKS.
+
+        Same rigorous interval logic as :meth:`satisfies`, never a silent yes: SATISFIES only if the WHOLE
+        stock interval sits inside the band (``low <= s.lo`` and ``s.hi <= high``); ``INSUFFICIENT_ASSAY``
+        (provably outside -> preprocessing/a different bottle) only if the stock interval is DISJOINT from the
+        band (``s.hi < low`` or ``s.lo > high``); anywhere the interval straddles a band edge -- or the
+        fraction is unknown -- it is ``UNKNOWN_ASSAY`` (measure it), because assuming the favourable end of a
+        straddling interval is exactly the identity-is-purity error section 10 forbids.
+
+        LEGACY helper (Round V): numbers only, no basis/evidence strength; the capability compiler uses
+        :meth:`spec_view` + :func:`smartchem.material_spec.compare_specification` instead.
+        """
+        for name, value in (("low", low), ("high", high)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not (0.0 <= float(value) <= 1.0):
+                raise ValueError(f"{name} must be a fraction in [0, 1]")
+        if float(low) > float(high):
+            raise ValueError("low cannot exceed high")
+        interval = self.active_fraction_interval(required_identity)
+        if interval is None:
+            return FitnessVerdict.IDENTITY_ABSENT
+        s_lo, s_hi = interval
+        if s_lo >= float(low) and s_hi <= float(high):
+            return FitnessVerdict.SATISFIES
+        if s_hi < float(low) or s_lo > float(high):
             return FitnessVerdict.INSUFFICIENT_ASSAY
         return FitnessVerdict.UNKNOWN_ASSAY
 
@@ -380,7 +619,8 @@ class StockMaterial(Digestible):
         if self.formulation_notes:
             detail.append("formulation: " + "; ".join(self.formulation_notes))
         return (
-            f"STOCK MATERIAL {self.display_name!r} [{self.phase.value}] -- {comps}. "
+            f"STOCK MATERIAL {self.display_name!r} [{self.phase.value}; phase evidence {self.phase_evidence.value}] "
+            f"-- {comps}. "
             f"Source: {self.provenance}. " + " | ".join(detail) + ". "
             "A material, not a pure identity: assay is an interval, and a pure-reagent requirement is met only "
             "when the interval PROVES it (section 10). Unknown fields are UNKNOWN, never an assumed value."

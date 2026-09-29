@@ -201,16 +201,17 @@ def test_evidence_substitution_across_routes_is_rejected(monkeypatch):
     swapped = replace(a, replay_payload=b.replay_payload)                    # A's identity, B's evidence
     forged = replace(resp, ranked_route_dossiers=(swapped,) + dossiers[1:])
     wire = serialize_response(forged, include_replay=True)
-    with pytest.raises(ValueError, match="re-projects to a DIFFERENT summary"):
+    with pytest.raises(ValueError, match=r"re-projects to a DIFFERENT summary|refused \(D26\.1\)"):  # D26.1 first
         deserialize_response(wire, require_verified_admission=True)
 
 
 def test_request_relaxation_is_admitted_unless_the_request_is_pinned(monkeypatch):
-    """evil-morty Finding 1 (VERIFIED): the re-derivation trusts the response's OWN request as the bench box.  A
-    keyless attacker who RELAXES that request (drops the temperature cap) makes an out-of-bounds route re-derive FITS.
-    This pins BOTH directions: WITHOUT a request pin the relaxation is admitted (the honest, documented residual --
-    the check authenticates verdict<->route coherence under the STATED context, not the context); WITH the consumer's
-    real request pinned via expected_request_digest, it is refused."""
+    """evil-morty Finding 1 (VERIFIED) + X-high D27.4 (Foreman N3): the re-derivation trusts the response's OWN request
+    as the bench box.  A keyless attacker who RELAXES that request (drops the temperature cap) and relabels ONE route
+    FITS is now REFUSED even without a pin -- D27.4 re-judges EVERY dossier under the carried box, and the untouched
+    dossiers (EXCLUDED under the real cap) no longer match their re-derivation.  What remains is the honest, documented
+    residual: a FULLY consistent answer to the relaxed request (every dossier honestly re-judged) is a coherent answer
+    to a DIFFERENT question -- it loads unless the consumer pins their real request via ``expected_request_digest``."""
     from dataclasses import replace as _replace
 
     from smartchem.constraints import PhysicalBounds
@@ -229,12 +230,17 @@ def test_request_relaxation_is_admitted_unless_the_request_is_pinned(monkeypatch
     promoted = _replace(resp, request=relaxed_request,
                         ranked_route_dossiers=(forged, *resp.ranked_route_dossiers[1:]))
     wire = serialize_response(promoted, include_replay=True)
-    # WITHOUT a request pin: the relaxed box re-derives the 400 K route to FITS -> ADMITTED (documented residual).
-    reloaded = deserialize_response(wire, require_verified_admission=True)
+    # D27.4: the partial relaxation is refused WITHOUT a pin -- the other dossiers were judged under the real 350 K cap.
+    with pytest.raises(ValueError, match=r"D27\.4"):
+        deserialize_response(wire, require_verified_admission=True)
+    # The residual: a FULLY consistent answer to the relaxed request loads without a pin (the 400 K route is FITS)...
+    relaxed = run_compilation(relaxed_request)
+    relaxed_wire = serialize_response(relaxed, include_replay=True)
+    reloaded = deserialize_response(relaxed_wire, require_verified_admission=True)
     assert forged.route_digest in reloaded.admissible_route_digests
-    # WITH the consumer's real (350 K cap) request pinned: the mismatch is refused.
+    # ...and WITH the consumer's real (350 K cap) request pinned it is refused: it answers a DIFFERENT question.
     with pytest.raises(ValueError, match="DIFFERENT request|expected_request_digest"):
-        deserialize_response(wire, require_verified_admission=True,
+        deserialize_response(relaxed_wire, require_verified_admission=True,
                              expected_request_digest=resp.request.semantic_digest)
 
 

@@ -241,6 +241,98 @@ reaction-vouched row):
   `smartchem/` touched on disk.
 - `~/.local/bin/ruff check` clean on all three files.
 
+**v0.9 CAPABILITY COMPILER, ROUND V — EVIDENCE-BOUND MATERIAL SEMANTICS · QUANTITY CONSERVATION · WIRE-SCHEMA
+FREEZE, + the X-HIGH CONTINUATION (2026-09-28 → 2026-09-29, **CLOSED — PR #93 `ROUND V CLOSED — ready for external
+review`, NOT merged**; package stays `0.9.0a1`; final code tip `d6c7edc`; the 15-gate ledger is audit §7.16). Audit + barriers
+D1–D23: `docs/research/V0_9_RC_ROUND_V_EXTERNAL_AUDIT_2026-09-28.md` (§3 = Round V, §7 = the X-high
+continuation).** Round V's first half (F64–F82 + Wave-A lane G) replaced every "one representation silently meaning
+two things": a typed `QuantityDemand` (EXACT / LOWER_BOUND_PLUS_UNKNOWN / UNKNOWN, exact `Fraction` arithmetic, never
+`None` for both), ONE exact max-flow allocation per unit domain (a bottle is spent once), the `_FORMULATION_SPECS`
+adjective table DELETED in favour of source-authored `MaterialSpecification` (basis, tolerance, NEAT/hydration/
+saturation states, `unresolved_terms`), evidence-graded composition (an assumption can neither certify nor refute),
+a digestible `IntervalEvidence` over a CLOSED derivation-kernel registry, waste categories earned only from positive
+stream evidence, a declaration-state wrapper (UNDECLARED / DECLARED_BOUND / NO_LIMIT) over the legacy bounds, honest
+schema bumps with REAL v0.8 producer fixtures, and D13: *every stated demand reaches its owning axis or that axis
+fails closed*. The X-high continuation re-proved what MEDIUM effort left unproven and tested every axis IN ISOLATION
+(the universal zero-FIT state masks per-axis bugs): a temperature FLOOR on the one shared `PhysicalBounds` (D14);
+an ordered per-step procedure timeline + an independently-correct process axis (D15); a MACHINE-CHECKED
+field-coverage ledger `smartchem/capability/coverage.py` (D16 — per-op post-resolution equipment/VERIFY guards,
+prose rate/agitation/endpoint/T/P fail closed); material conservation for untyped materials, CATALYST-role
+contradiction vs `net_consumes`, `envelope.medium` as provenance only, order-aware per-step external inputs (D17);
+an evidence-graded `PhaseClaim` (D18); a derivation-kernel known-answer lock (D19); and transport fixes incl. a
+consumer capability-question pin and a content-bound origin label (D20). **Zero-FIT theorem PROVEN** (every
+PROCESS_SPECIFIED route carries an unresolved spent stream; no evidence type can discharge one yet — the ceiling is a
+missing disposal VOCABULARY, parked to 0.9.5; an evaluator-level witness reaches FIT once waste is discharged).
+Measured (X-high, post-Wave-C′ D24 tree): funnel **34/34 properties** (`experiments/V0_9_CAPABILITY_FUNNEL_RESULTS.md`: 7 routes,
+zero CAPABILITY_FIT in every context, research_lab 7 UNKNOWN / poor_man 7 BLOCKED / Custom 4 BLOCKED + 3 UNKNOWN /
+an all-undeclared Custom 7 BLOCKED; ResearchLab / PoorMan / Custom diverge on 7/7 routes, every BLOCK names the missing
+capability; no axis reads NOT_APPLICABLE on a missing procedure -- D24.17); held-out saponification vs the BLIND oracle **12 PASS / 1 lawful divergence / 0 FAIL** with no compiler
+edit (`docs/research/V0_9_RC_ROUND_V_HELDOUT_PROBE_RESULTS_2026-09-28.md`). Mutation gate, fresh Wave C and the
+full OOM-safe suite: see the audit doc — not claimed here. No new reaction family, no new chemistry, no
+capability-fit by omission.
+
+  **Round V close evidence (all measured on the final code tip `d6c7edc`):** mutation gate `ACTIVE 217/217 killed, 0
+  survived | RETIRED 4 (0 void) | DEFERRED 0` (parent re-run, sources md5-stable); full OOM-safe suite **6529 collected /
+  6483 passed / 0 failed / 0 errors / 46 skipped**, 35 batches, exit 0; funnel 34/34 properties, zero CAPABILITY_FIT
+  (a PROVEN structural ceiling: no typed disposal vocabulary — `StreamDisposition` is the 0.9.5 FIT question), 7/7
+  routes diverge ResearchLab / PoorMan / Custom; blind held-out saponification oracle 12 PASS / 1 lawful DIVERGE /
+  0 FAIL with no compiler edit; search noninterference HOLDS; real v0.8 producer fixtures (incl. DAG + stereo) verify
+  byte-for-byte; wire ids request v1alpha7 / response v1alpha17 / route summary v1alpha5 / DAG summary v1alpha5 /
+  descriptor v1alpha20; the transport layer re-derives or binds every response field it does not disclose as advisory
+  (machine-checked `smartchem/transport_ledger.py`, D27–D29); 14 fresh non-author hostile agents across Waves
+  C′–C7 — no reachable false FIT in any wave. Hosted CI: INFRASTRUCTURE-DEAD on every tip (`runner_id=0`,
+  `steps=[]`) — neither green nor a code failure.
+
+**v0.9 CAPABILITY COMPILER, ROUND IV — EXTERNAL AUDIT (2026-09-28, EXTERNAL REVIEW HOLD — package stays
+`0.9.0a1`, NOT released to `main`; PR `feat/v0.9-capability-compiler -> main` OPEN + UNMERGED for another
+external-review pass). Audit + barrier: `docs/research/V0_9_RC_ROUND_IV_EXTERNAL_AUDIT_2026-09-28.md`.**
+An external hostile review found a NEW class of composition / whole-path overclaim (F41-F55) beyond Round III's
+F1/F2, and a fresh non-author Wave-C pass found one more P0 (F62). ALL resolved — reproduced-and-fixed,
+rigorously refuted, or a named defer. **THE MATERIAL OUTCOME: the Round-III `CAPABILITY_FIT` positive COLLAPSES
+to UNKNOWN under fail-closed whole-path semantics — NO corpus route reaches `CAPABILITY_FIT`.** The one
+PROCESS_SPECIFIED route (isopentyl) reads UNKNOWN because the source under-specifies whole-process DURATION
+(F56: only the 1-hr reflux floor is timed), auxiliary HAZARDS (F47: ionic washes/drier), and spent-stream
+DISPOSAL (F49). Fabricating any of those is banned; a vanishing positive is scientific information (the gate was
+NOT weakened to preserve it) — 0.9 defines `CAPABILITY_FIT` rigorously + every axis fails closed, and names
+exactly what 1.0 must source. Whether 0.9 ships with a defined-but-unreached FIT is the external reviewer's call.
+Fixes: F41 quantity summation · F42 finite-pool max-flow allocation (no double-spend) · F43 two-sided
+composition band (`satisfies_band`; 100% bicarbonate ⊬ "5% wash") · F44 structure>name (a bare name can't
+witness a proven structure) · F45 generic projection (`_KNOWN_LEAF_IDS` + runtime "glacial" scan DELETED;
+reactants are typed SUBSTRATE/REACTANT source uses) · F46 NaCl mass-fraction fixed `[0.23,0.27]`->`[0.263,0.265]`
++ typed `DerivedIntervalEvidence` (construction refuses an interval its own `derivation_fn` can't reproduce) ·
+F47/F48/F49 hazard/waste unknownness fails closed · F50 distinct-spec uses stay distinct · F51 convergent-DAG
+capability request typed-REFUSED · F52 `compile` delegates to `recompile` render (human≡JSON) · F54 legacy v0.8
+response loads additive-optional · F56/F62 per-dimension process fail-close, now a COMPLETE table over all five
+dimensions. Gate: **mutation M1-M62 60/62 killed, 0 survived** (M23 retired + M50 verified-defer; the committed
+M1-M40 harness was found BROKEN on the new core and repaired); **funnel 86/86 properties, zero `CAPABILITY_FIT`
+under every profile**, denominators never narrowed; fresh Wave-C review (F62 FIXED, F63 LOW deferred to 0.9.5,
+else HELD, search noninterference re-confirmed clean); full OOM-safe suite GREEN. Deferred to 0.9.5: M50
+synthetic-route corpus, F63/M58 derived-width provenance guard. No new reaction classes, no new chemistry
+family, no capability-fit by omission.
+
+**v0.9 CAPABILITY COMPILER, ROUND III — WHOLE-PATH SEMANTIC HARDENING (2026-09-28, RELEASE CANDIDATE —
+package version bumped `0.8.0a1` -> `0.9.0a1`; the 35-criterion release gate CLOSED; a merge-ready PR
+`feat/v0.9-capability-compiler -> main` is opened for EXTERNAL release review and is deliberately NOT merged —
+external review has the final say). Freeze `docs/research/V0_9_CAPABILITY_COMPILER_ROUND_III_FREEZE_2026-09-28.md`,
+release record `docs/research/V0_9_CAPABILITY_COMPILER_RELEASE_2026-09-28.md`.**
+The thesis Round III set out to prove and did: **the machine means what it says.** Capability is a PROJECTION over an
+UNCHANGED chemistry search — `semantic_digest` is byte-identical across {no profile, research-lab, poor-man, inline
+custom}; only the request/question/result digests and the per-route assessment move. A `CAPABILITY_FIT` verdict is
+never a false pass; every one of the 11 axes fails closed; and the forcing matrix is a faithful consequence of the
+code, not a coincidence of the corpus. Round II shipped a real core but a GAMED positive (`research_lab` + a
+universal `0.98` esterification assay floor lying by omission on six axes); Round III RETIRED the floor (source-scoped
+assay per input), migrated the positive to a fully-declared Custom bench, and closed the whole-path requirements:
+`ProcedureMaterialUse` (procedure-only materials no longer vanish), quantity/phase gating, specific `MeasurementMethod`
+(IR ≠ NMR ≠ balance), per-dimension UNCONSTRAINED→UNKNOWN, fail-closed budget denomination, a reserved ventilation
+axis, and procedure-hazard→containment folding. Wired into the real compiler request/response with a resolved
+`CapabilityProfile` snapshot (a bare preset name is REFUSED) + `CAPABILITY-REBIND-ON-LOAD`. **Gate:** M1-M40 mutation
+**40/40 killed**; funnel 75/75 properties (only the fully-declared Custom bench reaches FIT); fresh non-author hostile
+review (evil-morty directed + dalembert structure-theorem) CONVERGED on F1 (P0 physical per-dimension false-FIT) + F2
+(monetary empty-denominator fail-open), both FIXED and re-verified on the real path, everything else HELD; full
+OOM-safe suite **5757 passed / 0 failed / 0 errors / 46 skipped** (0.8 baseline 5628 passed; +129, no 0.7/0.8
+regression). No new reaction classes, no new chemistry family, no capability-fit by omission. Next: 0.9.5 Adversarial
+Release Candidate (plan `docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md`), then 1.0 Stable.
+
 **v0.8 REAL ROUTE DOSSIERS, ROUND II — PROCEDURE-EVIDENCE CLOSURE + VERIFIABLE CANONICAL TRANSPORT
 (2026-09-28, RELEASED — package version bumped `0.7.0a1` -> `0.8.0a1`; the 13-condition release gate CLOSED
 and the branch merged to `main`, per plan `docs/research/V0_8_ROUND_II_PROCEDURE_EVIDENCE_PLAN_v0.1.md` and

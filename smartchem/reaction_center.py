@@ -169,6 +169,12 @@ class ReactionCenter:
         expected = {"schema_version", "formed", "broken", "n_components"}
         if set(payload) != expected:
             raise ReactionCenterError("reaction-centre payload must contain exactly the versioned fields")
+        # X-high D26.7 (Wave-C'' RC-v): the payload's OWN version is checked -- ``cls.of`` stamps the current id, so an
+        # unchecked payload of any other (or a bogus) version was silently relabelled current on decode.
+        if payload["schema_version"] != REACTION_CENTER_SCHEMA:
+            raise ReactionCenterError(
+                f"reaction-centre payload schema_version must be exactly {REACTION_CENTER_SCHEMA!r}, got "
+                f"{payload['schema_version']!r} (D26.7)")
         return cls.of(
             (tuple(b) for b in payload["formed"]),
             (tuple(b) for b in payload["broken"]),

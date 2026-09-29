@@ -304,7 +304,8 @@ class TestCoherenceGuard:
 class TestValidation:
     def test_request_bad_schema_version(self):
         good = build_recompile_request("name:water")
-        with pytest.raises(ValueError, match="schema_version"):
+        # Round V (D11): an id that is neither current nor the whitelisted v0.8 legacy id is refused precisely.
+        with pytest.raises(ValueError, match="unsupported request schema_version 'bogus'"):
             replace(good, schema_version="bogus")
 
     def test_empty_target_input(self):
@@ -426,13 +427,14 @@ class TestSerialization:
             request_from_payload(payload)
 
     def test_response_payload_carries_exit_and_digest(self):
-        from smartchem.service import _transport_bound_result_digest
+        from smartchem.service import _payload_body_digest, _transport_bound_result_digest
         resp = run_compilation(build_recompile_request(_ROUTES_FOUND_TARGET, max_depth=3))
         payload = response_to_payload(resp)
         assert payload["exit_code"] == resp.exit_code
-        # v0.8 Round II (D5): the wire result_digest binds the declared transport_mode (default CANONICAL_VERIFIED).
+        # v0.8 Round II (D5) + X-high D27.2: the wire result_digest binds the declared transport_mode (default
+        # CANONICAL_VERIFIED) and the whole payload body.
         assert payload["result_digest"] == _transport_bound_result_digest(
-            resp.result_digest, payload["transport_mode"]
+            resp.result_digest, payload["transport_mode"], _payload_body_digest(payload)
         )
 
 

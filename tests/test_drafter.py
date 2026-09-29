@@ -182,3 +182,45 @@ class TestDossier:
     def test_dossier_without_feed_omits_the_ceiling(self):
         d = draft_route_dossier(_anhydride_route())
         assert d.ceiling is None
+
+
+class TestD14TemperatureFloorRanking:
+    """Round V X-high D14 (MP6): a bench temperature FLOOR is applied exactly like the pressure floor -- a step that
+    must go colder than the bench can reach is EXCLUDED; an undeclared step temperature is a GAP, never a silent FITS;
+    a process-record bench (whole-step extrema) has no whole-step MINIMUM, so the floor is always a gap there."""
+
+    def test_a_step_colder_than_the_bench_floor_is_excluded(self):
+        route = ExperimentRoute.of(ExperimentStep.assembling(
+            PARA, (AMP, ANH), (PARA, ACOH), reagents=(ANH,),
+            envelope=_env(250, 298, "cold acetylation (synthetic)"),
+        ))
+        fit = fit_route(route, ConstraintBox(min_temperature_k=280))
+        assert fit.status is RouteFitStatus.EXCLUDED
+        assert any("needs down to 250.0 K but the bench floor is 280 K" in e for e in fit.exclusions)
+
+    def test_a_step_above_the_floor_fits_a_floor_only_box(self):
+        fit = fit_route(_anhydride_route(pres=(1, 1)), ConstraintBox(min_temperature_k=280))
+        assert fit.status is RouteFitStatus.FITS  # 295 K >= 280 K; the floor is a real, declared constraint
+
+    def test_an_undeclared_step_temperature_under_a_floor_is_a_gap(self):
+        route = ExperimentRoute.of(ExperimentStep.assembling(
+            PARA, (AMP, ANH), (PARA, ACOH), reagents=(ANH,),
+            envelope=ConditionEnvelope(pressure=Interval(1, 1, "atm"), medium="", status=EvidenceStatus.EXPERIMENTAL,
+                                       provenance="pressure stated, temperature silent"),
+        ))
+        fit = fit_route(route, ConstraintBox(min_temperature_k=280))
+        assert fit.status is RouteFitStatus.UNKNOWN
+        assert any("temperature undeclared, but the bench floor is 280 K" in g for g in fit.gaps)
+
+    def test_a_process_bench_can_never_confirm_the_floor_from_a_record(self):
+        from smartchem.process_constraints import ProcessBounds
+        box = ConstraintBox(min_temperature_k=280, process=ProcessBounds.of(max_step_minutes=600.0))
+        fit = fit_route(_anhydride_route(pres=(1, 1)), box)
+        assert fit.status is not RouteFitStatus.FITS
+        assert any("whole-process minimum temperature including workup is undeclared" in g for g in fit.gaps)
+
+    def test_no_floor_leaves_the_legacy_verdict_and_reasons_byte_identical(self):
+        box = ConstraintBox(max_temperature_k=1473, max_pressure_atm=Fraction(3, 2))
+        fit = fit_route(_anhydride_route(pres=(1, 1)), box)
+        assert fit.status is RouteFitStatus.FITS and fit.exclusions == () and fit.gaps == ()
+        assert box.min_temperature_k is None

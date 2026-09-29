@@ -136,7 +136,8 @@ class ConstraintBox(Digestible):
     Any bound left ``None`` is unconstrained.  ``available_reagents`` is a set of formula strings and/or
     names a step's reactants are matched against (``None`` = every reagent available); ``available_equipment``
     is the set of :class:`~smartchem.experiment.equipment.EquipmentKind` the bench has (``None`` = every kind
-    available).
+    available).  ``min_temperature_k`` (Round V D14) is the coldest the bench can reach -- appended LAST so every
+    existing positional/keyword construction is unchanged; ``None`` keeps the legacy behaviour byte-identical.
     """
 
     max_temperature_k: float | None = None
@@ -145,6 +146,7 @@ class ConstraintBox(Digestible):
     available_reagents: frozenset[str] | None = None
     available_equipment: frozenset[EquipmentKind] | None = None
     process: ProcessBounds = field(default_factory=ProcessBounds.unconstrained)
+    min_temperature_k: float | None = None
 
     def __post_init__(self) -> None:
         if type(self.process) is not ProcessBounds:
@@ -156,6 +158,7 @@ class ConstraintBox(Digestible):
             max_temperature_k=self.max_temperature_k,
             min_pressure_atm=self.min_pressure_atm,
             max_pressure_atm=self.max_pressure_atm,
+            min_temperature_k=self.min_temperature_k,
         )
         if self.available_reagents is not None and type(self.available_reagents) is not frozenset:
             raise TypeError("available_reagents must be a frozenset of strings or None")
@@ -169,6 +172,7 @@ class ConstraintBox(Digestible):
             max_temperature_k=self.max_temperature_k,
             min_pressure_atm=self.min_pressure_atm,
             max_pressure_atm=self.max_pressure_atm,
+            min_temperature_k=self.min_temperature_k,
         )
 
     @classmethod
@@ -183,6 +187,9 @@ class ConstraintBox(Digestible):
             min_pressure_atm=bounds.min_pressure_atm,
             max_pressure_atm=bounds.max_pressure_atm,
             process=process if process is not None else ProcessBounds.unconstrained(),
+            # D14: a declared floor is carried, never silently dropped (a request whose identity carries a floor
+            # must be RANKED against that floor too). A legacy v1alpha1 box has min_temperature_k None.
+            min_temperature_k=bounds.min_temperature_k,
         )
 
     @property
@@ -194,7 +201,7 @@ class ConstraintBox(Digestible):
         """
         return self.process.constrains_anything or any(
             getattr(self, name) is not None
-            for name in ("max_temperature_k", "min_pressure_atm", "max_pressure_atm",
+            for name in ("max_temperature_k", "min_pressure_atm", "max_pressure_atm", "min_temperature_k",
                          "available_reagents", "available_equipment")
         )
 
@@ -271,6 +278,11 @@ def _step_box_check(step, box: ConstraintBox, equip: tuple[EquipmentItem, ...],
                 gaps.append(f"{tag}: whole-process {label} including workup is undeclared")
             elif (op == "max" and value > bound) or (op == "min" and value < bound):
                 exclusions.append(f"{tag}: whole-process {label} {value:g} violates {name} {bound:g}")
+        if box.min_temperature_k is not None:
+            # D14: a ProcessRequirements record declares a whole-step PEAK temperature but no whole-step MINIMUM, so a
+            # bench temperature floor can never be confirmed from the record -- a GAP, never a silent pass.
+            gaps.append(f"{tag}: whole-process minimum temperature including workup is undeclared (a process "
+                        f"record carries no whole-step minimum), but the bench floor is {box.min_temperature_k} K")
 
     if box.max_temperature_k is not None:
         if env.temperature is None:
@@ -278,6 +290,15 @@ def _step_box_check(step, box: ConstraintBox, equip: tuple[EquipmentItem, ...],
         elif env.temperature.hi > box.max_temperature_k:
             exclusions.append(
                 f"{tag}: needs up to {env.temperature.hi} K but the bench caps at {box.max_temperature_k} K"
+            )
+    if box.min_temperature_k is not None:
+        # D14: the temperature floor mirrors the pressure floor below -- an undeclared temperature cannot be
+        # CONFIRMED to stay above the bench's coldest reach (a GAP); a step that must go colder is EXCLUDED.
+        if env.temperature is None:
+            gaps.append(f"{tag}: temperature undeclared, but the bench floor is {box.min_temperature_k} K")
+        elif env.temperature.lo < box.min_temperature_k:
+            exclusions.append(
+                f"{tag}: needs down to {env.temperature.lo} K but the bench floor is {box.min_temperature_k} K"
             )
     if box.max_pressure_atm is not None:
         if env.pressure is None:

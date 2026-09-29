@@ -321,6 +321,40 @@ HAZARD_REFS: tuple[HazardRef, ...] = (
         status=EvidenceStatus.ESTABLISHED,
     ),
     HazardRef(
+        # F3 gap closed: the isopentyl-acetate route glues conc. H2SO4 in as a catalyst, and until now
+        # this bench had no GHS record for it -- so a "procedure-only hazardous material" axis had nothing
+        # to bite on (D9). Adding known, harmonised chemistry is enrichment, not fabrication; the ABSENCE
+        # was the defect. The one non-negotiable call here is H314: this acid burns skin, sourced or not.
+        formula="H2O4S",  # canonical Formula repr (alphabetical: H, O, S) -- NOT "H2SO4"
+        name="sulfuric acid",
+        ghs_codes=("H290", "H314"),
+        summary=(
+            "CORROSIVE -- causes severe skin burns and eye damage (Skin Corr. 1A, H314, the load-bearing "
+            "call); may be corrosive to metals (H290). This profile is the CONCENTRATED grade: a powerful "
+            "dehydrating agent, and hot/concentrated an oxidiser"
+        ),
+        reactivity=(
+            "reacts VIOLENTLY and highly exothermically with water -- always add acid TO water, never the "
+            "reverse (CAMEO); careless mixing boils and spatters corrosive acid",
+            "strong dehydrating agent (chars sugars and cellulose); hot concentrated acid oxidises metals "
+            "and organics",
+            "attacks most metals liberating flammable hydrogen; incompatible with water, strong bases, and "
+            "most organics",
+        ),
+        exposure="OSHA PEL 1 mg/m3 (8-h TWA); NIOSH REL 1 mg/m3; IDLH 15 mg/m3 (thoracic fraction)",
+        regulatory=(
+            "ECHA harmonised Annex VI (Index 016-020-00-8): Skin Corr. 1A / H314 at >=15%, banded weaker "
+            "below. SEPARATE hazard, deliberately NOT asserted as an H-code here: 'strong inorganic acid "
+            "mists containing sulfuric acid' are an IARC Group 1 occupational carcinogen -- a property of "
+            "the MIST, not a code the neat liquid bears; noted, not fabricated onto the substance"
+        ),
+        provenance=(
+            "PubChem GHS / ECHA harmonised Annex VI (CID 1118, CAS 7664-93-9); NIOSH Pocket Guide npgd0577; "
+            "CAMEO Chemicals (NOAA)"
+        ),
+        status=EvidenceStatus.ESTABLISHED,
+    ),
+    HazardRef(
         formula="H2O",
         name="water",
         ghs_codes=(),  # deliberately empty: water carries no GHS classification

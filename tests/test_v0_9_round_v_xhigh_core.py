@@ -828,3 +828,62 @@ def _replace_op1_quantity(route, text):
     ops = (op1,) + step.envelope.procedure.operations[1:]
     proc = dc.replace(step.envelope.procedure, operations=ops)
     return dc.replace(route, steps=(dc.replace(step, envelope=dc.replace(step.envelope, procedure=proc)),))
+
+
+# -- Foreman N5 (Wave C4 acceptance): an identity-free use NAME is a name, never a condition or hazard claim ----------
+
+_SMUGGLED_NAME = "sodium metal in a sealed tube at 650 K"
+
+
+def _typed_dme_world(*extra_uses):
+    """The fully typed DME world of the reachability proof above (which reaches overall FIT once waste is discharged),
+    with ``extra_uses`` riding its ADD op; every canonical summary is re-rendered, so the extra use is the ONLY
+    difference from the FIT control."""
+    from tests.test_poor_man_reaction_type_oracle import _routes
+
+    dme = next(r.steps[0] for r in _routes("COC", ["methanol"]) if len(r.steps) == 1)
+    meoh = dme.reactants[0]
+    src = SourceCitation("https://example.test/procedure", SourceReview.ACCEPTED)
+    add = ProcedureOperation(ordinal=1, kind=OperationKind.ADD, role=OperationRole.REACTION, locator="src p.1",
+                             material_uses=(_use("methanol", ProcedureMaterialRole.SUBSTRATE, meoh, qty="20"),
+                                            *extra_uses),
+                             duration=_pf(Interval(30, 30, "min"), "src p.1"))
+    filt = ProcedureOperation(ordinal=2, kind=OperationKind.FILTER, locator="src p.1", apparatus=("fluted filter paper",))
+    weigh = ProcedureOperation(ordinal=3, kind=OperationKind.VERIFY, locator="src p.1", apparatus=("analytical balance",))
+    na = EvidenceField.not_applicable("src p.1", "the source closes this out")
+    draft = ProcedureEvidence(reaction_scope="2 MeOH -> DME", source=src, scale=_pf("x", "src p.1"),
+                              operations=(add, filt, weigh), quench=na, workup_isolation=_pf("x", "src p.1"),
+                              separation=na, wash=na, drying=na, purification=na,
+                              analytical_verification=_pf("x", "src p.1"))
+    proc = dc.replace(draft, scale=_pf(render_scale(draft), "src p.1"),
+                      workup_isolation=_pf(render_summary(draft, "workup_isolation"), "src p.1"),
+                      analytical_verification=_pf(render_verification(draft), "src p.1"))
+    envelope = ConditionEnvelope(procedure=proc, process=_CLEAN_RECORD, temperature=Interval(298.15, 298.15, "K"),
+                                 pressure=Interval(1.0, 1.0, "atm"), status=EvidenceStatus.EXPERIMENTAL,
+                                 provenance="declared conditions", source=src)
+    return ExperimentRoute(ROUTE_SCHEMA, (dc.replace(dme, envelope=envelope),)), meoh
+
+
+def _waste_discharged_assessment(route, bench):
+    reqs = compile_capability_requirements(route)
+    return assess(bench, dc.replace(reqs, waste=WasteRequirement(frozenset(), ())), evaluate_route(route))
+
+
+def test_n5_an_identity_free_use_named_like_a_condition_never_reaches_fit_even_with_a_same_named_bottle():
+    """Foreman N5: an IDENTITY-FREE procedure use is name-keyed, so a bench bottle declared under the SAME string
+    satisfies it on the material axis -- and the name carries words ('sealed tube', '650 K') no axis may read as a
+    condition. Pinned: overall can NOT reach FIT. Today exactly ONE backstop holds it -- containment's F47 (an
+    unresolvable species has an UNKNOWN hazard status); material and physical PASS (the name is never read as a 650 K
+    peak). If F47 is ever relaxed this test names the hole instead of letting the smuggle certify."""
+    control, meoh = _typed_dme_world()
+    bench = _bench(material_inventory=(_bottle("methanol-pure", meoh), _bottle("same-name", _SMUGGLED_NAME)))
+    assert _waste_discharged_assessment(control, bench).overall is S.FIT            # discriminating: the world CAN fit
+    smuggled, _ = _typed_dme_world(_use(_SMUGGLED_NAME, ProcedureMaterialRole.SOLVENT, None, qty="2"))
+    a = _waste_discharged_assessment(smuggled, bench)
+    assert a.overall is not S.FIT, {n: getattr(a, n).status for n in ("material", "physical", "containment")}
+    # which backstop holds (so a relaxation is visible, not silent): the name-keyed bottle satisfies material, the
+    # physical axis reads the declared 298.15 K envelope (never the name), and only F47 keeps containment UNKNOWN.
+    assert a.material.status is S.FIT and a.physical.status is S.FIT
+    assert a.containment.status is S.UNKNOWN
+    assert any("F47" in reason for reason in a.containment.reasons)
+    assert any(_SMUGGLED_NAME in reason and "UNKNOWN" in reason for reason in a.containment.reasons)

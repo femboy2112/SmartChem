@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import dataclasses
 
+import pytest
+
 from smartchem.data.reagents import COMMODITY_REAGENTS, commodity_inventory
 from smartchem.experiment.affordability import (
     AffordabilityFrontierEntry,
@@ -155,9 +157,14 @@ def test_a_populated_frontier_round_trips_through_the_json_payload():
         CostVector(cash=52.95, access_difficulty=0, currency="USD", unit="t", hard_blockers=()),
     )
     injected = dataclasses.replace(resp, affordability_frontier=(entry,))
-    back = response_from_payload(response_to_payload(injected))
+    # the JSON codec round-trips a populated frontier.  The injected entry is not the producer's own frontier, so it
+    # round-trips on the THIN wire (no replay: the frontier is advisory there) -- the CANONICAL wire re-derives the
+    # frontier from the replayed routes and refuses the fabrication (X-high D27.4).
+    back = response_from_payload(response_to_payload(injected, include_replay=False))
     assert back.affordability_frontier == (entry,)
     assert back.affordability_frontier[0].cost_vector == entry.cost_vector
+    with pytest.raises(ValueError, match=r"affordability_frontier is not the producer's frontier.*D27\.4"):
+        response_from_payload(response_to_payload(injected))
 
 
 # ---- COST-VEC-01 quantity/stoich axis: material_quantity via dag_shopping_requirement ----

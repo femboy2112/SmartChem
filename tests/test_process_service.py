@@ -29,6 +29,18 @@ def request(**kwargs):
                                    process=ProcessBounds.quick(), **kwargs)
 
 
+def _retallied(response):
+    """What a CONSISTENT keyless forger does after relabelling dossiers: rewrite the section-11 fit tally in the
+    diagnostics so it matches the relabelled dossiers (X-high D27.4 refuses a tally that contradicts the carried
+    dossiers, even on the thin wire -- Wave C4 C4T-7)."""
+    from smartchem.service import _fit_counts, constraint_note
+    request_ = response.request
+    ranked = response.ranked_route_dossiers
+    note = constraint_note(request_.constraints.bounds, fit_counts=_fit_counts(ranked) if ranked else None,
+                           process=request_.constraints.process)
+    return replace(response, diagnostics=(*response.compilation_ir.diagnostics, *((note,) if note else ())))
+
+
 def test_process_profile_is_semantic_and_round_trips():
     req = request()
     assert deserialize_request(serialize_request(req)).semantic_digest == req.semantic_digest
@@ -172,31 +184,37 @@ def test_key_holding_forger_residual_is_not_closable_by_a_signature():
     victim = result.ranked_route_dossiers[0]
     fabricated = (requirements(),) * len(victim.process_requirements)
     forged = replace(victim, fit_status="FITS", gaps=(), exclusions=(), process_requirements=fabricated)
-    promoted = replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:]))
+    promoted = _retallied(replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:])))
     assert promoted.admissible_route_digests == (victim.route_digest,)
     assert promoted.exit_code == 0
-    reloaded = deserialize_response(serialize_response(promoted))
-    assert reloaded.admissible_route_digests == (victim.route_digest,)
-    # A key-holding forger simply signs the lie, and a consumer requiring a signature accepts it -- irreducible.
+    # X-high D27.4: on the CANONICAL wire the replay re-derives the dossier under the carried request, so even a
+    # key-holder's signed lie is refused -- the signature proves provenance, the replay re-derivation proves the verdict.
     key = secrets.token_bytes(32)
-    signed = serialize_response(promoted, signing_key=key)
+    with pytest.raises(ValueError, match=r"D27\.4"):
+        deserialize_response(serialize_response(promoted, signing_key=key), verification_key=key,
+                             require_signature=True)
+    # The irreducible residual lives on the THIN (replay-free, advisory) wire: unsigned it round-trips, and a
+    # key-holding forger simply signs the lie, which a consumer requiring a signature accepts.
+    reloaded = deserialize_response(serialize_response(promoted, include_replay=False))
+    assert reloaded.admissible_route_digests == (victim.route_digest,)
+    signed = serialize_response(promoted, signing_key=key, include_replay=False)
     assert deserialize_response(signed, verification_key=key, require_signature=True).admissible_route_digests == (
         victim.route_digest,)
 
 
 def test_non_process_axis_relabel_is_not_yet_authenticated(monkeypatch):
-    """Boundary pin (evil-morty Finding 1): PROCESS-ADMIT-01 re-derives ONLY the process component.
+    """Boundary pin (evil-morty Finding 1), narrowed by X-high D27.4: PROCESS-ADMIT-01 re-derives ONLY the process
+    component, but the CANONICAL wire now re-derives the whole COMBINED verdict from the replay.
 
     ``fit_status`` is the COMBINED verdict (composability + physical bounds + process).  A route EXCLUDED for a
     NON-process reason -- here a reaction over a physical temperature cap -- whose PROCESS evidence is FITS can
-    still be bare-relabeled to FITS: the carried ``process_requirements`` re-derive to FITS, so
-    ``_check_process_admission_coherence`` sees nothing wrong on its (process-only) axis.  Re-deriving the
-    physical/reagent/equipment/composability axes in-band needs the per-step physical conditions and the full route
-    graph the thin summary deliberately omits.  This test pins the UNSIGNED default (no verification key), where such a
-    relabel is producer-declared and therefore accepted; the KEYLESS out-of-band form of exactly this tamper IS refused
-    once the producer signs and the consumer requires a signature -- see test_signed_response_rejects_out_of_band_tamper
-    (COMBINED-VERDICT-AUTH).  Pinned so no caller mistakes an UNSIGNED deserialized admissible list for an authenticated
-    one.
+    be bare-relabeled to FITS: the carried ``process_requirements`` re-derive to FITS, so
+    ``_check_process_admission_coherence`` sees nothing wrong on its (process-only) axis.  On the CANONICAL wire D27.4
+    re-ranks the replayed routes under the carried request's box and REFUSES the relabel on a plain load; on the THIN
+    (replay-free) wire the physical/composability axes cannot be re-derived in-band, so there the relabel stays
+    producer-declared (ADVISORY, the transport ledger's DIGEST_ONLY_ADVISORY status) -- accepted unsigned, refused once
+    the producer signs and the consumer requires a signature (test_signed_response_rejects_out_of_band_tamper).  Pinned
+    so no caller mistakes an UNSIGNED THIN admissible list for an authenticated one.
     """
     from smartchem.contracts import EvidenceStatus
     declared = ProcessRequirements(
@@ -218,10 +236,14 @@ def test_non_process_axis_relabel_is_not_yet_authenticated(monkeypatch):
     # Bare relabel: FITS, clear the text, leave process_requirements untouched (still process-FITS).
     forged = replace(victim, fit_status="FITS", exclusions=(), gaps=())
     assert forged.process_requirements == victim.process_requirements
-    promoted = replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:]))
-    # ACCEPTED on the UNSIGNED path: the physical axis is not re-derived in-band (producer-declared default).
+    promoted = _retallied(replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:])))
     assert promoted.admissible_route_digests == (victim.route_digest,)
-    assert deserialize_response(serialize_response(promoted)).admissible_route_digests == (victim.route_digest,)
+    # REFUSED on the canonical wire (D27.4 re-derives the combined verdict from the replay under the carried box)...
+    with pytest.raises(ValueError, match=r"D27\.4"):
+        deserialize_response(serialize_response(promoted))
+    # ...ACCEPTED on the UNSIGNED THIN wire: nothing there to re-derive the physical axis from (advisory by contract).
+    assert deserialize_response(serialize_response(promoted, include_replay=False)).admissible_route_digests == (
+        victim.route_digest,)
 
 
 def test_producer_signature_round_trips_and_enforces_the_key():
@@ -279,13 +301,15 @@ def test_signed_response_rejects_out_of_band_tamper(monkeypatch):
 
     # A keyless attacker relabels the physical-axis exclusion to FITS out-of-band and keeps the stale signature.
     forged = replace(victim, fit_status="FITS", exclusions=(), gaps=())
-    promoted = replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:]))
+    promoted = _retallied(replace(result, ranked_route_dossiers=(forged, *result.ranked_route_dossiers[1:])))
     tampered = response_to_payload(promoted)  # coherent, self-consistent result_digest
     tampered["producer_signature"] = honest_payload["producer_signature"]  # the only signature they have seen
     with pytest.raises(ValueError, match="does not verify"):
         response_from_payload(tampered, verification_key=key, require_signature=True)
-    # Unsigned, it is still accepted -- the opt-in default is unchanged.
-    assert deserialize_response(serialize_response(promoted)).admissible_route_digests == (victim.route_digest,)
+    # Unsigned on the THIN wire it is still accepted -- the opt-in default is unchanged there (on the canonical wire
+    # X-high D27.4 now refuses it with no key: test_non_process_axis_relabel_is_not_yet_authenticated).
+    assert deserialize_response(serialize_response(promoted, include_replay=False)).admissible_route_digests == (
+        victim.route_digest,)
 
 
 _PARA_DAG = dict(helper_reagents=("acetic acid",),

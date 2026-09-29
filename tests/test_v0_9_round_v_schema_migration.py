@@ -36,6 +36,7 @@ from smartchem.service import (
     LEGACY_V08_RESPONSE_SCHEMA,
     RANKED_DAG_SUMMARY_SCHEMA,
     RANKED_ROUTE_SUMMARY_SCHEMA,
+    _payload_body_digest,
     _route_readiness_to_payload,
     _transport_bound_result_digest,
     _v08_digest,
@@ -224,15 +225,34 @@ def test_real_v08_response_loads_as_legacy_with_readiness_preserved(name):
 
 
 @pytest.mark.parametrize("name", _CANONICAL_ROUTE_RESPONSES)
-def test_real_v08_canonical_response_passes_verified_admission(name):
+def test_real_v08_canonical_response_binds_every_replay_to_its_v08_route_identity(name):
     """The CANONICAL_VERIFIED v0.8 wire re-derives every route (bound under the frozen v0.8 route identity) and its
-    readiness -- no check is weakened for legacy; the replay genuinely re-derives."""
-    resp = response_from_payload(_load(name), require_verified_admission=True)
+    readiness on a plain load -- no check is weakened for legacy; the replay genuinely re-derives."""
+    resp = response_from_payload(_load(name))
     assert resp.is_legacy_v08
     assert all(d.replay_payload is not None for d in resp.ranked_route_dossiers)
     for d in resp.ranked_route_dossiers:  # every legacy replay binds to its stored v0.8 route identity
         from smartchem.service import _reconstruct_route
         assert _v08_digest(_reconstruct_route(d.replay_payload)) == d.route_digest
+
+
+def test_real_v08_response_with_no_corpus_evidence_passes_verified_admission():
+    """A v0.8 answer whose replays carry no corpus envelope (ethyl acetate: every step's conditions are unknown) has
+    nothing for D27.1 to re-derive, so it passes verified admission exactly as before."""
+    resp = response_from_payload(_load("response_ethyl_acetate_smiles.json"), require_verified_admission=True)
+    assert resp.is_legacy_v08
+
+
+def test_real_v08_corpus_evidence_under_verified_admission_fails_closed_with_the_recompile_hint():
+    """X-high D27.1 (legacy leg): the v0.8 isopentyl routes carry v0.8's CORPUS envelopes -- a whole-step peak of
+    416.15 K the corpus has since withdrawn (P-X2), pre-re-filing prose, untyped material names.  Verified admission
+    re-derives corpus evidence against TODAY's shipped lookup (modulo the v0.8-absent ``material_uses``), so the v0.8
+    PROCESS_SPECIFIED claim -- resting on evidence the corpus no longer ships -- fails closed with the recompile hint,
+    never loads as verified.  A PLAIN load stays advisory (nothing in 0.8 bound the evidence)."""
+    payload = _load("response_isopentyl_acetate.json")
+    response_from_payload(copy.deepcopy(payload))  # plain: advisory, loads
+    with pytest.raises(ValueError, match=r"D27\.1.*recompile under 0\.9"):
+        response_from_payload(payload, require_verified_admission=True)
 
 
 def test_real_v08_procedure_routes_are_actually_exercised():
@@ -522,11 +542,14 @@ def _forger_refresh(payload: dict) -> dict:
         tuple(provider_snapshot_from_payload(s) for s in payload["provider_snapshots"]),
         parse_receipt_summary=payload["parse_receipt_summary"],
         ranked_dag_dossiers=tuple(ranked_dag_summary_from_payload(d) for d in payload["ranked_dag_dossiers"]))
-    payload["result_digest"] = _transport_bound_result_digest(resp.result_digest, payload["transport_mode"])
     payload["admissible_route_digests"] = list(resp.admissible_route_digests)
     payload["process_selection_status"] = resp.process_selection_status
     payload["exit_code"] = resp.exit_code
     payload["capability_question_digest"] = resp.capability_question_digest
+    # X-high D27.2: a CURRENT payload's wire digest binds its whole body, so the forger recomputes it LAST (over the
+    # refreshed body); a legacy payload keeps the frozen pre-D27 rule.
+    payload["result_digest"] = _transport_bound_result_digest(
+        resp.result_digest, payload["transport_mode"], None if resp.is_legacy_v08 else _payload_body_digest(payload))
     return payload
 
 

@@ -23,6 +23,7 @@ from smartchem.provenance import SourceCitation, SourceReview
 from smartchem.service import (
     CompilationResponse,
     ResponseOutcome,
+    _payload_body_digest,
     _route_readiness_from_payload,
     _transport_bound_result_digest,
     affordability_entry_from_payload,
@@ -90,15 +91,15 @@ def _recompute_derived_fields(payload: dict) -> dict:
     ``admissible_route_digests``, ``process_selection_status``) agree with what the tampered ``ranked_route_dossiers``
     NOW reconstruct to -- i.e. do exactly what a controlling, sophisticated forger would do. Returns ``payload``."""
     response = _rebuild_response(payload)
-    # v0.8 Round II: the wire result_digest folds in the declared transport_mode, so a sophisticated forger recomputes
-    # THAT (not the bare property) -- otherwise the tamper is caught by the cheaper digest-mismatch guard, not the
-    # readiness re-derivation these tests mean to exercise.
-    payload["result_digest"] = _transport_bound_result_digest(
-        response.result_digest, payload.get("transport_mode", "THIN_ADVISORY")
-    )
     payload["exit_code"] = response.exit_code
     payload["admissible_route_digests"] = list(response.admissible_route_digests)
     payload["process_selection_status"] = response.process_selection_status
+    # v0.8 Round II + X-high D27.2: the wire result_digest folds in the declared transport_mode AND the whole payload
+    # body, so a sophisticated forger recomputes THAT, LAST (not the bare property) -- otherwise the tamper is caught by
+    # the cheaper digest-mismatch guard, not the readiness re-derivation these tests mean to exercise.
+    payload["result_digest"] = _transport_bound_result_digest(
+        response.result_digest, payload.get("transport_mode", "THIN_ADVISORY"), _payload_body_digest(payload)
+    )
     return payload
 
 
@@ -136,10 +137,10 @@ def sourced_payload(monkeypatch):
 def test_g_honest_round_trip_preserves_readiness_identity(unsourced_payload):
     resp2 = response_from_payload(copy.deepcopy(unsourced_payload))
     # readiness rides result_digest (a digest-covered field), so a byte-identical round trip is the strongest form
-    # of "preserves identity" available here.  The WIRE digest binds the declared transport_mode (D5), so compare the
-    # reconstructed response's semantic digest through the same fold.
+    # of "preserves identity" available here.  The WIRE digest binds the declared transport_mode (D5) and the whole body
+    # (X-high D27.2), so compare the reconstructed response's semantic digest through the same fold.
     assert _transport_bound_result_digest(
-        resp2.result_digest, unsourced_payload["transport_mode"]
+        resp2.result_digest, unsourced_payload["transport_mode"], _payload_body_digest(unsourced_payload)
     ) == unsourced_payload["result_digest"]
     for r in resp2.ranked_route_dossiers:
         assert isinstance(r.readiness_tier, str)
@@ -153,7 +154,7 @@ def test_g_sourced_route_reaches_conditions_supported(sourced_payload):
     assert "CONDITIONS_SUPPORTED" in tiers, f"expected a CONDITIONS_SUPPORTED route, got tiers={tiers}"
     resp = response_from_payload(copy.deepcopy(sourced_payload))
     assert _transport_bound_result_digest(
-        resp.result_digest, sourced_payload["transport_mode"]
+        resp.result_digest, sourced_payload["transport_mode"], _payload_body_digest(sourced_payload)
     ) == sourced_payload["result_digest"]
 
 
@@ -219,7 +220,9 @@ def test_c_citation_removed_but_tier_kept_is_refused(sourced_payload):
     step_payload = target["replay_payload"][idx]
     step_payload["envelope"]["source"] = None
     _recompute_derived_fields(payload)
-    with pytest.raises(ValueError, match="readiness"):
+    # X-high D27.1 now re-derives the corpus envelope itself and refuses the stripped citation BEFORE the readiness
+    # re-derivation reaches it -- either layer refusing is the law holding.
+    with pytest.raises(ValueError, match=r"readiness|D27\.1"):
         response_from_payload(payload)
 
 

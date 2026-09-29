@@ -173,11 +173,16 @@ def test_the_default_thin_transport_fiction_strip_is_refused_under_verified_admi
     # boundary), a verified-admission load now fails CLOSED: an entry whose summary carries no replay_payload is
     # UNVERIFIED and REFUSED -- replay-MANDATORY-for-disposition-claims, mirroring _check_verified_admission's own
     # FITS-route rule.  So the fiction_blockers strip below is refused even though the replay is absent.
+    from smartchem.service import _payload_body_digest, _transport_bound_result_digest
     resp = run_compilation(build_recompile_request("isopentyl acetate", max_depth=3))
     thin = response_to_payload(resp, include_replay=False)            # v0.8 D5: the EXPLICIT thin opt-out (no replay)
     fr = thin["affordability_frontier"]
     i = next(j for j, e in enumerate(fr) if e["cost_vector"]["fiction_blockers"])
     thin["affordability_frontier"][i]["cost_vector"]["fiction_blockers"] = []
+    # X-high D27.2: the wire digest now covers the frontier, so the keyless forger recomputes it (otherwise the cheaper
+    # digest-mismatch guard catches the strip before the thin-transport closure this test pins).
+    thin["result_digest"] = _transport_bound_result_digest(resp.result_digest, thin["transport_mode"],
+                                                           _payload_body_digest(thin))
     with pytest.raises(ValueError, match="no replay_payload|UNVERIFIED|thin-transport"):
         response_from_payload(thin, require_verified_admission=True)
 

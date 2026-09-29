@@ -11,7 +11,10 @@ message so a test can never pass because some other layer happened to fire first
 * D14/D22 the constraints box is generation-paired with the request and carries the temperature floor;
 * D18 the replayed procedure-material phase is an evidence-graded PhaseClaim on the wire;
 * D22 the released v0.8 DAG summary id decodes ONLY as legacy (real v0.8 producer output: tests/fixtures/v08/
-  response_isopentyl_acetate_dag.json), and the WIP-only ids are never migrated.
+  response_isopentyl_acetate_dag.json), and the WIP-only ids are never migrated;
+* D27 (Wave C4 C4T-1..8 + Foreman N2-N4, bottom of the file) the structural transport closure: corpus envelopes
+  re-derived (D27.1), the whole-body wire digest (D27.2), the outcome / ranking / frontier / diagnostics / receipt
+  count / receipt bounds re-derived or bound (D27.3-D27.6), and the D27.7 residual closes.
 """
 from __future__ import annotations
 
@@ -415,8 +418,12 @@ def test_real_v08_loss_bearing_fixture_loads_as_legacy_and_its_stripped_loss_is_
     re-serializes through the public codec -- the frozen v0.8 digest rule is recomputed too -- and it is refused as
     legacy, never loaded as current."""
     raw = _load("response_stereo_isopentyl_acetate_smiles.json")
-    legacy = response_from_payload(copy.deepcopy(raw), require_verified_admission=True)
+    legacy = response_from_payload(copy.deepcopy(raw))
     assert legacy.is_legacy_v08 and [loss.feature for loss in legacy.identity_losses] == ["stereochemistry"]
+    # X-high D27.1 (legacy leg): its procedure routes carry v0.8's CORPUS envelopes, which today's corpus has since
+    # corrected, so VERIFIED admission fails closed with the recompile hint (a plain load stays advisory, above).
+    with pytest.raises(ValueError, match=r"D27\.1.*recompile under 0\.9"):
+        response_from_payload(copy.deepcopy(raw), require_verified_admission=True)
     # the attacker edits the REAL v0.8 wire in place (keeping its v0.8 shape) and recomputes the legacy result digest
     # with the public frozen-v0.8 rule, exactly as the stripped record digests it.
     forged = dc.replace(legacy, compilation_ir=dc.replace(legacy.compilation_ir, identity_losses=()))
@@ -574,7 +581,9 @@ def test_re_serializing_a_legacy_loaded_response_is_refused_not_emitted_with_0_9
 def _delete_route_everywhere(resp, *, rewrite_receipt=False):
     """Masters' NEW-3 attacker: drop dossier 0 AND its IR route candidate AND its frontier entry (all public pins are
     recomputed by the public codec). ``rewrite_receipt`` additionally rewrites the IR receipt's ``results_returned`` --
-    the consistent rewrite D25.3 names as its stated boundary."""
+    the consistent rewrite D25.3 names as its stated boundary.  The frontier is rebuilt the way a CONSISTENT forger must
+    since X-high D27.4 (which re-derives it on load): the producer's own ``_route_frontier`` over the remaining routes
+    (the frontier is set-relative -- deleting a dominating route can change it)."""
     gone = resp.ranked_route_dossiers[0].route_digest
     ir = dc.replace(resp.compilation_ir, candidates=tuple(
         c for c in resp.compilation_ir.candidates if c.candidate_digest != gone))
@@ -582,11 +591,11 @@ def _delete_route_everywhere(resp, *, rewrite_receipt=False):
         ir = dc.replace(ir, search_receipt=dc.replace(ir.search_receipt,
                                                       results_returned=ir.search_receipt.results_returned - 1))
     keep = resp.ranked_route_dossiers[1:]
+    routes = tuple(svc._reconstruct_route(d.replay_payload) for d in keep)
     forged = copy.copy(resp)
     object.__setattr__(forged, "compilation_ir", ir)
     object.__setattr__(forged, "ranked_route_dossiers", keep)
-    object.__setattr__(forged, "affordability_frontier", tuple(
-        e for e in resp.affordability_frontier if e.route_digest in {d.route_digest for d in keep}))
+    object.__setattr__(forged, "affordability_frontier", svc._route_frontier(resp.request, routes, keep))
     return response_to_payload(forged)
 
 
@@ -603,8 +612,10 @@ def test_new3_deleting_a_route_with_its_ir_candidate_and_frontier_entry_is_refus
 
 def test_new3_the_consistent_receipt_rewrite_boundary_documented():
     """The STATED boundary of D25.3 (audit §7.8): a keyless attacker who ALSO rewrites the carried receipt's
-    ``results_returned`` produces a self-consistent smaller answer that loads -- detectable only by the producer HMAC
-    or by re-running the deterministic search. Pinned so the boundary is explicit, not accidental."""
+    ``results_returned`` (and, since D27.4, rebuilds the frontier with the producer's own function) produces a
+    self-consistent smaller answer that loads on a plain keyless load -- detectable only by the producer HMAC (whose
+    signed digest now covers the whole body, D27.2) or by re-running the deterministic search (``require_reexecution``,
+    D26.2). Pinned so the boundary is explicit, not accidental."""
     resp = _run("poor-man")
     loaded = response_from_payload(_delete_route_everywhere(resp, rewrite_receipt=True),
                                    expected_request_digest=resp.request.semantic_digest,
@@ -670,7 +681,10 @@ def test_d26_1_t1c_a_cosmetic_transplant_is_caught_at_the_replayed_route():
 def test_d26_1_t4b_a_decompile_request_cannot_carry_a_recompile_answer():
     x = _run(None)
     dreq = svc.build_decompile_request("C3H6O2")
-    with pytest.raises(ValueError, match=r"the IR answers a RECOMPILE but the carried request is a DECOMPILE.*D26\.1"):
+    # X-high D27.6 (a construction-time law) now catches the transplanted recompile receipt's kind / bounds first;
+    # D26.1's operation check stays behind it as the load-time layer.
+    with pytest.raises(ValueError, match=r"the IR answers a RECOMPILE but the carried request is a DECOMPILE.*D26\.1|"
+                                         r"DIFFERENT search; refused \(D27\.6\)|relabelled receipt; refused \(D27\.6\)"):
         response_from_payload(response_to_payload(_bypass(x, request=dreq)), **_pins(dreq))
 
 
@@ -682,11 +696,15 @@ def test_d26_1_t3_a_linear_capability_question_answered_by_a_dag_search_is_refus
     lreq = build_recompile_request(_TARGET, max_depth=2, process=ProcessBounds.quick(), capability_profile="poor-man")
     lin = svc.search_algebra_digest(svc._GRAMMAR_TO_MODE_TOPOLOGY["routes"],
                                     svc.resolve_algebra_profile(lreq.algebra_profile))
-    ir = dc.replace(dag.compilation_ir, transform_registry_digest=lin,
-                    search_receipt=dc.replace(dag.compilation_ir.search_receipt, transform_registry_digest=lin))
-    with pytest.raises(ValueError, match=r"refused \(D26\.1\)"):
-        response_from_payload(response_to_payload(_bypass(dag, request=lreq, compilation_ir=ir)),
-                              require_verified_admission=True, **_pins(lreq))
+    # the forger relabels the receipt's search KIND too (X-high D27.6/D27.8 refuses the inconsistent one at
+    # construction), so D26.1's candidate-kind law is the layer this test pins
+    for kind, law in (("LINEAR_ROUTE", r"refused \(D26\.1\)"), ("CONVERGENT_DAG", r"relabelled receipt; refused \(D27\.6\)")):
+        ir = dc.replace(dag.compilation_ir, transform_registry_digest=lin,
+                        search_receipt=dc.replace(dag.compilation_ir.search_receipt, transform_registry_digest=lin,
+                                                  search_kind=kind))
+        with pytest.raises(ValueError, match=law):
+            response_from_payload(response_to_payload(_bypass(dag, request=lreq, compilation_ir=ir)),
+                                  require_verified_admission=True, **_pins(lreq))
 
 
 def test_d26_1_t6a_the_legacy_transplant_is_refused_with_the_recompile_hint():
@@ -843,3 +861,381 @@ def test_d26_7_rc_v_a_reaction_centre_payload_of_another_version_is_refused():
     assert ReactionCenter.from_payload(good).schema_version == REACTION_CENTER_SCHEMA
     with pytest.raises(ReactionCenterError, match=r"D26\.7"):
         ReactionCenter.from_payload(dict(good, schema_version="smartchem/reaction-center-v0-bogus"))
+
+
+# =====================================================================================================================
+# D27 (Wave C4 transport attacker C4T-1..8 + the Foreman acceptance probes N2-N4) -- the structural transport closure.
+# Every forgery is KEYLESS and built with the producer's OWN public-by-import helpers.  In each test the FIRST
+# assertion is the load that SUCCEEDED on 944baea (the discriminating half); helpers that exist only since D27 are
+# imported after it, so the test fails on 944baea for the attack's reason, not an ImportError.
+# =====================================================================================================================
+
+_BENCH_KW = dict(helper_reagents=("water", "acetic acid"), stock_materials=("isopentyl alcohol",))
+_PROCESS_KW = dict(helper_reagents=("water", "acetic acid"), process=ProcessBounds.of(max_total_minutes=30.0))
+_KEY = b"x-high-d27-regression-test-key-32"
+_FORGED_SNAPSHOT = {"schema_version": "smartchem.data/provider-snapshot-v1alpha1", "provider_ids": ["pubchem"],
+                    "record_count": 3, "content_digest": "0" * 64, "fetched_at": "2026-09-28T00:00:00Z",
+                    "allow_network": True}
+
+
+def _bench_run():
+    """Methyl acetate against the fully-declared isopentyl bench (the Wave C4 attacker's X: three ranked routes)."""
+    return _run(isopentyl_capability_fit_bench(), **_BENCH_KW)
+
+
+def _dag_run():
+    return run_compilation(build_recompile_request(_TARGET, max_depth=2, grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+                                                   **_PROCESS_KW))
+
+
+def _raw_edit(payload, edit):
+    """The wire attacker who edits the JSON and recomputes NOTHING."""
+    forged = copy.deepcopy(payload)
+    edit(forged)
+    return forged
+
+
+def _isopentyl_corpus_envelope():
+    """The shipped corpus's sourced, procedure-bearing isopentyl-acetate esterification envelope (the C4T-1 donor)."""
+    from smartchem.structure import structure_by_name
+
+    def mol(name):
+        return structure_by_name(name).molecule
+
+    result = routes.search_routes(mol("isopentyl acetate"), reagents=(mol("water"), mol("acetic acid")),
+                                  available=(mol("isopentyl alcohol"),), max_depth=1)
+    return next(r.steps[0].envelope for r in result.routes if r.steps[0].envelope.procedure is not None)
+
+
+def _legacy_refresh(wire):
+    """Recompute a hand-patched LEGACY wire's derived fields under the FROZEN v0.8 rule, exactly as the loader
+    reconstructs them (``response_to_payload`` refuses to emit legacy, so the attacker patches JSON)."""
+    r = svc.CompilationResponse(
+        wire["schema_version"], request_from_payload(wire["request"]), svc.ResponseOutcome(wire["outcome"]),
+        wire["standard_status"], svc.ir_from_payload(wire["compilation_ir"]), tuple(wire["diagnostics"]),
+        tuple(svc.ranked_summary_from_payload(x) for x in wire["ranked_route_dossiers"]),
+        tuple(svc.affordability_entry_from_payload(e) for e in wire["affordability_frontier"]),
+        parse_receipt_summary=wire["parse_receipt_summary"])
+    wire["exit_code"] = r.exit_code
+    wire["process_selection_status"] = r.process_selection_status
+    wire["admissible_route_digests"] = list(r.admissible_route_digests)
+    wire["result_digest"] = svc._transport_bound_result_digest(r.result_digest, wire.get("transport_mode", "THIN_ADVISORY"))
+
+
+def test_d27_1_c4t1_a_corpus_envelope_graft_is_refused_on_every_current_load():
+    """C4T-1 (P0): graft the isopentyl corpus envelope onto methyl acetate's one-step esterification, then honestly
+    re-derive EVERYTHING from the tampered route with the producer's own helpers (ranking, frontier, IR candidate
+    digests). The route SHAPE is untouched, so D26.1 cannot see it; pre-D27.1 it loaded PROCESS_SPECIFIED under both
+    pins + verified admission and only re-execution refused."""
+    resp = _run(None)
+    donor = _isopentyl_corpus_envelope()
+    remap, replayed = {}, []
+    for d in resp.ranked_route_dossiers:
+        route = _reconstruct_route(d.replay_payload)
+        if len(route.steps) == 1:
+            grafted = dc.replace(route, steps=(dc.replace(route.steps[0], envelope=donor),))
+            remap[d.route_digest] = grafted.digest
+            route = grafted
+        replayed.append(route)
+    assert remap, "setup: methyl acetate must have a one-step route to graft"
+    ranked = svc._ranked_summaries(tuple(replayed), resp.request.constraints.bounds, resp.identity_losses)
+    assert any(d.readiness.tier == PROCESS_SPECIFIED for d in ranked)            # the forged promotion
+    ir = resp.compilation_ir
+    candidates = tuple(sorted((dc.replace(c, candidate_digest=remap.get(c.candidate_digest, c.candidate_digest))
+                               for c in ir.candidates), key=lambda c: c.candidate_digest))
+    payload = response_to_payload(_bypass(resp, compilation_ir=dc.replace(ir, candidates=candidates),
+                                          ranked_route_dossiers=ranked,
+                                          affordability_frontier=svc._affordability_frontier(tuple(replayed), ranked)))
+    with pytest.raises(ValueError, match=r"not the one the shipped corpus attaches.*refused \(D27\.1\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(resp.request))
+    with pytest.raises(ValueError, match=r"D27\.1"):
+        response_from_payload(payload)                                            # every current load, not only VA
+
+
+def test_d27_1_c4t1_the_legacy_graft_is_refused_under_verified_admission_and_advisory_on_a_plain_load():
+    """ATK10: the same graft on the REAL v0.8 ethyl-acetate fixture (frozen v0.8 digest rule; the donor cut to the
+    v0.8-expressible shape). Pre-D27.1 it loaded under both pins + verified admission. D27.1's STATED legacy boundary:
+    on a PLAIN load v0.8 evidence stays advisory (it is v0.8's corpus; nothing in 0.8 bound it)."""
+    wire = _load("response_ethyl_acetate_smiles.json")
+    honest = response_from_payload(copy.deepcopy(wire))
+    victim = next(d for d in wire["ranked_route_dossiers"] if d["route_digest"].startswith("d2b8867e1930"))
+    old = victim["route_digest"]
+    step = _reconstruct_route(svc._migrate_legacy_v08_dossier(copy.deepcopy(victim))["replay_payload"]).steps[0]
+    envelope = svc._steps_to_replay_payload((dc.replace(step, envelope=_isopentyl_corpus_envelope()),))[0]["envelope"]
+    for op in envelope["procedure"]["operations"]:
+        op.pop("material_uses", None)            # the only v0.8-expressible value is [] (the decoder re-adds it)
+    victim["replay_payload"][0]["envelope"] = envelope
+    route = _reconstruct_route(svc._migrate_legacy_v08_dossier(copy.deepcopy(victim))["replay_payload"])
+    ready = evaluate_route(route, identity_losses=honest.identity_losses)
+    assert ready.tier == PROCESS_SPECIFIED                                        # the forged promotion
+    new = svc._v08_digest(route)
+    victim.update(route_digest=new, readiness=svc._route_readiness_to_payload(ready), readiness_tier=ready.tier,
+                  process_requirements=[svc._process_requirements_to_payload(s.envelope.process) for s in route.steps])
+    for c in wire["compilation_ir"]["candidates"]:
+        if c["candidate_digest"] == old:
+            c["candidate_digest"] = new
+    wire["compilation_ir"]["candidates"].sort(key=lambda c: c["candidate_digest"])
+    for e in wire["affordability_frontier"]:
+        if e["route_digest"] == old:
+            e["route_digest"] = new
+    _legacy_refresh(wire)
+    with pytest.raises(ValueError, match=r"refused \(D27\.1\).*legacy v0\.8 payload.*recompile under 0\.9"):
+        response_from_payload(copy.deepcopy(wire), require_verified_admission=True, **_pins(honest.request))
+    loaded = response_from_payload(wire)                         # the documented legacy boundary: advisory, plain
+    assert loaded.is_legacy_v08
+    assert any(d.readiness.tier == PROCESS_SPECIFIED for d in loaded.ranked_route_dossiers)
+
+
+def test_d27_2_c4t2_the_frontier_is_inside_the_wire_digest_the_hmac_and_reexecution():
+    """C4T-2 (ATK1-delete): the affordability frontier rode OUTSIDE result_digest, so a deleted frontier loaded even
+    under the producer HMAC + require_signature + both pins + verified admission + re-execution."""
+    resp = _bench_run()
+    assert resp.affordability_frontier
+    signed = response_to_payload(resp, signing_key=_KEY)
+    deleted = _raw_edit(signed, lambda w: w.update(affordability_frontier=[]))
+    with pytest.raises(ValueError, match=r"result_digest does not match"):
+        response_from_payload(deleted, verification_key=_KEY, require_signature=True, **_pins(resp.request))
+    from smartchem.service import _payload_body_digest
+
+    # the keyless forger recomputes the PUBLIC wire digest: the HMAC refuses it ...
+    deleted["result_digest"] = svc._transport_bound_result_digest(resp.result_digest, deleted["transport_mode"],
+                                                                  _payload_body_digest(deleted))
+    with pytest.raises(ValueError, match=r"producer_signature does not verify"):
+        response_from_payload(deleted, verification_key=_KEY, require_signature=True, **_pins(resp.request))
+    # ... and, keyless, the canonical wire re-derives the frontier on load (D27.4) ...
+    with pytest.raises(ValueError, match=r"affordability_frontier is not the producer's frontier.*D27\.4"):
+        response_from_payload(deleted)
+    # ... while the THIN wire (no replay to re-derive from) keeps it advisory on a plain load -- the stated residual --
+    # and re-execution refuses it (D27.2: the rerun's body is compared, not just the result identity).
+    thin = response_to_payload(_bypass(resp, affordability_frontier=()), include_replay=False)
+    response_from_payload(thin, **_pins(resp.request))
+    with pytest.raises(ValueError, match=r"differs from the re-executed one in \['affordability_frontier'\].*D27\.2"):
+        response_from_payload(thin, require_reexecution=True, **_pins(resp.request))
+
+
+def test_d27_3_c4t3_a_routes_found_answer_relabelled_target_already_available_is_refused():
+    """C4T-3 (ATK2a): ROUTES_FOUND relabelled TARGET_ALREADY_AVAILABLE (exit 0, "on the shelf") although the target is
+    not in the request's declared terminal set."""
+    req = build_recompile_request("smiles:COC", max_depth=1)
+    honest = run_compilation(req)
+    assert honest.outcome is svc.ResponseOutcome.ROUTES_FOUND
+    payload = response_to_payload(dc.replace(honest, outcome=svc.ResponseOutcome.TARGET_ALREADY_AVAILABLE))
+    with pytest.raises(ValueError, match=r"NOT in the declared terminal set.*refused \(D27\.3\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(req))
+    # control: the honest TARGET_ALREADY_AVAILABLE answer (the target IS a declared helper) still loads
+    shelf = run_compilation(build_recompile_request("smiles:CC(=O)O", max_depth=1,
+                                                    helper_reagents=("water", "acetic acid")))
+    assert shelf.outcome is svc.ResponseOutcome.TARGET_ALREADY_AVAILABLE
+    response_from_payload(response_to_payload(shelf), require_verified_admission=True, **_pins(shelf.request))
+
+
+def test_d27_4_c4t4_a_reordered_ranking_is_refused():
+    """C4T-4 (ATK4a): the ranking reversed (the REACTION_VOUCHED route last), the frontier rebuilt over it."""
+    resp = _bench_run()
+    reordered = tuple(reversed(resp.ranked_route_dossiers))
+    replayed = tuple(_reconstruct_route(d.replay_payload) for d in reordered)
+    payload = response_to_payload(_bypass(resp, ranked_route_dossiers=reordered,
+                                          affordability_frontier=svc._affordability_frontier(replayed, reordered)))
+    with pytest.raises(ValueError, match=r"not the producer's ranking of the replayed routes.*refused \(D27\.4\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(resp.request))
+
+
+def test_d27_4_n3_dossiers_judged_under_no_box_carried_under_a_280k_ceiling_are_refused_without_reexecution():
+    """Foreman N3: Y's dossiers (no box: fit UNCONSTRAINED) carried under a request with a 280 K ceiling (honest fit:
+    UNKNOWN) -- the IR request_digest does not cover the section-11 box, so pre-D27.4 only re-execution refused."""
+    y = _run(None)
+    assert "UNCONSTRAINED" in {d.fit_status for d in y.ranked_route_dossiers}
+    x = build_recompile_request(_TARGET, max_depth=2, max_temperature_k=280.0)
+    payload = response_to_payload(_bypass(y, request=x))
+    with pytest.raises(ValueError, match=r"not the producer's ranking of the replayed routes.*refused \(D27\.4\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(x))
+    honest = run_compilation(x)                                                   # control: the honest 280 K answer
+    assert {d.fit_status for d in honest.ranked_route_dossiers} == {"UNKNOWN"}
+    response_from_payload(response_to_payload(honest), require_verified_admission=True, **_pins(x))
+
+
+def test_d27_5_c4t5_deleting_a_dag_or_a_formula_edge_is_refused_by_the_receipt_count():
+    """C4T-5 (ATK5a / ATK6c): D25.3 skipped DAG and decompile answers on the false premise that their receipts count
+    edges; they count DAGs / emitted edges, one candidate each."""
+    hd = _dag_run()
+    ir = hd.compilation_ir
+    assert ir.search_receipt.results_returned == len(ir.candidates) >= 2          # the premise D25.3 denied
+    victim = ir.candidates[0].candidate_digest
+    payload = response_to_payload(_bypass(hd, compilation_ir=dc.replace(ir, candidates=ir.candidates[1:]),
+                                          ranked_dag_dossiers=tuple(d for d in hd.ranked_dag_dossiers
+                                                                    if d.route_digest != victim)))
+    with pytest.raises(ValueError, match=r"search receipt says the search returned .*refused \(D25\.3/D27\.5\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(hd.request))
+    dq = svc.build_decompile_request("C2H6O")
+    hdc = run_compilation(dq)
+    assert hdc.compilation_ir.search_receipt.results_returned == len(hdc.compilation_ir.candidates) == 1
+    payload = response_to_payload(_bypass(hdc, compilation_ir=dc.replace(hdc.compilation_ir, candidates=()),
+                                          outcome=svc.ResponseOutcome.NO_ROUTE_COMPLETE))
+    with pytest.raises(ValueError, match=r"FORMULA_DECOMPOSITION search receipt says.*refused \(D25\.3/D27\.5\)"):
+        response_from_payload(payload, **_pins(dq))
+
+
+def test_d27_6_c4t6_n2_the_receipt_bounds_and_every_route_depth_are_the_requests():
+    """C4T-6 (ATK5c) + Foreman N2: the receipt's search bounds were never compared with the request -- an inflated
+    receipt loaded, and a max_depth=1 request carried a depth-2 answer under both pins + verified admission."""
+    y = _run(None)
+    ir = y.compilation_ir
+    inflated = dc.replace(ir, search_receipt=dc.replace(ir.search_receipt, max_depth=12, cut_budget=10**7,
+                                                        result_limit=10**4))
+    with pytest.raises(ValueError, match=r"search receipt reports bounds .* DIFFERENT search; refused \(D27\.6\)"):
+        response_from_payload(response_to_payload(_bypass(y, compilation_ir=inflated)),
+                              require_verified_admission=True, **_pins(y.request))
+    x1 = build_recompile_request(_TARGET, max_depth=1)
+    assert max(len(d.replay_payload) for d in y.ranked_route_dossiers) == 2
+    ir1 = dc.replace(ir, request_digest=svc._rederive_request_context(x1).request_digest)
+    with pytest.raises(ValueError, match=r"refused \(D27\.6\)"):
+        response_from_payload(response_to_payload(_bypass(y, request=x1, compilation_ir=ir1)),
+                              require_verified_admission=True, **_pins(x1))
+    # the receipt ALSO rewritten to depth 1: the replayed 2-step route is itself the tell (the linear search never
+    # emits a route longer than max_depth)
+    ir1b = dc.replace(ir1, search_receipt=dc.replace(ir.search_receipt, max_depth=1))
+    with pytest.raises(ValueError, match=r"replayed route has 2 steps .* max_depth=1 .*refused \(D27\.6\)"):
+        response_from_payload(response_to_payload(_bypass(y, request=x1, compilation_ir=ir1b)),
+                              require_verified_admission=True, **_pins(x1))
+
+
+@pytest.mark.parametrize("relabel", [dict(search_kind="CONVERGENT_DAG"), dict(cut_budget_scope="GLOBAL")])
+def test_d27_8_the_receipt_kind_and_budget_scope_describe_the_requests_search(relabel):
+    """Found by the D27.8 ledger audit: the receipt's ``search_kind`` / ``cut_budget_scope`` were free labels (a
+    linear answer's receipt relabelled a convergent-DAG search, or its per-node budget a global one, loaded under both
+    pins + verified admission on 944baea)."""
+    y = _run(None)
+    ir = y.compilation_ir
+    forged = dc.replace(ir, search_receipt=dc.replace(ir.search_receipt, **relabel))
+    with pytest.raises(ValueError, match=r"relabelled receipt; refused \(D27\.6\)"):
+        response_from_payload(response_to_payload(_bypass(y, compilation_ir=forged)),
+                              require_verified_admission=True, **_pins(y.request))
+
+
+def test_d27_8_the_wire_search_space_status_is_the_loaded_responses():
+    """Found by the D27.8 ledger audit: the derived wire key ``search_space_status`` was never compared on load, so a
+    JSON consumer could read NO_ROUTE_IN_DECLARED_SPACE on a routes-found answer -- on 944baea even a raw edit loaded
+    (neither the wire digest nor any check covered the key). Now the raw edit is refused, and so is the keyless forger
+    who recomputes the public D27.2 digest: the loader's derived-key round trip compares the key itself."""
+    y = _run(None)
+    wire = response_to_payload(y)
+    assert wire["search_space_status"] != "NO_ROUTE_IN_DECLARED_SPACE"
+    wire["search_space_status"] = "NO_ROUTE_IN_DECLARED_SPACE"
+    with pytest.raises(ValueError, match=r"search_space_status does not match|result_digest does not match"):
+        response_from_payload(copy.deepcopy(wire), **_pins(y.request))
+    from smartchem.service import _payload_body_digest
+
+    wire["result_digest"] = svc._transport_bound_result_digest(y.result_digest, wire["transport_mode"],
+                                                               _payload_body_digest(wire))
+    with pytest.raises(ValueError, match=r"search_space_status does not match the reconstructed response"):
+        response_from_payload(wire, **_pins(y.request))
+
+
+def test_d27_4_c4t7_a_forged_fit_tally_is_refused_on_the_canonical_and_the_thin_wire():
+    """C4T-7 (ATK6b): the human-visible "N FIT" tally in the diagnostics rewritten. The canonical wire re-derives the
+    whole note; the thin wire still re-derives the tally from the fit statuses it carries."""
+    resp = _run(None, **_PROCESS_KW)
+    note = next(x for x in resp.diagnostics if "section-11 constraint APPLIED" in x)
+    fits, excluded, unknown = svc._fit_counts(resp.ranked_route_dossiers)
+    honest_tally = f"{fits} FIT, {excluded} EXCLUDED (outside a hard bound), {unknown} UNKNOWN-fit"
+    assert honest_tally in note and unknown
+    lie = note.replace(honest_tally, f"{fits + unknown} FIT, {excluded} EXCLUDED (outside a hard bound), 0 UNKNOWN-fit")
+    diagnostics = tuple(lie if x == note else x for x in resp.diagnostics)
+    for include_replay in (True, False):
+        payload = response_to_payload(_bypass(resp, diagnostics=diagnostics), include_replay=include_replay)
+        with pytest.raises(ValueError, match=r"diagnostics .*refused \(D27\.4\)"):
+            response_from_payload(payload, **_pins(resp.request))
+
+
+def test_d27_7_c4t8_the_ir_candidate_label_is_its_dossiers():
+    """C4T-8 (ATK2b): every IR candidate's free-text ``equation`` rewritten to the best route's (the dossiers and their
+    replays untouched) -- the human render listed three identical 'CH4O + C2H4O2' candidates."""
+    resp = _bench_run()
+    ir = resp.compilation_ir
+    best = resp.ranked_route_dossiers[0].equation
+    candidates = tuple(dc.replace(c, equation=best) for c in ir.candidates)
+    payload = response_to_payload(_bypass(resp, compilation_ir=dc.replace(ir, candidates=candidates)))
+    with pytest.raises(ValueError, match=r"equation text that is not its dossier's.*refused \(D27\.7\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(resp.request))
+
+
+def test_d27_7_c4t8_a_canonical_dossier_must_carry_its_replay():
+    """C4T-8 (ATK8): on the CANONICAL_VERIFIED wire a FORMAL, no-profile dossier simply dropped its replay -- every
+    replay-conditioned bind (D26.1's label, D27.1's evidence, D27.4's ranking) then had nothing to re-derive from."""
+    resp = _run(None, **_PROCESS_KW)
+    formal = next(d for d in resp.ranked_route_dossiers if d.readiness.tier == "FORMAL_CANDIDATE")
+    stripped = tuple(dc.replace(d, replay_payload=None) if d is formal else d for d in resp.ranked_route_dossiers)
+    payload = response_to_payload(_bypass(resp, ranked_route_dossiers=stripped))
+    assert payload["transport_mode"] == "CANONICAL_VERIFIED"
+    with pytest.raises(ValueError, match=r"canonical evidence must be re-derivable; refused \(D27\.7\)"):
+        response_from_payload(payload, require_verified_admission=True, **_pins(resp.request))
+
+
+def test_d27_2_c4t8_the_parse_receipt_provider_snapshots_and_dag_serial_holds_are_signed():
+    """C4T-8 (ATK2c' / ATK11): the parse receipt, provider snapshots and DAG serial holds rode outside the signed
+    digest -- each edit loaded under the producer HMAC + require_signature (+ re-execution)."""
+    resp = _run(None)
+    signed = response_to_payload(resp, signing_key=_KEY)
+    for edit in (lambda w: w.update(parse_receipt_summary=f"{w['parse_receipt_summary']} (FORGED)"),
+                 lambda w: w.update(provider_snapshots=[dict(_FORGED_SNAPSHOT)])):
+        with pytest.raises(ValueError, match=r"result_digest does not match"):
+            response_from_payload(_raw_edit(signed, edit), verification_key=_KEY, require_signature=True,
+                                  **_pins(resp.request))
+    hd = _dag_run()
+    signed_dag = response_to_payload(hd, signing_key=_KEY)
+    target = next(d for d in signed_dag["ranked_dag_dossiers"] if d["edges"])
+    i, j = target["edges"][0]
+    target["serial_holds"] = [[i, j, 99999.0]]
+    with pytest.raises(ValueError, match=r"result_digest does not match"):
+        response_from_payload(signed_dag, verification_key=_KEY, require_signature=True, **_pins(hd.request))
+
+
+def test_d27_7_c4t8_an_unpinned_payload_cannot_choose_a_larger_search_for_its_verifier(monkeypatch):
+    """C4T-8 (ATK7): without a request pin, ``require_reexecution`` ran whatever search the PAYLOAD declared (receipt
+    and IR request digest made consistent via the public helper) before refusing -- payload-chosen work."""
+    resp = _run(None)
+    bigger = dc.replace(resp.request, search_bounds=svc.SearchBounds.of(
+        **dict(dict(resp.request.search_bounds.bounds), max_depth=6)))
+    ir = resp.compilation_ir
+    ir6 = dc.replace(ir, request_digest=svc._rederive_request_context(bigger).request_digest,
+                     search_receipt=dc.replace(ir.search_receipt, max_depth=6))
+    payload = response_to_payload(_bypass(resp, request=bigger, compilation_ir=ir6))
+
+    def _no_rerun(request):
+        raise AssertionError(f"the verifier ran a payload-chosen search (max_depth="
+                             f"{request.search_bounds.value('max_depth')})")
+
+    monkeypatch.setattr(svc, "run_compilation", _no_rerun)
+    with pytest.raises(ValueError, match=r"did not pin the request.*refused \(D27\.7\)"):
+        response_from_payload(payload, require_reexecution=True)
+    # a consumer who PINS the request chose that search itself: the guard stands aside and the rerun is attempted
+    with pytest.raises(AssertionError, match="payload-chosen search"):
+        response_from_payload(payload, require_reexecution=True, expected_request_digest=bigger.semantic_digest)
+
+
+def test_d27_2_n4_a_neutral_re_centre_is_refused_on_the_wire_and_under_reexecution():
+    """Foreman N4 / T5n: ``replay_payload`` is compare=False (outside the result identity), so a NEUTRAL re-centre
+    (step 2 of the FORMAL route: readiness unchanged) passed even require_reexecution on 944baea, and a raw wire edit
+    loaded on a plain load. D27.2: the thick replay rides the whole-body wire digest."""
+    resp = _run(None)
+    k, formal = next((i, d) for i, d in enumerate(resp.ranked_route_dossiers) if len(d.replay_payload) == 2)
+
+    def recentre(replay):
+        replay[1]["reaction_center"]["n_components"] += 1
+
+    raw = _raw_edit(response_to_payload(resp), lambda w: recentre(w["ranked_route_dossiers"][k]["replay_payload"]))
+    with pytest.raises(ValueError, match=r"result_digest does not match"):
+        response_from_payload(raw, **_pins(resp.request))
+    # the keyless forger who recomputes the public digest: the centre is outside route.digest and the re-centre is
+    # NEUTRAL (same readiness), so it loads on a plain / verified-admission load -- the stated boundary -- and
+    # re-execution refuses it (the rerun's body carries the real centre).
+    replay = copy.deepcopy(formal.replay_payload)
+    recentre(replay)
+    assert _reconstruct_route(replay).digest == formal.route_digest
+    assert evaluate_route(_reconstruct_route(replay), identity_losses=resp.identity_losses) == formal.readiness
+    forged = dc.replace(resp, ranked_route_dossiers=tuple(
+        dc.replace(d, replay_payload=replay) if d is formal else d for d in resp.ranked_route_dossiers))
+    payload = response_to_payload(forged)
+    response_from_payload(payload, require_verified_admission=True, **_pins(resp.request))
+    with pytest.raises(ValueError, match=r"differs from the re-executed one in \['ranked_route_dossiers'\].*D27\.2"):
+        response_from_payload(payload, require_reexecution=True, **_pins(resp.request))

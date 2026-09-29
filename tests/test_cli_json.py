@@ -272,9 +272,9 @@ class TestHumanAndJsonAgree:
             payload["compilation_ir"]["search_receipt"]
         ).digest
         assert list(fields["candidate_ids"]) == [c["candidate_digest"] for c in payload["compilation_ir"]["candidates"]]
-        # v0.8 Round II (D5): the wire result_digest binds the declared transport_mode, so the bare semantic digest the
-        # projection reports is recoverable through the same fold (default canonical wire).
-        from smartchem.service import _transport_bound_result_digest
+        # v0.8 Round II (D5) + X-high D27.2: the wire result_digest binds the declared transport_mode and the whole
+        # payload body, so the bare semantic digest the projection reports is recoverable through the same fold.
+        from smartchem.service import _payload_body_digest, _transport_bound_result_digest
         assert payload["result_digest"] == _transport_bound_result_digest(
-            fields["result_digest"], payload["transport_mode"]
+            fields["result_digest"], payload["transport_mode"], _payload_body_digest(payload)
         )

@@ -173,7 +173,11 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
     body = text[start + 1:end]
     i = 0
     iso = ""
-    while i < len(body) and body[i].isdigit():      # isotope: CAPTURED (ID-STEREO-01), dropped from the graph
+    # every digit run below tests isdecimal(), NOT isdigit(): isdigit() also admits superscripts ('³'), which
+    # int() refuses, so '[³]' used to escape as a bare ValueError and the CLI exited 70 (0.9.5 A1/F-1).
+    # isdecimal() is exactly the set int() reads, so a superscript now falls through to a typed SmilesError
+    # and every decimal spelling that parsed before still parses.  Wrong glyph, right error class.
+    while i < len(body) and body[i].isdecimal():    # isotope: CAPTURED (ID-STEREO-01), dropped from the graph
         iso += body[i]
         i += 1
     isotope = int(iso) if iso else 0
@@ -203,7 +207,7 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
     if i < len(body) and body[i] == "H":
         i += 1
         num = ""
-        while i < len(body) and body[i].isdigit():
+        while i < len(body) and body[i].isdecimal():
             num += body[i]
             i += 1
         h_count = int(num) if num else 1
@@ -212,7 +216,7 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
         sign = 1 if body[i] == "+" else -1
         i += 1
         num = ""
-        while i < len(body) and body[i].isdigit():
+        while i < len(body) and body[i].isdecimal():
             num += body[i]
             i += 1
         if num:

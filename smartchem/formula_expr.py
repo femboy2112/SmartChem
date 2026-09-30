@@ -30,7 +30,9 @@ to kill:
 The grammar is deliberately finite -- the smallest durable thing that eats the "copy a formula off
 Wikipedia" surface.  What is *supported* (and every one is pinned by a committed test):
 ASCII formulas, Unicode subscript counts, a Unicode middle-dot (``·``) or a SPACED ASCII-dot
-(``CuSO4 . 5 H2O``) hydrate separator with a leading component multiplier, harmless whitespace, nested
+(``CuSO4 . 5 H2O``) hydrate separator with a leading component multiplier, harmless whitespace (removed
+only where removal cannot change tokenization -- ``H2 O``; a space that would glue a count, ``CuSO4 5H2O``, is
+refused, 0.9.5 A1/F-2), nested
 ``()`` and ``[]`` grouping, and the charge spellings ``NH4+``, ``[NH4]+``, ``SO4^2-``, ``SO4²⁻``
 (Unicode superscript), ``[Fe(CN)6]4-``.  Everything else is one of the typed refusals above.  Nothing
 here needs RDKit or any network.
@@ -132,7 +134,9 @@ class AmbiguousChargeError(FormulaSyntaxError):
     trailing run before a bare sign is **two or more digits** (``SO42-`` → ``SO4``+``2-`` vs ``SO42``+``1-``;
     also ``PO43-``, ``CO32-``, ``Cr2O72-``) -- accepting it would fail open to an absurd 42-oxygen composition.
     A **multi-element** body with a **single** trailing digit (``NH4+``, ``NO3-``) is unambiguous -- that digit
-    is the last element's count and the bare sign is ±1 -- and is accepted.  A *subclass* of
+    is the last element's count and the bare sign is ±1 -- and is accepted.  A whitespace-separated trailing
+    ``<digits><sign>`` (``SO4 2-``, ``[Fe(CN)6] 4-``) is the same ambiguity and is refused by the normalizer
+    with this type (0.9.5 A1/F-2), rather than glued into ``SO42-`` first.  A *subclass* of
     :class:`FormulaSyntaxError`, so the identity front door's
     ``except FormulaSyntaxError`` maps it to a typed :class:`~smartchem.identity_parse.IdentityParseError`,
     while a caller can catch this exact type.  The message names the unambiguous spellings (caret, Unicode
@@ -245,9 +249,10 @@ def normalize_formula_text(text: str) -> str:
     Idempotent (``normalize(normalize(x)) == normalize(x)``).  It: translates Unicode subscript digits
     to ASCII counts; converts a Unicode superscript charge run (``²⁻``) to caret form (``^2-``) so the
     subscript/superscript distinction that ASCII would otherwise lose is PRESERVED; folds every
-    middle-dot variant to a single ``.`` separator; and strips whitespace that surrounds a separator
-    and collapses interior runs.  It does NOT decide validity -- that is :func:`parse_formula_expr` --
-    it only produces the canonical spelling that parser reads.
+    middle-dot variant to a single ``.`` separator; and removes interior whitespace only where removal
+    cannot change tokenization (:func:`_drop_safe_whitespace` -- a space that would glue a count or fuse a
+    symbol is a typed refusal, never a silent merge).  It does NOT otherwise decide validity -- that is
+    :func:`parse_formula_expr` -- it only produces the canonical spelling that parser reads.
     """
     if not isinstance(text, str):
         raise FormulaSyntaxError("formula text must be a string")
@@ -284,12 +289,67 @@ def normalize_formula_text(text: str) -> str:
     for sep in _SEPARATOR_CHARS:
         work = work.replace(sep, _CANONICAL_SEP)
 
-    # 4) whitespace: drop it around a separator, collapse interior runs to nothing between atoms but
-    #    keep a boundary where a digit meets a following capital (so "5 H2O" -> "5H2O", "CuSO4 . 5 H2O"
-    #    -> "CuSO4.5H2O").  A formula has no meaningful internal spaces once separators are canonical, so
-    #    all remaining whitespace is removed; the separator carries the only real boundary.
-    work = "".join(work.split())
-    return work
+    # 4) whitespace (0.9.5 A1/F-2): removed ONLY where removal cannot change tokenization ("H2 O" -> "H2O",
+    #    "CuSO4 . 5 H2O" -> "CuSO4.5H2O"); a run whose removal would attach a count or fuse a symbol is refused.
+    #    The old blanket delete turned 'CuSO4 5H2O' into CuH2O46S with exit 0 -- the one place the front door
+    #    handed a chemist a confident wrong composition.  Deleting evidence is not normalizing it.
+    return _drop_safe_whitespace(work, text)
+
+
+def _drop_safe_whitespace(work: str, original: str) -> str:
+    """Remove each interior whitespace run only where removal cannot change tokenization; else refuse (A1/F-2).
+
+    ``work`` is already stripped, so every run has a non-space neighbour on each side, ``left`` and ``right``.
+    The run is REFUSED iff
+
+    * ``right`` is a digit and ``left`` is a letter, a digit, ``)`` or ``]`` -- removal would attach a count
+      across it (``CuSO4 5H2O`` -> ``O45``, ``H 2O`` -> ``H2``, ``Ca(OH) 2`` -> a group multiplier).  When the
+      text after the run is exactly a trailing ``<digits><sign>`` the digits are a candidate charge magnitude,
+      so it is the P0-B ion ambiguity (:class:`AmbiguousChargeError`: ``SO4 2-`` is ``SO4^2-`` or ``SO42-``);
+      otherwise a :class:`FormulaSyntaxError` naming the explicit component separator;
+    * ``right`` is lowercase and ``left`` is a capital -- removal would fuse them into a different element
+      symbol (``C l`` -> ``Cl``, ``N a`` -> ``Na``).  The tokenizer takes at most ONE lowercase, and only right
+      after a capital, so a lowercase ``left`` can never fuse (``Na l`` -> ``Nal`` is ``Na`` + a stray ``l``).
+
+    Every other run is removable because one neighbour already fixes the token boundary: a capital, ``(`` or
+    ``[`` always STARTS a token whatever precedes it (``H2 O``, ``Na Cl`` -- a lowercase ``l`` can never absorb
+    the following ``C``), the separator and the charge glyphs ``^ + -`` never belong to a count, and anything
+    left over (``H2 n``, ``Na l``, prose) is refused by the body parser with or without the space.  The result
+    carries no whitespace, so the normalizer stays idempotent.
+    """
+    out: list[str] = []
+    i, n = 0, len(work)
+    while i < n:
+        if not work[i].isspace():
+            out.append(work[i])
+            i += 1
+            continue
+        j = i
+        while j < n and work[j].isspace():
+            j += 1
+        left, right = work[i - 1], work[j]
+        if right.isdigit() and (left.isalpha() or left.isdigit() or left in ")]"):
+            tail = work[j:]
+            if tail[-1] in "+-" and tail[:-1].isdigit():
+                raise AmbiguousChargeError(
+                    f"{original!r} is an ambiguous ASCII ion: the whitespace before the trailing {tail!r} leaves it "
+                    f"unclear whether {tail[:-1]!r} is the charge magnitude or a count joined to the preceding "
+                    f"{left!r}. Write the charge unambiguously with a caret (e.g. SO4^2-), a Unicode superscript "
+                    f"(SO₄²⁻), or a bracket ion (e.g. [SO4]2-)."
+                )
+            raise FormulaSyntaxError(
+                f"{original!r} has whitespace between {left!r} and {right!r}; deleting it would attach the count "
+                f"{right!r} to the preceding {left!r} and change the composition. A hydrate/adduct boundary needs an "
+                f"explicit separator: write CuSO4·5H2O (middle dot) or the spaced ASCII dot CuSO4 . 5 H2O."
+            )
+        if right.islower() and left.isupper():
+            raise FormulaSyntaxError(
+                f"{original!r} has whitespace between {left!r} and {right!r}; deleting it would fuse them into the "
+                f"element symbol {left + right!r}. Write an element symbol without internal whitespace, and join "
+                f"components with an explicit separator (CuSO4·5H2O or CuSO4 . 5 H2O)."
+            )
+        i = j
+    return "".join(out)
 
 
 def _looks_parametric(text: str) -> "str | None":

@@ -38,6 +38,7 @@ inline ``name:``/``smiles:`` prefix), extended only additively: ``inchi:``/``for
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 
@@ -242,10 +243,27 @@ def _inchi_layer_int(value: str, text: str) -> int:
             f"InChI {text!r} has a per-component charge/proton layer ({value!r}); this parser resolves a single "
             "species -- supply one component"
         )
+    # 0.9.5 S17 (C6-F8): an optional sign and ASCII digits, nothing else.  ``int()`` alone is far too forgiving for
+    # an identity layer -- it read '+1_0' as +10 (PEP 515 digit grouping), and would take spaces and any Unicode
+    # decimal digit too.  InChI writes none of those, so none of them is a charge.
+    if _INCHI_SIGNED_INT.fullmatch(value) is None:
+        raise IdentityParseError(f"could not parse the InChI charge/proton layer {value!r} in {text!r}")
     try:
         return int(value)
-    except ValueError:
+    except ValueError:  # the int-string digit limit: a 4,300-digit charge is not a charge either
         raise IdentityParseError(f"could not parse the InChI charge/proton layer {value!r} in {text!r}") from None
+
+
+# 0.9.5 S17 (C6-F8) -- the InChI tokens this reader will stand behind.  The version token is '1S' (standard InChI) or
+# '1' (non-standard); 'garbage' and '2S' used to be waved through unread.  The formula layer is an ASCII Hill formula
+# (element symbol, optional ASCII count, repeated): a '.', a middle dot, whitespace or a non-ASCII digit is either a
+# multi-component species or not InChI at all -- Formula.parse treats ' \t.·' as separators, which is how
+# 'InChI=1S/CuO4S·H2O' slipped past the ASCII-dot multi-component refusal as one species.
+_INCHI_VERSIONS = frozenset({"1S", "1"})
+# Linear, not a ReDoS: every repetition must START on an uppercase letter the previous one cannot consume, so a string
+# splits one way only and each backtrack step fails in O(1).  (No possessive quantifier: Python 3.10 has none.)
+_INCHI_HILL_FORMULA = re.compile(r"(?:[A-Z][a-z]?[0-9]*)+", re.ASCII)
+_INCHI_SIGNED_INT = re.compile(r"[+-]?[0-9]+", re.ASCII)
 
 
 def _inchi_formula_layer(text: str) -> "tuple[object, tuple, tuple[str, ...]]":
@@ -271,21 +289,37 @@ def _inchi_formula_layer(text: str) -> "tuple[object, tuple, tuple[str, ...]]":
         raise IdentityParseError(
             f"malformed InChI {text!r}: expected 'InChI=<version>/<formula>[/...layers]'"
         )
+    if parts[0] not in _INCHI_VERSIONS:
+        raise IdentityParseError(
+            f"InChI {text!r} has version token {parts[0]!r}; this reader knows '1S' (standard) and '1' (non-standard)"
+        )
     formula_token = parts[1]
     if "." in formula_token:
         raise IdentityParseError(
             f"InChI {text!r} names a multi-component species (a '.' in the formula layer); this parser resolves a "
             "single species -- supply one component"
         )
+    if _INCHI_HILL_FORMULA.fullmatch(formula_token) is None:
+        raise IdentityParseError(
+            f"InChI {text!r} has formula layer {formula_token!r}, which is not one ASCII Hill formula (a middle dot or "
+            "whitespace separates components; counts are ASCII digits); this parser resolves a single species"
+        )
     layers = [p for p in parts[2:] if p]
     layer_tags = {p[0] for p in layers}
+    for tag in ("q", "p"):
+        # standard InChI writes each charge layer at most once; the old reader SUMMED repeats ('/q+1/q+1' -> +2)
+        if sum(1 for p in layers if p[0] == tag) > 1:
+            raise IdentityParseError(
+                f"InChI {text!r} repeats the /{tag} layer; a charge layer is written once, and this reader will not "
+                "add two of them up"
+            )
 
     # CONSUME the charge layers: /q (net charge) and /p (proton balance; each proton is an H+).
     q_charge = sum(_inchi_layer_int(p[1:], text) for p in layers if p[0] == "q")
     p_protons = sum(_inchi_layer_int(p[1:], text) for p in layers if p[0] == "p")
     try:
         counts = dict(Formula.parse(formula_token).counts)
-    except DecompilerError as exc:
+    except (DecompilerError, ValueError) as exc:   # ValueError: a count past the int-string digit limit (S17)
         raise IdentityParseError(f"could not parse the InChI formula layer {formula_token!r}: {exc}") from exc
     if p_protons:
         counts["H"] = counts.get("H", 0) + p_protons
@@ -383,6 +417,20 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
     Raises :class:`IdentityParseError` on an unresolvable/ambiguous string or a form this offline parser cannot
     honour -- never a raw traceback and never a silent mis-parse.
     """
+    try:
+        return _resolve_identity(target_input, input_kind)
+    except RecursionError:
+        # 0.9.5 S17 (C6-F1c / C8-F4): a front-door walk that recursed past the interpreter's limit on a deeply nested
+        # input is a bound on the INPUT, not a bug in the caller -- typed invalid input (exit 2), never an exit-70
+        # "internal error".  `from None`: nobody needs a thousand identical frames to learn the string was too deep.
+        raise IdentityParseError(
+            f"{target_input[:80]!r}{'...' if len(target_input) > 80 else ''} nests too deeply for the identity "
+            "parser (the interpreter's recursion limit was reached); no identity was established"
+        ) from None
+
+
+def _resolve_identity(target_input: str, input_kind: "InputKind | str") -> ResolvedIdentity:
+    """The body of :func:`resolve_identity` (which adds only the RecursionError -> typed refusal fold)."""
     from .category import CanonicalBoundExceeded
     from .decompiler import Formula
     from .smiles import SmilesError, parse_smiles_features

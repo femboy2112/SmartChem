@@ -166,12 +166,36 @@ class _Atom:
         self.chirality = chirality            # tetrahedral SENSE: 0 none, 1 '@' (anticlockwise), 2 '@@' (clockwise)
 
 
+def _bracket_int(digits: str, what: str, atom_text: str) -> int:
+    """``int(digits)`` for one decimal run inside a bracket atom, refusing typed where ``int()`` would raise.
+
+    0.9.5 S17 (C6-F1b): a run past Python's int-string limit (4,300 digits -- ``'[' + '1' * 4400 + 'C]'``) made
+    ``int()`` raise a bare ``ValueError`` that left the front door untyped (exit 70).  The run is already decimal
+    (every caller tests ``isdecimal()``), so the limit is the only refusal this helper types.  A NON-decimal run is
+    not its business: that is the callers' ``isdecimal()`` gate failing (S15 F-1, mutant M249), and it must stay loud
+    rather than be quietly typed here."""
+    try:
+        return int(digits)
+    except ValueError:
+        if not digits.isdecimal():
+            raise
+        raise SmilesError(
+            f"bracket atom {atom_text!r} has a {len(digits)}-digit {what}; that is not a chemical quantity"
+        ) from None
+
+
+def _ascii_letter(ch: str) -> bool:
+    """An ASCII letter -- the only alphabet element symbols are spelled in."""
+    return ch.isascii() and ch.isalpha()
+
+
 def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
     """Parse ``[...]`` starting at the ``[`` (index ``start``); return the atom and the index past ``]``."""
     end = text.find("]", start)
     if end == -1:
         raise SmilesError(f"unclosed bracket atom at position {start}")
     body = text[start + 1:end]
+    atom_text = text[start:end + 1]
     i = 0
     iso = ""
     # every digit run below tests isdecimal(), NOT isdigit(): isdigit() also admits superscripts ('³'), which
@@ -181,9 +205,18 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
     while i < len(body) and body[i].isdecimal():    # isotope: CAPTURED (ID-STEREO-01), dropped from the graph
         iso += body[i]
         i += 1
-    isotope = int(iso) if iso else 0
+    isotope = _bracket_int(iso, "isotope", atom_text) if iso else 0
     if i >= len(body):
-        raise SmilesError(f"bracket atom {text[start:end + 1]!r} has no element")
+        raise SmilesError(f"bracket atom {atom_text!r} has no element")
+    # 0.9.5 S17 (C6-F9): the element letters must be ASCII.  str.upper()/capitalize() below map non-ASCII
+    # confusables onto real symbols -- U+0131 dotless 'ı' upper-cases to 'I' (iodine), U+017F long 'ſ' to 'S'
+    # (sulfur, and 'ſi' to silicon) -- so '[ı]' used to parse as iodine.  A glyph that merely LOOKS like a
+    # symbol is not one; refuse it before any case mapping gets a chance to be creative.
+    if not _ascii_letter(body[i]) or (i + 1 < len(body) and body[i + 1].isalpha() and not body[i + 1].isascii()):
+        raise SmilesError(
+            f"bracket atom {atom_text!r} spells its element with a non-ASCII letter; element symbols are ASCII "
+            "(e.g. [I], [S], [Si])"
+        )
     aromatic = body[i].islower()
     # element symbol: a two-letter element (Upper+lower, e.g. 'Cl', 'Se') when the capitalised
     # pair is a real element, else a single letter. Aromatic atoms are written lowercase.
@@ -192,7 +225,7 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
     elif body[i].upper() in PT or body[i].upper() == "H":
         element, i = body[i].upper(), i + 1
     else:
-        raise SmilesError(f"unknown element in bracket atom {text[start:end + 1]!r}")
+        raise SmilesError(f"unknown element in bracket atom {atom_text!r}")
     # chirality markers @ / @@: CAPTURED LOSSLESSLY as the tetrahedral SENSE (ID-STEREO-01): 0 = none, 1 = '@'
     # (TH1, anticlockwise from the first neighbour), 2 = '@@' (TH2, clockwise).  ROUND-12 widened this from a bare
     # boolean -- the sense is what a chirality PARITY descriptor needs; it is still dropped from the constitution
@@ -203,7 +236,7 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
         chirality += 1
         i += 1
     if chirality > 2:
-        raise SmilesError(f"bracket atom {text[start:end + 1]!r} has more than two '@' chirality marks")
+        raise SmilesError(f"bracket atom {atom_text!r} has more than two '@' chirality marks")
     h_count = 0
     if i < len(body) and body[i] == "H":
         i += 1
@@ -211,9 +244,12 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
         while i < len(body) and body[i].isdecimal():
             num += body[i]
             i += 1
-        h_count = int(num) if num else 1
+        h_count = _bracket_int(num, "hydrogen count", atom_text) if num else 1
     charge = 0
-    while i < len(body) and body[i] in "+-":
+    # ONE charge run: '+', '-', '+<n>', '-<n>', or a same-sign repeat ('++', '---').  0.9.5 S17 (C6-F8): the old
+    # loop took run after run and SUMMED them, so '[O-+]' cancelled to a neutral O, '[Fe+2+]' became +3 and
+    # '[O-2+]' -1 -- arithmetic on a contradiction.  A second run is refused, not added up.
+    if i < len(body) and body[i] in "+-":
         sign = 1 if body[i] == "+" else -1
         i += 1
         num = ""
@@ -221,14 +257,19 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
             num += body[i]
             i += 1
         if num:
-            charge += sign * int(num)
+            charge = sign * _bracket_int(num, "charge", atom_text)
         else:
-            charge += sign
-            while i < len(body) and body[i] in "+-" and body[i] == ("+" if sign == 1 else "-"):
+            charge = sign
+            while i < len(body) and body[i] == ("+" if sign == 1 else "-"):
                 charge += sign
                 i += 1
+        if i < len(body) and body[i] in "+-":
+            raise SmilesError(
+                f"bracket atom {atom_text!r} writes more than one charge (a second {body[i]!r} run); give ONE "
+                "charge, e.g. [Fe+3] or [O-]"
+            )
     if i != len(body):
-        raise SmilesError(f"could not parse bracket atom {text[start:end + 1]!r}")
+        raise SmilesError(f"could not parse bracket atom {atom_text!r}")
     return _Atom(element, aromatic, charge, h_count, isotope, chirality), end + 1
 
 
@@ -292,19 +333,39 @@ def _parse_skeleton_stereo(
         if direction is not None:
             directions[(a, b)] = direction
 
+    # 0.9.5 S17 (C6-F5): a bond symbol binds the atom (or ring label) that FOLLOWS it -- nothing else.  The walk
+    # used to overwrite ``pending`` with the last symbol and silently drop one with nothing to bind, so 'C=#C' read
+    # as ethyne, 'CC=' (a truncated CC=O) as ethane, 'C(=)C' as ethene and 'C=1CCCC-1' as cyclopentane.  Two
+    # symbols in a row, a symbol with no atom after it (before '(' / ')' / the end) or before any atom, and a ring
+    # bond whose two ends disagree on its order are each refused.  A typo is a typo, not a different molecule.
+    def dangling(where: str) -> SmilesError:
+        return SmilesError(f"bond symbol {text[pending_at]!r} at position {pending_at} is {where}; a bond symbol "
+                           "must be followed by the atom or ring-closure label it binds")
+
+    pending_at = -1                      # the text position of the symbol that set ``pending`` (for the message)
     while i < n:
         ch = text[i]
         if ch == "(":
             if prev is None:
                 raise SmilesError("branch '(' before any atom")
+            if pending is not None:
+                raise dangling("followed by a branch '('")
             branch_stack.append(prev)
             i += 1
         elif ch == ")":
             if not branch_stack:
                 raise SmilesError("unbalanced ')'")
+            if pending is not None:
+                raise dangling("followed by ')'")
             prev = branch_stack.pop()
             i += 1
         elif ch in "-=#:/\\":
+            if prev is None:
+                raise SmilesError(f"bond symbol {ch!r} at position {i} comes before any atom")
+            if pending is not None:
+                raise SmilesError(f"two bond symbols in a row ({text[pending_at]!r} then {ch!r}) at position {i}; "
+                                  "a bond has exactly one order -- write one symbol")
+            pending_at = i
             pending = _AROMATIC if ch == ":" else _BOND_ORDER.get(ch, 1)
             if ch in "/\\":
                 pending_dir = ch == "/"
@@ -329,6 +390,9 @@ def _parse_skeleton_stereo(
                 i += 1
             if label in ring_open:
                 other, oorder, odir, opening_slot = ring_open.pop(label)
+                if pending is not None and oorder is not None and pending != oorder:
+                    raise SmilesError(f"ring bond {label!r} is written with two different orders at its two ends; "
+                                      "write the bond symbol once, or the same symbol at both ends")
                 order = pending if pending is not None else oorder
                 connect(other, prev, order, atoms[other].aromatic and atoms[prev].aromatic,
                         odir if odir is not None else pending_dir)
@@ -375,13 +439,74 @@ def _parse_skeleton_stereo(
             pending_dir = None
             prev = idx
 
+    if pending is not None:
+        raise dangling("at the end of the string")
     if branch_stack:
         raise SmilesError("unbalanced '(' -- a branch was not closed")
     if ring_open:
         raise SmilesError(f"unclosed ring bond(s): {sorted(ring_open)}")
     if not atoms:
         raise SmilesError("empty SMILES")
+    _check_hydrogen_atoms(atoms, bonds)
+    _check_aromatic_ring_members(atoms, bonds)
     return atoms, bonds, directions, written_neighbours
+
+
+def _check_hydrogen_atoms(atoms: list[_Atom], bonds: list[list[int]]) -> None:
+    """Refuse any explicit hydrogen ATOM that is not one terminal, single-bonded atom (0.9.5 S17, C6-F2).
+
+    Hydrogen has one valence.  A bracket atom carries no valence check, so ``[H]`` could be written bridging two
+    atoms (``C1C[H]1``, ``C[H]C``), chained to another H (``C[H][H]``) or multiply bonded (``[O]#[H]``); the parse
+    kept the graph, and ``resonance_canonical`` then re-derived every H as a terminal one, so ``C1C[H]1`` (C2H5)
+    shared ethane's key and a bridging H crashed the rebuild.  Its coordination -- graph neighbours plus its own
+    bracket H count -- is at most one, through an order-1 bond.  ``[H][H]`` / ``[HH]`` (H2), ``[H+]``, ``[H-]``
+    and ``[2H]C`` stay exactly as they were: each of those hydrogens has at most the one neighbour it is owed."""
+    degree = [0] * len(atoms)
+    for a, b, order in bonds:
+        degree[a] += 1
+        degree[b] += 1
+        for end in (a, b):
+            if atoms[end].element == "H" and order != 1:
+                raise SmilesError(
+                    f"hydrogen atom #{end} is joined by a bond of order {'aromatic' if order == _AROMATIC else order}; "
+                    "hydrogen forms exactly one single bond"
+                )
+    for k, atom in enumerate(atoms):
+        if atom.element == "H" and degree[k] + (atom.h_explicit or 0) > 1:
+            raise SmilesError(
+                f"hydrogen atom #{k} has {degree[k] + (atom.h_explicit or 0)} neighbours; hydrogen is a terminal "
+                "atom with one single bond (a bridging or chained [H] is outside this parser's scope)"
+            )
+
+
+def _check_aromatic_ring_members(atoms: list[_Atom], bonds: list[list[int]]) -> None:
+    """Refuse a lowercase (aromatic) atom that is not in an aromatic ring (0.9.5 S17, C8-F3).
+
+    Lowercase means "this atom is a member of an aromatic ring".  An aromatic atom with no aromatic ring bond has
+    nothing to kekulise, and the old path quietly filled it as its aliphatic self: ``Co`` (cobalt, to a human) became
+    methanol, ``Cs`` / ``Sc`` methanethiol, ``Cc`` ethane, ``c`` methane, ``o`` water, and ``c1CCCCC1`` cyclohexane.
+    OpenSMILES makes every one of those an error.  The rule: each aromatic atom is incident to at least one bond that
+    is BOTH aromatic (implicit between two lowercase atoms, or ``:``) AND a ring edge -- which is exactly what being a
+    member of an aromatic ring means.  Every real aromatic spelling (benzene, pyridine, furan, indole, naphthalene,
+    ``c1ccccc1O``, biphenyl's ``c1ccccc1c1ccccc1``) passes untouched; only the lowercase-that-meant-nothing refuses."""
+    aromatic = [k for k, atom in enumerate(atoms) if atom.aromatic]
+    if not aromatic:
+        return
+    ring_edges = _cip_ring_edges(len(atoms), bonds)
+    in_aromatic_ring = set()
+    for bi in ring_edges:
+        a, b, order = bonds[bi]
+        if order == _AROMATIC:
+            in_aromatic_ring.add(a)
+            in_aromatic_ring.add(b)
+    for k in aromatic:
+        if k not in in_aromatic_ring:
+            lower = atoms[k].element.lower()
+            raise SmilesError(
+                f"aromatic atom {lower!r} (atom #{k}) is not a member of an aromatic ring; lowercase marks an aromatic "
+                f"ring atom -- write {atoms[k].element!r} (uppercase) for a non-aromatic atom, or close the aromatic "
+                "ring"
+            )
 
 
 # R2: bound the resonance enumeration. A benzenoid's Kekulé count is small (benzene 2, naphthalene 3,
@@ -803,6 +928,21 @@ def resonance_canonical(molecule: Molecule) -> Molecule:
     if not heavy or len(heavy) > _RESONANCE_MAX_HEAVY:
         # O(1) DoS guard: a molecule too large to canonicalise per-placement cheaply keeps its literal identity
         # (no worse than pre-fix -- it simply won't unify across Kekulé spellings; see the cap note above).
+        return molecule.canonical()
+    # 0.9.5 S17 (C6-F2): the rebuild below re-derives hydrogens -- each heavy atom gets one TERMINAL H per H
+    # neighbour -- which is a resonance form of the input only when every H already IS one terminal, order-1 atom.
+    # A bridging H (counted once per heavy neighbour), an H-H bond or a multiply bonded H made the rebuild a
+    # DIFFERENT formula sharing the honest species' key ('C1C[H]1', C2H5, keyed as ethane) or crashed it.  The parser
+    # now refuses those spellings, but a wire / surgery graph never meets the parser: such a graph keeps its literal
+    # identity instead -- distinct formulas, distinct keys, and nobody's hydrogens get rewritten behind their back.
+    h_degree = dict.fromkeys((i for i, s in enumerate(atoms) if s == "H"), 0)
+    for b in bonds:
+        for end, other in ((b.i, b.j), (b.j, b.i)):
+            if end in h_degree:
+                if b.order != 1 or other in h_degree:
+                    return molecule.canonical()
+                h_degree[end] += 1
+    if any(d != 1 for d in h_degree.values()):
         return molecule.canonical()
     old_to_new = {old: new for new, old in enumerate(heavy)}
     h_count = [0] * len(heavy)

@@ -62,6 +62,7 @@ quantity, not one molecular identity (P0-D).
 """
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, field
 
 from .contracts import Digestible
@@ -98,7 +99,31 @@ _SUPERSCRIPT_CHARS = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")
 _SEPARATOR_CHARS = "·⋅•∙"  # middle dot, dot operator, bullet, bullet operator
 _CANONICAL_SEP = "."  # the internal parse separator (normalize folds every dot glyph to this)
 _RENDER_SEP = "·"     # the canonical RENDER separator (a middle-dot, never an ambiguous compact ASCII '.')
-_ASCII_DIGITS = "0123456789"
+_ASCII_DIGITS = "0123456789"  # the decimal-point guard's digits (v0.6 mutant 11 disables the guard through this)
+# 0.9.5 S17: the digits every COUNT / magnitude check reads, once _fold_decimal_digits has run -- deliberately a
+# separate name from the guard's, so disabling one check can never silently disable the whole grammar.
+_COUNT_DIGITS = "0123456789"
+
+
+def _fold_decimal_digits(text: str) -> str:
+    """Every Unicode DECIMAL digit (category Nd -- Arabic-Indic, fullwidth, Devanagari, ...) -> its ASCII digit.
+
+    0.9.5 S17 (C6-F3): the decimal-point and ion-ambiguity guards look at ASCII digits, while ``int()`` downstream
+    reads every Nd digit -- so the twin of a REFUSED spelling sailed through: ``C٦.5H12`` / ``C６.５H12`` (C6.5H12
+    refused) read as C6H60, ``H٢.٥O`` as H2O5, ``CuSO٤.5H2O`` as a hydrate.  Folding FIRST means every guard sees
+    the digits ``int()`` will read; a digit twin keeps the reading of its ASCII twin, refusals included.  Superscripts
+    and subscripts are not Nd (they keep their own charge / count meaning below); any other digit-looking glyph
+    (circled, dingbat) is not a count at all and is refused by the body parser as an unexpected character."""
+    if text.isascii():
+        return text
+    return "".join(str(unicodedata.decimal(ch)) if ch.isdecimal() and not ch.isascii() else ch for ch in text)
+
+
+def _ascii_digit_run(text: str) -> bool:
+    """A non-empty run of ASCII digits -- the only digits left once :func:`_fold_decimal_digits` has run.  (``isdigit()``
+    also says yes to '④' and '²', which ``int()`` then refuses with a bare ValueError: exit 70, C6-F1a.)"""
+    return bool(text) and all(ch in _COUNT_DIGITS for ch in text)
+
 
 # Markers that make an expression PARAMETRIC (a family of molecules, not one) -- refused, not coerced.
 # 'n'/'m'/'x'/'y' as a *standalone count position* is a variable subscript; '±'/'~' is an interval.
@@ -264,8 +289,9 @@ def normalize_formula_text(text: str) -> str:
     if not work:
         raise FormulaSyntaxError("formula text must be a non-empty string")
 
+    # 0) every Unicode decimal digit -> ASCII (S17), so no later guard is blind to a digit int() would read.
     # 1) subscript counts -> ASCII digits.
-    work = work.translate(_SUBSCRIPTS)
+    work = _fold_decimal_digits(work).translate(_SUBSCRIPTS)
 
     # 2) superscript charge run -> caret form.  A maximal run of superscript glyphs is a charge suffix;
     #    emit it as '^' + its ASCII translation so '²⁻' becomes '^2-' (never merged into the count digits).
@@ -277,6 +303,15 @@ def normalize_formula_text(text: str) -> str:
             j = i
             while j < n and work[j] in _SUPERSCRIPT_CHARS:
                 j += 1
+            if j < n and work[j] in _COUNT_DIGITS:
+                # 0.9.5 S17 (C6-F3): a superscript run glued to ASCII digits ('SO⁴2-') used to MERGE into one
+                # magnitude (SO, charge -42).  Which digits are the charge and which the count is exactly what the
+                # writer did not say -- the P0-B ambiguity again, in a mixed alphabet.  Refused, not concatenated.
+                raise AmbiguousChargeError(
+                    f"{text!r} writes a superscript {work[i:j]!r} directly before the ASCII digit {work[j]!r}; it is "
+                    "unclear which digits are the charge and which are a count. Write the charge in ONE spelling: a "
+                    "caret (e.g. SO4^2-), a Unicode superscript (SO₄²⁻), or a bracket ion (e.g. [SO4]2-)."
+                )
             out.append("^")
             out.append(work[i:j].translate(_SUPERSCRIPTS))
             i = j
@@ -328,9 +363,9 @@ def _drop_safe_whitespace(work: str, original: str) -> str:
         while j < n and work[j].isspace():
             j += 1
         left, right = work[i - 1], work[j]
-        if right.isdigit() and (left.isalpha() or left.isdigit() or left in ")]"):
+        if right in _COUNT_DIGITS and (left.isalpha() or left in _COUNT_DIGITS or left in ")]"):
             tail = work[j:]
-            if tail[-1] in "+-" and tail[:-1].isdigit():
+            if tail[-1] in "+-" and _ascii_digit_run(tail[:-1]):
                 raise AmbiguousChargeError(
                     f"{original!r} is an ambiguous ASCII ion: the whitespace before the trailing {tail!r} leaves it "
                     f"unclear whether {tail[:-1]!r} is the charge magnitude or a count joined to the preceding "
@@ -404,7 +439,7 @@ def _parse_body(text: str, source: str) -> Formula:
             open_kinds.pop()
             i += 1
             j = i
-            while j < n and text[j].isdigit():
+            while j < n and text[j] in _COUNT_DIGITS:
                 j += 1
             mult = int(text[i:j]) if j > i else 1
             if mult == 0:
@@ -422,7 +457,7 @@ def _parse_body(text: str, source: str) -> Formula:
             symbol = text[i:j]
             i = j
             k = i
-            while k < n and text[k].isdigit():
+            while k < n and text[k] in _COUNT_DIGITS:
                 k += 1
             mult = int(text[i:k]) if k > i else 1
             if mult == 0:
@@ -437,7 +472,7 @@ def _parse_body(text: str, source: str) -> Formula:
             raise FormulaSyntaxError(
                 f"unexpected lowercase {c!r} in {source!r} (an element symbol must start uppercase)"
             )
-        elif c.isdigit():
+        elif c in _COUNT_DIGITS:
             raise FormulaSyntaxError(f"count {c!r} with no preceding element in formula {source!r}")
         else:
             raise FormulaSyntaxError(f"unexpected character {c!r} in formula {source!r}")
@@ -477,7 +512,7 @@ def _extract_charge(text: str) -> "tuple[str, int, str]":
         if not sign:
             raise FormulaSyntaxError(f"caret charge in {text!r} has no sign (+/-)")
         mag_text = suffix[:-1]
-        if mag_text and not mag_text.isdigit():
+        if mag_text and not _ascii_digit_run(mag_text):
             raise FormulaSyntaxError(f"malformed caret charge {suffix!r} in {text!r}")
         mag = int(mag_text) if mag_text else 1
         if mag == 0:
@@ -488,7 +523,7 @@ def _extract_charge(text: str) -> "tuple[str, int, str]":
         # digits immediately before the sign (if any).
         j = len(text) - 1
         d = j
-        while d - 1 >= 0 and text[d - 1].isdigit():
+        while d - 1 >= 0 and text[d - 1] in _COUNT_DIGITS:
             d -= 1
         digits = text[d:j]
         preceding = text[:d]
@@ -553,7 +588,7 @@ def parse_formula_expr(text: str) -> FormulaExpr:
     # trips as a decimal).  Doing it here rather than inside normalize keeps normalize idempotent on a folded
     # hydrate 'CuSO4.5H2O'.  Only the ambiguous COMPACT ASCII period between two ASCII digits is a decimal.
     if isinstance(text, str):
-        raw = text.strip().translate(_SUBSCRIPTS)
+        raw = _fold_decimal_digits(text.strip()).translate(_SUBSCRIPTS)
         for k in range(1, len(raw) - 1):
             if raw[k] == "." and raw[k - 1] in _ASCII_DIGITS and raw[k + 1] in _ASCII_DIGITS:
                 raise FormulaSyntaxError(
@@ -585,7 +620,7 @@ def parse_formula_expr(text: str) -> FormulaExpr:
         # the identity of one molecular species, so it is refused at the identity front door rather than folded
         # into composition.
         m = 0
-        while m < len(part) and part[m].isdigit():
+        while m < len(part) and part[m] in _COUNT_DIGITS:
             m += 1
         mult_text, body_text = part[:m], part[m:]
         if mult_text and idx == 0:

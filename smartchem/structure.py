@@ -594,18 +594,52 @@ def resolve_structure(molecule: Molecule) -> "NamedStructure | None":
 def structure_by_name(name: str) -> "NamedStructure | None":
     """The registered structure whose common name, IUPAC, or a synonym matches ``name``.
 
-    Case- and surrounding-whitespace-insensitive over :attr:`NamedStructure.all_names`.  This is the
+    Case- and whitespace-insensitive over :attr:`NamedStructure.all_names`.  This is the
     offline name->structure resolver: it lets a chemist warm the cache or key evidence by a compound's
     NAME without a network round-trip, for any compound the registry carries.  Returns ``None`` on a miss
     (the caller falls back to a live name->structure resolution, or reports a loud skip) -- never a guess.
+
+    0.9.5 S17 (C6-F11): the folds are stock's -- the ONE owner.  This resolver used to keep its own (strip + casefold,
+    no interior collapse), so ``"acetic  acid"`` resolved nowhere here while the stock layer called it acetic acid.
+    And the casefold is lossy (``CO`` / ``Co``), exactly as ``normalize_material_name`` warns: eight labels of this
+    very table have case variants that are chemical formulas -- ``WAtEr`` (W At Er), ``AsPIrIn``, ``PrOPaNONe``, ... --
+    and AUTO asks this resolver FIRST, so a case-only match quietly turned a formula into a registry name.  So: a
+    whitespace-folded (``collapse_material_name``) match always resolves; a match that needs the casefold too
+    (``normalize_material_name``) resolves only a string that does not itself read as a formula.  ``"Water"`` and
+    ``"ACETIC ACID"`` still resolve; ``"WAtEr"`` is left to the formula grammar that it actually spells.
     """
     if not isinstance(name, str) or not name.strip():
         return None
-    needle = name.strip().casefold()
+    # Verbatim label first: equality before any fold implies equality under both, so this changes no answer -- it only
+    # keeps the import-time callers (``data/reagents.py`` resolves its commodity table while ``smartchem.experiment``
+    # is still importing IT) from importing the fold's owner, a circle nobody asked me to close.
     for structure in _REGISTERED:
-        if any(label.casefold() == needle for label in structure.all_names):
+        if name in structure.all_names:
+            return structure
+    from .experiment.stock import collapse_material_name, normalize_material_name  # lazy: experiment imports us
+
+    exact = collapse_material_name(name)
+    for structure in _REGISTERED:
+        if any(collapse_material_name(label) == exact for label in structure.all_names):
+            return structure
+    if _reads_as_formula(exact):
+        return None                    # a case-sensitive token: case-only agreement is POSSIBLE, never a resolution
+    needle = normalize_material_name(name)
+    for structure in _REGISTERED:
+        if any(normalize_material_name(label) == needle for label in structure.all_names):
             return structure
     return None
+
+
+def _reads_as_formula(text: str) -> bool:
+    """Whether ``text`` parses under the front-door formula grammar -- i.e. its letter CASE carries meaning."""
+    from .formula_expr import FormulaSyntaxError, parse_formula_expr
+
+    try:
+        parse_formula_expr(text)
+    except (FormulaSyntaxError, ValueError):
+        return False
+    return True
 
 
 def registered_structures() -> tuple[NamedStructure, ...]:

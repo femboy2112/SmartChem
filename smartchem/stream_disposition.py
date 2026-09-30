@@ -129,9 +129,18 @@ RECOVERY_OP_KINDS: "frozenset[OperationKind]" = frozenset({
     OperationKind.DISTILL, OperationKind.FILTER, OperationKind.SEPARATE,
 })
 
-_STRUCT_PREFIX = "struct:"
-_STRUCT_ASGIVEN = "struct-asgiven:"
+# 0.9.5 S17 (C6-F11): the two structure-key prefixes are stock's (``stock._STRUCT_PREFIX`` / ``_STRUCT_ASGIVEN``, the
+# owner of ``structure_key``) and are read from there when a subject is checked -- this module kept private literal
+# copies that merely happened to agree.  Lazily, like every other stock edge here: this leaf stays import-light.
+# ``name:`` has no other owner -- only a residual subject key speaks it -- so it stays here, once.
 _NAME_PREFIX = "name:"
+
+
+def _species_key_prefixes(with_name: bool) -> "tuple[str, ...]":
+    """The prefixes a species-level subject core may carry: stock's two structure-key prefixes, plus ``name:``."""
+    from .experiment.stock import _STRUCT_ASGIVEN, _STRUCT_PREFIX  # lazy: the experiment package imports this module
+
+    return (_STRUCT_PREFIX, _STRUCT_ASGIVEN) + ((_NAME_PREFIX,) if with_name else ())
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -243,7 +252,7 @@ class StreamSubject(Digestible):
         if self.kind in (SubjectKind.BYPRODUCT, SubjectKind.RESIDUAL):
             if self.ordinal is not None or self.index is not None:
                 raise ValueError(f"a {self.kind.value} subject is species-level: ordinal and index must be None")
-            prefixes = (_STRUCT_PREFIX, _STRUCT_ASGIVEN) + ((_NAME_PREFIX,) if self.kind is SubjectKind.RESIDUAL else ())
+            prefixes = _species_key_prefixes(self.kind is SubjectKind.RESIDUAL)
             if not self.core.startswith(prefixes):
                 raise ValueError(f"a {self.kind.value} core must be a species key with prefix in {prefixes}")
         else:

@@ -131,8 +131,28 @@ reads a payload-supplied path — recompile locally from the file).
   whitespace-folded match certifies a supply, covers a raw source string or merges two obligations. A match that holds
   only after also folding case is a *possible* source (`UNKNOWN`), never a certification — `CO` (carbon monoxide) is
   not `Co` (cobalt).
+* **One species, two keys (a declared split):** hypervalent and charge-separated spellings of one species are
+  *different* material keys — `CN(=O)=O` vs `C[N+](=O)[O-]` (nitro), `CS(C)=O` vs `C[S+](C)[O-]` (sulfoxide), and
+  likewise N-oxides, phosphine oxides, sulfones, nitrate; so are resonance forms that move a charge or an unpaired
+  electron (enolate `[O-]C=C` vs `O=C[CH2-]`). The resonance class re-places multiple bonds at fixed per-atom
+  pi-demand only. The error runs in one direction: a bottle spelled one way does not satisfy a requirement spelled the
+  other (false `BLOCKED` / `UNKNOWN`); two different species are never merged.
 * **Front door:** a formula spelling that is ambiguous (a bare trailing sign after a count, whitespace that would join
-  two counts) is refused with the explicit form to use — never silently read one way.
+  two counts) is refused with the explicit form to use — never silently read one way. A SMILES that is not well
+  formed is refused, never repaired: a lowercase (aromatic) atom outside an aromatic ring (`Co`, `Cc`, `c1CCCCC1`), an
+  explicit hydrogen that is not one terminal single-bonded atom (`C1C[H]1`, `C[H][H]`, `[O]#[H]`), two bond symbols in
+  a row or one with no atom to bind (`C=#C`, `CC=`, `C(=)C`), a ring bond whose two ends disagree (`C=1CCCC-1`), more
+  than one charge in a bracket atom (`[O-+]`, `[Fe+2+]`), a non-ASCII element letter (`[ı]`, `[ſ]`). In a formula,
+  every Unicode decimal digit reads as its ASCII twin, refusals included (`C٦.5H12` is the refused decimal `C6.5H12`),
+  and a superscript charge written against ASCII digits (`SO⁴2-`) is ambiguous. An InChI is read only with version
+  `1S` or `1`, one ASCII Hill formula, and each of `/q` `/p` at most once. Every front-door parse failure is typed
+  invalid input (exit 2), never an internal error.
+* **AUTO precedence on expert paths (declared):** only the `plan` target refuses an input-kind ambiguity
+  (`detect_auto_ambiguity`). The expert verbs' positional target and every stock / helper-reagent string (request
+  fields `stock_materials` / `helper_reagents`; CLI `--have` / `--reagents`) keep the legacy AUTO precedence —
+  offline name, then SMILES, then formula. There, `CO` is methanol (not carbon monoxide), `O` is water, `NO` is
+  hydroxylamine, `CCO` is ethanol. The reading is deterministic but not echoed per bench string; write `smiles:` /
+  `formula:` (or a registered name) to make the choice explicit.
 
 ## 6. Evidence contract
 

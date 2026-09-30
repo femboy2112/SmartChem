@@ -28,9 +28,15 @@ it stamps), **failure** (what happens on bad input) and **completeness** (what "
   to `recompile` (a perceived structure) or `decompile` (a bare formula).
 * **Identity:** `ResolvedIdentity` (layer: STRUCTURE / FORMULA / NAME) + `features` (stereo / isotope / charge the input
   declared) → section-5.3 identity *losses* when the compiler cannot carry them.
-* **Failure:** a typed `IdentityParseError` (exit 2, `INVALID_INPUT`) with the explicit form to use; on the `plan`
-  target AUTO never guesses between readings (`detect_auto_ambiguity`); ambiguous formula spellings (whitespace that would join counts, a bare
-  trailing sign after a single-element count) are refused, never silently read one way.
+* **Failure:** a typed `IdentityParseError` (exit 2, `INVALID_INPUT`) with the explicit form to use — every parse
+  failure, including a digit run past the int limit, a non-decimal digit, a recursion-depth overflow and a canonicaliser
+  bound (`IdentityOutOfBounds`); on the `plan` target AUTO never guesses between readings (`detect_auto_ambiguity`).
+  **Declared boundary:** the expert verbs' positional target and every stock / helper-reagent string keep the legacy
+  AUTO precedence (name → SMILES → formula: `CO` there is methanol, `O` water) — see COMPATIBILITY §5. Ambiguous formula
+  spellings (whitespace that would join counts, a bare trailing sign after a single-element count, a Unicode-digit twin
+  of a refused spelling, a superscript charge against ASCII digits) and malformed SMILES (a lowercase atom outside an
+  aromatic ring, a non-terminal or multiply bonded `[H]`, contradictory or dangling bond symbols, two charge runs, a
+  non-ASCII element letter) are refused, never silently read one way.
 * **Completeness:** n/a (a parse either perceives a layer or refuses).
 
 ### 2. Identity — `smiles.resonance_identity`, `compilation_ir._structure_ident`, `experiment/stock.structure_key`
